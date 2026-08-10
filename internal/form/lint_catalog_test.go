@@ -1,4 +1,4 @@
-package chalkboard_test
+package form_test
 
 import (
 	"encoding/json"
@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 )
 
 // TestDefaultTemplates_LintClean runs every embedded default template
@@ -16,7 +16,7 @@ import (
 // Stage 5 of plans/SYSTEM-REMINDERS.md: the harness's own templates
 // must not start with imperative system-command framing.
 func TestDefaultTemplates_LintClean(t *testing.T) {
-	tmpls, err := chalkboard.LoadDefaultTemplates()
+	tmpls, err := form.LoadDefaultTemplates()
 	require.NoError(t, err)
 
 	rawString := func(s string) json.RawMessage {
@@ -27,10 +27,10 @@ func TestDefaultTemplates_LintClean(t *testing.T) {
 	// Build a single patch that exercises every default template key.
 	// Old values are populated where the template uses {{.OldString}}
 	// (currently only model.tmpl).
-	prev := chalkboard.FromMap(map[string]json.RawMessage{
+	prev := form.FromMap(map[string]json.RawMessage{
 		"model": rawString("claude-sonnet-4-6"),
 	})
-	patch := chalkboard.Patch{
+	patch := form.Patch{
 		Set: map[string]json.RawMessage{
 			"cwd":          rawString("/home/figaro/dev"),
 			"datetime":     rawString("Wednesday, April 29, 2026, 10AM EDT"),
@@ -41,11 +41,11 @@ func TestDefaultTemplates_LintClean(t *testing.T) {
 		},
 	}
 
-	rendered, err := chalkboard.Render(patch, prev, tmpls)
+	rendered, err := form.Render(patch, prev, tmpls)
 	require.NoError(t, err)
 	require.NotEmpty(t, rendered, "default templates must produce some output for the test patch")
 
-	issues := chalkboard.Lint(rendered, chalkboard.LintOptions{})
+	issues := form.Lint(rendered, form.LintOptions{})
 	if len(issues) > 0 {
 		for _, iss := range issues {
 			t.Errorf("default template %q failed lint: %s\n  body: %s", iss.Key, iss.Reason, iss.Body)
@@ -70,7 +70,7 @@ func TestDefaultTemplates_LintClean(t *testing.T) {
 // system commands. Spot-check by lint, plus an explicit assertion that
 // no body contains common imperative red flags.
 func TestDefaultTemplates_AllBodiesAreFactual(t *testing.T) {
-	tmpls, err := chalkboard.LoadDefaultTemplates()
+	tmpls, err := form.LoadDefaultTemplates()
 	require.NoError(t, err)
 
 	rawString := func(s string) json.RawMessage {
@@ -78,7 +78,7 @@ func TestDefaultTemplates_AllBodiesAreFactual(t *testing.T) {
 		return b
 	}
 
-	patch := chalkboard.Patch{
+	patch := form.Patch{
 		Set: map[string]json.RawMessage{
 			"cwd":      rawString("/home/figaro"),
 			"datetime": rawString("Wednesday, April 29, 2026, 10AM EDT"),
@@ -86,7 +86,7 @@ func TestDefaultTemplates_AllBodiesAreFactual(t *testing.T) {
 			"root":     rawString("/home/figaro"),
 		},
 	}
-	rendered, err := chalkboard.Render(patch, chalkboard.Snapshot{}, tmpls)
+	rendered, err := form.Render(patch, form.Snapshot{}, tmpls)
 	require.NoError(t, err)
 
 	imperativeRedFlags := []string{

@@ -159,7 +159,7 @@ func TestInbox_SnapshotPromptsFIFOAndReadOnly(t *testing.T) {
 	defer cancel()
 	b := NewInbox(ctx)
 
-	// A pure-chalkboard prompt (empty text) is a carrier, not a message —
+	// A pure-form prompt (empty text) is a carrier, not a message —
 	// the default snapshot omits it. Non-prompt events (Set, Fork) are also
 	// skipped.
 	b.Send(event{typ: eventUserPrompt, text: "first"})

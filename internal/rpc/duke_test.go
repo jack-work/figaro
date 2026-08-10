@@ -26,7 +26,7 @@ func TestDukePlaceholderIsResolvedByTheTarget(t *testing.T) {
 		t.Fatalf("SenderFrom = %q, want gluck", got)
 	}
 
-	// An aria whose chalkboard says nothing falls back to the generic default.
+	// An aria whose form says nothing falls back to the generic default.
 	// A WRONG name is worse than a plain one.
 	if got := SenderFrom(raw, func() string { return "" }); got != DefaultDukeTitle {
 		t.Fatalf("SenderFrom = %q, want %q", got, DefaultDukeTitle)
@@ -60,7 +60,7 @@ func TestNoLabelCanForgeTheDukeFlag(t *testing.T) {
 }
 
 // FIGARO_CALLER is an OVERRIDE: a caller that named itself has said something
-// the target aria's chalkboard cannot know.
+// the target aria's form cannot know.
 func TestExplicitLabelOverridesTheDuke(t *testing.T) {
 	raw, err := WithCaller(QuaRequest{Text: "hi"}, "", &CallerRef{Duke: true, Label: "ci-bot"})
 	if err != nil {
@@ -116,10 +116,10 @@ func TestDukeRequiresInteractive(t *testing.T) {
 func TestResolvedDukeTitleIsSanitized(t *testing.T) {
 	raw, _ := WithCaller(QuaRequest{Text: "hi"}, "", &CallerRef{Duke: true})
 	if got := SenderFrom(raw, func() string { return "aria 999" }); got == "aria 999" {
-		t.Fatalf("a chalkboard value impersonated an aria: %q", got)
+		t.Fatalf("a form value impersonated an aria: %q", got)
 	}
 	if got := SenderFrom(raw, func() string { return "a\nb" }); got != "ab" {
-		t.Fatalf("control chars survived a chalkboard title: %q", got)
+		t.Fatalf("control chars survived a form title: %q", got)
 	}
 }
 

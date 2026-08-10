@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/compose"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
@@ -31,13 +31,13 @@ func (reconcileNoopProvider) Send(context.Context, provider.SendInput, provider.
 
 func newBareAgent(t *testing.T, log store.Log[message.Message]) *Agent {
 	t.Helper()
-	cb, _ := chalkboard.Open("")
+	cb, _ := form.Open("")
 	a := &Agent{
-		id:         "recon-test",
-		chalkboard: cb,
-		figLog:     log,
-		ariaSrv:    aria.NewServer(),
-		inbox:      NewInbox(context.Background()),
+		id:      "recon-test",
+		form:    cb,
+		figLog:  log,
+		ariaSrv: aria.NewServer(),
+		inbox:   NewInbox(context.Background()),
 		// These tests assert PROJECTION behaviour, so they must supply a
 		// projector. The engine itself may not import internal/compose — see
 		// projector_boundary_test.go — but a test binary may, which is exactly

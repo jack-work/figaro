@@ -1,4 +1,4 @@
-// Package cli — @key chalkboard reference expansion.
+// Package cli — @key form reference expansion.
 package cli
 
 import (
@@ -7,23 +7,23 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/transport"
 )
 
 // atExpandTimeout bounds the snapshot fetch used by @-expansion. The
-// figaro daemon should answer Chalkboard() in microseconds for a
+// figaro daemon should answer Form() in microseconds for a
 // resident aria; this is the budget for the entire round-trip
 // including dial. On timeout / dial error / any failure, we fall
 // back to leaving @-references literal (permissive mode).
 const atExpandTimeout = 500 * time.Millisecond
 
-// refSigil is the prefix character for chalkboard references.
+// refSigil is the prefix character for form references.
 // Set from config at startup; default '@'.
 var refSigil byte = '@'
 
-// SetRefSigil configures the chalkboard reference prefix. Called once
+// SetRefSigil configures the form reference prefix. Called once
 // at CLI startup from the loaded config.
 func SetRefSigil(s string) {
 	if len(s) == 1 && (s[0] == '@' || s[0] == ':') {
@@ -53,7 +53,7 @@ func SetRefSigil(s string) {
 // Non-string snapshot values are rendered via JSON unmarshal:
 // strings unwrap to their text, everything else is re-marshaled
 // to a compact JSON form. Empty snapshot is a valid no-op.
-func expandAtRefs(prompt string, snap chalkboard.Snapshot) string {
+func expandAtRefs(prompt string, snap form.Snapshot) string {
 	if snap.Len() == 0 || !strings.ContainsRune(prompt, rune(refSigil)) {
 		return prompt
 	}
@@ -91,7 +91,7 @@ func expandAtRefs(prompt string, snap chalkboard.Snapshot) string {
 	return out.String()
 }
 
-// readAtKey reads a chalkboard key off the head of s and returns the
+// readAtKey reads a form key off the head of s and returns the
 // key and the number of bytes consumed. Returns "" if the head does
 // not look like a key.
 func readAtKey(s string) (string, int) {
@@ -157,20 +157,20 @@ func formatAny(v any) string {
 }
 
 // fetchSnapshotForEndpoint best-effort dials a figaro at ep and
-// fetches its chalkboard snapshot. Returns an empty snapshot on any
+// fetches its form snapshot. Returns an empty snapshot on any
 // failure; the caller treats that as "no expansion possible"
 // (permissive mode).
-func fetchSnapshotForEndpoint(parent context.Context, ep transport.Endpoint) chalkboard.Snapshot {
+func fetchSnapshotForEndpoint(parent context.Context, ep transport.Endpoint) form.Snapshot {
 	ctx, cancel := context.WithTimeout(parent, atExpandTimeout)
 	defer cancel()
 	fcli, err := figaro.DialClient(ep, nil)
 	if err != nil {
-		return chalkboard.Snapshot{}
+		return form.Snapshot{}
 	}
 	defer fcli.Close()
-	resp, err := fcli.Chalkboard(ctx)
+	resp, err := fcli.Form(ctx)
 	if err != nil {
-		return chalkboard.Snapshot{}
+		return form.Snapshot{}
 	}
 	return resp.Snapshot
 }

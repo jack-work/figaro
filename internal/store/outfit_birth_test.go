@@ -39,7 +39,7 @@ func TestStumpBirthRecordIsStampedAtItsOwnOutfitPatch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	patches, err := be.ChalkboardPatches(aria)
+	patches, err := be.FormPatches(aria)
 	if err != nil {
 		t.Fatal(err)
 	}

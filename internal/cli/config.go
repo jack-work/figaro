@@ -14,8 +14,8 @@ import (
 	hushconfig "github.com/jack-work/hush/config"
 	"github.com/jack-work/hush/managed"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/tui"
 )
@@ -138,7 +138,7 @@ func ensureHush() {
 	}
 }
 
-// buildPromptChalkboard collects per-prompt chalkboard values.
+// buildPromptForm collects per-prompt form values.
 // These are read in the CLI process (which inherits the user's
 // shell env) and sent with every prompt so the agent always has
 // up-to-date values.
@@ -147,7 +147,7 @@ func ensureHush() {
 // itself, so the reminder renders on the turn that asked for it.
 var promptDressing dressing
 
-func buildPromptChalkboard() *rpc.ChalkboardInput {
+func buildPromptForm() *rpc.FormInput {
 	cwd, _ := os.Getwd()
 	snap := map[string]json.RawMessage{}
 	if cwd != "" {
@@ -160,35 +160,35 @@ func buildPromptChalkboard() *rpc.ChalkboardInput {
 		snap["datetime"] = b
 	}
 	// Allowlisted env vars from the caller's shell.
-	for k, v := range chalkboard.EnvironmentSnapshot() {
+	for k, v := range form.EnvironmentSnapshot() {
 		snap[k] = v
 	}
 	if len(snap) == 0 && promptDressing.IsEmpty() {
 		return nil
 	}
-	return &rpc.ChalkboardInput{Context: snap, Patch: promptDressing.patch}
+	return &rpc.FormInput{Context: snap, Patch: promptDressing.patch}
 }
 
-// buildChalkboard loads body templates with user overrides.
-func buildChalkboard() *template.Template {
-	tmpls, err := chalkboard.LoadDefaultTemplates()
+// buildFormTemplates loads body templates with user overrides.
+func buildFormTemplates() *template.Template {
+	tmpls, err := form.LoadDefaultTemplates()
 	if err != nil {
-		slog.Warn("chalkboard templates load failed (disabled)", "err", err)
+		slog.Warn("form templates load failed (disabled)", "err", err)
 		return nil
 	}
-	overrideDir := filepath.Join(config.DefaultConfigDir(), "chalkboard")
+	overrideDir := filepath.Join(config.DefaultConfigDir(), "form")
 	if _, err := os.Stat(overrideDir); err == nil {
-		if t, err := chalkboard.LoadOverrideTemplates(tmpls, overrideDir); err == nil {
+		if t, err := form.LoadOverrideTemplates(tmpls, overrideDir); err == nil {
 			tmpls = t
 		} else {
-			slog.Warn("chalkboard override templates (using defaults)", "err", err)
+			slog.Warn("form override templates (using defaults)", "err", err)
 		}
 	}
 	return tmpls
 }
 
 // stateDir returns the directory for persistent figaro state
-// (OTel data, aria archives, aria chalkboards). XDG_STATE_HOME and
+// (OTel data, aria archives, aria forms). XDG_STATE_HOME and
 // FIGARO_STATE_DIR are honored to allow dev-shell isolation.
 func stateDir() string {
 	if d := os.Getenv("FIGARO_STATE_DIR"); d != "" {

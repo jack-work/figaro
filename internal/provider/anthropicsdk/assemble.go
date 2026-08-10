@@ -7,12 +7,12 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/provider"
 )
 
 // buildParams layers request-local changes over the immutable parsed projection.
-func buildParams(messages []anthropic.MessageParam, lts []uint64, snap chalkboard.Snapshot, tools []provider.Tool, maxTokens int64, oauth bool, model string, eagerAllowed bool) anthropic.MessageNewParams {
+func buildParams(messages []anthropic.MessageParam, lts []uint64, snap form.Snapshot, tools []provider.Tool, maxTokens int64, oauth bool, model string, eagerAllowed bool) anthropic.MessageNewParams {
 	params := anthropic.MessageNewParams{
 		MaxTokens: maxTokens,
 		Model:     anthropic.Model(model),
@@ -84,7 +84,7 @@ func coalesceMessages(msgs []anthropic.MessageParam, lts []uint64) ([]anthropic.
 // positive integer (the budget in tokens; the API floor is 1024). It also
 // guarantees MaxTokens exceeds the budget, which the API requires
 // (max_tokens must leave room for the response after the thinking budget).
-func applyThinking(params *anthropic.MessageNewParams, snap chalkboard.Snapshot, model string) {
+func applyThinking(params *anthropic.MessageNewParams, snap form.Snapshot, model string) {
 	budgetRaw, _ := snap.Get("system.thinking_budget")
 	effortRaw, _ := snap.Get("system.thinking_effort")
 	budget := thinkingInt(budgetRaw)
@@ -124,7 +124,7 @@ func applyThinking(params *anthropic.MessageNewParams, snap chalkboard.Snapshot,
 	}
 }
 
-// thinkingInt reads a chalkboard number (tolerating a quoted string); 0 if absent.
+// thinkingInt reads a form number (tolerating a quoted string); 0 if absent.
 func thinkingInt(raw json.RawMessage) int {
 	if len(raw) == 0 {
 		return 0
@@ -140,7 +140,7 @@ func thinkingInt(raw json.RawMessage) int {
 	return n
 }
 
-// thinkingStr reads a chalkboard string; "" if absent.
+// thinkingStr reads a form string; "" if absent.
 func thinkingStr(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
@@ -154,7 +154,7 @@ func thinkingStr(raw json.RawMessage) string {
 // only) + credo. Credo lives at `system.credo` and may be a bare
 // string or a ContentEnvelope object (from the outfitter's fileName
 // loader). See readCredo for unwrap rules.
-func systemBlocks(snap chalkboard.Snapshot, oauth bool) []anthropic.TextBlockParam {
+func systemBlocks(snap form.Snapshot, oauth bool) []anthropic.TextBlockParam {
 	var out []anthropic.TextBlockParam
 	systemText := readCredo(snap)
 	if oauth {
@@ -169,11 +169,11 @@ func systemBlocks(snap chalkboard.Snapshot, oauth bool) []anthropic.TextBlockPar
 	return out
 }
 
-// readCredo extracts the credo text from a chalkboard snapshot,
+// readCredo extracts the credo text from a form snapshot,
 // handling both the bare-string and ContentEnvelope shapes
 // ({content, frontmatter, filePath}). Prefers content, falls back
 // to frontmatter, then to a bare string.
-func readCredo(snap chalkboard.Snapshot) string {
+func readCredo(snap form.Snapshot) string {
 	raw, ok := snap.Get("system.credo")
 	if !ok {
 		return ""
@@ -195,12 +195,12 @@ func readCredo(snap chalkboard.Snapshot) string {
 	return ""
 }
 
-// eagerToolStreaming reads the chalkboard opt-in for fine-grained tool-input
+// eagerToolStreaming reads the form opt-in for fine-grained tool-input
 // streaming. Absent means absent: the field is omitted and the API applies its
 // documented default, which BUFFERS each parameter value until it is complete
 // — the reason a 5 KB write argument shows nothing for 25 seconds and then all
 // at once.
-func eagerToolStreaming(snap chalkboard.Snapshot) bool {
+func eagerToolStreaming(snap form.Snapshot) bool {
 	raw, ok := snap.Get("system.eager_tool_streaming")
 	if !ok {
 		return false
@@ -277,7 +277,7 @@ func toolInputSchema(params any) anthropic.ToolInputSchemaParam {
 // reuse the prefix — memoize the score across breakpoints (so a shared prefix
 // isn't recomputed per fork), and promote spans above a threshold to long (1h)
 // retention. Keep that decision funnelled through here.
-func resolveCacheControl(snap chalkboard.Snapshot) provider.CachePolicy {
+func resolveCacheControl(snap form.Snapshot) provider.CachePolicy {
 	return provider.ResolveCachePolicy(snap)
 }
 
@@ -303,7 +303,7 @@ func markCacheBreakpoints(params *anthropic.MessageNewParams, policy provider.Ca
 
 // applyMessageTags reads system.tags and attaches per-message
 // cache_control overrides keyed by the figLog logical time.
-func applyMessageTags(params *anthropic.MessageNewParams, msgLTs []uint64, snap chalkboard.Snapshot) {
+func applyMessageTags(params *anthropic.MessageNewParams, msgLTs []uint64, snap form.Snapshot) {
 	raw, ok := snap.Get("system.tags")
 	if !ok || len(raw) == 0 {
 		return

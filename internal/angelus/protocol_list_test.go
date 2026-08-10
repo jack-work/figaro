@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
@@ -45,9 +45,9 @@ func (b *metadataListBackend) Meta(string) (*store.AriaMeta, error) {
 	}, nil
 }
 
-func (b *metadataListBackend) ChalkboardState(string) (chalkboard.Snapshot, error) {
+func (b *metadataListBackend) FormState(string) (form.Snapshot, error) {
 	b.chalkReads.Add(1)
-	return chalkboard.Snapshot{}, nil
+	return form.Snapshot{}, nil
 }
 
 func (b *metadataListBackend) Open(string) (store.Log[message.Message], error) {
@@ -75,7 +75,7 @@ func TestDormantListUsesMetadataOnly(t *testing.T) {
 		t.Fatalf("metadata not projected: %#v", got)
 	}
 	if got := backend.chalkReads.Load(); got != 0 {
-		t.Fatalf("dormant list folded chalkboard %d times", got)
+		t.Fatalf("dormant list folded form %d times", got)
 	}
 	if got := backend.logReads.Load(); got != 0 {
 		t.Fatalf("dormant list counted canonical log %d times", got)
@@ -107,11 +107,11 @@ func TestDormantListReportsBoundPIDs(t *testing.T) {
 }
 
 // The outfit column names the STUMP an aria was born under, which is minted
-// with the hash and never changes. It used to name a chalkboard key of the
+// with the hash and never changes. It used to name a form key of the
 // same name, so `set system.outfit_name x` renamed the aria's outfit in every
 // listing — and, since the column is what the version is re-resolved against,
 // reported an unchanged outfit as stale in the same breath.
-func TestListLabelsFromTheStumpNotTheChalkboard(t *testing.T) {
+func TestListLabelsFromTheStumpNotTheForm(t *testing.T) {
 	backend := &metadataListBackend{}
 	h := &handlers{angelus: &Angelus{Registry: NewRegistry(), Backend: backend}}
 

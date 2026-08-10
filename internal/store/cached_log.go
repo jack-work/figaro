@@ -14,7 +14,7 @@ import (
 // It used to hold every entry for the aria's whole life. That is the largest
 // thing a live aria pins: the decoded fig IR runs 4-5x its encoded bytes, and
 // a real 2500-message aria measured 12.5 MiB of it against 2.0 MiB of composed
-// UI and 48 KiB of chalkboard.
+// UI and 48 KiB of form.
 //
 // The window is a window and not an LRU on purpose. Figaro's access pattern on
 // the IR is append at the tail, translate the tail (provider.TailAfter),

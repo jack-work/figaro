@@ -80,7 +80,7 @@ func TestFigaroInfoResponse(t *testing.T) {
 
 func TestCreateRequest(t *testing.T) {
 	roundTrip(t, "create_request.json", rpc.CreateRequest{
-		Patch: &rpc.ChalkboardPatch{
+		Patch: &rpc.FormPatch{
 			Set: map[string]json.RawMessage{
 				"layers":       json.RawMessage(`["anthropic"]`),
 				"system.model": json.RawMessage(`"claude-sonnet-4-20250514"`),

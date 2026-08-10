@@ -51,24 +51,24 @@ var channelSchemas = map[string]channelSchema{
 	// to — shifting every turn id after it, which is the coordinate
 	// `send`/`fork <trunk>:<turn>` addresses. The gate makes that a refusal.
 	// v4: a main record carries a CURSOR STAMP -- where each unkeyed channel
-	// stood when the record was written -- and the chalkboard became unkeyed
+	// stood when the record was written -- and the form became unkeyed
 	// in the same release, so its records now carry main LT 0 instead of a
 	// real one. Reading an old store is transparent: a record with no stamp
-	// falls back to deriving the boundary from the chalkboard's old main-LT
+	// falls back to deriving the boundary from the form's old main-LT
 	// key, so nothing is rewritten and no converter is needed.
 	//
 	// The bump is for the OTHER direction, and it is why it lives HERE
-	// rather than on the chalkboard. An older binary has no notion of a
-	// stamp and would read the chalkboard's main LT of 0 as real, bucketing
+	// rather than on the form. An older binary has no notion of a
+	// stamp and would read the form's main LT of 0 as real, bucketing
 	// every board patch at LT 0: inline state transitions silently vanish,
 	// and a fork would inherit the wrong slice of the board. Gating on the
-	// IR version refuses that store outright, which covers the chalkboard's
-	// change too -- a chalkboard bump would instead demand a v1->v2
+	// IR version refuses that store outright, which covers the form's
+	// change too -- a form bump would instead demand a v1->v2
 	// converter for a migration that needs no data to move.
-	chanIR:         {version: 4, class: classCanonical},
-	chanChalkboard: {version: 1, class: classReducible},
+	chanIR:   {version: 4, class: classCanonical},
+	chanForm: {version: 1, class: classReducible},
 	// v2: not a shape change -- a POISON sweep. A projection bug rendered the
-	// whole chalkboard onto one message per provider round-trip instead of the
+	// whole form onto one message per provider round-trip instead of the
 	// delta, and the encoder wrote that into these per-LT caches, so the
 	// duplication is durable and re-reading does not undo it. Measured on real
 	// arias: 31-60% of a conversation's cached bytes were repeated board, and
@@ -101,12 +101,19 @@ func schemaFor(name string) (channelSchema, string, bool) {
 // 1: a stump's id is its content version alone. The name is inside the hashed
 // content and inside the birth record, so nothing parses an id.
 //
+// 2: the chalkboard is the FORM, and its channel directory is named "form".
+// Outfits are no longer a wire type either — a client sends a patch whose
+// `layers` directive the server materializes — but that is a protocol change,
+// not a store one. The directory rename is what makes this a generation: a
+// generation-1 store read by this build would present an empty form for every
+// aria, so it is refused and exported/imported instead.
+//
 // It exists so that the next change of meaning is a comparison rather than a
 // probe. Detection logic infers "have I run?" from the data and is wrong the
 // day the data has another reason to look that way; a recorded number states
 // it. A store minted from here on is stamped at creation, and a store with no
 // stamp is generation 0 -- the one inference, made once per store, ever.
-const storeVersion = 1
+const storeVersion = 2
 
 type schemaFile struct {
 	StoreVersion int            `json:"store-version"`
@@ -162,9 +169,15 @@ func ensureSchema(root string, trunks *xwal.Store) error {
 				"refusing to open a store written by a newer build (upgrade figaro)",
 			f.StoreVersion, storeVersion)
 	}
-	// Nothing to run between 0 and 1: neither id shape is parsed, and a
-	// stump has always stated its own name. When a generation DOES need work
-	// the registry goes here, keyed on this number rather than on a probe.
+	// Generation 1 held the form under a directory named "chalkboard". There
+	// is no in-place converter: `figaro export` on 0.22.x writes an aria out,
+	// `figaro import` here writes it back, and that round trip is the
+	// migration. Refusing beats reading a board that would come back empty.
+	if f.StoreVersion == 1 {
+		return fmt.Errorf(
+			"store is generation 1 (the form channel was called \"chalkboard\"): " +
+				"export each aria with figaro 0.22.x and import it here")
+	}
 	f.StoreVersion = storeVersion
 	stored := f.Channels
 	var bust []string

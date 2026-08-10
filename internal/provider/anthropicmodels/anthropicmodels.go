@@ -17,7 +17,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/provider"
 )
 
@@ -126,10 +126,10 @@ func (c *Catalog) Window(model string) int {
 
 // ContextLimit implements provider.ContextLimitProvider's contract for an
 // Anthropic-shaped provider: an explicit system.max_context_tokens on the
-// chalkboard wins outright (that is what an override is for), otherwise the
+// form wins outright (that is what an override is for), otherwise the
 // catalog/table window is reported. It never performs network I/O — callers
 // use it on live status paths.
-func (c *Catalog) ContextLimit(model string, snapshot chalkboard.Snapshot) int {
+func (c *Catalog) ContextLimit(model string, snapshot form.Snapshot) int {
 	if override, ok := provider.ContextLimitOverride(snapshot); ok {
 		return override
 	}

@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 )
 
-func mkSnap(t *testing.T, kv map[string]any) chalkboard.Snapshot {
+func mkSnap(t *testing.T, kv map[string]any) form.Snapshot {
 	t.Helper()
 	out := make(map[string]json.RawMessage, len(kv))
 	for k, v := range kv {
@@ -18,7 +18,7 @@ func mkSnap(t *testing.T, kv map[string]any) chalkboard.Snapshot {
 		}
 		out[k] = b
 	}
-	return chalkboard.FromMap(out)
+	return form.FromMap(out)
 }
 
 func TestExpandAtRefs_BasicSubstitution(t *testing.T) {
@@ -163,11 +163,11 @@ func TestExpandAtRefs_NonStringValues(t *testing.T) {
 }
 
 func TestExpandAtRefs_EmptySnapshotNoop(t *testing.T) {
-	got := expandAtRefs("hi @cwd! there", chalkboard.Snapshot{})
+	got := expandAtRefs("hi @cwd! there", form.Snapshot{})
 	if got != "hi @cwd! there" {
 		t.Errorf("zero snapshot must passthrough, got %q", got)
 	}
-	got = expandAtRefs("hi @cwd! there", chalkboard.FromMap(map[string]json.RawMessage{}))
+	got = expandAtRefs("hi @cwd! there", form.FromMap(map[string]json.RawMessage{}))
 	if got != "hi @cwd! there" {
 		t.Errorf("empty snapshot must passthrough, got %q", got)
 	}

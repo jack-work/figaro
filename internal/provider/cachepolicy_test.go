@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 )
 
-func snapWith(t *testing.T, kv map[string]any) chalkboard.Snapshot {
+func snapWith(t *testing.T, kv map[string]any) form.Snapshot {
 	t.Helper()
 	m := map[string]json.RawMessage{}
 	for k, v := range kv {
@@ -18,7 +18,7 @@ func snapWith(t *testing.T, kv map[string]any) chalkboard.Snapshot {
 		}
 		m[k] = raw
 	}
-	return chalkboard.FromMap(m)
+	return form.FromMap(m)
 }
 
 func TestResolveCachePolicyDefaultsOn(t *testing.T) {

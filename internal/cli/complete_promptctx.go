@@ -12,7 +12,7 @@ import (
 // has passed the `--` separator in `figaro <verb> [flags] -- <body>`.
 //
 // When the cursor's current partial token (ctx.Current) starts with
-// "@", the candidate pool narrows to chalkboard-key references:
+// "@", the candidate pool narrows to form-key references:
 // every key is emitted as "@<key>!" so the accepted candidate is
 // a complete reference (terminator included). expandAtRefs requires
 // the trailing "!" to substitute, so emitting it here means the
@@ -20,8 +20,8 @@ import (
 //
 // Otherwise the pool is the union of:
 //
-//   - chalkboard keys (well-known + live snapshot, via the existing
-//     completeChalkboardKeys plumbing — same source the `set` and
+//   - form keys (well-known + live snapshot, via the existing
+//     completeFormKeys plumbing — same source the `set` and
 //     `unset` commands use).
 //   - entries from the current working directory, with a trailing "/"
 //     on directories so the shell renders them correctly.
@@ -38,14 +38,14 @@ import (
 func completePromptContext(c *cmdkit.CompleteContext) []string {
 	sigil := string(refSigil)
 	if c != nil && strings.HasPrefix(c.Current, sigil) {
-		keys := completeChalkboardKeys(c)
+		keys := completeFormKeys(c)
 		out := make([]string, len(keys))
 		for i, k := range keys {
 			out[i] = sigil + k
 		}
 		return out
 	}
-	out := completeChalkboardKeys(c)
+	out := completeFormKeys(c)
 	out = append(out, listCWD()...)
 	sort.Strings(out)
 	return out

@@ -16,8 +16,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/websocket"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
@@ -197,7 +197,7 @@ func TestResponsesProviderStreamsAndCachesAssistant(t *testing.T) {
 	require.NoError(t, p.Send(context.Background(), provider.SendInput{
 		AriaID:    "aria-1",
 		FigLog:    log,
-		Snapshot:  chalkboard.FromMap(map[string]json.RawMessage{"system.credo": json.RawMessage(`"be concise"`)}),
+		Snapshot:  form.FromMap(map[string]json.RawMessage{"system.credo": json.RawMessage(`"be concise"`)}),
 		MaxTokens: 77,
 	}, bus))
 
@@ -306,7 +306,7 @@ func TestResponsesProviderMapsFunctionCalls(t *testing.T) {
 	assert.Equal(t, message.ContentToolInvoke, bus.messages[0].Content[0].Type)
 }
 
-func TestResponsesProviderAppliesChalkboardParameters(t *testing.T) {
+func TestResponsesProviderAppliesFormParameters(t *testing.T) {
 	requests := make(chan responseCreateRequest, 1)
 	server := newResponseServer(t, func(conn *websocket.Conn) {
 		defer conn.Close()
@@ -336,7 +336,7 @@ func TestResponsesProviderAppliesChalkboardParameters(t *testing.T) {
 	require.NoError(t, p.Send(context.Background(), provider.SendInput{
 		AriaID: "aria-1",
 		FigLog: log,
-		Snapshot: chalkboard.FromMap(map[string]json.RawMessage{
+		Snapshot: form.FromMap(map[string]json.RawMessage{
 			"system.context_tier":        json.RawMessage(`"long_context"`),
 			"system.thinking_effort":     json.RawMessage(`"high"`),
 			"system.reasoning_context":   json.RawMessage(`"all_turns"`),
@@ -360,51 +360,51 @@ func TestResponsesProviderAppliesChalkboardParameters(t *testing.T) {
 	assert.Nil(t, request.TopP)
 }
 
-func TestResponseOptionsRejectInvalidChalkboardParameters(t *testing.T) {
+func TestResponseOptionsRejectInvalidFormParameters(t *testing.T) {
 	tests := []struct {
 		name string
-		snap chalkboard.Snapshot
+		snap form.Snapshot
 	}{
 		{
 			name: "unknown context tier",
-			snap: chalkboard.FromMap(map[string]json.RawMessage{
+			snap: form.FromMap(map[string]json.RawMessage{
 				"system.context_tier": json.RawMessage(`"wide"`),
 			}),
 		},
 		{
 			name: "unknown reasoning context",
-			snap: chalkboard.FromMap(map[string]json.RawMessage{
+			snap: form.FromMap(map[string]json.RawMessage{
 				"system.reasoning_context": json.RawMessage(`"forever"`),
 			}),
 		},
 		{
 			name: "unknown reasoning summary",
-			snap: chalkboard.FromMap(map[string]json.RawMessage{
+			snap: form.FromMap(map[string]json.RawMessage{
 				"system.reasoning_summary": json.RawMessage(`"full"`),
 			}),
 		},
 		{
 			name: "temperature out of range",
-			snap: chalkboard.FromMap(map[string]json.RawMessage{
+			snap: form.FromMap(map[string]json.RawMessage{
 				"system.temperature": json.RawMessage(`2.1`),
 			}),
 		},
 		{
 			name: "top p out of range",
-			snap: chalkboard.FromMap(map[string]json.RawMessage{
+			snap: form.FromMap(map[string]json.RawMessage{
 				"system.top_p": json.RawMessage(`0`),
 			}),
 		},
 		{
 			name: "temperature and top p",
-			snap: chalkboard.FromMap(map[string]json.RawMessage{
+			snap: form.FromMap(map[string]json.RawMessage{
 				"system.temperature": json.RawMessage(`0.2`),
 				"system.top_p":       json.RawMessage(`0.8`),
 			}),
 		},
 		{
 			name: "parallel tools wrong type",
-			snap: chalkboard.FromMap(map[string]json.RawMessage{
+			snap: form.FromMap(map[string]json.RawMessage{
 				"system.parallel_tool_calls": json.RawMessage(`"yes"`),
 			}),
 		},
@@ -434,7 +434,7 @@ func TestResponsesProviderContextTierBudget(t *testing.T) {
 
 	require.NoError(t, p.validateContext(in, "gpt-5.6-terra", responseRequestOptions{contextTier: "long_context"}))
 
-	in.Snapshot = chalkboard.FromMap(map[string]json.RawMessage{
+	in.Snapshot = form.FromMap(map[string]json.RawMessage{
 		"system.max_context_tokens": json.RawMessage(`21`),
 	})
 	err = p.validateContext(in, "gpt-5.6-terra", responseRequestOptions{contextTier: "default"})
@@ -456,16 +456,16 @@ func TestCopilotContextLimitUsesCachedCatalog(t *testing.T) {
 	model.Billing.TokenPrices.LongContext.MaxPromptTokens = 1000000
 	c := &Copilot{catalog: map[string]catalogModel{"gpt-5.6-terra": model}}
 
-	assert.Equal(t, 128000, c.ContextLimit("gpt-5.6-terra", chalkboard.Snapshot{}))
-	assert.Equal(t, 1000000, c.ContextLimit("gpt-5.6-terra", chalkboard.FromMap(map[string]json.RawMessage{
+	assert.Equal(t, 128000, c.ContextLimit("gpt-5.6-terra", form.Snapshot{}))
+	assert.Equal(t, 1000000, c.ContextLimit("gpt-5.6-terra", form.FromMap(map[string]json.RawMessage{
 		"system.context_tier": json.RawMessage(`"long_context"`),
 	})))
-	assert.Equal(t, 120000, c.ContextLimit("gpt-5.6-terra", chalkboard.FromMap(map[string]json.RawMessage{
+	assert.Equal(t, 120000, c.ContextLimit("gpt-5.6-terra", form.FromMap(map[string]json.RawMessage{
 		"system.max_context_tokens": json.RawMessage(`120000`),
 	})))
 	// The pin is an override, not a clamp: it wins even when it is larger
 	// than the catalog's number.
-	assert.Equal(t, 2000000, c.ContextLimit("gpt-5.6-terra", chalkboard.FromMap(map[string]json.RawMessage{
+	assert.Equal(t, 2000000, c.ContextLimit("gpt-5.6-terra", form.FromMap(map[string]json.RawMessage{
 		"system.max_context_tokens": json.RawMessage(`2000000`),
 	})))
 }
@@ -577,9 +577,9 @@ func TestResponsesProviderDrivesFigaroToolRoundTrip(t *testing.T) {
 	registry := tool.NewRegistry()
 	echo := &responseIntegrationTool{}
 	require.NoError(t, registry.Register(echo))
-	cb, err := chalkboard.Open("")
+	cb, err := form.Open("")
 	require.NoError(t, err)
-	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
 		"system.model": json.RawMessage(`"gpt-5.6-terra"`),
 	}})
 	agent := figaro.NewAgent(figaro.Config{
@@ -587,7 +587,7 @@ func TestResponsesProviderDrivesFigaroToolRoundTrip(t *testing.T) {
 		SocketPath: t.TempDir() + "/figaro.sock",
 		Provider:   &responseAgentProvider{responsesProvider: p},
 		Tools:      registry,
-		Chalkboard: cb,
+		Form:       cb,
 	})
 	defer agent.Kill()
 
@@ -770,7 +770,7 @@ func TestResponsesInputPlacesToolOutputBeforeSteeringText(t *testing.T) {
 			message.TextContent("continue with the result"),
 		},
 	}
-	input, err := encodeResponseMessage(msg, nil, chalkboard.Snapshot{}, nil)
+	input, err := encodeResponseMessage(msg, nil, form.Snapshot{}, nil)
 	require.NoError(t, err)
 	require.Len(t, input, 2)
 	assert.Contains(t, string(input[0]), `"type":"function_call_output"`)
@@ -906,9 +906,9 @@ func TestEncodeResponseMessageIsDeterministic(t *testing.T) {
 			},
 		},
 	}
-	first, err := encodeResponseMessage(msg, nil, chalkboard.Snapshot{}, nil)
+	first, err := encodeResponseMessage(msg, nil, form.Snapshot{}, nil)
 	require.NoError(t, err)
-	second, err := encodeResponseMessage(msg, nil, chalkboard.Snapshot{}, nil)
+	second, err := encodeResponseMessage(msg, nil, form.Snapshot{}, nil)
 	require.NoError(t, err)
 
 	firstJSON, err := json.Marshal(first)
@@ -1134,7 +1134,7 @@ func TestPromptCacheBreakpointOnTheWireAcrossTurns(t *testing.T) {
 	cache := store.NewMemLog[[]json.RawMessage]()
 	p := newResponsesTestProvider(server, cache)
 	log := newResponsesInputLog(t)
-	snap := chalkboard.FromMap(map[string]json.RawMessage{"system.credo": json.RawMessage(`"be concise"`)})
+	snap := form.FromMap(map[string]json.RawMessage{"system.credo": json.RawMessage(`"be concise"`)})
 
 	// Turn 1: nothing completed behind it.
 	require.NoError(t, p.Send(context.Background(), provider.SendInput{

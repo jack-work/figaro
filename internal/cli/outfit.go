@@ -1,6 +1,6 @@
 // Package cli — `figaro state outfit`.
 //
-// Applies a spec additively to the current aria's chalkboard. Names are
+// Applies a spec additively to the current aria's form. Names are
 // resolved by the aria (the daemon owns the configDir); the CLI parses the
 // syntax, so a typo costs no round trip, and forwards JSON.
 package cli
@@ -126,7 +126,7 @@ func runOutfit(loaded *config.Loaded, ariaID, arg string) {
 		dieOutfitFailure(d.label(), err)
 	}
 	if len(resp.Set) == 0 {
-		fmt.Fprintf(os.Stderr, "outfit %s: no changes (chalkboard already matches)\n", d.label())
+		fmt.Fprintf(os.Stderr, "outfit %s: no changes (form already matches)\n", d.label())
 		return
 	}
 	fmt.Fprintf(os.Stderr, "outfit %s applied (%d keys):\n", d.label(), len(resp.Set))

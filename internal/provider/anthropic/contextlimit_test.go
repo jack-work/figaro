@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/stretchr/testify/assert"
 )
@@ -15,15 +15,15 @@ func TestAnthropicContextLimit(t *testing.T) {
 	a := &Anthropic{Model: "claude-opus-5"}
 
 	// From the verified table.
-	assert.Equal(t, 1_000_000, a.ContextLimit("claude-opus-5", chalkboard.Snapshot{}))
-	assert.Equal(t, 200_000, a.ContextLimit("claude-opus-4-5-20251101", chalkboard.Snapshot{}))
-	assert.Equal(t, 0, a.ContextLimit("some-unreleased-model", chalkboard.Snapshot{}))
+	assert.Equal(t, 1_000_000, a.ContextLimit("claude-opus-5", form.Snapshot{}))
+	assert.Equal(t, 200_000, a.ContextLimit("claude-opus-4-5-20251101", form.Snapshot{}))
+	assert.Equal(t, 0, a.ContextLimit("some-unreleased-model", form.Snapshot{}))
 
 	// Empty model falls back to the configured one.
-	assert.Equal(t, 1_000_000, a.ContextLimit("", chalkboard.Snapshot{}))
+	assert.Equal(t, 1_000_000, a.ContextLimit("", form.Snapshot{}))
 
-	// The chalkboard pin overrides.
-	assert.Equal(t, 250_000, a.ContextLimit("claude-opus-5", chalkboard.FromMap(map[string]json.RawMessage{
+	// The form pin overrides.
+	assert.Equal(t, 250_000, a.ContextLimit("claude-opus-5", form.FromMap(map[string]json.RawMessage{
 		"system.max_context_tokens": json.RawMessage(`250000`),
 	})))
 }

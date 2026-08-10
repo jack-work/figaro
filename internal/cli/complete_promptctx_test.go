@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/cmdkit"
+	"github.com/jack-work/figaro/internal/form"
 )
 
 func TestContainsShellUnsafe(t *testing.T) {
@@ -71,7 +71,7 @@ func TestListCWD_FiltersHiddenAndUnsafe(t *testing.T) {
 	}
 }
 
-func TestCompletePromptContext_UnionOfChalkboardAndCWD(t *testing.T) {
+func TestCompletePromptContext_UnionOfFormAndCWD(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "marker.go"), nil, 0o600); err != nil {
 		t.Fatal(err)
@@ -92,9 +92,9 @@ func TestCompletePromptContext_UnionOfChalkboardAndCWD(t *testing.T) {
 		t.Errorf("missing CWD entry marker.go in %v", got)
 	}
 
-	// At least one well-known chalkboard key must be present.
+	// At least one well-known form key must be present.
 	found := false
-	for _, d := range chalkboard.WellKnownKeys() {
+	for _, d := range form.WellKnownKeys() {
 		if strings.HasSuffix(d.Key, "<name>") {
 			continue
 		}
@@ -104,7 +104,7 @@ func TestCompletePromptContext_UnionOfChalkboardAndCWD(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("no well-known chalkboard key in candidates: %v", got)
+		t.Errorf("no well-known form key in candidates: %v", got)
 	}
 
 	// Output must be sorted (callers and shells assume nothing, but
@@ -117,7 +117,7 @@ func TestCompletePromptContext_UnionOfChalkboardAndCWD(t *testing.T) {
 	}
 }
 
-func TestCompletePromptContext_AtPrefixNarrowsToChalkboardKeys(t *testing.T) {
+func TestCompletePromptContext_AtPrefixNarrowsToFormKeys(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "cwd_entry.txt"), nil, 0o600); err != nil {
 		t.Fatal(err)
@@ -136,7 +136,7 @@ func TestCompletePromptContext_AtPrefixNarrowsToChalkboardKeys(t *testing.T) {
 	// Every candidate must be of the form @<key> — prefixed with @,
 	// no trailing terminator. The `!` is opt-in expansion typed by
 	// the user; most references are meant to pass literally to the
-	// model, which is already aware of the chalkboard.
+	// model, which is already aware of the form.
 	for _, c := range got {
 		if !strings.HasPrefix(c, "@") {
 			t.Errorf("candidate %q missing @ prefix", c)
@@ -151,7 +151,7 @@ func TestCompletePromptContext_AtPrefixNarrowsToChalkboardKeys(t *testing.T) {
 			t.Errorf("CWD entry leaked into @-pool: %v", got)
 		}
 	}
-	// At least one well-known chalkboard key must be present.
+	// At least one well-known form key must be present.
 	found := false
 	for _, c := range got {
 		if c == "@cwd" || c == "@model" {
@@ -160,7 +160,7 @@ func TestCompletePromptContext_AtPrefixNarrowsToChalkboardKeys(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("no @<key> chalkboard candidate in %v", got)
+		t.Errorf("no @<key> form candidate in %v", got)
 	}
 }
 
@@ -178,7 +178,7 @@ func TestCompletePromptOrIDFlag_Routing(t *testing.T) {
 
 	// After --id: aria ids (daemon may or may not be up; if up the
 	// list is non-empty, if down it's nil — both acceptable; what we
-	// assert is that chalkboard/CWD keys are NOT present, which
+	// assert is that form/CWD keys are NOT present, which
 	// distinguishes the --id branch from the past-separator branch).
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "should_not_appear.txt"), nil, 0o600); err != nil {

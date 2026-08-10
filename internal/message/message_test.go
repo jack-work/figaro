@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 )
 
@@ -91,15 +91,15 @@ func TestMessage_StateOnlyTic(t *testing.T) {
 }
 
 // TestPatch_AliasIdentity verifies the type-alias contract — a value
-// constructed as chalkboard.Patch is assignable to message.Patch and
+// constructed as form.Patch is assignable to message.Patch and
 // vice versa.
 func TestPatch_AliasIdentity(t *testing.T) {
-	cb := chalkboard.Patch{Set: map[string]json.RawMessage{"k": json.RawMessage(`"v"`)}}
+	cb := form.Patch{Set: map[string]json.RawMessage{"k": json.RawMessage(`"v"`)}}
 	var m message.Patch = cb
 	assert.False(t, m.IsEmpty())
 
 	mp := message.Patch{Set: map[string]json.RawMessage{}, Remove: []string{"x"}}
-	assert.False(t, chalkboard.Patch(mp).IsEmpty())
+	assert.False(t, form.Patch(mp).IsEmpty())
 }
 
 func TestNewInterruptSentinel_NamesAllToolCalls(t *testing.T) {

@@ -40,9 +40,9 @@ func TestMergePromptEvents_EmptyAndSingle(t *testing.T) {
 	if _, ok := mergePromptEvents(nil); ok {
 		t.Error("an empty batch must not produce a message")
 	}
-	one := event{typ: eventUserPrompt, text: "solo", chalkboard: &rpc.ChalkboardInput{}}
+	one := event{typ: eventUserPrompt, text: "solo", form: &rpc.FormInput{}}
 	got, ok := mergePromptEvents([]event{one})
-	if !ok || got.text != "solo" || got.chalkboard != one.chalkboard {
+	if !ok || got.text != "solo" || got.form != one.form {
 		t.Errorf("a single prompt must pass through unchanged, got %+v", got)
 	}
 }
@@ -62,29 +62,29 @@ func TestMergePromptEvents_SkipsEmptyTexts(t *testing.T) {
 	}
 }
 
-// PER-EVENT SIDE DATA MUST NOT BE LOST. Each queued prompt may carry chalkboard
+// PER-EVENT SIDE DATA MUST NOT BE LOST. Each queued prompt may carry form
 // input; merging N events into one message must merge N patches, in queue order,
 // so a later value wins and nothing is silently dropped.
-func TestMergePromptEvents_MergesChalkboardInQueueOrder(t *testing.T) {
+func TestMergePromptEvents_MergesFormInQueueOrder(t *testing.T) {
 	got, _ := mergePromptEvents([]event{
-		{typ: eventUserPrompt, text: "a", chalkboard: &rpc.ChalkboardInput{
+		{typ: eventUserPrompt, text: "a", form: &rpc.FormInput{
 			Context: map[string]json.RawMessage{"keep": json.RawMessage(`1`)},
-			Patch: &rpc.ChalkboardPatch{
+			Patch: &rpc.FormPatch{
 				Set:    map[string]json.RawMessage{"model": json.RawMessage(`"old"`)},
 				Remove: []string{"x"},
 			},
 		}},
-		{typ: eventUserPrompt, text: "b", chalkboard: &rpc.ChalkboardInput{
+		{typ: eventUserPrompt, text: "b", form: &rpc.FormInput{
 			Context: map[string]json.RawMessage{"also": json.RawMessage(`2`)},
-			Patch: &rpc.ChalkboardPatch{
+			Patch: &rpc.FormPatch{
 				Set:    map[string]json.RawMessage{"model": json.RawMessage(`"new"`)},
 				Remove: []string{"y"},
 			},
 		}},
 	})
-	cb := got.chalkboard
+	cb := got.form
 	if cb == nil {
-		t.Fatal("chalkboard input was dropped entirely")
+		t.Fatal("form input was dropped entirely")
 	}
 	if string(cb.Context["keep"]) != "1" || string(cb.Context["also"]) != "2" {
 		t.Errorf("context lost a contributor: %v", cb.Context)
@@ -100,17 +100,17 @@ func TestMergePromptEvents_MergesChalkboardInQueueOrder(t *testing.T) {
 // Merging must not mutate the inputs — the batch is prepended back to the inbox
 // on failure, and a mutated event would be restored in the wrong shape.
 func TestMergePromptEvents_DoesNotMutateInputs(t *testing.T) {
-	a := &rpc.ChalkboardInput{Patch: &rpc.ChalkboardPatch{
+	a := &rpc.FormInput{Patch: &rpc.FormPatch{
 		Set: map[string]json.RawMessage{"k": json.RawMessage(`"a"`)},
 	}}
-	b := &rpc.ChalkboardInput{Patch: &rpc.ChalkboardPatch{
+	b := &rpc.FormInput{Patch: &rpc.FormPatch{
 		Set: map[string]json.RawMessage{"k": json.RawMessage(`"b"`)},
 	}}
 	mergePromptEvents([]event{
-		{typ: eventUserPrompt, text: "x", chalkboard: a},
-		{typ: eventUserPrompt, text: "y", chalkboard: b},
+		{typ: eventUserPrompt, text: "x", form: a},
+		{typ: eventUserPrompt, text: "y", form: b},
 	})
 	if string(a.Patch.Set["k"]) != `"a"` || string(b.Patch.Set["k"]) != `"b"` {
-		t.Error("merge mutated a caller's chalkboard input")
+		t.Error("merge mutated a caller's form input")
 	}
 }

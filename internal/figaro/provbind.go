@@ -5,19 +5,19 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/provider"
 )
 
 // ProviderFactory builds a provider from a name plus the build-time knobs.
 // The agent holds one so it can REBIND mid-conversation: `system.provider`
-// is chalkboard state like any other key, and the board is authoritative.
+// is form state like any other key, and the board is authoritative.
 // Without a factory the agent keeps whatever instance it was constructed
 // with and refuses to pretend a switch happened.
 type ProviderFactory func(name string, knobs provider.Knobs) (provider.Provider, error)
 
 // providerBinding is the agent's current provider instance together with the
-// chalkboard coordinates that produced it. Published through an atomic
+// form coordinates that produced it. Published through an atomic
 // pointer: the drain loop writes, RPC goroutines (status, metrics) read.
 type providerBinding struct {
 	name  string
@@ -25,10 +25,10 @@ type providerBinding struct {
 	prov  provider.Provider
 }
 
-// providerKnobs reads the build-time knobs off a chalkboard snapshot. Same
+// providerKnobs reads the build-time knobs off a form snapshot. Same
 // keys the angelus reads when it first constructs a provider — this is the
 // re-resolution of that decision, one turn at a time.
-func providerKnobs(snap chalkboard.Snapshot) provider.Knobs {
+func providerKnobs(snap form.Snapshot) provider.Knobs {
 	return provider.Knobs{
 		Model:            snapshotString(snap, "system.model"),
 		MaxTokens:        snapshotInt(snap, "system.max_tokens"),
@@ -87,7 +87,7 @@ func (a *Agent) providerName() string {
 	return ""
 }
 
-// syncProvider re-resolves the provider from the chalkboard. It runs at the
+// syncProvider re-resolves the provider from the form. It runs at the
 // top of every provider round, so `figaro set system.provider …` (or a
 // re-applied outfit that moves the aria to another provider) takes effect
 // on the very next round — no restart, no fork.
@@ -127,7 +127,7 @@ func (a *Agent) syncProvider() error {
 	return nil
 }
 
-func snapshotInt(snap chalkboard.Snapshot, key string) int {
+func snapshotInt(snap form.Snapshot, key string) int {
 	raw, ok := snap.Get(key)
 	if !ok {
 		return 0
@@ -137,7 +137,7 @@ func snapshotInt(snap chalkboard.Snapshot, key string) int {
 	return n
 }
 
-func snapshotBool(snap chalkboard.Snapshot, key string) bool {
+func snapshotBool(snap form.Snapshot, key string) bool {
 	raw, ok := snap.Get(key)
 	if !ok {
 		return false

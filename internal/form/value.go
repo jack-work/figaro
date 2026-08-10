@@ -1,9 +1,9 @@
-// Canonical JSON value for the persistent chalkboard tree.
+// Canonical JSON value for the persistent form tree.
 //
 // Lifted from github.com/jack-work/pstate (value.go, MIT, same author) and
 // adapted. The one substantive change from the original: pstate canonicalises
 // *in place* (it stores only the canonical encoding and throws the caller's
-// bytes away). We cannot do that here — chalkboard.json must round-trip
+// bytes away). We cannot do that here — the form channel must round-trip
 // byte-for-byte and rendered <system-reminder> bodies must not shift under
 // users — so a Value keeps both encodings side by side.
 //
@@ -11,7 +11,7 @@
 //
 //	raw   is EXACTLY the bytes the caller supplied. Every user-visible byte
 //	      — MarshalJSON, String, Raw, rendered reminder bodies, the on-disk
-//	      chalkboard.json, the RPC ChalkboardResponse — comes from raw.
+//	      the form channel, the RPC FormResponse — comes from raw.
 //	      Nothing else. raw is never rewritten, reordered, or compacted.
 //
 //	canon is raw compacted with every object's keys sorted recursively.
@@ -30,7 +30,7 @@
 //
 // =======================================================================
 
-package chalkboard
+package form
 
 import (
 	"bytes"
@@ -135,7 +135,7 @@ func (v Value) IsJSON() bool { return v.canonical() != nil }
 // Numbers are compared by their literal token, not by numeric value: 1 and 1.0
 // are NOT equal, nor are 1e2 and 100. Deliberate — comparing numerically would
 // mean choosing a precision policy for arbitrary-precision JSON numbers, and
-// the chalkboard has no key where two spellings of one number are meaningfully
+// the form has no key where two spellings of one number are meaningfully
 // "the same edit". Cheap and lossless beats clever and lossy here.
 //
 // Duplicate keys within one object follow encoding/json: last occurrence wins,
@@ -156,7 +156,7 @@ func (v Value) Equal(other Value) bool {
 // Decode unmarshals the value into dst.
 func (v Value) Decode(dst any) error {
 	if err := json.Unmarshal(v.Raw(), dst); err != nil {
-		return fmt.Errorf("decode chalkboard value: %w", err)
+		return fmt.Errorf("decode form value: %w", err)
 	}
 	return nil
 }

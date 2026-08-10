@@ -5,17 +5,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 )
 
-// Chalkboard patches must reach the model on this dialect too. The projection
+// Form patches must reach the model on this dialect too. The projection
 // has always attached them to the message; only the Anthropic encoders drew
 // them, so every state change (an outfit fold, a `set`) was invisible to every
 // OpenAI-compatible endpoint.
-func TestEncodeRendersChalkboardReminders(t *testing.T) {
-	tmpls, err := chalkboard.LoadDefaultTemplates()
+func TestEncodeRendersFormReminders(t *testing.T) {
+	tmpls, err := form.LoadDefaultTemplates()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func TestEncodeRendersChalkboardReminders(t *testing.T) {
 			"focus_mode": json.RawMessage(`"deep"`),
 		}}},
 	}
-	encoded, err := p.encode(msg, chalkboard.Snapshot{})
+	encoded, err := p.encode(msg, form.Snapshot{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestEncodeRendersChalkboardReminders(t *testing.T) {
 
 	// No templates configured means no reminders, not a crash.
 	p.Templates = nil
-	encoded, err = p.encode(msg, chalkboard.Snapshot{})
+	encoded, err = p.encode(msg, form.Snapshot{})
 	if err != nil {
 		t.Fatal(err)
 	}

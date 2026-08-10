@@ -47,7 +47,7 @@ func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out 
 	}
 	defer fcli.Close()
 
-	if _, _, err := fcli.Qua(ctx, prompt, buildPromptChalkboard()); err != nil {
+	if _, _, err := fcli.Qua(ctx, prompt, buildPromptForm()); err != nil {
 		if !reportClosure(err, "prompt: %s", err) {
 			fmt.Fprintln(os.Stderr, "error: prompt:", err)
 		}
@@ -93,7 +93,7 @@ func verbatimPrompt(ctx context.Context, ep transport.Endpoint, prompt string, o
 	}
 	defer fcli.Close()
 
-	if _, _, err := fcli.Qua(ctx, prompt, buildPromptChalkboard()); err != nil {
+	if _, _, err := fcli.Qua(ctx, prompt, buildPromptForm()); err != nil {
 		if !reportClosure(err, "prompt: %s", err) {
 			fmt.Fprintln(os.Stderr, "error: prompt:", err)
 		}

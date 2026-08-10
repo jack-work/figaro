@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -127,7 +127,7 @@ func BenchmarkProjectMessagesLong(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				if _, err := a.projectMessagesWithModel(perMessage, chalkboard.Snapshot{}, benchTools(), 1024, false, "claude-test"); err != nil {
+				if _, err := a.projectMessagesWithModel(perMessage, form.Snapshot{}, benchTools(), 1024, false, "claude-test"); err != nil {
 					b.Fatal(err)
 				}
 			}

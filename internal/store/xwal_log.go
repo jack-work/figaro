@@ -61,7 +61,7 @@ func decodeRecord[T any](r xwal.Record) (Entry[T], bool) {
 		FigaroLT:     r.MainLT,
 		Payload:      v,
 		Fingerprint:  decodeMeta(r.Meta),
-		ChalkVersion: r.Cursors[chanChalkboard],
+		ChalkVersion: r.Cursors[chanForm],
 		EncodedBytes: len(r.Payload),
 	}, true
 }
@@ -379,7 +379,7 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 		e.LT = lt
 		e.FigaroLT = lt
 		// READ THE RECORD BACK. The append STAMPS the entry with the
-		// chalkboard cursor -- where the board stood at this LT -- and that
+		// form cursor -- where the board stood at this LT -- and that
 		// stamp is what the projection renders deltas against. The caller's
 		// struct does not have it and never did, so returning the caller's
 		// struct handed the cache an entry whose ChalkVersion was zero for

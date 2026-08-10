@@ -9,11 +9,11 @@ import (
 
 // dress is the birth patch a test means when it says "on outfit mock": the
 // layers directive the server materializes.
-func dress(t *testing.T, names ...string) *rpc.ChalkboardPatch {
+func dress(t *testing.T, names ...string) *rpc.FormPatch {
 	t.Helper()
 	b, err := json.Marshal(names)
 	if err != nil {
 		t.Fatalf("dress: %v", err)
 	}
-	return &rpc.ChalkboardPatch{Set: map[string]json.RawMessage{"layers": b}}
+	return &rpc.FormPatch{Set: map[string]json.RawMessage{"layers": b}}
 }

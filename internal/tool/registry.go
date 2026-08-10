@@ -130,7 +130,7 @@ func DefaultRegistry(cwd string, opts ...RegistryOption) *Registry {
 
 // DefaultRegistryFn is like DefaultRegistry but reads cwd at call time
 // via cwdFn. Agent wiring should pass a closure that pulls system.cwd
-// from the chalkboard.
+// from the form.
 func DefaultRegistryFn(cwdFn func() string, opts ...RegistryOption) *Registry {
 	return DefaultRegistryForAria("", cwdFn, opts...)
 }

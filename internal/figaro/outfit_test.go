@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/tool"
@@ -27,10 +27,10 @@ func writeOutfit(t *testing.T, configDir, name, body string) {
 }
 
 // agentForOutfit builds an Agent with an Outfitter rooted at
-// configDir and a chalkboard seeded by initial.
-func agentForOutfit(t *testing.T, configDir string, initial chalkboard.Patch) *figaro.Agent {
+// configDir and a form seeded by initial.
+func agentForOutfit(t *testing.T, configDir string, initial form.Patch) *figaro.Agent {
 	t.Helper()
-	cb, err := chalkboard.Open(filepath.Join(t.TempDir(), "chalkboard.json"))
+	cb, err := form.Open(filepath.Join(t.TempDir(), "the form channel"))
 	require.NoError(t, err)
 	if !initial.IsEmpty() {
 		cb.Apply(initial)
@@ -42,7 +42,7 @@ func agentForOutfit(t *testing.T, configDir string, initial chalkboard.Patch) *f
 		Provider:   &chalkSpyProvider{},
 		Outfitter:  outfit.New(configDir),
 		Tools:      tool.NewRegistry(),
-		Chalkboard: cb,
+		Form:       cb,
 	})
 	t.Cleanup(func() { a.Kill() })
 	return a
@@ -52,7 +52,7 @@ func agentForOutfit(t *testing.T, configDir string, initial chalkboard.Patch) *f
 // closure attached — not logged at drain, where nobody sees it.
 func TestSetRefusesAMissingLayer(t *testing.T) {
 	dir := t.TempDir()
-	a := agentForOutfit(t, dir, chalkboard.Patch{})
+	a := agentForOutfit(t, dir, form.Patch{})
 
 	_, _, err := a.Set(dressPatch("nope"), 0)
 	var missing *outfit.MissingError
@@ -63,12 +63,12 @@ func TestSetRefusesAMissingLayer(t *testing.T) {
 // qua rather than queueing and losing the outfit at drain.
 func TestPromptRefusedAtAccept(t *testing.T) {
 	dir := t.TempDir()
-	a := agentForOutfit(t, dir, chalkboard.Patch{})
+	a := agentForOutfit(t, dir, form.Patch{})
 
 	patch := dressPatch("nope")
 	_, err := a.Handle(t.Context(), rpc.MethodQua, mustJSON(t, rpc.QuaRequest{
-		Text:       "hello",
-		Chalkboard: &rpc.ChalkboardInput{Patch: &patch},
+		Text: "hello",
+		Form: &rpc.FormInput{Patch: &patch},
 	}))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "nope")
@@ -79,7 +79,7 @@ func TestPromptRefusedAtAccept(t *testing.T) {
 func TestSetMaterializesLayersUnderItsOwnKeys(t *testing.T) {
 	dir := t.TempDir()
 	writeOutfit(t, dir, "base", "[system]\nmodel = \"base-model\"\ntone = \"dry\"\n")
-	a := agentForOutfit(t, dir, chalkboard.Patch{})
+	a := agentForOutfit(t, dir, form.Patch{})
 
 	patch := dressPatch("base")
 	patch.Set["system.model"] = json.RawMessage(`"mine"`)
@@ -97,9 +97,9 @@ func TestSetMaterializesLayersUnderItsOwnKeys(t *testing.T) {
 }
 
 // dressPatch is `-O <names>`: the layers directive a client sends.
-func dressPatch(names ...string) chalkboard.Patch {
+func dressPatch(names ...string) form.Patch {
 	b, _ := json.Marshal(names)
-	return chalkboard.Patch{Set: map[string]json.RawMessage{"layers": b}}
+	return form.Patch{Set: map[string]json.RawMessage{"layers": b}}
 }
 
 func mustJSON(t *testing.T, v any) json.RawMessage {

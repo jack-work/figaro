@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 )
 
@@ -24,8 +24,8 @@ var ErrNoTrunkCapability = errors.New("this figaro has no trunk capability")
 // Promotion is what lets the two hierarchies diverge far enough for this.
 var ErrWouldOrphan = errors.New("delete would orphan a surviving aria")
 
-// VersionedPatch is a chalkboard patch with its durable version -- its own
-// index in the chalkboard channel. The board is unkeyed, so this is the
+// VersionedPatch is a form patch with its durable version -- its own
+// index in the form channel. The board is unkeyed, so this is the
 // only coordinate a patch carries.
 type VersionedPatch struct {
 	Version uint64
@@ -102,23 +102,23 @@ type Backend interface {
 	// worth making durable sooner than the flush interval (user tics).
 	Kick()
 
-	// ChalkboardState folds the aria's reducible chalkboard channel to
+	// FormState folds the aria's reducible form channel to
 	// its current snapshot. The channel is the durable truth; there is
-	// no separate chalkboard file.
-	ChalkboardState(ariaID string) (chalkboard.Snapshot, error)
+	// no separate form file.
+	FormState(ariaID string) (form.Snapshot, error)
 
-	// ChalkboardVersion is the durable index of the last patch appended to
-	// the aria's chalkboard channel — the version a conditional Set quotes.
-	ChalkboardVersion(ariaID string) (uint64, error)
+	// FormVersion is the durable index of the last patch appended to
+	// the aria's form channel — the version a conditional Set quotes.
+	FormVersion(ariaID string) (uint64, error)
 
-	// ApplyChalkboard appends a state patch to the chalkboard channel,
+	// ApplyForm appends a state patch to the form channel,
 	// keyed to the next IR LT (the transition the next message carries).
-	ApplyChalkboard(ariaID string, patch message.Patch) (version uint64, err error)
+	ApplyForm(ariaID string, patch message.Patch) (version uint64, err error)
 
-	// ChalkboardPatches returns every chalkboard patch grouped by the IR
+	// FormPatches returns every form patch grouped by the IR
 	// logical time it is keyed to (the transitions to render per message).
 	// Empty patches (genesis/seed no-ops) are omitted.
-	ChalkboardPatches(ariaID string) ([]VersionedPatch, error)
+	FormPatches(ariaID string) ([]VersionedPatch, error)
 
 	// CreateOutfit materializes (or reuses) the outfit node for
 	// (name, content-version-of-patch) and returns its id.

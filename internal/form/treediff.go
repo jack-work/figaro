@@ -1,4 +1,4 @@
-// Pointer-identity diff over the persistent chalkboard tree.
+// Pointer-identity diff over the persistent form tree.
 //
 // The thesis: Set and Delete path-copy, so every subtree that an edit did not
 // touch is *the same pointer* in both trees. `prev == next` therefore proves a
@@ -21,7 +21,7 @@
 // stays correct and degrades to O(n log n) for two wholly unrelated trees.
 // Scratch nodes never escape into a stored tree — nothing here mutates.
 
-package chalkboard
+package form
 
 import (
 	"encoding/json"

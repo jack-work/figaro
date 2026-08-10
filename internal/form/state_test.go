@@ -1,4 +1,4 @@
-package chalkboard_test
+package form_test
 
 import (
 	"encoding/json"
@@ -9,12 +9,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 )
 
 func TestState_OpenMissing_EmptySnapshot(t *testing.T) {
 	dir := t.TempDir()
-	s, err := chalkboard.Open(filepath.Join(dir, "chalkboard.json"))
+	s, err := form.Open(filepath.Join(dir, "the form channel"))
 	require.NoError(t, err)
 	defer s.Close()
 	assert.Equal(t, 0, s.Snapshot().Len())
@@ -22,12 +22,12 @@ func TestState_OpenMissing_EmptySnapshot(t *testing.T) {
 
 func TestState_ApplyAndSave_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "sub", "chalkboard.json") // ensure mkdir works
+	path := filepath.Join(dir, "sub", "the form channel") // ensure mkdir works
 
-	s, err := chalkboard.Open(path)
+	s, err := form.Open(path)
 	require.NoError(t, err)
 
-	patch := chalkboard.Patch{Set: map[string]json.RawMessage{
+	patch := form.Patch{Set: map[string]json.RawMessage{
 		"system.credo": json.RawMessage(`"you are figaro"`),
 		"cwd":          json.RawMessage(`"/home/figaro"`),
 	}}
@@ -37,7 +37,7 @@ func TestState_ApplyAndSave_RoundTrip(t *testing.T) {
 	require.NoError(t, s.Save())
 
 	// Reopen and verify persistence.
-	s2, err := chalkboard.Open(path)
+	s2, err := form.Open(path)
 	require.NoError(t, err)
 	defer s2.Close()
 	snap := s2.Snapshot()
@@ -46,14 +46,14 @@ func TestState_ApplyAndSave_RoundTrip(t *testing.T) {
 }
 
 func TestState_Snapshot_ReturnsClone(t *testing.T) {
-	s, err := chalkboard.Open(filepath.Join(t.TempDir(), "x.json"))
+	s, err := form.Open(filepath.Join(t.TempDir(), "x.json"))
 	require.NoError(t, err)
 	defer s.Close()
 
-	s.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{"k": json.RawMessage(`"v"`)}})
+	s.Apply(form.Patch{Set: map[string]json.RawMessage{"k": json.RawMessage(`"v"`)}})
 	snap1 := s.Snapshot()
 	// Derive a mutated snapshot from the clone.
-	snap1 = snap1.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{"k": json.RawMessage(`"mutated"`)}})
+	snap1 = snap1.Apply(form.Patch{Set: map[string]json.RawMessage{"k": json.RawMessage(`"mutated"`)}})
 	_ = snap1
 
 	snap2 := s.Snapshot()
@@ -62,8 +62,8 @@ func TestState_Snapshot_ReturnsClone(t *testing.T) {
 
 func TestState_Save_NotDirty_NoOp(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "chalkboard.json")
-	s, err := chalkboard.Open(path)
+	path := filepath.Join(dir, "the form channel")
+	s, err := form.Open(path)
 	require.NoError(t, err)
 	defer s.Close()
 
@@ -74,12 +74,12 @@ func TestState_Save_NotDirty_NoOp(t *testing.T) {
 
 func TestState_Apply_EmptyPatch_NoMark(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "chalkboard.json")
-	s, err := chalkboard.Open(path)
+	path := filepath.Join(dir, "the form channel")
+	s, err := form.Open(path)
 	require.NoError(t, err)
 	defer s.Close()
 
-	s.Apply(chalkboard.Patch{}) // empty
+	s.Apply(form.Patch{}) // empty
 	require.NoError(t, s.Save())
 	_, statErr := os.Stat(path)
 	assert.True(t, os.IsNotExist(statErr), "empty patch must not mark dirty")
@@ -87,18 +87,18 @@ func TestState_Apply_EmptyPatch_NoMark(t *testing.T) {
 
 func TestState_RemovePatch(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "chalkboard.json")
-	s, err := chalkboard.Open(path)
+	path := filepath.Join(dir, "the form channel")
+	s, err := form.Open(path)
 	require.NoError(t, err)
 
-	s.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{"k": json.RawMessage(`"v"`)}})
+	s.Apply(form.Patch{Set: map[string]json.RawMessage{"k": json.RawMessage(`"v"`)}})
 	require.NoError(t, s.Save())
 	require.NoError(t, s.Close())
 
-	s2, err := chalkboard.Open(path)
+	s2, err := form.Open(path)
 	require.NoError(t, err)
 	defer s2.Close()
-	s2.Apply(chalkboard.Patch{Remove: []string{"k"}})
+	s2.Apply(form.Patch{Remove: []string{"k"}})
 	snap := s2.Snapshot()
 	assert.False(t, snap.Has("k"))
 	require.NoError(t, s2.Save())
@@ -106,11 +106,11 @@ func TestState_RemovePatch(t *testing.T) {
 
 func TestState_Close_FlushesPending(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "chalkboard.json")
-	s, err := chalkboard.Open(path)
+	path := filepath.Join(dir, "the form channel")
+	s, err := form.Open(path)
 	require.NoError(t, err)
 
-	s.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{"k": json.RawMessage(`"v"`)}})
+	s.Apply(form.Patch{Set: map[string]json.RawMessage{"k": json.RawMessage(`"v"`)}})
 	require.NoError(t, s.Close()) // should flush
 
 	data, err := os.ReadFile(path)

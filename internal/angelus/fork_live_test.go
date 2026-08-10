@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
@@ -57,7 +57,7 @@ func (f *liveForkBackend) Open(string) (store.Log[message.Message], error) {
 	return f.log, nil
 }
 
-func (f *liveForkBackend) ApplyChalkboard(ariaID string, patch message.Patch) (uint64, error) {
+func (f *liveForkBackend) ApplyForm(ariaID string, patch message.Patch) (uint64, error) {
 	if f.chalk == nil {
 		f.chalk = map[string]message.Patch{}
 	}
@@ -198,9 +198,9 @@ func TestForkDuringActiveStreamKeepsContinuationRunning(t *testing.T) {
 	require.NoError(t, err)
 	id, err := backend.CreateConversation(outfit)
 	require.NoError(t, err)
-	snapshot, err := backend.ChalkboardState(id)
+	snapshot, err := backend.FormState(id)
 	require.NoError(t, err)
-	cb, _ := chalkboard.Open("")
+	cb, _ := form.Open("")
 	cb.Apply(snapshot.AsPatch())
 
 	prov := &activeForkProvider{
@@ -215,7 +215,7 @@ func TestForkDuringActiveStreamKeepsContinuationRunning(t *testing.T) {
 		SocketPath: "",
 		Provider:   prov,
 		Backend:    backend,
-		Chalkboard: cb,
+		Form:       cb,
 	})
 	t.Cleanup(func() {
 		release()
@@ -363,9 +363,9 @@ func TestForkDuringActiveToolKeepsToolAndContinuationRunning(t *testing.T) {
 	require.NoError(t, err)
 	id, err := backend.CreateConversation(outfit)
 	require.NoError(t, err)
-	snapshot, err := backend.ChalkboardState(id)
+	snapshot, err := backend.FormState(id)
 	require.NoError(t, err)
-	cb, _ := chalkboard.Open("")
+	cb, _ := form.Open("")
 	cb.Apply(snapshot.AsPatch())
 
 	blocking := &blockingForkTool{
@@ -378,11 +378,11 @@ func TestForkDuringActiveToolKeepsToolAndContinuationRunning(t *testing.T) {
 	tools := tool.NewRegistry()
 	tools.MustRegister(blocking)
 	agent := figaro.NewAgent(figaro.Config{
-		ID:         id,
-		Provider:   &activeToolProvider{},
-		Tools:      tools,
-		Backend:    backend,
-		Chalkboard: cb,
+		ID:       id,
+		Provider: &activeToolProvider{},
+		Tools:    tools,
+		Backend:  backend,
+		Form:     cb,
 	})
 	t.Cleanup(func() {
 		release()
@@ -521,9 +521,9 @@ func TestFigaroCanForkItselfFromInsideItsOwnTurn(t *testing.T) {
 	require.NoError(t, err)
 	id, err := backend.CreateConversation(outfit)
 	require.NoError(t, err)
-	snapshot, err := backend.ChalkboardState(id)
+	snapshot, err := backend.FormState(id)
 	require.NoError(t, err)
-	cb, _ := chalkboard.Open("")
+	cb, _ := form.Open("")
 	cb.Apply(snapshot.AsPatch())
 
 	registry := NewRegistry()
@@ -534,7 +534,7 @@ func TestFigaroCanForkItselfFromInsideItsOwnTurn(t *testing.T) {
 
 	agent := figaro.NewAgent(figaro.Config{
 		ID: id, Provider: &activeToolProvider{}, Tools: tools,
-		Backend: backend, Chalkboard: cb,
+		Backend: backend, Form: cb,
 	})
 	t.Cleanup(agent.Kill)
 	require.NoError(t, registry.Register(agent))

@@ -20,7 +20,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 
 	"github.com/jack-work/figaro/internal/auth"
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/anthropicmodels"
@@ -76,10 +76,10 @@ type Provider struct {
 	NoOAuthIdentity bool
 
 	// NoEagerToolStreaming refuses the eager_input_streaming tool field on
-	// this endpoint no matter what the chalkboard asks for. The GitHub
+	// this endpoint no matter what the form asks for. The GitHub
 	// Copilot Anthropic-dialect endpoint rejects the field outright
 	// (400 "tools.0.custom.eager_input_streaming: Extra inputs are not
-	// permitted"), so a chalkboard opt-in must not be able to break every
+	// permitted"), so a form opt-in must not be able to break every
 	// request there. See internal/provider/copilot/copilot.go.
 	NoEagerToolStreaming bool
 
@@ -168,7 +168,7 @@ func (p *Provider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 // system.max_context_tokens if set, else the window learned from the models
 // endpoint, else the verified static table (0 when unknown). No network I/O —
 // status surfaces call this.
-func (p *Provider) ContextLimit(model string, snapshot chalkboard.Snapshot) int {
+func (p *Provider) ContextLimit(model string, snapshot form.Snapshot) int {
 	if model == "" {
 		p.mu.Lock()
 		model = p.model
@@ -187,7 +187,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if err != nil {
 		return err
 	}
-	projected, err := p.catchUp(in.FigLog, cache, in.Chalkboard)
+	projected, err := p.catchUp(in.FigLog, cache, in.Form)
 	if err != nil {
 		return err
 	}
@@ -287,7 +287,7 @@ func (p *Provider) acceptAssistantProjection(lt uint64, encoded []json.RawMessag
 	state := appendProjectedMessages(p.projection.State, encoded, lt)
 	p.projection = &provider.IncrementalProjection[projectedMessages]{
 		State:            state,
-		Chalkboard:       p.projection.Chalkboard,
+		Form:             p.projection.Form,
 		Fingerprint:      p.projection.Fingerprint,
 		Entries:          p.projection.Entries + 1,
 		LastLT:           lt,
@@ -295,7 +295,7 @@ func (p *Provider) acceptAssistantProjection(lt uint64, encoded []json.RawMessag
 	}
 }
 
-func (p *Provider) resolveModel(snap chalkboard.Snapshot) string {
+func (p *Provider) resolveModel(snap form.Snapshot) string {
 	if v := snap.Lookup("system.model"); v != nil {
 		return *v
 	}

@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/tool"
@@ -33,8 +33,8 @@ import (
 // measured cost of that ordering is ~0.6µs (BenchmarkPromptBroadcastGap,
 // flat from 100 to 5,000 messages), so the trade is not worth taking.
 func TestInquiryFrameCarriesFreshMetrics(t *testing.T) {
-	cb, _ := chalkboard.Open("")
-	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+	cb, _ := form.Open("")
+	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"mock-model-v1"`),
 		"system.provider": json.RawMessage(`"idle-test"`),
 	}})
@@ -44,7 +44,7 @@ func TestInquiryFrameCarriesFreshMetrics(t *testing.T) {
 		SocketPath: "/tmp/inquiry-frame-metrics.sock",
 		Provider:   &idleProvider{},
 		Tools:      tool.NewRegistry(),
-		Chalkboard: cb,
+		Form:       cb,
 	})
 	defer a.Kill()
 

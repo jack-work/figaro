@@ -118,8 +118,8 @@ type AriaHeader struct {
 // ignored for policy purposes but the request is still attributable.
 func (a AriaHeader) Authenticate(_ string, params json.RawMessage) Identity {
 	// LabelOf, not the whole ref: the DUKE placeholder has no name until a
-	// server resolves it against an aria's chalkboard, and authz has no
-	// chalkboard. Attribution is resolved at the agent; this layer only ever
+	// server resolves it against an aria's form, and authz has no
+	// form. Attribution is resolved at the agent; this layer only ever
 	// needs the explicitly asserted name, and needs it for display alone.
 	id := Identity{Label: rpc.LabelOf(params)}
 	if !a.Enabled {

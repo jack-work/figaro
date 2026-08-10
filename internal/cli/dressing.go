@@ -14,14 +14,14 @@ import (
 )
 
 // dressing is what `-O` produced: the text as typed, for messages, and the
-// chalkboard patch it parsed into, which is what travels.
+// form patch it parsed into, which is what travels.
 //
 // No disk and no config is read here. A name becomes an entry in the patch's
 // `layers` directive and the SERVER resolves it — which is what lets `-O` mean
 // the same thing on a live aria as at birth.
 type dressing struct {
 	text  string
-	patch *rpc.ChalkboardPatch
+	patch *rpc.FormPatch
 }
 
 func (d dressing) IsEmpty() bool { return d.patch == nil || d.patch.IsEmpty() }

@@ -1,4 +1,4 @@
-package chalkboard
+package form
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ import (
 
 func osReadFile(path string) ([]byte, error) { return os.ReadFile(path) }
 
-// RenderedEntry is a chalkboard entry with its body produced by a template.
+// RenderedEntry is a form entry with its body produced by a template.
 type RenderedEntry struct {
 	Key  string
 	Body string
@@ -24,7 +24,7 @@ var defaultTemplates embed.FS
 
 // LoadDefaultTemplates parses the embedded body templates.
 func LoadDefaultTemplates() (*template.Template, error) {
-	root := template.New("chalkboard")
+	root := template.New("form")
 	err := fs.WalkDir(defaultTemplates, "templates", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -73,7 +73,7 @@ func LoadOverrideTemplates(base *template.Template, dir string) (*template.Templ
 // template render via that template. Keys in the harness-reserved
 // `system.*` namespace are silently skipped — providers consume those
 // directly. Other keys without a template fall back to a generic
-// body so new chalkboard data is visible by default without needing
+// body so new form data is visible by default without needing
 // a hand-rolled template per key.
 func Render(p Patch, prev Snapshot, tmpls *template.Template) ([]RenderedEntry, error) {
 	if p.IsEmpty() {

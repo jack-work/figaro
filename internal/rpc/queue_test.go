@@ -49,15 +49,15 @@ func TestInterruptResponse_CarriesTheQueueAsOfTheHangup(t *testing.T) {
 	})
 }
 
-// A drained payload must carry its chalkboard input, or `figaro cut -j` is a
+// A drained payload must carry its form input, or `figaro cut -j` is a
 // lossy save of the thing it exists to preserve.
-func TestQueuedPrompt_DrainedPayloadKeepsChalkboard(t *testing.T) {
+func TestQueuedPrompt_DrainedPayloadKeepsForm(t *testing.T) {
 	roundTripValue(t, rpc.QueuedPrompt{
 		ID:    7,
 		Text:  "with state",
 		State: rpc.QueueStateQueued,
-		Chalkboard: &rpc.ChalkboardInput{
-			Patch: &rpc.ChalkboardPatch{
+		Form: &rpc.FormInput{
+			Patch: &rpc.FormPatch{
 				Set: map[string]json.RawMessage{"mantra": json.RawMessage(`"x"`)},
 			},
 		},

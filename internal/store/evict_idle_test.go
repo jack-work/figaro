@@ -9,7 +9,7 @@ import (
 )
 
 // The daemon held every aria it had ever touched: cachedLog decodes a whole
-// IR and every translation into the heap at construction, chalkCache holds
+// IR and every translation into the heap at construction, formCache holds
 // the board and every patch, and only Remove ever deleted an entry.
 // Measured on a real daemon: 209 arias, 107,439 messages, 3.0 GB private.
 //
@@ -34,7 +34,7 @@ func TestIdleAriasAreEvictedAndRebuildIdentically(t *testing.T) {
 			t.Fatal(err)
 		}
 		arias = append(arias, id)
-		if _, err := be.ApplyChalkboard(id, message.Patch{Set: map[string]json.RawMessage{
+		if _, err := be.ApplyForm(id, message.Patch{Set: map[string]json.RawMessage{
 			"aria_id": json.RawMessage(`"` + id + `"`),
 		}}); err != nil {
 			t.Fatal(err)
@@ -55,7 +55,7 @@ func TestIdleAriasAreEvictedAndRebuildIdentically(t *testing.T) {
 
 	before := map[string]string{}
 	for _, id := range arias {
-		st, err := be.ChalkboardState(id)
+		st, err := be.FormState(id)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -74,7 +74,7 @@ func TestIdleAriasAreEvictedAndRebuildIdentically(t *testing.T) {
 
 	// And everything evicted comes back identical, from the store.
 	for _, id := range arias {
-		st, err := be.ChalkboardState(id)
+		st, err := be.FormState(id)
 		if err != nil {
 			t.Fatalf("aria %s after eviction: %v", id, err)
 		}

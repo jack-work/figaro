@@ -1,4 +1,4 @@
-package chalkboard
+package form
 
 import (
 	"bytes"
@@ -17,7 +17,7 @@ func mustValue(t testing.TB, text string) Value {
 }
 
 // canonicalFormPinned locks in the exact canonical encoding. Equality
-// semantics for the whole chalkboard hang off encoding/json emitting map keys
+// semantics for the whole form hang off encoding/json emitting map keys
 // in sorted order; if a toolchain ever changes that, this fails loudly instead
 // of silently changing when the agent sees a reminder.
 func TestCanonicalFormPinned(t *testing.T) {

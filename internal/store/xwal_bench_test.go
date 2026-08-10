@@ -25,7 +25,7 @@ func TestMain(m *testing.M) {
 // seedTree builds a representative aria forest: `stumps` outfits, each with
 // `convs` top-level conversations, each conversation forked `branches` times
 // (so the tree has real lineage/depth, not a flat list). Every trunk gets a
-// couple of real turns so it has a non-empty head + chalkboard to open.
+// couple of real turns so it has a non-empty head + form to open.
 func seedTree(tb testing.TB, b *XwalBackend, stumps, convs, branches int) int {
 	tb.Helper()
 	total := 0
@@ -248,7 +248,7 @@ func convIDs(be *XwalBackend) []string {
 	return ids
 }
 
-func BenchmarkChalkboardState10000(b *testing.B) {
+func BenchmarkFormState10000(b *testing.B) {
 	be, err := NewXwalBackend(b.TempDir(), 0)
 	if err != nil {
 		b.Fatal(err)
@@ -263,7 +263,7 @@ func BenchmarkChalkboardState10000(b *testing.B) {
 		b.Fatal(err)
 	}
 	for i := 0; i < 10_000; i++ {
-		if _, err := be.ApplyChalkboard(id, patchSet(map[string]string{
+		if _, err := be.ApplyForm(id, patchSet(map[string]string{
 			fmt.Sprintf("key%d", i%100): fmt.Sprintf("value%d", i),
 		})); err != nil {
 			b.Fatal(err)
@@ -273,13 +273,13 @@ func BenchmarkChalkboardState10000(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := be.ChalkboardState(id); err != nil {
+		if _, err := be.FormState(id); err != nil {
 			b.Fatal(err)
 		}
 	}
 }
 
-func BenchmarkChalkboardPatches10000(b *testing.B) {
+func BenchmarkFormPatches10000(b *testing.B) {
 	be, err := NewXwalBackend(b.TempDir(), 0)
 	if err != nil {
 		b.Fatal(err)
@@ -294,7 +294,7 @@ func BenchmarkChalkboardPatches10000(b *testing.B) {
 		b.Fatal(err)
 	}
 	for i := 0; i < 10_000; i++ {
-		if _, err := be.ApplyChalkboard(id, patchSet(map[string]string{
+		if _, err := be.ApplyForm(id, patchSet(map[string]string{
 			fmt.Sprintf("key%d", i%100): fmt.Sprintf("value%d", i),
 		})); err != nil {
 			b.Fatal(err)
@@ -304,7 +304,7 @@ func BenchmarkChalkboardPatches10000(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := be.ChalkboardPatches(id); err != nil {
+		if _, err := be.FormPatches(id); err != nil {
 			b.Fatal(err)
 		}
 	}

@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/uiir"
 )
@@ -21,8 +21,8 @@ func newQueuedAgent(t *testing.T, id string) (*figaro.Agent, *blockedProvider, f
 	t.Helper()
 	release := make(chan struct{})
 	prov := &blockedProvider{release: release}
-	cb, _ := chalkboard.Open("")
-	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+	cb, _ := form.Open("")
+	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
 		"system.model":      json.RawMessage(`"mock-model-v1"`),
 		"system.provider":   json.RawMessage(`"mock"`),
 		"system.max_tokens": json.RawMessage(`1024`),
@@ -32,7 +32,7 @@ func newQueuedAgent(t *testing.T, id string) (*figaro.Agent, *blockedProvider, f
 		ID:         id,
 		SocketPath: "/tmp/test-" + id + ".sock",
 		Provider:   prov,
-		Chalkboard: cb,
+		Form:       cb,
 	})
 	return a, prov, func() { close(release); a.Kill() }
 }

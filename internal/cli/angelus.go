@@ -138,18 +138,18 @@ func runAngelus() {
 	})
 	a.Build = buildRevision()
 
-	cbTmpls := buildChalkboard()
+	cbTmpls := buildFormTemplates()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	handlers := angelus.NewHandlers(angelus.ServerConfig{
-		Angelus:             a,
-		Config:              loaded,
-		ProviderFactory:     buildProviderFactory(loaded, cbTmpls, backend),
-		AvailableProviders:  KnownProviders(),
-		Ctx:                 ctx,
-		ChalkboardTemplates: cbTmpls,
+		Angelus:            a,
+		Config:             loaded,
+		ProviderFactory:    buildProviderFactory(loaded, cbTmpls, backend),
+		AvailableProviders: KnownProviders(),
+		Ctx:                ctx,
+		FormTemplates:      cbTmpls,
 	})
 	a.Handlers = handlers.Map
 

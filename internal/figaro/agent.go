@@ -11,8 +11,8 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
@@ -54,8 +54,8 @@ type event struct {
 	merged []uint64
 
 	// eventUserPrompt
-	text       string
-	chalkboard *rpc.ChalkboardInput
+	text string
+	form *rpc.FormInput
 	// segments is this event's attributed payloads, in submission order.
 	// A fresh submit has exactly one; mergePromptEvents concatenates them, so
 	// a folded message keeps WHO SAID WHAT instead of flattening it into one
@@ -67,14 +67,14 @@ type event struct {
 }
 
 // Config is the constructor input for NewAgent. Configured values
-// (model, cwd, etc.) live on the chalkboard under system.* keys.
+// (model, cwd, etc.) live on the form under system.* keys.
 type Config struct {
 	ID         string
 	SocketPath string
 	Provider   provider.Provider
 	// ProviderFactory lets the agent REBIND its provider mid-conversation
 	// when system.provider (or a build-time knob) changes on the
-	// chalkboard. Nil pins the agent to Provider for life — fine for
+	// form. Nil pins the agent to Provider for life — fine for
 	// tests, wrong for a live aria, because the board is authoritative.
 	ProviderFactory ProviderFactory
 	Outfitter       *outfit.Outfitter
@@ -85,18 +85,18 @@ type Config struct {
 	CreatedAt  time.Time
 	LastActive time.Time
 
-	// Chalkboard carries the aria's state, pre-seeded from the
-	// reducible chalkboard channel (backed) or empty (ephemeral). The
+	// Form carries the aria's state, pre-seeded from the
+	// reducible form channel (backed) or empty (ephemeral). The
 	// channel is the durable truth; State is the in-memory hot view the
 	// agent reads (model/max_tokens/cwd) and write-throughs on set.
 	// Nil creates an empty in-memory one. Closed by Kill.
-	Chalkboard *chalkboard.State
+	Form *form.State
 
 	// InlineBoot is the ephemeral-only boot patch. Backed arias hold
-	// their boot transition in the chalkboard channel; ephemeral arias
+	// their boot transition in the form channel; ephemeral arias
 	// have no channel, so this patch is folded onto the first IR turn so
 	// the outfit reminders still render. Ignored when Backend != nil.
-	InlineBoot *chalkboard.Patch
+	InlineBoot *form.Patch
 
 	// Settings is the loaded user configuration. Today the agent reads only
 	// the wire page budget from it, via ClampPageBudget — which is the SINGLE
@@ -110,7 +110,7 @@ type Config struct {
 type Agent struct {
 	id         string
 	socketPath string
-	// provBind is the live provider binding (instance + the chalkboard
+	// provBind is the live provider binding (instance + the form
 	// coordinates that produced it). Written by the drain loop via
 	// syncProvider, read lock-free by status/metrics on RPC goroutines.
 	provBind    atomic.Pointer[providerBinding]
@@ -119,10 +119,10 @@ type Agent struct {
 	tools       *tool.Registry
 	// proj converts fig IR to UI IR. nil in a core-only build.
 	proj       Projector
-	inlineBoot *chalkboard.Patch // ephemeral first-turn boot fold
+	inlineBoot *form.Patch // ephemeral first-turn boot fold
 	figLog     store.Log[message.Message]
 	backend    store.Backend // nil = ephemeral
-	chalkboard *chalkboard.State
+	form       *form.State
 	settings   *config.Loaded // wire budget policy; nil-safe
 
 	inbox *Inbox
@@ -201,7 +201,7 @@ func NewAgent(cfg Config) *Agent {
 		proj:        cfg.Projector,
 		inlineBoot:  cfg.InlineBoot,
 		backend:     cfg.Backend,
-		chalkboard:  cfg.Chalkboard,
+		form:        cfg.Form,
 		settings:    cfg.Settings,
 		createdAt:   createdAt,
 		lastActive:  lastActive,
@@ -211,10 +211,10 @@ func NewAgent(cfg Config) *Agent {
 
 	a.figLog = a.newLog()
 	repairInterruptedTail(a.figLog, a.id)
-	if a.chalkboard == nil {
-		// Ephemeral arias get an in-memory chalkboard. Backed arias are
-		// pre-seeded from the reducible chalkboard channel by the caller.
-		a.chalkboard, _ = chalkboard.Open("")
+	if a.form == nil {
+		// Ephemeral arias get an in-memory form. Backed arias are
+		// pre-seeded from the reducible form channel by the caller.
+		a.form, _ = form.Open("")
 	}
 	// The caller built cfg.Provider from this very board, so pairing the
 	// instance with the board's current knobs makes the first syncProvider
@@ -277,23 +277,23 @@ func (a *Agent) ID() string { return a.id }
 
 func (a *Agent) SocketPath() string { return a.socketPath }
 
-// chalkboardString reads a system.* string key. Empty when missing.
-// dukeTitle is what THIS aria calls its end user, from its chalkboard, or the
+// formString reads a system.* string key. Empty when missing.
+// dukeTitle is what THIS aria calls its end user, from its form, or the
 // generic default when it does not say. Passed to rpc.SenderFrom so the duke
 // placeholder an interactive CLI sends resolves against the aria being
 // addressed rather than against the shell that sent it.
 func (a *Agent) dukeTitle() string {
-	if t := a.chalkboardString(rpc.DukeTitleKey); t != "" {
+	if t := a.formString(rpc.DukeTitleKey); t != "" {
 		return t
 	}
 	return rpc.DefaultDukeTitle
 }
 
-func (a *Agent) chalkboardString(key string) string {
-	if a.chalkboard == nil {
+func (a *Agent) formString(key string) string {
+	if a.form == nil {
 		return ""
 	}
-	raw, ok := a.chalkboard.Snapshot().Get(key)
+	raw, ok := a.form.Snapshot().Get(key)
 	if !ok {
 		return ""
 	}
@@ -302,12 +302,12 @@ func (a *Agent) chalkboardString(key string) string {
 	return s
 }
 
-// chalkboardInt reads a numeric system.* key.
-func (a *Agent) chalkboardInt(key string) int {
-	if a.chalkboard == nil {
+// formInt reads a numeric system.* key.
+func (a *Agent) formInt(key string) int {
+	if a.form == nil {
 		return 0
 	}
-	raw, ok := a.chalkboard.Snapshot().Get(key)
+	raw, ok := a.form.Snapshot().Get(key)
 	if !ok {
 		return 0
 	}
@@ -316,9 +316,9 @@ func (a *Agent) chalkboardInt(key string) int {
 	return n
 }
 
-func (a *Agent) currentModel() string { return a.chalkboardString("system.model") }
+func (a *Agent) currentModel() string { return a.formString("system.model") }
 
-func snapshotString(snapshot chalkboard.Snapshot, key string) string {
+func snapshotString(snapshot form.Snapshot, key string) string {
 	raw, ok := snapshot.Get(key)
 	if !ok {
 		return ""
@@ -330,7 +330,7 @@ func snapshotString(snapshot chalkboard.Snapshot, key string) string {
 
 // snapshotOutfit reads the outfit stamp, falling back to the pre-rename keys
 // that arias minted before the rename carry.
-func snapshotOutfit(snapshot chalkboard.Snapshot) (name, version string) {
+func snapshotOutfit(snapshot form.Snapshot) (name, version string) {
 	name = snapshotString(snapshot, "system.outfit_name")
 	if name == "" {
 		name = snapshotString(snapshot, "system.loadout_name")
@@ -344,12 +344,12 @@ func snapshotOutfit(snapshot chalkboard.Snapshot) (name, version string) {
 
 // resolveContextLimit reports the effective prompt cap for the current model.
 //
-// Precedence: an explicit system.max_context_tokens on the chalkboard wins
+// Precedence: an explicit system.max_context_tokens on the form wins
 // outright — it is an override, so a user pinning a smaller (or larger) window
 // must not be second-guessed by provider metadata. Only when it is unset does
 // the provider get asked. (This used to be the other way round, which made the
 // key unreachable for any provider that reported a limit.)
-func resolveContextLimit(prov provider.Provider, model string, snapshot chalkboard.Snapshot) int {
+func resolveContextLimit(prov provider.Provider, model string, snapshot form.Snapshot) int {
 	if limit, ok := provider.ContextLimitOverride(snapshot); ok {
 		return limit
 	}
@@ -457,7 +457,7 @@ func (a *Agent) seedMetricsFromMeta() bool {
 	// The limit is a live provider+model lookup, never a checkpointed number:
 	// a model swap between runs must not be reported from a stale sidecar.
 	a.contextLimit = resolveContextLimit(a.provider(), model, snapshot)
-	// Chalkboard-owned fields come from the board, which is authoritative and
+	// Form-owned fields come from the board, which is authoritative and
 	// already open. Taking them from the sidecar would let a stale mantra
 	// survive a `figaro set`.
 	a.model = model
@@ -511,9 +511,9 @@ func (a *Agent) SubmitPrompt(req rpc.QuaRequest) { a.SubmitPromptFrom(req, "") }
 // the way down rather than becoming "unknown".
 func (a *Agent) SubmitPromptFrom(req rpc.QuaRequest, sender string) {
 	evt := event{
-		typ:        eventUserPrompt,
-		text:       req.Text,
-		chalkboard: req.Chalkboard,
+		typ:  eventUserPrompt,
+		text: req.Text,
+		form: req.Form,
 	}
 	if req.Text != "" {
 		evt.segments = []promptSegment{{sender: sender, text: req.Text}}
@@ -525,7 +525,7 @@ func (a *Agent) SubmitPromptFrom(req rpc.QuaRequest, sender string) {
 // accepted but not yet answered, in FIFO order, plus the epoch those ids
 // belong to. The inbox is untouched.
 //
-// carriers opts in to empty-text prompts (pure chalkboard carriers): the CRUD
+// carriers opts in to empty-text prompts (pure form carriers): the CRUD
 // surface must be able to address everything it can delete, while every
 // display surface wants them omitted — which is what this has always done.
 func (a *Agent) QueuedPrompts(carriers bool) (string, []rpc.QueuedPrompt) {
@@ -563,7 +563,7 @@ func (a *Agent) Interrupt() { a.Hangup(rpc.QueueKeep) }
 //
 // It also COALESCES the queue on the keep path — each contiguous run of
 // waiting prompts folds into one message, with the same semantics steering
-// already has (texts joined in order, chalkboard input merged so a later value
+// already has (texts joined in order, form input merged so a later value
 // wins). Three messages typed during a long turn and then cut short are one
 // question to answer, not three turns to sit through.
 //
@@ -601,12 +601,12 @@ func (a *Agent) Hangup(disposition rpc.QueueDisposition) rpc.InterruptResponse {
 	if disposition == rpc.QueueClear {
 		for _, e := range a.inbox.DrainUserPrompts() {
 			resp.Queue = append(resp.Queue, rpc.QueuedPrompt{
-				ID:         e.id,
-				Text:       e.text,
-				State:      rpc.QueueStateQueued,
-				At:         e.at,
-				Merged:     e.merged,
-				Chalkboard: e.chalkboard,
+				ID:     e.id,
+				Text:   e.text,
+				State:  rpc.QueueStateQueued,
+				At:     e.at,
+				Merged: e.merged,
+				Form:   e.form,
 			})
 		}
 		resp.Cleared = true
@@ -765,9 +765,9 @@ func (a *Agent) Kill() {
 		fn()
 	}
 
-	if a.chalkboard != nil {
-		if err := a.chalkboard.Close(); err != nil {
-			slog.Error("chalkboard close", "aria", a.id, "err", err)
+	if a.form != nil {
+		if err := a.form.Close(); err != nil {
+			slog.Error("form close", "aria", a.id, "err", err)
 		}
 	}
 
@@ -909,9 +909,9 @@ func (a *Agent) act(ctx context.Context) {
 	}
 }
 
-// serviceSets applies any queued chalkboard patches at a round boundary, the
+// serviceSets applies any queued form patches at a round boundary, the
 // same points steering prompts drain. Each patch lands on the in-memory
-// chalkboard (so the next provider round reads it via the snapshot) and rides
+// form (so the next provider round reads it via the snapshot) and rides
 // the next IR LT as a transition. Returns true when it serviced at least one.
 func (a *Agent) serviceSets() bool {
 	evts := a.inbox.TakeReadySet()
@@ -922,14 +922,14 @@ func (a *Agent) serviceSets() bool {
 }
 
 // applyControlPatch persists a state-only patch. No LLM round-trip.
-// Backed arias append it to the reducible chalkboard channel (keyed to
+// Backed arias append it to the reducible form channel (keyed to
 // the next IR LT, so it rides the next turn as a transition); ephemeral
 // arias fold it onto an IR control-turn (no channel to hold it).
 func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 	slog.Debug("event "+kind, "aria", a.id, "set", len(patch.Set), "remove", len(patch.Remove))
 	if a.backend != nil {
-		if _, err := a.backend.ApplyChalkboard(a.id, patch); err != nil {
-			slog.Error(kind+" chalkboard append", "aria", a.id, "err", err)
+		if _, err := a.backend.ApplyForm(a.id, patch); err != nil {
+			slog.Error(kind+" form append", "aria", a.id, "err", err)
 			return
 		}
 	} else {
@@ -943,25 +943,25 @@ func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 			return
 		}
 	}
-	a.chalkboard.Apply(patch)
+	a.form.Apply(patch)
 	a.refreshMetrics()
 	a.publishMetadata()
 }
 
 // chalkAccessor returns the per-LT transition source for the provider:
-// for backed arias, the chalkboard's patches in version order; nil for
+// for backed arias, the form's patches in version order; nil for
 // ephemeral (the provider falls back to inline IR patches).
 //
-// TODO: ChalkboardPatches copies the aria's ENTIRE patch history on every
+// TODO: FormPatches copies the aria's ENTIRE patch history on every
 // Send, which is O(total board) on a path that renders O(delta). See
-// plans/chalkboard-projection-followups.md §1.
-func (a *Agent) chalkAccessor() provider.Chalkboard {
+// plans/form-projection-followups.md §1.
+func (a *Agent) chalkAccessor() provider.Form {
 	if a.backend == nil {
 		return nil
 	}
-	ps, err := a.backend.ChalkboardPatches(a.id)
+	ps, err := a.backend.FormPatches(a.id)
 	if err != nil {
-		slog.Warn("chalkboard patches (transitions disabled this turn)", "aria", a.id, "err", err)
+		slog.Warn("form patches (transitions disabled this turn)", "aria", a.id, "err", err)
 		return nil
 	}
 	return &patchCursor{patches: ps}
@@ -994,7 +994,7 @@ func (c *patchCursor) PatchesBetween(after, upTo uint64) []message.Patch {
 	return out
 }
 
-// endTurn fans out turn.done and persists chalkboard + meta.
+// endTurn fans out turn.done and persists form + meta.
 // endTurn commits the live unit (it became a real IR message) and signals idle.
 func (a *Agent) endTurn(reason string) {
 	a.refreshMetrics()

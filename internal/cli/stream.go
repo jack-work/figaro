@@ -379,7 +379,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	// output it did not have before.
 	catchUp := in != nil && !set.listen
 
-	cursor, active, qerr := fcli.Qua(ctx, prompt, buildPromptChalkboard())
+	cursor, active, qerr := fcli.Qua(ctx, prompt, buildPromptForm())
 	if qerr != nil {
 		dieWithClosure(qerr, "prompt: %s", qerr)
 	}

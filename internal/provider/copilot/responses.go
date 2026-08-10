@@ -15,7 +15,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/net/websocket"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
@@ -237,7 +237,7 @@ func (p *responsesProvider) acceptAssistantProjection(lt uint64, payload []json.
 	state = append(state, payload...)
 	p.projection = &provider.IncrementalProjection[[]json.RawMessage]{
 		State:            state,
-		Chalkboard:       p.projection.Chalkboard,
+		Form:             p.projection.Form,
 		Fingerprint:      p.projection.Fingerprint,
 		Entries:          p.projection.Entries + 1,
 		LastLT:           lt,
@@ -419,10 +419,10 @@ func (p *responsesProvider) inputFor(in provider.SendInput) ([]json.RawMessage, 
 	projection, _, err := provider.ProjectIncrementally(provider.ProjectionConfig[[]json.RawMessage]{
 		Log:         in.FigLog,
 		Cache:       cache,
-		Chalkboard:  in.Chalkboard,
+		Form:        in.Form,
 		Previous:    previous,
 		Fingerprint: fingerprint,
-		Encode: func(msg message.Message, snap chalkboard.Snapshot) ([]json.RawMessage, error) {
+		Encode: func(msg message.Message, snap form.Snapshot) ([]json.RawMessage, error) {
 			encoded, err := encodeResponseMessage(msg, msg.Patches, snap, templates)
 			if err != nil {
 				return nil, fmt.Errorf("copilot responses: encode message %d: %w", msg.LogicalTime, err)
@@ -589,7 +589,7 @@ func decodeResponseArguments(raw string) (map[string]interface{}, error) {
 func encodeResponseMessage(
 	msg message.Message,
 	patches []message.Patch,
-	snap chalkboard.Snapshot,
+	snap form.Snapshot,
 	templates *template.Template,
 ) ([]json.RawMessage, error) {
 	var beforeMessage []json.RawMessage
@@ -756,13 +756,13 @@ func marshalResponseItem(item responseInputItem) (json.RawMessage, error) {
 
 func renderResponsePatch(
 	patch message.Patch,
-	snap chalkboard.Snapshot,
+	snap form.Snapshot,
 	templates *template.Template,
 ) ([]string, error) {
 	if templates == nil {
 		return nil, nil
 	}
-	rendered, err := chalkboard.Render(patch, snap, templates)
+	rendered, err := form.Render(patch, snap, templates)
 	if err != nil {
 		return nil, err
 	}
@@ -779,7 +779,7 @@ func escapeResponseAttr(value string) string {
 	return strings.ReplaceAll(value, "<", "&lt;")
 }
 
-func responseInstructions(snap chalkboard.Snapshot) string {
+func responseInstructions(snap form.Snapshot) string {
 	raw, ok := snap.Get("system.credo")
 	if !ok {
 		return ""
@@ -801,7 +801,7 @@ func responseInstructions(snap chalkboard.Snapshot) string {
 	return value
 }
 
-func responseString(snap chalkboard.Snapshot, key string) string {
+func responseString(snap form.Snapshot, key string) string {
 	raw, ok := snap.Get(key)
 	if !ok {
 		return ""
@@ -819,7 +819,7 @@ func responseFingerprint(model string) string {
 	return responsesFingerprintPrefix + "/" + model
 }
 
-func responseOptionsFor(snap chalkboard.Snapshot) (responseRequestOptions, error) {
+func responseOptionsFor(snap form.Snapshot) (responseRequestOptions, error) {
 	options := responseRequestOptions{parallelToolCalls: true}
 
 	if parallel, ok, err := responseOptionalBool(snap, "system.parallel_tool_calls"); err != nil {
@@ -896,7 +896,7 @@ func responseOptionsFor(snap chalkboard.Snapshot) (responseRequestOptions, error
 	return options, nil
 }
 
-func responseOptionalString(snap chalkboard.Snapshot, key string) (string, bool, error) {
+func responseOptionalString(snap form.Snapshot, key string) (string, bool, error) {
 	raw, ok := snap.Get(key)
 	if !ok || string(raw) == "null" {
 		return "", false, nil
@@ -908,7 +908,7 @@ func responseOptionalString(snap chalkboard.Snapshot, key string) (string, bool,
 	return strings.TrimSpace(value), true, nil
 }
 
-func responseOptionalBool(snap chalkboard.Snapshot, key string) (bool, bool, error) {
+func responseOptionalBool(snap form.Snapshot, key string) (bool, bool, error) {
 	raw, ok := snap.Get(key)
 	if !ok || string(raw) == "null" {
 		return false, false, nil
@@ -920,7 +920,7 @@ func responseOptionalBool(snap chalkboard.Snapshot, key string) (bool, bool, err
 	return value, true, nil
 }
 
-func responseOptionalFloat(snap chalkboard.Snapshot, key string) (float64, bool, error) {
+func responseOptionalFloat(snap form.Snapshot, key string) (float64, bool, error) {
 	raw, ok := snap.Get(key)
 	if !ok || string(raw) == "null" {
 		return 0, false, nil
@@ -932,7 +932,7 @@ func responseOptionalFloat(snap chalkboard.Snapshot, key string) (float64, bool,
 	return value, true, nil
 }
 
-func responseOptionalInt(snap chalkboard.Snapshot, key string) (int, bool, error) {
+func responseOptionalInt(snap form.Snapshot, key string) (int, bool, error) {
 	raw, ok := snap.Get(key)
 	if !ok || string(raw) == "null" {
 		return 0, false, nil

@@ -113,7 +113,7 @@ func Run(progName string, args []string) {
 	ctx := context.Background()
 	loaded := mustLoadConfig()
 
-	// Apply config-driven sigil for chalkboard references.
+	// Apply config-driven sigil for form references.
 	if sigil, err := loaded.RefSigil(); err != nil {
 		die("%s", err)
 	} else {
@@ -172,13 +172,13 @@ func Run(progName string, args []string) {
 //     documented in help and unparsed in practice.
 //
 // -O traces both. On the prompt verbs extractPromptFlags parses it into
-// sendOpts.outfit and parks it in promptOutfit, so buildPromptChalkboard puts
+// sendOpts.outfit and parks it in promptOutfit, so buildPromptForm puts
 // it on the same RPC as the message — no verb assembles its own prompt, so
 // none can carry the flag and forget the fold. On `state outfit` it is the
 // verb's first positional, and reaches the same ParseSpec and the same fold.
 //
 // Run bodies: manage.go (list/fork/kill/promote), prompt.go and send.go
-// (prompting), outfit.go (state outfit), chalkboard.go (state/set/unset),
+// (prompting), outfit.go (state outfit), form.go (state/set/unset),
 // portable.go (export/import), firstrun.go (the wizard create falls into).
 // Completions are CompleteArgs callbacks in complete_*.go.
 //
@@ -293,7 +293,7 @@ Flags:
   -O, --outfit <spec>
                  Dress the aria in an outfit. On an aria THIS CALL creates it
                  is the birth outfit; on one that already exists it is folded
-                 onto the chalkboard in the SAME call as the prompt, so the
+                 onto the form in the SAME call as the prompt, so the
                  turn you are sending is answered wearing it. Additive: keys
                  already holding the value are skipped, nothing is removed.
                  A spec is names, k=v pairs and JSON literals, comma-joined
@@ -498,7 +498,7 @@ send stream. Anything queued behind it is KEPT.
 
 The waiting messages coalesce into ONE combined message, which the aria
 answers next: three notes typed during a long turn are one question, not
-three turns to sit through. A queued chalkboard set or fork is a barrier
+three turns to sit through. A queued form set or fork is a barrier
 and is never crossed.
 
   figaro hup          stop the turn, keep the queue
@@ -543,7 +543,7 @@ pid-bound aria is used.`,
 behind it.
 
 The discarded messages are handed back rather than lost — verbatim, one
-entry per message as you typed it, with the chalkboard input each
+entry per message as you typed it, with the form input each
 carried — so they can be persisted:
 
   figaro cut          stop the turn, discard the queue (listed on stdout)
@@ -552,7 +552,7 @@ carried — so they can be persisted:
 
 Unlike ` + "`figaro hup`" + `, nothing survives to be answered. Clearing does
 not need a turn to be running — a queue is worth dropping between turns
-too. A queued chalkboard set or fork is not a question and is left
+too. A queued form set or fork is not a question and is left
 alone. With no id, the pid-bound aria is used.`,
 		ArgsMin: 0,
 		ArgsMax: 1,
@@ -784,7 +784,7 @@ With a prompt — ` + "`figaro fork [flags] -- <prompt>`" + ` — it also sends,
                  always the thing you just made, so it is always the thing
                  that gets prompted.)
   -O/--outfit  — dresses the ALTERNATIVE, in the same call that mints it: the
-                 fold lands on the new branch's chalkboard before anything is
+                 fold lands on the new branch's form before anything is
                  said to it, so the first turn is answered wearing it. Legal
                  with or without a prompt. See ` + "`figaro help outfits`" + `.
   -e/--ephemeral is rejected: a fork mints a persistent branch.`,
@@ -838,7 +838,7 @@ Needs the trunk capability -- a trunkless figaro is normalized already.`,
 		Short: "Write an aria to a portable file",
 		Usage: "export [<id>] [-o <file>]",
 		Long: `Write an aria to a file that another store can import: its outfit,
-its chalkboard, and every message, with no store-local identity in it.
+its form, and every message, with no store-local identity in it.
 
   figaro export                     the bound aria, to stdout
   figaro export 14bf8211 -o keep.json
@@ -937,13 +937,13 @@ aria nesting follows fork history alone and there is nothing to promote.`,
 
 	r.Register(&cmdkit.Command{
 		Name:    "state",
-		Aliases: []string{"chalkboard"},
+		Aliases: []string{"form"},
 		Group:   "State",
-		Short:   "Show the chalkboard, or dress it in an outfit",
+		Short:   "Show the form, or dress it in an outfit",
 		Usage:   "state [<id> | --id <id>] [-j] | state outfit <spec> | state outfit --list | state outfit --tree [<spec>]",
 		Long: `The aria's state, and the verbs that shape it.
 
-  figaro state                     print the chalkboard
+  figaro state                     print the form
   figaro state --id <id> -j        another aria's, as JSON
   figaro state outfit focus        fold an outfit onto this aria, now
   figaro state outfit a,b          fold both, b winning
@@ -960,7 +960,7 @@ state is an action, not a modifier on one.
 See ` + "`figaro help outfits`" + ` for the spec syntax.`,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria id (overrides pid binding)"},
-			{Long: "json", Short: "j", IsBool: true, Description: "Emit the snapshot as a JSON object"},
+			{Long: "json", Short: "j", IsBool: true, Description: "Accepted and ignored: the snapshot is always a JSON object"},
 			{Long: "list", IsBool: true, Description: "outfit: list available outfits and exit"},
 			{Long: "tree", IsBool: true, Description: "outfit: print the layer closure and exit; applies nothing"},
 			{Long: "refresh", IsBool: true, Description: "outfit: re-read outfits and config from disk"},
@@ -978,7 +978,7 @@ See ` + "`figaro help outfits`" + ` for the spec syntax.`,
 			if id == "" && len(args) > 0 {
 				id = args[0]
 			}
-			runChalkboard(ld, id, ctx.BoolFlag("json"))
+			runForm(ld, id)
 			return nil
 		},
 		CompleteArgs: completeStateArgs,
@@ -987,7 +987,7 @@ See ` + "`figaro help outfits`" + ` for the spec syntax.`,
 	r.Register(&cmdkit.Command{
 		Name:    "set",
 		Group:   "State",
-		Short:   "Patch a chalkboard key (no LLM round-trip)",
+		Short:   "Patch a form key (no LLM round-trip)",
 		Usage:   "set [--id <id>] <key> <value>",
 		ArgsMin: 2,
 		ArgsMax: 2,
@@ -999,13 +999,13 @@ See ` + "`figaro help outfits`" + ` for the spec syntax.`,
 			runSetArgs(ld, ctx.Flag("id"), ctx.Args[0], ctx.Args[1])
 			return nil
 		},
-		CompleteArgs: completeAriaIDsAfterFlag(completeChalkboardKeys),
+		CompleteArgs: completeAriaIDsAfterFlag(completeFormKeys),
 	})
 
 	r.Register(&cmdkit.Command{
 		Name:    "unset",
 		Group:   "State",
-		Short:   "Remove chalkboard key(s)",
+		Short:   "Remove form key(s)",
 		Usage:   "unset [--id <id>] <key> [<key>...]",
 		ArgsMin: 1,
 		Flags: []cmdkit.FlagDef{
@@ -1016,7 +1016,7 @@ See ` + "`figaro help outfits`" + ` for the spec syntax.`,
 			runUnsetArgs(ld, ctx.Flag("id"), ctx.Args)
 			return nil
 		},
-		CompleteArgs: completeAriaIDsAfterFlag(completeChalkboardKeys),
+		CompleteArgs: completeAriaIDsAfterFlag(completeFormKeys),
 	})
 
 	r.Register(&cmdkit.Command{
@@ -1025,7 +1025,7 @@ See ` + "`figaro help outfits`" + ` for the spec syntax.`,
 		Hidden: true,
 		Short:  "The outfit spec syntax (a help topic)",
 		Usage:  "help outfits",
-		Long: `An OUTFIT is a named patch for an aria's chalkboard: model, credo,
+		Long: `An OUTFIT is a named patch for an aria's form: model, credo,
 skills, and anything else you keep together. A SPEC is what you type where an
 outfit is asked for. It is a comma-separated list of terms, folded LEFT TO
 RIGHT — later terms win, exactly as an outfit's own ` + "`layers = [...]`" + ` does.
@@ -1043,7 +1043,7 @@ Where a spec goes:
 
   figaro new -O <spec> -- <p>        BIRTH: the stump the aria is spawned
                                      under, stamped as its outfit, shown by ls
-  figaro send -O <spec> -- <p>       FOLD: applied to the aria's chalkboard in
+  figaro send -O <spec> -- <p>       FOLD: applied to the aria's form in
   figaro fork -O <spec> [-- <p>]     the same call as the prompt (on fork, to
                                      the new branch, before it is spoken to)
   figaro state outfit <spec>         FOLD, with no prompt
@@ -1062,7 +1062,7 @@ Rules worth knowing:
     quotes, no leading ` + "`-`" + `. Layer names obey the same rule.
   - Structure must balance. An unmatched brace or quote is an error, and an
     inline term that sets nothing is too. Inline terms are capped at 64 KiB:
-    one fold is one chalkboard record.
+    one fold is one form record.
   - QUOTE a literal. Unquoted, ` + "`{mantra:test}`" + ` is not JSON (use the sugar,
     ` + "`mantra=test`" + `) and ` + "`{a:1,b:2}`" + ` is brace-expanded by the shell into two
     words with the braces gone, so it never reaches figaro at all.

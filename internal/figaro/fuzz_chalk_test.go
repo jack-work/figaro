@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
@@ -24,9 +24,9 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// A stress harness for the UNKEYED chalkboard channel.
+// A stress harness for the UNKEYED form channel.
 //
-// The board no longer keys its patches to a main LT: ApplyChalkboard appends
+// The board no longer keys its patches to a main LT: ApplyForm appends
 // with no reference to the timeline and serializes against nothing, so a `set`
 // can land while a turn is in flight. The association runs the other way --
 // each IR record stamps the board version it was written at (Entry.ChalkVersion)
@@ -100,15 +100,15 @@ func openGate(gate chan struct{}, n int) {
 	}
 }
 
-// fuzzAgent builds a BACKED agent (real XwalBackend, real chalkboard channel)
+// fuzzAgent builds a BACKED agent (real XwalBackend, real form channel)
 // around the given provider/factory. Backed is the point: only a backed aria
-// routes `set` through ApplyChalkboard and stamps ChalkVersion on its IR.
+// routes `set` through ApplyForm and stamps ChalkVersion on its IR.
 func fuzzAgent(t *testing.T, prov provider.Provider, factory figaro.ProviderFactory) (*figaro.Agent, store.Backend, string) {
 	t.Helper()
 	backend, id := backedConv(t, t.TempDir())
-	snap, err := backend.ChalkboardState(id)
+	snap, err := backend.FormState(id)
 	require.NoError(t, err)
-	cb, err := chalkboard.Open("")
+	cb, err := form.Open("")
 	require.NoError(t, err)
 	cb.Apply(snap.AsPatch())
 	a := figaro.NewAgent(figaro.Config{
@@ -118,7 +118,7 @@ func fuzzAgent(t *testing.T, prov provider.Provider, factory figaro.ProviderFact
 		Provider:        prov,
 		ProviderFactory: factory,
 		Backend:         backend,
-		Chalkboard:      cb,
+		Form:            cb,
 	})
 	t.Cleanup(a.Kill)
 	return a, backend, id
@@ -162,12 +162,12 @@ func setKV(a *figaro.Agent, key, val string) error {
 	if err != nil {
 		return err
 	}
-	_, _, err = a.Set(chalkboard.Patch{Set: map[string]json.RawMessage{key: raw}}, 0)
+	_, _, err = a.Set(form.Patch{Set: map[string]json.RawMessage{key: raw}}, 0)
 	return err
 }
 
 // snapMap flattens a snapshot for comparison.
-func snapMap(s chalkboard.Snapshot) map[string]string {
+func snapMap(s form.Snapshot) map[string]string {
 	out := map[string]string{}
 	for k, v := range s.All() {
 		out[k] = string(v)
@@ -186,7 +186,7 @@ func barrier(t *testing.T, a *figaro.Agent, ch <-chan rpc.Notification, gate cha
 	awaitTurnDone(t, ch)
 }
 
-func TestFuzzChalkboardUnkeyed(t *testing.T) {
+func TestFuzzFormUnkeyed(t *testing.T) {
 	t.Run("SetWhileTurnInFlight", func(t *testing.T) {
 		// A `set` landing MID-TURN, over and over, from several goroutines.
 		// The turn must still complete and the board must carry every patch.
@@ -220,7 +220,7 @@ func TestFuzzChalkboardUnkeyed(t *testing.T) {
 			}(w)
 		}
 		// And one writer straight at the channel, bypassing the inbox. THIS is
-		// the unkeyed path in the narrow sense: ApplyChalkboard reads no
+		// the unkeyed path in the narrow sense: ApplyForm reads no
 		// timeline and takes no lock against the turn, so it must complete
 		// while the round is parked rather than queue behind it. Its writes
 		// never reach the agent's in-memory board (nothing told it), so only
@@ -230,7 +230,7 @@ func TestFuzzChalkboardUnkeyed(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < setsPerWriter; i++ {
 				raw, _ := json.Marshal(fmt.Sprintf("d%d", i))
-				if _, err := backend.ApplyChalkboard(id, message.Patch{
+				if _, err := backend.ApplyForm(id, message.Patch{
 					Set: map[string]json.RawMessage{fmt.Sprintf("fuzz.direct.k%d", i): raw},
 				}); err != nil {
 					errs <- err
@@ -251,7 +251,7 @@ func TestFuzzChalkboardUnkeyed(t *testing.T) {
 		barrier(t, a, ch, gate, "barrier")
 
 		live := a.Snapshot()
-		durable, err := backend.ChalkboardState(id)
+		durable, err := backend.FormState(id)
 		require.NoError(t, err)
 		for w := 0; w < writers; w++ {
 			for i := 0; i < setsPerWriter; i++ {
@@ -275,7 +275,7 @@ func TestFuzzChalkboardUnkeyed(t *testing.T) {
 	})
 
 	t.Run("ProviderSwitchAcrossAndMidTurn", func(t *testing.T) {
-		// system.provider is chalkboard state like any other key, so a switch
+		// system.provider is form state like any other key, so a switch
 		// is just a patch -- including one written while a round is parked.
 		// The contract under test is narrow and structural: no panic, no
 		// deadlock, every turn reaches turn.done, and the board's provider is
@@ -361,7 +361,7 @@ func TestFuzzChalkboardUnkeyed(t *testing.T) {
 
 			entries := log.Read()
 			require.NotEmpty(t, entries)
-			board, err := backend.ChalkboardState(id)
+			board, err := backend.FormState(id)
 			require.NoError(t, err)
 			marks = append(marks, mark{lt: entries[len(entries)-1].LT, board: snapMap(board)})
 		}
@@ -374,9 +374,9 @@ func TestFuzzChalkboardUnkeyed(t *testing.T) {
 		require.NotEmpty(t, alt)
 		require.NotEqual(t, id, alt)
 
-		altBoard, err := backend.ChalkboardState(alt)
+		altBoard, err := backend.FormState(alt)
 		require.NoError(t, err)
-		nowBoard, err := backend.ChalkboardState(id)
+		nowBoard, err := backend.FormState(id)
 		require.NoError(t, err)
 
 		assert.Equal(t, at.board, snapMap(altBoard),
@@ -393,7 +393,7 @@ func TestFuzzChalkboardUnkeyed(t *testing.T) {
 
 	t.Run("ConcurrentPatchVersionsAreUniqueAndMonotonic", func(t *testing.T) {
 		// The version a patch comes back with IS its durable index in the
-		// chalkboard channel. Concurrent writers must each get their own, the
+		// form channel. Concurrent writers must each get their own, the
 		// numbers must never go backwards for a single writer, and the folded
 		// board must contain every key.
 		backend, id := backedConv(t, t.TempDir())
@@ -417,7 +417,7 @@ func TestFuzzChalkboardUnkeyed(t *testing.T) {
 				<-start // release all writers at once, no sleeps
 				for i := 0; i < patchesPerHand; i++ {
 					raw, _ := json.Marshal(fmt.Sprintf("w%d-i%d", w, i))
-					v, err := backend.ApplyChalkboard(id, message.Patch{
+					v, err := backend.ApplyForm(id, message.Patch{
 						Set: map[string]json.RawMessage{fmt.Sprintf("conc.w%d.k%d", w, i): raw},
 					})
 					if err != nil {
@@ -456,7 +456,7 @@ func TestFuzzChalkboardUnkeyed(t *testing.T) {
 				"versions are append positions: they must form one contiguous run")
 		}
 
-		board, err := backend.ChalkboardState(id)
+		board, err := backend.FormState(id)
 		require.NoError(t, err)
 		for w := 0; w < writers; w++ {
 			for i := 0; i < patchesPerHand; i++ {

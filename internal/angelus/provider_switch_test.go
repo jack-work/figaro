@@ -121,8 +121,8 @@ model = "mock-model"
 	require.NoError(t, err)
 	waitDone()
 
-	// The switch: chalkboard state, no restart.
-	_, err = fcli.Set(ctx, rpc.ChalkboardPatch{Set: map[string]json.RawMessage{
+	// The switch: form state, no restart.
+	_, err = fcli.Set(ctx, rpc.FormPatch{Set: map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"other"`),
 	}}, 0)
 	require.NoError(t, err)

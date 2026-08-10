@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/rpc"
 )
@@ -45,7 +45,7 @@ type portableAria struct {
 	Provider string            `json:"provider,omitempty"` // provenance, for the list sidecar
 	Model    string            `json:"model,omitempty"`
 	Exported string            `json:"exported,omitempty"` // RFC3339, provenance only
-	Board    message.Patch     `json:"chalkboard,omitempty"`
+	Board    message.Patch     `json:"form,omitempty"`
 	Messages []message.Message `json:"messages"`
 }
 
@@ -139,7 +139,7 @@ func exportAria(ctx context.Context, acli *angelus.Client, loaded *config.Loaded
 		}
 		// Scaffolding does not travel. The genesis tic and the outfit-birth
 		// stamp belong to the store's topology — the destination mints its own
-		// when it spawns — and a contentless input tic is a pure chalkboard
+		// when it spawns — and a contentless input tic is a pure form
 		// carrier, whose effect is already in the folded board below. What is
 		// left is the conversation.
 		if m.Role == message.RoleGenesis || (m.Role == message.RoleInput && len(m.Content) == 0) {
@@ -148,13 +148,13 @@ func exportAria(ctx context.Context, acli *angelus.Client, loaded *config.Loaded
 		doc.Messages = append(doc.Messages, m)
 	}
 
-	// The chalkboard lives on the ARIA socket, not the angelus, so this
+	// The form lives on the ARIA socket, not the angelus, so this
 	// attaches — which also revives a dormant aria, exactly as `figaro state`
 	// does. It is the same fold the agent itself would read.
-	var board chalkboard.Snapshot
+	var board form.Snapshot
 	var boardErr error
 	WithSessionFor(loaded, id, func(s *Session) error {
-		resp, cErr := s.Figaro.Chalkboard(ctx)
+		resp, cErr := s.Figaro.Form(ctx)
 		if cErr != nil {
 			boardErr = cErr
 			return nil
@@ -163,7 +163,7 @@ func exportAria(ctx context.Context, acli *angelus.Client, loaded *config.Loaded
 		return nil
 	})
 	if boardErr != nil {
-		return portableAria{}, fmt.Errorf("chalkboard %s: %w", id, boardErr)
+		return portableAria{}, fmt.Errorf("form %s: %w", id, boardErr)
 	}
 	doc.Board = message.Patch{Set: map[string]json.RawMessage{}}
 	for k, v := range board.All() {
@@ -235,13 +235,13 @@ func runImport(loaded *config.Loaded, args []string) {
 	defer acli.Close()
 
 	resp, err := acli.Import(ctx, rpc.ImportRequest{
-		Outfit:     doc.Outfit,
-		Chalkboard: doc.Board,
-		Messages:   doc.Messages,
-		WasID:      doc.AriaID,
-		Mantra:     doc.Mantra,
-		Provider:   doc.Provider,
-		Model:      doc.Model,
+		Outfit:   doc.Outfit,
+		Form:     doc.Board,
+		Messages: doc.Messages,
+		WasID:    doc.AriaID,
+		Mantra:   doc.Mantra,
+		Provider: doc.Provider,
+		Model:    doc.Model,
 	})
 	if err != nil {
 		die("import: %s", err)

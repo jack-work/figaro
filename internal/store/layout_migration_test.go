@@ -51,7 +51,7 @@ func seedForkedArias(t *testing.T, root string) (ids []string, boards map[string
 		patch := message.Patch{Set: map[string]json.RawMessage{
 			"gen": json.RawMessage(fmt.Sprintf("%d", gen)),
 		}}
-		if _, err := be.ApplyChalkboard(aria, patch); err != nil {
+		if _, err := be.ApplyForm(aria, patch); err != nil {
 			t.Fatal(err)
 		}
 		_, alt, err := be.ForkAt(aria, 2)
@@ -74,7 +74,7 @@ func seedForkedArias(t *testing.T, root string) (ids []string, boards map[string
 
 func boardOf(t *testing.T, be *XwalBackend, id string) string {
 	t.Helper()
-	snap, err := be.ChalkboardState(id)
+	snap, err := be.FormState(id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestOpenMigratesANestedStoreAndFindsEveryAria(t *testing.T) {
 	}
 	for _, id := range ids {
 		if b := boardOf(t, be, id); b != boards[id] {
-			t.Errorf("aria %s chalkboard after migration: got %q want %q", id, b, boards[id])
+			t.Errorf("aria %s form after migration: got %q want %q", id, b, boards[id])
 		}
 		lg, err := be.Open(id)
 		if err != nil {

@@ -49,8 +49,8 @@ model = "mock-model"
 		},
 		Ctx: ctx,
 		// Restore reads the board through these; without them restoreOne
-		// fails "chalkboard unavailable" and no wake can ever succeed.
-		ChalkboardTemplates: template.New("t"),
+		// fails "form unavailable" and no wake can ever succeed.
+		FormTemplates: template.New("t"),
 	}).Map
 
 	go a.Run(ctx)
@@ -87,8 +87,8 @@ func TestEndpointOutlivesAgent(t *testing.T) {
 
 	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	var before rpc.ChalkboardResponse
-	require.NoError(t, client.Call(callCtx, rpc.MethodChalkboard, struct{}{}, &before))
+	var before rpc.FormResponse
+	require.NoError(t, client.Call(callCtx, rpc.MethodForm, struct{}{}, &before))
 
 	// Reclaim the agent. This is what hibernation will do.
 	require.NoError(t, a.Registry.Kill(created.FigaroID))
@@ -97,8 +97,8 @@ func TestEndpointOutlivesAgent(t *testing.T) {
 	// The socket file is still there and the SAME connection still answers —
 	// served from the store, with no agent rebuilt.
 	require.FileExists(t, sock, "endpoint vanished with the agent")
-	var after rpc.ChalkboardResponse
-	require.NoError(t, client.Call(callCtx, rpc.MethodChalkboard, struct{}{}, &after),
+	var after rpc.FormResponse
+	require.NoError(t, client.Call(callCtx, rpc.MethodForm, struct{}{}, &after),
 		"attached client lost its connection when the agent died")
 	require.Nil(t, a.Registry.Get(created.FigaroID), "a read woke the aria")
 

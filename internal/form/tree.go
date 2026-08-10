@@ -1,4 +1,4 @@
-// Immutable AVL tree for chalkboard snapshots.
+// Immutable AVL tree for form snapshots.
 //
 // Lifted from github.com/jack-work/pstate (tree.go, MIT, same author) and
 // adapted. Changes from the original:
@@ -10,7 +10,7 @@
 //   - Delete already returned the receiver for an absent key; Set now matches,
 //     so "nothing changed" is observable as pointer identity everywhere.
 //   - All() iter.Seq2 alongside Range.
-//   - pstate's Tree.Apply(ordered edit list) is dropped: chalkboard's Patch is
+//   - pstate's Tree.Apply(ordered edit list) is dropped: form's Patch is
 //     a key-idempotent {Set, Remove}, applied by the Snapshot layer.
 //
 // The structure is persistent: Set and Delete copy only the O(log n) nodes on
@@ -18,7 +18,7 @@
 // receiver. That is what makes Clone free, and it is what diffTrees exploits —
 // an untouched subtree is *pointer-identical* between the two trees.
 
-package chalkboard
+package form
 
 import (
 	"encoding/json"
@@ -109,7 +109,7 @@ func (t ptree) Has(key string) bool {
 //   - it keeps "semantically identical write" free of allocation,
 //   - it makes diffTrees short-circuit instantly on such a write,
 //   - and it is why re-serialising an object whose keys were merely reordered
-//     does not perturb chalkboard.json or fire a reminder at the agent.
+//     does not perturb the form channel or fire a reminder at the agent.
 //
 // The corollary the caller must know: after t.Set(k, v), t.Get(k) may return
 // bytes that differ from v.Raw() while being semantically equal to it.

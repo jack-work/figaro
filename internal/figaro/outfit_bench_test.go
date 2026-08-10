@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/uiir"
@@ -46,9 +46,9 @@ func benchConfig(b *testing.B, skillCount, skillBytes int) string {
 	return dir
 }
 
-func benchAgent(b *testing.B, configDir string, initial chalkboard.Patch) *figaro.Agent {
+func benchAgent(b *testing.B, configDir string, initial form.Patch) *figaro.Agent {
 	b.Helper()
-	cb, err := chalkboard.Open(filepath.Join(b.TempDir(), "chalkboard.json"))
+	cb, err := form.Open(filepath.Join(b.TempDir(), "the form channel"))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func benchAgent(b *testing.B, configDir string, initial chalkboard.Patch) *figar
 		Provider:   &chalkSpyProvider{},
 		Outfitter:  outfit.New(configDir),
 		Tools:      tool.NewRegistry(),
-		Chalkboard: cb,
+		Form:       cb,
 	})
 	b.Cleanup(func() { a.Kill() })
 	return a
@@ -72,7 +72,7 @@ func benchAgent(b *testing.B, configDir string, initial chalkboard.Patch) *figar
 // the full cost — the closure fold plus the patch append.
 func BenchmarkDressFirstTime(b *testing.B) {
 	dir := benchConfig(b, 40, 4096)
-	a := benchAgent(b, dir, chalkboard.Patch{})
+	a := benchAgent(b, dir, form.Patch{})
 	patch := benchDress("full")
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -86,7 +86,7 @@ func BenchmarkDressFirstTime(b *testing.B) {
 // every patch carrying a layers directive pays.
 func BenchmarkMaterializeWarm(b *testing.B) {
 	dir := benchConfig(b, 40, 4096)
-	a := benchAgent(b, dir, chalkboard.Patch{})
+	a := benchAgent(b, dir, form.Patch{})
 	patch := benchDress("full")
 	if _, err := a.Materialize(patch); err != nil {
 		b.Fatal(err)
@@ -103,8 +103,8 @@ func BenchmarkMaterializeWarm(b *testing.B) {
 // nothing — every `fig set` pays this and no more.
 func BenchmarkMaterializeNoLayers(b *testing.B) {
 	dir := benchConfig(b, 40, 4096)
-	a := benchAgent(b, dir, chalkboard.Patch{})
-	patch := chalkboard.Patch{Set: map[string]json.RawMessage{"mantra": json.RawMessage(`"x"`)}}
+	a := benchAgent(b, dir, form.Patch{})
+	patch := form.Patch{Set: map[string]json.RawMessage{"mantra": json.RawMessage(`"x"`)}}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if _, err := a.Materialize(patch); err != nil {
@@ -122,7 +122,7 @@ func BenchmarkParsePatch(b *testing.B) {
 	}
 }
 
-func benchDress(names ...string) chalkboard.Patch {
+func benchDress(names ...string) form.Patch {
 	b, _ := json.Marshal(names)
-	return chalkboard.Patch{Set: map[string]json.RawMessage{"layers": b}}
+	return form.Patch{Set: map[string]json.RawMessage{"layers": b}}
 }

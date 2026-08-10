@@ -90,7 +90,7 @@ type Caller struct {
 // The common case is "the end user is typing" — the DUKE — and the CLI cannot
 // name them: the name belongs to the aria being addressed, not to the shell.
 // So the CLI sends a PLACEHOLDER and the server resolves it against the target
-// aria's chalkboard (see DukeTitleKey). That is what keeps the user's name out
+// aria's form (see DukeTitleKey). That is what keeps the user's name out
 // of shell config entirely.
 //
 // A placeholder must not collide with anything a human could type, and a
@@ -100,7 +100,7 @@ type Caller struct {
 // Duke:true. The guarantee is structural, not lexical.
 type CallerRef struct {
 	// Duke marks the caller as the end user, to be named by the target aria's
-	// chalkboard rather than by the caller. Set only by an INTERACTIVE CLI, so
+	// form rather than by the caller. Set only by an INTERACTIVE CLI, so
 	// an aria shelling out cannot accidentally speak as its master.
 	Duke bool `json:"duke,omitempty"`
 
@@ -114,7 +114,7 @@ func (c *CallerRef) Empty() bool {
 	return c == nil || (!c.Duke && c.Label == "")
 }
 
-// DukeTitleKey is the chalkboard key naming the end user for an aria. Set it
+// DukeTitleKey is the form key naming the end user for an aria. Set it
 // in an outfit ("gluck") and every prompt that aria receives from a human
 // terminal is attributed to that name.
 //
@@ -122,7 +122,7 @@ func (c *CallerRef) Empty() bool {
 // as distinct from an aria (another figaro) or an anonymous script.
 const DukeTitleKey = "duke-title"
 
-// DefaultDukeTitle is what an aria calls its end user when its chalkboard does
+// DefaultDukeTitle is what an aria calls its end user when its form does
 // not say. Deliberately generic: a wrong name is worse than a plain one.
 const DefaultDukeTitle = "user"
 
@@ -259,7 +259,7 @@ func CallerFromEnv() string {
 // a human-driven CLI puts nothing extra on the wire.
 //
 // nil params become a fresh object holding only the identity: several methods
-// take no arguments and pass nil (figaro.context, figaro.chalkboard), and they
+// take no arguments and pass nil (figaro.context, figaro.form), and they
 // must still be able to say who is calling. That is exactly why the identity
 // is injected generically here rather than embedded in each request struct —
 // there is no struct to embed it in when params is nil.
@@ -375,7 +375,7 @@ func SenderFrom(params json.RawMessage, dukeTitle func() string) string {
 	}
 	// An explicit label wins over the placeholder: FIGARO_CALLER is an
 	// override, and a caller that named itself has said something the target
-	// aria's chalkboard cannot know.
+	// aria's form cannot know.
 	if ref.Label != "" {
 		return ref.Label
 	}

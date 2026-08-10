@@ -269,8 +269,8 @@ dormant_after_minutes = 0
 		ProviderFactory: func(string, provider.Knobs) (provider.Provider, error) {
 			return &mockProviderForIntegration{}, nil
 		},
-		Ctx:                 ctx,
-		ChalkboardTemplates: template.New("t"),
+		Ctx:           ctx,
+		FormTemplates: template.New("t"),
 	}).Map
 
 	go a.Run(ctx)

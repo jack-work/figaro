@@ -1,6 +1,6 @@
-package chalkboard
+package form
 
-// The chalkboard is open-schema by design (see chalkboard.go): keys
+// The form is open-schema by design (see form.go): keys
 // are arbitrary, values are raw JSON. WellKnownKeys is a *partial*
 // schema — a curated list of keys the harness reads or writes today,
 // used to drive CLI completion and as a discoverability surface.
@@ -30,7 +30,7 @@ const (
 	KeyEphemeralPerTurn
 )
 
-// KeyDoc describes a known chalkboard key.
+// KeyDoc describes a known form key.
 type KeyDoc struct {
 	// Key is the dotted path. A trailing "<name>" marks a templated
 	// namespace (e.g. "system.environment.<name>") — completion
@@ -44,7 +44,7 @@ type KeyDoc struct {
 	Mode KeyMode
 }
 
-// WellKnownKeys returns the curated catalog of chalkboard keys the
+// WellKnownKeys returns the curated catalog of form keys the
 // harness reads or writes. Order is stable; callers may filter by Mode.
 func WellKnownKeys() []KeyDoc {
 	return []KeyDoc{

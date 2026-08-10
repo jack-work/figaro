@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -19,7 +19,7 @@ func TestProjectIncrementallyVisitsOnlySuffix(t *testing.T) {
 	config := ProjectionConfig[EncodedMessages]{
 		Log:         log,
 		Fingerprint: "v1",
-		Encode: func(msg message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
+		Encode: func(msg message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 			encoded++
 			return []json.RawMessage{json.RawMessage(`"` + msg.Content[0].Text + `"`)}, nil
 		},
@@ -61,7 +61,7 @@ func TestProjectIncrementallyInvalidatesFingerprint(t *testing.T) {
 		Log:         log,
 		Previous:    previous,
 		Fingerprint: "new",
-		Encode: func(message.Message, chalkboard.Snapshot) ([]json.RawMessage, error) {
+		Encode: func(message.Message, form.Snapshot) ([]json.RawMessage, error) {
 			encoded++
 			return []json.RawMessage{json.RawMessage(`{}`)}, nil
 		},
@@ -82,7 +82,7 @@ func TestProjectIncrementallyDoesNotAdvancePastEncodeFailure(t *testing.T) {
 	config := ProjectionConfig[EncodedMessages]{
 		Log:         log,
 		Fingerprint: "v1",
-		Encode: func(msg message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
+		Encode: func(msg message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 			text := msg.Content[0].Text
 			attempts[text]++
 			if text == "two" && attempts[text] == 1 {
@@ -136,7 +136,7 @@ func TestProjectIncrementallyUsesInputReadyCache(t *testing.T) {
 		Log:         log,
 		Cache:       cache,
 		Fingerprint: "v1",
-		Encode: func(message.Message, chalkboard.Snapshot) ([]json.RawMessage, error) {
+		Encode: func(message.Message, form.Snapshot) ([]json.RawMessage, error) {
 			return nil, errors.New("cache miss")
 		},
 		Append: func(state, encoded []json.RawMessage, _ uint64) []json.RawMessage {
@@ -166,7 +166,7 @@ func TestProjectIncrementallyRejectsStaleCacheEntry(t *testing.T) {
 		Log:         log,
 		Cache:       cache,
 		Fingerprint: "new",
-		Encode: func(message.Message, chalkboard.Snapshot) ([]json.RawMessage, error) {
+		Encode: func(message.Message, form.Snapshot) ([]json.RawMessage, error) {
 			encoded++
 			return []json.RawMessage{json.RawMessage(`{"fresh":true}`)}, nil
 		},

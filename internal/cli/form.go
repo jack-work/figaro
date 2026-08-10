@@ -4,17 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/rpc"
 )
 
-// runSetArgs patches a chalkboard key. Supports dotted paths like
+// runSetArgs patches a form key. Supports dotted paths like
 // system.tags[42].cache_control.
 func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string) {
 
@@ -24,7 +23,7 @@ func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string) {
 		value = s
 	}
 
-	top, path, err := parseChalkboardPath(keyArg)
+	top, path, err := parseFormPath(keyArg)
 	if err != nil {
 		die("set: %s", err)
 	}
@@ -34,7 +33,7 @@ func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string) {
 	if len(path) == 0 {
 		topValue = value
 	} else {
-		current, version := mustFetchChalkboardKey(loaded, ariaID, top)
+		current, version := mustFetchFormKey(loaded, ariaID, top)
 		merged, err := deepSetJSON(current, path, value)
 		if err != nil {
 			die("set: %s", err)
@@ -42,17 +41,17 @@ func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string) {
 		topValue, ifVersion = merged, version
 	}
 
-	patch := rpc.ChalkboardPatch{Set: map[string]json.RawMessage{top: topValue}}
+	patch := rpc.FormPatch{Set: map[string]json.RawMessage{top: topValue}}
 	resp := mustCallSet(loaded, ariaID, patch, ifVersion)
 	fmt.Fprintf(os.Stderr, "set %s = %s (figaro %s)\n", keyArg, value, resp.figaroID)
 }
 
-// runUnsetArgs removes chalkboard keys.
+// runUnsetArgs removes form keys.
 func runUnsetArgs(loaded *config.Loaded, ariaID string, args []string) {
-	patch := rpc.ChalkboardPatch{}
+	patch := rpc.FormPatch{}
 	var ifVersion uint64
 	for _, keyArg := range args {
-		top, path, err := parseChalkboardPath(keyArg)
+		top, path, err := parseFormPath(keyArg)
 		if err != nil {
 			die("unset: %s", err)
 		}
@@ -60,7 +59,7 @@ func runUnsetArgs(loaded *config.Loaded, ariaID string, args []string) {
 			patch.Remove = append(patch.Remove, top)
 			continue
 		}
-		current, version := mustFetchChalkboardKey(loaded, ariaID, top)
+		current, version := mustFetchFormKey(loaded, ariaID, top)
 		if len(current) == 0 {
 			continue
 		}
@@ -86,41 +85,63 @@ func runUnsetArgs(loaded *config.Loaded, ariaID string, args []string) {
 	fmt.Fprintf(os.Stderr, "unset %s (figaro %s)\n", strings.Join(args, ", "), resp.figaroID)
 }
 
-// runChalkboard prints the current chalkboard snapshot.
-func runChalkboard(loaded *config.Loaded, ariaID string, jsonOut bool) {
+// runForm prints the current form snapshot.
+func runForm(loaded *config.Loaded, ariaID string) {
 	WithSessionFor(loaded, ariaID, func(s *Session) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		resp, err := s.Figaro.Chalkboard(ctx)
+		resp, err := s.Figaro.Form(ctx)
 		if err != nil {
-			die("chalkboard: %s", err)
+			die("form: %s", err)
 		}
-		if jsonOut {
-			// One JSON object (keys sorted by encoding/json) instead of the
-			// default JSONL stream.
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(resp.Snapshot)
-		}
-		printSnapshot(os.Stdout, resp.Snapshot)
-		return nil
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(nestSnapshot(resp.Snapshot))
 	})
 }
 
-func printSnapshot(w io.Writer, snap chalkboard.Snapshot) {
-	enc := json.NewEncoder(w)
+// nestSnapshot rebuilds the tree the dotted keys describe. Flatness is how the
+// form is STORED — one key, one value, one patch record — not what it is: a
+// reader wants `system.model` under `system`, and a script wants to walk it.
+//
+// A key whose prefix is already a leaf keeps its dotted name rather than
+// overwriting that leaf: `a` and `a.b` can both be set, and neither may make
+// the other unreadable.
+func nestSnapshot(snap form.Snapshot) map[string]any {
+	root := map[string]any{}
 	for k, v := range snap.All() {
-		if err := enc.Encode(struct {
-			Key   string          `json:"key"`
-			Value json.RawMessage `json:"value"`
-		}{Key: k, Value: v}); err != nil {
-			fmt.Fprintf(w, "{\"key\":%q,\"error\":%q}\n", k, err.Error())
+		segments := strings.Split(k, ".")
+		node := root
+		ok := true
+		for _, seg := range segments[:len(segments)-1] {
+			child, seen := node[seg]
+			if !seen {
+				child = map[string]any{}
+				node[seg] = child
+			}
+			branch, isBranch := child.(map[string]any)
+			if !isBranch {
+				ok = false
+				break
+			}
+			node = branch
 		}
+		if !ok {
+			root[k] = json.RawMessage(v)
+			continue
+		}
+		leaf := segments[len(segments)-1]
+		if _, taken := node[leaf].(map[string]any); taken {
+			root[k] = json.RawMessage(v)
+			continue
+		}
+		node[leaf] = json.RawMessage(v)
 	}
+	return root
 }
 
-// parseChalkboardPath splits a dotted key into top-level key + segments.
-func parseChalkboardPath(s string) (string, []string, error) {
+// parseFormPath splits a dotted key into top-level key + segments.
+func parseFormPath(s string) (string, []string, error) {
 	if s == "" {
 		return "", nil, fmt.Errorf("empty key")
 	}
@@ -258,15 +279,15 @@ func deepDeleteWalk(obj map[string]any, path []string) bool {
 	return changed
 }
 
-// fetchChalkboardSnapshot returns the aria's live chalkboard snapshot via the
+// fetchFormSnapshot returns the aria's live form snapshot via the
 // angelus, or an empty snapshot on failure (best-effort — callers degrade
 // gracefully).
-func fetchChalkboardSnapshot(loaded *config.Loaded, ariaID string) chalkboard.Snapshot {
-	var snap chalkboard.Snapshot
+func fetchFormSnapshot(loaded *config.Loaded, ariaID string) form.Snapshot {
+	var snap form.Snapshot
 	WithSessionFor(loaded, ariaID, func(s *Session) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if resp, err := s.Figaro.Chalkboard(ctx); err == nil {
+		if resp, err := s.Figaro.Form(ctx); err == nil {
 			snap = resp.Snapshot
 		}
 		return nil
@@ -274,18 +295,18 @@ func fetchChalkboardSnapshot(loaded *config.Loaded, ariaID string) chalkboard.Sn
 	return snap
 }
 
-// mustFetchChalkboardKey reads one key AND the version the board stood at, so
+// mustFetchFormKey reads one key AND the version the board stood at, so
 // the write that follows can be conditional: editing inside a value means
 // reading it first, and two shells doing that must not clobber each other.
-func mustFetchChalkboardKey(loaded *config.Loaded, ariaID, key string) (json.RawMessage, uint64) {
+func mustFetchFormKey(loaded *config.Loaded, ariaID, key string) (json.RawMessage, uint64) {
 	var result json.RawMessage
 	var version uint64
 	WithSessionFor(loaded, ariaID, func(s *Session) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		resp, err := s.Figaro.Chalkboard(ctx)
+		resp, err := s.Figaro.Form(ctx)
 		if err != nil {
-			die("chalkboard: %s", err)
+			die("form: %s", err)
 		}
 		result, _ = resp.Snapshot.Get(key)
 		version = resp.Version
@@ -299,7 +320,7 @@ type setResult struct {
 	resp     *rpc.SetResponse
 }
 
-func mustCallSet(loaded *config.Loaded, ariaID string, patch rpc.ChalkboardPatch, ifVersion uint64) setResult {
+func mustCallSet(loaded *config.Loaded, ariaID string, patch rpc.FormPatch, ifVersion uint64) setResult {
 	var result setResult
 	WithSessionFor(loaded, ariaID, func(s *Session) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

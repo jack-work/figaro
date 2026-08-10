@@ -70,7 +70,7 @@ func cacheableAccumulatedBlock(b anthropic.ContentBlockUnion) (keep, fatal bool)
 // accumulated assistant turn) to the figaro IR.
 func decodeAssistantMessage(m anthropic.Message) message.Message {
 	// model/provider are not on the IR message — they live in the
-	// chalkboard (system.model / system.provider), derived on read.
+	// form (system.model / system.provider), derived on read.
 	out := message.Message{
 		Role: message.RoleOutput,
 	}

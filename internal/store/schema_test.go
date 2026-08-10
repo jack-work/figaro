@@ -167,7 +167,7 @@ func TestSchemaWrittenOnFirstOpen(t *testing.T) {
 }
 
 // A store written by a NEWER build must be refused, not silently
-// misread. This is the gate that covers the chalkboard becoming unkeyed:
+// misread. This is the gate that covers the form becoming unkeyed:
 // an older binary reads its main LT of 0 as real and loses every inline
 // transition, so the IR bump has to stop it at the door.
 func TestSchemaRefusesANewerStore(t *testing.T) {

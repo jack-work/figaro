@@ -1,4 +1,4 @@
-package chalkboard_test
+package form_test
 
 import (
 	"encoding/json"
@@ -9,11 +9,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 )
 
 // val returns the raw value at key, or nil when the key is absent.
-func val(s chalkboard.Snapshot, key string) json.RawMessage {
+func val(s form.Snapshot, key string) json.RawMessage {
 	v, _ := s.Get(key)
 	return v
 }
@@ -22,7 +22,7 @@ func val(s chalkboard.Snapshot, key string) json.RawMessage {
 // handle on an immutable tree, so two snapshots holding the same entries
 // need not be == (AVL shape depends on insertion order, and the version
 // counter counts derivations). Content is the thing worth asserting.
-func content(t *testing.T, s chalkboard.Snapshot) map[string]string {
+func content(t *testing.T, s form.Snapshot) map[string]string {
 	t.Helper()
 	out := map[string]string{}
 	for k, v := range s.All() {
@@ -42,11 +42,11 @@ func raw(t *testing.T, v interface{}) json.RawMessage {
 // --- Snapshot.Diff / .Apply round-trip ---
 
 func TestDiff_NoChange(t *testing.T) {
-	prev := chalkboard.FromMap(map[string]json.RawMessage{
+	prev := form.FromMap(map[string]json.RawMessage{
 		"cwd":   raw(t, "/foo"),
 		"model": raw(t, "claude-opus-4-6"),
 	})
-	next := chalkboard.FromMap(map[string]json.RawMessage{
+	next := form.FromMap(map[string]json.RawMessage{
 		"cwd":   raw(t, "/foo"),
 		"model": raw(t, "claude-opus-4-6"),
 	})
@@ -55,11 +55,11 @@ func TestDiff_NoChange(t *testing.T) {
 }
 
 func TestDiff_AddSetRemove(t *testing.T) {
-	prev := chalkboard.FromMap(map[string]json.RawMessage{
+	prev := form.FromMap(map[string]json.RawMessage{
 		"cwd":   raw(t, "/foo"),
 		"label": raw(t, "alpha"),
 	})
-	next := chalkboard.FromMap(map[string]json.RawMessage{
+	next := form.FromMap(map[string]json.RawMessage{
 		"cwd":   raw(t, "/bar"),            // changed
 		"model": raw(t, "claude-opus-4-6"), // added
 		// label removed
@@ -71,11 +71,11 @@ func TestDiff_AddSetRemove(t *testing.T) {
 }
 
 func TestApply_RoundTrip(t *testing.T) {
-	prev := chalkboard.FromMap(map[string]json.RawMessage{
+	prev := form.FromMap(map[string]json.RawMessage{
 		"cwd":  raw(t, "/foo"),
 		"keep": raw(t, "x"),
 	})
-	next := chalkboard.FromMap(map[string]json.RawMessage{
+	next := form.FromMap(map[string]json.RawMessage{
 		"cwd":   raw(t, "/bar"),
 		"keep":  raw(t, "x"),
 		"added": raw(t, "y"),
@@ -86,27 +86,27 @@ func TestApply_RoundTrip(t *testing.T) {
 }
 
 func TestApply_DoesNotMutateReceiver(t *testing.T) {
-	prev := chalkboard.FromMap(map[string]json.RawMessage{"k": raw(t, "v1")})
-	p := chalkboard.Patch{Set: map[string]json.RawMessage{"k": raw(t, "v2")}}
+	prev := form.FromMap(map[string]json.RawMessage{"k": raw(t, "v1")})
+	p := form.Patch{Set: map[string]json.RawMessage{"k": raw(t, "v2")}}
 	_ = prev.Apply(p)
 	assert.Equal(t, raw(t, "v1"), val(prev, "k"), "Apply must not mutate the receiver")
 }
 
 func TestMerge_QWinsOnConflict(t *testing.T) {
-	p := chalkboard.Patch{
+	p := form.Patch{
 		Set: map[string]json.RawMessage{
 			"a": raw(t, 1),
 			"b": raw(t, 2),
 		},
 		Remove: []string{"x"},
 	}
-	q := chalkboard.Patch{
+	q := form.Patch{
 		Set: map[string]json.RawMessage{
 			"a": raw(t, 100), // conflicts with p
 		},
 		Remove: []string{"b"}, // cancels p's set of b
 	}
-	merged := chalkboard.Merge(p, q)
+	merged := form.Merge(p, q)
 	assert.Equal(t, raw(t, 100), merged.Set["a"], "q wins on conflicting Set")
 	_, hasB := merged.Set["b"]
 	assert.False(t, hasB, "q's Remove cancels p's Set of the same key")
@@ -116,8 +116,8 @@ func TestMerge_QWinsOnConflict(t *testing.T) {
 // --- Patch.Entries: deterministic order ---
 
 func TestEntries_DeterministicOrder(t *testing.T) {
-	prev := chalkboard.FromMap(map[string]json.RawMessage{"a": raw(t, "old-a")})
-	p := chalkboard.Patch{
+	prev := form.FromMap(map[string]json.RawMessage{"a": raw(t, "old-a")})
+	p := form.Patch{
 		Set: map[string]json.RawMessage{
 			"zeta":  raw(t, "1"),
 			"alpha": raw(t, "2"),
@@ -125,7 +125,7 @@ func TestEntries_DeterministicOrder(t *testing.T) {
 		},
 		Remove: []string{"omega"},
 	}
-	es := chalkboard.PatchEntries(p, prev)
+	es := form.PatchEntries(p, prev)
 	keys := make([]string, len(es))
 	for i, e := range es {
 		keys[i] = e.Key
@@ -149,14 +149,14 @@ func TestEntries_DeterministicOrder(t *testing.T) {
 // --- Render with default templates ---
 
 func TestRender_DefaultTemplates_Cwd(t *testing.T) {
-	tmpls, err := chalkboard.LoadDefaultTemplates()
+	tmpls, err := form.LoadDefaultTemplates()
 	require.NoError(t, err)
 
-	prev := chalkboard.Snapshot{}
-	next := chalkboard.FromMap(map[string]json.RawMessage{"cwd": raw(t, "/home/figaro")})
+	prev := form.Snapshot{}
+	next := form.FromMap(map[string]json.RawMessage{"cwd": raw(t, "/home/figaro")})
 	p := next.Diff(prev)
 
-	rendered, err := chalkboard.Render(p, prev, tmpls)
+	rendered, err := form.Render(p, prev, tmpls)
 	require.NoError(t, err)
 	require.Len(t, rendered, 1)
 	assert.Equal(t, "cwd", rendered[0].Key)
@@ -164,28 +164,28 @@ func TestRender_DefaultTemplates_Cwd(t *testing.T) {
 }
 
 func TestRender_DefaultTemplates_Model_Old_New(t *testing.T) {
-	tmpls, err := chalkboard.LoadDefaultTemplates()
+	tmpls, err := form.LoadDefaultTemplates()
 	require.NoError(t, err)
 
-	prev := chalkboard.FromMap(map[string]json.RawMessage{"model": raw(t, "claude-sonnet")})
-	next := chalkboard.FromMap(map[string]json.RawMessage{"model": raw(t, "claude-opus")})
+	prev := form.FromMap(map[string]json.RawMessage{"model": raw(t, "claude-sonnet")})
+	next := form.FromMap(map[string]json.RawMessage{"model": raw(t, "claude-opus")})
 	p := next.Diff(prev)
 
-	rendered, err := chalkboard.Render(p, prev, tmpls)
+	rendered, err := form.Render(p, prev, tmpls)
 	require.NoError(t, err)
 	require.Len(t, rendered, 1)
 	assert.Equal(t, "Model changed from claude-sonnet to claude-opus.", rendered[0].Body)
 }
 
 func TestRender_UnknownKey_FallsBackToGeneric(t *testing.T) {
-	tmpls, err := chalkboard.LoadDefaultTemplates()
+	tmpls, err := form.LoadDefaultTemplates()
 	require.NoError(t, err)
 
-	prev := chalkboard.Snapshot{}
-	next := chalkboard.FromMap(map[string]json.RawMessage{"unknown_key": raw(t, "v")})
+	prev := form.Snapshot{}
+	next := form.FromMap(map[string]json.RawMessage{"unknown_key": raw(t, "v")})
 	p := next.Diff(prev)
 
-	rendered, err := chalkboard.Render(p, prev, tmpls)
+	rendered, err := form.Render(p, prev, tmpls)
 	require.NoError(t, err)
 	require.Len(t, rendered, 1, "untemplated non-system keys render via the generic fallback")
 	assert.Equal(t, "unknown_key", rendered[0].Key)
@@ -193,45 +193,45 @@ func TestRender_UnknownKey_FallsBackToGeneric(t *testing.T) {
 }
 
 func TestRender_SystemKey_SilentlySkipped(t *testing.T) {
-	tmpls, err := chalkboard.LoadDefaultTemplates()
+	tmpls, err := form.LoadDefaultTemplates()
 	require.NoError(t, err)
 
-	prev := chalkboard.Snapshot{}
-	next := chalkboard.FromMap(map[string]json.RawMessage{
+	prev := form.Snapshot{}
+	next := form.FromMap(map[string]json.RawMessage{
 		"system.credo":       raw(t, "you are figaro"),
 		"system.environment": raw(t, "env"),
 	})
 	p := next.Diff(prev)
 
-	rendered, err := chalkboard.Render(p, prev, tmpls)
+	rendered, err := form.Render(p, prev, tmpls)
 	require.NoError(t, err)
 	assert.Empty(t, rendered, "system.* keys must never produce reminder blocks; providers consume them directly")
 }
 
 func TestRender_EmptyPatch(t *testing.T) {
-	tmpls, err := chalkboard.LoadDefaultTemplates()
+	tmpls, err := form.LoadDefaultTemplates()
 	require.NoError(t, err)
 
-	rendered, err := chalkboard.Render(chalkboard.Patch{}, chalkboard.Snapshot{}, tmpls)
+	rendered, err := form.Render(form.Patch{}, form.Snapshot{}, tmpls)
 	require.NoError(t, err)
 	assert.Empty(t, rendered)
 }
 
 func TestRender_OverrideTemplate(t *testing.T) {
-	tmpls, err := chalkboard.LoadDefaultTemplates()
+	tmpls, err := form.LoadDefaultTemplates()
 	require.NoError(t, err)
 
 	dir := t.TempDir()
 	require.NoError(t, writeFile(filepath.Join(dir, "cwd.tmpl"), "you are working in {{.NewString}}"))
 
-	overridden, err := chalkboard.LoadOverrideTemplates(tmpls, dir)
+	overridden, err := form.LoadOverrideTemplates(tmpls, dir)
 	require.NoError(t, err)
 
-	prev := chalkboard.Snapshot{}
-	next := chalkboard.FromMap(map[string]json.RawMessage{"cwd": raw(t, "/over")})
+	prev := form.Snapshot{}
+	next := form.FromMap(map[string]json.RawMessage{"cwd": raw(t, "/over")})
 	p := next.Diff(prev)
 
-	rendered, err := chalkboard.Render(p, prev, overridden)
+	rendered, err := form.Render(p, prev, overridden)
 	require.NoError(t, err)
 	require.Len(t, rendered, 1)
 	assert.Equal(t, "you are working in /over", rendered[0].Body)
@@ -240,11 +240,11 @@ func TestRender_OverrideTemplate(t *testing.T) {
 // --- Lint ---
 
 func TestLint_ImperativePrefix(t *testing.T) {
-	rendered := []chalkboard.RenderedEntry{
+	rendered := []form.RenderedEntry{
 		{Key: "x", Body: "YOU MUST always use ripgrep"},
 		{Key: "y", Body: "Working directory: /foo"},
 	}
-	issues := chalkboard.Lint(rendered, chalkboard.LintOptions{})
+	issues := form.Lint(rendered, form.LintOptions{})
 	require.Len(t, issues, 1)
 	assert.Equal(t, "x", issues[0].Key)
 	assert.Contains(t, issues[0].Reason, "imperative")
@@ -255,19 +255,19 @@ func TestLint_Length(t *testing.T) {
 	for i := range long {
 		long[i] = 'x'
 	}
-	rendered := []chalkboard.RenderedEntry{
+	rendered := []form.RenderedEntry{
 		{Key: "x", Body: string(long)},
 	}
-	issues := chalkboard.Lint(rendered, chalkboard.LintOptions{MaxBodyLength: 100})
+	issues := form.Lint(rendered, form.LintOptions{MaxBodyLength: 100})
 	require.Len(t, issues, 1)
 	assert.Contains(t, issues[0].Reason, "exceeds")
 }
 
 func TestLint_Duplicate(t *testing.T) {
-	rendered := []chalkboard.RenderedEntry{
+	rendered := []form.RenderedEntry{
 		{Key: "x", Body: "Quick of hand. Light on your feet."},
 	}
-	issues := chalkboard.Lint(rendered, chalkboard.LintOptions{
+	issues := form.Lint(rendered, form.LintOptions{
 		DuplicateText: []string{"Quick of hand. Light on your feet."},
 	})
 	require.Len(t, issues, 1)
@@ -275,10 +275,10 @@ func TestLint_Duplicate(t *testing.T) {
 }
 
 func TestLint_CleanBody(t *testing.T) {
-	rendered := []chalkboard.RenderedEntry{
+	rendered := []form.RenderedEntry{
 		{Key: "x", Body: "Working directory: /foo"},
 	}
-	issues := chalkboard.Lint(rendered, chalkboard.LintOptions{})
+	issues := form.Lint(rendered, form.LintOptions{})
 	assert.Empty(t, issues)
 }
 

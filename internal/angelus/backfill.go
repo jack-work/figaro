@@ -8,14 +8,14 @@ import (
 
 // metaBackfill upgrades AriaMeta sidecars written by builds that predate the
 // metadata-only dormant listing. Those sidecars carry the counts but not the
-// chalkboard-derived identity fields (mantra, cwd, outfit, provider/model),
+// form-derived identity fields (mantra, cwd, outfit, provider/model),
 // so every dormant aria listed as a bare "aria <id>" row. The truth still
-// lives in each aria's chalkboard; fold it in once and the sidecar is current
+// lives in each aria's form; fold it in once and the sidecar is current
 // forever after (live actors republish full meta on every turn).
 //
 // Runs in the background at startup. Only metas missing ALL identity fields
 // are touched, so a completed sweep is a near-free scan on later starts, and
-// an aria whose chalkboard genuinely has no identity is retried harmlessly.
+// an aria whose form genuinely has no identity is retried harmlessly.
 // Live arias are skipped — their actor owns the sidecar.
 func (a *Angelus) metaBackfill(ctx context.Context) {
 	if a.Backend == nil {
@@ -38,7 +38,7 @@ func (a *Angelus) metaBackfill(ctx context.Context) {
 		if meta.Mantra != "" || meta.OutfitName != "" || meta.Cwd != "" {
 			continue // already carries identity fields
 		}
-		snap, err := a.Backend.ChalkboardState(id)
+		snap, err := a.Backend.FormState(id)
 		if err != nil {
 			continue
 		}

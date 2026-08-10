@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
@@ -52,17 +52,17 @@ func realisticLog(tb testing.TB, n int, withUsage bool) store.Log[message.Messag
 
 func gapAgent(tb testing.TB, n int, withUsage bool) *Agent {
 	tb.Helper()
-	cb, _ := chalkboard.Open("")
-	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+	cb, _ := form.Open("")
+	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
 		"system.model": json.RawMessage(`"claude-sonnet-4-5"`),
 		"mantra":       json.RawMessage(`"benchmark"`),
 	}})
 	tb.Cleanup(func() { _ = cb.Close() })
 	a := &Agent{
-		figLog:     realisticLog(tb, n, withUsage),
-		chalkboard: cb,
-		proj:       uiir.New(nil),
-		ariaSrv:    aria.NewServer(),
+		figLog:  realisticLog(tb, n, withUsage),
+		form:    cb,
+		proj:    uiir.New(nil),
+		ariaSrv: aria.NewServer(),
 	}
 	a.bindProvider(perfProvider{})
 	a.refreshMetricsFrom(a.Context())

@@ -3,7 +3,7 @@ package anthropic
 import (
 	"encoding/json"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 )
 
@@ -11,7 +11,7 @@ import (
 // before/after wire-shape parity.
 func (a *Anthropic) projectMessages(msgs []message.Message) (result []nativeMessage, perFLT []json.RawMessage) {
 	perFLT = make([]json.RawMessage, len(msgs))
-	prevSnap := chalkboard.Snapshot{}
+	prevSnap := form.Snapshot{}
 	for i, msg := range msgs {
 		nm, ok := a.renderMessage(msg, &prevSnap)
 		if !ok {
@@ -29,7 +29,7 @@ func (a *Anthropic) projectMessages(msgs []message.Message) (result []nativeMess
 // each IR message into per-message wire bytes.
 func (a *Anthropic) encodeAll(msgs []message.Message) [][]json.RawMessage {
 	out := make([][]json.RawMessage, 0, len(msgs))
-	prevSnap := chalkboard.Snapshot{}
+	prevSnap := form.Snapshot{}
 	for _, msg := range msgs {
 		nm, ok := a.renderMessage(msg, &prevSnap)
 		if !ok {

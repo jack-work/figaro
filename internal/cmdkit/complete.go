@@ -245,7 +245,7 @@ _%s "$@"
 func (r *Router) writeFishCompletion(w io.Writer) error {
 	// Note: we do NOT call `complete -c <name> -f` to disable fish's
 	// native filename fallback. The __complete dispatcher emits a
-	// best-effort candidate pool (e.g. chalkboard keys + a filtered
+	// best-effort candidate pool (e.g. form keys + a filtered
 	// CWD listing past --), but it deliberately drops names with
 	// shell-unsafe characters and hidden entries. Fish's built-in
 	// file completion handles those cases natively and is far more

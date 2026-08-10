@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 )
@@ -29,22 +29,22 @@ func fakeSchema() interface{} {
 
 // withKey returns snap plus one key. Snapshots are immutable values,
 // so derived boards are built with Apply rather than assigned into.
-func withKey(s chalkboard.Snapshot, key string, v json.RawMessage) chalkboard.Snapshot {
-	return s.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{key: v}})
+func withKey(s form.Snapshot, key string, v json.RawMessage) form.Snapshot {
+	return s.Apply(form.Patch{Set: map[string]json.RawMessage{key: v}})
 }
 
-func systemSnapshot(t *testing.T, text string) chalkboard.Snapshot {
+func systemSnapshot(t *testing.T, text string) form.Snapshot {
 	t.Helper()
 	raw, err := json.Marshal(text)
 	require.NoError(t, err)
-	return chalkboard.FromMap(map[string]json.RawMessage{"system.credo": raw})
+	return form.FromMap(map[string]json.RawMessage{"system.credo": raw})
 }
 
 // encodeAll mirrors the agent's catchUp: encode each IR message into
 // per-message wire bytes.
 func encodeAll(p *Provider, msgs []message.Message) [][]json.RawMessage {
 	out := make([][]json.RawMessage, 0, len(msgs))
-	prevSnap := chalkboard.Snapshot{}
+	prevSnap := form.Snapshot{}
 	for _, msg := range msgs {
 		mp, ok := p.renderMessage(msg, &prevSnap)
 		if !ok {
@@ -73,7 +73,7 @@ func projectAll(t testing.TB, perMessage [][]json.RawMessage, lts []uint64) proj
 	return projected
 }
 
-func legacyBuildParams(perMessage [][]json.RawMessage, lts []uint64, snap chalkboard.Snapshot, tools []provider.Tool, maxTokens int64, oauth bool, model string) (anthropic.MessageNewParams, error) {
+func legacyBuildParams(perMessage [][]json.RawMessage, lts []uint64, snap form.Snapshot, tools []provider.Tool, maxTokens int64, oauth bool, model string) (anthropic.MessageNewParams, error) {
 	params := anthropic.MessageNewParams{
 		MaxTokens: maxTokens,
 		Model:     anthropic.Model(model),
@@ -173,7 +173,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			// IR -> wire is deterministic; capture once.
-			encoded, err := p.encode(tc.ir, chalkboard.Snapshot{})
+			encoded, err := p.encode(tc.ir, form.Snapshot{})
 			require.NoError(t, err)
 			require.Len(t, encoded, 1)
 			wire := encoded[0]
@@ -424,7 +424,7 @@ func TestBuildParams_ByteIdenticalToCachedReconstruction(t *testing.T) {
 	}}
 	cases := []struct {
 		name   string
-		snap   chalkboard.Snapshot
+		snap   form.Snapshot
 		oauth  bool
 		model  string
 		maxOut int64
@@ -436,7 +436,7 @@ func TestBuildParams_ByteIdenticalToCachedReconstruction(t *testing.T) {
 		},
 		{
 			name: "per_lt_tags_after_coalescing",
-			snap: chalkboard.FromMap(map[string]json.RawMessage{
+			snap: form.FromMap(map[string]json.RawMessage{
 				"system.cache_control": json.RawMessage(`"none"`),
 				"system.tags":          json.RawMessage(`{"11":{"cache_control":"1h"},"13":{"cache_control":"5m"},"14":{"cache_control":"ephemeral"}}`),
 			}),
@@ -444,7 +444,7 @@ func TestBuildParams_ByteIdenticalToCachedReconstruction(t *testing.T) {
 		},
 		{
 			name: "budget_thinking_and_signed_block",
-			snap: chalkboard.FromMap(map[string]json.RawMessage{
+			snap: form.FromMap(map[string]json.RawMessage{
 				"system.cache_control":   json.RawMessage(`"ephemeral"`),
 				"system.thinking_budget": json.RawMessage(`2048`),
 			}),
@@ -453,7 +453,7 @@ func TestBuildParams_ByteIdenticalToCachedReconstruction(t *testing.T) {
 		},
 		{
 			name: "adaptive_thinking_model_switch",
-			snap: chalkboard.FromMap(map[string]json.RawMessage{
+			snap: form.FromMap(map[string]json.RawMessage{
 				"system.cache_control":   json.RawMessage(`"5m"`),
 				"system.thinking_effort": json.RawMessage(`"medium"`),
 			}),

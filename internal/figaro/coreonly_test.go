@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/rpc"
 )
@@ -22,8 +22,8 @@ import (
 // If this test fails, a build without the UI IR conversion is no longer viable
 // and the boundary in projector_boundary_test.go has become decorative.
 func TestCoreOnlyAgentRunsTurnsAndPersistsFigIR(t *testing.T) {
-	cb, _ := chalkboard.Open("")
-	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+	cb, _ := form.Open("")
+	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
 		"system.model":      json.RawMessage(`"mock-model-v1"`),
 		"system.provider":   json.RawMessage(`"mock"`),
 		"system.max_tokens": json.RawMessage(`1024`),
@@ -34,7 +34,7 @@ func TestCoreOnlyAgentRunsTurnsAndPersistsFigIR(t *testing.T) {
 		ID:         "core-only-001",
 		SocketPath: filepath.Join(t.TempDir(), "figaro.sock"),
 		Provider:   &mockProvider{response: "pong"},
-		Chalkboard: cb,
+		Form:       cb,
 	})
 	t.Cleanup(a.Kill)
 

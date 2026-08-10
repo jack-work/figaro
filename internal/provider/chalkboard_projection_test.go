@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -34,7 +34,7 @@ func (b *fakeBoard) PatchesBetween(after, upTo uint64) []message.Patch {
 	return out
 }
 
-// stamp appends an entry carrying a chalkboard mark, the way a real IR
+// stamp appends an entry carrying a form mark, the way a real IR
 // record does.
 func stamp(t *testing.T, log *store.MemLog[message.Message], text string, at uint64) {
 	t.Helper()
@@ -54,7 +54,7 @@ func stamp(t *testing.T, log *store.MemLog[message.Message], text string, at uin
 // compare two projections by what the model would actually have seen.
 func renderedKeys(config ProjectionConfig[EncodedMessages]) (*IncrementalProjection[EncodedMessages], []string, error) {
 	var seen []string
-	config.Encode = func(msg message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
+	config.Encode = func(msg message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 		for _, p := range msg.Patches {
 			for k := range p.Set {
 				seen = append(seen, k)
@@ -82,7 +82,7 @@ func TestWarmProjectionRendersWhatAColdOneWould(t *testing.T) {
 	}
 
 	cold, coldKeys, err := renderedKeys(ProjectionConfig[EncodedMessages]{
-		Log: build(), Fingerprint: "v1", Chalkboard: newFakeBoard(2, 3, 4, 5),
+		Log: build(), Fingerprint: "v1", Form: newFakeBoard(2, 3, 4, 5),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -93,14 +93,14 @@ func TestWarmProjectionRendersWhatAColdOneWould(t *testing.T) {
 	stamp(t, warmLog, "one", 2)
 	stamp(t, warmLog, "two", 4)
 	first, warmKeys, err := renderedKeys(ProjectionConfig[EncodedMessages]{
-		Log: warmLog, Fingerprint: "v1", Chalkboard: newFakeBoard(2, 3, 4, 5),
+		Log: warmLog, Fingerprint: "v1", Form: newFakeBoard(2, 3, 4, 5),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	stamp(t, warmLog, "three", 5)
 	_, moreKeys, err := renderedKeys(ProjectionConfig[EncodedMessages]{
-		Log: warmLog, Fingerprint: "v1", Chalkboard: newFakeBoard(2, 3, 4, 5),
+		Log: warmLog, Fingerprint: "v1", Form: newFakeBoard(2, 3, 4, 5),
 		Previous: first,
 	})
 	if err != nil {
@@ -130,7 +130,7 @@ func TestEveryPatchRendersExactlyOnceAcrossResumes(t *testing.T) {
 		// does: it is called per Send, not per turn. A test that reuses one
 		// cursor cannot reproduce the bug this file exists for.
 		proj, keys, err := renderedKeys(ProjectionConfig[EncodedMessages]{
-			Log: log, Fingerprint: "v1", Chalkboard: newFakeBoard(2, 3, 4, 5, 6), Previous: prev,
+			Log: log, Fingerprint: "v1", Form: newFakeBoard(2, 3, 4, 5, 6), Previous: prev,
 		})
 		if err != nil {
 			t.Fatal(err)

@@ -5,18 +5,18 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 )
 
-func TestCompleteChalkboardKeys_IncludesAllKnownAndExpandsEnv(t *testing.T) {
-	got := completeChalkboardKeys(nil)
+func TestCompleteFormKeys_IncludesAllKnownAndExpandsEnv(t *testing.T) {
+	got := completeFormKeys(nil)
 	gotSet := map[string]struct{}{}
 	for _, k := range got {
 		gotSet[k] = struct{}{}
 	}
 
 	// Every non-templated well-known key must appear verbatim.
-	for _, d := range chalkboard.WellKnownKeys() {
+	for _, d := range form.WellKnownKeys() {
 		if strings.HasSuffix(d.Key, "<name>") {
 			continue
 		}
@@ -32,7 +32,7 @@ func TestCompleteChalkboardKeys_IncludesAllKnownAndExpandsEnv(t *testing.T) {
 	}
 
 	// Each allowlisted env var must produce an entry.
-	for _, name := range chalkboard.EnvironmentAllowlist {
+	for _, name := range form.EnvironmentAllowlist {
 		want := "system.environment." + strings.ToLower(name)
 		if _, ok := gotSet[want]; !ok {
 			t.Errorf("missing expanded env entry %q", want)
@@ -68,7 +68,7 @@ func TestSoftFetchLiveKeysReturnsNilWhenDaemonDown(t *testing.T) {
 	// The premise, established rather than assumed: no daemon is
 	// reachable, so the call must fail soft and return nil within the
 	// timeout. Without this the test found the developer's own angelus
-	// and returned their live chalkboard keys.
+	// and returned their live form keys.
 	isolateDaemonEnv(t)
 	if got := softFetchLiveKeys(); got != nil {
 		t.Errorf("expected nil when daemon unavailable, got %v", got)

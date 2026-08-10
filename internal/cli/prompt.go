@@ -17,7 +17,7 @@ import (
 
 // runPrompt resolves the shell-bound figaro and prompts it. spec dresses the
 // aria: it is the birth outfit when this call mints one, and rides the prompt
-// as a chalkboard patch when the shell is already bound (see promptOutfit).
+// as a form patch when the shell is already bound (see promptOutfit).
 func runPrompt(loaded *config.Loaded, d dressing, prompt string, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -74,7 +74,7 @@ func runNewPrompt(loaded *config.Loaded, prompt string, d dressing, set renderSe
 		}
 		defer fcli.Close()
 		qctx, qcancel := context.WithTimeout(ctx, 10*time.Second)
-		if _, _, qerr := fcli.Qua(qctx, prompt, buildPromptChalkboard()); qerr != nil {
+		if _, _, qerr := fcli.Qua(qctx, prompt, buildPromptForm()); qerr != nil {
 			qcancel()
 			dieWithClosure(qerr, "prompt: %s", qerr)
 		}
@@ -116,7 +116,7 @@ func submitAndExit(ctx context.Context, loaded *config.Loaded, ariaID, prompt st
 
 	qctx, qcancel := context.WithTimeout(ctx, 10*time.Second)
 	defer qcancel()
-	if _, _, qerr := fcli.Qua(qctx, prompt, buildPromptChalkboard()); qerr != nil {
+	if _, _, qerr := fcli.Qua(qctx, prompt, buildPromptForm()); qerr != nil {
 		dieWithClosure(qerr, "prompt: %s", qerr)
 	}
 }

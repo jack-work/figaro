@@ -7,14 +7,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 )
 
 func renderNative(t *testing.T, msg message.Message) map[string]any {
 	t.Helper()
 	a := &Anthropic{}
-	snap := chalkboard.Snapshot{}
+	snap := form.Snapshot{}
 	nm, ok := a.renderMessage(msg, &snap)
 	require.True(t, ok, "message rendered to nothing")
 	raw, err := json.Marshal(nm)

@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/tool"
@@ -55,8 +55,8 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 		}},
 		streamEnd: 10 * time.Millisecond,
 	}
-	cb, _ := chalkboard.Open("")
-	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+	cb, _ := form.Open("")
+	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"mock"`),
 		"system.provider": json.RawMessage(`"staggered"`),
 	}})
@@ -66,7 +66,7 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 		SocketPath: "/tmp/steering-order.sock",
 		Provider:   prov,
 		Tools:      reg,
-		Chalkboard: cb,
+		Form:       cb,
 	})
 	defer a.Kill()
 
@@ -156,8 +156,8 @@ func TestMidTurnPromptJoinsTheRunningTurn(t *testing.T) {
 		tools:     []specTool{{id: "tc_steer", name: "steer", args: map[string]interface{}{}, readyAt: 0}},
 		streamEnd: 10 * time.Millisecond,
 	}
-	cb, _ := chalkboard.Open("")
-	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+	cb, _ := form.Open("")
+	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"mock"`),
 		"system.provider": json.RawMessage(`"staggered"`),
 	}})
@@ -167,7 +167,7 @@ func TestMidTurnPromptJoinsTheRunningTurn(t *testing.T) {
 		SocketPath: "/tmp/unmarked-midturn.sock",
 		Provider:   prov,
 		Tools:      reg,
-		Chalkboard: cb,
+		Form:       cb,
 	})
 	defer a.Kill()
 
@@ -199,11 +199,11 @@ func TestMidTurnPromptJoinsTheRunningTurn(t *testing.T) {
 	require.Equal(t, int32(2), prov.calls.Load())
 }
 
-// TestChalkboardSetDuringToolRoundAppliesNextRound proves a chalkboard patch
+// TestFormSetDuringToolRoundAppliesNextRound proves a form patch
 // enqueued mid-turn (a model switch) is serviced at the same tool-window
 // boundary steering prompts are — so the next provider round already sees the
 // new model, rather than the patch waiting out the whole turn.
-func TestChalkboardSetDuringToolRoundAppliesNextRound(t *testing.T) {
+func TestFormSetDuringToolRoundAppliesNextRound(t *testing.T) {
 	bt := &blockingSteeringTool{
 		started: make(chan struct{}),
 		release: make(chan struct{}),
@@ -219,8 +219,8 @@ func TestChalkboardSetDuringToolRoundAppliesNextRound(t *testing.T) {
 		}},
 		streamEnd: 10 * time.Millisecond,
 	}
-	cb, _ := chalkboard.Open("")
-	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+	cb, _ := form.Open("")
+	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"before"`),
 		"system.provider": json.RawMessage(`"staggered"`),
 	}})
@@ -230,7 +230,7 @@ func TestChalkboardSetDuringToolRoundAppliesNextRound(t *testing.T) {
 		SocketPath: "/tmp/midturn-set.sock",
 		Provider:   prov,
 		Tools:      reg,
-		Chalkboard: cb,
+		Form:       cb,
 	})
 	defer a.Kill()
 
@@ -242,7 +242,7 @@ func TestChalkboardSetDuringToolRoundAppliesNextRound(t *testing.T) {
 		t.Fatal("tool did not start")
 	}
 	// Switch the model while the tool round is in flight.
-	_, _, err := a.Set(chalkboard.Patch{Set: map[string]json.RawMessage{
+	_, _, err := a.Set(form.Patch{Set: map[string]json.RawMessage{
 		"system.model": json.RawMessage(`"after"`),
 	}}, 0)
 	require.NoError(t, err)

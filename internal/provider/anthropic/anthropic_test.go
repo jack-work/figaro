@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 )
@@ -23,20 +23,20 @@ func fakeSchema() interface{} {
 	}
 }
 
-// systemSnapshot returns a chalkboard snapshot that injects the given
+// systemSnapshot returns a form snapshot that injects the given
 // text as system.credo — the canonical source for the projection's
 // system block.
 // withKey returns snap plus one key. Snapshots are immutable values,
 // so derived boards are built with Apply rather than assigned into.
-func withKey(s chalkboard.Snapshot, key string, v json.RawMessage) chalkboard.Snapshot {
-	return s.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{key: v}})
+func withKey(s form.Snapshot, key string, v json.RawMessage) form.Snapshot {
+	return s.Apply(form.Patch{Set: map[string]json.RawMessage{key: v}})
 }
 
-func systemSnapshot(t *testing.T, text string) chalkboard.Snapshot {
+func systemSnapshot(t *testing.T, text string) form.Snapshot {
 	t.Helper()
 	raw, err := json.Marshal(text)
 	require.NoError(t, err)
-	return chalkboard.FromMap(map[string]json.RawMessage{"system.credo": raw})
+	return form.FromMap(map[string]json.RawMessage{"system.credo": raw})
 }
 
 // TestProjectTools_Deterministic verifies that two consecutive
@@ -195,7 +195,7 @@ func TestProjectMessages_OAuthSystemArray(t *testing.T) {
 }
 
 // TestProjectMessages_PerLTTag verifies that a `system.tags[<lt>].cache_control`
-// chalkboard entry attaches cache_control to the wire message whose
+// form entry attaches cache_control to the wire message whose
 // figLog LT matches.
 func TestProjectMessages_PerLTTag(t *testing.T) {
 	a := &Anthropic{}
@@ -231,7 +231,7 @@ func TestProjectMessages_PerLTTag(t *testing.T) {
 
 // TestCachingIsOnByDefault pins the contract that known_keys.go and the
 // cache-control skill both state: caching is ON at short retention with no
-// chalkboard key set at all.
+// form key set at all.
 //
 // It was not. The direct provider marked breakpoints only when
 // system.cache_control was explicitly set, so every default aria — this is

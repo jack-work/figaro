@@ -62,12 +62,12 @@ func TestAriasWorkEitherWay(t *testing.T) {
 		if _, _, err := b.Fork(conv); err != nil {
 			t.Fatalf("fork: %v", err)
 		}
-		snap, err := b.ChalkboardState(conv)
+		snap, err := b.FormState(conv)
 		if err != nil {
-			t.Fatalf("chalkboard: %v", err)
+			t.Fatalf("form: %v", err)
 		}
 		if v, ok := snap.Get("system.model"); !ok || string(v) != `"m"` {
-			t.Errorf("conversation lost its outfit chalkboard: %s ok=%v", v, ok)
+			t.Errorf("conversation lost its outfit form: %s ok=%v", v, ok)
 		}
 	})
 }
@@ -159,14 +159,14 @@ func TestDeleteRepairsTheBoundary(t *testing.T) {
 	}
 	// The boundary is repaired first: alt absorbs the prefix it borrows,
 	// then conv's subtree goes. alt must survive with its history intact.
-	before, err := b.ChalkboardState(alt)
+	before, err := b.FormState(alt)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := b.Store().RemoveLeaf(conv, true); err != nil {
 		t.Fatalf("delete after boundary repair: %v", err)
 	}
-	after, err := b.ChalkboardState(alt)
+	after, err := b.FormState(alt)
 	if err != nil {
 		t.Fatalf("the promoted aria did not survive the delete: %v", err)
 	}
@@ -201,11 +201,11 @@ func TestNormalizeMakesDeletesFree(t *testing.T) {
 		t.Fatal("normalize absorbed nothing, but an aria was promoted")
 	}
 	// The survivor now owns its history, so the delete owes no repair.
-	before, _ := b.ChalkboardState(alt)
+	before, _ := b.FormState(alt)
 	if err := b.Store().RemoveLeaf(conv, true); err != nil {
 		t.Fatalf("delete after normalize: %v", err)
 	}
-	after, err := b.ChalkboardState(alt)
+	after, err := b.FormState(alt)
 	if err != nil {
 		t.Fatalf("survivor broken by the delete: %v", err)
 	}

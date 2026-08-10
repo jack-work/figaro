@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
@@ -36,7 +36,7 @@ func (m *mockProvider) Name() string                                            
 func (m *mockProvider) Fingerprint() string                                      { return "mock/v0" }
 func (m *mockProvider) SetModel(model string)                                    {}
 func (m *mockProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) { return nil, nil }
-func (m *mockProvider) encode(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
+func (m *mockProvider) encode(_ message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 	return []json.RawMessage{json.RawMessage(`{"role": livedoc.RoleInput,"content":[]}`)}, nil
 }
 
@@ -80,7 +80,7 @@ func (metricsProvider) Name() string                                         { r
 func (metricsProvider) Fingerprint() string                                  { return "metrics/v1" }
 func (metricsProvider) SetModel(string)                                      {}
 func (metricsProvider) Models(context.Context) ([]provider.ModelInfo, error) { return nil, nil }
-func (metricsProvider) ContextLimit(string, chalkboard.Snapshot) int         { return 128000 }
+func (metricsProvider) ContextLimit(string, form.Snapshot) int               { return 128000 }
 func (metricsProvider) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
 	msg := message.Message{
 		Role:       message.RoleOutput,
@@ -110,7 +110,7 @@ func (p *lateLimitProvider) Name() string                                       
 func (p *lateLimitProvider) Fingerprint() string                                  { return "late-limit/v1" }
 func (p *lateLimitProvider) SetModel(string)                                      {}
 func (p *lateLimitProvider) Models(context.Context) ([]provider.ModelInfo, error) { return nil, nil }
-func (p *lateLimitProvider) ContextLimit(string, chalkboard.Snapshot) int {
+func (p *lateLimitProvider) ContextLimit(string, form.Snapshot) int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.limit
@@ -137,13 +137,13 @@ func (p *lateLimitProvider) Send(_ context.Context, in provider.SendInput, bus p
 // mockEncodeFn matches the per-message encoder shape. Provider mocks
 // supply their own implementations so spies (chalkSpyProvider) can
 // record what they would have encoded.
-type mockEncodeFn func(msg message.Message, prev chalkboard.Snapshot) ([]json.RawMessage, error)
+type mockEncodeFn func(msg message.Message, prev form.Snapshot) ([]json.RawMessage, error)
 
 // mockCatchUp catches up the cache from the durable figLog using
 // the given encoder. Mirrors what real providers do at the top of
 // Send. Skipped when cache is nil (ephemeral tests).
 func mockCatchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], encode mockEncodeFn, fingerprint string) {
-	snap := chalkboard.Snapshot{}
+	snap := form.Snapshot{}
 	for _, e := range figLog.Read() {
 		msg := e.Payload
 		msg.LogicalTime = e.LT
@@ -184,7 +184,7 @@ func mockPushAssistant(figLog store.Log[message.Message], cache store.Log[[]json
 	if err == nil {
 		msg.LogicalTime = entry.LT
 		if cache != nil {
-			if payload, eErr := encode(msg, chalkboard.Snapshot{}); eErr == nil {
+			if payload, eErr := encode(msg, form.Snapshot{}); eErr == nil {
 				_, _ = cache.Append(store.Entry[[]json.RawMessage]{
 					FigaroLT:    entry.LT,
 					Payload:     payload,
@@ -258,8 +258,8 @@ func submitSteer(a *figaro.Agent, text string) {
 // --- Tests ---
 
 func newTestAgent(response string) *figaro.Agent {
-	cb, _ := chalkboard.Open("")
-	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+	cb, _ := form.Open("")
+	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
 		"system.model":      json.RawMessage(`"mock-model-v1"`),
 		"system.provider":   json.RawMessage(`"mock"`),
 		"system.max_tokens": json.RawMessage(`1024`),
@@ -269,20 +269,20 @@ func newTestAgent(response string) *figaro.Agent {
 		ID:         "test-001",
 		SocketPath: "/tmp/test-figaro.sock",
 		Provider:   &mockProvider{response: response},
-		Chalkboard: cb,
+		Form:       cb,
 	})
 }
 
 func TestAgentPersistsCompleteListMetadata(t *testing.T) {
 	backend, id := backedConv(t, t.TempDir())
-	_, applyErr := backend.ApplyChalkboard(id, message.Patch{Set: map[string]json.RawMessage{
+	_, applyErr := backend.ApplyForm(id, message.Patch{Set: map[string]json.RawMessage{
 		"mantra":     json.RawMessage(`"initial"`),
 		"system.cwd": json.RawMessage(`"work"`),
 	}})
 	require.NoError(t, applyErr)
-	snapshot, err := backend.ChalkboardState(id)
+	snapshot, err := backend.FormState(id)
 	require.NoError(t, err)
-	cb, _ := chalkboard.Open("")
+	cb, _ := form.Open("")
 	cb.Apply(snapshot.AsPatch())
 	createdAt := time.UnixMilli(1_000)
 	lastActive := time.UnixMilli(2_000)
@@ -293,7 +293,7 @@ func TestAgentPersistsCompleteListMetadata(t *testing.T) {
 		SocketPath: filepath.Join(t.TempDir(), "figaro.sock"),
 		Provider:   &mockProvider{},
 		Backend:    backend,
-		Chalkboard: cb,
+		Form:       cb,
 		CreatedAt:  createdAt,
 		LastActive: lastActive,
 	})
@@ -310,7 +310,7 @@ func TestAgentPersistsCompleteListMetadata(t *testing.T) {
 	require.Equal(t, createdAt.UnixMilli(), meta.CreatedAtMS)
 	require.Equal(t, lastActive.UnixMilli(), meta.LastActiveMS)
 
-	_, _, err = a.Set(chalkboard.Patch{Set: map[string]json.RawMessage{
+	_, _, err = a.Set(form.Patch{Set: map[string]json.RawMessage{
 		"mantra": json.RawMessage(`"updated"`),
 	}}, 0)
 	require.NoError(t, err)
@@ -323,7 +323,7 @@ func TestAgentPersistsCompleteListMetadata(t *testing.T) {
 // backedConv builds an XwalBackend, materializes an outfit + a fresh
 // conversation, and returns the backend and the minted conversation id.
 // The caller builds the agent (so it can set the response, seed the
-// chalkboard, etc.).
+// form, etc.).
 func backedConv(t *testing.T, dir string) (store.Backend, string) {
 	t.Helper()
 	b, err := store.NewXwalBackend(dir, 0)
@@ -415,8 +415,8 @@ loop:
 }
 
 func TestAgentContextMetricsTrackCurrentSession(t *testing.T) {
-	cb, _ := chalkboard.Open("")
-	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+	cb, _ := form.Open("")
+	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
 		"system.model": json.RawMessage(`"gpt-5.6-terra"`),
 		"mantra":       json.RawMessage(`"keep session accounting visible"`),
 	}})
@@ -425,7 +425,7 @@ func TestAgentContextMetricsTrackCurrentSession(t *testing.T) {
 		ID:         "metrics-001",
 		SocketPath: "/tmp/metrics-test.sock",
 		Provider:   metricsProvider{},
-		Chalkboard: cb,
+		Form:       cb,
 	})
 	defer a.Kill()
 
@@ -463,8 +463,8 @@ done:
 }
 
 func TestAgentFirstLiveFrameUsesResolvedContextLimit(t *testing.T) {
-	cb, _ := chalkboard.Open("")
-	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+	cb, _ := form.Open("")
+	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
 		"system.model": json.RawMessage(`"gpt-5.6-terra"`),
 	}})
 	a := figaro.NewAgent(figaro.Config{
@@ -472,7 +472,7 @@ func TestAgentFirstLiveFrameUsesResolvedContextLimit(t *testing.T) {
 		ID:         "late-limit-001",
 		SocketPath: "/tmp/late-limit-test.sock",
 		Provider:   &lateLimitProvider{},
-		Chalkboard: cb,
+		Form:       cb,
 	})
 	defer a.Kill()
 
@@ -720,7 +720,7 @@ func (p *panicProvider) Name() string                                           
 func (p *panicProvider) Fingerprint() string                                      { return "panic-mock/v0" }
 func (p *panicProvider) SetModel(model string)                                    {}
 func (p *panicProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) { return nil, nil }
-func (p *panicProvider) encode(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
+func (p *panicProvider) encode(_ message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 	return []json.RawMessage{json.RawMessage(`{"role": livedoc.RoleInput,"content":[]}`)}, nil
 }
 
@@ -1213,8 +1213,8 @@ var _ = json.RawMessage(nil)
 // the live frames.
 func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 	backend, id := backedConv(t, t.TempDir())
-	cb, _ := chalkboard.Open("")
-	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+	cb, _ := form.Open("")
+	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
 		"system.model":      json.RawMessage(`"mock-model-v1"`),
 		"system.provider":   json.RawMessage(`"mock"`),
 		"system.max_tokens": json.RawMessage(`1024`),
@@ -1225,7 +1225,7 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 		SocketPath: filepath.Join(t.TempDir(), "figaro.sock"),
 		Provider:   &streamingMockProvider{response: "ALPHA"},
 		Backend:    backend,
-		Chalkboard: cb,
+		Form:       cb,
 	})
 	defer a.Kill()
 
@@ -1399,8 +1399,8 @@ func TestAgent_QueuedPromptsRPC(t *testing.T) {
 	// drain loop so subsequent prompts pile up in the inbox verifiably.
 	release := make(chan struct{})
 	prov := &blockedProvider{release: release}
-	cb, _ := chalkboard.Open("")
-	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+	cb, _ := form.Open("")
+	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
 		"system.model":      json.RawMessage(`"mock-model-v1"`),
 		"system.provider":   json.RawMessage(`"mock"`),
 		"system.max_tokens": json.RawMessage(`1024`),
@@ -1410,7 +1410,7 @@ func TestAgent_QueuedPromptsRPC(t *testing.T) {
 		ID:         "q-001",
 		SocketPath: "/tmp/test-figaro-q.sock",
 		Provider:   prov,
-		Chalkboard: cb,
+		Form:       cb,
 	})
 	defer func() { close(release); a.Kill() }()
 

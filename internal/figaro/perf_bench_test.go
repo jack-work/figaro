@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/compose"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
@@ -50,8 +50,8 @@ func longMemLog(tb testing.TB, n int) store.Log[message.Message] {
 
 func BenchmarkAgentRestoreHistory10000(b *testing.B) {
 	log := longMemLog(b, 10_000)
-	cb, _ := chalkboard.Open("")
-	a := &Agent{figLog: log, chalkboard: cb}
+	cb, _ := form.Open("")
+	a := &Agent{figLog: log, form: cb}
 	a.bindProvider(perfProvider{})
 
 	b.ReportAllocs()
@@ -79,8 +79,8 @@ func BenchmarkInterruptRepair10000(b *testing.B) {
 
 func BenchmarkAgentInfo10000(b *testing.B) {
 	log := longMemLog(b, 10_000)
-	cb, _ := chalkboard.Open("")
-	a := &Agent{figLog: log, chalkboard: cb, inbox: NewInbox(context.Background())}
+	cb, _ := form.Open("")
+	a := &Agent{figLog: log, form: cb, inbox: NewInbox(context.Background())}
 	a.bindProvider(perfProvider{})
 	a.refreshMetrics()
 
@@ -93,8 +93,8 @@ func BenchmarkAgentInfo10000(b *testing.B) {
 
 func BenchmarkAgentMetricRefresh10000(b *testing.B) {
 	log := longMemLog(b, 10_000)
-	cb, _ := chalkboard.Open("")
-	a := &Agent{figLog: log, chalkboard: cb}
+	cb, _ := form.Open("")
+	a := &Agent{figLog: log, form: cb}
 	a.bindProvider(perfProvider{})
 	a.refreshMetrics()
 
@@ -117,13 +117,13 @@ func BenchmarkAgentMetricRefresh10000(b *testing.B) {
 
 func BenchmarkMetadataPublication10000(b *testing.B) {
 	log := longMemLog(b, 10_000)
-	cb, _ := chalkboard.Open("")
+	cb, _ := form.Open("")
 	backend := &metadataCaptureBackend{}
 	a := &Agent{
-		id:         "perf",
-		figLog:     log,
-		chalkboard: cb,
-		backend:    backend,
+		id:      "perf",
+		figLog:  log,
+		form:    cb,
+		backend: backend,
 	}
 	a.bindProvider(perfProvider{})
 	a.refreshMetrics()

@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
@@ -112,8 +112,8 @@ func runImageTurn(t *testing.T, id string, reg *tool.Registry, calls []message.C
 	t.Helper()
 
 	prov := &oneRoundProvider{calls: calls, captured: make(chan struct{})}
-	cb, _ := chalkboard.Open("")
-	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+	cb, _ := form.Open("")
+	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"mock"`),
 		"system.provider": json.RawMessage(`"oneround"`),
 	}})
@@ -123,7 +123,7 @@ func runImageTurn(t *testing.T, id string, reg *tool.Registry, calls []message.C
 		SocketPath: "/tmp/" + id + ".sock",
 		Provider:   prov,
 		Tools:      reg,
-		Chalkboard: cb,
+		Form:       cb,
 	})
 	defer a.Kill()
 

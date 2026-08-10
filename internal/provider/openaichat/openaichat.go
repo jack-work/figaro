@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/auth"
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
@@ -39,13 +39,13 @@ type Provider struct {
 	projection     *provider.IncrementalProjection[provider.EncodedMessages]
 
 	// markMode is the aria's configured marking strategy, refreshed from
-	// the chalkboard at the top of every Send. It participates in
+	// the form at the top of every Send. It participates in
 	// Fingerprint because it decides the SHAPE of every encoded message,
 	// and a shape change has to invalidate the translation cache rather
 	// than leave two shapes interleaved in one cached prefix.
 	markMode provider.MarkMode
 
-	// Templates renders chalkboard patches as <system-reminder> text, the
+	// Templates renders form patches as <system-reminder> text, the
 	// same projection the Anthropic providers do. nil = skip.
 	Templates *template.Template
 }
@@ -94,7 +94,7 @@ func (p *Provider) SetModel(model string) {
 	p.mu.Unlock()
 }
 
-func (p *Provider) resolveModel(snap chalkboard.Snapshot) string {
+func (p *Provider) resolveModel(snap form.Snapshot) string {
 	if v := snap.Lookup("system.model"); v != nil {
 		return p.Route.QualifyModel(*v)
 	}
@@ -187,7 +187,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if err != nil {
 		return err
 	}
-	perMessage, _ := p.catchUp(in.FigLog, cache, in.Chalkboard)
+	perMessage, _ := p.catchUp(in.FigLog, cache, in.Form)
 	if len(perMessage) == 0 {
 		return fmt.Errorf("empty context")
 	}
@@ -259,8 +259,8 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 }
 
 // assemble builds one request from cached per-message bytes plus live
-// chalkboard state.
-func (p *Provider) assemble(perMessage [][]json.RawMessage, snapshot chalkboard.Snapshot,
+// form state.
+func (p *Provider) assemble(perMessage [][]json.RawMessage, snapshot form.Snapshot,
 	tools []provider.Tool, maxTokens int, ariaID string) (chatRequest, error) {
 	if maxTokens == 0 {
 		maxTokens = p.MaxTokens
@@ -306,9 +306,9 @@ func (p *Provider) assemble(perMessage [][]json.RawMessage, snapshot chalkboard.
 }
 
 // encode projects one IR message to wire bytes for the per-LT cache. The
-// snapshot is the board as of the PREVIOUS message: chalkboard patches render
+// snapshot is the board as of the PREVIOUS message: form patches render
 // against it, so a reminder says what changed rather than restating the board.
-func (p *Provider) encode(msg message.Message, prevSnapshot chalkboard.Snapshot) ([]json.RawMessage, error) {
+func (p *Provider) encode(msg message.Message, prevSnapshot form.Snapshot) ([]json.RawMessage, error) {
 	msgs, err := encodeMessage(msg, p.plan().Blocks, p.renderPatches(msg.Patches, prevSnapshot))
 	if err != nil {
 		return nil, err
@@ -324,15 +324,15 @@ func (p *Provider) encode(msg message.Message, prevSnapshot chalkboard.Snapshot)
 	return out, nil
 }
 
-// renderPatches turns chalkboard patches into reminder text. One string per
+// renderPatches turns form patches into reminder text. One string per
 // patched key, in the order the patches arrived.
-func (p *Provider) renderPatches(patches []message.Patch, snap chalkboard.Snapshot) []string {
+func (p *Provider) renderPatches(patches []message.Patch, snap form.Snapshot) []string {
 	if len(patches) == 0 || p.Templates == nil {
 		return nil
 	}
 	var out []string
 	for _, patch := range patches {
-		rendered, err := chalkboard.Render(patch, snap, p.Templates)
+		rendered, err := form.Render(patch, snap, p.Templates)
 		if err != nil {
 			slog.Warn("openaichat: render patch", "err", err)
 		}
@@ -345,7 +345,7 @@ func (p *Provider) renderPatches(patches []message.Patch, snap chalkboard.Snapsh
 }
 
 func (p *Provider) assistantCache(msg message.Message) (provider.AssistantCache, error) {
-	encoded, err := p.encode(msg, chalkboard.Snapshot{})
+	encoded, err := p.encode(msg, form.Snapshot{})
 	if err != nil {
 		return provider.AssistantCache{}, err
 	}
@@ -403,7 +403,7 @@ func (p *Provider) invalidateIfStale(s store.Log[[]json.RawMessage]) bool {
 }
 
 func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage],
-	chalk provider.Chalkboard) ([][]json.RawMessage, []uint64) {
+	chalk provider.Form) ([][]json.RawMessage, []uint64) {
 	fp := p.Fingerprint()
 	p.mu.Lock()
 	previous := p.projection
@@ -412,7 +412,7 @@ func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]
 	projection, _, err := provider.ProjectIncrementally(provider.ProjectionConfig[provider.EncodedMessages]{
 		Log:         figLog,
 		Cache:       cache,
-		Chalkboard:  chalk,
+		Form:        chalk,
 		Previous:    previous,
 		Fingerprint: fp,
 		Encode:      p.encode,
@@ -442,7 +442,7 @@ func (p *Provider) acceptAssistantProjection(lt uint64, encoded []json.RawMessag
 	state := provider.AppendEncodedMessage(p.projection.State, encoded, lt)
 	p.projection = &provider.IncrementalProjection[provider.EncodedMessages]{
 		State:            state,
-		Chalkboard:       p.projection.Chalkboard,
+		Form:             p.projection.Form,
 		Fingerprint:      p.projection.Fingerprint,
 		Entries:          p.projection.Entries + 1,
 		LastLT:           lt,

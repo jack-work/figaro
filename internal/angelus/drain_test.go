@@ -120,8 +120,8 @@ model = "mock-model"
 		ProviderFactory: func(string, provider.Knobs) (provider.Provider, error) {
 			return &mockProviderForIntegration{}, nil
 		},
-		Ctx:                 ctx,
-		ChalkboardTemplates: template.New("t"),
+		Ctx:           ctx,
+		FormTemplates: template.New("t"),
 	})
 
 	const n = 8

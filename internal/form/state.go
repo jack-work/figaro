@@ -1,4 +1,4 @@
-package chalkboard
+package form
 
 import (
 	"errors"
@@ -18,13 +18,13 @@ type board struct {
 	dirty    bool
 }
 
-// State is a per-aria chalkboard state handle.
+// State is a per-aria form state handle.
 //
 // Concurrency contract: ONE WRITER, MANY READERS.
 //
 // The writer is the agent's inbox drain loop (Agent.act -> applyControlPatch
-// -> State.Apply). Readers are everyone else — the figaro.chalkboard RPC
-// handler, Agent.ApplyOutfit, Agent.chalkboardString/chalkboardInt via
+// -> State.Apply). Readers are everyone else — the figaro.form RPC
+// handler, Agent.ApplyOutfit, Agent.formString/formInt via
 // Agent.Info — and they run on RPC goroutines, concurrently with the writer.
 //
 // Because a Snapshot is an immutable persistent value, publishing one through
@@ -52,17 +52,17 @@ func Open(path string) (*State, error) {
 		if errors.Is(err, fs.ErrNotExist) {
 			return s, nil
 		}
-		return nil, fmt.Errorf("chalkboard.Open(%s): %w", path, err)
+		return nil, fmt.Errorf("form.Open(%s): %w", path, err)
 	}
 	if len(data) == 0 {
 		return s, nil
 	}
 	var snap Snapshot
-	// Direct, not through json.Unmarshal: see chalkboardReduce's comment —
+	// Direct, not through json.Unmarshal: see formReduce's comment —
 	// encoding/json pre-scans the whole document before handing it to an
 	// Unmarshaler, which doubles the cost for identical bytes.
 	if err := snap.UnmarshalJSON(data); err != nil {
-		return nil, fmt.Errorf("chalkboard.Open: parse %s: %w", path, err)
+		return nil, fmt.Errorf("form.Open: parse %s: %w", path, err)
 	}
 	s.publish(board{snapshot: snap})
 	return s, nil
@@ -111,19 +111,19 @@ func (s *State) Save() error {
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
-		return fmt.Errorf("chalkboard.Save: mkdir: %w", err)
+		return fmt.Errorf("form.Save: mkdir: %w", err)
 	}
 	data, err := old.snapshot.MarshalJSON() // direct; see Open
 	if err != nil {
-		return fmt.Errorf("chalkboard.Save: marshal: %w", err)
+		return fmt.Errorf("form.Save: marshal: %w", err)
 	}
 	tmp := s.path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return fmt.Errorf("chalkboard.Save: write tmp: %w", err)
+		return fmt.Errorf("form.Save: write tmp: %w", err)
 	}
 	if err := os.Rename(tmp, s.path); err != nil {
 		os.Remove(tmp)
-		return fmt.Errorf("chalkboard.Save: rename: %w", err)
+		return fmt.Errorf("form.Save: rename: %w", err)
 	}
 	// Clear dirty only if nothing was published while we were writing. A
 	// failed swap means newer state exists and is legitimately still dirty.

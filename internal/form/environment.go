@@ -1,4 +1,4 @@
-package chalkboard
+package form
 
 import (
 	"encoding/json"
@@ -7,7 +7,7 @@ import (
 )
 
 // EnvironmentAllowlist is the set of env vars captured into the
-// chalkboard. Read by the CLI on every prompt (so the agent sees
+// form. Read by the CLI on every prompt (so the agent sees
 // the caller's current env) and also on the first turn in the agent
 // (fallback for vars set before the daemon started).
 var EnvironmentAllowlist = []string{
@@ -15,7 +15,7 @@ var EnvironmentAllowlist = []string{
 }
 
 // EnvironmentSnapshot returns the allowlisted env vars as a
-// chalkboard snapshot map (key = "system.environment.<lower_name>",
+// form snapshot map (key = "system.environment.<lower_name>",
 // value = JSON string). Used by the CLI to send env vars with
 // each prompt so the agent always has the caller's current values.
 func EnvironmentSnapshot() map[string]json.RawMessage {

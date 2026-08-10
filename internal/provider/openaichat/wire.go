@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 )
@@ -317,8 +317,8 @@ func dataURL(mime, data string) string {
 }
 
 // systemMessage builds the leading system turn from the credo. It is rebuilt
-// every turn from live chalkboard state and never cached per-LT.
-func systemMessage(snapshot chalkboard.Snapshot, blocks bool) (*chatMessage, error) {
+// every turn from live form state and never cached per-LT.
+func systemMessage(snapshot form.Snapshot, blocks bool) (*chatMessage, error) {
 	text := readCredo(snapshot)
 	if text == "" {
 		return nil, nil
@@ -332,7 +332,7 @@ func systemMessage(snapshot chalkboard.Snapshot, blocks bool) (*chatMessage, err
 
 // readCredo extracts the credo, accepting the bare-string and the
 // ContentEnvelope shapes the outfitter emits.
-func readCredo(snapshot chalkboard.Snapshot) string {
+func readCredo(snapshot form.Snapshot) string {
 	raw, ok := snapshot.Get("system.credo")
 	if !ok {
 		return ""

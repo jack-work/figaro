@@ -20,7 +20,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/internal/auth"
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
@@ -348,7 +348,7 @@ func (a *Anthropic) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 // system.max_context_tokens if set, else the window learned from the models
 // endpoint, else the verified static table (0 when unknown). No network I/O —
 // status surfaces call this.
-func (a *Anthropic) ContextLimit(model string, snapshot chalkboard.Snapshot) int {
+func (a *Anthropic) ContextLimit(model string, snapshot form.Snapshot) int {
 	if model == "" {
 		a.mu.Lock()
 		model = a.Model
@@ -430,7 +430,7 @@ func cacheableNativeBlock(b nativeBlock) (keep, fatal bool) {
 
 func decodeNativeMessage(nm nativeMessage) message.Message {
 	// model/provider are not on the IR message — they live in the
-	// chalkboard (system.model / system.provider), derived on read.
+	// form (system.model / system.provider), derived on read.
 	m := message.Message{
 		Role: message.RoleFromWire(nm.Role),
 	}
@@ -575,7 +575,7 @@ type nativeTool struct {
 }
 
 // encode projects one IR message to native wire bytes.
-func (a *Anthropic) encode(msg message.Message, prevSnapshot chalkboard.Snapshot) ([]json.RawMessage, error) {
+func (a *Anthropic) encode(msg message.Message, prevSnapshot form.Snapshot) ([]json.RawMessage, error) {
 	snap := prevSnapshot
 	nm, ok := a.renderMessage(msg, &snap)
 	if !ok {
@@ -589,7 +589,7 @@ func (a *Anthropic) encode(msg message.Message, prevSnapshot chalkboard.Snapshot
 }
 
 // renderMessage produces the wire shape.
-func (a *Anthropic) renderMessage(msg message.Message, prevSnap *chalkboard.Snapshot) (nativeMessage, bool) {
+func (a *Anthropic) renderMessage(msg message.Message, prevSnap *form.Snapshot) (nativeMessage, bool) {
 	switch msg.Role {
 	case message.RoleInput:
 		toolImages := message.ToolImagesByCall(msg.Content)
@@ -688,7 +688,7 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *chalkboard.Snap
 	return nativeMessage{}, false
 }
 
-func (a *Anthropic) renderPatchBlocks(patches []message.Patch, prevSnap *chalkboard.Snapshot) []nativeBlock {
+func (a *Anthropic) renderPatchBlocks(patches []message.Patch, prevSnap *form.Snapshot) []nativeBlock {
 	if len(patches) == 0 || a.Templates == nil {
 		for _, p := range patches {
 			*prevSnap = prevSnap.Apply(p)
@@ -700,7 +700,7 @@ func (a *Anthropic) renderPatchBlocks(patches []message.Patch, prevSnap *chalkbo
 	}
 	var out []nativeBlock
 	for _, p := range patches {
-		rendered, err := chalkboard.Render(p, *prevSnap, a.Templates)
+		rendered, err := form.Render(p, *prevSnap, a.Templates)
 		if err != nil {
 			slog.Warn("anthropic: render patch", "err", err)
 		} else {
@@ -732,11 +732,11 @@ func projectTools(tools []provider.Tool) []nativeTool {
 
 // systemBlocks builds the system prefix: preamble + credo.
 //
-// The credo lives on the chalkboard at `system.credo`. It may be a
+// The credo lives on the form at `system.credo`. It may be a
 // bare string (inline TOML) or a ContentEnvelope object emitted by
 // the outfitter's fileName loader: {content, frontmatter, filePath}.
 // Prefer content, fall back to frontmatter, then to a bare string.
-func systemBlocks(snapshot chalkboard.Snapshot, oauth bool) []systemBlock {
+func systemBlocks(snapshot form.Snapshot, oauth bool) []systemBlock {
 	var out []systemBlock
 	systemText := readCredo(snapshot)
 	if oauth {
@@ -751,9 +751,9 @@ func systemBlocks(snapshot chalkboard.Snapshot, oauth bool) []systemBlock {
 	return out
 }
 
-// readCredo extracts the credo text from a chalkboard snapshot,
+// readCredo extracts the credo text from a form snapshot,
 // handling both the bare-string and ContentEnvelope shapes.
-func readCredo(snapshot chalkboard.Snapshot) string {
+func readCredo(snapshot form.Snapshot) string {
 	raw, ok := snapshot.Get("system.credo")
 	if !ok {
 		return ""
@@ -777,12 +777,12 @@ func readCredo(snapshot chalkboard.Snapshot) string {
 
 // projectMessagesWithModel assembles a nativeRequest from cached
 // per-message bytes.
-func (a *Anthropic) projectMessagesWithModel(perMessage [][]json.RawMessage, snapshot chalkboard.Snapshot, tools []provider.Tool, maxTokens int, oauth bool, model string) (nativeRequest, error) {
+func (a *Anthropic) projectMessagesWithModel(perMessage [][]json.RawMessage, snapshot form.Snapshot, tools []provider.Tool, maxTokens int, oauth bool, model string) (nativeRequest, error) {
 	return a.projectMessagesWithLTs(perMessage, nil, snapshot, tools, maxTokens, oauth, model)
 }
 
 // projectMessagesWithLTs is the assembler with per-message LTs.
-func (a *Anthropic) projectMessagesWithLTs(perMessage [][]json.RawMessage, lts []uint64, snapshot chalkboard.Snapshot, tools []provider.Tool, maxTokens int, oauth bool, model string) (nativeRequest, error) {
+func (a *Anthropic) projectMessagesWithLTs(perMessage [][]json.RawMessage, lts []uint64, snapshot form.Snapshot, tools []provider.Tool, maxTokens int, oauth bool, model string) (nativeRequest, error) {
 	if maxTokens == 0 {
 		maxTokens = a.MaxTokens
 	}
@@ -792,7 +792,7 @@ func (a *Anthropic) projectMessagesWithLTs(perMessage [][]json.RawMessage, lts [
 	req := nativeRequest{
 		Model: model, MaxTokens: maxTokens, Stream: true,
 		System: systemBlocks(snapshot, oauth),
-		// TODO: put tools on the chalkboard as an ordered list.
+		// TODO: put tools on the form as an ordered list.
 		Tools: projectTools(tools),
 	}
 	var msgLTs []uint64
@@ -834,7 +834,7 @@ func (a *Anthropic) projectMessagesWithLTs(perMessage [][]json.RawMessage, lts [
 
 // applyMessageTags reads system.tags and applies per-message
 // cache_control overrides keyed by logical time.
-func applyMessageTags(req *nativeRequest, msgLTs []uint64, snapshot chalkboard.Snapshot, caps provider.CacheCaps) {
+func applyMessageTags(req *nativeRequest, msgLTs []uint64, snapshot form.Snapshot, caps provider.CacheCaps) {
 	raw, ok := snapshot.Get("system.tags")
 	if !ok || len(raw) == 0 {
 		return
@@ -964,7 +964,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	if err != nil {
 		return err
 	}
-	perMessage, lts := a.catchUp(in.FigLog, cache, in.Chalkboard)
+	perMessage, lts := a.catchUp(in.FigLog, cache, in.Form)
 	if len(perMessage) == 0 {
 		return fmt.Errorf("empty context")
 	}
@@ -1046,7 +1046,7 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 	if err != nil {
 		return err
 	}
-	perMessage, lts := a.catchUp(in.FigLog, cache, in.Chalkboard)
+	perMessage, lts := a.catchUp(in.FigLog, cache, in.Form)
 	if len(perMessage) == 0 {
 		return fmt.Errorf("empty context")
 	}
@@ -1129,7 +1129,7 @@ func (a *Anthropic) assistantCacheNative(msg nativeMessage) (provider.AssistantC
 }
 
 func (a *Anthropic) assistantCache(msg message.Message) (provider.AssistantCache, error) {
-	encoded, err := a.encode(msg, chalkboard.Snapshot{})
+	encoded, err := a.encode(msg, form.Snapshot{})
 	if err != nil {
 		return provider.AssistantCache{}, err
 	}
@@ -1147,7 +1147,7 @@ func (a *Anthropic) acceptAssistantProjection(lt uint64, encoded []json.RawMessa
 	state := provider.AppendEncodedMessage(a.projection.State, encoded, lt)
 	a.projection = &provider.IncrementalProjection[provider.EncodedMessages]{
 		State:            state,
-		Chalkboard:       a.projection.Chalkboard,
+		Form:             a.projection.Form,
 		Fingerprint:      a.projection.Fingerprint,
 		Entries:          a.projection.Entries + 1,
 		LastLT:           lt,
@@ -1155,7 +1155,7 @@ func (a *Anthropic) acceptAssistantProjection(lt uint64, encoded []json.RawMessa
 	}
 }
 
-func (a *Anthropic) resolveModel(snap chalkboard.Snapshot) string {
+func (a *Anthropic) resolveModel(snap form.Snapshot) string {
 	if v := snap.Lookup("system.model"); v != nil {
 		return *v
 	}
@@ -1166,7 +1166,7 @@ func (a *Anthropic) resolveModel(snap chalkboard.Snapshot) string {
 
 // catchUp encodes uncached figLog entries and returns per-message
 // wire bytes.
-func (a *Anthropic) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], chalk provider.Chalkboard) ([][]json.RawMessage, []uint64) {
+func (a *Anthropic) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], chalk provider.Form) ([][]json.RawMessage, []uint64) {
 	fp := a.Fingerprint()
 	a.mu.Lock()
 	previous := a.projection
@@ -1175,7 +1175,7 @@ func (a *Anthropic) catchUp(figLog store.Log[message.Message], cache store.Log[[
 	projection, _, err := provider.ProjectIncrementally(provider.ProjectionConfig[provider.EncodedMessages]{
 		Log:         figLog,
 		Cache:       cache,
-		Chalkboard:  chalk,
+		Form:        chalk,
 		Previous:    previous,
 		Fingerprint: fp,
 		Encode:      a.encode,
@@ -1444,8 +1444,8 @@ func (a *Anthropic) foldSSEEvent(ctx context.Context, eventType string, data []b
 }
 
 // applyThinking enables extended thinking on the request when the
-// chalkboard has system.thinking_budget or system.thinking_effort set.
-func applyThinking(req *nativeRequest, snap chalkboard.Snapshot, model string) {
+// form has system.thinking_budget or system.thinking_effort set.
+func applyThinking(req *nativeRequest, snap form.Snapshot, model string) {
 	budgetRaw, _ := snap.Get("system.thinking_budget")
 	effortRaw, _ := snap.Get("system.thinking_effort")
 

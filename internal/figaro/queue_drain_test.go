@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
@@ -60,7 +60,7 @@ func TestDrain_LoneSubmitIsUntouched(t *testing.T) {
 }
 
 // The barrier survives at this drain site too: a queued set still splits the
-// run, so a prompt is never answered against a chalkboard it never saw.
+// run, so a prompt is never answered against a form it never saw.
 func TestDrain_SetStillBlocksTheIdleFold(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -132,12 +132,12 @@ func TestDrain_InterruptedTurnDoesNotSwallowTheQueue(t *testing.T) {
 // starting the actor: the point is to call the drain deliberately, and a
 // running drain loop would race the test for its own queue.
 func newDrainTestAgent(ctx context.Context) *Agent {
-	board, _ := chalkboard.Open("")
+	board, _ := form.Open("")
 	return &Agent{
 		id:          "drain-test",
 		inbox:       NewInbox(ctx),
 		figLog:      store.NewMemLog[message.Message](),
-		chalkboard:  board,
+		form:        board,
 		ariaSrv:     aria.NewServer(),
 		gov:         toolout.New(liveOutputTail),
 		argPartials: map[string]string{},

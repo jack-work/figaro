@@ -3,7 +3,7 @@ package anthropic
 import (
 	"testing"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 )
@@ -46,7 +46,7 @@ func BenchmarkProjectMessages_10msgs(b *testing.B) {
 	tools := benchTools()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = a.projectMessagesWithModel(pre, chalkboard.Snapshot{}, tools, 1024, false, "claude-test")
+		_, _ = a.projectMessagesWithModel(pre, form.Snapshot{}, tools, 1024, false, "claude-test")
 	}
 }
 
@@ -56,7 +56,7 @@ func BenchmarkProjectMessages_100msgs(b *testing.B) {
 	tools := benchTools()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = a.projectMessagesWithModel(pre, chalkboard.Snapshot{}, tools, 1024, false, "claude-test")
+		_, _ = a.projectMessagesWithModel(pre, form.Snapshot{}, tools, 1024, false, "claude-test")
 	}
 }
 

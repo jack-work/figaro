@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 )
 
@@ -25,7 +25,7 @@ func TestRenderMessage_InterruptSentinel(t *testing.T) {
 			{Type: message.ContentToolInvoke, ToolCallID: "toolu_b", ToolName: "read"},
 		},
 	)
-	snap := chalkboard.Snapshot{}
+	snap := form.Snapshot{}
 	mp, ok := p.renderMessage(sentinel, &snap)
 	require.True(t, ok, "sentinel should produce a MessageParam")
 
@@ -56,7 +56,7 @@ func TestRenderMessage_InterruptSentinel(t *testing.T) {
 func TestRenderMessage_InterruptSentinel_EmptyContentDropped(t *testing.T) {
 	p := &Provider{}
 	sentinel := message.Message{Role: message.RoleSystemInterrupt}
-	snap := chalkboard.Snapshot{}
+	snap := form.Snapshot{}
 	_, ok := p.renderMessage(sentinel, &snap)
 	assert.False(t, ok, "sentinel with no interrupt blocks should be skipped")
 }
@@ -69,7 +69,7 @@ func TestRenderMessage_InterruptSentinel_EmptyTextDefaults(t *testing.T) {
 			{Type: message.ContentInterrupt, ToolCallID: "toolu_x"},
 		},
 	}
-	snap := chalkboard.Snapshot{}
+	snap := form.Snapshot{}
 	mp, ok := p.renderMessage(sentinel, &snap)
 	require.True(t, ok)
 	wire, _ := json.Marshal(mp)

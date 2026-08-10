@@ -427,7 +427,7 @@ func stripANSI(s string) string {
 }
 
 // CwdResolver fills in req.Cwd when it's empty. The Fn is invoked at
-// call time so the source (typically the chalkboard) can change
+// call time so the source (typically the form) can change
 // between invocations.
 type CwdResolver struct {
 	Fn func() string

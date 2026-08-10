@@ -112,15 +112,15 @@ func BenchmarkAriaReaderTail(b *testing.B) {
 	}
 }
 
-// BenchmarkAriaReaderChalkboard is the cheap read, kept honest: a board is
+// BenchmarkAriaReaderForm is the cheap read, kept honest: a board is
 // a reducible channel replay and must not become the reason a page is slow.
-func BenchmarkAriaReaderChalkboard(b *testing.B) {
+func BenchmarkAriaReaderForm(b *testing.B) {
 	backend, id := benchStore(b, 600)
 	r := NewAriaReader(backend, uiir.New(nil))
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		if _, err := r.Chalkboard(id); err != nil {
+		if _, err := r.Form(id); err != nil {
 			b.Fatal(err)
 		}
 	}

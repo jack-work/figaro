@@ -71,7 +71,7 @@ func ratio(a, b uint64) float64 {
 //	decoded IR (cachedLog)   12.5 MiB  86%          14.3 MiB  63%
 //	composed UI (aria.Srv)    2.0 MiB  14%           2.4 MiB  10%
 //	translations              1.2 KiB   0%           6.0 MiB  26%
-//	chalkboard               48.1 KiB               43.3 KiB
+//	form               48.1 KiB               43.3 KiB
 //	TOTAL                    14.5 MiB               22.7 MiB
 //
 // The decoded IR runs 4.2-5.4x the encoded wire bytes and dominates. That
@@ -190,7 +190,7 @@ func TestRealAriaMemory(t *testing.T) {
 	})
 
 	cbBytes, cbKeep := heapDelta(func() any {
-		snap, err := backend.ChalkboardState(id)
+		snap, err := backend.FormState(id)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -212,7 +212,7 @@ func TestRealAriaMemory(t *testing.T) {
 	t.Logf("  decoded IR (cachedLog)     %10s  %4.1fx encoded", human(irBytes), ratio(irBytes, encoded))
 	t.Logf("  composed UI (aria.Server)  %10s  %4.1fx the IR", human(uiBytes), ratio(uiBytes, irBytes))
 	t.Logf("  translations (all providers)%9s", human(transBytes))
-	t.Logf("  chalkboard                 %10s", human(cbBytes))
+	t.Logf("  form                 %10s", human(cbBytes))
 	t.Logf("  TOTAL per live aria        %10s", human(total))
 	t.Logf("  shares: IR %.0f%%  UI %.0f%%  trans %.0f%%",
 		100*ratio(irBytes, total), 100*ratio(uiBytes, total), 100*ratio(transBytes, total))

@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 )
 
 // Dialect names the wire format a route speaks. It is deliberately separate
@@ -102,8 +102,8 @@ const (
 	MarkNone MarkMode = "none"
 )
 
-// ResolveMarkMode reads the configured marking strategy off the chalkboard.
-func ResolveMarkMode(snap chalkboard.Snapshot) MarkMode {
+// ResolveMarkMode reads the configured marking strategy off the form.
+func ResolveMarkMode(snap form.Snapshot) MarkMode {
 	if v := snap.Lookup(CacheMarkersKey); v != nil {
 		switch strings.ToLower(strings.TrimSpace(*v)) {
 		case "blocks", "block", "explicit":

@@ -6,12 +6,12 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 )
 
 // THE INVARIANT: folding every patch the figaro was shown reproduces its
-// chalkboard exactly.
+// form exactly.
 //
 // A patch is shown when some IR entry's cursor stamp is at or above the
 // patch's version -- that is how the projection decides what to render as
@@ -51,7 +51,7 @@ func TestEveryPatchIsShownToTheAria(t *testing.T) {
 	// What the daemon does: identity keys, then a turn, then per-turn keys.
 	apply := func(kv map[string]json.RawMessage) {
 		t.Helper()
-		if _, err := be.ApplyChalkboard(aria, message.Patch{Set: kv}); err != nil {
+		if _, err := be.ApplyForm(aria, message.Patch{Set: kv}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -73,12 +73,12 @@ func TestEveryPatchIsShownToTheAria(t *testing.T) {
 	apply(map[string]json.RawMessage{"mantra": json.RawMessage(`"a mantra"`)})
 	say("second")
 
-	patches, err := be.ChalkboardPatches(aria)
+	patches, err := be.FormPatches(aria)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// The projection's walk: one forward cursor, entries in order.
-	shown := chalkboard.Snapshot{}
+	shown := form.Snapshot{}
 	cursor := 0
 	for _, e := range lg.ReadFrom(0, 0) {
 		if e.Payload.Role == message.RoleGenesis {
@@ -100,7 +100,7 @@ func TestEveryPatchIsShownToTheAria(t *testing.T) {
 		t.Errorf("%d patch(es) were never shown to the aria: %v", len(patches)-cursor, missed)
 	}
 
-	state, err := be.ChalkboardState(aria)
+	state, err := be.FormState(aria)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestEveryPatchIsShownToTheAria(t *testing.T) {
 }
 
 // A fork changes the aria's identity, and the branch must be TOLD -- the
-// new aria_id is an ordinary chalkboard patch, so it has to reach the
+// new aria_id is an ordinary form patch, so it has to reach the
 // child as an ordinary delta. The child inherits its parent's history, so
 // it sees the old value first and then the transition, which is the whole
 // point of encoding state as point-in-time deltas: the model can read its
@@ -141,7 +141,7 @@ func TestAForkedAriaIsShownItsNewAriaID(t *testing.T) {
 	}
 	setID := func(aria string) {
 		t.Helper()
-		if _, err := be.ApplyChalkboard(aria, message.Patch{Set: map[string]json.RawMessage{
+		if _, err := be.ApplyForm(aria, message.Patch{Set: map[string]json.RawMessage{
 			"aria_id": json.RawMessage(`"` + aria + `"`),
 		}}); err != nil {
 			t.Fatal(err)
@@ -169,7 +169,7 @@ func TestAForkedAriaIsShownItsNewAriaID(t *testing.T) {
 	setID(alt) // what the daemon stamps on a fresh branch
 	say(alt, "on the branch")
 
-	patches, err := be.ChalkboardPatches(alt)
+	patches, err := be.FormPatches(alt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestAForkedAriaIsShownItsNewAriaID(t *testing.T) {
 	// The projection's walk, collecting the aria_id values in the order the
 	// branch is told about them.
 	var seen []string
-	shown := chalkboard.Snapshot{}
+	shown := form.Snapshot{}
 	cursor := 0
 	for _, e := range lg.ReadFrom(0, 0) {
 		if e.Payload.Role == message.RoleGenesis {

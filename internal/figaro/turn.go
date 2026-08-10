@@ -15,7 +15,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
@@ -194,14 +194,14 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (
 		Steering:  steering && prompt.text != "",
 		Timestamp: time.Now().UnixMilli(),
 	}
-	var combined chalkboard.Patch
-	if prompt.chalkboard != nil {
-		combined = a.combineChalkboardInput(prompt.chalkboard)
+	var combined form.Patch
+	if prompt.form != nil {
+		combined = a.combineFormInput(prompt.form)
 	}
 	// Seed the mantra from the first user message's opening text, so every
 	// conversation has a stable title (the first n chars) without the agent
 	// having to set one. Only when unset, so it stays fixed to the opener.
-	if prompt.text != "" && a.chalkboardString("mantra") == "" {
+	if prompt.text != "" && a.formString("mantra") == "" {
 		if combined.Set == nil {
 			combined.Set = map[string]json.RawMessage{}
 		}
@@ -211,7 +211,7 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (
 	if !combined.IsEmpty() {
 		if a.backend != nil {
 			// DURABILITY PRECEDES VISIBILITY. On a failed append the
-			// in-memory chalkboard is NOT advanced, so the published board and
+			// in-memory form is NOT advanced, so the published board and
 			// the log agree and a restart replays cleanly.
 			//
 			// The reverse — which this did — is not a lost write but a
@@ -222,18 +222,18 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (
 			//
 			// The turn CONTINUES rather than aborting. The patch is a
 			// transition riding the turn, not the turn's content, and killing a
-			// live exchange over a chalkboard write is a worse failure than
+			// live exchange over a form write is a worse failure than
 			// proceeding without it — the error is logged and the message still
 			// reaches the model.
-			if _, err := a.backend.ApplyChalkboard(a.id, combined); err != nil {
-				slog.Error("turn chalkboard append", "aria", a.id, "err", err)
-				combined = chalkboard.Patch{}
+			if _, err := a.backend.ApplyForm(a.id, combined); err != nil {
+				slog.Error("turn form append", "aria", a.id, "err", err)
+				combined = form.Patch{}
 			}
 		} else {
 			msg.Patches = append(msg.Patches, combined)
 		}
 		if !combined.IsEmpty() {
-			a.chalkboard.Apply(combined)
+			a.form.Apply(combined)
 		}
 	}
 	// Ephemeral first message: fold the boot patch inline so the outfit
@@ -408,7 +408,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	if a.turn == nil {
 		a.turn = newTurnState()
 	}
-	// The chalkboard is authoritative: re-resolve the provider now, after
+	// The form is authoritative: re-resolve the provider now, after
 	// this round's queued `set`s have been serviced, so a provider switch
 	// lands on the very next round instead of waiting for a restart.
 	if err := a.syncProvider(); err != nil {
@@ -423,12 +423,12 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	bus := newTurnBus(turnCtx)
 	deferredLog := newDeferredAppendLog(a.figLog)
 	in := provider.SendInput{
-		AriaID:     a.id,
-		FigLog:     deferredLog,
-		Snapshot:   a.chalkboard.Snapshot(),
-		Chalkboard: a.chalkAccessor(),
-		Tools:      a.toolDefs(),
-		MaxTokens:  a.chalkboardInt("system.max_tokens"),
+		AriaID:    a.id,
+		FigLog:    deferredLog,
+		Snapshot:  a.form.Snapshot(),
+		Form:      a.chalkAccessor(),
+		Tools:     a.toolDefs(),
+		MaxTokens: a.formInt("system.max_tokens"),
 	}
 	sendDone := make(chan error, 1)
 	go func() {
@@ -868,7 +868,7 @@ func hasRenderablePrompt(prompts []event) bool {
 // appendPromptEvents drains queued prompts INTO A RUNNING TURN, as ONE message.
 //
 // The batch is the contiguous run of user prompts Inbox.TakeReadyUserPrompts
-// lifted in a single locked pass — it stops at the first fork or chalkboard set,
+// lifted in a single locked pass — it stops at the first fork or form set,
 // because those need ordering. So the batch boundary is already exactly the set
 // that belongs together, and we join it rather than splitting it: three nudges
 // typed during one tool round are ONE message of three lines at ONE LT, not
@@ -892,11 +892,11 @@ func (a *Agent) appendPromptEvents(prompts []event) error {
 		return nil
 	}
 	if _, err := a.appendUserPrompt(merged, false, true); err != nil {
-		// All-or-nothing: the chalkboard write precedes the IR append, so do not
+		// All-or-nothing: the form write precedes the IR append, so do not
 		// replay it when restoring. One message means one failure unit — there is
 		// no partial tail to prepend.
 		for i := range prompts {
-			prompts[i].chalkboard = nil
+			prompts[i].form = nil
 		}
 		if !a.inbox.Prepend(prompts) {
 			return fmt.Errorf("%w; inbox closed while restoring prompts", err)
@@ -909,7 +909,7 @@ func (a *Agent) appendPromptEvents(prompts []event) error {
 }
 
 // mergePromptEvents folds a drained batch into one prompt: texts joined by a
-// newline in queue order, chalkboard input merged in the same order so a later
+// newline in queue order, form input merged in the same order so a later
 // prompt's value wins. Reports false when the batch is empty.
 //
 // Identity folds with the content: the result keeps the FIRST id (it is the
@@ -928,7 +928,7 @@ func mergePromptEvents(prompts []event) (event, bool) {
 		if p.text != "" {
 			texts = append(texts, p.text)
 		}
-		out.chalkboard = mergeChalkboardInput(out.chalkboard, p.chalkboard)
+		out.form = mergeFormInput(out.form, p.form)
 		// Concatenated, never flattened: the fold is exactly where attribution
 		// used to be lost. Three nudges from three senders become one message
 		// of three attributed segments, not one anonymous paragraph.
@@ -978,15 +978,15 @@ func senderRuns(segments []promptSegment) []message.Content {
 	return out
 }
 
-// mergeChalkboardInput merges b over a, in queue order, without mutating either.
-func mergeChalkboardInput(a, b *rpc.ChalkboardInput) *rpc.ChalkboardInput {
+// mergeFormInput merges b over a, in queue order, without mutating either.
+func mergeFormInput(a, b *rpc.FormInput) *rpc.FormInput {
 	if b == nil {
 		return a
 	}
 	if a == nil {
 		return b
 	}
-	out := &rpc.ChalkboardInput{}
+	out := &rpc.FormInput{}
 	if len(a.Context) > 0 || len(b.Context) > 0 {
 		out.Context = map[string]json.RawMessage{}
 		for k, v := range a.Context {
@@ -997,8 +997,8 @@ func mergeChalkboardInput(a, b *rpc.ChalkboardInput) *rpc.ChalkboardInput {
 		}
 	}
 	if a.Patch != nil || b.Patch != nil {
-		out.Patch = &rpc.ChalkboardPatch{}
-		for _, src := range []*rpc.ChalkboardPatch{a.Patch, b.Patch} {
+		out.Patch = &rpc.FormPatch{}
+		for _, src := range []*rpc.FormPatch{a.Patch, b.Patch} {
 			if src == nil {
 				continue
 			}
@@ -1675,7 +1675,7 @@ func assistantToolInvokes(m message.Message) []message.Content {
 	return out
 }
 
-// combineChalkboardInput merges client-supplied chalkboard input
+// combineFormInput merges client-supplied form input
 // with the persisted snapshot.
 //
 // Two shapes, two contracts:
@@ -1683,7 +1683,7 @@ func assistantToolInvokes(m message.Message) []message.Content {
 //   - Context is *purely additive*. It carries the client's view of
 //     state-at-send-time; the agent sets keys whose values differ
 //     from the snapshot but never derives removals from absence.
-//     This lets clients ship a full chalkboard copy without racing
+//     This lets clients ship a full form copy without racing
 //     concurrent set/unset from another shell.
 //   - Patch is explicit set + remove; mutations the client really
 //     means. `figaro set`/`unset` land here.
@@ -1691,28 +1691,28 @@ func assistantToolInvokes(m message.Message) []message.Content {
 // system.* on Context is dropped: the harness owns that namespace,
 // and a stale client view must not clobber it. Patch is left intact
 // (it's the user explicitly mutating; trust them).
-func (a *Agent) combineChalkboardInput(input *rpc.ChalkboardInput) chalkboard.Patch {
-	if a.chalkboard == nil || input == nil {
-		return chalkboard.Patch{}
+func (a *Agent) combineFormInput(input *rpc.FormInput) form.Patch {
+	if a.form == nil || input == nil {
+		return form.Patch{}
 	}
-	snap := a.chalkboard.Snapshot()
-	var clientPatch chalkboard.Patch
+	snap := a.form.Snapshot()
+	var clientPatch form.Patch
 	if input.Patch != nil {
-		clientPatch = chalkboard.Patch{Set: input.Patch.Set, Remove: input.Patch.Remove}
+		clientPatch = form.Patch{Set: input.Patch.Set, Remove: input.Patch.Remove}
 	}
-	var ctxPatch chalkboard.Patch
+	var ctxPatch form.Patch
 	if input.Context != nil {
-		ctxPatch = additivePatch(withoutSystemNS(chalkboard.FromMap(input.Context)), snap)
+		ctxPatch = additivePatch(withoutSystemNS(form.FromMap(input.Context)), snap)
 	}
 	// Precedence: the client's passive view, then what it explicitly set.
-	out := chalkboard.Patch{}
-	for _, p := range []chalkboard.Patch{ctxPatch, clientPatch} {
+	out := form.Patch{}
+	for _, p := range []form.Patch{ctxPatch, clientPatch} {
 		switch {
 		case p.IsEmpty():
 		case out.IsEmpty():
 			out = p
 		default:
-			out = chalkboard.Merge(out, p)
+			out = form.Merge(out, p)
 		}
 	}
 	return out
@@ -1722,11 +1722,11 @@ func (a *Agent) combineChalkboardInput(input *rpc.ChalkboardInput) chalkboard.Pa
 // differ from snap. Keys present in snap but absent from ctx are NOT
 // removed — Context is purely additive by contract.
 //
-// Equality is the chalkboard's own (semantic JSON equality via the tree),
+// Equality is the form's own (semantic JSON equality via the tree),
 // not bytes.Equal: a semantically equal Set keeps the board's existing
 // bytes, so a byte comparison would re-report the same key every turn and
 // fire a redundant <system-reminder> each time.
-func additivePatch(ctx, snap chalkboard.Snapshot) chalkboard.Patch {
+func additivePatch(ctx, snap form.Snapshot) form.Patch {
 	return snap.Apply(ctx.AsPatch()).Diff(snap)
 }
 

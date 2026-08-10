@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
@@ -192,8 +192,8 @@ func TestSpeculativeDispatch_StartsBeforeStreamEnd(t *testing.T) {
 		streamEnd: 400 * time.Millisecond,
 	}
 
-	cb, _ := chalkboard.Open("")
-	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+	cb, _ := form.Open("")
+	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"mock"`),
 		"system.provider": json.RawMessage(`"staggered"`),
 	}})
@@ -203,7 +203,7 @@ func TestSpeculativeDispatch_StartsBeforeStreamEnd(t *testing.T) {
 		SocketPath: "/tmp/spec-test.sock",
 		Provider:   prov,
 		Tools:      reg,
-		Chalkboard: cb,
+		Form:       cb,
 	})
 	defer a.Kill()
 
@@ -269,8 +269,8 @@ func TestSpeculativeDispatch_ResultOrdering(t *testing.T) {
 		streamEnd: 80 * time.Millisecond,
 	}
 
-	cb, _ := chalkboard.Open("")
-	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+	cb, _ := form.Open("")
+	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"mock"`),
 		"system.provider": json.RawMessage(`"staggered"`),
 	}})
@@ -280,7 +280,7 @@ func TestSpeculativeDispatch_ResultOrdering(t *testing.T) {
 		SocketPath: "/tmp/spec-test-2.sock",
 		Provider:   prov,
 		Tools:      reg,
-		Chalkboard: cb,
+		Form:       cb,
 	})
 	defer a.Kill()
 
@@ -355,8 +355,8 @@ func TestToolTurn_IRStructure(t *testing.T) {
 		streamEnd: 100 * time.Millisecond,
 	}
 
-	cb, _ := chalkboard.Open("")
-	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+	cb, _ := form.Open("")
+	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"mock"`),
 		"system.provider": json.RawMessage(`"staggered"`),
 	}})
@@ -366,7 +366,7 @@ func TestToolTurn_IRStructure(t *testing.T) {
 		SocketPath: "/tmp/invoke-test.sock",
 		Provider:   prov,
 		Tools:      reg,
-		Chalkboard: cb,
+		Form:       cb,
 	})
 	defer a.Kill()
 

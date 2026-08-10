@@ -280,11 +280,11 @@ model = "mock-model"
 	require.Equal(t, created.FigaroID, fr.Continuation)
 	require.NotEqual(t, created.FigaroID, fr.Alternative)
 
-	// Each child's chalkboard names its OWN id: the continuation keeps the
+	// Each child's form names its OWN id: the continuation keeps the
 	// inherited stamp, the alternative is re-stamped at fork time — an aria
 	// that forks itself must be able to learn its new id.
 	chalkAriaID := func(id string) string {
-		snap, serr := backend.ChalkboardState(id)
+		snap, serr := backend.FormState(id)
 		require.NoError(t, serr)
 		rawID, _ := snap.Get("aria_id")
 		var got string

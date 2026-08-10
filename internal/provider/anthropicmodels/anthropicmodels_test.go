@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -75,26 +75,26 @@ func TestCatalogPrefersLearnedWindow(t *testing.T) {
 func TestCatalogContextLimitOverridePrecedence(t *testing.T) {
 	var c Catalog
 
-	assert.Equal(t, 1_000_000, c.ContextLimit("claude-opus-5", chalkboard.Snapshot{}))
+	assert.Equal(t, 1_000_000, c.ContextLimit("claude-opus-5", form.Snapshot{}))
 
 	// The user's pin wins, whether it is smaller...
-	assert.Equal(t, 200_000, c.ContextLimit("claude-opus-5", chalkboard.FromMap(map[string]json.RawMessage{
+	assert.Equal(t, 200_000, c.ContextLimit("claude-opus-5", form.FromMap(map[string]json.RawMessage{
 		"system.max_context_tokens": json.RawMessage(`200000`),
 	})))
 	// ...or larger than what we would report.
-	assert.Equal(t, 2_000_000, c.ContextLimit("claude-opus-5", chalkboard.FromMap(map[string]json.RawMessage{
+	assert.Equal(t, 2_000_000, c.ContextLimit("claude-opus-5", form.FromMap(map[string]json.RawMessage{
 		"system.max_context_tokens": json.RawMessage(`2000000`),
 	})))
 	// ...or the model is unknown.
-	assert.Equal(t, 500_000, c.ContextLimit("claude-opus-6", chalkboard.FromMap(map[string]json.RawMessage{
+	assert.Equal(t, 500_000, c.ContextLimit("claude-opus-6", form.FromMap(map[string]json.RawMessage{
 		"system.max_context_tokens": json.RawMessage(`500000`),
 	})))
 
 	// Junk or non-positive pins are ignored, not treated as a limit of 0.
-	assert.Equal(t, 1_000_000, c.ContextLimit("claude-opus-5", chalkboard.FromMap(map[string]json.RawMessage{
+	assert.Equal(t, 1_000_000, c.ContextLimit("claude-opus-5", form.FromMap(map[string]json.RawMessage{
 		"system.max_context_tokens": json.RawMessage(`"lots"`),
 	})))
-	assert.Equal(t, 1_000_000, c.ContextLimit("claude-opus-5", chalkboard.FromMap(map[string]json.RawMessage{
+	assert.Equal(t, 1_000_000, c.ContextLimit("claude-opus-5", form.FromMap(map[string]json.RawMessage{
 		"system.max_context_tokens": json.RawMessage(`0`),
 	})))
 }

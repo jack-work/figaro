@@ -14,7 +14,7 @@ package store
 // rewrites the sidecar. When the watermark is already at the tail (212 of 213
 // arias in the author's store) it does nothing at all.
 //
-// What it does NOT touch: mantra/cwd/outfit/provider/model (chalkboard- and
+// What it does NOT touch: mantra/cwd/outfit/provider/model (form- and
 // agent-owned, unknowable from an IR suffix — metaBackfill owns those) and
 // LastActiveMS (the IR carries no wall clock).
 

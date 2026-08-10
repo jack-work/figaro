@@ -33,8 +33,8 @@ func TestAgentClientPresentsCallerAcrossTheSecondHop(t *testing.T) {
 		return map[string]any{}, nil
 	}
 	handlers := map[string]jkrpc.HandlerFunc{
-		rpc.MethodSet:        record,
-		rpc.MethodChalkboard: record,
+		rpc.MethodSet:  record,
+		rpc.MethodForm: record,
 	}
 	ln, err := transport.Listen(transport.UnixEndpoint(sock))
 	if err != nil {
@@ -69,7 +69,7 @@ func TestAgentClientPresentsCallerAcrossTheSecondHop(t *testing.T) {
 	}
 
 	// A payload-bearing method, with a raw-JSON value that must survive intact.
-	patch := rpc.ChalkboardPatch{Set: map[string]json.RawMessage{
+	patch := rpc.FormPatch{Set: map[string]json.RawMessage{
 		"mantra": json.RawMessage(`"keep me exact"`),
 	}}
 	if _, err := cli.Set(context.Background(), patch, 0); err != nil {
@@ -87,9 +87,9 @@ func TestAgentClientPresentsCallerAcrossTheSecondHop(t *testing.T) {
 		t.Fatalf("patch value re-encoded: %s", v)
 	}
 
-	// figaro.chalkboard sends nil params.
-	if _, err := cli.Chalkboard(context.Background()); err != nil {
-		t.Fatalf("chalkboard: %v", err)
+	// figaro.form sends nil params.
+	if _, err := cli.Form(context.Background()); err != nil {
+		t.Fatalf("form: %v", err)
 	}
 	if id := rpc.CallerOf(next()); id != "caller02" {
 		t.Fatalf("nil-params caller = %q, want caller02", id)

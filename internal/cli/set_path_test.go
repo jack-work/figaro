@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseChalkboardPath(t *testing.T) {
+func TestParseFormPath(t *testing.T) {
 	cases := []struct {
 		in     string
 		top    string
@@ -23,7 +23,7 @@ func TestParseChalkboardPath(t *testing.T) {
 		{"foo[", "", nil, true},
 	}
 	for _, tc := range cases {
-		top, path, err := parseChalkboardPath(tc.in)
+		top, path, err := parseFormPath(tc.in)
 		if tc.hasErr {
 			assert.Error(t, err, "input %q", tc.in)
 			continue

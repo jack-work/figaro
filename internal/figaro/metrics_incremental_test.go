@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tokens"
@@ -12,9 +12,9 @@ import (
 
 func TestRefreshMetricsIncrementalMatchesFullFold(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
-	cb, _ := chalkboard.Open("")
+	cb, _ := form.Open("")
 	a := &Agent{
-		figLog: log, chalkboard: cb,
+		figLog: log, form: cb,
 		inbox: NewInbox(context.Background()),
 	}
 	a.bindProvider(perfProvider{})

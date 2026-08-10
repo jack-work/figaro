@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -46,7 +46,7 @@ func TestCatchUpPreservesPrefixBytes(t *testing.T) {
 }
 
 func TestCatchUpReplaysCachedPrefixSnapshot(t *testing.T) {
-	tmpl := template.Must(template.New("chalkboard").New("mode").Parse(`{{.OldString}}=>{{.NewString}}`))
+	tmpl := template.Must(template.New("form").New("mode").Parse(`{{.OldString}}=>{{.NewString}}`))
 	log := store.NewMemLog[message.Message]()
 	cache := store.NewMemLog[[]json.RawMessage]()
 	p := &Provider{reminder: "tag", Templates: tmpl}
@@ -61,7 +61,7 @@ func TestCatchUpReplaysCachedPrefixSnapshot(t *testing.T) {
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("second")}, Patches: []message.Patch{newPatch},
 	}})
 	require.NoError(t, err)
-	encodedFirst, err := p.encode(first.Payload, chalkboard.Snapshot{})
+	encodedFirst, err := p.encode(first.Payload, form.Snapshot{})
 	require.NoError(t, err)
 	_, err = cache.Append(store.Entry[[]json.RawMessage]{
 		FigaroLT: first.LT, Payload: encodedFirst, Fingerprint: p.Fingerprint(),

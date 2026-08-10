@@ -137,7 +137,7 @@ func TestCycleInLayersIsReported(t *testing.T) {
 }
 
 // `source` was the single-parent spelling. Ignoring it would flatten it into a
-// chalkboard key named "source" — the silent kind of wrong — and an array-valued
+// form key named "source" — the silent kind of wrong — and an array-valued
 // `source` used to be dropped without a word.
 func TestSourceIsRejectedRatherThanIgnored(t *testing.T) {
 	dir := t.TempDir()

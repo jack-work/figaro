@@ -1,8 +1,8 @@
-// Package outfit assembles an aria's chalkboard from on-disk config.
+// Package outfit assembles an aria's form from on-disk config.
 //
-// Load reads a named outfit TOML chain and returns a chalkboard patch.
+// Load reads a named outfit TOML chain and returns a form patch.
 // Providers read `system.credo` (and other system keys) straight off
-// the chalkboard — no derivation step.
+// the form — no derivation step.
 package outfit
 
 import (
@@ -15,10 +15,10 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 )
 
-// Outfitter assembles chalkboards from on-disk outfits. Safe for concurrent
+// Outfitter assembles forms from on-disk outfits. Safe for concurrent
 // use, and worth reusing: it caches what it reads against the files it read
 // (see cache.go), so a repeat fold costs a stat per dependency.
 type Outfitter struct {
@@ -88,9 +88,9 @@ func (e *CycleError) Error() string {
 	return fmt.Sprintf("outfit: cycle in layers at %q", e.At)
 }
 
-// Load resolves one named outfit and returns the chalkboard patch. A missing
+// Load resolves one named outfit and returns the form patch. A missing
 // outfit is an error: someone naming one wants to hear that it does not exist.
-func (o *Outfitter) Load(name string) (chalkboard.Patch, error) {
+func (o *Outfitter) Load(name string) (form.Patch, error) {
 	return o.load(name, true)
 }
 
@@ -98,7 +98,7 @@ func (o *Outfitter) Load(name string) (chalkboard.Patch, error) {
 // empty patch rather than an error. The first-run flow rides on that absence:
 // config names a default that is not written yet, the patch comes back empty,
 // and the missing system.provider is noticed downstream.
-func (o *Outfitter) LoadOptional(name string) (chalkboard.Patch, error) {
+func (o *Outfitter) LoadOptional(name string) (form.Patch, error) {
 	return o.load(name, false)
 }
 
@@ -106,26 +106,26 @@ func (o *Outfitter) LoadOptional(name string) (chalkboard.Patch, error) {
 // outfit that DOES exist is a broken reference under either strictness, because
 // the alternative is to discard the whole patch and let a typo look like an
 // empty outfit.
-func (o *Outfitter) load(name string, strict bool) (chalkboard.Patch, error) {
+func (o *Outfitter) load(name string, strict bool) (form.Patch, error) {
 	if name == "" {
-		return chalkboard.Patch{}, nil
+		return form.Patch{}, nil
 	}
 	if err := ValidName(name); err != nil {
-		return chalkboard.Patch{}, err
+		return form.Patch{}, err
 	}
 	root := o.Resolve(name)
 	if err := closureError(root); err != nil {
 		var missing *MissingError
 		if !strict && errors.As(err, &missing) && missing.RootOnly {
-			return chalkboard.Patch{}, nil
+			return form.Patch{}, nil
 		}
-		return chalkboard.Patch{}, err
+		return form.Patch{}, err
 	}
 	sub, err := o.fold(root, map[string]foldResult{})
 	if err != nil {
-		return chalkboard.Patch{}, err
+		return form.Patch{}, err
 	}
-	return chalkboard.Patch{Set: sub.keys}, nil
+	return form.Patch{Set: sub.keys}, nil
 }
 
 // Resolve builds the closure for one named outfit without reading any of it.
@@ -194,7 +194,7 @@ func (o *Outfitter) declaredLayers(path string) ([]string, error) {
 // layerNames extracts and validates the layers key.
 //
 // `source` was the single-parent spelling this replaced. It is rejected rather
-// than ignored: left alone it would flatten into a chalkboard key named
+// than ignored: left alone it would flatten into a form key named
 // "source", which is the silent kind of wrong.
 func layerNames(path string, raw map[string]any) ([]string, error) {
 	if _, ok := raw["source"]; ok {
@@ -317,7 +317,7 @@ func (o *Outfitter) resolvePath(name string) (string, error) {
 	return "", &os.PathError{Op: "open", Path: canonical, Err: os.ErrNotExist}
 }
 
-// flatten walks a TOML tree into dotted chalkboard keys, expanding
+// flatten walks a TOML tree into dotted form keys, expanding
 // fileName/dirName single-key tables.
 //
 // `fileName` produces a content-envelope object at the table's key:
@@ -402,7 +402,7 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 	return nil
 }
 
-// ContentEnvelope is the chalkboard shape for fileName/dirName-loaded
+// ContentEnvelope is the form shape for fileName/dirName-loaded
 // content. Exactly one of Frontmatter or Content is non-empty: if the
 // file began with a `---` fence, the raw frontmatter text goes in
 // Frontmatter and the body is omitted; otherwise the full body goes
@@ -432,7 +432,7 @@ func contentEnvelope(body, path string) ContentEnvelope {
 //
 // CRLF is not a nicety. The failure is SILENT AND EXPENSIVE: a skill whose
 // fence is not recognised falls through to the full-body envelope, so the
-// WHOLE FILE lands in the chalkboard and is inherited by every aria minted
+// WHOLE FILE lands in the form and is inherited by every aria minted
 // from that outfit. Six skills saved with Windows line endings put 101KB —
 // roughly 25k tokens — into every new aria on this author's box, none of it
 // asked for and none of it visible as anything but a large context.
@@ -448,7 +448,7 @@ func extractFrontmatter(body string) (string, bool) {
 		return "", false
 	}
 	// Normalise the block itself, not just the closing fence. The
-	// frontmatter string lands in the chalkboard verbatim and the outfit's
+	// frontmatter string lands in the form verbatim and the outfit's
 	// content version is a hash of that patch -- so a CRLF-saved skill and
 	// an LF-saved copy of the SAME skill would otherwise mint two different
 	// outfit stumps, with two shared prefixes and two caches, on two

@@ -109,12 +109,12 @@ func (h *handlers) wakeForHub(ctx context.Context, id string) (figaro.AgentServe
 func (h *handlers) readForHub(id, method string, params json.RawMessage) (any, bool, error) {
 	r := h.reader()
 	switch method {
-	case rpc.MethodChalkboard:
-		snap, err := r.Chalkboard(id)
+	case rpc.MethodForm:
+		snap, err := r.Form(id)
 		if err != nil {
 			return nil, true, err
 		}
-		return rpc.ChalkboardResponse{Snapshot: snap}, true, nil
+		return rpc.FormResponse{Snapshot: snap}, true, nil
 
 	case rpc.MethodContext:
 		msgs, metrics, err := r.Context(id)

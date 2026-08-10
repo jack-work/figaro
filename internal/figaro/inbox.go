@@ -252,7 +252,7 @@ func (b *Inbox) TakeReadySet() []event {
 // above are prefix-only precisely so FIFO across event kinds is preserved,
 // and this must not be the one place that reorders across them: a `set`
 // exists to change context BEFORE the prompt behind it, so folding that
-// prompt in front of the set would answer it against a chalkboard it was
+// prompt in front of the set would answer it against a form it was
 // never written against — with no error, no log line, and nothing to notice.
 // Across a fork it is worse: the message would land in the wrong trunk.
 //
@@ -288,7 +288,7 @@ func (b *Inbox) CoalesceUserPromptRuns() {
 // DrainUserPrompts removes every queued user prompt and returns them
 // VERBATIM, in FIFO order, each with its own id — not folded. Control events
 // (sets, forks) are left in the queue: this drops the questions, it does not
-// cancel the chalkboard mutation or the fork someone else asked for.
+// cancel the form mutation or the fork someone else asked for.
 //
 // Verbatim is the point. What is drained is handed back so it can be written
 // to disk instead of lost, and a caller who typed three messages wants their
@@ -457,7 +457,7 @@ func (b *Inbox) IsIdle() bool {
 
 // SnapshotPrompts returns a copy of every queued user prompt in FIFO order,
 // WITHOUT removing them. carriers==false omits empty-text prompts (pure
-// chalkboard carriers), which is what every display surface wants and what
+// form carriers), which is what every display surface wants and what
 // this has always returned; the CRUD surface asks for them because it must be
 // able to address what it can delete.
 //

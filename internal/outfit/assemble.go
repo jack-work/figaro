@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 )
 
 // KeyLayers is the patch key that names outfits to fold in. It is a DIRECTIVE,
@@ -19,7 +19,7 @@ const KeyLayers = "layers"
 // is how a client asks for "dressed as usual" without knowing the answer.
 const NameDefault = "default"
 
-// ParsePatch turns the `-O` syntax into ONE chalkboard patch. It touches no
+// ParsePatch turns the `-O` syntax into ONE form patch. It touches no
 // disk and reads no config: a name becomes an entry in `layers` for the server
 // to resolve, a literal or `k=v` becomes keys.
 //
@@ -30,10 +30,10 @@ const NameDefault = "default"
 // Names keep their order. A literal does NOT interleave with the layers a later
 // name pulls in — `a,{x:1},b` folds a and b first, then x — which is a
 // documented gap, not a defended property.
-func ParsePatch(text string) (chalkboard.Patch, error) {
+func ParsePatch(text string) (form.Patch, error) {
 	parts, err := splitTerms(text)
 	if err != nil {
-		return chalkboard.Patch{}, err
+		return form.Patch{}, err
 	}
 	set := map[string]json.RawMessage{}
 	var layers []string
@@ -50,12 +50,12 @@ func ParsePatch(text string) (chalkboard.Patch, error) {
 			keys, err = pairKeys(part)
 		default:
 			if err = ValidName(part); err != nil {
-				return chalkboard.Patch{}, err
+				return form.Patch{}, err
 			}
 			layers = append(layers, part)
 		}
 		if err != nil {
-			return chalkboard.Patch{}, err
+			return form.Patch{}, err
 		}
 		for k, v := range keys {
 			set[k] = v
@@ -66,21 +66,21 @@ func ParsePatch(text string) (chalkboard.Patch, error) {
 	if raw, ok := set[KeyLayers]; ok {
 		var declared []string
 		if err := json.Unmarshal(raw, &declared); err != nil {
-			return chalkboard.Patch{}, fmt.Errorf("outfit: layers must be an array of names: %w", err)
+			return form.Patch{}, fmt.Errorf("outfit: layers must be an array of names: %w", err)
 		}
 		layers = append(declared, layers...)
 	}
 	if len(layers) > 0 {
 		b, err := json.Marshal(layers)
 		if err != nil {
-			return chalkboard.Patch{}, err
+			return form.Patch{}, err
 		}
 		set[KeyLayers] = b
 	}
 	if len(set) == 0 {
-		return chalkboard.Patch{}, nil
+		return form.Patch{}, nil
 	}
-	return chalkboard.Patch{Set: set}, nil
+	return form.Patch{Set: set}, nil
 }
 
 // Materialize expands a patch's `layers` directive into the keys those outfits
@@ -100,14 +100,14 @@ func ParsePatch(text string) (chalkboard.Patch, error) {
 // board already wearing its siblings re-reads the whole graph; a DP over the
 // layer graph keyed on what the board already holds would fold only what
 // changed. Distant — outfits are small.
-func (o *Outfitter) Materialize(patch chalkboard.Patch, defaultName string) (chalkboard.Patch, error) {
+func (o *Outfitter) Materialize(patch form.Patch, defaultName string) (form.Patch, error) {
 	names, ok, err := Layers(patch)
 	if err != nil || !ok {
 		return patch, err
 	}
 	layered := map[string]json.RawMessage{}
 	for _, n := range names {
-		var folded chalkboard.Patch
+		var folded form.Patch
 		var ferr error
 		if n == NameDefault {
 			folded, ferr = o.defaults(defaultName)
@@ -115,13 +115,13 @@ func (o *Outfitter) Materialize(patch chalkboard.Patch, defaultName string) (cha
 			folded, ferr = o.Load(n)
 		}
 		if ferr != nil {
-			return chalkboard.Patch{}, ferr
+			return form.Patch{}, ferr
 		}
 		for k, v := range folded.Set {
 			layered[k] = v
 		}
 	}
-	out := chalkboard.Patch{Set: layered, Remove: patch.Remove}
+	out := form.Patch{Set: layered, Remove: patch.Remove}
 	for k, v := range patch.Set {
 		if k == KeyLayers {
 			continue
@@ -132,19 +132,19 @@ func (o *Outfitter) Materialize(patch chalkboard.Patch, defaultName string) (cha
 }
 
 // defaults folds what config calls the default outfit, leniently.
-func (o *Outfitter) defaults(defaultName string) (chalkboard.Patch, error) {
+func (o *Outfitter) defaults(defaultName string) (form.Patch, error) {
 	if defaultName == "" {
-		return chalkboard.Patch{}, nil
+		return form.Patch{}, nil
 	}
 	names, err := TermNames(defaultName)
 	if err != nil {
-		return chalkboard.Patch{}, err
+		return form.Patch{}, err
 	}
-	out := chalkboard.Patch{Set: map[string]json.RawMessage{}}
+	out := form.Patch{Set: map[string]json.RawMessage{}}
 	for _, n := range names {
 		folded, ferr := o.LoadOptional(n)
 		if ferr != nil {
-			return chalkboard.Patch{}, ferr
+			return form.Patch{}, ferr
 		}
 		for k, v := range folded.Set {
 			out.Set[k] = v
@@ -154,7 +154,7 @@ func (o *Outfitter) defaults(defaultName string) (chalkboard.Patch, error) {
 }
 
 // Layers reads a patch's `layers` directive: the names, and whether it had one.
-func Layers(patch chalkboard.Patch) ([]string, bool, error) {
+func Layers(patch form.Patch) ([]string, bool, error) {
 	raw, ok := patch.Set[KeyLayers]
 	if !ok {
 		return nil, false, nil
@@ -173,16 +173,16 @@ func Layers(patch chalkboard.Patch) ([]string, bool, error) {
 
 // WithLayer prepends a layer to a patch's directive, so the caller's own layers
 // keep precedence over it. Birth uses it to put `default` underneath.
-func WithLayer(patch chalkboard.Patch, name string) (chalkboard.Patch, error) {
+func WithLayer(patch form.Patch, name string) (form.Patch, error) {
 	names, _, err := Layers(patch)
 	if err != nil {
-		return chalkboard.Patch{}, err
+		return form.Patch{}, err
 	}
 	b, err := json.Marshal(append([]string{name}, names...))
 	if err != nil {
-		return chalkboard.Patch{}, err
+		return form.Patch{}, err
 	}
-	out := chalkboard.Patch{Set: map[string]json.RawMessage{}, Remove: patch.Remove}
+	out := form.Patch{Set: map[string]json.RawMessage{}, Remove: patch.Remove}
 	for k, v := range patch.Set {
 		out.Set[k] = v
 	}
@@ -193,7 +193,7 @@ func WithLayer(patch chalkboard.Patch, name string) (chalkboard.Patch, error) {
 // Label names a patch for a listing: the layers it folded, in order, with
 // `default` resolved to what it stood for. Empty when nothing was named — a
 // patch of bare keys has no outfit to be called after.
-func Label(patch chalkboard.Patch, defaultName string) string {
+func Label(patch form.Patch, defaultName string) string {
 	names, ok, err := Layers(patch)
 	if !ok || err != nil {
 		return ""
@@ -212,21 +212,21 @@ func Label(patch chalkboard.Patch, defaultName string) string {
 }
 
 // Names folds a list of outfit names, in order.
-func (o *Outfitter) Names(names ...string) (chalkboard.Patch, error) {
+func (o *Outfitter) Names(names ...string) (form.Patch, error) {
 	set := map[string]json.RawMessage{}
 	for _, name := range names {
 		keys, err := o.nameKeys(name)
 		if err != nil {
-			return chalkboard.Patch{}, err
+			return form.Patch{}, err
 		}
 		for k, v := range keys {
 			set[k] = v
 		}
 	}
 	if len(set) == 0 {
-		return chalkboard.Patch{}, nil
+		return form.Patch{}, nil
 	}
-	return chalkboard.Patch{Set: set}, nil
+	return form.Patch{Set: set}, nil
 }
 
 func (o *Outfitter) nameKeys(name string) (map[string]json.RawMessage, error) {

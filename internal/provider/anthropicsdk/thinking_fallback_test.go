@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 )
 
@@ -15,7 +15,7 @@ import (
 // The signed wire form is cached at production via acc.ToParam instead.
 func TestEncodeDropsUnsignedThinking(t *testing.T) {
 	p := &Provider{}
-	snap := chalkboard.Snapshot{}
+	snap := form.Snapshot{}
 	mp, ok := p.renderMessage(message.Message{
 		Role: message.RoleOutput,
 		Content: []message.Content{

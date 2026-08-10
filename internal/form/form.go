@@ -1,10 +1,10 @@
-// Package chalkboard manages structured per-aria state surfaced to
+// Package form manages structured per-aria state surfaced to
 // providers as system reminders.
 //
 // Snapshot is a full key-value view. Patch is the delta: keys to set
 // plus keys to remove. Schema is open (keys are arbitrary, values are
 // raw JSON). See render.go for value-to-body templates.
-package chalkboard
+package form
 
 import (
 	"encoding/json"
@@ -150,8 +150,8 @@ func (s Snapshot) Apply(p Patch) Snapshot {
 }
 
 // MarshalJSON emits the flat object form — {"key": value, ...} with keys
-// in lexical order — which is what chalkboard.json on disk, the RPC
-// ChalkboardResponse and store.chalkboardReduce all consume.
+// in lexical order — which is what the form channel on disk, the RPC
+// FormResponse and store.formReduce all consume.
 //
 // It delegates to encoding/json over the map representation this type
 // replaced, which makes byte-identity with the old format true by

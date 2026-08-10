@@ -2,7 +2,7 @@ package message
 
 import "encoding/json"
 
-// Patch is a chalkboard delta: keys to set plus keys to remove.
+// Patch is a form delta: keys to set plus keys to remove.
 type Patch struct {
 	Set    map[string]json.RawMessage `json:"set,omitempty"`
 	Remove []string                   `json:"remove,omitempty"`

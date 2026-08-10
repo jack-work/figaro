@@ -3,11 +3,11 @@ package provider
 import (
 	"strings"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 )
 
-// CacheControlKey is the chalkboard key that overrides the automatic
+// CacheControlKey is the form key that overrides the automatic
 // cache-marker policy. One spelling, read by every provider.
 const CacheControlKey = "system.cache_control"
 
@@ -60,7 +60,7 @@ func (p CachePolicy) Off() bool { return p.Type == "" }
 // `ttl` now rides inside cache_control. (It costs 2x base input on the write
 // versus 1.25x for 5m, so it pays off only across a session long enough to
 // have re-written the short cache at least twice.)
-func ResolveCachePolicy(snap chalkboard.Snapshot) CachePolicy {
+func ResolveCachePolicy(snap form.Snapshot) CachePolicy {
 	setting := ""
 	if cc := snap.Lookup(CacheControlKey); cc != nil {
 		setting = *cc
@@ -68,7 +68,7 @@ func ResolveCachePolicy(snap chalkboard.Snapshot) CachePolicy {
 	return ParseCachePolicy(setting)
 }
 
-// ParseCachePolicy maps one chalkboard setting string to a policy. Exported
+// ParseCachePolicy maps one form setting string to a policy. Exported
 // for the per-LT overrides in system.tags, which carry the same vocabulary.
 func ParseCachePolicy(setting string) CachePolicy {
 	switch strings.ToLower(strings.TrimSpace(setting)) {

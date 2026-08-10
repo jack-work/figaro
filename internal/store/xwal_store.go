@@ -10,7 +10,7 @@ package store
 //   - root: the channel dir itself (xwal.CreateTrunks genesis). Markerless,
 //     ceremonial — the "null" anchor. Addressed by the rootID sentinel.
 //   - outfit: a markerless stump (CreateStump) holding a renderable RoleInput
-//     birth message that carries the outfit's chalkboard stamp
+//     birth message that carries the outfit's form stamp
 //     (system.outfit_name/version). One per (name, content-version), and its
 //     id IS that version, so the dedup map lives on disk (Stumps()) — no
 //     policy side-file. Ceremonial.
@@ -52,8 +52,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/topo"
 	"github.com/jack-work/figwal/segment"
@@ -92,8 +92,12 @@ func hexTrunkID() string {
 }
 
 const (
-	chanIR         = "ir"
-	chanChalkboard = "chalkboard"
+	chanIR = "ir"
+	// chanForm is the form channel — the aria's state. It was "chalkboard" on
+	// disk through store generation 1; generation 2 renamed the directory with
+	// the concept, and the version gate refuses a generation-1 store rather
+	// than reading it as a board with no keys.
+	chanForm = "form"
 	// chanUI is the derived turn-shaped UI IR cache (Phase 4). Declared here
 	// so the schema registry can version it before it carries data.
 	chanUI = "ui"
@@ -115,8 +119,8 @@ const (
 	kindConversation nodeKind = "conversation"
 )
 
-// chalkboardReduce folds a message.Patch (JSON) onto a chalkboard
-// snapshot (JSON state) — figaro's reducer for the chalkboard channel.
+// formReduce folds a message.Patch (JSON) onto a form
+// snapshot (JSON state) — figaro's reducer for the form channel.
 //
 // The Snapshot's MarshalJSON/UnmarshalJSON are called DIRECTLY rather than
 // through json.Marshal/json.Unmarshal, and that is not a style tic: for a
@@ -126,8 +130,8 @@ const (
 // 97µs -> 188µs decode, 76µs -> 152µs encode), and this reducer runs once
 // per WAL record on segment rollover and fork. The bytes are identical
 // either way — TestSnapshotDirectCodecMatchesEncodingJSON pins that.
-func chalkboardReduce(state, patch []byte) ([]byte, error) {
-	snap := chalkboard.Snapshot{}
+func formReduce(state, patch []byte) ([]byte, error) {
+	snap := form.Snapshot{}
 	if len(state) > 0 {
 		if err := snap.UnmarshalJSON(state); err != nil {
 			return nil, err
@@ -178,14 +182,14 @@ func storeOptions(segmentSize int) xwal.StoreOptions {
 		Genesis:     genesis,
 		MintTrunkID: hexTrunkID,
 		Reducers: map[string]xwal.Reducer{
-			chanChalkboard: {Reduce: chalkboardReduce, Initial: []byte("{}")},
+			chanForm: {Reduce: formReduce, Initial: []byte("{}")},
 		},
 		Opaque: []string{
 			transChannel("anthropic"),
 			transChannel("copilot-messages"),
 			transChannel("copilot-responses"),
 		},
-		// The chalkboard is UNKEYED: a patch is a declaration of intent, not
+		// The form is UNKEYED: a patch is a declaration of intent, not
 		// a fact about a turn, so it should not have to read the timeline to
 		// be written. That is what lets a `set` land mid-turn.
 		//
@@ -193,7 +197,7 @@ func storeOptions(segmentSize int) xwal.StoreOptions {
 		// LT is a lookup key ("the provider message for turn k"), and a
 		// translation is derived AFTER its turn exists, so there is no
 		// moment at which the main record could stamp a cursor for it.
-		Unkeyed: []string{chanChalkboard},
+		Unkeyed: []string{chanForm},
 	}
 }
 
@@ -379,7 +383,7 @@ func (s *XwalStore) CreateOutfit(name string, patch message.Patch) (string, erro
 		return "", fmt.Errorf("xwal store: create outfit stump: %w", err)
 	}
 	// The outfit's birth message is renderable (RoleInput, empty content): its
-	// chalkboard patch renders as the outfit's <system-reminder> blocks ONCE
+	// form patch renders as the outfit's <system-reminder> blocks ONCE
 	// in this shared prefix, inherited (cached) by every conversation.
 	stamped := withOutfitVersion(named, ver)
 	if err := s.writeStumpBirth(stump, &stamped); err != nil {
@@ -475,7 +479,7 @@ func (s *XwalStore) OwnerOf(id string, atMainLT uint64) (xwal.Owner, error) {
 }
 
 // writeStumpBirth appends an outfit stump's renderable birth message (IR +
-// chalkboard stamp). Caller holds s.mu.
+// form stamp). Caller holds s.mu.
 func (s *XwalStore) writeStumpBirth(stump string, cbPatch *message.Patch) error {
 	x, err := s.trunks.StumpHead(stump)
 	if err != nil {
@@ -502,11 +506,11 @@ func (s *XwalStore) writeStumpBirth(stump string, cbPatch *message.Patch) error 
 	// The patch is keyed to the LT the birth record is about to take, which is
 	// what it was keyed to before (the record's own LT) and is the reducible
 	// one-ahead convention the flush coherence rule already allows. On an
-	// unkeyed chalkboard the key is ignored and the stamp is what matters;
+	// unkeyed form the key is ignored and the stamp is what matters;
 	// keying it correctly keeps the keyed case honest rather than relying on
 	// the channel happening to be unkeyed.
 	next := mainTailOf(x) + 1
-	if _, err := x.Append(chanChalkboard, next, pb, nil); err != nil {
+	if _, err := x.Append(chanForm, next, pb, nil); err != nil {
 		return err
 	}
 	gen, _ := json.Marshal(message.Message{Role: message.RoleInput, Timestamp: s.now()})

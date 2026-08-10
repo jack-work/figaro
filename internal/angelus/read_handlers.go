@@ -77,20 +77,20 @@ func (h *handlers) ariaContext(ctx context.Context, params json.RawMessage) (int
 	return rpc.ContextResponse{Messages: out, Metrics: metrics}, nil
 }
 
-// ariaChalkboard serves an aria's chalkboard without waking it.
-func (h *handlers) ariaChalkboard(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	id, err := ariaIDParam(params, "aria.chalkboard")
+// ariaForm serves an aria's form without waking it.
+func (h *handlers) ariaForm(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	id, err := ariaIDParam(params, "aria.form")
 	if err != nil {
 		return nil, err
 	}
 	if srv := h.liveAgent(id); srv != nil {
-		return srv.Handle(ctx, rpc.MethodChalkboard, nil)
+		return srv.Handle(ctx, rpc.MethodForm, nil)
 	}
-	snap, err := h.reader().Chalkboard(id)
+	snap, err := h.reader().Form(id)
 	if err != nil {
-		return nil, fmt.Errorf("aria.chalkboard: %w", err)
+		return nil, fmt.Errorf("aria.form: %w", err)
 	}
-	return rpc.ChalkboardResponse{Snapshot: snap}, nil
+	return rpc.FormResponse{Snapshot: snap}, nil
 }
 
 func ariaIDParam(params json.RawMessage, method string) (string, error) {

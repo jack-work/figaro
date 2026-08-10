@@ -7,18 +7,18 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-// completeChalkboardKeys returns the union of well-known keys and
+// completeFormKeys returns the union of well-known keys and
 // live snapshot keys for the pid-bound aria. Used by both `set` and
 // `unset` — no mode filtering, the runtime decides what's actionable.
 // Templated keys like "system.environment.<name>" are expanded to
 // one entry per allowlist member.
-func completeChalkboardKeys(c *cmdkit.CompleteContext) []string {
+func completeFormKeys(c *cmdkit.CompleteContext) []string {
 	seen := map[string]struct{}{}
 	var out []string
 	add := func(k string) {
@@ -31,14 +31,14 @@ func completeChalkboardKeys(c *cmdkit.CompleteContext) []string {
 		seen[k] = struct{}{}
 		out = append(out, k)
 	}
-	for _, d := range chalkboard.WellKnownKeys() {
+	for _, d := range form.WellKnownKeys() {
 		if strings.HasSuffix(d.Key, "<name>") {
 			// Only the environment template has a known expander; other
 			// <name>-shaped catalog entries are documentation-only and
 			// rely on softFetchLiveKeys() to surface concrete instances.
 			if d.Key == "system.environment.<name>" {
 				prefix := strings.TrimSuffix(d.Key, "<name>")
-				for _, name := range chalkboard.EnvironmentAllowlist {
+				for _, name := range form.EnvironmentAllowlist {
 					add(prefix + strings.ToLower(name))
 				}
 			}
@@ -78,14 +78,14 @@ func softFetchLiveKeys() []string {
 		return nil
 	}
 	defer fcli.Close()
-	resp, err := fcli.Chalkboard(ctx)
+	resp, err := fcli.Form(ctx)
 	if err != nil {
 		return nil
 	}
 	return snapshotKeys(resp.Snapshot)
 }
 
-func snapshotKeys(snap chalkboard.Snapshot) []string {
+func snapshotKeys(snap form.Snapshot) []string {
 	out := make([]string, 0, snap.Len())
 	for k := range snap.All() {
 		out = append(out, k)

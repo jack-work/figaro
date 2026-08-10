@@ -1,4 +1,4 @@
-package chalkboard_test
+package form_test
 
 import (
 	"encoding/json"
@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 )
 
 // Benchmark fixtures. Three boards, all deterministic:
@@ -120,7 +120,7 @@ func fixtures() []fixture {
 }
 
 // board is the Snapshot for a fixture, built through the seam.
-func (f fixture) board() chalkboard.Snapshot { return buildBoard(f.m()) }
+func (f fixture) board() form.Snapshot { return buildBoard(f.m()) }
 
 // mutated returns a copy of the fixture map with the first `n` keys (in
 // sorted order) carrying different values. n == -1 means every key.

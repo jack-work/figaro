@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
@@ -13,7 +13,7 @@ import (
 )
 
 // AriaReader answers the read half of the aria contract — history, context
-// and chalkboard — straight from the store, with no agent.
+// and form — straight from the store, with no agent.
 //
 // It exists because reading was the last thing pinning an agent in memory.
 // A transcript pager, a `figaro show`, a browser tab left open for a week:
@@ -31,7 +31,7 @@ import (
 //	Page      600 msgs   477 µs    916 KB/op
 //	Page       10k msgs  4.63 ms  13.1 MB/op
 //	Context    10k msgs   534 µs   2.8 MB/op   (decode only, no projection)
-//	Chalkboard            257 ns     51 B/op
+//	Form            257 ns     51 B/op
 //
 // So ~10 MB of the 13 is projection, thrown away each call: this is
 // O(whole history) per page, not O(page). Against an agent's ~6 MB of
@@ -117,15 +117,15 @@ func (r *AriaReader) Page(id string, at aria.Anchor, budget int, before bool) (a
 	return page, nil
 }
 
-// Chalkboard reads the reducible chalkboard channel, which is the durable
-// truth — there is no chalkboard.json to fall back on.
-func (r *AriaReader) Chalkboard(id string) (chalkboard.Snapshot, error) {
+// Form reads the reducible form channel, which is the durable
+// truth — there is no the form channel to fall back on.
+func (r *AriaReader) Form(id string) (form.Snapshot, error) {
 	if r == nil || r.backend == nil {
-		return chalkboard.Snapshot{}, errors.New("no backend (ephemeral angelus)")
+		return form.Snapshot{}, errors.New("no backend (ephemeral angelus)")
 	}
-	snap, err := r.backend.ChalkboardState(id)
+	snap, err := r.backend.FormState(id)
 	if err != nil {
-		return chalkboard.Snapshot{}, fmt.Errorf("chalkboard %s: %w", id, err)
+		return form.Snapshot{}, fmt.Errorf("form %s: %w", id, err)
 	}
 	return snap, nil
 }
@@ -134,7 +134,7 @@ func (r *AriaReader) Chalkboard(id string) (chalkboard.Snapshot, error) {
 // the fields that only a live turn can know. Token counts and context size
 // are pure functions of the IR, so they round-trip exactly; a dormant aria
 // simply has no provider bound, so the context LIMIT is whatever the
-// chalkboard last recorded rather than a live lookup.
+// form last recorded rather than a live lookup.
 func (r *AriaReader) metrics(id string, msgs []message.Message) *aria.Metrics {
 	contextTokens, exact := tokens.ContextSize(msgs)
 	m := &aria.Metrics{ContextTokens: contextTokens, ContextExact: exact}
@@ -146,13 +146,13 @@ func (r *AriaReader) metrics(id string, msgs []message.Message) *aria.Metrics {
 			m.CacheWriteTokens += u.CacheWriteTokens
 		}
 	}
-	if snap, err := r.Chalkboard(id); err == nil {
+	if snap, err := r.Form(id); err == nil {
 		m.Mantra = snapString(snap, "mantra")
 	}
 	return m
 }
 
-func snapString(snap chalkboard.Snapshot, key string) string {
+func snapString(snap form.Snapshot, key string) string {
 	raw, ok := snap.Get(key)
 	if !ok {
 		return ""

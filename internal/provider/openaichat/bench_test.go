@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
@@ -103,7 +103,7 @@ func BenchmarkCatchUp(b *testing.B) {
 // proportional to prompt bytes (serialization always is) — the invariant it
 // guards is that marking does not add a second full pass.
 func BenchmarkAssemble(b *testing.B) {
-	board := chalkboard.FromMap(map[string]json.RawMessage{
+	board := form.FromMap(map[string]json.RawMessage{
 		"system.credo": json.RawMessage(`"you are figaro"`),
 	})
 	for _, n := range []int{1_000, 10_000} {
@@ -133,7 +133,7 @@ func BenchmarkMarkRequest(b *testing.B) {
 			p := benchProvider(b, provider.MarkBlocks)
 			log := benchLog(b, n)
 			perMessage, _ := p.catchUp(log, nil, nil)
-			board := chalkboard.FromMap(map[string]json.RawMessage{
+			board := form.FromMap(map[string]json.RawMessage{
 				"system.credo": json.RawMessage(`"you are figaro"`),
 			})
 			req, err := p.assemble(perMessage, board, nil, 1024, "aria1")

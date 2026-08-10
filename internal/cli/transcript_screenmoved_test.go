@@ -17,7 +17,7 @@ import (
 // The second status row is a FROZEN one — spinner stopped mid-animation —
 // sitting to the right of ordinary prose, which is the user's report exactly:
 //
-//	   Read the chalkboard tail → get K → append⠴ · ctx ~328.0k/1.0m 32.8% · cost …
+//	   Read the form tail → get K → append⠴ · ctx ~328.0k/1.0m 32.8% · cost …
 //
 // Mechanism: the painter finishes every frame on the last row, the alt screen
 // has no scrollback, so a write of "\n"+text there SCROLLS THE WHOLE GRID and

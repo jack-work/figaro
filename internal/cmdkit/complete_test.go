@@ -230,7 +230,7 @@ func TestCompleteBarePromptSentinel(t *testing.T) {
 
 func TestCompletionScriptsMentionDispatcher(t *testing.T) {
 	r := NewRouter("figaro")
-	r.Register(&Command{Name: "set", Short: "Patch a chalkboard key"})
+	r.Register(&Command{Name: "set", Short: "Patch a form key"})
 
 	for _, shell := range []CompletionShell{ShellBash, ShellZsh, ShellFish} {
 		t.Run(string(shell), func(t *testing.T) {

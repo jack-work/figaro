@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 )
 
@@ -16,7 +16,7 @@ import (
 func renderJSON(t *testing.T, msg message.Message) map[string]any {
 	t.Helper()
 	p := &Provider{}
-	snap := chalkboard.Snapshot{}
+	snap := form.Snapshot{}
 	mp, ok := p.renderMessage(msg, &snap)
 	require.True(t, ok, "message rendered to nothing")
 	raw, err := json.Marshal(mp)

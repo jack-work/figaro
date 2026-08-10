@@ -60,9 +60,9 @@ func TestRealMigratedStoreOpensWithEverything(t *testing.T) {
 		if got > 0 {
 			read++
 		}
-		snap, err := be.ChalkboardState(n.ID)
+		snap, err := be.FormState(n.ID)
 		if err != nil {
-			t.Fatalf("aria %s chalkboard: %v", n.ID, err)
+			t.Fatalf("aria %s form: %v", n.ID, err)
 		}
 		if snap.Len() > 0 {
 			boards++
@@ -93,7 +93,7 @@ func TestRealMigratedStoreOpensWithEverything(t *testing.T) {
 		t.Error("every aria read empty")
 	}
 	if boards == 0 {
-		t.Error("not one aria has a chalkboard: the cursor fallback is not reaching the old keyed records")
+		t.Error("not one aria has a form: the cursor fallback is not reaching the old keyed records")
 	}
 	_ = deepest
 }

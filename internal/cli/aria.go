@@ -279,7 +279,7 @@ func selectTurnRange(turns []aria.Turn, o showOpts) (int, int) {
 
 // renderAriaIR is the raw IR path for --verbose / --literal: it renders
 // each message (markdown via largo, or unrendered when --literal) and, in
-// verbose mode, appends credo / state transitions / chalkboard.
+// verbose mode, appends credo / state transitions / form.
 func renderAriaIR(loaded *config.Loaded, figaroID string, entries []store.Entry[message.Message], opts showOpts) {
 	start := 0
 	if !opts.all && len(entries) > opts.last {
@@ -310,10 +310,10 @@ func renderAriaIR(loaded *config.Loaded, figaroID string, entries []store.Entry[
 	fmt.Println("---")
 	fmt.Println("## credo")
 	fmt.Println()
-	// The chalkboard is a reducible channel now (there is no chalkboard.json);
+	// The form is a reducible channel now (there is no the form channel);
 	// fetch the live snapshot through the angelus. Best-effort: the credo and
-	// chalkboard sections degrade to empty rather than aborting the dump.
-	snap := fetchChalkboardSnapshot(loaded, figaroID)
+	// form sections degrade to empty rather than aborting the dump.
+	snap := fetchFormSnapshot(loaded, figaroID)
 	if raw, ok := snap.Get("system.credo"); ok {
 		// system.credo may be a bare string or a ContentEnvelope object
 		// ({content, frontmatter, filePath}). Prefer content, fall back to
@@ -336,7 +336,7 @@ func renderAriaIR(loaded *config.Loaded, figaroID string, entries []store.Entry[
 			}
 		}
 	} else {
-		fmt.Println("(no system.credo on chalkboard)")
+		fmt.Println("(no system.credo on form)")
 	}
 	fmt.Println()
 	fmt.Println("---")
@@ -345,12 +345,14 @@ func renderAriaIR(loaded *config.Loaded, figaroID string, entries []store.Entry[
 	printTransitions(os.Stdout, entries)
 	fmt.Println()
 	fmt.Println("---")
-	fmt.Println("## chalkboard")
+	fmt.Println("## form")
 	fmt.Println()
-	printSnapshot(os.Stdout, snap)
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(nestSnapshot(snap))
 }
 
-// printTransitions prints all chalkboard patches in LT order.
+// printTransitions prints all form patches in LT order.
 func printTransitions(w io.Writer, entries []store.Entry[message.Message]) {
 	any := false
 	for _, e := range entries {

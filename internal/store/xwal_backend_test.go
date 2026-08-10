@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 )
 
@@ -56,8 +56,8 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 		t.Fatalf("translation lookup = (%+v,%v)", g, ok)
 	}
 
-	// chalkboard: inherited credo, re-derived via StateAt
-	snap, err := b.ChalkboardState(conv)
+	// form: inherited credo, re-derived via StateAt
+	snap, err := b.FormState(conv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,10 +65,10 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 		t.Fatalf("credo = %q, want 'be terse'", str(cbGet(snap, "system.credo")))
 	}
 	// mutate via patch; re-derive sees it
-	if _, err := b.ApplyChalkboard(conv, patchSet(map[string]string{"system.cwd": "/tmp"})); err != nil {
+	if _, err := b.ApplyForm(conv, patchSet(map[string]string{"system.cwd": "/tmp"})); err != nil {
 		t.Fatal(err)
 	}
-	snap, _ = b.ChalkboardState(conv)
+	snap, _ = b.FormState(conv)
 	if str(cbGet(snap, "system.cwd")) != "/tmp" {
 		t.Fatalf("cwd after apply = %q", str(cbGet(snap, "system.cwd")))
 	}
@@ -94,9 +94,9 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 		t.Fatalf("fork: %v", err)
 	}
 	for _, id := range []string{cont, alt} {
-		snap, err := b.ChalkboardState(id)
+		snap, err := b.FormState(id)
 		if err != nil {
-			t.Fatalf("child %s chalkboard: %v", id, err)
+			t.Fatalf("child %s form: %v", id, err)
 		}
 		if str(cbGet(snap, "system.cwd")) != "/tmp" {
 			t.Fatalf("child %s lost inherited cwd: %q", id, str(cbGet(snap, "system.cwd")))
@@ -127,7 +127,7 @@ func patchSet(kv map[string]string) message.Patch {
 	return message.Patch{Set: set}
 }
 
-func cbGet(s chalkboard.Snapshot, key string) json.RawMessage {
+func cbGet(s form.Snapshot, key string) json.RawMessage {
 	v, _ := s.Get(key)
 	return v
 }
@@ -232,10 +232,10 @@ func TestXwalBackend_ForkAtInterior(t *testing.T) {
 	if alt == conv || alt == "" {
 		t.Fatalf("alt must be a fresh trunk, got %q", alt)
 	}
-	// The alternative inherits the chalkboard prefix and is sendable.
-	snap, err := b.ChalkboardState(alt)
+	// The alternative inherits the form prefix and is sendable.
+	snap, err := b.FormState(alt)
 	if err != nil {
-		t.Fatalf("alt chalkboard: %v", err)
+		t.Fatalf("alt form: %v", err)
 	}
 	if str(cbGet(snap, "system.model")) != "m" {
 		t.Fatalf("alt lost inherited model: %q", str(cbGet(snap, "system.model")))
@@ -275,10 +275,10 @@ func TestXwalBackend_CauterizedOutfitFork(t *testing.T) {
 	if sib == conv || sib == l || sib == "" {
 		t.Fatalf("sib must be a fresh conversation trunk, got %q", sib)
 	}
-	// The sibling shares the outfit chalkboard and is itself sendable.
-	snap, err := b.ChalkboardState(sib)
+	// The sibling shares the outfit form and is itself sendable.
+	snap, err := b.FormState(sib)
 	if err != nil {
-		t.Fatalf("sib chalkboard: %v", err)
+		t.Fatalf("sib form: %v", err)
 	}
 	if str(cbGet(snap, "system.model")) != "m" {
 		t.Fatalf("sib lost the shared outfit model: %q", str(cbGet(snap, "system.model")))

@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 )
 
@@ -24,7 +24,7 @@ func TestRenderMessage_InterruptSentinel(t *testing.T) {
 			{Type: message.ContentToolInvoke, ToolCallID: "toolu_b", ToolName: "read"},
 		},
 	)
-	snap := chalkboard.Snapshot{}
+	snap := form.Snapshot{}
 	nm, ok := a.renderMessage(sentinel, &snap)
 	require.True(t, ok)
 	assert.Equal(t, "user", nm.Role)
@@ -47,7 +47,7 @@ func TestRenderMessage_InterruptSentinel(t *testing.T) {
 func TestRenderMessage_InterruptSentinel_NoBlocksDropped(t *testing.T) {
 	a := &Anthropic{}
 	sentinel := message.Message{Role: message.RoleSystemInterrupt}
-	snap := chalkboard.Snapshot{}
+	snap := form.Snapshot{}
 	_, ok := a.renderMessage(sentinel, &snap)
 	assert.False(t, ok)
 }
@@ -60,7 +60,7 @@ func TestRenderMessage_InterruptSentinel_EmptyTextDefaults(t *testing.T) {
 			{Type: message.ContentInterrupt, ToolCallID: "toolu_x"},
 		},
 	}
-	snap := chalkboard.Snapshot{}
+	snap := form.Snapshot{}
 	nm, ok := a.renderMessage(sentinel, &snap)
 	require.True(t, ok)
 	raw, err := json.Marshal(nm)

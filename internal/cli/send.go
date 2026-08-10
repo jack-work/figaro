@@ -240,7 +240,7 @@ func (o *sendOpts) addOutfit(text string) error {
 }
 
 // armOutfit hands the parsed dressing to the prompt builder. Every sending verb
-// parses through here, so none can forget to carry it: buildPromptChalkboard
+// parses through here, so none can forget to carry it: buildPromptForm
 // puts it on the same call as the message.
 func (o sendOpts) armOutfit() error {
 	promptDressing = o.outfit
@@ -772,7 +772,7 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 	}
 	defer fcli.Close()
 
-	if _, _, qerr := fcli.Qua(ctx, prompt, buildPromptChalkboard()); qerr != nil {
+	if _, _, qerr := fcli.Qua(ctx, prompt, buildPromptForm()); qerr != nil {
 		dieWithClosure(qerr, "prompt: %s", qerr)
 	}
 	if opts.json {

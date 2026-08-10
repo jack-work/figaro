@@ -7,34 +7,34 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 )
 
-// Chalkboard replay benchmarks — the BEFORE measurement for the
+// Form replay benchmarks — the BEFORE measurement for the
 // persistent-tree migration (branch chalk/bench, see DESIGN.md).
 //
 // Two paths are measured:
 //
-//  1. BenchmarkChalkboardReduceFold — the figwal reducer,
-//     chalkboardReduce (xwal_store.go). figwal folds it over every
+//  1. BenchmarkFormReduceFold — the figwal reducer,
+//     formReduce (xwal_store.go). figwal folds it over every
 //     sealed record on segment open (xwal.reducibleFold), and it
 //     unmarshals the WHOLE board, applies one patch, and re-marshals
 //     the WHOLE board per record. Cost per record is O(board), so a
 //     replay of N records over an M-key board is O(N*M) — the
 //     quadratic we expect to see, and the reason this file exists.
 //
-//  2. BenchmarkChalkboardOpenReplay — the end-to-end open path:
-//     XwalBackend.ChalkboardState on a cold backend, which runs
-//     loadChalkboardLocked (a per-record map fold, not the reducer)
+//  2. BenchmarkFormOpenReplay — the end-to-end open path:
+//     XwalBackend.FormState on a cold backend, which runs
+//     loadFormLocked (a per-record map fold, not the reducer)
 //     plus whatever figwal does on open.
 //
 // This is the one place in the fleet's benchmark work that lives in
-// `package store`: chalkboardReduce is package-private.
+// `package store`: formReduce is package-private.
 //
 // Standard invocation:
 //
-//	go test ./internal/store -run XXX -bench 'Chalkboard' -benchmem \
+//	go test ./internal/store -run XXX -bench 'Form' -benchmem \
 //	    -benchtime=1x -count=5 | tee bench-store-before.txt
 //
 // -benchtime=1x because a single fold at M=5000,N=2000 already takes
@@ -86,7 +86,7 @@ func replayValue(rng *rand.Rand, size int) json.RawMessage {
 }
 
 // replayPatches returns n single-key patches, cycling over the board's
-// own keys — i.e. what a long aria's chalkboard channel actually holds
+// own keys — i.e. what a long aria's form channel actually holds
 // (one `figaro set`-shaped record at a time).
 func replayPatches(m, n int) []message.Patch {
 	rng := rand.New(rand.NewSource(11))
@@ -101,10 +101,10 @@ func replayPatches(m, n int) []message.Patch {
 	return out
 }
 
-// BenchmarkChalkboardReduceFold folds n patch records onto an m-key
+// BenchmarkFormReduceFold folds n patch records onto an m-key
 // board through the real reducer, exactly as figwal does on segment
 // open. Reports ns/record so the scaling in m is readable directly.
-func BenchmarkChalkboardReduceFold(b *testing.B) {
+func BenchmarkFormReduceFold(b *testing.B) {
 	for _, g := range replayGrid {
 		b.Run(fmt.Sprintf("M=%d/N=%d", g.m, g.n), func(b *testing.B) {
 			initial := replayBoardJSON(g.m)
@@ -121,7 +121,7 @@ func BenchmarkChalkboardReduceFold(b *testing.B) {
 			for b.Loop() {
 				state := initial
 				for _, p := range raw {
-					next, err := chalkboardReduce(state, p)
+					next, err := formReduce(state, p)
 					if err != nil {
 						b.Fatal(err)
 					}
@@ -134,20 +134,20 @@ func BenchmarkChalkboardReduceFold(b *testing.B) {
 	}
 }
 
-// BenchmarkChalkboardOpenReplay measures the cold-open cost of
-// materializing an aria's chalkboard: a fresh XwalBackend over a store
+// BenchmarkFormOpenReplay measures the cold-open cost of
+// materializing an aria's form: a fresh XwalBackend over a store
 // seeded with an m-key board plus n single-key patch records.
-func BenchmarkChalkboardOpenReplay(b *testing.B) {
+func BenchmarkFormOpenReplay(b *testing.B) {
 	for _, g := range replayGrid {
 		b.Run(fmt.Sprintf("M=%d/N=%d", g.m, g.n), func(b *testing.B) {
-			root, aria := seedChalkboardAria(b, g.m, g.n)
+			root, aria := seedFormAria(b, g.m, g.n)
 			b.ResetTimer()
 			for b.Loop() {
 				be, err := NewXwalBackend(root, 0)
 				if err != nil {
 					b.Fatal(err)
 				}
-				snap, err := be.ChalkboardState(aria)
+				snap, err := be.FormState(aria)
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -161,10 +161,10 @@ func BenchmarkChalkboardOpenReplay(b *testing.B) {
 	}
 }
 
-// seedChalkboardAria writes a store with one conversation whose
-// chalkboard channel holds an m-key seed patch followed by n
+// seedFormAria writes a store with one conversation whose
+// form channel holds an m-key seed patch followed by n
 // single-key patches. Returns the store root and the aria id.
-func seedChalkboardAria(tb testing.TB, m, n int) (string, string) {
+func seedFormAria(tb testing.TB, m, n int) (string, string) {
 	tb.Helper()
 	root := tb.TempDir()
 	be, err := NewXwalBackend(root, 0)
@@ -180,7 +180,7 @@ func seedChalkboardAria(tb testing.TB, m, n int) (string, string) {
 		tb.Fatal(err)
 	}
 	for _, p := range replayPatches(m, n) {
-		if _, err := be.ApplyChalkboard(aria, p); err != nil {
+		if _, err := be.ApplyForm(aria, p); err != nil {
 			tb.Fatal(err)
 		}
 	}
@@ -192,6 +192,6 @@ func seedChalkboardAria(tb testing.TB, m, n int) (string, string) {
 
 // replaySnapLen is the seam for reading a Snapshot's size from this
 // file; on main a Snapshot was a map, now it is a tree handle.
-func replaySnapLen(s chalkboard.Snapshot) int { return s.Len() }
+func replaySnapLen(s form.Snapshot) int { return s.Len() }
 
 var storeSink int

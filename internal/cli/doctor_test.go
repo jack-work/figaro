@@ -70,15 +70,15 @@ func manifestChannels(t *testing.T, arias string) []string {
 // translations-v2/* is the critical non-regression: it must NOT be swept by the
 // legacy translations/ prefix rule.
 func TestDoctorGCPrunesDeadChannels(t *testing.T) {
-	channels := []string{"ir", "chalkboard", "turn-wal", "translations/anthropic", "translations-v2/anthropic"}
-	dirs := []string{"ir", "chalkboard", "turn-wal", "_live", "translations/anthropic", "translations-v2/anthropic"}
+	channels := []string{"ir", "form", "turn-wal", "translations/anthropic", "translations-v2/anthropic"}
+	dirs := []string{"ir", "form", "turn-wal", "_live", "translations/anthropic", "translations-v2/anthropic"}
 	arias := gcFixture(t, channels, dirs)
 
 	if err := runDoctorGC(false); err != nil {
 		t.Fatalf("gc: %v", err)
 	}
 
-	want := []string{"ir", "chalkboard", "translations-v2/anthropic"}
+	want := []string{"ir", "form", "translations-v2/anthropic"}
 	if got := manifestChannels(t, arias); !slices.Equal(got, want) {
 		t.Errorf("manifest channels = %v, want %v", got, want)
 	}
@@ -87,7 +87,7 @@ func TestDoctorGCPrunesDeadChannels(t *testing.T) {
 			t.Errorf("%s: still on disk", d)
 		}
 	}
-	for _, d := range []string{"ir", "chalkboard", "translations-v2/anthropic"} {
+	for _, d := range []string{"ir", "form", "translations-v2/anthropic"} {
 		if _, err := os.Stat(filepath.Join(arias, filepath.FromSlash(d))); err != nil {
 			t.Errorf("%s: should have survived: %v", d, err)
 		}

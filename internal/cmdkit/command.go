@@ -74,7 +74,7 @@ type CompleteContext struct {
 	// token before the cursor (i.e. the cursor lives in the prompt
 	// body of `figaro <verb> [flags] -- <body...>`). Useful for
 	// switching the candidate pool from flags/ids to prompt-context
-	// (chalkboard refs, CWD entries, etc.).
+	// (form refs, CWD entries, etc.).
 	PastSeparator bool
 
 	// Extra mirrors Router.Extra (e.g. *config.Loaded).

@@ -1,23 +1,23 @@
-package chalkboard_test
+package form_test
 
 import (
 	"encoding/json"
 	"fmt"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 )
 
-// Chalkboard microbenchmarks — the BEFORE measurement for the
+// Form microbenchmarks — the BEFORE measurement for the
 // persistent-tree migration (see DESIGN.md, branch chalk/bench).
 //
-// Everything here uses only the public chalkboard API, and every
+// Everything here uses only the public form API, and every
 // Snapshot construction/read goes through the seam in
 // bench_seam_test.go. Fixtures live in bench_fixtures_test.go.
 //
 // Standard invocation (see scripts/chalkbench.sh):
 //
-//	go test ./internal/chalkboard -bench=. -benchmem -count=10 |
+//	go test ./internal/form -bench=. -benchmem -count=10 |
 //	    tee bench-before.txt
 
 // --- Clone ---------------------------------------------------------
@@ -43,7 +43,7 @@ func BenchmarkApply_SmallPatch(b *testing.B) {
 		b.Run(f.name, func(b *testing.B) {
 			s := f.board()
 			keys := f.sampleKeys(3)
-			patch := chalkboard.Patch{
+			patch := form.Patch{
 				Set: map[string]json.RawMessage{
 					keys[0]:       json.RawMessage(`"patched"`),
 					"bench.fresh": json.RawMessage(`"newly-set"`),
@@ -103,7 +103,7 @@ func BenchmarkDiffDerived(b *testing.B) {
 		for _, n := range []int{1, 5} {
 			b.Run(fmt.Sprintf("%s/%d-key", f.name, n), func(b *testing.B) {
 				prev := f.board()
-				patch := chalkboard.Patch{Set: map[string]json.RawMessage{}}
+				patch := form.Patch{Set: map[string]json.RawMessage{}}
 				for _, k := range f.sampleKeys(n) {
 					patch.Set[k] = json.RawMessage(`"derived-change"`)
 				}
@@ -159,7 +159,7 @@ func BenchmarkLookup(b *testing.B) {
 // --- Render --------------------------------------------------------
 
 func BenchmarkRender(b *testing.B) {
-	tmpls, err := chalkboard.LoadDefaultTemplates()
+	tmpls, err := form.LoadDefaultTemplates()
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -172,10 +172,10 @@ func BenchmarkRender(b *testing.B) {
 				v, _ := boardGet(prev, k)
 				set[k] = mutateValue(v)
 			}
-			patch := chalkboard.Patch{Set: set}
+			patch := form.Patch{Set: set}
 			b.ResetTimer()
 			for b.Loop() {
-				out, err := chalkboard.Render(patch, prev, tmpls)
+				out, err := form.Render(patch, prev, tmpls)
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -187,8 +187,8 @@ func BenchmarkRender(b *testing.B) {
 
 // --- JSON ----------------------------------------------------------
 //
-// The wire shape is a flat object. chalkboard.json on disk, the
-// ChalkboardResponse RPC and chalkboardReduce all marshal/unmarshal a
+// The wire shape is a flat object. the form channel on disk, the
+// FormResponse RPC and formReduce all marshal/unmarshal a
 // whole Snapshot, so this is a hot path in its own right.
 
 func BenchmarkMarshalJSON(b *testing.B) {
@@ -232,7 +232,7 @@ func BenchmarkUnmarshalJSON(b *testing.B) {
 	}
 }
 
-// The full round trip is what chalkboardReduce pays per WAL record.
+// The full round trip is what formReduce pays per WAL record.
 func BenchmarkJSONRoundTrip(b *testing.B) {
 	for _, f := range fixtures() {
 		b.Run(f.name, func(b *testing.B) {
@@ -280,12 +280,12 @@ func BenchmarkSnapshot_Diff_Small(b *testing.B) {
 }
 
 func BenchmarkRender_DefaultTemplates_5entries(b *testing.B) {
-	tmpls, err := chalkboard.LoadDefaultTemplates()
+	tmpls, err := form.LoadDefaultTemplates()
 	if err != nil {
 		b.Fatal(err)
 	}
 	prev := buildBoard(map[string]json.RawMessage{})
-	patch := chalkboard.Patch{
+	patch := form.Patch{
 		Set: map[string]json.RawMessage{
 			"cwd":      json.RawMessage(`"/home/figaro"`),
 			"root":     json.RawMessage(`"/home/figaro"`),
@@ -296,7 +296,7 @@ func BenchmarkRender_DefaultTemplates_5entries(b *testing.B) {
 	}
 	b.ResetTimer()
 	for b.Loop() {
-		out, err := chalkboard.Render(patch, prev, tmpls)
+		out, err := form.Render(patch, prev, tmpls)
 		if err != nil {
 			b.Fatal(err)
 		}

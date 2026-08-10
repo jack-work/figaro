@@ -56,9 +56,9 @@ func DialClientWith(ep transport.Endpoint, onNotify NotifyHandler, tap transport
 // time, an idempotent resume cursor. The reply streams as figaro.aria pages.
 // A prompt accepted while a turn is active becomes steering; one accepted
 // while idle opens a new turn. The server classifies it at the drain boundary.
-func (c *Client) Qua(ctx context.Context, text string, cb *rpc.ChalkboardInput) (int, bool, error) {
+func (c *Client) Qua(ctx context.Context, text string, cb *rpc.FormInput) (int, bool, error) {
 	var resp rpc.QuaResponse
-	err := c.call(ctx, rpc.MethodQua, rpc.QuaRequest{Text: text, Chalkboard: cb}, &resp)
+	err := c.call(ctx, rpc.MethodQua, rpc.QuaRequest{Text: text, Form: cb}, &resp)
 	return resp.Cursor, resp.Active, err
 }
 
@@ -111,8 +111,8 @@ func (c *Client) Hangup(ctx context.Context, disposition rpc.QueueDisposition) (
 	return &resp, nil
 }
 
-// Set applies a chalkboard patch directly. No LLM round-trip.
-func (c *Client) Set(ctx context.Context, patch rpc.ChalkboardPatch, ifVersion uint64) (*rpc.SetResponse, error) {
+// Set applies a form patch directly. No LLM round-trip.
+func (c *Client) Set(ctx context.Context, patch rpc.FormPatch, ifVersion uint64) (*rpc.SetResponse, error) {
 	var resp rpc.SetResponse
 	if err := c.call(ctx, rpc.MethodSet, rpc.SetRequest{Patch: patch, IfVersion: ifVersion}, &resp); err != nil {
 		return nil, err
@@ -120,20 +120,20 @@ func (c *Client) Set(ctx context.Context, patch rpc.ChalkboardPatch, ifVersion u
 	return &resp, nil
 }
 
-// Outfit applies a spec additively to the chalkboard, each term taking
+// Outfit applies a spec additively to the form, each term taking
 // precedence over the ones before it. No keys are removed; values equal to the
 
-// Chalkboard returns the agent's current chalkboard snapshot.
-func (c *Client) Chalkboard(ctx context.Context) (*rpc.ChalkboardResponse, error) {
-	var resp rpc.ChalkboardResponse
-	if err := c.call(ctx, rpc.MethodChalkboard, nil, &resp); err != nil {
+// Form returns the agent's current form snapshot.
+func (c *Client) Form(ctx context.Context) (*rpc.FormResponse, error) {
+	var resp rpc.FormResponse
+	if err := c.call(ctx, rpc.MethodForm, nil, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
 }
 
 // Queued returns the aria's queued messages for DISPLAY: the prompts a human
-// would recognise as waiting, with pure chalkboard carriers omitted. The
+// would recognise as waiting, with pure form carriers omitted. The
 // response's Epoch names the generation those ids belong to.
 func (c *Client) Queued(ctx context.Context) (*rpc.QueuedResponse, error) {
 	var resp rpc.QueuedResponse

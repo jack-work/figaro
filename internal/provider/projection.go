@@ -3,14 +3,14 @@ package provider
 import (
 	"encoding/json"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
 )
 
 type IncrementalProjection[T any] struct {
 	State       T
-	Chalkboard  chalkboard.Snapshot
+	Form        form.Snapshot
 	Fingerprint string
 	Entries     int
 	LastLT      uint64
@@ -31,11 +31,11 @@ type ProjectionStats struct {
 type ProjectionConfig[T any] struct {
 	Log         store.Log[message.Message]
 	Cache       store.Log[[]json.RawMessage]
-	Chalkboard  Chalkboard
+	Form        Form
 	Previous    *IncrementalProjection[T]
 	Fingerprint string
 	Initial     T
-	Encode      func(message.Message, chalkboard.Snapshot) ([]json.RawMessage, error)
+	Encode      func(message.Message, form.Snapshot) ([]json.RawMessage, error)
 	Append      func(T, []json.RawMessage, uint64) T
 
 	ReportEncodeError func(uint64, error)
@@ -56,7 +56,7 @@ type ProjectionConfig[T any] struct {
 // request body. The decoded prefix was never needed for anything.
 func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjection[T], ProjectionStats, error) {
 	state := config.Initial
-	snap := chalkboard.Snapshot{}
+	snap := form.Snapshot{}
 	var lastChalk uint64
 
 	// A warm start reads from the watermark; a cold one reads everything.
@@ -77,7 +77,7 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 		previous.Fingerprint == config.Fingerprint &&
 		previous.Entries == prefix {
 		state = previous.State
-		snap = previous.Chalkboard
+		snap = previous.Form
 		lastChalk = previous.LastChalkVersion
 		stats.StartIndex = prefix
 	} else if prefix > 0 {
@@ -92,10 +92,10 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 		if msg.Role == message.RoleGenesis {
 			continue
 		}
-		if config.Chalkboard != nil {
+		if config.Form != nil {
 			// (after, upTo]: the previous entry's mark and this one's. Absolute,
 			// so a warm start renders exactly the same patches a cold walk would.
-			msg.Patches = config.Chalkboard.PatchesBetween(lastChalk, entry.ChalkVersion)
+			msg.Patches = config.Form.PatchesBetween(lastChalk, entry.ChalkVersion)
 		}
 		if entry.ChalkVersion > lastChalk {
 			lastChalk = entry.ChalkVersion
@@ -149,7 +149,7 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 	}
 	return &IncrementalProjection[T]{
 		State:            state,
-		Chalkboard:       snap,
+		Form:             snap,
 		Fingerprint:      config.Fingerprint,
 		Entries:          stats.Entries,
 		LastLT:           lastLT,

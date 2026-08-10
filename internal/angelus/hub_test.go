@@ -153,7 +153,7 @@ func TestHubServesReadsWithoutWaking(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	for _, m := range []string{rpc.MethodRead, rpc.MethodContext, rpc.MethodChalkboard} {
+	for _, m := range []string{rpc.MethodRead, rpc.MethodContext, rpc.MethodForm} {
 		var out map[string]any
 		require.NoError(t, client.Call(ctx, m, struct{}{}, &out), m)
 		require.Equal(t, "store", out["served_by"], m)
@@ -193,9 +193,9 @@ func TestHubWakesForMutatingMethods(t *testing.T) {
 // read set has to be exactly the three that are pure functions of the store.
 func TestMethodNeedsAgentClassification(t *testing.T) {
 	storeServable := map[string]bool{
-		rpc.MethodRead:       true,
-		rpc.MethodContext:    true,
-		rpc.MethodChalkboard: true,
+		rpc.MethodRead:    true,
+		rpc.MethodContext: true,
+		rpc.MethodForm:    true,
 	}
 	for _, m := range figaro.AgentMethods() {
 		require.Equal(t, !storeServable[m], rpc.MethodNeedsAgent(m), "method %s", m)

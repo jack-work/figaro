@@ -111,7 +111,7 @@ func runQueueList(loaded *config.Loaded, ariaID string, asJSON bool) {
 		if p.Text == "" {
 			// A carrier renders as nothing; say what it is instead of
 			// printing a blank row the user cannot act on.
-			text = term.Dim("(chalkboard only)")
+			text = term.Dim("(form only)")
 		}
 		if len(text) > width {
 			text = text[:width] + "…"

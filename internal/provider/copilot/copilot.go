@@ -19,7 +19,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 
 	"github.com/jack-work/figaro/internal/auth"
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/anthropicsdk"
 	"github.com/jack-work/figaro/internal/store"
@@ -70,7 +70,7 @@ func New(
 	}
 	inner.NoOAuthIdentity = true
 	// The Copilot Anthropic-dialect endpoint rejects eager_input_streaming
-	// outright (it used to ignore it silently), so the chalkboard opt-in must
+	// outright (it used to ignore it silently), so the form opt-in must
 	// not reach it. Claude models here keep the API's buffered default; GPT
 	// models take the responses route, which streams arguments natively.
 	inner.NoEagerToolStreaming = true
@@ -188,7 +188,7 @@ func (c *Copilot) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 // ContextLimit returns the active Responses prompt cap from the catalog already
 // cached while routing the model. It deliberately avoids fetching the catalog
 // so status rendering cannot add network latency.
-func (c *Copilot) ContextLimit(model string, snapshot chalkboard.Snapshot) int {
+func (c *Copilot) ContextLimit(model string, snapshot form.Snapshot) int {
 	c.mu.RLock()
 	entry, ok := c.catalog[model]
 	c.mu.RUnlock()

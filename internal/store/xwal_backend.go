@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 )
 
@@ -28,7 +28,7 @@ type XwalBackend struct {
 	store *XwalStore
 	mu    sync.Mutex
 	open  map[string]*ariaHandle
-	chalk map[string]*chalkCache
+	chalk map[string]*formCache
 	metas map[string]*metaCache
 	// labels is stump id -> what its birth record says it is. Never evicted
 	// and never invalidated: a stump id is the hash of content that contains
@@ -37,7 +37,7 @@ type XwalBackend struct {
 	labels map[string]outfitLabel
 	// touched is when each aria's caches were last used. These caches are
 	// PURE COST once an aria has no agent: cachedLog decodes an entire IR
-	// and every translation into the heap at construction, chalkCache holds
+	// and every translation into the heap at construction, formCache holds
 	// the whole board and every patch, and nothing but Remove ever deleted
 	// an entry. Measured on a real daemon: 209 arias resident, 107,439
 	// messages, 3.0 GB private -- against 424 MB of IR on disk, because Go
@@ -92,10 +92,10 @@ type ariaHandle struct {
 	trans map[string]*cachedLog[[]json.RawMessage]
 }
 
-type chalkCache struct {
+type formCache struct {
 	mu    sync.Mutex
 	ready bool
-	state chalkboard.Snapshot
+	state form.Snapshot
 	// version is the durable index of the last patch folded into state: what a
 	// conditional Set quotes back, and what an IR record's cursor stamped.
 	version uint64
@@ -124,7 +124,7 @@ func NewXwalBackend(root string, segmentSize int) (*XwalBackend, error) {
 		root:    root,
 		store:   st,
 		open:    map[string]*ariaHandle{},
-		chalk:   map[string]*chalkCache{},
+		chalk:   map[string]*formCache{},
 		metas:   map[string]*metaCache{},
 		touched: map[string]time.Time{},
 	}, nil
@@ -206,31 +206,31 @@ func (b *XwalBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.R
 
 func (b *XwalBackend) Kick() { b.store.trunks.Kick() }
 
-// ---- chalkboard (re-derived via StateAt; mutation appends a patch) ----
+// ---- form (re-derived via StateAt; mutation appends a patch) ----
 
-func (b *XwalBackend) ChalkboardState(ariaID string) (chalkboard.Snapshot, error) {
-	c := b.chalkCache(ariaID)
+func (b *XwalBackend) FormState(ariaID string) (form.Snapshot, error) {
+	c := b.formCache(ariaID)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if err := b.loadChalkboardLocked(ariaID, c); err != nil {
-		return chalkboard.Snapshot{}, err
+	if err := b.loadFormLocked(ariaID, c); err != nil {
+		return form.Snapshot{}, err
 	}
 	return c.state.Clone(), nil
 }
 
-func (b *XwalBackend) chalkCache(ariaID string) *chalkCache {
+func (b *XwalBackend) formCache(ariaID string) *formCache {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.touchLocked(ariaID)
 	c := b.chalk[ariaID]
 	if c == nil {
-		c = &chalkCache{}
+		c = &formCache{}
 		b.chalk[ariaID] = c
 	}
 	return c
 }
 
-func (b *XwalBackend) loadChalkboardLocked(ariaID string, c *chalkCache) error {
+func (b *XwalBackend) loadFormLocked(ariaID string, c *formCache) error {
 	if c.ready {
 		return nil
 	}
@@ -241,7 +241,7 @@ func (b *XwalBackend) loadChalkboardLocked(ariaID string, c *chalkCache) error {
 	defer xw.Close()
 	var first, last uint64
 	for _, ch := range xw.Channels() {
-		if ch.Name == chanChalkboard {
+		if ch.Name == chanForm {
 			first, last = ch.First, ch.Last
 			break
 		}
@@ -249,10 +249,10 @@ func (b *XwalBackend) loadChalkboardLocked(ariaID string, c *chalkCache) error {
 	if first == 0 && last > 0 {
 		first = 1
 	}
-	state := chalkboard.Snapshot{}
+	state := form.Snapshot{}
 	var patches []VersionedPatch
 	for lt := first; lt >= 1 && lt <= last; lt++ {
-		rec, err := xw.ReadAt(chanChalkboard, lt)
+		rec, err := xw.ReadAt(chanForm, lt)
 		if err != nil {
 			return err
 		}
@@ -272,29 +272,29 @@ func (b *XwalBackend) loadChalkboardLocked(ariaID string, c *chalkCache) error {
 	return nil
 }
 
-// ChalkboardVersion is the durable index of the aria's last board patch.
-func (b *XwalBackend) ChalkboardVersion(ariaID string) (uint64, error) {
-	c := b.chalkCache(ariaID)
+// FormVersion is the durable index of the aria's last board patch.
+func (b *XwalBackend) FormVersion(ariaID string) (uint64, error) {
+	c := b.formCache(ariaID)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if err := b.loadChalkboardLocked(ariaID, c); err != nil {
+	if err := b.loadFormLocked(ariaID, c); err != nil {
 		return 0, err
 	}
 	return c.version, nil
 }
 
-func (b *XwalBackend) ChalkboardPatches(ariaID string) ([]VersionedPatch, error) {
-	c := b.chalkCache(ariaID)
+func (b *XwalBackend) FormPatches(ariaID string) ([]VersionedPatch, error) {
+	c := b.formCache(ariaID)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if err := b.loadChalkboardLocked(ariaID, c); err != nil {
+	if err := b.loadFormLocked(ariaID, c); err != nil {
 		return nil, err
 	}
 	return append([]VersionedPatch(nil), c.patches...), nil
 }
 
-// ApplyChalkboard appends a patch and returns its VERSION: the patch's own
-// durable index in the chalkboard channel.
+// ApplyForm appends a patch and returns its VERSION: the patch's own
+// durable index in the form channel.
 //
 // It does not read the timeline. The channel is unkeyed, so a patch is
 // written with no reference to the turn in flight and nothing to serialize
@@ -309,14 +309,14 @@ func (b *XwalBackend) ChalkboardPatches(ariaID string) ([]VersionedPatch, error)
 // Durability precedes visibility: the in-memory board advances only after
 // the append returns, so a failure leaves the published board and the log
 // agreeing rather than diverging.
-func (b *XwalBackend) ApplyChalkboard(ariaID string, patch message.Patch) (uint64, error) {
+func (b *XwalBackend) ApplyForm(ariaID string, patch message.Patch) (uint64, error) {
 	pb, _ := json.Marshal(patch)
-	c := b.chalkCache(ariaID)
+	c := b.formCache(ariaID)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	// Store.Append, not Trunks.AppendChannel: the poison gate and the
-	// dirty/touch bookkeeping must see chalkboard writes.
-	version, err := b.store.trunks.Append(ariaID, chanChalkboard, 0, pb, nil)
+	// dirty/touch bookkeeping must see form writes.
+	version, err := b.store.trunks.Append(ariaID, chanForm, 0, pb, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -411,7 +411,7 @@ func (b *XwalBackend) label(n *NodeView) {
 
 // stumpLabel reads a stump's name and version out of the birth patch it wrote,
 // which is the only place either has ever been stated authoritatively -- the id
-// used to restate the name, and a chalkboard key of the same name is the
+// used to restate the name, and a form key of the same name is the
 // agent's mutable copy. Memoized for the life of the process: a stump id is the
 // hash of content that contains the label, and a stump cannot be patched, so
 // id -> label is a pure function.
@@ -422,7 +422,7 @@ func (b *XwalBackend) stumpLabel(id string) outfitLabel {
 	if ok {
 		return l
 	}
-	if snap, err := b.ChalkboardState(id); err == nil {
+	if snap, err := b.FormState(id); err == nil {
 		l = outfitLabel{name: snapString(snap, keyOutfitName), version: snapString(snap, keyOutfitVer)}
 	}
 	b.mu.Lock()
@@ -434,7 +434,7 @@ func (b *XwalBackend) stumpLabel(id string) outfitLabel {
 	return l
 }
 
-func snapString(s chalkboard.Snapshot, key string) string {
+func snapString(s form.Snapshot, key string) string {
 	raw, ok := s.Get(key)
 	if !ok {
 		return ""
@@ -693,7 +693,7 @@ func (b *XwalBackend) Close() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.open = map[string]*ariaHandle{}
-	b.chalk = map[string]*chalkCache{}
+	b.chalk = map[string]*formCache{}
 	b.metas = map[string]*metaCache{}
 	return b.store.trunks.Close() // Trunks.Close flushes the topology index
 }

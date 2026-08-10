@@ -78,7 +78,7 @@ type BackgroundExecutor interface {
 //
 // Transformers are applied in order. Typical uses: strip daemon-mode
 // env vars before they leak into children; resolve an empty Cwd from
-// a live source like the chalkboard; remap host paths for an SSH
+// a live source like the form; remap host paths for an SSH
 // executor.
 type ExecTransformer interface {
 	Apply(req ExecRequest) ExecRequest

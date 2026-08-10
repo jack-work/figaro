@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -25,7 +25,7 @@ type Tool struct {
 }
 
 // Knobs are operational provider settings derived from the outfit's
-// system.* chalkboard keys. The harness reads these to construct the
+// system.* form keys. The harness reads these to construct the
 // provider; the agent never sees them (no rendering template).
 type Knobs struct {
 	Model            string
@@ -70,7 +70,7 @@ type AssistantCache struct {
 	Fingerprint string
 }
 
-// Chalkboard is the per-LT transition accessor. Chalkboard patches no
+// Form is the per-LT transition accessor. Form patches no
 // longer ride inline on IR messages; they live in a reducible channel keyed
 // by IR logical time. PatchesAt returns the transitions to render on the
 // message at lt — the encoder folds them into that message's wire bytes
@@ -78,10 +78,10 @@ type AssistantCache struct {
 // (a message's bytes depend only on state up to that message). Live state for the
 // system prefix still arrives via SendInput.Snapshot, which is rebuilt
 // each turn and never cached per-LT.
-// Chalkboard supplies the board patches that landed before a turn, so the
+// Form supplies the board patches that landed before a turn, so the
 // projection can render a `set` inline where it happened.
 //
-// PatchesBetween takes chalkboard VERSIONS, not IR LTs. The board is
+// PatchesBetween takes form VERSIONS, not IR LTs. The board is
 // unkeyed -- a patch is written with no reference to the timeline -- and
 // the association runs the other way: each IR entry records how far the
 // board had advanced when it was written. The projection hands over the
@@ -95,18 +95,18 @@ type AssistantCache struct {
 // WHOLE board onto the first new message, and the encoder baked it into the
 // per-LT cache, so every provider round-trip permanently re-sent all of the
 // aria's state. An absolute range cannot express that bug.
-type Chalkboard interface {
+type Form interface {
 	PatchesBetween(after, upTo uint64) []message.Patch
 }
 
 // SendInput is one turn's input.
 type SendInput struct {
-	AriaID     string
-	FigLog     store.Log[message.Message]
-	Snapshot   chalkboard.Snapshot
-	Chalkboard Chalkboard // inline transitions; nil = none (ephemeral)
-	Tools      []Tool
-	MaxTokens  int
+	AriaID    string
+	FigLog    store.Log[message.Message]
+	Snapshot  form.Snapshot
+	Form      Form // inline transitions; nil = none (ephemeral)
+	Tools     []Tool
+	MaxTokens int
 }
 
 // Provider is the LLM provider interface.
@@ -127,17 +127,17 @@ type Provider interface {
 // prompt-context cap from already-cached provider metadata. Implementations
 // must not perform network I/O here because callers use it on live UI paths.
 type ContextLimitProvider interface {
-	ContextLimit(model string, snapshot chalkboard.Snapshot) int
+	ContextLimit(model string, snapshot form.Snapshot) int
 }
 
-// ContextLimitOverrideKey is the chalkboard key a user pins a context window
+// ContextLimitOverrideKey is the form key a user pins a context window
 // with. It overrides whatever the provider would otherwise report.
 const ContextLimitOverrideKey = "system.max_context_tokens"
 
 // ContextLimitOverride reads the user's pinned context window off the
-// chalkboard. One implementation so every provider spells the override the
+// form. One implementation so every provider spells the override the
 // same way.
-func ContextLimitOverride(snapshot chalkboard.Snapshot) (int, bool) {
+func ContextLimitOverride(snapshot form.Snapshot) (int, bool) {
 	raw, ok := snapshot.Get(ContextLimitOverrideKey)
 	if !ok {
 		return 0, false

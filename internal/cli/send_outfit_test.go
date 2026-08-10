@@ -7,7 +7,7 @@ import (
 
 // One flag, one parser, three verbs. -O accepts every spec form, composes on
 // repeat, survives bundling, and is legal against an existing target (it is a
-// chalkboard fold now, not a birth-only modifier).
+// form fold now, not a birth-only modifier).
 func TestSendOutfitParses(t *testing.T) {
 	cases := []struct {
 		name string
@@ -64,9 +64,9 @@ func TestParsedOutfitRidesThePrompt(t *testing.T) {
 	if _, _, err := extractSendFlags([]string{"-O", "a,ttl=1h", "--", "p"}); err != nil {
 		t.Fatal(err)
 	}
-	in := buildPromptChalkboard()
+	in := buildPromptForm()
 	if in == nil || in.Patch == nil {
-		t.Fatal("no chalkboard input")
+		t.Fatal("no form input")
 	}
 	if got := string(in.Patch.Set["layers"]); got != `["a"]` {
 		t.Errorf("prompt layers: %q", got)
@@ -79,7 +79,7 @@ func TestParsedOutfitRidesThePrompt(t *testing.T) {
 	if _, _, err := extractSendFlags([]string{"--", "p"}); err != nil {
 		t.Fatal(err)
 	}
-	if in := buildPromptChalkboard(); in != nil && in.Patch != nil {
+	if in := buildPromptForm(); in != nil && in.Patch != nil {
 		t.Errorf("patch invented from nothing: %v", in.Patch)
 	}
 }

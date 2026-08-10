@@ -24,7 +24,7 @@ var agentMethods = []string{
 	rpc.MethodContext,
 	rpc.MethodInterrupt,
 	rpc.MethodSet,
-	rpc.MethodChalkboard,
+	rpc.MethodForm,
 	rpc.MethodQueued,
 	rpc.MethodQueueUpdate,
 	rpc.MethodQueueDelete,
@@ -50,12 +50,12 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		}
 		// The prompt's patch may name layers; expand them HERE so a spec that
 		// does not resolve fails the qua before anything is queued.
-		if req.Chalkboard != nil && req.Chalkboard.Patch != nil {
-			materialized, merr := a.Materialize(*req.Chalkboard.Patch)
+		if req.Form != nil && req.Form.Patch != nil {
+			materialized, merr := a.Materialize(*req.Form.Patch)
 			if merr != nil {
 				return nil, outfitError(merr)
 			}
-			req.Chalkboard.Patch = &materialized
+			req.Form.Patch = &materialized
 		}
 		cursor := int(a.ariaSrv.LastTurn())
 		active := a.turnActive()
@@ -64,7 +64,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		// authenticated — is exactly the caller a confused aria needs named.
 		//
 		// The duke placeholder is resolved HERE, against THIS aria's
-		// chalkboard, because the caller cannot know what this aria calls
+		// form, because the caller cannot know what this aria calls
 		// its end user — that is precisely why it sends a placeholder.
 		a.SubmitPromptFrom(req, rpc.SenderFrom(params, a.dukeTitle))
 		return rpc.QuaResponse{OK: true, Cursor: cursor, Active: active}, nil
@@ -106,8 +106,8 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		}
 		return rpc.SetResponse{OK: true, Set: set, Remove: removed}, nil
 
-	case rpc.MethodChalkboard:
-		return rpc.ChalkboardResponse{Snapshot: a.Snapshot()}, nil
+	case rpc.MethodForm:
+		return rpc.FormResponse{Snapshot: a.Snapshot()}, nil
 
 	case rpc.MethodQueued:
 		var req rpc.QueuedRequest
@@ -145,7 +145,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		if req.ID == 0 {
 			return nil, fmt.Errorf("queue update: name the message id")
 		}
-		// Empty text would silently turn a question into a chalkboard carrier
+		// Empty text would silently turn a question into a form carrier
 		// — a shape the caller almost certainly did not mean and cannot see.
 		// Malformed input, so: error, not a rejection reason.
 		if req.Text == "" {

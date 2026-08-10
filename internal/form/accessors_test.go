@@ -1,4 +1,4 @@
-package chalkboard_test
+package form_test
 
 import (
 	"encoding/json"
@@ -7,11 +7,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 )
 
 func TestGet_PresentAndAbsent(t *testing.T) {
-	s := chalkboard.FromMap(map[string]json.RawMessage{
+	s := form.FromMap(map[string]json.RawMessage{
 		"cwd": raw(t, "/foo"),
 	})
 	v, ok := s.Get("cwd")
@@ -24,7 +24,7 @@ func TestGet_PresentAndAbsent(t *testing.T) {
 }
 
 func TestGet_NilSnapshot(t *testing.T) {
-	var s chalkboard.Snapshot
+	var s form.Snapshot
 	v, ok := s.Get("anything")
 	assert.False(t, ok)
 	assert.Nil(t, v)
@@ -36,18 +36,18 @@ func TestGet_NilSnapshot(t *testing.T) {
 }
 
 func TestHasAndLen(t *testing.T) {
-	s := chalkboard.FromMap(map[string]json.RawMessage{
+	s := form.FromMap(map[string]json.RawMessage{
 		"a": raw(t, 1),
 		"b": raw(t, 2),
 	})
 	assert.True(t, s.Has("a"))
 	assert.False(t, s.Has("c"))
 	assert.Equal(t, 2, s.Len())
-	assert.Equal(t, 0, chalkboard.Snapshot{}.Len())
+	assert.Equal(t, 0, form.Snapshot{}.Len())
 }
 
 func TestAll_LexicalKeyOrder(t *testing.T) {
-	s := chalkboard.FromMap(map[string]json.RawMessage{
+	s := form.FromMap(map[string]json.RawMessage{
 		"zeta":         raw(t, "z"),
 		"alpha":        raw(t, "a"),
 		"Beta":         raw(t, "B"),
@@ -75,7 +75,7 @@ func TestAll_LexicalKeyOrder(t *testing.T) {
 }
 
 func TestAll_EarlyBreak(t *testing.T) {
-	s := chalkboard.FromMap(map[string]json.RawMessage{
+	s := form.FromMap(map[string]json.RawMessage{
 		"a": raw(t, 1),
 		"b": raw(t, 2),
 		"c": raw(t, 3),
@@ -94,7 +94,7 @@ func TestFromMap_CopiesNotAliases(t *testing.T) {
 	m := map[string]json.RawMessage{
 		"k": json.RawMessage(`"v1"`),
 	}
-	s := chalkboard.FromMap(m)
+	s := form.FromMap(m)
 
 	// Mutating the source map must not be visible through the snapshot.
 	m["k"] = json.RawMessage(`"v2"`)
@@ -111,7 +111,7 @@ func TestFromMap_CopiesNotAliases(t *testing.T) {
 func TestFromMap_CopiesValueBytes(t *testing.T) {
 	buf := json.RawMessage(`"v1"`)
 	m := map[string]json.RawMessage{"k": buf}
-	s := chalkboard.FromMap(m)
+	s := form.FromMap(m)
 
 	// Mutating the value bytes in place must not be visible either
 	// (Clone has the same depth semantics).
@@ -122,20 +122,20 @@ func TestFromMap_CopiesValueBytes(t *testing.T) {
 }
 
 func TestFromMap_Nil(t *testing.T) {
-	s := chalkboard.FromMap(nil)
+	s := form.FromMap(nil)
 	assert.Equal(t, 0, s.Len())
 	assert.False(t, s.Has("k"))
 	// A nil-sourced snapshot must still be usable as a Diff/Apply base.
-	p := chalkboard.FromMap(map[string]json.RawMessage{"k": raw(t, "v")}).Diff(s)
+	p := form.FromMap(map[string]json.RawMessage{"k": raw(t, "v")}).Diff(s)
 	assert.Equal(t, raw(t, "v"), p.Set["k"])
 }
 
-// --- JSON wire shape. chalkboard.json on disk, the RPC
-// ChalkboardResponse, and chalkboardReduce in internal/store all
+// --- JSON wire shape. the form channel on disk, the RPC
+// FormResponse, and formReduce in internal/store all
 // depend on Snapshot marshalling as a flat object. ---
 
 func TestSnapshot_MarshalsAsFlatObject(t *testing.T) {
-	s := chalkboard.FromMap(map[string]json.RawMessage{
+	s := form.FromMap(map[string]json.RawMessage{
 		"cwd":                 json.RawMessage(`"/home/figaro"`),
 		"model":               json.RawMessage(`"claude-opus-4-6"`),
 		"count":               json.RawMessage(`42`),
@@ -191,7 +191,7 @@ func TestSnapshot_JSONRoundTripByteIdentical(t *testing.T) {
 		`"trunk":["root","conv"]` +
 		`}`
 
-	var s chalkboard.Snapshot
+	var s form.Snapshot
 	require.NoError(t, json.Unmarshal([]byte(onDisk), &s))
 	assert.Equal(t, 11, s.Len())
 
@@ -200,7 +200,7 @@ func TestSnapshot_JSONRoundTripByteIdentical(t *testing.T) {
 	assert.Equal(t, onDisk, string(out), "unmarshal -> marshal must be byte-identical")
 
 	// And again, to prove the round trip is a fixed point.
-	var s2 chalkboard.Snapshot
+	var s2 form.Snapshot
 	require.NoError(t, json.Unmarshal(out, &s2))
 	out2, err := json.Marshal(s2)
 	require.NoError(t, err)
@@ -213,11 +213,11 @@ func TestSnapshot_JSONRoundTripByteIdentical(t *testing.T) {
 }
 
 func TestSnapshot_MarshalEmptyAndNil(t *testing.T) {
-	b, err := json.Marshal(chalkboard.Snapshot{})
+	b, err := json.Marshal(form.Snapshot{})
 	require.NoError(t, err)
 	assert.Equal(t, `{}`, string(b))
 
-	b, err = json.Marshal(chalkboard.FromMap(nil))
+	b, err = json.Marshal(form.FromMap(nil))
 	require.NoError(t, err)
 	assert.Equal(t, `{}`, string(b))
 }

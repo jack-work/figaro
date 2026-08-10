@@ -9,13 +9,13 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 )
 
 // encode projects one IR message to SDK wire bytes. Returns nil if
 // the message has no content to send.
-func (p *Provider) encode(msg message.Message, prevSnap chalkboard.Snapshot) ([]json.RawMessage, error) {
+func (p *Provider) encode(msg message.Message, prevSnap form.Snapshot) ([]json.RawMessage, error) {
 	snap := prevSnap
 	mp, ok := p.renderMessage(msg, &snap)
 	if !ok {
@@ -29,7 +29,7 @@ func (p *Provider) encode(msg message.Message, prevSnap chalkboard.Snapshot) ([]
 }
 
 // renderMessage produces an SDK MessageParam.
-func (p *Provider) renderMessage(msg message.Message, prevSnap *chalkboard.Snapshot) (anthropic.MessageParam, bool) {
+func (p *Provider) renderMessage(msg message.Message, prevSnap *form.Snapshot) (anthropic.MessageParam, bool) {
 	switch msg.Role {
 	case message.RoleInput:
 		toolImages := message.ToolImagesByCall(msg.Content)
@@ -134,9 +134,9 @@ func toolInput(args map[string]interface{}) interface{} {
 	return args
 }
 
-// renderPatchBlocks projects chalkboard patches as system-reminder
+// renderPatchBlocks projects form patches as system-reminder
 // text blocks and advances the snapshot.
-func (p *Provider) renderPatchBlocks(patches []message.Patch, prevSnap *chalkboard.Snapshot) []anthropic.ContentBlockParamUnion {
+func (p *Provider) renderPatchBlocks(patches []message.Patch, prevSnap *form.Snapshot) []anthropic.ContentBlockParamUnion {
 	if len(patches) == 0 || p.Templates == nil {
 		for _, patch := range patches {
 			*prevSnap = prevSnap.Apply(patch)
@@ -148,7 +148,7 @@ func (p *Provider) renderPatchBlocks(patches []message.Patch, prevSnap *chalkboa
 	}
 	var out []anthropic.ContentBlockParamUnion
 	for _, patch := range patches {
-		rendered, err := chalkboard.Render(patch, *prevSnap, p.Templates)
+		rendered, err := form.Render(patch, *prevSnap, p.Templates)
 		if err != nil {
 			slog.Warn("anthropicsdk: render patch", "err", err)
 		} else {
@@ -203,7 +203,7 @@ func toolResultBlock(toolUseID, text string, isErr bool, images []message.Conten
 }
 
 // senderReminder renders one attribution for the model, in the same
-// <system-reminder> shape the chalkboard uses, so there is one convention for
+// <system-reminder> shape the form uses, so there is one convention for
 // "harness metadata inside a message" rather than two.
 func senderReminder(sender string) string {
 	return "<system-reminder name=\"sender\">" + sender + "</system-reminder>"

@@ -2,7 +2,7 @@
 //
 // Provider factories take operational knobs (model, max_tokens,
 // reminder_renderer, use_official_sdk) extracted by the angelus
-// from the outfit's system.* chalkboard keys. Credentials are
+// from the outfit's system.* form keys. Credentials are
 // resolved through the auth strategy chain: env var, plaintext
 // api_key in providers/<name>.toml, hush-encrypted api_key in
 // providers/<name>.toml, OAuth via hush.

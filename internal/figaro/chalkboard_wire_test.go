@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
@@ -38,7 +38,7 @@ func (p *chalkSpyProvider) SetModel(string)                                     
 
 // encode records every message it's asked to encode. Returns a stub
 // payload so the cache lookup hits next turn.
-func (p *chalkSpyProvider) encode(msg message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
+func (p *chalkSpyProvider) encode(msg message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 	p.mu.Lock()
 	p.encoded = append(p.encoded, msg)
 	p.mu.Unlock()
@@ -73,14 +73,14 @@ func (p *chalkSpyProvider) lastTurnPatches() []message.Patch {
 	return nil
 }
 
-// runOneTurn submits a prompt with the given chalkboard input and waits
+// runOneTurn submits a prompt with the given form input and waits
 // for the turn to complete (via turn.done).
-func runOneTurn(t *testing.T, a *figaro.Agent, text string, cb *rpc.ChalkboardInput) {
+func runOneTurn(t *testing.T, a *figaro.Agent, text string, cb *rpc.FormInput) {
 	t.Helper()
 	sub, unsub := subscribeChan(a)
 	defer unsub()
 
-	a.SubmitPrompt(rpc.QuaRequest{Text: text, Chalkboard: cb})
+	a.SubmitPrompt(rpc.QuaRequest{Text: text, Form: cb})
 
 	deadline := time.After(2 * time.Second)
 	for {
@@ -95,12 +95,12 @@ func runOneTurn(t *testing.T, a *figaro.Agent, text string, cb *rpc.ChalkboardIn
 	}
 }
 
-// newAgentWithChalkboard builds an Agent wired with a per-aria
-// *chalkboard.State and the embedded default templates.
-func newAgentWithChalkboard(t *testing.T) (*figaro.Agent, *chalkSpyProvider, *chalkboard.State) {
+// newAgentWithForm builds an Agent wired with a per-aria
+// *form.State and the embedded default templates.
+func newAgentWithForm(t *testing.T) (*figaro.Agent, *chalkSpyProvider, *form.State) {
 	t.Helper()
 	dir := t.TempDir()
-	cb, err := chalkboard.Open(filepath.Join(dir, "chalkboard.json"))
+	cb, err := form.Open(filepath.Join(dir, "the form channel"))
 	require.NoError(t, err)
 
 	prov := &chalkSpyProvider{}
@@ -110,7 +110,7 @@ func newAgentWithChalkboard(t *testing.T) (*figaro.Agent, *chalkSpyProvider, *ch
 		SocketPath: dir + "/sock",
 		Provider:   prov,
 		Tools:      tool.NewRegistry(),
-		Chalkboard: cb,
+		Form:       cb,
 	})
 	t.Cleanup(func() { a.Kill() })
 	return a, prov, cb
@@ -139,13 +139,13 @@ func patchSets(ps []message.Patch) []string {
 // internal/provider/anthropic).
 
 func TestWire_ContextOnly_DiffsAndApplies(t *testing.T) {
-	a, prov, _ := newAgentWithChalkboard(t)
+	a, prov, _ := newAgentWithForm(t)
 
 	// First turn always carries the bootstrap patch — burn it off
 	// so the assertions test steady-state Context/Patch semantics.
 	runOneTurn(t, a, "boot", nil)
 
-	cb1 := &rpc.ChalkboardInput{
+	cb1 := &rpc.FormInput{
 		Context: map[string]json.RawMessage{
 			"cwd": json.RawMessage(`"/home/alpha"`),
 		},
@@ -158,8 +158,8 @@ func TestWire_ContextOnly_DiffsAndApplies(t *testing.T) {
 }
 
 func TestWire_ContextOnly_NoChange_NoPatch(t *testing.T) {
-	a, prov, _ := newAgentWithChalkboard(t)
-	cb := &rpc.ChalkboardInput{
+	a, prov, _ := newAgentWithForm(t)
+	cb := &rpc.FormInput{
 		Context: map[string]json.RawMessage{
 			"cwd": json.RawMessage(`"/home/alpha"`),
 		},
@@ -171,13 +171,13 @@ func TestWire_ContextOnly_NoChange_NoPatch(t *testing.T) {
 }
 
 func TestWire_PatchOnly_AppliesDirectly(t *testing.T) {
-	a, prov, _ := newAgentWithChalkboard(t)
+	a, prov, _ := newAgentWithForm(t)
 
 	runOneTurn(t, a, "first", nil)
 	require.Equal(t, 1, prov.sendCount())
 
-	cb := &rpc.ChalkboardInput{
-		Patch: &rpc.ChalkboardPatch{
+	cb := &rpc.FormInput{
+		Patch: &rpc.FormPatch{
 			Set: map[string]json.RawMessage{
 				"cwd": json.RawMessage(`"/home/beta"`),
 			},
@@ -191,14 +191,14 @@ func TestWire_PatchOnly_AppliesDirectly(t *testing.T) {
 }
 
 func TestWire_ContextAndPatch_Combined(t *testing.T) {
-	a, prov, _ := newAgentWithChalkboard(t)
+	a, prov, _ := newAgentWithForm(t)
 	runOneTurn(t, a, "boot", nil) // burn off bootstrap turn
 
-	cb := &rpc.ChalkboardInput{
+	cb := &rpc.FormInput{
 		Context: map[string]json.RawMessage{
 			"cwd": json.RawMessage(`"/home/alpha"`),
 		},
-		Patch: &rpc.ChalkboardPatch{
+		Patch: &rpc.FormPatch{
 			Set: map[string]json.RawMessage{
 				"model": json.RawMessage(`"claude-opus"`),
 			},
@@ -212,12 +212,12 @@ func TestWire_ContextAndPatch_Combined(t *testing.T) {
 }
 
 func TestWire_NeitherContextNorPatch_NoOp(t *testing.T) {
-	a, prov, _ := newAgentWithChalkboard(t)
+	a, prov, _ := newAgentWithForm(t)
 	runOneTurn(t, a, "boot", nil) // burn off bootstrap turn
 
 	runOneTurn(t, a, "first", nil)
 	require.Equal(t, 2, prov.sendCount())
-	assert.Empty(t, prov.lastTurnPatches(), "no chalkboard input → no patches")
+	assert.Empty(t, prov.lastTurnPatches(), "no form input → no patches")
 }
 
 func TestWire_Context_IsAdditive(t *testing.T) {
@@ -225,15 +225,15 @@ func TestWire_Context_IsAdditive(t *testing.T) {
 	// absent from a subsequent Context are NOT removed. This lets
 	// clients ship a partial view (just the keys they own — cwd,
 	// datetime, env) without racing concurrent set/unset.
-	a, prov, _ := newAgentWithChalkboard(t)
+	a, prov, _ := newAgentWithForm(t)
 
-	runOneTurn(t, a, "first", &rpc.ChalkboardInput{
+	runOneTurn(t, a, "first", &rpc.FormInput{
 		Context: map[string]json.RawMessage{
 			"cwd": json.RawMessage(`"/home/alpha"`),
 		},
 	})
 
-	runOneTurn(t, a, "second", &rpc.ChalkboardInput{
+	runOneTurn(t, a, "second", &rpc.FormInput{
 		Context: map[string]json.RawMessage{},
 	})
 	require.Equal(t, 2, prov.sendCount())
@@ -241,20 +241,20 @@ func TestWire_Context_IsAdditive(t *testing.T) {
 }
 
 func TestWire_Context_DoesNotRemoveUnmentionedSnapshotKeys(t *testing.T) {
-	// A loaded chalkboard may contain keys (skills, outfit
+	// A loaded form may contain keys (skills, outfit
 	// values, etc.) the client never carries in Context. Sending a
 	// Context turn whose contents differ from those keys must not
 	// remove them — only set the keys the client explicitly named.
-	a, prov, cb := newAgentWithChalkboard(t)
+	a, prov, cb := newAgentWithForm(t)
 
 	// Seed something the client does NOT carry in Context.
-	cb.Apply(chalkboard.Patch{
+	cb.Apply(form.Patch{
 		Set: map[string]json.RawMessage{
 			"skills.go": json.RawMessage(`{"description":"go body"}`),
 		},
 	})
 
-	runOneTurn(t, a, "first", &rpc.ChalkboardInput{
+	runOneTurn(t, a, "first", &rpc.FormInput{
 		Context: map[string]json.RawMessage{
 			"cwd": json.RawMessage(`"/home/alpha"`),
 		},
@@ -269,5 +269,5 @@ func TestWire_Context_DoesNotRemoveUnmentionedSnapshotKeys(t *testing.T) {
 	// Snapshot key survives.
 	snap := cb.Snapshot()
 	ok := snap.Has("skills.go")
-	assert.True(t, ok, "skills.go must remain on the chalkboard")
+	assert.True(t, ok, "skills.go must remain on the form")
 }

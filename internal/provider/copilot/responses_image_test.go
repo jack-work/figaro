@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 )
 
@@ -50,7 +50,7 @@ func TestResponsesToolImageTrailsTheOutput(t *testing.T) {
 		},
 	}
 
-	input, err := encodeResponseMessage(msg, nil, chalkboard.Snapshot{}, nil)
+	input, err := encodeResponseMessage(msg, nil, form.Snapshot{}, nil)
 	require.NoError(t, err)
 	items := decodeItems(t, input)
 	require.Len(t, items, 2)
@@ -140,7 +140,7 @@ func TestResponsesToolImageShapes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			msg := message.Message{Role: message.RoleInput, Content: tt.content}
-			input, err := encodeResponseMessage(msg, nil, chalkboard.Snapshot{}, nil)
+			input, err := encodeResponseMessage(msg, nil, form.Snapshot{}, nil)
 			require.NoError(t, err)
 
 			items := decodeItems(t, input)

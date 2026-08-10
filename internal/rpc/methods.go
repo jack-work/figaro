@@ -3,7 +3,7 @@ package rpc
 import (
 	"encoding/json"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 )
@@ -17,12 +17,12 @@ const (
 	MethodTurnDone  = "turn.done"   // turn ended; params report idle state
 
 	// Requests.
-	MethodQua        = "figaro.qua"
-	MethodContext    = "figaro.context"
-	MethodInterrupt  = "figaro.interrupt"
-	MethodSet        = "figaro.set"
-	MethodChalkboard = "figaro.chalkboard"
-	MethodQueued     = "figaro.queued"
+	MethodQua       = "figaro.qua"
+	MethodContext   = "figaro.context"
+	MethodInterrupt = "figaro.interrupt"
+	MethodSet       = "figaro.set"
+	MethodForm      = "figaro.form"
+	MethodQueued    = "figaro.queued"
 
 	// The queue mutators. Reading the queue stays on MethodQueued (it predates
 	// them and its shape is unchanged); these two are the U and D of the CRUD,
@@ -44,14 +44,14 @@ const (
 // agent IS live it holds in-flight state the store does not have, and
 // these delegate to it.
 const (
-	MethodAriaPage       = "aria.page"       // one aria.Page window of sealed history
-	MethodAriaContext    = "aria.context"    // fig IR plus render metrics
-	MethodAriaChalkboard = "aria.chalkboard" // the durable chalkboard snapshot
+	MethodAriaPage    = "aria.page"    // one aria.Page window of sealed history
+	MethodAriaContext = "aria.context" // fig IR plus render metrics
+	MethodAriaForm    = "aria.form"    // the durable form snapshot
 )
 
 // MethodNeedsAgent reports whether a method requires a running turn loop.
 //
-// The false set is the read half: history, context and chalkboard are pure
+// The false set is the read half: history, context and form are pure
 // functions of the store, so an aria endpoint can answer them while the aria
 // is dormant and nothing has to be woken. Everything else — prompting,
 // interrupting, patching the board, touching the queue — either mutates
@@ -63,7 +63,7 @@ const (
 // milliseconds, while serving a mutation from a stale read costs correctness.
 func MethodNeedsAgent(method string) bool {
 	switch method {
-	case MethodRead, MethodContext, MethodChalkboard:
+	case MethodRead, MethodContext, MethodForm:
 		return false
 	}
 	return true
@@ -142,24 +142,24 @@ const (
 	MethodSaveBindings = "angelus.save_bindings"
 )
 
-// QuaRequest is the prompt call with optional chalkboard input.
+// QuaRequest is the prompt call with optional form input.
 type QuaRequest struct {
-	Text       string           `json:"text"`
-	Chalkboard *ChalkboardInput `json:"chalkboard,omitempty"`
+	Text string     `json:"text"`
+	Form *FormInput `json:"form,omitempty"`
 }
 
-// ChalkboardInput carries an optional state update: the client's passive view
+// FormInput carries an optional state update: the client's passive view
 // of state at send time, and the delta it means. An outfit is assembled into
 // Patch by the client, so a prompt and the state it should be answered in are
 // one call.
-type ChalkboardInput struct {
+type FormInput struct {
 	Context map[string]json.RawMessage `json:"context,omitempty"`
-	Patch   *ChalkboardPatch           `json:"patch,omitempty"`
+	Patch   *FormPatch                 `json:"patch,omitempty"`
 }
 
-// ChalkboardPatch is the wire shape for a chalkboard delta. It is the internal
+// FormPatch is the wire shape for a form delta. It is the internal
 // patch: one type, so no boundary retypes it.
-type ChalkboardPatch = message.Patch
+type FormPatch = message.Patch
 
 type QuaResponse struct {
 	OK bool `json:"ok"`
@@ -213,9 +213,9 @@ type ContextResponse struct {
 	Metrics  *aria.Metrics `json:"metrics,omitempty"`
 }
 
-// SetRequest applies a chalkboard patch directly.
+// SetRequest applies a form patch directly.
 type SetRequest struct {
-	Patch ChalkboardPatch `json:"patch"`
+	Patch FormPatch `json:"patch"`
 	// IfVersion refuses the patch unless the board is still at this durable
 	// version. Zero is unconditional. It exists for read-modify-write: editing
 	// inside a value (an array element, a nested field) means reading it first,
@@ -229,16 +229,16 @@ type SetResponse struct {
 	Remove []string `json:"remove,omitempty"`
 }
 
-// ChalkboardResponse returns the agent's current snapshot and the durable
+// FormResponse returns the agent's current snapshot and the durable
 // version it stands at, which is what a conditional Set quotes back.
-type ChalkboardResponse struct {
-	Snapshot chalkboard.Snapshot `json:"snapshot"`
-	Version  uint64              `json:"version,omitempty"`
+type FormResponse struct {
+	Snapshot form.Snapshot `json:"snapshot"`
+	Version  uint64        `json:"version,omitempty"`
 }
 
 // QueuedRequest asks for the messages this aria has accepted but not yet
 // answered. IncludeCarriers opts in to the empty-text prompts that carry only
-// a chalkboard patch: they are addressable by the CRUD surface and so must be
+// a form patch: they are addressable by the CRUD surface and so must be
 // listable, but they render as nothing, so the default stays exactly what it
 // has always been — the prompts a human would recognise as queued.
 type QueuedRequest struct {
@@ -270,7 +270,7 @@ const (
 )
 
 // QueuedPrompt is one queued message. Text is the exact string submitted; a
-// prompt with empty text is a pure chalkboard carrier and is only listed when
+// prompt with empty text is a pure form carrier and is only listed when
 // the request asked for carriers.
 type QueuedPrompt struct {
 	ID    uint64     `json:"id"`
@@ -281,10 +281,10 @@ type QueuedPrompt struct {
 	// coalesced a run of queued prompts, so a client holding one of those ids
 	// can still find where it went.
 	Merged []uint64 `json:"merged,omitempty"`
-	// Chalkboard rides only on DRAINED payloads (the response to a clearing
+	// Form rides only on DRAINED payloads (the response to a clearing
 	// hangup), so that what was drained can be persisted losslessly rather
 	// than lost.
-	Chalkboard *ChalkboardInput `json:"chalkboard,omitempty"`
+	Form *FormInput `json:"form,omitempty"`
 }
 
 // QueueOutcome is what happened to ONE requested mutation.
@@ -394,9 +394,9 @@ type FigaroInfoResponse struct {
 	ContextExact     bool   `json:"context_exact"`           // true if from Usage watermark
 	CreatedAt        int64  `json:"created_at"`              // unix millis
 	LastActive       int64  `json:"last_active"`             // unix millis
-	Mantra           string `json:"mantra"`                  // agent-maintained essence phrase (chalkboard "mantra")
-	Cwd              string `json:"cwd"`                     // working directory (chalkboard "system.cwd")
-	OutfitName       string `json:"outfit_name,omitempty"`   // chalkboard system.outfit_name
+	Mantra           string `json:"mantra"`                  // agent-maintained essence phrase (form "mantra")
+	Cwd              string `json:"cwd"`                     // working directory (form "system.cwd")
+	OutfitName       string `json:"outfit_name,omitempty"`   // form system.outfit_name
 	OutfitVer        string `json:"outfit_ver,omitempty"`    // "live" if the stamped hash matches the current outfit, else its short hash
 	BoundPIDs        []int  `json:"bound_pids"`
 
@@ -418,8 +418,8 @@ type FigaroInfoResponse struct {
 // configured default_outfit, which the angelus assembles; a patch that arrives
 // is folded ON TOP of that default, so `-O mantra=x` adds rather than replaces.
 type CreateRequest struct {
-	Patch     *ChalkboardPatch `json:"patch,omitempty"`
-	Ephemeral bool             `json:"ephemeral,omitempty"`
+	Patch     *FormPatch `json:"patch,omitempty"`
+	Ephemeral bool       `json:"ephemeral,omitempty"`
 }
 
 type CreateResponse struct {
@@ -454,9 +454,9 @@ type ForkRequest struct {
 	// number that means something else. Setting both is refused.
 	AtLT uint64 `json:"at_lt,omitempty"`
 	// Patch dresses the ALTERNATIVE the moment it exists, before anything is
-	// said to it: it lands on the child's chalkboard in the same call that
+	// said to it: it lands on the child's form in the same call that
 	// mints it, so a prompt sent next is answered with it in place.
-	Patch *ChalkboardPatch `json:"patch,omitempty"`
+	Patch *FormPatch `json:"patch,omitempty"`
 }
 
 // ForkResponse returns the two fresh child ids. The parent freezes and
@@ -518,7 +518,7 @@ type PromoteResponse struct {
 type ImportRequest struct {
 	Outfit      string            `json:"outfit"`
 	OutfitPatch message.Patch     `json:"outfit_patch,omitempty"`
-	Chalkboard  message.Patch     `json:"chalkboard,omitempty"`
+	Form        message.Patch     `json:"form,omitempty"`
 	Messages    []message.Message `json:"messages"`
 	WasID       string            `json:"was_id,omitempty"`
 	Mantra      string            `json:"mantra,omitempty"`
@@ -621,7 +621,7 @@ type AttachResponse struct {
 	Endpoint Endpoint `json:"endpoint"`
 }
 
-// ListRequest options. IDsOnly skips the per-aria chalkboard + forest fills
+// ListRequest options. IDsOnly skips the per-aria form + forest fills
 // (mantra, cwd, outfit hash, vector) — much cheaper when the caller only needs
 // the ids (e.g. shell completion). Global also includes the ceremonial anchors
 // (the null genesis trunk + every versioned outfit) with Kind/Parent set, for
@@ -720,7 +720,7 @@ type SaveBindingsResponse struct {
 }
 
 // AriaIDRequest names an aria and nothing else: the whole request for the
-// angelus-side context and chalkboard reads.
+// angelus-side context and form reads.
 type AriaIDRequest struct {
 	FigaroID string `json:"figaro_id"`
 }

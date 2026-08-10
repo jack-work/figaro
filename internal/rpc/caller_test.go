@@ -28,7 +28,7 @@ func TestWithCallerRoundTrip(t *testing.T) {
 	})
 
 	t.Run("nil params still carry the identity", func(t *testing.T) {
-		// figaro.context and figaro.chalkboard pass nil. If nil could not
+		// figaro.context and figaro.form pass nil. If nil could not
 		// carry an identity, those methods would be unauthenticatable and the
 		// policy seam would have a hole in it.
 		raw, err := WithCaller(nil, "caller99", nil)
@@ -57,8 +57,8 @@ func TestWithCallerRoundTrip(t *testing.T) {
 
 	t.Run("nested values are not re-encoded", func(t *testing.T) {
 		// Values ride as RawMessage. A lossy re-encode here would corrupt
-		// chalkboard patches, which are raw JSON by design.
-		in := SetRequest{Patch: ChalkboardPatch{
+		// form patches, which are raw JSON by design.
+		in := SetRequest{Patch: FormPatch{
 			Set: map[string]json.RawMessage{"k": json.RawMessage(`{"deep":[1,2,3]}`)},
 		}}
 		raw, err := WithCaller(in, "caller99", nil)

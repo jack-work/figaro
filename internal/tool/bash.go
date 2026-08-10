@@ -62,7 +62,7 @@ type Runner interface {
 // ExecRequest/ExecResult, plus formats the captured output.
 type BashTool struct {
 	// CwdFn returns the working directory for each invocation.
-	// Called at run time so updates to the chalkboard (system.cwd)
+	// Called at run time so updates to the form (system.cwd)
 	// take effect immediately. If nil or returns "", the executor
 	// picks the default.
 	CwdFn func() string

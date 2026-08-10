@@ -53,7 +53,7 @@ func TestImportLandsAsAWholeConversation(t *testing.T) {
 		WasID:    "23a5a06d",
 		Mantra:   "a portable aria",
 		Messages: msgs,
-		Chalkboard: message.Patch{Set: map[string]json.RawMessage{
+		Form: message.Patch{Set: map[string]json.RawMessage{
 			"mantra":             json.RawMessage(`"a portable aria"`),
 			"system.outfit_name": json.RawMessage(`"opus5-ant"`),
 		}},
@@ -80,7 +80,7 @@ func TestImportLandsAsAWholeConversation(t *testing.T) {
 	// The board arrives folded, with THIS store's id stamped on it — the same
 	// re-stamp a fork does, and for the same reason: an aria that believes it
 	// is another aria cannot address itself.
-	board, err := backend.ChalkboardState(resp.FigaroID)
+	board, err := backend.FormState(resp.FigaroID)
 	require.NoError(t, err)
 	raw, ok := board.Get("aria_id")
 	require.True(t, ok, "an imported aria must know its own id")

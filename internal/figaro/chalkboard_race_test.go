@@ -8,18 +8,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 )
 
-// TestChalkboardRPCRaceRepro drives the two goroutines that the design
+// TestFormRPCRaceRepro drives the two goroutines that the design
 // document names as racing:
 //
 //   - the AGENT goroutine: Agent.Set enqueues an eventSet on the inbox;
-//     Agent.act drains it and calls applyControlPatch -> chalkboard.State.Apply,
+//     Agent.act drains it and calls applyControlPatch -> form.State.Apply,
 //     which does `s.snapshot = s.snapshot.Apply(p)` (a write of the map header
 //     field) and `s.dirty = true`.
-//   - an RPC goroutine: figaro.Handle(rpc.MethodChalkboard) calls
-//     Agent.Snapshot() -> chalkboard.State.Snapshot() -> s.snapshot.Clone(),
+//   - an RPC goroutine: figaro.Handle(rpc.MethodForm) calls
+//     Agent.Snapshot() -> form.State.Snapshot() -> s.snapshot.Clone(),
 //     which reads the same field and ranges the map behind it.
 //
 // Nothing serializes the two: Agent.NewAgent does `go a.runWithRecovery(ctx)`
@@ -32,13 +32,13 @@ import (
 //
 // EXPECTED TO FAIL on main under -race. Repro command:
 //
-//	CHALK_RACE_REPRO=1 go test -race -run TestChalkboardRPCRaceRepro -count=1 ./internal/figaro/
+//	CHALK_RACE_REPRO=1 go test -race -run TestFormRPCRaceRepro -count=1 ./internal/figaro/
 //
 // It is gated behind CHALK_RACE_REPRO so the default suite stays green.
-func TestChalkboardRPCRaceRepro(t *testing.T) {
+func TestFormRPCRaceRepro(t *testing.T) {
 	requireRaceRepro(t)
 
-	a, _, _ := newAgentWithChalkboard(t)
+	a, _, _ := newAgentWithForm(t)
 
 	const (
 		writers       = 4
@@ -56,7 +56,7 @@ func TestChalkboardRPCRaceRepro(t *testing.T) {
 	var wg sync.WaitGroup
 	var writersDone sync.WaitGroup
 
-	// Writers: Agent.Set -> inbox -> act goroutine -> chalkboard.Apply.
+	// Writers: Agent.Set -> inbox -> act goroutine -> form.Apply.
 	for w := 0; w < writers; w++ {
 		wg.Add(1)
 		writersDone.Add(1)
@@ -66,7 +66,7 @@ func TestChalkboardRPCRaceRepro(t *testing.T) {
 			for i := 0; i < setsPerWriter; i++ {
 				key := fmt.Sprintf("w%d.k%d", w, i%64)
 				val, _ := json.Marshal(fmt.Sprintf("v%d", i))
-				_, _, err := a.Set(chalkboard.Patch{
+				_, _, err := a.Set(form.Patch{
 					Set: map[string]json.RawMessage{key: val},
 				}, 0)
 				if err != nil {
@@ -78,7 +78,7 @@ func TestChalkboardRPCRaceRepro(t *testing.T) {
 		}(w)
 	}
 
-	// Readers: exactly what rpc.MethodChalkboard does, in a tight loop.
+	// Readers: exactly what rpc.MethodForm does, in a tight loop.
 	for r := 0; r < readers; r++ {
 		wg.Add(1)
 		go func() {
@@ -90,7 +90,7 @@ func TestChalkboardRPCRaceRepro(t *testing.T) {
 				default:
 				}
 				snap := a.Snapshot()
-				// Touch the values, as ChalkboardResponse marshalling would.
+				// Touch the values, as FormResponse marshalling would.
 				for k, v := range snap.All() {
 					_ = k
 					_ = len(v)
@@ -104,17 +104,17 @@ func TestChalkboardRPCRaceRepro(t *testing.T) {
 	wg.Wait()
 }
 
-// TestChalkboardStateRaceRepro is the same race one layer down, with no
-// agent, no inbox and no log — just chalkboard.State, whose doc comment
+// TestFormStateRaceRepro is the same race one layer down, with no
+// agent, no inbox and no log — just form.State, whose doc comment
 // claims "single-owner (no concurrent access)". It isolates the unsynchronized
 // publication of State.snapshot (and State.dirty) so the -race report names
-// chalkboard/state.go directly.
+// form/state.go directly.
 //
-//	CHALK_RACE_REPRO=1 go test -race -run TestChalkboardStateRaceRepro -count=1 ./internal/figaro/
-func TestChalkboardStateRaceRepro(t *testing.T) {
+//	CHALK_RACE_REPRO=1 go test -race -run TestFormStateRaceRepro -count=1 ./internal/figaro/
+func TestFormStateRaceRepro(t *testing.T) {
 	requireRaceRepro(t)
 
-	st, err := chalkboard.Open("")
+	st, err := form.Open("")
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestChalkboardStateRaceRepro(t *testing.T) {
 	for i := 0; i < 64; i++ {
 		seed[fmt.Sprintf("seed.%d", i)] = json.RawMessage(`"x"`)
 	}
-	st.Apply(chalkboard.Patch{Set: seed})
+	st.Apply(form.Patch{Set: seed})
 
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
@@ -136,7 +136,7 @@ func TestChalkboardStateRaceRepro(t *testing.T) {
 				return
 			default:
 			}
-			st.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+			st.Apply(form.Patch{Set: map[string]json.RawMessage{
 				fmt.Sprintf("hot.%d", i%32): json.RawMessage(`"y"`),
 			}})
 		}

@@ -114,8 +114,8 @@ func TestHibernateKeepsAriaAddressable(t *testing.T) {
 
 	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	var cb rpc.ChalkboardResponse
-	require.NoError(t, client.Call(callCtx, rpc.MethodChalkboard, struct{}{}, &cb))
+	var cb rpc.FormResponse
+	require.NoError(t, client.Call(callCtx, rpc.MethodForm, struct{}{}, &cb))
 	require.Nil(t, a.Registry.Get(id), "a read woke a hibernated aria")
 }
 

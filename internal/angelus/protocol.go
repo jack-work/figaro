@@ -17,9 +17,9 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/internal/authz"
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/outfit"
@@ -34,7 +34,7 @@ import (
 
 // ProviderFactory creates providers for an Agent; instances never span
 // arias. The agent keeps the factory so it can rebind mid-conversation when
-// system.provider changes on the chalkboard (see figaro.syncProvider).
+// system.provider changes on the form (see figaro.syncProvider).
 type ProviderFactory = figaro.ProviderFactory
 
 // ServerConfig holds dependencies for the angelus JSON-RPC handlers.
@@ -49,8 +49,8 @@ type ServerConfig struct {
 	// clients can drive first-run provider selection.
 	AvailableProviders []string
 
-	// ChalkboardTemplates renders Patches as system reminders. nil = skip.
-	ChalkboardTemplates *template.Template
+	// FormTemplates renders Patches as system reminders. nil = skip.
+	FormTemplates *template.Template
 }
 
 // Handlers wraps the angelus JSON-RPC handler map.
@@ -66,32 +66,32 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		config:             cfg.Config,
 		factory:            cfg.ProviderFactory,
 		ctx:                cfg.Ctx,
-		cbTmpls:            cfg.ChalkboardTemplates,
+		cbTmpls:            cfg.FormTemplates,
 		outfitter:          outfit.New(cfg.Config.ConfigDir),
 		availableProviders: cfg.AvailableProviders,
 	}
 	return &Handlers{
 		Map: authz.Guard(map[string]jkrpc.HandlerFunc{
-			rpc.MethodCreate:         h.create,
-			rpc.MethodFork:           h.fork,
-			rpc.MethodPromote:        h.promote,
-			rpc.MethodImport:         h.importAria,
-			rpc.MethodOutfits:        h.outfits,
-			rpc.MethodConfigure:      h.configure,
-			rpc.MethodNormalize:      h.normalize,
-			rpc.MethodGC:             h.gc,
-			rpc.MethodKill:           h.kill,
-			rpc.MethodList:           h.list,
-			rpc.MethodAttach:         h.attach,
-			rpc.MethodBind:           h.bind,
-			rpc.MethodResolve:        h.resolve,
-			rpc.MethodUnbind:         h.unbind,
-			rpc.MethodStatus:         h.status,
-			rpc.MethodSaveBindings:   h.saveBindings,
-			rpc.MethodAriaRead:       h.ariaRead,
-			rpc.MethodAriaPage:       h.ariaPage,
-			rpc.MethodAriaContext:    h.ariaContext,
-			rpc.MethodAriaChalkboard: h.ariaChalkboard,
+			rpc.MethodCreate:       h.create,
+			rpc.MethodFork:         h.fork,
+			rpc.MethodPromote:      h.promote,
+			rpc.MethodImport:       h.importAria,
+			rpc.MethodOutfits:      h.outfits,
+			rpc.MethodConfigure:    h.configure,
+			rpc.MethodNormalize:    h.normalize,
+			rpc.MethodGC:           h.gc,
+			rpc.MethodKill:         h.kill,
+			rpc.MethodList:         h.list,
+			rpc.MethodAttach:       h.attach,
+			rpc.MethodBind:         h.bind,
+			rpc.MethodResolve:      h.resolve,
+			rpc.MethodUnbind:       h.unbind,
+			rpc.MethodStatus:       h.status,
+			rpc.MethodSaveBindings: h.saveBindings,
+			rpc.MethodAriaRead:     h.ariaRead,
+			rpc.MethodAriaPage:     h.ariaPage,
+			rpc.MethodAriaContext:  h.ariaContext,
+			rpc.MethodAriaForm:     h.ariaForm,
 		}, h.authenticator(), h.policy()),
 		h: h,
 	}
@@ -181,19 +181,19 @@ func (h *handlers) settings() (*config.Loaded, *outfit.Outfitter) {
 	return h.config, h.outfitter
 }
 
-// openAriaChalkboard returns the in-memory chalkboard hot view for an
-// aria, seeded from its reducible chalkboard channel (the durable
-// truth — there is no chalkboard.json). nil on failure.
-func (h *handlers) openAriaChalkboard(ariaID string) *chalkboard.State {
+// openAriaForm returns the in-memory form hot view for an
+// aria, seeded from its reducible form channel (the durable
+// truth — there is no the form channel). nil on failure.
+func (h *handlers) openAriaForm(ariaID string) *form.State {
 	if h.cbTmpls == nil || h.angelus.Backend == nil {
 		return nil
 	}
-	snap, err := h.angelus.Backend.ChalkboardState(ariaID)
+	snap, err := h.angelus.Backend.FormState(ariaID)
 	if err != nil {
-		slog.Warn("chalkboard state (disabled for aria)", "aria", ariaID, "err", err)
+		slog.Warn("form state (disabled for aria)", "aria", ariaID, "err", err)
 		return nil
 	}
-	st, _ := chalkboard.Open("")
+	st, _ := form.Open("")
 	if snap.Len() > 0 {
 		st.Apply(snap.AsPatch())
 	}
@@ -287,7 +287,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	// wears the default underneath: `layers:["default"]` folded first, whatever
 	// the caller sent on top. One rule for -O — it adds, it never replaces — so
 	// `send -O mantra=x` from an unbound shell means something.
-	asked := chalkboard.Patch{}
+	asked := form.Patch{}
 	if req.Patch != nil {
 		asked = *req.Patch
 	}
@@ -335,11 +335,11 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		backend = nil
 	}
 
-	// The chalkboard channel is the durable truth; cbState is the
-	// in-memory hot view (no chalkboard.json). System mints all ids.
-	cbState, _ := chalkboard.Open("")
+	// The form channel is the durable truth; cbState is the
+	// in-memory hot view (no the form channel). System mints all ids.
+	cbState, _ := form.Open("")
 	var id string
-	var inlineBoot *chalkboard.Patch
+	var inlineBoot *form.Patch
 
 	if backend == nil {
 		// Ephemeral: no channel. Seed state with the full outfit +
@@ -355,7 +355,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		// Materialize/reuse the outfit node (identity = stable outfit
 		// patch), fork it into a fresh conversation, then write the
 		// per-conversation boot transition (runtime fill-ins + req.Patch
-		// overrides) to its chalkboard channel. The outfit's own
+		// overrides) to its form channel. The outfit's own
 		// reminders render in the shared outfit-node prefix.
 		outfitID, lerr := backend.CreateOutfit(outfitName, outfitPatch)
 		if lerr != nil {
@@ -368,20 +368,20 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		}
 		boot := convBootPatch(req.Patch, id, cwd)
 		if !boot.IsEmpty() {
-			if _, aerr := backend.ApplyChalkboard(id, boot); aerr != nil {
-				return nil, fmt.Errorf("seed conversation chalkboard: %w", aerr)
+			if _, aerr := backend.ApplyForm(id, boot); aerr != nil {
+				return nil, fmt.Errorf("seed conversation form: %w", aerr)
 			}
 		}
-		snap, serr := backend.ChalkboardState(id)
+		snap, serr := backend.FormState(id)
 		if serr != nil {
-			return nil, fmt.Errorf("read conversation chalkboard: %w", serr)
+			return nil, fmt.Errorf("read conversation form: %w", serr)
 		}
 		cbState.Apply(snap.AsPatch())
 	}
 
 	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), id+".sock")
 
-	reg := tool.DefaultRegistryForAria(id, cwdFromChalkboard(cbState, cwd),
+	reg := tool.DefaultRegistryForAria(id, cwdFromForm(cbState, cwd),
 		tool.WithImageBudget(loaded.InlineImageBudget()),
 		tool.WithSessions(h.angelus.Sessions))
 	agent := figaro.NewAgent(figaro.Config{
@@ -393,7 +393,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		Tools:           reg,
 		Projector:       uiir.New(reg),
 		Backend:         backend,
-		Chalkboard:      cbState,
+		Form:            cbState,
 		InlineBoot:      inlineBoot,
 		Settings:        loaded,
 	})
@@ -516,7 +516,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	// Dress the child in the call that mints it, on the alternative and after
 	// the fork: a patch sent to the parent first can be ACKed and still miss
 	// the branch.
-	var dress chalkboard.Patch
+	var dress form.Patch
 	if req.Patch != nil {
 		_, ofit := h.settings()
 		loaded, _ := h.settings()
@@ -561,7 +561,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 			return err
 		}
 		h.seedForkMeta(parentMeta, req.FigaroID, alt, atMainLT, interior, forkOwner)
-		// The alternative inherits the parent's chalkboard — including the
+		// The alternative inherits the parent's form — including the
 		// parent's aria_id. Re-stamp so the forked agent knows its own id
 		// (a normal state transition it sees on its next turn); without
 		// this an aria cannot reliably fork itself.
@@ -579,19 +579,19 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 			// what actually changed. If the child's board cannot be read the
 			// fold is NOT applied wholesale: that would announce changes that
 			// did not happen and write a record per inherited key.
-			snap, serr := h.angelus.Backend.ChalkboardState(alt)
+			snap, serr := h.angelus.Backend.FormState(alt)
 			if serr != nil {
-				return fmt.Errorf("fork: read %s chalkboard to dress it: %w", alt, serr)
+				return fmt.Errorf("fork: read %s form to dress it: %w", alt, serr)
 			}
-			for k, v := range chalkboard.Additive(snap, dress).Set {
+			for k, v := range form.Additive(snap, dress).Set {
 				patch.Set[k] = v
 			}
 		}
 		if b, merr := json.Marshal(alt); merr == nil {
 			patch.Set["aria_id"] = b
 		}
-		if _, perr := h.angelus.Backend.ApplyChalkboard(alt, patch); perr != nil {
-			slog.Warn("fork: stamp child chalkboard", "alt", alt, "err", perr)
+		if _, perr := h.angelus.Backend.ApplyForm(alt, patch); perr != nil {
+			slog.Warn("fork: stamp child form", "alt", alt, "err", perr)
 		}
 		return nil
 	}
@@ -858,19 +858,19 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 			return nil, fmt.Errorf("import: append message %d of %d: %w", i+1, len(req.Messages), err)
 		}
 	}
-	// The chalkboard last, and as ONE patch: it is the aria's settled state,
+	// The form last, and as ONE patch: it is the aria's settled state,
 	// not a history of how it got there. aria_id is re-stamped because the
 	// exported board carries the id it had in the store it came from — the
 	// same re-stamp a fork does, for the same reason.
-	patch := req.Chalkboard
+	patch := req.Form
 	if patch.Set == nil {
 		patch.Set = map[string]json.RawMessage{}
 	}
 	if b, mErr := json.Marshal(id); mErr == nil {
 		patch.Set["aria_id"] = b
 	}
-	if _, err := h.angelus.Backend.ApplyChalkboard(id, patch); err != nil {
-		return nil, fmt.Errorf("import: chalkboard: %w", err)
+	if _, err := h.angelus.Backend.ApplyForm(id, patch); err != nil {
+		return nil, fmt.Errorf("import: form: %w", err)
 	}
 	// The list sidecar, so an imported aria is a first-class row in `figaro
 	// ls` rather than an id with dashes after it. Derived from what actually
@@ -925,8 +925,8 @@ func (h *handlers) promote(ctx context.Context, params json.RawMessage) (interfa
 // supply: the working dir (system.cwd/root), allowlisted env vars, and
 // the aria id (non-system, so the agent can read it from a reminder and
 // `figaro set --id <id> mantra …`).
-func runtimeFillins(ariaID, cwd string) chalkboard.Patch {
-	p := chalkboard.Patch{Set: map[string]json.RawMessage{}}
+func runtimeFillins(ariaID, cwd string) form.Patch {
+	p := form.Patch{Set: map[string]json.RawMessage{}}
 	if b, err := json.Marshal(ariaID); err == nil && ariaID != "" {
 		p.Set["aria_id"] = b
 	}
@@ -934,7 +934,7 @@ func runtimeFillins(ariaID, cwd string) chalkboard.Patch {
 		p.Set["system.cwd"] = b
 		p.Set["system.root"] = b
 	}
-	if env := chalkboard.EnvironmentPatch(); !env.IsEmpty() {
+	if env := form.EnvironmentPatch(); !env.IsEmpty() {
 		for k, v := range env.Set {
 			p.Set[k] = v
 		}
@@ -946,7 +946,7 @@ func runtimeFillins(ariaID, cwd string) chalkboard.Patch {
 // plus the per-create req.Patch overrides. The outfit itself is NOT
 // re-stated here — it is inherited via the fork watermark and rendered
 // in the shared outfit-node prefix.
-func convBootPatch(reqPatch *rpc.ChalkboardPatch, ariaID, cwd string) chalkboard.Patch {
+func convBootPatch(reqPatch *rpc.FormPatch, ariaID, cwd string) form.Patch {
 	p := runtimeFillins(ariaID, cwd)
 	if reqPatch != nil {
 		for k, v := range reqPatch.Set {
@@ -960,8 +960,8 @@ func convBootPatch(reqPatch *rpc.ChalkboardPatch, ariaID, cwd string) chalkboard
 // bootPatchEphemeral is the ephemeral boot: the full resolved outfit
 // (no channel to inherit from) plus runtime fill-ins. max_tokens
 // defaults when the outfit omits it.
-func bootPatchEphemeral(base chalkboard.Patch, ariaID, cwd string) chalkboard.Patch {
-	p := chalkboard.Patch{Set: map[string]json.RawMessage{}}
+func bootPatchEphemeral(base form.Patch, ariaID, cwd string) form.Patch {
+	p := form.Patch{Set: map[string]json.RawMessage{}}
 	for k, v := range base.Set {
 		p.Set[k] = v
 	}
@@ -977,7 +977,7 @@ func bootPatchEphemeral(base chalkboard.Patch, ariaID, cwd string) chalkboard.Pa
 
 // withAriaID returns p with aria_id set (used once the ephemeral id is
 // minted).
-func withAriaID(p chalkboard.Patch, ariaID string) chalkboard.Patch {
+func withAriaID(p form.Patch, ariaID string) form.Patch {
 	if b, err := json.Marshal(ariaID); err == nil {
 		if p.Set == nil {
 			p.Set = map[string]json.RawMessage{}
@@ -987,8 +987,8 @@ func withAriaID(p chalkboard.Patch, ariaID string) chalkboard.Patch {
 	return p
 }
 
-// patchString reads a string value from a chalkboard.Patch's Set map.
-func patchString(p chalkboard.Patch, key string) string {
+// patchString reads a string value from a form.Patch's Set map.
+func patchString(p form.Patch, key string) string {
 	raw, ok := p.Set[key]
 	if !ok {
 		return ""
@@ -998,8 +998,8 @@ func patchString(p chalkboard.Patch, key string) string {
 	return s
 }
 
-// patchInt reads an int value from a chalkboard.Patch's Set map.
-func patchInt(p chalkboard.Patch, key string) int {
+// patchInt reads an int value from a form.Patch's Set map.
+func patchInt(p form.Patch, key string) int {
 	raw, ok := p.Set[key]
 	if !ok {
 		return 0
@@ -1009,8 +1009,8 @@ func patchInt(p chalkboard.Patch, key string) int {
 	return n
 }
 
-// patchBool reads a bool value from a chalkboard.Patch's Set map.
-func patchBool(p chalkboard.Patch, key string) bool {
+// patchBool reads a bool value from a form.Patch's Set map.
+func patchBool(p form.Patch, key string) bool {
 	raw, ok := p.Set[key]
 	if !ok {
 		return false
@@ -1022,7 +1022,7 @@ func patchBool(p chalkboard.Patch, key string) bool {
 
 // knobsFromPatch extracts the operational provider knobs from a
 // outfit patch's system.* keys.
-func knobsFromPatch(p chalkboard.Patch) providerPkg.Knobs {
+func knobsFromPatch(p form.Patch) providerPkg.Knobs {
 	return providerPkg.Knobs{
 		Model:            patchString(p, "system.model"),
 		MaxTokens:        patchInt(p, "system.max_tokens"),
@@ -1072,7 +1072,7 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 
 // list merges live and dormant arias.
 func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	// IDsOnly skips the per-aria chalkboard + node fills (the slow part) — used
+	// IDsOnly skips the per-aria form + node fills (the slow part) — used
 	// by completion, which only needs the ids. Tolerant of nil/empty params.
 	var req rpc.ListRequest
 	_ = json.Unmarshal(params, &req)
@@ -1507,11 +1507,11 @@ func (h *handlers) restoreLock(ariaID string) *sync.Mutex {
 }
 
 // restoreOne builds and registers a figaro for an existing conversation
-// node, seeding its chalkboard from the channel.
+// node, seeding its form from the channel.
 func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro, error) {
-	cb := h.openAriaChalkboard(ariaID)
+	cb := h.openAriaForm(ariaID)
 	if cb == nil {
-		return nil, fmt.Errorf("restore %s: chalkboard unavailable", ariaID)
+		return nil, fmt.Errorf("restore %s: form unavailable", ariaID)
 	}
 	cbSnap := cb.Snapshot()
 	cbStr := func(key string) string {
@@ -1573,7 +1573,7 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro
 		}
 	}
 	loaded, ofit := h.settings()
-	reg := tool.DefaultRegistryForAria(ariaID, cwdFromChalkboard(cb, toolRoot),
+	reg := tool.DefaultRegistryForAria(ariaID, cwdFromForm(cb, toolRoot),
 		tool.WithImageBudget(loaded.InlineImageBudget()),
 		tool.WithSessions(h.angelus.Sessions))
 	agent := figaro.NewAgent(figaro.Config{
@@ -1585,7 +1585,7 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro
 		Tools:           reg,
 		Projector:       uiir.New(reg),
 		Backend:         h.angelus.Backend,
-		Chalkboard:      cb,
+		Form:            cb,
 		CreatedAt:       createdAt,
 		LastActive:      lastActive,
 		Settings:        loaded,
@@ -1608,13 +1608,13 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro
 	return agent, nil
 }
 
-// cwdFromChalkboard returns a closure that reads system.cwd from
+// cwdFromForm returns a closure that reads system.cwd from
 // cbState at call time, falling back to fallback when the key is
-// unset, the chalkboard is nil, or the value isn't a JSON string.
+// unset, the form is nil, or the value isn't a JSON string.
 //
 // This is the seam that lets the bash tool honor a runtime
 // `figaro set system.cwd …` without rebuilding the registry.
-func cwdFromChalkboard(cbState *chalkboard.State, fallback string) func() string {
+func cwdFromForm(cbState *form.State, fallback string) func() string {
 	return func() string {
 		if cbState == nil {
 			return fallback

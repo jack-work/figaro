@@ -69,7 +69,7 @@ type Config struct {
 	// only for testing.
 	UpdateCheckTTLHours *int `toml:"update_check_ttl_hours"`
 
-	// RefSigil is the prefix character for chalkboard references in
+	// RefSigil is the prefix character for form references in
 	// prompts and tab completion. Must be "@" or ":". Default "@".
 	RefSigil string `toml:"ref_sigil"`
 
@@ -448,7 +448,7 @@ func (l *Loaded) AuthzPolicy() string {
 	}
 }
 
-// RefSigil returns the chalkboard reference sigil. Default "@".
+// RefSigil returns the form reference sigil. Default "@".
 // Returns an error if the configured value is not "@" or ":".
 func (l *Loaded) RefSigil() (string, error) {
 	s := l.Config.RefSigil

@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
@@ -138,8 +138,8 @@ func runTurn(t *testing.T, a *figaro.Agent, ch <-chan rpc.Notification, text str
 
 func rebindAgent(t *testing.T, f *rebindFactory, boot map[string]json.RawMessage) (*figaro.Agent, <-chan rpc.Notification) {
 	t.Helper()
-	cb, _ := chalkboard.Open("")
-	cb.Apply(chalkboard.Patch{Set: boot})
+	cb, _ := form.Open("")
+	cb.Apply(form.Patch{Set: boot})
 	name := ""
 	if raw, ok := cb.Snapshot().Get("system.provider"); ok {
 		_ = json.Unmarshal(raw, &name)
@@ -152,7 +152,7 @@ func rebindAgent(t *testing.T, f *rebindFactory, boot map[string]json.RawMessage
 		SocketPath:      "/tmp/figaro-rebind-test.sock",
 		Provider:        prov,
 		ProviderFactory: f.build,
-		Chalkboard:      cb,
+		Form:            cb,
 	})
 	t.Cleanup(a.Kill)
 	ch, _ := subscribeChan(a)
@@ -161,7 +161,7 @@ func rebindAgent(t *testing.T, f *rebindFactory, boot map[string]json.RawMessage
 
 // TestProviderRebindsMidConversation is the regression test for the bug that
 // stranded a live aria on a wedged provider: `system.provider` changed on the
-// chalkboard (by `figaro set` or a re-applied outfit) but the agent kept the
+// form (by `figaro set` or a re-applied outfit) but the agent kept the
 // instance it was constructed with, so the switch only took effect if the
 // whole agent was re-created. It must take effect on the next round.
 func TestProviderRebindsMidConversation(t *testing.T) {
@@ -175,7 +175,7 @@ func TestProviderRebindsMidConversation(t *testing.T) {
 	require.EqualValues(t, 1, f.inst("alpha", false).sends.Load())
 	assert.Equal(t, "alpha", a.Info().Provider)
 
-	_, _, err := a.Set(chalkboard.Patch{Set: map[string]json.RawMessage{
+	_, _, err := a.Set(form.Patch{Set: map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"beta"`),
 		"system.model":    json.RawMessage(`"m-2"`),
 	}}, 0)
@@ -200,7 +200,7 @@ func TestProviderModelChangeDoesNotRebuild(t *testing.T) {
 	})
 	runTurn(t, a, ch, "first")
 
-	_, _, err := a.Set(chalkboard.Patch{Set: map[string]json.RawMessage{
+	_, _, err := a.Set(form.Patch{Set: map[string]json.RawMessage{
 		"system.model": json.RawMessage(`"m-2"`),
 	}}, 0)
 	require.NoError(t, err)
@@ -224,7 +224,7 @@ func TestProviderKnobChangeRebuilds(t *testing.T) {
 	})
 	runTurn(t, a, ch, "first")
 
-	_, _, err := a.Set(chalkboard.Patch{Set: map[string]json.RawMessage{
+	_, _, err := a.Set(form.Patch{Set: map[string]json.RawMessage{
 		"system.use_official_sdk": json.RawMessage(`true`),
 	}}, 0)
 	require.NoError(t, err)
@@ -248,7 +248,7 @@ func TestProviderRebindFailureEndsTurnAndRecovers(t *testing.T) {
 	runTurn(t, a, ch, "first")
 
 	f.setFail("gamma", true)
-	_, _, err := a.Set(chalkboard.Patch{Set: map[string]json.RawMessage{
+	_, _, err := a.Set(form.Patch{Set: map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"gamma"`),
 	}}, 0)
 	require.NoError(t, err)
@@ -259,7 +259,7 @@ func TestProviderRebindFailureEndsTurnAndRecovers(t *testing.T) {
 
 	// Correct the board: the aria is still usable.
 	f.setFail("gamma", false)
-	_, _, err = a.Set(chalkboard.Patch{Set: map[string]json.RawMessage{
+	_, _, err = a.Set(form.Patch{Set: map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"beta"`),
 	}}, 0)
 	require.NoError(t, err)

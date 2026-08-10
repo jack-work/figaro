@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 )
 
-func snap(t *testing.T, kv map[string]any) chalkboard.Snapshot {
+func snap(t *testing.T, kv map[string]any) form.Snapshot {
 	t.Helper()
 	m := map[string]json.RawMessage{}
 	for k, v := range kv {
@@ -23,7 +23,7 @@ func snap(t *testing.T, kv map[string]any) chalkboard.Snapshot {
 		}
 		m[k] = raw
 	}
-	return chalkboard.FromMap(m)
+	return form.FromMap(m)
 }
 
 func newTestProvider(t *testing.T, route provider.Route, mode provider.MarkMode) *Provider {
@@ -40,7 +40,7 @@ func encodeAll(t *testing.T, p *Provider, msgs []message.Message) [][]json.RawMe
 	t.Helper()
 	var out [][]json.RawMessage
 	for _, m := range msgs {
-		raw, err := p.encode(m, chalkboard.Snapshot{})
+		raw, err := p.encode(m, form.Snapshot{})
 		if err != nil {
 			t.Fatalf("encode: %v", err)
 		}
