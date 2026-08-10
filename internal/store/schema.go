@@ -163,6 +163,15 @@ func ensureSchema(root string, trunks *xwal.Store) error {
 	if err != nil {
 		return err
 	}
+	return checkGeneration(f, root, trunks)
+}
+
+// checkGeneration is the version half, split out so it can run BEFORE figwal
+// opens the store. A generation-1 store names its form channel "chalkboard",
+// and figwal's manifest is authoritative for channel shape — so it refuses the
+// open itself, with "no reducer \"chalkboard\" registered", which explains
+// nothing to the person holding the store. This must speak first.
+func checkGeneration(f schemaFile, root string, trunks *xwal.Store) error {
 	if f.StoreVersion > storeVersion {
 		return fmt.Errorf(
 			"store is generation %d but this figaro understands %d: "+
@@ -177,6 +186,9 @@ func ensureSchema(root string, trunks *xwal.Store) error {
 		return fmt.Errorf(
 			"store is generation 1 (the form channel was called \"chalkboard\"): " +
 				"export each aria with figaro 0.22.x and import it here")
+	}
+	if trunks == nil {
+		return nil // pre-open pass: the version is all that can be checked
 	}
 	f.StoreVersion = storeVersion
 	stored := f.Channels
@@ -250,6 +262,16 @@ type SchemaReport struct {
 func StoreGeneration(root string) (onDisk, known int, err error) {
 	f, err := readSchema(root)
 	return f.StoreVersion, storeVersion, err
+}
+
+// CheckStoreGeneration refuses a store this build cannot read, before anything
+// opens it. Called first so the reason is figaro's and not figwal's.
+func CheckStoreGeneration(root string) error {
+	f, err := readSchema(root)
+	if err != nil {
+		return err
+	}
+	return checkGeneration(f, root, nil)
 }
 
 // SchemaStatus reads the sidecar directly, without opening the store — so it

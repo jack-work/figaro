@@ -366,7 +366,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		if cerr != nil {
 			return nil, fmt.Errorf("create conversation: %w", cerr)
 		}
-		boot := convBootPatch(req.Patch, id, cwd)
+		boot := convBootPatch(id, cwd)
 		if !boot.IsEmpty() {
 			if _, aerr := backend.ApplyForm(id, boot); aerr != nil {
 				return nil, fmt.Errorf("seed conversation form: %w", aerr)
@@ -942,19 +942,14 @@ func runtimeFillins(ariaID, cwd string) form.Patch {
 	return p
 }
 
-// convBootPatch is the conversation's boot transition: runtime fill-ins
-// plus the per-create req.Patch overrides. The outfit itself is NOT
-// re-stated here — it is inherited via the fork watermark and rendered
-// in the shared outfit-node prefix.
-func convBootPatch(reqPatch *rpc.FormPatch, ariaID, cwd string) form.Patch {
-	p := runtimeFillins(ariaID, cwd)
-	if reqPatch != nil {
-		for k, v := range reqPatch.Set {
-			p.Set[k] = v
-		}
-		p.Remove = append(p.Remove, reqPatch.Remove...)
-	}
-	return p
+// convBootPatch is the conversation's boot transition: the runtime fill-ins,
+// and nothing else. What the caller asked for is already in the birth patch —
+// inherited through the fork watermark and rendered once in the shared prefix.
+//
+// It used to re-state the request here too, which is how the `layers` directive
+// reached a board: the birth patch was materialized, this copy was not.
+func convBootPatch(ariaID, cwd string) form.Patch {
+	return runtimeFillins(ariaID, cwd)
 }
 
 // bootPatchEphemeral is the ephemeral boot: the full resolved outfit

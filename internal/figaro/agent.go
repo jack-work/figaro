@@ -64,6 +64,10 @@ type event struct {
 
 	// eventSet
 	setPatch message.Patch
+	// setIfVersion refuses the patch unless the form still stands there. The
+	// check rides the event to the writer, where it is atomic with the append —
+	// checking at accept would answer about a version the patch never met.
+	setIfVersion uint64
 }
 
 // Config is the constructor input for NewAgent. Configured values
@@ -904,7 +908,7 @@ func (a *Agent) act(ctx context.Context) {
 				"text", truncLog(merged.text, 60), "folded", len(batch))
 			a.runTurn(ctx, merged)
 		case eventSet:
-			a.applyControlPatch(evt.setPatch, "set")
+			a.applyControlPatch(evt.setPatch, evt.setIfVersion, "set")
 		}
 	}
 }
@@ -916,7 +920,7 @@ func (a *Agent) act(ctx context.Context) {
 func (a *Agent) serviceSets() bool {
 	evts := a.inbox.TakeReadySet()
 	for _, evt := range evts {
-		a.applyControlPatch(evt.setPatch, "set")
+		a.applyControlPatch(evt.setPatch, evt.setIfVersion, "set")
 	}
 	return len(evts) > 0
 }
@@ -925,10 +929,10 @@ func (a *Agent) serviceSets() bool {
 // Backed arias append it to the reducible form channel (keyed to
 // the next IR LT, so it rides the next turn as a transition); ephemeral
 // arias fold it onto an IR control-turn (no channel to hold it).
-func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
+func (a *Agent) applyControlPatch(patch message.Patch, ifVersion uint64, kind string) {
 	slog.Debug("event "+kind, "aria", a.id, "set", len(patch.Set), "remove", len(patch.Remove))
 	if a.backend != nil {
-		if _, err := a.backend.ApplyForm(a.id, patch); err != nil {
+		if _, err := a.backend.ApplyFormIf(a.id, patch, ifVersion); err != nil {
 			slog.Error(kind+" form append", "aria", a.id, "err", err)
 			return
 		}

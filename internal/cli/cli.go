@@ -1023,56 +1023,56 @@ See ` + "`figaro help outfits`" + ` for the spec syntax.`,
 		Name:   "outfits",
 		Group:  "State",
 		Hidden: true,
-		Short:  "The outfit spec syntax (a help topic)",
+		Short:  "The outfit syntax (a help topic)",
 		Usage:  "help outfits",
 		Long: `An OUTFIT is a named patch for an aria's form: model, credo,
-skills, and anything else you keep together. A SPEC is what you type where an
-outfit is asked for. It is a comma-separated list of terms, folded LEFT TO
-RIGHT — later terms win, exactly as an outfit's own ` + "`layers = [...]`" + ` does.
+skills, and anything else you keep together. -O is a comma-separated list of
+terms, folded LEFT TO RIGHT — later terms win, exactly as an outfit's own
+` + "`layers = [...]`" + ` does.
 
   sonn5                     one outfit, from outfits/sonn5.toml
   sonn5,focus               both, focus winning
-  ttl=1h                    an inline term: one key, one value
+  ttl=1h                    one key, one value
   mantra="cool thing"       quoted values keep their spaces
   n=3   on=true             a value that parses as JSON keeps its type
   '{"ttl":"1h","n":3}'      the literal the sugar stands for
-  '{"layers":["a"],"x":1}'  an inline term may name layers of its own
+  '{"layers":["a"],"x":1}'  a literal may name layers of its own
   sonn5,ttl=1h              mix freely
 
-Where a spec goes:
+What actually travels is ONE form patch. A name becomes an entry in the patch's
+` + "`layers`" + ` directive and the server folds it; a literal or ` + "`k=v`" + ` becomes keys.
+So the same ` + "`-O`" + ` means the same thing at birth and on a live aria:
 
-  figaro new -O <spec> -- <p>        BIRTH: the stump the aria is spawned
-                                     under, stamped as its outfit, shown by ls
-  figaro send -O <spec> -- <p>       FOLD: applied to the aria's form in
-  figaro fork -O <spec> [-- <p>]     the same call as the prompt (on fork, to
-                                     the new branch, before it is spoken to)
-  figaro state outfit <spec>         FOLD, with no prompt
-  figaro state outfit --tree <spec>  draw the layer closure, apply nothing
-  figaro state outfit --list         what is on disk
+  figaro new -O <o> -- <p>        BIRTH: folded ON TOP of default_outfit
+  figaro send -O <o> -- <p>       applied to the form in the same call as
+  figaro fork -O <o> [-- <p>]     the prompt (on fork, to the new branch)
+  figaro state outfit <o>         applied, with no prompt
+  figaro state outfit --tree <o>  draw the layer closure, apply nothing
+  figaro state outfit --list      what the server has on disk
+  figaro state outfit --refresh   re-read outfits and config from disk
 
 Rules worth knowing:
 
-  - The fold is ADDITIVE. Keys already holding the outfit's value are skipped
-    and nothing is ever removed, so re-applying is free and the aria sees a
-    <system-reminder> for exactly what changed.
+  - Setting a key to the value it already holds changes nothing and announces
+    nothing, so re-applying an outfit is free.
   - A name that does not exist is an error everywhere except one place: the
-    configured default_outfit, whose absence is what triggers first-run setup.
+    reserved layer ` + "`default`" + `, whose absence is what triggers first-run setup.
   - A name is a file basename: no whitespace, no ` + "`=`" + ` (the sugar), no ` + "`/`" + ` or
     ` + "`\\`" + ` (which would climb out of the outfits directory), no brackets or
     quotes, no leading ` + "`-`" + `. Layer names obey the same rule.
-  - Structure must balance. An unmatched brace or quote is an error, and an
-    inline term that sets nothing is too. Inline terms are capped at 64 KiB:
-    one fold is one form record.
+  - Structure must balance. An unmatched brace or quote is an error.
+  - ORDER, one gap: names fold before the literals typed beside them, so
+    ` + "`a,{x:1},b`" + ` folds a and b first and then x. Write the literal last if
+    you meant it to win.
   - QUOTE a literal. Unquoted, ` + "`{mantra:test}`" + ` is not JSON (use the sugar,
     ` + "`mantra=test`" + `) and ` + "`{a:1,b:2}`" + ` is brace-expanded by the shell into two
     words with the braces gone, so it never reaches figaro at all.
   - Repeating -O appends: ` + "`-O a -O b`" + ` is ` + "`-O a,b`" + `.
-  - On the wire a spec is JSON: {"outfit":["sonn5",{"ttl":"1h"}]}. The sugar is
-    parsed by the CLI, so a typo costs no round trip.
+  - ` + "`layers`" + ` is reserved on a form: the server expands it and never stores it.
 
-Outfits live in ~/.config/figaro/outfits/<name>.toml. default_outfit in
-config.toml names the one an aria is born under when nothing else is said; it
-takes a full spec, so it may compose too.`,
+Outfits live in the SERVER's config: ~/.config/figaro/outfits/<name>.toml, with
+default_outfit in config.toml naming what ` + "`default`" + ` stands for. The first-run
+flow writes both through the daemon, so a client never has to know the path.`,
 		Run: func(ctx *cmdkit.RunContext) error {
 			if cmd, ok := r.Command("outfits"); ok {
 				r.PrintCommandHelp(cmd)

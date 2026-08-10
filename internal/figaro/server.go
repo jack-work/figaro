@@ -102,7 +102,9 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		}
 		set, removed, err := a.Set(req.Patch, req.IfVersion)
 		if err != nil {
-			return nil, err
+			// A patch may name layers, so a set can fail the way a dressing
+			// fails — with a closure the caller can draw.
+			return nil, outfitError(err)
 		}
 		return rpc.SetResponse{OK: true, Set: set, Remove: removed}, nil
 

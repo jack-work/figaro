@@ -271,3 +271,47 @@ func TestWire_Context_DoesNotRemoveUnmentionedSnapshotKeys(t *testing.T) {
 	ok := snap.Has("skills.go")
 	assert.True(t, ok, "skills.go must remain on the form")
 }
+
+// A conditional set is the guard a read-modify-write needs: `fig set x[0]` reads
+// the value, edits it in the client, and writes the whole key back, so a second
+// shell doing the same thing must not silently win. The check happens in the
+// form's writer, atomically with the append — checking at accept would answer
+// about a version the patch never met.
+func TestSetRefusesAStaleVersion(t *testing.T) {
+	b, id := newBackedConversation(t)
+	defer b.Close()
+	a := figaro.NewAgent(figaro.Config{
+		Projector: uiir.New(nil), ID: id, Provider: &chalkSpyProvider{},
+		Backend: b, Tools: tool.NewRegistry(), Form: mustForm(t),
+	})
+	defer a.Kill()
+
+	_, _, err := a.Set(form.Patch{Set: map[string]json.RawMessage{"a": json.RawMessage(`1`)}}, 0)
+	require.NoError(t, err)
+	var read uint64
+	require.Eventually(t, func() bool {
+		read = a.Version()
+		v, ok := a.Snapshot().Get("a")
+		return ok && string(v) == `1` && read > 0
+	}, time.Second, 5*time.Millisecond)
+
+	// Someone else writes in between: `read` is stale by the time this lands.
+	_, _, err = a.Set(form.Patch{Set: map[string]json.RawMessage{"b": json.RawMessage(`2`)}}, 0)
+	require.NoError(t, err)
+	require.Eventually(t, func() bool { return a.Version() > read }, time.Second, 5*time.Millisecond)
+	moved := a.Version()
+
+	_, _, err = a.Set(form.Patch{Set: map[string]json.RawMessage{"a": json.RawMessage(`3`)}}, read)
+	require.NoError(t, err, "the refusal happens at the writer, not at accept")
+	time.Sleep(50 * time.Millisecond)
+	v, _ := a.Snapshot().Get("a")
+	assert.Equal(t, `1`, string(v), "a stale conditional set must not land")
+	assert.Equal(t, moved, a.Version(), "and must not advance the form")
+}
+
+func mustForm(t *testing.T) *form.State {
+	t.Helper()
+	st, err := form.Open("")
+	require.NoError(t, err)
+	return st
+}

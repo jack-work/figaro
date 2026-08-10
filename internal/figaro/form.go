@@ -60,16 +60,11 @@ func (a *Agent) Set(patch form.Patch, ifVersion uint64) (set, removed []string, 
 	if err != nil {
 		return nil, nil, err
 	}
-	if ifVersion != 0 {
-		if have := a.Version(); have != ifVersion {
-			return nil, nil, fmt.Errorf("form moved: at version %d, not %d — re-read and retry", have, ifVersion)
-		}
-	}
 	for k := range patch.Set {
 		set = append(set, k)
 	}
 	removed = append(removed, patch.Remove...)
-	a.inbox.Send(event{typ: eventSet, setPatch: patch})
+	a.inbox.Send(event{typ: eventSet, setPatch: patch, setIfVersion: ifVersion})
 	return set, removed, nil
 }
 

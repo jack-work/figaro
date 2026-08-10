@@ -28,7 +28,7 @@ type XwalBackend struct {
 	store *XwalStore
 	mu    sync.Mutex
 	open  map[string]*ariaHandle
-	chalk map[string]*formCache
+	forms map[string]*Form
 	metas map[string]*metaCache
 	// labels is stump id -> what its birth record says it is. Never evicted
 	// and never invalidated: a stump id is the hash of content that contains
@@ -37,7 +37,7 @@ type XwalBackend struct {
 	labels map[string]outfitLabel
 	// touched is when each aria's caches were last used. These caches are
 	// PURE COST once an aria has no agent: cachedLog decodes an entire IR
-	// and every translation into the heap at construction, formCache holds
+	// and every translation into the heap at construction, a Form holds
 	// the whole board and every patch, and nothing but Remove ever deleted
 	// an entry. Measured on a real daemon: 209 arias resident, 107,439
 	// messages, 3.0 GB private -- against 424 MB of IR on disk, because Go
@@ -92,18 +92,6 @@ type ariaHandle struct {
 	trans map[string]*cachedLog[[]json.RawMessage]
 }
 
-type formCache struct {
-	mu    sync.Mutex
-	ready bool
-	state form.Snapshot
-	// version is the durable index of the last patch folded into state: what a
-	// conditional Set quotes back, and what an IR record's cursor stamped.
-	version uint64
-	// patches in version order. No grouping by turn: an IR entry carries
-	// the board version at its turn, so the reader walks both in step.
-	patches []VersionedPatch
-}
-
 type metaCache struct {
 	mu     sync.Mutex
 	loaded bool
@@ -124,7 +112,7 @@ func NewXwalBackend(root string, segmentSize int) (*XwalBackend, error) {
 		root:    root,
 		store:   st,
 		open:    map[string]*ariaHandle{},
-		chalk:   map[string]*formCache{},
+		forms:   map[string]*Form{},
 		metas:   map[string]*metaCache{},
 		touched: map[string]time.Time{},
 	}, nil
@@ -209,125 +197,73 @@ func (b *XwalBackend) Kick() { b.store.trunks.Kick() }
 // ---- form (re-derived via StateAt; mutation appends a patch) ----
 
 func (b *XwalBackend) FormState(ariaID string) (form.Snapshot, error) {
-	c := b.formCache(ariaID)
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if err := b.loadFormLocked(ariaID, c); err != nil {
+	f, err := b.form(ariaID)
+	if err != nil {
 		return form.Snapshot{}, err
 	}
-	return c.state.Clone(), nil
+	snap, _ := f.Snapshot()
+	return snap, nil
 }
 
-func (b *XwalBackend) formCache(ariaID string) *formCache {
+// form returns the aria's Form, opening (and replaying) it once.
+func (b *XwalBackend) form(ariaID string) (*Form, error) {
+	b.mu.Lock()
+	b.touchLocked(ariaID)
+	if f := b.forms[ariaID]; f != nil {
+		b.mu.Unlock()
+		return f, nil
+	}
+	b.mu.Unlock()
+
+	// Replay outside the registry lock: it reads files, and holding the map
+	// through that would serialize every aria behind one cold open.
+	opened, err := OpenForm(&xwalFormLog{backend: b, ariaID: ariaID})
+	if err != nil {
+		return nil, err
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.touchLocked(ariaID)
-	c := b.chalk[ariaID]
-	if c == nil {
-		c = &formCache{}
-		b.chalk[ariaID] = c
+	if existing := b.forms[ariaID]; existing != nil {
+		opened.Close() // lost the race; the winner owns the channel
+		return existing, nil
 	}
-	return c
+	b.forms[ariaID] = opened
+	return opened, nil
 }
 
-func (b *XwalBackend) loadFormLocked(ariaID string, c *formCache) error {
-	if c.ready {
-		return nil
-	}
-	xw, err := b.store.OpenNode(ariaID)
-	if err != nil {
-		return err
-	}
-	defer xw.Close()
-	var first, last uint64
-	for _, ch := range xw.Channels() {
-		if ch.Name == chanForm {
-			first, last = ch.First, ch.Last
-			break
-		}
-	}
-	if first == 0 && last > 0 {
-		first = 1
-	}
-	state := form.Snapshot{}
-	var patches []VersionedPatch
-	for lt := first; lt >= 1 && lt <= last; lt++ {
-		rec, err := xw.ReadAt(chanForm, lt)
-		if err != nil {
-			return err
-		}
-		var p message.Patch
-		if err := json.Unmarshal(rec.Payload, &p); err != nil {
-			return err
-		}
-		state = state.Apply(p)
-		if !p.IsEmpty() {
-			patches = append(patches, VersionedPatch{Version: lt, Patch: p})
-		}
-	}
-	c.state = state
-	c.patches = patches
-	c.version = last
-	c.ready = true
-	return nil
-}
-
-// FormVersion is the durable index of the aria's last board patch.
+// FormVersion is the durable index of the aria's last form patch.
 func (b *XwalBackend) FormVersion(ariaID string) (uint64, error) {
-	c := b.formCache(ariaID)
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if err := b.loadFormLocked(ariaID, c); err != nil {
+	f, err := b.form(ariaID)
+	if err != nil {
 		return 0, err
 	}
-	return c.version, nil
+	return f.Version(), nil
 }
 
 func (b *XwalBackend) FormPatches(ariaID string) ([]VersionedPatch, error) {
-	c := b.formCache(ariaID)
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if err := b.loadFormLocked(ariaID, c); err != nil {
+	f, err := b.form(ariaID)
+	if err != nil {
 		return nil, err
 	}
-	return append([]VersionedPatch(nil), c.patches...), nil
+	return f.Patches(), nil
 }
 
-// ApplyForm appends a patch and returns its VERSION: the patch's own
-// durable index in the form channel.
-//
-// It does not read the timeline. The channel is unkeyed, so a patch is
-// written with no reference to the turn in flight and nothing to serialize
-// against -- which is what lets a `set` land mid-turn instead of waiting
-// for the round to end.
-//
-// The version is the number both an acknowledgement and a resume cursor
-// need, and it is the append position, NOT an IR LT: several patches can
-// arrive between two turns, so only the position tells them apart. It
-// survives reopen because the channel is the durable truth.
-//
-// Durability precedes visibility: the in-memory board advances only after
-// the append returns, so a failure leaves the published board and the log
-// agreeing rather than diverging.
+// ApplyForm appends a patch and returns its VERSION: the patch's own durable
+// index in the form channel. The version is the number both an acknowledgement
+// and a resume cursor need, and it is the append position, NOT an IR LT —
+// several patches can arrive between two turns, so only the position tells
+// them apart. It survives reopen because the channel is the durable truth.
 func (b *XwalBackend) ApplyForm(ariaID string, patch message.Patch) (uint64, error) {
-	pb, _ := json.Marshal(patch)
-	c := b.formCache(ariaID)
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	// Store.Append, not Trunks.AppendChannel: the poison gate and the
-	// dirty/touch bookkeeping must see form writes.
-	version, err := b.store.trunks.Append(ariaID, chanForm, 0, pb, nil)
+	return b.ApplyFormIf(ariaID, patch, 0)
+}
+
+// ApplyFormIf refuses the patch unless the form still stands at ifVersion.
+func (b *XwalBackend) ApplyFormIf(ariaID string, patch message.Patch, ifVersion uint64) (uint64, error) {
+	f, err := b.form(ariaID)
 	if err != nil {
 		return 0, err
 	}
-	if c.ready {
-		c.state = c.state.Apply(patch)
-		c.version = version
-		if !patch.IsEmpty() {
-			c.patches = append(c.patches, VersionedPatch{Version: version, Patch: patch})
-		}
-	}
-	return version, nil
+	return f.Apply(patch, ifVersion)
 }
 
 // ---- tree operations (delegated) ----
@@ -552,7 +488,7 @@ func (b *XwalBackend) EvictIdle(live map[string]bool, idle time.Duration) int {
 			continue
 		}
 		if _, held := b.open[id]; !held {
-			if _, hasChalk := b.chalk[id]; !hasChalk {
+			if _, hasForm := b.forms[id]; !hasForm {
 				if _, hasMeta := b.metas[id]; !hasMeta {
 					delete(b.touched, id)
 					continue
@@ -560,7 +496,10 @@ func (b *XwalBackend) EvictIdle(live map[string]bool, idle time.Duration) int {
 			}
 		}
 		delete(b.open, id)
-		delete(b.chalk, id)
+		if f := b.forms[id]; f != nil {
+			f.Close()
+		}
+		delete(b.forms, id)
 		delete(b.metas, id)
 		delete(b.touched, id)
 		n++
@@ -677,7 +616,10 @@ func (b *XwalBackend) metaCache(ariaID string) *metaCache {
 func (b *XwalBackend) Remove(ariaID string, recursive bool) error {
 	b.dropHandle(ariaID)
 	b.mu.Lock()
-	delete(b.chalk, ariaID)
+	if f := b.forms[ariaID]; f != nil {
+		f.Close()
+	}
+	delete(b.forms, ariaID)
 	delete(b.metas, ariaID)
 	b.mu.Unlock()
 	_ = os.Remove(b.metaPath(ariaID))
@@ -693,7 +635,10 @@ func (b *XwalBackend) Close() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.open = map[string]*ariaHandle{}
-	b.chalk = map[string]*formCache{}
+	for _, f := range b.forms {
+		f.Close()
+	}
+	b.forms = map[string]*Form{}
 	b.metas = map[string]*metaCache{}
 	return b.store.trunks.Close() // Trunks.Close flushes the topology index
 }

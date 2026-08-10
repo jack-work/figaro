@@ -286,6 +286,12 @@ func OpenXwalStore(root string, segmentSize int) (*XwalStore, error) {
 	if err := migrateLayout(root); err != nil {
 		return nil, err
 	}
+	// The generation gate speaks BEFORE figwal does. A store from an older
+	// generation names its channels differently, and figwal would refuse it
+	// first with a message about a missing reducer.
+	if err := CheckStoreGeneration(root); err != nil {
+		return nil, err
+	}
 	st, err := xwal.OpenStore(root, storeOptions(segmentSize))
 	if err != nil {
 		return nil, err
