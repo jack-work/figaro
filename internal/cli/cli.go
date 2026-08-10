@@ -107,6 +107,15 @@ func Run(progName string, args []string) {
 				SetRefSigil(s)
 			}
 		}
+		// The binding policy must be computed HERE too: this branch
+		// exits before the main path's initBindingPolicy(), and the
+		// live-key completers resolve the shell's aria through
+		// shellPID. Left at zero, the daemon is asked which aria pid 0
+		// attends, answers not-found, and completion falls back to the
+		// well-known catalog — which is how every pid-bound shell got
+		// a static key list with its aria's skills.* silently missing,
+		// while FIGARO_ARIA shell-outs (which skip the pid) worked.
+		initBindingPolicy()
 		os.Exit(buildRouter(progName, loaded).Run(args))
 	}
 

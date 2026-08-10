@@ -118,11 +118,25 @@ func fakeRPCServer(t *testing.T, sockPath string, handlers map[string]jkrpc.Hand
 }
 
 // fakeAngelusResolvingTo answers pid.resolve with a binding pointing at
-// ariaSock, on the socket path completion actually dials.
-func fakeAngelusResolvingTo(t *testing.T, runtimeDir, ariaSock string) {
+// ariaSock, on the socket path completion actually dials. It is STRICT
+// about the pid, the way the real daemon is: a resolve for any pid but
+// wantPID answers not-found. The first version of this fake said Found
+// to every pid and was thereby tidier than reality — it certified a
+// completion path whose shellPID was never initialized (the __complete
+// dispatch exits before initBindingPolicy), which the real daemon
+// answered with not-found for pid 0, and every pid-bound shell got the
+// catalog instead of its aria's keys.
+func fakeAngelusResolvingTo(t *testing.T, runtimeDir, ariaSock string, wantPID int) {
 	t.Helper()
 	fakeRPCServer(t, filepath.Join(runtimeDir, "angelus.sock"), map[string]jkrpc.HandlerFunc{
 		rpc.MethodResolve: func(ctx context.Context, params json.RawMessage) (interface{}, error) {
+			var req rpc.ResolveRequest
+			if err := json.Unmarshal(params, &req); err != nil {
+				return nil, err
+			}
+			if req.PID != wantPID {
+				return rpc.ResolveResponse{Found: false}, nil
+			}
 			return rpc.ResolveResponse{
 				FigaroID: "fake-aria",
 				Endpoint: rpc.Endpoint{Scheme: "unix", Address: ariaSock},
@@ -130,6 +144,21 @@ func fakeAngelusResolvingTo(t *testing.T, runtimeDir, ariaSock string) {
 			}, nil
 		},
 	})
+}
+
+// bindShellPID computes the real binding key (initBindingPolicy is what
+// the production paths run) and returns it, restoring the package state
+// after the test. A test that hand-set shellPID would certify nothing
+// about the init that the __complete dispatch once skipped.
+func bindShellPID(t *testing.T) int {
+	t.Helper()
+	prev := shellPID
+	t.Cleanup(func() { shellPID = prev })
+	initBindingPolicy()
+	if shellPID == 0 {
+		t.Fatal("initBindingPolicy left shellPID at 0")
+	}
+	return shellPID
 }
 
 // completionTestDirs builds a SHORT runtime dir (unix socket paths cap
@@ -155,7 +184,7 @@ func completionTestDirs(t *testing.T) string {
 func TestCompleteFormKeys_AttendedAriaOffersLiveKeys(t *testing.T) {
 	rt := completionTestDirs(t)
 	ariaSock := filepath.Join(rt, "aria.sock")
-	fakeAngelusResolvingTo(t, rt, ariaSock)
+	fakeAngelusResolvingTo(t, rt, ariaSock, bindShellPID(t))
 	fakeRPCServer(t, ariaSock, map[string]jkrpc.HandlerFunc{
 		rpc.MethodForm: func(ctx context.Context, params json.RawMessage) (interface{}, error) {
 			var snap form.Snapshot
@@ -188,7 +217,7 @@ func TestCompleteFormKeys_AttendedAriaOffersLiveKeys(t *testing.T) {
 func TestCompleteFormKeys_DeclinesWhenBoundFormUnreadable(t *testing.T) {
 	rt := completionTestDirs(t)
 	// The resolved endpoint has no listener: dial fails, fetch fails.
-	fakeAngelusResolvingTo(t, rt, filepath.Join(rt, "dead.sock"))
+	fakeAngelusResolvingTo(t, rt, filepath.Join(rt, "dead.sock"), bindShellPID(t))
 
 	keys, status, err := softFetchLiveKeys()
 	if status != liveKeysFetchFailed {
