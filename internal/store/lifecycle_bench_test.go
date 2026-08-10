@@ -142,3 +142,78 @@ func BenchmarkListWithForms(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkForkWith is the verb a human performs: `fig fork` as the angelus
+// calls it. BenchmarkFork above measures Fork+ApplyForm, which is NOT this path
+// — it never touches ForkWith — so it cannot be evidence about it.
+func BenchmarkForkWith(b *testing.B) {
+	back, err := store.NewXwalBackend(b.TempDir(), 0)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer back.Close()
+	parent, _, err := back.ForkWith("", 0, birthPatch(0))
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, _, err := back.ForkWith(parent, 0, birthPatch(i)); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkFormApplySameAria is the cost that is paid on EVERY form write —
+// `fig set`, a mantra update, every system.* patch a turn commits — not once per
+// fork. Folded inside a fork number it was invisible.
+func BenchmarkFormApplySameAria(b *testing.B) {
+	back, err := store.NewXwalBackend(b.TempDir(), 0)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer back.Close()
+	outfit, err := back.CreateOutfit("bench", birthPatch(0))
+	if err != nil {
+		b.Fatal(err)
+	}
+	id, err := back.CreateConversation(outfit)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := back.ApplyForm(id, birthPatch(i)); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkFormApplyFreshAria is the same write against an aria nobody has
+// touched: it includes OPENING the form, which replays the channel. A caller
+// that only wants to append pays for materializing the whole state.
+func BenchmarkFormApplyFreshAria(b *testing.B) {
+	back, err := store.NewXwalBackend(b.TempDir(), 0)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer back.Close()
+	outfit, err := back.CreateOutfit("bench", birthPatch(0))
+	if err != nil {
+		b.Fatal(err)
+	}
+	ids := make([]string, b.N)
+	for i := range ids {
+		id, cerr := back.CreateConversation(outfit)
+		if cerr != nil {
+			b.Fatal(cerr)
+		}
+		ids[i] = id
+	}
+	b.ResetTimer()
+	for _, id := range ids {
+		if _, err := back.ApplyForm(id, birthPatch(0)); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

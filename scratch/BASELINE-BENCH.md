@@ -86,7 +86,52 @@ of variation, which is what says whether a delta means anything.
 | ls, 10 arias | 0.7 µs | 0.6 µs | −4.7% | 1.1% | 1.2% | real, faster |
 | ls, 100 arias | 4.3 µs | 4.3 µs | −0.2% | 3.2% | 1.5% | noise |
 
-## Attribution: the fork regression is ForkWith, and it is the price of the rule
+## CORRECTION: the attribution below was wrong, and the benchmark could not
+## have supported it
+
+Caught in review. BenchmarkFork calls `back.Fork` + `ApplyForm` — it never
+touches ForkWith, and XwalStore.Fork is byte-identical between the two trees. So
+"every fork now writes a birth record" was a true statement about the VERB and
+not about the thing being measured. Splitting the halves:
+
+| | main | form | |
+|---|---|---|---|
+| FormApplySameAria — EVERY form write | 14.07 µs | 40.45 µs | +187% |
+| FormApplyFreshAria — includes opening the form | 239.79 µs | 250.92 µs | +4.6% |
+
+The cost was in the APPLY half, which is paid on every `fig set`, every mantra
+update, every system.* patch a turn commits — not once per hand-driven fork. A
+completely different frequency, and the mitigation I had listed and rejected was
+for the wrong operation.
+
+### The cause, found by chasing the arithmetic that did not add up
+
+`Form.commit` published its patch history by COPYING it:
+
+    next.patches = append(append([]VersionedPatch(nil), st.patches...), vp)
+
+O(history) per write, so the cost grew with the aria's age — which is why the
+numbers would not reconcile, and why a synthetic benchmark understated it. An
+aria with a few hundred patches paid 3x; a long-lived one pays worse. There is
+exactly one writer, so appending to the shared backing array is safe: a
+published state holds a slice header with its own length, and a later append
+either writes past that length (which no reader reads) or reallocates.
+
+    FormApplySameAria   40.45 µs -> 17.84 µs   (main: 14.07 µs, +27% and O(1))
+
+The 27% that remains is the actor hop — Send, handler, commit, reply channel —
+which is what buys the single writer, the atomic If-Match and durability before
+visibility. That one is a real trade and it is O(1).
+
+### ForkWith itself, measured directly (no main counterpart: it is a new verb)
+
+    ForkWith   465 µs   sd 3.4%
+
+Decomposed: ~160 µs is the fork (unchanged from main, p=0.937 in review's
+split), the rest is the birth patch, the renderable record and SyncCoherent —
+the price of "a fork must carry a patch", paid once per hand-driven fork.
+
+## Superseded attribution (kept because being wrong in public is the point)
 
 +26 µs, 6.2%, and it is not noise — the spread is 1-2% on both sides.
 
