@@ -71,3 +71,43 @@ Run-to-run variance on Birth alone was measured at 6% (1.258 vs 1.334 ms in two
 consecutive runs), so everything in the ±5% band here is noise, not signal. The
 only real movements are elsewhere: FormState10000 (123 ms -> 5.3 ms) and
 FormPatches10000 (123 ms -> 50.6 ms).
+
+# The everyday verbs, properly: 6 runs each, main (f85b6ed) vs form
+
+Single runs could not resolve anything (Birth alone varies 6-9% run to run), so
+this is `-count=6` on both trees with the spread reported. sd is the coefficient
+of variation, which is what says whether a delta means anything.
+
+| benchmark | main | form | delta | main sd | form sd | |
+|---|---|---|---|---|---|---|
+| Birth | 1.06 ms | 1.07 ms | +0.4% | 9.5% | 6.6% | noise |
+| **Fork** | **429.6 µs** | **456.1 µs** | **+6.2%** | **1.0%** | **1.6%** | **REAL** |
+| Kill | 2.19 ms | 2.13 ms | −2.8% | 1.2% | 2.8% | real, faster |
+| ls, 10 arias | 0.7 µs | 0.6 µs | −4.7% | 1.1% | 1.2% | real, faster |
+| ls, 100 arias | 4.3 µs | 4.3 µs | −0.2% | 3.2% | 1.5% | noise |
+
+## Attribution: the fork regression is ForkWith, and it is the price of the rule
+
++26 µs, 6.2%, and it is not noise — the spread is 1-2% on both sides.
+
+Before, a plain `fig fork` was `ForkTail` and nothing else; a dress patch was a
+separate `ApplyForm` only when `-O` asked for one. Now every fork writes a form
+patch AND a renderable birth record AND an `x.SyncCoherent()` before it returns,
+because the child's identity is the hash of what it was born carrying and the
+patch must be durable before anything can spawn beneath it.
+
+So the 26 µs buys: the fork and its patch in ONE critical section (no window
+where a patch is ACKed on the parent and misses the child), an identity for the
+branch, and an aria that knows its own id. Cheaper than that is achievable —
+batching the fsync, or letting a dressing-free fork skip the record — but both
+trade back the property the record exists to provide, and 26 µs on an operation
+a human performs by hand is not the place to spend that.
+
+Kill got faster because closing a Form is cheaper than the cache teardown it
+replaced; ls/10 because a published snapshot is an atomic load where the old
+path re-cloned the board per row.
+
+## Transcript rig (from review, 6 runs each, benchstat)
+
+Every line ~ except TranscriptHeavyEnter at −2.08% (p=0.009) — faster. No
+regression from the actor extraction or the form fanout.
