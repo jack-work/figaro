@@ -201,3 +201,80 @@ yours, never stash it without saying so.**
 
 Green tests are not a demonstration; a benchmark is not evidence until you know
 what it calls; and when the budget will not cover the ask, say so out loud.
+
+---
+
+## Part 8 — KNOWN DEFECT: `@` completion shows the catalog, not the form
+
+Reported by Gluck against v0.23.0, unfixed, and it belongs here because it lives
+in the surface this branch touches. **Do this first.**
+
+### The symptom
+
+Completing `@` in an attended shell offers ~25 keys — `cwd`, `datetime`,
+`duke-title`, `model`, `root`, `token_budget`, `truncation`, and a run of
+`system.*` — and **none of the 27 `skills.*` keys the aria actually holds**.
+`fig form <id>` on the same aria shows 45 keys including `skills (27)`.
+
+Two tells that name the cause exactly:
+
+1. **Skills can never be in a static list.** They are materialized from an
+   outfit at birth; a hardcoded catalog cannot know them.
+2. **It offers keys the board does not have.** `truncation`, `token_budget` and
+   `system.verbosity` are not on Gluck's form. They are entries in
+   `form.WellKnownKeys()` (`internal/form/known_keys.go`) — documentation of
+   keys figaro understands, not a statement about any aria.
+
+So what is on screen IS the catalog. `completeFormKeys` adds the catalog and
+then adds `softFetchLiveKeys()` on top; the live half is coming back empty.
+
+### Why it is empty — check in this order
+
+`softFetchLiveKeys` (`internal/cli/complete_chalkboard.go:62`) returns **nil on
+every failure**, by design: completion must not autostart a daemon, prompt, or
+block. It has five nil-returning exits — dial the angelus, resolve the pid
+binding, dial the aria, `fcli.Form(ctx)`, and the decode.
+
+1. **Mixed versions (most likely).** v0.23.0 renamed the read method
+   `figaro.chalkboard` -> `figaro.form` (and `aria.chalkboard` -> `aria.form`).
+   A v0.23 CLI against a 0.22.x daemon gets *method not found* at the
+   `fcli.Form(ctx)` line and falls back silently. Completion runs whatever
+   `figaro` is on PATH, which is often the INSTALLED binary while testing a
+   worktree build — so this can be true even when `fig form listen` works.
+   Confirm: `figaro version` on both sides; `figaro stop` and retry.
+2. **Regression in the live path.** The same commit that removed
+   `outfitFallbackKeys` (the unattended fallback that folded the default outfit
+   CLIENT-side — server state a client must not read) touched this file. Verify
+   `softFetchLiveKeys` still resolves the binding and that `resp.Snapshot.All()`
+   is being drained into `out`.
+3. **Binding.** `resolveBinding(ctx, acli, shellPID)` must find the shell's
+   aria. A completion running under a different pid (a subshell, a wrapper)
+   resolves nothing and is indistinguishable from a broken fetch — see below.
+
+### The real defect is the silence
+
+Whatever the immediate cause, the design fault is that **five distinct failures
+share one answer (`nil`), and the caller renders a plausible wrong result on top
+of it.** "No aria bound" and "the daemon refused the method" are different facts
+and a human had to notice that skills were missing to discover either. This is
+the same shape as the form mirror's schema-mismatch bug fixed in v0.23.0: one
+return value serving two meanings, and the invisible one winning.
+
+**Fix the silence, not just the fetch:**
+
+- Distinguish *unbound* (offer the catalog — correct, it is all that is knowable)
+  from *fetch failed* (a wrong answer dressed as a right one).
+- On a failed fetch, completion still must not block or prompt — but it can
+  decline to offer the catalog, or mark the list, or write one line to the
+  completion debug log. Silently substituting documentation for state is the
+  behaviour to remove.
+- A test: an attended aria whose form carries `skills.foo` must complete
+  `skills.foo`. It would have failed the day this broke.
+
+### While you are there
+
+`fig form <id>` is the honest view of what a board holds; the catalog is the
+honest view of what figaro understands. They are different questions and the
+completion currently answers the second while appearing to answer the first.
+Consider marking catalog-only entries in the completion display so the
+difference is visible at the point of use.
