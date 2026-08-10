@@ -360,13 +360,20 @@ func (b *XwalBackend) stumpLabel(id string) outfitLabel {
 	}
 	if snap, err := b.FormState(id); err == nil {
 		l = outfitLabel{name: snapString(snap, keyOutfitName), version: snapString(snap, keyOutfitVer)}
+		if l.name == "" {
+			l.name, l.version = snapString(snap, keyLegacyName), snapString(snap, keyLegacyVer)
+		}
+		// Only a successful read is memoized. The licence for the memo is that
+		// a stump's CONTENT cannot change, which says nothing about an error:
+		// caching one blanked every row for that outfit for the life of the
+		// daemon, and nothing ever invalidated it.
+		b.mu.Lock()
+		if b.labels == nil {
+			b.labels = map[string]outfitLabel{}
+		}
+		b.labels[id] = l
+		b.mu.Unlock()
 	}
-	b.mu.Lock()
-	if b.labels == nil {
-		b.labels = map[string]outfitLabel{}
-	}
-	b.labels[id] = l
-	b.mu.Unlock()
 	return l
 }
 

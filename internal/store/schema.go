@@ -3,10 +3,12 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/jack-work/figwal/xwal"
 )
@@ -178,15 +180,6 @@ func checkGeneration(f schemaFile, root string, trunks *xwal.Store) error {
 				"refusing to open a store written by a newer build (upgrade figaro)",
 			f.StoreVersion, storeVersion)
 	}
-	// Generation 1 held the form under a directory named "chalkboard". There
-	// is no in-place converter: `figaro export` on 0.22.x writes an aria out,
-	// `figaro import` here writes it back, and that round trip is the
-	// migration. Refusing beats reading a board that would come back empty.
-	if f.StoreVersion == 1 {
-		return fmt.Errorf(
-			"store is generation 1 (the form channel was called \"chalkboard\"): " +
-				"export each aria with figaro 0.22.x and import it here")
-	}
 	if trunks == nil {
 		return nil // pre-open pass: the version is all that can be checked
 	}
@@ -264,14 +257,105 @@ func StoreGeneration(root string) (onDisk, known int, err error) {
 	return f.StoreVersion, storeVersion, err
 }
 
-// CheckStoreGeneration refuses a store this build cannot read, before anything
-// opens it. Called first so the reason is figaro's and not figwal's.
+// CheckStoreGeneration refuses a store this build cannot read, and migrates one
+// it can. It runs before anything OPENS the store, which is not a nicety: a
+// generation whose channels are named differently makes figwal refuse first,
+// with a message about a missing reducer, and a migration cannot run against an
+// open store anyway.
 func CheckStoreGeneration(root string) error {
 	f, err := readSchema(root)
 	if err != nil {
 		return err
 	}
-	return checkGeneration(f, root, nil)
+	if err := checkGeneration(f, root, nil); err != nil {
+		return err
+	}
+	return migrateGenerations(root, f.StoreVersion)
+}
+
+// isNoSuchChannel is the one refusal a re-run may ignore: the channel is gone
+// because this migration already moved it.
+func isNoSuchChannel(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "no such channel")
+}
+
+// generationMigration turns a store of generation N-1 into one of generation N.
+// It runs with the store closed, and must be idempotent: the sidecar is stamped
+// only after every step has succeeded, so a crash re-runs the whole chain.
+type generationMigration struct {
+	to  int
+	run func(root string) error
+}
+
+// generationMigrations is the registry the storeVersion comment promised —
+// keyed on the number, not on a probe. Absence is meaningful: generation 1
+// changed no bytes, so nothing runs for it.
+var generationMigrations = []generationMigration{
+	{to: 2, run: migrateFormChannel},
+}
+
+func migrateGenerations(root string, from int) error {
+	// No manifest, no store: a directory becomes one when figwal creates it,
+	// with today's channel names. Nothing to move, and reading a manifest that
+	// is not there would fail every first open.
+	if _, err := os.Stat(filepath.Join(root, "xwal.json")); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if from == 0 {
+		// A store with a manifest and no sidecar predates the sidecar, which
+		// makes it generation 1 by construction. Each migration is a no-op when
+		// its subject is already absent, so starting the chain costs nothing.
+		from = 1
+	}
+	for _, m := range generationMigrations {
+		if from >= m.to {
+			continue
+		}
+		start := time.Now()
+		if err := m.run(root); err != nil {
+			return fmt.Errorf("store %s: migration to generation %d failed: %w", root, m.to, err)
+		}
+		slog.Info("store generation migrated", "root", root,
+			"to", m.to, "ms", time.Since(start).Milliseconds())
+	}
+	return nil
+}
+
+// migrateFormChannel is generation 1 -> 2: the form's channel directory was
+// called "chalkboard". Renaming it is figwal's job (the manifest is its
+// format); the sidecar's channel key is ours.
+func migrateFormChannel(root string) error {
+	if _, err := os.Stat(filepath.Join(root, "chalkboard")); err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+		// Nothing under the old name. Either this store never had one, or a
+		// previous run moved it and died before the sidecar was stamped — and
+		// RenameChannel repairs the manifest for that second case.
+		if rerr := xwal.RenameChannel(root, "chalkboard", chanForm); rerr != nil && !isNoSuchChannel(rerr) {
+			return rerr
+		}
+	} else if err := xwal.RenameChannel(root, "chalkboard", chanForm); err != nil {
+		return err
+	}
+	f, err := readSchema(root)
+	if err != nil {
+		return err
+	}
+	if f.Channels == nil {
+		return nil
+	}
+	if v, ok := f.Channels["chalkboard"]; ok {
+		delete(f.Channels, "chalkboard")
+		if _, taken := f.Channels[chanForm]; !taken {
+			f.Channels[chanForm] = v
+		}
+		return writeSchema(root, f)
+	}
+	return nil
 }
 
 // SchemaStatus reads the sidecar directly, without opening the store — so it

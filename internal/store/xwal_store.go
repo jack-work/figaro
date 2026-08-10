@@ -104,6 +104,13 @@ const (
 
 	keyOutfitName = "system.outfit_name"
 	keyOutfitVer  = "system.outfit_version"
+	// The pre-rename spelling. A stump minted before the loadout->outfit rename
+	// states its name under these, and its birth record is canonical: it is
+	// read tolerantly, never rewritten. Without this every aria minted before
+	// that rename listed with a blank OUTFIT column — 463 of them in this
+	// author's store, silently, since the rename shipped.
+	keyLegacyName = "system.loadout_name"
+	keyLegacyVer  = "system.loadout_version"
 
 	// rootID is the ceremonial "null" anchor's display id. The root is the
 	// channel dir itself — it carries no trunk id on disk — so figaro names
