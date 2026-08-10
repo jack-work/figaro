@@ -2072,6 +2072,7 @@ func (t *transcript) find(q string) {
 	if q == "" {
 		return
 	}
+	t.wantTop = false // a search is a deliberate move; see transcript.wantTop
 	t.matchQuery = q
 	t.settle() // search the converged window: stopFollowing must not move it under us
 	total := t.index.total
@@ -2099,6 +2100,7 @@ func (t *transcript) findRepeat(delta int) {
 	if t.matchQuery == "" || delta == 0 {
 		return
 	}
+	t.wantTop = false // a search is a deliberate move; see transcript.wantTop
 	q := t.matchQuery
 	t.settle()
 	total := t.index.total
