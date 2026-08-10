@@ -120,7 +120,7 @@ func BenchmarkAriaReaderForm(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		if _, err := r.Form(id); err != nil {
+		if _, _, err := r.Form(id); err != nil {
 			b.Fatal(err)
 		}
 	}

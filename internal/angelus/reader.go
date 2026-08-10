@@ -117,17 +117,23 @@ func (r *AriaReader) Page(id string, at aria.Anchor, budget int, before bool) (a
 	return page, nil
 }
 
-// Form reads the reducible form channel, which is the durable
-// truth — there is no the form channel to fall back on.
-func (r *AriaReader) Form(id string) (form.Snapshot, error) {
+// Form reads the reducible form channel, which is the durable truth, AND the
+// version it stands at. The version is not decoration: a client mirroring the
+// form applies deltas on top of this snapshot, and without the version it cannot
+// tell whether the next delta follows it or whether it missed one.
+func (r *AriaReader) Form(id string) (form.Snapshot, uint64, error) {
 	if r == nil || r.backend == nil {
-		return form.Snapshot{}, errors.New("no backend (ephemeral angelus)")
+		return form.Snapshot{}, 0, errors.New("no backend (ephemeral angelus)")
 	}
 	snap, err := r.backend.FormState(id)
 	if err != nil {
-		return form.Snapshot{}, fmt.Errorf("form %s: %w", id, err)
+		return form.Snapshot{}, 0, fmt.Errorf("form %s: %w", id, err)
 	}
-	return snap, nil
+	version, err := r.backend.FormVersion(id)
+	if err != nil {
+		return form.Snapshot{}, 0, fmt.Errorf("form %s version: %w", id, err)
+	}
+	return snap, version, nil
 }
 
 // metrics recomputes what the agent's refreshMetricsFrom computes, minus
@@ -146,7 +152,7 @@ func (r *AriaReader) metrics(id string, msgs []message.Message) *aria.Metrics {
 			m.CacheWriteTokens += u.CacheWriteTokens
 		}
 	}
-	if snap, err := r.Form(id); err == nil {
+	if snap, _, err := r.Form(id); err == nil {
 		m.Mantra = snapString(snap, "mantra")
 	}
 	return m

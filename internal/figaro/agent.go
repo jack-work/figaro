@@ -247,6 +247,22 @@ func NewAgent(cfg Config) *Agent {
 		a.fanOut(rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodAriaFrame, Params: p})
 	})
 
+	// Form transitions ride the SAME fanout as the aria's frames, so a form
+	// listener is an ordinary subscriber on the same socket and there is no
+	// second transport to keep honest. The sink runs on the form's writer, so
+	// it does exactly one thing and returns.
+	if a.backend != nil {
+		if err := a.backend.WatchForm(a.id, func(version uint64, patch message.Patch) {
+			a.fanOut(rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodFormDelta,
+				Params: rpc.FormDelta{
+					Schema: rpc.FormDeltaSchema, AriaID: a.id, Version: version,
+					Patch: patch, At: time.Now().UnixMilli(),
+				}})
+		}); err != nil {
+			slog.Warn("watch form", "aria", a.id, "err", err)
+		}
+	}
+
 	a.publishMetadata()
 	go a.runWithRecovery(ctx)
 	return a

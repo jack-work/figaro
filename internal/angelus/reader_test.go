@@ -46,7 +46,7 @@ func TestAriaReaderReadsDormantAria(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, tail.Parts)
 
-	_, err = r.Form(id)
+	_, _, err = r.Form(id)
 	require.NoError(t, err)
 }
 
@@ -69,7 +69,7 @@ func TestAriaReaderWithoutBackend(t *testing.T) {
 	r := NewAriaReader(nil, uiir.New(nil))
 	_, _, err := r.Context("abcd1234")
 	require.ErrorContains(t, err, "no backend")
-	_, err = r.Form("abcd1234")
+	_, _, err = r.Form("abcd1234")
 	require.ErrorContains(t, err, "no backend")
 }
 

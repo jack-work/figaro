@@ -31,6 +31,9 @@ type Form struct {
 	log   FormLog
 	write *actor.Queue[formWrite]
 	state atomic.Pointer[formState]
+
+	mu       sync.Mutex
+	onCommit []func(version uint64, patch message.Patch)
 }
 
 // formState is one published version: the tree, the durable index it stands
@@ -121,6 +124,20 @@ func (f *Form) Apply(patch message.Patch, ifVersion uint64) (uint64, error) {
 	return res.version, res.err
 }
 
+// OnCommit registers a sink for committed patches, called AFTER the append and
+// the publish — never before, so an observer can never see state that would not
+// survive a restart.
+//
+// It runs ON THE WRITER, so it obeys the writer's law: hand the delta off and
+// return. A sink that blocks on anything which might be waiting on this form
+// stops every write to it. The routing layer's own queue is the right place to
+// put the work.
+func (f *Form) OnCommit(fn func(version uint64, patch message.Patch)) {
+	f.mu.Lock()
+	f.onCommit = append(f.onCommit, fn)
+	f.mu.Unlock()
+}
+
 // Close stops the writer. Further writes are refused rather than dropped.
 func (f *Form) Close() { f.write.Close() }
 
@@ -144,6 +161,12 @@ func (f *Form) commit(w formWrite) formResult {
 			VersionedPatch{Version: version, Patch: w.patch})
 	}
 	f.state.Store(next)
+	f.mu.Lock()
+	sinks := f.onCommit
+	f.mu.Unlock()
+	for _, fn := range sinks {
+		fn(version, w.patch)
+	}
 	return formResult{version: version}
 }
 

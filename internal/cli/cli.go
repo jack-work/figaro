@@ -949,6 +949,7 @@ aria nesting follows fork history alone and there is nothing to promote.`,
   figaro state outfit a,b          fold both, b winning
   figaro state outfit ttl=1h       fold an inline literal
   figaro state outfit --tree a     draw a's layer closure, apply nothing
+  figaro form listen               watch it live, as a JSON tree
   figaro state outfit --list       the outfits on disk
 
 ` + "`state outfit`" + ` is an ADDITIVE fold: keys already holding the outfit's
@@ -970,6 +971,14 @@ See ` + "`figaro help outfits`" + ` for the spec syntax.`,
 			args := ctx.Args
 			if len(args) > 0 && args[0] == "outfit" {
 				return runStateOutfit(ld, ctx, args[1:])
+			}
+			if len(args) > 0 && args[0] == "listen" {
+				id := ctx.Flag("id")
+				if id == "" && len(args) > 1 {
+					id = args[1]
+				}
+				runFormListen(ld, id)
+				return nil
 			}
 			if ctx.BoolFlag("list") || ctx.BoolFlag("tree") || ctx.BoolFlag("refresh") {
 				return fmt.Errorf("--list/--tree/--refresh belong to `state outfit`")

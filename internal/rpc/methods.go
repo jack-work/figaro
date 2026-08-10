@@ -24,6 +24,11 @@ const (
 	MethodForm      = "figaro.form"
 	MethodQueued    = "figaro.queued"
 
+	// MethodFormDelta pushes one committed form patch, in the shape a client
+	// SENDS one. It rides the same fanout the aria's own frames do, so a
+	// listener is an ordinary subscriber and there is no second transport.
+	MethodFormDelta = "form.delta"
+
 	// The queue mutators. Reading the queue stays on MethodQueued (it predates
 	// them and its shape is unchanged); these two are the U and D of the CRUD,
 	// while C is MethodQua — a queued message IS a submitted prompt, so there
@@ -155,6 +160,23 @@ type QuaRequest struct {
 type FormInput struct {
 	Context map[string]json.RawMessage `json:"context,omitempty"`
 	Patch   *FormPatch                 `json:"patch,omitempty"`
+}
+
+// FormDeltaSchema versions the ENVELOPE, not the patch. Version below is the
+// patch's own durable index in the aria's form channel; this is the shape the
+// two ends agreed on, and it moves when the shape does — a listener that reads
+// a schema it does not know can say so instead of guessing.
+const FormDeltaSchema = 1
+
+// FormDelta is one committed transition, and it is deliberately the same shape
+// in both directions: what a client sends as {patch, if_version} comes back as
+// {patch, version}. A recording of a stream can be replayed at another aria.
+type FormDelta struct {
+	Schema  int       `json:"schema"`
+	AriaID  string    `json:"aria_id,omitempty"`
+	Version uint64    `json:"version"`
+	Patch   FormPatch `json:"patch"`
+	At      int64     `json:"at,omitempty"`
 }
 
 // FormPatch is the wire shape for a form delta. It is the internal

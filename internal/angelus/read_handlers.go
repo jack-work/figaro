@@ -86,11 +86,11 @@ func (h *handlers) ariaForm(ctx context.Context, params json.RawMessage) (interf
 	if srv := h.liveAgent(id); srv != nil {
 		return srv.Handle(ctx, rpc.MethodForm, nil)
 	}
-	snap, err := h.reader().Form(id)
+	snap, version, err := h.reader().Form(id)
 	if err != nil {
 		return nil, fmt.Errorf("aria.form: %w", err)
 	}
-	return rpc.FormResponse{Snapshot: snap}, nil
+	return rpc.FormResponse{Snapshot: snap, Version: version}, nil
 }
 
 func ariaIDParam(params json.RawMessage, method string) (string, error) {

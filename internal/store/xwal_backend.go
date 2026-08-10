@@ -231,6 +231,18 @@ func (b *XwalBackend) form(ariaID string) (*Form, error) {
 	return opened, nil
 }
 
+// WatchForm registers a sink for every patch committed to an aria's form. It
+// opens the Form if nobody had, which is what lets a listener follow a DORMANT
+// aria: a form is a store object, and reading one does not need an agent.
+func (b *XwalBackend) WatchForm(ariaID string, fn func(version uint64, patch message.Patch)) error {
+	f, err := b.form(ariaID)
+	if err != nil {
+		return err
+	}
+	f.OnCommit(fn)
+	return nil
+}
+
 // FormVersion is the durable index of the aria's last form patch.
 func (b *XwalBackend) FormVersion(ariaID string) (uint64, error) {
 	f, err := b.form(ariaID)

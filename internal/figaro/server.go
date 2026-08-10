@@ -109,7 +109,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		return rpc.SetResponse{OK: true, Set: set, Remove: removed}, nil
 
 	case rpc.MethodForm:
-		return rpc.FormResponse{Snapshot: a.Snapshot()}, nil
+		return rpc.FormResponse{Snapshot: a.Snapshot(), Version: a.Version()}, nil
 
 	case rpc.MethodQueued:
 		var req rpc.QueuedRequest

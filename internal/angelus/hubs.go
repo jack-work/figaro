@@ -110,11 +110,11 @@ func (h *handlers) readForHub(id, method string, params json.RawMessage) (any, b
 	r := h.reader()
 	switch method {
 	case rpc.MethodForm:
-		snap, err := r.Form(id)
+		snap, version, err := r.Form(id)
 		if err != nil {
 			return nil, true, err
 		}
-		return rpc.FormResponse{Snapshot: snap}, true, nil
+		return rpc.FormResponse{Snapshot: snap, Version: version}, true, nil
 
 	case rpc.MethodContext:
 		msgs, metrics, err := r.Context(id)
