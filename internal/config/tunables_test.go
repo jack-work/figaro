@@ -57,10 +57,10 @@ func TestStreamEmitInterval(t *testing.T) {
 	if l.StreamEmitIntervalMs() != 90 || noConfig.StreamEmitIntervalMs() != 90 {
 		t.Errorf("default emit interval = %d/%d, want 90", l.StreamEmitIntervalMs(), noConfig.StreamEmitIntervalMs())
 	}
-	if l, err := loadWith(t, "stream_emit_interval_ms = 0\n"); err != nil || l.StreamEmitIntervalMs() != 0 {
+	if l, err := loadWith(t, "[cli]\nstream_emit_interval_ms = 0\n"); err != nil || l.StreamEmitIntervalMs() != 0 {
 		t.Errorf("explicit 0: got %v, %v", l, err)
 	}
-	if _, err := loadWith(t, "stream_emit_interval_ms = -1\n"); err == nil {
+	if _, err := loadWith(t, "[cli]\nstream_emit_interval_ms = -1\n"); err == nil {
 		t.Error("negative interval: expected a validation error, got nil")
 	}
 }

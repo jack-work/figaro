@@ -29,6 +29,27 @@ type Config struct {
 	// and a delete can never orphan a survivor because the two agree.
 	Trunks *bool `toml:"trunks"`
 
+	// CLI holds the settings a client owns: how it echoes, paces and colours
+	// its own output. They live in their own [cli] section because everything
+	// else here is the SERVER's state, which a client may only ask the daemon
+	// to change (angelus.configure) rather than read.
+	CLI CLIConfig `toml:"cli"`
+
+	// Wire bounds paginated reads. See WireConfig.
+	Wire WireConfig `toml:"wire"`
+
+	// Store bounds the on-disk WAL geometry. See StoreConfig.
+	Store StoreConfig `toml:"store"`
+
+	// Memory tunes when the daemon reclaims an idle aria. See MemoryConfig.
+	Memory MemoryConfig `toml:"memory"`
+
+	// Authz gates the RPC surface. See AuthzConfig.
+	Authz AuthzConfig `toml:"authz"`
+}
+
+// CLIConfig is the client's own settings. Nothing here reaches the daemon.
+type CLIConfig struct {
 	// EchoPrompt controls whether the CLI echoes the prompt.
 	// Pointer to distinguish unset (default true) from explicit false.
 	EchoPrompt *bool `toml:"echo_prompt"`
@@ -72,18 +93,6 @@ type Config struct {
 	// RefSigil is the prefix character for form references in
 	// prompts and tab completion. Must be "@" or ":". Default "@".
 	RefSigil string `toml:"ref_sigil"`
-
-	// Wire bounds paginated reads. See WireConfig.
-	Wire WireConfig `toml:"wire"`
-
-	// Store bounds the on-disk WAL geometry. See StoreConfig.
-	Store StoreConfig `toml:"store"`
-
-	// Memory tunes when the daemon reclaims an idle aria. See MemoryConfig.
-	Memory MemoryConfig `toml:"memory"`
-
-	// Authz gates the RPC surface. See AuthzConfig.
-	Authz AuthzConfig `toml:"authz"`
 }
 
 // AuthzConfig selects the authentication provider and the authorization
@@ -305,7 +314,7 @@ const maxInlineImageBytes = 3500 << 10
 // validateStream rejects a negative coalescing window (a negative interval
 // would read as "never throttle", which is what 0 already means).
 func (c Config) validateStream() error {
-	if v := c.StreamEmitIntervalMs; v != nil && *v < 0 {
+	if v := c.CLI.StreamEmitIntervalMs; v != nil && *v < 0 {
 		return fmt.Errorf("config: stream_emit_interval_ms must be >= 0 (0 emits every chunk), got %d", *v)
 	}
 	return nil
@@ -405,27 +414,27 @@ func (l *Loaded) Trunks() bool {
 
 // EchoPrompt returns whether to echo the prompt. Default true.
 func (l *Loaded) EchoPrompt() bool {
-	if l.Config.EchoPrompt == nil {
+	if l.Config.CLI.EchoPrompt == nil {
 		return true
 	}
-	return *l.Config.EchoPrompt
+	return *l.Config.CLI.EchoPrompt
 }
 
 // StatusLine returns whether to show status banners. Default true.
 func (l *Loaded) StatusLine() bool {
-	if l.Config.StatusLine == nil {
+	if l.Config.CLI.StatusLine == nil {
 		return true
 	}
-	return *l.Config.StatusLine
+	return *l.Config.CLI.StatusLine
 }
 
 // Interactive returns whether the first-run wizard should use a rich
 // TUI. Default true.
 func (l *Loaded) Interactive() bool {
-	if l.Config.Interactive == nil {
+	if l.Config.CLI.Interactive == nil {
 		return true
 	}
-	return *l.Config.Interactive
+	return *l.Config.CLI.Interactive
 }
 
 // CallerIdentityEnabled reports whether the caller-identity authn provider
@@ -451,7 +460,7 @@ func (l *Loaded) AuthzPolicy() string {
 // RefSigil returns the form reference sigil. Default "@".
 // Returns an error if the configured value is not "@" or ":".
 func (l *Loaded) RefSigil() (string, error) {
-	s := l.Config.RefSigil
+	s := l.Config.CLI.RefSigil
 	if s == "" {
 		return "@", nil
 	}
@@ -463,45 +472,45 @@ func (l *Loaded) RefSigil() (string, error) {
 
 // StreamCPS returns the pacer rate. Default 200.
 func (l *Loaded) StreamCPS() int {
-	if l.Config.StreamCPS == nil {
+	if l.Config.CLI.StreamCPS == nil {
 		return 200
 	}
-	return *l.Config.StreamCPS
+	return *l.Config.CLI.StreamCPS
 }
 
 // StreamFirstByteBypassMs returns the TTFT bypass window. Default 80ms.
 func (l *Loaded) StreamFirstByteBypassMs() int {
-	if l.Config.StreamFirstByteBypassMs == nil {
+	if l.Config.CLI.StreamFirstByteBypassMs == nil {
 		return 80
 	}
-	return *l.Config.StreamFirstByteBypassMs
+	return *l.Config.CLI.StreamFirstByteBypassMs
 }
 
 // StreamEmitIntervalMs returns the live-emit coalescing window in ms.
 // Default 90. Nil-safe: an agent built without config paces the same.
 func (l *Loaded) StreamEmitIntervalMs() int {
-	if l == nil || l.Config.StreamEmitIntervalMs == nil {
+	if l == nil || l.Config.CLI.StreamEmitIntervalMs == nil {
 		return 90
 	}
-	return *l.Config.StreamEmitIntervalMs
+	return *l.Config.CLI.StreamEmitIntervalMs
 }
 
 // CheckUpdates returns whether to run the passive startup update check.
 // Default true. Users who prefer silence can set `check_updates = false`
 // in ~/.config/figaro/config.toml.
 func (l *Loaded) CheckUpdates() bool {
-	if l.Config.CheckUpdates == nil {
+	if l.Config.CLI.CheckUpdates == nil {
 		return true
 	}
-	return *l.Config.CheckUpdates
+	return *l.Config.CLI.CheckUpdates
 }
 
 // UpdateCheckTTLHours returns the update-check cache TTL. Default 24h.
 func (l *Loaded) UpdateCheckTTLHours() int {
-	if l.Config.UpdateCheckTTLHours == nil {
+	if l.Config.CLI.UpdateCheckTTLHours == nil {
 		return 24
 	}
-	return *l.Config.UpdateCheckTTLHours
+	return *l.Config.CLI.UpdateCheckTTLHours
 }
 
 // ProviderAuth holds credentials for one provider. The on-disk file
