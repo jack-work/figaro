@@ -85,7 +85,12 @@ func (c Composer) Message(m aria.Message, w int) []Row {
 	// a page window that opened mid-turn, or a unit cut off an oversize turn —
 	// and announcing the speaker again asserts a boundary the turn does not
 	// have.
-	if len(rows) > 0 {
+	//
+	// Named, because the test is not "are there rows" but "was a question
+	// drawn": rows can only have come from c.inquiry today, and anything
+	// prepended above would silently bring the ghost back.
+	seam := len(rows) > 0
+	if seam {
 		rows = append(rows, chrome(""))
 		if c.Rule != nil {
 			rows = append(rows, chrome(clip(c.Rule(), w)))
