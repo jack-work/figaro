@@ -47,3 +47,27 @@ figaro: DressFirstTime 75µs   MaterializeWarm 69µs
 | non-empty | 462 (one aria never wrote a patch) |
 | `fig ls` renders lineage | yes, including pre-0.22 stumps |
 | OUTFIT column, arias older than the loadout->outfit rename | was blank for all of them; now named |
+
+# Everyday operations: main (f85b6ed) vs form, -benchtime=200ms
+
+New benchmarks, because none existed for the verbs a human actually runs.
+Same box, back to back. Birth/Fork/Kill measure what `fig new`, `fig fork` and
+`fig kill` do to the store; ListWithForms is `fig ls` including the per-row
+label read, which is where the cost lives.
+
+| op | main | form | |
+|---|---|---|---|
+| Birth (mint + spawn + boot patch) | 1.231 ms | 1.217 ms | −1% |
+| Fork (branch + dress the alt) | 467 µs | 481 µs | +3% |
+| Kill (close, remove, collect) | 2.177 ms | 2.167 ms | ~0 |
+| ls, 10 arias | 643 ns | 728 ns | +13% |
+| ls, 100 arias | 4.78 µs | 4.74 µs | ~0 |
+| Conversations (topology walk) | 700 ns | 734 ns | +5% |
+| Vectors, 10k branches | 2.229 ms | 2.220 ms | ~0 |
+| AgentInfo, 10k msgs | 19.8 ns | 20.4 ns | ~0 |
+| InterruptRepair, 10k msgs | 45.4 ns | 45.1 ns | ~0 |
+
+Run-to-run variance on Birth alone was measured at 6% (1.258 vs 1.334 ms in two
+consecutive runs), so everything in the ±5% band here is noise, not signal. The
+only real movements are elsewhere: FormState10000 (123 ms -> 5.3 ms) and
+FormPatches10000 (123 ms -> 50.6 ms).
