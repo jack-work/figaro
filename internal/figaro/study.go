@@ -80,7 +80,7 @@ func (a *Agent) armStudy(formID string) error {
 	}
 	a.studies.mu.Unlock()
 
-	cancel, err := a.backend.WatchFormDurable(formID, func(version uint64, patch form.Patch) {
+	cancel, err := a.backend.WatchFormDurable(formID, a.id, func(version uint64, patch form.Patch) {
 		a.studies.mu.Lock()
 		defer a.studies.mu.Unlock()
 		if _, ok := a.studies.cancels[formID]; !ok {
@@ -281,11 +281,21 @@ func (a *Agent) drainStudyReminders() []string {
 	if len(pending) == 0 {
 		return nil
 	}
+	// NEWEST WINS AT THE CAP, and the loss is STATED: overflow drops the
+	// oldest deltas (for a role, the newest assignment is the live one)
+	// and the first block says how many fell. Anything smarter is the
+	// coalescing open question above — this is the interim rule, not a
+	// policy blessing.
 	const capBlocks = 8
+	dropped := 0
 	if len(pending) > capBlocks {
-		pending = pending[len(pending)-capBlocks:]
+		dropped = len(pending) - capBlocks
+		pending = pending[dropped:]
 	}
-	out := make([]string, 0, len(pending))
+	out := make([]string, 0, len(pending)+1)
+	if dropped > 0 {
+		out = append(out, fmt.Sprintf("<system-reminder name=\"study-overflow\">%d older studied deltas were dropped (newest %d kept)</system-reminder>", dropped, capBlocks))
+	}
 	for _, d := range pending {
 		body, err := json.Marshal(d.patch)
 		if err != nil {

@@ -30,10 +30,9 @@ type XwalBackend struct {
 	open  map[string]*ariaHandle
 	forms map[string]*Form
 	// watchers are the durable (eviction-proof) form sinks, re-armed on
-	// every Form reopen. Keyed by node id.
-	watchers   map[string][]durableWatcher
-	watcherSeq uint64
-	metas      map[string]*metaCache
+	// every Form reopen. Keyed by node id; one entry per (node, owner).
+	watchers map[string][]durableWatcher
+	metas    map[string]*metaCache
 	// labels is stump id -> what its birth record says it is. Never evicted
 	// and never invalidated: a stump id is the hash of content that contains
 	// the label, and a stump cannot be patched, so the mapping is a pure
@@ -234,9 +233,11 @@ func (b *XwalBackend) form(ariaID string) (*Form, error) {
 	}
 	// Re-arm durable watchers: eviction closed the previous Form and its
 	// sinks with it; a watcher registered through WatchFormDurable outlives
-	// that, or a studied role would go silent after any idle sweep.
+	// that, or a studied role would go silent after any idle sweep. Each
+	// re-arm is generation-gated like the original arm, so a later
+	// replacement makes this copy inert too.
 	for _, w := range b.watchers[ariaID] {
-		opened.OnCommit(w.fn)
+		opened.OnCommit(b.gateWatcher(ariaID, w.owner, w.gen, w.fn))
 	}
 	b.forms[ariaID] = opened
 	return opened, nil
@@ -742,10 +743,40 @@ func (b *XwalBackend) LastTS(id string) int64 { return b.store.LastTS(id) }
 
 // ---- durable form watchers (study subscriptions) ----
 
-// durableWatcher is one WatchFormDurable registration.
+// durableWatcher is one WatchFormDurable registration. owner keys
+// REPLACEMENT: an agent re-registers its studies on every revival, and
+// without replacement each revival would stack one more copy of the
+// sink — duplicate reminders that only ever appear on long-lived
+// daemons. gen is what makes replacement SAFE on a live Form: sinks
+// armed there cannot be removed, so each armed closure carries the gen
+// it was armed at and delivers only while it IS the generation — a
+// replaced sink (a dead agent instance's closure, pending queue and
+// all) goes inert the instant its successor registers, and the
+// successor is armed immediately rather than waiting for a reopen.
 type durableWatcher struct {
-	id uint64
-	fn func(version uint64, patch message.Patch)
+	owner string
+	gen   uint64
+	fn    func(version uint64, patch message.Patch)
+}
+
+// gateWatcher wraps a sink so it delivers only while (id, owner) still
+// stands at gen — the mechanism that lets replacement and cancel take
+// effect on a live Form whose sink list only ever grows.
+func (b *XwalBackend) gateWatcher(id, owner string, gen uint64, fn func(uint64, message.Patch)) func(uint64, message.Patch) {
+	return func(version uint64, patch message.Patch) {
+		b.mu.Lock()
+		live := false
+		for i := range b.watchers[id] {
+			if b.watchers[id][i].owner == owner && b.watchers[id][i].gen == gen {
+				live = true
+				break
+			}
+		}
+		b.mu.Unlock()
+		if live {
+			fn(version, patch)
+		}
+	}
 }
 
 // WatchFormDurable is WatchForm that survives eviction: the sink is
@@ -753,22 +784,34 @@ type durableWatcher struct {
 // the Form (a studied role is never in the live set) cannot silently
 // sever it. The returned cancel removes the registration; it does not
 // need the Form to still be open.
-func (b *XwalBackend) WatchFormDurable(id string, fn func(version uint64, patch message.Patch)) (func(), error) {
+func (b *XwalBackend) WatchFormDurable(id, owner string, fn func(version uint64, patch message.Patch)) (func(), error) {
 	f, err := b.form(id)
 	if err != nil {
 		return nil, err
 	}
 	b.mu.Lock()
-	b.watcherSeq++
-	w := durableWatcher{id: b.watcherSeq, fn: fn}
-	b.watchers[id] = append(b.watchers[id], w)
+	var gen uint64
+	found := false
+	for i := range b.watchers[id] {
+		if b.watchers[id][i].owner == owner {
+			b.watchers[id][i].gen++
+			b.watchers[id][i].fn = fn
+			gen = b.watchers[id][i].gen
+			found = true
+			break
+		}
+	}
+	if !found {
+		gen = 1
+		b.watchers[id] = append(b.watchers[id], durableWatcher{owner: owner, gen: 1, fn: fn})
+	}
 	b.mu.Unlock()
-	f.OnCommit(fn)
+	f.OnCommit(b.gateWatcher(id, owner, gen, fn))
 	cancel := func() {
 		b.mu.Lock()
 		ws := b.watchers[id]
 		for i := range ws {
-			if ws[i].id == w.id {
+			if ws[i].owner == owner {
 				b.watchers[id] = append(ws[:i], ws[i+1:]...)
 				break
 			}

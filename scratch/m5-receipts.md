@@ -31,3 +31,21 @@ receipts live here until the forms build deploys, then they migrate.
 - e2e written (runs queued behind base2): cast points+studies (and is
   idempotent), born-cast mint, bound-target refusal, studied patch
   projects into the next turn, drop silences immediately.
+
+## Battery FINALS (quiet, base2 x head@3ef8488, -count=6)
+- READ PATHS: AriaReadPage/Before +2-2.6%; ReaderPage/Tail ±3%;
+  ReaderForm ~0; ReaderContext -11% at 10k. Flat. The forms work costs
+  the read path nothing.
+- DormantList: +6784% REGRESSION at 300 arias — my LastTS wrapper did a
+  stump SCAN per row (O(n²)/list). Fixed in 4665eef: trunk-by-map first.
+  After: 262µs→395µs at 300 (+50%, +1 alloc/row) — the honest price of
+  live recency; batch API noted as follow-up.
+- Machine: load 0.00 both halves; head half carried brief compile blips
+  from M5 writing (seconds, spread across 6 counts).
+
+## M5 landed
+- 4665eef (the O(n²) fix), d966eff (study/drop/cast). Suite + -race
+  green; grammar surfaces real-binary verified; happy paths socket-e2e
+  (sandbox has no provider — stated).
+- STILL OWED: twelve-aria stress + form-storm variant; actor-loop cast
+  bench; role-read addendum number.
