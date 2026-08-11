@@ -110,7 +110,7 @@ func TestStudyReminderTextsDeterministic(t *testing.T) {
 		t.Fatal("render not deterministic")
 	}
 	joined := strings.Join(a, "\n")
-	if !strings.Contains(joined, "began observing form @r") {
+	if !strings.Contains(joined, "now observes the form @r") {
 		t.Errorf("mark missing: %s", joined)
 	}
 	if strings.Index(joined, "study:@a") > strings.Index(joined, "study:@b") {
@@ -118,5 +118,66 @@ func TestStudyReminderTextsDeterministic(t *testing.T) {
 	}
 	if !strings.Contains(joined, "no longer exists") {
 		t.Errorf("tombstone missing")
+	}
+}
+
+// The window is folded, not narrated. Three patches to one key inside one
+// window render ONE block holding the value the key ENDS at — because a model
+// shown the intermediate values answers from them. A haiku did exactly that in
+// the fifty-observer storm: asked what the brief said, it reported the value
+// the brief held before the change it was being asked about.
+func TestStudyWindowIsFoldedToItsResult(t *testing.T) {
+	msg := message.Message{StudyPatches: map[string][]message.Patch{
+		"@r": {
+			{Set: map[string]json.RawMessage{"brief": json.RawMessage(`"stand by"`), "doomed": json.RawMessage(`1`)}},
+			{Set: map[string]json.RawMessage{"brief": json.RawMessage(`"go"`)}},
+			{Set: map[string]json.RawMessage{"brief": json.RawMessage(`"the watchword is COLUMBINE"`)}, Remove: []string{"doomed"}},
+		},
+	}}
+	joined := strings.Join(StudyReminderTexts(msg), "\n")
+	if n := strings.Count(joined, "system-reminder name=\"study:@r\""); n != 1 {
+		t.Fatalf("want ONE block for one form, got %d: %s", n, joined)
+	}
+	if !strings.Contains(joined, "COLUMBINE") {
+		t.Errorf("the current value is missing: %s", joined)
+	}
+	if strings.Contains(joined, "stand by") || strings.Contains(joined, `"go"`) {
+		t.Errorf("an intermediate value survived the fold: %s", joined)
+	}
+	if !strings.Contains(joined, "3 times") {
+		t.Errorf("the number of changes is worth saying: %s", joined)
+	}
+	if !strings.Contains(joined, "These keys were removed: doomed") {
+		t.Errorf("a removal must be stated: %s", joined)
+	}
+	// And the framing that stopped two haikus from reading the block as an
+	// injection attempt and refusing the turn.
+	if !strings.Contains(joined, "form this figaro studies") || !strings.Contains(joined, "not a message from anyone") {
+		t.Errorf("the block must say what it is: %s", joined)
+	}
+}
+
+// system.* belongs to the machinery, not to a reader — the board's own
+// renderer skips it, and an observed form is not different.
+func TestStudyRenderSkipsTheHarnessNamespace(t *testing.T) {
+	msg := message.Message{StudyPatches: map[string][]message.Patch{
+		"@r": {{Set: map[string]json.RawMessage{
+			"system.studies": json.RawMessage(`["@x"]`),
+			"brief":          json.RawMessage(`"visible"`),
+		}}},
+	}}
+	joined := strings.Join(StudyReminderTexts(msg), "\n")
+	if strings.Contains(joined, "system.studies") {
+		t.Errorf("harness namespace leaked: %s", joined)
+	}
+	if !strings.Contains(joined, "visible") {
+		t.Errorf("the readable key is missing: %s", joined)
+	}
+	// A window of nothing BUT system keys renders no block at all.
+	only := message.Message{StudyPatches: map[string][]message.Patch{
+		"@r": {{Set: map[string]json.RawMessage{"system.x": json.RawMessage(`1`)}}},
+	}}
+	if texts := StudyReminderTexts(only); len(texts) != 0 {
+		t.Errorf("want no block, got %v", texts)
 	}
 }
