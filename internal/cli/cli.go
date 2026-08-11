@@ -204,7 +204,7 @@ func buildRouter(progName string, loaded *config.Loaded) *cmdkit.Router {
 		Aliases: []string{"history"},
 		Group:   "Prompt",
 		Short:   "Render an aria's message history",
-		Usage:   "show [<id>] [-n N | --from A [--to B] | --before T | -a] [-j] [-o] [-v] [-l]",
+		Usage:   "show [<id>] [-n N | --from A [--to B] | --before T | -a] [--max-bytes N] [-j] [-o] [-v] [-l]",
 		Long: `Render an aria's history as turns. A turn is one exchange: your
 question and every node the agent produced about it. The optional
 positional is the target aria id; default is the pid-bound aria.
@@ -223,6 +223,17 @@ Turns are labeled by their turn id: the coordinate send/fork
   figaro show -o                   with each block's address and timestamp
   figaro show eac16fef -v          verbose IR, labeled by LT
   figaro show -l                   raw IR, no rendering
+  figaro show --max-bytes 200000   cap what is painted; the OLDEST turns go first
+
+show reads from the TAIL backwards, one page at a time, and stops as soon as
+your selection is covered. Length is not a limit: the last N turns of a 40,000
+turn aria cost the same read as the last N of a short one, so redirecting show
+to a file captures the tail of any aria. Diagnostics go to stderr, so the file
+holds the conversation and nothing else.
+
+--max-bytes is the one cap, and it is opt-in. When the selection is larger
+than the budget, the OLDEST turns of it are dropped, never the newest, and a
+line on stderr says how many.
 
 LT is the model's coordinate: it counts the steps the model experienced,
 and most LTs sit mid-tool. It stays visible under -v/-l for debugging the
@@ -238,6 +249,7 @@ fig IR, but it is not an address: turns are.`,
 			{Long: "from", Description: "Start turn id (inclusive)"},
 			{Long: "to", Description: "End turn id (inclusive)"},
 			{Long: "before", Description: "Show N turns before this turn id (paginate backwards)"},
+			{Long: "max-bytes", Description: "Cap the painted size; the oldest turns of the selection are dropped first"},
 			{Long: "last", Short: "n", Description: "Show the last N turns (paginate backwards from the end)"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
@@ -275,6 +287,13 @@ fig IR, but it is not an address: turns are.`,
 			}
 			if v := ctx.Flag("last"); v != "" {
 				args = append(args, "--last", v)
+			}
+			// A flag declared in the registry and not reassembled here is
+			// SILENTLY IGNORED: cmdkit consumes it, renderAria never sees it,
+			// and the command succeeds having done nothing you asked. That is
+			// how --max-bytes did nothing on its first run.
+			if v := ctx.Flag("max-bytes"); v != "" {
+				args = append(args, "--max-bytes", v)
 			}
 			runShow(ld, ariaID, args)
 			return nil
