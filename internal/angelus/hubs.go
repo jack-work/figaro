@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/livelog/aria"
@@ -73,6 +74,12 @@ func (h *handlers) hubFor(id string) (*ariaHub, error) {
 	hb := newAriaHub(id, filepath.Join(h.angelus.FigaroSocketDir(), id+".sock"))
 	hb.wake = h.wakeForHub
 	hb.read = h.readForHub
+	hb.write = h.writeForHub
+	if h.angelus.Backend != nil {
+		if n, ok := h.angelus.Backend.Node(id); ok {
+			hb.kind = n.Kind
+		}
+	}
 
 	if err := hb.listen(h.ctx); err != nil {
 		return nil, err
@@ -91,6 +98,55 @@ func (h *handlers) bindAgentToHub(id string, agent subscribableAgent) (func(), e
 		return nil, err
 	}
 	return hb.bind(agent), nil
+}
+
+// writeForHub applies mutations the store can absorb without an agent —
+// today exactly figaro.set. Serving it here (after read, before wake) is
+// what lets a patch land on a DORMANT aria without restoring it, and on an
+// unbound form that will never have an agent at all. It also breaks the
+// naked-figaro deadlock: `fig bind null` births a figaro whose wake fails
+// for want of provider keys, and this is the only path that can patch
+// those keys in.
+//
+// One writer, always: the backend's Form is the single writer per node
+// whether an agent is live or not — the agent itself writes through
+// backend.ApplyFormIf — so this is the same writer reached earlier, not a
+// second one. (When an agent IS live, route() sent the request to it
+// before we were consulted, which preserves the agent's materialization
+// of layer directives; a hub-served set applies the patch VERBATIM.)
+//
+// The committed delta is fanned out to the node's attached listeners by
+// hand: the agent's WatchForm sink does this when an agent is live, and
+// this path exists precisely when none is.
+func (h *handlers) writeForHub(id, method string, params json.RawMessage) (any, bool, error) {
+	if method != rpc.MethodSet {
+		return nil, false, nil
+	}
+	if h.angelus.Backend == nil {
+		return nil, false, nil
+	}
+	var req rpc.SetRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, true, err
+	}
+	if req.Patch.IsEmpty() {
+		return rpc.SetResponse{OK: true}, true, nil
+	}
+	version, err := h.angelus.Backend.ApplyFormIf(id, req.Patch, req.IfVersion)
+	if err != nil {
+		return nil, true, err
+	}
+	var set []string
+	for k := range req.Patch.Set {
+		set = append(set, k)
+	}
+	if hb := h.angelus.Hubs.get(id); hb != nil {
+		_ = hb.Notify(rpc.MethodFormDelta, rpc.FormDelta{
+			Schema: rpc.FormDeltaSchema, AriaID: id, Version: version,
+			Patch: req.Patch, At: time.Now().UnixMilli(),
+		})
+	}
+	return rpc.SetResponse{OK: true, Set: set, Remove: req.Patch.Remove}, true, nil
 }
 
 // wakeForHub restores an aria on demand for a method that needs a turn loop.

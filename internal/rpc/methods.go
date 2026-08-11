@@ -115,6 +115,11 @@ type OutfitLayer struct {
 
 const (
 	MethodCreate      = "figaro.create"
+	// MethodFormCreate mints an UNBOUND FORM: fork the null root (or a
+	// form) with a birth patch — kind "form", @-sigiled id, no agent,
+	// no endpoint activation beyond the hub. The form half of the one
+	// birth verb; figaro.create remains the figaro half.
+	MethodFormCreate  = "form.create"
 	MethodFork        = "figaro.fork"
 	MethodPromote     = "figaro.promote"
 	MethodImport      = "figaro.import"
@@ -446,6 +451,20 @@ type CreateRequest struct {
 
 type CreateResponse struct {
 	FigaroID string   `json:"figaro_id"`
+	Endpoint Endpoint `json:"endpoint"`
+}
+
+// FormCreateRequest mints an unbound form. Parent "" forks the null root;
+// a form id duplicates that form's state into a fresh @id. The patch is
+// required — a fork that transforms nothing is a fork nobody can name.
+type FormCreateRequest struct {
+	Parent string     `json:"parent,omitempty"`
+	Patch  *FormPatch `json:"patch"`
+}
+
+type FormCreateResponse struct {
+	FormID   string   `json:"form_id"`
+	Version  uint64   `json:"version"`
 	Endpoint Endpoint `json:"endpoint"`
 }
 

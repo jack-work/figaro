@@ -49,6 +49,19 @@ type ariaHub struct {
 	// read answers a method from the store. ok=false means "not my method",
 	// which sends the request down the wake path instead.
 	read func(id, method string, params json.RawMessage) (v any, ok bool, err error)
+	// write applies a mutation store-side WITHOUT an agent — the dormant
+	// half of figaro.set. Consulted after read and before wake, so a board
+	// patch never wakes a sleeper (and can reach a naked figaro whose wake
+	// would fail for want of the very provider keys the patch carries).
+	// ok=false hands the request onward. The backend's Form is the one
+	// writer per node whether an agent is live or not (the agent itself
+	// writes through the backend), so this is the same writer, earlier.
+	write func(id, method string, params json.RawMessage) (v any, ok bool, err error)
+	// kind is the node's species from its figwal marker ("conversation",
+	// "form", …). A form has no agent to wake, ever: methods that reach
+	// the wake path on a form node get a named refusal instead of a
+	// nonsensical restore attempt.
+	kind string
 
 	mu    sync.Mutex
 	ln    net.Listener
@@ -253,6 +266,17 @@ func (hb *ariaHub) route(ctx context.Context, method string, params json.RawMess
 			return v, err
 		}
 	}
+	// Mutations the store can absorb without a turn loop: served here so a
+	// board patch neither wakes a sleeper nor needs a form to have an agent
+	// it will never have.
+	if hb.write != nil {
+		if v, ok, err := hb.write(hb.id, method, params); ok {
+			return v, err
+		}
+	}
+	if hb.kind == kindFormNode {
+		return nil, fmt.Errorf("%s is a form, not a figaro: %s needs a turn loop and a form has none (bind it first)", hb.id, method)
+	}
 	if hb.wake == nil {
 		return nil, errDormantMethod
 	}
@@ -266,3 +290,8 @@ func (hb *ariaHub) route(ctx context.Context, method string, params json.RawMess
 	slog.Debug("hub woke aria", "aria", hb.id, "method", method)
 	return agent.Handle(ctx, method, params)
 }
+
+// kindFormNode is the marker kind of an unbound form, as the store mints
+// it. Declared here rather than imported: the angelus knows species by
+// name on the wire, not by the store's internal enum.
+const kindFormNode = "form"

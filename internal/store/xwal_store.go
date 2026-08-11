@@ -841,8 +841,16 @@ func (s *XwalStore) view(t xwal.TrunkInfo, at map[string]place) NodeView {
 		}
 	}
 	p := at[t.ID]
+	// The trunk's OWN kind, from its figwal marker: form trunks joined
+	// conversations in the forest, and hardcoding conversation here is how
+	// a form once got an agent woken for it. Legacy markers all say
+	// conversation already; empty (never written) falls back to it.
+	kind := t.Kind
+	if kind == "" {
+		kind = string(kindConversation)
+	}
 	return NodeView{
-		ID: t.ID, Parent: parent, Kind: string(kindConversation), Trunk: t.ID,
+		ID: t.ID, Parent: parent, Kind: kind, Trunk: t.ID,
 		Stump: p.stump, Vector: p.vec, BranchedLT: t.BranchedLT,
 	}
 }

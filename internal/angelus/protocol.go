@@ -73,6 +73,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 	return &Handlers{
 		Map: authz.Guard(map[string]jkrpc.HandlerFunc{
 			rpc.MethodCreate:       h.create,
+			rpc.MethodFormCreate:   h.formCreate,
 			rpc.MethodFork:         h.fork,
 			rpc.MethodPromote:      h.promote,
 			rpc.MethodImport:       h.importAria,
@@ -262,6 +263,42 @@ func outfitVerLabel(stamped, current, legacy string) string {
 		return stamped[:8]
 	}
 	return stamped
+}
+
+// formCreate mints an unbound form: the form half of the one birth verb.
+// No outfit resolution, no default, no dedup — the patch IS the form, and
+// naming an outfit is the CLIENT's affair (the CLI materializes -O into
+// the patch before calling; a form with no patch is refused by the store).
+// The hub is stood up before the response so the @id is dialable the
+// moment the caller holds it — same rule as every endpoint: unix sockets
+// have no lazy activation.
+func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	_, span := figOtel.Start(ctx, "angelus.formCreate")
+	defer span.End()
+
+	if h.angelus.Backend == nil {
+		return nil, fmt.Errorf("form.create: no backend (ephemeral angelus)")
+	}
+	var req rpc.FormCreateRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, err
+	}
+	if req.Patch == nil || req.Patch.IsEmpty() {
+		return nil, fmt.Errorf("form.create: a form is born of its patch; an empty one names nothing")
+	}
+	id, version, err := h.angelus.Backend.CreateForm(req.Parent, *req.Patch)
+	if err != nil {
+		return nil, err
+	}
+	hb, err := h.hubFor(id)
+	if err != nil {
+		return nil, fmt.Errorf("form.create: %s minted but endpoint failed: %w", id, err)
+	}
+	return rpc.FormCreateResponse{
+		FormID:   id,
+		Version:  version,
+		Endpoint: rpc.Endpoint{Scheme: "unix", Address: hb.sockPath},
+	}, nil
 }
 
 func (h *handlers) create(ctx context.Context, params json.RawMessage) (interface{}, error) {

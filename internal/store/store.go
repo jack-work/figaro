@@ -123,6 +123,11 @@ type Backend interface {
 	// section. parent == "" forks the null root, which is what birth is.
 	ForkWith(parent string, atMainLT uint64, patch message.Patch) (child string, version uint64, err error)
 
+	// CreateForm mints an UNBOUND FORM: fork the null root (parent "") or
+	// another form, with a birth patch, kind "form", @-sigiled id. Only
+	// forms fork independently; a conversation parent is refused.
+	CreateForm(parent string, patch message.Patch) (id string, version uint64, err error)
+
 	// ApplyFormIf appends a patch unless the form has moved off ifVersion
 	// (zero applies unconditionally). The comparison happens in the form's
 	// writer, atomically with the append.

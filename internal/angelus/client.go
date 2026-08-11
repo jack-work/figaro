@@ -61,6 +61,15 @@ func (c *Client) Create(ctx context.Context, patch *rpc.FormPatch) (*rpc.CreateR
 	return &resp, err
 }
 
+// FormCreate mints an unbound form from a birth patch. Parent "" forks the
+// null root; a form id duplicates that form. The response's endpoint is
+// live before the call returns.
+func (c *Client) FormCreate(ctx context.Context, parent string, patch *rpc.FormPatch) (*rpc.FormCreateResponse, error) {
+	var resp rpc.FormCreateResponse
+	err := c.call(ctx, rpc.MethodFormCreate, rpc.FormCreateRequest{Parent: parent, Patch: patch}, &resp)
+	return &resp, err
+}
+
 // Outfits asks what outfits exist and how a spec composes.
 func (c *Client) Outfits(ctx context.Context, spec string) (*rpc.OutfitsResponse, error) {
 	var resp rpc.OutfitsResponse
