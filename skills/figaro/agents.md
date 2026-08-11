@@ -67,8 +67,9 @@ figaro kill <id>                   when done, so it stops showing up in ls
 
 `-e` (ephemeral) and `-r` (raw) are orthogonal: one is about persistence, the
 other about formatting. Fan several out in parallel when the sub-questions are
-independent. The **figscript** skill has the full recipe, and **subagents** has
-the fan-out patterns; neither is repeated here.
+independent. [subagents.md](subagents.md) has the fan-out patterns, and the
+**figscript** skill (not bundled: it lives in the repo's `skills/`) has the
+full scripting recipe. Neither is repeated here.
 
 ## Knowing whether a sub-aria is still working
 

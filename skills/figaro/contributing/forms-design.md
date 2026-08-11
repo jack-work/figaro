@@ -160,19 +160,19 @@ aria minted from the same node shares its rendered prefix. So the pointer is
 reused with NO comparison while it is clean, and `fig outfit reload` is a
 flag rather than a computation.
 
-That cheapness has one hole, and it is the shipped skills. `nix profile
-upgrade` replaces the first-party skills on disk (they live at
-`<exe>/../share/figaro/skills` and the loader merges them OVER a user's copy
-of the same name), but nothing in the store changed, so a clean pointer would
-go on minting arias wearing the skills of the build you replaced, until
-somebody happened to run `fig outfit reload`.
+That cheapness has one hole, and it is the shipped skills. An upgrade
+replaces the first-party skill the binary carries (it is embedded, unpacked to
+a content-hashed directory under the state dir, and the loader merges it OVER
+a user's copy of the same name), but nothing in the store changed, so a clean
+pointer would go on minting arias wearing the skills of the build you
+replaced, until somebody happened to run `fig outfit reload`.
 
 The default-form record therefore carries the BUNDLED ROOT it was minted
-against. A nix path carries its store hash, so an upgrade always moves it; a
-daemon booting with a different one marks the record dirty. It only sets the
-flag: whether anything is reminted is still decided by the birth-hash
-comparison, so a rebuild whose skills are byte-identical keeps the same form
-and the same cache.
+against. That root is named by the CONTENT HASH of the embedded tree, so it
+moves exactly when a skill changed; a daemon booting with a different one
+marks the record dirty. It only sets the flag: whether anything is reminted is
+still decided by the birth-hash comparison, so a build whose skills are
+byte-identical keeps the same form and the same cache.
 
 Two consequences to know:
 

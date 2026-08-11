@@ -1414,15 +1414,15 @@ flow writes both through the daemon, so a client never has to know the path.`,
 	r.Register(&cmdkit.Command{
 		Name:  "doctor",
 		Group: "System",
-		Short: "Store maintenance: gc removes dead channels; schema reports channel versions; mem reports the daemon's footprint",
-		Usage: "doctor <gc [--dry-run] | schema | term | mem [-j]>",
+		Short: "Store maintenance: gc removes dead channels; schema reports channel versions; mem reports the daemon's footprint; skills lists what the binary ships",
+		Usage: "doctor <gc [--dry-run] | schema | term | mem [-j] | skills [-j]>",
 		Flags: []cmdkit.FlagDef{
 			{Long: "dry-run", Short: "n", IsBool: true, Description: "Report what would be removed without touching the store"},
 			{Long: "json", Short: "j", IsBool: true, Description: "Machine-readable output (mem)"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			if len(ctx.Args) != 1 {
-				return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j]>")
+				return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] | skills [-j]>")
 			}
 			switch ctx.Args[0] {
 			case "gc":
@@ -1433,8 +1433,10 @@ flow writes both through the daemon, so a client never has to know the path.`,
 				return runDoctorTerm()
 			case "mem":
 				return runDoctorMem(ctx.BoolFlag("json"))
+			case "skills":
+				return runDoctorSkills(ctx.BoolFlag("json"))
 			}
-			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j]>")
+			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] | skills [-j]>")
 		},
 	})
 

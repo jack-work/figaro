@@ -61,6 +61,7 @@ Each row is a separate read. Open one only when its "when" is true of you.
 | [start.md](start.md) | You are new to figaro and want the first hour to go well. Read once. |
 | [cli.md](cli.md) | You need a command that is not in the gesture list above, a flag's exact meaning, or the vault (passphrase/keyring) verbs. |
 | [agents.md](agents.md) | You are an agent driving figaro, or you are writing a script that does. |
+| [subagents.md](subagents.md) | You are spawning a subagent or fanning work out to parallel figaro sessions, and want the exact commands (`new` mints, `send` steers) plus how to watch and collect them. |
 | [contributing/](contributing/README.md) | You are changing figaro's source or its docs, or **cutting a release**: a tag alone ships to nobody. Start at that index. |
 
 Deep chapters, in `reference/`. These are long by design and cost real context;
@@ -81,6 +82,10 @@ about changing figaro rather than using it live under
 | [debugging/tapes.md](debugging/tapes.md) | Record an aria's wire and replay it: a rendering bug someone SAW and you cannot reproduce, or one recorded for CI. |
 | [reference/mantra.md](reference/mantra.md) | Maintaining your aria's mantra. |
 
-Other first-party skills stand on their own: **subagents** for fanning work
-out, **figscript** for scripting figaro from a shell, **figla** for waiting on
-something without polling.
+This skill is the ONLY one that ships inside the binary, so anything an agent
+must be able to reach without a preinstalled config lives here, [subagents.md]
+included. The skills that are not bundled (`figscript`, `figla`,
+`parallel-arias`, `inquire-figaro`, and the rest of `skills/` in the repo) are
+copied into a config dir by whoever wants them.
+
+[subagents.md]: subagents.md

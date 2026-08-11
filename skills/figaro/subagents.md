@@ -1,23 +1,36 @@
----
-name: subagents
-description: Spawn parallel figaro sessions as subagents, track their progress, and collect results. Use when the user wants to fan out independent work (research, refactoring, testing) to separate figaro instances running concurrently.
----
+# Subagents: parallel figaro sessions
 
-# Subagents: Parallel Figaro Sessions
+Spawn several `figaro` processes in parallel, each with its own aria, prompt
+and tool access. Monitor progress by log growth, collect results when they
+finish, revisit any aria later.
 
-Spawn multiple `figaro` processes in parallel, each with its own aria, prompt, and tool access. Monitor progress via log file growth, collect results when they finish, and optionally revisit any aria later.
+## The one thing that is not guessable
 
-## Core Commands
+**`new` mints; `send` speaks to someone who already exists.** An agent's own
+shell-outs carry `FIGARO_ARIA=<your id>`, so a bare `figaro send -f -- "..."`
+is addressed to *yourself*: the prompt you meant to dispatch arrives back in
+your own next turn, and no worker was ever born. Use `new` to spawn, and
+`send --id <id>` to steer.
+
+```sh
+figaro new -f -j -- "<prompt>"     spawn a worker, print {"aria_id":...}, return now
+figaro send -f --id <id> -- "<p>"  steer that worker later
+```
+
+## Core commands
 
 | Mode | Command | Use case |
 |------|---------|----------|
-| Persistent + raw | `figaro send -r -- "<prompt>"` | Background work you want to revisit |
-| Ephemeral + raw | `figaro send -er -- "<prompt>"` | Fire-and-forget one-shots |
-| Fire-and-forget | `figaro send -f -j -- "<prompt>"` | Launch and get the aria ID back immediately |
+| Spawn, fire and forget | `figaro new -f -j -- "<prompt>"` | Launch a worker and get its aria id back immediately |
+| Spawn, stream to a log | `figaro new -r -- "<prompt>"` | Background work you want to read as it lands |
+| Ephemeral one-shot | `figaro send -er -- "<prompt>"` | A throwaway answer; no aria survives |
+| Steer | `figaro send -f --id <id> -- "<p>"` | Give a running worker new instructions |
 | Reattach | `figaro listen <id>` | Watch a running aria's stream |
-| Check status | `figaro status <id>` | See if a turn is active or complete |
+| Check status | `figaro status <id> -j` | `dormant`, `idle` or `active` |
 
-`-r` (raw) disables ANSI/TUI formatting, giving clean plaintext suitable for piping and log capture. `-j` emits `{"aria_id":"..."}` on stdout for scripting.
+`-r` (raw) disables ANSI/TUI formatting, giving clean plaintext suitable for
+piping and log capture. `-j` emits one line of JSON on stdout for scripting.
+`-f` returns your shell immediately and leaves the daemon working.
 
 ## Pattern
 
@@ -26,19 +39,19 @@ Spawn multiple `figaro` processes in parallel, each with its own aria, prompt, a
 3. **Collect results** by reading log files after processes exit.
 4. **Resume** any persistent aria with `figaro listen <id>` or send follow-ups with `figaro send --id <id> -- "<prompt>"`.
 
-## Example: Parallel Research
+## Example: parallel research
 
 ```bash
 LOG_DIR="/tmp/figaro-subagents"
 mkdir -p "$LOG_DIR"
 
 # Task 1
-figaro send -r -- "Research the history of Unix signals. Provide a timeline." \
+figaro new -r -- "Research the history of Unix signals. Provide a timeline." \
   > "$LOG_DIR/signals.log" 2>&1 &
 PID1=$!
 
 # Task 2
-figaro send -r -- "Research the history of Windows IPC mechanisms. Provide a timeline." \
+figaro new -r -- "Research the history of Windows IPC mechanisms. Provide a timeline." \
   > "$LOG_DIR/ipc.log" 2>&1 &
 PID2=$!
 
@@ -47,11 +60,11 @@ wait
 echo "All done. Results in $LOG_DIR/"
 ```
 
-## Example: Fire-and-Forget with ID Tracking
+## Example: fire and forget with id tracking
 
 ```bash
 # Launch and capture the aria ID for later
-ARIA=$(figaro send -f -j -- "Refactor internal/tool to use interfaces" | jq -r .aria_id)
+ARIA=$(figaro new -f -j -- "Refactor internal/tool to use interfaces" | jq -r .aria_id)
 echo "Launched aria: $ARIA"
 
 # Check on it later
@@ -61,7 +74,7 @@ figaro status "$ARIA"
 figaro listen "$ARIA"
 ```
 
-## Example: Ephemeral One-Shots (No Aria Persistence)
+## Example: ephemeral one-shots (no aria persistence)
 
 ```bash
 # Quick parallel lookups, results only
@@ -76,7 +89,7 @@ cat /tmp/goroutines.txt /tmp/channels.txt /tmp/select.txt
 
 ```bash
 # Count running figaro subagents
-ps -ef | grep "figaro send" | grep -v grep | wc -l
+ps -ef | grep -E "figaro (new|send)" | grep -v grep | wc -l
 
 # Check log file sizes (growing = still working, stable = done)
 wc -c "$LOG_DIR"/*.log
@@ -91,9 +104,9 @@ figaro list -g
 ## Notes
 
 - Each subagent gets its own context window and token budget.
-- Persistent arias (`-r` without `-e`) remain in the store. Clean up with `figaro kill <id>` when done.
+- Persistent arias (`new`, with or without `-r`) remain in the store. Clean up with `figaro kill <id>` when done.
 - Ephemeral arias (`-er`) are destroyed on completion (no cleanup needed).
-- The angelus daemon manages all concurrent arias. It starts automatically on the first `figaro send`.
+- The angelus daemon manages all concurrent arias. It starts automatically on the first command that needs it.
 - Practical concurrency: depends on your provider's rate limits. 4-8 simultaneous arias is typical before throttling.
 - Subagents inherit the default outfit (provider, model, skills). Override per-aria with `figaro set --id <id> system.model <model>` after creation.
 - **Always pass `--id` when steering a subagent.** Your own shell-outs carry

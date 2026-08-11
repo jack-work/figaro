@@ -649,27 +649,5 @@ func directorySkillPath(dir string) string {
 	return ""
 }
 
-// BundledSkillsRoot is where the binary's own first-party skills live. The
-// daemon records it with the default form: when it moves, the shipped skills
-// moved with it, and the default form is due for recomputation.
-func BundledSkillsRoot() string { return bundledSkillsRoot() }
-
-// bundledSkillsRoot returns the directory holding first-party skills shipped
-// with the binary (its parent is <exe>/../share/figaro, so dirName="skills"
-// resolves to <exe>/../share/figaro/skills). FIGARO_BUNDLED_SKILLS overrides:
-// a path uses that root; "0"/"off"/"" disables bundled skills entirely.
-func bundledSkillsRoot() string {
-	if v, ok := os.LookupEnv("FIGARO_BUNDLED_SKILLS"); ok {
-		switch strings.ToLower(strings.TrimSpace(v)) {
-		case "", "0", "off", "false":
-			return ""
-		default:
-			return v
-		}
-	}
-	exe, err := os.Executable()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(filepath.Dir(exe), "..", "share", "figaro")
-}
+// The bundled-skills root lives in bundled.go: the skills ride inside the
+// binary and are unpacked to a content-hashed directory on first use.

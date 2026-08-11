@@ -36,8 +36,17 @@ const (
 	ChannelGoInstall Channel = "go-install"
 	ChannelNix       Channel = "nix"
 	ChannelDevShell  Channel = "dev-shell"
+	ChannelScript    Channel = "script"
+	ChannelHomebrew  Channel = "homebrew"
 	ChannelUnknown   Channel = "unknown"
 )
+
+// ChannelMarker is the file an installer drops BESIDE the binary to say how
+// figaro got there. Path sniffing cannot answer this honestly: ~/.local/bin
+// holds binaries from a dozen sources, and a wrong guess here prints an
+// upgrade command that damages someone's install. The installer knows, so it
+// writes it down; the file holds one word, the channel name.
+const ChannelMarker = ".figaro-channel"
 
 // Info is the result of a check. Latest is empty on failure; Available
 // is true iff Latest is strictly greater than Current.
@@ -57,6 +66,12 @@ func DetectChannel() Channel {
 	if err != nil {
 		return ChannelUnknown
 	}
+	return channelFor(exe)
+}
+
+// channelFor is DetectChannel against a given path, so the rules are testable
+// without a binary in every install layout.
+func channelFor(exe string) Channel {
 	// Resolve one level of symlink (Nix wrappers, ~/.nix-profile, …)
 	// so /nix/store detection is robust.
 	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
@@ -70,6 +85,20 @@ func DetectChannel() Channel {
 			return ChannelDevShell
 		}
 		return ChannelNix
+	}
+	// An installer's own word about itself outranks every heuristic below.
+	if b, err := os.ReadFile(filepath.Join(filepath.Dir(exe), ChannelMarker)); err == nil {
+		switch ch := Channel(strings.TrimSpace(string(b))); ch {
+		case ChannelScript, ChannelHomebrew, ChannelGoInstall, ChannelNix:
+			return ch
+		}
+	}
+	// Homebrew keeps every formula under a Cellar and links it into its bin
+	// dir; the symlink was resolved above, so the Cellar segment is the
+	// proof, and it holds for a custom brew prefix too (/opt/brew, and every
+	// other place someone has put one).
+	if strings.Contains(exe, string(os.PathSeparator)+"Cellar"+string(os.PathSeparator)) {
+		return ChannelHomebrew
 	}
 	// Heuristic: $GOBIN or $GOPATH/bin. We don't shell out to `go env`
 	// (adds a dependency on the go toolchain being installed); we sniff
@@ -243,6 +272,12 @@ func UpgradeCommand(ch Channel, module, latest string) string {
 		return "nix profile upgrade figaro   # or your flake input, then: nix profile upgrade '.*'"
 	case ChannelDevShell:
 		return "git pull && exit && nix develop   # (dev shell: rebuild by re-entering)"
+	case ChannelScript:
+		// The installer is idempotent and overwrites in place, so re-running
+		// it IS the upgrade. It takes the same route it took the first time.
+		return "curl -fsSL https://figar.org/install.sh | sh"
+	case ChannelHomebrew:
+		return "brew upgrade figaro"
 	}
 	return ""
 }

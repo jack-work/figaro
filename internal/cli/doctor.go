@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/transport"
@@ -233,4 +234,56 @@ func humanBytes(n int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTP"[exp])
+}
+
+// runDoctorSkills prints the first-party skill the binary carries: where it
+// unpacked to, and every file in it.
+//
+// It exists because embedding made the shipped skills INVISIBLE. When they
+// travelled beside the executable you could list a directory and see what a
+// build contained; now the only way to be sure a chapter is in the artifact
+// (and not merely in your worktree, unstaged and therefore not embedded) is to
+// ask the binary. Running this also forces the unpack, which is the other half
+// of the check: a root that cannot be written is reported here rather than as
+// a form that quietly lacks its skills.
+func runDoctorSkills(asJSON bool) error {
+	root := outfit.BundledSkillsRoot()
+	if root == "" {
+		if asJSON {
+			return json.NewEncoder(os.Stdout).Encode(map[string]any{"bundled": false})
+		}
+		fmt.Println("bundled skills: disabled (config bundled_skills = false, or FIGARO_BUNDLED_SKILLS)")
+		return nil
+	}
+	dir := filepath.Join(root, "skills")
+	files := []string{}
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, rerr := filepath.Rel(dir, path)
+		if rerr != nil {
+			return rerr
+		}
+		files = append(files, rel)
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("bundled skills at %s: %w", root, err)
+	}
+	slices.Sort(files)
+
+	if asJSON {
+		return json.NewEncoder(os.Stdout).Encode(map[string]any{
+			"bundled": true, "root": root, "files": files,
+		})
+	}
+	fmt.Printf("bundled skills: %d files, unpacked at\n  %s\n\n", len(files), dir)
+	for _, f := range files {
+		fmt.Println("  " + f)
+	}
+	return nil
 }

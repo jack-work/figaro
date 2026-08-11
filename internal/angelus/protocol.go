@@ -117,6 +117,12 @@ func newOutfitter(a *Angelus, loaded *config.Loaded) *outfit.Outfitter {
 
 // NewHandlers creates the handler set for the angelus socket.
 func NewHandlers(cfg ServerConfig) *Handlers {
+	// Before ANY outfit is folded, and before noticeUpgrade reads the bundled
+	// root: the switch has to be thrown ahead of the first resolution, or the
+	// daemon composes one form with the bundled skills and the next without.
+	if cfg.Config != nil {
+		outfit.SetBundledSkills(cfg.Config.BundledSkills())
+	}
 	h := &handlers{
 		angelus:            cfg.Angelus,
 		config:             cfg.Config,

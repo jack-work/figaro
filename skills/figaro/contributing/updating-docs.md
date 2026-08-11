@@ -30,10 +30,10 @@ decides to. Sibling files in the same directory are not loaded at all. They are
 inert until something opens them.
 
 So cost is a property of what an agent **reads**, not of where a file **lives**.
-Progressive disclosure is depth, not address. And everything under `skills/`
-ships in the binary at `$out/share/figaro/skills`, so a figaro on a machine
-with no checkout still reaches the deep chapters. Two homes buys nothing and
-costs the thing below.
+Progressive disclosure is depth, not address. And everything under
+`skills/figaro/` is embedded in the binary and unpacked on first use, so a
+figaro on a machine with no checkout still reaches the deep chapters. Two homes
+buys nothing and costs the thing below.
 
 ## What two homes costs, with the evidence from this repo
 
@@ -127,15 +127,15 @@ agent-only index would be unpaid overhead.
 there are two copies again and the sections stop being opened. One line per
 entry: what it is, and when to read it.
 
-**An untracked file builds clean and silently does not ship.** The flake's
-`postInstall` copies `$src/skills`, and for a flake `$src` is the **git tree**.
-A new section file that has not been `git add`ed produces a store output with
-the edited `SKILL.md` and no new sections at all, with no error anywhere. After
-adding a file, verify:
+**An untracked file builds clean and silently does not ship.** For a flake,
+`$src` is the **git tree**, and `go:embed` walks that tree: a new section file
+that has not been `git add`ed produces a binary with the edited `SKILL.md` and
+none of the new sections, with no error anywhere. After adding a file, verify
+that it is inside the artifact:
 
 ```sh
 nix build .#default -o /var/tmp/figaro-check
-ls /var/tmp/figaro-check/share/figaro/skills/figaro/
+/var/tmp/figaro-check/bin/figaro doctor skills
 ```
 
 ## When you add or move a file

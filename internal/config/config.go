@@ -29,6 +29,17 @@ type Config struct {
 	// and a delete can never orphan a survivor because the two agree.
 	Trunks *bool `toml:"trunks"`
 
+	// BundledSkills controls whether the skills that ship inside the binary
+	// (today: the `figaro` skill, unpacked from the embedded copy) take part
+	// in composing a form. Default true.
+	//
+	// False is for the user who keeps their own `figaro` skill in
+	// ~/.config/figaro/skills and does not want an upgrade correcting it.
+	// That is the whole trade: bundled skills WIN over a same-named copy in
+	// the config dir, precisely so an install can fix a stale one, and this
+	// is the switch that says "I will maintain mine myself".
+	BundledSkills *bool `toml:"bundled_skills"`
+
 	// CLI holds the settings a client owns: how it echoes, paces and colours
 	// its own output. They live in their own [cli] section because everything
 	// else here is the SERVER's state, which a client may only ask the daemon
@@ -410,6 +421,16 @@ func (l *Loaded) Trunks() bool {
 		return true
 	}
 	return *l.Config.Trunks
+}
+
+// BundledSkills reports whether the binary's own skills take part in
+// composing a form. Default true. See Config.BundledSkills, and
+// outfit.SetBundledSkills, which this feeds.
+func (l *Loaded) BundledSkills() bool {
+	if l.Config.BundledSkills == nil {
+		return true
+	}
+	return *l.Config.BundledSkills
 }
 
 // EchoPrompt returns whether to echo the prompt. Default true.

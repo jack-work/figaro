@@ -16,6 +16,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/form"
+	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/tui"
 )
@@ -33,6 +34,11 @@ func mustLoadConfig() *config.Loaded {
 	if err != nil {
 		die("config: %s", err)
 	}
+	// The client folds outfits too (completion, `figaro state`, the first-run
+	// wizard), so the bundled-skills switch is thrown on both sides of the
+	// socket. Setting it in the daemon alone would let a CLI-side fold see a
+	// different skill set than the aria it is describing.
+	outfit.SetBundledSkills(loaded.BundledSkills())
 	return loaded
 }
 

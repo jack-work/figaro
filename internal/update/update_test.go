@@ -122,3 +122,42 @@ func TestNudge_SilentOnDevVersion(t *testing.T) {
 		t.Fatalf("semver current with newer latest should nudge")
 	}
 }
+
+// The marker an installer drops beside the binary is the only honest answer to
+// "how did this get here": ~/.local/bin is a shared drawer, and a guess there
+// prints an upgrade command that could damage the install it guessed about.
+func TestDetectChannel_Marker(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "figaro")
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ChannelMarker), []byte("script\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := channelFor(exe); got != ChannelScript {
+		t.Fatalf("marker ignored: got %q", got)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, ChannelMarker), []byte("nonsense\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := channelFor(exe); got == ChannelScript {
+		t.Fatal("a marker naming no known channel must not be believed")
+	}
+}
+
+func TestDetectChannel_Homebrew(t *testing.T) {
+	for _, exe := range []string{
+		"/opt/homebrew/Cellar/figaro/0.24.0/bin/figaro",
+		"/home/linuxbrew/.linuxbrew/Cellar/figaro/0.24.0/bin/figaro",
+		"/opt/brew/Cellar/figaro/0.24.0/bin/figaro", // a custom prefix is still brew
+	} {
+		if got := channelFor(exe); got != ChannelHomebrew {
+			t.Fatalf("%s: got %q", exe, got)
+		}
+	}
+	if got := channelFor("/nix/store/abc-figaro/bin/figaro"); got != ChannelNix {
+		t.Fatalf("got %q", got)
+	}
+}

@@ -160,12 +160,42 @@ stable public API. Protocol versioning, capability negotiation, public client
 packages/schema, slow-subscriber isolation, and a browser-safe bridge are
 tracked in the UI-stream protocol TODO.
 
+## The skill that ships inside the binary
+
+figaro carries one first-party skill, `figaro`, embedded in the executable. On
+first use it is unpacked to a directory named by its content hash under the
+state dir (`~/.local/state/figaro/bundled-skills/<hash>/`), because a skill is
+only navigable if it has a path: the model gets a `filePath` and follows the
+links to the deeper chapters beside it.
+
+```bash
+figaro doctor skills            # where it unpacked, and every file in it
+```
+
+That is why installing figaro is one file and no directory layout. It also
+means an upgrade CORRECTS the skill: a bundled skill outranks a same-named
+copy in `~/.config/figaro/skills`, so a copy cannot silently fall behind the
+binary it documents. If you would rather maintain your own, take the wheel:
+
+```toml
+# ~/.config/figaro/config.toml
+bundled_skills = false
+```
+
+The other skills in this repo's `skills/` directory (`figscript`, `figla`,
+`parallel-arias`, `inquire-figaro`, and the rest) are not bundled. Copy the
+ones you want into `~/.config/figaro/skills/`.
+
 ## Updates
 
 ```bash
 figaro update                   # check for newer release
 figaro update --apply           # go install the latest tag
 ```
+
+`update` reports the channel it was installed through and the command that
+upgrades it: the installers drop a `.figaro-channel` marker beside the binary
+so that answer is read rather than guessed.
 
 ## Releasing
 

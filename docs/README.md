@@ -10,9 +10,10 @@ the rules are in
 [`../skills/figaro/contributing/updating-docs.md`](../skills/figaro/contributing/updating-docs.md); read
 it before adding any file anywhere.
 
-The practical reason the docs live under `skills/`: that tree ships inside the
-binary at `$out/share/figaro/skills`, so figaro can read its own documentation
-on a machine with no checkout. A file here would not.
+The practical reason the docs live under `skills/figaro/`: that tree is
+EMBEDDED in the binary (`skills.go`) and unpacked on first use, so figaro can
+read its own documentation on a machine with no checkout and with nothing
+installed beside the executable. A file here would not travel at all.
 
 ## The exception
 

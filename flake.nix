@@ -73,26 +73,16 @@
           # skips generation when cross-compiling (host can't run the
           # just-built binary); installShellCompletion is still safe to
           # call from cross builds, the scripts just won't be present.
+          # The first-party skill no longer travels beside the binary: it
+          # travels INSIDE it. skills.go embeds skills/figaro, and
+          # internal/outfit unpacks it to a content-hashed directory under
+          # the state dir on first use. That is what makes a one line install
+          # possible (one file to download), and it moves the old "refusing
+          # to ship a binary with no first-party skills" check from this
+          # postInstall to the compiler: delete skills/figaro and the embed
+          # directive fails the build.
           postInstall = ''
             ln -s figaro $out/bin/fig
-
-            # First-party skills ship alongside the binary at
-            # $out/share/figaro/skills; outfit's loader merges them OVER any
-            # `dirName = "skills"` table, so an upgrade corrects a skill even
-            # when a copy sits in the user's config. See bundledSkillsRoot
-            # (<exe>/../share/figaro).
-            #
-            # NOT conditional. A missing skills/ used to skip this silently and
-            # ship a figaro whose first-party skills simply did not exist -
-            # indistinguishable, at runtime, from a figaro that has none,
-            # because the loader treats an absent directory as an empty one.
-            # Failing the build is the only place that difference is visible.
-            if [ ! -d "$src/skills" ]; then
-              echo "figaro: no skills/ in the source tree: refusing to ship a binary with no first-party skills" >&2
-              exit 1
-            fi
-            mkdir -p $out/share/figaro
-            cp -r $src/skills $out/share/figaro/skills
           '' + final.lib.optionalString
             (final.stdenv.buildPlatform.canExecute final.stdenv.hostPlatform) ''
             installShellCompletion --cmd figaro \
