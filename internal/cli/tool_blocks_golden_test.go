@@ -109,6 +109,13 @@ func TestToolBlockGolden(t *testing.T) {
 	defer func(prev func() time.Time) { timeNow = prev }(timeNow)
 	timeNow = func() time.Time { return time.UnixMilli(1785862030000 + 17_200) }
 
+	// And the ZONE, for the same reason: the block prints a wall clock, so an
+	// unpinned golden asserts the owner's timezone. This one was recorded in
+	// EDT and passed for months on his machine alone; the first CI run on a
+	// UTC runner failed it, on a commit that had touched none of this.
+	defer func(prev func() *time.Location) { timeLocation = prev }(timeLocation)
+	timeLocation = func() *time.Location { return time.FixedZone("EDT", -4*60*60) }
+
 	var b strings.Builder
 	for _, c := range toolBlockCases() {
 		b.WriteString("## " + c.name + "\n")

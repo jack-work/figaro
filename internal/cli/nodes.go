@@ -531,8 +531,15 @@ func formatDuration(ms int64) string {
 	return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
 }
 
+// timeLocation is time.Local, indirected for exactly the reason timeNow is.
+// A golden that records a wall-clock STRING is a function of the machine's
+// zone as much as of the code: tool_blocks.golden was recorded in EDT and
+// failed the first time it ever ran anywhere else, on a UTC CI runner. The
+// test pins the zone; nothing in production reads anything but time.Local.
+var timeLocation = func() *time.Location { return time.Local }
+
 func formatToolTime(ms int64) string {
-	return time.UnixMilli(ms).Format("2006-01-02 15:04:05.000 MST")
+	return time.UnixMilli(ms).In(timeLocation()).Format("2006-01-02 15:04:05.000 MST")
 }
 
 // hardWrap char-wraps s (runewidth-aware) to at most w columns per line,
