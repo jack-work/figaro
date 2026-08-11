@@ -14,7 +14,7 @@ form *forks* it, and nothing in the system converts.
 ## The five gestures
 
 ```sh
-fig form new -O name=deploys -j        # mint state → {"form_id":"@a1b2c3",…}
+fig form new -S name=deploys -j        # mint state → {"form_id":"@a1b2c3",…}
 fig set --id @a1b2c3 status.phase canary   # write (or: fig at @a1b2c3; fig set …)
 fig form @a1b2c3                       # read; `fig form listen @a1b2c3` to watch
 fig bind @a1b2c3                       # birth a figaro from it (dormant; never rebinds your shell)
@@ -55,7 +55,9 @@ what you attend. `fig ls`: figaros only; a form-born aria shows its
 `@form` in the OUTFIT column. `fig ls -g`: the whole genealogy as one
 tree, form rows washed in the selection grey.
 
-Deeper: `skills/figaro/reference/forms.md` (all semantics, both
-personas), `forms-design.md` and `roles-design.md` (design), and
-`plans/forms-and-roles-v2.md` (the governing brief). Study and cast
-(`fig study`, `fig cast`) are specified there but not yet built.
+Deeper: [reference/forms.md](reference/forms.md) (all semantics, both
+personas, including `fig study` and `fig cast`, which are built and
+documented there), and [contributing/forms-design.md](contributing/forms-design.md)
+plus [contributing/roles-design.md](contributing/roles-design.md) for the
+design. The governing brief, `plans/forms-and-roles-v2.md`, lives in the
+repository and does not ship with the binary.

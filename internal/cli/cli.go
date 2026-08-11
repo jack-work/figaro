@@ -378,7 +378,7 @@ a prompt follows ` + "`--`" + `: sends it.
   figaro new -- <prompt>            fresh aria on the default outfit, prompted
   figaro new -O <spec> -- <p>       fresh aria on a named outfit, prompted
   figaro new -O <spec>              fresh aria on a named outfit, attended, no turn
-  figaro new -O ttl=1h -- <p>       fresh aria on an inline outfit
+  figaro new -S ttl=1h -- <p>       fresh aria with a birth patch (-O names, -S data)
   figaro new                        fresh aria on the default outfit, attended
 
 new always mints. To go home instead, ` + "`figaro attend null`" + ` drops this
@@ -927,7 +927,7 @@ With a prompt: ` + "`figaro fork [flags] -- <prompt>`" + `: it also sends, the w
   figaro fork -r -- <prompt>           branch, stream raw to stdout
   figaro fork -fj -- <prompt>          branch, fire-and-forget, print the ids
   figaro fork -O review -- <prompt>    branch, dress the branch, then ask
-  figaro fork -O ttl=1h                branch and dress it; say nothing yet
+  figaro fork -S ttl=1h                branch and patch it; say nothing yet
 
   -r/--raw, -v/--verbatim, -o/--verbose, -l/--listen, -x/--exec (+ -n, -y),
   -f/--forget, as in ` + "`figaro send`" + `; prompt-only (an error without one).
@@ -1096,7 +1096,7 @@ aria nesting follows fork history alone and there is nothing to promote.`,
 		Aliases: []string{"form"},
 		Group:   "State",
 		Short:   "Show the form, or shape it",
-		Usage:   "state [show] [<id>] | state set <k> <v> | state delete <paths> | state new -O <names> | state outfit <names>",
+		Usage:   "state [show] [<id>] | state set <k> <v> | state delete <paths> | state new [-O <names>] [-S <k=v>] | state outfit <names>",
 		Long: `The aria's state, and the verbs that shape it.
 
   figaro state                     print the form
@@ -1104,7 +1104,8 @@ aria nesting follows fork history alone and there is nothing to promote.`,
   figaro state set mantra hello    patch ONE path (key then value)
   figaro state set a=1,b="two"     patch several, in the -S grammar
   figaro state delete a.b,mantra   remove key paths, comma-separated
-  figaro form new -O sonn5         mint an UNBOUND form (@id); -O is required
+  figaro form new -S name=x        mint an UNBOUND form (@id); -O and/or -S,
+                                   never nothing: a form is born of its patch
   figaro form fork @id -S k=v      duplicate a form's state into a fresh @id
   figaro form ls                   list unbound forms (scoped by attendance)
   figaro form rm @id               remove an unbound form

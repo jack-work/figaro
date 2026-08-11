@@ -93,8 +93,9 @@ cache. The **child** carries what `-O` asked for, plus the runtime fill-ins. So
 `-O` ADDS to the default rather than replacing it, and that rule falls out of
 the topology instead of being arranged.
 
-Folding `-O` into the stump (which is what 0.22.x did) minted a private stump
-per literal, so `-O mantra=x` defeated the sharing stumps exist for.
+Folding `-O` into the stump (which is what 0.22.x did, back when `-O` still
+took `k=v` terms) minted a private stump per literal, so `-O mantra=x` defeated
+the sharing stumps exist for.
 
 Collection spares the LIVE default, by hash rather than by name: edit an
 outfit's files and the hash moves, so the version nobody wears is reaped once
@@ -235,33 +236,27 @@ hash. Everything is decoded and re-marshalled on the way in, so formatting
 never reaches it.
 
 The name is INSIDE that hash, not merely alongside it. That is what lets
-everything else key on content alone. All of these are one stump, minted once
-and reused:
+everything else key on content alone. Spelling and formatting do not reach it,
+so all of these are one birth record, hashed once:
 
 ```sh
-figaro new -O 'base,{"mantra":"test"}'
-figaro new -O base,mantra=test
-figaro new -O 'base,{ "mantra" : "test" }'
-figaro new -O 'base,{"x":1,"mantra":"test"}'   # and with the keys the other way
+figaro new -O base -S '{"mantra":"test"}'
+figaro new -O base -S mantra=test
+figaro new -O base -S '{ "mantra" : "test" }'
+figaro new -O base -S '{"x":1,"mantra":"test"}'   # keys the other way, same hash
 ```
 
-The label is the names in order plus one `{}` if any term was a literal, and
-that is all: a literal is anonymous, and the hash already says everything about
-it. So WHERE a literal sits changes the fold but not the identity -
+The label is the names, in order, and nothing else: data travels on `-S`, where
+the hash covers it and the label never mentions it. Two calls whose patches
+differ therefore share a label and differ in version, which is the intended
+reading, the version IS the identity.
 
-```sh
-figaro new -O base,x=1,mantra=test      # all three land on
-figaro new -O x=1,base,mantra=test      # base,{}@0523455ab442fec2
-figaro new -O x=1,mantra=test,base      # because base sets neither key
-```
-
-- while a literal that actually collides folds differently, hashes
-differently, and is a different stump:
-
-```sh
-figaro new -O setsx,x=1     # x=1  setsx,{}@994a6d0c…
-figaro new -O x=1,setsx     # x=9  setsx,{}@cbeef30a…   (setsx sets x=9)
-```
+*(Until 0.22.x, `-O` also swallowed `k=v` and `{...}` literal terms, and the
+label carried a `{}` to say one was present. That grammar is gone: `-O` takes
+names, `-S` takes data, and a `k=v` passed to `-O` is now refused by name. The
+paragraphs above were written against the old spelling and have been corrected
+to the new one; the stump-versus-child economy described earlier in this file
+is the part to trust about WHICH patch a term lands in.)*
 
 Two outfits with identical bodies and different NAMES stay two outfits, because
 the name is hashed with the body, a listing that reported an aria under a name

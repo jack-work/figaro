@@ -126,7 +126,7 @@ func runFormLs(loaded *config.Loaded, asJSON bool) {
 		return
 	}
 	if len(forms) == 0 {
-		fmt.Fprintln(os.Stderr, "no unbound forms; mint one with `fig form new -O name='…'`")
+		fmt.Fprintln(os.Stderr, "no unbound forms; mint one with `fig form new -S name='…'`")
 		return
 	}
 	fmt.Printf("%-14s %-22s %-10s %-8s %s\n", "FORM", "NAME", "TARGET", "AGE", "PARENT")

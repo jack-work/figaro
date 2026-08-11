@@ -124,7 +124,7 @@ form.
 **Scripting.** Every form verb takes `-j`:
 
 ```sh
-id=$(fig form new -O name=jobqueue -j | jq -r .form_id)
+id=$(fig form new -S name=jobqueue -j | jq -r .form_id)
 fig set --id "$id" jobs.next '"deploy-42"'
 fig bind "$id" -j | jq -r .figaro_id
 ```
@@ -138,7 +138,7 @@ marker); the resolver checks it before anything else.
 
 | verb | `null` | unbound form `@x` | figaro (bound form) |
 |---|---|---|---|
-| `fig form new -O` | forks it (that is what new is) | `form fork @x` duplicates | **refused**: "not an unbound form" |
+| `fig form new` | forks it (that is what new is) | `form fork @x` duplicates | **refused**: "not an unbound form" |
 | `fig bind` | naked figaro | figaro inheriting `@x` | refused (use `fig fork`) |
 | `fig fork` |: | `form fork` | conversation fork (as ever) |
 | `fig set` / `unset` |: | writes, wake-free | live: reminder next turn; dormant: wake-free |
@@ -195,6 +195,7 @@ renders a tombstone; observation advances at main-record boundaries
 
 ---
 
-*Design depth: `reference/forms-design.md` and `reference/roles-design.md`
+*Design depth: [../contributing/forms-design.md](../contributing/forms-design.md)
+and [../contributing/roles-design.md](../contributing/roles-design.md)
 (storage, hub routing, lifecycle internals). Spec of record:
-`plans/forms-and-roles-v2.md`.*
+`plans/forms-and-roles-v2.md`, in the repository, not in the binary.*

@@ -268,7 +268,7 @@ nix build .#default -o /tmp/fig            # the build every shell shares
 export FIGARO_STATE_DIR=/tmp/stress/state FIGARO_RUNTIME_DIR=/tmp/stress/rt
 for i in $(seq 1 12); do
   ( nix develop --quiet --command bash -c \
-      "/tmp/fig/bin/figaro send -O mantra=stress-$i,ttl=$i -r -- \
+      "/tmp/fig/bin/figaro send -S mantra=stress-$i,ttl=$i -r -- \
         'reply with the single word ok' > /tmp/stress/$i.out 2>&1" ) &
 done
 wait

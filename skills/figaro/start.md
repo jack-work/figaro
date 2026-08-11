@@ -101,8 +101,9 @@ figaro state outfit --tree <name> draw the layer closure; applies nothing
 Outfits compose. An outfit may declare `layers`, and several may be named at
 once (`-O a,b`, folded left to right). Applying one is additive: keys already
 holding that value are skipped, nothing is ever removed, and the agent sees a
-`<system-reminder>` for exactly what changed. The whole model, including the
-inline `-O ttl=1h` form and what "birth" means differently from "fold", is
+`<system-reminder>` for exactly what changed. Data never rides inside `-O`: a
+key goes in `-S` (`-O base -S ttl=1h`), and the two axes compose in one call.
+The whole model, including what "birth" means differently from "fold", is
 [reference/outfits.md](reference/outfits.md).
 
 Skills are markdown files under `~/.config/figaro/skills/`. Each one's
