@@ -85,7 +85,15 @@ func runFormListen(loaded *config.Loaded, ariaID string) {
 	if err != nil {
 		die("form listen needs a terminal: %s", err)
 	}
-	defer restore()
+	// The MODE, like the screen, has to survive exitNow -- which runs the hooks
+	// and then os.Exit, skipping every defer. stream.go:330 documents this one
+	// as measured: a Ctrl-C 130 left c_lflag at a30, so the user got their shell
+	// back with no echo and no line editing. Nothing calls exitNow inside this
+	// window today; leaving the worse of the two failures on a bare defer is
+	// still not worth the line it saves. sync.OnceFunc because both paths fire
+	// on a normal return.
+	restoreOnce := sync.OnceFunc(restore)
+	defer restoreOnce()
 	fmt.Fprint(os.Stdout, altScreenOn+cursorHide)
 	view.begin()
 	defer func() {
@@ -94,12 +102,21 @@ func runFormListen(loaded *config.Loaded, ariaID string) {
 		view.end()
 		fmt.Fprint(os.Stdout, cursorShow+altScreenOff)
 	}()
-	atExit(func() { view.end(); fmt.Fprint(os.Stdout, cursorShow+altScreenOff) })
+	atExit(func() {
+		view.end()
+		fmt.Fprint(os.Stdout, cursorShow+altScreenOff)
+		restoreOnce()
+	})
 
 	// Seeded here, not before the switch: resync ends in a paint, and a paint on
 	// the primary screen erases what the user was reading.
 	view.resync()
 
+	// Unconditional, and NOT redundant with the resync above: an incompatible
+	// schema delta can land any time after DialClient, including before begin().
+	// stop() paints that notice while the view is not yet live, and resync()
+	// returns early once stopped -- so this is the only thing that ever renders
+	// a notice set before the screen was switched.
 	view.paint()
 	keys := make([]byte, 8)
 	for {
