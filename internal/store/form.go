@@ -1,13 +1,16 @@
 package store
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"sync"
 	"sync/atomic"
 
 	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
+	figOtel "github.com/jack-work/figaro/internal/otel"
 )
 
 // Form is an aria's state, and the only writer of the channel that holds it.
@@ -107,10 +110,55 @@ func (f *Form) Snapshot() (form.Snapshot, uint64) {
 // Version is the durable index of the last patch applied.
 func (f *Form) Version() uint64 { return f.state.Load().version }
 
-// Patches returns the patches that built the published state, in order.
-func (f *Form) Patches() []VersionedPatch {
-	st := f.state.Load()
-	return append([]VersionedPatch(nil), st.patches...)
+// PatchesBetween returns the published patches in the absolute range
+// (after, upTo], as a VIEW on the published state's array: no copy.
+//
+// The view is safe for the same reason commit's shared-array append is safe,
+// and it is the read half of that decision. A published formState is
+// immutable: its slice header carries its own length, the single writer only
+// ever appends PAST that length or reallocates, so bytes a reader can see
+// never change under it. The returned slice is capped (ps[lo:hi:hi]) so a
+// caller that appends to it reallocates instead of scribbling into the
+// writer's array.
+//
+// It replaces Patches(), which copied the entire history on every call: once
+// per studied form per provider Send, to answer a question whose answer is
+// almost always one patch or none. That copy was defending against a mutation
+// this type structurally cannot perform.
+//
+// Absolute rather than cursor-relative because the projection warm-starts
+// mid-log: see the note on the caller side about what a relative cursor did.
+// Binary search on both ends, so a pass costs O(log n) per call and holds no
+// position between calls, which is what lets one accessor be shared and long
+// lived instead of rebuilt per Send.
+func (f *Form) PatchesBetween(after, upTo uint64) []VersionedPatch {
+	ps := f.state.Load().patches
+	out := patchRange(ps, after, upTo)
+	// The pair the old API could not report: what this read answered with,
+	// and how long the history behind it was. Free here (both are in hand),
+	// and it is the only place that knows both.
+	figOtel.RecordFormPatchRead(context.Background(), len(out), len(ps))
+	return out
+}
+
+// patchRange is the range itself: binary search on both ends of a
+// version-ordered, immutable array.
+//
+// The capped slice (ps[lo:hi:hi]) is not decoration. Without the cap, a caller
+// that appends to the returned slice writes into the writer's backing array,
+// past the length every published state can see but inside the capacity the
+// next commit will append into: a lost write with no crash and no test that
+// finds it. The cap turns that into a reallocation.
+func patchRange(ps []VersionedPatch, after, upTo uint64) []VersionedPatch {
+	if upTo <= after || len(ps) == 0 {
+		return nil
+	}
+	lo := sort.Search(len(ps), func(i int) bool { return ps[i].Version > after })
+	hi := sort.Search(len(ps), func(i int) bool { return ps[i].Version > upTo })
+	if lo >= hi {
+		return nil
+	}
+	return ps[lo:hi:hi]
 }
 
 // Apply appends a patch and publishes it, returning its durable version.

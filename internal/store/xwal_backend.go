@@ -253,12 +253,15 @@ func (b *XwalBackend) FormVersion(ariaID string) (uint64, error) {
 	return f.Version(), nil
 }
 
-func (b *XwalBackend) FormPatches(ariaID string) ([]VersionedPatch, error) {
+// FormPatchesBetween is Form.PatchesBetween through the backend: a READ-ONLY
+// VIEW on the form's published patch array for the absolute range (after,
+// upTo]. It does not copy, and the caller must not retain or mutate it.
+func (b *XwalBackend) FormPatchesBetween(ariaID string, after, upTo uint64) ([]VersionedPatch, error) {
 	f, err := b.form(ariaID)
 	if err != nil {
 		return nil, err
 	}
-	return f.Patches(), nil
+	return f.PatchesBetween(after, upTo), nil
 }
 
 // ApplyForm appends a patch and returns its VERSION: the patch's own durable

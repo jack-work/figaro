@@ -975,26 +975,31 @@ func (a *Agent) applyControlPatch(patch message.Patch, ifVersion uint64, kind st
 // for backed arias, the form's patches in version order; nil for
 // ephemeral (the provider falls back to inline IR patches).
 //
-// TODO: FormPatches copies the aria's ENTIRE patch history on every
-// Send, which is O(total board) on a path that renders O(delta). See
-// plans/form-projection-followups.md §1.
+// It hands back a LIVE VIEW, not a snapshot of the history. It used to call
+// FormPatches, which copied the aria's ENTIRE patch history on every Send:
+// O(total board) work on a path that renders O(delta), and the same cost paid
+// again for every studied form. The view asks the store for the range it is
+// actually being asked about, which the store answers by binary search into
+// an immutable published array. See plans/form-projection-followups.md §1: the
+// followup that filed this is now closed by it.
 func (a *Agent) formAccessor() provider.Form {
 	if a.backend == nil {
 		return nil
 	}
-	ps, err := a.backend.FormPatches(a.id)
-	if err != nil {
+	// Probe once: a form that cannot be opened disables transitions for the
+	// turn, exactly as the copying version did when its read failed.
+	if _, err := a.backend.FormVersion(a.id); err != nil {
 		slog.Warn("form patches (transitions disabled this turn)", "aria", a.id, "err", err)
 		return nil
 	}
-	return &patchCursor{patches: ps}
+	return formView{backend: a.backend, id: a.id}
 }
 
 // studyAccessors is formAccessor for the observed set: one absolute
 // accessor per studied form, read from THAT form's channel. A studied
 // form that cannot be read supplies no accessor: the projection
-// renders its stamp as a tombstone. Same O(total history) caveat as
-// formAccessor, same followup owns it.
+// renders its stamp as a tombstone, which is why the probe is not
+// optional and cannot be folded into the view.
 func (a *Agent) studyAccessors() map[string]provider.Form {
 	if a.backend == nil {
 		return nil
@@ -1005,38 +1010,44 @@ func (a *Agent) studyAccessors() map[string]provider.Form {
 	}
 	out := make(map[string]provider.Form, len(ids))
 	for _, fid := range ids {
-		ps, err := a.backend.FormPatches(fid)
-		if err != nil {
-			continue
+		if _, err := a.backend.FormVersion(fid); err != nil {
+			continue // no accessor: the projection renders a tombstone
 		}
-		out[fid] = &patchCursor{patches: ps}
+		out[fid] = formView{backend: a.backend, id: fid}
 	}
 	return out
 }
 
-// patchCursor walks the patch list forward, once. The projection asks for an
-// absolute range -- (after, upTo] -- so the cursor never has to guess where it
-// is: it skips anything at or below the low bound and takes what is in range.
-// The index only ever advances, so a pass costs the patches it actually
-// touches, not a scan per entry.
+// formView answers an absolute patch range from the store, per call, holding
+// no position of its own.
 //
-// The range is absolute rather than implicit BECAUSE the projection warm-starts
+// The range is absolute -- (after, upTo] -- BECAUSE the projection warm-starts
 // mid-log. A cursor that assumed "you have already been driven over everything
 // before this" replayed the whole board onto the first new message, and the
 // per-LT cache made that permanent.
-type patchCursor struct {
-	patches []store.VersionedPatch
-	i       int
+//
+// Holding no position is what lets the view be built per Send for free (it is
+// two words) and, more to the point, what lets the store answer by binary
+// search into the published array instead of handing over a copy for the
+// caller to walk. The only allocation left is the returned delta itself, which
+// is the answer, typically one patch or none.
+type formView struct {
+	backend store.Backend
+	id      string
 }
 
-func (c *patchCursor) PatchesBetween(after, upTo uint64) []message.Patch {
-	for c.i < len(c.patches) && c.patches[c.i].Version <= after {
-		c.i++
+func (v formView) PatchesBetween(after, upTo uint64) []message.Patch {
+	ps, err := v.backend.FormPatchesBetween(v.id, after, upTo)
+	if err != nil {
+		slog.Debug("form patches between", "form", v.id, "after", after, "upTo", upTo, "err", err)
+		return nil
 	}
-	var out []message.Patch
-	for c.i < len(c.patches) && c.patches[c.i].Version <= upTo {
-		out = append(out, c.patches[c.i].Patch)
-		c.i++
+	if len(ps) == 0 {
+		return nil
+	}
+	out := make([]message.Patch, len(ps))
+	for i := range ps {
+		out[i] = ps[i].Patch
 	}
 	return out
 }

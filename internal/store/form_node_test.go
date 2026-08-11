@@ -250,7 +250,7 @@ func TestObservedFormsStampIRAppends(t *testing.T) {
 	}
 
 	// And the patches between the two stamps are exactly the fold.
-	ps, err := be.FormPatches(role)
+	ps, err := be.FormPatchesBetween(role, 0, ^uint64(0))
 	if err != nil {
 		t.Fatal(err)
 	}

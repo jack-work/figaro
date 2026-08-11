@@ -279,36 +279,11 @@ func BenchmarkFormState10000(b *testing.B) {
 	}
 }
 
-func BenchmarkFormPatches10000(b *testing.B) {
-	be, err := NewXwalBackend(b.TempDir(), 0)
-	if err != nil {
-		b.Fatal(err)
-	}
-	defer be.Close()
-	outfit, err := be.CreateOutfit("perf", patchSet(map[string]string{"system.model": "m"}))
-	if err != nil {
-		b.Fatal(err)
-	}
-	id, err := be.CreateConversation(outfit)
-	if err != nil {
-		b.Fatal(err)
-	}
-	for i := 0; i < 10_000; i++ {
-		if _, err := be.ApplyForm(id, patchSet(map[string]string{
-			fmt.Sprintf("key%d", i%100): fmt.Sprintf("value%d", i),
-		})); err != nil {
-			b.Fatal(err)
-		}
-	}
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		if _, err := be.FormPatches(id); err != nil {
-			b.Fatal(err)
-		}
-	}
-}
+// BenchmarkFormPatches10000 is gone with the API it measured. It timed
+// "copy the whole patch history", which was never a question the provider
+// asked: a translate asks what changed between two stamps. Its successors,
+// which measure that question in both shapes, are BenchmarkFormDeltaPerSend*
+// and BenchmarkFormWholePerSend* in formview_bench_test.go.
 
 func BenchmarkVectors10000Branches(b *testing.B) {
 	infos := make([]xwal.TrunkInfo, 10_000)

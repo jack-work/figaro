@@ -73,7 +73,7 @@ func TestEveryPatchIsShownToTheAria(t *testing.T) {
 	apply(map[string]json.RawMessage{"mantra": json.RawMessage(`"a mantra"`)})
 	say("second")
 
-	patches, err := be.FormPatches(aria)
+	patches, err := be.FormPatchesBetween(aria, 0, ^uint64(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestAForkedAriaIsShownItsNewAriaID(t *testing.T) {
 	setID(alt) // what the daemon stamps on a fresh branch
 	say(alt, "on the branch")
 
-	patches, err := be.FormPatches(alt)
+	patches, err := be.FormPatchesBetween(alt, 0, ^uint64(0))
 	if err != nil {
 		t.Fatal(err)
 	}

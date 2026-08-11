@@ -170,10 +170,19 @@ type Backend interface {
 	// keyed to the next IR LT (the transition the next message carries).
 	ApplyForm(ariaID string, patch message.Patch) (version uint64, err error)
 
-	// FormPatches returns every form patch grouped by the IR
-	// logical time it is keyed to (the transitions to render per message).
-	// Empty patches (genesis/seed no-ops) are omitted.
-	FormPatches(ariaID string) ([]VersionedPatch, error)
+	// FormPatchesBetween returns the form patches in the absolute range
+	// (after, upTo], keyed by their durable version: the transitions to
+	// render between two stamps.
+	//
+	// It is a READ-ONLY VIEW on the form's published array, not a copy: the
+	// published state is immutable and its single writer only appends past
+	// the length a reader can see. Callers must not retain or mutate it.
+	//
+	// It replaced FormPatches(id), which returned the WHOLE history, copied,
+	// on a path that renders O(delta): once per studied form per provider
+	// Send. Absolute bounds because the projection warm-starts mid-log and a
+	// relative cursor cannot express where it resumed.
+	FormPatchesBetween(ariaID string, after, upTo uint64) ([]VersionedPatch, error)
 
 	// CreateOutfit materializes (or reuses) the outfit node for
 	// (name, content-version-of-patch) and returns its id.

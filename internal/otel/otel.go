@@ -95,6 +95,17 @@ func (w *rotatingWriter) Close() error {
 
 var (
 	requestDuration otelmetric.Float64Histogram
+
+	// The form/patch read path, as a PAIR: what a range read returned, and
+	// how long the history it was drawn from was. A duration tells you it got
+	// slow; the pair tells you whether a bounded read is still bounded, which
+	// is the failure mode this path can actually have in production.
+	//
+	// Histograms rather than counters, because the tail is the bug: a mean of
+	// 1.2 patches returned hides the one Send that walked forty thousand.
+	formPatchesReturned otelmetric.Int64Histogram
+	formPatchesHistory  otelmetric.Int64Histogram
+
 	instrumentsOnce sync.Once
 )
 
@@ -239,7 +250,41 @@ func initInstruments(m otelmetric.Meter) {
 		if err != nil {
 			slog.Warn("metric init", "name", "request.duration", "err", err)
 		}
+		formPatchesReturned, err = m.Int64Histogram(
+			"figaro.form.patches.returned",
+			otelmetric.WithUnit("{patch}"),
+			otelmetric.WithDescription("Form patches handed to one range read: the delta actually rendered"),
+		)
+		if err != nil {
+			slog.Warn("metric init", "name", "form.patches.returned", "err", err)
+		}
+		formPatchesHistory, err = m.Int64Histogram(
+			"figaro.form.patches.history",
+			otelmetric.WithUnit("{patch}"),
+			otelmetric.WithDescription("The form's whole patch history at the moment of a range read: what the old copy-everything read paid, and the alarm if returned ever starts tracking it"),
+		)
+		if err != nil {
+			slog.Warn("metric init", "name", "form.patches.history", "err", err)
+		}
 	})
+}
+
+// RecordFormPatchRead records one form patch-range read: how many patches the
+// caller got, and how long the history it was drawn from was.
+//
+// The PAIR is the point. Before the view, a read returned one patch and copied
+// the entire history, and no instrument in the binary could say so: the only
+// metric figaro had was request duration, and a copy hides comfortably inside
+// a network round trip. Returned-versus-history makes the difference a number,
+// and a returned distribution that starts tracking history is the regression
+// alarm for anything built on this path later.
+func RecordFormPatchRead(ctx context.Context, returned, history int, attrs ...attribute.KeyValue) {
+	if formPatchesReturned != nil {
+		formPatchesReturned.Record(ctx, int64(returned), otelmetric.WithAttributes(attrs...))
+	}
+	if formPatchesHistory != nil {
+		formPatchesHistory.Record(ctx, int64(history), otelmetric.WithAttributes(attrs...))
+	}
 }
 
 // Tracer returns the figaro tracer.

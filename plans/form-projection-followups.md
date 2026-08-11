@@ -22,6 +22,12 @@ was not. An absolute range cannot express that mistake, which is the point.
 
 ## 1. Stop materialising the whole patch list on every Send: the real win
 
+**CLOSED 2026-08-11.** `Form.Patches()` is gone; `Form.PatchesBetween(after,
+upTo]` answers by binary search into the published array and returns a capped
+sub-slice, with no copy and no retained cursor. Measurements, the real-store
+probe and the traps are in `plans/form-view-perf.md`. The paragraphs below are
+the filing, kept for the reasoning.
+
 `Agent.formAccessor()` calls `backend.FormPatches(a.id)` once per
 provider Send, and that returns **a copy of every patch the aria has ever
 had**:

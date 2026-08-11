@@ -78,8 +78,8 @@ func TestFormReplaysItsLog(t *testing.T) {
 	snap, version := again.Snapshot()
 	assert.Equal(t, uint64(2), version)
 	assert.Equal(t, 2, snap.Len())
-	require.Len(t, again.Patches(), 2)
-	assert.Equal(t, uint64(1), again.Patches()[0].Version)
+	require.Len(t, again.PatchesBetween(0, ^uint64(0)), 2)
+	assert.Equal(t, uint64(1), again.PatchesBetween(0, ^uint64(0))[0].Version)
 }
 
 // One writer, many callers: every Apply is serialized and every version is
