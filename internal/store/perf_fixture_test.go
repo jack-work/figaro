@@ -47,8 +47,14 @@ func TestGeneratePerformanceFixture(t *testing.T) {
 			if j%2 == 1 {
 				role = message.RoleOutput
 			}
+			// TurnID is STAMPED, as figaro.appendMsg stamps every durable
+			// write. A fixture without it is a pre-turn-id aria, which reads
+			// back through a different (legacy) path: fine to test on
+			// purpose, wrong to get by accident when the thing under test is
+			// how a modern aria pages.
 			if _, err := log.Append(Entry[message.Message]{Payload: message.Message{
 				Role:    role,
+				TurnID:  uint64(j/2 + 1),
 				Content: []message.Content{message.TextContent(body)},
 			}}); err != nil {
 				t.Fatal(err)
