@@ -56,7 +56,7 @@ func benchProvider(b *testing.B, mode provider.MarkMode) *Provider {
 }
 
 // BenchmarkCatchUp guards invariant 14: normal synchronisation is O(new
-// messages), not O(history). WarmDelta must not grow with n — if it does,
+// messages), not O(history). WarmDelta must not grow with n: if it does,
 // the projection is rescanning the prefix and the fix is in the projection,
 // not here.
 func BenchmarkCatchUp(b *testing.B) {
@@ -100,7 +100,7 @@ func BenchmarkCatchUp(b *testing.B) {
 }
 
 // BenchmarkAssemble measures the per-turn request build, which IS
-// proportional to prompt bytes (serialization always is) — the invariant it
+// proportional to prompt bytes (serialization always is): the invariant it
 // guards is that marking does not add a second full pass.
 func BenchmarkAssemble(b *testing.B) {
 	board := form.FromMap(map[string]json.RawMessage{

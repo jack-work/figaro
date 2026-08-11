@@ -17,15 +17,15 @@ import (
 // per-frame path. Neither branch could pin the property that only exists once
 // both are in: there is exactly ONE authority on "the retained window changed"
 // (transcript.windowRev, published by invalidateWindow), so the page layer and
-// the line index can never disagree about which window they describe — and the
+// the line index can never disagree about which window they describe, and the
 // row budget is computed from the index's EXACT per-message row counts, not
 // from an average over the row cache, which holds rows for everything the STORE
-// retains — a strictly larger set than the window.
+// retains, a strictly larger set than the window.
 //
 // D's tailRev answered "are t.pages still the client's tail?"; A's index had a
 // separate per-frame shape diff deciding whether to refill lineTurn. Two checks
-// over one fact is how a moved window ends up with lineTurn — resize anchoring,
-// viewportAnchor — describing a window that no longer exists.
+// over one fact is how a moved window ends up with lineTurn: resize anchoring,
+// viewportAnchor: describing a window that no longer exists.
 // ---------------------------------------------------------------------------
 
 // mixedHeightHistory alternates short and tall messages so the window and the
@@ -88,8 +88,8 @@ func assertIndexAgrees(t *testing.T, tr *transcript, when string) {
 }
 
 // TestMergedPageMutationAlwaysReachesTheIndex is the "one authority" invariant.
-// Every route that moves the window — the floor dropping onto a fetched page,
-// the floor rising back to the tail — must publish through invalidateWindow,
+// Every route that moves the window: the floor dropping onto a fetched page,
+// the floor rising back to the tail: must publish through invalidateWindow,
 // and the line index must come out the far side describing the window that
 // actually exists.
 func TestMergedPageMutationAlwaysReachesTheIndex(t *testing.T) {

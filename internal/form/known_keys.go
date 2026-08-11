@@ -2,7 +2,7 @@ package form
 
 // The form is open-schema by design (see form.go): keys
 // are arbitrary, values are raw JSON. WellKnownKeys is a *partial*
-// schema — a curated list of keys the harness reads or writes today,
+// schema, a curated list of keys the harness reads or writes today,
 // used to drive CLI completion and as a discoverability surface.
 //
 // Future direction: tighten this into a real partial schema (per-key
@@ -33,7 +33,7 @@ const (
 // KeyDoc describes a known form key.
 type KeyDoc struct {
 	// Key is the dotted path. A trailing "<name>" marks a templated
-	// namespace (e.g. "system.environment.<name>") — completion
+	// namespace (e.g. "system.environment.<name>"): completion
 	// should treat the literal segment as a placeholder.
 	Key string
 

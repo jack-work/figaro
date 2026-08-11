@@ -50,8 +50,8 @@ func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string) {
 
 // runFormSet is `fig form set`, in both spellings the grammar allows:
 //
-//	fig form set mantra "hello"     key then value — one path, the common case
-//	fig form set a=1,b="two"        the -S grammar — several keys, one call
+//	fig form set mantra "hello"     key then value: one path, the common case
+//	fig form set a=1,b="two"        the -S grammar: several keys, one call
 //
 // Two positionals is the pair form; anything else is read as -S terms, which
 // is what makes `set` the same language as the flag. Revived at Gluck's ask
@@ -79,7 +79,7 @@ func runFormSet(loaded *config.Loaded, ariaID string, args []string) error {
 	return nil
 }
 
-// runFormDelete is `fig form delete a.b,c` — key paths, comma-separated, in
+// runFormDelete is `fig form delete a.b,c`: key paths, comma-separated, in
 // the -D grammar. `unset` is the same verb under its older name.
 func runFormDelete(loaded *config.Loaded, ariaID string, args []string) error {
 	if len(args) == 0 {
@@ -168,7 +168,7 @@ func runForm(loaded *config.Loaded, ariaID string) {
 }
 
 // nestSnapshot rebuilds the tree the dotted keys describe. Flatness is how the
-// form is STORED — one key, one value, one patch record — not what it is: a
+// form is STORED: one key, one value, one patch record: not what it is: a
 // reader wants `system.model` under `system`, and a script wants to walk it.
 //
 // A key whose prefix is already a leaf keeps its dotted name rather than
@@ -347,7 +347,7 @@ func deepDeleteWalk(obj map[string]any, path []string) bool {
 }
 
 // fetchFormSnapshot returns the aria's live form snapshot via the
-// angelus, or an empty snapshot on failure (best-effort — callers degrade
+// angelus, or an empty snapshot on failure (best-effort: callers degrade
 // gracefully).
 func fetchFormSnapshot(loaded *config.Loaded, ariaID string) form.Snapshot {
 	var snap form.Snapshot

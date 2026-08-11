@@ -22,12 +22,12 @@ const NameDefault = "default"
 //	-D system.tags,mantra     key paths only    → ParseDelete
 //
 // They compose in one call, and the order is fixed: outfits fold first, then
-// --set, then --delete. `layers` survives in exactly one place — the unmarshal
-// that builds a patch from an outfit FILE — so a patch is data all the way
+// --set, then --delete. `layers` survives in exactly one place: the unmarshal
+// that builds a patch from an outfit FILE: so a patch is data all the way
 // down and no writer below the API boundary ever touches a disk.
 
 // ParseNames reads the `-O` syntax: a comma-separated list of outfit names,
-// in order, later names winning. Nothing else is admitted — a `k=v` or a JSON
+// in order, later names winning. Nothing else is admitted, a `k=v` or a JSON
 // literal here is a grammar error naming the flag that takes it.
 func ParseNames(text string) ([]string, error) {
 	parts, err := splitTerms(text)
@@ -56,7 +56,7 @@ func ParseNames(text string) ([]string, error) {
 
 // ParseSet reads the `-S` syntax into ONE form patch: `k=v` pairs and whole
 // JSON-object literals, comma-separated, later terms winning. It touches no
-// disk and reads no config, and it resolves nothing — a `layers` key written
+// disk and reads no config, and it resolves nothing, a `layers` key written
 // here is ordinary data, stored as typed.
 //
 //	ttl=1h,mantra="cool thing"  {"ttl":"1h","mantra":"cool thing"}
@@ -97,7 +97,7 @@ func ParseSet(text string) (form.Patch, error) {
 }
 
 // ParseDelete reads the `-D` syntax: comma-separated key paths to remove.
-// Paths are not validated here beyond emptiness — the dotted/bracketed path
+// Paths are not validated here beyond emptiness: the dotted/bracketed path
 // grammar belongs to the form, and a key that does not exist is a no-op.
 func ParseDelete(text string) ([]string, error) {
 	parts, err := splitTerms(text)
@@ -120,7 +120,7 @@ func ParseDelete(text string) ([]string, error) {
 
 // Dress is THE materialization call: the daemon's single point where outfit
 // names become keys. Names fold in order, then the caller's patch lands on
-// top — a client that wrote a key meant its own value — and the removals ride
+// top, a client that wrote a key meant its own value, and the removals ride
 // through untouched.
 //
 // It runs at the API boundary, ABOVE the store's single writer and above the
@@ -128,7 +128,7 @@ func ParseDelete(text string) ([]string, error) {
 // the filesystem. defaultName is what the reserved name `default` stands for;
 // it alone is lenient (an unset or not-yet-written default folds nothing,
 // which is what the first-run flow rides on, surfacing downstream as the
-// missing provider it is). Every other name is strict — a typo is a typo.
+// missing provider it is). Every other name is strict, a typo is a typo.
 func (o *Outfitter) Dress(names []string, patch form.Patch, defaultName string) (form.Patch, error) {
 	if len(names) == 0 {
 		return patch, nil
@@ -208,7 +208,7 @@ func (o *Outfitter) nameKeys(name string) (map[string]json.RawMessage, error) {
 }
 
 // literalKeys reads a JSON object term. `layers` inside a literal pulls in
-// named outfits the same way a file's does — but resolving them is the
+// named outfits the same way a file's does: but resolving them is the
 // assembler's job, and a literal that only declares layers sets nothing else.
 func literalKeys(part string) (map[string]json.RawMessage, error) {
 	var raw map[string]json.RawMessage

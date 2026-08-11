@@ -40,7 +40,7 @@ func TestReadPage(t *testing.T) {
 }
 
 // Read is point-in-time by construction: it copies. This used to be
-// store.Snapshot, which handed back the cache's own backing slice — free, and
+// store.Snapshot, which handed back the cache's own backing slice: free, and
 // exactly why full residency became something callers silently relied on.
 func TestRead_CachedLogRemainsStableAfterAppend(t *testing.T) {
 	inner := buildLog(t, []uint64{10, 20})

@@ -15,13 +15,13 @@ import (
 //
 // The old test pinned a hazard that no longer exists: the pager held a frozen
 // copy of the closed tail (t.pages) plus a frozen open message (heldOpen), and
-// between them was a GAP — the messages that had closed since the detach, held
+// between them was a GAP: the messages that had closed since the detach, held
 // by the client and by nobody else the pager could see. ^P from the open
 // message therefore had to refuse to move and ask for a forward page first.
 //
 // With one owner there is no gap to load: the open turn is the last thing in
 // the store's tail interval and the message before it is the one immediately
-// before it. So the assertion inverts — ^P from the open message MOVES, at
+// before it. So the assertion inverts: ^P from the open message MOVES, at
 // once, and asks for nothing.
 func TestTranscript_OpenSelectionExtendsIntoHistoryWithoutAGap(t *testing.T) {
 	history := transcriptHistory(200)

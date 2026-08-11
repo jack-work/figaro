@@ -9,7 +9,7 @@ import (
 // The trunk capability must be a leaf: exactly one package may import it,
 // the wiring that decides whether to construct it. If anything else reaches
 // for a trunk, a figaro built without the capability cannot be built at all
-// — and this test is the only thing that notices before that happens.
+// , and this test is the only thing that notices before that happens.
 //
 // Update allowed[] deliberately, never reflexively. Each entry is a place
 // that can no longer compile without the capability.

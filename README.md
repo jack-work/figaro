@@ -96,7 +96,7 @@ the last turn's prompt plus that turn's output, i.e.
 input_tokens + cache_read_input_tokens + cache_creation_input_tokens + output_tokens
 ```
 
-All three input buckets count — with prompt caching on (the default) most of
+All three input buckets count: with prompt caching on (the default) most of
 the prompt comes back as a cache read, so summing only `input_tokens` would
 under-report a long aria by orders of magnitude. Messages appended after the
 last metered turn are estimated at chars/4 and the figure is prefixed `~`.

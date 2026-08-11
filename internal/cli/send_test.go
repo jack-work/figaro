@@ -349,8 +349,8 @@ func TestExtractForkFlags(t *testing.T) {
 // TestBundleExpansionFollowsTheFlagTable is the drift guard for #9.
 //
 // send.go used to carry a hardcoded bundle-letter list with no link to its
-// documented flags. -j and -l were missing from it, so `send -fj` — the
-// fire-and-forget-plus-machine-output pair a script wants — failed as
+// documented flags. -j and -l were missing from it, so `send -fj`: the
+// fire-and-forget-plus-machine-output pair a script wants: failed as
 // "unknown flag" while `-f -j` worked. Now the letters come from
 // sendFlagDefs, so a flag cannot be documented and un-gangable at once.
 func TestBundleExpansionFollowsTheFlagTable(t *testing.T) {
@@ -410,7 +410,7 @@ func flagIsSet(o sendOpts, short string) bool {
 // count, the server rejected every one with "aria has no turn N".
 //
 // The two coordinates now travel in separate, named fields, so the only way
-// to reintroduce it is to write the wrong field name — which reads as a bug
+// to reintroduce it is to write the wrong field name: which reads as a bug
 // instead of as a plausible number.
 func TestForkPointKeepsTurnsAndLTsApart(t *testing.T) {
 	trunk, at, err := parseTarget("a1b2c3d4:12")

@@ -18,21 +18,21 @@ import (
 // and started the cli is the first message, even if there was prior history."
 //
 // Ctrl-T and `figaro listen` read the aria's tail before they open the pager.
-// The pager also opens WITHOUT being asked — an open turn taller than the
+// The pager also opens WITHOUT being asked, an open turn taller than the
 // viewport (OnLive -> openOverflows) or a resize that shrinks the viewport
-// under the live region — and those two doors read nothing at all. The store
+// under the live region, and those two doors read nothing at all. The store
 // then held one turn, MoreBefore was never set by any wire answer, and
 // atAriaFloor declared the running question the beginning of the aria: no
 // history above it, and no page ever requested, so scrolling up found nothing.
 //
 // Reproduced in a real terminal at 100x24 before the fix: an aria with five
-// prior turns, promoted by an overflowing reply, sat at `1-22/37` — 37 rows
-// being that one turn — and six half-page-ups moved nothing. The same aria,
+// prior turns, promoted by an overflowing reply, sat at `1-22/37`: 37 rows
+// being that one turn, and six half-page-ups moved nothing. The same aria,
 // same binary, entered with Ctrl-T instead: `133-153/153`.
 // ---------------------------------------------------------------------------
 
 // promotionFixture is a livelogTurn whose viewport is too short for the turn it
-// is about to be handed — i.e. one that will promote itself.
+// is about to be handed: i.e. one that will promote itself.
 func promotionFixture(tb testing.TB, w, h int) *livelogTurn {
 	tb.Helper()
 	var out bytes.Buffer
@@ -71,8 +71,8 @@ func TestOverflowPromotionAsksForHistory(t *testing.T) {
 	}
 }
 
-// TestResizePromotionAsksForHistory: the OTHER automatic door — the viewport
-// shrinking under a live region — owes the same read.
+// TestResizePromotionAsksForHistory: the OTHER automatic door: the viewport
+// shrinking under a live region: owes the same read.
 func TestResizePromotionAsksForHistory(t *testing.T) {
 	lt := promotionFixture(t, 60, 40)
 	asked := 0
@@ -121,7 +121,7 @@ func TestSeededPromotionDoesNotReRead(t *testing.T) {
 
 // TestPromotedPagerBelievesNothingAboutTheBeginning is the assertion closest to
 // what the user SAW. Without a catch-up, a promoted pager holds one turn and
-// MoreBefore false — and atAriaFloor then reports that the live question is the
+// MoreBefore false, and atAriaFloor then reports that the live question is the
 // first message in the aria. The hook is what makes that answer arrive from the
 // wire instead of from a zero value.
 func TestPromotedPagerBelievesNothingAboutTheBeginning(t *testing.T) {
@@ -136,7 +136,7 @@ func TestPromotedPagerBelievesNothingAboutTheBeginning(t *testing.T) {
 		t.Fatal("fixture: a pager that believes it is at the floor asks for no page")
 	}
 
-	// With the read paid — the same fold the deliberate door uses — the floor is
+	// With the read paid: the same fold the deliberate door uses: the floor is
 	// the wire's answer, and the window can walk backwards again.
 	lt2 := promotionFixture(t, 60, 12)
 	lt2.setCatchUp(func() {

@@ -20,8 +20,8 @@ import (
 // If you are here because this test failed: do not add an exception. Put the
 // call behind the Projector interface (internal/figaro/projector.go) and
 // implement it in internal/uiir. If what you need is turn ARITHMETIC rather
-// than rendering — which message opens a turn, what id it carries, which LTs a
-// turn spans — that lives in internal/turns and the engine may import it
+// than rendering: which message opens a turn, what id it carries, which LTs a
+// turn spans: that lives in internal/turns and the engine may import it
 // freely; it knows only the fig IR.
 var forbidden = []string{
 	"github.com/jack-work/figaro/internal/compose",
@@ -39,7 +39,7 @@ func TestEngineDoesNotDependOnTheProjection(t *testing.T) {
 	for _, f := range forbidden {
 		if deps[f] {
 			t.Errorf("internal/figaro depends on %s.\n"+
-				"The engine must not import the UI IR conversion — route it through\n"+
+				"The engine must not import the UI IR conversion: route it through\n"+
 				"figaro.Projector and implement in internal/uiir, or use internal/turns\n"+
 				"if you only need turn arithmetic.", f)
 		}

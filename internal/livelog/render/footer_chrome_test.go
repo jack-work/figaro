@@ -12,7 +12,7 @@ import (
 //
 // The live region always trails the pinned status footer, so it is visible from
 // the instant of submit. But a region being FROZEN must trail its ROLE'S CLOSER
-// instead — a plain rule for input, the bookend for output. Freezing the footer
+// instead, a plain rule for input, the bookend for output. Freezing the footer
 // verbatim stranded one copy in scrollback per message, so a single exchange
 // showed TWO status bars:
 //
@@ -53,7 +53,7 @@ func TestIncipit_FrozenExchangeDoesNotStrandTheFooter(t *testing.T) {
 
 	scr := strings.Join(ft.Screen(), "\n")
 	if got := strings.Count(scr, "---- aria abcd1234 ---"); got != 1 {
-		t.Errorf("status bookend appears %d times, want exactly 1 — the frozen "+
+		t.Errorf("status bookend appears %d times, want exactly 1: the frozen "+
 			"prompt stranded the pinned footer in scrollback\n---\n%s", got, scr)
 	}
 	for _, want := range []string{"test", "pronto"} {

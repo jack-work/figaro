@@ -1,19 +1,19 @@
 # Reading arias
 
-An **aria** is one conversation. Its id is a **figwal trunk id** — stable
+An **aria** is one conversation. Its id is a **figwal trunk id**: stable
 across forks (the continuation keeps it). The whole aria forest is backed by
 **figwal** (a segmented WAL with native forking), not per-aria directories.
 See [trunks.md](trunks.md) for the fork/trunk/attend model; this file is just
 about *reading* an aria's contents off disk.
 
-Two ways to read one — pick deliberately:
+Two ways to read one: pick deliberately:
 
-1. **The `figaro` CLI** — routes through the angelus's shared LogCache. Safe
+1. **The `figaro` CLI**: routes through the angelus's shared LogCache. Safe
    even while the aria is being written to live. Use for anything mid-flight.
-2. **Direct JSONL reads** — `cat`/`jq`/`rg` against the segment files. Use for
+2. **Direct JSONL reads**: `cat`/`jq`/`rg` against the segment files. Use for
    offline batch work across many dormant arias.
 
-When in doubt, prefer the CLI — direct reads understand neither forks (a
+When in doubt, prefer the CLI: direct reads understand neither forks (a
 trunk's history is spread across its node chain, with shared prefixes pulled
 from parent dirs) nor the form watermark fold.
 
@@ -68,14 +68,14 @@ Key points:
 - **Per-channel trees, not per-aria dirs.** `ir/`, `form/`, and
   `translations-v2/<provider>/` each mirror the same node tree (`n0/n1/…` with a
   `.fork` marker carrying the fork base index). A fork forks all channels as a
-  unit. Node ids (`n<N>`) are pure plumbing — never address them; address the
+  unit. Node ids (`n<N>`) are pure plumbing: never address them; address the
   trunk (= aria) id, which lives in the `.trunk` marker in the `ir/` tree.
 - **The IR is truth.** `translations-v2/*` is a derivable wire cache; the
   form is reducible (a watermark + jsonmerge patches), so there is **no
-  the form channel** — fold it via the CLI's `state` (or figwal `StateAt`),
+  the form channel**: fold it via the CLI's `state` (or figwal `StateAt`),
   don't read it raw.
 - **Closed/ceremonial trunks** (the null root and outfits) live in the same
-  tree but never append — see [trunks.md](trunks.md).
+  tree but never append: see [trunks.md](trunks.md).
 
 ## Entry + payload shape
 
@@ -88,7 +88,7 @@ Every line in an `ir/.../*.jsonl` segment is one figwal record:
 `Payload` is the `message.Message`. Note the key is capital `Payload`;
 `MainLT` is the foreign key into the IR timeline (it equals `LT` in the IR
 channel itself, and points back at an IR LT in the related channels);
-`_idx`/`_hash` are figwal sidecars — drop them when consuming.
+`_idx`/`_hash` are figwal sidecars: drop them when consuming.
 
 ```json
 {
@@ -111,7 +111,7 @@ channel itself, and points back at an IR LT in the related channels);
 Assistant tool calls are `tool_invoke` (not `tool_call`). `patches` are
 form mutations riding on user-role tics.
 
-## Path A — the `figaro` CLI
+## Path A: the `figaro` CLI
 
 ```
 figaro list                       the conversation forest (id, outfit, ver, fork, mantra…). alias: ls
@@ -126,20 +126,20 @@ figaro status <id> -m             provider/model/ctx + derived detail (mantra, c
 figaro state <id>                 the folded form snapshot (-j for JSON)
 ```
 
-`show` takes the aria id as a **positional** (or `--id`, or — inside an aria's
-own bash tool — `$FIGARO_ARIA`, or the terminal's pid binding);
+`show` takes the aria id as a **positional** (or `--id`, or: inside an aria's
+own bash tool: `$FIGARO_ARIA`, or the terminal's pid binding);
 turns are labeled by their **turn id** (the coordinate `send`/`fork
-<id>:<turn>` address — see [trunks.md](trunks.md)). Thinking blocks render muted by
-default. `figaro show` is the **only safe way** to read a live aria — the
+<id>:<turn>` address: see [trunks.md](trunks.md)). Thinking blocks render muted by
+default. `figaro show` is the **only safe way** to read a live aria: the
 angelus serves through a lock-free cache, sidestepping the truncation race on
 the active segment, and it stitches the trunk's node chain into one history.
 
-## Path B — direct JSONL reads
+## Path B: direct JSONL reads
 
 There is **no per-aria dir** to `cat` anymore. All IR segments for all arias
 live in the one `ir/` node tree, so direct reads are now *forest-wide* greps,
 not per-aria ones. They cannot reconstruct a single trunk's stitched history
-(that needs the fork chain) — use the CLI for that. Direct reads are good for
+(that needs the fork chain): use the CLI for that. Direct reads are good for
 "does this phrase appear anywhere on disk" sweeps over dormant data.
 
 ```bash
@@ -156,7 +156,7 @@ done
 ```
 
 **List arias by derived message count, newest first** (from the `_meta`
-sidecars, keyed by aria/trunk id — these are the reliable per-aria stat):
+sidecars, keyed by aria/trunk id: these are the reliable per-aria stat):
 
 ```bash
 for m in "$ARIAS"/_meta/*.json; do

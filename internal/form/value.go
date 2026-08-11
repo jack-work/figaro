@@ -3,22 +3,22 @@
 // Lifted from github.com/jack-work/pstate (value.go, MIT, same author) and
 // adapted. The one substantive change from the original: pstate canonicalises
 // *in place* (it stores only the canonical encoding and throws the caller's
-// bytes away). We cannot do that here — the form channel must round-trip
+// bytes away). We cannot do that here: the form channel must round-trip
 // byte-for-byte and rendered <system-reminder> bodies must not shift under
-// users — so a Value keeps both encodings side by side.
+// users: so a Value keeps both encodings side by side.
 //
 // ============================ THE INVARIANT ============================
 //
 //	raw   is EXACTLY the bytes the caller supplied. Every user-visible byte
-//	      — MarshalJSON, String, Raw, rendered reminder bodies, the on-disk
-//	      the form channel, the RPC FormResponse — comes from raw.
+//: MarshalJSON, String, Raw, rendered reminder bodies, the on-disk
+//	      the form channel, the RPC FormResponse: comes from raw.
 //	      Nothing else. raw is never rewritten, reordered, or compacted.
 //
 //	canon is raw compacted with every object's keys sorted recursively.
 //	      It exists for ONE purpose: Equal. It is never emitted, never
 //	      stored, never rendered. It is computed LAZILY, on the first
 //	      comparison that actually needs it, and memoised in a box shared
-//	      by every copy of the Value — canonicalising a whole board eagerly
+//	      by every copy of the Value: canonicalising a whole board eagerly
 //	      at load time cost more than the equality checks ever save (see
 //	      the reducer fold regressed 5x before this was lazy).
 //
@@ -47,7 +47,7 @@ import (
 // Values are compared with Equal, never with ==: a Value holds slices, so ==
 // does not compile, and byte equality is the wrong question anyway.
 type Value struct {
-	raw json.RawMessage // exactly as supplied — the only bytes ever emitted
+	raw json.RawMessage // exactly as supplied: the only bytes ever emitted
 	c   *canonBox       // memoised canonical form; nil only for the zero Value
 }
 
@@ -55,7 +55,7 @@ type Value struct {
 // NewValue and shared by every copy of that Value, so the parse happens at most
 // once no matter how many snapshots hold the value or how many goroutines
 // compare it. sync.Once supplies the happens-before edge that makes concurrent
-// readers safe — snapshots are published across goroutines by design.
+// readers safe: snapshots are published across goroutines by design.
 type canonBox struct {
 	once  sync.Once
 	bytes []byte // nil if raw is not valid JSON
@@ -123,9 +123,9 @@ func (v Value) IsJSON() bool { return v.canonical() != nil }
 // Equal reports semantic JSON equality: whitespace and object key order are
 // insignificant, so {"a":1,"b":2} equals {"b":2,"a":1}.
 //
-// Identical bytes short-circuit, so the overwhelmingly common cases — a value
+// Identical bytes short-circuit, so the overwhelmingly common cases, a value
 // re-set to what it already held, a diff walking two boards that agree on most
-// keys — cost one memcmp and never parse anything.
+// keys: cost one memcmp and never parse anything.
 //
 // Two values that are not valid JSON are equal only if their bytes match
 // exactly. A valid and an invalid value are never equal (their raw bytes
@@ -133,7 +133,7 @@ func (v Value) IsJSON() bool { return v.canonical() != nil }
 // proper equivalence relation across the mix.
 //
 // Numbers are compared by their literal token, not by numeric value: 1 and 1.0
-// are NOT equal, nor are 1e2 and 100. Deliberate — comparing numerically would
+// are NOT equal, nor are 1e2 and 100. Deliberate: comparing numerically would
 // mean choosing a precision policy for arbitrary-precision JSON numbers, and
 // the form has no key where two spellings of one number are meaningfully
 // "the same edit". Cheap and lossless beats clever and lossy here.
@@ -161,7 +161,7 @@ func (v Value) Decode(dst any) error {
 	return nil
 }
 
-// MarshalJSON implements json.Marshaler. It emits raw — never canon.
+// MarshalJSON implements json.Marshaler. It emits raw: never canon.
 func (v Value) MarshalJSON() ([]byte, error) { return v.Raw(), nil }
 
 // UnmarshalJSON implements json.Unmarshaler, preserving the incoming bytes.

@@ -15,7 +15,7 @@ package tool
 //     the terminal that started the daemon. It is what makes the
 //     identity above static: `figaro attend` refuses here.
 //
-// The pair is the whole model — an aria knows who it is and cannot
+// The pair is the whole model, an aria knows who it is and cannot
 // become someone else. Talking to another aria takes an explicit --id.
 func bashToolEnv(ariaID string) []string {
 	env := []string{

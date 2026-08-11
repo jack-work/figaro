@@ -41,7 +41,7 @@ func assertNoDup(t *testing.T, tag string, nodes []string) {
 	}
 	for n, c := range seen {
 		if c > 1 {
-			t.Errorf("[%s] DUPLICATED %q x%d — full: %v", tag, n, c, nodes)
+			t.Errorf("[%s] DUPLICATED %q x%d: full: %v", tag, n, c, nodes)
 		}
 	}
 	t.Logf("[%s] nodes: %v", tag, nodes)
@@ -81,7 +81,7 @@ func TestRepro_A_NaturalForward(t *testing.T) {
 
 // An earlier block fills in after a later thinking already exists, shifting the
 // thinking's flattened position while a tool holds an explicit id. This is the
-// core positional-id duplication — FAILS before the fix, must PASS after.
+// core positional-id duplication: FAILS before the fix, must PASS after.
 func TestRepro_B_EmptyEarlierFills(t *testing.T) {
 	frames := [][]message.Message{
 		{asstLT(1, prose(""), tool("A", "transactions"), think("verifying read-only"))},
@@ -91,7 +91,7 @@ func TestRepro_B_EmptyEarlierFills(t *testing.T) {
 }
 
 // A block un-fills mid-stream, shrinking the list and orphaning a higher
-// positional id — FAILS before the fix, must PASS after.
+// positional id: FAILS before the fix, must PASS after.
 func TestRepro_C_BlockUnfills(t *testing.T) {
 	frames := [][]message.Message{
 		{asstLT(1, think("alpha"), prose("beta"), think("gamma"))},
@@ -103,7 +103,7 @@ func TestRepro_C_BlockUnfills(t *testing.T) {
 // D: the seal-transition churn (SDK + summarized thinking). During streaming
 // the assembler omitted an empty summarized-thinking block while the provider
 // decode KEPT it, shifting a later thinking's block index and churning the
-// node id — which rendered as a duplicate.
+// node id: which rendered as a duplicate.
 //
 // Two independent defences now close this, so BOTH decodes must be clean:
 //   - decode skips empty thinking/prose, so the sealed structure matches the

@@ -15,7 +15,7 @@ import (
 
 // dressing is what the three dressing flags produced: the text as typed, for
 // messages; the outfit NAMES `-O` asked for; and the patch `-S`/`-D` spelled
-// out. Two axes, never mixed — names travel as names and the daemon's one
+// out. Two axes, never mixed: names travel as names and the daemon's one
 // dressing call resolves them, which is what lets `-O` mean the same thing on
 // a live aria as at birth without a directive ever riding inside a patch.
 type dressing struct {
@@ -84,7 +84,7 @@ func mustDress(outfits, set, del string) dressing {
 	return d
 }
 
-// parseNames reads a positional or flag value that must be outfit NAMES —
+// parseNames reads a positional or flag value that must be outfit NAMES -
 // `state outfit a,b`, `cast -O role`. A `k=v` there is a grammar error that
 // names the flag which takes it.
 func parseNames(text string) ([]string, error) {

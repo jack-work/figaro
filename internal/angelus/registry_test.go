@@ -118,7 +118,7 @@ func TestRegistry_ResolveUnbound(t *testing.T) {
 // aria before it could name it, and meant hibernation would have silently
 // detached every bound shell.
 //
-// A binding says WHICH ARIA a shell is attended to — identity, not memory —
+// A binding says WHICH ARIA a shell is attended to: identity, not memory -
 // so the Registry accepts a dormant id. Proving the aria exists at all moved
 // up to the handler (handlers.requireAria), which is the layer that has a
 // store to ask.

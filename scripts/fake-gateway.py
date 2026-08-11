@@ -2,7 +2,7 @@
 """A fake OpenAI-compatible gateway.
 
 Records every request body it receives and answers with a canned SSE stream
-carrying a usage block shaped like a real gateway's — including
+carrying a usage block shaped like a real gateway's: including
 prompt_tokens_details, which is the field figaro has to fold into its cache
 buckets. No credentials, no network, so the whole path (provider -> HTTP ->
 SSE -> IR -> status) can be exercised honestly.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# NOTE: tmux is shared with other arias — private socket only (-L fig-2747),
+# NOTE: tmux is shared with other arias: private socket only (-L fig-2747),
 # and never kill-server without -L.
 # Decisive and tmux-independent: record what figaro WRITES (script -f) and ask
 # whether the alt screen was ever entered before the exit sequence erases.

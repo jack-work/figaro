@@ -10,7 +10,7 @@ LT remains the storage and cross-channel coordinate underneath.
 
 ## Why
 
-A conversation's natural unit is the **turn** — one user prompt plus everything
+A conversation's natural unit is the **turn**: one user prompt plus everything
 the agent thought, ran, and said in response. Nothing in figaro names it. The
 fig IR has messages; the renderer invents "units" at draw time and discards
 them; the fork API takes an LT. Every coordinate we expose is a proxy for the
@@ -29,28 +29,28 @@ These are load-bearing. Implementations may rely on them; changing one is a
 spec change.
 
 1. **LT joins; turn id addresses.** LT stays the xwal substrate: positional
-   (derived from the WAL frame index, never persisted in the payload — see
+   (derived from the WAL frame index, never persisted in the payload: see
    `message.Message.LogicalTime`), the cross-channel foreign key, and the fork
    coordinate. Turn id rides above it as an attribute.
 
 2. **`(turn, node)` are the UI coordinates.** LT appears in the UI IR only as
-   downward-linking `lts` metadata. It is the *model's* coordinate — the LLM
-   experiences the conversation in logical time steps — and belongs to a fig IR
+   downward-linking `lts` metadata. It is the *model's* coordinate: the LLM
+   experiences the conversation in logical time steps, and belongs to a fig IR
    read path, not to UI code. That a tool node spans two LTs is the tell: a
    primitive that does not fit a coordinate means the coordinate is wrong for
    that layer.
 
 3. **`atMainLT` is INCLUSIVE of the frozen prefix.** figwal `disk/fork.go:194`
    reads *"atIdx must be in (FirstIndex, LastIndex+1]; the prefix retains at
-   least one entry"*, which sounds exclusive. **It is not** — measured, not
+   least one entry"*, which sounds exclusive. **It is not**: measured, not
    inferred: forking a real aria at `atMainLT = 5` produced a branch that still
    contained LT 5. So prefix = `[First, atMainLT]`, branch = `(atMainLT, Last]`.
-   Fork at turn T therefore uses **`atMainLT = min(LTs of T) - 1`** — the LT just
+   Fork at turn T therefore uses **`atMainLT = min(LTs of T) - 1`**: the LT just
    before the prompt. The branch retains everything through the end of turn T−1
    and your new prompt becomes the new turn T.
    The −1 is fork *policy* and lives in exactly one place, `cli.resolveTurn`;
    `compose.TurnSpan` reports the honest span and applies no adjustment.
-   Related channels do not cut at the same index: each cuts at `boundaryFor` —
+   Related channels do not cut at the same index: each cuts at `boundaryFor` -
    the first own entry whose referenced `mainLT >= atMainLT`
    (figwal `xwal/fork.go:638`).
 
@@ -60,7 +60,7 @@ spec change.
 5. **`Turns()` is a pure function of the message list.** No parameter, field,
    or branch may depend on whether the tail is open. The streaming projection
    and the sealed projection are the same function over different inputs, so
-   they cannot disagree — which is what prevents the screen visibly rewriting
+   they cannot disagree: which is what prevents the screen visibly rewriting
    itself at turn end (see the seal-transition churn in
    `internal/compose/repro_test.go`).
 
@@ -79,7 +79,7 @@ spec change.
    the live tail and were retired (`b8c126f`); the replacement is canonical-IR
    append plus drain/tail repair at open (`1d3a26b`). The UI projection is
    currently recomputed from that IR. If a derived `ui` xwal channel lands, it
-   may write a turn only after seal — never the mutable suffix.
+   may write a turn only after seal: never the mutable suffix.
 
 9. **At most one part per page carries `Live`, and it is the last.** Only the
    newest turn can be open, and a page is a contiguous window.
@@ -98,7 +98,7 @@ Phase 0 freed it.
 ## The wire types
 
 ```go
-// One page. Also the push frame — pull and push share this type.
+// One page. Also the push frame: pull and push share this type.
 type Page struct {
     Parts   []TurnPart `json:"parts,omitempty"`
     More    More       `json:"more"`
@@ -119,9 +119,9 @@ type TurnPart struct {
 
 type Turn struct {
     ID      uint64  `json:"turn"`
-    Inquiry string  `json:"inquiry,omitempty"` // the opening question — TEXT, not a node
+    Inquiry string  `json:"inquiry,omitempty"` // the opening question: TEXT, not a node
     At      int64   `json:"at,omitempty"`      // inquiry time, Unix milliseconds
-    LTs    []uint64 `json:"lts,omitempty"`     // metadata only — never an address
+    LTs    []uint64 `json:"lts,omitempty"`     // metadata only: never an address
     Sealed bool     `json:"sealed"`            // turn lifecycle
     Nodes  []Node   `json:"nodes,omitempty"`   // contiguous from From
     Live   *Live    `json:"live,omitempty"`    // mutable suffix, when one is active
@@ -162,8 +162,8 @@ address; consumers must not compare, order, deduplicate, or route deltas by it.
 
 Two orthogonal words, deliberately not one:
 
-- **`Sealed`** — the turn stopped moving. Lifecycle.
-- **`ClippedHead` / `ClippedTail`** — this page did not show you all of it.
+- **`Sealed`**: the turn stopped moving. Lifecycle.
+- **`ClippedHead` / `ClippedTail`**: this page did not show you all of it.
   Window.
 
 A live turn can be unclipped; a sealed turn can be clipped. Both flags are set
@@ -174,7 +174,7 @@ contiguity does not hold.
 ## Pagination
 
 **A page is a contiguous run of nodes over a contiguous run of turns.** Only the
-boundary turns can be clipped — the first at its head, the last at its tail.
+boundary turns can be clipped: the first at its head, the last at its tail.
 Everything between is whole. With a single turn in the page, that one turn may
 be clipped at both ends. This is a theorem of contiguity, not a rule to enforce.
 
@@ -188,7 +188,7 @@ ordinals, not LTs**.
 serialized size would exceed the budget; stop at a node boundary; **always emit
 at least one node**, even if it alone exceeds the budget. Node count is a poor
 budget: measured over 127 turns in 40 real arias at width 100, turns run median
-221 rows, p90 3043, max 7988 — so a fixed node count could mean 40 bytes or
+221 rows, p90 3043, max 7988: so a fixed node count could mean 40 bytes or
 400 KB.
 
 Node granularity is safe **only because tool output is already clamped** to
@@ -251,7 +251,7 @@ suffix; only `Sealed:true` closes the entire turn.
 
 The real `quick test` exchange from aria `84de420c`.
 
-**fig IR** — 4 messages, 7 content blocks:
+**fig IR**: 4 messages, 7 content blocks:
 
 ```
 LT 48  user       turn=7  [0] prose        "quick test"
@@ -264,7 +264,7 @@ LT 51  assistant  turn=7  [0] prose        "**RESULT: SUCCESS.**…"
 LT 52  user       turn=8  [0] prose        "cool, is all this available…"
 ```
 
-**UI IR** — one turn, question and reply together. The question is the turn's
+**UI IR**: one turn, question and reply together. The question is the turn's
 `inquiry`: TEXT on the turn, not a node, so a renderer tells it from the reply
 without inspecting a role, and node ids number the reply from 0:
 
@@ -281,7 +281,7 @@ own: its two `tool_result` blocks fold into the two tool nodes as
 `status`/`output`. It remains addressable in the fig IR and forkable, but it is
 not a UI coordinate.
 
-**Steering** — a user message bearing a `tool_result` *and* text. The text
+**Steering**, a user message bearing a `tool_result` *and* text. The text
 becomes a `steering` node positioned after the tool nodes
 (`internal/compose/compose.go:80-88`), sharing the result's LT:
 

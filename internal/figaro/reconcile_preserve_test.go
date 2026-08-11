@@ -39,8 +39,8 @@ func newBareAgent(t *testing.T, log store.Log[message.Message]) *Agent {
 		ariaSrv: aria.NewServer(),
 		inbox:   NewInbox(context.Background()),
 		// These tests assert PROJECTION behaviour, so they must supply a
-		// projector. The engine itself may not import internal/compose — see
-		// projector_boundary_test.go — but a test binary may, which is exactly
+		// projector. The engine itself may not import internal/compose: see
+		// projector_boundary_test.go: but a test binary may, which is exactly
 		// the separation the Projector interface buys.
 		proj: uiir.New(nil),
 	}
@@ -56,12 +56,12 @@ func newBareAgent(t *testing.T, log store.Log[message.Message]) *Agent {
 // was constructed on a stale head/fork ancestry, or the log was replaced
 // with an empty ephemeral fallback) causes Read to return 0 units and
 // the live-subscribe stream to go silent. Cleanly-idle arias are
-// unaffected because they never enter this code path — matches the
+// unaffected because they never enter this code path: matches the
 // reported symptom.
 func TestReconcileAriaServer_PreservesStateOnShorterHistory(t *testing.T) {
 	a := newBareAgent(t, store.NewMemLog[message.Message]()) // empty log
 	a.id = "recon-001"
-	// Seed ariaSrv with three sealed turns — imagine a healthy aria.
+	// Seed ariaSrv with three sealed turns: imagine a healthy aria.
 	for i := uint64(1); i <= 3; i++ {
 		a.ariaSrv.Commit(aria.Turn{
 			ID:     i,

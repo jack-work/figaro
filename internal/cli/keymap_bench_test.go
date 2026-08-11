@@ -47,7 +47,7 @@ func BenchmarkKeyDispatchPager(b *testing.B) {
 }
 
 // BenchmarkKeyDispatchInput: a whole read chunk of keystrokes through the
-// input loop — decode, opener gate, lookup, act — as one frame. 256 keys per
+// input loop: decode, opener gate, lookup, act, as one frame. 256 keys per
 // chunk, so the per-key cost dominates the single paint at the end.
 func BenchmarkKeyDispatchInput(b *testing.B) {
 	var w countingWriter

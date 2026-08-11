@@ -1,9 +1,9 @@
 // Package figtree renders a tree of records as an indented table: one row per
 // node, tree glyphs in the first cell, named fields in the columns after it.
 //
-// It exists because two callers need the same picture of a hierarchy — `figaro
+// It exists because two callers need the same picture of a hierarchy: `figaro
 // ls` drawing the aria forest, and an outfit layer closure explaining which
-// layer could not be found — and a tree walker copied twice is a tree walker
+// layer could not be found, and a tree walker copied twice is a tree walker
 // that will disagree with itself.
 //
 // Colour is data here, not code. A caller supplies FieldColors: "look at this
@@ -33,7 +33,7 @@ type Node struct {
 	Label string
 
 	// Fields are the node's named values, keyed as the Columns and
-	// FieldColors name them. Nil is legal — a missing field reads as "".
+	// FieldColors name them. Nil is legal, a missing field reads as "".
 	Fields map[string]string
 
 	Children []*Node
@@ -70,8 +70,8 @@ type Tree struct {
 	Backgrounds []RowBackground
 }
 
-// RowBackground washes an ENTIRE row — glyphs, label, every padded cell,
-// through to the right edge — with a raw SGR sequence when the watched
+// RowBackground washes an ENTIRE row: glyphs, label, every padded cell,
+// through to the right edge: with a raw SGR sequence when the watched
 // field holds the value. figaro uses it to give unbound-form rows the
 // same wash the transcript's node selection uses, one shared token.
 type RowBackground struct {
@@ -97,7 +97,7 @@ type Row struct {
 }
 
 // Cell is the tree cell: branch glyphs, marker, then the label painted with
-// Color. Only the label is painted — colouring the glyphs would make the shape
+// Color. Only the label is painted: colouring the glyphs would make the shape
 // of the tree compete with the meaning of its rows.
 func (r Row) Cell() string {
 	label := r.Label
@@ -193,7 +193,7 @@ func (t Tree) Render(width int) string {
 	return RenderRows(t.Rows(), t.Columns, width)
 }
 
-// RenderRows lays out rows a caller has already flattened — and possibly
+// RenderRows lays out rows a caller has already flattened, and possibly
 // filtered or truncated, which is why this is not folded into Render.
 func RenderRows(rows []Row, columns []Column, width int) string {
 	if len(columns) == 0 {

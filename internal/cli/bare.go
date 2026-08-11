@@ -17,7 +17,7 @@ import (
 // renderSettings{}) and every token before `--` was discarded in silence:
 // --id, -o, -l, -f, -j all vanished, and `figaro --id X -- hi` prompted the
 // pid-bound aria (minting a new one if the shell had no binding). Not a
-// regression — it had always been so.
+// regression: it had always been so.
 //
 // Two rules hold the form together:
 //
@@ -30,7 +30,7 @@ import (
 // a mistyped subcommand than an aria id, and swallowing it would forfeit the
 // did-you-mean. Name the aria with --id, or use the explicit `send` verb.
 
-// hasDashBoundary reports whether argv contains a bare `--` token — the
+// hasDashBoundary reports whether argv contains a bare `--` token: the
 // boundary that turns an invocation into a prompt.
 func hasDashBoundary(args []string) bool {
 	for _, a := range args {

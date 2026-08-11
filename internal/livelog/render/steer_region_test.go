@@ -8,7 +8,7 @@ import (
 	"github.com/jack-work/figaro/internal/livelog/aria"
 )
 
-// While the agent streams, the open suffix begins at the steer's own index — so
+// While the agent streams, the open suffix begins at the steer's own index: so
 // a one-node steering interjection and the four-node streaming region BOTH
 // report From=1. Identity by (turn, from) alone therefore let the steer claim
 // the whole region: Freeze took the "already on screen" path, dropped the
@@ -32,7 +32,7 @@ func TestIncipit_SteerInsideTheLiveRegionDoesNotDuplicateIt(t *testing.T) {
 	// The region streams from node 1 and GROWS to include the steer plus body.
 	in.Open(aria.Message{Turn: 2, From: 1, Role: livedoc.RoleOutput, Nodes: append([]livedoc.Node{steer}, body...)})
 
-	// The steer finalizes as its own closed message — same start, smaller extent.
+	// The steer finalizes as its own closed message: same start, smaller extent.
 	in.Freeze(aria.Message{Turn: 2, From: 1, Role: livedoc.RoleInput,
 		Nodes: []livedoc.Node{steer}})
 
@@ -48,7 +48,7 @@ func TestIncipit_SteerInsideTheLiveRegionDoesNotDuplicateIt(t *testing.T) {
 		t.Errorf("steer appears %d times, want exactly 1:\n%s", n, all)
 	}
 	// The tool row disappearing was part of the same defect, not a separate one.
-	// A tool renders from its name/status, not from Markdown — assert the row the
+	// A tool renders from its name/status, not from Markdown, assert the row the
 	// renderer actually produces.
 	if n := strings.Count(all, "tool bash"); n != 1 {
 		t.Errorf("tool row appears %d times, want exactly 1:\n%s", n, all)

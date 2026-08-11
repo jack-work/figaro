@@ -1,4 +1,4 @@
-# Figaro — Architecture
+# Figaro, Architecture
 
 Single Go binary, three roles selected by invocation: CLI, supervisor (*angelus*), agent (*figaro*). All IPC is JSON-RPC 2.0 over Unix sockets.
 
@@ -14,9 +14,9 @@ ephemeral          1 per user            N per user
 
 | Tier | Lifetime | Socket |
 |------|----------|--------|
-| **CLI** — stateless translator, stdio ↔ JSON-RPC | one prompt | dials angelus + figaro |
-| **Angelus** — supervisor: registry, PID monitor, lifecycle | per user | `$XDG_RUNTIME_DIR/figaro/angelus.sock` |
-| **Figaro** — actor: one inbox, one drain loop | per conversation | `$XDG_RUNTIME_DIR/figaro/figaros/<id>.sock` |
+| **CLI**: stateless translator, stdio ↔ JSON-RPC | one prompt | dials angelus + figaro |
+| **Angelus**: supervisor: registry, PID monitor, lifecycle | per user | `$XDG_RUNTIME_DIR/figaro/angelus.sock` |
+| **Figaro**, actor: one inbox, one drain loop | per conversation | `$XDG_RUNTIME_DIR/figaro/figaros/<id>.sock` |
 
 ## Packages
 
@@ -64,7 +64,7 @@ items. Translations remain fingerprint-invalidated.
 
 ## Actor loop
 
-One inbox per agent (selfish/patient mailbox), one drain goroutine. Every event — user prompt, live SSE delta, tool result, interrupt — enters through `Recv` and is processed in order.
+One inbox per agent (selfish/patient mailbox), one drain goroutine. Every event: user prompt, live SSE delta, tool result, interrupt: enters through `Recv` and is processed in order.
 
 ```
 Recv → synchronize → dispatch
@@ -169,13 +169,13 @@ The translator stream stores **input-ready** bytes. Production assistant
 entries are captured from each provider's exact native response and sanitized
 only for response-only fields (`stop_reason`, `model`, `usage`). The
 provider-agnostic IR encoder remains a cache-miss fallback and cannot recreate
-signed/redacted thinking. Splice is verbatim — no per-request stripping.
+signed/redacted thinking. Splice is verbatim: no per-request stripping.
 
-The per-message bytes are written exactly once and reused on every subsequent turn. The prefix is **byte-identical** across requests within an aria's lifetime — Anthropic's `cache_control` markers actually hit.
+The per-message bytes are written exactly once and reused on every subsequent turn. The prefix is **byte-identical** across requests within an aria's lifetime, Anthropic's `cache_control` markers actually hit.
 
 ## Credo
 
-Providers read `system.credo` from the chalkboard and inject it as the API's system prompt. The credo is a literal string (or a `ContentEnvelope` `{content, frontmatter, filePath}` when sourced via the outfitter's `fileName=` loader). No derivation, no templating — what you put in `system.credo` is what the model sees. To pick up edits to the on-disk credo file, re-apply the outfit: `figaro outfit <name>`.
+Providers read `system.credo` from the chalkboard and inject it as the API's system prompt. The credo is a literal string (or a `ContentEnvelope` `{content, frontmatter, filePath}` when sourced via the outfitter's `fileName=` loader). No derivation, no templating: what you put in `system.credo` is what the model sees. To pick up edits to the on-disk credo file, re-apply the outfit: `figaro outfit <name>`.
 
 ## Chalkboard
 
@@ -229,9 +229,9 @@ the mutable suffix and each `NodeDelta` addresses a positional ordinal with a
 
 Notifications:
 
-- `figaro.aria` — one `Page`, either a snapshot/catch-up-compatible part, a
+- `figaro.aria`: one `Page`, either a snapshot/catch-up-compatible part, a
   live delta, a live-suffix close marker, or a sealed turn;
-- `turn.done` `{reason,idle}` — control state saying the turn ended and whether
+- `turn.done` `{reason,idle}`: control state saying the turn ended and whether
   queued work remains.
 
 `figaro.read` is the pull half. Its current request retains pre-turn field

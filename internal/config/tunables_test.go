@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// An absent [store] table must give exactly today's geometry — the knob is
+// An absent [store] table must give exactly today's geometry: the knob is
 // new, the behavior of every store already on disk is not.
 func TestStoreSegmentSizeDefault(t *testing.T) {
 	l, err := loadWith(t, "")
@@ -32,7 +32,7 @@ func TestStoreSegmentSizeExplicit(t *testing.T) {
 }
 
 // A segment below the floor is not a slow store, it is an append that fails
-// the first time an image is inlined — so the refusal must say so.
+// the first time an image is inlined: so the refusal must say so.
 func TestStoreSegmentSizeFloor(t *testing.T) {
 	for _, tomlText := range []string{"[store]\nsegment_size = 4096\n", "[store]\nsegment_size = 0\n"} {
 		_, err := loadWith(t, tomlText)

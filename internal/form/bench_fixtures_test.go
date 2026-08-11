@@ -14,15 +14,15 @@ import (
 
 // Benchmark fixtures. Three boards, all deterministic:
 //
-//   default — the real thing. A verbatim capture of the user's default
+//   default: the real thing. A verbatim capture of the user's default
 //             outfit board (26 skill envelopes + system.credo + the
 //             system.* scalars), committed as
 //             testdata/board-default.json. See
 //             testdata/board-default.provenance.md for exactly how it
 //             was captured; nothing here reads live config.
-//   large   — synthetic: 5,000 keys, values averaging ~2KB, with a few
+//   large: synthetic: 5,000 keys, values averaging ~2KB, with a few
 //             64KB blobs. The "synthetically large aria".
-//   huge    — synthetic: 50,000 keys, small values.
+//   huge: synthetic: 50,000 keys, small values.
 //
 // Every fixture is built once per process (sync.OnceValue) and handed
 // to buildBoard (the seam) to become a Snapshot.

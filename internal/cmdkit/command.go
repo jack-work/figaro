@@ -39,7 +39,7 @@ type Command struct {
 	// Return nil on success, an error on failure.
 	Run func(ctx *RunContext) error
 
-	// PassRaw means the router should not parse flags or args —
+	// PassRaw means the router should not parse flags or args -
 	// everything after the command name goes into RunContext.RawArgs.
 	// Used for commands like prompt that use `-- <text>` conventions.
 	PassRaw bool
@@ -104,7 +104,7 @@ type FlagDef struct {
 	//
 	// This closes the other half of the unconsumed discipline. The dash-token
 	// branch catches a flag nobody can PARSE; this catches a flag that parses
-	// and is then dropped on the floor by a hand-written subword dispatcher —
+	// and is then dropped on the floor by a hand-written subword dispatcher -
 	// which is how `fig form -O name=charles` printed the form, ignored the
 	// flag, and reported success. A command with no subwords declares none of
 	// these and is unaffected.
@@ -126,7 +126,7 @@ type RunContext struct {
 	Extra interface{}
 
 	// Router is the table this command was dispatched from, so a subword
-	// dispatcher can delegate to the router's own knowledge — `fig form help
+	// dispatcher can delegate to the router's own knowledge: `fig form help
 	// <topic>` printing the same page `fig help <topic>` does, rather than a
 	// second copy of it that drifts.
 	Router *Router

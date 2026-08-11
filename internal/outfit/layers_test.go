@@ -70,7 +70,7 @@ func TestSharedLayerAppliesAtEachPosition(t *testing.T) {
 
 // The bug this replaces: a missing layer silently discarded the whole patch,
 // so a typo looked like an empty outfit and, downstream, like a missing
-// provider — which sent the user to the first-run wizard.
+// provider: which sent the user to the first-run wizard.
 func TestMissingLayerIsAnErrorCarryingTheClosure(t *testing.T) {
 	dir := t.TempDir()
 	writeOutfit(t, dir, "top", "layers = [\"present\", \"absent\"]\n[system]\nprovider = \"anthropic\"\n")
@@ -138,7 +138,7 @@ func TestCycleInLayersIsReported(t *testing.T) {
 }
 
 // `source` was the single-parent spelling. Ignoring it would flatten it into a
-// form key named "source" — the silent kind of wrong — and an array-valued
+// form key named "source": the silent kind of wrong, and an array-valued
 // `source` used to be dropped without a word.
 func TestSourceIsRejectedRatherThanIgnored(t *testing.T) {
 	dir := t.TempDir()
@@ -298,7 +298,7 @@ func TestLoaderRefusesPathsOutsideTheConfigDir(t *testing.T) {
 			}
 			if err == nil {
 				// An absolute path is re-rooted rather than refused, so it can
-				// only ever name something inside the config dir — which here
+				// only ever name something inside the config dir: which here
 				// does not exist, and the open error is the report.
 				assert.Empty(t, patch.Set)
 			}

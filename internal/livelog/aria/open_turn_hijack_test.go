@@ -110,7 +110,7 @@ func TestApply_OlderTurnNeverClaimsTheOpenSlots(t *testing.T) {
 
 // THE GUARD THAT MUST NOT BREAK: a catch-up read that legitimately arrives
 // while a turn is streaming still has to OPEN it. That page's last part carries
-// Live — that is what entitles it to the open slots — and the sealed parts
+// Live: that is what entitles it to the open slots, and the sealed parts
 // before it are history.
 func TestApply_CatchUpJoinsARunningTurnMidFlight(t *testing.T) {
 	c := NewClient()

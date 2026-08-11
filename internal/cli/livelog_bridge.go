@@ -55,7 +55,7 @@ type livelogTurn struct {
 	// It is a (turn, node-offset) PAIR, not a bare turn id. appendTurnSlices cuts
 	// one turn into several messages that all carry the same LT with a rising
 	// From, so a turn-granular boundary either replays a slice already on screen
-	// or — the bug this replaced — skips every slice after the first.
+	// or: the bug this replaced: skips every slice after the first.
 	lastFrozen  sliceCursor
 	pagerClosed []aria.Message
 
@@ -67,7 +67,7 @@ type livelogTurn struct {
 	// held buffers pages while the opening of the session is being decided.
 	// Frames arrive on the notify pump the instant the connection is up, so
 	// without a hold the question can freeze to scrollback BEFORE the history it
-	// follows is printed — the one ordering the preamble exists to establish.
+	// follows is printed: the one ordering the preamble exists to establish.
 	// Holding is a few milliseconds at the very start of a session and nothing
 	// is dropped: openInline applies every held page in arrival order.
 	hold bool
@@ -76,7 +76,7 @@ type livelogTurn struct {
 	// seeded is the catch-up page fetched when we joined a turn we did NOT open.
 	// The inline view prints a bounded slice of it (seedContext); the PAGER gets
 	// the whole set, merged into the client's store when it opens, so entering it
-	// — by Ctrl-T or by an overflow auto-enter — renders that history with no
+	//: by Ctrl-T or by an overflow auto-enter: renders that history with no
 	// round trip of its own. One fetch, two surfaces. It is deliberately NOT
 	// APPLIED to aria.Client: a page folded through Apply comes back through
 	// OnClosed and re-freezes history into scrollback, which is the whole trap
@@ -91,7 +91,7 @@ type livelogTurn struct {
 	seedExtents map[int]uint64
 	seedMore    bool
 
-	// catchUp is the history read owed by a pager that opens WITHOUT a seed —
+	// catchUp is the history read owed by a pager that opens WITHOUT a seed -
 	// i.e. by one of the two automatic promotions. Armed by the session
 	// (setCatchUp); nil in tests and in any view that has no RPC client.
 	catchUp func()
@@ -165,7 +165,7 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 			// hoisted a steer above the four tool calls that preceded it, while
 			// `fig show` and the pager placed it correctly after the first two.
 			// Turns() is a pure function of the message list, so the live path may
-			// not reorder what the projection fixed — the projection is
+			// not reorder what the projection fixed: the projection is
 			// authoritative. Flush anything that comes BEFORE this message first.
 			if t.pending != nil && cursorOf(m).after(cursorOf(*t.pending)) {
 				t.freezePending()
@@ -203,7 +203,7 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 }
 
 // transcriptFrameInterval is the pager's frame-rate ceiling. Live aria frames
-// arrive far faster than a terminal can usefully show them — a streaming tool
+// arrive far faster than a terminal can usefully show them, a streaming tool
 // can push dozens of deltas per second, each of which used to trigger a full
 // repaint of the pager. 120 fps is above anything a human resolves and well
 // above any terminal's own refresh, so nothing is lost by refusing to draw
@@ -217,7 +217,7 @@ const transcriptFrameInterval = time.Second / 120
 // pager is up, ANY write that bypasses the frame buffer (an error hint, an
 // interrupt notice, a library, the Go runtime) lands on the alt grid at the
 // cursor and, with a leading newline, scrolls every row out from under the
-// painter's model — which then paints row TAILS onto rows whose left half is
+// painter's model: which then paints row TAILS onto rows whose left half is
 // something else entirely, forever. See (*transcript).screenMoved.
 //
 // Known writers call screenMoved and are repaired on the next frame; this is
@@ -229,7 +229,7 @@ const transcriptResyncInterval = 2 * time.Second
 
 // framePacer is the transcript's frame-rate gate. It answers "may I paint
 // now?" and, when the answer is no, owes a trailing flush so the settled state
-// always reaches the screen — dropping the LAST frame of a burst is the one
+// always reaches the screen: dropping the LAST frame of a burst is the one
 // failure mode a rate limiter must not have.
 //
 // Every field is guarded by the caller's render mutex: allow() and painted()
@@ -321,17 +321,17 @@ func (t *livelogTurn) openOverflows(nodes []livedoc.Node) bool {
 	return false
 }
 
-// armThinking pins the footer the instant a submit is accepted — before the
+// armThinking pins the footer the instant a submit is accepted: before the
 // prompt has round-tripped, before the model's first token. The footer is a
 // permanent fixture of the view, so it must not wait on the stream.
 //
 // It used to arm a flag consumed when the prompt froze, which required the
 // prompt to arrive as its own CLOSED message. Once the prompt merged into the
 // turn it no longer reliably does, and the footer went missing until the first
-// token — so paint it here instead of waiting to be told.
+// token: so paint it here instead of waiting to be told.
 //
 // No-op in the pager (it renders the footer itself), and no-op when a
-// placeholder is already pinned — OpenThinking drops the current region to
+// placeholder is already pinned: OpenThinking drops the current region to
 // scrollback on its way out, so arming twice would strand a footer there.
 func (t *livelogTurn) armThinking() {
 	if t.tr.active || t.thinkingOpen {
@@ -345,7 +345,7 @@ func (t *livelogTurn) armThinking() {
 // setMoreBefore records the wire's answer to "is there anything before this
 // page" (Page.More.Before) on the ONE owner. The pager reads it back as "can I
 // still page older history"; nothing else may set it, because nothing else
-// knows — a PUSHED frame's More describes the delta window, not the
+// knows, a PUSHED frame's More describes the delta window, not the
 // conversation.
 func (t *livelogTurn) setMoreBefore(more bool) { t.client.SetMoreBefore(more) }
 
@@ -362,7 +362,7 @@ func (t *livelogTurn) apply(r aria.Page) {
 func (t *livelogTurn) holdFrames() { t.hold = true }
 
 // openInline places the opening of an inline session in the ONE order that
-// works, and is the only way to release the held frames — the order is not a
+// works, and is the only way to release the held frames: the order is not a
 // convention to remember at the call site, it is the method.
 //
 //  1. the preamble, if we are watching a turn we did not open;
@@ -372,13 +372,13 @@ func (t *livelogTurn) holdFrames() { t.hold = true }
 //
 // Reversing 2 and 3 is not cosmetic: the footer is pinned at submit and the
 // turn's first frame ADOPTS that region, so releasing first paints the
-// question as one live region and the footer as a SECOND one below it — two
+// question as one live region and the footer as a SECOND one below it: two
 // status bars, and a stale region the pager's exit erase then misses, after
 // which the question reaches scrollback twice. A pty found that; the suite was
 // green through it, which is why the order now lives here and not in stream.go.
 func (t *livelogTurn) openInline(fetched historyPage) {
 	// The pager's copy: printed or not, the fetch is kept (and merged into the
-	// store when the pager opens — see enterPager).
+	// store when the pager opens: see enterPager).
 	t.seeded, t.seedExtents, t.seedMore = fetched.msgs, fetched.extents, fetched.more
 	t.seedContext(fetched.msgs) // no-op when there is nothing to orient with
 	t.armThinking()             // no-op in the pager, and no-op if already pinned
@@ -403,7 +403,7 @@ const preambleMinRows = 6
 // question, and declares ALL of the history it was given already committed.
 //
 // Two things have to be true at once. A prompt sent to an aria with history
-// used to open on a rule and nothing else — you could not see where you were
+// used to open on a rule and nothing else: you could not see where you were
 // until the model spoke. And a naive fix (apply the catch-up page to the
 // client) is worse than the bug: every historical message would come back
 // through OnClosed, whose inline branch Freezes to NATIVE SCROLLBACK, so every
@@ -412,7 +412,7 @@ const preambleMinRows = 6
 // So the page never reaches the client. The caller folds it separately
 // (committedMessages) and hands the messages here, where a bounded slice is
 // printed ONCE, deliberately, and lastFrozen is seeded from the NEWEST message
-// — including the ones the budget elided. That is the freeze boundary
+// : including the ones the budget elided. That is the freeze boundary
 // flushTail already reasons about: everything at or below it is treated as
 // already on screen, so leaving the pager replays only what this session
 // produced. Nothing can reach scrollback twice, because nothing else in this
@@ -443,7 +443,7 @@ func (t *livelogTurn) seedContext(msgs []aria.Message) {
 }
 
 // fitPreamble takes the newest messages that fit in half the viewport. The
-// preamble is orientation, not a transcript — the pager is a Ctrl-T away — so
+// preamble is orientation, not a transcript: the pager is a Ctrl-T away: so
 // it must never push the question the user just asked off the top of the
 // screen. When the newest message alone overflows, its HEAD is dropped: the
 // rows nearest the new prompt are the ones worth keeping.
@@ -483,9 +483,9 @@ func (t *livelogTurn) clipPreamble(m aria.Message, w, budget int) aria.Message {
 }
 
 // preambleHeight is the row count Incipit.printMessage will emit for m. It
-// counts the same pieces the renderer draws — the top margin, the question
+// counts the same pieces the renderer draws: the top margin, the question
 // block, the rule between the voices, the role header, the blocks and their
-// separators, and the closing rule — and rounds UP where the margin is
+// separators, and the closing rule, and rounds UP where the margin is
 // conditional, because a preamble that overshoots its budget is the failure
 // mode that pushes the new question off the screen.
 func (t *livelogTurn) preambleHeight(m aria.Message, w int) int {
@@ -514,7 +514,7 @@ func (t *livelogTurn) transcriptActive() bool { return t.tr.active }
 
 // abandon closes a live region left mid-turn: flush the pager's tail, park
 // below the region, set the footer's status. Nothing is printed past the
-// status bookend — it already says "disconnected".
+// status bookend: it already says "disconnected".
 //
 // A turn that ALREADY FINISHED is not abandoned: the pager was closed after
 // the fact, so the tail is flushed and the real outcome kept.
@@ -533,7 +533,7 @@ func (t *livelogTurn) abandon(st turnStatus) {
 func (t *livelogTurn) tick() {
 	// Only a running tool's spinner needs the periodic repaint. With nothing
 	// animating the tick would recompose + diff the whole open message every
-	// frame for a no-op paint — pure waste. Content changes still repaint via
+	// frame for a no-op paint: pure waste. Content changes still repaint via
 	// the OnLive/OnClosed hooks, so gating here is invisible. (The transcript
 	// branch already did this; the inline branch didn't.)
 	thinking := t.status.advance()
@@ -550,7 +550,7 @@ func (t *livelogTurn) tick() {
 
 // resize repaints for the new geometry, escaping to the pager when the shrink
 // is destructive. A viewport shorter than the live region is the one case
-// inline drawing cannot fix — the terminal scrolls those rows into native
+// inline drawing cannot fix: the terminal scrolls those rows into native
 // scrollback before our code runs, so they are unreachable for in-place
 // repaint. The pager has no live region to lose.
 //
@@ -630,25 +630,25 @@ func (t *livelogTurn) enterTranscript() { t.enterPager() }
 // enterPager opens the transcript on whatever catch-up page the inline view
 // already fetched. That is the second half of the fetch's job: a prompt that
 // lands on a turn it did not open buys a little context, the inline view
-// prints a bounded slice of it, and the pager opens on the whole of it — no
+// prints a bounded slice of it, and the pager opens on the whole of it: no
 // read, and that much less to page in.
 //
 // The page goes into the ONE owner, silently (aria.Client.Merge fires no
-// OnClosed, so nothing is re-frozen into scrollback — the trap this design is
+// OnClosed, so nothing is re-frozen into scrollback: the trap this design is
 // built around). The pager's window is the store's own tail, so a merged page
 // IS history the pager opens on; there is no second copy and no per-frame
 // merge (transcript.seed/withSeed/mergeSeed, deleted).
 //
 // WITH NO PAGE IN HAND, THE DOOR OWES A READ. Three doors reach this method
 // and only one of them used to arrive with history: Ctrl-T reads first
-// (interactiveInput.enterTranscript), but the two AUTOMATIC promotions — an
+// (interactiveInput.enterTranscript), but the two AUTOMATIC promotions, an
 // open turn taller than the viewport, and a resize that makes the live region
-// unpaintable — called it with an empty seed and an empty store. The pager
+// unpaintable: called it with an empty seed and an empty store. The pager
 // then opened on the running turn alone, with MoreBefore false, and
 // atAriaFloor reported the question the user had just asked as the beginning
 // of the aria: no history above it and no page ever requested, so scrolling up
-// found nothing. catchUp is that missing read, asked for HERE — where the
-// promotion actually happens — rather than at each door.
+// found nothing. catchUp is that missing read, asked for HERE: where the
+// promotion actually happens: rather than at each door.
 func (t *livelogTurn) enterPager() {
 	t.client.Merge(t.seeded, t.seedExtents)
 	if len(t.seeded) > 0 {
@@ -669,10 +669,10 @@ func (t *livelogTurn) enterPager() {
 // setCatchUp arms the history read the automatic promotions owe (see
 // enterPager). Wired by the session, which owns the RPC client, for the same
 // reason setQueuedFetch and setHistoryFetcher are. Left nil the hook is simply
-// absent — which is what every renderer test wants.
+// absent: which is what every renderer test wants.
 func (t *livelogTurn) setCatchUp(fn func()) { t.catchUp = fn }
 
-// hasSeed reports whether the pager can open on history already in hand — the
+// hasSeed reports whether the pager can open on history already in hand: the
 // input loop asks so it can skip its blocking catch-up read.
 func (t *livelogTurn) hasSeed() bool { return len(t.seeded) > 0 }
 
@@ -694,7 +694,7 @@ func (t *livelogTurn) invalidateTranscriptRows() { t.tr.invalidateRows() }
 //     shell. Nothing is written to the alt grid, so nothing scrolls the
 //     painter's model away (see transcript.screenMoved) and nothing is lost.
 //   - inline: straight to stderr, as before. The live region really is torn
-//     down there and real scrollback really does exist below it — the reasoning
+//     down there and real scrollback really does exist below it: the reasoning
 //     in stream.go's comment, which was only ever false for the pager.
 //
 // Caller holds the render mutex.
@@ -718,7 +718,7 @@ func (t *livelogTurn) transcriptSelect(delta int, extend bool) {
 
 // transcriptClickable reports whether a left click on this screen row would hit
 // a node. The input loop asks BEFORE it acts so that a click on chrome does not
-// cancel a search prompt the reader is still typing into — the mouse is the one
+// cancel a search prompt the reader is still typing into: the mouse is the one
 // input device that reports where it landed rather than what was aimed at.
 func (t *livelogTurn) transcriptClickable(row int) bool {
 	return t.tr.active && t.tr.clickable(row)
@@ -733,7 +733,7 @@ func (t *livelogTurn) transcriptClick(row int, extend bool) bool {
 	// A panel is dismissed by any acting gesture, exactly as it is by any key the
 	// panel does not itself bind (see transcript.dispatch). The click still
 	// resolves against the frame the panel was drawn over, which is the frame the
-	// user clicked — that is what makes frameRefs the right authority.
+	// user clicked: that is what makes frameRefs the right authority.
 	acted := t.tr.clickAt(row, extend)
 	if acted {
 		t.tr.closePanels()
@@ -775,7 +775,7 @@ func (t *livelogTurn) leaveTranscript() {
 // pager may put into native scrollback. The message-level bounds below (the
 // freeze boundary, and lastTurnStart on a cold exit) are not bounds a reader
 // can feel: ONE turn of tool output is routinely thousands of rows, and Ctrl-T
-// dumped every one of them into the shell. A hundred rows is a screen or two —
+// dumped every one of them into the shell. A hundred rows is a screen or two -
 // enough to see where you left off, and the rest is a `figaro show` away.
 const scrollbackTailRows = 100
 
@@ -785,13 +785,13 @@ const scrollbackTailRows = 100
 // scrollbackTailRows rows. If we entered the pager cold (nothing frozen
 // inline, e.g. `figaro listen`), bound the dump to the last turn rather than
 // replaying the whole history. Resume clears the partial live region the
-// alt-screen restore left behind, prints the closed messages, and — if a
-// message is still streaming — reopens a live region.
+// alt-screen restore left behind, prints the closed messages, and: if a
+// message is still streaming: reopens a live region.
 func (t *livelogTurn) flushTail() {
 	v := t.client.View()
 
-	// A turn reaches scrollback as SEVERAL messages — appendTurnSlices cuts it at
-	// node boundaries and every slice carries the same LT with a rising From — so
+	// A turn reaches scrollback as SEVERAL messages, appendTurnSlices cuts it at
+	// node boundaries and every slice carries the same LT with a rising From: so
 	// both the boundary and the de-dup key on (LT, From). Keying on LT alone
 	// collapsed a turn to its first slice, which is how a completed reply watched
 	// in the pager never reached scrollback at all.
@@ -899,7 +899,7 @@ func (t *livelogTurn) transcriptPageFailed() {
 
 // setQueuedFetch wires the transcript's async refresh callback (used when the
 // queued-prompts panel opens). Wiring happens the first time the pager enters,
-// not at construction, so the input loop — which owns the RPC client — can
+// not at construction, so the input loop: which owns the RPC client: can
 // hand it in without a cyclic dependency at newLivelogTurn time.
 func (t *livelogTurn) setQueuedFetch(fn func()) { t.tr.queuedFetch = fn }
 
@@ -914,7 +914,7 @@ func (t *livelogTurn) setTranscriptQueued(prompts []string, errMsg string) {
 type ariaView struct {
 	settings *renderSettings
 	// gesture is true only on a surface that HAS a per-node expansion gesture
-	// — the pager. It exists because Composer.Expanded == nil means "this
+	//: the pager. It exists because Composer.Expanded == nil means "this
 	// surface cannot un-collapse anything, so draw the fullest form", which is
 	// right for OUTPUT (the incipit freezes to scrollback; `show` is a one-shot
 	// dump) and wrong for ARGUMENTS, whose collapsed form is a live window the
@@ -965,8 +965,8 @@ func (v *ariaView) Render(n livedoc.Node, width, tick int) []string {
 func (v *ariaView) RenderExpanded(n livedoc.Node, width, tick int, fullOutput bool) []string {
 	verbose := v.settings != nil && v.settings.verbose
 	// Expansion is a per-node GESTURE, and only the pager has one. A surface
-	// without one draws the minimized form — clamped body, `… last N of M
-	// lines` above it — rather than the fullest one.
+	// without one draws the minimized form: clamped body, `… last N of M
+	// lines` above it: rather than the fullest one.
 	//
 	// That reverses an older decision for the incipit, deliberately. It used
 	// to draw every row of a tool's output on the grounds that inline rows
@@ -992,7 +992,7 @@ func (t *livelogTurn) openRule() { t.in.OpenRule() }
 // A prompt sent to a busy aria is classified by the DRAIN, not by us: it
 // becomes a steering aside inside the running turn, or opens a turn of its
 // own, and only the agent knows which. Until it is placed, the honest thing to
-// say is not "here is your message" but "your message is WAITING" — so figaro
+// say is not "here is your message" but "your message is WAITING": so figaro
 // shows the queue itself, the same list `Q` has always shown, and shows it
 // without being asked.
 //

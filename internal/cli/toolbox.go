@@ -15,8 +15,8 @@ import (
 // How a tool is drawn.
 //
 // WHERE THIS LIVES, and why: one table, in the CLI, keyed by the tool NAME the
-// wire already carries. It is presentation policy — the server has no business
-// knowing that a shell wants a `$` — and it is the only place any of it is
+// wire already carries. It is presentation policy: the server has no business
+// knowing that a shell wants a `$`, and it is the only place any of it is
 // written down. A second frontend lifts this table rather than the renderer.
 //
 // It replaces the per-tool `Summarize()` methods that used to live beside the
@@ -40,7 +40,7 @@ type toolStyle struct {
 	Headline string
 	// Body is the argument to draw in place of the tool's own output. `write`
 	// sets it to `content`, so the file body streams in exactly the way a
-	// command's output does — and its receipt ("Wrote N bytes") is dropped,
+	// command's output does, and its receipt ("Wrote N bytes") is dropped,
 	// since the content is the interesting half and the reader can see it.
 	Body string
 	// Diff paints the body's +/- lines. The tool declares that its output is a
@@ -61,8 +61,8 @@ var toolStyles = map[string]toolStyle{
 // as the known ones rather than a special case.
 func styleFor(name string) toolStyle { return toolStyles[name] }
 
-// toolArgFields answers "what are this tool's arguments" — the streaming JSON
-// prefix while they arrive, the decoded map once they land — sorted by name in
+// toolArgFields answers "what are this tool's arguments": the streaming JSON
+// prefix while they arrive, the decoded map once they land: sorted by name in
 // BOTH phases, since the streamed order is the model's and the settled order
 // is a Go map's, and anything else reshuffles the block the instant the
 // arguments land.
@@ -92,7 +92,7 @@ func toolArgFields(n livedoc.Node) []partialjson.Field {
 //
 //	edits [map[new_text:// render draws one block… old_text:…]]
 //
-// — map order unspecified, the strings' newlines and tabs collapsed into one
+// : map order unspecified, the strings' newlines and tabs collapsed into one
 // unreadable line, and the actual edit invisible at any width or expansion.
 // Worse, it was a REGRESSION at the moment of settling: while the arguments
 // were still arriving the streaming parser showed the raw JSON, which at
@@ -100,7 +100,7 @@ func toolArgFields(n livedoc.Node) []partialjson.Field {
 //
 // Flattening instead of pretty-printing is what makes the strings readable:
 // each leaf is handed over as ITS OWN VALUE, so the tool block wraps and
-// clamps it exactly as it does `content` or `command` — real newlines, real
+// clamps it exactly as it does `content` or `command`: real newlines, real
 // tabs, no escapes. There is no per-tool control flow here and no tool name
 // is consulted; `edit` simply happens to be the only shape that needed it.
 func flattenArg(out []partialjson.Field, name string, v any, depth int) []partialjson.Field {
@@ -139,8 +139,8 @@ func flattenArg(out []partialjson.Field, name string, v any, depth int) []partia
 	return append(out, partialjson.Field{Name: name, Value: string(b), Done: true})
 }
 
-// pick returns the named argument, or — when the tool has no such argument at
-// all — the first one there is. The fallback is what lets `process` be drawn
+// pick returns the named argument, or: when the tool has no such argument at
+// all: the first one there is. The fallback is what lets `process` be drawn
 // like a shell without having a `command`: it gets its `action`, the nearest
 // thing it has to one.
 //
@@ -211,8 +211,8 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, ex
 		dur = " " + term.Dim("["+d+"]")
 	}
 
-	// The header. Minimized it carries the call itself — `$ grep …`, `write
-	// /tmp/x` — because that is what a reader scanning a transcript is looking
+	// The header. Minimized it carries the call itself: `$ grep …`, `write
+	// /tmp/x`: because that is what a reader scanning a transcript is looking
 	// for. Expanded it steps back to the tool's name, since the call is about
 	// to be shown in full on the row below.
 	name := n.Name
@@ -250,7 +250,7 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, ex
 			// While the call is still being written its arguments are all there
 			// is to look at, so a multi-line one is a block, head-clamped. Once
 			// the result lands it stands in for them and each argument shrinks
-			// to one clipped row — an allusion to the call, not the payload.
+			// to one clipped row, an allusion to the call, not the payload.
 			// A yank still gives them whole; see toolClipboardFull.
 			if !settledResult && strings.ContainsRune(f.Value, '\n') {
 				row(term.Label(f.Name))
@@ -270,7 +270,7 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, ex
 	}
 
 	// The body: the tool's output, or the argument that stands in for it.
-	// Minimized it is clamped and each row is cut rather than wrapped — a
+	// Minimized it is clamped and each row is cut rather than wrapped, a
 	// preview that reflows is harder to scan than one that stops.
 	clamp := bashCap
 	if expand {

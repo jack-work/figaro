@@ -1,11 +1,11 @@
 # M5 receipts (standby 718ade35)
 
 NOTE: chartered home for these was a live `@m3-receipts` form, but the
-INSTALLED figaro predates `fig form new` (the live daemon is pre-M2) —
+INSTALLED figaro predates `fig form new` (the live daemon is pre-M2) -
 receipts live here until the forms build deploys, then they migrate.
 
-## Battery pass 1 (NOISY — prime built concurrently)
-- base (400bec6/figwal v0.13): /tmp/bench-base.txt — store half noisy,
+## Battery pass 1 (NOISY: prime built concurrently)
+- base (400bec6/figwal v0.13): /tmp/bench-base.txt: store half noisy,
   angelus half quiet-ish. Demoted to shape only.
 - head: /tmp/bench-head.txt at 3ef8488 (three free re-points rode the
   chain: ffcd1ee → a2cd665 → 3ef8488 before the head compile).
@@ -17,7 +17,7 @@ receipts live here until the forms build deploys, then they migrate.
   → evict → write → silent.
 - Agent study/drop/cast: system.studies durable; sink gates on
   membership (drop silences even while a cancelled sink outlives on a
-  live Form); castOp serializes via inbox — the casting-calls comment
+  live Form); castOp serializes via inbox: the casting-calls comment
   stands at castOp; cross-call to the role writer per Form's contract;
   -O mints the role BORN cast (target-aria in the birth patch).
 - Projection: render-only <system-reminder name="study:@id"> blocks on
@@ -36,9 +36,9 @@ receipts live here until the forms build deploys, then they migrate.
 - READ PATHS: AriaReadPage/Before +2-2.6%; ReaderPage/Tail ±3%;
   ReaderForm ~0; ReaderContext -11% at 10k. Flat. The forms work costs
   the read path nothing.
-- DormantList: +6784% REGRESSION at 300 arias — my LastTS wrapper did a
+- DormantList: +6784% REGRESSION at 300 arias: my LastTS wrapper did a
   stump SCAN per row (O(n²)/list). Fixed in 4665eef: trunk-by-map first.
-  After: 262µs→395µs at 300 (+50%, +1 alloc/row) — the honest price of
+  After: 262µs→395µs at 300 (+50%, +1 alloc/row): the honest price of
   live recency; batch API noted as follow-up.
 - Machine: load 0.00 both halves; head half carried brief compile blips
   from M5 writing (seconds, spread across 6 counts).
@@ -46,24 +46,24 @@ receipts live here until the forms build deploys, then they migrate.
 ## M5 landed
 - 4665eef (the O(n²) fix), d966eff (study/drop/cast). Suite + -race
   green; grammar surfaces real-binary verified; happy paths socket-e2e
-  (sandbox has no provider — stated).
+  (sandbox has no provider: stated).
 - STILL OWED: twelve-aria stress + form-storm variant; actor-loop cast
   bench; role-read addendum number.
 
 ## The battery's finest catch, told properly
 The isStumpLocked regression (+6784%) was the loud one. The quiet one
 was better. Prime's review asked a simple question: your eviction test
-proves the watcher is ALIVE — does anything prove it is SINGULAR? It
+proves the watcher is ALIVE: does anything prove it is SINGULAR? It
 did not. And writing the counting test found the vein: an agent
 re-registers its studies on every REVIVAL, each fresh instance's guard
 map is empty, so every revival stacked one more watcher copy in the
 registry. Three revivals, one write to the studied role: three
-reminders. No fresh test process could ever see it — the duplicates
+reminders. No fresh test process could ever see it: the duplicates
 only exist on a daemon that has lived long enough to hibernate and
 wake the same aria twice. The fix is structural: registrations are
 owner-keyed (same node+owner REPLACES) and every armed sink is
-generation-gated, so the dead instance's closure — orphaned pending
-queue and all — goes inert the instant its successor registers, and
+generation-gated, so the dead instance's closure: orphaned pending
+queue and all: goes inert the instant its successor registers, and
 the successor arms immediately instead of waiting for a reopen.
 Pinned: 3 revivals x 3 evictions x 1 write = exactly 1 delivery.
 Reviewer instinct + counting test > any amount of green.
@@ -79,14 +79,14 @@ Reviewer instinct + counting test > any amount of green.
 ## Form storm (token-free variant; 12 workers, one daemon)
 12 x (1 form new + 40 own-sets + 40 shared-sets) = 960 sets + 13
 mints: 2.2s wall (CLI fork/exec dominates), 0 errors, 12/12 shared-
-form finals correct — the single writer serialized 480 concurrent
+form finals correct: the single writer serialized 480 concurrent
 writes to ONE form without losing any. Listing coherent after.
 NOT verified here: delta-fanout completeness under storm volume (the
 listener is a TUI; correctness is e2e-tested, loss-under-load is not).
 The token-burning twelve-aria stress awaits Gluck's meter-nod.
 
 ## For Gluck: the three projection decisions (M5 merge-ready behind them)
-1. REPLAY: studied reminders are render-only — a replayed transcript
+1. REPLAY: studied reminders are render-only, a replayed transcript
    does not show what the model saw. Accept, or durably mark?
 2. DORMANT CATCH-UP: a sleeping aria accumulates nothing; on wake it
    sees only post-wake deltas. Accept, or snapshot-diff on wake?
@@ -94,19 +94,19 @@ The token-burning twelve-aria stress awaits Gluck's meter-nod.
    Bless, or specify (per-form coalescing? size budget?)?
 
 ## The unification (Gluck's course correction, landed)
-The interim projection (text baked at turn assembly) is DEAD — no
+The interim projection (text baked at turn assembly) is DEAD: no
 production store ever carried it. In its place, pull-at-the-stamp:
 figwal v0.16.0 AppendMainCursors merges caller-supplied positions into
 the main record's cursor stamp; the store stamps every observed form's
 version on every IR append (SetObservedForms, mirrored from
 system.studies); the projection derives each member's patch-fold
-between consecutive stamps — the bound board is member zero of the same
-loop — and all four providers fold the result into their IR beside the
+between consecutive stamps: the bound board is member zero of the same
+loop, and all four providers fold the result into their IR beside the
 chalkboard's transitions, deterministically (sorted members, cache-
 stable bytes). Study/drop are stated IR marks; tombstones render for
 forms removed mid-observation; warm starts carry LastStudyVersions
 beside LastChalkVersion. Deleted: the pending queue, the turn-assembly
-injection, and WatchFormDurable with its generation gating — the
+injection, and WatchFormDurable with its generation gating: the
 milestone's finest catch became its most elegant deletion (the whole
 push apparatus, obsoleted by pull). A1/A2/A3 dissolved as predicted.
 
@@ -142,7 +142,7 @@ One honest regression, caught by the same battery and fixed before the
 commit: the first resolver draft hashed every file it read even when
 snapshots were disabled (sha256 over 160KB on the small cold path),
 which cost +15% on DressCold. An Outfitter with nowhere to put bytes
-has nothing to gain from knowing their name — early return, and cold
+has nothing to gain from knowing their name: early return, and cold
 came back 9% FASTER than base.
 
 ### Real-binary verification (nix develop .#clean, isolated daemon)
@@ -153,12 +153,12 @@ came back 9% FASTER than base.
 - `form outfit nosuchfit` → "✗ nosuchfit not found" at the boundary.
 - `form set <k> <v>`, `form set a=1,b="two"`, `form delete a,b`.
 - `fig form -O testfit` → "--outfit belongs to `form new`, `form
-  fork`, not on its own" — and it says `form`, the verb as typed.
+  fork`, not on its own", and it says `form`, the verb as typed.
 
 ### Owed / noted
 - The hub write path echoes every key as set even when the value is
   unchanged (the agent path skips no-ops), so a re-applied outfit says
-  "applied (2 keys)" instead of "no changes" — and a no-op patch bumps
+  "applied (2 keys)" instead of "no changes", and a no-op patch bumps
   a version and emits a delta on forms. Pre-existing; asked Gluck.
 - reference/outfits.md still carries pre-forms stump sections, flagged
   in place rather than silently left. They merge into the owed

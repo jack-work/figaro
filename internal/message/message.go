@@ -10,7 +10,7 @@ type Role string
 const (
 	// RoleInput and RoleOutput name the two voices. They are deliberately
 	// under-specified: "user" was a lie the moment a subagent sent a message,
-	// and figaro does not yet need to know WHO supplied input — only that it is
+	// and figaro does not yet need to know WHO supplied input: only that it is
 	// input. A finer distinction can be added later without another rename.
 	//
 	// These are figaro's INTERNAL vocabulary. Providers require literal
@@ -29,7 +29,7 @@ const (
 	// tool_result block) into the wire stream.
 	RoleSystemInterrupt Role = "system.interrupt"
 
-	// RoleGenesis marks a node's birth message in the IR — written when a
+	// RoleGenesis marks a node's birth message in the IR: written when a
 	// fork node is created (null root, outfit node, conversation) so the
 	// log is non-empty and forkable, and to anchor provenance. It is
 	// filtered from provider rendering (it is structural, not a turn).
@@ -38,7 +38,7 @@ const (
 
 // RoleFromWire maps a provider's wire vocabulary onto figaro's. Providers
 // speak user/assistant; figaro speaks input/output. This is the ONLY place the
-// mapping lives — both the decode boundary and UnmarshalJSON route through it,
+// mapping lives: both the decode boundary and UnmarshalJSON route through it,
 // so the two directions cannot drift apart. Anything unrecognised passes
 // through unchanged (tool_result, system, genesis are not voices).
 func RoleFromWire(s string) Role {
@@ -54,7 +54,7 @@ func RoleFromWire(s string) Role {
 // UnmarshalJSON accepts the pre-rename vocabulary so every aria written before
 // this change keeps reading. It lives on the type rather than in the two
 // projection sites because a decode path that forgets to normalise is a bug
-// nobody would see until a turn rendered under the wrong voice — the same
+// nobody would see until a turn rendered under the wrong voice: the same
 // class of silent drift this refactor exists to delete.
 //
 // Writing is unconditional: MarshalJSON is the default, so new entries record
@@ -71,7 +71,7 @@ func (r *Role) UnmarshalJSON(b []byte) error {
 
 // IsCeremonial reports whether m is a structural/inherited marker rather than
 // a conversational message: the root genesis sentinel, or the outfit-birth
-// (a RoleInput message with no renderable content — it carries only the
+// (a RoleInput message with no renderable content: it carries only the
 // outfit's form stamp, inherited by every conversation in the shared
 // prefix). These anchor the IR but are not turns, so the conversation's
 // message count must not include them.
@@ -97,7 +97,7 @@ func IsCeremonial(m Message) bool {
 // count: the number of conversational (non-ceremonial) messages in an IR
 // timeline. Every derivation (live FigaroInfo, the meta sidecar, the durable
 // usage/meta snapshots) routes through this so the count is identical no
-// matter where it is computed — and, because the figwal head is now a single
+// matter where it is computed, and, because the figwal head is now a single
 // deterministic leaf, it does not depend on fork head-selection order.
 func CountMessages(msgs []Message) int {
 	n := 0
@@ -136,7 +136,7 @@ type ContentType string
 
 const (
 	// ContentProse is an assistant/user markdown span. Named to match the
-	// UI IR's "prose" node (livedoc.NodeProse) — figaro IR and UI IR are
+	// UI IR's "prose" node (livedoc.NodeProse): figaro IR and UI IR are
 	// converging on shared primitive names (prose / thinking / tool / image).
 	ContentProse      ContentType = "prose"
 	ContentImage      ContentType = "image"
@@ -177,7 +177,7 @@ type Content struct {
 	// and fold into ONE message (mergePromptEvents), and those prompts may come
 	// from different places: a human, a parent aria, a sibling three worktrees
 	// away. Before this they arrived as one anonymous blob and arias genuinely
-	// could not tell who was talking — there was nothing on the message to say.
+	// could not tell who was talking: there was nothing on the message to say.
 	//
 	// It lives on Content rather than on Message because Message.Content IS the
 	// list of payloads, so one field makes each payload attributed without a
@@ -188,7 +188,7 @@ type Content struct {
 	//
 	// Rendered form, not an id: "aria 76062b18" for an authenticated aria,
 	// a bare label for an asserted one (see rpc.Attribution). Empty means
-	// unknown, and every renderer draws NOTHING rather than "unknown" — a
+	// unknown, and every renderer draws NOTHING rather than "unknown", a
 	// blank attribution is noise on every message that never had one.
 	Sender string `json:"sender,omitempty"`
 }
@@ -219,16 +219,16 @@ type Message struct {
 
 	// Study marks a change to this aria's OBSERVED SET: it began or
 	// stopped observing a form at this point in the timeline. The record
-	// is what lets the model (and a replay) account for silence — stamps
+	// is what lets the model (and a replay) account for silence: stamps
 	// simply appearing or vanishing would be a fact nobody stated.
 	Study *StudyMark `json:"study,omitempty"`
 
 	// StudyPatches are the OBSERVED forms' transitions for this message,
-	// keyed by form id — populated at PROJECTION time from the cursor
+	// keyed by form id: populated at PROJECTION time from the cursor
 	// stamps (never persisted in the IR payload; the studied forms'
 	// channels are the durable truth, and retranslation re-derives).
 	// The encoder folds them into the provider IR exactly as it folds
-	// Patches — the bound board is member zero of the same set.
+	// Patches: the bound board is member zero of the same set.
 	StudyPatches map[string][]Patch `json:"-"`
 
 	// StudyNotes are projection-time annotations per observed form (a
@@ -243,7 +243,7 @@ type Message struct {
 	// tells "then" from "now".
 	StudyAt map[string]uint64 `json:"-"`
 
-	// Assistant-only metadata. (model/provider are NOT here — they are
+	// Assistant-only metadata. (model/provider are NOT here: they are
 	// form values: system.model / system.provider, derived on read.)
 	Usage      *Usage     `json:"usage,omitempty"`
 	StopReason StopReason `json:"stop_reason,omitempty"`
@@ -253,14 +253,14 @@ type Message struct {
 	// it isn't persisted as a meaningless 0 in the payload.
 	LogicalTime uint64 `json:"logical_time,omitempty"`
 
-	// Steering marks an input message that arrived MID-TURN — a direction
+	// Steering marks an input message that arrived MID-TURN, a direction
 	// meant to influence the train of thought already in flight, not a new
 	// question. It is provenance, not content: the blocks are ordinary prose
 	// and every provider encodes them exactly as before, so the model reads a
 	// steer the same way it always did.
 	//
-	// It exists because the alternative — inferring steering from a prose
-	// block co-occurring with a tool_result — cannot work when a steer
+	// It exists because the alternative: inferring steering from a prose
+	// block co-occurring with a tool_result: cannot work when a steer
 	// arrives while no tool is running, and that inference is precisely what
 	// let a steer open its own turn and truncate the turn it meant to steer.
 	// The drain that classifies is the only place that knows, so the drain
@@ -374,7 +374,7 @@ func DanglingToolCallIDs(m Message) []string {
 }
 
 // ToolImagesByCall indexes the tool-produced images on a message by the call
-// that produced them — but only for calls that actually carry a tool_result
+// that produced them: but only for calls that actually carry a tool_result
 // block in that same message. An encoder that nests images inside their
 // tool_result needs the restriction: an image naming a call with no result
 // would be claimed by a block that is never rendered, and vanish, which is
@@ -406,8 +406,8 @@ func ToolImagesByCall(content []Content) map[string][]Content {
 // a tool call whose arguments DID NOT ARRIVE AS VALID JSON.
 //
 // A provider streams a tool call's arguments as a sequence of JSON fragments.
-// When the concatenation is not parseable — a raw tab where an escape was
-// owed, a string that never closes — the call cannot be executed, but the rest
+// When the concatenation is not parseable, a raw tab where an escape was
+// owed, a string that never closes: the call cannot be executed, but the rest
 // of the turn is unharmed: the thinking, the prose, and every other tool call
 // are already in hand. So the block is QUARANTINED rather than mourned: the
 // bytes that arrived are preserved verbatim under this key, which keeps the
@@ -429,8 +429,8 @@ func MalformedArgs(raw string) map[string]interface{} {
 //	{"INVALID_JSON": "<the unparseable input you received>"}
 //
 // serialized to a string, returned with is_error set. The wrapper is what
-// makes it unambiguous to the model that the input never parsed — rather than
-// prose it has to interpret — and it hands back the exact bytes that arrived,
+// makes it unambiguous to the model that the input never parsed: rather than
+// prose it has to interpret, and it hands back the exact bytes that arrived,
 // which is the only copy anyone has.
 //
 // Built with the JSON encoder, never by concatenation: the payload is by

@@ -75,7 +75,7 @@ func TestTranscriptRowBudgetShowsIdenticalFrame(t *testing.T) {
 
 // TestTranscriptRowBudgetBoundsTheWindow pins that the window converges to the
 // budget within one message, and that a light aria (where the budget is never
-// reached) keeps the full message-count page — i.e. the old geometry.
+// reached) keeps the full message-count page: i.e. the old geometry.
 func TestTranscriptRowBudgetBoundsTheWindow(t *testing.T) {
 	tr := newTallTranscript(t, 600)
 	tr.render()

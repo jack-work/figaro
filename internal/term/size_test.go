@@ -4,7 +4,7 @@ import "testing"
 
 // A terminal that reports 2 rows has 2 rows. The old guards (`c > 20`,
 // `r > 2`) treated a small-but-real measurement as noise and substituted a
-// fabricated 80x24 — so figaro painted 24 rows into a 2-row pane and every
+// fabricated 80x24: so figaro painted 24 rows into a 2-row pane and every
 // repaint scrolled the previous frame into scrollback, printing a streaming
 // reply several times over, each copy longer than the last.
 //

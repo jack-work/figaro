@@ -17,7 +17,7 @@ import (
 // transcript_paint_tmux_test.go already replays the pager's escape stream into
 // tmux and compares what tmux draws against what the pager believes it drew.
 // That test is the reason the suffix-update erase-order bug was found, and its
-// premise is exactly right. The one thing it never did was span a RESIZE — and
+// premise is exactly right. The one thing it never did was span a RESIZE, and
 // a resize is the only event where the terminal changes its own grid without the
 // application being involved. So the painter's belief and the screen can part
 // company there, and no test in the repo could see it.
@@ -30,7 +30,7 @@ import (
 // This test differs from the VT case (transcript_resize_paint_test.go) in the
 // one way that matters: THERE, I model what a terminal does to its grid on a
 // width change; HERE, tmux does it, and I model nothing. If the two disagree,
-// believe this one — a model only knows the bugs its author imagined.
+// believe this one, a model only knows the bugs its author imagined.
 //
 // The escape stream is split in two and the resize happens BETWEEN the halves,
 // in the real order a user produces: the terminal's grid changes first (it has
@@ -168,7 +168,7 @@ func tmuxReplayResize(t *testing.T, dir, pre, post string, w0, h0, w1, h1 int) [
 		return string(out), err
 	}
 	// kill-server leaves the socket INODE behind, so a later `[ -S sock ]` would
-	// call a dead server alive. Remove the file too — the artifact outliving the
+	// call a dead server alive. Remove the file too: the artifact outliving the
 	// process is the same family of trap as a scratch daemon outliving its pane.
 	defer func() {
 		_, _ = run("kill-server")
@@ -190,7 +190,7 @@ func tmuxReplayResize(t *testing.T, dir, pre, post string, w0, h0, w1, h1 int) [
 	// Read the height back and assert it, rather than trusting the +1. An entire
 	// investigation was once conducted at pane height zero.
 	if got := strings.TrimSpace(mustOut(t, run, "display", "-p", "#{pane_height}")); got != itoaTest(h0) {
-		t.Skipf("pane height is %s, wanted %d — cannot assert against a geometry we did not get", got, h0)
+		t.Skipf("pane height is %s, wanted %d: cannot assert against a geometry we did not get", got, h0)
 	}
 
 	waitFor := func(path string, what string) {

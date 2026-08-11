@@ -16,8 +16,8 @@ import (
 )
 
 // The snapshot's whole reason for existing: a resolution must not straddle an
-// edit. The file is rewritten AFTER the epoch has pinned it, and the fold —
-// even one rebuilt from scratch after eviction — still answers with the bytes
+// edit. The file is rewritten AFTER the epoch has pinned it, and the fold -
+// even one rebuilt from scratch after eviction: still answers with the bytes
 // that were there when the epoch began.
 func TestSnapshotPinsBytesForTheEpoch(t *testing.T) {
 	dir := t.TempDir()
@@ -74,7 +74,7 @@ func TestCycleIsTaintedAndNotRewalked(t *testing.T) {
 		assert.Contains(t, err.Error(), "cycle")
 	}
 
-	// A fresh epoch clears the verdict — the loop may have been cut.
+	// A fresh epoch clears the verdict: the loop may have been cut.
 	writeOutfit(t, dir, "c", "[system]\nc = 1\n")
 	o.Reload()
 	patch, err := o.Load("a")
@@ -84,7 +84,7 @@ func TestCycleIsTaintedAndNotRewalked(t *testing.T) {
 
 // A fold that never had to be walked is the point of the epoch: the second ask
 // costs no syscall at all. Proven by deleting the file out from under a pinned
-// epoch — a stat-per-dependency cache would notice and refold; this one must
+// epoch, a stat-per-dependency cache would notice and refold; this one must
 // answer from the epoch it already proved.
 func TestEpochAnswersWithoutTouchingDisk(t *testing.T) {
 	dir := t.TempDir()

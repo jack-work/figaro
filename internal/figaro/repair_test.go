@@ -49,7 +49,7 @@ func TestTailRepair_EmptyStreamNoOp(t *testing.T) {
 }
 
 func TestTailRepair_NonDanglingNoOp(t *testing.T) {
-	// Plain user/assistant text turn — no tool_use.
+	// Plain user/assistant text turn: no tool_use.
 	s := buildStream(t,
 		message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("hi")}},
 		message.Message{Role: message.RoleOutput, Content: []message.Content{message.TextContent("salve")}, StopReason: message.StopEnd},

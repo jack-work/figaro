@@ -1,4 +1,4 @@
-# board-default.json — provenance
+# board-default.json: provenance
 
 `board-default.json` is a **verbatim capture of the real default-outfit
 chalkboard** of this machine's figaro user, frozen so the benchmarks in
@@ -9,16 +9,16 @@ in the benchmark suite reads live config; it reads this file.
 
 37 keys, 15,776 bytes:
 
-- 26 `skills.<base>` content envelopes (`{frontmatter, filePath}`) — the
+- 26 `skills.<base>` content envelopes (`{frontmatter, filePath}`): the
   user's `~/.config/figaro/skills` plus the first-party skills bundled with
   the binary (`skills/` in this repo).
-- `system.credo` — the real `~/.config/figaro/credo.md` envelope (4,768
+- `system.credo`: the real `~/.config/figaro/credo.md` envelope (4,768
   bytes, the largest single value).
 - the `system.*` scalars: `provider`, `model`, `max_tokens`,
   `use_official_sdk`, `reminder_renderer`, `thinking_effort`, `cwd`, `root`,
   `outfit_name`, `outfit_version`, plus `aria_id`.
 
-`system.cwd` / `system.root` read `/tmp/chalkcap` — the capture happened
+`system.cwd` / `system.root` read `/tmp/chalkcap`: the capture happened
 there. `aria_id` is the throwaway aria's id. Neither affects what is being
 measured.
 
@@ -53,6 +53,6 @@ rm -rf /tmp/chalkcap/run /tmp/chalkcap/state
 
 ## Re-capturing
 
-Only re-capture if the fixture must reflect a changed outfit — and then
+Only re-capture if the fixture must reflect a changed outfit, and then
 say so loudly in the report, because it invalidates comparison against any
 a previously recorded baseline.

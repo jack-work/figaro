@@ -1,6 +1,6 @@
 ---
 name: using-tuis-n-fancy-clis
-description: Driving TUIs and interactive/"fancy" CLIs through a tmux PTY — input, synchronizing on render, capturing scrollback, and fuzzing for visual glitches. Plain CLIs are fine through bash; reach for tmux when UX reproducibility matters, when you need to interact with the same persistent terminal content across steps, or when a program takes over the terminal and its escapes would bleed into the parent.
+description: Driving TUIs and interactive/"fancy" CLIs through a tmux PTY: input, synchronizing on render, capturing scrollback, and fuzzing for visual glitches. Plain CLIs are fine through bash; reach for tmux when UX reproducibility matters, when you need to interact with the same persistent terminal content across steps, or when a program takes over the terminal and its escapes would bleed into the parent.
 ---
 
 # Using TUIs & fancy CLIs
@@ -8,13 +8,13 @@ description: Driving TUIs and interactive/"fancy" CLIs through a tmux PTY — in
 Plain, non-interactive CLIs run fine straight through bash. Reach for
 tmux when:
 
-- **UX reproducibility is a concern** — you want a real PTY of a known
+- **UX reproducibility is a concern**: you want a real PTY of a known
   size, drivable and inspectable deterministically.
 - **You need to interact with the same terminal content across steps**
-  — a persistent session you send keys to and re-read, rather than
+, a persistent session you send keys to and re-read, rather than
   one-shot command invocations.
-- **The program takes over the terminal** — bubbletea, huh, fzf, vim,
-  htop, less in interactive mode — whose escape sequences (alt-screen,
+- **The program takes over the terminal**: bubbletea, huh, fzf, vim,
+  htop, less in interactive mode: whose escape sequences (alt-screen,
   cursor visibility, line wrap, mouse modes) would otherwise bleed into
   the parent terminal. Especially the parent agent's terminal.
 
@@ -39,7 +39,7 @@ tmux kill-session -t "$SESS"
 
 ## On killing
 
-`tmux kill-session` is always safe — terminal state lives inside
+`tmux kill-session` is always safe: terminal state lives inside
 tmux's virtual pty and dies with it. Even if the inner TUI never
 got a chance to emit its cleanup escapes, the parent terminal is
 untouched.
@@ -51,7 +51,7 @@ restores the terminal.
 ## Synchronizing on render
 
 `send-keys` returns immediately; the TUI hasn't repainted yet. Don't
-`sleep` a fixed guess — poll until the pane stops changing:
+`sleep` a fixed guess: poll until the pane stops changing:
 
 ```bash
 wait_idle() { # return once the pane is stable for ~6s (no streaming)
@@ -87,12 +87,12 @@ Hunt them deterministically:
 1. **Build the CURRENT binary to /tmp** and run THAT. A stale installed
    binary just replays already-fixed bugs.
 2. **Use a deliberately SHORT pane** (`tmux new-session -d -s S -x 100
-   -y 24`). Forcing the output to scroll is the whole point — the
+   -y 24`). Forcing the output to scroll is the whole point: the
    scroll boundary is where relative-cursor painters desync.
 3. **Isolate state** so the run is non-impactful and repeatable (point
    the tool's runtime/state dirs at `/tmp`, keep auth/config inherited,
-   `cd` into a scratch dir). Drive only read-only / idle work — `ls`,
-   `cat` of system files, questions — nothing that mutates real files.
+   `cd` into a scratch dir). Drive only read-only / idle work: `ls`,
+   `cat` of system files, questions: nothing that mutates real files.
 4. **Drive the stressors**, `wait_idle` + capture after each:
    - long single turns (output well past the viewport),
    - **parallel** subtasks whose combined output overflows the pane,
@@ -104,7 +104,7 @@ Hunt them deterministically:
 5. **Detect** on the `-S -` capture (strip ANSI first): leftover
    spinner-frame glyphs in a *settled* frame, consecutive duplicate
    non-blank rows, rows wider than the pane (would wrap → desync).
-6. **Reproduce in a unit/VT harness** before fixing — a real-terminal
+6. **Reproduce in a unit/VT harness** before fixing, a real-terminal
    capture confirms it's real, a deterministic harness gives you a
    regression test and isolates it from capture artifacts.
 7. **Clean up**: `tmux kill-session`, kill any isolated daemon you
@@ -113,7 +113,7 @@ Hunt them deterministically:
 
 **Width-detector caveat.** A naïve display-width counter (e.g. Python
 `unicodedata.east_asian_width`) miscounts ZWJ sequences and flag emoji
-(`👨‍👩‍👧`, `🇯🇵`) — it sums the components and screams "over-wide" on a
+(`👨‍👩‍👧`, `🇯🇵`): it sums the components and screams "over-wide" on a
 line that renders fine. The tool's OWN width library is authoritative
 (for Go, `mattn/go-runewidth`'s `StringWidth`). Cross-check any
 over-wide flag against it before believing it.
@@ -121,7 +121,7 @@ over-wide flag against it before believing it.
 **A real limit to know:** a scrollback-preserving painter cannot
 rewrite a row once it scrolls into history. Content that's still
 *mutating* when it scrolls off (e.g. a tool flushed mid-run) keeps
-whatever it showed at flush time — the fix is to commit a *stable*
+whatever it showed at flush time: the fix is to commit a *stable*
 representation at flush, not to chase the impossible after-the-fact
 update.
 

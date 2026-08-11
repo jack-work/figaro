@@ -10,8 +10,8 @@ import (
 // The premature-break oracle, pointed at a REAL corpus.
 //
 // prose_wrap_test.go pins the defect with four paragraphs. This runs the same
-// oracle over as much genuine aria markdown as you care to hand it — bold,
-// links, em dashes, curly quotes, accents, the hyphens that were the trigger —
+// oracle over as much genuine aria markdown as you care to hand it: bold,
+// links, em dashes, curly quotes, accents, the hyphens that were the trigger -
 // at every width a pane plausibly has. It is opt-in because the corpus is
 // private: a JSON array of markdown strings, path in FIGARO_ORPHAN_CORPUS.
 //
@@ -20,7 +20,7 @@ import (
 //	FIGARO_ORPHAN_CORPUS=/var/tmp/corpus.json go test ./internal/render -run CorpusSweep
 //
 // Measured, 600 samples x widths 30..120, on the store as of 2026-08-02:
-// before glamour v2 (30aae84^) 4106 premature breaks, after it 6 — and all six
+// before glamour v2 (30aae84^) 4106 premature breaks, after it 6, and all six
 // are the oracle's own blind spots, not orphans: it collapses a double space
 // after a period, and it re-joins a word the renderer legitimately broke at a
 // hyphen breakpoint ("deep-" / "dive"). Treat a handful of hits as noise and a
@@ -47,7 +47,7 @@ func TestProse_CorpusSweep(t *testing.T) {
 	}
 	for si, md := range corpus {
 		// Paragraphs only. The oracle re-flows a block's ink greedily, so a
-		// list, a table or a code block is not its business — those have their
+		// list, a table or a code block is not its business: those have their
 		// own guards (table_wrap_test.go, hardwrap_test.go).
 		if strings.ContainsAny(md, "`|") || strings.Contains(md, "\n-") ||
 			strings.Contains(md, "\n#") || strings.Contains(md, "\n ") || strings.Contains(md, "\n1.") {
@@ -79,5 +79,5 @@ func TestProse_CorpusSweep(t *testing.T) {
 			flush()
 		}
 	}
-	t.Logf("corpus sweep: %d samples, widths 30..120 — premature=%d over=%d", len(corpus), premature, over)
+	t.Logf("corpus sweep: %d samples, widths 30..120: premature=%d over=%d", len(corpus), premature, over)
 }

@@ -15,7 +15,7 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// CRUD on the queue — the messages an aria has accepted but not yet answered.
+// CRUD on the queue: the messages an aria has accepted but not yet answered.
 //
 // Create is `figaro send`: a queued message IS a submitted prompt, so there is
 // no second door. What is here is read, update, delete.
@@ -24,7 +24,7 @@ import (
 // rebuilt, so an id is only meaningful paired with the generation it was read
 // from; the CLI reads the queue, takes that epoch, and hands it back with the
 // mutation. If the agent restarted in between, the server refuses the whole
-// request as stale and says so — rather than deleting whatever holds that
+// request as stale and says so: rather than deleting whatever holds that
 // number now.
 
 type queueJSON struct {
@@ -174,7 +174,7 @@ func runQueueEdit(loaded *config.Loaded, ariaID string, id uint64, text string, 
 //
 // A REFUSAL IS NOT AN ERROR AND IS NOT A SUCCESS. The server legitimately
 // declines to delete a message it has already committed; that is an answer,
-// it is printed in full, and it leaves a non-zero status so a script notices —
+// it is printed in full, and it leaves a non-zero status so a script notices -
 // but it is never dressed up as a transport failure, and it is never swallowed.
 func reportQueueResults(ariaID, epoch string, results []rpc.QueueResult, asJSON bool) {
 	if asJSON {

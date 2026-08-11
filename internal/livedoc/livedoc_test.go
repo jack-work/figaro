@@ -68,7 +68,7 @@ func TestDiff_RoundTrip(t *testing.T) {
 
 func TestDiff_SingleRegionMinimal(t *testing.T) {
 	// A one-glyph spinner flip in a large doc must produce a tiny delta,
-	// not a whole-doc resend — the core compression property.
+	// not a whole-doc resend: the core compression property.
 	prefix := "# Deploy\n\n## build\n"
 	suffix := " building\n\n## test\nqueued\n\n## deploy\nqueued\n"
 	old := prefix + "⠋" + suffix

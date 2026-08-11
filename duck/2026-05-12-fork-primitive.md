@@ -1,4 +1,4 @@
-# 2026-05-12 — Fork primitive for figaro
+# 2026-05-12: Fork primitive for figaro
 
 **Status:** brainstorm (substrate shipped, fork-proper not started). Folded
 into work on the `worktree-fork-sentinel` branch through commit `75b50ba`.
@@ -12,15 +12,15 @@ entries `[N, last]` and a **fresh** child appendable from N. The parent dir
 becomes a read-only branch point. `figaro attend` on a branch point presents
 an interactive menu of children, recursing until a leaf is selected.
 
-## User's framing — preserved
+## User's framing: preserved
 
 - *"WAL stays append-only."* No `TruncateBack`. Dangling tool_use at the tail is
   repaired by appending an `system.interrupt` sentinel IR entry; the translator
   emits a synthetic provider-acceptable surrogate on the wire. The IR is the
-  source of truth — mutation by deletion erodes replay/audit/fork semantics.
+  source of truth: mutation by deletion erodes replay/audit/fork semantics.
 - *"Translation should also be a figwal log, though not one that can branch."*
   Translator caches use the same `Log[T]` interface as the IR. Forks ride along
-  with the IR — translator logs aren't independently fork-able from the user's
+  with the IR: translator logs aren't independently fork-able from the user's
   POV.
 - *"Arias nested by id on disk."* Each fork is a subdirectory of its parent;
   the disk tree mirrors the conceptual fork tree.
@@ -40,18 +40,18 @@ an interactive menu of children, recursing until a leaf is selected.
    `figaro fork abc 6 v2`).
 5. **No depth cap.**
 
-## Pre-reqs in figwal — SHIPPED upstream
+## Pre-reqs in figwal: SHIPPED upstream
 
 - ✅ `Log.Fork` accepts optional second name `oldFutureName` (default = parent
   basename). Commit: `c32c9b1` on `figwal`.
-- 🟡 `Store.Rename(oldPath, newPath)` — deferred. Not on the fork critical path.
+- 🟡 `Store.Rename(oldPath, newPath)`: deferred. Not on the fork critical path.
   Without a Store, document that Rename only updates the calling `*Log` and
   other holders go stale.
 
-**Removed from scope:** `Log.TruncateBack`. The WAL stays append-only — see
+**Removed from scope:** `Log.TruncateBack`. The WAL stays append-only: see
 sentinel section below.
 
-## Interrupt sentinel — SHIPPED in `worktree-fork-sentinel`
+## Interrupt sentinel: SHIPPED in `worktree-fork-sentinel`
 
 The IR is append-only. When a tool_use lands without a matching tool_result
 (agent interrupt, fault, exit), the dangling state stays on disk. Repair is
@@ -68,19 +68,19 @@ lazy.
 - **Translator handling:** per-provider translators map the sentinel to
   whatever the provider requires to keep the conversation valid. For Anthropic
   this is a synthetic `tool_result` with `is_error: true` per dangling
-  tool_use_id, emitted only into the wire bytes — never back into the IR.
+  tool_use_id, emitted only into the wire bytes: never back into the IR.
 - **Replaces** the old `repair.go` suffix-truncate path.
 
 Commits: `20f7b28` `a1516a4` `fff5439` `02b5d78` on the worktree branch.
 
-## Substrate migration — SHIPPED in `worktree-fork-sentinel`
+## Substrate migration: SHIPPED in `worktree-fork-sentinel`
 
 `internal/store` now lives on figwal. Two backing implementations of `Log[T]`:
 
-- `FileLog` — legacy NDJSON file (one `aria.jsonl` per aria, one
+- `FileLog`: legacy NDJSON file (one `aria.jsonl` per aria, one
   `translations/<provider>.jsonl` per translator). Read-side only; new arias
   never get this shape.
-- `FigwalLog` — figwal segments. `arias/<id>/aria/<segment>.jsonl` for the IR,
+- `FigwalLog`: figwal segments. `arias/<id>/aria/<segment>.jsonl` for the IR,
   `arias/<id>/translations/<provider>/<segment>.jsonl` for translators.
 
 Selection: legacy file on disk pins legacy; otherwise figwal. The env gate
@@ -93,7 +93,7 @@ work). Whole interface renamed `Stream[T]` → `Log[T]`.
 Commits: `38b2c2a` `6fcf983` `fac87a6` `926acc1` `4c09402` on the worktree
 branch.
 
-## figwal v0.2.0 rename — SHIPPED upstream
+## figwal v0.2.0 rename: SHIPPED upstream
 
 `Cached` is gone. The user-facing type in `figwal/log` is `Log`, with all
 of the cached/lock-free semantics that used to be on `Cached`. The
@@ -106,37 +106,37 @@ layer can build snapshots across the package boundary.
 Tagged as **v0.2.0** on `figwal` (`fc1b63b`). figaro tracks the new
 API in commit `d48e54e` on this branch.
 
-## Shared LogCache (read routing) — SHIPPED in `worktree-fork-sentinel`
+## Shared LogCache (read routing): SHIPPED in `worktree-fork-sentinel`
 
 The post-migration `figaro aria` CLI was reading from disk directly,
 which races the live agent on figwal's active segment recovery. Fix
 shape: a single process owns each figwal log; everyone else asks that
 process.
 
-- **`store.LogCache`** — process-wide refcount-and-TTL cache of aria
+- **`store.LogCache`**: process-wide refcount-and-TTL cache of aria
   Logs keyed by ID (and by `(aria, provider)` for translator caches).
   Multiple acquirers share one instance, lock-free reads against the
   live writer. Background GC sweeps entries where `refs == 0` and
   `lastAccess > ttl ago` and closes them.
-- **angelus owns it** — `Angelus.LogCache` created at construction
+- **angelus owns it**: `Angelus.LogCache` created at construction
   (default TTL 5 minutes), closed in `Shutdown`. Passed to every
   agent on spawn via `figaro.Config.LogCache`.
-- **agent uses it lazily-via-refcount** — `agent.newLog` acquires
+- **agent uses it lazily-via-refcount**: `agent.newLog` acquires
   through the cache on spawn and releases on `Kill`. While the agent
   is alive its ref keeps the entry from eviction; when the agent
   dies the entry idles and may evict.
-- **`aria.read` RPC** — new method on the angelus socket. Pulls
+- **`aria.read` RPC**: new method on the angelus socket. Pulls
   entries through `LogCache.AcquireIR(id)` and returns a paginated
   window `{entries, total, next_from}`. Hard-capped at 1000 entries
   per call.
-- **CLI cut-over** — `figaro aria` now calls `acli.AriaRead` instead
+- **CLI cut-over**: `figaro aria` now calls `acli.AriaRead` instead
   of opening the FileBackend directly, eliminating the cross-process
   recovery hazard. Both legacy `aria.jsonl` and figwal `aria/`
   layouts read through the same path.
 
 Commits: `85728c2` `75b50ba` on the worktree branch.
 
-## Disk layout — what fork *will* produce (NOT shipped)
+## Disk layout: what fork *will* produce (NOT shipped)
 
 ```
 arias/abc12345/                 → arias/abc12345/                  RO branch point
@@ -158,7 +158,7 @@ arias/abc12345/                 → arias/abc12345/                  RO branch p
 Note: disk shape now uses figwal's `aria/` segment dir (not the legacy
 `aria.jsonl` file) per the migration.
 
-## Hierarchical aria IDs — NOT shipped
+## Hierarchical aria IDs: NOT shipped
 
 Aria IDs become slash-separated paths. Concrete edits:
 
@@ -176,10 +176,10 @@ Aria IDs become slash-separated paths. Concrete edits:
 - `Backend.List` walks the tree depth-first, returns leaf IDs (and branch
   points, depending on the consumer).
 
-This is the next standalone phase — it lands without any fork-RPC behavior
+This is the next standalone phase: it lands without any fork-RPC behavior
 change.
 
-## Three-stream fork — NOT shipped
+## Three-stream fork: NOT shipped
 
 `figaro.fork` (agent socket, not angelus) handler:
 
@@ -202,7 +202,7 @@ change.
 If steps 3-5 partially fail, the per-log `.fork-pending` files block re-open.
 Operator inspects; no automatic rollback in v1.
 
-## RPC additions — NOT shipped
+## RPC additions: NOT shipped
 
 **Agent socket:**
 
@@ -234,16 +234,16 @@ type ChildInfo struct {
 }
 ```
 
-## CLI additions — NOT shipped
+## CLI additions: NOT shipped
 
-- `figaro fork <at_lt> <fresh_name> [<old_future_name>]` — operates on
+- `figaro fork <at_lt> <fresh_name> [<old_future_name>]`: operates on
   attended aria.
-- `figaro fork --aria <id> <at_lt> <fresh_name> [<old_future_name>]` —
+- `figaro fork --aria <id> <at_lt> <fresh_name> [<old_future_name>]` -
   explicit aria.
-- `figaro attend <id>` — when angelus returns `Bound: false`, render an
+- `figaro attend <id>`: when angelus returns `Bound: false`, render an
   indented menu (number + name + last-modified + message count), prompt
   selection, recurse on the chosen child, bind the leaf.
-- `figaro list` — render as a tree (depth-first walk of `arias/`); branch
+- `figaro list`: render as a tree (depth-first walk of `arias/`); branch
   points get a trailing `*`. Existing flat output stays available behind
   `--flat`.
 

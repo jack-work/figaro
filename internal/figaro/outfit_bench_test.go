@@ -67,7 +67,7 @@ func benchAgent(b *testing.B, configDir string, initial form.Patch) *figaro.Agen
 }
 
 // BenchmarkDressFirstTime is materializing a composition onto a FRESH board:
-// the full cost — the closure fold plus the patch append.
+// the full cost: the closure fold plus the patch append.
 func BenchmarkDressFirstTime(b *testing.B) {
 	dir := benchConfig(b, 40, 4096)
 	a := benchAgent(b, dir, form.Patch{})
@@ -82,7 +82,7 @@ func BenchmarkDressFirstTime(b *testing.B) {
 
 // benchDress is what the API boundary hands the agent now: MATERIALIZED keys.
 // The fold that produced them is benchmarked where it lives, in internal/outfit
-// (BenchmarkDressWarm / BenchmarkDressCold) — the agent's price is the append.
+// (BenchmarkDressWarm / BenchmarkDressCold): the agent's price is the append.
 func benchDress(b *testing.B, configDir string, names ...string) form.Patch {
 	patch, err := outfit.New(configDir).Dress(names, form.Patch{}, "")
 	if err != nil {

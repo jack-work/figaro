@@ -98,7 +98,7 @@ func TestTranscriptExitFlushesClosuresBeyondClientTail(t *testing.T) {
 
 // A shrink shorter than the live region is the one case inline drawing cannot
 // fix, so resize reports that the caller should escape to the pager. Any other
-// resize repaints in place — an unconditional jump would be jarring.
+// resize repaints in place, an unconditional jump would be jarring.
 func TestResizePromotesOnlyOnDestructiveShrink(t *testing.T) {
 	newTurn := func() *livelogTurn {
 		var out bytes.Buffer

@@ -10,14 +10,14 @@ import (
 // glamour drops the ESC byte of a sequence it does not understand, keeps the
 // parameter bytes as VISIBLE TEXT, and has already wrapped as though the whole
 // sequence were zero-width. So `\x1b[31mred` rendered as a row four cells wider
-// than the width it was given — at EVERY width — printing "[31m" on screen.
+// than the width it was given, at EVERY width: printing "[31m" on screen.
 // Models paste ANSI out of tool output constantly, so this is a live path.
 //
 // THIS TEST EXISTS BECAUSE ITS ABSENCE LET ME SHIP A LIE: a previous commit
 // claimed to fix this by calling SanitizeForTerminal on the markdown. That
 // function is an OUTPUT sanitizer whose documented job is to KEEP SGR verbatim,
 // so it changed nothing here, and nothing in the suite could say so. The fix is
-// StripEscapes — for markdown an escape is neither content nor styling.
+// StripEscapes: for markdown an escape is neither content nor styling.
 //
 // CANARY (watched): swap StripEscapes for SanitizeForTerminal in Prose ->
 //
@@ -26,8 +26,8 @@ func TestMarkdownWithANSIDoesNotLeakOrOverrun(t *testing.T) {
 	// input -> the text that must remain VISIBLE. An explicit expectation, not
 	// a list of forbidden substrings: my first version grepped for "[?1049h"
 	// while the actual leak was "1049h", so five shapes passed green while
-	// alt-screen and cursor-hide — the two sequences every pasted tool
-	// transcript carries — still printed.
+	// alt-screen and cursor-hide: the two sequences every pasted tool
+	// transcript carries: still printed.
 	cases := []struct{ name, in, want string }{
 		{"sgr", "before \x1b[31mred\x1b[0m after words to make this wrap somewhere", "before red after words to make this wrap somewhere"},
 		{"private-mode", "alt \x1b[?1049h screen and text that continues for a while", "alt screen and text that continues for a while"},

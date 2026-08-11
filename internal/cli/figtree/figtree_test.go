@@ -130,7 +130,7 @@ func TestColorRulesPaintTheLabelByFieldValue(t *testing.T) {
 	}
 }
 
-// Painting must not disturb the column geometry — the whole reason Render does
+// Painting must not disturb the column geometry: the whole reason Render does
 // its own padding.
 func TestPaintedLabelsDoNotShiftColumns(t *testing.T) {
 	build := func() Tree {

@@ -27,7 +27,7 @@ func benchPatch(kv map[string]string) *rpc.FormPatch {
 	return &rpc.FormPatch{Set: set}
 }
 
-// One casting call, end to end, against an already-studied role — the
+// One casting call, end to end, against an already-studied role: the
 // steady-state shape (the first call's study registration is one-time).
 func BenchmarkCast(b *testing.B) {
 	old := slog.Default()

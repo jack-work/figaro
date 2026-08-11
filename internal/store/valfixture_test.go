@@ -56,7 +56,7 @@ func TestGenerateNumberedFixture(t *testing.T) {
 	body := func(tag string, n int) string {
 		var b strings.Builder
 		for i := 0; i < lines; i++ {
-			fmt.Fprintf(&b, "%s-%04d line %d of %d — unique marker %s%04d.%d\n",
+			fmt.Fprintf(&b, "%s-%04d line %d of %d: unique marker %s%04d.%d\n",
 				tag, n, i+1, lines, tag, n, i+1)
 		}
 		return b.String()

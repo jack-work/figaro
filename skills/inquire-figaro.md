@@ -51,7 +51,7 @@ figaro list -j | jq -r --arg self "$SELF" --argjson cut "$CUT" '
 ```
 
 That's your target list. Show it to the user before firing if there
-are more than a handful — a courtesy, not a blocker.
+are more than a handful, a courtesy, not a blocker.
 
 ### 2. Fan out in parallel
 
@@ -66,7 +66,7 @@ figaro send --id <ARIA_ID> -r -- "<the user's question>"
 Each becomes its own session. Record `{aria_id → session_id}`.
 
 Do not use `-e` (that's for ephemeral throwaways, contradicts `--id`).
-Do not use `-f` here — `-f` returns before the reply exists, and this
+Do not use `-f` here: `-f` returns before the reply exists, and this
 skill's whole point is *collecting* the reply.
 
 ### 3. Monitor and harvest
@@ -74,8 +74,8 @@ skill's whole point is *collecting* the reply.
 Poll the sessions. As each finishes, its stdout is that aria's
 reply. Two useful signals:
 
-- `process poll <session>` — status + output since last poll.
-- Cross-check with `figaro list -j | jq '.[] | select(.id=="<id>") | .state'` — a `state` of `idle` means the daemon has finished the turn.
+- `process poll <session>`: status + output since last poll.
+- Cross-check with `figaro list -j | jq '.[] | select(.id=="<id>") | .state'`, a `state` of `idle` means the daemon has finished the turn.
 
 Kick off synthesis for early finishers while stragglers are still
 going if that helps latency. Otherwise `wait` until every session
@@ -85,7 +85,7 @@ reports done.
 
 Fold the replies into whatever the user asked for:
 
-- **Chat**: a compact, attributed summary — "**a1b2c3d4** (mantra):
+- **Chat**: a compact, attributed summary: "**a1b2c3d4** (mantra):
   their take" per aria, then a short comparative synthesis.
 - **Document**: write a markdown file (or edit an existing one) with
   each reply quoted verbatim, followed by your synthesis.

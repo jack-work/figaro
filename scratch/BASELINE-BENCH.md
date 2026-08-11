@@ -1,4 +1,4 @@
-# Baseline (f85b6ed, 0.22.1) — AMD Ryzen 7 5800X, -benchtime=100ms
+# Baseline (f85b6ed, 0.22.1), AMD Ryzen 7 5800X, -benchtime=100ms
 
 chalkboard: Diff/huge/identical 6.3ns  Diff/large/one-key 436µs
             DiffDerived/huge/5-key 841ns  Get/huge 76ns
@@ -14,9 +14,9 @@ outfit:     FoldCold 627µs/476KB/1579  FoldWarm 76.6µs/23.7KB/175
 
 form:   Diff/huge/identical 6.4ns  DiffDerived/huge/5-key 856ns  Get/huge 80ns
         MarshalJSON/default 130µs (117 MB/s)  JSONRoundTrip/default 318µs
-        — unchanged; the tree did not move.
-store:  FormReduceFold M=30/N=100 43.5µs/rec  (was 43.5) — unchanged
-        FormOpenReplay M=30/N=2000 5.19µs/rec (was 5.16) — unchanged
+: unchanged; the tree did not move.
+store:  FormReduceFold M=30/N=100 43.5µs/rec  (was 43.5): unchanged
+        FormOpenReplay M=30/N=2000 5.19µs/rec (was 5.16): unchanged
         FormState10000    5.3ms /  1.8MB /  36k allocs  (was 123ms / 74MB / 970k)
         FormPatches10000 50.6ms / 17.7MB / 345k allocs  (was 123ms / 74MB / 970k)
         ^ the Form publishes once and Snapshot is an atomic load; the old cache
@@ -37,7 +37,7 @@ figaro: DressFirstTime 75µs   MaterializeWarm 69µs
 | 12 ephemeral arias, one daemon, own devshells | 12/12 answered |
 | 12 BACKED arias (birth + dress + turn + store) | 12/12, 41.7s wall, 56 MB daemon RSS, 1.5 MB store |
 | distinct ids / mantras / birth-patch hashes | 12 distinct, no shared state |
-| `layers` on any board afterwards | none — materialized and stripped |
+| `layers` on any board afterwards | none: materialized and stripped |
 
 # Migration, measured on a copy of a real store (463 conversations, 230 MB)
 
@@ -89,18 +89,18 @@ of variation, which is what says whether a delta means anything.
 ## CORRECTION: the attribution below was wrong, and the benchmark could not
 ## have supported it
 
-Caught in review. BenchmarkFork calls `back.Fork` + `ApplyForm` — it never
+Caught in review. BenchmarkFork calls `back.Fork` + `ApplyForm`: it never
 touches ForkWith, and XwalStore.Fork is byte-identical between the two trees. So
 "every fork now writes a birth record" was a true statement about the VERB and
 not about the thing being measured. Splitting the halves:
 
 | | main | form | |
 |---|---|---|---|
-| FormApplySameAria — EVERY form write | 14.07 µs | 40.45 µs | +187% |
-| FormApplyFreshAria — includes opening the form | 239.79 µs | 250.92 µs | +4.6% |
+| FormApplySameAria: EVERY form write | 14.07 µs | 40.45 µs | +187% |
+| FormApplyFreshAria: includes opening the form | 239.79 µs | 250.92 µs | +4.6% |
 
 The cost was in the APPLY half, which is paid on every `fig set`, every mantra
-update, every system.* patch a turn commits — not once per hand-driven fork. A
+update, every system.* patch a turn commits: not once per hand-driven fork. A
 completely different frequency, and the mitigation I had listed and rejected was
 for the wrong operation.
 
@@ -110,7 +110,7 @@ for the wrong operation.
 
     next.patches = append(append([]VersionedPatch(nil), st.patches...), vp)
 
-O(history) per write, so the cost grew with the aria's age — which is why the
+O(history) per write, so the cost grew with the aria's age: which is why the
 numbers would not reconcile, and why a synthetic benchmark understated it. An
 aria with a few hundred patches paid 3x; a long-lived one pays worse. There is
 exactly one writer, so appending to the shared backing array is safe: a
@@ -132,12 +132,12 @@ N, µs/op:
 | 3000 | 30.32 | 17.52 |
 
 After is FLAT and drifting down as the append amortizes. Before GROWS, gently to
-1000 and then turning — total work was O(N^2). That is O(1) versus O(history)
+1000 and then turning: total work was O(N^2). That is O(1) versus O(history)
 SHOWN, and it does not depend on which benchtime anyone picked.
 
 What remains against main is the actor hop: roughly +27% and O(1).
 
-The 27% that remains is the actor hop — Send, handler, commit, reply channel —
+The 27% that remains is the actor hop: Send, handler, commit, reply channel -
 which is what buys the single writer, the atomic If-Match and durability before
 visibility. That one is a real trade and it is O(1).
 
@@ -146,12 +146,12 @@ visibility. That one is a real trade and it is O(1).
     ForkWith   465 µs   sd 3.4%
 
 Decomposed: ~160 µs is the fork (unchanged from main, p=0.937 in review's
-split), the rest is the birth patch, the renderable record and SyncCoherent —
+split), the rest is the birth patch, the renderable record and SyncCoherent -
 the price of "a fork must carry a patch", paid once per hand-driven fork.
 
 ## Superseded attribution (kept because being wrong in public is the point)
 
-+26 µs, 6.2%, and it is not noise — the spread is 1-2% on both sides.
++26 µs, 6.2%, and it is not noise: the spread is 1-2% on both sides.
 
 Before, a plain `fig fork` was `ForkTail` and nothing else; a dress patch was a
 separate `ApplyForm` only when `-O` asked for one. Now every fork writes a form
@@ -161,8 +161,8 @@ patch must be durable before anything can spawn beneath it.
 
 So the 26 µs buys: the fork and its patch in ONE critical section (no window
 where a patch is ACKed on the parent and misses the child), an identity for the
-branch, and an aria that knows its own id. Cheaper than that is achievable —
-batching the fsync, or letting a dressing-free fork skip the record — but both
+branch, and an aria that knows its own id. Cheaper than that is achievable -
+batching the fsync, or letting a dressing-free fork skip the record: but both
 trade back the property the record exists to provide, and 26 µs on an operation
 a human performs by hand is not the place to spend that.
 
@@ -172,5 +172,5 @@ path re-cloned the board per row.
 
 ## Transcript rig (from review, 6 runs each, benchstat)
 
-Every line ~ except TranscriptHeavyEnter at −2.08% (p=0.009) — faster. No
+Every line ~ except TranscriptHeavyEnter at −2.08% (p=0.009): faster. No
 regression from the actor extraction or the form fanout.

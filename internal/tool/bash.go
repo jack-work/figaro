@@ -68,7 +68,7 @@ type BashTool struct {
 	CwdFn func() string
 
 	// Executor runs the request. Defaults to a bare LocalExecutor
-	// (no transformers, no env sanitization) — agent wiring is
+	// (no transformers, no env sanitization), agent wiring is
 	// expected to supply a properly-configured executor.
 	Executor Executor
 
@@ -201,8 +201,8 @@ func (b *BashTool) run(ctx context.Context, req BashRequest, onOutput OnOutput) 
 	}
 
 	// PTY commands are interactive (TUIs, coding agents) and only the
-	// blocking path drives a pseudo-terminal — the background Start path
-	// is pipe-only — so PTY never yields to a session.
+	// blocking path drives a pseudo-terminal: the background Start path
+	// is pipe-only: so PTY never yields to a session.
 	be, canBackground := b.Executor.(BackgroundExecutor)
 	if canBackground && b.Sessions != nil && !req.PTY {
 		return b.runSession(ctx, be, req, cwd, onOutput)

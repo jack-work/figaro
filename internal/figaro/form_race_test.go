@@ -105,7 +105,7 @@ func TestFormRPCRaceRepro(t *testing.T) {
 }
 
 // TestFormStateRaceRepro is the same race one layer down, with no
-// agent, no inbox and no log — just form.State, whose doc comment
+// agent, no inbox and no log: just form.State, whose doc comment
 // claims "single-owner (no concurrent access)". It isolates the unsynchronized
 // publication of State.snapshot (and State.dirty) so the -race report names
 // form/state.go directly.

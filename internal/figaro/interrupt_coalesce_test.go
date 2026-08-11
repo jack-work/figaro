@@ -81,7 +81,7 @@ func TestCoalesce_CarrierPatchesRideTheCombinedMessage(t *testing.T) {
 }
 
 // Nothing to fold is not an error, and a single prompt is left exactly as it
-// was — including its id, which a client may already be holding.
+// was: including its id, which a client may already be holding.
 func TestCoalesce_IsANoOpOnAShortQueue(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

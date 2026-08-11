@@ -45,7 +45,7 @@ func TestBash_NonZeroExit(t *testing.T) {
 	result, err := b.Execute(context.Background(), map[string]interface{}{
 		"command": "exit 42",
 	}, nil)
-	// Non-zero exit is not an error — it's returned in the output.
+	// Non-zero exit is not an error: it's returned in the output.
 	require.NoError(t, err)
 	assert.Contains(t, resultText(result), "exited with code 42")
 }

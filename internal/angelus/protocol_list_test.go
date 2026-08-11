@@ -18,7 +18,7 @@ type metadataListBackend struct {
 }
 
 // LastTS is recency's new source: figwal, not the sidecar. The dormant
-// list reads it per row — cheap by figwal's contract (retained atomic
+// list reads it per row: cheap by figwal's contract (retained atomic
 // counter), and crucially wake-free.
 func (b *metadataListBackend) LastTS(string) int64 { return 20 }
 
@@ -113,7 +113,7 @@ func TestDormantListReportsBoundPIDs(t *testing.T) {
 // The outfit column names the STUMP an aria was born under, which is minted
 // with the hash and never changes. It used to name a form key of the
 // same name, so `set system.outfit_name x` renamed the aria's outfit in every
-// listing — and, since the column is what the version is re-resolved against,
+// listing, and, since the column is what the version is re-resolved against,
 // reported an unchanged outfit as stale in the same breath.
 func TestListLabelsFromTheStumpNotTheForm(t *testing.T) {
 	backend := &metadataListBackend{}

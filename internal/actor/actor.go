@@ -4,7 +4,7 @@
 // There is one implementation because there are two users with the same
 // problem. An aria's prompt inbox and a form's writer both need "callers
 // enqueue, one goroutine owns the resource, order is FIFO, close refuses rather
-// than drops" — and when that was written twice, one copy grew a deadlock the
+// than drops", and when that was written twice, one copy grew a deadlock the
 // other did not have.
 //
 // THE HANDLER DOES ITS OWN WORK AND NOTHING ELSE. It must not call back into
@@ -40,7 +40,7 @@ type Queue[E any] struct {
 }
 
 // Start returns a queue. A non-nil handle gets its own goroutine draining the
-// queue in order — the form's writer. A nil handle means the OWNER drains, by
+// queue in order: the form's writer. A nil handle means the OWNER drains, by
 // calling Recv itself: the aria's turn loop does that, because what it does
 // between items (run a turn, wait on a provider) is not a handler's business.
 // Either way there is exactly one consumer, which is the whole point.
@@ -72,7 +72,7 @@ func Start[E any](ctx context.Context, handle func(E), fold Coalescer[E]) *Queue
 	return q
 }
 
-// Send enqueues an item. False means the queue is closed — a refusal, so a
+// Send enqueues an item. False means the queue is closed, a refusal, so a
 // caller waiting on a reply is not left waiting forever.
 func (q *Queue[E]) Send(item E) bool {
 	q.mu.Lock()
@@ -108,8 +108,8 @@ func (q *Queue[E]) Recv() (E, bool) {
 }
 
 // Do runs fn against the pending queue under the lock, replacing it with what
-// fn returns. It is the seam a user with its own bookkeeping needs — an inbox
-// that must reorder, coalesce, or delete queued items by id — without a second
+// fn returns. It is the seam a user with its own bookkeeping needs, an inbox
+// that must reorder, coalesce, or delete queued items by id: without a second
 // copy of the runtime growing around it.
 func (q *Queue[E]) Do(fn func(pending []E) []E) {
 	q.mu.Lock()
@@ -154,7 +154,7 @@ func (q *Queue[E]) Len() int {
 func (q *Queue[E]) IsIdle() bool { return q.Len() == 0 }
 
 // Closed reports whether the queue refuses new items. It reads the done channel
-// rather than the flag, so it is safe to call from INSIDE Do or Read — where the
+// rather than the flag, so it is safe to call from INSIDE Do or Read: where the
 // lock is already held, and where a user's own bookkeeping most wants to ask.
 func (q *Queue[E]) Closed() bool {
 	select {
@@ -169,7 +169,7 @@ func (q *Queue[E]) Closed() bool {
 // is still delivered: Recv returns false only once the queue is empty.
 //
 // That asymmetry is load-bearing, not sloppiness. A caller past Send is often
-// waiting on a reply the handler produces — Form.Apply blocks on exactly that —
+// waiting on a reply the handler produces: Form.Apply blocks on exactly that -
 // so dropping accepted items would leave it waiting forever. The line is drawn
 // at acceptance: Send refuses (returns false) after Close, and anything it
 // already took is answered.

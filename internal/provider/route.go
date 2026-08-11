@@ -119,7 +119,7 @@ func ResolveMarkMode(snap form.Snapshot) MarkMode {
 
 // MarkPlan is the resolved answer to "what do I stamp on this request?".
 // Every field is a function of the route's capabilities and the aria's
-// configured mode — both stable for the life of a turn — and never of a
+// configured mode: both stable for the life of a turn, and never of a
 // message's position. That is what keeps serialization byte-stable: a
 // message's shape cannot change from one turn to the next.
 type MarkPlan struct {
@@ -139,8 +139,8 @@ func (p MarkPlan) Marking() bool { return p.Blocks || p.TopLevel }
 // MarkPlan resolves capabilities and configured mode into a plan.
 //
 // Auto prefers the request-level directive wherever a route offers one. A
-// client cannot know which model a ROUTER will choose — that is the whole
-// point of a router, the arm is picked after the request arrives — and both
+// client cannot know which model a ROUTER will choose: that is the whole
+// point of a router, the arm is picked after the request arrives, and both
 // the minimum cacheable prompt size and the breakpoint budget are
 // per-model. Only the endpoint that resolves the arm can place breakpoints
 // correctly, so figaro hands it the intent and lets it place them.
@@ -263,7 +263,7 @@ func UncachedRoute(baseURL string) Route {
 }
 
 // BaseURLEnv is the environment override for a provider's endpoint. Named
-// per provider — ANTHROPIC_BASE_URL, OPENROUTER_BASE_URL — matching the
+// per provider, ANTHROPIC_BASE_URL, OPENROUTER_BASE_URL: matching the
 // convention every SDK in this space already uses.
 func BaseURLEnv(provider string) string {
 	return strings.ToUpper(provider) + "_BASE_URL"
@@ -309,7 +309,7 @@ const sessionKeyMaxLen = 256
 //
 // It is a hash rather than the aria id itself: the value leaves the machine,
 // and a gateway has no business learning figaro's identifier space. The hash
-// is stable across turns and across restarts (the whole point — it is what
+// is stable across turns and across restarts (the whole point: it is what
 // keeps a router pinned to one upstream and one warm cache), opaque, and
 // maps to nothing. It must never be recorded in telemetry.
 func SessionKey(ariaID string) string {

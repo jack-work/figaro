@@ -14,7 +14,7 @@ import (
 // U+2500 (─) is East Asian AMBIGUOUS: one cell in most terminals, two where
 // ambiguous-wide is configured. figaro builds every rule out of it and every
 // thinking gutter out of U+2502, then trusts its own measurement when it clips,
-// pads and wraps — so on a terminal that draws them wide, every such row is
+// pads and wraps: so on a terminal that draws them wide, every such row is
 // built to half the width it will occupy and runs off the right edge. Nothing
 // inside the process can see that; only the terminal can be asked.
 //
@@ -23,7 +23,7 @@ import (
 // The reply is CSI row ; col R.
 //
 // It reports (wide, ok). ok is false when the terminal does not answer in time
-// or the reply is unparseable, in which case the caller must keep its default —
+// or the reply is unparseable, in which case the caller must keep its default -
 // a silent guess here would be worse than the bug, because it would be wrong on
 // EVERY terminal rather than on the unusual one.
 func ProbeAmbiguousWide(timeout time.Duration) (wide, ok bool) {
@@ -103,7 +103,7 @@ func parseCursorReply(s string) (r struct {
 }
 
 // MeasureDrawn reports how many columns the terminal actually advanced when it
-// drew s — the ground truth figaro's own measurement is checked against.
+// drew s: the ground truth figaro's own measurement is checked against.
 func MeasureDrawn(s string, timeout time.Duration) (int, bool) {
 	if !IsTerminal(int(os.Stdin.Fd())) || !IsTerminal(int(os.Stdout.Fd())) {
 		return 0, false

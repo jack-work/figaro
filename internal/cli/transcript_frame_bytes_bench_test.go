@@ -9,7 +9,7 @@ import (
 	"github.com/jack-work/figaro/internal/livelog/aria"
 )
 
-// The wire — how many bytes a frame actually costs the terminal. On a local
+// The wire: how many bytes a frame actually costs the terminal. On a local
 // terminal this is nearly free; over ssh or through tmux it is the whole
 // latency budget, which is why it deserves its own number alongside ns/op.
 //

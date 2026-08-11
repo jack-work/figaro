@@ -34,7 +34,7 @@ const dumpBytes = 2048
 // `input_json_delta` chunks that don't reassemble into valid JSON),
 // the offending block's accumulated bytes are captured on the span
 // via `provider.accumulate.failed` so the failure is diagnosable
-// from `traces.jsonl` alone — no wire-dir replay required.
+// from `traces.jsonl` alone: no wire-dir replay required.
 func drainStream(ctx context.Context, stream *ssestream.Stream[anthropic.MessageStreamEventUnion], model string, bus provider.Bus) (message.Message, anthropic.Message, error) {
 	acc := anthropic.Message{Model: anthropic.Model(model)}
 	// Tracks per-tool-use indices that have already emitted a
@@ -73,7 +73,7 @@ func drainStream(ctx context.Context, stream *ssestream.Stream[anthropic.Message
 			// the prose and every tool call already streamed are in hand and
 			// paid for; throwing them away because the model owed us one
 			// escape is the expensive half of this failure, not the cheap one.
-			// Quarantine the offending block and carry on — the call comes
+			// Quarantine the offending block and carry on: the call comes
 			// back as an error result, and the model resends it.
 			if quarantineMalformedToolInput(ctx, &acc, err) {
 				if retry := acc.Accumulate(event); retry == nil {
@@ -182,7 +182,7 @@ func handleBlockStop(ctx context.Context, ev anthropic.ContentBlockStopEvent, ac
 // `input_json_delta` chunk to `acc.Content[idx].Input` *before*
 // calling `json.Marshal` on the block at `content_block_stop`; when
 // that marshal fails (json.RawMessage validates), the malformed
-// buffer is still sitting in `Input` — we just have to read it.
+// buffer is still sitting in `Input`: we just have to read it.
 //
 // We pick the last tool_use block as the offender heuristic: text
 // and thinking blocks don't route through json.RawMessage marshaling
@@ -249,7 +249,7 @@ func windowAround(b []byte, off, radius int) string {
 // jsonSyntaxOffset unwraps an error chain looking for a
 // *json.SyntaxError and returns its byte Offset, or -1 if not found.
 // The SDK wraps the marshal error with fmt.Errorf, so a naive type
-// assertion fails — errors.As walks the chain for us.
+// assertion fails: errors.As walks the chain for us.
 func jsonSyntaxOffset(err error) int64 {
 	var se *json.SyntaxError
 	if errors.As(err, &se) {
@@ -265,7 +265,7 @@ func jsonSyntaxOffset(err error) int64 {
 // `partial_json` is a JSON string whose contents are a fragment of the tool
 // input's JSON TEXT. A tab inside an argument therefore travels as the FOUR
 // bytes `\\t` and must arrive as the TWO bytes `\t`. If it arrives as one raw
-// tab, one decoding too many has happened somewhere — and JSON forbids a raw
+// tab, one decoding too many has happened somewhere, and JSON forbids a raw
 // control character inside a string literal, so that fragment can never
 // reassemble into anything valid. The turn is already lost at this moment,
 // several seconds before json.Marshal says so at content_block_stop.
@@ -275,7 +275,7 @@ func jsonSyntaxOffset(err error) int64 {
 //
 //   - wire.doubled_escape true: the wire was correct and something below us
 //     decoded twice. TestWireIsDecodedExactlyOnce says that something is not
-//     figaro and not the SDK — so look at whatever sits between.
+//     figaro and not the SDK: so look at whatever sits between.
 //   - wire.doubled_escape false: the fragment arrived single-escaped. Nothing
 //     downstream could have produced that; the sender did.
 //

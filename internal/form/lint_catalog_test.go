@@ -53,7 +53,7 @@ func TestDefaultTemplates_LintClean(t *testing.T) {
 	}
 
 	// Also assert that every template we expected to fire actually
-	// produced a rendered entry — guards against accidentally
+	// produced a rendered entry: guards against accidentally
 	// templating to empty strings.
 	rkeys := make(map[string]bool, len(rendered))
 	for _, r := range rendered {
@@ -66,7 +66,7 @@ func TestDefaultTemplates_LintClean(t *testing.T) {
 
 // TestDefaultTemplates_AllBodiesAreFactual checks that every body our
 // default templates produce reads as factual context (e.g. "Working
-// directory: …", "Model: …") — not as override instructions or
+// directory: …", "Model: …"): not as override instructions or
 // system commands. Spot-check by lint, plus an explicit assertion that
 // no body contains common imperative red flags.
 func TestDefaultTemplates_AllBodiesAreFactual(t *testing.T) {

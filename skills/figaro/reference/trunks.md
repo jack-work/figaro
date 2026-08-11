@@ -2,11 +2,11 @@
 
 figaro's aria store is backed by **figwal** (a segmented WAL with native
 forking). The aria id IS a figwal **trunk id**, and it is **stable across
-forks** — the continuation line keeps it. This file is the model: trunks,
+forks**: the continuation line keeps it. This file is the model: trunks,
 cauterization, LT numbering, and the `attend`/`ls`/`fork`/`kill` surface. For
 how the bytes sit on disk, see [arias.md](arias.md).
 
-> The word **trunk** echoes opera's *aria di baule* — the "trunk aria" (or
+> The word **trunk** echoes opera's *aria di baule*: the "trunk aria" (or
 > "suitcase aria") a singer carried from production to production, packed in
 > their travel trunk and slotted in wherever it fit. A figaro **trunk** is
 > likewise the portable canonical line a conversation carries through its forks.
@@ -17,7 +17,7 @@ The store is a fork *forest* of nodes (`n0/n1/…`). A **trunk is a
 root-to-leaf path** through it, not a single node. When you fork, the
 **continuation line keeps the trunk id** (the canonical trunk); the
 **alternative branches off** as a new trunk. So your id never moves out from
-under you — forking your own trunk doesn't relocate you.
+under you: forking your own trunk doesn't relocate you.
 
 Node ids are pure plumbing; nothing in the CLI ever addresses them.
 
@@ -27,28 +27,28 @@ figaro derives three node kinds from XWAL topology: the markerless root is
 `null`, markerless depth-one stumps are outfits, and live trunks are
 conversations. The full tree, top to bottom:
 
-- **null** — the genesis root, **one per store** (`xwal.CreateTrunks`).
+- **null**: the genesis root, **one per store** (`xwal.CreateTrunks`).
   Ceremonial, **closed**. Pure structure.
-- **outfit** (`name@content-hash`) — a named `CreateStump` child of null;
+- **outfit** (`name@content-hash`), a named `CreateStump` child of null;
   **one per distinct outfit name + content-version**, deduped by its stump
   name. Each carries that outfit's form stamp baked once
   into a **shared prefix**: `system.outfit_name`/`system.outfit_version`,
-  plus the whole outfit form — `skills.*`, `system.credo`,
+  plus the whole outfit form: `skills.*`, `system.credo`,
   `system.model`, …. **Closed.**
-- **conversation** — `SpawnUnderStump` from a *outfit*; inherits the outfit's
+- **conversation**: `SpawnUnderStump` from a *outfit*; inherits the outfit's
   rendered prefix via the fork watermark (cached once, shared by every
   conversation under it). The only **live** kind.
-- **branch** — a fork of a conversation. Also a conversation, just one whose
+- **branch**, a fork of a conversation. Also a conversation, just one whose
   parent is another conversation rather than an outfit.
 
 **Top-level aria vs branch.** A **top-level aria** is a conversation whose
-parent is an outfit — a root of the conversation forest. A **branch** is a
+parent is an outfit, a root of the conversation forest. A **branch** is a
 conversation whose parent is another conversation. (Both are `kindConversation`
 on disk; the distinction is lineage.)
 
-**Cauterization:** the null root and outfit stumps are **closed** — you can't
+**Cauterization:** the null root and outfit stumps are **closed**: you can't
 append to or continue them; they're structure, not conversation. Forking or
-sending "at" a cauterized trunk does *not* re-split it — it spawns a **fresh
+sending "at" a cauterized trunk does *not* re-split it: it spawns a **fresh
 child conversation** beneath it instead (`ForkAt` redirects through
 `SpawnUnderRoot`/`SpawnUnderStump`). This is why "create" and "fork a
 outfit" are the same mechanism.
@@ -62,7 +62,7 @@ Every turn has a figwal **main-LT**, continuous along the trunk's node chain:
 - `3+` = conversation turns
 
 `figaro show` labels each **turn** by its **turn id**, and `send`/`fork`/
-`attend`'s `:<turn>` address that — the shown number **is** the fork
+`attend`'s `:<turn>` address that: the shown number **is** the fork
 coordinate.
 
 ### Two coordinates: `:turn` and `.LT`
@@ -70,7 +70,7 @@ coordinate.
 | form | coordinate | what it means |
 |---|---|---|
 | `<id>:<n>` | **turn** | The exchange: your prompt and everything the agent did about it. What `show` prints, and what you normally want. |
-| `<id>.<n>` | **LT** | The model's logical time — one step of its experience. What `show -v/-l` prints. |
+| `<id>.<n>` | **LT** | The model's logical time: one step of its experience. What `show -v/-l` prints. |
 
 The colon is the human coordinate; the dot is the model's. **Prefer the
 colon.** Most LTs sit mid-tool, and forking there strands a `tool_invoke`
@@ -78,18 +78,18 @@ without its result, so `.LT` is the *precise* form rather than the safe one.
 Reach for it when you already hold an LT (from `show -v`, a log line, a
 tool), or to branch somewhere no turn boundary exists.
 
-Both work everywhere a coordinate does — `send`, `fork`, `attend` — because
+Both work everywhere a coordinate does: `send`, `fork`, `attend`: because
 one parser reads them, and the daemon accepts both on the wire (`at_turn`
 and `at_lt`) and does any translation itself. Naming both at once is an
 error rather than a precedence rule.
 
 ## Commands
 
-- **`send <id>:<turn> -- …`** (or `<id>.<lt>`) — fork the trunk so `<turn>` is
+- **`send <id>:<turn> -- …`** (or `<id>.<lt>`): fork the trunk so `<turn>` is
   **replaced**, then send to the new branch (and **rebind** this shell there;
   `--stay`/`--attend=false` to send but not move). Without a coordinate, plain
   append to the tail.
-- **`fork [<id>[:<turn>|.<lt>]] [--stay] [-- <prompt>]`** — imperative branch. A
+- **`fork [<id>[:<turn>|.<lt>]] [--stay] [-- <prompt>]`**: imperative branch. A
   `:<turn>` is an interior fork: everything through the end of turn
   `<turn>-1` is shared, the original suffix becomes the continuation, a fresh
   empty alternative diverges. `.<lt>` forks at that logical time exactly. No
@@ -98,7 +98,7 @@ error rather than a precedence rule.
   forking any other aria, or `--stay`, leaves your session untouched.
 
   **With a prompt** it forks *and sends*, the way `new -- <prompt>` does. The
-  prompt always lands on the **alternative** — the fresh empty branch — and
+  prompt always lands on the **alternative**: the fresh empty branch, and
   the continuation is never written to. `--stay` then governs only the
   **shell**: without it, forking your own aria moves you to the alternative
   (that is where the prompt went); forking anyone else's aria never moves
@@ -106,7 +106,7 @@ error rather than a precedence rule.
   Flags are `send`'s (same parser, same dispatch): `-r` raw, `-v` verbatim,
   `-o` verbose, `-l` listen, `-x`(+`-n`/`-y`) exec, `-f` forget. `-e` is
   **rejected** (a fork mints a persistent branch), and a send flag without a
-  prompt is an error rather than a no-op. `-j` prints one line —
+  prompt is an error rather than a no-op. `-j` prints one line -
   `mode:"fork-send"`, `aria_id` = the branch. `fork --` with an empty body
   opens the composer.
 
@@ -116,7 +116,7 @@ error rather than a precedence rule.
 
   **An aria cannot fork itself from inside its own running turn.** Fork
   coordination rides the agent's single-threaded inbox, so the fork queues
-  behind the very turn whose tool call is waiting on it — neither side can
+  behind the very turn whose tool call is waiting on it: neither side can
   move. With `[authz] policy = "default"` this is refused up front with an
   error carrying the workaround; with the policy off it simply hangs.
 
@@ -137,7 +137,7 @@ error rather than a precedence rule.
   Read `fork.json` on the **next** turn to learn the ids. Unsetting
   `FIGARO_ARIA`/`FIGARO_NO_BIND` matters: otherwise the detached child is
   attributed back to the calling aria and lands in the same trap. Forking a
-  **different** aria mid-turn is fine — that aria's drain loop is free — and
+  **different** aria mid-turn is fine: that aria's drain loop is free, and
   so is forking yourself while **idle**, which is exactly what the detached
   script does.
 
@@ -145,7 +145,7 @@ error rather than a precedence rule.
   > trunk coordination blocks the actor loop at all; the fix is to store trunk
   > state in its own reducible xwal channel the way the form is stored.
   > See the note at `angelus.handlers.fork`.
-- **`attend <id>` / `<id>:<turn>` / `:<turn>`** (alias **`at`**) — bind this shell,
+- **`attend <id>` / `<id>:<turn>` / `:<turn>`** (alias **`at`**): bind this shell,
   like `cd`. CLI-native attendance: the pid↔trunk map (the angelus binding
   registry) is the binding authority; the figwal layer knows nothing of it. An
   `:<turn>` sets a **one-shot pending fork-point** consumed by the next bare
@@ -154,32 +154,32 @@ error rather than a precedence rule.
   tool `attend` refuses, because `FIGARO_ARIA` pins that shell to the aria
   that spawned it, permanently (see the figaro SKILL). An aria reaches another
   aria with an explicit `--id`, never by attending it.
-- **`attend null`** (the literal `null`) — **go home**: unbind the shell. New
+- **`attend null`** (the literal `null`): **go home**: unbind the shell. New
   conversations then default to the live outfit. The word echoes the
   **kindNull** genesis root that sits above every outfit. There is **no
-  `detach`** (removed) — `attend null` is the unbind. `attend ~` is kept as
+  `detach`** (removed): `attend null` is the unbind. `attend ~` is kept as
   a legacy alias (the tilde must be quoted in the shell). Attending a
   cauterized (null/outfit) aria is rejected with a nudge toward
   `attend null` / `ls -H` / `ls -g`.
-- **`kill <id>`** — remove a trunk **and its whole subtree** (children
+- **`kill <id>`**: remove a trunk **and its whole subtree** (children
   included). Needs `--recursive`/`-r` to remove a trunk that has live
   branches.
 
-## ls / list — attend is `cd`
+## ls / list, attend is `cd`
 
 `attend` is the `cd` of the forest; `ls`/`list` navigate relative to it.
 
 **Scope:**
 
-- **`figaro ls`** — current scope. **Attended** → your aria's fork tree
+- **`figaro ls`**: current scope. **Attended** → your aria's fork tree
   (with `●` marking you); **detached** → home (all top-level arias).
-- **`figaro ls <id>`** — scope to that aria's subtree.
+- **`figaro ls <id>`**: scope to that aria's subtree.
 
 **Views (don't unbind you):**
 
-- **`-H`/`--home`** — the home view (all top-level arias + their branches)
+- **`-H`/`--home`**: the home view (all top-level arias + their branches)
   *without* unbinding; `●` stays on your real aria.
-- **`-g`/`--global`** — home **plus** the null + versioned-outfit anchors,
+- **`-g`/`--global`**: home **plus** the null + versioned-outfit anchors,
   drawn above the conversations (the infrastructure trunks).
 
 **Cap:**
@@ -189,12 +189,12 @@ error rather than a precedence rule.
 
 **JSON:**
 
-- **`--json`** — a pro/dev escape hatch: the global state of **all** arias
+- **`--json`**, a pro/dev escape hatch: the global state of **all** arias
   incl. null + outfits, **always**. Rejects every other flag.
 
 Columns: **ARIA** (mantra, or `aria <id>`, with tree glyphs + a
 `●`this-shell / `▸`running / `○`idle marker), **ID** (opaque hex), **OUTFIT**,
-**VER** (`live` or a short content-hash), **FORK** (`@N` — the LT a branch was
+**VER** (`live` or a short content-hash), **FORK** (`@N`: the LT a branch was
 taken at, blank for top-level arias), AGE, MSGS, CTX, CWD.
 
 ## promote

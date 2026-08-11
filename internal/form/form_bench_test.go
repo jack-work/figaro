@@ -8,7 +8,7 @@ import (
 	"github.com/jack-work/figaro/internal/form"
 )
 
-// Form microbenchmarks — the BEFORE measurement for the
+// Form microbenchmarks: the BEFORE measurement for the
 // persistent-tree migration (see DESIGN.md, branch chalk/bench).
 //
 // Everything here uses only the public form API, and every
@@ -93,7 +93,7 @@ func BenchmarkDiff(b *testing.B) {
 // BenchmarkDiff above builds `next` from a fresh map, so before the tree
 // swap it measured the only thing there was to measure, and after the
 // swap it measures the pathological case of two structurally unrelated
-// trees holding near-identical content — no sharing, so no
+// trees holding near-identical content: no sharing, so no
 // pointer-identity pruning. Every real Diff in figaro (turn.go's context
 // combine, ApplyOutfit, Render's prev) compares a board with its own
 // descendant, which is the case below. Keep both: one is the worst case,

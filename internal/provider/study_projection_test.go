@@ -27,11 +27,11 @@ func vp(v uint64, key, val string) store.VersionedPatch {
 }
 
 // The observed set folds at the stamps: each entry's StudyVersions
-// bracket exactly the studied patches since the previous stamp — the
-// bound board's derivation, generalized — and a stamped member with no
+// bracket exactly the studied patches since the previous stamp: the
+// bound board's derivation, generalized, and a stamped member with no
 // accessor renders a tombstone note instead of silence.
 func TestProjectionFoldsStudiedPatchesBetweenStamps(t *testing.T) {
-	// MemLog does not persist StudyVersions — drive the projection with a
+	// MemLog does not persist StudyVersions: drive the projection with a
 	// wrapper that stamps entries the way the xwal log does.
 	entries := []store.Entry[message.Message]{
 		{LT: 1, Payload: message.Message{Role: message.RoleInput}, StudyVersions: map[string]uint64{"@r": 1}},
@@ -169,7 +169,7 @@ func TestStudyWindowIsFoldedToItsResult(t *testing.T) {
 	}
 }
 
-// system.* belongs to the machinery, not to a reader — the board's own
+// system.* belongs to the machinery, not to a reader: the board's own
 // renderer skips it, and an observed form is not different.
 func TestStudyRenderSkipsTheHarnessNamespace(t *testing.T) {
 	msg := message.Message{StudyPatches: map[string][]message.Patch{

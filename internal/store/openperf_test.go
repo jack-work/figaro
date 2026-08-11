@@ -8,7 +8,7 @@ import (
 )
 
 // seedLargeAria builds a store with one conversation carrying nMsgs IR
-// messages of ~msgBytes each — a stand-in for a long session whose single IR
+// messages of ~msgBytes each, a stand-in for a long session whose single IR
 // segment is large. Returns the store root + aria id.
 func seedLargeAria(tb testing.TB, nMsgs, msgBytes int) (string, string) {
 	tb.Helper()

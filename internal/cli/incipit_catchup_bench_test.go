@@ -14,7 +14,7 @@ import (
 //
 //   - withSeed is on the PER-FRAME path: buildIndex calls resetToTail on every
 //     frame while the pager follows, and resetToTail is where the seed is
-//     merged. The default (no seed — every session that opened its own turn,
+//     merged. The default (no seed: every session that opened its own turn,
 //     and every `figaro listen`) must cost nothing measurable.
 //   - pageCarriesInquiry was on the per-notify-frame path until it was gated;
 //     the benchmark is what says how much that gate is worth.
@@ -61,8 +61,8 @@ func (nullWriter) Write(p []byte) (int, error) { return len(p), nil }
 // to merge. "seed=0" is the one that must not regress: it is every session that
 // opened its own turn, plus every `figaro listen`.
 //
-// The rebuild runs when the client's closed revision moves — a newly committed
-// message — NOT on every frame; BenchmarkTranscriptResetToTailSteady is what a
+// The rebuild runs when the client's closed revision moves, a newly committed
+// message: NOT on every frame; BenchmarkTranscriptResetToTailSteady is what a
 // frame actually pays, and it is the early return.
 func BenchmarkTranscriptResetToTail(b *testing.B) {
 	for _, c := range []struct{ held, seed int }{{40, 0}, {40, 4}, {400, 0}, {400, 4}} {
@@ -96,7 +96,7 @@ func BenchmarkTranscriptResetToTailSteady(b *testing.B) {
 
 // BenchmarkPageCarriesInquiry is the discriminator's cost per aria frame. It is
 // gated to the opening of the session (watchInquiry), so this is what the gate
-// saves on every frame after the first — measured rather than assumed.
+// saves on every frame after the first: measured rather than assumed.
 func BenchmarkPageCarriesInquiry(b *testing.B) {
 	prompt := "Run a bash sleep of 6 seconds, then reply with exactly one word: DATE"
 	frames := map[string]aria.Page{

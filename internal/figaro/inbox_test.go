@@ -36,7 +36,7 @@ func TestInbox_TakeReadySetContiguousPrefix(t *testing.T) {
 	b.Send(event{typ: eventUserPrompt, text: "p"})
 	b.Send(event{typ: eventSet})
 
-	// A set behind a prompt is not taken until the prompt clears — the
+	// A set behind a prompt is not taken until the prompt clears: the
 	// drain loop preserves FIFO across kinds.
 	assert.Empty(t, b.TakeReadySet())
 	require.Len(t, b.TakeReadyUserPrompts(), 1)
@@ -159,7 +159,7 @@ func TestInbox_SnapshotPromptsFIFOAndReadOnly(t *testing.T) {
 	defer cancel()
 	b := NewInbox(ctx)
 
-	// A pure-form prompt (empty text) is a carrier, not a message —
+	// A pure-form prompt (empty text) is a carrier, not a message -
 	// the default snapshot omits it. Non-prompt events (Set, Fork) are also
 	// skipped.
 	b.Send(event{typ: eventUserPrompt, text: "first"})
@@ -173,7 +173,7 @@ func TestInbox_SnapshotPromptsFIFOAndReadOnly(t *testing.T) {
 	assert.False(t, b.IsIdle())
 	require.Equal(t, []string{"first", "second"}, promptTexts(b.SnapshotPrompts(false)))
 
-	// Opt in and the carrier appears — it is deletable, so it must be
+	// Opt in and the carrier appears: it is deletable, so it must be
 	// addressable. Nothing else changes.
 	require.Equal(t, []string{"first", "", "second"}, promptTexts(b.SnapshotPrompts(true)))
 }
@@ -225,7 +225,7 @@ func TestInbox_EpochIsStablePerInboxAndFreshPerGeneration(t *testing.T) {
 	b.Send(event{typ: eventUserPrompt, text: "one"})
 	assert.Equal(t, epoch, b.Epoch(), "the epoch must not move under a live client")
 
-	// A new inbox is a new generation — the id space restarts, so the token
+	// A new inbox is a new generation: the id space restarts, so the token
 	// that qualifies it must not.
 	next := NewInbox(ctx)
 	assert.NotEqual(t, epoch, next.Epoch())

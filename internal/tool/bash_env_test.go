@@ -7,7 +7,7 @@ import (
 
 // TestBashToolEnv locks in the contract: every bash tool invocation
 // carries FIGARO_NO_BIND=1 so an aria's shell-outs to figaro can never
-// silently inherit — or clobber — the daemon shell's pid-binding.
+// silently inherit: or clobber: the daemon shell's pid-binding.
 func TestBashToolEnv(t *testing.T) {
 	env := bashToolEnv("")
 	if !slices.Contains(env, "FIGARO_NO_BIND=1") {
@@ -23,7 +23,7 @@ func TestBashToolEnvAria(t *testing.T) {
 		t.Errorf("bashToolEnv(id) = %v, want to contain FIGARO_ARIA=eac16fef", env)
 	}
 	// Identity without the no-bind guard would let a shell-out mutate
-	// the terminal's binding — the two must ride together.
+	// the terminal's binding: the two must ride together.
 	if !slices.Contains(env, "FIGARO_NO_BIND=1") {
 		t.Errorf("bashToolEnv(id) = %v, want to contain FIGARO_NO_BIND=1", env)
 	}

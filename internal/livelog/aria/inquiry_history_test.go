@@ -6,14 +6,14 @@ import (
 	"github.com/jack-work/figaro/internal/livedoc"
 )
 
-// A TURN MET BY SCROLLING UP KEEPS ITS HEAD — its opening nodes and its
-// question — even though the page carrying the tail arrived first.
+// A TURN MET BY SCROLLING UP KEEPS ITS HEAD: its opening nodes and its
+// question: even though the page carrying the tail arrived first.
 //
 // Reported as "opening old arias omits inquiries entirely". It was never only
 // the question: a turn first seen by its TAIL was marked closed, and every
 // later part for it was skipped whole, so the opening nodes were dropped in
 // silence too. Only the tail of each page-boundary turn survived, and the
-// question was then unreachable for good — no amount of scrolling could bring
+// question was then unreachable for good: no amount of scrolling could bring
 // back a head the client refused to adopt.
 func TestScrollingBackCompletesATurnsHead(t *testing.T) {
 	c := NewClient()
@@ -104,7 +104,7 @@ func TestHistoryStillDoesNotClaimTheOpenSlot(t *testing.T) {
 		t.Fatal("history destroyed the live turn")
 	}
 	if open.Turn != 9 {
-		t.Errorf("the open turn is now %d — a clipped-head part claimed the slot", open.Turn)
+		t.Errorf("the open turn is now %d, a clipped-head part claimed the slot", open.Turn)
 	}
 	if open.Inquiry != "the live question" {
 		t.Errorf("the live turn lost its question: %q", open.Inquiry)

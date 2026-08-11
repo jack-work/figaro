@@ -9,8 +9,8 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 )
 
-// Real-data proof for S32: every turn in a genuine 173-message aria — written
-// entirely BEFORE the input/output rename — has exactly one inquiry, and the
+// Real-data proof for S32: every turn in a genuine 173-message aria: written
+// entirely BEFORE the input/output rename: has exactly one inquiry, and the
 // legacy role vocabulary decodes through message.Role.UnmarshalJSON with no
 // migration. Skips when the fixture is absent so the suite stays hermetic.
 func TestTurns_RealAriaHasAnInquiryPerTurn(t *testing.T) {

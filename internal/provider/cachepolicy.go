@@ -19,7 +19,7 @@ const (
 
 	// AutoCacheBreakpoints is what figaro itself emits: the last system
 	// block, the last tool, and the rolling tail. The fourth slot is
-	// deliberately left free — for a downstream gateway that tops up its
+	// deliberately left free: for a downstream gateway that tops up its
 	// own marker, and for the per-fork long-retention marker described in
 	// reference/cache-control.md.
 	AutoCacheBreakpoints = 3
@@ -34,7 +34,7 @@ type CachePolicy struct {
 	Type string
 	// TTL is "" (the provider default, 5 minutes) or "1h". It is a
 	// separate wire field: {"type":"ephemeral","ttl":"1h"}. Writing the
-	// retention into Type — {"type":"1h"} — is rejected by the API.
+	// retention into Type: {"type":"1h"}: is rejected by the API.
 	TTL string
 }
 
@@ -146,7 +146,7 @@ func EstimateWireTokens(bytes int) int {
 // reads and writes broken out beside it, and confirms it arithmetically:
 // total_tokens = prompt + output. Anthropic reports the same three numbers
 // DISJOINT. figaro's InputTokens is the uncached remainder, because
-// tokens.ContextFromUsage sums all four — so a provider that copies an
+// tokens.ContextFromUsage sums all four: so a provider that copies an
 // inclusive prompt count straight into InputTokens counts every cached
 // token twice, and a fully cached aria reports nearly double its real size.
 //

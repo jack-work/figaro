@@ -120,7 +120,7 @@ func TestEndToEndResourceProfile(t *testing.T) {
 	require.Zero(t, after.mem.ResidentArias,
 		"eviction could not reach the caches an agent was pinning")
 	require.Equal(t, len(clients), after.mem.AttachedClients,
-		"reclamation disconnected a terminal — the regression this arc exists to prevent")
+		"reclamation disconnected a terminal: the regression this arc exists to prevent")
 	require.Equal(t, arias, after.mem.Endpoints, "an endpoint vanished with its agent")
 
 	// --- every terminal still works, and reads do not wake -------------

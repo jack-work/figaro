@@ -106,7 +106,7 @@ func Height() int {
 // the previous frame into history, so a streaming reply appeared several times
 // over, each copy longer than the last, and the pager floor and bodyHidden()
 // were both reasoning about a height the terminal never had. A measurement we
-// dislike is still a measurement — the only honest fallback is when there is
+// dislike is still a measurement: the only honest fallback is when there is
 // no measurement at all.
 func sizeOr(measured, fallback int) int {
 	if measured > 0 {
@@ -121,7 +121,7 @@ const reset = "\033[0m"
 // MEANING, not for hue, so a second palette is a second var rather than a
 // rewrite of every call site.
 //
-// Kanagawa, at the owner's request, in xterm-256 — the terminal's own 8
+// Kanagawa, at the owner's request, in xterm-256: the terminal's own 8
 // primaries vary per theme, and truecolor is not safe to assume through tmux.
 // Each field names the Kanagawa colour it approximates.
 type palette struct {
@@ -130,9 +130,9 @@ type palette struct {
 	green string
 	cyan  string
 
-	arg   string // springBlue #7FB4CA — what NAMES a call: tool name, status word
-	body  string // fujiWhite #DCD7BA — prose, thinking, argument VALUES: one voice
-	label string // fujiGray #727169 — argument NAMES, quieter than their values
+	arg   string // springBlue #7FB4CA: what NAMES a call: tool name, status word
+	body  string // fujiWhite #DCD7BA: prose, thinking, argument VALUES: one voice
+	label string // fujiGray #727169, argument NAMES, quieter than their values
 
 	diffAdd string // added line: autumnGreen #76946A on a winterGreen wash
 	diffDel string // removed line: autumnRed #C34043 on a winterRed wash

@@ -8,7 +8,7 @@ import (
 
 // FuzzStripEscapesLeavesNoESCBody: whatever the input, the output must carry no
 // ESC and no recognisable escape BODY. The body is what makes this a rendering
-// bug rather than a safety one — glamour prints it, having wrapped as though it
+// bug rather than a safety one: glamour prints it, having wrapped as though it
 // were nothing.
 func FuzzStripEscapesLeavesNoESCBody(f *testing.F) {
 	for _, s := range []string{

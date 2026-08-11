@@ -6,8 +6,8 @@ import "github.com/jack-work/figaro/internal/livelog/aria"
 //
 // The transcript's line space is the concatenation of every retained message's
 // rendered rows, with a ""/rule/"" separator triple injected between messages.
-// Materializing that whole space costs O(retained rows) — tens of thousands of
-// clipToWidth calls — yet a frame paints ~40 of them and a pure viewport move
+// Materializing that whole space costs O(retained rows): tens of thousands of
+// clipToWidth calls: yet a frame paints ~40 of them and a pure viewport move
 // (j/k, wheel, u/d, gg/G) changes none of the content.
 //
 // lineIndex records, per message, only where its rows START in line space. It
@@ -18,7 +18,7 @@ import "github.com/jack-work/figaro/internal/livelog/aria"
 // the rows actually painted.
 
 // lineEntry is one message's contribution to the transcript's line space.
-// start is the absolute line of the entry's first line — the separator's
+// start is the absolute line of the entry's first line: the separator's
 // first blank when sep is set, otherwise the first row.
 type lineEntry struct {
 	turn int
@@ -41,14 +41,14 @@ type lineEntry struct {
 func (e *lineEntry) isGap() bool { return e.gap != nil }
 
 // sepRows is the height of the separator between two messages: a blank, then
-// the RULE — and the next message's voice header directly beneath it, with no
+// the RULE, and the next message's voice header directly beneath it, with no
 // gap.
 //
 // THE RULE IS THE HEADER'S OVERLINE, not the previous message's underline.
 // That is already the shape renderMsgBase draws inside a message, between a
 // turn's question and the reply to it ("> input" / blank / text / blank / RULE
 // / "< figaro"), and TestInquiryChromeAgreesAcrossViews pins it. The separator
-// BETWEEN messages used to be a three-row triple — blank, rule, blank — so the
+// BETWEEN messages used to be a three-row triple: blank, rule, blank: so the
 // same rule grew a trailing blank whenever it happened to fall on a message
 // boundary, and "> input" sat one row lower than "< figaro" for no reason a
 // reader could see.
@@ -65,8 +65,8 @@ const sepRows = 2
 // Every conversion between entry-relative and absolute line space goes through
 // here rather than testing e.sep and naming the constant again. That is not
 // tidiness. Of the places that encode the separator's height, only entryLine
-// paints a row; the other two — rebuildLineLT's anchor fill and nodeSpanOf's
-// span arithmetic — live in INDEX space, so when they disagree with the real
+// paints a row; the other two: rebuildLineLT's anchor fill and nodeSpanOf's
+// span arithmetic: live in INDEX space, so when they disagree with the real
 // height nothing on screen looks wrong. A stale value there instead puts the
 // resize anchor and selection scroll-into-view one line further out of phase
 // per preceding separator, degrading with distance down the transcript, and no
@@ -96,7 +96,7 @@ func (e *lineEntry) height() int {
 // line that belongs to no node: a separator row, a gap sentinel, or an
 // out-of-range index.
 //
-// It is the mirror of entryLine and shares its arithmetic deliberately — a
+// It is the mirror of entryLine and shares its arithmetic deliberately, a
 // click resolves a screen row to a node through here while the painter resolves
 // the same row to text through there, and the two disagreeing would put the
 // selection cue on a different node than the one under the pointer.
@@ -114,7 +114,7 @@ type lineIndex struct {
 	entries []lineEntry
 	scratch []lineEntry
 	total   int
-	// rev is the transcript's windowRev this index was built from — the single
+	// rev is the transcript's windowRev this index was built from: the single
 	// authority on "the retained page set changed", shared with the page layer.
 	// See transcript.invalidateWindow.
 	rev uint64
@@ -138,8 +138,8 @@ func (x *lineIndex) entryAt(i int) int {
 }
 
 // buildIndex refreshes the line index for the current retained window. It
-// subsumes the bookkeeping lines() used to do — tail reset while following,
-// width invalidation of rowCache, and keeping lineTurn current — but stops short
+// subsumes the bookkeeping lines() used to do: tail reset while following,
+// width invalidation of rowCache, and keeping lineTurn current: but stops short
 // of materializing any row text.
 func (t *transcript) buildIndex() {
 	if t.follow {
@@ -151,12 +151,12 @@ func (t *transcript) buildIndex() {
 	}
 	entries, total := t.index.scratch[:0], 0
 	// ONE AUTHORITY ON HOW TALL AN ENTRY IS: lineEntry.height. Line space is
-	// advanced by asking the entry, not by re-deriving it here — the two
+	// advanced by asking the entry, not by re-deriving it here: the two
 	// disagreeing is how a gap could be one row in the index and several on
 	// screen, which no frame golden would catch.
 	// A SEPARATOR MARKS A TURN BOUNDARY, NOT AN ENTRY BOUNDARY. One turn can be
-	// several entries — a long agentic turn is delivered in slices, and paging
-	// back into it delivers more — and a rule between those slices says "another
+	// several entries, a long agentic turn is delivered in slices, and paging
+	// back into it delivers more, and a rule between those slices says "another
 	// exchange began here" when nothing did. That is what made a long turn read
 	// as a run of turns each missing its question.
 	prevTurn := -1
@@ -199,7 +199,7 @@ func (t *transcript) buildIndex() {
 	}
 	// The page set moved => the index describes a different window, full stop.
 	// That is the one authority (windowRev); the shape diff below only has to
-	// catch the things the page set cannot see — a width change, an expanded
+	// catch the things the page set cannot see, a width change, an expanded
 	// tool, the open message growing a token.
 	changed := t.index.rev != t.windowRev
 	if !changed {
@@ -223,7 +223,7 @@ func (t *transcript) buildIndex() {
 }
 
 // rebuildLineLT refills the slice-per-line map used for resize anchoring. Only
-// called when the index shape actually changed — a scroll leaves it alone.
+// called when the index shape actually changed, a scroll leaves it alone.
 // Separator rows carry the FOLLOWING message's slice, as they always have.
 func (t *transcript) rebuildLineLT() {
 	if cap(t.lineKey) < t.index.total {
@@ -232,7 +232,7 @@ func (t *transcript) rebuildLineLT() {
 	t.lineKey = t.lineKey[:t.index.total]
 	for k := range t.index.entries {
 		e := &t.index.entries[k]
-		// Driven by height(), the one authority — separator, rows and the gap
+		// Driven by height(), the one authority: separator, rows and the gap
 		// sentinel alike. Counting e.rows here instead is how a gap entry ends
 		// up with a lineKey hole that only resize anchoring can see.
 		for i := e.start; i < e.start+e.height(); i++ {
@@ -243,7 +243,7 @@ func (t *transcript) rebuildLineLT() {
 
 // gapKey is the sliceKey a hole is addressed by: its first MISSING anchor,
 // packed exactly as a message's (Turn, From) is. It cannot collide with a held
-// message — that anchor is the one we do not hold — and it moves when the hole
+// message: that anchor is the one we do not hold, and it moves when the hole
 // shrinks, which is what makes the viewport anchor follow a fill.
 func gapKey(g aria.Gap) sliceKey {
 	return sliceKey(int64(g.From.Turn)<<sliceKeyFromBits | int64(g.From.Node&(1<<sliceKeyFromBits-1)))
@@ -256,7 +256,7 @@ func gapKey(g aria.Gap) sliceKey {
 //
 // It is the ONE walker over the window's line space. window materializes row
 // TEXT through it and rowRefs collects row REFS through it, so the two cannot
-// drift about which entry a given absolute line fell in — the failure mode
+// drift about which entry a given absolute line fell in: the failure mode
 // being a click that highlights the node above or below the one it landed on,
 // which no golden frame test can see because the frame is correct either way.
 func (t *transcript) forEachWindowRow(a, b int, fn func(e *lineEntry, rel int)) {
@@ -298,7 +298,7 @@ func (t *transcript) window(a, b int, dst []string) []string {
 }
 
 // rowRefs collects the node each of absolute lines [a, b) belongs to, in the
-// same order window materializes them — so index i of the two results describes
+// same order window materializes them: so index i of the two results describes
 // one row: its text and the node it addresses.
 //
 // This is what makes a POINTER usable in the pager. Every other gesture
@@ -348,7 +348,7 @@ func (t *transcript) entryLine(e *lineEntry, rel int, hl string, sel selectionSp
 		// as anywhere else: the rule is the OVERLINE of what sits beneath it
 		// (see sepRows). The sentinel row plays the part of the voice header for
 		// the block that is missing, so the seam above a hole looks exactly like
-		// the seam above a message — which is the point, because a hole IS where
+		// the seam above a message: which is the point, because a hole IS where
 		// messages would be.
 		return t.gapRow(e.gap)
 	}

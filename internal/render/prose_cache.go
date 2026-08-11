@@ -4,7 +4,7 @@ import "sync"
 
 // Prose is a pure but expensive function: rendering one markdown block through
 // glamour is ~1 ms and ~9,000 allocations, and figaro re-renders the same block
-// constantly — every re-entry into the transcript re-renders the whole retained
+// constantly: every re-entry into the transcript re-renders the whole retained
 // window, and the live open message re-renders all of its nodes on every tick
 // even though only the last one is growing. proseCache turns those repeats into
 // a map lookup.
@@ -68,7 +68,7 @@ func storeProse(md string, width int, rows []string) {
 	// bury the entries that are actually worth keeping (the retained window)
 	// under hundreds of partials nobody will ask for again. Since the growth
 	// is by append, the previous version is recognizable as a prefix of this
-	// one — drop it.
+	// one: drop it.
 	if prev, ok := proseLastMD[width]; ok && prev != md && len(prev) < len(md) &&
 		md[:len(prev)] == prev {
 		stale := proseKey{width: width, md: prev}

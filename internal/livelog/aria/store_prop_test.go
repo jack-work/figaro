@@ -30,7 +30,7 @@ import (
 //          "minimal input: (2,1) (2,3) (2,4)"   <- shrunk from ~25 messages
 //        TestPropertyInsertIsIdempotent
 //
-//   2. Query concatenates every segment into ONE flat []Message with no Gap —
+//   2. Query concatenates every segment into ONE flat []Message with no Gap -
 //      the fabricated-adjacency bug itself:
 //        TestPropertyQuerySegmentsNeverSpanAHole, at iteration 1
 //          "segment 0 crosses turn 1->2 with no known extent"
@@ -64,7 +64,7 @@ func pmsg(turn int, from uint64, n int) Message {
 	return m
 }
 
-// unit is one single-node message — the finest grain the algebra deals in, so
+// unit is one single-node message: the finest grain the algebra deals in, so
 // that a random set of them is trivially disjoint and every insertion order is
 // legal.
 func unit(turn int, node uint64) Message {
@@ -88,7 +88,7 @@ func anchorsOf(s *Store) []Anchor {
 
 // checkInvariants asserts 1, 2 and 3 of docs/range-store.md over a whole store.
 //
-// truth is the GENERATOR's model of how many anchors each turn really has —
+// truth is the GENERATOR's model of how many anchors each turn really has -
 // deliberately not the store's own `ends`, which is bookkeeping the store
 // prunes once a merge has consumed it. Checking a structure against its own
 // bookkeeping proves only that it is self-consistent; checking it against the
@@ -109,7 +109,7 @@ func checkInvariants(t *testing.T, s *Store, truth map[uint64]uint64) {
 		for j, m := range r.Msgs {
 			f, to := msgSpan(m)
 			if j > 0 && f != cur {
-				t.Fatalf("range %d: message %d starts at %v, expected %v — Msgs SPAN A HOLE", i, j, f, cur)
+				t.Fatalf("range %d: message %d starts at %v, expected %v: Msgs SPAN A HOLE", i, j, f, cur)
 			}
 			cur = to.Next()
 			if j+1 < len(r.Msgs) {
@@ -119,7 +119,7 @@ func checkInvariants(t *testing.T, s *Store, truth map[uint64]uint64) {
 					// nothing lies between: the left side must really end its
 					// turn, and no turn may sit in the middle.
 					if n, ok := truth[to.Turn]; !ok || to.Node+1 != n {
-						t.Fatalf("range %d: messages %d/%d cross turns %d->%d but turn %d has %v anchors — FABRICATED ADJACENCY",
+						t.Fatalf("range %d: messages %d/%d cross turns %d->%d but turn %d has %v anchors: FABRICATED ADJACENCY",
 							i, j, j+1, to.Turn, nf.Turn, to.Turn, truth[to.Turn])
 					}
 					if nf.Turn != to.Turn+1 || nf.Node != 0 {
@@ -340,9 +340,9 @@ func TestPropertyQuerySegmentsNeverSpanAHole(t *testing.T) {
 				if mi+1 < len(seg.Msgs) {
 					if nf, _ := msgSpan(seg.Msgs[mi+1]); nf.Turn != to.Turn {
 						// Checked against the GENERATOR's extents, not the
-						// store's — see checkInvariants.
+						// store's: see checkInvariants.
 						if n, ok := ends[to.Turn]; !ok || to.Node+1 != n || nf.Turn != to.Turn+1 || nf.Node != 0 {
-							t.Fatalf("iter %d: segment %d crosses %v -> %v but turn %d has %v anchors — FABRICATED ADJACENCY",
+							t.Fatalf("iter %d: segment %d crosses %v -> %v but turn %d has %v anchors: FABRICATED ADJACENCY",
 								iter, si, to, nf, to.Turn, ends[to.Turn])
 						}
 						prev = nf
@@ -400,7 +400,7 @@ func TestPropertyInsertIsIdempotent(t *testing.T) {
 		checkInvariants(t, s, ends)
 
 		// A FATTER message overlapping what we hold must contribute only its
-		// novel part — never a second copy of a node we already have.
+		// novel part: never a second copy of a node we already have.
 		held := map[Anchor]bool{}
 		for _, a := range anchorsOf(s) {
 			held[a] = true
@@ -466,7 +466,7 @@ func TestGapNeedsATurnExtent(t *testing.T) {
 	}
 }
 
-// TestEvictionOpensAGap — eviction and never-fetched are the same state.
+// TestEvictionOpensAGap: eviction and never-fetched are the same state.
 func TestEvictionOpensAGap(t *testing.T) {
 	s := NewStore()
 	s.SetTurnLen(1, 9)
@@ -516,7 +516,7 @@ func TestEnsureIsAStub(t *testing.T) {
 	}
 }
 
-// TestPhantomMessageOccupiesOneAnchor — an inquiry whose turn produced nothing
+// TestPhantomMessageOccupiesOneAnchor, an inquiry whose turn produced nothing
 // is a real element and a range must be able to say it holds it.
 func TestPhantomMessageOccupiesOneAnchor(t *testing.T) {
 	s := NewStore()

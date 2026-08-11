@@ -2,11 +2,11 @@
 
 An **unbound form** is durable, versioned, forkable state with no agent
 attached: a JSON tree whose every change is a patch in an append-only
-channel. A figaro's chalkboard has always been exactly this — the only
+channel. A figaro's chalkboard has always been exactly this: the only
 news is that the primitive now stands alone. One id namespace covers
 both: an id with the `@` sigil (`@a1b2c3`) is an unbound form; a bare
 hex id is a figaro, which IS its bound form. Nothing ever converts
-between the two — **binding forks**, and the form goes on living.
+between the two: **binding forks**, and the form goes on living.
 
 ```
 null form ──fork──▶ unbound forms ──fork+aria_id──▶ figaros
@@ -18,7 +18,7 @@ null form ──fork──▶ unbound forms ──fork+aria_id──▶ figaros
 
 ## Using forms without a figaro (state tracking)
 
-**Mint.** Dressing is required — a form is born of its patch, and `fig form
+**Mint.** Dressing is required, a form is born of its patch, and `fig form
 new` never touches the default outfit. Two axes: `-O` names outfits, `-S`
 carries keys.
 
@@ -27,7 +27,7 @@ fig form new -S name=deploy-tracker -j     # → {"form_id":"@a5af1a83",…}
 fig form new -O focus -S ttl=1h            # an outfit works too; the daemon
                                            # MATERIALIZES it at the API
                                            # boundary, so the form holds
-                                           # skills and credo — never a name
+                                           # skills and credo: never a name
                                            # to be resolved later
 ```
 
@@ -45,19 +45,19 @@ fig form delete --id @a5af1a83 status.phase
 
 Or attend the form and drop the `--id`: `fig at @a5af1a83` binds your
 shell to it (kind-agnostic; `fig at null` goes home). Writes are served
-by the daemon without waking anything — a form has nothing to wake.
+by the daemon without waking anything, a form has nothing to wake.
 Concurrent writers serialize through the form's single writer;
 conditional writes (`if-version`) refuse when the board moved.
 
 **Fork.** `fig form fork @a5af1a83 who=trial` duplicates the state at
 that moment into a fresh `@id`. The parent stays fully patchable; later
 patches to it belong to it alone; a later fork takes the later state.
-A fork must carry a patch — a fork nobody can name is refused.
+A fork must carry a patch, a fork nobody can name is refused.
 
 **List.** `fig form ls` shows FORM / NAME / TARGET / AGE / PARENT,
 scoped by attendance: attending a form shows its subtree, attending a
 figaro shows its nearest unbound ancestor's tree, attending nothing
-shows everything. `fig ls -g` is the full genealogy — null at the root,
+shows everything. `fig ls -g` is the full genealogy: null at the root,
 forms as grey-washed rows, figaros at the tails. Plain `fig ls` never
 shows forms. Recency (AGE) is the newest record timestamp anywhere in
 the node, read without waking anything.
@@ -88,7 +88,7 @@ fig bind null                   # the naked figaro (below)
 
 Bind **never rebinds your shell** (attend the printed id yourself) and
 **never starts an agent**: the figaro is born dormant and wakes on first
-use. That is where a missing provider fails — so `bind null` mints
+use. That is where a missing provider fails: so `bind null` mints
 fine, refuses its first turn, and is repaired by patching the provider
 in through the same dormant write path:
 
@@ -100,7 +100,7 @@ fig send --id dcb89d6b -- hello         # first turn wakes it for real
 ```
 
 **`fig new` is bind, sugared.** It forks the daemon's **default form**
-(the pointer in `default_form.json`), binds, and attends — the one
+(the pointer in `default_form.json`), binds, and attends: the one
 attendance-moving birth. Reusing the same default-form node across
 creates is what shares the rendered prefix and the provider's warm
 cache; that reuse is deliberately load-bearing.
@@ -108,7 +108,7 @@ cache; that reuse is deliberately load-bearing.
 **`fig outfit reload`** flags the default form dirty and reads nothing;
 the compute lands on the next `fig new`: unchanged files and an
 untouched form no-op, a moved file hash remints, and a hand-patched
-default form remints too — the lifecycle refuses to propagate an ad-hoc
+default form remints too: the lifecycle refuses to propagate an ad-hoc
 patch to every future aria. There is deliberately **no `outfit write`**:
 outfit files are one-way sources of truth.
 
@@ -137,37 +137,37 @@ marker); the resolver checks it before anything else.
 |---|---|---|---|
 | `fig form new -O` | forks it (that is what new is) | `form fork @x` duplicates | **refused**: "not an unbound form" |
 | `fig bind` | naked figaro | figaro inheriting `@x` | refused (use `fig fork`) |
-| `fig fork` | — | `form fork` | conversation fork (as ever) |
-| `fig set` / `unset` | — | writes, wake-free | live: reminder next turn; dormant: wake-free |
-| `fig form` / `state` | — | the tree | the board |
-| `fig form listen` | — | live deltas | live deltas |
+| `fig fork` |: | `form fork` | conversation fork (as ever) |
+| `fig set` / `unset` |: | writes, wake-free | live: reminder next turn; dormant: wake-free |
+| `fig form` / `state` |: | the tree | the board |
+| `fig form listen` |: | live deltas | live deltas |
 | `fig send` / `q` | attended-null: `fig new` path + autobind | role: **follows `target-aria`**, once, late, per call; plain: refused with the two remedies | the turn, as ever |
-| `fig listen` | — | role: follows the target (banner `role @x → aria y`); plain: refused | transcript |
+| `fig listen` |: | role: follows the target (banner `role @x → aria y`); plain: refused | transcript |
 | `fig at` | home (drops binding) | attends the form | attends the figaro |
 | `fig ls` | header | **never shown** | rows; form-born arias show `@parent` in OUTFIT |
 | `fig ls -g` | root | washed rows | tails |
-| `fig form rm` / `kill` | — | removes | removes |
+| `fig form rm` / `kill` |: | removes | removes |
 
 ## Roles
 
-A form carrying a **`target-aria`** key is a **role** — a stable name
+A form carrying a **`target-aria`** key is a **role**, a stable name
 for "whoever holds this job now". Duck-typed: the key IS the type, and
 only unbound forms count (the key is inert on a figaro's board).
 
 **Resolution is late, and per call.** `fig send`, `fig listen`, `hup`,
-and the queue verbs against a role read the form THEN — a banner says
-`role @x → aria y` — and reach whatever the key names at that moment.
+and the queue verbs against a role read the form THEN, a banner says
+`role @x → aria y`, and reach whatever the key names at that moment.
 Two invocations with a repoint between them land on two different
 arias: that is the succession property, not a race. Rules that keep it
 honest:
 
 - **The `form` namespace never redirects.** `fig form @role`,
-  `form listen`, `set`, `at` address the role ITSELF — how you watch
+  `form listen`, `set`, `at` address the role ITSELF: how you watch
   and repoint it. Attendance binds to the role's id; only the
   turn-shaped verbs chase the target.
 - **Roles do not chain.** A `target-aria` naming another form is
   refused, not followed.
-- **An open `fig listen` does not chase a repoint** — reconnect to
+- **An open `fig listen` does not chase a repoint**: reconnect to
   re-resolve.
 - Each role-targeted invocation costs one wake-free form read.
 
@@ -183,7 +183,7 @@ ensures the study, serialized through the figaro's actor loop. The
 mechanism is the bound board's, generalized: every IR record stamps the
 positions of the whole OBSERVED SET (own board plus studied forms), and
 the provider translator derives each member's patch-fold between
-consecutive stamps at translation time — folded into the provider IR
+consecutive stamps at translation time: folded into the provider IR
 exactly as the chalkboard's transitions are, re-derived on every
 retranslate, never baked into this aria's records. Began/stopped
 observing are stated IR marks; a studied form removed mid-observation

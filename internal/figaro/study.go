@@ -1,15 +1,15 @@
 package figaro
 
-// Study subscriptions and the cast operation — the PULL-AT-THE-STAMP
+// Study subscriptions and the cast operation: the PULL-AT-THE-STAMP
 // design (Gluck's unification): an aria observes a SET of forms; its own
 // board is member zero (the fork it was born restudying); every IR
 // append stamps the whole set's positions (store.SetObservedForms +
 // figwal AppendMainCursors); and the PROVIDER TRANSLATOR derives each
 // member's patch-fold between consecutive stamps and folds it into the
-// provider IR exactly as it folds the chalkboard's own transitions —
+// provider IR exactly as it folds the chalkboard's own transitions -
 // re-derived on every retranslate. There is no push, no pending queue,
 // no watcher: observation is sampled at main-record boundaries, which
-// is not a limitation but the design — the stamp IS the moment of
+// is not a limitation but the design: the stamp IS the moment of
 // observation.
 //
 // Spec of record: plans/forms-and-roles-v2.md §7 plus Gluck's course
@@ -85,7 +85,7 @@ func (a *Agent) requireStudyTarget(formID string) error {
 // Study subscribes this aria to an unbound form: durable on the board,
 // declared to the store (stamps begin at the next IR record), and
 // STATED in the IR so the model and a replay can account for when
-// observation began. NO transactional guarantee — that is cast's job.
+// observation began. NO transactional guarantee: that is cast's job.
 func (a *Agent) Study(formID string) ([]string, error) {
 	if err := a.requireStudyTarget(formID); err != nil {
 		return nil, err
@@ -131,7 +131,7 @@ func (a *Agent) Drop(formID string) ([]string, error) {
 }
 
 // appendStudyMark states a began/stopped-observing transition in the IR.
-// Best-effort: the stamps are the mechanism, the mark is the narration —
+// Best-effort: the stamps are the mechanism, the mark is the narration -
 // a failed narration is logged by the append path, never fatal.
 func (a *Agent) appendStudyMark(formID string, began bool) {
 	if a.figLog == nil {
@@ -175,12 +175,12 @@ func (a *Agent) patchStudies(edit func([]string) []string) ([]string, bool, erro
 }
 
 // castOp rides the inbox so that casts serialize in the figaro's actor
-// loop — THESE ARE, LITERALLY, CASTING CALLS: each aspirant role passes
+// loop: THESE ARE, LITERALLY, CASTING CALLS: each aspirant role passes
 // through the one loop, in order, and no two castings of this figaro
 // can interleave. The loop CROSS-CALLS out to the role form's writer
 // (safe by store.Form's own contract: the writer does I/O and nothing
 // else, and never calls back), so there is no parked wait and no
-// dedicated queue — the serialization IS the loop.
+// dedicated queue: the serialization IS the loop.
 type castOp struct {
 	roleID    string      // existing role; "" when rolePatch mints one
 	rolePatch *form.Patch // -O case: the role is BORN cast
@@ -201,7 +201,7 @@ func (a *Agent) serviceCast(op *castOp) {
 
 	if op.rolePatch != nil {
 		// Two steps, the second atomic: fork the NULL form with the
-		// outfit ⊕ {target-aria: me} so the role is born cast — there is
+		// outfit ⊕ {target-aria: me} so the role is born cast: there is
 		// no separate patch step to half-fail.
 		p := *op.rolePatch
 		if p.Set == nil {
@@ -252,7 +252,7 @@ func (a *Agent) serviceCast(op *castOp) {
 }
 
 // Cast submits one casting call to the actor loop and waits for its
-// verdict. ctx bounds the wait — an ordinary call timeout, no parked
+// verdict. ctx bounds the wait, an ordinary call timeout, no parked
 // machinery.
 func (a *Agent) Cast(ctx context.Context, roleID string, rolePatch *form.Patch) (castResult, error) {
 	if a.backend == nil {

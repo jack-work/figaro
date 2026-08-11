@@ -6,7 +6,7 @@ default **inline-freeze** renderer (native scrollback), and the opt-in
 
 The data model behind all of this is the UI IR (`livedoc.Node`); see
 [ir-convergence.md](ir-convergence.md) for how it relates to the canonical fig
-IR. This doc is about the *stream* — how nodes get to the screen.
+IR. This doc is about the *stream*: how nodes get to the screen.
 
 ## The shape: one turn-shaped page, pushed and pulled
 
@@ -45,14 +45,14 @@ type Turn struct {
 }
 ```
 
-A `Turn` is one exchange. `Inquiry` is the question that opened it — text on
+A `Turn` is one exchange. `Inquiry` is the question that opened it: text on
 the turn, not a node.
 
 **An absent `Inquiry` means UNCHANGED, not empty.** A part is a delta against a
 turn the client already holds, and the client keeps the question it was given.
-It is restated only on the frames that ESTABLISH a turn — the `OpenInquiry`
+It is restated only on the frames that ESTABLISH a turn: the `OpenInquiry`
 broadcast, the first frame of each streaming suffix, the suffix close, the
-seal, and every snapshot — which is every frame a client can legitimately see
+seal, and every snapshot: which is every frame a client can legitimately see
 first. Restating it on all of them was **38% of the bytes pushed** on a measured
 tape, and 62% of a turn's wire cost in the benchmark.
 
@@ -92,23 +92,23 @@ first appears), `unset` removes fields, and `patch` splices a previous
 **streamed string** using byte offsets. Three fields are streamed:
 `markdown`, `output`, and `input`.
 
-`input` is a tool's arguments **as they arrive** — the raw, still-truncated
-JSON prefix — beside `args`, which is the same thing decoded and therefore
+`input` is a tool's arguments **as they arrive**: the raw, still-truncated
+JSON prefix: beside `args`, which is the same thing decoded and therefore
 only exists once the whole object parses. It is what there is to show while
 the model is still writing a large argument, and it is deliberately not
 append-only: a bounded tail drops leading bytes as it slides, and the field is
 cleared (an `unset`) the moment `args` lands. A `Delta` carries `del` as well
 as `ins`, so a shrink is one ordinary splice and needs nothing new on the
 wire. Whether the fragments arrive smoothly at all is a **provider** question
-— see `system.eager_tool_streaming` in
+- see `system.eager_tool_streaming` in
 [architecture.md](architecture.md).
 
 ### How a tool draws
 
 One table in the CLI (`internal/cli/toolbox.go`, `toolStyles`) says how every
 tool is drawn, keyed by the tool NAME the wire already carries. It is
-presentation policy — the server has no business knowing that a shell wants a
-`$` — and it is the only place any of it is written down. A second frontend
+presentation policy: the server has no business knowing that a shell wants a
+`$`, and it is the only place any of it is written down. A second frontend
 lifts the table rather than the renderer.
 
 | field | means |
@@ -123,7 +123,7 @@ lifts the table rather than the renderer.
 "read":  {Headline: "path"},
 ```
 
-An unknown tool keeps its name and takes its first argument as the headline —
+An unknown tool keeps its name and takes its first argument as the headline -
 the same shape as the known ones, not a special case.
 
 ```
@@ -137,8 +137,8 @@ minimized                                    expanded (Enter, or Ctrl-O)
   │ 33. Rossini's Almaviva is a tenor.          │ 15:13. Figaro is a baritone.
 ```
 
-Minimized, the header carries the CALL — what a reader scanning a transcript is
-looking for — and the body carries the result, clamped, each row **cut** rather
+Minimized, the header carries the CALL: what a reader scanning a transcript is
+looking for, and the body carries the result, clamped, each row **cut** rather
 than wrapped: a preview that reflows is harder to scan than one that stops.
 Expanded, the header steps back to the tool's name because the call is about to
 be shown in full: the headline argument first (in the call colour, unlabelled),
@@ -146,7 +146,7 @@ then the other arguments, then `started`/`finished`, then one blank row, then
 the whole output, wrapped.
 
 `write` sets `Body: "content"`, so the file body streams in exactly the way a
-command's output does, and its receipt ("Wrote N bytes") is never shown — the
+command's output does, and its receipt ("Wrote N bytes") is never shown: the
 content is the interesting half and the reader can see it.
 
 The duration is **one number**: opened to finished, the model writing the call
@@ -157,16 +157,16 @@ generation.
 **Expansion is per node and it persists.** `Esc` clears the *selection* and
 leaves the expansion alone; the way back is to select the node again and press
 `Enter`, or to leave the pager. (Expansion state lives in `transcript.expanded`,
-keyed by `(turn, node)`. `pruneCaches` must keep the OPEN turn — it is the live
+keyed by `(turn, node)`. `pruneCaches` must keep the OPEN turn: it is the live
 suffix and is not in the store's window, so a walk of the window alone prunes
 it as though it had scrolled out of history. That dropped a live expansion on
 `Esc` and on every frame while following the tail.)
 
-`Ctrl-O` shows the metadata and the coordinate row and **nothing else** — it no
+`Ctrl-O` shows the metadata and the coordinate row and **nothing else**: it no
 longer opens content. Verbosity and "open this one thing" are different
 questions, and one key answering both meant neither could be asked alone.
 
-A folded multi-line value names its fold on its **label** — `content (…last 5
+A folded multi-line value names its fold on its **label**: `content (…last 5
 of 41 lines)`, and `(…first 2 of 41 lines)` once settled, because a reader
 cannot otherwise tell which end they are looking at. Expanded, the note is gone
 and the value wraps instead: there is nothing to count when everything is
@@ -186,7 +186,7 @@ Two rules that are easy to get wrong:
 - **Only the pager has an expansion gesture**, so every other surface draws the
   minimized form. That reverses an older decision for the incipit, which used
   to draw every row of a tool's output because inline rows freeze to scrollback
-  and a collapse there can never be undone. True — but written when a collapse
+  and a collapse there can never be undone. True: but written when a collapse
   was SILENT. The `… last N of M lines` banner now says what was elided,
   `figaro show` has the rest, and a 60-line file written inline buried the
   conversation it belonged to. See `ariaView.gesture`.
@@ -218,15 +218,15 @@ method: `figaro.qua` IS the create.
 → {"ok": true, "cleared": false, "epoch": "…", "queue": [ … ]}
 ```
 
-`queue` in the response is the queue **as of the hangup** — one field, one
-meaning — and `cleared` says whether those messages were removed. On the clear
-path the drain happens BEFORE any fold, so what comes back is verbatim — one
-entry per message, each with its own id — which is what makes it worth
+`queue` in the response is the queue **as of the hangup**: one field, one
+meaning, and `cleared` says whether those messages were removed. On the clear
+path the drain happens BEFORE any fold, so what comes back is verbatim: one
+entry per message, each with its own id: which is what makes it worth
 persisting.
 
 **Coalescing is a property of DRAINING, not of interrupting.** All three drain
-sites — the idle drain that opens a turn, the two mid-turn drains that steer
-one, and the interrupt — fold the contiguous run of queued prompts into one
+sites: the idle drain that opens a turn, the two mid-turn drains that steer
+one, and the interrupt: fold the contiguous run of queued prompts into one
 message: texts joined by a BLANK LINE (a lone newline is a soft break in
 markdown, so the screen would rejoin them), form input merged in queue
 order so a later value wins. **A queued `set` or `fork` is a barrier** that is
@@ -247,8 +247,8 @@ epoch is compared only for equality, and is a string on the wire because a
 **Refusals are results.** Both mutators succeed at the RPC level and report one
 outcome per requested id (`deleted`/`updated`/`rejected`), in request order.
 Neither response has a summary `ok` field: reading the outcome is the only way
-to learn anything. The reason set is closed — `committing`, `committed`,
-`merged` (with `into`, the surviving id), `stale`, `unknown`, `closed` — and
+to learn anything. The reason set is closed: `committing`, `committed`,
+`merged` (with `into`, the surviving id), `stale`, `unknown`, `closed`, and
 the JSON-RPC error channel is reserved for transport and malformed requests.
 
 `turn.done` is the only control notification. Its params are
@@ -273,7 +273,7 @@ sockets live under `figaros/<id>.sock`.
 
 Do not construct an aria path as the primary discovery mechanism. Connect to
 Angelus and attach by id, which opens the aria's endpoint if it is not already
-listening and returns its actual address. `attach` does **not** wake the aria —
+listening and returns its actual address. `attach` does **not** wake the aria -
 it guarantees somewhere to dial, and the aria wakes on the first request that
 needs a turn loop, which for a transcript or a pager is never. See
 [reclamation.md](reclamation.md).
@@ -302,7 +302,7 @@ lifecycle operations remain on Angelus. Request ids are integers in the current
 
 Node types: `prose` (assistant markdown), `thinking` (extended-thinking),
 `tool` (an invocation folded with its streamed input and result), and `steering` (a user
-message injected mid-turn — see below).
+message injected mid-turn: see below).
 
 ### Protocol stability TODO
 
@@ -326,18 +326,18 @@ methods such as `figaro.qua`, `figaro.interrupt`, and `figaro.set`.
 
 ## Default view: inline-freeze, in native scrollback
 
-The default `Incipit` renderer (`internal/livelog/render`) draws **inline** —
+The default `Incipit` renderer (`internal/livelog/render`) draws **inline** -
 no alternate screen. The consequence is the headline feature:
 
 > **Your terminal's own scrollback owns the conversation.** Closed turn slices
 > are printed once and never touched again, so scrollback, search (your
-> terminal's `/`), mouse selection, and copy all work on the real transcript —
+> terminal's `/`), mouse selection, and copy all work on the real transcript -
 > Figaro does not capture the screen or hold it hostage in a pager.
 
 The mechanism that makes this safe: the **immutability boundary is the resize
 boundary.** Closed nodes freeze to scrollback exactly once; only the open turn
 suffix is a live, redrawable region. A terminal resize therefore repaints just
-that bounded suffix — committed history is never reflowed or duplicated.
+that bounded suffix: committed history is never reflowed or duplicated.
 
 Each turn opens with one dim full-width rule and renders its inquiry above the
 agent nodes. The assistant reply ends with the id·time **bookend** (gated on the
@@ -355,14 +355,14 @@ Inline keybindings while a turn streams:
 
 Inline rendering is clean at normal pane sizes. The one case it cannot fix:
 shrinking the pane **shorter than the live suffix** makes the *terminal itself*
-scroll content into native scrollback before figaro's code runs — unreachable
+scroll content into native scrollback before figaro's code runs: unreachable
 for in-place repaint. This is a property of inline drawing, not a bug; the
 alternate-screen transcript (no scrollback to lose) is the escape hatch when you
 want a guaranteed-stable, scrollable view.
 
 ## Opt-in: the live transcript pager
 
-Press **`Ctrl-T`** to open the transcript — a full-screen, alternate-screen
+Press **`Ctrl-T`** to open the transcript, a full-screen, alternate-screen
 pager over the *whole* conversation that **keeps streaming live** while you
 scroll. It shares the same `aria.Client`/range store as the inline view. On
 entry it pulls a recent backward page, fetches older ranges on demand, and
@@ -371,7 +371,7 @@ active view paints.
 
 Alternate screen is the right tool *here specifically* because it's a deliberate,
 toggled view: it gives a guaranteed-stable, scrollable surface without occluding
-your shell history permanently — on exit, the terminal restores your normal
+your shell history permanently: on exit, the terminal restores your normal
 screen and figaro reconstructs the inline scrollback so it reads as though you'd
 run `figaro show` (full content above, cursor below).
 
@@ -384,13 +384,13 @@ run `figaro show` (full content above, cursor below).
 | `PgDn` / `PgUp` | half-page down / up |
 | `Home` / `End` | top / bottom |
 | `/` | literal string search |
-| `:` | jump to a coordinate — `:12`, `:12.3`, `:0` |
+| `:` | jump to a coordinate: `:12`, `:12.3`, `:0` |
 | `q` / `Esc` / `Ctrl-T` | exit the pager |
 
 ### Coordinates and the `:` jump
 
 **`Ctrl-O` in the pager also draws every node's address**, one dim row above
-it — `12.3 · 01:23:45`: turn id, node id, and when the node was written. The
+it: `12.3 · 01:23:45`: turn id, node id, and when the node was written. The
 turn's opening question gets the same row at its virtual node id, `-1`, because
 the question selects, copies and highlights exactly as a node does and is
 addressable the same way.
@@ -409,12 +409,12 @@ placed on it, so you can see what you were sent to.
 
 `:0` is a **sentinel, not an address**. Turn ids are dense and 1-based within an
 aria, but a forked aria continues its parent's numbering, so a fork's first turn
-is not turn 1 — and `Anchor{Turn: 0}` means *unset* on the wire, so asking for
+is not turn 1, and `Anchor{Turn: 0}` means *unset* on the wire, so asking for
 it on a backward read returns the tail. `:0` therefore means "the lowest turn
 that actually exists", found by walking back until the store says there is
 nothing older.
 
-`gg` is unchanged and still means **the top of what is loaded** — the cheap
+`gg` is unchanged and still means **the top of what is loaded**: the cheap
 gesture, no paging. Once a conversation is long enough to page these are
 different questions, so they are different keys.
 
@@ -423,21 +423,21 @@ paging path, **bounded**; if it cannot be reached, the footer says so rather
 than hanging or landing somewhere else. `:` and `/` are each literal text inside
 the other's box.
 
-**A hole is not a turn.** The window can contain gaps — a `N turns not loaded`
-rule where history was evicted or arrived non-contiguously — and a gap entry
+**A hole is not a turn.** The window can contain gaps, a `N turns not loaded`
+rule where history was evicted or arrived non-contiguously, and a gap entry
 carries turn `0`, an id no aria issues. A coordinate that lands inside one is
 *not yet*, never *absent*: the walk stays up, asks for that hole to be filled
 (even one the viewport cannot see), and **snaps to the real turn once the entry
 is ungapped**. `:0` likewise waits rather than landing on the sentinel standing
-where the beginning will be. What cannot exist — past the live tail, or below a
-proven floor with no hole — is still answered honestly and at once.
+where the beginning will be. What cannot exist: past the live tail, or below a
+proven floor with no hole: is still answered honestly and at once.
 
-The arrow cluster is an alias for the letter motions, and — like them — pressing
+The arrow cluster is an alias for the letter motions, and: like them: pressing
 one while a turn streams inline opens the pager first, so the gesture acts on
 arrival instead of looking like a dead keyboard.
 
 These tables are a summary. The canonical list is the **keymap** in
-`internal/cli/keymap.go`: one declarative row per binding — the chord, the modes
+`internal/cli/keymap.go`: one declarative row per binding: the chord, the modes
 it is live in, whether it opens the pager from incipit, its action, and its help
 text. The `?` panel is generated from it, so what the pager tells you about
 itself cannot drift from what it does.
@@ -461,14 +461,14 @@ Three doors reach it, and **every one of them reads the aria's tail first**:
 The last two are **automatic promotions**, and they used to open on nothing but
 the turn being streamed: no history above it, `More.Before` never set by any
 wire answer, and so the pager concluded that the question you had just typed was
-the beginning of the aria — scrolling up found nothing, forever. The read is now
+the beginning of the aria: scrolling up found nothing, forever. The read is now
 owed by the promotion itself (`livelogTurn.enterPager` → `catchUp`) and runs
 **off the render lock**, since one of its callers is the frame path. A failed
 read is not a floor: the claim is released so a later gesture retries.
 
 ## Steering: messages mid-turn
 
-A message sent to a **busy** aria does not wait for a new turn — it folds into
+A message sent to a **busy** aria does not wait for a new turn: it folds into
 the *current* turn as a **steering** node, which the model reads on its next
 round. In the stream it appears as a `steering` node (rendered under a
 `↳ input` gutter) positioned where it arrived, inside the agent's turn. The
@@ -480,8 +480,8 @@ whether or not the aria is busy: arrive while a turn is running and you steer
 it; arrive when nothing is running and you open a turn. A steer is not a turn,
 so it does not get one.
 
-The classification is made in exactly one place — **the code that drains the
-queue into a turn** — because that is the only point that knows the turn
+The classification is made in exactly one place: **the code that drains the
+queue into a turn**: because that is the only point that knows the turn
 boundary as the agent itself sees it, rather than as a client call returning.
 Nothing upstream declares it and nothing downstream may override it. The
 `steering` bit is persisted so a replayed log classifies the same way it did

@@ -13,15 +13,15 @@ import (
 //
 // Outfitting is figaro API, not part of the single-writer action-reduction
 // core (Gluck, 2026-08-11). Every request that carries dressing carries it as
-// NAMES — `outfits: ["sonn5","focus"]` — beside a patch that is pure data, and
+// NAMES: `outfits: ["sonn5","focus"]`: beside a patch that is pure data, and
 // exactly one function turns the first into the second. Below this line the
 // store's writer, the agent's inbox and the hub's verbatim apply all hold data
 // that needs nothing from the filesystem; a key spelled `layers` on a patch is
 // a key, not a directive.
 //
 // Before this, five call sites materialized (create, fork, form.create,
-// form.bind, the agent's own accept path) and one did not — writeForHub, the
-// path an attended FORM takes — which is how `fig form outfit test` stored
+// form.bind, the agent's own accept path) and one did not: writeForHub, the
+// path an attended FORM takes: which is how `fig form outfit test` stored
 // {"layers":["test"]} on a board and nobody complained.
 
 // dress folds the named outfits and lands the caller's patch on top. It is the
@@ -53,7 +53,7 @@ func (h *handlers) dress(outfits []string, patch *rpc.FormPatch) (form.Patch, er
 
 // dressDefault is the birth fold every `fig new` rides: the configured default
 // outfit alone, materialized. It is separate from dress because the default
-// form's identity is a pure function of that closure — folding a caller's -O
+// form's identity is a pure function of that closure: folding a caller's -O
 // into it would mint a private form per literal and cost the shared prompt
 // prefix (the lesson of 0.22.1, recorded at create).
 func (h *handlers) dressDefault() (form.Patch, error) {
@@ -63,7 +63,7 @@ func (h *handlers) dressDefault() (form.Patch, error) {
 const outfitNameDefault = "default"
 
 // dressParams is the same call, applied to a request on its way INTO an aria's
-// hub — figaro.set, figaro.qua and figaro.cast all accept outfit names, and
+// hub: figaro.set, figaro.qua and figaro.cast all accept outfit names, and
 // all three must arrive at the agent (or at the hub's agentless writer) with
 // nothing left to expand. It rewrites the params in place and returns them;
 // a request naming no outfit is handed back untouched, byte for byte, so the
@@ -131,7 +131,7 @@ func mightCarryOutfits(params json.RawMessage) bool {
 }
 
 // remarshalWithSender rebuilds a params object from a typed request while
-// preserving the sibling keys the typed struct does not model — today the
+// preserving the sibling keys the typed struct does not model: today the
 // attribution envelope (`sender`), which an agent reads off the raw params.
 // Dropping it would make every dressed prompt anonymous.
 func remarshalWithSender(orig json.RawMessage, req any) (json.RawMessage, error) {

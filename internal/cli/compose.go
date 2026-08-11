@@ -24,7 +24,7 @@ import (
 // disagree with figaro about terminal state: one process, one raw-mode owner.
 
 // composeCancelled reports that the user dismissed the editor. Callers exit
-// quietly rather than treating it as a failure — abandoning a draft is a
+// quietly rather than treating it as a failure, abandoning a draft is a
 // decision, not an error.
 type composeCancelled struct{}
 
@@ -64,7 +64,7 @@ func (m composeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Match on String(), not Type. The Type constants are easy to get
 		// subtly wrong across bubbletea versions, and a submit key that
 		// silently does not fire leaves the user trapped in an editor with no
-		// way out but Esc — which throws the draft away. String() is what the
+		// way out but Esc: which throws the draft away. String() is what the
 		// library itself prints and is stable.
 		switch msg.String() {
 		case "esc", "ctrl+c":

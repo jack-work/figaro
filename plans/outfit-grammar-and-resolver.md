@@ -20,7 +20,7 @@ outfit named `test` exists. Two seams met:
 
 1. `layers` is a DIRECTIVE smuggled inside a patch. `outfit.ParsePatch` turns
    the bare name `test` into `{"layers":["test"]}`, and the server is expected
-   to expand it — `ofit.Materialize` — on every path that accepts a patch.
+   to expand it: `ofit.Materialize`: on every path that accepts a patch.
 2. The hub write path (`writeForHub`, added in M1 so a dormant figaro and an
    agentless form can take a `set`) applies patches VERBATIM. It is the one
    write path that never materialized, and attending an unbound form routes
@@ -46,22 +46,22 @@ patch is DATA, all the way down, and outfits are a separate axis.
   reverse.
 - `-P/--patch` is NOT introduced. A whole-patch envelope would be a third
   grammar for what `-S` plus `-D` already say, and each grammar is a test
-  matrix. [decision — flag if a machine-readable `{set,remove}` envelope is
+  matrix. [decision: flag if a machine-readable `{set,remove}` envelope is
   wanted for scripted callers; it is a two-line addition on top of this.]
 - Shorts: `-h` is cmdkit's only globally reserved short. `-P`, `-S`, `-D`
   are unused by every command in the table. Available.
 
 ### The form family's own verbs
 
-- `fig form set <key> <value>` — the ergonomic single path (revived).
-- `fig form set k=v,k2=v2` — one argument in the `--set` grammar, JSON
+- `fig form set <key> <value>`: the ergonomic single path (revived).
+- `fig form set k=v,k2=v2`: one argument in the `--set` grammar, JSON
   literals included. Same code path as `-S`.
-- `fig form delete a.b,c` — comma-separated paths. `unset` stays as an alias
+- `fig form delete a.b,c`: comma-separated paths. `unset` stays as an alias
   (it is the existing top-level spelling and muscle memory).
-- `fig form show [<id>]` — mirrors `figaro show`; the bare `fig form` keeps
+- `fig form show [<id>]`: mirrors `figaro show`; the bare `fig form` keeps
   printing the snapshot, and `show` is the explicit spelling that can later
   grow `figaro show`'s limiting mechanics.
-- `fig form help <topic>` — third position, not a stateful action.
+- `fig form help <topic>`: third position, not a stateful action.
 
 `state` remains a strict drop-in alias of `form` across all of it (v1
 mistake #11's canary covers the new subwords).
@@ -69,7 +69,7 @@ mistake #11's canary covers the new subwords).
 ## 2. Where `layers` survives
 
 **Exactly one place: the unmarshal that builds a patch from an outfit FILE.**
-An outfit file declaring `layers: [a, b]` still pulls its parents in — that is
+An outfit file declaring `layers: [a, b]` still pulls its parents in: that is
 the closure, and it is what makes outfits composable.
 
 Nowhere else. Not on the wire, not in a patch, not on a board. A `layers` key
@@ -93,7 +93,7 @@ on `CreateRequest`, `ForkRequest`, `FormCreateRequest`, `FormBindRequest`,
 `SetRequest`, `CastRequest`, and `FormInput` (the prompt's dressing). The
 patch field keeps its meaning and loses its magic.
 
-**Choke point.** One helper at the daemon's API boundary — above the store's
+**Choke point.** One helper at the daemon's API boundary, above the store's
 single writer and above the agent's inbox, i.e. in the angelus handlers and
 `hub.route` before dispatch:
 
@@ -107,11 +107,11 @@ calls it exactly once; nothing below it reads the filesystem.
 
 **Deletions.**
 
-- `figaro.Agent.Materialize` — gone. The agent's `Set` and the qua path stop
+- `figaro.Agent.Materialize`: gone. The agent's `Set` and the qua path stop
   touching outfits; the actor loop receives data only.
 - `ofit.Materialize` calls scattered through `protocol.go` (create, fork,
-  formCreate, formBind) — replaced by the one `dress` call.
-- `outfit.KeyLayers` as a patch directive — `ParsePatch` no longer emits it;
+  formCreate, formBind): replaced by the one `dress` call.
+- `outfit.KeyLayers` as a patch directive: `ParsePatch` no longer emits it;
   `WithLayer` (which prepended `default` to a patch's directive) becomes a
   name-list operation.
 
@@ -151,7 +151,7 @@ type Resolver interface {
 }
 ```
 
-### Snapshots — consistency against a mid-edit
+### Snapshots: consistency against a mid-edit
 
 A resolution must not straddle an edit. On a cache miss the file's bytes are
 read once and written to a **content-addressed snapshot store**
@@ -162,10 +162,10 @@ the tenth is being saved in an editor.
 
 Content addressing is the recommendation on top of Gluck's ask: it dedups
 identical files for free, it makes "which bytes dressed this aria" auditable
-after the fact (a receipt — the birth patch is durable, the source no longer
+after the fact (a receipt: the birth patch is durable, the source no longer
 has to be guessed), and GC is a mark-by-epoch sweep.
 
-### Cache — short-lived, evicting, two tiers
+### Cache: short-lived, evicting, two tiers
 
 1. **Node cache**: one file's parsed patch and declared layers, keyed
    `(name, snapshot-hash)`.
@@ -174,7 +174,7 @@ has to be guessed), and GC is a mark-by-epoch sweep.
 
 Eviction is idle-TTL (default 5 minutes) plus a byte budget with LRU. Large
 outfits are the anticipated case, so bytes are what is budgeted, not entries,
-and eviction drops memory only — the snapshot on disk makes re-reading cheap
+and eviction drops memory only: the snapshot on disk makes re-reading cheap
 and, crucially, still consistent.
 
 ### Lazy, warm in the background, never blocking startup
@@ -182,10 +182,10 @@ and, crucially, still consistent.
 Nothing is read at daemon start. A background goroutine warms exactly one
 thing: the closure of the configured default outfit, because `fig new` will
 want it. Every other name is read on demand. The closure tree is built
-iteratively as names are asked for — a node resolved once is a node whose
+iteratively as names are asked for, a node resolved once is a node whose
 subtree is already proven.
 
-### Cycles — lazy detection, cached verdicts, tainted nodes
+### Cycles: lazy detection, cached verdicts, tainted nodes
 
 No global topological sort, ever. Resolution is a DFS carrying an on-stack
 set; a back edge is a cycle, reported by naming the loop (`a → b → a`). Then:
@@ -197,7 +197,7 @@ set; a back edge is a cycle, reported by naming the loop (`a → b → a`). Then
 
 That memoized DFS *is* the incremental topological sort: the memo is the
 order, built only over the part of the graph anyone asked about. Taints and
-verdicts clear on `Reload()` (epoch bump), which is the only invalidation —
+verdicts clear on `Reload()` (epoch bump), which is the only invalidation -
 plus a `stat` on the root names of a fold, which is cheap and keeps the
 common "I edited one outfit" case honest without a watcher.
 
@@ -216,12 +216,12 @@ common "I edited one outfit" case honest without a watcher.
 1. Grammar + wire + relocation (§1–§3), one commit per surface, real-binary
    verified. The existing `Outfitter` keeps serving `Fold` behind the new
    interface so the relocation lands without waiting on §4.
-2. The resolver subsystem (§4) behind that interface — a swap, not a rewrite.
+2. The resolver subsystem (§4) behind that interface, a swap, not a rewrite.
 3. The remaining annoyances (`form show`, `form set`, `form delete`,
    `form help`, the unconsumed-`-O` defect) ride with step 1, since they are
    the same dispatcher.
 
-## 6. The unconsumed flag — annoyance 3, explained
+## 6. The unconsumed flag, annoyance 3, explained
 
 `fig form -O name=charles` printed the form and ignored the flag because
 `state`'s Run is a hand-written subword dispatcher: `-O` is DECLARED on the
@@ -232,12 +232,12 @@ and is then dropped on the floor by the Run function is invisible to it.
 
 The fix is declarative rather than another hand-check: a `FlagDef` may name
 the subwords it belongs to, and the router refuses the flag before Run when
-the first positional is not one of them —
+the first positional is not one of them -
 
 ```go
 {Long: "outfit", Short: "O", Subwords: []string{"new", "fork", "outfit"}, …}
 ```
 
-— which turns "silently ignored" into "`-O` belongs to `form new`, `form
+- which turns "silently ignored" into "`-O` belongs to `form new`, `form
 fork`, `form outfit`" and retires the hand-written `--list/--tree/--refresh`
 guard in the same stroke. Commands without subwords are unaffected.

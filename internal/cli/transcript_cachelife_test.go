@@ -12,8 +12,8 @@ import (
 //
 // This file used to pin the payload LRU: a page evicted from the render window
 // kept its payload (and so its rendered rows) so the return trip cost neither
-// I/O nor a re-render. There is no page cache any more — the STORE holds the
-// messages and the window is an interval into it — so the same two claims are
+// I/O nor a re-render. There is no page cache any more: the STORE holds the
+// messages and the window is an interval into it: so the same two claims are
 // made against the store instead:
 //
 //  1. turning around costs NO READ and NO RE-RENDER, because the window grows
@@ -22,8 +22,8 @@ import (
 
 // TestTurningAroundCostsNoReadAndNoRerender: page history in, go back to the
 // tail (G, which raises the floor), then scroll up again. The second trip up
-// must be served entirely out of the store — pageCursor returns no request at
-// all — and every message it brings back must still have its rows.
+// must be served entirely out of the store: pageCursor returns no request at
+// all, and every message it brings back must still have its rows.
 func TestTurningAroundCostsNoReadAndNoRerender(t *testing.T) {
 	history := transcriptHistory(300)
 	client := aria.NewClient()

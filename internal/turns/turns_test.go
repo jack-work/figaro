@@ -42,7 +42,7 @@ func conversation() []message.Message {
 		{Role: message.RoleInput},                             // boot / state-only: no turn
 		userMsg(prose("quick test")),                          // opens turn 1
 		asstLT(0, think("hm"), tool("t1", "bash")),            // turn 1
-		userMsg(toolResult("t1"), prose("actually, check X")), // turn 1 — steering, not a new turn
+		userMsg(toolResult("t1"), prose("actually, check X")), // turn 1: steering, not a new turn
 		asstLT(0, prose("done")),                              // turn 1
 		userMsg(prose("next question")),                       // opens turn 2
 		asstLT(0, prose("answer")),                            // turn 2
@@ -94,7 +94,7 @@ func TestMixedLegacyAndStampedAgree(t *testing.T) {
 
 // Purity: the ids a message gets must not depend on whether the tail is still
 // open. Stamping a prefix yields the same ids as stamping the whole log and
-// truncating — which is what lets a live turn be addressed before it seals.
+// truncating: which is what lets a live turn be addressed before it seals.
 func TestStampIsPureUnderOpenTail(t *testing.T) {
 	full := conversation()
 	StampIDs(full)
@@ -126,7 +126,7 @@ func TestForkChildContinuesParentNumbering(t *testing.T) {
 			child[forkAt].TurnID, parent[forkAt].TurnID)
 	}
 	if childSeed != seed {
-		t.Fatalf("child seed = %d, parent seed = %d — siblings must conflict piecewise",
+		t.Fatalf("child seed = %d, parent seed = %d: siblings must conflict piecewise",
 			childSeed, seed)
 	}
 }
@@ -161,7 +161,7 @@ func withLTs(msgs []message.Message) []message.Message {
 
 // TurnSpan is THE resolver: it is what turns the number a human types in
 // `fig send <aria>:<turn>` into the atMainLT a fork takes. first must be the
-// PROMPT's LT — atMainLT is exclusive of the frozen prefix, so forking there
+// PROMPT's LT, atMainLT is exclusive of the frozen prefix, so forking there
 // shares everything strictly before the question and replaces the question
 // onward.
 func TestSpan(t *testing.T) {
@@ -207,7 +207,7 @@ func TestSpanUnknown(t *testing.T) {
 
 // Fixtures. These mirror the ones in internal/compose's tests; the turn
 // arithmetic needs only fig IR blocks, so they are declared here rather than
-// exported from there — a test helper is not worth a package boundary.
+// exported from there, a test helper is not worth a package boundary.
 func asstLT(lt uint64, cs ...message.Content) message.Message {
 	return message.Message{Role: message.RoleOutput, Content: cs, LogicalTime: lt}
 }

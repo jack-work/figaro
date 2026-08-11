@@ -3,7 +3,7 @@ package cli
 // The study/cast family: `fig study`, `fig drop`, `fig cast`.
 // Grammar (plans/forms-and-roles-v2.md §3): the FORM is always the last
 // positional; -O occupies the form slot (cast only); with one positional
-// the aria comes from attendance — and for cast, from an auto-fork of
+// the aria comes from attendance, and for cast, from an auto-fork of
 // the default form when no aria is available.
 
 import (
@@ -115,7 +115,7 @@ func verbPast(v string) string {
 // runCast performs one casting call. With -O the role is minted BY the
 // figaro's actor loop, born cast; with no aria available the figaro
 // itself is minted first from the default form (the fig new path,
-// unattended) — figaro-minted-but-role-failed is reported as the
+// unattended): figaro-minted-but-role-failed is reported as the
 // partial it is.
 func runCast(loaded *config.Loaded, args []string, outfits, set, del string, asJSON bool) {
 	acli := mustConnectAngelus(loaded)

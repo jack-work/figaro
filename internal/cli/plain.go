@@ -77,7 +77,7 @@ func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out 
 }
 
 // verbatimPrompt dumps the raw wire frames as JSON (one object per line)
-// and returns an exit code. No formatting, no delta application — the
+// and returns an exit code. No formatting, no delta application: the
 // literal protocol stream.
 func verbatimPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out io.Writer) int {
 	ctx, cancel := context.WithCancel(ctx)
@@ -123,7 +123,7 @@ func verbatimPrompt(ctx context.Context, ep transport.Endpoint, prompt string, o
 }
 
 // verbatimSink writes every wire notification as a JSON line
-// {"method","params"} — the protocol exactly as it arrives, no decoding.
+// {"method","params"}: the protocol exactly as it arrives, no decoding.
 type verbatimSink struct {
 	out      io.Writer
 	doneCh   chan struct{}
@@ -209,7 +209,7 @@ func (s *plainSink) handle(method string, params json.RawMessage) {
 // emit writes the assistant unit's new text tail. It only emits when the
 // flattened text grows monotonically (the streaming case); a structural
 // change that rewrites already-printed text is swallowed rather than
-// reprinted — raw mode keeps the streamed copy.
+// reprinted: raw mode keeps the streamed copy.
 func (s *plainSink) emit(text string) {
 	b := strings.TrimRight(text, "\n")
 	if strings.HasPrefix(b, s.written) {

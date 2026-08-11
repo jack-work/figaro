@@ -49,7 +49,7 @@ tmux -L "$SOCK" send-keys -t "$SESS" \
 # Poll until a TOOL IS ACTUALLY RUNNING.
 #
 # The trigger oracle is the IR, NOT the screen: the footer carries the mantra,
-# the mantra is the prompt, and the prompt contains the word "bash" — so a
+# the mantra is the prompt, and the prompt contains the word "bash": so a
 # screen grep reported a tool in flight while the model was still thinking, and
 # the run proved nothing. (tmux-testing trap 2: only a rendered body line is
 # sound, and this is not one.) The screen stays the instrument for the CLAIM
@@ -111,9 +111,9 @@ for i in $(seq 1 45); do
   if grep -qE '^[[:space:]]*PLUMBAGO[[:space:]]*$' "$ROOT/after3.txt"; then break; fi
 done
 if grep -qE '^[[:space:]]*PLUMBAGO[[:space:]]*$' "$ROOT/after3.txt"; then
-  echo "ACCEPTED — the next turn ran and answered on the same aria"
+  echo "ACCEPTED: the next turn ran and answered on the same aria"
 else
-  echo "REFUSED or LOST — no answer to the post-hangup prompt"
+  echo "REFUSED or LOST: no answer to the post-hangup prompt"
   tail -12 "$ROOT/after3.txt"
 fi
 echo "--- final status row ---"

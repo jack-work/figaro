@@ -112,7 +112,7 @@ func TestEndpointOutlivesAgent(t *testing.T) {
 	require.NoError(t, a.Registry.Kill(created.FigaroID))
 	require.Nil(t, a.Registry.Get(created.FigaroID), "agent still registered")
 
-	// The socket file is still there and the SAME connection still answers —
+	// The socket file is still there and the SAME connection still answers -
 	// served from the store, with no agent rebuilt.
 	require.FileExists(t, sock, "endpoint vanished with the agent")
 	var after rpc.FormResponse
@@ -132,7 +132,7 @@ func TestEndpointOutlivesAgent(t *testing.T) {
 }
 
 // A prompt on a reclaimed aria must wake it and be answered on the same
-// connection — no new aria, no fork, no error handed to the user.
+// connection: no new aria, no fork, no error handed to the user.
 func TestPromptWakesReclaimedAria(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
@@ -154,7 +154,7 @@ func TestPromptWakesReclaimedAria(t *testing.T) {
 		rpc.QuaRequest{Text: "hello after reclamation"}, &out))
 	require.True(t, out.OK)
 
-	// Woken, and it is the SAME aria — the regression that would hurt most.
+	// Woken, and it is the SAME aria: the regression that would hurt most.
 	require.Eventually(t, func() bool {
 		return a.Registry.Get(created.FigaroID) != nil
 	}, 5*time.Second, 20*time.Millisecond, "prompt did not wake the aria")

@@ -1,7 +1,7 @@
-# Phase B — figaro forking on xwal (the GRAND model)
+# Phase B: figaro forking on xwal (the GRAND model)
 
 Worktree `xwal-forking` (off `main`), figwal **v0.5.0**. Goal: formidable
-conversation forking — everything is a fork of a null root, one tree.
+conversation forking: everything is a fork of a null root, one tree.
 Design settled with the user; this is the build spec. Lessons/frictions in
 memory ([[project_figwal_forking]]).
 
@@ -24,7 +24,7 @@ arias/                         <- the data dir IS the null root (xwal root, mani
   per (name, version). `system.outfit_name` + `system.outfit_version` are
   immutable chalkboard keys (set once; reducer/set refuses to change them).
 - **conversation** = fork(outfit node). Inherits outfit defaults via the
-  chalkboard **watermark** — no more bootPatch injection.
+  chalkboard **watermark**: no more bootPatch injection.
 - **branching** a live conversation = fork(conversation), same op, rich prefix.
 
 ## Fork identity (settled, figwal-native)
@@ -36,7 +36,7 @@ navigable index node) and yields **new-id children**:
 - fork the present (tail): figaro spawns the continuation as an explicit N-ary
   sibling; two new-id empty leaves; node frozen.
 - a frozen node persists as an index until all its children are deleted.
-- **No caller-specified ids** anywhere — system mints all ids (drop CreateWithID
+- **No caller-specified ids** anywhere: system mints all ids (drop CreateWithID
   + the create RPC id param). Fork mints child ids.
 
 ## Chalkboard = the reducible trinity member (transitions, not re-sends)
@@ -58,7 +58,7 @@ navigable index node) and yields **new-id children**:
 
 - outfit version = value-stable content hash of the resolved outfit patch
   (canonical JSON), using figwal's `segment.ValueHash` scheme (same as the
-  `_hash` sidecar) — one hashing convention project-wide.
+  `_hash` sidecar): one hashing convention project-wide.
 - outfit TOML change -> new hash -> new outfit node; existing conversations keep
   their node+version; versions coexist. ("never change a prefix.")
 
@@ -106,10 +106,10 @@ dual-read. (User approved.)
 
 ## Known edge (revisit)
 - A chalkboard `set` keyed to the next IR LT, with a fork at that exact LT and
-  NO intervening turn, lands the pending patch on the fork boundary — so it rides
+  NO intervening turn, lands the pending patch on the fork boundary: so it rides
   only with the continuation, not the alternative. Realistic flow (set rides with
   its committed turn) inherits to both. Proper fix: a reducible channel should
-  inherit entries keyed beyond the main tail (pending/future) on fork — a small
+  inherit entries keyed beyond the main tail (pending/future) on fork, a small
   xwal refinement.
 
 ## Build order

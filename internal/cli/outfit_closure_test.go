@@ -63,7 +63,7 @@ func TestRenderOutfitClosureDrawsEachRequestedOutfitAsARoot(t *testing.T) {
 }
 
 // Colour comes from the palette the diff renderer uses, and only the name is
-// painted — the glyphs stay plain so the shape does not compete with the rows.
+// painted: the glyphs stay plain so the shape does not compete with the rows.
 func TestRenderOutfitClosureUsesTheDiffPalette(t *testing.T) {
 	restore := term.SetColorMode(term.ColorAlways)
 	defer restore()

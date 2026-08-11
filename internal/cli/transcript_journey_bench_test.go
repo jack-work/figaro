@@ -69,7 +69,7 @@ type pagingHarness struct {
 
 	// peakBytes is the high-water mark of RETAINED row memory over the trip
 	// (row cache struct + text bytes, i.e. rowCacheFootprint). Once the frame is
-	// O(viewport) this, not frame CPU, is what a bigger window costs — so the
+	// O(viewport) this, not frame CPU, is what a bigger window costs: so the
 	// geometry sweep has to be able to see it. Sampled after every applyPage,
 	// which is when the window and the payload LRU change.
 	peakBytes int

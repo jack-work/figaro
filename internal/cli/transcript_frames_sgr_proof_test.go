@@ -10,7 +10,7 @@ import (
 
 // TestGoldenFramesMatchPreSGRAtTheCellLevel is the proof that comes with the
 // regenerated golden frames. Axis E rewrote testdata/transcript_frames*.golden
-// — that is the point of it, the bytes are supposed to shrink — so the golden
+// : that is the point of it, the bytes are supposed to shrink: so the golden
 // files can no longer vouch for themselves. The pre-collapse frames are kept
 // beside them as *.pre-sgr.golden, and this test replays both through the VT
 // model: same rows, same sections, and every row cell-identical in character,

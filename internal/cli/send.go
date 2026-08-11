@@ -63,7 +63,7 @@ func extractSendFlags(args []string) (sendOpts, []string, error) {
 // extractForkFlags is extractSendFlags for `figaro fork`, where the prompt
 // is OPTIONAL: `fork <id>:12` is a complete gesture, so a bare positional
 // is the target even with no `--` boundary in sight. Sharing the parser is
-// deliberate — fork and send must not drift apart on what a flag or a
+// deliberate: fork and send must not drift apart on what a flag or a
 // coordinate means.
 func extractForkFlags(args []string) (sendOpts, []string, error) {
 	return extractPromptFlags(args, true)
@@ -259,7 +259,7 @@ func (o *sendOpts) addOutfit(text string) error {
 }
 
 // joinTerms appends one flag value to what the same flag already carried,
-// comma-separated — the one composition rule all three axes share.
+// comma-separated: the one composition rule all three axes share.
 func joinTerms(have, more string) string {
 	if strings.TrimSpace(have) == "" {
 		return more
@@ -416,8 +416,8 @@ func runSend(loaded *config.Loaded, rawArgs []string) {
 }
 
 // runSendAs is runSend with the verb that appears in diagnostics. The bare
-// `figaro [flags] -- <prompt>` form dispatches here too — one parser, one
-// set of semantics — and labels its errors with the program name instead.
+// `figaro [flags] -- <prompt>` form dispatches here too: one parser, one
+// set of semantics, and labels its errors with the program name instead.
 func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	opts, rest, err := extractSendFlags(rawArgs)
 	if err != nil {
@@ -467,14 +467,14 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 		dieUsage("%s: %s", verb, err)
 	}
 	if opts.json {
-		// The turn is submitted and not attached to — exactly --forget, which
+		// The turn is submitted and not attached to: exactly --forget, which
 		// already knows how to emit the object.
 		opts.forget = true
 	}
 
 	set := renderSettings{verbose: opts.verbose, listen: opts.listen, record: opts.record}
 
-	// `send <trunk>:<turn>` — fork at that turn, then send. The message lands
+	// `send <trunk>:<turn>`: fork at that turn, then send. The message lands
 	// on whichever trunk we end up attended to: the new alternative by default
 	// (rebind), or the original with --attend=false/--stay.
 	if !at.isHead() {
@@ -513,7 +513,7 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 
 // validateSendOpts holds every "these flags contradict" rule for the prompt
 // verbs as a PURE function: it decides, never exits, never opens a socket.
-// That matters — inline in runSendAs, the only way to test a rejection was
+// That matters: inline in runSendAs, the only way to test a rejection was
 // to call the dispatcher, and a dispatcher past its guard reaches
 // mustConnectAngelus, which in a test binary is a fork bomb.
 //
@@ -666,7 +666,7 @@ func runSendRaw(loaded *config.Loaded, ariaID string, d dressing, prompt string)
 }
 
 // runSendVerbatim dumps the raw wire frames (one JSON object per line:
-// {"method","params"}) with no formatting — the literal protocol stream.
+// {"method","params"}) with no formatting: the literal protocol stream.
 // Ephemeral when -e, else the bound/named aria (left alive).
 func runSendVerbatim(loaded *config.Loaded, opts sendOpts, prompt string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -784,7 +784,7 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 	}
 }
 
-// runSendForget submits a prompt and exits — fire-and-forget. The daemon
+// runSendForget submits a prompt and exits: fire-and-forget. The daemon
 // keeps the turn alive; the CLI does not attach to the stream and never
 // sends figaro.interrupt. Useful from scripts, or when you want a prompt
 // to run and check on it later via `figaro show` / `figaro listen`.
@@ -793,7 +793,7 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 	// cold daemon plus a first-run outfit render does not fit in ten.
 	//
 	// TODO(perf): put this back to 10s once the `new`/`fork` latency work
-	// lands. The extra 20s buys exactly one thing — the create — and that
+	// lands. The extra 20s buys exactly one thing: the create, and that
 	// cost is the thing being fixed there. A timeout widened for a slow path
 	// outlives the slowness unless someone writes down when to close it.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

@@ -3,13 +3,13 @@ package render
 import "testing"
 
 // TestStripEscapesLeavesNoBody: an escape's BODY is what makes this a rendering
-// defect and not merely a safety one — glamour prints the body, having wrapped
+// defect and not merely a safety one: glamour prints the body, having wrapped
 // as though the whole sequence were nothing, so a row comes back wider than the
 // width it was given with "[31m" (or "1049h") on it.
 //
 // Every case here FAILS at b583dfa. The private-mode ones are the important
 // ones: '?' is not in isCSIParamByte, so the param loop stops at once and the
-// body leaks — and "\x1b[?25l" / "\x1b[?1049h" are the two escapes any pasted
+// body leaks, and "\x1b[?25l" / "\x1b[?1049h" are the two escapes any pasted
 // tool transcript carries. SanitizeForTerminal handles '?' explicitly; this
 // function forgot it.
 func TestStripEscapesLeavesNoBody(t *testing.T) {

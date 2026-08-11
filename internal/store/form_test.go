@@ -37,7 +37,7 @@ func TestFormStandsAlone(t *testing.T) {
 	assert.Equal(t, `"sing"`, string(got))
 }
 
-// A version quoted back is a promise the write is refused if the form moved —
+// A version quoted back is a promise the write is refused if the form moved -
 // the guard a read-modify-write needs, since editing inside a value means
 // reading it first.
 func TestFormIfVersionRefusesALostUpdate(t *testing.T) {
@@ -86,7 +86,7 @@ func TestFormReplaysItsLog(t *testing.T) {
 // distinct, with readers never blocked.
 //
 // Each writer writes a DIFFERENT value on purpose. Thirty-two writers all
-// setting k=1 is not a test of serialization — since the writer reduces a
+// setting k=1 is not a test of serialization: since the writer reduces a
 // patch against the board, thirty-one of those are no-ops and SHOULD share a
 // version. What must never happen is two real changes landing on one.
 func TestFormSerializesConcurrentWrites(t *testing.T) {
@@ -118,8 +118,8 @@ func TestFormSerializesConcurrentWrites(t *testing.T) {
 }
 
 // A patch that changes nothing is not an event. The rule lives in the WRITER,
-// where the diff is atomic with the append, so both write paths — the agent's
-// board and an agentless form — obey it identically, and an aria observing a
+// where the diff is atomic with the append, so both write paths: the agent's
+// board and an agentless form: obey it identically, and an aria observing a
 // form derives no transition from a set that set nothing.
 func TestNoOpPatchIsNotAnEvent(t *testing.T) {
 	f := store.NewMemForm()

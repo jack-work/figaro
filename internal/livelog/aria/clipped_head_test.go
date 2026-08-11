@@ -7,13 +7,13 @@ import (
 )
 
 // A catch-up read of a turn TOO BIG FOR ONE PAGE comes back clipped at the
-// head: the part starts at node From>0 and — correctly — carries no inquiry,
+// head: the part starts at node From>0 and: correctly: carries no inquiry,
 // because the slice that STARTS the turn is the only one that may.
 //
 // The client used to promote such a part as a message starting at node ZERO.
 // absorb pads the slots below From so the ids stay positional, and the seal
 // path then handed those padding slots out as a HEAD SLICE. A head slice is
-// where every renderer draws the question — and this one had none. That is the
+// where every renderer draws the question, and this one had none. That is the
 // whole of the user's report: "the inquiry doesn't always appear, even past
 // inquiries", where the something-he-could-not-put-his-finger-on was the page
 // budget, i.e. how big the turn happened to be.

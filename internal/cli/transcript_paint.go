@@ -14,7 +14,7 @@ import (
 // The node renderers compose rows out of styled segments (reflow's padding
 // writer restyles every padding cell), so a rendered row is mostly SGR churn:
 // a full-width blank row arrives as 96 repetitions of "\x1b[38;5;252m \x1b[0m"
-// — 1539 bytes to paint nothing. Over a pipe or an ssh link that is the
+//: 1539 bytes to paint nothing. Over a pipe or an ssh link that is the
 // dominant cost of a frame, and it is invisible in a benchmark that writes to
 // io.Discard.
 //
@@ -33,7 +33,7 @@ import (
 //     background, no reverse, no underline and no strikethrough is
 //     indistinguishable from an unstyled run of spaces, so no style change is
 //     emitted for it.
-//  3. Trailing-blank trim: such spaces at end of row are dropped entirely —
+//  3. Trailing-blank trim: such spaces at end of row are dropped entirely -
 //     paint has already cleared the row (or covered it), so they paint blank
 //     on blank.
 //
@@ -41,8 +41,8 @@ import (
 // default SGR and always leaves the terminal in default SGR. paint relies on
 // that both ways (an erase-line inherits the current background, and a row
 // that opens with no escape must not inherit the previous row's colour).
-// Rows are already required to be self-contained — a diffing painter may skip
-// the row above entirely — so this only removes a latent hazard.
+// Rows are already required to be self-contained, a diffing painter may skip
+// the row above entirely: so this only removes a latent hazard.
 // ---------------------------------------------------------------------------
 
 // sgrStyleMax caps how many distinct SGR sequences we track for one row before
@@ -140,7 +140,7 @@ func (s *sgrStyle) spaceInvisible() bool {
 
 // paramsInvisibleOnSpace reports whether every parameter in an SGR sequence is
 // one that cannot show up on a blank cell. Anything unrecognized is treated as
-// visible — the conservative direction. Allocation-free: it runs per escape
+// visible: the conservative direction. Allocation-free: it runs per escape
 // sequence on every painted row.
 func paramsInvisibleOnSpace(params string) bool {
 	for params != "" {
@@ -341,16 +341,16 @@ func trimTrailingSpaces(s string) string {
 //
 // A one-line scroll changes EVERY body row: row r now shows what row r+1
 // showed. The full-frame diff therefore finds nothing in common and
-// retransmits the whole viewport — which is what makes holding j/k feel like
+// retransmits the whole viewport: which is what makes holding j/k feel like
 // dragging. Terminals have had the answer since the VT100: set a scroll region
 // (DECSTBM) and shift it (SU/SD), then paint only the newly exposed rows.
 //
 // The shift is *detected*, not assumed. planScroll compares the new screen
 // against the last painted one, finds the largest run of rows that merely
 // moved, and predicts the exact grid the terminal will hold after the scroll.
-// paint then diffs against that prediction, so any row the scroll got wrong —
+// paint then diffs against that prediction, so any row the scroll got wrong -
 // live content that changed in the same frame, the footer, the newly exposed
-// rows — is repainted normally. Correctness does not depend on the guess being
+// rows: is repainted normally. Correctness does not depend on the guess being
 // good, only on the terminal implementing DECSTBM/SU/SD; a bad guess merely
 // costs bytes, and the plan is rejected unless it saves more than it costs.
 //
@@ -383,7 +383,7 @@ type scrollPlan struct {
 var transcriptScrollRegions = os.Getenv("FIGARO_NO_SCROLL_REGION") == ""
 
 // rowKey is an O(1) fingerprint of a row: length plus four sampled bytes. It
-// only has to be good enough to *propose* a shift — the winning candidate is
+// only has to be good enough to *propose* a shift: the winning candidate is
 // re-verified with real string equality, so a collision costs a wasted compare
 // and never a wrong frame.
 func rowKey(s string) uint32 {
@@ -606,7 +606,7 @@ func appendRowUpdate(dst []byte, screenRow int, old, row string) []byte {
 	if idx, col, st, ok := commonRowPrefix(old, row); ok {
 		dst = appendCUPCol(dst, screenRow+1, col+1)
 		// Erase BEFORE writing the tail, not after. The pager runs with autowrap
-		// off, so writing the last column leaves the cursor ON it — a trailing
+		// off, so writing the last column leaves the cursor ON it, a trailing
 		// erase-to-end-of-line would wipe the character just written. (Found by
 		// replaying a frame into tmux, which a screen model that let the cursor
 		// run past the margin had happily accepted.) Safe unstyled: every row

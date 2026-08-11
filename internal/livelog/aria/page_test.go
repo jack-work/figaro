@@ -61,7 +61,7 @@ func TestPaginate_ForwardFromStart(t *testing.T) {
 	}
 }
 
-// The zero anchor with Backward is the tail — what `fig show -n N` asks for.
+// The zero anchor with Backward is the tail: what `fig show -n N` asks for.
 func TestPaginate_BackwardFromEndIsTheTail(t *testing.T) {
 	turns := mkTurns(3, 3)
 	one := nodeSize(padNode(10))
@@ -84,7 +84,7 @@ func TestPaginate_BackwardFromEndIsTheTail(t *testing.T) {
 }
 
 // A page always carries at least one node, even when that node alone busts the
-// budget — otherwise a huge node would be unreachable and paging would stall.
+// budget: otherwise a huge node would be unreachable and paging would stall.
 func TestPaginate_AlwaysEmitsAtLeastOneNode(t *testing.T) {
 	turns := []Turn{{ID: 1, Sealed: true, Nodes: []livedoc.Node{padNode(50000)}}}
 	p := Paginate(turns, Anchor{}, Forward, 1)
@@ -158,7 +158,7 @@ func TestPaginate_PageBelowSuffixIsImmutable(t *testing.T) {
 	}
 }
 
-// At most one part per page carries Live, and it is the last — the open turn
+// At most one part per page carries Live, and it is the last: the open turn
 // is the newest and the window is contiguous, so the suffix can only ever be
 // at the very end.
 func TestPaginate_AtMostOneLiveAndItIsLast(t *testing.T) {
@@ -226,7 +226,7 @@ func TestPaginate_BidirectionalRoundTrip(t *testing.T) {
 	}
 }
 
-// An anchor naming a turn that no longer exists clamps rather than failing —
+// An anchor naming a turn that no longer exists clamps rather than failing -
 // a client scrolling a conversation that forked under it should land
 // somewhere sane. But "sane" is direction-aware: beyond the last turn there is
 // nothing FORWARD to give, and answering with the last turn anyway is how a
@@ -265,7 +265,7 @@ func TestPaginate_UnknownAnchorClamps(t *testing.T) {
 
 // The pager joins at the tail with a backward read, then asks forward from the
 // same beyond-the-end cursor for anything still streaming. Those two reads must
-// not both return the last turn, or it renders twice — the dormant-aria
+// not both return the last turn, or it renders twice: the dormant-aria
 // duplication.
 func TestPaginate_TailJoinDoesNotDuplicate(t *testing.T) {
 	turns := mkTurns(1, 2, 3)
@@ -279,7 +279,7 @@ func TestPaginate_TailJoinDoesNotDuplicate(t *testing.T) {
 		t.Fatalf("forward from the same cursor must add nothing, got %d parts", len(forward.Parts))
 	}
 	// The tail window reaches the end of the last turn, so it carries the open
-	// suffix itself — the second read has nothing left to contribute.
+	// suffix itself: the second read has nothing left to contribute.
 	lastPart := tail.Parts[len(tail.Parts)-1]
 	if lastPart.ClippedTail {
 		t.Error("the tail window must reach the last node of the last turn")

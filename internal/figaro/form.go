@@ -35,7 +35,7 @@ func (a *Agent) Version() uint64 {
 // reads no file, and a key spelled `layers` here is a key like any other.
 //
 // ifVersion, when non-zero, refuses the patch unless the board is still at
-// that durable version — the guard a read-modify-write needs, since editing
+// that durable version: the guard a read-modify-write needs, since editing
 // inside a value means reading it first.
 func (a *Agent) Set(patch form.Patch, ifVersion uint64) (set, removed []string, err error) {
 	if a.form == nil {

@@ -44,7 +44,7 @@ func (h *handlers) outfits(_ context.Context, params json.RawMessage) (interface
 }
 
 // configure patches config.toml on the server's behalf. The first-run wizard is
-// a client — it cannot write the daemon's config itself — so this is the seam
+// a client: it cannot write the daemon's config itself: so this is the seam
 // it drives, and the only config the CLI may change.
 func (h *handlers) configure(_ context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.ConfigureRequest
@@ -88,8 +88,8 @@ func (h *handlers) configure(_ context.Context, params json.RawMessage) (interfa
 	}
 	// Re-read so the next Create sees what was just written, and turn the
 	// resolver's epoch over so the next fold re-reads and re-snapshots what it
-	// needs. Reload is cheap by design — it reads nothing, it only invalidates
-	// — so a refresh no longer throws the resolver away and rebuilds it.
+	// needs. Reload is cheap by design: it reads nothing, it only invalidates
+	//: so a refresh no longer throws the resolver away and rebuilds it.
 	if fresh, err := config.Load(loaded.ConfigDir); err == nil {
 		h.configMu.Lock()
 		h.config = fresh

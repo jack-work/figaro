@@ -1,4 +1,4 @@
-// Package cli — `figaro state outfit`.
+// Package cli: `figaro state outfit`.
 //
 // Applies a spec additively to the current aria's form. Names are
 // resolved by the aria (the daemon owns the configDir); the CLI parses the
@@ -113,7 +113,7 @@ func completeOutfits(c *cmdkit.CompleteContext) []string {
 
 // runOutfit dresses the targeted aria: outfit NAMES, sent as names, folded by
 // the daemon's one dressing call and applied like any other patch. The verb
-// takes names only — keys go through `form set`, which is the other axis.
+// takes names only: keys go through `form set`, which is the other axis.
 func runOutfit(loaded *config.Loaded, ariaID, arg string) {
 	names, err := parseNames(arg)
 	if err != nil {
@@ -212,8 +212,8 @@ var outfitClosureColors = []figtree.FieldColor{{
 	},
 }}
 
-// renderOutfitClosure draws the closure. The synthetic root — the one with no
-// name, holding several requested outfits side by side — is not drawn; its
+// renderOutfitClosure draws the closure. The synthetic root: the one with no
+// name, holding several requested outfits side by side: is not drawn; its
 // children become the roots, so `figaro outfit a,b` shows two trees.
 func renderOutfitClosure(root *rpc.OutfitLayer) string {
 	tree := figtree.Tree{
@@ -268,7 +268,7 @@ func outfitClosureMarker(l *rpc.OutfitLayer) string {
 // runOutfitTree prints an outfit's layer closure without applying anything.
 //
 // The angelus resolves it: the outfits directory is the server's state. Exit
-// status follows the closure — 0 when every layer was found, 1 when the picture
+// status follows the closure: 0 when every layer was found, 1 when the picture
 // has red in it, so it can gate a script.
 func runOutfitTree(loaded *config.Loaded, arg string) {
 	acli := mustConnectAngelus(loaded)

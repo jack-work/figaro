@@ -10,7 +10,7 @@
 // not have the same shape and a naive "walk both structures in lockstep" is
 // wrong. This walks by KEY, not by shape: at each step the pivot is next's key
 // and prev is split around it, which is exactly a merge-join over two sorted
-// key sequences. The pointer check is a pure short-circuit layered on top —
+// key sequences. The pointer check is a pure short-circuit layered on top -
 // removing every `prev == next` line would leave a correct (slower) diff.
 //
 // Cost: the common case (same root key all the way down, i.e. a path copy with
@@ -19,7 +19,7 @@
 // down. Where rotations did move things, splitNode rebuilds a small spine of
 // scratch nodes and the short-circuit stops helping on that path; the diff
 // stays correct and degrades to O(n log n) for two wholly unrelated trees.
-// Scratch nodes never escape into a stored tree — nothing here mutates.
+// Scratch nodes never escape into a stored tree: nothing here mutates.
 
 package form
 

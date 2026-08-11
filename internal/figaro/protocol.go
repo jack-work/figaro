@@ -10,8 +10,8 @@ import (
 // a dial at all.
 //
 // SocketPath survives on Config and on the Figaro interface because it is
-// the ADDRESS an aria is reachable at — resolve and attach hand it to
-// clients — and that address is still a pure function of the id. What is
+// the ADDRESS an aria is reachable at: resolve and attach hand it to
+// clients, and that address is still a pure function of the id. What is
 // gone is the listener: StartSocket, its accept loop, and the per-connection
 // Subscribe that tied every client's lifetime to the agent's.
 

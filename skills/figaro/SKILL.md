@@ -49,7 +49,7 @@ One definition each. The file named owns the model behind it.
 | turn | One exchange: your prompt plus everything the agent did about it. The coordinate `:N` in `<id>:<turn>`; `.N` addresses an LT instead. | [reference/turns.md](reference/turns.md) |
 | LT | The storage coordinate, positional and cross-channel. Not an address you type. | [reference/turns.md](reference/turns.md) |
 | form | Durable, versioned, forkable JSON state. Every aria's chalkboard is one; an UNBOUND form (`@`-sigiled id) has no figaro and stands alone. A form carrying `target-aria` is a ROLE. | [forms.md](forms.md) |
-| outfit | A named patch for a form: model, credo, skills. Named by a SPEC — `sonn5,ttl=1h` — which is folded at birth or onto a live aria. | [reference/outfits.md](reference/outfits.md) |
+| outfit | A named patch for a form: model, credo, skills. Named by a SPEC: `sonn5,ttl=1h`: which is folded at birth or onto a live aria. | [reference/outfits.md](reference/outfits.md) |
 | angelus | The single supervisor daemon that owns the registry and outlives shells. | [reference/architecture.md](reference/architecture.md) |
 
 ## Where everything else lives
@@ -61,7 +61,7 @@ Each row is a separate read. Open one only when its "when" is true of you.
 | [start.md](start.md) | You are new to figaro and want the first hour to go well. Read once. |
 | [cli.md](cli.md) | You need a command that is not in the gesture list above, a flag's exact meaning, or the vault (passphrase/keyring) verbs. |
 | [agents.md](agents.md) | You are an agent driving figaro, or you are writing a script that does. |
-| [maintaining.md](maintaining.md) | You are changing the figaro source, handing changed source back to its owner, or **cutting a release** — read it before tagging anything: a tag alone ships to nobody. |
+| [maintaining.md](maintaining.md) | You are changing the figaro source, handing changed source back to its owner, or **cutting a release**: read it before tagging anything: a tag alone ships to nobody. |
 | [updating-docs.md](updating-docs.md) | You are about to edit any file in this tree. Read it before, not after. |
 
 Deep chapters, in `reference/`. These are long by design and cost real context;

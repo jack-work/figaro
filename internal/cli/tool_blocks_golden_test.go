@@ -25,7 +25,7 @@ var updateToolBlocks = flag.Bool("update-tool-blocks", false, "rewrite testdata/
 // "does this look right", which a human reads and a predicate does not. What
 // stays imperative is what a snapshot cannot say: the width INVARIANT (every
 // width from 20 to 200), the fold BEHAVIOUR under a gesture, and the colour
-// contract — those are in nodes_test.go and transcript_expand_test.go.
+// contract: those are in nodes_test.go and transcript_expand_test.go.
 //
 // The cases are the states the owner reviewed, in the order he reviewed them.
 // The cases are the states the owner reviewed, across the tool styles the

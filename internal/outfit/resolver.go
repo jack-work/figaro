@@ -14,7 +14,7 @@ import (
 
 // The resolver: epochs, snapshots, and a cache that stops stat-ing.
 //
-// Commissioned by Gluck, 2026-08-11, with the shape he specified — snapshot
+// Commissioned by Gluck, 2026-08-11, with the shape he specified: snapshot
 // the files on load so a resolution cannot straddle an edit; hand back
 // materialized patches by name behind an interface; keep a short-lived cache
 // with eviction because large outfits are anticipated; build the closure tree
@@ -24,7 +24,7 @@ import (
 //
 // WHAT IT REPLACED, and why it was not merely a nicety. The previous cache
 // validated a result by stat-ing every file it was built from. Honest, never
-// stale — and O(closure) syscalls on EVERY read, plus a dependency list that
+// stale, and O(closure) syscalls on EVERY read, plus a dependency list that
 // each parent merged from each child by linear scan. On a real-shaped tree of
 // 800 files that came to 2.4ms warm and 2.72 SECONDS cold, nearly all of it
 // spent proving that nothing had moved. An epoch proves it once for everyone.
@@ -32,7 +32,7 @@ import (
 // THE EPOCH is a consistent view of the outfits directory. The first read of
 // a file in an epoch copies its bytes into a content-addressed snapshot store
 // and records the hash; everything derived in that epoch is derived from those
-// bytes. Within an epoch a cached answer is valid by definition — no stats, no
+// bytes. Within an epoch a cached answer is valid by definition: no stats, no
 // dependency lists. The epoch advances on `fig outfit reload`, and on the
 // lazy revalidation below.
 //
@@ -44,7 +44,7 @@ import (
 // defaultStaleWindow is how long an epoch is trusted without re-checking the
 // disk. It is deliberately SHORT: a human who edits an outfit and runs the
 // next command is past it before their hand leaves the keyboard, while a burst
-// — `fig ls` folding one outfit per aria — still pays a single pass. Zero
+// : `fig ls` folding one outfit per aria: still pays a single pass. Zero
 // means "check on every ask", which is the old cost profile and what a test
 // asserting instantaneous invalidation is really asking for.
 const defaultStaleWindow = 100 * time.Millisecond
@@ -92,7 +92,7 @@ type epoch struct {
 }
 
 // node is one outfit file as of an epoch: where it is, what it declares, and
-// the snapshot its bytes went to. Deliberately small — a thousand of these is
+// the snapshot its bytes went to. Deliberately small, a thousand of these is
 // a rounding error, while a thousand materialized folds is not.
 type node struct {
 	name   string
@@ -113,7 +113,7 @@ type foldEntry struct {
 
 // snapStore is the side location Gluck asked for: file bytes, content
 // addressed, written once. It is what makes a resolution immune to an edit
-// landing halfway through it, and it doubles as a receipt — the bytes that
+// landing halfway through it, and it doubles as a receipt: the bytes that
 // dressed an aria are still there to be read afterwards.
 type snapStore struct {
 	dir string
@@ -131,9 +131,9 @@ func newSnapStore(dir string) *snapStore {
 // write is NOT an error to the caller: the snapshot is a consistency and audit
 // device, and an outfit that cannot be snapshotted must still be wearable.
 func (s *snapStore) put(b []byte) string {
-	// No store, no hash. Hashing every file read is not free — 40 skills of
+	// No store, no hash. Hashing every file read is not free: 40 skills of
 	// 4KB is 160KB of sha256 on the cold path, which showed up as a 15%
-	// regression against the old cache before this early return existed —
+	// regression against the old cache before this early return existed -
 	// and an Outfitter with nowhere to put the bytes has nothing to gain
 	// from knowing their name.
 	if s == nil || s.dir == "" {
@@ -178,7 +178,7 @@ func (s *snapStore) put(b []byte) string {
 	return id
 }
 
-// get reads bytes back by hash. Missing is not fatal — the caller falls back
+// get reads bytes back by hash. Missing is not fatal: the caller falls back
 // to the live file, which is the pre-snapshot behaviour.
 func (s *snapStore) get(id string) ([]byte, bool) {
 	if s == nil || s.dir == "" || id == "" {
@@ -269,7 +269,7 @@ func (d dep) sameFile(other dep) bool {
 
 // current returns the live epoch, revalidating first if the window has passed.
 // Revalidation stats what this epoch touched and turns the epoch over if
-// anything moved — which is how an edit with no `fig outfit reload` is
+// anything moved: which is how an edit with no `fig outfit reload` is
 // noticed, at a cost that does not scale with how often folds are asked for.
 func (o *Outfitter) current() *epoch {
 	o.mu.Lock()
@@ -306,7 +306,7 @@ func (o *Outfitter) current() *epoch {
 }
 
 // rollLocked starts a fresh epoch: something on disk moved, so every derived
-// answer is suspect and the whole fold cache goes with it. Coarse on purpose —
+// answer is suspect and the whole fold cache goes with it. Coarse on purpose -
 // an epoch turns over only when a file actually changed, and paying one cold
 // fold then is cheaper than carrying per-file dependency lists on every read
 // forever, which is exactly the bill the old cache paid.
@@ -324,7 +324,7 @@ func (o *Outfitter) rollLocked() {
 
 // Reload turns the epoch over now: the next fold re-reads and re-snapshots
 // everything it needs. `fig outfit reload` is its only caller, and it is
-// cheap — nothing is read here.
+// cheap: nothing is read here.
 func (o *Outfitter) Reload() {
 	o.mu.Lock()
 	defer o.mu.Unlock()

@@ -68,7 +68,7 @@ func (sc *studyClient) formValue(t *testing.T, ctx context.Context, key string) 
 }
 
 // A cast: the figaro studies the role and the role's target-aria points
-// at it — one call, serialized in the actor loop, durable on the board.
+// at it: one call, serialized in the actor loop, durable on the board.
 func TestCastPointsRoleAndRegistersStudy(t *testing.T) {
 	_, acli, ctx := daemonFixture(t)
 
@@ -104,7 +104,7 @@ func TestCastPointsRoleAndRegistersStudy(t *testing.T) {
 	require.False(t, cast.Studied, "second cast claims a fresh study")
 }
 
-// cast with a role patch: the role is BORN cast — target-aria rides the
+// cast with a role patch: the role is BORN cast: target-aria rides the
 // birth patch, so there is no window where the role exists unpointed.
 func TestCastMintsRoleBornCast(t *testing.T) {
 	_, acli, ctx := daemonFixture(t)
@@ -149,7 +149,7 @@ func TestCastRefusesBoundTargets(t *testing.T) {
 // The observation, pull-at-the-stamp: studying STATES itself in the IR
 // (the StudyMark record), every subsequent IR record stamps the studied
 // form's position, and NOTHING of the studied form's content is baked
-// into this aria's records — the provider derives the fold from the
+// into this aria's records: the provider derives the fold from the
 // stamps at translation time (pinned in provider's projection tests).
 func TestStudyStampsIRAndBakesNothing(t *testing.T) {
 	_, acli, ctx := daemonFixture(t)

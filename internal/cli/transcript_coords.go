@@ -11,15 +11,15 @@ import (
 //
 // The pager can now be told to go somewhere (`:12.3`, see transcript_jump.go).
 // A gesture that names a coordinate is useless if no coordinate is ever shown,
-// so Ctrl-O — the verbosity toggle, which already reveals tool timings and
-// argument dumps — additionally draws one dim row above every rendered node:
+// so Ctrl-O: the verbosity toggle, which already reveals tool timings and
+// argument dumps, additionally draws one dim row above every rendered node:
 //
 //	 12.3 · 01:23:45
 //
 // turn id, node id, and when the node was written. The inquiry gets the same
 // row with its VIRTUAL node id (inquiryNode, -1), because the question is
-// addressable exactly like a node is — it selects, copies and highlights
-// through the same nodeRef — and hiding its id would make the one thing at the
+// addressable exactly like a node is: it selects, copies and highlights
+// through the same nodeRef, and hiding its id would make the one thing at the
 // top of every turn the one thing you cannot jump to.
 //
 // Three constraints the shape has to satisfy, all of them load-bearing:
@@ -29,7 +29,7 @@ import (
 //     desynchronising the painter's one-row-per-line cursor math.
 //   - IT MUST NOT SEPARATE A VOICE HEADER FROM ITS RULE. The rule is the
 //     header's overline (TestVoiceHeaderHugsItsRule); so the coordinate sits
-//     BELOW the header, on the node's own side of the chrome — it labels the
+//     BELOW the header, on the node's own side of the chrome: it labels the
 //     node, not the voice.
 //   - THE DEFAULT PATH MUST NOT PAY. The row is minted inside renderMsgBase,
 //     which is memoized in rowCache, and only when verbose is on. With Ctrl-O
@@ -61,7 +61,7 @@ func nodeCoordAt(n livedoc.Node) int64 {
 
 // coordLabel renders one coordinate: "<turn>.<node>", plus " · hh:mm:ss" when
 // there is a timestamp to show. A zero timestamp prints no time rather than
-// 1970 — an unstamped node is a real state (an empty prose block minted so ids
+// 1970, an unstamped node is a real state (an empty prose block minted so ids
 // cannot shift) and lying about it is worse than saying nothing.
 func coordLabel(turn, node int, at int64) string {
 	s := strconv.Itoa(turn) + "." + strconv.Itoa(node)
@@ -72,7 +72,7 @@ func coordLabel(turn, node int, at int64) string {
 }
 
 // verbose is the pager's view of the Ctrl-O toggle. The transcript does not own
-// the flag — it lives on the shared renderSettings the input loop mutates — so
+// the flag: it lives on the shared renderSettings the input loop mutates: so
 // this is the one place that reaches for it, rather than three sites each
 // repeating the type assertion.
 func (t *transcript) verbose() bool {

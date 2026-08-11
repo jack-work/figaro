@@ -15,8 +15,8 @@ import (
 // Replay into a real terminal.
 //
 // vtScreen is a model, and a model only knows the bugs its author thought of.
-// This test replays the pager's actual escape stream into tmux — a real,
-// conservative VT implementation — and compares what it draws against what the
+// This test replays the pager's actual escape stream into tmux, a real,
+// conservative VT implementation, and compares what it draws against what the
 // pager believes it drew.
 //
 // It has already earned its place. The suffix-update path originally emitted

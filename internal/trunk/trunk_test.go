@@ -81,7 +81,7 @@ func TestPromoteMovesPresentationOnly(t *testing.T) {
 }
 
 // The whole reason boundary repair exists. After promoting B, deleting A
-// takes C and D but NOT B — and B still inherits A's prefix.
+// takes C and D but NOT B, and B still inherits A's prefix.
 func TestPromoteOpensABoundary(t *testing.T) {
 	x, f := open(t)
 	if err := x.Promote("B"); err != nil {

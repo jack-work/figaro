@@ -16,7 +16,7 @@ import (
 // Identifying the live region by LT alone made this one-node steer claim the
 // whole streaming region: Freeze took the "its rows are already on screen" path,
 // dropped seventeen rows of in-flight output into scrollback, and the rest of
-// the turn was frozen again afterwards — so the entire post-steer block printed
+// the turn was frozen again afterwards: so the entire post-steer block printed
 // twice at ordinary heights.
 func TestIncipit_FreezingASteerLeavesTheLiveRegionAlone(t *testing.T) {
 	const body = "It printed APRICOT after a six-second pause."

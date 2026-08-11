@@ -50,7 +50,7 @@ func ratio(a, b uint64) float64 {
 }
 
 // TestRealAriaMemory weighs a REAL aria's holders. It must be a real store:
-// synthetic prose gets the ratio BETWEEN rows backwards — uniform small
+// synthetic prose gets the ratio BETWEEN rows backwards: uniform small
 // messages make the composed UI look like 1.5x the decoded IR, where real
 // arias (tool calls, large results, multi-provider lineage) put it at 0.2x.
 //
@@ -109,7 +109,7 @@ func TestRealAriaMemory(t *testing.T) {
 
 	// RESIDENCY, not the cost of one read. The daemon's steady state is the
 	// cache holding rows while nobody is reading, so the log handle is what we
-	// keep alive and the Read result is deliberately discarded — retaining it
+	// keep alive and the Read result is deliberately discarded: retaining it
 	// would measure a caller's copy and, under a window, would pull the whole
 	// log back off disk to do so.
 	// TotalAlloc measures bytes EVER allocated, so it catches the transient
@@ -177,8 +177,8 @@ func TestRealAriaMemory(t *testing.T) {
 	})
 
 	// One cachedLog of []json.RawMessage per provider the aria has spoken
-	// to. Wildly variable — kilobytes on a single-provider aria, megabytes
-	// on one with a switch in its lineage — so it is measured, not assumed.
+	// to. Wildly variable: kilobytes on a single-provider aria, megabytes
+	// on one with a switch in its lineage: so it is measured, not assumed.
 	transBytes, transKeep := heapDelta(func() any {
 		var held []any
 		for _, prov := range []string{"anthropic", "copilot-messages", "copilot-responses", "openai"} {

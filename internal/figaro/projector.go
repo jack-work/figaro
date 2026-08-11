@@ -11,13 +11,13 @@ import (
 //
 // The core transacts in fig IR: it runs turns, appends message.Message to the
 // xwal, mints turn ids, forks. None of that needs a rendering. A build that
-// supplies no Projector still does all of it — it simply produces no UI frames
+// supplies no Projector still does all of it: it simply produces no UI frames
 // and serves empty reads. That is the point: figaro-the-engine is usable
 // without figaro-the-display, so a binary can ship without the conversion.
 //
 // The core still names the UI IR *shape* (aria.Turn, livedoc.Node) because it
 // serves those types over the wire. What it no longer depends on is the
-// *conversion* — internal/compose — which is the dependency that made the
+// *conversion*: internal/compose: which is the dependency that made the
 // engine inseparable from the renderer. projector_boundary_test.go pins that.
 //
 // Tool timings live here rather than on the Agent because they exist only to

@@ -4,7 +4,7 @@
 //
 // It deliberately imports nothing but the fig IR. Turn identity is a property
 // of the canonical record, not of any rendering of it, so the core can reason
-// about turns — stamp ids, resolve a fork coordinate — without depending on
+// about turns: stamp ids, resolve a fork coordinate: without depending on
 // the UI IR projection. This package previously lived inside internal/compose,
 // which made every caller of the turn arithmetic drag in livedoc and the aria
 // wire for no reason.
@@ -19,7 +19,7 @@ import (
 // Opens reports whether m begins a new turn.
 //
 // Three things disqualify an input message. A steering interjection never
-// opens a turn — it is a direction aimed at the exchange already in flight.
+// opens a turn: it is a direction aimed at the exchange already in flight.
 // A message bearing tool_result is the reply half of a tool round, so it
 // stays inside its turn even when it also carries text (that text is a
 // legacy-shaped steer). And a message with no text at all is a state-only
@@ -30,14 +30,14 @@ func Opens(m message.Message) bool {
 
 // IsSteering reports whether m is a mid-turn direction rather than a new
 // question. Two accepted shapes for one concept: the explicit flag the drain
-// sets, and the legacy shape — prose riding on a tool_result message — which
+// sets, and the legacy shape: prose riding on a tool_result message: which
 // real logs still contain and which must keep rendering as it always did.
 func IsSteering(m message.Message) bool {
 	return m.Steering || HasToolResult(m)
 }
 
 // StampIDs fills TurnID on every message that lacks one and returns the last
-// turn id the log implies — the seed an agent resumes minting from.
+// turn id the log implies: the seed an agent resumes minting from.
 //
 // It is a pure function of the slice: the same messages always yield the same
 // ids, and nothing depends on whether the tail is still open. A message that
@@ -46,7 +46,7 @@ func IsSteering(m message.Message) bool {
 //
 // Fork seeding needs no machinery of its own. A child shares its parent's
 // prefix verbatim, so counting turn openings over that prefix reproduces the
-// parent's ids exactly and the child continues from there — siblings then
+// parent's ids exactly and the child continues from there: siblings then
 // conflict piecewise, which is precisely how LT already behaves.
 //
 // Messages before the first prompt (boot, state-only tics) belong to no turn
@@ -66,8 +66,8 @@ func StampIDs(msgs []message.Message) uint64 {
 	return cur
 }
 
-// Span reports the LT range a turn occupies: first is the prompt's LT — the
-// coordinate a fork takes — and last is the turn's final message.
+// Span reports the LT range a turn occupies: first is the prompt's LT: the
+// coordinate a fork takes, and last is the turn's final message.
 //
 // This is THE resolver. `fig send <aria>:<turn>` and `fig fork <aria>:<turn>`
 // both route through it, and neither re-derives the walk: turn ids are
@@ -75,15 +75,15 @@ func StampIDs(msgs []message.Message) uint64 {
 // exactly what StampIDs already does. Deriving it twice is the class of bug
 // this whole change exists to kill.
 //
-// Fork semantics rest on first, but this function applies NO adjustment — it
+// Fork semantics rest on first, but this function applies NO adjustment: it
 // reports the honest span. atMainLT is INCLUSIVE of the frozen prefix (prefix
-// [First,atMainLT], branch (atMainLT,Last]) — measured, not inferred: forking a
+// [First,atMainLT], branch (atMainLT,Last]): measured, not inferred: forking a
 // real aria at atMainLT=5 yields a branch that still contains LT 5. So
 // replacing turn T takes atMainLT = first - 1, and that -1 is fork POLICY that
 // lives in exactly one place, cli.resolveTurn. Do not re-derive it here.
 //
 // Because that boundary is always a user prompt, the history a fork freezes
-// always terminates on a complete assistant message — no tool_invoke is ever
+// always terminates on a complete assistant message: no tool_invoke is ever
 // left dangling, so interrupted-tool synthesis is unreachable for a
 // user-initiated fork.
 func Span(msgs []message.Message, turn uint64) (first, last uint64, ok bool) {
@@ -102,7 +102,7 @@ func Span(msgs []message.Message, turn uint64) (first, last uint64, ok bool) {
 
 // At is the inverse of Span: it reports which turn owns an LT. Display
 // surfaces need this because the forest records a fork point as an LT
-// (NodeView.BranchedLT) while the user's coordinate is a turn — printing the
+// (NodeView.BranchedLT) while the user's coordinate is a turn: printing the
 // raw LT and calling it a fork argument is a lie, since `fork <id>:N` takes N
 // as a turn.
 //
@@ -131,7 +131,7 @@ func Text(m message.Message) string {
 	return strings.Join(parts, "\n")
 }
 
-// HasToolResult reports whether a message carries any tool_result block — i.e.
+// HasToolResult reports whether a message carries any tool_result block: i.e.
 // it is a tool-result tic (part of the turn) rather than a fresh user prompt.
 func HasToolResult(m message.Message) bool {
 	for _, c := range m.Content {

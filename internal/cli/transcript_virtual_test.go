@@ -49,7 +49,7 @@ func legacyLines(t *transcript) ([]string, []sliceKey, map[nodeRef]nodeSpan) {
 	nodeRows := map[nodeRef]nodeSpan{}
 	appendMsg := func(rows []transcriptRow, lt sliceKey) {
 		if len(out) > 0 {
-			// The separator is a PAIR — a blank and the rule — because the rule
+			// The separator is a PAIR, a blank and the rule: because the rule
 			// is the OVERLINE of the voice header on the next line (see sepRows).
 			// It was a triple, with a trailing blank, until that trailing blank
 			// was found to be the reason "> input" sat one row lower than
@@ -503,7 +503,7 @@ func TestTranscriptVirtualIndex_Degenerate(t *testing.T) {
 
 	// ...and so does one too small to hold the FOOTER. renderFrame writes a
 	// fixed three-row footer at screen[h-3:], so h<4 indexed screen[-2] and
-	// panicked — dragging a pane to 1-3 rows crashed the pager. The guard
+	// panicked: dragging a pane to 1-3 rows crashed the pager. The guard
 	// skips the frame instead; every height must survive, in both orders, and
 	// the pager must still paint once the pane is restored.
 	for _, h := range []int{3, 2, 1, 2, 3, 1} {

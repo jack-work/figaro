@@ -16,7 +16,7 @@ func TestCompleteAriaIDsAfterFlag_FiresOnlyAfterIDFlag(t *testing.T) {
 	fn := completeAriaIDsAfterFlag(inner)
 
 	// Cursor right after --id: must NOT fall through to inner. With the
-	// daemon isolated away, softFetchAriaIDs returns nil — what we're
+	// daemon isolated away, softFetchAriaIDs returns nil: what we're
 	// asserting is that inner wasn't reached.
 	isolateDaemonEnv(t)
 	_ = fn(&cmdkit.CompleteContext{Args: []string{"--id"}})

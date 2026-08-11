@@ -92,7 +92,7 @@ func TestWindow_SelfTrimsOnAppend(t *testing.T) {
 		require.NoError(t, err)
 	}
 	// Appends batch their compaction, so residency sits between the cap and
-	// cap+slack — bounded, which is the guarantee that matters.
+	// cap+slack: bounded, which is the guarantee that matters.
 	assert.LessOrEqual(t, c.Resident(), 10+windowSlack, "window grew unbounded")
 	assert.Equal(t, 205, c.Len())
 
@@ -190,7 +190,7 @@ func costOf(e Entry[uint64]) int { return int(e.Payload) }
 // measured on a real aria, dropping 80% of rows released 26% of bytes, because
 // the large tool results cluster at the tail.
 func TestWindow_ByteBudgetBoundsBytes(t *testing.T) {
-	// Head entries are cheap, tail entries expensive — the real shape.
+	// Head entries are cheap, tail entries expensive: the real shape.
 	fks := make([]uint64, 100)
 	for i := range fks {
 		if i < 90 {

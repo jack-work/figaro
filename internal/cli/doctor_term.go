@@ -18,7 +18,7 @@ import (
 // be reproduced from another machine: every surface, every width from 20 to 200,
 // live turns, resizes, nvim's embedded terminal, all clean. What cannot be
 // checked from here is whether the reporter's terminal DRAWS a glyph the width
-// figaro measured it to be — and if it does not, every row figaro builds is
+// figaro measured it to be, and if it does not, every row figaro builds is
 // wrong by the difference, invisibly.
 //
 // One command, run where the trouble is, answers it.

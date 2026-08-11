@@ -18,7 +18,7 @@ import (
 func TestCompleteFormKeys_IncludesAllKnownAndExpandsEnv(t *testing.T) {
 	// Isolated so the candidates come from the catalog alone: with a
 	// real daemon reachable the developer's own bound aria would leak
-	// keys in — or, worse, a fetch failure would empty the list.
+	// keys in: or, worse, a fetch failure would empty the list.
 	isolateDaemonEnv(t)
 	got := completeFormKeys(nil)
 	gotSet := map[string]struct{}{}
@@ -64,7 +64,7 @@ func TestCompleteFormKeys_IncludesAllKnownAndExpandsEnv(t *testing.T) {
 //
 // The environment is not a given: a developer running `go test ./...` from
 // a normal shell inherits FIGARO_RUNTIME_DIR (or its default), which is
-// where their own angelus is listening — and FIGARO_ARIA, which names a
+// where their own angelus is listening, and FIGARO_ARIA, which names a
 // live aria. A test whose premise is "the daemon is down" must establish
 // that premise itself rather than hope for it.
 func isolateDaemonEnv(t *testing.T) {
@@ -77,7 +77,7 @@ func isolateDaemonEnv(t *testing.T) {
 
 func TestSoftFetchLiveKeysUnboundWhenDaemonDown(t *testing.T) {
 	// The premise, established rather than assumed: no daemon is
-	// reachable, so the call must fail soft — and report UNBOUND, not
+	// reachable, so the call must fail soft, and report UNBOUND, not
 	// fetch-failed, because with no daemon nothing can be bound and
 	// the catalog is the honest answer. Without the isolation the test
 	// found the developer's own angelus and returned their live keys.
@@ -121,7 +121,7 @@ func fakeRPCServer(t *testing.T, sockPath string, handlers map[string]jkrpc.Hand
 // ariaSock, on the socket path completion actually dials. It is STRICT
 // about the pid, the way the real daemon is: a resolve for any pid but
 // wantPID answers not-found. The first version of this fake said Found
-// to every pid and was thereby tidier than reality — it certified a
+// to every pid and was thereby tidier than reality: it certified a
 // completion path whose shellPID was never initialized (the __complete
 // dispatch exits before initBindingPolicy), which the real daemon
 // answered with not-found for pid 0, and every pid-bound shell got the
@@ -211,7 +211,7 @@ func TestCompleteFormKeys_AttendedAriaOffersLiveKeys(t *testing.T) {
 }
 
 // The other half of the distinction: an aria is bound but its endpoint
-// is dead. Completion must DECLINE — offering the catalog here would
+// is dead. Completion must DECLINE: offering the catalog here would
 // present documentation as the board's state, which is the defect this
 // distinction exists to remove.
 func TestCompleteFormKeys_DeclinesWhenBoundFormUnreadable(t *testing.T) {

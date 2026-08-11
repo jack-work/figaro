@@ -109,7 +109,7 @@ func WithSessions(sessions *SessionRegistry) RegistryOption {
 
 // WithImageBudget caps the base64 payload of one inlined image. The agent
 // passes config.InlineImageBudget() so the tool that PRODUCES the image is
-// bounded by the same number the store can actually append — an image fitted
+// bounded by the same number the store can actually append, an image fitted
 // at ingest never has to be dropped downstream.
 func WithImageBudget(maxBase64 int) RegistryOption {
 	return func(o *registryOpts) {

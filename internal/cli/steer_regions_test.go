@@ -71,7 +71,7 @@ func TestBridge_SteerDoesNotOvertakeThePendingOutputRegion(t *testing.T) {
 	}
 	if iTool > iSteer {
 		t.Errorf("steer was hoisted above the tool that preceded it "+
-			"(tool at %d, steer at %d) — live order must match the projection:\n%s",
+			"(tool at %d, steer at %d): live order must match the projection:\n%s",
 			iTool, iSteer, got)
 	}
 }

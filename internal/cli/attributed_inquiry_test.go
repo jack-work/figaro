@@ -22,7 +22,7 @@ import (
 //	< figaro
 //	  Hello to both of you
 //
-// ONE "> input" for the whole question however many people wrote it — the
+// ONE "> input" for the whole question however many people wrote it: the
 // submissions folded into one message and a header apiece would say otherwise.
 // Each segment is prefaced by its sender, with a blank line between segments so
 // the parts read as separate messages.
@@ -91,7 +91,7 @@ func TestUnattributedInquiryIsUnchanged(t *testing.T) {
 	assertChrome(t, withSegs, want)
 
 	// A segment list carrying no senders is the same thing said differently,
-	// and must render identically — otherwise the presence of the field, not
+	// and must render identically: otherwise the presence of the field, not
 	// the presence of a sender, would change the screen.
 	blank := []aria.InquirySegment{{Text: "THEQUESTION"}}
 	assertChrome(t, renderTurnRows(aria.Message{Role: livedoc.RoleOutput, Inquiry: "THEQUESTION", InquirySegments: blank, Nodes: nodes}, 48, 0, renderSettings{}), want)

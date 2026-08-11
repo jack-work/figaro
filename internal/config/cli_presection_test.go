@@ -4,7 +4,7 @@ import "testing"
 
 // A config.toml written before the CLI settings moved into [cli] is still on
 // disk. TOML cannot know the key was renamed, so without the fallback in Load
-// those settings are read by nobody and the CLI silently uses its defaults —
+// those settings are read by nobody and the CLI silently uses its defaults -
 // measured before the fix: echo_prompt = false gave EchoPrompt() == true.
 func TestPreSectionCLIKeysStillApply(t *testing.T) {
 	l, err := loadWith(t, "default_outfit = \"default\"\necho_prompt = false\nstream_cps = 40\n")

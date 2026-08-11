@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# release.sh — cut a figaro release: version, tag, release branch, push,
+# release.sh: cut a figaro release: version, tag, release branch, push,
 # GitHub release. It does NOT touch this machine's installed figaro.
 #
 #   scripts/release.sh              # cut whatever flake.nix declares, if untagged
@@ -11,21 +11,21 @@
 #
 # THE SINGLE LIVE VERSION is the `version` line in flake.nix. It is what a
 # built binary reports (-X ...cli.semver), and the tag is minted to match it
-# — never the other way round. The bump argument is therefore optional: with
+#: never the other way round. The bump argument is therefore optional: with
 # one, flake.nix moves and the tag follows; without one, whatever flake.nix
 # already declares gets cut. The two can never disagree at the end of a run.
 #
 # What it does, in order:
 #
-#   1. Preflight — right branch, clean tree, not behind the remote, tools present.
+#   1. Preflight: right branch, clean tree, not behind the remote, tools present.
 #   2. Resolve the version: flake.nix as-is, or bumped from it. Refuse if that
 #      version is already tagged, or if it would move backwards.
 #   3. Gate on `go build && go vet && go test` (skip with --no-check).
 #   4. Write an annotated tag whose message IS the release notes: subject
-#      "vX.Y.Z — title", body prose (optional — a patch may be one line).
+#      "vX.Y.Z: title", body prose (optional, a patch may be one line).
 #      Opens $EDITOR unless -m/--notes-file/--tag-message. Your message is
 #      never thrown away: on any abort it is saved to .git/RELEASE_EDITMSG.
-#   5. Move the `release` branch to the tag — that is what a `nix profile`
+#   5. Move the `release` branch to the tag: that is what a `nix profile`
 #      entry tracking ?ref=release will pick up.
 #   6. Push branch + release + tag, then create the GitHub release, reading
 #      title and notes straight back out of the tag. One source of truth.
@@ -70,7 +70,7 @@ The version lives in flake.nix and nowhere else; the tag is minted to match.
 With a bump argument flake.nix moves first. Without one, whatever flake.nix
 already declares is what gets cut.
 
-  -m, --message <subject>  Tag subject text (the part after "vX.Y.Z — ").
+  -m, --message <subject>  Tag subject text (the part after "vX.Y.Z: ").
                            Skips the editor when --notes-file is also given.
       --notes-file <path>  File holding the release-notes body (prose).
                            "-" reads stdin.
@@ -116,14 +116,14 @@ cur_branch=$(git rev-parse --abbrev-ref HEAD)
 [ "$cur_branch" = "$BRANCH" ] || die "on branch '$cur_branch', expected '$BRANCH' (use --branch)"
 
 git diff --quiet && git diff --cached --quiet \
-	|| die "working tree is dirty — commit or stash first"
+	|| die "working tree is dirty: commit or stash first"
 
 # Untracked files are not fatal (result/, scratch output), but they will NOT
-# be in the tag — and forgetting to `git add` is exactly how a release ships
+# be in the tag, and forgetting to `git add` is exactly how a release ships
 # without the thing it was cut for.
 untracked=$(git ls-files --others --exclude-standard)
 if [ -n "$untracked" ]; then
-	printf 'release: warning — untracked files will not be in %s:\n' "$BUMP release" >&2
+	printf 'release: warning: untracked files will not be in %s:\n' "$BUMP release" >&2
 	printf '%s\n' "$untracked" | sed 's/^/    /' >&2
 fi
 
@@ -132,7 +132,7 @@ git fetch --tags --quiet "$REMOTE" || die "git fetch failed"
 
 if git rev-parse --verify --quiet "$REMOTE/$BRANCH" >/dev/null; then
 	behind=$(git rev-list --count "$BRANCH..$REMOTE/$BRANCH")
-	[ "$behind" = 0 ] || die "$BRANCH is $behind commit(s) behind $REMOTE/$BRANCH — pull first"
+	[ "$behind" = 0 ] || die "$BRANCH is $behind commit(s) behind $REMOTE/$BRANCH: pull first"
 fi
 
 # ------------------------------------------------------------------ version
@@ -165,12 +165,12 @@ TAG="v$VERSION"
 
 git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null \
 	&& die "$TAG already exists. flake.nix declares $flake_version, which is
-    already released — pass a bump (patch/minor/major) to move past it."
+    already released: pass a bump (patch/minor/major) to move past it."
 
 # Never go backwards: a version already released must stay released.
 if [ "$TAG" != "$last_tag" ] \
 	&& [ "$(printf '%s\n%s\n' "${TAG#v}" "${last_tag#v}" | sort -V | tail -1)" = "${last_tag#v}" ]; then
-	die "$TAG is behind the latest tag $last_tag — refusing to move the version backwards"
+	die "$TAG is behind the latest tag $last_tag: refusing to move the version backwards"
 fi
 
 if [ -n "$BUMP" ]; then
@@ -180,7 +180,7 @@ else
 fi
 
 unreleased=$(git log --oneline "$last_tag..$BRANCH" 2>/dev/null || true)
-[ -n "$unreleased" ] || die "no commits since $last_tag — nothing to release"
+[ -n "$unreleased" ] || die "no commits since $last_tag: nothing to release"
 printf '%s\n' "$unreleased" | sed 's/^/    /' >&2
 
 # ----------------------------------------------------------------- flake.nix
@@ -224,17 +224,17 @@ if [ -n "$TAG_MESSAGE_FILE" ]; then
 	tag_args=(-F "$tmpl")
 elif [ -n "$NOTES_FILE" ]; then
 	[ -n "$SUBJECT" ] || die "--notes-file requires -m/--message"
-	printf '%s — %s\n\n' "$TAG" "$SUBJECT" >"$tmpl"
+	printf '%s: %s\n\n' "$TAG" "$SUBJECT" >"$tmpl"
 	if [ "$NOTES_FILE" = "-" ]; then cat >>"$tmpl"; else cat "$NOTES_FILE" >>"$tmpl"; fi
 	tag_args=(-F "$tmpl")
 else
 	# Editor template. Comment lines are stripped by --cleanup=strip.
 	{
-		printf '%s — %s\n\n' "$TAG" "$SUBJECT"
-		printf '# Line 1 is the subject: "%s — <title>". It becomes the\n' "$TAG"
+		printf '%s: %s\n\n' "$TAG" "$SUBJECT"
+		printf '# Line 1 is the subject: "%s: <title>". It becomes the\n' "$TAG"
 		printf '# GitHub release title, so give it a title.\n#\n'
-		printf '# Everything after the blank line is the body — prose, not a\n'
-		printf '# changelog list — and becomes the release notes. The body is\n'
+		printf '# Everything after the blank line is the body: prose, not a\n'
+		printf '# changelog list, and becomes the release notes. The body is\n'
 		printf '# OPTIONAL: a one-line patch release is perfectly good, and the\n'
 		printf '# notes then fall back to the commit list below.\n#\n'
 		printf '# Commits since %s:\n' "$last_tag"
@@ -248,7 +248,7 @@ if [ "$DRY" = 1 ]; then
 	printf '   \033[2m[dry-run]\033[0m git tag -a --cleanup=strip %s %s\n' "${tag_args[*]}" "$TAG" >&2
 	printf '   \033[2m[dry-run]\033[0m tag message template:\n' >&2
 	sed 's/^/       /' "$tmpl" >&2
-	SUBJECT_OUT="$TAG — (from your editor)"
+	SUBJECT_OUT="$TAG: (from your editor)"
 	NOTES_OUT="(from your editor)"
 else
 	git tag -a --cleanup=strip "${tag_args[@]}" "$TAG"
@@ -265,17 +265,17 @@ else
 	printf '%s\n' "$msg" >"$SAVED"
 
 	case "$SUBJECT_OUT" in
-		""|*"— "|*"—")
+		""|*"- "|*"-")
 			git tag -d "$TAG" >/dev/null
-			die "tag subject has no title — aborted, tag removed.
+			die "tag subject has no title, aborted, tag removed.
     Your message was saved. Resume with:
         $0 $BUMP --tag-message $SAVED" ;;
 	esac
 
-	# An empty body is allowed — a patch release may be one honest line.
+	# An empty body is allowed, a patch release may be one honest line.
 	# The release notes then fall back to the commit list.
 	if [ -z "${NOTES_OUT//[[:space:]]/}" ]; then
-		say "no body — release notes will be the commit list since $last_tag"
+		say "no body: release notes will be the commit list since $last_tag"
 		NOTES_OUT=$(git log --no-merges --format='- %s' "$last_tag..$TAG")
 	fi
 fi
@@ -328,7 +328,7 @@ $TAG is cut and pushed. Nothing on this machine was upgraded.
   consumers pinning immutably:  github:jack-work/figaro/$TAG
   consumers tracking the ref:   ?ref=$RELEASE_BRANCH  (now $TAG)
 
-To move this machine onto it, from a terminal — not from inside an aria:
+To move this machine onto it, from a terminal: not from inside an aria:
 
   figaro stop --keep-pids && nix profile upgrade --all
 EOF

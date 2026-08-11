@@ -229,7 +229,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if out.Usage == nil {
 		// "No usage block" is not "usage was zero". With nothing to fold,
 		// every bucket reads 0 while the context figure keeps growing off
-		// the chars/4 estimate — an aria that looks accounted for and is
+		// the chars/4 estimate, an aria that looks accounted for and is
 		// not. Cheaper to say so here than to diff figaro against the
 		// endpoint's own log, which is how this was found.
 		slog.Warn("no usage block in response; token accounting for this turn is unavailable",
@@ -385,7 +385,7 @@ func (p *Provider) cacheFor(aria string) (store.Log[[]json.RawMessage], error) {
 	return s, nil
 }
 
-// invalidateIfStale clears the cache on fingerprint mismatch — which is how
+// invalidateIfStale clears the cache on fingerprint mismatch: which is how
 // a change of marking mode, and so of wire shape, re-translates cleanly
 // instead of interleaving two shapes in one prefix.
 func (p *Provider) invalidateIfStale(s store.Log[[]json.RawMessage]) bool {

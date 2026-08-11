@@ -70,7 +70,7 @@ func renderedKeys(config ProjectionConfig[EncodedMessages]) (*IncrementalProject
 // COLD EQUALS WARM. The projection warm-starts mid-log, so the patches it
 // renders must not depend on where it resumed. They did: a fresh cursor
 // pointed at the newest entry replayed the WHOLE board onto the first new
-// message, and the per-LT cache made that permanent — every round-trip
+// message, and the per-LT cache made that permanent: every round-trip
 // re-sent the aria's entire state.
 func TestWarmProjectionRendersWhatAColdOneWould(t *testing.T) {
 	build := func() *store.MemLog[message.Message] {
@@ -117,7 +117,7 @@ func TestWarmProjectionRendersWhatAColdOneWould(t *testing.T) {
 }
 
 // EXACTLY ONCE. Every patch reaches the model, and no patch reaches it
-// twice — the two failure modes this seam has actually had, in that order.
+// twice: the two failure modes this seam has actually had, in that order.
 func TestEveryPatchRendersExactlyOnceAcrossResumes(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
 	var all []string

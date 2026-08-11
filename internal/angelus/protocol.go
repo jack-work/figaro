@@ -62,7 +62,7 @@ type Handlers struct {
 // newOutfitter builds the daemon's ONE resolver, with its snapshot store in
 // the runtime directory. Snapshots are what keep a resolution from straddling
 // an edit: the first read of a file in an epoch pins its bytes, and everything
-// derived in that epoch — including a fold rebuilt after eviction — is derived
+// derived in that epoch: including a fold rebuilt after eviction: is derived
 // from the pinned copy. Runtime-scoped on purpose: the guarantee they provide
 // is per-daemon-run, and a reboot has nothing to be consistent with.
 func newOutfitter(a *Angelus, loaded *config.Loaded) *outfit.Outfitter {
@@ -200,7 +200,7 @@ type listEnrichment struct {
 
 // settings is the in-memory config and the outfitter over it, read under the
 // lock. Config is loaded once at start and re-read only when a client changes
-// it through MethodConfigure — the first-run wizard's seam — so no request pays
+// it through MethodConfigure: the first-run wizard's seam: so no request pays
 // a stat, and the two fields can never be observed half-swapped.
 func (h *handlers) settings() (*config.Loaded, *outfit.Outfitter) {
 	h.configMu.Lock()
@@ -210,7 +210,7 @@ func (h *handlers) settings() (*config.Loaded, *outfit.Outfitter) {
 
 // openAriaForm returns the in-memory form hot view for an
 // aria, seeded from its reducible form channel (the durable
-// truth — there is no the form channel). nil on failure.
+// truth: there is no the form channel). nil on failure.
 func (h *handlers) openAriaForm(ariaID string) *form.State {
 	if h.cbTmpls == nil || h.angelus.Backend == nil {
 		return nil
@@ -233,7 +233,7 @@ func (h *handlers) openAriaForm(ariaID string) *form.State {
 // This used to memoize with a 3-second TTL, because folding an outfit re-read
 // every skill file and `list` calls this once per aria. The Outfitter now
 // caches its folds against the files they were built from, so the repeat cost
-// is a stat per dependency — cheaper than the TTL was, and never stale.
+// is a stat per dependency: cheaper than the TTL was, and never stale.
 func (h *handlers) currentOutfitHash(name string) (current, legacy string) {
 	_, ofit := h.settings()
 	if ofit == nil {
@@ -257,8 +257,8 @@ func (h *handlers) currentOutfitHash(name string) (current, legacy string) {
 //
 // A listing asks this once per ROW and the answer only depends on the outfit,
 // so it carries a per-request memo. Without one, a store of 200 arias on one
-// outfit re-marshalled and re-hashed that outfit's whole patch — skills and
-// all — 200 times, and twice each since the legacy generation joined the
+// outfit re-marshalled and re-hashed that outfit's whole patch: skills and
+// all: 200 times, and twice each since the legacy generation joined the
 // comparison. The fold underneath is cached; the hashing was not.
 func (h *handlers) outfitVer(vers map[string][2]string, stamped, name string) string {
 	hashes, ok := vers[name]
@@ -292,11 +292,11 @@ func outfitVerLabel(stamped, current, legacy string) string {
 }
 
 // formCreate mints an unbound form: the form half of the one birth verb.
-// No outfit resolution, no default, no dedup — the patch IS the form, and
+// No outfit resolution, no default, no dedup: the patch IS the form, and
 // naming an outfit is the CLIENT's affair (the CLI materializes -O into
 // the patch before calling; a form with no patch is refused by the store).
 // The hub is stood up before the response so the @id is dialable the
-// moment the caller holds it — same rule as every endpoint: unix sockets
+// moment the caller holds it: same rule as every endpoint: unix sockets
 // have no lazy activation.
 func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	_, span := figOtel.Start(ctx, "angelus.formCreate")
@@ -314,7 +314,7 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 	}
 	// Dress at the boundary: the request's outfit NAMES fold into keys here,
 	// under the patch's own, and the form is born holding materialized state.
-	// No default outfit is ever folded in — `fig form new` demands its names
+	// No default outfit is ever folded in: `fig form new` demands its names
 	// explicitly.
 	patch, err := h.dress(req.Outfits, req.Patch)
 	if err != nil {
@@ -336,13 +336,13 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 }
 
 // formBind births a figaro from an unbound form (or the null root): the
-// bind half of the one birth verb. It mirrors create's storage dance —
-// fork with the dressing, stamp aria_id in the boot patch — and then
+// bind half of the one birth verb. It mirrors create's storage dance -
+// fork with the dressing, stamp aria_id in the boot patch, and then
 // STOPS: no provider is resolved, no agent constructed, no registry
 // entry. The figaro is born dormant behind its hub and wakes on first
 // need; a missing provider fails there, at the first turn, which is what
 // makes `bind null` a mintable naked figaro. It never touches the
-// caller's attendance either — binding shells is the client's affair.
+// caller's attendance either: binding shells is the client's affair.
 func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	_, span := figOtel.Start(ctx, "angelus.formBind")
 	defer span.End()
@@ -389,7 +389,7 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 
 // ensureDefaultForm returns the id of the current default form, minting a
 // fresh one when due. The lifecycle (v2 brief §6): `fig outfit reload`
-// only sets a dirty flag; the compute happens HERE, on the next fig new —
+// only sets a dirty flag; the compute happens HERE, on the next fig new -
 // materialized files are hashed and compared against the record, and a
 // pointer that is clean and whose node still exists is reused with NO
 // comparison at all (the cheap path, and the prompt-cache-preserving one:
@@ -439,11 +439,11 @@ func (h *handlers) ensureDefaultForm(backend store.Backend, stumpPatch form.Patc
 
 // outfitReload flags the default form for recomputation on the next
 // `fig new`. Deliberately cheap: no files are read here, and there is NO
-// inverse verb — outfit files are one-way sources of truth.
+// inverse verb: outfit files are one-way sources of truth.
 func (h *handlers) outfitReload(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	// Turn the resolver's epoch over first: whatever else this verb decides,
 	// asking for a reload means the files on disk are the truth now. It reads
-	// nothing — the next fold does the reading — which is what keeps this the
+	// nothing: the next fold does the reading: which is what keeps this the
 	// cheap verb §6 of the brief says it is.
 	if _, ofit := h.settings(); ofit != nil {
 		ofit.Reload()
@@ -488,7 +488,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	// TWO PATCHES, and which is which is the whole economy of this.
 	//
 	// The STUMP carries the default outfit's closure and NOTHING else, so its
-	// identity is a pure function of that closure — every aria on the same
+	// identity is a pure function of that closure: every aria on the same
 	// outfit shares one node, one set of records, and one rendered prefix in
 	// the provider's cache. Folding the caller's -O in here (which is what
 	// 0.22.1 did) minted a private stump per literal, so `-O mantra=x` defeated
@@ -501,7 +501,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	// Resolved through the reserved `default` layer, which is the one LENIENT
 	// name: a configured default that is not on disk yet folds to nothing
 	// rather than failing, because that absence is what the first-run flow
-	// rides on — it surfaces downstream as the missing provider it is.
+	// rides on: it surfaces downstream as the missing provider it is.
 	outfitName := loaded.Config.DefaultOutfit
 	stumpPatch, err := h.dressDefault()
 	if err != nil {
@@ -566,7 +566,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	} else {
 		// Ensure the DEFAULT FORM (stumps are legacy), then fork it: `fig
 		// new` is bind-the-default-form, and this reuse is what shares one
-		// rendered prefix — and one warm provider cache — across every
+		// rendered prefix, and one warm provider cache, across every
 		// aria on the same outfit. The hash optimization IS the cache.
 		formID, serr := h.ensureDefaultForm(backend, stumpPatch, outfitName)
 		if serr != nil {
@@ -578,7 +578,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 			return nil, fmt.Errorf("mint aria: %w", cerr)
 		}
 		// aria_id can only be stamped once the id exists, so it rides a second
-		// patch rather than the birth one — which keeps the birth patch a pure
+		// patch rather than the birth one: which keeps the birth patch a pure
 		// function of what was asked for, and so a stable identity.
 		if _, aerr := backend.ApplyForm(id, convBootPatch(id, cwd)); aerr != nil {
 			return nil, fmt.Errorf("stamp aria id: %w", aerr)
@@ -920,8 +920,8 @@ func (h *handlers) messageCountAt(id string, atMainLT uint64) int {
 // ones away. Killing an aria now collects its stump when it was the last
 // child; this is the sweep for everything that predates that.
 //
-// Collecting loses nothing — the next aria wanting that outfit re-mints the
-// same id — so the only question is whether anything is still under it, which
+// Collecting loses nothing: the next aria wanting that outfit re-mints the
+// same id: so the only question is whether anything is still under it, which
 // the topology answers directly.
 func (h *handlers) gc(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.GCRequest
@@ -998,15 +998,15 @@ func (h *handlers) normalize(ctx context.Context, params json.RawMessage) (inter
 // It grafts nothing. The outfit is resolved by content (CreateOutfit is
 // content-addressed, so an identical outfit is reused rather than
 // duplicated), a conversation is spawned under it, and the messages are
-// appended through the ordinary path. Every identity — node id, fork base, LT
-// — is minted by THIS store, which is why an import can never collide with
+// appended through the ordinary path. Every identity: node id, fork base, LT
+// : is minted by THIS store, which is why an import can never collide with
 // what is already here and never needs a renumbering pass.
 //
 // What it deliberately does not carry: the provider translation caches. They
 // are a derivable wire cache, and the price of dropping them is one cache-miss
 // on the next turn (which, per the anthropic assembler, replays without
 // thinking blocks rather than with unsigned ones). Exactness is the graft's
-// job — see proposals/aria-graft.md — not this one's.
+// job: see proposals/aria-graft.md: not this one's.
 func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.ImportRequest
 	if err := json.Unmarshal(params, &req); err != nil {
@@ -1037,7 +1037,7 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	}
 	// The form last, and as ONE patch: it is the aria's settled state,
 	// not a history of how it got there. aria_id is re-stamped because the
-	// exported board carries the id it had in the store it came from — the
+	// exported board carries the id it had in the store it came from: the
 	// same re-stamp a fork does, for the same reason.
 	patch := req.Form
 	if patch.Set == nil {
@@ -1103,10 +1103,10 @@ func (h *handlers) promote(ctx context.Context, params json.RawMessage) (interfa
 // `figaro set --id <id> mantra …`).
 // birthPatch is what an aria is born carrying: the materialized outfit, the name
 // it answers to, and the content hash of both. The hash covers the patch minus
-// itself — it cannot cover its own value — and the NAME is inside it, so two
+// itself: it cannot cover its own value, and the NAME is inside it, so two
 // outfits with identical bodies and different names stay two identities.
-// forkDress is what a branch is born carrying. The dressing may be empty — a
-// plain `fig fork` asks for nothing — but the patch may not be: the child
+// forkDress is what a branch is born carrying. The dressing may be empty, a
+// plain `fig fork` asks for nothing: but the patch may not be: the child
 // inherits its parent's form, aria_id included, and an aria that answers to its
 // parent's id cannot fork itself. The re-stamp is the floor.
 func forkDress(dress form.Patch, parent string) form.Patch {
@@ -1135,7 +1135,7 @@ func mergePatches(a, b form.Patch) form.Patch {
 
 // childBirthPatch is what an aria writes for ITSELF: the dressing it asked for
 // and the runtime fill-ins. Everything else it inherits from the stump. It is
-// never empty — cwd is always known — which is what lets ForkWith demand a
+// never empty: cwd is always known: which is what lets ForkWith demand a
 // patch.
 func childBirthPatch(dress form.Patch, cwd string) form.Patch {
 	p := form.Patch{Set: map[string]json.RawMessage{}, Remove: dress.Remove}
@@ -1189,7 +1189,7 @@ func runtimeFillins(ariaID, cwd string) form.Patch {
 }
 
 // convBootPatch is the conversation's boot transition: the runtime fill-ins,
-// and nothing else. What the caller asked for is already in the birth patch —
+// and nothing else. What the caller asked for is already in the birth patch -
 // inherited through the fork watermark and rendered once in the shared prefix.
 //
 // It used to re-state the request here too, which is how the `layers` directive
@@ -1301,7 +1301,7 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 	}
 
 	// The endpoint outlives the AGENT, not the aria. A deleted aria has no
-	// address, so the hub goes with it and connected clients get their EOF —
+	// address, so the hub goes with it and connected clients get their EOF -
 	// which is correct here and exactly what must not happen on hibernate.
 	if hb := h.angelus.Hubs.drop(req.FigaroID); hb != nil {
 		hb.Close()
@@ -1313,7 +1313,7 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 
 // list merges live and dormant arias.
 func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	// IDsOnly skips the per-aria form + node fills (the slow part) — used
+	// IDsOnly skips the per-aria form + node fills (the slow part): used
 	// by completion, which only needs the ids. Tolerant of nil/empty params.
 	var req rpc.ListRequest
 	_ = json.Unmarshal(params, &req)
@@ -1405,8 +1405,8 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		}
 	}
 
-	// Global: also surface the ceremonial anchors — the null genesis trunk and
-	// every versioned outfit — that the conversation filter above skips.
+	// Global: also surface the ceremonial anchors: the null genesis trunk and
+	// every versioned outfit: that the conversation filter above skips.
 	// fillFromNode below stamps their Kind/Outfit/Version/Parent.
 	if req.Global {
 		for _, n := range nodeList {
@@ -1420,7 +1420,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 			entry := rpc.FigaroInfoResponse{ID: n.ID, State: "anchor", BoundPIDs: boundPIDs[n.ID]}
 			if n.Kind == string(store.KindForm) {
 				// A form is a live row, not a ceremonial anchor: it has
-				// recency (figwal LastTS, wake-free — a form has nothing to
+				// recency (figwal LastTS, wake-free, a form has nothing to
 				// wake) and possibly a name and a casting (role) target,
 				// both read from its folded state. Forms are few; the fold
 				// is the same one `fig form <id>` performs.
@@ -1439,7 +1439,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		}
 	}
 
-	// Forest position for every entry (live + dormant), from the snapshot —
+	// Forest position for every entry (live + dormant), from the snapshot -
 	// and the outfit columns, which come from the stump and from nowhere else.
 	// vers memoizes the re-resolve per outfit; it lives here because this pass
 	// is single-threaded, unlike the metadata fill above.
@@ -1542,7 +1542,7 @@ const (
 
 // bind attends a shell to an aria WITHOUT waking it. Binding is an identity
 // fact, so the only thing that must exist is the aria on disk and an endpoint
-// to dial — never an agent. This is what makes `figaro attend` free.
+// to dial: never an agent. This is what makes `figaro attend` free.
 func (h *handlers) bind(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.BindRequest
 	if err := json.Unmarshal(params, &req); err != nil {
@@ -1564,7 +1564,7 @@ func (h *handlers) bind(ctx context.Context, params json.RawMessage) (interface{
 }
 
 // requireAria proves an aria exists without constructing anything. A bad id
-// must still be an error — attending a typo has to fail, not open a socket
+// must still be an error, attending a typo has to fail, not open a socket
 // for a conversation that was never born.
 func (h *handlers) requireAria(id string) error {
 	if err := rpc.ValidateAriaID(id); err != nil {
@@ -1578,7 +1578,7 @@ func (h *handlers) requireAria(id string) error {
 	}
 	// A topology lookup, not a read: Meta is NOT an existence check (it
 	// returns nil,nil for an unknown aria, and arias predating the sidecar
-	// legitimately have none — see backfill.go), and Open would decode the
+	// legitimately have none: see backfill.go), and Open would decode the
 	// whole IR just to prove the aria is there.
 	if _, ok := h.angelus.Backend.Node(id); !ok {
 		return fmt.Errorf("aria %s not found", id)
@@ -1614,7 +1614,7 @@ func (h *handlers) resolve(ctx context.Context, params json.RawMessage) (interfa
 		return nil, err
 	}
 	// A dormant aria is a FOUND aria. The binding is the answer and the
-	// address is a pure function of the id, so nothing here needs an agent —
+	// address is a pure function of the id, so nothing here needs an agent -
 	// resolving must not be the thing that wakes what the sweep reclaimed.
 	id, _, lt := h.angelus.Registry.Resolve(req.PID)
 	if id == "" {

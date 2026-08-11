@@ -18,7 +18,7 @@ import (
 // params of every request it receives.
 //
 // This goes over a REAL socket rather than a stubbed client because the thing
-// under test is the seam between our typed wrapper and jkrpc's marshaling —
+// under test is the seam between our typed wrapper and jkrpc's marshaling -
 // exactly the seam a mock would paper over. It also means a client that
 // recurses instead of dialing fails here loudly (stack overflow) rather than
 // in production on the first RPC.
@@ -108,7 +108,7 @@ func TestAngelusClientPresentsCallerOnBothParamShapes(t *testing.T) {
 		t.Fatalf("payload mangled: %+v (params: %s)", fr, got)
 	}
 
-	// SaveBindings passes nil params — the shape that cannot carry an embedded
+	// SaveBindings passes nil params: the shape that cannot carry an embedded
 	// struct, and so the shape most likely to lose the identity.
 	if _, err := cli.SaveBindings(ctx); err != nil {
 		t.Fatalf("saveBindings: %v", err)

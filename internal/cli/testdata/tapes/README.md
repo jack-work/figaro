@@ -20,6 +20,6 @@ a shape we no longer produce is a fixture that tests nothing.
 The two `stream-*` tapes are a matched pair: the same prompt, the same model
 and the same route, differing only in whether the provider was asked to stream
 tool arguments. They are the cheap way to exercise both halves of the tool
-block — a live moving window and a value that arrives whole — without a
+block, a live moving window and a value that arrives whole: without a
 provider or a token. `figaro replay testdata/tapes/stream-eager.tape` shows the
 first; `--speed 8` is enough to watch it.

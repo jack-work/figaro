@@ -15,7 +15,7 @@ import (
 //
 // Anthropic buffers each tool parameter value until it is complete by default,
 // which is why a large write argument arrives in one lump at the end.
-// eager_input_streaming turns that off per tool — but the Copilot
+// eager_input_streaming turns that off per tool: but the Copilot
 // Anthropic-dialect endpoint rejects the field with a 400, so a provider that
 // sets NoEagerToolStreaming must win over any form value.
 func TestEagerToolStreamingIsFormGated(t *testing.T) {

@@ -24,20 +24,20 @@ import (
 // connection Subscribe'd directly to the agent. Killing the agent therefore
 // closed the listener and EOF'd every client. That made "reclaim an idle
 // agent" and "keep attached shells alive" mutually exclusive, and it meant
-// any open transcript pinned an aria in memory forever — the common case,
+// any open transcript pinned an aria in memory forever: the common case,
 // not the rare one.
 //
 // So: the hub holds the listener and the connections; the agent is a
 // producer the hub binds and unbinds. Creating a hub is a listener and a map
 // and does NOT construct an agent, which is what lets a dormant aria answer
-// a dial at all. A unix socket cannot be lazily activated — connect() to a
-// path with no listener fails outright — so the endpoint has to exist before
+// a dial at all. A unix socket cannot be lazily activated: connect() to a
+// path with no listener fails outright: so the endpoint has to exist before
 // the client arrives, and the daemon is the only thing that can guarantee
 // that.
 //
 // One connection is one aria today. The Subscribe surface is deliberately
-// per-(conn, aria) rather than per-conn so that multiplexing later — one
-// pooled connection, many arias, target id in the envelope — is a change of
+// per-(conn, aria) rather than per-conn so that multiplexing later: one
+// pooled connection, many arias, target id in the envelope: is a change of
 // listener count rather than a change of architecture.
 type ariaHub struct {
 	id       string
@@ -49,7 +49,7 @@ type ariaHub struct {
 	// read answers a method from the store. ok=false means "not my method",
 	// which sends the request down the wake path instead.
 	read func(id, method string, params json.RawMessage) (v any, ok bool, err error)
-	// write applies a mutation store-side WITHOUT an agent — the dormant
+	// write applies a mutation store-side WITHOUT an agent: the dormant
 	// half of figaro.set. Consulted after read and before wake, so a board
 	// patch never wakes a sleeper (and can reach a naked figaro whose wake
 	// would fail for want of the very provider keys the patch carries).
@@ -59,8 +59,8 @@ type ariaHub struct {
 	write func(id, method string, params json.RawMessage) (v any, ok bool, err error)
 	// dress resolves a request's outfit NAMES into keys before it is routed
 	// anywhere. It is the API boundary's one materialization point: whatever
-	// the request reaches next — a live agent's inbox, the store's agentless
-	// writer — receives pure data, and no writer below this line reads a
+	// the request reaches next, a live agent's inbox, the store's agentless
+	// writer: receives pure data, and no writer below this line reads a
 	// file. A request naming no outfit is returned byte for byte.
 	dress func(method string, params json.RawMessage) (json.RawMessage, error)
 	// kind is the node's species from its figwal marker ("conversation",
@@ -236,7 +236,7 @@ func (hb *ariaHub) Close() {
 }
 
 // subscribableAgent is the half of the agent the hub needs: something that
-// serves methods and accepts one notifier. Narrow on purpose — the hub must
+// serves methods and accepts one notifier. Narrow on purpose: the hub must
 // not be able to run a turn.
 type subscribableAgent interface {
 	figaro.AgentServer

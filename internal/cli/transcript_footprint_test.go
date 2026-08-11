@@ -11,7 +11,7 @@ import (
 
 // rowCacheFootprint accounts for the bytes the transcript's row cache keeps
 // alive: the row slices themselves plus the string data they point at. It is
-// the memory half of the transcript's cost — the half that does not show up in
+// the memory half of the transcript's cost: the half that does not show up in
 // -benchmem, because it is retained rather than churned.
 func (t *transcript) rowCacheFootprint() (rows, structBytes, textBytes, escBytes int) {
 	for _, msg := range t.rowCache {

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# chalkbench-go.sh — run the chalkboard Go benchmarks into one
+# chalkbench-go.sh: run the chalkboard Go benchmarks into one
 # benchstat-friendly file.
 #
 #   scripts/chalkbench-go.sh bench-before.txt     # on chalk/bench (main)

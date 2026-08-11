@@ -22,7 +22,7 @@ import (
 //
 //	prompt = InputTokens + CacheReadTokens + CacheWriteTokens
 //
-// Summing only Input+Output — as this code used to — under-reports a cached
+// Summing only Input+Output, as this code used to: under-reports a cached
 // conversation by one to two orders of magnitude.
 //
 // Every caller that derives a context size from a Usage block must go through

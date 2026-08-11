@@ -1,11 +1,11 @@
-# INTEGRATION — `rosina/integration`
+# INTEGRATION: `rosina/integration`
 
 Two branches that are **complements**, merged so the pair can be judged as one
 thing. Neither is useful alone:
 
-- **`feat/mouse-nodes`** (ROSINA) — click a node to select it, click again to
+- **`feat/mouse-nodes`** (ROSINA): click a node to select it, click again to
   toggle its expansion. See **PROPOSAL-mouse.md**.
-- **`feat/table-wrap`** (SUSANNA) — markdown tables no longer lose text; prose
+- **`feat/table-wrap`** (SUSANNA): markdown tables no longer lose text; prose
   whose collapsed render drops rows becomes *expandable*. See
   **PROPOSAL-table-wrap.md**.
 
@@ -15,11 +15,11 @@ not on offer."* **Take both or neither.**
 
 ## What the merge actually required
 
-One conflict git reported (`PROPOSAL.md`, add/add — both branches wrote one; they
+One conflict git reported (`PROPOSAL.md`, add/add: both branches wrote one; they
 are preserved side by side above) and **one it did not**:
 
 `internal/cli/nodes.go` reported `Auto-merging` and produced a file with **two
-definitions of `nodeExpandable`** — mine (the placeholder: tools only, exactly
+definitions of `nodeExpandable`**: mine (the placeholder: tools only, exactly
 what `toggleSelectedTools` tested inline) and hers (the real predicate, which
 also answers for clipped prose). No textual conflict, no compile. Resolved by
 deleting the placeholder and leaving a comment where it stood, because
@@ -28,7 +28,7 @@ this file was checked rather than trusted.
 
 Everything else merged untouched: `livelog_bridge.go` (she edited 8 lines of
 `ariaView`, I added two bridge methods), `transcript*.go` (mine alone),
-`internal/render/*` (hers alone). The seam held — it was agreed by name and
+`internal/render/*` (hers alone). The seam held: it was agreed by name and
 signature *before* either of us built, which is why a two-agent change to the
 same predicate cost one deletion.
 

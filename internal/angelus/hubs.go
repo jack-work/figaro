@@ -65,7 +65,7 @@ func (hs *hubs) closeAll() {
 // building one constructs no agent.
 //
 // It must be called before anyone is handed the socket path, because a unix
-// socket has no lazy activation — a client that dials a path with no listener
+// socket has no lazy activation, a client that dials a path with no listener
 // gets ECONNREFUSED, not a wakeup.
 func (h *handlers) hubFor(id string) (*ariaHub, error) {
 	if hb := h.angelus.Hubs.get(id); hb != nil {
@@ -101,7 +101,7 @@ func (h *handlers) bindAgentToHub(id string, agent subscribableAgent) (func(), e
 	return hb.bind(agent), nil
 }
 
-// writeForHub applies mutations the store can absorb without an agent —
+// writeForHub applies mutations the store can absorb without an agent -
 // today exactly figaro.set. Serving it here (after read, before wake) is
 // what lets a patch land on a DORMANT aria without restoring it, and on an
 // unbound form that will never have an agent at all. It also breaks the
@@ -110,15 +110,15 @@ func (h *handlers) bindAgentToHub(id string, agent subscribableAgent) (func(), e
 // those keys in.
 //
 // One writer, always: the backend's Form is the single writer per node
-// whether an agent is live or not — the agent itself writes through
-// backend.ApplyFormIf — so this is the same writer reached earlier, not a
+// whether an agent is live or not: the agent itself writes through
+// backend.ApplyFormIf: so this is the same writer reached earlier, not a
 // second one.
 //
 // It applies the patch VERBATIM, and since 2026-08-11 that is correct by
 // construction rather than a seam: route() dressed the request on the way
 // in, so outfit names became keys at the API boundary and nothing arrives
 // here needing expansion. This used to be the ONE write path that never
-// materialized — and an attended form has no agent, so it comes exactly
+// materialized, and an attended form has no agent, so it comes exactly
 // here, which is how `fig form outfit test` stored {"layers":["test"]} on a
 // board and reported success.
 //

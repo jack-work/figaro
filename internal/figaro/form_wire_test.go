@@ -141,7 +141,7 @@ func patchSets(ps []message.Patch) []string {
 func TestWire_ContextOnly_DiffsAndApplies(t *testing.T) {
 	a, prov, _ := newAgentWithForm(t)
 
-	// First turn always carries the bootstrap patch — burn it off
+	// First turn always carries the bootstrap patch: burn it off
 	// so the assertions test steady-state Context/Patch semantics.
 	runOneTurn(t, a, "boot", nil)
 
@@ -223,7 +223,7 @@ func TestWire_NeitherContextNorPatch_NoOp(t *testing.T) {
 func TestWire_Context_IsAdditive(t *testing.T) {
 	// Context is purely additive: keys present in the snapshot but
 	// absent from a subsequent Context are NOT removed. This lets
-	// clients ship a partial view (just the keys they own — cwd,
+	// clients ship a partial view (just the keys they own: cwd,
 	// datetime, env) without racing concurrent set/unset.
 	a, prov, _ := newAgentWithForm(t)
 
@@ -244,7 +244,7 @@ func TestWire_Context_DoesNotRemoveUnmentionedSnapshotKeys(t *testing.T) {
 	// A loaded form may contain keys (skills, outfit
 	// values, etc.) the client never carries in Context. Sending a
 	// Context turn whose contents differ from those keys must not
-	// remove them — only set the keys the client explicitly named.
+	// remove them: only set the keys the client explicitly named.
 	a, prov, cb := newAgentWithForm(t)
 
 	// Seed something the client does NOT carry in Context.
@@ -275,7 +275,7 @@ func TestWire_Context_DoesNotRemoveUnmentionedSnapshotKeys(t *testing.T) {
 // A conditional set is the guard a read-modify-write needs: `fig set x[0]` reads
 // the value, edits it in the client, and writes the whole key back, so a second
 // shell doing the same thing must not silently win. The check happens in the
-// form's writer, atomically with the append — checking at accept would answer
+// form's writer, atomically with the append: checking at accept would answer
 // about a version the patch never met.
 func TestSetRefusesAStaleVersion(t *testing.T) {
 	b, id := newBackedConversation(t)

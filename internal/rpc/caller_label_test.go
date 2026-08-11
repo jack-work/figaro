@@ -9,7 +9,7 @@ import (
 // An asserted label must never be able to dress itself as an authenticated
 // aria. Attribution renders an authenticated aria as "aria <id>" and a label
 // BARE, so a label that begins with the reserved prefix would be
-// indistinguishable in the model's context — confidently misinformed, which is
+// indistinguishable in the model's context: confidently misinformed, which is
 // strictly worse than unattributed.
 func TestSanitizeLabelStripsTheReservedPrefix(t *testing.T) {
 	cases := map[string]string{
@@ -28,7 +28,7 @@ func TestSanitizeLabelStripsTheReservedPrefix(t *testing.T) {
 
 // The label is interpolated into terminal rows AND into the model's context. A
 // newline or an escape could break the first and forge structure in the second
-// — e.g. inventing a system-reminder block.
+// : e.g. inventing a system-reminder block.
 func TestSanitizeLabelStripsControlCharacters(t *testing.T) {
 	got := SanitizeLabel("Ja\nck\x1b[31m\x00")
 	if strings.ContainsAny(got, "\n\x1b\x00") {

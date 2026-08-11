@@ -89,19 +89,19 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, err
 		}
-		// The prompt's dressing was resolved before this call was routed —
+		// The prompt's dressing was resolved before this call was routed -
 		// the hub dresses on the way in (angelus.dressParams), so a spec
 		// that does not exist failed the qua before anything was queued and
 		// what arrives here is data.
 		cursor := int(a.ariaSrv.LastTurn())
 		active := a.turnActive()
 		// Attribution comes off the request itself, not from the authn
-		// provider: the agent socket has none, and a human — never
-		// authenticated — is exactly the caller a confused aria needs named.
+		// provider: the agent socket has none, and a human: never
+		// authenticated: is exactly the caller a confused aria needs named.
 		//
 		// The duke placeholder is resolved HERE, against THIS aria's
 		// form, because the caller cannot know what this aria calls
-		// its end user — that is precisely why it sends a placeholder.
+		// its end user: that is precisely why it sends a placeholder.
 		a.SubmitPromptFrom(req, rpc.SenderFrom(params, a.dukeTitle))
 		return rpc.QuaResponse{OK: true, Cursor: cursor, Active: active}, nil
 
@@ -139,7 +139,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		set, removed, err := a.Set(req.Patch, req.IfVersion)
 		if err != nil {
 			// A patch may name layers, so a set can fail the way a dressing
-			// fails — with a closure the caller can draw.
+			// fails: with a closure the caller can draw.
 			return nil, outfitError(err)
 		}
 		return rpc.SetResponse{OK: true, Set: set, Remove: removed}, nil
@@ -184,7 +184,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 			return nil, fmt.Errorf("queue update: name the message id")
 		}
 		// Empty text would silently turn a question into a form carrier
-		// — a shape the caller almost certainly did not mean and cannot see.
+		//, a shape the caller almost certainly did not mean and cannot see.
 		// Malformed input, so: error, not a rejection reason.
 		if req.Text == "" {
 			return nil, fmt.Errorf("queue update: text is empty (delete it instead)")

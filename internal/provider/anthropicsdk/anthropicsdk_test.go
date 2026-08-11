@@ -147,7 +147,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			},
 		},
 		{
-			// A tool_use with no arguments must still emit input:{} —
+			// A tool_use with no arguments must still emit input:{} -
 			// the API rejects missing/null and the WAL drops empty maps.
 			"empty_args_tool_call",
 			message.Message{

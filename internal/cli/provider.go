@@ -1,4 +1,4 @@
-// Package cli — provider wiring for the CLI process.
+// Package cli: provider wiring for the CLI process.
 //
 // Provider factories take operational knobs (model, max_tokens,
 // reminder_renderer, use_official_sdk) extracted by the angelus

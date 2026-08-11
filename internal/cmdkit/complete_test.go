@@ -261,7 +261,7 @@ func TestCompletionScriptsMentionDispatcher(t *testing.T) {
 // cli.isBareForm: a "--" boundary ANYWHERE after the program name, with a
 // non-command in the verb slot.
 //
-// Both generated scripts used to test position alone — fish `$tokens[2] = "--"`
+// Both generated scripts used to test position alone: fish `$tokens[2] = "--"`
 // and bash `COMP_WORDS[1] = "--"`. That was correct while the bare prompt form
 // took no flags. Once `figaro --id A -- <prompt>` became legal the boundary
 // moved to word 3, the detector stopped firing, and completion offered the VERB

@@ -6,7 +6,7 @@ import "reflect"
 // tool calls are distinct node types so a consumer can render a tool as a
 // native widget instead of baked-in markdown. Within a unit the list only
 // grows at the tail and existing nodes only mutate monotonically (prose
-// text grows, tool output grows, tool status flips) — never reorder — so
+// text grows, tool output grows, tool status flips): never reorder: so
 // nodes are addressed by a stable index and diffed positionally.
 
 // NodeType discriminates the node payload.
@@ -28,7 +28,7 @@ const (
 
 // Src is one fig-IR coordinate a node was projected from: the owning
 // message's logical time and the content block's index within it. A node
-// usually has one; a tool node has two — the invoke and its result — at
+// usually has one; a tool node has two: the invoke and its result, at
 // different block indices in different messages.
 type Src struct {
 	LT    uint64 `json:"lt"`
@@ -39,24 +39,24 @@ type Src struct {
 // message.RoleInput / message.RoleOutput. They live here because Node.Role
 // lives here, and they are constants rather than literals because the same two
 // strings were previously spelled out at twenty call sites across four
-// packages — the shape that lets a vocabulary drift.
+// packages: the shape that lets a vocabulary drift.
 const (
 	RoleInput  = "input"
 	RoleOutput = "output"
 )
 
 // Node is one element of a live unit. Only the fields for its Type are
-// meaningful; the rest are zero. The two long, streamed string fields —
-// prose Markdown and tool Output — are the splice-patchable ones.
+// meaningful; the rest are zero. The two long, streamed string fields -
+// prose Markdown and tool Output, are the splice-patchable ones.
 type Node struct {
 	Type NodeType `json:"type"`
 
 	// Role is RoleInput for steering interjections, RoleOutput otherwise. The
-	// turn's opening question is NOT a node — it is Turn.Inquiry, plain text —
+	// turn's opening question is NOT a node: it is Turn.Inquiry, plain text -
 	// so a node carrying RoleInput is always a steering interjection.
 	Role string `json:"role,omitempty"`
 
-	// LTs is fig-IR provenance — metadata, never an address. UI code addresses
+	// LTs is fig-IR provenance: metadata, never an address. UI code addresses
 	// by (turn, node); LT is the model's coordinate. Derived from Src.
 	LTs []uint64 `json:"lts,omitempty"`
 
@@ -95,7 +95,7 @@ type Node struct {
 	Name   string                 `json:"name,omitempty"`   // tool name
 	Args   map[string]interface{} `json:"args,omitempty"`   // invocation arguments
 	Status string                 `json:"status,omitempty"` // running | ok | error
-	// Input is the tool's arguments AS THEY ARRIVE — the raw, still-truncated
+	// Input is the tool's arguments AS THEY ARRIVE: the raw, still-truncated
 	// JSON prefix the provider is streaming. Args is the same thing decoded,
 	// and only exists once the whole object parses, so Input is what there is
 	// to show while the model is still writing it.
@@ -103,12 +103,12 @@ type Node struct {
 	// It is a STREAMED field (spliced by livedoc.Diff, like markdown and
 	// output), and it is not append-only: a bounded tail drops leading bytes
 	// as it slides, and it is cleared when Args lands. Both are ordinary
-	// deltas — Delta carries Del as well as Ins — so a shrink costs one splice
+	// deltas: Delta carries Del as well as Ins: so a shrink costs one splice
 	// and needs nothing new on the wire.
 	Input   string `json:"input,omitempty"`
 	Output  string `json:"output,omitempty"`  // streamed result text
 	Summary string `json:"summary,omitempty"` // producer-computed one-line tool description (client renders verbatim)
-	// OpenedAt is when the model began WRITING this call — the moment the tool
+	// OpenedAt is when the model began WRITING this call: the moment the tool
 	// block opened on the provider stream, before a single argument byte had
 	// arrived. StartedAt is when the call began RUNNING. The gap between them
 	// is GENERATION, which for a large write is nearly all of the wall time
@@ -126,7 +126,7 @@ const (
 	OpOpen  OpKind = "open"  // append a new node at Index
 	OpPatch OpKind = "patch" // splice a string field of an existing node
 	OpSet   OpKind = "set"   // update a tool node's scalar fields (status,
-	// name, args) — e.g. when the streamed tool_use arguments arrive after
+	// name, args): e.g. when the streamed tool_use arguments arrive after
 	// the block first opened
 )
 
@@ -148,7 +148,7 @@ type Op struct {
 	Status string                 `json:"status,omitempty"`
 	Name   string                 `json:"name,omitempty"`
 	Args   map[string]interface{} `json:"args,omitempty"`
-	// OpenedAt is when the model began WRITING this call — the moment the
+	// OpenedAt is when the model began WRITING this call: the moment the
 	// tool block opened on the provider stream, before a single argument
 	// byte had arrived. StartedAt is when the call began RUNNING. The gap
 	// between them is generation, which for a large write is nearly all of

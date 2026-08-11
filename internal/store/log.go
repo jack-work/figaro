@@ -15,7 +15,7 @@ type Entry[T any] struct {
 	// along on a record the reader is already holding.
 	ChalkVersion uint64
 	// StudyVersions, on IR entries of a STUDYING aria: where each observed
-	// form stood when this record was written, keyed by form id — the
+	// form stood when this record was written, keyed by form id: the
 	// study:-prefixed half of the same cursor stamp ChalkVersion rides.
 	// The projection derives each member's patch-fold between consecutive
 	// stamps, exactly as it derives the own board's from ChalkVersion.
@@ -25,7 +25,7 @@ type Entry[T any] struct {
 	//
 	// It exists to size the cache. Estimating retained bytes from the decoded
 	// struct means guessing at allocator rounding on every string, slice and
-	// boxed map value — an attempt at that came out 3x low. The encoded size,
+	// boxed map value, an attempt at that came out 3x low. The encoded size,
 	// times a measured inflation factor, is both cheaper and closer: decoded
 	// IR ran 4.0x and 5.3x its encoded bytes on two real arias.
 	EncodedBytes int
@@ -39,7 +39,7 @@ type Entry[T any] struct {
 //
 // Two backing implementations: MemLog (ephemeral) and xwalLog (figwal
 // segments). Translator caches use the same Log interface; they are
-// not independently fork-able — forks ride along with the IR log.
+// not independently fork-able: forks ride along with the IR log.
 type Log[T any] interface {
 	// TODO: Pass direction iota, ascending or descending.
 	Read() []Entry[T]

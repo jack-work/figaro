@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 )
 
-// DefaultFormRecord is the daemon's pointer to the CURRENT default form —
+// DefaultFormRecord is the daemon's pointer to the CURRENT default form -
 // the unbound form `fig new` binds from. Successor of KeepStump: where the
 // stump was content-addressed and deduped, the default form is a plain
 // form plus this record of what it was born from, so the reload lifecycle
@@ -14,7 +14,7 @@ import (
 type DefaultFormRecord struct {
 	FormID string `json:"form_id"`
 	// BirthHash is the content version of the materialized outfit the form
-	// was minted from. Compared against the outfit files ONLY when Dirty —
+	// was minted from. Compared against the outfit files ONLY when Dirty -
 	// `fig outfit reload` is a cheap flag, the compute happens on the next
 	// `fig new`.
 	BirthHash string `json:"birth_hash"`

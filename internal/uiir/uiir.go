@@ -4,7 +4,7 @@
 // internal/figaro declares a Projector interface and never imports this
 // package; the wiring happens where an Agent is constructed. Ship a build that
 // supplies no Projector and the engine still runs turns, persists fig IR, mints
-// turn ids and forks — it just renders nothing.
+// turn ids and forks: it just renders nothing.
 //
 // Everything here is a thin adapter over internal/compose. The value is not the
 // code, it is the direction of the arrow: conversion depends on the engine, not
@@ -77,7 +77,7 @@ func (p *Projector) ToolFinished(id string, at int64) {
 }
 
 // at returns the timing record for id, creating the map on demand. A blank id
-// has no record — the agent calls through on every tool event, including ones
+// has no record: the agent calls through on every tool event, including ones
 // the provider never named.
 func (p *Projector) at(id string) *compose.ToolTiming {
 	if id == "" {

@@ -1,4 +1,4 @@
-# Transcript paging policy — measurements and the geometry we chose
+# Transcript paging policy: measurements and the geometry we chose
 
 *Axis D of the transcript-performance work: the policy layer (what the pager
 holds, when it fetches, what it throws away), as distinct from the per-frame
@@ -6,7 +6,7 @@ cost of turning a message into rows.*
 
 **This document has been re-derived on the merged stack** (axis C's allocation
 surgery + axis A's viewport virtualization + this axis). D's solo findings are
-kept where they still hold and marked where the merge invalidated them — in one
+kept where they still hold and marked where the merge invalidated them: in one
 case the conclusion survived, the *reason* for it did not, and the constant it
 picked moved. See "What the merge changed" at the end for the short version.
 
@@ -28,15 +28,15 @@ the *counters* (fetches, refetches, re-renders, retained rows) are deterministic
   merge added a **peak retained-bytes** sampler (`rowCacheFootprint` after every
   `applyPage`), because once the frame is O(viewport) memory is the only cost
   that still scales with the window.
-- **`BenchmarkTranscriptJourney`** — scroll back 120 messages and return.
-- **`BenchmarkTranscriptFollowFrame` / `LiveStream`** — frames while following
+- **`BenchmarkTranscriptJourney`**: scroll back 120 messages and return.
+- **`BenchmarkTranscriptFollowFrame` / `LiveStream`**: frames while following
   the live tail.
 - **`BenchmarkTranscriptGeometry{Frame,Follow,Journey,Enter,LRU}`** and
-  **`TestTranscriptGeometryDepthReport`** — the sweeps that picked the constants.
+  **`TestTranscriptGeometryDepthReport`**: the sweeps that picked the constants.
   `Follow`, `Enter` and the depth report were added by the merge, for reasons
   the next section explains.
 
-## Finding 1: the per-frame paging rebuild is real but tiny — *and the merge made it matter*
+## Finding 1: the per-frame paging rebuild is real but tiny: *and the merge made it matter*
 
 `lines()` ran `if t.follow { t.resetToTail() }`, so every live frame rebuilt the
 page window: `client.View()` (which copies *and sorts* the retained closed set),
@@ -48,8 +48,8 @@ that cost **3.9 ms**. That is 0.1%, and D reported honestly that the hypothesis
 "this is the lag" was wrong.
 
 On the merged stack the same 3960 ns would have been **a third of a 12 µs
-frame**. D's second justification — "it is a *fixed* cost per frame, O(retained
-tail); once the frame is O(viewport) that is a large fraction of it" — turned
+frame**. D's second justification: "it is a *fixed* cost per frame, O(retained
+tail); once the frame is O(viewport) that is a large fraction of it": turned
 out to be exactly right, sooner than expected. It is also why a follow frame
 still allocates only 1.2 KB instead of 7.6 KB.
 
@@ -59,7 +59,7 @@ revision its window was built from and no-ops the rebuild while it holds.
 ### The merge's own correction: one authority, not two
 
 D's `tailRev` answers "are `t.pages` still a pristine snapshot of the client's
-closed tail?". A's line index had a *separate* staleness notion — a per-frame
+closed tail?". A's line index had a *separate* staleness notion, a per-frame
 shape diff deciding whether to refill `lineLT`. Two independent checks over the
 same fact is how this file grows a bug: a page set that moves without the index
 noticing leaves `lineLT` (resize anchoring, `viewportAnchor`) describing a window
@@ -69,7 +69,7 @@ They are now one signal. `transcript.invalidateWindow()` is the single authority
 every mutation of `t.pages` goes through it, it clears `tailRev` (so the page
 layer rebuilds) **and** bumps `windowRev` (which `buildIndex` records, so the
 index always refills). The shape diff survives only for the changes the page set
-cannot see — a width change, an expanded tool, the open message growing a token.
+cannot see, a width change, an expanded tool, the open message growing a token.
 `TestMergedPageMutationAlwaysReachesTheIndex` walks every route that moves
 `t.pages` (page in older, evict, page in newer from the LRU, `G`, resize) and
 checks `lineLT` against an independent recomputation from the index each time;
@@ -101,15 +101,15 @@ and keep exactly the old 30×3 geometry.
 
 D estimated rows-per-message by averaging `len(rows)` over `t.rowCache`, and
 listed "a per-page row count would make the geometry exact" as future work. The
-merge does not need a new count — **A's line index already has it**, per message,
+merge does not need a new count: **A's line index already has it**, per message,
 recomputed every frame as a side effect of drawing. `heldWindow()` reads it.
 
 That is not a cosmetic swap. The row-cache average was wrong in two directions
 that D's own changes created:
 
 - since rows follow payloads into the LRU (finding 3), `t.rowCache` holds up to
-  `transcriptPayloadLRULimit` extra pages of *history* — messages the window does
-  not hold — so the geometry was tuned on the wrong population;
+  `transcriptPayloadLRULimit` extra pages of *history*: messages the window does
+  not hold: so the geometry was tuned on the wrong population;
 - it charged a flat `+3` separator to every message including the first.
 
 The index also knows *which* entry is the open message, which the row cache never
@@ -139,7 +139,7 @@ merged code (`BenchmarkTranscriptGeometryFrame` / `GeometryFollow`):
 
 Flat, both scrolling and following, over a 5× range of retained rows. (Follow is
 the one worth checking: A left exactly one O(retained rows) step on the frame
-path — `rebuildLineLT`, which a streaming open message triggers every frame — and
+path: `rebuildLineLT`, which a streaming open message triggers every frame, and
 it is an int store per row, lost in the noise even at 4137 rows.)
 
 What is left is churn versus retained memory. The 120-message round trip
@@ -158,20 +158,20 @@ What is left is churn versus retained memory. The 120-message round trip
 messages: on a heavy aria every budget below ~800 rows produces the same window.
 The sweep keeps 300 so that floor is visible rather than hidden.)
 
-Read alone this table says 1200 again — it is where refetch churn hits zero. But
+Read alone this table says 1200 again: it is where refetch churn hits zero. But
 that is a **fixture artifact**, and `TestTranscriptGeometryDepthReport` shows it:
 
 | journey depth | 300 | 600 | 1200 | 1800 | 2400 | 4800 |
 |---|---|---|---|---|---|---|
-| 60 — fetches / refetched | 10/0 | 10/0 | 8/0 | 5/0 | 4/0 | 2/0 |
-| 120 — fetches / refetched | 26/30 | 26/30 | 16/0 | 10/0 | 8/0 | 4/0 |
-| 240 — fetches / refetched | 66/150 | 66/150 | 46/120 | 24/52 | **16/0** | 8/0 |
-| 240 — node re-renders | 1608 | 1608 | 1504 | 1300 | **1156** | 1080 |
-| 240 — peak retained | 1433 KB | 1433 KB | 1911 KB | 3106 KB | 4062 KB | 4301 KB |
+| 60: fetches / refetched | 10/0 | 10/0 | 8/0 | 5/0 | 4/0 | 2/0 |
+| 120: fetches / refetched | 26/30 | 26/30 | 16/0 | 10/0 | 8/0 | 4/0 |
+| 240: fetches / refetched | 66/150 | 66/150 | 46/120 | 24/52 | **16/0** | 8/0 |
+| 240: node re-renders | 1608 | 1608 | 1504 | 1300 | **1156** | 1080 |
+| 240: peak retained | 1433 KB | 1433 KB | 1911 KB | 3106 KB | 4062 KB | 4301 KB |
 
 The churn threshold tracks **how far you scroll**, not the budget. The pager
-retains the window plus `transcriptPayloadLRULimit` pages of it — about 5× the
-budget in rows — so 1200 bought a churn-free journey of ~120 messages and nothing
+retains the window plus `transcriptPayloadLRULimit` pages of it, about 5× the
+budget in rows: so 1200 bought a churn-free journey of ~120 messages and nothing
 more. Beyond that depth a bigger window is not just fewer fetches, it is *less
 CPU*: at depth 240, 2400 does 16 fetches instead of 46, refetches nothing instead
 of 120 messages, and re-renders 1156 nodes instead of 1504 (−23%).
@@ -198,7 +198,7 @@ cold row cache the pager cannot know how tall the messages are, and the old code
 guessed the *ceiling* (30 messages): opening the pager on an aria of 400-row tool
 dumps rendered thirty of them to paint one screen. It now starts at the floor (6)
 and `tuneTail` grows the window into the row budget once the first frame has
-measured it — so `enter` costs *one page*, not one window, and the 3.80 → 4.79 ms
+measured it: so `enter` costs *one page*, not one window, and the 3.80 → 4.79 ms
 above is the whole price of doubling the budget.
 
 Invisible by construction: the tail window is anchored at the newest message with
@@ -210,13 +210,13 @@ compares the visible rows against a pager with an unbounded budget).
 
 `trimPages` did `rememberPayload(page)` immediately followed by `dropPage(page)`.
 The payload LRU exists precisely so that turning around at a page boundary costs
-no I/O — and then `dropPage` deleted the page's `rowCache` entries, so the return
+no I/O, and then `dropPage` deleted the page's `rowCache` entries, so the return
 trip served the messages from memory and re-rendered every one of them. The cheap
 thing was retained and the expensive thing discarded.
 
 Rows now follow payloads: `dropPage` skips messages whose payload the LRU still
 holds, and rows are released when the payload leaves the LRU (or `pruneCaches`
-runs — it learned about the LRU too). Expansion state rides with the rows,
+runs: it learned about the LRU too). Expansion state rides with the rows,
 because cached rows are rendered *with* the expansion state and the two must
 never disagree.
 
@@ -238,7 +238,7 @@ Read at depth 120 this says "6 is enough". It is kept at **12** because the
 budget was raised on the strength of the depth-240 result, and that result needs
 it: window (51 messages) + 12 × 17-message pages = 255 messages of retained
 history, which is what makes a 240-message journey churn-free. 6 would retain 153
-and put the churn back. The sweep must be read at a depth that exercises it —
+and put the churn back. The sweep must be read at a depth that exercises it -
 that is what `TestTranscriptGeometryDepthReport` is for.
 
 The memory ceiling this implies is worth stating plainly:
@@ -252,7 +252,7 @@ The memory ceiling this implies is worth stating plainly:
   the user hit the wall. Now armed `transcriptPrefetchScreens` (2) viewports
   from either edge.
 - **Blocking.** The input loop called `pageTranscript()` inline after every key
-  and wheel event, and the `ReadBefore` ran on that goroutine — so during a
+  and wheel event, and the `ReadBefore` ran on that goroutine: so during a
   fetch the pager processed no keys and painted no frames. The scroll froze and
   then jumped. Fetches now run on a single-flight worker that, when a page
   lands, re-asks the pager whether the viewport has since moved close to another
@@ -272,7 +272,7 @@ above is read on re-renders and retained bytes, not on fetch count alone.
 
 `describePage` FNV-hashes the LTs of a page so an evicted page can be verified
 when refetched (`pageDesc.equal`). It is called once per fetch and once per tail
-rebuild — 30 iterations of an 8-byte write, ~200 ns, immeasurable next to the
+rebuild: 30 iterations of an 8-byte write, ~200 ns, immeasurable next to the
 page's row rendering. Now that the tail rebuild is revision-guarded it runs a
 handful of times per turn. **No change made**; the verification it enables
 (rejecting a stale page mid-search) is worth far more than the hash costs.
@@ -293,8 +293,8 @@ neither C's row primitives nor A's index.
 | LinesHeavy | 1071 µs · 1.06 MB · 2532 | 10.8 µs · 302 B · 0 | **5.7 µs · 179 B · 0** |
 | ScrollHeavySearch | 1224 µs · 1.25 MB · 2905 | 18.4 µs · 2328 B · 28 | **19.8 µs · 2344 B · 28** ⚠ |
 | HeavyEnter (Ctrl-T) | 10.19 ms · 4.87 MB · 76591 | 3.14 ms · 817 KB · 2088 | **1.87 ms · 493 KB · 1215** |
-| FollowHeavy | — (bench is axis A's) | 13.3 µs · 7636 B · 27 | **10.3 µs · 1176 B · 18** |
-| LiveHeavy | — (bench is axis A's) | 15.2 µs · 9767 B · 40 | **12.1 µs · 3085 B · 29** |
+| FollowHeavy |: (bench is axis A's) | 13.3 µs · 7636 B · 27 | **10.3 µs · 1176 B · 18** |
+| LiveHeavy |: (bench is axis A's) | 15.2 µs · 9767 B · 40 | **12.1 µs · 3085 B · 29** |
 | Journey/out20 (120 msgs, round trip) | 2.02 s · 1.92 GB · 5.59 M | 27.9 ms · 5.18 MB · 21465 | **33.4 ms · 4.20 MB · 19889** ⚠ |
 | Journey/out200 | 1.93 s · 1.93 GB · 5.59 M | 28.9 ms · 5.18 MB · 21465 | **30.5 ms · 4.20 MB · 19889** |
 
@@ -312,13 +312,13 @@ Journey policy counters (same trip):
 across three alternating runs, so it is not drift in the machine's load). It is
 *not* a new code path:
 
-- the painted frame is byte-identical — 37 rows, 11 matches, 1186 escape
+- the painted frame is byte-identical: 37 rows, 11 matches, 1186 escape
   sequences, 28 allocations, in both trees;
 - the same frame *without* a search highlight (`ScrollHeavy/out200`) is faster
   after the merge, and forcing the merged window to the pre-merge size does not
   move the search number (20.1 µs), so it is not the geometry either;
 - the CPU profiles are the same shape, and the extra ~1 µs lands proportionally
-  in `visibleIndex`, `skipANSI` and `uniseg.StepString` — functions the merge
+  in `visibleIndex`, `skipANSI` and `uniseg.StepString`: functions the merge
   does not touch, running on identical input.
 
 That is code-layout/inlining drift from a larger `transcript` struct and a few
@@ -330,7 +330,7 @@ the rows-based geometry doing exactly what it was built to do. The pre-merge tre
 still has the message-count window (3 × 30 = 4137 rows for this aria), so a
 120-message journey needs only 4 page turns; the merged window is 2343 rows and
 needs 8, and the return leg costs 69 more keystrokes-with-repaint. Journey wall
-is monotone in window size and nothing else — the merged tree at budget 4800
+is monotone in window size and nothing else: the merged tree at budget 4800
 (≈ the old geometry) runs the same trip in 24.4 ms, i.e. *faster* than pre-merge.
 
 So this is the price of the smaller retained window, and it buys the −40% Ctrl-T,
@@ -345,7 +345,7 @@ at D's solo budget of 1200 (16 fetches).
    vs retained rows*; A flattened that curve, and the merged constraint (churn vs
    retained memory, crossover set by scroll depth) supports twice the window.
 2. **The geometry reads A's line index, exactly**, instead of averaging the row
-   cache — which, after D's own LRU change, is no longer the retained window.
+   cache: which, after D's own LRU change, is no longer the retained window.
    D's "not done, worth doing" item is done.
 3. **`tuneTail` distinguishes committed rows from total rows**, which only the
    index makes possible, fixing a case where a long streaming reply could shrink
@@ -384,7 +384,7 @@ at D's solo budget of 1200 (16 fetches).
   already has and fold the reads in when they land.
 - `rebuildLineLT` is the last O(retained rows) step on the frame path, and a
   streaming open message triggers it every frame. It is currently ~1 µs of a
-  14 µs frame, so it is not worth fixing — but it is the step that would make
+  14 µs frame, so it is not worth fixing: but it is the step that would make
   the budget matter again, and it is trivially fixable (the open message is the
   *last* index entry, so only its own lines need refilling).
 - `pageMessages()` derives one page size from the window average. Now that the

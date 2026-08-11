@@ -1,4 +1,4 @@
-// Package cli — helpers shared between provider construction and
+// Package cli: helpers shared between provider construction and
 // the first-run / outfit flows.
 package cli
 

@@ -12,8 +12,8 @@ import (
 // THIS IS THE BUG THE OWNER REPORTED, three times: "we continue to render text
 // beyond the limit the right side provides", "one or two characters beyond the
 // edge", worse in tool output. It was never the gutter. There were THREE
-// hand-rolled escape scanners in this tree, and two of them — displayWidth's
-// escapeEnd and clipToWidthRewrite's inline loop — advanced to the first ASCII
+// hand-rolled escape scanners in this tree, and two of them: displayWidth's
+// escapeEnd and clipToWidthRewrite's inline loop, advanced to the first ASCII
 // LETTER, which is not what an escape sequence is:
 //
 //	"\x1b abc"       a bare ESC swallowed the 'a', so the width was one short
@@ -21,8 +21,8 @@ import (
 //	"\x1b]0;title\x07"  the OSC ended at the 't' of "title", so the row was
 //	                 clipped SHORT and text was lost instead
 //
-// Tool output reaches these clips with escapes intact — SanitizeForTerminal
-// deliberately keeps SGR — which is why the owner saw it worst there.
+// Tool output reaches these clips with escapes intact: SanitizeForTerminal
+// deliberately keeps SGR: which is why the owner saw it worst there.
 //
 // MEASURED IN A REAL PANE, before and after: clipToWidth(s, 10) on a bare-ESC
 // row rendered 11 columns before the fix and 10 or fewer after, for every shape
@@ -58,7 +58,7 @@ func TestClippedRowNeverExceedsItsWidth(t *testing.T) {
 	}
 }
 
-// displayWidth must not UNDERCOUNT — an undercount is the only arithmetic that
+// displayWidth must not UNDERCOUNT, an undercount is the only arithmetic that
 // can put text past the edge, because every clip trusts it.
 func TestDisplayWidthDoesNotUndercount(t *testing.T) {
 	for name, s := range map[string]string{
@@ -70,7 +70,7 @@ func TestDisplayWidthDoesNotUndercount(t *testing.T) {
 	} {
 		want := runewidth.StringWidth(render.StripEscapes(s))
 		if got := displayWidth(s); got < want {
-			t.Fatalf("%s: displayWidth=%d,true width=%d — undercount lets a clip overflow", name, got, want)
+			t.Fatalf("%s: displayWidth=%d,true width=%d: undercount lets a clip overflow", name, got, want)
 		}
 	}
 }

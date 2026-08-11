@@ -2,7 +2,7 @@ package render
 
 // WHAT THIS FILE ONCE FAILED TO CATCH
 //
-// These tests assert over compose() OUTPUT — what the renderer DECIDES to
+// These tests assert over compose() OUTPUT: what the renderer DECIDES to
 // paint. They cannot observe the terminal scrolling a row into history before
 // the next repaint. So they were green while a completed reply never reached
 // scrollback at all, and green again while a submit-time footer was frozen and
@@ -111,7 +111,7 @@ func TestIncipit_NoTrailingBlanksAfterScrolledFreeze(t *testing.T) {
 	}
 }
 
-// OpenThinking pins the FOOTER before any content — and only the footer. The
+// OpenThinking pins the FOOTER before any content, and only the footer. The
 // output header is suppressed until the inquiry comes back over the wire, so
 // submit shows rule + status and nothing else; the assistant frame that follows
 // adopts the same region in place, bringing the header with its first content
@@ -154,7 +154,7 @@ func TestIncipit_ThinkingAdoptedInPlace(t *testing.T) {
 
 // A turn that errors before any content adopts the thinking placeholder must
 // tear the footer region down (AbandonOpen) so an error hint printed straight
-// to the terminal afterward lands on clean scrollback — not glued into the
+// to the terminal afterward lands on clean scrollback: not glued into the
 // live footer rule. Regression for the no-provider scrollback artifact.
 func TestIncipit_ThinkingAbandonedOnEarlyError(t *testing.T) {
 	ft := NewFakeTerminal(60, 20)

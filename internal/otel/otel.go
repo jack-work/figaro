@@ -31,8 +31,8 @@ import (
 const scopeName = "figaro"
 
 // telemetryFileMax caps each telemetry .jsonl file; at most 2x that lives on
-// disk (the active file + one rolled-over ".1"). Keeps the file exporter — the
-// default when no OTLP agent is configured — from growing without bound in a
+// disk (the active file + one rolled-over ".1"). Keeps the file exporter: the
+// default when no OTLP agent is configured: from growing without bound in a
 // long-lived daemon.
 const telemetryFileMax = 16 << 20 // 16 MiB
 
@@ -134,7 +134,7 @@ func (h *leveledHandler) WithGroup(name string) slog.Handler {
 // daemon (_FIGARO_DAEMON=1) batches, so ending a span never blocks a turn on
 // file I/O. A short-lived CLI process uses the simple (synchronous) processor:
 // its span count is tiny so the cost is negligible, and it flushes on span end
-// — batching there would silently drop spans on the os.Exit / die() paths that
+// : batching there would silently drop spans on the os.Exit / die() paths that
 // skip the deferred shutdown flush.
 func newSpanProcessor(exp sdktrace.SpanExporter) sdktrace.SpanProcessor {
 	if os.Getenv("_FIGARO_DAEMON") == "1" {

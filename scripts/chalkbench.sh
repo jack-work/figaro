@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# chalkbench.sh — end-to-end chalkboard timing against an ISOLATED daemon.
+# chalkbench.sh: end-to-end chalkboard timing against an ISOLATED daemon.
 #
 # `figaro set` / `unset` / `outfit` / `state` are pure state operations:
 # no LLM round-trip, no tokens, no money. So we can time the real CLI
-# against a real daemon — as long as that daemon is not the user's.
+# against a real daemon, as long as that daemon is not the user's.
 #
 # Everything runs in a fresh temp dir:
 #   FIGARO_RUNTIME_DIR=$TMP/run   FIGARO_STATE_DIR=$TMP/state
@@ -90,7 +90,7 @@ now_ms() { local t=${EPOCHREALTIME/,/.}; echo "$(( ${t%.*} * 1000 + 10#${t#*.} /
 declare -a ROWS=()
 row() { ROWS+=("$1|$2|$3"); }
 
-# time_block <label> <n> <command...> — runs the command n times with
+# time_block <label> <n> <command...>: runs the command n times with
 # $IDX set to the iteration index. All output is swallowed.
 time_block() {
   local label="$1" n="$2"; shift 2
@@ -157,7 +157,7 @@ time_block "state -j after daemon restart (cold replay)" 1 do_state
 
 # --- report -----------------------------------------------------------
 printf '\n'
-printf 'chalkbench — isolated daemon, no LLM round-trips\n'
+printf 'chalkbench: isolated daemon, no LLM round-trips\n'
 printf '  repo:     %s (%s)\n' "$REPO" "$(git rev-parse --short HEAD)"
 printf '  outfit:  %s\n' "$OUTFIT"
 printf '  board:    %s keys / %s bytes  ->  %s keys / %s bytes after inflate\n' \

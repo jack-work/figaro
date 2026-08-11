@@ -12,7 +12,7 @@ import (
 )
 
 // The resolver's own instruments. What they measure is the ONE call the whole
-// daemon makes now — Dress — on two shapes: the composition a real config
+// daemon makes now: Dress: on two shapes: the composition a real config
 // carries, and an enormous generated tree that lives OUTSIDE this repository
 // (Gluck, 2026-08-11: megabytes of generated TOML have no business in git).
 //
@@ -94,7 +94,7 @@ func BenchmarkDressCold(b *testing.B) {
 	}
 }
 
-// BenchmarkDressNoOutfits is the cost of the check on a call that names none —
+// BenchmarkDressNoOutfits is the cost of the check on a call that names none -
 // every plain `fig set` pays this and no more. It must stay at zero-ish.
 func BenchmarkDressNoOutfits(b *testing.B) {
 	o := outfit.New(benchTree(b, 40, 4096))

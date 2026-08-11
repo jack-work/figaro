@@ -50,7 +50,7 @@ func (m *mockProviderForIntegration) Send(_ context.Context, in provider.SendInp
 func TestIntegration_CreateAndPrompt(t *testing.T) {
 	dir := t.TempDir()
 
-	// Mock outfit — the create path resolves it via outfit.
+	// Mock outfit: the create path resolves it via outfit.
 	require.NoError(t, os.MkdirAll(dir+"/outfits", 0700))
 	require.NoError(t, os.WriteFile(dir+"/outfits/mock.toml", []byte(`
 [system]
@@ -117,7 +117,7 @@ model = "mock-model"
 	waitForFigaro(t, figaroEP)
 
 	// Connect with notification handler to wait for turn.done.
-	// Notifications are delivered in wire order — no envelopes, no reordering.
+	// Notifications are delivered in wire order: no envelopes, no reordering.
 	doneCh := make(chan struct{}, 1)
 	fcli, err := figaro.DialClient(figaroEP, func(method string, params json.RawMessage) {
 		if method == "turn.done" {
@@ -217,7 +217,7 @@ model = "mock-model"
 
 // TestIntegration_Fork drives a turn, forks the conversation, and
 // verifies both children share the pre-fork prefix while diverging
-// independently — the whole daemon fork path end to end (mock provider).
+// independently: the whole daemon fork path end to end (mock provider).
 func TestIntegration_Fork(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(dir+"/outfits", 0700))
@@ -272,7 +272,7 @@ model = "mock-model"
 	}
 	fcli.Close()
 
-	// Fork (trunk model): the aria id is STABLE — the continuation keeps it
+	// Fork (trunk model): the aria id is STABLE: the continuation keeps it
 	// (cont == id, bind-to-trunk), only the alternative is new.
 	fr, err := acli.Fork(ctx, created.FigaroID, 0, 0, nil, nil)
 	require.NoError(t, err)
@@ -281,7 +281,7 @@ model = "mock-model"
 	require.NotEqual(t, created.FigaroID, fr.Alternative)
 
 	// Each child's form names its OWN id: the continuation keeps the
-	// inherited stamp, the alternative is re-stamped at fork time — an aria
+	// inherited stamp, the alternative is re-stamped at fork time, an aria
 	// that forks itself must be able to learn its new id.
 	chalkAriaID := func(id string) string {
 		snap, serr := backend.FormState(id)
@@ -328,7 +328,7 @@ model = "mock-model"
 	assert.NotEqual(t, cont.Trunk, alt.Trunk, "alternative founds a new trunk")
 	assert.Equal(t, alt.ID, alt.Trunk, "alternative trunk is itself")
 
-	// The trunk is stable and stays live — re-forking the same id again
+	// The trunk is stable and stays live: re-forking the same id again
 	// just adds another alternative (bind-to-trunk: forking doesn't move you).
 	fr2, err := acli.Fork(ctx, created.FigaroID, 0, 0, nil, nil)
 	require.NoError(t, err, "the trunk stays live and re-forkable")

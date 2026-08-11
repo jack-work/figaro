@@ -56,7 +56,7 @@ func TestJSONArgvIsRejectedNotIgnored(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			err := validateSendOpts(tc.opts, false)
 			if err == nil {
-				t.Fatal("accepted silently — the flag would be dropped")
+				t.Fatal("accepted silently: the flag would be dropped")
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("message must name %s: %s", tc.want, err)

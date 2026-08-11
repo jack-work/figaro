@@ -22,7 +22,7 @@ func TestCacheSeesAnEditedOutfit(t *testing.T) {
 	writeOutfit(t, dir, "top", "layers = [\"base\"]\n")
 	o := outfit.New(dir)
 	// Zero window: check the disk on every ask. That is what a test asserting
-	// INSTANTANEOUS invalidation is really asking for — the shipped default
+	// INSTANTANEOUS invalidation is really asking for: the shipped default
 	// coalesces a burst of folds into one check per 100ms, which no human can
 	// type inside but a test certainly can.
 	o.SetStaleWindow(0)

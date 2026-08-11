@@ -11,7 +11,7 @@ import (
 // The selection bar's contract, stated as properties rather than as a second
 // copy of the implementation.
 //
-// It used to be pinned against decorateNodeRowReference — a transcription of
+// It used to be pinned against decorateNodeRowReference, a transcription of
 // the pre-optimization code, which was fine while the bar OWNED a column and
 // the reference could be written in one line. The bar now stands inside the
 // row's own left margin so the pager can render at the same width as the
@@ -20,9 +20,9 @@ import (
 //
 //  1. an unselected row is the stored row, untouched;
 //  2. a selected row never leaves the pane, and never costs more than the one
-//     column the bar occupies — a row that grew past the viewport would
+//     column the bar occupies, a row that grew past the viewport would
 //     soft-wrap and desync the painter's one-row-per-line cursor math;
-//  3. the bar is always drawn — selection is never silent;
+//  3. the bar is always drawn: selection is never silent;
 //  4. everything from column two rightwards is unchanged, so selecting a row
 //     does not move its text.
 func TestDecorateNodeRowContract(t *testing.T) {
@@ -41,9 +41,9 @@ func TestDecorateNodeRowContract(t *testing.T) {
 	for _, row := range rows {
 		if !closedEscapes(row) {
 			// A row that ENDS inside an escape sequence paints nothing and eats
-			// whatever follows it, bar included. Node rows cannot carry one —
+			// whatever follows it, bar included. Node rows cannot carry one -
 			// render.Prose strips escapes on the way in and sanitizes on the way
-			// out — and clipToWidth's own corpus (nodes_clip_test.go) is where
+			// out, and clipToWidth's own corpus (nodes_clip_test.go) is where
 			// that robustness is pinned.
 			continue
 		}
@@ -55,7 +55,7 @@ func TestDecorateNodeRowContract(t *testing.T) {
 			for _, mark := range marks {
 				got := decorateNodeRow(plain, mark, w)
 				// The bar stands in the margin where there is one (same width) and
-				// displaces the row by one where there is not — never more, and
+				// displaces the row by one where there is not: never more, and
 				// never past the pane.
 				if n, pane := displayWidth(got), max(w, 1); n > pane || n > displayWidth(plain)+1 {
 					t.Errorf("selected decorate(%q, %d) is %d cells; pane is %d and the row rests at %d",

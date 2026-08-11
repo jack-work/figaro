@@ -4,12 +4,12 @@
 // Two sources, in priority order:
 //
 //  1. a Catalog learned from the provider's own /v1/models endpoint, whose
-//     ModelInfo carries max_input_tokens — authoritative, but only populated
+//     ModelInfo carries max_input_tokens, authoritative, but only populated
 //     once something has listed models in this process;
 //  2. a static prefix table for the models we have verified, so a fresh
 //     process still reports a window.
 //
-// Unrecognised models return 0 — "unknown". A missing number is honest; a
+// Unrecognised models return 0: "unknown". A missing number is honest; a
 // wrong one is not.
 package anthropicmodels
 
@@ -37,7 +37,7 @@ import (
 //
 // For Opus 5, 1M is both the default and the maximum: there is no smaller
 // variant and no beta header is involved (context-1m-2025-08-07 was retired in
-// April 2026 and is ignored — which is also why Sonnet 4.5 now reports 1M by
+// April 2026 and is ignored: which is also why Sonnet 4.5 now reports 1M by
 // default). Claude 3 and the undated Opus 4 / Haiku 4 ids predate the listing
 // above and are the long-standing 200k.
 //
@@ -127,7 +127,7 @@ func (c *Catalog) Window(model string) int {
 // ContextLimit implements provider.ContextLimitProvider's contract for an
 // Anthropic-shaped provider: an explicit system.max_context_tokens on the
 // form wins outright (that is what an override is for), otherwise the
-// catalog/table window is reported. It never performs network I/O — callers
+// catalog/table window is reported. It never performs network I/O: callers
 // use it on live status paths.
 func (c *Catalog) ContextLimit(model string, snapshot form.Snapshot) int {
 	if override, ok := provider.ContextLimitOverride(snapshot); ok {

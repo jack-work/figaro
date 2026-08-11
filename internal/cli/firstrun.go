@@ -1,4 +1,4 @@
-// Package cli — first-run setup wizard.
+// Package cli: first-run setup wizard.
 //
 // The wizard fires when the user runs any prompt-producing command
 // before figaro has enough configuration to satisfy it. It runs in
@@ -53,7 +53,7 @@ import (
 
 // providerChoice describes one entry in the first-run menu. A single
 // underlying provider (e.g. "anthropic") can appear multiple times
-// here with different modes (OAuth vs API key) — the menu shows the
+// here with different modes (OAuth vs API key): the menu shows the
 // human-facing options; the underlying provider name is what gets
 // written into the outfit.
 type providerChoice struct {
@@ -406,7 +406,7 @@ func runAPIKeyInline(loaded *config.Loaded, providerName string) error {
 
 // createDefaultOutfit asks the ANGELUS to write outfits/default.toml (or
 // default-<provider>.toml if that name is taken) and point default_outfit at
-// it. The wizard composes the body — that is client ergonomics — but the file
+// it. The wizard composes the body: that is client ergonomics: but the file
 // and the config are the server's state, so the server writes them.
 func createDefaultOutfit(ctx context.Context, acli *angelus.Client, existing []string, providerName, model string) (string, error) {
 	name := "default"
@@ -437,7 +437,7 @@ func createDefaultOutfit(ctx context.Context, acli *angelus.Client, existing []s
 // outfit references the skills directory via `skills = { dirName = "skills" }`,
 // and that alone is enough, because first-party skills ship inside the binary
 // and load from there. A copy in config would be overridden by the shipped one
-// anyway, so it would sit there stale and unread — which is the pointlessness
+// anyway, so it would sit there stale and unread: which is the pointlessness
 // this deliberately avoids.
 func starterOutfitBody(providerName, model string) string {
 	body := fmt.Sprintf(`# Scaffolded by figaro first-run setup.
@@ -485,7 +485,7 @@ func printDone() {
 // --- compile-time wiring ---------------------------------------------------
 
 // Compile-time check: angelus.Client.Create matches createFn shape
-// when bound (modulo context — caller supplies one).
+// when bound (modulo context: caller supplies one).
 var _ = func(acli *angelus.Client, ctx context.Context) createFn {
 	return func() (*rpc.CreateResponse, error) {
 		return acli.Create(ctx, nil, nil)
@@ -505,7 +505,7 @@ func isStdinTTY() bool {
 // its model list and prompts the user to pick one. On any failure
 // (no network, listing endpoint missing, user dismisses the prompt)
 // it falls back to defaultModelFor(providerName). Never blocks the
-// wizard — the outfit always gets *some* model.
+// wizard: the outfit always gets *some* model.
 func pickModelOrFallback(loaded *config.Loaded, providerName string) string {
 	fallback := defaultModelFor(providerName)
 

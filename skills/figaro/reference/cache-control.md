@@ -2,7 +2,7 @@
 
 Anthropic's prompt cache lets up to **four** `cache_control` breakpoints mark
 cached prefixes; everything before a mark is reused on later turns at a
-fraction of the input-token cost. Figaro applies this **automatically** — you
+fraction of the input-token cost. Figaro applies this **automatically**: you
 rarely need to touch it.
 
 ## What happens by default
@@ -17,7 +17,7 @@ breakpoints:
 
 So the static prefix is a cache *read* every turn after the first, and the
 rolling breakpoint caches the growing transcript so the next turn reads all
-prior history. That leaves one of the four breakpoints free — deliberately,
+prior history. That leaves one of the four breakpoints free: deliberately,
 for a downstream gateway that adds its own. **The tail is stamped last in
 wire order** and must stay that way: Anthropic honours all four breakpoints,
 but a gateway lowering them to Gemini keeps only the final one.
@@ -47,12 +47,12 @@ The distinction is the provider's, not ours, and it was measured:
   OpenAI model) caches a stable prefix implicitly, with no request-side
   signal at all. `none` removes markers that path never needed; the provider
   keeps caching and keeps discounting. Expect cache reads with caching
-  "off", and do not write a test that asserts otherwise — an implicit-caching
+  "off", and do not write a test that asserts otherwise, an implicit-caching
   provider will fail it by working correctly.
 
 So `none` is "send no directives", which is all a client can promise.
 
-Retention is a `ttl` field, not a type — `1h` reaches the wire as
+Retention is a `ttl` field, not a type: `1h` reaches the wire as
 `{"type":"ephemeral","ttl":"1h"}`. Neither TTL needs a beta header. 1h costs
 2x base input on the write against 1.25x for 5m, so it pays only across a
 session long enough to have re-written the short cache more than twice.
@@ -68,7 +68,7 @@ figaro set system.cache_markers none       # mark nothing
 
 The default, `auto`, asks the route. Direct Anthropic takes per-block
 markers. A gateway that advertises a request-level directive gets that
-instead, and places the breakpoints itself — which is the only correct
+instead, and places the breakpoints itself: which is the only correct
 answer when the endpoint is a *router*, because the model is chosen after
 the request arrives and both the minimum cacheable size and the breakpoint
 budget are per-model.
@@ -82,7 +82,7 @@ figaro unset system.tags[<LT>].cache_control
 ```
 
 where `<LT>` is a logical time in your own aria. Pick **stable prefixes** (the
-credo, settled tool outputs) — never the current turn — and place them roughly
+credo, settled tool outputs): never the current turn, and place them roughly
 monotonically.
 
 ## Gateways and routes
@@ -94,7 +94,7 @@ somewhere else with `ANTHROPIC_BASE_URL` (or the per-provider equivalent).
 Capabilities are consulted, never assumed. A marker sent where it is not
 understood is not harmless: some gateways hard-fail on it, and Anthropic's
 own OpenAI-compatible shim drops it silently while still billing full input
-— caching that looks enabled and is not. A route of unknown provenance is
+- caching that looks enabled and is not. A route of unknown provenance is
 marked with nothing.
 
 Routes that support sticky routing also carry a session key derived from the
@@ -125,6 +125,6 @@ InputTokens + CacheReadTokens + CacheWriteTokens + OutputTokens
 `tokens.ContextFromUsage` is the one definition; both the full fold
 (`tokens.ContextSize`) and the agent's incremental fast path
 (`Agent.refreshMetrics`) go through it, and `TestRefreshMetricsIncrementalMatchesFullFold`
-keeps them honest. Summing only Input+Output — as figaro did before — reports
+keeps them honest. Summing only Input+Output, as figaro did before: reports
 a cached aria as a few thousand tokens when it is really a few hundred
 thousand.

@@ -1,6 +1,6 @@
 # Transcript pager performance: the five-axis campaign, measured end to end
 
-Baseline is `1e643a1` (`test(transcript): heavy-aria scroll benchmark rig`) — the
+Baseline is `1e643a1` (`test(transcript): heavy-aria scroll benchmark rig`): the
 commit that introduced the shared rig, before any of the five axes. Every number
 here is from that rig unless stated: `-run XXX -bench 'Heavy|Burst' -benchtime
 30x -benchmem -count=8`, AMD Ryzen 7 5800X, go1.26.4, summarized with benchstat.
@@ -9,9 +9,9 @@ Three measurement points:
 
 | point | what is in it |
 |---|---|
-| **base** | `1e643a1` — nothing |
-| **pre** | `4953844` — C (allocations) + A (virtualization) + D (paging) |
-| **now** | `2298a1b` — the above + B (input coalescing, painter) + E (SGR collapse) |
+| **base** | `1e643a1`: nothing |
+| **pre** | `4953844`: C (allocations) + A (virtualization) + D (paging) |
+| **now** | `2298a1b`: the above + B (input coalescing, painter) + E (SGR collapse) |
 
 A fourth, `e6c459a` (B but not E), is used below only to attribute regressions.
 
@@ -35,7 +35,7 @@ Entering the pager on a heavy aria (`HeavyEnter`): **33.7 ms → 3.13 ms**, and
 13563 B → 3727 B of paint.
 
 A 24-event mouse-wheel flick: **24 frames → 1 frame** (`BurstFrames`,
-17.4 µs/flick, 1.04 KiB, 15 allocs — the whole flick, not per event).
+17.4 µs/flick, 1.04 KiB, 15 allocs: the whole flick, not per event).
 
 ---
 
@@ -53,11 +53,11 @@ sec/op (± is benchstat's spread over n=8):
 | `LinesHeavy` | 3865.51 µs ± 2% | 6.801 µs ± 12% | 7.159 µs ± 19% | −99.81% |
 | `ScrollHeavySearch` | 4382.55 µs ± 3% | 23.75 µs ± 17% | 21.32 µs ± 20% | −99.51% |
 | `HeavyEnter` | 33.745 ms ± 2% | 1.739 ms ± 6% | 3.128 ms ± 3% | −90.73% |
-| `FollowHeavy` | — | 11.65 µs ± 1% | 12.11 µs ± 12% | — |
-| `LiveHeavy` | — | 13.81 µs ± 20% | 22.75 µs ± 17% | — |
-| `FindHeavy` | — | 6.587 µs ± 13% | 3.148 µs ± 13% | — |
-| `FindRepeatHeavy` | — | 21.40 µs ± 7% | 10.19 µs ± 14% | — |
-| `BurstFrames` | — | — | 17.38 µs ± 8% | — |
+| `FollowHeavy` |: | 11.65 µs ± 1% | 12.11 µs ± 12% |: |
+| `LiveHeavy` |: | 13.81 µs ± 20% | 22.75 µs ± 17% |: |
+| `FindHeavy` |: | 6.587 µs ± 13% | 3.148 µs ± 13% |: |
+| `FindRepeatHeavy` |: | 21.40 µs ± 7% | 10.19 µs ± 14% |: |
+| `BurstFrames` |: |: | 17.38 µs ± 8% |: |
 
 (`FollowHeavy`, `LiveHeavy`, `FindHeavy`, `FindRepeatHeavy` were added by later
 axes and have no base column. `BurstFrames` is B's.)
@@ -83,8 +83,8 @@ E's standalone bytes benchmark replayed on the baseline tree.
 |---|---|---|---|
 | `FrameBytes/out20` B/frame | 12579 | **70** | 3127 |
 | `FrameBytes/out200` B/frame | 12585 | **70** | 3133 |
-| `PaintBytes/up` B/step | — | 155.1 | 2993 |
-| `PaintBytes/down` B/step | — | 155.1 | 2989 |
+| `PaintBytes/up` B/step |: | 155.1 | 2993 |
+| `PaintBytes/down` B/step |: | 155.1 | 2989 |
 | `EnterBytes` B/enter | 13563 | 3727 | 3727 |
 | writes/frame | 1 | 1 | 1 |
 
@@ -114,12 +114,12 @@ byte-identical across all three: neither B nor E perturbs D's paging policy.
 Everything below is measured against **pre** (A+C+D), which is the only fair
 comparison for "what did B and E cost".
 
-### 1. A scroll frame costs ~5 µs more CPU — B's painter
+### 1. A scroll frame costs ~5 µs more CPU: B's painter
 
 `ScrollHeavy/out20` 11.59 → 17.08 µs at B-only, 16.42 µs after E. **+42%.**
 
 Attributed by measurement, not assumption: B-only already shows the whole
-regression, and E claws a little back. It is *not* `compactRow` — stubbing
+regression, and E claws a little back. It is *not* `compactRow`: stubbing
 compaction out leaves the number where it is (16.95 µs). It is the scroll-region
 planner: `planScroll` fingerprints both frames and searches ±32 shifts, then
 predicts and prices the plan.
@@ -130,38 +130,38 @@ diff finds nothing and the painter does no work. The cost is specific to frames
 where the viewport actually moves.
 
 Is the trade good? Switching the scroll region off makes it *slower still*
-(19.5 µs) because every row goes out in full — so the planner pays for itself
+(19.5 µs) because every row goes out in full: so the planner pays for itself
 even on a local terminal in wall time, once the write is counted. And 16 µs is
 0.1% of a 60 Hz frame budget. Against 12579 → 70 bytes on the wire, this is the
 correct trade and it is not close.
 
-### 2. `ScrollBurst` 252 → 367 µs (+46%) — B's painter, and the rig is stale
+### 2. `ScrollBurst` 252 → 367 µs (+46%): B's painter, and the rig is stale
 
 `ScrollBurst` in the shared rig drives 24 `scrollBy` calls directly, so it paints
 24 frames and pays #1 twenty-four times. That is no longer what the pager does:
 the input loop brackets a read in a batch and paints once. `BurstFrames` is the
-same flick through the real path — 1.000 frames/op, 17.38 µs, 1.04 KiB, 15
+same flick through the real path: 1.000 frames/op, 17.38 µs, 1.04 KiB, 15
 allocs. The rig file is off limits by instruction, so the stale number stays;
 read `BurstFrames` instead.
 
-### 3. `HeavyEnter` 1.739 → 3.128 ms (+80%) — E's collapse
+### 3. `HeavyEnter` 1.739 → 3.128 ms (+80%): E's collapse
 
 B-only is 1.719 ms, so this is entirely E. It is the collapse being paid on a
 cold row-cache fill: +1.4 ms, +267 KB, +882 allocs. Bought with 4.6× smaller
 retained rows (journey peak retained 2438 → 816 KB) and 12579 → 3127 B/frame
 before the scroll region even engages.
 
-This is exactly the cost E's follow-up would remove — see the note at the
+This is exactly the cost E's follow-up would remove: see the note at the
 `collapseSGR` call site in `transcript.go` for why it is deferred and what it
 would take.
 
-### 4. Journey CPU 30.2 → 40.2 ms (+33%) — B's painter
+### 4. Journey CPU 30.2 → 40.2 ms (+33%): B's painter
 
 B-only is 41.0 ms, so again the painter, and again it is #1 multiplied by a long
 scroll. E is neutral-to-better here (41.0 → 40.2 ms) despite adding 2.5 MB of
 transient allocation, because everything downstream handles smaller rows.
 
-### 5. `LiveHeavy` 13.81 → 22.75 µs (+65%) — split, B then E
+### 5. `LiveHeavy` 13.81 → 22.75 µs (+65%): split, B then E
 
 B-only 17.00 µs (+23%), then E to 22.75 µs. The live tail repaints on every
 delta, so it pays the painter per frame; E's share is the cache fill for the
@@ -172,7 +172,7 @@ delta.
 
 ### 6. `FollowHeavy` 11.65 → 12.11 µs (+4%)
 
-p=0.065 and p=0.645 against pre — not significant. Listed for completeness.
+p=0.065 and p=0.645 against pre: not significant. Listed for completeness.
 
 ---
 
@@ -181,6 +181,6 @@ p=0.065 and p=0.645 against pre — not significant. Listed for completeness.
 - `FindHeavy` 6.587 → 3.148 µs (**−52%**), `FindRepeatHeavy` 21.40 → 10.19 µs
   (**−52%**), both with 26% less allocation: E's collapse leaves less ANSI for
   the search scan to skip over.
-- `ScrollHeavySearch` 23.75 → 21.32 µs (−10%, p=0.38 — directionally E's, not
+- `ScrollHeavySearch` 23.75 → 21.32 µs (−10%, p=0.38: directionally E's, not
   statistically established at n=8).
 - Journey peak retained memory 2438 → 816 KB (**3.0×**).

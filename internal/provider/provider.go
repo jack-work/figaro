@@ -41,13 +41,13 @@ type Bus interface {
 	PushDelta(content message.Content)
 	PushFigaro(msg message.Message, cache ...AssistantCache)
 	// PushToolInvokeStart fires when the assistant begins a tool_use
-	// block — the model starts *authoring* an invocation. The figaro
+	// block: the model starts *authoring* an invocation. The figaro
 	// side opens a tool_invoke block on the open assistant message.
 	PushToolInvokeStart(toolCallID, toolName string)
 	// PushToolInvokeDelta carries partial input JSON. Best-effort.
 	PushToolInvokeDelta(toolCallID, partialJSON string)
 	// PushToolReady fires when a tool_use block's input JSON is fully
-	// decoded — typically at content_block_stop. The harness may dispatch
+	// decoded: typically at content_block_stop. The harness may dispatch
 	// the tool immediately, before PushFigaro / message_stop arrives.
 	//
 	// The content must be a ContentToolInvoke with ToolCallID, ToolName,
@@ -73,7 +73,7 @@ type AssistantCache struct {
 // Form is the per-LT transition accessor. Form patches no
 // longer ride inline on IR messages; they live in a reducible channel keyed
 // by IR logical time. PatchesAt returns the transitions to render on the
-// message at lt — the encoder folds them into that message's wire bytes
+// message at lt: the encoder folds them into that message's wire bytes
 // exactly as it did the inline patches, so per-LT caching stays sound
 // (a message's bytes depend only on state up to that message). Live state for the
 // system prefix still arrives via SendInput.Snapshot, which is rebuilt

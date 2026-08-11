@@ -54,7 +54,7 @@ func TestFarmerSplitToWidthKeepsEverything(t *testing.T) {
 }
 
 // A chunk that opens a colour and never closes it leaves the rendition live for
-// whatever the painter draws next — including an erase-to-EOL, which paints the
+// whatever the painter draws next: including an erase-to-EOL, which paints the
 // background across the rest of the line.
 func TestFarmerSplitToWidthClosesItsStyle(t *testing.T) {
 	row := "\x1b[38;5;252m" + strings.Repeat("styled ", 30) + "\x1b[0m"

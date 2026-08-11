@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# NOTE: tmux is shared with other arias — private socket only (-L fig-2747),
+# NOTE: tmux is shared with other arias: private socket only (-L fig-2747),
 # and never kill-server without -L.
 # The master's three-part oracle, repeated across geometry x entry x exit.
 #
-#   (a) SEEDED  — pre-existing lines still in scrollback after figaro exits
-#   (b) CONTENT — the aria's last chunk reached scrollback
-#   (c) PROMPT  — the shell prompt is on a fresh line BELOW the content
+#   (a) SEEDED: pre-existing lines still in scrollback after figaro exits
+#   (b) CONTENT: the aria's last chunk reached scrollback
+#   (c) PROMPT: the shell prompt is on a fresh line BELOW the content
 #
 # "Occasionally" is the hard part, so every cell runs N times and the failures
 # are counted, not the passes.

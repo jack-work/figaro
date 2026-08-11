@@ -11,7 +11,7 @@ import (
 // THE `:` JUMP: go to a coordinate.
 //
 // Ctrl-O draws every node's address (transcript_coords.go). This is the other
-// half — a command line that accepts one:
+// half, a command line that accepts one:
 //
 //	:12       the head of turn 12
 //	:12.3     node 3 of turn 12
@@ -28,7 +28,7 @@ import (
 // numbering (internal/turns.StampIDs adopts an already-stamped id), so a
 // fork's first turn is emphatically not 1. `:0` therefore means "the lowest
 // turn that actually exists, whatever its id" and is resolved by walking back
-// until the store says there is nothing older — never by constructing an
+// until the store says there is nothing older: never by constructing an
 // anchor. aria.Anchor.Zero() is likewise UNSET ("the natural end for this
 // direction"), which is precisely why turn 0 can never be a real target and
 // can safely carry this meaning here.
@@ -39,11 +39,11 @@ import (
 //
 // WHAT HAPPENS WHEN THE TARGET IS NOT LOADED
 //
-// The pager grows its window backward — over history the store already holds
-// for free, and below that through ReadBefore — driven by
+// The pager grows its window backward: over history the store already holds
+// for free, and below that through ReadBefore: driven by
 // prefetchTranscriptPages, which CHAINS: it re-asks pageCursor after every
 // landing and keeps fetching while the pager says it wants more. A jump
-// therefore does not need a mechanism of its own — it only has to keep saying
+// therefore does not need a mechanism of its own: it only has to keep saying
 // "still want one", which is what jumpAdvance does by leaving t.jump set.
 // Nothing else in this file knows how pages arrive.
 //
@@ -54,7 +54,7 @@ import (
 //
 // 24 is chosen against measurements this repo already has, not by feel. One
 // fetch is a single ReadBefore round trip to the local daemon over a unix
-// socket — 0.1–1.2 ms measured on the long-aria benchmarks — and returns
+// socket: 0.1–1.2 ms measured on the long-aria benchmarks, and returns
 // pageMessages() messages, which is between transcriptMinPageSize and
 // transcriptPageSize. So 24 fetches cover several hundred to a few thousand
 // messages, comfortably past the largest real aria measured on this project
@@ -63,7 +63,7 @@ import (
 //
 // The bound is not really about speed. It is about TERMINATION: a store that
 // keeps returning pages which never reach the target would otherwise spin
-// forever, and the honest failure — a line in the footer saying so — is worth
+// forever, and the honest failure, a line in the footer saying so: is worth
 // far more than a pager that silently stops responding.
 const jumpBudget = 24
 
@@ -72,7 +72,7 @@ const jumpBudget = 24
 // unset. Keeping the sentinel in the parser's own type is what stops a
 // backward read from being handed a zero anchor and returning the tail.
 type jumpTarget struct {
-	start   bool // ":0" — the lowest turn that exists
+	start   bool // ":0": the lowest turn that exists
 	turn    int
 	node    int
 	hasNode bool
@@ -98,7 +98,7 @@ func (tg jumpTarget) missing() string {
 
 // parseJumpTarget reads the text of the jump box. It accepts `<turn>` and
 // `<turn>.<node>`, with the node allowed to be the inquiry sentinel (-1), and
-// nothing else — a coordinate is not an expression.
+// nothing else, a coordinate is not an expression.
 func parseJumpTarget(s string) (jumpTarget, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -139,7 +139,7 @@ const (
 // transcriptJump is a walk in progress: the target, what is left of the
 // budget, and enough of the origin to put the reader back where they were if
 // the walk fails. It mirrors transcriptSearch, which is the same shape for the
-// same reason — a paged search and a paged jump are one traversal with two
+// same reason, a paged search and a paged jump are one traversal with two
 // stopping conditions. As there, only the VIEWPORT is restored: history the
 // walk paged in is in the store, and throwing the floor back up would only
 // re-fetch it.
@@ -158,7 +158,7 @@ type transcriptJump struct {
 // The keymap actions. One row each; see keymap.go.
 // ---------------------------------------------------------------------------
 
-// pagerJumpPrompt is ':' — open the command line.
+// pagerJumpPrompt is ':': open the command line.
 func pagerJumpPrompt(t *transcript) { t.inJump, t.jumpQuery, t.jumpNote = true, "", "" }
 
 func jumpCancel(t *transcript) { t.inJump, t.jumpQuery = false, "" }
@@ -169,7 +169,7 @@ func jumpBackspace(t *transcript) {
 	}
 }
 
-// jumpLiteral is the box's fallback: a printable key is text, not a binding —
+// jumpLiteral is the box's fallback: a printable key is text, not a binding -
 // which is what makes '/' an ordinary character in here, as ':' is in the
 // search box. The keymap does not enumerate "every printable byte"; see
 // searchLiteral, whose contract this mirrors exactly.
@@ -247,15 +247,15 @@ func (t *transcript) jumpAdvance() {
 // A HOLE IS NOT A TURN, and this is the only resolver that has to know it. Gap
 // entries stand in line space beside messages but carry turn 0 (buildIndex),
 // and reading their turn as an address is how `:0` used to land ON the
-// "N turns not loaded" rule — the reader asked for the beginning of the aria
+// "N turns not loaded" rule: the reader asked for the beginning of the aria
 // and got a placeholder for it, with no selection, because firstRefOfTurn(0)
 // matches nothing. The same zero, read as the window's OLDEST turn, then made
 // every `tg.turn < oldest` test false, so a jump to a turn behind the hole was
-// answered "no turn N in this aria" — a denial about a conversation the pager
+// answered "no turn N in this aria", a denial about a conversation the pager
 // had simply not loaded yet.
 //
 // So: bounds come from MESSAGE entries only, and a target that could be inside
-// a hole resolves to jumpOlder — keep walking. pageCursor turns that into a
+// a hole resolves to jumpOlder: keep walking. pageCursor turns that into a
 // fill (see the jump branch there), jumpAdvance re-resolves when it lands, and
 // the landing happens on the real turn once the entry is ungapped. Delaying is
 // the whole trick: there is nothing to snap to until the rows exist.
@@ -275,13 +275,13 @@ func (t *transcript) jumpReachOf(tg jumpTarget) (int, nodeRef, jumpReach) {
 	}
 	if tg.start {
 		// The floor is only known once the store has said so, because nothing
-		// on the wire says where an aria begins — an empty ReadBefore is the
+		// on the wire says where an aria begins, an empty ReadBefore is the
 		// only proof there is. So this lands on the lowest turn that EXISTS,
 		// whatever it is called, rather than on a number chosen here.
 		//
 		// In practice that number is 1, forks included: a fork can read its
 		// parent's prefix, so its history opens where the parent's did. The
-		// point is not that 1 is wrong — it is that a client cannot tell 1
+		// point is not that 1 is wrong: it is that a client cannot tell 1
 		// from any other floor without asking, and asking is a walk.
 		if !t.atAriaFloor() {
 			return 0, nodeRef{}, jumpOlder
@@ -315,7 +315,7 @@ func (t *transcript) jumpReachOf(tg jumpTarget) (int, nodeRef, jumpReach) {
 			return span.first, ref, jumpHere
 		}
 		// The turn is here but that node is not. It can only be below the
-		// oldest retained SLICE of it — a turn too tall for one page arrives in
+		// oldest retained SLICE of it, a turn too tall for one page arrives in
 		// slices, and the head slice is the one that got trimmed.
 		if tg.turn == oldest && tg.node < int(t.oldestFrom()) && !t.atAriaFloor() {
 			return 0, nodeRef{}, jumpOlder
@@ -339,7 +339,7 @@ func (t *transcript) jumpReachOf(tg jumpTarget) (int, nodeRef, jumpReach) {
 }
 
 // windowTurnBounds is the oldest and newest TURN in the window, ignoring gap
-// entries — whose turn field is 0, an id no aria ever issues.
+// entries: whose turn field is 0, an id no aria ever issues.
 func (t *transcript) windowTurnBounds() (oldest, newest int, ok bool) {
 	for k := range t.index.entries {
 		e := &t.index.entries[k]
@@ -361,14 +361,14 @@ func (t *transcript) windowTurnBounds() (oldest, newest int, ok bool) {
 }
 
 // leadingGap reports whether a hole stands above the oldest message in the
-// window — i.e. whether history that is "below the floor" as far as the reader
+// window: i.e. whether history that is "below the floor" as far as the reader
 // is concerned is actually a hole INSIDE it.
 func (t *transcript) leadingGap() bool {
 	return len(t.index.entries) > 0 && t.index.entries[0].isGap()
 }
 
 // hasGap reports whether the window is missing anything inside itself. (whole()
-// asks a bigger question — no holes AND standing on the floor — and a jump only
+// asks a bigger question: no holes AND standing on the floor, and a jump only
 // cares about the holes.)
 func (t *transcript) hasGap() bool {
 	for k := range t.index.entries {
@@ -391,7 +391,7 @@ func (t *transcript) oldestGap() *aria.Gap {
 	return nil
 }
 
-// firstRefOfTurn is the turn's first selectable point in reading order — its
+// firstRefOfTurn is the turn's first selectable point in reading order: its
 // question when it has one, otherwise its first node. That is what the jump
 // puts the selection on, so a turn-granular landing still names something.
 func (t *transcript) firstRefOfTurn(turn int) nodeRef {
@@ -408,7 +408,7 @@ func (t *transcript) firstRefOfTurn(turn int) nodeRef {
 //
 // ensureSelectionVisible is deliberately NOT called. It scrolls to reveal a
 // selection's far END, so on a node taller than the pane it would drag the
-// viewport straight past the row we just aimed at — the opposite of a snap.
+// viewport straight past the row we just aimed at: the opposite of a snap.
 // The offset is set last for the same reason: stopFollowing re-derives it for
 // the detached geometry, and would otherwise overwrite the landing.
 func (t *transcript) landJump(line int, ref nodeRef) {
@@ -424,12 +424,12 @@ func (t *transcript) landJump(line int, ref nodeRef) {
 }
 
 // selectRef puts the selection on one node, carrying the hash the copy path
-// verifies endpoints with — which is why it goes through nodeRefs() rather
+// verifies endpoints with: which is why it goes through nodeRefs() rather
 // than minting a bare point.
 //
 // extend is the Shift variant: the anchor stays where it was and only the focus
 // moves, so a range can be built by pointing at its far end (Shift+click) just
-// as it can by walking to it (Shift+^N). A cold selection ignores extend — there
+// as it can by walking to it (Shift+^N). A cold selection ignores extend: there
 // is no anchor yet to extend from.
 //
 // It does NOT touch the viewport, deliberately: the jump sets the offset itself

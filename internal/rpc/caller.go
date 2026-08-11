@@ -12,7 +12,7 @@ import (
 // Caller identity on the wire.
 //
 // A figaro should know WHICH ARIA invoked it. Before this, the only signal was
-// FIGARO_ARIA in the callee's environment — and an agent injects that into
+// FIGARO_ARIA in the callee's environment, and an agent injects that into
 // every bash tool call, so a shell-out is statically attended to the aria that
 // spawned it (see skills/figaro/SKILL.md, "Knowing yourself"). Two problems
 // made that unusable as a credential:
@@ -20,7 +20,7 @@ import (
 //   - nothing rode on the wire, so a SERVER learned its caller only by
 //     convention and environment inheritance;
 //   - the env var cannot be turned off. A credential you cannot disable is not
-//     a credential — there is no state in which the server is entitled to
+//     a credential: there is no state in which the server is entitled to
 //     doubt it, and therefore no authentication happening.
 //
 // So the identity is presented explicitly, in a reserved params field, and the
@@ -36,7 +36,7 @@ import (
 // It has no such field, and its API hands neither side access to one:
 // Client.Call takes (method, params, result) and HandlerFunc receives only
 // (ctx, params). Adding an envelope slot therefore costs a jkrpc API change, a
-// module release, and a signature change to every handler in figaro — to carry
+// module release, and a signature change to every handler in figaro: to carry
 // one string that params can carry today. The reserved key is the cheap,
 // reversible choice; if the wire ever grows real headers this moves there
 // behind the same two functions.
@@ -46,7 +46,7 @@ import (
 // public contract.
 const CallerKey = "x-internal-figaro-id"
 
-// CallerLabelKey is the params field carrying an ASSERTED caller reference —
+// CallerLabelKey is the params field carrying an ASSERTED caller reference -
 // who is calling, when the caller is not an aria.
 //
 // IT IS NOT A CREDENTIAL AND MUST NEVER REACH AN AUTHORIZATION DECISION.
@@ -60,7 +60,7 @@ const CallerLabelKey = "x-caller"
 // AriaLabelPrefix is reserved. An authenticated aria renders as "aria <id>";
 // an asserted label renders bare. If a label could begin with this prefix, a
 // human setting FIGARO_CALLER="aria 76062b18" would be indistinguishable from
-// the real aria in the model's context — confidently misinformed, which is
+// the real aria in the model's context: confidently misinformed, which is
 // worse than unattributed. SanitizeLabel strips it.
 const AriaLabelPrefix = "aria "
 
@@ -71,13 +71,13 @@ const AriaLabelPrefix = "aria "
 // Runes, not bytes: a byte cap cuts a multi-byte rune in half, and the invalid
 // tail that leaves is not merely ugly. encoding/json replaces invalid UTF-8
 // with U+FFFD, so the value on the wire would differ from the value sanitized,
-// and a second sanitize pass would produce a third answer — which is exactly
+// and a second sanitize pass would produce a third answer: which is exactly
 // what a fuzzer found here.
 const MaxCallerLabelLen = 64
 
 // Caller is the decode side of CallerKey. Embed it in a request struct that
 // wants the identity typed, or use CallerOf to read it out of raw params
-// without knowing the request's shape at all — which is what the server-side
+// without knowing the request's shape at all: which is what the server-side
 // authenticator does, because it runs before dispatch has chosen a type.
 type Caller struct {
 	FigaroID string     `json:"x-internal-figaro-id,omitempty"`
@@ -87,14 +87,14 @@ type Caller struct {
 // CallerRef is who is calling, when the caller is not an aria. It is a TYPED
 // OBJECT rather than a string on purpose.
 //
-// The common case is "the end user is typing" — the DUKE — and the CLI cannot
+// The common case is "the end user is typing": the DUKE, and the CLI cannot
 // name them: the name belongs to the aria being addressed, not to the shell.
 // So the CLI sends a PLACEHOLDER and the server resolves it against the target
 // aria's form (see DukeTitleKey). That is what keeps the user's name out
 // of shell config entirely.
 //
 // A placeholder must not collide with anything a human could type, and a
-// reserved string is a poor way to guarantee that — someone eventually types
+// reserved string is a poor way to guarantee that: someone eventually types
 // the reserved word. A separate BOOL cannot be reached from a string at all:
 // FIGARO_CALLER only ever populates Label, so no value of it can produce
 // Duke:true. The guarantee is structural, not lexical.
@@ -118,7 +118,7 @@ func (c *CallerRef) Empty() bool {
 // in an outfit ("gluck") and every prompt that aria receives from a human
 // terminal is attributed to that name.
 //
-// "Duke" is the harness's word for the END USER — the person the agent serves,
+// "Duke" is the harness's word for the END USER: the person the agent serves,
 // as distinct from an aria (another figaro) or an anonymous script.
 const DukeTitleKey = "duke-title"
 
@@ -167,7 +167,7 @@ func SanitizeLabel(s string) string {
 // binding policy once, so every client dialled afterwards agrees.
 //
 // It gates the DUKE placeholder and nothing else: a non-interactive
-// invocation — a script, or an aria's own shell-out — presents no duke, so a
+// invocation, a script, or an aria's own shell-out: presents no duke, so a
 // figaro cannot speak as its master by accident. An aria that deliberately
 // allocates itself a terminal can still do it; that is a known gap, accepted
 // until real authentication closes it, and it is why none of this is allowed
@@ -203,7 +203,7 @@ func LabelFromEnv() string {
 }
 
 // CallerRefOf reads the asserted caller reference out of raw params, with its
-// label sanitized. Like CallerOf it never errors — an unusable ref is an absent
+// label sanitized. Like CallerOf it never errors, an unusable ref is an absent
 // one, and whether absence is acceptable is the policy's decision.
 func CallerRefOf(params json.RawMessage) *CallerRef {
 	if len(params) == 0 {
@@ -221,7 +221,7 @@ func CallerRefOf(params json.RawMessage) *CallerRef {
 	return &ref
 }
 
-// LabelOf is the asserted label alone, ignoring the duke placeholder — the
+// LabelOf is the asserted label alone, ignoring the duke placeholder: the
 // placeholder has no name until a server resolves it against an aria.
 func LabelOf(params json.RawMessage) string {
 	ref := CallerRefOf(params)
@@ -241,7 +241,7 @@ func LabelOf(params json.RawMessage) string {
 // and a pid binding says which aria a shell is ATTENDING, not that the shell
 // is one. Conflating them would let `figaro fork --id X` claim to *be* X.
 //
-// Empty means "no figaro caller" — a human at a terminal, or an external
+// Empty means "no figaro caller", a human at a terminal, or an external
 // script. That is a legitimate answer, not a failure.
 func CallerFromEnv() string {
 	id := strings.TrimSpace(os.Getenv("FIGARO_ARIA"))
@@ -261,7 +261,7 @@ func CallerFromEnv() string {
 // nil params become a fresh object holding only the identity: several methods
 // take no arguments and pass nil (figaro.context, figaro.form), and they
 // must still be able to say who is calling. That is exactly why the identity
-// is injected generically here rather than embedded in each request struct —
+// is injected generically here rather than embedded in each request struct -
 // there is no struct to embed it in when params is nil.
 //
 // Values are carried as json.RawMessage and re-marshaled verbatim, so this is
@@ -318,7 +318,7 @@ func WithCaller(params any, callerID string, ref *CallerRef) (json.RawMessage, e
 
 // CallerOf reads the presented identity out of raw params, or "" when absent,
 // malformed, or not an object. It never errors: an unreadable credential is
-// simply an absent one, and the authorization policy — not the decoder — is
+// simply an absent one, and the authorization policy: not the decoder: is
 // what decides whether absence is acceptable for a given method.
 func CallerOf(params json.RawMessage) string {
 	if len(params) == 0 {
@@ -344,7 +344,7 @@ func CallerOf(params json.RawMessage) string {
 // An authenticated aria renders "aria <id>"; an asserted label renders BARE.
 // The asymmetry is load-bearing: SanitizeLabel reserves the "aria " prefix, so
 // an assertion can never dress itself as an aria. Empty means UNKNOWN, and
-// callers must render nothing at all rather than "unknown" or a blank line —
+// callers must render nothing at all rather than "unknown" or a blank line -
 // most messages in an existing log have no sender and should look untouched.
 func Attribution(figaroID, label string) string {
 	if figaroID != "" {
@@ -362,7 +362,7 @@ func Attribution(figaroID, label string) string {
 //
 // It is therefore trust-on-assertion, like the credential itself. Anything
 // that can set FIGARO_ARIA can claim that id. That is honest for a 0600 unix
-// socket and is why nothing here feeds an authorization decision — the policy
+// socket and is why nothing here feeds an authorization decision: the policy
 // reads authz.Identity, which distinguishes proof from assertion; this only
 // says whose name to print.
 func SenderFrom(params json.RawMessage, dukeTitle func() string) string {

@@ -16,7 +16,7 @@ import (
 // when copying a file into ~/.config was the only way to have a skill at all.
 // First-party skills ship inside the binary now and load from there, so that
 // copy bought nothing and cost something real: a config skill shadows a
-// bundled one BY NAME, and back then config won — so the copy outranked the
+// bundled one BY NAME, and back then config won: so the copy outranked the
 // shipped skill forever and drifted away from it. One such shadow in this
 // repo's history ended up 201 lines behind on one file while holding the only
 // copy of a section on another. The loader now lets the BINARY win, so an

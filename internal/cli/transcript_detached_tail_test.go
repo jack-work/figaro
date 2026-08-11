@@ -24,8 +24,8 @@ import (
 //
 // It replaces TestTranscript_CommittedWatermarkReconcilesHeldOpen, which
 // pinned the opposite: that the frozen snapshot (heldOpen) was kept in sync
-// with what committed. There is no snapshot now — the window is the store's
-// tail interval and the open turn is the last thing in it — so both halves are
+// with what committed. There is no snapshot now: the window is the store's
+// tail interval and the open turn is the last thing in it: so both halves are
 // asserted directly. Restore heldOpen and the first half fails; make the
 // window re-derive its floor while detached and the second half fails.
 func TestDetachedTailAdvancesAndScreenHoldsStill(t *testing.T) {

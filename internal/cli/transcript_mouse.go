@@ -11,8 +11,8 @@ import (
 
 // THE POINTER, as a first-class way to address a node.
 //
-// The pager already had two ways to name a node — ^N/^P walk the ref list, and
-// `:12.3` names a coordinate — and a wheel that scrolled. What it did not have
+// The pager already had two ways to name a node: ^N/^P walk the ref list, and
+// `:12.3` names a coordinate, and a wheel that scrolled. What it did not have
 // is the gesture every reader tries first: pointing at the thing.
 //
 // The whole gesture is two rules:
@@ -33,7 +33,7 @@ import (
 //     recorded in renderFrame from the same geometry the body rows came from
 //     (see rowRefs). Nothing here re-derives an offset, because between the
 //     paint and the click a live token can arrive, the tail can be re-tuned, and
-//     a panel can change the body height — and the user pointed at what they
+//     a panel can change the body height, and the user pointed at what they
 //     SAW.
 //
 //  2. A CLICK NEVER MOVES THE PAGE. The row clicked is on screen by
@@ -48,8 +48,8 @@ import (
 //
 // It reports whether anything happened, so the caller can decide whether the
 // click was worth a frame (and whether it should disturb a search prompt). A
-// click on chrome — a voice header, a separator rule, a blank between nodes, a
-// gap sentinel, the footer — is deliberately a NO-OP rather than a
+// click on chrome, a voice header, a separator rule, a blank between nodes, a
+// gap sentinel, the footer: is deliberately a NO-OP rather than a
 // clear-selection: those rows are half the screen, and losing a selection to a
 // stray click that landed one row off is a worse outcome than a click that does
 // nothing.
@@ -71,7 +71,7 @@ func (t *transcript) clickAt(row int, extend bool) bool {
 	}
 	// Detach from the tail, as every selection gesture does: a selection the live
 	// stream scrolls out from under is not a selection. Unlike selectNode this
-	// does NOT then scroll — see the file comment, property 2.
+	// does NOT then scroll: see the file comment, property 2.
 	t.stopFollowing()
 	return t.selectRef(ref, extend)
 }
@@ -90,7 +90,7 @@ func (t *transcript) clickable(row int) bool {
 
 // nodeAt is the livedoc node behind a ref, when the ref names one. The
 // inquiry's sentinel ref (inquiryNode) names TEXT ON THE TURN and no node, so
-// it correctly answers false — the question has no collapsed form to toggle.
+// it correctly answers false: the question has no collapsed form to toggle.
 func (t *transcript) nodeAt(ref nodeRef) (node livedoc.Node, ok bool) {
 	find := func(m aria.Message) {
 		if ok || m.Turn != ref.turn {
@@ -130,7 +130,7 @@ func (t *transcript) toggleExpansionOf(ref nodeRef) bool {
 //
 // One row and not four is a real constraint, not taste: the panel is drawn
 // INSIDE the frame, so every row it takes is a row of transcript the reader
-// loses while it is open — and a following viewport's offset moves with it (see
+// loses while it is open, and a following viewport's offset moves with it (see
 // the off= rebases documented in keymap_input_equiv_test.go).
 func mouseHelpRows() []string {
 	const keys = "mouse"

@@ -15,7 +15,7 @@ import (
 // ever set ENABLE_VIRTUAL_TERMINAL_PROCESSING, so the renderer's escapes were
 // only honoured when something else had already turned it on. Windows Terminal
 // does (measured: stdout mode 0x0007); a bare conhost does not (0x0003), and
-// there \x1b[?1049h is inert — the pager's frames land in the PRIMARY buffer
+// there \x1b[?1049h is inert: the pager's frames land in the PRIMARY buffer
 // as ordinary text and the whole transcript is left in the user's scrollback.
 // Console mode belongs to the console, not the process, so anything sharing it
 // (a tool's child process) can clear the flag mid-session, which is why the
@@ -33,7 +33,7 @@ import (
 // see ArmDeferredWrap and vtOutputMode below.
 //
 // The restore puts both handles back, and it is the same closure the renderer
-// already unwinds — so this costs no new lifecycle.
+// already unwinds: so this costs no new lifecycle.
 func MakeRaw(fd int) (func(), error) {
 	h := windows.Handle(fd)
 	var old uint32
@@ -52,7 +52,7 @@ func MakeRaw(fd int) (func(), error) {
 // It is SEPARATE from MakeRaw, and called EARLIER, because the two answer
 // different questions: MakeRaw is about the console we READ (and only runs on
 // an interactive TTY path), while this is about the console we WRITE. figaro
-// writes its first escapes — autowrapOff+cursorHide — before any raw-mode
+// writes its first escapes, autowrapOff+cursorHide: before any raw-mode
 // session exists, and paths that never take raw mode at all (`figaro show`
 // rendering markdown, a non-interactive listen) still emit ANSI. Arming inside
 // MakeRaw left every one of those unarmed, which on a bare conhost means the
@@ -104,7 +104,7 @@ func cookedInputMode(mode uint32) uint32 {
 // neither depends on the other.
 //
 // A non-console stdin (piped, redirected) degrades to a no-op restore, as in
-// ArmOutput — `echo y | figaro …` is an ordinary case, not an error.
+// ArmOutput: `echo y | figaro …` is an ordinary case, not an error.
 func ArmCookedInput() func() {
 	h := windows.Handle(os.Stdin.Fd())
 	var old uint32
@@ -118,7 +118,7 @@ func ArmCookedInput() func() {
 }
 
 // SanitizeInput repairs a console left in raw mode by a figaro that died
-// without unwinding — a crash, a taskkill, a window closed mid-session.
+// without unwinding, a crash, a taskkill, a window closed mid-session.
 //
 // It is deliberately NOT paired with a restore: the state it replaces is
 // wreckage, and handing it back to the shell is how the wreckage propagates
@@ -142,7 +142,7 @@ func SanitizeInput() {
 }
 
 // DISABLE_NEWLINE_AUTO_RETURN is deliberately NOT set here. It defers the
-// right-edge wrap, which the painter wants — but it also stops a bare LF from
+// right-edge wrap, which the painter wants: but it also stops a bare LF from
 // implying a carriage return, and every line-oriented command (`list`, `show`,
 // `status`) writes bare \n through fmt.Println. Armed globally at startup it
 // staircased all of them rightward until they wrapped, which reads as "figaro

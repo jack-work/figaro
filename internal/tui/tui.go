@@ -1,4 +1,4 @@
-// Package tui — figaro's bubbletea-based first-run components.
+// Package tui: figaro's bubbletea-based first-run components.
 //
 // Built on top of charmbracelet/huh. Two components:
 //
@@ -13,7 +13,7 @@
 // Both components fall back to a plain numbered prompt when:
 //   - stdin/stdout is not a TTY, or
 //   - NO_COLOR is set, or
-//   - the caller passes Interactive(false) — the figaro config knob.
+//   - the caller passes Interactive(false): the figaro config knob.
 //
 // The fallback path is implemented in firstrun.go's existing
 // numbered-menu helpers; the TUI components defer to those when
@@ -190,7 +190,7 @@ func PickProvider(title string, options []ProviderOption) (string, error) {
 }
 
 // zeroString tries to overwrite a string's backing bytes. Best-effort
-// — Go's string immutability means the runtime may have made copies,
+// : Go's string immutability means the runtime may have made copies,
 // but doing the wipe here at least kills the local reference and
 // shortens the window before GC reclaims.
 func zeroString(s *string) {

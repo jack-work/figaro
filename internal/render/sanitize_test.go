@@ -79,7 +79,7 @@ func TestSanitize_KeepsSGR(t *testing.T) {
 }
 
 func TestSanitize_KeepsCursorMoves(t *testing.T) {
-	// Painter uses these — leave them alone.
+	// Painter uses these: leave them alone.
 	in := "row1\x1b[Krow2\x1b[1Brow3"
 	got := SanitizeForTerminal(in)
 	if got != in {

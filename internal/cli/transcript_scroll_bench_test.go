@@ -71,7 +71,7 @@ func heavyTranscript(b *testing.B, messages, outputLines int) (*transcript, *ari
 
 // BenchmarkTranscriptScrollHeavy is the headline number: one j/k scroll step in
 // a transcript whose retained pages are heavy. Nothing about the content
-// changed — only the viewport offset — so an ideal implementation costs
+// changed: only the viewport offset: so an ideal implementation costs
 // O(viewport), not O(retained rows).
 func BenchmarkTranscriptScrollHeavy(b *testing.B) {
 	for _, outputLines := range []int{20, 200} {

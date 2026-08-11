@@ -23,7 +23,7 @@ func rawPatch(kv map[string]string) *rpc.FormPatch {
 	return &rpc.FormPatch{Set: set}
 }
 
-// An unbound form lives a full life — minted, read, patched, watched —
+// An unbound form lives a full life: minted, read, patched, watched -
 // with NO agent ever constructed: the hub serves reads from the store and
 // writes through the backend's single form writer, and fans the committed
 // delta to attached clients itself.
@@ -87,7 +87,7 @@ func TestFormNodeLifecycleWithoutAnAgent(t *testing.T) {
 	require.Equal(t, `"canary"`, string(raw))
 
 	// A turn-shaped method gets a refusal that names the species and the
-	// remedy — never a wake attempt, never a provider error.
+	// remedy: never a wake attempt, never a provider error.
 	err = client.Call(callCtx, rpc.MethodQua, rpc.QuaRequest{Text: "hello"}, &struct{}{})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "is a form, not a figaro")
@@ -97,7 +97,7 @@ func TestFormNodeLifecycleWithoutAnAgent(t *testing.T) {
 	require.Nil(t, a.Registry.Get(created.FormID), "a form acquired an agent")
 }
 
-// figaro.set on a DORMANT aria is served without waking it — the same
+// figaro.set on a DORMANT aria is served without waking it: the same
 // write path forms use. This is also the naked-figaro remedy: a bind-null
 // figaro whose wake fails for want of provider keys can only be repaired
 // through a set that does not wake.
@@ -154,7 +154,7 @@ func TestFormCreateParentRules(t *testing.T) {
 	require.Error(t, err, "an empty birth patch must be refused")
 }
 
-// Listing recency now comes from figwal record timestamps — and reading
+// Listing recency now comes from figwal record timestamps, and reading
 // it NEVER wakes a dormant aria. The row carries a real LastActive while
 // the registry stays empty.
 func TestListRecencyDoesNotWakeDormantArias(t *testing.T) {
@@ -180,7 +180,7 @@ func TestListRecencyDoesNotWakeDormantArias(t *testing.T) {
 }
 
 // form.bind births a DORMANT figaro from a form: state inherited,
-// aria_id stamped, endpoint dialable — and no agent, no provider, no
+// aria_id stamped, endpoint dialable, and no agent, no provider, no
 // registry entry until first use. Dressed with a real outfit it then
 // wakes and answers; naked (bind null) it mints fine and fails its
 // first turn with the provider error, at the right time.
@@ -219,7 +219,7 @@ func TestFormBindBirthsDormantFigaro(t *testing.T) {
 }
 
 // bind null mints the naked figaro; its first turn fails for want of a
-// provider — at the turn, not at the mint.
+// provider, at the turn, not at the mint.
 func TestBindNullFailsAtFirstTurnNotAtMint(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
@@ -253,7 +253,7 @@ func TestBindNullFailsAtFirstTurnNotAtMint(t *testing.T) {
 // creates share ONE parent form (the reuse that shares the rendered
 // prefix and the provider's cache); reload with unchanged files is a
 // no-op; a changed outfit file remints on the NEXT create, not at
-// reload; a hand-patched default form remints too — the ad-hoc patch is
+// reload; a hand-patched default form remints too: the ad-hoc patch is
 // never silently propagated.
 func TestDefaultFormLifecycle(t *testing.T) {
 	a, acli, ctx, dir := daemonFixtureDir(t)
@@ -292,7 +292,7 @@ mantra = "v2"
 	require.NoError(t, err)
 	require.NotEqual(t, p1, parentOf(four.FigaroID), "changed files did not remint")
 
-	// Hand-patch the (new) default form, reload: remint again — the patch
+	// Hand-patch the (new) default form, reload: remint again: the patch
 	// must not silently reach every future aria.
 	p4 := parentOf(four.FigaroID)
 	_, err = a.Backend.ApplyForm(p4, *rawPatch(map[string]string{"sneaky": `true`}))

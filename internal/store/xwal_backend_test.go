@@ -74,7 +74,7 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 	}
 	// Commit a turn so the set is below the fork point (the realistic
 	// flow: set rides with its turn). A set with NO intervening turn sits
-	// at the fork boundary and would ride only with the continuation —
+	// at the fork boundary and would ride only with the continuation -
 	// a known edge to revisit.
 	if _, err := ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleOutput}}); err != nil {
 		t.Fatal(err)
@@ -263,7 +263,7 @@ func TestXwalBackend_CauterizedOutfitFork(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}})
 	}
-	// Fork conv at LT 2 — owned by the OUTFIT. Cauterized => a NEW conversation
+	// Fork conv at LT 2: owned by the OUTFIT. Cauterized => a NEW conversation
 	// sharing the outfit, NOT a re-split of the outfit into a continuation.
 	cont, sib, err := b.ForkAt(conv, 2)
 	if err != nil {
@@ -316,7 +316,7 @@ func TestXwalBackend_ForestVectors(t *testing.T) {
 		}
 	}
 	// Sibling roots are ordered by id (random hex), so c1/c2 may land in either
-	// order — assert the structure, not a fixed creation-order assignment: both
+	// order, assert the structure, not a fixed creation-order assignment: both
 	// top-level roots have distinct length-1 vectors forming the set {[0],[1]},
 	// and alt is c1's branch (its parent's vector + [0]).
 	if len(got[c1]) != 1 || len(got[c2]) != 1 {

@@ -47,7 +47,7 @@ func (m *mockProvider) Send(ctx context.Context, in provider.SendInput, bus prov
 }
 
 // streamingMockProvider emits its delta, then gives the drain loop time to
-// compose a PRE-APPEND live frame before appending — the window where
+// compose a PRE-APPEND live frame before appending: the window where
 // the in-flight assembly has no log entry behind it. The instant-append
 // mockProvider never exposes that window.
 type streamingMockProvider struct{ response string }
@@ -199,7 +199,7 @@ func mockPushAssistant(figLog store.Log[message.Message], cache store.Log[[]json
 
 // --- Test helpers ---
 
-// chanNotifier is the test-side adapter for figaro.Notifier — pipes
+// chanNotifier is the test-side adapter for figaro.Notifier: pipes
 // every fanout call into a buffered channel so tests can assert on
 // notification ordering. close-once is guarded by mu so unsub is safe
 // to call from anywhere.
@@ -594,7 +594,7 @@ func TestAgent_FIFOOrdering(t *testing.T) {
 	// Two prompts submitted back to back are answered IN ORDER. Whether they
 	// arrive as one turn or two is timing, not contract: the drain folds the
 	// contiguous run it finds, so a second prompt that lands before the first
-	// is lifted joins it — which is the point (four chained sends should be one
+	// is lifted joins it: which is the point (four chained sends should be one
 	// question, not four turns to sit through). What must never change is the
 	// order they reach the model in.
 	a := newTestAgent("")
@@ -630,7 +630,7 @@ func TestAgent_FIFOOrdering(t *testing.T) {
 		}
 	}
 
-	// Both prompts reached the conversation, in the order they were sent —
+	// Both prompts reached the conversation, in the order they were sent -
 	// whether as one input message or two.
 	var input string
 	for _, m := range a.Context() {
@@ -696,7 +696,7 @@ func TestAgent_Kill(t *testing.T) {
 
 	a.Kill()
 
-	// Kill clears subscribers but doesn't close test channels — they're
+	// Kill clears subscribers but doesn't close test channels: they're
 	// the test's own resource. Confirm no further notifications arrive.
 	select {
 	case n, ok := <-ch:
@@ -747,7 +747,7 @@ func TestAgent_PanicRecovery(t *testing.T) {
 
 	ch, _ := subscribeChan(a)
 
-	// First prompt — will panic inside the agent. The new contract is
+	// First prompt: will panic inside the agent. The new contract is
 	// that every turn (success or failure) terminates with turn.done so
 	// the CLI never hangs; an error surfaces as the done reason.
 	submitPrompt(a, "trigger panic")
@@ -770,7 +770,7 @@ func TestAgent_PanicRecovery(t *testing.T) {
 	}
 	assert.Contains(t, doneReason, "error", "panic should surface as an error turn.done")
 
-	// Second prompt — should work because the agent restarted.
+	// Second prompt: should work because the agent restarted.
 	submitPrompt(a, "after recovery")
 
 	gotDone = false
@@ -787,7 +787,7 @@ func TestAgent_PanicRecovery(t *testing.T) {
 	}
 
 	// Send-path panics are recovered in the spawned goroutine and
-	// surface as an Error notification — the conversation history
+	// surface as an Error notification: the conversation history
 	// is preserved (no full agent crash + reset). The second prompt's
 	// assistant turn should be the most recent entry.
 	msgs := a.Context()
@@ -826,7 +826,7 @@ func TestAgent_PanicRecovery_ContextReset(t *testing.T) {
 	}
 errorReceived:
 
-	// Send-path panics no longer wipe the conversation — the user
+	// Send-path panics no longer wipe the conversation: the user
 	// prompt that triggered the panic stays in the figaro log and
 	// the agent emits an Error notification. Token counters stay at
 	// zero because no assistant response landed.
@@ -921,7 +921,7 @@ func TestAgent_PersistenceRestoresOnCreate(t *testing.T) {
 firstDone:
 	a1.Kill()
 
-	// Second agent with the same conversation id + backend — restores.
+	// Second agent with the same conversation id + backend: restores.
 	a2 := figaro.NewAgent(figaro.Config{
 		Projector:  uiir.New(nil),
 		ID:         conv,
@@ -1050,7 +1050,7 @@ func TestAgent_BootRepairsDanglingToolUse(t *testing.T) {
 }
 
 func TestAgent_EphemeralWhenNoBackend(t *testing.T) {
-	// No Backend — should behave as before (no files written).
+	// No Backend: should behave as before (no files written).
 	tmpDir := t.TempDir()
 
 	a := figaro.NewAgent(figaro.Config{
@@ -1095,7 +1095,7 @@ func (s *slowProvider) SetModel(model string)                                   
 func (s *slowProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) { return nil, nil }
 
 // Send blocks until ctx is cancelled, then returns the cancellation
-// error — mirroring what a real HTTP SSE stream does when its request
+// error: mirroring what a real HTTP SSE stream does when its request
 // context is cancelled mid-flight.
 func (s *slowProvider) Send(ctx context.Context, _ provider.SendInput, bus provider.Bus) error {
 	if s.started != nil {
@@ -1266,7 +1266,7 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 
 	// Fold every frame through a real aria client: id churn between the
 	// in-flight and appended composition of the SAME message lands as two
-	// node ids across different frames — invisible per-frame, but the
+	// node ids across different frames: invisible per-frame, but the
 	// folded view shows a committed assistant message with two nodes.
 	cl := aria.NewClient()
 	for _, fr := range append(append([]rpc.Notification{}, turn1...), turn2...) {
@@ -1278,7 +1278,7 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 		require.NoError(t, json.Unmarshal(b, &r))
 		cl.Apply(r)
 	}
-	// Each turn carries its question as TEXT and exactly one assistant reply —
+	// Each turn carries its question as TEXT and exactly one assistant reply -
 	// a second turn must not re-compose the first turn's nodes into itself. A
 	// turn can close as several messages, so aggregate by turn before judging.
 	byTurn := map[int][]livedoc.Node{}
@@ -1330,7 +1330,7 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 // (Committed[].Full()), never as a live-then-close flicker. If a Live frame
 // with Role=="user" (or an empty-Role live frame at the user's LT) ever
 // appears, the CLI paints an intermediate state before the durable transcript
-// contains the message — the behavior we're deliberately eliminating.
+// contains the message: the behavior we're deliberately eliminating.
 func TestAgent_UserPromptCommitsWithoutLiveFrame(t *testing.T) {
 	a := newTestAgent("the reply")
 	defer a.Kill()
@@ -1359,7 +1359,7 @@ loop:
 
 	// The prompt is complete the instant it exists, so it must arrive as
 	// already-closed content and never stream. It is TEXT ON THE TURN, so what
-	// arrives is a part carrying Inquiry and no nodes at all — if it ever
+	// arrives is a part carrying Inquiry and no nodes at all: if it ever
 	// appeared inside a Live delta the client would render it in flight and
 	// then re-render it on commit, the flicker between send and durable commit.
 	sawInquiryCommitted := false
@@ -1419,7 +1419,7 @@ func TestAgent_QueuedPromptsRPC(t *testing.T) {
 
 	a.SubmitPrompt(rpc.QuaRequest{Text: "one"})
 	a.SubmitPrompt(rpc.QuaRequest{Text: "two"})
-	a.SubmitPrompt(rpc.QuaRequest{Text: ""}) // carrier — must be omitted
+	a.SubmitPrompt(rpc.QuaRequest{Text: ""}) // carrier: must be omitted
 
 	epoch, snap := a.QueuedPrompts(false)
 	require.NotEmpty(t, epoch, "the queue view names the generation its ids belong to")

@@ -93,7 +93,7 @@ func TestSubmit_DoesNotCoalesce(t *testing.T) {
 }
 
 // An IDLE aria has no turn to interrupt, so Interrupt returns before it
-// reaches the inbox at all — the fold requires a live turn by construction
+// reaches the inbox at all: the fold requires a live turn by construction
 // (Agent.Interrupt's early return), and an idle aria's queue is being drained
 // by the actor anyway. What matters at this level is that the no-op is clean:
 // the aria is not left marked interrupted, so the next turn is not poisoned.
@@ -134,8 +134,8 @@ func TestInterrupt_PromptArrivingAfterTheFoldStaysSeparate(t *testing.T) {
 	assert.Equal(t, "late", texts[1])
 }
 
-// ITEM 2. A clearing hangup drops the queue and hands it back VERBATIM — one
-// entry per message as typed, each with its own id — so `figaro cut -j` is a
+// ITEM 2. A clearing hangup drops the queue and hands it back VERBATIM: one
+// entry per message as typed, each with its own id: so `figaro cut -j` is a
 // save, not a lament. Coalescing first would return one blob and defeat that.
 func TestHangup_ClearDrainsVerbatim(t *testing.T) {
 	a, prov, done := newQueuedAgent(t, "clear-1")
@@ -158,7 +158,7 @@ func TestHangup_ClearDrainsVerbatim(t *testing.T) {
 	assert.Empty(t, queuedTextsOf(a), "and the aria is left with nothing to answer")
 }
 
-// The keep path reports the queue as of the hangup — post-fold, because that
+// The keep path reports the queue as of the hangup: post-fold, because that
 // is what the aria will actually answer.
 func TestHangup_KeepReportsTheFoldedQueue(t *testing.T) {
 	a, prov, done := newQueuedAgent(t, "keep-1")

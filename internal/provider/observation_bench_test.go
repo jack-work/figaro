@@ -15,13 +15,13 @@ import (
 //
 // The unification made every IR append stamp the whole observed set's
 // positions, and the translator derives each member's patch-fold between
-// consecutive stamps. That derivation runs on EVERY translate — warm and cold,
-// for every provider — so its slope in the number of observed forms is the
+// consecutive stamps. That derivation runs on EVERY translate: warm and cold,
+// for every provider: so its slope in the number of observed forms is the
 // number that decides whether a figaro can study many things or few.
 //
 // Commissioned when the storm harness went to 50 concurrent arias on one
 // role: correctness at that scale was measured live, and this is the other
-// half — what one aria pays per turn for each thing it watches.
+// half: what one aria pays per turn for each thing it watches.
 
 // benchForm is a Form accessor over a fixed patch history.
 type benchForm struct {

@@ -24,7 +24,7 @@ func fakeSchema() interface{} {
 }
 
 // systemSnapshot returns a form snapshot that injects the given
-// text as system.credo — the canonical source for the projection's
+// text as system.credo: the canonical source for the projection's
 // system block.
 // withKey returns snap plus one key. Snapshots are immutable values,
 // so derived boards are built with Apply rather than assigned into.
@@ -94,7 +94,7 @@ func TestProjectMessages_CacheBreakpoints(t *testing.T) {
 	msgs := []message.Message{
 		{Role: message.RoleInput, Content: []message.Content{message.TextContent("first turn")}},
 		{Role: message.RoleOutput, Content: []message.Content{message.TextContent("first reply")}},
-		{Role: message.RoleInput, Content: []message.Content{message.TextContent("second turn — current prompt")}},
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("second turn: current prompt")}},
 	}
 	tools := []provider.Tool{
 		{Name: "alpha", Description: "first", Parameters: fakeSchema()},
@@ -129,13 +129,13 @@ func TestProjectMessages_CacheBreakpoints(t *testing.T) {
 
 // TestProjectMessages_SingleMessageStillMarksTheTail verifies that a first
 // turn is marked. The old rule suppressed the message-level breakpoint
-// below two messages, so an aria's opening turn — typically the largest
-// stable prefix it will ever have, credo plus tools — wrote no cache at all
+// below two messages, so an aria's opening turn: typically the largest
+// stable prefix it will ever have, credo plus tools: wrote no cache at all
 // and turn two paid full price for it.
 func TestProjectMessages_SingleMessageStillMarksTheTail(t *testing.T) {
 	a := &Anthropic{}
 	msgs := []message.Message{
-		{Role: message.RoleInput, Content: []message.Content{message.TextContent("first prompt — nothing on disk yet")}},
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("first prompt: nothing on disk yet")}},
 	}
 
 	req, _ := a.projectMessagesWithModel(a.encodeAll(msgs), systemSnapshot(t, "you are a test agent"), nil, 1024, false, "claude-test")
@@ -234,8 +234,8 @@ func TestProjectMessages_PerLTTag(t *testing.T) {
 // form key set at all.
 //
 // It was not. The direct provider marked breakpoints only when
-// system.cache_control was explicitly set, so every default aria — this is
-// the provider you get without UseOfficialSDK — sent zero cache_control
+// system.cache_control was explicitly set, so every default aria: this is
+// the provider you get without UseOfficialSDK: sent zero cache_control
 // markers and re-paid full input price for its entire prefix every turn.
 //
 // Scale, measured on two live figaro arias running the SDK path (which did
@@ -306,7 +306,7 @@ func TestNeverExceedsTheAPIMarkerCap(t *testing.T) {
 
 // TestTTLIsAFieldNotAType is bug 3: `figaro set system.cache_control 1h`
 // used to write the retention into the type field, producing
-// {"type":"1h"} — a documented setting that the API rejects.
+// {"type":"1h"}, a documented setting that the API rejects.
 func TestTTLIsAFieldNotAType(t *testing.T) {
 	a := &Anthropic{}
 	msgs := []message.Message{

@@ -13,7 +13,7 @@ import (
 // Paint-bandwidth rig (axis B).
 //
 // The shared scroll rig writes to io.Discard, which makes the terminal look
-// free. On a real tty — and especially over ssh or a tmux pipe — the bytes the
+// free. On a real tty, and especially over ssh or a tmux pipe: the bytes the
 // pager pushes per scroll step are the thing you feel. `paint` diffs against
 // t.prev, but a one-line scroll changes EVERY body row, so the old full-diff
 // path re-transmits the whole screen every step.

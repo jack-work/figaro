@@ -4,9 +4,9 @@ Captured mid-build while the fork tree is being tested. Ordered roughly
 by "design is settled" → "still open." See PHASE_B_PLAN.md for the
 original plan and the commit log on `xwal-forking` for what landed.
 
-## 0. USER NOTES (2026-06-27, captured verbatim-ish — highest priority)
+## 0. USER NOTES (2026-06-27, captured verbatim-ish: highest priority)
 
-### 0a. Aria "trunk" — thread identity across forks
+### 0a. Aria "trunk": thread identity across forks
 The current fork semantics feel odd: forking freezes the parent and mints
 two brand-new ids, so nothing visibly "continues the thread." Fix with a
 **trunk tag**: a thread/limb identity separate from the per-node aria id.
@@ -43,7 +43,7 @@ trunk tag on `nodeRec` (continuation inherits parent's, alternative mints
 a new one + mantra/name); vector derivable from the tree (path of child
 indices) or stored; `list` renders vector|mantra|id with nesting.
 
-### 0b. `fig list` / `fig ls` — `--json` + visual nesting (still unbuilt)
+### 0b. `fig list` / `fig ls`: `--json` + visual nesting (still unbuilt)
 Originally requested, not yet built (was build-order step 6). Default
 view: hierarchy with the vector-column nesting above (~10 most-recent +
 lineage, depth-truncated). `--json` for the machine view. Fold together
@@ -51,7 +51,7 @@ with 0a (the trunk/vector model IS the list model).
 
 ### 0c. Data-quality bugs found on disk (diagnosed 2026-06-27)
 Inspecting `arias/ir/<outfit>/<conv>/...jsonl`:
-- **`logical_time` is always 0 on disk** — never written meaningfully
+- **`logical_time` is always 0 on disk**: never written meaningfully
   (only set on read via `unwrapMessages` from the frame `_idx`). The real
   LT is the frame `_idx`/`m` (coherent + monotonic). Fix: drop it from the
   persisted payload (`omitempty` + never set at write); frame index is the
@@ -99,7 +99,7 @@ append exactly at seal, and add read-through/fallback. Do not revive the retired
 
 Today `storeConfig()` hardcodes `ir` + `chalkboard`; translations are
 added dynamically via `AddChannel`. Generalize: a declarative channel
-registry so `ui`, `translations/*`, future projections are uniform —
+registry so `ui`, `translations/*`, future projections are uniform -
 each a "related tree" in the per-aria xwal store, all joint-forked
 together. This is the generalization the user described; the machinery
 (N-ary channels, joint fork, AddChannel) already exists.
@@ -122,16 +122,16 @@ stays cheap later.)
 - **`figaro fork` CLI**: DONE.
 - **TTL eviction of idle aria handles**: XwalBackend currently keeps
   handles until Fork/Remove/Close (warm cache, bounded by #arias touched
-  — fine for a local daemon). Add refcount+TTL if churn shows up.
+: fine for a local daemon). Add refcount+TTL if churn shows up.
 
 ## 5. Known correctness edge (open)
 
 A chalkboard `set` keyed to the next IR LT, with a fork at that exact LT
-and NO intervening turn, lands the pending patch on the fork boundary —
+and NO intervening turn, lands the pending patch on the fork boundary -
 rides only the continuation, not the alternative. Realistic flow (set
 rides its committed turn) inherits to both. Proper fix: reducible channel
 should inherit entries keyed beyond the main tail (pending/future) on
-fork — a small xwal refinement.
+fork, a small xwal refinement.
 
 ## 6. Cache-control fork-graph scoring (longer horizon)
 

@@ -127,7 +127,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	//
 	// SEAM (Phase 3): this reads the whole log and pages in memory, because
 	// every selector now speaks turn ids and turns are not derivable from an LT
-	// window — you cannot know which LT a turn starts at without walking. The
+	// window: you cannot know which LT a turn starts at without walking. The
 	// paginated turn-aware read (Page/TurnPart, byte budget, bidirectional)
 	// replaces this wholesale; when it lands, `show` becomes a thin client of it
 	// and this block collapses to one call.
@@ -165,7 +165,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	lo, hi := selectTurnRange(turns, opts)
 
 	if opts.jsonOut {
-		// The UI IR wire shape VERBATIM — an aria.Page, exactly what figaro.read
+		// The UI IR wire shape VERBATIM, an aria.Page, exactly what figaro.read
 		// returns and figaro.aria pushes. Not a bare []Turn, not a shadow struct:
 		// the same bytes a client folds, so `show --json` and the live stream can
 		// never describe a conversation differently.
@@ -198,7 +198,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		fmt.Println()
 		// The DEFAULT is what `figaro listen` draws: the same composer, the
 		// same rows, no metadata. `-o` adds the addresses and timestamps Ctrl-O
-		// shows in the pager — it used to be on unconditionally, which meant
+		// shows in the pager: it used to be on unconditionally, which meant
 		// every `show` printed detail nobody had asked for.
 		rows := renderTurnRows(aria.Message{
 			Turn: int(u.ID), Role: livedoc.RoleOutput,
@@ -220,7 +220,7 @@ func mustAtoi(s string) int {
 
 // selectUnitRange resolves the [lo,hi) unit window from the flags:
 // selectTurnRange picks the slice of turns to show. Every selector speaks TURN
-// IDs — the same coordinate `fig send <aria>:<turn>` takes and the same one the
+// IDs: the same coordinate `fig send <aria>:<turn>` takes and the same one the
 // header prints. Before this there were three coordinate systems in one
 // command: --from/--to were slice indices, --before was an LT, and the printed
 // label was a third thing. Now there is one.
@@ -228,7 +228,7 @@ func mustAtoi(s string) int {
 //	--all           everything
 //	--from A --to B turns A..B inclusive
 //	--before T -n N the N turns ending just before turn T (paginate backwards)
-//	default  -n N   the last N turns — paginate backwards from the end
+//	default  -n N   the last N turns: paginate backwards from the end
 //
 // Pagination is bidirectional by construction: --from walks forward from an
 // anchor, --before walks backward from one, so a scrolling client can pull an

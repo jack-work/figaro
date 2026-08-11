@@ -50,8 +50,8 @@ func (r *slowHistoryReader) callCount() int {
 
 // TestTranscriptScrollDoesNotBlockOnHistoryFetch is the stall test. With a
 // 750 ms history read outstanding, a burst of scroll keys must still be
-// consumed promptly — the frames the user is scrolling through do not wait on
-// the RPC — and the page must land once it arrives.
+// consumed promptly: the frames the user is scrolling through do not wait on
+// the RPC, and the page must land once it arrives.
 func TestTranscriptScrollDoesNotBlockOnHistoryFetch(t *testing.T) {
 	const delay = 750 * time.Millisecond
 	reader := &slowHistoryReader{history: transcriptHistory(300), delay: delay}

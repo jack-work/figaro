@@ -71,7 +71,7 @@ func (r *Registry) Get(id string) figaro.Figaro {
 
 // Kill removes a figaro, unbinds its PIDs, and kills it. The id stays
 // registered until the kill (which waits out the drain loop's final seal
-// appends) completes — unpublishing first would let a concurrent restore
+// appends) completes: unpublishing first would let a concurrent restore
 // run tail repair against the still-sealing agent.
 func (r *Registry) Kill(id string) error {
 	r.mu.Lock()
@@ -107,7 +107,7 @@ func (r *Registry) Kill(id string) error {
 // The differences from Kill are the whole feature, so they are spelled out:
 // bindings survive (a bound shell's next bare prompt must land on the same
 // trunk, not mint a new aria), figaroPIDs survives (the sweep must not
-// silently detach a terminal), and the caller does NOT drop the hub — the
+// silently detach a terminal), and the caller does NOT drop the hub: the
 // endpoint outliving the agent is the point.
 //
 // Refuses an aria with a turn in flight, and re-checks that immediately
@@ -164,7 +164,7 @@ func (r *Registry) Retiring(id string) bool {
 // fact, not a memory fact, so it deliberately does NOT require the aria to
 // be resident: binding a dormant aria is legal and does not wake it. This is
 // what makes `figaro attend` free, and what lets a bound shell keep its
-// attendance across a hibernate — without it, the sweep would silently
+// attendance across a hibernate: without it, the sweep would silently
 // detach every terminal it reclaimed.
 func (r *Registry) Bind(pid int, figaroID string, lt uint64) error {
 	if figaroID == "" {

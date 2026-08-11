@@ -1,7 +1,7 @@
 package cli
 
 // ---------------------------------------------------------------------------
-// TMUX SMOKE HARNESS — the tests a unit test provably cannot write.
+// TMUX SMOKE HARNESS: the tests a unit test provably cannot write.
 //
 // WHY THIS FILE EXISTS. On 2026-07-25, EIGHT separate times, a green test
 // certified broken code. Every one was caught by a human or an agent driving a
@@ -14,8 +14,8 @@ package cli
 //   - the paging double treated `limit` as a COUNT of parts; production used a
 //     BYTE budget. ~30 tests green while the pager rendered ONE node for an
 //     800-node aria.
-//   - a renderer test asserted over compose() OUTPUT — what figaro DECIDES to
-//     paint — and so could not observe rows scrolling away. Green while the
+//   - a renderer test asserted over compose() OUTPUT: what figaro DECIDES to
+//     paint, and so could not observe rows scrolling away. Green while the
 //     user's reply was lost.
 //   - composer tests fed WHOLE STRINGS through consume(); a real user types one
 //     byte per read. That hid a byte-vs-rune bug that mojibaked all non-ASCII.
@@ -28,7 +28,7 @@ package cli
 // back what a REAL user would see.
 //
 // DELIBERATELY NOT HERMETIC. These tests use a real provider. A fake provider
-// would be one more double free to drift from production — the exact failure
+// would be one more double free to drift from production: the exact failure
 // this file exists to prevent. The cost is tokens and seconds; the benefit is
 // that a passing run means something.
 //
@@ -37,7 +37,7 @@ package cli
 //	FIGARO_TMUX_SMOKE=1 go test ./internal/cli/ -run TestSmoke -v
 //
 // Skipped by default, so `go test ./...` stays fast and hermetic.
-// Full method and traps: the tmux-testing skill (~/.config/figaro/skills/tmux-testing.md) — read it before adding a case.
+// Full method and traps: the tmux-testing skill (~/.config/figaro/skills/tmux-testing.md): read it before adding a case.
 // ---------------------------------------------------------------------------
 
 import (
@@ -52,7 +52,7 @@ import (
 )
 
 // smokeEnabled gates the suite. Two doors, both explicit: the env var, and the
-// presence of tmux. Never auto-enable — a test that silently costs tokens is a
+// presence of tmux. Never auto-enable, a test that silently costs tokens is a
 // test people learn to distrust.
 func smokeEnabled(t *testing.T) {
 	t.Helper()
@@ -60,7 +60,7 @@ func smokeEnabled(t *testing.T) {
 		t.Skip("drives a real terminal and a real provider; skipped under -short")
 	}
 	if os.Getenv("FIGARO_TMUX_SMOKE") == "" {
-		t.Skip("set FIGARO_TMUX_SMOKE=1 to run (drives a real provider — costs tokens)")
+		t.Skip("set FIGARO_TMUX_SMOKE=1 to run (drives a real provider: costs tokens)")
 	}
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not available")
@@ -76,13 +76,13 @@ func smokeEnabled(t *testing.T) {
 //
 // FIGARO_SMOKE_BIN overrides it when you deliberately want to smoke a specific
 // build (a nix store path, say). In that case identity is NOT guaranteed, so we
-// print what we are testing — a stale binary replaying already-fixed bugs cost
+// print what we are testing, a stale binary replaying already-fixed bugs cost
 // this project an entire debugging session.
 func smokeBinary(t *testing.T) string {
 	t.Helper()
 	if bin := os.Getenv("FIGARO_SMOKE_BIN"); bin != "" {
 		out, _ := exec.Command(bin, "--version").CombinedOutput()
-		t.Logf("FIGARO_SMOKE_BIN in use — identity with this worktree is NOT guaranteed: %s",
+		t.Logf("FIGARO_SMOKE_BIN in use: identity with this worktree is NOT guaranteed: %s",
 			strings.TrimSpace(firstLine(string(out))))
 		return bin
 	}
@@ -129,7 +129,7 @@ func smokeStore(t *testing.T) []string {
 	//
 	// THE COPY CARRIES CREDENTIALS, SO IT IS HARDENED EXPLICITLY. `cp` without
 	// -p gives the destination the source mode masked by the umask, and the real
-	// providers/anthropic.toml is mode 644 inside a 755 providers/ — safe at rest
+	// providers/anthropic.toml is mode 644 inside a 755 providers/: safe at rest
 	// ONLY because ~/.config/figaro is 700. Copying it moves it out from under the
 	// one thing defending it. The config dir above is created 0700, which contains
 	// it today, but relying on a single parent directory is precisely the pattern
@@ -181,7 +181,7 @@ type pane struct {
 // TRAP, and it invalidated an entire night of measurements: `tmux new-session
 // -y N` yields pane_height N-1, because the status bar takes a row. Three
 // separate investigators reported "h=1 loses the reply" while measuring at pane
-// height ZERO — a state no user can reach. We turn the status bar OFF and then
+// height ZERO, a state no user can reach. We turn the status bar OFF and then
 // READ BACK #{pane_height}, so the number in a failure message is the number
 // figaro actually saw.
 func newPane(t *testing.T, env []string, bin string, w, h int) *pane {
@@ -198,7 +198,7 @@ func newPane(t *testing.T, env []string, bin string, w, h int) *pane {
 	if p.height != h {
 		// Never silently proceed on a height you did not ask for: an entire
 		// night of "h=1 loses the reply" reports were measured at pane height 0.
-		t.Logf("pane height is %d (asked for %d) — assertions use %d", p.height, h, p.height)
+		t.Logf("pane height is %d (asked for %d), assertions use %d", p.height, h, p.height)
 	}
 	t.Cleanup(p.close)
 	return p
@@ -228,7 +228,7 @@ func (p *pane) run(args ...string) (string, error) {
 }
 
 // send types a literal string as ONE read. Use typeSlowly for anything a human
-// would type — see the comment there.
+// would type: see the comment there.
 func (p *pane) send(s string) { p.tmux("send-keys", "-l", s) }
 
 // key sends a named key (Enter, C-c, C-d, Escape...).
@@ -249,7 +249,7 @@ func (p *pane) typeSlowly(s string) {
 }
 
 // visible is the pane as shown. scrollback is everything, including frames that
-// existed for milliseconds before scrolling away — which is the ONLY way to see
+// existed for milliseconds before scrolling away: which is the ONLY way to see
 // a duplicated footer or a submit-time frame.
 func (p *pane) visible() string    { return p.tmuxOut("capture-pane", "-p") }
 func (p *pane) scrollback() string { return p.tmuxOut("capture-pane", "-p", "-S", "-") }
@@ -275,7 +275,7 @@ func (p *pane) waitIdle(d time.Duration) {
 }
 
 // alive reports whether the pane's foreground command is still figaro. This is
-// how you catch a process that will not exit — no in-process test can.
+// how you catch a process that will not exit: no in-process test can.
 func (p *pane) alive() bool {
 	out := strings.TrimSpace(p.tmuxOut("display", "-p", "#{pane_current_command}"))
 	return strings.Contains(out, "figaro")
@@ -323,14 +323,14 @@ func footers(capture string) int {
 	return n
 }
 
-// statusRows counts RENDERED PAGER STATUS ROWS — rows, not substring hits.
+// statusRows counts RENDERED PAGER STATUS ROWS: rows, not substring hits.
 //
 // pagerChrome above answers "are we in the pager"; this answers "how many
 // status rows are on the grid", which is a different and sharper question. A
 // healthy pager paints exactly ONE, at screen[t.h-1]. Two means the terminal's
 // grid scrolled under the painter (something wrote outside the frame buffer)
 // and the painter then repainted the footer at h-1 while the old copy was
-// still on screen — i.e. t.prev no longer describes the terminal.
+// still on screen: i.e. t.prev no longer describes the terminal.
 //
 // This is deliberately fix-shape-agnostic: whether the eventual fix leaves the
 // pager before printing (0 status rows), routes the text through the frame

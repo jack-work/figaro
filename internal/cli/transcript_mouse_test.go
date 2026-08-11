@@ -13,7 +13,7 @@ import (
 
 // THE POINTER'S TESTS.
 //
-// Every one of these asserts through frameRefs — the map renderFrame records —
+// Every one of these asserts through frameRefs: the map renderFrame records -
 // because that is the property under test: a click resolves against the frame
 // that was PAINTED. A test that computed the expected row from t.offset itself
 // would agree with a broken implementation that did the same thing, which is
@@ -33,7 +33,7 @@ func clickRowOf(t *testing.T, tr *transcript, ref nodeRef) int {
 	return -1
 }
 
-// chromeRow finds a painted body row that belongs to no node — a separator, a
+// chromeRow finds a painted body row that belongs to no node, a separator, a
 // voice header, or a blank between two blocks.
 func chromeRow(t *testing.T, tr *transcript) int {
 	t.Helper()
@@ -240,7 +240,7 @@ func TestClickAgreesWithCtrlNSelection(t *testing.T) {
 }
 
 // TestClickDoesNotMoveTheViewport is property 2 of the gesture. The clicked row
-// is on screen by construction, so scrolling is never justified — and a tall
+// is on screen by construction, so scrolling is never justified, and a tall
 // node whose tail runs off the bottom is exactly where ensureSelectionVisible
 // would drag the page down, which is the jump selectNode's cold path was fixed
 // to stop making.
@@ -288,7 +288,7 @@ func TestClickResolvesAgainstThePaintedFrame(t *testing.T) {
 	tr.scrollBy(6)
 	tr.render()
 	// NOT A SKIP. If the visible refs did not change after a six-line scroll, the
-	// click map is stale — which is precisely the bug this test exists to catch.
+	// click map is stale: which is precisely the bug this test exists to catch.
 	// Skipping here is how the canary run came back green with frameRefs cached
 	// once at pager entry ("does the fixture still exercise its own path?").
 	if sameRefs(firstRefs, tr.frameRefs) {
@@ -366,7 +366,7 @@ func TestFrameRefsAlignWithPaintedRows(t *testing.T) {
 }
 
 // TestRowRefsSkipSeparatorsAndGaps pins refAt's arithmetic directly, including
-// the gap sentinel — which has no rows at all and whose entry is exactly where a
+// the gap sentinel: which has no rows at all and whose entry is exactly where a
 // naive `rel < len(e.rows)` check reads out of a nil slice.
 func TestRowRefsSkipSeparatorsAndGaps(t *testing.T) {
 	e := &lineEntry{
@@ -417,7 +417,7 @@ func clickBytes(col, row int, shift bool) []byte {
 	return []byte(press + release)
 }
 
-// firstToolRow finds a painted row belonging to a tool node with output — the
+// firstToolRow finds a painted row belonging to a tool node with output: the
 // one node kind that currently has a collapsed form to toggle.
 func firstToolRow(t *testing.T, tr *transcript) (int, nodeRef) {
 	t.Helper()
@@ -435,7 +435,7 @@ func firstToolRow(t *testing.T, tr *transcript) (int, nodeRef) {
 
 // TestClickReportsActOncePerClick is the press/release rule. A gesture that
 // fired on both reports would toggle twice per click and so appear never to fire
-// at all — the failure is INVISIBLE to any test that calls clickAt directly,
+// at all: the failure is INVISIBLE to any test that calls clickAt directly,
 // which is exactly why this one goes through the bytes.
 func TestClickReportsActOncePerClick(t *testing.T) {
 	out := &countingWriter{}

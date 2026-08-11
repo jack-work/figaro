@@ -24,11 +24,11 @@ import (
 // goes to the model: THE BUILT REQUEST.
 //
 // The IR being well-formed is not the same claim. Between the IR and the wire
-// sit renderMessage (which drops blocks it cannot represent — thinking, and any
+// sit renderMessage (which drops blocks it cannot represent: thinking, and any
 // message that renders to nothing), coalesceMessages (which merges adjacent
 // same-role messages), and the translation cache. Any of the three could break
-// the pairing Anthropic requires — every tool_use answered by a tool_result
-// with the same id — and the failure mode is an HTTP 400 on the NEXT turn, i.e.
+// the pairing Anthropic requires: every tool_use answered by a tool_result
+// with the same id, and the failure mode is an HTTP 400 on the NEXT turn, i.e.
 // a conversation that is dead and cannot say why.
 
 // interruptedToolProvider issues one tool call, appends the assistant message
@@ -166,7 +166,7 @@ func assertToolUsePairing(t *testing.T, msgs []anthropic.MessageParam) {
 	for id, at := range uses {
 		answeredAt, ok := results[id]
 		require.True(t, ok,
-			"tool_use %q reaches the model with no tool_result — the next request is a 400", id)
+			"tool_use %q reaches the model with no tool_result: the next request is a 400", id)
 		require.Greater(t, answeredAt, at,
 			"tool_result for %q must come AFTER the tool_use", id)
 	}

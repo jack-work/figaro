@@ -17,7 +17,7 @@ import (
 
 // lockStore takes a non-blocking exclusive flock on the aria store so only one
 // angelus ever has it open. Returns the open handle (keep it alive for the
-// daemon's lifetime — closing it releases the lock) and whether it was
+// daemon's lifetime: closing it releases the lock) and whether it was
 // acquired. A crashed holder's lock is released by the kernel, so the next
 // daemon can take over.
 func lockStore() (*os.File, bool) {
@@ -155,14 +155,14 @@ func runAngelus() {
 
 	// Keep the embedded hush agent alive for the daemon's life. The agent
 	// self-terminates after its TTL, and the daemon (unlike the CLI) issues no
-	// activity to respawn it — so without this, a turn running past the TTL
+	// activity to respawn it: so without this, a turn running past the TTL
 	// loses its credential ("No provider connected") mid-session. This is the
 	// primary fix for the long-autonomous-session credential loss.
 	go keepHushAlive(ctx)
 
 	// Rebind surviving shells WITHOUT restoring their arias. A daemon restart
 	// used to wake every aria that had a live terminal, which on a busy
-	// machine is most of them — minutes of restore and gigabytes resident
+	// machine is most of them: minutes of restore and gigabytes resident
 	// before anyone had asked for anything. The binding alone is what a shell
 	// needs; the aria wakes on its next prompt.
 	angelus.RestoreBindings(a.Registry, a.BindingsPath(), handlers.OpenEndpoint)
@@ -179,7 +179,7 @@ func runAngelus() {
 	if ctx.Err() != nil {
 		// Run returns the instant the listener closes; the drain (seal
 		// in-flight turns, close backend) runs behind it. Exiting before it
-		// finishes would lose every active turn — wait, bounded. The socket
+		// finishes would lose every active turn: wait, bounded. The socket
 		// is removed only after the drain so `figaro rest` reports success
 		// when turns are actually sealed.
 		select {

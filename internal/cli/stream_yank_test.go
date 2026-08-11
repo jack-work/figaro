@@ -43,7 +43,7 @@ func (r *stubHistoryReader) Queued(context.Context) (*rpc.QueuedResponse, error)
 }
 
 // With a selection active, 'y' should fire the selection copy (populating
-// copyPlan or completing to the clipboard) — NOT the aria id shortcut.
+// copyPlan or completing to the clipboard): NOT the aria id shortcut.
 func TestYankKey_WithSelectionCopiesSelection(t *testing.T) {
 	reader := &stubHistoryReader{history: transcriptHistory(120)}
 	tc := newRecordingTerminal()

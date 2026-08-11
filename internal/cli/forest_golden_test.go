@@ -10,7 +10,7 @@ import (
 // root with three children, a middle child that itself branches, a second
 // top-level tree, and recency ordering that differs from vector ordering.
 // LastActive values are negative on purpose: recency is decided by comparison,
-// which negatives preserve, while relAge prints "-" for anything <= 0 — so the
+// which negatives preserve, while relAge prints "-" for anything <= 0: so the
 // golden below does not change with the calendar.
 func forestFixture() []rpc.FigaroInfoResponse {
 	return []rpc.FigaroInfoResponse{

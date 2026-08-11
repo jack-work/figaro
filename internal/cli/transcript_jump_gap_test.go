@@ -11,26 +11,26 @@ import (
 // JUMPING ACROSS A HOLE.
 //
 // A gap entry stands in line space beside messages and carries turn 0
-// (buildIndex) — an id no aria ever issues. jumpReachOf read those zeros as
+// (buildIndex), an id no aria ever issues. jumpReachOf read those zeros as
 // addresses:
 //
 //   - a coordinate inside the hole is between the window's oldest and newest
 //     turn but in no entry, and the resolver answered jumpAbsent: "no turn 3 in
-//     this aria" — a DENIAL about a conversation it had merely not loaded. That
+//     this aria", a DENIAL about a conversation it had merely not loaded. That
 //     is the common `:` failure, because the hole is exactly where a reader who
 //     has been jumping around ends up pointing.
 //   - with a hole at the top of the window (the floor not yet proven), `:0`
-//     resolved to entries[0] — the sentinel — and landed ON the "N turns not
+//     resolved to entries[0]: the sentinel, and landed ON the "N turns not
 //     loaded" rule with no selection, because firstRefOfTurn(0) matches
 //     nothing.
 //
 // The rule now: a hole is not a turn. Bounds come from message entries, a
 // target that could be inside a hole means "not yet", and the walk drives its
-// own fill until the entry is ungapped — then it snaps to the real turn.
+// own fill until the entry is ungapped: then it snaps to the real turn.
 // ---------------------------------------------------------------------------
 
 // holed is a jumpFixture with a hole in the MIDDLE of the window and the floor
-// proven — the shape a reader reaches by jumping around a long aria.
+// proven: the shape a reader reaches by jumping around a long aria.
 func holed(t *testing.T, from, to uint64) *transcript {
 	t.Helper()
 	tr := jumpFixture(t, 1, 8)
@@ -150,7 +150,7 @@ func TestJumpStillDeniesWhatCannotExist(t *testing.T) {
 
 // TestWalkAsksToFillAHoleItCannotSee: the delay needs something to wait FOR.
 // gapNear reports only the hole the viewport is about to paint, so without the
-// jump's own branch in pageCursor a walk toward a distant hole stalls — the
+// jump's own branch in pageCursor a walk toward a distant hole stalls: the
 // pager standing at "jumping to turn 3…" forever, which is worse than the
 // denial it replaced.
 func TestWalkAsksToFillAHoleItCannotSee(t *testing.T) {

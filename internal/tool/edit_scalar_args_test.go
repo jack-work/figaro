@@ -30,7 +30,7 @@ func TestEditParametersAreAllScalarStrings(t *testing.T) {
 			t.Fatalf("%s: not a schema", name)
 		}
 		if p["type"] != "string" {
-			t.Errorf("%s has type %v — every argument must be a scalar string, "+
+			t.Errorf("%s has type %v: every argument must be a scalar string, "+
 				"or the model has to hand-author JSON for it", name, p["type"])
 		}
 		if _, nested := p["items"]; nested {
@@ -68,7 +68,7 @@ func TestEditAppliesOneScalarReplacement(t *testing.T) {
 }
 
 // A model reads its own transcript as an example. Histories are full of the
-// old shape, so it is still accepted — just never advertised.
+// old shape, so it is still accepted: just never advertised.
 func TestLegacyNestedShapeStillApplies(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "x.txt")

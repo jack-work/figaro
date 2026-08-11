@@ -97,7 +97,7 @@ func mustHush() *managed.Hush {
 		// FIGARO_HUSH_DIR pins a fully isolated, EMBEDDED hush rooted at one
 		// directory (its own identity, encrypted secrets, and agent socket
 		// under <dir>/run). Hermetic dev shells set it so figaro runs its
-		// own hush instance — re-authenticated per shell — instead of
+		// own hush instance: re-authenticated per shell: instead of
 		// reaching the user's shared agent, whose socket isn't visible
 		// inside the sandbox. Without it, hush resolves its normal surface.
 		if dir := os.Getenv("FIGARO_HUSH_DIR"); dir != "" {
@@ -119,7 +119,7 @@ func mustHush() *managed.Hush {
 // ensureHush initializes hush. Must be called from the CLI process.
 //
 // The first-run identity flow (prompt for passphrase, init the age
-// identity, persist to keyring) is owned by hush's managed package —
+// identity, persist to keyring) is owned by hush's managed package -
 // figaro is just a consumer here. Anything more elaborate (provider
 // selection, default outfit) is layered above via runFirstRunIfNeeded.
 func ensureHush() {

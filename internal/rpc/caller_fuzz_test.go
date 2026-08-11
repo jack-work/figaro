@@ -29,7 +29,7 @@ func FuzzSanitizeLabel(f *testing.F) {
 		// 1. NEVER impersonates an aria. This is the security property: the
 		//    rendered form of an authenticated caller is "aria <id>", so a
 		//    label that survives with that prefix is indistinguishable from
-		//    proof — the model would be confidently misinformed.
+		//    proof: the model would be confidently misinformed.
 		if strings.HasPrefix(got, AriaLabelPrefix) {
 			t.Fatalf("label kept the reserved prefix: %q -> %q", in, got)
 		}
@@ -101,7 +101,7 @@ func FuzzWithCallerRoundTrip(f *testing.F) {
 		}
 
 		// THE SECURITY PROPERTY. With no valid credential, the attribution can
-		// never render as an aria — no label, however crafted, is promoted.
+		// never render as an aria: no label, however crafted, is promoted.
 		attr := Attribution(gotID, gotLabel)
 		if gotID == "" && strings.HasPrefix(attr, AriaLabelPrefix) {
 			t.Fatalf("label %q was promoted to an aria attribution: %q", label, attr)

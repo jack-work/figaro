@@ -20,7 +20,7 @@ func TestCollapseSGRCases(t *testing.T) {
 		// Without a preceding reset the entry attributes are unknown, so the
 		// inner reset genuinely does something (it would clear an inherited
 		// bold) and has to stay. Once the row has asserted a full state, the
-		// per-cell churn folds away — which is the shape glamour actually
+		// per-cell churn folds away: which is the shape glamour actually
 		// emits, and where the 5x comes from.
 		{"per-cell padding, entry state unknown", "\x1b[38;5;252ma\x1b[0m\x1b[38;5;252mb\x1b[0m",
 			"\x1b[38;5;252ma\x1b[0m\x1b[38;5;252mb\x1b[0m"},
@@ -79,7 +79,7 @@ func testingAllocs(f func()) float64 {
 
 // sgrEntryStates are the rendition states a row might be entered in. collapseSGR
 // treats the entry state as unknown, so equivalence has to hold under all of
-// them — including a terminal left tinted by a previous row.
+// them: including a terminal left tinted by a previous row.
 var sgrEntryStates = []string{"", "\x1b[0m", "\x1b[31m", "\x1b[1;4;38;5;99;48;5;238m", "\x1b[7m"}
 
 func assertSGREquivalent(t *testing.T, in string) {
@@ -203,7 +203,7 @@ func FuzzSGRCollapse(f *testing.F) {
 // TestCollapseSGRKeepsRowsSelfContained documents the painter's invariant that
 // Axis B's scroll-region painter relies on: a row must start and end in default
 // SGR, so an unreset row cannot tint the row below it through an erase. The
-// normalizer never removes the bytes that uphold it — the entry state is
+// normalizer never removes the bytes that uphold it: the entry state is
 // modeled as unknown precisely so a leading reset survives.
 func TestCollapseSGRKeepsRowsSelfContained(t *testing.T) {
 	for _, row := range sgrCorpusRows(t) {
@@ -219,7 +219,7 @@ func TestCollapseSGRKeepsRowsSelfContained(t *testing.T) {
 		// And the invariant itself: a row that styles anything leaves the
 		// terminal in the default rendition even when it was entered tinted,
 		// so the next row's erase cannot inherit a colour. (Rows with no SGR
-		// at all — blanks, plain tool output — are transparent by nature; it
+		// at all: blanks, plain tool output, are transparent by nature; it
 		// is the styled row above them that has to have cleaned up.) True of
 		// every corpus row before the collapse, and still true after it.
 		if strings.Contains(out, "\x1b") && after != sgrFinalRendition("") {

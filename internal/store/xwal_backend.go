@@ -5,7 +5,7 @@ package store
 // is cheap and stable. It does NOT cache *xwal.XWAL handles: every read
 // and write opens a fresh one via s.trunks.Head / .Append / .AppendChannel,
 // which serialize against Fork/Promote inside figwal. No eviction dance
-// is needed — a Fork on aria X does not invalidate the row cache (the
+// is needed, a Fork on aria X does not invalidate the row cache (the
 // bytes on disk are stable append-only truth), and a Promote is purely
 // cosmetic. The old evictAll on Promote was over-scoped and could strand
 // a live agent mid-turn ("file already closed"); it's gone.
@@ -64,8 +64,8 @@ type XwalBackend struct {
 // means guessing allocator rounding for every string, slice and boxed
 // map[string]interface{} value, and the attempt came out 3x low (4.1 MiB
 // estimated against 12.1 MiB measured on a real aria). The encoded size is
-// known for free at decode, and the ratio between the two is stable — 4.0x and
-// 5.3x on two real arias — so one constant beats a model.
+// known for free at decode, and the ratio between the two is stable: 4.0x and
+// 5.3x on two real arias: so one constant beats a model.
 //
 // An entry appended this process has no encoded size recorded by the caller;
 // fall back to the content bytes, which is the right order of magnitude and
@@ -84,7 +84,7 @@ func irEntrySize(e Entry[message.Message]) int {
 // irDecodeInflation is how much larger decoded IR is than its wire bytes.
 // Measured, not assumed: 4.0x on a 2556-message aria and 5.3x on a
 // 1760-message one. The higher of the two, so a budget under-holds rather than
-// over-holds — being wrong toward less memory is the safe direction here.
+// over-holds: being wrong toward less memory is the safe direction here.
 const irDecodeInflation = 5
 
 type ariaHandle struct {
@@ -262,7 +262,7 @@ func (b *XwalBackend) FormPatches(ariaID string) ([]VersionedPatch, error) {
 
 // ApplyForm appends a patch and returns its VERSION: the patch's own durable
 // index in the form channel. The version is the number both an acknowledgement
-// and a resume cursor need, and it is the append position, NOT an IR LT —
+// and a resume cursor need, and it is the append position, NOT an IR LT -
 // several patches can arrive between two turns, so only the position tells
 // them apart. It survives reopen because the channel is the durable truth.
 func (b *XwalBackend) ApplyForm(ariaID string, patch message.Patch) (uint64, error) {
@@ -276,7 +276,7 @@ func (b *XwalBackend) ApplyFormIf(ariaID string, patch message.Patch, ifVersion 
 }
 
 // ApplyFormEffect is ApplyFormIf, and also returns what actually landed after
-// the writer reduced the patch against the board — which is what a caller
+// the writer reduced the patch against the board: which is what a caller
 // reporting to a human, or fanning a delta out to listeners, should be
 // speaking about.
 func (b *XwalBackend) ApplyFormEffect(ariaID string, patch message.Patch, ifVersion uint64) (uint64, message.Patch, error) {
@@ -290,7 +290,7 @@ func (b *XwalBackend) ApplyFormEffect(ariaID string, patch message.Patch, ifVers
 // ---- tree operations (delegated) ----
 
 // ForkWith is the one birth verb: see XwalStore.ForkWith. Every aria arrives
-// this way — `fig new` forks the null root, `fig fork` forks an aria — and the
+// this way: `fig new` forks the null root, `fig fork` forks an aria, and the
 // patch it carries is its identity.
 func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Patch) (string, uint64, error) {
 	child, version, err := b.store.ForkWith(parent, atMainLT, patch)
@@ -324,7 +324,7 @@ func (b *XwalBackend) CreateOutfit(name string, patch message.Patch) (string, er
 }
 
 // KeepStump names the one stump collection spares. WHICH stump that is, is
-// policy — the angelus knows what the configured default resolves to today; the
+// policy: the angelus knows what the configured default resolves to today; the
 // store only knows what it was asked to build.
 func (b *XwalBackend) KeepStump(id string) { b.store.KeepStump(id) }
 func (b *XwalBackend) CreateConversation(outfitID string) (string, error) {
@@ -376,7 +376,7 @@ type outfitLabel struct{ name, version string }
 // is thousands of nodes over a handful of outfits.
 func (b *XwalBackend) labelAll(nodes []NodeView) []NodeView {
 	// Two shapes in one listing: an aria under a stump takes the stump's label
-	// (memoized per stump — a listing of 200 arias on four outfits reads four
+	// (memoized per stump, a listing of 200 arias on four outfits reads four
 	// birth records), and an aria born of ForkWith states its own on its form.
 	var seen map[string]outfitLabel
 	for i := range nodes {
@@ -408,7 +408,7 @@ func (b *XwalBackend) label(n *NodeView) {
 //
 // An aria born since ForkWith says so on its OWN form: the birth patch carries
 // system.outfit_name and the content hash of itself. An aria born before that
-// hangs under a stump, and the stump's birth record is where the name lives —
+// hangs under a stump, and the stump's birth record is where the name lives -
 // read once and memoized, which immutability licenses.
 //
 // Two shapes, and no migration between them: re-parenting an old aria would mean
@@ -516,7 +516,7 @@ func (b *XwalBackend) SetIRBudget(n int) {
 // reports how many rows were released. It is the reaper's control surface: the
 // caller decides WHEN, this decides how.
 //
-// Live arias are skipped for the same reason EvictIdle skips them — one
+// Live arias are skipped for the same reason EvictIdle skips them: one
 // cachedLog is shared between the writing agent and concurrent readers, and a
 // window is only safe to shrink when nobody is mid-fold across it.
 func (b *XwalBackend) TrimResident(live map[string]bool, keep int) int {
@@ -538,7 +538,7 @@ func (b *XwalBackend) TrimResident(live map[string]bool, keep int) int {
 	return released
 }
 
-// ResidentRows reports resident decoded IR entries across every open aria —
+// ResidentRows reports resident decoded IR entries across every open aria -
 // the number a window bounds, as opposed to Resident's aria count.
 func (b *XwalBackend) ResidentRows() int {
 	n, _ := b.residency()
@@ -608,7 +608,7 @@ func (b *XwalBackend) Resident() int {
 }
 
 // dropHandle removes the aria's handle shell from the open map. Used by
-// Remove after the trunk is gone. No xwal to close — handles don't own
+// Remove after the trunk is gone. No xwal to close: handles don't own
 // any.
 func (b *XwalBackend) dropHandle(id string) {
 	b.mu.Lock()

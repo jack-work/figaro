@@ -20,7 +20,7 @@ import (
 
 // Messages queued behind a turn that has FINISHED are one question, not one
 // turn each. This is the reported case: four sends chained with && against an
-// idle aria — the first opens a turn, the rest pile up behind it.
+// idle aria: the first opens a turn, the rest pile up behind it.
 func TestDrain_QueuedRunBecomesOneInquiry(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -41,7 +41,7 @@ func TestDrain_QueuedRunBecomesOneInquiry(t *testing.T) {
 	assert.True(t, b.IsIdle(), "the whole run is drained, not one message of it")
 }
 
-// A LONE submit is still exactly itself — one message, its own id, no folding.
+// A LONE submit is still exactly itself: one message, its own id, no folding.
 func TestDrain_LoneSubmitIsUntouched(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -82,8 +82,8 @@ func TestDrain_SetStillBlocksTheIdleFold(t *testing.T) {
 
 // THE BUG BEHIND "the messages were received, but the turn ended abruptly".
 //
-// A drain that runs after the cancel appends the queued messages to the log —
-// so they appear on screen, "received" — and hands them to a round that opens
+// A drain that runs after the cancel appends the queued messages to the log -
+// so they appear on screen, "received", and hands them to a round that opens
 // with an already-dead context. That round dies at once and the messages go
 // with it: committed to the conversation, never answered, and gone from the
 // queue that would have re-asked them.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# image-ab.sh — prove the tool-image fix by A/B against a real model.
+# image-ab.sh: prove the tool-image fix by A/B against a real model.
 #
 # This is the only honest test of this change. Unit tests can assert that an
 # image block exists in a struct; only a model can tell you whether it SAW the
@@ -17,7 +17,7 @@
 # TRAP THIS SCRIPT EXISTS TO AVOID (tmux-testing, #11): an A/B that silently
 # runs the SAME binary twice produces identical output and reads as "the fix
 # does nothing". Both arms are built from explicit refs into explicit paths and
-# their md5s are printed and COMPARED — the script aborts if they match.
+# their md5s are printed and COMPARED: the script aborts if they match.
 #
 # Everything runs against an ISOLATED daemon in a temp dir. FIGARO_CONFIG_DIR
 # and FIGARO_HUSH_APP are inherited so real outfits and credentials are
@@ -98,7 +98,7 @@ AFTER_MD5=$(md5sum "$TMP/after" | cut -d' ' -f1)
 echo "  before md5 $BEFORE_MD5"
 echo "  after  md5 $AFTER_MD5"
 if [ "$BEFORE_MD5" = "$AFTER_MD5" ]; then
-  echo "ABORT: both arms are the same binary — the comparison would be meaningless" >&2
+  echo "ABORT: both arms are the same binary: the comparison would be meaningless" >&2
   exit 1
 fi
 
@@ -111,7 +111,7 @@ CODE=$(awk '$1=="huge.png"{sub(/^code=/,"",$NF); print $NF}' "$TMP/fixgen.txt")
 FIXTURE="$TMP/fixtures/huge.png"
 echo
 
-PROMPT="Use the read tool on $FIXTURE — nothing else. The image contains one line \
+PROMPT="Use the read tool on $FIXTURE: nothing else. The image contains one line \
 of large text reading CODE followed by five characters. Reply with EXACTLY that, in \
 the form CODE=XXXXX, and nothing else. If no image reached you, reply CODE=BLIND."
 
@@ -144,11 +144,11 @@ arm() {
 
 # ------------------------------------------------------------------- the runs
 
-echo "=== BEFORE — $BEFORE_REF ==="
+echo "=== BEFORE: $BEFORE_REF ==="
 BEFORE_OUT=$(arm before "$TMP/before" || true)
 sed 's/^/  | /' <<<"$BEFORE_OUT" | tail -6
 echo
-echo "=== AFTER — this branch ==="
+echo "=== AFTER: this branch ==="
 AFTER_OUT=$(arm after "$TMP/after" || true)
 sed 's/^/  | /' <<<"$AFTER_OUT" | tail -6
 echo
@@ -157,8 +157,8 @@ echo
 
 # A near miss is not blindness. A model that answers 9X584 for 9XS84 has plainly
 # SEEN the picture and misread one glyph; calling that "did not see it" blames
-# the fix for the fixture. The verdict stays strict — four of five is still a
-# fail — but it names WHICH failure it is, so nobody debugs the wrong thing.
+# the fix for the fixture. The verdict stays strict: four of five is still a
+# fail: but it names WHICH failure it is, so nobody debugs the wrong thing.
 # (The fixture alphabet has since been stripped of confusable pairs, so this
 # should now only fire on a real problem.)
 seen_code() { grep -oiE 'CODE=[A-Z0-9]{5}' <<<"$1" | head -1 | cut -d= -f2 | tr 'a-z' 'A-Z'; }
@@ -177,7 +177,7 @@ echo "────────────────────────�
 printf 'the image says          CODE=%s\n' "$CODE"
 
 if [ "$BEFORE_SAW" = "$CODE" ]; then
-  echo "BEFORE                  saw it — THE BUG IS NOT REPRODUCED"
+  echo "BEFORE                  saw it: THE BUG IS NOT REPRODUCED"
   echo "                        (is $BEFORE_REF really unfixed?)"
   rc=1
 else
@@ -187,13 +187,13 @@ fi
 if [ "$AFTER_SAW" = "$CODE" ]; then
   echo "AFTER                   saw it ✓  (the fix works)"
 elif [ -n "$AFTER_SAW" ] && [ "$(hamming "$CODE" "$AFTER_SAW")" -le 1 ]; then
-  printf 'AFTER                   answered %s — ONE GLYPH OFF\n' "$AFTER_SAW"
+  printf 'AFTER                   answered %s: ONE GLYPH OFF\n' "$AFTER_SAW"
   echo "                        The image DID reach the model: blind is not a"
   echo "                        near miss. This is an OCR misread, not a"
   echo "                        delivery failure. Re-run before acting on it."
   rc=1
 else
-  printf 'AFTER                   answered %s — THE FIX FAILED\n' "${AFTER_SAW:-nothing}"
+  printf 'AFTER                   answered %s: THE FIX FAILED\n' "${AFTER_SAW:-nothing}"
   rc=1
 fi
 echo "──────────────────────────────────────────────────────────────"

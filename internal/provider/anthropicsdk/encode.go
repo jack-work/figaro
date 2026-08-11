@@ -45,7 +45,7 @@ func (p *Provider) renderMessage(msg message.Message, prevSnap *form.Snapshot) (
 				// model still reads an unambiguous "who said what".
 				//
 				// A message with no senders emits exactly what it always did:
-				// no extra block, byte-identical wire. That is not tidiness —
+				// no extra block, byte-identical wire. That is not tidiness -
 				// the provider wire cache is keyed by LT and holds signed
 				// thinking blocks, so silently re-encoding old messages would
 				// invalidate caches and replay unsigned blocks as 400s.
@@ -128,7 +128,7 @@ func (p *Provider) renderMessage(msg message.Message, prevSnap *form.Snapshot) (
 	return anthropic.MessageParam{}, false
 }
 
-// toolInput normalizes zero-argument tool_use to "{}" — the API
+// toolInput normalizes zero-argument tool_use to "{}": the API
 // rejects a missing or null input, and the IR drops empty maps
 // during a WAL roundtrip.
 func toolInput(args map[string]interface{}) interface{} {

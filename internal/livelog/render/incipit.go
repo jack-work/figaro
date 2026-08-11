@@ -41,10 +41,10 @@ func diffRange(old, next []string) (first, last int) {
 	return
 }
 
-// Incipit renders an aria stream inline — no alternate screen. Closed messages
+// Incipit renders an aria stream inline: no alternate screen. Closed messages
 // are printed to native scrollback exactly once (Freeze) and never touched again;
 // only the open message is a live, redrawable region (Open). A resize repaints
-// just the open message — the bounded, mutable part — so committed history is
+// just the open message: the bounded, mutable part: so committed history is
 // never reflowed. That is the structural fix for the resize/duplication class:
 // the immutability boundary (a frozen message) is also the resize boundary.
 //
@@ -70,7 +70,7 @@ type Incipit struct {
 	// therefore that the next message must draw no top margin of its own.
 	//
 	// THE RULE IS THE OVERLINE OF THE HEADER BENEATH IT. messageRows already
-	// draws the seam that way inside a message — the question, a blank, the rule,
+	// draws the seam that way inside a message: the question, a blank, the rule,
 	// then "< figaro" hard against it. A message boundary is the same seam, but
 	// the rule arrives from the PREVIOUS message's closer (or, for the first
 	// message, from OpenRule), so without this the next message added its own
@@ -125,19 +125,19 @@ func (i *Incipit) topMargin() []string {
 }
 
 // Freeze finalizes a closed message. If it's the message currently live, its
-// rows are already on screen — drop the cursor below them and release the
+// rows are already on screen: drop the cursor below them and release the
 // region. Otherwise print its rows fresh, prefaced with a blank line.
 //
 // A thinking placeholder is a footer-only region pinned at submit, before the
 // prompt has even round-tripped. A message printed while it is up must land
 // ABOVE it in scrollback, so erase the placeholder, print, and repaint it in
-// place — otherwise the footer would be stranded above the very message it
+// place: otherwise the footer would be stranded above the very message it
 // belongs under.
 // A message IS the live region only when it starts where the region starts.
 // LT alone is not identity: aria.Message.LT carries the TURN id, so every
 // message in a turn shares it. Testing LT alone made freezing a one-node
-// steering interjection drop the whole streaming region — seventeen rows of
-// it — into scrollback, after which the rest of the turn was frozen again and
+// steering interjection drop the whole streaming region: seventeen rows of
+// it: into scrollback, after which the rest of the turn was frozen again and
 // the entire post-steer block printed twice.
 // A message IS the live region only when it covers the SAME EXTENT. Start
 // alone is not identity either: while the agent streams, the open suffix begins
@@ -154,7 +154,7 @@ func (i *Incipit) isLiveRegion(m aria.Message) bool {
 // overlapsLiveRegion reports whether a closed message covers nodes the live
 // region is ALSO showing. The region is then stale: those nodes are being
 // delivered as closed messages instead, and the producer will reopen past them.
-// Erasing is the only correct response — dropping them to scrollback prints
+// Erasing is the only correct response: dropping them to scrollback prints
 // them twice, once from the abandoned region and once from the frozen message.
 func (i *Incipit) overlapsLiveRegion(m aria.Message) bool {
 	return i.liveTurn != 0 && m.Turn == i.liveTurn &&
@@ -168,7 +168,7 @@ func (i *Incipit) Freeze(m aria.Message) {
 			// Repaint with the role's closer in place of the pinned footer
 			// before committing. The footer is CHROME: it belongs to whatever
 			// region is currently live, and freezing it verbatim left one copy
-			// stranded in scrollback per message — two footers for a single
+			// stranded in scrollback per message: two footers for a single
 			// exchange, which is not what the sketch asks for.
 			closer, endsInRule := i.closer(m.Role)
 			i.paint(i.composeWith(m.Inquiry, m.InquirySegments, m.Nodes, closer))
@@ -179,7 +179,7 @@ func (i *Incipit) Freeze(m aria.Message) {
 		}
 		// The live region showed only the footer, so the body was never painted
 		// and there is nothing on screen worth keeping. Erase the footer and fall
-		// through to print the message in full — otherwise the reply is lost from
+		// through to print the message in full: otherwise the reply is lost from
 		// scrollback entirely, which is what happened at every height below the
 		// pager floor.
 		io.WriteString(i.term, "\x1b[J")
@@ -206,7 +206,7 @@ func (i *Incipit) Freeze(m aria.Message) {
 		b.WriteString("\r\n")
 	}
 	// Trailing separator: the same rule/bookend compose() paints, so a message
-	// printed fresh (a committed frame that never had a live region — e.g. a
+	// printed fresh (a committed frame that never had a live region: e.g. a
 	// user prompt) is still closed off from what follows.
 	closer, endsInRule := i.closer(m.Role)
 	if len(closer) > 0 {
@@ -227,13 +227,13 @@ func (i *Incipit) Freeze(m aria.Message) {
 // Resume rebuilds the inline view after the transcript pager closes. The
 // alt-screen restored whatever partial live region was on screen when the pager
 // opened; this clears it, prints the given closed messages to scrollback (the
-// bookend follows the assistant only), and — if a message is still streaming —
+// bookend follows the assistant only), and: if a message is still streaming -
 // starts a fresh live region. The cursor lands on a new line below everything,
 // so input resumes after the content like `figaro show`.
 //
 // maxRows CAPS WHAT REACHES SCROLLBACK, counted in physical rows, keeping the
 // LAST maxRows (0 = unbounded). Leaving the pager used to replay every message
-// the pager had shown — an hour of tool output, thousands of rows, dumped into
+// the pager had shown, an hour of tool output, thousands of rows, dumped into
 // the shell in one burst on Ctrl-T. The tail is what a reader wants back; the
 // rest is a `figaro show` away. The clip is applied to the assembled rows, not
 // per message, so the boundary lands mid-message when that is where row 100
@@ -260,7 +260,7 @@ func (i *Incipit) Resume(closed []aria.Message, open *aria.Message, maxRows int)
 // It walks BACKWARDS on purpose: a hundred rows off the end of a ten-thousand
 // row conversation must not cost ten thousand rows of rendering. That is only
 // sound because the one piece of cross-message state a message's rows depend
-// on — atRule, i.e. "is the row above me already my overline" — is a pure
+// on, atRule, i.e. "is the row above me already my overline": is a pure
 // function of the PREVIOUS message's role (see closer), so it can be answered
 // without having rendered anything before it.
 func (i *Incipit) tailRows(closed []aria.Message, maxRows int) (rows []string, endsInRule, ok bool) {
@@ -297,7 +297,7 @@ func (i *Incipit) tailRows(closed []aria.Message, maxRows int) (rows []string, e
 
 // messagePrintRows renders a closed message as it appears in scrollback
 // (bookend after an assistant message), prefaced with a blank line plus the
-// role header when configured — the same leading rule Freeze/compose apply.
+// role header when configured: the same leading rule Freeze/compose apply.
 // atRule says whether the row above is already this message's overline, so no
 // top margin is drawn; endsInRule reports the same fact for the message below.
 func (i *Incipit) messagePrintRows(m aria.Message, atRule bool) (rows []string, endsInRule bool) {
@@ -323,8 +323,8 @@ func (i *Incipit) messagePrintRows(m aria.Message, atRule bool) (rows []string, 
 // Open paints (or repaints) the open message's blocks as the live region.
 func (i *Incipit) Open(m aria.Message) {
 	// A thinking placeholder (OpenThinking) is the same on-screen region as the
-	// assistant message that follows: adopt its turn in place — no dropBelow, no
-	// reset — so the footer painted on submit stays put and the streamed
+	// assistant message that follows: adopt its turn in place: no dropBelow, no
+	// reset: so the footer painted on submit stays put and the streamed
 	// content fills in above it, never orphaning a header/footer to scrollback.
 	if i.thinking && m.Role == i.role {
 		i.thinking = false
@@ -335,7 +335,7 @@ func (i *Incipit) Open(m aria.Message) {
 	}
 	if m.Turn != i.liveTurn || m.From != i.liveFrom {
 		// A new open message without a prior Freeze: release whatever was live.
-		// A thinking placeholder is ERASED rather than released — it is a pinned
+		// A thinking placeholder is ERASED rather than released: it is a pinned
 		// footer, not content, and dropping it into scrollback would strand the
 		// status bar above the very message it describes.
 		if i.thinking {
@@ -352,8 +352,8 @@ func (i *Incipit) Open(m aria.Message) {
 	i.paint(i.compose(m.Nodes))
 }
 
-// OpenThinking paints an empty live region for a role that has only started —
-// its header and status footer — before any content has streamed. The next
+// OpenThinking paints an empty live region for a role that has only started -
+// its header and status footer: before any content has streamed. The next
 // Open(realLT, sameRole, …) adopts this region in place. Used on submit so the
 // footer appears immediately rather than waiting for the model's first token.
 func (i *Incipit) OpenThinking(role string) {
@@ -367,7 +367,7 @@ func (i *Incipit) OpenThinking(role string) {
 	i.paint(i.compose(nil))
 }
 
-// thinkingTurn is the sentinel liveTurn for an OpenThinking placeholder — any
+// thinkingTurn is the sentinel liveTurn for an OpenThinking placeholder, any
 // value a real message LT never takes.
 const thinkingTurn = -1
 
@@ -383,7 +383,7 @@ func (i *Incipit) Tick(nodes []livedoc.Node) {
 	i.paint(i.compose(nodes))
 }
 
-// Resize repaints the open message at the new width — clearing from the live
+// Resize repaints the open message at the new width: clearing from the live
 // region's top downward only, so scrollback above is untouched.
 func (i *Incipit) Resize(nodes []livedoc.Node) {
 	if i.liveTurn == 0 {
@@ -403,7 +403,7 @@ func (i *Incipit) LiveHeight() int { return len(i.live) }
 // minInlineHeight is the viewport below which the live region draws the footer
 // ALONE. It mirrors cli.minPagerHeight deliberately: that constant is the floor
 // under which the transcript pager refuses to open, so below it there is no
-// escape hatch from the inherent inline limit (docs/ui-stream.md) — a live
+// escape hatch from the inherent inline limit (docs/ui-stream.md), a live
 // region taller than the viewport scrolls rows into native history, where they
 // can never be repainted, stranding half-drawn frames forever.
 //
@@ -426,7 +426,7 @@ func (i *Incipit) viewportHeight() int {
 
 // clipRows keeps a region from being TALLER THAN THE TERMINAL. Painting more
 // rows than exist scrolls the earlier ones into history, where they can never
-// be repainted — so at the extreme the suppressed footer (rule + status, two
+// be repainted: so at the extreme the suppressed footer (rule + status, two
 // rows) overflowed a one-row viewport, stranded a partial frame in scrollback
 // and lost the completed reply.
 //
@@ -446,7 +446,7 @@ func (i *Incipit) compose(nodes []livedoc.Node) []string {
 
 // composeWith builds the region's rows with an explicit trailer. The LIVE
 // region trails the pinned footer; a region being FROZEN trails its role's
-// closer instead, because the footer is chrome — committing it would strand a
+// closer instead, because the footer is chrome: committing it would strand a
 // status bar in scrollback above the very message that follows it.
 func (i *Incipit) composeWith(inquiry string, segments []aria.InquirySegment, nodes []livedoc.Node, foot []string) []string {
 	w, _ := i.term.Size()
@@ -458,8 +458,8 @@ func (i *Incipit) composeWith(inquiry string, segments []aria.InquirySegment, no
 		return clipRows(rows, i.viewportHeight())
 	}
 	body := i.messageRows(inquiry, segments, i.role, nodes)
-	// Every message is prefaced with a blank row — frozen into scrollback
-	// alongside the rest of the live region — unless the row above it is
+	// Every message is prefaced with a blank row: frozen into scrollback
+	// alongside the rest of the live region: unless the row above it is
 	// already this message's overline (see atRule).
 	margin := i.topMargin()
 	rows := make([]string, 0, len(body)+len(margin)+2)
@@ -497,7 +497,7 @@ func (i *Incipit) composer() Composer {
 
 // footer returns the rows pinned at the bottom of the LIVE region. Unlike
 // closer(), it does not depend on the role: the status bar is a fixture of the
-// view — present at submit, during streaming, at completion, and after a pager
+// view: present at submit, during streaming, at completion, and after a pager
 // round-trip. Making it a consequence of which message happened to close is
 // exactly what let it vanish when the prompt merged into the turn.
 func (i *Incipit) footer() []string {
@@ -594,7 +594,7 @@ func (i *Incipit) vmove(b *strings.Builder, target int) {
 // ground. Use this when the agent dies mid-turn, the user disconnects with
 // Ctrl-D, or an interrupt times out.
 //
-// line is typically a dim rule with a reason label — the caller owns the
+// line is typically a dim rule with a reason label: the caller owns the
 // formatting (CLI policy). Without a live region, line is still printed.
 func (i *Incipit) AbandonOpen(line string) {
 	var b strings.Builder
@@ -620,7 +620,7 @@ func (i *Incipit) AbandonOpen(line string) {
 func (i *Incipit) dropBelow() {
 	// The cursor is parked at the region's visible top (logical row i.vt). When
 	// the region scrolled taller than the viewport, its first i.vt rows are above
-	// the screen, so the visible span is len-i.vt — using len would leave i.vt
+	// the screen, so the visible span is len-i.vt: using len would leave i.vt
 	// blank lines after the bookend.
 	if n := len(i.live) - i.vt; n > 0 {
 		io.WriteString(i.term, strings.Repeat("\r\n", n))

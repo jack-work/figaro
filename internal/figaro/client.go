@@ -41,7 +41,7 @@ func DialClient(ep transport.Endpoint, onNotify NotifyHandler) (*Client, error) 
 	return DialClientWith(ep, onNotify, nil)
 }
 
-// DialClientWith is DialClient with connection middleware — the seam the wire
+// DialClientWith is DialClient with connection middleware: the seam the wire
 // recorder hangs on. Passing nil is DialClient exactly.
 func DialClientWith(ep transport.Endpoint, onNotify NotifyHandler, tap transport.Tap) (*Client, error) {
 	conn, err := transport.DialWith(ep, tap)
@@ -63,7 +63,7 @@ func (c *Client) Qua(ctx context.Context, text string, cb *rpc.FormInput) (int, 
 }
 
 // Read pulls one aria.Page forward from a turn cursor (the catch-up half of the
-// figaro.aria stream) — used after version desync or to seed a listener. The
+// figaro.aria stream): used after version desync or to seed a listener. The
 // request's JSON field remains named sinceLT for wire compatibility.
 func (c *Client) Read(ctx context.Context, sinceTurn int) (aria.Page, error) {
 	var r aria.Page
@@ -71,7 +71,7 @@ func (c *Client) Read(ctx context.Context, sinceTurn int) (aria.Page, error) {
 	return r, err
 }
 
-// ReadBefore pages backward from an anchor — the other direction of the
+// ReadBefore pages backward from an anchor: the other direction of the
 // same cut, for a pager to walk history. A zero anchor means the tail, and the
 // anchor's Node matters: a window whose oldest slice starts mid-turn must ask
 // for what precedes THAT NODE, not that turn.
@@ -100,7 +100,7 @@ func (c *Client) Interrupt(ctx context.Context) error {
 
 // Hangup is Interrupt with an explicit disposition for the queue, and the
 // queue itself comes back: what survived (keep) or what was dropped (clear).
-// A cleared queue is returned VERBATIM — one entry per message as typed — so
+// A cleared queue is returned VERBATIM: one entry per message as typed: so
 // the caller can persist it instead of losing it.
 func (c *Client) Hangup(ctx context.Context, disposition rpc.QueueDisposition) (*rpc.InterruptResponse, error) {
 	var resp rpc.InterruptResponse
@@ -118,7 +118,7 @@ func (c *Client) Set(ctx context.Context, patch rpc.FormPatch, ifVersion uint64)
 
 // SetDressed is Set with outfit NAMES beside the patch: the names are folded
 // into keys at the daemon's API boundary, under the patch's own, and what
-// reaches the writer is data. It is how `state outfit <names>` applies — the
+// reaches the writer is data. It is how `state outfit <names>` applies: the
 // same call every other dressing surface makes.
 func (c *Client) SetDressed(ctx context.Context, outfits []string, patch rpc.FormPatch, ifVersion uint64) (*rpc.SetResponse, error) {
 	var resp rpc.SetResponse

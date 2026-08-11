@@ -12,8 +12,8 @@ import (
 // ---------------------------------------------------------------------------
 // A cold Ctrl-N/Ctrl-P seeds from the VIEWPORT and does not scroll.
 //
-// It used to seed from the ends of the RETAINED WINDOW — len(refs)-1 for ^P,
-// 0 for ^N — which is a different thing entirely: the window holds far more
+// It used to seed from the ends of the RETAINED WINDOW: len(refs)-1 for ^P,
+// 0 for ^N: which is a different thing entirely: the window holds far more
 // than the screen shows. ensureSelectionVisible then dragged the page to
 // wherever that landed.
 //
@@ -22,7 +22,7 @@ import (
 //
 //	^P parked at the TOP  (1-38/70): jumped to 32-69/70, cue nowhere on screen
 //	^N parked at the TAIL (34-70/70): jumped to 3-40/70, cue on the FIRST node
-//	^N parked at the TOP  (1-38/70): correct — and this is the trap. At the top
+//	^N parked at the TOP  (1-38/70): correct, and this is the trap. At the top
 //	  of the window "first in window" and "topmost visible" are the same node,
 //	  so it is the one starting position where the defect is invisible.
 //

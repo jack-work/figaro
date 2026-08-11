@@ -10,16 +10,16 @@ import (
 
 // A message has ONE shape, and this is where it is decided.
 //
-// It used to be decided three times — Incipit.messageRows for the live view,
-// transcript.renderMsgBase for the pager, cli.renderTurnRows for `show` — each
+// It used to be decided three times: Incipit.messageRows for the live view,
+// transcript.renderMsgBase for the pager, cli.renderTurnRows for `show`: each
 // with its own inquiry renderer, its own node walk and its own idea of where
 // the blanks go. They drifted, as three copies do: the pager rendered nodes two
 // columns narrower than the incipit and indented them one further, and `show`
 // printed verbose detail nobody had asked for. Conformance is not something you
 // can test three implementations into; it is something you get by having one.
 //
-// Composer is that one. Every surface supplies what is genuinely its own — the
-// view that draws a block, the chrome hooks, whether a block is expanded — and
+// Composer is that one. Every surface supplies what is genuinely its own: the
+// view that draws a block, the chrome hooks, whether a block is expanded, and
 // receives the same rows in the same order.
 
 // Block indices that are not a node's. A row carries the index of the block it
@@ -66,7 +66,7 @@ type expandable interface {
 // one blank row between blocks.
 //
 // The question is TEXT ON THE TURN, not a node, so no node walk can produce it
-// — which is why it is drawn here and nowhere else.
+// : which is why it is drawn here and nowhere else.
 //
 // No header over an empty run: a message whose blocks all render to nothing
 // (minted-but-empty prose, a tool already drawn) must not print a header over
@@ -92,8 +92,8 @@ func (c Composer) Message(m aria.Message, w int) []Row {
 	return append(rows, body...)
 }
 
-// Nodes composes a block list: each block, one blank row between them, and —
-// when the surface asks for it — a coordinate label above each.
+// Nodes composes a block list: each block, one blank row between them, and -
+// when the surface asks for it, a coordinate label above each.
 func (c Composer) Nodes(nodes []livedoc.Node, w int) []Row {
 	if w <= 0 {
 		w = 80
@@ -130,7 +130,7 @@ func (c Composer) render(n livedoc.Node, w, block int) []string {
 
 // inquiry draws the question that opened the turn, attributed when it can be.
 //
-// ONE header for the whole question however many people wrote it — the
+// ONE header for the whole question however many people wrote it: the
 // submissions folded into one message, and a header apiece would say otherwise.
 // Senders are drawn per segment instead, dim, above their text, and an UNKNOWN
 // sender draws NOTHING: most messages ever written carry none, and a

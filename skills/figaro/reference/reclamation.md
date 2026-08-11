@@ -1,4 +1,4 @@
-# Reclamation — what figaro holds in memory, and how it lets go
+# Reclamation: what figaro holds in memory, and how it lets go
 
 **When to read this.** You are changing `internal/angelus` (the hub, the sweep),
 `internal/store` (the row caches), or tuning `[memory]` in `config.toml`. Or a
@@ -13,14 +13,14 @@ Waking resumes the stream mid-flight.
 ## What a live aria costs
 
 Measured on two real arias, not estimated
-(`internal/angelus/realaria_probe_test.go`, env-gated — point it at a *copy* of
+(`internal/angelus/realaria_probe_test.go`, env-gated: point it at a *copy* of
 a store):
 
 | holder | cf3fc17d (2556 msgs) | e83ae209 (1760 msgs) |
 |---|---|---|
-| **decoded IR** (`cachedLog`) | **12.5 MiB — 86%** | **14.3 MiB — 63%** |
-| composed UI (`aria.Server`) | 2.0 MiB — 14% | 2.4 MiB — 10% |
-| translations, per provider | 1.2 KiB — 0% | 6.0 MiB — 26% |
+| **decoded IR** (`cachedLog`) | **12.5 MiB: 86%** | **14.3 MiB: 63%** |
+| composed UI (`aria.Server`) | 2.0 MiB: 14% | 2.4 MiB: 10% |
+| translations, per provider | 1.2 KiB: 0% | 6.0 MiB: 26% |
 | form | 48 KiB | 43 KiB |
 | **total** | **14.5 MiB** | **22.7 MiB** |
 
@@ -28,7 +28,7 @@ The decoded IR runs **4–5x its encoded bytes** and dominates. Two consequences
 that are easy to get backwards:
 
 - **Synthetic data lies about this.** Uniform small prose messages make the
-  composed UI look like 1.5x the decoded IR. On real arias it is 0.2x — tool
+  composed UI look like 1.5x the decoded IR. On real arias it is 0.2x: tool
   calls and large results inflate the IR far more than the projection of them.
   Any claim about which holder dominates has to be made against a real store.
 - **Translations are wildly variable.** Kilobytes on a single-provider aria,
@@ -51,7 +51,7 @@ how to drop the 86% row and was *forbidden* to while an agent was live, because
 one `cachedLog` is shared between the writing agent and concurrent readers.
 Hibernation is not a separate memory feature; it is the unlock.
 
-## The endpoint outlives the agent — `ariaHub`
+## The endpoint outlives the agent: `ariaHub`
 
 The inversion everything else rests on. The **angelus** owns the listener at
 `figaros/<id>.sock` and the set of client connections; the agent is a producer
@@ -65,14 +65,14 @@ the hub binds. See `angelus/hub.go`.
   always ≤1 and lifetime-independent of any client. `Agent.OnTeardown` carries
   the unbind, because the endpoint must survive the agent and therefore cannot
   be owned by it.
-- Subscription is per-(conn, aria), which today buys nothing — one conn is one
+- Subscription is per-(conn, aria), which today buys nothing: one conn is one
   aria. It means multiplexing later (one pooled connection, many arias, target
   id in the envelope) is a change of *listener count*, not of architecture.
 
 Requests route on liveness. `rpc.MethodNeedsAgent` classifies the surface:
 `figaro.read`, `figaro.context` and `figaro.form` are pure functions of
 the store and are served from it while the aria is dormant; everything else
-wakes. **Default is `true`** — a method added later and left unclassified wakes
+wakes. **Default is `true`**, a method added later and left unclassified wakes
 rather than being answered from stale bytes, because a needless restore costs
 milliseconds and a stale mutation costs correctness.
 
@@ -94,8 +94,8 @@ state == "idle" && now - LastActive > dormant_after
 ```
 
 Notably absent: bound pids, attached clients, running sessions. Each would have
-made hibernation impossible for exactly the arias that cost most — a terminal
-left open all afternoon is the common case — and each is gone because what it
+made hibernation impossible for exactly the arias that cost most, a terminal
+left open all afternoon is the common case, and each is gone because what it
 protected moved elsewhere. Keyed on `LastActive`, so an aria woken a moment ago
 is not reclaimed on the next tick; restore is O(history) and that would be a
 flap costing more than the memory it saves.
@@ -120,7 +120,7 @@ with identical semantics either way. See `store/cached_log.go`.
 
 **A window, not an LRU, deliberately.** The access pattern is: append, translate
 the tail past a watermark, render recent turns, occasionally page backward on a
-scroll. That is a window — a slice header and a counter — where an LRU would be
+scroll. That is a window, a slice header and a counter: where an LRU would be
 a map, a list, per-entry bookkeeping and a second lock for the same reclamation.
 Backward paging is served from the store by the angelus reader without touching
 the window.
@@ -128,7 +128,7 @@ the window.
 Two findings that shaped it, both from benchmarks:
 
 - **Trimming on every append cost 4.4 µs and 51 KB** against 308 ns and zero
-  allocations unwindowed — a 14x regression on the daemon's hottest write path,
+  allocations unwindowed, a 14x regression on the daemon's hottest write path,
   since each compaction copies the window. Compaction is batched behind a slack
   allowance (362 ns, zero extra allocations). Construction still compacts
   *exactly*, since that is the moment the whole log was just materialized.
@@ -138,7 +138,7 @@ Two findings that shaped it, both from benchmarks:
   `ir_window` is a row-count safety.
 
 Entries are sized from `Entry.EncodedBytes * irDecodeInflation`. Sizing from the
-decoded struct was tried and abandoned — guessing allocator rounding for every
+decoded struct was tried and abandoned: guessing allocator rounding for every
 string, slice and boxed map value came out **3x low**. The encoded size is known
 for free at decode, and the ratio is stable enough (4.0x and 5.3x on two real
 arias) that one constant beats a model.
@@ -155,8 +155,8 @@ encoded size is known *before* it is decoded. Opening a 2000-message aria:
 | `budget=256KiB` | 5.0 ms | 1.35 MB | 11,827 |
 
 Beware one number when profiling this: **figwal's `OpenNode` costs ~27.5 MiB of
-transient allocation the first time an aria is opened** — loading the lineage
-head — and ~0 on every open after. It dominates a wake and is figwal-side, not
+transient allocation the first time an aria is opened**: loading the lineage
+head, and ~0 on every open after. It dominates a wake and is figwal-side, not
 ours. Cold reads through a trimmed window are cheap once that head is warm.
 
 ## Who controls the caches
@@ -166,20 +166,20 @@ keep)` is reached through an optional interface, the same pattern `idleEvictor`
 already uses, and skips live arias for the same reason.
 
 The window **also self-trims on append**, because a log growing through a long
-autonomous turn has to be bounded now rather than at the next sweep — and that
+autonomous turn has to be bounded now rather than at the next sweep, and that
 needs no goroutine, which keeps the daemon on **one sweep clock**. A second
 timer inside `internal/store` would be a second scheduler with no shared view of
 liveness.
 
 The cache is otherwise invisible: `cachedLog` satisfies `Log[T]`, so consumers
 cannot tell whether a row is resident. `store.Snapshot` was deleted for exactly
-this reason — it returned the cache's own backing slice when the log happened to
+this reason: it returned the cache's own backing slice when the log happened to
 be materialized, which made "all of it is in RAM" free at the call site and
 therefore load-bearing everywhere. Consumers that want a suffix call
 `store.TailAfter`; one that genuinely needs every entry calls `Read` and pays
 for the copy.
 
-## Configuration — `[memory]` in `config.toml`
+## Configuration: `[memory]` in `config.toml`
 
 Daemon policy, not conversation state, so it lives in `config.toml` and never in
 an outfit or the form.
@@ -206,7 +206,7 @@ It names out loud the state in which idle eviction can free nothing (every
 resident aria having a live agent).
 
 `net/http/pprof` serves on `$FIGARO_RUNTIME_DIR/pprof.sock` when `FIGARO_PPROF`
-is set — 0600, same trust boundary as `angelus.sock`. Off by default: pprof's
+is set: 0600, same trust boundary as `angelus.sock`. Off by default: pprof's
 handlers stop the world and leak argv, and this daemon is long-lived.
 
 ```sh
@@ -216,7 +216,7 @@ go tool pprof -http=: 'http+unix://$XDG_RUNTIME_DIR/figaro/pprof.sock/debug/ppro
 
 `scripts/hibernate-demo.sh` is the same thing with your own eyes: N seeded
 arias, a `figaro listen` pane on each, an aggressively short dormancy window,
-and the counters as the sweep runs. What to look for is two numbers at once —
+and the counters as the sweep runs. What to look for is two numbers at once -
 `live=0` with `attached-clients=N`.
 
 ## Known gaps

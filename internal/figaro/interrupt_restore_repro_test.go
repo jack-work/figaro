@@ -20,7 +20,7 @@ import (
 
 // slowStreamingProvider streams a delta, then blocks. Used to force a
 // mid-turn interrupt (assistant never appends) so the store's on-disk
-// tail is a bare user prompt with no assistant reply — the state
+// tail is a bare user prompt with no assistant reply: the state
 // prior investigation flagged as breaking read+subscribe coherence.
 type slowStreamingProvider struct {
 	started chan struct{}
@@ -43,7 +43,7 @@ func (p *slowStreamingProvider) Send(ctx context.Context, _ provider.SendInput, 
 }
 
 // TestReadSubscribeAfterInterruptedTurn asserts that after an aria is
-// interrupted mid-turn — content on disk, no assistant append — a fresh
+// interrupted mid-turn: content on disk, no assistant append, a fresh
 // agent restored on the same backend sees the aria's content via
 // Read(0), and a live subscriber receives frames on the next prompt.
 //
@@ -59,7 +59,7 @@ func TestReadSubscribeAfterInterruptedTurn(t *testing.T) {
 // TestReadSubscribeAfterInterrupt_SameAgent runs the same scenario
 // without restarting the backend/agent: the interrupt happens, then a
 // second prompt goes through on the SAME agent. Reads and subscribers
-// must still see it. This is the "disconnect" half of the lead —
+// must still see it. This is the "disconnect" half of the lead -
 // nothing is recycled, only the turn was cancelled.
 func TestReadSubscribeAfterInterrupt_SameAgent(t *testing.T) {
 	t.Parallel()
@@ -142,7 +142,7 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 		// Same-agent path: keep a1 alive, swap the provider isn't an option,
 		// so we test that a1 (with the slow provider) at least serves a
 		// FRESH Read(0)+Subscribe correctly. The slow provider on the next
-		// prompt is fine — we only assert on the current on-disk content.
+		// prompt is fine: we only assert on the current on-disk content.
 		a2 = a1
 		t.Cleanup(a2.Kill)
 	}
@@ -176,7 +176,7 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 	waitFor(t, sink2, rpc.MethodTurnDone, 5*time.Second)
 
 	// After the second turn, both the older exchange and the new one must be
-	// visible to a fresh reader. Two TURNS, not three units — the question
+	// visible to a fresh reader. Two TURNS, not three units: the question
 	// belongs to the turn that answered it.
 	final := a2.Read(aria.Anchor{Turn: 0}, 1<<20)
 	require.GreaterOrEqual(t, len(final.Parts), 2,

@@ -7,7 +7,7 @@ import (
 )
 
 // Every `figaro show` selector speaks TURN IDS. Before this there were three
-// coordinate systems in one command — --from/--to were slice indices, --before
+// coordinate systems in one command: --from/--to were slice indices, --before
 // was an LT, and the printed label was a third thing. This pins the collapse.
 func TestSelectTurnRangeSpeaksTurnIDs(t *testing.T) {
 	// Turn ids need not start at 1 or be contiguous: a forked trunk inherits

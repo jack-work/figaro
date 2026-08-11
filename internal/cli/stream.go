@@ -24,13 +24,13 @@ import (
 const spinnerFPS = 11 // spinner frames per second (~90ms/frame)
 
 // recentCursor is a beyond-the-end turn id. ReadBefore from it returns the
-// newest byte-bounded node page — the pager's initial lazy window.
+// newest byte-bounded node page: the pager's initial lazy window.
 const recentCursor = 1 << 60
 
 // The opening preamble: how much history a new prompt is allowed to fetch, and
 // how long it may wait for it.
 //
-// The budget is small on purpose — the preamble is orientation, not a
+// The budget is small on purpose: the preamble is orientation, not a
 // transcript, and the renderer clips it to half the viewport anyway. The
 // timeout is the UI contract: the agent socket serves one request at a time,
 // so this read sits between the prompt's accept and its first painted row.
@@ -84,13 +84,13 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 
 	// The renderer owns the cursor and assumes one row per line: disable the
 	// terminal's auto-margin so a full-width row never wraps, and hide the
-	// cursor. It draws in incipit (no alternate screen) — frozen output lands in
+	// cursor. It draws in incipit (no alternate screen): frozen output lands in
 	// the normal scrollback.
 	fmt.Fprint(os.Stdout, autowrapOff+cursorHide)
 	defer endSession(os.Stdout)
 	// The painter's half of the console arming: hold the cursor on the last
 	// cell instead of wrapping the instant it is written. Scoped to the painted
-	// session — armed globally it staircases every fmt.Println. OnceFunc for the
+	// session, armed globally it staircases every fmt.Println. OnceFunc for the
 	// same reason as cli.go's: the defer and exitNow's hooks both fire.
 	restoreWrap := sync.OnceFunc(term.ArmDeferredWrap())
 	defer restoreWrap()
@@ -100,7 +100,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	// Static opening rule: a single dim horizontal line separating the user's
 	// shell prompt from the response stream. Printed once, lives in scrollback.
 	// The renderer owns it, because it also owns the decision about the blank
-	// row underneath it — the first message hugs this rule as its overline.
+	// row underneath it: the first message hugs this rule as its overline.
 	lt.openRule()
 
 	// The renderer is single-threaded; the notify pump, the spinner ticker, the
@@ -117,7 +117,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	atExit(func() {
 		// TryLock, not Lock: the hook must never be the reason a dying
 		// process hangs. Every current caller is lock-free at the point it
-		// dies, so this takes the lock in practice — and if a future one is
+		// dies, so this takes the lock in practice, and if a future one is
 		// not, restoring the terminal unlocked still beats not restoring it.
 		if mu.TryLock() {
 			defer mu.Unlock()
@@ -134,7 +134,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	sendCursor := -1 // cursor from Qua; stop only once committed past it and idle
 
 	// THE DISCRIMINATOR. ownTurn is closed the instant a frame carries the
-	// inquiry we just sent — proof that OUR prompt opened the turn about to
+	// inquiry we just sent: proof that OUR prompt opened the turn about to
 	// paint. noTurn is closed when the agent reports an error instead, because
 	// then no turn is coming at all. State can race (Qua's `active` flag is
 	// sampled before the prompt is even queued); the EVENT cannot, and it is
@@ -145,7 +145,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	noTurn := make(chan struct{})
 	var ownOnce, noOnce sync.Once
 	// watchInquiry keeps the check OFF the steady-state frame path. Every aria
-	// frame passes through onNotify — dozens a second while a tool streams — and
+	// frame passes through onNotify: dozens a second while a tool streams, and
 	// the question is only ever asked once, at the opening of the session.
 	// Cleared by the answer, and again by the decision itself, so from then on a
 	// frame pays one bool test. (Touched only under mu, like everything else
@@ -172,11 +172,11 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			// Settle when the agent reports idle (inbox empty, no turn running):
 			// a turn that ended with our steer still queued reports idle=false,
 			// so we correctly wait for our own turn. A daemon predating the idle
-			// field sends nil — treat that as settled (the pre-steering behavior),
+			// field sends nil: treat that as settled (the pre-steering behavior),
 			// so an old running daemon doesn't strand the command. We only act
 			// once our prompt has been submitted (sendCursor set after Qua
 			// returns), so a turn.done that predates our send can't end us early.
-			// Do NOT gate on lt.cursor() advancing — the final commit can arrive
+			// Do NOT gate on lt.cursor() advancing: the final commit can arrive
 			// via async desync recovery AFTER this one-shot turn.done, which
 			// would strand us and hang the command.
 			idle := d.Idle == nil || *d.Idle
@@ -191,7 +191,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				// THE COMMENT ABOVE IS TRUE INLINE AND FALSE IN THE PAGER:
 				// finishTurn returns early while the pager is up, the alt
 				// screen has no scrollback, and the cursor is parked on the
-				// status row — so writing here landed the hint ON the footer
+				// status row: so writing here landed the hint ON the footer
 				// and scrolled the grid out from under the painter's model.
 				// lt.report picks the right door for whichever renderer owns
 				// the terminal, and loses nothing either way.
@@ -207,11 +207,11 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			}
 			running = false
 			// Close on turn-done only in incipit. Once the transcript pager is
-			// up — however it was entered — it has listen semantics: the session
+			// up: however it was entered: it has listen semantics: the session
 			// stays open until an explicit q / Ctrl-D / Ctrl-C.
 			//
 			// NOTE for anyone adding work here: onNotify already holds mu with a
-			// deferred unlock, and mu is a plain sync.Mutex — NOT reentrant.
+			// deferred unlock, and mu is a plain sync.Mutex: NOT reentrant.
 			// Re-locking it on this path once deadlocked the notify pump, and the
 			// input loop with it (rendering needs the same lock), so every exit
 			// key went dead and the process could never be closed.
@@ -314,7 +314,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	defer close(stopTick)
 
 	// Repaint on resize (platform-abstracted: SIGWINCH on unix, a console event
-	// on Windows — all behind the term.Client boundary).
+	// on Windows, all behind the term.Client boundary).
 	defer tc.OnResize(func(w, h int) {
 		mu.Lock()
 		lt.resize(w, h)
@@ -323,16 +323,16 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 
 	// Live keybindings. MakeRaw disables signal generation, so Ctrl-C (0x03) and
 	// Ctrl-D (0x04) arrive as input BYTES (portable, and identical in incipit and
-	// transcript) — the input loop owns them, not a SIGINT handler.
+	// transcript): the input loop owns them, not a SIGINT handler.
 	if tc.IsTTY() {
 		if restore, err := tc.MakeRaw(); err == nil {
 			// The restore must survive os.Exit, not only a normal return.
 			// MEASURED on Linux before this line existed: Ctrl-C during a
 			// running turn exits 130 through exitNow, which runs the hooks and
-			// then os.Exit — skipping every defer. `stty -g` before/after
+			// then os.Exit: skipping every defer. `stty -g` before/after
 			// differed in c_lflag (8a3b -> a30: ECHO and ICANON cleared), so
-			// the user's shell was left in RAW MODE — no echo, no line editing
-			// — by the most ordinary gesture there is.
+			// the user's shell was left in RAW MODE: no echo, no line editing
+			//: by the most ordinary gesture there is.
 			//
 			// The atExit hook above already restores the screen, the cursor and
 			// autowrap for exactly this reason; the terminal MODE was the one
@@ -389,26 +389,26 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	mu.Unlock()
 	// Joining an already-running turn: the inline renderer can't cleanly paint a
 	// turn already in progress (partial state, mid-stream). Drop into the
-	// transcript pager on the last page — consistent scrollback, no glitch. A
+	// transcript pager on the last page: consistent scrollback, no glitch. A
 	// fresh turn (idle aria) stays inline with the thinking footer.
 	joined := active && in != nil
 	if joined {
 		in.enterTranscript()
 	}
 
-	// WHERE YOU ARE — but only when you did not just say it yourself.
+	// WHERE YOU ARE: but only when you did not just say it yourself.
 	//
 	// An aria with history used to open on a dim rule and nothing else until
 	// the model's first token. Printing the tail fixes that, but printing it on
 	// EVERY prompt restates the previous exchange immediately above itself,
-	// separated only by the shell prompt — and `q` in a continuous terminal is
+	// separated only by the shell prompt, and `q` in a continuous terminal is
 	// how this is mostly driven, so that is a daily irritant, not a corner.
 	//
-	// The rule: a prompt to an IDLE aria is call-response — nothing before the
+	// The rule: a prompt to an IDLE aria is call-response: nothing before the
 	// question. A prompt that lands on a turn we did not open buys a little
 	// context, which is both printed (orientation) and KEPT (openInline seeds
 	// the pager with it, so Ctrl-T opens on history without a read). Decided
-	// from the STREAM — did our own question come back? — not from Qua's
+	// from the STREAM: did our own question come back?: not from Qua's
 	// `active`, which is sampled before the prompt is even queued.
 	var fetched historyPage
 	if catchUp && !joined && !awaitOwnTurn(prompt, ownTurn, noTurn) {
@@ -463,7 +463,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 
 // interruptExit is the Ctrl-C rule: an interrupted TURN is 130 (128+SIGINT),
 // a Ctrl-C with nothing running is a clean 0. This path used to fall out of
-// its select and exit 0, so `send … || retry` never fired. Ctrl-D stays 0 —
+// its select and exit 0, so `send … || retry` never fired. Ctrl-D stays 0 -
 // it leaves the turn running on purpose.
 func interruptExit(wasRunning bool) int {
 	if wasRunning {
@@ -473,7 +473,7 @@ func interruptExit(wasRunning bool) int {
 }
 
 // interactiveInput is the shared control-key + pager input loop for the live
-// TTY commands — send's mustPromptFigaro and listen's tailFigaro. It owns
+// TTY commands: send's mustPromptFigaro and listen's tailFigaro. It owns
 // Ctrl-C/D/L/T/O and 'y' (copy id), plus the pager's scroll + mouse, so both
 // commands behave identically in incipit and transcript.
 type interactiveInput struct {
@@ -505,7 +505,7 @@ type interactiveInput struct {
 	pageDone     chan struct{}
 	// pageWanted defers the history-paging check to the end of the input chunk.
 	// It reads a viewport offset that render() clamps, so it belongs after the
-	// frame — once per chunk, not once per event. (B wrote this when
+	// frame: once per chunk, not once per event. (B wrote this when
 	// pageTranscript still blocked on the RPC; D since made it a non-blocking
 	// single-flight launcher, so the deferral is now about asking the *settled*
 	// viewport for a cursor exactly once, instead of once per wheel report.)
@@ -542,11 +542,11 @@ type transcriptReadClient interface {
 //
 // One read suffices. A backward read from a beyond-the-end cursor is the tail,
 // and because that window reaches the last node of the last turn it carries the
-// open suffix with it — so a viewer joining mid-turn gets the live message's
+// open suffix with it: so a viewer joining mid-turn gets the live message's
 // base version in the same page. (This used to need a second, forward read:
 // locate clamped a beyond-the-end anchor to the last turn's FIRST node, so the
 // backward window stopped short of the live suffix and the forward one returned
-// the whole turn again — which is how a dormant aria rendered its last turn
+// the whole turn again: which is how a dormant aria rendered its last turn
 // twice.)
 //
 // This is the DELIBERATE door, so the read is synchronous: the reader asked for
@@ -598,12 +598,12 @@ func (in *interactiveInput) enterTranscript() {
 // livelogTurn and fired from enterPager.
 //
 // THE BUG IT EXISTS FOR. Ctrl-T and `figaro listen` read history before they
-// open the pager. The pager also opens BY ITSELF — an open turn taller than the
+// open the pager. The pager also opens BY ITSELF, an open turn taller than the
 // viewport (OnLive → openOverflows), or a resize that shrinks the viewport
-// under the live region — and those two doors read nothing. The store then held
+// under the live region, and those two doors read nothing. The store then held
 // exactly one turn: the one being streamed. With MoreBefore never set by any
 // wire answer it stays false, so transcript.atAriaFloor concluded that the
-// question the user had just typed WAS the beginning of the aria — no history
+// question the user had just typed WAS the beginning of the aria: no history
 // above it, no page ever requested by pageCursor, and scrolling up found
 // nothing, forever. The conversation was intact on disk and one `figaro listen`
 // away; only this view could not see it. It is the ordinary case on a small
@@ -614,7 +614,7 @@ func (in *interactiveInput) enterTranscript() {
 // and performs it on its own goroutine.
 //
 // A FAILED READ IS NOT A FLOOR. On error the claim is released rather than
-// latched, so a later gesture can try again — the alternative is a session
+// latched, so a later gesture can try again: the alternative is a session
 // permanently convinced it has seen the beginning because one RPC timed out.
 func (in *interactiveInput) pagerCatchUp() {
 	if in.caughtUp {
@@ -636,7 +636,7 @@ func (in *interactiveInput) readHistoryIntoPager() {
 	}
 	// The same fold, in the same order, as the deliberate door: apply carries the
 	// open suffix, and setMoreBefore records what the WIRE said about the
-	// beginning. Applying is safe here precisely because the pager is up — the
+	// beginning. Applying is safe here precisely because the pager is up: the
 	// inline branch of OnClosed (which freezes to native scrollback) is not
 	// reachable while tr.active, which is the trap this whole design is built
 	// around.
@@ -807,8 +807,8 @@ func (in *interactiveInput) pageTranscriptSearch(ctx context.Context, cancel con
 // nothing in front of it. 300ms is ~900× the slowest measurement.
 //
 // It has to exist because the other branch may deliver nothing for tens of
-// seconds — a steer sits invisible behind a long tool call until the round
-// boundary — and waiting on it would hang the prompt. It must not be tight,
+// seconds, a steer sits invisible behind a long tool call until the round
+// boundary, and waiting on it would hang the prompt. It must not be tight,
 // because being wrong is asymmetric: too short and a slow-but-ordinary prompt
 // gets an unwanted preamble (the irritant this removes), too long and a turn
 // we really did join waits a beat for its orientation. Nothing of OURS is
@@ -817,7 +817,7 @@ const ownTurnDeadline = 300 * time.Millisecond
 
 // awaitOwnTurn reports whether the turn we are about to watch is the one our
 // prompt opened. True means: our question came back on the wire, so the screen
-// is about to show it and there is nothing to orient — print no preamble.
+// is about to show it and there is nothing to orient: print no preamble.
 //
 // An empty prompt has no inquiry to match and cannot be told apart this way;
 // treat it as ours rather than orienting a session that asked nothing.
@@ -841,7 +841,7 @@ func awaitOwnTurn(prompt string, own, none <-chan struct{}) bool {
 //
 // The inquiry travels as TEXT on the turn and is recorded verbatim
 // (OpenInquiry(a.turnID, prompt.text)), so equality on the text is the whole
-// test — no turn id arithmetic, which would need the cursor from Qua and the
+// test: no turn id arithmetic, which would need the cursor from Qua and the
 // inquiry frame can beat Qua's own response back to us.
 func pageCarriesInquiry(p aria.Page, prompt string) bool {
 	want := strings.TrimSpace(prompt)
@@ -860,7 +860,7 @@ func pageCarriesInquiry(p aria.Page, prompt string) bool {
 //
 // Nothing here reaches the aria.Client: applying a history page would fire
 // OnClosed for every historical message, and the inline branch of OnClosed
-// Freezes to native scrollback — i.e. the retained history would be re-dumped
+// Freezes to native scrollback: i.e. the retained history would be re-dumped
 // into the terminal on every prompt. Folding the page separately
 // (committedMessages, the same fold the pager's page fetch uses) gives the
 // renderer the messages with no side effects at all.
@@ -869,7 +869,7 @@ func pageCarriesInquiry(p aria.Page, prompt string) bool {
 // history: SEALED parts only, so a turn another client is mid-way through is
 // never half-printed; and nothing past the cursor Qua reported, which is the
 // last committed turn at accept time. An error, a timeout, or an aria with no
-// history all return nil — the caller then behaves exactly as before.
+// history all return nil: the caller then behaves exactly as before.
 func recentContext(ctx context.Context, fcli transcriptReadClient, cursor int) historyPage {
 	rctx, rcancel := context.WithTimeout(ctx, recentContextTimeout)
 	defer rcancel()
@@ -893,7 +893,7 @@ func recentContext(ctx context.Context, fcli transcriptReadClient, cursor int) h
 // asked the server for 30 BYTES, and the paginator's "always emit at least one
 // node" floor turned every page into a single node.
 //
-// Over-estimating is safe — the client keeps only what it asked for and the
+// Over-estimating is safe: the client keeps only what it asked for and the
 // server clamps to page_budget_max. Under-estimating truncates.
 const wireBytesPerMessage = 4096
 
@@ -969,7 +969,7 @@ func (in *interactiveInput) cancelTranscriptSearch() {
 
 // refreshQueued kicks a background fetch of the aria's queued user prompts and
 // writes the result into the transcript panel. Called from the transcript when
-// the queued panel opens; safe to invoke concurrently with any prior fetch —
+// the queued panel opens; safe to invoke concurrently with any prior fetch -
 // the last completion wins (there is no ordering constraint on a purely
 // observational panel).
 func (in *interactiveInput) refreshQueued() {
@@ -1000,8 +1000,8 @@ func (in *interactiveInput) refreshQueued() {
 // Call under a MakeRaw session so Ctrl-C/Ctrl-D arrive as bytes.
 //
 // One read is one frame. In raw mode a read returns everything the tty has
-// buffered, so a mouse-wheel flick — and everything that piled up while the
-// previous frame was being drawn — arrives as a single chunk. Bracketing the
+// buffered, so a mouse-wheel flick, and everything that piled up while the
+// previous frame was being drawn, arrives as a single chunk. Bracketing the
 // whole chunk in a transcript batch collapses it into one paint at the settled
 // offset, instead of one paint per event with only the last one wanted. The
 // buffer is sized to hold a whole flick (a wheel report is ~6 bytes) rather
@@ -1047,7 +1047,7 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 	for i < len(data) {
 		in.mu.Lock()
 		mode := in.lt.transcriptMode()
-		// Mouse sequences are only expected when the PAGER is up — that is where
+		// Mouse sequences are only expected when the PAGER is up: that is where
 		// mouse reporting is enabled. Ask the pager, not the mode: a non-incipit
 		// mode can be live without the pager being up, and letting ldmouse.Parse
 		// see input then swallows a bare Esc as a possible mouse prefix.
@@ -1137,7 +1137,7 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 			}
 		} else {
 			// Coalesce CR+LF (and the mirrored LF+CR) into ONE newline event.
-			// Windows conhost — and some other terminals — emit both bytes for
+			// Windows conhost, and some other terminals: emit both bytes for
 			// a single Enter keypress; without this dedup a toggle binding on
 			// Enter fires twice per press and appears stuck. parseModifiedKey
 			// handles the CSI-u path (Enter as code 13); this raw-byte
@@ -1166,7 +1166,7 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 			}
 			continue
 		}
-		// Nothing owns it up here: hand it to the pager — a motion, a panel, or
+		// Nothing owns it up here: hand it to the pager, a motion, a panel, or
 		// literal text in the search box.
 		if ev.mode != modeIncipit {
 			in.mu.Lock()
@@ -1180,7 +1180,7 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 }
 
 // ---------------------------------------------------------------------------
-// The input loop's key actions — the rows of the keymap that own the process
+// The input loop's key actions: the rows of the keymap that own the process
 // rather than the viewport (see keymap.go). They run on the read goroutine,
 // take the render lock themselves, and may end the loop.
 // ---------------------------------------------------------------------------
@@ -1240,13 +1240,13 @@ func inputInterrupt(in *interactiveInput, ev keyEvent) keyVerdict {
 // It is the third thing you can do to a running turn, and the one that was
 // missing. Ctrl-C stops the turn and takes the session with it; Ctrl-D leaves
 // the session and lets the turn run on; this stops the turn and keeps the
-// session — which is what you want when the model is off down the wrong path
+// session: which is what you want when the model is off down the wrong path
 // and you intend to say so in a moment.
 //
 // The queue is KEPT (the same disposition `figaro hup` sends): whatever you
 // typed while it was working coalesces into one message and is answered next.
 // `figaro cut` is the other choice, and it is a separate deliberate act rather
-// than a modifier on this key — losing a queue must never be one keystroke
+// than a modifier on this key: losing a queue must never be one keystroke
 // away from stopping a turn.
 //
 // The RPC runs off the input goroutine: the socket round trip must not freeze
@@ -1257,7 +1257,7 @@ func inputHangUp(in *interactiveInput, _ keyEvent) keyVerdict {
 }
 
 // inputHangUpDrop is 'X': the same, and the queue goes with it. What was
-// dropped is reported rather than swallowed — into the status notice, and
+// dropped is reported rather than swallowed: into the status notice, and
 // through the pending report, which leaveTranscript reprints to the shell. So
 // the text survives even though its place in the queue does not.
 func inputHangUpDrop(in *interactiveInput, _ keyEvent) keyVerdict {
@@ -1291,7 +1291,7 @@ func (in *interactiveInput) hangUp(disposition rpc.QueueDisposition) keyVerdict 
 			// ONE report, with the list inside it. report() folds newlines for
 			// the status row (which is one physical line) and keeps the raw
 			// text for the pending report, which leaveTranscript reprints to
-			// the shell — so the summary is readable live and the full list
+			// the shell: so the summary is readable live and the full list
 			// lands in scrollback. N separate reports would instead leave the
 			// status row showing only the LAST message, which is how this read
 			// in the pty: a lone "doomed two" with no header.
@@ -1328,7 +1328,7 @@ func inputDisconnect(in *interactiveInput, _ keyEvent) keyVerdict {
 }
 
 // inputEnterTranscript is Ctrl-T / Ctrl-L: open the transcript pager. Entering
-// it — by any route — carries listen semantics: the session stays open until an
+// it: by any route: carries listen semantics: the session stays open until an
 // explicit q / Ctrl-D / Ctrl-C.
 func inputEnterTranscript(in *interactiveInput, _ keyEvent) keyVerdict {
 	in.cancelTranscriptSearch()
@@ -1393,8 +1393,8 @@ func (in *interactiveInput) selectNodeKey(delta int, ev keyEvent) keyVerdict {
 // pointer, or toggle its expansion when it is already the focus.
 //
 // Clickability is asked FIRST and the whole gesture is skipped when the answer
-// is no. A click is the one input that can miss — a keystroke is always aimed,
-// a pointer lands where it lands — so a click on a blank row between two nodes
+// is no. A click is the one input that can miss, a keystroke is always aimed,
+// a pointer lands where it lands: so a click on a blank row between two nodes
 // must not cancel a search prompt, dismiss a panel, or cost a frame.
 func (in *interactiveInput) clickTranscript(ev ldmouse.Event) {
 	row := ev.Y - 1 // the report is 1-based; screen rows are 0-based
@@ -1467,7 +1467,7 @@ func (in *interactiveInput) coalesceNewline(b byte) bool {
 	return false
 }
 
-// dimRule returns a plain dim full-width horizontal rule — the opening rule and
+// dimRule returns a plain dim full-width horizontal rule: the opening rule and
 // the closer after a non-assistant (user/steering) message.
 func dimRule() string { return term.Dim(strings.Repeat("─", termWidth())) }
 

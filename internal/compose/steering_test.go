@@ -22,7 +22,7 @@ func steer(text string) message.Message {
 // This is the defect the user hit: the drain persisted every queued prompt as
 // a bare input message, so both the arithmetic and the projection independently
 // concluded it opened a turn. The exchange being steered was cut off mid-flight
-// — its closing prose never arrived — and the steer became a turn of its own
+// : its closing prose never arrived, and the steer became a turn of its own
 // whose inquiry was the steering text.
 func TestSteerJoinsTheTurnItSteers(t *testing.T) {
 	msgs := []message.Message{
@@ -39,11 +39,11 @@ func TestSteerJoinsTheTurnItSteers(t *testing.T) {
 		for _, tn := range tns {
 			t.Logf("turn %d inquiry=%q", tn.ID, tn.Inquiry)
 		}
-		t.Fatalf("got %d turns, want 1 — a steer opened a turn of its own", len(tns))
+		t.Fatalf("got %d turns, want 1, a steer opened a turn of its own", len(tns))
 	}
 	tn := tns[0]
 	if tn.Inquiry != "do a bunch of readonly bash work" {
-		t.Errorf("inquiry = %q, want the original question — a steer overwrote it", tn.Inquiry)
+		t.Errorf("inquiry = %q, want the original question, a steer overwrote it", tn.Inquiry)
 	}
 
 	var steering, closing int
@@ -59,10 +59,10 @@ func TestSteerJoinsTheTurnItSteers(t *testing.T) {
 		}
 	}
 	if steering != 1 {
-		t.Errorf("steering nodes = %d, want 1 — the steer did not render as steering", steering)
+		t.Errorf("steering nodes = %d, want 1: the steer did not render as steering", steering)
 	}
 	if closing != 1 {
-		t.Errorf("closing prose present = %d, want 1 — the turn was truncated", closing)
+		t.Errorf("closing prose present = %d, want 1: the turn was truncated", closing)
 	}
 }
 

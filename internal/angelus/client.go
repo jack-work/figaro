@@ -174,7 +174,7 @@ func (c *Client) ListIDs(ctx context.Context) (*rpc.ListResponse, error) {
 }
 
 // ListGlobal returns the aria list including the ceremonial anchors (the null
-// genesis trunk + every versioned outfit), each with Kind/Parent set — for the
+// genesis trunk + every versioned outfit), each with Kind/Parent set: for the
 // `ls -g` hierarchy and the `--json` escape hatch.
 func (c *Client) ListGlobal(ctx context.Context) (*rpc.ListResponse, error) {
 	var resp rpc.ListResponse

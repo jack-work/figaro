@@ -1,4 +1,4 @@
-// Package cli — @key form reference expansion.
+// Package cli: @key form reference expansion.
 package cli
 
 import (
@@ -78,7 +78,7 @@ func expandAtRefs(prompt string, snap form.Snapshot) string {
 		raw, ok := snap.Get(key)
 		if !ok {
 			// Permissive: unknown key (with terminator!) left fully
-			// literal — including the "!" — so typos surface clearly
+			// literal: including the "!": so typos surface clearly
 			// in the prompt the model sees.
 			out.WriteByte(c)
 			i++

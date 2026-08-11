@@ -61,7 +61,7 @@ func BenchmarkTranscriptLiveHeavy(b *testing.B) {
 
 // BenchmarkTranscriptFindHeavy is a '/' jump to a match a few lines below the
 // cursor in a heavy aria. The match is near, so the cost should be the cost of
-// the lines actually inspected — not of the whole retained window.
+// the lines actually inspected: not of the whole retained window.
 func BenchmarkTranscriptFindHeavy(b *testing.B) {
 	tr, _ := heavyFollowTranscript(b, 200, 200)
 	tr.scrollBy(-1)

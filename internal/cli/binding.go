@@ -15,7 +15,7 @@ import (
 // The daemon tracks a "pid → aria" binding so an interactive shell can
 // `attend <id>` once and have subsequent verbs default to that aria.
 // Non-interactive callers (scripts, an aria's own bash tool) should NOT
-// look up or mutate that binding — every command must name its target
+// look up or mutate that binding: every command must name its target
 // explicitly via --id / <id>. Silent inheritance across a `figaro send
 // -f` into a subshell into another `figaro` invocation has caused real
 // bugs (a fuzz run's child figaro grabbed its parent's binding and
@@ -48,7 +48,7 @@ func initBindingPolicy() {
 	interactive = term.IsTerminal(int(os.Stdin.Fd())) ||
 		term.IsTerminal(int(os.Stderr.Fd()))
 	// The same signal arms the DUKE placeholder: only a human at a terminal
-	// speaks for the end user, so an aria's own shell-out — never a TTY —
+	// speaks for the end user, so an aria's own shell-out: never a TTY -
 	// cannot present itself as its master by accident.
 	rpc.SetInteractive(interactive)
 }
@@ -63,7 +63,7 @@ func initBindingPolicy() {
 // no pid binding involved.
 //
 // It is an identity, not a binding. Nothing is written to the angelus,
-// and it cannot be changed from inside — `figaro attend` refuses, and
+// and it cannot be changed from inside: `figaro attend` refuses, and
 // bind/unbind are no-ops. Addressing another aria takes an explicit
 // --id.
 //
@@ -100,7 +100,7 @@ func bindingDisabled() bool {
 // differs in one rung: a missing TTY does not hide the answer.
 //
 // Asking which aria a shell attends is not a mutation. The answer is
-// already public — `figaro list` prints it — and the hazard the tty rung
+// already public: `figaro list` prints it, and the hazard the tty rung
 // was added for (a nested figaro inheriting its parent's binding) is now
 // answered by identity: an agent's children carry FIGARO_ARIA, which
 // outranks everything here. What the rung actually cost was every
@@ -180,7 +180,7 @@ func resolveBinding(ctx context.Context, acli *angelus.Client, ppid int) (*rpc.R
 	return acli.Resolve(ctx, ppid)
 }
 
-// resolveEnvAria answers the FIGARO_ARIA path. Attach — not Bind —
+// resolveEnvAria answers the FIGARO_ARIA path. Attach: not Bind -
 // hands back the endpoint and revives a dormant aria without touching
 // the pid map; in the common case (an aria's own shell-out, so the
 // aria is live) it is a registry lookup on the daemon side.
@@ -199,7 +199,7 @@ func resolveEnvAria(ctx context.Context, acli *angelus.Client, id string) (*rpc.
 	}, nil
 }
 
-// bindBinding wraps acli.Bind — no-op under bindingDisabled.
+// bindBinding wraps acli.Bind: no-op under bindingDisabled.
 func bindBinding(ctx context.Context, acli *angelus.Client, ppid int, figaroID string, atLT uint64) error {
 	if bindingDisabled() {
 		return nil
@@ -207,7 +207,7 @@ func bindBinding(ctx context.Context, acli *angelus.Client, ppid int, figaroID s
 	return acli.Bind(ctx, ppid, figaroID, atLT)
 }
 
-// unbindBinding wraps acli.Unbind — no-op under bindingDisabled.
+// unbindBinding wraps acli.Unbind: no-op under bindingDisabled.
 func unbindBinding(ctx context.Context, acli *angelus.Client, ppid int) error {
 	if bindingDisabled() {
 		return nil

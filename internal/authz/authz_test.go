@@ -169,7 +169,7 @@ func TestRulesFirstDenialWins(t *testing.T) {
 	if d := (Rules{}).Check(Request{}); !d.Allow {
 		t.Fatal("empty table should allow")
 	}
-	// A nil Check must be skipped, not panic — a half-built table is a
+	// A nil Check must be skipped, not panic, a half-built table is a
 	// configuration mistake, not a reason to take the daemon down.
 	if d := (Rules{{Name: "nil"}, deny}).Check(Request{}); d.Reason != "first" {
 		t.Fatalf("nil rule not skipped: %+v", d)

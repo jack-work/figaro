@@ -10,7 +10,7 @@ import (
 	"github.com/jack-work/figaro/internal/rpc"
 )
 
-// CRUD on the queue. The interesting half is not deletion — it is the shape of
+// CRUD on the queue. The interesting half is not deletion: it is the shape of
 // a REFUSAL, which has to be specific enough to act on.
 
 func TestQueueDelete_RemovesByID(t *testing.T) {
@@ -29,7 +29,7 @@ func TestQueueDelete_RemovesByID(t *testing.T) {
 }
 
 // Deleting the message the agent is committing right now is a legitimate ask
-// and a legitimate refusal — and the caller is told which, not just "no".
+// and a legitimate refusal, and the caller is told which, not just "no".
 func TestQueueDelete_InFlightIsRefusedWithAReason(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -50,8 +50,8 @@ func TestQueueDelete_InFlightIsRefusedWithAReason(t *testing.T) {
 	assert.Equal(t, rpc.RejectCommitted, results[0].Reason)
 }
 
-// An id an interrupt folded away still resolves — to the message that
-// absorbed it — instead of being reported as if it never existed.
+// An id an interrupt folded away still resolves: to the message that
+// absorbed it: instead of being reported as if it never existed.
 func TestQueueDelete_MergedIDPointsAtItsSurvivor(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -94,7 +94,7 @@ func TestQueueDelete_StaleEpochMutatesNothing(t *testing.T) {
 		"a stale id must not delete the message that now holds that number")
 }
 
-// An epoch is required whenever ids are named — a caller that never read the
+// An epoch is required whenever ids are named, a caller that never read the
 // queue cannot know what it is deleting.
 func TestQueueDelete_MissingEpochIsStale(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())

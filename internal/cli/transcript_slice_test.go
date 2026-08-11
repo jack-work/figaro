@@ -31,10 +31,10 @@ func TestSliceTurn_BoundsUnitsWithoutLosingNodes(t *testing.T) {
 	var seen int
 	for i, m := range got {
 		if m.Turn != 7 {
-			t.Errorf("unit %d: turn id = %d, want 7 — slices keep their turn", i, m.Turn)
+			t.Errorf("unit %d: turn id = %d, want 7: slices keep their turn", i, m.Turn)
 		}
 		if m.From != uint64(seen) {
-			t.Errorf("unit %d: From = %d, want %d — offsets must be contiguous", i, m.From, seen)
+			t.Errorf("unit %d: From = %d, want %d: offsets must be contiguous", i, m.From, seen)
 		}
 		if len(m.Nodes) == 0 {
 			t.Errorf("unit %d is empty", i)
@@ -42,7 +42,7 @@ func TestSliceTurn_BoundsUnitsWithoutLosingNodes(t *testing.T) {
 		seen += len(m.Nodes)
 	}
 	if seen != len(nodes) {
-		t.Fatalf("slices cover %d nodes, want %d — nothing may be dropped or duplicated", seen, len(nodes))
+		t.Fatalf("slices cover %d nodes, want %d: nothing may be dropped or duplicated", seen, len(nodes))
 	}
 }
 
@@ -90,7 +90,7 @@ func TestCommittedMessages_HonoursPartOffset(t *testing.T) {
 	}}}
 	got := committedMessages(page)
 	if len(got) != 1 || got[0].From != 5 {
-		t.Fatalf("unit From = %v, want 5 — a clipped part starts where the wire says", got)
+		t.Fatalf("unit From = %v, want 5, a clipped part starts where the wire says", got)
 	}
 }
 

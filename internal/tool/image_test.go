@@ -238,7 +238,7 @@ func TestFitImageCorrectsAMislabelledMIME(t *testing.T) {
 }
 
 // TestFitImageFlattensAlphaOverWhite: JPEG has no alpha, and the naive
-// conversion paints every transparent pixel BLACK — turning a screenshot with
+// conversion paints every transparent pixel BLACK: turning a screenshot with
 // a transparent titlebar into a photograph of a void.
 func TestFitImageFlattensAlphaOverWhite(t *testing.T) {
 	img := image.NewRGBA(image.Rect(0, 0, 400, 400))

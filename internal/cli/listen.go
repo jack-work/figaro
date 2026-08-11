@@ -31,7 +31,7 @@ import (
 //
 // recordPath, when set, tees the aria wire into a tape (see internal/tape):
 // the testing affordance that turns a bug someone SAW into a bug CI can
-// replay. It is inert when empty — no file, no wrapper, no cost.
+// replay. It is inert when empty: no file, no wrapper, no cost.
 func runListen(loaded *config.Loaded, ariaID, recordPath, note string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -83,7 +83,7 @@ func runListen(loaded *config.Loaded, ariaID, recordPath, note string) {
 type tailOpts struct {
 	// tape records the wire (nil = record nothing).
 	tape *tape.Writer
-	// end closes when the stream is over by the caller's own reckoning — the
+	// end closes when the stream is over by the caller's own reckoning: the
 	// end of a replayed tape. It joins the SAME select the turn-over path uses,
 	// so the exit is the clean one and not an invented interrupt.
 	end <-chan struct{}
@@ -154,7 +154,7 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 				lt.apply(r)
 			}
 		case rpc.MethodTurnDone:
-			// listen is a tail — we don't exit on turn boundaries.
+			// listen is a tail: we don't exit on turn boundaries.
 			// Just surface error reasons so the user sees them.
 			var d rpc.DoneEntry
 			_ = json.Unmarshal(params, &d)
@@ -223,7 +223,7 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 		mu.Unlock()
 	})()
 
-	// Keybindings — the same control keys + pager as send, via the shared loop.
+	// Keybindings: the same control keys + pager as send, via the shared loop.
 	// MakeRaw so Ctrl-C/Ctrl-D arrive as bytes.
 	if tc.IsTTY() {
 		if restore, err := tc.MakeRaw(); err == nil {

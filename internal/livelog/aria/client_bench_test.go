@@ -16,7 +16,7 @@ import (
 // promise is that landing behind the existing API costs nothing, and a promise
 // with no measurement is a wish.
 //
-// Apply is the per-frame path — one call per live delta, i.e. per few
+// Apply is the per-frame path: one call per live delta, i.e. per few
 // characters of streamed model output. View is the per-repaint path; the
 // transcript calls it whenever ClosedRevision moves. Open is called on EVERY
 // transcript frame.
@@ -125,7 +125,7 @@ func BenchmarkClientTrim(b *testing.B) {
 }
 
 // BenchmarkClientTallTurn folds ONE turn that releases its head in slices as
-// Live.From advances — the long-turn path, where the head range's To moves
+// Live.From advances: the long-turn path, where the head range's To moves
 // inside a streaming turn.
 func BenchmarkClientTallTurn(b *testing.B) {
 	for _, n := range []int{100, 1_000} {

@@ -8,7 +8,7 @@ import (
 // THE DUKE IS THE END USER, AND THE CLI CANNOT NAME THEM.
 //
 // The name belongs to the aria being addressed, not to the shell doing the
-// addressing — which is what keeps it out of shell config entirely. So the CLI
+// addressing: which is what keeps it out of shell config entirely. So the CLI
 // sends a PLACEHOLDER and the server resolves it.
 func TestDukePlaceholderIsResolvedByTheTarget(t *testing.T) {
 	raw, err := WithCaller(QuaRequest{Text: "hi"}, "", &CallerRef{Duke: true})
@@ -16,7 +16,7 @@ func TestDukePlaceholderIsResolvedByTheTarget(t *testing.T) {
 		t.Fatalf("WithCaller: %v", err)
 	}
 
-	// Unresolved, the placeholder has NO name — LabelOf must not invent one.
+	// Unresolved, the placeholder has NO name: LabelOf must not invent one.
 	if got := LabelOf(raw); got != "" {
 		t.Fatalf("duke placeholder carried a label: %q", got)
 	}
@@ -100,7 +100,7 @@ func TestDukeRequiresInteractive(t *testing.T) {
 		t.Fatalf("interactive presented %+v, want Duke:true", ref)
 	}
 
-	// The override still wins, and suppresses the placeholder — a script that
+	// The override still wins, and suppresses the placeholder, a script that
 	// names itself is not the duke.
 	t.Setenv("FIGARO_CALLER", "ci-bot")
 	ref = CallerRefFromEnv()

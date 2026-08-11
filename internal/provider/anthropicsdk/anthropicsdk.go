@@ -166,7 +166,7 @@ func (p *Provider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 
 // ContextLimit reports the model's context window: the user's pinned
 // system.max_context_tokens if set, else the window learned from the models
-// endpoint, else the verified static table (0 when unknown). No network I/O —
+// endpoint, else the verified static table (0 when unknown). No network I/O -
 // status surfaces call this.
 func (p *Provider) ContextLimit(model string, snapshot form.Snapshot) int {
 	if model == "" {

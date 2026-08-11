@@ -64,7 +64,7 @@ Give every aria:
 ## Supervising
 
 `figaro aria <name> -- ...` does NOT block until the model is done.
-Don't watch the CLI's PID — watch the aria itself:
+Don't watch the CLI's PID: watch the aria itself:
 
 - `figaro list` → STATE column (`active`/`idle`) and MSGS count.
 - `figaro aria <id> -a -l` → tail for the sentinel.

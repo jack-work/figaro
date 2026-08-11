@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# chalkstress.sh — end-to-end concurrency stress for the figaro chalkboard.
+# chalkstress.sh: end-to-end concurrency stress for the figaro chalkboard.
 #
 # WHY THIS EXISTS
 # ---------------
@@ -55,7 +55,7 @@
 #   STRESS_RACE      build the daemon with -race and hand-start it so its
 #                    stderr is captured; ANY "WARNING: DATA RACE" in the
 #                    daemon log fails the run. This is the end-to-end twin of
-#                    the repro test — on main it fires, after the fix it must
+#                    the repro test: on main it fires, after the fix it must
 #                    not.                                     (default: unset)
 #   STRESS_RACE_LOG  where to copy the daemon log when races are found
 #                                    (default /tmp/chalkstress-daemon-race.log)
@@ -66,7 +66,7 @@
 # its own FIGARO_RUNTIME_DIR and FIGARO_STATE_DIR. FIGARO_CONFIG_DIR and
 # FIGARO_HUSH_APP are inherited so the outfit is realistic (~30 skill blobs).
 # No LLM turn is ever started, so this costs zero tokens. The user's live
-# daemon must never be touched — see guard_isolation() below.
+# daemon must never be touched: see guard_isolation() below.
 
 set -uo pipefail
 
@@ -97,8 +97,8 @@ mkdir -p "$FIGARO_RUNTIME_DIR" "$FIGARO_STATE_DIR"
 
 guard_isolation() {
 	local live_state live_runtime real_state real_runtime
-	[ -n "${FIGARO_STATE_DIR:-}" ]   || fail "FIGARO_STATE_DIR is unset/empty — refusing to run"
-	[ -n "${FIGARO_RUNTIME_DIR:-}" ] || fail "FIGARO_RUNTIME_DIR is unset/empty — refusing to run"
+	[ -n "${FIGARO_STATE_DIR:-}" ]   || fail "FIGARO_STATE_DIR is unset/empty: refusing to run"
+	[ -n "${FIGARO_RUNTIME_DIR:-}" ] || fail "FIGARO_RUNTIME_DIR is unset/empty: refusing to run"
 
 	real_state=$(cd "$FIGARO_STATE_DIR" && pwd -P)     || fail "cannot resolve FIGARO_STATE_DIR"
 	real_runtime=$(cd "$FIGARO_RUNTIME_DIR" && pwd -P) || fail "cannot resolve FIGARO_RUNTIME_DIR"
@@ -121,7 +121,7 @@ guard_isolation() {
 	done
 	# Belt and braces: the isolated dirs must be empty of a live daemon socket
 	# we did not create ourselves.
-	[ ! -e "$real_runtime/angelus.sock" ] || fail "a socket already exists at $real_runtime/angelus.sock — aborting"
+	[ ! -e "$real_runtime/angelus.sock" ] || fail "a socket already exists at $real_runtime/angelus.sock, aborting"
 	log "isolation OK: runtime=$real_runtime state=$real_state"
 }
 
@@ -215,7 +215,7 @@ running() { [ "$(date +%s)" -lt "$END" ]; }
 # Runs a figaro command with stdout+stderr swallowed into the diagnostic log,
 # and records ONE line in <errfile> only if it exits non-zero. figaro chatters
 # on stderr on success (`set k = v`, the `list` footer), so raw stderr is not
-# a failure signal — the exit code is.
+# a failure signal: the exit code is.
 quiet() {
 	local errfile=$1 label=$2; shift 3
 	local rc=0
@@ -302,7 +302,7 @@ note_ok()   { printf '\033[32m  ✓ %s\033[0m\n' "$*" >&2; }
 if kill -0 "$ANGELUS_PID" 2>/dev/null; then
 	note_ok "angelus $ANGELUS_PID still alive"
 else
-	note_fail "angelus $ANGELUS_PID is GONE — the daemon died under concurrent set+state"
+	note_fail "angelus $ANGELUS_PID is GONE: the daemon died under concurrent set+state"
 fi
 
 # Worker errors (a dead socket shows up here first).

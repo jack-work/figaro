@@ -2,7 +2,7 @@
 //
 // Load reads a named outfit TOML chain and returns a form patch.
 // Providers read `system.credo` (and other system keys) straight off
-// the form — no derivation step.
+// the form: no derivation step.
 package outfit
 
 import (
@@ -40,13 +40,13 @@ type Outfitter struct {
 // New returns an Outfitter rooted at configDir with NO snapshot store: reads
 // come from the live files, epoch-cached. A library that writes to a user's
 // disk without being asked is a library that surprises someone, so the
-// snapshot store is opt-in — and the component that has a state directory and
+// snapshot store is opt-in, and the component that has a state directory and
 // a lifecycle to hang it on is the daemon, which calls NewAt.
 func New(configDir string) *Outfitter {
 	return NewAt(configDir, "")
 }
 
-// NewAt is New with the snapshot store placed by hand — what the daemon uses
+// NewAt is New with the snapshot store placed by hand: what the daemon uses
 // (its own state directory) and what tests use (a temp dir). An empty snapDir
 // disables snapshotting: reads then come straight from the live files, which
 // is the pre-snapshot behaviour and still correct, just not edit-proof.
@@ -76,7 +76,7 @@ type Closure struct {
 	Path  string // "" when the outfit was not found
 	Found bool
 	Cycle bool // this name is already being resolved further up the chain
-	// Err is a fault in the FILE itself — unparseable TOML, a malformed
+	// Err is a fault in the FILE itself: unparseable TOML, a malformed
 	// layers list. It rides on the node rather than aborting the walk, so the
 	// closure can still be drawn around the break, and closureError reports it
 	// ahead of anything else because it is the most specific thing wrong.
@@ -103,7 +103,7 @@ type MissingError struct {
 	Missing []string
 	// RootOnly is true when the only thing missing is the outfit that was
 	// asked for. That is the ordinary "no such outfit" and callers may treat
-	// it as an absence rather than a fault — the first-run flow does.
+	// it as an absence rather than a fault: the first-run flow does.
 	RootOnly bool
 }
 
@@ -205,8 +205,8 @@ func (o *Outfitter) resolveNode(ep *epoch, name string, stack []string, memo map
 	}
 	if !n.found {
 		c := &Closure{Name: name}
-		// The file is gone. Nothing downstream will consult its cached fold —
-		// resolution stops here — so this is the only moment we learn it is
+		// The file is gone. Nothing downstream will consult its cached fold -
+		// resolution stops here: so this is the only moment we learn it is
 		// collectible, and the only place that can reap it.
 		o.Forget(name)
 		memo[name] = c
@@ -253,7 +253,7 @@ func layerNames(path string, raw map[string]any) ([]string, error) {
 
 // closureError reports the first structural fault in a closure: a cycle, or
 // anything not on disk. RootOnly says the only thing missing is the outfit that
-// was asked for — the ordinary "no such outfit", which a lenient caller may
+// was asked for: the ordinary "no such outfit", which a lenient caller may
 // treat as an absence.
 func closureError(root *Closure) error {
 	var cycle string
@@ -285,7 +285,7 @@ func closureError(root *Closure) error {
 
 // foldIn returns one outfit's flattened keys: its layers in order, then its
 // own, so the nearest declaration wins. Cached per name per epoch, which makes
-// a layer shared by several others cheap at each of its positions — and, since
+// a layer shared by several others cheap at each of its positions, and, since
 // an epoch is a consistent view, costs nothing to validate.
 //
 // stack carries the chain being folded. A name that reappears on it is a
@@ -348,7 +348,7 @@ func (o *Outfitter) taintOf(ep *epoch, name string) error {
 }
 
 // taint marks every name on a cycle, so none of them is ever walked again in
-// this epoch — not the one that closed the loop, and not the ones that only
+// this epoch: not the one that closed the loop, and not the ones that only
 // lead into it.
 func (o *Outfitter) taint(ep *epoch, names []string, err error) {
 	o.mu.Lock()
@@ -399,7 +399,7 @@ func (o *Outfitter) resolvePath(name string, r *reader) (string, error) {
 //	{ "content":     "...", "filePath": "..." }   // otherwise
 //
 // `dirName` fans each file out as its own dotted key under the
-// table — `skills = { dirName = "skills" }` yields `skills.<base>`
+// table: `skills = { dirName = "skills" }` yields `skills.<base>`
 // entries, each carrying a full envelope. This shape lets completion
 // pickers see each item individually rather than receiving one opaque
 // JSON blob.
@@ -439,7 +439,7 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 				// That order used to be the other way round, and it was a trap
 				// with no alarm on it. A copy in ~/.config outranked the
 				// shipped skill FOREVER: an upgrade could not reach it, so the
-				// copy silently fell behind the binary it documented — one such
+				// copy silently fell behind the binary it documented: one such
 				// shadow in this repo's history ended up 201 lines stale while
 				// holding the only copy of a section that had moved. A skill
 				// that ships with figaro is part of figaro, and an install must
@@ -500,7 +500,7 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 // allowed to read, and refuses anything that leaves it.
 //
 // The reference is DATA. It arrives from an outfit file today, and an outfit
-// file is the user's own — but the loader is the thing that turns a string into
+// file is the user's own: but the loader is the thing that turns a string into
 // a file read inside the daemon, and the daemon reads with the daemon's
 // privileges on the daemon's filesystem. Before the spec collapse a client could
 // send `-O '{"x":{"fileName":"../../.ssh/id_ed25519"}}'` and have the contents
@@ -509,7 +509,7 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 // now), and this makes sure it cannot come back by another door.
 //
 // Symlinks are followed and then checked, so a link inside the root pointing
-// out of it is refused too — that is the version of this bug that survives a
+// out of it is refused too: that is the version of this bug that survives a
 // naive prefix test.
 func assetPath(root, ref string) (string, error) {
 	if ref == "" {
@@ -562,14 +562,14 @@ func contentEnvelope(body, path string) ContentEnvelope {
 // extractFrontmatter returns the raw text between the opening and
 // closing `---` fences, or ("", false) if no parseable frontmatter
 // block is found. The body must begin with a `---` fence on its own
-// line (BOM and leading whitespace are not tolerated — frontmatter is
+// line (BOM and leading whitespace are not tolerated: frontmatter is
 // opt-in), but the line ending may be LF or CRLF.
 //
 // CRLF is not a nicety. The failure is SILENT AND EXPENSIVE: a skill whose
 // fence is not recognised falls through to the full-body envelope, so the
 // WHOLE FILE lands in the form and is inherited by every aria minted
-// from that outfit. Six skills saved with Windows line endings put 101KB —
-// roughly 25k tokens — into every new aria on this author's box, none of it
+// from that outfit. Six skills saved with Windows line endings put 101KB -
+// roughly 25k tokens: into every new aria on this author's box, none of it
 // asked for and none of it visible as anything but a large context.
 func extractFrontmatter(body string) (string, bool) {
 	rest, ok := strings.CutPrefix(body, "---\n")

@@ -1,7 +1,7 @@
 // Package partialjson extracts a top-level string field from a JSON object
 // prefix that may be truncated anywhere. It never errors: it returns the
 // longest safely-decodable prefix of the value so far, so that repeated calls
-// on growing inputs are monotonic — the live preview never rewrites what it
+// on growing inputs are monotonic: the live preview never rewrites what it
 // already showed.
 package partialjson
 
@@ -376,8 +376,8 @@ type Field struct {
 // input are monotonic and a live view never rewrites what it showed.
 //
 // It exists so a renderer can show a tool's arguments while they stream
-// WITHOUT knowing anything about the tool. The alternative — asking each tool
-// which single argument to preview — is what this replaced.
+// WITHOUT knowing anything about the tool. The alternative, asking each tool
+// which single argument to preview: is what this replaced.
 func Fields(data []byte) []Field {
 	p := parser{b: data}
 	if !p.skipWS() || p.peek() != '{' {

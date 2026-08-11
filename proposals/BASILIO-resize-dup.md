@@ -1,11 +1,11 @@
-# PROPOSAL — BASILIO · resize duplication
+# PROPOSAL: BASILIO · resize duplication
 
 Branch **`fix/resize-dup`** (forked from `paint/base`). One-line fix, measured
 rather than argued. `go build ./... && go vet ./... && go test ./...` green.
 
 Owner split, agreed with BARTOLO in writing before either of us committed: **I
 own the fix, BARTOLO owns the regression tests.** The canary is therefore a joint
-act — see [Canary](#canary), which is the one deliverable neither of us can fake
+act: see [Canary](#canary), which is the one deliverable neither of us can fake
 alone.
 
 ---
@@ -34,7 +34,7 @@ cd /home/gluck/dev/figaro-qua/resize-dup
 ```
 
 By hand (`PAINT-REPRO.md` §4–5): stand up a 100×40 pane, `figaro listen
-8566c903`, `^T`, `gg` then three `d`, resize to **100×72 — width only**, capture,
+8566c903`, `^T`, `gg` then three `d`, resize to **100×72: width only**, capture,
 jog the viewport six half-pages away and six back to the *same* offset, capture,
 diff. Any difference at the same footer range is the bug.
 
@@ -61,7 +61,7 @@ row and silently skipped every blank one, because a blank row's new content is
 everywhere: `entryLine` (`transcript_index.go`) returns `""` for row 0 of every
 message separator. So after a resize each separator's blank row kept whatever the
 terminal had left in it, and stayed wrong until the viewport moved far enough to
-make that row *differ* from `t.prev` — "typically fixed upon return".
+make that row *differ* from `t.prev`: "typically fixed upon return".
 
 ## 4. Why "duplicated" and "gap contamination" are one bug
 
@@ -71,7 +71,7 @@ Proven, and one of my own hypotheses died on the way.
 DECSTBM+SU/SD and *multiply* the ghosts. **It does not.** Ghost count is dead
 constant at 4 across 12 successive one-row scrolls: stale rows **relocate, they
 never duplicate**. The source's claim that a mis-detected shift "costs bytes,
-never correctness" survives — but it has an **unstated precondition**: it is only
+never correctness" survives: but it has an **unstated precondition**: it is only
 true while `t.prev` actually equals the terminal. Worth a comment someday; I did
 not add one, as it is not this bug.
 
@@ -80,7 +80,7 @@ not add one, as it is not this bug.
 new frame covers mostly the same viewport, so that old line is very often **also
 rendered in the new frame at its own correct row**. Measured on synthetic
 content: of 3 surviving ghosts, **1 was a line simultaneously on screen
-legitimately** — the user sees it twice. "Lines are duplicated" and "gaps hold
+legitimately**: the user sees it twice. "Lines are duplicated" and "gaps hold
 text from another line" are one event described from two ends.
 
 ## 5. The fix
@@ -98,7 +98,7 @@ same hazard from the other side and which nobody had noticed. Costs nothing on
 the hot path: when `base` is `prev` or `predBuf` it is always `len(screen)`.
 I also corrected the two comments that stated an intent the code did not deliver.
 
-### Why not the alternatives — and why this is **not** a `BLOCKED:`
+### Why not the alternatives, and why this is **not** a `BLOCKED:`
 
 My brief told me to escalate if choosing here was a visible behaviour trade-off.
 **I measured, and it isn't**, so escalating would have been noise:
@@ -110,7 +110,7 @@ My brief told me to escalate if choosing here was a visible behaviour trade-off.
 | `t.prefix += "\x1b[2J"` | fixes resize only; leaves the painter footgun loaded | **visible flicker** | worse on both axes |
 
 The measurement that removes the trade-off: the post-resize frame is **3730 bytes
-before, 3774 after**. It is that cheap *structurally* — every non-blank row
+before, 3774 after**. It is that cheap *structurally*: every non-blank row
 already differed from a nil base and was already being retransmitted, so the only
 rows added are the blank ones, at `CUP`+`EL` each. `\x1b[2J` would also have
 fixed it and would flicker, which the original comment was right to avoid. There
@@ -121,13 +121,13 @@ was never a decision here, only a number somebody had to take.
 ## 6. Evidence
 
 **Real pty A/B.** Same script, same aria, fresh pane *and* fresh daemon per arm,
-md5 printed so the arms provably differ (trap #11 — two arms that produce
+md5 printed so the arms provably differ (trap #11: two arms that produce
 identical output are more often one binary than one bug):
 
 | arm | md5 | result |
 |---|---|---|
-| before — pristine `paint/base` | `0e04173e36e9` | 5 clean, **3 CONTAMINATED**, 1 skipped |
-| after — `fix/resize-dup` HEAD | `c1330222cc02` | **8 clean, 0 contaminated**, 1 skipped |
+| before: pristine `paint/base` | `0e04173e36e9` | 5 clean, **3 CONTAMINATED**, 1 skipped |
+| after: `fix/resize-dup` HEAD | `c1330222cc02` | **8 clean, 0 contaminated**, 1 skipped |
 
 Contaminated cases: `width-72` (5 rows), `width-120` (3 rows), `both-64x20` (1).
 Full log: `/var/tmp/paint-basilio/ab.log`; captures under
@@ -153,10 +153,10 @@ reading each one:**
 | field | why it is already safe |
 |---|---|
 | `rowCache`, `cacheW` | `buildIndex` clears the cache when `t.cacheW != t.w` (`transcript_index.go:132`), and `resize` calls `buildIndex`. Already correct. |
-| `predBuf` | `planScroll` regrows it to `h` and `copy`s from `prev` before every use; never read stale. And it cannot run at all on the resize frame — it requires `len(prev) == h`, and `prev` is nil. |
+| `predBuf` | `planScroll` regrows it to `h` and `copy`s from `prev` before every use; never read stale. And it cannot run at all on the resize frame: it requires `len(prev) == h`, and `prev` is nil. |
 | `keysOld`, `keysNew` | regrown to `h` and fully overwritten on every `planScroll` call. |
 | `screenSpare` | `nextScreen` `clear()`s it before handing it out (or allocates). |
-| `prefix` | only ever set by `enter()`, and consumed by the next paint. `resize` deliberately does **not** add `\x1b[2J` — see §5. |
+| `prefix` | only ever set by `enter()`, and consumed by the next paint. `resize` deliberately does **not** add `\x1b[2J`: see §5. |
 
 Note the interaction ALMAVIVA suspected is real but benign: `prev = nil` disables
 `planScroll` for exactly one frame, so the resize frame is always a plain full
@@ -164,13 +164,13 @@ diff and the scroll path re-arms next frame against a base that is now true.
 
 ## 8. Canary
 
-**I did not write the regression tests — BARTOLO owns them, by agreement.** So
+**I did not write the regression tests: BARTOLO owns them, by agreement.** So
 the canary is deliberately split, which is what makes it evidence: BARTOLO lands
 his tests against **pristine `paint/base`** and quotes the failure; he then
 applies my patch and quotes the pass. Neither of us can produce both halves
 alone.
 
-What I can attest, from my own scratch probes (run, then deleted — they are not
+What I can attest, from my own scratch probes (run, then deleted: they are not
 tests, they are measurements):
 
 ```
@@ -190,7 +190,7 @@ so it cannot erase content that was previously drawn.
   `len(screen)`, so `r < len(base)` is true on every steady-state frame and the
   compare is unchanged.
 - Byte cost on resize: **+1.2%, measured**.
-- Flicker: none — no clear is emitted, and the whole frame stays inside the
+- Flicker: none: no clear is emitted, and the whole frame stays inside the
   existing `\x1b[?2026h` synchronized update.
 - The existing paint tests (including the byte-thrift assertions
   `TestTranscriptPaint_UsesScrollRegion`, `TestPaintReusesBuffers*`, and the tmux
@@ -208,22 +208,22 @@ so it cannot erase content that was previously drawn.
 - **Falsification of the convergence claim beyond resize.** BARTOLO's lane: a
   live streaming turn, `/`-search + `n`/`N`, a history page landing mid-view, the
   `!`/`Q` panels, `gg`/`G`, the wheel. My sweep covered scroll, `C-n`, `Enter`,
-  `C-o` — all clean, one aria, one geometry. **If he finds contamination with no
+  `C-o`, all clean, one aria, one geometry. **If he finds contamination with no
   resize, that is a second bug and this fix does not claim it.**
 - **`enter()` and `leave()`**, which also nil `prev`, are now covered by the same
-  guard, but I did not go looking for bugs there. `enter()` was never broken —
+  guard, but I did not go looking for bugs there. `enter()` was never broken -
   it pairs its nil with `\x1b[2J`.
 
 ## 11. Decisions for the user
 
-**None.** I looked for one and measured it away — see §5. The only judgement call
+**None.** I looked for one and measured it away: see §5. The only judgement call
 was fix shape, and the cheapest correct option is also the least visible, so
 there is nothing to trade.
 
 One thing worth a human's *opinion* rather than a decision: the pager suppresses
 `\x1b[2J` on resize to avoid flicker and now genuinely does not need it. If the
 user ever reports residual flicker or tearing on resize over a slow link, the
-frame is a candidate for a `\x1b[2J` + full paint after all — but on this
+frame is a candidate for a `\x1b[2J` + full paint after all: but on this
 evidence that would be a regression, not a fix.
 
 ---

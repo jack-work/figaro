@@ -73,8 +73,8 @@ func TestAriaReaderWithoutBackend(t *testing.T) {
 	require.ErrorContains(t, err, "no backend")
 }
 
-// A nil projector is legal — figaro-the-engine ships without
-// figaro-the-display — and must serve empty pages, not panic.
+// A nil projector is legal: figaro-the-engine ships without
+// figaro-the-display, and must serve empty pages, not panic.
 func TestAriaReaderWithoutProjector(t *testing.T) {
 	backend, id := benchStore(t, 4)
 	r := NewAriaReader(backend, nil)

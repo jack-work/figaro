@@ -60,7 +60,7 @@ type ProjectionConfig[T any] struct {
 // slice was the single biggest reason an agent could not be made cheap.
 //
 // What the wire needs in full is the ENCODED projection, carried in
-// Previous.State — bytes, not structs, and unavoidable because it is the
+// Previous.State: bytes, not structs, and unavoidable because it is the
 // request body. The decoded prefix was never needed for anything.
 func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjection[T], ProjectionStats, error) {
 	state := config.Initial
@@ -79,8 +79,8 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 	prefix := total - len(entries)
 
 	// The watermark is only trustworthy if the prefix is exactly as long as it
-	// was when the watermark was taken. Anything else — a Clear, a fork
-	// rewrite, a fingerprint change that raced us — means the cached state
+	// was when the watermark was taken. Anything else, a Clear, a fork
+	// rewrite, a fingerprint change that raced us: means the cached state
 	// describes a log that no longer exists, so fall back to a cold walk.
 	if previous := config.Previous; previous != nil &&
 		previous.Fingerprint == config.Fingerprint &&
@@ -115,7 +115,7 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 		// The observed set: the same derivation per member, from the same
 		// stamp. The bound board above is member zero of this pattern; the
 		// studied forms are the shared members, and their transitions fold
-		// into the provider IR identically — re-derived on retranslate.
+		// into the provider IR identically: re-derived on retranslate.
 		for fid, upTo := range entry.StudyVersions {
 			acc := config.Studies[fid]
 			if acc == nil {

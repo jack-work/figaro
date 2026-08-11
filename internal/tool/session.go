@@ -78,7 +78,7 @@ func (s *ExecSession) writeChunk(p []byte) {
 // supervise attaches a started process and watches it to completion,
 // enforcing the hard-kill deadline. It is deliberately free of any
 // caller context: only the timeout (or an explicit Kill) ends the
-// process early — a tool-call abort never does.
+// process early, a tool-call abort never does.
 func (s *ExecSession) supervise(proc Process, hardTimeout time.Duration) {
 	s.mu.Lock()
 	s.proc = proc

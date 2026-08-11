@@ -1,5 +1,5 @@
 // Package openaichat implements the Provider for OpenAI-compatible Chat
-// Completions endpoints — OpenRouter, and local gateways that speak the same
+// Completions endpoints: OpenRouter, and local gateways that speak the same
 // dialect (coding-router). The Anthropic-family providers live next door;
 // this one exists because the wire format genuinely differs, while the route
 // and cache machinery are shared through internal/provider.
@@ -29,8 +29,8 @@ type chatRequest struct {
 	// CacheControl is the request-level directive: the endpoint applies the
 	// breakpoint to the last cacheable block and advances it itself as the
 	// conversation grows. Preferred for a router, which is the only party
-	// that knows which model — and therefore which minimum cacheable size
-	// and which breakpoint budget — the request resolved to.
+	// that knows which model, and therefore which minimum cacheable size
+	// and which breakpoint budget: the request resolved to.
 	CacheControl *cacheControl `json:"cache_control,omitempty"`
 
 	// SessionID and PromptCacheKey are the same value under the two names
@@ -53,7 +53,7 @@ type cacheControl struct {
 }
 
 // chatMessage keeps Content as raw JSON because the dialect accepts two
-// shapes — a bare string, or a list of typed parts — and only the second can
+// shapes, a bare string, or a list of typed parts, and only the second can
 // carry a cache marker. Which shape is used is a property of the route, so a
 // message's bytes never change between turns.
 type chatMessage struct {
@@ -111,7 +111,7 @@ type chatUsage struct {
 // toIR maps gateway usage into figaro's four buckets.
 //
 // prompt_tokens is INCLUSIVE of cache reads and writes, while figaro's
-// InputTokens is the uncached remainder — tokens.ContextFromUsage sums all
+// InputTokens is the uncached remainder: tokens.ContextFromUsage sums all
 // four, so double-counting here would inflate every cached aria's context
 // figure by the size of its own cache.
 func (u chatUsage) toIR() *message.Usage {
@@ -374,7 +374,7 @@ func projectTools(tools []provider.Tool) []chatTool {
 
 // markRequest applies the resolved plan.
 //
-// Per-block mode marks the system prefix and the rolling tail — two markers,
+// Per-block mode marks the system prefix and the rolling tail: two markers,
 // not three: this dialect carries tool definitions in a sibling array with
 // nowhere to hang a marker, so the tool breakpoint of the Anthropic path has
 // no equivalent here. The tail is stamped LAST in wire order, because a

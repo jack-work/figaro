@@ -130,7 +130,7 @@ func FuzzParseCachePolicy(f *testing.F) {
 			t.Fatalf("setting %q disabled caching but kept ttl %q", setting, p.TTL)
 		}
 		// Idempotence: re-parsing the canonical spelling is a fixed point.
-		// "none" is the canonical spelling of the off policy — the empty
+		// "none" is the canonical spelling of the off policy: the empty
 		// string means "unset", which is ON by default.
 		canonical := "none"
 		if !p.Off() {

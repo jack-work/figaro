@@ -111,7 +111,7 @@ func TestRestoreBindings_SkipsDeadPID(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bindings.json")
 
-	// 2^30 is well above default kernel.pid_max (4M) — cannot be alive.
+	// 2^30 is well above default kernel.pid_max (4M): cannot be alive.
 	const deadPID = 1 << 30
 	file := `{"bindings":[{"pid":1073741824,"figaro_id":"ghost","start_time":42}]}`
 	require.NoError(t, os.WriteFile(path, []byte(file), 0600))

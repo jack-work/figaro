@@ -8,7 +8,7 @@ import (
 	"github.com/jack-work/figaro/internal/form"
 )
 
-// The form is stored flat — one dotted key, one value, one patch record — but
+// The form is stored flat: one dotted key, one value, one patch record: but
 // read as the tree those keys describe.
 func TestNestSnapshotBuildsTheTree(t *testing.T) {
 	snap := form.FromMap(map[string]json.RawMessage{

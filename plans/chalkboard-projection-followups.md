@@ -1,4 +1,4 @@
-# Chalkboard projection — follow-ups
+# Chalkboard projection: follow-ups
 
 Filed 2026-08-03 alongside the fix for "every provider round-trip re-sent the
 whole chalkboard". That fix is in; these are the things it deliberately did NOT
@@ -14,13 +14,13 @@ Context for the fix itself:
 upTo]`, instead of the implicit `PatchesUpTo(version)`. The projection carries
 `LastChalkVersion` across a warm start, so a resumed pass renders exactly the
 patches a cold walk would. `patchCursor` still walks forward once and its index
-only advances — no per-entry scan, no binary search.
+only advances: no per-entry scan, no binary search.
 
 The bug was that a *fresh* cursor (index 0) was handed to a projection that
 warm-starts at `previous.Entries`. The entry index was preserved; the cursor's
 was not. An absolute range cannot express that mistake, which is the point.
 
-## 1. Stop materialising the whole patch list on every Send  — the real win
+## 1. Stop materialising the whole patch list on every Send: the real win
 
 `Agent.chalkAccessor()` calls `backend.ChalkboardPatches(a.id)` once per
 provider Send, and that returns **a copy of every patch the aria has ever
@@ -35,11 +35,11 @@ several times per turn to render, typically, one patch or none. It is O(total
 board) work on a path invariant #14 says must be O(delta).
 
 Better shape: hand the projection a view that can answer `(after, upTo]`
-without copying — the patches are already ordered by version and held in
+without copying: the patches are already ordered by version and held in
 `chalkCache`, so a bounded sub-slice under the existing lock would do. Keep the
 absolute range in the interface; only the plumbing changes.
 
-## 2. Missing tests — deliberately skipped for turnaround
+## 2. Missing tests: deliberately skipped for turnaround
 
 Verified by live reproduction instead (fresh aria, several tool round-trips,
 decode `translations-v2/copilot-messages/<node>/*.jsonl` and count
@@ -49,21 +49,21 @@ decode `translations-v2/copilot-messages/<node>/*.jsonl` and count
   two warm-resumed passes; assert the rendered patch sets per LT are
   identical. This is the invariant that broke and it is cheap to state.
 - **A patch is rendered exactly once.** Across a whole projection, the union
-  of `msg.Patches` must equal the aria's patch list with no duplicates —
+  of `msg.Patches` must equal the aria's patch list with no duplicates -
   catches both this regression (all patches, repeatedly) and 072fd24's
   (no patches at all).
 - **`LastChalkVersion` survives the hand-built projections.** All three
   providers rebuild `IncrementalProjection` by hand after a live append
   (`copilot/responses.go`, `anthropic/anthropic.go`,
   `anthropicsdk/anthropicsdk.go`). Dropping the field there silently
-  reintroduces the bug on the live path only — the nastiest possible
+  reintroduces the bug on the live path only: the nastiest possible
   variant, because a cold reopen looks correct.
 
 ## 3. Arias already poisoned
 
 The duplication was written into the per-LT translation cache, so affected
 arias keep paying it until their cache is invalidated. A `Fingerprint()` bump
-clears it (`classDerived` in `store/schema.go` — the cache is regenerated
+clears it (`classDerived` in `store/schema.go`: the cache is regenerated
 lazily). Not done automatically here: it re-encodes every aria on next use, and
 that is a decision for whoever cuts the release, not for a hotfix.
 

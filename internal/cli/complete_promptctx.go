@@ -21,7 +21,7 @@ import (
 // Otherwise the pool is the union of:
 //
 //   - form keys (well-known + live snapshot, via the existing
-//     completeFormKeys plumbing — same source the `set` and
+//     completeFormKeys plumbing: same source the `set` and
 //     `unset` commands use).
 //   - entries from the current working directory, with a trailing "/"
 //     on directories so the shell renders them correctly.

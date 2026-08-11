@@ -10,14 +10,14 @@ import (
 //
 // glamour's dark style emits its colour per *cell*: a padded prose row comes
 // back as `ESC[38;5;252m<space>ESC[0m` repeated forty times, which is 76% ANSI
-// by weight. Those sequences are redundant — between two adjacent cells the
-// reset/set pair returns the terminal to the state it was already in — so they
+// by weight. Those sequences are redundant: between two adjacent cells the
+// reset/set pair returns the terminal to the state it was already in: so they
 // cost retained memory in the row cache and, worse, bytes down the pipe on
 // every painted frame (the thing you feel over ssh or inside tmux).
 //
 // collapseSGR removes them. It is deliberately *subtractive*: it only ever
 // drops whole escape sequences, and never synthesizes or reorders one. That is
-// what makes "visually identical" a provable property rather than a hope — a
+// what makes "visually identical" a provable property rather than a hope, a
 // dropped sequence is one whose effect on the rendition state was nil at the
 // point it appeared, so every printable cell is written under exactly the
 // rendition it had before, and the state at the end of the row is unchanged.
@@ -65,7 +65,7 @@ const (
 
 // sgrState is a graphic-rendition state, with per-field knowledge: on entry to
 // a row nothing is known, and each sequence teaches the model only about the
-// fields it sets. The zero value is therefore "unknown", not "default" — a row
+// fields it sets. The zero value is therefore "unknown", not "default", a row
 // never assumes what the row above it left behind, which is what keeps a
 // leading `ESC[0m` from being collapsed away.
 type sgrState struct {
@@ -111,15 +111,15 @@ func (a sgrState) equal(b sgrState) bool {
 type escKind uint8
 
 const (
-	escSGR     escKind = iota // CSI <digits and semicolons> m — a rendition change
+	escSGR     escKind = iota // CSI <digits and semicolons> m, a rendition change
 	escNeutral                // a CSI final that provably cannot change the rendition
 	escOpaque                 // anything else: pass through, then forget the state
 )
 
 // csiRenditionNeutral lists CSI final bytes that move the cursor or erase but
 // never alter the graphic rendition: CUU/CUD/CUF/CUB/CNL/CPL/CHA/CUP, ED, EL,
-// IL, DL, DCH, SU, SD, ECH, HPA, HPR, VPA, VPR. They still act as barriers —
-// ED/EL/ECH fill with the *current* background — so pending rendition changes
+// IL, DL, DCH, SU, SD, ECH, HPA, HPR, VPA, VPR. They still act as barriers -
+// ED/EL/ECH fill with the *current* background: so pending rendition changes
 // are always realized before one of them is written.
 const csiRenditionNeutral = "ABCDEFGHJKLMPSTX`ade"
 
@@ -194,7 +194,7 @@ func sgrParam(params string, i int) (val int, next int, ok bool) {
 
 // applySGRParams folds an SGR sequence's parameter string (the bytes between
 // "\x1b[" and the final 'm') into st. absolute reports whether the resulting
-// state is independent of st — true once a reset parameter has been seen —
+// state is independent of st: true once a reset parameter has been seen -
 // which is what lets the collapser drop everything before it.
 func applySGRParams(st sgrState, params string, tok *uint32) (out sgrState, absolute bool) {
 	if params == "" { // ESC[m == ESC[0m
@@ -293,7 +293,7 @@ func applySGRParams(st sgrState, params string, tok *uint32) (out sgrState, abso
 func extendedColor(params string, i int) (sgrColor, int, bool) {
 	// Every sub-parameter must be present and spelled with digits. A selector
 	// with a missing (`ESC[48;5m`) or empty (`ESC[38;5;;m`) sub-parameter is
-	// malformed and real terminals disagree about what it means — one reads the
+	// malformed and real terminals disagree about what it means: one reads the
 	// empty field as colour 0 and carries on, another abandons the sequence. So
 	// refuse to model it and let the caller go opaque, rather than pick a
 	// reading and collapse on the strength of it.
@@ -431,7 +431,7 @@ type sgrCollapser struct {
 	tok  uint32
 }
 
-// push buffers one SGR sequence. If the buffer fills (pathological — real rows
+// push buffers one SGR sequence. If the buffer fills (pathological: real rows
 // run 2 to 4 sequences between printable characters) the run is decided early:
 // flush's reasoning is valid at any point, a barrier only makes it more
 // effective, so an over-long run is collapsed in pieces rather than kept whole.
@@ -447,7 +447,7 @@ func (c *sgrCollapser) drop(k int) {
 	if c.out == nil {
 		// The result can only be shorter than the input, so one allocation of
 		// len(s) covers the whole row. Growing from nil instead took seven
-		// appends per row — a third of the normalizer's cost.
+		// appends per row, a third of the normalizer's cost.
 		c.out = make([]byte, 0, len(c.s))
 	}
 	c.out = append(c.out, c.s[c.copied:int(c.run[k].start)]...)
@@ -468,7 +468,7 @@ func (c *sgrCollapser) flush() {
 	final := run[len(run)-1].st
 
 	// Whole run is a round trip (`ESC[0m ESC[38;5;252m` back to the colour
-	// already in effect — the glamour per-cell pattern): none of it is needed.
+	// already in effect: the glamour per-cell pattern): none of it is needed.
 	if c.emitted.equal(final) {
 		for k := range run {
 			c.drop(k)

@@ -17,7 +17,7 @@ import (
 
 // liveKeysStatus names the three distinct answers a live-key fetch can
 // give. They used to be collapsed into "nil or not", and the collapse
-// was a defect: "no aria bound" (the catalog is all that is knowable —
+// was a defect: "no aria bound" (the catalog is all that is knowable -
 // offer it) and "an aria is bound but unreadable" (offering the catalog
 // substitutes documentation for state) both looked like nil, so a shell
 // attending a real aria was shown a hardcoded key list with every
@@ -26,7 +26,7 @@ import (
 type liveKeysStatus int
 
 const (
-	// liveKeysUnbound: no aria is bound to this shell — including the
+	// liveKeysUnbound: no aria is bound to this shell: including the
 	// no-daemon case, where nothing CAN be bound. The well-known
 	// catalog is the honest and complete answer.
 	liveKeysUnbound liveKeysStatus = iota
@@ -35,7 +35,7 @@ const (
 	liveKeysOK
 
 	// liveKeysFetchFailed: an aria IS bound but its form could not be
-	// read — a dead endpoint, a daemon from another revision refusing
+	// read, a dead endpoint, a daemon from another revision refusing
 	// the method, a timeout. The board's real keys exist and are
 	// unknowable right now; a catalog offered here is a wrong answer
 	// dressed as a right one.
@@ -44,14 +44,14 @@ const (
 
 // completeFormKeys returns the union of well-known keys and
 // live snapshot keys for the pid-bound aria. Used by both `set` and
-// `unset` — no mode filtering, the runtime decides what's actionable.
+// `unset`: no mode filtering, the runtime decides what's actionable.
 // Templated keys like "system.environment.<name>" are expanded to
 // one entry per allowlist member.
 //
 // When an aria is bound but its form cannot be fetched, this declines
 // to offer anything rather than presenting the catalog as if it were
 // the board's state (see liveKeysStatus). Completion still never
-// blocks, prompts, or autostarts a daemon — the decline is one line on
+// blocks, prompts, or autostarts a daemon: the decline is one line on
 // stderr, which the shell-side completion glue discards (2>/dev/null)
 // and a human running `figaro __complete …` by hand can read.
 func completeFormKeys(c *cmdkit.CompleteContext) []string {
@@ -96,7 +96,7 @@ func completeFormKeys(c *cmdkit.CompleteContext) []string {
 
 // softFetchLiveKeys best-effort fetches snapshot keys for the
 // pid-bound aria. It never autostarts the daemon, prompts the user, or
-// blocks long — but it does say which of the three facts it found
+// blocks long: but it does say which of the three facts it found
 // (see liveKeysStatus): unbound, fetched, or bound-but-unreadable. The
 // error accompanies liveKeysFetchFailed and names the failing step, so
 // a mixed-version daemon ("method not found") is distinguishable from a

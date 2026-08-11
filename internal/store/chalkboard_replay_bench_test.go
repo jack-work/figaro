@@ -11,20 +11,20 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 )
 
-// Form replay benchmarks — the BEFORE measurement for the
+// Form replay benchmarks: the BEFORE measurement for the
 // persistent-tree migration (branch chalk/bench, see DESIGN.md).
 //
 // Two paths are measured:
 //
-//  1. BenchmarkFormReduceFold — the figwal reducer,
+//  1. BenchmarkFormReduceFold: the figwal reducer,
 //     formReduce (xwal_store.go). figwal folds it over every
 //     sealed record on segment open (xwal.reducibleFold), and it
 //     unmarshals the WHOLE board, applies one patch, and re-marshals
 //     the WHOLE board per record. Cost per record is O(board), so a
-//     replay of N records over an M-key board is O(N*M) — the
+//     replay of N records over an M-key board is O(N*M): the
 //     quadratic we expect to see, and the reason this file exists.
 //
-//  2. BenchmarkFormOpenReplay — the end-to-end open path:
+//  2. BenchmarkFormOpenReplay: the end-to-end open path:
 //     XwalBackend.FormState on a cold backend, which runs
 //     loadFormLocked (a per-record map fold, not the reducer)
 //     plus whatever figwal does on open.
@@ -86,7 +86,7 @@ func replayValue(rng *rand.Rand, size int) json.RawMessage {
 }
 
 // replayPatches returns n single-key patches, cycling over the board's
-// own keys — i.e. what a long aria's form channel actually holds
+// own keys: i.e. what a long aria's form channel actually holds
 // (one `figaro set`-shaped record at a time).
 func replayPatches(m, n int) []message.Patch {
 	rng := rand.New(rand.NewSource(11))

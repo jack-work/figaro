@@ -16,7 +16,7 @@ import (
 
 // Attending must be free. Before this, bind and attach both called
 // restoreByID, so `figaro attend` on a cold aria paid a full restore and
-// pinned 12-14 MB — and a daemon restart woke every aria that had a live
+// pinned 12-14 MB, and a daemon restart woke every aria that had a live
 // terminal, which on a busy machine is most of them.
 func TestAttendDoesNotWake(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
@@ -141,7 +141,7 @@ func TestHibernateRefusesActiveAria(t *testing.T) {
 		rpc.QuaRequest{Text: "keep me busy"}, &out))
 
 	// The turn may be brief with a mock provider, so only assert the refusal
-	// when we actually caught it active — a flaky assertion here would be
+	// when we actually caught it active, a flaky assertion here would be
 	// worse than none.
 	if f := a.Registry.Get(id); f != nil && f.TurnActive() {
 		require.Error(t, a.Registry.Hibernate(id), "reclaimed an active aria")

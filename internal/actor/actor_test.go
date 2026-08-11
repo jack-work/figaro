@@ -173,7 +173,7 @@ func TestContextCancelCloses(t *testing.T) {
 //
 // The asymmetry is load-bearing. Form.Apply blocks on a reply its handler
 // produces, so dropping accepted items would leave every caller past Send
-// waiting forever — the hang this is supposed to prevent. The doc used to claim
+// waiting forever: the hang this is supposed to prevent. The doc used to claim
 // the opposite of what the code did, which is worse than either behaviour.
 func TestCloseDeliversWhatWasAlreadyAccepted(t *testing.T) {
 	q := actor.Start[int](context.Background(), nil, nil)

@@ -9,8 +9,8 @@ import (
 
 // AN EDIT MUST SHOW THE EDIT.
 //
-// `edits` is a list of objects — the one argument shape in figaro that is not
-// a scalar — and it used to render through fmt's %v:
+// `edits` is a list of objects: the one argument shape in figaro that is not
+// a scalar, and it used to render through fmt's %v:
 //
 //	edits [map[new_text:// render draws one block… old_text:…]]
 //
@@ -56,7 +56,7 @@ func TestNestedArgsFlattenByPath(t *testing.T) {
 }
 
 // Scalars that are not strings are JSON, which is the notation they arrived
-// in — never %v, and never quoted like a string.
+// in: never %v, and never quoted like a string.
 func TestNonStringScalarsAreJSON(t *testing.T) {
 	n := livedoc.Node{Type: livedoc.NodeTool, Name: "bash",
 		Args: map[string]any{"command": "true", "timeout": float64(240), "quiet": true}}

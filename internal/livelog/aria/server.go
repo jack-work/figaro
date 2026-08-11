@@ -24,7 +24,7 @@ type Server struct {
 	// baseTurn/base remember where a turn's streaming region begins. The
 	// producer recomposes the WHOLE region on every frame (it reads the turn's
 	// messages back from the log), so a second round inside one turn must
-	// reopen at the same boundary rather than after the first round — else the
+	// reopen at the same boundary rather than after the first round: else the
 	// recomposed nodes would be appended again instead of replacing.
 	baseTurn uint64
 	base     uint64
@@ -42,7 +42,7 @@ type openTurn struct {
 // NewServer returns an empty aria server.
 func NewServer() *Server { return &Server{subs: map[int]func(Page){}} }
 
-// LastTurn returns the id of the newest known turn (0 if none) — the cursor a
+// LastTurn returns the id of the newest known turn (0 if none): the cursor a
 // client streams from.
 func (s *Server) LastTurn() uint64 {
 	s.mu.Lock()
@@ -77,7 +77,7 @@ func (s *Server) Restore(turns []Turn) {
 
 // AdoptIfEmpty seeds a server that has never materialized anything, and
 // reports whether it did. s.turns fills as turns seal, so an aria this process
-// has not run a turn for — a dormant one, just attached — holds nothing and
+// has not run a turn for, a dormant one, just attached: holds nothing and
 // would serve an empty page. The caller composes from the durable log outside
 // this lock (it is not cheap) and offers the result here; if a turn opened in
 // the meantime the live state is already authoritative and the offer is
@@ -111,7 +111,7 @@ func (s *Server) OpenTurn(id uint64) {
 
 // Update applies the suffix's new full node list and broadcasts the field
 // deltas against the prior frame (v++ if anything changed). Node ids are
-// positional — the i'th suffix node is id from+i — so identity needs no
+// positional: the i'th suffix node is id from+i: so identity needs no
 // separate key.
 func (s *Server) Update(nodes []livedoc.Node) {
 	s.mu.Lock()
@@ -137,10 +137,10 @@ func (s *Server) Update(nodes []livedoc.Node) {
 	}
 	v := s.open.ver
 	s.open.ver++
-	// The question rides the frames that ESTABLISH this streaming suffix — its
-	// first, and its close — and no others. See inquiryOfLocked.
-	// The question rides the frames that ESTABLISH this streaming suffix — its
-	// first, and its close — and no others. See inquiryOfLocked.
+	// The question rides the frames that ESTABLISH this streaming suffix: its
+	// first, and its close, and no others. See inquiryOfLocked.
+	// The question rides the frames that ESTABLISH this streaming suffix: its
+	// first, and its close, and no others. See inquiryOfLocked.
 	inquiry, segments := "", []InquirySegment(nil)
 	if v == 0 {
 		inquiry, segments = s.inquiryOfLocked(s.open.id)
@@ -155,8 +155,8 @@ func (s *Server) Update(nodes []livedoc.Node) {
 	deliver(subs, frame)
 }
 
-// Close folds the streaming suffix into its turn. The turn itself stays open —
-// a turn spans many messages — so nothing is sealed here; Seal does that.
+// Close folds the streaming suffix into its turn. The turn itself stays open -
+// a turn spans many messages: so nothing is sealed here; Seal does that.
 func (s *Server) Close() {
 	s.mu.Lock()
 	if s.open == nil {
@@ -185,7 +185,7 @@ func (s *Server) Close() {
 }
 
 // Seal marks the newest turn finished: it stops moving, and every node in it
-// is immutable from here. This is the one moment the word means — and, later,
+// is immutable from here. This is the one moment the word means, and, later,
 // the moment the turn is written to its xwal channel.
 func (s *Server) Seal(lts []uint64) {
 	s.mu.Lock()
@@ -242,7 +242,7 @@ func (s *Server) Subscribe(push func(Page)) (cancel func()) {
 }
 
 // Read pages forward from at; ReadBefore pages backward. Both are the same
-// cut, differing only in which side of the anchor the budget is spent on —
+// cut, differing only in which side of the anchor the budget is spent on -
 // that is what lets a scrolling client pull an earlier or a later page from
 // wherever it happens to be.
 func (s *Server) Read(at Anchor, budget int) Page {
@@ -439,20 +439,20 @@ func (s *Server) OpenInquiry(id uint64, inquiry string, segments ...InquirySegme
 	}}})
 }
 
-// inquiryOfLocked is the recorded question for a turn — its text AND the
-// segments naming who asked it — or the zero values if none. Caller holds s.mu.
+// inquiryOfLocked is the recorded question for a turn: its text AND the
+// segments naming who asked it: or the zero values if none. Caller holds s.mu.
 //
 // WHICH FRAMES CARRY IT, and why it is not all of them.
 //
 // It used to ride exactly ONE frame, the OpenInquiry broadcast. A client that
 // had not folded that single frame before nodes arrived held a turn with
-// content and no question, and nothing later re-supplied it — only the seal
+// content and no question, and nothing later re-supplied it: only the seal
 // carries the whole Turn, which is why the question appeared when the turn
 // ENDED and not before. The fix was to put it on every part.
 //
 // That fix was too broad. A part is a DELTA against a turn the client already
 // holds, and the client has always kept the question it was given
-// (Client.inquiry, re-applied in Client.message) — so an absent inquiry means
+// (Client.inquiry, re-applied in Client.message): so an absent inquiry means
 // UNCHANGED, exactly as an absent node field does. Restating it on every frame
 // of a streaming turn was 38% of the bytes pushed on a measured tape.
 //
@@ -464,7 +464,7 @@ func (s *Server) OpenInquiry(id uint64, inquiry string, segments ...InquirySegme
 //     the original bug was about: a client that subscribed after OpenInquiry
 //     and before any node;
 //   - Close, the suffix's own end marker;
-//   - Seal, and every snapshot — so `figaro.read` always answers with it, which
+//   - Seal, and every snapshot: so `figaro.read` always answers with it, which
 //     is what a client joining mid-turn is required to issue anyway.
 //
 // What it does NOT ride is the 2nd..Nth delta of a suffix, which is all of the
@@ -473,7 +473,7 @@ func (s *Server) OpenInquiry(id uint64, inquiry string, segments ...InquirySegme
 // It returns the SEGMENTS for the same reason, and that half was missing:
 // re-supplying the text alone made every streaming frame a part that named the
 // question but not its askers, and the client holds what a part last said
-// (heldInquiry) — so the attributed inquiry OpenInquiry had just broadcast was
+// (heldInquiry): so the attributed inquiry OpenInquiry had just broadcast was
 // overwritten with an unattributed copy by the very next frame. `figaro show`
 // re-derives segments from the IR and was right; the live surfaces were told
 // the question came from nobody. A steer was unaffected: it is a node, and a

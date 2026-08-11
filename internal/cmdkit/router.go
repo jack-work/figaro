@@ -29,7 +29,7 @@ type Router struct {
 	Fallback func(args []string, extra interface{}) error
 
 	// Stdout takes REQUESTED output: --help, help <cmd>, --version. The
-	// split is about who asked — help you asked for must be pipeable;
+	// split is about who asked: help you asked for must be pipeable;
 	// usage printed because argv was wrong is a diagnostic (Stderr).
 	Stdout io.Writer
 
@@ -37,7 +37,7 @@ type Router struct {
 	// error. Defaults to os.Stderr.
 	Stderr io.Writer
 
-	// Synopsis is extra usage lines printed under the Usage header —
+	// Synopsis is extra usage lines printed under the Usage header -
 	// for forms the router itself does not dispatch (e.g. figaro's bare
 	// `figaro [flags] -- <prompt>`).
 	Synopsis []string
@@ -71,7 +71,7 @@ func NewRouter(name string) *Router {
 }
 
 // registerHelp installs `help [<command>]`. It lives here, not in each
-// consumer's table, because help is the router's own knowledge — and
+// consumer's table, because help is the router's own knowledge, and
 // because without it `figaro help` answered `unknown command "help", did
 // you mean: figaro hup`: the most-guessed verb, pointed at the daemon.
 func (r *Router) registerHelp() {
@@ -252,7 +252,7 @@ func (r *Router) Run(args []string) int {
 }
 
 // errUsage lets a command report "argv was rejected, and I have already
-// said why" — the router turns it into exit 2 with no second message.
+// said why": the router turns it into exit 2 with no second message.
 var errUsage = errors.New("usage")
 
 // parse processes flags and positional args for a command.
@@ -308,8 +308,8 @@ func (r *Router) parse(cmd *Command, verb string, args []string) (*RunContext, e
 				return nil, fmt.Errorf("unknown flag: --%s", name)
 			}
 			if fd.IsBool {
-				// A bool may carry an explicit truth value — `--attend=false`
-				// is a form send.go already honours — but nothing else.
+				// A bool may carry an explicit truth value: `--attend=false`
+				// is a form send.go already honours: but nothing else.
 				val := "true"
 				if hasInline {
 					switch inline {

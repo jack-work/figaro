@@ -86,7 +86,7 @@ type OwnerInfo struct {
 
 // Backend is the aria storage provider. One per angelus. The only
 // implementation is *XwalBackend (the fork-tree on figwal/xwal); it
-// owns each aria's shared log instance until Remove / Close — callers
+// owns each aria's shared log instance until Remove / Close: callers
 // never close what Open returns.
 type Backend interface {
 	// Open returns the figaro IR Stream for an aria. The same shared,
@@ -97,7 +97,7 @@ type Backend interface {
 	// OpenTranslation returns the per-provider translator Stream.
 	OpenTranslation(ariaID, providerName string) (Log[[]json.RawMessage], error)
 
-	// Kick expedites the store's background flush — called after appends
+	// Kick expedites the store's background flush: called after appends
 	// worth making durable sooner than the flush interval (user tics).
 	Kick()
 
@@ -107,11 +107,11 @@ type Backend interface {
 	FormState(ariaID string) (form.Snapshot, error)
 
 	// FormVersion is the durable index of the last patch appended to
-	// the aria's form channel — the version a conditional Set quotes.
+	// the aria's form channel: the version a conditional Set quotes.
 	FormVersion(ariaID string) (uint64, error)
 
 	// LastTS is the newest figwal record timestamp anywhere in the node,
-	// unix millis — the recency a listing sorts by. Served from figwal's
+	// unix millis: the recency a listing sorts by. Served from figwal's
 	// lock-free per-node counter; NEVER wakes an agent (it opens a store
 	// handle, not a figaro). Zero for pre-timestamp history.
 	LastTS(id string) int64
@@ -122,7 +122,7 @@ type Backend interface {
 	KeepStump(id string)
 
 	// LoadDefaultForm / SaveDefaultForm read and write the daemon's
-	// pointer to the current default form — `fig new`'s forking point and
+	// pointer to the current default form: `fig new`'s forking point and
 	// KeepStump's successor. Load returns (nil, nil) before first mint.
 	LoadDefaultForm() (*DefaultFormRecord, error)
 	SaveDefaultForm(rec *DefaultFormRecord) error

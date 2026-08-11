@@ -16,7 +16,7 @@ import (
 //
 // The transcript is TEMPORAL: what is higher on screen was generated earlier.
 // So a block that changes height must push the EARLIER content off the top and
-// leave everything at or after it exactly where it was — that is where the
+// leave everything at or after it exactly where it was: that is where the
 // reader is looking. t.offset is an absolute line index, so doing nothing
 // pinned the viewport top and grew downward instead, shoving later content off
 // the bottom.
@@ -24,12 +24,12 @@ import (
 // Observed on the shipped binary before the fix (tmux 100x40, a `seq 1 400`
 // tool truncated to 10 of 200 lines with a one-line reply under it): the reply
 // sat on screen row 38, and pressing Enter moved the window from 33-70/70 to
-// 219-256/259 — the reply was not merely displaced, it was gone from the
+// 219-256/259: the reply was not merely displaced, it was gone from the
 // screen, and the reader was dropped into the middle of the tool output.
 // ---------------------------------------------------------------------------
 
 // expandFixture is a transcript over one turn whose middle node is a tool with
-// output long enough to be truncated, followed by a distinctive prose node —
+// output long enough to be truncated, followed by a distinctive prose node -
 // the anchor whose screen row must not move.
 func expandFixture(t *testing.T) (*transcript, nodeRef) {
 	t.Helper()
@@ -122,7 +122,7 @@ func TestExpandGrowsUpward_AnchorKeepsItsScreenRow(t *testing.T) {
 
 // TestExpandGrowsUpward_Clamps pins the low clamp, which is the reachable one.
 //
-// The two directions are opposite and easy to get backwards — the first draft
+// The two directions are opposite and easy to get backwards: the first draft
 // of this test asserted a LOW clamp on an EXPAND, which is simply wrong.
 // Expanding moves the offset DOWN, and line space and maxOff grow by the same
 // number of rows, so a viewport that was in range stays in range: the high
@@ -204,7 +204,7 @@ func TestExpandInFollowModeStaysPinned(t *testing.T) {
 //
 // It recomputed the body as t.h - 1 while layout() reserves two rows for the
 // footer, one per open-panel line, and one more for the live padding row. So it
-// scrolled just short and left the focus off the bottom edge — a selection that
+// scrolled just short and left the focus off the bottom edge, a selection that
 // moved the page and then wasn't on it.
 // ---------------------------------------------------------------------------
 
@@ -255,7 +255,7 @@ func TestEnsureSelectionVisibleUsesLayoutBody(t *testing.T) {
 // window keeps streaming underneath the selection.
 //
 // The gesture used to be inert on exactly this node: nodeExpandable answered
-// "has output?", and a tool whose arguments are still arriving has none yet —
+// "has output?", and a tool whose arguments are still arriving has none yet -
 // so the one block a reader most wants to open (a running write, to watch the
 // file arrive) was the one Enter did nothing to.
 // ---------------------------------------------------------------------------
@@ -309,7 +309,7 @@ func TestPagerStreamingToolExpandsItsArguments(t *testing.T) {
 	}
 
 	if !tr.toggleSelectedNodes() {
-		t.Fatal("Enter was inert on a streaming tool — nodeExpandable must answer for arguments")
+		t.Fatal("Enter was inert on a streaming tool: nodeExpandable must answer for arguments")
 	}
 	expanded := argRowsOf(tr)
 	if len(expanded) <= len(folded) {
@@ -357,14 +357,14 @@ func TestPagerStreamingWindowFollowsTheStream(t *testing.T) {
 }
 
 // Escape clears the SELECTION and leaves the EXPANSION alone. Collapsing is a
-// deliberate act — select the node again and press Enter — not a side effect
+// deliberate act: select the node again and press Enter: not a side effect
 // of pointing somewhere else.
 //
 // The bug underneath was worse than the gesture: pruneCaches walks the store's
 // window to decide what to keep, and the OPEN turn is not in that window. Its
 // caches were therefore pruned as though it had scrolled out of history. The
 // row cache merely re-renders, but `expanded` is user state, and it was being
-// dropped on Escape — and on EVERY FRAME while following the live tail, which
+// dropped on Escape, and on EVERY FRAME while following the live tail, which
 // is why expanding a streaming tool looked like it did not work.
 func TestEscapeKeepsExpansionOnTheOpenTurn(t *testing.T) {
 	tr, ref, _ := streamingFixture(t, strings.Repeat("a line of the file being written\n", 30))
@@ -391,7 +391,7 @@ func TestEscapeKeepsExpansionOnTheOpenTurn(t *testing.T) {
 		t.Error("a frame while following dropped the expansion")
 	}
 
-	// And selecting it again collapses it — the only way back.
+	// And selecting it again collapses it: the only way back.
 	tr.selection = nodeSelection{active: true,
 		anchor: selectionPoint{nodeRef: ref, hash: tr.expandedHashProbe(ref)},
 		focus:  selectionPoint{nodeRef: ref, hash: tr.expandedHashProbe(ref)}}
@@ -404,7 +404,7 @@ func TestEscapeKeepsExpansionOnTheOpenTurn(t *testing.T) {
 }
 
 // expandedHashProbe is the node hash the selection endpoints carry, looked up
-// by ref — the tests build selections by hand and must agree with the guard.
+// by ref: the tests build selections by hand and must agree with the guard.
 func (t *transcript) expandedHashProbe(ref nodeRef) uint64 {
 	var h uint64
 	if open := t.openMessage(); open != nil && open.Turn == ref.turn {
@@ -421,7 +421,7 @@ func (t *transcript) expandedHashProbe(ref nodeRef) uint64 {
 //
 // One turn can be several entries: a long agentic turn is delivered in slices,
 // and paging back into it delivers more. A rule between those slices claims
-// another exchange began where none did — and since the question is drawn only
+// another exchange began where none did, and since the question is drawn only
 // on the slice that STARTS a turn, every later slice showed a rule, a
 // `< figaro` header and no question. That is what "the transcript omits
 // inquiries" turned out to be.
@@ -438,7 +438,7 @@ func TestSeparatorOnlyAtATurnBoundary(t *testing.T) {
 	client.SetClosedLimit(transcriptTailLimit)
 	// Turn 9 arrives as TWO slices, as a long turn does; turn 10 is its own.
 	// The tail slice arrives first, as a backward page delivers it, then the
-	// page holding the head — which is exactly the owner's recorded case.
+	// page holding the head: which is exactly the owner's recorded case.
 	client.Apply(aria.Page{Parts: []aria.TurnPart{
 		{Turn: aria.Turn{ID: 9, Inquiry: "the long question", Sealed: true, Nodes: long[6:]},
 			From: 6, ClippedHead: true},
@@ -472,7 +472,7 @@ func TestSeparatorOnlyAtATurnBoundary(t *testing.T) {
 	// The first entry never gets one, so N turns give N-1 separators however
 	// many entries they are spread across.
 	if want := len(byTurn) - 1; seps != want {
-		t.Errorf("%d separators across %d entries of %d turns, want %d — a rule between "+
+		t.Errorf("%d separators across %d entries of %d turns, want %d, a rule between "+
 			"slices of one turn reads as a turn that lost its question",
 			seps, entries, len(byTurn), want)
 	}

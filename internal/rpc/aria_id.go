@@ -6,12 +6,12 @@ import "fmt"
 const MaxAriaIDLen = 64
 
 // ValidateAriaID enforces [A-Za-z0-9_-]{1,64}, with one addition: a
-// leading '@' — the unbound-form sigil. Node ids are one namespace
+// leading '@': the unbound-form sigil. Node ids are one namespace
 // (a figaro IS its bound form, addressed by one id), so every surface
 // that validates an aria id must admit a form id too; the sigil is how
 // a human and a verb tell the species apart, not a separate grammar.
 // Legacy stump ids ("name@hash") carry an interior '@' and are also
-// admitted — they are legacy forms.
+// admitted: they are legacy forms.
 func ValidateAriaID(id string) error {
 	if len(id) == 0 {
 		return fmt.Errorf("aria id is empty")

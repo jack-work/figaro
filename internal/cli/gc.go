@@ -1,4 +1,4 @@
-// Package cli — `figaro gc` command.
+// Package cli: `figaro gc` command.
 //
 // Collects outfit stumps nothing is using. A stump is content-addressed
 // (<outfit>@<hash>), so one accumulates per outfit VERSION: every edit mints a
@@ -28,7 +28,7 @@ const (
 	fieldFate     = "fate"
 )
 
-// gcColors: a stump still hosting arias is green, one about to go is red — the
+// gcColors: a stump still hosting arias is green, one about to go is red: the
 // same reading as an outfit closure, where red is what is not there (or, here,
 // what is about to stop being).
 var gcColors = []figtree.FieldColor{{

@@ -11,7 +11,7 @@ Additionally, post status bar tail content on close should be removed entirely. 
 ──────────────────────────────────────────────────────────────────── aria 5fd16081 ───
 disconnected ⠸ · ctx ~10.3k/1.0m 1.0% · cost 643 tok · 02:30:56
 
-─── [disconnected — turn continues] ──────────────────────────────────────────────────
+─── [disconnected: turn continues] ──────────────────────────────────────────────────
 follow: figaro listen 5fd16081
 
 When you are done, a new task that you can take after I review the previously commissioned task. Read it and perform research and be prepared to carry it forward on my command, if you have context:

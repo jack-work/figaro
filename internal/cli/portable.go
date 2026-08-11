@@ -19,7 +19,7 @@ import (
 // The store is ONE figwal trunk store, not a directory per aria: node ids are
 // positional in a flat namespace, fork bases are indices into a parent's log,
 // and a trunk id is unique per store. So two stores cannot simply be poured
-// together — the identities collide, and a collision is SILENT, giving a store
+// together: the identities collide, and a collision is SILENT, giving a store
 // that opens, lists and renders subtly wrong.
 //
 // Export/import sidesteps all of it by carrying CONTENT rather than identity.
@@ -29,8 +29,8 @@ import (
 //
 // What that costs, stated plainly: the provider translation caches do not
 // travel, so the first turn after an import re-translates (and replays without
-// thinking blocks rather than with unsigned ones). Exact fidelity — node ids,
-// LTs, branches, the wire caches — is the graft's job, and the graft is a
+// thinking blocks rather than with unsigned ones). Exact fidelity: node ids,
+// LTs, branches, the wire caches: is the graft's job, and the graft is a
 // design in proposals/aria-graft.md rather than code.
 
 // portableAria is the file format. Deliberately plain: a JSON object a human
@@ -119,7 +119,7 @@ func runExport(loaded *config.Loaded, args []string) {
 	fmt.Fprintf(os.Stderr, "exported %s (%d messages) to %s\n", id, len(doc.Messages), out)
 }
 
-// exportAria gathers everything portable about one aria, through the angelus —
+// exportAria gathers everything portable about one aria, through the angelus -
 // so it works while the aria is live, and never touches the store's flock.
 func exportAria(ctx context.Context, acli *angelus.Client, loaded *config.Loaded, id string) (portableAria, error) {
 	resp, err := acli.AriaRead(ctx, id, 0, 0)
@@ -138,8 +138,8 @@ func exportAria(ctx context.Context, acli *angelus.Client, loaded *config.Loaded
 			return portableAria{}, fmt.Errorf("parse LT=%d: %w", e.LT, err)
 		}
 		// Scaffolding does not travel. The genesis tic and the outfit-birth
-		// stamp belong to the store's topology — the destination mints its own
-		// when it spawns — and a contentless input tic is a pure form
+		// stamp belong to the store's topology: the destination mints its own
+		// when it spawns, and a contentless input tic is a pure form
 		// carrier, whose effect is already in the folded board below. What is
 		// left is the conversation.
 		if m.Role == message.RoleGenesis || (m.Role == message.RoleInput && len(m.Content) == 0) {
@@ -149,7 +149,7 @@ func exportAria(ctx context.Context, acli *angelus.Client, loaded *config.Loaded
 	}
 
 	// The form lives on the ARIA socket, not the angelus, so this
-	// attaches — which also revives a dormant aria, exactly as `figaro state`
+	// attaches: which also revives a dormant aria, exactly as `figaro state`
 	// does. It is the same fold the agent itself would read.
 	var board form.Snapshot
 	var boardErr error

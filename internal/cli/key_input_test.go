@@ -78,7 +78,7 @@ func TestCoalesceNewlineCRLF(t *testing.T) {
 	if !in.coalesceNewline(0x0a) {
 		t.Fatal("LF paired with prior CR must be skipped")
 	}
-	// Two Enters in a row: CR CR (Linux) should NOT dedup — both are real.
+	// Two Enters in a row: CR CR (Linux) should NOT dedup: both are real.
 	in2 := &interactiveInput{}
 	if in2.coalesceNewline(0x0d) || in2.coalesceNewline(0x0d) {
 		t.Fatal("consecutive CRs are two real presses; neither may be skipped")
@@ -110,12 +110,12 @@ func TestNavKeyFor(t *testing.T) {
 		seq  string
 		want navKey
 	}{
-		// CSI — the normal cursor mode.
+		// CSI: the normal cursor mode.
 		{"csi up", "\x1b[A", navUp},
 		{"csi down", "\x1b[B", navDown},
 		{"csi home", "\x1b[H", navHome},
 		{"csi end", "\x1b[F", navEnd},
-		// SS3 — application cursor mode (DECCKM), which many terminals switch
+		// SS3, application cursor mode (DECCKM), which many terminals switch
 		// to the moment a full-screen app takes the alt screen.
 		{"ss3 up", "\x1bOA", navUp},
 		{"ss3 down", "\x1bOB", navDown},

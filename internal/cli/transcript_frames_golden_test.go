@@ -51,7 +51,7 @@ func frameFixture(t *testing.T) *transcript {
 // TestTranscriptFramesGolden pins the exact bytes of the materialized rows in
 // three states: plain, with a node selection (gutter + background wash), and
 // with a search highlight. This is the end-to-end guard for the allocation
-// surgery in clipToWidth / decorateNodeRow — the frames must not move.
+// surgery in clipToWidth / decorateNodeRow: the frames must not move.
 func TestTranscriptFramesGolden(t *testing.T) {
 	got := buildGoldenFrames(t)
 
@@ -89,12 +89,12 @@ func buildGoldenFrames(t *testing.T) string {
 	section("plain", tr.lines())
 
 	// The first two selectable points are the two turns' INQUIRIES (a question
-	// selects and copies exactly like a node — see inquiryNode); step past them
+	// selects and copies exactly like a node: see inquiryNode); step past them
 	// so this fixture keeps pinning the same three NODE rows it always did, and
 	// the pre-sgr cell-level proof beside it stays a proof.
 	//
-	// The viewport is parked at the top first. ^N seeds from the VIEWPORT now —
-	// the topmost block on screen — and frameFixture leaves the offset at the
+	// The viewport is parked at the top first. ^N seeds from the VIEWPORT now -
+	// the topmost block on screen, and frameFixture leaves the offset at the
 	// bottom, so without this the walk starts further down and this golden would
 	// pin different rows. Stating the precondition keeps the golden about row
 	// BYTES, which is what it is for.

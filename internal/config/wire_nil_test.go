@@ -4,7 +4,7 @@ import "testing"
 
 // The agent is constructed without config in tests and for ephemeral arias, so
 // the accessors must answer on a nil receiver. If they did not, the agent would
-// need its own fallback constant — which is exactly the duplicated-policy bug
+// need its own fallback constant: which is exactly the duplicated-policy bug
 // this project exists to kill: before this wiring, internal/figaro carried its
 // own defaultPageBudget AND silently dropped the ceiling.
 func TestPageBudgetPolicyIsNilSafe(t *testing.T) {

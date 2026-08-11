@@ -11,7 +11,7 @@ import (
 
 // The VERBOSE render path had no benchmark. Ctrl-O now adds a row per node
 // (transcript_coords.go), and a path that cannot be measured cannot be
-// defended — so here it is, in both arms of the A/B: cold entry (which fills
+// defended: so here it is, in both arms of the A/B: cold entry (which fills
 // the row cache, where the coordinate row is minted) and a steady frame (which
 // only reads it back).
 //
@@ -84,8 +84,8 @@ func BenchmarkTranscriptVerboseFrame(b *testing.B) {
 	}
 }
 
-// BenchmarkTranscriptVerboseIndex isolates buildIndex — the O(#messages) pass
-// every frame makes — because that is the one whose input size the extra rows
+// BenchmarkTranscriptVerboseIndex isolates buildIndex: the O(#messages) pass
+// every frame makes: because that is the one whose input size the extra rows
 // change (taller entries, same entry count).
 func BenchmarkTranscriptVerboseIndex(b *testing.B) {
 	for _, verbose := range []bool{false, true} {

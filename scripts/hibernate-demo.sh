@@ -173,7 +173,7 @@ else
   #
   # Two is the target, not three: message_count excludes ceremonial rows, so a
   # seeded aria is exactly prompt + reply. Requiring three never matched, so
-  # this waited out its whole timeout and the arias hibernated DURING seeding —
+  # this waited out its whole timeout and the arias hibernated DURING seeding -
   # which made the "before the sweep" reading show live=0 and look broken.
   echo "   waiting for replies (up to 45s)"
   for _ in $(seq 1 45); do

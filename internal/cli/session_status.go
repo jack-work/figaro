@@ -21,7 +21,7 @@ const (
 	turnStatusInterrupted
 	turnStatusError
 	// turnStatusDisconnected: this CLI stopped watching while the turn was
-	// still running. It is NOT a failure — the user chose to detach and the
+	// still running. It is NOT a failure: the user chose to detach and the
 	// turn continues on the daemon, which is exactly when the
 	// "follow: figaro listen" hint applies.
 	turnStatusDisconnected
@@ -34,8 +34,8 @@ type sessionStatus struct {
 	metrics   aria.Metrics
 	turn      turnStatus
 	tick      uint64
-	// notice is trouble the user must see — an error reason, an interrupt
-	// notice — carried IN the frame buffer instead of being written straight
+	// notice is trouble the user must see, an error reason, an interrupt
+	// notice: carried IN the frame buffer instead of being written straight
 	// to the terminal. While the pager is up there is no scrollback to write
 	// to, the cursor sits on the status row, and a raw write scrolls the grid
 	// out from under the painter (see transcript.screenMoved). So it lives
@@ -80,7 +80,7 @@ func (s *sessionStatus) beginTurn() {
 
 // finishTurn classifies a reason reported BY THE SERVER on turn.done, whose
 // vocabulary is fixed. Client-side outcomes (detach, agent loss) are set
-// explicitly with setTurn instead of being inferred from English — a status is
+// explicitly with setTurn instead of being inferred from English, a status is
 // a fact about the turn, not a substring of a sentence.
 func (s *sessionStatus) finishTurn(reason string) {
 	if s == nil {
@@ -145,7 +145,7 @@ func (s *sessionStatus) turnLabel() string {
 }
 
 // ruleLine is the upper of the two footer rows: a full-width rule with the
-// identity right-aligned — "─────…── aria <id>[ · <pos>] ───". Undecorated
+// identity right-aligned: "─────…── aria <id>[ · <pos>] ───". Undecorated
 // (the caller dims it).
 func (s *sessionStatus) ruleLine(width int, pos string) string {
 	label := "aria " + s.figaroID
@@ -160,10 +160,10 @@ func (s *sessionStatus) ruleLine(width int, pos string) string {
 	return clipToWidth(strings.Repeat("─", fill)+right, width)
 }
 
-// statusLine is the lower footer row: plain left-aligned text —
+// statusLine is the lower footer row: plain left-aligned text -
 // "<mantra> · <turn state> · ctx … · cost … · <time>[ · ? help · ! status]".
 // hints adds the key hooks (live pager only; frozen scrollback omits them).
-// Narrow panes shed the mantra first, then cost, then ctx, then the time —
+// Narrow panes shed the mantra first, then cost, then ctx, then the time -
 // the turn state and the hints survive last.
 func (s *sessionStatus) statusLine(width int, hints bool) string {
 	if s == nil {
@@ -288,7 +288,7 @@ func formatTokenCount(tokens int) string {
 }
 
 // bookendLines is the incipit closer / live-region bookend: the same two-row
-// footer the transcript pins (rule + status text), minus the key hints —
+// footer the transcript pins (rule + status text), minus the key hints -
 // they'd be dead text once frozen into scrollback. A blank row sits between
 // the rule and the status text so the status line breathes.
 func bookendLines(status *sessionStatus) []string {

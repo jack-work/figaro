@@ -16,7 +16,7 @@ import (
 // resolveTargetEndpoint resolves both id and endpoint. Used by verbs
 // that talk to the figaro directly (send, plain, x, set, state...).
 // Aria ids are system-minted, so a missing explicitID is always an
-// error — there is no create-by-name. autoCreate is retained for call
+// error: there is no create-by-name. autoCreate is retained for call
 // compatibility but no longer creates.
 func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *angelus.Client, explicitID string, autoCreate bool, d dressing) (string, transport.Endpoint, error) {
 	if explicitID == "" {
@@ -33,14 +33,14 @@ func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *ang
 			// `send -f`, `-r` and `-v` all refused to work in a shell with
 			// no binding, while a plain `send` in the same shell minted an
 			// aria happily. Which flag you chose decided whether the verb
-			// could create — and nothing said so.
+			// could create, and nothing said so.
 			if !mintsWhenUnbound(autoCreate) {
 				if resolveDisabled() {
 					return "", transport.Endpoint{}, fmt.Errorf("no aria specified (pass --id <id>; binding disabled in this shell)")
 				}
 				return "", transport.Endpoint{}, fmt.Errorf("no figaro bound to this shell (try: --id <id> or attend <id>)")
 			}
-			// Mint one, on the named outfit, and bind this shell to it —
+			// Mint one, on the named outfit, and bind this shell to it -
 			// bindBinding is a no-op when binding is disabled, so a script
 			// gets the aria without acquiring a binding it never asked for.
 			id, ep := mustCreateAndBindOutfit(ctx, acli, loaded, ppid, d)
@@ -74,7 +74,7 @@ func mintsWhenUnbound(autoCreate bool) bool { return autoCreate }
 
 // resolveFigaroTargetEndpoint is resolveTargetEndpoint for verbs that need
 // a FIGARO (send, listen, hup, queue): an unbound-form target is resolved
-// through its role. The `form` namespace never redirects — set, state,
+// through its role. The `form` namespace never redirects: set, state,
 // form listen, state outfit address the form itself and use the raw
 // resolver. Resolution is LATE, per call: repoint target-aria and the
 // next invocation reaches the successor; nothing chases mid-stream.
@@ -88,7 +88,7 @@ func resolveFigaroTargetEndpoint(ctx context.Context, loaded *config.Loaded, acl
 
 // redirectRole follows a role form to its target aria, once. A plain
 // form (no target-aria) refuses by name; a target that is itself a form
-// refuses too — target-aria names an aria, and a chain of roles is a
+// refuses too: target-aria names an aria, and a chain of roles is a
 // misconfiguration better reported than walked.
 func redirectRole(ctx context.Context, loaded *config.Loaded, acli *angelus.Client, id string, ep transport.Endpoint) (string, transport.Endpoint, error) {
 	if !strings.HasPrefix(id, "@") && !strings.Contains(id, "@") {

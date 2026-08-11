@@ -121,7 +121,7 @@ func TestIntegration_ClickOnATableIsInert(t *testing.T) {
 	if got := body(); strings.Contains(got, "more table lines") {
 		t.Fatalf("the table was clamped:\n%s", got)
 	}
-	// The last row is on screen from the start — that is the whole point.
+	// The last row is on screen from the start: that is the whole point.
 	if got := body(); !strings.Contains(got, "wrap at any sane width 13") {
 		t.Fatalf("the last table row is not drawn without expanding:\n%s", got)
 	}
@@ -155,14 +155,14 @@ func TestIntegration_TableTextSurvivesTheRoundTrip(t *testing.T) {
 		}
 		// COLUMNS, NOT BYTES. The first version of this assertion used
 		// len(stripANSI(r)) and reported every table row as 100+ columns over
-		// budget at every width — because a box-drawing glyph (│ ─ ┼) is three
+		// budget at every width: because a box-drawing glyph (│ ─ ┼) is three
 		// BYTES and one COLUMN, and a table is made of them. It read as a
 		// width-violation in feat/table-wrap and was a defect in this test:
 		// measured properly, the max row width is EXACTLY the budget at 60, 80
 		// and 100. Anything that measures a terminal must measure in cells.
 		for i, r := range rows {
 			if w := runewidth.StringWidth(stripANSI(r)); w > width {
-				t.Errorf("width %d: row %d is %d columns wide — one physical line per row is violated", width, i, w)
+				t.Errorf("width %d: row %d is %d columns wide: one physical line per row is violated", width, i, w)
 				break
 			}
 		}

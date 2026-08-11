@@ -7,13 +7,13 @@ import (
 
 // The premature-break guard.
 //
-// glamour wraps a paragraph TWICE — once in ParagraphElement.Finish, once more
+// glamour wraps a paragraph TWICE: once in ParagraphElement.Finish, once more
 // over the whole document block in BlockElement.Finish. Through v1.0.0 the
 // first pass was muesli/reflow's wordwrap, which writes a BREAKPOINT rune ('-',
 // its only default) to the buffer without adding it to lineLen: a line came
 // back ONE CELL TOO WIDE PER HYPHEN. The second pass (x/ansi.Wordwrap,
 // breakpoints " ,.;-+|") then re-wrapped that one line at the same limit and
-// pushed its last word down alone — never re-joining the line below, so the
+// pushed its last word down alone: never re-joining the line below, so the
 // tail of the paragraph came out orphaned:
 //
 //	Three hundred and forty-nine workshops. In one town. Making
@@ -30,8 +30,8 @@ import (
 
 var wrapCorpus = []string{
 	"Three hundred and forty-nine workshops. In one town. Making one thing.",
-	"The name \"catlinite,\" note, honors George Catlin, the nineteenth-century American painter who documented Plains peoples — which is to say the stone that Indigenous nations had been quarrying for two millennia is known to geology by the surname of a white man who saw it in the 1830s.",
-	"pipe factory there in 1825 and is said to have begun carving native bruyère around 1840; the trade's own historians settle on the mid-1850s — 1854 or 1856 — as the real inflection point, and are frank that the name of the man who cut the first briar pipe is simply gone.",
+	"The name \"catlinite,\" note, honors George Catlin, the nineteenth-century American painter who documented Plains peoples: which is to say the stone that Indigenous nations had been quarrying for two millennia is known to geology by the surname of a white man who saw it in the 1830s.",
+	"pipe factory there in 1825 and is said to have begun carving native bruyère around 1840; the trade's own historians settle on the mid-1850s: 1854 or 1856, as the real inflection point, and are frank that the name of the man who cut the first briar pipe is simply gone.",
 	"I need to respect the rate limit of one request per second, so I'll batch the queries together in a single bash command with 1.5-second delays between each request to stay safely under the limit.",
 }
 
@@ -98,7 +98,7 @@ func TestProse_NoPrematureBreak(t *testing.T) {
 
 // TestProse_HyphenDoesNotWidenTheLine is the mechanism, asserted directly.
 //
-// The two texts are the SAME LENGTH — 'x' against '-' in the same slots — so
+// The two texts are the SAME LENGTH: 'x' against '-' in the same slots: so
 // any difference in how they wrap is the hyphen's doing and nothing else.
 // Under reflow's miscount the hyphenated text wrapped up to three cells wider
 // (one per hyphen on the line), and that surplus is what the second pass
@@ -109,7 +109,7 @@ func TestProse_HyphenDoesNotWidenTheLine(t *testing.T) {
 	for w := 20; w <= 60; w++ {
 		wp, wh := widest(Prose(plain, w)), widest(Prose(hyphen, w))
 		if wh > wp {
-			t.Errorf("width %d: plain text wrapped at %d cells, hyphenated at %d — the hyphens bought %d cells they do not occupy",
+			t.Errorf("width %d: plain text wrapped at %d cells, hyphenated at %d: the hyphens bought %d cells they do not occupy",
 				w, wp, wh, wh-wp)
 		}
 	}

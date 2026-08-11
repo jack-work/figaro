@@ -16,8 +16,8 @@ import (
 // It was stamped one index BELOW it: the record was appended before the
 // patch, so PatchesUpTo() returned nothing and no aria created under the
 // stump rendered its skills, its credo, or anything else the outfit sets.
-// The board itself was intact the whole time — `figaro state` showed every
-// key — because the snapshot path folds the inherited prefix and only the
+// The board itself was intact the whole time: `figaro state` showed every
+// key: because the snapshot path folds the inherited prefix and only the
 // turn-scoped projection reads the stamp. That is why it looked like a
 // rendering bug and was a write-ordering one.
 func TestStumpBirthRecordIsStampedAtItsOwnOutfitPatch(t *testing.T) {
@@ -80,8 +80,8 @@ func TestStumpBirthRecordIsStampedAtItsOwnOutfitPatch(t *testing.T) {
 }
 
 // The version IS the identity: the hash of the record the stump writes, minus
-// the version field. So the name is inside it — two outfits with identical
-// bodies and different names are two outfits — and a name is all that can
+// the version field. So the name is inside it: two outfits with identical
+// bodies and different names are two outfits, and a name is all that can
 // separate two identical folds.
 func TestOutfitVersionCoversTheName(t *testing.T) {
 	body := message.Patch{Set: map[string]json.RawMessage{"x": json.RawMessage(`1`)}}
@@ -102,7 +102,7 @@ func TestOutfitVersionCoversTheName(t *testing.T) {
 	}
 }
 
-// A stump states its own name, so a listing never has to parse an id — which
+// A stump states its own name, so a listing never has to parse an id: which
 // is what lets the id be the content version alone, and what lets a store
 // written before that keep its `<name>@<version>` directories untouched.
 func TestStumpNamesItselfWhateverItsIdLooksLike(t *testing.T) {

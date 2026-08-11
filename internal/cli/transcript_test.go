@@ -121,14 +121,14 @@ func TestTranscript_LazyOlderPaging(t *testing.T) {
 	if !strings.Contains(strings.Join(ft.Screen(), "\n"), "msg01") {
 		t.Fatalf("after paging, the top should show msg01")
 	}
-	// Oldest is now LT 1 — nothing older; paging stops.
+	// Oldest is now LT 1: nothing older; paging stops.
 	req, ok = tr.pageCursor()
 	if ok {
 		t.Fatalf("no history should remain below LT 1 (got cursor %d)", req.before)
 	}
 }
 
-// The footer must render at exactly the viewport width (display columns — the
+// The footer must render at exactly the viewport width (display columns: the
 // box-drawing/"·" glyphs are multi-byte, and byte-length math shortened these
 // rules), and the last content line above it must not be a blank separator.
 func TestTranscript_FooterWidthAndNoTrailingBlank(t *testing.T) {

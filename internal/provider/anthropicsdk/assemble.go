@@ -25,7 +25,7 @@ func buildParams(messages []anthropic.MessageParam, lts []uint64, snap form.Snap
 	// Anthropic requires roles to alternate after the first message.
 	// Consecutive same-role messages happen when a turn errors (the user message is
 	// committed but no assistant reply follows) and the next prompt appends
-	// another user message — replaying that verbatim is a malformed request. Merge
+	// another user message: replaying that verbatim is a malformed request. Merge
 	// adjacent same-role messages by concatenating their content blocks.
 	params.Messages, msgLTs = coalesceMessages(params.Messages, msgLTs)
 
@@ -198,7 +198,7 @@ func readCredo(snap form.Snapshot) string {
 // eagerToolStreaming reads the form opt-in for fine-grained tool-input
 // streaming. Absent means absent: the field is omitted and the API applies its
 // documented default, which BUFFERS each parameter value until it is complete
-// — the reason a 5 KB write argument shows nothing for 25 seconds and then all
+// : the reason a 5 KB write argument shows nothing for 25 seconds and then all
 // at once.
 func eagerToolStreaming(snap form.Snapshot) bool {
 	raw, ok := snap.Get("system.eager_tool_streaming")
@@ -240,7 +240,7 @@ func toolInputSchema(params any) anthropic.ToolInputSchemaParam {
 	for k, v := range m {
 		switch k {
 		case "type":
-			// Drop — SDK forces "object" via default.
+			// Drop: SDK forces "object" via default.
 		case "properties":
 			schema.Properties = v
 		case "required":
@@ -267,14 +267,14 @@ func toolInputSchema(params any) anthropic.ToolInputSchemaParam {
 	return schema
 }
 
-// resolveCacheControl is provider.ResolveCachePolicy — kept as a named
+// resolveCacheControl is provider.ResolveCachePolicy: kept as a named
 // wrapper because the FUTURE note below is about this call site.
 //
 // FUTURE (conversation forks): retention becomes a per-span score rather than
 // one flat setting. When the IR carries a fork graph, a provider-implemented
 // scorer will read each cache-eligible span's node range plus a pointer into
-// that graph — chiefly its descendant/child count, i.e. how many branches
-// reuse the prefix — memoize the score across breakpoints (so a shared prefix
+// that graph: chiefly its descendant/child count, i.e. how many branches
+// reuse the prefix: memoize the score across breakpoints (so a shared prefix
 // isn't recomputed per fork), and promote spans above a threshold to long (1h)
 // retention. Keep that decision funnelled through here.
 func resolveCacheControl(snap form.Snapshot) provider.CachePolicy {

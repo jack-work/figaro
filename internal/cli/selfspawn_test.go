@@ -69,7 +69,7 @@ func TestRefuseSelfSpawnFromTestBinary(t *testing.T) {
 }
 
 // TestRefuseSelfSpawnHonoursTheEnvSwitch covers harnesses whose binary is
-// not named *.test — benchmarks under a scope, fuzzers, CI runners.
+// not named *.test: benchmarks under a scope, fuzzers, CI runners.
 func TestRefuseSelfSpawnHonoursTheEnvSwitch(t *testing.T) {
 	t.Setenv("FIGARO_NO_SELF_SPAWN", "1")
 	var exited bool
@@ -124,7 +124,7 @@ func captureStderr(t *testing.T, fn func()) string {
 func TestMain(m *testing.M) {
 	if os.Getenv("_FIGARO_DAEMON") == "1" {
 		os.Stderr.WriteString(
-			"cli tests: _FIGARO_DAEMON=1 in a test binary — refusing to run the suite.\n" +
+			"cli tests: _FIGARO_DAEMON=1 in a test binary: refusing to run the suite.\n" +
 				"  something exec'd this test binary as an angelus; that is the fork-bomb\n" +
 				"  path (see refuseSelfSpawn in angelus_client.go). Aborting generation 1.\n")
 		os.Exit(3)

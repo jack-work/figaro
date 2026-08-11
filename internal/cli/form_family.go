@@ -18,8 +18,8 @@ import (
 // primitives. Semantics: plans/forms-and-roles-v2.md; the daemon half is
 // form.create + the hub's agentless read/write paths.
 
-// runFormNew mints an unbound form. Dressing is REQUIRED — `fig form new`
-// never touches the default outfit — and extra k=v positionals fold on top of
+// runFormNew mints an unbound form. Dressing is REQUIRED: `fig form new`
+// never touches the default outfit, and extra k=v positionals fold on top of
 // -S, later terms winning.
 func runFormNew(loaded *config.Loaded, outfits, set, del string, kvs []string, asJSON bool) {
 	d := mustFormDress(outfits, set, del, kvs, "form new -O <names> [-S k=v] [k=v …]")
@@ -83,7 +83,7 @@ func createFormAndReport(loaded *config.Loaded, parent string, d dressing, asJSO
 }
 
 // runFormLs lists unbound forms: the form rows of the global listing,
-// scoped by attendance per the brief — attending a form shows its
+// scoped by attendance per the brief, attending a form shows its
 // subtree, attending a figaro shows its nearest unbound ancestor's tree,
 // otherwise the top level.
 func runFormLs(loaded *config.Loaded, asJSON bool) {
@@ -142,7 +142,7 @@ func runFormLs(loaded *config.Loaded, asJSON bool) {
 
 // attendedFormScope maps this shell's attendance to a form-tree scope: the
 // attended form itself, or an attended figaro's nearest unbound ancestor.
-// "" means unscoped (top level — attending null, or nothing resolvable).
+// "" means unscoped (top level, attending null, or nothing resolvable).
 func attendedFormScope(ctx context.Context, acli *angelus.Client, byID map[string]rpc.FigaroInfoResponse) string {
 	r, err := resolveBinding(ctx, acli, shellPID)
 	if err != nil || r == nil || !r.Found {
@@ -185,7 +185,7 @@ func formDescendsFrom(byID map[string]rpc.FigaroInfoResponse, id, scope string) 
 
 // runBind births a figaro from an unbound form. No positional: the
 // attended form. "null": the naked figaro (fails its first TURN unless
-// -O or later patches supply a provider — minting is not the gate).
+// -O or later patches supply a provider: minting is not the gate).
 // Never rebinds this shell: the printed id is attended by hand.
 func runBind(loaded *config.Loaded, target, outfits, set, del string, asJSON bool) {
 	acli := mustConnectAngelus(loaded)

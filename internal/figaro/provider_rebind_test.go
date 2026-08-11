@@ -113,7 +113,7 @@ func (f *rebindFactory) setFail(name string, fail bool) {
 	f.fail[name] = fail
 }
 
-// runTurn submits a prompt, waits for turn.done, and returns its reason —
+// runTurn submits a prompt, waits for turn.done, and returns its reason -
 // which is where a failed round reports itself.
 func runTurn(t *testing.T, a *figaro.Agent, ch <-chan rpc.Notification, text string) string {
 	t.Helper()
@@ -235,7 +235,7 @@ func TestProviderKnobChangeRebuilds(t *testing.T) {
 	assert.EqualValues(t, 1, f.inst("alpha", true).sends.Load())
 }
 
-// A provider that cannot be built must fail the turn loudly — and must not
+// A provider that cannot be built must fail the turn loudly, and must not
 // silently keep talking to the old one, which is exactly the confusion the
 // original bug produced. The aria stays alive and recovers when the board is
 // corrected.

@@ -35,7 +35,7 @@ func sharedStdin() *bufio.Reader {
 // interactive figaro that dies without unwinding its raw-mode restore (a crash,
 // a taskkill, a closed window mid-session) leaves ENABLE_LINE_INPUT,
 // ENABLE_ECHO_INPUT and ENABLE_PROCESSED_INPUT cleared for every process that
-// touches that console afterwards — and PSReadLine faithfully restores the
+// touches that console afterwards, and PSReadLine faithfully restores the
 // broken mode around each of its own prompts, so it survives until the window
 // is closed. In that state Enter delivers a bare \r, ReadString('\n') waits for
 // a byte that will never arrive, nothing echoes, and Ctrl-C arrives as the byte
@@ -72,7 +72,7 @@ func readLine(r *bufio.Reader) (string, error) {
 		case '\r':
 			// CRLF: drop the paired LF so it can't surface as a phantom
 			// empty line at the NEXT prompt. Only from bytes already
-			// buffered — peeking past them would block on a lone \r and
+			// buffered: peeking past them would block on a lone \r and
 			// reintroduce exactly the hang this function exists to kill.
 			if r.Buffered() > 0 {
 				if p, perr := r.Peek(1); perr == nil && p[0] == '\n' {

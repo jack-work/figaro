@@ -31,7 +31,7 @@ func stateKey(t *testing.T, be *XwalBackend, id, key string) string {
 }
 
 // An unbound form is born of the null root with the @ sigil and the form
-// kind, carrying its birth patch as state — no outfit, no stump, no
+// kind, carrying its birth patch as state: no outfit, no stump, no
 // content addressing: a second identical mint is a DIFFERENT form.
 func TestCreateFormMintsSigiledIndependentForms(t *testing.T) {
 	be, err := NewXwalBackend(t.TempDir(), 0)
@@ -112,8 +112,8 @@ func TestFormForkDuplicatesStateAndParentLivesOn(t *testing.T) {
 	}
 }
 
-// Binding: ForkWith on a FORM parent spawns a conversation — bare hex id,
-// conversation kind — that inherits the form's state as its prefix. The
+// Binding: ForkWith on a FORM parent spawns a conversation: bare hex id,
+// conversation kind: that inherits the form's state as its prefix. The
 // form is not consumed, not frozen, not converted.
 func TestForkWithOnFormParentBindsAConversation(t *testing.T) {
 	be, err := NewXwalBackend(t.TempDir(), 0)
@@ -171,7 +171,7 @@ func TestCreateFormRefusesConversationParent(t *testing.T) {
 	}
 }
 
-// Legacy stumps bind exactly as forms do — they were always forms in
+// Legacy stumps bind exactly as forms do: they were always forms in
 // spirit, and their @-shaped ids already read as form ids.
 func TestForkWithOnLegacyStumpStillBinds(t *testing.T) {
 	be, err := NewXwalBackend(t.TempDir(), 0)
@@ -196,7 +196,7 @@ func TestForkWithOnLegacyStumpStillBinds(t *testing.T) {
 // The observed set rides the IR stamp: once declared, every IR append
 // records where each studied form stood, the entry reads it back under
 // StudyVersions, and consecutive stamps bracket exactly the patches the
-// projection must fold — the bound board's mechanism, generalized.
+// projection must fold: the bound board's mechanism, generalized.
 func TestObservedFormsStampIRAppends(t *testing.T) {
 	be, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
