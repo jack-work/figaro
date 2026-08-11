@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
@@ -736,6 +737,48 @@ positional slot belongs to the sub-verb.`,
 			return nil
 		},
 		CompleteArgs: completeAriaIDsPositionalOrFlag,
+	})
+
+	r.Register(&cmdkit.Command{
+		Name:  "outfit",
+		Group: "State",
+		Short: "Outfit lifecycle: reload flags the default form for recomputation",
+		Usage: "outfit reload",
+		Long: `The outfit files are ONE-WAY sources of truth: figaro reads them, and
+nothing ever writes form state back (deliberate — they may be tracked in
+git; access controls will fence the gap later).
+
+  figaro outfit reload    flag the default form dirty; the next fig new
+                          re-reads the files, and remints the default form
+                          only if the hash moved or the form was patched
+                          by hand since birth. Same files, untouched form:
+                          a no-op, and the shared prefix (and the
+                          provider's warm cache) survives.
+
+Folding an outfit onto a LIVE aria is a different act: see
+` + "`figaro state outfit`" + `.`,
+		ArgsMin: 1,
+		ArgsMax: 1,
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			if ctx.Args[0] != "reload" {
+				return fmt.Errorf("outfit: unknown subcommand %q (only `reload`; there is deliberately no `write`)", ctx.Args[0])
+			}
+			acli := mustConnectAngelus(ld)
+			defer acli.Close()
+			c, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			resp, err := acli.OutfitReload(c)
+			if err != nil {
+				die("outfit reload: %s", err)
+			}
+			if resp.Flagged {
+				fmt.Printf("default form %s flagged; the next `fig new` recomputes from the outfit files\n", resp.FormID)
+			} else {
+				fmt.Println("no default form minted yet; the next `fig new` computes from the files regardless")
+			}
+			return nil
+		},
 	})
 
 	r.Register(&cmdkit.Command{

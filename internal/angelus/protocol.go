@@ -75,6 +75,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 			rpc.MethodCreate:       h.create,
 			rpc.MethodFormCreate:   h.formCreate,
 			rpc.MethodFormBind:     h.formBind,
+			rpc.MethodOutfitReload: h.outfitReload,
 			rpc.MethodFork:         h.fork,
 			rpc.MethodPromote:      h.promote,
 			rpc.MethodImport:       h.importAria,
@@ -368,6 +369,78 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 	}, nil
 }
 
+// ensureDefaultForm returns the id of the current default form, minting a
+// fresh one when due. The lifecycle (v2 brief §6): `fig outfit reload`
+// only sets a dirty flag; the compute happens HERE, on the next fig new —
+// materialized files are hashed and compared against the record, and a
+// pointer that is clean and whose node still exists is reused with NO
+// comparison at all (the cheap path, and the prompt-cache-preserving one:
+// reuse of the same node is what shares the rendered prefix). A remint is
+// due when: no record, dirty + hash moved, or dirty + the form was patched
+// by hand since birth (propagating an ad-hoc patch to every future aria is
+// exactly what the dirty-compute refuses to do silently).
+func (h *handlers) ensureDefaultForm(backend store.Backend, stumpPatch form.Patch, outfitName string) (string, error) {
+	rec, err := backend.LoadDefaultForm()
+	if err != nil {
+		return "", fmt.Errorf("default form record: %w", err)
+	}
+	if rec != nil {
+		if _, ok := backend.Node(rec.FormID); !ok {
+			rec = nil // the form was removed; remint
+		}
+	}
+	if rec != nil && !rec.Dirty {
+		return rec.FormID, nil
+	}
+	birth := birthPatch(stumpPatch, outfitName, "")
+	hash, err := store.ContentVersion(birth)
+	if err != nil {
+		return "", fmt.Errorf("default form hash: %w", err)
+	}
+	if rec != nil && rec.Dirty && rec.BirthHash == hash {
+		if v, verr := backend.FormVersion(rec.FormID); verr == nil && v == rec.BirthVersion {
+			rec.Dirty = false // same files, untouched form: reload is a no-op
+			if err := backend.SaveDefaultForm(rec); err != nil {
+				return "", err
+			}
+			return rec.FormID, nil
+		}
+	}
+	id, version, err := backend.CreateForm("", birth)
+	if err != nil {
+		return "", fmt.Errorf("mint default form: %w", err)
+	}
+	if err := backend.SaveDefaultForm(&store.DefaultFormRecord{
+		FormID: id, BirthHash: hash, BirthVersion: version,
+	}); err != nil {
+		return "", err
+	}
+	slog.Info("default form minted", "form", id, "outfit", outfitName, "hash", hash)
+	return id, nil
+}
+
+// outfitReload flags the default form for recomputation on the next
+// `fig new`. Deliberately cheap: no files are read here, and there is NO
+// inverse verb — outfit files are one-way sources of truth.
+func (h *handlers) outfitReload(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	if h.angelus.Backend == nil {
+		return nil, fmt.Errorf("outfit.reload: no backend (ephemeral angelus)")
+	}
+	rec, err := h.angelus.Backend.LoadDefaultForm()
+	if err != nil {
+		return nil, err
+	}
+	if rec == nil {
+		// Nothing minted yet: the next fig new computes from files anyway.
+		return rpc.OutfitReloadResponse{}, nil
+	}
+	rec.Dirty = true
+	if err := h.angelus.Backend.SaveDefaultForm(rec); err != nil {
+		return nil, err
+	}
+	return rpc.OutfitReloadResponse{Flagged: true, FormID: rec.FormID}, nil
+}
+
 func (h *handlers) create(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	_, span := figOtel.Start(ctx, "angelus.create")
 	defer span.End()
@@ -473,20 +546,16 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		bp := boot
 		inlineBoot = &bp
 	} else {
-		// Mint the outfit's stump if this is the first aria to wear it, then
-		// fork it. ForkWith does not care what the parent is — the null root
-		// or a stump — so birth is one verb either way.
-		stumpID, serr := backend.CreateOutfit(outfitName, birthPatch(stumpPatch, outfitName, ""))
+		// Ensure the DEFAULT FORM (stumps are legacy), then fork it: `fig
+		// new` is bind-the-default-form, and this reuse is what shares one
+		// rendered prefix — and one warm provider cache — across every
+		// aria on the same outfit. The hash optimization IS the cache.
+		formID, serr := h.ensureDefaultForm(backend, stumpPatch, outfitName)
 		if serr != nil {
-			return nil, fmt.Errorf("mint outfit stump: %w", serr)
+			return nil, serr
 		}
-		// This is what the default resolves to RIGHT NOW, so it is the one
-		// collection spares. Edit the outfit's files and the hash moves; the
-		// version nobody wears any more stops being spared and is reaped when
-		// its last aria dies.
-		backend.KeepStump(stumpID)
 		var cerr error
-		id, _, cerr = backend.ForkWith(stumpID, 0, childBirthPatch(dress, cwd))
+		id, _, cerr = backend.ForkWith(formID, 0, childBirthPatch(dress, cwd))
 		if cerr != nil {
 			return nil, fmt.Errorf("mint aria: %w", cerr)
 		}

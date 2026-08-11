@@ -78,6 +78,13 @@ func (c *Client) FormBind(ctx context.Context, parent string, patch *rpc.FormPat
 	return &resp, err
 }
 
+// OutfitReload flags the default form for recomputation on the next new.
+func (c *Client) OutfitReload(ctx context.Context) (*rpc.OutfitReloadResponse, error) {
+	var resp rpc.OutfitReloadResponse
+	err := c.call(ctx, rpc.MethodOutfitReload, struct{}{}, &resp)
+	return &resp, err
+}
+
 // Outfits asks what outfits exist and how a spec composes.
 func (c *Client) Outfits(ctx context.Context, spec string) (*rpc.OutfitsResponse, error) {
 	var resp rpc.OutfitsResponse

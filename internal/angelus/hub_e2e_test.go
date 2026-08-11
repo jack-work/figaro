@@ -23,6 +23,13 @@ import (
 
 // daemonFixture is a real angelus over a real store with a mock provider.
 func daemonFixture(t *testing.T) (*angelus.Angelus, *angelus.Client, context.Context) {
+	a, acli, ctx, _ := daemonFixtureDir(t)
+	return a, acli, ctx
+}
+
+// daemonFixtureDir is daemonFixture plus the config dir, for tests that
+// rewrite outfit files.
+func daemonFixtureDir(t *testing.T) (*angelus.Angelus, *angelus.Client, context.Context, string) {
 	t.Helper()
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(dir+"/outfits", 0700))
@@ -31,6 +38,10 @@ func daemonFixture(t *testing.T) (*angelus.Angelus, *angelus.Client, context.Con
 provider = "mock"
 model = "mock-model"
 `), 0600))
+	// A named default makes the default-form lifecycle observable: without
+	// it the default form is the stable empty form and a file edit can
+	// never move its hash.
+	require.NoError(t, os.WriteFile(dir+"/config.toml", []byte("default_outfit = \"mock\"\n"), 0600))
 
 	backend, err := store.NewXwalBackend(dir+"/arias", 0)
 	require.NoError(t, err)
@@ -67,7 +78,7 @@ model = "mock-model"
 	acli, err := angelus.DialClient(transport.UnixEndpoint(a.SocketPath))
 	require.NoError(t, err)
 	t.Cleanup(func() { acli.Close() })
-	return a, acli, ctx
+	return a, acli, ctx, dir
 }
 
 // End-to-end proof of the inversion: a client attached to a real aria's

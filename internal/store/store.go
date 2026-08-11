@@ -118,7 +118,14 @@ type Backend interface {
 
 	// KeepStump names the stump collection must spare: the live default, whose
 	// re-minting would rewrite a whole outfit to save one directory.
+	// Legacy: new arias are born of the DEFAULT FORM, not a stump.
 	KeepStump(id string)
+
+	// LoadDefaultForm / SaveDefaultForm read and write the daemon's
+	// pointer to the current default form — `fig new`'s forking point and
+	// KeepStump's successor. Load returns (nil, nil) before first mint.
+	LoadDefaultForm() (*DefaultFormRecord, error)
+	SaveDefaultForm(rec *DefaultFormRecord) error
 
 	// WatchForm registers a sink for every patch committed to an aria's form.
 	// Called on the form's writer, so a sink must hand off and return.

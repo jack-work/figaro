@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -246,4 +247,59 @@ func TestBindNullFailsAtFirstTurnNotAtMint(t *testing.T) {
 	}, &set))
 	err = client.Call(callCtx, rpc.MethodQua, rpc.QuaRequest{Text: "hello"}, &struct{}{})
 	require.NoError(t, err, "the patched naked figaro should take its first turn")
+}
+
+// The default-form lifecycle: fig new is bind-the-default-form. Two
+// creates share ONE parent form (the reuse that shares the rendered
+// prefix and the provider's cache); reload with unchanged files is a
+// no-op; a changed outfit file remints on the NEXT create, not at
+// reload; a hand-patched default form remints too — the ad-hoc patch is
+// never silently propagated.
+func TestDefaultFormLifecycle(t *testing.T) {
+	a, acli, ctx, dir := daemonFixtureDir(t)
+
+	one, err := acli.Create(ctx, dress(t, "mock"))
+	require.NoError(t, err)
+	two, err := acli.Create(ctx, dress(t, "mock"))
+	require.NoError(t, err)
+
+	parentOf := func(id string) string {
+		n, ok := a.Backend.Node(id)
+		require.True(t, ok)
+		return n.Parent
+	}
+	p1, p2 := parentOf(one.FigaroID), parentOf(two.FigaroID)
+	require.Equal(t, p1, p2, "two creates did not share the default form")
+	require.True(t, strings.HasPrefix(p1, "@"), "default parent %q is not a form", p1)
+
+	// Reload with UNCHANGED files: the next create reuses (no-op compute).
+	_, err = acli.OutfitReload(ctx)
+	require.NoError(t, err)
+	three, err := acli.Create(ctx, dress(t, "mock"))
+	require.NoError(t, err)
+	require.Equal(t, p1, parentOf(three.FigaroID), "unchanged files reminted the default form")
+
+	// Change the outfit file: reload, and the NEXT create remints.
+	require.NoError(t, os.WriteFile(dir+"/outfits/mock.toml", []byte(`
+[system]
+provider = "mock"
+model = "mock-model"
+mantra = "v2"
+`), 0600))
+	_, err = acli.OutfitReload(ctx)
+	require.NoError(t, err)
+	four, err := acli.Create(ctx, dress(t, "mock"))
+	require.NoError(t, err)
+	require.NotEqual(t, p1, parentOf(four.FigaroID), "changed files did not remint")
+
+	// Hand-patch the (new) default form, reload: remint again — the patch
+	// must not silently reach every future aria.
+	p4 := parentOf(four.FigaroID)
+	_, err = a.Backend.ApplyForm(p4, *rawPatch(map[string]string{"sneaky": `true`}))
+	require.NoError(t, err)
+	_, err = acli.OutfitReload(ctx)
+	require.NoError(t, err)
+	five, err := acli.Create(ctx, dress(t, "mock"))
+	require.NoError(t, err)
+	require.NotEqual(t, p4, parentOf(five.FigaroID), "a hand-patched default form was reused after reload")
 }

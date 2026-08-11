@@ -150,6 +150,10 @@ const (
 	// outfits directory is the SERVER's state, so a client asks rather than
 	// reading it: the daemon may not even share a filesystem with the caller.
 	MethodOutfits = "angelus.outfits"
+	// MethodOutfitReload flags the default form for recomputation on the
+	// next fig new. There is deliberately no inverse: outfit files are
+	// one-way sources of truth.
+	MethodOutfitReload = "outfit.reload"
 
 	// MethodConfigure patches the server's configuration. The first-run
 	// wizard is a client, so it cannot write config.toml itself.
@@ -610,6 +614,13 @@ type OutfitsRequest struct {
 // OutfitsResponse is the outfits on disk, the configured default, and the layer
 // closure of the requested spec — found and missing nodes alike, because a
 // broken reference is best explained by the shape it was found in.
+// OutfitReloadResponse: Flagged is false when nothing was minted yet
+// (the next fig new computes from files regardless).
+type OutfitReloadResponse struct {
+	Flagged bool   `json:"flagged"`
+	FormID  string `json:"form_id,omitempty"`
+}
+
 type OutfitsResponse struct {
 	Default string       `json:"default,omitempty"`
 	Names   []string     `json:"names,omitempty"`
