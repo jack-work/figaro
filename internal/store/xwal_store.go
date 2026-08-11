@@ -1127,10 +1127,16 @@ func (s *XwalStore) deleteOrphans(id string) []string {
 func (s *XwalStore) LastTS(id string) int64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.isStumpLocked(id) {
-		return s.trunks.StumpLastTS(id)
+	// Trunk first, BY MAP LOOKUP: the first draft asked isStumpLocked
+	// before anything, and that is a full stump scan — per row, so a
+	// 300-aria listing went O(n²) and the -count=6 battery caught it at
+	// +6784% (18ms where 262µs stood). Kind() is an index map hit; the
+	// stump fallback (StumpLastTS guards with a node map hit) only runs
+	// for ids that are not trunks at all.
+	if _, ok := s.trunks.Kind(id); ok {
+		return s.trunks.LastTS(id)
 	}
-	return s.trunks.LastTS(id)
+	return s.trunks.StumpLastTS(id)
 }
 
 // KindForm is the public name of the unbound-form node kind, for
