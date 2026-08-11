@@ -181,3 +181,45 @@ func formDescendsFrom(byID map[string]rpc.FigaroInfoResponse, id, scope string) 
 	}
 	return false
 }
+
+// runBind births a figaro from an unbound form. No positional: the
+// attended form. "null": the naked figaro (fails its first TURN unless
+// -O or later patches supply a provider — minting is not the gate).
+// Never rebinds this shell: the printed id is attended by hand.
+func runBind(loaded *config.Loaded, target, spec string, asJSON bool) {
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if target == "" {
+		r, err := resolveBinding(ctx, acli, shellPID)
+		if err != nil || r == nil || !r.Found {
+			die("bind: nothing attended; name the form: fig bind <@form-id|null>")
+		}
+		if !strings.HasPrefix(r.FigaroID, "@") {
+			die("bind: attending %s, which is a figaro, not a form.\n  fig fork          branch the attended figaro\n  fig bind <@form>  birth a figaro from a form", r.FigaroID)
+		}
+		target = r.FigaroID
+	}
+
+	var patch *rpc.FormPatch
+	if strings.TrimSpace(spec) != "" {
+		d, err := parseDressing(spec)
+		if err != nil {
+			die("bind: %s", err)
+		}
+		patch = d.patch
+	}
+	resp, err := acli.FormBind(ctx, target, patch)
+	if err != nil {
+		die("bind: %s", err)
+	}
+	if asJSON {
+		enc := json.NewEncoder(os.Stdout)
+		_ = enc.Encode(map[string]any{"figaro_id": resp.FigaroID, "form_id": target})
+		return
+	}
+	fmt.Printf("bound %s from %s\n", resp.FigaroID, target)
+	fmt.Fprintf(os.Stderr, "dormant until first use; attend it with `fig at %s`\n", resp.FigaroID)
+}

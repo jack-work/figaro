@@ -70,6 +70,14 @@ func (c *Client) FormCreate(ctx context.Context, parent string, patch *rpc.FormP
 	return &resp, err
 }
 
+// FormBind births a dormant figaro from a form (or "null"). The optional
+// patch is the -O dressing.
+func (c *Client) FormBind(ctx context.Context, parent string, patch *rpc.FormPatch) (*rpc.FormBindResponse, error) {
+	var resp rpc.FormBindResponse
+	err := c.call(ctx, rpc.MethodFormBind, rpc.FormBindRequest{Parent: parent, Patch: patch}, &resp)
+	return &resp, err
+}
+
 // Outfits asks what outfits exist and how a spec composes.
 func (c *Client) Outfits(ctx context.Context, spec string) (*rpc.OutfitsResponse, error) {
 	var resp rpc.OutfitsResponse

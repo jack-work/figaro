@@ -120,6 +120,13 @@ const (
 	// no endpoint activation beyond the hub. The form half of the one
 	// birth verb; figaro.create remains the figaro half.
 	MethodFormCreate  = "form.create"
+	// MethodFormBind births a FIGARO from an unbound form: fork the form
+	// (or the null root) with the caller's dressing plus runtime
+	// fill-ins, stamp aria_id, stand the endpoint up — and construct NO
+	// agent: the figaro is born dormant and wakes on first need, which
+	// is where a missing provider fails (`bind null` mints fine and
+	// errors at the first turn, by design).
+	MethodFormBind    = "form.bind"
 	MethodFork        = "figaro.fork"
 	MethodPromote     = "figaro.promote"
 	MethodImport      = "figaro.import"
@@ -470,6 +477,20 @@ type FormCreateRequest struct {
 type FormCreateResponse struct {
 	FormID   string   `json:"form_id"`
 	Version  uint64   `json:"version"`
+	Endpoint Endpoint `json:"endpoint"`
+}
+
+// FormBindRequest births a figaro from a form. Parent "" (or "null")
+// forks the null root — the naked figaro. Patch is the optional -O
+// dressing; unlike form.create it may be absent (runtime fill-ins make
+// the birth patch nonempty).
+type FormBindRequest struct {
+	Parent string     `json:"parent,omitempty"`
+	Patch  *FormPatch `json:"patch,omitempty"`
+}
+
+type FormBindResponse struct {
+	FigaroID string   `json:"figaro_id"`
 	Endpoint Endpoint `json:"endpoint"`
 }
 

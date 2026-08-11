@@ -74,6 +74,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		Map: authz.Guard(map[string]jkrpc.HandlerFunc{
 			rpc.MethodCreate:       h.create,
 			rpc.MethodFormCreate:   h.formCreate,
+			rpc.MethodFormBind:     h.formBind,
 			rpc.MethodFork:         h.fork,
 			rpc.MethodPromote:      h.promote,
 			rpc.MethodImport:       h.importAria,
@@ -306,6 +307,63 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 	return rpc.FormCreateResponse{
 		FormID:   id,
 		Version:  version,
+		Endpoint: rpc.Endpoint{Scheme: "unix", Address: hb.sockPath},
+	}, nil
+}
+
+// formBind births a figaro from an unbound form (or the null root): the
+// bind half of the one birth verb. It mirrors create's storage dance —
+// fork with the dressing, stamp aria_id in the boot patch — and then
+// STOPS: no provider is resolved, no agent constructed, no registry
+// entry. The figaro is born dormant behind its hub and wakes on first
+// need; a missing provider fails there, at the first turn, which is what
+// makes `bind null` a mintable naked figaro. It never touches the
+// caller's attendance either — binding shells is the client's affair.
+func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	_, span := figOtel.Start(ctx, "angelus.formBind")
+	defer span.End()
+
+	if h.angelus.Backend == nil {
+		return nil, fmt.Errorf("form.bind: no backend (ephemeral angelus)")
+	}
+	var req rpc.FormBindRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, err
+	}
+	parent := req.Parent
+	if parent == "null" {
+		parent = ""
+	}
+	if parent != "" {
+		n, ok := h.angelus.Backend.Node(parent)
+		isStump := ok && n.Kind == "outfit"
+		if !ok || (n.Kind != store.KindForm && !isStump) {
+			return nil, fmt.Errorf("form.bind: %s is not an unbound form (bind forks forms; a figaro forks with `fig fork`)", req.Parent)
+		}
+	}
+	loaded, ofit := h.settings()
+	dress := form.Patch{}
+	if req.Patch != nil && !req.Patch.IsEmpty() {
+		var err error
+		dress, err = ofit.Materialize(*req.Patch, loaded.Config.DefaultOutfit)
+		if err != nil {
+			return nil, h.errOutfitNotFound(outfit.Label(*req.Patch, loaded.Config.DefaultOutfit), err)
+		}
+	}
+	cwd, _ := os.Getwd()
+	id, _, err := h.angelus.Backend.ForkWith(parent, 0, childBirthPatch(dress, cwd))
+	if err != nil {
+		return nil, fmt.Errorf("form.bind: mint figaro: %w", err)
+	}
+	if _, err := h.angelus.Backend.ApplyForm(id, convBootPatch(id, cwd)); err != nil {
+		return nil, fmt.Errorf("form.bind: stamp aria id: %w", err)
+	}
+	hb, err := h.hubFor(id)
+	if err != nil {
+		return nil, fmt.Errorf("form.bind: %s minted but endpoint failed: %w", id, err)
+	}
+	return rpc.FormBindResponse{
+		FigaroID: id,
 		Endpoint: rpc.Endpoint{Scheme: "unix", Address: hb.sockPath},
 	}, nil
 }

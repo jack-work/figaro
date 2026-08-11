@@ -872,16 +872,27 @@ type place struct {
 func (s *XwalStore) vectorsLocked(infos []xwal.TrunkInfo) map[string]place {
 	live := make(map[string]bool, len(infos))
 	for _, ti := range infos {
+		// Forms are not part of the conversation fork-forest: a form-born
+		// aria is a TOP-LEVEL conversation (its born-of shows in the
+		// listing's OUTFIT column), not a branch of an invisible parent —
+		// which is exactly how a vector under a never-listed node made
+		// bound figaros vanish from `fig ls`.
+		if ti.Kind == string(kindForm) {
+			continue
+		}
 		live[ti.ID] = true
 	}
 	type seed struct{ id, stump string }
 	kids := map[string][]string{}
 	var roots []seed
 	for _, ti := range infos {
+		if ti.Kind == string(kindForm) {
+			continue
+		}
 		if ti.Parent != "" && live[ti.Parent] {
 			kids[ti.Parent] = append(kids[ti.Parent], ti.ID) // branch of a conversation
 		} else {
-			roots = append(roots, seed{ti.ID, ti.Stump}) // top-level (parent is a stump/root)
+			roots = append(roots, seed{ti.ID, ti.Stump}) // top-level (parent is a stump/root/form)
 		}
 	}
 	sort.Slice(roots, func(i, j int) bool { return roots[i].id < roots[j].id })

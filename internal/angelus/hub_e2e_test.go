@@ -3,6 +3,7 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"testing"
@@ -44,7 +45,13 @@ model = "mock-model"
 	a.Handlers = angelus.NewHandlers(angelus.ServerConfig{
 		Angelus: a,
 		Config:  loaded,
-		ProviderFactory: func(string, provider.Knobs) (provider.Provider, error) {
+		ProviderFactory: func(name string, _ provider.Knobs) (provider.Provider, error) {
+			// Real factories refuse an empty/unknown provider; a fixture
+			// more lenient than reality certifies paths reality refuses
+			// (the naked-figaro test needs the refusal).
+			if name != "mock" {
+				return nil, fmt.Errorf("unknown provider %q", name)
+			}
 			return &mockProviderForIntegration{}, nil
 		},
 		Ctx: ctx,

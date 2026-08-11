@@ -739,6 +739,40 @@ positional slot belongs to the sub-verb.`,
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:  "bind",
+		Group: "Session",
+		Short: "Birth a figaro from an unbound form (dormant; never rebinds this shell)",
+		Usage: "bind [<@form-id> | null] [-O <spec>] [-j]",
+		Long: `Births a FIGARO by forking an unbound form: the form's state becomes the
+figaro's inherited prefix, the form goes on living, and nothing converts.
+
+  figaro bind                 bind from the ATTENDED form
+  figaro bind @a1b2c3         bind from that form
+  figaro bind null            the naked figaro: mints fine, and its first
+                              TURN fails until a provider is patched in
+  figaro bind @a1b2c3 -O focus  fold a dressing into the birth
+
+The figaro is born DORMANT — no agent, no provider constructed — and
+wakes on first use. Your shell's attendance never moves: attend the
+printed id yourself. See ` + "`figaro help form`" + ` for the form family.`,
+		ArgsMax: 1,
+		Flags: []cmdkit.FlagDef{
+			{Long: "outfit", Short: "O", Description: "Dressing folded into the birth patch"},
+			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			target := ""
+			if len(ctx.Args) > 0 {
+				target = ctx.Args[0]
+			}
+			runBind(ld, target, ctx.Flag("outfit"), ctx.BoolFlag("json"))
+			return nil
+		},
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:  "fork",
 		Group: "Session",
 		Short: "Branch a conversation: keep this id, mint an alternative",

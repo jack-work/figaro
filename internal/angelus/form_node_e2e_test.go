@@ -177,3 +177,73 @@ func TestListRecencyDoesNotWakeDormantArias(t *testing.T) {
 	require.NotZero(t, row.LastActive, "recency missing: figwal timestamps did not reach the row")
 	require.Nil(t, a.Registry.Get(created.FigaroID), "listing recency woke the aria")
 }
+
+// form.bind births a DORMANT figaro from a form: state inherited,
+// aria_id stamped, endpoint dialable — and no agent, no provider, no
+// registry entry until first use. Dressed with a real outfit it then
+// wakes and answers; naked (bind null) it mints fine and fails its
+// first turn with the provider error, at the right time.
+func TestFormBindBirthsDormantFigaro(t *testing.T) {
+	a, acli, ctx := daemonFixture(t)
+
+	created, err := acli.FormCreate(ctx, "", rawPatch(map[string]string{"team.goal": `"ship it"`}))
+	require.NoError(t, err)
+
+	bound, err := acli.FormBind(ctx, created.FormID, rawPatch(map[string]string{"layers": `["mock"]`}))
+	require.NoError(t, err)
+	require.False(t, strings.HasPrefix(bound.FigaroID, "@"), "bound figaro %q carries the form sigil", bound.FigaroID)
+	require.Nil(t, a.Registry.Get(bound.FigaroID), "bind constructed an agent")
+
+	// Inherited state + stamped identity, readable dormant.
+	conn, err := net.Dial("unix", bound.Endpoint.Address)
+	require.NoError(t, err)
+	defer conn.Close()
+	client := jkrpc.NewClient(jkrpc.NewConn(conn), nil)
+	defer client.Close()
+	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	var form rpc.FormResponse
+	require.NoError(t, client.Call(callCtx, rpc.MethodForm, struct{}{}, &form))
+	raw, ok := form.Snapshot.Get("team.goal")
+	require.True(t, ok, "form state did not inherit")
+	require.Equal(t, `"ship it"`, string(raw))
+	raw, ok = form.Snapshot.Get("aria_id")
+	require.True(t, ok)
+	require.Equal(t, `"`+bound.FigaroID+`"`, string(raw))
+	require.Nil(t, a.Registry.Get(bound.FigaroID), "a read woke the bound figaro")
+
+	// The parent form goes on living, unconverted.
+	_, err = acli.FormCreate(ctx, created.FormID, rawPatch(map[string]string{"who": `"sibling"`}))
+	require.NoError(t, err, "the form stopped being forkable after binding")
+}
+
+// bind null mints the naked figaro; its first turn fails for want of a
+// provider — at the turn, not at the mint.
+func TestBindNullFailsAtFirstTurnNotAtMint(t *testing.T) {
+	a, acli, ctx := daemonFixture(t)
+
+	bound, err := acli.FormBind(ctx, "null", nil)
+	require.NoError(t, err, "bind null must mint")
+	require.Nil(t, a.Registry.Get(bound.FigaroID))
+
+	conn, err := net.Dial("unix", bound.Endpoint.Address)
+	require.NoError(t, err)
+	defer conn.Close()
+	client := jkrpc.NewClient(jkrpc.NewConn(conn), nil)
+	defer client.Close()
+	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	err = client.Call(callCtx, rpc.MethodQua, rpc.QuaRequest{Text: "hello"}, &struct{}{})
+	require.Error(t, err, "a provider-less figaro answered a turn")
+
+	// The remedy: patch the provider in THROUGH THE SAME dormant path,
+	// then the next turn wakes for real.
+	var set rpc.SetResponse
+	require.NoError(t, client.Call(callCtx, rpc.MethodSet, rpc.SetRequest{
+		Patch: *rawPatch(map[string]string{
+			"system.provider": `"mock"`, "system.model": `"mock-model"`,
+		}),
+	}, &set))
+	err = client.Call(callCtx, rpc.MethodQua, rpc.QuaRequest{Text: "hello"}, &struct{}{})
+	require.NoError(t, err, "the patched naked figaro should take its first turn")
+}
