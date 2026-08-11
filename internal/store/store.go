@@ -155,6 +155,12 @@ type Backend interface {
 	// writer, atomically with the append.
 	ApplyFormIf(ariaID string, patch message.Patch, ifVersion uint64) (uint64, error)
 
+	// ApplyFormEffect is ApplyFormIf plus what actually landed: the writer
+	// reduces a patch against the board (a key already holding the value is
+	// not an event), and a caller that reports or fans out the change must
+	// speak about the reduced patch, not the requested one.
+	ApplyFormEffect(ariaID string, patch message.Patch, ifVersion uint64) (uint64, message.Patch, error)
+
 	// ApplyForm appends a state patch to the form channel,
 	// keyed to the next IR LT (the transition the next message carries).
 	ApplyForm(ariaID string, patch message.Patch) (version uint64, err error)

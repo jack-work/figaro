@@ -139,21 +139,28 @@ func (h *handlers) writeForHub(id, method string, params json.RawMessage) (any, 
 	if req.Patch.IsEmpty() {
 		return rpc.SetResponse{OK: true}, true, nil
 	}
-	version, err := h.angelus.Backend.ApplyFormIf(id, req.Patch, req.IfVersion)
+	version, applied, err := h.angelus.Backend.ApplyFormEffect(id, req.Patch, req.IfVersion)
 	if err != nil {
 		return nil, true, err
 	}
+	// Report and fan out what LANDED, not what was asked for. A set of a value
+	// the board already holds is not an event: the writer dropped it, so this
+	// says so, no delta goes out, and an aria observing this form derives no
+	// transition from it.
+	if applied.IsEmpty() {
+		return rpc.SetResponse{OK: true}, true, nil
+	}
 	var set []string
-	for k := range req.Patch.Set {
+	for k := range applied.Set {
 		set = append(set, k)
 	}
 	if hb := h.angelus.Hubs.get(id); hb != nil {
 		_ = hb.Notify(rpc.MethodFormDelta, rpc.FormDelta{
 			Schema: rpc.FormDeltaSchema, AriaID: id, Version: version,
-			Patch: req.Patch, At: time.Now().UnixMilli(),
+			Patch: applied, At: time.Now().UnixMilli(),
 		})
 	}
-	return rpc.SetResponse{OK: true, Set: set, Remove: req.Patch.Remove}, true, nil
+	return rpc.SetResponse{OK: true, Set: set, Remove: applied.Remove}, true, nil
 }
 
 // wakeForHub restores an aria on demand for a method that needs a turn loop.

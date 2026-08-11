@@ -271,11 +271,20 @@ func (b *XwalBackend) ApplyForm(ariaID string, patch message.Patch) (uint64, err
 
 // ApplyFormIf refuses the patch unless the form still stands at ifVersion.
 func (b *XwalBackend) ApplyFormIf(ariaID string, patch message.Patch, ifVersion uint64) (uint64, error) {
+	version, _, err := b.ApplyFormEffect(ariaID, patch, ifVersion)
+	return version, err
+}
+
+// ApplyFormEffect is ApplyFormIf, and also returns what actually landed after
+// the writer reduced the patch against the board — which is what a caller
+// reporting to a human, or fanning a delta out to listeners, should be
+// speaking about.
+func (b *XwalBackend) ApplyFormEffect(ariaID string, patch message.Patch, ifVersion uint64) (uint64, message.Patch, error) {
 	f, err := b.form(ariaID)
 	if err != nil {
-		return 0, err
+		return 0, message.Patch{}, err
 	}
-	return f.Apply(patch, ifVersion)
+	return f.ApplyEffect(patch, ifVersion)
 }
 
 // ---- tree operations (delegated) ----

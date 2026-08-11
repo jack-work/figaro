@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -83,6 +84,11 @@ func TestFormReplaysItsLog(t *testing.T) {
 
 // One writer, many callers: every Apply is serialized and every version is
 // distinct, with readers never blocked.
+//
+// Each writer writes a DIFFERENT value on purpose. Thirty-two writers all
+// setting k=1 is not a test of serialization — since the writer reduces a
+// patch against the board, thirty-one of those are no-ops and SHOULD share a
+// version. What must never happen is two real changes landing on one.
 func TestFormSerializesConcurrentWrites(t *testing.T) {
 	f := store.NewMemForm()
 	defer f.Close()
@@ -94,7 +100,7 @@ func TestFormSerializesConcurrentWrites(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			v, err := f.Apply(set("k", `1`), 0)
+			v, err := f.Apply(set("k", fmt.Sprintf("%d", i)), 0)
 			assert.NoError(t, err)
 			versions[i] = v
 			f.Snapshot() // readers run throughout
@@ -109,6 +115,48 @@ func TestFormSerializesConcurrentWrites(t *testing.T) {
 	}
 	_, version := f.Snapshot()
 	assert.Equal(t, uint64(writers), version)
+}
+
+// A patch that changes nothing is not an event. The rule lives in the WRITER,
+// where the diff is atomic with the append, so both write paths — the agent's
+// board and an agentless form — obey it identically, and an aria observing a
+// form derives no transition from a set that set nothing.
+func TestNoOpPatchIsNotAnEvent(t *testing.T) {
+	f := store.NewMemForm()
+	defer f.Close()
+
+	var committed int
+	f.OnCommit(func(uint64, message.Patch) { committed++ })
+
+	v1, applied, err := f.ApplyEffect(set("k", `1`), 0)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), v1)
+	require.Contains(t, applied.Set, "k")
+
+	// The same value again: no version, no record, no delta, and the caller
+	// is told plainly that nothing landed.
+	v2, applied, err := f.ApplyEffect(set("k", `1`), 0)
+	require.NoError(t, err)
+	assert.Equal(t, v1, v2, "a no-op must not move the version")
+	assert.True(t, applied.IsEmpty(), "and must report that nothing landed")
+
+	// A removal of a key that is not there is the same kind of nothing.
+	v3, applied, err := f.ApplyEffect(message.Patch{Remove: []string{"absent"}}, 0)
+	require.NoError(t, err)
+	assert.Equal(t, v1, v3)
+	assert.True(t, applied.IsEmpty())
+
+	// A real change still is one, and only the changed half of a mixed patch
+	// survives the reduction.
+	v4, applied, err := f.ApplyEffect(message.Patch{Set: map[string]json.RawMessage{
+		"k": json.RawMessage(`1`),   // unchanged
+		"j": json.RawMessage(`"n"`), // new
+	}}, 0)
+	require.NoError(t, err)
+	assert.Greater(t, v4, v1)
+	assert.NotContains(t, applied.Set, "k")
+	assert.Contains(t, applied.Set, "j")
+	assert.Equal(t, 2, committed, "two real events, and no others")
 }
 
 func apply(f *store.Form, p message.Patch) error {
