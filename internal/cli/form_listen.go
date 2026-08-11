@@ -80,7 +80,6 @@ func runFormListen(loaded *config.Loaded, ariaID string) {
 		}
 		return resp.Snapshot, resp.Version, nil
 	}
-	view.resync()
 
 	restore, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
@@ -88,8 +87,18 @@ func runFormListen(loaded *config.Loaded, ariaID string) {
 	}
 	defer restore()
 	fmt.Fprint(os.Stdout, altScreenOn+cursorHide)
-	defer fmt.Fprint(os.Stdout, cursorShow+altScreenOff)
-	atExit(func() { fmt.Fprint(os.Stdout, cursorShow+altScreenOff) })
+	view.begin()
+	defer func() {
+		// end() BEFORE the screen is put back: a delta arriving during teardown
+		// would otherwise paint onto the terminal we have just restored.
+		view.end()
+		fmt.Fprint(os.Stdout, cursorShow+altScreenOff)
+	}()
+	atExit(func() { view.end(); fmt.Fprint(os.Stdout, cursorShow+altScreenOff) })
+
+	// Seeded here, not before the switch: resync ends in a paint, and a paint on
+	// the primary screen erases what the user was reading.
+	view.resync()
 
 	view.paint()
 	keys := make([]byte, 8)
@@ -141,6 +150,35 @@ type formView struct {
 	notice  string
 	stopped bool
 	refetch func() (form.Snapshot, uint64, error)
+
+	// live gates every paint on the alternate screen being ON.
+	//
+	// paint() begins with erase-in-display and ends by parking the cursor on the
+	// last row. On the alternate screen that is free; on the PRIMARY screen it
+	// erases whatever the user was looking at and leaves a screenful of blank
+	// lines behind, which is what they find when they quit and the alternate
+	// screen is put back.
+	//
+	// Two paints could land there. The seeding resync ran before the terminal
+	// was switched, and a delta can arrive on the notifier's goroutine at any
+	// moment -- including after the alternate screen has been put away and
+	// before the process has actually exited.
+	live bool
+}
+
+// begin marks the view paintable. Call it AFTER the alternate screen is on.
+func (v *formView) begin() {
+	v.mu.Lock()
+	v.live = true
+	v.mu.Unlock()
+}
+
+// end marks the view unpaintable. Call it BEFORE the alternate screen is put
+// away, so a delta racing the teardown cannot paint onto the restored screen.
+func (v *formView) end() {
+	v.mu.Lock()
+	v.live = false
+	v.mu.Unlock()
 }
 
 // stop parks the view: the notice stays, and nothing is applied or refetched
@@ -228,6 +266,11 @@ func (v *formView) paint() {
 
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	if !v.live {
+		// Not on the alternate screen: painting here would erase the user's own
+		// terminal. See formView.live.
+		return
+	}
 	v.rows = flattenFormTree(buildFormTree(snap), v.open, nil)
 	v.cursor = clampInt(v.cursor, 0, len(v.rows)-1)
 	// Keep the cursor on screen without scrolling further than it moved.
