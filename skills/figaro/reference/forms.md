@@ -18,15 +18,17 @@ null form ──fork──▶ unbound forms ──fork+aria_id──▶ figaros
 
 ## Using forms without a figaro (state tracking)
 
-**Mint.** `-O` is required — a form is born of its patch, and `fig form
-new` never touches the default outfit:
+**Mint.** Dressing is required — a form is born of its patch, and `fig form
+new` never touches the default outfit. Two axes: `-O` names outfits, `-S`
+carries keys.
 
 ```sh
-fig form new -O name=deploy-tracker -j     # → {"form_id":"@a5af1a83",…}
-fig form new -O 'focus,ttl=1h'             # an outfit spec works too; the
-                                           # daemon MATERIALIZES it — the form
-                                           # holds skills/credo, never a raw
-                                           # layers directive
+fig form new -S name=deploy-tracker -j     # → {"form_id":"@a5af1a83",…}
+fig form new -O focus -S ttl=1h            # an outfit works too; the daemon
+                                           # MATERIALIZES it at the API
+                                           # boundary, so the form holds
+                                           # skills and credo — never a name
+                                           # to be resolved later
 ```
 
 **Read.** `fig form @a5af1a83` prints the nested tree; `-j` is already
@@ -37,7 +39,8 @@ its shape. `fig form listen @a5af1a83` watches it live (deltas ride
 
 ```sh
 fig set --id @a5af1a83 status.phase canary
-fig unset --id @a5af1a83 status.phase
+fig form set --id @a5af1a83 status.phase canary     # the same, from the family
+fig form delete --id @a5af1a83 status.phase
 ```
 
 Or attend the form and drop the `--id`: `fig at @a5af1a83` binds your
@@ -175,7 +178,7 @@ fig send --id @role -- status?                # reaches the holder, whoever that
 
 **Study and cast.** `fig study [<aria>] <@form>` subscribes a figaro to
 an unbound form; `fig drop` unsubscribes; `fig cast [<aria>] <@form>`
-(or `-O <spec>` to mint the role born cast) points the role here AND
+(or `-O <names>` / `-S <k=v>` to mint the role born cast) points the role here AND
 ensures the study, serialized through the figaro's actor loop. The
 mechanism is the bound board's, generalized: every IR record stamps the
 positions of the whole OBSERVED SET (own board plus studied forms), and

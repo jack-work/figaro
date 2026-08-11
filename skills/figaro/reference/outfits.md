@@ -4,6 +4,11 @@ The model behind every place an outfit can be named. Read it when you are
 composing outfits, when `-O` did not do what you expected, or before changing
 anything under `internal/outfit`.
 
+> **Stumps are dead.** The sections below that speak of stumps and
+> content-addressed birth describe the pre-forms world; the primitive is now
+> the unbound FORM, and `reference/forms.md` is the current model. What remains
+> true here is the outfit grammar, the resolver, and how dressing travels.
+
 ## The three nouns
 
 | Noun | What it is |
@@ -12,22 +17,36 @@ anything under `internal/outfit`.
 | outfit | A named patch for a form, at `~/.config/figaro/outfits/<name>.toml`. |
 | spec | What you type where an outfit is asked for: an ordered list of terms. |
 
-## The spec
+## The two axes
 
-Terms are comma-separated and folded **left to right** — later terms win, the
-same rule an outfit's own `layers` follows, so `a,b` and an outfit declaring
-`layers = ["a","b"]` compose identically. A term is a name or an inline
-literal.
+Dressing has two axes and they are never mixed (Gluck's ruling, 2026-08-11).
+Outfits are NAMES; patches are DATA; a directive never rides inside a patch.
+
+| flag | takes | folded |
+|---|---|---|
+| `-O`/`--outfit` | outfit names, comma-separated | first |
+| `-S`/`--set` | `k=v` or a whole JSON literal, comma-separated | second |
+| `-D`/`--delete` | form key paths, comma-separated | last |
 
 ```
-sonn5                      a name: outfits/sonn5.toml
-sonn5,focus                two names, focus winning
-ttl=1h                     inline, sugar for {"ttl":"1h"}
-mantra="cool thing"        a quoted value keeps its spaces
-n=3   on=true              a value that parses as JSON keeps its type
-'{"ttl":"1h","n":3}'       the literal itself
-'{"layers":["a"],"x":1}'   an inline term may name layers of its own
+-O sonn5                   a name: outfits/sonn5.toml
+-O sonn5,focus             two names, focus winning
+-S ttl=1h                  sugar for {"ttl":"1h"}
+-S mantra="cool thing"     a quoted value keeps its spaces
+-S n=3   -S on=true        a value that parses as JSON keeps its type
+-S '{"ttl":"1h","n":3}'    the literal itself
+-D system.tags,mantra      two keys removed
+-O sonn5 -S ttl=1h         compose: the outfit, then your key ON TOP
 ```
+
+Each flag composes with itself on repeat (`-O a -O b` is `-O a,b`), and the
+order between them is fixed: **outfits, then set, then delete**. A key you
+wrote always beats an outfit that also sets it.
+
+`layers` is respected in exactly ONE place: the unmarshal that builds a patch
+from an outfit FILE, where it names that file's own layers. Written into `-S`
+it is ordinary data and is stored as typed. That is what lets a patch cross
+the chalkboard without the closure machinery waking up at all.
 
 ### The shell is half of this grammar
 
@@ -38,28 +57,24 @@ shell** into two separate words with the braces gone, so the term never
 arrives at all. Both are refused by name rather than as "no such outfit".
 
 ```sh
-figaro new -O 'base,{"ttl":"1h"}'   # quoted literal
-figaro new -O base,ttl=1h           # the same thing, no quoting needed
+figaro new -O base -S '{"ttl":"1h"}'   # quoted literal
+figaro new -O base -S ttl=1h           # the same thing, no quoting needed
 ```
 
 A name is a file basename, and the grammar is narrow about it: no whitespace,
-no `=` (the sugar's separator), no `/` or `\` (a name must not climb out of the
-outfits directory), no `{} []`, quotes or `:`, and no leading `-` (so `-O -j` says
-so locally instead of asking the server for an outfit called `-j`). The same
-gate applies to a `layers` entry, wherever it is declared.
+no `=` (that is `--set`), no `/` or `\` (a name must not climb out of the
+outfits directory), no `{} []`, quotes or `:`, and no leading `-` (so `-O -j`
+says so locally instead of asking the server for an outfit called `-j`). The
+same gate applies to a `layers` entry inside a file.
 
 Commas inside quotes, braces or brackets are data, not separators — but the
 structure must balance. An unmatched `}` or `"` is an error, not a mode in
-which commas stop separating. An inline term that sets nothing (`{}`) is an
-error too, and inline terms are capped at 64 KiB in total: one fold becomes one
-form record, and a record larger than a WAL segment cannot be written.
+which commas stop separating. A term that sets nothing (`{}`) is an error too.
 
-The sugar is client-side. On the wire a spec is JSON — an array whose elements
-are strings or objects, and a bare string is read as one spec:
+On the wire the two axes stay apart: names in `outfits`, data in `patch`.
 
 ```json
-{"outfit": ["sonn5", {"ttl": "1h"}]}
-{"outfit": "sonn5"}
+{"outfits": ["sonn5"], "patch": {"set": {"ttl": "1h"}}}
 ```
 
 ## Birth versus fold
@@ -67,7 +82,7 @@ are strings or objects, and a bare string is read as one spec:
 Two different things happen to an outfit, and which one you get depends on
 whether the call creates the aria.
 
-**Birth.** `figaro new -O <spec>`, and `send -O` when this call has to mint an
+**Birth.** `figaro new -O <names>`, and `send -O` when this call has to mint an
 aria (an unbound shell, or `-e`).
 
 TWO PATCHES, and which is which is the whole economy. The **stump** carries the
@@ -103,26 +118,60 @@ born, which is provenance and does not change.
 ## One call, not two
 
 On the prompt verbs the dressing travels **on the prompt itself**
-(`figaro.qua`'s `form.patch`). A name is not resolved by the client: it becomes
-an entry in the patch's `layers` directive, which the SERVER materializes when
-it accepts the call — which is what lets the same `-O` mean the same thing on a
-live aria as at birth. So:
+(`figaro.qua`'s `form.outfits` and `form.patch`). A name is not resolved by the
+client and it is not resolved by the writer either: it is resolved ONCE, at the
+daemon's API boundary, by the single dressing call every method routes through
+(`angelus.dress`, and `dressParams` for the methods that reach an aria through
+its hub). So:
 
 - a spec that does not resolve fails the call, with the layer closure attached,
   before anything is queued;
 - the fold and the message are one event, so the reminder renders on the turn
   that asked for it rather than the one after;
-- an explicit `set` on the same call wins over the outfit.
+- an explicit `set` on the same call wins over the outfit;
+- everything below the boundary — the store's single writer, the agent's actor
+  loop, the hub's agentless writer — holds pure data and reads no file. That
+  last one is not decoration: the hub path is what an attended FORM takes, and
+  while it was the one write path that never materialized, `fig form outfit
+  test` stored `{"layers":["test"]}` on a board and reported success.
 
-The resolve happens at accept and the FOLD happens at drain, against the board
-the patch actually lands on. That is not an implementation detail: a `set` or
-`unset` queued behind a running turn has not touched the board yet, so a diff
-taken at accept can call a key "already equal", omit it, and let the queued
-removal win — the turn answered without the key you dressed for.
+The FOLD still happens at drain, against the board the patch actually lands on.
+That is not an implementation detail: a `set` or `unset` queued behind a running
+turn has not touched the board yet, so a diff taken at accept can call a key
+"already equal", omit it, and let the queued removal win — the turn answered
+without the key you dressed for.
 
-`figaro.fork` carries the spec too, and applies it to the **alternative** the
-moment it exists — resolved before the fork so a bad spec costs nothing,
+`figaro.fork` carries the dressing too, and applies it to the **alternative**
+the moment it exists — resolved before the fork so a bad spec costs nothing,
 applied after it so the patch cannot land on the parent and miss the branch.
+
+## The resolver
+
+One `Outfitter` per daemon, and it is the only thing that reads an outfit file.
+
+It works in **epochs**: a consistent view of the outfits directory. The first
+read of a file in an epoch pins its bytes into a content-addressed snapshot
+store, and everything derived in that epoch — including a fold rebuilt after
+eviction — comes from the pinned copy, so a resolution cannot straddle an edit.
+Within an epoch a cached answer is valid by definition: no stats, no dependency
+lists.
+
+- **Staleness**: an epoch is trusted for 100ms, then a pass stats only what it
+  touched and turns it over if anything moved. `fig outfit reload` turns it
+  over immediately and reads nothing doing it.
+- **Eviction** is by BYTES (64MB, LRU, five-minute idle sweep), because large
+  outfits are the anticipated case. Evicted folds rebuild from the snapshot.
+- **Cycles** are found by the memoised depth-first walk — which IS the
+  incremental topological sort — named in the error, and then TAINTED: every
+  name on the loop answers from the verdict instead of walking again. Taints
+  die with the epoch.
+- **Warming** is one background goroutine at startup, for the configured
+  default outfit only. Startup blocks on nothing.
+
+The epoch replaced a cache that validated by stat-ing every file it was built
+from, with each parent merging each child's dependency list by linear scan.
+On a generated tree of 800 files that cost 2.72 SECONDS cold and 2.4ms warm;
+it is now 19.9ms and 61µs.
 
 ## Layers
 
@@ -268,10 +317,11 @@ one.
 
 | Thing | Where |
 |---|---|
-| `Spec`, `Term`, `ParseSpec` | `internal/outfit/spec.go` |
-| `LoadSpec`, closures, layers, `fileName`/`dirName` | `internal/outfit/outfit.go` |
+| the grammar: `ParseNames`, `ParseSet`, `ParseDelete` | `internal/outfit/assemble.go` |
+| the one dressing call | `outfit.Outfitter.Dress` |
+| the API boundary that makes it | `angelus.handlers.dress` / `dressParams` |
+| epochs, snapshots, eviction, taints | `internal/outfit/resolver.go` |
+| closures, layers, `fileName`/`dirName` | `internal/outfit/outfit.go` |
 | the additive diff | `form.Additive` |
-| fold on a live aria | `figaro.Agent.OutfitPatch` / `ApplyOutfit` |
-| resolve at accept / fold at drain | `figaro.Agent.CheckPromptOutfit` / `combineFormInput` |
 | birth, and the default | `angelus.handlers.create` |
 | fold on a fork | `angelus.handlers.fork` |

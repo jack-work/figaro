@@ -33,7 +33,7 @@ These hold across the whole CLI:
 |---|---|
 | `figaro -- <prompt>` | Prompt the attended aria. Creates one if this shell has no binding. |
 | `figaro send [flags] -- <prompt>` | The same, with the verb spelled out. Alias `qua`. |
-| `figaro new [-O <spec>] -- <prompt>` | Mint a fresh aria, bind this shell to it, prompt it. |
+| `figaro new [-O <names>] [-S <k=v>] -- <prompt>` | Mint a fresh aria, bind this shell to it, prompt it. |
 | `figaro new` | With no prompt: mint on the default outfit and attend it, no turn. `new` always mints; `figaro attend null` is how you go home. |
 
 `send` flags, all combinable unless noted:
@@ -42,7 +42,9 @@ These hold across the whole CLI:
 |---|---|
 | `-f`, `--forget` | Submit and exit. Do not attach to the stream, do not interrupt on Ctrl-C. The turn keeps running in the daemon. Mints an aria if this shell has none (the id goes to stderr, or to stdout with `-j`). |
 | `-e`, `--ephemeral` | Spin a throwaway in-memory aria and kill it when the turn ends. Contradicts `--id`. |
-| `-O`, `--outfit <spec>` | Dress the aria. On one this call creates it is the birth outfit; on one that already exists the spec is folded onto its form **in the same call as the prompt**, so that turn is answered wearing it. Repeats append (`-O a -O b` = `-O a,b`). Bundles like any value-taking short: `-erO sonn5` or `-erOsonn5`. Defaults to `default_outfit`. See [reference/outfits.md](reference/outfits.md). |
+| `-O`, `--outfit <names>` | Dress the aria in OUTFIT NAMES. On one this call creates it is the birth outfit; on one that already exists it is folded onto the form **in the same call as the prompt**, so that turn is answered wearing it. Repeats append (`-O a -O b` = `-O a,b`). Bundles like any value-taking short: `-erO sonn5` or `-erOsonn5`. Defaults to `default_outfit`. See [reference/outfits.md](reference/outfits.md). |
+| `-S`, `--set <k=v>` | Form keys, the other axis: `k=v` or a JSON literal, comma-separated. Folded AFTER `-O`, so your key beats the outfit's. |
+| `-D`, `--delete <paths>` | Form key paths to remove, comma-separated. Folded last. |
 | `-r`, `--raw` | Plain text on stdout: no ANSI, no markdown. Streamed, not buffered. |
 | `-o`, `--verbose` | Expand full tool inputs. Ctrl-O toggles it live. |
 | `-l`, `--listen` | Open the transcript pager at startup. |
@@ -191,10 +193,13 @@ that goes wrong yields a store that looks fine.
 
 | Command | Effect |
 |---|---|
-| `figaro state [<id>]` | The folded form snapshot. `-j` for JSON. Alias `form`. |
+| `figaro state [show] [<id>]` | The folded form snapshot. `-j` for JSON. Alias `form`; `show` is the explicit spelling. |
 | `figaro set [<id>] <key> <value>` | Patch one key with no model round trip. |
 | `figaro unset [<id>] <key>...` | Remove keys. |
-| `figaro state outfit <spec>` | Fold an outfit onto this aria now: additive, nothing removed, a `<system-reminder>` for what changed. A dressing is names, `k=v` and JSON literals, comma-joined (`sonn5,ttl=1h`); names become a `layers` directive the SERVER materializes, so the same `-O` means the same thing at birth and on a live aria. `--list` for what is on disk. See [reference/outfits.md](reference/outfits.md). |
+| `figaro form set <key> <value>` | The same, from the form family. `form set a=1,b=2` takes the `-S` grammar instead. |
+| `figaro form delete <paths>` | Remove key paths, comma-separated (the `-D` grammar). `unset` is its older name. |
+| `figaro form help <topic>` | A help page, from the form family's third position. |
+| `figaro state outfit <names>` | Fold outfits onto this aria now: additive, nothing removed, a `<system-reminder>` for what changed. Takes NAMES only — keys are the other axis (`form set`). The names travel as names and the daemon resolves them once, at its API boundary, so the same `-O` means the same thing at birth and on a live aria. `--list` for what is on disk. See [reference/outfits.md](reference/outfits.md). |
 | `figaro gc [--dry-run]` | Collect outfit stumps nothing is using. One stump exists per outfit VERSION; killing an aria collects its stump when it was the last child, so `gc` sweeps the versions that predate that. Content-addressed, so a collected stump is re-minted identically by the next aria that wants it. |
 | `figaro form listen [<id>]` | Watch the form as a live JSON tree, in the alt screen. The client keeps its OWN copy and applies the patches the server broadcasts (`form.delta`), so it is the same tree and the same algebra on both ends. `j`/`k` move, `enter` expands, `y` yanks, `e`/`d` page. |
 | `figaro state outfit --tree [<spec>]` | Draw the layer closure and apply nothing — green where a layer resolves, red where it does not. The angelus resolves it — the outfits directory is the server's state, so a client asks rather than reading it. Exits non-zero when the closure has a gap. |
