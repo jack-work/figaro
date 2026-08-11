@@ -1220,6 +1220,10 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		switch {
 		case req.IDsOnly && !req.Global:
 			conversationIDs = h.angelus.Backend.ConversationIDs()
+			// Forms complete everywhere an id does: attend, kill, set --id.
+			for _, f := range h.angelus.Backend.Forms() {
+				conversationIDs = append(conversationIDs, f.ID)
+			}
 		case req.Global:
 			nodeList = h.angelus.Backend.Nodes()
 		default:

@@ -291,7 +291,7 @@ func listForest(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree
 			Label:  truncRunes(label, 44),
 			Fields: map[string]string{
 				fieldID:     f.ID,
-				fieldOutfit: dash(f.OutfitName),
+				fieldOutfit: dash(bornOf(f)),
 				fieldVer:    dash(f.OutfitVer),
 				fieldFork:   fork,
 				fieldAge:    relAge(f.LastActive),
@@ -567,6 +567,15 @@ func vectorLess(a, b []int) bool {
 }
 
 // dash returns "-" for an empty string.
+// bornOf names what an aria was born under: its outfit, or — for a
+// form-born aria — the @form itself (the nearest unbound ancestor).
+func bornOf(f rpc.FigaroInfoResponse) string {
+	if f.OutfitName == "" && strings.HasPrefix(f.Parent, "@") {
+		return f.Parent
+	}
+	return f.OutfitName
+}
+
 func dash(s string) string {
 	if strings.TrimSpace(s) == "" {
 		return "-"
