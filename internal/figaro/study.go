@@ -28,11 +28,20 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// studiesKey is where an aria's study subscriptions live: on its OWN
+// StudiesKey is where an aria's study subscriptions live: on its OWN
 // form, so revival re-declares and a fork inherits the RELATIONSHIP
 // (the list rides the copied board) while the studied form itself is
 // never copied.
-const studiesKey = "system.studies"
+//
+// Exported because the DORMANT half of these verbs lives in the angelus:
+// a figaro with no agent is served from the hub, exactly as `set` is, and
+// both halves must agree about where the list lives and how it is read.
+const StudiesKey = "system.studies"
+
+const studiesKey = StudiesKey
+
+// StudiesFromSnapshot parses system.studies (a JSON array of form ids).
+func StudiesFromSnapshot(snap form.Snapshot) []string { return studiesFromSnapshot(snap) }
 
 // studiesFromSnapshot parses system.studies (a JSON array of form ids).
 func studiesFromSnapshot(snap form.Snapshot) []string {

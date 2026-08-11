@@ -27,6 +27,12 @@ func resolveStudyArgs(ctx context.Context, acli *angelus.Client, args []string, 
 		ariaID, formID = args[0], args[1]
 	case len(args) == 1 && formInFlags:
 		ariaID = args[0]
+	case len(args) == 1 && verb == "study" && !strings.HasPrefix(args[0], "@"):
+		// The form is always the last positional, so a lone one is the form.
+		// A lone positional that CANNOT be a form is the aria, and for study
+		// that means "list what this aria studies" without having to attend
+		// it first. The sigil is what makes this lexical rather than a guess.
+		ariaID = args[0]
 	case len(args) == 1:
 		formID = args[0]
 	case len(args) == 0 && !formInFlags && verb != "cast-list":

@@ -211,3 +211,64 @@ func TestDropEndsStampsAndStatesItself(t *testing.T) {
 	require.Contains(t, text, `"began":true`)
 	require.Contains(t, text, `"began":false`)
 }
+
+// A figaro that cannot WAKE can still be cast. The casting verbs used to
+// demand the actor loop, so reaching them meant restoring the aria and
+// constructing a provider: `fig cast` on a naked figaro (one born of `bind
+// null`, with no provider keys at all) failed with
+//
+//	hub …: wake: restore …: create provider: unknown provider: ""
+//
+// which is the naked-figaro deadlock one verb further out, and the same
+// deadlock M1 broke for `set` by serving it from the hub. This proves the
+// casting half: no agent is constructed, and the store's own writers do the
+// work.
+func TestCastServesADormantFigaroWithoutWaking(t *testing.T) {
+	_, acli, ctx := daemonFixture(t)
+
+	// A NAKED figaro: no outfit, no provider. Waking it is impossible.
+	naked, err := acli.FormBind(ctx, "null", nil, nil)
+	if err != nil {
+		t.Fatalf("bind null: %v", err)
+	}
+	role, err := acli.FormCreate(ctx, "", nil, rawPatch(map[string]string{"name": `"understudy"`}))
+	if err != nil {
+		t.Fatalf("form create: %v", err)
+	}
+
+	fc, err := figaro.DialClient(transport.Endpoint{
+		Scheme: naked.Endpoint.Scheme, Address: naked.Endpoint.Address}, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer fc.Close()
+
+	res, err := fc.Cast(ctx, rpc.CastRequest{FormID: role.FormID})
+	if err != nil {
+		t.Fatalf("cast a dormant naked figaro: %v", err)
+	}
+	if !res.Studied || !res.Patched {
+		t.Fatalf("cast reported studied=%v patched=%v", res.Studied, res.Patched)
+	}
+
+	// The role points here, and the subscription is durable on the board.
+	form, err := fc.Form(ctx)
+	if err != nil {
+		t.Fatalf("form: %v", err)
+	}
+	if studies := figaro.StudiesFromSnapshot(form.Snapshot); len(studies) != 1 || studies[0] != role.FormID {
+		t.Fatalf("studies on the board: %v", studies)
+	}
+
+	// And it can be dropped again, still without an agent.
+	if _, err := fc.Drop(ctx, role.FormID); err != nil {
+		t.Fatalf("drop: %v", err)
+	}
+	form, err = fc.Form(ctx)
+	if err != nil {
+		t.Fatalf("form after drop: %v", err)
+	}
+	if studies := figaro.StudiesFromSnapshot(form.Snapshot); len(studies) != 0 {
+		t.Fatalf("studies after drop: %v", studies)
+	}
+}

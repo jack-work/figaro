@@ -126,10 +126,43 @@ func (h *handlers) bindAgentToHub(id string, agent subscribableAgent) (func(), e
 // hand: the agent's WatchForm sink does this when an agent is live, and
 // this path exists precisely when none is.
 func (h *handlers) writeForHub(id, method string, params json.RawMessage) (any, bool, error) {
-	if method != rpc.MethodSet {
+	if h.angelus.Backend == nil {
 		return nil, false, nil
 	}
-	if h.angelus.Backend == nil {
+	switch method {
+	case rpc.MethodSet:
+		// below
+	case rpc.MethodStudy, rpc.MethodDrop:
+		var req rpc.StudyRequest
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &req); err != nil {
+				return nil, true, err
+			}
+		}
+		if req.FormID == "" && method == rpc.MethodStudy {
+			// A bare `fig study` is a LISTING, and a listing needs no agent.
+			snap, err := h.angelus.Backend.FormState(id)
+			if err != nil {
+				return nil, true, err
+			}
+			return rpc.StudyResponse{OK: true, Studies: figaro.StudiesFromSnapshot(snap)}, true, nil
+		}
+		studies, err := h.studyForHub(id, req.FormID, method == rpc.MethodDrop)
+		if err != nil {
+			return nil, true, err
+		}
+		return rpc.StudyResponse{OK: true, Studies: studies}, true, nil
+	case rpc.MethodCast:
+		var req rpc.CastRequest
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, true, err
+		}
+		res, err := h.castForHub(id, req)
+		if err != nil {
+			return nil, true, err
+		}
+		return res, true, nil
+	default:
 		return nil, false, nil
 	}
 	var req rpc.SetRequest
