@@ -22,14 +22,14 @@ import (
 )
 
 // daemonFixture is a real angelus over a real store with a mock provider.
-func daemonFixture(t *testing.T) (*angelus.Angelus, *angelus.Client, context.Context) {
+func daemonFixture(t testing.TB) (*angelus.Angelus, *angelus.Client, context.Context) {
 	a, acli, ctx, _ := daemonFixtureDir(t)
 	return a, acli, ctx
 }
 
 // daemonFixtureDir is daemonFixture plus the config dir, for tests that
 // rewrite outfit files.
-func daemonFixtureDir(t *testing.T) (*angelus.Angelus, *angelus.Client, context.Context, string) {
+func daemonFixtureDir(t testing.TB) (*angelus.Angelus, *angelus.Client, context.Context, string) {
 	t.Helper()
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(dir+"/outfits", 0700))

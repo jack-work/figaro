@@ -10,7 +10,7 @@ import (
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-func testRuntimeDir(t *testing.T, fallback string) string {
+func testRuntimeDir(t testing.TB, fallback string) string {
 	t.Helper()
 	if runtime.GOOS != "windows" {
 		return fallback
@@ -23,7 +23,7 @@ func testRuntimeDir(t *testing.T, fallback string) string {
 	return dir
 }
 
-func waitForAngelus(t *testing.T, path string) {
+func waitForAngelus(t testing.TB, path string) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	var lastErr error
@@ -39,7 +39,7 @@ func waitForAngelus(t *testing.T, path string) {
 	t.Fatalf("angelus socket %s never accepted a connection: %v", path, lastErr)
 }
 
-func waitForFigaro(t *testing.T, endpoint transport.Endpoint) {
+func waitForFigaro(t testing.TB, endpoint transport.Endpoint) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	var lastErr error

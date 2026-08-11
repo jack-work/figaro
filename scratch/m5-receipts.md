@@ -49,3 +49,46 @@ receipts live here until the forms build deploys, then they migrate.
   (sandbox has no provider — stated).
 - STILL OWED: twelve-aria stress + form-storm variant; actor-loop cast
   bench; role-read addendum number.
+
+## The battery's finest catch, told properly
+The isStumpLocked regression (+6784%) was the loud one. The quiet one
+was better. Prime's review asked a simple question: your eviction test
+proves the watcher is ALIVE — does anything prove it is SINGULAR? It
+did not. And writing the counting test found the vein: an agent
+re-registers its studies on every REVIVAL, each fresh instance's guard
+map is empty, so every revival stacked one more watcher copy in the
+registry. Three revivals, one write to the studied role: three
+reminders. No fresh test process could ever see it — the duplicates
+only exist on a daemon that has lived long enough to hibernate and
+wake the same aria twice. The fix is structural: registrations are
+owner-keyed (same node+owner REPLACES) and every armed sink is
+generation-gated, so the dead instance's closure — orphaned pending
+queue and all — goes inert the instant its successor registers, and
+the successor arms immediately instead of waiting for a reopen.
+Pinned: 3 revivals x 3 evictions x 1 write = exactly 1 delivery.
+Reviewer instinct + counting test > any amount of green.
+
+## Cast + redirect numbers (-count=6, quiet)
+- BenchmarkCast (RPC → actor loop → cross-call, steady state):
+  ~33.5µs, ~6.5KB, ~115 allocs. A casting call costs thirty-three
+  microseconds.
+- BenchmarkRoleRedirectRead (per role-targeted invocation):
+  22.8µs ±0.1%, 3.6KB, 63 allocs. One socket round-trip.
+- Both committed as permanent battery instruments.
+
+## Form storm (token-free variant; 12 workers, one daemon)
+12 x (1 form new + 40 own-sets + 40 shared-sets) = 960 sets + 13
+mints: 2.2s wall (CLI fork/exec dominates), 0 errors, 12/12 shared-
+form finals correct — the single writer serialized 480 concurrent
+writes to ONE form without losing any. Listing coherent after.
+NOT verified here: delta-fanout completeness under storm volume (the
+listener is a TUI; correctness is e2e-tested, loss-under-load is not).
+The token-burning twelve-aria stress awaits Gluck's meter-nod.
+
+## For Gluck: the three projection decisions (M5 merge-ready behind them)
+1. REPLAY: studied reminders are render-only — a replayed transcript
+   does not show what the model saw. Accept, or durably mark?
+2. DORMANT CATCH-UP: a sleeping aria accumulates nothing; on wake it
+   sees only post-wake deltas. Accept, or snapshot-diff on wake?
+3. COALESCING: interim rule is newest-8 + counted-overflow notice.
+   Bless, or specify (per-form coalescing? size budget?)?
