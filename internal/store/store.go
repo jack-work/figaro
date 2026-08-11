@@ -182,6 +182,9 @@ type Backend interface {
 	Node(id string) (NodeView, bool)
 	Nodes() []NodeView
 
+	// Forms returns every unbound form trunk (kind "form").
+	Forms() []NodeView
+
 	// CollectStump removes a childless outfit stump. Stumps are content
 	// addressed, so a collected one is re-minted identically by the next aria
 	// that wants that outfit; this reclaims the versions nothing uses.

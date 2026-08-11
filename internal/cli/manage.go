@@ -39,6 +39,7 @@ const (
 	fieldCtx    = "ctx"
 	fieldCwd    = "cwd"
 	fieldDetail = "detail"
+	fieldKind   = "kind"
 )
 
 // listColumns is the table `list` prints at a given width: the full nine, a
@@ -366,6 +367,15 @@ func globalForest(figs []rpc.FigaroInfoResponse, boundID string, ppid int) figtr
 				ver = "?"
 			}
 			label, detail = "outfit "+dash(f.OutfitName)+"@"+ver, "ceremonial"
+		case "form":
+			label = "form " + f.ID
+			if f.Name != "" {
+				label = f.Name + " " + f.ID
+			}
+			detail = "unbound"
+			if f.TargetAria != "" {
+				detail = "role → " + f.TargetAria
+			}
 		default:
 			label = f.Mantra
 			if label == "" {
@@ -380,6 +390,7 @@ func globalForest(figs []rpc.FigaroInfoResponse, boundID string, ppid int) figtr
 				fieldID:     f.ID,
 				fieldDetail: detail,
 				fieldMsgs:   strconv.Itoa(f.MessageCount),
+				fieldKind:   f.Kind,
 			},
 		}
 		for _, c := range childrenOf[id] {
@@ -387,12 +398,22 @@ func globalForest(figs []rpc.FigaroInfoResponse, boundID string, ppid int) figtr
 		}
 		return n
 	}
-	tree := figtree.Tree{}
+	tree := figtree.Tree{
+		// Unbound forms wear the transcript selection's wash — one shared
+		// token (bgFormRow), so the two surfaces can never drift apart.
+		Backgrounds: []figtree.RowBackground{{Field: fieldKind, Value: "form", Seq: bgFormRow}},
+	}
 	if nullID != "" {
 		tree.Roots = append(tree.Roots, grow(nullID))
 	}
 	return tree
 }
+
+// bgFormRow is the row wash for unbound forms in `ls -g` — the SAME
+// sequence the transcript pager uses for node selection (see
+// transcript_selection.go); grey 236 was chosen there against every
+// theme, and this surface inherits that decision rather than remaking it.
+const bgFormRow = "\x1b[48;5;236m"
 
 func renderGlobal(figs []rpc.FigaroInfoResponse, boundID string, limit int) {
 	rows := globalForest(figs, boundID, shellPID).Rows()

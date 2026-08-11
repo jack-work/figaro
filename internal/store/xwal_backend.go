@@ -356,6 +356,7 @@ func (b *XwalBackend) Node(id string) (NodeView, bool) {
 
 func (b *XwalBackend) Nodes() []NodeView         { return b.labelAll(b.store.Nodes()) }
 func (b *XwalBackend) Conversations() []NodeView { return b.labelAll(b.store.Conversations()) }
+func (b *XwalBackend) Forms() []NodeView         { return b.store.Forms() }
 func (b *XwalBackend) ConversationIDs() []string { return b.store.ConversationIDs() }
 
 // outfitLabel is a stump's own account of itself.

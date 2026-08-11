@@ -954,12 +954,21 @@ aria nesting follows fork history alone and there is nothing to promote.`,
 
   figaro state                     print the form
   figaro state --id <id> -j        another aria's, as JSON
+  figaro form new -O name='x'      mint an UNBOUND form (@id); -O is required
+  figaro form fork @id k=v         duplicate a form's state into a fresh @id
+  figaro form ls                   list unbound forms (scoped by attendance)
+  figaro form rm @id               remove an unbound form
   figaro state outfit focus        fold an outfit onto this aria, now
   figaro state outfit a,b          fold both, b winning
   figaro state outfit ttl=1h       fold an inline literal
   figaro state outfit --tree a     draw a's layer closure, apply nothing
   figaro form listen               watch it live, as a JSON tree
   figaro state outfit --list       the outfits on disk
+
+An unbound form is durable, versioned, forkable state with no figaro
+attached: patch it with set/unset, watch it with form listen, make a
+figaro from it by forking (bind). A form carrying target-aria is a ROLE.
+` + "`state`" + ` and ` + "`form`" + ` are one command; both spellings work everywhere.
 
 ` + "`state outfit`" + ` is an ADDITIVE fold: keys already holding the outfit's
 value are skipped and nothing is ever removed, so re-applying is free and the
@@ -970,10 +979,12 @@ state is an action, not a modifier on one.
 See ` + "`figaro help outfits`" + ` for the spec syntax.`,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria id (overrides pid binding)"},
-			{Long: "json", Short: "j", IsBool: true, Description: "Accepted and ignored: the snapshot is always a JSON object"},
+			{Long: "json", Short: "j", IsBool: true, Description: "JSON output (new/fork/ls emit machine-readable ids)"},
+			{Long: "outfit", Short: "O", Description: "new/fork: the birth spec (required for new)"},
 			{Long: "list", IsBool: true, Description: "outfit: list available outfits and exit"},
 			{Long: "tree", IsBool: true, Description: "outfit: print the layer closure and exit; applies nothing"},
 			{Long: "refresh", IsBool: true, Description: "outfit: re-read outfits and config from disk"},
+			{Long: "recursive", IsBool: true, Description: "rm: also remove the form's live branches"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
@@ -987,6 +998,27 @@ See ` + "`figaro help outfits`" + ` for the spec syntax.`,
 					id = args[1]
 				}
 				runFormListen(ld, id)
+				return nil
+			}
+			if len(args) > 0 && args[0] == "new" {
+				runFormNew(ld, ctx.Flag("outfit"), args[1:], ctx.BoolFlag("json"))
+				return nil
+			}
+			if len(args) > 0 && args[0] == "fork" {
+				parent := ""
+				rest := args[1:]
+				if len(rest) > 0 {
+					parent, rest = rest[0], rest[1:]
+				}
+				runFormFork(ld, parent, ctx.Flag("outfit"), rest, ctx.BoolFlag("json"))
+				return nil
+			}
+			if len(args) > 0 && args[0] == "ls" {
+				runFormLs(ld, ctx.BoolFlag("json"))
+				return nil
+			}
+			if len(args) > 0 && args[0] == "rm" {
+				runKill(ld, "", args[1:], ctx.BoolFlag("recursive"))
 				return nil
 			}
 			if ctx.BoolFlag("list") || ctx.BoolFlag("tree") || ctx.BoolFlag("refresh") {

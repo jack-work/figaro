@@ -297,6 +297,7 @@ type topologySnapshot struct {
 	version         uint64
 	nodes           []NodeView
 	conversations   []NodeView
+	forms           []NodeView
 	conversationIDs []string
 	byID            map[string]NodeView
 }
@@ -921,13 +922,22 @@ func (s *XwalStore) topologySnapshot() *topologySnapshot {
 	infos := s.listTrunks()
 	at := s.vectorsLocked(infos)
 	conversations := make([]NodeView, 0, len(infos))
+	var forms []NodeView
 	ids := make([]string, 0, len(infos))
 	nodes := make([]NodeView, 0, len(infos)+1)
 	byID := make(map[string]NodeView, len(infos)+1)
 	for _, t := range infos {
 		node := s.view(t, at)
-		conversations = append(conversations, node)
-		ids = append(ids, node.ID)
+		// Split the forest by species: `fig ls` lists conversations, and a
+		// form leaking in would be an aria-shaped row for a thing with no
+		// turns. Forms get their own accessor and the global view carries
+		// both.
+		if node.Kind == string(kindForm) {
+			forms = append(forms, node)
+		} else {
+			conversations = append(conversations, node)
+			ids = append(ids, node.ID)
+		}
 		nodes = append(nodes, node)
 		byID[node.ID] = node
 	}
@@ -943,6 +953,7 @@ func (s *XwalStore) topologySnapshot() *topologySnapshot {
 		version:         version,
 		nodes:           nodes,
 		conversations:   conversations,
+		forms:           forms,
 		conversationIDs: ids,
 		byID:            byID,
 	}
@@ -954,6 +965,11 @@ func (s *XwalStore) topologySnapshot() *topologySnapshot {
 // fork-forest vectors but excluding ceremonial anchors.
 func (s *XwalStore) Conversations() []NodeView {
 	return append([]NodeView(nil), s.topologySnapshot().conversations...)
+}
+
+// Forms returns every unbound form trunk.
+func (s *XwalStore) Forms() []NodeView {
+	return append([]NodeView(nil), s.topologySnapshot().forms...)
 }
 
 // ConversationIDs returns persisted conversation ids without computing
@@ -1105,3 +1121,7 @@ func (s *XwalStore) LastTS(id string) int64 {
 	}
 	return s.trunks.LastTS(id)
 }
+
+// KindForm is the public name of the unbound-form node kind, for
+// consumers that discriminate rows by species.
+const KindForm = string(kindForm)

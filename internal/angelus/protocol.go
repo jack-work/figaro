@@ -286,7 +286,16 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 	if req.Patch == nil || req.Patch.IsEmpty() {
 		return nil, fmt.Errorf("form.create: a form is born of its patch; an empty one names nothing")
 	}
-	id, version, err := h.angelus.Backend.CreateForm(req.Parent, *req.Patch)
+	// Materialize server-side: a `layers` directive in the patch resolves to
+	// skills/credo exactly as figaro.create resolves it — a form must hold
+	// materialized state, never a raw directive. No default outfit is ever
+	// folded in: `fig form new` demands its spec explicitly.
+	loaded, ofit := h.settings()
+	patch, err := ofit.Materialize(*req.Patch, loaded.Config.DefaultOutfit)
+	if err != nil {
+		return nil, h.errOutfitNotFound(outfit.Label(*req.Patch, loaded.Config.DefaultOutfit), err)
+	}
+	id, version, err := h.angelus.Backend.CreateForm(req.Parent, patch)
 	if err != nil {
 		return nil, err
 	}
@@ -1267,7 +1276,25 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 				continue
 			}
 			seen[n.ID] = struct{}{}
-			result = append(result, rpc.FigaroInfoResponse{ID: n.ID, State: "anchor", BoundPIDs: boundPIDs[n.ID]})
+			entry := rpc.FigaroInfoResponse{ID: n.ID, State: "anchor", BoundPIDs: boundPIDs[n.ID]}
+			if n.Kind == string(store.KindForm) {
+				// A form is a live row, not a ceremonial anchor: it has
+				// recency (figwal LastTS, wake-free — a form has nothing to
+				// wake) and possibly a name and a casting (role) target,
+				// both read from its folded state. Forms are few; the fold
+				// is the same one `fig form <id>` performs.
+				entry.State = "form"
+				entry.LastActive = h.angelus.Backend.LastTS(n.ID)
+				if snap, err := h.angelus.Backend.FormState(n.ID); err == nil {
+					if v := snap.Lookup("name"); v != nil {
+						entry.Name = *v
+					}
+					if v := snap.Lookup("target-aria"); v != nil {
+						entry.TargetAria = *v
+					}
+				}
+			}
+			result = append(result, entry)
 		}
 	}
 

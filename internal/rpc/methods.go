@@ -436,7 +436,12 @@ type FigaroInfoResponse struct {
 	Trunk      string `json:"trunk,omitempty"`
 	Parent     string `json:"parent,omitempty"`
 	BranchedLT uint64 `json:"branched_lt,omitempty"` // main-LT this trunk diverged at
-	Kind       string `json:"kind,omitempty"`        // "conversation" | "outfit" | "null" (set in global listings)
+	Kind       string `json:"kind,omitempty"`        // "conversation" | "form" | "outfit" | "null" (set in global listings)
+
+	// Unbound-form rows only: the form's "name" key, and — when the form is
+	// a role (duck-typed by the key's presence) — its target-aria.
+	Name       string `json:"name,omitempty"`
+	TargetAria string `json:"target_aria,omitempty"`
 }
 
 // CreateRequest names the outfit for a new aria. The system mints the
