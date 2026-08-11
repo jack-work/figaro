@@ -614,7 +614,7 @@ func runSendRaw(loaded *config.Loaded, ariaID string, d dressing, prompt string)
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	_, figaroEP, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, true, d)
+	_, figaroEP, err := resolveFigaroTargetEndpoint(ctx, loaded, acli, ariaID, true, d)
 	if err != nil {
 		die("%s", err)
 	}
@@ -652,7 +652,7 @@ func runSendVerbatim(loaded *config.Loaded, opts sendOpts, prompt string) {
 			die("send: %s", err)
 		}
 	} else {
-		_, ep, err := resolveTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.outfit)
+		_, ep, err := resolveFigaroTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.outfit)
 		if err != nil {
 			die("%s", err)
 		}
@@ -690,7 +690,7 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 			die("send: %s", err)
 		}
 	} else {
-		_, ep, err := resolveTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.outfit)
+		_, ep, err := resolveFigaroTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.outfit)
 		if err != nil {
 			die("%s", err)
 		}
@@ -759,7 +759,7 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	ariaID, figaroEP, err := resolveTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.outfit)
+	ariaID, figaroEP, err := resolveFigaroTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.outfit)
 	if err != nil {
 		die("%s", err)
 	}

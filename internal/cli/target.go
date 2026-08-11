@@ -3,11 +3,13 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/transport"
 )
 
@@ -69,3 +71,47 @@ func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *ang
 // one. Prompt verbs are; read-only verbs (hup, listen, outfit) are not,
 // because "show me the aria" cannot sensibly answer by inventing one.
 func mintsWhenUnbound(autoCreate bool) bool { return autoCreate }
+
+// resolveFigaroTargetEndpoint is resolveTargetEndpoint for verbs that need
+// a FIGARO (send, listen, hup, queue): an unbound-form target is resolved
+// through its role. The `form` namespace never redirects — set, state,
+// form listen, state outfit address the form itself and use the raw
+// resolver. Resolution is LATE, per call: repoint target-aria and the
+// next invocation reaches the successor; nothing chases mid-stream.
+func resolveFigaroTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *angelus.Client, explicitID string, autoCreate bool, d dressing) (string, transport.Endpoint, error) {
+	id, ep, err := resolveTargetEndpoint(ctx, loaded, acli, explicitID, autoCreate, d)
+	if err != nil {
+		return id, ep, err
+	}
+	return redirectRole(ctx, loaded, acli, id, ep)
+}
+
+// redirectRole follows a role form to its target aria, once. A plain
+// form (no target-aria) refuses by name; a target that is itself a form
+// refuses too — target-aria names an aria, and a chain of roles is a
+// misconfiguration better reported than walked.
+func redirectRole(ctx context.Context, loaded *config.Loaded, acli *angelus.Client, id string, ep transport.Endpoint) (string, transport.Endpoint, error) {
+	if !strings.HasPrefix(id, "@") && !strings.Contains(id, "@") {
+		return id, ep, nil
+	}
+	fcli, err := figaro.DialClient(ep, nil)
+	if err != nil {
+		return "", transport.Endpoint{}, fmt.Errorf("read form %s: %w", id, err)
+	}
+	formCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	resp, err := fcli.Form(formCtx)
+	cancel()
+	fcli.Close()
+	if err != nil {
+		return "", transport.Endpoint{}, fmt.Errorf("read form %s: %w", id, err)
+	}
+	target := resp.Snapshot.Lookup("target-aria")
+	if target == nil || *target == "" {
+		return "", transport.Endpoint{}, fmt.Errorf("%s is a form, not a figaro: this verb needs one.\n  fig bind %s                 birth a figaro from it\n  fig set --id %s target-aria <aria>   make it a ROLE, and this verb reaches the holder", id, id, id)
+	}
+	if strings.Contains(*target, "@") {
+		return "", transport.Endpoint{}, fmt.Errorf("role %s: target-aria %q is a form, not an aria — roles do not chain", id, *target)
+	}
+	fmt.Fprintf(os.Stderr, "role %s → aria %s\n", id, *target)
+	return resolveTargetEndpoint(ctx, loaded, acli, *target, false, dressing{})
+}

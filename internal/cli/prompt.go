@@ -44,6 +44,13 @@ func runPrompt(loaded *config.Loaded, d dressing, prompt string, set renderSetti
 		}
 		figaroID = resp.FigaroID
 		figaroEP = transport.Endpoint{Scheme: resp.Endpoint.Scheme, Address: resp.Endpoint.Address}
+		// Attending a ROLE: the prompt reaches whoever holds it, resolved
+		// per call. Attending a plain form refuses by name (redirectRole).
+		var rerr error
+		figaroID, figaroEP, rerr = redirectRole(ctx, loaded, acli, figaroID, figaroEP)
+		if rerr != nil {
+			die("%s", rerr)
+		}
 	} else {
 		figaroID, figaroEP = mustCreateAndBindOutfit(ctx, acli, loaded, ppid, d)
 	}
