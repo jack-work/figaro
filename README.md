@@ -19,13 +19,29 @@ A coding agent with few opinions, firmly held. Supports multi-agent, context for
 
 ## Install
 
+One static binary, no runtime deps. Pick a line.
+
 ```bash
+curl -fsSL https://figar.org/install.sh | sh
+```
+
+```powershell
+irm https://figar.org/install.ps1 | iex
+```
+
+```bash
+brew install jack-work/tap/figaro     # macOS
 nix profile install github:jack-work/figaro
-# or
 go install github.com/jack-work/figaro/cmd/figaro@latest
 ```
 
-Also reachable as `fig` (the Nix package installs the symlink; for `go install`, add one manually).
+The shell installer takes `--version` and `--dir`, which under a pipe go after
+`--`: `curl -fsSL https://figar.org/install.sh | sh -s -- --dir /usr/local/bin`.
+It installs to `~/.local/bin` by default, verifies the release sha256, and
+writes shell completions.
+
+Also reachable as `fig`. Every path above installs the alias except
+`go install`, which needs one line: `ln -s figaro $(go env GOPATH)/bin/fig`.
 
 Config lives at `~/.config/figaro/`.
 
@@ -201,7 +217,17 @@ so that answer is read rather than guessed.
 
 ```bash
 grep -n '^replace' go.mod && echo "strip before tagging" || echo ok
-git tag vX.Y.Z && git push origin vX.Y.Z
+scripts/release.sh patch        # flake.nix version -> tag -> GitHub release
+```
+
+The version lives in `flake.nix` and nowhere else; the tag is minted to match.
+Pushing the tag wakes `.github/workflows/release.yml`, which runs GoReleaser:
+it builds the linux/darwin/windows archives, uploads them plus `checksums.txt`
+to the release the script already created (`mode: keep-existing`, so the
+hand-written notes survive), and pushes the Homebrew cask to
+`jack-work/homebrew-tap`.
+
+```bash
 # smoke test:
 go install github.com/jack-work/figaro/cmd/figaro@vX.Y.Z
 # then bump flake.nix vendorHash if needed

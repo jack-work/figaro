@@ -1,0 +1,50 @@
+# release.yml: turn a pushed v* tag into downloadable binaries.
+#
+# scripts/release.sh runs on a human's machine: it moves flake.nix, writes the
+# annotated tag, pushes it, and creates the GitHub release with hand-written
+# notes. This workflow is what the tag push wakes up, and it does one job:
+# build the archives and attach them. The .goreleaser.yaml `release.mode:
+# keep-existing` is what keeps it from stomping the notes.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # goreleaser derives the version from the tag and the changelog from
+          # history. A shallow clone with no tags makes it guess, and it guesses
+          # wrong (0.0.1-next).
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/setup-go@v5
+        with:
+          # go.mod is the single declaration of the toolchain. Naming a version
+          # here would be a second one, free to drift.
+          go-version-file: go.mod
+          cache: true
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          # Uploads the assets to the release in THIS repo.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pushes the cask to jack-work/homebrew-tap, a DIFFERENT repo, which
+          # the automatic GITHUB_TOKEN cannot write to. This secret must be
+          # created by hand: a fine-grained PAT (or classic PAT with `repo`)
+          # scoped to jack-work/homebrew-tap with contents:write, stored as
+          # the HOMEBREW_TAP_TOKEN repository secret. Until it exists, the tap
+          # step is the only thing that fails; the release assets still land.
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

@@ -10,3 +10,4 @@ teams.log
 *.pem
 .env
 .env.*
+/dist
