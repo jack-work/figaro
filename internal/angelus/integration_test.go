@@ -88,7 +88,7 @@ model = "mock-model"
 	require.NoError(t, err)
 	defer acli.Close()
 
-	createResp, err := acli.Create(ctx, dress(t, "mock"))
+	createResp, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	assert.NotEmpty(t, createResp.FigaroID)
 	assert.Equal(t, "unix", createResp.Endpoint.Scheme)
@@ -205,7 +205,7 @@ model = "mock-model"
 	require.Error(t, err)
 
 	// Create a live aria (system-minted id), then Attach is a no-op success.
-	resp, err := acli.Create(ctx, dress(t, "mock"))
+	resp, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, resp.FigaroID)
 
@@ -249,7 +249,7 @@ model = "mock-model"
 	defer acli.Close()
 
 	// Create + drive one turn.
-	created, err := acli.Create(ctx, dress(t, "mock"))
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	figEP := transport.Endpoint{Scheme: created.Endpoint.Scheme, Address: created.Endpoint.Address}
 	waitForFigaro(t, figEP)
@@ -274,7 +274,7 @@ model = "mock-model"
 
 	// Fork (trunk model): the aria id is STABLE — the continuation keeps it
 	// (cont == id, bind-to-trunk), only the alternative is new.
-	fr, err := acli.Fork(ctx, created.FigaroID, 0, 0, nil)
+	fr, err := acli.Fork(ctx, created.FigaroID, 0, 0, nil, nil)
 	require.NoError(t, err)
 	require.NotEqual(t, fr.Continuation, fr.Alternative)
 	require.Equal(t, created.FigaroID, fr.Continuation)
@@ -330,7 +330,7 @@ model = "mock-model"
 
 	// The trunk is stable and stays live — re-forking the same id again
 	// just adds another alternative (bind-to-trunk: forking doesn't move you).
-	fr2, err := acli.Fork(ctx, created.FigaroID, 0, 0, nil)
+	fr2, err := acli.Fork(ctx, created.FigaroID, 0, 0, nil, nil)
 	require.NoError(t, err, "the trunk stays live and re-forkable")
 	require.NotEqual(t, fr2.Continuation, fr2.Alternative)
 	require.Equal(t, created.FigaroID, fr2.Continuation)

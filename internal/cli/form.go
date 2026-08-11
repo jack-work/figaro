@@ -8,8 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/form"
+	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/rpc"
 )
 
@@ -44,6 +46,71 @@ func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string) {
 	patch := rpc.FormPatch{Set: map[string]json.RawMessage{top: topValue}}
 	resp := mustCallSet(loaded, ariaID, patch, ifVersion)
 	fmt.Fprintf(os.Stderr, "set %s = %s (figaro %s)\n", keyArg, value, resp.figaroID)
+}
+
+// runFormSet is `fig form set`, in both spellings the grammar allows:
+//
+//	fig form set mantra "hello"     key then value — one path, the common case
+//	fig form set a=1,b="two"        the -S grammar — several keys, one call
+//
+// Two positionals is the pair form; anything else is read as -S terms, which
+// is what makes `set` the same language as the flag. Revived at Gluck's ask
+// (2026-08-11): the single-path set is the ergonomic verb, and the form family
+// has room for it at position 2.
+func runFormSet(loaded *config.Loaded, ariaID string, args []string) error {
+	switch len(args) {
+	case 0:
+		return fmt.Errorf("usage: form set <key> <value> | form set k=v,k2=v2")
+	case 2:
+		if !strings.ContainsAny(args[0], "={") {
+			runSetArgs(loaded, ariaID, args[0], args[1])
+			return nil
+		}
+	}
+	patch, err := outfit.ParseSet(strings.Join(args, ","))
+	if err != nil {
+		return err
+	}
+	if patch.IsEmpty() {
+		return fmt.Errorf("form set: %q sets nothing", strings.Join(args, " "))
+	}
+	resp := mustCallSet(loaded, ariaID, rpc.FormPatch{Set: patch.Set}, 0)
+	fmt.Fprintf(os.Stderr, "set %s (figaro %s)\n", strings.Join(resp.resp.Set, ", "), resp.figaroID)
+	return nil
+}
+
+// runFormDelete is `fig form delete a.b,c` — key paths, comma-separated, in
+// the -D grammar. `unset` is the same verb under its older name.
+func runFormDelete(loaded *config.Loaded, ariaID string, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: form delete <path>[,<path>…]")
+	}
+	var paths []string
+	for _, a := range args {
+		more, err := outfit.ParseDelete(a)
+		if err != nil {
+			return err
+		}
+		paths = append(paths, more...)
+	}
+	if len(paths) == 0 {
+		return fmt.Errorf("form delete: no key paths given")
+	}
+	runUnsetArgs(loaded, ariaID, paths)
+	return nil
+}
+
+// runFormHelp is `fig form help <topic>`: the router's own page, printed from
+// the form family's third position rather than mapped onto a stateful verb.
+func runFormHelp(ctx *cmdkit.RunContext, args []string) error {
+	if len(args) == 0 {
+		ctx.Help("state")
+		return nil
+	}
+	if ctx.Help(args[0]) {
+		return nil
+	}
+	return fmt.Errorf("no help topic %q (try `figaro help` for the list)", args[0])
 }
 
 // runUnsetArgs removes form keys.

@@ -231,9 +231,9 @@ func (r *Router) Run(args []string) int {
 	}
 
 	// Parse flags + args.
-	ctx, err := r.parse(cmd, tail)
+	ctx, err := r.parse(cmd, first, tail)
 	if err != nil {
-		fmt.Fprintf(r.Stderr, "error: %s %s: %s\n", r.Name, cmd.Name, err)
+		fmt.Fprintf(r.Stderr, "error: %s %s: %s\n", r.Name, first, err)
 		return 2
 	}
 	ctx.Extra = r.Extra
@@ -256,9 +256,17 @@ func (r *Router) Run(args []string) int {
 var errUsage = errors.New("usage")
 
 // parse processes flags and positional args for a command.
-func (r *Router) parse(cmd *Command, args []string) (*RunContext, error) {
+// parse reads flags and positionals. verb is the name as TYPED, which may be
+// an alias: a message about `fig form -O` must say `form`, not the canonical
+// `state` the user never wrote.
+func (r *Router) parse(cmd *Command, verb string, args []string) (*RunContext, error) {
+	if verb == "" {
+		verb = cmd.Name
+	}
+
 	ctx := &RunContext{
-		Flags: make(map[string]string),
+		Flags:  make(map[string]string),
+		Router: r,
 	}
 
 	if cmd.PassRaw {
@@ -364,6 +372,25 @@ func (r *Router) parse(cmd *Command, args []string) (*RunContext, error) {
 		continue
 	}
 
+	// Validate flag/subword agreement before anything runs. A flag that
+	// belongs to a sub-verb the caller did not type is refused here rather
+	// than silently ignored by a Run function that never reads it.
+	for _, fd := range cmd.Flags {
+		if len(fd.Subwords) == 0 {
+			continue
+		}
+		if _, given := ctx.Flags[fd.Long]; !given {
+			continue
+		}
+		sub := ""
+		if len(ctx.Args) > 0 {
+			sub = ctx.Args[0]
+		}
+		if !containsString(fd.Subwords, sub) {
+			return nil, subwordFlagError(verb, fd, sub)
+		}
+	}
+
 	// Validate arg count.
 	if cmd.ArgsMin > 0 && len(ctx.Args) < cmd.ArgsMin {
 		return nil, fmt.Errorf("requires at least %d argument(s)", cmd.ArgsMin)
@@ -373,6 +400,30 @@ func (r *Router) parse(cmd *Command, args []string) (*RunContext, error) {
 	}
 
 	return ctx, nil
+}
+
+// containsString is the membership test the subword check needs; the table is
+// two or three entries, so a loop is the whole implementation.
+func containsString(list []string, want string) bool {
+	for _, s := range list {
+		if s == want {
+			return true
+		}
+	}
+	return false
+}
+
+// subwordFlagError names where a flag belongs, in the grammar the user typed.
+func subwordFlagError(cmd string, fd FlagDef, sub string) error {
+	where := make([]string, 0, len(fd.Subwords))
+	for _, w := range fd.Subwords {
+		where = append(where, "`"+cmd+" "+w+"`")
+	}
+	got := "on its own"
+	if sub != "" {
+		got = "`" + cmd + " " + sub + "`"
+	}
+	return fmt.Errorf("--%s belongs to %s, not %s", fd.Long, strings.Join(where, ", "), got)
 }
 
 // unconsumedFlagError explains a dash-token that survived both the flag

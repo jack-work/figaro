@@ -55,26 +55,26 @@ func (c *Client) Status(ctx context.Context) (*rpc.StatusResponse, error) {
 
 // Create starts a new figaro from a patch. An empty patch means the configured
 // default_outfit; a patch is folded on top of it.
-func (c *Client) Create(ctx context.Context, patch *rpc.FormPatch) (*rpc.CreateResponse, error) {
+func (c *Client) Create(ctx context.Context, outfits []string, patch *rpc.FormPatch) (*rpc.CreateResponse, error) {
 	var resp rpc.CreateResponse
-	err := c.call(ctx, rpc.MethodCreate, rpc.CreateRequest{Patch: patch}, &resp)
+	err := c.call(ctx, rpc.MethodCreate, rpc.CreateRequest{Outfits: outfits, Patch: patch}, &resp)
 	return &resp, err
 }
 
 // FormCreate mints an unbound form from a birth patch. Parent "" forks the
 // null root; a form id duplicates that form. The response's endpoint is
 // live before the call returns.
-func (c *Client) FormCreate(ctx context.Context, parent string, patch *rpc.FormPatch) (*rpc.FormCreateResponse, error) {
+func (c *Client) FormCreate(ctx context.Context, parent string, outfits []string, patch *rpc.FormPatch) (*rpc.FormCreateResponse, error) {
 	var resp rpc.FormCreateResponse
-	err := c.call(ctx, rpc.MethodFormCreate, rpc.FormCreateRequest{Parent: parent, Patch: patch}, &resp)
+	err := c.call(ctx, rpc.MethodFormCreate, rpc.FormCreateRequest{Parent: parent, Outfits: outfits, Patch: patch}, &resp)
 	return &resp, err
 }
 
 // FormBind births a dormant figaro from a form (or "null"). The optional
 // patch is the -O dressing.
-func (c *Client) FormBind(ctx context.Context, parent string, patch *rpc.FormPatch) (*rpc.FormBindResponse, error) {
+func (c *Client) FormBind(ctx context.Context, parent string, outfits []string, patch *rpc.FormPatch) (*rpc.FormBindResponse, error) {
 	var resp rpc.FormBindResponse
-	err := c.call(ctx, rpc.MethodFormBind, rpc.FormBindRequest{Parent: parent, Patch: patch}, &resp)
+	err := c.call(ctx, rpc.MethodFormBind, rpc.FormBindRequest{Parent: parent, Outfits: outfits, Patch: patch}, &resp)
 	return &resp, err
 }
 
@@ -112,17 +112,17 @@ func (c *Client) GC(ctx context.Context, dryRun bool) (*rpc.GCResponse, error) {
 // logical time exactly. They are separate parameters, and separate wire
 // fields, because passing one where the other belonged is the defect this
 // signature exists to prevent.
-func (c *Client) Fork(ctx context.Context, figaroID string, atTurn, atLT uint64, patch *rpc.FormPatch) (*rpc.ForkResponse, error) {
+func (c *Client) Fork(ctx context.Context, figaroID string, atTurn, atLT uint64, outfits []string, patch *rpc.FormPatch) (*rpc.ForkResponse, error) {
 	var resp rpc.ForkResponse
 	err := c.call(ctx, rpc.MethodFork,
-		rpc.ForkRequest{FigaroID: figaroID, AtTurn: atTurn, AtLT: atLT, Patch: patch}, &resp)
+		rpc.ForkRequest{FigaroID: figaroID, AtTurn: atTurn, AtLT: atLT, Outfits: outfits, Patch: patch}, &resp)
 	return &resp, err
 }
 
 // CreateEphemeral creates an in-memory-only figaro.
-func (c *Client) CreateEphemeral(ctx context.Context, patch *rpc.FormPatch) (*rpc.CreateResponse, error) {
+func (c *Client) CreateEphemeral(ctx context.Context, outfits []string, patch *rpc.FormPatch) (*rpc.CreateResponse, error) {
 	var resp rpc.CreateResponse
-	err := c.call(ctx, rpc.MethodCreate, rpc.CreateRequest{Patch: patch, Ephemeral: true}, &resp)
+	err := c.call(ctx, rpc.MethodCreate, rpc.CreateRequest{Outfits: outfits, Patch: patch, Ephemeral: true}, &resp)
 	return &resp, err
 }
 

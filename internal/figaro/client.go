@@ -113,15 +113,20 @@ func (c *Client) Hangup(ctx context.Context, disposition rpc.QueueDisposition) (
 
 // Set applies a form patch directly. No LLM round-trip.
 func (c *Client) Set(ctx context.Context, patch rpc.FormPatch, ifVersion uint64) (*rpc.SetResponse, error) {
+	return c.SetDressed(ctx, nil, patch, ifVersion)
+}
+
+// SetDressed is Set with outfit NAMES beside the patch: the names are folded
+// into keys at the daemon's API boundary, under the patch's own, and what
+// reaches the writer is data. It is how `state outfit <names>` applies — the
+// same call every other dressing surface makes.
+func (c *Client) SetDressed(ctx context.Context, outfits []string, patch rpc.FormPatch, ifVersion uint64) (*rpc.SetResponse, error) {
 	var resp rpc.SetResponse
-	if err := c.call(ctx, rpc.MethodSet, rpc.SetRequest{Patch: patch, IfVersion: ifVersion}, &resp); err != nil {
+	if err := c.call(ctx, rpc.MethodSet, rpc.SetRequest{Outfits: outfits, Patch: patch, IfVersion: ifVersion}, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
 }
-
-// Outfit applies a spec additively to the form, each term taking
-// precedence over the ones before it. No keys are removed; values equal to the
 
 // Form returns the agent's current form snapshot.
 func (c *Client) Form(ctx context.Context) (*rpc.FormResponse, error) {

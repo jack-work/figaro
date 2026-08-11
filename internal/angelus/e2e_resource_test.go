@@ -56,7 +56,7 @@ func TestEndToEndResourceProfile(t *testing.T) {
 	ids := make([]string, 0, arias)
 	socks := make([]string, 0, arias)
 	for i := 0; i < arias; i++ {
-		created, err := acli.Create(ctx, dress(t, "mock"))
+		created, err := acli.Create(ctx, dress(t, "mock"), nil)
 		require.NoError(t, err)
 		ids = append(ids, created.FigaroID)
 		socks = append(socks, created.Endpoint.Address)

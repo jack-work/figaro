@@ -9,34 +9,66 @@ import (
 	"github.com/jack-work/figaro/internal/form"
 )
 
-// KeyLayers is the patch key that names outfits to fold in. It is a DIRECTIVE,
-// resolved by the server's Materialize and never left on a board: a client
-// writes names, the server writes the keys they stand for. That is what lets
-// layers work on a patch applied long after birth, not only at mint time.
-const KeyLayers = "layers"
-
-// NameDefault, as a layer, means whatever config calls the default outfit. It
-// is how a client asks for "dressed as usual" without knowing the answer.
+// NameDefault, as an outfit name, means whatever config calls the default
+// outfit. It is how a client asks for "dressed as usual" without knowing the
+// answer.
 const NameDefault = "default"
 
-// ParsePatch turns the `-O` syntax into ONE form patch. It touches no
-// disk and reads no config: a name becomes an entry in `layers` for the server
-// to resolve, a literal or `k=v` becomes keys.
+// The grammar, since 2026-08-11 (Gluck's ruling): outfits and patches are
+// SEPARATE AXES, and neither is smuggled inside the other.
 //
-//	sonn5,focus                 {"layers":["sonn5","focus"]}
+//	-O sonn5,focus            names only        → ParseNames
+//	-S ttl=1h,{"n":3}         keys only         → ParseSet
+//	-D system.tags,mantra     key paths only    → ParseDelete
+//
+// They compose in one call, and the order is fixed: outfits fold first, then
+// --set, then --delete. `layers` survives in exactly one place — the unmarshal
+// that builds a patch from an outfit FILE — so a patch is data all the way
+// down and no writer below the API boundary ever touches a disk.
+
+// ParseNames reads the `-O` syntax: a comma-separated list of outfit names,
+// in order, later names winning. Nothing else is admitted — a `k=v` or a JSON
+// literal here is a grammar error naming the flag that takes it.
+func ParseNames(text string) ([]string, error) {
+	parts, err := splitTerms(text)
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(part, "{"):
+			return nil, fmt.Errorf("outfit: %s: --outfit takes outfit NAMES; a JSON literal goes in --set", part)
+		case strings.ContainsRune(part, '='):
+			return nil, fmt.Errorf("outfit: %s: --outfit takes outfit NAMES; `k=v` goes in --set (-S %s)", part, part)
+		}
+		if err := ValidName(part); err != nil {
+			return nil, err
+		}
+		names = append(names, part)
+	}
+	return names, nil
+}
+
+// ParseSet reads the `-S` syntax into ONE form patch: `k=v` pairs and whole
+// JSON-object literals, comma-separated, later terms winning. It touches no
+// disk and reads no config, and it resolves nothing — a `layers` key written
+// here is ordinary data, stored as typed.
+//
 //	ttl=1h,mantra="cool thing"  {"ttl":"1h","mantra":"cool thing"}
-//	sonn5,{"ttl":"1h"}          {"layers":["sonn5"],"ttl":"1h"}
+//	{"ttl":"1h"},n=3            {"ttl":"1h","n":3}
 //
-// Names keep their order. A literal does NOT interleave with the layers a later
-// name pulls in — `a,{x:1},b` folds a and b first, then x — which is a
-// documented gap, not a defended property.
-func ParsePatch(text string) (form.Patch, error) {
+// A bare name is refused: that is an outfit, and outfits arrive through -O.
+func ParseSet(text string) (form.Patch, error) {
 	parts, err := splitTerms(text)
 	if err != nil {
 		return form.Patch{}, err
 	}
 	set := map[string]json.RawMessage{}
-	var layers []string
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
 		if part == "" {
@@ -49,10 +81,7 @@ func ParsePatch(text string) (form.Patch, error) {
 		case strings.ContainsRune(part, '='):
 			keys, err = pairKeys(part)
 		default:
-			if err = ValidName(part); err != nil {
-				return form.Patch{}, err
-			}
-			layers = append(layers, part)
+			return form.Patch{}, fmt.Errorf("outfit: %s: --set takes `k=v` or a JSON literal; a bare name is an outfit (-O %s)", part, part)
 		}
 		if err != nil {
 			return form.Patch{}, err
@@ -61,61 +90,60 @@ func ParsePatch(text string) (form.Patch, error) {
 			set[k] = v
 		}
 	}
-	// A literal may name layers of its own; they come before the ones typed
-	// as bare names, since the literal was written first.
-	if raw, ok := set[KeyLayers]; ok {
-		var declared []string
-		if err := json.Unmarshal(raw, &declared); err != nil {
-			return form.Patch{}, fmt.Errorf("outfit: layers must be an array of names: %w", err)
-		}
-		layers = append(declared, layers...)
-	}
-	if len(layers) > 0 {
-		b, err := json.Marshal(layers)
-		if err != nil {
-			return form.Patch{}, err
-		}
-		set[KeyLayers] = b
-	}
 	if len(set) == 0 {
 		return form.Patch{}, nil
 	}
 	return form.Patch{Set: set}, nil
 }
 
-// Materialize expands a patch's `layers` directive into the keys those outfits
-// set, and removes the directive. Layer keys go UNDER the patch's own: a client
-// that wrote both meant its own value.
+// ParseDelete reads the `-D` syntax: comma-separated key paths to remove.
+// Paths are not validated here beyond emptiness — the dotted/bracketed path
+// grammar belongs to the form, and a key that does not exist is a no-op.
+func ParseDelete(text string) ([]string, error) {
+	parts, err := splitTerms(text)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if strings.HasPrefix(part, "{") || strings.ContainsRune(part, '=') {
+			return nil, fmt.Errorf("outfit: %s: --delete takes key paths, one per comma", part)
+		}
+		out = append(out, part)
+	}
+	return out, nil
+}
+
+// Dress is THE materialization call: the daemon's single point where outfit
+// names become keys. Names fold in order, then the caller's patch lands on
+// top — a client that wrote a key meant its own value — and the removals ride
+// through untouched.
 //
-// This runs on the server for every patch — birth, set and fork dress alike —
-// so `-O opus5` on a live aria means what it means at mint time.
-//
-// defaultName is what the reserved layer `default` stands for. An unset default
-// folds nothing rather than failing: the first-run flow rides on that absence
-// and notices the missing system.provider downstream. A default that names a
-// file which does not exist yet is the same case. Every OTHER name is strict —
-// a typo is a typo.
-//
-// TODO: realize only the DELTA of the closure. A patch that adds one layer to a
-// board already wearing its siblings re-reads the whole graph; a DP over the
-// layer graph keyed on what the board already holds would fold only what
-// changed. Distant — outfits are small.
-func (o *Outfitter) Materialize(patch form.Patch, defaultName string) (form.Patch, error) {
-	names, ok, err := Layers(patch)
-	if err != nil || !ok {
-		return patch, err
+// It runs at the API boundary, ABOVE the store's single writer and above the
+// agent's inbox, so everything below holds pure data and needs nothing from
+// the filesystem. defaultName is what the reserved name `default` stands for;
+// it alone is lenient (an unset or not-yet-written default folds nothing,
+// which is what the first-run flow rides on, surfacing downstream as the
+// missing provider it is). Every other name is strict — a typo is a typo.
+func (o *Outfitter) Dress(names []string, patch form.Patch, defaultName string) (form.Patch, error) {
+	if len(names) == 0 {
+		return patch, nil
 	}
 	layered := map[string]json.RawMessage{}
 	for _, n := range names {
 		var folded form.Patch
-		var ferr error
+		var err error
 		if n == NameDefault {
-			folded, ferr = o.defaults(defaultName)
+			folded, err = o.defaults(defaultName)
 		} else {
-			folded, ferr = o.Load(n)
+			folded, err = o.Load(n)
 		}
-		if ferr != nil {
-			return form.Patch{}, ferr
+		if err != nil {
+			return form.Patch{}, err
 		}
 		for k, v := range folded.Set {
 			layered[k] = v
@@ -123,9 +151,6 @@ func (o *Outfitter) Materialize(patch form.Patch, defaultName string) (form.Patc
 	}
 	out := form.Patch{Set: layered, Remove: patch.Remove}
 	for k, v := range patch.Set {
-		if k == KeyLayers {
-			continue
-		}
 		out.Set[k] = v
 	}
 	return out, nil
@@ -151,64 +176,6 @@ func (o *Outfitter) defaults(defaultName string) (form.Patch, error) {
 		}
 	}
 	return out, nil
-}
-
-// Layers reads a patch's `layers` directive: the names, and whether it had one.
-func Layers(patch form.Patch) ([]string, bool, error) {
-	raw, ok := patch.Set[KeyLayers]
-	if !ok {
-		return nil, false, nil
-	}
-	var names []string
-	if err := json.Unmarshal(raw, &names); err != nil {
-		return nil, true, fmt.Errorf("outfit: layers must be an array of names: %w", err)
-	}
-	for _, n := range names {
-		if err := ValidName(n); err != nil {
-			return nil, true, err
-		}
-	}
-	return names, true, nil
-}
-
-// WithLayer prepends a layer to a patch's directive, so the caller's own layers
-// keep precedence over it. Birth uses it to put `default` underneath.
-func WithLayer(patch form.Patch, name string) (form.Patch, error) {
-	names, _, err := Layers(patch)
-	if err != nil {
-		return form.Patch{}, err
-	}
-	b, err := json.Marshal(append([]string{name}, names...))
-	if err != nil {
-		return form.Patch{}, err
-	}
-	out := form.Patch{Set: map[string]json.RawMessage{}, Remove: patch.Remove}
-	for k, v := range patch.Set {
-		out.Set[k] = v
-	}
-	out.Set[KeyLayers] = b
-	return out, nil
-}
-
-// Label names a patch for a listing: the layers it folded, in order, with
-// `default` resolved to what it stood for. Empty when nothing was named — a
-// patch of bare keys has no outfit to be called after.
-func Label(patch form.Patch, defaultName string) string {
-	names, ok, err := Layers(patch)
-	if !ok || err != nil {
-		return ""
-	}
-	out := make([]string, 0, len(names))
-	for _, n := range names {
-		if n != NameDefault {
-			out = append(out, n)
-			continue
-		}
-		if more, err := TermNames(defaultName); err == nil {
-			out = append(out, more...)
-		}
-	}
-	return strings.Join(out, ",")
 }
 
 // Names folds a list of outfit names, in order.

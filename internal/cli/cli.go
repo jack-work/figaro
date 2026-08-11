@@ -803,10 +803,10 @@ attended figaro's studies. The form is always the LAST positional.`,
 	})
 
 	r.Register(&cmdkit.Command{
-		Name:  "drop",
-		Group: "Session",
-		Short: "Unsubscribe this figaro from a studied form",
-		Usage: "drop [<aria>] <@form-id>",
+		Name:    "drop",
+		Group:   "Session",
+		Short:   "Unsubscribe this figaro from a studied form",
+		Usage:   "drop [<aria>] <@form-id>",
 		ArgsMin: 1,
 		ArgsMax: 2,
 		Flags: []cmdkit.FlagDef{
@@ -823,7 +823,7 @@ attended figaro's studies. The form is always the LAST positional.`,
 		Name:  "cast",
 		Group: "Session",
 		Short: "Cast a figaro into a role (point target-aria here, and study it)",
-		Usage: "cast [<aria>] <@form-id> | cast [<aria>] -O <spec> [-j]",
+		Usage: "cast [<aria>] <@form-id> | cast [<aria>] -O <names> [-S <k=v>] [-j]",
 		Long: `One casting call: ensure the figaro studies the role, then point the
 role's target-aria at it — serialized through the figaro's actor loop, so
 no two castings of one figaro interleave. With -O the role is MINTED by
@@ -836,11 +836,13 @@ The form is always the LAST positional. Bound boards are refused: roles
 are unbound forms only.`,
 		ArgsMax: 2,
 		Flags: []cmdkit.FlagDef{
-			{Long: "outfit", Short: "O", Description: "Mint the role from this spec (occupies the form slot)"},
+			{Long: "outfit", Short: "O", Description: "Mint the role from these outfit NAMES (occupies the form slot)"},
+			{Long: "set", Short: "S", Description: "Mint the role with these keys (occupies the form slot)"},
+			{Long: "delete", Short: "D", Description: "Key paths the minted role's birth patch removes"},
 			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
-			runCast(ctx.Extra.(*config.Loaded), ctx.Args, ctx.Flag("outfit"), ctx.BoolFlag("json"))
+			runCast(ctx.Extra.(*config.Loaded), ctx.Args, ctx.Flag("outfit"), ctx.Flag("set"), ctx.Flag("delete"), ctx.BoolFlag("json"))
 			return nil
 		},
 		CompleteArgs: completeAriaIDsPositionalOrFlag,
@@ -850,7 +852,7 @@ are unbound forms only.`,
 		Name:  "bind",
 		Group: "Session",
 		Short: "Birth a figaro from an unbound form (dormant; never rebinds this shell)",
-		Usage: "bind [<@form-id> | null] [-O <spec>] [-j]",
+		Usage: "bind [<@form-id> | null] [-O <names>] [-S <k=v>] [-j]",
 		Long: `Births a FIGARO by forking an unbound form: the form's state becomes the
 figaro's inherited prefix, the form goes on living, and nothing converts.
 
@@ -858,14 +860,17 @@ figaro's inherited prefix, the form goes on living, and nothing converts.
   figaro bind @a1b2c3         bind from that form
   figaro bind null            the naked figaro: mints fine, and its first
                               TURN fails until a provider is patched in
-  figaro bind @a1b2c3 -O focus  fold a dressing into the birth
+  figaro bind @a1b2c3 -O focus  fold an outfit into the birth
+  figaro bind @a1b2c3 -S n=1    fold keys into the birth
 
 The figaro is born DORMANT — no agent, no provider constructed — and
 wakes on first use. Your shell's attendance never moves: attend the
 printed id yourself. See ` + "`figaro help form`" + ` for the form family.`,
 		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
-			{Long: "outfit", Short: "O", Description: "Dressing folded into the birth patch"},
+			{Long: "outfit", Short: "O", Description: "Outfit NAMES folded into the birth patch"},
+			{Long: "set", Short: "S", Description: "Birth keys: k=v or a JSON literal"},
+			{Long: "delete", Short: "D", Description: "Key paths the birth patch removes"},
 			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
@@ -874,7 +879,7 @@ printed id yourself. See ` + "`figaro help form`" + ` for the form family.`,
 			if len(ctx.Args) > 0 {
 				target = ctx.Args[0]
 			}
-			runBind(ld, target, ctx.Flag("outfit"), ctx.BoolFlag("json"))
+			runBind(ld, target, ctx.Flag("outfit"), ctx.Flag("set"), ctx.Flag("delete"), ctx.BoolFlag("json"))
 			return nil
 		},
 		CompleteArgs: completeAriaIDsPositionalOrFlag,
@@ -1090,25 +1095,37 @@ aria nesting follows fork history alone and there is nothing to promote.`,
 		Name:    "state",
 		Aliases: []string{"form"},
 		Group:   "State",
-		Short:   "Show the form, or dress it in an outfit",
-		Usage:   "state [<id> | --id <id>] [-j] | state outfit <spec> | state outfit --list | state outfit --tree [<spec>]",
+		Short:   "Show the form, or shape it",
+		Usage:   "state [show] [<id>] | state set <k> <v> | state delete <paths> | state new -O <names> | state outfit <names>",
 		Long: `The aria's state, and the verbs that shape it.
 
   figaro state                     print the form
-  figaro state --id <id> -j        another aria's, as JSON
-  figaro form new -O name='x'      mint an UNBOUND form (@id); -O is required
-  figaro form fork @id k=v         duplicate a form's state into a fresh @id
+  figaro state show --id <id> -j   another aria's, as JSON
+  figaro state set mantra hello    patch ONE path (key then value)
+  figaro state set a=1,b="two"     patch several, in the -S grammar
+  figaro state delete a.b,mantra   remove key paths, comma-separated
+  figaro form new -O sonn5         mint an UNBOUND form (@id); -O is required
+  figaro form fork @id -S k=v      duplicate a form's state into a fresh @id
   figaro form ls                   list unbound forms (scoped by attendance)
   figaro form rm @id               remove an unbound form
   figaro state outfit focus        fold an outfit onto this aria, now
   figaro state outfit a,b          fold both, b winning
-  figaro state outfit ttl=1h       fold an inline literal
   figaro state outfit --tree a     draw a's layer closure, apply nothing
   figaro form listen               watch it live, as a JSON tree
-  figaro state outfit --list       the outfits on disk
+  figaro form help outfits         a help topic, from here
+
+THE TWO AXES. Outfits and patches are separate and never mixed:
+
+  -O/--outfit   outfit NAMES only, comma-separated
+  -S/--set      form keys: ` + "`k=v`" + ` or a JSON literal, comma-separated
+  -D/--delete   form key paths to remove, comma-separated
+
+They compose wherever dressing is accepted, and the order is fixed:
+outfits fold first, then --set, then --delete. Outfit names are resolved
+once, at the daemon's API boundary; what lands on a board is always data.
 
 An unbound form is durable, versioned, forkable state with no figaro
-attached: patch it with set/unset, watch it with form listen, make a
+attached: patch it with set/delete, watch it with form listen, make a
 figaro from it by forking (bind). A form carrying target-aria is a ROLE.
 ` + "`state`" + ` and ` + "`form`" + ` are one command; both spellings work everywhere.
 
@@ -1118,53 +1135,65 @@ aria sees a <system-reminder> for exactly what changed. It is the same fold
 ` + "`-O`" + ` performs on send/new/fork; the verb form exists because dressing
 state is an action, not a modifier on one.
 
-See ` + "`figaro help outfits`" + ` for the spec syntax.`,
+See ` + "`figaro help outfits`" + ` for the outfit syntax.`,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria id (overrides pid binding)"},
 			{Long: "json", Short: "j", IsBool: true, Description: "JSON output (new/fork/ls emit machine-readable ids)"},
-			{Long: "outfit", Short: "O", Description: "new/fork: the birth spec (required for new)"},
-			{Long: "list", IsBool: true, Description: "outfit: list available outfits and exit"},
-			{Long: "tree", IsBool: true, Description: "outfit: print the layer closure and exit; applies nothing"},
-			{Long: "refresh", IsBool: true, Description: "outfit: re-read outfits and config from disk"},
-			{Long: "recursive", IsBool: true, Description: "rm: also remove the form's live branches"},
+			{Long: "outfit", Short: "O", Subwords: []string{"new", "fork"}, Description: "new/fork: outfit NAMES for the birth patch (required for new)"},
+			{Long: "set", Short: "S", Subwords: []string{"new", "fork"}, Description: "new/fork: birth keys, k=v or a JSON literal"},
+			{Long: "delete", Short: "D", Subwords: []string{"new", "fork"}, Description: "new/fork: key paths the birth patch removes"},
+			{Long: "list", IsBool: true, Subwords: []string{"outfit"}, Description: "outfit: list available outfits and exit"},
+			{Long: "tree", IsBool: true, Subwords: []string{"outfit"}, Description: "outfit: print the layer closure and exit; applies nothing"},
+			{Long: "refresh", IsBool: true, Subwords: []string{"outfit"}, Description: "outfit: re-read outfits and config from disk"},
+			{Long: "recursive", IsBool: true, Subwords: []string{"rm"}, Description: "rm: also remove the form's live branches"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			args := ctx.Args
-			if len(args) > 0 && args[0] == "outfit" {
-				return runStateOutfit(ld, ctx, args[1:])
+			sub := ""
+			if len(args) > 0 {
+				sub = args[0]
 			}
-			if len(args) > 0 && args[0] == "listen" {
+			switch sub {
+			case "outfit":
+				return runStateOutfit(ld, ctx, args[1:])
+			case "listen":
 				id := ctx.Flag("id")
 				if id == "" && len(args) > 1 {
 					id = args[1]
 				}
 				runFormListen(ld, id)
 				return nil
-			}
-			if len(args) > 0 && args[0] == "new" {
-				runFormNew(ld, ctx.Flag("outfit"), args[1:], ctx.BoolFlag("json"))
+			case "new":
+				runFormNew(ld, ctx.Flag("outfit"), ctx.Flag("set"), ctx.Flag("delete"), args[1:], ctx.BoolFlag("json"))
 				return nil
-			}
-			if len(args) > 0 && args[0] == "fork" {
+			case "fork":
 				parent := ""
 				rest := args[1:]
 				if len(rest) > 0 {
 					parent, rest = rest[0], rest[1:]
 				}
-				runFormFork(ld, parent, ctx.Flag("outfit"), rest, ctx.BoolFlag("json"))
+				runFormFork(ld, parent, ctx.Flag("outfit"), ctx.Flag("set"), ctx.Flag("delete"), rest, ctx.BoolFlag("json"))
 				return nil
-			}
-			if len(args) > 0 && args[0] == "ls" {
+			case "ls":
 				runFormLs(ld, ctx.BoolFlag("json"))
 				return nil
-			}
-			if len(args) > 0 && args[0] == "rm" {
+			case "rm":
 				runKill(ld, "", args[1:], ctx.BoolFlag("recursive"))
 				return nil
-			}
-			if ctx.BoolFlag("list") || ctx.BoolFlag("tree") || ctx.BoolFlag("refresh") {
-				return fmt.Errorf("--list/--tree/--refresh belong to `state outfit`")
+			case "set":
+				return runFormSet(ld, ctx.Flag("id"), args[1:])
+			case "delete", "unset":
+				return runFormDelete(ld, ctx.Flag("id"), args[1:])
+			case "help":
+				return runFormHelp(ctx, args[1:])
+			case "show":
+				id := ctx.Flag("id")
+				if id == "" && len(args) > 1 {
+					id = args[1]
+				}
+				runForm(ld, id)
+				return nil
 			}
 			id := ctx.Flag("id")
 			if id == "" && len(args) > 0 {
@@ -1218,27 +1247,36 @@ See ` + "`figaro help outfits`" + ` for the spec syntax.`,
 		Short:  "The outfit syntax (a help topic)",
 		Usage:  "help outfits",
 		Long: `An OUTFIT is a named patch for an aria's form: model, credo,
-skills, and anything else you keep together. -O is a comma-separated list of
-terms, folded LEFT TO RIGHT — later terms win, exactly as an outfit's own
-` + "`layers = [...]`" + ` does.
+skills, and anything else you keep together. Dressing has TWO AXES, and they
+are never mixed:
 
-  sonn5                     one outfit, from outfits/sonn5.toml
-  sonn5,focus               both, focus winning
-  ttl=1h                    one key, one value
-  mantra="cool thing"       quoted values keep their spaces
-  n=3   on=true             a value that parses as JSON keeps its type
-  '{"ttl":"1h","n":3}'      the literal the sugar stands for
-  '{"layers":["a"],"x":1}'  a literal may name layers of its own
-  sonn5,ttl=1h              mix freely
+  -O/--outfit   outfit NAMES, comma-separated, folded LEFT TO RIGHT
+  -S/--set      form keys: ` + "`k=v`" + ` or a whole JSON literal, comma-separated
+  -D/--delete   form key paths to remove, comma-separated
 
-What actually travels is ONE form patch. A name becomes an entry in the patch's
-` + "`layers`" + ` directive and the server folds it; a literal or ` + "`k=v`" + ` becomes keys.
-So the same ` + "`-O`" + ` means the same thing at birth and on a live aria:
+  -O sonn5                     one outfit, from outfits/sonn5.toml
+  -O sonn5,focus               both, focus winning
+  -S ttl=1h                    one key, one value
+  -S mantra="cool thing"       quoted values keep their spaces
+  -S n=3   -S on=true          a value that parses as JSON keeps its type
+  -S '{"ttl":"1h","n":3}'      the literal the sugar stands for
+  -D system.tags,mantra        remove two keys
+  -O sonn5 -S ttl=1h           compose: the outfit, then your key on top
+
+ORDER IS FIXED where they compose: outfits fold first, then --set, then
+--delete. A key you wrote always beats the outfit that also sets it.
+
+What travels is names on one side and DATA on the other. The daemon resolves
+the names once, at its API boundary, and what lands on a board is always
+materialized keys — so the same ` + "`-O`" + ` means the same thing at birth and on a
+live aria, and a patch never carries a directive:
 
   figaro new -O <o> -- <p>        BIRTH: folded ON TOP of default_outfit
   figaro send -O <o> -- <p>       applied to the form in the same call as
   figaro fork -O <o> [-- <p>]     the prompt (on fork, to the new branch)
   figaro state outfit <o>         applied, with no prompt
+  figaro state set k v            the other axis, one path
+  figaro state delete <paths>     removals
   figaro state outfit --tree <o>  draw the layer closure, apply nothing
   figaro state outfit --list      what the server has on disk
   figaro state outfit --refresh   re-read outfits and config from disk
@@ -1248,19 +1286,18 @@ Rules worth knowing:
   - Setting a key to the value it already holds changes nothing and announces
     nothing, so re-applying an outfit is free.
   - A name that does not exist is an error everywhere except one place: the
-    reserved layer ` + "`default`" + `, whose absence is what triggers first-run setup.
-  - A name is a file basename: no whitespace, no ` + "`=`" + ` (the sugar), no ` + "`/`" + ` or
-    ` + "`\\`" + ` (which would climb out of the outfits directory), no brackets or
-    quotes, no leading ` + "`-`" + `. Layer names obey the same rule.
+    reserved name ` + "`default`" + `, whose absence is what triggers first-run setup.
+  - A name is a file basename: no whitespace, no ` + "`=`" + ` (that is --set), no ` + "`/`" + `
+    or ` + "`\\`" + ` (which would climb out of the outfits directory), no brackets or
+    quotes, no leading ` + "`-`" + `. Layer names inside a file obey the same rule.
   - Structure must balance. An unmatched brace or quote is an error.
-  - ORDER, one gap: names fold before the literals typed beside them, so
-    ` + "`a,{x:1},b`" + ` folds a and b first and then x. Write the literal last if
-    you meant it to win.
   - QUOTE a literal. Unquoted, ` + "`{mantra:test}`" + ` is not JSON (use the sugar,
     ` + "`mantra=test`" + `) and ` + "`{a:1,b:2}`" + ` is brace-expanded by the shell into two
     words with the braces gone, so it never reaches figaro at all.
-  - Repeating -O appends: ` + "`-O a -O b`" + ` is ` + "`-O a,b`" + `.
-  - ` + "`layers`" + ` is reserved on a form: the server expands it and never stores it.
+  - Repeating a flag appends: ` + "`-O a -O b`" + ` is ` + "`-O a,b`" + `, and the same for -S/-D.
+  - ` + "`layers`" + ` is respected in exactly ONE place: an outfit FILE, where it
+    names the outfits that file is composed from. Written into a patch it is
+    ordinary data and is stored as typed.
 
 Outfits live in the SERVER's config: ~/.config/figaro/outfits/<name>.toml, with
 default_outfit in config.toml naming what ` + "`default`" + ` stands for. The first-run

@@ -30,7 +30,7 @@ func rawPatch(kv map[string]string) *rpc.FormPatch {
 func TestFormNodeLifecycleWithoutAnAgent(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
-	created, err := acli.FormCreate(ctx, "", rawPatch(map[string]string{"name": `"deploy tracker"`}))
+	created, err := acli.FormCreate(ctx, "", nil, rawPatch(map[string]string{"name": `"deploy tracker"`}))
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(created.FormID, "@"), "form id %q lacks the sigil", created.FormID)
 	require.NotZero(t, created.Version)
@@ -104,7 +104,7 @@ func TestFormNodeLifecycleWithoutAnAgent(t *testing.T) {
 func TestDormantAriaSetDoesNotWake(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
-	created, err := acli.Create(ctx, dress(t, "mock"))
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	require.NoError(t, a.Registry.Kill(created.FigaroID))
 	require.Nil(t, a.Registry.Get(created.FigaroID))
@@ -137,20 +137,20 @@ func TestDormantAriaSetDoesNotWake(t *testing.T) {
 func TestFormCreateParentRules(t *testing.T) {
 	_, acli, ctx := daemonFixture(t)
 
-	parent, err := acli.FormCreate(ctx, "", rawPatch(map[string]string{"k": `1`}))
+	parent, err := acli.FormCreate(ctx, "", nil, rawPatch(map[string]string{"k": `1`}))
 	require.NoError(t, err)
-	child, err := acli.FormCreate(ctx, parent.FormID, rawPatch(map[string]string{"who": `"child"`}))
+	child, err := acli.FormCreate(ctx, parent.FormID, nil, rawPatch(map[string]string{"who": `"child"`}))
 	require.NoError(t, err)
 	require.NotEqual(t, parent.FormID, child.FormID)
 	require.True(t, strings.HasPrefix(child.FormID, "@"))
 
-	aria, err := acli.Create(ctx, dress(t, "mock"))
+	aria, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
-	_, err = acli.FormCreate(ctx, aria.FigaroID, rawPatch(map[string]string{"x": `1`}))
+	_, err = acli.FormCreate(ctx, aria.FigaroID, nil, rawPatch(map[string]string{"x": `1`}))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not an unbound form")
 
-	_, err = acli.FormCreate(ctx, "", &rpc.FormPatch{})
+	_, err = acli.FormCreate(ctx, "", nil, &rpc.FormPatch{})
 	require.Error(t, err, "an empty birth patch must be refused")
 }
 
@@ -160,7 +160,7 @@ func TestFormCreateParentRules(t *testing.T) {
 func TestListRecencyDoesNotWakeDormantArias(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
-	created, err := acli.Create(ctx, dress(t, "mock"))
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	require.NoError(t, a.Registry.Kill(created.FigaroID))
 	require.Nil(t, a.Registry.Get(created.FigaroID))
@@ -187,10 +187,10 @@ func TestListRecencyDoesNotWakeDormantArias(t *testing.T) {
 func TestFormBindBirthsDormantFigaro(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
-	created, err := acli.FormCreate(ctx, "", rawPatch(map[string]string{"team.goal": `"ship it"`}))
+	created, err := acli.FormCreate(ctx, "", nil, rawPatch(map[string]string{"team.goal": `"ship it"`}))
 	require.NoError(t, err)
 
-	bound, err := acli.FormBind(ctx, created.FormID, rawPatch(map[string]string{"layers": `["mock"]`}))
+	bound, err := acli.FormBind(ctx, created.FormID, []string{"mock"}, nil)
 	require.NoError(t, err)
 	require.False(t, strings.HasPrefix(bound.FigaroID, "@"), "bound figaro %q carries the form sigil", bound.FigaroID)
 	require.Nil(t, a.Registry.Get(bound.FigaroID), "bind constructed an agent")
@@ -214,7 +214,7 @@ func TestFormBindBirthsDormantFigaro(t *testing.T) {
 	require.Nil(t, a.Registry.Get(bound.FigaroID), "a read woke the bound figaro")
 
 	// The parent form goes on living, unconverted.
-	_, err = acli.FormCreate(ctx, created.FormID, rawPatch(map[string]string{"who": `"sibling"`}))
+	_, err = acli.FormCreate(ctx, created.FormID, nil, rawPatch(map[string]string{"who": `"sibling"`}))
 	require.NoError(t, err, "the form stopped being forkable after binding")
 }
 
@@ -223,7 +223,7 @@ func TestFormBindBirthsDormantFigaro(t *testing.T) {
 func TestBindNullFailsAtFirstTurnNotAtMint(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
-	bound, err := acli.FormBind(ctx, "null", nil)
+	bound, err := acli.FormBind(ctx, "null", nil, nil)
 	require.NoError(t, err, "bind null must mint")
 	require.Nil(t, a.Registry.Get(bound.FigaroID))
 
@@ -258,9 +258,9 @@ func TestBindNullFailsAtFirstTurnNotAtMint(t *testing.T) {
 func TestDefaultFormLifecycle(t *testing.T) {
 	a, acli, ctx, dir := daemonFixtureDir(t)
 
-	one, err := acli.Create(ctx, dress(t, "mock"))
+	one, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
-	two, err := acli.Create(ctx, dress(t, "mock"))
+	two, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 
 	parentOf := func(id string) string {
@@ -275,7 +275,7 @@ func TestDefaultFormLifecycle(t *testing.T) {
 	// Reload with UNCHANGED files: the next create reuses (no-op compute).
 	_, err = acli.OutfitReload(ctx)
 	require.NoError(t, err)
-	three, err := acli.Create(ctx, dress(t, "mock"))
+	three, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	require.Equal(t, p1, parentOf(three.FigaroID), "unchanged files reminted the default form")
 
@@ -288,7 +288,7 @@ mantra = "v2"
 `), 0600))
 	_, err = acli.OutfitReload(ctx)
 	require.NoError(t, err)
-	four, err := acli.Create(ctx, dress(t, "mock"))
+	four, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	require.NotEqual(t, p1, parentOf(four.FigaroID), "changed files did not remint")
 
@@ -299,7 +299,7 @@ mantra = "v2"
 	require.NoError(t, err)
 	_, err = acli.OutfitReload(ctx)
 	require.NoError(t, err)
-	five, err := acli.Create(ctx, dress(t, "mock"))
+	five, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	require.NotEqual(t, p4, parentOf(five.FigaroID), "a hand-patched default form was reused after reload")
 }

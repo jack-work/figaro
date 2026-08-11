@@ -288,14 +288,13 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 	if req.Patch == nil || req.Patch.IsEmpty() {
 		return nil, fmt.Errorf("form.create: a form is born of its patch; an empty one names nothing")
 	}
-	// Materialize server-side: a `layers` directive in the patch resolves to
-	// skills/credo exactly as figaro.create resolves it — a form must hold
-	// materialized state, never a raw directive. No default outfit is ever
-	// folded in: `fig form new` demands its spec explicitly.
-	loaded, ofit := h.settings()
-	patch, err := ofit.Materialize(*req.Patch, loaded.Config.DefaultOutfit)
+	// Dress at the boundary: the request's outfit NAMES fold into keys here,
+	// under the patch's own, and the form is born holding materialized state.
+	// No default outfit is ever folded in — `fig form new` demands its names
+	// explicitly.
+	patch, err := h.dress(req.Outfits, req.Patch)
 	if err != nil {
-		return nil, h.errOutfitNotFound(outfit.Label(*req.Patch, loaded.Config.DefaultOutfit), err)
+		return nil, err
 	}
 	id, version, err := h.angelus.Backend.CreateForm(req.Parent, patch)
 	if err != nil {
@@ -342,14 +341,9 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 			return nil, fmt.Errorf("form.bind: %s is not an unbound form (bind forks forms; a figaro forks with `fig fork`)", req.Parent)
 		}
 	}
-	loaded, ofit := h.settings()
-	dress := form.Patch{}
-	if req.Patch != nil && !req.Patch.IsEmpty() {
-		var err error
-		dress, err = ofit.Materialize(*req.Patch, loaded.Config.DefaultOutfit)
-		if err != nil {
-			return nil, h.errOutfitNotFound(outfit.Label(*req.Patch, loaded.Config.DefaultOutfit), err)
-		}
+	dress, err := h.dress(req.Outfits, req.Patch)
+	if err != nil {
+		return nil, err
 	}
 	cwd, _ := os.Getwd()
 	id, _, err := h.angelus.Backend.ForkWith(parent, 0, childBirthPatch(dress, cwd))
@@ -458,7 +452,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	// default_outfit, then retries this Create call) are picked up
 	// without a daemon restart. One os.ReadFile + toml.Unmarshal per
 	// request is cheap relative to anything downstream.
-	loaded, ofit := h.settings()
+	loaded, _ := h.settings()
 
 	// TWO PATCHES, and which is which is the whole economy of this.
 	//
@@ -478,21 +472,14 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	// rather than failing, because that absence is what the first-run flow
 	// rides on — it surfaces downstream as the missing provider it is.
 	outfitName := loaded.Config.DefaultOutfit
-	asked, err := outfit.WithLayer(form.Patch{}, outfit.NameDefault)
+	stumpPatch, err := h.dressDefault()
 	if err != nil {
 		return nil, err
 	}
-	stumpPatch, err := ofit.Materialize(asked, outfitName)
-	if err != nil {
-		return nil, h.errOutfitNotFound(outfitName, err)
-	}
 
-	dress := form.Patch{}
-	if req.Patch != nil {
-		dress, err = ofit.Materialize(*req.Patch, outfitName)
-		if err != nil {
-			return nil, h.errOutfitNotFound(outfit.Label(*req.Patch, outfitName), err)
-		}
+	dress, err := h.dress(req.Outfits, req.Patch)
+	if err != nil {
+		return nil, err
 	}
 	// The provider is resolved against what the aria will ACTUALLY wear: the
 	// stump underneath, the dressing on top.
@@ -582,7 +569,6 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		SocketPath:      sockPath,
 		Provider:        prov,
 		ProviderFactory: h.factory,
-		Outfitter:       ofit,
 		Tools:           reg,
 		Projector:       uiir.New(reg),
 		Backend:         backend,
@@ -709,15 +695,9 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	// Dress the child in the call that mints it, on the alternative and after
 	// the fork: a patch sent to the parent first can be ACKed and still miss
 	// the branch.
-	var dress form.Patch
-	if req.Patch != nil {
-		_, ofit := h.settings()
-		loaded, _ := h.settings()
-		materialized, merr := ofit.Materialize(*req.Patch, loaded.Config.DefaultOutfit)
-		if merr != nil {
-			return nil, h.errOutfitNotFound(outfit.Label(*req.Patch, loaded.Config.DefaultOutfit), merr)
-		}
-		dress = materialized
+	dress, err := h.dress(req.Outfits, req.Patch)
+	if err != nil {
+		return nil, err
 	}
 	// The COORDINATE says whether this is interior; atMainLT says where.
 	// They are not the same question: forking at turn 1 retains nothing
@@ -784,8 +764,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	// other end: rather than move trunk state off the actor, stop routing the
 	// fork through the actor at all. authz.NoSelfForkDuringTurn stays as a
 	// guardrail, but it no longer guards a hang.
-	err := runFork()
-	if err != nil {
+	if err := runFork(); err != nil {
 		return nil, fmt.Errorf("fork %q: %w", req.FigaroID, err)
 	}
 	slog.Info("forked figaro", "parent", req.FigaroID, "turn", req.AtTurn, "lt", atMainLT, "continuation", cont, "alternative", alt)
@@ -1825,7 +1804,7 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro
 	if ts := h.angelus.Backend.LastTS(ariaID); ts != 0 {
 		lastActive = time.UnixMilli(ts)
 	}
-	loaded, ofit := h.settings()
+	loaded, _ := h.settings()
 	reg := tool.DefaultRegistryForAria(ariaID, cwdFromForm(cb, toolRoot),
 		tool.WithImageBudget(loaded.InlineImageBudget()),
 		tool.WithSessions(h.angelus.Sessions))
@@ -1834,7 +1813,6 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro
 		SocketPath:      sockPath,
 		Provider:        prov,
 		ProviderFactory: h.factory,
-		Outfitter:       ofit,
 		Tools:           reg,
 		Projector:       uiir.New(reg),
 		Backend:         h.angelus.Backend,

@@ -89,15 +89,10 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, err
 		}
-		// The prompt's patch may name layers; expand them HERE so a spec that
-		// does not resolve fails the qua before anything is queued.
-		if req.Form != nil && req.Form.Patch != nil {
-			materialized, merr := a.Materialize(*req.Form.Patch)
-			if merr != nil {
-				return nil, outfitError(merr)
-			}
-			req.Form.Patch = &materialized
-		}
+		// The prompt's dressing was resolved before this call was routed —
+		// the hub dresses on the way in (angelus.dressParams), so a spec
+		// that does not exist failed the qua before anything was queued and
+		// what arrives here is data.
 		cursor := int(a.ariaSrv.LastTurn())
 		active := a.turnActive()
 		// Attribution comes off the request itself, not from the authn

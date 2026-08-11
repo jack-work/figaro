@@ -117,7 +117,7 @@ model = "m"
 	require.NoError(t, err)
 	defer acli.Close()
 
-	create, err := acli.Create(ctx, dress(t, "switch"))
+	create, err := acli.Create(ctx, dress(t, "switch"), nil)
 	require.NoError(t, err)
 	figEP := transport.Endpoint{Scheme: create.Endpoint.Scheme, Address: create.Endpoint.Address}
 	waitForFigaro(t, figEP)

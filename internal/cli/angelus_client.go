@@ -258,7 +258,7 @@ func mustConnectAngelus(loaded *config.Loaded) *angelus.Client {
 // dressing means "as usual" — the angelus folds the configured default.
 func mustCreateAndBindOutfit(ctx context.Context, acli *angelus.Client, loaded *config.Loaded, ppid int, d dressing) (string, transport.Endpoint) {
 	createResp, err := createWithFirstRun(ctx, loaded, d, func() (*rpc.CreateResponse, error) {
-		return acli.Create(ctx, d.patch)
+		return acli.Create(ctx, d.names, d.patch)
 	})
 	if err != nil {
 		dieWithClosure(err, "create figaro: %s", err)

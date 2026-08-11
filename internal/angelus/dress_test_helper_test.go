@@ -1,19 +1,11 @@
 package angelus_test
 
-import (
-	"encoding/json"
-	"testing"
+import "testing"
 
-	"github.com/jack-work/figaro/internal/rpc"
-)
-
-// dress is the birth patch a test means when it says "on outfit mock": the
-// layers directive the server materializes.
-func dress(t testing.TB, names ...string) *rpc.FormPatch {
+// dress is the outfit axis a test means when it says "on outfit mock": NAMES,
+// which the daemon's one dressing call resolves at the API boundary. Nothing a
+// test sends carries a directive inside a patch any more.
+func dress(t testing.TB, names ...string) []string {
 	t.Helper()
-	b, err := json.Marshal(names)
-	if err != nil {
-		t.Fatalf("dress: %v", err)
-	}
-	return &rpc.FormPatch{Set: map[string]json.RawMessage{"layers": b}}
+	return names
 }

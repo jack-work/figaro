@@ -16,7 +16,6 @@ import (
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
-	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
@@ -85,7 +84,6 @@ type Config struct {
 	// form. Nil pins the agent to Provider for life — fine for
 	// tests, wrong for a live aria, because the board is authoritative.
 	ProviderFactory ProviderFactory
-	Outfitter       *outfit.Outfitter
 	Tools           *tool.Registry
 	// Projector renders fig IR as UI IR. nil ships an engine with no display.
 	Projector  Projector
@@ -123,7 +121,6 @@ type Agent struct {
 	// syncProvider, read lock-free by status/metrics on RPC goroutines.
 	provBind    atomic.Pointer[providerBinding]
 	provFactory ProviderFactory
-	outfitter   *outfit.Outfitter
 	tools       *tool.Registry
 	// proj converts fig IR to UI IR. nil in a core-only build.
 	proj       Projector
@@ -204,7 +201,6 @@ func NewAgent(cfg Config) *Agent {
 		id:          cfg.ID,
 		socketPath:  cfg.SocketPath,
 		provFactory: cfg.ProviderFactory,
-		outfitter:   cfg.Outfitter,
 		tools:       cfg.Tools,
 		proj:        cfg.Projector,
 		inlineBoot:  cfg.InlineBoot,

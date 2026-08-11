@@ -24,7 +24,7 @@ func waitForFork(
 ) (*rpc.ForkResponse, error) {
 	done := make(chan forkCallResult, 1)
 	go func() {
-		response, err := client.Fork(ctx, ariaID, at.turn, at.lt, d.patch)
+		response, err := client.Fork(ctx, ariaID, at.turn, at.lt, d.names, d.patch)
 		done <- forkCallResult{response: response, err: err}
 	}()
 

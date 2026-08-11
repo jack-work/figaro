@@ -72,9 +72,9 @@ func (sc *studyClient) formValue(t *testing.T, ctx context.Context, key string) 
 func TestCastPointsRoleAndRegistersStudy(t *testing.T) {
 	_, acli, ctx := daemonFixture(t)
 
-	created, err := acli.Create(ctx, dress(t, "mock"))
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
-	role, err := acli.FormCreate(ctx, "", rawPatch(map[string]string{"name": `"supervisor"`}))
+	role, err := acli.FormCreate(ctx, "", nil, rawPatch(map[string]string{"name": `"supervisor"`}))
 	require.NoError(t, err)
 
 	fc := dialNode(t, created.Endpoint)
@@ -108,7 +108,7 @@ func TestCastPointsRoleAndRegistersStudy(t *testing.T) {
 // birth patch, so there is no window where the role exists unpointed.
 func TestCastMintsRoleBornCast(t *testing.T) {
 	_, acli, ctx := daemonFixture(t)
-	created, err := acli.Create(ctx, dress(t, "mock"))
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 
 	fc := dialNode(t, created.Endpoint)
@@ -133,9 +133,9 @@ func TestCastMintsRoleBornCast(t *testing.T) {
 // A cast at a BOUND board is refused by name: roles are unbound only.
 func TestCastRefusesBoundTargets(t *testing.T) {
 	_, acli, ctx := daemonFixture(t)
-	a1, err := acli.Create(ctx, dress(t, "mock"))
+	a1, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
-	a2, err := acli.Create(ctx, dress(t, "mock"))
+	a2, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 
 	fc := dialNode(t, a1.Endpoint)
@@ -153,9 +153,9 @@ func TestCastRefusesBoundTargets(t *testing.T) {
 // stamps at translation time (pinned in provider's projection tests).
 func TestStudyStampsIRAndBakesNothing(t *testing.T) {
 	_, acli, ctx := daemonFixture(t)
-	created, err := acli.Create(ctx, dress(t, "mock"))
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
-	role, err := acli.FormCreate(ctx, "", rawPatch(map[string]string{"name": `"watched"`}))
+	role, err := acli.FormCreate(ctx, "", nil, rawPatch(map[string]string{"name": `"watched"`}))
 	require.NoError(t, err)
 
 	fc := dialNode(t, created.Endpoint)
@@ -186,9 +186,9 @@ func TestStudyStampsIRAndBakesNothing(t *testing.T) {
 // stopped-observing mark is in the timeline.
 func TestDropEndsStampsAndStatesItself(t *testing.T) {
 	_, acli, ctx := daemonFixture(t)
-	created, err := acli.Create(ctx, dress(t, "mock"))
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
-	role, err := acli.FormCreate(ctx, "", rawPatch(map[string]string{"name": `"brief"`}))
+	role, err := acli.FormCreate(ctx, "", nil, rawPatch(map[string]string{"name": `"brief"`}))
 	require.NoError(t, err)
 
 	fc := dialNode(t, created.Endpoint)

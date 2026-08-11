@@ -122,12 +122,12 @@ type OutfitLayer struct {
 }
 
 const (
-	MethodCreate      = "figaro.create"
+	MethodCreate = "figaro.create"
 	// MethodFormCreate mints an UNBOUND FORM: fork the null root (or a
 	// form) with a birth patch — kind "form", @-sigiled id, no agent,
 	// no endpoint activation beyond the hub. The form half of the one
 	// birth verb; figaro.create remains the figaro half.
-	MethodFormCreate  = "form.create"
+	MethodFormCreate = "form.create"
 	// MethodFormBind births a FIGARO from an unbound form: fork the form
 	// (or the null root) with the caller's dressing plus runtime
 	// fill-ins, stamp aria_id, stand the endpoint up — and construct NO
@@ -184,6 +184,12 @@ type QuaRequest struct {
 type FormInput struct {
 	Context map[string]json.RawMessage `json:"context,omitempty"`
 	Patch   *FormPatch                 `json:"patch,omitempty"`
+	// Outfits are outfit NAMES, folded in order and UNDER Patch's own keys.
+	// The outfit axis is separate from the patch axis: names here, data
+	// there, and the daemon's ONE dressing call at the API boundary is what
+	// turns the first into the second. Nothing below that boundary reads a
+	// file.
+	Outfits []string `json:"outfits,omitempty"`
 }
 
 // FormDeltaSchema versions the ENVELOPE, not the patch. Version below is the
@@ -262,6 +268,12 @@ type ContextResponse struct {
 // SetRequest applies a form patch directly.
 type SetRequest struct {
 	Patch FormPatch `json:"patch"`
+	// Outfits are outfit NAMES, folded in order and UNDER Patch's own keys.
+	// The outfit axis is separate from the patch axis: names here, data
+	// there, and the daemon's ONE dressing call at the API boundary is what
+	// turns the first into the second. Nothing below that boundary reads a
+	// file.
+	Outfits []string `json:"outfits,omitempty"`
 	// IfVersion refuses the patch unless the board is still at this durable
 	// version. Zero is unconditional. It exists for read-modify-write: editing
 	// inside a value (an array element, a nested field) means reading it first,
@@ -471,6 +483,12 @@ type FigaroInfoResponse struct {
 type CreateRequest struct {
 	Patch     *FormPatch `json:"patch,omitempty"`
 	Ephemeral bool       `json:"ephemeral,omitempty"`
+	// Outfits are outfit NAMES, folded in order and UNDER Patch's own keys.
+	// The outfit axis is separate from the patch axis: names here, data
+	// there, and the daemon's ONE dressing call at the API boundary is what
+	// turns the first into the second. Nothing below that boundary reads a
+	// file.
+	Outfits []string `json:"outfits,omitempty"`
 }
 
 type CreateResponse struct {
@@ -484,6 +502,12 @@ type CreateResponse struct {
 type FormCreateRequest struct {
 	Parent string     `json:"parent,omitempty"`
 	Patch  *FormPatch `json:"patch"`
+	// Outfits are outfit NAMES, folded in order and UNDER Patch's own keys.
+	// The outfit axis is separate from the patch axis: names here, data
+	// there, and the daemon's ONE dressing call at the API boundary is what
+	// turns the first into the second. Nothing below that boundary reads a
+	// file.
+	Outfits []string `json:"outfits,omitempty"`
 }
 
 type FormCreateResponse struct {
@@ -499,6 +523,12 @@ type FormCreateResponse struct {
 type FormBindRequest struct {
 	Parent string     `json:"parent,omitempty"`
 	Patch  *FormPatch `json:"patch,omitempty"`
+	// Outfits are outfit NAMES, folded in order and UNDER Patch's own keys.
+	// The outfit axis is separate from the patch axis: names here, data
+	// there, and the daemon's ONE dressing call at the API boundary is what
+	// turns the first into the second. Nothing below that boundary reads a
+	// file.
+	Outfits []string `json:"outfits,omitempty"`
 }
 
 type FormBindResponse struct {
@@ -523,6 +553,12 @@ type StudyResponse struct {
 type CastRequest struct {
 	FormID    string     `json:"form_id,omitempty"`
 	RolePatch *FormPatch `json:"role_patch,omitempty"`
+	// Outfits are outfit NAMES, folded in order and UNDER Patch's own keys.
+	// The outfit axis is separate from the patch axis: names here, data
+	// there, and the daemon's ONE dressing call at the API boundary is what
+	// turns the first into the second. Nothing below that boundary reads a
+	// file.
+	Outfits []string `json:"outfits,omitempty"`
 }
 
 // CastResponse reports the call's verdict, step by step, so a partial
@@ -563,6 +599,12 @@ type ForkRequest struct {
 	// said to it: it lands on the child's form in the same call that
 	// mints it, so a prompt sent next is answered with it in place.
 	Patch *FormPatch `json:"patch,omitempty"`
+	// Outfits are outfit NAMES, folded in order and UNDER Patch's own keys.
+	// The outfit axis is separate from the patch axis: names here, data
+	// there, and the daemon's ONE dressing call at the API boundary is what
+	// turns the first into the second. Nothing below that boundary reads a
+	// file.
+	Outfits []string `json:"outfits,omitempty"`
 }
 
 // ForkResponse returns the two fresh child ids. The parent freezes and

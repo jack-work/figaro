@@ -57,6 +57,12 @@ type ariaHub struct {
 	// writer per node whether an agent is live or not (the agent itself
 	// writes through the backend), so this is the same writer, earlier.
 	write func(id, method string, params json.RawMessage) (v any, ok bool, err error)
+	// dress resolves a request's outfit NAMES into keys before it is routed
+	// anywhere. It is the API boundary's one materialization point: whatever
+	// the request reaches next — a live agent's inbox, the store's agentless
+	// writer — receives pure data, and no writer below this line reads a
+	// file. A request naming no outfit is returned byte for byte.
+	dress func(method string, params json.RawMessage) (json.RawMessage, error)
 	// kind is the node's species from its figwal marker ("conversation",
 	// "form", …). A form has no agent to wake, ever: methods that reach
 	// the wake path on a form node get a named refusal instead of a
@@ -256,6 +262,17 @@ func (hb *ariaHub) handlers() map[string]jkrpc.HandlerFunc {
 // route sends a request to the agent, waking the aria when the method needs
 // a turn loop and answering from the store when it does not.
 func (hb *ariaHub) route(ctx context.Context, method string, params json.RawMessage) (any, error) {
+	// Dress FIRST, before any of the three destinations. A spec that names
+	// nothing on disk fails here, at the boundary, rather than landing as a
+	// literal on a board (which is exactly what `fig form outfit test` did
+	// while the hub's writer applied patches verbatim).
+	if hb.dress != nil {
+		dressed, err := hb.dress(method, params)
+		if err != nil {
+			return nil, err
+		}
+		params = dressed
+	}
 	if agent := hb.boundAgent(); agent != nil {
 		return agent.Handle(ctx, method, params)
 	}

@@ -34,11 +34,11 @@ func BenchmarkCast(b *testing.B) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	b.Cleanup(func() { slog.SetDefault(old) })
 	_, acli, ctx := daemonFixture(b)
-	created, err := acli.Create(ctx, dress(b, "mock"))
+	created, err := acli.Create(ctx, dress(b, "mock"), nil)
 	if err != nil {
 		b.Fatal(err)
 	}
-	role, err := acli.FormCreate(ctx, "", benchPatch(map[string]string{"name": `"bench-role"`}))
+	role, err := acli.FormCreate(ctx, "", nil, benchPatch(map[string]string{"name": `"bench-role"`}))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func BenchmarkRoleRedirectRead(b *testing.B) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	b.Cleanup(func() { slog.SetDefault(old) })
 	_, acli, ctx := daemonFixture(b)
-	role, err := acli.FormCreate(ctx, "", benchPatch(map[string]string{
+	role, err := acli.FormCreate(ctx, "", nil, benchPatch(map[string]string{
 		"name": `"bench-role"`, "target-aria": `"abc123"`,
 	}))
 	if err != nil {

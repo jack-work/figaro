@@ -18,49 +18,50 @@ import (
 // primitives. Semantics: plans/forms-and-roles-v2.md; the daemon half is
 // form.create + the hub's agentless read/write paths.
 
-// runFormNew mints an unbound form. The spec is REQUIRED — `fig form new`
-// never touches the default outfit — and extra k=v positionals fold on
-// top, later terms winning.
-func runFormNew(loaded *config.Loaded, spec string, kvs []string, asJSON bool) {
-	patch := mustFormPatch(spec, kvs, "form new -O <spec> [k=v …]")
-	createFormAndReport(loaded, "", patch, asJSON)
+// runFormNew mints an unbound form. Dressing is REQUIRED — `fig form new`
+// never touches the default outfit — and extra k=v positionals fold on top of
+// -S, later terms winning.
+func runFormNew(loaded *config.Loaded, outfits, set, del string, kvs []string, asJSON bool) {
+	d := mustFormDress(outfits, set, del, kvs, "form new -O <names> [-S k=v] [k=v …]")
+	createFormAndReport(loaded, "", d, asJSON)
 }
 
 // runFormFork duplicates a form's state into a fresh @id. The patch is
 // required by the one-birth-verb law (a fork nobody can name is refused
 // by the store), so at least one of -O / k=v must be present.
-func runFormFork(loaded *config.Loaded, parent, spec string, kvs []string, asJSON bool) {
+func runFormFork(loaded *config.Loaded, parent, outfits, set, del string, kvs []string, asJSON bool) {
 	if parent == "" {
-		die("usage: form fork <@form-id> [-O <spec>] [k=v …]")
+		die("usage: form fork <@form-id> [-O <names>] [-S k=v] [k=v …]")
 	}
-	patch := mustFormPatch(spec, kvs, "form fork <@form-id> [-O <spec>] [k=v …]")
-	createFormAndReport(loaded, parent, patch, asJSON)
+	d := mustFormDress(outfits, set, del, kvs, "form fork <@form-id> [-O <names>] [-S k=v] [k=v …]")
+	createFormAndReport(loaded, parent, d, asJSON)
 }
 
-// mustFormPatch merges the -O spec and k=v positionals into one birth
-// patch; each term parses with the same grammar -O uses everywhere.
-func mustFormPatch(spec string, kvs []string, usage string) *rpc.FormPatch {
+// mustFormDress assembles the birth dressing: outfit NAMES from -O, keys from
+// -S and from the bare k=v positionals (which are the same grammar, so they
+// simply join the -S terms), removals from -D.
+func mustFormDress(outfits, set, del string, kvs []string, usage string) dressing {
 	terms := make([]string, 0, len(kvs)+1)
-	if strings.TrimSpace(spec) != "" {
-		terms = append(terms, spec)
+	if strings.TrimSpace(set) != "" {
+		terms = append(terms, set)
 	}
 	terms = append(terms, kvs...)
-	if len(terms) == 0 {
-		die("a form is born of its patch: give -O <spec> and/or k=v terms\nusage: %s", usage)
-	}
-	d, err := parseDressing(strings.Join(terms, ","))
+	d, err := parseDress(outfits, strings.Join(terms, ","), del)
 	if err != nil {
 		die("%s", err)
 	}
-	return d.patch
+	if d.IsEmpty() {
+		die("a form is born of its patch: give -O <names> and/or -S k=v terms\nusage: %s", usage)
+	}
+	return d
 }
 
-func createFormAndReport(loaded *config.Loaded, parent string, patch *rpc.FormPatch, asJSON bool) {
+func createFormAndReport(loaded *config.Loaded, parent string, d dressing, asJSON bool) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	resp, err := acli.FormCreate(ctx, parent, patch)
+	resp, err := acli.FormCreate(ctx, parent, d.names, d.patch)
 	if err != nil {
 		die("form: %s", err)
 	}
@@ -186,7 +187,7 @@ func formDescendsFrom(byID map[string]rpc.FigaroInfoResponse, id, scope string) 
 // attended form. "null": the naked figaro (fails its first TURN unless
 // -O or later patches supply a provider — minting is not the gate).
 // Never rebinds this shell: the printed id is attended by hand.
-func runBind(loaded *config.Loaded, target, spec string, asJSON bool) {
+func runBind(loaded *config.Loaded, target, outfits, set, del string, asJSON bool) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -203,15 +204,11 @@ func runBind(loaded *config.Loaded, target, spec string, asJSON bool) {
 		target = r.FigaroID
 	}
 
-	var patch *rpc.FormPatch
-	if strings.TrimSpace(spec) != "" {
-		d, err := parseDressing(spec)
-		if err != nil {
-			die("bind: %s", err)
-		}
-		patch = d.patch
+	d, err := parseDress(outfits, set, del)
+	if err != nil {
+		die("bind: %s", err)
 	}
-	resp, err := acli.FormBind(ctx, target, patch)
+	resp, err := acli.FormBind(ctx, target, d.names, d.patch)
 	if err != nil {
 		die("bind: %s", err)
 	}

@@ -488,7 +488,7 @@ func printDone() {
 // when bound (modulo context — caller supplies one).
 var _ = func(acli *angelus.Client, ctx context.Context) createFn {
 	return func() (*rpc.CreateResponse, error) {
-		return acli.Create(ctx, nil)
+		return acli.Create(ctx, nil, nil)
 	}
 }
 

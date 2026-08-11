@@ -78,7 +78,7 @@ model = "m"
 
 	acli, err := angelus.DialClient(transport.UnixEndpoint(a.SocketPath))
 	require.NoError(t, err)
-	create, err := acli.Create(ctx, dress(t, "parked"))
+	create, err := acli.Create(ctx, dress(t, "parked"), nil)
 	require.NoError(t, err)
 	acli.Close()
 

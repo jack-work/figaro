@@ -166,7 +166,7 @@ func buildPromptForm() *rpc.FormInput {
 	if len(snap) == 0 && promptDressing.IsEmpty() {
 		return nil
 	}
-	return &rpc.FormInput{Context: snap, Patch: promptDressing.patch}
+	return &rpc.FormInput{Context: snap, Outfits: promptDressing.names, Patch: promptDressing.patch}
 }
 
 // buildFormTemplates loads body templates with user overrides.

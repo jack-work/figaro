@@ -1,7 +1,6 @@
 package figaro_test
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -60,7 +59,6 @@ func benchAgent(b *testing.B, configDir string, initial form.Patch) *figaro.Agen
 		ID:         "outfit-bench",
 		SocketPath: filepath.Join(b.TempDir(), "sock"),
 		Provider:   &chalkSpyProvider{},
-		Outfitter:  outfit.New(configDir),
 		Tools:      tool.NewRegistry(),
 		Form:       cb,
 	})
@@ -73,7 +71,7 @@ func benchAgent(b *testing.B, configDir string, initial form.Patch) *figaro.Agen
 func BenchmarkDressFirstTime(b *testing.B) {
 	dir := benchConfig(b, 40, 4096)
 	a := benchAgent(b, dir, form.Patch{})
-	patch := benchDress("full")
+	patch := benchDress(b, dir, "full")
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if _, _, err := a.Set(patch, 0); err != nil {
@@ -82,47 +80,13 @@ func BenchmarkDressFirstTime(b *testing.B) {
 	}
 }
 
-// BenchmarkMaterializeWarm is the accept-time expansion alone, warm: the price
-// every patch carrying a layers directive pays.
-func BenchmarkMaterializeWarm(b *testing.B) {
-	dir := benchConfig(b, 40, 4096)
-	a := benchAgent(b, dir, form.Patch{})
-	patch := benchDress("full")
-	if _, err := a.Materialize(patch); err != nil {
+// benchDress is what the API boundary hands the agent now: MATERIALIZED keys.
+// The fold that produced them is benchmarked where it lives, in internal/outfit
+// (BenchmarkDressWarm / BenchmarkDressCold) — the agent's price is the append.
+func benchDress(b *testing.B, configDir string, names ...string) form.Patch {
+	patch, err := outfit.New(configDir).Dress(names, form.Patch{}, "")
+	if err != nil {
 		b.Fatal(err)
 	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		if _, err := a.Materialize(patch); err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-// BenchmarkMaterializeNoLayers is the cost of the check on a patch that names
-// nothing — every `fig set` pays this and no more.
-func BenchmarkMaterializeNoLayers(b *testing.B) {
-	dir := benchConfig(b, 40, 4096)
-	a := benchAgent(b, dir, form.Patch{})
-	patch := form.Patch{Set: map[string]json.RawMessage{"mantra": json.RawMessage(`"x"`)}}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		if _, err := a.Materialize(patch); err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkParsePatch(b *testing.B) {
-	const text = `house,terse,{"ttl":"1h","mantra":"bench"},full`
-	for i := 0; i < b.N; i++ {
-		if _, err := outfit.ParsePatch(text); err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func benchDress(names ...string) form.Patch {
-	b, _ := json.Marshal(names)
-	return form.Patch{Set: map[string]json.RawMessage{"layers": b}}
+	return patch
 }

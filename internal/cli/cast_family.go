@@ -111,34 +111,35 @@ func verbPast(v string) string {
 // itself is minted first from the default form (the fig new path,
 // unattended) — figaro-minted-but-role-failed is reported as the
 // partial it is.
-func runCast(loaded *config.Loaded, args []string, spec string, asJSON bool) {
+func runCast(loaded *config.Loaded, args []string, outfits, set, del string, asJSON bool) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	ariaID, formID, err := resolveStudyArgs(ctx, acli, args, strings.TrimSpace(spec) != "", "cast")
+	minting := strings.TrimSpace(outfits) != "" || strings.TrimSpace(set) != "" || strings.TrimSpace(del) != ""
+	ariaID, formID, err := resolveStudyArgs(ctx, acli, args, minting, "cast")
 	if err != nil {
 		die("%s", err)
 	}
-	var rolePatch *rpc.FormPatch
-	if strings.TrimSpace(spec) != "" {
+	var role dressing
+	if minting {
 		if formID != "" {
-			die("cast: -O mints the role and OCCUPIES the form slot; drop %s or the spec", formID)
+			die("cast: -O/-S mint the role and OCCUPY the form slot; drop %s or the dressing", formID)
 		}
-		d, derr := parseDressing(spec)
+		d, derr := parseDress(outfits, set, del)
 		if derr != nil {
 			die("cast: %s", derr)
 		}
-		rolePatch = d.patch
+		role = d
 	}
-	if formID == "" && rolePatch == nil {
-		die("cast: name a role or mint one: fig cast [<aria>] <@form> | fig cast [<aria>] -O <spec>")
+	if formID == "" && role.IsEmpty() {
+		die("cast: name a role or mint one: fig cast [<aria>] <@form> | fig cast [<aria>] -O <names> [-S k=v]")
 	}
 
 	minted := ""
 	if ariaID == "" {
-		created, cerr := acli.Create(ctx, nil)
+		created, cerr := acli.Create(ctx, nil, nil)
 		if cerr != nil {
 			die("cast: no figaro attended and minting one failed: %s", cerr)
 		}
@@ -148,7 +149,7 @@ func runCast(loaded *config.Loaded, args []string, spec string, asJSON bool) {
 	}
 
 	WithSessionFor(loaded, ariaID, func(s *Session) error {
-		resp, cerr := s.Figaro.Cast(ctx, rpc.CastRequest{FormID: formID, RolePatch: rolePatch})
+		resp, cerr := s.Figaro.Cast(ctx, rpc.CastRequest{FormID: formID, Outfits: role.names, RolePatch: role.patch})
 		if cerr != nil {
 			if minted != "" {
 				// The partial, spelled out: the figaro exists, the casting
