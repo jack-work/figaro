@@ -127,8 +127,8 @@ transactional guarantee.
 ### fig cast [<aria-id>] [<form-id> | -O <spec…>]
 See §7.
 
-### fig outfit reload / fig outfit write [<form-id>]
-See §6.
+### fig outfit reload
+See §6. (There is deliberately NO `outfit write`: see §6.)
 
 ### fig ls / fig form ls
 See §5.
@@ -207,10 +207,12 @@ a form]
   state, which has a normalization swamp). Same hash and unpatched → no-op,
   reuse. A remint happens even if an identical hash exists elsewhere: dedup
   is dead.
-- `fig outfit write [<form-id>]`: the inverse — serialize a form's state
-  into the config dir as an outfit file. Necessarily FLAT: forms hold
-  materialized values; credo/skill refs and layers indirection are lost.
-  The generated file says so in a header comment.
+- There is NO `fig outfit write` (struck by Gluck, 2026-08-10): outfit
+  files are one-way sources of truth — possibly git-tracked — and no
+  path may serialize form state back onto them. That the files are
+  editable at all is a side effect to be fenced off when access
+  controls arrive; the absence of a write verb is a deliberate gap,
+  not an omission.
 - Direct patches to the default form: allowed, discouraged, DETECTED (the
   dirty-since-birth bit means the next reload-compute remints rather than
   silently propagating an ad-hoc patch to every future `fig new`).
