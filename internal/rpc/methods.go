@@ -33,6 +33,14 @@ const (
 	// them and its shape is unchanged); these two are the U and D of the CRUD,
 	// while C is MethodQua — a queued message IS a submitted prompt, so there
 	// is deliberately no second create path.
+	// The study/cast family. Study/drop manage this aria's subscriptions
+	// to UNBOUND forms (durable under system.studies); cast is the
+	// casting-call: serialize in the aria's actor loop, ensure the study,
+	// cross-call the role's writer to point target-aria here.
+	MethodStudy = "figaro.study"
+	MethodDrop  = "figaro.drop"
+	MethodCast  = "figaro.cast"
+
 	MethodQueueUpdate = "figaro.queue.update"
 	MethodQueueDelete = "figaro.queue.delete"
 
@@ -496,6 +504,33 @@ type FormBindRequest struct {
 type FormBindResponse struct {
 	FigaroID string   `json:"figaro_id"`
 	Endpoint Endpoint `json:"endpoint"`
+}
+
+// StudyRequest subscribes (figaro.study) or unsubscribes (figaro.drop)
+// the aria from an unbound form. Empty FormID on figaro.study lists.
+type StudyRequest struct {
+	FormID string `json:"form_id,omitempty"`
+}
+
+type StudyResponse struct {
+	OK      bool     `json:"ok"`
+	Studies []string `json:"studies"`
+}
+
+// CastRequest is one casting call. Exactly one of FormID / RolePatch:
+// an existing role's id, or the patch a new role is BORN from (the
+// server folds target-aria in, so nothing half-fails).
+type CastRequest struct {
+	FormID    string     `json:"form_id,omitempty"`
+	RolePatch *FormPatch `json:"role_patch,omitempty"`
+}
+
+// CastResponse reports the call's verdict, step by step, so a partial
+// failure is a described state and never a mystery.
+type CastResponse struct {
+	RoleID  string `json:"role_id"`
+	Studied bool   `json:"studied"` // newly studied by this call
+	Patched bool   `json:"patched"` // target-aria points here
 }
 
 // ForkRequest branches a conversation. With neither coordinate set it forks

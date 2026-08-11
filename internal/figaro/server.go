@@ -21,6 +21,9 @@ type AgentServer interface {
 // agentMethods is the set of methods the figaro socket exposes.
 var agentMethods = []string{
 	rpc.MethodQua,
+	rpc.MethodStudy,
+	rpc.MethodDrop,
+	rpc.MethodCast,
 	rpc.MethodContext,
 	rpc.MethodInterrupt,
 	rpc.MethodSet,
@@ -43,6 +46,44 @@ func AgentMethods() []string {
 // Handle dispatches RPC methods.
 func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessage) (any, error) {
 	switch method {
+	case rpc.MethodStudy:
+		var req rpc.StudyRequest
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, err
+		}
+		if req.FormID == "" {
+			return rpc.StudyResponse{OK: true, Studies: a.StudyList()}, nil
+		}
+		studies, err := a.Study(req.FormID)
+		if err != nil {
+			return nil, err
+		}
+		return rpc.StudyResponse{OK: true, Studies: studies}, nil
+
+	case rpc.MethodDrop:
+		var req rpc.StudyRequest
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, err
+		}
+		studies, err := a.Drop(req.FormID)
+		if err != nil {
+			return nil, err
+		}
+		return rpc.StudyResponse{OK: true, Studies: studies}, nil
+
+	case rpc.MethodCast:
+		var req rpc.CastRequest
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, err
+		}
+		res, err := a.Cast(ctx, req.FormID, req.RolePatch)
+		if err != nil {
+			// A partial verdict still describes itself: the response
+			// carries what landed before the step that failed.
+			return nil, err
+		}
+		return rpc.CastResponse{RoleID: res.roleID, Studied: res.studied, Patched: res.patched}, nil
+
 	case rpc.MethodQua:
 		var req rpc.QuaRequest
 		if err := json.Unmarshal(params, &req); err != nil {

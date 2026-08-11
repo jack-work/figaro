@@ -131,6 +131,12 @@ type Backend interface {
 	// Called on the form's writer, so a sink must hand off and return.
 	WatchForm(ariaID string, fn func(version uint64, patch message.Patch)) error
 
+	// WatchFormDurable is WatchForm surviving eviction: re-armed whenever
+	// the node's Form reopens. The cancel removes the registration; the
+	// DELIVERY gate remains the caller's (a cancelled sink may fire until
+	// the live Form closes).
+	WatchFormDurable(id string, fn func(version uint64, patch message.Patch)) (func(), error)
+
 	// ForkWith forks a node and lands a patch on the child in one critical
 	// section. parent == "" forks the null root, which is what birth is.
 	ForkWith(parent string, atMainLT uint64, patch message.Patch) (child string, version uint64, err error)

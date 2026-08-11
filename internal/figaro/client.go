@@ -184,3 +184,29 @@ func (c *Client) UpdateQueued(ctx context.Context, req rpc.QueueUpdateRequest) (
 	}
 	return &resp, nil
 }
+
+// Study subscribes the aria to an unbound form ("" lists), Drop
+// unsubscribes, Cast runs one casting call (see rpc.CastRequest).
+func (c *Client) Study(ctx context.Context, formID string) (*rpc.StudyResponse, error) {
+	var resp rpc.StudyResponse
+	if err := c.call(ctx, rpc.MethodStudy, rpc.StudyRequest{FormID: formID}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *Client) Drop(ctx context.Context, formID string) (*rpc.StudyResponse, error) {
+	var resp rpc.StudyResponse
+	if err := c.call(ctx, rpc.MethodDrop, rpc.StudyRequest{FormID: formID}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *Client) Cast(ctx context.Context, req rpc.CastRequest) (*rpc.CastResponse, error) {
+	var resp rpc.CastResponse
+	if err := c.call(ctx, rpc.MethodCast, req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}

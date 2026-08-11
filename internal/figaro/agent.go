@@ -32,6 +32,7 @@ type eventType int
 const (
 	eventUserPrompt eventType = iota
 	eventSet
+	eventCast
 )
 
 // promptSegment is one submission inside a (possibly folded) user message:
@@ -52,6 +53,9 @@ type event struct {
 	id     uint64
 	at     int64
 	merged []uint64
+
+	// eventCast
+	cast *castOp
 
 	// eventUserPrompt
 	text string
@@ -114,6 +118,9 @@ type Config struct {
 type Agent struct {
 	id         string
 	socketPath string
+	// studies is the live study-subscription state (roles/forms this aria
+	// observes). See study.go.
+	studies studyState
 	// provBind is the live provider binding (instance + the form
 	// coordinates that produced it). Written by the drain loop via
 	// syncProvider, read lock-free by status/metrics on RPC goroutines.
@@ -263,6 +270,7 @@ func NewAgent(cfg Config) *Agent {
 		}
 	}
 
+	a.resumeStudies()
 	a.publishMetadata()
 	go a.runWithRecovery(ctx)
 	return a
@@ -925,6 +933,8 @@ func (a *Agent) act(ctx context.Context) {
 			a.runTurn(ctx, merged)
 		case eventSet:
 			a.applyControlPatch(evt.setPatch, evt.setIfVersion, "set")
+		case eventCast:
+			a.serviceCast(evt.cast)
 		}
 	}
 }

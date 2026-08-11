@@ -782,6 +782,71 @@ Folding an outfit onto a LIVE aria is a different act: see
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:  "study",
+		Group: "Session",
+		Short: "Subscribe this figaro to an unbound form (see its changes)",
+		Usage: "study [<aria>] <@form-id> | study [-j]",
+		Long: `Subscribes a figaro to an unbound form: committed patches to the form
+reach the figaro as <system-reminder> blocks on its next turn. Durable on
+the figaro's own board (system.studies); revival resubscribes; a fork
+inherits the relationship, never a private copy. No arguments lists the
+attended figaro's studies. The form is always the LAST positional.`,
+		ArgsMax: 2,
+		Flags: []cmdkit.FlagDef{
+			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			runStudy(ctx.Extra.(*config.Loaded), ctx.Args, false, ctx.BoolFlag("json"))
+			return nil
+		},
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
+	})
+
+	r.Register(&cmdkit.Command{
+		Name:  "drop",
+		Group: "Session",
+		Short: "Unsubscribe this figaro from a studied form",
+		Usage: "drop [<aria>] <@form-id>",
+		ArgsMin: 1,
+		ArgsMax: 2,
+		Flags: []cmdkit.FlagDef{
+			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			runStudy(ctx.Extra.(*config.Loaded), ctx.Args, true, ctx.BoolFlag("json"))
+			return nil
+		},
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
+	})
+
+	r.Register(&cmdkit.Command{
+		Name:  "cast",
+		Group: "Session",
+		Short: "Cast a figaro into a role (point target-aria here, and study it)",
+		Usage: "cast [<aria>] <@form-id> | cast [<aria>] -O <spec> [-j]",
+		Long: `One casting call: ensure the figaro studies the role, then point the
+role's target-aria at it — serialized through the figaro's actor loop, so
+no two castings of one figaro interleave. With -O the role is MINTED by
+the call, born already cast (nothing half-fails); -O occupies the form
+slot, so a lone positional is then the aria. With no figaro available
+(unattended, or attending a form) one is minted from the default form
+first — if the casting then fails, that partial is spelled out.
+
+The form is always the LAST positional. Bound boards are refused: roles
+are unbound forms only.`,
+		ArgsMax: 2,
+		Flags: []cmdkit.FlagDef{
+			{Long: "outfit", Short: "O", Description: "Mint the role from this spec (occupies the form slot)"},
+			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			runCast(ctx.Extra.(*config.Loaded), ctx.Args, ctx.Flag("outfit"), ctx.BoolFlag("json"))
+			return nil
+		},
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:  "bind",
 		Group: "Session",
 		Short: "Birth a figaro from an unbound form (dormant; never rebinds this shell)",

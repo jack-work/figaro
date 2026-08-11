@@ -29,7 +29,11 @@ type XwalBackend struct {
 	mu    sync.Mutex
 	open  map[string]*ariaHandle
 	forms map[string]*Form
-	metas map[string]*metaCache
+	// watchers are the durable (eviction-proof) form sinks, re-armed on
+	// every Form reopen. Keyed by node id.
+	watchers   map[string][]durableWatcher
+	watcherSeq uint64
+	metas      map[string]*metaCache
 	// labels is stump id -> what its birth record says it is. Never evicted
 	// and never invalidated: a stump id is the hash of content that contains
 	// the label, and a stump cannot be patched, so the mapping is a pure
@@ -109,12 +113,13 @@ func NewXwalBackend(root string, segmentSize int) (*XwalBackend, error) {
 		return nil, err
 	}
 	return &XwalBackend{
-		root:    root,
-		store:   st,
-		open:    map[string]*ariaHandle{},
-		forms:   map[string]*Form{},
-		metas:   map[string]*metaCache{},
-		touched: map[string]time.Time{},
+		root:     root,
+		store:    st,
+		open:     map[string]*ariaHandle{},
+		forms:    map[string]*Form{},
+		watchers: map[string][]durableWatcher{},
+		metas:    map[string]*metaCache{},
+		touched:  map[string]time.Time{},
 	}, nil
 }
 
@@ -226,6 +231,12 @@ func (b *XwalBackend) form(ariaID string) (*Form, error) {
 	if existing := b.forms[ariaID]; existing != nil {
 		opened.Close() // lost the race; the winner owns the channel
 		return existing, nil
+	}
+	// Re-arm durable watchers: eviction closed the previous Form and its
+	// sinks with it; a watcher registered through WatchFormDurable outlives
+	// that, or a studied role would go silent after any idle sweep.
+	for _, w := range b.watchers[ariaID] {
+		opened.OnCommit(w.fn)
 	}
 	b.forms[ariaID] = opened
 	return opened, nil
@@ -728,3 +739,49 @@ func (b *XwalBackend) Close() error {
 
 // LastTS delegates node recency to figwal: see XwalStore.LastTS.
 func (b *XwalBackend) LastTS(id string) int64 { return b.store.LastTS(id) }
+
+// ---- durable form watchers (study subscriptions) ----
+
+// durableWatcher is one WatchFormDurable registration.
+type durableWatcher struct {
+	id uint64
+	fn func(version uint64, patch message.Patch)
+}
+
+// WatchFormDurable is WatchForm that survives eviction: the sink is
+// re-armed every time the node's Form reopens, so an idle sweep closing
+// the Form (a studied role is never in the live set) cannot silently
+// sever it. The returned cancel removes the registration; it does not
+// need the Form to still be open.
+func (b *XwalBackend) WatchFormDurable(id string, fn func(version uint64, patch message.Patch)) (func(), error) {
+	f, err := b.form(id)
+	if err != nil {
+		return nil, err
+	}
+	b.mu.Lock()
+	b.watcherSeq++
+	w := durableWatcher{id: b.watcherSeq, fn: fn}
+	b.watchers[id] = append(b.watchers[id], w)
+	b.mu.Unlock()
+	f.OnCommit(fn)
+	cancel := func() {
+		b.mu.Lock()
+		ws := b.watchers[id]
+		for i := range ws {
+			if ws[i].id == w.id {
+				b.watchers[id] = append(ws[:i], ws[i+1:]...)
+				break
+			}
+		}
+		if len(b.watchers[id]) == 0 {
+			delete(b.watchers, id)
+		}
+		b.mu.Unlock()
+		// The live Form (if any) keeps the sink until it closes; commits
+		// between cancel and close are suppressed at the delivery layer by
+		// the caller. Removing OnCommit entries in-place is store.Form
+		// surgery this deliberately avoids: eviction or shutdown drops the
+		// stale sink with the Form.
+	}
+	return cancel, nil
+}
