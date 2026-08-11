@@ -152,3 +152,28 @@ func TestFormCreateParentRules(t *testing.T) {
 	_, err = acli.FormCreate(ctx, "", &rpc.FormPatch{})
 	require.Error(t, err, "an empty birth patch must be refused")
 }
+
+// Listing recency now comes from figwal record timestamps — and reading
+// it NEVER wakes a dormant aria. The row carries a real LastActive while
+// the registry stays empty.
+func TestListRecencyDoesNotWakeDormantArias(t *testing.T) {
+	a, acli, ctx := daemonFixture(t)
+
+	created, err := acli.Create(ctx, dress(t, "mock"))
+	require.NoError(t, err)
+	require.NoError(t, a.Registry.Kill(created.FigaroID))
+	require.Nil(t, a.Registry.Get(created.FigaroID))
+
+	list, err := acli.List(ctx)
+	require.NoError(t, err)
+	var row *rpc.FigaroInfoResponse
+	for i := range list.Figaros {
+		if list.Figaros[i].ID == created.FigaroID {
+			row = &list.Figaros[i]
+		}
+	}
+	require.NotNil(t, row)
+	require.Equal(t, "dormant", row.State)
+	require.NotZero(t, row.LastActive, "recency missing: figwal timestamps did not reach the row")
+	require.Nil(t, a.Registry.Get(created.FigaroID), "listing recency woke the aria")
+}

@@ -1065,7 +1065,6 @@ func (a *Agent) publishMetadata() {
 		TokensOut:        a.tokensOut,
 		CacheReadTokens:  a.cacheRead,
 		CacheWriteTokens: a.cacheWrite,
-		LastActiveMS:     a.lastActive.UnixMilli(),
 		Provider:         a.providerName(),
 		Model:            a.model,
 		Mantra:           a.mantra,

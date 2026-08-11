@@ -40,7 +40,6 @@ type AriaMeta struct {
 	TokensOut        int    `json:"tokens_out,omitempty"`
 	CacheReadTokens  int    `json:"cache_read_tokens,omitempty"`
 	CacheWriteTokens int    `json:"cache_write_tokens,omitempty"`
-	LastActiveMS     int64  `json:"last_active_ms,omitempty"`
 	LastFigaroLT     uint64 `json:"last_figaro_lt,omitempty"`
 	Provider         string `json:"provider,omitempty"`
 	Model            string `json:"model,omitempty"`
@@ -110,6 +109,12 @@ type Backend interface {
 	// FormVersion is the durable index of the last patch appended to
 	// the aria's form channel — the version a conditional Set quotes.
 	FormVersion(ariaID string) (uint64, error)
+
+	// LastTS is the newest figwal record timestamp anywhere in the node,
+	// unix millis — the recency a listing sorts by. Served from figwal's
+	// lock-free per-node counter; NEVER wakes an agent (it opens a store
+	// handle, not a figaro). Zero for pre-timestamp history.
+	LastTS(id string) int64
 
 	// KeepStump names the stump collection must spare: the live default, whose
 	// re-minting would rewrite a whole outfit to save one directory.

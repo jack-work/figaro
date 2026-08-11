@@ -1090,3 +1090,18 @@ func (s *XwalStore) deleteOrphans(id string) []string {
 	}
 	return topo.Boundary(s.TopologyAdjacency(), s.tree.DeleteSet(id))
 }
+
+// LastTS is the newest figwal record timestamp anywhere in a node, unix
+// millis — recency for listings. figwal serves it from the open handle's
+// lock-free counter (one head open hydrates a cold node, and the trunks
+// layer keeps it warm). This NEVER wakes an agent: it opens a store
+// handle, not a figaro. Zero for pre-timestamp history — "we can
+// tolerate without them".
+func (s *XwalStore) LastTS(id string) int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.isStumpLocked(id) {
+		return s.trunks.StumpLastTS(id)
+	}
+	return s.trunks.LastTS(id)
+}

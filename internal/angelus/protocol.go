@@ -683,7 +683,6 @@ func (h *handlers) forkMetaSnapshot(parent string) *store.AriaMeta {
 		copy.ContextLimit = info.ContextLimit
 		copy.ContextExact = info.ContextExact
 		copy.CreatedAtMS = info.CreatedAt.UnixMilli()
-		copy.LastActiveMS = info.LastActive.UnixMilli()
 		copy.LastFigaroLT = info.LastFigaroLT
 	}
 	return &copy
@@ -696,9 +695,7 @@ func (h *handlers) seedForkMeta(meta *store.AriaMeta, parent, child string, atMa
 		return
 	}
 	copy := *meta
-	now := time.Now().UnixMilli()
-	copy.CreatedAtMS = now
-	copy.LastActiveMS = now
+	copy.CreatedAtMS = time.Now().UnixMilli()
 	if interior {
 		copy.MessageCount = h.messageCountAt(parent, atMainLT)
 		copy.TurnCount = 0
@@ -912,7 +909,6 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	// not as a claim about this store's spend.
 	meta := &store.AriaMeta{
 		MessageCount: len(req.Messages),
-		LastActiveMS: time.Now().UnixMilli(),
 		OutfitName:   req.Outfit,
 		Mantra:       req.Mantra,
 		Provider:     req.Provider,
@@ -1244,10 +1240,11 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 				entry.TokensOut = meta.TokensOut
 				entry.CacheReadTokens = meta.CacheReadTokens
 				entry.CacheWriteTokens = meta.CacheWriteTokens
-				if meta.LastActiveMS != 0 {
-					entry.LastActive = meta.LastActiveMS
-				}
 			}
+			// Recency comes from figwal, not the sidecar: the newest record
+			// timestamp anywhere in the node, read from the store WITHOUT
+			// waking anything.
+			entry.LastActive = h.angelus.Backend.LastTS(id)
 		}
 		result = append(result, entry)
 		if !req.IDsOnly {
@@ -1306,6 +1303,8 @@ func (h *handlers) enrichList(result []rpc.FigaroInfoResponse, tasks []listEnric
 				if meta != nil {
 					h.fillFromMeta(meta, entry)
 				}
+				// Recency from figwal, sidecar-free, wake-free.
+				entry.LastActive = h.angelus.Backend.LastTS(task.ariaID)
 			}
 		}()
 	}
@@ -1331,9 +1330,6 @@ func (h *handlers) fillFromMeta(meta *store.AriaMeta, entry *rpc.FigaroInfoRespo
 	entry.Cwd = meta.Cwd
 	if meta.CreatedAtMS != 0 {
 		entry.CreatedAt = meta.CreatedAtMS
-	}
-	if meta.LastActiveMS != 0 {
-		entry.LastActive = meta.LastActiveMS
 	}
 }
 
@@ -1667,9 +1663,9 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro
 		if meta.CreatedAtMS != 0 {
 			createdAt = time.UnixMilli(meta.CreatedAtMS)
 		}
-		if meta.LastActiveMS != 0 {
-			lastActive = time.UnixMilli(meta.LastActiveMS)
-		}
+	}
+	if ts := h.angelus.Backend.LastTS(ariaID); ts != 0 {
+		lastActive = time.UnixMilli(ts)
 	}
 	loaded, ofit := h.settings()
 	reg := tool.DefaultRegistryForAria(ariaID, cwdFromForm(cb, toolRoot),

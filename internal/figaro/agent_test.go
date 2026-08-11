@@ -308,7 +308,6 @@ func TestAgentPersistsCompleteListMetadata(t *testing.T) {
 	require.Equal(t, "d", meta.OutfitName)
 	require.NotEmpty(t, meta.OutfitVersion)
 	require.Equal(t, createdAt.UnixMilli(), meta.CreatedAtMS)
-	require.Equal(t, lastActive.UnixMilli(), meta.LastActiveMS)
 
 	_, _, err = a.Set(form.Patch{Set: map[string]json.RawMessage{
 		"mantra": json.RawMessage(`"updated"`),

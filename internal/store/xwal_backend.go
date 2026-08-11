@@ -724,3 +724,6 @@ func (b *XwalBackend) Close() error {
 	b.metas = map[string]*metaCache{}
 	return b.store.trunks.Close() // Trunks.Close flushes the topology index
 }
+
+// LastTS delegates node recency to figwal: see XwalStore.LastTS.
+func (b *XwalBackend) LastTS(id string) int64 { return b.store.LastTS(id) }

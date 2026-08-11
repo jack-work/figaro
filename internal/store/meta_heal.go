@@ -15,8 +15,11 @@ package store
 // arias in the author's store) it does nothing at all.
 //
 // What it does NOT touch: mantra/cwd/outfit/provider/model (form- and
-// agent-owned, unknowable from an IR suffix — metaBackfill owns those) and
-// LastActiveMS (the IR carries no wall clock).
+// agent-owned, unknowable from an IR suffix — metaBackfill owns those).
+// Recency is not here at all anymore: every figwal record carries a server
+// timestamp now, and Backend.LastTS reads the newest one straight from the
+// store — the sidecar's LastActiveMS died with the premise that "the IR
+// carries no wall clock".
 
 import (
 	"log/slog"

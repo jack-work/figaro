@@ -76,7 +76,6 @@ func TestGenerateNumberedFixture(t *testing.T) {
 	}
 	if err := backend.SetMeta(id, &AriaMeta{
 		MessageCount: turns * 2,
-		LastActiveMS: 1,
 		LastFigaroLT: uint64(turns*2 + 2),
 	}); err != nil {
 		t.Fatal(err)

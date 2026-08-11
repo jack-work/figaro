@@ -56,7 +56,6 @@ func TestGeneratePerformanceFixture(t *testing.T) {
 		}
 		if err := backend.SetMeta(id, &AriaMeta{
 			MessageCount: messages,
-			LastActiveMS: int64(i + 1),
 			LastFigaroLT: uint64(messages + 2),
 		}); err != nil {
 			t.Fatal(err)

@@ -17,6 +17,11 @@ type metadataListBackend struct {
 	logReads   atomic.Int64
 }
 
+// LastTS is recency's new source: figwal, not the sidecar. The dormant
+// list reads it per row — cheap by figwal's contract (retained atomic
+// counter), and crucially wake-free.
+func (b *metadataListBackend) LastTS(string) int64 { return 20 }
+
 // A conversation carries the stump it was born under, and its label, resolved
 // by the backend from the stump's own record.
 func (b *metadataListBackend) Conversations() []store.NodeView {
@@ -41,7 +46,6 @@ func (b *metadataListBackend) Meta(string) (*store.AriaMeta, error) {
 		ContextLimit:     1_000,
 		ContextExact:     true,
 		CreatedAtMS:      10,
-		LastActiveMS:     20,
 	}, nil
 }
 
