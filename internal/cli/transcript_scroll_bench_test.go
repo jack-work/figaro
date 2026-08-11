@@ -27,9 +27,9 @@ import (
 // ---------------------------------------------------------------------------
 
 // Every turn in the rig carries the question that provoked it, because every
-// turn in production does. Without one the renderer takes a different branch —
+// turn in production does. Without one the renderer takes a different branch,
 // no inquiry seam, and since the speaker header closes that seam, no header
-// either — so the rig would measure a shape no reader ever sees, and its
+// either, so the rig would measure a shape no reader ever sees, and its
 // rows-per-message (which is the budget the retained window is spent in)
 // would be wrong by two rows per turn.
 func heavyInquiry(seed int) string {

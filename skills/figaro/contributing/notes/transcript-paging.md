@@ -363,7 +363,7 @@ at D's solo budget of 1200 (16 fetches).
 
 1. **The retained window is smaller than the old message-count geometry for
    heavy arias, but larger than D solo shipped** (~2343 rows vs D's ~1101 and the
-   original 4137). The footer's scroll total (`48–97/97`) is relative to the
+   original 4137). The footer's scroll total (`48-97/97`) is relative to the
    retained window, so those numbers changed.
 2. **Expansion state survives a round trip.** Rows and `expanded` are dropped
    together (they must be: cached rows are rendered *with* the expansion state),

@@ -795,7 +795,7 @@ func (in *interactiveInput) pageTranscriptSearch(ctx context.Context, cancel con
 // part carries our own text; 4 dials, warm aria):
 //
 //	Qua returned          +0.13 … +0.15 ms
-//	our inquiry frame     +0.19 … +0.34 ms   (0.04–0.19 ms after Qua returned)
+//	our inquiry frame     +0.19 … +0.34 ms   (0.04-0.19 ms after Qua returned)
 //
 // which agrees with W1B's BenchmarkPromptBroadcastGap: the append→broadcast
 // window inside the daemon is ~0.7µs on a 5,000-message aria and flat in aria

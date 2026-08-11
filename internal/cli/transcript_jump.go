@@ -54,7 +54,7 @@ import (
 //
 // 24 is chosen against measurements this repo already has, not by feel. One
 // fetch is a single ReadBefore round trip to the local daemon over a unix
-// socket: 0.1–1.2 ms measured on the long-aria benchmarks, and returns
+// socket: 0.1-1.2 ms measured on the long-aria benchmarks, and returns
 // pageMessages() messages, which is between transcriptMinPageSize and
 // transcriptPageSize. So 24 fetches cover several hundred to a few thousand
 // messages, comfortably past the largest real aria measured on this project

@@ -81,8 +81,8 @@ func (c Composer) Message(m aria.Message, w int) []Row {
 		return rows
 	}
 	// The speaker header closes the inquiry seam; it does not open a node run.
-	// A message with no question is a CONTINUATION of one already on screen —
-	// a page window that opened mid-turn, or a unit cut off an oversize turn —
+	// A message with no question is a CONTINUATION of one already on screen,
+	// a page window that opened mid-turn, or a unit cut off an oversize turn,
 	// and announcing the speaker again asserts a boundary the turn does not
 	// have.
 	//

@@ -9,7 +9,7 @@ import (
 )
 
 // wantTop is a STANDING request, so its correctness is not a property of the
-// gestures that existed when it was written — it is a property of every gesture
+// gestures that existed when it was written, it is a property of every gesture
 // that will ever move the reader. Two hand-written probes (wanttop_retract_test)
 // pin the two holes that were actually there; this pins the RULE, so a gesture
 // added later cannot quietly reopen one.
@@ -32,7 +32,7 @@ func TestWantTop_AnyKeyThatMovesTheReaderRetractsIt(t *testing.T) {
 
 	// The gestures that ARE the request; they may move the viewport and keep it.
 	exempt := map[string]bool{
-		"0x67": true, // 'g' — the first half of gg, and the second
+		"0x67": true, // 'g': the first half of gg, and the second
 		"Home": true,
 		"0x1b": true, // ESC: dismisses panels, does not move the reader
 	}
@@ -65,7 +65,7 @@ func TestWantTop_AnyKeyThatMovesTheReaderRetractsIt(t *testing.T) {
 }
 
 // And the other half of the contract: a landing while the request STANDS must
-// re-pin to the top, and the floor must clear it — otherwise the walk either
+// re-pin to the top, and the floor must clear it, otherwise the walk either
 // never arrives or never stops.
 func TestWantTop_LandingRepinsAndTheFloorClearsIt(t *testing.T) {
 	tr, _ := wantTopFixture(t)

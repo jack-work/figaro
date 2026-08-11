@@ -70,7 +70,7 @@ func newResponsesProvider(
 			}
 			return baseURLFromToken(token, enterpriseDomain)
 		},
-		dial:      dialResponses,
+		dial: dialResponses,
 	}
 }
 

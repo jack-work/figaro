@@ -13,8 +13,8 @@ import (
 
 // wantTop's contract is "any deliberate move elsewhere retracts it"
 // (transcript.go). scroll, landJump and resetToTail honour that; these probe
-// the two deliberate moves that write t.offset WITHOUT going through them —
-// a search landing and a selection reveal — with a page already in flight,
+// the two deliberate moves that write t.offset WITHOUT going through them,
+// a search landing and a selection reveal, with a page already in flight,
 // which is exactly when a stale intent yanks the reader back to line 0.
 
 func wantTopFixture(t *testing.T) (*transcript, *ldrender.FakeTerminal) {
@@ -66,7 +66,7 @@ func TestWantTop_SearchLandingRetractsIt(t *testing.T) {
 	}
 }
 
-// Entering a selection is a deliberate move too — the reader is reading nodes,
+// Entering a selection is a deliberate move too, the reader is reading nodes,
 // not still asking for the beginning.
 func TestWantTop_SelectionRetractsIt(t *testing.T) {
 	tr, _ := wantTopFixture(t)

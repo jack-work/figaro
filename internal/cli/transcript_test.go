@@ -115,8 +115,8 @@ func TestTranscript_LazyOlderPaging(t *testing.T) {
 	// stay at the top of what is now held, and see the history they went there
 	// for without pressing anything again.
 	//
-	// Anchoring is still right for an ordinary scroll — a page landing must not
-	// yank the rows you are reading — and that is asserted separately. It was
+	// Anchoring is still right for an ordinary scroll, a page landing must not
+	// yank the rows you are reading, and that is asserted separately. It was
 	// asserted HERE too, which made the anchor look like the rule rather than
 	// the default, and hid the reason Home never converged.
 	tr.applyPage(req, committedPage(aria.Page{Parts: []aria.TurnPart{msg(1), msg(2), msg(3), msg(4)}}))

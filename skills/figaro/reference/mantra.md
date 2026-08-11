@@ -1,6 +1,6 @@
 # Mantra
 
-Every aria carries a **mantra**: a short, vivid 5–10 word phrase capturing the
+Every aria carries a **mantra**: a short, vivid 5-10 word phrase capturing the
 essence of *this* conversation: its current quest. It shows next to the aria
 in `figaro list`, so a human scanning their arias can tell at a glance what
 each one is about. Think of it as the aria's title card, rewritten as the
@@ -21,7 +21,7 @@ From `bash`:
 figaro set mantra "the phrase here"
 ```
 
-Stored as a plain string: quote it, 5–10 words, no trailing punctuation.
+Stored as a plain string: quote it, 5-10 words, no trailing punctuation.
 
 ```bash
 figaro set mantra "wrestling a root-access AWS billing puzzle"

@@ -262,10 +262,10 @@ from the form, auto-seeded from the first user message), and a parent trunk +
 **branched-at LT**.
 
 ```
-T0 "fork tree"  A[1–31 frozen] ─┬─ B[31–52 frozen] ─┬─ C[52–98 live]   ← T0 head
-                                 │                    └─ a1b2[52–]        ← T3 "rewrite cli"
-                                 └─ 3456[31–39] ─┬─ 7890[39–61]          ← T1 head
-                                                 └─ 4d0c[39–]            ← T2 "repro wal"
+T0 "fork tree"  A[1-31 frozen] ─┬─ B[31-52 frozen] ─┬─ C[52-98 live]   ← T0 head
+                                 │                    └─ a1b2[52-]        ← T3 "rewrite cli"
+                                 └─ 3456[31-39] ─┬─ 7890[39-61]          ← T1 head
+                                                 └─ 4d0c[39-]            ← T2 "repro wal"
 ```
 T0 = `A→B→C`; the closed nodes (A, B) are T0's frozen segments, C is its live head. The node
 ids are plumbing; you address `T0`.

@@ -59,7 +59,7 @@ func oracleTranscript() *transcript {
 // It is relative because the absolute offset is not what this oracle is for.
 // Following the tail pins the offset at `total_lines - body`, so any change to
 // how a message is drawn moves every recorded number while changing no
-// binding at all — which has now happened often enough to be the main cost of
+// binding at all, which has now happened often enough to be the main cost of
 // owning the table. A delta is a statement about the KEY ("u scrolls a page
 // up"), and a page is a function of the pane, not of the conversation.
 //
@@ -75,7 +75,7 @@ func offToken(tr *transcript, base int) string {
 		return "off:top"
 	case tr.follow && off == maxOff:
 		// FOLLOWING: the offset is not a position the key chose, it is a
-		// consequence of being pinned to the tail — entering the transcript,
+		// consequence of being pinned to the tail, entering the transcript,
 		// toggling verbose and opening a panel all re-pin it. Recorded by name
 		// so the number, which is content length, stays out of the table.
 		//
@@ -101,7 +101,7 @@ func oracleSignature(tr *transcript, base int) string {
 		len(tr.expanded), tr.inJump, tr.jumpQuery)
 }
 
-// inertOffset is where the offset sits after a key this state does not bind —
+// inertOffset is where the offset sits after a key this state does not bind,
 // the reference every cell in the row is measured against. The probe key is
 // chosen from the row itself, so a state that later binds 0x01 cannot silently
 // start measuring against something that moves.

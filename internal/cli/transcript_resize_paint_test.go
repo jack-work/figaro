@@ -20,7 +20,7 @@ import (
 //	 area. It will typically be fixed upon return."
 //
 // Reproduced in a real tmux pane before this test was written (see
-// skills/figaro/contributing/paint-repro.md §8): at 100x40, scrolled to rows 219–240 of 1058, a width
+// skills/figaro/contributing/paint-repro.md §8): at 100x40, scrolled to rows 219-240 of 1058, a width
 // change to 72 columns left FIVE rows holding text from other lines, and a jog
 // away and back cleared them.
 //

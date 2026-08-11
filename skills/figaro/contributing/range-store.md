@@ -188,7 +188,7 @@ honest representation:
 
 Consequences to accept deliberately:
 
-- The footer's `190–226/250` becomes **rows we hold**, not rows that exist.
+- The footer's `190-226/250` becomes **rows we hold**, not rows that exist.
   Mark it (`≈`) or drop the total. Do not print a number that is false.
 - A gap row is a legitimate selection and navigation target.
 - Binding a gap row is the fetch trigger; with a prefetch distance the
@@ -238,13 +238,13 @@ drain, after our submit returns.
 
 Stated by the user, and binding:
 
-- a message to an **idle** figaro must feel like **call–response**: the
+- a message to an **idle** figaro must feel like **call-response**: the
   question, then the reply. No preamble, nothing above it.
 - a message to a **running** figaro gets **a little immediate context**, and
   that fetch must **seed the store**, so the pager does not re-page to render.
 
 The discriminator is the EVENT, not a state flag: if the arriving turn carries
-our own inquiry, our prompt opened the turn (call–response). If it does not, we
+our own inquiry, our prompt opened the turn (call-response). If it does not, we
 are joining a turn already in flight (orientation). State can race; the event
 cannot. This is the same inquiry-vs-steer split the drain makes, observed from
 the stream.

@@ -144,7 +144,7 @@ func TestSkillLinkLabelsMatchTargets(t *testing.T) {
 // internal/tape/tape.go and internal/cli/testdata/tapes/README.md still said
 // contributing/tapes.md after tapes.md moved to debugging/, and twenty-one
 // comments still said docs/<x>.md years after docs/ stopped holding any of
-// them — including four naming turn-addressing.md, the same vanished file the
+// them, including four naming turn-addressing.md, the same vanished file the
 // label test caught inside the tree. A reader following any of them landed
 // nowhere, and the whole suite was green.
 //

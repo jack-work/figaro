@@ -24,7 +24,7 @@ a store):
 | form | 48 KiB | 43 KiB |
 | **total** | **14.5 MiB** | **22.7 MiB** |
 
-The decoded IR runs **4–5x its encoded bytes** and dominates. Two consequences
+The decoded IR runs **4-5x its encoded bytes** and dominates. Two consequences
 that are easy to get backwards:
 
 - **Synthetic data lies about this.** Uniform small prose messages make the

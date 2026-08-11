@@ -54,7 +54,7 @@ func TestSpeakerHeader_FirstSliceIsCorrect(t *testing.T) {
 
 // A CONTINUATION slice of the same turn carries no question, so it must not
 // announce the speaker again: the header belongs to the inquiry seam, and a
-// continuation has no seam. This is the reported bug — a "< figaro" printed
+// continuation has no seam. This is the reported bug: a "< figaro" printed
 // between two tool nodes of one turn, at the page boundary that cut it.
 func TestSpeakerHeader_ContinuationCarriesNone(t *testing.T) {
 	m := aria.Message{

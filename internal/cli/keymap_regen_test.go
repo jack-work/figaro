@@ -17,8 +17,8 @@ import (
 //	ORACLE_REGEN=1 go test ./internal/cli/ -run TestOracleRegen
 //
 // Both regenerators press their keys through the same sweep the verifier uses
-// (sweepPager, sweepInput) — a second copy of the sweep could record cells the
-// verifier never reads — so all that is left here is the formatting.
+// (sweepPager, sweepInput), a second copy of the sweep could record cells the
+// verifier never reads, so all that is left here is the formatting.
 
 // oracleRows renders one row of a frozen table: the inert signature, then
 // every cell that differs from it, sorted so a regeneration diffs cleanly.

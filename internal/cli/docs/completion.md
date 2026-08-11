@@ -200,7 +200,7 @@ figaro x -- list files in @cwd!  # @cwd! expanded before instruction
 - Hidden files are never suggested by `listCWD`. Fish covers them
   via native file completion; bash/zsh do not.
 - All RPC fetches (aria ids, live snapshot keys, snapshot for
-  `@`-expansion) bound at 300–500ms. A sluggish daemon can make tab
+  `@`-expansion) bound at 300-500ms. A sluggish daemon can make tab
   feel laggy or expansion fall through to literal, but neither
   blocks long.
 - Upgrading figaro does not regenerate the on-disk completion script.

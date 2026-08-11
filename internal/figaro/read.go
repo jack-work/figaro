@@ -19,7 +19,7 @@ import (
 // Cost is one compose over the log (~4.2ms at 800 turns) on the first read of a
 // dormant aria, then never again: AdoptIfEmpty declines once anything is
 // materialized. Deliberately uncached; a persisted turn cache was measured
-// 2.1–2.5x SLOWER to open than composing.
+// 2.1-2.5x SLOWER to open than composing.
 func (a *Agent) hydrate() {
 	if a.ariaSrv.LastTurn() > 0 || a.ariaSrv.HasOpen() {
 		return

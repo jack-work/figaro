@@ -14,7 +14,7 @@ import (
 // A store that HOLDS history and hands it over a page at a time.
 //
 // Every other jump fixture in this package answers a page request with the
-// empty page — the floor — so the walk terminates on the first fetch and the
+// empty page (the floor), so the walk terminates on the first fetch and the
 // only paths exercised are "already here" and "does not exist". The reported
 // failure is neither: `:5` on a large aria showed "jumping to turn 5…", pulled
 // one round of history, and then stopped, silently, at the tail. That needs a

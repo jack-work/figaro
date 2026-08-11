@@ -19,14 +19,14 @@ import (
 //
 // This closes it from the other end:
 //
-//	aria.PaginateBefore  — the real byte-budget walk, at the real 64 KiB
+//	aria.PaginateBefore: the real byte-budget walk, at the real 64 KiB
 //	  -> assemble         sets ClippedHead when the window opens mid-turn
 //	  -> committedMessages drops the inquiry for that part
 //	  -> Composer.Message  must therefore draw no speaker header
 //
 // The turn sizes are not invented either. Measured over four of this store's
-// own arias, turns over the 64 KiB budget are ordinary — 4 of 24, 3 of 18, 9 of
-// 15 — with the largest at 343 KB, five times the budget. A page walking back
+// own arias, turns over the 64 KiB budget are ordinary, 4 of 24, 3 of 18, 9 of
+// 15, with the largest at 343 KB, five times the budget. A page walking back
 // through any of them opens mid-turn by arithmetic, not by luck.
 const productionPageBudget = 65536 // config.defaultPageBudget
 
