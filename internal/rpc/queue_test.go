@@ -13,7 +13,7 @@ import (
 // The queue wire: identity (epoch + id), the hangup's queue disposition, and
 // the per-id outcomes of a mutation. These tests pin the JSON, because the
 // whole point of the epoch is that a client reads it in one call and hands it
-// back in the next — a silent rename would turn that into a no-op.
+// back in the next, a silent rename would turn that into a no-op.
 
 func TestInterruptRequest_ZeroValueIsKeep(t *testing.T) {
 	b, err := json.Marshal(rpc.InterruptRequest{})

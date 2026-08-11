@@ -10,8 +10,8 @@ import (
 )
 
 // The window is an INTERVAL into the store now, so "did the pager re-derive
-// its window" is asked of windowRev — the one authority on "the retained
-// window changed" — and of the interval's own floor. A live frame must move
+// its window" is asked of windowRev: the one authority on "the retained
+// window changed", and of the interval's own floor. A live frame must move
 // neither once the window is up to date.
 func transcriptTailRev(tr *transcript) uint64 { return tr.windowRev }
 
@@ -57,7 +57,7 @@ func TestTranscriptFollowFrameDoesNotRebuildWindow(t *testing.T) {
 }
 
 // TestTranscriptFollowFrameMatchesRebuild pins that the fast path renders the
-// exact same frame a full rebuild does — the guard is an optimization, not a
+// exact same frame a full rebuild does: the guard is an optimization, not a
 // behaviour change.
 func TestTranscriptFollowFrameMatchesRebuild(t *testing.T) {
 	build := func() *transcript {

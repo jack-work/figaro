@@ -57,12 +57,13 @@ func decodeRecord[T any](r xwal.Record) (Entry[T], bool) {
 		}
 	}
 	return Entry[T]{
-		LT:           r.ChannelLT,
-		FigaroLT:     r.MainLT,
-		Payload:      v,
-		Fingerprint:  decodeMeta(r.Meta),
-		ChalkVersion: r.Cursors[chanForm],
-		EncodedBytes: len(r.Payload),
+		LT:                 r.ChannelLT,
+		FigaroLT:           r.MainLT,
+		Payload:            v,
+		Fingerprint:        decodeMeta(r.Meta),
+		FormChannelVersion: r.Cursors[chanForm],
+		StudyVersions:      studyCursors(r.Cursors),
+		EncodedBytes:       len(r.Payload),
 	}, true
 }
 
@@ -129,7 +130,7 @@ func channelBounds(xw *xwal.XWAL, channel string) (first, last uint64, ok bool) 
 // channel's total entry count.
 //
 // It exists because building a windowed cache used to read and json.Unmarshal
-// the whole channel and then throw most of it away — 2556 decodes to keep 420,
+// the whole channel and then throw most of it away: 2556 decodes to keep 420,
 // with a transient allocation of the full 12 MiB to hold 2. Steady state was
 // bounded; the moment of opening was not, and a burst of opens (a daemon
 // restart, several attends) stacked those peaks.
@@ -230,8 +231,8 @@ func (l *xwalLog[T]) ReadFrom(figaroLT uint64, n int) []Entry[T] {
 		start := first
 		if figaroLT > first {
 			if l.isMain {
-				// The main channel is identity — figwal guarantees
-				// main-LT == channel-LT there — so the start index IS the
+				// The main channel is identity: figwal guarantees
+				// main-LT == channel-LT there: so the start index IS the
 				// watermark. O(1), no search.
 				start = figaroLT
 			} else {
@@ -247,7 +248,7 @@ func (l *xwalLog[T]) ReadFrom(figaroLT uint64, n int) []Entry[T] {
 				// one for Lookup (ch.lookup); exposing a "first channel-LT at
 				// or after this main-LT" query would remove the search
 				// entirely. Deferred because side-channel suffix reads are not
-				// on the hot path — the IR is, and the IR takes the O(1) branch
+				// on the hot path: the IR is, and the IR takes the O(1) branch
 				// above.
 				lo, hi := first, last
 				for lo < hi {
@@ -372,7 +373,11 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	}
 	meta := encodeMeta(e.Fingerprint)
 	if l.isMain {
-		lt, aerr := l.store.trunks.Append(l.ariaID, l.channel, 0, payload, meta)
+		// The stamp moment: alongside the automatic own-channel cursors,
+		// record where every OBSERVED form stands right now. This is the
+		// provider's snapshot point for the whole observed set: the same
+		// instant, one map (see AppendMainCursors in figwal).
+		_, lt, aerr := l.store.trunks.AppendCursors(l.ariaID, payload, meta, l.store.observedCursors(l.ariaID))
 		if aerr != nil {
 			return Entry[T]{}, aerr
 		}
@@ -382,7 +387,7 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 		// form cursor -- where the board stood at this LT -- and that
 		// stamp is what the projection renders deltas against. The caller's
 		// struct does not have it and never did, so returning the caller's
-		// struct handed the cache an entry whose ChalkVersion was zero for
+		// struct handed the cache an entry whose FormChannelVersion was zero for
 		// the life of the process: every reminder was filtered out by
 		// PatchesUpTo(0), and the aria saw none of its own state. It looked
 		// right after a restart, because the cache is rebuilt by decoding
@@ -392,7 +397,8 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 		// actually written rather than what we believed we wrote -- which
 		// covers the next field of this kind as well as this one.
 		if stamped, ok := l.readBack(lt); ok {
-			e.ChalkVersion = stamped.ChalkVersion
+			e.FormChannelVersion = stamped.FormChannelVersion
+			e.StudyVersions = stamped.StudyVersions
 		}
 		return e, nil
 	}
@@ -423,7 +429,7 @@ func (l *xwalLog[T]) readBack(lt uint64) (Entry[T], bool) {
 }
 
 // Clear goes through Store.Clear, which drops the channel's pending
-// flush buffer atomically with the on-disk wipe — a raw XWAL.Clear
+// flush buffer atomically with the on-disk wipe, a raw XWAL.Clear
 // would race the flusher into resurrecting wiped records.
 func (l *xwalLog[T]) Clear() error {
 	return l.store.trunks.Clear(l.ariaID, l.channel)

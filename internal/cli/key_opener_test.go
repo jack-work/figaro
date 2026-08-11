@@ -16,7 +16,7 @@ import "testing"
 // It used to do so from INCIPIT too. It no longer does, deliberately: in the
 // inline view every printable character starts composing a steer, because
 // requiring a trigger silently ate the user's first word. '!' is a printable
-// character someone may be typing. The pager is reached with ^T or ^L — control
+// character someone may be typing. The pager is reached with ^T or ^L: control
 // keys, which are never text.
 func TestInputConsume_BangOpensStatusPanel(t *testing.T) {
 	var out countingWriter
@@ -51,7 +51,7 @@ func TestOpensTranscriptFor_RejectedKeys(t *testing.T) {
 			t.Fatalf("key %q must not be an opening gesture", b)
 		}
 	}
-	// The panel keys ARE opening gestures — they raise the pager and act.
+	// The panel keys ARE opening gestures: they raise the pager and act.
 	for _, b := range []byte{'!', '?', 'Q'} {
 		if !opensTranscriptFor(b) {
 			t.Fatalf("panel key %q must open the pager from incipit", b)

@@ -33,7 +33,7 @@ func tapeTap(w *tape.Writer) transport.Tap {
 //
 // THE POINT IS THAT NOTHING IS FAKED ON THE CLIENT SIDE. The replayer stands
 // up a unix socket, speaks the recorded frames over it, and then calls
-// tailFigaro — the same function `figaro listen` calls, with the same
+// tailFigaro: the same function `figaro listen` calls, with the same
 // renderer, the same pager, the same catch-up read and the same frame pacer.
 // A harness that instead fed pages into the renderer by hand would be testing
 // a second implementation of the client, which is the one thing a repro must
@@ -70,7 +70,7 @@ func runReplay(loaded *config.Loaded, path string, speed float64, note bool) {
 	if err := srv.listen(ctx, ep); err != nil {
 		die("replay: %s", err)
 	}
-	// The renderer leaves when the tape runs out — a replay that hung on the
+	// The renderer leaves when the tape runs out, a replay that hung on the
 	// last frame would need a keypress to end, and CI has no fingers. It goes
 	// out through tailFigaro's ordinary end-of-stream door, not through ctx
 	// cancellation, which is Ctrl-C and would have the replay report an

@@ -13,8 +13,8 @@ import (
 )
 
 // An import must be unable to collide with what is already in the store. That
-// is the whole reason it replays rather than grafts: every identity — node id,
-// fork base, LT, trunk id — is minted HERE, so there is nothing to renumber
+// is the whole reason it replays rather than grafts: every identity: node id,
+// fork base, LT, trunk id: is minted HERE, so there is nothing to renumber
 // and no silent way to get it wrong.
 //
 // The graft that would preserve those identities is a design, not code:
@@ -77,7 +77,7 @@ func TestImportLandsAsAWholeConversation(t *testing.T) {
 	require.Equal(t, []string{"say alpha", "alpha", "say beta", "beta"}, got,
 		"the conversation must arrive whole and in order")
 
-	// The board arrives folded, with THIS store's id stamped on it — the same
+	// The board arrives folded, with THIS store's id stamped on it: the same
 	// re-stamp a fork does, and for the same reason: an aria that believes it
 	// is another aria cannot address itself.
 	board, err := backend.FormState(resp.FigaroID)

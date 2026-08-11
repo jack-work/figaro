@@ -3,6 +3,7 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"testing"
@@ -21,7 +22,14 @@ import (
 )
 
 // daemonFixture is a real angelus over a real store with a mock provider.
-func daemonFixture(t *testing.T) (*angelus.Angelus, *angelus.Client, context.Context) {
+func daemonFixture(t testing.TB) (*angelus.Angelus, *angelus.Client, context.Context) {
+	a, acli, ctx, _ := daemonFixtureDir(t)
+	return a, acli, ctx
+}
+
+// daemonFixtureDir is daemonFixture plus the config dir, for tests that
+// rewrite outfit files.
+func daemonFixtureDir(t testing.TB) (*angelus.Angelus, *angelus.Client, context.Context, string) {
 	t.Helper()
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(dir+"/outfits", 0700))
@@ -30,6 +38,10 @@ func daemonFixture(t *testing.T) (*angelus.Angelus, *angelus.Client, context.Con
 provider = "mock"
 model = "mock-model"
 `), 0600))
+	// A named default makes the default-form lifecycle observable: without
+	// it the default form is the stable empty form and a file edit can
+	// never move its hash.
+	require.NoError(t, os.WriteFile(dir+"/config.toml", []byte("default_outfit = \"mock\"\n"), 0600))
 
 	backend, err := store.NewXwalBackend(dir+"/arias", 0)
 	require.NoError(t, err)
@@ -44,7 +56,13 @@ model = "mock-model"
 	a.Handlers = angelus.NewHandlers(angelus.ServerConfig{
 		Angelus: a,
 		Config:  loaded,
-		ProviderFactory: func(string, provider.Knobs) (provider.Provider, error) {
+		ProviderFactory: func(name string, _ provider.Knobs) (provider.Provider, error) {
+			// Real factories refuse an empty/unknown provider; a fixture
+			// more lenient than reality certifies paths reality refuses
+			// (the naked-figaro test needs the refusal).
+			if name != "mock" {
+				return nil, fmt.Errorf("unknown provider %q", name)
+			}
 			return &mockProviderForIntegration{}, nil
 		},
 		Ctx: ctx,
@@ -60,7 +78,7 @@ model = "mock-model"
 	acli, err := angelus.DialClient(transport.UnixEndpoint(a.SocketPath))
 	require.NoError(t, err)
 	t.Cleanup(func() { acli.Close() })
-	return a, acli, ctx
+	return a, acli, ctx, dir
 }
 
 // End-to-end proof of the inversion: a client attached to a real aria's
@@ -70,7 +88,7 @@ model = "mock-model"
 func TestEndpointOutlivesAgent(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
-	created, err := acli.Create(ctx, dress(t, "mock"))
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	sock := created.Endpoint.Address
 	require.FileExists(t, sock, "endpoint not listening when Create returned")
@@ -94,7 +112,7 @@ func TestEndpointOutlivesAgent(t *testing.T) {
 	require.NoError(t, a.Registry.Kill(created.FigaroID))
 	require.Nil(t, a.Registry.Get(created.FigaroID), "agent still registered")
 
-	// The socket file is still there and the SAME connection still answers —
+	// The socket file is still there and the SAME connection still answers -
 	// served from the store, with no agent rebuilt.
 	require.FileExists(t, sock, "endpoint vanished with the agent")
 	var after rpc.FormResponse
@@ -114,11 +132,11 @@ func TestEndpointOutlivesAgent(t *testing.T) {
 }
 
 // A prompt on a reclaimed aria must wake it and be answered on the same
-// connection — no new aria, no fork, no error handed to the user.
+// connection: no new aria, no fork, no error handed to the user.
 func TestPromptWakesReclaimedAria(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
-	created, err := acli.Create(ctx, dress(t, "mock"))
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	require.NoError(t, a.Registry.Kill(created.FigaroID))
 	require.Nil(t, a.Registry.Get(created.FigaroID))
@@ -136,7 +154,7 @@ func TestPromptWakesReclaimedAria(t *testing.T) {
 		rpc.QuaRequest{Text: "hello after reclamation"}, &out))
 	require.True(t, out.OK)
 
-	// Woken, and it is the SAME aria — the regression that would hurt most.
+	// Woken, and it is the SAME aria: the regression that would hurt most.
 	require.Eventually(t, func() bool {
 		return a.Registry.Get(created.FigaroID) != nil
 	}, 5*time.Second, 20*time.Millisecond, "prompt did not wake the aria")
@@ -146,7 +164,7 @@ func TestPromptWakesReclaimedAria(t *testing.T) {
 func TestKillRemovesEndpoint(t *testing.T) {
 	_, acli, ctx := daemonFixture(t)
 
-	created, err := acli.Create(ctx, dress(t, "mock"))
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	sock := created.Endpoint.Address
 	require.FileExists(t, sock)

@@ -53,7 +53,7 @@ func TestResizeReachesTheHiddenPager(t *testing.T) {
 // the old width would be re-served to the new viewport.
 //
 // NOTE ON WHAT THIS DOES NOT PROVE. The same assertion against resize() passes
-// with the invalidation REMOVED — buildIndex evicts every entry whose turn is
+// with the invalidation REMOVED: buildIndex evicts every entry whose turn is
 // outside the window, and with an empty client that is all of them. A test that
 // passes for the wrong reason is worse than no test, so it is not here. resize's
 // invalidation is held by the end-to-end measurement instead: one resize

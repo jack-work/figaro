@@ -16,7 +16,7 @@ var notOnTheWire = map[string]string{
 }
 
 // A field added to livedoc.Node that nobody wires into fullSet/setField is
-// silently dropped on the LIVE path while surviving on the committed path —
+// silently dropped on the LIVE path while surviving on the committed path -
 // a live-vs-committed divergence, which is precisely what the purity invariant
 // forbids. Three had already accumulated: role and tool_call_id were emitted
 // and dropped; lts was emitted and dropped; at and src were never emitted at
@@ -52,7 +52,7 @@ func TestLiveDeltaCarriesEveryNodeField(t *testing.T) {
 			continue
 		}
 		if rv.Field(i).IsZero() {
-			t.Fatalf("fixture leaves %s zero — extend it or the round trip is vacuous", rt.Field(i).Name)
+			t.Fatalf("fixture leaves %s zero: extend it or the round trip is vacuous", rt.Field(i).Name)
 		}
 	}
 
@@ -113,8 +113,8 @@ func TestLiveDiffCarriesLateArrivingFields(t *testing.T) {
 // A tool's arguments arrive as a growing JSON prefix, so the common case is an
 // append. Two ordinary cases are not: a bounded tail drops leading bytes as it
 // slides, and the field is cleared once the decoded Args land. If the wire
-// could only append, both would need a whole-value `set` — the thing delta
-// compression exists to avoid — so this pins that livedoc.Diff's Del reaches
+// could only append, both would need a whole-value `set`: the thing delta
+// compression exists to avoid: so this pins that livedoc.Diff's Del reaches
 // the client intact.
 func TestStreamedInputSplicesAndShrinks(t *testing.T) {
 	steps := []struct {
@@ -124,7 +124,7 @@ func TestStreamedInputSplicesAndShrinks(t *testing.T) {
 	}{
 		{"first appearance", `{"path":"/x`, "set"},
 		{"append", `{"path":"/x.md","content":"aaa`, "patch"},
-		{"tail slides — leading bytes DELETED", `content":"aaabbb`, "patch"},
+		{"tail slides: leading bytes DELETED", `content":"aaabbb`, "patch"},
 		{"cleared when Args land", "", "unset"},
 	}
 	var prev livedoc.Node

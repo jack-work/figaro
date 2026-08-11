@@ -87,7 +87,7 @@ func TestFarmerQuoteInvariants(t *testing.T) {
 					// OVERFLOW MUST BE INHERITED, NEVER ADDED. glamour overruns
 					// the width it is GIVEN (an unclosed fence at 12 of these
 					// 181 widths, by up to 11 cells at w=20), so a blunt
-					// row<=width here just re-reports glamour every run — and a
+					// row<=width here just re-reports glamour every run, and a
 					// blunt row<=width guarded by "prose fits" fires on the
 					// boundary width where prose fits and the two-column-tighter
 					// quoted render does not. The contract is the delta: a
@@ -195,7 +195,7 @@ func isFinalByte(c byte) bool {
 }
 
 // glamourOverranAt reports whether the markdown, rendered at the RESERVED
-// width, already exceeds it — i.e. whether glamour, not the gutter, is the one
+// width, already exceeds it: i.e. whether glamour, not the gutter, is the one
 // that cannot fit it. (The doc comment used to name proseOverflowsAt, a second
 // helper that no test called.)
 func glamourOverranAt(md string, w int) bool {

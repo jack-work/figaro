@@ -145,7 +145,7 @@ func BenchmarkListWithForms(b *testing.B) {
 
 // BenchmarkForkWith is the verb a human performs: `fig fork` as the angelus
 // calls it. BenchmarkFork above measures Fork+ApplyForm, which is NOT this path
-// — it never touches ForkWith — so it cannot be evidence about it.
+// : it never touches ForkWith: so it cannot be evidence about it.
 func BenchmarkForkWith(b *testing.B) {
 	back, err := store.NewXwalBackend(b.TempDir(), 0)
 	if err != nil {
@@ -164,8 +164,8 @@ func BenchmarkForkWith(b *testing.B) {
 	}
 }
 
-// BenchmarkFormApplySameAria is the cost that is paid on EVERY form write —
-// `fig set`, a mantra update, every system.* patch a turn commits — not once per
+// BenchmarkFormApplySameAria is the cost that is paid on EVERY form write -
+// `fig set`, a mantra update, every system.* patch a turn commits: not once per
 // fork. Folded inside a fork number it was invisible.
 func BenchmarkFormApplySameAria(b *testing.B) {
 	back, err := store.NewXwalBackend(b.TempDir(), 0)

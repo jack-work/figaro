@@ -25,7 +25,7 @@ func (c *Cache) path() string { return filepath.Join(c.dir, "update-check.json")
 
 // Read returns the cached Info if it exists and is younger than ttl.
 // A miss (no file, unreadable, expired, unparseable) returns nil with
-// no error — the caller should treat it as "check now".
+// no error: the caller should treat it as "check now".
 //
 // ttl <= 0 always misses (the caller wants a fresh check).
 func (c *Cache) Read(ttl time.Duration) *Info {
@@ -107,7 +107,7 @@ func Check(ctx context.Context, cache *Cache, ttl time.Duration, module, current
 // on a channel we can point at, "" otherwise. Formatted to stand out
 // briefly in stderr without dominating the CLI's real output.
 //
-// A non-semver current version (a "dev-<commit>" stamp — the flake
+// A non-semver current version (a "dev-<commit>" stamp: the flake
 // package doesn't carry the tag) stays silent: Compare treats it as
 // -inf, so ANY release tag would claim "available", including ones the
 // dev build already contains. `figaro update` still shows full detail.

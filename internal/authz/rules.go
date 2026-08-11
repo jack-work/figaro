@@ -6,8 +6,8 @@ import (
 
 // TurnActiveFunc reports whether the named aria has a turn in flight.
 //
-// The policy cannot know this on its own — it is agent state, owned by the
-// registry — so it is injected. Keeping it a func rather than an interface also
+// The policy cannot know this on its own: it is agent state, owned by the
+// registry: so it is injected. Keeping it a func rather than an interface also
 // keeps authz free of any dependency on internal/figaro or internal/angelus,
 // which is what lets those packages import authz instead of the reverse.
 type TurnActiveFunc func(ariaID string) bool
@@ -23,7 +23,7 @@ type TurnActiveFunc func(ariaID string) bool
 const selfForkHelp = `cannot fork %[1]s from inside its own running turn: the fork would deadlock.
 
 A fork is an inbox event, and the agent's drain loop handles one event at a
-time. Issued from inside a running turn, the fork queues behind that turn —
+time. Issued from inside a running turn, the fork queues behind that turn -
 and the turn cannot finish while your tool call waits on the fork. Neither
 side can move.
 
@@ -56,14 +56,14 @@ To brief the fork, add a send after the fork in that script:
 //
 // Three conditions, all necessary:
 //
-//   - the method is figaro.fork — no other method coordinates through the
+//   - the method is figaro.fork: no other method coordinates through the
 //     inbox this way;
 //   - the caller is authenticated AND is the fork target. An anonymous caller
 //     is a human or an external script, and is not inside the turn, so it must
 //     not be denied. A DIFFERENT aria forking this one is also fine: its tool
 //     call blocks, but the target's drain loop is free to service the fork;
 //   - the target actually has a turn in flight. Forking yourself while idle is
-//     legitimate and common — that is what a detached script does.
+//     legitimate and common: that is what a detached script does.
 func NoSelfForkDuringTurn(turnActive TurnActiveFunc) Rule {
 	return Rule{
 		Name: "no-self-fork-during-turn",

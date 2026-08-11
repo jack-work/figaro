@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
-# chalkstress.sh — end-to-end concurrency stress for the figaro chalkboard.
+# formstress.sh: end-to-end concurrency stress for the figaro form.
 #
 # WHY THIS EXISTS
 # ---------------
 # `figaro set` / `unset` / `outfit` route through the agent inbox and are
 # applied on the *agent* goroutine (Agent.act -> applyControlPatch ->
-# chalkboard.State.Apply). `figaro state` (rpc.MethodChalkboard) calls
+# form.State.Apply). `figaro state` (rpc.MethodForm) calls
 # Agent.Snapshot() inline on the *RPC* goroutine (StartSocket -> `go
 # a.serveConn` -> jkrpc handler), with no inbox and no mutex in between.
-# That is an unsynchronized publication of chalkboard.State.snapshot, proved
-# by internal/figaro/chalkboard_race_test.go. This script hammers the same
+# That is an unsynchronized publication of form.State.snapshot, proved
+# by internal/figaro/form_race_test.go. This script hammers the same
 # two paths through a real daemon over a real socket.
 #
 # ACCEPTANCE CRITERIA FOR THE FIX (atomic.Pointer publication)
 # ------------------------------------------------------------
-# The chalkboard race may be declared fixed when ALL of the following pass:
+# The form race may be declared fixed when ALL of the following pass:
 #
 #   1. The repro test is clean under the race detector:
 #        CHALK_RACE_REPRO=1 go test -race -count=1 \
-#          -run 'TestChalkboardRPCRaceRepro|TestChalkboardStateRaceRepro' \
+#          -run 'TestFormRPCRaceRepro|TestFormStateRaceRepro' \
 #          ./internal/figaro/
 #      Zero "WARNING: DATA RACE". On main this emits 11 of them, 5/5 runs.
 #
@@ -30,10 +30,10 @@
 #
 #   4. This script is clean at, at minimum:
 #        STRESS_WRITERS=4 STRESS_READERS=6 STRESS_DURATION=30 \
-#          scripts/chalkstress.sh
+#          scripts/formstress.sh
 #      AND with a race-instrumented daemon:
 #        STRESS_RACE=1 STRESS_WRITERS=4 STRESS_READERS=6 STRESS_DURATION=30 \
-#          scripts/chalkstress.sh
+#          scripts/formstress.sh
 #      "Clean" = exit 0, which asserts: the daemon survived, every key in
 #      every writer's disjoint range holds that writer's own final value (no
 #      lost updates, no cross-writer contamination), and the state that
@@ -44,7 +44,7 @@
 #
 # USAGE
 # -----
-#   scripts/chalkstress.sh
+#   scripts/formstress.sh
 #
 #   STRESS_WRITERS   concurrent set/unset workers            (default 4)
 #   STRESS_READERS   concurrent `state` readers              (default 6)
@@ -55,10 +55,10 @@
 #   STRESS_RACE      build the daemon with -race and hand-start it so its
 #                    stderr is captured; ANY "WARNING: DATA RACE" in the
 #                    daemon log fails the run. This is the end-to-end twin of
-#                    the repro test — on main it fires, after the fix it must
+#                    the repro test: on main it fires, after the fix it must
 #                    not.                                     (default: unset)
 #   STRESS_RACE_LOG  where to copy the daemon log when races are found
-#                                    (default /tmp/chalkstress-daemon-race.log)
+#                                    (default /tmp/formstress-daemon-race.log)
 #
 # ISOLATION
 # ---------
@@ -66,13 +66,13 @@
 # its own FIGARO_RUNTIME_DIR and FIGARO_STATE_DIR. FIGARO_CONFIG_DIR and
 # FIGARO_HUSH_APP are inherited so the outfit is realistic (~30 skill blobs).
 # No LLM turn is ever started, so this costs zero tokens. The user's live
-# daemon must never be touched — see guard_isolation() below.
+# daemon must never be touched: see guard_isolation() below.
 
 set -uo pipefail
 
-log()  { printf '\033[36m[chalkstress]\033[0m %s\n' "$*" >&2; }
-warn() { printf '\033[33m[chalkstress]\033[0m %s\n' "$*" >&2; }
-fail() { printf '\033[31m[chalkstress] FAIL:\033[0m %s\n' "$*" >&2; exit 1; }
+log()  { printf '\033[36m[formstress]\033[0m %s\n' "$*" >&2; }
+warn() { printf '\033[33m[formstress]\033[0m %s\n' "$*" >&2; }
+fail() { printf '\033[31m[formstress] FAIL:\033[0m %s\n' "$*" >&2; exit 1; }
 
 WRITERS=${STRESS_WRITERS:-4}
 READERS=${STRESS_READERS:-6}
@@ -90,15 +90,15 @@ cd "$REPO_ROOT" || fail "cannot cd to repo root"
 # Temp root + isolation guard. This is the one unforgivable failure mode:
 # never, under any circumstance, drive the user's live daemon.
 # ---------------------------------------------------------------------------
-TMPROOT=$(mktemp -d "${TMPDIR:-/tmp}/chalkstress.XXXXXXXX") || fail "mktemp"
+TMPROOT=$(mktemp -d "${TMPDIR:-/tmp}/formstress.XXXXXXXX") || fail "mktemp"
 export FIGARO_RUNTIME_DIR="$TMPROOT/runtime"
 export FIGARO_STATE_DIR="$TMPROOT/state"
 mkdir -p "$FIGARO_RUNTIME_DIR" "$FIGARO_STATE_DIR"
 
 guard_isolation() {
 	local live_state live_runtime real_state real_runtime
-	[ -n "${FIGARO_STATE_DIR:-}" ]   || fail "FIGARO_STATE_DIR is unset/empty — refusing to run"
-	[ -n "${FIGARO_RUNTIME_DIR:-}" ] || fail "FIGARO_RUNTIME_DIR is unset/empty — refusing to run"
+	[ -n "${FIGARO_STATE_DIR:-}" ]   || fail "FIGARO_STATE_DIR is unset/empty: refusing to run"
+	[ -n "${FIGARO_RUNTIME_DIR:-}" ] || fail "FIGARO_RUNTIME_DIR is unset/empty: refusing to run"
 
 	real_state=$(cd "$FIGARO_STATE_DIR" && pwd -P)     || fail "cannot resolve FIGARO_STATE_DIR"
 	real_runtime=$(cd "$FIGARO_RUNTIME_DIR" && pwd -P) || fail "cannot resolve FIGARO_RUNTIME_DIR"
@@ -121,7 +121,7 @@ guard_isolation() {
 	done
 	# Belt and braces: the isolated dirs must be empty of a live daemon socket
 	# we did not create ourselves.
-	[ ! -e "$real_runtime/angelus.sock" ] || fail "a socket already exists at $real_runtime/angelus.sock — aborting"
+	[ ! -e "$real_runtime/angelus.sock" ] || fail "a socket already exists at $real_runtime/angelus.sock, aborting"
 	log "isolation OK: runtime=$real_runtime state=$real_state"
 }
 
@@ -197,7 +197,7 @@ ANGELUS_PID=$(cat "$FIGARO_RUNTIME_DIR/angelus.pid" 2>/dev/null)
 log "isolated angelus pid $ANGELUS_PID"
 
 BASE_KEYS=$(fig state --id "$ARIA" -j 2>/dev/null | jq -r 'keys|length')
-log "baseline chalkboard: $BASE_KEYS keys"
+log "baseline form: $BASE_KEYS keys"
 
 ERRDIR="$TMPROOT/errs"
 DIAG="$TMPROOT/worker-stderr.log"   # worker stderr, for post-mortem only
@@ -215,7 +215,7 @@ running() { [ "$(date +%s)" -lt "$END" ]; }
 # Runs a figaro command with stdout+stderr swallowed into the diagnostic log,
 # and records ONE line in <errfile> only if it exits non-zero. figaro chatters
 # on stderr on success (`set k = v`, the `list` footer), so raw stderr is not
-# a failure signal — the exit code is.
+# a failure signal: the exit code is.
 quiet() {
 	local errfile=$1 label=$2; shift 3
 	local rc=0
@@ -302,7 +302,7 @@ note_ok()   { printf '\033[32m  ✓ %s\033[0m\n' "$*" >&2; }
 if kill -0 "$ANGELUS_PID" 2>/dev/null; then
 	note_ok "angelus $ANGELUS_PID still alive"
 else
-	note_fail "angelus $ANGELUS_PID is GONE — the daemon died under concurrent set+state"
+	note_fail "angelus $ANGELUS_PID is GONE: the daemon died under concurrent set+state"
 fi
 
 # Worker errors (a dead socket shows up here first).
@@ -356,7 +356,7 @@ else
 fi
 
 # 5c. Persisted state == fresh read. Stop the daemon, let the next command
-# respawn it, and re-read: the chalkboard must replay identically.
+# respawn it, and re-read: the form must replay identically.
 log "restarting the isolated daemon to check durability"
 fig rest >/dev/null 2>&1
 sleep 1
@@ -383,8 +383,8 @@ if [ -n "${STRESS_RACE:-}" ]; then
 	else
 		note_fail "race-instrumented daemon reported $nraces DATA RACE(s):"
 		sed -n '/WARNING: DATA RACE/,/^==================$/p' "$DAEMON_LOG" | head -40 >&2
-		cp "$DAEMON_LOG" "${STRESS_RACE_LOG:-/tmp/chalkstress-daemon-race.log}" 2>/dev/null \
-			&& warn "full daemon log copied to ${STRESS_RACE_LOG:-/tmp/chalkstress-daemon-race.log}"
+		cp "$DAEMON_LOG" "${STRESS_RACE_LOG:-/tmp/formstress-daemon-race.log}" 2>/dev/null \
+			&& warn "full daemon log copied to ${STRESS_RACE_LOG:-/tmp/formstress-daemon-race.log}"
 	fi
 fi
 

@@ -86,7 +86,7 @@ func newSGRTerm(w, h int) *sgrTerm {
 // sgrRender replays s on a grid of the given size. Both sides of a comparison
 // must use the SAME size: an erase runs to the right edge, so sizing the grid
 // from the input length would make two strings of different length
-// incomparable — and quietly hide a difference.
+// incomparable, and quietly hide a difference.
 func sgrRender(s string, w, h int) *sgrTerm {
 	t := newSGRTerm(w, h)
 	t.write(s)
@@ -421,7 +421,7 @@ func sgrCellDiff(a, b string) string {
 	return sgrRender(a, w, h).diff(sgrRender(b, w, h))
 }
 
-// sgrFinalRendition is the rendition a string leaves the terminal in — the
+// sgrFinalRendition is the rendition a string leaves the terminal in: the
 // painter's "every row ends in default SGR" invariant, observable.
 func sgrFinalRendition(s string) string {
 	w, h := sgrGridFor(s)

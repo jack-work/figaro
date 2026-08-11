@@ -60,7 +60,7 @@ func healFixtureSized(t *testing.T, dir string, n, segmentSize int) (*XwalBacken
 
 // TestMetaHealsOnReadBounded is the whole contract of meta_heal.go: a sidecar
 // whose watermark trails is caught up by the next READ of the aria, and the
-// replay touches EXACTLY the entries after the watermark — the count is
+// replay touches EXACTLY the entries after the watermark: the count is
 // measured, not asserted by inspection.
 func TestMetaHealsOnReadBounded(t *testing.T) {
 	b, conv, lts := healFixture(t, t.TempDir(), 10)

@@ -15,7 +15,7 @@ import (
 // Where B's pacer meets D's prefetch worker.
 //
 // D made history paging asynchronous: the fetch runs on its own goroutine and
-// calls applyPage — and so render() — under the shared render mutex, off the
+// calls applyPage, and so render(): under the shared render mutex, off the
 // input goroutine. B then put a 120 fps gate in front of render(). The two
 // compose by design (a landing page should be paced like any other frame), but
 // the composition has a failure mode neither axis could see alone: a page that
@@ -93,7 +93,7 @@ func assertFrameIsFresh(t *testing.T, tr *transcript, what string) {
 }
 
 // TestPacedPageLanding_IsNeverSwallowed is the invariant, stated exactly. A
-// page that lands inside the frame interval is refused — and then painted by
+// page that lands inside the frame interval is refused, and then painted by
 // the trailing render, leaving the screen up to date.
 func TestPacedPageLanding_IsNeverSwallowed(t *testing.T) {
 	var w countingWriter
@@ -111,7 +111,7 @@ func TestPacedPageLanding_IsNeverSwallowed(t *testing.T) {
 		t.Fatal("gg at the top of the retained window did not ask for older history")
 	}
 
-	// The page lands 200 µs later — well inside the 1/120 s frame interval, so
+	// The page lands 200 µs later: well inside the 1/120 s frame interval, so
 	// the gate refuses it.
 	*now = now.Add(200 * time.Microsecond)
 	w.reset()
@@ -230,7 +230,7 @@ func (r *blockingHistoryReader) ReadBefore(ctx context.Context, at aria.Anchor, 
 // run under -race. Three parties take in.mu: the input goroutine (draining a
 // batch), the prefetch worker (applying a landed page), and the pacer's timer
 // goroutine (the trailing flush). There is exactly one mutex and no other lock
-// in the graph — the pacer deliberately reuses the caller's — so this cannot
+// in the graph: the pacer deliberately reuses the caller's: so this cannot
 // deadlock by construction; the test is here because "by construction" is a
 // claim, and because the race detector has opinions about who touches
 // framePacer's fields.
@@ -290,7 +290,7 @@ func TestPacerAndPrefetchDoNotDeadlock(t *testing.T) {
 //
 // A/D let scrollBy overshoot and relied on render() clamping. B's gate made
 // render() skippable, so a scroll burst past the top left offset negative, and
-// the next off-frame reader — viewportAnchor, when a prefetched page lands —
+// the next off-frame reader: viewportAnchor, when a prefetched page lands -
 // indexed t.lineTurn with it and panicked. The clamp now happens in front of the
 // gate, so it survives batching and rate limiting alike.
 func TestDeferredFrameStillClampsTheViewport(t *testing.T) {

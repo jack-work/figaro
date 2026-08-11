@@ -41,7 +41,7 @@ func (e *EditTool) Name() string { return "edit" }
 
 func (e *EditTool) Description() string {
 	return "Replace one exact region of a file with new text. " +
-		"old_text must match a UNIQUE region of the file — if it appears more than " +
+		"old_text must match a UNIQUE region of the file: if it appears more than " +
 		"once, include surrounding lines until it does not. " +
 		"To make several changes, issue several edit calls; they may be issued " +
 		"together and are applied one at a time, each against the file as it " +
@@ -49,7 +49,7 @@ func (e *EditTool) Description() string {
 		"one call with a wider old_text instead."
 }
 
-// Parameters — EVERY VALUE IS A SCALAR STRING, AND THAT IS THE POINT.
+// Parameters: EVERY VALUE IS A SCALAR STRING, AND THAT IS THE POINT.
 //
 // Claude's tool-call format says it: "String and scalar parameters should be
 // specified as is, while lists and objects should use JSON format." A scalar
@@ -57,8 +57,8 @@ func (e *EditTool) Description() string {
 // JSON the MODEL has to author by hand, escaping every tab, newline and quote
 // inside it.
 //
-// This tool used to take `edits: [{old_text, new_text}]` — the only
-// array-of-objects in figaro's tool tree — and it was the only tool that ever
+// This tool used to take `edits: [{old_text, new_text}]`: the only
+// array-of-objects in figaro's tool tree, and it was the only tool that ever
 // produced malformed arguments: measured over one day, 5 failures in 24 large
 // `edit` calls against 0 in 277 large `bash` and `write` calls, which carry
 // payloads just as big through scalar strings. The nesting was the whole
@@ -77,7 +77,7 @@ func (e *EditTool) Parameters() interface{} {
 			},
 			"old_text": map[string]interface{}{
 				"type":        "string",
-				"description": "Exact text to find, matched against the file as it currently stands. Must appear exactly once — widen it with surrounding lines if it does not.",
+				"description": "Exact text to find, matched against the file as it currently stands. Must appear exactly once: widen it with surrounding lines if it does not.",
 			},
 			"new_text": map[string]interface{}{
 				"type":        "string",
@@ -167,7 +167,7 @@ func (e *EditTool) Edit(ctx context.Context, req EditRequest) (EditResult, error
 // still ACCEPTED, and deliberately so: a long aria's history is full of calls
 // in the old shape, and a model reads its own transcript as an example of how
 // this tool is used. Refusing would turn every such imitation into a wasted
-// round trip. Nothing advertises it — the schema offers scalars only — so it
+// round trip. Nothing advertises it: the schema offers scalars only: so it
 // fades as histories turn over, and it can be deleted then.
 func parseEditArgs(args map[string]interface{}) (EditRequest, error) {
 	path, _ := args["path"].(string)

@@ -12,7 +12,7 @@
 //
 // Without the trunk capability the two are the same tree and Tree reads
 // straight through to the topology. With it, internal/trunk supplies a
-// pstate-backed tree that may differ — a promoted aria appears above the
+// pstate-backed tree that may differ, a promoted aria appears above the
 // ancestor it still inherits from.
 //
 // The rule that keeps this safe: FORKING NEVER CONSULTS A Tree. Owner and

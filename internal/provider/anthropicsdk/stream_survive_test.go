@@ -80,7 +80,7 @@ func toolTurn(t *testing.T, prose string, fragments []string) string {
 // STRING whose contents are a fragment of the tool input's JSON TEXT, so a tab
 // inside an argument travels as the four bytes \\t and arrives as the two
 // bytes \t. If anything on our side decoded a second time, the tab would
-// arrive RAW — which is precisely the corruption seen in the field.
+// arrive RAW: which is precisely the corruption seen in the field.
 //
 // It does not. The accumulated buffer is byte-identical to what was meant, so
 // a payload that arrives broken was already broken when it reached us.
@@ -120,7 +120,7 @@ func TestWireIsDecodedExactlyOnce(t *testing.T) {
 // arrived with its tabs, newlines and quotes unescaped, so `new_text` never
 // closes and the key after it runs into the value. escapeRawControlChars
 // cannot save it (the value/key boundary is gone), and guessing would write
-// the wrong bytes into a source file — so the call is refused, and everything
+// the wrong bytes into a source file: so the call is refused, and everything
 // else in the turn survives.
 func TestMalformedToolInputDoesNotKillTheTurn(t *testing.T) {
 	broken := "{\"edits\": [{\"new_text\": \"\tif a != \"b\" {\n\t}, \"path\": \"x.go\"}"
@@ -169,8 +169,8 @@ func TestMalformedToolInputDoesNotKillTheTurn(t *testing.T) {
 }
 
 // A payload broken ONLY by raw control characters is refused too. There used
-// to be a repair for this case — escape the control bytes in place and carry
-// on — and it was sound, but it is a second rule to hold in the head and it
+// to be a repair for this case: escape the control bytes in place and carry
+// on, and it was sound, but it is a second rule to hold in the head and it
 // rewrites bytes the model sent. One rule reads better and matches what the
 // API documents: if it does not parse, it does not run. The cost is one extra
 // round trip on the narrowest case; the benefit is that nothing in figaro

@@ -7,7 +7,7 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 )
 
-// inqUser is a plain input message — the shape that opens a turn.
+// inqUser is a plain input message: the shape that opens a turn.
 func inqUser(cs ...message.Content) message.Message {
 	return message.Message{Role: message.RoleInput, Content: cs}
 }
@@ -25,7 +25,7 @@ func inqConversation() []message.Message {
 		{Role: message.RoleInput},                            // boot / state-only: no turn
 		inqUser(prose("quick test")),                         // opens turn 1
 		asstLT(0, think("hm"), tool("t1", "bash")),           // turn 1
-		inqUser(inqResult("t1"), prose("actually, check X")), // turn 1 — steering, not a new turn
+		inqUser(inqResult("t1"), prose("actually, check X")), // turn 1: steering, not a new turn
 		asstLT(0, prose("done")),                             // turn 1
 		inqUser(prose("next question")),                      // opens turn 2
 		asstLT(0, prose("answer")),                           // turn 2
@@ -43,7 +43,7 @@ func TestTurns_EveryTurnHasExactlyOneInquiry(t *testing.T) {
 	}
 	for _, tn := range tns {
 		if tn.Inquiry == "" {
-			t.Errorf("turn %d has no inquiry — a turn cannot open without one", tn.ID)
+			t.Errorf("turn %d has no inquiry, a turn cannot open without one", tn.ID)
 		}
 	}
 	if got := tns[0].Inquiry; got != "quick test" {
@@ -55,13 +55,13 @@ func TestTurns_EveryTurnHasExactlyOneInquiry(t *testing.T) {
 // any node: a turn's list holds what the AGENT produced plus the steering that
 // rode along, so a renderer can tell the question from the answer without
 // inspecting a role. The predecessor of this test proved the inquiry text and
-// the prompt node agreed — its whole purpose was to license removing the node,
+// the prompt node agreed: its whole purpose was to license removing the node,
 // which this now pins.
 func TestTurns_InquiryIsNotANode(t *testing.T) {
 	for _, tn := range Turns(inqConversation()) {
 		for i, n := range tn.Nodes {
 			if n.Markdown == tn.Inquiry {
-				t.Errorf("turn %d node %d echoes the inquiry %q — the question is not a node",
+				t.Errorf("turn %d node %d echoes the inquiry %q: the question is not a node",
 					tn.ID, i, tn.Inquiry)
 			}
 			// Steering is the only input-voice node left.

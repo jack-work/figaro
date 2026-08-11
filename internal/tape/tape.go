@@ -2,7 +2,7 @@
 // crosses the CLI↔agent socket, with the time it crossed.
 //
 // WHY A WIRE TAPE AND NOT A FIXTURE. A paint bug lives in the interaction
-// between what the server said and WHEN it said it — a delta that lands
+// between what the server said and WHEN it said it, a delta that lands
 // mid-frame, a catch-up read that races a live push, a turn that streams for
 // ninety seconds and re-tunes the pager's window on every token. A
 // hand-written fixture encodes what we THINK the server does; a tape encodes
@@ -16,7 +16,7 @@
 // struct that gained a field.
 //
 // RECORDING IS OPT-IN AND CARRIES CONVERSATION CONTENT. A tape holds the
-// aria's prose, tool output, cwd and form — everything the pager could
+// aria's prose, tool output, cwd and form: everything the pager could
 // paint. It is written only where the caller asked for it, never by default,
 // and a tape promoted to a committed fixture wants a read before it is
 // committed. See skills/figaro/debugging/tapes.md.
@@ -70,7 +70,7 @@ const (
 // T is SECONDS SINCE THE HEADER'S Started, not a wall clock: a tape must be
 // replayable at a different hour and at a different speed, and a relative
 // clock is the only form in which both are meaningful. Nanosecond resolution
-// survives the float — 1e-9 of a few thousand seconds is well inside float64's
+// survives the float: 1e-9 of a few thousand seconds is well inside float64's
 // 2^-52 of relative precision.
 type Frame struct {
 	T   float64         `json:"t"`
@@ -148,7 +148,7 @@ func NewWriter(w io.WriteCloser, h Header) (*Writer, error) {
 }
 
 // Frame appends one message. Recording errors are latched and reported by
-// Close: a tape that fails to write must not take the session down with it —
+// Close: a tape that fails to write must not take the session down with it -
 // the recording is the observer, never the subject.
 func (t *Writer) Frame(dir Direction, msg []byte) {
 	if t == nil {
@@ -202,7 +202,7 @@ func (t *Writer) Close() error {
 //
 // It splits on newlines rather than decoding, because the wire IS newline
 // delimited (encoding/json escapes every newline inside a string, and jkrpc
-// writes one value per Encode). Splitting keeps the recorded bytes VERBATIM —
+// writes one value per Encode). Splitting keeps the recorded bytes VERBATIM -
 // a re-encode would silently normalize key order and numeric formatting, and a
 // replay would then be reproducing our marshaller rather than the server.
 func Tap(c net.Conn, w *Writer) net.Conn {
@@ -238,8 +238,8 @@ func (t *tapped) Write(p []byte) (int, error) {
 }
 
 // lineSplitter reassembles newline-terminated messages out of arbitrary read
-// chunks. A chunk boundary is not a message boundary — one Read can carry
-// three notifications and half of a fourth — and timing a partial message
+// chunks. A chunk boundary is not a message boundary: one Read can carry
+// three notifications and half of a fourth, and timing a partial message
 // would attribute a frame to the moment its first byte arrived rather than the
 // moment it was complete and actionable.
 type lineSplitter struct{ rem []byte }

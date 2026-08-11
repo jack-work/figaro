@@ -10,7 +10,7 @@ import (
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 )
 
-// farmerTranscript builds a transcript over thinking-heavy content — the frame
+// farmerTranscript builds a transcript over thinking-heavy content: the frame
 // is the thing the owner actually looks at, and node rows are only half of it
 // (the transcript renders nodes at t.w-2 and re-clips at t.w-1 through
 // plainNodeRow, so a node-level invariant is not a frame-level one).
@@ -38,7 +38,7 @@ func farmerTranscript(t *testing.T, w, h int) *transcript {
 }
 
 // TestFarmerFrameRowsFitEveryWidth: no painted row may exceed the viewport, at
-// any width, in a frame — plain, selected, and search-highlighted.
+// any width, in a frame: plain, selected, and search-highlighted.
 func TestFarmerFrameRowsFitEveryWidth(t *testing.T) {
 	seen := map[string]bool{}
 	for w := 20; w <= 200; w++ {

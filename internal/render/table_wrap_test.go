@@ -63,7 +63,7 @@ func longCellCase() tableCase {
 // every cell a lipgloss style with Inline(true), which disables word wrap in
 // the cell render, while lipgloss/table sized each row to the WRAPPED height of
 // its content. So a cell that needed two lines got two lines of space, its
-// first line of text, and a blank — the remainder was discarded by the cell's
+// first line of text, and a blank: the remainder was discarded by the cell's
 // MaxWidth. render.Prose therefore returned rows that were comfortably inside
 // the requested width (clipToWidth is innocent) but with the text already gone.
 //

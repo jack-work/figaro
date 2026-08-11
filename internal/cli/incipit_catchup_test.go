@@ -18,7 +18,7 @@ import (
 //
 // `q -- "..."` against an aria with history used to open on a dim rule and
 // nothing else: no sign of where you were until the model's first token. The
-// obvious fix — apply a catch-up read to the aria.Client — is worse than the
+// obvious fix, apply a catch-up read to the aria.Client: is worse than the
 // bug, because OnClosed's inline branch Freezes every message it is handed to
 // NATIVE SCROLLBACK. That would re-dump the whole retained history on every
 // prompt.
@@ -26,7 +26,7 @@ import (
 // So the page is folded outside the client and printed once, and the freeze
 // boundary is seeded from it so that the rest of the session treats it as
 // already committed. This test states both halves: the context is on screen,
-// and NOTHING reaches scrollback twice — including across a pager round trip,
+// and NOTHING reaches scrollback twice: including across a pager round trip,
 // which re-flushes everything past that boundary.
 func TestOpeningPreamblePrintsRecentContextExactlyOnce(t *testing.T) {
 	var out bytes.Buffer
@@ -71,7 +71,7 @@ func TestOpeningPreamblePrintsRecentContextExactlyOnce(t *testing.T) {
 
 	// Everything above is already in the terminal's scrollback and the pager's
 	// alt-screen restore leaves it alone, so the only thing that can duplicate
-	// it is what the EXIT flush prints. That is what this measures — the whole
+	// it is what the EXIT flush prints. That is what this measures: the whole
 	// byte stream cannot be counted, because the live region the pager left
 	// behind is erased rather than removed.
 	out.Reset()
@@ -119,7 +119,7 @@ func TestHeldFramesLandAfterThePreamble(t *testing.T) {
 // THE CANARY FOR THE SEED. Ctrl-T before the model has closed anything is the
 // case that makes the boundary load-bearing: the pager's own catch-up read
 // fills the client with HISTORY, and on exit a zero boundary reads as "we
-// entered cold" — which bounds the flush to the last turn it can see, i.e. the
+// entered cold": which bounds the flush to the last turn it can see, i.e. the
 // last turn of the history the preamble just printed. Seeding the boundary is
 // what tells flushTail that pre-session content is already committed.
 func TestPagerExitAfterPreambleDoesNotReprintHistory(t *testing.T) {
@@ -132,7 +132,7 @@ func TestPagerExitAfterPreambleDoesNotReprintHistory(t *testing.T) {
 		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "PRIORANSWER"}}}})
 
 	// The prompt is accepted and the preamble is on screen, but the daemon has
-	// not pushed a single frame yet — the window between Qua returning and the
+	// not pushed a single frame yet: the window between Qua returning and the
 	// turn's first notification. Ctrl-T lands there, and the pager's catch-up
 	// read hands the client exactly the history the preamble just printed.
 	lt.enterTranscript()
@@ -152,7 +152,7 @@ func TestPagerExitAfterPreambleDoesNotReprintHistory(t *testing.T) {
 }
 
 // A brand new aria and an ephemeral one have no history at all: the read comes
-// back empty, and the session must open EXACTLY as it did before — no rows, and
+// back empty, and the session must open EXACTLY as it did before: no rows, and
 // no freeze boundary (a zero boundary is what makes a cold pager exit bound
 // itself to the last turn).
 func TestOpeningPreambleWithNoHistoryIsANoOp(t *testing.T) {
@@ -196,8 +196,8 @@ func TestOpeningPreambleSkippedInThePager(t *testing.T) {
 
 // Orientation, not a transcript: the preamble may not push the question the
 // user just asked off the top of the screen. A single enormous prior turn is
-// clipped from the HEAD — the rows nearest the new prompt are the ones worth
-// keeping — and the boundary is still seeded from the WHOLE message, so the
+// clipped from the HEAD: the rows nearest the new prompt are the ones worth
+// keeping, and the boundary is still seeded from the WHOLE message, so the
 // elided rows can never arrive later.
 func TestOpeningPreambleIsBoundedByTheViewport(t *testing.T) {
 	tall := func(last string) []aria.Message {
@@ -257,7 +257,7 @@ func TestOpeningPreambleIsBoundedByTheViewport(t *testing.T) {
 // What the preamble is allowed to show: sealed turns only, and nothing past the
 // cursor Qua reported. The first keeps a turn another client is mid-way through
 // from being half-printed as history; the second keeps THIS prompt out of its
-// own preamble — the read races the daemon committing the inquiry we just sent.
+// own preamble: the read races the daemon committing the inquiry we just sent.
 func TestRecentContextShowsOnlySealedTurnsAtOrBelowTheCursor(t *testing.T) {
 	rc := &fakeRecentReader{page: aria.Page{Parts: []aria.TurnPart{
 		{Turn: aria.Turn{ID: 4, Inquiry: "old", Sealed: true,
@@ -309,7 +309,7 @@ func (f *fakeRecentReader) ReadBefore(_ context.Context, at aria.Anchor, budget 
 
 func (f *fakeRecentReader) Queued(context.Context) (*rpc.QueuedResponse, error) { return nil, nil }
 
-// bodyCount counts the rows whose printable text is exactly token — the only
+// bodyCount counts the rows whose printable text is exactly token: the only
 // sound way to count a token in rendered output (a substring count also finds
 // it in a footer, a mantra, or a wrapped fragment).
 func bodyCount(out, token string) int {
@@ -328,7 +328,7 @@ func bodyCount(out, token string) int {
 // first frame ADOPTS that region in place. Release the held frames first and
 // the question paints as one live region with the footer opening a SECOND one
 // below it: two status bars on screen, and a stale region that the pager's
-// exit erase then misses — after which the question reaches scrollback twice.
+// exit erase then misses, after which the question reaches scrollback twice.
 // A pty found that; every unit assertion in this file was green through it.
 func TestReleasedFramesAdoptTheArmedFooter(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(80, 40)
@@ -389,9 +389,9 @@ func TestPageCarriesInquiry(t *testing.T) {
 }
 
 // The wait has three exits and each one has to mean something different: our
-// question came back (ours — say nothing), the agent errored (no turn is
-// coming — orient), or nobody said anything in time (we are watching someone
-// else's turn — orient). The deadline exists because the steer branch may
+// question came back (ours: say nothing), the agent errored (no turn is
+// coming: orient), or nobody said anything in time (we are watching someone
+// else's turn: orient). The deadline exists because the steer branch may
 // deliver NOTHING for tens of seconds, so waiting on it would hang the prompt.
 func TestAwaitOwnTurn(t *testing.T) {
 	closed := func() chan struct{} { c := make(chan struct{}); close(c); return c }
@@ -420,8 +420,8 @@ func TestAwaitOwnTurn(t *testing.T) {
 // A prompt that lands on a turn it did not open buys a little context. The
 // inline view prints a bounded slice of it, and the PAGER gets the whole page:
 // opening it renders that history immediately instead of waiting on a read of
-// its own. The page still never reaches aria.Client — that is what keeps
-// OnClosed from re-freezing history into scrollback — so the pager is fed
+// its own. The page still never reaches aria.Client: that is what keeps
+// OnClosed from re-freezing history into scrollback: so the pager is fed
 // through its own window, and what it already holds must not arrive twice.
 func TestJoinedFetchSeedsThePager(t *testing.T) {
 	var out bytes.Buffer
@@ -435,7 +435,7 @@ func TestJoinedFetchSeedsThePager(t *testing.T) {
 	lt.apply(page(6, 0, delta(0, livedoc.RoleOutput, "JOINEDANSWER")))
 
 	// The catch-up page: two prior turns, plus a restatement of the turn the
-	// client is already holding — the tail read reaches it, so the overlap is
+	// client is already holding: the tail read reaches it, so the overlap is
 	// the normal case, not a contrived one.
 	fetched := []aria.Message{
 		{Turn: 4, Inquiry: "OLDQUESTION", Role: livedoc.RoleOutput,
@@ -460,7 +460,7 @@ func TestJoinedFetchSeedsThePager(t *testing.T) {
 		}
 	}
 	if n := bodyCount(pager, "JOINEDANSWER"); n != 1 {
-		t.Fatalf("pager shows the joined turn %d times, want 1 — the seed overlapped the window:\n%s", n, pager)
+		t.Fatalf("pager shows the joined turn %d times, want 1: the seed overlapped the window:\n%s", n, pager)
 	}
 }
 

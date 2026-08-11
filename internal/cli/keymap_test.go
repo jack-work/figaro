@@ -63,7 +63,7 @@ func modeName(m keyMode) string {
 	return "?"
 }
 
-// navSequence is the canonical terminal encoding of a navigation key — enough
+// navSequence is the canonical terminal encoding of a navigation key: enough
 // to drive one through the real input loop. (key_nav_test.go covers the other
 // five encodings of each.)
 func navSequence(n navKey) string {
@@ -151,7 +151,7 @@ func TestKeymap_EveryRowIsWellFormed(t *testing.T) {
 		}
 		switch bd.open {
 		case openUnset:
-			t.Errorf("%s: no open policy — say whether it opens the pager from incipit", bd.chord)
+			t.Errorf("%s: no open policy: say whether it opens the pager from incipit", bd.chord)
 		case staysInline:
 			if bd.why == "" {
 				t.Errorf("%s: stays inline without saying why", bd.chord)
@@ -250,7 +250,7 @@ func TestKeymap_OpenersReallyOpenThePager(t *testing.T) {
 
 // TestKeymap_InlineKeysStayInline is the other half: a binding that says it
 // does not open the pager must not. The two exceptions are named here because
-// the table names them too — ^L and ^T enter through their own action, which
+// the table names them too: ^L and ^T enter through their own action, which
 // is why they are not openers in the gate sense.
 func TestKeymap_InlineKeysStayInline(t *testing.T) {
 	entersByAction := map[byte]bool{0x0c: true, 0x14: true} // ^L, ^T
@@ -283,14 +283,14 @@ func TestKeymap_InlineKeysStayInline(t *testing.T) {
 
 // TestHelpBody_MatchesTheOldHandWrittenPanel: the generated rows are, glyph
 // for glyph, the panel that used to be a hand-kept []string in helpLines. The
-// user must not see a difference — only correctness by construction.
+// user must not see a difference: only correctness by construction.
 //
 // The 'i' row is the one deliberate addition since: the steer composer is a
 // genuinely new binding, not drift. Everything else is unchanged.
 //
 // The ':' row is the second: the coordinate jump (transcript_jump.go). It is
 // listed directly under the search rows because it is the same gesture family
-// — type something into the footer, land somewhere — and because that keeps
+// : type something into the footer, land somewhere, and because that keeps
 // "how do I get to a place I can see the address of" adjacent to "how do I
 // find one".
 func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
@@ -352,7 +352,7 @@ func TestHelp_EveryVisibleBindingIsDocumented(t *testing.T) {
 	}
 	for _, r := range helpRows {
 		if documented[r.id] == 0 {
-			t.Errorf("help row %q documents no live binding — it should be deleted", r.text)
+			t.Errorf("help row %q documents no live binding: it should be deleted", r.text)
 		}
 	}
 }
@@ -399,7 +399,7 @@ func TestHelp_HiddenBindingsStayOffTheList(t *testing.T) {
 
 // TestKeymap_ActionArraysAgreeWithTheIndex: dispatch reads the compiled action
 // arrays, everything else reads the row index. Both are built from the same
-// table in the same pass — this asserts they cannot have drifted anyway.
+// table in the same pass: this asserts they cannot have drifted anyway.
 func TestKeymap_ActionArraysAgreeWithTheIndex(t *testing.T) {
 	same := func(a, b any) bool {
 		return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()

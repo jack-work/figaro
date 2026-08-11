@@ -126,7 +126,7 @@ func TestGatewayBlocksModeMarksSystemAndTailOnly(t *testing.T) {
 		t.Errorf("first marker must be the system prefix, got index %d", marked[0])
 	}
 	if last := len(req.Messages) - 1; marked[len(marked)-1] != last {
-		t.Errorf("the rolling tail must carry the FINAL marker (index %d), got %d — a gateway lowering to Gemini keeps only the last one",
+		t.Errorf("the rolling tail must carry the FINAL marker (index %d), got %d, a gateway lowering to Gemini keeps only the last one",
 			last, marked[len(marked)-1])
 	}
 }
@@ -152,8 +152,8 @@ func markedIndexes(t *testing.T, req chatRequest) []int {
 // --- byte stability: shape is a function of route, never of position -------
 
 // Two consecutive turns must serialize the shared prefix identically. If a
-// message is a string on one turn and a block list on the next — or carries
-// a marker on one turn and not the next — the prefix bytes change and the
+// message is a string on one turn and a block list on the next: or carries
+// a marker on one turn and not the next: the prefix bytes change and the
 // cache it was building is thrown away.
 func TestPrefixBytesAreStableAcrossTurns(t *testing.T) {
 	for _, mode := range []provider.MarkMode{provider.MarkAuto, provider.MarkBlocks} {
@@ -443,7 +443,7 @@ func FuzzStampLeafCache(f *testing.F) {
 }
 
 // A local gateway holds the real provider credentials itself. Demanding one
-// from figaro means inventing a secret that nothing reads — and the CLI's
+// from figaro means inventing a secret that nothing reads, and the CLI's
 // credential gate is keyed on the provider name, so it refused to start a
 // turn at all ("No provider connected") until one existed. Found by driving
 // the real binary in a pty against a local endpoint; no unit test saw it,
@@ -485,7 +485,7 @@ var errNoCredential = errors.New("no credential available")
 // that used no tokens. Found in the e2e round against a gateway whose
 // streaming path returned no usage at all: every bucket read 0 while the
 // context figure kept climbing off the estimator, so the aria looked
-// accounted for. drainSSE must report nil — not a zeroed Usage — so the
+// accounted for. drainSSE must report nil: not a zeroed Usage: so the
 // caller can tell the two apart and say so.
 func TestNoUsageBlockIsDistinctFromZeroUsage(t *testing.T) {
 	stream := "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n" +
@@ -496,7 +496,7 @@ func TestNoUsageBlockIsDistinctFromZeroUsage(t *testing.T) {
 		t.Fatalf("drainSSE: %v", err)
 	}
 	if got.Usage != nil {
-		t.Fatalf("a missing usage block must stay nil, got %+v — a zeroed Usage would fold as a real measurement of zero", got.Usage)
+		t.Fatalf("a missing usage block must stay nil, got %+v, a zeroed Usage would fold as a real measurement of zero", got.Usage)
 	}
 	if msg := got.toIRMessage(); msg.Usage != nil {
 		t.Errorf("IR message usage = %+v, want nil", msg.Usage)
@@ -540,7 +540,7 @@ func TestBareBaseURLGatewayIsUncachedAndUnsticky(t *testing.T) {
 // A gateway that omits `index` on tool_call deltas must not have its calls
 // merged. Defaulting the missing index to 0 put every call of a turn in one
 // slot and concatenated their arguments; downstream that surfaced as a tool
-// invoked with arguments belonging to a different call — or with none at
+// invoked with arguments belonging to a different call: or with none at
 // all. Twenty turns of a real session were lost to this class of failure.
 func TestToolCallsWithoutIndexDoNotMerge(t *testing.T) {
 	stream := strings.Join([]string{

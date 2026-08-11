@@ -10,9 +10,9 @@ import (
 // A tall turn reaches the renderer as SEVERAL messages, cut at unit-size
 // boundaries. A steered turn is the sharp case: the steer is a node INSIDE the
 // agent's run, so the turn arrives as {From:0} steer + output, {From:2..} more
-// output — and the inquiry rides on the first slice as TEXT, occupying no node
+// output, and the inquiry rides on the first slice as TEXT, occupying no node
 // id at all. Every node in that turn must own a DISTINCT nodeRef, because
-// nodeRef keys expansion state (Ctrl-O) and the selection marks — two nodes
+// nodeRef keys expansion state (Ctrl-O) and the selection marks: two nodes
 // sharing a ref share those, so expanding a tool would expand an unrelated node
 // and a copy would take the wrong text.
 //
@@ -39,7 +39,7 @@ func TestNodeRefIsUniquePerNodeAcrossTurnSlices(t *testing.T) {
 		for i, n := range m.Nodes {
 			ref := nodeRefAt(m, i)
 			if prev, dup := seen[ref]; dup {
-				t.Fatalf("duplicate nodeRef %v: %q and %q share it — "+
+				t.Fatalf("duplicate nodeRef %v: %q and %q share it: "+
 					"slice-local indices collide across the slices of one turn",
 					ref, prev, n.Markdown)
 			}

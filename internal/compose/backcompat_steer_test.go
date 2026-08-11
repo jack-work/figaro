@@ -11,7 +11,7 @@ import (
 //
 // The drain now folds a batch of queued prompts into ONE message whose prose is
 // the texts joined by newlines. Logs written before that carry N SEPARATE input
-// messages, and nothing on disk is migrated — so the read path must keep
+// messages, and nothing on disk is migrated: so the read path must keep
 // producing N steering nodes for them, exactly as it did.
 //
 // This is the shape the user has 23 of in his real store. If this test ever
@@ -27,7 +27,7 @@ func TestTurns_LegacySeparateSteersStillRenderSeparately(t *testing.T) {
 	}
 	tns := Turns(legacy)
 	if len(tns) != 1 {
-		t.Fatalf("legacy log produced %d turns, want 1 — separate steers must not open turns", len(tns))
+		t.Fatalf("legacy log produced %d turns, want 1: separate steers must not open turns", len(tns))
 	}
 	var steers []string
 	for _, n := range tns[0].Nodes {
@@ -36,14 +36,14 @@ func TestTurns_LegacySeparateSteersStillRenderSeparately(t *testing.T) {
 		}
 	}
 	if len(steers) != 2 {
-		t.Fatalf("legacy log rendered %d steering nodes, want 2 — N messages must stay N nodes: %v", len(steers), steers)
+		t.Fatalf("legacy log rendered %d steering nodes, want 2: N messages must stay N nodes: %v", len(steers), steers)
 	}
 	if steers[0] != "nudge one" || steers[1] != "nudge two" {
 		t.Errorf("legacy steer text changed: %v", steers)
 	}
 }
 
-// The NEW write shape — one message carrying newline-joined text — renders as a
+// The NEW write shape: one message carrying newline-joined text: renders as a
 // SINGLE steering node holding every line. Three nudges typed during one tool
 // round are one aside, not three the model must reconcile.
 func TestTurns_ConcatenatedSteerIsOneNode(t *testing.T) {

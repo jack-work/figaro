@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# paint-gapcheck.sh — a COMPARISON-FREE detector for gap contamination.
+# paint-gapcheck.sh, a COMPARISON-FREE detector for gap contamination.
 #
 # Why this exists, and why jog-and-diff is not enough on its own.
 #
 # The jog-and-diff oracle (docs/paint-repro.md §5) captures a frame, moves the
 # viewport away and back, and diffs. It is excellent, and it is how the bug was
 # first caught. But it has a blind spot that is exactly the case ALMAVIVA told me
-# to attack: the user said gaps are "TYPICALLY fixed upon return" — typically,
+# to attack: the user said gaps are "TYPICALLY fixed upon return": typically,
 # not always. If a gesture leaves contamination that the jog does NOT repair,
 # then the suspect frame and the "truth" frame are EQUALLY WRONG, the diff is
 # empty, and jog-and-diff reports CLEAN. An oracle that compares the painter
@@ -15,7 +15,7 @@
 # So this detector asserts a STRUCTURAL INVARIANT of a single frame, with nothing
 # to compare against:
 #
-#   A message separator is rendered as EXACTLY TWO ROWS — a blank, then a rule
+#   A message separator is rendered as EXACTLY TWO ROWS, a blank, then a rule
 #   (internal/cli/transcript_index.go, entryLine: `case 0: return ""`,
 #   `case 1: return t.transRule()`), and the rule is dimTransRule(w): a full
 #   width run of U+2500 and nothing else (internal/cli/transcript.go:2132).
@@ -59,7 +59,7 @@ awk -v W="$w" '
     # A VERDICT ON NOTHING IS NOT A PASS.
     #
     # First run of this detector against a real pane reported "0 contaminated"
-    # on a frame I had just proved contaminated by other means — because the
+    # on a frame I had just proved contaminated by other means: because the
     # viewport was entirely inside one long tool output and contained no message
     # separator at all. Zero rules examined means the detector did not look at
     # the thing it exists to look at, and reporting that as clean is how a test
@@ -68,7 +68,7 @@ awk -v W="$w" '
     # So: exit 2, distinct from both clean (0) and contaminated (1). Point the
     # viewport at a message boundary and run it again.
     if (rules == 0) {
-      printf "gapcheck: VACUOUS — no separator rule in this viewport, so this frame proves NOTHING.\n"
+      printf "gapcheck: VACUOUS: no separator rule in this viewport, so this frame proves NOTHING.\n"
       printf "gapcheck: scroll to a message boundary (separators sit between messages, not inside one).\n"
       exit 2
     }

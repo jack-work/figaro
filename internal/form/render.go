@@ -71,7 +71,7 @@ func LoadOverrideTemplates(base *template.Template, dir string) (*template.Templ
 
 // Render produces bodies for each patch entry. Keys with a matching
 // template render via that template. Keys in the harness-reserved
-// `system.*` namespace are silently skipped — providers consume those
+// `system.*` namespace are silently skipped: providers consume those
 // directly. Other keys without a template fall back to a generic
 // body so new form data is visible by default without needing
 // a hand-rolled template per key.

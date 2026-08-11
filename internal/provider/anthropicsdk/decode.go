@@ -15,7 +15,7 @@ import (
 // validAccumulatedBlock reports whether an accumulated block is
 // API-legal to replay. Shared by the IR decoder (so the sealed message
 // matches the in-flight asm, which never creates a node for empty
-// text/thinking — keeping them shifts later block indices and
+// text/thinking: keeping them shifts later block indices and
 // duplicates the live render; empty summarized-thinking blocks are the
 // common case with Display: Summarized) and the cache path (so an
 // open+close-with-no-deltas block never persists without its required
@@ -36,7 +36,7 @@ func validAccumulatedBlock(b anthropic.ContentBlockUnion) bool {
 	return true
 }
 
-// cacheableAccumulatedBlock is the wire-replay predicate — wider than
+// cacheableAccumulatedBlock is the wire-replay predicate: wider than
 // validAccumulatedBlock for thinking: a signed empty-summary block must
 // replay (the API requires the thinking block leading a tool-use
 // assistant) even though the renderer skips it. fatal marks the whole
@@ -69,7 +69,7 @@ func cacheableAccumulatedBlock(b anthropic.ContentBlockUnion) (keep, fatal bool)
 // decodeAssistantMessage projects an SDK Message (the final
 // accumulated assistant turn) to the figaro IR.
 func decodeAssistantMessage(m anthropic.Message) message.Message {
-	// model/provider are not on the IR message — they live in the
+	// model/provider are not on the IR message: they live in the
 	// form (system.model / system.provider), derived on read.
 	out := message.Message{
 		Role: message.RoleOutput,
@@ -82,7 +82,7 @@ func decodeAssistantMessage(m anthropic.Message) message.Message {
 		case anthropic.TextBlock:
 			out.Content = append(out.Content, message.Content{Type: message.ContentProse, Text: v.Text})
 		case anthropic.ThinkingBlock:
-			// Text only — for display and other providers. The signature lives
+			// Text only: for display and other providers. The signature lives
 			// in the cached wire bytes (acc.ToParam), never the IR.
 			out.Content = append(out.Content, message.Content{Type: message.ContentThinking, Text: v.Thinking})
 		case anthropic.ToolUseBlock:
@@ -133,7 +133,7 @@ func mapStopReason(s anthropic.StopReason) message.StopReason {
 // that says so and keeps the bytes.
 //
 // ONE RULE: IF IT DOES NOT PARSE, IT DOES NOT RUN. That is the contract
-// Anthropic publishes for fine-grained tool streaming — the API streams a
+// Anthropic publishes for fine-grained tool streaming: the API streams a
 // tool's input without buffering or validating it, so invalid JSON is a
 // documented outcome, not a defect to be mended: "you cannot run the tool, so
 // report the failure back to Claude instead."

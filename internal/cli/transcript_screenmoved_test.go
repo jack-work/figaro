@@ -14,14 +14,14 @@ import (
 //	four seconds later ..................................... 2   (persists)
 //	after a terminal resize ................................ 1   (heals)
 //
-// The second status row is a FROZEN one — spinner stopped mid-animation —
+// The second status row is a FROZEN one: spinner stopped mid-animation -
 // sitting to the right of ordinary prose, which is the user's report exactly:
 //
 //	   Read the form tail → get K → append⠴ · ctx ~328.0k/1.0m 32.8% · cost …
 //
 // Mechanism: the painter finishes every frame on the last row, the alt screen
 // has no scrollback, so a write of "\n"+text there SCROLLS THE WHOLE GRID and
-// leaves t.prev — "the frame the terminal is holding" — describing a screen
+// leaves t.prev: "the frame the terminal is holding": describing a screen
 // that no longer exists. Every row that composes identically is then skipped,
 // and every row that differs is updated from a shared-prefix divergence column
 // (appendRowUpdate), i.e. a TAIL written onto a row whose left half is now
@@ -31,7 +31,7 @@ import (
 // strayWrite does to the VT exactly what `fmt.Fprintln(os.Stderr, "\n"+text)`
 // does to a real terminal with the cursor parked on the last row: the grid
 // scrolls up one, and the text lands on the bottom row. The transcript is NOT
-// told — that is the whole point.
+// told: that is the whole point.
 func strayWrite(v *vtScreen, text string) {
 	v.row, v.col = v.h-1, 0
 	v.scroll(1)
@@ -45,7 +45,7 @@ func strayWrite(v *vtScreen, text string) {
 // row must still restore the WHOLE screen once screenMoved is called.
 //
 // CANARY (run it): delete the tr.screenMoved() line and this test fails with
-// the contaminated grid — the stale row survives, which is the bug.
+// the contaminated grid: the stale row survives, which is the bug.
 func TestScreenMovedRepaintsInFull(t *testing.T) {
 	const w, h = 40, 6
 	frame := func(status string) []string {
@@ -66,7 +66,7 @@ func TestScreenMovedRepaintsInFull(t *testing.T) {
 	// (pin the bug, so this test cannot pass for the wrong reason).
 	tr.paint(append([]string(nil), frame("status ⠙ · ctx 1k")...))
 	if got := screen.text()[0]; strings.HasPrefix(got, "alpha row") {
-		t.Fatal("hazard gone: the painter repaired an unannounced scroll by itself — " +
+		t.Fatal("hazard gone: the painter repaired an unannounced scroll by itself: " +
 			"if that is now true, this test is measuring nothing and must be rewritten")
 	}
 
@@ -136,7 +136,7 @@ func TestResyncDoesNotFireOnEveryFrame(t *testing.T) {
 		t.Fatal("second frame wrote nothing")
 	}
 	if second >= first {
-		t.Errorf("second frame wrote %d bytes, as much as the full first frame (%d) — "+
+		t.Errorf("second frame wrote %d bytes, as much as the full first frame (%d): "+
 			"the diff is not being used between resyncs", second, first)
 	}
 }

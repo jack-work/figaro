@@ -16,7 +16,7 @@ import (
 // unchanged. This test pins the WRITE side.
 // The separator is a BLANK LINE, and both halves of that matter. On screen,
 // prose is markdown: a lone newline is a SOFT break, so glamour rejoined three
-// messages into one sentence ("test2 test3 test4") — which is how this was
+// messages into one sentence ("test2 test3 test4"): which is how this was
 // reported. For the model, a blank line is the unambiguous mark of separate
 // messages. One separator satisfies both, so what the reader sees and what the
 // agent reads cannot drift.
@@ -30,7 +30,7 @@ func TestMergePromptEvents_JoinsWithABlankLine(t *testing.T) {
 		t.Fatal("a non-empty batch must merge")
 	}
 	if got.text != "a\n\nb\n\nc" {
-		t.Errorf("text = %q, want %q — blank line between, no trim", got.text, "a\n\nb\n\nc")
+		t.Errorf("text = %q, want %q: blank line between, no trim", got.text, "a\n\nb\n\nc")
 	}
 }
 
@@ -47,7 +47,7 @@ func TestMergePromptEvents_EmptyAndSingle(t *testing.T) {
 	}
 }
 
-// A blank prompt contributes no line — it must not leave a stray empty row in
+// A blank prompt contributes no line: it must not leave a stray empty row in
 // the middle of the merged text.
 func TestMergePromptEvents_SkipsEmptyTexts(t *testing.T) {
 	got, _ := mergePromptEvents([]event{
@@ -97,7 +97,7 @@ func TestMergePromptEvents_MergesFormInQueueOrder(t *testing.T) {
 	}
 }
 
-// Merging must not mutate the inputs — the batch is prepended back to the inbox
+// Merging must not mutate the inputs: the batch is prepended back to the inbox
 // on failure, and a mutated event would be restored in the wrong shape.
 func TestMergePromptEvents_DoesNotMutateInputs(t *testing.T) {
 	a := &rpc.FormInput{Patch: &rpc.FormPatch{

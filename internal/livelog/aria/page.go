@@ -19,13 +19,13 @@ const (
 	Backward Direction = "backward"
 )
 
-// Anchor addresses one node in the conversation. It is the UI coordinate —
+// Anchor addresses one node in the conversation. It is the UI coordinate -
 // turn id plus the node's positional ordinal within that turn. LT never
 // appears here: that is the model's coordinate, carried on nodes as metadata.
 //
 // The zero Anchor means "the natural end for this direction": the very first
 // node when paging Forward, the very last when paging Backward. So a backward
-// read with no anchor is the tail — what `fig show -n N` asks for.
+// read with no anchor is the tail: what `fig show -n N` asks for.
 type Anchor struct {
 	Turn uint64 `json:"turn"`
 	Node uint64 `json:"node"`
@@ -44,7 +44,7 @@ type More struct {
 
 // TurnPart is one turn as it appears on a page: the turn itself plus where
 // this window sits inside it. A part carries a contiguous run of nodes, so
-// ids are positional — Nodes[i] has id From+i — and are omitted from the wire.
+// ids are positional: Nodes[i] has id From+i, and are omitted from the wire.
 //
 // Only a page's boundary turns can be clipped; inner turns are whole. That is
 // a consequence of the window being contiguous, not a rule the paginator has
@@ -71,7 +71,7 @@ func (p Page) Empty() bool { return len(p.Parts) == 0 && p.Metrics == nil }
 
 // nodeSize is a node's cost against the page budget: its serialized length.
 // The budget exists to bound wire bytes and client memory, so measuring the
-// bytes themselves is the honest metric — node count is not a proxy for it
+// bytes themselves is the honest metric: node count is not a proxy for it
 // (a prose node may be 40 bytes, a tool node 40KB).
 func nodeSize(n livedoc.Node) int {
 	b, err := json.Marshal(n)
@@ -88,7 +88,7 @@ type cursor struct{ turn, node int }
 
 // locate resolves an anchor to a cursor, and reports whether anything lies in
 // the direction of travel. An anchor outside the materialized range is not an
-// error — it is how a caller says "the end": a backward read from beyond the
+// error: it is how a caller says "the end": a backward read from beyond the
 // last turn is the tail, and a forward read from there has nothing left to
 // give. Clamping both directions to the same cursor (as this once did) made a
 // forward read from beyond the end return the whole last turn, which a pager
@@ -122,7 +122,7 @@ func locate(turns []Turn, a Anchor, dir Direction) (cursor, bool) {
 	}
 	// Turn ids ascend, so find the anchor by bisection rather than by walking.
 	// ti is the largest index whose id is <= a.Turn (an exact hit when the turn
-	// is present, its predecessor otherwise) — the same answer the linear scan
+	// is present, its predecessor otherwise): the same answer the linear scan
 	// gave. It matters because Paginate is called once PER PAGE, so an O(#turns)
 	// probe made walking a whole aria quadratic in the turn count.
 	ti := sort.Search(len(turns), func(i int) bool { return turns[i].ID > a.Turn }) - 1
@@ -166,7 +166,7 @@ func step(turns []Turn, c cursor, dir Direction) (cursor, bool) {
 // Paginate cuts one Page out of turns, walking from at in dir until budget
 // bytes are spent. It is pure: same inputs, same page, no clock, no state.
 //
-// Budget is in bytes and granularity is in nodes — a node is never split, and
+// Budget is in bytes and granularity is in nodes, a node is never split, and
 // at least one node is always emitted even if it alone busts the budget. That
 // is safe only because tool output is already clamped upstream (compose's
 // 200-source-line tailBound), so a single node is bounded.
@@ -218,7 +218,7 @@ func Paginate(turns []Turn, at Anchor, dir Direction, budget int) Page {
 
 // PaginateBefore pages backward from an anchor, EXCLUDING the anchor node when
 // that node actually exists. "Before" means before: the caller already holds
-// the anchor — it is the oldest thing in its window and it asked for what
+// the anchor: it is the oldest thing in its window and it asked for what
 // precedes it. Returning it again duplicates a message at every page boundary.
 //
 // An anchor past the last turn is a TAIL request (recentCursor). It names no

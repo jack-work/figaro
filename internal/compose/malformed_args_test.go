@@ -12,7 +12,7 @@ import (
 //
 // The point of unbuffered tool-input streaming is to watch the bytes land.
 // When they turn out not to parse, the thing worth looking at is exactly
-// those bytes — so a quarantined call renders as its raw input, not as the
+// those bytes: so a quarantined call renders as its raw input, not as the
 // envelope figaro wrapped it in to keep the wire legal.
 func TestQuarantinedCallRendersItsBytes(t *testing.T) {
 	raw := "{\"edits\": [{\"new_text\": \"\tif len(rows) > 0 {\n\t\tchrome(\"\")"
@@ -43,7 +43,7 @@ func TestQuarantinedBytesDoNotDependOnTheLiveMap(t *testing.T) {
 		Type: message.ContentToolInvoke, ToolCallID: "tc_1", ToolName: "edit",
 		Arguments: message.MalformedArgs("{\"path\": \"x.go\", \"new_text\": \"\tbroken"),
 	}
-	// argPartials empty — exactly the state after a restart.
+	// argPartials empty: exactly the state after a restart.
 	if n := toolNode(inv, 7, 0, nil, map[string]string{}, map[string]string{}, nil); n.Input == "" {
 		t.Error("a reloaded failed call lost the only copy of its arguments")
 	}

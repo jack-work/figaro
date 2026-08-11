@@ -21,6 +21,9 @@ type AgentServer interface {
 // agentMethods is the set of methods the figaro socket exposes.
 var agentMethods = []string{
 	rpc.MethodQua,
+	rpc.MethodStudy,
+	rpc.MethodDrop,
+	rpc.MethodCast,
 	rpc.MethodContext,
 	rpc.MethodInterrupt,
 	rpc.MethodSet,
@@ -43,29 +46,62 @@ func AgentMethods() []string {
 // Handle dispatches RPC methods.
 func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessage) (any, error) {
 	switch method {
+	case rpc.MethodStudy:
+		var req rpc.StudyRequest
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, err
+		}
+		if req.FormID == "" {
+			return rpc.StudyResponse{OK: true, Studies: a.StudyList()}, nil
+		}
+		studies, err := a.Study(req.FormID)
+		if err != nil {
+			return nil, err
+		}
+		return rpc.StudyResponse{OK: true, Studies: studies}, nil
+
+	case rpc.MethodDrop:
+		var req rpc.StudyRequest
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, err
+		}
+		studies, err := a.Drop(req.FormID)
+		if err != nil {
+			return nil, err
+		}
+		return rpc.StudyResponse{OK: true, Studies: studies}, nil
+
+	case rpc.MethodCast:
+		var req rpc.CastRequest
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, err
+		}
+		res, err := a.Cast(ctx, req.FormID, req.RolePatch)
+		if err != nil {
+			// A partial verdict still describes itself: the response
+			// carries what landed before the step that failed.
+			return nil, err
+		}
+		return rpc.CastResponse{RoleID: res.roleID, Studied: res.studied, Patched: res.patched}, nil
+
 	case rpc.MethodQua:
 		var req rpc.QuaRequest
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, err
 		}
-		// The prompt's patch may name layers; expand them HERE so a spec that
-		// does not resolve fails the qua before anything is queued.
-		if req.Form != nil && req.Form.Patch != nil {
-			materialized, merr := a.Materialize(*req.Form.Patch)
-			if merr != nil {
-				return nil, outfitError(merr)
-			}
-			req.Form.Patch = &materialized
-		}
+		// The prompt's dressing was resolved before this call was routed -
+		// the hub dresses on the way in (angelus.dressParams), so a spec
+		// that does not exist failed the qua before anything was queued and
+		// what arrives here is data.
 		cursor := int(a.ariaSrv.LastTurn())
 		active := a.turnActive()
 		// Attribution comes off the request itself, not from the authn
-		// provider: the agent socket has none, and a human — never
-		// authenticated — is exactly the caller a confused aria needs named.
+		// provider: the agent socket has none, and a human: never
+		// authenticated: is exactly the caller a confused aria needs named.
 		//
 		// The duke placeholder is resolved HERE, against THIS aria's
 		// form, because the caller cannot know what this aria calls
-		// its end user — that is precisely why it sends a placeholder.
+		// its end user: that is precisely why it sends a placeholder.
 		a.SubmitPromptFrom(req, rpc.SenderFrom(params, a.dukeTitle))
 		return rpc.QuaResponse{OK: true, Cursor: cursor, Active: active}, nil
 
@@ -103,7 +139,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		set, removed, err := a.Set(req.Patch, req.IfVersion)
 		if err != nil {
 			// A patch may name layers, so a set can fail the way a dressing
-			// fails — with a closure the caller can draw.
+			// fails: with a closure the caller can draw.
 			return nil, outfitError(err)
 		}
 		return rpc.SetResponse{OK: true, Set: set, Remove: removed}, nil
@@ -148,7 +184,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 			return nil, fmt.Errorf("queue update: name the message id")
 		}
 		// Empty text would silently turn a question into a form carrier
-		// — a shape the caller almost certainly did not mean and cannot see.
+		//, a shape the caller almost certainly did not mean and cannot see.
 		// Malformed input, so: error, not a rejection reason.
 		if req.Text == "" {
 			return nil, fmt.Errorf("queue update: text is empty (delete it instead)")

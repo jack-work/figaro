@@ -51,7 +51,7 @@ func TestGCCollectsOnlyChildlessStumps(t *testing.T) {
 	if _, err := backend.CreateConversation(live); err != nil {
 		t.Fatal(err)
 	}
-	// Two older versions nothing was ever born under — the shape a store
+	// Two older versions nothing was ever born under: the shape a store
 	// accumulates when an outfit is edited between mints.
 	for _, v := range []string{"old-1", "old-2"} {
 		if _, err := backend.CreateOutfit("config", gcPatch(v)); err != nil {
@@ -90,7 +90,7 @@ func TestGCCollectsOnlyChildlessStumps(t *testing.T) {
 	}
 }
 
-// The live aria must still be readable — gc must never touch a prefix
+// The live aria must still be readable: gc must never touch a prefix
 // something reads its history through.
 func TestGCLeavesLiveAriasReadable(t *testing.T) {
 	h, backend := gcHandlers(t)

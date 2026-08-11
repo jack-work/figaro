@@ -30,7 +30,7 @@
           pname = "figaro";
           version = "0.23.1";
           src = self;
-          vendorHash = "sha256-D/nhmmc3gBVFKR0CI1FoQtRHIBUbICbF0j/C1VN5X6s=";
+          vendorHash = "sha256-4ZIm//A8nT5ZNm/INd4n0z+km7+8XylzsCOyd5GDXjw=";
 
           subPackages = [ "cmd/figaro" ];
           env.CGO_ENABLED = 0;
@@ -58,7 +58,7 @@
           # Multi-call shims used to live here (q/l/x symlinks); they
           # were moved to user shell aliases. See ~/.config/fish/config.fish.
           #
-          # `fig` is different — it's a pure rename (no argv rewrite),
+          # `fig` is different: it's a pure rename (no argv rewrite),
           # so we install it as a symlink next to figaro. main.go uses
           # filepath.Base(os.Args[0]) so help/usage/completion reflect
           # whichever name was invoked. Users installing via `go install`
@@ -68,7 +68,7 @@
           # binary and dropped into the standard nixpkgs autoload
           # paths ($out/share/{bash-completion,zsh/site-functions,
           # fish/vendor_completions.d}). Every nix rebuild produces a
-          # matching script atomically with the binary — no more stale
+          # matching script atomically with the binary: no more stale
           # on-disk completions after an upgrade. The canExecute guard
           # skips generation when cross-compiling (host can't run the
           # just-built binary); installShellCompletion is still safe to
@@ -83,12 +83,12 @@
             # (<exe>/../share/figaro).
             #
             # NOT conditional. A missing skills/ used to skip this silently and
-            # ship a figaro whose first-party skills simply did not exist —
+            # ship a figaro whose first-party skills simply did not exist -
             # indistinguishable, at runtime, from a figaro that has none,
             # because the loader treats an absent directory as an empty one.
             # Failing the build is the only place that difference is visible.
             if [ ! -d "$src/skills" ]; then
-              echo "figaro: no skills/ in the source tree — refusing to ship a binary with no first-party skills" >&2
+              echo "figaro: no skills/ in the source tree: refusing to ship a binary with no first-party skills" >&2
               exit 1
             fi
             mkdir -p $out/share/figaro
@@ -121,7 +121,7 @@
         figaroPkg = self.packages.${pkgs.system}.default;
 
         # Each override knob is an attribute on a profile. A null
-        # value means "inherit from the real user environment" — the
+        # value means "inherit from the real user environment": the
         # corresponding env var is left untouched. A string means
         # "set this env var"; "@dev" is a sentinel expanded to a
         # dev-scoped path under $FIGARO_DEV_ROOT/<knob>.
@@ -144,8 +144,8 @@
         # seedConfig copies the real config into a dev-scoped config dir on
         # first entry, so a shell can be given your actual outfits, skills and
         # credo while every write lands on the copy. Credentials are NOT
-        # copied — providers/ is symlinked, so a secret is never duplicated on
-        # disk — and hush is left to its own knob.
+        # copied: providers/ is symlinked, so a secret is never duplicated on
+        # disk, and hush is left to its own knob.
         mkFigaroShell = {
           name,
           runtime ? "@dev",
@@ -181,7 +181,7 @@
               # FIGARO_HUSH_APP: inheriting (uses real "figaro" identity)
               #
               # figaro's managed hush derives its agent-socket dir from
-              # os.TempDir()/<app>-hush — NOT XDG_RUNTIME_DIR, and with no env
+              # os.TempDir()/<app>-hush: NOT XDG_RUNTIME_DIR, and with no env
               # override in the shared (nil-Dirs) path. Nix rewrites TMPDIR to a
               # per-shell dir ($TMPDIR=/tmp/nix-shell.XXX), so inside the shell
               # figaro would look for the agent at
@@ -217,7 +217,7 @@
                 ( umask 077; head -c 24 /dev/urandom | base64 | tr -d '\n' > "$FIGARO_DEV_ROOT/hush-passphrase" )
               fi
               export FIGARO_HUSH_PASSPHRASE="$(cat "$FIGARO_DEV_ROOT/hush-passphrase")"
-              # NOTE: the embedded managed hush unlocks via the OS keyring — it
+              # NOTE: the embedded managed hush unlocks via the OS keyring: it
               # persists the passphrase on first-run and reads it back on every
               # later unlock/agent-respawn. So we do NOT clear the keyring on
               # entry (that would break non-interactive unlock of the existing
@@ -250,8 +250,8 @@
 
             ${if seedConfig then ''
             # Seed the dev config dir with a COPY of the real one, once per dev
-            # root. Everything that DEFINES a composition travels — config.toml,
-            # outfits (or a pre-rename loadouts/), skills, credo — so the shell
+            # root. Everything that DEFINES a composition travels: config.toml,
+            # outfits (or a pre-rename loadouts/), skills, credo: so the shell
             # sees your real outfits and can be edited freely without touching
             # them.
             #
@@ -318,7 +318,7 @@
             # global figaro install can't shadow the dev binary. NOTE: an
             # interactive shell launched inside the dev shell (e.g. fish) may
             # re-prepend its own ~/go/bin or ~/.nix-profile to PATH and shadow
-            # this again — guard it by re-prepending $FIGARO_DEV_BIN at the end
+            # this again: guard it by re-prepending $FIGARO_DEV_BIN at the end
             # of your shell rc when it is set (see ~/.config/fish/config.fish).
             export FIGARO_DEV_BIN="$FIGARO_DEV_ROOT/bin"
             mkdir -p "$FIGARO_DEV_BIN"
@@ -338,7 +338,7 @@
           '';
         };
       in {
-        # The default shell — fully inherited environment. Use this
+        # The default shell: fully inherited environment. Use this
         # to develop against the real daemon/config/state/hush. The
         # in-shell binary is still the worktree build (via
         # buildInputs), so you're testing your changes against your
@@ -351,7 +351,7 @@
           hush    = null;
         };
 
-        # Fully hermetic — every singleton path is dev-scoped.
+        # Fully hermetic: every singleton path is dev-scoped.
         # First invocation will trigger the hush + figaro first-run
         # flow. Use this for testing first-run UX or for completely
         # blank-slate experiments.
@@ -368,11 +368,11 @@
 
         # Share config (real providers, real outfits) but isolate
         # runtime + state AND run an isolated, embedded hush (its own
-        # identity, re-authenticated per shell — `q login` or set
+        # identity, re-authenticated per shell: `q login` or set
         # ANTHROPIC_API_KEY on first use). The shared agent's socket
         # isn't reachable from inside the sandbox, so this gives a
         # self-contained hush instead. NOTE: AGE-ENC provider keys in
-        # the shared config can't be decrypted by the fresh identity —
+        # the shared config can't be decrypted by the fresh identity -
         # re-auth the provider (OAuth/login or a plaintext/env key).
         share-config = mkFigaroShell {
           name = "share-config";
@@ -403,7 +403,7 @@
         # A COPY of your real config, isolated in a dev root.
         #
         # `nix develop .#sandbox` gives you your actual outfits, skills and
-        # credo — writable, and reachable by `figaro outfit --tree` — with the
+        # credo: writable, and reachable by `figaro outfit --tree`: with the
         # runtime and state dev-scoped so the live daemon and your arias are
         # never touched. hush is shared, so turns can actually run.
         #
@@ -448,7 +448,7 @@
         # before the shellHook runs (the path interpolation forces
         # evaluation). It's also added to buildInputs so the binary
         # is on the in-shell PATH directly, independent of profile
-        # state — defensive against a partial enter-failure.
+        # state: defensive against a partial enter-failure.
         #
         # Edge cases:
         #   - No existing figaro in profile: skip save/restore; just
@@ -520,7 +520,7 @@
             }
 
             _figaro_swap_exit() {
-              echo "[figaro-swap] exit — restoring previous figaro" >&2
+              echo "[figaro-swap] exit: restoring previous figaro" >&2
               _figaro_swap_stop_daemon
 
               # The worktree entry will be keyed by its derivation name
@@ -550,7 +550,7 @@
             _figaro_swap_enter
             trap _figaro_swap_exit EXIT
 
-            echo "[figaro-swap] active — exit shell to restore the previous figaro" >&2
+            echo "[figaro-swap] active: exit shell to restore the previous figaro" >&2
           '';
         };
       });

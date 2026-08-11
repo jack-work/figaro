@@ -25,7 +25,7 @@ func TestMalformedCallIsRefusedWithAnActionableError(t *testing.T) {
 
 	// The dispatcher is the one chokepoint every tool passes through.
 	if p := newSpecDispatcher(make(chan toolEvent, 1)).dispatch(t.Context(), nil, bad); p != nil {
-		t.Fatal("a quarantined call was dispatched — the tool ran on arguments that never arrived")
+		t.Fatal("a quarantined call was dispatched: the tool ran on arguments that never arrived")
 	}
 
 	tic := (&Agent{}).assembleToolResults(
@@ -34,7 +34,7 @@ func TestMalformedCallIsRefusedWithAnActionableError(t *testing.T) {
 		map[string]toolOutcome{"tc_2": {content: []message.Content{{Type: message.ContentProse, Text: "done"}}}},
 	)
 	if len(tic.Content) != 2 {
-		t.Fatalf("tool_result blocks = %d, want 2 — the pairing with tool_use must stay intact", len(tic.Content))
+		t.Fatalf("tool_result blocks = %d, want 2: the pairing with tool_use must stay intact", len(tic.Content))
 	}
 	got := tic.Content[0]
 	if !got.IsError {
@@ -44,7 +44,7 @@ func TestMalformedCallIsRefusedWithAnActionableError(t *testing.T) {
 		t.Errorf("tool_call_id = %q, want tc_1", got.ToolCallID)
 	}
 	// The shape the API documents: {"INVALID_JSON": "<what arrived>"}, built
-	// with the encoder — the payload is by definition full of unescaped quotes
+	// with the encoder: the payload is by definition full of unescaped quotes
 	// and control characters, and this is where they must survive.
 	var wrapper map[string]string
 	if err := json.Unmarshal([]byte(got.Text), &wrapper); err != nil {

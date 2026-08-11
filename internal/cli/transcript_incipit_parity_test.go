@@ -15,8 +15,8 @@ import (
 // THE INVARIANT: the same node, on the same pane, renders identically inline
 // and in the pager.
 //
-// It did not. The pager rendered nodes at t.w-2 — one column for the selection
-// bar, one for nothing — and then prefixed a blank, so at a 66-column pane the
+// It did not. The pager rendered nodes at t.w-2: one column for the selection
+// bar, one for nothing, and then prefixed a blank, so at a 66-column pane the
 // incipit wrapped a paragraph at 66 with a two-column margin and the pager
 // wrapped the SAME paragraph at 64 and indented it three. Two columns of budget
 // and one of indent, on the same screen, for the same text: the owner read it
@@ -27,7 +27,7 @@ import (
 // test fails on the first paragraph wide enough to wrap, naming both rows.
 func TestPagerRowsMatchIncipitRows(t *testing.T) {
 	nodes := []livedoc.Node{
-		{ID: "n0", Type: livedoc.NodeProse, Markdown: "The trade's own historians settle on the mid-1850s — 1854 or 1856 — as the real inflection point, and are frank that the name of the man who cut the first briar pipe is simply gone."},
+		{ID: "n0", Type: livedoc.NodeProse, Markdown: "The trade's own historians settle on the mid-1850s: 1854 or 1856, as the real inflection point, and are frank that the name of the man who cut the first briar pipe is simply gone."},
 		{ID: "n1", Type: livedoc.NodeProse, Markdown: "Three hundred and forty-nine **workshops**. In one town. Making one thing.\n\nAnd a second paragraph, with `code` and a [link](https://example.com), to keep glamour honest about inline styling."},
 		{ID: "n2", Type: livedoc.NodeThinking, Markdown: "I need to respect the rate limit of one request per second, so I'll batch the queries together in a single bash command with 1.5-second delays between each request to stay safely under the limit."},
 		{ID: "n3", Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK, Summary: "rg --line-number transcript internal/cli", Output: "internal/cli/transcript.go:200:func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria.Client, figaroID string, startedAt time.Time) *transcript\nsecond line"},
@@ -80,8 +80,8 @@ func pagerNodeRows(t *testing.T, n livedoc.Node, w int) []string {
 }
 
 // ink reduces rows to what a reader sees: no escapes, no trailing padding, no
-// blank rows. Styling is not what this invariant is about — the incipit paints
-// through a VT that drops SGR, the pager stores it collapsed — but every cell
+// blank rows. Styling is not what this invariant is about: the incipit paints
+// through a VT that drops SGR, the pager stores it collapsed: but every cell
 // of content, and the column it sits in, is.
 func ink(rows []string) []string {
 	var out []string

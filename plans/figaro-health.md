@@ -1,4 +1,4 @@
-# `figaro health` — a service-health verb
+# `figaro health`, a service-health verb
 
 **Status: not built.** Agreed as the next piece of work after the hibernation
 branch merges. This file is the brief, not a description of anything that exists.
@@ -25,7 +25,7 @@ figaro health -j           machine-readable, the full long payload
 figaro health --days 30    widen the usage window (default 7)
 ```
 
-Non-interactive. Prints and exits — no alt-screen, no keys, no pager. It must be
+Non-interactive. Prints and exits: no alt-screen, no keys, no pager. It must be
 safe to pipe, safe to run in CI, and safe at any terminal width, which for this
 codebase means: **read the width, do not assume 80, and degrade by dropping
 columns rather than wrapping them.** The `SUSANNA-table-wrap` proposal in
@@ -49,8 +49,8 @@ All of this exists in `rpc.MemStatus` today.
 ### Arias
 - total on disk, and the split: **live / dormant**
 
-  Note the vocabulary trap. Today `figaro status` reports three states —
-  `dormant | idle | active` — where `dormant` means "not in memory" and
+  Note the vocabulary trap. Today `figaro status` reports three states -
+  `dormant | idle | active`: where `dormant` means "not in memory" and
   `idle`/`active` are both live. There is no separate "hibernated" state and
   there should not be one: an aria reclaimed by the sweep IS dormant, and
   inventing a fourth word would make the sweep's effect look like a different
@@ -85,7 +85,7 @@ no per-object-graph accounting, and the two honest options are:
    exists and is calibrated: entries are sized from
    `Entry.EncodedBytes * irDecodeInflation`, with the constant (5) derived from
    measuring two real arias at 4.0x and 5.3x. Extend the same treatment to
-   translations and the chalkboard and the number is defensible to within ~25%,
+   translations and the form and the number is defensible to within ~25%,
    which is what `TestRealAriaMemory` measured. Print it as `~12.4 MiB`.
 2. **Say nothing.** Better than a number that looks exact and is not.
 
@@ -93,12 +93,12 @@ Do (1), with the tilde, and do not drop the tilde later.
 
 The composed UI (`aria.Server`) is the other resident holder, at ~0.2x the
 decoded IR on real arias. It only exists while an agent is bound, so a dormant
-aria's row correctly shows less — that is not a bug and the long view should
+aria's row correctly shows less: that is not a bug and the long view should
 make it obvious rather than surprising.
 
 **Disk bytes needs a new store method.** `XwalStore` knows each aria's node
 directory; summing segment file sizes per channel is a `filepath.WalkDir`. Break
-it out by channel in the long view — the IR / translations split is genuinely
+it out by channel in the long view: the IR / translations split is genuinely
 interesting, because a provider switch in an aria's lineage leaves a full second
 wire projection on disk (measured: 1.2 KiB on one real aria, 6.0 MiB on
 another).
@@ -117,7 +117,7 @@ The section people will actually run this for.
 `TokensOut`, `CacheReadTokens` and `CacheWriteTokens` as **lifetime totals per
 aria**, with no time dimension. So today the only honest daily series must come
 from the IR itself: every assistant message carries `message.Usage`, and every
-message has a turn and a logical time. Folding usage per day means walking IR —
+message has a turn and a logical time. Folding usage per day means walking IR -
 which is exactly the full-log walk the windowing work spent effort removing.
 
 Three options, in order of preference:
@@ -134,8 +134,8 @@ Three options, in order of preference:
 3. **Per-aria lifetime totals only, no time series.** What is possible today.
    Ship this in the short view immediately, and do not pretend it is a series.
 
-Recommend (1). There is a precedent for the shape — `metrics.jsonl` sits beside
-`logs.jsonl` in the state dir — but **it will not do the job as it stands**:
+Recommend (1). There is a precedent for the shape: `metrics.jsonl` sits beside
+`logs.jsonl` in the state dir: but **it will not do the job as it stands**:
 inspected on a real store, the only metric it carries is
 `figaro.request.duration`. So this is a new append, not an aggregation over
 something that exists. It is still small: one line per turn at the point
@@ -144,7 +144,7 @@ something that exists. It is still small: one line per turn at the point
 ### Configuration echo
 
 Print the `[memory]` values in effect, with defaults marked. A user tuning knobs
-should not have to guess whether their file was read — during the hibernation
+should not have to guess whether their file was read: during the hibernation
 fuzz an entire run was wasted on a config directory that lacked `credo.md`, and
 the failure surfaced as an outfit error rather than a config one.
 
@@ -157,7 +157,7 @@ it belongs here instead.
 
 Delete it, and fold what it shows into `health`. It was scaffolding for a
 measurement; two overlapping views of the same counters is one more thing to
-keep honest. Its `-j` consumers are zero — it shipped on this branch.
+keep honest. Its `-j` consumers are zero: it shipped on this branch.
 
 ## Sequencing
 

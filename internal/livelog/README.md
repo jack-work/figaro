@@ -82,12 +82,12 @@ turn. `Turn.Sealed` is the final immutability signal.
 
 ## Packages
 
-- **`aria`** — `Page`, pagination, `Server`, range-backed `Client`, field-delta
+- **`aria`**: `Page`, pagination, `Server`, range-backed `Client`, field-delta
   folding, desync detection, and history fetching. No socket or terminal I/O.
-- **`render`** — the inline `Incipit` renderer. Closed slices freeze to native
+- **`render`**: the inline `Incipit` renderer. Closed slices freeze to native
   scrollback once; only the open suffix is repainted. The transcript renderer
   provides an alternate-screen, scrollable view over the same client/store.
-- **`livedoc`** (sibling package) — neutral nodes plus rune-safe string
+- **`livedoc`** (sibling package): neutral nodes plus rune-safe string
   `Diff`/`Apply`; no ANSI, width, or theme decisions.
 
 ## In Figaro

@@ -50,7 +50,7 @@ func (r *ReadTool) Description() string {
 		"Read the contents of a file. For text files, output is truncated to %d lines or %dKB "+
 			"(whichever is hit first). Use offset/limit for large files. "+
 			"Image files (JPEG, PNG, GIF, WebP) are detected automatically and returned as "+
-			"vision-compatible image content blocks — always use this tool instead of cat/bash "+
+			"vision-compatible image content blocks: always use this tool instead of cat/bash "+
 			"when you need to view or analyze an image. A large image is scaled down to fit; "+
 			"when that happens the result says so and gives the factor for mapping a coordinate "+
 			"on what you see back onto the original.",
@@ -109,7 +109,7 @@ func (r *ReadTool) Execute(ctx context.Context, args map[string]interface{}, onO
 // The picture is the point, so a too-large image is SCALED, not discarded:
 // dropping it would leave the model to answer questions about something it
 // cannot see. Only an image that cannot be encoded under the ceiling at any
-// size returns text alone — and then the note says so plainly, because a model
+// size returns text alone, and then the note says so plainly, because a model
 // that knows it is blind can ask for a crop, while a model that does not will
 // invent what it thinks it saw.
 func (r *ReadTool) readImage(absPath, mimeType string, onOutput OnOutput) ([]message.Content, error) {

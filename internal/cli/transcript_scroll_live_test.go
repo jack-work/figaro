@@ -23,8 +23,8 @@ func TestTranscriptScrollLiveContract(t *testing.T) {
 		t.Errorf("live frame does not say live: %q", tr.prev[tr.h-2])
 	}
 
-	// SCROLLED: the padding row is given back to content — the last line sits
-	// flush against the rule — and the marker is gone. Counted rather than read
+	// SCROLLED: the padding row is given back to content: the last line sits
+	// flush against the rule, and the marker is gone. Counted rather than read
 	// off the screen because a content row is allowed to be blank itself.
 	//
 	// And that reclaimed row IS the notch: the first k out of live spends its
@@ -63,7 +63,7 @@ func TestTranscriptScrollLiveContract(t *testing.T) {
 	// PROMOTED BY THE SCROLL KEY: enter() and the keystroke arrive in one input
 	// chunk and the frame-rate gate defers the frame between them, so follow
 	// drops before anything has painted. The window must still be the settled
-	// tail — this is 'k' from the inline view, which used to open on the cold
+	// tail: this is 'k' from the inline view, which used to open on the cold
 	// window the pager was constructed with: a screen of history erased.
 	fresh := newTranscript(io.Discard, tr.w, tr.h, tr.view, tr.client, "aria0001", time.Unix(0, 0))
 	fresh.gate = func() bool { return false }

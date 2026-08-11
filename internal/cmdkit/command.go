@@ -39,7 +39,7 @@ type Command struct {
 	// Return nil on success, an error on failure.
 	Run func(ctx *RunContext) error
 
-	// PassRaw means the router should not parse flags or args —
+	// PassRaw means the router should not parse flags or args -
 	// everything after the command name goes into RunContext.RawArgs.
 	// Used for commands like prompt that use `-- <text>` conventions.
 	PassRaw bool
@@ -97,6 +97,18 @@ type FlagDef struct {
 
 	// Default is the default value (string form). Empty = unset.
 	Default string
+
+	// Subwords, when non-empty, names the sub-verbs this flag belongs to.
+	// The router refuses the flag BEFORE Run when the command's first
+	// positional is not one of them, naming where it does belong.
+	//
+	// This closes the other half of the unconsumed discipline. The dash-token
+	// branch catches a flag nobody can PARSE; this catches a flag that parses
+	// and is then dropped on the floor by a hand-written subword dispatcher -
+	// which is how `fig form -O name=charles` printed the form, ignored the
+	// flag, and reported success. A command with no subwords declares none of
+	// these and is unaffected.
+	Subwords []string
 }
 
 // RunContext carries parsed state into a command's Run function.
@@ -112,6 +124,27 @@ type RunContext struct {
 
 	// Extra is caller-provided data (e.g. *config.Loaded, dependencies).
 	Extra interface{}
+
+	// Router is the table this command was dispatched from, so a subword
+	// dispatcher can delegate to the router's own knowledge: `fig form help
+	// <topic>` printing the same page `fig help <topic>` does, rather than a
+	// second copy of it that drifts.
+	Router *Router
+}
+
+// Help prints the help page for a command by name, the way `help <name>`
+// would. Reports false when no such command is registered, leaving the
+// caller to say so in its own words.
+func (c *RunContext) Help(name string) bool {
+	if c.Router == nil {
+		return false
+	}
+	cmd, ok := c.Router.Command(name)
+	if !ok {
+		return false
+	}
+	c.Router.PrintCommandHelp(cmd)
+	return true
 }
 
 // Flag returns the value of a flag by long name. Returns "" if unset.

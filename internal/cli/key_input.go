@@ -1,8 +1,8 @@
 package cli
 
 // navKey names the logical cursor-motion keys. They are the one part of the
-// keyboard a terminal cannot deliver as a byte — every one of them arrives as
-// an escape sequence — which is why they need a vocabulary of their own
+// keyboard a terminal cannot deliver as a byte: every one of them arrives as
+// an escape sequence: which is why they need a vocabulary of their own
 // alongside modifiedKey's byte codes.
 type navKey uint8
 
@@ -128,7 +128,7 @@ func parseKeyNumber(buf []byte) (value, consumed int, complete bool) {
 // data[0]==0x1b, so the caller can distinguish an actual Escape keypress
 // (bare 0x1b) from a prefix byte of e.g. an arrow key (\x1b[A), an SS3
 // F-key (\x1bOP), or an OSC (\x1b]…ST). CSI-u sequences we DO recognize
-// are already handled by parseModifiedKey — this is the catch-all so bare
+// are already handled by parseModifiedKey: this is the catch-all so bare
 // Esc can drive its own binding without a spurious CSI prefix triggering it.
 //
 // Returns consumed=0, need=false for a bare Esc (either the buffer holds
@@ -175,19 +175,19 @@ func consumeEscapeSequence(data []byte) (consumed int, need bool) {
 	}
 }
 
-// navKeyFor classifies a COMPLETE escape sequence — one already delimited by
-// consumeEscapeSequence — as a logical navigation key. Splitting the job in
+// navKeyFor classifies a COMPLETE escape sequence: one already delimited by
+// consumeEscapeSequence, as a logical navigation key. Splitting the job in
 // two keeps the delimiter (which owns the "bare Esc vs. sequence prefix"
 // guarantee and the split-read `need`) untouched, and makes classification a
 // total function over a finished sequence.
 //
-// Anything not in the navigation vocabulary — F-keys, OSC replies, cursor
-// position reports, Left/Right — returns ok=false and stays swallowed exactly
+// Anything not in the navigation vocabulary: F-keys, OSC replies, cursor
+// position reports, Left/Right: returns ok=false and stays swallowed exactly
 // as before.
 //
 // Both encodings are accepted: CSI (\x1b[A, the normal cursor mode) and SS3
 // (\x1bOA, which terminals emit for the arrows once an application turns on
-// DECCKM — vim, less and the pager's own alt-screen entry all can). Home and
+// DECCKM: vim, less and the pager's own alt-screen entry all can). Home and
 // End are the worst-behaved keys in the terminal world: xterm sends \x1b[H /
 // \x1b[F, the VT220 lineage sends \x1b[1~ / \x1b[4~, and rxvt sends
 // \x1b[7~ / \x1b[8~. All six are honored.

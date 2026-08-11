@@ -24,7 +24,7 @@ func TestCatchUpPreservesPrefixBytes(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	first, err := p.catchUp(log, cache, nil)
+	first, err := p.catchUp(log, cache, nil, nil)
 	require.NoError(t, err)
 	require.Len(t, first.Messages, 2)
 	firstBlock := first.Messages[0].Content[0].OfText
@@ -35,7 +35,7 @@ func TestCatchUpPreservesPrefixBytes(t *testing.T) {
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("next")},
 	}})
 	require.NoError(t, err)
-	second, err := p.catchUp(log, cache, nil)
+	second, err := p.catchUp(log, cache, nil, nil)
 	require.NoError(t, err)
 
 	require.Len(t, second.Messages, 3)
@@ -68,7 +68,7 @@ func TestCatchUpReplaysCachedPrefixSnapshot(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	projected, err := p.catchUp(log, cache, nil)
+	projected, err := p.catchUp(log, cache, nil, nil)
 	require.NoError(t, err)
 	require.Len(t, projected.Messages, 2)
 	require.Len(t, projected.Messages[1].Content, 2)

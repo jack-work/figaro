@@ -20,7 +20,7 @@ import (
 // wrapped line, so its "worst offender" was 120 cells of trailing PADDING; and
 // a captured pane also holds rows frozen at a PREVIOUS width, and the shell's
 // own echo. Nothing that cannot separate what figaro WROTE from what the
-// terminal REMEMBERS can convict figaro — or clear it.
+// terminal REMEMBERS can convict figaro: or clear it.
 //
 // WHY IT IS ALWAYS ON. Asking a reporter to set a variable, reproduce on
 // demand and send a log is three chances to lose the evidence. The cost is one
@@ -37,7 +37,7 @@ import (
 // question is "which surface produced THAT" rather than "does it happen".
 //
 // WHAT IT ANSWERED. Driven against the reporter's own aria in a 66x30 pane,
-// this log stayed EMPTY while the prose was visibly broken — which is how the
+// this log stayed EMPTY while the prose was visibly broken: which is how the
 // hunt left the painter and went to the renderer, where glamour was wrapping
 // every paragraph twice (30aae84). An instrument that clears the accused is
 // worth as much as one that convicts.
@@ -52,7 +52,7 @@ type widthAudit struct {
 	// session never creates one.
 	lazy func() *os.File
 	// lastW is the width the carried column belongs to. A resize moves the
-	// cursor under us, so a column carried across one is meaningless — and
+	// cursor under us, so a column carried across one is meaningless, and
 	// reporting it produced empty-ink "overruns" on every resize, which is a
 	// detector crying wolf at the exact moment the user is looking.
 	lastW int
@@ -99,7 +99,7 @@ func (a *widthAudit) Write(p []byte) (int, error) {
 //
 // SPLITTING IS THE WHOLE DIFFICULTY. The incipit separates rows with CR-LF, but
 // the pager positions each row with CUP (ESC [ row ; col H) and never emits a
-// newline at all — so splitting on CR-LF alone measured an entire FRAME as one
+// newline at all: so splitting on CR-LF alone measured an entire FRAME as one
 // row and reported 1,634 cells in a 100-column terminal. That is a broken
 // instrument reporting a spectacular bug, which is worse than reporting
 // nothing: it buries the one real hit (a 128-cell status rule) under noise.
@@ -128,8 +128,8 @@ func (a *widthAudit) check(s string) {
 	// This audit began by measuring rows as though each started at column 1,
 	// which is a second way to be blind: a row emitted from a stale cursor
 	// column overflows by exactly the offset, and both the row and the width
-	// look innocent on their own. So the write is replayed as a cursor —
-	// CR/CUP set the column, text advances it — and what is reported is where
+	// look innocent on their own. So the write is replayed as a cursor -
+	// CR/CUP set the column, text advances it, and what is reported is where
 	// the row ENDS.
 	for _, row := range splitPaintedRowsAt(s, &a.col) {
 		if row.text == "" {
@@ -188,7 +188,7 @@ func stripEsc(s string) string {
 
 // auditRows reports rows a NON-painter surface is about to print. `figaro show`
 // writes straight to stdout rather than through the Terminal, so the writer
-// wrapper never sees it — and it renders the same nodes the pager does, which
+// wrapper never sees it, and it renders the same nodes the pager does, which
 // makes it exactly the kind of gap an audit is supposed not to have.
 func auditRows(rows []string, width int, surface string) {
 	dest := strings.TrimSpace(os.Getenv("FIGARO_WIDTH_AUDIT"))

@@ -48,7 +48,7 @@ func (s *staticAuth) Resolve() (string, error) { return s.token, nil }
 func (s *staticAuth) Invalidate(string) error  { atomic.AddInt32(&s.invalidated, 1); return nil }
 
 // TestDoWithAuthRetry_RetriesTransient: a server that 529s twice then 200s must
-// be retried through to success — an overload blip must not kill the turn.
+// be retried through to success, an overload blip must not kill the turn.
 func TestDoWithAuthRetry_RetriesTransient(t *testing.T) {
 	old := retryBaseDelay
 	retryBaseDelay = time.Millisecond

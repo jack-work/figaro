@@ -12,10 +12,10 @@
 
 Two representations of a conversation exist today:
 
-- **fig IR** — `message.Message` (`internal/message`): the canonical, lossless,
+- **fig IR**: `message.Message` (`internal/message`): the canonical, lossless,
   provider-agnostic record. The main xwal channel. Append-only turns; rich
   content blocks + provenance (roles, usage, stop reasons, interrupts, patches).
-- **UI IR** — `aria.Turn` + `livedoc.Node` on the `aria.Page` read wire
+- **UI IR**: `aria.Turn` + `livedoc.Node` on the `aria.Page` read wire
   (`internal/livedoc`, `internal/livelog/aria`): a render projection. Lossy and
   splice-friendly, with a versioned mutable suffix for live repaint. Derived
   from fig IR through `internal/uiir`/`internal/compose`, a pure one-way map.
@@ -30,7 +30,7 @@ current storage.
 > **The convergence now has a plan and a shared coordinate.** See
 > [../reference/turns.md](../reference/turns.md). Both IRs carry a **turn id**; **LT
 > joins, turn id addresses**. The open debate below ("should a live message be a
-> whole turn?") is **resolved: yes** — the UI IR unit is the turn, prompt and
+> whole turn?") is **resolved: yes**: the UI IR unit is the turn, prompt and
 > reply together.
 
 ## The drift, measured
@@ -40,38 +40,38 @@ same *thing*. The mapping is not 1:1 in either direction:
 
 | fig IR content | → UI IR nodes |
 |---|---|
-| `tool_invoke` (assistant msg) **+** `tool_result` (user msg) | **1** `tool` node — 2 blocks, 2 *messages*, 1 node |
-| empty `prose` / `thinking` | **1** — reserves its ordinal; renderer hides it until content arrives |
-| `image` | **0** — no case in the `compose.Nodes` switch |
-| `interrupt` | **0** — no case |
-| `prose` inside a `tool_result` message | **1** `steering` node — no content counterpart |
+| `tool_invoke` (assistant msg) **+** `tool_result` (user msg) | **1** `tool` node: 2 blocks, 2 *messages*, 1 node |
+| empty `prose` / `thinking` | **1**: reserves its ordinal; renderer hides it until content arrives |
+| `image` | **0**: no case in the `compose.Nodes` switch |
+| `interrupt` | **0**: no case |
+| `prose` inside a `tool_result` message | **1** `steering` node: no content counterpart |
 
 Vocabularies overlap by half: content is `prose, image, thinking, tool_invoke,
 tool_result, interrupt` (6); nodes are `prose, thinking, tool, steering` (4);
 shared: `prose, thinking`.
 
-**What turn ids fix.** The node `id` field was doing double duty — a synthesized
+**What turn ids fix.** The node `id` field was doing double duty, a synthesized
 `"<lt>.<blockIdx>"` for prose/thinking, an opaque provider receipt for tools,
 and nothing at all for the user's prompt. The UI address is now the positional
 pair `(turn, node ordinal)`, while `lts`/`src` carry provenance and the user's
 question is `Turn.Inquiry`. `Node.ID` still serializes the old string metadata
 for now, but clients must not use it as identity. The cardinality mismatch
-above stays — folding a tool's invoke and result into one node is correct — and
+above stays: folding a tool's invoke and result into one node is correct, and
 is now stated by `lts`/`src` instead of being invisible.
 
 ## Answers to the open IR questions
 
-- **Where do tools render — assistant or user message?** The **assistant**
+- **Where do tools render, assistant or user message?** The **assistant**
   output inside the turn. `compose.Nodes` iterates assistant messages; a
   `tool_invoke` block becomes one `tool` node. The opening prompt is
   `Turn.Inquiry`, not a node or separate unit. A user-role `tool_result`
   message also creates no unit; it folds into the invoked tool node.
 - **How does the UI converge a tool to one item?** fig IR has two events in two
-  messages — `tool_invoke` (assistant) and `tool_result` (a later user message),
+  messages: `tool_invoke` (assistant) and `tool_result` (a later user message),
   linked by `tool_call_id`. `compose.toolNode` merges them into a single `tool`
   node `{id, name, args, status, output}`: status `running` until the result
   arrives, then `ok`/`error`; output is the streamed/final result text
-  (tail-bounded to 200 lines — the full text stays in the canonical IR). So the
+  (tail-bounded to 200 lines: the full text stays in the canonical IR). So the
   UI's single tool node is the *folded lifecycle* of the fig IR's invoke+result.
 
 ## Primitive-name alignment
@@ -95,11 +95,11 @@ derived snapshot.
 
 ## Future (north star + blockers)
 
-- **Tool calling over a separate channel — the key blocker.** Today a tool is
+- **Tool calling over a separate channel: the key blocker.** Today a tool is
   "handled via instructions" inside the fig IR (invoke block in one message,
   result in another). The intent: the fig IR **encodes a tool** (one block), and
   the tool is *run over a separate channel*, delivering IR updates to the
-  mutable turn suffix — exactly how the UI streams `NodeDelta`s into an open
+  mutable turn suffix: exactly how the UI streams `NodeDelta`s into an open
   node. This unlocks:
   - **Formalizing the "live" message in the fig IR** the way the UI does: an
     open message with a version, mutated by deltas, then closed. The live state
@@ -109,9 +109,9 @@ derived snapshot.
     degree observed, whether a tool was invoked/completed, a separate tool
     channel + that state lets us know **which tools still need handling** on
     restore. (Full fig↔UI convergence then becomes safe.)
-- **"message" supplants "tic"; turn vs message. — RESOLVED.** The UI IR unit is
+- **"message" supplants "tic"; turn vs message.: RESOLVED.** The UI IR unit is
   the **turn**: user inquiry and assistant reply in one entry. Tools and
-  steering do not make this hard once nodes carry `lts` — a tool node simply
+  steering do not make this hard once nodes carry `lts`, a tool node simply
   spans two LTs, and steering is the same primitive as the prompt at a later
   position. See [../reference/turns.md](../reference/turns.md).
 
@@ -126,7 +126,7 @@ derived snapshot.
   and sharing the `tool_result` LT.
 - Reshaping the unit (turn-as-message) wants **compaction** in place first.
 - The wire `type` value changed (`text`→`prose`); existing stores need a fresh
-  start (or a migration) — fine on this branch.
+  start (or a migration): fine on this branch.
 
 ## Sequence
 

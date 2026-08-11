@@ -12,7 +12,7 @@ import (
 
 // TestTranscript_ForwardSelectionRequestsEvictedPage is GONE. It pinned that
 // dragging a selection past the bottom of the retained window asked for a
-// FORWARD page — a direction that only existed because history lived in a
+// FORWARD page, a direction that only existed because history lived in a
 // second copy the window could slide off the tail. The window reaches the live
 // tail by construction now, so there is nothing newer to request.
 
@@ -26,8 +26,8 @@ func TestTranscript_ScrollingPinsOpenMessage(t *testing.T) {
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
 	tr.key('k')
-	// PINNED, NOT FROZEN. Scrolling away keeps the open message in the window —
-	// it is the last thing in the store's tail interval — and it keeps arriving
+	// PINNED, NOT FROZEN. Scrolling away keeps the open message in the window -
+	// it is the last thing in the store's tail interval, and it keeps arriving
 	// from the client rather than from a snapshot taken at the detach.
 	open := tr.openMessage()
 	if open == nil {

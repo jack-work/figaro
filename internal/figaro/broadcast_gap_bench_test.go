@@ -18,8 +18,8 @@ import (
 // that is Kick + refreshMetrics; the question is what it costs on a large
 // aria, since a watching client cannot see the question until it clears.
 //
-// realisticLog builds a conversation shaped like a real one — prose in,
-// tool output back, usage stamped on every assistant message — because the
+// realisticLog builds a conversation shaped like a real one: prose in,
+// tool output back, usage stamped on every assistant message: because the
 // cost of the full fold is dominated by content bytes and by whether
 // tokens.ContextSize can take its usage watermark shortcut.
 func realisticLog(tb testing.TB, n int, withUsage bool) store.Log[message.Message] {
@@ -72,9 +72,9 @@ func gapAgent(tb testing.TB, n int, withUsage bool) *Agent {
 // BenchmarkPromptBroadcastGap measures the two regimes refreshMetrics can be
 // in when appendUserPrompt calls it, right after the user message landed:
 //
-//	incremental — the production case. metricsLT is one row behind the tail,
+//	incremental: the production case. metricsLT is one row behind the tail,
 //	              so the fold reads exactly the row just appended.
-//	fallback    — refreshMetricsFrom(a.Context()): full log copy, full
+//	fallback: refreshMetricsFrom(a.Context()): full log copy, full
 //	              re-estimate, full recount. Only reachable when the log
 //	              REWOUND under the agent (tail.LT < metricsLT).
 func BenchmarkPromptBroadcastGap(b *testing.B) {

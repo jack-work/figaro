@@ -13,7 +13,7 @@ import (
 // THE CHROME AROUND THE QUESTION IS PART OF THE QUESTION.
 //
 // When the inquiry was a NODE it travelled as its own message and got the
-// blank lines and the closing rule for free — the rule was that message's
+// blank lines and the closing rule for free: the rule was that message's
 // closer. As TEXT it is drawn by hand at three sites (inline incipit, the
 // pager, `fig show`), and the first cut of that drew the header and the text
 // and nothing else: the reply ran straight into the question with no rule
@@ -21,7 +21,7 @@ import (
 //
 // The block is: "> input" / blank / indented text / blank / RULE / "< figaro".
 // All three surfaces must agree on it, because a live-vs-committed difference
-// here is not cosmetics — it is the same exchange telling two stories.
+// here is not cosmetics: it is the same exchange telling two stories.
 func TestInquiryChromeAgreesAcrossViews(t *testing.T) {
 	const question = "THEQUESTION"
 	nodes := []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "THEANSWER"}}
@@ -57,7 +57,7 @@ func TestInquiryChromeAgreesAcrossViews(t *testing.T) {
 }
 
 // assertChrome checks that want appears in rows in order, with the blanks
-// exactly where want says — a row is "blank" iff it holds no printable text,
+// exactly where want says, a row is "blank" iff it holds no printable text,
 // and "─" matches a rule row (a run of box-drawing dashes and nothing else).
 func assertChrome(t *testing.T, rows []string, want []string) {
 	t.Helper()
@@ -104,7 +104,7 @@ func classifyChromeRow(row string) string {
 
 // THE RULE IS THE OVERLINE OF THE HEADER BENEATH IT, EVERYWHERE.
 //
-// TestInquiryChromeAgreesAcrossViews above pins the seam INSIDE a message —
+// TestInquiryChromeAgreesAcrossViews above pins the seam INSIDE a message -
 // question, blank, rule, "< figaro" hard against it. Nothing pinned the same
 // seam at a message BOUNDARY, and that is exactly where it drifted: the pager
 // separated two units with a blank/rule/blank triple and the inline renderer
@@ -118,7 +118,7 @@ func classifyChromeRow(row string) string {
 //
 // So this asserts the invariant rather than one shape: no rendered surface may
 // put a blank row between a bare rule and the voice header it introduces. The
-// assistant bookend is untouched by it — that closer ends in status TEXT, not a
+// assistant bookend is untouched by it: that closer ends in status TEXT, not a
 // rule, so the blank under it is not this pattern and stays.
 func TestVoiceHeaderHugsItsRule(t *testing.T) {
 	nodes1 := []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "FIRSTANSWER"}}

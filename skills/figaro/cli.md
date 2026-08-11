@@ -15,14 +15,14 @@ These hold across the whole CLI:
   flags because it *is* `send`.
 - **`--` separates flags from a prompt.** Flags go before it, prompt after. A
   `--` inside the prompt body is prompt text, and nothing before the boundary
-  is dropped in silence — an unrecognized token is an error.
+  is dropped in silence, an unrecognized token is an error.
 - **Targeting** is `--id <id>` everywhere, or a positional `<id>` on most
   verbs. With neither, a verb targets the aria this shell is attended to. The
   precedence is `--id` beats `FIGARO_ARIA` beats the pid binding.
 - **`-j`/`--json`** submits and exits, printing one machine-readable line on
   stdout and nothing else. It contradicts anything that streams or renders
   (`-r`, `-v`, `-o`, `-l`, `-x`, `-e`), and says so rather than dropping them.
-- **`-h`/`--help`** prints that verb's help on **stdout**, exit 0 — reserved on
+- **`-h`/`--help`** prints that verb's help on **stdout**, exit 0: reserved on
   every verb, so no command may claim `-h` for itself. Usage printed because
   argv was wrong goes to **stderr** with **exit 2**; exit 1 means the command
   ran and failed. `figaro help [<verb>]` is the same help by another door.
@@ -33,7 +33,7 @@ These hold across the whole CLI:
 |---|---|
 | `figaro -- <prompt>` | Prompt the attended aria. Creates one if this shell has no binding. |
 | `figaro send [flags] -- <prompt>` | The same, with the verb spelled out. Alias `qua`. |
-| `figaro new [-O <spec>] -- <prompt>` | Mint a fresh aria, bind this shell to it, prompt it. |
+| `figaro new [-O <names>] [-S <k=v>] -- <prompt>` | Mint a fresh aria, bind this shell to it, prompt it. |
 | `figaro new` | With no prompt: mint on the default outfit and attend it, no turn. `new` always mints; `figaro attend null` is how you go home. |
 
 `send` flags, all combinable unless noted:
@@ -42,7 +42,9 @@ These hold across the whole CLI:
 |---|---|
 | `-f`, `--forget` | Submit and exit. Do not attach to the stream, do not interrupt on Ctrl-C. The turn keeps running in the daemon. Mints an aria if this shell has none (the id goes to stderr, or to stdout with `-j`). |
 | `-e`, `--ephemeral` | Spin a throwaway in-memory aria and kill it when the turn ends. Contradicts `--id`. |
-| `-O`, `--outfit <spec>` | Dress the aria. On one this call creates it is the birth outfit; on one that already exists the spec is folded onto its form **in the same call as the prompt**, so that turn is answered wearing it. Repeats append (`-O a -O b` = `-O a,b`). Bundles like any value-taking short: `-erO sonn5` or `-erOsonn5`. Defaults to `default_outfit`. See [reference/outfits.md](reference/outfits.md). |
+| `-O`, `--outfit <names>` | Dress the aria in OUTFIT NAMES. On one this call creates it is the birth outfit; on one that already exists it is folded onto the form **in the same call as the prompt**, so that turn is answered wearing it. Repeats append (`-O a -O b` = `-O a,b`). Bundles like any value-taking short: `-erO sonn5` or `-erOsonn5`. Defaults to `default_outfit`. See [reference/outfits.md](reference/outfits.md). |
+| `-S`, `--set <k=v>` | Form keys, the other axis: `k=v` or a JSON literal, comma-separated. Folded AFTER `-O`, so your key beats the outfit's. |
+| `-D`, `--delete <paths>` | Form key paths to remove, comma-separated. Folded last. |
 | `-r`, `--raw` | Plain text on stdout: no ANSI, no markdown. Streamed, not buffered. |
 | `-o`, `--verbose` | Expand full tool inputs. Ctrl-O toggles it live. |
 | `-l`, `--listen` | Open the transcript pager at startup. |
@@ -61,8 +63,8 @@ The classification happens where the queue is drained, and nowhere else.
 
 **Every drain coalesces the contiguous run of queued prompts into one message;
 a queued `set` or `fork` is a barrier.** Four chained sends against an idle
-aria are one reply and then ONE combined question — not four turns to sit
-through — and the same is true of messages queued behind a turn you then
+aria are one reply and then ONE combined question: not four turns to sit
+through, and the same is true of messages queued behind a turn you then
 interrupt. The messages are separated by a blank line, so they stay separate
 lines on screen and separate messages to the model. A `set` queued between two
 of them still applies in order, because folding a prompt in front of it would
@@ -72,7 +74,7 @@ A single submit is untouched: one message in, one message out.
 
 Prompts that arrive while the aria is busy wait in its **queue**. They are
 addressed by an id from the listing, paired with the **epoch** that id was read
-in — ids restart whenever the agent is rebuilt (a daemon restart, a
+in: ids restart whenever the agent is rebuilt (a daemon restart, a
 dormant→attach), so every mutation re-reads first and hands the epoch back. A
 request from a previous generation is refused as `stale` rather than resolved
 against whatever holds that number now.
@@ -84,14 +86,14 @@ against whatever holds that number now.
 | `figaro queue rm --all` | Drop all of them. |
 | `figaro queue edit <id> -- <text>` | Rewrite one. |
 
-To ADD to the queue, `send` — a queued message is just a prompt that arrived
+To ADD to the queue, `send`, a queued message is just a prompt that arrived
 while the aria was busy, so there is no separate create verb. The sub-verb owns
 the positional slot, so another aria is `--id`, never a bare id.
 
 A refusal is an **answer**, not a crash. The agent declines to delete a message
 it has already committed, and says which: `committing` (lifted by the drain
 loop this instant), `committed` (already part of the conversation), `merged` (an
-interrupt folded it into another queued message — the survivor's id is given),
+interrupt folded it into another queued message: the survivor's id is given),
 `stale`, `unknown`, `closed`. Exit is 0 when every id was applied, 1 when any
 was refused, 2 for misuse.
 
@@ -105,8 +107,8 @@ Two verbs, differing in one thing: what becomes of the queue.
 | `figaro hup -d [<id>] [-j]` | Stop the turn and **discard** them. |
 | `figaro cut [<id>] [-j]` | Shorthand for `hup -d`. |
 
-Both forms **return** the queued messages — listed on stdout, or as JSON with
-`-j` — so discarding is not losing.
+Both forms **return** the queued messages: listed on stdout, or as JSON with
+`-j`: so discarding is not losing.
 
 `hup` is the everyday one, and what it leaves behind is governed by the rule
 below.
@@ -121,13 +123,13 @@ Clearing does not need a turn to be running. Neither verb touches a queued
 
 In the transcript pager, **`H`** is `hup` from the keyboard and **`X`** is
 `hup -d`: both stop the turn and keep watching. They are the third thing you
-can do to a running turn — `Ctrl-C` stops it and exits, `Ctrl-D` exits and lets
+can do to a running turn: `Ctrl-C` stops it and exits, `Ctrl-D` exits and lets
 it run on, `H`/`X` stop it and stay. What `X` drops is printed into the status
 line and reprinted to the shell when you leave the pager, so the text survives
 even though its place in the queue does not.
 
-The wire behind all of this — the interrupt's queue disposition, the
-`(epoch, id)` identity, and the closed set of refusal reasons — is
+The wire behind all of this: the interrupt's queue disposition, the
+`(epoch, id)` identity, and the closed set of refusal reasons: is
 [reference/ui-stream.md](reference/ui-stream.md).
 
 ## Moving around
@@ -141,7 +143,7 @@ The wire behind all of this — the interrupt's queue disposition, the
 | `figaro attend <id>` | Bind this shell to an aria. Alias `at`. |
 | `figaro attend <id>:<turn>` | Bind with a pending fork point: the next bare prompt forks there. `<id>.<lt>` names an LT instead of a turn. |
 | `figaro attend null` | Go home. There is no `detach` verb. |
-| `figaro show [<id>]` | Render history — the same rows `listen` draws. `-n N` last N turns, `-a` all, `-o` block addresses and timestamps, `-v` raw IR, `-l` no markdown, `-j` JSON. |
+| `figaro show [<id>]` | Render history: the same rows `listen` draws. `-n N` last N turns, `-a` all, `-o` block addresses and timestamps, `-v` raw IR, `-l` no markdown, `-j` JSON. |
 | `figaro status [<id>]` | One aria in focus: provider, model, context, cost. `-m` adds cwd, outfit, fork origin. |
 | `figaro listen [<id>]` | Attach to the live stream without prompting. Ctrl-D detaches, the turn survives. |
 | `figaro hup [<id>] [-d]` | Hang up: stop the turn; `-d` also discards the queue (see The queue). |
@@ -155,7 +157,7 @@ row shows `▸`, not `●`, so identify yourself from the header instead.
 `attend` binds the **terminal**, not the process that typed it: on unix the key
 is the session leader, so subshells, pipelines, `$(...)`, `timeout figaro …`
 and a shell-prompt segment all resolve to the same aria. A script run from an
-attended shell therefore speaks to that shell's aria — it cannot move the
+attended shell therefore speaks to that shell's aria: it cannot move the
 attendance, only use it. Windows has no POSIX session and keys on the parent.
 Override with `--no-bind`/`-A` (ignore the binding) or `--bind` (use it where
 the no-TTY rule would switch writes off); both go before the verb.
@@ -176,11 +178,11 @@ the no-TTY rule would switch writes off); both go before the verb.
 The model behind these, including what freezes and which child keeps the id, is
 [reference/trunks.md](reference/trunks.md).
 
-**Moving an aria between stores** — out of a dev shell, onto another machine —
+**Moving an aria between stores**: out of a dev shell, onto another machine -
 is `export` then `import`. They carry CONTENT, not identity: node ids, fork
 bases and LTs belong to the store an aria is in, so the destination mints its
 own and an import can never collide with what is already there. Three things do
-not travel: the aria's id (a trunk id is unique per store — the old one is
+not travel: the aria's id (a trunk id is unique per store: the old one is
 reported as provenance), branches, and the provider translation caches, so the
 first turn after an import re-translates. Preserving all three needs a byte-level
 graft, which is designed in [proposals/aria-graft.md](../../proposals/aria-graft.md)
@@ -191,13 +193,16 @@ that goes wrong yields a store that looks fine.
 
 | Command | Effect |
 |---|---|
-| `figaro state [<id>]` | The folded form snapshot. `-j` for JSON. Alias `form`. |
+| `figaro state [show] [<id>]` | The folded form snapshot. `-j` for JSON. Alias `form`; `show` is the explicit spelling. |
 | `figaro set [<id>] <key> <value>` | Patch one key with no model round trip. |
 | `figaro unset [<id>] <key>...` | Remove keys. |
-| `figaro state outfit <spec>` | Fold an outfit onto this aria now: additive, nothing removed, a `<system-reminder>` for what changed. A dressing is names, `k=v` and JSON literals, comma-joined (`sonn5,ttl=1h`); names become a `layers` directive the SERVER materializes, so the same `-O` means the same thing at birth and on a live aria. `--list` for what is on disk. See [reference/outfits.md](reference/outfits.md). |
+| `figaro form set <key> <value>` | The same, from the form family. `form set a=1,b=2` takes the `-S` grammar instead. |
+| `figaro form delete <paths>` | Remove key paths, comma-separated (the `-D` grammar). `unset` is its older name. |
+| `figaro form help <topic>` | A help page, from the form family's third position. |
+| `figaro state outfit <names>` | Fold outfits onto this aria now: additive, nothing removed, a `<system-reminder>` for what changed. Takes NAMES only: keys are the other axis (`form set`). The names travel as names and the daemon resolves them once, at its API boundary, so the same `-O` means the same thing at birth and on a live aria. `--list` for what is on disk. See [reference/outfits.md](reference/outfits.md). |
 | `figaro gc [--dry-run]` | Collect outfit stumps nothing is using. One stump exists per outfit VERSION; killing an aria collects its stump when it was the last child, so `gc` sweeps the versions that predate that. Content-addressed, so a collected stump is re-minted identically by the next aria that wants it. |
 | `figaro form listen [<id>]` | Watch the form as a live JSON tree, in the alt screen. The client keeps its OWN copy and applies the patches the server broadcasts (`form.delta`), so it is the same tree and the same algebra on both ends. `j`/`k` move, `enter` expands, `y` yanks, `e`/`d` page. |
-| `figaro state outfit --tree [<spec>]` | Draw the layer closure and apply nothing — green where a layer resolves, red where it does not. The angelus resolves it — the outfits directory is the server's state, so a client asks rather than reading it. Exits non-zero when the closure has a gap. |
+| `figaro state outfit --tree [<spec>]` | Draw the layer closure and apply nothing: green where a layer resolves, red where it does not. The angelus resolves it: the outfits directory is the server's state, so a client asks rather than reading it. Exits non-zero when the closure has a gap. |
 
 Setting a key is a real event in the conversation: on the tic where a
 non-`system` key changes, the agent sees a `<system-reminder>` naming it. Keys
@@ -224,7 +229,7 @@ you pick up a rebuilt binary.
 
 figaro embeds hush rather than talking to the user's: its own identity
 (`~/.config/figaro/hush/identity.age`), its own agent, and its own OS-keyring
-entry under service `figaro` — *not* `hush`. The `hush` binary on PATH therefore
+entry under service `figaro`: *not* `hush`. The `hush` binary on PATH therefore
 addresses a different instance and cannot repair figaro's. Alias: `figaro hush`.
 
 | Command | Effect |
@@ -241,7 +246,7 @@ back wrong. `vault status` names the condition and `vault forget` is the exit;
 `ensureHush` prints both when it sees that error. hush ≤ v0.6.2 could *cause*
 it: `Hooks.Verify` was handed the live passphrase buffer, and `identity.Unlock`
 zeroes what it is given, so the verified passphrase reached the keyring as NUL
-bytes. Fixed in v0.6.3 — verification runs against a copy.
+bytes. Fixed in v0.6.3: verification runs against a copy.
 
 ## Keys while streaming
 

@@ -26,7 +26,7 @@ type providerBinding struct {
 }
 
 // providerKnobs reads the build-time knobs off a form snapshot. Same
-// keys the angelus reads when it first constructs a provider — this is the
+// keys the angelus reads when it first constructs a provider: this is the
 // re-resolution of that decision, one turn at a time.
 func providerKnobs(snap form.Snapshot) provider.Knobs {
 	return provider.Knobs{
@@ -41,7 +41,7 @@ func providerKnobs(snap form.Snapshot) provider.Knobs {
 //
 // Model is deliberately excluded: every provider resolves `system.model`
 // from the per-turn snapshot inside Send, so a model change needs no
-// rebuild — and rebuilding would throw away the in-memory wire projection
+// rebuild, and rebuilding would throw away the in-memory wire projection
 // for nothing.
 func sameBuild(a, b provider.Knobs) bool {
 	return a.MaxTokens == b.MaxTokens &&
@@ -52,7 +52,7 @@ func sameBuild(a, b provider.Knobs) bool {
 // bindProvider installs the initial binding from the constructor's provider,
 // pairing it with the board coordinates the caller built it from. The name
 // comes off the board (falling back to the instance's own) because
-// `system.provider` is the label that decides rebinds — an instance whose
+// `system.provider` is the label that decides rebinds, an instance whose
 // Name() spells things differently must not read as a pending switch.
 func (a *Agent) bindProvider(prov provider.Provider) {
 	if prov == nil {
@@ -90,7 +90,7 @@ func (a *Agent) providerName() string {
 // syncProvider re-resolves the provider from the form. It runs at the
 // top of every provider round, so `figaro set system.provider …` (or a
 // re-applied outfit that moves the aria to another provider) takes effect
-// on the very next round — no restart, no fork.
+// on the very next round: no restart, no fork.
 //
 // A conversation is provider-agnostic by construction: the IR is canonical
 // and each provider keeps its own translation channel, so the new provider

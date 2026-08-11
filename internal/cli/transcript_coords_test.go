@@ -82,7 +82,7 @@ func TestCoordinatesAppearOnlyUnderVerbose(t *testing.T) {
 var coordRowRE = regexp.MustCompile(`^-?\d+\.-?\d+( · \d\d:\d\d:\d\d)?$`)
 
 // TestCoordinateRowIsOnePhysicalRow: a coordinate must survive a pane too
-// narrow to hold it by being CLIPPED, never by wrapping — a row that is not
+// narrow to hold it by being CLIPPED, never by wrapping, a row that is not
 // exactly one physical line desynchronises the painter's cursor math.
 func TestCoordinateRowIsOnePhysicalRow(t *testing.T) {
 	for _, w := range []int{4, 8, 12, 60} {
@@ -103,8 +103,8 @@ func TestCoordinateRowIsOnePhysicalRow(t *testing.T) {
 }
 
 // TestCoordinateBelongsToItsNodesSpan: the address carries the node's ref, so
-// selecting the node covers the coordinate too, and nodeSpanOf — which
-// ensureSelectionVisible converts to absolute lines — starts AT the address.
+// selecting the node covers the coordinate too, and nodeSpanOf: which
+// ensureSelectionVisible converts to absolute lines: starts AT the address.
 // If these two ever disagreed, scroll-into-view would land one row off per
 // node under Ctrl-O.
 func TestCoordinateBelongsToItsNodesSpan(t *testing.T) {

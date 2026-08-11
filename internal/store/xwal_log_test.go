@@ -111,7 +111,7 @@ func TestXwalLog_ReadsSurvivePromote(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The sibling is rooted at the outfit stump, so Promote returns
-	// ErrAtStump — but the point of the test is that our conv's
+	// ErrAtStump: but the point of the test is that our conv's
 	// handle is untouched regardless.
 	_, _ = b.Promote(sibling, 1)
 

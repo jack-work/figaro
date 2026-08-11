@@ -14,11 +14,15 @@ type IncrementalProjection[T any] struct {
 	Fingerprint string
 	Entries     int
 	LastLT      uint64
-	// LastChalkVersion is how far the board had advanced at the last entry
+	// LastFormVersion is how far the board had advanced at the last entry
 	// projected. It MUST survive a warm start: without it the next pass asks
 	// for patches from 0 and re-renders the whole board onto the first new
 	// message, which the per-LT cache then makes permanent.
-	LastChalkVersion uint64
+	LastFormVersion uint64
+	// LastStudyVersions is the same fact for every OBSERVED form (the
+	// study half of the cursor stamp), and must survive a warm start for
+	// the same reason.
+	LastStudyVersions map[string]uint64
 }
 
 type ProjectionStats struct {
@@ -29,9 +33,13 @@ type ProjectionStats struct {
 }
 
 type ProjectionConfig[T any] struct {
-	Log         store.Log[message.Message]
-	Cache       store.Log[[]json.RawMessage]
-	Form        Form
+	Log   store.Log[message.Message]
+	Cache store.Log[[]json.RawMessage]
+	Form  Form
+	// Studies are the observed forms' patch accessors, keyed by form id.
+	// A stamped id with no accessor renders a tombstone: the form ceased
+	// to exist while observed, and that is a fact the model should see.
+	Studies     map[string]Form
 	Previous    *IncrementalProjection[T]
 	Fingerprint string
 	Initial     T
@@ -52,12 +60,13 @@ type ProjectionConfig[T any] struct {
 // slice was the single biggest reason an agent could not be made cheap.
 //
 // What the wire needs in full is the ENCODED projection, carried in
-// Previous.State — bytes, not structs, and unavoidable because it is the
+// Previous.State: bytes, not structs, and unavoidable because it is the
 // request body. The decoded prefix was never needed for anything.
 func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjection[T], ProjectionStats, error) {
 	state := config.Initial
 	snap := form.Snapshot{}
-	var lastChalk uint64
+	var lastForm uint64
+	lastStudy := map[string]uint64{}
 
 	// A warm start reads from the watermark; a cold one reads everything.
 	// TailAfter(0) is the whole log, so the two are one call.
@@ -70,15 +79,18 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 	prefix := total - len(entries)
 
 	// The watermark is only trustworthy if the prefix is exactly as long as it
-	// was when the watermark was taken. Anything else — a Clear, a fork
-	// rewrite, a fingerprint change that raced us — means the cached state
+	// was when the watermark was taken. Anything else, a Clear, a fork
+	// rewrite, a fingerprint change that raced us: means the cached state
 	// describes a log that no longer exists, so fall back to a cold walk.
 	if previous := config.Previous; previous != nil &&
 		previous.Fingerprint == config.Fingerprint &&
 		previous.Entries == prefix {
 		state = previous.State
 		snap = previous.Form
-		lastChalk = previous.LastChalkVersion
+		lastForm = previous.LastFormVersion
+		for k, v := range previous.LastStudyVersions {
+			lastStudy[k] = v
+		}
 		stats.StartIndex = prefix
 	} else if prefix > 0 {
 		// Watermark rejected but we only read the suffix. Re-read cold.
@@ -95,10 +107,37 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 		if config.Form != nil {
 			// (after, upTo]: the previous entry's mark and this one's. Absolute,
 			// so a warm start renders exactly the same patches a cold walk would.
-			msg.Patches = config.Form.PatchesBetween(lastChalk, entry.ChalkVersion)
+			msg.Patches = config.Form.PatchesBetween(lastForm, entry.FormChannelVersion)
 		}
-		if entry.ChalkVersion > lastChalk {
-			lastChalk = entry.ChalkVersion
+		if entry.FormChannelVersion > lastForm {
+			lastForm = entry.FormChannelVersion
+		}
+		// The observed set: the same derivation per member, from the same
+		// stamp. The bound board above is member zero of this pattern; the
+		// studied forms are the shared members, and their transitions fold
+		// into the provider IR identically: re-derived on retranslate.
+		for fid, upTo := range entry.StudyVersions {
+			acc := config.Studies[fid]
+			if acc == nil {
+				if msg.StudyNotes == nil {
+					msg.StudyNotes = map[string]string{}
+				}
+				msg.StudyNotes[fid] = "the observed form no longer exists (removed while studied)"
+				continue
+			}
+			if ps := acc.PatchesBetween(lastStudy[fid], upTo); len(ps) > 0 {
+				if msg.StudyPatches == nil {
+					msg.StudyPatches = map[string][]message.Patch{}
+				}
+				msg.StudyPatches[fid] = ps
+				if msg.StudyAt == nil {
+					msg.StudyAt = map[string]uint64{}
+				}
+				msg.StudyAt[fid] = upTo
+			}
+			if upTo > lastStudy[fid] {
+				lastStudy[fid] = upTo
+			}
 		}
 
 		var encoded []json.RawMessage
@@ -148,12 +187,13 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 		lastLT = entries[len(entries)-1].LT
 	}
 	return &IncrementalProjection[T]{
-		State:            state,
-		Form:             snap,
-		Fingerprint:      config.Fingerprint,
-		Entries:          stats.Entries,
-		LastLT:           lastLT,
-		LastChalkVersion: lastChalk,
+		State:             state,
+		Form:              snap,
+		Fingerprint:       config.Fingerprint,
+		Entries:           stats.Entries,
+		LastLT:            lastLT,
+		LastFormVersion:   lastForm,
+		LastStudyVersions: lastStudy,
 	}, stats, nil
 }
 

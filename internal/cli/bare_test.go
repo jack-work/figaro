@@ -5,7 +5,7 @@ import "testing"
 // TestIsBareForm pins the routing decision for `figaro … -- <prompt>`.
 //
 // The bug this file exists for: the old fast path matched on "is there a
-// prompt after `--`" and then threw away every token before it — so
+// prompt after `--`" and then threw away every token before it: so
 // `figaro --id X -- hi` prompted the pid-bound aria (minting a new one when
 // the shell had no binding) and said nothing about it.
 func TestIsBareForm(t *testing.T) {
@@ -23,7 +23,7 @@ func TestIsBareForm(t *testing.T) {
 		{"known command alias", []string{"qua", "--", "hello"}, false},
 		{"new with boundary", []string{"new", "--", "hello"}, false},
 		// `plain`, `x` and `exec` were deprecated aliases of send and are
-		// gone; they now behave like any other unknown leading word — the
+		// gone; they now behave like any other unknown leading word: the
 		// bare form claims them and rejects them with a did-you-mean.
 		{"removed plain", []string{"plain", "--", "hello"}, true},
 		{"removed x", []string{"x", "--", "hello"}, true},
@@ -33,7 +33,7 @@ func TestIsBareForm(t *testing.T) {
 		{"help", []string{"help"}, false},
 		{"bare help flag", []string{"--help"}, false},
 		// A typo'd subcommand WITH a boundary is claimed by the bare form,
-		// which rejects a leading bare word (see runBarePrompt) — either
+		// which rejects a leading bare word (see runBarePrompt): either
 		// way it is an error, never a silent prompt.
 		{"typo'd command with boundary", []string{"shwo", "--", "x"}, true},
 	}

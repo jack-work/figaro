@@ -31,8 +31,16 @@ const (
 
 	// The queue mutators. Reading the queue stays on MethodQueued (it predates
 	// them and its shape is unchanged); these two are the U and D of the CRUD,
-	// while C is MethodQua — a queued message IS a submitted prompt, so there
+	// while C is MethodQua, a queued message IS a submitted prompt, so there
 	// is deliberately no second create path.
+	// The study/cast family. Study/drop manage this aria's subscriptions
+	// to UNBOUND forms (durable under system.studies); cast is the
+	// casting-call: serialize in the aria's actor loop, ensure the study,
+	// cross-call the role's writer to point target-aria here.
+	MethodStudy = "figaro.study"
+	MethodDrop  = "figaro.drop"
+	MethodCast  = "figaro.cast"
+
 	MethodQueueUpdate = "figaro.queue.update"
 	MethodQueueDelete = "figaro.queue.delete"
 
@@ -44,7 +52,7 @@ const (
 
 // The angelus-side read methods. They take an aria id and are answered
 // from the store when no agent is live, so a dormant aria is readable
-// without waking it — reading was the last thing that pinned an agent in
+// without waking it: reading was the last thing that pinned an agent in
 // memory. The per-aria equivalents above stay exactly as they are: when an
 // agent IS live it holds in-flight state the store does not have, and
 // these delegate to it.
@@ -58,8 +66,8 @@ const (
 //
 // The false set is the read half: history, context and form are pure
 // functions of the store, so an aria endpoint can answer them while the aria
-// is dormant and nothing has to be woken. Everything else — prompting,
-// interrupting, patching the board, touching the queue — either mutates
+// is dormant and nothing has to be woken. Everything else: prompting,
+// interrupting, patching the board, touching the queue: either mutates
 // durable state through the agent's serialization or needs in-flight state
 // that only a live turn has, and must wake.
 //
@@ -114,7 +122,19 @@ type OutfitLayer struct {
 }
 
 const (
-	MethodCreate      = "figaro.create"
+	MethodCreate = "figaro.create"
+	// MethodFormCreate mints an UNBOUND FORM: fork the null root (or a
+	// form) with a birth patch: kind "form", @-sigiled id, no agent,
+	// no endpoint activation beyond the hub. The form half of the one
+	// birth verb; figaro.create remains the figaro half.
+	MethodFormCreate = "form.create"
+	// MethodFormBind births a FIGARO from an unbound form: fork the form
+	// (or the null root) with the caller's dressing plus runtime
+	// fill-ins, stamp aria_id, stand the endpoint up, and construct NO
+	// agent: the figaro is born dormant and wakes on first need, which
+	// is where a missing provider fails (`bind null` mints fine and
+	// errors at the first turn, by design).
+	MethodFormBind    = "form.bind"
 	MethodFork        = "figaro.fork"
 	MethodPromote     = "figaro.promote"
 	MethodImport      = "figaro.import"
@@ -138,6 +158,10 @@ const (
 	// outfits directory is the SERVER's state, so a client asks rather than
 	// reading it: the daemon may not even share a filesystem with the caller.
 	MethodOutfits = "angelus.outfits"
+	// MethodOutfitReload flags the default form for recomputation on the
+	// next fig new. There is deliberately no inverse: outfit files are
+	// one-way sources of truth.
+	MethodOutfitReload = "outfit.reload"
 
 	// MethodConfigure patches the server's configuration. The first-run
 	// wizard is a client, so it cannot write config.toml itself.
@@ -160,11 +184,17 @@ type QuaRequest struct {
 type FormInput struct {
 	Context map[string]json.RawMessage `json:"context,omitempty"`
 	Patch   *FormPatch                 `json:"patch,omitempty"`
+	// Outfits are outfit NAMES, folded in order and UNDER Patch's own keys.
+	// The outfit axis is separate from the patch axis: names here, data
+	// there, and the daemon's ONE dressing call at the API boundary is what
+	// turns the first into the second. Nothing below that boundary reads a
+	// file.
+	Outfits []string `json:"outfits,omitempty"`
 }
 
 // FormDeltaSchema versions the ENVELOPE, not the patch. Version below is the
 // patch's own durable index in the aria's form channel; this is the shape the
-// two ends agreed on, and it moves when the shape does — a listener that reads
+// two ends agreed on, and it moves when the shape does, a listener that reads
 // a schema it does not know can say so instead of guessing.
 const FormDeltaSchema = 1
 
@@ -199,7 +229,7 @@ type QuaResponse struct {
 // QueueDisposition says what a hangup does with the messages the aria has
 // accepted but not yet answered. It is an explicit enum rather than a boolean
 // because the two CLI verbs that carry it (`hup` keeps, `cut` discards) must
-// each name a disposition outright — a negated flag is how a caller ends up
+// each name a disposition outright, a negated flag is how a caller ends up
 // discarding a queue it meant to keep.
 type QueueDisposition string
 
@@ -217,8 +247,8 @@ type InterruptRequest struct {
 	Queue QueueDisposition `json:"queue,omitempty"` // "" == QueueKeep
 }
 
-// InterruptResponse reports the hangup. Queue is THE QUEUE AS OF THE HANGUP —
-// one meaning, always populated — and Cleared says whether those messages were
+// InterruptResponse reports the hangup. Queue is THE QUEUE AS OF THE HANGUP -
+// one meaning, always populated, and Cleared says whether those messages were
 // removed or left to be answered. Epoch names the inbox generation the ids in
 // Queue belong to (see QueueDeleteRequest).
 type InterruptResponse struct {
@@ -238,6 +268,12 @@ type ContextResponse struct {
 // SetRequest applies a form patch directly.
 type SetRequest struct {
 	Patch FormPatch `json:"patch"`
+	// Outfits are outfit NAMES, folded in order and UNDER Patch's own keys.
+	// The outfit axis is separate from the patch axis: names here, data
+	// there, and the daemon's ONE dressing call at the API boundary is what
+	// turns the first into the second. Nothing below that boundary reads a
+	// file.
+	Outfits []string `json:"outfits,omitempty"`
 	// IfVersion refuses the patch unless the board is still at this durable
 	// version. Zero is unconditional. It exists for read-modify-write: editing
 	// inside a value (an array element, a nested field) means reading it first,
@@ -262,7 +298,7 @@ type FormResponse struct {
 // answered. IncludeCarriers opts in to the empty-text prompts that carry only
 // a form patch: they are addressable by the CRUD surface and so must be
 // listable, but they render as nothing, so the default stays exactly what it
-// has always been — the prompts a human would recognise as queued.
+// has always been: the prompts a human would recognise as queued.
 type QueuedRequest struct {
 	IncludeCarriers bool `json:"include_carriers,omitempty"`
 }
@@ -270,7 +306,7 @@ type QueuedRequest struct {
 // QueuedResponse carries the queued messages in FIFO order (oldest first).
 //
 // Epoch names the INBOX GENERATION these ids belong to. It is minted afresh
-// every time an agent is constructed — a daemon restart, a dormant→attach —
+// every time an agent is constructed, a daemon restart, a dormant→attach -
 // and ids restart with it, so an id is only meaningful when paired with the
 // epoch it was read against. Mutators require it back (QueueDeleteRequest);
 // that is what stops a stale id from deleting a different message that happens
@@ -287,7 +323,7 @@ const (
 	// QueueStateQueued: in the inbox, deletable.
 	QueueStateQueued QueueState = "queued"
 	// QueueStateCommitting: lifted by the drain loop and on its way into the
-	// IR. Visible, but no longer deletable — see QueueRejection.
+	// IR. Visible, but no longer deletable: see QueueRejection.
 	QueueStateCommitting QueueState = "committing"
 )
 
@@ -314,7 +350,7 @@ type QueuedPrompt struct {
 // There is deliberately no summary "ok" on either mutator response: reading
 // the per-id outcome is the only way to learn anything, so it cannot be
 // skipped and defaulted to success. A refusal is a legitimate decision by the
-// agent — not a fault — so it travels as data, and the JSON-RPC error channel
+// agent: not a fault: so it travels as data, and the JSON-RPC error channel
 // stays reserved for transport and malformed requests.
 type QueueOutcome string
 
@@ -360,7 +396,7 @@ type QueueResult struct {
 // QueueDeleteRequest asks the aria to drop queued messages.
 //
 // Epoch is the generation IDs were read against and is REQUIRED whenever IDs
-// is non-empty — it is a compare-and-swap token, not decoration. All names no
+// is non-empty: it is a compare-and-swap token, not decoration. All names no
 // id at all ("whatever is queued now"), so it needs no epoch.
 type QueueDeleteRequest struct {
 	Epoch string   `json:"epoch,omitempty"`
@@ -431,7 +467,12 @@ type FigaroInfoResponse struct {
 	Trunk      string `json:"trunk,omitempty"`
 	Parent     string `json:"parent,omitempty"`
 	BranchedLT uint64 `json:"branched_lt,omitempty"` // main-LT this trunk diverged at
-	Kind       string `json:"kind,omitempty"`        // "conversation" | "outfit" | "null" (set in global listings)
+	Kind       string `json:"kind,omitempty"`        // "conversation" | "form" | "outfit" | "null" (set in global listings)
+
+	// Unbound-form rows only: the form's "name" key, and: when the form is
+	// a role (duck-typed by the key's presence): its target-aria.
+	Name       string `json:"name,omitempty"`
+	TargetAria string `json:"target_aria,omitempty"`
 }
 
 // CreateRequest names the outfit for a new aria. The system mints the
@@ -442,11 +483,90 @@ type FigaroInfoResponse struct {
 type CreateRequest struct {
 	Patch     *FormPatch `json:"patch,omitempty"`
 	Ephemeral bool       `json:"ephemeral,omitempty"`
+	// Outfits are outfit NAMES, folded in order and UNDER Patch's own keys.
+	// The outfit axis is separate from the patch axis: names here, data
+	// there, and the daemon's ONE dressing call at the API boundary is what
+	// turns the first into the second. Nothing below that boundary reads a
+	// file.
+	Outfits []string `json:"outfits,omitempty"`
 }
 
 type CreateResponse struct {
 	FigaroID string   `json:"figaro_id"`
 	Endpoint Endpoint `json:"endpoint"`
+}
+
+// FormCreateRequest mints an unbound form. Parent "" forks the null root;
+// a form id duplicates that form's state into a fresh @id. The patch is
+// required, a fork that transforms nothing is a fork nobody can name.
+type FormCreateRequest struct {
+	Parent string     `json:"parent,omitempty"`
+	Patch  *FormPatch `json:"patch"`
+	// Outfits are outfit NAMES, folded in order and UNDER Patch's own keys.
+	// The outfit axis is separate from the patch axis: names here, data
+	// there, and the daemon's ONE dressing call at the API boundary is what
+	// turns the first into the second. Nothing below that boundary reads a
+	// file.
+	Outfits []string `json:"outfits,omitempty"`
+}
+
+type FormCreateResponse struct {
+	FormID   string   `json:"form_id"`
+	Version  uint64   `json:"version"`
+	Endpoint Endpoint `json:"endpoint"`
+}
+
+// FormBindRequest births a figaro from a form. Parent "" (or "null")
+// forks the null root: the naked figaro. Patch is the optional -O
+// dressing; unlike form.create it may be absent (runtime fill-ins make
+// the birth patch nonempty).
+type FormBindRequest struct {
+	Parent string     `json:"parent,omitempty"`
+	Patch  *FormPatch `json:"patch,omitempty"`
+	// Outfits are outfit NAMES, folded in order and UNDER Patch's own keys.
+	// The outfit axis is separate from the patch axis: names here, data
+	// there, and the daemon's ONE dressing call at the API boundary is what
+	// turns the first into the second. Nothing below that boundary reads a
+	// file.
+	Outfits []string `json:"outfits,omitempty"`
+}
+
+type FormBindResponse struct {
+	FigaroID string   `json:"figaro_id"`
+	Endpoint Endpoint `json:"endpoint"`
+}
+
+// StudyRequest subscribes (figaro.study) or unsubscribes (figaro.drop)
+// the aria from an unbound form. Empty FormID on figaro.study lists.
+type StudyRequest struct {
+	FormID string `json:"form_id,omitempty"`
+}
+
+type StudyResponse struct {
+	OK      bool     `json:"ok"`
+	Studies []string `json:"studies"`
+}
+
+// CastRequest is one casting call. Exactly one of FormID / RolePatch:
+// an existing role's id, or the patch a new role is BORN from (the
+// server folds target-aria in, so nothing half-fails).
+type CastRequest struct {
+	FormID    string     `json:"form_id,omitempty"`
+	RolePatch *FormPatch `json:"role_patch,omitempty"`
+	// Outfits are outfit NAMES, folded in order and UNDER Patch's own keys.
+	// The outfit axis is separate from the patch axis: names here, data
+	// there, and the daemon's ONE dressing call at the API boundary is what
+	// turns the first into the second. Nothing below that boundary reads a
+	// file.
+	Outfits []string `json:"outfits,omitempty"`
+}
+
+// CastResponse reports the call's verdict, step by step, so a partial
+// failure is a described state and never a mystery.
+type CastResponse struct {
+	RoleID  string `json:"role_id"`
+	Studied bool   `json:"studied"` // newly studied by this call
+	Patched bool   `json:"patched"` // target-aria points here
 }
 
 // ForkRequest branches a conversation. With neither coordinate set it forks
@@ -479,6 +599,12 @@ type ForkRequest struct {
 	// said to it: it lands on the child's form in the same call that
 	// mints it, so a prompt sent next is answered with it in place.
 	Patch *FormPatch `json:"patch,omitempty"`
+	// Outfits are outfit NAMES, folded in order and UNDER Patch's own keys.
+	// The outfit axis is separate from the patch axis: names here, data
+	// there, and the daemon's ONE dressing call at the API boundary is what
+	// turns the first into the second. Nothing below that boundary reads a
+	// file.
+	Outfits []string `json:"outfits,omitempty"`
 }
 
 // ForkResponse returns the two fresh child ids. The parent freezes and
@@ -530,7 +656,7 @@ type PromoteResponse struct {
 // ImportRequest restores an exported aria into this store as a NEW
 // conversation. Nothing is grafted: the outfit is resolved or created by
 // content, a fresh conversation is spawned under it, and Messages are appended
-// through the ordinary path — so node ids, fork bases and LTs are the
+// through the ordinary path: so node ids, fork bases and LTs are the
 // destination's own and can never collide with what is already there.
 //
 // WasID is the id the aria had where it came from. It is PROVENANCE, not a
@@ -563,8 +689,15 @@ type OutfitsRequest struct {
 }
 
 // OutfitsResponse is the outfits on disk, the configured default, and the layer
-// closure of the requested spec — found and missing nodes alike, because a
+// closure of the requested spec: found and missing nodes alike, because a
 // broken reference is best explained by the shape it was found in.
+// OutfitReloadResponse: Flagged is false when nothing was minted yet
+// (the next fig new computes from files regardless).
+type OutfitReloadResponse struct {
+	Flagged bool   `json:"flagged"`
+	FormID  string `json:"form_id,omitempty"`
+}
+
 type OutfitsResponse struct {
 	Default string       `json:"default,omitempty"`
 	Names   []string     `json:"names,omitempty"`
@@ -606,7 +739,7 @@ type GCStump struct {
 	Outfit   string `json:"outfit,omitempty"`
 	Version  string `json:"version,omitempty"`
 	Children int    `json:"children"`
-	// Collected is true when it was removed, or — under DryRun — would be.
+	// Collected is true when it was removed, or: under DryRun: would be.
 	Collected bool   `json:"collected,omitempty"`
 	Err       string `json:"err,omitempty"`
 }
@@ -644,7 +777,7 @@ type AttachResponse struct {
 }
 
 // ListRequest options. IDsOnly skips the per-aria form + forest fills
-// (mantra, cwd, outfit hash, vector) — much cheaper when the caller only needs
+// (mantra, cwd, outfit hash, vector): much cheaper when the caller only needs
 // the ids (e.g. shell completion). Global also includes the ceremonial anchors
 // (the null genesis trunk + every versioned outfit) with Kind/Parent set, for
 // the `ls -g` hierarchy and the `--json` escape hatch.
@@ -691,8 +824,8 @@ type StatusResponse struct {
 	FigaroCount int   `json:"figaro_count"`
 	BoundPIDs   int   `json:"bound_pids"`
 	// Build is the daemon's VCS revision. A CLI speaking a different build
-	// than the running daemon renders nothing at all — the wire changes
-	// between builds — so the mismatch must be named, not suffered.
+	// than the running daemon renders nothing at all: the wire changes
+	// between builds: so the mismatch must be named, not suffered.
 	Build string `json:"build,omitempty"`
 
 	// Mem is a pointer so an older daemon's silence reads as "cannot
@@ -702,7 +835,7 @@ type StatusResponse struct {
 
 // MemStatus is what the daemon can say about its footprint with no
 // profiler attached. The numbers that motivated aria eviction were
-// observations of RSS, not attributions — nothing distinguished a backend
+// observations of RSS, not attributions: nothing distinguished a backend
 // holding decoded logs from an agent holding a composed UI.
 type MemStatus struct {
 	LiveArias     int `json:"live_arias"`     // agents in the registry; eviction may not touch these

@@ -84,7 +84,7 @@ func TestEveryPatchIsShownToTheAria(t *testing.T) {
 		if e.Payload.Role == message.RoleGenesis {
 			continue
 		}
-		for cursor < len(patches) && patches[cursor].Version <= e.ChalkVersion {
+		for cursor < len(patches) && patches[cursor].Version <= e.FormChannelVersion {
 			shown = shown.Apply(patches[cursor].Patch)
 			cursor++
 		}
@@ -186,7 +186,7 @@ func TestAForkedAriaIsShownItsNewAriaID(t *testing.T) {
 		if e.Payload.Role == message.RoleGenesis {
 			continue
 		}
-		for cursor < len(patches) && patches[cursor].Version <= e.ChalkVersion {
+		for cursor < len(patches) && patches[cursor].Version <= e.FormChannelVersion {
 			p := patches[cursor]
 			if v, ok := p.Patch.Set["aria_id"]; ok {
 				seen = append(seen, string(v))

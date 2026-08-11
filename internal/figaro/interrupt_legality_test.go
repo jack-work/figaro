@@ -24,7 +24,7 @@ import (
 // dormant, the daemon restarts, and the NEXT prompt is served by a completely
 // new Agent reading the same bytes off disk. repairInterruptedTail runs at boot
 // for exactly this reason, and a legality that only holds in a warm agent is
-// not legality at all — it is a cache.
+// not legality at all: it is a cache.
 //
 // So this test interrupts, then throws the agent and the backend away, reopens
 // the store, and asks the fresh agent to answer. What it asserts is what the

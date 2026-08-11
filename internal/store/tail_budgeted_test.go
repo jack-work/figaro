@@ -45,7 +45,7 @@ func realAria(t testing.TB, n, textBytes int) (*XwalBackend, string) {
 }
 
 // The tail read must produce exactly the tail an unbudgeted read would, and
-// must report the WHOLE channel's count — a windowed cache's Len depends on it.
+// must report the WHOLE channel's count, a windowed cache's Len depends on it.
 func TestTailBudgeted_MatchesFullRead(t *testing.T) {
 	be, id := realAria(t, 60, 128)
 	inner := newXwalLog[message.Message](be.Store(), id, chanIR, true)
@@ -75,7 +75,7 @@ func TestTailBudgeted_MatchesFullRead(t *testing.T) {
 	}
 }
 
-// Ascending order, and EncodedBytes populated — the cache sizes itself with it.
+// Ascending order, and EncodedBytes populated: the cache sizes itself with it.
 func TestTailBudgeted_AscendingWithSizes(t *testing.T) {
 	be, id := realAria(t, 20, 64)
 	inner := newXwalLog[message.Message](be.Store(), id, chanIR, true)

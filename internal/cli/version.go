@@ -19,7 +19,7 @@ import (
 var (
 	commit     = ""
 	commitTime = ""
-	// commitDirty is "true" or "" — string so it survives -ldflags -X.
+	// commitDirty is "true" or "": string so it survives -ldflags -X.
 	commitDirty = ""
 	// semver is the release version, injected from flake.nix's `version`.
 	// It is the single live version: flake.nix declares it, the release
@@ -41,8 +41,8 @@ func runVersion() {
 // outside a repo), in which case callers must skip build comparisons rather
 // than treat unknown as mismatched.
 //
-// `go install <module>/cmd/figaro@vX.Y.Z` records no VCS settings at all —
-// the module proxy ships a zip, not a checkout — so the module version is the
+// `go install <module>/cmd/figaro@vX.Y.Z` records no VCS settings at all -
+// the module proxy ships a zip, not a checkout: so the module version is the
 // only identity such a binary has. It is a real one: two binaries reporting
 // the same module version are the same source. Falling back to it keeps the
 // daemon handshake honest for the install path most users actually take;
@@ -149,7 +149,7 @@ func currentExe() string {
 // <module>@vX.Y.Z` reports the module version, because the proxy ships a zip
 // with no VCS metadata at all. Both are real identities and neither can be
 // converted into the other, so "different string" does NOT imply "different
-// source" across schemes — a nix daemon and a proxy-installed CLI built from
+// source" across schemes, a nix daemon and a proxy-installed CLI built from
 // the SAME release will never compare equal.
 //
 // checkDaemonBuild uses this to refuse only within a scheme, and to warn

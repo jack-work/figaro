@@ -42,7 +42,7 @@ func TestRawInputModeEnablesVTAndPreservesUnrelatedFlags(t *testing.T) {
 	}
 }
 
-// The OUTPUT half. A bare conhost hands us 0x0003 — no VT processing — and
+// The OUTPUT half. A bare conhost hands us 0x0003: no VT processing, and
 // there \x1b[?1049h is inert: the pager paints into the PRIMARY buffer and the
 // transcript is left in the shell's scrollback.
 func TestVTOutputModeArmsVTAndPreservesUnrelatedFlags(t *testing.T) {
@@ -62,7 +62,7 @@ func TestVTOutputModeArmsVTAndPreservesUnrelatedFlags(t *testing.T) {
 
 // CANARY. DISABLE_NEWLINE_AUTO_RETURN must NOT ride along with the startup
 // arming: it stops a bare LF from implying a carriage return, so every
-// fmt.Println in `list`/`show`/`status` staircases rightward until it wraps —
+// fmt.Println in `list`/`show`/`status` staircases rightward until it wraps -
 // which is indistinguishable, to the eye, from figaro ignoring the terminal
 // width. It belongs to the painter alone (ArmDeferredWrap), because only the
 // painter writes explicit \r and does its own cursor math.

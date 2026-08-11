@@ -5,8 +5,8 @@ package cli
 //
 // Three properties live here that no in-process test can reach:
 //
-//  1. the picture survives the whole path — read tool, fitter, IR record,
-//     encoder, wire — and the MODEL can describe it;
+//  1. the picture survives the whole path: read tool, fitter, IR record,
+//     encoder, wire, and the MODEL can describe it;
 //  2. the note explaining what was done to the picture is rendered where a
 //     human can read it;
 //  3. not one byte of base64 is painted into the terminal.
@@ -39,7 +39,7 @@ import (
 //
 // It carries per-pixel noise on purpose. A flat image of these dimensions PNGs
 // down to a few kilobytes, would fit every budget, and would therefore prove
-// nothing about the path under test — the fitter would pass it straight
+// nothing about the path under test: the fitter would pass it straight
 // through. The noise makes the file honestly large without touching the signal.
 func bigTwoToneImage(t *testing.T, dir string) string {
 	t.Helper()
@@ -117,11 +117,11 @@ func TestSmoke_ToolImageReachesTheModel(t *testing.T) {
 	//
 	// TRAP: searching the whole capture is unsound. The prompt is echoed by the
 	// shell AND rendered back as the input block, so every sentinel in the
-	// instructions — including HALVES=BLIND — appears in the capture before the
+	// instructions: including HALVES=BLIND, appears in the capture before the
 	// model has said anything at all. Only a RENDERED BODY LINE is evidence.
 	switch {
 	case answerLines(capture, "HALVES=BLIND") > 0:
-		t.Fatalf("the model reports it received no image — the picture did not survive the path\n%s", capture)
+		t.Fatalf("the model reports it received no image: the picture did not survive the path\n%s", capture)
 	case answerLines(capture, "HALVES=RED-BLUE") > 0:
 		// good
 	default:

@@ -1077,7 +1077,7 @@ func TestNoExplicitModeIsSent(t *testing.T) {
 }
 
 // The key must be the SAME derivation openaichat uses, so one conversation
-// pins to one name on both OpenAI-family routes — and it must never be the
+// pins to one name on both OpenAI-family routes, and it must never be the
 // raw aria id.
 func TestPromptCacheKeyMatchesTheSharedDerivation(t *testing.T) {
 	const aria = "4cf7d08f"
@@ -1096,7 +1096,7 @@ func TestPromptCacheKeyMatchesTheSharedDerivation(t *testing.T) {
 
 // TestPromptCacheBreakpointOnTheWireAcrossTurns drives two real turns
 // through Send over a real websocket and asserts what the CLIENT put on the
-// wire — the only thing figaro controls, and the only thing observable on
+// wire: the only thing figaro controls, and the only thing observable on
 // this route at all (it speaks websocket, so wirelog cannot see it and
 // FIGARO_WIRE_DIR yields nothing here).
 func TestPromptCacheBreakpointOnTheWireAcrossTurns(t *testing.T) {
@@ -1230,7 +1230,7 @@ func TestPromptCacheBreakpointOnTheWireAcrossTurns(t *testing.T) {
 // a function_call with an encrypted `item.id`, and every subsequent
 // `response.function_call_arguments.delta` for that same item carries a
 // DIFFERENT encryption of it. Keying only on item_id therefore missed on every
-// delta, `call` came back nil, and the push was skipped silently — measured on
+// delta, `call` came back nil, and the push was skipped silently: measured on
 // gpt-5.6-sol: 1211 upstream argument deltas, 0 forwarded. The arguments still
 // arrived whole on `output_item.done`, so nothing looked broken; the tool node
 // simply sat empty for 25 seconds and then filled in one jump.
@@ -1278,7 +1278,7 @@ func TestResponseCallForReencryptedItemID(t *testing.T) {
 		t.Fatalf("call_id lookup regressed: got %v, want %p", got, call)
 	}
 
-	// An index nobody announced is still nothing — the fallback must not
+	// An index nobody announced is still nothing: the fallback must not
 	// invent a call for an unrelated output item.
 	stray := responseStreamEvent{ItemID: "UNKNOWN", OutputIndex: 7}
 	if got := responseCallFor(calls, items, byIndex, stray); got != nil {

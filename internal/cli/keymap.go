@@ -9,7 +9,7 @@ import (
 // The keymap: one declarative table naming every keybinding in the live TTY.
 //
 // Before this file the answer to "what does this key do?" was spread across
-// five places that had to agree by hand — the input loop's control-key switch,
+// five places that had to agree by hand: the input loop's control-key switch,
 // the pager's key switch, the search sub-mode switch, a hand-kept list of keys
 // that may open the pager, and a hand-written help panel. They did not agree:
 // '!' acted inside the pager but no key could get you there.
@@ -21,18 +21,18 @@ import (
 //
 // Dispatch is two-level, because the keyboard genuinely is:
 //
-//	input level   (interactiveInput) — keys that own the process: interrupt,
+//	input level   (interactiveInput): keys that own the process: interrupt,
 //	              detach, listen, clipboard. Live in incipit AND in the pager.
-//	pager level   (transcript)       — motions, search, panels, selection.
+//	pager level   (transcript): motions, search, panels, selection.
 //	              Only reachable with the pager up.
 //
 // A key is looked up at the input level first; if no row is live in the
 // current mode, it falls through to the pager (which is how 'y' and 'q' become
-// literal text while the search prompt is up — they have no search-mode row).
+// literal text while the search prompt is up: they have no search-mode row).
 //
 // Performance: the table is compiled once, at init, into fixed-size arrays of
 // the actions themselves, keyed [mode][chord]. A keystroke costs one array
-// load and one indirect call — no map, no closure built per key, nothing
+// load and one indirect call: no map, no closure built per key, nothing
 // allocated. (A parallel index of row numbers serves everything that is NOT
 // on the keystroke path: the openers, the help panel, the tests.)
 
@@ -89,8 +89,8 @@ func ctrlChord(letter byte) chord { return chord{kind: chordCtrlLetter, b: lette
 
 // openPolicy says what a key does when it is pressed during inline (incipit)
 // streaming. It is deliberately a tri-state with no usable zero value: a new
-// binding must SAY which it is, so the '!' bug — a key that acted in the pager
-// but had no way to get there — cannot recur.
+// binding must SAY which it is, so the '!' bug, a key that acted in the pager
+// but had no way to get there: cannot recur.
 type openPolicy uint8
 
 const (
@@ -187,7 +187,7 @@ var keymap = []keyBinding{
 		open: opensPager, help: helpVerbose, input: inputToggleVerbose,
 	},
 	{
-		// In incipit 'y' copies the aria id — a feature of its own, not a
+		// In incipit 'y' copies the aria id, a feature of its own, not a
 		// reason to open the pager. In the search box it is literal text.
 		chord: byteChord('y'), modes: inIncipit | inTranscript | inPanel,
 		open: staysInline, why: "in incipit it already copies the aria id",
@@ -241,7 +241,7 @@ var keymap = []keyBinding{
 	{
 		// ':' is a printable byte, and in incipit a printable byte composes a
 		// steer. It is also a gesture that addresses a VIEWPORT, and there is
-		// none until the pager is up — jumping to turn 12 in a view that shows
+		// none until the pager is up: jumping to turn 12 in a view that shows
 		// only the live tail has nothing to snap.
 		chord: byteChord(':'), modes: inTranscript,
 		open: staysInline, why: "in incipit a printable byte composes a steer, and a coordinate needs a viewport to land in",
@@ -261,7 +261,7 @@ var keymap = []keyBinding{
 		// stays ready for the next thing you type.
 		//
 		// Transcript-only by design. In incipit a printable byte composes a
-		// steer, and an incipit session closes on turn.done anyway — there is
+		// steer, and an incipit session closes on turn.done anyway: there is
 		// no "and stay" to offer there.
 		chord: byteChord('H'), modes: inTranscript | inPanel,
 		open: staysInline, why: "it addresses a turn that is streaming in the view you are already in",
@@ -396,7 +396,7 @@ const (
 
 // helpRow is one line of the panel: the key column and what it does. The key
 // column is prose ("j/k · u/d · gg/G" reads better than a mechanical join of
-// six labels); what the table enforces is the SET — every visible binding is
+// six labels); what the table enforces is the SET: every visible binding is
 // documented by exactly one row, and every row documents at least one live
 // binding, so a key cannot be added or removed behind the help panel's back.
 type helpRow struct {
@@ -432,7 +432,7 @@ var helpRows = []helpRow{
 // text then starts at column 22, after the two-space indent.
 const helpKeyColumn = 20
 
-// helpBody renders the panel's rows — without the leading blank line, the
+// helpBody renders the panel's rows: without the leading blank line, the
 // version footer, the height clamp or the dimming, which belong to the pager
 // that knows its own geometry.
 func helpBody() []string {
@@ -452,10 +452,10 @@ func helpBody() []string {
 //
 // Two shapes, from one table, so neither can drift from the other:
 //
-//	pagerAct / inputAct  — the ACTION, keyed [mode][chord]. This is the hot
+//	pagerAct / inputAct: the ACTION, keyed [mode][chord]. This is the hot
 //	                       path: one array load and an indirect call, no
 //	                       intermediate row lookup, nothing allocated.
-//	pagerIndex/inputIndex — the row INDEX, for everything off the keystroke
+//	pagerIndex/inputIndex: the row INDEX, for everything off the keystroke
 //	                       path (openers, help, the tests that walk the map).
 // ---------------------------------------------------------------------------
 
@@ -563,7 +563,7 @@ func buildKeyIndex() {
 }
 
 // pager resolves the pager action bound to a chord in one mode, or nil. The
-// byte case — every keystroke that is not an arrow — is a single array load.
+// byte case: every keystroke that is not an arrow: is a single array load.
 func (a *pagerActions) pager(mode keyMode, ev keyEvent) pagerFunc {
 	if ev.nav != navNone {
 		if int(ev.nav) >= navCount {
@@ -625,7 +625,7 @@ func (idx *keyIndex) lookup(mode keyMode, ev keyEvent) *keyBinding {
 }
 
 // ctrlChordLetter reports whether a CSI-u report should be treated as a
-// Ctrl+letter CHORD — modifiers and all — rather than reduced to the control
+// Ctrl+letter CHORD: modifiers and all: rather than reduced to the control
 // byte it would otherwise arrive as. The table decides: only letters some row
 // binds as a chordCtrlLetter qualify, so CSI-u Ctrl-D still detaches through
 // the 0x04 row exactly as a raw byte does.

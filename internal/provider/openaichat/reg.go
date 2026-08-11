@@ -79,7 +79,7 @@ func buildGateway(ctx provider.BuildContext) (provider.Provider, error) {
 		base = v
 	}
 	if base == "" {
-		return nil, fmt.Errorf("gateway: no base_url — set FIGARO_GATEWAY_BASE_URL or base_url in providers/gateway.toml")
+		return nil, fmt.Errorf("gateway: no base_url: set FIGARO_GATEWAY_BASE_URL or base_url in providers/gateway.toml")
 	}
 
 	// An endpoint we were merely handed is not assumed to honour markers.
@@ -127,8 +127,8 @@ func build(ctx provider.BuildContext, route provider.Route, name string, cfg Con
 	}
 	p.Templates = ctx.Templates
 	// Say which route was resolved and what it will do. The conservative
-	// default — an endpoint we were merely handed gets no markers and no
-	// session key — is correct, but silence about it means the first
+	// default, an endpoint we were merely handed gets no markers and no
+	// session key: is correct, but silence about it means the first
 	// symptom is a wire dump showing nothing where the user expected
 	// caching. Name it once, at construction.
 	markers := "off (endpoint not trusted for cache directives)"

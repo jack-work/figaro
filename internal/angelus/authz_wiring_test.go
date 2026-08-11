@@ -60,7 +60,7 @@ func TestForkPolicyOffByDefault(t *testing.T) {
 	}
 }
 
-// With both switches on, a self-fork mid-turn is refused — and refused with
+// With both switches on, a self-fork mid-turn is refused, and refused with
 // instructions, all the way out through the handler map.
 func TestForkDeniedForSelfDuringTurn(t *testing.T) {
 	hs := authzHandlers(t, true, "default", &liveForkFigaro{id: "aria0001", turnActive: true})
@@ -81,7 +81,7 @@ func TestForkDeniedForSelfDuringTurn(t *testing.T) {
 }
 
 // The three legitimate cases, through the real map. Each must reach the handler
-// (and then fail on the missing Backend, which is fine — what matters is that
+// (and then fail on the missing Backend, which is fine: what matters is that
 // the failure is not a denial).
 func TestForkAllowedWhenNotASelfForkMidTurn(t *testing.T) {
 	cases := []struct {
@@ -111,7 +111,7 @@ func TestForkAllowedWhenNotASelfForkMidTurn(t *testing.T) {
 	}
 }
 
-// Guard must cover the served set exactly — a method added to the map without
+// Guard must cover the served set exactly, a method added to the map without
 // thinking about authorization is still guarded.
 func TestEveryServedMethodIsGuarded(t *testing.T) {
 	hs := authzHandlers(t, true, "default", nil)

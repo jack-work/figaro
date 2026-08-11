@@ -26,7 +26,7 @@ go build -ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-
   -o "$BIN" ./cmd/figaro || exit 1
 echo "binary $(md5sum "$BIN" | cut -d' ' -f1)"
 
-# turns <aria> — the IR as (turn, inquiry, node kinds, sealed).
+# turns <aria>: the IR as (turn, inquiry, node kinds, sealed).
 turns() {
   "$BIN" show --id "$1" -j 2>/dev/null | python3 -c "
 import json,sys

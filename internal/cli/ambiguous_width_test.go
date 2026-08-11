@@ -17,7 +17,7 @@ import (
 // Measured on one captured frame at width 100: 0 rows over as a normal
 // terminal, 48 over as an ambiguous-wide one, worst 200 cells (+100).
 //
-// This is invisible to any test that measures figaro against figaro — which is
+// This is invisible to any test that measures figaro against figaro: which is
 // exactly what three rounds of clean sweeps were doing.
 func TestAmbiguousWideChangesEveryMeasurement(t *testing.T) {
 	const rule = "─────"  // U+2500 x5, what every rule is made of
@@ -41,7 +41,7 @@ func TestAmbiguousWideChangesEveryMeasurement(t *testing.T) {
 
 // TestAmbiguousWideReachesTheRenderer: the flag is useless if row-building does
 // not see it. A quoted node's rows must stay inside the viewport on BOTH kinds
-// of terminal — that is the whole point of believing the terminal.
+// of terminal: that is the whole point of believing the terminal.
 func TestAmbiguousWideReachesTheRenderer(t *testing.T) {
 	setAmbiguousWide(t, true)
 	md := "a sentence long enough to wrap a few times at these widths, plus a rule ───── inside it"

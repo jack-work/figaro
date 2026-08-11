@@ -97,7 +97,7 @@ func DetectChannel() Channel {
 // worktree builds.
 //
 // commitFallback is the ldflags-injected VCS revision from
-// internal/cli.version.go — pass it in so we don't create a cycle.
+// internal/cli.version.go: pass it in so we don't create a cycle.
 func CurrentVersion(commitFallback string) string {
 	info, ok := debug.ReadBuildInfo()
 	if ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
@@ -242,7 +242,7 @@ func UpgradeCommand(ch Channel, module, latest string) string {
 	case ChannelNix:
 		return "nix profile upgrade figaro   # or your flake input, then: nix profile upgrade '.*'"
 	case ChannelDevShell:
-		return "git pull && exit && nix develop   # (dev shell — rebuild by re-entering)"
+		return "git pull && exit && nix develop   # (dev shell: rebuild by re-entering)"
 	}
 	return ""
 }

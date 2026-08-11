@@ -26,7 +26,7 @@ import (
 //
 // Caching stays invisible to consumers: every method below satisfies Log[T]
 // with identical semantics whether or not a row is resident. What changed is
-// that "all of it is in RAM" is no longer free — see the note on store.Snapshot
+// that "all of it is in RAM" is no longer free: see the note on store.Snapshot
 // in log.go.
 type cachedLog[T any] struct {
 	inner Log[T]
@@ -121,7 +121,7 @@ func (c *cachedLog[T]) sizeOfLocked(e Entry[T]) int {
 }
 
 // Read returns every entry. It falls through to the inner log when the window
-// does not hold the whole channel — the honest price of a call that wants the
+// does not hold the whole channel: the honest price of a call that wants the
 // prefix, and the reason nothing on the hot path calls it.
 func (c *cachedLog[T]) Read() []Entry[T] {
 	c.mu.RLock()
@@ -271,7 +271,7 @@ func (c *cachedLog[T]) Append(e Entry[T]) (Entry[T], error) {
 // PeekTail and the append path both need.
 //
 // This is the reaper's control surface, reached through the optional
-// windowedLog interface — the caller says when, never how.
+// windowedLog interface: the caller says when, never how.
 func (c *cachedLog[T]) Trim(keep int) int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -291,7 +291,7 @@ func (c *cachedLog[T]) Resident() int {
 //
 // It trims in BATCHES, letting the window overshoot by windowSlack before
 // compacting back down. Trimming on every append past the cap was measured at
-// 4.4 µs and 51 KB per append against 308 ns and zero allocations unwindowed —
+// 4.4 µs and 51 KB per append against 308 ns and zero allocations unwindowed -
 // a 14x regression on the hottest write path in the daemon, because each
 // compaction copies the whole window. Batching amortizes that copy over
 // windowSlack appends, which brings it to within noise of untrimmed.

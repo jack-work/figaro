@@ -275,7 +275,7 @@ func (a *Angelus) evictIdleArias() {
 //
 // Notably absent: bound pids, attached clients, and running background
 // sessions. Each of those used to be a reason to refuse, and each would have
-// made hibernation impossible for exactly the arias that cost the most — a
+// made hibernation impossible for exactly the arias that cost the most, a
 // terminal left open all afternoon is the common case. They are gone because
 // what they protected moved: bindings survive Hibernate, clients hang off the
 // hub rather than the agent, and sessions live on the daemon.
@@ -404,7 +404,7 @@ type residentTrimmer interface {
 // trimResident shrinks the IR window of every aria with no live agent.
 //
 // The window already bounds itself on append, so this is not what keeps a busy
-// aria in check — it is the lifecycle half: an aria that has just been
+// aria in check: it is the lifecycle half: an aria that has just been
 // reclaimed is holding a full window it will not read again until someone
 // wakes it, and only the daemon knows that transition happened.
 func (a *Angelus) trimResident() {

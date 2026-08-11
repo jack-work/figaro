@@ -12,13 +12,13 @@ import (
 	"github.com/jack-work/figaro/internal/rpc"
 )
 
-// The two hangups. They differ by ONE thing — what becomes of the messages
-// queued behind the turn — and that is why they are two verbs rather than one
+// The two hangups. They differ by ONE thing: what becomes of the messages
+// queued behind the turn, and that is why they are two verbs rather than one
 // verb with a negated flag:
 //
-//	hup — stop the turn, KEEP the queue. The waiting messages coalesce into
+//	hup: stop the turn, KEEP the queue. The waiting messages coalesce into
 //	      one combined message, which the aria answers next.
-//	cut — stop the turn and DISCARD the queue, handing it back so it can be
+//	cut: stop the turn and DISCARD the queue, handing it back so it can be
 //	      saved instead of lost.
 //
 // A flag would put the destructive choice one absent character away from the
@@ -26,7 +26,7 @@ import (
 
 // hangupJSON is the one object -j prints. It is the whole answer: which aria,
 // whether a turn was actually stopped, what happened to the queue, and the
-// queue itself — verbatim for `cut`, so `figaro cut -j > lost.json` is a save.
+// queue itself: verbatim for `cut`, so `figaro cut -j > lost.json` is a save.
 type hangupJSON struct {
 	Aria    string             `json:"aria"`
 	Cleared bool               `json:"cleared"`
@@ -34,7 +34,7 @@ type hangupJSON struct {
 	Queue   []rpc.QueuedPrompt `json:"queue"`
 }
 
-// runHangup sends figaro.interrupt with an explicit queue disposition — the
+// runHangup sends figaro.interrupt with an explicit queue disposition: the
 // same RPC Ctrl-C fires inside a send stream. With no id, the pid-bound aria
 // is used.
 func runHangup(loaded *config.Loaded, ariaID string, disposition rpc.QueueDisposition, asJSON bool) {
@@ -44,7 +44,7 @@ func runHangup(loaded *config.Loaded, ariaID string, disposition rpc.QueueDispos
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	resolvedID, ep, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, false, dressing{})
+	resolvedID, ep, err := resolveFigaroTargetEndpoint(ctx, loaded, acli, ariaID, false, dressing{})
 	if err != nil {
 		die("%s", err)
 	}

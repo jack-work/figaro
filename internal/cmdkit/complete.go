@@ -249,7 +249,7 @@ func (r *Router) writeFishCompletion(w io.Writer) error {
 	// CWD listing past --), but it deliberately drops names with
 	// shell-unsafe characters and hidden entries. Fish's built-in
 	// file completion handles those cases natively and is far more
-	// polished than anything we'd reinvent — so we let it ride
+	// polished than anything we'd reinvent: so we let it ride
 	// alongside our dynamic candidates.
 	//
 	// The dynamic function detects the bare-prompt form (`figaro --`

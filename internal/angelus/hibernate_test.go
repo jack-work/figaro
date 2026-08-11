@@ -16,12 +16,12 @@ import (
 
 // Attending must be free. Before this, bind and attach both called
 // restoreByID, so `figaro attend` on a cold aria paid a full restore and
-// pinned 12-14 MB — and a daemon restart woke every aria that had a live
+// pinned 12-14 MB, and a daemon restart woke every aria that had a live
 // terminal, which on a busy machine is most of them.
 func TestAttendDoesNotWake(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
-	created, err := acli.Create(ctx, dress(t, "mock"))
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	id := created.FigaroID
 	require.NoError(t, a.Registry.Kill(id)) // make it dormant
@@ -68,7 +68,7 @@ func TestAttendUnknownAriaFails(t *testing.T) {
 func TestBindingSurvivesHibernate(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
-	created, err := acli.Create(ctx, dress(t, "mock"))
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	id := created.FigaroID
 	pid := os.Getpid()
@@ -88,7 +88,7 @@ func TestBindingSurvivesHibernate(t *testing.T) {
 func TestHibernateKeepsAriaAddressable(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
-	created, err := acli.Create(ctx, dress(t, "mock"))
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	id, sock := created.FigaroID, created.Endpoint.Address
 
@@ -124,7 +124,7 @@ func TestHibernateKeepsAriaAddressable(t *testing.T) {
 func TestHibernateRefusesActiveAria(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
-	created, err := acli.Create(ctx, dress(t, "mock"))
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	id := created.FigaroID
 
@@ -141,7 +141,7 @@ func TestHibernateRefusesActiveAria(t *testing.T) {
 		rpc.QuaRequest{Text: "keep me busy"}, &out))
 
 	// The turn may be brief with a mock provider, so only assert the refusal
-	// when we actually caught it active — a flaky assertion here would be
+	// when we actually caught it active, a flaky assertion here would be
 	// worse than none.
 	if f := a.Registry.Get(id); f != nil && f.TurnActive() {
 		require.Error(t, a.Registry.Hibernate(id), "reclaimed an active aria")
@@ -160,7 +160,7 @@ func TestHibernateRefusesActiveAria(t *testing.T) {
 func TestHibernateIsIdempotent(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
-	created, err := acli.Create(ctx, dress(t, "mock"))
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	id := created.FigaroID
 
@@ -174,7 +174,7 @@ func TestHibernateIsIdempotent(t *testing.T) {
 func TestHibernateWakeCycle(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
-	created, err := acli.Create(ctx, dress(t, "mock"))
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 	id := created.FigaroID
 

@@ -58,7 +58,7 @@ func TestNodeExpandable(t *testing.T) {
 // TestNodeExpandable_AgreesWithTheRender is the anti-lie test: a predicate that
 // DENIES expandability while the two renders differ makes the gesture drop a
 // form the user could have seen. The converse (true while they match) is
-// asserted for non-tools only — a tool with output shorter than the cap reports
+// asserted for non-tools only, a tool with output shorter than the cap reports
 // expandable although nothing changes, which is longstanding.
 func TestNodeExpandable_AgreesWithTheRender(t *testing.T) {
 	nodes := []livedoc.Node{

@@ -8,7 +8,7 @@ import (
 )
 
 // The canary must fire on the shape that killed four turns in one day, and
-// stay silent on a healthy stream — an instrument that cries every turn is
+// stay silent on a healthy stream, an instrument that cries every turn is
 // noise, and one that never cries is decoration.
 func TestWireCanary(t *testing.T) {
 	owner := anthropic.ContentBlockUnion{Type: "tool_use", ID: "toolu_1", Name: "edit"}
@@ -54,7 +54,7 @@ func TestWireCanaryVerdict(t *testing.T) {
 	if !strings.Contains(correct, `\\`) {
 		t.Fatal("fixture: a correct wire carries a doubled escape")
 	}
-	// A SINGLE-ESCAPED wire does not — the fragment was decoded before it
+	// A SINGLE-ESCAPED wire does not: the fragment was decoded before it
 	// reached us, and no downstream reader can undo that.
 	single := `{"type":"content_block_delta","delta":{"partial_json":"{\"new_text\": \"\tif a {"}}`
 	if strings.Contains(single, `\\`) {

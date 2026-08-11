@@ -83,7 +83,7 @@ func TestSanitizeOutput(t *testing.T) {
 	}{
 		{"nul stripped", "a\x00b", "ab"},
 		{"tab newline cr preserved", "a\tb\nc\rd", "a\tb\nc\rd"},
-		{"multibyte rune preserved", "café — 日本語 🎉", "café — 日本語 🎉"},
+		{"multibyte rune preserved", "café: 日本語 🎉", "café: 日本語 🎉"},
 		{"del stripped", "a\x7fb", "ab"},
 		{"format char stripped", "a​b", "ab"},
 		{"c0 controls stripped", "\x01\x1fok", "ok"},

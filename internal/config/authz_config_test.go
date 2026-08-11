@@ -8,7 +8,7 @@ import (
 
 // The [authz] block has to survive an actual TOML round trip through Load.
 // Every other test in this change constructs config.Loaded in Go, which proves
-// nothing about the toml tags — a typo there makes the whole feature
+// nothing about the toml tags, a typo there makes the whole feature
 // unreachable in production while every unit test stays green.
 func TestLoadParsesAuthzSection(t *testing.T) {
 	dir := t.TempDir()

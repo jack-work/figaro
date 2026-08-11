@@ -103,7 +103,7 @@ func BenchmarkTranscriptGeometryJourney(b *testing.B) {
 // tail window converges on one page's worth of rows (transcriptWindowRows /
 // transcriptPageLimit), and entering the pager has to render every one of them
 // once. This is the cost that grows with the budget on the MERGED stack, where
-// steady-state frame cost no longer does — so it belongs in the sweep that
+// steady-state frame cost no longer does: so it belongs in the sweep that
 // picks the number.
 func BenchmarkTranscriptGeometryEnter(b *testing.B) {
 	for _, rows := range geometryBudgets {
@@ -124,8 +124,8 @@ func BenchmarkTranscriptGeometryEnter(b *testing.B) {
 }
 
 // BenchmarkTranscriptGeometryFollow is the live-tail side of the budget. Axis A
-// left exactly one O(retained rows) step on the frame path — rebuildLineLT,
-// which refills the LT-per-line map whenever the index shape moves — and a
+// left exactly one O(retained rows) step on the frame path: rebuildLineLT,
+// which refills the LT-per-line map whenever the index shape moves, and a
 // streaming open message moves it on every single frame. So unlike a scroll
 // frame, a follow frame IS sensitive to the window size, and the sweep has to
 // say by how much before the budget is raised.
@@ -152,7 +152,7 @@ func BenchmarkTranscriptGeometryFollow(b *testing.B) {
 
 // TestTranscriptGeometryDepthReport asks the question the merged stack forces
 // and D's solo sweep could not: now that frame cost is flat in the window size,
-// the only remaining benefit of a bigger window is less paging churn — so is the
+// the only remaining benefit of a bigger window is less paging churn: so is the
 // churn threshold a property of the BUDGET, or of how far the user scrolls?
 //
 // It sweeps budget x journey depth and prints fetches / refetched messages /

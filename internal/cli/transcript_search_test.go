@@ -50,7 +50,7 @@ func TestTranscript_SearchHighlightsAllMatchesPersist(t *testing.T) {
 		}
 	}
 	if hits == 0 {
-		t.Fatalf("no lines contain 'apple' at all — screen:\n%s", strings.Join(lines, "\n"))
+		t.Fatalf("no lines contain 'apple' at all: screen:\n%s", strings.Join(lines, "\n"))
 	}
 	if wrapped != hits {
 		t.Fatalf("expected all %d 'apple' lines to be highlighted, got %d", hits, wrapped)

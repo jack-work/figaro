@@ -88,7 +88,7 @@ func drainSSE(ctx context.Context, body io.Reader, bus provider.Bus) (assembled,
 				// `index` is required by the spec and gateways omit it
 				// anyway. Defaulting the missing case to 0 merged every
 				// call of a turn into one slot and concatenated their
-				// arguments — a client must not silently corrupt a tool
+				// arguments, a client must not silently corrupt a tool
 				// call because an upstream left a field out. With no
 				// index: a new id opens a new slot, and a bare fragment
 				// continues the slot it is obviously continuing.

@@ -15,7 +15,7 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// CRUD on the queue — the messages an aria has accepted but not yet answered.
+// CRUD on the queue: the messages an aria has accepted but not yet answered.
 //
 // Create is `figaro send`: a queued message IS a submitted prompt, so there is
 // no second door. What is here is read, update, delete.
@@ -24,7 +24,7 @@ import (
 // rebuilt, so an id is only meaningful paired with the generation it was read
 // from; the CLI reads the queue, takes that epoch, and hands it back with the
 // mutation. If the agent restarted in between, the server refuses the whole
-// request as stale and says so — rather than deleting whatever holds that
+// request as stale and says so: rather than deleting whatever holds that
 // number now.
 
 type queueJSON struct {
@@ -51,7 +51,7 @@ func openQueueSession(loaded *config.Loaded, ariaID string) (*queueSession, cont
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 
 	acli := mustConnectAngelus(loaded)
-	resolvedID, ep, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, false, dressing{})
+	resolvedID, ep, err := resolveFigaroTargetEndpoint(ctx, loaded, acli, ariaID, false, dressing{})
 	if err != nil {
 		acli.Close()
 		cancel()
@@ -101,7 +101,7 @@ func runQueueList(loaded *config.Loaded, ariaID string, asJSON bool) {
 		fmt.Printf("queue %s: empty\n", s.id)
 		return
 	}
-	fmt.Printf("queue %s — %s waiting\n", s.id, plural(len(queue), "message"))
+	fmt.Printf("queue %s: %s waiting\n", s.id, plural(len(queue), "message"))
 	width := termWidth() - 24
 	if width < 20 {
 		width = 20
@@ -174,7 +174,7 @@ func runQueueEdit(loaded *config.Loaded, ariaID string, id uint64, text string, 
 //
 // A REFUSAL IS NOT AN ERROR AND IS NOT A SUCCESS. The server legitimately
 // declines to delete a message it has already committed; that is an answer,
-// it is printed in full, and it leaves a non-zero status so a script notices —
+// it is printed in full, and it leaves a non-zero status so a script notices -
 // but it is never dressed up as a transport failure, and it is never swallowed.
 func reportQueueResults(ariaID, epoch string, results []rpc.QueueResult, asJSON bool) {
 	if asJSON {
@@ -191,7 +191,7 @@ func reportQueueResults(ariaID, epoch string, results []rpc.QueueResult, asJSON 
 			case rpc.QueueRejected:
 				line := fmt.Sprintf("  %-4d rejected: %s", r.ID, r.Reason)
 				if r.Detail != "" {
-					line += " — " + r.Detail
+					line += ": " + r.Detail
 				}
 				if r.Into != 0 {
 					line += fmt.Sprintf(" (try %d)", r.Into)

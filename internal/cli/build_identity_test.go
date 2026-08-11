@@ -6,8 +6,8 @@ import "testing"
 //
 // Two identity schemes coexist and neither converts into the other:
 //
-//	revision  a git SHA — a nix build, or `go build` in a checkout
-//	module    vX.Y.Z    — `go install <module>/cmd/figaro@vX.Y.Z`, because the
+//	revision  a git SHA, a nix build, or `go build` in a checkout
+//	module    vX.Y.Z: `go install <module>/cmd/figaro@vX.Y.Z`, because the
 //	                      proxy ships a zip and records no VCS metadata at all
 //
 // b551b32 made a proxy-built binary report its module version instead of
@@ -32,7 +32,7 @@ func TestBuildIdentityKind(t *testing.T) {
 		{"deadbeef", "revision"},
 		{"v0.17.0", "module"},
 		{"v1.2.3-rc1", "module"},
-		// "(devel)" never reaches here — moduleVersion filters it — but if it
+		// "(devel)" never reaches here: moduleVersion filters it: but if it
 		// ever did it must not be mistaken for either real scheme.
 		{"(devel)", "other"},
 		{"unknown", "other"},
@@ -63,14 +63,14 @@ func TestMixedSchemesAreNotRefused(t *testing.T) {
 	}
 }
 
-// TestBuildHandshakeMatrix pins the DECISION, not just the classifier — my
+// TestBuildHandshakeMatrix pins the DECISION, not just the classifier: my
 // first attempt tested only buildIdentityKind, so neutering the mixed-scheme
 // case in checkDaemonBuild left it green. A canary that cannot fail is not a
 // canary, and a green reading from it is worse than a red one.
 //
 // CANARY (watched): change the handshakeMixedSchemes case to `default:` and
 // the "nix daemon beside a proxy CLI" row fails with
-// `got handshakeRefuse, want handshakeMixedSchemes` — the lockout, reproduced.
+// `got handshakeRefuse, want handshakeMixedSchemes`: the lockout, reproduced.
 func TestBuildHandshakeMatrix(t *testing.T) {
 	cases := []struct {
 		name         string

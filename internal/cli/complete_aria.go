@@ -13,7 +13,7 @@ import (
 // softFetchAriaIDs best-effort fetches the list of known aria ids
 // (live + dormant) via the angelus RPC surface. Returns nil on any
 // failure: completion must never autostart the daemon, prompt the
-// user, or block long. CLI stays backend-agnostic — the daemon is
+// user, or block long. CLI stays backend-agnostic: the daemon is
 // the source of truth, the CLI never touches the on-disk aria dir.
 func softFetchAriaIDs() []string {
 	ep := transport.UnixEndpoint(angelusSocketPath())

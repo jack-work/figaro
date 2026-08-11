@@ -1,6 +1,6 @@
 ---
 name: treebear
-description: Explains the "treebear" Git workflow pattern — a bare repository with git worktrees as children. Use when the user mentions treebear, bare repo worktree setups, or asks about managing multiple branches via worktrees.
+description: Explains the "treebear" Git workflow pattern, a bare repository with git worktrees as children. Use when the user mentions treebear, bare repo worktree setups, or asks about managing multiple branches via worktrees.
 ---
 
 # Treebear

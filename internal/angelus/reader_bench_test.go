@@ -64,7 +64,7 @@ func benchText(i int) string {
 // resident. It is the number that decides whether hibernation pays for
 // itself: reclaiming an agent is only a win if reading it back is cheap.
 //
-// It is currently O(whole history) per page, not O(page) — every call
+// It is currently O(whole history) per page, not O(page): every call
 // decodes the log and projects every turn just to serve one window. That is
 // the known cost of the first pass and the thing a range-projecting reader
 // would fix. Measure it before optimising it.
@@ -75,7 +75,7 @@ func BenchmarkAriaReaderPage(b *testing.B) {
 			r := NewAriaReader(backend, uiir.New(nil))
 
 			// Warm the memoized log so the measurement is projection, not
-			// first-open disk I/O — a second reader hits the same instance.
+			// first-open disk I/O, a second reader hits the same instance.
 			if _, err := r.Page(id, aria.Anchor{}, 65536, false); err != nil {
 				b.Fatal(err)
 			}

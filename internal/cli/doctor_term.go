@@ -18,7 +18,7 @@ import (
 // be reproduced from another machine: every surface, every width from 20 to 200,
 // live turns, resizes, nvim's embedded terminal, all clean. What cannot be
 // checked from here is whether the reporter's terminal DRAWS a glyph the width
-// figaro measured it to be — and if it does not, every row figaro builds is
+// figaro measured it to be, and if it does not, every row figaro builds is
 // wrong by the difference, invisibly.
 //
 // One command, run where the trouble is, answers it.
@@ -30,7 +30,7 @@ func runDoctorTerm() error {
 	fmt.Printf("stdout tty   %v    stdin tty %v\n",
 		term.IsTerminal(int(os.Stdout.Fd())), term.IsTerminal(int(os.Stdin.Fd())))
 
-	fmt.Printf("\nglyph widths — what figaro MEASURES vs what your terminal DRAWS\n")
+	fmt.Printf("\nglyph widths: what figaro MEASURES vs what your terminal DRAWS\n")
 	fmt.Printf("  a mismatch on any row below is the bug: every row containing that\n")
 	fmt.Printf("  glyph is built to the wrong width and runs past the edge.\n\n")
 

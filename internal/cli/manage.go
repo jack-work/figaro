@@ -39,11 +39,12 @@ const (
 	fieldCtx    = "ctx"
 	fieldCwd    = "cwd"
 	fieldDetail = "detail"
+	fieldKind   = "kind"
 )
 
 // listColumns is the table `list` prints at a given width: the full nine, a
-// reduced six, or — for the global hierarchy, whose rows are anchors rather
-// than conversations — the tree, its id and one detail line.
+// reduced six, or: for the global hierarchy, whose rows are anchors rather
+// than conversations: the tree, its id and one detail line.
 func listColumns(width int, global bool) []figtree.Column {
 	switch {
 	case global:
@@ -81,7 +82,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		// --json: the prodev escape hatch — the whole store (incl. the null +
+		// --json: the prodev escape hatch: the whole store (incl. the null +
 		// outfit anchors) as one JSON array. No scoping, no rendering.
 		if o.jsonOut {
 			resp, err := acli.ListGlobal(ctx)
@@ -128,7 +129,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		case rootID == "/":
 			rootID = ""
 		case rootID != "":
-			// explicit subtree — keep
+			// explicit subtree: keep
 		case o.home:
 			rootID = ""
 		case boundID != "":
@@ -216,7 +217,7 @@ func listForest(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree
 			continue
 		}
 		byVec[vecKey(f.Vector)] = f
-		// Roots are depth-0 conversations, or — when scoped to a subtree —
+		// Roots are depth-0 conversations, or: when scoped to a subtree -
 		// the named trunk itself; everything else nests under its parent.
 		isRoot := len(f.Vector) == 1
 		if rootID != "" {
@@ -272,7 +273,7 @@ func listForest(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree
 		}
 		// Branches are MARKED, not numbered. The forest records a fork point
 		// as an LT (BranchedLT), but the coordinate `send/fork <id>:N` takes
-		// is a TURN — printing the LT here and letting it read as a fork
+		// is a TURN: printing the LT here and letting it read as a fork
 		// argument is the exact class of trap this project exists to remove
 		// (the old comment claimed the two were the same; they never were
 		// after turn addressing, and are off by a whole exchange).
@@ -290,7 +291,7 @@ func listForest(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree
 			Label:  truncRunes(label, 44),
 			Fields: map[string]string{
 				fieldID:     f.ID,
-				fieldOutfit: dash(f.OutfitName),
+				fieldOutfit: dash(bornOf(f)),
 				fieldVer:    dash(f.OutfitVer),
 				fieldFork:   fork,
 				fieldAge:    relAge(f.LastActive),
@@ -315,8 +316,8 @@ func listForest(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree
 	return tree, roots
 }
 
-// renderGlobal prints the full hierarchy — null → outfits → conversations →
-// branches — by parent links. ● marks the attended aria, or, when detached,
+// renderGlobal prints the full hierarchy: null → outfits → conversations →
+// branches: by parent links. ● marks the attended aria, or, when detached,
 // the live outfit (your implicit home).
 // globalForest builds the rendered rows for the whole hierarchy, walked by
 // parent links. Pure, so its shape can be pinned without an angelus.
@@ -366,6 +367,15 @@ func globalForest(figs []rpc.FigaroInfoResponse, boundID string, ppid int) figtr
 				ver = "?"
 			}
 			label, detail = "outfit "+dash(f.OutfitName)+"@"+ver, "ceremonial"
+		case "form":
+			label = "form " + f.ID
+			if f.Name != "" {
+				label = f.Name + " " + f.ID
+			}
+			detail = "unbound"
+			if f.TargetAria != "" {
+				detail = "role → " + f.TargetAria
+			}
 		default:
 			label = f.Mantra
 			if label == "" {
@@ -380,6 +390,7 @@ func globalForest(figs []rpc.FigaroInfoResponse, boundID string, ppid int) figtr
 				fieldID:     f.ID,
 				fieldDetail: detail,
 				fieldMsgs:   strconv.Itoa(f.MessageCount),
+				fieldKind:   f.Kind,
 			},
 		}
 		for _, c := range childrenOf[id] {
@@ -387,12 +398,22 @@ func globalForest(figs []rpc.FigaroInfoResponse, boundID string, ppid int) figtr
 		}
 		return n
 	}
-	tree := figtree.Tree{}
+	tree := figtree.Tree{
+		// Unbound forms wear the transcript selection's wash: one shared
+		// token (bgFormRow), so the two surfaces can never drift apart.
+		Backgrounds: []figtree.RowBackground{{Field: fieldKind, Value: "form", Seq: bgFormRow}},
+	}
 	if nullID != "" {
 		tree.Roots = append(tree.Roots, grow(nullID))
 	}
 	return tree
 }
+
+// bgFormRow is the row wash for unbound forms in `ls -g`: the SAME
+// sequence the transcript pager uses for node selection (see
+// transcript_selection.go); grey 236 was chosen there against every
+// theme, and this surface inherits that decision rather than remaking it.
+const bgFormRow = "\x1b[48;5;236m"
 
 func renderGlobal(figs []rpc.FigaroInfoResponse, boundID string, limit int) {
 	rows := globalForest(figs, boundID, shellPID).Rows()
@@ -487,7 +508,7 @@ func vecKey(v []int) string {
 }
 
 // topLevelAncestor returns the id of the top-level conversation trunk that
-// contains id (the trunk whose vector is the first component of id's vector) —
+// contains id (the trunk whose vector is the first component of id's vector) -
 // i.e. the root of id's whole fork tree. Falls back to id if not found.
 func topLevelAncestor(figs []rpc.FigaroInfoResponse, id string) string {
 	var vec []int
@@ -546,6 +567,15 @@ func vectorLess(a, b []int) bool {
 }
 
 // dash returns "-" for an empty string.
+// bornOf names what an aria was born under: its outfit, or: for a
+// form-born aria: the @form itself (the nearest unbound ancestor).
+func bornOf(f rpc.FigaroInfoResponse) string {
+	if f.OutfitName == "" && strings.HasPrefix(f.Parent, "@") {
+		return f.Parent
+	}
+	return f.OutfitName
+}
+
 func dash(s string) string {
 	if strings.TrimSpace(s) == "" {
 		return "-"
@@ -621,12 +651,12 @@ func runKillByID(loaded *config.Loaded, figaroID string, recursive bool) {
 // for an interior fork at that turn.
 //
 // Rescoping: when you fork your OWN bound aria, the shell stays on the
-// continuation, which KEEPS the target's id, trunk and mantra — the aria
+// continuation, which KEEPS the target's id, trunk and mantra: the aria
 // is not frozen and nothing addressing it breaks. Forking any OTHER aria,
 // or passing --stay, is a maintenance fork: your session is left untouched.
 func runFork(loaded *config.Loaded, spec string, opts sendOpts) {
 	stay, asJSON := opts.stay, opts.json
-	// Split an optional :<turn> suffix off the target. Shared parser — fork and
+	// Split an optional :<turn> suffix off the target. Shared parser: fork and
 	// send must not drift apart on what a coordinate means.
 	target, at, perr := parseTarget(spec)
 	if perr != nil {
@@ -655,7 +685,7 @@ func runFork(loaded *config.Loaded, spec string, opts sendOpts) {
 
 		// Rebinding is mostly ceremony now: a fork keeps the aria id, so the
 		// continuation IS the aria this shell is already bound to. The Bind
-		// still earns its keep — it clears any pending fork point on the
+		// still earns its keep: it clears any pending fork point on the
 		// binding (atLT 0), and a cauterized fork (redirected to a fresh
 		// conversation under an outfit or the root) can hand back a
 		// continuation that really is somewhere else. Registry.Bind rebinds
@@ -670,7 +700,7 @@ func runFork(loaded *config.Loaded, spec string, opts sendOpts) {
 		}
 
 		if asJSON {
-			// aria_id is the "new/current" aria after the fork —
+			// aria_id is the "new/current" aria after the fork -
 			// the continuation when we rescoped (this shell moved),
 			// otherwise the alternative (what the caller usually cares
 			// about when scripting: the fresh empty branch).
@@ -732,7 +762,7 @@ func runNormalize(loaded *config.Loaded, segments bool) {
 		}
 		switch resp.Detached {
 		case 0:
-			fmt.Fprintln(os.Stderr, "normalize: already normalized — nothing to absorb")
+			fmt.Fprintln(os.Stderr, "normalize: already normalized, nothing to absorb")
 		case 1:
 			fmt.Fprintln(os.Stderr, "normalize: 1 aria now owns its history outright")
 		default:
@@ -744,7 +774,7 @@ func runNormalize(loaded *config.Loaded, segments bool) {
 
 // runPromote raises an aria in the PRESENTATION hierarchy: it takes its
 // parent's place in the tree fig ls draws, and the parent comes to sit under
-// it. Nothing moves on disk and no history changes — the aria still reads
+// it. Nothing moves on disk and no history changes: the aria still reads
 // exactly the turns it did before, so this is instant regardless of how long
 // the conversation is. Needs the trunk capability.
 func runPromote(loaded *config.Loaded, idFlag string, args []string) {
@@ -781,9 +811,9 @@ func runPromote(loaded *config.Loaded, idFlag string, args []string) {
 				"  Set `trunks = true` in config.toml and restart the daemon to enable it.")
 		}
 		if resp.AtStump {
-			die("promote: %s is rooted at an outfit — cannot promote into an outfit; make or edit an outfit instead", target)
+			die("promote: %s is rooted at an outfit, so it cannot be promoted into one; make or edit an outfit instead", target)
 		}
-		fmt.Fprintf(os.Stderr, "promoted %s by %d level(s) — it is now the canonical line through its ancestors\n", target, resp.Climbed)
+		fmt.Fprintf(os.Stderr, "promoted %s by %d level(s): it is now the canonical line through its ancestors\n", target, resp.Climbed)
 		return nil
 	})
 }
@@ -793,7 +823,7 @@ func runPromote(loaded *config.Loaded, idFlag string, args []string) {
 // prompt forks there and moves to the new branch). The :<LT> form re-pins the
 // already-bound aria.
 func runAttend(loaded *config.Loaded, spec string) {
-	// A statically-attended shell (FIGARO_ARIA — an aria's own bash
+	// A statically-attended shell (FIGARO_ARIA, an aria's own bash
 	// tool) has an identity, not a binding: there is nothing to move.
 	if id := envAriaID(); id != "" {
 		die("attend: this shell is statically attended to %s (FIGARO_ARIA) and cannot be re-attended.\n"+
@@ -838,11 +868,11 @@ func runAttend(loaded *config.Loaded, spec string) {
 			atMainLT = lt
 		}
 		if err := bindBinding(ctx, acli, ppid, trunk, atMainLT); err != nil {
-			// A cauterized anchor (null/outfit) can't be attended — nudge.
+			// A cauterized anchor (null/outfit) can't be attended: nudge.
 			if r, e := acli.ListGlobal(ctx); e == nil {
 				for _, f := range r.Figaros {
 					if f.ID == trunk && (f.Kind == "null" || f.Kind == "outfit") {
-						die("%s is a %s — a closed anchor, not a conversation; it can't be attended.\n"+
+						die("%s is a %s: a closed anchor, not a conversation; it can't be attended.\n"+
 							"  figaro attend null  go home (unbind; new conversations use the live outfit)\n"+
 							"  figaro ls -h        lists top-level conversations (use -a or -n N to show all or N most recent in scope)\n"+
 							"  figaro ls -g        show the full hierarchy (null + outfits + conversations)", trunk, f.Kind)

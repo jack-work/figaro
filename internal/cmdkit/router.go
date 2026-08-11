@@ -29,7 +29,7 @@ type Router struct {
 	Fallback func(args []string, extra interface{}) error
 
 	// Stdout takes REQUESTED output: --help, help <cmd>, --version. The
-	// split is about who asked — help you asked for must be pipeable;
+	// split is about who asked: help you asked for must be pipeable;
 	// usage printed because argv was wrong is a diagnostic (Stderr).
 	Stdout io.Writer
 
@@ -37,7 +37,7 @@ type Router struct {
 	// error. Defaults to os.Stderr.
 	Stderr io.Writer
 
-	// Synopsis is extra usage lines printed under the Usage header —
+	// Synopsis is extra usage lines printed under the Usage header -
 	// for forms the router itself does not dispatch (e.g. figaro's bare
 	// `figaro [flags] -- <prompt>`).
 	Synopsis []string
@@ -71,7 +71,7 @@ func NewRouter(name string) *Router {
 }
 
 // registerHelp installs `help [<command>]`. It lives here, not in each
-// consumer's table, because help is the router's own knowledge — and
+// consumer's table, because help is the router's own knowledge, and
 // because without it `figaro help` answered `unknown command "help", did
 // you mean: figaro hup`: the most-guessed verb, pointed at the daemon.
 func (r *Router) registerHelp() {
@@ -231,9 +231,9 @@ func (r *Router) Run(args []string) int {
 	}
 
 	// Parse flags + args.
-	ctx, err := r.parse(cmd, tail)
+	ctx, err := r.parse(cmd, first, tail)
 	if err != nil {
-		fmt.Fprintf(r.Stderr, "error: %s %s: %s\n", r.Name, cmd.Name, err)
+		fmt.Fprintf(r.Stderr, "error: %s %s: %s\n", r.Name, first, err)
 		return 2
 	}
 	ctx.Extra = r.Extra
@@ -252,13 +252,21 @@ func (r *Router) Run(args []string) int {
 }
 
 // errUsage lets a command report "argv was rejected, and I have already
-// said why" — the router turns it into exit 2 with no second message.
+// said why": the router turns it into exit 2 with no second message.
 var errUsage = errors.New("usage")
 
 // parse processes flags and positional args for a command.
-func (r *Router) parse(cmd *Command, args []string) (*RunContext, error) {
+// parse reads flags and positionals. verb is the name as TYPED, which may be
+// an alias: a message about `fig form -O` must say `form`, not the canonical
+// `state` the user never wrote.
+func (r *Router) parse(cmd *Command, verb string, args []string) (*RunContext, error) {
+	if verb == "" {
+		verb = cmd.Name
+	}
+
 	ctx := &RunContext{
-		Flags: make(map[string]string),
+		Flags:  make(map[string]string),
+		Router: r,
 	}
 
 	if cmd.PassRaw {
@@ -300,8 +308,8 @@ func (r *Router) parse(cmd *Command, args []string) (*RunContext, error) {
 				return nil, fmt.Errorf("unknown flag: --%s", name)
 			}
 			if fd.IsBool {
-				// A bool may carry an explicit truth value — `--attend=false`
-				// is a form send.go already honours — but nothing else.
+				// A bool may carry an explicit truth value: `--attend=false`
+				// is a form send.go already honours: but nothing else.
 				val := "true"
 				if hasInline {
 					switch inline {
@@ -364,6 +372,25 @@ func (r *Router) parse(cmd *Command, args []string) (*RunContext, error) {
 		continue
 	}
 
+	// Validate flag/subword agreement before anything runs. A flag that
+	// belongs to a sub-verb the caller did not type is refused here rather
+	// than silently ignored by a Run function that never reads it.
+	for _, fd := range cmd.Flags {
+		if len(fd.Subwords) == 0 {
+			continue
+		}
+		if _, given := ctx.Flags[fd.Long]; !given {
+			continue
+		}
+		sub := ""
+		if len(ctx.Args) > 0 {
+			sub = ctx.Args[0]
+		}
+		if !containsString(fd.Subwords, sub) {
+			return nil, subwordFlagError(verb, fd, sub)
+		}
+	}
+
 	// Validate arg count.
 	if cmd.ArgsMin > 0 && len(ctx.Args) < cmd.ArgsMin {
 		return nil, fmt.Errorf("requires at least %d argument(s)", cmd.ArgsMin)
@@ -373,6 +400,30 @@ func (r *Router) parse(cmd *Command, args []string) (*RunContext, error) {
 	}
 
 	return ctx, nil
+}
+
+// containsString is the membership test the subword check needs; the table is
+// two or three entries, so a loop is the whole implementation.
+func containsString(list []string, want string) bool {
+	for _, s := range list {
+		if s == want {
+			return true
+		}
+	}
+	return false
+}
+
+// subwordFlagError names where a flag belongs, in the grammar the user typed.
+func subwordFlagError(cmd string, fd FlagDef, sub string) error {
+	where := make([]string, 0, len(fd.Subwords))
+	for _, w := range fd.Subwords {
+		where = append(where, "`"+cmd+" "+w+"`")
+	}
+	got := "on its own"
+	if sub != "" {
+		got = "`" + cmd + " " + sub + "`"
+	}
+	return fmt.Errorf("--%s belongs to %s, not %s", fd.Long, strings.Join(where, ", "), got)
 }
 
 // unconsumedFlagError explains a dash-token that survived both the flag

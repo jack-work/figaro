@@ -31,7 +31,7 @@ func TestHangupVerbs_HelpNamesTheDispositionAndTheOtherVerb(t *testing.T) {
 		}
 		for _, want := range tc.says {
 			if !strings.Contains(cmd.Short, want) {
-				t.Errorf("%s: short help %q does not say %q — the queue disposition must be unmissable",
+				t.Errorf("%s: short help %q does not say %q: the queue disposition must be unmissable",
 					tc.verb, cmd.Short, want)
 			}
 		}
@@ -42,7 +42,7 @@ func TestHangupVerbs_HelpNamesTheDispositionAndTheOtherVerb(t *testing.T) {
 		if !strings.Contains(cmd.Long, tc.namesPeer) {
 			t.Errorf("%s: long help never mentions %q", tc.verb, tc.namesPeer)
 		}
-		// Both forms hand the queue back — that is what makes dropping it
+		// Both forms hand the queue back: that is what makes dropping it
 		// different from losing it.
 		if !strings.Contains(cmd.Long, "-j") {
 			t.Errorf("%s: long help must say how to get the messages back as JSON", tc.verb)
@@ -93,7 +93,7 @@ func TestHangupVerbs_BothTakeJSON(t *testing.T) {
 }
 
 // `figaro cut -j > lost.json` has to be a SAVE. That means exactly one object,
-// and a queue that is an array even when empty — a caller doing `.queue[]`
+// and a queue that is an array even when empty, a caller doing `.queue[]`
 // must not have to special-case null.
 func TestHangupJSON_IsOneObjectWithAnArrayQueue(t *testing.T) {
 	b, err := json.Marshal(hangupJSON{

@@ -91,7 +91,7 @@ model = "mock-model"
 	require.NoError(t, err)
 	defer acli.Close()
 
-	resp, err := acli.Create(ctx, dress(t, "mock"))
+	resp, err := acli.Create(ctx, dress(t, "mock"), nil)
 	require.NoError(t, err)
 
 	ep := transport.Endpoint{Scheme: resp.Endpoint.Scheme, Address: resp.Endpoint.Address}

@@ -15,14 +15,14 @@ import (
 //   - E shrinks the row TEXT on the way into the row cache, subtractively. It
 //     models the entry rendition as unknown, so a row's leading reset is never
 //     dropped, and it preserves the final rendition exactly.
-//   - B rewrites the row on the way OUT to the terminal — compacting SGR,
+//   - B rewrites the row on the way OUT to the terminal: compacting SGR,
 //     addressing from the first differing column, and moving whole runs of rows
 //     with DECSTBM + SU/SD. It requires every painted row to start and end in
 //     default SGR, because SU/SD blank the rolled-in rows with the *current*
 //     background.
 //
 // E's guarantee is strict (same rendition per cell); B's is looser by licence
-// (same appearance — it may drop invisible styling on blank cells). Composed,
+// (same appearance: it may drop invisible styling on blank cells). Composed,
 // the claim is B's: a viewer cannot tell. This file proves that composition
 // rather than assuming it, over real glamour rows, through the real painter,
 // on all three paths at once.
@@ -38,7 +38,7 @@ import (
 //   - sgrTerm (sgr_vt_test.go) compares exact rendition per cell, plus the
 //     erase-time background, the cursor and an opaque-escape event log. That
 //     strictness is what makes collapseSGR's subtractive argument checkable.
-//     Run compactRow's tests through it and they all fail — correctly, because
+//     Run compactRow's tests through it and they all fail: correctly, because
 //     compactRow really does change the rendition of blank cells.
 //   - vtScreen (transcript_paint_test.go) compares appearance: a space with no
 //     reverse, underline or strike is the same cell whatever its foreground.
@@ -47,7 +47,7 @@ import (
 //
 // Unifying would mean parameterizing sgrTerm by the relation AND teaching it
 // DECSTBM/SU/SD (which only vtScreen has) AND teaching vtScreen ECH/ED and the
-// escape log (which only sgrTerm has) — a rewrite of the two things that judge
+// escape log (which only sgrTerm has), a rewrite of the two things that judge
 // everything else, for no new coverage. Both are anchored to the same external
 // oracle instead: TestTranscriptPaint_RealTerminalReplay replays the pager's
 // actual stream through tmux, and on this stack those rows are E-collapsed, so
@@ -109,9 +109,9 @@ func paintFrames(t testing.TB, frames [][]string, w, h int, collapse, regions bo
 var decstbmRE = regexp.MustCompile(`\x1b\[\d+;\d+r`)
 
 // TestSGRCollapsePaintsIdenticallyThroughTheScrollPainter is the composition
-// test. Three ways of putting the same frames on a terminal — the rows as the
+// test. Three ways of putting the same frames on a terminal: the rows as the
 // renderers produced them, E's collapsed rows through the full-frame diff, and
-// E's collapsed rows through B's scroll-region painter — must be
+// E's collapsed rows through B's scroll-region painter: must be
 // indistinguishable to a viewer.
 //
 // The middle one is the control: if it also failed, the bug would be E's alone.

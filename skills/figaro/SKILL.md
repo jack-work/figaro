@@ -48,8 +48,8 @@ One definition each. The file named owns the model behind it.
 | trunk | A root-to-leaf path through the fork forest; the aria id is its id, and it survives forks. | [reference/trunks.md](reference/trunks.md) |
 | turn | One exchange: your prompt plus everything the agent did about it. The coordinate `:N` in `<id>:<turn>`; `.N` addresses an LT instead. | [reference/turns.md](reference/turns.md) |
 | LT | The storage coordinate, positional and cross-channel. Not an address you type. | [reference/turns.md](reference/turns.md) |
-| form | Per-aria key to JSON state that rides along with the conversation. | [reference/architecture.md](reference/architecture.md) |
-| outfit | A named patch for a form: model, credo, skills. Named by a SPEC — `sonn5,ttl=1h` — which is folded at birth or onto a live aria. | [reference/outfits.md](reference/outfits.md) |
+| form | Durable, versioned, forkable JSON state. Every aria's form is one; an UNBOUND form (`@`-sigiled id) has no figaro and stands alone. A form carrying `target-aria` is a ROLE. | [forms.md](forms.md) |
+| outfit | A named patch for a form: model, credo, skills. Named by NAME (`-O sonn5,focus`), folded at birth or onto a live aria; keys travel beside it on `-S`. | [reference/outfits.md](reference/outfits.md) |
 | angelus | The single supervisor daemon that owns the registry and outlives shells. | [reference/architecture.md](reference/architecture.md) |
 
 ## Where everything else lives
@@ -61,7 +61,7 @@ Each row is a separate read. Open one only when its "when" is true of you.
 | [start.md](start.md) | You are new to figaro and want the first hour to go well. Read once. |
 | [cli.md](cli.md) | You need a command that is not in the gesture list above, a flag's exact meaning, or the vault (passphrase/keyring) verbs. |
 | [agents.md](agents.md) | You are an agent driving figaro, or you are writing a script that does. |
-| [contributing/](contributing/README.md) | You are changing figaro's source or its docs, or **cutting a release** — a tag alone ships to nobody. Start at that index. |
+| [contributing/](contributing/README.md) | You are changing figaro's source or its docs, or **cutting a release**: a tag alone ships to nobody. Start at that index. |
 
 Deep chapters, in `reference/`. These are long by design and cost real context;
 open one when you are working inside that subsystem, not to browse. Chapters
@@ -76,7 +76,8 @@ about changing figaro rather than using it live under
 | [reference/architecture.md](reference/architecture.md) | The three roles, the IR, the form, the RPC wire, the provider layer. |
 | [reference/ui-stream.md](reference/ui-stream.md) | How a conversation reaches a terminal: the read wire, inline freeze, the pager. |
 | [reference/cache-control.md](reference/cache-control.md) | Prompt caching, and overriding it. |
-| [reference/outfits.md](reference/outfits.md) | Composing outfits, the `-O` spec syntax, or `-O` did not do what you expected. |
+| [reference/outfits.md](reference/outfits.md) | Composing outfits, the `-O`/`-S`/`-D` grammar, or dressing did not do what you expected. |
+| [reference/forms.md](reference/forms.md) | Using unbound forms and roles: the verbs, the listings, the matrix. |
 | [debugging/tapes.md](debugging/tapes.md) | Record an aria's wire and replay it: a rendering bug someone SAW and you cannot reproduce, or one recorded for CI. |
 | [reference/mantra.md](reference/mantra.md) | Maintaining your aria's mantra. |
 

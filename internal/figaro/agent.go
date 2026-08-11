@@ -16,7 +16,6 @@ import (
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
-	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
@@ -32,6 +31,7 @@ type eventType int
 const (
 	eventUserPrompt eventType = iota
 	eventSet
+	eventCast
 )
 
 // promptSegment is one submission inside a (possibly folded) user message:
@@ -53,6 +53,9 @@ type event struct {
 	at     int64
 	merged []uint64
 
+	// eventCast
+	cast *castOp
+
 	// eventUserPrompt
 	text string
 	form *rpc.FormInput
@@ -65,7 +68,7 @@ type event struct {
 	// eventSet
 	setPatch message.Patch
 	// setIfVersion refuses the patch unless the form still stands there. The
-	// check rides the event to the writer, where it is atomic with the append —
+	// check rides the event to the writer, where it is atomic with the append -
 	// checking at accept would answer about a version the patch never met.
 	setIfVersion uint64
 }
@@ -78,10 +81,9 @@ type Config struct {
 	Provider   provider.Provider
 	// ProviderFactory lets the agent REBIND its provider mid-conversation
 	// when system.provider (or a build-time knob) changes on the
-	// form. Nil pins the agent to Provider for life — fine for
+	// form. Nil pins the agent to Provider for life: fine for
 	// tests, wrong for a live aria, because the board is authoritative.
 	ProviderFactory ProviderFactory
-	Outfitter       *outfit.Outfitter
 	Tools           *tool.Registry
 	// Projector renders fig IR as UI IR. nil ships an engine with no display.
 	Projector  Projector
@@ -103,7 +105,7 @@ type Config struct {
 	InlineBoot *form.Patch
 
 	// Settings is the loaded user configuration. Today the agent reads only
-	// the wire page budget from it, via ClampPageBudget — which is the SINGLE
+	// the wire page budget from it, via ClampPageBudget: which is the SINGLE
 	// policy point deciding how many bytes a paginated read may cost. Nil is
 	// safe (the accessors are nil-safe and return the built-in defaults,
 	// ceiling included), so tests and ephemeral agents need not supply one.
@@ -119,7 +121,6 @@ type Agent struct {
 	// syncProvider, read lock-free by status/metrics on RPC goroutines.
 	provBind    atomic.Pointer[providerBinding]
 	provFactory ProviderFactory
-	outfitter   *outfit.Outfitter
 	tools       *tool.Registry
 	// proj converts fig IR to UI IR. nil in a core-only build.
 	proj       Projector
@@ -144,7 +145,7 @@ type Agent struct {
 	teardown []func()
 
 	// Live-render state, owned by the drain loop. turnStartLT is the FigaroLT
-	// (main LT) of the last figLog entry before this turn's agent messages —
+	// (main LT) of the last figLog entry before this turn's agent messages -
 	// composeTurn reads strictly after it. It must be an LT, not an entry
 	// count: main LTs are trunk-global (patches/transitions consume them too),
 	// so they run far ahead of the message channel's entry count, and passing
@@ -200,7 +201,6 @@ func NewAgent(cfg Config) *Agent {
 		id:          cfg.ID,
 		socketPath:  cfg.SocketPath,
 		provFactory: cfg.ProviderFactory,
-		outfitter:   cfg.Outfitter,
 		tools:       cfg.Tools,
 		proj:        cfg.Projector,
 		inlineBoot:  cfg.InlineBoot,
@@ -222,7 +222,7 @@ func NewAgent(cfg Config) *Agent {
 	}
 	// The caller built cfg.Provider from this very board, so pairing the
 	// instance with the board's current knobs makes the first syncProvider
-	// a no-op — and any later divergence a genuine rebind.
+	// a no-op, and any later divergence a genuine rebind.
 	a.bindProvider(cfg.Provider)
 	a.inbox = NewInbox(ctx)
 
@@ -230,7 +230,7 @@ func NewAgent(cfg Config) *Agent {
 	// Metrics come off the _meta sidecar when it is current, which after
 	// Backend.Open it always is: healMeta folds any suffix past the watermark
 	// on the read path. That turns construction's metric pass from a walk of
-	// every message into a struct copy — and, more importantly, removes one of
+	// every message into a struct copy, and, more importantly, removes one of
 	// the reasons the whole decoded log had to be materialized here at all.
 	if !a.seedMetricsFromMeta() {
 		a.refreshMetricsFrom(messages)
@@ -263,6 +263,7 @@ func NewAgent(cfg Config) *Agent {
 		}
 	}
 
+	a.resumeStudies()
 	a.publishMetadata()
 	go a.runWithRecovery(ctx)
 	return a
@@ -270,7 +271,7 @@ func NewAgent(cfg Config) *Agent {
 
 // newLog opens the figaro IR log. The backend owns and memoizes one
 // shared instance per aria (so a concurrent aria.read RPC sees the same
-// rows, lock-free), and closes it on Fork/Remove/Close — the agent never
+// rows, lock-free), and closes it on Fork/Remove/Close: the agent never
 // closes what Open returns.
 func (a *Agent) newLog() store.Log[message.Message] {
 	if a.backend == nil {
@@ -284,7 +285,7 @@ func (a *Agent) newLog() store.Log[message.Message] {
 		// restarted. That is the exact head/fork-ancestry-resolution
 		// symptom of the interrupted-mid-turn bug. Surface it loudly and
 		// keep the previous log (if any) so we do not wipe state.
-		slog.Error("backend open failed — keeping previous log", "aria", a.id, "err", err)
+		slog.Error("backend open failed: keeping previous log", "aria", a.id, "err", err)
 		if a.figLog != nil {
 			return a.figLog
 		}
@@ -365,7 +366,7 @@ func snapshotOutfit(snapshot form.Snapshot) (name, version string) {
 // resolveContextLimit reports the effective prompt cap for the current model.
 //
 // Precedence: an explicit system.max_context_tokens on the form wins
-// outright — it is an override, so a user pinning a smaller (or larger) window
+// outright: it is an override, so a user pinning a smaller (or larger) window
 // must not be second-guessed by provider metadata. Only when it is unset does
 // the provider get asked. (This used to be the other way round, which made the
 // key unreachable for any provider that reported a limit.)
@@ -547,7 +548,7 @@ func (a *Agent) SubmitPromptFrom(req rpc.QuaRequest, sender string) {
 //
 // carriers opts in to empty-text prompts (pure form carriers): the CRUD
 // surface must be able to address everything it can delete, while every
-// display surface wants them omitted — which is what this has always done.
+// display surface wants them omitted: which is what this has always done.
 func (a *Agent) QueuedPrompts(carriers bool) (string, []rpc.QueuedPrompt) {
 	events := a.inbox.SnapshotPrompts(carriers)
 	out := make([]rpc.QueuedPrompt, 0, len(events))
@@ -581,7 +582,7 @@ func (a *Agent) Interrupt() { a.Hangup(rpc.QueueKeep) }
 // Hangup aborts the current turn and says what became of the messages waiting
 // behind it.
 //
-// It also COALESCES the queue on the keep path — each contiguous run of
+// It also COALESCES the queue on the keep path: each contiguous run of
 // waiting prompts folds into one message, with the same semantics steering
 // already has (texts joined in order, form input merged so a later value
 // wins). Three messages typed during a long turn and then cut short are one
@@ -595,17 +596,17 @@ func (a *Agent) Interrupt() { a.Hangup(rpc.QueueKeep) }
 //
 // An IDLE aria coalesces nothing. There is no turn to interrupt, the drain
 // loop is already working through the queue, and folding under it would change
-// what a plain submit means — which is the one thing this must not do.
+// what a plain submit means: which is the one thing this must not do.
 //
 // Two dispositions, named rather than negated, because the CLI verbs that
 // carry them are two different intentions:
 //
-//	QueueKeep  — stop the turn; the queue is answered next (`figaro hup`).
-//	QueueClear — stop the turn AND drop the queue, handing it back so it can
+//	QueueKeep: stop the turn; the queue is answered next (`figaro hup`).
+//	QueueClear: stop the turn AND drop the queue, handing it back so it can
 //	             be persisted rather than lost (`figaro cut`).
 //
-// The response's Queue is THE QUEUE AS OF THE HANGUP either way — one field,
-// one meaning — and Cleared says which happened to it.
+// The response's Queue is THE QUEUE AS OF THE HANGUP either way: one field,
+// one meaning, and Cleared says which happened to it.
 //
 // Order is why clear does not simply reuse the keep path: the drain happens
 // BEFORE any fold, so what comes back is the messages as they were typed, each
@@ -842,9 +843,9 @@ func (a *Agent) reconcileAriaServer() {
 	// Defensive: never wipe already-materialized state with a shorter history.
 	// reconcileAriaServer runs on mid-turn error paths whose only source of
 	// truth is a.Context() (the durable figLog). If that read returns fewer
-	// turns than the server already holds — a backend that transiently failed
+	// turns than the server already holds, a backend that transiently failed
 	// to open and fell back to a memory log, a cachedLog built on stale fork
-	// ancestry — replacing the good state with the short one makes Read return
+	// ancestry: replacing the good state with the short one makes Read return
 	// nothing and the live stream go silent. Keep what we have and log loudly.
 	shorter := len(history) == 0 || history[len(history)-1].ID < oldLast
 	if oldLast > 0 && shorter {
@@ -903,7 +904,7 @@ func (a *Agent) act(ctx context.Context) {
 			// COALESCE THE WAITING RUN. Everything queued behind this prompt
 			// with no control event in between is part of the same ask: three
 			// notes typed while the previous turn was finishing are one
-			// question, not three turns to sit through — and that is true
+			// question, not three turns to sit through, and that is true
 			// whether the turn ahead of them completed or was interrupted.
 			//
 			// This is the third and last drain site to fold, and it is why the
@@ -925,6 +926,8 @@ func (a *Agent) act(ctx context.Context) {
 			a.runTurn(ctx, merged)
 		case eventSet:
 			a.applyControlPatch(evt.setPatch, evt.setIfVersion, "set")
+		case eventCast:
+			a.serviceCast(evt.cast)
 		}
 	}
 }
@@ -968,14 +971,14 @@ func (a *Agent) applyControlPatch(patch message.Patch, ifVersion uint64, kind st
 	a.publishMetadata()
 }
 
-// chalkAccessor returns the per-LT transition source for the provider:
+// formAccessor returns the per-LT transition source for the provider:
 // for backed arias, the form's patches in version order; nil for
 // ephemeral (the provider falls back to inline IR patches).
 //
 // TODO: FormPatches copies the aria's ENTIRE patch history on every
 // Send, which is O(total board) on a path that renders O(delta). See
 // plans/form-projection-followups.md §1.
-func (a *Agent) chalkAccessor() provider.Form {
+func (a *Agent) formAccessor() provider.Form {
 	if a.backend == nil {
 		return nil
 	}
@@ -985,6 +988,30 @@ func (a *Agent) chalkAccessor() provider.Form {
 		return nil
 	}
 	return &patchCursor{patches: ps}
+}
+
+// studyAccessors is formAccessor for the observed set: one absolute
+// accessor per studied form, read from THAT form's channel. A studied
+// form that cannot be read supplies no accessor: the projection
+// renders its stamp as a tombstone. Same O(total history) caveat as
+// formAccessor, same followup owns it.
+func (a *Agent) studyAccessors() map[string]provider.Form {
+	if a.backend == nil {
+		return nil
+	}
+	ids := studiesFromSnapshot(a.form.Snapshot())
+	if len(ids) == 0 {
+		return nil
+	}
+	out := make(map[string]provider.Form, len(ids))
+	for _, fid := range ids {
+		ps, err := a.backend.FormPatches(fid)
+		if err != nil {
+			continue
+		}
+		out[fid] = &patchCursor{patches: ps}
+	}
+	return out
 }
 
 // patchCursor walks the patch list forward, once. The projection asks for an
@@ -1022,7 +1049,7 @@ func (a *Agent) endTurn(reason string) {
 	a.finishTurn(reason)
 }
 
-// endTurnDiscarding ends a turn WITHOUT committing the live unit — for a
+// endTurnDiscarding ends a turn WITHOUT committing the live unit: for a
 // mid-turn failure where the assistant message never reached figLog. Committing
 // it would leave a UI message the model log doesn't have, so the next turn
 // regenerates equivalent content and the aria shows it twice. Discarding drops
@@ -1065,7 +1092,6 @@ func (a *Agent) publishMetadata() {
 		TokensOut:        a.tokensOut,
 		CacheReadTokens:  a.cacheRead,
 		CacheWriteTokens: a.cacheWrite,
-		LastActiveMS:     a.lastActive.UnixMilli(),
 		Provider:         a.providerName(),
 		Model:            a.model,
 		Mantra:           a.mantra,

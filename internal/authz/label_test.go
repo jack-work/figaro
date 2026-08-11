@@ -11,7 +11,7 @@ import (
 //
 // x-caller is set from an environment variable by whoever is calling. If it
 // could stand in for an authenticated aria id, every rule would be one
-// `FIGARO_CALLER=…` away from bypass — and the first rule we have is the one
+// `FIGARO_CALLER=…` away from bypass, and the first rule we have is the one
 // that stops a fork deadlocking. This is the test that says so.
 func TestLabelCannotAuthorize(t *testing.T) {
 	// A caller asserts a label that names the very aria it is targeting, with

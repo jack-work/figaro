@@ -20,7 +20,7 @@ func TestMintsWhenUnbound(t *testing.T) {
 // they cannot find is an error, not an invitation.
 func TestAutoCreateWiring(t *testing.T) {
 	// Documented here rather than asserted against the call sites, because
-	// the call sites are the assertion — this test fails to compile if the
+	// the call sites are the assertion: this test fails to compile if the
 	// signature loses the parameter, and the table below is what a reviewer
 	// checks it against.
 	mayCreate := map[string]bool{

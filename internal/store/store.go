@@ -40,7 +40,6 @@ type AriaMeta struct {
 	TokensOut        int    `json:"tokens_out,omitempty"`
 	CacheReadTokens  int    `json:"cache_read_tokens,omitempty"`
 	CacheWriteTokens int    `json:"cache_write_tokens,omitempty"`
-	LastActiveMS     int64  `json:"last_active_ms,omitempty"`
 	LastFigaroLT     uint64 `json:"last_figaro_lt,omitempty"`
 	Provider         string `json:"provider,omitempty"`
 	Model            string `json:"model,omitempty"`
@@ -87,7 +86,7 @@ type OwnerInfo struct {
 
 // Backend is the aria storage provider. One per angelus. The only
 // implementation is *XwalBackend (the fork-tree on figwal/xwal); it
-// owns each aria's shared log instance until Remove / Close — callers
+// owns each aria's shared log instance until Remove / Close: callers
 // never close what Open returns.
 type Backend interface {
 	// Open returns the figaro IR Stream for an aria. The same shared,
@@ -98,7 +97,7 @@ type Backend interface {
 	// OpenTranslation returns the per-provider translator Stream.
 	OpenTranslation(ariaID, providerName string) (Log[[]json.RawMessage], error)
 
-	// Kick expedites the store's background flush — called after appends
+	// Kick expedites the store's background flush: called after appends
 	// worth making durable sooner than the flush interval (user tics).
 	Kick()
 
@@ -108,25 +107,59 @@ type Backend interface {
 	FormState(ariaID string) (form.Snapshot, error)
 
 	// FormVersion is the durable index of the last patch appended to
-	// the aria's form channel — the version a conditional Set quotes.
+	// the aria's form channel: the version a conditional Set quotes.
 	FormVersion(ariaID string) (uint64, error)
+
+	// LastTS is the newest figwal record timestamp anywhere in the node,
+	// unix millis: the recency a listing sorts by. Served from figwal's
+	// lock-free per-node counter; NEVER wakes an agent (it opens a store
+	// handle, not a figaro). Zero for pre-timestamp history.
+	LastTS(id string) int64
 
 	// KeepStump names the stump collection must spare: the live default, whose
 	// re-minting would rewrite a whole outfit to save one directory.
+	// Legacy: new arias are born of the DEFAULT FORM, not a stump.
 	KeepStump(id string)
+
+	// LoadDefaultForm / SaveDefaultForm read and write the daemon's
+	// pointer to the current default form: `fig new`'s forking point and
+	// KeepStump's successor. Load returns (nil, nil) before first mint.
+	LoadDefaultForm() (*DefaultFormRecord, error)
+	SaveDefaultForm(rec *DefaultFormRecord) error
 
 	// WatchForm registers a sink for every patch committed to an aria's form.
 	// Called on the form's writer, so a sink must hand off and return.
 	WatchForm(ariaID string, fn func(version uint64, patch message.Patch)) error
 
+	// WatchFormDurable is WatchForm surviving eviction: re-armed whenever
+	// the node's Form reopens. The cancel removes the registration; the
+	// DELIVERY gate remains the caller's (a cancelled sink may fire until
+	// the live Form closes).
+	// SetObservedForms declares the forms whose positions every IR append
+	// of this aria stamps (the observed set: study subscriptions). The
+	// board's system.studies is the durable truth; this is its in-memory
+	// mirror, re-declared by the agent on boot and on study/drop.
+	SetObservedForms(ariaID string, formIDs []string)
+
 	// ForkWith forks a node and lands a patch on the child in one critical
 	// section. parent == "" forks the null root, which is what birth is.
 	ForkWith(parent string, atMainLT uint64, patch message.Patch) (child string, version uint64, err error)
+
+	// CreateForm mints an UNBOUND FORM: fork the null root (parent "") or
+	// another form, with a birth patch, kind "form", @-sigiled id. Only
+	// forms fork independently; a conversation parent is refused.
+	CreateForm(parent string, patch message.Patch) (id string, version uint64, err error)
 
 	// ApplyFormIf appends a patch unless the form has moved off ifVersion
 	// (zero applies unconditionally). The comparison happens in the form's
 	// writer, atomically with the append.
 	ApplyFormIf(ariaID string, patch message.Patch, ifVersion uint64) (uint64, error)
+
+	// ApplyFormEffect is ApplyFormIf plus what actually landed: the writer
+	// reduces a patch against the board (a key already holding the value is
+	// not an event), and a caller that reports or fans out the change must
+	// speak about the reduced patch, not the requested one.
+	ApplyFormEffect(ariaID string, patch message.Patch, ifVersion uint64) (uint64, message.Patch, error)
 
 	// ApplyForm appends a state patch to the form channel,
 	// keyed to the next IR LT (the transition the next message carries).
@@ -171,6 +204,9 @@ type Backend interface {
 	// Node / Nodes expose the tree for lineage + listing.
 	Node(id string) (NodeView, bool)
 	Nodes() []NodeView
+
+	// Forms returns every unbound form trunk (kind "form").
+	Forms() []NodeView
 
 	// CollectStump removes a childless outfit stump. Stumps are content
 	// addressed, so a collected one is re-minted identically by the next aria

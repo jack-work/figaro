@@ -15,7 +15,7 @@
 //
 // The structure is persistent: Set and Delete copy only the O(log n) nodes on
 // the path from the root to the edit and share every other subtree with the
-// receiver. That is what makes Clone free, and it is what diffTrees exploits —
+// receiver. That is what makes Clone free, and it is what diffTrees exploits -
 // an untouched subtree is *pointer-identical* between the two trees.
 
 package form
@@ -59,8 +59,8 @@ type treeEntry struct {
 
 // treeFromEntries sorts entries by key and builds a perfectly balanced tree
 // bottom-up. Keys must be unique (they always are: they come from a map or a
-// JSON object). Bulk-building beats n repeated Sets by a wide margin — no
-// comparisons past the sort, no rotations, and no intermediate path copies —
+// JSON object). Bulk-building beats n repeated Sets by a wide margin: no
+// comparisons past the sort, no rotations, and no intermediate path copies -
 // and it is on the aria-load and WAL-replay paths, so it matters.
 func treeFromEntries(entries []treeEntry) ptree {
 	slices.SortFunc(entries, func(a, b treeEntry) int { return strings.Compare(a.key, b.key) })
@@ -103,7 +103,7 @@ func (t ptree) Has(key string) bool {
 // Set returns a tree containing key bound to value. The receiver is unchanged.
 //
 // If key is already bound to a value that Equals value, the receiver is
-// returned as-is — same root pointer, and the ORIGINAL raw bytes are kept, not
+// returned as-is: same root pointer, and the ORIGINAL raw bytes are kept, not
 // the incoming ones. This is deliberate and load-bearing:
 //
 //   - it keeps "semantically identical write" free of allocation,

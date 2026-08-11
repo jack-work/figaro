@@ -24,7 +24,7 @@ import (
 //
 // THE WRITER DOES I/O AND NOTHING ELSE. It never calls back into an agent,
 // never renders, never waits on a turn. That is what makes Apply safe to call
-// from inside a turn — even from a tool call — where the older design, which
+// from inside a turn: even from a tool call: where the older design, which
 // routed storage through the queue that also owns turns, could close a wait
 // cycle and hang. A Form is happy to exist with no aria attached at all.
 type Form struct {
@@ -53,6 +53,10 @@ type formWrite struct {
 
 type formResult struct {
 	version uint64
+	// applied is what the writer actually committed after reducing the
+	// caller's patch against the published state: the keys that really
+	// changed, and the removals that really removed something.
+	applied message.Patch
 	err     error
 }
 
@@ -87,7 +91,7 @@ func OpenForm(log FormLog) (*Form, error) {
 	}
 	f.state.Store(st)
 	// The runtime is internal/actor, the same one the aria's inbox runs on: one
-	// goroutine, FIFO, close refuses. No Coalescer — two form patches could be
+	// goroutine, FIFO, close refuses. No Coalescer: two form patches could be
 	// merged, but each carries its own version and its own reply, so folding
 	// them would have to invent an answer for a caller that asked about one.
 	f.write = actor.Start[formWrite](nil, func(w formWrite) { w.reply <- f.commit(w) }, nil)
@@ -113,19 +117,28 @@ func (f *Form) Patches() []VersionedPatch {
 //
 // ifVersion, when non-zero, refuses unless the form still stands at that
 // version. The comparison happens in the writer, where it is atomic with the
-// append — which is what makes a read-modify-write (an array element, a nested
+// append: which is what makes a read-modify-write (an array element, a nested
 // field) safe against a second shell doing the same thing.
 func (f *Form) Apply(patch message.Patch, ifVersion uint64) (uint64, error) {
+	version, _, err := f.ApplyEffect(patch, ifVersion)
+	return version, err
+}
+
+// ApplyEffect is Apply, and also says what actually landed: the patch after
+// the writer reduced it against the published state. A caller that reports to
+// a human ("set 3 keys") or fans a delta out to listeners wants THAT, not what
+// it asked for.
+func (f *Form) ApplyEffect(patch message.Patch, ifVersion uint64) (uint64, message.Patch, error) {
 	reply := make(chan formResult, 1)
 	if !f.write.Send(formWrite{patch: patch, ifVersion: ifVersion, reply: reply}) {
-		return 0, fmt.Errorf("form is closed")
+		return 0, message.Patch{}, fmt.Errorf("form is closed")
 	}
 	res := <-reply
-	return res.version, res.err
+	return res.version, res.applied, res.err
 }
 
 // OnCommit registers a sink for committed patches, called AFTER the append and
-// the publish — never before, so an observer can never see state that would not
+// the publish: never before, so an observer can never see state that would not
 // survive a restart.
 //
 // It runs ON THE WRITER, so it obeys the writer's law: hand the delta off and
@@ -145,9 +158,28 @@ func (f *Form) commit(w formWrite) formResult {
 	st := f.state.Load()
 	if w.ifVersion != 0 && st.version != w.ifVersion {
 		return formResult{err: fmt.Errorf(
-			"form moved: at version %d, not %d — re-read and retry", st.version, w.ifVersion)}
+			"form moved: at version %d, not %d: re-read and retry", st.version, w.ifVersion)}
 	}
-	payload, err := json.Marshal(w.patch)
+	// REDUCE FIRST. A patch is only an event if it changes something: keys
+	// already holding the value asked for are dropped, removals of keys that
+	// are not there are dropped, and a patch that survives none of that is a
+	// no-op: no record, no version, no delta.
+	//
+	// It happens HERE, in the writer, and not in either caller, for two
+	// reasons. It is the only place where the diff is atomic with the append,
+	// so a filter cannot lose a write to a racing one (read-then-filter in a
+	// handler can: two shells, one setting a=2 and one setting a=1 against a
+	// board holding a=1, and the second silently drops the write that would
+	// have won). And it is the only place BOTH write paths pass through, so
+	// the agent's board and an agentless form obey one rule instead of two -
+	// which matters most for observation, where a no-op patch on a role would
+	// otherwise move its version and make an observing aria derive a
+	// transition that announces nothing.
+	applied := effectivePatch(st.snap, w.patch)
+	if applied.IsEmpty() {
+		return formResult{version: st.version, applied: applied}
+	}
+	payload, err := json.Marshal(applied)
 	if err != nil {
 		return formResult{err: err}
 	}
@@ -155,24 +187,39 @@ func (f *Form) commit(w formWrite) formResult {
 	if err != nil {
 		return formResult{err: err}
 	}
-	next := &formState{snap: st.snap.Apply(w.patch), version: version, patches: st.patches}
-	if !w.patch.IsEmpty() {
+	next := &formState{snap: st.snap.Apply(applied), version: version, patches: st.patches}
+	if !applied.IsEmpty() {
 		// Append to the SHARED backing array rather than copying the history.
 		// Safe because there is exactly one writer: a published state holds a
 		// slice header with its own length, so a later append either writes
 		// past that length (which no reader reads) or reallocates. Copying
-		// instead made every write O(history) — 14µs to 40µs on an aria with a
+		// instead made every write O(history): 14µs to 40µs on an aria with a
 		// few hundred patches, and worse the longer it lived.
-		next.patches = append(st.patches, VersionedPatch{Version: version, Patch: w.patch})
+		next.patches = append(st.patches, VersionedPatch{Version: version, Patch: applied})
 	}
 	f.state.Store(next)
 	f.mu.Lock()
 	sinks := f.onCommit
 	f.mu.Unlock()
 	for _, fn := range sinks {
-		fn(version, w.patch)
+		fn(version, applied)
 	}
-	return formResult{version: version}
+	return formResult{version: version, applied: applied}
+}
+
+// effectivePatch is what a patch actually does to a state: the keys it
+// changes, and the removals that remove something. form.Additive is the one
+// implementation of the first half: every place that dresses a board must
+// agree about what "already wearing it" means, and the second half is the
+// same question asked of Remove.
+func effectivePatch(snap form.Snapshot, p message.Patch) message.Patch {
+	out := form.Additive(snap, message.Patch{Set: p.Set})
+	for _, k := range p.Remove {
+		if snap.Has(k) {
+			out.Remove = append(out.Remove, k)
+		}
+	}
+	return out
 }
 
 // MemFormLog holds a form's records in memory. It is what "a form without an

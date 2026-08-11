@@ -18,7 +18,7 @@ import (
 // bytes, so the input loop used to delimit them and throw them away: pressing
 // Up during a streaming turn did nothing at all, which reads as a hung
 // terminal. navKeyFor (see key_input_test.go) names them; these tests pin the
-// routing — every arrow lands exactly where its letter-key equivalent lands,
+// routing: every arrow lands exactly where its letter-key equivalent lands,
 // whether the pager is already up or has to be opened first.
 // ---------------------------------------------------------------------------
 
@@ -84,7 +84,7 @@ func navHistory() []aria.TurnPart {
 	return committed
 }
 
-// navInput builds an input loop sitting in incipit — the pager is NOT up, so a
+// navInput builds an input loop sitting in incipit: the pager is NOT up, so a
 // key has to open it. Pass open=true for the already-paging case.
 func navInput(tb testing.TB, out *countingWriter, open bool) (*interactiveInput, *livelogTurn) {
 	tb.Helper()
@@ -105,7 +105,7 @@ func navInput(tb testing.TB, out *countingWriter, open bool) (*interactiveInput,
 
 // TestInputConsume_NavKeysMatchLetterMotions is the headline oracle: every
 // encoding of every navigation key lands exactly where the letter motion it is
-// an alias for lands — both when it has to open the pager from incipit, and
+// an alias for lands: both when it has to open the pager from incipit, and
 // when the pager is already up.
 func TestInputConsume_NavKeysMatchLetterMotions(t *testing.T) {
 	cases := []struct {
@@ -121,7 +121,7 @@ func TestInputConsume_NavKeysMatchLetterMotions(t *testing.T) {
 		{"end", []string{"\x1b[F", "\x1bOF", "\x1b[4~", "\x1b[8~"}, "G"},
 	}
 	// The letter aliases are equivalent to the arrow cluster only INSIDE the
-	// pager. In incipit a printable character starts composing a steer — the
+	// pager. In incipit a printable character starts composing a steer: the
 	// arrows still open the pager (they are gestures, not text), but 'j' is a
 	// letter someone is trying to type. Comparing them from incipit would assert
 	// the behaviour we deliberately removed, so the equivalence is pager-only and
@@ -169,7 +169,7 @@ func TestInputConsume_NavKeysMatchLetterMotions(t *testing.T) {
 // be stitched, must not fire a bare-Esc binding on the prefix, and must act
 // exactly once when it completes.
 //
-// The cut starts at 2 — AFTER the introducer — because a buffer holding only
+// The cut starts at 2, AFTER the introducer: because a buffer holding only
 // `\x1b` is genuinely ambiguous: nothing in the bytes distinguishes an Escape
 // keypress from the head of a sequence whose tail has not been read yet. Only
 // a timer can, and the input loop has none. The codebase resolves that
@@ -179,7 +179,7 @@ func TestInputConsume_NavKeysMatchLetterMotions(t *testing.T) {
 // This loop used to start at 1 and pass, but not by design: it runs with the
 // pager UP, where mouse reporting is on, and the mouse parser alone held the
 // lone `\x1b` as a possible `\x1b[<…M`. With the pager DOWN the same cut
-// already resolved to bare Esc on 45bee38 — so cut=1 was never a guarantee,
+// already resolved to bare Esc on 45bee38: so cut=1 was never a guarantee,
 // it was an inconsistency between the two modes, and the one that held the
 // byte is the one that made Escape dead in the pager. Everything from the
 // introducer onward is still stitched, which is what a split read actually
@@ -224,7 +224,7 @@ func TestInputConsume_NavKeySplitAcrossReads(t *testing.T) {
 }
 
 // TestInputConsume_UnknownSequenceStillSwallowed: the keys we did NOT claim
-// keep their old behaviour — eaten whole, no pager, no stray bytes reaching the
+// keep their old behaviour: eaten whole, no pager, no stray bytes reaching the
 // key handler.
 func TestInputConsume_UnknownSequenceStillSwallowed(t *testing.T) {
 	for _, seq := range []string{"\x1bOP", "\x1b[3~", "\x1b[15~", "\x1b[D", "\x1b[C", "\x1b]0;title\x07"} {
@@ -252,7 +252,7 @@ func TestInputConsume_UnknownSequenceStillSwallowed(t *testing.T) {
 
 // TestInputConsume_ArrowBurstPaintsOneFrame: a held Up arrow autorepeats into
 // one read as a run of escape sequences. It must go through the same batch as
-// the letter keys — one frame, not one per press.
+// the letter keys: one frame, not one per press.
 func TestInputConsume_ArrowBurstPaintsOneFrame(t *testing.T) {
 	const presses = 12
 	var w countingWriter

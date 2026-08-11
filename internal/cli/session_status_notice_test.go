@@ -96,7 +96,7 @@ func TestStatusLineEllipsisOnOverflow(t *testing.T) {
 	}
 }
 
-// A row that fits must be left exactly alone — no ellipsis, no rewrite.
+// A row that fits must be left exactly alone: no ellipsis, no rewrite.
 func TestStatusLineNoEllipsisWhenItFits(t *testing.T) {
 	s := statusFixture("m")
 	line := s.statusLine(400, true)
@@ -130,7 +130,7 @@ func TestClipToWidthEllipsis(t *testing.T) {
 }
 
 // displayWidth exists because runewidth.StringWidth counts the BYTES of an SGR
-// run as columns — a dim wrapper alone measures eight columns of nothing, and
+// run as columns, a dim wrapper alone measures eight columns of nothing, and
 // the footer would shed tokens that fit.
 func TestDisplayWidthIgnoresEscapes(t *testing.T) {
 	if got := displayWidth("\x1b[2mfive!\x1b[0m"); got != 5 {

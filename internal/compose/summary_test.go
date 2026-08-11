@@ -7,7 +7,7 @@ import (
 )
 
 func TestNodes_Summary_IsGenericKeyValues(t *testing.T) {
-	// Summary is for SEARCH and the clipboard, never for rendering — the CLI's
+	// Summary is for SEARCH and the clipboard, never for rendering: the CLI's
 	// tool table says which argument speaks for a call. So it is generic:
 	// sorted key=value pairs, with no per-tool hook.
 	inv := message.Content{

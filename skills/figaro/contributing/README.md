@@ -35,6 +35,8 @@ Read the one you are inside. These describe internals, not usage.
 | File | When to read it |
 |---|---|
 | [trunks-substrate.md](trunks-substrate.md) | Changing `internal/store` or the fork handlers. |
+| [forms-design.md](forms-design.md) | Changing the form primitive: the single writer, the hub, outfit resolution, observation. |
+| [roles-design.md](roles-design.md) | Changing roles, cast, or how a studied form renders into a model's context. |
 | [reclamation.md](reclamation.md) | Changing the hub, the sweep or the row caches — what a live aria costs and when the daemon reclaims one. |
 | [translation-lineage.md](translation-lineage.md) | Provider wire caches across a fork. |
 

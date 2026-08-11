@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# paint-jogdiff.sh — the JOG-AND-DIFF oracle as a runnable sweep.
+# paint-jogdiff.sh: the JOG-AND-DIFF oracle as a runnable sweep.
 #
 # Captures the pager's frame, moves the viewport away and back to the SAME
 # offset, captures again, and diffs. Any difference means the first frame was a
@@ -9,29 +9,29 @@
 #   scripts/paint-jogdiff.sh <hunter> [aria-id|-] [binary]
 #
 # e.g. scripts/paint-jogdiff.sh bartolo abc12345      # use an aria already in the store
-#      PP_ALLOW_TURN=1 scripts/paint-jogdiff.sh bartolo -   # MINT one — SPENDS A TURN
+#      PP_ALLOW_TURN=1 scripts/paint-jogdiff.sh bartolo -   # MINT one: SPENDS A TURN
 #      scripts/paint-jogdiff.sh bartolo abc12345 /var/tmp/paint-bartolo/figaro-fixed
 #
 # THIS SCRIPT SPENDS A PROVIDER TURN IF YOU ASK IT TO MINT A FIXTURE, and only
 # then. Minting is gated behind PP_ALLOW_TURN=1 because FIGARO_CONFIG_DIR is the
-# REAL config by reference — see the guard below.
+# REAL config by reference: see the guard below.
 #
 # CONTENT. This used to call pp_seed, which copied the master's real aria store.
 # That is disarmed for privacy, so with no aria id this now MINTS A SYNTHETIC
 # FIXTURE via pp_fixture (one cheap turn; PP_FIXTURE_ROWS to size it). BASILIO
 # caught the stale call: the script exited 1 before doing anything, and every
 # instruction built on top of it was a document stating an intent the code did not
-# implement — the same family we had just spent the night auditing.
+# implement: the same family we had just spent the night auditing.
 #
 # KEEP FIXTURES TABLE-FREE (SUSANNA): a table's row count at a given width
 # changes after feat/table-wrap, so a resize across a table measures the merge
-# rather than the bug. pp_fixture is table-free by construction — bare integers —
+# rather than the bug. pp_fixture is table-free by construction: bare integers -
 # which has a second virtue: every legitimate body row is an increasing integer,
 # so a gap row containing ANYTHING is self-evidently a bug and no oracle is needed.
 #
 # Exit 0 = every comparable gesture was CLEAN. Exit 1 = at least one
 # CONTAMINATED. Comparisons whose offset moved are reported SKIP and do not
-# count either way — never silently compare two different viewports.
+# count either way: never silently compare two different viewports.
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/paintpane.sh"
@@ -51,8 +51,8 @@ if [ "$ARIA" = "-" ]; then
   # THIS IS THE ONLY PATH THAT SPENDS MONEY, AND IT IS NOW GATED.
   #
   # CHERUBINO caught the footgun, which was mine: pp_env resolves
-  # FIGARO_CONFIG_DIR to ${PP_CONFIG:-$HOME/.config/figaro} — the REAL config, by
-  # reference — and pp_fixture calls `pp_run new -j`. So `paint-jogdiff.sh
+  # FIGARO_CONFIG_DIR to ${PP_CONFIG:-$HOME/.config/figaro}: the REAL config, by
+  # reference, and pp_fixture calls `pp_run new -j`. So `paint-jogdiff.sh
   # <hunter> -` resolves the master's REAL credentials and spends a REAL provider
   # turn, SILENTLY, as a side effect of a script whose name says "jogdiff". A
   # stand-down would then be one unset variable away from being violated by
@@ -63,7 +63,7 @@ if [ "$ARIA" = "-" ]; then
   # right for a reason that did not hold". That is wrong and it matters: the guard
   # was right for a reason that WAS NOT YET TRUE. pp_run hardcoded the empty
   # scratch config at the time, so the mint could not have reached a real
-  # credential — it would have died with "figaro needs initial setup", which he
+  # credential: it would have died with "figaro needs initial setup", which he
   # measured. Fixing pp_run to consume pp_env is what ARMED the hazard. DEFENDING A
   # PATH BEFORE YOU OPEN IT IS THE ONLY ORDER THAT IS EVER SAFE, so the guard's
   # placement was correct in anticipation and is not an instance of the defect
@@ -97,7 +97,7 @@ pp_pager "$ARIA" || exit 1
 
 # REFUSE A FIXTURE THAT CANNOT FAIL. Without an `N–M/T` range in the footer the
 # transcript fits the pane, maxOff is 0, every motion is a no-op, and this whole
-# sweep would compare identical frames and print CLEAN for ANY binary — a
+# sweep would compare identical frames and print CLEAN for ANY binary, a
 # false-clean instrument, which is trap 12 committed by the tool that hunts it.
 # BASILIO measured the no-range footer on a 250-row synthetic fixture.
 pp_require_range || exit 3
@@ -107,7 +107,7 @@ fails=0; skips=0; cleans=0
 
 pp_pos() { grep -o '· [0-9]*–[0-9]*/[0-9]*+*' "$1" | tail -1; }
 
-# jogdiff <tag> — the oracle. 6 half-pages up, 6 back down.
+# jogdiff <tag>: the oracle. 6 half-pages up, 6 back down.
 jogdiff() {
   local tag="$1" a b n w
   pp_stable 12 3 >/dev/null
@@ -118,12 +118,12 @@ jogdiff() {
   a="$(pp_pos "$OUT/$tag-suspect.txt")"; b="$(pp_pos "$OUT/$tag-truth.txt")"
   if [ "$a" != "$b" ]; then
     # NOT a pass and NOT a failure. A taller viewport pulls more history, the
-    # row total grows, and the jog lands somewhere else — diffing that would be
+    # row total grows, and the jog lands somewhere else: diffing that would be
     # a meaningless number that looks like a result.
     printf '  %-10s SKIP   (offset moved: [%s] -> [%s])\n' "$tag" "$a" "$b"; skips=$((skips + 1)); return
   fi
   if [ "$(pp_chrome "$(cat "$OUT/$tag-suspect.txt")")" -eq 0 ]; then
-    printf '  %-10s SKIP   (no pager chrome — not in the pager)\n' "$tag"; skips=$((skips + 1)); return
+    printf '  %-10s SKIP   (no pager chrome: not in the pager)\n' "$tag"; skips=$((skips + 1)); return
   fi
   n="$(diff "$OUT/$tag-suspect.txt" "$OUT/$tag-truth.txt" | grep -c '^<')"
   w="$(awk '{ print length($0) }' "$OUT/$tag-suspect.txt" | sort -rn | head -1)"
@@ -141,7 +141,7 @@ jogdiff() {
 # NOTE ON GEOMETRY, since a stale comment here is how BASILIO's repro rotted: the
 # ABSOLUTE offset this lands on depends on the fixture size (it was 219-240 in a
 # 1058-row real aria; it will be elsewhere in a 400-row fixture). That does not
-# matter, and deliberately so — the oracle never asserts a position. It asserts
+# matter, and deliberately so: the oracle never asserts a position. It asserts
 # only that the two captures share the SAME footer range, and SKIPs when they do
 # not. Do not add an assertion about where this lands.
 pp_key g; pp_key g; pp_stable 8 2 >/dev/null

@@ -14,8 +14,8 @@ import (
 // ---------------------------------------------------------------------------
 // GAPS: one row, and the fetch that means it usually never paints.
 //
-// THE DEGENERATE CASE IS THE ACCEPTANCE TEST. An ordinary aria — no jumps, no
-// eviction — must have ONE range and render NO gap, ever. If a gap appears in
+// THE DEGENERATE CASE IS THE ACCEPTANCE TEST. An ordinary aria: no jumps, no
+// eviction: must have ONE range and render NO gap, ever. If a gap appears in
 // normal scroll-up the extent bookkeeping is wrong, and no rendering rule may
 // paper over it. That is TestOrdinaryScrollUpNeverRendersAGap, and its canary
 // is TestAFalseAdjacencyFailsTheDegenerateCase.
@@ -35,7 +35,7 @@ func gapRows(tr *transcript) []string {
 
 // TestOrdinaryScrollUpNeverRendersAGap: the whole point. Page an aria in from
 // the tail to the beginning, one screen at a time, and no hole may ever
-// render — because the store must be able to say that the last node of turn t
+// render: because the store must be able to say that the last node of turn t
 // and the first of turn t+1 are neighbours (the extents the wire states).
 func TestOrdinaryScrollUpNeverRendersAGap(t *testing.T) {
 	history := transcriptHistory(120)
@@ -68,7 +68,7 @@ func TestOrdinaryScrollUpNeverRendersAGap(t *testing.T) {
 
 // TestAFalseAdjacencyFailsTheDegenerateCase is the canary for the test above:
 // force a hole the store cannot know about (evict the middle) and the
-// one-range assertion — and the no-gap assertion — must both fail. An
+// one-range assertion, and the no-gap assertion: must both fail. An
 // assertion that has never failed is not evidence.
 func TestAFalseAdjacencyFailsTheDegenerateCase(t *testing.T) {
 	history := transcriptHistory(60)
@@ -142,7 +142,7 @@ func TestGapIsExactlyOneRowWhateverItHides(t *testing.T) {
 
 // TestGapDoesNotCorruptTheCoordinates: `:` jump and Ctrl-O read nodeSpanOf and
 // the line index. A gap row carries no node, and must therefore be invisible
-// to both — the coordinates of every real node must be exactly what they were
+// to both: the coordinates of every real node must be exactly what they were
 // before the hole appeared, shifted only by the rows the hole actually
 // replaced.
 func TestGapDoesNotCorruptTheCoordinates(t *testing.T) {
@@ -221,7 +221,7 @@ func TestFooterMarksAnIncompleteBuffer(t *testing.T) {
 
 // TestEnsureOnBindClosesTheHole is the fetch trigger: a hole within the
 // prefetch distance of the viewport produces a FILL request, and serving it
-// through the real Client.Ensure — with ReadBefore as the fetcher — closes the
+// through the real Client.Ensure: with ReadBefore as the fetcher: closes the
 // hole and the sentinel stops being drawn.
 func TestEnsureOnBindClosesTheHole(t *testing.T) {
 	history := transcriptHistory(60)
@@ -302,8 +302,8 @@ func TestPrefetchDistanceMeansTheSentinelUsuallyNeverPaints(t *testing.T) {
 	if req, ok := tr.pageCursor(); ok && req.fill != nil {
 		t.Fatalf("filled a hole %d rows away", tr.offset-gapAt)
 	}
-	// Coming within the prefetch distance — still a screen and a half ABOVE
-	// the viewport's top, so it cannot be on screen — arms the fill.
+	// Coming within the prefetch distance: still a screen and a half ABOVE
+	// the viewport's top, so it cannot be on screen, arms the fill.
 	tr.offset = gapAt + transcriptPrefetchScreens*tr.h - 1
 	if tr.offset <= gapAt {
 		t.Fatal("fixture: the viewport already shows the hole; this proves nothing")
@@ -349,7 +349,7 @@ func TestGapSurvivesAResizeWithoutMovingTheReader(t *testing.T) {
 }
 
 // TestLiveTailStillArrivesBesideAGap: a hole in the middle of the window must
-// not take the window off the tail — the open turn is still the last thing in
+// not take the window off the tail: the open turn is still the last thing in
 // it. (The 2a-part-2 property, re-asserted with a hole present.)
 func TestLiveTailStillArrivesBesideAGap(t *testing.T) {
 	history := transcriptHistory(60)

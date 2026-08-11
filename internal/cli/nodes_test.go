@@ -11,7 +11,7 @@ import (
 )
 
 // stripANSI removes ANSI escape sequences so tests can assert on visible text.
-// It uses escapeEnd — the package's ONE escape grammar (b568b6f) — rather than
+// It uses escapeEnd: the package's ONE escape grammar (b568b6f): rather than
 // a fourth hand-rolled scanner; farmerStrip was a fifth, and is gone.
 func stripANSI(s string) string {
 	var b strings.Builder
@@ -28,7 +28,7 @@ func stripANSI(s string) string {
 
 func TestRenderToolNode_RunningOutputClampedToBashCap(t *testing.T) {
 	// A running tool whose Output has many lines: the visible body is
-	// tail-clamped to bashCap — earlier lines must not leak.
+	// tail-clamped to bashCap: earlier lines must not leak.
 	var lines []string
 	for i := 0; i < 30; i++ {
 		lines = append(lines, "line"+string(rune('A'+i%26)))
@@ -83,7 +83,7 @@ func TestRenderToolNodeSanitizesBeforeTailClamp(t *testing.T) {
 // voice in the inline renderer, the pager and `show` alike.
 //
 // The MECHANISM changed twice. It was an inline "↳ input" marker on a prompt
-// NODE, because `show` had no header to carry a voice — but that marker belongs
+// NODE, because `show` had no header to carry a voice: but that marker belongs
 // to STEERING, so the prompt wearing it printed the voice twice in incipit and
 // mislabelled the prompt as steering in `show`. Then it was a voice-run header
 // over node 0. Now the question is not a node at all: it is Turn.Inquiry, drawn
@@ -92,7 +92,7 @@ func TestInquiryDrawsAsTheUsersVoiceInEveryView(t *testing.T) {
 	reply := livedoc.Node{Type: livedoc.NodeProse, Role: livedoc.RoleOutput, Markdown: "RED"}
 	steer := livedoc.Node{Type: livedoc.NodeSteering, Role: livedoc.RoleInput, Markdown: "actually, whisper it"}
 
-	// A whole turn shows BOTH voices, each under its own header, in order —
+	// A whole turn shows BOTH voices, each under its own header, in order -
 	// the question first, though it is text rather than a node.
 	turn := stripANSI(strings.Join(
 		renderTurnRows(aria.Message{Role: livedoc.RoleOutput, Inquiry: "what is the codeword?", InquirySegments: nil, Nodes: []livedoc.Node{reply}}, 60, 0, renderSettings{}), "\n"))
@@ -104,10 +104,10 @@ func TestInquiryDrawsAsTheUsersVoiceInEveryView(t *testing.T) {
 		t.Fatalf("the inquiry text is missing:\n%s", turn)
 	}
 	if strings.Contains(turn, "↳ input") {
-		t.Fatalf("the inquiry wore steering's marker — the duplicate-voice bug:\n%s", turn)
+		t.Fatalf("the inquiry wore steering's marker: the duplicate-voice bug:\n%s", turn)
 	}
 
-	// "↳ input" is reserved for genuine steering — the one input-voice NODE.
+	// "↳ input" is reserved for genuine steering: the one input-voice NODE.
 	view := &ariaView{settings: &renderSettings{}}
 	if !strings.Contains(stripANSI(strings.Join(view.Render(steer, 60, 0), "\n")), "↳ input") {
 		t.Fatal("steering lost its marker")
@@ -150,7 +150,7 @@ func TestNodeExpandable_StreamingToolWithNoOutput(t *testing.T) {
 	streaming := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
 		Input: `{"path":"/x","content":"a`}
 	if !nodeExpandable(streaming) {
-		t.Error("a streaming tool must be expandable — its arguments are what there is to see")
+		t.Error("a streaming tool must be expandable: its arguments are what there is to see")
 	}
 	settled := livedoc.Node{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
 		Args: map[string]any{"command": "ls"}}
@@ -163,7 +163,7 @@ func TestNodeExpandable_StreamingToolWithNoOutput(t *testing.T) {
 }
 
 // Arguments and the tool NAME are drawn in one colour (Kanagawa springBlue),
-// and the block's rule is drawn in the SAME dim the output rule uses — one
+// and the block's rule is drawn in the SAME dim the output rule uses: one
 // blue for the call, furniture identical on both sides.
 func TestRenderToolNode_ColoursAreConsistent(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
@@ -237,7 +237,7 @@ func renderNodeRows(t *testing.T, n livedoc.Node, width, cap int, expand bool) [
 
 // A row that had to be REWRITTEN is not a row that was CLIPPED. Tab-indented
 // source fails clipFits however short it is, and the ellipsis used to be
-// stamped on it anyway — a phantom "…" on every line of a Go file's diff.
+// stamped on it anyway, a phantom "…" on every line of a Go file's diff.
 func TestClipToWidthEllipsis_NoPhantomOnRewrittenRow(t *testing.T) {
 	for _, s := range []string{"\tshort", " 50 \tOpenedAt: o}", "a\tb\tc"} {
 		if got := clipToWidthEllipsis(s, 60); strings.HasSuffix(stripANSI(got), "…") {

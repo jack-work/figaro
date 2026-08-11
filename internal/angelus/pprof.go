@@ -16,8 +16,8 @@ import (
 )
 
 // PprofEnv arms the profiler when set. Off by default because pprof's
-// handlers are a real surface on a long-lived daemon — a profile request
-// stops the world, /debug/pprof/cmdline leaks argv — and behind a 0600
+// handlers are a real surface on a long-lived daemon, a profile request
+// stops the world, /debug/pprof/cmdline leaks argv, and behind a 0600
 // unix socket the reach is the owning user, same as angelus.sock.
 const PprofEnv = "FIGARO_PPROF"
 

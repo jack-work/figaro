@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/livelog/aria"
@@ -64,7 +65,7 @@ func (hs *hubs) closeAll() {
 // building one constructs no agent.
 //
 // It must be called before anyone is handed the socket path, because a unix
-// socket has no lazy activation — a client that dials a path with no listener
+// socket has no lazy activation, a client that dials a path with no listener
 // gets ECONNREFUSED, not a wakeup.
 func (h *handlers) hubFor(id string) (*ariaHub, error) {
 	if hb := h.angelus.Hubs.get(id); hb != nil {
@@ -73,6 +74,13 @@ func (h *handlers) hubFor(id string) (*ariaHub, error) {
 	hb := newAriaHub(id, filepath.Join(h.angelus.FigaroSocketDir(), id+".sock"))
 	hb.wake = h.wakeForHub
 	hb.read = h.readForHub
+	hb.write = h.writeForHub
+	hb.dress = h.dressParams
+	if h.angelus.Backend != nil {
+		if n, ok := h.angelus.Backend.Node(id); ok {
+			hb.kind = n.Kind
+		}
+	}
 
 	if err := hb.listen(h.ctx); err != nil {
 		return nil, err
@@ -91,6 +99,101 @@ func (h *handlers) bindAgentToHub(id string, agent subscribableAgent) (func(), e
 		return nil, err
 	}
 	return hb.bind(agent), nil
+}
+
+// writeForHub applies mutations the store can absorb without an agent -
+// today exactly figaro.set. Serving it here (after read, before wake) is
+// what lets a patch land on a DORMANT aria without restoring it, and on an
+// unbound form that will never have an agent at all. It also breaks the
+// naked-figaro deadlock: `fig bind null` births a figaro whose wake fails
+// for want of provider keys, and this is the only path that can patch
+// those keys in.
+//
+// One writer, always: the backend's Form is the single writer per node
+// whether an agent is live or not: the agent itself writes through
+// backend.ApplyFormIf: so this is the same writer reached earlier, not a
+// second one.
+//
+// It applies the patch VERBATIM, and since 2026-08-11 that is correct by
+// construction rather than a seam: route() dressed the request on the way
+// in, so outfit names became keys at the API boundary and nothing arrives
+// here needing expansion. This used to be the ONE write path that never
+// materialized, and an attended form has no agent, so it comes exactly
+// here, which is how `fig form outfit test` stored {"layers":["test"]} on a
+// board and reported success.
+//
+// The committed delta is fanned out to the node's attached listeners by
+// hand: the agent's WatchForm sink does this when an agent is live, and
+// this path exists precisely when none is.
+func (h *handlers) writeForHub(id, method string, params json.RawMessage) (any, bool, error) {
+	if h.angelus.Backend == nil {
+		return nil, false, nil
+	}
+	switch method {
+	case rpc.MethodSet:
+		// below
+	case rpc.MethodStudy, rpc.MethodDrop:
+		var req rpc.StudyRequest
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &req); err != nil {
+				return nil, true, err
+			}
+		}
+		if req.FormID == "" && method == rpc.MethodStudy {
+			// A bare `fig study` is a LISTING, and a listing needs no agent.
+			snap, err := h.angelus.Backend.FormState(id)
+			if err != nil {
+				return nil, true, err
+			}
+			return rpc.StudyResponse{OK: true, Studies: figaro.StudiesFromSnapshot(snap)}, true, nil
+		}
+		studies, err := h.studyForHub(id, req.FormID, method == rpc.MethodDrop)
+		if err != nil {
+			return nil, true, err
+		}
+		return rpc.StudyResponse{OK: true, Studies: studies}, true, nil
+	case rpc.MethodCast:
+		var req rpc.CastRequest
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, true, err
+		}
+		res, err := h.castForHub(id, req)
+		if err != nil {
+			return nil, true, err
+		}
+		return res, true, nil
+	default:
+		return nil, false, nil
+	}
+	var req rpc.SetRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, true, err
+	}
+	if req.Patch.IsEmpty() {
+		return rpc.SetResponse{OK: true}, true, nil
+	}
+	version, applied, err := h.angelus.Backend.ApplyFormEffect(id, req.Patch, req.IfVersion)
+	if err != nil {
+		return nil, true, err
+	}
+	// Report and fan out what LANDED, not what was asked for. A set of a value
+	// the board already holds is not an event: the writer dropped it, so this
+	// says so, no delta goes out, and an aria observing this form derives no
+	// transition from it.
+	if applied.IsEmpty() {
+		return rpc.SetResponse{OK: true}, true, nil
+	}
+	var set []string
+	for k := range applied.Set {
+		set = append(set, k)
+	}
+	if hb := h.angelus.Hubs.get(id); hb != nil {
+		_ = hb.Notify(rpc.MethodFormDelta, rpc.FormDelta{
+			Schema: rpc.FormDeltaSchema, AriaID: id, Version: version,
+			Patch: applied, At: time.Now().UnixMilli(),
+		})
+	}
+	return rpc.SetResponse{OK: true, Set: set, Remove: applied.Remove}, true, nil
 }
 
 // wakeForHub restores an aria on demand for a method that needs a turn loop.

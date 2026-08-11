@@ -8,7 +8,7 @@ import (
 	"github.com/jack-work/figaro/internal/rpc"
 )
 
-// `figaro queue` is CRUD minus the C — create is `send`, because a queued
+// `figaro queue` is CRUD minus the C: create is `send`, because a queued
 // message is just a prompt that arrived while the aria was busy. These pin
 // the argv contract and the exit-code rule; the outcomes themselves are the
 // agent's, tested there and over the wire in internal/angelus.
@@ -31,7 +31,7 @@ func TestQueueVerb_IsRegisteredWithItsFlags(t *testing.T) {
 		}
 	}
 	// The sub-verb owns the positional slot, so the aria must be reachable by
-	// flag — otherwise `figaro queue rm 3` is ambiguous between an aria and an
+	// flag: otherwise `figaro queue rm 3` is ambiguous between an aria and an
 	// id, which is exactly the kind of guess the CLI does not make.
 	if !strings.Contains(cmd.Long, "--id") {
 		t.Error("queue's help must say how to address another aria")
@@ -59,7 +59,7 @@ func TestParseQueueIDs_RejectsNonIDs(t *testing.T) {
 }
 
 // A refusal leaves a non-zero status so a script notices, but it is a RUNTIME
-// outcome (1), never misuse (2) — the caller asked correctly and was declined.
+// outcome (1), never misuse (2): the caller asked correctly and was declined.
 func TestReportQueueResults_ExitCodes(t *testing.T) {
 	applied := []rpc.QueueResult{
 		{ID: 1, Outcome: rpc.QueueDeleted},
@@ -103,7 +103,7 @@ func TestReportQueueResults_RefusalRunsExitHooks(t *testing.T) {
 }
 
 // -j is one object, and results is an array even when the server refused
-// everything — a consumer doing .results[] must not special-case null.
+// everything, a consumer doing .results[] must not special-case null.
 func TestQueueResultJSON_IsOneObject(t *testing.T) {
 	b, err := json.Marshal(queueResultJSON{
 		Aria:  "abc123",

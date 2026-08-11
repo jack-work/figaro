@@ -2,7 +2,7 @@
 # PROVE the mechanism: while the pager is up with a live turn, a single write
 # that bypasses the frame buffer lands at the cursor (parked on the status row)
 # and SCROLLS the alt grid. The painter's base (t.prev) still describes the
-# unscrolled screen, so it never repaints the shifted rows — and each later
+# unscrolled screen, so it never repaints the shifted rows, and each later
 # spinner tick writes a fresh status TAIL one row below the stale one.
 set -uo pipefail
 FIG=${FIG:?set FIG=/abs/path/to/figaro}

@@ -8,8 +8,8 @@ import (
 
 // THE SEAM.
 //
-// Every construction of a form.Snapshot from a map — and every
-// read out of one — in the benchmark suite goes through this file, and
+// Every construction of a form.Snapshot from a map, and every
+// read out of one: in the benchmark suite goes through this file, and
 // only this file. On main, Snapshot is `map[string]json.RawMessage` and
 // these are conversions/index expressions. After the persistent-tree
 // swap the integrator edits the three bodies below (one line each) and

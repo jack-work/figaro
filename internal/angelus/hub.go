@@ -24,20 +24,20 @@ import (
 // connection Subscribe'd directly to the agent. Killing the agent therefore
 // closed the listener and EOF'd every client. That made "reclaim an idle
 // agent" and "keep attached shells alive" mutually exclusive, and it meant
-// any open transcript pinned an aria in memory forever — the common case,
+// any open transcript pinned an aria in memory forever: the common case,
 // not the rare one.
 //
 // So: the hub holds the listener and the connections; the agent is a
 // producer the hub binds and unbinds. Creating a hub is a listener and a map
 // and does NOT construct an agent, which is what lets a dormant aria answer
-// a dial at all. A unix socket cannot be lazily activated — connect() to a
-// path with no listener fails outright — so the endpoint has to exist before
+// a dial at all. A unix socket cannot be lazily activated: connect() to a
+// path with no listener fails outright: so the endpoint has to exist before
 // the client arrives, and the daemon is the only thing that can guarantee
 // that.
 //
 // One connection is one aria today. The Subscribe surface is deliberately
-// per-(conn, aria) rather than per-conn so that multiplexing later — one
-// pooled connection, many arias, target id in the envelope — is a change of
+// per-(conn, aria) rather than per-conn so that multiplexing later: one
+// pooled connection, many arias, target id in the envelope: is a change of
 // listener count rather than a change of architecture.
 type ariaHub struct {
 	id       string
@@ -49,6 +49,25 @@ type ariaHub struct {
 	// read answers a method from the store. ok=false means "not my method",
 	// which sends the request down the wake path instead.
 	read func(id, method string, params json.RawMessage) (v any, ok bool, err error)
+	// write applies a mutation store-side WITHOUT an agent: the dormant
+	// half of figaro.set. Consulted after read and before wake, so a board
+	// patch never wakes a sleeper (and can reach a naked figaro whose wake
+	// would fail for want of the very provider keys the patch carries).
+	// ok=false hands the request onward. The backend's Form is the one
+	// writer per node whether an agent is live or not (the agent itself
+	// writes through the backend), so this is the same writer, earlier.
+	write func(id, method string, params json.RawMessage) (v any, ok bool, err error)
+	// dress resolves a request's outfit NAMES into keys before it is routed
+	// anywhere. It is the API boundary's one materialization point: whatever
+	// the request reaches next, a live agent's inbox, the store's agentless
+	// writer: receives pure data, and no writer below this line reads a
+	// file. A request naming no outfit is returned byte for byte.
+	dress func(method string, params json.RawMessage) (json.RawMessage, error)
+	// kind is the node's species from its figwal marker ("conversation",
+	// "form", …). A form has no agent to wake, ever: methods that reach
+	// the wake path on a form node get a named refusal instead of a
+	// nonsensical restore attempt.
+	kind string
 
 	mu    sync.Mutex
 	ln    net.Listener
@@ -217,7 +236,7 @@ func (hb *ariaHub) Close() {
 }
 
 // subscribableAgent is the half of the agent the hub needs: something that
-// serves methods and accepts one notifier. Narrow on purpose — the hub must
+// serves methods and accepts one notifier. Narrow on purpose: the hub must
 // not be able to run a turn.
 type subscribableAgent interface {
 	figaro.AgentServer
@@ -243,6 +262,17 @@ func (hb *ariaHub) handlers() map[string]jkrpc.HandlerFunc {
 // route sends a request to the agent, waking the aria when the method needs
 // a turn loop and answering from the store when it does not.
 func (hb *ariaHub) route(ctx context.Context, method string, params json.RawMessage) (any, error) {
+	// Dress FIRST, before any of the three destinations. A spec that names
+	// nothing on disk fails here, at the boundary, rather than landing as a
+	// literal on a board (which is exactly what `fig form outfit test` did
+	// while the hub's writer applied patches verbatim).
+	if hb.dress != nil {
+		dressed, err := hb.dress(method, params)
+		if err != nil {
+			return nil, err
+		}
+		params = dressed
+	}
 	if agent := hb.boundAgent(); agent != nil {
 		return agent.Handle(ctx, method, params)
 	}
@@ -252,6 +282,17 @@ func (hb *ariaHub) route(ctx context.Context, method string, params json.RawMess
 		if v, ok, err := hb.read(hb.id, method, params); ok {
 			return v, err
 		}
+	}
+	// Mutations the store can absorb without a turn loop: served here so a
+	// board patch neither wakes a sleeper nor needs a form to have an agent
+	// it will never have.
+	if hb.write != nil {
+		if v, ok, err := hb.write(hb.id, method, params); ok {
+			return v, err
+		}
+	}
+	if hb.kind == kindFormNode {
+		return nil, fmt.Errorf("%s is a form, not a figaro: %s needs a turn loop and a form has none (bind it first)", hb.id, method)
 	}
 	if hb.wake == nil {
 		return nil, errDormantMethod
@@ -266,3 +307,8 @@ func (hb *ariaHub) route(ctx context.Context, method string, params json.RawMess
 	slog.Debug("hub woke aria", "aria", hb.id, "method", method)
 	return agent.Handle(ctx, method, params)
 }
+
+// kindFormNode is the marker kind of an unbound form, as the store mints
+// it. Declared here rather than imported: the angelus knows species by
+// name on the wire, not by the store's internal enum.
+const kindFormNode = "form"

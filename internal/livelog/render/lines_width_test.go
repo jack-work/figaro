@@ -7,7 +7,7 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// THE COMPLAINT: markdown thinking content — and bash tool output — rendered
+// THE COMPLAINT: markdown thinking content, and bash tool output: rendered
 // "one or two characters beyond the right edge". In nvim's terminal with
 // nowrap the overflow is hidden and obscures the GUI; in tmux it wraps and
 // breaks up the UI. Two terminal policies, one defect.
@@ -25,7 +25,7 @@ import (
 // NOTE ON MEASUREMENT, because it cost a wrong answer here first: measure the
 // output with the ANSI stripped. runewidth.StringWidth counts the BYTES of an
 // SGR run as columns, so measuring clip()'s return directly reports +3 on
-// pure ASCII — the reset escape clip appends when it cuts. That is the
+// pure ASCII: the reset escape clip appends when it cuts. That is the
 // instrument lying, not the code; the same trap the footer path hit.
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;:?]*[ -/]*[@-~]`)
 
@@ -45,7 +45,7 @@ func TestClipCountsCellsNotRunes(t *testing.T) {
 		for _, c := range cases {
 			got := cellsOf(clip(c.s, w))
 			if got > w {
-				t.Errorf("clip(%s, %d) emitted %d cells (+%d) — it must never exceed the viewport",
+				t.Errorf("clip(%s, %d) emitted %d cells (+%d): it must never exceed the viewport",
 					c.name, w, got, got-w)
 			}
 			// And it must still fill the row when there is content for it: a
@@ -53,7 +53,7 @@ func TestClipCountsCellsNotRunes(t *testing.T) {
 			// which is what counting escape bytes as columns would cause.
 			// A wide rune straddling the boundary legitimately leaves one cell.
 			if full := cellsOf(c.s); full >= w && got < w-1 {
-				t.Errorf("clip(%s, %d) emitted only %d cells — clipping too early", c.name, w, got)
+				t.Errorf("clip(%s, %d) emitted only %d cells: clipping too early", c.name, w, got)
 			}
 		}
 	}
@@ -85,7 +85,7 @@ func TestHardWrapKeepsExplicitNewlines(t *testing.T) {
 }
 
 // A zero-width combining mark must not consume a column, or accented text
-// would clip early — the mirror of the bug being fixed.
+// would clip early: the mirror of the bug being fixed.
 func TestClipCombiningMarksCostNothing(t *testing.T) {
 	// "e" + combining acute, ten times: ten columns, twenty runes.
 	s := ""

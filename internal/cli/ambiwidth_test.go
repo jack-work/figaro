@@ -50,7 +50,7 @@ func TestAmbiguousWidthPrecedence(t *testing.T) {
 }
 
 // No tty, no answer: keep the default. A guess would be wrong on every terminal
-// instead of on the unusual one — and `go test` is exactly that case.
+// instead of on the unusual one, and `go test` is exactly that case.
 func TestAmbiguousWidthWithoutATTYKeepsTheDefault(t *testing.T) {
 	restore := runewidth.DefaultCondition.EastAsianWidth
 	t.Cleanup(func() { runewidth.DefaultCondition.EastAsianWidth = restore })

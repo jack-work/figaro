@@ -50,13 +50,13 @@ func TestIncipit_PromptLandsAboveThePinnedFooter(t *testing.T) {
 		t.Fatalf("prompt missing:\n%s", joined)
 	}
 	if footer < 0 {
-		t.Fatalf("footer missing after freeze — it must stay pinned:\n%s", joined)
+		t.Fatalf("footer missing after freeze: it must stay pinned:\n%s", joined)
 	}
 	if footer < prompt {
 		t.Fatalf("footer (row %d) is ABOVE the prompt (row %d):\n%s", footer, prompt, joined)
 	}
 	if strings.Count(joined, "FOOTER") != 1 {
-		t.Fatalf("footer duplicated (%d copies) — the placeholder was not erased:\n%s",
+		t.Fatalf("footer duplicated (%d copies): the placeholder was not erased:\n%s",
 			strings.Count(joined, "FOOTER"), joined)
 	}
 }
@@ -84,7 +84,7 @@ func TestIncipit_TinyViewportShowsOnlyTheFooter(t *testing.T) {
 }
 
 // CONTENT LOSS GUARD. Below the pager floor the live region draws the footer
-// alone, so the body is never painted — which means Freeze must print the
+// alone, so the body is never painted: which means Freeze must print the
 // message in full instead of assuming its rows are already on screen. Without
 // that, the reply vanishes from scrollback entirely: measured at h=2 and h=3,
 // where only the first streamed character survived, and at h=4, where a stale
@@ -97,7 +97,7 @@ func TestIncipit_TinyViewportKeepsTheReplyInScrollback(t *testing.T) {
 		withChrome(in)
 
 		in.OpenThinking(livedoc.RoleOutput)
-		// stream a partial, then the full text — the exact shape that stranded "T"
+		// stream a partial, then the full text: the exact shape that stranded "T"
 		in.Open(aria.Message{Turn: 7, Role: livedoc.RoleOutput, Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "T"}}})
 		in.Open(aria.Message{Turn: 7, Role: livedoc.RoleOutput, Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "TINYREPLY"}}})
 		in.Freeze(aria.Message{Turn: 7, Role: livedoc.RoleOutput,
@@ -117,7 +117,7 @@ func TestIncipit_TinyViewportKeepsTheReplyInScrollback(t *testing.T) {
 	}
 }
 
-// A slice of a turn is routinely invisible — thinking is hidden by default, a
+// A slice of a turn is routinely invisible: thinking is hidden by default, a
 // tool may already be drawn, prose is minted empty so ids cannot shift. A header
 // over such a run showed as a bare "< figaro" labelling nothing, directly above
 // the next block's own header.

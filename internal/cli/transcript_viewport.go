@@ -5,14 +5,14 @@ package cli
 //
 // The index owns the line space; this owns the WINDOW onto it. The question
 // here is what the viewport should do when content CHANGES HEIGHT underneath
-// it — which half of the screen is allowed to move.
+// it: which half of the screen is allowed to move.
 // ---------------------------------------------------------------------------
 
 // shiftViewport moves the viewport by delta lines, clamped to the line space.
 //
-// The HIGH clamp is close to unreachable on an expansion — line space and
+// The HIGH clamp is close to unreachable on an expansion: line space and
 // maxOff both grow by exactly the number of rows added, so a viewport that was
-// in range stays in range — and is kept because nothing here should be able to
+// in range stays in range, and is kept because nothing here should be able to
 // put t.offset out of bounds for the frame path to trip over.
 //
 // The LOW clamp is the reachable one: COLLAPSING moves the offset UP, and a
@@ -33,14 +33,14 @@ func (t *transcript) shiftViewport(delta int) {
 	}
 }
 
-// anchorBelow re-pins the viewport so that ref's tail — and therefore
-// everything after it — keeps its screen row across a height change. mutate
+// anchorBelow re-pins the viewport so that ref's tail, and therefore
+// everything after it: keeps its screen row across a height change. mutate
 // performs the change.
 //
 // THE TRANSCRIPT IS TEMPORAL: content earlier on screen was generated earlier.
 // So when a block changes height it is the EARLIER portion of the screen that
 // must move, upward and off the top, while everything at or below the change
-// holds still — that is where the reader's eye and mental model are anchored.
+// holds still: that is where the reader's eye and mental model are anchored.
 //
 // t.offset is an ABSOLUTE line index, so doing nothing pins the viewport TOP
 // and grows the content DOWNWARD, shoving later content off the bottom. That
@@ -56,7 +56,7 @@ func (t *transcript) shiftViewport(delta int) {
 // upward and the content below keeps its rows.
 //
 // Reports whether it anchored. It cannot when ref has no span on one side of
-// the change — it was never in the index, or the change removed it — and the
+// the change: it was never in the index, or the change removed it, and the
 // caller then keeps its previous behaviour rather than inventing a delta.
 func (t *transcript) anchorBelow(ref nodeRef, mutate func()) bool {
 	t.buildIndex()
@@ -94,7 +94,7 @@ func entryRowsStart(e *lineEntry) int { return e.start + e.sepHeight() }
 // reader is looking at, not the one the retained window happens to end with.
 //
 // VISIBLE MEANS "STARTS ON SCREEN". A ref qualifies when its FIRST line falls
-// inside the viewport, even if the rest of it runs off the bottom — a tall tool
+// inside the viewport, even if the rest of it runs off the bottom, a tall tool
 // whose head is on screen is the thing you are looking at, and requiring the
 // whole span to fit would skip it in favour of something you cannot see.
 //
@@ -104,8 +104,8 @@ func entryRowsStart(e *lineEntry) int { return e.start + e.sepHeight() }
 //
 // The fallback is for a single block taller than the whole viewport: scrolled
 // into its middle, nothing STARTS on screen, and the honest answer is that
-// block. Overlap picks it up. Only if that finds nothing — an empty or unbuilt
-// index — does the caller fall back to the ends of the window.
+// block. Overlap picks it up. Only if that finds nothing, an empty or unbuilt
+// index: does the caller fall back to the ends of the window.
 func (t *transcript) viewportSeedRef(dir int) (nodeRef, bool) {
 	top, bottom := t.viewportLines()
 	var (
@@ -155,8 +155,8 @@ func (t *transcript) viewportSeedRef(dir int) (nodeRef, bool) {
 }
 
 // viewportLines is the half-open line range the body is currently showing,
-// [top, bottom). It reads the CURRENT geometry — an open panel and the
-// follow-mode padding row both change the body height — so the caller must have
+// [top, bottom). It reads the CURRENT geometry, an open panel and the
+// follow-mode padding row both change the body height: so the caller must have
 // a fresh index.
 func (t *transcript) viewportLines() (top, bottom int) {
 	body, _ := t.layout(len(t.footLines()))

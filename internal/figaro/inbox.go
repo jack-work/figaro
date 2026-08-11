@@ -15,20 +15,20 @@ import (
 //
 // IDENTITY. Every queued user prompt carries an id, minted here, so the CRUD
 // surface has something to address. Ids are dense and per-INBOX, which makes
-// them typeable (`figaro queue rm 3`) but NOT durable: a new Inbox — a daemon
-// restart, a dormant→attach, a panic-restart of the drain loop — starts again
+// them typeable (`figaro queue rm 3`) but NOT durable: a new Inbox, a daemon
+// restart, a dormant→attach, a panic-restart of the drain loop: starts again
 // at 1. A client holding an id from a previous generation would otherwise
 // delete whatever holds that number now.
 //
 // So the inbox also mints an EPOCH: 8 bytes of crypto/rand, hex, once per
 // inbox. Every mutation must present the epoch its ids were read against, and
 // a mismatch is refused rather than resolved. The epoch is compared only for
-// EQUALITY — never ordered — which is exactly why a random nonce is the right
+// EQUALITY: never ordered: which is exactly why a random nonce is the right
 // primitive here and a clock is not (a clock can go backwards), nor the log
 // tail (it does not advance when an agent boots, queues, and dies without
 // appending: the precise case that reproduces a colliding id).
 type Inbox struct {
-	// q is the runtime — internal/actor, the same single-writer queue a Form
+	// q is the runtime: internal/actor, the same single-writer queue a Form
 	// writes through. Everything below it is prompt bookkeeping, which is what
 	// an inbox IS beyond the queue.
 	q    *actor.Queue[event]
@@ -40,8 +40,8 @@ type Inbox struct {
 
 	// lifted holds prompts the drain loop has taken but not yet appended, and
 	// committed the last few it did append. Together they are what lets a
-	// refusal say WHICH kind of too-late it was — "committing" vs "committed"
-	// vs "never heard of it" — instead of collapsing all three into unknown.
+	// refusal say WHICH kind of too-late it was: "committing" vs "committed"
+	// vs "never heard of it": instead of collapsing all three into unknown.
 	lifted    []promptRef
 	committed []promptRef
 }
@@ -62,14 +62,14 @@ func NewInbox(ctx context.Context) *Inbox {
 	b := &Inbox{wake: make(chan struct{}, 1), epoch: mintEpoch()}
 	// No handler: an inbox is drained by the agent's own loop calling Recv, not
 	// by a goroutine the queue owns. Start still gives the FIFO, the wait, and
-	// the close semantics — the parts that were worth having once.
+	// the close semantics: the parts that were worth having once.
 	b.q = actor.Start[event](ctx, nil, nil)
 	return b
 }
 
 // mintEpoch returns a fresh inbox generation token. crypto/rand cannot
 // meaningfully fail here, but if it ever did, a fixed string would silently
-// make every stale id look current — so fall back to something unique enough
+// make every stale id look current: so fall back to something unique enough
 // to still differ from the previous generation.
 func mintEpoch() string {
 	var b [8]byte
@@ -143,7 +143,7 @@ func (b *Inbox) TakeReadyUserPrompts() []event {
 
 // liftLocked records that a prompt left the queue for the drain loop. Until
 // MarkCommitted moves it on, a delete aimed at it is refused as "committing"
-// — it is becoming a message right now, and that is a different fact from
+// : it is becoming a message right now, and that is a different fact from
 // "already answered" or "never existed".
 func (b *Inbox) liftLocked(evt event) {
 	if evt.typ != eventUserPrompt || evt.id == 0 {
@@ -221,7 +221,7 @@ func (b *Inbox) TakeReadySet() []event {
 // normal submit path (Send), the mid-turn steering drain
 // (TakeReadyUserPrompts) and the durability retry (Prepend) have no way to
 // reach this, so no flag has to be threaded anywhere and no shared helper has
-// to ask whether it is being interrupted. The result is an ORDINARY queue —
+// to ask whether it is being interrupted. The result is an ORDINARY queue -
 // the drain loop cannot tell a fold happened, because there is nothing to
 // tell: one event holding one multi-line message is a shape it already
 // handles.
@@ -231,11 +231,11 @@ func (b *Inbox) TakeReadySet() []event {
 // and this must not be the one place that reorders across them: a `set`
 // exists to change context BEFORE the prompt behind it, so folding that
 // prompt in front of the set would answer it against a form it was
-// never written against — with no error, no log line, and nothing to notice.
+// never written against: with no error, no log line, and nothing to notice.
 // Across a fork it is worse: the message would land in the wrong trunk.
 //
-// In the gesture this exists for — a person with several messages typed
-// during one long turn, hitting Ctrl-C — set and fork arrive by CLI rather
+// In the gesture this exists for, a person with several messages typed
+// during one long turn, hitting Ctrl-C: set and fork arrive by CLI rather
 // than the composer, so there is no interleaved control event and run
 // coalescing IS whole-queue coalescing.
 func (b *Inbox) CoalesceUserPromptRuns() {
@@ -264,13 +264,13 @@ func (b *Inbox) CoalesceUserPromptRuns() {
 }
 
 // DrainUserPrompts removes every queued user prompt and returns them
-// VERBATIM, in FIFO order, each with its own id — not folded. Control events
+// VERBATIM, in FIFO order, each with its own id: not folded. Control events
 // (sets, forks) are left in the queue: this drops the questions, it does not
 // cancel the form mutation or the fork someone else asked for.
 //
 // Verbatim is the point. What is drained is handed back so it can be written
 // to disk instead of lost, and a caller who typed three messages wants their
-// three messages back — not one blob that has to be unpicked.
+// three messages back: not one blob that has to be unpicked.
 func (b *Inbox) DrainUserPrompts() []event {
 	var drained []event
 	b.q.Do(func(pending []event) []event {
@@ -301,7 +301,7 @@ func (b *Inbox) DrainUserPrompts() []event {
 // epoch is a compare-and-swap token and is required whenever ids are named:
 // ids restart with every inbox, so resolving one against the wrong generation
 // would delete a different message than the caller read. A mismatch refuses
-// the WHOLE request — nothing is mutated — rather than deleting the ids that
+// the WHOLE request: nothing is mutated: rather than deleting the ids that
 // happen to exist in both.
 //
 // The all-form names no id, so it needs no epoch and reports one result per
@@ -407,8 +407,8 @@ func indexOf(queue []event, id uint64) int {
 }
 
 // refuseLocked explains why an id that is not in the queue cannot be mutated.
-// The order is chronological — folded, then in flight, then answered, then
-// never heard of — so the reason is always the most specific true one.
+// The order is chronological: folded, then in flight, then answered, then
+// never heard of: so the reason is always the most specific true one.
 func (b *Inbox) refuseLocked(queue []event, id uint64) rpc.QueueResult {
 	reject := func(reason rpc.QueueRejection, detail string, into uint64) rpc.QueueResult {
 		return rpc.QueueResult{

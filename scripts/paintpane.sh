@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# paintpane.sh — a sourceable harness for driving figaro's transcript pager in a
+# paintpane.sh, a sourceable harness for driving figaro's transcript pager in a
 # REAL pty, for hunting paint bugs (resize duplication, gap contamination,
 # status-bar bleed).
 #
@@ -25,7 +25,7 @@ set -o pipefail
 # --------------------------------------------------------------------------
 # Naming contract, agreed with BERTA the watchdog. Do not invent your own.
 #   tmux socket : /tmp/paint-<hunter>/tmux.sock   (PRIVATE server, never the
-#                 default socket — so kill-server can never touch the user's
+#                 default socket: so kill-server can never touch the user's
 #                 sessions 0/dev/figaro-qua/fx/gw4/iq/iq2)
 #   session     : paint-<hunter>-<tag>
 #   scratch store: /var/tmp/paint-<hunter>/{state,run,config}
@@ -45,11 +45,11 @@ PP_REPO=""
 
 pp_die() { echo "paintpane: $*" >&2; return 1; }
 
-# pp_init <hunter> — build a STAMPED binary and prepare an isolated store.
+# pp_init <hunter>: build a STAMPED binary and prepare an isolated store.
 #
 # Trap #2: a plain `go build` in a git WORKTREE records no VCS revision at all
 # (a worktree's .git is a file, not a directory, so Go's autodetection never
-# fires — and -buildvcs=true neither helps nor complains). An unstamped binary
+# fires, and -buildvcs=true neither helps nor complains). An unstamped binary
 # makes `figaro --version` say "unknown" and leaves the CLI/daemon build
 # handshake with nothing to compare. Always stamp.
 pp_init() {
@@ -79,7 +79,7 @@ pp_init() {
   trap pp_down EXIT
 }
 
-# pp_seed — copy the REAL aria store into the scratch store, read-only on the
+# pp_seed: copy the REAL aria store into the scratch store, read-only on the
 # source. This is how the pager gets hundreds of messages of real content for
 # ZERO tokens and without a provider round-trip: `figaro listen <id>` + ^T
 # renders history and never calls figaro.qua.
@@ -93,7 +93,7 @@ pp_init() {
 # reference), content is now synthetic (pp_fixture), and pp_down deletes what
 # little remains.
 # ------------------------------------------------------------------------
-# pp_seed — DEPRECATED AND DISARMED. It copied the master's real aria store
+# pp_seed: DEPRECATED AND DISARMED. It copied the master's real aria store
 # (119 MB of his conversations) and his whole config (credentials) into a
 # world-traversable /var/tmp. Both are now refused. Use pp_fixture for content
 # and pp_config_copy if you must isolate config.
@@ -121,9 +121,9 @@ paintpane: pp_seed is DISABLED.
 
   Use instead:
     pp_fixture 400        deterministic synthetic content (one cheap turn),
-                          N numbered rows — contamination is self-evident
+                          N numbered rows: contamination is self-evident
     pp_config_copy        isolate config WITHOUT providers/ or hush/
-    (config is otherwise SHARED BY REFERENCE — see pp_env)
+    (config is otherwise SHARED BY REFERENCE: see pp_env)
 
   If you truly need real history, set
   PP_SEED_REAL_STORE_I_ACCEPT_THE_PRIVACY_COST=1 and say so in your write-up.
@@ -131,14 +131,14 @@ EOF
   return 1
 }
 
-# pp_env — the env every command in the pane must carry.
+# pp_env: the env every command in the pane must carry.
 #
 # FIGARO_CONFIG_DIR IS SHARED BY REFERENCE, NOT COPIED. This is the documented
 # preset shape (see the figaro skill: isolate runtime+state, share config) and it
 # is here for a security reason, not a tidiness one.
 #
 # THE INCIDENT. pp_seed used to `cp -r ~/.config/figaro` into /var/tmp. `cp`
-# preserved modes faithfully — that was never the problem. The problem is that
+# preserved modes faithfully: that was never the problem. The problem is that
 # providers/anthropic.toml is itself mode 644 and was safe in the real config
 # ONLY BECAUSE ITS PARENT IS 700. Copying it out from under that parent put the
 # master's Anthropic credential world-readable inside /var/tmp, which is 1777 AND
@@ -148,7 +148,7 @@ EOF
 # NEVER RELY ON A PARENT DIRECTORY TO PROTECT A FILE YOU ARE ABOUT TO MOVE.
 #
 # A reference cannot be left behind with the wrong mode, so sharing is not merely
-# cheaper — it removes the failure mode. If you genuinely must isolate config,
+# cheaper: it removes the failure mode. If you genuinely must isolate config,
 # use pp_config_copy, which EXCLUDES providers/ entirely.
 #
 # Separately: FIGARO_ARIA / FIGARO_NO_BIND are SCRUBBED wherever this env is
@@ -163,14 +163,14 @@ pp_env() {
     "FIGARO_CONFIG_DIR=${PP_CONFIG:-$HOME/.config/figaro}"
 }
 
-# pp_config_copy — isolate config WITHOUT duplicating credentials.
+# pp_config_copy: isolate config WITHOUT duplicating credentials.
 #
 # Copies outfits/credo/skills and deliberately omits providers/ and hush/, then
 # refuses to continue if anything group/world-readable survived. Auth then has to
 # come from the environment (e.g. ANTHROPIC_API_KEY) or the dev-hush path the
-# figaro skill documents — which is the correct posture for a throwaway store.
+# figaro skill documents: which is the correct posture for a throwaway store.
 #
-# DEREFERENCE. `cp -r` — and `tar` without -h, which is what this used to do —
+# DEREFERENCE. `cp -r`, and `tar` without -h, which is what this used to do -
 # copies a SYMLINK AS A SYMLINK, so a "isolated" config silently reaches back
 # into the original. SUSANNA measured it: her scratch config's skills/plaid and
 # skills/pishot.md were links into the master's LIVE ~/dev trees, so an arm that
@@ -193,7 +193,7 @@ pp_config_copy() {
   leaky="$(find "$dst" -type f \( -perm -g+r -o -perm -o+r \) 2>/dev/null | wc -l)"
   [ "$leaky" = 0 ] || { pp_die "REFUSING: $leaky group/world-readable file(s) under $dst"; return 1; }
   links="$(find "$dst" -type l 2>/dev/null | wc -l)"
-  [ "$links" = 0 ] || { pp_die "REFUSING: $links symlink(s) under $dst — NOT hermetic, they reach back into the original"; return 1; }
+  [ "$links" = 0 ] || { pp_die "REFUSING: $links symlink(s) under $dst: NOT hermetic, they reach back into the original"; return 1; }
   if [ -e "$dst/providers" ] || [ -e "$dst/hush" ]; then
     pp_die "REFUSING: providers/ or hush/ leaked into $dst"; return 1
   fi
@@ -201,16 +201,16 @@ pp_config_copy() {
   echo "paintpane: isolated config at $dst (no providers/, no hush/, no symlinks)"
 }
 
-# pp_fixture [rows] — build a SYNTHETIC pager fixture.
+# pp_fixture [rows]: build a SYNTHETIC pager fixture.
 #
-# REPLACES the old pp_seed, which copied 119 MB of the master's real aria store —
-# his actual conversation history — into /var/tmp, four times. The painters need
+# REPLACES the old pp_seed, which copied 119 MB of the master's real aria store -
+# his actual conversation history: into /var/tmp, four times. The painters need
 # ENOUGH CONTENT TO FILL A PAGER, not his history.
 #
 # ⚠ KNOWN INADEQUATE, MEASURED BY BASILIO. `seq 1 N` is ONE tool node, and the
 # pager COLLAPSES a tool node to "… last 10 of 200 lines". Measured at N=250 in a
 # 40-row pane: 14 rows used, 20 blank, and THE FOOTER SHOWS NO RANGE. A transcript
-# with no range has maxOff 0, so gg/d/u are no-ops — which would make a jog-diff
+# with no range has maxOff 0, so gg/d/u are no-ops: which would make a jog-diff
 # sweep compare two identical frames and report CLEAN FOR ANY BINARY, including a
 # provably broken one. That is trap 12 with my name on it: an instrument that
 # cannot fail.
@@ -238,11 +238,11 @@ Then reply with the single word DONE and nothing else." 2>&1)" || {
   printf '%s\n' "$PP_ARIA"
 }
 
-# pp_require_range — refuse to measure a transcript that CANNOT FAIL.
+# pp_require_range: refuse to measure a transcript that CANNOT FAIL.
 #
 # The footer only carries an `N–M/T` range when total > body. Without one, maxOff
 # is 0, every motion is a no-op, and any before/after comparison is two identical
-# frames — so the verdict is CLEAN regardless of the binary under test. BASILIO
+# frames: so the verdict is CLEAN regardless of the binary under test. BASILIO
 # measured the no-range footer on a 250-row fixture and inferred the vacuity from
 # layout/footerRows; this gate makes the inference unnecessary by turning a silent
 # false-clean into a loud refusal.
@@ -251,7 +251,7 @@ Then reply with the single word DONE and nothing else." 2>&1)" || {
 pp_require_range() {
   local cap; cap="$(pp_cap)"
   if ! printf '%s' "$cap" | grep -qE '[0-9]+[–-][0-9]+/[0-9]+'; then
-    pp_die "transcript shows NO RANGE in the footer — it fits the pane, so every motion is a no-op and any comparison would report CLEAN for ANY binary. Refusing to measure a fixture that cannot fail. Use a taller transcript or a shorter pane."
+    pp_die "transcript shows NO RANGE in the footer: it fits the pane, so every motion is a no-op and any comparison would report CLEAN for ANY binary. Refusing to measure a fixture that cannot fail. Use a taller transcript or a shorter pane."
     return 1
   fi
   return 0
@@ -260,13 +260,13 @@ pp_require_range() {
 
 pp_envargs() { local v; while read -r v; do printf ' %q' "$v"; done < <(pp_env); }
 
-# pp_run <args...> — run the scratch binary against the scratch store from HERE
+# pp_run <args...>: run the scratch binary against the scratch store from HERE
 # (not inside the pane): absolute path, explicit env, no PATH involved.
 #
 # ONE AUTHORITY FOR THE ENVIRONMENT. This used to re-encode the env inline and
 # HARDCODED FIGARO_CONFIG_DIR=$PP_STORE/config, while pp_env said
 # ${PP_CONFIG:-$HOME/.config/figaro}. Two authorities for one fact, and the
-# credential fix updated only one of them — so pp_fixture pointed at the empty
+# credential fix updated only one of them: so pp_fixture pointed at the empty
 # config pp_init creates and died with "figaro needs initial setup but stdin is
 # not a TTY". BASILIO measured it, verbatim, and the fix is not to correct the
 # copy but to DELETE it: pp_run now consumes pp_env, so there is one place the
@@ -277,17 +277,17 @@ pp_run() {
   env -u FIGARO_ARIA -u FIGARO_NO_BIND "${e[@]}" "$PP_BIN" "$@"
 }
 
-# pp_tmux — talk to OUR private server only.
+# pp_tmux: talk to OUR private server only.
 pp_tmux() { tmux -S "$PP_SOCK" "$@"; }
 
-# pp_up <w> <h> [tag] — a pane of EXACTLY h usable rows.
+# pp_up <w> <h> [tag], a pane of EXACTLY h usable rows.
 #
 # Trap #1: `tmux new-session -y N` gives pane_height N-1, because the status bar
-# takes a row — and turning the status bar off afterwards does NOT give the row
+# takes a row, and turning the status bar off afterwards does NOT give the row
 # back to a detached session, nor does resize-window. Measured: -y 30 -> 29
 # either way; -y 31 -> 30. So ask for h+1 and then READ BACK #{pane_height},
-# and report THAT number. An entire thread of "h=1 loses the reply" — three
-# investigators, many trials — was measured at pane height ZERO, a state no
+# and report THAT number. An entire thread of "h=1 loses the reply": three
+# investigators, many trials: was measured at pane height ZERO, a state no
 # user can reach.
 pp_up() {
   PP_W="${1:?pp_up <w> <h>}"; local want="${2:?pp_up <w> <h>}"; local tag="${3:-p}"
@@ -297,11 +297,11 @@ pp_up() {
   pp_tmux set -g history-limit 10000
   PP_H="$(pp_tmux display -p -t "$PP_SESS" '#{pane_height}' | tr -d '[:space:]')"
   if [ "$PP_H" != "$want" ]; then
-    echo "paintpane: pane height is $PP_H (asked $want) — ASSERT AGAINST $PP_H" >&2
+    echo "paintpane: pane height is $PP_H (asked $want), ASSERT AGAINST $PP_H" >&2
   fi
   # Scrub the inherited aria identity inside the shell. Trap #11: `new-session
   # -e PATH=...` is silently IGNORED, so we never trust -e for anything that
-  # matters and we never rely on PATH inside a pane — figaro is always invoked
+  # matters and we never rely on PATH inside a pane: figaro is always invoked
   # by ABSOLUTE PATH.
   pp_tmux send-keys -t "$PP_SESS" 'unset FIGARO_ARIA FIGARO_NO_BIND; export'"$(pp_envargs)"'; PS1="pp$ "' Enter
   pp_tmux send-keys -t "$PP_SESS" 'clear' Enter
@@ -311,7 +311,7 @@ pp_up() {
 pp_send()  { pp_tmux send-keys -t "$PP_SESS" -l "$1"; }
 pp_key()   { pp_tmux send-keys -t "$PP_SESS" "$@"; }
 
-# pp_type <s> — one character per read, with a gap.
+# pp_type <s>: one character per read, with a gap.
 #
 # Trap #5: `send-keys -l "whole string"` arrives as a SINGLE read; a human types
 # one byte at a time. Composer tests fed whole strings and passed while a
@@ -319,19 +319,19 @@ pp_key()   { pp_tmux send-keys -t "$PP_SESS" "$@"; }
 # is INPUT, type slowly.
 pp_type() { local s="$1" c; for ((i = 0; i < ${#s}; i++)); do c="${s:i:1}"; pp_send "$c"; sleep 0.12; done; }
 
-# pp_raw  — visible pane WITH escapes (-e), for asserting on SGR/styling.
-# pp_cap  — visible pane, escapes stripped by tmux itself.
-# pp_hist — FULL SCROLLBACK.
+# pp_raw: visible pane WITH escapes (-e), for asserting on SGR/styling.
+# pp_cap: visible pane, escapes stripped by tmux itself.
+# pp_hist: FULL SCROLLBACK.
 #
 # Trap #4: capture the scrollback, not the pane. Frames that existed for
-# MILLISECONDS are preserved verbatim in history — that is how the duplicated
+# MILLISECONDS are preserved verbatim in history: that is how the duplicated
 # submit-time footer was photographed after fast polling failed to catch it.
 # The right instrument was a SHORT PANE, not a faster loop.
 pp_cap()  { pp_tmux capture-pane -p -t "$PP_SESS"; }
 pp_raw()  { pp_tmux capture-pane -p -e -t "$PP_SESS"; }
 pp_hist() { pp_tmux capture-pane -p -S - -t "$PP_SESS"; }
 
-# pp_stable [timeout_s] [needed] — poll until the pane stops changing.
+# pp_stable [timeout_s] [needed]: poll until the pane stops changing.
 #
 # Trap #7: never sleep a fixed guess. Returns 0 once the pane has been
 # byte-identical for `needed` consecutive samples, 1 on timeout.
@@ -349,7 +349,7 @@ pp_stable() {
   return 1
 }
 
-# pp_chrome [capture] — count transcript-pager chrome markers.
+# pp_chrome [capture]: count transcript-pager chrome markers.
 #
 # Trap #3: GATE EVERY ABSENCE ON THIS. A long turn auto-promotes to the pager,
 # where earlier content sits above the tail window and is therefore not in your
@@ -361,7 +361,7 @@ pp_chrome() {
   awk 'BEGIN{n=0} /\? help|! status/{n++} END{print n}' <<<"$cap"
 }
 
-# pp_pager <aria-id> [budget] — open the pager on an existing aria.
+# pp_pager <aria-id> [budget]: open the pager on an existing aria.
 #
 # `figaro listen` attaches WITHOUT calling figaro.qua: no prompt, no provider,
 # no tokens. ^T promotes to the transcript pager. Waits until chrome appears.
@@ -380,7 +380,7 @@ pp_pager() {
   return 1
 }
 
-# pp_resize <w> <h> — resize the WINDOW (which is what a user's terminal does).
+# pp_resize <w> <h>: resize the WINDOW (which is what a user's terminal does).
 # Same +1 correction as pp_up, then read back.
 pp_resize() {
   local w="${1:?pp_resize <w> <h>}" want="${2:?pp_resize <w> <h>}"
@@ -391,34 +391,34 @@ pp_resize() {
   echo "paintpane: resized to ${PP_W}x${PP_H}"
 }
 
-# pp_leave — exit the pager and the CLI politely, so the daemon is not orphaned.
+# pp_leave: exit the pager and the CLI politely, so the daemon is not orphaned.
 pp_leave() { pp_key q; sleep 0.4; pp_key C-d; sleep 0.6; }
 
-# pp_alive — is OUR tmux server actually running?
+# pp_alive: is OUR tmux server actually running?
 #
 # NOT `[ -S "$PP_SOCK" ]`. Found by BERTA the watchdog: `kill-server` leaves the
 # socket INODE behind, so a dead server still has a live-looking socket file and
-# a file test reports it as up. That is the trap #10 family — the artifact
+# a file test reports it as up. That is the trap #10 family: the artifact
 # outlives the process. Ask tmux, not the filesystem.
 pp_alive() { tmux -S "$PP_SOCK" has-session -t "$PP_SESS" 2>/dev/null; }
 
-# pp_server_alive — is any session left on our server?
+# pp_server_alive: is any session left on our server?
 pp_server_alive() { tmux -S "$PP_SOCK" list-sessions >/dev/null 2>&1; }
 
-# pp_tmux_servers — every tmux server belonging to a paint hunter.
+# pp_tmux_servers: every tmux server belonging to a paint hunter.
 #
 # DO NOT USE `pgrep -x tmux`. It matches NOTHING, ever: tmux rewrites its
 # process title, so /proc/<pid>/comm is literally "tmux: server" or
 # "tmux: client" and never "tmux". BERTA measured it against a machine with FOUR
-# live servers — including two of ours — and got ZERO hits. A teardown check
+# live servers: including two of ours, and got ZERO hits. A teardown check
 # written `pgrep -x tmux || echo clean` therefore reports CLEAN over a field of
 # orphans, which is the exact shape of the incident that produced trap #10's 230
 # orphaned processes.
 #
 # `pgrep tmux` (no -x) does work, because pgrep substring-matches comm. Only the
 # exact-match flag is fatal. We do not rely on either: we require comm to START
-# with "tmux" (so a shell whose command line merely mentions tmux — like the one
-# running this function — cannot match) and then match on the socket path.
+# with "tmux" (so a shell whose command line merely mentions tmux: like the one
+# running this function: cannot match) and then match on the socket path.
 pp_tmux_servers() {
   local p pid comm args
   for p in /proc/[0-9]*; do
@@ -430,10 +430,10 @@ pp_tmux_servers() {
   done
 }
 
-# pp_figaro_daemons — every figaro process on a paint hunter's scratch store.
+# pp_figaro_daemons: every figaro process on a paint hunter's scratch store.
 #
 # NO NAME MATCHING. I first wrote this as `[ "$comm" = figaro ]` and it was blind
-# for exactly the reason `pgrep -x tmux` is blind, one function above — I
+# for exactly the reason `pgrep -x tmux` is blind, one function above: I
 # committed BERTA's trap while fixing BERTA's trap. `comm` is the binary
 # BASENAME, and an A/B arm is called `figaro-after`, `figaro-probe`,
 # `figaro-after2`… Measured: BASILIO had a live daemon named `figaro-after` on
@@ -450,7 +450,7 @@ pp_figaro_daemons() {
     # redirection is performed by the SHELL and fails before tr ever runs, so the
     # error comes from bash and 2>/dev/null on tr cannot catch it. Measured: 300+
     # "Permission denied" lines for other users' processes, which is worse than
-    # useless — a diagnostic that floods is a diagnostic people learn to ignore,
+    # useless, a diagnostic that floods is a diagnostic people learn to ignore,
     # and this one exists to be believed.
     [ -r "$p/environ" ] || continue
     rd="$( { tr '\0' '\n' < "$p/environ" | grep -m1 '^FIGARO_RUNTIME_DIR=/var/tmp/paint-'; } 2>/dev/null )" || continue
@@ -459,7 +459,7 @@ pp_figaro_daemons() {
   done
 }
 
-# pp_stale_pidfiles — angelus.pid files whose process is gone.
+# pp_stale_pidfiles, angelus.pid files whose process is gone.
 #
 # Another artifact-outlives-the-process case: measured stale angelus.pid for two
 # hunters whose daemons had already exited. Never treat a pid FILE as liveness.
@@ -472,7 +472,7 @@ pp_stale_pidfiles() {
   done
 }
 
-# pp_verify_clean — assert teardown actually happened. Exit 0 = clean.
+# pp_verify_clean, assert teardown actually happened. Exit 0 = clean.
 #
 # Call this AFTER pp_down, and believe it rather than your intentions. I told the
 # watchdog I had removed a socket that I had in fact never removed; a claim is
@@ -492,7 +492,7 @@ pp_verify_clean() {
   return "$bad"
 }
 
-# pp_down — tear down BOTH halves.
+# pp_down: tear down BOTH halves.
 #
 # Trap #10: `tmux kill-server` leaves the scratch daemon RUNNING. On one night
 # seventeen agents each left one behind: 230 orphaned processes, 1.2 GB of
@@ -534,7 +534,7 @@ pp_down() {
 # Assertion helpers that are honest.
 # --------------------------------------------------------------------------
 
-# pp_dupruns <file> — report REPEATED SEQUENCES of >=n non-blank rows.
+# pp_dupruns <file>: report REPEATED SEQUENCES of >=n non-blank rows.
 #
 # Trap #8: a naive adjacent-duplicate check MISSES REAL DUPLICATION. The
 # body-duplication bug placed its two copies ~25 lines apart, separated by
@@ -556,7 +556,7 @@ pp_dupruns() {
     }' "$f"
 }
 
-# pp_overwide <file> [w] — rows wider than the viewport. A row that exceeds the
+# pp_overwide <file> [w]: rows wider than the viewport. A row that exceeds the
 # width would wrap and desync the painter; invariant #1 says every row passes
 # through clipToWidth (one physical line per row).
 #

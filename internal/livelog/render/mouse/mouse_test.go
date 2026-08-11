@@ -47,7 +47,7 @@ func TestParse(t *testing.T) {
 		{name: "split at prefix only", in: "\x1b[<", w: want{need: true}},
 		{name: "split mid-prefix", in: "\x1b[", w: want{need: true}},
 		// A LONE ESC IS A KEYPRESS, NOT A SPLIT MOUSE REPORT. This case used to
-		// assert need=true — it pinned the bug rather than the intent. With the
+		// assert need=true: it pinned the bug rather than the intent. With the
 		// pager up, mouse reporting is on and this parser runs first, so claiming
 		// the byte parked every bare Escape in the input loop's `pending` buffer
 		// until the next keystroke arrived. Esc-to-clear-selection then left its
@@ -69,8 +69,8 @@ func TestParse(t *testing.T) {
 		},
 		{
 			// The RELEASE of the same click. It has to be distinguishable from the
-			// press or a click-to-toggle gesture fires twice per click — on the way
-			// down and on the way up — and so never appears to do anything.
+			// press or a click-to-toggle gesture fires twice per click: on the way
+			// down and on the way up, and so never appears to do anything.
 			name: "left release",
 			in:   "\x1b[<0;3;4m",
 			w: want{ok: true, consumed: len("\x1b[<0;3;4m"),
@@ -132,7 +132,7 @@ func TestControlStrings(t *testing.T) {
 // TestModifierAccessors pins the bit meanings against the xterm encoding. They
 // are asserted rather than trusted because 4/8/16 is exactly the kind of
 // triple a reader "remembers" as 1/2/4 (the CSI-u modifier mask, which IS
-// 1/2/4 and is decoded elsewhere in this binary — see navModifiers).
+// 1/2/4 and is decoded elsewhere in this binary: see navModifiers).
 func TestModifierAccessors(t *testing.T) {
 	cases := []struct {
 		mod                    int

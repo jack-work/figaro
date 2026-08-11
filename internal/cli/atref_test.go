@@ -48,7 +48,7 @@ func TestExpandAtRefs_RequiresBangTerminator(t *testing.T) {
 		"cwd":   "/x",
 		"model": "m",
 	})
-	// Without a trailing "!" no expansion happens — the @ is literal.
+	// Without a trailing "!" no expansion happens: the @ is literal.
 	// This is the whole point of the explicit terminator: zero false
 	// positives. Email addresses, code snippets, twitter handles all
 	// pass through untouched.
@@ -134,7 +134,7 @@ func TestExpandAtRefs_DottedKey(t *testing.T) {
 		t.Errorf("expandAtRefs(trailing dot no bang) = %q, want %q", got, want)
 	}
 
-	// "@system!." — terminator immediately after the key, then a dot
+	// "@system!.": terminator immediately after the key, then a dot
 	// of sentence punctuation. Expands.
 	got = expandAtRefs("end with @system!.", snap)
 	want = "end with WHOLE."

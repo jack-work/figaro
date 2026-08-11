@@ -54,7 +54,7 @@ func TestProse_Empty(t *testing.T) {
 }
 
 // Prose renders a code snippet as a glamour code block: indented (deeper
-// than the 2-col prose margin) and set off by blank lines — not the col-0
+// than the 2-col prose margin) and set off by blank lines: not the col-0
 // clamped tool-output form.
 func TestProse_CodeBlockIndentedAndSpaced(t *testing.T) {
 	rows := Prose("Run this:\n\n```sh\nfind . -name '*.tf'\n```\n\nDone.", 80)

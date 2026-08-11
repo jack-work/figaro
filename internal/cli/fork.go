@@ -17,7 +17,7 @@ import (
 // Without a prompt this is the imperative branch it always was: freeze the
 // target, mint a continuation and an empty alternative (see runFork).
 //
-// With a prompt it gains `new`'s semantics — fork, then immediately send —
+// With a prompt it gains `new`'s semantics: fork, then immediately send -
 // and it is the same parser as `send`, so the send flags mean here exactly
 // what they mean there. Three rules hold the composed form together:
 //
@@ -27,7 +27,7 @@ import (
 //   - `--stay` governs the SHELL, not the prompt. Without it, forking your
 //     OWN bound aria moves you to the branch you just prompted (you froze
 //     the aria you were on; the branch is where the work now is). Forking
-//     any other aria never moves you — that is a fan-out, not a rescope.
+//     any other aria never moves you: that is a fan-out, not a rescope.
 //     This is fork's own longstanding rule, pointed at the alternative
 //     instead of the continuation because that is where the prompt went.
 //   - `-e/--ephemeral` is rejected. A fork mints a persistent branch in the
@@ -79,7 +79,7 @@ func planFork(args []string) (forkPlan, error) {
 		}
 		return plan, nil
 	}
-	// The same contradictions `send` enforces, from the same function — a
+	// The same contradictions `send` enforces, from the same function, a
 	// fork's prompt is a send, and two copies of a rule is how the fork-send
 	// path came to keep the print-JSON-then-stream contract after send lost
 	// it. --json's rules ride along: -j with --raw/--verbatim/--exec/
@@ -186,7 +186,7 @@ func runForkPrompt(loaded *config.Loaded, spec string, opts sendOpts, prompt str
 		}
 		branch = resp.Alternative
 
-		// Move to the branch we just prompted — but only when we forked our
+		// Move to the branch we just prompted: but only when we forked our
 		// OWN bound aria, and only without --stay. Forking someone else's
 		// aria is a fan-out; it never steals this shell. Registry.Bind
 		// rebinds in place, so no Unbind is needed first.
@@ -200,7 +200,7 @@ func runForkPrompt(loaded *config.Loaded, spec string, opts sendOpts, prompt str
 		}
 
 		if opts.json {
-			// aria_id is the aria the prompt goes to — always the branch.
+			// aria_id is the aria the prompt goes to, always the branch.
 			enc := json.NewEncoder(os.Stdout)
 			_ = enc.Encode(struct {
 				AriaID       string `json:"aria_id"`
@@ -243,7 +243,7 @@ func runForkPrompt(loaded *config.Loaded, spec string, opts sendOpts, prompt str
 	if opts.json {
 		// --json submits and exits: the object printed above IS the output.
 		// This path used to print it and then stream the rendered turn onto
-		// the same stdout — the second copy of the defect `send` shed.
+		// the same stdout: the second copy of the defect `send` shed.
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer cancel()
 		submitAndExit(ctx, loaded, branch, prompt)

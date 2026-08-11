@@ -16,7 +16,7 @@ import (
 // Runs in the background at startup. Only metas missing ALL identity fields
 // are touched, so a completed sweep is a near-free scan on later starts, and
 // an aria whose form genuinely has no identity is retried harmlessly.
-// Live arias are skipped — their actor owns the sidecar.
+// Live arias are skipped: their actor owns the sidecar.
 func (a *Angelus) metaBackfill(ctx context.Context) {
 	if a.Backend == nil {
 		return

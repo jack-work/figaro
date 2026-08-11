@@ -103,7 +103,7 @@ func TestLoad_EmptyNameReturnsEmptyPatch(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "outfits"), 0700))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "outfits", "config.toml"), []byte(`x = 1`), 0600))
 
-	// Empty name no longer defaults to "config" — callers must
+	// Empty name no longer defaults to "config": callers must
 	// resolve the name (e.g. via config.DefaultOutfit) themselves.
 	patch, err := outfit.New(dir).Load("")
 	require.NoError(t, err)
@@ -111,7 +111,7 @@ func TestLoad_EmptyNameReturnsEmptyPatch(t *testing.T) {
 }
 
 // A subdirectory with a SKILL.md is one skill keyed by the dir name; the user's
-// skills merge under the BUNDLED ones, which win by name — an install must be
+// skills merge under the BUNDLED ones, which win by name, an install must be
 // able to correct a skill it ships, and a config copy that outranks the binary
 // forever is a copy that silently falls behind it.
 func TestLoad_DirSkill_AndBundledMerge(t *testing.T) {

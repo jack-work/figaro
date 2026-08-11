@@ -84,7 +84,7 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 
 	// A DRAINED BATCH IS ONE MESSAGE. Both steers were queued during the same
 	// tool round, so TakeReadyUserPrompts lifts them together and the drain
-	// joins them with a newline: one message, one LT, one steering decision —
+	// joins them with a newline: one message, one LT, one steering decision -
 	// not two messages for the model to reconcile.
 	msgs := a.Context()
 	require.Len(t, msgs, 5)
@@ -104,7 +104,7 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 
 	// The canonical order survives as ONE turn. A steer is a direction aimed at
 	// the exchange already in flight, so it joins that turn rather than opening
-	// its own — which is what previously truncated the turn being steered and
+	// its own: which is what previously truncated the turn being steered and
 	// left its closing prose unrendered.
 	//
 	// The TOOL node belongs here too. This expectation used to omit it, which
@@ -131,12 +131,12 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 			"and the tool call it interrupted must survive")
 	require.Equal(t, "steer one\n\nsteer two", read.Parts[0].Nodes[1].Markdown,
 		"both queued texts survive, separated by a BLANK line so markdown keeps "+
-			"them on separate rows — nothing is dropped and nothing is rejoined")
+			"them on separate rows: nothing is dropped and nothing is rejoined")
 	require.Equal(t, int32(2), prov.calls.Load())
 }
 
 // TIMING IS THE WHOLE RULE: a prompt that arrives while a turn is running joins
-// that turn as a steering aside. There is no flag and no declaration — one
+// that turn as a steering aside. There is no flag and no declaration: one
 // command, identical whether or not the aria is busy.
 //
 // This test previously asserted the opposite, from an era when intent was
@@ -201,7 +201,7 @@ func TestMidTurnPromptJoinsTheRunningTurn(t *testing.T) {
 
 // TestFormSetDuringToolRoundAppliesNextRound proves a form patch
 // enqueued mid-turn (a model switch) is serviced at the same tool-window
-// boundary steering prompts are — so the next provider round already sees the
+// boundary steering prompts are: so the next provider round already sees the
 // new model, rather than the patch waiting out the whole turn.
 func TestFormSetDuringToolRoundAppliesNextRound(t *testing.T) {
 	bt := &blockingSteeringTool{

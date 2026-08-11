@@ -49,7 +49,7 @@ func TestWidthAuditReportsOnlyRealOverruns(t *testing.T) {
 // A row can fit on its own and still run off the edge, because it did not start
 // at column 1. Measuring the row alone is a second way to be blind: the row is
 // innocent, the width is innocent, and the screen is wrong by exactly the
-// offset — which is what "a couple of characters beyond the edge" looks like.
+// offset: which is what "a couple of characters beyond the edge" looks like.
 //
 // CANARY (watched): ignore the start column (measure the row alone) and the
 // second write below stops being reported.
@@ -74,7 +74,7 @@ func TestWidthAuditCountsTheColumnARowStartsAt(t *testing.T) {
 	}
 }
 
-// With no env var set, an overrun still leaves a receipt — and a healthy
+// With no env var set, an overrun still leaves a receipt, and a healthy
 // session creates no file at all.
 //
 // Four reports of this bug produced one reproduction, because every route to

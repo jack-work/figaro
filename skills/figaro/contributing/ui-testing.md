@@ -1,4 +1,4 @@
-# Procedural UI testing — driving figaro in a real terminal
+# Procedural UI testing: driving figaro in a real terminal
 
 **What this file is.** A repeatable *procedure* for answering questions about
 figaro's terminal UI that only a real pty can answer, generalized out of the
@@ -7,7 +7,7 @@ belong to the method itself, and the criteria for promoting a manual sweep into
 an automated test.
 
 **Status, plainly: this is a manual, agentic process today.** Most of what
-follows *could* be a Go test — §6 lists the concrete candidates and what each
+follows *could* be a Go test: §6 lists the concrete candidates and what each
 one needs before it can be written. It is written down as a procedure first
 because the expensive part has never been the assertion; it is knowing what to
 drive, what to look at, and which "clean" results are lies. An agent handed this
@@ -17,7 +17,7 @@ file can run a hunt end to end; a test suite cannot yet.
 
 | artifact | owns |
 |---|---|
-| **tmux-testing skill** (`~/.config/figaro/skills/tmux-testing.md`) | the ELEVEN ENVIRONMENT TRAPS — pane heights, `-e PATH` being ignored, counting tokens, capture vs scrollback. Read it first; it is why each step below is shaped the way it is. |
+| **tmux-testing skill** (`~/.config/figaro/skills/tmux-testing.md`) | the ELEVEN ENVIRONMENT TRAPS: pane heights, `-e PATH` being ignored, counting tokens, capture vs scrollback. Read it first; it is why each step below is shaped the way it is. |
 | **`docs/paint-repro.md`** | one subsystem's cookbook: the pager's geometry, the store fixtures, and the findings of the paint hunts (§8.1–§8.4). |
 | **`scripts/paintpane.sh`** + `paint-jogdiff.sh`, `paint-gapcheck.sh` | the runnable shell harness (`pp_*` verbs) and two packaged oracles. |
 | **`internal/cli/tmuxsmoke_*_test.go`** | the automated end of the same method: `FIGARO_TMUX_SMOKE=1 go test ./internal/cli/ -run TestSmoke`. Real binary, real pty, real provider, skipped by default. |
@@ -34,8 +34,8 @@ most questions. Triage first:
 | the question | instrument |
 |---|---|
 | "what does the composer decide to paint?" | unit test over `compose()` / the row builders |
-| "what bytes does the painter emit for this frame?" | the VT model (`newVT` in `transcript_paint_test.go`) — a real terminal parser, no pty |
-| "what is on the screen after N frames and a resize?" | the VT model, still — it applies escapes and scroll regions |
+| "what bytes does the painter emit for this frame?" | the VT model (`newVT` in `transcript_paint_test.go`), a real terminal parser, no pty |
+| "what is on the screen after N frames and a resize?" | the VT model, still: it applies escapes and scroll regions |
 | "does the process exit / does a key reach the shell / did the pager stay up?" | **tmux** |
 | "did anything write outside the frame buffer?" | **tmux**, or the byte stream (§5c) |
 | "does this look right to a human?" | **tmux**, and then a human |
@@ -52,7 +52,7 @@ the property is about what **happened**.
 Seven phases. They are in this order because each one invalidates results
 gathered before it.
 
-### P0 — ISOLATE
+### P0: ISOLATE
 
 ```sh
 source scripts/paintpane.sh
@@ -64,7 +64,7 @@ Non-negotiables, each of which has cost somebody a wrong answer:
 - **Build it in a DEV SHELL, not with `go build`.** `nix develop --command`
   gives the flake's binary, toolchain and dependency closure; a worktree
   `go build` gives yours. A whole night of this hunt ran on stamped scratch
-  builds under Go 1.26.5 while the flake builds under 1.26.1 — a difference
+  builds under Go 1.26.5 while the flake builds under 1.26.1, a difference
   that can decide whether a rendering bug reproduces at all. See
   [maintaining.md](maintaining.md) for the presets and how to isolate the
   store inside a shell.
@@ -82,29 +82,29 @@ Non-negotiables, each of which has cost somebody a wrong answer:
 - **Never the live daemon.** It is a strict singleton on a store flock; pointing
   a test build at the real store makes them contend, not cooperate.
 
-### P1 — STAND UP A SUBJECT
+### P1: STAND UP A SUBJECT
 
 Three ways to get a pager, in increasing cost:
 
 ```sh
-pp_pager <aria-id>                      # `figaro listen` + ^T — ZERO tokens, instant
+pp_pager <aria-id>                      # `figaro listen` + ^T: ZERO tokens, instant
 <fig> send --id <aria> -l -- "<prompt>" # a live turn: the spinner animates
 <fig> send --id <aria> -- "<prompt>"    # inline (incipit), no pager
 ```
 
 `listen` is the workhorse: it attaches without calling `figaro.qua`, so a
 fully-loaded pager costs nothing and is deterministic. Use a live turn only when
-the property genuinely needs one — anything about spinners, streaming deltas,
+the property genuinely needs one, anything about spinners, streaming deltas,
 turn-end, or interrupts.
 
 **Getting volume cheaply.** Rows, not tokens, are what the pager pages. A dozen
 small turns asking for a long numbered list gives ~1500 rendered rows for a few
 thousand tokens. Copying the real aria store is a last resort: it is 130 MB of
 the user's own conversations, and if you do it, `mkdir -p -m 700` first, copy no
-`providers/` or `hush/`, and delete it in P7 — a capture of a full pane is a
+`providers/` or `hush/`, and delete it in P7, a capture of a full pane is a
 photograph of somebody's private conversation.
 
-### P2 — WRITE THE ORACLE BEFORE YOU DRIVE
+### P2: WRITE THE ORACLE BEFORE YOU DRIVE
 
 An oracle is a predicate over a capture that decides *wrong*, not *different*.
 Write it down before the first gesture, and hold it to two requirements:
@@ -112,12 +112,12 @@ Write it down before the first gesture, and hold it to two requirements:
 1. **It must be able to fail.** Run it against a known-bad arm (the pre-fix
    binary, or the fix reverted) and quote the failure. An assertion that has
    never failed is not evidence.
-2. **It must not be healed by its own driving.** See §4a — this is the trap that
+2. **It must not be healed by its own driving.** See §4a: this is the trap that
    most often produces a confident CLEAN.
 
 The catalogue of oracles that have earned their keep is §3.
 
-### P3 — DRIVE
+### P3: DRIVE
 
 ```sh
 pp_key C-n; pp_key d; pp_type "hello"    # keys; pp_type sends ONE BYTE AT A TIME
@@ -138,7 +138,7 @@ Three notes:
   whichever internal writer does it in production. It is how the status-smear
   mechanism was finally captured (`docs/paint-repro.md` §8.4).
 
-### P4 — SETTLE
+### P4: SETTLE
 
 ```sh
 pp_stable      # poll until the pane stops changing
@@ -147,14 +147,14 @@ pp_stable      # poll until the pane stops changing
 **Never sleep a fixed guess.** A model's first token can take five seconds or
 fifty. Poll until two consecutive captures are identical, with a ceiling.
 
-### P5 — MEASURE
+### P5: MEASURE
 
 Four instruments, each seeing something the others cannot:
 
 | instrument | shows | blind to |
 |---|---|---|
 | `pp_cap` (`capture-pane -p`) | the visible grid, ANSI stripped | anything that scrolled away; all styling |
-| `pp_hist` (`-S -`) | the full scrollback | nothing that scrolled — this is how a frame that existed for 12 ms was photographed |
+| `pp_hist` (`-S -`) | the full scrollback | nothing that scrolled: this is how a frame that existed for 12 ms was photographed |
 | `pp_raw` (`-e`) | the grid WITH SGR | which writer produced it |
 | `script -q -f out.raw -c '<fig> …'` | **the bytes figaro actually wrote** | what the emulator did with them |
 
@@ -162,10 +162,10 @@ The byte stream is the court of last resort and it settles arguments in one
 read: it distinguishes *"the painter composed a wrong row"* from *"the painter
 composed the right row and the terminal was not where it thought"*. In the
 resize hunt it took a plausible three-hour theory off the table in ninety
-seconds — the frame was a clean full repaint, `CUP + EL + content` on every row,
+seconds: the frame was a clean full repaint, `CUP + EL + content` on every row,
 so the composer was innocent.
 
-### P6 — JUDGE (A/B, with identities printed)
+### P6: JUDGE (A/B, with identities printed)
 
 ```sh
 md5sum "$BEFORE" "$AFTER"        # quote BOTH in the report
@@ -181,7 +181,7 @@ md5sum "$BEFORE" "$AFTER"        # quote BOTH in the report
   quoted failure belongs in the commit message; a good one is a miniature of the
   bug (`got "status ⠋ · ctx 1k", want "───── rule"`).
 
-### P7 — TEAR DOWN
+### P7: TEAR DOWN
 
 ```sh
 pp_down          # tmux server on OUR socket + the scratch daemon
@@ -204,7 +204,7 @@ today (§6).
 Capture, move the viewport away and back to the same offset, capture, diff. Any
 difference means the first frame was a lie. Needs no model of correct content,
 which is its power. **Gate it on the footer range being identical in both
-captures** — a page landing between them changes the row space, and comparing
+captures**, a page landing between them changes the row space, and comparing
 two different windows is a meaningless diff that looks like a finding.
 
 **b. Comparison-free invariants** (`scripts/paint-gapcheck.sh`). Jog-and-diff is
@@ -221,7 +221,7 @@ anchor the pattern to the row shape. ✎
 should equal it exactly on a full-width frame. This is what proved `clipToWidth`
 was holding and sent a hunt to the second branch of its brief. ✎
 
-**e. Liveness — a PROCESS question.** "The chrome is gone" is not evidence that
+**e. Liveness, a PROCESS question.** "The chrome is gone" is not evidence that
 figaro died; a pane below four rows makes the painter skip the frame on purpose,
 so the screen holds tmux's truncation of an older one. Ask `pgrep`. Getting this
 wrong produced 29 false failures in one fuzz run.
@@ -242,33 +242,33 @@ The skill's eleven traps are about the environment. These five are about the
 procedure, and each cost a measured wrong answer during the resize-smear hunt.
 
 **a. An instrument whose gestures heal what it hunts.** The randomized resize
-fuzz reports 0 failures against a *provably broken* binary — because `resize()`
+fuzz reports 0 failures against a *provably broken* binary: because `resize()`
 discards the painter's model of the screen, which is exactly the repair the bug
 needs. The fuzz is a guard on invariants; the discriminating instrument was a
 script that injects damage and then **holds still**. Before trusting a sweep,
 ask what its own driving repairs.
 
 **b. Scoring the unmeasurable.** A pane under 10 rows cannot show the pager's
-chrome, and under 4 the frame is deliberately skipped. Drive those sizes — the
-invariant is that the *next workable size* is clean — but do not score them.
+chrome, and under 4 the frame is deliberately skipped. Drive those sizes: the
+invariant is that the *next workable size* is clean: but do not score them.
 Scoring the unmeasurable manufactures false alarms; the mirror image, a fixture
 whose footer shows no range, manufactures false calm (with `maxOff == 0` every
 navigation key is a no-op, so a jog-diff compares a frame with itself and prints
 CLEAN for any binary, including a provably broken one). **Gate on the fixture
 being able to fail.**
 
-**c. Gestures leak to the shell.** When the subject exits — a turn ending, a
-crash — subsequent `send-keys` land in bash. `C-d` is EOF, which kills the
+**c. Gestures leak to the shell.** When the subject exits, a turn ending, a
+crash: subsequent `send-keys` land in bash. `C-d` is EOF, which kills the
 session, which kills the server, which looks exactly like the crash you were
 hunting. Keep `C-d` out of fuzz gesture sets and stop the sweep when the subject
 is gone.
 
-**d. The build handshake between arms.** See P6. It is a *feature* — the daemon
-refuses to speak a different build's wire — but in an A/B it presents as an
+**d. The build handshake between arms.** See P6. It is a *feature*: the daemon
+refuses to speak a different build's wire: but in an A/B it presents as an
 empty capture and a clean score.
 
 **e. Symptom-shaped hypotheses.** The user reports a bug "when resizing", so the
-hunt goes to the resize path — where, measured, it is clean, and the resize turns
+hunt goes to the resize path: where, measured, it is clean, and the resize turns
 out to be the *cure*. Do the negative measurement early and write it down; two
 recorded negatives ("the resize repaint is clean", "the shrinking status line is
 correct elision") are worth more to the next hunter than the positive, because
@@ -283,14 +283,14 @@ trusted. Report only what has a return value or a file behind it, and where you
 intend something, say INTEND.
 
 1. absolute worktree path; branch @ short sha
-2. **the repro recipe** — exact geometry, subject size, key sequence. This is
+2. **the repro recipe**: exact geometry, subject size, key sequence. This is
    the deliverable that matters most, and it is worth writing down *before* the
    fix exists.
 3. root cause, one paragraph
 4. what changed
 5. the A/B table with both md5s
 6. the canary failure, quoted
-7. **what remains unproven** — including anything you decided not to decide
+7. **what remains unproven**: including anything you decided not to decide
 8. hygiene: processes, sockets, store copies
 
 ---
@@ -300,11 +300,11 @@ intend something, say INTEND.
 **The honest state of things.** Everything above is run by hand, or by an agent
 following it. That is not where it should stay. Sorted by how ready each is:
 
-**Ready today — VT model, no pty, no provider.** These are ordinary Go tests
+**Ready today: VT model, no pty, no provider.** These are ordinary Go tests
 against `newVT`; the only reason they do not all exist is that nobody has
 written them.
 
-- *the painter's model can be void or stale* — an unannounced scroll of the VT
+- *the painter's model can be void or stale*, an unannounced scroll of the VT
   followed by a frame must not leave stale rows once the painter is told
   (`internal/cli/transcript_screenmoved_test.go`, on `fix/resize-bleed`, is the
   first of these).
@@ -313,37 +313,37 @@ written them.
 - *idempotence under repaint* (§3g).
 - *ellipsis and shed order* for the status row at narrow widths.
 
-**Ready with work — the existing tmux smoke suite.** `TestSmoke_*` already
+**Ready with work: the existing tmux smoke suite.** `TestSmoke_*` already
 drives a real pty and a real provider behind `FIGARO_TMUX_SMOKE=1`. Candidates
 that fit its shape, each naming the bug it would have caught:
 
-- `TestSmoke_ResizeSweepIsClean` — jog-and-diff across a width matrix, with the
+- `TestSmoke_ResizeSweepIsClean`: jog-and-diff across a width matrix, with the
   range gate of §3a. Needs a **deterministic fixture with a real range**, which
   is precisely what the paint hunts found `pp_fixture` lacking.
-- `TestSmoke_StrayWriteDoesNotSmear` — inject to `#{pane_tty}`, hold still,
+- `TestSmoke_StrayWriteDoesNotSmear`: inject to `#{pane_tty}`, hold still,
   assert one status row. Needs only what `scripts/paint-strayscroll.sh` already
   does (on `fix/resize-bleed`, with `scripts/paint-fuzz.sh`; neither is on main
   yet).
-- `TestSmoke_TinyPaneRecovers` — shrink below the pager's chrome and back;
+- `TestSmoke_TinyPaneRecovers`: shrink below the pager's chrome and back;
   assert the next workable size is clean. Needs the "unmeasurable" gate of §4b
   expressed as a skip.
 
 **Resists automation, and should stay a procedure.** Say so rather than write a
 weak test:
 
-- *"does this look right"* — kerning, dimming, whether a footer reads as chrome
+- *"does this look right"*: kerning, dimming, whether a footer reads as chrome
   or as content. A human, or a screenshot review.
-- *the discriminating power of a new oracle* — §2 P2's first requirement is a
+- *the discriminating power of a new oracle*: §2 P2's first requirement is a
   judgement call about a known-bad arm that does not exist yet.
-- *exploratory fuzzing* — its value is finding the gesture nobody thought of,
+- *exploratory fuzzing*: its value is finding the gesture nobody thought of,
   which is the part a fixed case cannot contain. Fuzz by hand, then **promote
   each finding into a fixed case**; that promotion is the whole point.
 
-**Promotion criteria** — a manual sweep becomes a test case when all four hold:
+**Promotion criteria**, a manual sweep becomes a test case when all four hold:
 it has a fixture that can fail (§4b); an oracle that failed at least once on a
 known-bad arm; a bounded runtime; and a cleanup path that leaves no daemon,
 socket, or store copy behind. Until then it belongs here, as a procedure, run by
-somebody — or something — that can read.
+somebody: or something: that can read.
 
 ---
 

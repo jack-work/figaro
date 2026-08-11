@@ -6,7 +6,7 @@ import (
 )
 
 // The identity has to survive a round trip through a REAL request struct, a
-// nil params (the no-argument methods), and an already-populated object —
+// nil params (the no-argument methods), and an already-populated object -
 // those are the three shapes the two client hops actually send.
 func TestWithCallerRoundTrip(t *testing.T) {
 	t.Run("struct params keep their fields", func(t *testing.T) {
@@ -17,7 +17,7 @@ func TestWithCallerRoundTrip(t *testing.T) {
 		if got := CallerOf(raw); got != "caller99" {
 			t.Fatalf("CallerOf = %q, want caller99", got)
 		}
-		// The payload must be untouched — the caller field rides ALONGSIDE it.
+		// The payload must be untouched: the caller field rides ALONGSIDE it.
 		var req ForkRequest
 		if err := json.Unmarshal(raw, &req); err != nil {
 			t.Fatalf("unmarshal payload: %v", err)

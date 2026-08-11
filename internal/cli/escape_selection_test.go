@@ -9,7 +9,7 @@ import (
 // Escape clears the selection cue on the VERY NEXT FRAME.
 //
 // The shipped bug: Esc dropped the selection but the highlight stayed painted
-// until the user scrolled. The cause was not in the pager at all — dispatch()
+// until the user scrolled. The cause was not in the pager at all: dispatch()
 // always renders, and the cue is applied at paint time (entryLine ->
 // decorateNodeRow), so a composed frame would have dropped it. The Esc BYTE
 // never reached dispatch.
@@ -18,7 +18,7 @@ import (
 // ldmouse.Parse first. `\x1b` is a prefix of the SGR mouse introducer
 // `\x1b[<`, so Parse claimed the read was incomplete; consume stashed the byte
 // in `pending` and ended the frame. A bare Escape is always exactly one byte
-// at the end of a read, so Esc NEVER dispatched on its own frame — it
+// at the end of a read, so Esc NEVER dispatched on its own frame: it
 // dispatched on whatever key came next, which is why "navigate the page" was
 // the thing that appeared to clear the cue.
 //
@@ -58,7 +58,7 @@ func TestEscapeClearsSelectionCueOnNextFrame(t *testing.T) {
 		t.Fatal("bare Esc stopped the input loop")
 	}
 	if len(rest) != 0 {
-		t.Fatalf("bare Esc was held back as %q — it will not dispatch until the next keystroke", rest)
+		t.Fatalf("bare Esc was held back as %q: it will not dispatch until the next keystroke", rest)
 	}
 	if p.lt.tr.selection.active {
 		t.Fatal("Esc did not clear the selection")

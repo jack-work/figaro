@@ -13,7 +13,7 @@ import (
 // A tall turn reaches scrollback as SEVERAL closed messages sharing one turn
 // id: the head closes when the live suffix advances past it ({1,0}), the tail
 // when the turn seals ({1,1}). Freezing the head inline therefore records turn 1
-// as "flushed" — and a turn-granular boundary (from = lastFrozenLT+1 = 2) then
+// as "flushed", and a turn-granular boundary (from = lastFrozenLT+1 = 2) then
 // excludes the REST OF TURN 1, so a reply watched in the pager never reached
 // scrollback. The boundary must be a (turn, node-offset) cursor.
 func TestPagerExitFlushesLaterSlicesOfAnAlreadyFrozenTurn(t *testing.T) {
@@ -33,7 +33,7 @@ func TestPagerExitFlushesLaterSlicesOfAnAlreadyFrozenTurn(t *testing.T) {
 
 	// Into the pager, where the reply completes and the turn SEALS. Sealing
 	// resets the open region, so the reply can only reach scrollback through the
-	// closed set — which is exactly what the flush boundary governs.
+	// closed set: which is exactly what the flush boundary governs.
 	lt.enterTranscript()
 	lt.apply(page(1, 3))
 	lt.apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: 1, Sealed: true}}}})
@@ -56,8 +56,8 @@ func TestPagerExitFlushesLaterSlicesOfAnAlreadyFrozenTurn(t *testing.T) {
 	}
 }
 
-// A turn genuinely still running must still say so — the fix must not silence
-// the honest case — and detaching from it is NOT a failure. A user choosing to
+// A turn genuinely still running must still say so: the fix must not silence
+// the honest case, and detaching from it is NOT a failure. A user choosing to
 // stop watching is a decision, not an error; calling it one erodes trust in
 // every other status we show. It says so in one place: the status bookend.
 func TestPagerExitStillWarnsWhileTheTurnRuns(t *testing.T) {
@@ -78,12 +78,12 @@ func TestPagerExitStillWarnsWhileTheTurnRuns(t *testing.T) {
 	}
 }
 
-// The server's turn.done vocabulary is fixed, so finishTurn may classify it —
+// The server's turn.done vocabulary is fixed, so finishTurn may classify it -
 // but it must not read a client-side outcome out of an English sentence. Before
 // this, any reason containing "disconnect" was reported as a failure.
 func TestDetachIsNotAnError(t *testing.T) {
 	s := newSessionStatus("aria1234", time.Now())
-	s.finishTurn("disconnected — turn continues")
+	s.finishTurn("disconnected: turn continues")
 	if l := s.turnLabel(); l == "error ✗" {
 		t.Fatal("a deliberate detach is not a failure")
 	}
@@ -127,7 +127,7 @@ func TestPainterSessionWritesOnlyCRLF(t *testing.T) {
 	s := out.String()
 	for i := 0; i < len(s); i++ {
 		if s[i] == '\n' && (i == 0 || s[i-1] != '\r') {
-			t.Fatalf("bare LF at byte %d — on Windows this staircases:\n%q", i, s[max(0, i-60):min(len(s), i+10)])
+			t.Fatalf("bare LF at byte %d: on Windows this staircases:\n%q", i, s[max(0, i-60):min(len(s), i+10)])
 		}
 	}
 }

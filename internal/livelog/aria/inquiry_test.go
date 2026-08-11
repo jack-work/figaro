@@ -11,7 +11,7 @@ import (
 // A CLIENT ALWAYS HAS THE QUESTION, AND KNOWS WHO ASKED IT.
 //
 // That is the property; "every part carries it" was one way to get it, and an
-// expensive one — on a measured tape the restated question was 38% of the
+// expensive one: on a measured tape the restated question was 38% of the
 // bytes pushed. A part is a delta against a turn the client already holds, so
 // an absent inquiry means UNCHANGED, exactly as an absent node field does.
 //
@@ -43,7 +43,7 @@ func TestClientAlwaysHasTheQuestion(t *testing.T) {
 	}
 
 	// Fold every prefix. After each one the client must be able to say what was
-	// asked — including the very first frame that mentions the turn.
+	// asked: including the very first frame that mentions the turn.
 	for n := 1; n <= len(frames); n++ {
 		c := NewClient()
 		for _, f := range frames[:n] {
@@ -66,8 +66,8 @@ func TestClientAlwaysHasTheQuestion(t *testing.T) {
 	}
 }
 
-// A client that MISSED the opening frames — the case the whole design turns on
-// — recovers through the read it is required to issue on connect.
+// A client that MISSED the opening frames: the case the whole design turns on
+// : recovers through the read it is required to issue on connect.
 func TestLateJoinerRecoversTheQuestionFromARead(t *testing.T) {
 	const q = "WHATDIDIASK"
 	s := NewServer()
@@ -93,7 +93,7 @@ func TestLateJoinerRecoversTheQuestionFromARead(t *testing.T) {
 	}
 }
 
-// questionOf is what the client can say about a turn, through its own view —
+// questionOf is what the client can say about a turn, through its own view -
 // not by reaching into the frames it was given.
 func questionOf(c *Client, turn int) (question, sender string) {
 	v := c.View()
@@ -115,7 +115,7 @@ func open(v View) []Message {
 	return []Message{*v.Open}
 }
 
-// The saving, asserted rather than described — and isolated, by driving the
+// The saving, asserted rather than described, and isolated, by driving the
 // SAME turn twice with questions of different lengths. The difference in bytes
 // pushed is the question's whole contribution, node traffic having cancelled.
 func TestQuestionIsNotRestatedOnEveryFrame(t *testing.T) {
@@ -162,7 +162,7 @@ func TestQuestionIsNotRestatedOnEveryFrame(t *testing.T) {
 // bytes a subscriber is handed for one turn of forty frames, with a question of
 // realistic length. It reports B/turn so a before/after is one number.
 func BenchmarkTurnPushBytes(b *testing.B) {
-	q := "Use the write tool exactly once to write /var/tmp/x/opera.md — 25 numbered " +
+	q := "Use the write tool exactly once to write /var/tmp/x/opera.md: 25 numbered " +
 		"lines about Il barbiere di Siviglia. Then run: grep -c . /var/tmp/x/opera.md . " +
 		"Then reply with one short sentence."
 	b.ReportAllocs()

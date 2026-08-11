@@ -4,7 +4,7 @@
 .claude/
 teams.log
 
-# secrets — never commit
+# secrets: never commit
 /api-key
 *.key
 *.pem

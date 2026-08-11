@@ -20,7 +20,7 @@ import (
 // deadChannels name store channels nothing reads or writes: turn-wal (drain +
 // tail repair replaced it) and _live (the transcript pivot); both are scanned
 // on disk too, since _live was never a manifest entry. Legacy translations/* is
-// swept by prefix — translations-v2/ does not carry it. GC rewrites the figwal
+// swept by prefix: translations-v2/ does not carry it. GC rewrites the figwal
 // manifest directly, so it requires the daemon stopped.
 var deadChannels = []string{"turn-wal", "_live"}
 
@@ -206,7 +206,7 @@ func runDoctorMem(asJSON bool) error {
 	fmt.Printf("limit      %s (GOMEMLIMIT, soft)\n", limit)
 
 	if m.PprofSocket == "" {
-		fmt.Printf("pprof      not armed — restart the daemon with %s=1\n", angelus.PprofEnv)
+		fmt.Printf("pprof      not armed: restart the daemon with %s=1\n", angelus.PprofEnv)
 	} else {
 		fmt.Printf("pprof      %s\n", m.PprofSocket)
 		fmt.Printf("           go tool pprof -http=: 'http+unix://%s/debug/pprof/heap'\n", m.PprofSocket)
@@ -221,7 +221,7 @@ func runDoctorMem(asJSON bool) error {
 }
 
 // humanBytes renders a byte count at three significant figures. These are
-// read by eye, not parsed — --json exists for the machine.
+// read by eye, not parsed: --json exists for the machine.
 func humanBytes(n int64) string {
 	const unit = 1024
 	if n < unit {

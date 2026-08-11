@@ -1,6 +1,6 @@
 ---
 name: tmux-testing
-description: How to test figaro's terminal UI honestly — driving the real binary in a real pty with tmux, the traps that produced confident wrong answers, and the standing rules. Use when changing anything that paints (incipit, the transcript pager, the composer, footers, freeze/scrollback), when a test passes but a human reports a bug, or before believing any claim about what the screen shows.
+description: How to test figaro's terminal UI honestly: driving the real binary in a real pty with tmux, the traps that produced confident wrong answers, and the standing rules. Use when changing anything that paints (incipit, the transcript pager, the composer, footers, freeze/scrollback), when a test passes but a human reports a bug, or before believing any claim about what the screen shows.
 ---
 
 # Testing figaro's terminal UI
@@ -9,8 +9,8 @@ description: How to test figaro's terminal UI honestly — driving the real bina
 > than reality.**
 
 That sentence was written after a single night in which **eight** green tests
-certified broken code, and two bugs shipped anyway — a process that would not
-exit, and a duplicated status bar — both found by a user in his own shell,
+certified broken code, and two bugs shipped anyway, a process that would not
+exit, and a duplicated status bar: both found by a user in his own shell,
 neither visible to the suite.
 
 This skill is how not to repeat it.
@@ -32,12 +32,12 @@ FIGARO_TMUX_SMOKE=1 go test ./internal/cli/ -run TestSmoke -v
 
 `internal/cli/tmuxsmoke_test.go` is the harness; `tmuxsmoke_cases_test.go` is the
 suite. Skipped by default so `go test ./...` stays fast and hermetic. Each case
-names the shipped bug it exists to catch — read those before adding one.
+names the shipped bug it exists to catch: read those before adding one.
 
 **It uses a real provider on purpose.** A fake provider would be one more double
 free to drift. Costs tokens; a pass means something.
 
-## Use a dev shell — it is the harness you keep re-inventing
+## Use a dev shell: it is the harness you keep re-inventing
 
 ```sh
 nix develop .#share-config   # isolated runtime+state, YOUR config + hush
@@ -48,7 +48,7 @@ Inside it, `figaro`/`fig`/`q` are **this worktree's build, already stamped**
 `FIGARO_RUNTIME_DIR`/`FIGARO_STATE_DIR` are dev-scoped, so nothing you do
 touches your live daemon or arias. `duck/HOW_TO_TEST.md` is the long version.
 
-Presets: `share-config` (real providers work — use this), `clean` (hermetic,
+Presets: `share-config` (real providers work: use this), `clean` (hermetic,
 fresh hush + first-run), `snapshot` (a copy of your real arias), `share-hush`,
 `sandbox`, `default` (everything inherited).
 
@@ -62,7 +62,7 @@ The shell warns about the other half of this trap in its own banner: a shell
 launched inside the dev shell may re-prepend `~/go/bin` and shadow
 `$FIGARO_DEV_BIN`. Re-prepend it in your rc when it is set.
 
-## Build a stamped binary — when you build by hand
+## Build a stamped binary: when you build by hand
 
 The dev shell stamps for you, and so do `scripts/*.sh` and the harness
 (`smokeBinary`). Reach for this only when you need two binaries at once (an A/B
@@ -73,11 +73,11 @@ go build -ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-
   -o /tmp/figaro ./cmd/figaro
 ```
 
-A plain `go build` **in a git worktree records no revision at all** — Go's VCS
+A plain `go build` **in a git worktree records no revision at all**: Go's VCS
 autodetection only fires when `.git` is a *directory*, and a worktree's is a
 file. `-buildvcs=true` does not help and does not complain; it just stays
 silent. So `figaro --version` says `unknown`, and the CLI/daemon build
-handshake (`checkDaemonBuild`) has nothing to compare — it can only warn. That
+handshake (`checkDaemonBuild`) has nothing to compare: it can only warn. That
 is how an old daemon spoke a new client's wire and rendered a user's own
 question in figaro's voice, four times, with no error.
 
@@ -85,9 +85,9 @@ question in figaro's voice, four times, with no error.
 
 **1. `tmux new-session -y N` gives pane height N−1.** The status bar takes a row,
 and turning it off afterwards does **not** give the row back to a detached
-session — nor does `resize-window`. Measured: `-y 30` → 29 either way; `-y 31` →
+session: nor does `resize-window`. Measured: `-y 30` → 29 either way; `-y 31` →
 30. So **ask for `h+1`**, then *read back* `#{pane_height}` and report **that**.
-An entire thread of "h=1 loses the reply" — three investigators, many trials —
+An entire thread of "h=1 loses the reply": three investigators, many trials -
 was measured at pane height **zero**, a state no user can reach.
 
 **2. Counting a token across the capture is unsound.** The footer mantra echoes
@@ -98,7 +98,7 @@ made a live bug look fixed. Only the rendered body line is sound:
 
 **3. Gate every ABSENCE on pager chrome.** Grep for `? help`, `! status`, or an
 `N–M/T` range. A long turn **auto-promotes** to the pager, where earlier content
-sits above the tail window — so it isn't in your capture. *An absence inside a
+sits above the tail window: so it isn't in your capture. *An absence inside a
 pager is not an absence.* This produced two false reports and cost two agents
 real time. Use a pane tall enough not to promote (`y=100` for tool-heavy turns)
 and assert `pagerChrome == 0` **before** trusting any count.
@@ -106,7 +106,7 @@ and assert `pagerChrome == 0` **before** trusting any count.
 **4. Capture scrollback, not the pane.** `capture-pane -p -S -`. Frames that
 existed for milliseconds are preserved there verbatim. This is how the
 submit-time footer stanza was photographed after fast polling failed to catch
-it — the right instrument was a *short pane*, not a faster loop.
+it: the right instrument was a *short pane*, not a faster loop.
 
 **5. Type one character per read.** `send-keys -l "whole string"` arrives as a
 single read; a human types one byte at a time. Composer tests fed whole strings
@@ -115,7 +115,7 @@ the thing under test is input, type slowly.**
 
 **6. Test the path of someone who does not know the affordance exists.** Three
 investigators tested the composer by pressing its trigger key first, and all
-three pronounced it sound. Nobody typed *without* it — which is exactly where
+three pronounced it sound. Nobody typed *without* it: which is exactly where
 silent, partial, meaning-changing input loss lived. *Every expert test agreed
 with every other expert test and all of them were incomplete.*
 
@@ -133,13 +133,13 @@ token inflates counts. Both produced false positives.
 **10. Clean up the daemon, not just the session.** `kill-server` leaves the
 scratch daemon running. Seventeen agents each left one: **230 orphaned
 processes**, 1.2 GB of tmpfs, and a memory-pressure alert with processes already
-stalling. The harness's `close()` does both — if you drive tmux by hand, you
+stalling. The harness's `close()` does both: if you drive tmux by hand, you
 must too.
 
-**11. `tmux new-session -e PATH=...` is silently ignored — so your A/B runs the
+**11. `tmux new-session -e PATH=...` is silently ignored: so your A/B runs the
 SAME binary twice.** Measured on tmux 3.7b: `-e MYCANARY=hello` arrives intact
 while `-e PATH=/tmp/build:...` does not, leaving the pane on the inherited
-`~/.nix-profile/bin` — i.e. the INSTALLED figaro, not the one under test. An
+`~/.nix-profile/bin`: i.e. the INSTALLED figaro, not the one under test. An
 agent A/B'ing a fix this way got byte-identical "before" and "after" output and
 reported the fix as having no effect; the arms had never differed. Nothing was
 wrong with the fix and nothing was wrong with the assertions.
@@ -166,7 +166,7 @@ smuggle.
 ## Timing recipe for steering bugs
 
 A steer must land **after a tool has completed** or there is nothing to
-misorder. A steer fired before the first tool shows nothing wrong — and that
+misorder. A steer fired before the first tool shows nothing wrong, and that
 single difference produced two contradictory bug reports.
 
 ```
@@ -177,13 +177,13 @@ t=72  capture-pane -p -S -
 
 Assert: `pagerChrome == 0`; screen `✓ bash` count **equals**
 `show --json | [.parts[].nodes[]|select(.type=="tool")] | length`; `↳ input == 1`;
-and **the node ORDER on screen matches `fig show`** — incipit hoisting a steer
+and **the node ORDER on screen matches `fig show`**: incipit hoisting a steer
 above the tools while `show` places it correctly is a live-vs-committed
 divergence, which the purity invariant forbids.
 
 ## Before you believe a test
 
-- Did it ever fail? **Canary it** — revert the fix and quote the failure. An
+- Did it ever fail? **Canary it**: revert the fix and quote the failure. An
   assertion that has never failed is not evidence.
 - Does the double call the real function? The paging double treated `limit` as a
   *count* while production used a *byte budget*, and never called `Paginate`.
@@ -191,15 +191,15 @@ divergence, which the purity invariant forbids.
 - Does the fixture still exercise its own path? One test had silently stopped
   scrolling and could no longer fail for its stated reason.
 - Is it pinning current behaviour or intended behaviour? Two tests *asserted the
-  bug* — one expected a tool present in the IR to render nowhere; a golden file
+  bug*: one expected a tool present in the IR to render nowhere; a golden file
   literally encoded a duplicated voice marker.
 
 ## Twelve arias, one daemon, one build
 
 The suite proves one client at a time. The failures that cost releases were
 concurrent: twelve shells minting, dressing and prompting arias through ONE
-daemon, each in its own nix devshell over the same build. Not a Go test — it
-spends tokens and it needs the real provider — so it is a recipe, run by hand
+daemon, each in its own nix devshell over the same build. Not a Go test: it
+spends tokens and it needs the real provider: so it is a recipe, run by hand
 before anything that touches the store, the form writer or the inbox lands.
 
 ```sh
@@ -213,18 +213,18 @@ done
 wait
 ```
 
-Then read, in this order — each answers a different question:
+Then read, in this order: each answers a different question:
 
-- `grep -l ok /tmp/stress/*.out | wc -l` — did all twelve get an answer? A
+- `grep -l ok /tmp/stress/*.out | wc -l`: did all twelve get an answer? A
   serialization bug shows up here as a hang, not a wrong answer.
-- `figaro ls -a` — twelve DISTINCT ids, each with its own mantra and 2 messages.
+- `figaro ls -a`: twelve DISTINCT ids, each with its own mantra and 2 messages.
   A shared-state bug shows up as a repeated mantra or a missing row.
-- `figaro state --id <one>` — the form is materialized: `-O` names became keys,
+- `figaro state --id <one>`: the form is materialized: `-O` names became keys,
   and `layers` is not on the board.
 - `awk '/VmRSS/{print $2}' /proc/$(cat $FIGARO_RUNTIME_DIR/angelus.pid)/status`
-  — the daemon's own footprint, not the harness's.
+: the daemon's own footprint, not the harness's.
 
 Measured on the form branch: 41.7s wall for twelve, 12/12 answered, 56 MB
 daemon RSS, 1.5 MB store. Isolate all three of `FIGARO_CONFIG_DIR`,
-`FIGARO_STATE_DIR` and `FIGARO_RUNTIME_DIR` or the run finds the user's daemon —
+`FIGARO_STATE_DIR` and `FIGARO_RUNTIME_DIR` or the run finds the user's daemon -
 an interactive shell's own prompt integration will start one for you.

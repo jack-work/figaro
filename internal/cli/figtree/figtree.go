@@ -1,9 +1,9 @@
 // Package figtree renders a tree of records as an indented table: one row per
 // node, tree glyphs in the first cell, named fields in the columns after it.
 //
-// It exists because two callers need the same picture of a hierarchy — `figaro
+// It exists because two callers need the same picture of a hierarchy: `figaro
 // ls` drawing the aria forest, and an outfit layer closure explaining which
-// layer could not be found — and a tree walker copied twice is a tree walker
+// layer could not be found, and a tree walker copied twice is a tree walker
 // that will disagree with itself.
 //
 // Colour is data here, not code. A caller supplies FieldColors: "look at this
@@ -33,7 +33,7 @@ type Node struct {
 	Label string
 
 	// Fields are the node's named values, keyed as the Columns and
-	// FieldColors name them. Nil is legal — a missing field reads as "".
+	// FieldColors name them. Nil is legal, a missing field reads as "".
 	Fields map[string]string
 
 	Children []*Node
@@ -64,9 +64,20 @@ type Column struct {
 // Tree is a whole renderable picture: what to walk, what to print, how to
 // paint it. Columns nil renders the bare tree with no header.
 type Tree struct {
-	Roots   []*Node
-	Columns []Column
-	Colors  []FieldColor
+	Roots       []*Node
+	Columns     []Column
+	Colors      []FieldColor
+	Backgrounds []RowBackground
+}
+
+// RowBackground washes an ENTIRE row: glyphs, label, every padded cell,
+// through to the right edge: with a raw SGR sequence when the watched
+// field holds the value. figaro uses it to give unbound-form rows the
+// same wash the transcript's node selection uses, one shared token.
+type RowBackground struct {
+	Field string
+	Value string
+	Seq   string
 }
 
 // Row is one flattened node. Branch/Marker/Label are kept apart so a caller
@@ -79,10 +90,14 @@ type Row struct {
 
 	// Color is the role resolved from the Tree's FieldColors, "" for none.
 	Color string
+
+	// Background is the raw SGR wash resolved from the Tree's
+	// Backgrounds, "" for none. Applied by RenderRows over the whole line.
+	Background string
 }
 
 // Cell is the tree cell: branch glyphs, marker, then the label painted with
-// Color. Only the label is painted — colouring the glyphs would make the shape
+// Color. Only the label is painted: colouring the glyphs would make the shape
 // of the tree compete with the meaning of its rows.
 func (r Row) Cell() string {
 	label := r.Label
@@ -115,11 +130,12 @@ func (t Tree) Rows() []Row {
 			}
 		}
 		rows = append(rows, Row{
-			Branch: branch,
-			Marker: n.Marker,
-			Label:  n.Label,
-			Fields: n.Fields,
-			Color:  t.colorOf(n),
+			Branch:     branch,
+			Marker:     n.Marker,
+			Label:      n.Label,
+			Fields:     n.Fields,
+			Color:      t.colorOf(n),
+			Background: t.backgroundOf(n),
 		})
 		childPrefix := prefix
 		if !isRoot {
@@ -137,6 +153,16 @@ func (t Tree) Rows() []Row {
 		walk(r, "", true, true)
 	}
 	return rows
+}
+
+// backgroundOf resolves a node's row wash: first matching rule wins.
+func (t Tree) backgroundOf(n *Node) string {
+	for _, b := range t.Backgrounds {
+		if n.Fields[b.Field] == b.Value {
+			return b.Seq
+		}
+	}
+	return ""
 }
 
 // colorOf resolves a node's role: first FieldColor with a matching rule wins.
@@ -167,13 +193,13 @@ func (t Tree) Render(width int) string {
 	return RenderRows(t.Rows(), t.Columns, width)
 }
 
-// RenderRows lays out rows a caller has already flattened — and possibly
+// RenderRows lays out rows a caller has already flattened, and possibly
 // filtered or truncated, which is why this is not folded into Render.
 func RenderRows(rows []Row, columns []Column, width int) string {
 	if len(columns) == 0 {
 		var out bytes.Buffer
 		for _, r := range rows {
-			fmt.Fprintln(&out, clip(r.Cell(), width))
+			fmt.Fprintln(&out, washRow(clip(r.Cell(), width), r.Background))
 		}
 		return out.String()
 	}
@@ -206,7 +232,7 @@ func RenderRows(rows []Row, columns []Column, width int) string {
 	}
 
 	var out bytes.Buffer
-	for _, cells := range grid {
+	for rowIdx, cells := range grid {
 		var line strings.Builder
 		for i, cell := range cells {
 			line.WriteString(cell)
@@ -216,9 +242,26 @@ func RenderRows(rows []Row, columns []Column, width int) string {
 				line.WriteString(strings.Repeat(" ", widths[i]-term.VisibleLen(cell)+padding))
 			}
 		}
-		fmt.Fprintln(&out, clip(line.String(), width))
+		bg := ""
+		if rowIdx > 0 {
+			bg = rows[rowIdx-1].Background
+		}
+		fmt.Fprintln(&out, washRow(clip(line.String(), width), bg))
 	}
 	return out.String()
+}
+
+// washRow wraps a rendered line in a background sequence, re-arming the
+// wash after any embedded reset (the idiom the transcript's selection
+// wash established) and painting to the right edge with EL so the row
+// reads as one band, not a ragged run of cells.
+func washRow(line, bg string) string {
+	if bg == "" || line == "" {
+		return line
+	}
+	const reset = "\x1b[0m"
+	line = strings.ReplaceAll(line, reset, reset+bg)
+	return bg + line + "\x1b[K" + reset
 }
 
 // padding is the gap between columns, matching what `figaro ls` printed when

@@ -11,7 +11,7 @@ import (
 // Behavioural equivalence at the input level: what the read loop does with a
 // key, in every mode, must be what it did before the keymap.
 //
-// Generated the same way as the pager oracle in keymap_equiv_test.go — by
+// Generated the same way as the pager oracle in keymap_equiv_test.go: by
 // running 45bee38 over every byte, every navigation encoding and a handful of
 // CSI-u chords in five starting states, and recording everything a keystroke
 // can move: the pager, the verbosity and listen flags, the clipboard, the
@@ -23,7 +23,7 @@ import (
 // block was removed (internal/render, trimBlankEdges): a message lost a row,
 // so the ROW-budgeted pager window holds 18 of the fixture's messages instead
 // of 17 and the bottom of the content moved. Nothing else in the signature
-// moved — every other column is byte-identical to 45bee38.
+// moved: every other column is byte-identical to 45bee38.
 //
 // The 0x1b row was rebased a second time, and this one is a deliberate
 // BEHAVIOUR change rather than a re-measurement. 45bee38 held a bare Esc back
@@ -31,14 +31,14 @@ import (
 // and ldmouse.Parse claimed the byte as a possible split `\x1b[<…M`. So the
 // oracle was certifying a DEAD ESCAPE KEY: it did not clear a selection, did
 // not close a panel (h stayed true), and did not cancel a search (q stayed
-// "ms") — none of which is what keymap.go's table says Esc does. Esc now
+// "ms"): none of which is what keymap.go's table says Esc does. Esc now
 // dispatches on its own read, so all four rows lose rest="\x1b" and gain the
 // effect the table promised. See mouse.Parse for the rule and its cost.
 //
 // The off= column was rebased a THIRD time, by sepRows: the separator between
 // two messages lost its trailing blank (transcript_index.go), so every message
 // boundary is one row shorter. This is a re-measurement, not a behaviour
-// change — only off= moved, in every row, and fol=, the selection identity and
+// change: only off= moved, in every row, and fol=, the selection identity and
 // every other column are untouched.
 //
 // It did not move UNIFORMLY, and the exception is worth stating because it
@@ -48,17 +48,17 @@ import (
 // budgeted in ROWS, not messages: verbose tool inputs used to push the window
 // down to 17 messages, and with a shorter separator the same budget now holds
 // 18. So the window gained a whole message and the line space grew. Measured,
-// not assumed — heldWindow() reports 17 messages before and 18 after, for the
+// not assumed: heldWindow() reports 17 messages before and 18 after, for the
 // same fixture and the same budget.
 //
 // The off= column was rebased a FIFTH time, by exactly ONE row and only in the
 // 19 states where the HELP PANEL IS SHOWING (h=true). The '?' panel grew a
 // single generated line documenting the mouse gestures (click to select, click
-// again to expand, wheel to scroll — see transcript_mouse.go's mouseHelpRows),
+// again to expand, wheel to scroll: see transcript_mouse.go's mouseHelpRows),
 // and the panel is drawn inside the frame: one more panel row is one fewer body
 // row, and a FOLLOWING viewport's offset is correspondingly one higher. This is
 // the same mechanism as the FOURTH-rebase note about a keymap-generated panel
-// row, and it is a re-measurement, not a behaviour change — h=true is the only
+// row, and it is a re-measurement, not a behaviour change: h=true is the only
 // predicate that selects the moved rows, no other column moved anywhere, and the
 // 19 were patched individually from the oracle's own report rather than by a
 // blanket rule over every h=true literal (a blanket bump moved rows the panel
@@ -74,7 +74,7 @@ import (
 //
 // Those keys open the pager AND move the node selection in one press. The
 // pager used to open on a COPY of the client's closed tail taken at enter()
-// — and in this fixture the catch-up read that fills the client lands after
+//, and in this fixture the catch-up read that fills the client lands after
 // that copy is taken, so ^N found an empty window, did nothing, and left the
 // pager following. It took a frame for the window to catch up, and only the
 // SECOND ^N selected anything. The oracle was certifying that dead first
@@ -278,7 +278,7 @@ func inputNavSeq(n navKey) string {
 //     the tail (pagerTail), and following does not arm the newer prefetch. That
 //     is the documented live-padding behaviour, reached now and not before.
 //
-// The off= column was rebased a FOURTH time, and only on the ^O rows — the
+// The off= column was rebased a FOURTH time, and only on the ^O rows: the
 // eight cells (0x0f and csiu ^o, in each of the four states that have them)
 // where the signature is taken with verbosity ON. Ctrl-O now also draws one
 // dim coordinate row above every rendered node (transcript_coords.go), so a
@@ -294,7 +294,7 @@ func inputNavSeq(n navKey) string {
 //     nodes = 72 coordinate rows, exactly the delta. (panel starts 20 rows
 //     lower for its open panel, hence 791 -> 863; the delta is the same 72.)
 //   - from incipit: 771 -> 745, -26. There Ctrl-O OPENS the pager, so the
-//     window is built cold by resetToTail — and that window is budgeted in
+//     window is built cold by resetToTail, and that window is budgeted in
 //     ROWS, not messages. Taller messages buy fewer of them: 18 messages /
 //     808 rows before, 16 / 782 after. This is the same budget effect the
 //     sepRows note above records, running the other way: there the separator
@@ -303,7 +303,7 @@ func inputNavSeq(n navKey) string {
 // Regenerated a FIFTH time, for the ':' coordinate jump. Three classes,
 // diffed cell by cell against the previous literal before installing:
 //
-//   - EVERY expectation gained the suffix ` jmp=false jq=""` — the signature
+//   - EVERY expectation gained the suffix ` jmp=false jq=""`: the signature
 //     grew the jump box's two columns.
 //   - the three `0x3a` cells (transcript, transcript+sel, panel) report
 //     `jmp=true` and NOTHING else moved. ':' inside the search box is still
@@ -330,7 +330,7 @@ func inputNavSeq(n navKey) string {
 //     restoreViewportAnchor); it is new only in that no round trip is needed.
 //   - 0x0a / 0x0d in the "jump" state: `:12` now LANDS (off=306, sel=true)
 //     where it used to give up and restore the reader (off=753, fol=true). The
-//     probe's client holds all 120 turns, so turn 12 was never missing — the
+//     probe's client holds all 120 turns, so turn 12 was never missing: the
 //     old pager just could not see it, because its window was three fetched
 //     pages wide and the store was not the window.
 //
@@ -352,7 +352,7 @@ func inputNavSeq(n navKey) string {
 //   - -8 / -15 / -2: the same shrink measured in the verbose (^O) and
 //     cold-selection states, where the window is built from a different seed.
 //   - +28 (nav:Home) and +102 (the ':12' jump landing): these are budgeted in
-//     ROWS, so shorter messages buy MORE of them — the window reaches further
+//     ROWS, so shorter messages buy MORE of them: the window reaches further
 //     back and the row a landed anchor sits on has more history above it. Same
 //     mechanism as the sepRows note above, running the other way.
 //

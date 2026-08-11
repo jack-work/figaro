@@ -236,12 +236,12 @@ func (p *responsesProvider) acceptAssistantProjection(lt uint64, payload []json.
 	state := append([]json.RawMessage(nil), p.projection.State...)
 	state = append(state, payload...)
 	p.projection = &provider.IncrementalProjection[[]json.RawMessage]{
-		State:            state,
-		Form:             p.projection.Form,
-		Fingerprint:      p.projection.Fingerprint,
-		Entries:          p.projection.Entries + 1,
-		LastLT:           lt,
-		LastChalkVersion: p.projection.LastChalkVersion,
+		State:           state,
+		Form:            p.projection.Form,
+		Fingerprint:     p.projection.Fingerprint,
+		Entries:         p.projection.Entries + 1,
+		LastLT:          lt,
+		LastFormVersion: p.projection.LastFormVersion,
 	}
 }
 
@@ -330,7 +330,7 @@ func contextSizeForLog(log store.Log[message.Message]) (int, bool) {
 
 	// Cold path: no usage anywhere in the last 64 entries, so find the last
 	// one that has any. Read() rather than a zero-copy snapshot, deliberately
-	// — under a windowed cache the prefix may not be resident at all, and a
+	//: under a windowed cache the prefix may not be resident at all, and a
 	// rare path should pay a re-read instead of forcing the whole log to stay
 	// in memory for the common one.
 	entries := log.Read()
@@ -420,12 +420,24 @@ func (p *responsesProvider) inputFor(in provider.SendInput) ([]json.RawMessage, 
 		Log:         in.FigLog,
 		Cache:       cache,
 		Form:        in.Form,
+		Studies:     in.Studies,
 		Previous:    previous,
 		Fingerprint: fingerprint,
 		Encode: func(msg message.Message, snap form.Snapshot) ([]json.RawMessage, error) {
 			encoded, err := encodeResponseMessage(msg, msg.Patches, snap, templates)
 			if err != nil {
 				return nil, fmt.Errorf("copilot responses: encode message %d: %w", msg.LogicalTime, err)
+			}
+			// The observed set folds in beside the board: each study
+			// reminder becomes one input_text message part.
+			for _, text := range provider.StudyReminderTexts(msg) {
+				part, merr := json.Marshal(map[string]any{
+					"role":    "user",
+					"content": []map[string]any{{"type": "input_text", "text": text}},
+				})
+				if merr == nil {
+					encoded = append(encoded, part)
+				}
 			}
 			return encoded, nil
 		},
@@ -705,7 +717,7 @@ type responseContent struct {
 // breakpoint is ADDITIVE, leaving OpenAI's automatic breakpoints in place,
 // so a bad placement costs nothing. Setting the mode disables the automatic
 // ones, and then a single misplaced mark forfeits the whole prefix on every
-// turn — at the 1.25x cache-write rate GPT-5.6 introduced.
+// turn, at the 1.25x cache-write rate GPT-5.6 introduced.
 type promptCacheBreakpoint struct {
 	Type string `json:"type"`
 }
@@ -1242,8 +1254,8 @@ func toolImageCaption(c message.Content) string {
 // last completed exchange, and reports how many it placed.
 //
 // Placement is deliberately BEHIND the newest turn. GPT-5.6 already carries
-// an implicit breakpoint at the latest user/tool message, and — unlike
-// earlier models — it does NOT fall back to the longest matching unmarked
+// an implicit breakpoint at the latest user/tool message, and: unlike
+// earlier models: it does NOT fall back to the longest matching unmarked
 // prefix when that fails. So a changed tail returns cached_tokens=0 even
 // though thousands of leading tokens are identical. A mark on the last
 // assistant item is a boundary that existed, byte for byte, on the previous
@@ -1290,8 +1302,8 @@ func markPromptCacheBreakpoint(input []json.RawMessage) ([]json.RawMessage, int)
 
 // logPromptCacheEconomics records what the cache actually did.
 //
-// This route speaks websocket, so wirelog — which wraps an http
-// RoundTripper — cannot see it and FIGARO_WIRE_DIR yields nothing here. The
+// This route speaks websocket, so wirelog: which wraps an http
+// RoundTripper: cannot see it and FIGARO_WIRE_DIR yields nothing here. The
 // usage numbers are the only instrument available, and on GPT-5.6 they are
 // the ones that matter: writes are billed at 1.25x the uncached rate, so a
 // breakpoint that re-writes every turn costs more than not caching at all.

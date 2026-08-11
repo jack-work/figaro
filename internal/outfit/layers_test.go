@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/outfit"
 )
 
@@ -69,7 +70,7 @@ func TestSharedLayerAppliesAtEachPosition(t *testing.T) {
 
 // The bug this replaces: a missing layer silently discarded the whole patch,
 // so a typo looked like an empty outfit and, downstream, like a missing
-// provider — which sent the user to the first-run wizard.
+// provider: which sent the user to the first-run wizard.
 func TestMissingLayerIsAnErrorCarryingTheClosure(t *testing.T) {
 	dir := t.TempDir()
 	writeOutfit(t, dir, "top", "layers = [\"present\", \"absent\"]\n[system]\nprovider = \"anthropic\"\n")
@@ -137,7 +138,7 @@ func TestCycleInLayersIsReported(t *testing.T) {
 }
 
 // `source` was the single-parent spelling. Ignoring it would flatten it into a
-// form key named "source" — the silent kind of wrong — and an array-valued
+// form key named "source": the silent kind of wrong, and an array-valued
 // `source` used to be dropped without a word.
 func TestSourceIsRejectedRatherThanIgnored(t *testing.T) {
 	dir := t.TempDir()
@@ -165,48 +166,67 @@ func TestMalformedLayersIsReported(t *testing.T) {
 	}
 }
 
-// A literal's own keys beat the layers it names, and the directive never leaks
-// onto a board.
-func TestMaterializePutsLayersUnderTheLiteral(t *testing.T) {
+// The patch's own keys beat the outfits named beside them, and no directive
+// ever reaches a board: the two axes are parsed apart and folded in one call.
+func TestDressPutsOutfitsUnderThePatch(t *testing.T) {
 	dir := t.TempDir()
 	writeOutfit(t, dir, "base", "[system]\nmodel = \"base-model\"\ncredo = \"base\"\n")
 	o := outfit.New(dir)
 
-	asked, err := outfit.ParsePatch(`base,{"system.model":"inline-model","ttl":"1h"}`)
+	names, err := outfit.ParseNames("base")
 	require.NoError(t, err)
-	patch, err := o.Materialize(asked, "")
+	asked, err := outfit.ParseSet(`{"system.model":"inline-model","ttl":"1h"}`)
+	require.NoError(t, err)
+	patch, err := o.Dress(names, asked, "")
 	require.NoError(t, err)
 	assert.Equal(t, `"inline-model"`, string(patch.Set["system.model"]))
 	assert.Equal(t, `"base"`, string(patch.Set["system.credo"]))
 	assert.Equal(t, `"1h"`, string(patch.Set["ttl"]))
 	assert.NotContains(t, patch.Set, "layers")
 
-	// layers declared inside a literal resolve like any other.
-	asked, err = outfit.ParsePatch(`{"layers":["base"],"ttl":"2h"}`)
+	// `layers` written into a PATCH is data now, not a directive: it is
+	// stored as typed and resolves nothing. The only place the key is
+	// respected is the unmarshal of an outfit FILE.
+	literal, err := outfit.ParseSet(`{"layers":["base"],"ttl":"2h"}`)
 	require.NoError(t, err)
-	patch, err = o.Materialize(asked, "")
+	patch, err = o.Dress(nil, literal, "")
 	require.NoError(t, err)
-	assert.Equal(t, `"base-model"`, string(patch.Set["system.model"]))
-	assert.Equal(t, `"2h"`, string(patch.Set["ttl"]))
+	assert.NotContains(t, patch.Set, "system.model")
+	assert.Equal(t, `["base"]`, string(patch.Set["layers"]))
 
-	// A missing layer is a broken reference, always.
-	asked, err = outfit.ParsePatch(`{"layers":["nope"]}`)
-	require.NoError(t, err)
-	_, err = o.Materialize(asked, "")
+	// A missing outfit is a broken reference, always.
+	_, err = o.Dress([]string{"nope"}, form.Patch{}, "")
 	var missing *outfit.MissingError
 	require.True(t, errors.As(err, &missing), "want MissingError, got %v", err)
 
 	// `default` is the one lenient name: unset folds nothing, so the first-run
 	// flow can notice a missing provider instead of a missing file.
-	asked, err = outfit.ParsePatch(`default`)
-	require.NoError(t, err)
-	patch, err = o.Materialize(asked, "")
+	patch, err = o.Dress([]string{"default"}, form.Patch{}, "")
 	require.NoError(t, err)
 	assert.True(t, patch.IsEmpty())
 
-	patch, err = o.Materialize(asked, "base")
+	patch, err = o.Dress([]string{"default"}, form.Patch{}, "base")
 	require.NoError(t, err)
 	assert.Equal(t, `"base-model"`, string(patch.Set["system.model"]))
+}
+
+// The grammar refuses the other axis's terms, naming the flag that takes them.
+func TestGrammarKeepsTheAxesApart(t *testing.T) {
+	_, err := outfit.ParseNames("ttl=1h")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--set")
+
+	_, err = outfit.ParseNames(`{"a":1}`)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--set")
+
+	_, err = outfit.ParseSet("sonn5")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "-O sonn5")
+
+	paths, err := outfit.ParseDelete("a.b, mantra")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"a.b", "mantra"}, paths)
 }
 
 // One Outfitter serves every aria in the daemon, and a fold reads files and
@@ -217,10 +237,12 @@ func TestConcurrentFoldsAgree(t *testing.T) {
 	writeOutfit(t, dir, "base", "[system]\nmodel = \"base-model\"\n")
 	writeOutfit(t, dir, "top", "layers = [\"base\"]\n[system]\ncredo = \"top\"\n")
 	o := outfit.New(dir)
-	asked, err := outfit.ParsePatch(`top,base,{"layers":["top"],"ttl":"1h"}`)
+	names, err := outfit.ParseNames("top,base")
+	require.NoError(t, err)
+	asked, err := outfit.ParseSet(`{"ttl":"1h"}`)
 	require.NoError(t, err)
 
-	want, err := o.Materialize(asked, "")
+	want, err := o.Dress(names, asked, "")
 	require.NoError(t, err)
 
 	var wg sync.WaitGroup
@@ -228,7 +250,7 @@ func TestConcurrentFoldsAgree(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			got, err := o.Materialize(asked, "")
+			got, err := o.Dress(names, asked, "")
 			assert.NoError(t, err)
 			assert.Equal(t, len(want.Set), len(got.Set))
 			for k, v := range want.Set {
@@ -276,7 +298,7 @@ func TestLoaderRefusesPathsOutsideTheConfigDir(t *testing.T) {
 			}
 			if err == nil {
 				// An absolute path is re-rooted rather than refused, so it can
-				// only ever name something inside the config dir — which here
+				// only ever name something inside the config dir: which here
 				// does not exist, and the open error is the report.
 				assert.Empty(t, patch.Set)
 			}

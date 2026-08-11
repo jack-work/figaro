@@ -12,11 +12,11 @@ not against a conversation.
 
 The client's model of a conversation is a list plus a pile of booleans:
 
-- `aria.Client.closed []Message` — one implicit contiguous run
-- `transcript.pages []transcriptPage` — a **second copy** of the same messages
-- `checkOlder` / `checkNewer` / `noMoreOlder` — one bit per edge, standing in
+- `aria.Client.closed []Message`: one implicit contiguous run
+- `transcript.pages []transcriptPage`, a **second copy** of the same messages
+- `checkOlder` / `checkNewer` / `noMoreOlder`: one bit per edge, standing in
   for "is there more, and where"
-- `heldOpen *aria.Message` — a frozen snapshot, needed only because the two
+- `heldOpen *aria.Message`, a frozen snapshot, needed only because the two
   copies disagree about what is closed
 
 Four consequences, all of which we have hit:
@@ -50,7 +50,7 @@ unchanged.
 
 `aria.Anchor{Turn, Node}` already exists and is the address: turn ids ascend,
 node ids are positional within a turn (`Nodes[i].ID == From+i`), nothing is
-ever renumbered. LT is metadata and MUST NOT appear here — a tool node spans
+ever renumbered. LT is metadata and MUST NOT appear here, a tool node spans
 two LTs and one LT can carry both a tool result and a steer.
 
 Ordering is lexicographic on `(Turn, Node)`. Implement `Anchor.Less`,
@@ -63,12 +63,12 @@ was wrong**, and phase 1 corrected it.
 
 `Next()` cannot cross a turn boundary. An `Anchor` does not encode its turn's
 length, so `(1,11)` and `(2,0)` are neighbours **only if turn 1 has exactly
-twelve nodes** — a fact the anchor does not carry. Held strictly, no two turns
+twelve nodes**, a fact the anchor does not carry. Held strictly, no two turns
 ever coalesce, every turn becomes its own range, and the degenerate case this
 design promises ("one range forever, no gap ever rendered") never happens.
 
 So the store records a turn's **extent** when something authoritative states it
-— a sealed part with `!ClippedTail`, or the streamed buffer — and **answers
+- a sealed part with `!ClippedTail`, or the streamed buffer, and **answers
 false when it does not know**.
 
 > A false gap is honest. A false adjacency is the bug this whole design exists
@@ -79,7 +79,7 @@ to one range) and `TestGapNeedsATurnExtent` (the refusal to guess).
 
 Two consequences worth stating:
 
-- A message with **no nodes** — an inquiry whose turn produced nothing — still
+- A message with **no nodes**, an inquiry whose turn produced nothing: still
   occupies one anchor, treated as a phantom node 0. It is a real element the
   client materializes, so a range must be able to say it holds it.
 - `Store.more` is deliberately NOT populated from a pushed page. A push's `More`
@@ -102,7 +102,7 @@ type Range struct {
 type Store struct {
     ranges  []Range   // sorted by From; non-overlapping; NEVER adjacent
     more    More      // is there anything beyond the outermost edges
-    open    *openTurn // the ONE streaming suffix — unchanged from today
+    open    *openTurn // the ONE streaming suffix: unchanged from today
     pending []Pending // submitted, not yet classified by the drain
 }
 ```
@@ -119,7 +119,7 @@ type Store struct {
    INTO the head range, not held in both.
 
 Invariant 3 is the one that matters. The bug class this design exists to
-prevent is **fabricated adjacency** — returning a flat `[]Message` spanning a
+prevent is **fabricated adjacency**: returning a flat `[]Message` spanning a
 hole, so the caller believes two messages are neighbours when a hundred turns
 sit between them. `Message`'s own doc records three separate bugs from
 mistaking `Turn` for an identity; this is the same disease at range scale.
@@ -148,7 +148,7 @@ A caller that does not care about gaps writes:
 for _, seg := range store.Query(a, b) { use(seg.Msgs) }
 ```
 
-…ignores `.Gap`, and is **never lied to** — it simply gets less. A caller that
+…ignores `.Gap`, and is **never lied to**: it simply gets less. A caller that
 needs completeness calls `Ensure` first. Gap-blind by default, gap-aware by
 choice. There is no third mode and no flag.
 
@@ -166,7 +166,7 @@ choice. There is no third mode and no flag.
 | evict | drop or trim a range; **a gap appears** |
 
 Eviction and never-fetched are the same state. That is not a coincidence to be
-tolerated — it is the point. Retention stops being a special case and becomes
+tolerated: it is the point. Retention stops being a special case and becomes
 "keep the ranges nearest the viewport."
 
 ## Gaps and rendering
@@ -199,7 +199,7 @@ Consequences to accept deliberately:
 - mid-history eviction (impossible today; trim is bottom-only)
 - a jump to an arbitrary anchor (`fig show <id>:<turn>`, a permalink)
 - a search landing far from the viewport
-- `ClippedHead` — **already on the wire**; today the client papers over it by
+- `ClippedHead`: **already on the wire**; today the client papers over it by
   flooring `emitted`
 - reconnect where catch-up cannot span the missing interval in budget
 
@@ -214,7 +214,7 @@ the migration story: correct before it is useful.
 
 ```go
 // Pending is a prompt that has been submitted but not yet classified by the
-// drain. It has NO server coordinate, because only the drain can assign one —
+// drain. It has NO server coordinate, because only the drain can assign one -
 // it alone knows whether a turn was in flight when the prompt came off the
 // queue.
 type Pending struct {
@@ -226,8 +226,8 @@ type Pending struct {
 Pinned after the head range, rendered in its own style. On acknowledgement it
 resolves exactly one of two ways:
 
-- **inquiry** — acquires a turn id, merges into the head range
-- **steer** — becomes a node inside `open`
+- **inquiry**, acquires a turn id, merges into the head range
+- **steer**: becomes a node inside `open`
 
 Both are "acquire a coordinate and move". Neither is a special case of the
 other, and the client MUST NOT guess which will happen: a prompt sent while a
@@ -249,7 +249,7 @@ are joining a turn already in flight (orientation). State can race; the event
 cannot. This is the same inquiry-vs-steer split the drain makes, observed from
 the stream.
 
-Seeding is not a second fold. In a range store, seeding is `merge(range)` —
+Seeding is not a second fold. In a range store, seeding is `merge(range)` -
 there is no event stream to double-emit, which is what made the old
 `OnClosed`-fires-and-`Freeze`-prints trap possible.
 
@@ -267,11 +267,11 @@ Order, and why:
    `committedW`, `checkOlder/checkNewer/noMoreOlder`. Bug B (the frozen
    detached tail) should DISSOLVE here, not be fixed: with one owner, released
    nodes land in the head range, which IS the window, so there is nothing to
-   freeze. If it does not dissolve, the store is wrong — stop and say so.
+   freeze. If it does not dissolve, the store is wrong: stop and say so.
 
    **Landed as 2a (66cf353, 343927e): the TAIL window is the store's tail.**
    The pager's window at the live tail is the interval `[from, ∞)` into the
-   store, and the open turn is the last thing in it. Bug B did dissolve — it
+   store, and the open turn is the last thing in it. Bug B did dissolve: it
    was not fixed. `heldOpen`, `tailRev` and the pager's second copy of the
    catch-up page (`seed`/`withSeed`/`mergeSeed`) are gone; `aria.Client.Merge`
    is the silent door a fetched page goes through, `Store.TailFrom` derives the
@@ -283,7 +283,7 @@ Order, and why:
    **Remaining as 2a-part-2:** fetched older history still lands in `t.pages`,
    and with it `newer`, `payloadLRU`, `committedW` and the three edge bits.
    The first older page takes the window off the tail, and `openMessage` then
-   goes quiet rather than drawing a snapshot history has run past — which
+   goes quiet rather than drawing a snapshot history has run past: which
    costs one thing that used to work: a selection anchored on the LIVE turn no
    longer survives paging history in. It comes back when `pages` does not
    exist.
@@ -298,7 +298,7 @@ Order, and why:
    worth naming:
 
    - **The armed flags are derived, not remembered.** "Do I want older
-     history" is `wantOlder()` — a search or a jump is walking, or the viewport
+     history" is `wantOlder()`, a search or a jump is walking, or the viewport
      is within `transcriptPrefetchScreens` of the floor. "Is there any" is
      `atAriaFloor()`, which asks the STORE what it holds below the floor and
      the WIRE (`Client.MoreBefore`, set from `Page.More.Before`) what lies
@@ -316,14 +316,14 @@ Order, and why:
    (`Client.ForEachSegment`, the allocation-free mirror of `Query`); everything
    else in the pager stays gap-blind and is simply told less.
 
-   - **A gap is exactly one row**, whatever it hides — `lineEntry.height` is
+   - **A gap is exactly one row**, whatever it hides: `lineEntry.height` is
      the single authority on how tall an entry is, and line space is advanced
      by asking it. (Two authorities is how a hole could be one row in the index
      and twenty-one on screen; the canary for the one-row rule only bit after
      they were merged.)
    - **The sentinel names turns, not rows.** `Gap.Turns` counts the turns the
-     hole swallows WHOLE — an endpoint whose head or tail we still hold is not
-     "not loaded" — and zero is a real answer ("the rest of this turn is not
+     hole swallows WHOLE, an endpoint whose head or tail we still hold is not
+     "not loaded", and zero is a real answer ("the rest of this turn is not
      loaded").
    - **Binding it is the fetch trigger**, at the same `transcriptPrefetchScreens`
      distance the window floor uses, so the sentinel usually never paints. The
@@ -331,7 +331,7 @@ Order, and why:
      because a hole carries no node: `^N`/`^P` step over it, and making it a
      selection endpoint would have to teach the copy path what a hole is.
    - **`Ensure` is real**: `Store.Ensure` for a single-threaded owner,
-     `Client.Ensure` for the concurrent one — the same loop with the fetch
+     `Client.Ensure` for the concurrent one: the same loop with the fetch
      OUTSIDE the lock, so a five-second read never freezes a frame. Both share
      `firstGap` and `fillAt`. It reads at the anchor just PAST the hole so the
      fill lands against what the reader already holds, and it reports
@@ -342,7 +342,7 @@ Order, and why:
      the number a reader navigates by.
 4. **Pending**, and the submitted→committed→acked lifecycle.
 
-## Open questions — decide before coding the affected phase
+## Open questions: decide before coding the affected phase
 
 - **What should `gg` mean?** "Top of what I hold" (today) or "the beginning of
   the aria"? The second needs `Ensure` to be interruptible and

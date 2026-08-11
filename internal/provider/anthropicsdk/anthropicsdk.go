@@ -166,7 +166,7 @@ func (p *Provider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 
 // ContextLimit reports the model's context window: the user's pinned
 // system.max_context_tokens if set, else the window learned from the models
-// endpoint, else the verified static table (0 when unknown). No network I/O —
+// endpoint, else the verified static table (0 when unknown). No network I/O -
 // status surfaces call this.
 func (p *Provider) ContextLimit(model string, snapshot form.Snapshot) int {
 	if model == "" {
@@ -187,7 +187,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if err != nil {
 		return err
 	}
-	projected, err := p.catchUp(in.FigLog, cache, in.Form)
+	projected, err := p.catchUp(in.FigLog, cache, in.Form, in.Studies)
 	if err != nil {
 		return err
 	}
@@ -286,12 +286,12 @@ func (p *Provider) acceptAssistantProjection(lt uint64, encoded []json.RawMessag
 	}
 	state := appendProjectedMessages(p.projection.State, encoded, lt)
 	p.projection = &provider.IncrementalProjection[projectedMessages]{
-		State:            state,
-		Form:             p.projection.Form,
-		Fingerprint:      p.projection.Fingerprint,
-		Entries:          p.projection.Entries + 1,
-		LastLT:           lt,
-		LastChalkVersion: p.projection.LastChalkVersion,
+		State:           state,
+		Form:            p.projection.Form,
+		Fingerprint:     p.projection.Fingerprint,
+		Entries:         p.projection.Entries + 1,
+		LastLT:          lt,
+		LastFormVersion: p.projection.LastFormVersion,
 	}
 }
 

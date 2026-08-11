@@ -11,7 +11,7 @@ import (
 // glamour wraps on word boundaries, so a token longer than the wrap width comes
 // out whole; an unclosed fence ignores the wrap width altogether, overrunning by
 // 11 cells at w=20. Every painter downstream clips, so the overrun never
-// corrupted the screen — it silently ATE THE TAIL of the text that did not fit.
+// corrupted the screen: it silently ATE THE TAIL of the text that did not fit.
 //
 // CANARY (watched): drop hardWrapOverlong from Prose ->
 //
@@ -59,7 +59,7 @@ func longRuns(md string) []string {
 }
 
 // One escape scanner, not two. splitToWidth and cells used a second, sloppier
-// one whose default arm advanced a single byte past the ESC — so a multi-byte
+// one whose default arm advanced a single byte past the ESC: so a multi-byte
 // rune immediately after a bare ESC was cut mid-sequence and the row came back
 // as invalid UTF-8. Unreachable through Prose today, because StripEscapes runs
 // first and removes the ESC; that is precisely why it is worth closing rather

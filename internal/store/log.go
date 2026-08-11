@@ -9,17 +9,23 @@ type Entry[T any] struct {
 	FigaroLT    uint64
 	Payload     T
 	Fingerprint string
-	// ChalkVersion, on IR entries only: how far the form had advanced
+	// FormChannelVersion, on IR entries only: how far the form had advanced
 	// when this turn was written. The board is unkeyed, so a patch carries
 	// no turn; this is the other side of that association, and it rides
 	// along on a record the reader is already holding.
-	ChalkVersion uint64
+	FormChannelVersion uint64
+	// StudyVersions, on IR entries of a STUDYING aria: where each observed
+	// form stood when this record was written, keyed by form id: the
+	// study:-prefixed half of the same cursor stamp FormChannelVersion rides.
+	// The projection derives each member's patch-fold between consecutive
+	// stamps, exactly as it derives the own board's from FormChannelVersion.
+	StudyVersions map[string]uint64
 	// EncodedBytes is the record's on-disk payload size, captured at decode
 	// because that is the one place it is known for free.
 	//
 	// It exists to size the cache. Estimating retained bytes from the decoded
 	// struct means guessing at allocator rounding on every string, slice and
-	// boxed map value — an attempt at that came out 3x low. The encoded size,
+	// boxed map value, an attempt at that came out 3x low. The encoded size,
 	// times a measured inflation factor, is both cheaper and closer: decoded
 	// IR ran 4.0x and 5.3x its encoded bytes on two real arias.
 	EncodedBytes int
@@ -33,7 +39,7 @@ type Entry[T any] struct {
 //
 // Two backing implementations: MemLog (ephemeral) and xwalLog (figwal
 // segments). Translator caches use the same Log interface; they are
-// not independently fork-able — forks ride along with the IR log.
+// not independently fork-able: forks ride along with the IR log.
 type Log[T any] interface {
 	// TODO: Pass direction iota, ascending or descending.
 	Read() []Entry[T]

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# chalkbench.sh — end-to-end chalkboard timing against an ISOLATED daemon.
+# formbench.sh: end-to-end form timing against an ISOLATED daemon.
 #
 # `figaro set` / `unset` / `outfit` / `state` are pure state operations:
 # no LLM round-trip, no tokens, no money. So we can time the real CLI
-# against a real daemon — as long as that daemon is not the user's.
+# against a real daemon, as long as that daemon is not the user's.
 #
 # Everything runs in a fresh temp dir:
 #   FIGARO_RUNTIME_DIR=$TMP/run   FIGARO_STATE_DIR=$TMP/state
@@ -12,7 +12,7 @@
 # refuses to run if those point at the user's live store, tears the
 # daemon down on exit, and removes the temp dir.
 #
-# Usage:  scripts/chalkbench.sh [-O <outfit>] [-k <ops>] [-i <inflate keys>]
+# Usage:  scripts/formbench.sh [-O <outfit>] [-k <ops>] [-i <inflate keys>]
 # Output: a table of milliseconds on stdout.
 
 set -euo pipefail
@@ -32,9 +32,9 @@ while getopts "O:k:i:h" opt; do
   esac
 done
 
-command -v jq >/dev/null || { echo "chalkbench: jq required" >&2; exit 1; }
+command -v jq >/dev/null || { echo "formbench: jq required" >&2; exit 1; }
 
-die() { printf 'chalkbench: %s\n' "$*" >&2; exit 1; }
+die() { printf 'formbench: %s\n' "$*" >&2; exit 1; }
 
 REPO="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 cd "$REPO"
@@ -43,7 +43,7 @@ cd "$REPO"
 REAL_STATE="${HOME}/.local/state/figaro"
 REAL_RUNTIME="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/figaro"
 
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/chalkbench.XXXXXXXX")"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/formbench.XXXXXXXX")"
 export FIGARO_RUNTIME_DIR="$TMP/run"
 export FIGARO_STATE_DIR="$TMP/state"
 # Make the repo's first-party skills visible the way an installed
@@ -72,7 +72,7 @@ cleanup() {
 trap cleanup EXIT
 
 # --- build ------------------------------------------------------------
-echo "chalkbench: building $REPO/cmd/figaro -> $FIG" >&2
+echo "formbench: building $REPO/cmd/figaro -> $FIG" >&2
 # -ldflags stamps the revision: a plain `go build` in a git worktree records no
 # vcs.revision, which silently disables the CLI/daemon build handshake.
 go build -ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-parse --short=12 HEAD)" \
@@ -90,7 +90,7 @@ now_ms() { local t=${EPOCHREALTIME/,/.}; echo "$(( ${t%.*} * 1000 + 10#${t#*.} /
 declare -a ROWS=()
 row() { ROWS+=("$1|$2|$3"); }
 
-# time_block <label> <n> <command...> — runs the command n times with
+# time_block <label> <n> <command...>: runs the command n times with
 # $IDX set to the iteration index. All output is swallowed.
 time_block() {
   local label="$1" n="$2"; shift 2
@@ -150,14 +150,14 @@ time_block "unset (large board)" "$OPS" do_unset
 
 # --- cold replay ------------------------------------------------------
 # Put the daemon to rest and re-read the aria: this pays the full
-# chalkboard channel replay on open.
+# form channel replay on open.
 fig rest >/dev/null 2>&1 || true
 sleep 0.3
 time_block "state -j after daemon restart (cold replay)" 1 do_state
 
 # --- report -----------------------------------------------------------
 printf '\n'
-printf 'chalkbench — isolated daemon, no LLM round-trips\n'
+printf 'formbench: isolated daemon, no LLM round-trips\n'
 printf '  repo:     %s (%s)\n' "$REPO" "$(git rev-parse --short HEAD)"
 printf '  outfit:  %s\n' "$OUTFIT"
 printf '  board:    %s keys / %s bytes  ->  %s keys / %s bytes after inflate\n' \

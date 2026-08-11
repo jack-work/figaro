@@ -94,7 +94,7 @@ func TestDetectChannel_GoInstall(t *testing.T) {
 	}
 	t.Setenv("GOBIN", gobin)
 	// We can't override os.Executable() directly; this test just
-	// exercises DetectChannel's *env* handling for regressions —
+	// exercises DetectChannel's *env* handling for regressions -
 	// the exe path is whatever the test binary is, so the assertion
 	// is: if the test binary lives under $GOBIN, we detect go-install;
 	// otherwise the code falls through, which is also fine.
@@ -110,7 +110,7 @@ func contains(s, sub string) bool {
 	return false
 }
 
-// A dev-stamped current version can't be compared to release tags —
+// A dev-stamped current version can't be compared to release tags -
 // the nudge must stay silent instead of claiming any tag is newer.
 func TestNudge_SilentOnDevVersion(t *testing.T) {
 	info := &Info{Current: "dev-da2abf499885", Latest: "v0.3.0", Available: true, Channel: ChannelNix}

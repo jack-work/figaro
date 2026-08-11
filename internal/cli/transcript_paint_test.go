@@ -21,7 +21,7 @@ import (
 // A cell-accurate VT for proving paint-layer rewrites are invisible.
 //
 // ldrender.FakeTerminal models the grid but drops SGR entirely, so it cannot
-// tell a coloured cell from a plain one — useless for checking a transform
+// tell a coloured cell from a plain one: useless for checking a transform
 // whose whole job is rewriting colour. vtScreen is the smaller, sharper tool:
 // it keeps (rune, style) per cell for the subset of ANSI paint emits, plus the
 // scroll-region operations the shifted-frame path uses.
@@ -131,7 +131,7 @@ func (v *vtScreen) csi(seq string) {
 	body := seq[2 : len(seq)-1]
 	final := seq[len(seq)-1]
 	if strings.HasPrefix(body, "?") {
-		return // DECSET/DECRST (synchronized update, autowrap…) — no cell effect
+		return // DECSET/DECRST (synchronized update, autowrap…): no cell effect
 	}
 	nums := func() []int {
 		var out []int
@@ -546,7 +546,7 @@ func TestTranscriptPaint_UsesScrollRegion(t *testing.T) {
 	tr.scrollBy(-1)
 
 	frame := out.lastFrame()
-	// 1;38: the body runs to the rule while detached — the padding row above it
+	// 1;38: the body runs to the rule while detached: the padding row above it
 	// belongs to live mode alone (see layout).
 	if !strings.Contains(frame, "\x1b[1;38r") {
 		t.Fatalf("no scroll region in frame: %q", frame)
@@ -590,7 +590,7 @@ func TestTranscriptPaint_ScrollRegionOptOut(t *testing.T) {
 
 // TestTranscriptPaint_ScrollWithLiveContent is the case a naive "shift by the
 // offset delta" implementation gets wrong: the viewport moves AND the content
-// under it changes in the same frame. That is the ordinary streaming frame —
+// under it changes in the same frame. That is the ordinary streaming frame -
 // following the tail while a message grows scrolls the body up by however many
 // rows the new text wrapped to, and the last row is new. Detection is from the
 // frames themselves and the diff runs against the predicted post-scroll grid,
@@ -646,7 +646,7 @@ func TestTranscriptPaint_ScrollWithLiveContent(t *testing.T) {
 }
 
 // TestTranscriptPaint_ShiftedFrameProperty drives paint directly with
-// synthetic frames — pure shifts, shifts with edits, unrelated screens — and
+// synthetic frames: pure shifts, shifts with edits, unrelated screens, and
 // asserts the optimized stream and the naive full-repaint stream always agree.
 // This is the safety net for the shift detector's heuristics.
 func TestTranscriptPaint_ShiftedFrameProperty(t *testing.T) {
@@ -717,7 +717,7 @@ func TestTranscriptPaint_ShiftedFrameProperty(t *testing.T) {
 	}
 }
 
-// tailEdit produces a row sharing a long, well-formed prefix with a template —
+// tailEdit produces a row sharing a long, well-formed prefix with a template -
 // the shape of the footer rule (a hundred dashes plus a changing counter) and of
 // a streaming line of prose. Rows always close their style: the property oracle
 // is the literal old painter, whose erase-line inherits a leaked background
@@ -833,8 +833,8 @@ func TestTranscriptPaint_NoBackgroundBleed(t *testing.T) {
 //
 // C asserted byte-identity with paintReference (the pre-optimization painter)
 // because C's change to paint() was pure buffer recycling: same escapes, fewer
-// allocations. B's painter deliberately emits *different* bytes — compacted
-// SGR, suffix updates, scroll regions — so byte-identity is no longer the
+// allocations. B's painter deliberately emits *different* bytes: compacted
+// SGR, suffix updates, scroll regions: so byte-identity is no longer the
 // intent and the assertion is re-stated at the level that still holds: the
 // cells. paintReference is dropped as a duplicate of naivePaint.
 //

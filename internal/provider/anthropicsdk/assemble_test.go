@@ -15,7 +15,7 @@ import (
 //
 // Anthropic buffers each tool parameter value until it is complete by default,
 // which is why a large write argument arrives in one lump at the end.
-// eager_input_streaming turns that off per tool — but the Copilot
+// eager_input_streaming turns that off per tool: but the Copilot
 // Anthropic-dialect endpoint rejects the field with a 400, so a provider that
 // sets NoEagerToolStreaming must win over any form value.
 func TestEagerToolStreamingIsFormGated(t *testing.T) {
@@ -33,7 +33,7 @@ func TestEagerToolStreamingIsFormGated(t *testing.T) {
 	}
 	cases := []struct {
 		name         string
-		chalk        string
+		form         string
 		eagerAllowed bool
 		want         *bool // nil = field omitted
 	}{
@@ -45,9 +45,9 @@ func TestEagerToolStreamingIsFormGated(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			snap := form.Snapshot{}
-			if tc.chalk != "" {
+			if tc.form != "" {
 				snap = form.FromMap(map[string]json.RawMessage{
-					"system.eager_tool_streaming": json.RawMessage(tc.chalk),
+					"system.eager_tool_streaming": json.RawMessage(tc.form),
 				})
 			}
 			got := eagerOf(buildParams(nil, nil, snap, tools, 1024, false, "claude-opus-5", tc.eagerAllowed))

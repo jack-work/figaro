@@ -22,7 +22,7 @@ func histMsg(turn int, from uint64, n int) Message {
 
 // TestTailFromWalksBackward pins the primitive that replaced the pager's
 // tail-window cache: the anchor N messages from the end, without walking the
-// aria. Revert TailFrom to a forward scan and this still passes — what it
+// aria. Revert TailFrom to a forward scan and this still passes: what it
 // really guards is the ANSWER, which resetToTail now recomputes every frame.
 func TestTailFromWalksBackward(t *testing.T) {
 	s := NewStore()
@@ -58,7 +58,7 @@ func TestTailFromCrossesRanges(t *testing.T) {
 		t.Fatalf("a hole between turn 2 and turn 9 is TWO ranges; got %d", got)
 	}
 	if got, ok := s.TailFrom(3); !ok || got != (Anchor{Turn: 2}) {
-		t.Fatalf("TailFrom(3) = %v,%v; want turn 2 — the count spans the hole", got, ok)
+		t.Fatalf("TailFrom(3) = %v,%v; want turn 2: the count spans the hole", got, ok)
 	}
 }
 
@@ -192,7 +192,7 @@ func TestBeforeIsTheReturnTrip(t *testing.T) {
 	if got, n := s.Before(Anchor{Turn: 1}, 4); n != 0 || got != (Anchor{Turn: 1}) {
 		t.Fatalf("Before at the floor = %v, %d; want the anchor itself over 0", got, n)
 	}
-	// It counts MESSAGES across a hole, exactly as TailFrom does — the window's
+	// It counts MESSAGES across a hole, exactly as TailFrom does: the window's
 	// floor may straddle one.
 	s.Evict(Anchor{Turn: 4}, Anchor{Turn: 6, Node: 1})
 	if got, n := s.Before(Anchor{Turn: 8}, 3); n != 3 || got != (Anchor{Turn: 2}) {
@@ -201,7 +201,7 @@ func TestBeforeIsTheReturnTrip(t *testing.T) {
 }
 
 // TestEnsureFillsAHoleThroughItsFetcher: phase 1 left Ensure a stub returning
-// ErrNoFetcher. It is real now — it asks the store what is missing, reads
+// ErrNoFetcher. It is real now: it asks the store what is missing, reads
 // BEFORE the hole's far end (so the fill arrives nearest what we already
 // hold), folds the extents so the run coalesces, and stops when Query says the
 // interval is whole.
@@ -239,8 +239,8 @@ func TestEnsureFillsAHoleThroughItsFetcher(t *testing.T) {
 	if len(reads) == 0 {
 		t.Fatal("Ensure closed the hole without reading")
 	}
-	// It reads at the anchor AFTER the hole — the first thing we DO hold above
-	// it — so the fill lands against the reader's own position first.
+	// It reads at the anchor AFTER the hole: the first thing we DO hold above
+	// it: so the fill lands against the reader's own position first.
 	if reads[0] != (Anchor{Turn: 18}) {
 		t.Fatalf("first fill read at %v; want the anchor just past the hole", reads[0])
 	}

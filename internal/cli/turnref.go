@@ -13,7 +13,7 @@ import (
 // ariaMessages reads an aria's whole log and returns it as messages with their
 // logical times attached. The LT lives on the store entry, not in the payload
 // (it is the frame index, populated on read), so it has to be stitched back on
-// here — every caller that forgets produces messages that silently claim LT 0.
+// here: every caller that forgets produces messages that silently claim LT 0.
 func ariaMessages(ctx context.Context, acli *angelus.Client, ariaID string) ([]message.Message, error) {
 	resp, err := acli.AriaRead(ctx, ariaID, 0, 0)
 	if err != nil {
@@ -34,7 +34,7 @@ func ariaMessages(ctx context.Context, acli *angelus.Client, ariaID string) ([]m
 // MEASURED, not assumed: figwal's doc reads "atIdx must be in (FirstIndex,
 // LastIndex+1]", which sounds like the prefix is [First,atMainLT). It is not.
 // Forking an aria at atMainLT=5 produced a branch that still contained LT 5, so
-// the retained prefix is [First, atMainLT] — INCLUSIVE — and the branch begins
+// the retained prefix is [First, atMainLT]: INCLUSIVE, and the branch begins
 // at atMainLT+1.
 //
 // So the coordinate that lets you REPLACE turn N is the LT just before its

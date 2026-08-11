@@ -34,7 +34,7 @@ func tapePaths(t *testing.T) []string {
 	return paths
 }
 
-// tapePages: the live-render pages in wire order — the catch-up read's
+// tapePages: the live-render pages in wire order: the catch-up read's
 // response (the seed the pager opens on), then every push.
 func tapePages(t *testing.T, path string) (tape.Header, []aria.Page) {
 	t.Helper()
@@ -68,7 +68,7 @@ func tapePages(t *testing.T, path string) (tape.Header, []aria.Page) {
 }
 
 // replayTape renders every page at the recorded geometry, calling frame after
-// each — the fixture the assertions share.
+// each: the fixture the assertions share.
 func replayTape(t *testing.T, path string, frame func(tr *transcript, i int)) {
 	t.Helper()
 	h, pages := tapePages(t, path)
@@ -91,7 +91,7 @@ func replayTape(t *testing.T, path string, frame func(tr *transcript, i int)) {
 // TestTapeReplayKeepsTheWindowHonest: while following, the retained row total
 // may only GROW. The window is anchored at the newest message and history is
 // only added behind it, so a total that falls has dropped rows the reader can
-// still scroll to — and one that falls and rises is the pager arguing with
+// still scroll to, and one that falls and rises is the pager arguing with
 // itself, which is the range row that wavered between 1043-1072/1072+ and
 // 546-575/575+ for a whole turn on 2026-08-01.
 //

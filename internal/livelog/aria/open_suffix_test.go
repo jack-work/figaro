@@ -12,7 +12,7 @@ import (
 // agent's header."
 //
 // Open() and View() disobeyed it, handing back the whole node slice. The
-// transcript asks Open() every frame, so the pager printed the prompt TWICE —
+// transcript asks Open() every frame, so the pager printed the prompt TWICE -
 // once under its own voice and again under the agent's, because turnRole of the
 // whole slice is the agent. That is a user-visible duplication of the question
 // they just asked.
@@ -35,7 +35,7 @@ func TestOpenAndViewCarryOnlyTheSuffix(t *testing.T) {
 			t.Errorf("%s: From = %d, want 1 (the suffix offset)", name, got.From)
 		}
 		if len(got.Nodes) != 1 {
-			t.Fatalf("%s: %d nodes, want only the suffix — the prompt already closed",
+			t.Fatalf("%s: %d nodes, want only the suffix: the prompt already closed",
 				name, len(got.Nodes))
 		}
 		if got.Nodes[0].Markdown != "the answer" {

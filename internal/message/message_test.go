@@ -59,8 +59,8 @@ func TestMessage_Roundtrip_WithPatches(t *testing.T) {
 }
 
 // TestMessage_StateOnlyTic verifies that a user-role Message carrying
-// only Patches (no Content) — e.g. the first-turn env-var seed or a
-// `figaro set` — round-trips correctly.
+// only Patches (no Content): e.g. the first-turn env-var seed or a
+// `figaro set`: round-trips correctly.
 func TestMessage_StateOnlyTic(t *testing.T) {
 	tic := message.Message{
 		Role:        message.RoleInput,
@@ -90,7 +90,7 @@ func TestMessage_StateOnlyTic(t *testing.T) {
 	assert.Equal(t, json.RawMessage(`"you are figaro"`), decoded.Patches[0].Set["system.credo"])
 }
 
-// TestPatch_AliasIdentity verifies the type-alias contract — a value
+// TestPatch_AliasIdentity verifies the type-alias contract, a value
 // constructed as form.Patch is assignable to message.Patch and
 // vice versa.
 func TestPatch_AliasIdentity(t *testing.T) {
@@ -170,7 +170,7 @@ func TestCountMessages_ExcludesCeremonial(t *testing.T) {
 }
 
 // A store written before the input/output rename must keep reading. The
-// mapping lives on the type, so no decode path can forget it — the failure it
+// mapping lives on the type, so no decode path can forget it: the failure it
 // prevents is silent: a turn rendering under the wrong speaker.
 func TestRole_LegacyVocabularyStillDecodes(t *testing.T) {
 	for _, c := range []struct{ on, want string }{

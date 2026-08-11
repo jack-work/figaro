@@ -5,7 +5,7 @@ package cli
 // Its readBefore double sliced history itself and treated `limit` as a COUNT
 // OF PARTS. Production's limit is a BYTE BUDGET, and the double never called
 // aria.Paginate at all. Result: ~30 tests in this file stayed GREEN while the
-// live pager rendered ONE NODE for an 800-node aria — and, separately, a
+// live pager rendered ONE NODE for an 800-node aria, and, separately, a
 // duplicated message at EVERY page boundary went unseen because the double
 // excluded the anchor while production included it. The double did not merely
 // fail to model production; it encoded the OPPOSITE semantics.
@@ -26,7 +26,7 @@ import (
 )
 
 // applyTail folds the opening tail page into the client the way the input
-// loop's cold enter does — including the WIRE'S ANSWER about the beginning
+// loop's cold enter does: including the WIRE'S ANSWER about the beginning
 // (Page.More.Before), which is what the pager reads back as "can I still page
 // older history". Applying the page without it leaves the store believing it
 // holds the whole aria, and no test would ever page.
@@ -37,7 +37,7 @@ func applyTail(client *aria.Client, p aria.Page) {
 
 // pageOnce drives ONE older-history fetch exactly as the input loop does: ask
 // the pager for a cursor, read at it, apply. It reports whether a fetch
-// happened — false means the pager wanted nothing (or grew its window over
+// happened: false means the pager wanted nothing (or grew its window over
 // history the store already held, which costs no read).
 func pageOnce(tr *transcript, history []aria.TurnPart) bool {
 	req, ok := tr.pageCursor()
@@ -52,7 +52,7 @@ func pageOnce(tr *transcript, history []aria.TurnPart) bool {
 // pageToFloor drives the fetch loop until the pager stops asking, with the
 // reader parked at the top of the window throughout (the anchor restore pushes
 // the offset down as the window grows, which is the prefetch distance doing its
-// job — a reader who keeps scrolling keeps asking). Bounded so a bug reports
+// job, a reader who keeps scrolling keeps asking). Bounded so a bug reports
 // instead of hanging.
 func pageToFloor(tr *transcript, history []aria.TurnPart) int {
 	n := 0
@@ -89,14 +89,14 @@ func testSelectionPoint(lt, index int, node livedoc.Node) selectionPoint {
 //
 // Tests want to say "a page of 30", but the wire only understands BYTES. Rather
 // than push that translation into 37 call sites, do it here from the fixture's
-// own node size — so the count stays the test's vocabulary while the paginator
+// own node size: so the count stays the test's vocabulary while the paginator
 // still runs for real.
 // fixtureMemo caches the per-fixture work readBefore would otherwise redo on
 // EVERY page: projecting []TurnPart to []Turn, and measuring the widest
 // marshalled node. Both depend only on `history`, but a search walks the whole
 // aria one page at a time, so recomputing them was O(N^2) json.Marshal calls
-// plus an O(N) copy per page. That is harness cost, not production cost — the
-// server holds its turns and never re-measures the log to serve a page — but it
+// plus an O(N) copy per page. That is harness cost, not production cost: the
+// server holds its turns and never re-measures the log to serve a page: but it
 // made BenchmarkTranscriptPagedSearchMiss/10000 158x slower than the same
 // benchmark on the pre-turn-addressing tree and put /50000 out of reach, which
 // hid the very numbers the acceptance matrix asks for. A one-entry cache keyed
@@ -135,7 +135,7 @@ func readBefore(history []aria.TurnPart, before, parts int) aria.Page {
 	return readBeforeAt(history, aria.Anchor{Turn: uint64(before)}, parts)
 }
 
-// readBeforeAt is readBefore anchored on a NODE as well as a turn — the shape
+// readBeforeAt is readBefore anchored on a NODE as well as a turn: the shape
 // the pager and the selection walk actually ask for.
 func readBeforeAt(history []aria.TurnPart, at aria.Anchor, parts int) aria.Page {
 	if parts <= 0 {
@@ -156,7 +156,7 @@ func nodeBytes(n livedoc.Node) int {
 }
 
 // TestTranscript_PagingOlderKeepsTheLiveTail: scrolling up grows the window
-// DOWNWARD into the one owner, and the head of the window stays where it was —
+// DOWNWARD into the one owner, and the head of the window stays where it was -
 // at the live tail.
 //
 // This is the phase-2a-part-2 falsifier. Before it, the first page of older
@@ -286,7 +286,7 @@ func TestTranscript_ResizeAnchorsPagedMessage(t *testing.T) {
 }
 
 // TestTranscript_SearchFindsAMatchInTheGrownWindow: after paging history in,
-// a search for something in the NEWER part of the window still lands on it —
+// a search for something in the NEWER part of the window still lands on it -
 // the window never left the tail, so there is no "newer" to traverse back to.
 func TestTranscript_SearchFindsAMatchInTheGrownWindow(t *testing.T) {
 	history := transcriptHistory(200)
@@ -332,7 +332,7 @@ func TestTranscript_SelectsOpenNodeAfterLeavingFollow(t *testing.T) {
 
 // TestTranscript_ScrollUpReachesTheFloorAndStops: paging back to the beginning
 // proves the floor (an empty ReadBefore) and the pager then asks for nothing
-// more — the un-latched replacement for noMoreOlder.
+// more: the un-latched replacement for noMoreOlder.
 func TestTranscript_ScrollUpReachesTheFloorAndStops(t *testing.T) {
 	history := transcriptHistory(120)
 	client := aria.NewClient()

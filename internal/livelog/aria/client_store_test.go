@@ -8,7 +8,7 @@ import (
 
 // These assert the shim's side of the phase-1 contract: the store beneath
 // Client holds what the doc says it holds, for the page sequences the client
-// actually sees. The rest of this package's tests — untouched by the swap —
+// actually sees. The rest of this package's tests: untouched by the swap -
 // assert that the OUTSIDE of the client is unchanged.
 
 func liveDelta(turn uint64, from uint64, v int, id uint64, text string) Page {
@@ -78,7 +78,7 @@ func TestReleasedHeadLandsInTheHeadRange(t *testing.T) {
 	}
 }
 
-// TestCatchUpOverlapDoesNotDoubleApply — the same turn arriving twice, once
+// TestCatchUpOverlapDoesNotDoubleApply: the same turn arriving twice, once
 // live and once as history, must not be held twice.
 func TestCatchUpOverlapDoesNotDoubleApply(t *testing.T) {
 	c := NewClient()

@@ -37,7 +37,7 @@ import (
 //
 // WHY THE EXISTING "MATCHES NAIVE REPAINT" TEST CANNOT CATCH THIS, which is the
 // reason this file is separate rather than another step() in that one:
-// naivePaint is a DIFF painter too, and it carries the identical hole —
+// naivePaint is a DIFF painter too, and it carries the identical hole -
 //
 //	var old string
 //	if r < len(prev) { old = prev[r] }
@@ -51,7 +51,7 @@ import (
 // certified broken code.
 // ---------------------------------------------------------------------------
 
-// vtFromRows paints rows into a fresh screen unconditionally — every row, no
+// vtFromRows paints rows into a fresh screen unconditionally: every row, no
 // diff, no skipping. This is the ground truth for "what t.prev claims the
 // terminal shows".
 func vtFromRows(w, h int, rows []string) *vtScreen {
@@ -71,7 +71,7 @@ func vtFromRows(w, h int, rows []string) *vtScreen {
 // resizeGrid changes the screen's DIMENSIONS. It makes no claim about what a
 // terminal does to the surviving cells, because this test never relies on one:
 // every cell is overwritten with a marker immediately afterwards (see
-// scribbleUnknown). That is deliberate — an earlier version of this test modelled
+// scribbleUnknown). That is deliberate, an earlier version of this test modelled
 // "a width change truncates cells in place", which is true of tmux and which the
 // companion tmux case confirmed row-for-row, but a test that has to defend a
 // model of a terminal is a test carrying a liability. BASILIO's formulation is
@@ -101,7 +101,7 @@ func (v *vtScreen) resizeGrid(w, h int) {
 // about the screen. resize() throws that knowledge away, and the contract it
 // takes on by doing so is: CONVERGE TO YOUR OWN BELIEF FROM AN ARBITRARY PRIOR
 // STATE. Scribbling is the arbitrary prior state, and it is strictly harsher than
-// anything a real terminal does — tmux truncates rows on a width change and
+// anything a real terminal does: tmux truncates rows on a width change and
 // slides them on a height shrink, both of which leave SOME cells right by luck.
 // So a painter that converges from a scribble converges from any real resize,
 // which makes this an over-approximation in the safe direction: it cannot pass
@@ -153,7 +153,7 @@ func assertBelief(t *testing.T, vt *vtScreen, prev []string, w, h int, what stri
 // TestTranscriptPaint_ResizeLeavesNoStaleRows is the regression test for the
 // gap-contamination / resize-duplication bug.
 //
-// It asserts the invariant after EVERY frame, not just the final one — painter
+// It asserts the invariant after EVERY frame, not just the final one: painter
 // invariant #5. A transient glitch self-heals on the next op, so a test that
 // only looks at the settled screen cannot see the very thing the user is
 // complaining about: he sees the bad frame, then his own scroll repairs it.
@@ -205,7 +205,7 @@ func TestTranscriptPaint_ResizeLeavesNoStaleRows(t *testing.T) {
 			// terminal's grid changes first (it has already happened by the time
 			// SIGWINCH is delivered), then the application is told. The scribble
 			// stands in for "whatever the terminal left behind", harsher than any
-			// real case — see scribbleUnknown.
+			// real case: see scribbleUnknown.
 			resize := func(nw, nh int) {
 				vt.resizeGrid(nw, nh)
 				vt.scribbleUnknown()
@@ -216,7 +216,7 @@ func TestTranscriptPaint_ResizeLeavesNoStaleRows(t *testing.T) {
 			step("enter")
 
 			// Scroll off the tail into history, so the viewport is full of
-			// message separators — a blank row followed by a rule, per
+			// message separators, a blank row followed by a rule, per
 			// entryLine's `case 0: return ""`.
 			for i := range 30 {
 				tr.scrollBy(-1)
@@ -228,7 +228,7 @@ func TestTranscriptPaint_ResizeLeavesNoStaleRows(t *testing.T) {
 				t.Logf("viewport holds %d intentionally-blank rows at %dx%d", got, w, h)
 			}
 
-			// WIDTH ONLY — no row moves, so nothing but the paint diff can explain
+			// WIDTH ONLY: no row moves, so nothing but the paint diff can explain
 			// a difference.
 			resize(72, h)
 			step("after width shrink 100->72")
@@ -237,7 +237,7 @@ func TestTranscriptPaint_ResizeLeavesNoStaleRows(t *testing.T) {
 			step("after width grow 72->120")
 
 			// HEIGHT, BOTH DIRECTIONS. Growth was never judged by the real-pty
-			// oracle at all — a taller viewport pulls history, the row total moves
+			// oracle at all, a taller viewport pulls history, the row total moves
 			// (1028+ -> 1212+) and the jog lands on a different viewport, so that
 			// oracle correctly refuses to compare. Deterministically it is settled
 			// here, and on pristine code it fails in every direction.
@@ -272,7 +272,7 @@ func TestTranscriptPaint_ResizeLeavesNoStaleRows(t *testing.T) {
 //
 // ALMAVIVA's convergence claim is that gap contamination and resize duplication
 // are one bug, reached only through a resize. His evidence was a real-pty sweep
-// showing scroll / C-n / Enter / C-o clean — but on ONE aria at ONE geometry,
+// showing scroll / C-n / Enter / C-o clean: but on ONE aria at ONE geometry,
 // and it never covered a search jump, the ! or ? panels, gg/G, a wheel burst, or
 // a history page landing mid-view. The user also said gaps are "TYPICALLY fixed
 // upon return", and that word leaves room for a fault the repair gesture does
@@ -283,7 +283,7 @@ func TestTranscriptPaint_ResizeLeavesNoStaleRows(t *testing.T) {
 // frame and the "truth" frame are equally wrong, the diff is empty, and it
 // reports clean. That blind spot is exactly where a second root cause would
 // hide. So this runs in the VT harness instead, where t.prev is absolute ground
-// truth and every frame is checked directly — no comparison against another
+// truth and every frame is checked directly: no comparison against another
 // frame, no blind spot, no resize anywhere in the test.
 //
 // If this ever fails, there is a SECOND bug and it is not BASILIO's.
@@ -325,7 +325,7 @@ func TestTranscriptPaint_GesturesKeepBelief(t *testing.T) {
 			defer func() { t.Logf("belief invariant held across %d frames, no resize anywhere", frames) }()
 			step("enter")
 
-			// gg / G — the deliberate jumps, which do not route through the
+			// gg / G: the deliberate jumps, which do not route through the
 			// single-notch gesture and so land wherever they land.
 			tr.key('g')
 			tr.key('g')
@@ -398,7 +398,7 @@ func TestTranscriptPaint_GesturesKeepBelief(t *testing.T) {
 			step("help panel closed")
 
 			// The queued-prompts panel, opened the way the queue itself opens
-			// it — which means feeding queuedRows, the only field the panel
+			// it: which means feeding queuedRows, the only field the panel
 			// reads. The call this replaced went to a setter that wrote two
 			// fields nobody read, so the panel rendered its "(none)" fallback
 			// while the comment claimed otherwise.
@@ -436,7 +436,7 @@ func TestTranscriptPaint_GesturesKeepBelief(t *testing.T) {
 				step(fmt.Sprintf("deep climb %d", i))
 			}
 
-			// A LIVE STREAMING TURN — the one hunting ground the real-pty sweep
+			// A LIVE STREAMING TURN: the one hunting ground the real-pty sweep
 			// could not reach without spending a provider turn, and the one place
 			// where content grows under the reader rather than being scrolled
 			// over. Driven here by applying an UNSEALED turn repeatedly with more

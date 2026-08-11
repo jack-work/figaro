@@ -19,7 +19,7 @@ import (
 // A completed turn must return the shell.
 //
 // CAUGHT: a build shipped where `figaro send` never exited after the turn
-// completed. Ctrl-C, Ctrl-D, q and Escape ALL failed to dismiss it — the user
+// completed. Ctrl-C, Ctrl-D, q and Escape ALL failed to dismiss it: the user
 // could not leave the view, and reported he could not evaluate the branch at
 // all. No in-process test can observe this: the hang is in the process
 // lifecycle, not in any function's return value.
@@ -39,7 +39,7 @@ func TestSmoke_ProcessExitsAfterTurn(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 	}
 	if p.alive() {
-		t.Fatalf("figaro is STILL RUNNING after the turn completed — the user cannot exit the view\n%s",
+		t.Fatalf("figaro is STILL RUNNING after the turn completed: the user cannot exit the view\n%s",
 			p.visible())
 	}
 }
@@ -47,7 +47,7 @@ func TestSmoke_ProcessExitsAfterTurn(t *testing.T) {
 // Every documented exit key must work while a turn streams.
 //
 // CAUGHT: the same hang as above. These keys are the user's only escape from a
-// long turn, so each is asserted separately — a suite that only tests Ctrl-C
+// long turn, so each is asserted separately, a suite that only tests Ctrl-C
 // would have passed while Ctrl-D and q were dead.
 func TestSmoke_ExitKeysWork(t *testing.T) {
 	smokeEnabled(t)
@@ -74,7 +74,7 @@ func TestSmoke_ExitKeysWork(t *testing.T) {
 // One turn leaves exactly one footer in scrollback.
 //
 // CAUGHT: a build shipped where the submit-time footer was frozen into
-// scrollback and then a second footer printed at completion — the user saw the
+// scrollback and then a second footer printed at completion: the user saw the
 // context bar twice for a single exchange. Invisible to a renderer unit test,
 // which sees only what compose() DECIDES to paint and never what survives a
 // frame scrolling away.
@@ -99,7 +99,7 @@ func TestSmoke_OneTurnOneFooter(t *testing.T) {
 //
 // CAUGHT, and then REVERTED: an in-view steer composer was built that made every
 // printable character start typing a draft. Nobody asked for it, and it cost ten
-// keybindings — `k` opened a text box instead of scrolling. The user's rule is
+// keybindings: `k` opened a text box instead of scrolling. The user's rule is
 // that there is nothing in the UI to steer: a message is a steer purely because
 // of WHEN it is sent, so the transcript stays lean and the keyboard stays a
 // keyboard.
@@ -122,7 +122,7 @@ func TestSmoke_LettersAreKeybindingsNotText(t *testing.T) {
 
 	vis := p.visible()
 	if strings.Contains(vis, "steer ↳") || strings.Contains(vis, "send ↳") {
-		t.Fatalf("a letter opened a text box — the composer is back\n%s", vis)
+		t.Fatalf("a letter opened a text box: the composer is back\n%s", vis)
 	}
 	if c := pagerChrome(vis); c == 0 {
 		t.Fatalf("'j' did not reach the pager: it must scroll, not be swallowed\n%s", vis)
@@ -133,7 +133,7 @@ func TestSmoke_LettersAreKeybindingsNotText(t *testing.T) {
 //
 // CAUGHT: incipit hoisted a mid-turn steer above the tools that preceded it,
 // while `fig show` placed it correctly. The same turn told two different
-// stories depending on how you looked at it — which the purity invariant
+// stories depending on how you looked at it: which the purity invariant
 // (Turns() is a pure function of the message list) explicitly forbids.
 //
 // The steer must land AFTER a tool has completed or there is nothing to
@@ -145,7 +145,7 @@ func TestSmoke_SteerOrderMatchesShow(t *testing.T) {
 	p := newPane(t, env, bin, 100, 100) // tall: tool-heavy turns auto-promote
 
 	p.startTurn("run 3 readonly bash commands with sleep 8 between each, then say ORDEROK")
-	time.Sleep(14 * time.Second) // a tool has completed by now — this is the trick
+	time.Sleep(14 * time.Second) // a tool has completed by now: this is the trick
 	if !p.alive() {
 		t.Skip("turn ended before the steer could land")
 	}
@@ -165,7 +165,7 @@ func TestSmoke_SteerOrderMatchesShow(t *testing.T) {
 	lines := strings.Split(sb, "\n")
 	for i := 1; i < len(lines); i++ {
 		if strings.Contains(lines[i], "↳ input") && strings.Contains(lines[i-1], "> input") {
-			t.Errorf("steer is hoisted directly under the inquiry header — live order disagrees with fig show\n%s", sb)
+			t.Errorf("steer is hoisted directly under the inquiry header: live order disagrees with fig show\n%s", sb)
 			break
 		}
 	}
@@ -176,21 +176,21 @@ func TestSmoke_SteerOrderMatchesShow(t *testing.T) {
 // CAUGHT (user's words): "Errors where the text bleeds into the status bar."
 //
 // The pager runs on the ALTERNATE SCREEN, and an alt screen has NO SCROLLBACK
-// (measured: alternate_on=1, history_size=0 — `capture-pane -p -S -` returns
+// (measured: alternate_on=1, history_size=0: `capture-pane -p -S -` returns
 // exactly the visible rows). So a write to stdout/stderr while the pager is up
-// cannot land "below" anything. It lands ON THE GRID, at the cursor — and the
+// cannot land "below" anything. It lands ON THE GRID, at the cursor, and the
 // painter finishes every frame by writing screen[t.h-1], the status row, so the
 // cursor is parked there. Worse, those writes lead with "\n": on the bottom row
 // a newline SCROLLS THE WHOLE GRID UP, the painter is never told, and t.prev
 // stops describing the terminal. The visible result is the user's report plus a
-// DUPLICATED STATUS ROW — the same duplicated-footer signature that has already
+// DUPLICATED STATUS ROW: the same duplicated-footer signature that has already
 // shipped once from a different cause.
 //
 // Two sites are confirmed by real pty capture:
 //
 //   - internal/cli/stream.go:169  fmt.Fprintln(os.Stderr, "\n"+d.Reason)
 //     reached because livelogTurn.finishTurn (livelog_bridge.go:561) returns
-//     EARLY when t.tr.active — it does NOT leave the pager, so the comment at
+//     EARLY when t.tr.active: it does NOT leave the pager, so the comment at
 //     that call site ("tear the live region down FIRST, so an error hint lands
 //     on clean scrollback below it, not over the footer") is true inline and
 //     FALSE in the pager.
@@ -231,7 +231,7 @@ func TestSmoke_ErrorDoesNotBleedIntoStatusBar(t *testing.T) {
 	// and a skip that looks like a pass is how a test stops being evidence.
 	if pagerChrome(vis) == 0 {
 		// The pager is gone: whatever printed, it did not print over a frame.
-		// That is fix (i) (leave before printing) — or the pager never opened at
+		// That is fix (i) (leave before printing): or the pager never opened at
 		// all, which this test simply has no opinion about.
 		return
 	}
@@ -245,7 +245,7 @@ func TestSmoke_ErrorDoesNotBleedIntoStatusBar(t *testing.T) {
 	// NOT the load-bearing assertion. The escape-sequence check below is, because
 	// it is a property of the bytes themselves and does not race.
 	if got := statusRows(vis); got > 1 {
-		t.Errorf("status row appears %d times on the grid, want at most 1 — "+
+		t.Errorf("status row appears %d times on the grid, want at most 1: "+
 			"a second copy means the grid scrolled under the painter and t.prev "+
 			"no longer describes the terminal\n%s", got, vis)
 	}

@@ -19,7 +19,7 @@ import (
 //
 // Before exec, every transformer in Transformers is applied in order.
 // EnvSanitizer transformers additionally strip their Denylist from the
-// inherited os.Environ() base — that step is folded in here rather
+// inherited os.Environ() base: that step is folded in here rather
 // than the transformer chain so a transformer doesn't have to
 // materialize a full env slice.
 type LocalExecutor struct {
@@ -41,7 +41,7 @@ func NewLocalExecutor(transformers ...ExecTransformer) *LocalExecutor {
 // (sanitized+merged env, cwd) ready to Start. It deliberately does NOT
 // set SysProcAttr: the pipe and background paths want their own process
 // group (Setpgid) so the whole tree can be signaled, while the PTY path
-// lets pty.Start install Setsid/Setctty instead — the two are mutually
+// lets pty.Start install Setsid/Setctty instead: the two are mutually
 // exclusive, so each caller sets what it needs.
 func (e *LocalExecutor) buildCmd(req ExecRequest) (*exec.Cmd, error) {
 	for _, t := range e.Transformers {
@@ -94,7 +94,7 @@ func (e *LocalExecutor) Execute(ctx context.Context, req ExecRequest, onChunk fu
 }
 
 // Start launches the command and returns a Process whose lifetime is
-// independent of any context — the caller (a session) owns when to
+// independent of any context: the caller (a session) owns when to
 // wait, signal, or kill it. Output streams to onChunk for as long as
 // the process runs.
 func (e *LocalExecutor) Start(req ExecRequest, onChunk func([]byte)) (Process, error) {
@@ -169,7 +169,7 @@ var (
 )
 
 // execPTY runs cmd through a pseudo-terminal. The ok return is false
-// only when the PTY spawn itself fails — in that case a warning has
+// only when the PTY spawn itself fails: in that case a warning has
 // been written to onChunk and the caller should retry on the pipe path.
 // Once the PTY is up, any subsequent error is returned with ok=true.
 func (e *LocalExecutor) execPTY(ctx context.Context, cmd *exec.Cmd, req ExecRequest, onChunk func([]byte)) (ExecResult, error, bool) {

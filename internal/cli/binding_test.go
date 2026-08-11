@@ -15,7 +15,7 @@ func TestBindingDisabled_FlagsAndEnv(t *testing.T) {
 		noBindFlag, forceBind, noBindEnv, interactive = saveFlag, saveForce, saveEnv, saveInt
 	})
 	// These cases are about the pid-binding policy only. Neutralize
-	// FIGARO_ARIA, which outranks all of it — and which is set for real
+	// FIGARO_ARIA, which outranks all of it, and which is set for real
 	// when the suite is run from inside an aria's own bash tool.
 	t.Setenv("FIGARO_ARIA", "")
 
@@ -165,7 +165,7 @@ func TestEnvAriaID(t *testing.T) {
 }
 
 // TestBindingDisabled_EnvAriaWins: a statically-attended shell has an
-// identity, not a binding — so bind/unbind stay off even under an
+// identity, not a binding: so bind/unbind stay off even under an
 // explicit --bind, and even on an interactive terminal.
 func TestBindingDisabled_EnvAriaWins(t *testing.T) {
 	saveFlag, saveForce, saveEnv, saveInt := noBindFlag, forceBind, noBindEnv, interactive

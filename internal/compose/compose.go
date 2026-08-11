@@ -1,6 +1,6 @@
 // Package compose maps the Figaro IR (a turn's message.Message blocks)
 // to the canonical live-render unit: an ordered list of typed nodes. It
-// is the producer-side translation, analogous to a provider Encode —
+// is the producer-side translation, analogous to a provider Encode -
 // pure, deterministic, and dependency-light (no renderer/glamour), so the
 // agent can compose without importing the terminal renderer.
 //
@@ -29,8 +29,8 @@ import (
 
 // nodeID mints a stable id for an id-less node (thinking/prose/steering) from
 // its primary-IR coordinate: the message's logical time and the content
-// block's index within that message. Both are stable — LT is immutable once
-// assigned and the block index is append-only — so the id doesn't move when
+// block's index within that message. Both are stable: LT is immutable once
+// assigned and the block index is append-only: so the id doesn't move when
 // the flattened, empty-skipped render position shifts. (Tool nodes key off
 // their ToolCallID instead.) The in-flight message gets a provisional LT from
 // composeTurn so its ids match what they'll be after it seals.
@@ -46,7 +46,7 @@ const composeBashCap = 200
 // ToolPreviewArg returns the name of the "body" argument whose live-streaming
 // value should surface as a running tool node's preview (e.g. "content" for
 type ToolTiming struct {
-	// OpenedAt is when the tool block opened on the provider stream — the
+	// OpenedAt is when the tool block opened on the provider stream: the
 	// start of GENERATION. StartedAt/FinishedAt bracket EXECUTION.
 	OpenedAt   int64
 	StartedAt  int64
@@ -54,7 +54,7 @@ type ToolTiming struct {
 }
 
 // Nodes maps a turn's messages to the live node list: each assistant
-// content block becomes a node in order — text/thinking → prose, tool
+// content block becomes a node in order: text/thinking → prose, tool
 // invoke → a tool node folding in its result (or streamed partial). A
 // tool with no result yet is left status=running with whatever output has
 // streamed. argPartials carries the raw, still-truncated tool_use argument
@@ -133,14 +133,14 @@ func toolNode(inv message.Content, lt uint64, block int, results map[string]resu
 	args := inv.Arguments
 	// A QUARANTINED CALL IS SHOWN AS THE BYTES THAT ARRIVED. Its arguments
 	// never parsed, so figaro wrapped them in an envelope to keep the wire
-	// legal (message.MalformedArgs) — but that envelope is bookkeeping, not
+	// legal (message.MalformedArgs): but that envelope is bookkeeping, not
 	// something a reader asked to see, and rendering it would put a sentinel
 	// key where the arguments belong AND hide the very bytes worth looking at.
 	//
 	// So the envelope is unwrapped back into Input, which is the field for
 	// exactly this: the raw, still-unparsed argument text. Unlike the live
 	// prefix it survives a reload, because it travels on the message rather
-	// than in the turn's scratch map — the failed call reads the same tomorrow
+	// than in the turn's scratch map: the failed call reads the same tomorrow
 	// as it did while it was streaming.
 	rawArgs, quarantined := message.MalformedArgsOf(inv)
 	if quarantined {
@@ -182,7 +182,7 @@ func toolNode(inv message.Content, lt uint64, block int, results map[string]resu
 		n.Status = livedoc.StatusRunning
 		n.Output = tailBound(partials[inv.ToolCallID])
 		// Generation phase: the arguments are still arriving. Show the raw
-		// prefix for EVERY tool — no name is consulted and none is special —
+		// prefix for EVERY tool: no name is consulted and none is special -
 		// and drop it the moment the decoded Arguments land, since Args says
 		// the same thing without the truncation.
 		if len(args) == 0 && !quarantined {
@@ -193,7 +193,7 @@ func toolNode(inv message.Content, lt uint64, block int, results map[string]resu
 }
 
 // summaryFor is a tool node's one-line description, used for SEARCH and for
-// the clipboard — never for rendering, which reads the arguments directly
+// the clipboard: never for rendering, which reads the arguments directly
 // through the CLI's tool table. It is deliberately generic: the per-tool
 // Summarize() hooks it used to call said which argument spoke for a call,
 // which is the same thing the table says, in a second place.
@@ -226,7 +226,7 @@ func tailBound(text string) string {
 	return strings.Join(lines, "\n")
 }
 
-// Units is gone. compose.Turns is the single projection now — a turn is one
+// Units is gone. compose.Turns is the single projection now, a turn is one
 // exchange, opened by Turn.Inquiry (text) rather than by a unit or a node. See
 // internal/compose/turns.go and skills/figaro/reference/turns.md.
 

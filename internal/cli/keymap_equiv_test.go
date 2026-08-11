@@ -23,12 +23,12 @@ import (
 //
 // Each row is a starting state: the signature an INERT key leaves (an unbound
 // control byte), plus every key that leaves something else. So a key missing
-// from the map is an assertion too — it must be a no-op in that mode.
+// from the map is an assertion too: it must be a no-op in that mode.
 //
 // The off= column was rebased once, by sepRows: the separator between two
 // messages lost its trailing blank (transcript_index.go), so this fixture's
 // seven message boundaries are one row shorter each and every off= fell by 7.
-// A re-measurement, not a behaviour change — fol=, the selection identity and
+// A re-measurement, not a behaviour change: fol=, the selection identity and
 // every other column are byte-identical to 45bee38. See the longer note in
 // keymap_input_equiv_test.go for the one fixture where the shrink made the
 // line space GROW instead.
@@ -171,19 +171,19 @@ var oracleStates = map[string]func(*transcript){
 //     old=, new= and exp= are byte-identical, because opening the box is all
 //     the key does. In the two SEARCH states ':' is still literal text
 //     (q="ms:"), which is why they appear here with the suffix and nothing
-//     else — that is the "':' is a character inside the search box" rule,
+//     else: that is the "':' is a character inside the search box" rule,
 //     asserted rather than asserted-about.
 //
 // REBASED A FOURTH TIME, and this one is a COLUMN REMOVAL, not a behaviour
 // change: `old=` and `new=` reported checkOlder/checkNewer, the two armed
 // prefetch flags, and phase 2a-part-2 deleted them (whether the pager wants
-// history is derived from the offset, the store and the wire — see wantOlder).
+// history is derived from the offset, the store and the wire: see wantOlder).
 // The two columns were stripped from every literal mechanically, and NOT ONE
 // other cell moved: the whole table passed unchanged on the first run, which is
 // the evidence that removing the flags left the keystrokes alone.
 //
 // And one new state, "jump", so TestKeymap_OracleCoversEveryPagerRow can
-// reach the box's own rows — which is where '/' is proved to be literal text
+// reach the box's own rows: which is where '/' is proved to be literal text
 // in there, the mirror of the rule above.
 //
 // Regenerated mechanically, not hand-edited.
@@ -668,7 +668,7 @@ func TestKeymap_PagerBehaviourIsUnchanged(t *testing.T) {
 
 // TestKeymap_OracleCoversEveryPagerRow: the sweep above is only as good as its
 // states. Every pager-level binding must be exercised by at least one row of
-// the oracle — otherwise a binding could be silently broken.
+// the oracle: otherwise a binding could be silently broken.
 func TestKeymap_OracleCoversEveryPagerRow(t *testing.T) {
 	covered := map[keyMode]bool{}
 	for _, row := range pagerOracle {

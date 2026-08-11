@@ -8,14 +8,14 @@ import (
 	"github.com/jack-work/figaro/internal/form"
 )
 
-// Form microbenchmarks — the BEFORE measurement for the
-// persistent-tree migration (see DESIGN.md, branch chalk/bench).
+// Form microbenchmarks: the BEFORE measurement for the
+// persistent-tree migration (see DESIGN.md, branch form/bench).
 //
 // Everything here uses only the public form API, and every
 // Snapshot construction/read goes through the seam in
 // bench_seam_test.go. Fixtures live in bench_fixtures_test.go.
 //
-// Standard invocation (see scripts/chalkbench.sh):
+// Standard invocation (see scripts/formbench.sh):
 //
 //	go test ./internal/form -bench=. -benchmem -count=10 |
 //	    tee bench-before.txt
@@ -93,7 +93,7 @@ func BenchmarkDiff(b *testing.B) {
 // BenchmarkDiff above builds `next` from a fresh map, so before the tree
 // swap it measured the only thing there was to measure, and after the
 // swap it measures the pathological case of two structurally unrelated
-// trees holding near-identical content — no sharing, so no
+// trees holding near-identical content: no sharing, so no
 // pointer-identity pruning. Every real Diff in figaro (turn.go's context
 // combine, ApplyOutfit, Render's prev) compares a board with its own
 // descendant, which is the case below. Keep both: one is the worst case,

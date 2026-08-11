@@ -36,14 +36,14 @@ type renderSettings struct {
 
 // renderNode draws ONE node. This is the single dispatch on node kind, shared
 // by every view: `show` (via renderNodeList), the inline incipit and the
-// transcript pager (via ariaView). It used to exist twice — ariaView switched
+// transcript pager (via ariaView). It used to exist twice, ariaView switched
 // on n.Type alone and so drew a turn's prompt as agent prose, putting the
 // user's own question under the "< figaro" header while `show` correctly
 // marked it "↳ input". Two renderers for one representation is the exact defect
 // class turn addressing exists to remove; there is now one.
 //
 // Expansion arrives twice, because a tool now has TWO collapsible parts that
-// answer to different policies. bashCap collapses the OUTPUT — and the incipit
+// answer to different policies. bashCap collapses the OUTPUT, and the incipit
 // always passes it uncapped, since nothing there can un-collapse after the
 // fact (architecture.md invariant #2). expanded collapses the ARGUMENTS, and
 // the incipit must NOT force that one: a streaming argument inline is a moving
@@ -59,8 +59,8 @@ func renderNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, expand
 		return renderToolNode(n, width, bashCap, tick, verbose, expanded)
 	case n.Type == livedoc.NodeThinking:
 		return renderThinkingNode(n, width)
-	// Steering is the only input-voice NODE there is — the inquiry is text on
-	// the turn and never reaches here — so this marker cannot be mistaken for
+	// Steering is the only input-voice NODE there is: the inquiry is text on
+	// the turn and never reaches here: so this marker cannot be mistaken for
 	// the question that opened the turn.
 	case n.Type == livedoc.NodeSteering:
 		return renderSteeringNode(n, width)
@@ -77,16 +77,16 @@ func nodeExpandable(n livedoc.Node) bool {
 		return false
 	}
 	// Output OR arguments. A tool whose arguments are still streaming has no
-	// output yet and is precisely the node you most want to open — a running
-	// write, to watch the file arrive — so an output-only test made Enter
+	// output yet and is precisely the node you most want to open, a running
+	// write, to watch the file arrive: so an output-only test made Enter
 	// inert on it. A settled tool hides its arguments until asked, so it has
 	// something to reveal even when its output is short.
 	return strings.TrimSpace(n.Output) != "" ||
 		strings.TrimSpace(n.Input) != "" || len(n.Args) > 0
 }
 
-// renderTurnRows renders a whole exchange — the inquiry that opened the turn,
-// then what the agent made of it — through the ONE composer every surface
+// renderTurnRows renders a whole exchange: the inquiry that opened the turn,
+// then what the agent made of it: through the ONE composer every surface
 // shares (ldrender.Composer, compose.go). `show` is its caller; the pager and
 // the incipit reach the composer directly.
 func renderTurnRows(m aria.Message, width int, tick uint64, set renderSettings) []string {
@@ -99,7 +99,7 @@ func renderNodeList(nodes []livedoc.Node, width int, tick uint64, set renderSett
 }
 
 // turnComposer is `show`'s composition: the shared shape, the shared chrome,
-// and — under --details — the same per-block coordinate row Ctrl-O draws in the
+// and: under --details: the same per-block coordinate row Ctrl-O draws in the
 // pager, instead of the timestamp line `show` used to invent for itself.
 //
 // Blocks are drawn EXPANDED, as the incipit draws them (Composer.Expanded nil):
@@ -134,7 +134,7 @@ const proseIndent = "  "
 // multi-line bash command in a tool's arg summary is the common culprit).
 //
 // The overwhelmingly common case is a row that already fits and carries
-// nothing to rewrite — every row of every frame is clipped, twice (once by
+// nothing to rewrite: every row of every frame is clipped, twice (once by
 // the node renderer, once by the transcript's selection gutter), and almost
 // none of them actually need clipping. clipFits proves the rewrite is a
 // no-op with a single allocation-free byte scan; only rows that genuinely
@@ -188,8 +188,8 @@ func clipFits(s string, width int) bool {
 }
 
 // escapeEnd returns the index just past the ANSI escape sequence starting at
-// s[i] (assumed to be ESC) — everything up to and including the first ASCII
-// letter, or the end of the string — and whether that span was pure ASCII
+// s[i] (assumed to be ESC): everything up to and including the first ASCII
+// letter, or the end of the string, and whether that span was pure ASCII
 // (in which case the caller can skip the UTF-8 validity check, which is
 // otherwise a quarter of the scan's cost on glamour-styled rows). Byte-wise
 // scanning is equivalent to the rune-wise scan it replaces: a multi-byte
@@ -199,7 +199,7 @@ func escapeEnd(s string, i int) (int, bool) {
 	// ONE grammar, in render.SkipEscape. This used to scan to the first ASCII
 	// letter, which is not what an escape is: a bare ESC swallowed the
 	// character after it, so displayWidth UNDERCOUNTED and clipToWidth emitted
-	// a row one cell past the edge — measured, clip to 10 gave 11 visible
+	// a row one cell past the edge: measured, clip to 10 gave 11 visible
 	// cells. An OSC whose payload contains a letter ended early instead, which
 	// clips short and loses text. Tool output reaches these clips with escapes
 	// intact, because SanitizeForTerminal deliberately keeps SGR.
@@ -215,7 +215,7 @@ func escapeEnd(s string, i int) (int, bool) {
 }
 
 // clipToWidthRewrite is the general path: it materializes the clipped row.
-// displayWidth is the column count of a row with escape sequences excluded —
+// displayWidth is the column count of a row with escape sequences excluded -
 // what the terminal will actually occupy. runewidth.StringWidth counts the
 // bytes of an SGR run as characters, which over-measures every styled row (a
 // dim wrapper alone is eight columns of nothing) and would shed footer tokens
@@ -246,7 +246,7 @@ func displayWidth(s string) int {
 }
 
 // clipToWidthEllipsis is clipToWidth for a row the reader parses as a SENTENCE
-// rather than as a picture — the footer's status line. A hard clip there ends
+// rather than as a picture: the footer's status line. A hard clip there ends
 // mid-token with nothing to say anything was dropped ("cost 4.5k to"); one
 // column spent on an ellipsis says it ("cost 4.5k…").
 //
@@ -291,7 +291,7 @@ func clipRewrite(s string, width int) (string, bool) {
 		if s[i] == 0x1b { // copy the whole escape sequence, uncounted
 			// render.SkipEscape, not a third hand-rolled scanner. This loop
 			// used to advance to the first ASCII LETTER, so a bare ESC ate the
-			// character after it and that character was written UNCOUNTED —
+			// character after it and that character was written UNCOUNTED -
 			// the row then rendered one cell PAST THE EDGE. Measured in a real
 			// pane: clip to 10 produced 11 visible columns. An OSC ended early
 			// for the same reason ("\x1b]0;title\x07" stopped at the 't' of
@@ -337,8 +337,8 @@ func renderThinkingNode(n livedoc.Node, width int) []string {
 	return nodeProseRows(n, width)
 }
 
-// renderSteeringNode renders a user message injected mid-turn — a steering
-// interjection — under a marked gutter so it reads as the user's voice inside
+// renderSteeringNode renders a user message injected mid-turn, a steering
+// interjection: under a marked gutter so it reads as the user's voice inside
 // the assistant's turn, distinct from prose and thinking.
 func renderSteeringNode(n livedoc.Node, width int) []string {
 	// Subdued relative to the inquiry, deliberately: steering nudges a train of
@@ -352,7 +352,7 @@ func renderSteeringNode(n livedoc.Node, width int) []string {
 	return append([]string{head}, nodeProseRows(n, width)...)
 }
 
-// nodeMarkdown is the markdown a non-tool node renders from — the node's own
+// nodeMarkdown is the markdown a non-tool node renders from: the node's own
 // text, for every kind. Thinking and steering used to be wrapped in blockquote
 // syntax here; they now reserve width and draw their rule themselves (see
 // nodeProseRows), because glamour prefixes markdown LINES and figaro needs
@@ -360,7 +360,7 @@ func renderSteeringNode(n livedoc.Node, width int) []string {
 func nodeMarkdown(n livedoc.Node) string { return n.Markdown }
 
 // quoteGutter is the rule figaro draws down the left of thinking and steering,
-// on every rendered row, itself — see nodeProseRows for why glamour cannot.
+// on every rendered row, itself: see nodeProseRows for why glamour cannot.
 const quoteGutter = "  │ "
 
 // quoted reports whether a node draws under the gutter.
@@ -379,13 +379,13 @@ func proseWidth(n livedoc.Node, width int) int {
 }
 
 // quoteGutterCells is quoteGutter's width on screen: four columns, not four
-// bytes — the rule is a three-byte rune.
+// bytes: the rule is a three-byte rune.
 //
 // The full four are reserved even though the rule STANDS IN glamour's
 // two-column margin and so usually costs only two. A row with no margin to
 // stand in pays the whole four: a hard-wrap continuation chunk (see
 // render.hardWrapOverlong) has none, and neither does a row glamour emits
-// flush. Reserving two was measured and overflows — w=20, CJK, 22 cells in a
+// flush. Reserving two was measured and overflows: w=20, CJK, 22 cells in a
 // 20-column viewport. Those two columns are recoverable by teaching the hard
 // wrap to carry the leading margin onto its continuations; that is a separate
 // change with its own test, not a constant to shave here.
@@ -401,17 +401,17 @@ func nodeProseRows(n livedoc.Node, width int) []string {
 	//
 	// Thinking used to be handed to glamour as markdown blockquote syntax, and
 	// glamour applies a blockquote prefix per MARKDOWN LINE, not per rendered
-	// ROW — so a paragraph long enough to wrap produced continuation rows with
+	// ROW: so a paragraph long enough to wrap produced continuation rows with
 	// no rule at all. Three attempts to repair those rows AFTERWARDS each failed
 	// for one structural reason: putting a two-cell rule where glamour put a
 	// two-cell inset needs two columns the row does not have, and no post-hoc
 	// edit can create horizontal space. Only re-wrapping can. Those versions
 	// drew the rule one column left of the block (read as missing indentation),
-	// and then ate the right-hand end of any row without slack — "… +261 more
+	// and then ate the right-hand end of any row without slack: "… +261 more
 	// table lines" came back as "… +261 more tabl".
 	//
 	// CONTRACT: a row may exceed `width` only where glamour's OWN output at the
-	// reserved width already does — a nested list, a fence, an unclosed fence
+	// reserved width already does, a nested list, a fence, an unclosed fence
 	// (by up to 7 cells). This function adds the gutter and nothing else, and
 	// does not clip: every painter already owns its edge (renderNodeList at
 	// width, plainNodeRow at t.w-1, the incipit at w), and a clip here was one
@@ -426,7 +426,7 @@ func nodeProseRows(n livedoc.Node, width int) []string {
 	for _, r := range rows {
 		// The rule STANDS IN glamour's own paragraph margin rather than sitting
 		// on top of it. Prefixing without dedenting put thinking text at column
-		// 6 while the prose around it starts at 2 — two columns of content lost
+		// 6 while the prose around it starts at 2: two columns of content lost
 		// at every width, for nothing. Dedenting puts it at 4, which is where
 		// the old blockquote had it.
 		out = append(out, dim+dedentProse(r))
@@ -440,8 +440,8 @@ func nodeProseRows(n livedoc.Node, width int) []string {
 //
 // THE ESCAPES ARE NOT ALL AT THE FRONT. This used to skip a leading run of
 // escapes and then test for two literal spaces, which held only because
-// glamour v1 emitted its margin as one unbroken "  ". v2 splits it — space,
-// SGR, space — so the prefix test missed, the row was not dedented, and the
+// glamour v1 emitted its margin as one unbroken "  ". v2 splits it: space,
+// SGR, space: so the prefix test missed, the row was not dedented, and the
 // gutter cost four columns instead of two: thinking text at column 6 while the
 // prose beside it starts at 4. The farmer's 24-shape gutter fuzz caught it at
 // `emoji w=20 row 3`. So: consume two VISIBLE spaces, wherever the escapes
@@ -469,7 +469,7 @@ func dedentProse(row string) string {
 }
 
 // renderToolNode draws a tool as a widget with ZERO per-tool control flow:
-// a status glyph, the tool name, and — when set — the producer's Summary
+// a status glyph, the tool name, and: when set: the producer's Summary
 // (truncated for the header, wrapped in verbose mode); then any streamed
 // output under a dim gutter, tail-clamped to bashCap lines. In verbose mode
 // Args are also rendered generically as sorted key=value lines. The client
@@ -498,7 +498,7 @@ func tailOutput(output string, limit int) (string, int) {
 var timeNow = time.Now
 
 // toolElapsed is how long this call has taken, all in: the model writing it
-// plus the tool running it. One number, because the header has one slot — the
+// plus the tool running it. One number, because the header has one slot: the
 // split is in the expanded view, where `started` and `finished` bracket the
 // execution and everything before `started` was generation.
 func toolElapsed(n livedoc.Node) string {

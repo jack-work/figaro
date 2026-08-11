@@ -17,7 +17,7 @@ import (
 //
 // A mouse-wheel flick delivers a burst of scroll reports. The pager used to
 // paint one frame per report, so a 24-event flick meant 24 full frames, 23 of
-// which nobody wanted to see — and each of which delayed the one they did.
+// which nobody wanted to see, and each of which delayed the one they did.
 // These tests pin both halves of the fix: a burst produces exactly one frame
 // at the settled offset, and no rate limiter ever swallows the final frame.
 // ---------------------------------------------------------------------------
@@ -277,7 +277,7 @@ func TestInputConsume_WheelBurstPaintsOneFrame(t *testing.T) {
 		t.Fatalf("coalesced flick landed at offset %d, dripped at %d", lt.tr.offset, drip.lt.tr.offset)
 	}
 	// The flick's total travel (72 rows) exceeds the viewport, so the single
-	// frame is a genuine full repaint — and still costs well under half of what
+	// frame is a genuine full repaint, and still costs well under half of what
 	// the 24 intermediate frames did.
 	if b := coalesced.bytes.Load(); b*2 >= drippedBytes {
 		t.Fatalf("coalesced flick emitted %d bytes vs %d dripped; want less than half", b, drippedBytes)

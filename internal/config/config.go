@@ -86,7 +86,7 @@ type CLIConfig struct {
 	CheckUpdates *bool `toml:"check_updates"`
 
 	// UpdateCheckTTLHours bounds how often the proxy is asked. Default
-	// 24. Zero disables caching (each check hits the network) — useful
+	// 24. Zero disables caching (each check hits the network): useful
 	// only for testing.
 	UpdateCheckTTLHours *int `toml:"update_check_ttl_hours"`
 
@@ -105,7 +105,7 @@ type CLIConfig struct {
 type AuthzConfig struct {
 	// CallerIdentity enables the authn provider that reads the caller's aria
 	// id from the x-internal-figaro-id params field (rpc.CallerKey). When
-	// false, every request is anonymous no matter what it presented — the
+	// false, every request is anonymous no matter what it presented: the
 	// server has chosen not to trust the wire.
 	//
 	// Pointer so unset is distinguishable from an explicit false.
@@ -125,7 +125,7 @@ type StoreConfig struct {
 	// SegmentSize bounds ONE WAL segment file in bytes; a segment rolls when
 	// the next record would not fit. Default 2 MiB (~1300 IR entries at the
 	// measured 1.6KB/entry). Raise it to roll less often on a big store;
-	// lower it to keep individual files small. New segments only — existing
+	// lower it to keep individual files small. New segments only: existing
 	// ones keep their size and simply stop growing.
 	SegmentSize *int `toml:"segment_size"`
 }
@@ -135,8 +135,8 @@ type StoreConfig struct {
 // reclaiming too late costs only RSS. The defaults err toward keeping a
 // conversation warm as long as someone plausibly comes back to it.
 type MemoryConfig struct {
-	// DormantAfterMinutes is how long an aria must sit idle — no turn in
-	// flight, nothing queued — before the daemon reclaims it. Default 15.
+	// DormantAfterMinutes is how long an aria must sit idle: no turn in
+	// flight, nothing queued: before the daemon reclaims it. Default 15.
 	//
 	// Do not set this low. Restore is O(history): ~15 ms to open the xwal
 	// head at 600 messages, ~9 ms to rebuild the UI at 10k, ~42 ms at 50k.
@@ -163,8 +163,8 @@ type MemoryConfig struct {
 	// 0 (default) retains everything, which is the behaviour figaro has always
 	// had.
 	//
-	// The decoded fig IR is the largest thing a live aria holds — 4-5x its
-	// encoded bytes, measured at 12.5 MiB on a 2500-message aria — and almost
+	// The decoded fig IR is the largest thing a live aria holds: 4-5x its
+	// encoded bytes, measured at 12.5 MiB on a 2500-message aria, and almost
 	// none of it is needed: translation reads the suffix past its watermark,
 	// rendering reads recent turns, and backward paging is served from the
 	// store by the angelus reader without touching this window.
@@ -178,7 +178,7 @@ type MemoryConfig struct {
 	// knob to reach for: it bounds the axis that actually costs.
 	//
 	// Row count does not. Measured on a real 2556-message aria, dropping 80%
-	// of ROWS released only 26% of BYTES — a long agentic conversation puts
+	// of ROWS released only 26% of BYTES, a long agentic conversation puts
 	// short prose at the head and large tool results at the tail, so a row
 	// budget bounds the wrong end of a skewed distribution.
 	//
@@ -290,7 +290,7 @@ const (
 // tool imagery one tool_result record may carry.
 //
 // It is derived, not chosen. The tic is ONE figwal record and a record larger
-// than a segment fails the append outright, taking the turn with it — so the
+// than a segment fails the append outright, taking the turn with it: so the
 // ceiling has to move with `store.segment_size` rather than being a constant
 // pinned to the smallest legal configuration. A user who raises the segment
 // size to hold bigger screenshots gets bigger screenshots; one who lowers it
@@ -308,7 +308,7 @@ func (l *Loaded) InlineImageBudget() int {
 
 // maxInlineImageBytes mirrors tool.ProviderImageCeiling. It is duplicated
 // rather than imported because internal/tool is a consumer of this package's
-// numbers, not a supplier — the dependency must not run both ways.
+// numbers, not a supplier: the dependency must not run both ways.
 const maxInlineImageBytes = 3500 << 10
 
 // validateStream rejects a negative coalescing window (a negative interval
@@ -323,18 +323,18 @@ func (c Config) validateStream() error {
 // validateStore rejects a segment too small to hold one record. The largest
 // record seen in a real store is 128KB; the read tool inlines images as
 // base64, bounded by InlineImageBudget, which is itself derived FROM this
-// number — so the two cannot drift into a configuration that cannot append.
+// number: so the two cannot drift into a configuration that cannot append.
 // Below the floor there is no share of the segment large enough to hold a
 // legible picture and the text results beside it.
 func (c Config) validateStore() error {
 	if s := c.Store.SegmentSize; s != nil && *s < minSegmentSize {
-		return fmt.Errorf("config: store.segment_size (%d) must be >= %d: a WAL segment must fit ONE whole record, and a tool_result carrying a base64 image is one record — below the floor there is no share of a segment big enough for a legible picture, and figwal rejects the append (\"payload too large for segment size\") outright", *s, minSegmentSize)
+		return fmt.Errorf("config: store.segment_size (%d) must be >= %d: a WAL segment must fit ONE whole record, and a tool_result carrying a base64 image is one record: below the floor there is no share of a segment big enough for a legible picture, and figwal rejects the append (\"payload too large for segment size\") outright", *s, minSegmentSize)
 	}
 	return nil
 }
 
 // WireConfig bounds a paginated read. The budget is spent in BYTES and
-// paid out in whole NODES — a page never splits a node, and always
+// paid out in whole NODES, a page never splits a node, and always
 // carries at least one even when that node alone exceeds the budget.
 // Node granularity is only safe because tool output is already clamped
 // (compose.composeBashCap); the full text stays in the canonical IR.
@@ -438,7 +438,7 @@ func (l *Loaded) Interactive() bool {
 }
 
 // CallerIdentityEnabled reports whether the caller-identity authn provider
-// is on. Default false — today's behavior.
+// is on. Default false: today's behavior.
 func (l *Loaded) CallerIdentityEnabled() bool {
 	if l.Config.Authz.CallerIdentity == nil {
 		return false
@@ -514,7 +514,7 @@ func (l *Loaded) UpdateCheckTTLHours() int {
 }
 
 // ProviderAuth holds credentials for one provider. The on-disk file
-// lives at providers/<name>.toml (flat — no per-provider subdirectory).
+// lives at providers/<name>.toml (flat: no per-provider subdirectory).
 // Secret fields are AGE-encrypted at rest; callers must decrypt
 // through hush before use.
 type ProviderAuth struct {
@@ -536,7 +536,7 @@ type Loaded struct {
 }
 
 // ProviderAuthPath returns the path to a provider's auth file
-// (providers/<name>.toml — flat, no subdirectory).
+// (providers/<name>.toml: flat, no subdirectory).
 func (l *Loaded) ProviderAuthPath(name string) string {
 	return filepath.Join(l.ConfigDir, "providers", name+".toml")
 }
@@ -637,7 +637,7 @@ func (l *Loaded) LoadProviderAuth(name string, target interface{}) error {
 // DefaultConfigDir returns the config directory (XDG-aware).
 func DefaultConfigDir() string {
 	// FIGARO_CONFIG_DIR is an explicit override used as-is (no
-	// "figaro" suffix appended) — lets dev shells point at an
+	// "figaro" suffix appended): lets dev shells point at an
 	// isolated config tree without touching the user's real one.
 	if d := os.Getenv("FIGARO_CONFIG_DIR"); d != "" {
 		return d
@@ -677,7 +677,7 @@ func Load(configDir string) (*Loaded, error) {
 	// The CLI settings were read from the TOP LEVEL until they moved into
 	// [cli]. Same treatment as default_loadout above, for the same reason: a
 	// config.toml written before the move is still on disk, TOML has no idea
-	// the key was renamed, and an unread key here is silent — measured,
+	// the key was renamed, and an unread key here is silent: measured,
 	// `echo_prompt = false` at the top level yielded EchoPrompt() == true with
 	// no error and no warning. A setting that quietly stops applying is worse
 	// than one that fails loudly, because nobody goes looking.

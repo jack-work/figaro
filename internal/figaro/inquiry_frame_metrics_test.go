@@ -23,9 +23,9 @@ import (
 // subscription in NewAgent, so the frame that first carries the user's
 // question also carries the status footer's numbers. Refreshing metrics
 // BEFORE the broadcast is what makes that frame describe a world in which
-// the question already exists: its context-token estimate is counted, and —
+// the question already exists: its context-token estimate is counted, and -
 // on a first prompt, where appendUserPrompt seeds the mantra from the
-// opening text — the mantra is populated.
+// opening text: the mantra is populated.
 //
 // Broadcast-before-refresh would emit a first frame whose Mantra is "" and
 // whose ContextTokens is 0: the footer would name no conversation on the

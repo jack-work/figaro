@@ -180,7 +180,7 @@ func TestRead_ByteTruncation(t *testing.T) {
 
 func TestRead_FirstLineExceedsLimit(t *testing.T) {
 	dir := t.TempDir()
-	// Single line larger than MaxOutputBytes — TruncateHead returns
+	// Single line larger than MaxOutputBytes: TruncateHead returns
 	// FirstLineExceedsLimit, and the read tool surfaces a sed fallback
 	// instead of a mid-line slice.
 	bigLine := strings.Repeat("x", 60*1024)
@@ -195,7 +195,7 @@ func TestRead_FirstLineExceedsLimit(t *testing.T) {
 	assert.Contains(t, text, "exceeds")
 	assert.Contains(t, text, "sed -n '1p'")
 	assert.Contains(t, text, "huge.txt")
-	// No output lines emitted — only the hint.
+	// No output lines emitted: only the hint.
 	assert.Less(t, len(text), 300)
 }
 

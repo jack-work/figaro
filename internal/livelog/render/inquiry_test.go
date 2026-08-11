@@ -10,8 +10,8 @@ import (
 
 // THE QUESTION IS TEXT ON THE TURN, and the inline renderer draws it from
 // there. It used to be Nodes[0], which is why nothing here had to know about
-// it; now the live region has to paint it itself, at submit — before a single
-// token of the reply exists — and keep it through every repaint until the
+// it; now the live region has to paint it itself, at submit: before a single
+// token of the reply exists, and keep it through every repaint until the
 // exchange freezes, ONCE.
 func TestIncipit_InquiryPaintsAtSubmitAndFreezesOnce(t *testing.T) {
 	ft := NewFakeTerminal(60, 24)
@@ -63,6 +63,6 @@ func TestIncipit_LaterSliceDoesNotRepeatTheQuestion(t *testing.T) {
 
 	scr := strings.Join(ft.Screen(), "\n")
 	if got := strings.Count(scr, "ASKED"); got != 1 {
-		t.Fatalf("the question appears %d times, want 1 — only the first slice carries it:\n%s", got, scr)
+		t.Fatalf("the question appears %d times, want 1: only the first slice carries it:\n%s", got, scr)
 	}
 }

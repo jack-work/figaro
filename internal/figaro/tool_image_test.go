@@ -42,7 +42,7 @@ func (it *imageTool) Execute(context.Context, map[string]any, tool.OnOutput) ([]
 }
 
 // oneRoundProvider calls one tool, then on its second Send captures the IR
-// the agent has assembled — which is exactly the history any real provider
+// the agent has assembled: which is exactly the history any real provider
 // would encode onto the wire.
 type oneRoundProvider struct {
 	calls    []message.Content

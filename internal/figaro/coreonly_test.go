@@ -30,7 +30,7 @@ func TestCoreOnlyAgentRunsTurnsAndPersistsFigIR(t *testing.T) {
 	}})
 
 	a := figaro.NewAgent(figaro.Config{
-		// Projector deliberately omitted — this IS the test.
+		// Projector deliberately omitted: this IS the test.
 		ID:         "core-only-001",
 		SocketPath: filepath.Join(t.TempDir(), "figaro.sock"),
 		Provider:   &mockProvider{response: "pong"},
@@ -61,7 +61,7 @@ func TestCoreOnlyAgentRunsTurnsAndPersistsFigIR(t *testing.T) {
 	}
 	require.True(t, stamped, "turn ids are fig IR and must be stamped without a projector")
 
-	// And the UI IR surface is simply empty — not broken, not panicking.
+	// And the UI IR surface is simply empty: not broken, not panicking.
 	require.NotPanics(t, func() {
 		p := a.Read(aria.Anchor{}, 1<<20)
 		require.Empty(t, p.Parts, "no projector means no rendered turns")

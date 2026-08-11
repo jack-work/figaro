@@ -4,7 +4,7 @@ Everything runs against an **isolated** daemon (its own runtime + state
 dirs) so it never touches your live figaro. Config, hush, and auth are
 inherited from your normal setup, so real provider turns work.
 
-## Option A — nix dev shell (recommended)
+## Option A: nix dev shell (recommended)
 
 The flake's dev shells put **this worktree's build** on `PATH` as
 `figaro` / `fig` / `q`. Use the `share-config` preset: it isolates
@@ -25,10 +25,10 @@ tree lives under `$FIGARO_STATE_DIR/arias/`. To start from a blank slate,
 hermetic incl. a fresh hush + first-run).
 
 Note: the dev-shell state dir persists across shell entries (it's a
-stable path, not a fresh tempdir) — delete it when you want a clean run.
+stable path, not a fresh tempdir): delete it when you want a clean run.
 `fig stop` / `pkill -f figaro` stops the dev daemon.
 
-## Option B — plain go build + tempdirs
+## Option B: plain go build + tempdirs
 
 ## 1. Build
 
@@ -52,8 +52,8 @@ The aria fork tree lives under `$FIGARO_STATE_DIR/arias/`.
 ```fish
 /tmp/figt list                      # empty table; boots the daemon + null root
 /tmp/figt "what is 2+2?"            # creates a conversation (real LLM turn), binds this shell
-/tmp/figt state                     # chalkboard snapshot (credo, cwd, aria_id, ...)
-/tmp/figt set note hello            # append a chalkboard transition
+/tmp/figt state                     # form snapshot (credo, cwd, aria_id, ...)
+/tmp/figt set note hello            # append a form transition
 /tmp/figt "and 3+3?"               # second turn; the `note` reminder rides this tic
 /tmp/figt show -v                   # raw IR incl. the <system-reminder> transitions
 /tmp/figt list                      # one conversation, with msgs/tokens/cwd
@@ -84,7 +84,7 @@ cat $FIGARO_STATE_DIR/arias/index.json   # nodes (null -> outfit -> conversation
 ```
 
 You should see: one `null` root (`"arias"`), one `outfit` node per
-(name, content-version), and conversation nodes — the forked parent with
+(name, content-version), and conversation nodes: the forked parent with
 `"frozen": true` and two children pointing at it via `parent`.
 
 ## 6. Tear down
@@ -98,10 +98,10 @@ rm -rf $FIGARO_RUNTIME_DIR $FIGARO_STATE_DIR /tmp/figt
 
 - **Outfit reminders render once** in the shared outfit prefix (the
   outfit node's renderable birth tic) and are inherited by every
-  conversation — check `show -v` on a second conversation from the same
+  conversation: check `show -v` on a second conversation from the same
   outfit: its skills/credo come from the cached prefix, not re-injected.
 - **`set` then immediately `fork`** with no turn in between: the pending
-  patch rides only the continuation (known edge — commit a turn between
+  patch rides only the continuation (known edge: commit a turn between
   `set` and `fork` for it to reach both).
 - Dormant `figaro list` tokens/recency come from the `_meta/<id>.json`
   sidecar written at end of each turn.

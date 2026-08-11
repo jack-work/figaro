@@ -35,8 +35,13 @@ type sendOpts struct {
 	forget    bool     // --forget / -f: submit and exit; do not stream
 	json      bool     // --json / -j: emit machine-readable result on stdout ({aria_id, ...})
 	listen    bool     // --listen / -l: auto-enter the transcript at startup
-	outfit    dressing // --outfit / -O: what this call dresses the aria in
-	record    string   // --record: write a wire tape of this stream (testing)
+	outfit    dressing // the assembled dressing: -O names, -S keys, -D removals
+	// The three axes as typed, accumulated so repeats compose. -O is outfit
+	// NAMES only; -S carries k=v and JSON literals; -D carries key paths.
+	outfitText string
+	setText    string
+	delText    string
+	record     string // --record: write a wire tape of this stream (testing)
 }
 
 // extractSendFlags scans a PassRaw arg list for the send command's
@@ -58,7 +63,7 @@ func extractSendFlags(args []string) (sendOpts, []string, error) {
 // extractForkFlags is extractSendFlags for `figaro fork`, where the prompt
 // is OPTIONAL: `fork <id>:12` is a complete gesture, so a bare positional
 // is the target even with no `--` boundary in sight. Sharing the parser is
-// deliberate — fork and send must not drift apart on what a flag or a
+// deliberate: fork and send must not drift apart on what a flag or a
 // coordinate means.
 func extractForkFlags(args []string) (sendOpts, []string, error) {
 	return extractPromptFlags(args, true)
@@ -135,6 +140,28 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 			if err := opts.addOutfit(strings.TrimPrefix(a, "--outfit=")); err != nil {
 				return opts, nil, err
 			}
+			i++
+			continue
+		case a == "--set", a == "-S":
+			if i+1 >= len(expanded) {
+				return opts, nil, fmt.Errorf("--set requires a value")
+			}
+			opts.setText = joinTerms(opts.setText, expanded[i+1])
+			i += 2
+			continue
+		case strings.HasPrefix(a, "--set="):
+			opts.setText = joinTerms(opts.setText, strings.TrimPrefix(a, "--set="))
+			i++
+			continue
+		case a == "--delete", a == "-D":
+			if i+1 >= len(expanded) {
+				return opts, nil, fmt.Errorf("--delete requires a value")
+			}
+			opts.delText = joinTerms(opts.delText, expanded[i+1])
+			i += 2
+			continue
+		case strings.HasPrefix(a, "--delete="):
+			opts.delText = joinTerms(opts.delText, strings.TrimPrefix(a, "--delete="))
 			i++
 			continue
 		case a == "--record":
@@ -220,30 +247,36 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 	return opts, rest, opts.armOutfit()
 }
 
-// addOutfit folds one -O value onto the spec. Repeats compose rather than
+// addOutfit folds one -O value onto the names. Repeats compose rather than
 // conflict: `-O a -O b` means `-O a,b`, the same left-to-right fold every
 // other outfit surface uses.
 func (o *sendOpts) addOutfit(text string) error {
 	if strings.TrimSpace(text) == "" {
 		return fmt.Errorf("--outfit requires a value")
 	}
-	joined := text
-	if o.outfit.text != "" {
-		joined = o.outfit.text + "," + text
+	o.outfitText = joinTerms(o.outfitText, text)
+	return nil
+}
+
+// joinTerms appends one flag value to what the same flag already carried,
+// comma-separated: the one composition rule all three axes share.
+func joinTerms(have, more string) string {
+	if strings.TrimSpace(have) == "" {
+		return more
 	}
-	d, err := parseDressing(joined)
+	return have + "," + more
+}
+
+// armOutfit assembles the three axes and hands the dressing to the prompt
+// builder. Every sending verb parses through here, so none can forget to carry
+// it: buildPromptForm puts it on the same call as the message.
+func (o *sendOpts) armOutfit() error {
+	d, err := parseDress(o.outfitText, o.setText, o.delText)
 	if err != nil {
 		return err
 	}
 	o.outfit = d
-	return nil
-}
-
-// armOutfit hands the parsed dressing to the prompt builder. Every sending verb
-// parses through here, so none can forget to carry it: buildPromptForm
-// puts it on the same call as the message.
-func (o sendOpts) armOutfit() error {
-	promptDressing = o.outfit
+	promptDressing = d
 	return nil
 }
 
@@ -264,7 +297,9 @@ var sendFlagDefs = []cmdkit.FlagDef{
 	{Long: "yes", Short: "y", IsBool: true, Description: "--exec only: skip confirmation"},
 	{Long: "forget", Short: "f", IsBool: true, Description: "Submit and exit; do not stream"},
 	{Long: "json", Short: "j", IsBool: true, Description: "Submit, print one JSON object, exit"},
-	{Long: "outfit", Short: "O", Description: "Outfit(s) to dress the aria in: names, k=v, or a JSON literal"},
+	{Long: "outfit", Short: "O", Description: "Outfit NAMES to dress the aria in (comma-separated)"},
+	{Long: "set", Short: "S", Description: "Form keys: k=v or a JSON literal, comma-separated"},
+	{Long: "delete", Short: "D", Description: "Form key paths to remove, comma-separated"},
 }
 
 // argsBeforeBoundary / argsFromBoundary split argv at the first bare `--`.
@@ -381,8 +416,8 @@ func runSend(loaded *config.Loaded, rawArgs []string) {
 }
 
 // runSendAs is runSend with the verb that appears in diagnostics. The bare
-// `figaro [flags] -- <prompt>` form dispatches here too — one parser, one
-// set of semantics — and labels its errors with the program name instead.
+// `figaro [flags] -- <prompt>` form dispatches here too: one parser, one
+// set of semantics, and labels its errors with the program name instead.
 func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	opts, rest, err := extractSendFlags(rawArgs)
 	if err != nil {
@@ -432,14 +467,14 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 		dieUsage("%s: %s", verb, err)
 	}
 	if opts.json {
-		// The turn is submitted and not attached to — exactly --forget, which
+		// The turn is submitted and not attached to: exactly --forget, which
 		// already knows how to emit the object.
 		opts.forget = true
 	}
 
 	set := renderSettings{verbose: opts.verbose, listen: opts.listen, record: opts.record}
 
-	// `send <trunk>:<turn>` — fork at that turn, then send. The message lands
+	// `send <trunk>:<turn>`: fork at that turn, then send. The message lands
 	// on whichever trunk we end up attended to: the new alternative by default
 	// (rebind), or the original with --attend=false/--stay.
 	if !at.isHead() {
@@ -478,7 +513,7 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 
 // validateSendOpts holds every "these flags contradict" rule for the prompt
 // verbs as a PURE function: it decides, never exits, never opens a socket.
-// That matters — inline in runSendAs, the only way to test a rejection was
+// That matters: inline in runSendAs, the only way to test a rejection was
 // to call the dispatcher, and a dispatcher past its guard reaches
 // mustConnectAngelus, which in a test binary is a fork bomb.
 //
@@ -553,7 +588,9 @@ func runSendEphemeralRaw(loaded *config.Loaded, opts sendOpts, prompt string) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit.patch) })
+	createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) {
+		return acli.CreateEphemeral(ctx, opts.outfit.names, opts.outfit.patch)
+	})
 	if err != nil {
 		dieWithClosure(err, "create figaro: %s", err)
 	}
@@ -585,7 +622,9 @@ func runSendEphemeralRich(loaded *config.Loaded, opts sendOpts, prompt string, s
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit.patch) })
+	createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) {
+		return acli.CreateEphemeral(ctx, opts.outfit.names, opts.outfit.patch)
+	})
 	if err != nil {
 		dieWithClosure(err, "create figaro: %s", err)
 	}
@@ -614,7 +653,7 @@ func runSendRaw(loaded *config.Loaded, ariaID string, d dressing, prompt string)
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	_, figaroEP, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, true, d)
+	_, figaroEP, err := resolveFigaroTargetEndpoint(ctx, loaded, acli, ariaID, true, d)
 	if err != nil {
 		die("%s", err)
 	}
@@ -627,7 +666,7 @@ func runSendRaw(loaded *config.Loaded, ariaID string, d dressing, prompt string)
 }
 
 // runSendVerbatim dumps the raw wire frames (one JSON object per line:
-// {"method","params"}) with no formatting — the literal protocol stream.
+// {"method","params"}) with no formatting: the literal protocol stream.
 // Ephemeral when -e, else the bound/named aria (left alive).
 func runSendVerbatim(loaded *config.Loaded, opts sendOpts, prompt string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -638,7 +677,9 @@ func runSendVerbatim(loaded *config.Loaded, opts sendOpts, prompt string) {
 
 	var figaroEP transport.Endpoint
 	if opts.ephemeral {
-		createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit.patch) })
+		createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) {
+			return acli.CreateEphemeral(ctx, opts.outfit.names, opts.outfit.patch)
+		})
 		if err != nil {
 			dieWithClosure(err, "create figaro: %s", err)
 		}
@@ -652,7 +693,7 @@ func runSendVerbatim(loaded *config.Loaded, opts sendOpts, prompt string) {
 			die("send: %s", err)
 		}
 	} else {
-		_, ep, err := resolveTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.outfit)
+		_, ep, err := resolveFigaroTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.outfit)
 		if err != nil {
 			die("%s", err)
 		}
@@ -676,7 +717,9 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 
 	var figaroEP transport.Endpoint
 	if opts.ephemeral || opts.id == "" {
-		createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit.patch) })
+		createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) {
+			return acli.CreateEphemeral(ctx, opts.outfit.names, opts.outfit.patch)
+		})
 		if err != nil {
 			dieWithClosure(err, "create figaro: %s", err)
 		}
@@ -690,7 +733,7 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 			die("send: %s", err)
 		}
 	} else {
-		_, ep, err := resolveTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.outfit)
+		_, ep, err := resolveFigaroTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.outfit)
 		if err != nil {
 			die("%s", err)
 		}
@@ -741,7 +784,7 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 	}
 }
 
-// runSendForget submits a prompt and exits — fire-and-forget. The daemon
+// runSendForget submits a prompt and exits: fire-and-forget. The daemon
 // keeps the turn alive; the CLI does not attach to the stream and never
 // sends figaro.interrupt. Useful from scripts, or when you want a prompt
 // to run and check on it later via `figaro show` / `figaro listen`.
@@ -750,7 +793,7 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 	// cold daemon plus a first-run outfit render does not fit in ten.
 	//
 	// TODO(perf): put this back to 10s once the `new`/`fork` latency work
-	// lands. The extra 20s buys exactly one thing — the create — and that
+	// lands. The extra 20s buys exactly one thing: the create, and that
 	// cost is the thing being fixed there. A timeout widened for a slow path
 	// outlives the slowness unless someone writes down when to close it.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -759,7 +802,7 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	ariaID, figaroEP, err := resolveTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.outfit)
+	ariaID, figaroEP, err := resolveFigaroTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.outfit)
 	if err != nil {
 		die("%s", err)
 	}
@@ -783,5 +826,5 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 		}{AriaID: ariaID, Mode: "forget"})
 		return
 	}
-	fmt.Fprintf(os.Stderr, "forgot %s — use `figaro listen %s` to follow\n", ariaID, ariaID)
+	fmt.Fprintf(os.Stderr, "forgot %s: use `figaro listen %s` to follow\n", ariaID, ariaID)
 }

@@ -103,7 +103,7 @@ func main() {
 	// 5/S, 8/B, 0/O, 1/I/L, 2/Z, 6/G and P/F are each one JPEG artifact away
 	// from one another in an upscaled bitmap font. A model that answers 9X584
 	// for 9XS84 has plainly SEEN the picture, so a code containing both glyphs
-	// measures its OCR rather than whether the image arrived — and the arrival
+	// measures its OCR rather than whether the image arrived, and the arrival
 	// is the only thing under test. (Measured: GPT-5.6 did exactly that and
 	// turned a working fix into a red run.) Sixteen symbols still leave
 	// 1,048,576 codes, so nothing here is guessable blind.

@@ -10,7 +10,7 @@ import (
 )
 
 // streamOnto opens a pager over history, streams n live frames, and reports
-// how many times the row total FELL — following only adds history behind the
+// how many times the row total FELL: following only adds history behind the
 // tail, so a fall is the window arguing with itself.
 func streamOnto(t *testing.T, history []aria.TurnPart, n int) (drops int, tr *transcript) {
 	t.Helper()
@@ -65,7 +65,7 @@ func TestTailWindowHasAFixedPoint(t *testing.T) {
 }
 
 // The mechanism: the cut is the largest suffix of the window that fits the
-// budget, from heights the index holds — never an average, never fewer than
+// budget, from heights the index holds: never an average, never fewer than
 // one message however tall.
 func TestTailFitCutsOnMeasuredHeights(t *testing.T) {
 	budget := pageRowBudget()

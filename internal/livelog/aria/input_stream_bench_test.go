@@ -40,8 +40,8 @@ func BenchmarkStreamedInputDelta(b *testing.B) {
 	}
 }
 
-// The same traffic end to end — compose's output through the server's diff
-// into a client fold — which is what the CLI actually pays.
+// The same traffic end to end: compose's output through the server's diff
+// into a client fold: which is what the CLI actually pays.
 func BenchmarkStreamedInputServerToClient(b *testing.B) {
 	frames := benchInput(100)
 	b.ReportAllocs()
@@ -92,7 +92,7 @@ func TestStreamedInputWireBytesStayProportional(t *testing.T) {
 	// that losing the splice fails it by an order of magnitude.
 	budget := len(final) * 4
 	if pushed > budget {
-		t.Fatalf("pushed %d bytes for a %d-byte argument over %d frames (budget %d) — is `input` still spliced?",
+		t.Fatalf("pushed %d bytes for a %d-byte argument over %d frames (budget %d): is `input` still spliced?",
 			pushed, len(final), len(frames), budget)
 	}
 	t.Logf("pushed %d bytes for a %d-byte argument over %d frames (%.1f× the typed bytes)",

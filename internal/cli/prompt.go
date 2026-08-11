@@ -37,13 +37,20 @@ func runPrompt(loaded *config.Loaded, d dressing, prompt string, set renderSetti
 
 	if resp.Found {
 		// Bound at a pending fork-point (attend <id>:<LT>): this prompt forks
-		// there and moves to the new branch (one-shot — the rebind clears it).
+		// there and moves to the new branch (one-shot: the rebind clears it).
 		if resp.AtMainLT > 0 {
 			runSendForkAt(loaded, resp.FigaroID, forkPoint{lt: resp.AtMainLT}, false, false, prompt, set)
 			return
 		}
 		figaroID = resp.FigaroID
 		figaroEP = transport.Endpoint{Scheme: resp.Endpoint.Scheme, Address: resp.Endpoint.Address}
+		// Attending a ROLE: the prompt reaches whoever holds it, resolved
+		// per call. Attending a plain form refuses by name (redirectRole).
+		var rerr error
+		figaroID, figaroEP, rerr = redirectRole(ctx, loaded, acli, figaroID, figaroEP)
+		if rerr != nil {
+			die("%s", rerr)
+		}
 	} else {
 		figaroID, figaroEP = mustCreateAndBindOutfit(ctx, acli, loaded, ppid, d)
 	}
@@ -96,7 +103,7 @@ func runNewPrompt(loaded *config.Loaded, prompt string, d dressing, set renderSe
 }
 
 // submitAndExit queues a prompt on an existing aria and returns without
-// attaching to the stream — the tail of every --json path. Kept in one
+// attaching to the stream: the tail of every --json path. Kept in one
 // place so "what --json does" cannot drift between send, new and fork.
 func submitAndExit(ctx context.Context, loaded *config.Loaded, ariaID, prompt string) {
 	acli := mustConnectAngelus(loaded)
@@ -130,7 +137,7 @@ func submitAndExit(ctx context.Context, loaded *config.Loaded, ariaID, prompt st
 // The turn's first LT is its prompt, and atMainLT is exclusive of the frozen
 // prefix, so the branch shares everything strictly before the question and
 // replaces the question onward. That boundary is always a user message, so the
-// frozen history always ends on a complete assistant message — no tool_invoke
+// frozen history always ends on a complete assistant message: no tool_invoke
 // is left dangling and no interrupted-tool synthesis can occur.
 func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, asJSON bool, prompt string, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -226,7 +233,7 @@ func promptAria(loaded *config.Loaded, ariaID, prompt string, set renderSettings
 }
 
 // resolveAria attaches to an existing named aria. Aria ids are
-// system-minted, so an unknown id is an error — a new conversation
+// system-minted, so an unknown id is an error, a new conversation
 // comes from the no-id flow (`figaro`), not by naming one here.
 func resolveAria(ctx context.Context, acli *angelus.Client, ariaID string) (transport.Endpoint, error) {
 	attachCtx, attachCancel := context.WithTimeout(ctx, 10*time.Second)
@@ -283,7 +290,7 @@ func runUnattend(loaded *config.Loaded) {
 	}
 	_ = unbindBinding(ctx, acli, ppid)
 	if bound != "" {
-		fmt.Fprintf(os.Stderr, "home — unattended %s; new conversations use the default outfit\n", bound)
+		fmt.Fprintf(os.Stderr, "home: unattended %s; new conversations use the default outfit\n", bound)
 	} else {
 		fmt.Fprintln(os.Stderr, "no aria bound to this shell")
 	}

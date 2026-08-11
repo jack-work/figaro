@@ -6,12 +6,12 @@ import (
 	"testing"
 )
 
-// RANGE ALGEBRA BENCHMARKS — insert/merge/Query at 100/1k/10k messages, so
+// RANGE ALGEBRA BENCHMARKS: insert/merge/Query at 100/1k/10k messages, so
 // phase 2 has a baseline to regress against when the transcript starts reading
 // from the store instead of from a flat list.
 
 // benchStore builds a store holding n single-node messages, one per turn, with
-// every turn's extent known — so they coalesce into ONE range, which is the
+// every turn's extent known: so they coalesce into ONE range, which is the
 // degenerate case the doc promises for an aria nobody has jumped around in.
 func benchStore(n int) *Store {
 	s := NewStore()
@@ -61,7 +61,7 @@ func BenchmarkStoreInsertFragmented(b *testing.B) {
 }
 
 // BenchmarkStoreMergeCoalesce measures the cost of learning the extent that
-// fuses two neighbouring ranges — the merge path proper.
+// fuses two neighbouring ranges: the merge path proper.
 func BenchmarkStoreMergeCoalesce(b *testing.B) {
 	for _, n := range []int{100, 1_000, 10_000} {
 		b.Run(fmt.Sprintf("msgs=%d", n), func(b *testing.B) {

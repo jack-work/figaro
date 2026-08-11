@@ -60,7 +60,7 @@ func (p *staggeredProvider) Send(ctx context.Context, in provider.SendInput, bus
 	}
 	p.modelMu.Unlock()
 	if p.calls.Add(1) > 1 {
-		// Second round (after tool results) — terminate with no
+		// Second round (after tool results): terminate with no
 		// further tool calls so the agent's outer loop returns.
 		msg := message.Message{
 			Role:       message.RoleOutput,
@@ -78,7 +78,7 @@ func (p *staggeredProvider) Send(ctx context.Context, in provider.SendInput, bus
 	}
 	start := time.Now()
 	// Stagger PushToolReady calls. Track each in a WaitGroup so Send
-	// doesn't return until every speculative push has happened —
+	// doesn't return until every speculative push has happened -
 	// otherwise driveOneRound's deferred close(bus.toolsReady) races
 	// the late PushToolReady.
 	var pushWG sync.WaitGroup
@@ -250,7 +250,7 @@ func TestSpeculativeDispatch_StartsBeforeStreamEnd(t *testing.T) {
 // message, even when speculative dispatch finishes them out of order.
 func TestSpeculativeDispatch_ResultOrdering(t *testing.T) {
 	zero := time.Now()
-	// Two tools, second one ready first but slower — so it finishes
+	// Two tools, second one ready first but slower: so it finishes
 	// after the first. Result order must still match call order.
 	fastTool := &recordingTool{name: "fast", dur: 10 * time.Millisecond, zero: zero}
 	slowTool := &recordingTool{name: "slow", dur: 80 * time.Millisecond, zero: zero}

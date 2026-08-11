@@ -33,7 +33,7 @@ type Snapshot struct {
 
 // FromMap builds a Snapshot from a plain map. The map is copied (to the
 // same depth as Clone was before the tree swap), so later mutation of m
-// — or of the value bytes in it — does not affect the returned Snapshot
+// : or of the value bytes in it: does not affect the returned Snapshot
 // and vice versa.
 //
 // This is the seam: every construction of a Snapshot from a map goes
@@ -133,7 +133,7 @@ func Additive(s Snapshot, p Patch) Patch {
 //
 // A patch that changes nothing (every Set semantically equal to what is
 // already there, every Remove absent) returns the receiver itself,
-// pointer-identical — which is what lets Diff answer "no change" in
+// pointer-identical: which is what lets Diff answer "no change" in
 // constant time.
 func (s Snapshot) Apply(p Patch) Snapshot {
 	t := s.tree()
@@ -149,8 +149,8 @@ func (s Snapshot) Apply(p Patch) Snapshot {
 	return Snapshot{root: t.root}
 }
 
-// MarshalJSON emits the flat object form — {"key": value, ...} with keys
-// in lexical order — which is what the form channel on disk, the RPC
+// MarshalJSON emits the flat object form: {"key": value, ...} with keys
+// in lexical order: which is what the form channel on disk, the RPC
 // FormResponse and store.formReduce all consume.
 //
 // It delegates to encoding/json over the map representation this type
@@ -158,7 +158,7 @@ func (s Snapshot) Apply(p Patch) Snapshot {
 // construction rather than by argument. That matters more than it looks:
 // encoding/json compacts a raw message and rewrites <, > and & as
 // \u003c, \u003e, \u0026, so hand-rolling the object would silently
-// change bytes that are already on disk — and the WAL's reducer state
+// change bytes that are already on disk, and the WAL's reducer state
 // records are content-hashed, so "silently" would mean "loudly, later".
 // Measured faster than marshalling each value separately, too.
 func (s Snapshot) MarshalJSON() ([]byte, error) {

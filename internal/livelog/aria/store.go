@@ -9,7 +9,7 @@ import (
 	"github.com/jack-work/figaro/internal/livedoc"
 )
 
-// This file is the RANGE STORE — the client's model of one aria as a SET OF
+// This file is the RANGE STORE: the client's model of one aria as a SET OF
 // CONTIGUOUS INTERVALS over (turn, node) space, rather than a list plus a pile
 // of booleans. See skills/figaro/contributing/range-store.md; that document is the contract and this
 // is its implementation.
@@ -48,7 +48,7 @@ func (a Anchor) Next() Anchor {
 	return Anchor{Turn: a.Turn, Node: a.Node + 1}
 }
 
-// Prev is the immediately preceding anchor — the mirror of Next. In (turn,
+// Prev is the immediately preceding anchor: the mirror of Next. In (turn,
 // node) space ordered lexicographically the predecessor of (t, 0) is the last
 // node of turn t-1, which with uint64 ordinals is (t-1, maxNode). The zero
 // anchor is its own predecessor: it is the floor.
@@ -71,13 +71,13 @@ type Range struct {
 }
 
 // Gap is a hole: the store holds nothing in [From, To], and something is
-// believed to be there (invariant 2 — adjacent ranges coalesce, so a gap
+// believed to be there (invariant 2, adjacent ranges coalesce, so a gap
 // always contains at least one real node).
 type Gap struct {
 	From, To Anchor
 }
 
-// Turns is how many turns the hole swallows WHOLE — the count a one-row gap
+// Turns is how many turns the hole swallows WHOLE: the count a one-row gap
 // sentinel prints ("13 turns not loaded").
 //
 // The endpoints are excluded when they are only partly missing, and that is
@@ -85,7 +85,7 @@ type Gap struct {
 // after the last thing we hold to the anchor before the next, so if we hold
 // the HEAD of a turn its id is g.From.Turn even though most of that turn is
 // here. Counting it would tell a reader a turn is gone when they are looking
-// at it. Zero is a real answer — the tail of one turn, and nothing else.
+// at it. Zero is a real answer: the tail of one turn, and nothing else.
 func (g Gap) Turns() int {
 	lo, hi := g.From.Turn, g.To.Turn
 	if g.From.Node > 0 {
@@ -111,7 +111,7 @@ type Segment struct {
 }
 
 // Pending is a prompt that has been submitted but not yet classified by the
-// drain. It has NO server coordinate, because only the drain can assign one —
+// drain. It has NO server coordinate, because only the drain can assign one -
 // it alone knows whether a turn was in flight when the prompt came off the
 // queue.
 //
@@ -123,8 +123,8 @@ type Pending struct {
 }
 
 // openTail is the ONE streaming suffix. It is today's client machinery moved
-// intact under the store, so that invariant 4 — the open turn is disjoint from
-// every range — has an owner that can be checked. (skills/figaro/contributing/range-store.md calls
+// intact under the store, so that invariant 4: the open turn is disjoint from
+// every range: has an owner that can be checked. (skills/figaro/contributing/range-store.md calls
 // this field `open *openTurn`; the name openTurn is already taken in this
 // package by the SERVER's open-turn record, so the type is named openTail and
 // held by value, with turn == 0 meaning "nothing open", which is the sentinel
@@ -140,7 +140,7 @@ type openTail struct {
 type Store struct {
 	ranges  []Range           // sorted by From; non-overlapping; NEVER adjacent
 	more    More              // is there anything beyond the outermost edges
-	open    openTail          // the ONE streaming suffix — unchanged from today
+	open    openTail          // the ONE streaming suffix: unchanged from today
 	pending []Pending         // submitted, not yet classified by the drain
 	ends    map[uint64]uint64 // turn -> anchors it occupies, once known
 	fetch   Fetcher           // fills holes; see Ensure
@@ -151,7 +151,7 @@ func NewStore() *Store { return &Store{ends: map[uint64]uint64{}} }
 
 // Fetched is one backward read, folded into the units the store holds. It is
 // what a Fetcher hands back: the messages, the turn extents the wire stated
-// (see Store.SetTurnLen — without them two turns can never be called
+// (see Store.SetTurnLen: without them two turns can never be called
 // neighbours), and whether anything precedes the page.
 type Fetched struct {
 	Msgs    []Message
@@ -159,7 +159,7 @@ type Fetched struct {
 	More    bool
 }
 
-// Fetcher reads the history immediately BEFORE an anchor — the same keyset
+// Fetcher reads the history immediately BEFORE an anchor: the same keyset
 // read the wire offers (figaro.read backward). The store never speaks the wire
 // itself: whoever owns the RPC client installs one of these, and Ensure calls
 // it.
@@ -182,8 +182,8 @@ const ensureRounds = 64
 
 // ---------------------------------------------------------------- coverage --
 
-// spanEnd is the last node ordinal a message covers. A message with no nodes —
-// an inquiry whose turn produced nothing — still occupies exactly one anchor,
+// spanEnd is the last node ordinal a message covers. A message with no nodes -
+// an inquiry whose turn produced nothing: still occupies exactly one anchor,
 // its own (Turn, From): it is a real element of the conversation and a range
 // that "holds every node between From and To" must be able to say it holds it.
 func spanEnd(m Message) uint64 {
@@ -225,7 +225,7 @@ func sliceNodes(m Message, lo, hi uint64) Message {
 // SetTurnLen records how many anchors a turn occupies, which is the ONLY way
 // to know that (t, n) and (t+1, 0) are neighbours: an anchor cannot answer it
 // (see Anchor.Next). A turn that produced no nodes but carried an inquiry
-// occupies one anchor — its phantom node 0 — because that is what the client
+// occupies one anchor: its phantom node 0: because that is what the client
 // materializes for it.
 //
 // Learning a length can make two existing ranges adjacent, so this coalesces.
@@ -252,7 +252,7 @@ func (s *Store) TurnLen(turn uint64) (uint64, bool) {
 	return n, ok
 }
 
-// adjacent reports whether NOTHING can exist strictly between a and b — the
+// adjacent reports whether NOTHING can exist strictly between a and b: the
 // predicate invariant 2 is stated in terms of. Within a turn it is pure
 // arithmetic. Across turns it needs the extent of every turn in between, and
 // answers false when that is unknown: a false gap says "there may be something
@@ -301,7 +301,7 @@ func (s *Store) mergeAt(i int) bool {
 }
 
 // consume drops the turn extent that a merge has just made unnecessary. An
-// extent answers one question — "does this turn end here?" — and once the
+// extent answers one question: "does this turn end here?", and once the
 // boundary it described is INTERIOR to a contiguous range, nobody will ask
 // again. Keeping it would grow `ends` with the number of turns the aria has
 // ever had; dropping it keeps the map proportional to the number of range
@@ -326,8 +326,8 @@ func (s *Store) coalesce() {
 
 // coalesceAround merges only the neighbourhood of one turn. Learning turn T's
 // extent can only make a range that ENDS in T adjacent to its successor, so
-// scanning the whole interval set per seal — which made folding a fragmented
-// aria quadratic in its turn count — is wasted work.
+// scanning the whole interval set per seal: which made folding a fragmented
+// aria quadratic in its turn count: is wasted work.
 func (s *Store) coalesceAround(turn uint64) {
 	i := sort.Search(len(s.ranges), func(k int) bool { return turn < s.ranges[k].From.Turn }) - 1
 	if i < 0 {
@@ -348,8 +348,8 @@ func (s *Store) coalesceAround(turn uint64) {
 // novel part, so no information is lost either way.
 func (s *Store) Insert(msgs ...Message) {
 	for _, m := range msgs {
-		// THE APPEND CASE — a turn sealing, or the open turn releasing its
-		// head — is what every ordinary fold does, and it must cost what
+		// THE APPEND CASE, a turn sealing, or the open turn releasing its
+		// head: is what every ordinary fold does, and it must cost what
 		// appending to a slice costs. Going through subtractHeld and building
 		// a one-message Range for it added two allocations PER MESSAGE, which
 		// is 30% on folding a conversation.
@@ -411,7 +411,7 @@ func (s *Store) subtractHeld(m Message) []Message {
 }
 
 // firstRangeAtOrAfter is the index of the first range that can hold or follow
-// anchor a — the bisection that keeps insert and query off an O(#ranges) walk.
+// anchor a: the bisection that keeps insert and query off an O(#ranges) walk.
 func (s *Store) firstRangeAtOrAfter(a Anchor) int {
 	return sort.Search(len(s.ranges), func(k int) bool { return !s.ranges[k].To.Less(a) })
 }
@@ -426,7 +426,7 @@ func firstMsgAtOrAfter(msgs []Message, a Anchor) int {
 }
 
 // insertRange splices in a range that is known to overlap nothing, then lets
-// mergeAt — the ONE merge — absorb whichever neighbours it turns out to touch.
+// mergeAt: the ONE merge, absorb whichever neighbours it turns out to touch.
 // Invariants 1 and 2 are re-established here and nowhere else.
 func (s *Store) insertRange(nr Range) {
 	i := sort.Search(len(s.ranges), func(k int) bool { return nr.From.Less(s.ranges[k].From) })
@@ -442,7 +442,7 @@ func (s *Store) insertRange(nr Range) {
 // ----------------------------------------------------------------- evict ----
 
 // Evict forgets [from, to]. A range straddling the interval SPLITS, and a gap
-// appears — eviction and never-fetched are the same state, which is the point:
+// appears: eviction and never-fetched are the same state, which is the point:
 // retention stops being a special case and becomes "keep the ranges nearest
 // the viewport".
 func (s *Store) Evict(from, to Anchor) {
@@ -509,8 +509,8 @@ func (s *Store) keep(r Range, lo, hi Anchor) *Range {
 // because it only ever removes a prefix.
 //
 // It does not copy. Reslicing off the front and zeroing what it drops keeps
-// the retained window allocation-free per trim — this runs on EVERY Apply once
-// an aria is longer than the limit — while still releasing the dropped
+// the retained window allocation-free per trim: this runs on EVERY Apply once
+// an aria is longer than the limit: while still releasing the dropped
 // messages' nodes to the collector, which a bare reslice would not.
 func (s *Store) TrimOldestTo(limit int) {
 	if limit < 0 {
@@ -554,10 +554,10 @@ func (s *Store) ForEach(fn func(Message) bool) {
 //
 //	for _, seg := range store.Query(a, b) { use(seg.Msgs) }
 //
-// ignores .Gap, and is NEVER LIED TO — it simply gets less.
+// ignores .Gap, and is NEVER LIED TO: it simply gets less.
 //
 // Segment.Msgs ALIASES the store's own slices and MUST NOT BE MUTATED. This is
-// what makes a repaint free: the common query — the whole of what we hold —
+// what makes a repaint free: the common query: the whole of what we hold -
 // allocates nothing but the segment header.
 func (s *Store) Query(from, to Anchor) []Segment {
 	if to.Less(from) {
@@ -622,7 +622,7 @@ func (s *Store) Query(from, to Anchor) []Segment {
 }
 
 // window is the part of r inside [lo, hi], WITHOUT COPYING when it can be
-// avoided — which is almost always. Copying is only forced when a boundary
+// avoided: which is almost always. Copying is only forced when a boundary
 // message straddles the window and has to be cut; a pager's interior messages
 // never do, and the whole-range case (every repaint of an aria nobody has
 // scrolled) then costs nothing at all.
@@ -671,7 +671,7 @@ func fuseGaps(in []Segment) []Segment {
 // Ensure fills every hole in [from, to], fetching as needed, so that Query
 // over the same interval then returns exactly one Segment with a nil Gap.
 //
-// THE STORE IS NOT THREAD-SAFE, and this one blocks on I/O — so a concurrent
+// THE STORE IS NOT THREAD-SAFE, and this one blocks on I/O: so a concurrent
 // owner must NOT call it: Client.Ensure runs the same loop with the fetch
 // OUTSIDE its lock, which is what keeps a five-second read off the render
 // path. Both share firstGap and fillAt so there is one definition of "which
@@ -725,7 +725,7 @@ func (s *Store) firstGap(from, to Anchor) (Gap, bool) {
 
 // fillAt is the anchor a backward read must be taken at to close a hole from
 // its TOP: the first thing after the hole. A read before the hole's own end
-// would return the hole's end and everything below it — correct, but it walks
+// would return the hole's end and everything below it: correct, but it walks
 // the hole from the bottom, and a caller filling a hole it is about to render
 // wants the part nearest what it already holds first.
 func fillAt(g Gap) Anchor { return g.To.Next() }
@@ -746,7 +746,7 @@ func (s *Store) Absorbed(got Fetched) {
 // ForEachIn walks the retained messages whose span touches [from, to], in
 // order, stopping early if fn returns false. It is GAP-BLIND by design (the
 // contract's default mode: a caller that ignores holes is never lied to, it
-// simply gets less) and yields WHOLE messages — the pager keys its row cache
+// simply gets less) and yields WHOLE messages: the pager keys its row cache
 // on a message's identity, so half of one is not a thing it can hold.
 func (s *Store) ForEachIn(from, to Anchor, fn func(Message) bool) {
 	if to.Less(from) {
@@ -769,7 +769,7 @@ func (s *Store) ForEachIn(from, to Anchor, fn func(Message) bool) {
 
 // ForEachSegment walks [from, to] the way a RENDERER must see it: contiguous
 // runs, and the holes between them. It is the GAP-AWARE mirror of ForEachIn
-// (the gap-blind default), and it allocates nothing — a pager rebuilding its
+// (the gap-blind default), and it allocates nothing, a pager rebuilding its
 // line index every frame cannot pay for a Segment slice per frame.
 //
 // gap is called for each hole; returning false from either callback stops the
@@ -819,7 +819,7 @@ func (s *Store) Ranges() []Range { return append([]Range(nil), s.ranges...) }
 
 // TailFrom is the anchor of the n-th message from the END of the store, and
 // whether the store holds that many. It walks the ranges BACKWARD, so a window
-// of forty messages costs forty steps whatever the length of the aria — which
+// of forty messages costs forty steps whatever the length of the aria: which
 // is why the pager can re-derive its tail window on every frame instead of
 // caching one and needing a revision counter to know when the cache went
 // stale.
@@ -861,7 +861,7 @@ func (s *Store) Skip(a Anchor, n int) (Anchor, bool) {
 // Before is the BACKWARD mirror of Skip, and it is what a windowed reader
 // lowers its floor with: the anchor n messages before a, plus how many
 // messages the interval [got, a) actually gained. Fewer than n held below a is
-// not an error — the store hands back its own oldest and says how far it got,
+// not an error: the store hands back its own oldest and says how far it got,
 // because "take another page of what you already have" wants whatever is
 // there.
 //
@@ -934,9 +934,9 @@ func (s *Store) Pending() []Pending { return append([]Pending(nil), s.pending...
 
 // The open turn keeps its own machinery, unchanged: these are the client's
 // former openTurn/openFrom/openV/openNodesSlice fields with their behaviour
-// intact. They live here so that invariant 4 — open is disjoint from every
+// intact. They live here so that invariant 4: open is disjoint from every
 // range, because nodes below Live.From are RELEASED INTO the head range rather
-// than held in both — has a single owner.
+// than held in both: has a single owner.
 
 func (s *Store) OpenTurn() int        { return s.open.turn }
 func (s *Store) OpenV() int           { return s.open.v }
@@ -957,7 +957,7 @@ func (s *Store) ClaimOpen(turn int) {
 // ResetOpen releases the open-turn slots.
 func (s *Store) ResetOpen() { s.open = openTail{} }
 
-// OpenNodes copies the whole materialized open turn — including the head
+// OpenNodes copies the whole materialized open turn: including the head
 // already released to the ranges. It is what a seal promotes from.
 func (s *Store) OpenNodes() []livedoc.Node {
 	return append([]livedoc.Node(nil), s.open.nodes...)
@@ -983,7 +983,7 @@ func (s *Store) FoldAt(nd NodeDelta) {
 
 // OpenBase is the first node of the open turn still ours to show: Live.From,
 // floored by the caller's emit cursor. They differ only when a clipped
-// catch-up read raised the cursor above the boundary — the turn's head was
+// catch-up read raised the cursor above the boundary: the turn's head was
 // never delivered, so the region starts where our knowledge does, not at zero.
 func (s *Store) OpenBase(emitted int) int {
 	n := int(s.open.from)

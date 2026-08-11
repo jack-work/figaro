@@ -30,7 +30,7 @@ figaro -- buongiorno
 
 The first prompt triggers a setup wizard (provider, model, outfit). After that, `figaro --` is all you need.
 
-Run `figaro -- :skills.howto!` to start the interactive tutorial (the howto skill walks you through arias, forking, the chalkboard, and outfits in character).
+Run `figaro -- :skills.howto!` to start the interactive tutorial (the howto skill walks you through arias, forking, the form, and outfits in character).
 
 ### Copilot models
 
@@ -96,7 +96,7 @@ the last turn's prompt plus that turn's output, i.e.
 input_tokens + cache_read_input_tokens + cache_creation_input_tokens + output_tokens
 ```
 
-All three input buckets count — with prompt caching on (the default) most of
+All three input buckets count: with prompt caching on (the default) most of
 the prompt comes back as a cache read, so summing only `input_tokens` would
 under-report a long aria by orders of magnitude. Messages appended after the
 last metered turn are estimated at chars/4 and the figure is prefixed `~`.
@@ -117,7 +117,7 @@ prints a bare token count.
 
 - **Arias**: persistent conversations, append-only IR log, fork-tree storage via [figwal](https://github.com/jack-work/figwal).
 - **Forking**: branch at a turn boundary; both sides share the canonical IR prefix. `attend` is your `cd`.
-- **Chalkboard**: per-aria key-value state, travels as patches, surfaces as system reminders.
+- **Form**: per-aria key-value state, travels as patches, surfaces as system reminders.
 - **Outfits**: TOML profiles (provider, model, credo, skills) inherited by new arias.
 - **Tools**: bash, read, write, edit, process. Parallel dispatch.
 - **Providers**: Anthropic (direct + SDK), GitHub Copilot. Registry-driven, no switches.
@@ -133,7 +133,7 @@ figaro fork                     branch at head
 figaro fork <id>:12 -- <p>      branch at a turn and prompt the branch
 figaro show <id> -n 5           last 5 turns
 figaro listen <id>              follow an aria without prompting it
-figaro set <key> <value>        patch chalkboard state
+figaro set <key> <value>        patch form state
 figaro status                   current aria info
 figaro --help                   full command list
 ```
@@ -181,7 +181,7 @@ The primary supported user interface for figaro is provided by the CLI.  It is d
 
 Idiomatically, a shell alias or binary `q` may be defined which aliases to `fig send --`.  The single character alias makes the standard use case, messaging figaro and binding to shell, easier to type.  The project author uses this alias and several others to avoid CLI verbiage.  Other aliases, however, may naturally be defined to support emergent or alternative use cases.  Figaro is in the service of the user; figaro-specific shell configurations are idiomatic.
 
-The chalkboard is the internal name for structured state which serves both to expose structured state as agent context, and to configure figaro runtime.  Set values with `fig set key value`.  The system prefix is not natively shown to the model.
+The form is the internal name for structured state which serves both to expose structured state as agent context, and to configure figaro runtime.  Set values with `fig set key value`.  The system prefix is not natively shown to the model.
 
 ## On Isolation
 Figaro has only filesystem based isolation. It is currently used with full userspace privileges. It inherits the permissions of its user caller. While figaro can be run in a sandbox, a gateway is necessary to broker sandbox ingress.  Furthermore, figaro is not prevented from calling any other figaro aria in its instance.  Native sandboxing via first party gateway and permission modeling is a TODO.  File an issue if you want to see it sooner rather than later.

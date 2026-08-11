@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
@@ -32,7 +33,7 @@ func Run(progName string, args []string) {
 
 	// AMBIGUOUS-WIDTH GLYPHS: believe the terminal, not the default table.
 	//
-	// U+2500 (─) and U+2502 (│) are East Asian AMBIGUOUS — one cell in most
+	// U+2500 (─) and U+2502 (│) are East Asian AMBIGUOUS: one cell in most
 	// terminals, TWO where ambiguous-wide is configured. Every rule figaro draws
 	// is made of ─ and every thinking gutter of │, and every row is built on
 	// go-runewidth's answer of ONE. On an ambiguous-wide terminal each of those
@@ -60,17 +61,17 @@ func Run(progName string, args []string) {
 	// already turned it on: measured at stdout mode 0x0003 under a bare conhost
 	// (inert) against 0x0007 under Windows Terminal. Where it is off,
 	// \x1b[?1049h does nothing and the pager's frames land in the PRIMARY
-	// buffer as ordinary text — the transcript dumped into the user's
+	// buffer as ordinary text: the transcript dumped into the user's
 	// scrollback. It rides here rather than inside MakeRaw because MakeRaw is
 	// about the console we READ and only runs on an interactive path, while
 	// the first escapes (autowrapOff+cursorHide) are written before any raw
 	// session exists and `figaro show` renders ANSI without one at all.
 	//
 	// Off Windows this is a no-op. A redirected stdout degrades to a no-op
-	// too — `figaro list -j | jq` is the ordinary case, not an error.
+	// too: `figaro list -j | jq` is the ordinary case, not an error.
 	// OnceFunc because both paths fire on a normal return: the defer runs, and
 	// then exitNow's hooks would run it again. (No nil check: neither platform
-	// returns one — Windows hands back a no-op restore when there is no console
+	// returns one: Windows hands back a no-op restore when there is no console
 	// to arm, and off Windows the whole function is a no-op.)
 	restoreConsole := sync.OnceFunc(term.ArmOutput())
 	defer restoreConsole()
@@ -79,7 +80,7 @@ func Run(progName string, args []string) {
 	// Repair the console we READ, before the first prompt asks it for a line.
 	// figaro clears line-editing, echo and Ctrl-C processing for every
 	// interactive session, and a session killed without unwinding leaves them
-	// clear for every process that touches that console afterwards — PSReadLine
+	// clear for every process that touches that console afterwards: PSReadLine
 	// saves and restores whatever it finds, so the damage outlives the shell
 	// prompt and the next figaro's MakeRaw dutifully saves RAW as the mode to
 	// return to. In that state a prompt echoes nothing and Enter sends a bare
@@ -107,6 +108,15 @@ func Run(progName string, args []string) {
 				SetRefSigil(s)
 			}
 		}
+		// The binding policy must be computed HERE too: this branch
+		// exits before the main path's initBindingPolicy(), and the
+		// live-key completers resolve the shell's aria through
+		// shellPID. Left at zero, the daemon is asked which aria pid 0
+		// attends, answers not-found, and completion falls back to the
+		// well-known catalog: which is how every pid-bound shell got
+		// a static key list with its aria's skills.* silently missing,
+		// while FIGARO_ARIA shell-outs (which skip the pid) worked.
+		initBindingPolicy()
 		os.Exit(buildRouter(progName, loaded).Run(args))
 	}
 
@@ -133,7 +143,7 @@ func Run(progName string, args []string) {
 		defer shutdown(ctx)
 	}
 
-	// Update nudge — help surfaces only (config-gated, TTY-only, cached).
+	// Update nudge: help surfaces only (config-gated, TTY-only, cached).
 	// It used to fire on every command, which interleaved with real output;
 	// now it rides along with the help text (and the transcript's '?' panel).
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
@@ -166,14 +176,14 @@ func Run(progName string, args []string) {
 //     `state`, `set`, `attend`, `gc`, `kill`.
 //   - PassRaw. Run gets the untouched tail, for grammars the router cannot
 //     express: everything after `--` is a prompt and must not be inspected,
-//     and a positional may be <id>:<turn>. `send`, `new`, `fork` — sharing one
+//     and a positional may be <id>:<turn>. `send`, `new`, `fork`: sharing one
 //     parser (extractPromptFlags, send.go) that reads the same table
 //     (sendFlagDefs) the router would have. One table, so a flag cannot be
 //     documented in help and unparsed in practice.
 //
 // -O traces both. On the prompt verbs extractPromptFlags parses it into
 // sendOpts.outfit and parks it in promptOutfit, so buildPromptForm puts
-// it on the same RPC as the message — no verb assembles its own prompt, so
+// it on the same RPC as the message: no verb assembles its own prompt, so
 // none can carry the flag and forget the fold. On `state outfit` it is the
 // verb's first positional, and reaches the same ParseSpec and the same fold.
 //
@@ -198,7 +208,7 @@ func buildRouter(progName string, loaded *config.Loaded) *cmdkit.Router {
 		Long: `Render an aria's history as turns. A turn is one exchange: your
 question and every node the agent produced about it. The optional
 positional is the target aria id; default is the pid-bound aria.
-Turns are labeled by their turn id — the coordinate send/fork
+Turns are labeled by their turn id: the coordinate send/fork
 <id>:<turn> takes.
 
   figaro show                      last 10 turns of the bound aria
@@ -214,7 +224,7 @@ Turns are labeled by their turn id — the coordinate send/fork
   figaro show eac16fef -v          verbose IR, labeled by LT
   figaro show -l                   raw IR, no rendering
 
-LT is the model's coordinate — it counts the steps the model experienced,
+LT is the model's coordinate: it counts the steps the model experienced,
 and most LTs sit mid-tool. It stays visible under -v/-l for debugging the
 fig IR, but it is not an address: turns are.`,
 		ArgsMax: 1,
@@ -279,7 +289,7 @@ fig IR, but it is not an address: turns are.`,
 		Short:   "Send a prompt to an aria",
 		Usage:   "send [--id <id>] [-O <spec>] [-e] [-r] [-v] [-o] [-l] [-x] [-n] [-y] [-f] [-j] -- <prompt>",
 		Long: `Send a prompt to an aria. Without --id, targets the pid-bound
-aria (creating one if this shell has no binding) — or, inside an aria's
+aria (creating one if this shell has no binding): or, inside an aria's
 own bash tool, the aria itself (FIGARO_ARIA). With --id, targets
 the named aria, which must already exist (aria ids are system-minted).
 
@@ -303,7 +313,7 @@ Flags:
   -r, --raw      Stream verbatim to stdout: no ANSI, no markdown.
                  Pipe-friendly. Says nothing about persistence.
   -v, --verbatim Dump the raw wire frames as JSON (one {"method","params"}
-                 per line) — the literal protocol stream, no formatting,
+                 per line): the literal protocol stream, no formatting,
                  no delta application.
   -o, --verbose  Verbose: expand full tool inputs (else truncated). Thinking
                  blocks are always shown (muted). Ctrl-O toggles live.
@@ -345,7 +355,7 @@ Keys while streaming:
   figaro send -- <nudge>               sent mid-turn, this steers that turn
 
 The bare form drops the verb: ` + "`figaro [flags] -- <prompt>`" + ` parses exactly
-like ` + "`figaro send [flags] -- <prompt>`" + ` — same flags, same semantics. The
+like ` + "`figaro send [flags] -- <prompt>`" + `: same flags, same semantics. The
 ` + "`--`" + ` is mandatory there (so a mistyped subcommand stays an error), and a
 positional target needs the explicit verb or --id.`,
 		PassRaw: true,
@@ -362,8 +372,8 @@ positional target needs the explicit verb or --id.`,
 		Group: "Prompt",
 		Short: "Start a fresh aria and prompt it",
 		Usage: "new [-j|--json] [-O <spec>] [-- <prompt>]",
-		Long: `Creates a new aria (server-generated id), binds it to this shell, and — when
-a prompt follows ` + "`--`" + ` — sends it.
+		Long: `Creates a new aria (server-generated id), binds it to this shell, and: when
+a prompt follows ` + "`--`" + `: sends it.
 
   figaro new -- <prompt>            fresh aria on the default outfit, prompted
   figaro new -O <spec> -- <p>       fresh aria on a named outfit, prompted
@@ -372,7 +382,7 @@ a prompt follows ` + "`--`" + ` — sends it.
   figaro new                        fresh aria on the default outfit, attended
 
 new always mints. To go home instead, ` + "`figaro attend null`" + ` drops this
-shell's binding — which is what bare ` + "`new`" + ` used to do, a second spelling
+shell's binding: which is what bare ` + "`new`" + ` used to do, a second spelling
 of another verb sitting on the obvious meaning of this one.
 
 The outfit is the aria's BIRTH outfit here: the stump it is spawned under,
@@ -417,7 +427,7 @@ already exists (--id, -e, -x) are refused rather than ignored.
 		Usage: "listen [<id>]",
 		Long: `Attach to an aria's live stream. Same view as a send mid-stream:
 catches up to the committed cursor, follows live frames, and supports
-Ctrl-T transcript mode — just without calling figaro.qua. Stays open
+Ctrl-T transcript mode: just without calling figaro.qua. Stays open
 until you close it.
 
 With no id, the pid-bound aria is used.
@@ -429,7 +439,7 @@ Keys:
   Ctrl-O   Toggle verbose tool-input expansion.
   q / Esc  (in pager) leave pager and return to the inline tail.
 
-TESTING: --record <file> writes a wire tape — every JSON-RPC message
+TESTING: --record <file> writes a wire tape: every JSON-RPC message
 this CLI exchanged with the agent, with the time it crossed. Replay it
 with ` + "`figaro replay <file>`" + ` to reproduce the exact stream, and
 the exact rendering, with no daemon and no provider. A tape carries the
@@ -461,8 +471,8 @@ aria's content; it is written only when you ask for it.`,
 
 The tape is the whole world: no angelus, no agent, no provider, no aria
 store, no tokens. A local socket speaks the recorded JSON-RPC frames on
-their recorded schedule and the ordinary listen renderer — same pager,
-same pacer, same catch-up — draws them. What you see is what was seen.
+their recorded schedule and the ordinary listen renderer: same pager,
+same pacer, same catch-up: draws them. What you see is what was seen.
 
   figaro replay bug.tape              real time
   figaro replay bug.tape --speed 4    four times faster
@@ -493,7 +503,7 @@ same pacer, same catch-up — draws them. What you see is what was seen.
 		Group: "Prompt",
 		Short: "Hang up: stop the turn, KEEP queued messages (-d discards them)",
 		Usage: "hup [<id>] [-d|--drop-queued-messages] [-j|--json]",
-		Long: `Hang up on the turn in flight — the same RPC Ctrl-C fires inside a
+		Long: `Hang up on the turn in flight: the same RPC Ctrl-C fires inside a
 send stream. Anything queued behind it is KEPT.
 
 The waiting messages coalesce into ONE combined message, which the aria
@@ -505,8 +515,8 @@ and is never crossed.
   figaro hup -d       stop the turn and DROP the queue
   figaro hup -j       either of the above as one JSON object
 
-Both forms RETURN the queued messages — listed on stdout, or as JSON
-with -j — so dropping them is not the same as losing them:
+Both forms RETURN the queued messages: listed on stdout, or as JSON
+with -j: so dropping them is not the same as losing them:
 
   figaro hup -dj > lost.json
 
@@ -542,16 +552,16 @@ pid-bound aria is used.`,
 		Long: `Cut the line: stop the turn in flight AND drop everything queued
 behind it.
 
-The discarded messages are handed back rather than lost — verbatim, one
+The discarded messages are handed back rather than lost: verbatim, one
 entry per message as you typed it, with the form input each
-carried — so they can be persisted:
+carried: so they can be persisted:
 
   figaro cut          stop the turn, discard the queue (listed on stdout)
   figaro cut -j > lost.json
                       the same, as one JSON object you can keep
 
 Unlike ` + "`figaro hup`" + `, nothing survives to be answered. Clearing does
-not need a turn to be running — a queue is worth dropping between turns
+not need a turn to be running, a queue is worth dropping between turns
 too. A queued form set or fork is not a question and is left
 alone. With no id, the pid-bound aria is used.`,
 		ArgsMin: 0,
@@ -587,7 +597,7 @@ To ADD to the queue, send: a queued message is just a prompt that
 arrived while the aria was busy.
 
 Ids come from the listing and are only meaningful in the generation they
-were read from — they restart whenever the agent is rebuilt — so every
+were read from: they restart whenever the agent is rebuilt: so every
 mutation re-reads the queue first and names that generation. If the
 agent restarted in between, the request is refused as stale rather than
 resolved against a different message.
@@ -595,7 +605,7 @@ resolved against a different message.
 A refusal is an ANSWER, not a crash: the agent will decline to delete a
 message it has already committed to the conversation, and says which of
 "committing", "committed", "merged" (an interrupt folded it into another
-queued message — the survivor's id is named), "stale" or "unknown"
+queued message: the survivor's id is named), "stale" or "unknown"
 applies. Exit is 0 when every id was applied, 1 when any was refused.
 
 The aria is --id <aria>, or the one this shell is attended to. The
@@ -654,7 +664,7 @@ positional slot belongs to the sub-verb.`,
 		Name:    "list",
 		Aliases: []string{"ls"},
 		Group:   "Session",
-		Short:   "List arias — scoped to where you're attended (attend is `cd`)",
+		Short:   "List arias: scoped to where you're attended (attend is `cd`)",
 		Usage:   "list [<id>] [-H|--home | -g|--global] [-a|--all | -n <count>] [-j|--json]",
 		Long: "Lists arias `ls`-style relative to where you're attended (attend is\nthe `cd`).\n\n" +
 			"Scope:\n" +
@@ -718,12 +728,158 @@ positional slot belongs to the sub-verb.`,
 		Group:   "Session",
 		Short:   "Bind this shell to an existing aria (optionally at a turn)",
 		Usage:   "attend <id> | <id>:<turn> | <id>.<lt> | :<turn> | null",
-		Long:    "Binds this shell to an aria. With :<turn> the binding carries a pending\nfork-point — the next bare prompt (`fig -- …`) forks the trunk there and\nmoves to the new branch. `:<turn>` alone re-pins the already-bound aria.\n\n`attend null` goes home: drops this shell's binding (named for the kindNull\ngenesis root). New conversations then default to the live outfit.\n\nTerminal-only. Inside an aria's own bash tool, FIGARO_ARIA statically\nattends that shell to the aria that spawned it, and attend refuses — reach\nanother aria with an explicit --id instead.",
+		Long:    "Binds this shell to an aria. With :<turn> the binding carries a pending\nfork-point: the next bare prompt (`fig -- …`) forks the trunk there and\nmoves to the new branch. `:<turn>` alone re-pins the already-bound aria.\n\n`attend null` goes home: drops this shell's binding (named for the kindNull\ngenesis root). New conversations then default to the live outfit.\n\nTerminal-only. Inside an aria's own bash tool, FIGARO_ARIA statically\nattends that shell to the aria that spawned it, and attend refuses: reach\nanother aria with an explicit --id instead.",
 		ArgsMin: 1,
 		ArgsMax: 1,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			runAttend(ld, ctx.Args[0])
+			return nil
+		},
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
+	})
+
+	r.Register(&cmdkit.Command{
+		Name:  "outfit",
+		Group: "State",
+		Short: "Outfit lifecycle: reload flags the default form for recomputation",
+		Usage: "outfit reload",
+		Long: `The outfit files are ONE-WAY sources of truth: figaro reads them, and
+nothing ever writes form state back (deliberate: they may be tracked in
+git; access controls will fence the gap later).
+
+  figaro outfit reload    flag the default form dirty; the next fig new
+                          re-reads the files, and remints the default form
+                          only if the hash moved or the form was patched
+                          by hand since birth. Same files, untouched form:
+                          a no-op, and the shared prefix (and the
+                          provider's warm cache) survives.
+
+Folding an outfit onto a LIVE aria is a different act: see
+` + "`figaro state outfit`" + `.`,
+		ArgsMin: 1,
+		ArgsMax: 1,
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			if ctx.Args[0] != "reload" {
+				return fmt.Errorf("outfit: unknown subcommand %q (only `reload`; there is deliberately no `write`)", ctx.Args[0])
+			}
+			acli := mustConnectAngelus(ld)
+			defer acli.Close()
+			c, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			resp, err := acli.OutfitReload(c)
+			if err != nil {
+				die("outfit reload: %s", err)
+			}
+			if resp.Flagged {
+				fmt.Printf("default form %s flagged; the next `fig new` recomputes from the outfit files\n", resp.FormID)
+			} else {
+				fmt.Println("no default form minted yet; the next `fig new` computes from the files regardless")
+			}
+			return nil
+		},
+	})
+
+	r.Register(&cmdkit.Command{
+		Name:  "study",
+		Group: "Session",
+		Short: "Subscribe this figaro to an unbound form (see its changes)",
+		Usage: "study [<aria>] <@form-id> | study [-j]",
+		Long: `Subscribes a figaro to an unbound form: committed patches to the form
+reach the figaro as <system-reminder> blocks on its next turn. Durable on
+the figaro's own board (system.studies); revival resubscribes; a fork
+inherits the relationship, never a private copy. No arguments lists the
+attended figaro's studies. The form is always the LAST positional.`,
+		ArgsMax: 2,
+		Flags: []cmdkit.FlagDef{
+			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			runStudy(ctx.Extra.(*config.Loaded), ctx.Args, false, ctx.BoolFlag("json"))
+			return nil
+		},
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
+	})
+
+	r.Register(&cmdkit.Command{
+		Name:    "drop",
+		Group:   "Session",
+		Short:   "Unsubscribe this figaro from a studied form",
+		Usage:   "drop [<aria>] <@form-id>",
+		ArgsMin: 1,
+		ArgsMax: 2,
+		Flags: []cmdkit.FlagDef{
+			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			runStudy(ctx.Extra.(*config.Loaded), ctx.Args, true, ctx.BoolFlag("json"))
+			return nil
+		},
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
+	})
+
+	r.Register(&cmdkit.Command{
+		Name:  "cast",
+		Group: "Session",
+		Short: "Cast a figaro into a role (point target-aria here, and study it)",
+		Usage: "cast [<aria>] <@form-id> | cast [<aria>] -O <names> [-S <k=v>] [-j]",
+		Long: `One casting call: ensure the figaro studies the role, then point the
+role's target-aria at it: serialized through the figaro's actor loop, so
+no two castings of one figaro interleave. With -O the role is MINTED by
+the call, born already cast (nothing half-fails); -O occupies the form
+slot, so a lone positional is then the aria. With no figaro available
+(unattended, or attending a form) one is minted from the default form
+first: if the casting then fails, that partial is spelled out.
+
+The form is always the LAST positional. Bound boards are refused: roles
+are unbound forms only.`,
+		ArgsMax: 2,
+		Flags: []cmdkit.FlagDef{
+			{Long: "outfit", Short: "O", Description: "Mint the role from these outfit NAMES (occupies the form slot)"},
+			{Long: "set", Short: "S", Description: "Mint the role with these keys (occupies the form slot)"},
+			{Long: "delete", Short: "D", Description: "Key paths the minted role's birth patch removes"},
+			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			runCast(ctx.Extra.(*config.Loaded), ctx.Args, ctx.Flag("outfit"), ctx.Flag("set"), ctx.Flag("delete"), ctx.BoolFlag("json"))
+			return nil
+		},
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
+	})
+
+	r.Register(&cmdkit.Command{
+		Name:  "bind",
+		Group: "Session",
+		Short: "Birth a figaro from an unbound form (dormant; never rebinds this shell)",
+		Usage: "bind [<@form-id> | null] [-O <names>] [-S <k=v>] [-j]",
+		Long: `Births a FIGARO by forking an unbound form: the form's state becomes the
+figaro's inherited prefix, the form goes on living, and nothing converts.
+
+  figaro bind                 bind from the ATTENDED form
+  figaro bind @a1b2c3         bind from that form
+  figaro bind null            the naked figaro: mints fine, and its first
+                              TURN fails until a provider is patched in
+  figaro bind @a1b2c3 -O focus  fold an outfit into the birth
+  figaro bind @a1b2c3 -S n=1    fold keys into the birth
+
+The figaro is born DORMANT: no agent, no provider constructed, and
+wakes on first use. Your shell's attendance never moves: attend the
+printed id yourself. See ` + "`figaro help form`" + ` for the form family.`,
+		ArgsMax: 1,
+		Flags: []cmdkit.FlagDef{
+			{Long: "outfit", Short: "O", Description: "Outfit NAMES folded into the birth patch"},
+			{Long: "set", Short: "S", Description: "Birth keys: k=v or a JSON literal"},
+			{Long: "delete", Short: "D", Description: "Key paths the birth patch removes"},
+			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			target := ""
+			if len(ctx.Args) > 0 {
+				target = ctx.Args[0]
+			}
+			runBind(ld, target, ctx.Flag("outfit"), ctx.Flag("set"), ctx.Flag("delete"), ctx.BoolFlag("json"))
 			return nil
 		},
 		CompleteArgs: completeAriaIDsPositionalOrFlag,
@@ -742,7 +898,7 @@ so anything already addressing it keeps working. Only an INTERIOR fork
 
   figaro fork                 branch the bound aria at its head
   figaro fork <id>            branch another aria at its head (maintenance)
-  figaro fork <id>:12         interior fork — history before turn 12 is shared,
+  figaro fork <id>:12         interior fork: history before turn 12 is shared,
                               the original suffix becomes the continuation
   figaro fork <id>.842        the same, at an LT instead of a turn
   figaro fork --stay          branch but do not rebind this shell
@@ -760,7 +916,7 @@ the aria is never frozen. Forking any other aria, or passing --stay,
 also leaves your session untouched. SELF-FORKING IS SAFE -- it does not
 cost you your id, your inbox, or any message in flight.
 
-With a prompt — ` + "`figaro fork [flags] -- <prompt>`" + ` — it also sends, the way
+With a prompt: ` + "`figaro fork [flags] -- <prompt>`" + `: it also sends, the way
 ` + "`figaro new -- <prompt>`" + ` does. The prompt always lands on the ALTERNATIVE
 (the fresh empty branch); the continuation is never written to. Parsing is
 ` + "`send`" + `'s, so the send flags mean here exactly what they mean there:
@@ -774,16 +930,16 @@ With a prompt — ` + "`figaro fork [flags] -- <prompt>`" + ` — it also sends,
   figaro fork -O ttl=1h                branch and dress it; say nothing yet
 
   -r/--raw, -v/--verbatim, -o/--verbose, -l/--listen, -x/--exec (+ -n, -y),
-  -f/--forget  — as in ` + "`figaro send`" + `; prompt-only (an error without one).
-  -j/--json    — one line on stdout: {aria_id, parent, continuation,
+  -f/--forget, as in ` + "`figaro send`" + `; prompt-only (an error without one).
+  -j/--json: one line on stdout: {aria_id, parent, continuation,
                  alternative, turn, rescoped, mode}. mode is "fork" with no
                  prompt, "fork-send" with one, and aria_id is then the branch.
-  --stay       — governs the SHELL only, never where the prompt lands. (This
+  --stay: governs the SHELL only, never where the prompt lands. (This
                  differs from ` + "`send <id>:<turn> --stay`" + `, which parks the branch
                  and sends to the original trunk; under fork the branch is
                  always the thing you just made, so it is always the thing
                  that gets prompted.)
-  -O/--outfit  — dresses the ALTERNATIVE, in the same call that mints it: the
+  -O/--outfit: dresses the ALTERNATIVE, in the same call that mints it: the
                  fold lands on the new branch's form before anything is
                  said to it, so the first turn is answered wearing it. Legal
                  with or without a prompt. See ` + "`figaro help outfits`" + `.
@@ -844,7 +1000,7 @@ its form, and every message, with no store-local identity in it.
   figaro export 14bf8211 -o keep.json
 
 It carries CONTENT, not identity. Node ids, fork bases and LTs belong to the
-store an aria is in, not to the aria — so they are left behind and the
+store an aria is in, not to the aria: so they are left behind and the
 destination mints its own. That is what makes an import unable to collide.
 
 The provider translation caches do not travel either. They are a derivable
@@ -891,7 +1047,7 @@ when not, and the tool says which happened.`,
 place, and the parent comes to sit under it.
 
 This is presentation only. Nothing moves on disk, no history changes, and
-the aria still reads exactly the turns it read before — so a promote is
+the aria still reads exactly the turns it read before: so a promote is
 instant no matter how long the conversation is, and cannot fail halfway.
 
   figaro promote              promote the bound aria one level
@@ -939,18 +1095,39 @@ aria nesting follows fork history alone and there is nothing to promote.`,
 		Name:    "state",
 		Aliases: []string{"form"},
 		Group:   "State",
-		Short:   "Show the form, or dress it in an outfit",
-		Usage:   "state [<id> | --id <id>] [-j] | state outfit <spec> | state outfit --list | state outfit --tree [<spec>]",
+		Short:   "Show the form, or shape it",
+		Usage:   "state [show] [<id>] | state set <k> <v> | state delete <paths> | state new -O <names> | state outfit <names>",
 		Long: `The aria's state, and the verbs that shape it.
 
   figaro state                     print the form
-  figaro state --id <id> -j        another aria's, as JSON
+  figaro state show --id <id> -j   another aria's, as JSON
+  figaro state set mantra hello    patch ONE path (key then value)
+  figaro state set a=1,b="two"     patch several, in the -S grammar
+  figaro state delete a.b,mantra   remove key paths, comma-separated
+  figaro form new -O sonn5         mint an UNBOUND form (@id); -O is required
+  figaro form fork @id -S k=v      duplicate a form's state into a fresh @id
+  figaro form ls                   list unbound forms (scoped by attendance)
+  figaro form rm @id               remove an unbound form
   figaro state outfit focus        fold an outfit onto this aria, now
   figaro state outfit a,b          fold both, b winning
-  figaro state outfit ttl=1h       fold an inline literal
   figaro state outfit --tree a     draw a's layer closure, apply nothing
   figaro form listen               watch it live, as a JSON tree
-  figaro state outfit --list       the outfits on disk
+  figaro form help outfits         a help topic, from here
+
+THE TWO AXES. Outfits and patches are separate and never mixed:
+
+  -O/--outfit   outfit NAMES only, comma-separated
+  -S/--set      form keys: ` + "`k=v`" + ` or a JSON literal, comma-separated
+  -D/--delete   form key paths to remove, comma-separated
+
+They compose wherever dressing is accepted, and the order is fixed:
+outfits fold first, then --set, then --delete. Outfit names are resolved
+once, at the daemon's API boundary; what lands on a board is always data.
+
+An unbound form is durable, versioned, forkable state with no figaro
+attached: patch it with set/delete, watch it with form listen, make a
+figaro from it by forking (bind). A form carrying target-aria is a ROLE.
+` + "`state`" + ` and ` + "`form`" + ` are one command; both spellings work everywhere.
 
 ` + "`state outfit`" + ` is an ADDITIVE fold: keys already holding the outfit's
 value are skipped and nothing is ever removed, so re-applying is free and the
@@ -958,30 +1135,65 @@ aria sees a <system-reminder> for exactly what changed. It is the same fold
 ` + "`-O`" + ` performs on send/new/fork; the verb form exists because dressing
 state is an action, not a modifier on one.
 
-See ` + "`figaro help outfits`" + ` for the spec syntax.`,
+See ` + "`figaro help outfits`" + ` for the outfit syntax.`,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria id (overrides pid binding)"},
-			{Long: "json", Short: "j", IsBool: true, Description: "Accepted and ignored: the snapshot is always a JSON object"},
-			{Long: "list", IsBool: true, Description: "outfit: list available outfits and exit"},
-			{Long: "tree", IsBool: true, Description: "outfit: print the layer closure and exit; applies nothing"},
-			{Long: "refresh", IsBool: true, Description: "outfit: re-read outfits and config from disk"},
+			{Long: "json", Short: "j", IsBool: true, Description: "JSON output (new/fork/ls emit machine-readable ids)"},
+			{Long: "outfit", Short: "O", Subwords: []string{"new", "fork"}, Description: "new/fork: outfit NAMES for the birth patch (required for new)"},
+			{Long: "set", Short: "S", Subwords: []string{"new", "fork"}, Description: "new/fork: birth keys, k=v or a JSON literal"},
+			{Long: "delete", Short: "D", Subwords: []string{"new", "fork"}, Description: "new/fork: key paths the birth patch removes"},
+			{Long: "list", IsBool: true, Subwords: []string{"outfit"}, Description: "outfit: list available outfits and exit"},
+			{Long: "tree", IsBool: true, Subwords: []string{"outfit"}, Description: "outfit: print the layer closure and exit; applies nothing"},
+			{Long: "refresh", IsBool: true, Subwords: []string{"outfit"}, Description: "outfit: re-read outfits and config from disk"},
+			{Long: "recursive", IsBool: true, Subwords: []string{"rm"}, Description: "rm: also remove the form's live branches"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			args := ctx.Args
-			if len(args) > 0 && args[0] == "outfit" {
-				return runStateOutfit(ld, ctx, args[1:])
+			sub := ""
+			if len(args) > 0 {
+				sub = args[0]
 			}
-			if len(args) > 0 && args[0] == "listen" {
+			switch sub {
+			case "outfit":
+				return runStateOutfit(ld, ctx, args[1:])
+			case "listen":
 				id := ctx.Flag("id")
 				if id == "" && len(args) > 1 {
 					id = args[1]
 				}
 				runFormListen(ld, id)
 				return nil
-			}
-			if ctx.BoolFlag("list") || ctx.BoolFlag("tree") || ctx.BoolFlag("refresh") {
-				return fmt.Errorf("--list/--tree/--refresh belong to `state outfit`")
+			case "new":
+				runFormNew(ld, ctx.Flag("outfit"), ctx.Flag("set"), ctx.Flag("delete"), args[1:], ctx.BoolFlag("json"))
+				return nil
+			case "fork":
+				parent := ""
+				rest := args[1:]
+				if len(rest) > 0 {
+					parent, rest = rest[0], rest[1:]
+				}
+				runFormFork(ld, parent, ctx.Flag("outfit"), ctx.Flag("set"), ctx.Flag("delete"), rest, ctx.BoolFlag("json"))
+				return nil
+			case "ls":
+				runFormLs(ld, ctx.BoolFlag("json"))
+				return nil
+			case "rm":
+				runKill(ld, "", args[1:], ctx.BoolFlag("recursive"))
+				return nil
+			case "set":
+				return runFormSet(ld, ctx.Flag("id"), args[1:])
+			case "delete", "unset":
+				return runFormDelete(ld, ctx.Flag("id"), args[1:])
+			case "help":
+				return runFormHelp(ctx, args[1:])
+			case "show":
+				id := ctx.Flag("id")
+				if id == "" && len(args) > 1 {
+					id = args[1]
+				}
+				runForm(ld, id)
+				return nil
 			}
 			id := ctx.Flag("id")
 			if id == "" && len(args) > 0 {
@@ -1035,27 +1247,36 @@ See ` + "`figaro help outfits`" + ` for the spec syntax.`,
 		Short:  "The outfit syntax (a help topic)",
 		Usage:  "help outfits",
 		Long: `An OUTFIT is a named patch for an aria's form: model, credo,
-skills, and anything else you keep together. -O is a comma-separated list of
-terms, folded LEFT TO RIGHT — later terms win, exactly as an outfit's own
-` + "`layers = [...]`" + ` does.
+skills, and anything else you keep together. Dressing has TWO AXES, and they
+are never mixed:
 
-  sonn5                     one outfit, from outfits/sonn5.toml
-  sonn5,focus               both, focus winning
-  ttl=1h                    one key, one value
-  mantra="cool thing"       quoted values keep their spaces
-  n=3   on=true             a value that parses as JSON keeps its type
-  '{"ttl":"1h","n":3}'      the literal the sugar stands for
-  '{"layers":["a"],"x":1}'  a literal may name layers of its own
-  sonn5,ttl=1h              mix freely
+  -O/--outfit   outfit NAMES, comma-separated, folded LEFT TO RIGHT
+  -S/--set      form keys: ` + "`k=v`" + ` or a whole JSON literal, comma-separated
+  -D/--delete   form key paths to remove, comma-separated
 
-What actually travels is ONE form patch. A name becomes an entry in the patch's
-` + "`layers`" + ` directive and the server folds it; a literal or ` + "`k=v`" + ` becomes keys.
-So the same ` + "`-O`" + ` means the same thing at birth and on a live aria:
+  -O sonn5                     one outfit, from outfits/sonn5.toml
+  -O sonn5,focus               both, focus winning
+  -S ttl=1h                    one key, one value
+  -S mantra="cool thing"       quoted values keep their spaces
+  -S n=3   -S on=true          a value that parses as JSON keeps its type
+  -S '{"ttl":"1h","n":3}'      the literal the sugar stands for
+  -D system.tags,mantra        remove two keys
+  -O sonn5 -S ttl=1h           compose: the outfit, then your key on top
+
+ORDER IS FIXED where they compose: outfits fold first, then --set, then
+--delete. A key you wrote always beats the outfit that also sets it.
+
+What travels is names on one side and DATA on the other. The daemon resolves
+the names once, at its API boundary, and what lands on a board is always
+materialized keys: so the same ` + "`-O`" + ` means the same thing at birth and on a
+live aria, and a patch never carries a directive:
 
   figaro new -O <o> -- <p>        BIRTH: folded ON TOP of default_outfit
   figaro send -O <o> -- <p>       applied to the form in the same call as
   figaro fork -O <o> [-- <p>]     the prompt (on fork, to the new branch)
   figaro state outfit <o>         applied, with no prompt
+  figaro state set k v            the other axis, one path
+  figaro state delete <paths>     removals
   figaro state outfit --tree <o>  draw the layer closure, apply nothing
   figaro state outfit --list      what the server has on disk
   figaro state outfit --refresh   re-read outfits and config from disk
@@ -1065,19 +1286,18 @@ Rules worth knowing:
   - Setting a key to the value it already holds changes nothing and announces
     nothing, so re-applying an outfit is free.
   - A name that does not exist is an error everywhere except one place: the
-    reserved layer ` + "`default`" + `, whose absence is what triggers first-run setup.
-  - A name is a file basename: no whitespace, no ` + "`=`" + ` (the sugar), no ` + "`/`" + ` or
-    ` + "`\\`" + ` (which would climb out of the outfits directory), no brackets or
-    quotes, no leading ` + "`-`" + `. Layer names obey the same rule.
+    reserved name ` + "`default`" + `, whose absence is what triggers first-run setup.
+  - A name is a file basename: no whitespace, no ` + "`=`" + ` (that is --set), no ` + "`/`" + `
+    or ` + "`\\`" + ` (which would climb out of the outfits directory), no brackets or
+    quotes, no leading ` + "`-`" + `. Layer names inside a file obey the same rule.
   - Structure must balance. An unmatched brace or quote is an error.
-  - ORDER, one gap: names fold before the literals typed beside them, so
-    ` + "`a,{x:1},b`" + ` folds a and b first and then x. Write the literal last if
-    you meant it to win.
   - QUOTE a literal. Unquoted, ` + "`{mantra:test}`" + ` is not JSON (use the sugar,
     ` + "`mantra=test`" + `) and ` + "`{a:1,b:2}`" + ` is brace-expanded by the shell into two
     words with the braces gone, so it never reaches figaro at all.
-  - Repeating -O appends: ` + "`-O a -O b`" + ` is ` + "`-O a,b`" + `.
-  - ` + "`layers`" + ` is reserved on a form: the server expands it and never stores it.
+  - Repeating a flag appends: ` + "`-O a -O b`" + ` is ` + "`-O a,b`" + `, and the same for -S/-D.
+  - ` + "`layers`" + ` is respected in exactly ONE place: an outfit FILE, where it
+    names the outfits that file is composed from. Written into a patch it is
+    ordinary data and is stored as typed.
 
 Outfits live in the SERVER's config: ~/.config/figaro/outfits/<name>.toml, with
 default_outfit in config.toml naming what ` + "`default`" + ` stands for. The first-run
@@ -1258,10 +1478,10 @@ instance, so these are the levers for this one.
 		Short: "Check for a newer figaro release",
 		Usage: "update [--check] [--json] [--apply]",
 		Long: `Ask the Go module proxy for the latest tagged figaro release,
-compare it against this binary, and tell you how to upgrade — respecting
+compare it against this binary, and tell you how to upgrade: respecting
 whichever install channel you used (` + "`go install`" + `, Nix, dev shell).
 
-By default this is *advisory* — figaro never rewrites its own binary
+By default this is *advisory*: figaro never rewrites its own binary
 unless you pass --apply and are on the go-install channel.
 
   figaro update                current vs. latest, cached
@@ -1315,8 +1535,8 @@ auto-load it on the next tab.
 	// should pull from the prompt-context pool, not the verb list.
 	r.SetBarePromptComplete(completePromptContext)
 
-	// The bare form is not a registered command — Run dispatches it before
-	// the router sees argv — so it needs its own usage line.
+	// The bare form is not a registered command: Run dispatches it before
+	// the router sees argv: so it needs its own usage line.
 	r.Synopsis = []string{progName + " [send flags] -- <prompt>   (same flags as `" + progName + " send`)"}
 	// Consumed by extractNoBindFlag before dispatch, so no Command declares
 	// them and nothing else would print them.

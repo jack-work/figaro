@@ -74,7 +74,7 @@ func TestTruncateVisible(t *testing.T) {
 
 // A prompt must end on \r as surely as on \n. On a Windows console left in raw
 // mode by a figaro that died without unwinding (console mode belongs to the
-// console, not the process), Enter delivers a bare \r — and the old
+// console, not the process), Enter delivers a bare \r, and the old
 // ReadString('\n') waited for a byte that would never arrive. MEASURED:
 // `figaro login copilot` hung at its first prompt, echoing nothing, and took
 // two Ctrl-C to leave.
@@ -112,7 +112,7 @@ func TestReadLineTerminators(t *testing.T) {
 }
 
 // present/absent exist so a tree can mark what is there and what is not. They
-// are required to be the diff renderer's own green and red — the claim lives
+// are required to be the diff renderer's own green and red: the claim lives
 // here, where the palette is defined, rather than in each caller that paints.
 func TestPresentAndAbsentShareTheDiffForegrounds(t *testing.T) {
 	restore := SetColorMode(ColorAlways)

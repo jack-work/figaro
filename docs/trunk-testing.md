@@ -28,7 +28,7 @@ to `allowed[]` knowing a trunkless figaro can no longer build it.
                                # and real-shaped-data work
 
 `.#snapshot` reseeds from your daemon's arias into `$FIGARO_STATE_DIR`. It
-is a copy. Migration testing goes here and ONLY here — never against
+is a copy. Migration testing goes here and ONLY here: never against
 `~/.local/state/figaro/arias`, because a bad migration cannot be undone by
 rebuilding.
 
@@ -73,7 +73,7 @@ driving a model.
 
 ## Crash safety
 
-figwal's crash harness is the race engine — it kills a child at randomised
+figwal's crash harness is the race engine: it kills a child at randomised
 offsets and replays by seed:
 
     cd $FIGWAL && go test ./crashtest/ -count=1          # both modes

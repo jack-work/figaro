@@ -8,15 +8,18 @@ package store
 // for good. AriaMeta.LastFigaroLT is the watermark that says how far the
 // checkpoint got.
 //
-// healMeta closes that gap on the READ path only — no startup sweep, no
+// healMeta closes that gap on the READ path only: no startup sweep, no
 // background job. It folds exactly the entries after the watermark with the
 // same rules as Agent.refreshMetrics, so the two paths cannot drift, and it
 // rewrites the sidecar. When the watermark is already at the tail (212 of 213
 // arias in the author's store) it does nothing at all.
 //
 // What it does NOT touch: mantra/cwd/outfit/provider/model (form- and
-// agent-owned, unknowable from an IR suffix — metaBackfill owns those) and
-// LastActiveMS (the IR carries no wall clock).
+// agent-owned, unknowable from an IR suffix: metaBackfill owns those).
+// Recency is not here at all anymore: every figwal record carries a server
+// timestamp now, and Backend.LastTS reads the newest one straight from the
+// store: the sidecar's LastActiveMS died with the premise that "the IR
+// carries no wall clock".
 
 import (
 	"log/slog"
@@ -35,7 +38,7 @@ var metaHealFolded atomic.Int64
 func MetaHealFolded() int64 { return metaHealFolded.Load() }
 
 // healMeta advances the sidecar to the log tail if it lags. Called from Open
-// — the point where content is actually read — so the cost rides along with a
+// : the point where content is actually read: so the cost rides along with a
 // read the caller was doing anyway, and `list` (Meta only) never pays it.
 func (b *XwalBackend) healMeta(ariaID string, log Log[message.Message]) {
 	tail, ok := log.PeekTail()

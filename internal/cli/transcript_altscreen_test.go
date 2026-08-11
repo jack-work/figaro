@@ -9,7 +9,7 @@ import (
 )
 
 // newTestTranscript is a pager wired to a plain writer, so the test reads the
-// exact BYTES figaro would put on a terminal — which is the level this bug
+// exact BYTES figaro would put on a terminal: which is the level this bug
 // lives at. Content is irrelevant here; the escapes are the subject.
 func newTestTranscript(out *strings.Builder) *transcript {
 	client := aria.NewClient()
@@ -27,7 +27,7 @@ func newTestTranscript(out *strings.Builder) *transcript {
 //	?1049l (leave alt screen) = 1
 //	\x1b[2J (erase screen)    = 1     <- on the PRIMARY screen. The user's own.
 //
-// At thirty rows the same drive gives 1 / 1 — paired, harmless.
+// At thirty rows the same drive gives 1 / 1: paired, harmless.
 //
 // MECHANISM. enter() only QUEUES the switch (t.prefix, emitted by whichever
 // frame paints next) and a frame is not guaranteed: renderFrame returns early
@@ -144,7 +144,7 @@ func TestEnterLeaveCyclesArePaired(t *testing.T) {
 
 // The erase at leave is gone on purpose: ?1049l restores the primary screen by
 // definition. Keeping it destroyed the user's screen on any terminal that does
-// not honour 1049 — which is precisely the reported Windows shape, where the
+// not honour 1049: which is precisely the reported Windows shape, where the
 // pager's frames land in the primary buffer as ordinary text.
 func TestLeaveDoesNotEraseTheScreen(t *testing.T) {
 	var out strings.Builder
@@ -159,7 +159,7 @@ func TestLeaveDoesNotEraseTheScreen(t *testing.T) {
 }
 
 // os.Exit does not run defers, and two exits in stream.go are os.Exit: die()
-// (reachable AFTER --listen has opened the pager — a Qua failure lands there)
+// (reachable AFTER --listen has opened the pager, a Qua failure lands there)
 // and the Ctrl-C 130 path. Both used to leave the terminal on the alternate
 // screen, shell invisible. exitNow runs the registered hooks first.
 func TestExitHooksRunBeforeTheProcessGoes(t *testing.T) {
@@ -184,7 +184,7 @@ func TestExitHooksRunBeforeTheProcessGoes(t *testing.T) {
 	}
 }
 
-// die() and dieUsage() must go through the hooks, not around them — that is
+// die() and dieUsage() must go through the hooks, not around them: that is
 // the whole point, since die() is the exit that strands a pager.
 func TestDieRunsExitHooks(t *testing.T) {
 	for _, tc := range []struct {

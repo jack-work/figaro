@@ -56,7 +56,7 @@ func benchProvider(b *testing.B, mode provider.MarkMode) *Provider {
 }
 
 // BenchmarkCatchUp guards invariant 14: normal synchronisation is O(new
-// messages), not O(history). WarmDelta must not grow with n — if it does,
+// messages), not O(history). WarmDelta must not grow with n: if it does,
 // the projection is rescanning the prefix and the fix is in the projection,
 // not here.
 func BenchmarkCatchUp(b *testing.B) {
@@ -69,7 +69,7 @@ func BenchmarkCatchUp(b *testing.B) {
 				cache := newCopyingBenchLog[[]json.RawMessage]()
 				p := benchProvider(b, provider.MarkAuto)
 				b.StartTimer()
-				p.catchUp(log, cache, nil)
+				p.catchUp(log, cache, nil, nil)
 			}
 		})
 		b.Run("WarmDelta/"+strconv.Itoa(n), func(b *testing.B) {
@@ -84,7 +84,7 @@ func BenchmarkCatchUp(b *testing.B) {
 				}
 			}
 			p := benchProvider(b, provider.MarkAuto)
-			p.catchUp(prefix, nil, nil)
+			p.catchUp(prefix, nil, nil, nil)
 			prewarmed := p.projection
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -93,14 +93,14 @@ func BenchmarkCatchUp(b *testing.B) {
 				b.StopTimer()
 				p.projection = prewarmed
 				b.StartTimer()
-				p.catchUp(log, nil, nil)
+				p.catchUp(log, nil, nil, nil)
 			}
 		})
 	}
 }
 
 // BenchmarkAssemble measures the per-turn request build, which IS
-// proportional to prompt bytes (serialization always is) — the invariant it
+// proportional to prompt bytes (serialization always is): the invariant it
 // guards is that marking does not add a second full pass.
 func BenchmarkAssemble(b *testing.B) {
 	board := form.FromMap(map[string]json.RawMessage{
@@ -111,7 +111,7 @@ func BenchmarkAssemble(b *testing.B) {
 			b.Run(string(mode)+"/"+strconv.Itoa(n), func(b *testing.B) {
 				p := benchProvider(b, mode)
 				log := benchLog(b, n)
-				perMessage, _ := p.catchUp(log, nil, nil)
+				perMessage, _ := p.catchUp(log, nil, nil, nil)
 				b.ReportAllocs()
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
@@ -132,7 +132,7 @@ func BenchmarkMarkRequest(b *testing.B) {
 		b.Run(strconv.Itoa(n), func(b *testing.B) {
 			p := benchProvider(b, provider.MarkBlocks)
 			log := benchLog(b, n)
-			perMessage, _ := p.catchUp(log, nil, nil)
+			perMessage, _ := p.catchUp(log, nil, nil, nil)
 			board := form.FromMap(map[string]json.RawMessage{
 				"system.credo": json.RawMessage(`"you are figaro"`),
 			})

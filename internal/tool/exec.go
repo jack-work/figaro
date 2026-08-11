@@ -16,7 +16,7 @@ type ExecRequest struct {
 	Command string
 
 	// Cwd is the requested working directory. Empty means "let the
-	// executor pick" — typically the host default for the current
+	// executor pick": typically the host default for the current
 	// agent.
 	Cwd string
 

@@ -34,8 +34,8 @@ func types(t aria.Turn) []livedoc.NodeType {
 	return out
 }
 
-// A turn is one exchange: the question that opened it is Turn.Inquiry — text,
-// not a unit and not a node — and Nodes holds only what came back.
+// A turn is one exchange: the question that opened it is Turn.Inquiry: text,
+// not a unit and not a node, and Nodes holds only what came back.
 func TestTurns_InquiryIsTextAndNodesAreTheReply(t *testing.T) {
 	msgs := []message.Message{
 		userPrompt("first question"),
@@ -108,7 +108,7 @@ func TestTurns_ToolBeforeSteeringSharingItsLT(t *testing.T) {
 	}
 	tn := turns[0]
 	want := []livedoc.NodeType{
-		livedoc.NodeProse,    // "hey" — node 0 is the agent's first block
+		livedoc.NodeProse,    // "hey": node 0 is the agent's first block
 		livedoc.NodeTool,     // t1
 		livedoc.NodeSteering, // the steer
 		livedoc.NodeProse,    // "oh cool sure"
@@ -141,7 +141,7 @@ func TestTurns_ToolBeforeSteeringSharingItsLT(t *testing.T) {
 	}
 }
 
-// S11 — the purity property. Turns() may not depend on whether the tail is
+// S11: the purity property. Turns() may not depend on whether the tail is
 // open: composing every prefix must agree with composing the whole and
 // truncating. This is what stops the screen rewriting itself at seal.
 func TestTurns_PureUnderOpenTail(t *testing.T) {

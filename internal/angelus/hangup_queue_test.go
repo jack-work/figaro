@@ -20,7 +20,7 @@ import (
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-// The hangup disposition, over a real angelus + a real aria socket — the same
+// The hangup disposition, over a real angelus + a real aria socket: the same
 // path `figaro hup` and `figaro cut` take. The unit tests prove the fold and
 // the drain; this proves the wire carries the choice and brings the queue back.
 
@@ -78,7 +78,7 @@ model = "m"
 
 	acli, err := angelus.DialClient(transport.UnixEndpoint(a.SocketPath))
 	require.NoError(t, err)
-	create, err := acli.Create(ctx, dress(t, "parked"))
+	create, err := acli.Create(ctx, dress(t, "parked"), nil)
 	require.NoError(t, err)
 	acli.Close()
 
@@ -162,7 +162,7 @@ func TestHangup_ClearOverTheWire(t *testing.T) {
 //
 // Observed on the CONVERSATION, not on the queue. The queue is the wrong
 // instrument here: the moment the interrupt lands, the drain loop is free to
-// lift the folded message and start answering it, so a queue read is a race —
+// lift the folded message and start answering it, so a queue read is a race -
 // it passed alone and failed under load, which is how the flake announced
 // itself. What "kept" actually means is that the aria goes on to ask itself
 // the combined question, and that is durable.
@@ -252,7 +252,7 @@ func TestQueueMutators_OverTheWire(t *testing.T) {
 	assert.Equal(t, []string{"keep me", "fixed"},
 		[]string{after.Prompts[0].Text, after.Prompts[1].Text})
 
-	// A stale epoch is refused as a RESULT — the call itself succeeds.
+	// A stale epoch is refused as a RESULT: the call itself succeeds.
 	stale, err := cli.DeleteQueued(ctx, rpc.QueueDeleteRequest{
 		Epoch: "not-this-generation", IDs: []uint64{after.Prompts[0].ID},
 	})

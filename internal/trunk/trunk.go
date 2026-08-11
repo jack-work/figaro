@@ -28,7 +28,7 @@ import (
 //
 // Absent an override, presentation falls through to the topology. So a lost
 // or truncated pstate degrades to the truthful default rather than to a
-// wrong tree — the same property that lets figwal rebuild its index from
+// wrong tree: the same property that lets figwal rebuild its index from
 // markers.
 type state struct {
 	Version int               `json:"version"`
@@ -212,7 +212,7 @@ func (x *Tree) Reparent(id, parent string) error {
 }
 
 // Overridden is every aria whose presentation parent differs from its
-// topology parent AND which still reads its history through an ancestor —
+// topology parent AND which still reads its history through an ancestor -
 // exactly the arias that can make a delete's boundary non-empty.
 //
 // The second condition is what makes normalization terminate. Absorbing an

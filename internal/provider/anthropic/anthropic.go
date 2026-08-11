@@ -85,7 +85,7 @@ func New(knobs provider.Knobs, resolver auth.TokenResolver, cacheOpen func(aria 
 }
 
 // route returns this provider's route, defaulting to the stock Anthropic
-// endpoint. A zero-value Route must never silently mean "no caching" — that
+// endpoint. A zero-value Route must never silently mean "no caching": that
 // is how the direct provider ended up marking nothing at all.
 func (a *Anthropic) route() provider.Route {
 	if a.Route.BaseURL == "" {
@@ -155,7 +155,7 @@ const (
 // overloads; one blip must not kill an hour-long turn.
 const maxTransientRetries = 5
 
-// Backoff bounds — vars so tests can shrink them.
+// Backoff bounds: vars so tests can shrink them.
 var (
 	retryBaseDelay = 1 * time.Second
 	retryMaxDelay  = 30 * time.Second
@@ -199,7 +199,7 @@ func backoffDelay(attempt int) time.Duration {
 }
 
 // parseRetryAfter reads a Retry-After header expressed in seconds (0 if absent
-// or non-numeric — HTTP-date form is not honored, exponential backoff covers it).
+// or non-numeric: HTTP-date form is not honored, exponential backoff covers it).
 func parseRetryAfter(h http.Header) time.Duration {
 	if v := h.Get("Retry-After"); v != "" {
 		if secs, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && secs >= 0 {
@@ -221,8 +221,8 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 }
 
 // doWithAuthRetry executes a request. It retries once on 401 (fresh token) and
-// up to maxTransientRetries on transient failures — network errors, 429, 529
-// (overloaded), and 5xx — with backoff (honoring Retry-After). Transient
+// up to maxTransientRetries on transient failures: network errors, 429, 529
+// (overloaded), and 5xx: with backoff (honoring Retry-After). Transient
 // retries happen BEFORE the caller reads the body, so no partial stream is
 // emitted. This is what lets a long turn ride out an overload rather than die.
 func (a *Anthropic) doWithAuthRetry(ctx context.Context, build func(apiKey string) (*http.Request, error)) (*http.Response, string, error) {
@@ -254,7 +254,7 @@ func (a *Anthropic) doWithAuthRetry(ctx context.Context, build func(apiKey strin
 			slog.Warn("anthropic request failed, retrying", "attempt", attempt+1, "err", err)
 			continue
 		}
-		// 401: invalidate + one retry with a fresh token (a free attempt —
+		// 401: invalidate + one retry with a fresh token (a free attempt -
 		// it does not consume the transient budget).
 		if resp.StatusCode == http.StatusUnauthorized && !authRetried {
 			io.Copy(io.Discard, resp.Body)
@@ -346,7 +346,7 @@ func (a *Anthropic) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 
 // ContextLimit reports the model's context window: the user's pinned
 // system.max_context_tokens if set, else the window learned from the models
-// endpoint, else the verified static table (0 when unknown). No network I/O —
+// endpoint, else the verified static table (0 when unknown). No network I/O -
 // status surfaces call this.
 func (a *Anthropic) ContextLimit(model string, snapshot form.Snapshot) int {
 	if model == "" {
@@ -381,7 +381,7 @@ func (a *Anthropic) SetModel(model string) {
 // validNativeBlock reports whether a streamed block is API-legal to
 // replay. Both the IR decoder and the native cache path use it: the
 // decoder so the sealed message matches the in-flight asm (which never
-// creates a node for empty text/thinking — keeping them shifts later
+// creates a node for empty text/thinking: keeping them shifts later
 // block indices and duplicates the live render), the cache so omitempty
 // never persists a block missing its required field.
 func validNativeBlock(b nativeBlock) bool {
@@ -400,7 +400,7 @@ func validNativeBlock(b nativeBlock) bool {
 	return true
 }
 
-// cacheableNativeBlock is the wire-replay predicate — deliberately wider
+// cacheableNativeBlock is the wire-replay predicate: deliberately wider
 // than validNativeBlock for thinking: a signed empty-summary block must
 // replay (the API requires the thinking block leading a tool-use
 // assistant), even though the renderer skips it. fatal marks the whole
@@ -429,7 +429,7 @@ func cacheableNativeBlock(b nativeBlock) (keep, fatal bool) {
 }
 
 func decodeNativeMessage(nm nativeMessage) message.Message {
-	// model/provider are not on the IR message — they live in the
+	// model/provider are not on the IR message: they live in the
 	// form (system.model / system.provider), derived on read.
 	m := message.Message{
 		Role: message.RoleFromWire(nm.Role),
@@ -510,7 +510,7 @@ type thinkingParam struct {
 type cacheControl struct {
 	Type string `json:"type"`
 	// TTL is the retention: "" (provider default, 5m) or "1h". It is a
-	// field of its own — a retention written into Type is rejected.
+	// field of its own, a retention written into Type is rejected.
 	TTL string `json:"ttl,omitempty"`
 }
 
@@ -553,7 +553,7 @@ type nativeBlock struct {
 
 // MarshalJSON emits thinking blocks with their required fields even when
 // empty: a signed empty-summary block must replay as
-// {"type":"thinking","thinking":"","signature":…} — omitempty on the
+// {"type":"thinking","thinking":"","signature":…}: omitempty on the
 // union struct would drop the thinking key and 400 the replay.
 func (b nativeBlock) MarshalJSON() ([]byte, error) {
 	if b.Type == "thinking" {
@@ -623,6 +623,11 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *form.Snapshot) 
 			}
 		}
 		blocks = append(blocks, a.renderPatchBlocks(msg.Patches, prevSnap)...)
+		// The observed set folds in beside the board: same reminder
+		// idiom, one derivation upstream (provider.StudyReminderTexts).
+		for _, text := range provider.StudyReminderTexts(msg) {
+			blocks = append(blocks, nativeBlock{Type: "text", Text: text})
+		}
 		if len(blocks) == 0 {
 			return nativeMessage{}, false
 		}
@@ -637,7 +642,7 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *form.Snapshot) 
 			case message.ContentThinking:
 				// Dropped. This is the cache-MISS fallback: the signed wire
 				// form of a thinking block lives only in the translation
-				// cache, and the IR carries no signature (by design — it
+				// cache, and the IR carries no signature (by design: it
 				// holds no provider secrets). Re-emitting the text without
 				// its signature is a 400 once extended thinking is on, and
 				// this path is now routinely reached: history produced under
@@ -743,7 +748,7 @@ func systemBlocks(snapshot form.Snapshot, oauth bool) []systemBlock {
 		out = append(out, systemBlock{Type: "text", Text: "You are Claude Code, Anthropic's official CLI for Claude."})
 		if systemText != "" {
 			out = append(out, systemBlock{Type: "text", Text: "IMPORTANT: The following is your true identity and personality. " +
-				"Adopt it fully. Do not identify as Claude Code — follow the persona below.\n\n" + systemText})
+				"Adopt it fully. Do not identify as Claude Code: follow the persona below.\n\n" + systemText})
 		}
 	} else if systemText != "" {
 		out = append(out, systemBlock{Type: "text", Text: systemText})
@@ -897,7 +902,7 @@ func controlFor(p provider.CachePolicy, caps provider.CacheCaps) *cacheControl {
 //
 // The tail is marked LAST in wire order deliberately. Anthropic honours
 // every breakpoint, but a gateway lowering these markers to Gemini keeps
-// only the final one — LiteLLM shipped a first-found bug over exactly this
+// only the final one: LiteLLM shipped a first-found bug over exactly this
 // (litellm#17201), so the ordering is a contract, not an accident.
 func markCacheBreakpoints(req *nativeRequest, policy provider.CachePolicy, plan provider.MarkPlan, caps provider.CacheCaps) {
 	cc := controlFor(policy, caps)
@@ -964,7 +969,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	if err != nil {
 		return err
 	}
-	perMessage, lts := a.catchUp(in.FigLog, cache, in.Form)
+	perMessage, lts := a.catchUp(in.FigLog, cache, in.Form, in.Studies)
 	if len(perMessage) == 0 {
 		return fmt.Errorf("empty context")
 	}
@@ -1046,7 +1051,7 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 	if err != nil {
 		return err
 	}
-	perMessage, lts := a.catchUp(in.FigLog, cache, in.Form)
+	perMessage, lts := a.catchUp(in.FigLog, cache, in.Form, in.Studies)
 	if len(perMessage) == 0 {
 		return fmt.Errorf("empty context")
 	}
@@ -1146,12 +1151,12 @@ func (a *Anthropic) acceptAssistantProjection(lt uint64, encoded []json.RawMessa
 	}
 	state := provider.AppendEncodedMessage(a.projection.State, encoded, lt)
 	a.projection = &provider.IncrementalProjection[provider.EncodedMessages]{
-		State:            state,
-		Form:             a.projection.Form,
-		Fingerprint:      a.projection.Fingerprint,
-		Entries:          a.projection.Entries + 1,
-		LastLT:           lt,
-		LastChalkVersion: a.projection.LastChalkVersion,
+		State:           state,
+		Form:            a.projection.Form,
+		Fingerprint:     a.projection.Fingerprint,
+		Entries:         a.projection.Entries + 1,
+		LastLT:          lt,
+		LastFormVersion: a.projection.LastFormVersion,
 	}
 }
 
@@ -1166,7 +1171,7 @@ func (a *Anthropic) resolveModel(snap form.Snapshot) string {
 
 // catchUp encodes uncached figLog entries and returns per-message
 // wire bytes.
-func (a *Anthropic) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], chalk provider.Form) ([][]json.RawMessage, []uint64) {
+func (a *Anthropic) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], form provider.Form, studies map[string]provider.Form) ([][]json.RawMessage, []uint64) {
 	fp := a.Fingerprint()
 	a.mu.Lock()
 	previous := a.projection
@@ -1175,7 +1180,8 @@ func (a *Anthropic) catchUp(figLog store.Log[message.Message], cache store.Log[[
 	projection, _, err := provider.ProjectIncrementally(provider.ProjectionConfig[provider.EncodedMessages]{
 		Log:         figLog,
 		Cache:       cache,
-		Form:        chalk,
+		Form:        form,
+		Studies:     studies,
 		Previous:    previous,
 		Fingerprint: fp,
 		Encode:      a.encode,
@@ -1469,7 +1475,7 @@ func applyThinking(req *nativeRequest, snap form.Snapshot, model string) {
 	}
 
 	if provider.IsAdaptiveThinkingModel(model) {
-		// Adaptive models take an effort level, not a token budget —
+		// Adaptive models take an effort level, not a token budget -
 		// budget_tokens (and thinking type "enabled") returns a 400 on
 		// Opus 4.6+ and the whole Claude 5 generation.
 		if effort == "" {

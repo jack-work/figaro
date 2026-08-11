@@ -25,7 +25,7 @@ func UnixEndpoint(path string) Endpoint {
 // which is what every caller but the recorder passes.
 //
 // It sits HERE, below jkrpc, because this is the only place that sees both
-// directions as bytes. A tap higher up — a NotifyHandler wrapper, say — would
+// directions as bytes. A tap higher up, a NotifyHandler wrapper, say: would
 // see notifications but not the responses to our own calls, and would see the
 // values OUR decoder produced rather than the bytes the server sent.
 type Tap func(net.Conn) net.Conn

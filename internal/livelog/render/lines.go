@@ -8,7 +8,7 @@ import (
 
 // clip truncates s to at most width display columns and flattens embedded
 // control characters (newline/tab/CR/<0x20) to spaces, guaranteeing every
-// emitted row is exactly one physical line — the invariant the renderer's
+// emitted row is exactly one physical line: the invariant the renderer's
 // cursor math depends on. ANSI escape sequences pass through uncounted; a reset
 // is appended if the line was cut mid-style so color can't bleed.
 //
@@ -42,12 +42,12 @@ func clip(s string, width int) string {
 		}
 		// CELLS, NOT RUNES. A CJK ideograph or an emoji occupies two columns,
 		// so counting runes let a row "clipped to width" occupy width + the
-		// number of wide runes on it — measured at +12 on a 60-column pane
+		// number of wide runes on it: measured at +12 on a 60-column pane
 		// for one line of Japanese, and at exactly +1 for a line carrying a
 		// single wide rune, which is the master's "one or two characters
 		// beyond the right edge". A row wider than the viewport wraps in the
 		// terminal (tmux: the UI breaks up) or is hidden (nvim nowrap: it
-		// obscures the right of the GUI) — the two symptoms are one bug.
+		// obscures the right of the GUI): the two symptoms are one bug.
 		w := runewidth.RuneWidth(r)
 		if col+w > width {
 			clipped = true

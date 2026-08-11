@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// helpers — verify the byte windowing the failure dump relies on
+// helpers: verify the byte windowing the failure dump relies on
 // behaves correctly at the edges (empty, short, exact, long).
 
 func TestSafeHead(t *testing.T) {
@@ -78,7 +78,7 @@ func TestWindowAround(t *testing.T) {
 // underlying json.RawMessage marshal error.
 func TestJSONSyntaxOffset_UnwrapsChain(t *testing.T) {
 	// Provoke a real *json.SyntaxError by marshaling an invalid
-	// json.RawMessage — this is exactly the SDK's failure path.
+	// json.RawMessage: this is exactly the SDK's failure path.
 	bad := json.RawMessage(`{"a":1 "b":2}`) // missing comma
 	_, marshalErr := json.Marshal(bad)
 	if marshalErr == nil {
@@ -102,13 +102,13 @@ func TestJSONSyntaxOffset_UnwrapsChain(t *testing.T) {
 		t.Logf("note: SDK marshal error did not expose *json.SyntaxError through As (offset=%d); dump fallback still works", got)
 		return
 	}
-	// Offset >= 0 means errors.As walked the chain successfully —
+	// Offset >= 0 means errors.As walked the chain successfully -
 	// the actual byte position is whatever encoding/json reports.
 	t.Logf("recovered json syntax error at offset %d", got)
 }
 
 func wrapWith(prefix string, err error) error {
-	// fmt.Errorf with %w — same shape drainStream uses.
+	// fmt.Errorf with %w: same shape drainStream uses.
 	return &wrapped{prefix: prefix, err: err}
 }
 

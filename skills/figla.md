@@ -1,11 +1,11 @@
 ---
 name: figla
-description: Fire-and-forget reminders for a figaro aria. Use figla instead of polling a background process in a loop, sleeping inside a tool call, or spawning ad-hoc `sleep && …` shells — arm a reminder for when you expect work to finish, cancel it if the work reports first, and get a message carrying live state if it does not. Reminders are scoped per aria.
+description: Fire-and-forget reminders for a figaro aria. Use figla instead of polling a background process in a loop, sleeping inside a tool call, or spawning ad-hoc `sleep && …` shells, arm a reminder for when you expect work to finish, cancel it if the work reports first, and get a message carrying live state if it does not. Reminders are scoped per aria.
 ---
 
-# figla — "Figaro là"
+# figla: "Figaro là"
 
-Figaro sings *"Figaro qua, Figaro là"* — here, over there. A reminder is figaro
+Figaro sings *"Figaro qua, Figaro là"*: here, over there. A reminder is figaro
 calling to himself from a little further along in time.
 
 ## When to reach for it
@@ -15,7 +15,7 @@ Background builds, subagents, long test runs, a worker aria you dispatched.
 
 **Do not** poll in a loop. **Do not** `sleep 300` inside a tool call. **Do not**
 spawn `setsid bash -c 'sleep … && …'`. Those three habits burn turns, hold
-context hostage, and leak processes — one agent session left 230 orphaned
+context hostage, and leak processes: one agent session left 230 orphaned
 daemons and tripped a memory-pressure alert doing exactly that.
 
 ## The whole surface
@@ -61,7 +61,7 @@ Good watches: `git -C <wt> log --oneline -1`, `figaro list -a | grep <id>`,
    noise gets ignored.
 2. **Cancel on report.** Make `figla cancel` the first thing you do when a
    worker answers. An uncancelled reminder is a lie waiting to be told.
-3. **Reap when a phase ends** — `figla cancel --aria <id> --all`. Reminders are
+3. **Reap when a phase ends**: `figla cancel --aria <id> --all`. Reminders are
    aria-scoped precisely so this is safe.
 4. **A fired reminder is gone.** There is nothing to cancel afterwards; arm a
    fresh one if the work is still running.
@@ -76,11 +76,11 @@ overridable with `FIGLA_STATE`.
 
 Two carriers, chosen automatically:
 
-- **systemd** — a transient `--user` timer with `--collect`, when a user bus is
+- **systemd**, a transient `--user` timer with `--collect`, when a user bus is
   genuinely reachable. Costs nothing while pending and self-collects.
-- **detach** — a detached child process, everywhere else: Windows, macOS,
+- **detach**, a detached child process, everywhere else: Windows, macOS,
   containers, and Linux hosts whose user bus is missing. *This is the common
-  path, not an exotic fallback* — the machine figla was written on has
+  path, not an exotic fallback*: the machine figla was written on has
   `systemd --user` running with **no reachable bus**, so `systemctl --user`
   fails outright.
 

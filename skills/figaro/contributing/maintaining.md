@@ -32,7 +32,7 @@ Never work in `main/` itself. It is the owner's checkout.
 
 **The dev shell is the default; a scratch `go build` is the exception.** Reach
 for `go build` only for a wire-level probe where the binary's provenance cannot
-matter — dumping request bodies, checking an exit code. Anything you intend to
+matter: dumping request bodies, checking an exit code. Anything you intend to
 BELIEVE about behaviour, and everything about rendering, goes through a shell.
 
 The reason is not ceremony. A worktree `go build` differs from the flake build
@@ -93,7 +93,7 @@ FIGARO_RUNTIME_DIR=/var/tmp/x/run FIGARO_STATE_DIR=/var/tmp/x/state \
 ```
 
 Real credentials and real outfits, an isolated store and socket, the flake's
-own binary — and no first-run picker, because the config knob was overridden.
+own binary, and no first-run picker, because the config knob was overridden.
 A shell entry takes tens of seconds, so give it room in any timeout.
 
 ## Without a shell
@@ -147,7 +147,7 @@ Original flake URL: git+file:///home/gluck/dev/figaro-qua/.bare?ref=release
 ```
 
 so `nix profile upgrade --all` follows that branch and nothing else. Cut a tag
-without moving `release` and the upgrade is a silent no-op — the symptom is a
+without moving `release` and the upgrade is a silent no-op: the symptom is a
 "stale" figaro that is simply the last version the branch pointed at. That is
 step 5 of the script, and it is the step a human skips.
 
@@ -167,7 +167,7 @@ optional: with one, `flake.nix` moves and the tag follows; without one,
 whatever `flake.nix` already declares gets cut.
 
 Nothing on this machine is upgraded by the script, deliberately. Take it
-yourself, **from a terminal and not from inside an aria** — the upgrade swaps
+yourself, **from a terminal and not from inside an aria**: the upgrade swaps
 the binary under the running angelus that is hosting you:
 
 ```sh
@@ -188,7 +188,7 @@ Rules:
 
 - Bump when an OLDER binary would misread what this one writes. Backward
   compatible reading is not a reason to bump; forward misreading always is.
-- A bump with no migration is legal only for `classCanonical` — derived on
+- A bump with no migration is legal only for `classCanonical`: derived on
   read, never rewritten. Anything else owes a converter, and `ensureSchema`
   will refuse the store until it has one.
 - `store-version` exists so the next change of meaning is a COMPARISON, not a
@@ -201,7 +201,7 @@ Rules:
 
 Fixtures for a conversion, both kinds:
 
-- **Inverse builders** — build with the current writer, de-migrate in test
+- **Inverse builders**: build with the current writer, de-migrate in test
   code. figwal's `nest()` is the model, and so is its guard: assert the fixture
   really is old (`"fixture is not nested; the test would prove nothing"`),
   or the day the inverse stops working every migration test passes vacuously.

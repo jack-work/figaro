@@ -23,15 +23,15 @@ type board struct {
 // Concurrency contract: ONE WRITER, MANY READERS.
 //
 // The writer is the agent's inbox drain loop (Agent.act -> applyControlPatch
-// -> State.Apply). Readers are everyone else — the figaro.form RPC
+// -> State.Apply). Readers are everyone else: the figaro.form RPC
 // handler, Agent.ApplyOutfit, Agent.formString/formInt via
-// Agent.Info — and they run on RPC goroutines, concurrently with the writer.
+// Agent.Info, and they run on RPC goroutines, concurrently with the writer.
 //
 // Because a Snapshot is an immutable persistent value, publishing one through
 // an atomic.Pointer is all the synchronisation needed: readers are lock-free,
 // each sees a complete board, and the happens-before edge that the plain field
 // read used to lack is supplied by the atomic. Before this, State.Snapshot on
-// an RPC goroutine raced State.Apply on the agent goroutine — a reader could
+// an RPC goroutine raced State.Apply on the agent goroutine, a reader could
 // range a map the writer was still filling, which is fatal-capable, not benign.
 //
 // A second writer would need CompareAndSwap on the update path. There is
@@ -58,7 +58,7 @@ func Open(path string) (*State, error) {
 		return s, nil
 	}
 	var snap Snapshot
-	// Direct, not through json.Unmarshal: see formReduce's comment —
+	// Direct, not through json.Unmarshal: see formReduce's comment -
 	// encoding/json pre-scans the whole document before handing it to an
 	// Unmarshaler, which doubles the cost for identical bytes.
 	if err := snap.UnmarshalJSON(data); err != nil {
@@ -86,7 +86,7 @@ func (s *State) Snapshot() Snapshot {
 }
 
 // Apply advances the state by the patch and returns the new board.
-// Writer-side only — see the concurrency contract on State.
+// Writer-side only: see the concurrency contract on State.
 //
 // A patch that changes nothing publishes nothing and does not mark the
 // state dirty: the tree returns a pointer-identical root for a

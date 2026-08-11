@@ -13,9 +13,14 @@ import (
 
 type metadataListBackend struct {
 	store.Backend
-	chalkReads atomic.Int64
-	logReads   atomic.Int64
+	formReads atomic.Int64
+	logReads  atomic.Int64
 }
+
+// LastTS is recency's new source: figwal, not the sidecar. The dormant
+// list reads it per row: cheap by figwal's contract (retained atomic
+// counter), and crucially wake-free.
+func (b *metadataListBackend) LastTS(string) int64 { return 20 }
 
 // A conversation carries the stump it was born under, and its label, resolved
 // by the backend from the stump's own record.
@@ -41,12 +46,11 @@ func (b *metadataListBackend) Meta(string) (*store.AriaMeta, error) {
 		ContextLimit:     1_000,
 		ContextExact:     true,
 		CreatedAtMS:      10,
-		LastActiveMS:     20,
 	}, nil
 }
 
 func (b *metadataListBackend) FormState(string) (form.Snapshot, error) {
-	b.chalkReads.Add(1)
+	b.formReads.Add(1)
 	return form.Snapshot{}, nil
 }
 
@@ -74,7 +78,7 @@ func TestDormantListUsesMetadataOnly(t *testing.T) {
 		got.LastActive != 20 {
 		t.Fatalf("metadata not projected: %#v", got)
 	}
-	if got := backend.chalkReads.Load(); got != 0 {
+	if got := backend.formReads.Load(); got != 0 {
 		t.Fatalf("dormant list folded form %d times", got)
 	}
 	if got := backend.logReads.Load(); got != 0 {
@@ -109,7 +113,7 @@ func TestDormantListReportsBoundPIDs(t *testing.T) {
 // The outfit column names the STUMP an aria was born under, which is minted
 // with the hash and never changes. It used to name a form key of the
 // same name, so `set system.outfit_name x` renamed the aria's outfit in every
-// listing — and, since the column is what the version is re-resolved against,
+// listing, and, since the column is what the version is re-resolved against,
 // reported an unchanged outfit as stale in the same breath.
 func TestListLabelsFromTheStumpNotTheForm(t *testing.T) {
 	backend := &metadataListBackend{}

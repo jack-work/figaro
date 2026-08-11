@@ -36,7 +36,7 @@ func ariaBackend(loaded *config.Loaded) (store.Backend, error) {
 
 func angelusRuntimeDir() string {
 	// FIGARO_RUNTIME_DIR is an explicit override used as-is (no
-	// "figaro" suffix appended) — lets dev shells point at an
+	// "figaro" suffix appended): lets dev shells point at an
 	// isolated runtime without colliding with the user's daemon.
 	if d := os.Getenv("FIGARO_RUNTIME_DIR"); d != "" {
 		return d
@@ -59,7 +59,7 @@ func angelusStartupLog() string {
 }
 
 // startupDiagnosisLines bounds how much of the daemon's early output is
-// quoted back — enough for a stack-free error, not a wall of slog.
+// quoted back: enough for a stack-free error, not a wall of slog.
 const startupDiagnosisLines = 8
 
 // startupDiagnosis quotes whatever the daemon managed to say before it
@@ -86,7 +86,7 @@ func startupDiagnosis() string {
 // forked is not figaro.
 //
 // ensureAngelus starts the daemon by re-executing os.Executable(), which in
-// a test binary is `cli.test` — so a test touching any daemon-connecting
+// a test binary is `cli.test`: so a test touching any daemon-connecting
 // path spawns a detached copy of the TEST BINARY, which re-runs the suite,
 // which spawns another. On 2026-07-30 that put 1391 cli.test processes in
 // the OOM task dump (45.8G + 50.2G swap) and took the desktop session with
@@ -102,7 +102,7 @@ func refuseSelfSpawn(exe string) {
 		die("refusing to spawn an angelus from a test binary (%s)\n"+
 			"  a test reached a daemon-connecting path (mustConnectAngelus/ensureAngelus)\n"+
 			"  the daemon is started by re-executing os.Executable(), which here is the\n"+
-			"  TEST BINARY — every spawn re-runs the suite and spawns again (fork bomb)\n"+
+			"  TEST BINARY: every spawn re-runs the suite and spawns again (fork bomb)\n"+
 			"  tests must inject an endpoint, never reach the bootstrap", filepath.Base(exe))
 	}
 }
@@ -152,14 +152,14 @@ func ensureAngelus() {
 	}
 
 	// The daemon is still our child until we exit, so a fast failure is
-	// observable — report it immediately instead of idling out the
+	// observable: report it immediately instead of idling out the
 	// deadline on a process that is already gone.
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
 
 	// A LIVE daemon is never declared dead. The old rule was a flat five
 	// seconds, and the first open after an upgrade migrates the store
-	// layout, which takes about five seconds on a real one — so the CLI
+	// layout, which takes about five seconds on a real one: so the CLI
 	// told the user his daemon had failed at the exact moment when killing
 	// it would destroy his arias. Now: while the child is alive we keep
 	// waiting and say what it is doing; only an exit, or a very long
@@ -217,7 +217,7 @@ func ariaRoot() string { return filepath.Join(stateDir(), "arias") }
 // is one file read.
 func startupActivity() string {
 	if need, err := xwal.NeedsFlatten(ariaRoot()); err == nil && need {
-		return "migrating the store layout — let it finish; interrupting a migration " +
+		return "migrating the store layout: let it finish; interrupting a migration " +
 			"is the one thing that can cost you arias"
 	}
 	return "still starting"
@@ -255,10 +255,10 @@ func mustConnectAngelus(loaded *config.Loaded) *angelus.Client {
 }
 
 // mustCreateAndBindOutfit mints an aria and binds this shell to it. An empty
-// dressing means "as usual" — the angelus folds the configured default.
+// dressing means "as usual": the angelus folds the configured default.
 func mustCreateAndBindOutfit(ctx context.Context, acli *angelus.Client, loaded *config.Loaded, ppid int, d dressing) (string, transport.Endpoint) {
 	createResp, err := createWithFirstRun(ctx, loaded, d, func() (*rpc.CreateResponse, error) {
-		return acli.Create(ctx, d.patch)
+		return acli.Create(ctx, d.names, d.patch)
 	})
 	if err != nil {
 		dieWithClosure(err, "create figaro: %s", err)
@@ -282,11 +282,11 @@ func mustCreateAndBindOutfit(ctx context.Context, acli *angelus.Client, loaded *
 
 // checkDaemonBuild refuses to speak to a daemon built from a different
 // revision. The wire shape changes between builds, so a mismatched pair does
-// not fail loudly — it renders NOTHING, which reads as a broken terminal
+// not fail loudly: it renders NOTHING, which reads as a broken terminal
 // rather than a stale process. Naming both revisions turns an hour of
 // confusion into one command.
 //
-// An unknown revision must not be treated as mismatched — but it must not be
+// An unknown revision must not be treated as mismatched: but it must not be
 // treated as fine either. A plain `go build` in a git worktree stamps nothing
 // (Go auto-detects VCS only when .git is a directory), which is exactly how
 // this project is developed, so unknown is the COMMON case: when one side is
@@ -323,7 +323,7 @@ func checkDaemonBuild(cli *angelus.Client) {
 				"        so they cannot be compared:\n"+
 				"          daemon %s (%s)\n          cli    %s (%s)\n"+
 				"        They may or may not be the same release. If output is missing\n"+
-				"        or garbled, run `figaro stop` — the next command starts an\n"+
+				"        or garbled, run `figaro stop`: the next command starts an\n"+
 				"        angelus from THIS binary, and the pair matches by construction.\n",
 			short12(st.Build), buildIdentityKind(st.Build), short12(mine), buildIdentityKind(mine))
 	case handshakeRefuse:
@@ -340,7 +340,7 @@ func checkDaemonBuild(cli *angelus.Client) {
 // The rule is COMPARE LIKE WITH LIKE. A source build reports a git revision; a
 // `go install <module>@vX.Y.Z` reports the module version, because the proxy
 // ships a zip with no VCS metadata. Neither converts into the other, so across
-// schemes a difference proves nothing — a nix daemon beside a proxy CLI of the
+// schemes a difference proves nothing, a nix daemon beside a proxy CLI of the
 // SAME release can never compare equal.
 //
 // Refusing there would brick a legitimate pair with no path back: the user's

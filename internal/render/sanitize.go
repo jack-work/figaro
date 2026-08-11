@@ -1,4 +1,4 @@
-// SanitizeForTerminal — strips terminal-state-mutating ANSI sequences
+// SanitizeForTerminal: strips terminal-state-mutating ANSI sequences
 // from text destined for figaro's live region.
 //
 // Tool output (bash stdout, model-emitted text, anything originating
@@ -6,7 +6,7 @@
 // that mutate global terminal state: alt-screen mode, cursor
 // visibility, line wrap, mouse modes, scroll regions, the OS window
 // title. If those bytes reach the host terminal, figaro's render loop
-// becomes incoherent — the painter thinks it owns the cursor; the
+// becomes incoherent: the painter thinks it owns the cursor; the
 // terminal thinks it's in alt-screen. Recovery is a `tput reset` or,
 // pathologically, restarting figaro.
 //
@@ -39,17 +39,17 @@ import (
 //	                 application cursor keys 1, bracketed paste 2004).
 //	ESC ] ... BEL    OSC (set title, palette, hyperlink). Also
 //	ESC ] ... ESC \  ST-terminated OSC.
-//	ESC c            RIS — full terminal reset.
-//	ESC 7, ESC 8     DECSC / DECRC — cursor save / restore.
+//	ESC c            RIS: full terminal reset.
+//	ESC 7, ESC 8     DECSC / DECRC: cursor save / restore.
 //	ESC =, ESC >     Application / numeric keypad mode.
 //	ESC ( B/0        Charset selection.
-//	CSI N r          DECSTBM — scroll region.
+//	CSI N r          DECSTBM: scroll region.
 //	CSI N s/u        Cursor save / restore (CSI variant).
 //
 // Kept:
 //
 //	CSI N m          SGR (color, bold, italic). The whole point.
-//	CSI N {A-H,J,K}  Cursor moves and erase — figaro's painter uses
+//	CSI N {A-H,J,K}  Cursor moves and erase: figaro's painter uses
 //	                 these; glamour emits them too.
 func SanitizeForTerminal(s string) string {
 	if s == "" || !strings.ContainsRune(s, 0x1b) {
@@ -65,7 +65,7 @@ func SanitizeForTerminal(s string) string {
 			i++
 			continue
 		}
-		// ESC at end-of-string — drop.
+		// ESC at end-of-string: drop.
 		if i+1 >= len(s) {
 			return b.String()
 		}
@@ -90,16 +90,16 @@ func SanitizeForTerminal(s string) string {
 			full := s[i : j+1]
 			switch {
 			case privateMode:
-				// Always dangerous — drop.
+				// Always dangerous: drop.
 			case final == 'm':
-				// SGR — keep verbatim.
+				// SGR: keep verbatim.
 				b.WriteString(full)
 			case isCursorOrEraseFinal(final):
-				// Cursor / erase — keep.
+				// Cursor / erase: keep.
 				b.WriteString(full)
 			default:
 				// Other CSIs (DECSTBM 'r', save/restore 's'/'u',
-				// device attributes 'c', etc.) — drop.
+				// device attributes 'c', etc.): drop.
 			}
 			i = j + 1
 
@@ -130,7 +130,7 @@ func SanitizeForTerminal(s string) string {
 			}
 
 		default:
-			// Unknown ESC <byte> — drop two bytes.
+			// Unknown ESC <byte>: drop two bytes.
 			i += 2
 		}
 	}
@@ -180,7 +180,7 @@ func isCursorOrEraseFinal(b byte) bool {
 // protect the host terminal from state-mutating sequences in output figaro is
 // about to print, so it deliberately KEEPS SGR verbatim. Handing markdown to
 // glamour with SGR still in it produced a row four cells wider than the width
-// it was given, at every width, with "[31m" printed as visible text — glamour
+// it was given, at every width, with "[31m" printed as visible text: glamour
 // drops the ESC byte, keeps the parameter bytes as content, and has already
 // wrapped as though the whole sequence were zero-width.
 //
@@ -208,7 +208,7 @@ func StripEscapes(s string) string {
 // ONE grammar. internal/cli had its own, which scanned to the first ASCII
 // LETTER: a bare ESC therefore swallowed the character after it, displayWidth
 // undercounted by one, and clipToWidth let a row through one cell PAST THE
-// EDGE — the reported "one or two characters beyond the right side". An OSC
+// EDGE: the reported "one or two characters beyond the right side". An OSC
 // title ended it early instead, which clips a row short and loses text.
 func SkipEscape(s string, i int) int { return skipEscape(s, i) }
 
@@ -216,13 +216,13 @@ func SkipEscape(s string, i int) int { return skipEscape(s, i) }
 // (s[i] == ESC), consuming the WHOLE sequence for every form the terminal
 // grammar defines. Each arm below is a leak that was measured, not imagined:
 //
-//	CSI      ESC [ params intermediates final — '?' is a PARAMETER byte, and
+//	CSI      ESC [ params intermediates final: '?' is a PARAMETER byte, and
 //	         omitting it left "\x1b[?25l" printing "25l". That is cursor-hide;
 //	         with alt-screen it is what every pasted tool transcript carries.
 //	OSC      ESC ] … BEL or ST
-//	DCS/…    ESC P, ESC _, ESC ^, ESC X … ST — payloads, not two-byte escapes
-//	SS2/SS3  ESC N, ESC O + one byte — "\x1bOP" printed "P"
-//	charset  ESC ( ) * + - . / + one byte — "\x1b(B" printed "B"
+//	DCS/…    ESC P, ESC _, ESC ^, ESC X … ST: payloads, not two-byte escapes
+//	SS2/SS3  ESC N, ESC O + one byte: "\x1bOP" printed "P"
+//	charset  ESC ( ) * + - . / + one byte: "\x1b(B" printed "B"
 //	other    ESC + one byte
 func skipEscape(s string, i int) int {
 	i++ // ESC
@@ -231,7 +231,7 @@ func skipEscape(s string, i int) int {
 	}
 	switch c := s[i]; {
 	case c == '[':
-		// CSI: scan to a FINAL byte (0x40..0x7e), the way a terminal does — so
+		// CSI: scan to a FINAL byte (0x40..0x7e), the way a terminal does: so
 		// "\x1b[\xff\xfem" is consumed through its 'm' rather than leaking two
 		// replacement characters. But abort at a space or a control byte and
 		// consume only what was scanned: a real CSI does not contain them, and
@@ -269,7 +269,7 @@ func skipEscape(s string, i int) int {
 	default:
 		// One RUNE, not one byte. A bare ESC before ordinary text is not a
 		// sequence at all, and advancing a single byte cut a multi-byte rune in
-		// half — "\x1b\u0631" came back as invalid UTF-8. Only reachable from
+		// half: "\x1b\u0631" came back as invalid UTF-8. Only reachable from
 		// splitToWidth, and only because that used to carry its own second copy
 		// of this scanner; there is one now.
 		_, sz := utf8.DecodeRuneInString(s[i:])

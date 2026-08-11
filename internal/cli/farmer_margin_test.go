@@ -9,7 +9,7 @@ import (
 )
 
 // The gutter's cost is 2 where there is a margin for the rule to stand in and 4
-// where there is not — a hard-wrap continuation chunk has none — and what must
+// where there is not, a hard-wrap continuation chunk has none, and what must
 // never happen is a row paying MORE than the gutter is wide, or landing past
 // the viewport. This is the same property thinking_gutter_test.go asserts on
 // five shapes, over the 24-shape corpus and every width 20..200: CJK, emoji,
@@ -50,7 +50,7 @@ func TestFarmerGutterCostsNoMoreThanItsWidth(t *testing.T) {
 
 // THE GUTTER MUST NOT EAT TEXT. The companion property to the one above: the
 // rule costs columns, and the row it is prefixed to must still say the same
-// words. Named for the repair era it was written in — a version that kept the
+// words. Named for the repair era it was written in, a version that kept the
 // row's own leading spaces AND added a two-cell rule, so the clip took two
 // cells back off the RIGHT end and, on a row without padding, two characters
 // of the agent's own words with them.

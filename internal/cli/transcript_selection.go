@@ -19,13 +19,13 @@ type nodeRef struct {
 }
 
 // nodeRefAt identifies the i'th node OF THE SLICE m by its position within the
-// whole TURN. m.From is the positional id of m.Nodes[0] — the wire guarantees
-// Nodes[i].ID == From+i — so a turn that reaches the renderer as several slices
+// whole TURN. m.From is the positional id of m.Nodes[0]: the wire guarantees
+// Nodes[i].ID == From+i: so a turn that reaches the renderer as several slices
 // still yields one distinct ref per node.
 //
 // Using the slice-local index instead COLLIDES. A steered turn arrives as
 // {From:0,n=1} {From:1,n=1} {From:2,n=3}, so the inquiry, the steer and the
-// first output node would all take the ref {turn,0} — sharing expansion and
+// first output node would all take the ref {turn,0}: sharing expansion and
 // selection state between unrelated nodes. Always mint refs through here.
 func nodeRefAt(m aria.Message, i int) nodeRef {
 	return nodeRef{turn: m.Turn, index: int(m.From) + i}
@@ -33,7 +33,7 @@ func nodeRefAt(m aria.Message, i int) nodeRef {
 
 // inquiryNode is the index a turn's opening question takes. The question is
 // TEXT ON THE TURN and occupies no node slot, but selection, copy and the
-// Ctrl-O expansion state all key on nodeRef — so it needs one, and it must not
+// Ctrl-O expansion state all key on nodeRef: so it needs one, and it must not
 // collide with any node's. Node indices are positional and therefore never
 // negative (Nodes[i].ID == From+i), which makes a negative sentinel free of
 // collisions by construction rather than by convention; and pointLess then
@@ -81,7 +81,7 @@ type selectionCopyPlan struct {
 	// expanded is the fold state at the moment the yank was asked for. The
 	// copy follows the EYE: a folded tool yanks its output, an expanded one
 	// yanks the call and the result in full. Snapshotted into the plan so the
-	// copier — which may page history in the background — never reads the
+	// copier: which may page history in the background: never reads the
 	// live map from another goroutine.
 	expanded map[nodeRef]bool
 }
@@ -92,8 +92,8 @@ type transcriptRow struct {
 }
 
 // searchText is the row's text as the reader sees it. Node rows carry no
-// prefix of their own — the selection bar is painted over glamour's margin at
-// decoration time, not baked into the stored row — so this is the row.
+// prefix of their own: the selection bar is painted over glamour's margin at
+// decoration time, not baked into the stored row: so this is the row.
 func (r transcriptRow) searchText() string {
 	return r.text
 }
@@ -188,7 +188,7 @@ func (t *transcript) selectNode(delta int, extend bool) {
 	if cold {
 		// COLD ENTRY SEEDS FROM THE VIEWPORT, NOT FROM THE WINDOW. The retained
 		// window holds far more than the screen shows, so len(refs)-1 was the
-		// last node of everything HELD, not the last one VISIBLE — and
+		// last node of everything HELD, not the last one VISIBLE, and
 		// ensureSelectionVisible then yanked the page to it. Entering a
 		// selection must not move the page at all.
 		//
@@ -196,7 +196,7 @@ func (t *transcript) selectNode(delta int, extend bool) {
 		// can re-tune it, moving line space) and re-derives t.offset for the
 		// detached geometry, where the live padding row becomes content. A ref
 		// chosen against the FOLLOWING geometry can therefore stop being the
-		// bottommost visible one a frame later — the same staleness
+		// bottommost visible one a frame later: the same staleness
 		// stopFollowing's own comment records for the promoted-by-'k' pager.
 		// Picking after the detach means picking against the geometry that will
 		// actually be painted.
@@ -250,7 +250,7 @@ func (t *transcript) selectNode(delta int, extend bool) {
 
 // clearSelection drops the selection and re-anchors the viewport on the line
 // it was showing. It used to trim the retained page set in the direction the
-// selection had been dragged — the pages are gone, and the store's own
+// selection had been dragged: the pages are gone, and the store's own
 // retention (evictStale) is what bounds memory now.
 func (t *transcript) clearSelection() {
 	anchor, within := t.viewportAnchor()
@@ -313,7 +313,7 @@ func nodeClipboardText(n livedoc.Node, expanded bool) string {
 }
 
 // anchorAbove reports whether a addresses a position strictly later than b in
-// (turn, node) reading order — i.e. whether a backward walk sitting at a still
+// (turn, node) reading order: i.e. whether a backward walk sitting at a still
 // has ground to cover before it reaches b.
 func anchorAbove(a, b aria.Anchor) bool {
 	return a.Turn > b.Turn || a.Turn == b.Turn && a.Node > b.Node
@@ -335,7 +335,7 @@ func selectionText(plan selectionCopyPlan, pageSize int, read func(aria.Anchor, 
 	}
 	// The walk is anchored on (turn, NODE), not on the turn alone. A turn too
 	// big for one page comes back in slices, and a turn-granular step lands on
-	// the turn BEFORE it — skipping every slice below the first, the head slice
+	// the turn BEFORE it: skipping every slice below the first, the head slice
 	// among them, which is the only one that carries the inquiry.
 	at := aria.Anchor{Turn: uint64(plan.hi.turn + 1)}
 	if plan.open != nil && plan.open.Turn == plan.hi.turn {
@@ -474,7 +474,7 @@ func nodeHash(n livedoc.Node) uint64 {
 
 // toggleSelectedNodes is Enter in the pager: expand (or re-collapse) every
 // expandable node inside the selection. It was toggleSelectedTools, and the
-// rename is the point — expandability is a property a node reports through
+// rename is the point: expandability is a property a node reports through
 // nodeExpandable, not a synonym for "is a tool", so the gesture widens for free
 // as more node kinds grow a collapsed form.
 func (t *transcript) toggleSelectedNodes() bool {
@@ -532,7 +532,7 @@ func (t *transcript) toggleExpansion(refs []nodeRef) bool {
 	}
 	// EXPANDING GROWS UPWARD. Leaving t.offset alone pins the viewport TOP, and
 	// because the offset is an ABSOLUTE line index the new rows shove everything
-	// after the expansion down and off the bottom — the half of the screen the
+	// after the expansion down and off the bottom: the half of the screen the
 	// reader is actually anchored on. anchorBelow pins the tail of the change
 	// instead, so every node at or after it keeps its screen row and the earlier
 	// content is what scrolls away. See anchorBelow for why that is the right way
@@ -541,7 +541,7 @@ func (t *transcript) toggleExpansion(refs []nodeRef) bool {
 	// The anchor is the LAST toggled node: a selection can cover several, and only
 	// the content after all of them is guaranteed to hold still.
 	//
-	// Following is left alone — the viewport is pinned to the bottom there and
+	// Following is left alone: the viewport is pinned to the bottom there and
 	// renderFrame re-derives the offset every frame, so a shift would be
 	// overwritten and the bottom is already the correct anchor.
 	if t.follow {
@@ -568,7 +568,7 @@ func (t *transcript) toggleExpansion(refs []nodeRef) bool {
 // t.h - 1, which is not the same quantity: layout reserves two rows for the
 // footer rule and status, another for an open panel's every line, and one more
 // for the live padding row while following. So this believed the body was one
-// row taller than it is — two while following, more with a panel up — and
+// row taller than it is: two while following, more with a panel up, and
 // "scroll until span.last is visible" stopped short by exactly that much.
 //
 // The symptom was a selection that scrolled the page and then wasn't on it.
@@ -601,7 +601,7 @@ func (t *transcript) ensureSelectionVisible() {
 // cost the pager a column of text and shifted every node one column right of
 // where the inline renderer draws the same node. The bar now stands in
 // glamour's own left margin (decorateNodeRow), so the resting row is exactly
-// the row the incipit paints — which is the invariant
+// the row the incipit paints: which is the invariant
 // TestPagerRowsMatchIncipitRows pins.
 //
 // This is computed once, when the message's rows are rendered into the row
@@ -619,8 +619,8 @@ func plainNodeRow(row string, width int) string {
 //
 // Rows a renderer wraps through glamour arrive with a two-column left margin,
 // so the bar REPLACES a blank the row was already spending and the text does
-// not move. Rows with no margin to stand in — a tool header ("✓ bash"), the
-// steering marker — get the bar INSERTED and the row clipped back to the cells
+// not move. Rows with no margin to stand in, a tool header ("✓ bash"), the
+// steering marker: get the bar INSERTED and the row clipped back to the cells
 // it had, so a selected row can never be wider than an unselected one. Either
 // way the bar is drawn: selection is never silent.
 //
@@ -652,14 +652,14 @@ func barOverMargin(row, bar string, width int) string {
 // relying on a wide gutter.
 //
 // It takes the row in its plainNodeRow form (clipped, and otherwise exactly
-// the row the inline renderer paints), so the unselected case — the
-// overwhelming majority of rows in any frame — returns it untouched with zero
+// the row the inline renderer paints), so the unselected case: the
+// overwhelming majority of rows in any frame: returns it untouched with zero
 // allocation. The bar is written INTO the row's own left margin
 // (barOverMargin), which is why a selected row is the same width, and starts
 // at the same column, as an unselected one.
 //
 // Background painting has two subtleties. First, any `\x1b[0m` inside the
-// row resets ALL SGR — including our background — so every reset in the
+// row resets ALL SGR: including our background: so every reset in the
 // content is re-emitted with the background restored. Second, the paint loop
 // erases the line with the terminal's default background BEFORE writing the
 // row, so we trail with `\x1b[K` (erase-to-end at the current, i.e. selected,
@@ -676,7 +676,7 @@ func decorateNodeRow(plain string, mark selectionMark, width int) string {
 		// enough to read as a lift, with the foreground untouched.
 		//
 		// Both previous attempts failed the same way, which is a documented
-		// trap rather than bad luck — "selection backgrounds that make
+		// trap rather than bad luck: "selection backgrounds that make
 		// highlighted text unreadable" is one of the standard complaints about
 		// terminal themes. Grey 238 sat close enough to dim foreground text to
 		// grey it out; blue 24 was legible but loud against every theme that
@@ -702,7 +702,7 @@ func decorateNodeRow(plain string, mark selectionMark, width int) string {
 	// clears the wash exactly as thoroughly. glamour v1 only ever emitted the
 	// long form, so matching one spelling was enough by accident; v2 emits the
 	// short one, and a selected row whose content ended in `\x1b[m` lost its
-	// highlight from there to the right edge — the `\x1b[K` then erased with the
+	// highlight from there to the right edge: the `\x1b[K` then erased with the
 	// DEFAULT background. TestGoldenFramesMatchPreSGRAtTheCellLevel caught it at
 	// cell 0,45, which is the only reason anybody knows.
 	for _, r := range []string{reset, "\x1b[m"} {

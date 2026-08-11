@@ -133,7 +133,7 @@ func TestCompletePromptContext_AtPrefixNarrowsToFormKeys(t *testing.T) {
 		PastSeparator: true,
 	})
 
-	// Every candidate must be of the form @<key> — prefixed with @,
+	// Every candidate must be of the form @<key>: prefixed with @,
 	// no trailing terminator. The `!` is opt-in expansion typed by
 	// the user; most references are meant to pass literally to the
 	// model, which is already aware of the form.
@@ -177,7 +177,7 @@ func TestCompletePromptOrIDFlag_Routing(t *testing.T) {
 	}
 
 	// After --id: aria ids (daemon may or may not be up; if up the
-	// list is non-empty, if down it's nil — both acceptable; what we
+	// list is non-empty, if down it's nil: both acceptable; what we
 	// assert is that form/CWD keys are NOT present, which
 	// distinguishes the --id branch from the past-separator branch).
 	dir := t.TempDir()

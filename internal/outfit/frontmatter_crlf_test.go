@@ -5,7 +5,7 @@ import "testing"
 // A skill saved with Windows line endings must produce the SAME frontmatter
 // as its LF twin. Not cosmetic: the frontmatter lands in the form
 // verbatim and the outfit's content version is a hash of that patch, so a
-// stray \r mints a second outfit stump — two shared prefixes and two caches
+// stray \r mints a second outfit stump: two shared prefixes and two caches
 // for one logical outfit, across two machines editing one repository.
 func TestCRLFFrontmatterMatchesItsLFTwin(t *testing.T) {
 	lf := "---\nname: golang\ndescription: Go patterns.\n---\nbody\n"

@@ -21,7 +21,7 @@ import (
 //
 // The board under test is a real capture of the default outfit (37
 // keys, 15KB, skill envelopes with em-dashes and embedded newlines,
-// system.* scalars) — see testdata/board-default.provenance.md — not a
+// system.* scalars): see testdata/board-default.provenance.md: not a
 // hand-written toy.
 
 func realBoard(t *testing.T) map[string]json.RawMessage {
@@ -131,7 +131,7 @@ func TestWireShape_AdversarialValues(t *testing.T) {
 	assert.Equal(t, string(want), string(out))
 }
 
-// TestUnmarshal_NullAndEmpty — a `null` state or an empty object must
+// TestUnmarshal_NullAndEmpty, a `null` state or an empty object must
 // both decode to an empty, usable board, as the map did.
 func TestUnmarshal_NullAndEmpty(t *testing.T) {
 	for _, in := range []string{`null`, `{}`} {
@@ -144,7 +144,7 @@ func TestUnmarshal_NullAndEmpty(t *testing.T) {
 	}
 }
 
-// TestMarshal_InvalidValueStillErrors — a board holding non-JSON bytes
+// TestMarshal_InvalidValueStillErrors, a board holding non-JSON bytes
 // failed to marshal before the swap and must keep failing, loudly,
 // rather than silently emitting a null.
 func TestMarshal_InvalidValueStillErrors(t *testing.T) {
@@ -161,7 +161,7 @@ func TestMarshal_InvalidValueStillErrors(t *testing.T) {
 // difference the swap introduces: a value that changes only in object
 // key order, insignificant whitespace or escape spelling now compares
 // equal, so no <system-reminder> fires for it. Content is never altered
-// — the stored bytes are whatever was written first.
+// : the stored bytes are whatever was written first.
 func TestDiff_KeyOrderOnlyChangeIsNotAChange(t *testing.T) {
 	prev := form.FromMap(map[string]json.RawMessage{
 		"cfg": json.RawMessage(`{"a":1,"b":2}`),
@@ -172,7 +172,7 @@ func TestDiff_KeyOrderOnlyChangeIsNotAChange(t *testing.T) {
 	assert.True(t, next.Diff(prev).IsEmpty(),
 		"a key-order-only rewrite must not read as a change")
 
-	// The original bytes are retained — a no-op write does not perturb
+	// The original bytes are retained, a no-op write does not perturb
 	// the form channel.
 	v, ok := next.Get("cfg")
 	require.True(t, ok)
@@ -223,7 +223,7 @@ func TestAsPatch(t *testing.T) {
 // lets the hot paths (store.formReduce, State.Open/Save) call
 // MarshalJSON/UnmarshalJSON directly instead of going through
 // json.Marshal/json.Unmarshal. encoding/json re-scans a Marshaler's
-// output and pre-scans an Unmarshaler's input — a ~2x cost on a 15KB
+// output and pre-scans an Unmarshaler's input, a ~2x cost on a 15KB
 // board for bytes that are identical. If this test ever fails, the
 // direct calls must go back through encoding/json.
 func TestSnapshotDirectCodecMatchesEncodingJSON(t *testing.T) {

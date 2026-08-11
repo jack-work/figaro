@@ -1,4 +1,4 @@
-// Package cli — `figaro state outfit`.
+// Package cli: `figaro state outfit`.
 //
 // Applies a spec additively to the current aria's form. Names are
 // resolved by the aria (the daemon owns the configDir); the CLI parses the
@@ -50,18 +50,28 @@ func runStateOutfit(loaded *config.Loaded, ctx *cmdkit.RunContext, args []string
 	return nil
 }
 
-// completeStateArgs offers the `outfit` sub-verb first, then whatever that
-// position wants: aria ids for the snapshot form, outfit names after `outfit`.
+// stateSubwords is the form family's position-2 vocabulary, in the order a
+// human is likeliest to want it. Completion offers these before ids.
+var stateSubwords = []string{"show", "set", "delete", "outfit", "new", "fork", "ls", "rm", "listen", "help"}
+
+// completeStateArgs offers the sub-verbs first, then whatever the position
+// wants: outfit names after `outfit`, help topics after `help`, aria ids for
+// the snapshot form.
 func completeStateArgs(c *cmdkit.CompleteContext) []string {
 	if c == nil {
 		return nil
 	}
 	for _, a := range c.Args {
-		if a == "outfit" {
+		switch a {
+		case "outfit":
 			return completeOutfits(c)
+		case "help":
+			return []string{"outfits", "form", "state"}
+		case "set", "delete", "show":
+			return completeAriaIDsAfterFlag(completeFormKeys)(c)
 		}
 	}
-	return append([]string{"outfit"}, completeAriaIDsPositionalOrFlag(c)...)
+	return append(append([]string{}, stateSubwords...), completeAriaIDsPositionalOrFlag(c)...)
 }
 
 // completeOutfits completes `state outfit`: available outfit names for the
@@ -101,18 +111,26 @@ func completeOutfits(c *cmdkit.CompleteContext) []string {
 	return out
 }
 
-// runOutfit dresses the targeted aria: `-O`'s syntax parsed into a patch and
-// applied like any other. The server resolves the layers it names.
+// runOutfit dresses the targeted aria: outfit NAMES, sent as names, folded by
+// the daemon's one dressing call and applied like any other patch. The verb
+// takes names only: keys go through `form set`, which is the other axis.
 func runOutfit(loaded *config.Loaded, ariaID, arg string) {
-	d := mustParseDressing(arg, "figaro state outfit [--id <id>] <spec>")
+	names, err := parseNames(arg)
+	if err != nil {
+		die("%s", err)
+	}
+	label := arg
+	if len(label) > 72 {
+		label = label[:69] + "..."
+	}
 
 	ctx := context.Background()
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	_, ep, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, false, dressing{})
-	if err != nil {
-		die("%s", err)
+	_, ep, terr := resolveTargetEndpoint(ctx, loaded, acli, ariaID, false, dressing{})
+	if terr != nil {
+		die("%s", terr)
 	}
 
 	fcli, err := figaro.DialClient(transport.Endpoint{Scheme: ep.Scheme, Address: ep.Address}, nil)
@@ -121,15 +139,15 @@ func runOutfit(loaded *config.Loaded, ariaID, arg string) {
 	}
 	defer fcli.Close()
 
-	resp, err := fcli.Set(ctx, *d.patch, 0)
+	resp, err := fcli.SetDressed(ctx, names, rpc.FormPatch{}, 0)
 	if err != nil {
-		dieOutfitFailure(d.label(), err)
+		dieOutfitFailure(label, err)
 	}
 	if len(resp.Set) == 0 {
-		fmt.Fprintf(os.Stderr, "outfit %s: no changes (form already matches)\n", d.label())
+		fmt.Fprintf(os.Stderr, "outfit %s: no changes (form already matches)\n", label)
 		return
 	}
-	fmt.Fprintf(os.Stderr, "outfit %s applied (%d keys):\n", d.label(), len(resp.Set))
+	fmt.Fprintf(os.Stderr, "outfit %s applied (%d keys):\n", label, len(resp.Set))
 	for _, k := range resp.Set {
 		fmt.Fprintf(os.Stderr, "  %s\n", k)
 	}
@@ -194,8 +212,8 @@ var outfitClosureColors = []figtree.FieldColor{{
 	},
 }}
 
-// renderOutfitClosure draws the closure. The synthetic root — the one with no
-// name, holding several requested outfits side by side — is not drawn; its
+// renderOutfitClosure draws the closure. The synthetic root: the one with no
+// name, holding several requested outfits side by side: is not drawn; its
 // children become the roots, so `figaro outfit a,b` shows two trees.
 func renderOutfitClosure(root *rpc.OutfitLayer) string {
 	tree := figtree.Tree{
@@ -250,7 +268,7 @@ func outfitClosureMarker(l *rpc.OutfitLayer) string {
 // runOutfitTree prints an outfit's layer closure without applying anything.
 //
 // The angelus resolves it: the outfits directory is the server's state. Exit
-// status follows the closure — 0 when every layer was found, 1 when the picture
+// status follows the closure: 0 when every layer was found, 1 when the picture
 // has red in it, so it can gate a script.
 func runOutfitTree(loaded *config.Loaded, arg string) {
 	acli := mustConnectAngelus(loaded)

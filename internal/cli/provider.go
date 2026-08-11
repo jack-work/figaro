@@ -1,4 +1,4 @@
-// Package cli — provider wiring for the CLI process.
+// Package cli: provider wiring for the CLI process.
 //
 // Provider factories take operational knobs (model, max_tokens,
 // reminder_renderer, use_official_sdk) extracted by the angelus
@@ -94,7 +94,7 @@ func environmentStrategies(reg *providerPkg.Registration) []auth.CredentialStrat
 // for lack of a credential.
 func providerSetupHint() string {
 	var b strings.Builder
-	b.WriteString("No provider connected — figaro has no credential to reach a model.\n\n")
+	b.WriteString("No provider connected: figaro has no credential to reach a model.\n\n")
 	b.WriteString("Connect one and retry:\n")
 	for _, name := range providerPkg.Names() {
 		reg := providerPkg.Lookup(name)
@@ -113,7 +113,7 @@ func providerSetupHint() string {
 
 // buildProviderFactory wires per-aria provider construction via the
 // registry. No provider-specific switches.
-func buildProviderFactory(loaded *config.Loaded, cbTmpls *template.Template, backend store.Backend) angelus.ProviderFactory {
+func buildProviderFactory(loaded *config.Loaded, formTmpls *template.Template, backend store.Backend) angelus.ProviderFactory {
 	return func(providerName string, knobs providerPkg.Knobs) (providerPkg.Provider, error) {
 		reg := providerPkg.Lookup(providerName)
 		if reg == nil {
@@ -133,7 +133,7 @@ func buildProviderFactory(loaded *config.Loaded, cbTmpls *template.Template, bac
 			Loaded:    loaded,
 			Knobs:     knobs,
 			Resolver:  resolver,
-			Templates: cbTmpls,
+			Templates: formTmpls,
 			CacheOpen: cacheOpen,
 			Backend:   backend,
 		})

@@ -11,7 +11,7 @@ import (
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 )
 
-// jumpFixture is an aria whose turn ids START AT firstTurn — the fork case,
+// jumpFixture is an aria whose turn ids START AT firstTurn: the fork case,
 // where StampIDs adopts the parent's numbering and the first turn is emphatically
 // not 1. Pass firstTurn=1 for the ordinary case.
 func jumpFixture(tb testing.TB, firstTurn, turns int) *transcript {
@@ -32,7 +32,7 @@ func jumpFixture(tb testing.TB, firstTurn, turns int) *transcript {
 	}
 	client.Apply(aria.Page{Parts: parts})
 	// The wire has not said the aria begins here, so the pager may still walk
-	// backward — which is the interesting case for a FORK, whose first turn id
+	// backward: which is the interesting case for a FORK, whose first turn id
 	// is not 1 and whose floor can only be found by an empty read.
 	client.SetMoreBefore(true)
 	ft := ldrender.NewFakeTerminal(60, 20)
@@ -111,7 +111,7 @@ func TestJumpToTheInquirySentinel(t *testing.T) {
 // THE FORK CASE IS THE POINT. `:0` is not "turn 1": StampIDs adopts an
 // already-stamped id, so a forked child continues its parent's numbering.
 // Resolving `:0` by constructing an anchor would either miss (turn 1 does not
-// exist there) or, worse, hand a backward read Anchor{Turn:0} — which means
+// exist there) or, worse, hand a backward read Anchor{Turn:0}: which means
 // UNSET on the wire and returns the TAIL.
 func TestJumpZeroReachesTheFirstExistingTurn(t *testing.T) {
 	for _, first := range []int{1, 7} {
@@ -266,7 +266,7 @@ func TestJumpParser(t *testing.T) {
 }
 
 // TestGGStillMeansTopOfTheBuffer: the jump is an addition, not a replacement.
-// `gg` remains the cheap gesture — top of what is HELD, no paging, no walk.
+// `gg` remains the cheap gesture: top of what is HELD, no paging, no walk.
 func TestGGStillMeansTopOfTheBuffer(t *testing.T) {
 	tr := jumpFixture(t, 5, 8)
 	tr.key('g')

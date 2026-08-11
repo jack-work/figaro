@@ -73,7 +73,7 @@ func BenchmarkCatchUp(b *testing.B) {
 				cache := newCopyingBenchLog[[]json.RawMessage]()
 				p := sdkBenchProvider(cache)
 				b.StartTimer()
-				p.catchUp(log, cache, nil)
+				p.catchUp(log, cache, nil, nil)
 			}
 		})
 		b.Run("WarmDeltaEncode/"+strconv.Itoa(n), func(b *testing.B) {
@@ -81,7 +81,7 @@ func BenchmarkCatchUp(b *testing.B) {
 			log := sdkBenchLog(b, n)
 			appendSDKBenchSuffix(b, log)
 			p := sdkBenchProvider(nil)
-			p.catchUp(prefix, nil, nil)
+			p.catchUp(prefix, nil, nil, nil)
 			prewarmed := p.projection
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -90,7 +90,7 @@ func BenchmarkCatchUp(b *testing.B) {
 				b.StopTimer()
 				p.projection = prewarmed
 				b.StartTimer()
-				p.catchUp(log, nil, nil)
+				p.catchUp(log, nil, nil, nil)
 			}
 		})
 		b.Run("WarmDeltaCached/"+strconv.Itoa(n), func(b *testing.B) {
@@ -99,9 +99,9 @@ func BenchmarkCatchUp(b *testing.B) {
 			appendSDKBenchSuffix(b, log)
 			cache := newCopyingBenchLog[[]json.RawMessage]()
 			p := sdkBenchProvider(cache)
-			p.catchUp(prefix, cache, nil)
+			p.catchUp(prefix, cache, nil, nil)
 			prewarmed := p.projection
-			p.catchUp(log, cache, nil)
+			p.catchUp(log, cache, nil, nil)
 			b.ReportAllocs()
 			b.ResetTimer()
 			b.ReportMetric(2, "messages/op")
@@ -109,18 +109,18 @@ func BenchmarkCatchUp(b *testing.B) {
 				b.StopTimer()
 				p.projection = prewarmed
 				b.StartTimer()
-				p.catchUp(log, cache, nil)
+				p.catchUp(log, cache, nil, nil)
 			}
 		})
 		b.Run("WarmSteady/"+strconv.Itoa(n), func(b *testing.B) {
 			log := sdkBenchLog(b, n)
 			cache := newCopyingBenchLog[[]json.RawMessage]()
 			p := sdkBenchProvider(cache)
-			p.catchUp(log, cache, nil)
+			p.catchUp(log, cache, nil, nil)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				p.catchUp(log, cache, nil)
+				p.catchUp(log, cache, nil, nil)
 			}
 		})
 	}
@@ -132,7 +132,7 @@ func BenchmarkBuildParams(b *testing.B) {
 			log := sdkBenchLog(b, n)
 			cache := newCopyingBenchLog[[]json.RawMessage]()
 			p := sdkBenchProvider(cache)
-			projected, err := p.catchUp(log, cache, nil)
+			projected, err := p.catchUp(log, cache, nil, nil)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -151,7 +151,7 @@ func BenchmarkParseCachedMessages(b *testing.B) {
 			log := sdkBenchLog(b, n)
 			cache := newCopyingBenchLog[[]json.RawMessage]()
 			p := sdkBenchProvider(cache)
-			if _, err := p.catchUp(log, cache, nil); err != nil {
+			if _, err := p.catchUp(log, cache, nil, nil); err != nil {
 				b.Fatal(err)
 			}
 			entries := cache.Read()
@@ -176,7 +176,7 @@ func BenchmarkMarshalParams(b *testing.B) {
 			log := sdkBenchLog(b, n)
 			cache := newCopyingBenchLog[[]json.RawMessage]()
 			p := sdkBenchProvider(cache)
-			projected, err := p.catchUp(log, cache, nil)
+			projected, err := p.catchUp(log, cache, nil, nil)
 			if err != nil {
 				b.Fatal(err)
 			}

@@ -9,7 +9,7 @@ import (
 )
 
 // At h=1 there is exactly one row. The suppressed (footer-only) region is still
-// two rows — rule + status — so painting it overflows the viewport, scrolls the
+// two rows: rule + status: so painting it overflows the viewport, scrolls the
 // partial into history, and the completed reply never lands.
 //
 // This height only became reachable once term.Size stopped fabricating 80x24
@@ -42,7 +42,7 @@ func TestIncipit_SingleRowViewportKeepsTheReply(t *testing.T) {
 }
 
 // The suppressed region must never be taller than the terminal. Whatever
-// survives clipping must be the STATUS line — the row the user actually needs —
+// survives clipping must be the STATUS line: the row the user actually needs -
 // not the rule above it.
 func TestIncipit_SuppressedRegionFitsTheViewport(t *testing.T) {
 	for _, h := range []int{1, 2, 3} {

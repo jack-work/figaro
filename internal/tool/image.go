@@ -4,12 +4,12 @@
 // loop base64 that must survive two independent ceilings:
 //
 //  1. the PROVIDER's inline-image limit, and the resolution past which a
-//     provider downscales server-side anyway — bytes above it buy nothing; and
+//     provider downscales server-side anyway: bytes above it buy nothing; and
 //  2. the STORE's: the tool_result tic is ONE figwal record, and a record that
 //     does not fit inside a WAL segment fails the append and takes the turn
 //     with it.
 //
-// Dropping the image satisfies both and helps nobody — it reproduces, at a
+// Dropping the image satisfies both and helps nobody: it reproduces, at a
 // different threshold, exactly the blindness this path exists to end. Fitting
 // it satisfies both and keeps the picture. So the ceiling is a target to
 // encode toward, not a wall to fall off: scale down, try lossless first, and
@@ -37,7 +37,7 @@ type ImageLimits struct {
 	// MaxDim is the longest edge in pixels. Anthropic scales anything above
 	// 1568px down on its own, so pixels past it cost bytes and buy nothing.
 	MaxDim int
-	// MaxBase64 caps the encoded payload — the number that actually decides
+	// MaxBase64 caps the encoded payload: the number that actually decides
 	// whether the WAL record fits.
 	MaxBase64 int
 	// MaxPixels refuses a decode bomb before it is allocated: a small file can
@@ -62,7 +62,7 @@ const (
 	minUsefulImageBytes = 8 << 10
 )
 
-// DefaultImageLimits is the fallback for a caller with no configuration —
+// DefaultImageLimits is the fallback for a caller with no configuration -
 // tests, one-off registries, `figaro read`.
 func DefaultImageLimits() ImageLimits {
 	return ImageLimits{
@@ -202,7 +202,7 @@ func FitImage(raw []byte, mime string, lim ImageLimits) (FittedImage, error) {
 				Resized: w != origW || h != origH,
 				Recoded: mt != canonicalMIME(format, mime),
 			}
-			// Resizing to MaxDim is an OPTIMIZATION, not a requirement — the
+			// Resizing to MaxDim is an OPTIMIZATION, not a requirement: the
 			// providers accept larger images, they merely downscale them. So when
 			// the original already fit the byte budget, only take the re-encode if
 			// it actually saved bytes. Re-encoding a 2% oversized PNG, or a photo
@@ -236,7 +236,7 @@ func passthrough(raw []byte, cfg image.Config, format, mime string) FittedImage 
 // The order follows the SOURCE. A screenshot arrives lossless and survives PNG
 // far better than it survives a quality ladder, so PNG is tried first and
 // abandoned only when it genuinely does not fit. A photograph arrives as JPEG
-// and has already paid for its artifacts — re-encoding it as PNG would faithfully
+// and has already paid for its artifacts: re-encoding it as PNG would faithfully
 // preserve those artifacts at several times the size, which is the worst of both.
 func encodeUnder(img image.Image, limit int, lossy bool) (data, mime string, ok bool) {
 	tryPNG := func() (string, string, bool) {
@@ -275,7 +275,7 @@ func encodeUnder(img image.Image, limit int, lossy bool) (data, mime string, ok 
 }
 
 // flattenAlpha composites over white. JPEG has no alpha channel, and the
-// naive conversion renders every transparent pixel BLACK — which turns a
+// naive conversion renders every transparent pixel BLACK: which turns a
 // screenshot with a transparent titlebar into a photograph of a void.
 func flattenAlpha(img image.Image) image.Image {
 	if op, ok := img.(interface{ Opaque() bool }); ok && op.Opaque() {
@@ -330,7 +330,7 @@ func maxInt(a, b int) int {
 
 // inlineableFormat reports whether a decoded format can be sent to the model
 // byte-for-byte. Every provider figaro speaks to accepts all four, so an image
-// already under the ceiling is never re-encoded — WebP keeps its container and
+// already under the ceiling is never re-encoded: WebP keeps its container and
 // an animated GIF keeps its frames. Only the RESIZE path has to recode, since
 // pure Go can encode neither WebP nor multi-frame GIF.
 func inlineableFormat(format string) bool {

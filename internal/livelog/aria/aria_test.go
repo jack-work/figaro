@@ -47,7 +47,7 @@ func eqIDs(t *testing.T, label string, got, want []uint64) {
 }
 
 // A streaming suffix emits one frame per change, versioned, with the node
-// addressed by its positional id — no separate key.
+// addressed by its positional id: no separate key.
 func TestServer_DeltasVersionAndFold(t *testing.T) {
 	s := NewServer()
 	rc := &rec{}
@@ -138,7 +138,7 @@ func TestServer_PatchOnGrowth(t *testing.T) {
 	}
 }
 
-// Close folds the suffix into its turn but does NOT seal it — a turn spans
+// Close folds the suffix into its turn but does NOT seal it, a turn spans
 // many messages, and only finishTurn ends it.
 func TestServer_CloseFoldsSealDoesNot(t *testing.T) {
 	s := NewServer()
@@ -179,8 +179,8 @@ func TestServer_CloseFoldsSealDoesNot(t *testing.T) {
 }
 
 // The client folds a page into materialized turns. The committed head is
-// released as soon as the live suffix opens — the prompt must reach scrollback
-// immediately rather than ride the redrawable region until the turn seals — and
+// released as soon as the live suffix opens: the prompt must reach scrollback
+// immediately rather than ride the redrawable region until the turn seals, and
 // the agent's reply follows at seal.
 func TestClient_FoldAndPromote(t *testing.T) {
 	c := NewClient()
@@ -219,7 +219,7 @@ func TestClient_FoldAndPromote(t *testing.T) {
 // A turn closes as ONE message. It used to close as one per voice run, because
 // the prompt was node 0 and spoke in the user's voice; with the inquiry off the
 // node list every node is the agent's, so there is no run to cut. (Two tests
-// stood here — one for the run split, one for run contiguity; they assert the
+// stood here: one for the run split, one for run contiguity; they assert the
 // same single fact now.)
 func TestClient_ClosesOneMessagePerTurn(t *testing.T) {
 	c := NewClient()
@@ -244,7 +244,7 @@ func TestClient_ClosesOneMessagePerTurn(t *testing.T) {
 		t.Errorf("role = %q, want %q", m.Role, livedoc.RoleOutput)
 	}
 	if m.Inquiry != "ask" {
-		t.Errorf("inquiry = %q, want %q — the first slice carries the question", m.Inquiry, "ask")
+		t.Errorf("inquiry = %q, want %q: the first slice carries the question", m.Inquiry, "ask")
 	}
 }
 

@@ -1,6 +1,6 @@
 //go:build tmux
 
-// Package cli — END-TO-END TERMINAL TESTS.
+// Package cli: END-TO-END TERMINAL TESTS.
 //
 // # WHY THIS FILE EXISTS
 //
@@ -38,7 +38,7 @@
 //	FIGARO_E2E_BIN=$P/bin/figaro go test -tags tmux ./internal/cli/ -run TestE2E -v
 //
 // The tag keeps it out of the default suite: it costs real provider calls and
-// wall-clock. It is not optional for UI changes — see the tmux-testing skill (~/.config/figaro/skills/tmux-testing.md).
+// wall-clock. It is not optional for UI changes: see the tmux-testing skill (~/.config/figaro/skills/tmux-testing.md).
 package cli
 
 import (
@@ -73,8 +73,8 @@ func tmuxRun(t *testing.T, args ...string) string {
 //
 // GEOMETRY TRAP, and it cost this project a night: `tmux new-session -y N`
 // yields pane_height N-1, because the status bar takes a row. Every "height 1"
-// measurement in the original bug hunt was actually taken at height ZERO — a
-// state no user can reach — and produced a bug report for a defect that did not
+// measurement in the original bug hunt was actually taken at height ZERO, a
+// state no user can reach, and produced a bug report for a defect that did not
 // exist at any reachable size. ALWAYS assert pane_height, never assume -y.
 func newPane(t *testing.T, cols, rows int) *pane {
 	t.Helper()
@@ -128,7 +128,7 @@ func (p *pane) send(keys ...string) {
 }
 
 // typeText sends ONE CHARACTER PER CALL, with a gap. A single send-keys with a
-// whole string arrives as one read and appends fine — it is the one input
+// whole string arrives as one read and appends fine: it is the one input
 // pattern a real user never produces, and testing that way hid a composer that
 // discarded every character typed before its trigger key.
 func (p *pane) typeText(s string) {
@@ -185,7 +185,7 @@ func (p *pane) inPager() bool {
 func TestE2E_SimpleTurnExitsWithOneFooter(t *testing.T) {
 	p := newPane(t, 100, 30)
 	if h := p.height(); h != 29 {
-		t.Fatalf("pane_height = %d, want 29 (tmux -y 30 gives 29 — the status bar takes a row)", h)
+		t.Fatalf("pane_height = %d, want 29 (tmux -y 30 gives 29: the status bar takes a row)", h)
 	}
 	p.run("test")
 
@@ -233,7 +233,7 @@ func TestE2E_ExitKeysWork(t *testing.T) {
 }
 
 // The naive user types without knowing any trigger key. Every printable
-// character must compose — including j/d/i/q/u/k/g, which were pager openers
+// character must compose: including j/d/i/q/u/k/g, which were pager openers
 // and silently swallowed the beginning of the sentence.
 func TestE2E_NaiveTypingComposesASteer(t *testing.T) {
 	p := newPane(t, 100, 40)
@@ -241,7 +241,7 @@ func TestE2E_NaiveTypingComposesASteer(t *testing.T) {
 	time.Sleep(12 * time.Second)
 	p.typeText("just dig quickly")
 	if p.inPager() {
-		t.Fatalf("typing opened the pager — a printable character was treated as a motion\n---\n%s", p.visible())
+		t.Fatalf("typing opened the pager, a printable character was treated as a motion\n---\n%s", p.visible())
 	}
 	if v := p.visible(); !strings.Contains(v, "just dig quickly") {
 		t.Fatalf("draft does not hold the full text\n---\n%s", v)

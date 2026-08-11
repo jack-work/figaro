@@ -24,7 +24,7 @@ func updateCache() *update.Cache {
 
 // helpVersionLine is the version line for the transcript's '?' panel:
 // "figaro <version>", extended with the update nudge when the CACHE
-// (only — never the network; this runs inside the live pager) says a
+// (only: never the network; this runs inside the live pager) says a
 // newer release is comparable and available. The passive nudge lives in
 // the help surfaces exactly so it never interleaves with real output.
 func helpVersionLine() string {
@@ -34,7 +34,7 @@ func helpVersionLine() string {
 		info.Current = cur
 		info.Available = info.Latest != "" && update.Compare(info.Latest, cur) > 0
 		if update.Nudge(info, figaroModule) != "" {
-			line += " · " + info.Latest + " available — run: figaro update"
+			line += " · " + info.Latest + " available: run: figaro update"
 		}
 	}
 	return line
@@ -42,7 +42,7 @@ func helpVersionLine() string {
 
 // runUpdateCheck is the help-surface update nudge (figaro help /
 // --help). It prints a single stderr line if a newer release is
-// available and the config allows it. All error paths are silent — a
+// available and the config allows it. All error paths are silent, a
 // failed update check must never interfere with real CLI work.
 func runUpdateCheck(loaded *config.Loaded) {
 	if loaded == nil || !loaded.CheckUpdates() {
@@ -53,7 +53,7 @@ func runUpdateCheck(loaded *config.Loaded) {
 	if !isStderrTTY() {
 		return
 	}
-	// Dev-shell builds churn faster than any release cadence — skip.
+	// Dev-shell builds churn faster than any release cadence: skip.
 	if update.DetectChannel() == update.ChannelDevShell {
 		return
 	}

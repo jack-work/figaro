@@ -19,7 +19,7 @@ func runVaultStatus() error {
 	fmt.Printf("mode       %s\n", h.Mode())
 	fmt.Printf("identity   %s\n", h.IdentityFile())
 	if !h.HasIdentity() {
-		fmt.Println("           (absent — the next figaro command sets one up)")
+		fmt.Println("           (absent: the next figaro command sets one up)")
 		return nil
 	}
 	if pub, err := h.PublicKey(); err == nil {
@@ -47,7 +47,7 @@ func runVaultStatus() error {
 	v, err := keyring.Get(svc, acct)
 	switch {
 	case errors.Is(err, keyring.ErrNotFound):
-		fmt.Println("           no saved passphrase — you'll be prompted")
+		fmt.Println("           no saved passphrase: you'll be prompted")
 	case err != nil:
 		fmt.Printf("           unreadable (%v)\n", err)
 	default:
@@ -76,14 +76,14 @@ func runVaultForget() error {
 	if err != nil {
 		return fmt.Errorf("keyring delete (%s:%s): %w", svc, acct, err)
 	}
-	fmt.Printf("cleared %s:%s — the next figaro command will prompt\n", svc, acct)
+	fmt.Printf("cleared %s:%s: the next figaro command will prompt\n", svc, acct)
 	return nil
 }
 
 func runVaultUnlock() error {
 	h := mustHush()
 	if !h.HasIdentity() {
-		return fmt.Errorf("no identity yet at %s — run any figaro command to set one up", h.IdentityFile())
+		return fmt.Errorf("no identity yet at %s: run any figaro command to set one up", h.IdentityFile())
 	}
 	pp, err := tui.PromptPassphrase("figaro")
 	if err != nil {
@@ -95,7 +95,7 @@ func runVaultUnlock() error {
 		}
 	}()
 	if err := h.VerifyPassphrase(pp); err != nil {
-		return fmt.Errorf("that passphrase does not decrypt the identity — nothing saved: %w", err)
+		return fmt.Errorf("that passphrase does not decrypt the identity: nothing saved: %w", err)
 	}
 	svc, acct := h.KeyringTarget()
 	if svc != "" && acct != "" {

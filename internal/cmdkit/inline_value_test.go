@@ -84,7 +84,7 @@ func TestInlineFlagValues(t *testing.T) {
 	t.Run("unknown inline flag names only the flag", func(t *testing.T) {
 		_, code, err := run("--bogus=5")
 		if code != 2 || !strings.Contains(err, "unknown flag: --bogus") {
-			t.Errorf("code %d err %q — the = value must not be part of the name", code, err)
+			t.Errorf("code %d err %q: the = value must not be part of the name", code, err)
 		}
 	})
 }

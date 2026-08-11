@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// TestPlanFork pins the `fork` grammar — the whole surface that used to be
+// TestPlanFork pins the `fork` grammar: the whole surface that used to be
 // "one optional positional and two bools" and is now `send`'s parser with a
 // fork-shaped set of rejections.
 //
@@ -174,7 +174,7 @@ func TestPlanFork(t *testing.T) {
 
 // TestForkPromptRoute pins which `send` dispatch a forked prompt takes. The
 // point of the fork+prompt form is that these mean exactly what they mean on
-// `send` — the routing table is the contract.
+// `send`: the routing table is the contract.
 func TestForkPromptRoute(t *testing.T) {
 	cases := []struct {
 		name string
@@ -229,7 +229,7 @@ func TestForkTargetHint(t *testing.T) {
 
 // TestForkJSONSubmitsAndExits pins the second copy of the --json contract.
 //
-// `fork -- <prompt>` is a send, so it inherits send's rules — but it kept
+// `fork -- <prompt>` is a send, so it inherits send's rules: but it kept
 // its own copy of two of them and its own tail, which is how the fork-send
 // path went on printing the object AND THEN streaming the rendered turn to
 // the same stdout after `send` had stopped. Two copies of a rule is one
@@ -251,7 +251,7 @@ func TestForkJSONSubmitsAndExits(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := planFork(tc.args)
 			if err == nil {
-				t.Fatal("accepted silently — the flag would be dropped")
+				t.Fatal("accepted silently: the flag would be dropped")
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("message must name %s: %s", tc.want, err)
