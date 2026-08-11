@@ -1,0 +1,40 @@
+# ci.yml: the same gate scripts/release.sh runs locally before it will cut a
+# tag (go build / vet / test), run on every push and PR so the gate is never
+# the first place a break is discovered.
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: build
+        # CGO off everywhere, so CI cannot pass on a binary the release path
+        # would never produce (agents.md invariant #11).
+        env:
+          CGO_ENABLED: "0"
+        run: go build ./...
+
+      - name: vet
+        env:
+          CGO_ENABLED: "0"
+        run: go vet ./...
+
+      - name: test
+        env:
+          CGO_ENABLED: "0"
+        run: go test ./...
