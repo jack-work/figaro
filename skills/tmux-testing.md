@@ -62,6 +62,67 @@ The shell warns about the other half of this trap in its own banner: a shell
 launched inside the dev shell may re-prepend `~/go/bin` and shadow
 `$FIGARO_DEV_BIN`. Re-prepend it in your rc when it is set.
 
+## Capturing demo material: a devshell on a NEW store
+
+The dev shells isolate runtime and state, but a dev root **persists across
+entries**, so "isolated" is not the same as "empty". When the output is going
+somewhere public: a demo, a screenshot, a marketing page: start from a store
+with nothing in it, and prove it twice.
+
+```sh
+cd ~/dev/figaro-qua/main
+nix develop .#share-hush        # real credentials, isolated runtime+config+state
+
+# 1. prove which binary and which store the shell actually has
+type -a figaro                  # the dev bin must be first
+echo "$FIGARO_STATE_DIR"
+
+# 2. start from empty: stop the dev daemon FIRST, or it rebuilds the store
+figaro stop
+rm -rf "$FIGARO_STATE_DIR/arias"
+figaro ls                       # must print 0 top-level arias
+
+# ... capture ...
+
+# 3. prove it again on the way out
+figaro ls                       # only what you made
+FIGARO_STATE_DIR= FIGARO_RUNTIME_DIR= FIGARO_CONFIG_DIR= \
+  ~/.nix-profile/bin/figaro ls  # the real store, untouched
+figaro stop                     # trap 10: the scratch daemon is yours to reap
+```
+
+`share-hush` is the preset for this: it shares the global hush identity (so
+real provider credentials work) while isolating runtime, config **and** state.
+Because the config is a copy, outfits can be edited freely during a capture -
+which is how the outfit demo is filmed - without touching the real ones. Pin a
+cheap real model in a demo outfit rather than reaching for a fake provider:
+
+```toml
+# $FIGARO_CONFIG_DIR/outfits/impresario.toml
+layers = ["default"]
+[system]
+provider = "anthropic"
+model    = "claude-haiku-4-5-20251001"
+```
+
+**Three traps specific to capture work**, all of which cost real time:
+
+1. **A tmux pane inherits the user's interactive rc**, and a figaro prompt
+   integration in it will run the INSTALLED figaro against your isolated
+   runtime dir: which autostarts a daemon of the wrong build, and then every
+   command in the pane fails the build handshake. Spawn panes with a clean rc
+   that only sets the dev env:
+   `tmux new-session -d "bash --noprofile --init-file /path/to/panerc"`.
+   Note `--norc` CANCELS `--init-file`; passing both silently gives you neither.
+2. **A long turn auto-promotes to the transcript pager** (trap 3), and the next
+   command you send is typed INTO the pager rather than the shell. Return to
+   the prompt between scenarios (`q`, then `C-c`) and assert you see `$` before
+   sending anything else.
+3. **`pkill -f <pattern>` matches your own command line.** A cleanup step
+   spelled `pkill -f figaro-dev-share-hush` killed the very shell that was
+   running it, halfway through, leaving the store un-wiped and the operator
+   convinced the wipe had run. Reap by pid, or by an absolute exe path.
+
 ## Build a stamped binary: when you build by hand
 
 The dev shell stamps for you, and so do `scripts/*.sh` and the harness
