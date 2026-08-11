@@ -141,13 +141,13 @@ Commits: `85728c2` `75b50ba` on the worktree branch.
 ```
 arias/abc12345/                 → arias/abc12345/                  RO branch point
   aria/<segments>                 aria/<segments>                  prefix [1..N-1]
-  chalkboard.json                 chalkboard.json                  rolled back to N-1
+  form.json                 form.json                  rolled back to N-1
   meta.json                       meta.json                        recomputed
   translations/anthropic/         translations/anthropic/          prefix
                                   abc12345/                        old-future child
                                     .fork
                                     aria/<segments>                suffix [N..]
-                                    chalkboard.json
+                                    form.json
                                     meta.json
                                     translations/anthropic/
                                   v2/                              fresh fork
@@ -189,9 +189,9 @@ change.
 3. For each open figwal log (aria + every translator), call
    `Cached.Fork(atIdx, freshName, oldFutureName)`. Per-log atomicity is
    figwal's `.fork-pending` sentinel.
-4. Compute the parent's rolled-back chalkboard: replay IR patches `[1..N-1]`
-   into a fresh `chalkboard.Open` snapshot; atomic-write to parent
-   `chalkboard.json`. Copy parent's pre-fork chalkboard into the old-future
+4. Compute the parent's rolled-back form: replay IR patches `[1..N-1]`
+   into a fresh `form.Open` snapshot; atomic-write to parent
+   `form.json`. Copy parent's pre-fork form into the old-future
    child's dir. Fresh child gets the same rolled-back snapshot.
 5. Recompute `meta.json` for each child (cumulative tokens / message count /
    last-active up to that child's slice).
@@ -263,7 +263,7 @@ type ChildInfo struct {
 7. **figaro:** `figaro.fork` agent RPC + CLI for the IR log only. Hand-test on
    a throwaway aria.
 8. **figaro:** extend fork to coordinate translator logs.
-9. **figaro:** chalkboard rollback + per-child meta.json recompute.
+9. **figaro:** form rollback + per-child meta.json recompute.
 10. **figaro:** `pid.bind` branch-point response + CLI selection loop.
 11. **figaro:** `figaro list` tree rendering + branch-point annotation.
 
@@ -282,7 +282,7 @@ skill.
 
 ## Risks
 
-- **Chalkboard rollback** is the trickiest piece. Patches in `aria.jsonl` are
+- **Form rollback** is the trickiest piece. Patches in `aria.jsonl` are
   full snapshots vs deltas; need to confirm before phase 7. Gate this behind a
   test that writes N entries with patches and asserts the rolled-back state
   matches a fresh replay.

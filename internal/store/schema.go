@@ -103,7 +103,7 @@ func schemaFor(name string) (channelSchema, string, bool) {
 // 1: a stump's id is its content version alone. The name is inside the hashed
 // content and inside the birth record, so nothing parses an id.
 //
-// 2: the chalkboard is the FORM, and its channel directory is named "form".
+// 2: the form is the FORM, and its channel directory is named "form".
 // Outfits are no longer a wire type either, a client sends a patch whose
 // `layers` directive the server materializes: but that is a protocol change,
 // not a store one. The directory rename is what makes this a generation: a
@@ -169,9 +169,9 @@ func ensureSchema(root string, trunks *xwal.Store) error {
 }
 
 // checkGeneration is the version half, split out so it can run BEFORE figwal
-// opens the store. A generation-1 store names its form channel "chalkboard",
+// opens the store. A generation-1 store names its form channel "form",
 // and figwal's manifest is authoritative for channel shape: so it refuses the
-// open itself, with "no reducer \"chalkboard\" registered", which explains
+// open itself, with "no reducer \"form\" registered", which explains
 // nothing to the person holding the store. This must speak first.
 func checkGeneration(f schemaFile, root string, trunks *xwal.Store) error {
 	if f.StoreVersion > storeVersion {
@@ -325,20 +325,20 @@ func migrateGenerations(root string, from int) error {
 }
 
 // migrateFormChannel is generation 1 -> 2: the form's channel directory was
-// called "chalkboard". Renaming it is figwal's job (the manifest is its
+// called "form". Renaming it is figwal's job (the manifest is its
 // format); the sidecar's channel key is ours.
 func migrateFormChannel(root string) error {
-	if _, err := os.Stat(filepath.Join(root, "chalkboard")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, "form")); err != nil {
 		if !os.IsNotExist(err) {
 			return err
 		}
 		// Nothing under the old name. Either this store never had one, or a
 		// previous run moved it and died before the sidecar was stamped, and
 		// RenameChannel repairs the manifest for that second case.
-		if rerr := xwal.RenameChannel(root, "chalkboard", chanForm); rerr != nil && !isNoSuchChannel(rerr) {
+		if rerr := xwal.RenameChannel(root, "form", chanForm); rerr != nil && !isNoSuchChannel(rerr) {
 			return rerr
 		}
-	} else if err := xwal.RenameChannel(root, "chalkboard", chanForm); err != nil {
+	} else if err := xwal.RenameChannel(root, "form", chanForm); err != nil {
 		return err
 	}
 	f, err := readSchema(root)
@@ -348,8 +348,8 @@ func migrateFormChannel(root string) error {
 	if f.Channels == nil {
 		return nil
 	}
-	if v, ok := f.Channels["chalkboard"]; ok {
-		delete(f.Channels, "chalkboard")
+	if v, ok := f.Channels["form"]; ok {
+		delete(f.Channels, "form")
 		if _, taken := f.Channels[chanForm]; !taken {
 			f.Channels[chanForm] = v
 		}

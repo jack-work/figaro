@@ -29,7 +29,7 @@ import (
 // The board no longer keys its patches to a main LT: ApplyForm appends
 // with no reference to the timeline and serializes against nothing, so a `set`
 // can land while a turn is in flight. The association runs the other way --
-// each IR record stamps the board version it was written at (Entry.ChalkVersion)
+// each IR record stamps the board version it was written at (Entry.FormChannelVersion)
 // -- and that stamp is what an interior fork inherits.
 //
 // Everything here drives real Agents over a real XwalBackend with a stub
@@ -102,7 +102,7 @@ func openGate(gate chan struct{}, n int) {
 
 // fuzzAgent builds a BACKED agent (real XwalBackend, real form channel)
 // around the given provider/factory. Backed is the point: only a backed aria
-// routes `set` through ApplyForm and stamps ChalkVersion on its IR.
+// routes `set` through ApplyForm and stamps FormChannelVersion on its IR.
 func fuzzAgent(t *testing.T, prov provider.Provider, factory figaro.ProviderFactory) (*figaro.Agent, store.Backend, string) {
 	t.Helper()
 	backend, id := backedConv(t, t.TempDir())

@@ -102,10 +102,10 @@ version on every IR append (SetObservedForms, mirrored from
 system.studies); the projection derives each member's patch-fold
 between consecutive stamps: the bound board is member zero of the same
 loop, and all four providers fold the result into their IR beside the
-chalkboard's transitions, deterministically (sorted members, cache-
+form's transitions, deterministically (sorted members, cache-
 stable bytes). Study/drop are stated IR marks; tombstones render for
 forms removed mid-observation; warm starts carry LastStudyVersions
-beside LastChalkVersion. Deleted: the pending queue, the turn-assembly
+beside LastFormVersion. Deleted: the pending queue, the turn-assembly
 injection, and WatchFormDurable with its generation gating: the
 milestone's finest catch became its most elegant deletion (the whole
 push apparatus, obsoleted by pull). A1/A2/A3 dissolved as predicted.

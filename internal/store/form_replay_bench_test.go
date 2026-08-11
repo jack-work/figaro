@@ -12,7 +12,7 @@ import (
 )
 
 // Form replay benchmarks: the BEFORE measurement for the
-// persistent-tree migration (branch chalk/bench, see DESIGN.md).
+// persistent-tree migration (branch form/bench, see DESIGN.md).
 //
 // Two paths are measured:
 //

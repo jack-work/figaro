@@ -77,7 +77,7 @@ func (p *Provider) invalidateIfStale(s store.Log[[]json.RawMessage]) bool {
 
 // catchUp projects untranslated entries into immutable typed messages.
 // Cached raw bytes are parsed only when their entry first joins the projection.
-func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], chalk provider.Form, studies map[string]provider.Form) (projectedMessages, error) {
+func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], form provider.Form, studies map[string]provider.Form) (projectedMessages, error) {
 	t0 := time.Now()
 	fp := p.Fingerprint()
 	p.mu.Lock()
@@ -87,7 +87,7 @@ func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]
 	projection, stats, err := provider.ProjectIncrementally(provider.ProjectionConfig[projectedMessages]{
 		Log:         figLog,
 		Cache:       cache,
-		Form:        chalk,
+		Form:        form,
 		Studies:     studies,
 		Previous:    previous,
 		Fingerprint: fp,

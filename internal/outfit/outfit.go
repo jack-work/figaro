@@ -649,6 +649,11 @@ func directorySkillPath(dir string) string {
 	return ""
 }
 
+// BundledSkillsRoot is where the binary's own first-party skills live. The
+// daemon records it with the default form: when it moves, the shipped skills
+// moved with it, and the default form is due for recomputation.
+func BundledSkillsRoot() string { return bundledSkillsRoot() }
+
 // bundledSkillsRoot returns the directory holding first-party skills shipped
 // with the binary (its parent is <exe>/../share/figaro, so dirName="skills"
 // resolves to <exe>/../share/figaro/skills). FIGARO_BUNDLED_SKILLS overrides:

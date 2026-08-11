@@ -13,8 +13,8 @@ import (
 
 type metadataListBackend struct {
 	store.Backend
-	chalkReads atomic.Int64
-	logReads   atomic.Int64
+	formReads atomic.Int64
+	logReads  atomic.Int64
 }
 
 // LastTS is recency's new source: figwal, not the sidecar. The dormant
@@ -50,7 +50,7 @@ func (b *metadataListBackend) Meta(string) (*store.AriaMeta, error) {
 }
 
 func (b *metadataListBackend) FormState(string) (form.Snapshot, error) {
-	b.chalkReads.Add(1)
+	b.formReads.Add(1)
 	return form.Snapshot{}, nil
 }
 
@@ -78,7 +78,7 @@ func TestDormantListUsesMetadataOnly(t *testing.T) {
 		got.LastActive != 20 {
 		t.Fatalf("metadata not projected: %#v", got)
 	}
-	if got := backend.chalkReads.Load(); got != 0 {
+	if got := backend.formReads.Load(); got != 0 {
 		t.Fatalf("dormant list folded form %d times", got)
 	}
 	if got := backend.logReads.Load(); got != 0 {

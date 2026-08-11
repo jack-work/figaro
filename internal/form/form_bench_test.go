@@ -9,13 +9,13 @@ import (
 )
 
 // Form microbenchmarks: the BEFORE measurement for the
-// persistent-tree migration (see DESIGN.md, branch chalk/bench).
+// persistent-tree migration (see DESIGN.md, branch form/bench).
 //
 // Everything here uses only the public form API, and every
 // Snapshot construction/read goes through the seam in
 // bench_seam_test.go. Fixtures live in bench_fixtures_test.go.
 //
-// Standard invocation (see scripts/chalkbench.sh):
+// Standard invocation (see scripts/formbench.sh):
 //
 //	go test ./internal/form -bench=. -benchmem -count=10 |
 //	    tee bench-before.txt

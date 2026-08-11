@@ -405,7 +405,7 @@ func (p *Provider) invalidateIfStale(s store.Log[[]json.RawMessage]) bool {
 }
 
 func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage],
-	chalk provider.Form, studies map[string]provider.Form) ([][]json.RawMessage, []uint64) {
+	form provider.Form, studies map[string]provider.Form) ([][]json.RawMessage, []uint64) {
 	fp := p.Fingerprint()
 	p.mu.Lock()
 	previous := p.projection
@@ -414,7 +414,7 @@ func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]
 	projection, _, err := provider.ProjectIncrementally(provider.ProjectionConfig[provider.EncodedMessages]{
 		Log:         figLog,
 		Cache:       cache,
-		Form:        chalk,
+		Form:        form,
 		Studies:     studies,
 		Previous:    previous,
 		Fingerprint: fp,
@@ -444,11 +444,11 @@ func (p *Provider) acceptAssistantProjection(lt uint64, encoded []json.RawMessag
 	}
 	state := provider.AppendEncodedMessage(p.projection.State, encoded, lt)
 	p.projection = &provider.IncrementalProjection[provider.EncodedMessages]{
-		State:            state,
-		Form:             p.projection.Form,
-		Fingerprint:      p.projection.Fingerprint,
-		Entries:          p.projection.Entries + 1,
-		LastLT:           lt,
-		LastChalkVersion: p.projection.LastChalkVersion,
+		State:           state,
+		Form:            p.projection.Form,
+		Fingerprint:     p.projection.Fingerprint,
+		Entries:         p.projection.Entries + 1,
+		LastLT:          lt,
+		LastFormVersion: p.projection.LastFormVersion,
 	}
 }

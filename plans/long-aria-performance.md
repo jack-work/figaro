@@ -99,7 +99,7 @@ For each `(aria, provider fingerprint)` keep:
 
 ```text
 translatedThroughIRLT
-chalkboardSnapshotAtWatermark
+formSnapshotAtWatermark
 per-message input-ready bytes
 flattened provider input view
 ```
@@ -141,7 +141,7 @@ both page payload and descriptor have been evicted.
 
 - Cache the forest snapshot by XWAL topology version.
 - Read dormant list/status fields from existing metadata and inherited
-  chalkboard snapshots without opening/canonicalizing every aria.
+  form snapshots without opening/canonicalizing every aria.
 - Invalidate one entry on actor metadata publication and the forest cache on a
   topology mutation.
 - Use indexed/binary LT lookup for `Read`, `ReadBefore`, and raw `aria.read`.
@@ -169,7 +169,7 @@ both page payload and descriptor have been evicted.
 These are not required for the no-format-change phase:
 
 - Persisted `ui` projection channel for instant cold restore.
-- Durable translator/chalkboard checkpoint records beyond existing XWAL
+- Durable translator/form checkpoint records beyond existing XWAL
   watermarks.
 - Snapshot/epoch token on the read wire for server-enforced fork isolation.
 - Literal-search index and cursor protocol.

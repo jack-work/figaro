@@ -97,7 +97,7 @@ append exactly at seal, and add read-through/fallback. Do not revive the retired
 
 ## 2. Declarative channel set ("track trees via an xwal store")
 
-Today `storeConfig()` hardcodes `ir` + `chalkboard`; translations are
+Today `storeConfig()` hardcodes `ir` + `form`; translations are
 added dynamically via `AddChannel`. Generalize: a declarative channel
 registry so `ui`, `translations/*`, future projections are uniform -
 each a "related tree" in the per-aria xwal store, all joint-forked
@@ -106,7 +106,7 @@ together. This is the generalization the user described; the machinery
 
 ## 3. Paginated range-query API for any stream
 
-User wants `fig show <stream>` over ANY channel (ir / chalkboard /
+User wants `fig show <stream>` over ANY channel (ir / form /
 translations / ui) with range + next-cursor semantics. `aria.read`
 already has the shape (`From`/`Limit` → `Total`/`NextFrom`). Generalize
 it channel-agnostically on `xwal.ReadAt` + channel bounds so it's a small
@@ -126,7 +126,7 @@ stays cheap later.)
 
 ## 5. Known correctness edge (open)
 
-A chalkboard `set` keyed to the next IR LT, with a fork at that exact LT
+A form `set` keyed to the next IR LT, with a fork at that exact LT
 and NO intervening turn, lands the pending patch on the fork boundary -
 rides only the continuation, not the alternative. Realistic flow (set
 rides its committed turn) inherits to both. Proper fix: reducible channel

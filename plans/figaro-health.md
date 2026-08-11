@@ -85,7 +85,7 @@ no per-object-graph accounting, and the two honest options are:
    exists and is calibrated: entries are sized from
    `Entry.EncodedBytes * irDecodeInflation`, with the constant (5) derived from
    measuring two real arias at 4.0x and 5.3x. Extend the same treatment to
-   translations and the chalkboard and the number is defensible to within ~25%,
+   translations and the form and the number is defensible to within ~25%,
    which is what `TestRealAriaMemory` measured. Print it as `~12.4 MiB`.
 2. **Say nothing.** Better than a number that looks exact and is not.
 

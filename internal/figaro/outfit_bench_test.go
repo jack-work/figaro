@@ -58,7 +58,7 @@ func benchAgent(b *testing.B, configDir string, initial form.Patch) *figaro.Agen
 		Projector:  uiir.New(nil),
 		ID:         "outfit-bench",
 		SocketPath: filepath.Join(b.TempDir(), "sock"),
-		Provider:   &chalkSpyProvider{},
+		Provider:   &formSpyProvider{},
 		Tools:      tool.NewRegistry(),
 		Form:       cb,
 	})

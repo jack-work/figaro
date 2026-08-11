@@ -9,7 +9,7 @@ when they ship.
 - [ ] **Prefix byte-stability regression**: restore the test deleted in
       Stage C.3 (`internal/provider/anthropic/prefix_stability_test.go`).
       What survives today is the weakest form (single-call same-input →
-      same-bytes). Need: multi-turn projections with chalkboard mutations,
+      same-bytes). Need: multi-turn projections with form mutations,
       bootstrap entry + tool-result tics, and the new skills system block,
       all asserting byte-equality of `req.System ++ req.Tools ++
       req.Messages[:len-1]`. Without this, a future change can silently
@@ -37,11 +37,11 @@ when they ship.
 - [ ] **`AriaMeta` retirement**: currently lives in
       `arias/{id}/meta.json` as a "transitional" artifact (see
       `internal/store/file.go`). Stage C.6 was supposed to retire it in
-      favor of `chalkboard.system.*` taking over restoration metadata.
+      favor of `form.system.*` taking over restoration metadata.
       Today still load-bearing for `restoreByID` (the lazy on-demand
       restoration path in `internal/angelus/protocol.go`): that path
       reads `meta.json` to reconstruct provider/model/cwd before
-      instantiating the Agent. Migrating to read from `chalkboard.json`
+      instantiating the Agent. Migrating to read from `form.json`
       (which already carries `system.{model,provider}` after Stage C.4)
       is the natural fold; `cwd` / `root` would need to move into
       `system.*` first. Item from the v3 plan, not yet done.

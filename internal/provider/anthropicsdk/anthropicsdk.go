@@ -286,12 +286,12 @@ func (p *Provider) acceptAssistantProjection(lt uint64, encoded []json.RawMessag
 	}
 	state := appendProjectedMessages(p.projection.State, encoded, lt)
 	p.projection = &provider.IncrementalProjection[projectedMessages]{
-		State:            state,
-		Form:             p.projection.Form,
-		Fingerprint:      p.projection.Fingerprint,
-		Entries:          p.projection.Entries + 1,
-		LastLT:           lt,
-		LastChalkVersion: p.projection.LastChalkVersion,
+		State:           state,
+		Form:            p.projection.Form,
+		Fingerprint:     p.projection.Fingerprint,
+		Entries:         p.projection.Entries + 1,
+		LastLT:          lt,
+		LastFormVersion: p.projection.LastFormVersion,
 	}
 }
 

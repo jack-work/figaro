@@ -39,7 +39,7 @@ func (b *fakeBoard) PatchesBetween(after, upTo uint64) []message.Patch {
 func stamp(t *testing.T, log *store.MemLog[message.Message], text string, at uint64) {
 	t.Helper()
 	e, err := log.Append(store.Entry[message.Message]{
-		ChalkVersion: at,
+		FormChannelVersion: at,
 		Payload: message.Message{
 			Role: message.RoleInput, Content: []message.Content{message.TextContent(text)},
 		},
@@ -111,8 +111,8 @@ func TestWarmProjectionRendersWhatAColdOneWould(t *testing.T) {
 	if strings.Join(warm, ",") != strings.Join(coldKeys, ",") {
 		t.Errorf("warm start renders differently from cold:\n cold %v\n warm %v", coldKeys, warm)
 	}
-	if cold.LastChalkVersion == 0 {
-		t.Error("a cold projection reports LastChalkVersion 0; a warm resume would restart from the beginning")
+	if cold.LastFormVersion == 0 {
+		t.Error("a cold projection reports LastFormVersion 0; a warm resume would restart from the beginning")
 	}
 }
 
@@ -126,7 +126,7 @@ func TestEveryPatchRendersExactlyOnceAcrossResumes(t *testing.T) {
 	var prev *IncrementalProjection[EncodedMessages]
 	for i, mark := range []uint64{2, 3, 4, 6, 6} {
 		stamp(t, log, fmt.Sprintf("turn%d", i), mark)
-		// A FRESH cursor every pass, because that is what chalkAccessor()
+		// A FRESH cursor every pass, because that is what formAccessor()
 		// does: it is called per Send, not per turn. A test that reuses one
 		// cursor cannot reproduce the bug this file exists for.
 		proj, keys, err := renderedKeys(ProjectionConfig[EncodedMessages]{

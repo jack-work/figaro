@@ -971,14 +971,14 @@ func (a *Agent) applyControlPatch(patch message.Patch, ifVersion uint64, kind st
 	a.publishMetadata()
 }
 
-// chalkAccessor returns the per-LT transition source for the provider:
+// formAccessor returns the per-LT transition source for the provider:
 // for backed arias, the form's patches in version order; nil for
 // ephemeral (the provider falls back to inline IR patches).
 //
 // TODO: FormPatches copies the aria's ENTIRE patch history on every
 // Send, which is O(total board) on a path that renders O(delta). See
 // plans/form-projection-followups.md §1.
-func (a *Agent) chalkAccessor() provider.Form {
+func (a *Agent) formAccessor() provider.Form {
 	if a.backend == nil {
 		return nil
 	}
@@ -990,11 +990,11 @@ func (a *Agent) chalkAccessor() provider.Form {
 	return &patchCursor{patches: ps}
 }
 
-// studyAccessors is chalkAccessor for the observed set: one absolute
+// studyAccessors is formAccessor for the observed set: one absolute
 // accessor per studied form, read from THAT form's channel. A studied
 // form that cannot be read supplies no accessor: the projection
 // renders its stamp as a tombstone. Same O(total history) caveat as
-// chalkAccessor, same followup owns it.
+// formAccessor, same followup owns it.
 func (a *Agent) studyAccessors() map[string]provider.Form {
 	if a.backend == nil {
 		return nil

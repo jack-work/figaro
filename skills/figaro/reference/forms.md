@@ -2,7 +2,7 @@
 
 An **unbound form** is durable, versioned, forkable state with no agent
 attached: a JSON tree whose every change is a patch in an append-only
-channel. A figaro's chalkboard has always been exactly this: the only
+channel. A figaro's form has always been exactly this: the only
 news is that the primitive now stands alone. One id namespace covers
 both: an id with the `@` sigil (`@a1b2c3`) is an unbound form; a bare
 hex id is a figaro, which IS its bound form. Nothing ever converts
@@ -184,7 +184,7 @@ mechanism is the bound board's, generalized: every IR record stamps the
 positions of the whole OBSERVED SET (own board plus studied forms), and
 the provider translator derives each member's patch-fold between
 consecutive stamps at translation time: folded into the provider IR
-exactly as the chalkboard's transitions are, re-derived on every
+exactly as the form's transitions are, re-derived on every
 retranslate, never baked into this aria's records. Began/stopped
 observing are stated IR marks; a studied form removed mid-observation
 renders a tombstone; observation advances at main-record boundaries

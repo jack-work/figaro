@@ -236,12 +236,12 @@ func (p *responsesProvider) acceptAssistantProjection(lt uint64, payload []json.
 	state := append([]json.RawMessage(nil), p.projection.State...)
 	state = append(state, payload...)
 	p.projection = &provider.IncrementalProjection[[]json.RawMessage]{
-		State:            state,
-		Form:             p.projection.Form,
-		Fingerprint:      p.projection.Fingerprint,
-		Entries:          p.projection.Entries + 1,
-		LastLT:           lt,
-		LastChalkVersion: p.projection.LastChalkVersion,
+		State:           state,
+		Form:            p.projection.Form,
+		Fingerprint:     p.projection.Fingerprint,
+		Entries:         p.projection.Entries + 1,
+		LastLT:          lt,
+		LastFormVersion: p.projection.LastFormVersion,
 	}
 }
 

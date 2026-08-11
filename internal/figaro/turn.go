@@ -426,7 +426,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		AriaID:    a.id,
 		FigLog:    deferredLog,
 		Snapshot:  a.form.Snapshot(),
-		Form:      a.chalkAccessor(),
+		Form:      a.formAccessor(),
 		Studies:   a.studyAccessors(),
 		Tools:     a.toolDefs(),
 		MaxTokens: a.formInt("system.max_tokens"),

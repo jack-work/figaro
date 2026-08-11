@@ -24,6 +24,18 @@ type DefaultFormRecord struct {
 	// every future aria.
 	BirthVersion uint64 `json:"birth_version"`
 	Dirty        bool   `json:"dirty,omitempty"`
+	// BundledRoot is where the BINARY's own first-party skills lived when
+	// this form was minted. It is the upgrade trigger, and it exists because
+	// the cheap path above is too cheap on its own: a clean pointer is reused
+	// with no comparison at all, so `nix profile upgrade` would replace the
+	// shipped skills on disk and every future `fig new` would go on wearing
+	// the old ones until somebody happened to run `fig outfit reload`.
+	//
+	// A nix upgrade always moves this path (it carries the store hash), so a
+	// daemon that boots holding a different one marks the record dirty and
+	// lets the ordinary reload-compute decide: same content, no remint; new
+	// skills, a fresh default form. Cheap trigger, exact decision.
+	BundledRoot string `json:"bundled_root,omitempty"`
 }
 
 func (b *XwalBackend) defaultFormPath() string {

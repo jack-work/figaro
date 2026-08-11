@@ -230,13 +230,13 @@ then adds `softFetchLiveKeys()` on top; the live half is coming back empty.
 
 ### Why it is empty: check in this order
 
-`softFetchLiveKeys` (`internal/cli/complete_chalkboard.go:62`) returns **nil on
+`softFetchLiveKeys` (`internal/cli/complete_form.go:62`) returns **nil on
 every failure**, by design: completion must not autostart a daemon, prompt, or
 block. It has five nil-returning exits: dial the angelus, resolve the pid
 binding, dial the aria, `fcli.Form(ctx)`, and the decode.
 
 1. **Mixed versions (most likely).** v0.23.0 renamed the read method
-   `figaro.chalkboard` -> `figaro.form` (and `aria.chalkboard` -> `aria.form`).
+   `figaro.form` -> `figaro.form` (and `aria.form` -> `aria.form`).
    A v0.23 CLI against a 0.22.x daemon gets *method not found* at the
    `fcli.Form(ctx)` line and falls back silently. Completion runs whatever
    `figaro` is on PATH, which is often the INSTALLED binary while testing a

@@ -135,7 +135,7 @@ func (p *lateLimitProvider) Send(_ context.Context, in provider.SendInput, bus p
 }
 
 // mockEncodeFn matches the per-message encoder shape. Provider mocks
-// supply their own implementations so spies (chalkSpyProvider) can
+// supply their own implementations so spies (formSpyProvider) can
 // record what they would have encoded.
 type mockEncodeFn func(msg message.Message, prev form.Snapshot) ([]json.RawMessage, error)
 

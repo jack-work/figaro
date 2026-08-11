@@ -24,7 +24,7 @@ ephemeral          1 per user            N per user
 cmd/figaro/                multi-call entry: figaro / q / l + --angelus daemon
 internal/angelus/          supervisor, PID monitor, JSON-RPC handlers
 internal/auth/             OAuth + PKCE, hush-encrypted token storage
-internal/chalkboard/       per-aria structured state + system-reminder rendering
+internal/form/       per-aria structured state + system-reminder rendering
 internal/config/           TOML config loader
 internal/credo/            personality body + skill catalog
 internal/figaro/           actor: agent loop, inbox, translator orchestration
@@ -45,7 +45,7 @@ Every aria is one XWAL trunk with related channels:
 ```
 arias/
 ├── ir/                               canonical message.Message timeline
-├── chalkboard/                       reducible state patches
+├── form/                       reducible state patches
 ├── translations-v2/
 │   ├── anthropic/                    opaque provider request objects
 │   ├── copilot-messages/
@@ -146,7 +146,7 @@ type Provider interface {
 ```
 
 - Providers own their per-message IR projection and translation cache.
-- `Send` takes the canonical `FigLog`, current chalkboard snapshot, tools,
+- `Send` takes the canonical `FigLog`, current form snapshot, tools,
   and token limit; it rebuilds its provider-native request and emits
   provider-native streaming events through the bus.
 - The Copilot provider routes catalog models by their advertised endpoint:
@@ -158,7 +158,7 @@ type Provider interface {
   `system.context_tier`, `system.max_context_tokens`,
   `system.reasoning_context`, `system.reasoning_summary`, `system.thinking_effort`,
   `system.verbosity`, `system.temperature`, `system.top_p`, and
-  `system.parallel_tool_calls` from the chalkboard for every turn. The
+  `system.parallel_tool_calls` from the form for every turn. The
   context tier selects a catalog-backed replay budget; `reasoning_context`
   maps directly to the Responses API. A Responses model change creates a
   new translation-cache fingerprint so opaque reasoning never crosses models.
@@ -175,11 +175,11 @@ The per-message bytes are written exactly once and reused on every subsequent tu
 
 ## Credo
 
-Providers read `system.credo` from the chalkboard and inject it as the API's system prompt. The credo is a literal string (or a `ContentEnvelope` `{content, frontmatter, filePath}` when sourced via the outfitter's `fileName=` loader). No derivation, no templating: what you put in `system.credo` is what the model sees. To pick up edits to the on-disk credo file, re-apply the outfit: `figaro outfit <name>`.
+Providers read `system.credo` from the form and inject it as the API's system prompt. The credo is a literal string (or a `ContentEnvelope` `{content, frontmatter, filePath}` when sourced via the outfitter's `fileName=` loader). No derivation, no templating: what you put in `system.credo` is what the model sees. To pick up edits to the on-disk credo file, re-apply the outfit: `figaro outfit <name>`.
 
-## Chalkboard
+## Form
 
-Structured per-aria state. Patches ride on the user-role tic in `aria.jsonl`; the current snapshot is cached at `chalkboard.json`. Each key has a body template (`internal/chalkboard/templates/`); the provider renders patches as `<system-reminder name="…">…</system-reminder>` text blocks on the user message that carries them.
+Structured per-aria state. Patches ride on the user-role tic in `aria.jsonl`; the current snapshot is cached at `form.json`. Each key has a body template (`internal/form/templates/`); the provider renders patches as `<system-reminder name="…">…</system-reminder>` text blocks on the user message that carries them.
 
 The `system.*` namespace is harness-reserved. Clients write under any other key.
 
@@ -192,9 +192,9 @@ All IPC is JSON-RPC 2.0 framed as one JSON object per line (NDJSON).
 `pid.resolve`, `pid.unbind`, `angelus.status`, `angelus.save_bindings`.
 `figaro.attach` lazily restores a dormant aria and returns its endpoint.
 
-**Figaro socket (requests):** `figaro.qua` (prompt; optional `chalkboard`),
+**Figaro socket (requests):** `figaro.qua` (prompt; optional `form`),
 `figaro.read`, `figaro.interrupt`, `figaro.context`, `figaro.set`,
-`figaro.outfit`, `figaro.chalkboard`, `figaro.queued`.
+`figaro.outfit`, `figaro.form`, `figaro.queued`.
 
 Every accepted aria connection is automatically subscribed to subsequent
 notifications. A frontend calls `figaro.read` on that same connection for

@@ -21,31 +21,31 @@ import (
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
-// chalkSpyProvider captures the IR messages EncodeMessage is called
+// formSpyProvider captures the IR messages EncodeMessage is called
 // with so tests can inspect the per-message Patches the agent
 // attached during catchUpTranslation.
-type chalkSpyProvider struct {
+type formSpyProvider struct {
 	mu       sync.Mutex
 	encoded  []message.Message
 	sentRuns int
 	cache    store.Log[[]json.RawMessage] // optional, set by tests that inspect cache state
 }
 
-func (p *chalkSpyProvider) Name() string                                           { return "spy" }
-func (p *chalkSpyProvider) Fingerprint() string                                    { return "spy/v0" }
-func (p *chalkSpyProvider) Models(_ context.Context) ([]provider.ModelInfo, error) { return nil, nil }
-func (p *chalkSpyProvider) SetModel(string)                                        {}
+func (p *formSpyProvider) Name() string                                           { return "spy" }
+func (p *formSpyProvider) Fingerprint() string                                    { return "spy/v0" }
+func (p *formSpyProvider) Models(_ context.Context) ([]provider.ModelInfo, error) { return nil, nil }
+func (p *formSpyProvider) SetModel(string)                                        {}
 
 // encode records every message it's asked to encode. Returns a stub
 // payload so the cache lookup hits next turn.
-func (p *chalkSpyProvider) encode(msg message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
+func (p *formSpyProvider) encode(msg message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 	p.mu.Lock()
 	p.encoded = append(p.encoded, msg)
 	p.mu.Unlock()
 	return []json.RawMessage{json.RawMessage(`{"role": livedoc.RoleInput,"content":[]}`)}, nil
 }
 
-func (p *chalkSpyProvider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
+func (p *formSpyProvider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
 	p.mu.Lock()
 	p.sentRuns++
 	p.mu.Unlock()
@@ -54,7 +54,7 @@ func (p *chalkSpyProvider) Send(ctx context.Context, in provider.SendInput, bus 
 	return nil
 }
 
-func (p *chalkSpyProvider) sendCount() int {
+func (p *formSpyProvider) sendCount() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.sentRuns
@@ -62,7 +62,7 @@ func (p *chalkSpyProvider) sendCount() int {
 
 // lastTurnPatches returns the patches attached to the most recent
 // user-role message handed to EncodeMessage. Empty if none.
-func (p *chalkSpyProvider) lastTurnPatches() []message.Patch {
+func (p *formSpyProvider) lastTurnPatches() []message.Patch {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for i := len(p.encoded) - 1; i >= 0; i-- {
@@ -97,13 +97,13 @@ func runOneTurn(t *testing.T, a *figaro.Agent, text string, cb *rpc.FormInput) {
 
 // newAgentWithForm builds an Agent wired with a per-aria
 // *form.State and the embedded default templates.
-func newAgentWithForm(t *testing.T) (*figaro.Agent, *chalkSpyProvider, *form.State) {
+func newAgentWithForm(t *testing.T) (*figaro.Agent, *formSpyProvider, *form.State) {
 	t.Helper()
 	dir := t.TempDir()
 	cb, err := form.Open(filepath.Join(dir, "the form channel"))
 	require.NoError(t, err)
 
-	prov := &chalkSpyProvider{}
+	prov := &formSpyProvider{}
 	a := figaro.NewAgent(figaro.Config{
 		Projector:  uiir.New(nil),
 		ID:         "test-aria",
@@ -281,7 +281,7 @@ func TestSetRefusesAStaleVersion(t *testing.T) {
 	b, id := newBackedConversation(t)
 	defer b.Close()
 	a := figaro.NewAgent(figaro.Config{
-		Projector: uiir.New(nil), ID: id, Provider: &chalkSpyProvider{},
+		Projector: uiir.New(nil), ID: id, Provider: &formSpyProvider{},
 		Backend: b, Tools: tool.NewRegistry(), Form: mustForm(t),
 	})
 	defer a.Kill()

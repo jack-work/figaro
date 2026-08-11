@@ -109,7 +109,7 @@ const formSigil = "@"
 
 const (
 	chanIR = "ir"
-	// chanForm is the form channel: the aria's state. It was "chalkboard" on
+	// chanForm is the form channel: the aria's state. It was "form" on
 	// disk through store generation 1; generation 2 renamed the directory with
 	// the concept, and the version gate refuses a generation-1 store rather
 	// than reading it as a board with no keys.

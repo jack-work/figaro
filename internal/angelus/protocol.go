@@ -59,6 +59,44 @@ type Handlers struct {
 	h   *handlers
 }
 
+// noticeUpgrade marks the default form for recomputation when the BINARY's
+// bundled skills have moved since it was minted.
+//
+// Without this, `nix profile upgrade` ships new first-party skills that no
+// aria ever wears. The default-form pointer is reused with no comparison
+// while it is clean (that reuse is what shares the rendered prefix in the
+// provider's cache, so it is not a shortcut to give up), and only `fig outfit
+// reload` ever set the flag. A user who upgrades and never runs that verb
+// keeps minting arias against the skills of the build they replaced.
+//
+// The trigger is the bundled root path, which carries the store hash and so
+// moves on every upgrade. It only sets the FLAG: whether anything is reminted
+// is still decided by the hash comparison in ensureDefaultForm, so a rebuild
+// with identical skills costs one comparison and keeps the same form.
+func (h *handlers) noticeUpgrade() {
+	b := h.angelus.Backend
+	if b == nil {
+		return
+	}
+	rec, err := b.LoadDefaultForm()
+	if err != nil || rec == nil {
+		return
+	}
+	root := outfit.BundledSkillsRoot()
+	if rec.BundledRoot == root {
+		return
+	}
+	was := rec.BundledRoot
+	rec.BundledRoot = root
+	rec.Dirty = true
+	if err := b.SaveDefaultForm(rec); err != nil {
+		slog.Warn("default form: could not record the bundled skills root", "err", err)
+		return
+	}
+	slog.Info("bundled skills moved: the default form will be recomputed on the next new",
+		"was", was, "now", root, "form", rec.FormID)
+}
+
 // newOutfitter builds the daemon's ONE resolver, with its snapshot store in
 // the runtime directory. Snapshots are what keep a resolution from straddling
 // an edit: the first read of a file in an epoch pins its bytes, and everything
@@ -84,7 +122,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		config:             cfg.Config,
 		factory:            cfg.ProviderFactory,
 		ctx:                cfg.Ctx,
-		cbTmpls:            cfg.FormTemplates,
+		formTmpls:          cfg.FormTemplates,
 		outfitter:          newOutfitter(cfg.Angelus, cfg.Config),
 		availableProviders: cfg.AvailableProviders,
 	}
@@ -94,6 +132,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 	if cfg.Config != nil {
 		h.outfitter.Warm(cfg.Config.Config.DefaultOutfit)
 	}
+	h.noticeUpgrade()
 	return &Handlers{
 		Map: authz.Guard(map[string]jkrpc.HandlerFunc{
 			rpc.MethodCreate:       h.create,
@@ -180,7 +219,7 @@ type handlers struct {
 	config             *config.Loaded
 	factory            ProviderFactory
 	ctx                context.Context
-	cbTmpls            *template.Template
+	formTmpls          *template.Template
 	outfitter          *outfit.Outfitter
 	availableProviders []string
 
@@ -212,7 +251,7 @@ func (h *handlers) settings() (*config.Loaded, *outfit.Outfitter) {
 // aria, seeded from its reducible form channel (the durable
 // truth: there is no the form channel). nil on failure.
 func (h *handlers) openAriaForm(ariaID string) *form.State {
-	if h.cbTmpls == nil || h.angelus.Backend == nil {
+	if h.formTmpls == nil || h.angelus.Backend == nil {
 		return nil
 	}
 	snap, err := h.angelus.Backend.FormState(ariaID)
@@ -430,6 +469,7 @@ func (h *handlers) ensureDefaultForm(backend store.Backend, stumpPatch form.Patc
 	}
 	if err := backend.SaveDefaultForm(&store.DefaultFormRecord{
 		FormID: id, BirthHash: hash, BirthVersion: version,
+		BundledRoot: outfit.BundledSkillsRoot(),
 	}); err != nil {
 		return "", err
 	}

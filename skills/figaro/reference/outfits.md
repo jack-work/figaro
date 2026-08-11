@@ -46,7 +46,7 @@ wrote always beats an outfit that also sets it.
 `layers` is respected in exactly ONE place: the unmarshal that builds a patch
 from an outfit FILE, where it names that file's own layers. Written into `-S`
 it is ordinary data and is stored as typed. That is what lets a patch cross
-the chalkboard without the closure machinery waking up at all.
+the form without the closure machinery waking up at all.
 
 ### The shell is half of this grammar
 

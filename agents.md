@@ -52,10 +52,10 @@ Load-bearing. Breaking them produces races, lost messages, or silent corruption.
 9. **Notification ordering is wire-ordered.** Notifications come from the drain loop (or `fanOut` it owns), not arbitrary goroutines.
 10. **Secrets never hit disk in plaintext.** Tokens go through `hush`. Don't read or log credentials.
 11. **One static binary.** No new runtime deps (Node, Bun, Python). New tools, providers, frontends reach through the existing socket protocol.
-12. **Harness does not inject overrides.** No "ignore previous", no synthetic system speech mid-conversation. State changes flow through the chalkboard. Credo persists across panics, model switches, and interrupts.
+12. **Harness does not inject overrides.** No "ignore previous", no synthetic system speech mid-conversation. State changes flow through the form. Credo persists across panics, model switches, and interrupts.
 13. **XWAL owns cache topology.** Parallel channels share the aria tree and its immutable on-disk prefixes; forks inherit parent prefix locations rather than copying or rebuilding them. Keep native hot head/channel snapshots open, serialize writes per lineage, and never reopen/rescan total history per append or block unrelated trunks behind a global tree lock. Prefer Figwal/XWAL snapshots, watermarks, and shared-prefix views over Figaro-side row caches or precautionary locks.
 14. **Translator catch-up is delta work.** In either direction, normal synchronization is O(untranslated messages), usually one or two. O(total history) cache scans, copies, or lookups are a design failure; full walks are reserved for explicit fingerprint invalidation such as a model change.
-15. **Dormant listing is metadata-only.** Agents persist complete `AriaMeta` at initialization, turn boundaries, and state-only patches. `figaro.list` reads that sidecar and a topology snapshot keyed by `Trunks.Version()`; it never opens IR or folds chalkboard history. Repair stale metadata explicitly rather than hiding a history scan in list.
+15. **Dormant listing is metadata-only.** Agents persist complete `AriaMeta` at initialization, turn boundaries, and state-only patches. `figaro.list` reads that sidecar and a topology snapshot keyed by `Trunks.Version()`; it never opens IR or folds form history. Repair stale metadata explicitly rather than hiding a history scan in list.
 16. **Live forks stay live.** Fork coordination enters through the figaro's existing inbox and is serviced between provider/tool stream events. Never kill, interrupt, or restart the addressed actor: its stable trunk ID is the continuation and it resumes appending after the fork.
 17. **Completion metadata is incremental and singular.** The actor folds new IR entries once and writes one complete `AriaMeta` snapshot through `Backend.SetMeta`. Do not add parallel derivation files or history scans at turn completion.
 18. **In-progress turn state is memory-only.** The IR gets per-message appends (assistant at seal, tool-result tics at completion); interrupt/SIGTERM seals in-memory partial state as an interrupted turn (`sealTurn`), and open-time `repairInterruptedTail` appends honest interrupted tool results when the IR tail has unresolved tool calls. There is no turn journal.
@@ -69,7 +69,7 @@ Load-bearing. Breaking them produces races, lost messages, or silent corruption.
 - `internal/figaro/inbox.go`: selfish vs. patient semantics, routing subscriber.
 - `internal/angelus/protocol.go`: supervisor JSON-RPC handlers, dormant-aria handling, lazy restore.
 - `internal/store/file_stream.go` + `mem_stream.go`, append/condense/discard semantics. Easy to break.
-- `internal/provider/projection.go`: shared O(delta) translator watermark, chalkboard state, and input-ready cache catch-up.
+- `internal/provider/projection.go`: shared O(delta) translator watermark, form state, and input-ready cache catch-up.
 - `internal/provider/anthropic/anthropic.go`: direct HTTP+SSE, no SDK. SSE parser is hand-rolled. `Send` assembles the request body internally; `Assemble` runs the SSE accumulator. `Fingerprint()` change invalidates the translator cache.
 - `github.com/jack-work/jkrpc` (extracted from `internal/jsonrpc/`): NDJSON framing. Don't switch frame formats without updating both ends.
 - `cmd/figaro/main.go`: multi-call dispatch, daemon fork, signal handling. The `q` and `l` symlinks are part of the contract (provided by `flake.nix` `postInstall`).
@@ -80,7 +80,7 @@ Take freely-reversible local actions. Pause and ask before:
 
 **Always:**
 - Changing any **JSON-RPC method, notification, or wire payload**. Frontends in any language are part of the contract.
-- Changing the **on-disk aria, chalkboard, or translator format**. Old data must keep loading or migrate explicitly. XWAL stores parallel trees under `arias/{ir,chalkboard,translations}`, plus `_meta/<id>.json`.
+- Changing the **on-disk aria, form, or translator format**. Old data must keep loading or migrate explicitly. XWAL stores parallel trees under `arias/{ir,form,translations}`, plus `_meta/<id>.json`.
 - Anything that mutates the **cache prefix** mid-session. Invariant #5.
 - Touching **OAuth / hush flows**. Tokens are users' real credentials.
 - Adding a **new runtime dependency**, replace directive, or external service.

@@ -283,7 +283,7 @@ model = "mock-model"
 	// Each child's form names its OWN id: the continuation keeps the
 	// inherited stamp, the alternative is re-stamped at fork time, an aria
 	// that forks itself must be able to learn its new id.
-	chalkAriaID := func(id string) string {
+	formAriaID := func(id string) string {
 		snap, serr := backend.FormState(id)
 		require.NoError(t, serr)
 		rawID, _ := snap.Get("aria_id")
@@ -291,8 +291,8 @@ model = "mock-model"
 		require.NoError(t, json.Unmarshal(rawID, &got))
 		return got
 	}
-	assert.Equal(t, fr.Continuation, chalkAriaID(fr.Continuation))
-	assert.Equal(t, fr.Alternative, chalkAriaID(fr.Alternative))
+	assert.Equal(t, fr.Continuation, formAriaID(fr.Continuation))
+	assert.Equal(t, fr.Alternative, formAriaID(fr.Alternative))
 
 	// Both children see the pre-fork prompt (shared prefix).
 	countUser := func(id, want string) int {

@@ -57,13 +57,13 @@ func decodeRecord[T any](r xwal.Record) (Entry[T], bool) {
 		}
 	}
 	return Entry[T]{
-		LT:            r.ChannelLT,
-		FigaroLT:      r.MainLT,
-		Payload:       v,
-		Fingerprint:   decodeMeta(r.Meta),
-		ChalkVersion:  r.Cursors[chanForm],
-		StudyVersions: studyCursors(r.Cursors),
-		EncodedBytes:  len(r.Payload),
+		LT:                 r.ChannelLT,
+		FigaroLT:           r.MainLT,
+		Payload:            v,
+		Fingerprint:        decodeMeta(r.Meta),
+		FormChannelVersion: r.Cursors[chanForm],
+		StudyVersions:      studyCursors(r.Cursors),
+		EncodedBytes:       len(r.Payload),
 	}, true
 }
 
@@ -387,7 +387,7 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 		// form cursor -- where the board stood at this LT -- and that
 		// stamp is what the projection renders deltas against. The caller's
 		// struct does not have it and never did, so returning the caller's
-		// struct handed the cache an entry whose ChalkVersion was zero for
+		// struct handed the cache an entry whose FormChannelVersion was zero for
 		// the life of the process: every reminder was filtered out by
 		// PatchesUpTo(0), and the aria saw none of its own state. It looked
 		// right after a restart, because the cache is rebuilt by decoding
@@ -397,7 +397,7 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 		// actually written rather than what we believed we wrote -- which
 		// covers the next field of this kind as well as this one.
 		if stamped, ok := l.readBack(lt); ok {
-			e.ChalkVersion = stamped.ChalkVersion
+			e.FormChannelVersion = stamped.FormChannelVersion
 			e.StudyVersions = stamped.StudyVersions
 		}
 		return e, nil

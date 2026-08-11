@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# chalkbench-go.sh: run the chalkboard Go benchmarks into one
+# formbench-go.sh: run the form Go benchmarks into one
 # benchstat-friendly file.
 #
-#   scripts/chalkbench-go.sh bench-before.txt     # on chalk/bench (main)
-#   scripts/chalkbench-go.sh bench-after.txt      # after the tree swap
+#   scripts/formbench-go.sh bench-before.txt     # on form/bench (main)
+#   scripts/formbench-go.sh bench-after.txt      # after the tree swap
 #   benchstat bench-before.txt bench-after.txt
 #
 # The three fixtures are run in SEPARATE processes on purpose: each
@@ -33,13 +33,13 @@ SOLO='Lookup|Snapshot_Diff_Small|Render_DefaultTemplates'
 echo "# $(date -Is)  $(git rev-parse --short HEAD)  COUNT=$COUNT BENCHTIME=$BENCHTIME" >>"$OUT"
 
 for sel in "$SOLO" /default /large /huge; do
-  echo "==> internal/chalkboard $sel" >&2
-  go test ./internal/chalkboard -run XXX -bench "$sel" -benchmem \
+  echo "==> internal/form $sel" >&2
+  go test ./internal/form -run XXX -bench "$sel" -benchmem \
     -count="$COUNT" -benchtime="$BENCHTIME" >>"$OUT"
 done
 
-echo "==> internal/store Chalkboard" >&2
-go test ./internal/store -run XXX -bench Chalkboard -benchmem \
+echo "==> internal/store Form" >&2
+go test ./internal/store -run XXX -bench Form -benchmem \
   -benchtime=1x -count="$STORE_COUNT" >>"$OUT"
 
 echo "wrote $OUT" >&2

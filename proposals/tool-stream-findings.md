@@ -23,7 +23,7 @@ median 7 bytes, for one 5.6 KB argument: but Anthropic **buffers each
 parameter value** until it is complete, which is documented behaviour and the
 reason a large write arrives in one lump. `eager_input_streaming` (GA) turns
 that off; the Copilot Anthropic-dialect endpoint rejects the field outright, so
-the copilot provider drops it whatever the chalkboard says.
+the copilot provider drops it whatever the form says.
 
 Measured on three routes, sampling the wirelog tee as it was written:
 

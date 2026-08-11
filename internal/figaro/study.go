@@ -6,7 +6,7 @@ package figaro
 // append stamps the whole set's positions (store.SetObservedForms +
 // figwal AppendMainCursors); and the PROVIDER TRANSLATOR derives each
 // member's patch-fold between consecutive stamps and folds it into the
-// provider IR exactly as it folds the chalkboard's own transitions -
+// provider IR exactly as it folds the form's own transitions -
 // re-derived on every retranslate. There is no push, no pending queue,
 // no watcher: observation is sampled at main-record boundaries, which
 // is not a limitation but the design: the stamp IS the moment of
@@ -14,7 +14,7 @@ package figaro
 //
 // Spec of record: plans/forms-and-roles-v2.md §7 plus Gluck's course
 // corrections of 2026-08-11 (unify with the bound-form mechanism; fold
-// studied patches into the provider IR like the chalkboard's).
+// studied patches into the provider IR like the form's).
 
 import (
 	"context"

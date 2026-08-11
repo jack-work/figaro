@@ -142,7 +142,7 @@ type Snapshot struct {
   identical bytes. Hot paths (`formReduce`, `State.Open`/`Save`) call
   `MarshalJSON`/`UnmarshalJSON` **directly** to skip it;
   `TestSnapshotDirectCodecMatchesEncodingJSON` pins that the two spellings
-  agree. Re-measure with `scripts/chalkbench-go.sh` if the question returns.
+  agree. Re-measure with `scripts/formbench-go.sh` if the question returns.
 
 `State` (`state.go`) is **one writer, many readers**. The writer is the agent's
 drain loop (`act` → `applyControlPatch` → `State.Apply`); readers are the

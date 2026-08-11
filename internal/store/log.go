@@ -9,16 +9,16 @@ type Entry[T any] struct {
 	FigaroLT    uint64
 	Payload     T
 	Fingerprint string
-	// ChalkVersion, on IR entries only: how far the form had advanced
+	// FormChannelVersion, on IR entries only: how far the form had advanced
 	// when this turn was written. The board is unkeyed, so a patch carries
 	// no turn; this is the other side of that association, and it rides
 	// along on a record the reader is already holding.
-	ChalkVersion uint64
+	FormChannelVersion uint64
 	// StudyVersions, on IR entries of a STUDYING aria: where each observed
 	// form stood when this record was written, keyed by form id: the
-	// study:-prefixed half of the same cursor stamp ChalkVersion rides.
+	// study:-prefixed half of the same cursor stamp FormChannelVersion rides.
 	// The projection derives each member's patch-fold between consecutive
-	// stamps, exactly as it derives the own board's from ChalkVersion.
+	// stamps, exactly as it derives the own board's from FormChannelVersion.
 	StudyVersions map[string]uint64
 	// EncodedBytes is the record's on-disk payload size, captured at decode
 	// because that is the one place it is known for free.

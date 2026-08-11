@@ -20,7 +20,7 @@ mutex+cond FIFO of `event` (`internal/figaro/agent.go`):
 type event struct {
     typ        eventType     // eventUserPrompt | eventSet | eventFork
     text       string
-    chalkboard *rpc.ChalkboardInput
+    form *rpc.FormInput
     setPatch   message.Patch
     fork       func() error; forkDone chan error
 }
@@ -28,7 +28,7 @@ type event struct {
 
 - **Events have no identity**: no id, no timestamp. `figaro.queued` returns
   bare strings (`Inbox.SnapshotUserPrompts`, which also *drops* empty-text
-  prompts, i.e. pure chalkboard carriers). Item 5 needs ids before anything.
+  prompts, i.e. pure form carriers). Item 5 needs ids before anything.
 - **Three takers, all prefix-only**: `TakeReadyUserPrompts`, `TakeReadyForks`,
   `TakeReadySet` lift only the contiguous prefix run of their own kind, so FIFO
   order *across* kinds is never violated. `Recv` pops one and blocks.
@@ -95,7 +95,7 @@ func (b *Inbox) CoalesceUserPromptRuns() {
 The barrier is the point. All three existing takers are prefix-only precisely
 so FIFO across event kinds is never violated; folding a prompt past a queued
 `set` would be the only place in the tree that reorders across kinds, and it
-would answer that prompt against a chalkboard it was never written against: no
+would answer that prompt against a form it was never written against: no
 error, no log line, nothing to notice. Across a `fork` it is worse (wrong
 trunk). And in the gesture the requirement describes, a human with three typed
 messages hitting Ctrl-C: `set`/`fork` arrive by CLI, not the composer, so
@@ -135,7 +135,7 @@ ruling 1: `Send(p1) Send(p2) Set Send(p3)` → `Interrupt` yields
 
 **What IS shared, deliberately: the merge itself.** `mergePromptEvents([]event)
 (event, bool)` (`turn.go`, unchanged): texts joined by `\n` in queue order,
-chalkboard inputs merged so a later value wins (`mergeChalkboardInput`). It is
+form inputs merged so a later value wins (`mergeFormInput`). It is
 a **pure function with no notion of interrupt**, and it is the whole of "the
 same semantics steering already has". Sharing a pure fold is not sharing a
 mode.
@@ -379,7 +379,7 @@ type QueuedPrompt struct {   // extended in place; the wire field stays `prompts
     State  string   `json:"state"`            // "queued" | "committing"
     At     int64    `json:"at,omitempty"`
     Merged []uint64 `json:"merged,omitempty"` // ids folded in by an interrupt
-    Chalkboard *ChalkboardInput `json:"chalkboard,omitempty"` // drained payloads only
+    Form *FormInput `json:"form,omitempty"` // drained payloads only
 }
 ```
 
@@ -403,7 +403,7 @@ An empty request from an older client behaves exactly as today.
   submitted prompt.
 - **R**: `figaro.queued`. ▸**REQUIRED ITEM B: additive, not broadened.** My
   original proposal changed what an existing method *returns* for every existing
-  consumer (listing the empty-text chalkboard carriers `SnapshotUserPrompts`
+  consumer (listing the empty-text form carriers `SnapshotUserPrompts`
   filters out today). Withdrawn. The filter stays exactly as it is; carriers
   come back only behind an explicit opt-in, `{"include_carriers": true}`, which
   only `figaro queue` sets: because only CRUD needs to address them. The `Q`
@@ -426,7 +426,7 @@ An empty request from an older client behaves exactly as today.
 `figaro.interrupt {"queue":"clear"}`. Plain: `cut <id>: interrupted, N queued
 messages drained`. `-j`: one line,
 `{"aria":…,"interrupted":true,"cleared":true,"queue":[…]}`: the drained
-messages verbatim, text + chalkboard input, so `figaro cut -j > lost.json` is a
+messages verbatim, text + form input, so `figaro cut -j > lost.json` is a
 lossless save. (*Naming:* `cut` = cut the line, against `hup` = hang it up
 politely. Fallback if it reads wrong beside `fork`/`kill`: `figaro hup --clear`,
 which costs the two-verb clarity you asked for.)

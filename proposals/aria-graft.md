@@ -25,7 +25,7 @@ back. This is what it would take.
 Verified against a live store, not inferred:
 
 - One figwal trunk store per `FIGARO_STATE_DIR/arias`, **not** a directory
-  per aria. `xwal.json` declares the channels: `ir` (main), `chalkboard`
+  per aria. `xwal.json` declares the channels: `ir` (main), `form`
   (reducible/jsonmerge), `turn-wal` and `translations-v2/<provider>` (opaque),
   plus the legacy `translations/<provider>`.
 - Every channel mirrors the **same node tree**, and that tree is **flat**:
@@ -51,8 +51,8 @@ Four facts make a graft tractable, and all four were checked:
    *identity*: a stump already present is reused, never copied, never renamed.
    Only conversations need new names.
 4. **A trunk id appears inside a payload**, not only in `.node`: the
-   chalkboard carries `"aria_id"`. A trunk rename is therefore a marker
-   rewrite *and* a chalkboard patch: the same re-stamp `fork` already does.
+   form carries `"aria_id"`. A trunk rename is therefore a marker
+   rewrite *and* a form patch: the same re-stamp `fork` already does.
 
 ## The work
 
@@ -73,11 +73,11 @@ beyond the parent's length is the corruption this whole design exists to avoid,
 so assert it rather than assume it.
 
 **5 · Trunk ids.** On collision, mint a new one, rewrite `.node trunk=`, rename
-`_meta/<id>.json`, and append a chalkboard patch re-stamping `aria_id`.
+`_meta/<id>.json`, and append a form patch re-stamping `aria_id`.
 
 **6 · Channels.** Intersect against both `xwal.json` files. A missing
 `translations*` channel is droppable: it is a derivable cache. A missing `ir`
-or `chalkboard` is a refusal.
+or `form` is a refusal.
 
 **7 · Atomicity.** Stage inside the destination store, fsync, rename into
 place. The daemon must be down: it holds the store flock, caches an in-memory

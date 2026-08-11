@@ -74,7 +74,7 @@ the closure, and it is what makes outfits composable.
 
 Nowhere else. Not on the wire, not in a patch, not on a board. A `layers` key
 typed by a human into `-S` is ordinary data and is stored as such. This is
-what lets non-outfit-reading patches cross the chalkboard without the closure
+what lets non-outfit-reading patches cross the form without the closure
 machinery ever waking up.
 
 ## 3. Materialization moves out of the core

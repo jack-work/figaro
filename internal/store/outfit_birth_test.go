@@ -66,7 +66,7 @@ func TestStumpBirthRecordIsStampedAtItsOwnOutfitPatch(t *testing.T) {
 		if e.Payload.Role == message.RoleGenesis {
 			continue
 		}
-		for cursor < len(patches) && patches[cursor].Version <= e.ChalkVersion {
+		for cursor < len(patches) && patches[cursor].Version <= e.FormChannelVersion {
 			if patches[cursor].Version == outfitVersion {
 				delivered = true
 			}

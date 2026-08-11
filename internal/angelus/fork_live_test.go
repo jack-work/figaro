@@ -41,8 +41,8 @@ type liveForkBackend struct {
 	childMeta  *store.AriaMeta
 	owner      store.OwnerInfo
 	nodes      map[string]store.NodeView
-	chalk      map[string]message.Patch
-	chalkVer   uint64
+	form       map[string]message.Patch
+	formVer    uint64
 	log        store.Log[message.Message]
 }
 
@@ -59,12 +59,12 @@ func (f *liveForkBackend) Open(string) (store.Log[message.Message], error) {
 }
 
 func (f *liveForkBackend) ApplyForm(ariaID string, patch message.Patch) (uint64, error) {
-	if f.chalk == nil {
-		f.chalk = map[string]message.Patch{}
+	if f.form == nil {
+		f.form = map[string]message.Patch{}
 	}
-	f.chalk[ariaID] = patch
-	f.chalkVer++
-	return f.chalkVer, nil
+	f.form[ariaID] = patch
+	f.formVer++
+	return f.formVer, nil
 }
 
 func (b *liveForkBackend) Fork(id string) (string, string, error) {
@@ -77,12 +77,12 @@ func (b *liveForkBackend) ForkWith(_ string, _ uint64, patch message.Patch) (str
 		return "", 0, fmt.Errorf("fork-with: a fork must carry a patch")
 	}
 	b.forked = true
-	if b.chalk == nil {
-		b.chalk = map[string]message.Patch{}
+	if b.form == nil {
+		b.form = map[string]message.Patch{}
 	}
-	b.chalk["alternative"] = patch
-	b.chalkVer++
-	return "alternative", b.chalkVer, nil
+	b.form["alternative"] = patch
+	b.formVer++
+	return "alternative", b.formVer, nil
 }
 
 func (b *liveForkBackend) ForkAt(id string, _ uint64) (string, string, error) {

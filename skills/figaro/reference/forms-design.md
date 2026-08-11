@@ -138,7 +138,7 @@ was born restudying; studied forms are the shared members.
 Every IR append stamps the whole set's positions into ONE cursor map
 (figwal `AppendMainCursors`). The provider translator derives each member's
 patch-fold between consecutive stamps and folds it into the provider IR
-exactly as it folds the chalkboard's own transitions. It is re-derived on
+exactly as it folds the form's own transitions. It is re-derived on
 every retranslate and never baked into the aria's records.
 
 Consequences worth stating, because they look like bugs if you do not know
@@ -152,6 +152,37 @@ them:
 - Study and drop are stated IR marks, so a replay can account for when
   observation began.
 - A form removed while observed renders a tombstone.
+
+## 8b. The default form, and what an upgrade does to it
+
+`fig new` reuses one default form, and that reuse IS the prompt cache: every
+aria minted from the same node shares its rendered prefix. So the pointer is
+reused with NO comparison while it is clean, and `fig outfit reload` is a
+flag rather than a computation.
+
+That cheapness has one hole, and it is the shipped skills. `nix profile
+upgrade` replaces the first-party skills on disk (they live at
+`<exe>/../share/figaro/skills` and the loader merges them OVER a user's copy
+of the same name), but nothing in the store changed, so a clean pointer would
+go on minting arias wearing the skills of the build you replaced, until
+somebody happened to run `fig outfit reload`.
+
+The default-form record therefore carries the BUNDLED ROOT it was minted
+against. A nix path carries its store hash, so an upgrade always moves it; a
+daemon booting with a different one marks the record dirty. It only sets the
+flag: whether anything is reminted is still decided by the birth-hash
+comparison, so a rebuild whose skills are byte-identical keeps the same form
+and the same cache.
+
+Two consequences to know:
+
+- The DAEMON MUST RESTART for any of this. It is the daemon that reads the
+  skills, and an old daemon holds the old ones. The build-identity guard
+  already forces the restart, because a new CLI refuses to pair with a daemon
+  of another build.
+- EXISTING arias keep what they were born wearing. A form is per-aria state,
+  and no upgrade may silently rewrite it. `fig state outfit <name>` re-folds
+  the new skills onto a live aria, additively.
 
 ## 9. Deliberate absences
 
@@ -179,3 +210,5 @@ said out loud.
 7. Recency comes from figwal, not from a sidecar.
 8. Observation is derived at translate time and never stored in the
    observer's records.
+9. The default form is reused while clean, and an upgrade that moves the
+   bundled skills marks it for recomputation.

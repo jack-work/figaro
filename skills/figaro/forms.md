@@ -7,7 +7,7 @@ description: Getting started with figaro forms and roles: durable, versioned, fo
 
 A **form** is durable, versioned, forkable state: a JSON tree with
 history, stored in the same WAL an aria's conversation lives in. A
-figaro's chalkboard IS one. An id starting with `@` is an **unbound**
+figaro's form IS one. An id starting with `@` is an **unbound**
 form: no figaro attached, and none ever will be: making a figaro from a
 form *forks* it, and nothing in the system converts.
 

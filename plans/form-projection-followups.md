@@ -1,18 +1,18 @@
-# Chalkboard projection: follow-ups
+# Form projection: follow-ups
 
 Filed 2026-08-03 alongside the fix for "every provider round-trip re-sent the
-whole chalkboard". That fix is in; these are the things it deliberately did NOT
+whole form". That fix is in; these are the things it deliberately did NOT
 do, left here so the next aria to touch this code can pick them up.
 
 Context for the fix itself:
-`~/notes/figaro-backup/20260803-120630/REGRESSION-chalkboard-resend.md`
+`~/notes/figaro-backup/20260803-120630/REGRESSION-form-resend.md`
 (measurements, decoded wire bytes, and the mechanism).
 
 ## What shipped
 
-`provider.Chalkboard` now asks for an absolute range, `PatchesBetween(after,
+`provider.Form` now asks for an absolute range, `PatchesBetween(after,
 upTo]`, instead of the implicit `PatchesUpTo(version)`. The projection carries
-`LastChalkVersion` across a warm start, so a resumed pass renders exactly the
+`LastFormVersion` across a warm start, so a resumed pass renders exactly the
 patches a cold walk would. `patchCursor` still walks forward once and its index
 only advances: no per-entry scan, no binary search.
 
@@ -22,7 +22,7 @@ was not. An absolute range cannot express that mistake, which is the point.
 
 ## 1. Stop materialising the whole patch list on every Send: the real win
 
-`Agent.chalkAccessor()` calls `backend.ChalkboardPatches(a.id)` once per
+`Agent.formAccessor()` calls `backend.FormPatches(a.id)` once per
 provider Send, and that returns **a copy of every patch the aria has ever
 had**:
 
@@ -52,7 +52,7 @@ decode `translations-v2/copilot-messages/<node>/*.jsonl` and count
   of `msg.Patches` must equal the aria's patch list with no duplicates -
   catches both this regression (all patches, repeatedly) and 072fd24's
   (no patches at all).
-- **`LastChalkVersion` survives the hand-built projections.** All three
+- **`LastFormVersion` survives the hand-built projections.** All three
   providers rebuild `IncrementalProjection` by hand after a live append
   (`copilot/responses.go`, `anthropic/anthropic.go`,
   `anthropicsdk/anthropicsdk.go`). Dropping the field there silently

@@ -1151,12 +1151,12 @@ func (a *Anthropic) acceptAssistantProjection(lt uint64, encoded []json.RawMessa
 	}
 	state := provider.AppendEncodedMessage(a.projection.State, encoded, lt)
 	a.projection = &provider.IncrementalProjection[provider.EncodedMessages]{
-		State:            state,
-		Form:             a.projection.Form,
-		Fingerprint:      a.projection.Fingerprint,
-		Entries:          a.projection.Entries + 1,
-		LastLT:           lt,
-		LastChalkVersion: a.projection.LastChalkVersion,
+		State:           state,
+		Form:            a.projection.Form,
+		Fingerprint:     a.projection.Fingerprint,
+		Entries:         a.projection.Entries + 1,
+		LastLT:          lt,
+		LastFormVersion: a.projection.LastFormVersion,
 	}
 }
 
@@ -1171,7 +1171,7 @@ func (a *Anthropic) resolveModel(snap form.Snapshot) string {
 
 // catchUp encodes uncached figLog entries and returns per-message
 // wire bytes.
-func (a *Anthropic) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], chalk provider.Form, studies map[string]provider.Form) ([][]json.RawMessage, []uint64) {
+func (a *Anthropic) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], form provider.Form, studies map[string]provider.Form) ([][]json.RawMessage, []uint64) {
 	fp := a.Fingerprint()
 	a.mu.Lock()
 	previous := a.projection
@@ -1180,7 +1180,7 @@ func (a *Anthropic) catchUp(figLog store.Log[message.Message], cache store.Log[[
 	projection, _, err := provider.ProjectIncrementally(provider.ProjectionConfig[provider.EncodedMessages]{
 		Log:         figLog,
 		Cache:       cache,
-		Form:        chalk,
+		Form:        form,
 		Studies:     studies,
 		Previous:    previous,
 		Fingerprint: fp,

@@ -52,8 +52,8 @@ The aria fork tree lives under `$FIGARO_STATE_DIR/arias/`.
 ```fish
 /tmp/figt list                      # empty table; boots the daemon + null root
 /tmp/figt "what is 2+2?"            # creates a conversation (real LLM turn), binds this shell
-/tmp/figt state                     # chalkboard snapshot (credo, cwd, aria_id, ...)
-/tmp/figt set note hello            # append a chalkboard transition
+/tmp/figt state                     # form snapshot (credo, cwd, aria_id, ...)
+/tmp/figt set note hello            # append a form transition
 /tmp/figt "and 3+3?"               # second turn; the `note` reminder rides this tic
 /tmp/figt show -v                   # raw IR incl. the <system-reminder> transitions
 /tmp/figt list                      # one conversation, with msgs/tokens/cwd

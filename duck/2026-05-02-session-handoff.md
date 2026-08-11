@@ -15,9 +15,9 @@ later if more landed in the meantime.
 
 - Stage A: `Patch` relocation; `Translation` envelope (formerly Baggage); new content-block shapes.
 - Stage A.5 / B: `ContentToolResult`; on-disk move to `arias/{id}/aria.jsonl + meta.json`.
-- Stage C.1–C.6: `*chalkboard.State` per-aria handle; bootstrap state-only tic; `figaro.rehydrate` RPC + CLI; trimmed credo `Context`; agent loop accumulates an in-progress tic; provider renders patches inline as `<system-reminder>` content blocks.
-- Stage D.1–D.2f: chalkboard snapshot threaded through `Provider.Send`; `Translation` renamed (Baggage → Translation); `causal.Slice[T]` / `causal.Sink[T]` package; `Provider.Fingerprint()` + `OpenAccumulator()` interface; translations moved to a parallel `arias/{id}/translations/{provider}.jsonl` file (timeline of `{alt, figaro_lts, messages, fingerprint}`); `Translation` field dropped from `message.Message`; regenerate-on-Fingerprint-mismatch; **write-through translation persistence on Send** (provider returns `ProjectionSummary`, agent writes per-message + system-block bytes, idempotent skip).
-- Stage E: skills out of the credo body, into `chalkboard.system.skills` as a structured catalog. Provider emits skills as a separate system block. Bug fix in the same commit: cache lookup in `projectMessages` was admitting non-message-shaped translation entries (the system block array stored at the bootstrap flt) as user messages, producing empty-role wire bytes. Now validates `cached.Role` before use.
+- Stage C.1–C.6: `*form.State` per-aria handle; bootstrap state-only tic; `figaro.rehydrate` RPC + CLI; trimmed credo `Context`; agent loop accumulates an in-progress tic; provider renders patches inline as `<system-reminder>` content blocks.
+- Stage D.1–D.2f: form snapshot threaded through `Provider.Send`; `Translation` renamed (Baggage → Translation); `causal.Slice[T]` / `causal.Sink[T]` package; `Provider.Fingerprint()` + `OpenAccumulator()` interface; translations moved to a parallel `arias/{id}/translations/{provider}.jsonl` file (timeline of `{alt, figaro_lts, messages, fingerprint}`); `Translation` field dropped from `message.Message`; regenerate-on-Fingerprint-mismatch; **write-through translation persistence on Send** (provider returns `ProjectionSummary`, agent writes per-message + system-block bytes, idempotent skip).
+- Stage E: skills out of the credo body, into `form.system.skills` as a structured catalog. Provider emits skills as a separate system block. Bug fix in the same commit: cache lookup in `projectMessages` was admitting non-message-shaped translation entries (the system block array stored at the bootstrap flt) as user messages, producing empty-role wire bytes. Now validates `cached.Role` before use.
 
 **Not yet done:**
 
@@ -57,7 +57,7 @@ brainstorm):
   don't try to fix.
 - **Tools:** more specialized than a generic peer: "environment" peer.
   Built-ins, share security boundary, native figaro communication. The
-  system should support configuring environments via the chalkboard
+  system should support configuring environments via the form
   (e.g. an SSH-backed environment, or an IPC process pool). When the
   figaro IR is longer than peer streams in tail translation, that
   implies environment updates the peers need to be notified about.
@@ -149,7 +149,7 @@ the user contradicts one, defer to them.
 - **Smoke-test a real prompt:** if the user has hush unlocked, run a
   tool-using prompt (`figaro plain -- "use bash to print the date"`) and
   inspect the resulting `~/.local/state/figaro/arias/$ID/` to confirm
-  the four-file layout (`aria.jsonl`, `chalkboard.json`, `meta.json`,
+  the four-file layout (`aria.jsonl`, `form.json`, `meta.json`,
   `translations/anthropic.jsonl`).
 - **Memory:** `~/.claude/projects/-home-gluck-dev-figaro-qua-main/memory/`
   is Claude Code's persistent memory directory. The user has been

@@ -4,10 +4,10 @@ Two related CLI subsystems:
 
 - **Shell completion**: dynamic tab candidates emitted via a hidden
   `__complete` dispatcher.
-- **`@key` expansion**: chalkboard references in prompt bodies
+- **`@key` expansion**: form references in prompt bodies
   substituted with snapshot values before send.
 
-Both stay backend-agnostic: every dependency on aria/chalkboard
+Both stay backend-agnostic: every dependency on aria/form
 state goes through the angelus/figaro RPC surface, never the local
 filesystem (so the CLI deploys cleanly against a remote daemon).
 
@@ -17,9 +17,9 @@ filesystem (so the CLI deploys cleanly against a remote daemon).
   emitter, `CompleteContext`.
 - `internal/cmdkit/router.go`: `Router.SetBarePromptComplete`.
 - `internal/cli/complete_aria.go`, aria-id candidate source.
-- `internal/cli/complete_chalkboard.go`: chalkboard-key source.
+- `internal/cli/complete_form.go`: form-key source.
 - `internal/cli/complete_promptctx.go`: prompt-context completer
-  (chalkboard keys + CWD; narrows to `@key` form on cursor prefix).
+  (form keys + CWD; narrows to `@key` form on cursor prefix).
 - `internal/cli/atref.go`: `@key` parser + endpoint snapshot fetch.
 
 ## Install
@@ -87,15 +87,15 @@ Returns sorted ids, or nil on any failure.
   is at the first positional slot or right after `--id`. Used by
   `attend`, `kill`, `status`.
 
-### Chalkboard keys (`complete_chalkboard.go`)
+### Form keys (`complete_form.go`)
 
-`completeChalkboardKeys` returns the union of:
+`completeFormKeys` returns the union of:
 
-- well-known keys from `chalkboard.WellKnownKeys()`, with templated
+- well-known keys from `form.WellKnownKeys()`, with templated
   keys (e.g. `system.environment.<name>`) expanded per the env
   allowlist.
 - live snapshot keys from `softFetchLiveKeys`, which calls
-  `figaro.Client.Chalkboard` for the pid-bound aria with a 300ms
+  `figaro.Client.Form` for the pid-bound aria with a 300ms
   deadline.
 
 Used by `set` and `unset`.
@@ -104,13 +104,13 @@ Used by `set` and `unset`.
 
 `completePromptContext` returns:
 
-- **If `Current` starts with `@`**: chalkboard keys, each prefixed
+- **If `Current` starts with `@`**: form keys, each prefixed
   with `@` (no trailing `!`). The shell prefix-filter narrows to
   matching keys; the inserted candidate is a literal `@key`
   reference. Expansion is opt-in via a manually-typed `!`
   terminator (`@key!`); without it the reference passes literally
   to the model.
-- **Otherwise**: chalkboard keys (un-prefixed) + CWD entries.
+- **Otherwise**: form keys (un-prefixed) + CWD entries.
   Directories get a trailing `/`. Hidden entries are filtered.
   Names with shell-unsafe characters are dropped (the bash/zsh
   scripts use `compgen -W` which word-splits on IFS). Fish's
@@ -153,7 +153,7 @@ are re-marshaled to a compact JSON form (`42`, `true`, `[1,2,3]`).
 ### Wiring
 
 `expandAtRefsForEndpoint(ctx, endpoint, prompt)` fetches the
-chalkboard snapshot for `endpoint` via `figaro.Client.Chalkboard`
+form snapshot for `endpoint` via `figaro.Client.Form`
 (500ms deadline) and substitutes. On any failure (dial error,
 timeout, etc.) the prompt is sent unexpanded.
 
@@ -175,8 +175,8 @@ every prompt entry point: `runPrompt`, `runNewPrompt`, `promptAria`,
 | `kill`           | `completeAriaIDsPositionalOrFlag`                  |
 | `status`         | `completeAriaIDsPositionalOrFlag`                  |
 | `state`          | `completeAriaIDsAfterFlag(nil)`                    |
-| `set`            | `completeAriaIDsAfterFlag(completeChalkboardKeys)` |
-| `unset`          | `completeAriaIDsAfterFlag(completeChalkboardKeys)` |
+| `set`            | `completeAriaIDsAfterFlag(completeFormKeys)` |
+| `unset`          | `completeAriaIDsAfterFlag(completeFormKeys)` |
 | bare prompt (`--`) | `completePromptContext`                          |
 
 ## Worked examples

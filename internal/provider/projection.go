@@ -14,11 +14,11 @@ type IncrementalProjection[T any] struct {
 	Fingerprint string
 	Entries     int
 	LastLT      uint64
-	// LastChalkVersion is how far the board had advanced at the last entry
+	// LastFormVersion is how far the board had advanced at the last entry
 	// projected. It MUST survive a warm start: without it the next pass asks
 	// for patches from 0 and re-renders the whole board onto the first new
 	// message, which the per-LT cache then makes permanent.
-	LastChalkVersion uint64
+	LastFormVersion uint64
 	// LastStudyVersions is the same fact for every OBSERVED form (the
 	// study half of the cursor stamp), and must survive a warm start for
 	// the same reason.
@@ -65,7 +65,7 @@ type ProjectionConfig[T any] struct {
 func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjection[T], ProjectionStats, error) {
 	state := config.Initial
 	snap := form.Snapshot{}
-	var lastChalk uint64
+	var lastForm uint64
 	lastStudy := map[string]uint64{}
 
 	// A warm start reads from the watermark; a cold one reads everything.
@@ -87,7 +87,7 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 		previous.Entries == prefix {
 		state = previous.State
 		snap = previous.Form
-		lastChalk = previous.LastChalkVersion
+		lastForm = previous.LastFormVersion
 		for k, v := range previous.LastStudyVersions {
 			lastStudy[k] = v
 		}
@@ -107,10 +107,10 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 		if config.Form != nil {
 			// (after, upTo]: the previous entry's mark and this one's. Absolute,
 			// so a warm start renders exactly the same patches a cold walk would.
-			msg.Patches = config.Form.PatchesBetween(lastChalk, entry.ChalkVersion)
+			msg.Patches = config.Form.PatchesBetween(lastForm, entry.FormChannelVersion)
 		}
-		if entry.ChalkVersion > lastChalk {
-			lastChalk = entry.ChalkVersion
+		if entry.FormChannelVersion > lastForm {
+			lastForm = entry.FormChannelVersion
 		}
 		// The observed set: the same derivation per member, from the same
 		// stamp. The bound board above is member zero of this pattern; the
@@ -192,7 +192,7 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 		Fingerprint:       config.Fingerprint,
 		Entries:           stats.Entries,
 		LastLT:            lastLT,
-		LastChalkVersion:  lastChalk,
+		LastFormVersion:   lastForm,
 		LastStudyVersions: lastStudy,
 	}, stats, nil
 }

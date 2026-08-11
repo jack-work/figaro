@@ -113,7 +113,7 @@ func providerSetupHint() string {
 
 // buildProviderFactory wires per-aria provider construction via the
 // registry. No provider-specific switches.
-func buildProviderFactory(loaded *config.Loaded, cbTmpls *template.Template, backend store.Backend) angelus.ProviderFactory {
+func buildProviderFactory(loaded *config.Loaded, formTmpls *template.Template, backend store.Backend) angelus.ProviderFactory {
 	return func(providerName string, knobs providerPkg.Knobs) (providerPkg.Provider, error) {
 		reg := providerPkg.Lookup(providerName)
 		if reg == nil {
@@ -133,7 +133,7 @@ func buildProviderFactory(loaded *config.Loaded, cbTmpls *template.Template, bac
 			Loaded:    loaded,
 			Knobs:     knobs,
 			Resolver:  resolver,
-			Templates: cbTmpls,
+			Templates: formTmpls,
 			CacheOpen: cacheOpen,
 			Backend:   backend,
 		})
