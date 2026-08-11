@@ -1,0 +1,181 @@
+# Forms: the design
+
+Why the primitive is shaped this way, and what a change to it must not
+break. For someone editing `internal/store`, `internal/angelus` or the form
+family in `internal/cli`. If you want to USE forms, read
+[forms.md](../forms.md) first; if you want the outfit grammar, read
+[outfits.md](outfits.md).
+
+Spec of record: `plans/forms-and-roles-v2.md`. This file is the distilled
+design, kept current with the code.
+
+## 1. One primitive, one verb, nothing converts
+
+```
+null form ──fork+patch──▶ unbound form ──fork+patch⊇{aria_id}──▶ figaro
+```
+
+- **Null form** is the ur-form: the store's root, empty state, markerless.
+  Unattendance is attendance of null. Whether the pid map records a null
+  binding or an absence is an implementation detail.
+- **Unbound form** carries kind `form` in the figwal node marker. Patchable,
+  independently forkable, bindable, studiable.
+- **Bound form is a figaro.** Born by forking an unbound form with a birth
+  patch containing `aria_id`. One public id: the aria id IS the bound form's
+  id.
+- **Role** is a duck type, not a kind: an unbound form carrying
+  `target-aria`. See [roles-design.md](roles-design.md).
+- **Outfit form** is a usage, not a type: any form used as a forking point.
+
+The reason nothing converts is that kind must be immutable by construction.
+If a form could become a figaro in place, every reader would have to handle
+a node whose species changed under it, and the marker would need a write
+path. Binding forks instead, so kind is decided once, at node creation, and
+the index can read it without opening heads.
+
+The special case inventory is CLOSED. Null is the only special node. The
+only other distinctions are bound versus unbound, and cast versus uncast.
+A change that adds a third kind is a change to this design, not an
+implementation detail.
+
+## 2. Identity
+
+Unbound forms mint with the `@` sigil. Bound forms have none. Legacy stump
+ids (`@<hash>`, `<name>@<hash>`) already read as form ids, so they simply
+ARE legacy forms: bindable as-is, no rename, no id migration.
+
+Internally an aspect is `(node-id, channel)`, and the channel-major layout
+(`arias/form/<node>`, `arias/ir/<node>`) is what discriminates the form
+address from the IR address. Publicly there is one id for every operation.
+
+## 3. The single writer, and what it reduces
+
+`store.Form` is the one writer per node, whichever path reaches it: an
+agent writes through `backend.ApplyFormIf`, and an agentless node is served
+by the hub through the same call. There is never contention, because
+binding forks.
+
+The writer REDUCES before it appends. A patch is only an event if it
+changes something: keys already holding the value asked for are dropped,
+removals of absent keys are dropped, and a patch that survives none of that
+appends no record, moves no version and fans out no delta.
+
+That rule lives in the writer and nowhere else, for two reasons that are
+easy to rediscover the hard way:
+
+1. It is the only place the diff is ATOMIC with the append. Filtering in a
+   handler reads, then filters, then writes. Two shells, one setting `a=2`
+   and one setting `a=1` against a board holding `a=1`, and the second
+   silently drops the write that should have won.
+2. It is the only place both write paths pass through. Two implementations
+   of "already wearing it" is how the agent path and the hub path came to
+   disagree, which mattered most for observation: a no-op patch on a role
+   moved its version, and every observing aria derived a transition
+   announcing nothing.
+
+`ApplyEffect` returns what actually landed. A caller that reports to a human
+or fans a delta out to listeners must speak about the reduced patch, not
+the requested one.
+
+## 4. Outfits resolve ABOVE the writer
+
+Outfitting is figaro API, not part of the reduction core. Every request that
+carries dressing carries it as NAMES in an `outfits` field, beside a patch
+that is pure data, and exactly one call at the daemon's API boundary turns
+the first into the second (`angelus.dress`, plus `dressParams` for the
+methods that reach an aria through its hub).
+
+Below that boundary nothing reads a file. `layers` is respected in exactly
+one place: the unmarshal that builds a patch from an outfit FILE. Written
+into a patch it is ordinary data.
+
+This is not tidiness. While the hub's write path applied patches verbatim
+and the agent's did not, `fig form outfit test` stored `{"layers":["test"]}`
+on a board and reported success, because an attended form has no agent and
+takes exactly that path.
+
+## 5. Hub-hosted forms
+
+A node with no agent is served by the hub: reads from the store, and `set`
+from the store's writer, with no wake. Three things depend on it.
+
+- An unbound form has no agent and never will.
+- A DORMANT figaro takes a patch without being restored, which is also what
+  breaks the naked-figaro deadlock: `fig bind null` mints a figaro whose
+  first turn fails for want of provider keys, and this is the only path
+  that can patch those keys in.
+- `set` stops waking sleepers generally.
+
+The care point is the writer handoff at wake: the hub's Form closes before
+the agent's opens, both in-daemon and actor-serialized.
+
+## 6. Fork under a form mints a new trunk
+
+`ForkTail` is continuation: the child keeps the trunk id, because the aria
+id IS the trunk id. Binding and form-forking need the spawn-beneath shape
+instead, generalized from stumps to arbitrary form nodes. This is the
+sharpest store-level edge in the whole design; a change here is a change to
+lineage, listings and recency at once.
+
+## 7. Recency, listings, GC
+
+Recency is figwal's `LastTS`, a retained atomic counter read per node. It is
+not a sidecar field and must not become one again.
+
+The listing reads lineage and kind from the figwal index without opening
+heads. That is what keeps `fig ls` off the 300ms path, and it is fragile in
+a specific way: any per-row read that opens a node turns a listing into a
+scan. One did, once, and cost +6784% at 300 arias.
+
+GC collects forms that are unreferenced AND unbound AND not the default.
+Legacy stumps stay readable and are listed as legacy.
+
+## 8. Observation is pull at the stamp
+
+An aria observes a SET of forms. Its own board is member zero, the fork it
+was born restudying; studied forms are the shared members.
+
+Every IR append stamps the whole set's positions into ONE cursor map
+(figwal `AppendMainCursors`). The provider translator derives each member's
+patch-fold between consecutive stamps and folds it into the provider IR
+exactly as it folds the chalkboard's own transitions. It is re-derived on
+every retranslate and never baked into the aria's records.
+
+Consequences worth stating, because they look like bugs if you do not know
+them:
+
+- Observation is SAMPLED at main-record boundaries. The stamp is the moment
+  of observation. There is no push, no pending queue, no watcher.
+- A window can contain many patches to one key. The renderer folds them to
+  the value the key ends at; see [roles-design.md](roles-design.md) for why
+  that is not optional.
+- Study and drop are stated IR marks, so a replay can account for when
+  observation began.
+- A form removed while observed renders a tombstone.
+
+## 9. Deliberate absences
+
+- There is NO `fig outfit write`. Outfit files are one-way sources of truth,
+  possibly git-tracked, and no path may serialize form state back onto
+  them.
+- Forms are NOT content-addressed. Every form has its own minted id. The
+  content hash survives only as `fig new`'s reuse optimization for the
+  default form, which is also what shares the rendered prefix in the
+  provider's cache.
+- Nothing converts. If you find yourself wanting a `promote` from form to
+  figaro, you want a fork.
+
+## 10. Invariants
+
+A change that breaks one of these is a change to the design and needs to be
+said out loud.
+
+1. Kind is decided at node creation and never mutates.
+2. One writer per node, whichever path reaches it.
+3. A patch that changes nothing is not an event.
+4. Outfit names are resolved above the writer; the core reads no files.
+5. `layers` is respected only in an outfit file.
+6. Listings read the index, never the heads.
+7. Recency comes from figwal, not from a sidecar.
+8. Observation is derived at translate time and never stored in the
+   observer's records.
