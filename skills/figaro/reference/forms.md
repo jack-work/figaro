@@ -32,7 +32,10 @@ fig form new -O focus -S ttl=1h            # an outfit works too; the daemon
 ```
 
 **Read.** `fig form @a5af1a83` prints the nested tree; `-j` is already
-its shape. `fig form listen @a5af1a83` watches it live (deltas ride
+its shape. `fig status @a5af1a83` answers the other question: what this
+node IS (form, role, or figaro), its name and version, how many keys it
+holds, and, for a role, where it points and whether that aria is live,
+dormant or gone. `fig form listen @a5af1a83` watches it live (deltas ride
 `form.delta`; reconnect resyncs).
 
 **Write.** The same verbs an aria's board uses:
