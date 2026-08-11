@@ -163,3 +163,53 @@ came back 9% FASTER than base.
 - reference/outfits.md still carries pre-forms stump sections, flagged
   in place rather than silently left. They merge into the owed
   forms-design.md / roles-design.md.
+
+## The role deliverable, against real providers (0c40a5ba)
+
+Harnesses at ~/notes/figaro/tests/roles/ (out of source: they burn
+tokens and depend on live credentials). Run in nix develop .#share-hush,
+which is the preset that has real credentials AND an isolated everything
+else. NOT .#share-config: it runs an embedded hush with a fresh
+identity, and the first real turn dies with "resolve token: no
+credential available". That cost one run to learn.
+
+### role-flow.sh: the succession flow, 14 checks
+- opus (claude-opus-5): 14/14.
+- sonnet (claude-sonnet-4-5), three runs CONCURRENTLY on one daemon:
+  14/14 each. Concurrent casting and observation hold.
+Proven: mint, cast and its verdict; the form namespace not redirecting
+while the figaro namespace does; a patch to the role reaching the MODEL;
+a second patch arriving as a transition rather than a restatement;
+repointing taking effect on the next call with no restart; drop
+silencing a later patch.
+
+One harness lesson worth keeping: the answer word must never appear in
+the prompt. The first draft asked for "REDIRECTED" and then checked the
+transcript for it, which passes on the echo of the question. A broken
+redirect would have looked green.
+
+### role-storm.sh: N observers, one role, one daemon
+N=8 haiku, first run: 5 observed the patch, 3 did not. Two distinct
+model-tier failures, both in the RENDERING, neither visible against
+opus or sonnet:
+
+1. One answered with the value the brief held BEFORE the change it was
+   asked about. The window carried the birth patch and the update as
+   two separate {"set":{...}} blocks, and nothing said which was
+   current.
+2. Two REFUSED the turn and explained why: "this appears to be an
+   attempt to use system reminders and nested JSON structures to get me
+   to extract or confirm a specific..." A bare envelope with no
+   provenance reads as an injection attempt to a small model. They were
+   being careful and they were right to be.
+
+Fixed by folding the window per form and making the body structural
+(3e7c87c, then 1eebff9 for Gluck's ruling that a reminder states
+structure and the skills contextualize it). N=8 rerun: 8/8 observed,
+0 missed, 0 errored.
+
+### Observation cost, measured
+internal/provider/observation_bench_test.go, warm (the shape every live
+turn takes): 164ns at 0 observed forms, 329ns at 1, 479ns at 8, 4.3us
+and 3.5KB at 50. Cold retranslate of 40 turns: 4.8us to 256us/218KB at
+50 forms. Watching fifty things costs a turn about four microseconds.
