@@ -109,3 +109,57 @@ beside LastChalkVersion. Deleted: the pending queue, the turn-assembly
 injection, and WatchFormDurable with its generation gating — the
 milestone's finest catch became its most elegant deletion (the whole
 push apparatus, obsoleted by pull). A1/A2/A3 dissolved as predicted.
+
+## The annoyance queue (successor 0c40a5ba, 2026-08-11)
+
+Gluck's /tmp/form-annoyances.md, all six, plus his two rulings by
+message (the -O/-S/-D split; -P struck).
+
+### The A/B, three ways, -count=6, quiet machine
+Base = 7e655aa (pre-change), relocation = cedc3fc, resolver = 8e7a6c5+.
+The huge tree is 804 generated files at ~/notes/figaro/tests/
+huge-outfits (out of source, by Gluck's instruction); raw output in
+~/notes/figaro/bench/.
+
+  bench            base        relocation      resolver
+  DressWarm      66.8µs        65.5µs          3.6µs     18.5x
+  DressCold     637.2µs       599.7µs        582.8µs      1.09x
+  DressHugeWarm   2.36ms        2.32ms         62.0µs     38x
+  DressHugeCold   2.734s        2.721s         20.2ms    135x
+  DressHugeCycle  10.0µs         9.6µs          0.5µs     19x
+  DressNoOutfits    10ns           2ns            2ns
+
+READ IT THIS WAY. The relocation column is FLAT on purpose: moving
+where materialization happens must not change what it costs, and it
+did not. Every gain is the resolver's epoch.
+
+The 2.72-second cold fold was not a big tree being big. It was the old
+cache's dependency lists: each parent merged each child's list by
+linear scan, and every read re-stat-ed the lot to prove freshness. An
+epoch proves it once for everyone.
+
+One honest regression, caught by the same battery and fixed before the
+commit: the first resolver draft hashed every file it read even when
+snapshots were disabled (sha256 over 160KB on the small cold path),
+which cost +15% on DressCold. An Outfitter with nowhere to put bytes
+has nothing to gain from knowing their name — early return, and cold
+came back 9% FASTER than base.
+
+### Real-binary verification (nix develop .#clean, isolated daemon)
+- `form new -O testfit -S name=charles` → the outfit's keys
+  MATERIALIZED on the form, the -S key on top.
+- THE DEFECT: `form outfit testfit` on a form (hub write path, no
+  agent) → "applied (2 keys)", no directive stored.
+- `form outfit nosuchfit` → "✗ nosuchfit not found" at the boundary.
+- `form set <k> <v>`, `form set a=1,b="two"`, `form delete a,b`.
+- `fig form -O testfit` → "--outfit belongs to `form new`, `form
+  fork`, not on its own" — and it says `form`, the verb as typed.
+
+### Owed / noted
+- The hub write path echoes every key as set even when the value is
+  unchanged (the agent path skips no-ops), so a re-applied outfit says
+  "applied (2 keys)" instead of "no changes" — and a no-op patch bumps
+  a version and emits a delta on forms. Pre-existing; asked Gluck.
+- reference/outfits.md still carries pre-forms stump sections, flagged
+  in place rather than silently left. They merge into the owed
+  forms-design.md / roles-design.md.

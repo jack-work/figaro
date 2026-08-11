@@ -131,11 +131,16 @@ func newSnapStore(dir string) *snapStore {
 // write is NOT an error to the caller: the snapshot is a consistency and audit
 // device, and an outfit that cannot be snapshotted must still be wearable.
 func (s *snapStore) put(b []byte) string {
+	// No store, no hash. Hashing every file read is not free — 40 skills of
+	// 4KB is 160KB of sha256 on the cold path, which showed up as a 15%
+	// regression against the old cache before this early return existed —
+	// and an Outfitter with nowhere to put the bytes has nothing to gain
+	// from knowing their name.
+	if s == nil || s.dir == "" {
+		return ""
+	}
 	sum := sha256.Sum256(b)
 	id := hex.EncodeToString(sum[:])
-	if s == nil || s.dir == "" {
-		return id
-	}
 	s.mu.Lock()
 	known := s.have[id]
 	s.mu.Unlock()
