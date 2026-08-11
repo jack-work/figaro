@@ -24,6 +24,11 @@ import (
 // state; the skills are what contextualize it. So each block is one compact
 // JSON object naming the form and what moved, and nothing else.
 //
+// Each block carries the form VERSION its window ends at, so two blocks about
+// one form can be ordered by a reader without inferring anything from
+// position. That is not decoration either: with fifty haiku observers, one
+// answered from the earlier of two blocks about the same key.
+//
 // ONE BLOCK PER FORM, NOT PER PATCH, and it states the RESULT rather than the
 // history. That rule was bought at the haiku tier, in a storm of fifty
 // observers: a window carrying three patches used to render three bare
@@ -47,6 +52,9 @@ func StudyReminderTexts(msg message.Message) []string {
 		sort.Strings(fids)
 		for _, fid := range fids {
 			if body := studyFold(fid, msg.StudyPatches[fid]); body != nil {
+				if v, ok := msg.StudyAt[fid]; ok {
+					body["version"] = v
+				}
 				out = append(out, studyBlock("study:"+fid, body))
 			}
 		}

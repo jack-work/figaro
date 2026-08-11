@@ -130,6 +130,10 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 					msg.StudyPatches = map[string][]message.Patch{}
 				}
 				msg.StudyPatches[fid] = ps
+				if msg.StudyAt == nil {
+					msg.StudyAt = map[string]uint64{}
+				}
+				msg.StudyAt[fid] = upTo
 			}
 			if upTo > lastStudy[fid] {
 				lastStudy[fid] = upTo

@@ -156,6 +156,13 @@ func TestStudyWindowIsFoldedToItsResult(t *testing.T) {
 	if !strings.Contains(joined, `"form":"@r"`) {
 		t.Errorf("the block must name its form: %s", joined)
 	}
+	// A version is rendered when the projection supplies one, so two blocks
+	// about one form can be ordered by a reader.
+	withVersion := msg
+	withVersion.StudyAt = map[string]uint64{"@r": 7}
+	if v := strings.Join(StudyReminderTexts(withVersion), "\n"); !strings.Contains(v, `"version":7`) {
+		t.Errorf("the version must ride the block: %s", v)
+	}
 	// Structure, not prose: no sentences in the body.
 	if strings.Contains(joined, "figaro studies") || strings.Contains(joined, "since the last turn") {
 		t.Errorf("the body must be structural: %s", joined)

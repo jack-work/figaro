@@ -235,6 +235,14 @@ type Message struct {
 	// tombstone for a form that ceased to exist mid-observation).
 	StudyNotes map[string]string `json:"-"`
 
+	// StudyAt is the version each observed form stood at when this message
+	// was stamped: the upper bound of the window StudyPatches folds. It is
+	// rendered so a reader can ORDER two blocks about the same form without
+	// inferring anything from position. A haiku in the fifty-observer storm
+	// answered from the older of two blocks; ordinals are how a small model
+	// tells "then" from "now".
+	StudyAt map[string]uint64 `json:"-"`
+
 	// Assistant-only metadata. (model/provider are NOT here — they are
 	// form values: system.model / system.provider, derived on read.)
 	Usage      *Usage     `json:"usage,omitempty"`
