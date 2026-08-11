@@ -118,9 +118,6 @@ type Config struct {
 type Agent struct {
 	id         string
 	socketPath string
-	// studies is the live study-subscription state (roles/forms this aria
-	// observes). See study.go.
-	studies studyState
 	// provBind is the live provider binding (instance + the form
 	// coordinates that produced it). Written by the drain loop via
 	// syncProvider, read lock-free by status/metrics on RPC goroutines.
@@ -995,6 +992,30 @@ func (a *Agent) chalkAccessor() provider.Form {
 		return nil
 	}
 	return &patchCursor{patches: ps}
+}
+
+// studyAccessors is chalkAccessor for the observed set: one absolute
+// accessor per studied form, read from THAT form's channel. A studied
+// form that cannot be read supplies no accessor — the projection
+// renders its stamp as a tombstone. Same O(total history) caveat as
+// chalkAccessor, same followup owns it.
+func (a *Agent) studyAccessors() map[string]provider.Form {
+	if a.backend == nil {
+		return nil
+	}
+	ids := studiesFromSnapshot(a.form.Snapshot())
+	if len(ids) == 0 {
+		return nil
+	}
+	out := make(map[string]provider.Form, len(ids))
+	for _, fid := range ids {
+		ps, err := a.backend.FormPatches(fid)
+		if err != nil {
+			continue
+		}
+		out[fid] = &patchCursor{patches: ps}
+	}
+	return out
 }
 
 // patchCursor walks the patch list forward, once. The projection asks for an

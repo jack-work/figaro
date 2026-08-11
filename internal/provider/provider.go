@@ -101,10 +101,15 @@ type Form interface {
 
 // SendInput is one turn's input.
 type SendInput struct {
-	AriaID    string
-	FigLog    store.Log[message.Message]
-	Snapshot  form.Snapshot
-	Form      Form // inline transitions; nil = none (ephemeral)
+	AriaID   string
+	FigLog   store.Log[message.Message]
+	Snapshot form.Snapshot
+	Form     Form // inline transitions; nil = none (ephemeral)
+	// Studies are the OBSERVED forms' accessors, keyed by form id (the
+	// study half of the cursor stamp). Same contract as Form, one per
+	// member; the projection folds each member's transitions into the
+	// provider IR exactly as it folds the board's.
+	Studies   map[string]Form
 	Tools     []Tool
 	MaxTokens int
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/internal/provider"
 )
 
 // encode projects one IR message to SDK wire bytes. Returns nil if
@@ -73,6 +74,9 @@ func (p *Provider) renderMessage(msg message.Message, prevSnap *form.Snapshot) (
 			}
 		}
 		blocks = append(blocks, p.renderPatchBlocks(msg.Patches, prevSnap)...)
+		for _, text := range provider.StudyReminderTexts(msg) {
+			blocks = append(blocks, anthropic.NewTextBlock(text))
+		}
 		if len(blocks) == 0 {
 			return anthropic.MessageParam{}, false
 		}

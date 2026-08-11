@@ -146,10 +146,12 @@ func TestCastRefusesBoundTargets(t *testing.T) {
 	require.Contains(t, err.Error(), "figaro, not an unbound form")
 }
 
-// The observation: a patch to a studied form reaches the studying
-// figaro's next turn as a render-only reminder block. This is the
-// minimal projection the commission allows; policy beyond it is open.
-func TestStudiedPatchProjectsIntoNextTurn(t *testing.T) {
+// The observation, pull-at-the-stamp: studying STATES itself in the IR
+// (the StudyMark record), every subsequent IR record stamps the studied
+// form's position, and NOTHING of the studied form's content is baked
+// into this aria's records — the provider derives the fold from the
+// stamps at translation time (pinned in provider's projection tests).
+func TestStudyStampsIRAndBakesNothing(t *testing.T) {
 	_, acli, ctx := daemonFixture(t)
 	created, err := acli.Create(ctx, dress(t, "mock"))
 	require.NoError(t, err)
@@ -170,13 +172,19 @@ func TestStudiedPatchProjectsIntoNextTurn(t *testing.T) {
 
 	fc.turn(t, callCtx, "hello")
 	text := fc.contextText(t, callCtx)
-	require.Contains(t, text, "study:"+role.FormID, "studied delta never projected into a turn")
-	require.Contains(t, text, "canary")
+	// The MARK is in the timeline: began-observing is a stated fact.
+	require.Contains(t, text, `"study"`, "study mark missing from the IR")
+	require.Contains(t, text, role.FormID)
+	// The CONTENT is not: no baked reminder text, no copied value. The
+	// studied form's channel is the only place "canary" lives.
+	require.NotContains(t, text, "system-reminder", "studied content baked into the IR")
+	require.NotContains(t, text, "canary", "studied VALUE copied into the IR")
 }
 
-// Drop silences the study at once — even though the underlying sink may
-// outlive it until the next eviction, membership gates delivery.
-func TestDropSilencesImmediately(t *testing.T) {
+// Drop ends the stamps and states itself: the observed set no longer
+// includes the form, so later records carry no position for it, and the
+// stopped-observing mark is in the timeline.
+func TestDropEndsStampsAndStatesItself(t *testing.T) {
 	_, acli, ctx := daemonFixture(t)
 	created, err := acli.Create(ctx, dress(t, "mock"))
 	require.NoError(t, err)
@@ -197,6 +205,9 @@ func TestDropSilencesImmediately(t *testing.T) {
 	require.NoError(t, err)
 
 	fc.turn(t, callCtx, "hello")
-	require.NotContains(t, fc.contextText(t, callCtx), "study:"+role.FormID,
-		"a dropped study still delivered")
+	text := fc.contextText(t, callCtx)
+	require.NotContains(t, text, `"drop"`, "a dropped study's value reached the IR")
+	// Both marks stand: began and stopped.
+	require.Contains(t, text, `"began":true`)
+	require.Contains(t, text, `"began":false`)
 }

@@ -187,7 +187,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if err != nil {
 		return err
 	}
-	projected, err := p.catchUp(in.FigLog, cache, in.Form)
+	projected, err := p.catchUp(in.FigLog, cache, in.Form, in.Studies)
 	if err != nil {
 		return err
 	}

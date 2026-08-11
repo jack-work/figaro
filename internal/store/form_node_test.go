@@ -192,3 +192,75 @@ func TestForkWithOnLegacyStumpStillBinds(t *testing.T) {
 		t.Errorf("stump-bound aria lost the outfit patch: %s", got)
 	}
 }
+
+// The observed set rides the IR stamp: once declared, every IR append
+// records where each studied form stood, the entry reads it back under
+// StudyVersions, and consecutive stamps bracket exactly the patches the
+// projection must fold — the bound board's mechanism, generalized.
+func TestObservedFormsStampIRAppends(t *testing.T) {
+	be, err := NewXwalBackend(t.TempDir(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer be.Close()
+
+	role, v0, err := be.CreateForm("", patchOf(t, map[string]string{"name": `"role"`}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	aria, _, err := be.ForkWith("", 0, patchOf(t, map[string]string{"aria_id": `"a1"`}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	be.SetObservedForms(aria, []string{role})
+
+	log, err := be.Open(aria)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e1, err := log.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e1.StudyVersions[role] != v0 {
+		t.Fatalf("first stamp = %v, want %s at %d", e1.StudyVersions, role, v0)
+	}
+
+	// The role moves; the NEXT record's stamp says so.
+	v1, err := be.ApplyForm(role, patchOf(t, map[string]string{"phase": `"canary"`}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e2, err := log.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleOutput}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e2.StudyVersions[role] != v1 || v1 <= v0 {
+		t.Fatalf("second stamp = %v, want %s at %d (> %d)", e2.StudyVersions, role, v1, v0)
+	}
+
+	// Dropped: later records stamp nothing for it.
+	be.SetObservedForms(aria, nil)
+	e3, err := log.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := e3.StudyVersions[role]; ok {
+		t.Fatalf("dropped form still stamped: %v", e3.StudyVersions)
+	}
+
+	// And the patches between the two stamps are exactly the fold.
+	ps, err := be.FormPatches(role)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, p := range ps {
+		if p.Version > e1.StudyVersions[role] && p.Version <= e2.StudyVersions[role] {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("patches between stamps = %d, want exactly the one canary patch", n)
+	}
+}

@@ -69,7 +69,7 @@ func BenchmarkCatchUp(b *testing.B) {
 				cache := newCopyingBenchLog[[]json.RawMessage]()
 				p := benchProvider(b, provider.MarkAuto)
 				b.StartTimer()
-				p.catchUp(log, cache, nil)
+				p.catchUp(log, cache, nil, nil)
 			}
 		})
 		b.Run("WarmDelta/"+strconv.Itoa(n), func(b *testing.B) {
@@ -84,7 +84,7 @@ func BenchmarkCatchUp(b *testing.B) {
 				}
 			}
 			p := benchProvider(b, provider.MarkAuto)
-			p.catchUp(prefix, nil, nil)
+			p.catchUp(prefix, nil, nil, nil)
 			prewarmed := p.projection
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -93,7 +93,7 @@ func BenchmarkCatchUp(b *testing.B) {
 				b.StopTimer()
 				p.projection = prewarmed
 				b.StartTimer()
-				p.catchUp(log, nil, nil)
+				p.catchUp(log, nil, nil, nil)
 			}
 		})
 	}
@@ -111,7 +111,7 @@ func BenchmarkAssemble(b *testing.B) {
 			b.Run(string(mode)+"/"+strconv.Itoa(n), func(b *testing.B) {
 				p := benchProvider(b, mode)
 				log := benchLog(b, n)
-				perMessage, _ := p.catchUp(log, nil, nil)
+				perMessage, _ := p.catchUp(log, nil, nil, nil)
 				b.ReportAllocs()
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
@@ -132,7 +132,7 @@ func BenchmarkMarkRequest(b *testing.B) {
 		b.Run(strconv.Itoa(n), func(b *testing.B) {
 			p := benchProvider(b, provider.MarkBlocks)
 			log := benchLog(b, n)
-			perMessage, _ := p.catchUp(log, nil, nil)
+			perMessage, _ := p.catchUp(log, nil, nil, nil)
 			board := form.FromMap(map[string]json.RawMessage{
 				"system.credo": json.RawMessage(`"you are figaro"`),
 			})

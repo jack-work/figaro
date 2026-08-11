@@ -204,12 +204,36 @@ type Usage struct {
 // Message is the canonical IR unit for conversation turns and
 // state-only events. Per-provider wire projections are cached
 // in translator streams keyed by LogicalTime.
+// StudyMark states a study/drop transition in the IR.
+type StudyMark struct {
+	FormID string `json:"form_id"`
+	Began  bool   `json:"began"`
+}
+
 type Message struct {
 	Role    Role      `json:"role"`
 	Content []Content `json:"content"`
 
 	// Patches are form mutations for this message.
 	Patches []Patch `json:"patches,omitempty"`
+
+	// Study marks a change to this aria's OBSERVED SET: it began or
+	// stopped observing a form at this point in the timeline. The record
+	// is what lets the model (and a replay) account for silence — stamps
+	// simply appearing or vanishing would be a fact nobody stated.
+	Study *StudyMark `json:"study,omitempty"`
+
+	// StudyPatches are the OBSERVED forms' transitions for this message,
+	// keyed by form id — populated at PROJECTION time from the cursor
+	// stamps (never persisted in the IR payload; the studied forms'
+	// channels are the durable truth, and retranslation re-derives).
+	// The encoder folds them into the provider IR exactly as it folds
+	// Patches — the bound board is member zero of the same set.
+	StudyPatches map[string][]Patch `json:"-"`
+
+	// StudyNotes are projection-time annotations per observed form (a
+	// tombstone for a form that ceased to exist mid-observation).
+	StudyNotes map[string]string `json:"-"`
 
 	// Assistant-only metadata. (model/provider are NOT here — they are
 	// form values: system.model / system.provider, derived on read.)

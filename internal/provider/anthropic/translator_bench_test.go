@@ -66,7 +66,7 @@ func BenchmarkCatchUp(b *testing.B) {
 				cache := newCopyingBenchLog[[]json.RawMessage]()
 				a := &Anthropic{ReminderRenderer: "tag"}
 				b.StartTimer()
-				a.catchUp(log, cache, nil)
+				a.catchUp(log, cache, nil, nil)
 			}
 		})
 		b.Run("WarmDeltaEncode/"+strconv.Itoa(n), func(b *testing.B) {
@@ -74,7 +74,7 @@ func BenchmarkCatchUp(b *testing.B) {
 			log := directBenchLog(b, n)
 			appendDirectBenchSuffix(b, log)
 			a := &Anthropic{ReminderRenderer: "tag"}
-			a.catchUp(prefix, nil, nil)
+			a.catchUp(prefix, nil, nil, nil)
 			prewarmed := a.projection
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -83,7 +83,7 @@ func BenchmarkCatchUp(b *testing.B) {
 				b.StopTimer()
 				a.projection = prewarmed
 				b.StartTimer()
-				a.catchUp(log, nil, nil)
+				a.catchUp(log, nil, nil, nil)
 			}
 		})
 		b.Run("WarmDeltaCached/"+strconv.Itoa(n), func(b *testing.B) {
@@ -92,9 +92,9 @@ func BenchmarkCatchUp(b *testing.B) {
 			appendDirectBenchSuffix(b, log)
 			cache := newCopyingBenchLog[[]json.RawMessage]()
 			a := &Anthropic{ReminderRenderer: "tag"}
-			a.catchUp(prefix, cache, nil)
+			a.catchUp(prefix, cache, nil, nil)
 			prewarmed := a.projection
-			a.catchUp(log, cache, nil)
+			a.catchUp(log, cache, nil, nil)
 			b.ReportAllocs()
 			b.ResetTimer()
 			b.ReportMetric(2, "messages/op")
@@ -102,18 +102,18 @@ func BenchmarkCatchUp(b *testing.B) {
 				b.StopTimer()
 				a.projection = prewarmed
 				b.StartTimer()
-				a.catchUp(log, cache, nil)
+				a.catchUp(log, cache, nil, nil)
 			}
 		})
 		b.Run("WarmSteady/"+strconv.Itoa(n), func(b *testing.B) {
 			log := directBenchLog(b, n)
 			cache := newCopyingBenchLog[[]json.RawMessage]()
 			a := &Anthropic{ReminderRenderer: "tag"}
-			a.catchUp(log, cache, nil)
+			a.catchUp(log, cache, nil, nil)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				a.catchUp(log, cache, nil)
+				a.catchUp(log, cache, nil, nil)
 			}
 		})
 	}

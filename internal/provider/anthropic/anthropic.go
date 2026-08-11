@@ -623,6 +623,11 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *form.Snapshot) 
 			}
 		}
 		blocks = append(blocks, a.renderPatchBlocks(msg.Patches, prevSnap)...)
+		// The observed set folds in beside the board — same reminder
+		// idiom, one derivation upstream (provider.StudyReminderTexts).
+		for _, text := range provider.StudyReminderTexts(msg) {
+			blocks = append(blocks, nativeBlock{Type: "text", Text: text})
+		}
 		if len(blocks) == 0 {
 			return nativeMessage{}, false
 		}
@@ -964,7 +969,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	if err != nil {
 		return err
 	}
-	perMessage, lts := a.catchUp(in.FigLog, cache, in.Form)
+	perMessage, lts := a.catchUp(in.FigLog, cache, in.Form, in.Studies)
 	if len(perMessage) == 0 {
 		return fmt.Errorf("empty context")
 	}
@@ -1046,7 +1051,7 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 	if err != nil {
 		return err
 	}
-	perMessage, lts := a.catchUp(in.FigLog, cache, in.Form)
+	perMessage, lts := a.catchUp(in.FigLog, cache, in.Form, in.Studies)
 	if len(perMessage) == 0 {
 		return fmt.Errorf("empty context")
 	}
@@ -1166,7 +1171,7 @@ func (a *Anthropic) resolveModel(snap form.Snapshot) string {
 
 // catchUp encodes uncached figLog entries and returns per-message
 // wire bytes.
-func (a *Anthropic) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], chalk provider.Form) ([][]json.RawMessage, []uint64) {
+func (a *Anthropic) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], chalk provider.Form, studies map[string]provider.Form) ([][]json.RawMessage, []uint64) {
 	fp := a.Fingerprint()
 	a.mu.Lock()
 	previous := a.projection
@@ -1176,6 +1181,7 @@ func (a *Anthropic) catchUp(figLog store.Log[message.Message], cache store.Log[[
 		Log:         figLog,
 		Cache:       cache,
 		Form:        chalk,
+		Studies:     studies,
 		Previous:    previous,
 		Fingerprint: fp,
 		Encode:      a.encode,

@@ -128,7 +128,7 @@ func TestInterruptedTurn_BuiltRequestPairsEveryToolUse(t *testing.T) {
 	}
 
 	p := &Provider{}
-	projection, err := p.catchUp(figLog, nil, nil)
+	projection, err := p.catchUp(figLog, nil, nil, nil)
 	require.NoError(t, err, "the post-interrupt IR must project to a request at all")
 
 	assertToolUsePairing(t, projection.Messages)

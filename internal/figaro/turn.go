@@ -245,12 +245,6 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (
 		}
 		a.inlineBoot = nil
 	}
-	// Studied deltas ride the next input as RENDER-ONLY reminder blocks:
-	// never msg.Patches, never this aria's channels — a study is a
-	// relationship, not a private copy (open questions in study.go).
-	for _, r := range a.drainStudyReminders() {
-		msg.Content = append(msg.Content, message.TextContent(r))
-	}
 	if blocks := senderRuns(prompt.segments); len(blocks) > 0 {
 		msg.Content = append(msg.Content, blocks...)
 	} else if prompt.text != "" {
@@ -433,6 +427,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		FigLog:    deferredLog,
 		Snapshot:  a.form.Snapshot(),
 		Form:      a.chalkAccessor(),
+		Studies:   a.studyAccessors(),
 		Tools:     a.toolDefs(),
 		MaxTokens: a.formInt("system.max_tokens"),
 	}

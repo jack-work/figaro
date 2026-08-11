@@ -92,3 +92,20 @@ The token-burning twelve-aria stress awaits Gluck's meter-nod.
    sees only post-wake deltas. Accept, or snapshot-diff on wake?
 3. COALESCING: interim rule is newest-8 + counted-overflow notice.
    Bless, or specify (per-form coalescing? size budget?)?
+
+## The unification (Gluck's course correction, landed)
+The interim projection (text baked at turn assembly) is DEAD — no
+production store ever carried it. In its place, pull-at-the-stamp:
+figwal v0.16.0 AppendMainCursors merges caller-supplied positions into
+the main record's cursor stamp; the store stamps every observed form's
+version on every IR append (SetObservedForms, mirrored from
+system.studies); the projection derives each member's patch-fold
+between consecutive stamps — the bound board is member zero of the same
+loop — and all four providers fold the result into their IR beside the
+chalkboard's transitions, deterministically (sorted members, cache-
+stable bytes). Study/drop are stated IR marks; tombstones render for
+forms removed mid-observation; warm starts carry LastStudyVersions
+beside LastChalkVersion. Deleted: the pending queue, the turn-assembly
+injection, and WatchFormDurable with its generation gating — the
+milestone's finest catch became its most elegant deletion (the whole
+push apparatus, obsoleted by pull). A1/A2/A3 dissolved as predicted.

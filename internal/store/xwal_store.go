@@ -48,6 +48,7 @@ import (
 	"log/slog"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -241,7 +242,12 @@ type XwalStore struct {
 	mu       sync.Mutex
 	trunks   *xwal.Store
 	topology atomic.Pointer[topologySnapshot]
-	now      func() int64
+
+	// observed: ariaID → the form ids its IR appends stamp (study
+	// subscriptions). In-memory; the aria's board is the durable truth.
+	observedMu sync.Mutex
+	observed   map[string][]string
+	now        func() int64
 	// tree is the PRESENTATION hierarchy: what fig ls draws and what a
 	// delete takes. Never consulted for forking — that reads .from.
 	tree topo.Tree
@@ -335,7 +341,8 @@ func OpenXwalStore(root string, segmentSize int) (*XwalStore, error) {
 	}
 	x := &XwalStore{
 		root: root, trunks: st,
-		now: func() int64 { return time.Now().UnixMilli() },
+		observed: map[string][]string{},
+		now:      func() int64 { return time.Now().UnixMilli() },
 	}
 	x.tree = topo.FromTopology(xwalTopology{x})
 	return x, nil
@@ -1142,3 +1149,77 @@ func (s *XwalStore) LastTS(id string) int64 {
 // KindForm is the public name of the unbound-form node kind, for
 // consumers that discriminate rows by species.
 const KindForm = string(kindForm)
+
+// ---- the observed set (study subscriptions, pull-at-the-stamp) ----
+
+// studyCursorPrefix namespaces observed-form positions inside the main
+// record's cursor map, beside the node's own channel entries. '@' cannot
+// appear in a channel name, so the namespaces cannot collide.
+const studyCursorPrefix = "study:"
+
+// studyCursors extracts the observed-form half of a cursor stamp,
+// keyed by bare form id.
+func studyCursors(cursors map[string]uint64) map[string]uint64 {
+	var out map[string]uint64
+	for k, v := range cursors {
+		if rest, ok := strings.CutPrefix(k, studyCursorPrefix); ok {
+			if out == nil {
+				out = map[string]uint64{}
+			}
+			out[rest] = v
+		}
+	}
+	return out
+}
+
+// SetObservedForms declares which forms an aria observes; every
+// subsequent IR append stamps their positions. The list is the AGENT's
+// declaration (mirroring its board's system.studies) — the store holds
+// it in memory only, because the board is the durable truth and the
+// agent re-declares on boot.
+func (s *XwalStore) SetObservedForms(ariaID string, formIDs []string) {
+	s.observedMu.Lock()
+	if len(formIDs) == 0 {
+		delete(s.observed, ariaID)
+	} else {
+		s.observed[ariaID] = append([]string(nil), formIDs...)
+	}
+	s.observedMu.Unlock()
+}
+
+// observedCursors reads each observed form's CURRENT version at the
+// stamp moment. A form that cannot be read stamps nothing this record —
+// absence in a stamp is meaningful (not-observed or unreadable), and
+// the projection's tombstone handling names deletion when it renders.
+func (s *XwalStore) observedCursors(ariaID string) map[string]uint64 {
+	s.observedMu.Lock()
+	ids := s.observed[ariaID]
+	s.observedMu.Unlock()
+	if len(ids) == 0 {
+		return nil
+	}
+	out := make(map[string]uint64, len(ids))
+	for _, fid := range ids {
+		if v, ok := s.formTail(fid); ok {
+			out[studyCursorPrefix+fid] = v
+		}
+	}
+	return out
+}
+
+// formTail is the form channel's last index for any node — the version
+// a conditional Set quotes, read from the hot handle without a Form
+// replay.
+func (s *XwalStore) formTail(id string) (uint64, bool) {
+	x, err := s.OpenNode(id)
+	if err != nil {
+		return 0, false
+	}
+	defer x.Close()
+	for _, c := range x.Channels() {
+		if c.Name == chanForm {
+			return c.Last, true
+		}
+	}
+	return 0, false
+}

@@ -1,43 +1,38 @@
 package figaro
 
-// Study subscriptions and the cast operation. Spec of record:
-// plans/forms-and-roles-v2.md §7. The design narrative belongs to
-// skills/figaro/reference/roles-design.md; what is here is the mechanics.
+// Study subscriptions and the cast operation — the PULL-AT-THE-STAMP
+// design (Gluck's unification): an aria observes a SET of forms; its own
+// board is member zero (the fork it was born restudying); every IR
+// append stamps the whole set's positions (store.SetObservedForms +
+// figwal AppendMainCursors); and the PROVIDER TRANSLATOR derives each
+// member's patch-fold between consecutive stamps and folds it into the
+// provider IR exactly as it folds the chalkboard's own transitions —
+// re-derived on every retranslate. There is no push, no pending queue,
+// no watcher: observation is sampled at main-record boundaries, which
+// is not a limitation but the design — the stamp IS the moment of
+// observation.
+//
+// Spec of record: plans/forms-and-roles-v2.md §7 plus Gluck's course
+// corrections of 2026-08-11 (unify with the bound-form mechanism; fold
+// studied patches into the provider IR like the chalkboard's).
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"strings"
-	"sync"
+	"time"
 
 	"github.com/jack-work/figaro/internal/form"
+	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/internal/store"
 )
 
 // studiesKey is where an aria's study subscriptions live: on its OWN
-// form, so revival resubscribes and a fork inherits the RELATIONSHIP
+// form, so revival re-declares and a fork inherits the RELATIONSHIP
 // (the list rides the copied board) while the studied form itself is
 // never copied.
 const studiesKey = "system.studies"
-
-// studyDelta is one committed patch from a studied form, pending
-// render-only projection into the next input message.
-type studyDelta struct {
-	formID  string
-	version uint64
-	patch   form.Patch
-}
-
-// studyState is the agent's live subscription set. The set — not the
-// watcher — is the truth for delivery: WatchFormDurable's cancel does
-// not strip a sink from a live Form, so the sink itself checks
-// membership before delivering, and a dropped study goes quiet at once.
-type studyState struct {
-	mu      sync.Mutex
-	cancels map[string]func()
-	pending []studyDelta
-}
 
 // studiesFromSnapshot parses system.studies (a JSON array of form ids).
 func studiesFromSnapshot(snap form.Snapshot) []string {
@@ -52,49 +47,14 @@ func studiesFromSnapshot(snap form.Snapshot) []string {
 	return ids
 }
 
-// resumeStudies re-arms every subscription named on the board. Boot and
-// revival path; a failure to arm one study is logged, not fatal — the
-// board names the intent and the next study/drop repairs it.
+// resumeStudies re-declares the observed set from the board. Boot and
+// revival path; the board is the durable truth, the store's set is its
+// in-memory mirror.
 func (a *Agent) resumeStudies() {
 	if a.backend == nil {
 		return
 	}
-	for _, id := range studiesFromSnapshot(a.form.Snapshot()) {
-		if err := a.armStudy(id); err != nil {
-			slog.Warn("resume study", "aria", a.id, "form", id, "err", err)
-		}
-	}
-}
-
-// armStudy wires the durable watcher for one form. Idempotent per form.
-// The sink hands off to the pending queue and returns — it runs on the
-// form's writer, which does I/O and nothing else and must never block.
-func (a *Agent) armStudy(formID string) error {
-	a.studies.mu.Lock()
-	if a.studies.cancels == nil {
-		a.studies.cancels = map[string]func(){}
-	}
-	if _, ok := a.studies.cancels[formID]; ok {
-		a.studies.mu.Unlock()
-		return nil
-	}
-	a.studies.mu.Unlock()
-
-	cancel, err := a.backend.WatchFormDurable(formID, a.id, func(version uint64, patch form.Patch) {
-		a.studies.mu.Lock()
-		defer a.studies.mu.Unlock()
-		if _, ok := a.studies.cancels[formID]; !ok {
-			return // dropped: membership, not the watcher, gates delivery
-		}
-		a.studies.pending = append(a.studies.pending, studyDelta{formID: formID, version: version, patch: patch})
-	})
-	if err != nil {
-		return err
-	}
-	a.studies.mu.Lock()
-	a.studies.cancels[formID] = cancel
-	a.studies.mu.Unlock()
-	return nil
+	a.backend.SetObservedForms(a.id, studiesFromSnapshot(a.form.Snapshot()))
 }
 
 // requireStudyTarget names the slot errors: only an UNBOUND form is
@@ -114,15 +74,14 @@ func (a *Agent) requireStudyTarget(formID string) error {
 }
 
 // Study subscribes this aria to an unbound form: durable on the board,
-// armed immediately. NO transactional guarantee — that is cast's job.
+// declared to the store (stamps begin at the next IR record), and
+// STATED in the IR so the model and a replay can account for when
+// observation began. NO transactional guarantee — that is cast's job.
 func (a *Agent) Study(formID string) ([]string, error) {
 	if err := a.requireStudyTarget(formID); err != nil {
 		return nil, err
 	}
-	if err := a.armStudy(formID); err != nil {
-		return nil, err
-	}
-	studies, err := a.patchStudies(func(ids []string) []string {
+	studies, changed, err := a.patchStudies(func(ids []string) []string {
 		for _, id := range ids {
 			if id == formID {
 				return ids
@@ -133,20 +92,17 @@ func (a *Agent) Study(formID string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	a.backend.SetObservedForms(a.id, studies)
+	if changed {
+		a.appendStudyMark(formID, true)
+	}
 	return studies, nil
 }
 
-// Drop unsubscribes: membership goes first (the sink checks it), then
-// the watcher, then the board.
+// Drop unsubscribes: the board first (truth), then the store's mirror
+// (stamps end at the next IR record), then the stated mark.
 func (a *Agent) Drop(formID string) ([]string, error) {
-	a.studies.mu.Lock()
-	cancel := a.studies.cancels[formID]
-	delete(a.studies.cancels, formID)
-	a.studies.mu.Unlock()
-	if cancel != nil {
-		cancel()
-	}
-	return a.patchStudies(func(ids []string) []string {
+	studies, changed, err := a.patchStudies(func(ids []string) []string {
 		out := ids[:0]
 		for _, id := range ids {
 			if id != formID {
@@ -155,33 +111,58 @@ func (a *Agent) Drop(formID string) ([]string, error) {
 		}
 		return out
 	})
+	if err != nil {
+		return nil, err
+	}
+	a.backend.SetObservedForms(a.id, studies)
+	if changed {
+		a.appendStudyMark(formID, false)
+	}
+	return studies, nil
+}
+
+// appendStudyMark states a began/stopped-observing transition in the IR.
+// Best-effort: the stamps are the mechanism, the mark is the narration —
+// a failed narration is logged by the append path, never fatal.
+func (a *Agent) appendStudyMark(formID string, began bool) {
+	if a.figLog == nil {
+		return
+	}
+	_, _ = a.figLog.Append(store.Entry[message.Message]{Payload: message.Message{
+		Role:      message.RoleInput,
+		Study:     &message.StudyMark{FormID: formID, Began: began},
+		Timestamp: time.Now().UnixMilli(),
+	}})
 }
 
 // patchStudies is the read-modify-write of the studies array, guarded by
 // the board version so concurrent writers cannot lose each other.
-func (a *Agent) patchStudies(edit func([]string) []string) ([]string, error) {
+// changed reports whether the edit altered membership.
+func (a *Agent) patchStudies(edit func([]string) []string) ([]string, bool, error) {
 	for attempt := 0; attempt < 5; attempt++ {
 		snap := a.form.Snapshot()
 		version := a.Version()
-		ids := edit(studiesFromSnapshot(snap))
+		before := studiesFromSnapshot(snap)
+		ids := edit(append([]string(nil), before...))
 		if ids == nil {
 			ids = []string{}
 		}
+		changed := len(ids) != len(before)
 		b, err := json.Marshal(ids)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		patch := form.Patch{Set: map[string]json.RawMessage{studiesKey: b}}
 		if _, err := a.backend.ApplyFormIf(a.id, patch, version); err != nil {
 			if strings.Contains(err.Error(), "version") {
 				continue // the board moved; re-read and retry
 			}
-			return nil, err
+			return nil, false, err
 		}
 		a.form.Apply(patch)
-		return ids, nil
+		return ids, changed, nil
 	}
-	return nil, fmt.Errorf("studies: the board would not hold still")
+	return nil, false, fmt.Errorf("studies: the board would not hold still")
 }
 
 // castOp rides the inbox so that casts serialize in the figaro's actor
@@ -247,9 +228,6 @@ func (a *Agent) serviceCast(op *castOp) {
 			return
 		}
 		res.studied = true
-	} else if err := a.armStudy(res.roleID); err != nil {
-		res.err = fmt.Errorf("cast: arm study %s: %w", res.roleID, err)
-		return
 	}
 
 	if !res.patched {
@@ -262,48 +240,6 @@ func (a *Agent) serviceCast(op *castOp) {
 		}
 		res.patched = true
 	}
-}
-
-// drainStudyReminders renders pending studied deltas as reminder blocks
-// for the next input message — RENDER-ONLY, never written to this
-// aria's channels: a study is a relationship, not a private copy.
-//
-// OPEN QUESTIONS, deliberately unimplemented (policy Gluck has not
-// blessed): these blocks are invisible to replay (nothing durable marks
-// that the model saw them); a dormant aria accumulates nothing and
-// catches up only by whatever the next reader renders; and no
-// coalescing/budget policy exists beyond a hard cap.
-func (a *Agent) drainStudyReminders() []string {
-	a.studies.mu.Lock()
-	pending := a.studies.pending
-	a.studies.pending = nil
-	a.studies.mu.Unlock()
-	if len(pending) == 0 {
-		return nil
-	}
-	// NEWEST WINS AT THE CAP, and the loss is STATED: overflow drops the
-	// oldest deltas (for a role, the newest assignment is the live one)
-	// and the first block says how many fell. Anything smarter is the
-	// coalescing open question above — this is the interim rule, not a
-	// policy blessing.
-	const capBlocks = 8
-	dropped := 0
-	if len(pending) > capBlocks {
-		dropped = len(pending) - capBlocks
-		pending = pending[dropped:]
-	}
-	out := make([]string, 0, len(pending)+1)
-	if dropped > 0 {
-		out = append(out, fmt.Sprintf("<system-reminder name=\"study-overflow\">%d older studied deltas were dropped (newest %d kept)</system-reminder>", dropped, capBlocks))
-	}
-	for _, d := range pending {
-		body, err := json.Marshal(d.patch)
-		if err != nil {
-			continue
-		}
-		out = append(out, fmt.Sprintf("<system-reminder name=\"study:%s\" version=\"%d\">\n%s\n</system-reminder>", d.formID, d.version, body))
-	}
-	return out
 }
 
 // Cast submits one casting call to the actor loop and waits for its

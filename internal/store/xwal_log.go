@@ -57,12 +57,13 @@ func decodeRecord[T any](r xwal.Record) (Entry[T], bool) {
 		}
 	}
 	return Entry[T]{
-		LT:           r.ChannelLT,
-		FigaroLT:     r.MainLT,
-		Payload:      v,
-		Fingerprint:  decodeMeta(r.Meta),
-		ChalkVersion: r.Cursors[chanForm],
-		EncodedBytes: len(r.Payload),
+		LT:            r.ChannelLT,
+		FigaroLT:      r.MainLT,
+		Payload:       v,
+		Fingerprint:   decodeMeta(r.Meta),
+		ChalkVersion:  r.Cursors[chanForm],
+		StudyVersions: studyCursors(r.Cursors),
+		EncodedBytes:  len(r.Payload),
 	}, true
 }
 
@@ -372,7 +373,11 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	}
 	meta := encodeMeta(e.Fingerprint)
 	if l.isMain {
-		lt, aerr := l.store.trunks.Append(l.ariaID, l.channel, 0, payload, meta)
+		// The stamp moment: alongside the automatic own-channel cursors,
+		// record where every OBSERVED form stands right now. This is the
+		// provider's snapshot point for the whole observed set — the same
+		// instant, one map (see AppendMainCursors in figwal).
+		_, lt, aerr := l.store.trunks.AppendCursors(l.ariaID, payload, meta, l.store.observedCursors(l.ariaID))
 		if aerr != nil {
 			return Entry[T]{}, aerr
 		}
@@ -393,6 +398,7 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 		// covers the next field of this kind as well as this one.
 		if stamped, ok := l.readBack(lt); ok {
 			e.ChalkVersion = stamped.ChalkVersion
+			e.StudyVersions = stamped.StudyVersions
 		}
 		return e, nil
 	}

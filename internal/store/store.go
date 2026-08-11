@@ -135,10 +135,11 @@ type Backend interface {
 	// the node's Form reopens. The cancel removes the registration; the
 	// DELIVERY gate remains the caller's (a cancelled sink may fire until
 	// the live Form closes).
-	// owner keys replacement: re-registering the same (id, owner) swaps
-	// the sink instead of stacking a duplicate — an agent re-registers
-	// on every revival.
-	WatchFormDurable(id, owner string, fn func(version uint64, patch message.Patch)) (func(), error)
+	// SetObservedForms declares the forms whose positions every IR append
+	// of this aria stamps (the observed set: study subscriptions). The
+	// board's system.studies is the durable truth; this is its in-memory
+	// mirror, re-declared by the agent on boot and on study/drop.
+	SetObservedForms(ariaID string, formIDs []string)
 
 	// ForkWith forks a node and lands a patch on the child in one critical
 	// section. parent == "" forks the null root, which is what birth is.

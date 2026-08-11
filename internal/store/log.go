@@ -14,6 +14,12 @@ type Entry[T any] struct {
 	// no turn; this is the other side of that association, and it rides
 	// along on a record the reader is already holding.
 	ChalkVersion uint64
+	// StudyVersions, on IR entries of a STUDYING aria: where each observed
+	// form stood when this record was written, keyed by form id — the
+	// study:-prefixed half of the same cursor stamp ChalkVersion rides.
+	// The projection derives each member's patch-fold between consecutive
+	// stamps, exactly as it derives the own board's from ChalkVersion.
+	StudyVersions map[string]uint64
 	// EncodedBytes is the record's on-disk payload size, captured at decode
 	// because that is the one place it is known for free.
 	//

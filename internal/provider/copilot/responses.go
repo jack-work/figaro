@@ -420,12 +420,24 @@ func (p *responsesProvider) inputFor(in provider.SendInput) ([]json.RawMessage, 
 		Log:         in.FigLog,
 		Cache:       cache,
 		Form:        in.Form,
+		Studies:     in.Studies,
 		Previous:    previous,
 		Fingerprint: fingerprint,
 		Encode: func(msg message.Message, snap form.Snapshot) ([]json.RawMessage, error) {
 			encoded, err := encodeResponseMessage(msg, msg.Patches, snap, templates)
 			if err != nil {
 				return nil, fmt.Errorf("copilot responses: encode message %d: %w", msg.LogicalTime, err)
+			}
+			// The observed set folds in beside the board: each study
+			// reminder becomes one input_text message part.
+			for _, text := range provider.StudyReminderTexts(msg) {
+				part, merr := json.Marshal(map[string]any{
+					"role":    "user",
+					"content": []map[string]any{{"type": "input_text", "text": text}},
+				})
+				if merr == nil {
+					encoded = append(encoded, part)
+				}
 			}
 			return encoded, nil
 		},

@@ -187,7 +187,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if err != nil {
 		return err
 	}
-	perMessage, _ := p.catchUp(in.FigLog, cache, in.Form)
+	perMessage, _ := p.catchUp(in.FigLog, cache, in.Form, in.Studies)
 	if len(perMessage) == 0 {
 		return fmt.Errorf("empty context")
 	}
@@ -309,7 +309,9 @@ func (p *Provider) assemble(perMessage [][]json.RawMessage, snapshot form.Snapsh
 // snapshot is the board as of the PREVIOUS message: form patches render
 // against it, so a reminder says what changed rather than restating the board.
 func (p *Provider) encode(msg message.Message, prevSnapshot form.Snapshot) ([]json.RawMessage, error) {
-	msgs, err := encodeMessage(msg, p.plan().Blocks, p.renderPatches(msg.Patches, prevSnapshot))
+	reminders := p.renderPatches(msg.Patches, prevSnapshot)
+	reminders = append(reminders, provider.StudyReminderTexts(msg)...)
+	msgs, err := encodeMessage(msg, p.plan().Blocks, reminders)
 	if err != nil {
 		return nil, err
 	}
@@ -403,7 +405,7 @@ func (p *Provider) invalidateIfStale(s store.Log[[]json.RawMessage]) bool {
 }
 
 func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage],
-	chalk provider.Form) ([][]json.RawMessage, []uint64) {
+	chalk provider.Form, studies map[string]provider.Form) ([][]json.RawMessage, []uint64) {
 	fp := p.Fingerprint()
 	p.mu.Lock()
 	previous := p.projection
@@ -413,6 +415,7 @@ func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]
 		Log:         figLog,
 		Cache:       cache,
 		Form:        chalk,
+		Studies:     studies,
 		Previous:    previous,
 		Fingerprint: fp,
 		Encode:      p.encode,

@@ -173,8 +173,19 @@ fig set --id @role target-aria dcb89d6b       # repoint on succession
 fig send --id @role -- status?                # reaches the holder, whoever that is now
 ```
 
-**FUTURE (not yet shipped — do not rely on it)**: the `study`/`drop`
-subscription verbs and the `cast` casting-call transaction.
+**Study and cast.** `fig study [<aria>] <@form>` subscribes a figaro to
+an unbound form; `fig drop` unsubscribes; `fig cast [<aria>] <@form>`
+(or `-O <spec>` to mint the role born cast) points the role here AND
+ensures the study, serialized through the figaro's actor loop. The
+mechanism is the bound board's, generalized: every IR record stamps the
+positions of the whole OBSERVED SET (own board plus studied forms), and
+the provider translator derives each member's patch-fold between
+consecutive stamps at translation time — folded into the provider IR
+exactly as the chalkboard's transitions are, re-derived on every
+retranslate, never baked into this aria's records. Began/stopped
+observing are stated IR marks; a studied form removed mid-observation
+renders a tombstone; observation advances at main-record boundaries
+(the stamp IS the moment of observation).
 
 ---
 
