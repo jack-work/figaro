@@ -1273,9 +1273,9 @@ func (in *interactiveInput) hangUp(disposition rpc.QueueDisposition) keyVerdict 
 	}
 	in.mu.Lock()
 	if disposition == rpc.QueueClear {
-		in.lt.report("hanging up — dropping the queue")
+		in.lt.report("hanging up: dropping the queue")
 	} else {
-		in.lt.report("hanging up — staying attached")
+		in.lt.report("hanging up: staying attached")
 	}
 	in.mu.Unlock()
 	go func() {
@@ -1296,20 +1296,20 @@ func (in *interactiveInput) hangUp(disposition rpc.QueueDisposition) keyVerdict 
 			// status row showing only the LAST message, which is how this read
 			// in the pty: a lone "doomed two" with no header.
 			var b strings.Builder
-			fmt.Fprintf(&b, "hung up — listening; dropped %s:", queueCount(resp.Queue))
+			fmt.Fprintf(&b, "hung up: listening; dropped %s:", queueCount(resp.Queue))
 			for _, p := range resp.Queue {
 				b.WriteString("\n  " + queueRowText(p.Text))
 			}
 			in.lt.report(b.String())
 		case resp.Cleared:
-			in.lt.report("hung up — listening (nothing was queued)")
+			in.lt.report("hung up: listening (nothing was queued)")
 		case len(resp.Queue) > 0:
 			// Say what survived, because the whole point of keeping it is that
 			// it is about to be asked.
-			in.lt.report(fmt.Sprintf("hung up — listening (%s queued, answered next)",
+			in.lt.report(fmt.Sprintf("hung up: listening (%s queued, answered next)",
 				queueCount(resp.Queue)))
 		default:
-			in.lt.report("hung up — listening")
+			in.lt.report("hung up: listening")
 		}
 	}()
 	return keyHandled

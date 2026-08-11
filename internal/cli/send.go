@@ -826,5 +826,5 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 		}{AriaID: ariaID, Mode: "forget"})
 		return
 	}
-	fmt.Fprintf(os.Stderr, "forgot %s — use `figaro listen %s` to follow\n", ariaID, ariaID)
+	fmt.Fprintf(os.Stderr, "forgot %s: use `figaro listen %s` to follow\n", ariaID, ariaID)
 }

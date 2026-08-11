@@ -249,7 +249,7 @@ func runImport(loaded *config.Loaded, args []string) {
 	fmt.Fprintf(os.Stderr, "imported %d messages as %s (outfit %s)\n",
 		resp.Messages, resp.FigaroID, resp.Outfit)
 	if resp.WasID != "" {
-		fmt.Fprintf(os.Stderr, "  it was %s where it came from — a trunk id is unique per store, so this one is new\n", resp.WasID)
+		fmt.Fprintf(os.Stderr, "  it was %s where it came from: a trunk id is unique per store, so this one is new\n", resp.WasID)
 	}
 }
 

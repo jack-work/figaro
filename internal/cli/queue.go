@@ -101,7 +101,7 @@ func runQueueList(loaded *config.Loaded, ariaID string, asJSON bool) {
 		fmt.Printf("queue %s: empty\n", s.id)
 		return
 	}
-	fmt.Printf("queue %s — %s waiting\n", s.id, plural(len(queue), "message"))
+	fmt.Printf("queue %s: %s waiting\n", s.id, plural(len(queue), "message"))
 	width := termWidth() - 24
 	if width < 20 {
 		width = 20
@@ -191,7 +191,7 @@ func reportQueueResults(ariaID, epoch string, results []rpc.QueueResult, asJSON 
 			case rpc.QueueRejected:
 				line := fmt.Sprintf("  %-4d rejected: %s", r.ID, r.Reason)
 				if r.Detail != "" {
-					line += " — " + r.Detail
+					line += ": " + r.Detail
 				}
 				if r.Into != 0 {
 					line += fmt.Sprintf(" (try %d)", r.Into)

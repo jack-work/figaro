@@ -30,7 +30,7 @@ func runDoctorTerm() error {
 	fmt.Printf("stdout tty   %v    stdin tty %v\n",
 		term.IsTerminal(int(os.Stdout.Fd())), term.IsTerminal(int(os.Stdin.Fd())))
 
-	fmt.Printf("\nglyph widths — what figaro MEASURES vs what your terminal DRAWS\n")
+	fmt.Printf("\nglyph widths: what figaro MEASURES vs what your terminal DRAWS\n")
 	fmt.Printf("  a mismatch on any row below is the bug: every row containing that\n")
 	fmt.Printf("  glyph is built to the wrong width and runs past the edge.\n\n")
 

@@ -158,7 +158,7 @@ func (f *Form) commit(w formWrite) formResult {
 	st := f.state.Load()
 	if w.ifVersion != 0 && st.version != w.ifVersion {
 		return formResult{err: fmt.Errorf(
-			"form moved: at version %d, not %d — re-read and retry", st.version, w.ifVersion)}
+			"form moved: at version %d, not %d: re-read and retry", st.version, w.ifVersion)}
 	}
 	// REDUCE FIRST. A patch is only an event if it changes something: keys
 	// already holding the value asked for are dropped, removals of keys that

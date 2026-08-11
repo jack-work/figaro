@@ -285,7 +285,7 @@ func (a *Agent) newLog() store.Log[message.Message] {
 		// restarted. That is the exact head/fork-ancestry-resolution
 		// symptom of the interrupted-mid-turn bug. Surface it loudly and
 		// keep the previous log (if any) so we do not wipe state.
-		slog.Error("backend open failed — keeping previous log", "aria", a.id, "err", err)
+		slog.Error("backend open failed: keeping previous log", "aria", a.id, "err", err)
 		if a.figLog != nil {
 			return a.figLog
 		}

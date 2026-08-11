@@ -188,10 +188,10 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	// while ids are gapless and 1-based; printing lo+1 here would be a fourth
 	// coordinate system in the one command that just collapsed three.
 	if lo >= hi {
-		fmt.Printf("# aria %s — %d turns (no turn in range)\n\n", figaroID, len(turns))
+		fmt.Printf("# aria %s: %d turns (no turn in range)\n\n", figaroID, len(turns))
 		return
 	}
-	fmt.Printf("# aria %s — %d turns (showing %d–%d) · [N] is the turn to fork/send at\n\n", figaroID, len(turns), turns[lo].ID, turns[hi-1].ID)
+	fmt.Printf("# aria %s: %d turns (showing %d–%d) · [N] is the turn to fork/send at\n\n", figaroID, len(turns), turns[lo].ID, turns[hi-1].ID)
 	for i := lo; i < hi; i++ {
 		u := turns[i]
 		fmt.Println(term.Dim(fmt.Sprintf("[%d]", u.ID)))
@@ -297,7 +297,7 @@ func renderAriaIR(loaded *config.Loaded, figaroID string, entries []store.Entry[
 		flush = func() { sw.Flush() }
 	}
 
-	fmt.Fprintf(w, "# aria %s — showing %d of %d messages\n\n", figaroID, len(entries)-start, len(entries))
+	fmt.Fprintf(w, "# aria %s: showing %d of %d messages\n\n", figaroID, len(entries)-start, len(entries))
 	for _, e := range entries[start:] {
 		renderMessage(w, e.Payload, e.LT, opts.verbose)
 	}

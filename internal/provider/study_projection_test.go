@@ -110,7 +110,7 @@ func TestStudyReminderTextsDeterministic(t *testing.T) {
 		t.Fatal("render not deterministic")
 	}
 	joined := strings.Join(a, "\n")
-	if !strings.Contains(joined, "now observes the form @r") {
+	if !strings.Contains(joined, `{"form":"@r","observing":true}`) {
 		t.Errorf("mark missing: %s", joined)
 	}
 	if strings.Index(joined, "study:@a") > strings.Index(joined, "study:@b") {
@@ -122,10 +122,13 @@ func TestStudyReminderTextsDeterministic(t *testing.T) {
 }
 
 // The window is folded, not narrated. Three patches to one key inside one
-// window render ONE block holding the value the key ENDS at — because a model
+// window render ONE block holding the value the key ENDS at, because a model
 // shown the intermediate values answers from them. A haiku did exactly that in
 // the fifty-observer storm: asked what the brief said, it reported the value
 // the brief held before the change it was being asked about.
+//
+// The body is STRUCTURE, not prose (Gluck's rule): one compact JSON object
+// naming the form and what moved. The skills contextualize it.
 func TestStudyWindowIsFoldedToItsResult(t *testing.T) {
 	msg := message.Message{StudyPatches: map[string][]message.Patch{
 		"@r": {
@@ -135,7 +138,7 @@ func TestStudyWindowIsFoldedToItsResult(t *testing.T) {
 		},
 	}}
 	joined := strings.Join(StudyReminderTexts(msg), "\n")
-	if n := strings.Count(joined, "system-reminder name=\"study:@r\""); n != 1 {
+	if n := strings.Count(joined, `system-reminder name="study:@r"`); n != 1 {
 		t.Fatalf("want ONE block for one form, got %d: %s", n, joined)
 	}
 	if !strings.Contains(joined, "COLUMBINE") {
@@ -144,16 +147,18 @@ func TestStudyWindowIsFoldedToItsResult(t *testing.T) {
 	if strings.Contains(joined, "stand by") || strings.Contains(joined, `"go"`) {
 		t.Errorf("an intermediate value survived the fold: %s", joined)
 	}
-	if !strings.Contains(joined, "3 times") {
-		t.Errorf("the number of changes is worth saying: %s", joined)
+	if !strings.Contains(joined, `"changes":3`) {
+		t.Errorf("the number of changes is worth stating: %s", joined)
 	}
-	if !strings.Contains(joined, "These keys were removed: doomed") {
+	if !strings.Contains(joined, `"removed":["doomed"]`) {
 		t.Errorf("a removal must be stated: %s", joined)
 	}
-	// And the framing that stopped two haikus from reading the block as an
-	// injection attempt and refusing the turn.
-	if !strings.Contains(joined, "form this figaro studies") || !strings.Contains(joined, "not a message from anyone") {
-		t.Errorf("the block must say what it is: %s", joined)
+	if !strings.Contains(joined, `"form":"@r"`) {
+		t.Errorf("the block must name its form: %s", joined)
+	}
+	// Structure, not prose: no sentences in the body.
+	if strings.Contains(joined, "figaro studies") || strings.Contains(joined, "since the last turn") {
+		t.Errorf("the body must be structural: %s", joined)
 	}
 }
 

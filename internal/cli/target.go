@@ -110,7 +110,7 @@ func redirectRole(ctx context.Context, loaded *config.Loaded, acli *angelus.Clie
 		return "", transport.Endpoint{}, fmt.Errorf("%s is a form, not a figaro: this verb needs one.\n  fig bind %s                 birth a figaro from it\n  fig set --id %s target-aria <aria>   make it a ROLE, and this verb reaches the holder", id, id, id)
 	}
 	if strings.Contains(*target, "@") {
-		return "", transport.Endpoint{}, fmt.Errorf("role %s: target-aria %q is a form, not an aria — roles do not chain", id, *target)
+		return "", transport.Endpoint{}, fmt.Errorf("role %s: target-aria %q is a form, not an aria; roles do not chain", id, *target)
 	}
 	fmt.Fprintf(os.Stderr, "role %s → aria %s\n", id, *target)
 	return resolveTargetEndpoint(ctx, loaded, acli, *target, false, dressing{})

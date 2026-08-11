@@ -280,7 +280,7 @@ func ValidName(name string) error {
 		// `-O {a:1,b:2}` unquoted is brace-EXPANDED by the shell into two
 		// words with the braces gone, so this is usually a literal that never
 		// reached us. `:` is also the turn coordinate.
-		return fmt.Errorf("outfit: %q: a name cannot contain `:` — for a literal, quote it ('{\"a\":1}') or use the sugar (a=1)", name)
+		return fmt.Errorf("outfit: %q: a name cannot contain `:`: for a literal, quote it ('{\"a\":1}') or use the sugar (a=1)", name)
 	}
 	for _, r := range name {
 		if unicode.IsSpace(r) || unicode.IsControl(r) {

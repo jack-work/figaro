@@ -290,7 +290,7 @@ func runUnattend(loaded *config.Loaded) {
 	}
 	_ = unbindBinding(ctx, acli, ppid)
 	if bound != "" {
-		fmt.Fprintf(os.Stderr, "home — unattended %s; new conversations use the default outfit\n", bound)
+		fmt.Fprintf(os.Stderr, "home: unattended %s; new conversations use the default outfit\n", bound)
 	} else {
 		fmt.Fprintln(os.Stderr, "no aria bound to this shell")
 	}

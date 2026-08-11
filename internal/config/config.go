@@ -328,7 +328,7 @@ func (c Config) validateStream() error {
 // legible picture and the text results beside it.
 func (c Config) validateStore() error {
 	if s := c.Store.SegmentSize; s != nil && *s < minSegmentSize {
-		return fmt.Errorf("config: store.segment_size (%d) must be >= %d: a WAL segment must fit ONE whole record, and a tool_result carrying a base64 image is one record — below the floor there is no share of a segment big enough for a legible picture, and figwal rejects the append (\"payload too large for segment size\") outright", *s, minSegmentSize)
+		return fmt.Errorf("config: store.segment_size (%d) must be >= %d: a WAL segment must fit ONE whole record, and a tool_result carrying a base64 image is one record: below the floor there is no share of a segment big enough for a legible picture, and figwal rejects the append (\"payload too large for segment size\") outright", *s, minSegmentSize)
 	}
 	return nil
 }

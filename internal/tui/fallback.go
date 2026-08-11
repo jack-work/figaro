@@ -22,7 +22,7 @@ func promptPassphraseFallback(appname string) ([]byte, error) {
 	}
 	fmt.Fprintf(os.Stderr, "\n[%s] First-time setup.\n", appname)
 	fmt.Fprintln(os.Stderr, "Choose a passphrase to encrypt your credentials at rest.")
-	fmt.Fprintln(os.Stderr, "We'll save it to your OS keyring — you won't be asked again.")
+	fmt.Fprintln(os.Stderr, "We'll save it to your OS keyring: you won't be asked again.")
 	fmt.Fprintln(os.Stderr)
 
 	for {
@@ -46,7 +46,7 @@ func promptPassphraseFallback(appname string) ([]byte, error) {
 		if !bytesEqual(pp1, pp2) {
 			wipe(pp1)
 			wipe(pp2)
-			fmt.Fprintln(os.Stderr, "  passphrases do not match — try again")
+			fmt.Fprintln(os.Stderr, "  passphrases do not match: try again")
 			continue
 		}
 		wipe(pp2)

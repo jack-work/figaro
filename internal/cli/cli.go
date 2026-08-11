@@ -664,7 +664,7 @@ positional slot belongs to the sub-verb.`,
 		Name:    "list",
 		Aliases: []string{"ls"},
 		Group:   "Session",
-		Short:   "List arias — scoped to where you're attended (attend is `cd`)",
+		Short:   "List arias: scoped to where you're attended (attend is `cd`)",
 		Usage:   "list [<id>] [-H|--home | -g|--global] [-a|--all | -n <count>] [-j|--json]",
 		Long: "Lists arias `ls`-style relative to where you're attended (attend is\nthe `cd`).\n\n" +
 			"Scope:\n" +
@@ -728,7 +728,7 @@ positional slot belongs to the sub-verb.`,
 		Group:   "Session",
 		Short:   "Bind this shell to an existing aria (optionally at a turn)",
 		Usage:   "attend <id> | <id>:<turn> | <id>.<lt> | :<turn> | null",
-		Long:    "Binds this shell to an aria. With :<turn> the binding carries a pending\nfork-point — the next bare prompt (`fig -- …`) forks the trunk there and\nmoves to the new branch. `:<turn>` alone re-pins the already-bound aria.\n\n`attend null` goes home: drops this shell's binding (named for the kindNull\ngenesis root). New conversations then default to the live outfit.\n\nTerminal-only. Inside an aria's own bash tool, FIGARO_ARIA statically\nattends that shell to the aria that spawned it, and attend refuses — reach\nanother aria with an explicit --id instead.",
+		Long:    "Binds this shell to an aria. With :<turn> the binding carries a pending\nfork-point: the next bare prompt (`fig -- …`) forks the trunk there and\nmoves to the new branch. `:<turn>` alone re-pins the already-bound aria.\n\n`attend null` goes home: drops this shell's binding (named for the kindNull\ngenesis root). New conversations then default to the live outfit.\n\nTerminal-only. Inside an aria's own bash tool, FIGARO_ARIA statically\nattends that shell to the aria that spawned it, and attend refuses: reach\nanother aria with an explicit --id instead.",
 		ArgsMin: 1,
 		ArgsMax: 1,
 		Run: func(ctx *cmdkit.RunContext) error {

@@ -762,7 +762,7 @@ func runNormalize(loaded *config.Loaded, segments bool) {
 		}
 		switch resp.Detached {
 		case 0:
-			fmt.Fprintln(os.Stderr, "normalize: already normalized — nothing to absorb")
+			fmt.Fprintln(os.Stderr, "normalize: already normalized, nothing to absorb")
 		case 1:
 			fmt.Fprintln(os.Stderr, "normalize: 1 aria now owns its history outright")
 		default:
@@ -811,9 +811,9 @@ func runPromote(loaded *config.Loaded, idFlag string, args []string) {
 				"  Set `trunks = true` in config.toml and restart the daemon to enable it.")
 		}
 		if resp.AtStump {
-			die("promote: %s is rooted at an outfit — cannot promote into an outfit; make or edit an outfit instead", target)
+			die("promote: %s is rooted at an outfit, so it cannot be promoted into one; make or edit an outfit instead", target)
 		}
-		fmt.Fprintf(os.Stderr, "promoted %s by %d level(s) — it is now the canonical line through its ancestors\n", target, resp.Climbed)
+		fmt.Fprintf(os.Stderr, "promoted %s by %d level(s): it is now the canonical line through its ancestors\n", target, resp.Climbed)
 		return nil
 	})
 }
@@ -872,7 +872,7 @@ func runAttend(loaded *config.Loaded, spec string) {
 			if r, e := acli.ListGlobal(ctx); e == nil {
 				for _, f := range r.Figaros {
 					if f.ID == trunk && (f.Kind == "null" || f.Kind == "outfit") {
-						die("%s is a %s — a closed anchor, not a conversation; it can't be attended.\n"+
+						die("%s is a %s: a closed anchor, not a conversation; it can't be attended.\n"+
 							"  figaro attend null  go home (unbind; new conversations use the live outfit)\n"+
 							"  figaro ls -h        lists top-level conversations (use -a or -n N to show all or N most recent in scope)\n"+
 							"  figaro ls -g        show the full hierarchy (null + outfits + conversations)", trunk, f.Kind)

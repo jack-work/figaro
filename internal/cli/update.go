@@ -34,7 +34,7 @@ func helpVersionLine() string {
 		info.Current = cur
 		info.Available = info.Latest != "" && update.Compare(info.Latest, cur) > 0
 		if update.Nudge(info, figaroModule) != "" {
-			line += " · " + info.Latest + " available — run: figaro update"
+			line += " · " + info.Latest + " available: run: figaro update"
 		}
 	}
 	return line

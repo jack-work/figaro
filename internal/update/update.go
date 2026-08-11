@@ -242,7 +242,7 @@ func UpgradeCommand(ch Channel, module, latest string) string {
 	case ChannelNix:
 		return "nix profile upgrade figaro   # or your flake input, then: nix profile upgrade '.*'"
 	case ChannelDevShell:
-		return "git pull && exit && nix develop   # (dev shell — rebuild by re-entering)"
+		return "git pull && exit && nix develop   # (dev shell: rebuild by re-entering)"
 	}
 	return ""
 }

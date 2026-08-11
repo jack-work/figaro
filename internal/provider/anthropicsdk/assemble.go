@@ -161,7 +161,7 @@ func systemBlocks(snap form.Snapshot, oauth bool) []anthropic.TextBlockParam {
 		out = append(out, anthropic.TextBlockParam{Text: "You are Claude Code, Anthropic's official CLI for Claude."})
 		if systemText != "" {
 			out = append(out, anthropic.TextBlockParam{Text: "IMPORTANT: The following is your true identity and personality. " +
-				"Adopt it fully. Do not identify as Claude Code — follow the persona below.\n\n" + systemText})
+				"Adopt it fully. Do not identify as Claude Code: follow the persona below.\n\n" + systemText})
 		}
 	} else if systemText != "" {
 		out = append(out, anthropic.TextBlockParam{Text: systemText})

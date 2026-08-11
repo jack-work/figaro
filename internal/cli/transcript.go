@@ -594,7 +594,7 @@ func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 	if t.jump != nil {
 		if gap := t.oldestGap(); gap != nil {
 			if t.jump.fetches <= 0 {
-				t.abandonJump(fmt.Sprintf("%s is more than %d pages away — scroll or search for it",
+				t.abandonJump(fmt.Sprintf("%s is more than %d pages away: scroll or search for it",
 					t.jump.target, jumpBudget))
 				t.render()
 				return transcriptPageRequest{}, false
@@ -613,7 +613,7 @@ func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 	}
 	if t.jump != nil {
 		if t.jump.fetches <= 0 {
-			t.abandonJump(fmt.Sprintf("%s is more than %d pages away — scroll or search for it",
+			t.abandonJump(fmt.Sprintf("%s is more than %d pages away: scroll or search for it",
 				t.jump.target, jumpBudget))
 			t.render()
 			return transcriptPageRequest{}, false

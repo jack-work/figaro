@@ -94,7 +94,7 @@ func environmentStrategies(reg *providerPkg.Registration) []auth.CredentialStrat
 // for lack of a credential.
 func providerSetupHint() string {
 	var b strings.Builder
-	b.WriteString("No provider connected — figaro has no credential to reach a model.\n\n")
+	b.WriteString("No provider connected: figaro has no credential to reach a model.\n\n")
 	b.WriteString("Connect one and retry:\n")
 	for _, name := range providerPkg.Names() {
 		reg := providerPkg.Lookup(name)

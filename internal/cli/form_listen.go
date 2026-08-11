@@ -61,7 +61,7 @@ func runFormListen(loaded *config.Loaded, ariaID string) {
 			case formIncompatible:
 				// Said once, and then we stop: refetching per delta would be a
 				// storm against a peer that cannot agree with us.
-				view.stop(fmt.Sprintf("this daemon speaks form schema %d, this client speaks %d — not tracking",
+				view.stop(fmt.Sprintf("this daemon speaks form schema %d, this client speaks %d: not tracking",
 					d.Schema, rpc.FormDeltaSchema))
 			default:
 				view.paint()

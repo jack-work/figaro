@@ -206,7 +206,7 @@ func runDoctorMem(asJSON bool) error {
 	fmt.Printf("limit      %s (GOMEMLIMIT, soft)\n", limit)
 
 	if m.PprofSocket == "" {
-		fmt.Printf("pprof      not armed — restart the daemon with %s=1\n", angelus.PprofEnv)
+		fmt.Printf("pprof      not armed: restart the daemon with %s=1\n", angelus.PprofEnv)
 	} else {
 		fmt.Printf("pprof      %s\n", m.PprofSocket)
 		fmt.Printf("           go tool pprof -http=: 'http+unix://%s/debug/pprof/heap'\n", m.PprofSocket)

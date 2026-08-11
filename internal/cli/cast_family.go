@@ -61,7 +61,7 @@ func runStudy(loaded *config.Loaded, args []string, drop, asJSON bool) {
 		die("%s", err)
 	}
 	if ariaID == "" {
-		die("%s: no figaro — attend one, or name it: fig %s <aria> <@form>", verb, verb)
+		die("%s: no figaro attended; attend one or name it: fig %s <aria> <@form>", verb, verb)
 	}
 	if formID == "" && drop {
 		die("drop: name the form: fig drop [<aria>] <@form>")

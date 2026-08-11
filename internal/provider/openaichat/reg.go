@@ -79,7 +79,7 @@ func buildGateway(ctx provider.BuildContext) (provider.Provider, error) {
 		base = v
 	}
 	if base == "" {
-		return nil, fmt.Errorf("gateway: no base_url — set FIGARO_GATEWAY_BASE_URL or base_url in providers/gateway.toml")
+		return nil, fmt.Errorf("gateway: no base_url: set FIGARO_GATEWAY_BASE_URL or base_url in providers/gateway.toml")
 	}
 
 	// An endpoint we were merely handed is not assumed to honour markers.

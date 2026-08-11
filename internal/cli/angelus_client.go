@@ -102,7 +102,7 @@ func refuseSelfSpawn(exe string) {
 		die("refusing to spawn an angelus from a test binary (%s)\n"+
 			"  a test reached a daemon-connecting path (mustConnectAngelus/ensureAngelus)\n"+
 			"  the daemon is started by re-executing os.Executable(), which here is the\n"+
-			"  TEST BINARY — every spawn re-runs the suite and spawns again (fork bomb)\n"+
+			"  TEST BINARY: every spawn re-runs the suite and spawns again (fork bomb)\n"+
 			"  tests must inject an endpoint, never reach the bootstrap", filepath.Base(exe))
 	}
 }
@@ -217,7 +217,7 @@ func ariaRoot() string { return filepath.Join(stateDir(), "arias") }
 // is one file read.
 func startupActivity() string {
 	if need, err := xwal.NeedsFlatten(ariaRoot()); err == nil && need {
-		return "migrating the store layout — let it finish; interrupting a migration " +
+		return "migrating the store layout: let it finish; interrupting a migration " +
 			"is the one thing that can cost you arias"
 	}
 	return "still starting"
@@ -323,7 +323,7 @@ func checkDaemonBuild(cli *angelus.Client) {
 				"        so they cannot be compared:\n"+
 				"          daemon %s (%s)\n          cli    %s (%s)\n"+
 				"        They may or may not be the same release. If output is missing\n"+
-				"        or garbled, run `figaro stop` — the next command starts an\n"+
+				"        or garbled, run `figaro stop`: the next command starts an\n"+
 				"        angelus from THIS binary, and the pair matches by construction.\n",
 			short12(st.Build), buildIdentityKind(st.Build), short12(mine), buildIdentityKind(mine))
 	case handshakeRefuse:

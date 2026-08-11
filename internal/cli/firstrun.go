@@ -87,7 +87,7 @@ var providerCatalog = []providerChoice{
 	{
 		label:    "GitHub Copilot (device code login)",
 		provider: "copilot",
-		hint:     "recommended — uses your Copilot subscription",
+		hint:     "recommended: uses your Copilot subscription",
 		setup:    runCopilotLogin,
 	},
 	{
@@ -150,7 +150,7 @@ func createWithFirstRun(ctx context.Context, loaded *config.Loaded, d dressing, 
 	switch code {
 	case rpc.ErrNoDefaultOutfit, rpc.ErrNoProvider:
 		if !d.IsEmpty() {
-			return nil, fmt.Errorf("-O %s sets no system.provider — add one to that outfit, or layer one that has it",
+			return nil, fmt.Errorf("-O %s sets no system.provider: add one to that outfit, or layer one that has it",
 				d.label())
 		}
 		if werr := runWizard(ctx, loaded, data); werr != nil {
@@ -468,7 +468,7 @@ func printWelcome(loaded *config.Loaded) {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, cyan("  ▌ figaro setup")+dim("  ·  one minute, three steps  ·  config: "+loaded.ConfigPath))
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, dim("       (Step 1/3 — secrets vault — already done by hush.)"))
+	fmt.Fprintln(os.Stderr, dim("       (Step 1/3, secrets vault, already done by hush.)"))
 	fmt.Fprintln(os.Stderr)
 }
 

@@ -105,7 +105,7 @@ func PromptPassphrase(appname string) ([]byte, error) {
 				Title(fmt.Sprintf("Set up %s secrets vault", appname)).
 				Description(
 					"Choose a passphrase to encrypt your provider credentials at rest.\n"+
-						"We'll save it to your OS keyring — you won't be asked again.\n",
+						"We'll save it to your OS keyring: you won't be asked again.\n",
 				),
 			huh.NewInput().
 				Title("Passphrase").
@@ -167,7 +167,7 @@ func PickProvider(title string, options []ProviderOption) (string, error) {
 	for _, o := range options {
 		display := o.Label
 		if o.Hint != "" {
-			display = fmt.Sprintf("%s — %s", o.Label, o.Hint)
+			display = fmt.Sprintf("%s: %s", o.Label, o.Hint)
 		}
 		hopts = append(hopts, huh.NewOption(display, o.Key))
 	}

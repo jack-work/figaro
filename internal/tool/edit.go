@@ -41,7 +41,7 @@ func (e *EditTool) Name() string { return "edit" }
 
 func (e *EditTool) Description() string {
 	return "Replace one exact region of a file with new text. " +
-		"old_text must match a UNIQUE region of the file — if it appears more than " +
+		"old_text must match a UNIQUE region of the file: if it appears more than " +
 		"once, include surrounding lines until it does not. " +
 		"To make several changes, issue several edit calls; they may be issued " +
 		"together and are applied one at a time, each against the file as it " +
@@ -77,7 +77,7 @@ func (e *EditTool) Parameters() interface{} {
 			},
 			"old_text": map[string]interface{}{
 				"type":        "string",
-				"description": "Exact text to find, matched against the file as it currently stands. Must appear exactly once — widen it with surrounding lines if it does not.",
+				"description": "Exact text to find, matched against the file as it currently stands. Must appear exactly once: widen it with surrounding lines if it does not.",
 			},
 			"new_text": map[string]interface{}{
 				"type":        "string",

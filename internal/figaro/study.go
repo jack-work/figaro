@@ -235,7 +235,7 @@ func (a *Agent) serviceCast(op *castOp) {
 		// we never wait on anything that could wait on us.
 		b, _ := json.Marshal(a.id)
 		if _, err := a.backend.ApplyForm(res.roleID, form.Patch{Set: map[string]json.RawMessage{"target-aria": b}}); err != nil {
-			res.err = fmt.Errorf("cast: point %s here (study registered — partial): %w", res.roleID, err)
+			res.err = fmt.Errorf("cast: point %s here (study registered: partial): %w", res.roleID, err)
 			return
 		}
 		res.patched = true

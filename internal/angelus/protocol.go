@@ -745,11 +745,11 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 			forkOwner = owner
 			switch {
 			case owner.IsRoot:
-				note = fmt.Sprintf("%s is the genesis root — spawned a fresh outfitless conversation there", where)
+				note = fmt.Sprintf("%s is the genesis root: spawned a fresh outfitless conversation there", where)
 			case owner.Outfit != "":
-				note = fmt.Sprintf("%s is in outfit %s — spawned a fresh conversation under it", where, owner.Outfit)
+				note = fmt.Sprintf("%s is in outfit %s: spawned a fresh conversation under it", where, owner.Outfit)
 			case owner.Trunk != "" && owner.Trunk != req.FigaroID:
-				note = fmt.Sprintf("%s lives in trunk %s — branching there", where, owner.Trunk)
+				note = fmt.Sprintf("%s lives in trunk %s: branching there", where, owner.Trunk)
 			}
 		}
 	}
