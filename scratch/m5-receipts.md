@@ -213,3 +213,39 @@ internal/provider/observation_bench_test.go, warm (the shape every live
 turn takes): 164ns at 0 observed forms, 329ns at 1, 479ns at 8, 4.3us
 and 3.5KB at 50. Cold retranslate of 40 turns: 4.8us to 256us/218KB at
 50 forms. Watching fifty things costs a turn about four microseconds.
+
+### The fifty-observer storm, and what it taught about rendering
+N=50 haiku, one role, one daemon. Four runs, same machine, same
+harness, differing only in the reminder shape and the question:
+
+  run   reminder shape                     question      observed
+  A     transitions only, versioned        ambiguous     49/50
+  B     transitions only, versioned        ambiguous     44/50
+  C     transitions only, versioned        explicit      50/50
+  D     baseline on the mark + transitions ambiguous     50/50
+
+C is the control: asked to report the value at the highest version, all
+fifty did. So the MECHANISM delivers to fifty concurrent observers, and
+A and B were measuring comprehension, not delivery.
+
+D is the fix. Every miss in A and B answered with the value the form
+held when the aria was CAST. That value was in context because the
+study mark's window is (0, V]: the form's whole history, folded, and
+rendered as though it were a change. Two structurally identical blocks
+whose only difference is a version number is a thing a small model
+reads backwards. So the mark now carries its baseline, labelled as
+state, and no second block repeats it:
+
+  {"form":"@r","observing":true,"state":{"brief":"stand by"},"version":2}
+  {"changes":1,"form":"@r","set":{"brief":"..."},"version":4}
+
+A version number alone did not fix it (run B was WITH versions). The
+semantic distinction between "what it was when I began" and "what
+changed" did.
+
+### Storm cost, N=50 haiku
+- 50 binds in 0.9s, 50 casts in 0.7s with none failing, 50 concurrent
+  turns in 4.1-5.2s.
+- Daemon RSS: 40.6MB at rest, 42.9MB with fifty DORMANT figaros (about
+  46KB each), 63-72MB at the peak of fifty concurrent turns (about
+  390-570KB per live turn), settling to 58-64MB.

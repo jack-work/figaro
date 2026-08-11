@@ -110,7 +110,7 @@ func TestStudyReminderTextsDeterministic(t *testing.T) {
 		t.Fatal("render not deterministic")
 	}
 	joined := strings.Join(a, "\n")
-	if !strings.Contains(joined, `{"form":"@r","observing":true}`) {
+	if !strings.Contains(joined, `"form":"@r","observing":true`) {
 		t.Errorf("mark missing: %s", joined)
 	}
 	if strings.Index(joined, "study:@a") > strings.Index(joined, "study:@b") {
@@ -191,5 +191,45 @@ func TestStudyRenderSkipsTheHarnessNamespace(t *testing.T) {
 	}}
 	if texts := StudyReminderTexts(only); len(texts) != 0 {
 		t.Errorf("want no block, got %v", texts)
+	}
+}
+
+// When observation BEGINS, the window is the form's whole history, which folds
+// to its STATE rather than to a change. It rides the mark, labelled as state,
+// and no second block repeats it: two structurally identical blocks differing
+// only in a version number is what a small model reads backwards.
+func TestStudyMarkCarriesTheBaselineState(t *testing.T) {
+	msg := message.Message{
+		Study: &message.StudyMark{FormID: "@r", Began: true},
+		StudyPatches: map[string][]message.Patch{"@r": {
+			{Set: map[string]json.RawMessage{"brief": json.RawMessage(`"stand by"`)}},
+			{Set: map[string]json.RawMessage{"name": json.RawMessage(`"warden"`)}},
+		}},
+		StudyAt: map[string]uint64{"@r": 2},
+	}
+	texts := StudyReminderTexts(msg)
+	if len(texts) != 1 {
+		t.Fatalf("want ONE block at the mark, got %d: %v", len(texts), texts)
+	}
+	joined := texts[0]
+	for _, want := range []string{`"observing":true`, `"state":`, `"stand by"`, `"warden"`, `"version":2`} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("mark block missing %s: %s", want, joined)
+		}
+	}
+	if strings.Contains(joined, `"changes"`) {
+		t.Errorf("a baseline is not a change count: %s", joined)
+	}
+
+	// A form that is NOT the one being marked still renders its own block.
+	msg.StudyPatches["@other"] = []message.Patch{{Set: map[string]json.RawMessage{"x": json.RawMessage(`1`)}}}
+	if got := len(StudyReminderTexts(msg)); got != 2 {
+		t.Errorf("want the mark plus one fold, got %d", got)
+	}
+
+	// Stopping observation says so and carries no state.
+	stop := message.Message{Study: &message.StudyMark{FormID: "@r", Began: false}}
+	if s := strings.Join(StudyReminderTexts(stop), ""); !strings.Contains(s, `"observing":false`) || strings.Contains(s, `"state"`) {
+		t.Errorf("stop mark: %s", s)
 	}
 }

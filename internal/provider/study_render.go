@@ -39,10 +39,31 @@ import (
 // is a trap.
 func StudyReminderTexts(msg message.Message) []string {
 	var out []string
+	// The mark, and the BASELINE with it. At the moment observation begins,
+	// the window is (0, V]: the form's whole history, which folds to its
+	// STATE, not to a change. Rendering that as an ordinary transition block
+	// puts two structurally identical blocks in the context whose only
+	// difference is a version number, and a small model reads the first. So
+	// the mark carries the state it began with, labelled as such, and no
+	// separate fold block is emitted for the same form at the same stamp.
+	begun := ""
 	if msg.Study != nil {
-		out = append(out, studyBlock("study", map[string]any{
-			"form": msg.Study.FormID, "observing": msg.Study.Began,
-		}))
+		body := map[string]any{"form": msg.Study.FormID, "observing": msg.Study.Began}
+		if msg.Study.Began {
+			if v, ok := msg.StudyAt[msg.Study.FormID]; ok {
+				body["version"] = v
+			}
+			if fold := studyFold(msg.Study.FormID, msg.StudyPatches[msg.Study.FormID]); fold != nil {
+				if set, ok := fold["set"]; ok {
+					body["state"] = set
+				}
+				if rm, ok := fold["removed"]; ok {
+					body["removed"] = rm
+				}
+				begun = msg.Study.FormID
+			}
+		}
+		out = append(out, studyBlock("study", body))
 	}
 	if len(msg.StudyPatches) > 0 {
 		fids := make([]string, 0, len(msg.StudyPatches))
@@ -51,6 +72,9 @@ func StudyReminderTexts(msg message.Message) []string {
 		}
 		sort.Strings(fids)
 		for _, fid := range fids {
+			if fid == begun {
+				continue // its state rode the mark
+			}
 			if body := studyFold(fid, msg.StudyPatches[fid]); body != nil {
 				if v, ok := msg.StudyAt[fid]; ok {
 					body["version"] = v
