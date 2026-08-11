@@ -874,7 +874,7 @@ func TestCopilotSeparatesMessagesAndResponsesCaches(t *testing.T) {
 	p, err := New(
 		provider.Knobs{Model: "gpt-5.6-terra"},
 		&staticResponseTokenSource{token: "test-token"},
-		"",
+		Config{},
 		func(string) (store.Log[[]json.RawMessage], error) { return messages, nil },
 		func(string) (store.Log[[]json.RawMessage], error) { return responses, nil },
 	)

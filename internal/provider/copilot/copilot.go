@@ -28,6 +28,7 @@ import (
 const (
 	providerName      = "copilot"
 	defaultBaseURL    = "https://api.individual.githubcopilot.com"
+	directBaseURL     = "https://api.enterprise.githubcopilot.com"
 	copilotAPIVersion = "2026-06-01"
 )
 
@@ -55,14 +56,14 @@ type Copilot struct {
 func New(
 	knobs provider.Knobs,
 	githubToken auth.TokenResolver,
-	enterpriseDomain string,
+	cfg Config,
 	messagesCacheOpen func(string) (store.Log[[]json.RawMessage], error),
 	responsesCacheOpen func(string) (store.Log[[]json.RawMessage], error),
 ) (*Copilot, error) {
 	if githubToken == nil {
 		return nil, fmt.Errorf("copilot: nil token resolver (need GitHub access token)")
 	}
-	tokenSrc := NewCopilotTokenSource(githubToken, enterpriseDomain)
+	tokenSrc := newTokenSource(githubToken, cfg)
 
 	inner, err := anthropicsdk.New(knobs, tokenSrc, messagesCacheOpen)
 	if err != nil {
@@ -79,7 +80,7 @@ func New(
 
 	return &Copilot{
 		inner:     inner,
-		responses: newResponsesProvider(knobs, tokenSrc, enterpriseDomain, responsesCacheOpen),
+		responses: newResponsesProvider(knobs, tokenSrc, cfg.EnterpriseDomain, responsesCacheOpen),
 		tokenSrc:  tokenSrc,
 		model:     knobs.Model,
 		catalog:   map[string]catalogModel{},
@@ -96,7 +97,7 @@ func copilotRequestOptions(tokenSrc *CopilotTokenSource) []option.RequestOption 
 			if err != nil {
 				return nil, err
 			}
-			baseURL := baseURLFromToken(token, tokenSrc.domain)
+			baseURL := tokenSrc.BaseURL()
 			// Rewrite the URL to the Copilot endpoint
 			req.URL.Scheme = "https"
 			req.URL.Host = baseURL[len("https://"):]
@@ -271,11 +272,9 @@ func (c *Copilot) routeForModel(ctx context.Context, model string) (modelRoute, 
 		if route := routeForCatalogModel(entry); route != modelRouteUnknown {
 			return route, nil
 		}
+		return modelRouteUnknown, fmt.Errorf("copilot: model %q has no supported direct transport", model)
 	}
-	if isAnthropicModel(model) {
-		return modelRouteMessages, nil
-	}
-	return modelRouteUnknown, fmt.Errorf("copilot: model %q has no supported direct transport", model)
+	return modelRouteUnknown, fmt.Errorf("copilot: model %q is not in this Copilot catalog", model)
 }
 
 func routeForCatalogModel(model catalogModel) modelRoute {
@@ -304,7 +303,7 @@ func (c *Copilot) fetchCatalog(ctx context.Context) ([]catalogModel, error) {
 	if err != nil {
 		return nil, fmt.Errorf("copilot models: resolve token: %w", err)
 	}
-	baseURL := baseURLFromToken(token, c.tokenSrc.domain)
+	baseURL := c.tokenSrc.BaseURL()
 	req, err := http.NewRequestWithContext(ctx, "GET", baseURL+"/models", nil)
 	if err != nil {
 		return nil, err
@@ -364,22 +363,60 @@ func baseURLFromToken(token, enterpriseDomain string) string {
 }
 
 // CopilotTokenSource exchanges a GitHub access token for a short-lived
-// Copilot session token, caching it until near expiry.
+// Copilot session token, caching it until near expiry. In direct mode the
+// GitHub token is presented to the API unchanged, as the Copilot CLI does.
 type CopilotTokenSource struct {
-	github    auth.TokenResolver
-	domain    string
-	mu        sync.Mutex
-	token     string
-	expiresAt time.Time
+	github       auth.TokenResolver
+	domain       string
+	direct       bool
+	baseOverride string
+	mu           sync.Mutex
+	token        string
+	apiBase      string
+	expiresAt    time.Time
 }
 
 func NewCopilotTokenSource(github auth.TokenResolver, enterpriseDomain string) *CopilotTokenSource {
 	return &CopilotTokenSource{github: github, domain: enterpriseDomain}
 }
 
+func newTokenSource(github auth.TokenResolver, cfg Config) *CopilotTokenSource {
+	return &CopilotTokenSource{
+		github:       github,
+		domain:       cfg.EnterpriseDomain,
+		direct:       strings.EqualFold(strings.TrimSpace(cfg.TokenMode), "direct"),
+		baseOverride: strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
+	}
+}
+
+// BaseURL reports the API host for the currently resolved credential. An
+// explicit override wins, then the endpoints.api the exchange handed back,
+// then the legacy derivation from the token body.
+func (s *CopilotTokenSource) BaseURL() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.baseOverride != "" {
+		return s.baseOverride
+	}
+	if s.apiBase != "" {
+		return s.apiBase
+	}
+	return baseURLFromToken(s.token, s.domain)
+}
+
 func (s *CopilotTokenSource) Resolve() (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.direct {
+		githubToken, err := s.github.Resolve()
+		if err != nil {
+			return "", fmt.Errorf("copilot: resolve github token: %w", err)
+		}
+		if s.apiBase == "" {
+			s.apiBase = directBaseURL
+		}
+		return githubToken, nil
+	}
 	if s.token != "" && time.Now().Before(s.expiresAt) {
 		return s.token, nil
 	}
@@ -387,12 +424,13 @@ func (s *CopilotTokenSource) Resolve() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("copilot: resolve github token: %w", err)
 	}
-	tok, exp, err := exchangeCopilotToken(githubToken, s.domain)
+	tok, exp, api, err := exchangeCopilotToken(githubToken, s.domain)
 	if err != nil {
 		return "", err
 	}
 	s.token = tok
 	s.expiresAt = exp
+	s.apiBase = api
 	return tok, nil
 }
 
@@ -406,7 +444,7 @@ func (s *CopilotTokenSource) Invalidate(token string) error {
 	return s.github.Invalidate("")
 }
 
-func exchangeCopilotToken(githubAccessToken, enterpriseDomain string) (token string, expiresAt time.Time, err error) {
+func exchangeCopilotToken(githubAccessToken, enterpriseDomain string) (token string, expiresAt time.Time, apiBase string, err error) {
 	domain := enterpriseDomain
 	if domain == "" {
 		domain = "github.com"
@@ -414,7 +452,7 @@ func exchangeCopilotToken(githubAccessToken, enterpriseDomain string) (token str
 	tokenURL := fmt.Sprintf("https://api.%s/copilot_internal/v2/token", domain)
 	req, err := http.NewRequest("GET", tokenURL, nil)
 	if err != nil {
-		return "", time.Time{}, err
+		return "", time.Time{}, "", err
 	}
 	req.Header.Set("Authorization", "Bearer "+githubAccessToken)
 	for k, v := range copilotStaticHeaders {
@@ -425,25 +463,28 @@ func exchangeCopilotToken(githubAccessToken, enterpriseDomain string) (token str
 	}
 	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("copilot token exchange: %w", err)
+		return "", time.Time{}, "", fmt.Errorf("copilot token exchange: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
-		return "", time.Time{}, fmt.Errorf("copilot token exchange %d: %s", resp.StatusCode, body)
+		return "", time.Time{}, "", fmt.Errorf("copilot token exchange %d: %s", resp.StatusCode, body)
 	}
 	var parsed struct {
 		Token     string `json:"token"`
 		ExpiresAt int64  `json:"expires_at"`
+		Endpoints struct {
+			API string `json:"api"`
+		} `json:"endpoints"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-		return "", time.Time{}, fmt.Errorf("copilot token parse: %w", err)
+		return "", time.Time{}, "", fmt.Errorf("copilot token parse: %w", err)
 	}
 	if parsed.Token == "" {
-		return "", time.Time{}, fmt.Errorf("copilot token exchange returned empty token")
+		return "", time.Time{}, "", fmt.Errorf("copilot token exchange returned empty token")
 	}
 	exp := time.Unix(parsed.ExpiresAt, 0).Add(-5 * time.Minute)
-	return parsed.Token, exp, nil
+	return parsed.Token, exp, strings.TrimRight(parsed.Endpoints.API, "/"), nil
 }
 
 // debug helper (kept; guarded by env var)

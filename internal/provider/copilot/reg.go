@@ -17,6 +17,8 @@ import (
 type Config struct {
 	APIKey           string `toml:"api_key"`
 	EnterpriseDomain string `toml:"enterprise_domain,omitempty"`
+	TokenMode        string `toml:"token_mode,omitempty"`
+	BaseURL          string `toml:"base_url,omitempty"`
 }
 
 func loadConfig(loaded *config.Loaded) Config {
@@ -62,7 +64,7 @@ func buildFromContext(ctx provider.BuildContext) (provider.Provider, error) {
 		}
 		return ctx.Backend.OpenTranslation(aria, "copilot-responses")
 	}
-	p, err := New(knobs, ctx.Resolver, cfg.EnterpriseDomain, messagesCacheOpen, responsesCacheOpen)
+	p, err := New(knobs, ctx.Resolver, cfg, messagesCacheOpen, responsesCacheOpen)
 	if err != nil {
 		return nil, err
 	}

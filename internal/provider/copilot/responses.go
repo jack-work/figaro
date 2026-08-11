@@ -62,7 +62,14 @@ func newResponsesProvider(
 		maxTokens: knobs.MaxTokens,
 		machineID: uuid.NewString(),
 		limits:    map[string]responseContextLimits{},
-		baseURL:   func(token string) string { return baseURLFromToken(token, enterpriseDomain) },
+		baseURL: func(token string) string {
+			if b, ok := tokenSrc.(interface{ BaseURL() string }); ok {
+				if u := b.BaseURL(); u != "" {
+					return u
+				}
+			}
+			return baseURLFromToken(token, enterpriseDomain)
+		},
 		dial:      dialResponses,
 	}
 }

@@ -169,10 +169,11 @@ func ensureSchema(root string, trunks *xwal.Store) error {
 }
 
 // checkGeneration is the version half, split out so it can run BEFORE figwal
-// opens the store. A generation-1 store names its form channel "form",
-// and figwal's manifest is authoritative for channel shape: so it refuses the
-// open itself, with "no reducer \"form\" registered", which explains
-// nothing to the person holding the store. This must speak first.
+// opens the store. A generation-1 store names its form channel
+// chanFormLegacy, and figwal's manifest is authoritative for channel shape:
+// so it refuses the open itself, with "no reducer \"jsonmerge\" registered
+// for channel \"chalkboard\"", which explains nothing to the person holding
+// the store. This must speak first.
 func checkGeneration(f schemaFile, root string, trunks *xwal.Store) error {
 	if f.StoreVersion > storeVersion {
 		return fmt.Errorf(
@@ -324,21 +325,26 @@ func migrateGenerations(root string, from int) error {
 	return nil
 }
 
+// chanFormLegacy is the generation-1 name of the form channel. It is a
+// constant so that renaming chanForm cannot silently rewrite the old name a
+// migration exists to recognise.
+const chanFormLegacy = "chalkboard"
+
 // migrateFormChannel is generation 1 -> 2: the form's channel directory was
-// called "form". Renaming it is figwal's job (the manifest is its
+// called chanFormLegacy. Renaming it is figwal's job (the manifest is its
 // format); the sidecar's channel key is ours.
 func migrateFormChannel(root string) error {
-	if _, err := os.Stat(filepath.Join(root, "form")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, chanFormLegacy)); err != nil {
 		if !os.IsNotExist(err) {
 			return err
 		}
 		// Nothing under the old name. Either this store never had one, or a
 		// previous run moved it and died before the sidecar was stamped, and
 		// RenameChannel repairs the manifest for that second case.
-		if rerr := xwal.RenameChannel(root, "form", chanForm); rerr != nil && !isNoSuchChannel(rerr) {
+		if rerr := xwal.RenameChannel(root, chanFormLegacy, chanForm); rerr != nil && !isNoSuchChannel(rerr) {
 			return rerr
 		}
-	} else if err := xwal.RenameChannel(root, "form", chanForm); err != nil {
+	} else if err := xwal.RenameChannel(root, chanFormLegacy, chanForm); err != nil {
 		return err
 	}
 	f, err := readSchema(root)
@@ -348,8 +354,8 @@ func migrateFormChannel(root string) error {
 	if f.Channels == nil {
 		return nil
 	}
-	if v, ok := f.Channels["form"]; ok {
-		delete(f.Channels, "form")
+	if v, ok := f.Channels[chanFormLegacy]; ok {
+		delete(f.Channels, chanFormLegacy)
 		if _, taken := f.Channels[chanForm]; !taken {
 			f.Channels[chanForm] = v
 		}
