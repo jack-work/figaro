@@ -86,17 +86,21 @@ func (h *handlers) configure(_ context.Context, params json.RawMessage) (interfa
 		}
 		resp.DefaultOutfit = req.DefaultOutfit
 	}
-	// Re-read so the next Create sees what was just written. A fresh Outfitter
-	// also drops every cached fold, which is what Refresh alone asks for.
-	//
-	// TODO: this folds every outfit a request touches from scratch after a
-	// refresh, and Materialize folds the whole closure rather than the part
-	// that changed. Fine while outfits are small; both want the same cure — a
-	// fold cache keyed on the closure, invalidated per file.
+	// Re-read so the next Create sees what was just written, and turn the
+	// resolver's epoch over so the next fold re-reads and re-snapshots what it
+	// needs. Reload is cheap by design — it reads nothing, it only invalidates
+	// — so a refresh no longer throws the resolver away and rebuilds it.
 	if fresh, err := config.Load(loaded.ConfigDir); err == nil {
 		h.configMu.Lock()
-		h.config, h.outfitter = fresh, outfit.New(fresh.ConfigDir)
+		h.config = fresh
+		if h.outfitter != nil {
+			h.outfitter.Reload()
+		} else {
+			h.outfitter = newOutfitter(h.angelus, fresh)
+		}
+		ofit := h.outfitter
 		h.configMu.Unlock()
+		ofit.Warm(fresh.Config.DefaultOutfit)
 	}
 	return resp, nil
 }

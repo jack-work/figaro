@@ -12,28 +12,59 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
 	"github.com/jack-work/figaro/internal/form"
 )
 
-// Outfitter assembles forms from on-disk outfits. Safe for concurrent
-// use, and worth reusing: it caches what it reads against the files it read
-// (see cache.go), so a repeat fold costs a stat per dependency.
+// Outfitter assembles forms from on-disk outfits, and is the only thing in
+// the daemon that reads an outfit file. Safe for concurrent use, and worth
+// reusing: everything it reads is snapshotted and cached per EPOCH, so a
+// repeat fold costs a map lookup rather than a syscall per dependency
+// (resolver.go holds that machinery and the reasons for it).
 type Outfitter struct {
 	configDir string
+	snaps     *snapStore
 
-	// layersOf caches an outfit's declared layers, keyed by file path.
-	layersOf cache[[]string]
-	// folded caches a fully composed patch, keyed by outfit name, against the
-	// dependencies of its whole closure.
-	folded cache[map[string]json.RawMessage]
+	mu          sync.Mutex
+	ep          *epoch
+	folds       map[string]foldEntry
+	foldBytes   int
+	budget      int
+	staleWindow time.Duration
 }
 
-// New returns an Outfitter rooted at configDir.
+// New returns an Outfitter rooted at configDir with NO snapshot store: reads
+// come from the live files, epoch-cached. A library that writes to a user's
+// disk without being asked is a library that surprises someone, so the
+// snapshot store is opt-in — and the component that has a state directory and
+// a lifecycle to hang it on is the daemon, which calls NewAt.
 func New(configDir string) *Outfitter {
-	return &Outfitter{configDir: configDir}
+	return NewAt(configDir, "")
+}
+
+// NewAt is New with the snapshot store placed by hand — what the daemon uses
+// (its own state directory) and what tests use (a temp dir). An empty snapDir
+// disables snapshotting: reads then come straight from the live files, which
+// is the pre-snapshot behaviour and still correct, just not edit-proof.
+func NewAt(configDir, snapDir string) *Outfitter {
+	return &Outfitter{
+		configDir:   configDir,
+		snaps:       newSnapStore(snapDir),
+		folds:       map[string]foldEntry{},
+		budget:      foldBudget,
+		staleWindow: defaultStaleWindow,
+		ep: &epoch{
+			gen:     1,
+			nodes:   map[string]*node{},
+			taints:  map[string]error{},
+			touched: map[string]dep{},
+			checked: time.Now(),
+		},
+	}
 }
 
 // Closure is one node of an outfit's layer graph: the outfit itself, the
@@ -41,10 +72,15 @@ func New(configDir string) *Outfitter {
 // even when layers are missing, because a broken reference is best explained by
 // showing the shape it was found in.
 type Closure struct {
-	Name   string
-	Path   string // "" when the outfit was not found
-	Found  bool
-	Cycle  bool // this name is already being resolved further up the chain
+	Name  string
+	Path  string // "" when the outfit was not found
+	Found bool
+	Cycle bool // this name is already being resolved further up the chain
+	// Err is a fault in the FILE itself — unparseable TOML, a malformed
+	// layers list. It rides on the node rather than aborting the walk, so the
+	// closure can still be drawn around the break, and closureError reports it
+	// ahead of anything else because it is the most specific thing wrong.
+	Err    error
 	Layers []*Closure
 }
 
@@ -113,7 +149,14 @@ func (o *Outfitter) load(name string, strict bool) (form.Patch, error) {
 	if err := ValidName(name); err != nil {
 		return form.Patch{}, err
 	}
-	root := o.Resolve(name)
+	ep := o.current()
+	// The fast path, and the whole point of the epoch: a fold already
+	// materialized in this view is returned without touching the disk or
+	// re-proving anything about the graph.
+	if keys, ok := o.getFold(ep.gen, name); ok {
+		return form.Patch{Set: keys}, nil
+	}
+	root := o.resolveIn(ep, name)
 	if err := closureError(root); err != nil {
 		var missing *MissingError
 		if !strict && errors.As(err, &missing) && missing.RootOnly {
@@ -121,23 +164,31 @@ func (o *Outfitter) load(name string, strict bool) (form.Patch, error) {
 		}
 		return form.Patch{}, err
 	}
-	sub, err := o.fold(root, map[string]foldResult{})
+	keys, err := o.foldIn(ep, name, nil)
 	if err != nil {
 		return form.Patch{}, err
 	}
-	return form.Patch{Set: sub.keys}, nil
+	return form.Patch{Set: keys}, nil
 }
 
-// Resolve builds the closure for one named outfit without reading any of it.
+// Resolve builds the closure for one named outfit. It reads each file's
+// layer list (once per epoch, from the snapshot) and nothing else.
 func (o *Outfitter) Resolve(name string) *Closure {
-	return o.resolve(name, nil, map[string]*Closure{})
+	return o.resolveIn(o.current(), name)
 }
 
-// resolve reads one outfit's layer list and recurses. stack is the chain
-// currently being resolved, so a name that reappears on it is a cycle rather
-// than a second visit; memo holds finished nodes, which by definition are not
-// on the stack.
-func (o *Outfitter) resolve(name string, stack []string, memo map[string]*Closure) *Closure {
+// resolveIn is Resolve inside a known epoch. stack is the chain currently
+// being resolved, so a name that reappears on it is a cycle rather than a
+// second visit; memo holds finished nodes, which by definition are not on the
+// stack. Both the node parse and the cycle verdict are cached in the epoch,
+// which is what "never sort more than you have to" comes to in practice: the
+// memoised depth-first walk IS the topological sort, built only over the part
+// of the graph anyone asked about.
+func (o *Outfitter) resolveIn(ep *epoch, name string) *Closure {
+	return o.resolveNode(ep, name, nil, map[string]*Closure{})
+}
+
+func (o *Outfitter) resolveNode(ep *epoch, name string, stack []string, memo map[string]*Closure) *Closure {
 	for _, s := range stack {
 		if s == name {
 			return &Closure{Name: name, Found: true, Cycle: true}
@@ -146,49 +197,27 @@ func (o *Outfitter) resolve(name string, stack []string, memo map[string]*Closur
 	if c, ok := memo[name]; ok {
 		return c
 	}
-	c := &Closure{Name: name}
-	path, err := o.resolvePath(name)
+	n, err := o.nodeFor(ep, name)
 	if err != nil {
+		c := &Closure{Name: name, Found: true, Err: err}
+		memo[name] = c
+		return c
+	}
+	if !n.found {
+		c := &Closure{Name: name}
 		// The file is gone. Nothing downstream will consult its cached fold —
 		// resolution stops here — so this is the only moment we learn it is
 		// collectible, and the only place that can reap it.
-		o.folded.Forget(name)
+		o.Forget(name)
 		memo[name] = c
 		return c
 	}
-	c.Path, c.Found = path, true
-
-	names, lErr := o.declaredLayers(path)
-	if lErr != nil {
-		// A malformed layers list is reported by fold, which parses the file
-		// for real. The closure just stops descending.
-		memo[name] = c
-		return c
-	}
-	for _, l := range names {
-		c.Layers = append(c.Layers, o.resolve(l, append(stack, name), memo))
+	c := &Closure{Name: name, Path: n.path, Found: true}
+	for _, l := range n.layers {
+		c.Layers = append(c.Layers, o.resolveNode(ep, l, append(stack, name), memo))
 	}
 	memo[name] = c
 	return c
-}
-
-// declaredLayers reads just the layers key from an outfit file. Cached against
-// the file, so resolving a closure re-parses nothing that has not changed.
-func (o *Outfitter) declaredLayers(path string) ([]string, error) {
-	if names, _, ok := o.layersOf.get(path); ok {
-		return names, nil
-	}
-	stamp := statDep(path)
-	raw := map[string]any{}
-	if _, err := toml.DecodeFile(path, &raw); err != nil {
-		return nil, fmt.Errorf("outfit: parse %s: %w", path, err)
-	}
-	names, err := layerNames(path, raw)
-	if err != nil {
-		return nil, err
-	}
-	o.layersOf.put(path, names, []dep{stamp})
-	return names, nil
 }
 
 // layerNames extracts and validates the layers key.
@@ -229,7 +258,11 @@ func layerNames(path string, raw map[string]any) ([]string, error) {
 func closureError(root *Closure) error {
 	var cycle string
 	var missing []string
+	var fault error
 	root.Walk(func(c *Closure) {
+		if c.Err != nil && fault == nil {
+			fault = c.Err
+		}
 		if c.Cycle && cycle == "" {
 			cycle = c.Name
 		}
@@ -237,6 +270,9 @@ func closureError(root *Closure) error {
 			missing = append(missing, c.Name)
 		}
 	})
+	if fault != nil {
+		return fault
+	}
 	if cycle != "" {
 		return &CycleError{Closure: root, At: cycle}
 	}
@@ -247,64 +283,95 @@ func closureError(root *Closure) error {
 		RootOnly: len(missing) == 1 && missing[0] == root.Name}
 }
 
-// fold returns one outfit's flattened keys: its layers in order, then its own,
-// so the nearest declaration wins. Memoised per name, which makes a layer
-// shared by several others cheap to apply at each of its positions.
-func (o *Outfitter) fold(c *Closure, memo map[string]foldResult) (foldResult, error) {
-	if done, ok := memo[c.Name]; ok {
-		return done, nil
+// foldIn returns one outfit's flattened keys: its layers in order, then its
+// own, so the nearest declaration wins. Cached per name per epoch, which makes
+// a layer shared by several others cheap at each of its positions — and, since
+// an epoch is a consistent view, costs nothing to validate.
+//
+// stack carries the chain being folded. A name that reappears on it is a
+// cycle: the loop is named in the error and every name ON it is TAINTED, so a
+// second ask answers from the taint instead of walking the graph again. The
+// taint dies with the epoch.
+func (o *Outfitter) foldIn(ep *epoch, name string, stack []string) (map[string]json.RawMessage, error) {
+	if err := o.taintOf(ep, name); err != nil {
+		return nil, err
 	}
-	if keys, deps, ok := o.folded.get(c.Name); ok {
-		done := foldResult{keys: keys, deps: deps}
-		memo[c.Name] = done
-		return done, nil
+	for i, s := range stack {
+		if s == name {
+			err := &CycleError{At: name}
+			o.taint(ep, append(stack[i:], name), err)
+			return nil, err
+		}
+	}
+	if keys, ok := o.getFold(ep.gen, name); ok {
+		return keys, nil
+	}
+	n, err := o.nodeFor(ep, name)
+	if err != nil {
+		return nil, err
+	}
+	if !n.found {
+		return nil, &MissingError{Missing: []string{name}, RootOnly: len(stack) == 0}
 	}
 	flat := map[string]json.RawMessage{}
-	d := &deps{}
-	for _, layer := range c.Layers {
-		sub, err := o.fold(layer, memo)
-		if err != nil {
-			return foldResult{}, err
+	for _, layer := range n.layers {
+		sub, serr := o.foldIn(ep, layer, append(stack, name))
+		if serr != nil {
+			return nil, serr
 		}
-		for k, v := range sub.keys {
+		for k, v := range sub {
 			flat[k] = v
 		}
-		d.merge(sub.deps)
 	}
-	raw := map[string]any{}
-	// Stamp BEFORE reading. A write that lands between the read and the stat
-	// is invisible the other way round: the entry caches half a file under the
-	// finished write's mtime, and nothing ever invalidates it.
-	d.add(c.Path)
-	if _, err := toml.DecodeFile(c.Path, &raw); err != nil {
-		return foldResult{}, fmt.Errorf("outfit: parse %s: %w", c.Path, err)
+	r := &reader{o: o, ep: ep}
+	b, rerr := r.read(n.path)
+	if rerr != nil {
+		return nil, fmt.Errorf("outfit: read %s: %w", n.path, rerr)
 	}
-	if _, err := layerNames(c.Path, raw); err != nil {
-		return foldResult{}, err
+	raw, perr := decodeTOML(b, n.path)
+	if perr != nil {
+		return nil, perr
 	}
 	delete(raw, "layers")
-	if err := o.flatten("", raw, flat, d); err != nil {
-		return foldResult{}, err
+	if err := o.flatten("", raw, flat, r); err != nil {
+		return nil, err
 	}
-	done := foldResult{keys: flat, deps: d.seen}
-	memo[c.Name] = done
-	o.folded.put(c.Name, flat, d.seen)
-	return done, nil
+	o.putFold(ep.gen, name, flat)
+	return flat, nil
 }
 
-// foldResult is a composed patch and the files it was composed from. The deps
-// travel with the keys so a parent inherits them directly rather than reading
-// them back out of the cache, which a concurrent invalidation could have
-// emptied — and a parent missing a child's dependency is a stale patch.
-type foldResult struct {
-	keys map[string]json.RawMessage
-	deps []dep
+// taintOf answers instantly for a name already known to sit inside a cycle.
+func (o *Outfitter) taintOf(ep *epoch, name string) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return ep.taints[name]
+}
+
+// taint marks every name on a cycle, so none of them is ever walked again in
+// this epoch — not the one that closed the loop, and not the ones that only
+// lead into it.
+func (o *Outfitter) taint(ep *epoch, names []string, err error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	for _, n := range names {
+		ep.taints[n] = err
+	}
+}
+
+// decodeTOML parses bytes that came from a snapshot rather than a path, so
+// what is parsed is exactly what was pinned.
+func decodeTOML(b []byte, path string) (map[string]any, error) {
+	raw := map[string]any{}
+	if err := toml.Unmarshal(b, &raw); err != nil {
+		return nil, fmt.Errorf("outfit: parse %s: %w", path, err)
+	}
+	return raw, nil
 }
 
 // resolvePath finds an outfit file (outfits/<name>.toml). The
 // legacy providers/<name>/config.toml fallback has been removed:
 // provider directories now only carry auth credentials.
-func (o *Outfitter) resolvePath(name string) (string, error) {
+func (o *Outfitter) resolvePath(name string, r *reader) (string, error) {
 	// loadouts/ is the pre-rename directory, still read if it survived.
 	canonical := filepath.Join(o.configDir, "outfits", name+".toml")
 	for _, path := range []string{canonical, filepath.Join(o.configDir, "loadouts", name+".toml")} {
@@ -313,6 +380,12 @@ func (o *Outfitter) resolvePath(name string) (string, error) {
 		} else if !os.IsNotExist(err) {
 			return "", fmt.Errorf("outfit: stat %s: %w", path, err)
 		}
+	}
+	// A name that resolved to NOTHING is still a fact about the disk: record
+	// the path that was missing, so creating the file later turns the epoch
+	// over instead of being invisible behind a cached absence.
+	if r != nil {
+		r.stat(canonical)
 	}
 	return "", &os.PathError{Op: "open", Path: canonical, Err: os.ErrNotExist}
 }
@@ -334,7 +407,7 @@ func (o *Outfitter) resolvePath(name string) (string, error) {
 // `frontmatter` is the raw frontmatter text (between the fences),
 // unparsed; the agent reads the file when it wants the body. When
 // no frontmatter is present, the full body lands in `content`.
-func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]json.RawMessage, d *deps) error {
+func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]json.RawMessage, r *reader) error {
 	for k, v := range in {
 		key := k
 		if prefix != "" {
@@ -347,8 +420,7 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 				if perr != nil {
 					return fmt.Errorf("outfit: %s fileName=%q: %w", key, fn, perr)
 				}
-				d.add(path)
-				body, err := os.ReadFile(path)
+				body, err := r.read(path)
 				if err != nil {
 					return fmt.Errorf("outfit: %s fileName=%q: %w", key, fn, err)
 				}
@@ -381,7 +453,7 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 				if uerr != nil {
 					return fmt.Errorf("outfit: %s dirName=%q: %w", key, dn, uerr)
 				}
-				u, err := loadDir(udir, d)
+				u, err := loadDir(udir, r)
 				if err != nil {
 					return fmt.Errorf("outfit: %s dirName=%q: %w", key, dn, err)
 				}
@@ -393,7 +465,7 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 					if berr != nil {
 						return fmt.Errorf("outfit: %s bundled dirName=%q: %w", key, dn, berr)
 					}
-					b, err := loadDir(bdir, d)
+					b, err := loadDir(bdir, r)
 					if err != nil {
 						return fmt.Errorf("outfit: %s bundled dirName=%q: %w", key, dn, err)
 					}
@@ -410,7 +482,7 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 				}
 				continue
 			}
-			if err := o.flatten(key, val, out, d); err != nil {
+			if err := o.flatten(key, val, out, r); err != nil {
 				return err
 			}
 		default:
@@ -521,11 +593,10 @@ func extractFrontmatter(body string) (string, bool) {
 
 // loadDir reads file skills and directory skills from dir. A directory skill
 // is keyed by its directory name and rooted at SKILL.md (or skill.md).
-func loadDir(dir string, d *deps) (map[string]ContentEnvelope, error) {
+func loadDir(dir string, r *reader) (map[string]ContentEnvelope, error) {
 	// The directory's own stat comes first: adding or removing a skill changes
 	// it while leaving every surviving file untouched.
-	d.add(dir)
-	entries, err := os.ReadDir(dir)
+	entries, err := r.readDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return map[string]ContentEnvelope{}, nil
@@ -547,8 +618,7 @@ func loadDir(dir string, d *deps) (map[string]ContentEnvelope, error) {
 			if skillPath == "" {
 				continue
 			}
-			d.add(skillPath)
-			body, err := os.ReadFile(skillPath)
+			body, err := r.read(skillPath)
 			if err != nil {
 				continue
 			}
@@ -556,8 +626,7 @@ func loadDir(dir string, d *deps) (map[string]ContentEnvelope, error) {
 			continue
 		}
 		path := filepath.Join(dir, e.Name())
-		d.add(path)
-		body, err := os.ReadFile(path)
+		body, err := r.read(path)
 		if err != nil {
 			return nil, err
 		}
@@ -599,16 +668,3 @@ func bundledSkillsRoot() string {
 	}
 	return filepath.Join(filepath.Dir(exe), "..", "share", "figaro")
 }
-
-// CachedFolds reports how many composed patches are held. For tests and for
-// anyone wondering whether the cache is reaping.
-func (o *Outfitter) CachedFolds() int {
-	o.folded.mu.Lock()
-	defer o.folded.mu.Unlock()
-	return len(o.folded.entries)
-}
-
-// Forget drops an outfit's cached fold. On-disk outfits do not need this — a
-// stat invalidates them — but an outfit that never had a file cannot be
-// invalidated by anything on disk, so its owner must say when it is done.
-func (o *Outfitter) Forget(name string) { o.folded.Forget(name) }

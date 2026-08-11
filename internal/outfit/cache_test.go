@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,6 +21,11 @@ func TestCacheSeesAnEditedOutfit(t *testing.T) {
 	writeOutfit(t, dir, "base", "[system]\nmodel = \"first\"\n")
 	writeOutfit(t, dir, "top", "layers = [\"base\"]\n")
 	o := outfit.New(dir)
+	// Zero window: check the disk on every ask. That is what a test asserting
+	// INSTANTANEOUS invalidation is really asking for — the shipped default
+	// coalesces a burst of folds into one check per 100ms, which no human can
+	// type inside but a test certainly can.
+	o.SetStaleWindow(0)
 
 	patch, err := o.Load("top")
 	require.NoError(t, err)
@@ -38,6 +44,7 @@ func TestCacheSeesAnEditedContentFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "credo.md"), []byte("first"), 0o600))
 	writeOutfit(t, dir, "top", "system = { credo = { fileName = \"credo.md\" } }\n")
 	o := outfit.New(dir)
+	o.SetStaleWindow(0)
 
 	patch, err := o.Load("top")
 	require.NoError(t, err)
@@ -59,6 +66,7 @@ func TestCacheSeesSkillsAddedAndRemoved(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(skills, "alpha.md"), []byte("---\nname: alpha\n---\nbody\n"), 0o600))
 	writeOutfit(t, dir, "top", "skills = { dirName = \"skills\" }\n")
 	o := outfit.New(dir)
+	o.SetStaleWindow(0)
 
 	patch, err := o.Load("top")
 	require.NoError(t, err)
@@ -82,6 +90,7 @@ func TestCacheSeesALayerAppear(t *testing.T) {
 	dir := t.TempDir()
 	writeOutfit(t, dir, "top", "layers = [\"later\"]\n[system]\nmodel = \"own\"\n")
 	o := outfit.New(dir)
+	o.SetStaleWindow(0)
 
 	_, err := o.Load("top")
 	require.Error(t, err)
@@ -188,6 +197,7 @@ func TestDeletedOutfitIsEvictedFromTheCache(t *testing.T) {
 	dir := t.TempDir()
 	writeOutfit(t, dir, "doomed", "[system]\nmodel = \"m\"\n")
 	o := outfit.New(dir)
+	o.SetStaleWindow(0)
 
 	_, err := o.Load("doomed")
 	require.NoError(t, err)
@@ -199,15 +209,22 @@ func TestDeletedOutfitIsEvictedFromTheCache(t *testing.T) {
 	assert.Equal(t, 0, o.CachedFolds(), "the entry for a deleted outfit must be dropped")
 }
 
-func TestCacheDoesNotGrowWithoutBound(t *testing.T) {
+// The cache is bounded in BYTES now, not entries: large outfits are the
+// anticipated case, so what matters is how much memory the folds hold, and
+// eviction is least-recently-used against a budget.
+func TestCacheStaysUnderItsByteBudget(t *testing.T) {
 	dir := t.TempDir()
 	o := outfit.New(dir)
-	for i := 0; i < 500; i++ {
+	o.SetStaleWindow(time.Hour) // one epoch: measure eviction, not invalidation
+	const budget = 4096
+	o.SetFoldBudget(budget)
+	body := strings.Repeat("x", 512)
+	for i := 0; i < 200; i++ {
 		name := fmt.Sprintf("ephemeral-%03d", i)
-		writeOutfit(t, dir, name, "[system]\nmodel = \"m\"\n")
+		writeOutfit(t, dir, name, fmt.Sprintf("[system]\nmodel = \"%s\"\n", body))
 		_, err := o.Load(name)
 		require.NoError(t, err)
-		require.NoError(t, os.Remove(filepath.Join(dir, "outfits", name+".toml")))
 	}
-	assert.LessOrEqual(t, o.CachedFolds(), 65, "the fold cache must stay bounded")
+	assert.LessOrEqual(t, o.CachedBytes(), budget, "the fold cache must stay under its budget")
+	assert.Greater(t, o.CachedFolds(), 0, "and must not evict itself to nothing")
 }

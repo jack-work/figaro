@@ -59,6 +59,24 @@ type Handlers struct {
 	h   *handlers
 }
 
+// newOutfitter builds the daemon's ONE resolver, with its snapshot store in
+// the runtime directory. Snapshots are what keep a resolution from straddling
+// an edit: the first read of a file in an epoch pins its bytes, and everything
+// derived in that epoch — including a fold rebuilt after eviction — is derived
+// from the pinned copy. Runtime-scoped on purpose: the guarantee they provide
+// is per-daemon-run, and a reboot has nothing to be consistent with.
+func newOutfitter(a *Angelus, loaded *config.Loaded) *outfit.Outfitter {
+	dir := ""
+	if loaded != nil {
+		dir = loaded.ConfigDir
+	}
+	snap := ""
+	if a != nil && a.RuntimeDir != "" {
+		snap = filepath.Join(a.RuntimeDir, "outfit-snapshots")
+	}
+	return outfit.NewAt(dir, snap)
+}
+
 // NewHandlers creates the handler set for the angelus socket.
 func NewHandlers(cfg ServerConfig) *Handlers {
 	h := &handlers{
@@ -67,8 +85,14 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		factory:            cfg.ProviderFactory,
 		ctx:                cfg.Ctx,
 		cbTmpls:            cfg.FormTemplates,
-		outfitter:          outfit.New(cfg.Config.ConfigDir),
+		outfitter:          newOutfitter(cfg.Angelus, cfg.Config),
 		availableProviders: cfg.AvailableProviders,
+	}
+	// Warm the ONE closure `fig new` is certain to want, in the background.
+	// Nothing blocks on it: startup reads no outfit file, and every other name
+	// is folded when someone asks for it.
+	if cfg.Config != nil {
+		h.outfitter.Warm(cfg.Config.Config.DefaultOutfit)
 	}
 	return &Handlers{
 		Map: authz.Guard(map[string]jkrpc.HandlerFunc{
@@ -417,6 +441,13 @@ func (h *handlers) ensureDefaultForm(backend store.Backend, stumpPatch form.Patc
 // `fig new`. Deliberately cheap: no files are read here, and there is NO
 // inverse verb — outfit files are one-way sources of truth.
 func (h *handlers) outfitReload(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	// Turn the resolver's epoch over first: whatever else this verb decides,
+	// asking for a reload means the files on disk are the truth now. It reads
+	// nothing — the next fold does the reading — which is what keeps this the
+	// cheap verb §6 of the brief says it is.
+	if _, ofit := h.settings(); ofit != nil {
+		ofit.Reload()
+	}
 	if h.angelus.Backend == nil {
 		return nil, fmt.Errorf("outfit.reload: no backend (ephemeral angelus)")
 	}
