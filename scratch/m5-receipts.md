@@ -249,3 +249,24 @@ changed" did.
 - Daemon RSS: 40.6MB at rest, 42.9MB with fifty DORMANT figaros (about
   46KB each), 63-72MB at the peak of fifty concurrent turns (about
   390-570KB per live turn), settling to 58-64MB.
+
+### B2: the migration rehearsal (deploy blocker), CLEARED
+nix develop .#snapshot, a 207MB copy of the real store seeded
+2026-08-05. 26 checks, 0 failures:
+- the new build opens the old store; global listing 0.38s, scoped
+  listings 0.02s.
+- five old arias read, both transcript and form.
+- legacy stumps (@9762ced3, @dad14ddc) read as forms.
+- form new / set / show / delete, bind null, cast, drop, form rm all
+  work against the real data.
+- doctor schema: disk and binary agree on every channel (store-version
+  2, form 1, ir 4, translations-v2 2, ui 1). No migration is pending.
+- the listing still works after the writes.
+
+The FIRST B2 run failed three checks and earned its keep: cast and drop
+died on a figaro born of `bind null` with
+"wake: restore: create provider: unknown provider". The casting verbs
+demanded the actor loop, so they demanded a WAKE, so they demanded a
+provider. Fixed in 92c9350 by serving them from the hub when no agent
+is live, which is the rule `set` has had since M1. Nothing about that
+was visible in a dev-shell store where every aria is born dressed.
