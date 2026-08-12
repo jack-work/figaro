@@ -124,6 +124,20 @@ func runCast(loaded *config.Loaded, args []string, outfits, set, del string, asJ
 	defer cancel()
 
 	minting := strings.TrimSpace(outfits) != "" || strings.TrimSpace(set) != "" || strings.TrimSpace(del) != ""
+
+	// ATTENDING A FORM, with no aria named: the figaro that will play it does
+	// not exist yet. Mint one and cast it, which is the other entrance to
+	// `new -C` and the same operation from the other end. Here the dressing
+	// dresses the ARIA: the form is already standing in front of us, so there
+	// is nothing else -O could be for.
+	if len(args) == 0 {
+		if attended := attendedForm(ctx, acli); attended != "" {
+			d := mustDress(outfits, set, del)
+			runCastFromAttendedForm(loaded, attended, d, asJSON)
+			return
+		}
+	}
+
 	ariaID, formID, err := resolveStudyArgs(ctx, acli, args, minting, "cast")
 	if err != nil {
 		die("%s", err)

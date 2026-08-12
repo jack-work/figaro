@@ -26,7 +26,9 @@ package form
 // now: logging is enough to debug with, and the verb is a surface of its own.
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"strings"
 )
@@ -82,6 +84,21 @@ func ReadStudyIncantation(snap Snapshot) StudyIncantation {
 	if !ok {
 		return StudyIncantation{}
 	}
+	// THE FAST PATH IS THE CORRECT ONE. A well-formed incantation decodes
+	// straight into the struct: no intermediate map, no per-field unmarshal,
+	// no diagnostics to assemble for problems that do not exist. Only a value
+	// that fails this decode pays for the explanation of why, and a strict
+	// decoder is what makes "fails" include the typo case.
+	//
+	// It matters because this runs per encoded message on the study path, and
+	// the map-per-read version cost 2.3x what rendering the block costs.
+	var fast StudyIncantation
+	if strictDecode(raw, &fast) == nil {
+		fast.OnStudy = strings.TrimSpace(fast.OnStudy)
+		fast.OnUpdate = strings.TrimSpace(fast.OnUpdate)
+		fast.OnDrop = strings.TrimSpace(fast.OnDrop)
+		return fast
+	}
 	fields, ok := incantationObject(raw, StudyIncantationKey, studyIncantationFields)
 	if !ok {
 		return StudyIncantation{}
@@ -93,6 +110,25 @@ func ReadStudyIncantation(snap Snapshot) StudyIncantation {
 	}
 }
 
+// strictDecode decodes one JSON object into out, refusing unknown fields. The
+// refusal is the point: it routes a typo to the diagnostic path instead of
+// silently dropping it, which is the failure mode that leaves a human staring
+// at a key that "does nothing".
+func strictDecode(raw json.RawMessage, out any) error {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(out); err != nil {
+		return err
+	}
+	// Trailing content means the value was not one object.
+	if dec.More() {
+		return errTrailingJSON
+	}
+	return nil
+}
+
+var errTrailingJSON = errors.New("incantation: trailing content after the object")
+
 // ReadForkIncantation reads system.fork_incantation off a board, accepting
 // either a bare string or an object carrying onfork.
 func ReadForkIncantation(snap Snapshot) ForkIncantation {
@@ -102,6 +138,10 @@ func ReadForkIncantation(snap Snapshot) ForkIncantation {
 	}
 	if s, isString := incantationString(raw); isString {
 		return ForkIncantation{OnFork: strings.TrimSpace(s)}
+	}
+	var fast ForkIncantation
+	if strictDecode(raw, &fast) == nil {
+		return ForkIncantation{OnFork: strings.TrimSpace(fast.OnFork)}
 	}
 	fields, ok := incantationObject(raw, ForkIncantationKey, []string{"onfork"})
 	if !ok {

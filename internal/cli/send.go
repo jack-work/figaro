@@ -42,6 +42,7 @@ type sendOpts struct {
 	setText    string
 	delText    string
 	record     string // --record: write a wire tape of this stream (testing)
+	cast       bool   // --cast / -C: new only: autocast the fresh aria into a role
 }
 
 // extractSendFlags scans a PassRaw arg list for the send command's
@@ -214,6 +215,10 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 			opts.forget = true
 			i++
 			continue
+		case a == "--cast", a == "-C":
+			opts.cast = true
+			i++
+			continue
 		case a == "--json", a == "-j":
 			opts.json = true
 			i++
@@ -300,6 +305,7 @@ var sendFlagDefs = []cmdkit.FlagDef{
 	{Long: "outfit", Short: "O", Description: "Outfit NAMES to dress the aria in (comma-separated)"},
 	{Long: "set", Short: "S", Description: "Form keys: k=v or a JSON literal, comma-separated"},
 	{Long: "delete", Short: "D", Description: "Form key paths to remove, comma-separated"},
+	{Long: "cast", Short: "C", IsBool: true, Description: "new: cast the fresh aria into a role (named @form, or minted from -O/-S)"},
 }
 
 // argsBeforeBoundary / argsFromBoundary split argv at the first bare `--`.

@@ -398,6 +398,8 @@ func flagIsSet(o sendOpts, short string) bool {
 		return o.skipYes
 	case "f":
 		return o.forget
+	case "C":
+		return o.cast
 	case "j":
 		return o.json
 	}

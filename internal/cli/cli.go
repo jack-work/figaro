@@ -399,6 +399,14 @@ a prompt follows ` + "`--`" + `: sends it.
   figaro new -O <spec>              fresh aria on a named outfit, attended, no turn
   figaro new -S ttl=1h -- <p>       fresh aria with a birth patch (-O names, -S data)
   figaro new                        fresh aria on the default outfit, attended
+  figaro new -C <@form>             fresh aria, cast into that role at birth
+  figaro new -CO reviewer           fresh aria, and a role minted from an outfit
+  figaro new -CS name=x             fresh aria, and a role minted from keys
+
+-C/--cast mints the pair. With a role named, -O/-S dress the ARIA; with no
+role named they mint the ROLE, because that is the thing that does not exist
+yet. A figaro that is minted but not cast is reported as exactly that, with
+its id, rather than exiting silently.
 
 new always mints. To go home instead, ` + "`figaro attend null`" + ` drops this
 shell's binding: which is what bare ` + "`new`" + ` used to do, a second spelling
@@ -427,6 +435,14 @@ already exists (--id, -e, -x) are refused rather than ignored.
 			}
 			prompt := extractPrompt(rest)
 			set := renderSettings{jsonMode: opts.json}
+			if opts.cast {
+				role, cerr := castFormArg(rest)
+				if cerr != nil {
+					return fmt.Errorf("new -C: %s", cerr)
+				}
+				runNewCast(ld, role, opts.outfit, prompt, set)
+				return nil
+			}
 			if prompt == "" {
 				// No prompt: mint under the spec (empty = default_outfit) and
 				// attend it, no turn. A prompt needs the `--` boundary.
@@ -850,6 +866,15 @@ the call, born already cast (nothing half-fails); -O occupies the form
 slot, so a lone positional is then the aria. With no figaro available
 (unattended, or attending a form) one is minted from the default form
 first: if the casting then fails, that partial is spelled out.
+
+ATTENDING A FORM, with no arguments at all, mints a figaro for it and
+casts it: the other entrance to `+"`figaro new -C`"+`, the same operation from
+the other end. There, -O/-S dress the ARIA, because the form already
+exists; attending an ARIA they mint the ROLE, for the same reason.
+
+  figaro cast                 (attending @form) mint a figaro and cast it
+  figaro cast -O sonn5        (attending @form) dress the minted figaro
+  figaro cast -O reviewer     (attending an aria) mint the role, cast into it
 
 The form is always the LAST positional. Bound boards are refused: roles
 are unbound forms only.`,

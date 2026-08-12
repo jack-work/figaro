@@ -86,3 +86,15 @@ func BenchmarkForkReminderOrdinaryMessage(b *testing.B) {
 		provider.ForkReminderTexts(msg, board)
 	}
 }
+
+// The control: the same render against an EMPTY board, which is what this
+// function did before incantations existed. The gap between this and
+// NoIncantation is the whole price paid by every aria that never sets the key.
+func BenchmarkStudyReminderEmptyBoard(b *testing.B) {
+	msg := benchStudyMessage()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		provider.StudyReminderTexts(msg, form.Snapshot{})
+	}
+}
