@@ -46,6 +46,7 @@ type Tree struct {
 	path string
 	topo topo.Topology
 	over map[string]string
+	rev  uint64
 }
 
 // Open loads the overrides beside a store, or starts empty.
@@ -74,6 +75,7 @@ func Open(dir string, t topo.Topology) (*Tree, error) {
 }
 
 func (x *Tree) save() error {
+	x.rev++
 	s := state{Version: stateVersion, Parent: maps.Clone(x.over)}
 	b, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
@@ -115,26 +117,54 @@ func (x *Tree) save() error {
 	return dir.Sync()
 }
 
+// ONE LOCKING RULE, and it is the only thing standing between this file
+// and a deadlock: x.mu guards the override map and NOTHING ELSE. No method
+// calls x.topo while holding it. The topology answers out of the store's
+// snapshot, and rebuilding that snapshot reads Edges() -- so a topology
+// call under the write lock waits on a reader that waits on us.
+
 // Parent is the override if one exists, else the topology edge.
 func (x *Tree) Parent(id string) (string, bool) {
 	x.mu.RLock()
-	defer x.mu.RUnlock()
-	return x.parentLocked(id)
-}
-
-func (x *Tree) parentLocked(id string) (string, bool) {
-	if p, ok := x.over[id]; ok {
+	p, ok := x.over[id]
+	x.mu.RUnlock()
+	if ok {
 		return p, true
 	}
 	return x.topo.From(id)
 }
 
-func (x *Tree) Children(id string) []string {
+// Edges is the override map. The caller applies it over a topology it
+// already holds, which is what a listing does once per snapshot.
+func (x *Tree) Edges() map[string]string {
 	x.mu.RLock()
 	defer x.mu.RUnlock()
+	return maps.Clone(x.over)
+}
+
+// Rev counts edits, so a cache keyed on the topology alone still notices a
+// promote.
+func (x *Tree) Rev() uint64 {
+	x.mu.RLock()
+	defer x.mu.RUnlock()
+	return x.rev
+}
+
+// parentVia answers from a snapshot of the overrides, for bulk walks.
+func (x *Tree) parentVia(over map[string]string) func(string) (string, bool) {
+	return func(id string) (string, bool) {
+		if p, ok := over[id]; ok {
+			return p, true
+		}
+		return x.topo.From(id)
+	}
+}
+
+func (x *Tree) Children(id string) []string {
+	parentOf := x.parentVia(x.Edges())
 	var out []string
 	for _, n := range x.topo.Nodes() {
-		if p, ok := x.parentLocked(n); ok && p == id && n != id {
+		if p, ok := parentOf(n); ok && p == id && n != id {
 			out = append(out, n)
 		}
 	}
@@ -143,28 +173,32 @@ func (x *Tree) Children(id string) []string {
 }
 
 func (x *Tree) DeleteSet(id string) []string {
-	x.mu.RLock()
-	kids := topo.ChildIndex(x.topo, x.parentLocked)
-	x.mu.RUnlock()
+	kids := topo.ChildIndex(x.topo, x.parentVia(x.Edges()))
 	return topo.DescendantClosure(kids, id)
 }
 
-// Normalized reports whether every aria still sits where its history says.
-// True means a delete's boundary is provably empty and no repair is needed.
 // Normalized reports whether any aria still sits away from where its
 // history lives. Delete takes this path, so it answers on the first
 // survivor rather than allocating and sorting the whole list.
 func (x *Tree) Normalized() bool {
-	x.mu.RLock()
-	defer x.mu.RUnlock()
-	for id := range x.over {
-		up, ok := x.topo.From(id)
-		if !ok || up == "" || x.isRootLocked(up) {
+	for id := range x.Edges() {
+		if x.freeOfAncestry(id) {
 			continue
 		}
 		return false
 	}
 	return true
+}
+
+// freeOfAncestry reports that nothing above id could be taken away from it:
+// it owns its history outright, or the only thing above it is the root.
+func (x *Tree) freeOfAncestry(id string) bool {
+	up, ok := x.topo.From(id)
+	if !ok || up == "" {
+		return true
+	}
+	over, ok := x.topo.From(up)
+	return ok && over == ""
 }
 
 // Promote raises id one level: it takes its grandparent's place, and the
@@ -175,18 +209,21 @@ func (x *Tree) Normalized() bool {
 // halfway into a corrupt store. The topology is untouched: id still reads
 // its history exactly where it did before.
 func (x *Tree) Promote(id string) error {
-	x.mu.Lock()
-	defer x.mu.Unlock()
-	parent, ok := x.parentLocked(id)
+	parent, ok := x.Parent(id)
 	if !ok || parent == "" {
 		return fmt.Errorf("trunk: %q is already a root", id)
 	}
-	grand, _ := x.parentLocked(parent)
+	grand, _ := x.Parent(parent)
 	if grand == id {
 		return fmt.Errorf("trunk: %q and %q already swapped", id, parent)
 	}
-	x.setLocked(id, grand)
-	x.setLocked(parent, id)
+	idUp, _ := x.topo.From(id)
+	parentUp, _ := x.topo.From(parent)
+
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	x.setLocked(id, grand, idUp)
+	x.setLocked(parent, id, parentUp)
 	return x.save()
 }
 
@@ -194,8 +231,8 @@ func (x *Tree) Promote(id string) error {
 // when it agrees with the topology. ONE rule, so an aria promoted back to
 // where its history puts it leaves no trace -- otherwise Normalized() stays
 // false forever and every later delete repairs an empty boundary.
-func (x *Tree) setLocked(id, parent string) {
-	if up, ok := x.topo.From(id); ok && up == parent {
+func (x *Tree) setLocked(id, parent, topoParent string) {
+	if parent == topoParent {
 		delete(x.over, id)
 		return
 	}
@@ -205,9 +242,10 @@ func (x *Tree) setLocked(id, parent string) {
 // Reparent sets an explicit presentation edge. Used by normalization to put
 // an aria back where its history says it belongs.
 func (x *Tree) Reparent(id, parent string) error {
+	up, _ := x.topo.From(id)
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	x.setLocked(id, parent)
+	x.setLocked(id, parent, up)
 	return x.save()
 }
 
@@ -221,12 +259,10 @@ func (x *Tree) Reparent(id, parent string) error {
 // on every run and leave Normalized() false forever, so the operation meant
 // to establish the invariant would never report it established.
 func (x *Tree) Overridden() []string {
-	x.mu.RLock()
-	defer x.mu.RUnlock()
-	out := make([]string, 0, len(x.over))
-	for id := range x.over {
-		up, ok := x.topo.From(id)
-		if !ok || up == "" || x.isRootLocked(up) {
+	over := x.Edges()
+	out := make([]string, 0, len(over))
+	for id := range over {
+		if x.freeOfAncestry(id) {
 			continue // nothing above it that a delete could take away
 		}
 		out = append(out, id)
@@ -235,22 +271,20 @@ func (x *Tree) Overridden() []string {
 	return out
 }
 
-// isRootLocked reports whether id is the null root. The root is the only
-// node with no .from at all -- that is the discriminator the flat design
-// settled on -- and it is the one ancestor no delete may remove, so an
-// aria sitting directly under it can never be orphaned.
-func (x *Tree) isRootLocked(id string) bool {
-	up, ok := x.topo.From(id)
-	return ok && up == ""
-}
-
-// Forget drops an aria's override, for use after it is deleted.
+// Forget drops every edge that names one of these arias, in either
+// direction: for use once they are deleted. An edge POINTING at a deleted
+// aria goes too, so the survivor falls back to its history rather than
+// hanging off a parent that is no longer there.
 func (x *Tree) Forget(ids ...string) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	changed := false
+	gone := make(map[string]bool, len(ids))
 	for _, id := range ids {
-		if _, ok := x.over[id]; ok {
+		gone[id] = true
+	}
+	changed := false
+	for id, up := range x.over {
+		if gone[id] || gone[up] {
 			delete(x.over, id)
 			changed = true
 		}

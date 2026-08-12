@@ -301,11 +301,24 @@ func (s *XwalStore) SetTree(t topo.Tree) { s.tree = t }
 
 type topologySnapshot struct {
 	version         uint64
+	rev             uint64
 	nodes           []NodeView
 	conversations   []NodeView
 	forms           []NodeView
 	conversationIDs []string
 	byID            map[string]NodeView
+}
+
+func (t *topologySnapshot) fresh(version, rev uint64) bool {
+	return t.version == version && t.rev == rev
+}
+
+// presentRev is the presentation clock, zero without a trunk capability.
+func (s *XwalStore) presentRev() uint64 {
+	if s.tree == nil {
+		return 0
+	}
+	return s.tree.Rev()
 }
 
 // OpenXwalStore opens the aria tree at root, creating it when absent.
@@ -671,11 +684,25 @@ func (s *XwalStore) forkAtLocked(id string, atMainLT uint64) (string, error) {
 // pstate and writes nothing to any aria's history, so it is O(1) in history
 // length. ErrAtStump means there is nothing above to promote into, or the
 // build has no trunk capability at all.
+//
+// The climb stops at the outfit boundary. Only conversations nest: an
+// outfit stump and the genesis root are structure, and a hierarchy that
+// hung one of them under a conversation would put every aria in the store
+// inside one aria's subtree.
 func (s *XwalStore) Promote(id string, levels int) (int, error) {
 	// NO s.mu here: the tree resolves lineage through Node, which refreshes
 	// the topology snapshot under s.mu. Holding it across the tree call
 	// deadlocks. The tree carries its own lock and its write is atomic.
+	if s.tree == nil {
+		return 0, ErrNoTrunkCapability
+	}
 	for climbed := 0; climbed < levels; climbed++ {
+		if !s.promotableInto(id) {
+			if climbed > 0 {
+				return climbed, nil
+			}
+			return 0, ErrAtStump
+		}
 		if err := s.tree.Promote(id); err != nil {
 			if errors.Is(err, topo.ErrNoPromote) {
 				return climbed, ErrNoTrunkCapability
@@ -687,6 +714,16 @@ func (s *XwalStore) Promote(id string, levels int) (int, error) {
 		}
 	}
 	return levels, nil
+}
+
+// promotableInto reports whether id currently sits under a conversation.
+func (s *XwalStore) promotableInto(id string) bool {
+	parent, ok := s.tree.Parent(id)
+	if !ok || parent == "" {
+		return false
+	}
+	node, ok := s.Node(parent)
+	return ok && node.Kind == string(kindConversation)
 }
 
 // OwnerOf resolves which node owns atMainLT along a trunk's lineage (a trunk,
@@ -834,6 +871,9 @@ type NodeView struct {
 	Trunk      string
 	Vector     []int
 	BranchedLT uint64 // main-LT this trunk diverged from its parent
+	// Present is where the row APPEARS: the topology edge unless a promote
+	// moved it. Vector follows Present, so a listing draws one tree.
+	Present string
 }
 
 // view renders a live (conversation) trunk. Its parent for the global
@@ -924,51 +964,125 @@ func (s *XwalStore) vectorsLocked(infos []xwal.TrunkInfo) map[string]place {
 	return at
 }
 
+// presentLocked stamps every node's display parent, and the vectors that
+// follow from it, returning the presentation revision it read.
+func (s *XwalStore) presentLocked(nodes []NodeView) uint64 {
+	var edges map[string]string
+	var rev uint64
+	if s.tree != nil {
+		edges, rev = s.tree.Edges(), s.tree.Rev()
+	}
+	parent := make(map[string]string, len(nodes))
+	for _, n := range nodes {
+		parent[n.ID] = n.Parent
+	}
+	pres := topo.Present(parent, edges)
+	for i := range nodes {
+		nodes[i].Present = pres[nodes[i].ID]
+	}
+	if len(edges) == 0 {
+		return rev
+	}
+	vecs := presentVectors(nodes, pres)
+	for i := range nodes {
+		if v, ok := vecs[nodes[i].ID]; ok {
+			nodes[i].Vector = v
+		}
+	}
+	return rev
+}
+
+// presentVectors is vectorsLocked over the display edges: the same rule
+// (a conversation under a conversation is a branch, anything else is a
+// root), walked once.
+func presentVectors(nodes []NodeView, pres map[string]string) map[string][]int {
+	live := make(map[string]bool, len(nodes))
+	for _, n := range nodes {
+		if n.Kind == string(kindConversation) {
+			live[n.ID] = true
+		}
+	}
+	kids := map[string][]string{}
+	var roots []string
+	for _, n := range nodes {
+		if !live[n.ID] {
+			continue
+		}
+		if up := pres[n.ID]; up != "" && live[up] {
+			kids[up] = append(kids[up], n.ID)
+		} else {
+			roots = append(roots, n.ID)
+		}
+	}
+	sort.Strings(roots)
+	for k := range kids {
+		sort.Strings(kids[k])
+	}
+	out := make(map[string][]int, len(live))
+	var assign func(id string, prefix []int)
+	assign = func(id string, prefix []int) {
+		if _, seen := out[id]; seen {
+			return
+		}
+		out[id] = prefix
+		for i, c := range kids[id] {
+			assign(c, append(append([]int(nil), prefix...), i))
+		}
+	}
+	for i, r := range roots {
+		assign(r, []int{i})
+	}
+	return out
+}
+
 func (s *XwalStore) topologySnapshot() *topologySnapshot {
-	version := s.trunks.Version()
-	if snapshot := s.topology.Load(); snapshot != nil && snapshot.version == version {
+	// Keyed on BOTH clocks: figwal's topology version and the presentation
+	// revision. A promote moves no bytes, so the first one does not move.
+	version, rev := s.trunks.Version(), s.presentRev()
+	if snapshot := s.topology.Load(); snapshot != nil && snapshot.fresh(version, rev) {
 		return snapshot
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	version = s.trunks.Version()
-	if snapshot := s.topology.Load(); snapshot != nil && snapshot.version == version {
+	version, rev = s.trunks.Version(), s.presentRev()
+	if snapshot := s.topology.Load(); snapshot != nil && snapshot.fresh(version, rev) {
 		return snapshot
 	}
 
 	infos := s.listTrunks()
 	at := s.vectorsLocked(infos)
-	conversations := make([]NodeView, 0, len(infos))
-	var forms []NodeView
-	ids := make([]string, 0, len(infos))
 	nodes := make([]NodeView, 0, len(infos)+1)
-	byID := make(map[string]NodeView, len(infos)+1)
 	for _, t := range infos {
-		node := s.view(t, at)
+		nodes = append(nodes, s.view(t, at))
+	}
+	nodes = append(nodes, NodeView{ID: rootID, Kind: string(kindNull), Trunk: rootID})
+	for _, st := range s.listStumps() {
+		nodes = append(nodes, NodeView{ID: st.Name, Kind: string(kindOutfit), Parent: rootID, Stump: st.Name})
+	}
+	rev = s.presentLocked(nodes)
+
+	conversations := make([]NodeView, 0, len(nodes))
+	var forms []NodeView
+	ids := make([]string, 0, len(nodes))
+	byID := make(map[string]NodeView, len(nodes))
+	for _, node := range nodes {
 		// Split the forest by species: `fig ls` lists conversations, and a
 		// form leaking in would be an aria-shaped row for a thing with no
 		// turns. Forms get their own accessor and the global view carries
 		// both.
-		if node.Kind == string(kindForm) {
+		switch node.Kind {
+		case string(kindForm):
 			forms = append(forms, node)
-		} else {
+		case string(kindConversation):
 			conversations = append(conversations, node)
 			ids = append(ids, node.ID)
 		}
-		nodes = append(nodes, node)
-		byID[node.ID] = node
-	}
-	root := NodeView{ID: rootID, Kind: string(kindNull), Trunk: rootID}
-	nodes = append(nodes, root)
-	byID[root.ID] = root
-	for _, st := range s.listStumps() {
-		node := NodeView{ID: st.Name, Kind: string(kindOutfit), Parent: rootID, Stump: st.Name}
-		nodes = append(nodes, node)
 		byID[node.ID] = node
 	}
 	snapshot := &topologySnapshot{
 		version:         version,
+		rev:             rev,
 		nodes:           nodes,
 		conversations:   conversations,
 		forms:           forms,
@@ -1011,17 +1125,33 @@ func (s *XwalStore) Node(id string) (NodeView, bool) {
 // RemoveLeaf deletes an aria via xwal.Trunks. Trunk-addressed; refuses one
 // with live branches unless recursive.
 //
-// Once an aria has been promoted the two hierarchies diverge, and a delete
-// that follows presentation can take a directory some surviving aria still
-// inherits its history through. Those survivors absorb the prefix they
-// borrow and stop pointing at it BEFORE anything is unlinked, so a crash
-// between the two leaves them reading through directories still present.
+// The two hierarchies split the work. What is REFUSED is counted on the
+// drawn tree, so the warning matches what `fig ls` shows. What is REMOVED
+// is the history subtree, because that is what owns bytes. An aria merely
+// promoted under the target therefore survives, and forgetting its edge
+// returns it to where its history puts it.
+//
+// Survivors that read their history through the delete set absorb the
+// prefix they borrow BEFORE anything is unlinked, so a crash between the
+// two leaves them reading through directories still present.
 func (s *XwalStore) RemoveLeaf(id string, recursive bool) error {
+	// Refuse before touching anything. The boundary repair below rewrites
+	// surviving arias, so a delete that is going to be refused must be
+	// refused while the store still looks the way the caller found it.
+	taken := s.tree.DeleteSet(id)
+	if !recursive && len(taken) > 1 {
+		return fmt.Errorf("%w: %q has %d; -r takes them too", ErrHasBranches, id, len(taken)-1)
+	}
 	// Repair the boundary FIRST: every survivor that reads its history
 	// through this delete set absorbs that prefix and stops pointing at it.
 	// Only then does anything get unlinked, so a crash between the two
 	// leaves survivors that still read through directories still present.
+	homes := map[string]string{}
 	for _, orphan := range s.deleteOrphans(id) {
+		// Where it is DRAWN today, remembered before the detach empties its
+		// .from. Absorbing a prefix is a storage repair; without this it
+		// also teleports an untouched aria to the genesis root.
+		homes[orphan] = s.survivingHome(orphan, taken)
 		// Boundary speaks in aria ids; Detach addresses the node directory.
 		node, ok := s.trunks.HeadNode(orphan)
 		if !ok {
@@ -1035,6 +1165,28 @@ func (s *XwalStore) RemoveLeaf(id string, recursive bool) error {
 	// topology no longer knows the two were related) and before the lock:
 	// topologySnapshot takes s.mu itself.
 	stump := s.topologySnapshot().byID[id].Stump
+	if err := s.removeLocked(id, stump, recursive); err != nil {
+		return err
+	}
+	// Presentation is repaired with s.mu RELEASED: an edge resolves through
+	// the topology snapshot, which takes that lock itself.
+	if err := s.tree.Forget(taken...); err != nil {
+		slog.Warn("forget presentation edges", "aria", id, "err", err)
+	}
+	for orphan, home := range homes {
+		if home == "" {
+			continue
+		}
+		if err := s.tree.Reparent(orphan, home); err != nil {
+			slog.Warn("rehome detached aria", "aria", orphan, "under", home, "err", err)
+		}
+	}
+	return nil
+}
+
+// removeLocked is the unlink and the stump collection, the only part of a
+// delete that touches the store.
+func (s *XwalStore) removeLocked(id, stump string, recursive bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.trunks.Remove(id, recursive); err != nil {
@@ -1042,6 +1194,25 @@ func (s *XwalStore) RemoveLeaf(id string, recursive bool) error {
 	}
 	s.collectStump(stump)
 	return nil
+}
+
+// survivingHome is the nearest place above id that outlives this delete.
+func (s *XwalStore) survivingHome(id string, taken []string) string {
+	doomed := make(map[string]bool, len(taken))
+	for _, t := range taken {
+		doomed[t] = true
+	}
+	seen := map[string]bool{id: true}
+	for up, ok := s.tree.Parent(id); ok && up != ""; up, ok = s.tree.Parent(up) {
+		if seen[up] {
+			return ""
+		}
+		seen[up] = true
+		if !doomed[up] {
+			return up
+		}
+	}
+	return ""
 }
 
 // CollectStump removes a childless outfit stump. Refuses one still hosting

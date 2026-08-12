@@ -24,6 +24,11 @@ var ErrNoTrunkCapability = errors.New("this figaro has no trunk capability")
 // Promotion is what lets the two hierarchies diverge far enough for this.
 var ErrWouldOrphan = errors.New("delete would orphan a surviving aria")
 
+// ErrHasBranches refuses a non-recursive delete of an aria that others
+// appear under. Checked BEFORE anything is written, because the repair a
+// delete performs on its boundary cannot be taken back.
+var ErrHasBranches = errors.New("aria has live branches")
+
 // VersionedPatch is a form patch with its durable version -- its own
 // index in the form channel. The board is unkeyed, so this is the
 // only coordinate a patch carries.

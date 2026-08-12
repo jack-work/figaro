@@ -467,7 +467,11 @@ type FigaroInfoResponse struct {
 	Trunk      string `json:"trunk,omitempty"`
 	Parent     string `json:"parent,omitempty"`
 	BranchedLT uint64 `json:"branched_lt,omitempty"` // main-LT this trunk diverged at
-	Kind       string `json:"kind,omitempty"`        // "conversation" | "form" | "outfit" | "null" (set in global listings)
+	// Present is where the row is DRAWN: Parent unless a promote moved it.
+	// Vector follows Present, so a listing draws one tree; Parent stays the
+	// fork answer that `status` prints.
+	Present string `json:"present,omitempty"`
+	Kind    string `json:"kind,omitempty"` // "conversation" | "form" | "outfit" | "null" (set in global listings)
 
 	// Unbound-form rows only: the form's "name" key, and: when the form is
 	// a role (duck-typed by the key's presence): its target-aria.

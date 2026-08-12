@@ -1060,7 +1060,7 @@ when not, and the tool says which happened.`,
 	r.Register(&cmdkit.Command{
 		Name:  "promote",
 		Group: "Session",
-		Short: "Make a trunk the canonical line through its ancestors",
+		Short: "Raise an aria in the tree ls draws",
 		Usage: "promote [--id <id> | <id>] [levels]",
 		Long: `Raise an aria in the tree ` + "`figaro ls`" + ` draws: it takes its parent's
 place, and the parent comes to sit under it.
