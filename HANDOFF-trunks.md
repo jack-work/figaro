@@ -1,7 +1,7 @@
 # HANDOFF — the presentation hierarchy: promote, ls, and delete
 
 Worktree   `~/dev/figaro-qua/trunkfix`
-Branch     `fix/trunk-presentation` @ `64c49d24`
+Branch     `fix/trunk-presentation` @ `4bc5ad0c`
 Dev shell  `nix develop .#snapshot` (real config + credentials, dev-scoped state)
 
 ## figwal
@@ -62,6 +62,36 @@ cold rebuild is 3.9 ms at 512 arias. The snapshot is keyed on figwal's
 topology version AND a presentation revision, because a promote
 deliberately moves no bytes.
 
+## Second pass: the leak, the mid-turn fork, the JSON
+
+**A form held a goroutine.** Every opened aria parked one in `Cond.Wait`
+for the life of the process; a fork opened one per branch. The queue was
+buying serialization, which is a mutex. 40 arias + 200 forks: 415
+goroutines before, 174 after. 50 forks in a pty: 35 -> 35.
+
+**A listing pinned the whole store.** `fig ls` reads a form per row for
+the OUTFIT column, and reading one refreshed its idle clock, so a shell
+with a status line kept every aria resident forever and the sweep could
+never fire. Touch now means use. Same run, after four minutes of
+listing on a timer: 40 arias resident before, 0 after; 335 goroutines
+before, 94 after.
+
+**A fork taken mid-turn bricked the branch.** It inherits a `tool_use`
+whose result belongs to the turn still running on the parent, and the
+next prompt died on a provider 400. The repair existed but peeked only
+at the tail, which a fork's birth record hides; it scans now. Verified
+against a real model: `RESUMED`, and the stranded tool renders as
+`status=error "process died mid-turn; output not captured"`.
+
+**`show -j` on an empty branch** answered `{"more":{}}`. `parts` is now
+always present and always an array.
+
+**Deletes stopped making fossils.** Collecting the outfit stump counted
+topological children, so a just-detached survivor did not count and the
+anchor was collected out from under an aria still drawn beneath it.
+Serial promote + recursive kill over a 42-aria forest: 0 arias drawn
+under the genesis root.
+
 ## Left undone
 
 - figwal is on a branch, not a release (above).
@@ -69,11 +99,15 @@ deliberately moves no bytes.
   conversations at the genesis root. Nothing here re-homes them; their
   lineage is gone from disk. `fig promote` can place them by hand now
   that promote works.
-- `figaro doctor mem` on the live daemon reports 902 MiB heap against 24
-  resident arias and a 45 MiB row cache. A sandbox of 301 arias sits at
-  68 MiB RSS with no leak, so the difference is real arias' payloads,
-  most likely the translation channels. Arm `FIGARO_PPROF=1` on the next
-  daemon restart to settle it. Report: `/tmp/figaro-subagents/memory.md`.
+- The live daemon's 902 MiB was measured before these fixes; the two
+  causes found since (a goroutine per open form, and a listing that
+  pinned every aria) account for the goroutine count and the residency,
+  not necessarily for all of the heap. Re-measure after a restart on
+  this build, and arm `FIGARO_PPROF=1` if it is still high.
+- A 33-way PARALLEL recursive-kill storm on a promoted forest still
+  leaves some arias drawn under the genesis root: their re-home target
+  is taken by a concurrent delete. Serial deletes are clean. Data is
+  intact either way; it is a placement artifact.
 - `feat/incantations` merges clean into this branch (test-merged, not
   guessed).
 
