@@ -208,7 +208,7 @@ func (b *XwalBackend) FormState(ariaID string) (form.Snapshot, error) {
 // form returns the aria's Form, opening (and replaying) it once.
 func (b *XwalBackend) form(ariaID string) (*Form, error) {
 	b.mu.Lock()
-	b.touchLocked(ariaID)
+	b.seenLocked(ariaID)
 	if f := b.forms[ariaID]; f != nil {
 		b.mu.Unlock()
 		return f, nil
@@ -235,6 +235,7 @@ func (b *XwalBackend) form(ariaID string) (*Form, error) {
 // opens the Form if nobody had, which is what lets a listener follow a DORMANT
 // aria: a form is a store object, and reading one does not need an agent.
 func (b *XwalBackend) WatchForm(ariaID string, fn func(version uint64, patch message.Patch)) error {
+	b.touch(ariaID)
 	f, err := b.form(ariaID)
 	if err != nil {
 		return err
@@ -266,11 +267,13 @@ func (b *XwalBackend) FormPatches(ariaID string) ([]VersionedPatch, error) {
 // several patches can arrive between two turns, so only the position tells
 // them apart. It survives reopen because the channel is the durable truth.
 func (b *XwalBackend) ApplyForm(ariaID string, patch message.Patch) (uint64, error) {
+	b.touch(ariaID)
 	return b.ApplyFormIf(ariaID, patch, 0)
 }
 
 // ApplyFormIf refuses the patch unless the form still stands at ifVersion.
 func (b *XwalBackend) ApplyFormIf(ariaID string, patch message.Patch, ifVersion uint64) (uint64, error) {
+	b.touch(ariaID)
 	version, _, err := b.ApplyFormEffect(ariaID, patch, ifVersion)
 	return version, err
 }
@@ -298,10 +301,10 @@ func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Pat
 		return "", 0, err
 	}
 	// The Form for a node born a moment ago must not be a replay of a channel
-	// that was empty when someone else opened it first.
-	b.mu.Lock()
-	delete(b.forms, child)
-	b.mu.Unlock()
+	// that was empty when someone else opened it first. Close what is
+	// dropped: a Form holds a writer, and a dropped one nobody closed is a
+	// writer nobody can reach.
+	b.dropForm(child)
 	return child, version, nil
 }
 
@@ -313,9 +316,7 @@ func (b *XwalBackend) CreateForm(parent string, patch message.Patch) (string, ui
 	if err != nil {
 		return "", 0, err
 	}
-	b.mu.Lock()
-	delete(b.forms, id)
-	b.mu.Unlock()
+	b.dropForm(id)
 	return id, version, nil
 }
 
@@ -474,14 +475,68 @@ func snapString(s form.Snapshot, key string) string {
 	return out
 }
 
+func (b *XwalBackend) touch(id string) {
+	b.mu.Lock()
+	b.touchLocked(id)
+	b.mu.Unlock()
+}
+
+// dropForm forgets an aria's Form and closes it. One place, because a
+// delete that only forgets leaves the writer behind.
+func (b *XwalBackend) dropForm(id string) {
+	b.mu.Lock()
+	f := b.forms[id]
+	delete(b.forms, id)
+	b.mu.Unlock()
+	if f != nil {
+		f.Close()
+	}
+}
+
+// TOUCH IS USE, NOT SIGHT. A listing reads a form per row (labelOf, for the
+// OUTFIT column), and when that refreshed the idle clock every aria in the
+// store stayed resident for as long as anyone ran `fig ls` more often than
+// the dormancy window -- which is every shell with a status line, forever.
+// So opening a form only RECORDS the aria (seenLocked), and the clock is
+// refreshed by the paths that mean somebody is using it: reading its
+// history, writing its form, subscribing to it.
+func (b *XwalBackend) seenLocked(id string) {
+	if b.touched != nil {
+		if _, ok := b.touched[id]; !ok {
+			b.touched[id] = time.Now()
+		}
+	}
+}
+
 func (b *XwalBackend) touchLocked(id string) {
 	if b.touched != nil {
 		b.touched[id] = time.Now()
 	}
 }
 
+// held is every aria this backend is holding anything for. Eviction walks
+// THIS, not the touch map alone: an aria whose touch entry was already
+// dropped would otherwise keep its caches forever, unreachable by the
+// sweep that exists to release them.
+func (b *XwalBackend) held() map[string]struct{} {
+	ids := make(map[string]struct{}, len(b.touched))
+	for id := range b.touched {
+		ids[id] = struct{}{}
+	}
+	for id := range b.open {
+		ids[id] = struct{}{}
+	}
+	for id := range b.forms {
+		ids[id] = struct{}{}
+	}
+	for id := range b.metas {
+		ids[id] = struct{}{}
+	}
+	return ids
+}
+
 // EvictIdle drops the cached IR, translations, board and metadata of every
-// aria that is NOT live and has not been touched for idle. It returns how
+// aria that is NOT live and has not been used for idle. It returns how
 // many it released.
 //
 // Two rules, and the first is not negotiable. An aria with a LIVE AGENT is
@@ -575,8 +630,11 @@ func (b *XwalBackend) EvictIdle(live map[string]bool, idle time.Duration) int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	n := 0
-	for id := range b.touched {
-		if live[id] || b.touched[id].After(cutoff) {
+	for id := range b.held() {
+		if live[id] {
+			continue
+		}
+		if at, ok := b.touched[id]; ok && at.After(cutoff) {
 			continue
 		}
 		if _, held := b.open[id]; !held {
@@ -693,10 +751,15 @@ func (b *XwalBackend) loadMetaLocked(ariaID string, c *metaCache) error {
 	return nil
 }
 
+// metaCache does NOT touch. Reading the sidecar is what a LISTING does, to
+// every aria in the store, and touching there refreshed the idle clock of
+// everything at once: eviction could then never fire for anybody as long as
+// someone ran `fig ls` more often than the dormancy window, which is every
+// shell with a status line. Touch means the aria's history or form was used,
+// not that a row was drawn for it.
 func (b *XwalBackend) metaCache(ariaID string) *metaCache {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.touchLocked(ariaID)
 	c := b.metas[ariaID]
 	if c == nil {
 		c = &metaCache{}
@@ -707,11 +770,8 @@ func (b *XwalBackend) metaCache(ariaID string) *metaCache {
 
 func (b *XwalBackend) Remove(ariaID string, recursive bool) error {
 	b.dropHandle(ariaID)
+	b.dropForm(ariaID)
 	b.mu.Lock()
-	if f := b.forms[ariaID]; f != nil {
-		f.Close()
-	}
-	delete(b.forms, ariaID)
 	delete(b.metas, ariaID)
 	b.mu.Unlock()
 	_ = os.Remove(b.metaPath(ariaID))

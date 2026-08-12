@@ -6,16 +6,18 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/jack-work/figaro/internal/actor"
 	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 )
 
 // Form is an aria's state, and the only writer of the channel that holds it.
 //
-// One goroutine owns the append. Readers never touch it: a published state is
-// swapped in atomically, so Snapshot is one load and cannot block, cannot wake
-// a dormant aria, and cannot be serialized behind a turn.
+// ONE LOCK owns the append, not one goroutine. Serialization is all the
+// writer ever needed, and a parked goroutine per open form cost the daemon
+// one goroutine for every aria anyone had listed. Readers never touch it: a
+// published state is swapped in atomically, so Snapshot is one load and
+// cannot block, cannot wake a dormant aria, and cannot be serialized behind
+// a turn.
 //
 // DURABILITY PRECEDES VISIBILITY, structurally. The writer appends, and only
 // then publishes. The reverse is not a lost write but a hallucinated one: the
@@ -29,8 +31,12 @@ import (
 // cycle and hang. A Form is happy to exist with no aria attached at all.
 type Form struct {
 	log   FormLog
-	write *actor.Queue[formWrite]
 	state atomic.Pointer[formState]
+
+	// write serializes commits: the single writer, held across the append
+	// and the publish so durability precedes visibility.
+	write  sync.Mutex
+	closed bool
 
 	mu       sync.Mutex
 	onCommit []func(version uint64, patch message.Patch)
@@ -48,7 +54,6 @@ type formState struct {
 type formWrite struct {
 	patch     message.Patch
 	ifVersion uint64
-	reply     chan formResult
 }
 
 type formResult struct {
@@ -90,11 +95,6 @@ func OpenForm(log FormLog) (*Form, error) {
 		return nil, err
 	}
 	f.state.Store(st)
-	// The runtime is internal/actor, the same one the aria's inbox runs on: one
-	// goroutine, FIFO, close refuses. No Coalescer: two form patches could be
-	// merged, but each carries its own version and its own reply, so folding
-	// them would have to invent an answer for a caller that asked about one.
-	f.write = actor.Start[formWrite](nil, func(w formWrite) { w.reply <- f.commit(w) }, nil)
 	return f, nil
 }
 
@@ -129,11 +129,12 @@ func (f *Form) Apply(patch message.Patch, ifVersion uint64) (uint64, error) {
 // a human ("set 3 keys") or fans a delta out to listeners wants THAT, not what
 // it asked for.
 func (f *Form) ApplyEffect(patch message.Patch, ifVersion uint64) (uint64, message.Patch, error) {
-	reply := make(chan formResult, 1)
-	if !f.write.Send(formWrite{patch: patch, ifVersion: ifVersion, reply: reply}) {
+	f.write.Lock()
+	defer f.write.Unlock()
+	if f.closed {
 		return 0, message.Patch{}, fmt.Errorf("form is closed")
 	}
-	res := <-reply
+	res := f.commit(formWrite{patch: patch, ifVersion: ifVersion})
 	return res.version, res.applied, res.err
 }
 
@@ -141,9 +142,9 @@ func (f *Form) ApplyEffect(patch message.Patch, ifVersion uint64) (uint64, messa
 // the publish: never before, so an observer can never see state that would not
 // survive a restart.
 //
-// It runs ON THE WRITER, so it obeys the writer's law: hand the delta off and
-// return. A sink that blocks on anything which might be waiting on this form
-// stops every write to it. The routing layer's own queue is the right place to
+// It runs UNDER THE WRITE LOCK, so it obeys the writer's law: hand the delta
+// off and return. A sink that blocks on anything which might be waiting on
+// this form stops every write to it. The routing layer's own queue is the right place to
 // put the work.
 func (f *Form) OnCommit(fn func(version uint64, patch message.Patch)) {
 	f.mu.Lock()
@@ -152,7 +153,12 @@ func (f *Form) OnCommit(fn func(version uint64, patch message.Patch)) {
 }
 
 // Close stops the writer. Further writes are refused rather than dropped.
-func (f *Form) Close() { f.write.Close() }
+// Idempotent: eviction and a delete can both reach the same form.
+func (f *Form) Close() {
+	f.write.Lock()
+	f.closed = true
+	f.write.Unlock()
+}
 
 func (f *Form) commit(w formWrite) formResult {
 	st := f.state.Load()
