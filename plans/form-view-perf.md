@@ -188,3 +188,46 @@ rm -rf "$box"          # it holds conversation history
 5. **Ephemeral arias (`send -er`) touch no board**, so the first load harness
    exercised everything except the path under test. `live_arias: 0` in the
    output was the tell.
+
+## 6. After the incantations (2026-08-11, same branch)
+
+The incantation work touches the study renderer and the CLI, not the store's
+read path, and the numbers say so. Same toolchain, same machine:
+
+```
+FormDeltaPerSend100      64.47n -> 68.06n   +5.58%
+FormWholePerSend10000    71.14n -> 70.94n        ~
+StudiedSetPerSend50x500  4.301u -> 4.258u        ~
+FormState10000 (control) 57.08n -> 57.21n        ~
+```
+
+A few nanoseconds on the delta reads, nothing anywhere else, control flat.
+
+The renderer's own numbers, which are where the feature lives:
+
+```
+StudyReminderEmptyBoard     2.001u   1.707Ki   (what it cost before the feature)
+StudyReminderNoIncantation  2.035u   1.707Ki   (+34ns, +0 allocs: every aria today)
+StudyReminderWithIncantation 3.505u  2.835Ki   (only arias that set the key)
+StudyReminderNoStudyEvent    4.44n   0 B       (a message with no study event)
+ForkReminderOrdinaryMessage 12.17n   0 B
+```
+
+Three things were deliberate:
+
+- **The board is not consulted unless the message carries a study event.** A
+  non-studying aria pays 4.4ns per message, which is the type switch.
+- **A well-formed incantation decodes straight into its struct**, no
+  intermediate map, no per-field unmarshal. The first version built a map per
+  read and cost 2.3x the render; only a value that FAILS the strict decode now
+  pays for the diagnosis of why. A strict decoder is also what routes a typo
+  to the diagnostic path instead of silently dropping it.
+- **The 1.5us for arias that set the key is paid once per message**, not once
+  per turn: the encoded block lands in the per-LT translation cache.
+
+### A benchmark trap, for the record
+
+`nix develop` ships its own Go. The first after-run inside the devshell showed
+a uniform +8 to +10% across every benchmark, INCLUDING `FormState10000`, which
+this branch does not touch. The control is what said "toolchain, not code".
+Compare like with like or do not compare.
