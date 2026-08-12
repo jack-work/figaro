@@ -11,8 +11,8 @@ files, implemented against the old API through one seam function.
 
 `store.Form.Patches()` returned a **copy of every patch a form had ever
 taken**. `Agent.formAccessor` / `Agent.studyAccessors` called it through
-`Backend.FormPatches` **once per form per provider Send** — the board plus
-every studied form — and then walked a fresh forward cursor to the range the
+`Backend.FormPatches` **once per form per provider Send** (the board plus
+every studied form), and then walked a fresh forward cursor to the range the
 projection actually asked for, which is one patch or none on a warm turn.
 
 It is replaced by `Form.PatchesBetween(after, upTo]`: a binary search into the
@@ -131,11 +131,11 @@ once showed 300 MB resident with 800 MB paged out.
 
 Two new instruments, wired at the one place that knows both numbers:
 
-- `figaro.form.patches.returned` — what a range read answered with.
-- `figaro.form.patches.history` — how long the history behind it was.
+- `figaro.form.patches.returned`: what a range read answered with.
+- `figaro.form.patches.history`: how long the history behind it was.
 
 The **pair** is the point: before the view, a read returned one patch and
-copied the whole history, and no instrument in the binary could say so — the
+copied the whole history, and no instrument in the binary could say so: the
 only metric figaro had was `figaro.request.duration`, and a copy hides
 comfortably inside a network round trip.
 
@@ -160,7 +160,7 @@ go test ./internal/store -run XXX -bench 'FormDeltaPerSend|FormWholePerSend|Stud
   -benchmem -count=6 > after.txt
 benchstat before.txt after.txt
 
-# real data — a COPY, never the live store
+# real data: a COPY, never the live store
 box=$(mktemp -d); chmod 700 "$box"
 cp -a --reflink=auto ~/.local/state/figaro/arias "$box/arias"; chmod -R go-rwx "$box"
 FIGARO_PROBE_ROOT=$box/arias FIGARO_PROBE_ALLOW_UNREADABLE=5 \
@@ -177,7 +177,7 @@ rm -rf "$box"          # it holds conversation history
    timed "copy the whole history" faithfully for months. Nothing timed "what a
    Send actually asks", which is where the cost was. A benchmark named after
    the API rather than the question is how an O(n) path stays invisible.
-2. **The fake accessor in `observation_bench_test.go` returns a sub-slice** —
+2. **The fake accessor in `observation_bench_test.go` returns a sub-slice** , 
    the shape we wanted, not the shape production had. The observation suite
    therefore reported the cost of the fix while the bug was live.
 3. **`bc` is not on this box.** The first stress run printed blank timings and

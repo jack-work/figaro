@@ -193,6 +193,39 @@ observing are stated IR marks; a studied form removed mid-observation
 renders a tombstone; observation advances at main-record boundaries
 (the stamp IS the moment of observation).
 
+**Minting the pair in one gesture.** `fig new -C` mints a figaro and casts
+it; `fig cast` with a FORM attended and no arguments mints the figaro for the
+form in front of it. Same operation, two entrances. Which thing the dressing
+dresses is decided by which thing does not exist yet:
+
+```sh
+fig new -C @role -O sonn5     # the role exists; -O dresses the ARIA
+fig new -CO reviewer          # no role named; -O mints the ROLE
+fig new -CS name=x -- go      # mint both, then prompt
+fig cast -O reviewer          # attending an aria: -O mints the ROLE
+fig cast                      # attending @form: mint a figaro to play it
+fig cast -O sonn5             # attending @form: -O dresses the minted ARIA
+```
+
+Two objects across two writers is not a transaction. A figaro that is minted
+but not cast is reported as exactly that, with its id, and `-j` carries both
+facts: `{"aria_id":…,"minted_figaro":true,"cast":false,"error":…}`.
+
+**What a studied form SAYS at each event** is `system.study_incantation` on
+the observer's own board, an object with any subset of `onstudy`, `onupdate`
+and `ondrop`. The phrase rides the block for that event as a `say` field; the
+fact is rendered either way. `system.fork_incantation` is the same idea for a
+branch's birth: a string, or `{"onfork": …}`. Unset means silence, which is
+what a fork has always been. A malformed incantation costs its own phrase and
+nothing else: a non-object is refused, a non-string field is dropped alone, an
+unknown key is named, all of it in the daemon log, and the block it decorates
+still renders.
+
+```sh
+fig set --id <aria> 'system.study_incantation={"onupdate":"the brief moved; re-read it"}'
+fig set --id <aria> 'system.fork_incantation=you are a branch; the trunk went on without you'
+```
+
 ---
 
 *Design depth: [../contributing/forms-design.md](../contributing/forms-design.md)

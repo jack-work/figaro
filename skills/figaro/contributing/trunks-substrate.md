@@ -195,7 +195,7 @@ interface.
   `parent:turn` a fork takes (`BranchedLT-1` was the pre-turn-addressing display and was
   off by a whole exchange).
 - **`Backend` interface** (`store.go`): `Open`/`OpenTranslation`/`FormState`/
-  `ApplyForm`/`FormPatches`/`CreateOutfit`/`CreateConversation`/`Fork`/`ForkAt`/
+  `ApplyForm`/`FormPatchesBetween`/`CreateOutfit`/`CreateConversation`/`Fork`/`ForkAt`/
   `Node`/`Nodes`/`Conversations`/`ConversationIDs`/`Meta`/`SetMeta`/`Remove`/`Close`.
   `XwalBackend` memoizes one shared row cache per aria; callers never close what `Open`
   returns.
@@ -411,7 +411,9 @@ the RPC does with it.
   trunk writes need not wait on the timeline, and `repair.go` already treats a
   reducible watermark ahead of main as normal. Mirror the form's three
   methods in `internal/store/xwal_backend.go` (`ApplyForm`,
-  `FormState`, `FormPatches`). One gotcha: the channel's foreign-key
+  `FormState`, `FormPatchesBetween`, which answers an absolute range
+  `(after, upTo]` with a read-only VIEW on the published patch array
+  rather than a copy: see `plans/form-view-perf.md`). One gotcha: the channel's foreign-key
   index maps a main LT to the **last** entry at that LT, so a mapping with
   several entries per LT must range-scan rather than `Lookup`.
 

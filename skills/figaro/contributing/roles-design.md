@@ -68,6 +68,28 @@ words, and `-j` carries both outcomes.
 `fig study` and `fig drop` are callable on their own. They carry no
 transactional guarantee. That is cast's job.
 
+### The two entrances
+
+The pair (a figaro and the role it plays) can be minted from either end, and
+both entrances land in the same `autocast` in `internal/cli/cast_new.go`:
+
+- `fig new -C [<@form>]`: the aria does not exist yet. The role positional is
+  lifted out of the argv BEFORE the prompt parser sees it, because `new`
+  refuses bare arguments and that refusal is right for everything except this
+  one. The `@` sigil makes the lift lexical, and nothing after `--` is
+  touched.
+- `fig cast` with a FORM attended and no arguments: the role does not exist
+  yet... rather, it does, and the FIGARO does not. Mint one and cast it.
+
+Which thing the dressing dresses follows from which thing is missing, and
+that is the only reading in which each invocation is unambiguous: with a role
+named, `-O`/`-S` dress the ARIA; with no role named, they mint the ROLE.
+
+Two objects across two writers is not a transaction, so the partial is a
+REPORTED state and never an exit. By the time the cast runs the figaro
+exists; `WithSessionFor`'s dying error path is deliberately not used, because
+an aria whose id is never printed is an orphan.
+
 ## 4. The positional grammar
 
 The form is always the LAST positional; `-O`/`-S` occupy the form slot.
@@ -77,6 +99,7 @@ fig cast <aria> <@form>      two positionals
 fig cast <aria> -O <names>   one positional and a spec: the positional is the aria
 fig cast <@form>             one positional alone: it is the form
 fig cast -O <names>          no aria available, so one is minted from the default form
+fig cast                     attending a @form: mint a figaro to play it
 ```
 
 Every slot is self-checking. Kind validation names the error ("`x` names a

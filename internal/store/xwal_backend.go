@@ -194,7 +194,8 @@ func (b *XwalBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.R
 
 func (b *XwalBackend) Kick() { b.store.trunks.Kick() }
 
-// ---- form (re-derived via StateAt; mutation appends a patch) ----
+// ---- form (replayed once per node, then served from memory; mutation
+// appends a patch) ----
 
 func (b *XwalBackend) FormState(ariaID string) (form.Snapshot, error) {
 	f, err := b.form(ariaID)

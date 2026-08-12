@@ -34,6 +34,7 @@ These hold across the whole CLI:
 | `figaro -- <prompt>` | Prompt the attended aria. Creates one if this shell has no binding. |
 | `figaro send [flags] -- <prompt>` | The same, with the verb spelled out. Alias `qua`. |
 | `figaro new [-O <names>] [-S <k=v>] -- <prompt>` | Mint a fresh aria, bind this shell to it, prompt it. |
+| `figaro new -C [<@form>]` | Mint the aria and CAST it in one gesture. With a role named, `-O`/`-S` dress the aria; with none, they mint the role (`new -CO reviewer`, `new -CS name=x`). A figaro minted but not cast is reported as that partial, with its id. |
 | `figaro new` | With no prompt: mint on the default outfit and attend it, no turn. `new` always mints; `figaro attend null` is how you go home. |
 
 `send` flags, all combinable unless noted:
@@ -207,6 +208,16 @@ that goes wrong yields a store that looks fine.
 Setting a key is a real event in the conversation: on the tic where a
 non-`system` key changes, the agent sees a `<system-reminder>` naming it. Keys
 under `system.` are hidden from the agent and read directly by the harness.
+
+Two `system.` keys are exceptions in one direction: they do not render
+themselves, they change what OTHER events say.
+`system.study_incantation` is `{onstudy, onupdate, ondrop}`, any subset, each a
+string, and the matching phrase rides that study block as a `say` field.
+`system.fork_incantation` is the same for a branch's birth: a bare string, or
+`{"onfork": …}`. Unset means silence. A malformed one is logged and skipped
+key by key; the fact it decorates still reaches the model. Both are read from
+the BOUND form only: a studied form does not get to put words in its
+observer's mouth.
 
 ## Daemon and tools
 

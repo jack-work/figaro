@@ -1,4 +1,4 @@
-# figaro-lab — running and testing figaro in containers on spain
+# figaro-lab: running and testing figaro in containers on spain
 
 **Status: proposal.** Nothing here is built. Written 2026-08-09.
 
@@ -24,7 +24,7 @@ namespace around it.
 | headless auth story | works but undocumented: `ANTHROPIC_API_KEY`, or `FIGARO_HUSH_DIR` + `FIGARO_HUSH_PASSPHRASE` (honored **only together**, so it can never touch the real keystore). |
 | pty test suites | exist and are strong (`internal/cli/tmuxsmoke_*_test.go`, `scripts/paint-fuzz.sh`, `queue-fuzz.sh`, tapes) but are **all manually driven**. `ui-testing.md` says so in its own second paragraph. |
 
-So the container work is not really "can figaro run in a container" — it can.
+So the container work is not really "can figaro run in a container": it can.
 It is "there is no unattended runner anywhere, and spain is the obvious place
 to put one."
 
@@ -35,7 +35,7 @@ to put one."
 Do not build one box that does everything. The tiers differ by an order of
 magnitude in cost and in trust.
 
-### T0 — hermetic checks. No container needed; the nix sandbox *is* the container.
+### T0: hermetic checks. No container needed; the nix sandbox *is* the container.
 
 `go build ./... && go vet ./... && go test ./...`, plus the VT-model paint
 tests, the tape replays (`go test ./internal/cli -run TestTape -tape …`), and
@@ -56,7 +56,7 @@ checks = forAllSystems ({ pkgs }: {
 Then spain runs `nix flake check` on a timer against the `main` branch. That
 alone closes the largest gap in the project and costs nothing per run.
 
-### T1 — pty smoke and fuzz. This is what wants a real container.
+### T1: pty smoke and fuzz. This is what wants a real container.
 
 `FIGARO_TMUX_SMOKE=1 go test ./internal/cli -run TestSmoke`, `paint-fuzz.sh`,
 `queue-fuzz.sh`, `paintpane.sh` sweeps. Requirements the nix sandbox cannot
@@ -70,7 +70,7 @@ give you:
 → **systemd-nspawn**, per `~/notes/kelliher-web/nspawn.md`. `containers.<name>`
 in `spain-flake`, `privateNetwork = true`, own systemd, own journal.
 
-### T2 — agentic bug hunters. Same container shape as T1, different payload.
+### T2: agentic bug hunters. Same container shape as T1, different payload.
 
 figaro arias, credo and skills loaded, running the `ui-testing.md` procedure
 *themselves*: pick a subsystem, write an oracle, prove it can fail against a
@@ -92,7 +92,7 @@ environment.systemPackages = with pkgs; [
 ```
 
 `smokeBinary` in `tmuxsmoke_test.go` builds the binary from the tree under
-test — identity by construction. So the container needs a Go toolchain, not
+test: identity by construction. So the container needs a Go toolchain, not
 just the packaged figaro.
 
 ### Six things that will bite, in the order they will bite
@@ -100,7 +100,7 @@ just the packaged figaro.
 1. **`/nix/store` is shared, `nix build` is not.** NixOS `containers.<name>`
    bind-mounts the host store read-only. Build *derivations on the host* and
    pass them in; do not try to run a nix daemon inside the container. For T0,
-   the host builds `nix flake check` directly — no container at all.
+   the host builds `nix flake check` directly: no container at all.
 2. **Go module cache.** A container with no network (or no `~/.cache/go-build`)
    cannot `go build`. Two options: (a) build the flake's vendor derivation on
    the host and bind-mount it with `GOFLAGS=-mod=vendor`, or (b) bind-mount a
@@ -142,7 +142,7 @@ host's real `providers/` or hush identity into a container.
 
 ## 3. The fleet: bossman as the runner, kstack as the front door
 
-`bossman` already is the fleet supervisor this needs — heartbeat manager,
+`bossman` already is the fleet supervisor this needs: heartbeat manager,
 worker roster, `figaro` backend (`figaro send -e -r --`), NDJSON event log on
 a unix socket, HTTP/SSE, a web UI, `/state`, `/healthz`. Don't write a second
 one.
@@ -172,7 +172,7 @@ allow-listing the two hostnames when it matters.
 
 | Repo | Change |
 |---|---|
-| `figaro-qua` | add `checks.<system>` (T0). Add `nixosModules.default` exposing `services.figaro-lab` — the unit, the state dirs, the credential wiring, the knob env. This is figaro's own contract; it should not live in spain-flake. |
+| `figaro-qua` | add `checks.<system>` (T0). Add `nixosModules.default` exposing `services.figaro-lab`: the unit, the state dirs, the credential wiring, the knob env. This is figaro's own contract; it should not live in spain-flake. |
 | `figaro-qua/scripts` | make `paint-fuzz.sh` / `queue-fuzz.sh` **exit non-zero on a failing oracle** and emit machine-readable findings (they already print; make them report). Parameterize `/var/tmp/rb` and the tmux socket by env. |
 | `bossman` | probably nothing. Possibly a `figaro-worker` backend variant that pre-seeds the worktree + knobs. |
 | `kelliher-web` | the `containerAddress` (or accept `extraConfig`) two-liner. |
@@ -180,7 +180,7 @@ allow-listing the two hostnames when it matters.
 
 ---
 
-## 5. The governor — the part that is not optional
+## 5. The governor: the part that is not optional
 
 A fleet of agents with a provider key, a shell, and a heartbeat is a machine
 for converting money into logs. Before T2 ships:
@@ -190,7 +190,7 @@ for converting money into logs. Before T2 ships:
 - **Kill switch**: `systemctl stop figaro-lab` must be sufficient, and the
   container must come back clean (`ephemeral = false` for state you want,
   scratch under a dir the unit wipes on start).
-- **Egress allow-list** — an agent that can reach the whole internet on a
+- **Egress allow-list**: an agent that can reach the whole internet on a
   machine that also hosts Authelia and lldap is a different risk class than a
   laptop. `privateNetwork = true` + NAT + allow-list, and no bind mount of
   `/run/secrets`.
@@ -198,7 +198,7 @@ for converting money into logs. Before T2 ships:
   tmux/pty fuzz is the expected failure mode, not the exception.
 - **Findings are artifacts, not chat.** Every hunt writes to
   `/var/lib/figaro-lab/findings/<date>-<name>/`: the oracle, the **red arm**
-  (proof the oracle can fail — `ui-testing.md` P2 requirement 1), the tmux
+  (proof the oracle can fail: `ui-testing.md` P2 requirement 1), the tmux
   captures, a tape if one was recorded, and a branch with a failing test.
   A finding with no red arm is discarded automatically.
 
@@ -206,29 +206,29 @@ for converting money into logs. Before T2 ships:
 
 ## 6. Phasing
 
-**Phase 1 — flake `checks` (a day, no container, no spain).**
+**Phase 1: flake `checks` (a day, no container, no spain).**
 `checks.unit`, `checks.vet`, `checks.tapes`. Run `nix flake check` locally.
 Deliverable: the project has an automated gate for the first time.
 
-**Phase 2 — the lab container on spain, T0 only (a day).**
+**Phase 2: the lab container on spain, T0 only (a day).**
 `services.figaro-lab` in figaro's flake; `containers.figaro-lab` in
 spain-flake; a systemd timer that fetches `main` and runs `nix flake check`,
 journaling the result. No provider key yet. Proves the deploy loop.
 
-**Phase 3 — T1 in the container (the real work, 2–3 days).**
+**Phase 3: T1 in the container (the real work, 2–3 days).**
 tmux + go in the closure, disk-backed `/var/tmp`, vendor dir bind-mounted,
 provider key via sops. Make `paint-fuzz.sh` and `queue-fuzz.sh` CI citizens
 with exit codes. First goal is boring: reproduce one *already-fixed* paint bug
 in the container against its pre-fix commit. If the container cannot reproduce
-a known bug, it cannot find an unknown one — that is the acceptance test for
+a known bug, it cannot find an unknown one: that is the acceptance test for
 the whole tier.
 
-**Phase 4 — bossman + the front door (a day).**
+**Phase 4: bossman + the front door (a day).**
 bossman in the container with the figaro backend, HTTP on the veth, Caddy site
 behind Authelia at `lab.kelliher.info`. Watch a fleet of two workers do
 something trivial (bump a doc) end to end.
 
-**Phase 5 — T2 hunters, gated (ongoing).**
+**Phase 5: T2 hunters, gated (ongoing).**
 Governor first, then one hunter on one subsystem with a hand-written brief.
 Grade its findings by hand for a week before adding a second.
 
@@ -241,7 +241,7 @@ real init, the clean `/dev/pts`, the shared `/nix/store`, and the "declared in
 the flake, comes and goes with `nixos-rebuild switch`" property that makes
 everything else on spain legible. nspawn is the right first stage, and
 nspawn.md already argued this. If a hunter ever needs to be genuinely
-untrusted — a fuzz that writes arbitrary files, an agent with a stolen prompt —
+untrusted: a fuzz that writes arbitrary files, an agent with a stolen prompt , 
 that is when you reach for a VM (microvm.nix), not for Docker.
 
 ## 8. What this does NOT solve
@@ -250,7 +250,7 @@ that is when you reach for a VM (microvm.nix), not for Docker.
   Tapes are the bridge: a container can *record* one, a human plays it back.
 - **Cross-platform paint bugs.** spain is x86_64-linux. The Darwin arms of the
   matrix have no runner and this plan does not give them one.
-- **Provider drift.** The smoke suite is deliberately non-hermetic — it hits a
+- **Provider drift.** The smoke suite is deliberately non-hermetic: it hits a
   real provider. A container makes that cheap to run repeatedly, which makes
   provider-side changes show up as flakes. Budget for triage, or accept that
   red is sometimes Anthropic's fault.

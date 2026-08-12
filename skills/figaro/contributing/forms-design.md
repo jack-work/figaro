@@ -152,6 +152,40 @@ them:
 - Study and drop are stated IR marks, so a replay can account for when
   observation began.
 - A form removed while observed renders a tombstone.
+- The translator asks each member for an ABSOLUTE range, `(after, upTo]`,
+  and the store answers with a read-only VIEW into an immutable, published
+  patch array. It used to answer with a copy of the whole history, once per
+  member per Send: `plans/form-view-perf.md` has the measurements and the
+  reason a bounded question was being answered at unbounded cost.
+- What each event SAYS beyond the fact is `system.study_incantation` on the
+  observer's own board. See §8c.
+
+## 8c. Incantations
+
+The machinery states facts; what a fact MEANS to a particular figaro is not
+the machinery's business. `system.study_incantation` is an object with any
+subset of `onstudy`, `onupdate` and `ondrop`, each a string, and the matching
+phrase rides that event's block as a `say` field.
+`system.fork_incantation` is the same for a branch's birth, spelled either as
+a bare string or as `{"onfork": …}`.
+
+Three properties, each load-bearing:
+
+- **The bound form only.** A studied form does not get to put words in its
+  observer's mouth. All system settings live on the observer's own board and
+  this is no exception.
+- **Tolerance is asymmetric.** A malformed incantation costs its own phrase
+  and nothing else: a non-object is refused wholesale, a non-string field is
+  dropped alone, an unknown key is named in the log, and the block it
+  decorates still renders. A strict parse would mean one typo in a shared
+  outfit silently breaking every aria wearing it.
+- **Fork's default is silence, and stays silence.** `form.Render` skips the
+  whole `system.` namespace, so a forked aria was never told it was forked.
+  The incantation is what overrides that; with no key set, nothing changes
+  for anybody.
+
+The warnings go to the daemon log, which nobody reads. There is a
+`TODO(notifications)` at the site: they belong in a verb a human can run.
 
 ## 8b. The default form, and what an upgrade does to it
 
@@ -212,3 +246,7 @@ said out loud.
    observer's records.
 9. The default form is reused while clean, and an upgrade that moves the
    bundled skills marks it for recomputation.
+10. A form patch read answers a bounded question at bounded cost: the store
+    returns a view, never a copy of the history.
+11. An incantation is decoration on a fact. A malformed one costs its phrase
+    and never the fact, never the block, never the turn.
