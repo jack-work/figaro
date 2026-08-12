@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+	"sync/atomic"
 
 	"github.com/jack-work/figaro/internal/topo"
 )
@@ -46,7 +47,10 @@ type Tree struct {
 	path string
 	topo topo.Topology
 	over map[string]string
-	rev  uint64
+	// rev is atomic because every listing reads it to decide whether its
+	// snapshot is stale, and a mutex there is a contention point on a path
+	// that does not otherwise touch this file.
+	rev atomic.Uint64
 }
 
 // Open loads the overrides beside a store, or starts empty.
@@ -75,7 +79,7 @@ func Open(dir string, t topo.Topology) (*Tree, error) {
 }
 
 func (x *Tree) save() error {
-	x.rev++
+	x.rev.Add(1)
 	s := state{Version: stateVersion, Parent: maps.Clone(x.over)}
 	b, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
@@ -144,11 +148,7 @@ func (x *Tree) Edges() map[string]string {
 
 // Rev counts edits, so a cache keyed on the topology alone still notices a
 // promote.
-func (x *Tree) Rev() uint64 {
-	x.mu.RLock()
-	defer x.mu.RUnlock()
-	return x.rev
-}
+func (x *Tree) Rev() uint64 { return x.rev.Load() }
 
 // parentVia answers from a snapshot of the overrides, for bulk walks.
 func (x *Tree) parentVia(over map[string]string) func(string) (string, bool) {

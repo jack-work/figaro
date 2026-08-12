@@ -348,22 +348,13 @@ the RPC does with it.
   chain: `1`=genesis, `2`=outfit birth, `3+`=conversation turns. `send`/`fork`/`attend`
   the resolved LT tells which root, stump, or trunk owns it (`Owner`); `show` labels each
   **turn** by its turn id, which is the `:N` a fork takes: no realignment needed.
-- **`list`/`ls` is the conversation forest, with `attend` as `cd`.** The shipped navigation
-  surface:
-  - **`figaro ls`**: *current scope*: **attended** → your aria's fork tree (top-level
-    ancestor's whole tree, `●` marking you); **detached** → home (all top-level arias).
-  - **`figaro ls <id>`**: scope to that aria's subtree.
-  - **`-H`/`--home`**: the home view (all top-level arias + branches) **without unbinding**;
-    `●` stays on your real aria.
-  - **`-g`/`--global`**: home **plus** the null + versioned-outfit anchors drawn *above*
-    the conversations (the infrastructure trunks).
-  - **cap:** default = the **10 most-recently-used**; **`-a`/`--all`** removes the cap;
-    **`-n N`** sets it (`-a`/`-n` mutually exclusive).
-  - **`--json`**, a pro/dev escape hatch: the global state of **all** arias incl. null +
-    outfits, **always**; rejects every other flag.
-  - Columns: **ARIA** (mantra or `aria <id>`, tree glyphs + `●`this/`▸`running/`○`idle),
-    **ID**, **OUTFIT**, **VER** (`live` or short content-hash), **FORK** (`@N` = the LT a
-    branch was taken at, blank for top-level arias), **AGE**, **MSGS**, **CTX**, **CWD**.
+- **`list`/`ls` is the conversation forest, with `attend` as `cd`.** The scopes, the views,
+  the cap, the columns and the JSON escape hatch are specified once, in
+  [../reference/trunks.md](../reference/trunks.md); this file had a second copy of them
+  and it went stale in two places.
+- **Two edges per row.** `parent` is the history figwal owns; `present` is where the row is
+  drawn, which a promote moves and the vector follows. Only the first may decide where data
+  comes from (`internal/topo`).
 
 ---
 

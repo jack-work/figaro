@@ -264,43 +264,13 @@ repair, because a repair cannot be taken back.
 ## The trunk state, and where it is going
 
 Today the presentation lives in `trunks.json` beside the store: one JSON
-object of overrides, absent an override the topology answers. It is
-rewritten whole on every edit, it has no reader but the daemon, and nothing
-on disk can reconstruct it.
+object of overrides, rewritten whole on every edit, absent an override the
+topology answers.
 
-**Slated:** move it into an UNBOUND SINGLETON FORM, one per store and so
-1:1 with the angelus that owns it. A form is already the project's answer
-to "durable, versioned, reducible state": patch stream in, folded document
-out. The trunk state is exactly that shape, and the special-cased JSON file
-is the odd one out.
-
-The document, folded:
-
-```jsonc
-{
-  "version": 1,
-  "parent": {                  // aria id -> the aria it is DRAWN under
-    "86d12409": "01efd291",    // absent = drawn where its history says
-    "e2a75c6b": "86d12409"
-  }
-}
-```
-
-The patch stream, one record per edit (the form reducer merges them, and a
-null value deletes the key):
-
-```jsonc
-{"parent": {"86d12409": "01efd291", "01efd291": "86d12409"}}   // a promote
-{"parent": {"86d12409": null}}                                 // a forget
-```
-
-What it buys: crash safety and atomic replace for free (the WAL already has
-both), one code path for durable state instead of two, `figaro form` as its
-inspector, and a natural home for anything else that is store-global rather
-than per-aria.
-
-What it needs from figwal: a store-global channel that is not a per-trunk
-one, and a RETENTION rule for it. History has no value here (only the fold
-does), so it should live in ONE segment, rewritten in place rather than
-grown forever: see the note in
-[contributing/](../contributing/README.md) before starting.
+**Slated:** move it into an unbound SINGLETON FORM, one per store and so
+1:1 with the angelus that owns it. A form is already this project's answer
+to durable, versioned, reducible state, and the trunk state is exactly that
+shape. The document, the patch stream, the migration, and what figwal must
+add for it (one segment, rewritten whole, because only the fold has value
+here) are in
+[contributing/trunk-singleton-form.md](../contributing/trunk-singleton-form.md).
