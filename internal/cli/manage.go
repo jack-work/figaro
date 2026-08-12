@@ -335,8 +335,8 @@ func listForest(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree
 // branches: by parent links. ● marks the attended aria, or, when detached,
 // the live outfit (your implicit home).
 // globalForest builds the rendered rows for the whole hierarchy, walked by
-// parent links. Pure, so its shape can be pinned without an angelus.
-// globalForest is the whole genealogy from the null root down.
+// the DRAWN edge (promote's override, else history). Pure, so its shape can
+// be pinned without an angelus.
 func globalForest(figs []rpc.FigaroInfoResponse, boundID string, ppid int) figtree.Tree {
 	return forestFrom(figs, "", -1, boundID, ppid)
 }
@@ -467,7 +467,10 @@ func renderFormScope(figs []rpc.FigaroInfoResponse, formID string, limit int) {
 	label := formID
 	for _, f := range figs {
 		if f.ID == formID {
-			parent = f.Parent
+			// drawnUnder, not Parent: the scope has to root where the TREE
+			// draws this row, or a promoted form would be scoped under an
+			// ancestor the listing no longer puts it beneath.
+			parent = drawnUnder(f)
 			if f.Name != "" {
 				label = f.Name + " " + formID
 			}

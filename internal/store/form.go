@@ -115,11 +115,15 @@ func (f *Form) Version() uint64 { return f.state.Load().version }
 //
 // The view is safe for the same reason commit's shared-array append is safe,
 // and it is the read half of that decision. A published formState is
-// immutable: its slice header carries its own length, the single writer only
-// ever appends PAST that length or reallocates, so bytes a reader can see
-// never change under it. The returned slice is capped (ps[lo:hi:hi]) so a
-// caller that appends to it reallocates instead of scribbling into the
-// writer's array.
+// immutable: its slice header carries its own length, and the single writer
+// (one at a time, under f.write) only ever appends PAST that length or
+// reallocates, so bytes a reader can see never change under it. The returned
+// slice is capped (ps[lo:hi:hi]) so a caller that appends to it reallocates
+// instead of scribbling into the writer's array.
+//
+// The writer became a mutex rather than a goroutine in the trunk-presentation
+// work, which changes nothing here: what the view needs is that commits
+// SERIALIZE and that state is published atomically, and both still hold.
 //
 // It replaces Patches(), which copied the entire history on every call: once
 // per studied form per provider Send, to answer a question whose answer is
