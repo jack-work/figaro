@@ -390,7 +390,7 @@ positional target needs the explicit verb or --id.`,
 		Name:  "new",
 		Group: "Prompt",
 		Short: "Start a fresh aria and prompt it",
-		Usage: "new [-j|--json] [-O <spec>] [-- <prompt>]",
+		Usage: "new [-j|--json] [-O <spec>] [-C [<@form>]] [-- <prompt>]",
 		Long: `Creates a new aria (server-generated id), binds it to this shell, and: when
 a prompt follows ` + "`--`" + `: sends it.
 
@@ -866,7 +866,7 @@ attended figaro's studies. The form is always the LAST positional.`,
 		Name:  "cast",
 		Group: "Session",
 		Short: "Cast a figaro into a role (point target-aria here, and study it)",
-		Usage: "cast [<aria>] <@form-id> | cast [<aria>] -O <names> [-S <k=v>] [-j]",
+		Usage: "cast [<aria>] <@form-id> | cast [<aria>] -O <names> [-S <k=v>] [-j] | cast (attending a form)",
 		Long: `One casting call: ensure the figaro studies the role, then point the
 role's target-aria at it: serialized through the figaro's actor loop, so
 no two castings of one figaro interleave. With -O the role is MINTED by
