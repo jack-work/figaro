@@ -170,7 +170,7 @@ the no-TTY rule would switch writes off); both go before the verb.
 | `figaro fork <id>:12` | Interior fork: history through turn 11 is shared, the original suffix continues, a fresh empty alternative diverges. |
 | `figaro fork [flags] -- <prompt>` | Branch and immediately prompt the new branch. Takes `send`'s flags; `-e` is rejected. |
 | `figaro fork --stay` | Branch without moving this shell. |
-| `figaro promote <id> [levels]` | Make a trunk the canonical line through its ancestors. Pure relabeling. |
+| `figaro promote <id> [levels]` | Raise an aria in the tree `ls` draws; it takes its parent's place. Presentation only. |
 | `figaro kill <id>` | Remove a trunk and its subtree. `-r` is required if it has live branches. |
 | `figaro export [<id>] [-o <f>]` | Write an aria to a portable file: outfit, form, every message. |
 | `figaro import <file>` | Restore one into THIS store as a new conversation. `-` reads stdin. |

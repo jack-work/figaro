@@ -694,7 +694,7 @@ positional slot belongs to the sub-verb.`,
 			"                (-h is reserved for help, on every verb)\n" +
 			"  -g, --global  home plus the null + outfit anchors (the full tree)\n\n" +
 			"Cap (mutually exclusive):\n" +
-			"  (default)     10 most-recently-used\n" +
+			"  (default)     10 rows, trees ordered by their most recent member\n" +
 			"  -a, --all     no cap\n" +
 			"  -n <count>    cap to <count>\n\n" +
 			"  -j, --json    pro/dev: every aria incl. null + outfits as JSON;\n" +
@@ -703,7 +703,7 @@ positional slot belongs to the sub-verb.`,
 		Flags: []cmdkit.FlagDef{
 			{Long: "home", Short: "H", IsBool: true, Description: "Home view: all top-level arias, without unbinding (-h is help)"},
 			{Long: "global", Short: "g", IsBool: true, Description: "Full hierarchy incl. the null + outfit anchors"},
-			{Long: "all", Short: "a", IsBool: true, Description: "Show all (remove the 10-most-recent cap)"},
+			{Long: "all", Short: "a", IsBool: true, Description: "Show all (remove the 10-row cap)"},
 			{Long: "limit", Short: "n", Description: "Cap to N rows (default 10)"},
 			{Long: "json", Short: "j", IsBool: true, Description: "Pro/dev: all arias (incl. anchors) as JSON; no other flags"},
 		},
@@ -1060,7 +1060,7 @@ when not, and the tool says which happened.`,
 	r.Register(&cmdkit.Command{
 		Name:  "promote",
 		Group: "Session",
-		Short: "Make a trunk the canonical line through its ancestors",
+		Short: "Raise an aria in the tree ls draws",
 		Usage: "promote [--id <id> | <id>] [levels]",
 		Long: `Raise an aria in the tree ` + "`figaro ls`" + ` draws: it takes its parent's
 place, and the parent comes to sit under it.

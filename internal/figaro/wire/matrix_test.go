@@ -2,6 +2,7 @@ package wire_test
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -113,8 +114,14 @@ func TestTrunklessIsAlwaysNormalized(t *testing.T) {
 	if !b.Store().Tree().Normalized() {
 		t.Fatal("a trunkless figaro must be normalized by construction")
 	}
-	if _, ok := b.Store().Tree().(interface{ Reparent(string, string) error }); ok {
-		t.Error("the trunkless tree must not expose presentation edits")
+	if err := b.Store().Tree().Promote("anything"); !errors.Is(err, topo.ErrNoPromote) {
+		t.Errorf("trunkless promote = %v, want ErrNoPromote", err)
+	}
+	if err := b.Store().Tree().Reparent("a", "b"); err != nil {
+		t.Errorf("trunkless reparent must be a no-op, got %v", err)
+	}
+	if b.Store().Tree().Edges() != nil {
+		t.Error("the trunkless tree must carry no presentation edges")
 	}
 }
 

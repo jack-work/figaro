@@ -4,12 +4,17 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
-    # figwal is a PUBLISHED module now: go.mod requires
+    # figwal is a PUBLISHED module: go.mod requires
     # github.com/jack-work/figwal at a real version and carries no
     # `replace`, so the vendor derivation fetches it like any other
     # dependency and this flake needs no input for it. Bumping figwal is
     # one step again -- edit go.mod, then reset vendorHash from the "got:"
     # value nix prints.
+    #
+    # A LOCAL path replace breaks every nix build ("inconsistent
+    # vendoring"), so an unreleased figwal is pinned by COMMIT instead:
+    # push the branch, `go get github.com/jack-work/figwal@<sha>`, reset
+    # the hash. A pseudo-version is fetchable; a path is not.
   };
 
   outputs = { self, nixpkgs }:
@@ -30,7 +35,7 @@
           pname = "figaro";
           version = "0.24.3";
           src = self;
-          vendorHash = "sha256-4ZIm//A8nT5ZNm/INd4n0z+km7+8XylzsCOyd5GDXjw=";
+          vendorHash = "sha256-U7/kyxBPgFLc3q+QRVadqr2LuyzBexyIQIh/Bfl/wYQ=";
 
           subPackages = [ "cmd/figaro" ];
           env.CGO_ENABLED = 0;

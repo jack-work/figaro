@@ -208,3 +208,27 @@ func TestTailRepair_FileBackedPersists(t *testing.T) {
 	require.NotEmpty(t, entries)
 	requireRepairTic(t, entries[len(entries)-1].Payload, "tc_disk")
 }
+
+// A head fork taken mid-turn inherits the assistant's tool_use and then
+// writes the branch's own birth record after it. The old peek-at-the-tail
+// check saw an input record, concluded there was nothing to repair, and the
+// branch's next prompt died on a provider 400.
+func TestTailRepair_DanglingCallBehindABirthRecord(t *testing.T) {
+	s := buildStream(t,
+		message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("run it")}},
+		message.Message{
+			Role:       message.RoleOutput,
+			Content:    []message.Content{toolCall("tc_a", "bash")},
+			StopReason: message.StopToolInvoke,
+		},
+		message.Message{Role: message.RoleInput}, // the fork's birth record: no content
+	)
+	if _, ok := repairInterruptedTail(s, "branch"); !ok {
+		t.Fatal("a dangling call behind a birth record went unrepaired")
+	}
+	entries := s.Read()
+	requireRepairTic(t, entries[len(entries)-1].Payload, "tc_a")
+	if _, ok := repairInterruptedTail(s, "branch"); ok {
+		t.Fatal("repaired twice")
+	}
+}

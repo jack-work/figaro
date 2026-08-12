@@ -162,8 +162,8 @@ error rather than a precedence rule.
   cauterized (null/outfit) aria is rejected with a nudge toward
   `attend null` / `ls -H` / `ls -g`.
 - **`kill <id>`**: remove a trunk **and its whole subtree** (children
-  included). Needs `--recursive`/`-r` to remove a trunk that has live
-  branches.
+  included). Needs `--recursive`/`-r` when anything is drawn under it; a
+  refusal writes nothing. See "Delete, and the two hierarchies" below.
 
 ## ls / list, attend is `cd`
 
@@ -184,8 +184,11 @@ error rather than a precedence rule.
 
 **Cap:**
 
-- default = the **10 most-recently-used**; **`-a`/`--all`** removes the cap;
-  **`-n N`** sets it. `-a` and `-n` are mutually exclusive.
+- default = the first **10 ROWS** of the drawn tree, whole trees ordered by
+  their most recent member. It is a row budget, not a "ten newest arias"
+  filter, so a deep tree can spend the whole budget and the footer says how
+  many are left. **`-a`/`--all`** removes the cap; **`-n N`** sets it. `-a`
+  and `-n` are mutually exclusive.
 
 **JSON:**
 
@@ -194,25 +197,80 @@ error rather than a precedence rule.
 
 Columns: **ARIA** (mantra, or `aria <id>`, with tree glyphs + a
 `●`this-shell / `▸`running / `○`idle marker), **ID** (opaque hex), **OUTFIT**,
-**VER** (`live` or a short content-hash), **FORK** (`@N`: the LT a branch was
-taken at, blank for top-level arias), AGE, MSGS, CTX, CWD.
+**VER** (`live` or a short content-hash), **FORK** (`yes` for a branch, `-`
+for a top-level aria: the fork POINT is an LT and the coordinate you would
+type is a turn, so `figaro status <id>` prints the `parent:turn` you can
+fork at rather than a number here that reads like one), AGE, MSGS, CTX, CWD.
+
+The tree a listing draws follows the PRESENTATION edge (`present` in
+`--json`), which is the topology edge until a promote moves it.
 
 ## promote
 
-**`promote [<id>] [levels]`** re-elects which root-to-leaf path is the
-canonical trunk. The named trunk climbs its ancestry, absorbing each parent
-trunk's run, until it is the canonical line through them. Pure relabeling: no
-data moves, ids are stable, your binding is untouched.
+**`promote [<id>] [levels]`** raises an aria in the tree `figaro ls` draws:
+it takes its parent's place, and the parent it displaced comes to sit under
+it. Presentation only. No history moves, no id changes, your binding is
+untouched, and the aria still reads exactly the turns it read before, so a
+promote is O(1) in conversation length and cannot fail halfway.
 
 ```sh
 figaro promote              the bound aria, one level
 figaro promote <id>         another aria, one level
-figaro promote <id> 10      up to 10 stump-bounded levels
+figaro promote <id> 10      up to 10 levels, stopping at the outfit
 ```
 
-Promotion stops at the outfit boundary. A top-level conversation is already
-rooted at an outfit and cannot climb into it; that is rejected rather than
-silently ignored, with a nudge toward making or editing an outfit instead.
+**Two hierarchies, and which one answers what.** The TOPOLOGY (`.from` on
+disk) says where an aria's history comes from: forking, reading and
+context always follow it, and nothing in this section can move it. The
+PRESENTATION says where a row is drawn and what a delete warns about. They
+start identical; a promote is the only thing that parts them.
+
+Promotion stops at the outfit boundary. Only conversations nest, so an
+outfit stump and the genesis root are never reparented under an aria: a
+top-level conversation has nothing above it to promote into and is refused
+("cannot promote into an outfit"), with a nudge toward making or editing an
+outfit instead. `promote <id> 10` on an aria three levels deep climbs three
+and reports three; it is not an error to ask for more than the tree has.
+
+**`figaro normalize`** makes every aria own its history outright, so no
+delete can owe anything at its boundary. It is the one operation here that
+is not instant (it copies the prefix each promoted aria borrows).
 
 Implementation: `runPromote` (`internal/cli/manage.go`), the `figaro.promote`
-RPC, and `PromoteResponse{FigaroID, Climbed, AtStump}`.
+RPC, `PromoteResponse{FigaroID, Climbed, AtStump}`, the boundary check in
+`XwalStore.Promote`, and the override state in `internal/trunk`. The listing
+carries both edges: `parent` (history, what `status` prints as forked-from)
+and `present` (where the row is drawn, what the vector follows).
+
+## Delete, and the two hierarchies
+
+`kill <id>` counts on one tree and cuts on the other, deliberately:
+
+- **What it refuses** is counted on the DRAWN tree, so the warning matches
+  what you see: `kill <id>` on an aria with rows under it refuses and names
+  how many; `-r` takes them.
+- **What it removes** is the HISTORY subtree, because that is what owns
+  bytes on disk.
+- An aria merely promoted under the target therefore survives. Its
+  presentation edge is forgotten and it returns to where its history puts
+  it.
+- A survivor that read its history THROUGH the removed set absorbs that
+  prefix first, and is then pinned where it was drawn, so a delete never
+  teleports an untouched aria to the genesis root.
+
+A refused delete writes nothing at all: the count is taken before any
+repair, because a repair cannot be taken back.
+
+## The trunk state, and where it is going
+
+Today the presentation lives in `trunks.json` beside the store: one JSON
+object of overrides, rewritten whole on every edit, absent an override the
+topology answers.
+
+**Slated:** move it into an unbound SINGLETON FORM, one per store and so
+1:1 with the angelus that owns it. A form is already this project's answer
+to durable, versioned, reducible state, and the trunk state is exactly that
+shape. The document, the patch stream, the migration, and what figwal must
+add for it (one segment, rewritten whole, because only the fold has value
+here) are in
+[contributing/trunk-singleton-form.md](../contributing/trunk-singleton-form.md).

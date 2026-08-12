@@ -1558,6 +1558,7 @@ func (h *handlers) fillFromNode(nodes map[string]store.NodeView, vers map[string
 	entry.Vector = n.Vector
 	entry.Trunk = n.Trunk
 	entry.Parent = n.Parent
+	entry.Present = n.Present
 	entry.BranchedLT = n.BranchedLT
 	entry.Kind = n.Kind
 	if n.Kind == string(outfitKind) {

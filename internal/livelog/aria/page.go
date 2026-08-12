@@ -61,9 +61,21 @@ type TurnPart struct {
 // Page is the one wire shape: pulled by read, pushed by the live stream. A
 // pure delta push is a Page whose single part carries Live and no Nodes.
 type Page struct {
-	Parts   []TurnPart `json:"parts,omitempty"`
+	Parts   []TurnPart `json:"parts"`
 	More    More       `json:"more"`
 	Metrics *Metrics   `json:"metrics,omitempty"`
+}
+
+// MarshalJSON keeps `parts` present and an ARRAY, always. An empty branch
+// used to serialize as {"more":{}}: no key at all, so a consumer that
+// indexed parts got a nil and a client that iterated it crashed. An empty
+// page is a page with nothing in it, not a page without the field.
+func (p Page) MarshalJSON() ([]byte, error) {
+	type wire Page
+	if p.Parts == nil {
+		p.Parts = []TurnPart{}
+	}
+	return json.Marshal(wire(p))
 }
 
 // Empty reports whether the page carries nothing, so it isn't sent.

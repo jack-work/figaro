@@ -327,7 +327,7 @@ func globalForest(figs []rpc.FigaroInfoResponse, boundID string, ppid int) figtr
 	nullID := ""
 	for _, f := range figs {
 		byID[f.ID] = f
-		childrenOf[f.Parent] = append(childrenOf[f.Parent], f.ID)
+		childrenOf[drawnUnder(f)] = append(childrenOf[drawnUnder(f)], f.ID)
 		if f.Kind == "null" {
 			nullID = f.ID
 		}
@@ -407,6 +407,15 @@ func globalForest(figs []rpc.FigaroInfoResponse, boundID string, ppid int) figtr
 		tree.Roots = append(tree.Roots, grow(nullID))
 	}
 	return tree
+}
+
+// drawnUnder is the row's place in the drawn tree: where a promote put it,
+// else where its history did.
+func drawnUnder(f rpc.FigaroInfoResponse) string {
+	if f.Present != "" {
+		return f.Present
+	}
+	return f.Parent
 }
 
 // bgFormRow is the row wash for unbound forms in `ls -g`: the SAME
@@ -811,9 +820,10 @@ func runPromote(loaded *config.Loaded, idFlag string, args []string) {
 				"  Set `trunks = true` in config.toml and restart the daemon to enable it.")
 		}
 		if resp.AtStump {
-			die("promote: %s is rooted at an outfit, so it cannot be promoted into one; make or edit an outfit instead", target)
+			die("promote: nothing above %s but an outfit, and only conversations nest;\n"+
+				"  edit the outfit instead, or promote something under this one", target)
 		}
-		fmt.Fprintf(os.Stderr, "promoted %s by %d level(s): it is now the canonical line through its ancestors\n", target, resp.Climbed)
+		fmt.Fprintf(os.Stderr, "promoted %s by %d level(s): `figaro ls` now draws it there\n", target, resp.Climbed)
 		return nil
 	})
 }
