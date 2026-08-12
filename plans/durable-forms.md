@@ -33,26 +33,26 @@ That is the changeset. Everything below is detail.
 
 1. **One writer per form.** An inbox with exactly one drainer. Not a mutex,
    not a convention.
-2. **Durable before visible.** A patch is synced to disk before it reaches
+1. **Durable before visible.** A patch is synced to disk before it reaches
    the published state. The reverse is not a lost write but a hallucinated
    one: the model is shown state as a reminder, so a crash would leave it
    acting on something that never happened.
-3. **Reads are lock-free.** The live state is an immutable AVL root behind an
+1. **Reads are lock-free.** The live state is an immutable AVL root behind an
    atomic pointer. A read is one load. It never blocks a writer, never wakes
    anything, never serializes behind a turn.
-4. **Command and event are different things.** A command may be refused. An
+1. **Command and event are different things.** A command may be refused. An
    event is a fact and can only be observed. The reduction from one to the
    other is pure and happens in the writer.
-5. **Every command receives an answer.** Silence is not a legal outcome, even
+1. **Every command receives an answer.** Silence is not a legal outcome, even
    when the log gets nothing.
-6. **Absence is the truthful default.** State describing other state holds
+1. **Absence is the truthful default.** State describing other state holds
    overrides, never a full picture, so a lost document degrades to the truth
    rather than to a lie.
-7. **Forking never consults presentation.** A presentation edge must never
+1. **Forking never consults presentation.** A presentation edge must never
    decide where data comes from.
-8. **Deletion is a record, not an event in memory.** A subscriber that was
+1. **Deletion is a record, not an event in memory.** A subscriber that was
    offline must be able to learn it; a replay must reproduce it.
-9. **History is observable unless the form declares otherwise**, and a form
+1. **History is observable unless the form declares otherwise**, and a form
    that declares otherwise may not hand out views of it.
 
 ## 2. What a delete does to the log
@@ -68,26 +68,26 @@ own. That is why a fork is cheap and why a family shares one rendered prefix.
 
 1. **Refuse first**, before touching anything, because the repair below
    rewrites surviving arias and cannot be taken back.
-2. **Find the boundary**: survivors outside the delete set whose lineage runs
+1. **Find the boundary**: survivors outside the delete set whose lineage runs
    through it (`topo.Boundary`).
-3. **Detach each** (`Trunks.Detach`): copy `[1, base)` out of the ancestor
+1. **Detach each** (`Trunks.Detach`): copy `[1, base)` out of the ancestor
    chain into the node's own directory as **one segment based at 1**. One,
    because a reducible channel's segment header carries the folded state at
    its start and only a segment based at 1 can honestly carry the initial
    state.
-4. **Publish by rename**, `.fork` per channel first, the node marker
+1. **Publish by rename**, `.fork` per channel first, the node marker
    (`.from`) LAST. A crash between two channels' flips leaves each channel
    individually correct, because `.from` still names the parent: a flipped
    channel reads its absorbed copy, an unflipped one delegates, and the two
    are byte-identical.
-5. **Only then unlink.**
-6. **Repair presentation** with the store lock released: `Forget` every edge
+1. **Only then unlink.**
+1. **Repair presentation** with the store lock released: `Forget` every edge
    naming a doomed node, `Reparent` survivors to a home that outlives the
    delete. Without it a survivor falls back to topology and lands under the
    genesis root with no outfit, which is the fossil this path exists to stop
    making (109 of 503 conversations in the real store, before figwal
    v0.16.1).
-7. **Collect the stump** only if nothing is left wearing it.
+1. **Collect the stump** only if nothing is left wearing it.
 
 Crash-safe with no journal, by ordering alone: absorbed records are written
 below the node's own fork base, where reads still delegate and cannot see
@@ -137,6 +137,12 @@ func (f *Form) Await(t Ticket) (Result, error)       // caller's own goroutine
 func (f *Form) Apply(cmd Command) (Result, error)    // Submit + Await
 ```
 
+**All three have wire equivalents** (§16.3): `form.submit` returns a ticket
+without waiting, `form.await` blocks on one, and `form.patch` is the pair,
+which a client may implement locally rather than as a third round trip. A
+client that wants optimistic replication uses `form.submit` plus the event
+stream and never calls `form.await` at all.
+
 The worker keeps `patched atomic.Uint64` plus a broadcast tick (a
 `chan struct{}` closed and replaced at each publish). `Await` reads the tick,
 checks `patched >= mine`, waits, repeats. **No goroutine per call, no channel
@@ -160,6 +166,28 @@ next := &formState{snap: st.snap.Apply(applied), version: version, ...}
 f.state.Store(next)                            // visible half
 ```
 
+**How an append is made durable, and whether that is cheaper than an
+in-place update.** Three facts:
+
+- `fsync` flushes the file's data AND its metadata. `fdatasync` skips
+  metadata that is not needed to read the data back, but a file's SIZE is
+  needed, and an append changes the size. So for a plain append the two cost
+  about the same: both write the inode.
+- An in-place overwrite does not change the size, so `fdatasync` there
+  flushes data blocks only, and is genuinely cheaper. But an in-place update
+  is not available to us: a torn overwrite destroys a record that was
+  already durable, which is exactly what a log must never do. It is why
+  segment logs never rewrite bytes anyone might be reading.
+- The database trick that gets both is **preallocation**: `fallocate` the
+  segment to its full size at creation, so appends write into space that
+  already exists and the size never changes, and then `fdatasync` is the
+  cheap one. figwal does not do this today (it uses `f.Sync()`, plus a
+  directory fsync for creations and unlinks), and it is the first place to
+  look if the sync cost turns out to matter.
+
+So: appends are correct and currently pay a metadata flush. If the measured
+cost is a problem, preallocate; do not reach for in-place writes.
+
 The reduce is a pure function of published state; nothing is applied until
 after the append. **A failure anywhere before the `Store` leaves the
 published state untouched, so there is nothing to roll back.** Reverse
@@ -182,6 +210,7 @@ batch, 256 patches cost one. Batch the **durability**, never the
 **semantics**: each command is still reduced against the state as of its own
 position in the queue, or two clients' `ifVersion` guards stop meaning
 anything.
+(Gluck approves on batching the durability but not the semantics.)
 
 ### 3.4 Where the version comes from
 
@@ -232,10 +261,10 @@ not hold is reasonable there.
 
 So a command carries an intent:
 
-| intent | set | remove | who |
-|---|---|---|---|
+| intent             | set    | remove               | who                                  |
+| ------------------ | ------ | -------------------- | ------------------------------------ |
 | `assert` (default) | reduce | **reject if absent** | `fig unset`, `form delete`, an agent |
-| `ensure` | reduce | reduce if absent | birth dressing `-D`, machine writers |
+| `ensure`           | reduce | reduce if absent     | birth dressing `-D`, machine writers |
 
 Same event either way. The reducer stays pure; the refusal happens in
 validation, before the reduce.
@@ -329,6 +358,29 @@ count, and deliver a `Resync` marker when space frees. A silent drop is
 unacceptable because a mirror that misses one patch is wrong forever without
 knowing it. The worker must never block on a consumer.
 
+### 6.1 The subscriber set is its own concurrency domain
+
+**Yes, and it is better than putting it in the queue.** The registry is an
+atomic pointer to an immutable subscriber slice, replaced by
+compare-and-swap on register and unregister. No lock, no queue, its own
+domain, and `emit` reads it with one load.
+
+What made me route it through the queue was the snapshot race: read a
+snapshot and then subscribe, and a patch landing between the two is in
+neither. **Reverse the order and the race is gone:**
+
+1. **Register first** (atomic CAS into the subscriber set).
+2. **Then read the published snapshot** (one atomic load).
+
+Any event that lands between the two is *delivered* AND *contained in the
+snapshot*: a duplicate, not a gap. The subscriber discards events at or
+below its snapshot version and is exactly correct. Duplicates are
+recoverable; gaps are not, and the ordering is what decides which one you
+get.
+
+So `SubscribeFrom` is **not** a queued command. It is two atomic
+operations in that order, and the subscriber's own version filter.
+
 ## 7. Deletion, leases, reclamation
 
 **The tombstone is state.** A final patch on the dying form's own channel
@@ -337,21 +389,29 @@ are refused. Subscribers hear it through the same stream as any other
 change: one delivery path, one durability story, and an offline subscriber
 reads it on resume.
 
-**Leases, not refcounts.** A counter cannot distinguish "still reading" from
-"died holding a reference". A subscriber registers `{id, holder, expires}`
-and renews while it lives; a sweep drops expired registrations; a tombstoned
-form with no unexpired lease is reclaimable.
+**Leases, in memory, best effort.** The first draft made them durable and
+refcounted. The libretto's intervals (§12.3) removed the need: what a durable
+count was for was keeping a source alive long enough for a reader to see it,
+and the intervals record what was seen instead.
 
-- **Restart is a clean sweep, not a timeout.** Within one daemon the holder
-  is the process instance, so every lease from a previous instance is
-  provably dead at start and cleared in one pass. The TTL only covers a
-  holder that is alive but silent, which today is nobody and later is a
-  remote node.
+So the registry is in-memory: `{id, holder, expires}`, renewed while the
+holder lives, swept when stale, lost on restart, which is correct because
+every holder is lost on restart too. A tombstoned form with no unexpired
+lease is reclaimable.
+
+- **Restart is a clean sweep**: no lease survives, so nothing waits out a
+  TTL for the common case. The TTL covers a holder that is alive but silent,
+  which today is nobody and later is a remote node.
 - **Renewal rides existing timers**: the 2-second pid monitor renews, the
   120-second reclamation sweep expires. No new goroutine.
-- **TTL in minutes**, configurable (§9). Being wrong in one direction holds
-  a form on disk slightly too long; in the other it reclaims state a live
-  reader still needs.
+- **TTL in minutes**, configurable (§9).
+- **Missed reclamations are tolerated and logged.** A holder that dies
+  without unsubscribing leaves a form on disk until its lease expires; a
+  sweep that races a subscribe may reclaim something a reader wanted, and
+  that reader gets a "the form you were following is gone" error rather than
+  a corruption. Both are recoverable, both are logged, and neither justifies
+  a distributed protocol. Self-recover where possible and iterate once the
+  libretto is working.
 
 **Composition with §2:** a tombstoned node whose boundary survivors have not
 detached must not be unlinked either. Two reasons to defer, one mechanism to
@@ -366,16 +426,32 @@ their own lifecycles, coupled to the form that gives the node its identity.
 When this distributes, the three activate together, because identity is the
 bound form.
 
-| state | kind | history observable | compaction | durability |
-|---|---|---|---|---|
-| bound form (an aria's) | form | **yes, load-bearing** | forbidden | sync before publish |
-| unbound form / role | form | **yes, load-bearing** | forbidden | sync before publish |
-| outfit node / default form | form | irrelevant (one patch) | unnecessary | sync at birth |
-| **topology form** | form | no | **required**, single segment | sync before publish |
-| derived spec | form | no | desired | sync before publish |
-| derived values | form | no | desired | sync before publish (see §14) |
-| IR | log | **yes, it is the conversation** | never | as today |
-| translator cache | log | no | explicit `fig translator evict` only | durable, like the IR |
+| state                      | kind | history observable              | compaction                           | durability                    |
+| -------------------------- | ---- | ------------------------------- | ------------------------------------ | ----------------------------- |
+| bound form (an aria's)     | form | **yes, load-bearing**           | forbidden                            | sync before publish           |
+| unbound form / role        | form | **yes, load-bearing**           | forbidden                            | sync before publish           |
+| outfit node / default form | form | irrelevant (one patch)          | unnecessary                          | sync at birth                 |
+| **topology form**          | form | no                              | **required**, single segment         | sync before publish           |
+| derived spec               | form | no                              | desired                              | sync before publish           |
+| derived values             | form | no                              | desired                              | sync before publish (see §14) |
+| IR                         | log  | **yes, it is the conversation** | never                                | as today                      |
+| translator cache           | log  | **yes, retained**               | never; tail truncation only          | durable, like the IR          |
+
+**The translator cache, corrected.** It is retained indefinitely and never
+compacted. The only removals are from the TAIL: an API error or an explicit
+eviction truncates back to a point and the suffix is regenerated. Nothing
+earlier than the tail is ever rewritten, which is the same discipline the IR
+has and the reason both can be trusted by a reader holding an old position.
+
+It already has the two coordinates this needs: `store.Entry` carries `LT`
+(its own position in the translation channel) and `FigaroLT` (the IR record
+it translates), so the index from a cached translation back to its source
+exists today and is what `Cache.Lookup(entry.LT)` uses.
+
+Durability equal to the IR: sync before publish, same as everything else.
+The word "observable" in this table means **retained**, not "rendered to a
+model": a channel is observable when a reader can still ask what it looked
+like at an old version.
 
 **Why the first two forbid compaction, precisely.** The projection renders a
 form's transitions BETWEEN two stamps and re-derives them on every
@@ -391,12 +467,12 @@ and the safety argument evaporates silently.
 
 ## 9. Configuration: one policy, several enforcement points
 
-| clock | where | default | configured today |
-|---|---|---|---|
-| agent + cache reclamation | `EvictIdle` | 15 min | `[memory] dormant_after_minutes` |
-| figwal head unload | `xwal.Store` `IdleUnload` | 5 min | **no** |
-| actor linger | new | ~2 s | **no** |
-| subscriber lease TTL | new | ~10 min | **no** |
+| clock                     | where                     | default | configured today                 |
+| ------------------------- | ------------------------- | ------- | -------------------------------- |
+| agent + cache reclamation | `EvictIdle`               | 15 min  | `[memory] dormant_after_minutes` |
+| figwal head unload        | `xwal.Store` `IdleUnload` | 5 min   | **no**                           |
+| actor linger              | new                       | ~2 s    | **no**                           |
+| subscriber lease TTL      | new                       | ~10 min | **no**                           |
 
 ```toml
 [memory]
@@ -414,21 +490,42 @@ each enforcement point, not at the parser.
 `[store] segment_size` (2 MiB) gains a companion for compacting channels,
 which want a small segment so a roll is cheap.
 
-## 10. Compaction, as segment normalization
+## 10. Retention, which is what "compaction" means here
 
-Replace a channel's segments with one segment holding the folded document.
-Not truncation in place. `absorbPrefix` already has the shape: write the new
-segment, fsync, rename, fsync the directory. Either the old or the new is
-present, and both fold correctly.
+Compaction is not a distinct operation and introduces no new pause. It is a
+**retention policy**: how many sealed segments a channel keeps.
 
-**Trigger: on roll.** Tune the segment small so rolls are frequent and each
-is cheap. When a segment fills, the writer serializes the whole document into
-a fresh segment before continuing: a pause proportional to the document, not
-to history.
+Every reducible channel already rolls segments, and **a reducible segment's
+header is the folded state at its start**. So the fold that a compacted
+channel needs is written by the ordinary roll, for every channel, today. The
+only difference between a normal form and the topology form is what happens
+to the sealed segments behind the newest one:
 
-Acceptable for the topology form (a different concurrency domain, bursty and
-rare writes, a small map) and not for a board (written mid-turn on the hot
-path).
+| channel | policy |
+|---|---|
+| bound form, unbound form, derived form | keep all |
+| topology form | keep 1 |
+| indexed forms (future) | configurable N |
+
+Deleting the segments behind the newest is a background unlink. Nothing
+blocks, nothing is serialized into a fresh file specially, and the crash
+story is the roll's own: the newest segment folds correctly on its own, and
+an interrupted unlink leaves a file that the next pass removes.
+
+The blocking cost that does exist is the **roll itself**, which serializes
+the fold into the new segment's header. That is paid by every reducible
+channel, is proportional to the document rather than to history, and is
+tuned by segment size: small segments roll often and cheaply, large ones
+rarely and expensively. The topology form wants small.
+
+**The rule that still holds:** a channel may set a retention policy only if
+it hands out no patch views and nothing renders its history, because
+`PatchesBetween` returns a view into an array whose safety rests on the
+records still being there. Enforced by the type (§8).
+
+**All of it is configurable** (§9) and the values are fuzzed, because a
+retention policy that is wrong by one segment is a data-loss bug that only
+appears under a specific roll boundary.
 
 ## 11. The topology form
 
@@ -438,97 +535,237 @@ one per angelus, because the angelus owns the store.
 - **One patch per change**, always. A promote is two keys in one record,
   which is what makes it atomic; today it is one `save()` of a whole file and
   the pair can half-land.
+
 - **Validation inside the loop**, in the same critical section as the patch.
   Today promote reads topology, decides, and writes overrides in separate
   steps: a TOCTOU against a concurrent promote or a delete's `Forget`.
+
 - **Reads are free**: the folded tree is an AVL root behind an atomic
   pointer.
+
 - **History not observable**, single segment, compaction required.
+
 - **Never listed, never forked, never bound.** Excluded from
   `Conversations()` and from `ls -g`'s form rows, or the tree grows a row
   describing itself.
-- **Bootstrap is safe because absence is truthful**: a store whose topology
-  form is not yet resolved renders where history puts things, which is
-  right, not wrong. That is what keeps the cycle (the listing needs the
-  tree, the tree lives in a node in the store) from being a deadlock.
-- **Partition later** if one writer becomes a bottleneck: one form per child
-  of the null root, or per child of null-or-outfit-stump. The document
-  partitions cleanly because an edge names only its two endpoints.
+
+- **It always exists, and it is outside the graph it describes.** Corrected
+  from the first draft, which said absence was a safe state: it is not a
+  state at all. The angelus creates the topology form at store open if it is
+  not there, holds it for the daemon's lifetime, and closes it at shutdown.
+  It is not a node in the node graph, has no parent, cannot be forked, and
+  **does not depend on the topology it holds**, which is what makes the
+  bootstrap trivial rather than circular.
+
+  What IS truthful-by-absence is an **entry inside** the document: an aria
+  with no override is drawn where its history puts it. That is the property
+  worth keeping, and I conflated it with the document itself.
+
+  Of every form in the system this one has the least in common with the
+  others: no lineage, no fork, no birth patch, no outfit, one instance,
+  daemon lifetime.
+
+- **Not a bottleneck in practice.** Reads are free. Writes are promotes,
+  deletes and **forks**, and a fork already goes through the angelus, so the
+  serialization point is one the operation was passing through anyway. If
+  read pressure ever justifies it, the answer is a derived replica rather
+  than a partition.
+
+Partitioning (one form per child of the null root, or per child of
+null-or-outfit-stump) is possible because an edge names only its two
+endpoints, but it is far off and explicitly not in scope here.
 
 ## 12. Derived forms, and the libretto
 
-A derived form is a **compound**: two forms, two concurrency domains.
+### 12.1 A derived form is ONE form with one actor
 
-- **The spec**: form id to observed subtype, a JSON tree of subscribed
-  fields. Presence-only grammar for now,
-  `{"@abc": {"brief": "this", "status": "this"}}`. An expression language
-  later.
-- **The values**: the same shape, holding values.
-- **The derivation**: an actor with two producers, incoming patches from its
-  subscription set and patches its own spec emits.
+The first draft made it a compound of two forms, spec and values, on the
+argument that user intent and machine output need different writers. That
+was over-design: **one actor is one writer**, and an actor handling two kinds
+of operation is not two writers. Spec changes are rare enough (a study, a
+drop) that they share the queue with the folds without contending for
+anything.
 
-Two forms because the spec is user intent and the values are machine output:
-different writers, different lifecycles, different protection classes. One
-form would mean two writers on one node and the model collapses.
+So: one form, one actor, two namespaces inside the document.
 
-**`study` becomes an alias** for setting `{"@formid": "this"}` on the
-libretto; `drop` is a key removal. Both are ordinary commands through an
-ordinary writer, which deletes `study.go`'s board list, `study_hub.go`'s
-dormant half, and the `SetObservedForms` mirror.
+```jsonc
+{
+  // SPEC: what is observed, and which paths. User intent.
+  "spec.@abc123": {"*": true},                        // the whole form
+  "spec.@def456": {"brief": true, "status": true},    // a projection
 
-**Self-modifying derivations are refused structurally** at subscribe time. A
-derivation subscribing to its own output is a feedback loop: harmless with
-presence-only grammar, oscillating with expressions, and it will oscillate at
-3am inside an actor nothing is watching. Do not build a fixpoint evaluator
-with a step cap.
+  // RANGES: the durable record of WHEN each was observed, in the
+  // source's own versions. Machine output.
+  "range.@abc123": [[3, 41], [55, null]],             // dropped at 41, re-studied at 55, open
+  "range.@def456": [[7, null]]
+}
+```
 
-**Allocation.** Three copies per observed value (source snapshot, derived
-tree, the figaro's read) plus the spec, where a study costs zero today
-because the projection reads the source directly. `form.Snapshot` is an
-immutable AVL where `Clone` is the identity, and a presence-only derivation
-is literally a subtree selection, so **write it as tree surgery, not
-marshal-and-unmarshal**. Very hard to retrofit once the derivation speaks
-JSON internally.
+Protection follows the namespace rather than a sigil: `spec.*` is settable,
+`range.*` is `KeySystemManaged` and refuses an external write (§5).
+
+**The projection you designed weeks ago comes back here**, where it always
+belonged: `study -P brief,status` writes a spec entry with those paths, and
+`study` with no `-P` writes `{"*": true}`. The whole form is the default.
+
+### 12.2 The libretto is the bound derived form
+
+Every other derived form is free-standing and created through the API. The
+libretto is the one that is **bound**: minted with its figaro, **forked with
+it**, and addressed through it. It is to a derived form what an aria's board
+is to an unbound form.
+
+That settles the open question from the other thread: **the libretto forks.**
+A branch inherits its parent's observations, which is today's behaviour and
+the least surprising one.
+
+### 12.3 Ranges, and what they buy
+
+The libretto does not hold a cursor. It holds, per observed form, **the
+intervals of that form's revision history during which this figaro was
+observing it**. Fully persistent, durable, replayable.
+
+This is the piece that removes a whole subsystem. With intervals:
+
+- **Replay is deterministic** without the source being retained for anyone.
+  The translator asks "what was observed, over which source versions, at IR
+  record N" and the answer is recorded state rather than a live subscription.
+- **A form studied, dropped and re-studied renders correctly**, because the
+  gap is in the document.
+- **Refcounted durable leases stop being necessary.** What a subscriber
+  needed a durable count for was to keep a source alive long enough to be
+  read; the intervals say what was read instead. Leases shrink to an
+  in-memory, best-effort liveness signal (§7).
+
+**The IR stamps ONE cursor: the libretto's version.** Not one per observed
+form. The translator resolves that version to the libretto's state at that
+point (spec plus intervals), then reads the source patches those intervals
+admit. One number in the record, everything else in a durable document.
+
+### 12.4 The write path, in order
+
+- **`study`** patches `spec.<formid>` and opens an interval. Ordinary
+  command, ordinary writer, no agent, no wake.
+- **The libretto's actor subscribes** to each form in the spec and behaves
+  like any other consumer: it folds incoming patches, extends the open
+  interval's end to the source's new version, hears a tombstone and closes
+  the interval, syncs, publishes.
+- **The figaro reads the libretto** at each IR record and stamps its version.
+  It never writes it on that path.
+
+### 12.5 The cost, stated plainly
+
+Extending an interval per source patch is **write amplification**: one
+libretto patch per source patch, per observing figaro. Fifty observers on one
+busy form is fifty libretto writes per patch.
+
+Two things blunt it, and they should be measured rather than assumed: the
+libretto's actor batches (fifty source patches in a burst extend an interval
+once, because the batch reduces to one end value), and an interval end is one
+key, so the patch is small. It is still the sharpest performance question in
+this design and it is `[q12]`.
+
+### 12.6 Persistence and retention
+
+Derived forms are **fully persistent, no retention limit, for now**. The
+option to configure one exists (§10) and is not exercised. Only indexed
+forms and the topology form take a retention policy today.
+
+### 12.7 Allocation, and what "tree surgery" means
+
+`form.Snapshot` is an immutable AVL with structural sharing: `Clone` is the
+identity function, and `Apply` copies only the O(k log n) nodes on the paths
+a patch touches. Two ways to build a derived value from a source value:
+
+- **Marshal and unmarshal**: serialize the selected keys to JSON, parse them
+  into the derived form's tree. Allocation proportional to the BYTES
+  selected, on every event. On the measured `large` fixture (5k keys) a full
+  copy is 2.0 ms and 12.1 MB; on a real board, 3.7 µs and 18 KB.
+- **Tree surgery**: the derived tree points at the SAME immutable value nodes
+  the source holds, because a presence-only derivation is literally a subtree
+  selection. Allocation proportional to the nodes on the touched paths, which
+  is what `Apply` already costs.
+
+**Where it becomes perceivable:** a small board with one observer, never. A
+2 MB board, or the fifty-observer storm the study benchmarks already model,
+immediately: 50 × 12 MB per patch versus 50 × a few hundred bytes.
+
+It has to be the design from the first line, because it is very hard to
+retrofit once the derivation speaks JSON internally.
 
 ## 13. Inconsistencies found while writing this down
 
 Recorded because each was a real contradiction between two turns of the
 design, and the resolutions are load-bearing.
 
-1. **The libretto cursor write versus fsync-before-publish.** If the drain
-   loop writes cursors on the IR hot path and that write is now an fsync,
-   every IR record costs a form sync. Worse, if the write is made async, the
-   IR could stamp a libretto version that is not yet durable, and a crash
-   leaves the IR referencing a version that never existed: an ordering
-   violation ACROSS forms.
-   **Resolution: read-then-stamp, never write-then-stamp.** The loop stamps
-   the libretto version it *read*, which is durable by construction because
-   publish follows fsync. The cursor *update* is a separate non-blocking
-   `Submit`. No cross-form ordering constraint exists, and the hot path pays
-   nothing.
-2. **"Validation inside the topology loop retires the `deleting` lock" was
+1. **The libretto cursor write versus fsync-before-publish.** The form in
+   question is **the libretto**, and the hot path is the figaro's drain loop
+   at each IR record.
+
+   The trap: if the loop WRITES the libretto on that path and the write now
+   syncs, every IR record costs a libretto fsync. Make the write async to
+   avoid that, and a worse thing happens: the IR record stamps a libretto
+   version that is not yet durable, so a crash leaves the IR pointing at a
+   version that never existed. That is an ordering violation ACROSS two
+   forms, and neither form can detect it alone.
+
+   **Resolution: read-then-stamp, never write-then-stamp.**
+
+   The loop *reads* the libretto's published version and stamps that number
+   into the IR record. Because publish follows fsync, **any version the loop
+   can observe is already durable**, so the IR can never reference something
+   that is not on disk. The stamp is a read of an atomic pointer: no queue,
+   no sync, no wait.
+
+   The libretto's own updates (extending an interval as a source moves) are
+   driven by the libretto's actor from its subscriptions, not by the figaro's
+   loop, and they are ordinary batched patches. The two never need to be
+   ordered against each other, because the only thing the IR asserts is "at
+   this record I had observed the libretto at version V", and V was durable
+   when it was read.
+
+   Generalised: **a cross-form reference may only name a version the
+   referrer has observed as published.** Publication implies durability, so
+   the reference is safe by construction and no cross-form protocol is
+   needed.
+
+1. **"Validation inside the topology loop retires the `deleting` lock" was
    too strong.** A delete is filesystem repair (detach, unlink) plus a
    topology patch. The actor owns only the second. The `deleting` lock still
    guards the filesystem half; what the actor removes is the TOCTOU on the
    topology half.
-3. **`SubscribeFrom` "inside the writer" would re-enter the lock**, because
-   registration takes a durable lease, and a durable registration is a write.
-   Resolved by making subscribe a queued command whose result is the
-   snapshot.
-4. **Rejecting removals of absent keys breaks birth dressing.** `-D` on a
+1. **`SubscribeFrom` does not belong in the queue at all**, and the first
+   draft put it there for the wrong reason. I routed it through the writer
+   because registration was going to take a DURABLE lease, and a durable
+   registration is a write. Two things changed:
+
+   - Leases became **in-memory and best-effort** (§7), because the libretto's
+     intervals record what was observed, so nothing durable needs to count
+     readers.
+   - The snapshot race, which was the other reason, is closed by ORDERING
+     rather than by serialization: **register first, then read the
+     snapshot**. An event landing between the two is delivered *and* present
+     in the snapshot, which is a duplicate; the subscriber drops events at or
+     below its snapshot version. Do it the other way and the same event is in
+     neither, which is a gap. Duplicates are recoverable, gaps are not.
+
+   So the subscriber set is an `atomic.Pointer` to an immutable slice, swapped
+   by CAS, in its own concurrency domain, with no lock and no queue: exactly
+   the shape you asked for.
+1. **Rejecting removals of absent keys breaks birth dressing.** `-D` on a
    birth patch means "do not inherit this" and may name a key the parent
    closure lacks. Resolved by the `assert` / `ensure` intent in §4.2.
-5. **"Every command gets an answer" versus "a patch that changes nothing is
+1. **"Every command gets an answer" versus "a patch that changes nothing is
    not an event."** Both are right, about different layers. Resolved by
    splitting the log rule from the protocol rule (§4.1).
-6. **Compaction versus zero-copy patch views.** `PatchesBetween` returns a
+1. **Compaction versus zero-copy patch views.** `PatchesBetween` returns a
    view into an immutable array whose safety rests on append-only. Resolved
    by the type-level rule in §8.
-7. **A panicking commit sink now takes down the caller**, since main moved
+1. **A panicking commit sink now takes down the caller**, since main moved
    sinks off the actor goroutine and onto the caller under the write lock.
    Two lines of `recover` around the sink loop, and it belongs there
    regardless of the rest of this plan.
-8. **The dot-prefix protection class is dropped** in favour of the schema
+1. **The dot-prefix protection class is dropped** in favour of the schema
    alone (§5), which also retires the `.id` rename and its migration.
 
 ## 14. What this costs
@@ -536,19 +773,25 @@ design, and the resolutions are load-bearing.
 1. **Solo write latency**: a form patch goes from a buffered memcpy (~5 µs)
    to a real fsync (~50 to 200 µs). `fig set`, every mantra update. The
    number to watch.
-2. **Contended throughput improves**: group commit amortizes the fsync and
+1. **Contended throughput improves**: group commit amortizes the fsync and
    takes figwal's per-lineage lock once per batch rather than once per patch.
-3. **Goroutines drop for idle forms** and do **not** drop for blocking
+1. **Goroutines drop for idle forms** and do **not** drop for blocking
    callers, who still park. `Submit` without `Await` is what removes those.
-4. **Derived forms cost three copies per observed value** unless the tree
-   surgery is written from the start.
-5. **The topology form serializes globally.** Rare writes, free reads,
+1. **Derived forms cost a copy per observed value** unless they share tree
+   structure with the source instead of re-encoding it. Defined, with the
+   numbers and the scale at which it is perceivable, in §12.7.
+1. **The topology form serializes globally.** Rare writes, free reads,
    partitions later.
-6. **Compaction pauses the topology writer** for one document serialization,
-   on roll.
-7. **Deferred reclamation holds disk** for tombstoned forms with live leases.
-8. **Validation costs a lookup and a branch per key**, on one-to-three-key
-   patches.
+1. **Retention introduces no new pause.** See §10: it is a policy on how
+   many sealed segments to keep, not a distinct operation, and the fold it
+   depends on is written by the ordinary roll every reducible channel already
+   performs.
+1. **Deferred reclamation holds disk** for tombstoned forms with live leases.
+1. **Validation costs a lookup and a branch per key**, on one-to-three-key
+   patches. "Validation" here means the schema check of §5: is this key
+   system-managed and is this caller privileged, is the value the declared
+   shape, and is an `assert` removal naming a key that is actually there. A
+   map lookup and a comparison, in the writer, before the reduce.
 
 **Measure before anything:**
 
@@ -565,20 +808,20 @@ design, and the resolutions are load-bearing.
 
 1. **`SubscribeFrom`** as a queued command. Fixes `form listen`'s existing
    race on its own.
-2. **The lazy actor** in `internal/actor`, exit race handled and tested once.
-3. **Group commit and sync-before-publish**, plus
+1. **The lazy actor** in `internal/actor`, exit race handled and tested once.
+1. **Group commit and sync-before-publish**, plus
    `XWAL.SyncChannelThrough`. Plus the sink `recover`.
-4. **Command/event/ack on the wire**: `session`, `seq`, intent, and the
+1. **Command/event/ack on the wire**: `session`, `seq`, intent, and the
    acknowledgement of a no-op. The whole server side of optimistic
    replication, worth having before any replica exists because it also fixes
    the silent-no-op ambiguity.
-5. **Schema validation** in `commit`, `KeySystemManaged` enforced.
-6. **Tombstones and leases.**
-7. **Segment normalization**, with the type-level rule.
-8. **The topology form**, replacing `trunks.json`, with its migration.
-9. **Derived forms**, libretto first, `study` as an alias.
-10. **The API refactor** (§16), before the surface grows by the methods the
-    above adds.
+1. **Schema validation** in `commit`, `KeySystemManaged` enforced.
+1. **Tombstones and leases.**
+1. **Segment normalization**, with the type-level rule.
+1. **The topology form**, replacing `trunks.json`, with its migration.
+1. **Derived forms**, libretto first, `study` as an alias.
+1. **The API refactor** (§16), before the surface grows by the methods the
+   above adds.
 
 Steps 1 through 4 are worth having even if 5 through 10 never happen.
 
@@ -595,15 +838,15 @@ later. But it should be done BEFORE those methods exist, so the ordering is
 The first segment of a method name means three different things depending on
 which line you are on:
 
-| prefix | means | examples |
-|---|---|---|
-| `figaro.` | sometimes *sent to an aria* | `figaro.qua`, `figaro.set`, `figaro.study` |
-| `figaro.` | sometimes *about arias, sent to the daemon* | `figaro.create`, `figaro.list`, `figaro.kill` |
-| `aria.` | *about an aria, answered from the store* | `aria.form`, `aria.context`, `aria.read` |
-| `angelus.` | the daemon itself | `angelus.status`, `angelus.outfits` |
-| `form.` | forms, three of them only | `form.create`, `form.bind`, `form.delta` |
-| `pid.` | shell bindings | `pid.bind`, `pid.resolve` |
-| (none) | | `turn.done`, `outfit.reload` |
+| prefix     | means                                       | examples                                      |
+| ---------- | ------------------------------------------- | --------------------------------------------- |
+| `figaro.`  | sometimes *sent to an aria*                 | `figaro.qua`, `figaro.set`, `figaro.study`    |
+| `figaro.`  | sometimes *about arias, sent to the daemon* | `figaro.create`, `figaro.list`, `figaro.kill` |
+| `aria.`    | *about an aria, answered from the store*    | `aria.form`, `aria.context`, `aria.read`      |
+| `angelus.` | the daemon itself                           | `angelus.status`, `angelus.outfits`           |
+| `form.`    | forms, three of them only                   | `form.create`, `form.bind`, `form.delta`      |
+| `pid.`     | shell bindings                              | `pid.bind`, `pid.resolve`                     |
+| (none)     |                                             | `turn.done`, `outfit.reload`                  |
 
 So the prefix is sometimes the SUBJECT, sometimes the RECIPIENT, and in the
 largest namespace both at once. There is no rule a newcomer could infer,
@@ -615,12 +858,12 @@ Four concrete symptoms:
    live: `figaro.form` / `aria.form`, `figaro.context` / `aria.context`,
    `figaro.read` / `aria.read`. Residency is the implementation detail the
    hub exists to hide, and it already hides it for writes.
-2. **Nouns and verbs are mixed with no convention.** `figaro.qua` and
+1. **Nouns and verbs are mixed with no convention.** `figaro.qua` and
    `figaro.set` are verbs; `figaro.form` and `figaro.queued` are nouns with
    an implied get. You cannot tell whether `figaro.form` reads or writes
    without opening the handler.
-3. **The noun sometimes lies.** `figaro.kill` also deletes forms.
-4. **The wire types are the internal types.** `type FormPatch = message.Patch`
+1. **The noun sometimes lies.** `figaro.kill` also deletes forms.
+1. **The wire types are the internal types.** `type FormPatch = message.Patch`
    is an alias, so an internal refactor is a wire break with no compiler
    error at the boundary.
 
@@ -647,10 +890,16 @@ the socket is the subtype boundary. `fig set` is a CLI alias for
 **On the node.**
 
 ```
-form.get          form.patch        form.subscribe     form.watch(cancel)
+form.get          form.patch        form.submit        form.await
+form.subscribe    form.unsubscribe
 aria.prompt       aria.interrupt    aria.read          aria.context
 aria.queue.list   aria.queue.update aria.queue.delete
 ```
+
+`form.submit` returns a ticket and does not wait; `form.await` blocks on
+one; `form.patch` is the pair, and a client is free to implement it locally
+rather than spend a third round trip. An optimistic client uses `submit`
+plus the event stream and never calls `await`.
 
 **On the angelus.**
 
@@ -669,21 +918,21 @@ angelus.hello     angelus.status    angelus.configure  angelus.save_bindings
 
 ### 16.4 What dies, and into what
 
-| today | becomes |
-|---|---|
-| `figaro.form`, `aria.form` | `form.get` |
-| `figaro.context`, `aria.context` | `aria.context` |
-| `figaro.read`, `aria.read`, `aria.page` | `aria.read`, one paging shape |
-| `figaro.set` | `form.patch` |
-| `figaro.study`, `figaro.drop` | `form.patch` on the libretto (§12) |
-| `figaro.cast` | stays a verb: it is two writes across two nodes |
-| `figaro.create`, `form.create`, `form.bind` | `node.create` with kind + parent |
-| `figaro.kill` | `node.delete` |
-| `figaro.queued` | `aria.queue.list` |
-| `figaro.gc`, `figaro.normalize`, `figaro.import`, `figaro.promote` | `node.*` |
-| `figaro.attach` | `node.attach`, and the only method that hands out an endpoint, so also where role redirection lands |
-| `pid.*` | `shell.*` |
-| `angelus.info` | folded into `angelus.hello` |
+| today                                                              | becomes                                                                                             |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `figaro.form`, `aria.form`                                         | `form.get`                                                                                          |
+| `figaro.context`, `aria.context`                                   | `aria.context`                                                                                      |
+| `figaro.read`, `aria.read`, `aria.page`                            | `aria.read`, one paging shape                                                                       |
+| `figaro.set`                                                       | `form.patch`                                                                                        |
+| `figaro.study`, `figaro.drop`                                      | `form.patch` on the libretto (§12)                                                                  |
+| `figaro.cast`                                                      | stays a verb: it is two writes across two nodes                                                     |
+| `figaro.create`, `form.create`, `form.bind`                        | `node.create` with kind + parent                                                                    |
+| `figaro.kill`                                                      | `node.delete`                                                                                       |
+| `figaro.queued`                                                    | `aria.queue.list`                                                                                   |
+| `figaro.gc`, `figaro.normalize`, `figaro.import`, `figaro.promote` | `node.*`                                                                                            |
+| `figaro.attach`                                                    | `node.attach`, and the only method that hands out an endpoint, so also where role redirection lands |
+| `pid.*`                                                            | `shell.*`                                                                                           |
+| `angelus.info`                                                     | folded into `angelus.hello`                                                                         |
 
 Seven methods become three; three namespaces become one rule.
 
@@ -741,13 +990,40 @@ becomes impossible rather than merely discouraged.
 
 ## 17. Open rulings
 
-- Does the topology form reuse `store.Form` or get its own type? Own type
-  makes compaction and no-views properties rather than promises; sharing
-  keeps one commit protocol. Depends how good step 2 is.
-- Does the libretto fork with its figaro? Instinct: a fork copies the SPEC
-  and shares nothing else.
-- Do derived VALUES get the same sync-before-publish? They are rebuildable,
-  so relaxed is defensible; I lean against, because what the libretto holds
-  is what the model is shown.
-- Does `ensure` intent stay internal (birth dressing only) or become a
+Settled since the first draft, recorded so they are not reopened:
+
+- A delete of an absent key is **rejected** under `assert`, reduced under
+  `ensure` (§4.2).
+- The dot-prefixed reserved path is **dropped**; protection is the schema
+  (§5).
+- Command ids are **monotonic per session** (§4.1).
+- A derived form is **one form with one actor**, not a compound (§12.1).
+- The libretto **forks with its figaro** and is the sole bound derived form
+  (§12.2).
+- The libretto holds **intervals of observed revision history**, not cursors,
+  which is what retires durable refcounting (§12.3).
+- The IR stamps **one cursor**, the libretto's (§12.3).
+- Leases are **in-memory and best-effort** (§7).
+- Subscription is **register-then-snapshot**, lock-free, outside the queue
+  (§6.1).
+- Retention replaces "compaction" and introduces **no new pause** (§10).
+- The topology form **always exists**, has an angelus lifetime, and is
+  outside the graph it describes (§11).
+- Derivations may subscribe only to **primary forms** (§12).
+- The translator cache is **retained, never compacted, tail-truncated only**
+  (§8).
+
+Still open:
+
+- **Libretto write amplification** (§12.5): one libretto patch per source
+  patch per observing figaro. Batching blunts it; it needs a number.
+  `[q12]`
+- **Interval end on drop versus on every patch.** Extending the open end per
+  source patch is what makes replay exact; closing it only on drop would be
+  far cheaper and would require the IR to stamp source versions again,
+  undoing §12.3. I think exactness wins, but it is the tradeoff to confirm.
+  `[q12]`
+- **Does `ensure` intent stay internal** (birth dressing only) or become a
   client-facing flag?
+- **`agent.mu` and `restoreLocks`** (`[q10]`): in scope or follow-ups?
+- **`fig form listen` on a resync** (`[q11]`): what does the pager show?
