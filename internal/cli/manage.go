@@ -820,7 +820,8 @@ func runPromote(loaded *config.Loaded, idFlag string, args []string) {
 				"  Set `trunks = true` in config.toml and restart the daemon to enable it.")
 		}
 		if resp.AtStump {
-			die("promote: %s is rooted at an outfit, so it cannot be promoted into one; make or edit an outfit instead", target)
+			die("promote: nothing above %s but an outfit, and only conversations nest;\n"+
+				"  edit the outfit instead, or promote something under this one", target)
 		}
 		fmt.Fprintf(os.Stderr, "promoted %s by %d level(s): `figaro ls` now draws it there\n", target, resp.Climbed)
 		return nil
