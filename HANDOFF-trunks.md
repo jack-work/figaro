@@ -6,21 +6,9 @@ Dev shell  `nix develop .#snapshot` (real config + credentials, dev-scoped state
 
 ## figwal
 
-This branch needs a figwal fix that is **not in a release yet**:
-`a3bf1e9`, pushed as `jack-work/figwal` branch `fix/remove-subtree`.
-`go.mod` names it by commit:
-
-```
-github.com/jack-work/figwal v0.16.1-0.20260812062559-a3bf1e987b64
-```
-
-A pseudo-version is fetchable, so `nix develop` and `nix build` work. A
-local path `replace` is NOT: buildGoModule vendors the module set and go
-refuses the mismatch. Do not reintroduce one.
-
-Before a release: merge that figwal branch, tag it, and `go get
-github.com/jack-work/figwal@vX.Y.Z`, then reset `vendorHash` from the
-"got:" line nix prints.
+The delete half of this work is figwal's, released as **v0.16.1** and
+required normally in `go.mod`. No replace, no pseudo-version, nothing to
+undo before shipping.
 
 ## What was wrong
 
@@ -94,7 +82,6 @@ under the genesis root.
 
 ## Left undone
 
-- figwal is on a branch, not a release (above).
 - The live store still holds the fossils of the old delete: 109
   conversations at the genesis root. Nothing here re-homes them; their
   lineage is gone from disk. `fig promote` can place them by hand now
