@@ -619,51 +619,81 @@ That settles the open question from the other thread: **the libretto forks.**
 A branch inherits its parent's observations, which is today's behaviour and
 the least surprising one.
 
-### 12.3 Ranges, and what they buy
+### 12.3 The libretto holds a COPY, not a reference
 
-The libretto does not hold a cursor. It holds, per observed form, **the
-intervals of that form's revision history during which this figaro was
-observing it**. Fully persistent, durable, replayable.
+The libretto is **the figaro's view of the world, materialized**: the
+projected subset of every studied form, held as ordinary keys, with its own
+patch history.
 
-This is the piece that removes a whole subsystem. With intervals:
+```jsonc
+{
+  "spec.@abc123": {"*": true},
+  "spec.@def456": {"brief": true, "status": true},
 
-- **Replay is deterministic** without the source being retained for anyone.
-  The translator asks "what was observed, over which source versions, at IR
-  record N" and the answer is recorded state rather than a live subscription.
-- **A form studied, dropped and re-studied renders correctly**, because the
-  gap is in the document.
-- **Refcounted durable leases stop being necessary.** What a subscriber
-  needed a durable count for was to keep a source alive long enough to be
-  read; the intervals say what was read instead. Leases shrink to an
-  in-memory, best-effort liveness signal (§7).
+  "@abc123.brief":  "ship the thing",
+  "@abc123.status": "merged",
+  "@def456.brief":  "the other thing"
+}
+```
 
-**The IR stamps ONE cursor: the libretto's version.** Not one per observed
-form. The translator resolves that version to the libretto's state at that
-point (spec plus intervals), then reads the source patches those intervals
-admit. One number in the record, everything else in a durable document.
+An earlier draft had it recording INTERVALS into each source's history
+instead. That is broken, and the reason is worth keeping: the translator
+would have to read the source's patches inside those ranges, so a studied
+form could never be deleted while any libretto named a range in it, and any
+retranslation (a fingerprint bump, a cache eviction) would demand those
+records still exist. Refcounting and retention coupling, reintroduced by the
+back door. Derived state is a COPY; deriving a pointer is not derivation.
+
+**Five things collapse out of holding the copy:**
+
+1. **Intervals disappear.** The libretto's own patch history IS the record of
+   what was observed and when. A study is the patch that creates the keys, a
+   change is a patch, a drop is a removal.
+2. **The translator never touches a source form.** It reads
+   `PatchesBetween(prev, cur]` on the libretto and renders it: one cursor in
+   the IR, one accessor, the same code path the board already uses.
+   `studyAccessors`, the per-form windows and the missing-accessor tombstone
+   branch all go.
+3. **Source forms become freely deletable.** The libretto already holds what
+   the figaro saw, so reclamation waits only on LIVE subscribers, which is
+   why leases can stay in-memory and best-effort (§7).
+4. **The render special cases become ordinary state.** The begin-mark
+   baseline exists because the first window is `(0, V]` and folds to a whole
+   form; now the baseline is simply the patch that created the keys. The
+   two-block trap and the "state rides the mark" rule become unnecessary.
+5. **The libretto may not be compacted**, because the translator takes
+   `PatchesBetween` views of it. Same type-level rule as a board (§8, §10).
 
 ### 12.4 The write path, in order
 
-- **`study`** patches `spec.<formid>` and opens an interval. Ordinary
-  command, ordinary writer, no agent, no wake.
+- **`study`** patches `spec.<formid>`. Ordinary command, ordinary writer, no
+  agent, no wake.
 - **The libretto's actor subscribes** to each form in the spec and behaves
-  like any other consumer: it folds incoming patches, extends the open
-  interval's end to the source's new version, hears a tombstone and closes
-  the interval, syncs, publishes.
+  like any other consumer: it folds an incoming patch through the spec's
+  projection into its own keys, hears a tombstone and records it, syncs,
+  publishes.
 - **The figaro reads the libretto** at each IR record and stamps its version.
-  It never writes it on that path.
+  It never writes it on that path (§13.1).
 
 ### 12.5 The cost, stated plainly
 
-Extending an interval per source patch is **write amplification**: one
-libretto patch per source patch, per observing figaro. Fifty observers on one
-busy form is fifty libretto writes per patch.
+**Duplication.** Every observed value is copied into every observer's
+libretto and retained there with its history. Fifty observers on one form is
+fifty copies, in memory and on disk. That is what buys the decoupling, and
+it is accepted for now.
 
-Two things blunt it, and they should be measured rather than assumed: the
-libretto's actor batches (fifty source patches in a burst extend an interval
-once, because the batch reduces to one end value), and an interval end is one
-key, so the patch is small. It is still the sharpest performance question in
-this design and it is `[q12]`.
+In memory the mitigation is tree surgery (§12.7): the libretto's AVL points
+at the same immutable value nodes as the source, so the resident cost is
+nodes on touched paths rather than bytes. On disk it is a real copy, and the
+lever is a retention policy per libretto, which is fully persistent today
+and configurable later.
+
+The direction of travel, not built here: refcounting so that the only copy
+is the translator's, which is already a projective, byte-identical
+materialized cache on disk and cannot break unless something evicts it.
+Eviction should be explicit (`fig translator evict`) rather than automatic;
+an API rejecting historical state should be visible and require a manual
+eviction rather than silently regenerating.
 
 ### 12.6 Persistence and retention
 
@@ -1015,13 +1045,9 @@ Settled since the first draft, recorded so they are not reopened:
 
 Still open:
 
-- **Libretto write amplification** (§12.5): one libretto patch per source
-  patch per observing figaro. Batching blunts it; it needs a number.
-  `[q12]`
-- **Interval end on drop versus on every patch.** Extending the open end per
-  source patch is what makes replay exact; closing it only on drop would be
-  far cheaper and would require the IR to stamp source versions again,
-  undoing §12.3. I think exactness wins, but it is the tradeoff to confirm.
+- **Libretto copy volume** (§12.5): every observed value is duplicated per
+  observer, with its history. Accepted for now; refcounting so the only copy
+  is the translator's is the direction of travel, not this changeset.
   `[q12]`
 - **Does `ensure` intent stay internal** (birth dressing only) or become a
   client-facing flag?
