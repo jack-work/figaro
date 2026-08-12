@@ -157,7 +157,16 @@ func TestDetectChannel_Homebrew(t *testing.T) {
 			t.Fatalf("%s: got %q", exe, got)
 		}
 	}
+	// FIGARO_DEV_ROOT is what tells a /nix/store path from a dev-shell build
+	// of one, so the test has to say which it is asking about. Without this
+	// the case passed from a bare shell and failed from inside `nix develop`:
+	// a result that depends on who ran it is not a result.
+	t.Setenv("FIGARO_DEV_ROOT", "")
 	if got := channelFor("/nix/store/abc-figaro/bin/figaro"); got != ChannelNix {
 		t.Fatalf("got %q", got)
+	}
+	t.Setenv("FIGARO_DEV_ROOT", "/var/tmp/somewhere")
+	if got := channelFor("/nix/store/abc-figaro/bin/figaro"); got != ChannelDevShell {
+		t.Fatalf("under a dev root, got %q", got)
 	}
 }
