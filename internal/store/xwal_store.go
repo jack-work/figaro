@@ -251,6 +251,11 @@ type XwalStore struct {
 	// tree is the PRESENTATION hierarchy: what fig ls draws and what a
 	// delete takes. Never consulted for forking: that reads .from.
 	tree topo.Tree
+	// deleting serializes whole deletes. A delete reads where the
+	// survivors are drawn, unlinks, and writes them somewhere that
+	// outlived it; two of those interleaved re-home an aria under a
+	// parent the other one is in the middle of taking.
+	deleting sync.Mutex
 }
 
 // Topology exposes the .from adjacency for topo.Tree and boundary
@@ -1135,6 +1140,8 @@ func (s *XwalStore) Node(id string) (NodeView, bool) {
 // prefix they borrow BEFORE anything is unlinked, so a crash between the
 // two leaves them reading through directories still present.
 func (s *XwalStore) RemoveLeaf(id string, recursive bool) error {
+	s.deleting.Lock()
+	defer s.deleting.Unlock()
 	// Refuse before touching anything. The boundary repair below rewrites
 	// surviving arias, so a delete that is going to be refused must be
 	// refused while the store still looks the way the caller found it.
@@ -1147,6 +1154,20 @@ func (s *XwalStore) RemoveLeaf(id string, recursive bool) error {
 	// Only then does anything get unlinked, so a crash between the two
 	// leaves survivors that still read through directories still present.
 	homes := map[string]string{}
+	// Anything DRAWN under something this delete takes has to be re-drawn
+	// somewhere that survives. Its edge is about to be forgotten, and
+	// falling back to the topology puts it under the genesis root with no
+	// outfit, which is the fossil this whole path exists to stop making.
+	doomed := make(map[string]bool, len(taken))
+	for _, t := range taken {
+		doomed[t] = true
+	}
+	for child, up := range s.tree.Edges() {
+		if doomed[child] || !doomed[up] {
+			continue
+		}
+		homes[child] = s.survivingHome(child, taken)
+	}
 	for _, orphan := range s.deleteOrphans(id) {
 		// Where it is DRAWN today, remembered before the detach empties its
 		// .from. Absorbing a prefix is a storage repair; without this it
@@ -1165,7 +1186,7 @@ func (s *XwalStore) RemoveLeaf(id string, recursive bool) error {
 	// topology no longer knows the two were related) and before the lock:
 	// topologySnapshot takes s.mu itself.
 	stump := s.topologySnapshot().byID[id].Stump
-	if err := s.removeLocked(id, stump, recursive); err != nil {
+	if err := s.removeLocked(id, recursive); err != nil {
 		return err
 	}
 	// Presentation is repaired with s.mu RELEASED: an edge resolves through
@@ -1173,30 +1194,52 @@ func (s *XwalStore) RemoveLeaf(id string, recursive bool) error {
 	if err := s.tree.Forget(taken...); err != nil {
 		slog.Warn("forget presentation edges", "aria", id, "err", err)
 	}
+	keep := false
 	for orphan, home := range homes {
 		if home == "" {
 			continue
+		}
+		if home == stump {
+			keep = true
 		}
 		if err := s.tree.Reparent(orphan, home); err != nil {
 			slog.Warn("rehome detached aria", "aria", orphan, "under", home, "err", err)
 		}
 	}
+	// The stump goes only if nothing is left wearing it. A detached
+	// survivor no longer counts as a child in the topology, so collecting
+	// on that count alone took the outfit out from under an aria that is
+	// still drawn beneath it.
+	if !keep {
+		s.collectStumpAfterDelete(stump)
+	}
 	return nil
 }
 
-// removeLocked is the unlink and the stump collection, the only part of a
-// delete that touches the store.
-func (s *XwalStore) removeLocked(id, stump string, recursive bool) error {
+// removeLocked is the unlink, the only part of a delete that touches the
+// store. Stump collection is deferred: it depends on where the survivors
+// end up.
+func (s *XwalStore) removeLocked(id string, recursive bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := s.trunks.Remove(id, recursive); err != nil {
-		return err
-	}
-	s.collectStump(stump)
-	return nil
+	return s.trunks.Remove(id, recursive)
 }
 
-// survivingHome is the nearest place above id that outlives this delete.
+func (s *XwalStore) collectStumpAfterDelete(stump string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.collectStump(stump)
+}
+
+// survivingHome is the nearest place above id that outlives this delete: the
+// first drawn ancestor still standing, or failing that the outfit it was
+// born under.
+//
+// The fallback is the difference between a top-level aria and a fossil. A
+// detach empties the node's .from, and with it figwal's record of which
+// stump the aria hangs from, so an aria whose whole lineage was deleted
+// would be drawn directly under the genesis root with no outfit above it -
+// which is exactly the shape a store full of old recursive kills is in.
 func (s *XwalStore) survivingHome(id string, taken []string) string {
 	doomed := make(map[string]bool, len(taken))
 	for _, t := range taken {
@@ -1205,12 +1248,15 @@ func (s *XwalStore) survivingHome(id string, taken []string) string {
 	seen := map[string]bool{id: true}
 	for up, ok := s.tree.Parent(id); ok && up != ""; up, ok = s.tree.Parent(up) {
 		if seen[up] {
-			return ""
+			break
 		}
 		seen[up] = true
 		if !doomed[up] {
 			return up
 		}
+	}
+	if node, ok := s.Node(id); ok && node.Stump != "" && !doomed[node.Stump] {
+		return node.Stump
 	}
 	return ""
 }

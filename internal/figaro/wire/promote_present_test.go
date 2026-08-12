@@ -170,3 +170,24 @@ func TestDeleteKeepsASurvivorWhereItWasDrawn(t *testing.T) {
 		t.Errorf("survivor drawn under %q, want %q", got, a)
 	}
 }
+
+// A survivor whose whole drawn lineage was deleted is a top-level aria, not
+// a fossil at the genesis root: the detach empties its .from, so the only
+// record of which outfit it wore is the one the delete writes down.
+func TestDeleteLeavesNoAriaBelowTheRoot(t *testing.T) {
+	b, _ := backend(t, true)
+	outfit, a, _, leaf := chain(t, b)
+
+	if _, err := b.Store().Promote(leaf, 2); err != nil { // leaf to the top
+		t.Fatal(err)
+	}
+	if err := b.Remove(a, true); err != nil { // takes a and mid
+		t.Fatal(err)
+	}
+	if _, ok := b.Node(leaf); !ok {
+		t.Fatal("the promoted survivor was deleted with its old ancestors")
+	}
+	if got := drawnUnder(t, b, leaf); got != outfit {
+		t.Errorf("survivor drawn under %q, want its outfit %q", got, outfit)
+	}
+}
