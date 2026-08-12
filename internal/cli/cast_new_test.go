@@ -37,7 +37,7 @@ func TestCastFlagBundlesWithDressing(t *testing.T) {
 
 // The role id is the one @-sigiled positional. The sigil is what makes this
 // lexical rather than a guess, exactly as it is in the study/cast grammar.
-func TestCastFormArg(t *testing.T) {
+func TestLiftRoleArg(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		args []string
@@ -51,7 +51,7 @@ func TestCastFormArg(t *testing.T) {
 		{"two roles", []string{"@a", "@b"}, "", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := castFormArg(tc.args)
+			got, _, err := liftRoleArg(tc.args)
 			if tc.bad {
 				if err == nil {
 					t.Fatalf("want a grammar error, got %q", got)
@@ -65,5 +65,26 @@ func TestCastFormArg(t *testing.T) {
 				t.Fatalf("want %q, got %q", tc.want, got)
 			}
 		})
+	}
+}
+
+// The lift must leave the rest of the argv exactly as the prompt parser
+// expects it, including the boundary and everything past it.
+func TestLiftRoleArgKeepsTheRest(t *testing.T) {
+	role, kept, err := liftRoleArg([]string{"-C", "@abc", "-O", "sonn5", "--", "do", "@it"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if role != "@abc" {
+		t.Fatalf("role: want @abc, got %q", role)
+	}
+	want := []string{"-C", "-O", "sonn5", "--", "do", "@it"}
+	if len(kept) != len(want) {
+		t.Fatalf("kept %v, want %v", kept, want)
+	}
+	for i := range want {
+		if kept[i] != want[i] {
+			t.Fatalf("kept %v, want %v", kept, want)
+		}
 	}
 }

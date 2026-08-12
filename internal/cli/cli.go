@@ -426,20 +426,28 @@ already exists (--id, -e, -x) are refused rather than ignored.
 			ld := ctx.Extra.(*config.Loaded)
 			// Same parser as send and fork: -O composes the same way, shorts
 			// bundle the same way, and a rejection reads the same.
-			opts, rest, perr := extractPromptFlags(ctx.RawArgs, false)
+			// The role positional is lifted out BEFORE the prompt parser
+			// sees it: `new` refuses bare arguments (a prompt must follow
+			// `--`), and that refusal is right for everything except the one
+			// argument this verb now takes. The `@` sigil is what makes the
+			// lift lexical rather than a guess.
+			role, raw, rerr := liftRoleArg(ctx.RawArgs)
+			if rerr != nil {
+				return fmt.Errorf("new: %s", rerr)
+			}
+			opts, rest, perr := extractPromptFlags(raw, false)
 			if perr != nil {
 				return fmt.Errorf("new: %s", perr)
 			}
 			if err := validateNewOpts(opts); err != nil {
 				return fmt.Errorf("new: %s", err)
 			}
+			if role != "" && !opts.cast {
+				return fmt.Errorf("new: %s is a role; `new -C %s` casts into it", role, role)
+			}
 			prompt := extractPrompt(rest)
 			set := renderSettings{jsonMode: opts.json}
 			if opts.cast {
-				role, cerr := castFormArg(rest)
-				if cerr != nil {
-					return fmt.Errorf("new -C: %s", cerr)
-				}
 				runNewCast(ld, role, opts.outfit, prompt, set)
 				return nil
 			}

@@ -104,24 +104,32 @@ func reportCast(out castOutcome, asJSON bool) {
 		out.RoleID, out.AriaID)
 }
 
-// castFormArg pulls the role id out of a `new -C` argument list: the one bare
-// `@`-sigiled positional before the prompt boundary. Anything else there is a
-// grammar error rather than a guess, because the alternative reading (a
-// prompt without `--`) is one this verb already refuses.
-func castFormArg(rest []string) (string, error) {
-	form := ""
-	for _, a := range rest {
+// liftRoleArg removes the role positional from an argument list and returns
+// it: the one bare `@`-sigiled word before the prompt boundary.
+//
+// It runs BEFORE the prompt parser, which refuses bare arguments outright.
+// That refusal is correct for `new` generally, so rather than teaching it an
+// exception, the one argument that is legal here is taken out of its way. The
+// sigil makes it lexical: nothing after `--` is touched, so an `@handle`
+// inside a prompt is prose.
+func liftRoleArg(args []string) (string, []string, error) {
+	role := ""
+	kept := make([]string, 0, len(args))
+	for i, a := range args {
 		if a == "--" {
+			kept = append(kept, args[i:]...)
 			break
 		}
 		if strings.HasPrefix(a, "@") {
-			if form != "" {
-				return "", fmt.Errorf("name one role, not two (%s and %s)", form, a)
+			if role != "" {
+				return "", nil, fmt.Errorf("name one role, not two (%s and %s)", role, a)
 			}
-			form = a
+			role = a
+			continue
 		}
+		kept = append(kept, a)
 	}
-	return form, nil
+	return role, kept, nil
 }
 
 // mintFigaroFor creates an aria, attends this shell to it, and returns its id.
