@@ -1,33 +1,26 @@
 # HANDOFF — the presentation hierarchy: promote, ls, and delete
 
 Worktree   `~/dev/figaro-qua/trunkfix`
-Branch     `fix/trunk-presentation` @ `a496c11d`
-Dev shell  see **the figwal caveat** below before `nix develop`
+Branch     `fix/trunk-presentation` @ `64c49d24`
+Dev shell  `nix develop .#snapshot` (real config + credentials, dev-scoped state)
 
-## The figwal caveat, first
+## figwal
 
-This branch needs a figwal fix that is **committed but not published**:
-`~/dev/figwal` @ `a3bf1e9` on `master`. `go.mod` therefore carries
+This branch needs a figwal fix that is **not in a release yet**:
+`a3bf1e9`, pushed as `jack-work/figwal` branch `fix/remove-subtree`.
+`go.mod` names it by commit:
 
 ```
-replace github.com/jack-work/figwal => /home/gluck/dev/figwal
+github.com/jack-work/figwal v0.16.1-0.20260812062559-a3bf1e987b64
 ```
 
-so `nix develop` in this worktree **cannot build** (a path replace is not
-in the store). Before merge: push figwal, tag it, then drop the replace,
-bump the require, and reset `vendorHash` from the "got:" line.
+A pseudo-version is fetchable, so `nix develop` and `nix build` work. A
+local path `replace` is NOT: buildGoModule vendors the module set and go
+refuses the mismatch. Do not reintroduce one.
 
-To validate today, either
-
-```sh
-cd ~/dev/figaro-qua/trunkfix && go build -ldflags \
-  "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-parse HEAD)" \
-  -o /tmp/fig ./cmd/figaro
-```
-
-or use a dev shell from the `main` worktree for isolation and run that
-binary by absolute path inside it (that is how it was validated: `nix
-develop .#sandbox`, real copilot turns, tmux pty).
+Before a release: merge that figwal branch, tag it, and `go get
+github.com/jack-work/figwal@vX.Y.Z`, then reset `vendorHash` from the
+"got:" line nix prints.
 
 ## What was wrong
 
@@ -71,7 +64,7 @@ deliberately moves no bytes.
 
 ## Left undone
 
-- figwal is unpublished (above).
+- figwal is on a branch, not a release (above).
 - The live store still holds the fossils of the old delete: 109
   conversations at the genesis root. Nothing here re-homes them; their
   lineage is gone from disk. `fig promote` can place them by hand now
