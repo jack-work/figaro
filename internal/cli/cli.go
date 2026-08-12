@@ -448,7 +448,7 @@ already exists (--id, -e, -x) are refused rather than ignored.
 			prompt := extractPrompt(rest)
 			set := renderSettings{jsonMode: opts.json}
 			if opts.cast {
-				runNewCast(ld, role, opts.outfit, prompt, set)
+				runNewCast(ld, role, opts.outfit, prompt, set, opts.stay)
 				return nil
 			}
 			if prompt == "" {
@@ -892,9 +892,10 @@ are unbound forms only.`,
 			{Long: "set", Short: "S", Description: "Mint the role with these keys (occupies the form slot)"},
 			{Long: "delete", Short: "D", Description: "Key paths the minted role's birth patch removes"},
 			{Long: "json", Short: "j", IsBool: true, Description: "JSON output"},
+			{Long: "stay", IsBool: true, Description: "Do not attend the role this call mints"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
-			runCast(ctx.Extra.(*config.Loaded), ctx.Args, ctx.Flag("outfit"), ctx.Flag("set"), ctx.Flag("delete"), ctx.BoolFlag("json"))
+			runCast(ctx.Extra.(*config.Loaded), ctx.Args, ctx.Flag("outfit"), ctx.Flag("set"), ctx.Flag("delete"), ctx.BoolFlag("json"), ctx.BoolFlag("stay"))
 			return nil
 		},
 		CompleteArgs: completeAriaIDsPositionalOrFlag,

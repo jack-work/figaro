@@ -104,6 +104,21 @@ func runList(loaded *config.Loaded, o lsOpts) {
 			boundID = r.FigaroID
 		}
 
+		// ATTENDING A FORM. The flat aria table cannot show one: figaro.list
+		// answers with figaros, so the form has no row, the ● has nothing to
+		// land on, and the scope quietly degrades to home. Draw the genealogy
+		// instead, which already knows how to render a form and a role, and
+		// bound the same way the aria listing bounds itself: from the form's
+		// parent, one level past the form.
+		if !o.global && o.rootID == "" && !o.home && strings.HasPrefix(boundID, "@") {
+			resp, err := acli.ListGlobal(ctx)
+			if err != nil {
+				die("list: %s", err)
+			}
+			renderFormScope(resp.Figaros, boundID, o.limit)
+			return nil
+		}
+
 		// Global view: the full null → outfit → conversation → branch tree.
 		if o.global {
 			resp, err := acli.ListGlobal(ctx)
@@ -321,7 +336,21 @@ func listForest(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree
 // the live outfit (your implicit home).
 // globalForest builds the rendered rows for the whole hierarchy, walked by
 // parent links. Pure, so its shape can be pinned without an angelus.
+// globalForest is the whole genealogy from the null root down.
 func globalForest(figs []rpc.FigaroInfoResponse, boundID string, ppid int) figtree.Tree {
+	return forestFrom(figs, "", -1, boundID, ppid)
+}
+
+// forestFrom grows the same tree globalForest does, from an arbitrary root and
+// to a bounded depth. rootID "" means the null genesis root; maxDepth < 0 means
+// no limit, and 0 means the root alone.
+//
+// It exists so that attending a FORM can be shown in the tree that already
+// knows how to draw forms, rather than in the flat aria table that cannot: the
+// scoped `fig ls` used to fall back to the home listing, silently, because
+// figaro.list returns figaros only and the form could not be placed. The
+// result was byte-identical to attending nothing at all.
+func forestFrom(figs []rpc.FigaroInfoResponse, rootID string, maxDepth int, boundID string, ppid int) figtree.Tree {
 	byID := map[string]rpc.FigaroInfoResponse{}
 	childrenOf := map[string][]string{}
 	nullID := ""
@@ -354,8 +383,8 @@ func globalForest(figs []rpc.FigaroInfoResponse, boundID string, ppid int) figtr
 		}
 		return "○"
 	}
-	var grow func(id string) *figtree.Node
-	grow = func(id string) *figtree.Node {
+	var grow func(id string, depth int) *figtree.Node
+	grow = func(id string, depth int) *figtree.Node {
 		f := byID[id]
 		var label, detail string
 		switch f.Kind {
@@ -393,8 +422,10 @@ func globalForest(figs []rpc.FigaroInfoResponse, boundID string, ppid int) figtr
 				fieldKind:   f.Kind,
 			},
 		}
-		for _, c := range childrenOf[id] {
-			n.Children = append(n.Children, grow(c))
+		if maxDepth < 0 || depth < maxDepth {
+			for _, c := range childrenOf[id] {
+				n.Children = append(n.Children, grow(c, depth+1))
+			}
 		}
 		return n
 	}
@@ -403,8 +434,12 @@ func globalForest(figs []rpc.FigaroInfoResponse, boundID string, ppid int) figtr
 		// token (bgFormRow), so the two surfaces can never drift apart.
 		Backgrounds: []figtree.RowBackground{{Field: fieldKind, Value: "form", Seq: bgFormRow}},
 	}
-	if nullID != "" {
-		tree.Roots = append(tree.Roots, grow(nullID))
+	root := rootID
+	if root == "" {
+		root = nullID
+	}
+	if _, ok := byID[root]; ok {
+		tree.Roots = append(tree.Roots, grow(root, 0))
 	}
 	return tree
 }
@@ -423,6 +458,51 @@ func drawnUnder(f rpc.FigaroInfoResponse) string {
 // transcript_selection.go); grey 236 was chosen there against every
 // theme, and this surface inherits that decision rather than remaking it.
 const bgFormRow = "\x1b[48;5;236m"
+
+// renderFormScope draws the attended FORM in its lineage: its parent as the
+// root, the form beneath it, and the form's own children one level further.
+// The same shape `fig ls` gives an aria, in the tree that can hold a form.
+func renderFormScope(figs []rpc.FigaroInfoResponse, formID string, limit int) {
+	parent := ""
+	label := formID
+	for _, f := range figs {
+		if f.ID == formID {
+			parent = f.Parent
+			if f.Name != "" {
+				label = f.Name + " " + formID
+			}
+			if f.TargetAria != "" {
+				label += " → " + f.TargetAria
+			}
+			break
+		}
+	}
+	// Rooting at the parent needs the parent to be one level up, so the form
+	// sits at depth 1 and its children at depth 2. A form whose parent is not
+	// in the listing roots at the form itself.
+	root, depth := parent, 2
+	if root == "" {
+		root, depth = formID, 1
+	}
+	rows := forestFrom(figs, root, depth, formID, shellPID).Rows()
+	total := len(rows)
+	shown := total
+	if limit > 0 && total > limit {
+		rows = rows[:limit]
+		shown = limit
+	}
+	width := listOutputWidth()
+	summary := fmt.Sprintf("form %s · showing %d of %d        ●=here ▸=running ○=idle", label, shown, total)
+	if width < listCompactWidth {
+		summary = fmt.Sprintf("form %s · %d/%d · ● here ▸ running ○ idle", label, shown, total)
+	}
+	fmt.Fprintln(os.Stderr, truncateVisible(summary, width))
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprint(os.Stdout, renderListRows(rows, width, true))
+	if limit > 0 && total > limit {
+		fmt.Fprintf(os.Stderr, "\n… %d more (-a for all, -n N for N)\n", total-limit)
+	}
+}
 
 func renderGlobal(figs []rpc.FigaroInfoResponse, boundID string, limit int) {
 	rows := globalForest(figs, boundID, shellPID).Rows()

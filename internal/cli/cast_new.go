@@ -132,9 +132,14 @@ func liftRoleArg(args []string) (string, []string, error) {
 	return role, kept, nil
 }
 
-// mintFigaroFor creates an aria, attends this shell to it, and returns its id.
-// The `fig new` path, reused so that an autocast-born figaro is born exactly
-// like a hand-made one.
+// mintFigaroFor creates an aria and returns its id. The `fig new` path,
+// reused so that an autocast-born figaro is born exactly like a hand-made one.
+//
+// It always binds, because that is what minting an aria means to this shell,
+// and attendAfterCast decides where the shell ENDS UP once the casting is
+// known. Doing it in two steps rather than one keeps the failure case honest:
+// a mint that succeeds and a cast that does not leaves the shell attending
+// something real.
 func mintFigaroFor(loaded *config.Loaded, d dressing) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -148,13 +153,53 @@ func mintFigaroFor(loaded *config.Loaded, d dressing) (string, error) {
 	return id, nil
 }
 
+// attendAfterCast puts this shell where the casting left the interesting
+// thing.
+//
+// THE RULE: when the call MINTED a role, attend the role. That is the object
+// you just created and the one you are most likely to edit next, and attending
+// it costs nothing, because a role redirects every turn-shaped verb to its
+// holder. So prompts still reach the new aria while `state` and `set` reach
+// the role. When no role was minted (you named an existing one, or you were
+// already standing in front of it) the shell stays where it was.
+//
+// --stay opts out of the move entirely, in either direction.
+func attendAfterCast(loaded *config.Loaded, roleID string, minted, stay bool) {
+	if stay || !minted || roleID == "" || bindingDisabled() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+	if err := bindBinding(ctx, acli, shellPID, roleID, 0); err != nil {
+		fmt.Fprintf(os.Stderr, "cast: minted %s but could not attend it: %s\n", roleID, err)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "attending %s (--stay to keep your previous attendance)\n", roleID)
+}
+
+// restoreAttendance puts the shell back where it was. The mint rebinds as a
+// side effect of being a mint, so a verb that should not have moved the shell
+// has to move it back.
+func restoreAttendance(loaded *config.Loaded, id string) {
+	if id == "" || bindingDisabled() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+	_ = bindBinding(ctx, acli, shellPID, id, 0)
+}
+
 // runNewCast is `fig new -C`: mint the figaro, then cast it.
 //
 // With a role id, the role exists and the dressing dresses the ARIA. Without
 // one, the dressing mints the ROLE and the aria takes the default outfit:
 // there is nothing else -O could mean when the thing being named does not
 // exist yet.
-func runNewCast(loaded *config.Loaded, roleID string, d dressing, prompt string, set renderSettings) {
+func runNewCast(loaded *config.Loaded, roleID string, d dressing, prompt string, set renderSettings, stay bool) {
 	ariaDress, roleDress := d, dressing{}
 	if roleID == "" {
 		if d.IsEmpty() {
@@ -168,8 +213,12 @@ func runNewCast(loaded *config.Loaded, roleID string, d dressing, prompt string,
 		die("new -C: %s", err)
 	}
 
+	mintedRole := roleID == ""
 	out := autocast(loaded, ariaID, roleID, roleDress)
 	out.Minted = true
+	if out.CastOK {
+		attendAfterCast(loaded, out.RoleID, mintedRole, stay)
+	}
 	if !out.CastOK || set.jsonMode {
 		reportCast(out, set.jsonMode)
 		if prompt == "" {
@@ -179,9 +228,10 @@ func runNewCast(loaded *config.Loaded, roleID string, d dressing, prompt string,
 		reportCast(out, false)
 	}
 	if prompt != "" {
-		// The shell was rebound to the new aria by the mint, so the bare
-		// prompt path reaches it: one entry point, not a second spelling of
-		// send that could drift from it.
+		// The shell is attending either the aria or its new role, and a role
+		// redirects to its holder, so the bare prompt path reaches the same
+		// figaro either way: one entry point, not a second spelling of send
+		// that could drift from it.
 		runPrompt(loaded, dressing{}, prompt, set)
 	}
 }
@@ -189,7 +239,7 @@ func runNewCast(loaded *config.Loaded, roleID string, d dressing, prompt string,
 // runCastFromAttendedForm is `fig cast` with a form attended and no aria
 // named: the figaro that will play the role does not exist yet, so mint it
 // and cast it into what this shell is standing in front of.
-func runCastFromAttendedForm(loaded *config.Loaded, formID string, d dressing, asJSON bool) {
+func runCastFromAttendedForm(loaded *config.Loaded, formID string, d dressing, asJSON, stay bool) {
 	ariaID, err := mintFigaroFor(loaded, d)
 	if err != nil {
 		die("cast: attending %s, but minting a figaro for it failed: %s", formID, err)
@@ -197,6 +247,11 @@ func runCastFromAttendedForm(loaded *config.Loaded, formID string, d dressing, a
 	fmt.Fprintf(os.Stderr, "attending %s: minted %s to play it\n", formID, ariaID)
 	out := autocast(loaded, ariaID, formID, dressing{})
 	out.Minted = true
+	// No role was minted here: the form was already in front of us. The mint
+	// rebound this shell to the aria as a side effect, so put it back.
+	if !stay {
+		restoreAttendance(loaded, formID)
+	}
 	reportCast(out, asJSON)
 }
 

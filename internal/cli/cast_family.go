@@ -117,7 +117,7 @@ func verbPast(v string) string {
 // itself is minted first from the default form (the fig new path,
 // unattended): figaro-minted-but-role-failed is reported as the
 // partial it is.
-func runCast(loaded *config.Loaded, args []string, outfits, set, del string, asJSON bool) {
+func runCast(loaded *config.Loaded, args []string, outfits, set, del string, asJSON, stay bool) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -133,7 +133,7 @@ func runCast(loaded *config.Loaded, args []string, outfits, set, del string, asJ
 	if len(args) == 0 {
 		if attended := attendedForm(ctx, acli); attended != "" {
 			d := mustDress(outfits, set, del)
-			runCastFromAttendedForm(loaded, attended, d, asJSON)
+			runCastFromAttendedForm(loaded, attended, d, asJSON, stay)
 			return
 		}
 	}
@@ -191,6 +191,9 @@ func runCast(loaded *config.Loaded, args []string, outfits, set, del string, asJ
 				"minted_figaro": minted != "",
 			})
 		}
+		// A role this call MINTED is what the shell should end up in front
+		// of; a role that already existed leaves attendance alone.
+		attendAfterCast(loaded, resp.RoleID, minting, stay)
 		fmt.Printf("cast %s into %s", ariaID, resp.RoleID)
 		if resp.Studied {
 			fmt.Printf(" (now studying it)")
