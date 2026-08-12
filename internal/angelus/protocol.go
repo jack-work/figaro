@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"text/template"
 	"time"
@@ -442,6 +443,26 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 // due when: no record, dirty + hash moved, or dirty + the form was patched
 // by hand since birth (propagating an ad-hoc patch to every future aria is
 // exactly what the dirty-compute refuses to do silently).
+// birthParent is the node a fresh aria forks from: the shared default form
+// when the caller named no outfit, and an outfit node for the named closure
+// when it did.
+//
+// Both are content-addressed, so two arias asking for the same thing get the
+// same parent, one set of records and one rendered prefix. CreateOutfit is the
+// older half of that mechanism and it already reuses by (name, content
+// version); the default form is the newer half and it is a single slot,
+// because there is only ever one default.
+func (h *handlers) birthParent(backend store.Backend, closure form.Patch, outfitName string, named bool) (string, error) {
+	if !named {
+		return h.ensureDefaultForm(backend, closure, outfitName)
+	}
+	id, err := backend.CreateOutfit(outfitName, birthPatch(closure, outfitName, ""))
+	if err != nil {
+		return "", fmt.Errorf("outfit node %q: %w", outfitName, err)
+	}
+	return id, nil
+}
+
 func (h *handlers) ensureDefaultForm(backend store.Backend, stumpPatch form.Patch, outfitName string) (string, error) {
 	rec, err := backend.LoadDefaultForm()
 	if err != nil {
@@ -533,28 +554,56 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 
 	// TWO PATCHES, and which is which is the whole economy of this.
 	//
-	// The STUMP carries the default outfit's closure and NOTHING else, so its
-	// identity is a pure function of that closure: every aria on the same
-	// outfit shares one node, one set of records, and one rendered prefix in
-	// the provider's cache. Folding the caller's -O in here (which is what
-	// 0.22.1 did) minted a private stump per literal, so `-O mantra=x` defeated
-	// the sharing this exists for.
+	// The PARENT carries a closure and nothing else, so its identity is a pure
+	// function of that closure: every aria wearing it shares one node, one set
+	// of records, and one rendered prefix in the provider's cache.
 	//
-	// The CHILD carries everything per-aria: what -O asked for, the runtime
-	// fill-ins, its own id. So `-O` adds to the default instead of replacing
-	// it, and that rule now falls out of the topology rather than being
-	// arranged: the default is what the child inherits, -O is what it wrote.
-	// Resolved through the reserved `default` layer, which is the one LENIENT
-	// name: a configured default that is not on disk yet folds to nothing
-	// rather than failing, because that absence is what the first-run flow
-	// rides on: it surfaces downstream as the missing provider it is.
+	// The CHILD carries what is per-aria: the caller's KEYS, the runtime
+	// fill-ins, its own id.
+	//
+	// The default closure is resolved through the reserved `default` layer,
+	// the one LENIENT name: a configured default that is not on disk yet folds
+	// to nothing rather than failing, because that absence is what the
+	// first-run flow rides on, surfacing downstream as the missing provider it
+	// actually is.
+	// -O OVERRIDES THE DEFAULT; it does not layer on top of it (Gluck,
+	// 2026-08-12). `fig new -O sonn5` wears sonn5's closure and nothing the
+	// configured default happened to add, which is what naming an outfit
+	// plainly means and what every other verb taking -O already does.
+	//
+	// The reason it used to layer has expired. In 0.22.1 the caller's -O was
+	// folded into the STUMP, and -O could carry key literals, so `-O
+	// mantra=x` minted a private stump per literal and destroyed the sharing
+	// stumps exist for. The fix then was to move -O to the child. But -O has
+	// since become NAMES ONLY (keys travel on -S), so a named closure is
+	// shared by name and content version like any other, and it can go back
+	// under the fork where it belongs.
+	//
+	// So the parent node is the closure the caller asked for: the DEFAULT
+	// FORM when nothing was named, an outfit node for that name otherwise.
+	// Both are content-addressed and both are shared by every aria wearing
+	// them, which is what keeps one rendered prefix and one warm provider
+	// cache per outfit.
 	outfitName := loaded.Config.DefaultOutfit
-	stumpPatch, err := h.dressDefault()
+	named := len(req.Outfits) > 0
+	if named {
+		outfitName = strings.Join(req.Outfits, ",")
+	}
+
+	var stumpPatch form.Patch
+	var err error
+	if named {
+		stumpPatch, err = h.dress(req.Outfits, nil)
+	} else {
+		stumpPatch, err = h.dressDefault()
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	dress, err := h.dress(req.Outfits, req.Patch)
+	// The child carries only what is per-aria: the caller's KEYS (-S/-D) and
+	// the runtime fill-ins. The names are in the parent now.
+	dress, err := h.dress(nil, req.Patch)
 	if err != nil {
 		return nil, err
 	}
@@ -614,7 +663,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		// new` is bind-the-default-form, and this reuse is what shares one
 		// rendered prefix, and one warm provider cache, across every
 		// aria on the same outfit. The hash optimization IS the cache.
-		formID, serr := h.ensureDefaultForm(backend, stumpPatch, outfitName)
+		formID, serr := h.birthParent(backend, stumpPatch, outfitName, named)
 		if serr != nil {
 			return nil, serr
 		}

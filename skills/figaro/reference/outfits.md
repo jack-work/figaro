@@ -85,17 +85,35 @@ whether the call creates the aria.
 **Birth.** `figaro new -O <names>`, and `send -O` when this call has to mint an
 aria (an unbound shell, or `-e`).
 
-TWO PATCHES, and which is which is the whole economy. The **stump** carries the
-DEFAULT outfit's closure and nothing else: one per content version: so its
-identity is a pure function of that closure and every aria wearing the outfit
-shares one node, one set of records, and one rendered prefix in the provider's
-cache. The **child** carries what `-O` asked for, plus the runtime fill-ins. So
-`-O` ADDS to the default rather than replacing it, and that rule falls out of
-the topology instead of being arranged.
+TWO PATCHES, and which is which is the whole economy. The **parent** carries a
+closure and nothing else, one node per content version, so its identity is a
+pure function of that closure and every aria wearing it shares one node, one
+set of records, and one rendered prefix in the provider's cache. The **child**
+carries the caller's KEYS (`-S`/`-D`) plus the runtime fill-ins.
 
-Folding `-O` into the stump (which is what 0.22.x did, back when `-O` still
-took `k=v` terms) minted a private stump per literal, so `-O mantra=x` defeated
-the sharing stumps exist for.
+`-O` OVERRIDES the default; it does not layer on top of it. `figaro new -O
+sonn5` wears sonn5's closure and nothing the configured default happened to
+add. The parent is the default form when nothing was named and an outfit node
+for that name when something was, so the sharing is per outfit either way.
+
+An outfit closure with no `system.provider` is refused at birth, by name:
+
+```
+figaro new -O model-gpt5
+error: create figaro: -O model-gpt5 sets no system.provider: add one to that
+outfit, or layer one that has it
+```
+
+Which is the point of overriding rather than layering: what you named is what
+you get, including its gaps.
+
+The layering rule that used to be here expired with the grammar. In 0.22.x
+`-O` still took `k=v` terms and was folded into the stump, so `-O mantra=x`
+minted a private stump per literal and defeated the sharing stumps exist for.
+The fix then was to move `-O` to the child, which made it additive as a side
+effect. `-O` has since become NAMES ONLY (keys travel on `-S`), so a named
+closure is shared by name and content version like any other and belongs back
+under the fork.
 
 Collection spares the LIVE default, by hash rather than by name: edit an
 outfit's files and the hash moves, so the version nobody wears is reaped once

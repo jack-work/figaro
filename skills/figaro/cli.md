@@ -34,7 +34,7 @@ These hold across the whole CLI:
 | `figaro -- <prompt>` | Prompt the attended aria. Creates one if this shell has no binding. |
 | `figaro send [flags] -- <prompt>` | The same, with the verb spelled out. Alias `qua`. |
 | `figaro new [-O <names>] [-S <k=v>] -- <prompt>` | Mint a fresh aria, bind this shell to it, prompt it. |
-| `figaro new -C [<@form>]` | Mint the aria and CAST it in one gesture. With a role named, `-O`/`-S` dress the aria; with none, they mint the role (`new -CO reviewer`, `new -CS name=x`). A figaro minted but not cast is reported as that partial, with its id. |
+| `figaro new -C [<@form>]` | Mint the aria and CAST it in one gesture. With a role named, `-O`/`-S` dress the aria; with none, they mint the role (`new -CO reviewer`, `new -CS name=x`). When the call MINTS a role, the shell ends up attending that role (`--stay` opts out); a role redirects turn-shaped verbs to its holder, so prompts still reach the aria. A figaro minted but not cast is reported as that partial, with its id. |
 | `figaro new` | With no prompt: mint on the default outfit and attend it, no turn. `new` always mints; `figaro attend null` is how you go home. |
 
 `send` flags, all combinable unless noted:

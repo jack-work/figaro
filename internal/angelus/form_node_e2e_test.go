@@ -104,7 +104,7 @@ func TestFormNodeLifecycleWithoutAnAgent(t *testing.T) {
 func TestDormantAriaSetDoesNotWake(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
-	created, err := acli.Create(ctx, dress(t, "mock"), nil)
+	created, err := acli.Create(ctx, nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, a.Registry.Kill(created.FigaroID))
 	require.Nil(t, a.Registry.Get(created.FigaroID))
@@ -144,7 +144,7 @@ func TestFormCreateParentRules(t *testing.T) {
 	require.NotEqual(t, parent.FormID, child.FormID)
 	require.True(t, strings.HasPrefix(child.FormID, "@"))
 
-	aria, err := acli.Create(ctx, dress(t, "mock"), nil)
+	aria, err := acli.Create(ctx, nil, nil)
 	require.NoError(t, err)
 	_, err = acli.FormCreate(ctx, aria.FigaroID, nil, rawPatch(map[string]string{"x": `1`}))
 	require.Error(t, err)
@@ -160,7 +160,7 @@ func TestFormCreateParentRules(t *testing.T) {
 func TestListRecencyDoesNotWakeDormantArias(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
-	created, err := acli.Create(ctx, dress(t, "mock"), nil)
+	created, err := acli.Create(ctx, nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, a.Registry.Kill(created.FigaroID))
 	require.Nil(t, a.Registry.Get(created.FigaroID))
@@ -255,12 +255,18 @@ func TestBindNullFailsAtFirstTurnNotAtMint(t *testing.T) {
 // no-op; a changed outfit file remints on the NEXT create, not at
 // reload; a hand-patched default form remints too: the ad-hoc patch is
 // never silently propagated.
+//
+// Creates here name NO outfit, which is what `fig new` does. Naming one
+// explicitly takes the other path now (-O overrides the default rather than
+// layering on it) and is covered by TestNamedOutfitParentIsShared. The two
+// used to be the same path, which is why this test used to say `-O mock`
+// while describing the default.
 func TestDefaultFormLifecycle(t *testing.T) {
 	a, acli, ctx, dir := daemonFixtureDir(t)
 
-	one, err := acli.Create(ctx, dress(t, "mock"), nil)
+	one, err := acli.Create(ctx, nil, nil)
 	require.NoError(t, err)
-	two, err := acli.Create(ctx, dress(t, "mock"), nil)
+	two, err := acli.Create(ctx, nil, nil)
 	require.NoError(t, err)
 
 	parentOf := func(id string) string {
@@ -275,7 +281,7 @@ func TestDefaultFormLifecycle(t *testing.T) {
 	// Reload with UNCHANGED files: the next create reuses (no-op compute).
 	_, err = acli.OutfitReload(ctx)
 	require.NoError(t, err)
-	three, err := acli.Create(ctx, dress(t, "mock"), nil)
+	three, err := acli.Create(ctx, nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, p1, parentOf(three.FigaroID), "unchanged files reminted the default form")
 
@@ -288,7 +294,7 @@ mantra = "v2"
 `), 0600))
 	_, err = acli.OutfitReload(ctx)
 	require.NoError(t, err)
-	four, err := acli.Create(ctx, dress(t, "mock"), nil)
+	four, err := acli.Create(ctx, nil, nil)
 	require.NoError(t, err)
 	require.NotEqual(t, p1, parentOf(four.FigaroID), "changed files did not remint")
 
@@ -299,7 +305,63 @@ mantra = "v2"
 	require.NoError(t, err)
 	_, err = acli.OutfitReload(ctx)
 	require.NoError(t, err)
-	five, err := acli.Create(ctx, dress(t, "mock"), nil)
+	five, err := acli.Create(ctx, nil, nil)
 	require.NoError(t, err)
 	require.NotEqual(t, p4, parentOf(five.FigaroID), "a hand-patched default form was reused after reload")
+}
+
+// -O OVERRIDES the default, and arias naming the same outfit still share one
+// parent: the sharing that keeps one rendered prefix and one warm provider
+// cache per outfit, which is the whole reason a birth has a parent at all.
+//
+// The remint property comes from content addressing rather than from the
+// default form's dirty flag: an outfit node is reused by (name, content
+// version), so a changed file is a different node by construction.
+func TestNamedOutfitParentIsShared(t *testing.T) {
+	a, acli, ctx, dir := daemonFixtureDir(t)
+
+	parentOf := func(id string) string {
+		n, ok := a.Backend.Node(id)
+		require.True(t, ok)
+		return n.Parent
+	}
+
+	require.NoError(t, os.WriteFile(dir+"/outfits/other.toml", []byte(`
+[system]
+provider = "mock"
+model = "other-model"
+`), 0600))
+
+	one, err := acli.Create(ctx, dress(t, "other"), nil)
+	require.NoError(t, err)
+	two, err := acli.Create(ctx, dress(t, "other"), nil)
+	require.NoError(t, err)
+	p1 := parentOf(one.FigaroID)
+	require.Equal(t, p1, parentOf(two.FigaroID), "two creates on one outfit did not share a parent")
+
+	// A different outfit is a different parent, and the DEFAULT is a third:
+	// naming an outfit must not land you on the default form.
+	byDefault, err := acli.Create(ctx, nil, nil)
+	require.NoError(t, err)
+	require.NotEqual(t, p1, parentOf(byDefault.FigaroID),
+		"a named outfit shared the default form's parent")
+
+	// The named closure is what the aria wears, not the default plus it.
+	snap, err := a.Backend.FormState(one.FigaroID)
+	require.NoError(t, err)
+	model, ok := snap.Get("system.model")
+	require.True(t, ok)
+	require.JSONEq(t, `"other-model"`, string(model), "-O did not override the default outfit")
+
+	// Change the file: the next create lands on a different node.
+	require.NoError(t, os.WriteFile(dir+"/outfits/other.toml", []byte(`
+[system]
+provider = "mock"
+model = "other-model-v2"
+`), 0600))
+	_, err = acli.OutfitReload(ctx)
+	require.NoError(t, err)
+	three, err := acli.Create(ctx, dress(t, "other"), nil)
+	require.NoError(t, err)
+	require.NotEqual(t, p1, parentOf(three.FigaroID), "a changed outfit file was not reminted")
 }
