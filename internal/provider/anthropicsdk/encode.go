@@ -73,8 +73,14 @@ func (p *Provider) renderMessage(msg message.Message, prevSnap *form.Snapshot) (
 				blocks = append(blocks, toolResultBlock(c.ToolCallID, text, c.IsError, toolImages[c.ToolCallID]))
 			}
 		}
+		// Taken before renderPatchBlocks advances prevSnap: see the note in
+		// the anthropic encoder.
+		board := derefSnap(prevSnap)
 		blocks = append(blocks, p.renderPatchBlocks(msg.Patches, prevSnap)...)
-		for _, text := range provider.StudyReminderTexts(msg) {
+		for _, text := range provider.StudyReminderTexts(msg, board) {
+			blocks = append(blocks, anthropic.NewTextBlock(text))
+		}
+		for _, text := range provider.ForkReminderTexts(msg, board) {
 			blocks = append(blocks, anthropic.NewTextBlock(text))
 		}
 		if len(blocks) == 0 {
@@ -211,4 +217,15 @@ func toolResultBlock(toolUseID, text string, isErr bool, images []message.Conten
 // "harness metadata inside a message" rather than two.
 func senderReminder(sender string) string {
 	return "<system-reminder name=\"sender\">" + sender + "</system-reminder>"
+}
+
+// derefSnap is the board or the empty one. This encoder threads the previous
+// snapshot as a pointer (nil at the head of a cold walk), and the reminder
+// renderers take a value: a Snapshot is two words and its zero is legitimately
+// "an empty board", so there is nothing to guard beyond the nil.
+func derefSnap(s *form.Snapshot) form.Snapshot {
+	if s == nil {
+		return form.Snapshot{}
+	}
+	return *s
 }

@@ -437,7 +437,8 @@ func (p *responsesProvider) inputFor(in provider.SendInput) ([]json.RawMessage, 
 			}
 			// The observed set folds in beside the board: each study
 			// reminder becomes one input_text message part.
-			for _, text := range provider.StudyReminderTexts(msg) {
+			for _, text := range append(provider.StudyReminderTexts(msg, snap),
+				provider.ForkReminderTexts(msg, snap)...) {
 				part, merr := json.Marshal(map[string]any{
 					"role":    "user",
 					"content": []map[string]any{{"type": "input_text", "text": text}},

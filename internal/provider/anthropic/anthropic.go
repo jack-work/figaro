@@ -622,10 +622,18 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *form.Snapshot) 
 				})
 			}
 		}
+		// The board as it stood BEFORE this message's patches: the same
+		// state every other dialect reads incantations from. renderPatchBlocks
+		// advances prevSnap in place, so it has to be taken first or this
+		// provider would answer from a different board than the rest.
+		board := derefSnap(prevSnap)
 		blocks = append(blocks, a.renderPatchBlocks(msg.Patches, prevSnap)...)
 		// The observed set folds in beside the board: same reminder
 		// idiom, one derivation upstream (provider.StudyReminderTexts).
-		for _, text := range provider.StudyReminderTexts(msg) {
+		for _, text := range provider.StudyReminderTexts(msg, board) {
+			blocks = append(blocks, nativeBlock{Type: "text", Text: text})
+		}
+		for _, text := range provider.ForkReminderTexts(msg, board) {
 			blocks = append(blocks, nativeBlock{Type: "text", Text: text})
 		}
 		if len(blocks) == 0 {
@@ -1506,4 +1514,14 @@ func imageBlock(c message.Content) nativeBlock {
 			"type": "base64", "media_type": c.MimeType, "data": c.Data,
 		},
 	}
+}
+
+// derefSnap is the board or the empty one: this encoder threads the previous
+// snapshot as a pointer (nil at the head of a cold walk) and the reminder
+// renderers take a value.
+func derefSnap(s *form.Snapshot) form.Snapshot {
+	if s == nil {
+		return form.Snapshot{}
+	}
+	return *s
 }

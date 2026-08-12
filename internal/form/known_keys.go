@@ -66,8 +66,11 @@ func WellKnownKeys() []KeyDoc {
 		{Key: "system.top_p", Short: "Copilot Responses nucleus sampling (greater than 0 through 1; mutually exclusive with temperature)", Mode: KeyUserSettable},
 		{Key: "system.parallel_tool_calls", Short: "Whether Copilot Responses may emit parallel function calls", Mode: KeyUserSettable},
 		{Key: "system.environment.<name>", Short: "Allowlisted env var capture", Mode: KeyUserSettable},
+		{Key: "system.study_incantation", Short: `What to SAY at a study lifecycle event: {"onstudy":…,"onupdate":…,"ondrop":…}, any subset, strings`, Mode: KeyUserSettable},
+		{Key: "system.fork_incantation", Short: `What to say to a branch at birth: a string, or {"onfork":…}. Unset means silence, which is the historical behaviour`, Mode: KeyUserSettable},
 
 		{Key: "system.cwd", Short: "Canonical working directory (set at create time)", Mode: KeySystemManaged},
+		{Key: "system.forked_from", Short: "The trunk this branch was forked from (stamped at birth)", Mode: KeySystemManaged},
 		{Key: "model", Short: "Active model ID", Mode: KeySystemManaged},
 		{Key: "root", Short: "Project root path", Mode: KeySystemManaged},
 		{Key: "token_budget", Short: "Context window usage indicator", Mode: KeySystemManaged},

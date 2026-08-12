@@ -310,7 +310,8 @@ func (p *Provider) assemble(perMessage [][]json.RawMessage, snapshot form.Snapsh
 // against it, so a reminder says what changed rather than restating the board.
 func (p *Provider) encode(msg message.Message, prevSnapshot form.Snapshot) ([]json.RawMessage, error) {
 	reminders := p.renderPatches(msg.Patches, prevSnapshot)
-	reminders = append(reminders, provider.StudyReminderTexts(msg)...)
+	reminders = append(reminders, provider.StudyReminderTexts(msg, prevSnapshot)...)
+	reminders = append(reminders, provider.ForkReminderTexts(msg, prevSnapshot)...)
 	msgs, err := encodeMessage(msg, p.plan().Blocks, reminders)
 	if err != nil {
 		return nil, err

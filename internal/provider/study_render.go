@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 )
 
@@ -37,8 +38,15 @@ import (
 // FIRST, reporting the value the form held before the change it was being
 // asked about. An intermediate value inside one window is not information, it
 // is a trap.
-func StudyReminderTexts(msg message.Message) []string {
+func StudyReminderTexts(msg message.Message, board form.Snapshot) []string {
 	var out []string
+	// The board is read for ONE thing: the incantation. Reading it costs a
+	// lookup, and only when this message carries a study event at all, so an
+	// aria that studies nothing pays nothing.
+	var incantation form.StudyIncantation
+	if msg.Study != nil || len(msg.StudyPatches) > 0 || len(msg.StudyNotes) > 0 {
+		incantation = form.ReadStudyIncantation(board)
+	}
 	// The mark, and the BASELINE with it. At the moment observation begins,
 	// the window is (0, V]: the form's whole history, which folds to its
 	// STATE, not to a change. Rendering that as an ordinary transition block
@@ -49,6 +57,12 @@ func StudyReminderTexts(msg message.Message) []string {
 	begun := ""
 	if msg.Study != nil {
 		body := map[string]any{"form": msg.Study.FormID, "observing": msg.Study.Began}
+		if say := incantation.OnStudy; say != "" && msg.Study.Began {
+			body["say"] = say
+		}
+		if say := incantation.OnDrop; say != "" && !msg.Study.Began {
+			body["say"] = say
+		}
 		if msg.Study.Began {
 			if v, ok := msg.StudyAt[msg.Study.FormID]; ok {
 				body["version"] = v
@@ -78,6 +92,9 @@ func StudyReminderTexts(msg message.Message) []string {
 			if body := studyFold(fid, msg.StudyPatches[fid]); body != nil {
 				if v, ok := msg.StudyAt[fid]; ok {
 					body["version"] = v
+				}
+				if incantation.OnUpdate != "" {
+					body["say"] = incantation.OnUpdate
 				}
 				out = append(out, studyBlock("study:"+fid, body))
 			}

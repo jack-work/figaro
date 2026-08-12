@@ -104,8 +104,8 @@ func TestStudyReminderTextsDeterministic(t *testing.T) {
 		},
 		StudyNotes: map[string]string{"@gone": "the observed form no longer exists (removed while studied)"},
 	}
-	a := StudyReminderTexts(msg)
-	b := StudyReminderTexts(msg)
+	a := StudyReminderTexts(msg, form.Snapshot{})
+	b := StudyReminderTexts(msg, form.Snapshot{})
 	if strings.Join(a, "|") != strings.Join(b, "|") {
 		t.Fatal("render not deterministic")
 	}
@@ -137,7 +137,7 @@ func TestStudyWindowIsFoldedToItsResult(t *testing.T) {
 			{Set: map[string]json.RawMessage{"brief": json.RawMessage(`"the watchword is COLUMBINE"`)}, Remove: []string{"doomed"}},
 		},
 	}}
-	joined := strings.Join(StudyReminderTexts(msg), "\n")
+	joined := strings.Join(StudyReminderTexts(msg, form.Snapshot{}), "\n")
 	if n := strings.Count(joined, `system-reminder name="study:@r"`); n != 1 {
 		t.Fatalf("want ONE block for one form, got %d: %s", n, joined)
 	}
@@ -160,7 +160,7 @@ func TestStudyWindowIsFoldedToItsResult(t *testing.T) {
 	// about one form can be ordered by a reader.
 	withVersion := msg
 	withVersion.StudyAt = map[string]uint64{"@r": 7}
-	if v := strings.Join(StudyReminderTexts(withVersion), "\n"); !strings.Contains(v, `"version":7`) {
+	if v := strings.Join(StudyReminderTexts(withVersion, form.Snapshot{}), "\n"); !strings.Contains(v, `"version":7`) {
 		t.Errorf("the version must ride the block: %s", v)
 	}
 	// Structure, not prose: no sentences in the body.
@@ -178,7 +178,7 @@ func TestStudyRenderSkipsTheHarnessNamespace(t *testing.T) {
 			"brief":          json.RawMessage(`"visible"`),
 		}}},
 	}}
-	joined := strings.Join(StudyReminderTexts(msg), "\n")
+	joined := strings.Join(StudyReminderTexts(msg, form.Snapshot{}), "\n")
 	if strings.Contains(joined, "system.studies") {
 		t.Errorf("harness namespace leaked: %s", joined)
 	}
@@ -189,7 +189,7 @@ func TestStudyRenderSkipsTheHarnessNamespace(t *testing.T) {
 	only := message.Message{StudyPatches: map[string][]message.Patch{
 		"@r": {{Set: map[string]json.RawMessage{"system.x": json.RawMessage(`1`)}}},
 	}}
-	if texts := StudyReminderTexts(only); len(texts) != 0 {
+	if texts := StudyReminderTexts(only, form.Snapshot{}); len(texts) != 0 {
 		t.Errorf("want no block, got %v", texts)
 	}
 }
@@ -207,7 +207,7 @@ func TestStudyMarkCarriesTheBaselineState(t *testing.T) {
 		}},
 		StudyAt: map[string]uint64{"@r": 2},
 	}
-	texts := StudyReminderTexts(msg)
+	texts := StudyReminderTexts(msg, form.Snapshot{})
 	if len(texts) != 1 {
 		t.Fatalf("want ONE block at the mark, got %d: %v", len(texts), texts)
 	}
@@ -223,13 +223,13 @@ func TestStudyMarkCarriesTheBaselineState(t *testing.T) {
 
 	// A form that is NOT the one being marked still renders its own block.
 	msg.StudyPatches["@other"] = []message.Patch{{Set: map[string]json.RawMessage{"x": json.RawMessage(`1`)}}}
-	if got := len(StudyReminderTexts(msg)); got != 2 {
+	if got := len(StudyReminderTexts(msg, form.Snapshot{})); got != 2 {
 		t.Errorf("want the mark plus one fold, got %d", got)
 	}
 
 	// Stopping observation says so and carries no state.
 	stop := message.Message{Study: &message.StudyMark{FormID: "@r", Began: false}}
-	if s := strings.Join(StudyReminderTexts(stop), ""); !strings.Contains(s, `"observing":false`) || strings.Contains(s, `"state"`) {
+	if s := strings.Join(StudyReminderTexts(stop, form.Snapshot{}), ""); !strings.Contains(s, `"observing":false`) || strings.Contains(s, `"state"`) {
 		t.Errorf("stop mark: %s", s)
 	}
 }

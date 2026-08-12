@@ -1163,7 +1163,7 @@ func forkDress(dress form.Patch, parent string) form.Patch {
 	// A placeholder the writer replaces would be a lie; the id is not known
 	// until the child exists, so aria_id is re-stamped by the boot patch that
 	// follows. What this guarantees is that the birth patch is never empty.
-	p.Set["system.forked_from"] = json.RawMessage(`"` + parent + `"`)
+	p.Set[form.ForkedFromKey] = json.RawMessage(`"` + parent + `"`)
 	return p
 }
 

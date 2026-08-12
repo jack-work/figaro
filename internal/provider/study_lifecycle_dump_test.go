@@ -98,7 +98,7 @@ func TestStudyLifecycleDump(t *testing.T) {
 		Log:     log,
 		Studies: studies,
 		Encode: func(m message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
-			texts := provider.StudyReminderTexts(m)
+			texts := provider.StudyReminderTexts(m, form.Snapshot{})
 			fmt.Printf("\n──── %s ────\n", labels[i])
 			i++
 			if len(texts) == 0 {
