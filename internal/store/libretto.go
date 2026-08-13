@@ -29,6 +29,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -169,19 +170,31 @@ func (l *Libretto) Retain() (int, error)  { return l.addRefs(1) }
 func (l *Libretto) Release() (int, error) { return l.addRefs(-1) }
 
 func (l *Libretto) addRefs(delta int) (int, error) {
+	caller, _, _, _ := runtime.Caller(2)
 	for {
 		st := l.formState()
 		version := l.form.Version()
-		next := intOf(st, KeyLibrettoRefs) + delta
+		from := intOf(st, KeyLibrettoRefs)
+		next := from + delta
 		if next < 0 {
 			// A double drop is a bug in the caller, not a reason to invent a
 			// negative refcount that reclamation would never collect.
-			return intOf(st, KeyLibrettoRefs), fmt.Errorf(
-				"libretto %s: release below zero", l.ID())
+			//
+			// THE LEDGER COMES WITH IT. This is an under-count, the direction
+			// the sweep cannot repair, and it has appeared once in a loaded
+			// run and never again in four. A message that says only "below
+			// zero" leaves the next person doing what I did -- running it
+			// again and learning nothing -- so the refusal carries the moves
+			// that led to it.
+			recordRefMove(refMove{libretto: l.ID(), delta: delta, from: from, to: next, refused: true, caller: caller})
+			return from, fmt.Errorf(
+				"libretto %s: release below zero\nrecent refcount moves (oldest first):\n%s",
+				l.ID(), LibrettoLedger())
 		}
 		_, _, err := l.form.ApplyEffectPrivileged(
 			librettoPatch(map[string]any{KeyLibrettoRefs: next}), version)
 		if err == nil {
+			recordRefMove(refMove{libretto: l.ID(), delta: delta, from: from, to: next, caller: caller})
 			return next, nil
 		}
 		if !errors.Is(err, ErrFormMoved) {

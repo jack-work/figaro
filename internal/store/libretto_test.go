@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -460,5 +461,39 @@ func TestLibrettoStopsListeningWhenItsSourceDies(t *testing.T) {
 	}
 	if !sawDeath {
 		t.Error("the death is not in the copy's history, so no render can name it")
+	}
+}
+
+// The refusal must EXPLAIN ITSELF. A release with no matching retain is an
+// under-count, the direction the sweep cannot repair, and it has so far
+// appeared once in a loaded run and in none of the four that chased it.
+// Repetition is not a hunting method for that; a message that names the moves
+// which led to it is.
+func TestReleaseBelowZeroCarriesTheLedger(t *testing.T) {
+	be, src, _ := librettoFixture(t)
+	lib, err := be.Libretto(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lib.Retain(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lib.Release(); err != nil {
+		t.Fatal(err)
+	}
+	_, err = lib.Release() // one too many, deliberately
+	if err == nil {
+		t.Fatal("releasing below zero was allowed")
+	}
+	msg := err.Error()
+	for _, want := range []string{"release below zero", "recent refcount moves", "retain", "release"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("the refusal does not carry %q:\n%s", want, msg)
+		}
+	}
+	// And it names WHERE, so the caller with no matching retain is visible
+	// rather than inferred.
+	if !strings.Contains(msg, "libretto_test.go") {
+		t.Errorf("the ledger names no call site:\n%s", msg)
 	}
 }
