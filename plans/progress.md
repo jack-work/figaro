@@ -1247,3 +1247,58 @@ memory is without a profiler**, which is the whole point. `resident_ir_bytes`
 next to `loaded_heads` is the comparison that matters: the first is figaro's
 bounded cache of decoded entries, the second is figwal's unbounded cache of
 raw ones, and the second is an order of magnitude larger.
+
+### Which call hydrates, refined (and one of my own numbers corrected)
+
+An exact memory profile of the listing test (`-memprofilerate 1`) puts
+figaro's own retention at 7.35 MB, **87% of it in `OpenForm`**:
+
+```
+6.43MB 87.45%  store.OpenForm
+3.53MB 48.05%  encoding/json.(*RawMessage).UnmarshalJSON   (under it)
+0.39MB  5.35%  store.topologySnapshot
+```
+
+So the hydrator is the **OUTFIT column**. `labelOf` falls back to the board
+for any node with no stump — 209 of 515 in the real store — and
+`FormState` opens the Form, whose replay opens the NODE, which is what makes
+figwal build that node's whole-log snapshot. `topologySnapshot` itself is
+0.39 MB: `vectorsLocked` and `presentLocked` are pure in-memory walks, and
+`ListLight` was already fixed for this exact reason once before.
+
+**Correcting myself**: I read "+113 MiB in `Conversations()`" off
+`ReadMemStats` deltas and attributed it to the topology build. The profile
+says otherwise. Both were measured; only one was measured at the right
+granularity, and the coarse one attributed the cost to whichever call
+happened to straddle a GC. The daemon-side profile (83 MB in
+`buildOwnSnapshot`, reached through `handlers.list`) is the trustworthy one,
+because it was taken from a living daemon rather than inferred from deltas.
+
+### So the choice is latency against memory, and it is Gluck's to make
+
+The label is two keys. Getting them costs a form replay and a node
+hydration, per row, per listing.
+
+1. **Do not RETAIN the form opened for a label.** Purely internal, no
+   second source of truth, and it extends a doctrine already in the code
+   ("TOUCH IS USE, NOT SIGHT" at `seenLocked`) from the idle clock to the
+   registry. **Costs listing latency**: a status line re-replaying 209 forms
+   every few seconds is real CPU, and the current design deliberately chose
+   the other way.
+2. **Cache the label in the meta sidecar**, which a listing already reads
+   for message counts and tokens. No replay, no hydration, and the label is
+   exactly as stable as the counts beside it. **Costs a second source of
+   truth** for state that lives in the form, which this design generally
+   forbids — mitigated by the heal path that already exists
+   (`meta_heal.go`) and by the fact that `b.labels` does precisely this for
+   STUMP labels today, justified there because a stump id is the hash of its
+   own content.
+
+I have not taken either. Both change something a user can feel (`fig ls`
+latency, or where a label comes from), and the measurement is now cheap
+enough that either can be judged in ninety seconds:
+
+```
+box=$(mktemp -d); cp -a --reflink=auto ~/.local/state/figaro/arias $box/arias
+FIGARO_PROBE_ROOT=$box/arias go test ./internal/store -run ListingCost -v
+```
