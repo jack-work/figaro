@@ -578,3 +578,17 @@ func (s *Server) ReleaseCache() {
 	s.cache.Release()
 	s.mu.Unlock()
 }
+
+// TailBracket is the newest sealed turn's LT bracket end (0 when none or
+// unbracketed). The tail is pinned resident, so this costs no
+// materialization -- it exists so a staleness probe does not have to
+// call Turns(), which would.
+func (s *Server) TailBracket() uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tl := s.cache.Tail()
+	if tl == nil || len(tl.LTs) < 2 {
+		return 0
+	}
+	return tl.LTs[1]
+}

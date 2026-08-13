@@ -232,6 +232,13 @@ type handlers struct {
 	outfitter          *outfit.Outfitter
 	availableProviders []string
 
+	// readerOnce/readerInst memoize the windowed reader: its per-aria
+	// servers ARE the window, and a reader minted per call would retain
+	// nothing and recompose everything, which is the old behaviour with
+	// extra steps.
+	readerOnce sync.Once
+	readerInst *AriaReader
+
 	// configMu guards config against concurrent reload + read. The
 	// reload-from-disk is cheap, but other handlers may dereference
 	// h.config concurrently.

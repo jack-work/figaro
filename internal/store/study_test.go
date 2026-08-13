@@ -721,7 +721,9 @@ func TestFormAtIsAPairThatExisted(t *testing.T) {
 	// pair must be self-consistent, which here means the version is the one
 	// at which that exact value was published.
 	stop := make(chan struct{})
+	writerDone := make(chan struct{})
 	go func() {
+		defer close(writerDone)
 		for i := 0; ; i++ {
 			select {
 			case <-stop:
@@ -731,7 +733,11 @@ func TestFormAtIsAPairThatExisted(t *testing.T) {
 			_, _ = be.ApplyForm(aria, patchOf(t, map[string]string{"n": fmt.Sprintf("%d", i)}))
 		}
 	}()
-	defer close(stop)
+	// WAIT for the writer, not merely signal it: a goroutine mid-ApplyForm
+	// when the test returns recreates files under the TempDir while cleanup
+	// removes it, and the failure reads "directory not empty" -- seen twice
+	// under a loaded gate before this line existed.
+	defer func() { close(stop); <-writerDone }()
 
 	for i := 0; i < 200; i++ {
 		at, err := be.FormAt(aria)

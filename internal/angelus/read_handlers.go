@@ -17,7 +17,10 @@ import (
 // render a call's shape, and a sealed history already carries them in the
 // IR. Nothing here executes a tool.
 func (h *handlers) reader() *AriaReader {
-	return NewAriaReader(h.angelus.Backend, uiir.New(nil))
+	h.readerOnce.Do(func() {
+		h.readerInst = NewAriaReaderBounded(h.angelus.Backend, uiir.New(nil), h.angelus.UIWindow)
+	})
+	return h.readerInst
 }
 
 // liveAgent returns the aria's agent if one is resident, else nil. This is

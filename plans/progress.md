@@ -3974,3 +3974,10 @@ filesystem-name encoding, identity for clean keys) and NOT proven
 innocent either. If it recurs, capture the message first; the suspect
 axes are the (v,v] emptiness (a lost-update signal, serious) versus a
 fixture-timing artifact (benign).
+
+VERDICT (same session, second occurrence WITH the message captured):
+fixture-timing, benign. "TempDir RemoveAll: directory not empty" -- the
+test signalled its writer goroutine but never WAITED for it, so a
+mid-flight ApplyForm recreated files under the tree cleanup was
+removing. Fixed by waiting (close+<-done). The pair property itself
+never failed.
