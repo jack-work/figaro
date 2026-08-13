@@ -2638,7 +2638,7 @@ name is stripped and the LOOKUP is not; getting it backwards produces
 | store-side `StudyForm`/`DropForm` (ordering) | **done** (`0c5a6353`) |
 | the study mark cannot land inside a round | **done** (`d6b97f6e`) |
 | the verb retains/releases, live and dormant | **done** (`2e4490b3`) |
-| **fork/import/kill as refcount participants (§12.2.2)** | **not started** |
+| fork/kill as refcount participants (§12.2.2) | **done** (`f7c39f69`); import does not exist as a verb, and inherits the rule when it does |
 | **the IR's per-libretto cursors (§12.5)** | **not started** |
 | **the translator reading librettos instead of sources** | **not started** |
 | **reclamation** | blocked on a ruling: refs==0 is not sufficient |
@@ -2646,3 +2646,21 @@ name is stripped and the LOOKUP is not; getting it backwards produces
 The next two are the ones that change what a user sees, and both live in
 `internal/provider/projection.go` and the four provider encoders — read
 6c2d7b9f's two warnings above before touching either.
+
+### §12.2.2 closed, and the flake explained
+
+Fork retains before the child exists; kill releases before the tombstone,
+because a sealed form cannot be read back for its study set. The fork test is
+verified red without the participant (*refs after a fork = 1, want 2*), and
+both end by running the sweep and asserting it corrects nothing.
+
+**The `SetWhileTurnInFlight` flake is understood and fixed.** It timed out on
+two different builds under a full `go test ./...` and passed at `-count=5`
+and `-count=8` in isolation. The cause is not timing luck: **the WAL change
+made every queued `set` a mandatory fsync**, and that test drains 160 of them
+inside one turn — half a second on an idle box, several times that when a
+dozen packages compete for one disk. `fuzzTurnTimeout` was 5 s, chosen before
+durability was mandatory, and its own comment calls it a liveness guard
+rather than synchronisation. Raised to 20 s, with the arithmetic in the
+comment. **A test whose deadline is a measurement of the disk is a test that
+will lie eventually.**
