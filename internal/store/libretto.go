@@ -289,9 +289,34 @@ func (l *Libretto) fold(sub *Subscription, stop <-chan struct{}, done chan<- str
 					draining = false
 				}
 			}
-			l.applyBatch(sub, batch)
+			if dead := l.applyBatch(sub, batch); dead {
+				// THE SOURCE DIED, so stop listening -- wym.md:21, and the
+				// half of it that was never built. A subscription outliving
+				// its source pins that Form resident forever: the idle sweep
+				// refuses to evict anything subscribed, correctly, so the
+				// corpse of every studied-and-deleted form would be held for
+				// the daemon's life.
+				//
+				// Detaching from THIS goroutine, so it cannot join itself:
+				// Close() waits on `done`, and `done` is closed by our own
+				// defer.
+				l.detach(sub)
+				return
+			}
 		}
 	}
+}
+
+// detach ends the subscription from inside the fold. Following() reports
+// false afterwards, which is what lets a later verb re-attach if a form with
+// this id ever comes back.
+func (l *Libretto) detach(sub *Subscription) {
+	l.mu.Lock()
+	if l.sub == sub {
+		l.sub, l.stop, l.done = nil, nil, nil
+	}
+	l.mu.Unlock()
+	sub.Close()
 }
 
 // applyBatch folds a run of source events into ONE patch on the copy.
@@ -299,7 +324,8 @@ func (l *Libretto) fold(sub *Subscription, stop <-chan struct{}, done chan<- str
 // Later events win, per key, in both directions: a key set and then removed
 // leaves a removal, and one removed and then set leaves a set. Getting that
 // backwards is how a mirror ends up holding a value the source does not.
-func (l *Libretto) applyBatch(sub *Subscription, batch []Event) {
+// It reports whether the source is DEAD, which ends the following.
+func (l *Libretto) applyBatch(sub *Subscription, batch []Event) bool {
 	set := map[string]json.RawMessage{}
 	removed := map[string]bool{}
 	var last uint64
@@ -313,7 +339,7 @@ func (l *Libretto) applyBatch(sub *Subscription, batch []Event) {
 				snap, at := src.Snapshot()
 				_ = l.seed(snap, at)
 			}
-			return
+			return false
 		}
 		if ev.Version <= l.At() {
 			continue // duplicate from the register-then-read window
@@ -340,7 +366,7 @@ func (l *Libretto) applyBatch(sub *Subscription, batch []Event) {
 		last = maxVersion(last, ev.Version)
 	}
 	if last == 0 {
-		return // nothing new
+		return false // nothing new
 	}
 	if dead {
 		raw, _ := json.Marshal(false)
@@ -348,7 +374,7 @@ func (l *Libretto) applyBatch(sub *Subscription, batch []Event) {
 	}
 	raw, err := json.Marshal(last)
 	if err != nil {
-		return
+		return false
 	}
 	set[KeyLibrettoAt] = raw
 	remove := make([]string, 0, len(removed))
@@ -357,8 +383,12 @@ func (l *Libretto) applyBatch(sub *Subscription, batch []Event) {
 	}
 	if _, _, err := l.form.ApplyEffectPrivileged(
 		message.Patch{Set: set, Remove: remove}, 0); err != nil {
-		return
+		// The death is not recorded, so do not stop listening on it: a
+		// libretto that unsubscribed without writing alive=false would be
+		// silently stale rather than truthfully dead.
+		return false
 	}
+	return dead
 }
 
 func maxVersion(a, b uint64) uint64 {

@@ -415,3 +415,50 @@ func TestLibrettoReaderSeesFoldsAfterItWasOpened(t *testing.T) {
 		t.Fatal("reading a libretto as a node succeeded; that is the orphaned reader")
 	}
 }
+
+// THE DEATH ENDS THE LISTENING (wym.md:21, the half that was never built).
+//
+// A subscription that outlives its source pins that Form resident forever:
+// the idle sweep refuses to evict anything subscribed, so the corpse of every
+// studied-then-deleted form would be held for the daemon's life. The copy
+// must stay READABLE while ceasing to listen -- that is the whole point of it
+// being a copy.
+func TestLibrettoStopsListeningWhenItsSourceDies(t *testing.T) {
+	be, src, srcForm := librettoFixture(t)
+	aria, _, err := be.ForkWith("", 0, patchOf(t, map[string]string{"aria_id": `"a1"`}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := be.StudyForm(aria, src); err != nil {
+		t.Fatal(err)
+	}
+	lib, err := be.Libretto(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !lib.Following() {
+		t.Fatal("not following its source before the death")
+	}
+	before := lib.Version()
+
+	if _, err := srcForm.Tombstone("test"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the listening to stop", func() bool { return !lib.Following() })
+	if lib.Alive() {
+		t.Error("the death was not recorded, but the listening stopped anyway")
+	}
+
+	// The copy outlives the source, which is what makes a studied form
+	// deletable at all: its history is still readable AND the death itself
+	// arrives as an ordinary key transition the render can show.
+	sawDeath := false
+	for _, p := range lib.PatchesBetween(before, lib.Version()) {
+		if _, ok := p.Patch.Set[KeyLibrettoAlive]; ok {
+			sawDeath = true
+		}
+	}
+	if !sawDeath {
+		t.Error("the death is not in the copy's history, so no render can name it")
+	}
+}
