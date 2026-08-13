@@ -2716,7 +2716,19 @@ uses. The fork test now runs over both in a table, and the listing assertion
 walks `Nodes()` and `Forms()` rather than trusting one filter. Ninety seconds
 of live driving found what a green suite could not.
 
-## The projection switch: analysed, NOT started, and there is a trap in it
+## The projection switch: CORRECTED by Gluck (see durable-forms 12.5b), then analysed below
+
+**Read this first**: the analysis below talks itself into a permanent dual
+rendering path for legacy stamps. That is wrong. Gluck: figaro stamps the
+LIBRETTO's cursor and the translator reads the libretto; records already on
+disk carrying SOURCE cursors are simply IGNORED (their study block is absent,
+which the reclamation ruling already licensed). A namespace and a skip, not
+two rendering paths. And a libretto is fully persistent — no retention, no
+compaction, no dropped segments, ever — because the translator asks it for
+arbitrary historical ranges and a dropped segment answers the wrong one
+silently.
+
+## (the original analysis, kept for its trap, which is still real)
 
 §12.5 wants the IR to stamp LIBRETTO versions and the translator to read
 librettos instead of source forms. I traced both ends before touching

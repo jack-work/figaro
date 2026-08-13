@@ -808,6 +808,38 @@ immediately: 50 × 12 MB per patch versus 50 × a few hundred bytes.
 It has to be the design from the first line, because it is very hard to
 retrofit once the derivation speaks JSON internally.
 
+### 12.5b The stamps, corrected (Gluck, 2026-08-13)
+
+**figaro stamps the LIBRETTO's cursor, not the source's, and the translator
+reads the libretto.** The source form is never touched at render time. That
+is §12.5 as written, and it is what should have existed from the moment the
+libretto did.
+
+The only complication is records ALREADY on disk, written before librettos
+existed and carrying source cursors. They do not need a second reading path:
+**a stamp in the old namespace is IGNORED**, and that record renders with no
+study block. Absence is the truthful default (§1), it is what a deleted
+source produced anyway, and Gluck's reclamation ruling already licensed an
+old transcript losing its study state.
+
+So the switch is: a new cursor namespace, a translator that reads librettos,
+and a skip for the old namespace. Not a permanent dual rendering path — which
+is what I had talked myself into, and it was wrong.
+
+The degradation window is bounded exactly: the migration seeds each libretto
+with the source's state at migration time, so only records written BEFORE
+that lose their block.
+
+**A LIBRETTO IS FULLY PERSISTENT. No retention, no compaction, no dropped
+segment files, ever** (Gluck, and it is the rule the rest depends on). The
+translator asks for arbitrary historical ranges between two stamps, so a
+libretto that dropped old segments would silently answer the wrong range
+rather than fail. This is §8/§10's type-level rule — a channel that hands out
+patch views may not have a retention policy — and it binds harder here,
+because once a source is deleted the libretto is the ONLY copy. Anything
+that later adds retention (phase 7) must refuse a libretto by type, not by
+convention.
+
 ### 12.7b Rulings (Gluck, 2026-08-13)
 
 **A deleted source is reported IN BAND, as a key.** The libretto carries
