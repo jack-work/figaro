@@ -24,10 +24,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
-	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/rpc"
@@ -70,73 +68,20 @@ func (h *handlers) studyForHub(ariaID, formID string, drop bool) ([]string, erro
 			return nil, err
 		}
 	}
-	// The libretto half, in the order §12.2.1 requires: retained BEFORE the
-	// board declares a study, released AFTER the board stops claiming one, so
-	// every crash leaves the count too high rather than too low.
-	if !drop && formID != "" {
-		retainLibrettoForHub(b, ariaID, formID)
-	}
-	studies, changed, err := h.patchStudiesForHub(ariaID, formID, drop)
+	// ONE implementation of the two-participant write, in the store, where
+	// the ordering argument lives (durable-forms §12.2.1). The hub had a
+	// parallel copy of the board's read-modify-write and a parallel copy of
+	// the refcount calls; two implementations of a crash-ordering rule is one
+	// too many, and the second one is where it goes wrong.
+	studies, changed, err := studyThroughStore(b, ariaID, formID, drop)
 	if err != nil {
 		return nil, err
-	}
-	if formID != "" && (drop && changed || !drop && !changed) {
-		// Dropped, or already declared: either way this hub is holding a
-		// reference it must give back.
-		releaseLibrettoForHub(b, ariaID, formID)
 	}
 	b.SetObservedForms(ariaID, studies)
 	if changed && formID != "" {
 		h.markStudyForHub(ariaID, formID, !drop)
 	}
 	return studies, nil
-}
-
-// patchStudiesForHub is the read-modify-write of the studies array, guarded by
-// the board version so a concurrent writer cannot be lost.
-func (h *handlers) patchStudiesForHub(ariaID, formID string, drop bool) ([]string, bool, error) {
-	b := h.angelus.Backend
-	for attempt := 0; attempt < 5; attempt++ {
-		snap, err := b.FormState(ariaID)
-		if err != nil {
-			return nil, false, err
-		}
-		version, err := b.FormVersion(ariaID)
-		if err != nil {
-			return nil, false, err
-		}
-		before := figaro.StudiesFromSnapshot(snap)
-		ids := make([]string, 0, len(before)+1)
-		found := false
-		for _, id := range before {
-			if id == formID {
-				found = true
-				if drop {
-					continue
-				}
-			}
-			ids = append(ids, id)
-		}
-		if !drop && !found && formID != "" {
-			ids = append(ids, formID)
-		}
-		if len(ids) == len(before) {
-			return ids, false, nil // nothing to do, and nothing to record
-		}
-		raw, err := json.Marshal(ids)
-		if err != nil {
-			return nil, false, err
-		}
-		patch := form.Patch{Set: map[string]json.RawMessage{figaro.StudiesKey: raw}}
-		if _, err := b.ApplyFormIf(ariaID, patch, version); err != nil {
-			if isVersionConflict(err) {
-				continue // the board moved; re-read and retry
-			}
-			return nil, false, err
-		}
-		return ids, true, nil
-	}
-	return nil, false, fmt.Errorf("studies: the board would not hold still")
 }
 
 func isVersionConflict(err error) bool {
@@ -146,40 +91,23 @@ func isVersionConflict(err error) bool {
 	return err != nil && containsAny(err.Error(), "form moved", "version")
 }
 
-// The libretto's refcount, when the backend has librettos. Optional
-// interface: an ephemeral backend has none and must not pretend.
-type librettoBackend interface {
-	Libretto(formID string) (*store.Libretto, error)
+// studyThroughStore routes to the store's two-participant write when the
+// backend has one. An ephemeral backend has no librettos and keeps the plain
+// board write, which is what it has always done.
+func studyThroughStore(b store.Backend, ariaID, formID string, drop bool) ([]string, bool, error) {
+	sb, ok := b.(studyBackend)
+	if !ok || formID == "" {
+		return nil, false, fmt.Errorf("study: this backend cannot study")
+	}
+	if drop {
+		return sb.DropForm(ariaID, formID)
+	}
+	return sb.StudyForm(ariaID, formID)
 }
 
-func retainLibrettoForHub(b store.Backend, ariaID, formID string) {
-	lb, ok := b.(librettoBackend)
-	if !ok {
-		return
-	}
-	lib, err := lb.Libretto(formID)
-	if err != nil {
-		slog.Warn("study: libretto unreachable", "aria", ariaID, "form", formID, "err", err)
-		return
-	}
-	if _, err := lib.Retain(); err != nil {
-		slog.Warn("study: retain failed", "aria", ariaID, "form", formID, "err", err)
-	}
-}
-
-func releaseLibrettoForHub(b store.Backend, ariaID, formID string) {
-	lb, ok := b.(librettoBackend)
-	if !ok {
-		return
-	}
-	lib, err := lb.Libretto(formID)
-	if err != nil {
-		slog.Warn("drop: libretto unreachable", "aria", ariaID, "form", formID, "err", err)
-		return
-	}
-	if _, err := lib.Release(); err != nil {
-		slog.Warn("drop: release failed", "aria", ariaID, "form", formID, "err", err)
-	}
+type studyBackend interface {
+	StudyForm(observerID, sourceFormID string) ([]string, bool, error)
+	DropForm(observerID, sourceFormID string) ([]string, bool, error)
 }
 
 func containsAny(s string, subs ...string) bool {

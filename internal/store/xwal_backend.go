@@ -389,12 +389,20 @@ func (b *XwalBackend) SubscribeForm(ariaID string, buffer int) (*Subscription, e
 }
 
 func (b *XwalBackend) ApplyFormPrivileged(ariaID string, patch message.Patch) (uint64, error) {
+	v, _, err := b.ApplyFormEffectPrivilegedIf(ariaID, patch, 0)
+	return v, err
+}
+
+// ApplyFormEffectPrivilegedIf is the privileged write with a version guard,
+// for the harness's own read-modify-write on a system-managed key. Without
+// the guard, two writers of `system.studies` silently overwrite each other.
+func (b *XwalBackend) ApplyFormEffectPrivilegedIf(ariaID string, patch message.Patch,
+	ifVersion uint64) (uint64, message.Patch, error) {
 	f, err := b.form(ariaID)
 	if err != nil {
-		return 0, err
+		return 0, message.Patch{}, err
 	}
-	v, _, err := f.ApplyEffectPrivileged(patch, 0)
-	return v, err
+	return f.ApplyEffectPrivileged(patch, ifVersion)
 }
 
 func (b *XwalBackend) ApplyFormEffectIntent(ariaID string, patch message.Patch, ifVersion uint64, intent Intent) (uint64, message.Patch, error) {

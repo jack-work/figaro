@@ -22,7 +22,9 @@ package store
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 
@@ -33,61 +35,86 @@ import (
 // absent, seeded from the source, retained, and following; then the board
 // declares it. Idempotent — studying twice is not two references, because the
 // board is a SET and the refcount is derived from the boards.
-func (b *XwalBackend) StudyForm(observerID, sourceFormID string) error {
-	source := strings.TrimPrefix(sourceFormID, "@")
-	studies, err := b.studiesOfBoard(observerID)
-	if err != nil {
-		return err
+func (b *XwalBackend) StudyForm(observerID, sourceFormID string) ([]string, bool, error) {
+	for attempt := 0; attempt < 5; attempt++ {
+		studies, version, err := b.studiesAndVersion(observerID)
+		if err != nil {
+			return nil, false, err
+		}
+		if slices.Contains(studies, sourceFormID) {
+			return studies, false, nil // already declared, and not a second reference
+		}
+		lib, err := b.libretto(sourceFormID)
+		if err != nil {
+			return nil, false, err
+		}
+		// LIBRETTO FIRST. A crash here leaves a count too high, which the
+		// sweep repairs. The reverse leaves a board naming a libretto nothing
+		// counted, which reclamation would collect out from under a live
+		// observer.
+		if _, err := lib.Retain(); err != nil {
+			return nil, false, err
+		}
+		next := append(append([]string(nil), studies...), sourceFormID)
+		err = b.setStudies(observerID, next, version)
+		if err == nil {
+			return next, true, nil
+		}
+		// The board moved under us: give the reference back before retrying,
+		// or a contended study leaks one per attempt.
+		if _, rerr := lib.Release(); rerr != nil {
+			slog.Warn("study: retry could not release", "aria", observerID, "err", rerr)
+		}
+		if !errors.Is(err, ErrFormMoved) {
+			return nil, false, err
+		}
 	}
-	if slices.Contains(studies, source) {
-		return nil // already declared; the sweep owns the count's truth
-	}
-	lib, err := b.libretto(source)
-	if err != nil {
-		return err
-	}
-	// LIBRETTO FIRST. A crash here leaves a count too high, which the sweep
-	// repairs. The reverse leaves a board naming a libretto nothing counted,
-	// which reclamation would collect out from under a live observer.
-	if _, err := lib.Retain(); err != nil {
-		return err
-	}
-	return b.setStudies(observerID, append(studies, source))
+	return nil, false, fmt.Errorf("study: the board would not hold still")
 }
 
 // DropForm is the inverse, in the inverse order. Dropping a form that has
 // since been deleted is legal (durable-forms §12.2.2): the subscription goes,
 // the board stops naming it, and the copy stays.
-func (b *XwalBackend) DropForm(observerID, sourceFormID string) error {
-	source := strings.TrimPrefix(sourceFormID, "@")
-	studies, err := b.studiesOfBoard(observerID)
+func (b *XwalBackend) DropForm(observerID, sourceFormID string) ([]string, bool, error) {
+	var studies []string
+	for attempt := 0; attempt < 5; attempt++ {
+		var version uint64
+		var err error
+		studies, version, err = b.studiesAndVersion(observerID)
+		if err != nil {
+			return nil, false, err
+		}
+		idx := slices.Index(studies, sourceFormID)
+		if idx < 0 {
+			return studies, false, nil
+		}
+		// BOARD FIRST: stop claiming it before the count comes down, so a
+		// crash between the two over-counts rather than under-counts.
+		next := slices.Delete(append([]string(nil), studies...), idx, idx+1)
+		if err := b.setStudies(observerID, next, version); err != nil {
+			if errors.Is(err, ErrFormMoved) {
+				continue
+			}
+			return nil, false, err
+		}
+		studies = next
+		break
+	}
+	lib, err := b.libretto(sourceFormID)
 	if err != nil {
-		return err
-	}
-	idx := slices.Index(studies, source)
-	if idx < 0 {
-		return nil
-	}
-	// BOARD FIRST: stop claiming it before the count comes down, so a crash
-	// between the two over-counts rather than under-counts.
-	if err := b.setStudies(observerID, slices.Delete(studies, idx, idx+1)); err != nil {
-		return err
-	}
-	lib, err := b.libretto(source)
-	if err != nil {
-		return err
+		return studies, true, err
 	}
 	refs, err := lib.Release()
 	if err != nil {
-		return err
+		return studies, true, err
 	}
 	if refs == 0 {
 		// Nobody is reading it: stop the fold and let the copy rest. It is
 		// NOT unlinked -- an IR record references a libretto forever (see
 		// Reclaimable), so the copy has to outlive the last observer.
-		b.closeLibretto(source)
+		b.closeLibretto(sourceFormID)
 	}
-	return nil
+	return studies, true, nil
 }
 
 // StudiedBy is the observer's declared set, from the durable board rather
@@ -196,18 +223,35 @@ func (b *XwalBackend) studiesOfBoard(observerID string) ([]string, error) {
 	return studiesOf(snap), nil
 }
 
-// setStudies writes the declared set. Privileged: `system.studies` is
-// system-managed, which is what stops a hand-written `fig set` from claiming
-// a study nothing counted.
-func (b *XwalBackend) setStudies(observerID string, ids []string) error {
+// setStudies writes the declared set, guarded by the board version so a
+// concurrent writer cannot be lost: two arias studying different forms at
+// once must not overwrite each other's declaration.
+//
+// Privileged, because `system.studies` is system-managed -- which is what
+// stops a hand-written `fig set` from claiming a study nothing counted.
+func (b *XwalBackend) setStudies(observerID string, ids []string, ifVersion uint64) error {
 	slices.Sort(ids)
 	ids = slices.Compact(ids)
 	raw, err := json.Marshal(ids)
 	if err != nil {
 		return err
 	}
-	_, err = b.ApplyFormPrivileged(observerID, message.Patch{
+	_, _, err = b.ApplyFormEffectPrivilegedIf(observerID, message.Patch{
 		Set: map[string]json.RawMessage{StudiesKey: raw},
-	})
+	}, ifVersion)
 	return err
+}
+
+// studiesAndVersion reads the declared set together with the version it was
+// read at, which is what makes the write above a compare-and-set.
+func (b *XwalBackend) studiesAndVersion(observerID string) ([]string, uint64, error) {
+	snap, err := b.FormState(observerID)
+	if err != nil {
+		return nil, 0, err
+	}
+	version, err := b.FormVersion(observerID)
+	if err != nil {
+		return nil, 0, err
+	}
+	return studiesOf(snap), version, nil
 }

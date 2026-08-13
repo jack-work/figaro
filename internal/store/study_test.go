@@ -28,7 +28,7 @@ func TestStudyRetainsBeforeItDeclares(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := be.StudyForm(watcherA, sourceID); err != nil {
+	if _, _, err := be.StudyForm(watcherA, sourceID); err != nil {
 		t.Fatal(err)
 	}
 	lib, err := be.Libretto(sourceID)
@@ -58,7 +58,7 @@ func TestStudyRetainsBeforeItDeclares(t *testing.T) {
 
 	// Studying twice is not two references: the board is a SET, and the
 	// count is derived from the boards.
-	if err := be.StudyForm(watcherA, sourceID); err != nil {
+	if _, _, err := be.StudyForm(watcherA, sourceID); err != nil {
 		t.Fatal(err)
 	}
 	if got := lib.Refs(); got != 1 {
@@ -66,7 +66,7 @@ func TestStudyRetainsBeforeItDeclares(t *testing.T) {
 	}
 
 	// A second observer shares the one libretto.
-	if err := be.StudyForm(watcherB, sourceID); err != nil {
+	if _, _, err := be.StudyForm(watcherB, sourceID); err != nil {
 		t.Fatal(err)
 	}
 	if got := lib.Refs(); got != 2 {
@@ -101,10 +101,10 @@ func TestDropDeclaresBeforeItReleases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := be.StudyForm(watcher, sourceID); err != nil {
+	if _, _, err := be.StudyForm(watcher, sourceID); err != nil {
 		t.Fatal(err)
 	}
-	if err := be.DropForm(watcher, sourceID); err != nil {
+	if _, _, err := be.DropForm(watcher, sourceID); err != nil {
 		t.Fatal(err)
 	}
 	studies, err := be.StudiedBy(watcher)
@@ -128,7 +128,7 @@ func TestDropDeclaresBeforeItReleases(t *testing.T) {
 		t.Fatal("the libretto lost its state when the last observer dropped")
 	}
 	// Dropping again is legal and changes nothing.
-	if err := be.DropForm(watcher, sourceID); err != nil {
+	if _, _, err := be.DropForm(watcher, sourceID); err != nil {
 		t.Fatalf("a second drop errored: %v", err)
 	}
 	if got := lib.Refs(); got != 0 {
@@ -158,7 +158,7 @@ func TestDropAfterTheSourceIsDead(t *testing.T) {
 	if _, err := be.ApplyForm(sourceID, setPatch(map[string]string{"brief": "doomed"})); err != nil {
 		t.Fatal(err)
 	}
-	if err := be.StudyForm(watcher, sourceID); err != nil {
+	if _, _, err := be.StudyForm(watcher, sourceID); err != nil {
 		t.Fatal(err)
 	}
 	lib, err := be.Libretto(sourceID)
@@ -169,7 +169,7 @@ func TestDropAfterTheSourceIsDead(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "the death to reach the libretto", func() bool { return !lib.Alive() })
-	if err := be.DropForm(watcher, sourceID); err != nil {
+	if _, _, err := be.DropForm(watcher, sourceID); err != nil {
 		t.Fatalf("dropping a dead form was refused: %v", err)
 	}
 	again, err := be.Libretto(sourceID)
@@ -203,7 +203,7 @@ func TestForkInheritsTheStudyAndItsReference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := be.StudyForm(parent, sourceID); err != nil {
+	if _, _, err := be.StudyForm(parent, sourceID); err != nil {
 		t.Fatal(err)
 	}
 	lib, err := be.Libretto(sourceID)
@@ -231,7 +231,7 @@ func TestForkInheritsTheStudyAndItsReference(t *testing.T) {
 	}
 
 	// The parent dropping must not reclaim what the child still observes.
-	if err := be.DropForm(cont, sourceID); err != nil {
+	if _, _, err := be.DropForm(cont, sourceID); err != nil {
 		t.Fatal(err)
 	}
 	if got := lib.Refs(); got == 0 {
@@ -252,7 +252,7 @@ func TestKillReleasesWhatItsBoardStudied(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := be.StudyForm(watcher, sourceID); err != nil {
+	if _, _, err := be.StudyForm(watcher, sourceID); err != nil {
 		t.Fatal(err)
 	}
 	lib, err := be.Libretto(sourceID)
@@ -305,7 +305,7 @@ func TestEveryForkEntryPointInheritsTheReference(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := be.StudyForm(parent, sourceID); err != nil {
+			if _, _, err := be.StudyForm(parent, sourceID); err != nil {
 				t.Fatal(err)
 			}
 			if err := tc.fork(be, parent); err != nil {
@@ -340,7 +340,7 @@ func TestLibrettoStumpsAreNeverListed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := be.StudyForm(watcher, sourceID); err != nil {
+	if _, _, err := be.StudyForm(watcher, sourceID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := be.Libretto(sourceID); err != nil {
