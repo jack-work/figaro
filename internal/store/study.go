@@ -37,6 +37,28 @@ import (
 // declares it. Idempotent — studying twice is not two references, because the
 // board is a SET and the refcount is derived from the boards.
 func (b *XwalBackend) StudyForm(observerID, sourceFormID string) ([]string, bool, error) {
+	lib, err := b.libretto(sourceFormID)
+	if err != nil {
+		return nil, false, err
+	}
+	// RETAINED ONCE, not once per attempt. The reference is taken before the
+	// first board write (§12.2.1's order) and held across the retries, so
+	// contention costs extra board writes rather than extra durable writes
+	// on the libretto -- eight concurrent casts were paying a retain and a
+	// release per attempt each.
+	retained := false
+	defer func() {
+		// Whatever the outcome, a reference this call took and did not use
+		// goes back: a failed study must not leave a count only a sweep can
+		// explain.
+		if retained {
+			if _, err := lib.Release(); err != nil {
+				slog.Warn("study: could not release after a failed attempt",
+					"aria", observerID, "form", sourceFormID, "err", err)
+			}
+		}
+	}()
+
 	for attempt := 0; attempt < studyAttempts; attempt++ {
 		studies, version, err := b.studiesAndVersion(observerID)
 		if err != nil {
@@ -45,26 +67,21 @@ func (b *XwalBackend) StudyForm(observerID, sourceFormID string) ([]string, bool
 		if slices.Contains(studies, sourceFormID) {
 			return studies, false, nil // already declared, and not a second reference
 		}
-		lib, err := b.libretto(sourceFormID)
-		if err != nil {
-			return nil, false, err
-		}
-		// LIBRETTO FIRST. A crash here leaves a count too high, which the
-		// sweep repairs. The reverse leaves a board naming a libretto nothing
-		// counted, which reclamation would collect out from under a live
-		// observer.
-		if _, err := lib.Retain(); err != nil {
-			return nil, false, err
+		if !retained {
+			// LIBRETTO FIRST. A crash here leaves a count too high, which the
+			// sweep repairs. The reverse leaves a board naming a libretto
+			// nothing counted, which reclamation would collect out from
+			// under a live observer.
+			if _, err := lib.Retain(); err != nil {
+				return nil, false, err
+			}
+			retained = true
 		}
 		next := append(append([]string(nil), studies...), sourceFormID)
 		err = b.setStudies(observerID, next, version)
 		if err == nil {
+			retained = false // the declaration owns it now
 			return next, true, nil
-		}
-		// The board moved under us: give the reference back before retrying,
-		// or a contended study leaks one per attempt.
-		if _, rerr := lib.Release(); rerr != nil {
-			slog.Warn("study: retry could not release", "aria", observerID, "err", rerr)
 		}
 		if !errors.Is(err, ErrFormMoved) {
 			return nil, false, err

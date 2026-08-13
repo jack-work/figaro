@@ -521,3 +521,46 @@ func TestConcurrentStudiesOfOneForm(t *testing.T) {
 		t.Fatalf("the sweep disagreed after concurrent drops: %+v", audit)
 	}
 }
+
+// A study that ultimately FAILS must not leave a reference behind. The
+// retain happens before the first board write, and if the declaration never
+// lands the count would otherwise stay high with nothing naming it -- a leak
+// only the sweep could explain.
+func TestAFailedStudyLeavesNoReference(t *testing.T) {
+	be, sourceID, _ := librettoFixture(t)
+	outfit, err := be.CreateOutfit("failed", setPatch(map[string]string{"system.model": "m"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	watcher, err := be.CreateConversation(outfit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lib, err := be.Libretto(sourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Seal the observer's board: every write to it now fails, so the study
+	// cannot be declared however many times it is retried.
+	f, err := be.form(watcher)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Tombstone("test: make the board unwritable"); err != nil {
+		t.Fatal(err)
+	}
+	before := lib.Refs()
+	if _, _, err := be.StudyForm(watcher, sourceID); err == nil {
+		t.Fatal("studying onto a sealed board succeeded")
+	}
+	if got := lib.Refs(); got != before {
+		t.Fatalf("a failed study left refs at %d, was %d", got, before)
+	}
+	audit, err := be.ReconcileLibrettos()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if audit.Corrected != 0 {
+		t.Fatalf("the sweep had to repair after a failed study: %+v", audit)
+	}
+}
