@@ -3127,3 +3127,25 @@ a check that cannot fail, caught the same way.
 minted 7 of 11 before I stopped the daemon, and a later pass finished the
 other 4. An interrupted migration resumes; it does not corrupt and it does
 not restart.
+
+### The repair command declined to repair (`7525ca87`)
+
+`doctor librettos` had `if !dryRun && audit.Corrected > 0` — a shortcut
+written before the pass could mint anything. So a store whose only problem
+was a MISSING libretto was audited and left exactly as it was, which is the
+entire migration case, declined by the command that exists to perform it.
+
+Found by running the repair on the real store and then running it again:
+**"corrected 0, missing 4" twice in a row is a repair tool that has given up
+without saying so.** Now:
+
+```
+corrected 4   minted 4   missing 0
+second pass:  would correct 0   would mint 0   12 librettos
+```
+
+**And a lesson I paid for twice today**: `./result/bin/figaro` is whatever
+the last `nix build` produced, not what you just wrote. My first attempt at
+this check used it and I read stale output as a real result — the giveaway
+was wording I had changed an hour earlier. **Build to `/tmp` and test that**,
+or you will debug the past.
