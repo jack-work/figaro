@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/config"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 )
 
@@ -68,23 +69,25 @@ func keepHushAlive(ctx context.Context) {
 	}
 }
 
-// defaultMemLimit is a SOFT ceiling for the daemon's heap: Go collects
+// The soft ceiling is `[memory] soft_limit_mb`, default 2048. Go collects
 // harder as it approaches instead of growing to meet whatever the last big
-// sweep asked for. It is a backstop, not the fix -- idle-aria eviction is
-// the fix -- and it is deliberately well above a healthy daemon's working
-// set (measured: ~40 MB fresh, a few hundred MB with a dozen live arias)
-// so it only bites when something is retaining more than it should.
+// sweep asked for, which makes the ceiling a licence as much as a limit: a
+// high one leaves the runtime no reason to give memory back. It is a
+// backstop, not the fix -- idle-aria eviction is the fix.
 //
 // GOMEMLIMIT in the environment always wins: Go reads it at startup, and a
-// user who has set one has an opinion worth more than this default.
-const defaultMemLimit int64 = 2 << 30 // 2 GiB
+// user who has set one has an opinion worth more than a default.
 
-func armMemoryLimit() {
+func armMemoryLimit(loaded *config.Loaded) {
 	if os.Getenv("GOMEMLIMIT") != "" {
 		return
 	}
-	debug.SetMemoryLimit(defaultMemLimit)
-	slog.Info("daemon memory limit armed", "soft_limit_bytes", defaultMemLimit)
+	limit := loaded.SoftLimitBytes()
+	if limit <= 0 {
+		return // configured off
+	}
+	debug.SetMemoryLimit(limit)
+	slog.Info("daemon memory limit armed", "soft_limit_bytes", limit)
 }
 
 func runAngelus() {
@@ -117,7 +120,7 @@ func runAngelus() {
 		os.Exit(1)
 	}
 
-	armMemoryLimit()
+	armMemoryLimit(loaded)
 
 	// The window has to be set before any aria is opened, or the first handles
 	// built are unbounded for the daemon's whole life. Optional interface, for

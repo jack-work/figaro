@@ -41,3 +41,23 @@ func TestIRWindowBytesDefaults(t *testing.T) {
 		t.Fatalf("a configured value must be honoured, got %d", got)
 	}
 }
+
+func TestSoftLimitBytes(t *testing.T) {
+	if got := (*Loaded)(nil).SoftLimitBytes(); got != int64(defaultSoftLimitMB)<<20 {
+		t.Fatalf("nil config: want the default ceiling, got %d", got)
+	}
+	var l Loaded
+	if got := l.SoftLimitBytes(); got != int64(defaultSoftLimitMB)<<20 {
+		t.Fatalf("unset: want the default ceiling, got %d", got)
+	}
+	off := 0
+	l.Config.Memory.SoftLimitMB = &off
+	if got := l.SoftLimitBytes(); got != 0 {
+		t.Fatalf("0 must mean no ceiling, got %d", got)
+	}
+	small := 256
+	l.Config.Memory.SoftLimitMB = &small
+	if got := l.SoftLimitBytes(); got != 256<<20 {
+		t.Fatalf("a configured ceiling must be honoured, got %d", got)
+	}
+}

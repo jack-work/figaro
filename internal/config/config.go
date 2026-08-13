@@ -196,6 +196,13 @@ type MemoryConfig struct {
 	// 0 (default) is unbounded. 4 holds a comfortable working tail on every
 	// aria measured.
 	IRWindowMB *int `toml:"ir_window_mb"`
+
+	// SoftLimitMB is the daemon's heap ceiling (Go's GOMEMLIMIT). Go
+	// collects harder as it approaches instead of growing to meet whatever
+	// the last big sweep asked for, so the ceiling is also a licence: a high
+	// one leaves the runtime no reason to give memory back. Default 2048.
+	// 0 removes the limit. GOMEMLIMIT in the environment always wins.
+	SoftLimitMB *int `toml:"soft_limit_mb"`
 }
 
 const (
@@ -279,6 +286,10 @@ const (
 	// minIRWindowMB is the same floor in bytes. One turn carrying a couple of
 	// large tool results is comfortably under a mebibyte.
 	minIRWindowMB = 1
+	// defaultSoftLimitMB is the daemon's heap ceiling. Well above a healthy
+	// working set (~40 MB fresh, a few hundred with a dozen live arias) so
+	// it only bites when something is retaining more than it should.
+	defaultSoftLimitMB = 2048
 	// defaultIRWindowMB bounds resident decoded IR when nothing says
 	// otherwise. It used to be unbounded, and the decoded IR is the largest
 	// thing a live aria holds: 4 to 5x its encoded bytes, measured at 12.5
@@ -290,6 +301,18 @@ const (
 	// ir_window_mb = 0 to go back to unbounded.
 	defaultIRWindowMB = 4
 )
+
+// SoftLimitBytes is the daemon's heap ceiling in bytes, or 0 for none.
+// Nil-safe.
+func (l *Loaded) SoftLimitBytes() int64 {
+	if l == nil || l.Config.Memory.SoftLimitMB == nil {
+		return int64(defaultSoftLimitMB) << 20
+	}
+	if mb := *l.Config.Memory.SoftLimitMB; mb > 0 {
+		return int64(mb) << 20
+	}
+	return 0
+}
 
 // SegmentSize returns the WAL segment size in bytes. Nil-safe, so a store
 // opened without config still gets the same geometry as one opened with it.

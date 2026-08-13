@@ -383,3 +383,28 @@ Eight messages is eight fsyncs, ~24 ms, inside a 13 s turn. **The IR sync is
 0.2% of a real turn.** That is the answer to whether mandatory durability is
 affordable on the conversation path: it is, comfortably, and it was the last
 open question about the WAL change.
+
+#### Where the 2 GB comes from
+
+Gluck's live daemon, measured this session:
+
+```
+heap_alloc   115 MB      heap_inuse  149 MB      heap_sys  416 MB
+resident_ir   22 MB across 4 resident arias
+goroutines   306         mem_limit  2147483648
+```
+
+**The 2 GB is a configured ceiling, not consumption.** `armMemoryLimit` set
+`debug.SetMemoryLimit(2 GiB)` unconditionally and it was not configurable. A
+high ceiling is a LICENCE as much as a limit: Go collects harder only as it
+approaches, so `heap_sys` sits at 416 MB while only 149 MB is in use and the
+runtime has no reason to give the rest back.
+
+Now `[memory] soft_limit_mb`, default 2048, 0 for none, `GOMEMLIMIT` still
+winning. Lowering it is the one-knob answer to "figaro is holding too much",
+at the cost of more GC cycles.
+
+**Not investigated: 306 goroutines with 3 live arias.** That is a lot, and
+the lazy actor only removed the per-form ones. Worth a `/debug/pprof/goroutine`
+against the live daemon (now that profiling is armed) before assuming it is
+fine.
