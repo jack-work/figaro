@@ -633,3 +633,23 @@ The resolution splits the checks by what they need:
   writer has. They stay deferred and reach the log. Phase 3's ticket is the
   proper close: the caller gets a handle it may await if it wants, and `set`
   keeps not waiting by default.
+
+#### Fleet, end of session (everything landed)
+
+Same harness again, against the two earlier columns:
+
+| | before WAL | after WAL | after everything |
+|---|---|---|---|
+| turns answered | 12/12 | 12/12 | 12/12 |
+| history build (300 CLI patches) | 4.11 s | 4.98 s | 4.99 s |
+| turn wall (12 concurrent) | 4.53 s | 5.49 s | **5.01 s** |
+| daemon PSS loaded | 56.8 M | 58.6 M | **46.5 M** |
+| `Pss_anon` | 30.6 M | 32.2 M | 30.1 M |
+| goroutines | 93 | 80 | 80 |
+| heap_alloc | 14.9 M | 16.0 M | **9.2 M** |
+| resident form patches | n/a | n/a | 361 |
+
+The memory work shows: **PSS down 12 M and heap_alloc down 6.8 M against the
+pre-WAL baseline**, with the durability guarantee added rather than removed.
+Turn wall came back most of the way. `resident_form_patches` is visible for
+the first time, which is the point of reporting it.
