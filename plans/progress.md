@@ -3035,3 +3035,27 @@ lease-holder, and the caches underneath it were written before any such
 reader existed. When phase 9's projection reads librettos, or phase 10 hands
 out streams, ask this question again — *what does the sweep do to the thing
 I am holding* — because the answer defaults to "silently the wrong thing".
+
+### I created the two-worktrees-one-branch hazard myself, in figwal
+
+The HAZARD section at the top of this file is about a fork checking a branch
+out in someone's worktree. I did the same thing to `/home/gluck/dev/figwal`:
+cut all four figwal releases from `/var/tmp/figwal-lazy` with `master`
+checked out in BOTH, so master advanced under the main worktree while its
+files stayed at `4f9ce6a`.
+
+**What that leaves is worse than a stale checkout.** `git status` there
+showed fourteen STAGED changes — my new files as deletions, my edits as
+reversions — because the index still described the old tree. Anyone
+committing in that worktree would have reverted the entire figwal session in
+one commit, with a clean-looking diff.
+
+Repaired with `git reset --hard HEAD` after checking that every staged path
+was one of mine and nothing was untracked. The build there is green and the
+code is present.
+
+**The rule, restated because I proved it applies to the person who wrote it
+down**: one branch, one worktree. `git worktree add -f /var/tmp/<name>
+<ref>` for anything you are cutting releases from, and check
+`git worktree list` before you use `-f` on a branch somebody else has out —
+including yourself in another directory.
