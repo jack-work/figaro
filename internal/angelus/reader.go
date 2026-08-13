@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jack-work/figaro/internal/form"
+	"github.com/jack-work/figaro/internal/formdelta"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
@@ -64,29 +65,36 @@ func NewAriaReader(backend store.Backend, proj Projector) *AriaReader {
 
 // messages decodes the aria's IR. The backend hands back the same shared
 // instance a live agent would hold, so this is lock-free against writes.
-func (r *AriaReader) messages(id string) ([]message.Message, error) {
+// The ENTRIES come back too: they carry the cursor stamps
+// (FormChannelVersion, StudyVersions) that the message payload does not,
+// and the form-delta assembly reads them.
+func (r *AriaReader) messages(id string) ([]message.Message, []store.Entry[message.Message], error) {
 	if r == nil || r.backend == nil {
-		return nil, errors.New("no backend (ephemeral angelus)")
+		return nil, nil, errors.New("no backend (ephemeral angelus)")
 	}
 	if id == "" {
-		return nil, errors.New("empty aria id")
+		return nil, nil, errors.New("empty aria id")
 	}
 	log, err := r.backend.Open(id)
 	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", id, err)
+		return nil, nil, fmt.Errorf("open %s: %w", id, err)
 	}
 	entries := log.Read()
 	msgs := make([]message.Message, 0, len(entries))
 	for _, e := range entries {
-		msgs = append(msgs, e.Payload)
+		m := e.Payload
+		// The entry's LT is authoritative; the payload's copy may predate
+		// the field. The projection does exactly this.
+		m.LogicalTime = e.LT
+		msgs = append(msgs, m)
 	}
-	return msgs, nil
+	return msgs, entries, nil
 }
 
 // Context returns the aria's fig IR plus the metrics a client renders
 // beside it.
 func (r *AriaReader) Context(id string) ([]message.Message, *aria.Metrics, error) {
-	msgs, err := r.messages(id)
+	msgs, _, err := r.messages(id)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -97,13 +105,20 @@ func (r *AriaReader) Context(id string) ([]message.Message, *aria.Metrics, error
 // with before means the tail. There is no open streaming region: a dormant
 // aria has no turn in flight, which is what makes it dormant.
 func (r *AriaReader) Page(id string, at aria.Anchor, budget int, before bool) (aria.Page, error) {
-	msgs, err := r.messages(id)
+	msgs, entries, err := r.messages(id)
 	if err != nil {
 		return aria.Page{}, err
 	}
 	srv := aria.NewServer()
 	if r.proj != nil {
-		for _, t := range r.proj.Turns(msgs) {
+		turns := r.proj.Turns(msgs)
+		// The form deltas: assembled from the store's own stamps and patch
+		// logs, never from the provider's translated bytes. An ephemeral or
+		// delta-less backend simply attaches nothing.
+		if fb, ok := r.backend.(formdelta.Backend); ok {
+			formdelta.Attach(turns, formdelta.PerRecord(fb, id, entries))
+		}
+		for _, t := range turns {
 			srv.Commit(t)
 		}
 	}

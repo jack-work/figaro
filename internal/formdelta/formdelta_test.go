@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -278,5 +279,43 @@ func TestAssemblyIsDeterministic(t *testing.T) {
 	}
 	if len(first) == 0 {
 		t.Fatal("the fixture rendered nothing at all: the test is not testing")
+	}
+}
+
+// Attach: a record that projects a node lands on that node (a tool round
+// on the tool node, both LTs); the inquiry record, which is not a node,
+// lands on the turn; and nothing is dropped.
+func TestAttachPlacesDeltasDeliberately(t *testing.T) {
+	turns := []aria.Turn{{
+		ID:  1,
+		LTs: []uint64{10, 14},
+		Nodes: []livedoc.Node{
+			{Type: livedoc.NodeProse, Src: []livedoc.Src{{LT: 11, Block: 0}}},
+			{Type: livedoc.NodeTool, Src: []livedoc.Src{{LT: 12, Block: 1}, {LT: 13, Block: 0}}},
+		},
+	}}
+	d := func(k string) map[string]livedoc.FormDelta {
+		return map[string]livedoc.FormDelta{k: {Kind: livedoc.FormBound, Event: livedoc.FormSet, Form: "a1"}}
+	}
+	Attach(turns, map[uint64]map[string]livedoc.FormDelta{
+		10: d("a1.inquiry-window"), // the record that opened the turn: no node
+		11: d("a1.on-prose"),       // the prose record
+		13: d("a1.on-tool-result"), // the tool RESULT record: the tool node claims it
+		14: d("a1.unclaimed"),      // a record no node claims
+	})
+	if _, ok := turns[0].FormDeltas["a1.inquiry-window"]; !ok {
+		t.Fatalf("the inquiry window should land on the TURN: %+v", turns[0].FormDeltas)
+	}
+	if _, ok := turns[0].Nodes[0].FormDeltas["a1.on-prose"]; !ok {
+		t.Fatalf("the prose record's delta should land on the prose node: %+v", turns[0].Nodes[0].FormDeltas)
+	}
+	if _, ok := turns[0].Nodes[1].FormDeltas["a1.on-tool-result"]; !ok {
+		t.Fatalf("the tool result's delta should land on the tool node: %+v", turns[0].Nodes[1].FormDeltas)
+	}
+	if _, ok := turns[0].FormDeltas["a1.unclaimed"]; !ok {
+		t.Fatal("an unclaimed record's delta must surface on the turn, not vanish")
+	}
+	if len(turns[0].Nodes[0].FormDeltas) != 1 || len(turns[0].Nodes[1].FormDeltas) != 1 {
+		t.Fatal("a delta rendered on more than one unit")
 	}
 }

@@ -2,6 +2,7 @@ package aria
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 
 	"github.com/jack-work/figaro/internal/livedoc"
@@ -747,6 +748,8 @@ func setField(n *livedoc.Node, field string, v any) {
 		} else if m, ok := v.(map[string]any); ok {
 			n.Args = m
 		}
+	case "formDeltas":
+		n.FormDeltas = asFormDeltas(v)
 	}
 }
 
@@ -801,4 +804,26 @@ func asSrcs(v any) []livedoc.Src {
 		return out
 	}
 	return nil
+}
+
+// asFormDeltas accepts both the in-process value and its JSON echo, like
+// asSrcs above and for the same reason: a delta reaches the fold either
+// constructed locally or decoded off the wire.
+func asFormDeltas(v any) map[string]livedoc.FormDelta {
+	switch t := v.(type) {
+	case nil:
+		return nil
+	case map[string]livedoc.FormDelta:
+		return t
+	default:
+		raw, err := json.Marshal(v)
+		if err != nil {
+			return nil
+		}
+		var out map[string]livedoc.FormDelta
+		if json.Unmarshal(raw, &out) != nil || len(out) == 0 {
+			return nil
+		}
+		return out
+	}
 }

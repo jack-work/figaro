@@ -409,6 +409,9 @@ func fullSet(id uint64, n livedoc.Node) NodeDelta {
 	if n.At != 0 {
 		set["at"] = n.At
 	}
+	if n.FormDeltas != nil {
+		set["formDeltas"] = n.FormDeltas
+	}
 	return NodeDelta{ID: id, Set: set}
 }
 

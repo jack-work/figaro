@@ -32,6 +32,7 @@ import (
 	"strings"
 
 	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -201,4 +202,55 @@ func maxU64(a, b uint64) uint64 {
 		return b
 	}
 	return a
+}
+
+// Attach folds per-record deltas onto the turns they belong to. The rule,
+// chosen deliberately (plans/form-deltas-in-ui-ir.md §2): a window closes
+// on the node projected from the record that carries the stamp -- for a
+// tool round that is the tool node, which claims both the invoke and the
+// result record. A record that projects no node (the turn's opening
+// inquiry, or furniture) attaches to the TURN, exactly as Turn.At does,
+// so nothing is computed and then dropped on the floor.
+func Attach(turns []aria.Turn, deltas map[uint64]map[string]livedoc.FormDelta) {
+	if len(deltas) == 0 {
+		return
+	}
+	for ti := range turns {
+		t := &turns[ti]
+		if len(t.LTs) < 2 {
+			continue
+		}
+		// First node to claim an LT wins: one record can project several
+		// nodes (three content blocks are three nodes), and one record's
+		// state must render once.
+		claimed := map[uint64]int{}
+		for ni := range t.Nodes {
+			for _, src := range t.Nodes[ni].Src {
+				if _, ok := claimed[src.LT]; !ok {
+					claimed[src.LT] = ni
+				}
+			}
+		}
+		for lt := t.LTs[0]; lt <= t.LTs[1]; lt++ {
+			d := deltas[lt]
+			if len(d) == 0 {
+				continue
+			}
+			if ni, ok := claimed[lt]; ok {
+				t.Nodes[ni].FormDeltas = merge(t.Nodes[ni].FormDeltas, d)
+			} else {
+				t.FormDeltas = merge(t.FormDeltas, d)
+			}
+		}
+	}
+}
+
+func merge(into, from map[string]livedoc.FormDelta) map[string]livedoc.FormDelta {
+	if into == nil {
+		into = make(map[string]livedoc.FormDelta, len(from))
+	}
+	for k, v := range from {
+		into[k] = v
+	}
+	return into
 }
