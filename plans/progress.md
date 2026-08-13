@@ -2,6 +2,42 @@
 
 Live notes for whoever holds the role `@980dc16c`. Update this, not chat.
 
+## SESSION 2 AT A GLANCE (aria c1d55d02)
+
+Phases 6 and 8 closed, phase 3's wire half landed, one lock-audit item done,
+and the memory question answered. Everything below is detailed later in the
+file; this is the map.
+
+**Shipped**
+
+| | |
+|---|---|
+| phase 6 | the delete path buries what it takes: a death record before any unlink, a refused delete buries nothing |
+| phase 8 | the presentation hierarchy IS a form; `internal/trunk` and `trunks.json` deleted (458 lines), promote is one atomic patch |
+| phase 3 (wire) | a set answers `applied` / `unchanged` / `queued` with a version; the CLI stopped claiming writes it never made |
+| lock audit #2 | `cachedLog` publishes an immutable snapshot; contended reads 11.45 ns to 1.30 ns |
+| cold reads | `PatchesBetween` below the window went O(offset) to O(range): 142 us to 3.05 us, flat with offset |
+| memory | translations measured then bounded; `figwal loaded-heads` reported; the OUTFIT column stopped re-opening a form per row (209 to 0) |
+
+**Found, not fixed** — `fig ls` retains ~95 MB on a 515-aria store, none of
+it in any cache figaro owns: figwal copies every payload of a channel into
+memory when a log opens. See "WHERE THE MEMORY IS". The fix is
+segment-granular lazy loading in figwal, and two candidate figaro-side
+mitigations are written up with their trade-offs because both change
+something a user can feel and both want Gluck's ruling.
+
+**Three of my own claims died on their own measurements**, and each is left
+in place as a falsification rather than deleted: translations as the missing
+memory (they are 8% of the IR), a "+13% regression" that ten samples showed
+was noise, and a version-addressed cold open that measured +338% and was
+reverted in full.
+
+**Bugs found while doing something else**: a stale topology decided delete
+sets (so `fig kill -r` unlinked a fork figaro never listed); `byFK` was an
+unbounded index living inside a bounded window; `resident_ir_bytes` counted
+one of the two caches an open aria holds.
+
+
 ## HAZARD: two arias, one worktree
 
 A reviewer fork checked `pr16` out **in this worktree** while I was working
