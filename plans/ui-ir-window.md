@@ -121,3 +121,27 @@ ui cache   resident-turns=N  resident=X MiB of Y  recomposes=K
 - The just-sealed turn should enter the window already composed (the
   stream built it); do not evict-then-recompose the thing most likely
   to be read next.
+
+## Post-merge tasks (Gluck, 2026-08-13 evening — DO AFTER MERGE)
+
+1. **Tune his real config.toml**: set `ui_window_mb = 16` explicitly
+   (the binary default, duplicated so the setting is visible), AND add
+   the other in-binary [memory] defaults to the real config.toml for the
+   same reason. Test that tuning each actually changes behaviour
+   (doctor mem is the instrument).
+2. **Record working set before/after on the SAME load** — the live
+   daemon's PSS under his normal session, old binary vs merged, plus
+   doctor mem's ui window line. The 179MB → ? number is the deliverable.
+3. **After this and the CLI refactor**: design how to PREDICT, MEASURE
+   and EVALUATE trade-offs as a practice — performance, memory, CPU
+   thrashing, disk — rather than per-change improvisation.
+
+## TODO for a later generation (Gluck's design note)
+
+The turn UI is a TREE (forks), but every aria.Server holds a flat
+[]Turn: forked arias share no composed prefix, so N branches of one
+trunk pay N copies of the common history. Consider structuring the
+composed UI IR as an IN-MEMORY PREFIX XWAL, the same shape the fig IR
+uses on disk — branches share the prefix, the window bounds the union,
+and fork cost drops to the divergent suffix. Almost certainly another
+generation's work; recorded so it is not re-discovered.
