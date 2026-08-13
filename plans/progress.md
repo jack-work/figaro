@@ -2368,3 +2368,26 @@ live in `internal/figaro/study.go`, `internal/angelus/study_hub.go` and
 the self-cast deadlock, and the displaced-`tool_result` corruption — study
 becoming an ordinary patch on a separate node is what removes the
 out-of-band IR record between a `tool_use` and its result.
+
+### The reconciliation sweep (`5f4081fa`)
+
+`XwalBackend.ReconcileLibrettos` recomputes every libretto's refcount from
+the boards that name it, and reports what it found rather than only what it
+changed: boards read, librettos examined, **corrected**, **orphaned** (a
+libretto no board names — the state reclamation acts on) and **missing** (a
+studied form with no libretto, reported and never created, because minting
+one is the study verb's job and only it has the source to seed from).
+
+Recompute, never adjust. That is the whole design point: the study path's
+ordering promises only that a crash leaves the count too HIGH, and §12.2.2's
+three sites (fork, import, kill) break it the other way. A sweep that
+adjusted would repair the recoverable direction and not the other one.
+
+**A duplicated constant, and its guard.** The store needs `system.studies` to
+read a board's study set, and it cannot import `internal/figaro` because
+figaro imports the store. So the name is declared twice, and
+`studies_key_test.go` (an EXTERNAL test package, which may import both)
+asserts they agree. Without it, a rename on one side leaves the sweep reading
+nothing and reporting every count as zero — a sweep that has gone blind while
+producing correct-looking output, which is the worst failure a repair tool
+has.
