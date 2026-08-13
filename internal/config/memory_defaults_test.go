@@ -81,3 +81,20 @@ func TestActorLinger(t *testing.T) {
 		t.Fatalf("negative must floor at zero: got %v", got)
 	}
 }
+
+func TestHandleIdle(t *testing.T) {
+	if got := (*Loaded)(nil).HandleIdle(); got != 0 {
+		t.Fatalf("nil config must defer to figwal's default: got %v", got)
+	}
+	var l Loaded
+	m := 12
+	l.Config.Memory.HandleIdleMinutes = &m
+	if got := l.HandleIdle(); got != 12*time.Minute {
+		t.Fatalf("configured: got %v", got)
+	}
+	never := -1
+	l.Config.Memory.HandleIdleMinutes = &never
+	if got := l.HandleIdle(); got != -time.Minute {
+		t.Fatalf("negative passes through as never-unload: got %v", got)
+	}
+}

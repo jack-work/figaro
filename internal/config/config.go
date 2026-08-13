@@ -208,6 +208,11 @@ type MemoryConfig struct {
 	// draining, before leaving. Long enough that a burst shares one
 	// goroutine, short enough that an idle form holds nothing. Default 2000.
 	ActorLingerMS *int `toml:"actor_linger_ms"`
+
+	// HandleIdleMinutes is how long figwal keeps a lineage's in-RAM head
+	// without an append or a read. 0 takes figwal's own default (5m);
+	// negative means never unload.
+	HandleIdleMinutes *int `toml:"handle_idle_minutes"`
 }
 
 const (
@@ -334,6 +339,15 @@ func (l *Loaded) ActorLinger() time.Duration {
 		ms = 0
 	}
 	return time.Duration(ms) * time.Millisecond
+}
+
+// HandleIdle is figwal's head-unload window. Nil-safe; zero defers to
+// figwal's own default.
+func (l *Loaded) HandleIdle() time.Duration {
+	if l == nil || l.Config.Memory.HandleIdleMinutes == nil {
+		return 0
+	}
+	return time.Duration(*l.Config.Memory.HandleIdleMinutes) * time.Minute
 }
 
 // SegmentSize returns the WAL segment size in bytes. Nil-safe, so a store

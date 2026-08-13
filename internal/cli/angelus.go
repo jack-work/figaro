@@ -114,6 +114,11 @@ func runAngelus() {
 		defer otelShutdown(context.Background())
 	}
 
+	// BEFORE the backend opens: the store reads its idle window at open, and
+	// a form built earlier would keep the old linger for the daemon's life.
+	store.SetFormLinger(loaded.ActorLinger())
+	store.SetHandleIdle(loaded.HandleIdle())
+
 	backend, err := ariaBackend(loaded)
 	if err != nil {
 		slog.Error("angelus aria backend", "err", err)
@@ -127,10 +132,6 @@ func runAngelus() {
 	// built are unbounded for the daemon's whole life. Optional interface, for
 	// the same reason the other cache policies are: a backend without a window
 	// should not have to pretend it has one.
-	// Before any form opens, for the same reason as the IR window: a form
-	// built earlier would keep the old value for the daemon's whole life.
-	store.SetFormLinger(loaded.ActorLinger())
-
 	if w, ok := backend.(interface {
 		SetIRWindow(int)
 		SetIRBudget(int)

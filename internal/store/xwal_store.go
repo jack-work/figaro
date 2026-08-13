@@ -193,6 +193,17 @@ func formReduce(state, patch []byte) ([]byte, error) {
 //
 // Affects new segments only: existing arias keep their oversized files and
 // simply stop growing them.
+// handleIdle is figwal's IdleUnload: how long a lineage's in-RAM head
+// survives without an append or a read. The second of the three idle clocks
+// (agent eviction, this, the writer's linger), and the only one that was
+// never wired to config. Package level and set before the store opens, like
+// the others.
+var handleIdle atomic.Int64
+
+// SetHandleIdle sets figwal's head-unload window. Call before opening the
+// store; zero leaves figwal's own default.
+func SetHandleIdle(d time.Duration) { handleIdle.Store(int64(d)) }
+
 func storeOptions(segmentSize int) xwal.StoreOptions {
 	if segmentSize <= 0 {
 		var noConfig *config.Loaded // the accessor is nil-safe on purpose
@@ -208,6 +219,7 @@ func storeOptions(segmentSize int) xwal.StoreOptions {
 		// reaches memory, so a later background pass has no opinion left to
 		// offer and could only turn a rejected write durable after the fact.
 		NoBackgroundFlush: true,
+		IdleUnload:        time.Duration(handleIdle.Load()),
 		Codec:             "jsonl",
 		SegmentSize: int64(segmentSize),
 		Genesis:     genesis,
