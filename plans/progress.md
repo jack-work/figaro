@@ -95,6 +95,35 @@ where every quote is escaped. That last one reported the switch broken for a
 whole cycle after it was fixed. **A check that cannot pass costs exactly what
 a check that cannot fail costs**, and both look like evidence while they lie.
 
+### The fleet, against a base run made the same hour
+
+`ariastress.sh --arias 12 --study --study-patches 300`, twice: once on this
+work, once on `eaeda9f5` in its own worktree. Same box, same minute, nothing
+else running.
+
+| | base `eaeda9f5` | **this work** |
+|---|---|---|
+| turns answered | 12/12 | **12/12** |
+| history build | 4.95 s | **4.97 s** |
+| control | 0.16 s | **0.16 s** |
+| daemon PSS loaded | 50.5 M | **47.2 M** |
+| goroutines | 81 | **81** |
+| heap_alloc | 14.6 M | 16.8 M |
+| heap_sys | 31.2 M | **27.2 M** |
+
+**Read that heap_alloc row carefully rather than as a regression.** It is an
+instantaneous sample whose value depends on where the GC happened to be;
+`heap_sys` (what the process asked the OS for) is 4 MB LOWER and PSS is 3.3 MB
+lower, which is the direction that matters and the number a user can feel.
+Comparing to session 3's 10.5 M would have been the mistake: that is a
+different build on a different day, and the control column exists so that a
+comparison is made against something measured beside it.
+
+Turn wall was 8.17 s against the base's 5.18 s, and **that is not a claim
+about this code**: twelve real provider calls dominate it, and the control
+(0.16 s both runs) says the box was not loaded. A number whose variance is
+somebody else's API is not evidence in either direction.
+
 ## SESSION 3 AT A GLANCE (aria d604c755)
 
 The figwal memory job in both halves, the layer nobody had reclaimed at all,
@@ -3578,3 +3607,19 @@ unchanged), held across retries, and handed back by a defer if the
 declaration never lands. `TestAFailedStudyLeavesNoReference` holds that last
 part: a study onto a SEALED board fails however often it retries, and must
 leave the refcount exactly where it found it.
+
+## HANDOFF GATE (session 4), all green
+
+```
+go build, go vet, go test ./... -count=1                       ok
+-race -count=3 on store, figaro, angelus, provider             ok
+FIGARO_CRASH_TEST=1 (acknowledged patches survive SIGKILL)     ok
+nix build .#default                                            ok
+fleet: 12 arias, study, 300 patches, vs a base run beside it   12/12
+live: renderlive.sh (7 checks, on the wire)                    ok
+```
+
+The one that matters for this session is `renderlive.sh`, because it is the
+only one that reads what the MODEL is sent. A green unit suite and a green
+`doctor` said the switch worked while the studied block was frozen at its
+first version on every real turn.
