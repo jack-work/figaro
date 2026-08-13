@@ -52,6 +52,13 @@ type Composer struct {
 	// pager has an expansion gesture; nil means "the view's default".
 	Expanded func(block int) bool
 
+	// State draws a node's (or the turn's) form deltas beneath it, already
+	// styled and wrapped by the surface. The block is the same coordinate
+	// Expanded answers for, so the pager's gesture can open a collapsed
+	// delta; BlockInquiry addresses the turn-level set. nil draws nothing,
+	// which is every surface that has not opted in.
+	State func(block int, deltas map[string]livedoc.FormDelta, w int) []string
+
 	Tick int // animation frame for spinners
 }
 
@@ -76,6 +83,13 @@ func (c Composer) Message(m aria.Message, w int) []Row {
 		w = 80
 	}
 	rows := c.inquiry(m.Inquiry, m.InquirySegments, w)
+	// The turn's own form deltas sit under the question they arrived with,
+	// in the inquiry's Block coordinate.
+	if c.State != nil && len(m.FormDeltas) > 0 {
+		for _, l := range c.State(BlockInquiry, m.FormDeltas, w) {
+			rows = append(rows, Row{Text: clip(l, w), Block: BlockInquiry})
+		}
+	}
 	body := c.Nodes(m.Nodes, w)
 	if len(body) == 0 {
 		return rows
@@ -125,6 +139,14 @@ func (c Composer) Nodes(nodes []livedoc.Node, w int) []Row {
 		}
 		for _, l := range c.render(n, w, k) {
 			rows = append(rows, Row{Text: clip(l, w), Block: k})
+		}
+		// The node's form deltas, below the block it explains and sharing
+		// its Block coordinate: selected and yanked alongside the node, not
+		// individually addressable.
+		if c.State != nil && len(n.FormDeltas) > 0 {
+			for _, l := range c.State(k, n.FormDeltas, w) {
+				rows = append(rows, Row{Text: clip(l, w), Block: k})
+			}
 		}
 	}
 	return rows

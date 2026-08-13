@@ -179,7 +179,8 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		// every `show` printed detail nobody had asked for.
 		rows := renderTurnRows(aria.Message{
 			Turn: int(u.ID), Role: livedoc.RoleOutput,
-			Inquiry: u.Inquiry, InquirySegments: u.InquirySegments, Nodes: u.Nodes,
+			Inquiry: u.Inquiry, InquirySegments: u.InquirySegments,
+			FormDeltas: u.FormDeltas, Nodes: u.Nodes,
 		}, width, 0, renderSettings{verbose: opts.details})
 		auditRows(rows, width, "show")
 		fmt.Println(strings.Join(rows, "\n"))

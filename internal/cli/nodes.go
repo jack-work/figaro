@@ -73,6 +73,12 @@ func renderNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, expand
 // gesture with nothing to show is inert rather than a silent flag flip. Only a
 // tool has a second form; prose renders whole at every width.
 func nodeExpandable(n livedoc.Node) bool {
+	// A node whose form deltas were capped or folded has a second form to
+	// show, whatever its type. The width is nominal: expandability is a
+	// property of the content, not of today's terminal.
+	if deltasExpandable(n.FormDeltas, 80) {
+		return true
+	}
 	if n.Type != livedoc.NodeTool {
 		return false
 	}
@@ -113,6 +119,11 @@ func turnComposer(turn, width int, tick uint64, set renderSettings) ldrender.Com
 		Rule:   func() string { return dimTransRule(width) },
 		Sender: dimSender,
 		Tick:   int(tick),
+		// Deltas collapse to one line per form by default; --details is the
+		// stdout way to open them, since a one-shot dump has no gesture.
+		State: func(_ int, deltas map[string]livedoc.FormDelta, w int) []string {
+			return formDeltaLines(deltas, w, set.verbose)
+		},
 	}
 	if set.verbose {
 		c.Coord = func(block int, n livedoc.Node) string {

@@ -154,6 +154,9 @@ type Message struct {
 	Inquiry string
 	// InquirySegments splits Inquiry by sender; see Turn.InquirySegments.
 	InquirySegments []InquirySegment
-	Role            string
-	Nodes           []livedoc.Node
+	// FormDeltas is the TURN-level form state (see Turn.FormDeltas), carried
+	// like Inquiry: only by the slice that starts the turn.
+	FormDeltas map[string]livedoc.FormDelta
+	Role       string
+	Nodes      []livedoc.Node
 }

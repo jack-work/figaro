@@ -789,15 +789,21 @@ func committedMessages(p aria.Page) []aria.Message {
 		if !part.ClippedHead && part.From == 0 {
 			inquiry = part.Inquiry
 		}
+		// Turn-level deltas travel with the inquiry: the slice that starts
+		// the turn, and no other.
+		var turnDeltas map[string]livedoc.FormDelta
+		if part.From == 0 {
+			turnDeltas = part.FormDeltas
+		}
 		if len(part.Nodes) == 0 {
-			if inquiry != "" {
+			if inquiry != "" || len(turnDeltas) > 0 {
 				messages = append(messages, aria.Message{
-					Turn: int(part.ID), Inquiry: inquiry, Role: livedoc.RoleInput,
+					Turn: int(part.ID), Inquiry: inquiry, FormDeltas: turnDeltas, Role: livedoc.RoleInput,
 				})
 			}
 			continue
 		}
-		messages = appendTurnSlices(messages, part.ID, part.From, inquiry, part.Nodes)
+		messages = appendTurnSlices(messages, part.ID, part.From, inquiry, turnDeltas, part.Nodes)
 	}
 	return messages
 }
@@ -823,13 +829,14 @@ func nodeChars(n livedoc.Node) int {
 // The whole-turn case is the overwhelming majority (38 turns -> 41 units on the
 // largest real aria) and is allocation-free: this is on the page-refetch path,
 // where an intermediate slice per part cost 25-37% of selection rehydrate.
-func appendTurnSlices(dst []aria.Message, id uint64, from uint64, inquiry string, nodes []livedoc.Node) []aria.Message {
+func appendTurnSlices(dst []aria.Message, id uint64, from uint64, inquiry string, turnDeltas map[string]livedoc.FormDelta, nodes []livedoc.Node) []aria.Message {
 	unit := func(off int, seg []livedoc.Node) aria.Message {
 		m := aria.Message{
 			Turn: int(id), From: from + uint64(off), Role: livedoc.RoleOutput, Nodes: seg,
 		}
 		if m.From == 0 {
 			m.Inquiry = inquiry
+			m.FormDeltas = turnDeltas
 		}
 		return m
 	}
@@ -858,7 +865,7 @@ func appendTurnSlices(dst []aria.Message, id uint64, from uint64, inquiry string
 
 // sliceTurn is the standalone form, for tests and callers without a dst.
 func sliceTurn(id uint64, from uint64, nodes []livedoc.Node) []aria.Message {
-	return appendTurnSlices(nil, id, from, "", nodes)
+	return appendTurnSlices(nil, id, from, "", nil, nodes)
 }
 
 // sliceKey identifies one pager unit: the turn id in the high bits, the node
@@ -1466,6 +1473,15 @@ func (t *transcript) composer(m aria.Message) ldrender.Composer {
 		// may open arguments as well as output (see ariaView.gesture).
 		View: pagerView(t.view), Header: messageHeader, Rule: t.transRule, Sender: dimSender, Tick: t.tick,
 		Expanded: func(block int) bool { return t.expanded[nodeRefAt(m, block)] },
+		// Deltas share the node's expansion gesture: Enter on the node opens
+		// its collapsed state line along with its output and arguments.
+		State: func(block int, deltas map[string]livedoc.FormDelta, w int) []string {
+			ref := nodeRefAt(m, block)
+			if block == ldrender.BlockInquiry {
+				ref = nodeRef{turn: m.Turn, index: inquiryNode}
+			}
+			return formDeltaLines(deltas, w, t.expanded[ref])
+		},
 	}
 	if t.verbose() {
 		// Ctrl-O draws each block's (turn, node, timestamp) above it; see
