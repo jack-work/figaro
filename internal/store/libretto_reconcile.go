@@ -98,7 +98,9 @@ func (b *XwalBackend) reconcileLibrettos(apply bool) (LibrettoAudit, error) {
 		}
 		seen[source] = true
 		audit.Librettos++
-		lib, err := OpenLibretto(b.store, source)
+		// The SHARED instance, never a fresh one: opening a second Libretto
+		// over the same stump puts a second writer on its channel.
+		lib, err := b.librettoInstance(source)
 		if err != nil {
 			return audit, fmt.Errorf("reconcile %s: %w", st.Name, err)
 		}
@@ -109,13 +111,11 @@ func (b *XwalBackend) reconcileLibrettos(apply bool) (LibrettoAudit, error) {
 		if lib.Refs() != n {
 			if apply {
 				if err := lib.setRefs(n); err != nil {
-					lib.Close()
 					return audit, fmt.Errorf("reconcile %s: %w", st.Name, err)
 				}
 			}
 			audit.Corrected++
 		}
-		lib.Close()
 	}
 	for source := range want {
 		if seen[source] {

@@ -138,14 +138,34 @@ func (b *XwalBackend) Libretto(sourceFormID string) (*Libretto, error) {
 // instance: the fold is a goroutine per LIBRETTO, not per observer, which is
 // the whole point of sharing one per studied form.
 func (b *XwalBackend) libretto(sourceFormID string) (*Libretto, error) {
+	lib, err := b.librettoInstance(sourceFormID)
+	if err != nil {
+		return nil, err
+	}
+	if !lib.Following() {
+		// Not following: either the first open, or a source that could not be
+		// opened before and may be openable now.
+		if err := b.attach(lib, sourceFormID); err != nil {
+			slog.Info("libretto: not following its source",
+				"libretto", lib.ID(), "source", sourceFormID, "err", err)
+		}
+	}
+	return lib, nil
+}
+
+// librettoInstance is THE instance for this source: one Libretto, therefore
+// one store.Form, therefore ONE WRITER on that stump's channel.
+//
+// The rule is the base rule of the whole design and it was broken by the
+// reconciliation sweep, which opened its own Libretto per libretto examined:
+// a copy already open and following then had a second writer appending to its
+// log, each computing versions from its own replayed state. Whoever needs a
+// libretto asks here.
+func (b *XwalBackend) librettoInstance(sourceFormID string) (*Libretto, error) {
 	key := strings.TrimPrefix(sourceFormID, "@")
 	b.mu.Lock()
 	if l := b.librettos[key]; l != nil {
 		b.mu.Unlock()
-		if !l.Following() {
-			// A source that could not be opened before may be openable now.
-			_ = b.attach(l, sourceFormID)
-		}
 		return l, nil
 	}
 	b.mu.Unlock()
@@ -155,21 +175,6 @@ func (b *XwalBackend) libretto(sourceFormID string) (*Libretto, error) {
 	if err != nil {
 		return nil, err
 	}
-	// A MISSING SOURCE IS NOT AN ERROR. The copy outlives what it copied --
-	// that is the point of §12.3 -- so a libretto whose form has been
-	// deleted is still openable, still readable, and still droppable. Before
-	// this, a restart between the deletion and the drop left the study
-	// undroppable forever: `unknown trunk`, from the one call that had no
-	// business needing the source at all.
-	//
-	// Not fatal and not sticky: attachment is retried by the next caller
-	// (see above), so a source that is merely unreadable for a moment starts
-	// being followed again when it is not.
-	if err := b.attach(lib, sourceFormID); err != nil {
-		slog.Info("libretto: not following its source",
-			"libretto", lib.ID(), "source", sourceFormID, "err", err)
-	}
-
 	b.mu.Lock()
 	if existing := b.librettos[key]; existing != nil {
 		b.mu.Unlock()

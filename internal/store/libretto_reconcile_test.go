@@ -45,7 +45,10 @@ func TestReconcileRepairsBothDirections(t *testing.T) {
 	studySet(t, be, watcherA, sourceID)
 	studySet(t, be, watcherB, sourceID)
 
-	lib, err := OpenLibretto(be.Store(), sourceID)
+	// THE SHARED instance, not a fresh one: a second Libretto over the same
+	// stump is a second writer on its channel, which is what this sweep was
+	// caught doing (see TestSweepDoesNotCreateASecondWriter).
+	lib, err := be.Libretto(sourceID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +58,6 @@ func TestReconcileRepairsBothDirections(t *testing.T) {
 	if err := lib.setRefs(0); err != nil {
 		t.Fatal(err)
 	}
-	lib.Close()
 	audit, err := be.ReconcileLibrettos()
 	if err != nil {
 		t.Fatal(err)
@@ -63,7 +65,7 @@ func TestReconcileRepairsBothDirections(t *testing.T) {
 	if audit.Corrected != 1 {
 		t.Fatalf("corrected %d librettos, want 1 (audit %+v)", audit.Corrected, audit)
 	}
-	again, err := OpenLibretto(be.Store(), sourceID)
+	again, err := be.Libretto(sourceID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,15 +77,13 @@ func TestReconcileRepairsBothDirections(t *testing.T) {
 	if err := again.setRefs(7); err != nil {
 		t.Fatal(err)
 	}
-	again.Close()
 	if _, err := be.ReconcileLibrettos(); err != nil {
 		t.Fatal(err)
 	}
-	third, err := OpenLibretto(be.Store(), sourceID)
+	third, err := be.Libretto(sourceID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer third.Close()
 	if got := third.Refs(); got != 2 {
 		t.Fatalf("refs after repairing an over-count = %d, want 2", got)
 	}
@@ -106,14 +106,13 @@ func TestReconcileRepairsBothDirections(t *testing.T) {
 // rather than by trusting a decrement that may never have happened.
 func TestReconcileZeroesAnOrphan(t *testing.T) {
 	be, sourceID, _ := librettoFixture(t)
-	lib, err := OpenLibretto(be.Store(), sourceID)
+	lib, err := be.Libretto(sourceID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := lib.Retain(); err != nil {
 		t.Fatal(err)
 	}
-	lib.Close()
 
 	audit, err := be.ReconcileLibrettos()
 	if err != nil {
@@ -122,11 +121,10 @@ func TestReconcileZeroesAnOrphan(t *testing.T) {
 	if audit.Orphaned != 1 {
 		t.Fatalf("orphaned = %d, want 1 (audit %+v)", audit.Orphaned, audit)
 	}
-	again, err := OpenLibretto(be.Store(), sourceID)
+	again, err := be.Libretto(sourceID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer again.Close()
 	if !again.Reclaimable() {
 		t.Fatalf("an orphan still reports %d refs", again.Refs())
 	}

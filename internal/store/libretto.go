@@ -211,9 +211,15 @@ func (l *Libretto) Follow(src *Form) error {
 		return nil // already following
 	}
 	sub := src.SubscribeFrom(256)
-	if err := l.seed(sub.Snap, sub.At); err != nil {
-		sub.Close()
-		return err
+	// Seed only when the copy is BEHIND. Re-attaching an already-current
+	// libretto -- after a restart, or after a source came back -- must not
+	// write the whole state again, or every boot appends a seed record per
+	// libretto forever.
+	if l.At() < sub.At {
+		if err := l.seed(sub.Snap, sub.At); err != nil {
+			sub.Close()
+			return err
+		}
 	}
 	l.sub = sub
 	l.stop = make(chan struct{})
