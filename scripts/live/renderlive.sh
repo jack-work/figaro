@@ -57,7 +57,7 @@ check() { # check <what> <expected: yes|no> <pattern>
 check "the study block is rendered"        yes 'system-reminder name=\\"study'
 check "the source's new value reached it"  yes 'merged'
 check "the second patch too"               yes "8b12f128"
-check "the LATER delta (phase ga)"         yes "\"ga\""
+check "the LATER delta (phase ga)"         yes "phase.*ga"
 check "the libretto's at is hidden"        no  'system.libretto.at'
 check "the libretto's refcount is hidden"  no  'system.libretto.refs'
 check "no stump name leaked into the block" no '@libretto::'
