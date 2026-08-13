@@ -19,7 +19,30 @@ for state nothing consumed. It reads now.
 | deletions | `StudyNotes`, its field, its render branch and its tombstone: **deleted**. A dead source is `system.libretto.alive` on a copy that outlives it, rendered as an ordinary key change |
 | no new field | `IncrementalProjection` is untouched, per 6c2d7b9f's warning about that seam |
 
-**Two things found by building it, both in the direction that loses data**
+**THE ONE THAT MATTERS MOST, found by restarting a daemon** (`5c407e53`): a
+study window could close on a record that cannot carry it. Study blocks ride
+a USER message — every encoder renders them under `RoleInput` — but the
+projection advanced the cursor on every stamped record, so an ASSISTANT
+record computed a block, dropped it, and left the next user record asking for
+`(v, v]`:
+
+```
+input   libretto:4   "say: two"     <- stamped before the fold landed
+output  libretto:5   "Two."         <- the fold's patch falls in THIS window
+input   libretto:5   "say: three"   <- (5,5] is empty. Gone, permanently.
+```
+
+With a libretto this is the COMMON case, not a corner, because the fold is
+asynchronous: a source change written during a turn lands in the window that
+closes on the turn's own answer. Pre-existing in shape, and the switch is
+what made it likely.
+
+**What is left after the fix is LAG, not loss**: nothing re-attaches a fold at
+boot, so the first turn after a restart stamps the stale version and the
+change appears on the next one. `scripts/live/restartlive.sh` asserts exactly
+that, because it is what is true.
+
+**Two more things found by building it, both in the direction that loses data**
 
 0. **THE ORPHANED READER — found live, after the unit suite was green.** The
    accessor read the copy as a NODE, which opens a second Form over the
@@ -2909,7 +2932,16 @@ What remains, in the order I would take it:
 **~~The projection switch~~ is DONE** (session 4, `e0fd5c34`): the stamps,
 the accessor and the machinery filter. Phase 9 is complete. What remains:
 
-1. **The reborn form (`wym.md:22`) is NOT REACHABLE TODAY, and that is the
+1. **Close the restart lag**: attach the fold at BOOT for every libretto a
+   board still names, instead of waiting for the first verb or render to do
+   it. The boot sweep already enumerates them (`reconcileLibrettos`) and
+   already opens each instance — it opens them WITHOUT following, which is
+   the whole gap. Cost is one subscription and one goroutine per studied
+   form (nine on the real store), both already reported by `doctor mem`.
+   `scripts/live/restartlive.sh` is the test, and it should then assert on
+   the FIRST turn after a restart rather than the second.
+
+2. **The reborn form (`wym.md:22`) is NOT REACHABLE TODAY, and that is the
    finding.** I went to build it and stopped at the question a fix should
    always be asked: can the case be constructed? It cannot. Every node id is
    minted inside the store (`mintTrunkID`/`hexTrunkID`) and **no code path
@@ -2938,23 +2970,23 @@ the accessor and the machinery filter. Phase 9 is complete. What remains:
    not negligible, and a collision produces exactly the reborn-id case by
    accident. Whether mint checks for a live id, I did not verify.
 
-2. **Show him the two-participant write.** He approved it *conditionally on
+3. **Show him the two-participant write.** He approved it *conditionally on
    seeing the code* (`answers-forms.md:12`) and the review was never asked
    for. Five minutes of his time, and the retry count has since gone 5 → 32.
-3. ~~Strike the stale design text~~ **done**: `"paths"` is out of §12.3's
+4. ~~Strike the stale design text~~ **done**: `"paths"` is out of §12.3's
    document (the built thing never had it), `[q13]` is struck as settled by
    `answers-forms.md:1`, and `[q14]` is answered by the code — a libretto is
    a reserved stump read only through `Libretto(source)`.
-4. **Reclamation** — DEFERRED by ruling (§12.7b), not a gap. 3.0 KB.
-5. **Phase 10, the API refactor**, and with it the lock audit's first
+5. **Reclamation** — DEFERRED by ruling (§12.7b), not a gap. 3.0 KB.
+6. **Phase 10, the API refactor**, and with it the lock audit's first
    fast-follow (`figaro/agent.go`'s `mu`). The audit says it wants its own
    branch and its own pty runs; believe it.
-6. **Phase 7, retention** — deferred with its argument written down. When it
+7. **Phase 7, retention** — deferred with its argument written down. When it
    lands, **retention must refuse a libretto BY TYPE, not by convention**
    (§12.5b): the translator asks for arbitrary historical ranges, so a
    libretto that dropped segments answers a wrong range silently, and once a
    source is deleted the libretto is the only copy.
-7. **One idle policy instead of four.** figwal unloads a head at 5 minutes
+8. **One idle policy instead of four.** figwal unloads a head at 5 minutes
    while the agent above it lives to 15, so a quiet aria drops its RAW bytes
    and keeps its DECODED ones. The four clocks are tabulated above.
 
