@@ -49,7 +49,9 @@ fig form delete --id @a5af1a83 status.phase
 Or attend the form and drop the `--id`: `fig at @a5af1a83` binds your
 shell to it (kind-agnostic; `fig at null` goes home). Writes are served
 by the daemon without waking anything, a form has nothing to wake.
-Concurrent writers serialize through the form's single writer;
+Concurrent writers serialize through the form's single writer (an actor
+whose goroutine exists only while there is work, batching one fsync across
+concurrent patches);
 conditional writes (`if-version`) refuse when the board moved.
 
 **Fork.** `fig form fork @a5af1a83 who=trial` duplicates the state at

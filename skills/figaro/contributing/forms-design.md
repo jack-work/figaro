@@ -77,6 +77,56 @@ easy to rediscover the hard way:
 or fans a delta out to listeners must speak about the reduced patch, not
 the requested one.
 
+### 3a. The writer is an actor, and durability precedes visibility literally
+
+The single writer is a LAZY ACTOR (`internal/actor.Lazy`): one drainer,
+spawned on submit, gone after an idle window. It was a mutex, and before
+that a permanently parked goroutine per form, which cost the daemon one
+goroutine per aria anyone had merely LISTED.
+
+One drain does: reduce each submission against a RUNNING state, append, ONE
+fsync for the whole batch, publish, emit, answer. Two consequences worth
+knowing:
+
+- **Batching is for durability, never for semantics.** Each write is still
+  reduced against the state as of its own position in the batch, or two
+  `ifVersion` writers stop meaning anything: the first must win and the
+  second must see the moved version.
+- **A failed sync rejects the batch and publishes nothing.** Safe because
+  the reduce is pure and nothing is applied before the sync, so there is
+  nothing to roll back. Reverse patches are unnecessary and were never
+  built.
+
+figaro runs figwal with the background flush OFF and syncs every append
+before anything reaches memory, on the form channel and the IR both. The
+claim that durability precedes visibility used to be true of ORDERING and
+false of DURABILITY: figwal buffered up to 64 MiB and a form patch is a few
+hundred bytes, so nothing was ever synced by the write itself.
+
+The cost is one fsync per durable write, measured at 3.1 ms on the author's
+filesystem, recovered under load by batching: per-patch cost falls 47x from
+one writer to 256.
+
+### 3b. Removals carry an intent
+
+`Ensure` (the default) reduces a removal of an absent key away. `Assert`
+refuses it, because a caller deleting something that is not there has a
+wrong model of the world and should be told. Birth dressing means `Ensure`:
+`-D` says do not inherit this, about a parent closure that may never have
+held it.
+
+### 3c. Subscribing without a gap
+
+`SubscribeFrom` registers FIRST and reads the snapshot SECOND. A patch
+landing between the two is then on the stream AND in the snapshot, which is
+a duplicate the reader drops by version. The obvious order puts it in
+neither, which is a gap, and a mirror that misses one patch is wrong forever
+without knowing it.
+
+A slow subscriber never blocks the writer: a full buffer drops and counts,
+`Missed()` is always readable, and an in-band marker rides the next event
+that fits.
+
 ## 4. Outfits resolve ABOVE the writer
 
 Outfitting is figaro API, not part of the reduction core. Every request that
