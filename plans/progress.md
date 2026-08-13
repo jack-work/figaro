@@ -2822,3 +2822,36 @@ copy being durable, it is the same price the WAL work chose everywhere else,
 and the alternative (a libretto that is a cache rather than a form) gives up
 replayability. If it ever hurts, the lever is the fold's own batching window,
 not the durability.
+
+### The fleet exercises it now, and a number I nearly published wrong
+
+`ariastress.sh --arias 12 --study --study-patches 300 --keep`, on the final
+build: 12/12 answered, control 0.16 s, history build 5.03 s (baseline 5.14 s
+— no regression), and the store now contains `@libretto::e1d28cfb`. Audited
+offline afterwards:
+
+```
+boards read      25
+librettos        1
+would correct    0     <- the verbs and the sweep agree after a full fleet run
+orphaned         0
+missing          0
+```
+
+**The mistake, recorded because it is the interesting part.** The libretto
+holds 29 records for 300 source patches, and I read that as ten-to-one
+coalescing and started to write it down. It is nothing of the kind: the
+harness applies its 300 patches SEQUENTIALLY and only then studies, so
+almost nothing was ever folded. Those 29 records are the seed, the twelve
+retains (one durable patch each, one per observer) and the drops.
+
+Two things follow, and both are more useful than the number I imagined:
+
+1. **A retain is a durable record.** Twelve observers of one form cost twelve
+   libretto records at study time. Cheap, correct, and worth knowing before
+   somebody studies from a hundred arias at once.
+2. **The coalescing measurement stands on its own benchmark**
+   (`BenchmarkLibrettoFoldBurstConcurrent`, 4.0 patches per record under
+   group commit) and NOT on this fleet, which cannot produce the case at all.
+   A number from a workload that cannot exercise the mechanism is not
+   evidence for it.
