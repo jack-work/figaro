@@ -126,6 +126,15 @@ func (l *Libretto) Source() string {
 	return l.source
 }
 
+// Following reports whether this libretto is subscribed to its source. False
+// means the source could not be opened -- deleted, most often -- and the copy
+// is standing still, which is exactly what it should do.
+func (l *Libretto) Following() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.sub != nil
+}
+
 // State is the materialized copy, bookkeeping included.
 func (l *Libretto) State() form.Snapshot { return l.formState() }
 

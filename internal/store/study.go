@@ -142,6 +142,10 @@ func (b *XwalBackend) libretto(sourceFormID string) (*Libretto, error) {
 	b.mu.Lock()
 	if l := b.librettos[key]; l != nil {
 		b.mu.Unlock()
+		if !l.Following() {
+			// A source that could not be opened before may be openable now.
+			_ = b.attach(l, sourceFormID)
+		}
 		return l, nil
 	}
 	b.mu.Unlock()
@@ -151,14 +155,19 @@ func (b *XwalBackend) libretto(sourceFormID string) (*Libretto, error) {
 	if err != nil {
 		return nil, err
 	}
-	src, err := b.form(sourceFormID)
-	if err != nil {
-		lib.Close()
-		return nil, fmt.Errorf("libretto %s: source: %w", sourceFormID, err)
-	}
-	if err := lib.Follow(src); err != nil {
-		lib.Close()
-		return nil, err
+	// A MISSING SOURCE IS NOT AN ERROR. The copy outlives what it copied --
+	// that is the point of §12.3 -- so a libretto whose form has been
+	// deleted is still openable, still readable, and still droppable. Before
+	// this, a restart between the deletion and the drop left the study
+	// undroppable forever: `unknown trunk`, from the one call that had no
+	// business needing the source at all.
+	//
+	// Not fatal and not sticky: attachment is retried by the next caller
+	// (see above), so a source that is merely unreadable for a moment starts
+	// being followed again when it is not.
+	if err := b.attach(lib, sourceFormID); err != nil {
+		slog.Info("libretto: not following its source",
+			"libretto", lib.ID(), "source", sourceFormID, "err", err)
 	}
 
 	b.mu.Lock()
@@ -191,6 +200,15 @@ func (b *XwalBackend) LibrettoStats() (open, observers int) {
 		observers += l.Refs()
 	}
 	return open, observers
+}
+
+// attach subscribes a libretto to its source, if the source can be opened.
+func (b *XwalBackend) attach(lib *Libretto, sourceFormID string) error {
+	src, err := b.form(sourceFormID)
+	if err != nil {
+		return err
+	}
+	return lib.Follow(src)
 }
 
 func (b *XwalBackend) closeLibretto(source string) {
