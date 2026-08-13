@@ -437,3 +437,87 @@ func TestRetainDeclaredStudiesCoversAnImportedBoard(t *testing.T) {
 		t.Fatal("a libretto an imported aria is still studying reported itself reclaimable")
 	}
 }
+
+// SIXTEEN ARIAS STUDYING ONE FORM AT ONCE. Three races meet here and each
+// one is silent if it is wrong: the libretto singleton (two openers, one
+// instance, and the loser must not leave a second writer on the stump), the
+// refcount's compare-and-set loop, and sixteen boards each doing a
+// version-guarded read-modify-write of their own study set.
+//
+// The assertion that matters is not "no panic" but that the SWEEP agrees
+// afterwards: the count derived from the boards is what reclamation trusts,
+// so a lost retain is a copy reclaimed under a live observer.
+func TestConcurrentStudiesOfOneForm(t *testing.T) {
+	be, sourceID, _ := librettoFixture(t)
+	outfit, err := be.CreateOutfit("crowd", setPatch(map[string]string{"system.model": "m"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const observers = 16
+	watchers := make([]string, observers)
+	for i := range watchers {
+		id, err := be.CreateConversation(outfit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		watchers[i] = id
+	}
+
+	errs := make(chan error, observers)
+	for _, w := range watchers {
+		go func(w string) {
+			_, _, err := be.StudyForm(w, sourceID)
+			errs <- err
+		}(w)
+	}
+	for range watchers {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	lib, err := be.Libretto(sourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := lib.Refs(); got != observers {
+		t.Fatalf("refs = %d after %d concurrent studies", got, observers)
+	}
+	open, obs := be.LibrettoStats()
+	if open != 1 {
+		t.Fatalf("%d libretto instances for one form", open)
+	}
+	if obs != observers {
+		t.Fatalf("stats say %d observers, want %d", obs, observers)
+	}
+	audit, err := be.ReconcileLibrettos()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if audit.Corrected != 0 {
+		t.Fatalf("the sweep disagreed after concurrent studies: %+v", audit)
+	}
+
+	// And the same crowd dropping at once.
+	for _, w := range watchers {
+		go func(w string) {
+			_, _, err := be.DropForm(w, sourceID)
+			errs <- err
+		}(w)
+	}
+	for range watchers {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := lib.Refs(); got != 0 {
+		t.Fatalf("refs = %d after everyone dropped", got)
+	}
+	audit, err = be.ReconcileLibrettos()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if audit.Corrected != 0 {
+		t.Fatalf("the sweep disagreed after concurrent drops: %+v", audit)
+	}
+}
