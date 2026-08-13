@@ -172,8 +172,19 @@ func (l *Libretto) Release() (int, error) { return l.addRefs(-1) }
 func (l *Libretto) addRefs(delta int) (int, error) {
 	caller, _, _, _ := runtime.Caller(2)
 	for {
-		st := l.formState()
-		version := l.form.Version()
+		// ONE READ, NOT TWO. Form.Snapshot() publishes the state and its
+		// version from a single atomic load; taking them separately lets a
+		// writer land between the two, and then the count is computed from
+		// the OLD state while the conditional apply quotes the NEW version --
+		// so the guard passes and the update is lost.
+		//
+		// A lost retain over-counts (a leak the sweep repairs). A lost
+		// release under-counts, and the count then drifts low until some
+		// later, legitimate release finds zero and is refused. That is the
+		// "release below zero" that appeared once under a loaded gate and in
+		// none of the runs that chased it: the window between two atomic
+		// loads is exactly as rare as that.
+		st, version := l.form.Snapshot()
 		from := intOf(st, KeyLibrettoRefs)
 		next := from + delta
 		if next < 0 {

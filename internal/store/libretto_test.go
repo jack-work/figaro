@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -495,5 +496,60 @@ func TestReleaseBelowZeroCarriesTheLedger(t *testing.T) {
 	// rather than inferred.
 	if !strings.Contains(msg, "libretto_test.go") {
 		t.Errorf("the ledger names no call site:\n%s", msg)
+	}
+}
+
+// The refcount survives concurrent movers. Each goroutine retains and
+// releases in balanced pairs, so the count must end exactly where it began --
+// and no release may ever be refused, because none of them is unmatched.
+//
+// HONESTY ABOUT WHAT THIS PROVES: it does NOT prove the two-atomic-loads fix.
+// Run against the old two-load version -- 8 runs, 1600 balanced pairs, under
+// -race -- it stayed green: the window between two atomic loads is narrower
+// than this harness can hit. It guards the property from here on; the
+// argument for the fix is that the window EXISTS by construction, not that
+// this test found it. The ledger on a refusal is what will read out the real
+// occurrence if the window is not the cause.
+func TestRefcountSurvivesConcurrentMovers(t *testing.T) {
+	be, src, _ := librettoFixture(t)
+	lib, err := be.Libretto(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A floor, so a lost update cannot be masked by the below-zero refusal.
+	for i := 0; i < 8; i++ {
+		if _, err := lib.Retain(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := lib.Refs()
+
+	const movers, rounds = 8, 25
+	var wg sync.WaitGroup
+	errs := make(chan error, movers)
+	for i := 0; i < movers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for r := 0; r < rounds; r++ {
+				if _, err := lib.Retain(); err != nil {
+					errs <- err
+					return
+				}
+				if _, err := lib.Release(); err != nil {
+					errs <- err
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("a balanced mover was refused: %v", err)
+	}
+	if got := lib.Refs(); got != before {
+		t.Fatalf("refs = %d, want %d: %d balanced pairs lost %d references",
+			got, before, movers*rounds, before-got)
 	}
 }
