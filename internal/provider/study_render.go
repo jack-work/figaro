@@ -44,7 +44,7 @@ func StudyReminderTexts(msg message.Message, board form.Snapshot) []string {
 	// lookup, and only when this message carries a study event at all, so an
 	// aria that studies nothing pays nothing.
 	var incantation form.StudyIncantation
-	if msg.Study != nil || len(msg.StudyPatches) > 0 || len(msg.StudyNotes) > 0 {
+	if msg.Study != nil || len(msg.StudyPatches) > 0 {
 		incantation = form.ReadStudyIncantation(board)
 	}
 	// The mark, and the BASELINE with it. At the moment observation begins,
@@ -98,18 +98,6 @@ func StudyReminderTexts(msg message.Message, board form.Snapshot) []string {
 				}
 				out = append(out, studyBlock("study:"+fid, body))
 			}
-		}
-	}
-	if len(msg.StudyNotes) > 0 {
-		fids := make([]string, 0, len(msg.StudyNotes))
-		for fid := range msg.StudyNotes {
-			fids = append(fids, fid)
-		}
-		sort.Strings(fids)
-		for _, fid := range fids {
-			out = append(out, studyBlock("study:"+fid, map[string]any{
-				"form": fid, "exists": false, "note": msg.StudyNotes[fid],
-			}))
 		}
 	}
 	return out

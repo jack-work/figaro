@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"runtime"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -1063,11 +1064,12 @@ func (a *Agent) formAccessor() provider.Form {
 	return formView{backend: a.backend, id: a.id}
 }
 
-// studyAccessors is formAccessor for the observed set: one absolute
-// accessor per studied form, read from THAT form's channel. A studied
-// form that cannot be read supplies no accessor: the projection
-// renders its stamp as a tombstone, which is why the probe is not
-// optional and cannot be folded into the view.
+// studyAccessors is formAccessor for the observed set: one absolute accessor
+// per studied form, read from that form's LIBRETTO. The source is never
+// touched at render time, so a deleted source needs no special case -- its
+// libretto carries the death as a key and outlives it.
+//
+// Keys stay SOURCE ids, because that is the name the user and the model know.
 func (a *Agent) studyAccessors() map[string]provider.Form {
 	if a.backend == nil {
 		return nil
@@ -1078,12 +1080,58 @@ func (a *Agent) studyAccessors() map[string]provider.Form {
 	}
 	out := make(map[string]provider.Form, len(ids))
 	for _, fid := range ids {
-		if _, err := a.backend.FormVersion(fid); err != nil {
-			continue // no accessor: the projection renders a tombstone
+		lid := store.LibrettoID(fid)
+		if _, err := a.backend.FormVersion(lid); err != nil {
+			continue
 		}
-		out[fid] = formView{backend: a.backend, id: fid}
+		out[fid] = librettoView{formView{backend: a.backend, id: lid}}
 	}
 	return out
+}
+
+// librettoView is formView with the libretto's own bookkeeping stripped: the
+// document holds machinery beside the mirrored keys, and only the mirror is
+// anybody's business. A patch that was pure bookkeeping comes back empty and
+// the projection skips it, so a fold nobody can see costs no block.
+type librettoView struct{ formView }
+
+func (v librettoView) PatchesBetween(after, upTo uint64) []message.Patch {
+	ps := v.formView.PatchesBetween(after, upTo)
+	out := ps[:0]
+	for _, p := range ps {
+		if p = withoutBookkeeping(p); !p.IsEmpty() {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// withoutBookkeeping strips the libretto's machinery, COPYING only when there
+// is something to strip. The patch handed in is the store's own published
+// value, shared by every reader of that log: editing it in place edits
+// history.
+func withoutBookkeeping(p message.Patch) message.Patch {
+	hidden := slices.ContainsFunc(p.Remove, store.HiddenLibrettoKey)
+	for k := range p.Set {
+		if hidden {
+			break
+		}
+		hidden = store.HiddenLibrettoKey(k)
+	}
+	if !hidden {
+		return p
+	}
+	q := message.Patch{Remove: slices.DeleteFunc(slices.Clone(p.Remove), store.HiddenLibrettoKey)}
+	for k, raw := range p.Set {
+		if store.HiddenLibrettoKey(k) {
+			continue
+		}
+		if q.Set == nil {
+			q.Set = make(map[string]json.RawMessage, len(p.Set))
+		}
+		q.Set[k] = raw
+	}
+	return q
 }
 
 // formView answers an absolute patch range from the store, per call, holding

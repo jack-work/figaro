@@ -179,10 +179,6 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 
 			acc := config.Studies[fid]
 			if acc == nil {
-				if msg.StudyNotes == nil {
-					msg.StudyNotes = map[string]string{}
-				}
-				msg.StudyNotes[fid] = "the observed form no longer exists (removed while studied)"
 				continue
 			}
 			if ps := acc.PatchesBetween(prev, upTo); len(ps) > 0 {

@@ -29,7 +29,7 @@ func vp(v uint64, key, val string) store.VersionedPatch {
 // The observed set folds at the stamps: each entry's StudyVersions
 // bracket exactly the studied patches since the previous stamp: the
 // bound board's derivation, generalized, and a stamped member with no
-// accessor renders a tombstone note instead of silence.
+// accessor renders nothing at all.
 func TestProjectionFoldsStudiedPatchesBetweenStamps(t *testing.T) {
 	// MemLog does not persist StudyVersions: drive the projection with a
 	// wrapper that stamps entries the way the xwal log does.
@@ -69,8 +69,11 @@ func TestProjectionFoldsStudiedPatchesBetweenStamps(t *testing.T) {
 	if len(folded[2].StudyPatches["@r"]) != 0 {
 		t.Fatalf("entry3 @r patches = %v, want none (stamp unmoved)", folded[2].StudyPatches["@r"])
 	}
-	if note := folded[2].StudyNotes["@gone"]; !strings.Contains(note, "no longer exists") {
-		t.Fatalf("tombstone missing for @gone: %q", note)
+	// @gone is stamped with no accessor: a libretto is fully persistent, so
+	// this is unreadability, not death, and absence is the truthful answer.
+	// A dead SOURCE arrives as system.libretto.alive on the libretto itself.
+	if _, ok := folded[2].StudyPatches["@gone"]; ok {
+		t.Fatalf("@gone rendered a block with no accessor: %v", folded[2].StudyPatches["@gone"])
 	}
 }
 
@@ -94,7 +97,7 @@ func (l *stampedLog) ReadFrom(from uint64, limit int) []store.Entry[message.Mess
 }
 
 // The render is deterministic and provider-neutral: marks, folds
-// (members sorted), tombstones.
+// (members sorted).
 func TestStudyReminderTextsDeterministic(t *testing.T) {
 	msg := message.Message{
 		Study: &message.StudyMark{FormID: "@r", Began: true},
@@ -102,7 +105,6 @@ func TestStudyReminderTextsDeterministic(t *testing.T) {
 			"@b": {{Set: map[string]json.RawMessage{"x": json.RawMessage(`1`)}}},
 			"@a": {{Set: map[string]json.RawMessage{"y": json.RawMessage(`2`)}}},
 		},
-		StudyNotes: map[string]string{"@gone": "the observed form no longer exists (removed while studied)"},
 	}
 	a := StudyReminderTexts(msg, form.Snapshot{})
 	b := StudyReminderTexts(msg, form.Snapshot{})
@@ -115,9 +117,6 @@ func TestStudyReminderTextsDeterministic(t *testing.T) {
 	}
 	if strings.Index(joined, "study:@a") > strings.Index(joined, "study:@b") {
 		t.Errorf("members not sorted: %s", joined)
-	}
-	if !strings.Contains(joined, "no longer exists") {
-		t.Errorf("tombstone missing")
 	}
 }
 

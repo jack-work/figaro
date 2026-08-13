@@ -1441,17 +1441,22 @@ const KindForm = string(kindForm)
 
 // ---- the observed set (study subscriptions, pull-at-the-stamp) ----
 
-// studyCursorPrefix namespaces observed-form positions inside the main
-// record's cursor map, beside the node's own channel entries. '@' cannot
-// appear in a channel name, so the namespaces cannot collide.
-const studyCursorPrefix = "study:"
+// librettoCursorPrefix namespaces observed-form positions inside the main
+// record's cursor map, beside the node's own channel entries. The value is
+// the LIBRETTO's version, never the source's.
+//
+// Records written before librettos existed carry the older "study:" prefix
+// holding SOURCE versions. Those no longer match, so they render no study
+// block at all -- which is the point: reading a source version against a
+// libretto's log answers a wrong range silently.
+const librettoCursorPrefix = "libretto:"
 
 // studyCursors extracts the observed-form half of a cursor stamp,
 // keyed by bare form id.
 func studyCursors(cursors map[string]uint64) map[string]uint64 {
 	var out map[string]uint64
 	for k, v := range cursors {
-		if rest, ok := strings.CutPrefix(k, studyCursorPrefix); ok {
+		if rest, ok := strings.CutPrefix(k, librettoCursorPrefix); ok {
 			if out == nil {
 				out = map[string]uint64{}
 			}
@@ -1476,10 +1481,9 @@ func (s *XwalStore) SetObservedForms(ariaID string, formIDs []string) {
 	s.observedMu.Unlock()
 }
 
-// observedCursors reads each observed form's CURRENT version at the
-// stamp moment. A form that cannot be read stamps nothing this record -
-// absence in a stamp is meaningful (not-observed or unreadable), and
-// the projection's tombstone handling names deletion when it renders.
+// observedCursors reads each observed form's LIBRETTO version at the stamp
+// moment. The source form is never touched: the libretto is the copy the
+// translator renders from, and it outlives its source.
 func (s *XwalStore) observedCursors(ariaID string) map[string]uint64 {
 	s.observedMu.Lock()
 	ids := s.observed[ariaID]
@@ -1489,8 +1493,8 @@ func (s *XwalStore) observedCursors(ariaID string) map[string]uint64 {
 	}
 	out := make(map[string]uint64, len(ids))
 	for _, fid := range ids {
-		if v, ok := s.formTail(fid); ok {
-			out[studyCursorPrefix+fid] = v
+		if v, ok := s.formTail(LibrettoID(fid)); ok {
+			out[librettoCursorPrefix+fid] = v
 		}
 	}
 	return out

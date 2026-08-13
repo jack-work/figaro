@@ -231,10 +231,6 @@ type Message struct {
 	// Patches: the bound board is member zero of the same set.
 	StudyPatches map[string][]Patch `json:"-"`
 
-	// StudyNotes are projection-time annotations per observed form (a
-	// tombstone for a form that ceased to exist mid-observation).
-	StudyNotes map[string]string `json:"-"`
-
 	// StudyAt is the version each observed form stood at when this message
 	// was stamped: the upper bound of the window StudyPatches folds. It is
 	// rendered so a reader can ORDER two blocks about the same form without

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jack-work/figaro/internal/message"
 )
@@ -193,10 +194,10 @@ func TestForkWithOnLegacyStumpStillBinds(t *testing.T) {
 	}
 }
 
-// The observed set rides the IR stamp: once declared, every IR append
-// records where each studied form stood, the entry reads it back under
-// StudyVersions, and consecutive stamps bracket exactly the patches the
-// projection must fold: the bound board's mechanism, generalized.
+// The observed set rides the IR stamp, and the stamp is the LIBRETTO's
+// version: once declared, every IR append records where each studied form's
+// COPY stood, the entry reads it back under StudyVersions, and consecutive
+// stamps bracket exactly the patches the projection must fold.
 func TestObservedFormsStampIRAppends(t *testing.T) {
 	be, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
@@ -212,7 +213,15 @@ func TestObservedFormsStampIRAppends(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	be.SetObservedForms(aria, []string{role})
+	studies, _, err := be.StudyForm(aria, role)
+	if err != nil {
+		t.Fatal(err)
+	}
+	be.SetObservedForms(aria, studies)
+	lib, err := be.libretto(role)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	log, err := be.Open(aria)
 	if err != nil {
@@ -222,21 +231,27 @@ func TestObservedFormsStampIRAppends(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if e1.StudyVersions[role] != v0 {
-		t.Fatalf("first stamp = %v, want %s at %d", e1.StudyVersions, role, v0)
+	if got, want := e1.StudyVersions[role], lib.Version(); got != want || got == 0 {
+		t.Fatalf("first stamp = %v, want the libretto at %d", e1.StudyVersions, want)
+	}
+	// The libretto's log is its OWN. A source version stamped here would read
+	// a wrong range out of it, silently, which is why the namespace changed.
+	if e1.StudyVersions[role] == v0 && lib.Version() != v0 {
+		t.Fatalf("stamp looks like the source version %d", v0)
 	}
 
-	// The role moves; the NEXT record's stamp says so.
+	// The role moves; the fold carries it into the copy; the NEXT record says so.
 	v1, err := be.ApplyForm(role, patchOf(t, map[string]string{"phase": `"canary"`}))
 	if err != nil {
 		t.Fatal(err)
 	}
+	waitForFold(t, lib, v1)
 	e2, err := log.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleOutput}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if e2.StudyVersions[role] != v1 || v1 <= v0 {
-		t.Fatalf("second stamp = %v, want %s at %d (> %d)", e2.StudyVersions, role, v1, v0)
+	if e2.StudyVersions[role] <= e1.StudyVersions[role] {
+		t.Fatalf("second stamp = %v, want past %d", e2.StudyVersions, e1.StudyVersions[role])
 	}
 
 	// Dropped: later records stamp nothing for it.
@@ -249,18 +264,35 @@ func TestObservedFormsStampIRAppends(t *testing.T) {
 		t.Fatalf("dropped form still stamped: %v", e3.StudyVersions)
 	}
 
-	// And the patches between the two stamps are exactly the fold.
-	ps, err := be.FormPatchesBetween(role, 0, ^uint64(0))
+	// And the patches between the two stamps, READ FROM THE LIBRETTO, are
+	// exactly the fold: the canary patch, plus whatever bookkeeping the fold
+	// wrote beside it (which the render strips, not the store).
+	ps, err := be.FormPatchesBetween(lib.ID(), e1.StudyVersions[role], e2.StudyVersions[role])
 	if err != nil {
 		t.Fatal(err)
 	}
-	n := 0
+	found := false
 	for _, p := range ps {
-		if p.Version > e1.StudyVersions[role] && p.Version <= e2.StudyVersions[role] {
-			n++
+		if _, ok := p.Patch.Set["phase"]; ok {
+			found = true
 		}
 	}
-	if n != 1 {
-		t.Fatalf("patches between stamps = %d, want exactly the one canary patch", n)
+	if !found {
+		t.Fatalf("the canary patch is not between the stamps: %+v", ps)
 	}
+}
+
+// waitForFold blocks until the libretto has folded the source through version
+// v. The copy is durable and asynchronous: a stamp taken the instant after a
+// source write names where the COPY stood, which may be one fold behind.
+func waitForFold(t *testing.T, lib *Libretto, v uint64) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if lib.At() >= v {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("libretto did not fold source version %d (at %d)", v, lib.At())
 }

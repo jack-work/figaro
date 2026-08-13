@@ -387,6 +387,19 @@ func isLibrettoKey(k string) bool {
 	return strings.HasPrefix(k, "system.libretto.") || k == TombstoneKey
 }
 
+// HiddenLibrettoKey names the bookkeeping the MODEL must never see. The
+// translator reads the libretto rather than the source, so the document's own
+// machinery would otherwise fold into the studied block: system.libretto.at
+// moves on every fold, and refs moves whenever some OTHER aria studies or
+// drops the same form, which is cross-aria noise inside one aria's context.
+//
+// alive is deliberately not hidden. A dead source is reported in band, as a
+// key transition like any other, which is what keeps liveness out of the
+// projection entirely.
+func HiddenLibrettoKey(k string) bool {
+	return strings.HasPrefix(k, "system.libretto.") && k != KeyLibrettoAlive
+}
+
 func librettoPatch(kv map[string]any) message.Patch {
 	set := make(map[string]json.RawMessage, len(kv))
 	for k, v := range kv {
