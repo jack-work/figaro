@@ -223,3 +223,35 @@ ever took, decoded, resident. Bounding it is the "windowed LRU" idea from
 the original conversation, and it is harder than the IR window because
 `PatchesBetween` must still answer for ranges below the window, which means
 reading them back from figwal. Design is in durable-forms; not started.
+
+#### Fleet regression: 12 arias, one daemon, one studied form (300 patches)
+
+Same harness (`scripts/ariastress.sh --study --study-patches 300`), same box,
+against the numbers taken before the WAL change during the incantations work:
+
+| | before WAL | after WAL |
+|---|---|---|
+| turns answered | 12/12 | 12/12 |
+| history build (300 CLI patches) | 4.11 s | **4.98 s** |
+| turn wall (12 concurrent) | 4.53 s | 5.49 s |
+| control (12 x `ls -j`) | 0.17 s | 0.16 s |
+| daemon PSS loaded | 56.8 M | 58.6 M |
+| `Pss_anon` loaded | 30.6 M | 32.2 M |
+| swap | 0 | 0 |
+| goroutines | 93 | **80** |
+| heap_alloc | 14.9 M | 16.0 M |
+
+Read it as:
+
+- **300 mandatory fsyncs cost 0.87 s**, or 2.9 ms each, which is exactly the
+  measured filesystem floor. Nothing is being wasted; that is the price.
+- **Turn wall is up 0.96 s across 12 concurrent turns**, most of which is the
+  IR now syncing per message. Against a provider round trip measured in
+  seconds it is visible but not dominant.
+- **Goroutines are DOWN 14%** (93 to 80) with 12 live arias, which is the
+  lazy actor: forms no longer park a goroutine each.
+- Memory is flat to slightly up. The `ir_window_mb` default does not show
+  here because these arias have almost no IR (72 rows); it will show on real
+  arias, where the decoded IR is 63 to 86 percent of the footprint.
+- The control is unchanged, which is what says the rest of the table is
+  measuring the change rather than the afternoon.
