@@ -653,3 +653,35 @@ The memory work shows: **PSS down 12 M and heap_alloc down 6.8 M against the
 pre-WAL baseline**, with the durability guarantee added rather than removed.
 Turn wall came back most of the way. `resident_form_patches` is visible for
 the first time, which is the point of reporting it.
+
+## NEXT STEPS (superseding every earlier list in this file)
+
+Everything above is history. This is the queue.
+
+1. **Phase 3: command, event, ack, session and seq.** The attempt to make
+   `set` synchronous proved why this is the right shape: a caller wants a
+   HANDLE it may await, not a wait it cannot refuse. It also closes the two
+   refusals that currently only reach the log (a stale `ifVersion`, an
+   `Assert` removal on a live aria), and it is the whole server side of
+   optimistic replication.
+2. **`cachedLog.mu` to a published snapshot.** 34 uses of one RWMutex on the
+   hot read path, guarding `rows`, `trimmed` and `byFK`. One immutable
+   struct behind an `atomic.Pointer`, the pattern `formState` uses. Do it
+   with `BenchmarkCachedLogReadLongAria` in hand.
+3. **Phase 6: tombstones and leases.** Needed by 8 and 9, and the tombstone
+   is what lets a studied form be deleted at all.
+4. **Phase 7: retention as a policy** (N segments), and the type-level rule
+   that a channel handing out views may not have one.
+5. **Phase 8: the topology form**, replacing `trunks.json`. `internal/trunk`
+   dies with it.
+6. **Phase 9: derived forms and the libretto**, per the rulings: one
+   libretto per studied FORM, `@libretto::<formid>`, shared, refcounted, not
+   forked, whole-form only, holding a COPY. Study is a two-participant write
+   ordered so every crash over-counts.
+7. **Phase 10: the API refactor** and `angelus.hello`.
+
+**Perf work that is known and not done**: preallocation plus `fdatasync` in
+figwal (the only lever that lowers the 3 ms per-sync floor); a bounded range
+read in figwal so a cold `PatchesBetween` below the window stops walking the
+whole log; and 306 goroutines on a daemon with 3 live arias, which nobody
+has profiled because the running daemon predates profiling being armed.
