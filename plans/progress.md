@@ -2965,13 +2965,31 @@ the accessor and the machinery filter. Phase 9 is complete. What remains:
    not claim it is not — three green runs are not evidence of absence for
    something that appears once in a loaded run.
 
-   **How to hunt it, since repetition has already failed**: the message comes
-   from `addRefs` refusing to go below zero, so the question is which release
-   had no matching retain. That is answerable by fault injection rather than
-   luck — make `Retain`/`Release` record (aria, form, delta, stack) into a
-   ring buffer under a build tag, run the race test until it fires, and read
-   the last twenty entries. Cheaper than another hundred green runs, and it
-   ends the argument either way.
+   **Done, in both halves.**
+
+   *The instrument* (`5e343ec8`): the refusal carries the last 64 refcount
+   moves — retain or release, which libretto, from what to what, and the call
+   site. Always on: a mutex and a struct copy beside an fsync is nothing, and
+   the run that matters is on a real store at 3am, not under a harness. The
+   next occurrence names the release that had no matching retain instead of
+   asking for another hundred runs.
+
+   *A cause, found by reading rather than by luck* (`b9ca9424`): `addRefs`
+   loaded the state and the version SEPARATELY. `Form.Snapshot()` publishes
+   both from one atomic load, and taking them apart opens a lost-update
+   window — the count computed from the old state, the conditional apply
+   quoting the new version, so the guard passes and the update is
+   overwritten. A lost retain over-counts (repairable); a lost release
+   under-counts, and the count drifts low until a later legitimate release
+   finds zero. That is the shape of the failure, and the window is exactly as
+   rare as a once-in-a-loaded-gate flake.
+
+   **NOT PROVEN, and I will not pretend otherwise.** The property test added
+   with the fix stayed GREEN against the old two-load version: 8 runs, 1600
+   balanced pairs, under `-race`. The window is narrower than any harness I
+   could write. The argument for the fix is that the window exists by
+   construction; if it was not the cause, the ledger will say so next time,
+   which is why the instrument landed first and the fix second.
 
 2. **The restart lag, and it is NOT what it looks like.** After a restart the
    first turn of a studying aria stamps a copy that has not heard the source
