@@ -106,6 +106,37 @@ I shipped cli/formdeltas.go UNTRACKED; go build was green and
 TRACKED files. The rule is now a role key: git add before nix-testing,
 and nix build is part of every gate unless Gluck says otherwise.
 
+### PINNED FOLLOW-UP (Gluck, 2026-08-13): the windowed UI IR rehydrate
+
+Do this as soon as the delta work is in main; Gluck rates it very
+important. The finding: aria.Server is TWO things wearing one name.
+
+1. **Irreducible**: the open streaming region and the delta/version wire
+   (NodeDelta splices against the previous frame, version counters,
+   OnDesync). A stateless reader cannot serve either: mid-turn state is
+   not durable yet, and a diff protocol needs memory of the last frame.
+2. **A cache pretending to be an organ**: the sealed-turns section --
+   memoized compose output, UNBOUNDED, resident for the agent's life
+   (~6MB at bench size; a suspect slice of the 88MiB unnamed heap). The
+   reader is the other extreme: O(whole history) per PAGE, 13.1MB/op
+   thrown away at 10k msgs, because Turns() walks everything to serve
+   one window.
+
+The convergent shape: ONE windowed component, shared compose. The server
+keeps the open region + version state + a BOUNDED window of sealed turns
+with figwal-style eviction -- no on-disk store, UI IR is a pure
+derivation, evict freely and recompose on request. The reader becomes
+the same component with no open region. Seams already known: anchors
+below the window recompose that range (StampIDs is deterministic); the
+open turn is pinned, never evictable; range-compose needs decoded IR for
+the range, which cachedLog's window already bounds -- the layers align;
+the new resident structure arrives WITH its number in doctor mem;
+formdelta attachment cost gets bounded by the same window for free.
+
+This also completes the memory pyramid: figwal bytes bounded, decoded IR
+bounded, composed UI IR currently either unbounded-resident (agent) or
+absent (reader) -- afterwards, bounded everywhere.
+
 ### Session 5 cleanup ledger
 
 Live-script copies made: /var/tmp/figstudy.cQIj figcast.icUi

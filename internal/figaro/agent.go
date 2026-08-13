@@ -259,7 +259,8 @@ func NewAgent(cfg Config) *Agent {
 	a.bindProvider(cfg.Provider)
 	a.inbox = NewInbox(ctx)
 
-	messages := unwrapMessages(a.figLog.Read())
+	entries := a.figLog.Read()
+	messages := unwrapMessages(entries)
 	// Metrics come off the _meta sidecar when it is current, which after
 	// Backend.Open it always is: healMeta folds any suffix past the watermark
 	// on the read path. That turns construction's metric pass from a walk of
@@ -272,7 +273,7 @@ func NewAgent(cfg Config) *Agent {
 	// Build sealed UI turns from canonical IR, then broadcast every aria-server
 	// change to socket subscribers as one aria.Page.
 	a.ariaSrv = aria.NewServer()
-	for _, t := range a.projTurns(messages) {
+	for _, t := range a.attachFormDeltas(a.projTurns(messages), entries) {
 		a.ariaSrv.Commit(t)
 	}
 	a.ariaSrv.Subscribe(func(p aria.Page) {
@@ -872,7 +873,7 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 func (a *Agent) reconcileAriaServer() {
 	oldLast := a.ariaSrv.LastTurn()
 	hadOpen := a.ariaSrv.HasOpen()
-	history := a.projTurns(a.Context())
+	history := a.materializeTurns()
 	// Defensive: never wipe already-materialized state with a shorter history.
 	// reconcileAriaServer runs on mid-turn error paths whose only source of
 	// truth is a.Context() (the durable figLog). If that read returns fewer
