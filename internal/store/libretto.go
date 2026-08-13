@@ -164,9 +164,21 @@ func (l *Libretto) addRefs(delta int) (int, error) {
 	}
 }
 
-// Reclaimable reports whether nothing is studying this any more. The decision
-// to unlink is the caller's; a libretto whose source is dead and whose refs
-// are zero holds a copy nobody can reach.
+// Reclaimable reports that nobody is STUDYING this any more. It is necessary
+// for reclamation and it is NOT sufficient, which is worth stating where the
+// method is rather than where the sweep is:
+//
+// an IR record stamps the libretto version it was rendered against (§12.5),
+// so an aria that studied a form and dropped it still references this
+// libretto for the whole of its history. Unlinking on refs==0 would make
+// those records unrenderable -- the exact coupling the COPY was introduced
+// to remove, reintroduced from the other end.
+//
+// So reclamation needs a second question, "does any surviving IR reference
+// it", and that question has no answer in this package today. Until it does,
+// this is the flag a caller may act on for a libretto whose observers are
+// gone AND whose referencing arias are gone with them -- which today means
+// only the delete path.
 func (l *Libretto) Reclaimable() bool { return l.Refs() == 0 }
 
 // Follow subscribes to the source and folds its patches in, forever, until

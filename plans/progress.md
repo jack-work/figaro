@@ -2391,3 +2391,33 @@ asserts they agree. Without it, a rename on one side leaves the sweep reading
 nothing and reporting every count as zero — a sweep that has gone blind while
 producing correct-looking output, which is the worst failure a repair tool
 has.
+
+### A constraint the libretto exposes: refs==0 is NOT enough to reclaim
+
+Found while writing `Reclaimable`, and it belongs in durable-forms §12
+whenever someone next edits it.
+
+The refcount answers "is anyone STUDYING this now". Reclamation needs more
+than that, because **an IR record stamps the libretto version it was rendered
+against** (§12.5). An aria that studied a form in the past and dropped it
+still references that libretto for the whole of its history: unlink on
+refs==0 and those records become unrenderable — which is precisely the
+coupling the COPY exists to remove (§12.3: "deriving a pointer is not
+derivation"), reintroduced from the other end.
+
+So reclaiming a libretto needs a second question — *does any surviving IR
+reference it* — and that question has no answer in the store today. Three
+ways it could get one, none built:
+
+1. **Delete-path only**: a libretto is reclaimed when every aria that ever
+   stamped it is gone. Sound, needs no new state, and reclaims almost never.
+2. **A reverse index**: arias-that-stamped-this-libretto, maintained on the
+   libretto. New durable state with its own drift problem, and the
+   reconciliation sweep would have to recompute it too.
+3. **Let the render degrade**: absence is the truthful default (§1), so a
+   missing libretto renders as "no study state for this record" rather than
+   as an error. Cheapest, and it is a decision about what an old transcript
+   is allowed to lose — Gluck's, not mine.
+
+`Reclaimable` says all of this at the method, because the name promises more
+than the number can deliver.
