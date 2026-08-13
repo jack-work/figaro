@@ -2601,3 +2601,48 @@ mark is only narration. **Verified red against the old code.**
 
 Their branch `fix/tool-result-adjacency` exists and is EMPTY; the work landed
 here instead, so it can be deleted.
+
+## The verb mints its libretto now, on both halves (`2e4490b3`)
+
+Study and drop move the refcount in §12.2.1's order, on the agent's loop for a
+live aria and on the hub for a dormant one — the two halves that have had to
+agree about the study set since `set` was served from the hub.
+
+```
+study: libretto retained FIRST, board declares SECOND
+drop:  board stops claiming it FIRST, libretto released SECOND
+```
+
+**A study that changes nothing hands its reference straight back**, so a
+repeated study is not a second reference: the board is a SET and the count is
+derived from it. Both tests end by running the reconciliation sweep and
+asserting it corrects **nothing** — that is the invariant the verb and the
+sweep exist to share, and it is a better assertion than either half alone.
+
+**Best-effort, through an optional interface.** An ephemeral backend has no
+librettos, and a libretto that cannot be reached must not block a
+declaration, because the board is the authoritative fact and the sweep
+recomputes from it.
+
+**The sigil bug, for the next person who meets it**: an unbound form is
+addressed `@abc123` and its libretto's STUMP is named for the bare id. So the
+name is stripped and the LOOKUP is not; getting it backwards produces
+`xwal: unknown trunk "abc123"`, which is exactly how it was found.
+
+### Where phase 9 now stands
+
+| piece | state |
+|---|---|
+| the libretto: form, fold, refcount, death record | **done** (`ac3314bc`) |
+| reconciliation sweep + `doctor librettos` | **done** (`5f4081fa`, `0bd1a7fa`) |
+| store-side `StudyForm`/`DropForm` (ordering) | **done** (`0c5a6353`) |
+| the study mark cannot land inside a round | **done** (`d6b97f6e`) |
+| the verb retains/releases, live and dormant | **done** (`2e4490b3`) |
+| **fork/import/kill as refcount participants (§12.2.2)** | **not started** |
+| **the IR's per-libretto cursors (§12.5)** | **not started** |
+| **the translator reading librettos instead of sources** | **not started** |
+| **reclamation** | blocked on a ruling: refs==0 is not sufficient |
+
+The next two are the ones that change what a user sees, and both live in
+`internal/provider/projection.go` and the four provider encoders — read
+6c2d7b9f's two warnings above before touching either.
