@@ -2997,8 +2997,10 @@ saying twice, because it means the fold is not on the critical path.
   is waiting; it has NOT moved the role.
 - **The role is `@980dc16c`.** On handoff:
   `figaro state set --id @980dc16c target-aria b2b0c543` — a form patch the
-  hub serves with no agent involved. **Do not use `fig cast` from inside an
-  aria**: it rides the inbox that is running the turn issuing it, and hangs.
+  hub serves with no agent involved. A form patch is still the right way to
+  move a role; the reason it was the ONLY way is gone as of `30dcd6ba`, which
+  took the cast off the inbox. **Against a daemon running an older binary it
+  still hangs** — which is most of the ones on this box until they restart.
 - It arrived at the same two hazards from the notes alone (§12.5 is a
   migration; `system.studies` is unprotected and reachable from the CLI), and
   named a third question I had left implicit: **is the projection switch
