@@ -16,6 +16,12 @@ import (
 // default slog logger) so benchmark output is readable. Re-enable with
 // FIGARO_LOG_LEVEL set.
 func TestMain(m *testing.M) {
+	// The crash test re-enters this binary as a child (form_crash_test.go),
+	// which has to happen before any test runs.
+	if dir := os.Getenv(crashChildEnv); dir != "" {
+		crashChild(dir)
+		return
+	}
 	if os.Getenv("FIGARO_LOG_LEVEL") == "" {
 		slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	}
