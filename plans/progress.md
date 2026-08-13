@@ -1997,3 +1997,49 @@ TOTAL                1731 MB of PSS across 33 figaro processes
 applies per process, so it never bit; the aggregate has no ceiling at all.
 429 MB of that daemon's heap against 44 MB of instrumented cache is exactly
 the shape "WHERE THE MEMORY IS" describes, on a binary from before the fix.
+
+## The read-path comparison, and a +475% that was not real
+
+benchstat, 6 samples, merge base (`d8428ee1`) against this branch, on an
+otherwise idle box. Everything flat except one row:
+
+| | base | after | |
+|---|---|---|---|
+| `FormOpenReplay` (6 shapes) | — | — | ~ all, geomean +0.4%/record |
+| `FormDeltaPerSend1000` | 58.6 ns | 60.4 ns | ~ (p=0.24) |
+| `FormWholePerSend100` | 46.3 ns | 44.7 ns | ~ (p=0.42) |
+| `CachedLogReadLongAria` 1k/10k/50k | — | — | ~, +1.6% on 50k |
+| **`FormColdDeltaAt500` / `At1500`** | 2.96 / 2.87 µs | **17.0 / 16.7 µs** | **+475% (p=0.002)** |
+
+The cold read below the patch window is the path a previous session took from
+142 µs to 3 µs, so a five-fold loss there had to be understood before
+anything shipped.
+
+**It is a benchmark artifact, and the instrument that proved it is now
+permanent.** The suspect was cache thrash — a block dropped and reloaded per
+read. `segment.CacheLoads()` (added for this, kept for good) answered it: 50
+cold reads caused **one** load. So the cost was one-time, and the reason it
+showed up is that it MOVED: the old code materialized the whole channel
+during the untimed fixture build, and the new code loads the segment inside
+the first measured iteration. At `-benchtime 100x` that one-time cost is
+amortized over a hundred iterations and reads as +14 µs each.
+
+At `-benchtime 4000x`, three samples each:
+
+| | base | after | |
+|---|---|---|---|
+| `FormColdDeltaAt500` | 2.34–2.47 µs | 2.74–3.03 µs | **+18%**, 29 allocs both, +68 B/op |
+
+So the honest number is **+18% on the cold path**, which is a read going
+through an RWMutex and a segment lookup instead of one atomic load of an
+array that held the entire channel. That is the trade, stated plainly.
+
+**A rule this cost an hour to relearn**: `-benchtime 100x` on a path with any
+one-time cost measures the one-time cost. My predecessor's note says do not
+publish a five-sample benchmark; the companion is do not publish a
+hundred-iteration one either, unless you have checked that the loop is what
+you are timing.
+
+**Bisected between my own two figwal changes**, because it mattered which:
+the cost arrived with the payload cache (the `cacheSnapshot` deletion), and
+lazy segment opening slightly IMPROVES it (10.5 µs against 11.4 µs at 200x).
