@@ -2909,13 +2909,22 @@ What remains, in the order I would take it:
 **~~The projection switch~~ is DONE** (session 4, `e0fd5c34`): the stamps,
 the accessor and the machinery filter. Phase 9 is complete. What remains:
 
-1. **The two drift items from Gluck's own words**, which are the only
-   unhonored bullets in `wym.md` and are twelve lines apart in `libretto.go`:
-   a dead source is never **unsubscribed** (so its form is permanently
-   un-evictable), and a form **reborn under the same id** is silently
-   discarded by two high-water-mark guards while `alive` stays false. Neither
-   has a test or a note. He described both as part of how a study survives
-   its source.
+1. **A form REBORN under the same id is still silently discarded**
+   (`wym.md:22`). The other half of that paragraph — a dead source is never
+   unsubscribed — is now built (`b60d1fd6`), and it is the enabler for this
+   one: `Following()` goes false on death, so `b.libretto()` will re-attach
+   on the next verb. What still breaks is the watermark: a reborn form's
+   channel restarts at 1, and both the seed guard (`libretto.go`, "seed only
+   when the copy is BEHIND") and the event guard (`ev.Version <= l.At()`)
+   discard everything below the DEAD form's high water mark. `alive` also
+   stays false.
+
+   **The shape of the fix**: rebirth is detectable — the source's current
+   version is BELOW our `at` — and the answer is to re-seed from the new
+   source and reset `at` and `alive` together, as one patch. The trap is that
+   version numbers alone cannot distinguish "reborn" from "a stale read", so
+   whoever builds it should tie the reset to the node identity figwal already
+   has rather than to the number.
 2. **Show him the two-participant write.** He approved it *conditionally on
    seeing the code* (`answers-forms.md:12`) and the review was never asked
    for. Five minutes of his time, and the retry count has since gone 5 → 32.
