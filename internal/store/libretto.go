@@ -142,6 +142,15 @@ func (l *Libretto) State() form.Snapshot { return l.formState() }
 // stamps (durable-forms §12.5).
 func (l *Libretto) Version() uint64 { return l.form.Version() }
 
+// PatchesBetween is the copy's own patch view, (after, upTo], for the
+// translator. It must come from THIS instance: a second Form over the same
+// stump replays once and never hears the fold again, so its reader is
+// orphaned at the version it opened at -- silently, and forever, because the
+// per-LT cache makes whichever rendering ran first permanent.
+func (l *Libretto) PatchesBetween(after, upTo uint64) []VersionedPatch {
+	return l.form.PatchesBetween(after, upTo)
+}
+
 // Refs is how many figaros are studying the source.
 func (l *Libretto) Refs() int { return intOf(l.formState(), KeyLibrettoRefs) }
 

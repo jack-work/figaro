@@ -12,6 +12,7 @@ package store
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -267,6 +268,20 @@ func (b *XwalBackend) FormState(ariaID string) (form.Snapshot, error) {
 
 // form returns the aria's Form, opening (and replaying) it once.
 func (b *XwalBackend) form(ariaID string) (*Form, error) {
+	// A LIBRETTO IS NOT A NODE. Its Form lives in the libretto registry and
+	// is the writer the fold appends through; a second Form over the same
+	// stump replays at open and never hears that writer again, so its reader
+	// freezes at the version it opened at. Silently, and permanently, because
+	// the per-LT cache keeps whichever rendering ran first.
+	//
+	// That is not hypothetical: it is how the translator's first cut of §12.5
+	// rendered one correct study block and then froze. Refused by
+	// construction rather than by a comment, because the correct call
+	// (Libretto(source)) is one the compiler cannot suggest.
+	if source, ok := SourceOfLibretto(ariaID); ok {
+		return nil, fmt.Errorf(
+			"form %s: a libretto must be read through Libretto(%q), not as a node", ariaID, source)
+	}
 	b.mu.Lock()
 	b.seenLocked(ariaID)
 	if f := b.forms[ariaID]; f != nil {

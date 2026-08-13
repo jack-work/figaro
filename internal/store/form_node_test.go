@@ -267,10 +267,7 @@ func TestObservedFormsStampIRAppends(t *testing.T) {
 	// And the patches between the two stamps, READ FROM THE LIBRETTO, are
 	// exactly the fold: the canary patch, plus whatever bookkeeping the fold
 	// wrote beside it (which the render strips, not the store).
-	ps, err := be.FormPatchesBetween(lib.ID(), e1.StudyVersions[role], e2.StudyVersions[role])
-	if err != nil {
-		t.Fatal(err)
-	}
+	ps := lib.PatchesBetween(e1.StudyVersions[role], e2.StudyVersions[role])
 	found := false
 	for _, p := range ps {
 		if _, ok := p.Patch.Set["phase"]; ok {

@@ -1070,8 +1070,14 @@ func (a *Agent) formAccessor() provider.Form {
 // libretto carries the death as a key and outlives it.
 //
 // Keys stay SOURCE ids, because that is the name the user and the model know.
+//
+// The accessor holds the SHARED libretto instance, never a form opened over
+// its stump: a second Form over one channel replays at open and never hears
+// the fold again, so it renders the study block correctly once and then
+// freezes at that version forever.
 func (a *Agent) studyAccessors() map[string]provider.Form {
-	if a.backend == nil {
+	lb, ok := a.backend.(librettoBackend)
+	if a.backend == nil || !ok {
 		return nil
 	}
 	ids := studiesFromSnapshot(a.form.Snapshot())
@@ -1080,26 +1086,33 @@ func (a *Agent) studyAccessors() map[string]provider.Form {
 	}
 	out := make(map[string]provider.Form, len(ids))
 	for _, fid := range ids {
-		lid := store.LibrettoID(fid)
-		if _, err := a.backend.FormVersion(lid); err != nil {
+		lib, err := lb.Libretto(fid)
+		if err != nil {
 			continue
 		}
-		out[fid] = librettoView{formView{backend: a.backend, id: lid}}
+		out[fid] = librettoView{lib}
 	}
 	return out
 }
 
-// librettoView is formView with the libretto's own bookkeeping stripped: the
-// document holds machinery beside the mirrored keys, and only the mirror is
-// anybody's business. A patch that was pure bookkeeping comes back empty and
-// the projection skips it, so a fold nobody can see costs no block.
-type librettoView struct{ formView }
+// librettoBackend is the store's libretto registry, as an optional
+// interface: an ephemeral backend has none and must not pretend.
+type librettoBackend interface {
+	Libretto(sourceFormID string) (*store.Libretto, error)
+}
+
+// librettoView is the libretto's patch view with its own bookkeeping
+// stripped: the document holds machinery beside the mirrored keys, and only
+// the mirror is anybody's business. A patch that was pure bookkeeping comes
+// back empty and the projection skips it, so a fold nobody can see costs no
+// block.
+type librettoView struct{ lib *store.Libretto }
 
 func (v librettoView) PatchesBetween(after, upTo uint64) []message.Patch {
-	ps := v.formView.PatchesBetween(after, upTo)
-	out := ps[:0]
-	for _, p := range ps {
-		if p = withoutBookkeeping(p); !p.IsEmpty() {
+	ps := v.lib.PatchesBetween(after, upTo)
+	out := make([]message.Patch, 0, len(ps))
+	for _, vp := range ps {
+		if p := withoutBookkeeping(vp.Patch); !p.IsEmpty() {
 			out = append(out, p)
 		}
 	}

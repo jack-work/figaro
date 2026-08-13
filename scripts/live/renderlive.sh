@@ -20,18 +20,26 @@ FORM=$("$BIN" form new --set brief="the studied thing" 2>&1 | grep -oE "@[0-9a-f
 ARIA=$("$BIN" new 2>&1 | grep -oE "[0-9a-f]{8}" | head -1)
 echo "form=$FORM aria=$ARIA"
 
-"$BIN" set --id "$ARIA" system.environment.figaro_wire_dir "$ROOT/wire" >/dev/null 2>&1
-"$BIN" study "$ARIA" "$FORM" >/dev/null 2>&1
+"$BIN" set --id "$ARIA" system.environment.figaro_wire_dir "$ROOT/wire" || exit 1
+"$BIN" study "$ARIA" "$FORM" || exit 1
 
 # The source moves AFTER the study: this is the transition the libretto folds
 # and the only reason the block should say anything at all.
-"$BIN" set "$FORM" status merged >/dev/null 2>&1
-"$BIN" set "$FORM" sha 8b12f128 >/dev/null 2>&1
+# NOT >/dev/null: a set that fails silently is a live script that cannot
+# fail, and this one did exactly that (wrong argument shape) while still
+# printing green.
+"$BIN" set --id "$FORM" status merged || exit 1
+"$BIN" set --id "$FORM" sha 8b12f128 || exit 1
 sleep 1   # the fold is asynchronous and durable; the stamp names the COPY
 
-"$BIN" send --id "$ARIA" -e -- "Reply with the single word: ok" >/dev/null 2>&1
+"$BIN" send --id "$ARIA" -- "Reply with the single word: ok" >/dev/null 2>&1
+# A second turn: the FIRST record after a study carries the whole copy as its
+# baseline, so the transition only shows as a delta on the next one.
+"$BIN" set --id "$FORM" phase ga || exit 1
+sleep 1
+"$BIN" send --id "$ARIA" -- "Reply with the single word: done" >/dev/null 2>&1
 
-REQ=$(ls -t "$ROOT"/wire/*/*request* 2>/dev/null | head -1)
+REQ=$(ls -t "$ROOT"/wire/*/*.req.http 2>/dev/null | head -1)
 if [ -z "$REQ" ]; then echo "FAIL: no wire dump under $ROOT/wire"; echo "ROOT=$ROOT"; exit 1; fi
 echo "--- wire: $REQ"
 
@@ -48,7 +56,8 @@ check() { # check <what> <expected: yes|no> <pattern>
 
 check "the study block is rendered"        yes 'system-reminder name=\\"study'
 check "the source's new value reached it"  yes 'merged'
-check "the second patch too"               yes '8b12f128'
+check "the second patch too"               yes "8b12f128"
+check "the LATER delta (phase ga)"         yes "\"ga\""
 check "the libretto's at is hidden"        no  'system.libretto.at'
 check "the libretto's refcount is hidden"  no  'system.libretto.refs'
 check "no stump name leaked into the block" no '@libretto::'

@@ -367,3 +367,51 @@ func TestLibrettoBatchFoldEndsWhereTheSourceDoes(t *testing.T) {
 		t.Fatal("a key the source removed survived the coalesced fold")
 	}
 }
+
+// THE ORPHANED READER. The libretto's Form is the writer the fold appends
+// through. A reader that opens its own Form over the same stump replays once
+// and never hears that writer again, so it renders one correct study block
+// and then freezes -- which is exactly what the translator did the first time
+// it read a libretto, while every unit test and every refcount stayed green.
+//
+// Two halves: the shared instance sees a fold that happens AFTER it was
+// handed out, and the node path refuses to hand out a second one at all.
+func TestLibrettoReaderSeesFoldsAfterItWasOpened(t *testing.T) {
+	be, src, _ := librettoFixture(t)
+	aria, _, err := be.ForkWith("", 0, patchOf(t, map[string]string{"aria_id": `"a1"`}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := be.StudyForm(aria, src); err != nil {
+		t.Fatal(err)
+	}
+
+	// The accessor is taken ONCE, as a turn takes it, and held.
+	lib, err := be.Libretto(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := lib.Version()
+
+	v, err := be.ApplyForm(src, patchOf(t, map[string]string{"afterwards": `"yes"`}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForFold(t, lib, v)
+
+	found := false
+	for _, p := range lib.PatchesBetween(at, lib.Version()) {
+		if _, ok := p.Patch.Set["afterwards"]; ok {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the held accessor froze at %d: a source change after it was opened never rendered", at)
+	}
+
+	// And the wrong door is locked: reading a libretto as a node would open
+	// that second Form.
+	if _, err := be.FormVersion(LibrettoID(src)); err == nil {
+		t.Fatal("reading a libretto as a node succeeded; that is the orphaned reader")
+	}
+}

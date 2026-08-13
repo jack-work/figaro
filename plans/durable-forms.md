@@ -950,6 +950,36 @@ for the fold rather than assume it.
 **What died with it**: `StudyNotes`, its field, its render branch, and the
 tombstone it printed. A deleted source needs no special case now.
 
+### 12.5d THE ORPHANED READER (found live, and it is the trap in this seam)
+
+The first cut of the switch shipped green: every unit test passed, the
+refcounts agreed, the sweep was silent, and the studied block rendered
+correctly. On a real daemon it rendered correctly **once** and then froze
+forever, and no test could see it.
+
+The accessor read the copy as if it were a node — `FormVersion(librettoID)`,
+`FormPatchesBetween(librettoID, …)`. Both go through the node registry, which
+opens a **second Form over the libretto's channel**. That instance replays at
+open, so its first read is right; the fold appends through the *other*
+instance, so it never hears another patch. The reader is orphaned at the
+version it opened at, and the per-LT cache makes the frozen rendering
+permanent.
+
+This is the same hazard the idle sweep already guards (`xwal_backend.go`:
+"Evicting it does not stop the subscriber, it orphans it"), arriving from the
+read side instead of the eviction side. **Every reader of a libretto must
+hold the SHARED instance** — `Libretto(source)` — exactly as the
+reconciliation sweep's own comment demands.
+
+It is refused by construction now: `b.form()` rejects a libretto id and names
+the call that is correct, because a second Form over one channel is not a
+mistake the compiler can catch and not one a green suite will show.
+
+**And the lesson under it, again**: a stamp advancing proves nothing about a
+render. The IR showed `libretto:@id` going 4 → 5 while the model was being
+sent a block from version 4, every turn, forever. What caught it was one live
+script asserting on the WIRE.
+
 ## 13. Inconsistencies found while writing this down
 
 Recorded because each was a real contradiction between two turns of the

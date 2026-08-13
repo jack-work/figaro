@@ -21,6 +21,18 @@ for state nothing consumed. It reads now.
 
 **Two things found by building it, both in the direction that loses data**
 
+0. **THE ORPHANED READER — found live, after the unit suite was green.** The
+   accessor read the copy as a NODE, which opens a second Form over the
+   libretto's channel. It replays at open, so the first render is right; the
+   fold appends through the other instance, so nothing after it ever arrives.
+   On a real daemon the studied block rendered **once and then froze
+   forever**, while the IR stamps went on advancing (4 → 5 → …) and every
+   count stayed healthy. `doctor librettos` was silent, `doctor mem` said
+   `open=1 observers=1`, and the whole unit suite passed. See §12.5d. Refused
+   by construction now: `b.form()` rejects a libretto id and names the call
+   that is correct. **What caught it was `renderlive.sh` asserting on the
+   WIRE** — the bytes the model was actually sent.
+
 1. **The libretto's bookkeeping would have reached the model.** `at` moves on
    every fold; `refs` moves whenever some OTHER aria studies the same form.
    Reading the copy means reading the document the copy lives in, and one
