@@ -2,6 +2,43 @@
 
 Live notes for whoever holds the role `@980dc16c`. Update this, not chat.
 
+## SESSION 3 AT A GLANCE (aria d604c755)
+
+The figwal memory job, done in both halves, plus the layer nobody had
+reclaimed at all, plus phase 9's first half. Details are far below; this is
+the map.
+
+**Shipped**
+
+| | |
+|---|---|
+| figwal payload cache | opening a channel stopped copying every payload into RAM. Lazy per SEGMENT, budgeted (`segment_cache_mb`, default 32), LRU-evicted, with an idle sweep. **A listing on 515 arias: 116.5 MiB retained → 48.0, and it tracks the knob (4 MiB → 17.6)** |
+| figwal lazy open | a sealed segment is a FILE, not an open handle: only the newest is opened, the rest on the read that lands in them. Open a 32-segment log: 5.42 ms → 0.19 ms |
+| the arena | an idle daemon now hands free heap back (`debug.FreeOSMemory` behind a two-sweep latch). **PSS after a listing then idle: base 251 → 259 MB; after, 141 → 51 MB** |
+| phase 9, half | the libretto exists: derived form, whole-form fold, refcount on its own actor, death record, reconciliation sweep, `doctor librettos` |
+| instruments | `doctor mem` reports `segment-cache=X of Y loads=N`; `daemon_day_test.go` measures what a store costs once every aria has been looked at |
+
+**The headline number Gluck asked for**: merely LOOKING at every board on the
+real store — no decoding, no rendering — cost **297 MiB of heap and 419 MiB
+reserved from the OS**, and now costs **68.5 and 127**.
+
+**Four of my own claims died on their own measurements** and are left in
+place as falsifications: that lazy opening would cut memory (48.7 → 48.6
+MiB), that it would cut the 2.7 s first listing (unmoved), that it would cut
+file descriptors (1227 → 1219), and that a +475% benchmark regression was
+real (it was a one-time cost amortized over 100 iterations; the steady-state
+figure is +18%).
+
+**Two faults found in my own new code, by measuring it**: recency stamped a
+globally contended atomic on every read (reads got SLOWER with more readers:
+26 ns on one core, 47 on sixteen), and a lost eviction race stranded bytes
+that nothing could ever reclaim.
+
+**Also closed**: the cold-open fold, dead for a structural reason (a real
+form is ONE segment, so there is no earlier watermark to fold from — it
+measured 20-25x SLOWER); and phase 7, deferred with the argument written
+down rather than left as a gap note.
+
 ## SESSION 2 AT A GLANCE (aria c1d55d02)
 
 Phases 6 and 8 closed, phase 3's wire half landed, one lock-audit item done,
