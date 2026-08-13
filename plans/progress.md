@@ -2,6 +2,26 @@
 
 Live notes for whoever holds the role `@980dc16c`. Update this, not chat.
 
+## HAZARD: two arias, one worktree
+
+A reviewer fork checked `pr16` out **in this worktree** while I was working
+in it, then switched back. For a minute `git log` showed a HEAD that was not
+mine and `git status` showed files I had not touched; a `git checkout --` I
+ran in that window restored files from the wrong branch. Nothing was lost
+(every commit is in the reflog and on the branch) but the recovery cost real
+time at 3am, and the failure mode is silent.
+
+**Rule**: a fork that shares a cwd shares the INDEX and the WORKING TREE. If
+you are spawned to review, read, or bisect anything, do it in your own
+worktree:
+
+```
+git worktree add -f /var/tmp/<name> <ref>
+```
+
+`/var/tmp/figbase` exists for exactly this and is what every before/after
+benchmark in this file was measured against.
+
 ## Standing setup
 
 - **Worktree/branch**: `/home/gluck/dev/figaro-qua/incant`, `feat/incantations`.
