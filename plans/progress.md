@@ -696,3 +696,20 @@ visits in index order, so walking past `upTo` finds nothing; without the
 stop, every cold read of an early range walked the whole log. Still O(offset)
 rather than O(1) because `FormLog` has no bounded range read, which is the
 figwal `RecordsBetween` item in the perf list.
+
+### A quadratic waiting to happen, if the patch window is ever tightened
+
+The projection walks IR records in ascending order and asks
+`PatchesBetween(prev, cur]` for each. If a board's history exceeds
+`form_patch_window`, every one of those reads below the window walks the log,
+so a COLD retranslate of such an aria is O(records x history): quadratic.
+
+It does not bite today. The default window is 2048 and the longest board in
+the author's store holds 99 patches, so nothing reaches it. But whoever
+lowers that knob, or meets a board that writes continuously for a very long
+time, will meet this.
+
+The fix is the one already on the perf list: a bounded range read in figwal
+(`RecordsBetween(channel, after, upTo)`, a thin wrapper over the segment
+index that already exists) so a cold read is O(range) rather than O(offset).
+Do that BEFORE lowering `form_patch_window`, not after.
