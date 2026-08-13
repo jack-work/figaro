@@ -778,3 +778,28 @@ making it an argument.
 
 Still not done in phase 3: `session`, `seq`, the acknowledgement of a no-op
 on the wire, and intent on the RPC beyond the `assert` boolean.
+
+## HANDOFF GATE, passed
+
+Run before the role moved, on the final commit of session 1:
+
+```
+nix develop: build + vet + full suite        ok
+-race -count=3 on store, actor, figaro       ok
+FIGARO_CRASH_TEST=1 crash test               ok
+nix build .#default                          ok
+```
+
+**Session 1 totals**: 66 commits ahead of main. Phases 0, 1, 2, 4 and 5
+complete; phase 3 has its store-side seam (`Submit`/`Await`, intent) and
+lacks its wire half (`session`, `seq`, the no-op acknowledgement). Phases 6
+to 10 untouched.
+
+Deletions worth naming: `Form`'s write mutex and its sink list, `Kick` and
+its six call sites, `keepMu`, `cachedLog`'s lock over the append, and the
+buffered-durability story figaro used to have.
+
+The one thing a reader should take away: **figaro's writes are durable
+before they are visible, and that cost one fsync per record, recovered
+under load by batching and paid for in memory by two new bounds.** The
+fleet ends 12 MB lighter in PSS than it began.
