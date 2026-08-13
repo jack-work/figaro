@@ -2092,3 +2092,32 @@ For the record, those clocks and their rates, since they are ordered oddly:
 figwal unloads a head at 5 minutes while the agent above it lives to 15, so a
 quiet aria drops its RAW bytes and keeps its DECODED ones. That predates this
 work and is worth fixing as one policy rather than four.
+
+### The idle sweep, proved on a live daemon (and a first attempt that proved nothing)
+
+`/var/tmp/figstate/sweeplive.sh`. First run: a full listing filled the cache,
+and five seconds later it was empty — but `loaded-heads` had gone 316 → 0, so
+**figwal's head unload had done it, not my sweep.** A green light for the
+wrong mechanism.
+
+Second run pins the heads open (`handle_idle_minutes = -1`) so nothing else
+can free a block:
+
+```
+right after a full listing   loaded-heads=317  segment-cache=21.9 MiB  loads=801
++5s idle                     loaded-heads=317  segment-cache=15.0 KiB  loads=801
++10s idle                    loaded-heads=317  segment-cache=0 B       loads=801
+and a listing still works afterwards
+```
+
+Heads pinned, blocks gone, reads fine, and `loads` unchanged at 801 — so
+nothing reloaded behind the sweep. That is the wiring proved end to end,
+which is the standard this project set after shipping two knobs that were
+configured and unwired.
+
+**A flaw in my own harness, found while doing it**: my live scripts ran
+`figaro serve`, which is not a command. The daemon is auto-started by the
+first CLI call, so every measurement stands — but the `grep` of `daemon.log`
+in those scripts was reading an empty file and could never have failed. Both
+scripts are corrected. **A check that cannot fail is worse than no check**,
+because it is counted as evidence.
