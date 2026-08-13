@@ -284,6 +284,14 @@ func (b *XwalBackend) ApplyFormIf(ariaID string, patch message.Patch, ifVersion 
 // the writer reduced the patch against the board: which is what a caller
 // reporting to a human, or fanning a delta out to listeners, should be
 // speaking about.
+func (b *XwalBackend) SubscribeForm(ariaID string, buffer int) (*Subscription, error) {
+	f, err := b.form(ariaID)
+	if err != nil {
+		return nil, err
+	}
+	return f.SubscribeFrom(buffer), nil
+}
+
 func (b *XwalBackend) ApplyFormPrivileged(ariaID string, patch message.Patch) (uint64, error) {
 	f, err := b.form(ariaID)
 	if err != nil {

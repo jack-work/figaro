@@ -354,7 +354,7 @@ Run it against real disk or it proves nothing: `TMPDIR=/var/tmp`.
 | 2 form on the actor, group commit, fsync | **done**, crash-tested |
 | 3 command/event/ack | **partial**: intent (`assert`/`ensure`) is wired end to end; command, event, ack, session and seq are not |
 | 4 schema validation | not started |
-| 5 `SubscribeFrom` | **done** in the store; not yet used by `form listen` or the hub |
+| 5 `SubscribeFrom` | **done**, and reachable through `Backend.SubscribeForm`; no consumer yet (the libretto is its customer, and `form listen` already does register-then-read on its own) |
 | 6 tombstones and leases | not started |
 | 7 retention policy | not started |
 | 8 topology form | not started |

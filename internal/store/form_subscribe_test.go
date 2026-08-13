@@ -128,3 +128,38 @@ func TestSubscribeCloseIsIdempotent(t *testing.T) {
 		t.Fatalf("closing a subscription disturbed the writer: %v", err)
 	}
 }
+
+// Through the backend, which is how everything that is not a test reaches a
+// form: the same no-gap guarantee, and the aria's own board is subscribable
+// like any other.
+func TestSubscribeThroughBackend(t *testing.T) {
+	be, err := NewXwalBackend(t.TempDir(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer be.Close()
+	id, _, err := be.CreateForm("", patchSet(map[string]string{"seed": "0"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub, err := be.SubscribeForm(id, 32)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sub.Close()
+
+	if _, err := be.ApplyForm(id, patchSet(map[string]string{"brief": "moved"})); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case ev := <-sub.C:
+		if ev.Version <= sub.At {
+			t.Fatalf("event at %d is not past the snapshot at %d", ev.Version, sub.At)
+		}
+		if _, ok := ev.Applied.Set["brief"]; !ok {
+			t.Fatalf("the event does not carry the patch: %v", ev.Applied)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no event reached the subscriber")
+	}
+}

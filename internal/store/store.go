@@ -167,6 +167,13 @@ type Backend interface {
 	// away. See store.Intent.
 	ApplyFormEffectIntent(ariaID string, patch message.Patch, ifVersion uint64, intent Intent) (uint64, message.Patch, error)
 
+	// SubscribeForm gives a caller the form's state and the stream that
+	// continues it, with no gap between them: registration happens BEFORE
+	// the snapshot is read, so a patch landing in the window is a duplicate
+	// the reader drops by version rather than a gap it can never recover.
+	// The caller must Close the subscription.
+	SubscribeForm(ariaID string, buffer int) (*Subscription, error)
+
 	// ApplyFormPrivileged is the harness's own write: it may touch keys the
 	// catalog marks system-managed (the boot patch's system.cwd, and
 	// whatever follows it). There is no wire field for this and there must
