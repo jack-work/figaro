@@ -664,10 +664,15 @@ Everything above is history. This is the queue.
    refusals that currently only reach the log (a stale `ifVersion`, an
    `Assert` removal on a live aria), and it is the whole server side of
    optimistic replication.
-2. **`cachedLog.mu` to a published snapshot.** 34 uses of one RWMutex on the
-   hot read path, guarding `rows`, `trimmed` and `byFK`. One immutable
-   struct behind an `atomic.Pointer`, the pattern `formState` uses. Do it
-   with `BenchmarkCachedLogReadLongAria` in hand.
+2. **`cachedLog.mu` to a published snapshot: DEMOTED, and here is why.**
+   `BenchmarkCachedLogReadWhileAppending` measures a reader against an
+   appender whose append sleeps 3 ms (standing in for the sync). It reads
+   **10.55 ns/op, zero allocs**. The `appendMu` split already took the I/O
+   out from under the read lock, which was the whole pathology; what is left
+   is a brief cache-update window and it does not show. Do this only if a
+   profile says otherwise. The benchmark is the guard: if a change makes
+   readers wait on the append again, that number goes from tens of
+   nanoseconds to milliseconds.
 3. **Phase 6: tombstones and leases.** Needed by 8 and 9, and the tombstone
    is what lets a studied form be deleted at all.
 4. **Phase 7: retention as a policy** (N segments), and the type-level rule
