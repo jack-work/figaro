@@ -487,3 +487,16 @@ The order for whoever picks this up:
 3. THEN call `CheckWritable` from `reduceOne`, before the reduce.
 4. Only then consider shape validation, which wants a per-key validator and
    the provider-keyed system schema, and which is a separate argument.
+
+#### Validation gate, end of session 1
+
+All green, on commit `HEAD` of `feat/incantations`:
+
+```
+go build ./... && go vet ./...            clean
+go test ./... -count=1                    clean, bare shell and nix develop
+-race on store/figaro/angelus/actor/form  clean
+nix build .#default                       builds
+FIGARO_CRASH_TEST=1 crash test            acknowledged patches all durable
+live: mint, patch, real turn, tool loop    all answered
+```
