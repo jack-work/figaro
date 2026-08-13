@@ -3341,3 +3341,35 @@ dormancy, so no stamp falls in the gap the catch-up would create — and it
 would remove the double write for a form whose watchers are all asleep. It is
 not built because nothing has measured it as a problem, and a knob nobody
 sends is what this project keeps refusing.
+
+### One writer per form — including the sweep's (`9d324c4f`)
+
+The base rule of the design (§1: *one writer per form, an inbox with exactly
+one drainer, not a mutex and not a convention*), broken by the reconciliation
+sweep I wrote this morning. It opened its OWN `Libretto` per libretto
+examined, so a copy already open and following had a **second `store.Form`
+appending to its channel**, each computing versions from its own replayed
+state:
+
+```
+the live libretto says refs=9 after the sweep corrected it to 1:
+the sweep wrote through a second writer
+```
+
+`librettoInstance` is THE instance for a source now, and everything asks it:
+the verb, the participants, the sweep. The sweep also stopped `Close`ing what
+it examined — it was closing a `Form` another goroutine was folding into.
+
+**And re-attaching no longer re-seeds.** `Follow` wrote the source's whole
+state every time it attached, so re-attaching a current copy (after a
+restart, or after a missing source came back) appended the whole board again.
+It seeds only when the copy is BEHIND, which makes attachment free and keeps
+a boot from adding a record per libretto forever.
+
+**How it was found**, because the method is the transferable part: I asked
+what re-attaches a libretto after a restart, found nothing did until someone
+called `Libretto()`, and while checking who calls it noticed the sweep
+calling `OpenLibretto` instead. The bug was two lines away from the question
+that found it. **Ask what happens to the thing you built when the process
+restarts, when the sweep runs, and when two callers arrive at once** — this
+session found four bugs with those three questions.
