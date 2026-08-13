@@ -304,7 +304,17 @@ func (l *Libretto) Close() {
 	l.form.Close()
 }
 
-func isLibrettoKey(k string) bool { return strings.HasPrefix(k, "system.libretto.") }
+// isLibrettoKey names the keys a verbatim mirror must NOT copy.
+//
+// The bookkeeping namespace, because the copy would overwrite the refcount.
+// And the TOMBSTONE, because a form seals itself when it carries one: mirror
+// the source's death record and the libretto commits suicide the moment its
+// source dies, which is the precise opposite of the copy outliving it. The
+// death is recorded as system.libretto.alive instead, which is a fact about
+// the source rather than an instruction about this form.
+func isLibrettoKey(k string) bool {
+	return strings.HasPrefix(k, "system.libretto.") || k == TombstoneKey
+}
 
 func librettoPatch(kv map[string]any) message.Patch {
 	set := make(map[string]json.RawMessage, len(kv))

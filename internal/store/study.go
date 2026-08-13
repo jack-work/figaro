@@ -1,0 +1,188 @@
+package store
+
+// study and drop, as the store performs them.
+//
+// A study leaves TWO nodes consistent: the libretto (refcount up, following)
+// and the observer's board (`system.studies` gains the id). Two actors, two
+// logs, no shared transaction, and durable-forms §12.2.1 says what to do
+// about that: not two-phase commit, but ORDERING chosen so every crash fails
+// in the safe direction.
+//
+//	study: libretto FIRST (retain), board SECOND
+//	drop:  board FIRST (stop claiming it), libretto SECOND (release)
+//
+// Both leave, on a crash, a refcount that is too HIGH. Too high delays
+// reclamation; too low reclaims a copy a live observer still needs. One is a
+// leak and the other is data loss, and only the leak is recoverable — by
+// `ReconcileLibrettos`, which recomputes from the boards.
+//
+// The verb above this (in internal/figaro) owns the user-facing rules: which
+// forms are study-able, what a projection means, and what the agent's
+// in-memory mirror does. This owns the two writes and their order.
+
+import (
+	"encoding/json"
+	"fmt"
+	"slices"
+	"strings"
+
+	"github.com/jack-work/figaro/internal/message"
+)
+
+// StudyForm makes observer study sourceForm: the libretto is minted if
+// absent, seeded from the source, retained, and following; then the board
+// declares it. Idempotent — studying twice is not two references, because the
+// board is a SET and the refcount is derived from the boards.
+func (b *XwalBackend) StudyForm(observerID, sourceFormID string) error {
+	source := strings.TrimPrefix(sourceFormID, "@")
+	studies, err := b.studiesOfBoard(observerID)
+	if err != nil {
+		return err
+	}
+	if slices.Contains(studies, source) {
+		return nil // already declared; the sweep owns the count's truth
+	}
+	lib, err := b.libretto(source)
+	if err != nil {
+		return err
+	}
+	// LIBRETTO FIRST. A crash here leaves a count too high, which the sweep
+	// repairs. The reverse leaves a board naming a libretto nothing counted,
+	// which reclamation would collect out from under a live observer.
+	if _, err := lib.Retain(); err != nil {
+		return err
+	}
+	return b.setStudies(observerID, append(studies, source))
+}
+
+// DropForm is the inverse, in the inverse order. Dropping a form that has
+// since been deleted is legal (durable-forms §12.2.2): the subscription goes,
+// the board stops naming it, and the copy stays.
+func (b *XwalBackend) DropForm(observerID, sourceFormID string) error {
+	source := strings.TrimPrefix(sourceFormID, "@")
+	studies, err := b.studiesOfBoard(observerID)
+	if err != nil {
+		return err
+	}
+	idx := slices.Index(studies, source)
+	if idx < 0 {
+		return nil
+	}
+	// BOARD FIRST: stop claiming it before the count comes down, so a crash
+	// between the two over-counts rather than under-counts.
+	if err := b.setStudies(observerID, slices.Delete(studies, idx, idx+1)); err != nil {
+		return err
+	}
+	lib, err := b.libretto(source)
+	if err != nil {
+		return err
+	}
+	refs, err := lib.Release()
+	if err != nil {
+		return err
+	}
+	if refs == 0 {
+		// Nobody is reading it: stop the fold and let the copy rest. It is
+		// NOT unlinked -- an IR record references a libretto forever (see
+		// Reclaimable), so the copy has to outlive the last observer.
+		b.closeLibretto(source)
+	}
+	return nil
+}
+
+// StudiedBy is the observer's declared set, from the durable board rather
+// than from any in-memory mirror of it.
+func (b *XwalBackend) StudiedBy(observerID string) ([]string, error) {
+	return b.studiesOfBoard(observerID)
+}
+
+// Libretto returns the libretto for a studied form, minting and following it
+// if it is not already open. Exported for the verb and for the translator.
+func (b *XwalBackend) Libretto(sourceFormID string) (*Libretto, error) {
+	return b.libretto(strings.TrimPrefix(sourceFormID, "@"))
+}
+
+// libretto opens, seeds and starts following, once per source, and keeps the
+// instance: the fold is a goroutine per LIBRETTO, not per observer, which is
+// the whole point of sharing one per studied form.
+func (b *XwalBackend) libretto(source string) (*Libretto, error) {
+	b.mu.Lock()
+	if l := b.librettos[source]; l != nil {
+		b.mu.Unlock()
+		return l, nil
+	}
+	b.mu.Unlock()
+
+	// Outside the lock: this replays a form and reads files.
+	lib, err := OpenLibretto(b.store, source)
+	if err != nil {
+		return nil, err
+	}
+	src, err := b.form(source)
+	if err != nil {
+		lib.Close()
+		return nil, fmt.Errorf("libretto %s: source: %w", source, err)
+	}
+	if err := lib.Follow(src); err != nil {
+		lib.Close()
+		return nil, err
+	}
+
+	b.mu.Lock()
+	if existing := b.librettos[source]; existing != nil {
+		b.mu.Unlock()
+		lib.Close() // lost the race; the shared one wins
+		return existing, nil
+	}
+	if b.librettos == nil {
+		b.librettos = map[string]*Libretto{}
+	}
+	b.librettos[source] = lib
+	b.mu.Unlock()
+	return lib, nil
+}
+
+func (b *XwalBackend) closeLibretto(source string) {
+	b.mu.Lock()
+	lib := b.librettos[source]
+	delete(b.librettos, source)
+	b.mu.Unlock()
+	if lib != nil {
+		lib.Close()
+	}
+}
+
+// closeLibrettos stops every fold. Called when the backend closes.
+func (b *XwalBackend) closeLibrettos() {
+	b.mu.Lock()
+	all := b.librettos
+	b.librettos = nil
+	b.mu.Unlock()
+	for _, lib := range all {
+		lib.Close()
+	}
+}
+
+func (b *XwalBackend) studiesOfBoard(observerID string) ([]string, error) {
+	snap, err := b.FormState(observerID)
+	if err != nil {
+		return nil, err
+	}
+	return studiesOf(snap), nil
+}
+
+// setStudies writes the declared set. Privileged: `system.studies` is
+// system-managed, which is what stops a hand-written `fig set` from claiming
+// a study nothing counted.
+func (b *XwalBackend) setStudies(observerID string, ids []string) error {
+	slices.Sort(ids)
+	ids = slices.Compact(ids)
+	raw, err := json.Marshal(ids)
+	if err != nil {
+		return err
+	}
+	_, err = b.ApplyFormPrivileged(observerID, message.Patch{
+		Set: map[string]json.RawMessage{StudiesKey: raw},
+	})
+	return err
+}

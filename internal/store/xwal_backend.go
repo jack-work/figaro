@@ -31,6 +31,10 @@ type XwalBackend struct {
 	open  map[string]*ariaHandle
 	forms map[string]*Form
 	metas map[string]*metaCache
+	// librettos is source form id -> the shared derived form following it.
+	// One fold goroutine per LIBRETTO, not per observer: that is what
+	// "one libretto per studied form" buys.
+	librettos map[string]*Libretto
 	// lastTS is aria id -> newest record timestamp, memoized.
 	//
 	// A listing asks for recency PER ROW, and figwal answers from the open
@@ -1021,6 +1025,9 @@ func (b *XwalBackend) CollectStump(stumpID string) error {
 }
 
 func (b *XwalBackend) Close() error {
+	// Before the lock: each fold goroutine is stopped and joined, and it
+	// writes to a form while it drains.
+	b.closeLibrettos()
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.open = map[string]*ariaHandle{}
