@@ -246,3 +246,73 @@ func TestTopologyForm_MigrationIsOnce(t *testing.T) {
 		t.Fatalf("reopening migrated again: rev %d -> %d", rev, y.Rev())
 	}
 }
+
+// THE CRASH WINDOW. The migration folds the file in and then renames it, so
+// a crash between the two leaves a store whose form holds the edges AND
+// whose trunks.json is still there. The next open must not fold them again:
+// that is what "ordering, not a journal" means here, and it is checked by
+// putting the file back rather than by killing a process.
+func TestTopologyForm_CrashBetweenFoldAndRename(t *testing.T) {
+	dir := t.TempDir()
+	f := forest()
+	legacy := filepath.Join(dir, "trunks.json")
+	body := []byte(`{"version":1,"parent":{"A":"B"}}`)
+	if err := os.WriteFile(legacy, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	x, be := openTopoIn(t, dir, f)
+	rev := x.Rev()
+	x.Close()
+	be.Close()
+
+	// The crash: the fold landed, the rename did not.
+	if err := os.WriteFile(legacy, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	y, _ := openTopoIn(t, dir, f)
+	if y.Rev() != rev {
+		t.Fatalf("a second fold landed: rev %d -> %d", rev, y.Rev())
+	}
+	if p, _ := y.Parent("A"); p != "B" {
+		t.Fatalf("Parent(A) = %q, want B", p)
+	}
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Fatal("the rename did not complete on the recovery pass")
+	}
+}
+
+// ABSENCE IS THE TRUTHFUL DEFAULT (durable-forms §1). A store whose topology
+// form holds nothing draws every aria where its history puts it, rather than
+// drawing a wrong tree. This is what makes the form's loss survivable.
+func TestTopologyForm_EmptyDegradesToTheTopology(t *testing.T) {
+	x, f := openTopo(t)
+	if !x.Normalized() {
+		t.Fatal("an empty topology form must be normalized")
+	}
+	for id, want := range map[string]string{"B": "A", "C": "A", "D": "C"} {
+		if p, _ := x.Parent(id); p != want {
+			t.Fatalf("Parent(%s) = %q, want the topology edge %q", id, p, want)
+		}
+	}
+	if len(x.Edges()) != 0 {
+		t.Fatalf("edges on a fresh tree: %v", x.Edges())
+	}
+	_ = f
+}
+
+// A Forget naming edges that are not there must not write a record. The
+// delete path calls it on every delete, and a record per delete on a form
+// with no retention is growth for nothing.
+func TestTopologyForm_ForgetWritesNothingWhenNothingMatches(t *testing.T) {
+	x, _ := openTopo(t)
+	if err := x.Promote("B"); err != nil {
+		t.Fatal(err)
+	}
+	rev := x.Rev()
+	if err := x.Forget("Z", "Y"); err != nil {
+		t.Fatal(err)
+	}
+	if x.Rev() != rev {
+		t.Fatalf("Forget of unknown ids wrote a record: rev %d -> %d", rev, x.Rev())
+	}
+}
