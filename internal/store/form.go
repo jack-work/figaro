@@ -374,7 +374,7 @@ func (f *Form) Submit(patch message.Patch, ifVersion uint64, intent Intent) (Tic
 // the privileged entry point, which is a call site rather than an argument.
 func (f *Form) submit(w *formWrite) (Ticket, error) {
 	if err := f.q.Submit(w); err != nil {
-		return Ticket{}, fmt.Errorf("form is closed")
+		return Ticket{}, ErrFormClosed
 	}
 	return Ticket{w: w}, nil
 }
@@ -488,7 +488,7 @@ type versionedApplied struct {
 
 func (f *Form) reduceOne(st *formState, w *formWrite) (*formState, formResult) {
 	if f.closed.Load() {
-		return nil, formResult{err: fmt.Errorf("form is closed")}
+		return nil, formResult{err: ErrFormClosed}
 	}
 	// A tombstone is final. The one write allowed past it is the tombstone
 	// itself, which Tombstone makes idempotent rather than repeatable.

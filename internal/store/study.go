@@ -73,6 +73,12 @@ func (b *XwalBackend) StudyForm(observerID, sourceFormID string) ([]string, bool
 			// nothing counted, which reclamation would collect out from
 			// under a live observer.
 			if _, err := lib.Retain(); err != nil {
+				if b.retryable(err, sourceFormID) {
+					if lib, err = b.libretto(sourceFormID); err != nil {
+						return nil, false, err
+					}
+					continue
+				}
 				return nil, false, err
 			}
 			retained = true
@@ -152,7 +158,16 @@ func (b *XwalBackend) DropForm(observerID, sourceFormID string) ([]string, bool,
 	}
 	refs, err := lib.Release()
 	if err != nil {
-		return studies, true, err
+		if b.retryable(err, sourceFormID) {
+			// The instance went away under us; the fresh one holds the
+			// durable count, which is what the release has to move.
+			if lib, err = b.libretto(sourceFormID); err == nil {
+				refs, err = lib.Release()
+			}
+		}
+		if err != nil {
+			return studies, true, err
+		}
 	}
 	if refs == 0 {
 		// Nobody is reading it: stop the fold and let the copy rest. It is
@@ -262,15 +277,38 @@ func (b *XwalBackend) attach(lib *Libretto, sourceFormID string) error {
 	return lib.Follow(src)
 }
 
+// closeLibretto stops the fold when nobody is studying any more. It re-checks
+// the refcount while holding the registry lock, because a study arriving
+// between "refs reached zero" and this call has already taken a reference
+// through this very instance -- and tearing it down under that caller was
+// reachable in practice: "study: form is closed".
+//
+// The check narrows the window; it does not close it, so the callers treat a
+// closed instance as retryable (see retryable).
 func (b *XwalBackend) closeLibretto(source string) {
 	source = strings.TrimPrefix(source, "@")
 	b.mu.Lock()
 	lib := b.librettos[source]
+	if lib != nil && lib.Refs() != 0 {
+		b.mu.Unlock()
+		return // somebody studied it again while we were deciding
+	}
 	delete(b.librettos, source)
 	b.mu.Unlock()
 	if lib != nil {
 		lib.Close()
 	}
+}
+
+// retryable reports the failures a caller should answer by fetching a fresh
+// libretto instead of failing the verb: the instance it held was torn down
+// by a concurrent drop-to-zero.
+func (b *XwalBackend) retryable(err error, source string) bool {
+	if !errors.Is(err, ErrFormClosed) {
+		return false
+	}
+	b.closeLibretto(source) // evict the corpse so the next fetch opens fresh
+	return true
 }
 
 // closeLibrettos stops every fold. Called when the backend closes.

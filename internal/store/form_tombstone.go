@@ -23,6 +23,12 @@ import (
 // write or clear it.
 const TombstoneKey = "system.tombstone"
 
+// ErrFormClosed is what a write to a Form whose writer has gone gets. It is
+// a sentinel because a caller holding an instance that was torn down
+// underneath it -- a libretto closed by the last drop while a study retained
+// it -- should fetch a fresh one and retry, not fail the user's verb.
+var ErrFormClosed = errors.New("form is closed")
+
 // ErrFormMoved is the stale-ifVersion refusal, as a sentinel: a caller doing
 // read-modify-write on a form needs to tell "somebody else got there first,
 // retry" apart from "this write is wrong", and a string never let it.

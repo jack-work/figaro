@@ -564,3 +564,76 @@ func TestAFailedStudyLeavesNoReference(t *testing.T) {
 		t.Fatalf("the sweep had to repair after a failed study: %+v", audit)
 	}
 }
+
+// STUDY AND DROP RACING ON ONE FORM. The last drop closes the libretto's
+// fold; a study arriving in that window retains an instance that is being
+// torn down. Nothing here may end with a board naming a study whose copy has
+// stopped following, which is the silent-staleness failure again.
+func TestStudyAndDropRaceOnOneForm(t *testing.T) {
+	be, sourceID, _ := librettoFixture(t)
+	outfit, err := be.CreateOutfit("race", setPatch(map[string]string{"system.model": "m"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const watchers = 6
+	ids := make([]string, watchers)
+	for i := range ids {
+		id, err := be.CreateConversation(outfit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids[i] = id
+	}
+
+	done := make(chan struct{})
+	for _, w := range ids {
+		go func(w string) {
+			defer func() { done <- struct{}{} }()
+			for i := 0; i < 12; i++ {
+				if _, _, err := be.StudyForm(w, sourceID); err != nil {
+					t.Errorf("study: %v", err)
+					return
+				}
+				if _, _, err := be.DropForm(w, sourceID); err != nil {
+					t.Errorf("drop: %v", err)
+					return
+				}
+			}
+		}(w)
+	}
+	for range ids {
+		<-done
+	}
+
+	// Every board is clean, so the count must be zero and the sweep silent.
+	lib, err := be.Libretto(sourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := lib.Refs(); got != 0 {
+		t.Fatalf("refs = %d after every study was dropped", got)
+	}
+	audit, err := be.ReconcileLibrettos()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if audit.Corrected != 0 {
+		t.Fatalf("the sweep disagreed after study/drop racing: %+v", audit)
+	}
+
+	// And the survivor still follows: one more study, one more patch.
+	if _, _, err := be.StudyForm(ids[0], sourceID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := be.ApplyForm(sourceID, setPatch(map[string]string{"brief": "after the storm"})); err != nil {
+		t.Fatal(err)
+	}
+	final, err := be.Libretto(sourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the copy to follow after the race", func() bool {
+		raw, ok := final.State().Get("brief")
+		return ok && string(raw) == `"after the storm"`
+	})
+}
