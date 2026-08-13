@@ -9,6 +9,23 @@ A local coding-agent daemon. One static Go binary, three roles: the `CLI` you
 type at, the `Angelus` supervisor that outlives your shell, and one `Agent` per
 conversation. An **aria** is one conversation.
 
+## If you are a figaro, reading your own context
+
+Your context carries `<system-reminder name="…">` blocks. **They are state,
+not the user speaking**: the daemon injects them at each turn, and they are
+the only way you see anything outside your own conversation.
+
+| tag | what it is |
+|---|---|
+| `name="<key>"` | one key of **your bound form** (your board): `cwd`, `mantra`, `aria_id`, whatever your outfit set. `figaro set <key> <value>` changes it. |
+| `name="study"` | you began or stopped observing a form: `{form, observing, state, version}`. `state` is the whole form as it stood when observation began. |
+| `name="study:@id"` | that form **changed**: `{form, changes, set, removed, version}` — and `"exists":false` when it was deleted (the copy survives, so history still renders). |
+| `name="fork"` | you are a branch, and where you came from. |
+
+A form you do not study is invisible to you. See [forms.md](forms.md) for the
+four species — bound form, unbound form, studied form, role — what arrives on
+change, and what configures it.
+
 ## The gestures
 
 Nine commands cover almost everything. Exact forms, not summaries.
