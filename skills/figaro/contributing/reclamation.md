@@ -189,9 +189,30 @@ an outfit or the form.
 dormant_after_minutes  = 15   # 0 disables reclamation entirely
 sweep_interval_seconds = 120  # floored at 1s
 max_live_arias         = 0    # 0 = unbounded; SOFT cap
-ir_window_mb           = 0    # 0 = unbounded; the knob that matters
+ir_window_mb           = 4    # 0 = unbounded; the knob that matters
 ir_window              = 0    # row-count safety, floored at 64
+soft_limit_mb          = 2048 # the daemon's heap ceiling; 0 = none
+actor_linger_ms        = 2000 # how long a form's writer waits before leaving
+handle_idle_minutes    = 0    # figwal head unload; 0 = figwal's default (5m)
 ```
+
+**`ir_window_mb` defaults to 4 now**, not unbounded. The decoded IR is 63 to
+86 percent of a real aria's footprint, so leaving the one bound that governs
+it switched off meant every aria anyone touched kept all of it.
+
+**`soft_limit_mb` is a ceiling AND a licence.** Go collects harder only as it
+approaches, so a high one leaves the runtime no reason to hand memory back:
+a live daemon measured 115 MB allocated against 416 MB of `heap_sys` under
+the 2 GiB default. Lowering it is the one-knob answer to a daemon holding
+too much, paid for in GC cycles. `GOMEMLIMIT` in the environment always wins.
+
+**Three clocks, one policy.** `dormant_after_minutes` evicts agents and their
+caches, `handle_idle_minutes` unloads figwal's in-RAM heads, and
+`actor_linger_ms` is how long a form's writer goroutine survives a drained
+queue. They enforce the same intent at three layers and should be set
+together or not at all. The last two must be set BEFORE the store and the
+forms open, which is why they are package-level and armed in `runAngelus`
+rather than read per call.
 
 `max_live_arias` is soft by design: an aria mid-turn counts toward it and is
 skipped, because hitting a number is never worth killing a turn. It logs once
