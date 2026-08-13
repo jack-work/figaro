@@ -451,5 +451,12 @@ func (p *Provider) acceptAssistantProjection(lt uint64, encoded []json.RawMessag
 		Entries:         p.projection.Entries + 1,
 		LastLT:          lt,
 		LastFormVersion: p.projection.LastFormVersion,
+		// EVERY FIELD THE PROJECTION CARRIES MUST BE CARRIED HERE. This
+		// splice rebuilds the projection by hand after a live append, and a
+		// field it forgets is not lost state but lost POSITION: the next pass
+		// believes the board sits at zero and folds the whole history to
+		// catch up, every turn, correctly and forever.
+		FormVersionOfSnapshot: p.projection.FormVersionOfSnapshot,
+		LastStudyVersions:     p.projection.LastStudyVersions,
 	}
 }
