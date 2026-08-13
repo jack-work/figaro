@@ -2121,3 +2121,45 @@ first CLI call, so every measurement stands — but the `grep` of `daemon.log`
 in those scripts was reading an empty file and could never have failed. Both
 scripts are corrected. **A check that cannot fail is worse than no check**,
 because it is counted as evidence.
+
+### The third claim dies: it does NOT pay in file descriptors
+
+I wrote "it pays in TIME and in file descriptors" into a commit message.
+Half of that is wrong, and `/var/tmp/figstate/fdcount.sh` says so — the same
+listing, on both trees, with heads pinned open (`handle_idle_minutes = -1`)
+so nothing is released underneath the measurement:
+
+| 318 heads loaded | base | after |
+|---|---|---|
+| open file descriptors | 1227 | **1219** |
+| of which segment files | 1218 | **1210** |
+| heap alloc | 200.0 MiB | **79.8 MiB** |
+
+**Identical**, and the reason is obvious in hindsight: 1210 fds over 318
+heads is 3.8 per head, which is one ACTIVE segment per channel — and the
+active segment is exactly the one lazy opening still opens eagerly. Most
+nodes in this store have one or two segments per channel, so there is almost
+no sealed segment to defer.
+
+So the ledger for lazy segment opening, honestly:
+
+- **Dead**: it cuts memory (48.7 → 48.6 MiB), it cuts the 2.7 s first listing
+  (unmoved), it cuts file descriptors (1227 → 1219).
+- **Alive**: opening a node is 28x cheaper in the microbenchmark (5.42 ms →
+  0.19 ms on a 32-segment log), and that reaches the store where something
+  opens a node and reads little of it — `RangePatches` opens one per cold
+  read (11.4 → 10.5 µs). End to end on the real store it buys 8–23% of wall
+  clock:
+
+| phase | base | after |
+|---|---|---|
+| topology + labels | 344 ms | **302 ms** |
+| touching every board (368 more heads) | 401 ms | **310 ms** |
+| visiting every aria | 4.079 s | **3.751 s** |
+
+**The memory is the payload cache's doing, not lazy opening's**, and the
+right way to read this session is: one change that mattered enormously
+(payloads), one that is correct, cheap and modest (opening). Three of my
+claims for the second one died on measurement. I am leaving it in because it
+is the right shape and it is proven correct, not because it was worth what I
+said it was.
