@@ -2781,19 +2781,12 @@ What remains, in the order I would take it:
    references a libretto forever. Three options are written up under "A
    constraint the libretto exposes"; the cheapest is to let the render
    degrade, and that is a decision about what an old transcript may lose.
-3. **`system.studies` should be `KeySystemManaged`** — my successor named it
-   as its first unblocked stroke and it is the right one. A hand-written
-   `fig set system.studies '["@abc"]'` declares a study nothing counted,
-   which is §12.2.2's unrecoverable direction reachable from the CLI. It has
-   real blast radius: `import` applies a caller-supplied board patch
-   UNPRIVILEGED, so protecting the key forces a decision about whether an
-   import may carry a study set at all.
-4. **Phase 10, the API refactor**, and with it the lock audit's first
+3. **Phase 10, the API refactor**, and with it the lock audit's first
    fast-follow (`figaro/agent.go`'s `mu`). The audit says it wants its own
    branch and its own pty runs; believe it.
-5. **Phase 7, retention** — deferred with its argument written down. Its real
+4. **Phase 7, retention** — deferred with its argument written down. Its real
    customer is librettos-holding-LT-ranges, not the topology form.
-6. **One idle policy instead of four.** figwal unloads a head at 5 minutes
+5. **One idle policy instead of four.** figwal unloads a head at 5 minutes
    while the agent above it lives to 15, so a quiet aria drops its RAW bytes
    and keeps its DECODED ones. The four clocks are tabulated above.
 
@@ -3272,3 +3265,27 @@ per libretto actually being followed, plus a second durable write per patch
 on a studied form (coalesced to a quarter of that under group commit). Both
 are reported by `doctor mem`, and neither exists for a store nobody is
 studying in.
+
+### `system.studies` is protected, and import stopped copying it (`e81b93ab`)
+
+The last CLI-reachable path into §12.2.2's unrecoverable direction, and the
+stroke my successor had named as its first. Taken while it waited on rulings,
+so it starts with more headroom.
+
+```
+$ figaro state set --id b1123524 system.studies '["@deadbeef"]'
+error: system.studies: written by the harness, not by hand
+```
+
+**The blast radius was exactly where the note said**, and one test found it:
+`import` applies a caller-supplied board patch UNPRIVILEGED, so protecting
+the key breaks restoring a study set by copying it. The answer is NOT to make
+import privileged — that would let an importer write `system.cwd` and the
+model — it is to stop restoring studies by copying at all. **Import now lifts
+`system.studies` out of the patch and replays each id through the VERB**,
+which mints the libretto, seeds it and retains it. An import naming a form
+this store does not have is fine: the libretto holds an empty copy and starts
+following if that form ever arrives.
+
+So import became a first-class participant rather than a board-copier, which
+is what §12.2.2 asks for and better than the hook it replaces.
