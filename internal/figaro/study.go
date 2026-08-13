@@ -241,17 +241,28 @@ func (a *Agent) patchStudies(edit func([]string) []string) ([]string, bool, erro
 	return nil, false, fmt.Errorf("studies: the board would not hold still")
 }
 
-// castOp rides the inbox so that casts serialize in the figaro's actor
-// loop: THESE ARE, LITERALLY, CASTING CALLS: each aspirant role passes
-// through the one loop, in order, and no two castings of this figaro
-// can interleave. The loop CROSS-CALLS out to the role form's writer
-// (safe by store.Form's own contract: the writer does I/O and nothing
-// else, and never calls back), so there is no parked wait and no
-// dedicated queue: the serialization IS the loop.
+// castOp WAS an inbox event, so that casts serialized in the figaro's actor
+// loop. That serialization cost more than it bought, and the price had a
+// name: the SELF-CAST DEADLOCK. `fig cast` on your own aria from inside a
+// turn hangs, because the cast rides the inbox and the inbox is running the
+// turn that issued it -- and "create a role as step one" asks for exactly
+// that. It is the same bug as the displaced tool_result from the other end:
+// one hangs because it NEEDS the loop, one corrupted because it went AROUND
+// the loop (durable-forms, phase 9: fixing study should fix both).
+//
+// What the loop bought was mutual exclusion between two castings of one
+// figaro. Phase 9 pays for that differently, and better: the study is a
+// version-guarded read-modify-write on the board (retried on conflict), and
+// the role's target-aria is a patch on the ROLE form's own single writer.
+// Two concurrent casts cannot lose each other's work -- and two casts
+// producing two roles that both point here is what was asked for, not a
+// race.
+//
+// So a cast runs on the caller's goroutine now, and nothing waits on a loop
+// that may be waiting on it.
 type castOp struct {
 	roleID    string      // existing role; "" when rolePatch mints one
 	rolePatch *form.Patch // -O case: the role is BORN cast
-	reply     chan castResult
 }
 
 type castResult struct {
@@ -261,10 +272,9 @@ type castResult struct {
 	err     error
 }
 
-// serviceCast executes one casting call inside the actor loop.
-func (a *Agent) serviceCast(op *castOp) {
+// serviceCast executes one casting call.
+func (a *Agent) serviceCast(op *castOp) castResult {
 	res := castResult{roleID: op.roleID}
-	defer func() { op.reply <- res }()
 
 	if op.rolePatch != nil {
 		// Two steps, the second atomic: fork the NULL form with the
@@ -279,14 +289,14 @@ func (a *Agent) serviceCast(op *castOp) {
 		id, _, err := a.backend.CreateForm("", p)
 		if err != nil {
 			res.err = fmt.Errorf("cast: mint role: %w", err)
-			return
+			return res
 		}
 		res.roleID = id
 		res.patched = true
 	} else {
 		if err := a.requireStudyTarget(op.roleID); err != nil {
 			res.err = err
-			return
+			return res
 		}
 	}
 
@@ -301,7 +311,7 @@ func (a *Agent) serviceCast(op *castOp) {
 	if !already {
 		if _, err := a.Study(res.roleID); err != nil {
 			res.err = fmt.Errorf("cast: study %s: %w", res.roleID, err)
-			return
+			return res
 		}
 		res.studied = true
 	}
@@ -312,27 +322,29 @@ func (a *Agent) serviceCast(op *castOp) {
 		b, _ := json.Marshal(a.id)
 		if _, err := a.backend.ApplyForm(res.roleID, form.Patch{Set: map[string]json.RawMessage{"target-aria": b}}); err != nil {
 			res.err = fmt.Errorf("cast: point %s here (study registered: partial): %w", res.roleID, err)
-			return
+			return res
 		}
 		res.patched = true
 	}
+	return res
 }
 
-// Cast submits one casting call to the actor loop and waits for its
-// verdict. ctx bounds the wait, an ordinary call timeout, no parked
-// machinery.
+// Cast performs one casting call on the CALLER's goroutine. See castOp for
+// why it no longer rides the inbox: a cast issued from inside this aria's own
+// turn used to wait for a loop that was waiting for the turn that issued it.
+//
+// ctx is honoured before the work starts; the writes themselves are each
+// bounded by their own form's writer and are not interruptible half way,
+// which is the same contract `set` has.
 func (a *Agent) Cast(ctx context.Context, roleID string, rolePatch *form.Patch) (castResult, error) {
 	if a.backend == nil {
 		return castResult{}, fmt.Errorf("cast: ephemeral aria has no store")
 	}
-	op := &castOp{roleID: roleID, rolePatch: rolePatch, reply: make(chan castResult, 1)}
-	a.inbox.Send(event{typ: eventCast, cast: op})
-	select {
-	case res := <-op.reply:
-		return res, res.err
-	case <-ctx.Done():
-		return castResult{}, fmt.Errorf("cast: %w (the call is queued and will still run)", ctx.Err())
+	if err := ctx.Err(); err != nil {
+		return castResult{}, fmt.Errorf("cast: %w", err)
 	}
+	res := a.serviceCast(&castOp{roleID: roleID, rolePatch: rolePatch})
+	return res, res.err
 }
 
 // StudyList answers figaro.study with no form id: the current set.

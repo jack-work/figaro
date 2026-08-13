@@ -31,7 +31,6 @@ type eventType int
 const (
 	eventUserPrompt eventType = iota
 	eventSet
-	eventCast
 	// eventStudyMark narrates a study/drop transition in the IR. It is an
 	// EVENT rather than a direct append because of what a direct append did:
 	// written from the RPC goroutine, it landed between an assistant
@@ -60,9 +59,6 @@ type event struct {
 	id     uint64
 	at     int64
 	merged []uint64
-
-	// eventCast
-	cast *castOp
 
 	// eventStudyMark
 	studyMark *message.StudyMark
@@ -962,8 +958,6 @@ func (a *Agent) act(ctx context.Context) {
 			a.runTurn(ctx, merged)
 		case eventSet:
 			a.applyControlPatchVerdict(evt.setPatch, evt.setIfVersion, evt.setAssert, "set", evt.setDone)
-		case eventCast:
-			a.serviceCast(evt.cast)
 		case eventStudyMark:
 			a.writeStudyMark(evt.studyMark)
 		}
