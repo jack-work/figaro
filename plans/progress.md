@@ -2466,3 +2466,75 @@ base, and four other full-suite runs of this build were green, so it is
 load-sensitive rather than new — but I could not reproduce it on the base
 either, so "not mine" is inference, not proof. If it recurs, the suspect is
 the gate/park timing in that fuzz case under a loaded box, not the form path.
+
+---
+
+## THE NEXT WORKER'S FIRST JOB: phase 9's second half, the wiring
+
+The libretto MECHANISM exists and is tested (`internal/store/libretto.go`,
+`libretto_reconcile.go`, `doctor librettos`). What is missing is every place
+it has to be driven from, and most of it lives in files aria 6c2d7b9f owns —
+**ask before touching, and check whether that fork is still alive; its last
+message said "this fork is done"**.
+
+In the order I would take them:
+
+1. **The study verb's two-participant write** (§12.2.1), in
+   `internal/figaro/study.go` and `internal/angelus/study_hub.go`. Libretto
+   first (mint if absent, seed from the source, `Retain`), board second
+   (`system.studies` gains the id). Drop is the inverse order. Every crash
+   then over-counts, which the sweep repairs; the reverse cannot be repaired.
+   **This is also the change that should fix the self-cast deadlock and the
+   displaced-`tool_result` corruption**, because study stops being an
+   out-of-band IR record — check it against both.
+2. **Fork, import and kill as refcount participants** (§12.2.2). Read that
+   section first: it is a design bug found before the thing was built. Fork
+   must `Retain` every libretto the parent's `study-set` names BEFORE the
+   child exists; kill must `Release` them.
+3. **The IR's per-libretto cursors** (§12.5), in
+   `internal/provider/projection.go`: N cursors, one per studied form,
+   pointing at LIBRETTO versions rather than source versions. The translator
+   then reads `PatchesBetween` on the libretto and never touches a source
+   form, which is the point of the copy.
+4. **Reclamation**, which needs a decision before it needs code: `refs == 0`
+   is NOT sufficient, because an IR record references a libretto forever. See
+   "A constraint the libretto exposes" — three options, all cheap, and the
+   choice is about what an old transcript may lose.
+
+### Then, in order
+
+- **Phase 10, the API refactor** and `angelus.hello`. The lock audit's first
+  fast-follow (`figaro/agent.go`'s `mu`, an aria's own state guarded by a
+  lock beside an inbox that exists to own it) belongs with it, and the audit
+  says it wants its own branch and its own pty runs.
+- **Phase 7, retention** — deferred with reasons; see its section. Its real
+  customer is librettos-holding-LT-ranges, not the topology form.
+- **The four idle clocks**, which are ordered oddly: figwal unloads a head at
+  5 minutes while the agent above it lives to 15, so a quiet aria drops its
+  RAW bytes and keeps its DECODED ones. One policy, not four.
+
+### What I would measure again before believing anything
+
+```
+FIGARO_PROBE_ROOT=<copy> go test ./internal/store -run DaemonDay -v   # the memory picture
+FIGARO_PROBE_ROOT=<copy> go test ./internal/store -run ListingCost -v # one listing
+bash /var/tmp/figstate/idlemem.sh                                     # PSS on an idle daemon
+bash /var/tmp/figstate/sweeplive.sh                                   # the idle sweep, live
+scripts/ariastress.sh --arias 12 --study --study-patches 300          # the fleet
+```
+
+### Traps, added to the four I inherited
+
+5. **`-benchtime 100x` measures a one-time cost.** A cold-read benchmark read
+   +475% because a segment load moved out of untimed setup into the first
+   measured iteration. At 4000x the same change is +18%.
+6. **Do not run two heavy jobs at once.** A fleet run read 8.49 s against a
+   5.0 s baseline because a `nix build` was in the same minute. The control
+   column is what catches it.
+7. **A check that cannot fail is worse than no check.** My live scripts ran
+   `figaro serve`, which is not a command; the daemon auto-starts, so every
+   measurement stood, but the `grep` of `daemon.log` beside them was reading
+   an empty file and counted as evidence.
+8. **Prove the mechanism you think you are proving.** The first idle-sweep
+   run showed the cache emptying — via figwal's head unload, not my sweep.
+   Pinning heads open (`handle_idle_minutes = -1`) is what made it a test.
