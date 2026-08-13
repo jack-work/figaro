@@ -862,3 +862,72 @@ routing a privileged write through the public `Submit`.
 own worktree off this branch, in `internal/figaro/repair.go`,
 `internal/figaro/study.go`, `internal/angelus/study_hub.go`, the four
 provider encoders and `internal/form/incantation.go`. Stay out of those.
+
+---
+
+# SESSION 2 (aria c1d55d02)
+
+Role `@980dc16c` moved on the handoff; the heartbeat followed it.
+
+### Phase 6 finished: the delete path buries what it takes
+
+`XwalBackend.Remove` now hands `RemoveLeaf` a **bury** hook, called after its
+refusal and before any detach or unlink:
+
+- Each doomed form records its own death (`Tombstone`) while its channel
+  still exists. A subscriber hears it on the stream it already reads, which
+  is the difference between a death and a silence.
+- Then the aria's caches are forgotten: handle, form, meta. **Every id in the
+  set, not just the one named.** A recursive delete used to unlink a subtree
+  and leave its children's forms resident, pointed at files that no longer
+  existed, so `FormState` on a deleted aria kept answering from cache.
+
+**The ordering property is the test.** `TestRefusedDeleteBuriesNothing`: a
+tombstone cannot be taken back, so burying before the refusal would seal an
+aria that is still alive. It failed on the first run, and the reason was not
+the ordering.
+
+### The bug that failure exposed: a stale topology decided the delete set
+
+`xwalTopology.Nodes()` read `s.topology.Load()` raw, while `From()` resolves
+through `s.Node`, which refreshes. So the adjacency the delete set is built
+from could predate the fork it was supposed to include. Consequences, all
+observed rather than argued:
+
+- `fig kill <parent>` on a just-forked aria was refused by **figwal**
+  (`trunk has 1 live branch(es)`) rather than by figaro, with a message no
+  listing can explain.
+- `fig kill -r <parent>` unlinked the fork — correct, it is a child — but
+  figaro's own delete set never contained it, so its presentation edge, meta
+  and caches were all skipped, and its form kept answering from memory after
+  its files were gone.
+
+One line: route `Nodes()` through `topologySnapshot()`. When nothing has
+moved that is two loads and a compare, and it is the same freshness rule
+every other reader of the topology already obeys.
+
+`TestDeleteSetSeesAForkMadeSinceTheLastRefresh` is the guard, and it fails
+on the parent commit.
+
+**Deviation from the plan.** durable-forms §7 defers reclamation until a
+tombstoned form has no reader. There is no sweep to collect a deferred
+unlink, and deferring without a collector converts a tolerated race into an
+unbounded disk leak, so the unlink goes ahead and the case is LOGGED
+(`tombstone: unlinking a form still being read`). The reader learns from the
+tombstone it has just been sent. When the sweep exists, that log line is
+where it hooks in.
+
+**Deviation, second.** A tombstone that cannot be written is logged, not
+fatal. Deleting is the recovery for an aria whose disk is misbehaving, and
+refusing the delete because the death record failed takes that away.
+
+### Design correction folded in (from aria 057ebc2e): fork under-counts
+
+`plans/durable-forms.md` §12.2.2 is new. The libretto refcount ordering was
+chosen so every crash OVER-counts; **fork, import and kill are three write
+sites outside the study verb that break it in the unrecoverable direction**,
+because a child inherits its parent's `study-set` without anything
+incrementing the librettos it names. Fork must increment before the child is
+created. The reconciliation sweep RECOMPUTES rather than adjusts, so it
+repairs under-counts too, which §12.2.1 did not say and which makes it a
+backstop for all three.

@@ -288,7 +288,12 @@ func (t xwalTopology) From(id string) (string, bool) {
 }
 
 func (t xwalTopology) Nodes() []string {
-	snap := t.s.topology.Load()
+	// THROUGH topologySnapshot, not the raw pointer. From() resolves via
+	// s.Node, which refreshes; reading s.topology directly here answered
+	// from whatever was last built, so a delete computed its set from a
+	// topology that predated the fork it was meant to include. The check is
+	// two loads and a compare when nothing has moved.
+	snap := t.s.topologySnapshot()
 	if snap == nil {
 		return nil
 	}
@@ -1154,7 +1159,11 @@ func (s *XwalStore) Node(id string) (NodeView, bool) {
 // Survivors that read their history through the delete set absorb the
 // prefix they borrow BEFORE anything is unlinked, so a crash between the
 // two leaves them reading through directories still present.
-func (s *XwalStore) RemoveLeaf(id string, recursive bool) error {
+// bury, when non-nil, is handed the whole delete set AFTER the refusal and
+// BEFORE any repair or unlink. It is where the dying forms record their own
+// death (durable-forms §7): the record must precede the unlink, or a crash
+// between them leaves a live-looking form whose files are half gone.
+func (s *XwalStore) RemoveLeaf(id string, recursive bool, bury func([]string)) error {
 	s.deleting.Lock()
 	defer s.deleting.Unlock()
 	// Refuse before touching anything. The boundary repair below rewrites
@@ -1163,6 +1172,9 @@ func (s *XwalStore) RemoveLeaf(id string, recursive bool) error {
 	taken := s.tree.DeleteSet(id)
 	if !recursive && len(taken) > 1 {
 		return fmt.Errorf("%w: %q has %d; -r takes them too", ErrHasBranches, id, len(taken)-1)
+	}
+	if bury != nil {
+		bury(taken)
 	}
 	// Repair the boundary FIRST: every survivor that reads its history
 	// through this delete set absorbs that prefix and stops pointing at it.

@@ -666,9 +666,43 @@ is a leak, the other is data loss, and only one of them is recoverable.
 
 **Reconciliation makes the leak finite.** The authoritative fact is "figaro
 X studies form Y", and it lives in X's board. A sweep (at daemon start, and
-behind a repair verb) recomputes each libretto's count from the boards that
-name it. Cheap, idempotent, and it is the same discipline as the delete
-path's boundary repair.
+behind a repair verb) **recomputes** each libretto's count from the boards
+that name it, rather than adjusting it. Recomputing is what makes it a
+backstop for §12.2.2 as well: it repairs an UNDER-count exactly as readily
+as an over-count. It runs at daemon start or on demand, so it narrows the
+window rather than closing it, and the orderings above and below are still
+required. Cheap, idempotent, the same discipline as the delete path's
+boundary repair.
+
+### 12.2.2 Fork, import and kill are also participants (found by 057ebc2e)
+
+The ordering in §12.2.1 makes every crash over-count. **Three write sites
+outside the study verb break that in the unrecoverable direction**, and the
+design as written never named them, because its only fork sentence (§12.2,
+"librettos do not fork") rules out forking the libretto NODE and says
+nothing about `refs` when an OBSERVER forks.
+
+- **Fork under-counts.** A child inherits the board, therefore the
+  `study-set`, therefore every study its parent held — and no libretto is
+  incremented. Fork, then let the parent drop: `refs` reaches zero, the
+  libretto is reclaimed, and the child is still observing it. **The order
+  must be: read the parent's `study-set`, increment each named libretto,
+  THEN create the child.** A crash between the increment and the birth
+  over-counts, which the sweep repairs; the reverse cannot be.
+- **`import` under-counts** identically: it restores a board wholesale whose
+  `study-set` names librettos that were never incremented for it.
+- **`kill` / `node.delete` must decrement** every libretto its board names,
+  or `refs` stays high forever. That is the safe direction, but nothing
+  collects it until a sweep.
+
+The rule, stated so a fourth site inherits it: **any operation that brings a
+board carrying a `study-set` into or out of existence is a participant in
+the refcount.** Only the study verb knows that today.
+
+**This is a bug the libretto INTRODUCES.** Today the relationship rides the
+copied board as `system.studies` and a fork inheriting it is correct and
+free, precisely because nothing counts. Counting is what makes every copier
+of a board a writer of the count.
 
 Neither half blocks the figaro's actor loop. Both may block the board's own
 writer and the libretto's writer, which is what keeps the count honest.

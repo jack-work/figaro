@@ -12,6 +12,7 @@ package store
 
 import (
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -821,14 +822,42 @@ func (b *XwalBackend) metaCache(ariaID string) *metaCache {
 	return c
 }
 
+// Remove buries the delete set and then unlinks it. The burial runs inside
+// RemoveLeaf, after its refusal and before its repair, so a refused delete
+// leaves nothing sealed and an interrupted one leaves forms that say they
+// are dead rather than forms that look alive with half their files gone.
 func (b *XwalBackend) Remove(ariaID string, recursive bool) error {
-	b.dropHandle(ariaID)
-	b.dropForm(ariaID)
-	b.mu.Lock()
-	delete(b.metas, ariaID)
-	b.mu.Unlock()
-	_ = os.Remove(b.metaPath(ariaID))
-	return b.store.RemoveLeaf(ariaID, recursive)
+	return b.store.RemoveLeaf(ariaID, recursive, b.bury)
+}
+
+// bury writes each doomed form's tombstone and then forgets the aria's
+// caches. Every id in the set, not just the one named: a recursive delete
+// used to unlink a subtree while leaving its children's forms and handles
+// resident, pointed at files that no longer exist.
+//
+// A tombstone that cannot be written is LOGGED, not fatal. Deleting is the
+// recovery for an aria whose disk is misbehaving, and refusing the delete
+// because the death record failed would take that away.
+func (b *XwalBackend) bury(doomed []string) {
+	for _, id := range doomed {
+		if f, err := b.form(id); err != nil {
+			slog.Warn("tombstone: form unreadable", "aria", id, "err", err)
+		} else if _, err := f.Tombstone("deleted"); err != nil {
+			slog.Warn("tombstone: not recorded", "aria", id, "err", err)
+		} else if !f.Reclaimable() {
+			// Deferred reclamation is not built (durable-forms §7): the
+			// unlink goes ahead and the reader learns from the tombstone it
+			// has just been sent. Counted here so the case is visible before
+			// anyone builds the sweep that would wait for it.
+			slog.Info("tombstone: unlinking a form still being read", "aria", id)
+		}
+		b.dropHandle(id)
+		b.dropForm(id)
+		b.mu.Lock()
+		delete(b.metas, id)
+		b.mu.Unlock()
+		_ = os.Remove(b.metaPath(id))
+	}
 }
 
 // CollectStump removes a childless outfit stump. See XwalStore.CollectStump.

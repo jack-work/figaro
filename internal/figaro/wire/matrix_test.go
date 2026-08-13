@@ -170,7 +170,7 @@ func TestDeleteRepairsTheBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := b.Store().RemoveLeaf(conv, true); err != nil {
+	if err := b.Remove(conv, true); err != nil {
 		t.Fatalf("delete after boundary repair: %v", err)
 	}
 	after, err := b.FormState(alt)
@@ -209,7 +209,7 @@ func TestNormalizeMakesDeletesFree(t *testing.T) {
 	}
 	// The survivor now owns its history, so the delete owes no repair.
 	before, _ := b.FormState(alt)
-	if err := b.Store().RemoveLeaf(conv, true); err != nil {
+	if err := b.Remove(conv, true); err != nil {
 		t.Fatalf("delete after normalize: %v", err)
 	}
 	after, err := b.FormState(alt)
