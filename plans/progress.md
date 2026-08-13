@@ -3028,7 +3028,15 @@ saying twice, because it means the fold is not on the critical path.
   named a third question I had left implicit: **is the projection switch
   worth its permanent dual path at all yet?** That is the right question and
   it is Gluck's.
+- **THE ROLE MOVED to `b2b0c543` at 2026-08-13 ~10:20**, on Gluck's word,
+  with all three rulings recorded in durable-forms §12.5b/§12.7b.
 - **d604c755 stays alive as a reference**, as its own predecessor did.
+- **Gluck's standing instruction to the new holder**: study the EARLIEST
+  material first — `durable-forms.md` whole, `answers-forms.md` and `wym.md`
+  (his own words, verbatim), and session 1 of this file — and check that what
+  has been BUILT matches what was originally described. Report divergences
+  rather than assuming the newest note wins. Then hurry: little work remains,
+  and he wants a testable branch, having been at this all night.
 
 ### The fifty-observer storm (`a524bec2`)
 
