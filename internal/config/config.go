@@ -259,8 +259,11 @@ func (l *Loaded) IRWindow() int {
 // unbounded. Nil-safe, floored for the same reason IRWindow is: a budget too
 // small to hold a turn makes an in-flight turn re-read its own tail.
 func (l *Loaded) IRWindowBytes() int {
-	if l == nil || l.Config.Memory.IRWindowMB == nil || *l.Config.Memory.IRWindowMB <= 0 {
-		return 0
+	if l == nil || l.Config.Memory.IRWindowMB == nil {
+		return defaultIRWindowMB << 20
+	}
+	if *l.Config.Memory.IRWindowMB <= 0 {
+		return 0 // explicitly unbounded
 	}
 	if mb := *l.Config.Memory.IRWindowMB; mb < minIRWindowMB {
 		return minIRWindowMB << 20
@@ -276,6 +279,16 @@ const (
 	// minIRWindowMB is the same floor in bytes. One turn carrying a couple of
 	// large tool results is comfortably under a mebibyte.
 	minIRWindowMB = 1
+	// defaultIRWindowMB bounds resident decoded IR when nothing says
+	// otherwise. It used to be unbounded, and the decoded IR is the largest
+	// thing a live aria holds: 4 to 5x its encoded bytes, measured at 12.5
+	// MiB on a 2556-message aria and 63 to 86 percent of that aria's whole
+	// footprint. Unbounded by default meant every aria anyone touched kept
+	// all of it.
+	//
+	// 4 MiB holds a comfortable working tail on every aria measured. Set
+	// ir_window_mb = 0 to go back to unbounded.
+	defaultIRWindowMB = 4
 )
 
 // SegmentSize returns the WAL segment size in bytes. Nil-safe, so a store
