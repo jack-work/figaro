@@ -2947,7 +2947,33 @@ What remains, in the order I would take it:
 **~~The projection switch~~ is DONE** (session 4, `e0fd5c34`): the stamps,
 the accessor and the machinery filter. Phase 9 is complete. What remains:
 
-1. **The restart lag, and it is NOT what it looks like.** After a restart the
+1. **A FLAKE IN THE UNRECOVERABLE DIRECTION, unattributed.**
+   `TestStudyAndDropRaceOnOneForm` failed once under a full gate on my head:
+   *drop: libretto @libretto::…: release below zero*. That is an UNDER-count,
+   the direction the sweep cannot repair, so it outranks everything else in
+   this list.
+
+   What is known, and it is deliberately short of a verdict:
+   - `69fd14da` (the lifecycle fix): `-race -count=10` **green**.
+   - my head: **failed once**, inside `go test ./... && -race -count=3` on
+     four packages.
+   - my head, isolated `-race -count=6`: green. With its two neighbours,
+     `-count=5`: green. Whole package `-race -count=3`: green (129 s).
+
+   So it survives the fix that was supposed to end it, and I could not
+   reproduce it in three attempts. I will not claim it is mine and I will
+   not claim it is not — three green runs are not evidence of absence for
+   something that appears once in a loaded run.
+
+   **How to hunt it, since repetition has already failed**: the message comes
+   from `addRefs` refusing to go below zero, so the question is which release
+   had no matching retain. That is answerable by fault injection rather than
+   luck — make `Retain`/`Release` record (aria, form, delta, stack) into a
+   ring buffer under a build tag, run the race test until it fires, and read
+   the last twenty entries. Cheaper than another hundred green runs, and it
+   ends the argument either way.
+
+2. **The restart lag, and it is NOT what it looks like.** After a restart the
    first turn of a studying aria stamps a copy that has not heard the source
    change; the next turn carries it. Loss is fixed (`5c407e53`); this is the
    remaining lag.
@@ -2970,7 +2996,7 @@ the accessor and the machinery filter. Phase 9 is complete. What remains:
    from the third side); and the boot sweep being a background goroutine that
    may attach after the write it needed to hear.
 
-2. **The reborn form (`wym.md:22`) is NOT REACHABLE TODAY, and that is the
+3. **The reborn form (`wym.md:22`) is NOT REACHABLE TODAY, and that is the
    finding.** I went to build it and stopped at the question a fix should
    always be asked: can the case be constructed? It cannot. Every node id is
    minted inside the store (`mintTrunkID`/`hexTrunkID`) and **no code path
@@ -2999,23 +3025,23 @@ the accessor and the machinery filter. Phase 9 is complete. What remains:
    not negligible, and a collision produces exactly the reborn-id case by
    accident. Whether mint checks for a live id, I did not verify.
 
-3. **Show him the two-participant write.** He approved it *conditionally on
+4. **Show him the two-participant write.** He approved it *conditionally on
    seeing the code* (`answers-forms.md:12`) and the review was never asked
    for. Five minutes of his time, and the retry count has since gone 5 → 32.
-4. ~~Strike the stale design text~~ **done**: `"paths"` is out of §12.3's
+5. ~~Strike the stale design text~~ **done**: `"paths"` is out of §12.3's
    document (the built thing never had it), `[q13]` is struck as settled by
    `answers-forms.md:1`, and `[q14]` is answered by the code — a libretto is
    a reserved stump read only through `Libretto(source)`.
-5. **Reclamation** — DEFERRED by ruling (§12.7b), not a gap. 3.0 KB.
-6. **Phase 10, the API refactor**, and with it the lock audit's first
+6. **Reclamation** — DEFERRED by ruling (§12.7b), not a gap. 3.0 KB.
+7. **Phase 10, the API refactor**, and with it the lock audit's first
    fast-follow (`figaro/agent.go`'s `mu`). The audit says it wants its own
    branch and its own pty runs; believe it.
-7. **Phase 7, retention** — deferred with its argument written down. When it
+8. **Phase 7, retention** — deferred with its argument written down. When it
    lands, **retention must refuse a libretto BY TYPE, not by convention**
    (§12.5b): the translator asks for arbitrary historical ranges, so a
    libretto that dropped segments answers a wrong range silently, and once a
    source is deleted the libretto is the only copy.
-8. **One idle policy instead of four.** figwal unloads a head at 5 minutes
+9. **One idle policy instead of four.** figwal unloads a head at 5 minutes
    while the agent above it lives to 15, so a quiet aria drops its RAW bytes
    and keeps its DECODED ones. The four clocks are tabulated above.
 
