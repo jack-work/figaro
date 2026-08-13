@@ -2968,3 +2968,20 @@ exactly one exists, and it is visible as `librettos open=1` in `doctor mem`.
 History build is the fastest it has been since before the WAL, with a
 studied form now costing a second durable write per patch — which is worth
 saying twice, because it means the fold is not on the critical path.
+
+## Succession (session 3)
+
+- **Successor minted**: `b2b0c543`, briefed with the reading order, the eight
+  traps, the released file boundary, and the two rulings that gate its first
+  job. Its id is in `/var/tmp/figstate/.successor`. It has read the plans and
+  is waiting; it has NOT moved the role.
+- **The role is `@980dc16c`.** On handoff:
+  `figaro state set --id @980dc16c target-aria b2b0c543` — a form patch the
+  hub serves with no agent involved. **Do not use `fig cast` from inside an
+  aria**: it rides the inbox that is running the turn issuing it, and hangs.
+- It arrived at the same two hazards from the notes alone (§12.5 is a
+  migration; `system.studies` is unprotected and reachable from the CLI), and
+  named a third question I had left implicit: **is the projection switch
+  worth its permanent dual path at all yet?** That is the right question and
+  it is Gluck's.
+- **d604c755 stays alive as a reference**, as its own predecessor did.
