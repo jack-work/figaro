@@ -2765,3 +2765,25 @@ What remains, in the order I would take it:
 study path or the caches. Ninety seconds of driving the real verbs found two
 bugs a green unit suite could not, and both were in the direction that loses
 data.
+
+### The durability gate, run deliberately (it is the one that matters for figwal)
+
+```
+FIGARO_CRASH_TEST=1 TMPDIR=/var/tmp go test ./internal/store -run Acknowledged
+  attempt 0: 116 acknowledged patches, all durable
+  attempt 1: 180 acknowledged patches, all durable
+  attempt 2: 225 acknowledged patches, all durable
+  attempt 3: 138 acknowledged patches, all durable
+```
+
+A child process patches a form and prints every version the writer said
+landed; the parent SIGKILLs it at a random moment and checks every
+acknowledged version is on disk. **This is the gate that matters for this
+session specifically**, because the figwal work changed how records are READ
+BACK — payloads are no longer materialized at open, sealed segments are
+opened on demand, and blocks are evicted underneath readers. If any of that
+had made a record unreadable after a crash, this is where it would show, and
+it does not.
+
+figwal's own `crashtest -long` was run on the lazy-open release and again on
+the final one (`e44a843`, seed 17).
