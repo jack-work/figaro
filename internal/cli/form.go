@@ -45,7 +45,8 @@ func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string) {
 
 	patch := rpc.FormPatch{Set: map[string]json.RawMessage{top: topValue}}
 	resp := mustCallSet(loaded, ariaID, patch, ifVersion)
-	fmt.Fprintf(os.Stderr, "set %s = %s (figaro %s)\n", keyArg, value, resp.figaroID)
+	fmt.Fprintf(os.Stderr, "%s %s = %s (figaro %s)%s\n",
+		resp.verb("set"), keyArg, value, resp.figaroID, resp.at())
 }
 
 // runFormSet is `fig form set`, in both spellings the grammar allows:
@@ -75,7 +76,8 @@ func runFormSet(loaded *config.Loaded, ariaID string, args []string) error {
 		return fmt.Errorf("form set: %q sets nothing", strings.Join(args, " "))
 	}
 	resp := mustCallSet(loaded, ariaID, rpc.FormPatch{Set: patch.Set}, 0)
-	fmt.Fprintf(os.Stderr, "set %s (figaro %s)\n", strings.Join(resp.resp.Set, ", "), resp.figaroID)
+	fmt.Fprintf(os.Stderr, "%s %s (figaro %s)%s\n",
+		resp.verb("set"), strings.Join(resp.resp.Set, ", "), resp.figaroID, resp.at())
 	return nil
 }
 
@@ -151,7 +153,8 @@ func runUnsetArgs(loaded *config.Loaded, ariaID string, args []string) {
 	// A removal names something the caller believes is there, so an absent
 	// key is a refusal rather than a silent success.
 	resp := mustCallSetAsserting(loaded, ariaID, patch, ifVersion)
-	fmt.Fprintf(os.Stderr, "unset %s (figaro %s)\n", strings.Join(args, ", "), resp.figaroID)
+	fmt.Fprintf(os.Stderr, "%s %s (figaro %s)%s\n",
+		resp.verb("unset"), strings.Join(args, ", "), resp.figaroID, resp.at())
 }
 
 // runForm prints the current form snapshot.
@@ -387,6 +390,32 @@ func mustFetchFormKey(loaded *config.Loaded, ariaID, key string) (json.RawMessag
 type setResult struct {
 	figaroID string
 	resp     *rpc.SetResponse
+}
+
+// verb reports what actually happened, so the CLI stops claiming a write it
+// did not make. A set of the value a board already holds reduces to nothing,
+// and saying "set" there is a lie a script cannot see through.
+func (r setResult) verb(did string) string {
+	if r.resp == nil {
+		return did
+	}
+	switch r.resp.Outcome {
+	case rpc.OutcomeUnchanged:
+		return "unchanged:"
+	case rpc.OutcomeQueued:
+		return "queued:"
+	default:
+		return did
+	}
+}
+
+// at names the durable version a write landed at, when there is one. A
+// script doing read-modify-write quotes it back as if_version.
+func (r setResult) at() string {
+	if r.resp == nil || r.resp.Version == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" @%d", r.resp.Version)
 }
 
 func mustCallSetAsserting(loaded *config.Loaded, ariaID string, patch rpc.FormPatch, ifVersion uint64) setResult {

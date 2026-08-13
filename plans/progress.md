@@ -991,3 +991,9 @@ would be speculative state with no reader, and wire fields nobody sends are
 the opposite of the standing order. The outcome and the version are what the
 CLI and a script can use today. When a replica exists, the pair lands with
 its dedup window and its conformance test in one change.
+
+**And the CLI stops lying.** `fig set`/`fig unset` print the outcome:
+`unchanged: mantra = "x"` when the board already held it, `queued:` when a
+live aria will apply it at the next round boundary, and `set … @V` with the
+durable version otherwise — which is the number a script quotes back as
+`if_version`.
