@@ -1710,3 +1710,16 @@ until reading a record can miss.
 3. **Phase 9, the libretto** — read durable-forms §12.2.2 first: fork,
    import and kill are refcount participants and the design did not say so.
 4. **Phase 10, the API refactor.**
+
+### Succession (session 2)
+
+- **Successor minted**: `d604c755`, briefed with the reading order, the four
+  traps, the file boundary with 6c2d7b9f, and the figwal job. Its id is in
+  `/var/tmp/figstate/.successor`.
+- **The role is `@980dc16c`.** Move it with
+  `figaro state set --id @980dc16c target-aria d604c755` — a form patch the
+  hub serves with no agent involved. **Do not use `fig cast` from inside an
+  aria**: it rides the inbox, the inbox is running the turn that issued it,
+  and it hangs until the timeout.
+- **c1d55d02 stays alive as a reference** at Gluck's instruction: parenting,
+  not merely handing over. Ask it; it answers.
