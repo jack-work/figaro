@@ -2787,3 +2787,38 @@ it does not.
 
 figwal's own `crashtest -long` was run on the lazy-open release and again on
 the final one (`e44a843`, seed 17).
+
+### The libretto's cost, measured (`0852d0f0`)
+
+§12.7's tree-surgery claim, checked against the built thing:
+
+| source board | allocation per fold |
+|---|---|
+| 10 keys | 31 KB, 343 allocs |
+| 5000 keys | **38 KB, 439 allocs** |
+
+**Flat in board size.** Marshal-and-unmarshal would have made the second row
+megabytes; the fold applies the source's own `message.Patch` to its own tree,
+so the copy shares the source's immutable value nodes.
+
+**And the cost nobody had named: the copy is DURABLE, so a studied form pays
+a second fsync per patch.** Now measured and reduced where it can be:
+
+| writers on the source | source patches per libretto record |
+|---|---|
+| 1 | 1.005 |
+| 8 | **4.000** |
+
+The fold drains whatever is queued and applies it as one patch. That does
+nothing for a sequential writer — the source is itself fsync-bound, so events
+arrive milliseconds apart with nothing to coalesce — and takes a QUARTER of
+the records under group commit, which is what a busy form actually produces.
+The mirror's contract is the STATE, not the number of records it took to
+reach it.
+
+**Left honest rather than optimised away**: a studied form under sequential
+writes still costs 2x the fsyncs it did unstudied. That is the price of the
+copy being durable, it is the same price the WAL work chose everywhere else,
+and the alternative (a libretto that is a cache rather than a form) gives up
+replayability. If it ever hurts, the lever is the fold's own batching window,
+not the durability.
