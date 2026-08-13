@@ -1415,3 +1415,45 @@ build before anyone reads a number off it.
 
 The last row is new because nothing could report it before: 60 translation
 rows, 195 KB, on arias with 72 IR rows between them.
+
+### A negative result, and it is worth more than the change was
+
+**Hypothesis**: a form's cold open replays every record to rebuild a value
+figwal already holds folded (the form channel is reducible, and a segment
+header carries the fold). So take `StateAt(last)` for the snapshot and read
+only a bounded TAIL of patches, and a cold open becomes O(window) where it
+was O(history).
+
+I built it, with `FormLog.Bounds` and `FormLog.FoldedAt`, both real logs
+implementing them, the `trimmed` trap handled, and a `TestColdFoldEqualsReplay`
+equality suite (fold and replay must be indistinguishable: same version, same
+state, same `PatchesBetween` answers at every range). All of it passed,
+including the stump-hosted topology form.
+
+**Then I measured it. `BenchmarkFormOpenReplay`, 6 samples:**
+
+| | before | after | |
+|---|---|---|---|
+| M=30 / N=100 | 17.78 ms | 23.65 ms | **+33%** |
+| M=30 / N=2000 | 26.17 ms | 114.66 ms | **+338%** |
+
+**Reverted in full.** Two reasons, and the second is the interesting one:
+
+1. Three calls (`Bounds`, `FoldedAt`, `RangePatches`) each opened the node
+   handle, where the replay opened it once. That part is fixable.
+2. **The replay was never reading disk.** By the time figaro asks for the
+   first record, figwal has already copied every payload of the channel into
+   memory (`buildOwnSnapshot`, see "WHERE THE MEMORY IS"). So figaro's
+   "replay" is a walk over RAM, and there is no I/O for a fold to save. The
+   optimization was aimed at a cost that does not exist at this layer.
+
+**What that means for the next person, and it is the useful part:** no
+figaro-side change to how forms open can pay for itself while figwal
+materializes whole channels. The cold-open cost IS the hydration. Fix it in
+figwal — 6c2d7b9f's segment-granular lazy loading, sketched in their message
+and worth building — and only then revisit the fold, which becomes a genuine
+saving the moment reading a record can miss.
+
+The equality test was the right instrument and it did its job: it proved the
+change CORRECT, and the benchmark proved it not worth having. Both were
+needed, in that order.
