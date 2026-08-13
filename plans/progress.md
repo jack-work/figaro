@@ -2163,3 +2163,46 @@ right way to read this session is: one change that mattered enormously
 claims for the second one died on measurement. I am leaving it in because it
 is the right shape and it is proven correct, not because it was worth what I
 said it was.
+
+## An idle daemon gives its arena back (`77b9fcb7`)
+
+Not on any phase list; it comes from measuring Gluck's live box while the
+rest of this was running. **The "2 GB" is a FLEET**: 1731 MB of PSS across 33
+figaro processes — one daemon at 536 MB, a second at 129 MB, thirteen more
+between 17 and 59 MB, and seven CLIs at ~25 MB each. `GOMEMLIMIT` is per
+process, so it never bit; the aggregate has no ceiling at all.
+
+Go's collector returns spans lazily and only under pressure, so a daemon that
+has finished a burst keeps the arena it grew for it. Once a sweep finds
+nothing live and nothing resident, twice running, the daemon now calls
+`debug.FreeOSMemory`.
+
+`/var/tmp/figstate/idlemem.sh`, same script both trees, real-store copy:
+
+| | after a listing | +5 s idle | +40 s idle | after listing again |
+|---|---|---|---|---|
+| base | PSS 251 MB | 251 MB | 259 MB | 272 MB |
+| after | PSS 141 MB | **51 MB** | 59 MB | 62 MB |
+
+**The base never gives anything back — it only grows.** Five times, on the
+state most of those thirty-three processes spend their lives in.
+
+The creep from 51 to 59 MB across the idle window is the measurement itself:
+each `doctor mem` poll allocates ~1.1 MiB and the latch has already fired.
+
+**Once per quiet period, not per sweep**: `FreeOSMemory` is a stop-the-world
+collection plus a scavenge — pointless to repeat and rude to run while
+anyone is working. Any work resets the latch, and the latch is what the test
+holds, because the release itself is not observable but "fires once, resets
+on work" is.
+
+### The three memory layers now, and which knob owns each
+
+| layer | bound by | reclaimed when |
+|---|---|---|
+| figaro's decoded IR / translations / patches | `ir_window_mb`, `translation_window_mb`, `form_patch_window` | `dormant_after_minutes` sweep |
+| figwal's raw segment payloads | `segment_cache_mb` | budget pressure, the sweep (keep=2), or a head unload |
+| the Go arena underneath both | `soft_limit_mb` (GOMEMLIMIT) | **two quiet sweeps, now** |
+
+The third had no reclamation at all before this, which is why the first two
+kept being measured against a process that never shrank.
