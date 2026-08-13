@@ -308,3 +308,62 @@ func TestLibrettoNeverMirrorsItsOwnBookkeeping(t *testing.T) {
 		t.Fatalf("the source overwrote the libretto's refcount: refs = %d", got)
 	}
 }
+
+// The fold coalesces, so a run of source patches becomes ONE durable write on
+// the copy. What must NOT change is the STATE it arrives at: later events win
+// per key, in both directions, or a mirror ends up holding a value the source
+// does not.
+func TestLibrettoBatchFoldEndsWhereTheSourceDoes(t *testing.T) {
+	be, id, src := librettoFixture(t)
+	lib, err := OpenLibretto(be.Store(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lib.Close()
+	if err := lib.Follow(src); err != nil {
+		t.Fatal(err)
+	}
+	// A burst: set, remove, re-set, and a key that ends removed. Written as
+	// fast as the source will take them, so the fold sees them batched.
+	for i := 0; i < 20; i++ {
+		if _, err := be.ApplyForm(id, setPatch(map[string]string{
+			"kept":   fmt.Sprintf("v%d", i),
+			"doomed": "here",
+		})); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := be.ApplyForm(id, message.Patch{Remove: []string{"doomed"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := be.ApplyForm(id, setPatch(map[string]string{"last": "word"})); err != nil {
+		t.Fatal(err)
+	}
+
+	waitFor(t, "the copy to reach the source's last word", func() bool {
+		raw, ok := lib.State().Get("last")
+		if !ok {
+			return false
+		}
+		var got string
+		json.Unmarshal(raw, &got)
+		return got == "word"
+	})
+	// Every key the source ends with, the copy ends with -- and nothing else.
+	srcSnap, _ := src.Snapshot()
+	for k, want := range srcSnap.All() {
+		if isLibrettoKey(k) {
+			continue
+		}
+		got, ok := lib.State().Get(k)
+		if !ok {
+			t.Fatalf("the copy is missing %q after a coalesced fold", k)
+		}
+		if string(got) != string(want) {
+			t.Fatalf("copy %q = %s, source has %s", k, got, want)
+		}
+	}
+	if _, ok := lib.State().Get("doomed"); ok {
+		t.Fatal("a key the source removed survived the coalesced fold")
+	}
+}

@@ -246,54 +246,102 @@ func (l *Libretto) fold(sub *Subscription, stop <-chan struct{}, done chan<- str
 			if !ok {
 				return
 			}
-			if ev.Missed > 0 {
-				// The truthful recovery: re-seed from the source's current
-				// state. A mirror that skips a patch is wrong forever and
-				// does not know it.
-				if src := sub.Source(); src != nil {
-					snap, at := src.Snapshot()
-					_ = l.seed(snap, at)
+			// COALESCE. The copy is durable, so every fold is an fsync, and a
+			// studied form under a burst would otherwise pay one per source
+			// patch on top of its own. Whatever is already queued is applied
+			// as ONE patch: the mirror's contract is the STATE, not the
+			// number of records it took to get there, and the cursor is the
+			// last version folded either way.
+			batch := append(make([]Event, 0, 8), ev)
+			for draining := true; draining; {
+				select {
+				case next, ok := <-sub.C:
+					if !ok {
+						draining = false
+						break
+					}
+					batch = append(batch, next)
+				default:
+					draining = false
 				}
-				continue
 			}
-			if ev.Version <= l.At() {
-				continue // duplicate from the register-then-read window
-			}
-			l.applyEvent(ev)
+			l.applyBatch(sub, batch)
 		}
 	}
 }
 
-func (l *Libretto) applyEvent(ev Event) {
-	set := make(map[string]json.RawMessage, len(ev.Applied.Set)+1)
-	for k, v := range ev.Applied.Set {
-		if isLibrettoKey(k) {
-			continue
+// applyBatch folds a run of source events into ONE patch on the copy.
+//
+// Later events win, per key, in both directions: a key set and then removed
+// leaves a removal, and one removed and then set leaves a set. Getting that
+// backwards is how a mirror ends up holding a value the source does not.
+func (l *Libretto) applyBatch(sub *Subscription, batch []Event) {
+	set := map[string]json.RawMessage{}
+	removed := map[string]bool{}
+	var last uint64
+	dead := false
+	for _, ev := range batch {
+		if ev.Missed > 0 {
+			// The truthful recovery: re-seed from the source's current state.
+			// A mirror that skips a patch is wrong forever and does not know
+			// it, so the whole batch is abandoned for a fresh copy.
+			if src := sub.Source(); src != nil {
+				snap, at := src.Snapshot()
+				_ = l.seed(snap, at)
+			}
+			return
 		}
-		set[k] = v
-	}
-	remove := make([]string, 0, len(ev.Applied.Remove))
-	for _, k := range ev.Applied.Remove {
-		if isLibrettoKey(k) {
-			continue
+		if ev.Version <= l.At() {
+			continue // duplicate from the register-then-read window
 		}
-		remove = append(remove, k)
+		for k, v := range ev.Applied.Set {
+			if isLibrettoKey(k) {
+				continue
+			}
+			set[k] = v
+			delete(removed, k)
+		}
+		for _, k := range ev.Applied.Remove {
+			if isLibrettoKey(k) {
+				continue
+			}
+			removed[k] = true
+			delete(set, k)
+		}
+		// A tombstone on the source is the death notice. The copy stays,
+		// which is what makes a studied form deletable at all.
+		if _, isDead := ev.Applied.Set[TombstoneKey]; isDead {
+			dead = true
+		}
+		last = maxVersion(last, ev.Version)
 	}
-	// A tombstone on the source is the death notice: record it and stop.
-	// The copy stays, which is what makes a studied form deletable at all.
-	if _, dead := ev.Applied.Set[TombstoneKey]; dead {
+	if last == 0 {
+		return // nothing new
+	}
+	if dead {
 		raw, _ := json.Marshal(false)
 		set[KeyLibrettoAlive] = raw
 	}
-	raw, err := json.Marshal(ev.Version)
+	raw, err := json.Marshal(last)
 	if err != nil {
 		return
 	}
 	set[KeyLibrettoAt] = raw
+	remove := make([]string, 0, len(removed))
+	for k := range removed {
+		remove = append(remove, k)
+	}
 	if _, _, err := l.form.ApplyEffectPrivileged(
 		message.Patch{Set: set, Remove: remove}, 0); err != nil {
 		return
 	}
+}
+
+func maxVersion(a, b uint64) uint64 {
+	if b > a {
+		return b
+	}
+	return a
 }
 
 // Close stops following and releases the form. The copy stays on disk.
