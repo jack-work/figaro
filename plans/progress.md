@@ -963,13 +963,21 @@ The first row is the one the change was made for, and its benchmark says so
 in its own comment: a reader mid-append paid the writer's cache update and
 now does not.
 
-**The last two rows are a regression I have not explained.** `Read()` does
-the same work either way (one branch, one `make`, one `copy`) and allocates
-identically to the byte. Five samples at 200 iterations of a millisecond-
-scale copy is thin, and the call is the documented cold path ("the reason
-nothing on the hot path calls it"), but it is unexplained and it is written
-down rather than dismissed. Re-measure with more samples before trusting
-either direction.
+**The last two rows were NOISE, and re-measuring said so.** Five samples at
+200 iterations of a millisecond-scale copy is not a measurement. Re-run from
+a base worktree at `-benchtime 300x -count=10`:
+
+| | before | after | |
+|---|---|---|---|
+| `CachedLogReadLongAria/1000` | 22.29 µs | 22.47 µs | ~ (p=0.85) |
+| `CachedLogReadLongAria/10000` | 325.1 µs | 327.7 µs | ~ (p=0.97) |
+| `CachedLogReadLongAria/50000` | 1.720 ms | 1.752 ms | +1.86% (p=0.011) |
+
+Geomean +1.15%, and the only significant row is under two percent on a call
+documented as the cold path. `Read()` does the same work either way and
+allocates identically to the byte, which is what said the +13% could not be
+real. **Do not publish a five-sample benchmark**; the base worktree at
+`/var/tmp/figbase` makes the ten-sample version cost nothing but patience.
 
 ### Phase 3, the wire half: an outcome, not an OK
 
@@ -1054,3 +1062,45 @@ aria with a long board was O(records × history) and is now O(records).
 `form_patch_window`".** The knob is now safe to tighten, which is the
 largest remaining memory lever on a form: 2048 decoded patches per resident
 board, kept for a cold read that now costs 3 µs from disk.
+
+### The goroutine census, since nobody had run one
+
+The live daemon has no pprof socket (`FIGARO_PPROF` was not set when it
+started), so this is an isolated daemon with the profiler armed: 5 arias,
+5 unbound forms, then 5 concurrent `form listen` clients, then idle.
+
+```
+5 arias                41 goroutines / 5 endpoints
++ 5 forms              48 / 10
++ 5 listeners          46 / 10
+listeners gone         46 / 10
+20s idle               46 / 10
+```
+
+The profile says where they are:
+
+```
+10  angelus.(*ariaHub).listen     one per endpoint
+10  angelus.(*ariaHub).accept     one per endpoint
+ 5  actor.Start                   one per resident agent inbox
+ 5  figaro.(*Agent).act           one per resident agent
+```
+
+**Two per endpoint, two per resident agent, and listeners leak nothing** —
+the count is identical before and after five of them come and go. So the
+355 goroutines on Gluck's daemon (29 endpoints, 4 live arias) are a working
+set, not a leak: 58 of them are endpoint accept/listen pairs, the rest ride
+live turns.
+
+**The endpoint pair is the interesting one.** It is held for as long as the
+node's hub exists, whether or not the aria is awake, so it is a per-node
+standing cost that dormancy does not reclaim. Whether a dormant aria needs
+its own socket at all is a question for the API refactor (phase 10), where
+`node.attach` is already the only method that hands out an endpoint.
+
+**What this does NOT explain** is the memory. The same daemon reports
+`heap_alloc` 260 MB against 38 MB of resident IR. Neither bound landed so
+far (the IR window, the patch window) touches the other 222 MB, and nothing
+in the goroutine census accounts for it either. That is the next thing to
+measure, and it should be measured with a heap profile on a daemon that has
+`FIGARO_PPROF=1` from the start rather than guessed at.
