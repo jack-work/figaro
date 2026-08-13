@@ -570,3 +570,11 @@ func (s *Server) inquiryOfLocked(id uint64) (string, []InquirySegment) {
 	}
 	return "", nil
 }
+
+// ReleaseCache returns the sealed section's budget references. Call on
+// teardown; the server remains usable but unaccounted afterwards.
+func (s *Server) ReleaseCache() {
+	s.mu.Lock()
+	s.cache.Release()
+	s.mu.Unlock()
+}

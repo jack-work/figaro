@@ -822,6 +822,13 @@ func (a *Agent) Kill() {
 	a.teardown = nil
 	a.mu.Unlock()
 
+	// Hand the sealed section's bytes back to the shared UI budget: a
+	// reclaimed agent that kept its refs would squeeze every live cache
+	// against ghosts, forever.
+	if a.ariaSrv != nil {
+		a.ariaSrv.ReleaseCache()
+	}
+
 	for _, fn := range teardown {
 		fn()
 	}

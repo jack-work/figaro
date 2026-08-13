@@ -463,3 +463,9 @@ func (c *TurnCache) TailMutated() {
 		b.mu.Unlock()
 	}
 }
+
+// Release hands every accounted reference back to the shared budget. An
+// owner that is being torn down MUST call it: a reclaimed agent's refs
+// otherwise poison the accountant forever -- total never shrinks, so
+// every live cache is squeezed against ghosts.
+func (c *TurnCache) Release() { c.releaseAll() }
