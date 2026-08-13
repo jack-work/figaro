@@ -53,6 +53,12 @@ func (a *Angelus) StartPprof(ctx context.Context) error {
 	}
 
 	mux := http.NewServeMux()
+	// /debug/pprof/mutex and /block are served by Index but return nothing
+	// unless sampling is on, and nothing turned it on. For a daemon whose
+	// writers are now serialization points, contention is the profile worth
+	// having.
+	runtime.SetMutexProfileFraction(5)
+	runtime.SetBlockProfileRate(10000) // ns: sample blocking over 10us
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
 	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)

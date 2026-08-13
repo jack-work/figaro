@@ -106,6 +106,13 @@ var (
 	formPatchesReturned otelmetric.Int64Histogram
 	formPatchesHistory  otelmetric.Int64Histogram
 
+	// The durability pair. syncDuration is how long an fsync took;
+	// syncBatch is how many patches it covered. Group commit is the only
+	// reason a mandatory sync is affordable, and a batch distribution
+	// collapsing to 1 is the alarm that it stopped working.
+	syncDuration otelmetric.Float64Histogram
+	syncBatch    otelmetric.Int64Histogram
+
 	instrumentsOnce sync.Once
 )
 
@@ -258,6 +265,22 @@ func initInstruments(m otelmetric.Meter) {
 		if err != nil {
 			slog.Warn("metric init", "name", "form.patches.returned", "err", err)
 		}
+		syncDuration, err = m.Float64Histogram(
+			"figaro.wal.sync.duration",
+			otelmetric.WithUnit("ms"),
+			otelmetric.WithDescription("One fsync on a WAL channel, before anything it covers is published"),
+		)
+		if err != nil {
+			slog.Warn("metric init", "name", "wal.sync.duration", "err", err)
+		}
+		syncBatch, err = m.Int64Histogram(
+			"figaro.wal.sync.batch",
+			otelmetric.WithUnit("{patch}"),
+			otelmetric.WithDescription("How many patches one fsync covered: the distribution that says whether group commit is working"),
+		)
+		if err != nil {
+			slog.Warn("metric init", "name", "wal.sync.batch", "err", err)
+		}
 		formPatchesHistory, err = m.Int64Histogram(
 			"figaro.form.patches.history",
 			otelmetric.WithUnit("{patch}"),
@@ -267,6 +290,16 @@ func initInstruments(m otelmetric.Meter) {
 			slog.Warn("metric init", "name", "form.patches.history", "err", err)
 		}
 	})
+}
+
+// RecordSync records one fsync and how many patches it made durable.
+func RecordSync(ctx context.Context, d time.Duration, patches int, attrs ...attribute.KeyValue) {
+	if syncDuration != nil {
+		syncDuration.Record(ctx, float64(d.Microseconds())/1000, otelmetric.WithAttributes(attrs...))
+	}
+	if syncBatch != nil {
+		syncBatch.Record(ctx, int64(patches), otelmetric.WithAttributes(attrs...))
+	}
 }
 
 // RecordFormPatchRead records one form patch-range read: how many patches the

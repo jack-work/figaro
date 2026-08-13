@@ -59,8 +59,13 @@ func crashChild(dir string) {
 }
 
 func TestAcknowledgedPatchesSurviveAKill(t *testing.T) {
-	if testing.Short() {
-		t.Skip("spawns a child process and kills it")
+	// Opt-in: it spawns and kills child processes, and it is meaningless on
+	// tmpfs, where a "sync" costs nothing and the child spins fast enough to
+	// bury the parent in acknowledgements.
+	//
+	//	FIGARO_CRASH_TEST=1 TMPDIR=/var/tmp go test ./internal/store -run Acknowledged -v
+	if os.Getenv("FIGARO_CRASH_TEST") == "" {
+		t.Skip("set FIGARO_CRASH_TEST=1 (and TMPDIR to real disk) to run the kill test")
 	}
 	rng := rand.New(rand.NewSource(1))
 	for attempt := 0; attempt < 4; attempt++ {

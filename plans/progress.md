@@ -330,3 +330,26 @@ vendorHash reset, docs updated in `forms-design.md` and `reference/forms.md`.
    `system.forked_from`) are written by the angelus during birth and would
    need the privileged path, so land the privileged entry point FIRST and
    only then start refusing.
+
+#### Instruments, and a trap in the crash test
+
+Landed the two missing instruments:
+
+- `figaro.wal.sync.duration` and `figaro.wal.sync.batch`: how long an fsync
+  took and how many patches it covered. **A batch distribution collapsing to
+  1 is the alarm that group commit stopped working**, which is the only
+  thing keeping a mandatory sync affordable.
+- Mutex and block profiling are now ENABLED under `FIGARO_PPROF`
+  (`SetMutexProfileFraction(5)`, `SetBlockProfileRate(10µs)`). They were
+  served by `pprof.Index` and returned nothing, because nothing turned
+  sampling on. For a daemon whose writers are serialization points, that was
+  the missing profile.
+
+**The crash test is now opt-in** (`FIGARO_CRASH_TEST=1`), because in a full
+`go test ./...` it hung the suite for ten minutes. On tmpfs a "sync" costs
+nothing, so the child spins fast enough to bury the parent in
+acknowledgements. Run it deliberately, on real disk:
+
+```
+FIGARO_CRASH_TEST=1 TMPDIR=/var/tmp go test ./internal/store -run Acknowledged -v
+```

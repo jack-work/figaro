@@ -307,7 +307,10 @@ func (f *Form) runBatch(batch []*formWrite) {
 	}
 
 	if lastRecord != 0 {
-		if err := f.log.SyncThrough(lastRecord); err != nil {
+		started := time.Now()
+		err := f.log.SyncThrough(lastRecord)
+		figOtel.RecordSync(context.Background(), time.Since(started), len(events))
+		if err != nil {
 			// Nothing was published. The records are on the caller side of
 			// durability, so the honest answer is that they did not happen:
 			// every write in this batch is rejected and the state stands
