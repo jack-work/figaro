@@ -2872,3 +2872,27 @@ This project has twice shipped a resident structure nobody could see (the
 translation cache, figwal's snapshots). The rule that came out of it — a new
 resident structure arrives with its number in `doctor mem` — is now applied
 to phase 9 as well.
+
+### One implementation of the two-participant write (`d8a97bbe`)
+
+I built `StudyForm`/`DropForm` in the store, then wired the hub with a
+parallel copy — its own read-modify-write of the board, its own retain and
+release. That left the store's pair with **no production caller**: dead code
+with good tests, which is the "a knob nobody sends" antipattern I had
+criticised phase 7 for four hours earlier. Worth recording as a habit to
+watch: building the mechanism and then wiring past it is easy to do when the
+wiring happens in a different file on a different day.
+
+The hub delegates now. **Two implementations of a crash-ordering rule is one
+too many**, and they had already drifted: the hub retried on a version
+conflict and the store's version did not.
+
+So the store's gained the retry, and with it a guard the hub had and mine
+lacked — `system.studies` is a read-modify-write, and without a version check
+two arias studying different forms at once overwrite each other's
+declaration. `ApplyFormEffectPrivilegedIf` is that guard for a system-managed
+key. **The retry must also hand the reference back before it loops**, or a
+contended study leaks one per attempt: a leak that appears only under
+contention, and then only as a count that will not come down.
+
+Net 20 lines fewer, and the live path re-verified end to end.
