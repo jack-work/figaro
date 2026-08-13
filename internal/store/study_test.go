@@ -187,3 +187,92 @@ func TestDropAfterTheSourceIsDead(t *testing.T) {
 		t.Fatalf("the copy says %q", got)
 	}
 }
+
+// FORK is a refcount participant (durable-forms §12.2.2), and it is the one
+// that fails in the unrecoverable direction: a child inherits the board,
+// therefore the study set, therefore every study its parent held -- with
+// nothing incrementing the librettos it names. Fork, then let the parent
+// drop, and refs reaches zero while the child is still observing.
+func TestForkInheritsTheStudyAndItsReference(t *testing.T) {
+	be, sourceID, _ := librettoFixture(t)
+	outfit, err := be.CreateOutfit("fork", setPatch(map[string]string{"system.model": "m"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, err := be.CreateConversation(outfit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := be.StudyForm(parent, sourceID); err != nil {
+		t.Fatal(err)
+	}
+	lib, err := be.Libretto(sourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := lib.Refs(); got != 1 {
+		t.Fatalf("refs before the fork = %d, want 1", got)
+	}
+
+	cont, alt, err := be.Fork(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := lib.Refs(); got != 2 {
+		t.Fatalf("refs after a fork = %d, want 2: the child studies it too", got)
+	}
+	// And the boards agree with the count, which is what the sweep checks.
+	audit, err := be.ReconcileLibrettos()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if audit.Corrected != 0 {
+		t.Fatalf("the sweep disagreed after a fork: %+v", audit)
+	}
+
+	// The parent dropping must not reclaim what the child still observes.
+	if err := be.DropForm(cont, sourceID); err != nil {
+		t.Fatal(err)
+	}
+	if got := lib.Refs(); got == 0 {
+		t.Fatal("one branch dropping took the reference the other still holds")
+	}
+	_ = alt
+}
+
+// KILL is the same rule at the other end: a board going out of existence
+// stops studying what it named, or refs stays high forever.
+func TestKillReleasesWhatItsBoardStudied(t *testing.T) {
+	be, sourceID, _ := librettoFixture(t)
+	outfit, err := be.CreateOutfit("kill", setPatch(map[string]string{"system.model": "m"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	watcher, err := be.CreateConversation(outfit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := be.StudyForm(watcher, sourceID); err != nil {
+		t.Fatal(err)
+	}
+	lib, err := be.Libretto(sourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := lib.Refs(); got != 1 {
+		t.Fatalf("refs before the kill = %d, want 1", got)
+	}
+	if err := be.Remove(watcher, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := lib.Refs(); got != 0 {
+		t.Fatalf("refs after killing the only observer = %d, want 0", got)
+	}
+	audit, err := be.ReconcileLibrettos()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if audit.Corrected != 0 {
+		t.Fatalf("the sweep disagreed after a kill: %+v", audit)
+	}
+}

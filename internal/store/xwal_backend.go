@@ -455,10 +455,41 @@ func (b *XwalBackend) CreateConversation(outfitID string) (string, error) {
 	return b.store.CreateConversation(outfitID)
 }
 func (b *XwalBackend) Fork(ariaID string) (cont, alt string, err error) {
+	b.inheritStudies(ariaID)
 	return b.store.Fork(ariaID)
 }
 func (b *XwalBackend) ForkAt(ariaID string, atMainLT uint64) (cont, alt string, err error) {
+	b.inheritStudies(ariaID)
 	return b.store.ForkAt(ariaID, atMainLT)
+}
+
+// inheritStudies is FORK's half of the refcount (durable-forms §12.2.2).
+//
+// A child inherits its parent's board, therefore its `system.studies`,
+// therefore every study the parent held -- and nothing incremented the
+// librettos it names. Fork, then let the parent drop: refs reaches zero, the
+// libretto is reclaimed, and the child is still observing it. That is the
+// UNRECOVERABLE direction, so the increment happens BEFORE the child exists.
+// A crash between the two over-counts, which the sweep repairs.
+//
+// The rule this obeys, stated so a fourth site inherits it: any operation
+// that brings a board carrying a study-set into or out of existence is a
+// participant in the refcount.
+func (b *XwalBackend) inheritStudies(ariaID string) {
+	snap, err := b.FormState(ariaID)
+	if err != nil {
+		return // no board to inherit; nothing to count
+	}
+	for _, formID := range studiesOf(snap) {
+		lib, err := b.Libretto(formID)
+		if err != nil {
+			slog.Warn("fork: libretto unreachable", "aria", ariaID, "form", formID, "err", err)
+			continue
+		}
+		if _, err := lib.Retain(); err != nil {
+			slog.Warn("fork: retain failed", "aria", ariaID, "form", formID, "err", err)
+		}
+	}
 }
 
 // Promote climbs a conversation trunk. Cosmetic: relabels ancestor
@@ -997,6 +1028,10 @@ func (b *XwalBackend) Remove(ariaID string, recursive bool) error {
 // because the death record failed would take that away.
 func (b *XwalBackend) bury(doomed []string) {
 	for _, id := range doomed {
+		// KILL's half of the refcount (§12.2.2): a board going out of
+		// existence stops studying what it named. Before the tombstone,
+		// because a sealed form cannot be read back for its study set.
+		b.releaseStudies(id)
 		if f, err := b.form(id); err != nil {
 			slog.Warn("tombstone: form unreadable", "aria", id, "err", err)
 		} else if _, err := f.Tombstone("deleted"); err != nil {
@@ -1016,6 +1051,26 @@ func (b *XwalBackend) bury(doomed []string) {
 		delete(b.labels, id)
 		b.mu.Unlock()
 		_ = os.Remove(b.metaPath(id))
+	}
+}
+
+// releaseStudies drops the references a dying board held. Best-effort and
+// logged: a delete is the recovery path for a broken aria and must not be
+// refused because a count could not be moved. The sweep recomputes anyway.
+func (b *XwalBackend) releaseStudies(ariaID string) {
+	snap, err := b.FormState(ariaID)
+	if err != nil {
+		return
+	}
+	for _, formID := range studiesOf(snap) {
+		lib, err := b.Libretto(formID)
+		if err != nil {
+			slog.Warn("kill: libretto unreachable", "aria", ariaID, "form", formID, "err", err)
+			continue
+		}
+		if _, err := lib.Release(); err != nil {
+			slog.Warn("kill: release failed", "aria", ariaID, "form", formID, "err", err)
+		}
 	}
 }
 

@@ -39,7 +39,17 @@ import (
 // after N sets cannot be serviced before them).
 // ---------------------------------------------------------------------------
 
-const fuzzTurnTimeout = 5 * time.Second
+// fuzzTurnTimeout is a LIVENESS guard, not synchronisation: a wedged test
+// must fail on an assertion rather than hang the package.
+//
+// Raised from 5s because the WAL change made every queued `set` a mandatory
+// fsync, and SetWhileTurnInFlight drains 160 of them inside one turn. At ~3
+// ms each that is half a second on an idle box and several times that when
+// `go test ./...` has a dozen packages competing for the same disk -- which
+// is where it timed out twice, on two different builds, while passing at
+// -count=5 and -count=8 in isolation. The deadline was chosen before
+// durability was mandatory and nobody moved it.
+const fuzzTurnTimeout = 20 * time.Second
 
 // gateProvider is a stub provider that parks inside Send until the test opens
 // the gate. That park IS the "turn in flight" window every subtest below needs;
