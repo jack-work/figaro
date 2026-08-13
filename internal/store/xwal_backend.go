@@ -88,6 +88,22 @@ func irEntrySize(e Entry[message.Message]) int {
 // over-holds: being wrong toward less memory is the safe direction here.
 const irDecodeInflation = 5
 
+// transEntrySize estimates one cached TRANSLATION entry's retained bytes.
+// The payload is the provider's own wire form, so its encoded size is the
+// bytes themselves rather than an estimate, and the inflation is the decode
+// into []json.RawMessage headers.
+//
+// It exists to make the caches VISIBLE. They are opened unbounded (see
+// OpenTranslation) and they were counted by nothing, so a daemon holding
+// hundreds of megabytes of them reported only its IR.
+func transEntrySize(e Entry[[]json.RawMessage]) int {
+	n := 0
+	for _, raw := range e.Payload {
+		n += len(raw) + 16
+	}
+	return n
+}
+
 type ariaHandle struct {
 	ir    *cachedLog[message.Message]
 	trans map[string]*cachedLog[[]json.RawMessage]
@@ -182,7 +198,11 @@ func (b *XwalBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.R
 	}
 	b.mu.Unlock()
 	ch := transChannel(providerName)
-	c := newCachedLog[[]json.RawMessage](newXwalLog[[]json.RawMessage](b.store, ariaID, ch, false))
+	// Unbounded, as before: what changes here is that the entries are now
+	// MEASURED. Bounding them is a separate argument that wants these
+	// numbers first.
+	c := newWindowedLog[[]json.RawMessage](
+		newXwalLog[[]json.RawMessage](b.store, ariaID, ch, false), 0, 0, 1, transEntrySize)
 	b.mu.Lock()
 	if existing := h.trans[providerName]; existing != nil {
 		b.mu.Unlock()
@@ -663,6 +683,13 @@ func (b *XwalBackend) ResidentIRBytes() int {
 }
 
 func (b *XwalBackend) residency() (rows, bytes int) {
+	rows, bytes, _, _ = b.residencyAll()
+	return rows, bytes
+}
+
+// residencyAll separates the two caches an open aria holds. The IR was the
+// only one ever reported, and the translations are the ones nothing bounds.
+func (b *XwalBackend) residencyAll() (irRows, irBytes, trRows, trBytes int) {
 	b.mu.Lock()
 	handles := make([]*ariaHandle, 0, len(b.open))
 	for _, h := range b.open {
@@ -672,11 +699,31 @@ func (b *XwalBackend) residency() (rows, bytes int) {
 
 	for _, h := range handles {
 		if h.ir != nil {
-			rows += h.ir.Resident()
-			bytes += h.ir.ResidentBytes()
+			irRows += h.ir.Resident()
+			irBytes += h.ir.ResidentBytes()
+		}
+		for _, t := range h.trans {
+			if t == nil {
+				continue
+			}
+			trRows += t.Resident()
+			trBytes += t.ResidentBytes()
 		}
 	}
-	return rows, bytes
+	return irRows, irBytes, trRows, trBytes
+}
+
+// ResidentTranslationRows and ResidentTranslationBytes report the OTHER
+// cache: one per (aria, provider), holding the provider's wire form of every
+// message it has translated.
+func (b *XwalBackend) ResidentTranslationRows() int {
+	_, _, rows, _ := b.residencyAll()
+	return rows
+}
+
+func (b *XwalBackend) ResidentTranslationBytes() int {
+	_, _, _, bytes := b.residencyAll()
+	return bytes
 }
 
 func (b *XwalBackend) EvictIdle(live map[string]bool, idle time.Duration) int {

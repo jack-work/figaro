@@ -113,6 +113,13 @@ func (a *Angelus) MemStatus() *rpc.MemStatus {
 	if fp, ok := a.Backend.(interface{ ResidentFormPatches() int }); ok {
 		st.ResidentFormPatches = fp.ResidentFormPatches()
 	}
+	if tr, ok := a.Backend.(interface {
+		ResidentTranslationRows() int
+		ResidentTranslationBytes() int
+	}); ok {
+		st.ResidentTranslationRows = tr.ResidentTranslationRows()
+		st.ResidentTranslationBytes = tr.ResidentTranslationBytes()
+	}
 	if a.Hubs != nil {
 		for _, hb := range a.Hubs.all() {
 			st.Endpoints++

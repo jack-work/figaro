@@ -895,6 +895,13 @@ type MemStatus struct {
 	// the number that correlates with RSS. Rows are a poor proxy: the large
 	// entries cluster at the tail of a conversation.
 	ResidentIRBytes int `json:"resident_ir_bytes"`
+	// ResidentTranslationRows and ResidentTranslationBytes are the OTHER
+	// cache: one per (aria, provider), holding the provider's wire form of
+	// every message it has translated. Nothing bounds it and, until these
+	// two, nothing counted it either, so a daemon holding hundreds of
+	// megabytes of translations reported only its IR.
+	ResidentTranslationRows  int `json:"resident_translation_rows"`
+	ResidentTranslationBytes int `json:"resident_translation_bytes"`
 
 	HeapAllocBytes uint64 `json:"heap_alloc_bytes"` // live heap objects
 	HeapInuseBytes uint64 `json:"heap_inuse_bytes"` // spans in use, incl. fragmentation

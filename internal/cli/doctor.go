@@ -194,6 +194,8 @@ func runDoctorMem(asJSON bool) error {
 	fmt.Printf("endpoints  open=%d  attached-clients=%d\n", m.Endpoints, m.AttachedClients)
 	fmt.Printf("ir cache   resident-rows=%d  resident=%s\n",
 		m.ResidentIRRows, humanBytes(int64(m.ResidentIRBytes)))
+	fmt.Printf("xlt cache  resident-rows=%d  resident=%s  (unbounded)\n",
+		m.ResidentTranslationRows, humanBytes(int64(m.ResidentTranslationBytes)))
 	fmt.Printf("runtime    goroutines=%d  sessions=%d  gc=%d\n",
 		m.Goroutines, m.Sessions, m.NumGC)
 	fmt.Printf("heap       alloc=%s  inuse=%s  sys=%s  total-sys=%s\n",
