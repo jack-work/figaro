@@ -219,10 +219,32 @@ Also done this session:
 #### Still unbounded, and the next memory lever
 
 `formState.patches` grows for the life of the process: every patch a form
-ever took, decoded, resident. Bounding it is the "windowed LRU" idea from
-the original conversation, and it is harder than the IR window because
-`PatchesBetween` must still answer for ranges below the window, which means
-reading them back from figwal. Design is in durable-forms; not started.
+ever took, decoded, resident. This is the last unbounded retention in the
+store and it is the next memory lever after the IR window.
+
+**The design, including the trap.** Two halves:
+
+1. **Serve below the window from the log.** `PatchesBetween(after, upTo]`
+   checks whether the window still reaches `after`; if not, read that range
+   back through `FormLog.RangePatches` and return a fresh slice. Correct,
+   allocating, and only on the cold path (a retranslate of old history).
+   The hot path keeps the zero-copy view.
+
+2. **Trim, but COPY when you trim.** Here is the trap: `commit` appends to a
+   SHARED backing array and each published state holds its own length. That
+   is what makes the view safe, and it also means **re-slicing the front off
+   does not release anything**: a header pointing into the middle of an
+   array pins the whole array. Trimming has to copy the tail into a fresh
+   array, and copying on every write is O(history) again, which is the
+   regression this whole line of work removed.
+
+   So: copy only when the excess crosses a slack allowance, exactly the
+   pattern `cachedLog` already uses ("compaction is batched behind a slack
+   allowance, 362 ns, zero extra allocations"). Read that code before
+   writing this one.
+
+Not started. `PatchesBetween`'s zero-copy contract and its test
+(`TestFormPatchesBetweenIsAViewNotACopy`) are what will catch a mistake.
 
 #### Fleet regression: 12 arias, one daemon, one studied form (300 patches)
 
