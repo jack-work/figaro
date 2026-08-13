@@ -122,8 +122,10 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 		if cached, ok := lookupCached(config, entry); ok {
 			stats.Cached++
 			lastForm = maxU64(lastForm, entry.FormChannelVersion)
-			for fid, upTo := range entry.StudyVersions {
-				lastStudy[fid] = maxU64(lastStudy[fid], upTo)
+			if carriesStudy(msg) {
+				for fid, upTo := range entry.StudyVersions {
+					lastStudy[fid] = maxU64(lastStudy[fid], upTo)
+				}
 			}
 			// An EPHEMERAL aria has no accessor and carries its patches on
 			// the record itself, so there is nothing to catch up from later.
@@ -166,6 +168,25 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 		// stamp. The bound board above is member zero of this pattern; the
 		// studied forms are the shared members, and their transitions fold
 		// into the provider IR identically: re-derived on retranslate.
+		if !carriesStudy(msg) {
+			// A WINDOW MAY ONLY CLOSE ON A RECORD THAT CAN CARRY THE BLOCK.
+			// A studied form's transitions ride a USER message: every encoder
+			// renders them under RoleInput and nowhere else. An assistant
+			// record that consumed its window would compute a block, drop it
+			// on the floor, and leave the next user record asking for
+			// (v, v] -- so the change would never be shown, to anyone, ever.
+			//
+			// That is not hypothetical and it is not rare with a libretto:
+			// the fold is asynchronous, so a source change written during a
+			// turn lands in the window that closes on the TURN'S OWN ANSWER.
+			// Found by restarting a daemon and watching `afterrestart`
+			// vanish between two turns.
+			//
+			// The rule is a function of the record's ROLE, so a cached record
+			// and an encoded one still agree, which is what the advance being
+			// unconditional was protecting.
+			goto encode
+		}
 		for fid, upTo := range entry.StudyVersions {
 			// ADVANCE FIRST, whatever happens below. The cursor is where the
 			// form STOOD at this stamp, which is true of a form that has
@@ -193,6 +214,7 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 			}
 		}
 
+	encode:
 		encoded, err := config.Encode(msg, snap)
 		if err != nil {
 			if config.ReportEncodeError != nil {
@@ -254,6 +276,11 @@ func lookupCached[T any](config ProjectionConfig[T], entry store.Entry[message.M
 	}
 	return cached.Payload, true
 }
+
+// carriesStudy reports whether a record can carry a studied-form block. Only
+// a user message can: every encoder renders StudyReminderTexts under
+// RoleInput. A record that cannot carry one must not consume a window.
+func carriesStudy(msg message.Message) bool { return msg.Role == message.RoleInput }
 
 func maxU64(a, b uint64) uint64 {
 	if b > a {

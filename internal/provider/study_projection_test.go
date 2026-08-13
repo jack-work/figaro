@@ -63,11 +63,16 @@ func TestProjectionFoldsStudiedPatchesBetweenStamps(t *testing.T) {
 	if n := len(folded[0].StudyPatches["@r"]); n != 1 {
 		t.Fatalf("entry1 @r patches = %d, want 1 (version 1 only)", n)
 	}
-	if n := len(folded[1].StudyPatches["@r"]); n != 2 {
-		t.Fatalf("entry2 @r patches = %d, want 2 (versions 2,3)", n)
+	// entry2 is an OUTPUT record. It cannot carry a study block (every
+	// encoder renders them under RoleInput), so it neither folds nor
+	// consumes: its window passes to the next user record instead of being
+	// computed and dropped. This assertion used to read the other way, and
+	// what it was pinning was a silent loss.
+	if n := len(folded[1].StudyPatches["@r"]); n != 0 {
+		t.Fatalf("entry2 (output) @r patches = %d, want 0: it cannot show them", n)
 	}
-	if len(folded[2].StudyPatches["@r"]) != 0 {
-		t.Fatalf("entry3 @r patches = %v, want none (stamp unmoved)", folded[2].StudyPatches["@r"])
+	if n := len(folded[2].StudyPatches["@r"]); n != 2 {
+		t.Fatalf("entry3 @r patches = %d, want 2 (versions 2,3, inherited from the output's window)", n)
 	}
 	// @gone is stamped with no accessor: a libretto is fully persistent, so
 	// this is unreadability, not death, and absence is the truthful answer.
@@ -230,5 +235,48 @@ func TestStudyMarkCarriesTheBaselineState(t *testing.T) {
 	stop := message.Message{Study: &message.StudyMark{FormID: "@r", Began: false}}
 	if s := strings.Join(StudyReminderTexts(stop, form.Snapshot{}), ""); !strings.Contains(s, `"observing":false`) || strings.Contains(s, `"state"`) {
 		t.Errorf("stop mark: %s", s)
+	}
+}
+
+// A WINDOW MAY ONLY CLOSE ON A RECORD THAT CAN CARRY THE BLOCK.
+//
+// Study transitions ride a USER message (every encoder renders them under
+// RoleInput). If an assistant record consumes its window, the block it
+// computes is dropped and the next user record asks for (v, v] -- so a
+// studied form's change is never shown, to anyone, ever.
+//
+// With a libretto this is the COMMON case, not a corner: the fold is
+// asynchronous, so a source change written during a turn lands in the window
+// that closes on the turn's own answer.
+func TestAssistantRecordDoesNotSwallowAStudyWindow(t *testing.T) {
+	entries := []store.Entry[message.Message]{
+		{LT: 1, Payload: message.Message{Role: message.RoleInput}, StudyVersions: map[string]uint64{"@r": 1}},
+		// The source moved DURING the turn: the answer stamps past it.
+		{LT: 2, Payload: message.Message{Role: message.RoleOutput}, StudyVersions: map[string]uint64{"@r": 3}},
+		{LT: 3, Payload: message.Message{Role: message.RoleInput}, StudyVersions: map[string]uint64{"@r": 3}},
+	}
+	role := &fakeForm{ps: []store.VersionedPatch{
+		vp(1, "name", `"r"`), vp(2, "phase", `"canary"`), vp(3, "phase", `"ga"`),
+	}}
+
+	var folded []message.Message
+	_, _, err := ProjectIncrementally(ProjectionConfig[int]{
+		Log:     &stampedLog{entries: entries},
+		Studies: map[string]Form{"@r": role},
+		Encode: func(m message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
+			folded = append(folded, m)
+			return []json.RawMessage{json.RawMessage(`{}`)}, nil
+		},
+		Append: func(s int, _ []json.RawMessage, _ uint64) int { return s + 1 },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(folded[1].StudyPatches["@r"]); n != 0 {
+		t.Errorf("the assistant record rendered %d study patches it cannot show", n)
+	}
+	// The user record that FOLLOWS it must see everything since version 1.
+	if n := len(folded[2].StudyPatches["@r"]); n != 2 {
+		t.Fatalf("the next user record folded %d patches, want 2 (versions 2 and 3): the window was swallowed", n)
 	}
 }
