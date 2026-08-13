@@ -830,6 +830,19 @@ The degradation window is bounded exactly: the migration seeds each libretto
 with the source's state at migration time, so only records written BEFORE
 that lose their block.
 
+**The bookkeeping must not reach the model** (found by b2b0c543 while tracing
+the switch). `system.libretto.refs`, `.at` and `.alive` live in the SAME
+document as the mirrored keys, so a translator reading the copy would render
+`.at` changing on every fold and `.refs` changing whenever a DIFFERENT aria
+studies or drops the same form — machinery churn in every studied block, which
+the source form never produced.
+
+The rule: **the studied block renders the mirrored keys and `.alive`, and
+nothing else.** `.at` and `.refs` are filtered where the accessor is built, so
+the projection stays ignorant of what they are. `.alive` is exactly the
+exception ruling 1 asks for, which is why it is a `system.libretto.*` key at
+all rather than something the translator has to be told about.
+
 **A LIBRETTO IS FULLY PERSISTENT. No retention, no compaction, no dropped
 segment files, ever** (Gluck, and it is the rule the rest depends on). The
 translator asks for arbitrary historical ranges between two stamps, so a
@@ -852,6 +865,11 @@ encoder MAY special-case that one key into the sentence it prints today, and
 `system.study_incantation`'s `ondrop` already exists to say what the event
 means to a particular figaro; neither is required, and neither may put
 liveness back into the translator.
+
+**Old records degrade, and that is fine** (Gluck, asked directly): an aria
+whose stamps predate the libretto renders without a study block, and a studied
+form that was deleted needs no special handling. This is what makes §12.5 a
+namespace and a skip.
 
 **Reclamation is deferred, not designed away.** Deleting an aria already
 decrements every libretto its board names (§12.2.2, built). What is NOT built
