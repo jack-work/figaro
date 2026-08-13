@@ -272,11 +272,13 @@ and the counters as the sweep runs. What to look for is two numbers at once -
   would remove the search. `TODO(perf)` in `store/xwal_log.go`.
 - **The form patch list is not windowed.** It holds the board plus every
   patch. Measured at ~45 KiB, so this is design tidiness, not a memory win.
-- **Opening a node still SCANS every segment file** to build its per-record
-  offset index, which is why the first listing on a 515-aria store takes 2.7
-  seconds where the second takes 31 ms. The index is small (8 bytes a record)
-  but building it reads every byte on disk. A footer index per sealed segment,
-  or opening sealed segments only when a read needs one, would remove it; both
-  live in figwal and neither is built.
+- **The first `fig ls` on a 515-aria store takes 2.7 s and nobody knows why
+  yet.** It is NOT the segment scan: figwal now opens only the newest segment
+  of a node (the rest on the read that lands in them), and the wall time did
+  not move. Measured in-process, the whole listing is ~390 ms (topology and
+  labels 302 ms, recency 84 ms), so most of that 2.7 s is somewhere between
+  the CLI and the daemon's list handler -- meta sidecars, JSON, or the boot
+  it races. Profile the daemon-side handler before believing any story about
+  it, including this one.
 - **Memory-pressure triggering does not exist.** The time rule and the cap are
   the only policies. Add one only if measurement demands it.

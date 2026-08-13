@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"strconv"
 	"testing"
+	"time"
 )
 
 func TestDaemonDayMemory(t *testing.T) {
@@ -44,10 +45,14 @@ func TestDaemonDayMemory(t *testing.T) {
 		return int64(m.HeapAlloc), int64(m.HeapSys)
 	}
 	mib := func(v int64) float64 { return float64(v) / (1 << 20) }
+	last := time.Now()
 	report := func(phase string) {
+		took := time.Since(last)
 		alloc, sys := heap()
-		t.Logf("%-26s heap alloc %8.1f MiB   sys %8.1f MiB   loaded-heads %d",
-			phase, mib(alloc), mib(sys), be.Store().LoadedHeads())
+		t.Logf("%-26s %8s  heap alloc %8.1f MiB   sys %8.1f MiB   loaded-heads %d",
+			phase, took.Round(time.Millisecond), mib(alloc), mib(sys),
+			be.Store().LoadedHeads())
+		last = time.Now()
 	}
 
 	report("open")
@@ -55,9 +60,12 @@ func TestDaemonDayMemory(t *testing.T) {
 	report("topology")
 	for i := range rows {
 		be.label(&rows[i])
+	}
+	report("labels")
+	for i := range rows {
 		_ = be.LastTS(rows[i].ID)
 	}
-	report("listing (label+recency)")
+	report("recency")
 
 	// FIRST, the raw-residency phase: touch every aria's board and its IR
 	// counter and decode nothing into figaro's caches. This is figwal's
