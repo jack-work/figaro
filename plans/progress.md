@@ -71,6 +71,30 @@ only to primary forms.
 Row 6 of that audit was "figaro stamps the libretto's cursor — not built".
 This session is that row.
 
+### What the model is actually sent, now (`renderlive.sh`, on the wire)
+
+Studying a form, patching it twice before a turn and once after, the request
+figaro POSTs carries exactly this and nothing else:
+
+```
+study        {"form":"@id","observing":true,"state":{"brief":"the studied thing"}}
+study:@id    {"changes":2,"set":{"sha":"8b12f128","status":"merged"}}
+study:@id    {"changes":1,"set":{"phase":"ga"}}
+```
+
+The mark carries the baseline (the seeded copy), the two patches that landed
+in one window are ONE block of two changes — the fold coalescing, visible —
+and the patch after the first turn is its own block. No `system.libretto.at`,
+no `refs`, no `@libretto::` stump name anywhere in the context. Seven checks,
+all asserting on the wire dump rather than on what a model said about it.
+
+**Three of the four faults that run exposed were in the SCRIPT, not the
+product**: a `set` with the wrong argument shape whose error I had sent to
+`/dev/null`, a glob matching no file, and a grep for `"ga"` against a body
+where every quote is escaped. That last one reported the switch broken for a
+whole cycle after it was fixed. **A check that cannot pass costs exactly what
+a check that cannot fail costs**, and both look like evidence while they lie.
+
 ## SESSION 3 AT A GLANCE (aria d604c755)
 
 The figwal memory job in both halves, the layer nobody had reclaimed at all,
