@@ -75,6 +75,17 @@ var errSealed = fmt.Errorf("form is tombstoned: no further patches")
 // and later is a node on another machine. When that exists, this becomes
 // {id, holder, expires} and the sweep drops the stale; nothing above it
 // changes.
+// Subscribed reports whether anything is streaming from this form.
+//
+// It is the LEASE (durable-forms §7: "the lease registry is the subscriber
+// set"), and eviction has to respect it for a reason that is not obvious:
+// dropping a Form from the registry does not stop its subscribers, it
+// ORPHANS them. The next write constructs a new Form instance, and the old
+// one -- which is the one the subscriber holds -- never hears anything
+// again. The mirror then stops following with no error anywhere, which is
+// the worst way for a cache to be wrong.
+func (f *Form) Subscribed() bool { return len(*f.subs.Load()) > 0 }
+
 func (f *Form) Reclaimable() bool {
 	if !f.Tombstoned() {
 		return false

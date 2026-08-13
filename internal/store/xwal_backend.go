@@ -897,6 +897,15 @@ func (b *XwalBackend) EvictIdle(live map[string]bool, idle time.Duration) int {
 		if at, ok := b.touched[id]; ok && at.After(cutoff) {
 			continue
 		}
+		// A form somebody is STREAMING from is not idle, whatever its clock
+		// says. Evicting it does not stop the subscriber, it orphans it: the
+		// next write builds a new Form and the old instance -- the one the
+		// subscriber holds -- never hears again. A libretto stopped
+		// following its source exactly this way, silently, while every
+		// count still read healthy.
+		if f := b.forms[id]; f != nil && f.Subscribed() {
+			continue
+		}
 		if _, held := b.open[id]; !held {
 			if _, hasForm := b.forms[id]; !hasForm {
 				if _, hasMeta := b.metas[id]; !hasMeta {
