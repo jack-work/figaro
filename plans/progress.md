@@ -2896,3 +2896,14 @@ contended study leaks one per attempt: a leak that appears only under
 contention, and then only as a count that will not come down.
 
 Net 20 lines fewer, and the live path re-verified end to end.
+
+### And the agent's half delegates too (`1becdf8e`)
+
+Three read-modify-writes of `system.studies` (agent, hub, and the store's
+own) became one, with the agent keeping the single part the hub does not
+need: refreshing its in-memory board mirror after the durable write, because
+an agent renders from a snapshot and a write it does not hear about is a
+write the next turn will not see.
+
+47 lines added, 64 removed. **A crash-ordering rule that three call sites had
+to agree about by inspection now exists once.**
