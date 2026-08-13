@@ -132,10 +132,18 @@ type Backend interface {
 	// Called on the form's writer, so a sink must hand off and return.
 	WatchForm(ariaID string, fn func(version uint64, patch message.Patch)) error
 
-	// WatchFormDurable is WatchForm surviving eviction: re-armed whenever
-	// the node's Form reopens. The cancel removes the registration; the
-	// DELIVERY gate remains the caller's (a cancelled sink may fire until
-	// the live Form closes).
+	// A sink is registered on ONE Form instance, so it lives exactly as long
+	// as that instance does. Eviction constructs a new one on the next write
+	// and the old sink hears nothing more -- which is safe for an agent's own
+	// watch, because the sweep never evicts a live aria, and is NOT safe for
+	// anything else. A long-lived reader of somebody else's form wants
+	// SubscribeForm, whose subscription is a LEASE the sweep honours
+	// (Form.Subscribed).
+	//
+	// This comment used to describe a `WatchFormDurable` that re-armed across
+	// eviction. There is no such method: it was removed, or never built, and
+	// the promise outlived it.
+
 	// SetObservedForms declares the forms whose positions every IR append
 	// of this aria stamps (the observed set: study subscriptions). The
 	// board's system.studies is the durable truth; this is its in-memory
