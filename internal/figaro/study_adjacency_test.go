@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/internal/store"
 	"github.com/stretchr/testify/require"
 )
 
@@ -80,4 +81,54 @@ func TestStudyMarkCannotLandInsideARound(t *testing.T) {
 	require.Eventually(t, func() bool { return studyMarks() == 1 },
 		3*time.Second, 5*time.Millisecond,
 		"the mark never arrived after the round boundary")
+}
+
+// Study mints the libretto and retains it; drop gives the reference back.
+// The board is the authoritative fact and the count is derived from it, so
+// the two must agree the moment the verb returns -- that is what the
+// reconciliation sweep exists to check, and it should have nothing to fix.
+func TestStudyMintsAndRetainsItsLibretto(t *testing.T) {
+	entered, gate := newGate()
+	prov := &gateProvider{name: "gate", entered: entered, gate: gate}
+	a, backend, _ := fuzzAgent(t, prov, nil)
+
+	formID, _, err := backend.CreateForm("", message.Patch{
+		Set: map[string]json.RawMessage{"brief": json.RawMessage(`"observed"`)},
+	})
+	require.NoError(t, err)
+
+	lb, ok := backend.(interface {
+		Libretto(string) (*store.Libretto, error)
+		ReconcileLibrettos() (store.LibrettoAudit, error)
+	})
+	require.True(t, ok, "the xwal backend should carry the libretto half")
+
+	if _, err := a.Study(formID); err != nil {
+		t.Fatal(err)
+	}
+	lib, err := lb.Libretto(formID)
+	require.NoError(t, err)
+	require.Equal(t, 1, lib.Refs(), "study did not retain the libretto")
+	require.Eventually(t, func() bool {
+		raw, ok := lib.State().Get("brief")
+		return ok && string(raw) == `"observed"`
+	}, 3*time.Second, 5*time.Millisecond, "the libretto is not following the source")
+
+	// Studying again is not a second reference: the board is a set.
+	if _, err := a.Study(formID); err != nil {
+		t.Fatal(err)
+	}
+	require.Equal(t, 1, lib.Refs(), "a repeated study double-counted")
+
+	audit, err := lb.ReconcileLibrettos()
+	require.NoError(t, err)
+	require.Zero(t, audit.Corrected, "the sweep disagreed with the verb: %+v", audit)
+
+	if _, err := a.Drop(formID); err != nil {
+		t.Fatal(err)
+	}
+	require.Equal(t, 0, lib.Refs(), "drop did not release the libretto")
+	audit, err = lb.ReconcileLibrettos()
+	require.NoError(t, err)
+	require.Zero(t, audit.Corrected, "after a drop the sweep disagreed: %+v", audit)
 }

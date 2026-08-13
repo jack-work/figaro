@@ -22,7 +22,9 @@ package angelus
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jack-work/figaro/internal/figaro"
@@ -68,9 +70,20 @@ func (h *handlers) studyForHub(ariaID, formID string, drop bool) ([]string, erro
 			return nil, err
 		}
 	}
+	// The libretto half, in the order §12.2.1 requires: retained BEFORE the
+	// board declares a study, released AFTER the board stops claiming one, so
+	// every crash leaves the count too high rather than too low.
+	if !drop && formID != "" {
+		retainLibrettoForHub(b, ariaID, formID)
+	}
 	studies, changed, err := h.patchStudiesForHub(ariaID, formID, drop)
 	if err != nil {
 		return nil, err
+	}
+	if formID != "" && (drop && changed || !drop && !changed) {
+		// Dropped, or already declared: either way this hub is holding a
+		// reference it must give back.
+		releaseLibrettoForHub(b, ariaID, formID)
 	}
 	b.SetObservedForms(ariaID, studies)
 	if changed && formID != "" {
@@ -127,7 +140,46 @@ func (h *handlers) patchStudiesForHub(ariaID, formID string, drop bool) ([]strin
 }
 
 func isVersionConflict(err error) bool {
-	return err != nil && (containsAny(err.Error(), "form moved", "version"))
+	if errors.Is(err, store.ErrFormMoved) {
+		return true
+	}
+	return err != nil && containsAny(err.Error(), "form moved", "version")
+}
+
+// The libretto's refcount, when the backend has librettos. Optional
+// interface: an ephemeral backend has none and must not pretend.
+type librettoBackend interface {
+	Libretto(formID string) (*store.Libretto, error)
+}
+
+func retainLibrettoForHub(b store.Backend, ariaID, formID string) {
+	lb, ok := b.(librettoBackend)
+	if !ok {
+		return
+	}
+	lib, err := lb.Libretto(formID)
+	if err != nil {
+		slog.Warn("study: libretto unreachable", "aria", ariaID, "form", formID, "err", err)
+		return
+	}
+	if _, err := lib.Retain(); err != nil {
+		slog.Warn("study: retain failed", "aria", ariaID, "form", formID, "err", err)
+	}
+}
+
+func releaseLibrettoForHub(b store.Backend, ariaID, formID string) {
+	lb, ok := b.(librettoBackend)
+	if !ok {
+		return
+	}
+	lib, err := lb.Libretto(formID)
+	if err != nil {
+		slog.Warn("drop: libretto unreachable", "aria", ariaID, "form", formID, "err", err)
+		return
+	}
+	if _, err := lib.Release(); err != nil {
+		slog.Warn("drop: release failed", "aria", ariaID, "form", formID, "err", err)
+	}
 }
 
 func containsAny(s string, subs ...string) bool {

@@ -70,8 +70,11 @@ func SourceOfLibretto(librettoID string) (string, bool) {
 
 // Libretto is a derived form with exactly one source.
 type Libretto struct {
-	form   *Form
+	form *Form
+	// source is the bare id, which names the stump; addr is the id as the
+	// store addresses it, sigil and all. They differ for an unbound form.
 	source string
+	addr   string
 
 	mu   sync.Mutex
 	sub  *Subscription
@@ -90,7 +93,7 @@ func OpenLibretto(s *XwalStore, sourceFormID string) (*Libretto, error) {
 	if err != nil {
 		return nil, err
 	}
-	l := &Libretto{form: f, source: strings.TrimPrefix(sourceFormID, "@")}
+	l := &Libretto{form: f, source: strings.TrimPrefix(sourceFormID, "@"), addr: sourceFormID}
 	// A fresh libretto is alive and unobserved. Written once, so a reader can
 	// tell "never studied" from "studied and dropped" without inferring it
 	// from an absence.
@@ -115,8 +118,13 @@ func (l *Libretto) formState() form.Snapshot {
 // ID is the libretto's own form id (its stump name).
 func (l *Libretto) ID() string { return LibrettoID(l.source) }
 
-// Source is the form id this libretto observes.
-func (l *Libretto) Source() string { return l.source }
+// Source is the form id this libretto observes, as the store addresses it.
+func (l *Libretto) Source() string {
+	if l.addr != "" {
+		return l.addr
+	}
+	return l.source
+}
 
 // State is the materialized copy, bookkeeping included.
 func (l *Libretto) State() form.Snapshot { return l.formState() }

@@ -19,8 +19,9 @@ package figaro
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"strings"
+	"log/slog"
 	"time"
 
 	"github.com/jack-work/figaro/internal/form"
@@ -90,6 +91,12 @@ func (a *Agent) Study(formID string) ([]string, error) {
 	if err := a.requireStudyTarget(formID); err != nil {
 		return nil, err
 	}
+	// LIBRETTO FIRST (durable-forms §12.2.1). A crash between the two writes
+	// then leaves a refcount too HIGH, which the reconciliation sweep
+	// repairs; the reverse leaves a board naming a libretto nothing counted,
+	// and reclamation would collect a copy out from under a live observer.
+	// One is a leak and the other is data loss.
+	retainLibretto(a.backend, a.id, formID)
 	studies, changed, err := a.patchStudies(func(ids []string) []string {
 		for _, id := range ids {
 			if id == formID {
@@ -102,6 +109,11 @@ func (a *Agent) Study(formID string) ([]string, error) {
 		return nil, err
 	}
 	a.backend.SetObservedForms(a.id, studies)
+	if !changed {
+		// Already declared: hand the reference back rather than leaving a
+		// count that only a sweep can explain.
+		releaseLibretto(a.backend, a.id, formID)
+	}
 	if changed {
 		a.appendStudyMark(formID, true)
 	}
@@ -111,6 +123,8 @@ func (a *Agent) Study(formID string) ([]string, error) {
 // Drop unsubscribes: the board first (truth), then the store's mirror
 // (stamps end at the next IR record), then the stated mark.
 func (a *Agent) Drop(formID string) ([]string, error) {
+	// BOARD FIRST on the way out, for the same reason in reverse: stop
+	// claiming it before the count comes down.
 	studies, changed, err := a.patchStudies(func(ids []string) []string {
 		out := ids[:0]
 		for _, id := range ids {
@@ -125,9 +139,52 @@ func (a *Agent) Drop(formID string) ([]string, error) {
 	}
 	a.backend.SetObservedForms(a.id, studies)
 	if changed {
+		releaseLibretto(a.backend, a.id, formID)
 		a.appendStudyMark(formID, false)
 	}
 	return studies, nil
+}
+
+// retainLibretto and releaseLibretto move the shared derived form's refcount
+// when the backend has one. Optional interface, because an ephemeral backend
+// has no librettos and must not have to pretend it does.
+//
+// Best-effort by design: a libretto that cannot be reached does not block the
+// declaration, because the board is the authoritative fact and the sweep
+// recomputes the count from it (§12.2.1).
+func retainLibretto(b store.Backend, ariaID, formID string) {
+	lb, ok := b.(librettoBackend)
+	if !ok {
+		return
+	}
+	lib, err := lb.Libretto(formID)
+	if err != nil {
+		slog.Warn("study: libretto unreachable", "aria", ariaID, "form", formID, "err", err)
+		return
+	}
+	if _, err := lib.Retain(); err != nil {
+		slog.Warn("study: retain failed", "aria", ariaID, "form", formID, "err", err)
+	}
+}
+
+func releaseLibretto(b store.Backend, ariaID, formID string) {
+	lb, ok := b.(librettoBackend)
+	if !ok {
+		return
+	}
+	lib, err := lb.Libretto(formID)
+	if err != nil {
+		slog.Warn("drop: libretto unreachable", "aria", ariaID, "form", formID, "err", err)
+		return
+	}
+	if _, err := lib.Release(); err != nil {
+		slog.Warn("drop: release failed", "aria", ariaID, "form", formID, "err", err)
+	}
+}
+
+// librettoBackend is the store's half of phase 9, as an optional interface.
+type librettoBackend interface {
+	Libretto(formID string) (*store.Libretto, error)
 }
 
 // appendStudyMark QUEUES a began/stopped-observing transition. The record is
@@ -190,7 +247,7 @@ func (a *Agent) patchStudies(edit func([]string) []string) ([]string, bool, erro
 		}
 		patch := form.Patch{Set: map[string]json.RawMessage{studiesKey: b}}
 		if _, err := a.backend.ApplyFormIf(a.id, patch, version); err != nil {
-			if strings.Contains(err.Error(), "version") {
+			if errors.Is(err, store.ErrFormMoved) {
 				continue // the board moved; re-read and retry
 			}
 			return nil, false, err

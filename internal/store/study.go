@@ -98,30 +98,36 @@ func (b *XwalBackend) StudiedBy(observerID string) ([]string, error) {
 
 // Libretto returns the libretto for a studied form, minting and following it
 // if it is not already open. Exported for the verb and for the translator.
+//
+// The sigil matters in exactly one direction: an unbound form is addressed as
+// "@abc123" and its libretto's STUMP is named for the bare id, so the name is
+// stripped and the LOOKUP is not. Getting that backwards produces "unknown
+// trunk", which is how this was found.
 func (b *XwalBackend) Libretto(sourceFormID string) (*Libretto, error) {
-	return b.libretto(strings.TrimPrefix(sourceFormID, "@"))
+	return b.libretto(sourceFormID)
 }
 
 // libretto opens, seeds and starts following, once per source, and keeps the
 // instance: the fold is a goroutine per LIBRETTO, not per observer, which is
 // the whole point of sharing one per studied form.
-func (b *XwalBackend) libretto(source string) (*Libretto, error) {
+func (b *XwalBackend) libretto(sourceFormID string) (*Libretto, error) {
+	key := strings.TrimPrefix(sourceFormID, "@")
 	b.mu.Lock()
-	if l := b.librettos[source]; l != nil {
+	if l := b.librettos[key]; l != nil {
 		b.mu.Unlock()
 		return l, nil
 	}
 	b.mu.Unlock()
 
 	// Outside the lock: this replays a form and reads files.
-	lib, err := OpenLibretto(b.store, source)
+	lib, err := OpenLibretto(b.store, sourceFormID)
 	if err != nil {
 		return nil, err
 	}
-	src, err := b.form(source)
+	src, err := b.form(sourceFormID)
 	if err != nil {
 		lib.Close()
-		return nil, fmt.Errorf("libretto %s: source: %w", source, err)
+		return nil, fmt.Errorf("libretto %s: source: %w", sourceFormID, err)
 	}
 	if err := lib.Follow(src); err != nil {
 		lib.Close()
@@ -129,7 +135,7 @@ func (b *XwalBackend) libretto(source string) (*Libretto, error) {
 	}
 
 	b.mu.Lock()
-	if existing := b.librettos[source]; existing != nil {
+	if existing := b.librettos[key]; existing != nil {
 		b.mu.Unlock()
 		lib.Close() // lost the race; the shared one wins
 		return existing, nil
@@ -137,12 +143,13 @@ func (b *XwalBackend) libretto(source string) (*Libretto, error) {
 	if b.librettos == nil {
 		b.librettos = map[string]*Libretto{}
 	}
-	b.librettos[source] = lib
+	b.librettos[key] = lib
 	b.mu.Unlock()
 	return lib, nil
 }
 
 func (b *XwalBackend) closeLibretto(source string) {
+	source = strings.TrimPrefix(source, "@")
 	b.mu.Lock()
 	lib := b.librettos[source]
 	delete(b.librettos, source)
