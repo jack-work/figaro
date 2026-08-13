@@ -235,8 +235,20 @@ type handlers struct {
 	// h.config concurrently.
 	configMu sync.Mutex
 
-	restoreMu    sync.Mutex
-	restoreLocks map[string]*sync.Mutex
+	// restoring is the in-flight wake per aria. It is a single-flight, not a
+	// lock table: the entry EXISTS only while a wake is running, so nothing
+	// accumulates. The map it replaces handed out a *sync.Mutex per aria and
+	// never removed one, so it grew by one entry per aria ever restored, for
+	// the life of the daemon (plans/lock-audit.md, fast-follow 2).
+	restoreMu sync.Mutex
+	restoring map[string]*restoreCall
+}
+
+// restoreCall is one wake, shared by everyone who asked for it while it ran.
+type restoreCall struct {
+	done chan struct{}
+	f    figaro.Figaro
+	err  error
 }
 
 type listEnrichment struct {
@@ -1841,27 +1853,42 @@ func (h *handlers) restoreByID(ctx context.Context, ariaID string) (figaro.Figar
 	if h.angelus.Backend == nil {
 		return nil, fmt.Errorf("no backend configured")
 	}
-	mu := h.restoreLock(ariaID)
-	mu.Lock()
-	defer mu.Unlock()
-	if f := h.angelus.Registry.Get(ariaID); f != nil {
-		return f, nil
-	}
-	return h.restoreOne(ctx, ariaID)
-}
-
-func (h *handlers) restoreLock(ariaID string) *sync.Mutex {
+	// SINGLE FLIGHT. Two requests for a dormant aria must not build two
+	// agents, and the second must not wait on a lock that outlives the wake.
 	h.restoreMu.Lock()
-	defer h.restoreMu.Unlock()
-	if h.restoreLocks == nil {
-		h.restoreLocks = map[string]*sync.Mutex{}
+	if call, ok := h.restoring[ariaID]; ok {
+		h.restoreMu.Unlock()
+		select {
+		case <-call.done:
+			// The winner registered it; prefer the registry, which is the
+			// truth, and fall back to what the call returned.
+			if f := h.angelus.Registry.Get(ariaID); f != nil {
+				return f, nil
+			}
+			return call.f, call.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
-	mu, ok := h.restoreLocks[ariaID]
-	if !ok {
-		mu = &sync.Mutex{}
-		h.restoreLocks[ariaID] = mu
+	call := &restoreCall{done: make(chan struct{})}
+	if h.restoring == nil {
+		h.restoring = map[string]*restoreCall{}
 	}
-	return mu
+	h.restoring[ariaID] = call
+	h.restoreMu.Unlock()
+
+	if f := h.angelus.Registry.Get(ariaID); f != nil {
+		call.f = f
+	} else {
+		call.f, call.err = h.restoreOne(ctx, ariaID)
+	}
+	// The entry goes as the wake ends, which is what makes this bounded by
+	// concurrent wakes rather than by arias ever woken.
+	h.restoreMu.Lock()
+	delete(h.restoring, ariaID)
+	h.restoreMu.Unlock()
+	close(call.done)
+	return call.f, call.err
 }
 
 // restoreOne builds and registers a figaro for an existing conversation
