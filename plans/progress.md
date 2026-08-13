@@ -3290,7 +3290,9 @@ following if that form ever arrives.
 So import became a first-class participant rather than a board-copier, which
 is what §12.2.2 asks for and better than the hook it replaces.
 
-## FINAL GATE (session 3), on `27fe08bf`
+## FINAL GATE (superseded — see the one below, on `9d324c4f`)
+
+## GATE on `27fe08bf`
 
 ```
 go build, go vet, go test ./... -count=1                        ok
@@ -3373,3 +3375,43 @@ calling `OpenLibretto` instead. The bug was two lines away from the question
 that found it. **Ask what happens to the thing you built when the process
 restarts, when the sweep runs, and when two callers arrive at once** — this
 session found four bugs with those three questions.
+
+## FINAL GATE (session 3), on `9d324c4f`, everything green
+
+```
+go build, go vet, go test ./... -count=1                        ok
+-race -count=3 on store, figaro, angelus, actor, provider       ok
+FIGARO_CRASH_TEST=1 acknowledged patches survive SIGKILL        ok
+nix build .#default                                             ok
+fleet: 12 arias, study, 300 patches      12/12
+  history build 4.94 s   turn wall 5.28 s   control 0.16 s
+  daemon PSS 49.1 M
+live: scripts/live/studylive.sh, realstudy.sh                   ok
+figwal: -race -count=3 (log/disk/segment/xwal), crashtest -long ok
+```
+
+**194 commits on `feat/incantations`.** figwal released four times, pinned at
+`e44a843`, vendorHash reset and `nix build` proven each time.
+
+### The ten faults of my own that measurement found, in one list
+
+Because the count is the useful part, not any one of them:
+
+1. a lost eviction race stranded bytes nothing could reclaim;
+2. recency stamped a globally contended atomic on every read (reads got
+   SLOWER with more readers);
+3. the mirror copied its source's TOMBSTONE and sealed itself;
+4. the idle sweep evicted a source and ORPHANED the fold, leaving a silently
+   stale copy;
+5. opening a libretto needed its source, so a study of a deleted form could
+   not be dropped after a restart;
+6. the migration guard skipped exactly the stores needing migration;
+7. `doctor librettos` declined to repair the only case it existed for;
+8. the libretto stump was drawn by `fig ls -g`;
+9. `ForkWith` — the entry point the CLI uses — was not a refcount
+   participant, while `Fork`, which only tests call, was;
+10. the reconciliation sweep put a SECOND WRITER on a form.
+
+**Four came from `scripts/live/`, one from a benchmark, one from a profile,
+and four from asking three questions**: what happens when the process
+restarts, when the sweep runs, and when two callers arrive at once.
