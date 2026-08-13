@@ -2469,7 +2469,9 @@ the gate/park timing in that fuzz case under a loaded box, not the form path.
 
 ---
 
-## THE NEXT WORKER'S FIRST JOB: phase 9's second half, the wiring
+## THE NEXT WORKER'S FIRST JOB (superseded — see "WHAT IS ACTUALLY LEFT" at the end)
+
+## phase 9's second half, the wiring (mostly done since this was written)
 
 The libretto MECHANISM exists and is tested (`internal/store/libretto.go`,
 `libretto_reconcile.go`, `doctor librettos`). What is missing is every place
@@ -2731,3 +2733,35 @@ in the projection. My instinct is that it is worth it and that the dual path
 should be written as "legacy stamps are read from the source, and there is a
 dated comment saying when that can be deleted", but it is a judgement about
 history compatibility and it should be Gluck's.
+
+
+---
+
+# WHAT IS ACTUALLY LEFT (written last; this supersedes every earlier list)
+
+Phase 9's mechanism, its verbs and its safety net are done and live-validated.
+What remains, in the order I would take it:
+
+1. **The projection switch** (§12.5), with the migration trap above: a second
+   cursor namespace, not a reinterpretation. Read that section first; it is
+   the only place in this session's work where doing the obvious thing
+   silently corrupts existing transcripts.
+2. **Reclamation of a libretto**, which needs a RULING before it needs code:
+   `refs == 0` is necessary and not sufficient, because an IR record
+   references a libretto forever. Three options are written up under "A
+   constraint the libretto exposes"; the cheapest is to let the render
+   degrade, and that is a decision about what an old transcript may lose.
+3. **Phase 10, the API refactor**, and with it the lock audit's first
+   fast-follow (`figaro/agent.go`'s `mu`). The audit says it wants its own
+   branch and its own pty runs; believe it.
+4. **Phase 7, retention** — deferred with its argument written down. Its real
+   customer is librettos-holding-LT-ranges, not the topology form.
+5. **One idle policy instead of four.** figwal unloads a head at 5 minutes
+   while the agent above it lives to 15, so a quiet aria drops its RAW bytes
+   and keeps its DECODED ones. The four clocks are tabulated above.
+
+**The one thing I would do first if I were staying**: run
+`/var/tmp/figstate/studylive.sh` and `sweeplive.sh` after any change to the
+study path or the caches. Ninety seconds of driving the real verbs found two
+bugs a green unit suite could not, and both were in the direction that loses
+data.
