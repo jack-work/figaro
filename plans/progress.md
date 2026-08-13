@@ -3961,3 +3961,16 @@ study:@id    {"changes":1,"exists":false,"version":8}           <- the source di
 No `system.libretto.at`, no `refs`, no stump name. That last line is §12.7b,
 and it was built, durable, correct and invisible until a wire assertion
 looked for it.
+
+### Flake record (session 5, after the figwal v0.17.1 uptake)
+
+`TestFormAtIsAPairThatExisted` failed ONCE inside a whole-package run
+immediately after the uptake, then passed in isolation, 4x whole-package,
+and -race -count=2 beside its neighbours. The failure text was not
+captured (the run grepped only the FAIL line -- lesson: capture -v on
+gates). Same shape as the TestStudyAndDropRaceOnOneForm class: once,
+under load, unreproducible. NOT attributed to v0.17.1 (whose change is a
+filesystem-name encoding, identity for clean keys) and NOT proven
+innocent either. If it recurs, capture the message first; the suspect
+axes are the (v,v] emptiness (a lost-update signal, serious) versus a
+fixture-timing artifact (benign).
