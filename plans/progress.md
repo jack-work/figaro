@@ -3415,3 +3415,26 @@ Because the count is the useful part, not any one of them:
 **Four came from `scripts/live/`, one from a benchmark, one from a profile,
 and four from asking three questions**: what happens when the process
 restarts, when the sweep runs, and when two callers arrive at once.
+
+### Optimism has to be sized for the contention it replaced (`609abccc`)
+
+Taking the cast off the actor loop removed serialization between two castings
+of one figaro and left optimistic retry in its place — sized, at five
+attempts, for the world where that could not happen. Eight concurrent casts
+exhausted it:
+
+```
+cast: study @c580c388: study: the board would not hold still
+```
+
+and each failure loses a study for a role **already pointed at the caster** —
+a role pointing at a figaro that does not know it. 32 attempts with a small
+jittered backoff now, so N writers of one board converge instead of colliding
+in lockstep; each attempt costs one fsync and only under contention that used
+to be impossible.
+
+**The lesson, and it generalises past this change**: when you remove a
+serialization point, the thing that replaces it inherits a load it was never
+sized for, and the tests that passed did so because none of them exercised
+the case the removed mechanism existed to handle. **Write the concurrent test
+FOR THE PROPERTY THE OLD MECHANISM GUARANTEED**, not for the new code path.
