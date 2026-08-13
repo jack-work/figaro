@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/jack-work/figaro/internal/message"
 )
@@ -13,11 +14,19 @@ import (
 type failingLog struct {
 	MemFormLog
 	failSync atomic.Bool
+	slow     atomic.Bool
 	syncs    atomic.Int64
 }
 
 func (l *failingLog) SyncThrough(uint64) error {
 	l.syncs.Add(1)
+	if l.slow.Load() {
+		// A real fsync is milliseconds. Without standing in for that, a
+		// memory log drains faster than writers can submit and every write
+		// forms its own batch, which measures the harness rather than the
+		// batching.
+		time.Sleep(2 * time.Millisecond)
+	}
 	if l.failSync.Load() {
 		return fmt.Errorf("disk is gone")
 	}
@@ -66,6 +75,7 @@ func TestFailedSyncRejectsAndPublishesNothing(t *testing.T) {
 // commit works, and without it every writer pays a full fsync.
 func TestBatchSyncsOnce(t *testing.T) {
 	log := &failingLog{}
+	log.slow.Store(true)
 	f, err := OpenForm(log)
 	if err != nil {
 		t.Fatal(err)
@@ -166,5 +176,34 @@ func TestSinkPanicIsContained(t *testing.T) {
 	}
 	if saw.Load() != 2 {
 		t.Fatalf("a panicking sink starved its neighbour: %d of 2", saw.Load())
+	}
+}
+
+// Assert refuses a removal of a key that is not there; Ensure reduces it
+// away. Same event either way when the key IS there.
+func TestRemovalIntent(t *testing.T) {
+	f := NewMemForm()
+	defer f.Close()
+	if _, err := f.Apply(kv("here", "1"), 0); err != nil {
+		t.Fatal(err)
+	}
+	v := f.Version()
+
+	rm := message.Patch{Remove: []string{"absent"}}
+	if _, _, err := f.ApplyEffectIntent(rm, 0, Ensure); err != nil {
+		t.Fatalf("ensure must reduce an absent removal away: %v", err)
+	}
+	if _, _, err := f.ApplyEffectIntent(rm, 0, Assert); err == nil {
+		t.Fatal("assert must refuse a removal of a key that is not there")
+	}
+	if f.Version() != v {
+		t.Fatal("a refusal moved the version")
+	}
+
+	real := message.Patch{Remove: []string{"here"}}
+	if _, applied, err := f.ApplyEffectIntent(real, 0, Assert); err != nil {
+		t.Fatalf("assert must allow a removal that removes: %v", err)
+	} else if len(applied.Remove) != 1 {
+		t.Fatalf("want one removal, got %v", applied.Remove)
 	}
 }

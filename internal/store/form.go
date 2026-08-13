@@ -66,9 +66,25 @@ type formState struct {
 type formWrite struct {
 	patch     message.Patch
 	ifVersion uint64
+	intent    Intent
 	result    formResult
 	done      atomic.Bool
 }
+
+// Intent says what a REMOVAL means, which is the one place a command and its
+// event are allowed to disagree about legality.
+type Intent uint8
+
+const (
+	// Ensure: the caller wants the key absent and does not care whether it
+	// was. Birth dressing means this, and `-D` may name a key the parent
+	// closure never held.
+	Ensure Intent = iota
+	// Assert: the caller believes the key is there. Removing one that is not
+	// is a refusal, because the caller's model of the world is wrong and
+	// telling it so is more useful than silently agreeing.
+	Assert
+)
 
 type formResult struct {
 	version uint64
@@ -211,7 +227,13 @@ func (f *Form) Apply(patch message.Patch, ifVersion uint64) (uint64, error) {
 // a human ("set 3 keys") or fans a delta out to listeners wants THAT, not what
 // it asked for.
 func (f *Form) ApplyEffect(patch message.Patch, ifVersion uint64) (uint64, message.Patch, error) {
-	w := &formWrite{patch: patch, ifVersion: ifVersion}
+	return f.ApplyEffectIntent(patch, ifVersion, Ensure)
+}
+
+// ApplyEffectIntent is ApplyEffect with the removal rule named. Under Assert
+// a removal of a key that is not there is refused rather than reduced away.
+func (f *Form) ApplyEffectIntent(patch message.Patch, ifVersion uint64, intent Intent) (uint64, message.Patch, error) {
+	w := &formWrite{patch: patch, ifVersion: ifVersion, intent: intent}
 	if err := f.q.Submit(w); err != nil {
 		return 0, message.Patch{}, fmt.Errorf("form is closed")
 	}
@@ -318,6 +340,14 @@ func (f *Form) reduceOne(st *formState, w *formWrite) (*formState, formResult) {
 	if w.ifVersion != 0 && st.version != w.ifVersion {
 		return nil, formResult{err: fmt.Errorf(
 			"form moved: at version %d, not %d: re-read and retry", st.version, w.ifVersion)}
+	}
+	if w.intent == Assert {
+		for _, k := range w.patch.Remove {
+			if !st.snap.Has(k) {
+				return nil, formResult{version: st.version,
+					err: fmt.Errorf("remove %q: no such key", k)}
+			}
+		}
 	}
 	// REDUCE FIRST, and purely. A patch is only an event if it changes
 	// something, and the reduce touches nothing, which is why a failure
