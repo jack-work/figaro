@@ -260,3 +260,39 @@ func TestAwaitIsIdempotentAndCancellable(t *testing.T) {
 		t.Fatal("a ticket-less await must fail")
 	}
 }
+
+// The sync covers RECORDS, and the metric must say so: a batch of many
+// writes in which one changed anything is one record, and calling that a
+// batch of many would make the group-commit alarm read backwards.
+func TestSyncCountsRecordsNotWrites(t *testing.T) {
+	log := &failingLog{}
+	log.slow.Store(true)
+	f, err := OpenForm(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	if _, err := f.Apply(kv("k", "settled"), 0); err != nil {
+		t.Fatal(err)
+	}
+	before := log.syncs.Load()
+
+	// Twenty writers, all setting the value the board already holds: every
+	// one reduces to nothing, so the batch writes no record at all.
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := f.Apply(kv("k", "settled"), 0); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if n := log.syncs.Load(); n != before {
+		t.Fatalf("a batch that wrote no record synced %d times", n-before)
+	}
+}

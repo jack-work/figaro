@@ -439,6 +439,11 @@ func (f *Form) runBatch(batch []*formWrite) {
 	if lastRecord != 0 {
 		started := time.Now()
 		err := f.log.SyncThrough(lastRecord)
+		// RECORDS, not writes. A batch of 64 in which one patch changed
+		// anything writes one record, and reporting the batch size there
+		// would say group commit is working when it is not. The alarm this
+		// instrument exists to raise is the reverse case, so it must count
+		// what the sync actually covered.
 		figOtel.RecordSync(context.Background(), time.Since(started), len(events))
 		if err != nil {
 			// Nothing was published. The records are on the caller side of
