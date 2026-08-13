@@ -128,6 +128,15 @@ func TestReadsScaleWithMissesNotLength(t *testing.T) {
 	if want := 1 + 10; short.calls != want {
 		t.Fatalf("want %d reads for 10 misses, got %d", want, short.calls)
 	}
+	// The count alone would pass if each of those reads spanned the whole
+	// board. What is bounded is the WORK, so assert the span: the catch-up
+	// covers the skipped prefix once and each miss covers its own record.
+	if want := 90 + 10; short.spanned != want {
+		t.Fatalf("want %d versions spanned, got %d", want, short.spanned)
+	}
+	if want := 990 + 10; long.spanned != want {
+		t.Fatalf("want %d versions spanned at 1000 entries, got %d", want, long.spanned)
+	}
 }
 
 // Studied forms are read only for records that are actually encoded. They
@@ -201,3 +210,90 @@ func benchProject(b *testing.B, n, cached, observed int) {
 func BenchmarkColdWalkWarmCache(b *testing.B)          { benchProject(b, 500, 500, 0) }
 func BenchmarkColdWalkWarmCache8Observed(b *testing.B) { benchProject(b, 500, 500, 8) }
 func BenchmarkColdWalkColdCache(b *testing.B)          { benchProject(b, 500, 0, 8) }
+
+// spliceThenOneMore reproduces the live path exactly: project a history cold,
+// rebuild the projection by hand the way every provider does after appending
+// an assistant message, then take one more record and project warm.
+//
+// carry says whether the splice preserves FormVersionOfSnapshot. It is a
+// parameter so the test can prove the assertion catches its absence, which a
+// test written only against the fixed code cannot.
+func spliceThenOneMore(t testing.TB, n int, carry bool) int {
+	t.Helper()
+	board := make([]message.Patch, n+8)
+	for i := range board {
+		board[i] = message.Patch{Set: map[string]json.RawMessage{
+			"mode": json.RawMessage(fmt.Sprintf(`"v%d"`, i)),
+		}}
+	}
+	acc := &countingForm{patches: board}
+	log := store.NewMemLog[message.Message]()
+	appendOne := func(v uint64) store.Entry[message.Message] {
+		e, err := log.Append(store.Entry[message.Message]{
+			Payload:            message.Message{Role: message.RoleInput},
+			FormChannelVersion: v,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+	for i := 0; i < n; i++ {
+		appendOne(uint64(i + 1))
+	}
+	p, _, err := provider.ProjectIncrementally(projConfig(acc, log, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The assistant message lands, and the provider splices it in rather than
+	// reprojecting. This is the seam.
+	live := appendOne(uint64(n))
+	spliced := &provider.IncrementalProjection[int]{
+		State:             p.State,
+		Form:              p.Form,
+		Fingerprint:       p.Fingerprint,
+		Entries:           p.Entries + 1,
+		LastLT:            live.LT,
+		LastFormVersion:   p.LastFormVersion,
+		LastStudyVersions: p.LastStudyVersions,
+	}
+	if carry {
+		spliced.FormVersionOfSnapshot = p.FormVersionOfSnapshot
+	}
+
+	// The next turn: one new record, projected warm off the splice.
+	appendOne(uint64(n + 1))
+	before := acc.spanned
+	cfg := projConfig(acc, log, nil)
+	cfg.Previous = spliced
+	if _, _, err := provider.ProjectIncrementally(cfg); err != nil {
+		t.Fatal(err)
+	}
+	return acc.spanned - before
+}
+
+// THE SPLICE. Every provider rebuilds IncrementalProjection by hand after a
+// live append, and a field forgotten there is not lost state but lost
+// POSITION: the next pass believes the board sits at zero and folds the whole
+// history to catch up, every turn, correctly and forever. Invisible to any
+// test that does not cross the splice, which is why this one does.
+func TestSplicePreservesTheBoardPosition(t *testing.T) {
+	if spanned := spliceThenOneMore(t, 500, true); spanned > 2 {
+		t.Fatalf("one new record spanned %d versions across the splice", spanned)
+	}
+	// And the assertion is load-bearing: without the field it reads the lot.
+	if spanned := spliceThenOneMore(t, 500, false); spanned <= 2 {
+		t.Fatalf("dropping FormVersionOfSnapshot spanned only %d; the test cannot see the bug", spanned)
+	}
+}
+
+func projConfig(acc *countingForm, log store.Log[message.Message], cache store.Log[[]json.RawMessage]) provider.ProjectionConfig[int] {
+	return provider.ProjectionConfig[int]{
+		Log: log, Cache: cache, Form: acc, Fingerprint: "fp",
+		Encode: func(m message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
+			return []json.RawMessage{json.RawMessage(`{}`)}, nil
+		},
+		Append: func(s int, _ []json.RawMessage, _ uint64) int { return s + 1 },
+	}
+}

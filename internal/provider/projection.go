@@ -167,6 +167,16 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 		// studied forms are the shared members, and their transitions fold
 		// into the provider IR identically: re-derived on retranslate.
 		for fid, upTo := range entry.StudyVersions {
+			// ADVANCE FIRST, whatever happens below. The cursor is where the
+			// form STOOD at this stamp, which is true of a form that has
+			// since been deleted too. Advancing it inside the readable branch
+			// meant a cached record and an encoded one disagreed about a dead
+			// form's position, and if such a form were ever reborn under its
+			// id the two temperatures would render it differently, with the
+			// per-LT cache making whichever ran first permanent.
+			prev := lastStudy[fid]
+			lastStudy[fid] = maxU64(prev, upTo)
+
 			acc := config.Studies[fid]
 			if acc == nil {
 				if msg.StudyNotes == nil {
@@ -175,7 +185,7 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 				msg.StudyNotes[fid] = "the observed form no longer exists (removed while studied)"
 				continue
 			}
-			if ps := acc.PatchesBetween(lastStudy[fid], upTo); len(ps) > 0 {
+			if ps := acc.PatchesBetween(prev, upTo); len(ps) > 0 {
 				if msg.StudyPatches == nil {
 					msg.StudyPatches = map[string][]message.Patch{}
 				}
@@ -184,9 +194,6 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 					msg.StudyAt = map[string]uint64{}
 				}
 				msg.StudyAt[fid] = upTo
-			}
-			if upTo > lastStudy[fid] {
-				lastStudy[fid] = upTo
 			}
 		}
 
