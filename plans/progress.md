@@ -1513,3 +1513,33 @@ saving the moment reading a record can miss.
 The equality test was the right instrument and it did its job: it proved the
 change CORRECT, and the benchmark proved it not worth having. Both were
 needed, in that order.
+
+### The steady-state listing is now free
+
+Recency was the second per-row hydrator. `LastTS` is answered from figwal's
+counter on the OPEN handle, so a cold node is hydrated to answer it — the
+same disease as the OUTFIT column, and the same cure: memoize, and let the
+writes invalidate.
+
+Invalidation is complete because every append this daemon makes passes one
+of two points: the IR log handed out by `Open` (wrapped in a one-method
+`recencyLog` decorator) or a Form's commit sink. A delete drops both memos
+with the aria's other caches.
+
+Measured on the real-store copy, listing every row exactly as `handlers.list`
+does (label + recency), then evicting every form and listing again:
+
+```
+first listing    +115 MiB   216 heads loaded
+SECOND listing    +0.0 MiB    0 forms re-opened   216 heads (unchanged)
+```
+
+**A status line on a timer now costs nothing.** That was the actual
+complaint: not that a listing is expensive once, but that it was expensive
+every few seconds forever, because the caches it filled were evicted and
+refilled in a cycle.
+
+**The first listing still costs 115 MiB and that is figwal's**, not
+figaro's: opening any node copies the whole channel into memory. Nothing on
+this side can fix it (see "A negative result"), and the fix is
+segment-granular lazy loading in figwal.

@@ -31,6 +31,20 @@ type XwalBackend struct {
 	open  map[string]*ariaHandle
 	forms map[string]*Form
 	metas map[string]*metaCache
+	// lastTS is aria id -> newest record timestamp, memoized.
+	//
+	// A listing asks for recency PER ROW, and figwal answers from the open
+	// handle's counter, so a cold node is HYDRATED to answer it: its whole
+	// channel is copied into memory (log.buildOwnSnapshot). The node is then
+	// unloaded for idleness and the next listing hydrates it again, so a
+	// status line on a timer cycles the store through memory forever. Same
+	// disease as the label memo above it, same cure: memoize, and let the
+	// writes invalidate.
+	//
+	// Invalidation is complete because every append this daemon makes passes
+	// through Open (the IR) or a Form (the board), and both are wrapped.
+	lastTS map[string]int64
+
 	// labels is stump id -> what its birth record says it is. Never evicted
 	// and never invalidated: a stump id is the hash of content that contains
 	// the label, and a stump cannot be patched, so the mapping is a pure
@@ -182,7 +196,24 @@ func (b *XwalBackend) Open(ariaID string) (Log[message.Message], error) {
 	// Reading the content is where a trailing sidecar gets caught up; see
 	// meta_heal.go. No-op unless the watermark lags the tail.
 	b.healMeta(ariaID, h.ir)
-	return h.ir, nil
+	return &recencyLog{Log: h.ir, backend: b, ariaID: ariaID}, nil
+}
+
+// recencyLog keeps the memoized recency honest. It is a one-method decorator:
+// everything else is the cache itself, and an append is the only thing that
+// makes an aria newer.
+type recencyLog struct {
+	Log[message.Message]
+	backend *XwalBackend
+	ariaID  string
+}
+
+func (l *recencyLog) Append(e Entry[message.Message]) (Entry[message.Message], error) {
+	stamped, err := l.Log.Append(e)
+	if err == nil {
+		l.backend.wroteTo(l.ariaID, time.Now().UnixMilli())
+	}
+	return stamped, err
 }
 
 func transChannel(provider string) string { return "translations-v2/" + provider }
@@ -250,6 +281,7 @@ func (b *XwalBackend) form(ariaID string) (*Form, error) {
 	// opened, so EVERY writer passes it: the hub, the agent's own loop, a
 	// birth dressing, an outfit fold.
 	opened.OnCommit(func(_ uint64, patch message.Patch) {
+		b.wroteTo(ariaID, time.Now().UnixMilli())
 		if namesOutfit(patch) {
 			b.labelChanged(ariaID)
 		}
@@ -976,6 +1008,8 @@ func (b *XwalBackend) bury(doomed []string) {
 		b.dropForm(id)
 		b.mu.Lock()
 		delete(b.metas, id)
+		delete(b.lastTS, id)
+		delete(b.labels, id)
 		b.mu.Unlock()
 		_ = os.Remove(b.metaPath(id))
 	}
@@ -1001,8 +1035,41 @@ func (b *XwalBackend) Close() error {
 // LoadedHeads delegates to the store: see XwalStore.LoadedHeads.
 func (b *XwalBackend) LoadedHeads() int { return b.store.LoadedHeads() }
 
-// LastTS delegates node recency to figwal: see XwalStore.LastTS.
-func (b *XwalBackend) LastTS(id string) int64 { return b.store.LastTS(id) }
+// LastTS is node recency, memoized: see the lastTS field for why.
+func (b *XwalBackend) LastTS(id string) int64 {
+	b.mu.Lock()
+	ts, ok := b.lastTS[id]
+	b.mu.Unlock()
+	if ok {
+		return ts
+	}
+	ts = b.store.LastTS(id)
+	if ts == 0 {
+		// Not memoized: zero means "no timestamped record yet", and a node
+		// that gains its first record must not read as stale forever.
+		return 0
+	}
+	b.mu.Lock()
+	if b.lastTS == nil {
+		b.lastTS = map[string]int64{}
+	}
+	b.lastTS[id] = ts
+	b.mu.Unlock()
+	return ts
+}
+
+// wroteTo advances the memoized recency for an aria. Called by every append
+// this daemon makes: an IR record, a board patch.
+func (b *XwalBackend) wroteTo(ariaID string, at int64) {
+	b.mu.Lock()
+	if b.lastTS == nil {
+		b.lastTS = map[string]int64{}
+	}
+	if at > b.lastTS[ariaID] {
+		b.lastTS[ariaID] = at
+	}
+	b.mu.Unlock()
+}
 
 // SetObservedForms delegates the observed set: see XwalStore.
 func (b *XwalBackend) SetObservedForms(ariaID string, formIDs []string) {

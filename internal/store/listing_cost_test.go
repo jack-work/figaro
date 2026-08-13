@@ -53,11 +53,13 @@ func TestListingCost(t *testing.T) {
 		mib(afterSecondScan-afterFirstScan))
 	t.Logf("topology build:   %+.1f MiB",
 		mib(afterTopology-afterSecondScan))
-	// This is what a listing does per row.
+	// This is what a listing does per row: the OUTFIT column and recency.
 	for i := range rows {
 		be.label(&rows[i])
+		_ = be.LastTS(rows[i].ID)
 	}
 	afterLabels := heap()
+	headsAfterFirst := be.Store().LoadedHeads()
 
 	be.mu.Lock()
 	forms := len(be.forms)
@@ -71,12 +73,14 @@ func TestListingCost(t *testing.T) {
 	rows2 := be.Conversations()
 	for i := range rows2 {
 		be.label(&rows2[i])
+		_ = be.LastTS(rows2[i].ID)
 	}
 	afterSecond := heap()
 	be.mu.Lock()
 	forms2 := len(be.forms)
 	be.mu.Unlock()
 	t.Logf("after evicting every form: %.1f MiB heap", mib(evicted))
+	t.Logf("first listing:  loaded heads %d", headsAfterFirst)
 	t.Logf("SECOND listing:   %+.1f MiB  (%d forms re-opened, loaded heads %d)",
 		mib(afterSecond-evicted), forms2, be.Store().LoadedHeads())
 

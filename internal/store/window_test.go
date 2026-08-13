@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/jack-work/figaro/internal/message"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -339,5 +341,53 @@ func TestLabelMemoIsInvalidatedByAWrite(t *testing.T) {
 	be.mu.Unlock()
 	if !cached {
 		t.Fatal("an unrelated write dropped the memo: the listing pays for every patch")
+	}
+}
+
+// Recency is memoized because answering it per row HYDRATES a cold node.
+// The memo must move when the aria is written to, or `fig ls` sorts by a
+// timestamp that stopped advancing.
+func TestRecencyMemoAdvancesOnAWrite(t *testing.T) {
+	be, err := NewXwalBackend(t.TempDir(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer be.Close()
+	outfit, err := be.CreateOutfit("r", patchSet(map[string]string{"system.model": "m"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := be.CreateConversation(outfit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := be.ApplyForm(id, kv("brief", "one")); err != nil {
+		t.Fatal(err)
+	}
+	first := be.LastTS(id)
+	if first == 0 {
+		t.Fatal("a written aria reports no recency")
+	}
+	time.Sleep(2 * time.Millisecond)
+	if _, err := be.ApplyForm(id, kv("brief", "two")); err != nil {
+		t.Fatal(err)
+	}
+	second := be.LastTS(id)
+	if second <= first {
+		t.Fatalf("recency did not advance on a board write: %d -> %d", first, second)
+	}
+	// An IR append must move it too.
+	log, err := be.Open(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	if _, err := log.Append(Entry[message.Message]{Payload: message.Message{
+		Role: message.RoleOutput, Content: []message.Content{message.TextContent("hi")},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if third := be.LastTS(id); third <= second {
+		t.Fatalf("recency did not advance on an IR append: %d -> %d", second, third)
 	}
 }
