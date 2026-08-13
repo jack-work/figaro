@@ -231,13 +231,19 @@ func (a *Angelus) pidMonitor(ctx context.Context) {
 // live observer still needs. Recomputing at start narrows that window without
 // closing it, and the write paths' ordering is still required.
 //
-// Guarded twice so it costs nothing when there is nothing to do: a stump-name
-// scan skips a store that has never studied anything (every store, until the
-// verb is used), and the pass runs in the background, because it opens every
-// board and a daemon must not make its first caller wait for a repair.
+// It also MINTS a libretto for a studied form that has none, which is the
+// migration: a store from before phase 9 carries studies whose librettos
+// were never created, and the verb cannot mint them because it only runs at
+// study time. The author's store has eleven.
+//
+// That is why the cheap "does this store have any librettos" guard is GONE.
+// It skipped exactly the stores that needed migrating -- the ones with none
+// yet -- which is the kind of guard that looks like thrift and is a bug.
+// The pass runs in the background instead, because it reads every board:
+// 0.89 s on a 711-board store, and no caller waits for it.
 func (a *Angelus) reconcileLibrettos() {
 	rec, ok := a.Backend.(librettoReconciler)
-	if !ok || !rec.HasLibrettos() {
+	if !ok {
 		return
 	}
 	go func() {

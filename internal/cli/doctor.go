@@ -331,9 +331,14 @@ func runDoctorLibrettos(dryRun bool) error {
 	fmt.Printf("boards read      %d\n", audit.Boards)
 	fmt.Printf("librettos        %d\n", audit.Librettos)
 	fmt.Printf("%-16s %d\n", verb, audit.Corrected)
+	if audit.Minted > 0 {
+		fmt.Printf("minted           %d  (pre-existing studies migrated)\n", audit.Minted)
+	}
 	fmt.Printf("orphaned         %d  (no board names them: reclaimable when nothing renders them)\n",
 		audit.Orphaned)
-	fmt.Printf("missing          %d  (studied forms with no libretto; the study verb mints those)\n",
-		audit.Missing)
+	fmt.Printf("%-16s %d  (studied forms still without one%s)\n",
+		map[bool]string{true: "would mint", false: "missing"}[dryRun],
+		audit.Missing,
+		map[bool]string{true: "; run without --dry-run", false: ""}[dryRun])
 	return nil
 }

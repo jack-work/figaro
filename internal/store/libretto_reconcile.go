@@ -23,6 +23,7 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 )
 
@@ -32,7 +33,8 @@ type LibrettoAudit struct {
 	Librettos int // librettos examined
 	Corrected int // refcounts that were wrong
 	Orphaned  int // librettos no board names at all
-	Missing   int // studied forms with no libretto yet
+	Missing   int // studied forms STILL without a libretto when the pass ended
+	Minted    int // librettos this pass created (the migration)
 }
 
 // StudiesKey is the board key naming the forms a figaro studies. It is
@@ -116,11 +118,39 @@ func (b *XwalBackend) reconcileLibrettos(apply bool) (LibrettoAudit, error) {
 		lib.Close()
 	}
 	for source := range want {
-		if !seen[source] {
-			// A form somebody studies with no libretto to hold the copy.
-			// Reported, not created: minting one is the study verb's job and
-			// it needs the source form to seed from.
-			audit.Missing++
+		if seen[source] {
+			continue
+		}
+		// A form somebody studies with no libretto to hold the copy. This is
+		// the MIGRATION case and it is not hypothetical: the author's store
+		// has eleven such studies, all made before librettos existed. Left
+		// alone they would never acquire one, because the study verb mints
+		// at study time and these were studied long ago.
+		audit.Missing++
+		if !apply {
+			continue
+		}
+		// Minting seeds the copy from the source and starts the fold; the
+		// refcount is then whatever the boards say, which is what the rest
+		// of this pass already computes.
+		lib, err := b.libretto(source)
+		if err != nil {
+			slog.Info("reconcile: cannot mint a libretto for a studied form",
+				"form", source, "err", err)
+			continue // and it is still missing, which is what Missing means
+		}
+		// Repaired, so it is no longer missing. Counting the PRE-state here
+		// made the pass report "missing 4" immediately after creating those
+		// four, which is a repair tool lying about its own work.
+		audit.Missing--
+		audit.Minted++
+		slog.Info("reconcile: minted a libretto for a pre-existing study",
+			"libretto", lib.ID(), "source", source, "refs", want[source])
+		if lib.Refs() != want[source] {
+			if err := lib.setRefs(want[source]); err != nil {
+				return audit, fmt.Errorf("reconcile mint %s: %w", source, err)
+			}
+			audit.Corrected++
 		}
 	}
 	return audit, nil
