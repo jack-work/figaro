@@ -1628,3 +1628,85 @@ answers correctly when the round ends, and a caller whose context expires
 stops waiting while the patch still lands. `TestFormSetDuringToolRoundApplies
 NextRound` — the test that hung the first attempt for its full timeout — is
 green.
+
+---
+
+## THE NEXT WORKER'S FIRST JOB: figwal segment-granular lazy loading
+
+Gluck's ruling, 2026-08-13: **figwal version bumps are expected**, to be
+coordinated properly, with `nix build` proven to work. So the objection that
+kept me off this is gone, and it is handed over as the first job because it
+is the largest single memory lever in the system.
+
+### The problem, with the evidence already gathered
+
+`figwal/log.buildOwnSnapshot` copies **every record's payload** of a channel
+into an in-memory snapshot when a Log is opened:
+
+```go
+err := l.RangeOwn(0, func(idx uint64, payload []byte) error {
+	cp := make([]byte, len(payload))
+	copy(cp, payload)
+	snap.entries = append(snap.entries, cp)
+	return nil
+})
+```
+
+That is figwal's lock-free read cache — the same published-snapshot pattern
+this changeset applies everywhere — but WHOLE-LOG rather than windowed. So:
+
+- one `fig ls` on the 515-aria copy retains **95 MB**, with zero arias
+  resident by figaro's own count (`213d290f`, and the profile is in "WHERE
+  THE MEMORY IS");
+- the ceiling is the store: 281 MB on disk becomes ~281 MB resident once
+  everything has been touched, before figaro decodes a byte;
+- **every bound this project added sits on top of it** (`ir_window_mb`,
+  `translation_window_mb`, `form_patch_window` all bound DECODED copies of
+  bytes figwal is already holding raw).
+
+### 6c2d7b9f's design, which I endorse
+
+One flattened per-channel segment index built at open by readdir over the
+lineage, entries `{base, path, visibleTo}`; a store-wide `sync.Map` from
+segment PATH to a slot holding `atomic.Pointer[bytes]` + `usedAt` + a load
+mutex, so one file has one copy however many lineages pass through it;
+eviction nils the pointer and never touches the map; within a segment,
+lookup is `entries[lt-base]`, O(1).
+
+### What I learned that changes how to approach it
+
+**Do not micro-optimize figaro first.** I built the version-addressed cold
+open (fold from the reducer instead of replaying) with a full equality
+suite, and it measured **+338%**, because the replay was never reading disk:
+figwal had already copied everything into RAM. Reverted. The lesson
+generalises — no figaro-side change to how anything OPENS can pay for itself
+until reading a record can miss.
+
+### The coordination this needs
+
+1. Land it in `/home/gluck/dev/figwal`, with its `crashtest` harness run
+   deliberately, not just the unit tests.
+2. Release and pin: figaro currently pins
+   `v0.16.2-0.20260813012153-4f9ce6a665f6`.
+3. **Reset the flake's `vendorHash`** — edit `go.mod`, build, take the
+   "got:" value. Documented in `flake.nix`; the last reset produced
+   `sha256-y0FdOfhVnIIOXAXsI9S/wg+9aXQbRne/K4sLGZZdzD4=`.
+4. `nix build .#default` MUST pass before it is called done.
+5. Re-measure with the instruments already built:
+   `FIGARO_PROBE_ROOT=<copy> go test ./internal/store -run ListingCost -v`
+   (reports loaded heads and the per-listing heap), `doctor mem`'s
+   `figwal loaded-heads` line, and the daemon heap profile recipe in
+   `/var/tmp/figstate/heap2.sh`.
+6. `scripts/ariastress.sh --arias 12 --study --study-patches 300` before and
+   after, against the table in "Fleet regression".
+
+### After it, in order
+
+1. **Phase 7, retention** — and point it at the topology form first, which
+   grows one record per promote forever today (my deviation, §8 of
+   durable-forms wants a single segment).
+2. **Revisit the cold-open fold**, which becomes a real saving the moment a
+   record read can miss.
+3. **Phase 9, the libretto** — read durable-forms §12.2.2 first: fork,
+   import and kill are refcount participants and the design did not say so.
+4. **Phase 10, the API refactor.**
