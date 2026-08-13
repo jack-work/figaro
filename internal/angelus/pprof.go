@@ -113,6 +113,9 @@ func (a *Angelus) MemStatus() *rpc.MemStatus {
 	if fp, ok := a.Backend.(interface{ ResidentFormPatches() int }); ok {
 		st.ResidentFormPatches = fp.ResidentFormPatches()
 	}
+	if lh, ok := a.Backend.(interface{ LoadedHeads() int }); ok {
+		st.LoadedHeads = lh.LoadedHeads()
+	}
 	if tr, ok := a.Backend.(interface {
 		ResidentTranslationRows() int
 		ResidentTranslationBytes() int

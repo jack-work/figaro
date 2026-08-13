@@ -902,6 +902,12 @@ type MemStatus struct {
 	// megabytes of translations reported only its IR.
 	ResidentTranslationRows  int `json:"resident_translation_rows"`
 	ResidentTranslationBytes int `json:"resident_translation_bytes"`
+	// LoadedHeads is how many lineage heads figwal holds in memory, each one
+	// a whole channel's raw payloads. It is the biggest resident thing in the
+	// daemon, it is not figaro's cache, and no figure reported it: a single
+	// listing drives it to the node count and figwal's idle unload brings it
+	// back. See "WHERE THE MEMORY IS" in plans/progress.md.
+	LoadedHeads int `json:"loaded_heads"`
 
 	HeapAllocBytes uint64 `json:"heap_alloc_bytes"` // live heap objects
 	HeapInuseBytes uint64 `json:"heap_inuse_bytes"` // spans in use, incl. fragmentation

@@ -937,6 +937,9 @@ func (b *XwalBackend) Close() error {
 	return b.store.trunks.Close() // Trunks.Close flushes the topology index
 }
 
+// LoadedHeads delegates to the store: see XwalStore.LoadedHeads.
+func (b *XwalBackend) LoadedHeads() int { return b.store.LoadedHeads() }
+
 // LastTS delegates node recency to figwal: see XwalStore.LastTS.
 func (b *XwalBackend) LastTS(id string) int64 { return b.store.LastTS(id) }
 

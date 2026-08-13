@@ -1226,3 +1226,24 @@ heap with 4 live arias and 38 MB of reported IR.
 section, `listing_cost_test.go` and `realtrans_probe_test.go`, both env-gated
 against a copy. The measurement is repeatable in about ninety seconds and
 should be repeated after any of the three.
+
+### And now it is a number: `figwal loaded-heads`
+
+`xwal.Store.LoadedHeads()` was exported and reported by nothing. `doctor mem`
+prints it, and the wire response carries it:
+
+```
+figwal     loaded-heads=54  (each holds a channel's whole raw history)
+heap       alloc=86.0 MiB
+```
+
+54 heads, 86 MiB, ~1.6 MB each, after one listing on the 515-aria copy.
+Note it is 54 and not 515: a listing does not hydrate every node, and
+whatever selects those 54 is the next thing to understand if fix 1 is taken.
+
+The live daemon cannot answer yet — it is running a binary that predates the
+field — but **any daemon started after this commit can be asked where its
+memory is without a profiler**, which is the whole point. `resident_ir_bytes`
+next to `loaded_heads` is the comparison that matters: the first is figaro's
+bounded cache of decoded entries, the second is figwal's unbounded cache of
+raw ones, and the second is an order of magnitude larger.

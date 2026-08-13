@@ -315,6 +315,13 @@ func (t xwalTopology) ChildrenOf(id string) []string {
 	return out
 }
 
+// LoadedHeads is how many lineage heads figwal holds in memory. Each one is
+// a whole channel's raw payloads (log.buildOwnSnapshot copies every record),
+// so this is the largest resident thing in the daemon and nothing reported
+// it. A listing touches every node for recency, so it climbs to the size of
+// the store and comes back down on figwal's idle unload.
+func (s *XwalStore) LoadedHeads() int { return s.trunks.LoadedHeads() }
+
 // Tree is the presentation hierarchy in force.
 func (s *XwalStore) Tree() topo.Tree { return s.tree }
 
