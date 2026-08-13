@@ -2236,3 +2236,41 @@ Fleet, final build, against the four columns:
 read 8.49 s because I had started a `nix build` in the same minute. Re-run
 alone it is 4.96 s. The control catching it (0.18 vs 0.16 s) is exactly why
 the harness has one.
+
+## The cold-open fold is dead, and this time the reason is structural
+
+It has been on the queue since session 2: *"revisit the cold-open fold, which
+becomes a real saving the moment a record read can miss."* Reads can miss
+now, so I measured it before building anything
+(`internal/store/foldcheck_test.go`, `FIGARO_PROBE_FOLD=1`):
+
+| form history | cold replay (figaro) | figwal `StateAt` fold |
+|---|---|---|
+| 500 patches | **1.99 ms** | 43.0 ms |
+| 5000 patches | **18.9 ms** | 449.7 ms |
+
+**The fold is 20 to 25 times SLOWER**, and the reason is not the one either
+of us guessed:
+
+1. **A reducible segment's header holds the fold at the segment's START.** So
+   `StateAt(last)` folds that header with every payload from the segment base
+   up to `last` — and figaro's segments are 2 MiB, which holds roughly twenty
+   thousand form patches. **A real form is ONE segment**, so there is no
+   earlier watermark to start from and the fold does exactly the work the
+   replay does.
+2. On top of that it pays an fsync (`log.StateAt` syncs first, because the
+   disk fold must see every appended patch) and a JSON round trip through the
+   reducer per folded record, where figaro's replay applies patches in
+   memory.
+
+So the fold can only pay when a form spans MANY segments, which would need
+either much smaller segments for form channels or boards far longer than any
+that exist. **Closed, with the measurement, rather than left on the queue for
+a fourth session.** If it is ever reopened, the lever is segment SIZE for the
+form channel, not the fold.
+
+That also retires the last of the three "figaro-side open" ideas: my
+predecessor's version-addressed open (+338%), the fold from the reducer
+(+2000%), and my own lazy segment opening, which was correct and modest. The
+cold form open is 19 ms for 5000 patches because it decodes 5000 JSON
+patches, and the only thing that changes that is decoding fewer of them.
