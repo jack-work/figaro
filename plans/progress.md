@@ -187,3 +187,39 @@ regression.
    no-op acknowledgement.
 5. Phase 4: schema validation in the writer.
 6. Phase 5: `SubscribeFrom` as register-then-snapshot, lock-free.
+
+#### Live validation on the WAL build (nix devshell, real provider)
+
+```
+20 sequential form patches   275 ms total (13.8 ms each)
+a real turn                  2692 ms, answered
+daemon PSS                   43.8 M, anon 17.9 M, swap 0
+heap_alloc                   4.8 M
+goroutines                   21
+```
+
+The 13.8 ms per `fig set` is mostly CLI process spawn: an earlier control
+measured `figaro list -j`, which touches no board, at 12.16 ms. The
+mandatory fsync is hiding inside the shell's startup cost at the CLI
+granularity, which is the honest way to read it: **interactively the WAL
+change is invisible.** A script that patches through one long-lived
+connection would see the 3 ms.
+
+Also done this session:
+- `nix build` works: flake `vendorHash` reset for the figwal bump.
+  `sha256-y0FdOfhVnIIOXAXsI9S/wg+9aXQbRne/K4sLGZZdzD4=`.
+- Full suite green inside `nix develop .#default`.
+- `ir_window_mb` defaults to 4 MiB instead of unbounded. The decoded IR is
+  63 to 86 percent of a real aria's footprint, so this is the single
+  largest memory lever available and it was switched off.
+- `keepMu` retired for an `atomic.Pointer[string]`, per the lock audit: one
+  string with a documented lock-order hazard, and a pointer swap has no
+  order to invert.
+
+#### Still unbounded, and the next memory lever
+
+`formState.patches` grows for the life of the process: every patch a form
+ever took, decoded, resident. Bounding it is the "windowed LRU" idea from
+the original conversation, and it is harder than the IR window because
+`PatchesBetween` must still answer for ranges below the window, which means
+reading them back from figwal. Design is in durable-forms; not started.

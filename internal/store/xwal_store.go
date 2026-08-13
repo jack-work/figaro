@@ -233,14 +233,15 @@ func storeOptions(segmentSize int) xwal.StoreOptions {
 }
 
 // XwalStore owns the aria tree (policy over xwal.Store, whose flusher
-// owns all durability: appends are memory-first, disk follows with
-// bounded lag, Kick expedites).
+// owns all durability: every append syncs before it is visible, and the
+// background flush is off).
 type XwalStore struct {
-	// keepStump is the stump collection spares (the live default). Its own
-	// lock: collectStump runs under s.mu and KeepStump is called from outside
-	// it, so sharing s.mu would invert the order.
-	keepMu    sync.Mutex
-	keepStump string
+	// keepStump is the stump collection spares (the live default). One
+	// string, published atomically: it used to carry a lock of its own
+	// precisely because collectStump runs under s.mu and KeepStump does not,
+	// so sharing s.mu would invert the order. A pointer swap has no order to
+	// invert.
+	keepStump atomic.Pointer[string]
 
 	root     string
 	mu       sync.Mutex
@@ -597,9 +598,7 @@ func (s *XwalStore) writeBirth(node string, patch message.Patch) (uint64, error)
 // angelus sets it whenever it mints or reuses one, so "current" tracks the
 // outfit's content rather than its name.
 func (s *XwalStore) KeepStump(id string) {
-	s.keepMu.Lock()
-	s.keepStump = id
-	s.keepMu.Unlock()
+	s.keepStump.Store(&id)
 }
 
 // isStumpLocked reports whether an id names a stump. Caller holds s.mu.
@@ -1293,9 +1292,10 @@ func (s *XwalStore) collectStump(name string) {
 	// the same outfit are not spared: the hash is what varies when the files
 	// change, so keeping "the default" by name would pin every version it ever
 	// had.
-	s.keepMu.Lock()
-	keep := s.keepStump
-	s.keepMu.Unlock()
+	keep := ""
+	if p := s.keepStump.Load(); p != nil {
+		keep = *p
+	}
 	if name == keep {
 		return
 	}
