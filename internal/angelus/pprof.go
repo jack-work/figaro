@@ -110,6 +110,9 @@ func (a *Angelus) MemStatus() *rpc.MemStatus {
 		st.ResidentIRRows = tr.ResidentRows()
 		st.ResidentIRBytes = tr.ResidentIRBytes()
 	}
+	if fp, ok := a.Backend.(interface{ ResidentFormPatches() int }); ok {
+		st.ResidentFormPatches = fp.ResidentFormPatches()
+	}
 	if a.Hubs != nil {
 		for _, hb := range a.Hubs.all() {
 			st.Endpoints++

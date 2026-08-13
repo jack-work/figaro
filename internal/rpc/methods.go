@@ -864,6 +864,9 @@ type MemStatus struct {
 	// the number the IR window bounds, and the one that moves when the window
 	// is doing anything at all.
 	ResidentIRRows int `json:"resident_ir_rows"`
+	// ResidentFormPatches is decoded form patches held across every open
+	// form. Bounded by form_patch_window; the store's other retention.
+	ResidentFormPatches int `json:"resident_form_patches"`
 	// ResidentIRBytes is the estimated retained size of those rows, which is
 	// the number that correlates with RSS. Rows are a poor proxy: the large
 	// entries cluster at the tail of a conversation.

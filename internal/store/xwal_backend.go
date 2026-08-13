@@ -610,6 +610,23 @@ func (b *XwalBackend) ResidentRows() int {
 	return n
 }
 
+// ResidentFormPatches is decoded form patches held across every open form:
+// the number form_patch_window bounds, and the one that says whether it is
+// doing anything.
+func (b *XwalBackend) ResidentFormPatches() int {
+	b.mu.Lock()
+	forms := make([]*Form, 0, len(b.forms))
+	for _, f := range b.forms {
+		forms = append(forms, f)
+	}
+	b.mu.Unlock()
+	n := 0
+	for _, f := range forms {
+		n += len(f.state.Load().patches)
+	}
+	return n
+}
+
 // ResidentIRBytes is the estimated retained size of every open aria's IR
 // window. This is the number to watch: rows are a poor proxy, because the
 // large entries cluster at the tail.
