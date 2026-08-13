@@ -489,8 +489,13 @@ func (b *XwalBackend) ForkAt(ariaID string, atMainLT uint64) (cont, alt string, 
 // that brings a board carrying a study-set into or out of existence is a
 // participant in the refcount.
 // RetainDeclaredStudies is the participant hook for any path that brings a
-// board into existence carrying a study-set it did not declare itself:
-// fork (below) and IMPORT, which restores a board wholesale.
+// board into existence carrying a study-set it did not declare itself.
+//
+// FORK is its caller: a child inherits the parent's board wholesale, so it
+// inherits the studies without ever running the verb. IMPORT used to be the
+// other one and no longer needs it -- it lifts `system.studies` out of the
+// imported patch and replays each id through the verb, which is stronger,
+// because the verb mints and seeds the libretto as well as counting it.
 func (b *XwalBackend) RetainDeclaredStudies(ariaID string) { b.inheritStudies(ariaID) }
 
 func (b *XwalBackend) inheritStudies(ariaID string) {
