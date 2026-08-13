@@ -45,6 +45,12 @@ type Subscription struct {
 	missed atomic.Int64
 }
 
+// Source is the form this subscription reads, or nil once closed. A
+// subscriber told to resync needs to re-read the very form it is following,
+// and making it carry that pointer separately is how mirrors end up
+// resyncing from the wrong one.
+func (s *Subscription) Source() *Form { return s.form }
+
 // Missed reports how many events were dropped because this subscriber could
 // not keep up. Non-zero means the snapshot must be read again.
 func (s *Subscription) Missed() int64 { return s.missed.Load() }

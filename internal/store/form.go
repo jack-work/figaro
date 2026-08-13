@@ -496,8 +496,8 @@ func (f *Form) reduceOne(st *formState, w *formWrite) (*formState, formResult) {
 		return nil, formResult{version: st.version, err: errSealed}
 	}
 	if w.ifVersion != 0 && st.version != w.ifVersion {
-		return nil, formResult{err: fmt.Errorf(
-			"form moved: at version %d, not %d: re-read and retry", st.version, w.ifVersion)}
+		return nil, formResult{err: fmt.Errorf("%w: at version %d, not %d: re-read and retry",
+			ErrFormMoved, st.version, w.ifVersion)}
 	}
 	if err := form.CheckWritable(w.patch, w.priv); err != nil {
 		return nil, formResult{version: st.version, err: err}

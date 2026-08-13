@@ -118,16 +118,21 @@ func OpenTopologyTree(s *XwalStore, dir string) (*TopologyTree, error) {
 	return t, nil
 }
 
-func (s *XwalStore) ensureTopologyStump() error {
+func (s *XwalStore) ensureTopologyStump() error { return s.ensureStump(topologyStump) }
+
+// ensureStump mints a reserved stump if it is not there. Reserved stumps are
+// how this store gives a form a WELL-KNOWN id: figwal names a stump by a
+// string the caller chooses, where every other node gets a system id.
+func (s *XwalStore) ensureStump(name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, st := range s.trunks.Stumps() {
-		if st.Name == topologyStump {
+		if st.Name == name {
 			return nil
 		}
 	}
-	if err := s.trunks.CreateStump(topologyStump); err != nil {
-		return fmt.Errorf("xwal store: create topology stump: %w", err)
+	if err := s.trunks.CreateStump(name); err != nil {
+		return fmt.Errorf("xwal store: create stump %q: %w", name, err)
 	}
 	return nil
 }

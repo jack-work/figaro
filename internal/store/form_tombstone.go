@@ -13,6 +13,7 @@ package store
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/jack-work/figaro/internal/message"
@@ -21,6 +22,11 @@ import (
 // TombstoneKey marks a form as dead. Harness-owned: nothing off a wire may
 // write or clear it.
 const TombstoneKey = "system.tombstone"
+
+// ErrFormMoved is the stale-ifVersion refusal, as a sentinel: a caller doing
+// read-modify-write on a form needs to tell "somebody else got there first,
+// retry" apart from "this write is wrong", and a string never let it.
+var ErrFormMoved = errors.New("form moved")
 
 // Tombstone marks the form dead, durably, and seals it. Idempotent: a form
 // already tombstoned reports its existing version rather than failing, so a
