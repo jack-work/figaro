@@ -3438,3 +3438,17 @@ serialization point, the thing that replaces it inherits a load it was never
 sized for, and the tests that passed did so because none of them exercised
 the case the removed mechanism existed to handle. **Write the concurrent test
 FOR THE PROPERTY THE OLD MECHANISM GUARANTEED**, not for the new code path.
+
+### Retain once, not once per attempt (`dbf8704e`)
+
+The retry loop took a reference and gave it back on every conflict, so eight
+concurrent casts paid a retain and a release — two durable writes on the
+libretto — per attempt each. **Contention should cost extra BOARD writes,
+which are the thing being contended, not extra writes on a form nobody is
+fighting over.**
+
+The reference is taken once, before the first board write (§12.2.1's order
+unchanged), held across retries, and handed back by a defer if the
+declaration never lands. `TestAFailedStudyLeavesNoReference` holds that last
+part: a study onto a SEALED board fails however often it retries, and must
+leave the refcount exactly where it found it.
