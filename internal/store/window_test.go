@@ -120,9 +120,9 @@ func TestWindow_TrimNeverDropsTheTail(t *testing.T) {
 // A trim must actually release memory, not just re-slice a retained array.
 func TestWindow_TrimReleasesBackingArray(t *testing.T) {
 	c, _ := windowFixture(t, 1000, 0)
-	before := cap(c.rows)
+	before := cap(c.load().rows)
 	c.Trim(10)
-	assert.Equal(t, 10, cap(c.rows),
+	assert.Equal(t, 10, cap(c.load().rows),
 		"trim kept a %d-entry array alive to hold 10 rows", before)
 }
 
@@ -130,9 +130,9 @@ func TestWindow_TrimReleasesBackingArray(t *testing.T) {
 // not leave a phantom trimmed count.
 func TestWindow_ClearResetsOffset(t *testing.T) {
 	c, _ := windowFixture(t, 50, 5)
-	require.Positive(t, c.trimmed)
+	require.Positive(t, c.load().trimmed)
 	require.NoError(t, c.Clear())
-	assert.Zero(t, c.trimmed)
+	assert.Zero(t, c.load().trimmed)
 	assert.Zero(t, c.Len())
 	assert.Empty(t, c.Read())
 }

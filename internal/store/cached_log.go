@@ -3,6 +3,7 @@ package store
 import (
 	"sort"
 	"sync"
+	"sync/atomic"
 )
 
 // cachedLog is a memoized read-through view over a Log[T]. It materializes a
@@ -28,24 +29,31 @@ import (
 // with identical semantics whether or not a row is resident. What changed is
 // that "all of it is in RAM" is no longer free: see the note on store.Snapshot
 // in log.go.
-type cachedLog[T any] struct {
-	inner Log[T]
-	// appendMu serializes APPENDERS so cache updates land in log order. It
-	// is not mu: holding mu across inner.Append would block every reader for
-	// the length of an fsync, which is milliseconds now that figaro syncs
-	// before it publishes.
-	appendMu sync.Mutex
-	mu       sync.RWMutex
-
+// logView is the published window: immutable once stored, so a reader takes
+// it with one atomic load and holds no lock at all.
+type logView[T any] struct {
 	// rows is the resident window: the last len(rows) entries of the log.
 	rows []Entry[T]
-	// trimmed is how many entries were dropped off the front. Absolute index
-	// of rows[i] is trimmed+i, which is what byFK stores.
+	// trimmed is how many entries were dropped off the front. The absolute
+	// index of rows[i] is trimmed+i.
 	trimmed int
-	// byFK maps FigaroLT to ABSOLUTE index, so trimming does not invalidate it
-	// (an entry below the window is simply not resident, and its index is
-	// still the truth if it comes back).
-	byFK map[uint64]int
+	// bytes is the running size of rows, carried forward so trimming never
+	// has to re-measure the window.
+	bytes int
+}
+
+type cachedLog[T any] struct {
+	inner Log[T]
+	// writeMu serializes MUTATORS so cache updates land in log order. No
+	// reader ever takes it: holding a lock across inner.Append would block
+	// every reader for the length of an fsync, which is milliseconds now
+	// that figaro syncs before it publishes.
+	writeMu sync.Mutex
+	// view is the whole of the cache's state. Readers load it; mutators
+	// build a successor and store it. Replaces an RWMutex over rows,
+	// trimmed, bytes and a byFK index: 34 acquisitions on the hot read path,
+	// every one of which waited behind an append.
+	view atomic.Pointer[logView[T]]
 
 	// window is the maximum number of resident entries, enforced on append.
 	// 0 disables trimming, which is the default: an unconfigured store behaves
@@ -62,9 +70,6 @@ type cachedLog[T any] struct {
 	// sizeOf estimates one entry's retained bytes. nil means unmeasurable, in
 	// which case budget is ignored and only window applies.
 	sizeOf func(Entry[T]) int
-	// bytes is the running size of rows, maintained incrementally so trimming
-	// never has to re-measure the window.
-	bytes int
 }
 
 var _ Log[any] = (*cachedLog[any])(nil)
@@ -84,10 +89,8 @@ func newWindowedLog[T any](inner Log[T], window, budget, inflation int, sizeOf f
 	if inflation < 1 {
 		inflation = 1
 	}
-	c := &cachedLog[T]{
-		inner: inner, byFK: map[uint64]int{},
-		window: window, budget: budget, sizeOf: sizeOf,
-	}
+	c := &cachedLog[T]{inner: inner, window: window, budget: budget, sizeOf: sizeOf}
+	v := &logView[T]{}
 
 	// A bounded cache reads only the tail it will keep, when the inner log can
 	// serve one. Reading everything and compacting afterwards worked but had to
@@ -97,83 +100,79 @@ func newWindowedLog[T any](inner Log[T], window, budget, inflation int, sizeOf f
 	// stacked those peaks.
 	if tb, ok := inner.(tailBudgetedLog[T]); ok && (budget > 0 || window > 0) {
 		rows, total := tb.TailBudgeted(budget, window, inflation)
-		c.rows = rows
-		c.trimmed = total - len(rows)
-		for i, e := range rows {
-			c.byFK[e.FigaroLT] = c.trimmed + i
-			c.bytes += c.sizeOfLocked(e)
+		v.rows = rows
+		v.trimmed = total - len(rows)
+		for _, e := range rows {
+			v.bytes += c.size(e)
 		}
+		c.view.Store(v)
 		return c
 	}
 
-	for _, e := range inner.Read() {
-		c.byFK[e.FigaroLT] = len(c.rows)
-		c.rows = append(c.rows, e)
-		c.bytes += c.sizeOfLocked(e)
+	v.rows = inner.Read()
+	for _, e := range v.rows {
+		v.bytes += c.size(e)
 	}
 	// Compact EXACTLY at construction, without the append path's slack: this is
 	// the moment the whole log was just materialized, so it is precisely the
 	// residency the window exists to avoid.
-	c.compactLocked(0)
+	c.compact(v, 0)
+	c.view.Store(v)
 	return c
 }
 
-func (c *cachedLog[T]) sizeOfLocked(e Entry[T]) int {
+func (c *cachedLog[T]) size(e Entry[T]) int {
 	if c.sizeOf == nil {
 		return 0
 	}
 	return c.sizeOf(e)
 }
 
+func (c *cachedLog[T]) load() *logView[T] { return c.view.Load() }
+
 // Read returns every entry. It falls through to the inner log when the window
 // does not hold the whole channel: the honest price of a call that wants the
 // prefix, and the reason nothing on the hot path calls it.
 func (c *cachedLog[T]) Read() []Entry[T] {
-	c.mu.RLock()
-	if c.trimmed == 0 {
-		out := make([]Entry[T], len(c.rows))
-		copy(out, c.rows)
-		c.mu.RUnlock()
-		return out
+	v := c.load()
+	if v.trimmed > 0 {
+		return c.inner.Read()
 	}
-	c.mu.RUnlock()
-	return c.inner.Read()
+	out := make([]Entry[T], len(v.rows))
+	copy(out, v.rows)
+	return out
 }
 
 func (c *cachedLog[T]) TailSnapshot(n int) []Entry[T] {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if n <= 0 || len(c.rows) == 0 {
+	v := c.load()
+	if n <= 0 || len(v.rows) == 0 {
 		return nil
 	}
-	if n > len(c.rows) {
-		n = len(c.rows)
+	if n > len(v.rows) {
+		n = len(v.rows)
 	}
-	return c.rows[len(c.rows)-n:]
+	return v.rows[len(v.rows)-n:]
 }
 
 func (c *cachedLog[T]) Len() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.trimmed + len(c.rows)
+	v := c.load()
+	return v.trimmed + len(v.rows)
 }
 
 func (c *cachedLog[T]) ReadFrom(figaroLT uint64, n int) []Entry[T] {
-	c.mu.RLock()
-	if c.belowWindowLocked(figaroLT) {
-		c.mu.RUnlock()
+	v := c.load()
+	if v.belowWindow(figaroLT) {
 		return c.inner.ReadFrom(figaroLT, n)
 	}
-	defer c.mu.RUnlock()
-	start := sort.Search(len(c.rows), func(i int) bool {
-		return c.rows[i].FigaroLT >= figaroLT
+	start := sort.Search(len(v.rows), func(i int) bool {
+		return v.rows[i].FigaroLT >= figaroLT
 	})
-	end := len(c.rows)
+	end := len(v.rows)
 	if n > 0 && start+n < end {
 		end = start + n
 	}
 	out := make([]Entry[T], end-start)
-	copy(out, c.rows[start:end])
+	copy(out, v.rows[start:end])
 	return out
 }
 
@@ -182,11 +181,10 @@ func (c *cachedLog[T]) ReadFrom(figaroLT uint64, n int) []Entry[T] {
 // It is the read the incremental translator uses, and the one the window is
 // shaped for: a warm watermark is always inside it.
 func (c *cachedLog[T]) TailAfter(lt uint64) ([]Entry[T], int) {
-	c.mu.RLock()
+	v := c.load()
 	// A watermark below the window means a cold consumer, which needs the
 	// prefix it is about to fold anyway.
-	if c.trimmed > 0 && (len(c.rows) == 0 || lt < c.rows[0].LT) {
-		c.mu.RUnlock()
+	if v.trimmed > 0 && (len(v.rows) == 0 || lt < v.rows[0].LT) {
 		all := c.inner.Read()
 		i := 0
 		for i < len(all) && all[i].LT <= lt {
@@ -196,48 +194,48 @@ func (c *cachedLog[T]) TailAfter(lt uint64) ([]Entry[T], int) {
 		copy(out, all[i:])
 		return out, len(all)
 	}
-	defer c.mu.RUnlock()
-	start := sort.Search(len(c.rows), func(i int) bool {
-		return c.rows[i].LT > lt
+	start := sort.Search(len(v.rows), func(i int) bool {
+		return v.rows[i].LT > lt
 	})
-	out := make([]Entry[T], len(c.rows)-start)
-	copy(out, c.rows[start:])
-	return out, c.trimmed + len(c.rows)
+	out := make([]Entry[T], len(v.rows)-start)
+	copy(out, v.rows[start:])
+	return out, v.trimmed + len(v.rows)
 }
 
 func (c *cachedLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) {
-	c.mu.RLock()
+	v := c.load()
 	// Paging backward past the window is the user-scroll case. Serve it from
 	// disk rather than growing the window: a scroll must not permanently
 	// re-resident a prefix nobody will read again.
-	if c.trimmed > 0 && (before == 0 || c.belowWindowLocked(before)) {
-		c.mu.RUnlock()
+	if v.trimmed > 0 && (before == 0 || v.belowWindow(before)) {
 		return c.inner.ReadPage(from, before, n)
 	}
-	if c.belowWindowLocked(from) {
-		c.mu.RUnlock()
+	if v.belowWindow(from) {
 		return c.inner.ReadPage(from, before, n)
 	}
-	defer c.mu.RUnlock()
-	page, _ := readPage(c.rows, from, before, n)
-	return page, c.trimmed + len(c.rows)
+	page, _ := readPage(v.rows, from, before, n)
+	return page, v.trimmed + len(v.rows)
 }
 
+// Lookup finds an entry by FigaroLT.
+//
+// There used to be a byFK map from FigaroLT to absolute index beside the
+// window. It answered nothing the rows cannot: entries are ascending by
+// FigaroLT (ReadFrom binary searches on exactly that), so a resident hit is a
+// search, and every miss goes to the inner log whenever anything was trimmed.
+// What it did do was grow forever - it was never pruned on trim - so a
+// bounded window carried an unbounded index of the entries it had dropped.
 func (c *cachedLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
-	c.mu.RLock()
-	if i, ok := c.byFK[figaroLT]; ok {
-		if rel := i - c.trimmed; rel >= 0 && rel < len(c.rows) {
-			e := c.rows[rel]
-			c.mu.RUnlock()
-			return e, true
-		}
-		// Known to exist, not resident.
-		c.mu.RUnlock()
-		return c.inner.Lookup(figaroLT)
+	v := c.load()
+	// The LAST match, not the first: the map it replaces kept the newest
+	// index written for a FigaroLT.
+	i := sort.Search(len(v.rows), func(i int) bool {
+		return v.rows[i].FigaroLT > figaroLT
+	}) - 1
+	if i >= 0 && v.rows[i].FigaroLT == figaroLT {
+		return v.rows[i], true
 	}
-	trimmed := c.trimmed
-	c.mu.RUnlock()
-	if trimmed > 0 {
+	if v.trimmed > 0 {
 		return c.inner.Lookup(figaroLT)
 	}
 	return Entry[T]{}, false
@@ -246,33 +244,37 @@ func (c *cachedLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
 // PeekTail is always resident: the window is a tail window, so the last entry
 // is in it whenever the log is non-empty.
 func (c *cachedLog[T]) PeekTail() (Entry[T], bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if len(c.rows) == 0 {
+	v := c.load()
+	if len(v.rows) == 0 {
 		return Entry[T]{}, false
 	}
-	return c.rows[len(c.rows)-1], true
+	return v.rows[len(v.rows)-1], true
 }
 
 func (c *cachedLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	// The durable half runs with NO reader blocked: an append syncs, and a
-	// sync is milliseconds. Appenders serialize on appendMu so the cache
-	// still sees them in log order.
-	c.appendMu.Lock()
-	defer c.appendMu.Unlock()
+	// sync is milliseconds. Mutators serialize on writeMu so the cache still
+	// sees them in log order.
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	stamped, err := c.inner.Append(e)
 	if err != nil {
 		return Entry[T]{}, err
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.byFK[stamped.FigaroLT] = c.trimmed + len(c.rows)
-	c.rows = append(c.rows, stamped)
-	c.bytes += c.sizeOfLocked(stamped)
+	old := c.load()
+	// append() may write into the old array's spare capacity, at an index
+	// past the published length, where no reader can see it. The successor
+	// is what publishes it.
+	next := &logView[T]{
+		rows:    append(old.rows, stamped),
+		trimmed: old.trimmed,
+		bytes:   old.bytes + c.size(stamped),
+	}
 	// Trim on append rather than on a timer. A log growing through a long
 	// autonomous turn has to be bounded now, not at the next sweep, and doing
 	// it here costs no goroutine and no second scheduler.
-	c.enforceWindowLocked()
+	c.compact(next, windowSlack)
+	c.view.Store(next)
 	return stamped, nil
 }
 
@@ -283,43 +285,36 @@ func (c *cachedLog[T]) Append(e Entry[T]) (Entry[T], error) {
 // This is the reaper's control surface, reached through the optional
 // windowedLog interface: the caller says when, never how.
 func (c *cachedLog[T]) Trim(keep int) int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.trimLocked(keep)
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	next := c.load().clone()
+	dropped := c.trim(next, keep)
+	if dropped > 0 {
+		c.view.Store(next)
+	}
+	return dropped
 }
 
 // Resident reports how many entries are in the window.
-func (c *cachedLog[T]) Resident() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return len(c.rows)
-}
+func (c *cachedLog[T]) Resident() int { return len(c.load().rows) }
 
-// enforceWindowLocked applies the configured cap, and does nothing when
-// windowing is off. Kept distinct from trimLocked so that "no window
-// configured" can never be confused with "trim to the minimum".
+// compact drops entries off the front of v until both bounds are satisfied,
+// allowing an overshoot of slack rows (and 2x the byte budget) first so the
+// copy amortizes across appends rather than running on every one.
 //
-// It trims in BATCHES, letting the window overshoot by windowSlack before
-// compacting back down. Trimming on every append past the cap was measured at
+// It trims in BATCHES. Trimming on every append past the cap was measured at
 // 4.4 µs and 51 KB per append against 308 ns and zero allocations unwindowed -
 // a 14x regression on the hottest write path in the daemon, because each
 // compaction copies the whole window. Batching amortizes that copy over
 // windowSlack appends, which brings it to within noise of untrimmed.
-func (c *cachedLog[T]) enforceWindowLocked() int {
-	return c.compactLocked(windowSlack)
-}
-
-// compactLocked drops entries off the front until both bounds are satisfied,
-// allowing an overshoot of slack rows (and 2x the byte budget) first so the
-// copy amortizes across appends rather than running on every one.
-func (c *cachedLog[T]) compactLocked(slack int) int {
-	overRows := c.window > 0 && len(c.rows) > c.window+slack
-	overBytes := c.budget > 0 && c.sizeOf != nil && c.bytes > c.budget+c.budget*slackNum/slackDen
+func (c *cachedLog[T]) compact(v *logView[T], slack int) int {
+	overRows := c.window > 0 && len(v.rows) > c.window+slack
+	overBytes := c.budget > 0 && c.sizeOf != nil && v.bytes > c.budget+c.budget*slackNum/slackDen
 	if !overRows && !overBytes {
 		return 0
 	}
 
-	keep := len(c.rows)
+	keep := len(v.rows)
 	if c.window > 0 && keep > c.window {
 		keep = c.window
 	}
@@ -327,8 +322,8 @@ func (c *cachedLog[T]) compactLocked(slack int) int {
 		// Walk back from the tail accumulating bytes; keep the newest entries
 		// that fit. At least one, always: PeekTail and Append both read it.
 		total, n := 0, 0
-		for i := len(c.rows) - 1; i >= 0; i-- {
-			sz := c.sizeOfLocked(c.rows[i])
+		for i := len(v.rows) - 1; i >= 0; i-- {
+			sz := c.size(v.rows[i])
 			if n > 0 && total+sz > c.budget {
 				break
 			}
@@ -339,7 +334,7 @@ func (c *cachedLog[T]) compactLocked(slack int) int {
 			keep = n
 		}
 	}
-	return c.trimLocked(keep)
+	return c.trim(v, keep)
 }
 
 // slackNum/slackDen is the byte overshoot allowed before compaction: half the
@@ -354,51 +349,49 @@ const (
 // peaks at window+slack, never above.
 const windowSlack = 256
 
-func (c *cachedLog[T]) trimLocked(keep int) int {
+func (c *cachedLog[T]) trim(v *logView[T], keep int) int {
 	if keep <= 0 {
 		keep = 1 // never drop the tail: PeekTail and Append both read it
 	}
-	if len(c.rows) <= keep {
+	if len(v.rows) <= keep {
 		return 0
 	}
-	drop := len(c.rows) - keep
+	drop := len(v.rows) - keep
 	// Re-slice into a fresh array: keeping the old backing array alive would
 	// retain exactly the entries we are trying to release.
 	kept := make([]Entry[T], keep)
-	copy(kept, c.rows[drop:])
-	for _, e := range c.rows[:drop] {
-		c.bytes -= c.sizeOfLocked(e)
+	copy(kept, v.rows[drop:])
+	for _, e := range v.rows[:drop] {
+		v.bytes -= c.size(e)
 	}
-	c.rows = kept
-	c.trimmed += drop
+	v.rows = kept
+	v.trimmed += drop
 	return drop
 }
 
-// ResidentBytes is the estimated retained size of the window.
-func (c *cachedLog[T]) ResidentBytes() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.bytes
+func (v *logView[T]) clone() *logView[T] {
+	out := *v
+	return &out
 }
 
-// belowWindowLocked reports whether figaroLT names an entry ahead of the
-// window's first resident row. Caller holds at least a read lock.
-func (c *cachedLog[T]) belowWindowLocked(figaroLT uint64) bool {
-	if c.trimmed == 0 || len(c.rows) == 0 {
+// ResidentBytes is the estimated retained size of the window.
+func (c *cachedLog[T]) ResidentBytes() int { return c.load().bytes }
+
+// belowWindow reports whether figaroLT names an entry ahead of the window's
+// first resident row.
+func (v *logView[T]) belowWindow(figaroLT uint64) bool {
+	if v.trimmed == 0 || len(v.rows) == 0 {
 		return false
 	}
-	return figaroLT < c.rows[0].FigaroLT
+	return figaroLT < v.rows[0].FigaroLT
 }
 
 func (c *cachedLog[T]) Clear() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	if err := c.inner.Clear(); err != nil {
 		return err
 	}
-	c.rows = nil
-	c.trimmed = 0
-	c.bytes = 0
-	c.byFK = map[uint64]int{}
+	c.view.Store(&logView[T]{})
 	return nil
 }

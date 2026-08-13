@@ -64,7 +64,7 @@ type Form struct {
 
 	// sinks and closed are drainer-owned except for the CAS in OnCommit:
 	// an immutable slice behind a pointer, so emitting takes no lock.
-	sinks  atomic.Pointer[[]func(uint64, message.Patch)]
+	sinks atomic.Pointer[[]func(uint64, message.Patch)]
 	// sealed is set by a tombstone and rebuilt from the published state at
 	// open, so a dead form stays dead across a restart without anyone
 	// re-declaring it.

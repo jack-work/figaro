@@ -221,9 +221,9 @@ func storeOptions(segmentSize int) xwal.StoreOptions {
 		NoBackgroundFlush: true,
 		IdleUnload:        time.Duration(handleIdle.Load()),
 		Codec:             "jsonl",
-		SegmentSize: int64(segmentSize),
-		Genesis:     genesis,
-		MintTrunkID: mintTrunkID,
+		SegmentSize:       int64(segmentSize),
+		Genesis:           genesis,
+		MintTrunkID:       mintTrunkID,
 		Reducers: map[string]xwal.Reducer{
 			chanForm: {Reduce: formReduce, Initial: []byte("{}")},
 		},
