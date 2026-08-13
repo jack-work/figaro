@@ -276,3 +276,84 @@ func TestKillReleasesWhatItsBoardStudied(t *testing.T) {
 		t.Fatalf("the sweep disagreed after a kill: %+v", audit)
 	}
 }
+
+// Every path that gives a board a COPY is a participant. ForkWith is the one
+// a live `fig fork` takes, and it was missed while every test that called
+// Fork passed -- which is why this asserts the property on both entry points
+// rather than on the one the last test happened to use.
+func TestEveryForkEntryPointInheritsTheReference(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		fork func(be *XwalBackend, parent string) error
+	}{
+		{"Fork", func(be *XwalBackend, parent string) error {
+			_, _, err := be.Fork(parent)
+			return err
+		}},
+		{"ForkWith", func(be *XwalBackend, parent string) error {
+			_, _, err := be.ForkWith(parent, 0, setPatch(map[string]string{"note": "forked"}))
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			be, sourceID, _ := librettoFixture(t)
+			outfit, err := be.CreateOutfit("forks", setPatch(map[string]string{"system.model": "m"}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			parent, err := be.CreateConversation(outfit)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := be.StudyForm(parent, sourceID); err != nil {
+				t.Fatal(err)
+			}
+			if err := tc.fork(be, parent); err != nil {
+				t.Fatal(err)
+			}
+			lib, err := be.Libretto(sourceID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := lib.Refs(); got != 2 {
+				t.Fatalf("%s left refs at %d, want 2", tc.name, got)
+			}
+			audit, err := be.ReconcileLibrettos()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if audit.Corrected != 0 {
+				t.Fatalf("%s: the sweep disagreed: %+v", tc.name, audit)
+			}
+		})
+	}
+}
+
+// A libretto is machinery, not a conversation: no listing may draw it.
+func TestLibrettoStumpsAreNeverListed(t *testing.T) {
+	be, sourceID, _ := librettoFixture(t)
+	outfit, err := be.CreateOutfit("hidden", setPatch(map[string]string{"system.model": "m"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	watcher, err := be.CreateConversation(outfit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := be.StudyForm(watcher, sourceID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := be.Libretto(sourceID); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range be.Nodes() {
+		if _, isLibretto := SourceOfLibretto(n.ID); isLibretto {
+			t.Fatalf("a libretto stump appeared in a listing: %s", n.ID)
+		}
+	}
+	for _, n := range be.Forms() {
+		if _, isLibretto := SourceOfLibretto(n.ID); isLibretto {
+			t.Fatalf("a libretto stump appeared among the forms: %s", n.ID)
+		}
+	}
+}

@@ -419,6 +419,11 @@ func (b *XwalBackend) ApplyFormEffect(ariaID string, patch message.Patch, ifVers
 // this way: `fig new` forks the null root, `fig fork` forks an aria, and the
 // patch it carries is its identity.
 func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Patch) (string, uint64, error) {
+	// Every path that gives a board a copy is a refcount participant, and
+	// this is the one a live `fig fork` takes. Missing it under-counted on a
+	// real daemon while every unit test passed, because the tests called
+	// Fork and the CLI calls this.
+	b.inheritStudies(parent)
 	child, version, err := b.store.ForkWith(parent, atMainLT, patch)
 	if err != nil {
 		return "", 0, err

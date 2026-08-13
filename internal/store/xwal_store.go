@@ -82,12 +82,17 @@ func (s *XwalStore) listTrunks() []xwal.TrunkInfo {
 func (s *XwalStore) listStumps() []xwal.StumpInfo {
 	trunkScanCount.Add(1)
 	all := s.trunks.Stumps()
-	// The topology form hangs on a reserved stump, and it describes the very
-	// tree this list builds. Left in, the hierarchy grows a row about itself
-	// (durable-forms §11: never listed, never forked, never bound).
+	// Reserved stumps carry MACHINERY, not conversations, and none of them
+	// belong in a listing: the topology form describes the very tree this
+	// list builds (left in, the hierarchy grows a row about itself), and a
+	// libretto is a derived copy of a form the user already sees. Both are
+	// "never listed, never forked, never bound" (durable-forms §11, §12.2).
+	//
+	// Found live rather than in a test: `fig ls -g` drew a @libretto:: row
+	// the moment the study verb minted one.
 	out := all[:0:0]
 	for _, st := range all {
-		if st.Name == topologyStump {
+		if isReservedStump(st.Name) {
 			continue
 		}
 		out = append(out, st)
