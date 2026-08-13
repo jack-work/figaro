@@ -2855,3 +2855,20 @@ Two things follow, and both are more useful than the number I imagined:
    group commit) and NOT on this fleet, which cannot produce the case at all.
    A number from a workload that cannot exercise the mechanism is not
    evidence for it.
+
+### `doctor mem` reports what studying costs (`f8fb8416`)
+
+```
+librettos  open=1  observers=2  (one fold goroutine each)
+```
+
+Printed only when there are any. A fold is a goroutine and a subscription,
+and ONE libretto is shared by every observer of that form — which is the
+whole argument for one-per-form over one-per-figaro, and nothing could check
+it until now. Live: two arias studying one form give `open=1 observers=2`,
+and `observers=1` after one drops.
+
+This project has twice shipped a resident structure nobody could see (the
+translation cache, figwal's snapshots). The rule that came out of it — a new
+resident structure arrives with its number in `doctor mem` — is now applied
+to phase 9 as well.
