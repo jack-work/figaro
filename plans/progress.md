@@ -1598,3 +1598,33 @@ because the parse was never the broken half.
 
 `HandleIdleForTest`, `FormLingerForTest` and `PatchWindowForTest` exist only
 to let the test read those enforcement points from another package.
+
+### `fig set --wait` (Gluck's ruling, 2026-08-13)
+
+The one place the two halves of a write disagreed: on a LIVE aria a stale
+`ifVersion` and an `Assert` removal are answered by the writer, which runs at
+the next round boundary, so they reached the daemon log and not the caller.
+
+`--wait` asks for that verdict. The event carries a buffered channel, the
+round boundary fills it, and the caller gets `applied`/`unchanged` plus the
+version. **Both** places a queued set can be applied report it — the drain
+loop and `serviceSets` at the boundary — or a waiter hangs on a turn that
+already applied its patch.
+
+**Opt-in, and the tests are what keep it so.** Live, on an isolated daemon:
+
+```
+$ figaro set --id a5edb50e brief one            # default, unchanged
+queued: brief = "one" (figaro a5edb50e)
+$ figaro set --id a5edb50e --wait brief two
+set brief = "two" (figaro a5edb50e) @6
+$ figaro set --id a5edb50e --wait brief two
+unchanged: brief = "two" (figaro a5edb50e) @6
+```
+
+Three tests: the DEFAULT set does not block during a tool round (the deadlock
+the first attempt shipped, asserted as an absence), `--wait` does block and
+answers correctly when the round ends, and a caller whose context expires
+stops waiting while the patch still lands. `TestFormSetDuringToolRoundApplies
+NextRound` — the test that hung the first attempt for its full timeout — is
+green.
