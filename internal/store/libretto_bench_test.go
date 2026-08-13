@@ -133,3 +133,65 @@ func librettoBurst(b *testing.B, writers int) {
 		b.ReportMetric(float64(b.N)/records, "source-patches/libretto-record")
 	}
 }
+
+// THE FIFTY-OBSERVER STORM, which durable-forms §12.7 names as the case
+// where the derivation's cost stops being theoretical: "50 x 12 MB per patch
+// versus 50 x a few hundred bytes".
+//
+// One libretto per studied FORM is what answers it. Fifty observers share
+// one copy, one fold and one goroutine, so a patch to the source is folded
+// ONCE however many figaros are watching -- which is the whole reason the
+// design reversed from one-libretto-per-figaro. This measures that the
+// sharing is real: the per-patch cost must not move with the observer count.
+func benchStorm(b *testing.B, observers int) {
+	be, err := NewXwalBackend(b.TempDir(), 0)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer be.Close()
+	outfit, err := be.CreateOutfit("storm", setPatch(map[string]string{"system.model": "m"}))
+	if err != nil {
+		b.Fatal(err)
+	}
+	sourceID, err := be.CreateConversation(outfit)
+	if err != nil {
+		b.Fatal(err)
+	}
+	for i := 0; i < observers; i++ {
+		watcher, err := be.CreateConversation(outfit)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if _, _, err := be.StudyForm(watcher, sourceID); err != nil {
+			b.Fatal(err)
+		}
+	}
+	lib, err := be.Libretto(sourceID)
+	if err != nil {
+		b.Fatal(err)
+	}
+	if got := lib.Refs(); got != observers {
+		b.Fatalf("refs = %d, want %d observers", got, observers)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := be.ApplyForm(sourceID, setPatch(map[string]string{
+			"moving": fmt.Sprintf("v%d", i),
+		})); err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.StopTimer()
+	deadline := time.Now().Add(30 * time.Second)
+	for lib.At() < uint64(b.N) && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	open, obs := be.LibrettoStats()
+	b.ReportMetric(float64(open), "librettos")
+	b.ReportMetric(float64(obs), "observers")
+}
+
+func BenchmarkStorm1Observer(b *testing.B)   { benchStorm(b, 1) }
+func BenchmarkStorm50Observers(b *testing.B) { benchStorm(b, 50) }
