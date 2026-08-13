@@ -1139,3 +1139,90 @@ the floor is raised), and `TestTranslationBudgetReachesTheCache` for the
 thing a config test cannot see — that the budget reaches the CACHE, bounds
 residency, and loses no records, because a read below the window still
 falls through to the log.
+
+## WHERE THE MEMORY IS. `fig ls` retains 95 MB, and none of it is figaro's
+
+This is the answer to the 2 GB question, and it is not in any cache figaro
+owns. Measured, on a daemon started with `FIGARO_PPROF=1` against a COPY of
+the real store (515 conversations, 577 trunks, 281 MB on disk):
+
+```
+after boot                    heap  ~8 MB
+after ONE `figaro ls -j`      heap  208 MB     resident_arias 0
+                                              resident_ir_bytes 0
+                                              resident_translation_bytes 0
+```
+
+Zero resident arias. Zero IR. Zero translations. Every cache figaro
+measures is empty, and the heap is 208 MB. The profile (`inuse_space`,
+after the call):
+
+```
+83.21MB 78.99%  figwal/log.buildOwnSnapshot.func1
+95.30MB 90.47%  angelus.(*handlers).list
+        chain:  list -> ... -> disk.(*Log).RangeOwn -> buildOwnSnapshot.func1
+```
+
+**`figwal/log.buildOwnSnapshot` copies every record's payload into an
+in-memory snapshot when a Log is opened:**
+
+```go
+err := l.RangeOwn(0, func(idx uint64, payload []byte) error {
+	cp := make([]byte, len(payload))
+	copy(cp, payload)
+	snap.entries = append(snap.entries, cp)
+	return nil
+})
+```
+
+That is figwal's lock-free read cache — the same published-snapshot pattern
+this whole changeset has been applying — but **whole-log rather than
+windowed**. Opening a node materializes the node's entire encoded history.
+
+**And a listing opens every node.** `handlers.list` asks
+`Backend.LastTS(id)` per row for recency, which is figwal's counter on the
+OPEN handle, and the comment at `XwalStore.LastTS` says so in as many
+words: *"one head open hydrates a cold node, and the trunks layer keeps it
+warm"*. It never wakes an agent, which is what the comment was defending,
+and it hydrates the store.
+
+So the layering, stated plainly:
+
+| cache | contents | bounded |
+|---|---|---|
+| figaro `cachedLog` (IR) | decoded entries | yes, `ir_window_mb` |
+| figaro `cachedLog` (translations) | decoded entries | yes, as of this session |
+| figaro `formState.patches` | decoded patches | yes, `form_patch_window` |
+| **figwal `cacheSnapshot`** | **every raw payload of every channel** | **no** |
+
+Every bound this project has added sits on top of an unbounded one. On this
+store the ceiling is the store: 281 MB on disk becomes ~281 MB resident
+once everything has been touched, before figaro decodes a byte of it.
+
+`handle_idle_minutes` (figwal's `IdleUnload`, 5 min) does reclaim it — which
+is why the daemon does not simply grow forever. But **a shell status line
+running `fig ls` on a timer re-touches every node faster than the idle clock
+can drop it**, and that is the steady state Gluck is looking at: 260 MB of
+heap with 4 live arias and 38 MB of reported IR.
+
+### The three candidate fixes, and what each costs
+
+1. **Stop hydrating for recency (figaro, small).** A listing needs "when was
+   this node last written", not its history. The newest segment file's mtime
+   answers it with one `stat` and no hydration. Changes `fig ls` ordering
+   semantics from "newest record timestamp" to "newest write time", which are
+   the same thing in every case that is not a restore, so **it needs Gluck's
+   ruling before it lands** rather than my judgement at one in the morning.
+2. **Bound the snapshot (figwal, large).** A tail window with a fall-through
+   to disk below it, exactly what `cachedLog` does one layer up. It is the
+   right long-term shape and it costs figwal's "reads are lock-free from
+   memory, always" property below the window.
+3. **mmap the segments instead of copying payloads (figwal, largest).** The
+   page cache becomes the cache, the pages are shared and evictable by the
+   kernel, and RSS stops being figaro's problem. Best end state, biggest
+   change.
+
+**Nothing here is landed.** The instrument and the evidence are: this
+section, `listing_cost_test.go` and `realtrans_probe_test.go`, both env-gated
+against a copy. The measurement is repeatable in about ninety seconds and
+should be repeated after any of the three.
