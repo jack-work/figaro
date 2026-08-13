@@ -213,6 +213,12 @@ type MemoryConfig struct {
 	// without an append or a read. 0 takes figwal's own default (5m);
 	// negative means never unload.
 	HandleIdleMinutes *int `toml:"handle_idle_minutes"`
+
+	// FormPatchWindow bounds the decoded patch history a form keeps
+	// resident. A range below it is re-read from the log, which costs a walk
+	// and happens only on a cold retranslate. Default 2048; 0 retains
+	// everything.
+	FormPatchWindow *int `toml:"form_patch_window"`
 }
 
 const (
@@ -303,6 +309,10 @@ const (
 	// defaultActorLingerMS keeps a form's writer through a tool loop's
 	// writes without keeping it through an idle afternoon.
 	defaultActorLingerMS = 2000
+	// defaultFormPatchWindow is generous: the longest board in the author's
+	// store holds 99 patches, so this only bites a form written to
+	// continuously for a very long time.
+	defaultFormPatchWindow = 2048
 	// defaultIRWindowMB bounds resident decoded IR when nothing says
 	// otherwise. It used to be unbounded, and the decoded IR is the largest
 	// thing a live aria holds: 4 to 5x its encoded bytes, measured at 12.5
@@ -348,6 +358,17 @@ func (l *Loaded) HandleIdle() time.Duration {
 		return 0
 	}
 	return time.Duration(*l.Config.Memory.HandleIdleMinutes) * time.Minute
+}
+
+// FormPatchWindow bounds resident decoded patches per form. Nil-safe.
+func (l *Loaded) FormPatchWindow() int {
+	if l == nil || l.Config.Memory.FormPatchWindow == nil {
+		return defaultFormPatchWindow
+	}
+	if n := *l.Config.Memory.FormPatchWindow; n > 0 {
+		return n
+	}
+	return 0
 }
 
 // SegmentSize returns the WAL segment size in bytes. Nil-safe, so a store

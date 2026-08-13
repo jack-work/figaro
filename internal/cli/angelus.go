@@ -118,6 +118,7 @@ func runAngelus() {
 	// a form built earlier would keep the old linger for the daemon's life.
 	store.SetFormLinger(loaded.ActorLinger())
 	store.SetHandleIdle(loaded.HandleIdle())
+	store.SetPatchWindow(loaded.FormPatchWindow())
 
 	backend, err := ariaBackend(loaded)
 	if err != nil {

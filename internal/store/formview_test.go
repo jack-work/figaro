@@ -180,3 +180,42 @@ func TestFormPatchesBetweenUnderConcurrentWrites(t *testing.T) {
 	close(stop)
 	wg.Wait()
 }
+
+// Trimming must not lose an answer: a range below the resident window is
+// re-read from the log and must match what the window would have said.
+func TestPatchesBelowTheWindowComeFromTheLog(t *testing.T) {
+	SetPatchWindow(8)
+	t.Cleanup(func() { SetPatchWindow(2048) })
+
+	f := formWithPatches(t, 400)
+	ps := f.state.Load().patches
+	if len(ps) > 8+patchSlack {
+		t.Fatalf("window not enforced: %d resident", len(ps))
+	}
+	if ps[0].Version <= 1 {
+		t.Skip("nothing was trimmed; raise the patch count")
+	}
+
+	// A range entirely below the window.
+	got := f.PatchesBetween(0, 5)
+	if len(got) != 5 {
+		t.Fatalf("want 5 patches from the log, got %d", len(got))
+	}
+	for i, p := range got {
+		if p.Version != uint64(i+1) {
+			t.Fatalf("at %d: version %d", i, p.Version)
+		}
+	}
+
+	// A range straddling the boundary.
+	straddle := f.PatchesBetween(ps[0].Version-3, ps[0].Version+1)
+	if len(straddle) != 4 {
+		t.Fatalf("straddling the window edge: want 4, got %d", len(straddle))
+	}
+
+	// And the hot path is still a view.
+	v := f.Version()
+	if hot := f.PatchesBetween(v-1, v); len(hot) != 1 {
+		t.Fatalf("the window must still answer its own range: got %d", len(hot))
+	}
+}

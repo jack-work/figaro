@@ -98,3 +98,20 @@ func TestHandleIdle(t *testing.T) {
 		t.Fatalf("negative passes through as never-unload: got %v", got)
 	}
 }
+
+func TestFormPatchWindow(t *testing.T) {
+	if got := (*Loaded)(nil).FormPatchWindow(); got != defaultFormPatchWindow {
+		t.Fatalf("nil config: got %d", got)
+	}
+	var l Loaded
+	off := 0
+	l.Config.Memory.FormPatchWindow = &off
+	if got := l.FormPatchWindow(); got != 0 {
+		t.Fatalf("0 must mean retain everything: got %d", got)
+	}
+	n := 64
+	l.Config.Memory.FormPatchWindow = &n
+	if got := l.FormPatchWindow(); got != 64 {
+		t.Fatalf("configured: got %d", got)
+	}
+}

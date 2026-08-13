@@ -522,3 +522,27 @@ nix build .#default                       builds
 FIGARO_CRASH_TEST=1 crash test            acknowledged patches all durable
 live: mint, patch, real turn, tool loop    all answered
 ```
+
+#### The last unbounded retention is bounded
+
+`formState.patches` now has a window (`[memory] form_patch_window`, default
+2048, 0 retains everything). Two halves, as designed:
+
+- **Below the window, read from the log.** `PatchesBetween` checks whether
+  the resident array reaches `after`; if not it walks `RangePatches` and
+  returns a fresh slice. Cold path only: a retranslate of old history. The
+  hot path is still the zero-copy view, still 45 to 57 ns and zero allocs.
+- **Trim by COPYING, across a slack allowance.** Re-slicing releases nothing
+  because the array is shared by construction, so the tail is copied into a
+  fresh array once the excess passes 256. Copying per write would be the
+  O(history) cost this whole line of work removed.
+
+The log walk is O(history) per cold call, because `FormLog` has no bounded
+range read. Acceptable now (it happens on retranslate, not per Send) and the
+obvious next step if it shows up: figwal already has the segment index and
+`RecordsBetween` would be a thin wrapper.
+
+**Workflow note, from Gluck:** long commands were held in the foreground and
+blocked the actor loop, so heartbeats queued behind them. `/var/tmp/figstate/job
+<name> <cmd>` runs work as a transient user service; `/var/tmp/figstate/jobs.sh`
+lists status. Use it for anything over a few seconds.

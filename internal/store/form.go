@@ -143,6 +143,25 @@ func OpenForm(log FormLog) (*Form, error) {
 // per-lineage lock against every other node forked from the same root.
 const formBatch = 64
 
+// patchWindow bounds the DECODED patch history a form keeps resident, and
+// patchSlack is how far past it the array may run before it is copied down.
+//
+// Slack, because trimming is a COPY. The published array is shared by
+// construction (that is what makes PatchesBetween a view), so re-slicing the
+// front off releases nothing: a header into the middle pins the whole array.
+// Copying on every write would be the O(history) cost this design removed,
+// so it happens once per slack allowance instead.
+var (
+	patchWindow atomic.Int64
+	patchSlack  = 256
+)
+
+func init() { patchWindow.Store(2048) }
+
+// SetPatchWindow bounds resident decoded patches per form. Zero or negative
+// retains everything, which is what figaro did before this existed.
+func SetPatchWindow(n int) { patchWindow.Store(int64(n)) }
+
 // formLinger is how long a drained writer waits before leaving. Package
 // level so the daemon can set it once from config before any form opens;
 // changing it later would leave already-open forms on the old value, which
@@ -195,13 +214,48 @@ func (f *Form) Version() uint64 { return f.state.Load().version }
 // position between calls, which is what lets one accessor be shared and long
 // lived instead of rebuilt per Send.
 func (f *Form) PatchesBetween(after, upTo uint64) []VersionedPatch {
-	ps := f.state.Load().patches
+	st := f.state.Load()
+	ps := st.patches
+	// The window answers only if the range starts at or above its first
+	// version. Below that the patches are on disk and the answer costs a
+	// walk: a cold retranslate of old history goes here, the hot path does
+	// not.
+	if upTo > after && len(ps) > 0 && after+1 < ps[0].Version {
+		if fromLog, ok := f.patchesFromLog(after, upTo); ok {
+			figOtel.RecordFormPatchRead(context.Background(), len(fromLog), len(ps))
+			return fromLog
+		}
+	}
 	out := patchRange(ps, after, upTo)
 	// The pair the old API could not report: what this read answered with,
 	// and how long the history behind it was. Free here (both are in hand),
 	// and it is the only place that knows both.
 	figOtel.RecordFormPatchRead(context.Background(), len(out), len(ps))
 	return out
+}
+
+// patchesFromLog re-reads a range the resident window no longer covers.
+// Allocates, and is meant to: it is the cold path.
+func (f *Form) patchesFromLog(after, upTo uint64) ([]VersionedPatch, bool) {
+	var out []VersionedPatch
+	err := f.log.RangePatches(func(index uint64, payload []byte) error {
+		if index <= after || index > upTo {
+			return nil
+		}
+		var p message.Patch
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return err
+		}
+		if !p.IsEmpty() {
+			out = append(out, VersionedPatch{Version: index, Patch: p})
+		}
+		return nil
+	})
+	if err != nil {
+		slog.Warn("form patches from log", "after", after, "upTo", upTo, "err", err)
+		return nil, false
+	}
+	return out, true
 }
 
 // patchRange is the range itself: binary search on both ends of a
@@ -212,6 +266,18 @@ func (f *Form) PatchesBetween(after, upTo uint64) []VersionedPatch {
 // past the length every published state can see but inside the capacity the
 // next commit will append into: a lost write with no crash and no test that
 // finds it. The cap turns that into a reallocation.
+// trimPatches copies the tail down once the array has run a slack allowance
+// past the window. Copying is the point: re-slicing would release nothing.
+func trimPatches(ps []VersionedPatch) []VersionedPatch {
+	w := int(patchWindow.Load())
+	if w <= 0 || len(ps) <= w+patchSlack {
+		return ps
+	}
+	kept := make([]VersionedPatch, w)
+	copy(kept, ps[len(ps)-w:])
+	return kept
+}
+
 func patchRange(ps []VersionedPatch, after, upTo uint64) []VersionedPatch {
 	if upTo <= after || len(ps) == 0 {
 		return nil
@@ -391,7 +457,7 @@ func (f *Form) reduceOne(st *formState, w *formWrite) (*formState, formResult) {
 	// Safe because there is exactly one drainer: a published state holds a
 	// slice header with its own length, so a later append either writes past
 	// that length (which no reader reads) or reallocates.
-	next.patches = append(st.patches, VersionedPatch{Version: version, Patch: applied})
+	next.patches = trimPatches(append(st.patches, VersionedPatch{Version: version, Patch: applied}))
 	return next, formResult{version: version, applied: applied}
 }
 
