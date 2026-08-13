@@ -2909,22 +2909,35 @@ What remains, in the order I would take it:
 **~~The projection switch~~ is DONE** (session 4, `e0fd5c34`): the stamps,
 the accessor and the machinery filter. Phase 9 is complete. What remains:
 
-1. **A form REBORN under the same id is still silently discarded**
-   (`wym.md:22`). The other half of that paragraph — a dead source is never
-   unsubscribed — is now built (`b60d1fd6`), and it is the enabler for this
-   one: `Following()` goes false on death, so `b.libretto()` will re-attach
-   on the next verb. What still breaks is the watermark: a reborn form's
-   channel restarts at 1, and both the seed guard (`libretto.go`, "seed only
-   when the copy is BEHIND") and the event guard (`ev.Version <= l.At()`)
-   discard everything below the DEAD form's high water mark. `alive` also
-   stays false.
+1. **The reborn form (`wym.md:22`) is NOT REACHABLE TODAY, and that is the
+   finding.** I went to build it and stopped at the question a fix should
+   always be asked: can the case be constructed? It cannot. Every node id is
+   minted inside the store (`mintTrunkID`/`hexTrunkID`) and **no code path
+   anywhere creates a node under a caller-chosen id** — `CreateForm` mints,
+   `fork` mints, and `import` mints a fresh conversation rather than
+   restoring the exported one's id. A dead form id cannot come back, so the
+   two watermark guards that would discard it are never consulted.
 
-   **The shape of the fix**: rebirth is detectable — the source's current
-   version is BELOW our `at` — and the answer is to re-seed from the new
-   source and reset `at` and `alive` together, as one patch. The trap is that
-   version numbers alone cannot distinguish "reborn" from "a stale read", so
-   whoever builds it should tie the reset to the node identity figwal already
-   has rather than to the number.
+   So the honest state is: the guards are correct for the world as built,
+   the promise in `wym.md:22` is unkept because nothing can test it, and
+   **it becomes reachable the moment Gluck builds the thing he already asked
+   for** — `answers-forms.md:2`, "allow forms to be created from a client
+   specified key". That is the change that makes rebirth constructible, and
+   the watermark reset belongs WITH it, where it can have a test.
+
+   **The design of the fix, for whoever does it then**: the signal is not a
+   version comparison (a stale read looks the same). It is that the copy
+   records `alive:false` and a later attach SUCCEEDS on a source that is not
+   tombstoned — a dead form cannot be reopened, so that combination means a
+   different form now wears the id. The reseed must REPLACE rather than
+   merge (remove mirrored keys the new state lacks) and reset `at` and
+   `alive` in the same patch.
+
+   **One thing worth checking while there**: ids are 4 bytes. A store with
+   tens of thousands of forms has a birthday-collision probability that is
+   not negligible, and a collision produces exactly the reborn-id case by
+   accident. Whether mint checks for a live id, I did not verify.
+
 2. **Show him the two-participant write.** He approved it *conditionally on
    seeing the code* (`answers-forms.md:12`) and the review was never asked
    for. Five minutes of his time, and the retry count has since gone 5 → 32.
