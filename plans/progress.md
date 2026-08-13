@@ -3059,3 +3059,33 @@ down**: one branch, one worktree. `git worktree add -f /var/tmp/<name>
 <ref>` for anything you are cutting releases from, and check
 `git worktree list` before you use `-f` on a branch somebody else has out —
 including yourself in another directory.
+
+### A study of a deleted form could not be dropped after a restart (`176c7efb`)
+
+§12.2.2 says it plainly — *drop on a form that has since been deleted is
+legal* — and it was, but only while the libretto happened to be cached in the
+daemon. **Across a restart it failed**:
+
+```
+libretto @450dea2c: source: xwal: unknown trunk "@450dea2c"
+```
+
+and the study was then stuck on that board **forever**, because every attempt
+to drop it took the same path.
+
+The fault was one call that had no business needing the source: opening a
+libretto tried to SUBSCRIBE, and a subscription needs a live form. The copy
+outliving what it copied is the whole point of §12.3, so a missing source is
+no longer an error — the libretto opens, reads and drops without one, and
+only the FOLLOWING stops. Not latched either: the next caller retries the
+attachment, so a source unreadable for a moment is followed again when it is
+not.
+
+**The pattern in the last three bugs is worth naming**, because it is the
+same one three times: *the copy is supposed to be independent of its source,
+and every place I touched quietly re-coupled them*. The mirror copied the
+source's tombstone and sealed itself; the sweep evicted the source and
+orphaned the fold; opening the copy required opening the source. Each was
+found by asking what happens to the libretto when the source is gone, idle,
+or dead — **which is the question to keep asking**, because the design says
+they are independent and the code keeps assuming they are not.
