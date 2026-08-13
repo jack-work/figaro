@@ -209,6 +209,19 @@ type MemoryConfig struct {
 	// 0 is unbounded, which is what this was before it had a name.
 	TranslationWindowMB *int `toml:"translation_window_mb"`
 
+	// SegmentCacheMB bounds the RAW segment payloads figwal holds in memory,
+	// across every open channel of every aria, in mebibytes.
+	//
+	// It is the bound the other three sit on top of: `ir_window_mb`,
+	// `translation_window_mb` and `form_patch_window` all cap DECODED copies
+	// of bytes figwal was holding raw and without limit. A segment's payloads
+	// are loaded on the first read that lands in it and dropped, least
+	// recently used first, when the total crosses this line; a dropped block
+	// costs nothing but the next read of it, because the file has every byte.
+	//
+	// 0 makes every read a pread, which is legal and slow.
+	SegmentCacheMB *int `toml:"segment_cache_mb"`
+
 	// SoftLimitMB is the daemon's heap ceiling (Go's GOMEMLIMIT). Go
 	// collects harder as it approaches instead of growing to meet whatever
 	// the last big sweep asked for, so the ceiling is also a licence: a high
@@ -323,7 +336,26 @@ func (l *Loaded) TranslationWindowBytes() int {
 	return *l.Config.Memory.TranslationWindowMB << 20
 }
 
+// SegmentCacheBytes is the process-wide budget for raw segment payloads held
+// in memory by figwal, or 0 to hold none. Nil-safe.
+func (l *Loaded) SegmentCacheBytes() int64 {
+	if l == nil || l.Config.Memory.SegmentCacheMB == nil {
+		return int64(defaultSegmentCacheMB) << 20
+	}
+	if mb := *l.Config.Memory.SegmentCacheMB; mb > 0 {
+		return int64(mb) << 20
+	}
+	return 0
+}
+
 const (
+	// defaultSegmentCacheMB is figwal's own default, restated here so the
+	// daemon's number is the daemon's to choose. 32 MiB holds the working set
+	// of a busy fleet (the author's whole store is 281 MB on disk, and a
+	// listing touches the tail of each channel) while refusing the old
+	// behaviour, which was to hold all of it.
+	defaultSegmentCacheMB = 32
+
 	// defaultTranslationWindowMB holds the whole translation history of every
 	// aria in the author's store (largest: 2.9 MiB), so it changes nothing
 	// today and caps the growth that had no cap.

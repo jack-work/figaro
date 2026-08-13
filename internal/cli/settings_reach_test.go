@@ -35,6 +35,7 @@ translation_window_mb  = 5
 form_patch_window      = 64
 actor_linger_ms        = 250
 handle_idle_minutes    = 3
+segment_cache_mb       = 9
 `
 	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
@@ -60,6 +61,13 @@ handle_idle_minutes    = 3
 	}
 	if got := store.PatchWindowForTest(); got != 64 {
 		t.Errorf("form patch window at the enforcement point = %d, want 64", got)
+	}
+	// figwal's own budget, read back from figwal rather than from the loader:
+	// this is the one bound that lives in another module, which is exactly
+	// the trip a parser test cannot make.
+	if got := store.SegmentCacheBudget(); got != 9<<20 {
+		t.Errorf("segment cache budget at the enforcement point = %d, want %d",
+			got, 9<<20)
 	}
 	if spy.irWindow != 321 {
 		t.Errorf("ir window = %d, want 321", spy.irWindow)

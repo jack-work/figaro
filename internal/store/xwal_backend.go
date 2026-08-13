@@ -1035,6 +1035,12 @@ func (b *XwalBackend) Close() error {
 // LoadedHeads delegates to the store: see XwalStore.LoadedHeads.
 func (b *XwalBackend) LoadedHeads() int { return b.store.LoadedHeads() }
 
+// SegmentCacheBytes and SegmentCacheBudget report figwal's raw payload
+// residency and its bound. They are process-wide, not per backend, because
+// one segment file has one copy however many lineages read through it.
+func (b *XwalBackend) SegmentCacheBytes() int64  { return SegmentCacheBytes() }
+func (b *XwalBackend) SegmentCacheBudget() int64 { return SegmentCacheBudget() }
+
 // LastTS is node recency, memoized: see the lastTS field for why.
 func (b *XwalBackend) LastTS(id string) int64 {
 	b.mu.Lock()

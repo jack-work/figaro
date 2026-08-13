@@ -14,6 +14,7 @@ package store
 import (
 	"os"
 	"runtime"
+	"strconv"
 	"testing"
 )
 
@@ -39,6 +40,16 @@ func TestListingCost(t *testing.T) {
 		return int64(m.HeapAlloc)
 	}
 	mib := func(d int64) float64 { return float64(d) / (1 << 20) }
+	// figwal's payload budget is the layer under every figure below: the
+	// probe can be run at another one to see the trade directly.
+	if mb := os.Getenv("FIGARO_PROBE_SEGCACHE_MB"); mb != "" {
+		n, err := strconv.Atoi(mb)
+		if err != nil {
+			t.Fatal(err)
+		}
+		SetSegmentCacheBudget(int64(n) << 20)
+	}
+	t.Logf("segment cache budget: %.1f MiB", mib(SegmentCacheBudget()))
 	before := heap()
 	light := be.Store().listTrunks()
 	afterFirstScan := heap()
@@ -60,6 +71,8 @@ func TestListingCost(t *testing.T) {
 	}
 	afterLabels := heap()
 	headsAfterFirst := be.Store().LoadedHeads()
+	t.Logf("figwal segment cache: %.1f MiB held after the listing",
+		mib(SegmentCacheBytes()))
 
 	be.mu.Lock()
 	forms := len(be.forms)

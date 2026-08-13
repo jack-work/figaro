@@ -196,8 +196,8 @@ func runDoctorMem(asJSON bool) error {
 		m.ResidentIRRows, humanBytes(int64(m.ResidentIRBytes)))
 	fmt.Printf("xlt cache  resident-rows=%d  resident=%s\n",
 		m.ResidentTranslationRows, humanBytes(int64(m.ResidentTranslationBytes)))
-	fmt.Printf("figwal     loaded-heads=%d  (each holds a channel's whole raw history)\n",
-		m.LoadedHeads)
+	fmt.Printf("figwal     loaded-heads=%d  segment-cache=%s of %s\n",
+		m.LoadedHeads, humanBytes(m.SegmentCacheBytes), humanBytes(m.SegmentCacheBudget))
 	fmt.Printf("runtime    goroutines=%d  sessions=%d  gc=%d\n",
 		m.Goroutines, m.Sessions, m.NumGC)
 	fmt.Printf("heap       alloc=%s  inuse=%s  sys=%s  total-sys=%s\n",

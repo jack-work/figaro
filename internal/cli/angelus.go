@@ -91,6 +91,7 @@ func applyStoreSettings(loaded *config.Loaded) {
 	store.SetFormLinger(loaded.ActorLinger())
 	store.SetHandleIdle(loaded.HandleIdle())
 	store.SetPatchWindow(loaded.FormPatchWindow())
+	store.SetSegmentCacheBudget(loaded.SegmentCacheBytes())
 }
 
 // applyCacheSettings bounds the per-aria caches. It must run before any aria

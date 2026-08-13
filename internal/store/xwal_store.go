@@ -57,6 +57,7 @@ import (
 	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/topo"
+	fwlog "github.com/jack-work/figwal/log"
 	"github.com/jack-work/figwal/segment"
 	"github.com/jack-work/figwal/xwal"
 )
@@ -214,6 +215,17 @@ var handleIdle atomic.Int64
 // SetHandleIdle sets figwal's head-unload window. Call before opening the
 // store; zero leaves figwal's own default.
 func SetHandleIdle(d time.Duration) { handleIdle.Store(int64(d)) }
+
+// SetSegmentCacheBudget bounds the raw segment payloads figwal holds across
+// every open channel. This is the bound every other cache in figaro sits on
+// top of: the IR window, the translation window and the patch window all cap
+// DECODED copies of these bytes.
+func SetSegmentCacheBudget(bytes int64) { fwlog.SetPayloadCacheBudget(bytes) }
+
+// SegmentCacheBytes reports what figwal currently holds against that budget,
+// and SegmentCacheBudget the budget itself.
+func SegmentCacheBytes() int64  { return fwlog.PayloadCacheBytes() }
+func SegmentCacheBudget() int64 { return segment.CacheBudget() }
 
 func storeOptions(segmentSize int) xwal.StoreOptions {
 	if segmentSize <= 0 {
