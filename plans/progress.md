@@ -2687,3 +2687,47 @@ entry point the TEST chose proves nothing about the entry point the PRODUCT
 uses. The fork test now runs over both in a table, and the listing assertion
 walks `Nodes()` and `Forms()` rather than trusting one filter. Ninety seconds
 of live driving found what a green suite could not.
+
+## The projection switch: analysed, NOT started, and there is a trap in it
+
+§12.5 wants the IR to stamp LIBRETTO versions and the translator to read
+librettos instead of source forms. I traced both ends before touching
+anything, and the good news is that **it does not need `projection.go` or the
+four encoders at all**:
+
+- the translator's accessors come from `Agent.studyAccessors`
+  (`internal/figaro/agent.go`), which builds `formView{id: fid}` per studied
+  form. Pointing those at `LibrettoID(fid)` is a one-line change.
+- the stamps come from `XwalStore.observedCursors`, which reads
+  `formTail(fid)`. A libretto is a stump with a form channel, so
+  `formTail(LibrettoID(fid))` works unchanged.
+
+So no new field on `IncrementalProjection`, and 6c2d7b9f's seam is not
+touched. **But do not just do it**, because of this:
+
+### THE STAMPS ARE DURABLE HISTORY
+
+Every IR record ever written by a studying aria carries `StudyVersions`
+keyed by form id, holding **source-form versions**. Switch the
+interpretation and every one of those numbers is read against the wrong log
+on the next retranslate: a libretto's version 7 is not the source's version
+7, and the ranges will be silently wrong rather than absent. The per-LT cache
+then makes whichever rendering ran first permanent.
+
+**So the switch needs a second cursor namespace, not a reinterpretation.**
+`studyCursorPrefix` already namespaces these in the record's cursor map; a
+`libretto:` prefix beside it lets old records keep their meaning and new ones
+carry the new one. The projection reads whichever it finds — legacy stamps
+through the source accessor (exactly today's behaviour, including the
+"removed while studied" note), new stamps through the libretto. That is more
+code than the one-liner, and it is the difference between a migration and a
+silent corruption of every existing transcript.
+
+**Whoever takes it should also ask whether it is worth doing at all yet.**
+What the switch buys is §12.3's three properties — the translator never
+touches a source form, source forms become freely deletable, and the render's
+special cases become ordinary state. What it costs is a permanent dual path
+in the projection. My instinct is that it is worth it and that the dual path
+should be written as "legacy stamps are read from the source, and there is a
+dated comment saying when that can be deleted", but it is a judgement about
+history compatibility and it should be Gluck's.
