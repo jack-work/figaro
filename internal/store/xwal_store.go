@@ -80,7 +80,18 @@ func (s *XwalStore) listTrunks() []xwal.TrunkInfo {
 
 func (s *XwalStore) listStumps() []xwal.StumpInfo {
 	trunkScanCount.Add(1)
-	return s.trunks.Stumps()
+	all := s.trunks.Stumps()
+	// The topology form hangs on a reserved stump, and it describes the very
+	// tree this list builds. Left in, the hierarchy grows a row about itself
+	// (durable-forms §11: never listed, never forked, never bound).
+	out := all[:0:0]
+	for _, st := range all {
+		if st.Name == topologyStump {
+			continue
+		}
+		out = append(out, st)
+	}
+	return out
 }
 
 // hexTrunkID mints an opaque aria/trunk id (the same 4-byte hex form figaro

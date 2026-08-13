@@ -10,7 +10,6 @@ package wire
 
 import (
 	"github.com/jack-work/figaro/internal/store"
-	"github.com/jack-work/figaro/internal/trunk"
 )
 
 // Capabilities are the optional behaviours a server is built with. They are
@@ -30,7 +29,9 @@ func Install(s *store.XwalStore, root string, caps Capabilities) error {
 	if !caps.Trunks {
 		return nil
 	}
-	t, err := trunk.Open(root, s.TopologyAdjacency())
+	// The presentation hierarchy is a FORM on a reserved stump, and it folds
+	// a legacy trunks.json in on first open. See store/topology_form.go.
+	t, err := store.OpenTopologyTree(s, root)
 	if err != nil {
 		return err
 	}
