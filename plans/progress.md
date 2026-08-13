@@ -2421,3 +2421,11 @@ ways it could get one, none built:
 
 `Reclaimable` says all of this at the method, because the name promises more
 than the number can deliver.
+
+**A flake to know about, ownership unproven.** One `go test ./...` run failed
+`TestFuzzFormUnkeyed/SetWhileTurnInFlight` with *timeout waiting for
+turn.done*. It passes at `-count=5` in this tree and `-count=8` in the merge
+base, and four other full-suite runs of this build were green, so it is
+load-sensitive rather than new — but I could not reproduce it on the base
+either, so "not mine" is inference, not proof. If it recurs, the suspect is
+the gate/park timing in that fuzz case under a loaded box, not the form path.

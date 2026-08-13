@@ -46,6 +46,16 @@ const StudiesKey = "system.studies"
 // before the recount (and is counted) or after it (and moves the count from
 // the value the sweep just wrote).
 func (b *XwalBackend) ReconcileLibrettos() (LibrettoAudit, error) {
+	return b.reconcileLibrettos(true)
+}
+
+// AuditLibrettos is ReconcileLibrettos without the writes: the same counts,
+// nothing changed. `Corrected` then reads as "would correct".
+func (b *XwalBackend) AuditLibrettos() (LibrettoAudit, error) {
+	return b.reconcileLibrettos(false)
+}
+
+func (b *XwalBackend) reconcileLibrettos(apply bool) (LibrettoAudit, error) {
 	var audit LibrettoAudit
 
 	// What the boards actually say.
@@ -82,9 +92,11 @@ func (b *XwalBackend) ReconcileLibrettos() (LibrettoAudit, error) {
 			audit.Orphaned++
 		}
 		if lib.Refs() != n {
-			if err := lib.setRefs(n); err != nil {
-				lib.Close()
-				return audit, fmt.Errorf("reconcile %s: %w", st.Name, err)
+			if apply {
+				if err := lib.setRefs(n); err != nil {
+					lib.Close()
+					return audit, fmt.Errorf("reconcile %s: %w", st.Name, err)
+				}
 			}
 			audit.Corrected++
 		}

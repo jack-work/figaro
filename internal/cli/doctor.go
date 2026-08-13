@@ -292,3 +292,44 @@ func runDoctorSkills(asJSON bool) error {
 	}
 	return nil
 }
+
+// runDoctorLibrettos recounts every libretto from the boards that name it.
+//
+// Offline, like gc: it opens the store directly, and the daemon holds that
+// store. The count it repairs is a DERIVED number kept incrementally, and
+// three write sites outside the study verb (fork, import, kill) can leave it
+// too LOW, which is the direction that reclaims state a live observer still
+// needs. Recomputing is the backstop for both directions.
+func runDoctorLibrettos(dryRun bool) error {
+	if cli, err := angelus.DialClient(transport.UnixEndpoint(angelusSocketPath())); err == nil {
+		cli.Close()
+		return fmt.Errorf("angelus is running; stop it first (figaro stop)")
+	}
+	be, err := store.NewXwalBackend(ariaRoot(), 0)
+	if err != nil {
+		return err
+	}
+	defer be.Close()
+
+	audit, err := be.AuditLibrettos()
+	if err != nil {
+		return err
+	}
+	if !dryRun && audit.Corrected > 0 {
+		if audit, err = be.ReconcileLibrettos(); err != nil {
+			return err
+		}
+	}
+	verb := "corrected"
+	if dryRun {
+		verb = "would correct"
+	}
+	fmt.Printf("boards read      %d\n", audit.Boards)
+	fmt.Printf("librettos        %d\n", audit.Librettos)
+	fmt.Printf("%-16s %d\n", verb, audit.Corrected)
+	fmt.Printf("orphaned         %d  (no board names them: reclaimable when nothing renders them)\n",
+		audit.Orphaned)
+	fmt.Printf("missing          %d  (studied forms with no libretto; the study verb mints those)\n",
+		audit.Missing)
+	return nil
+}
