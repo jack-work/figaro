@@ -275,3 +275,55 @@ caller. Dormant nodes (hub-served) return it properly. The rule is applied
 on both paths; only the reporting differs. Phase 3's synchronous command and
 acknowledgement closes it, and until then this is the one place the two
 halves of a write disagree about anything.
+
+#### The WAL claim is now tested, not asserted
+
+`internal/store/form_crash_test.go`: a child process patches a form and
+prints every version the writer said landed; the parent SIGKILLs it at a
+random moment, reopens the store, and checks every acknowledged version is
+on disk. 130 to 240 acknowledged patches per attempt, all durable, four
+attempts.
+
+The shape is figwal's `crashtest` harness narrowed to one form. Note that it
+re-enters the test binary through `FIGARO_FORM_CRASH_CHILD`, and the store
+package already had a `TestMain`, so the child hook lives in
+`xwal_bench_test.go`'s `TestMain` rather than in a second one.
+
+Run it against real disk or it proves nothing: `TMPDIR=/var/tmp`.
+
+### Where things stand
+
+| phase | state |
+|---|---|
+| 0 figwal `SyncChannelThrough` + flush gate | **done**, released, pinned |
+| 1 `internal/actor.Lazy` | **done**, fuzzed |
+| 2 form on the actor, group commit, fsync | **done**, crash-tested |
+| 3 command/event/ack | **partial**: intent (`assert`/`ensure`) is wired end to end; command, event, ack, session and seq are not |
+| 4 schema validation | not started |
+| 5 `SubscribeFrom` | **done** in the store; not yet used by `form listen` or the hub |
+| 6 tombstones and leases | not started |
+| 7 retention policy | not started |
+| 8 topology form | not started |
+| 9 derived forms, libretto | not started |
+| 10 API refactor | not started |
+
+Also done outside the phase list: `ir_window_mb` bounded by default (the
+single largest memory lever, previously off), `keepMu` retired, the flake
+vendorHash reset, docs updated in `forms-design.md` and `reference/forms.md`.
+
+### The next three things, in order
+
+1. **Use `SubscribeFrom` where the race actually bites**: `fig form listen`
+   reads a snapshot and then attaches to the delta fanout, which is exactly
+   the gap the new API closes. This makes phase 5 real for users and is
+   small.
+2. **`cachedLog.mu` to a published snapshot** (lock audit): 34 uses of one
+   `RWMutex` on the hot read path, guarding `rows`, `trimmed` and `byFK`.
+   They become one immutable struct behind an `atomic.Pointer`, the same
+   pattern `formState` uses. Contended reads stop waiting on appends.
+   Sizeable and mechanical; do it with the benchmark in hand.
+3. **Phase 4, schema validation.** Beware the blast radius: `KeySystemManaged`
+   keys (`aria_id`, `system.cwd`, `system.outfit_version`,
+   `system.forked_from`) are written by the angelus during birth and would
+   need the privileged path, so land the privileged entry point FIRST and
+   only then start refusing.

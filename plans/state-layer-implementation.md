@@ -35,6 +35,11 @@ commit when it builds, passes, and leaves the tree honest.
 
 ## The phases
 
+**STATUS as of 2026-08-12** (see `progress.md` for commits): phases 0, 1, 2
+and 5 are DONE. Phase 3 is partial (intent landed end to end; command,
+event, ack, session and seq not started). Phase 4 not started. Phases 6
+to 10 not started.
+
 | # | phase | red | green | independently useful |
 |---|---|---|---|---|
 | 0 | figwal: `SyncChannelThrough` | 0 | ~60 | yes |
