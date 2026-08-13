@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/form"
+	"github.com/jack-work/figaro/internal/store"
 	"github.com/stretchr/testify/require"
 )
 
@@ -62,4 +63,60 @@ func TestCastDuringOwnTurnDoesNotDeadlock(t *testing.T) {
 
 	openGate(gate, 1)
 	awaitTurnDone(t, ch)
+}
+
+// Cast lost its actor-loop serialization, so the case it protected must hold
+// without it: EIGHT CASTS OF ONE FIGARO AT ONCE, into eight different roles.
+//
+// Each cast does a version-guarded read-modify-write of the same board (the
+// study set) and a patch on its own role. If the retry were wrong, studies
+// would be lost silently -- the board would name fewer roles than were cast,
+// and each missing one is a role pointing at a figaro that does not know it.
+func TestConcurrentCastsOfOneFigaro(t *testing.T) {
+	entered, gate := newGate()
+	prov := &gateProvider{name: "gate", entered: entered, gate: gate}
+	a, backend, _ := fuzzAgent(t, prov, nil)
+
+	const casts = 8
+	roles := make([]string, casts)
+	for i := range roles {
+		id, _, err := backend.CreateForm("", form.Patch{
+			Set: map[string]json.RawMessage{"name": json.RawMessage(`"role"`)},
+		})
+		require.NoError(t, err)
+		roles[i] = id
+	}
+
+	errs := make(chan error, casts)
+	for _, roleID := range roles {
+		go func(roleID string) {
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			_, err := a.Cast(ctx, roleID, nil)
+			errs <- err
+		}(roleID)
+	}
+	for range roles {
+		require.NoError(t, <-errs)
+	}
+
+	studies := a.StudyList()
+	for _, roleID := range roles {
+		require.Contains(t, studies, roleID,
+			"a concurrent cast lost its study: the role points at a figaro that does not know it")
+		snap, err := backend.FormState(roleID)
+		require.NoError(t, err)
+		_, ok := snap.Get("target-aria")
+		require.True(t, ok, "a concurrent cast left a role unpointed")
+	}
+	require.Len(t, studies, casts, "the study set gained or lost entries: %v", studies)
+
+	// The refcounts must agree with the board, which is what the sweep checks.
+	if rec, ok := backend.(interface {
+		ReconcileLibrettos() (store.LibrettoAudit, error)
+	}); ok {
+		audit, err := rec.ReconcileLibrettos()
+		require.NoError(t, err)
+		require.Zero(t, audit.Corrected, "the sweep disagreed after concurrent casts: %+v", audit)
+	}
 }

@@ -27,6 +27,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/jack-work/figaro/internal/message"
 )
@@ -36,7 +37,7 @@ import (
 // declares it. Idempotent — studying twice is not two references, because the
 // board is a SET and the refcount is derived from the boards.
 func (b *XwalBackend) StudyForm(observerID, sourceFormID string) ([]string, bool, error) {
-	for attempt := 0; attempt < 5; attempt++ {
+	for attempt := 0; attempt < studyAttempts; attempt++ {
 		studies, version, err := b.studiesAndVersion(observerID)
 		if err != nil {
 			return nil, false, err
@@ -68,8 +69,35 @@ func (b *XwalBackend) StudyForm(observerID, sourceFormID string) ([]string, bool
 		if !errors.Is(err, ErrFormMoved) {
 			return nil, false, err
 		}
+		backoff(attempt)
 	}
-	return nil, false, fmt.Errorf("study: the board would not hold still")
+	return nil, false, fmt.Errorf("study: the board would not hold still after %d attempts",
+		studyAttempts)
+}
+
+// studyAttempts sizes the optimistic retry on `system.studies`.
+//
+// It used to be five, which was enough while a figaro's casts were
+// serialized by its actor loop. Taking the cast off that loop (the self-cast
+// deadlock) replaced serialization with optimism, and optimism has to be
+// sized for the contention it now meets: eight concurrent casts of one
+// figaro exhausted five attempts and failed with "the board would not hold
+// still", losing studies for roles that had already been pointed at the
+// caster.
+//
+// Each attempt costs one fsync on conflict, so a generous count is cheap and
+// only spent under contention that used to be impossible.
+const studyAttempts = 32
+
+// backoff spreads retries so N writers of one board converge instead of
+// colliding in step. Deliberately tiny: the writes themselves are
+// milliseconds and the point is only to break the lockstep.
+func backoff(attempt int) {
+	d := time.Duration(attempt+1) * 200 * time.Microsecond
+	if d > 5*time.Millisecond {
+		d = 5 * time.Millisecond
+	}
+	time.Sleep(d)
 }
 
 // DropForm is the inverse, in the inverse order. Dropping a form that has
@@ -77,7 +105,7 @@ func (b *XwalBackend) StudyForm(observerID, sourceFormID string) ([]string, bool
 // the board stops naming it, and the copy stays.
 func (b *XwalBackend) DropForm(observerID, sourceFormID string) ([]string, bool, error) {
 	var studies []string
-	for attempt := 0; attempt < 5; attempt++ {
+	for attempt := 0; attempt < studyAttempts; attempt++ {
 		var version uint64
 		var err error
 		studies, version, err = b.studiesAndVersion(observerID)
@@ -93,6 +121,7 @@ func (b *XwalBackend) DropForm(observerID, sourceFormID string) ([]string, bool,
 		next := slices.Delete(append([]string(nil), studies...), idx, idx+1)
 		if err := b.setStudies(observerID, next, version); err != nil {
 			if errors.Is(err, ErrFormMoved) {
+				backoff(attempt)
 				continue
 			}
 			return nil, false, err
