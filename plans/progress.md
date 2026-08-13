@@ -4,9 +4,9 @@ Live notes for whoever holds the role `@980dc16c`. Update this, not chat.
 
 ## SESSION 3 AT A GLANCE (aria d604c755)
 
-The figwal memory job, done in both halves, plus the layer nobody had
-reclaimed at all, plus phase 9's first half. Details are far below; this is
-the map.
+The figwal memory job in both halves, the layer nobody had reclaimed at all,
+and phase 9 built and wired except its projection. Details are far below;
+this is the map, and "WHAT IS ACTUALLY LEFT" at the very bottom is the queue.
 
 **Shipped**
 
@@ -15,8 +15,9 @@ the map.
 | figwal payload cache | opening a channel stopped copying every payload into RAM. Lazy per SEGMENT, budgeted (`segment_cache_mb`, default 32), LRU-evicted, with an idle sweep. **A listing on 515 arias: 116.5 MiB retained → 48.0, and it tracks the knob (4 MiB → 17.6)** |
 | figwal lazy open | a sealed segment is a FILE, not an open handle: only the newest is opened, the rest on the read that lands in them. Open a 32-segment log: 5.42 ms → 0.19 ms |
 | the arena | an idle daemon now hands free heap back (`debug.FreeOSMemory` behind a two-sweep latch). **PSS after a listing then idle: base 251 → 259 MB; after, 141 → 51 MB** |
-| phase 9, half | the libretto exists: derived form, whole-form fold, refcount on its own actor, death record, reconciliation sweep, `doctor librettos` |
-| instruments | `doctor mem` reports `segment-cache=X of Y loads=N`; `daemon_day_test.go` measures what a store costs once every aria has been looked at |
+| phase 9 | **the libretto is BUILT and wired**: derived form, whole-form fold, refcount, death record, reconciliation sweep with migration, `doctor librettos`, and study/drop/fork/kill/import as refcount participants. The study mark rides the inbox now, which fixes a defect that had bricked two arias. Only the projection half is left, and it is blocked on a ruling |
+| instruments | `doctor mem` reports `segment-cache=X of Y loads=N` and `librettos open=N observers=M`; `daemon_day_test.go` measures what a store costs once every aria has been looked at; `doctor librettos` audits and repairs |
+| the real store | phase 9 runs against a copy of it (715 rows): study, fork, drop, and a sweep over 711 boards in 0.89 s that MIGRATES the eleven studies made before librettos existed |
 
 **The headline number Gluck asked for**: merely LOOKING at every board on the
 real store — no decoding, no rendering — cost **297 MiB of heap and 419 MiB
@@ -29,10 +30,17 @@ file descriptors (1227 → 1219), and that a +475% benchmark regression was
 real (it was a one-time cost amortized over 100 iterations; the steady-state
 figure is +18%).
 
-**Two faults found in my own new code, by measuring it**: recency stamped a
-globally contended atomic on every read (reads got SLOWER with more readers:
-26 ns on one core, 47 on sixteen), and a lost eviction race stranded bytes
-that nothing could ever reclaim.
+**Seven faults found in my own new code**, every one by driving or measuring
+it rather than by reading it: recency stamped a globally contended atomic on
+every read (reads got SLOWER with more readers, 26 ns on one core and 47 on
+sixteen); a lost eviction race stranded bytes nothing could reclaim; the
+mirror copied its source's TOMBSTONE and so sealed itself; the idle sweep
+EVICTED a source and orphaned the fold, leaving a silently stale copy;
+opening a libretto needed its source, so a study of a deleted form could not
+be dropped after a restart; the migration guard skipped exactly the stores
+needing migration; and `doctor librettos` declined to repair the only case it
+existed for. The last four were found by `studylive.sh` and `realstudy.sh` —
+**ninety seconds of driving the real verbs, twice, against a green suite.**
 
 **Also closed**: the cold-open fold, dead for a structural reason (a real
 form is ONE segment, so there is no earlier watermark to fold from — it
