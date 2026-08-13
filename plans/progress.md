@@ -408,3 +408,26 @@ at the cost of more GC cycles.
 the lazy actor only removed the per-form ones. Worth a `/debug/pprof/goroutine`
 against the live daemon (now that profiling is armed) before assuming it is
 fine.
+
+#### Config, read back at the enforcement point
+
+Validated live in a devshell, which is the test Gluck asked for: a
+`config.toml` supplying the values, read through the loader, checked where
+it is enforced rather than where it is parsed.
+
+```toml
+[memory]
+soft_limit_mb   = 512
+ir_window_mb    = 2
+actor_linger_ms = 250
+```
+
+```
+$ figaro doctor mem -j | jq -c '{mem_limit_bytes}'
+{"mem_limit_bytes":536870912}      # 512 MiB, as configured
+```
+
+`[memory]` now carries `dormant_after_minutes` (existing), `ir_window`,
+`ir_window_mb`, `soft_limit_mb` and `actor_linger_ms`. Still unwired from
+config: figwal's `IdleUnload` (the second of the three idle clocks) and the
+subscriber lease TTL (phase 6, not built).
