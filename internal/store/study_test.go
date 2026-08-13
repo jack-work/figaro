@@ -394,7 +394,18 @@ func TestRetainDeclaredStudiesCoversAnImportedBoard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := be.ApplyForm(imported, message.Patch{
+	// A HAND-WRITTEN study set is refused: `system.studies` is system-managed
+	// because each entry is refcounted, and a board naming a study nothing
+	// counted is the unrecoverable direction of §12.2.2, reachable from the
+	// CLI until this key was protected.
+	if _, _, err := be.ApplyFormEffect(imported, message.Patch{
+		Set: map[string]json.RawMessage{StudiesKey: raw},
+	}, 0); err == nil {
+		t.Fatal("an unprivileged write of system.studies was allowed")
+	}
+	// The harness's own restore (a fork's board copy, an import replaying the
+	// set) is privileged, and THAT is what the participant hook covers.
+	if _, err := be.ApplyFormPrivileged(imported, message.Patch{
 		Set: map[string]json.RawMessage{StudiesKey: raw},
 	}); err != nil {
 		t.Fatal(err)

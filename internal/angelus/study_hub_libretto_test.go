@@ -79,3 +79,35 @@ func TestHubDropReleasesTheLibretto(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, audit.Corrected, "the sweep disagreed after a hub drop: %+v", audit)
 }
+
+// IMPORT restores a study set by STUDYING, not by copying the key: each id
+// goes through the verb, which mints the libretto and retains it. Copying
+// the key would declare studies nothing counted -- and cannot, now that
+// `system.studies` is system-managed.
+func TestImportRestoresStudiesThroughTheVerb(t *testing.T) {
+	h, be, _, formID := hubStudyFixture(t)
+
+	// Stand in for the import handler's own sequence: a fresh aria, then the
+	// exported board's studies replayed through the verb.
+	outfit, err := be.CreateOutfit("imp", message.Patch{
+		Set: map[string]json.RawMessage{"system.model": json.RawMessage(`"m"`)},
+	})
+	require.NoError(t, err)
+	imported, err := be.CreateConversation(outfit)
+	require.NoError(t, err)
+
+	_, _, err = studyThroughStore(be, imported, formID, false)
+	require.NoError(t, err)
+
+	lib, err := be.Libretto(formID)
+	require.NoError(t, err)
+	require.Equal(t, 1, lib.Refs(), "the imported study was not counted")
+	studies, err := be.StudiedBy(imported)
+	require.NoError(t, err)
+	require.Contains(t, studies, formID)
+
+	audit, err := be.ReconcileLibrettos()
+	require.NoError(t, err)
+	require.Zero(t, audit.Corrected, "the sweep disagreed after an import: %+v", audit)
+	_ = h
+}

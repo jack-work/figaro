@@ -1150,21 +1150,34 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	if patch.Set == nil {
 		patch.Set = map[string]json.RawMessage{}
 	}
+	// The study set is NOT restored by copying the key. `system.studies` is
+	// system-managed precisely because each entry is refcounted on a shared
+	// libretto: a board that names a study nothing counted is §12.2.2's
+	// unrecoverable direction. So it is lifted out of the imported patch and
+	// replayed through the VERB below, which retains as it declares.
+	var studies []string
+	if raw, ok := patch.Set[figaro.StudiesKey]; ok {
+		if err := json.Unmarshal(raw, &studies); err != nil {
+			return nil, fmt.Errorf("import: %s: %w", figaro.StudiesKey, err)
+		}
+		delete(patch.Set, figaro.StudiesKey)
+	}
 	if b, mErr := json.Marshal(id); mErr == nil {
 		patch.Set["aria_id"] = b
 	}
 	if _, err := h.angelus.Backend.ApplyForm(id, patch); err != nil {
 		return nil, fmt.Errorf("import: form: %w", err)
 	}
-	// IMPORT IS A REFCOUNT PARTICIPANT (durable-forms §12.2.2). The restored
-	// board can name studied forms -- `system.studies` is an ordinary key, so
-	// an exported board carries it -- and nothing incremented the librettos
-	// it names. Left alone, the last live observer drops, refs reaches zero,
-	// and a copy the imported aria is still observing is reclaimed. The rule:
-	// any operation that brings a board carrying a study-set into existence
-	// is a participant.
-	if r, ok := h.angelus.Backend.(interface{ RetainDeclaredStudies(string) }); ok {
-		r.RetainDeclaredStudies(id)
+	// IMPORT IS A REFCOUNT PARTICIPANT (durable-forms §12.2.2), and it pays
+	// by studying rather than by declaring: each id goes through the verb,
+	// which mints the libretto, seeds it and retains it. An import that
+	// names a form this store does not have is not an error -- the libretto
+	// holds an empty copy and starts following if that form ever arrives.
+	for _, formID := range studies {
+		if _, _, err := studyThroughStore(h.angelus.Backend, id, formID, false); err != nil {
+			slog.Warn("import: could not restore a study",
+				"aria", id, "form", formID, "err", err)
+		}
 	}
 	// The list sidecar, so an imported aria is a first-class row in `figaro
 	// ls` rather than an id with dashes after it. Derived from what actually
