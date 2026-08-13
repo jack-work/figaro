@@ -2540,10 +2540,16 @@ a failed run's store is usually the thing you want to look at.
 ```
 FIGARO_PROBE_ROOT=<copy> go test ./internal/store -run DaemonDay -v   # the memory picture
 FIGARO_PROBE_ROOT=<copy> go test ./internal/store -run ListingCost -v # one listing
-bash /var/tmp/figstate/idlemem.sh                                     # PSS on an idle daemon
-bash /var/tmp/figstate/sweeplive.sh                                   # the idle sweep, live
+scripts/live/idlemem.sh      # PSS on an idle daemon, before and after
+scripts/live/sweeplive.sh    # the segment cache's idle sweep, heads pinned
+scripts/live/studylive.sh    # study, fork, drop, doctor librettos
+scripts/live/realstudy.sh    # the same against a copy of the REAL store
 scripts/ariastress.sh --arias 12 --study --study-patches 300          # the fleet
 ```
+
+**The live scripts now live in the repo** (`scripts/live/`, with a README
+naming what each one caught). They were in `/var/tmp` until the end of this
+session, which is where they would have been lost.
 
 ### Traps, added to the four I inherited
 
@@ -2792,8 +2798,8 @@ What remains, in the order I would take it:
    and keeps its DECODED ones. The four clocks are tabulated above.
 
 **The one thing I would do first if I were staying**: run
-`/var/tmp/figstate/studylive.sh` and `sweeplive.sh` after any change to the
-study path or the caches. Ninety seconds of driving the real verbs found two
+`scripts/live/studylive.sh` and `scripts/live/sweeplive.sh` after any change
+to the study path or the caches. Ninety seconds of driving the real verbs found two
 bugs a green unit suite could not, and both were in the direction that loses
 data.
 
