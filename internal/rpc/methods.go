@@ -924,6 +924,11 @@ type MemStatus struct {
 	// rather than with distinct segments is the alarm: blocks are being
 	// dropped as fast as they are built.
 	SegmentCacheLoads int64 `json:"segment_cache_loads"`
+	// Librettos is how many derived forms are open and folding, and
+	// LibrettoObservers how many figaros they carry between them. A fold is
+	// a goroutine and a subscription; this is what studying costs.
+	Librettos         int `json:"librettos"`
+	LibrettoObservers int `json:"libretto_observers"`
 
 	HeapAllocBytes uint64 `json:"heap_alloc_bytes"` // live heap objects
 	HeapInuseBytes uint64 `json:"heap_inuse_bytes"` // spans in use, incl. fragmentation

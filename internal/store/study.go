@@ -148,6 +148,24 @@ func (b *XwalBackend) libretto(sourceFormID string) (*Libretto, error) {
 	return lib, nil
 }
 
+// LibrettoStats is what the daemon holds for phase 9: how many librettos are
+// open and folding, and how many observers they carry between them. A fold is
+// a goroutine and a subscription, so this is the one number that says whether
+// studying is costing anything.
+func (b *XwalBackend) LibrettoStats() (open, observers int) {
+	b.mu.Lock()
+	all := make([]*Libretto, 0, len(b.librettos))
+	for _, l := range b.librettos {
+		all = append(all, l)
+	}
+	b.mu.Unlock()
+	for _, l := range all {
+		open++
+		observers += l.Refs()
+	}
+	return open, observers
+}
+
 func (b *XwalBackend) closeLibretto(source string) {
 	source = strings.TrimPrefix(source, "@")
 	b.mu.Lock()

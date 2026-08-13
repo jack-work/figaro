@@ -125,6 +125,9 @@ func (a *Angelus) MemStatus() *rpc.MemStatus {
 		st.SegmentCacheBudget = sc.SegmentCacheBudget()
 		st.SegmentCacheLoads = sc.SegmentCacheLoads()
 	}
+	if lb, ok := a.Backend.(interface{ LibrettoStats() (int, int) }); ok {
+		st.Librettos, st.LibrettoObservers = lb.LibrettoStats()
+	}
 	if tr, ok := a.Backend.(interface {
 		ResidentTranslationRows() int
 		ResidentTranslationBytes() int
