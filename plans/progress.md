@@ -3316,3 +3316,28 @@ and the layer below that never gave its arena back. Bounding the first and
 returning the second took a store's whole history out of RAM — 297 MiB to
 68.5 for a full pass over the real store — and every bound figaro had already
 added kept working, on top of something that finally has one too.
+
+### What a studied form costs while everyone sleeps (`b84b7c5c`)
+
+Asserted as a test rather than left to be discovered later as a memory
+question. After an idle sweep with a study outstanding:
+
+```
+observer resident = false      its own caches go, as always
+source   resident = TRUE       a form with a subscriber is not idle (§7)
+librettos         = 1          the fold is still live
+```
+
+So **a studied form is pinned for as long as any board names it**: one
+resident `Form`, one fold goroutine, and a second durable write per source
+patch — even when nobody is awake to read the copy. Bounded by the number of
+studied forms (eleven on the author's store), reported by `doctor mem`, and
+correct: the copy must be current when an observer wakes.
+
+**The refinement nobody has needed yet**, written down so it is not
+rediscovered: the fold could STOP while no observer is resident and catch up
+with one seed patch on wake. That is legal — no IR record is stamped during
+dormancy, so no stamp falls in the gap the catch-up would create — and it
+would remove the double write for a form whose watchers are all asleep. It is
+not built because nothing has measured it as a problem, and a knob nobody
+sends is what this project keeps refusing.
