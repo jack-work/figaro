@@ -124,7 +124,6 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 	if restart {
 		lateUnsub()
 		a1.Kill()
-		backend1.Kick()
 		require.NoError(t, backend1.Close())
 		var err error
 		backend2, err = store.NewXwalBackend(dir, 0)

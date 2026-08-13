@@ -74,7 +74,6 @@ func TestInterruptLegality_SurvivesAReload(t *testing.T) {
 	// Everything warm is now thrown away: the agent, its in-memory turn state,
 	// and the backend handle. What survives is bytes.
 	a1.Kill()
-	backend1.Kick()
 	require.NoError(t, backend1.Close())
 
 	backend2, err := store.NewXwalBackend(dir, 0)

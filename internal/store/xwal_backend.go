@@ -192,8 +192,6 @@ func (b *XwalBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.R
 	return c, nil
 }
 
-func (b *XwalBackend) Kick() { b.store.trunks.Kick() }
-
 // ---- form (replayed once per node, then served from memory; mutation
 // appends a patch) ----
 

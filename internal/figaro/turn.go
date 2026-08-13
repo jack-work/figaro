@@ -277,9 +277,6 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (
 	// broadcast because it costs ~50ns to have the flush already in flight
 	// when someone is told, and because the steering branch below RETURNS:
 	// anything moved past it is silently skipped for every steer.
-	if a.backend != nil {
-		a.backend.Kick()
-	}
 	// refreshMetrics stays here, AHEAD of OpenInquiry, deliberately. Every
 	// aria-server broadcast is stamped with sessionMetrics() by the
 	// subscription in NewAgent, so the frame that first carries the user's

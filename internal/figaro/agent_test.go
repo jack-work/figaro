@@ -967,7 +967,6 @@ done:
 	a.Kill()
 	// Flusher persistence, not Close-drain, is what this test pins:
 	// kick and poll the IR segment bytes on disk before any Close.
-	backend.Kick()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		found := false

@@ -1163,7 +1163,6 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	if err := h.angelus.Backend.SetMeta(id, meta); err != nil {
 		slog.Warn("import: set meta", "id", id, "err", err)
 	}
-	h.angelus.Backend.Kick()
 	slog.Info("imported aria", "id", id, "outfit", req.Outfit, "messages", len(req.Messages))
 	return rpc.ImportResponse{
 		FigaroID: id, Outfit: req.Outfit, Messages: len(req.Messages), WasID: req.WasID,
