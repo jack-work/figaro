@@ -313,10 +313,13 @@ vendorHash reset, docs updated in `forms-design.md` and `reference/forms.md`.
 
 ### The next three things, in order
 
-1. **Use `SubscribeFrom` where the race actually bites**: `fig form listen`
-   reads a snapshot and then attaches to the delta fanout, which is exactly
-   the gap the new API closes. This makes phase 5 real for users and is
-   small.
+1. **Correction, and it retires a task.** I claimed several times that
+   `fig form listen` had the snapshot-then-tail race. **It does not.**
+   `internal/cli/form_listen.go` dials with the delta handler installed and
+   only THEN refetches the snapshot, with the mirror's version check catching
+   a delta older than the seed. Register-then-read, already, with the reason
+   in the comment. `SubscribeFrom` remains right for derived forms and for
+   anything that needs a durable cursor, but `form listen` needs nothing.
 2. **`cachedLog.mu` to a published snapshot** (lock audit): 34 uses of one
    `RWMutex` on the hot read path, guarding `rows`, `trimmed` and `byFK`.
    They become one immutable struct behind an `atomic.Pointer`, the same
