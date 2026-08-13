@@ -920,6 +920,10 @@ type MemStatus struct {
 	// copies of these same bytes.
 	SegmentCacheBytes  int64 `json:"segment_cache_bytes"`
 	SegmentCacheBudget int64 `json:"segment_cache_budget"`
+	// SegmentCacheLoads counts whole-segment loads. Climbing with READS
+	// rather than with distinct segments is the alarm: blocks are being
+	// dropped as fast as they are built.
+	SegmentCacheLoads int64 `json:"segment_cache_loads"`
 
 	HeapAllocBytes uint64 `json:"heap_alloc_bytes"` // live heap objects
 	HeapInuseBytes uint64 `json:"heap_inuse_bytes"` // spans in use, incl. fragmentation

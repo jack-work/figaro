@@ -227,6 +227,11 @@ func SetSegmentCacheBudget(bytes int64) { fwlog.SetPayloadCacheBudget(bytes) }
 func SegmentCacheBytes() int64  { return fwlog.PayloadCacheBytes() }
 func SegmentCacheBudget() int64 { return segment.CacheBudget() }
 
+// SegmentCacheLoads counts whole-segment loads. Climbing with READS rather
+// than with distinct segments means blocks are being dropped as fast as they
+// are built, and every read is paying for a segment.
+func SegmentCacheLoads() int64 { return segment.CacheLoads() }
+
 func storeOptions(segmentSize int) xwal.StoreOptions {
 	if segmentSize <= 0 {
 		var noConfig *config.Loaded // the accessor is nil-safe on purpose

@@ -1040,6 +1040,7 @@ func (b *XwalBackend) LoadedHeads() int { return b.store.LoadedHeads() }
 // one segment file has one copy however many lineages read through it.
 func (b *XwalBackend) SegmentCacheBytes() int64  { return SegmentCacheBytes() }
 func (b *XwalBackend) SegmentCacheBudget() int64 { return SegmentCacheBudget() }
+func (b *XwalBackend) SegmentCacheLoads() int64  { return SegmentCacheLoads() }
 
 // LastTS is node recency, memoized: see the lastTS field for why.
 func (b *XwalBackend) LastTS(id string) int64 {

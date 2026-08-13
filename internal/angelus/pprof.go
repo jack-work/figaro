@@ -119,9 +119,11 @@ func (a *Angelus) MemStatus() *rpc.MemStatus {
 	if sc, ok := a.Backend.(interface {
 		SegmentCacheBytes() int64
 		SegmentCacheBudget() int64
+		SegmentCacheLoads() int64
 	}); ok {
 		st.SegmentCacheBytes = sc.SegmentCacheBytes()
 		st.SegmentCacheBudget = sc.SegmentCacheBudget()
+		st.SegmentCacheLoads = sc.SegmentCacheLoads()
 	}
 	if tr, ok := a.Backend.(interface {
 		ResidentTranslationRows() int
