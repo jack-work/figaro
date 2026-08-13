@@ -22,13 +22,17 @@ echo "--- patch the studied form; the daemon restarts to serve this"
 "$BIN" doctor mem 2>&1 | grep -iE "librett" || echo "  (no libretto line: nothing is following)"
 sleep 3
 "$BIN" send --id "$ARIA" -- "say: two" >/dev/null 2>&1
-# The FIRST turn after a restart cannot show it, and that is understood, not
-# ignored: nothing re-attaches a libretto's fold at boot, so the first render
-# is what attaches it -- after that record was already stamped. What matters
-# is that the window is not LOST, which is what the next turn proves.
+# TWO turns, because the first one after a restart is known to be one behind
+# and the thing that must never be true is that it is LOST. See the notes:
+# attaching the fold at boot does NOT fix the first turn, so the cause is not
+# what it looks like.
+echo "--- first turn after the restart:"
+REQ=$(ls -t "$ROOT"/wire/*/*.req.http | head -1)
+echo "    afterrestart: $(grep -c afterrestart "$REQ")  (0 is the known lag)"
 "$BIN" send --id "$ARIA" -- "say: three" >/dev/null 2>&1
 REQ=$(ls -t "$ROOT"/wire/*/*.req.http | head -1)
 n=$(grep -c afterrestart "$REQ")
-if [ "$n" -gt 0 ]; then echo "PASS: the post-restart change reached the model (one turn late)"; else echo "FAIL: a studied form went STALE across a restart"; fi
+if [ "$n" -gt 0 ]; then echo "PASS: the change survived the restart (one turn late)"
+else echo "FAIL: a studied form went STALE across a restart -- the window was LOST"; fi
 grep -oE 'name=\\"study[^}]{0,120}}' "$REQ" | tail -2 | cut -c1-160
 echo "ROOT=$ROOT"

@@ -2932,14 +2932,28 @@ What remains, in the order I would take it:
 **~~The projection switch~~ is DONE** (session 4, `e0fd5c34`): the stamps,
 the accessor and the machinery filter. Phase 9 is complete. What remains:
 
-1. **Close the restart lag**: attach the fold at BOOT for every libretto a
-   board still names, instead of waiting for the first verb or render to do
-   it. The boot sweep already enumerates them (`reconcileLibrettos`) and
-   already opens each instance — it opens them WITHOUT following, which is
-   the whole gap. Cost is one subscription and one goroutine per studied
-   form (nine on the real store), both already reported by `doctor mem`.
-   `scripts/live/restartlive.sh` is the test, and it should then assert on
-   the FIRST turn after a restart rather than the second.
+1. **The restart lag, and it is NOT what it looks like.** After a restart the
+   first turn of a studying aria stamps a copy that has not heard the source
+   change; the next turn carries it. Loss is fixed (`5c407e53`); this is the
+   remaining lag.
+
+   **I tried the obvious fix and it did not work, which is the useful part.**
+   The obvious fix is "nothing re-attaches the fold at boot, so attach it in
+   the boot sweep". I built that, and the live script still reported the
+   first turn stale — while `doctor mem` reported `librettos open=1
+   observers=1`, i.e. **a fold goroutine already exists after boot**. So the
+   premise is false: something IS following, and the copy still had not
+   advanced when the record was stamped. I reverted the change rather than
+   ship one whose comment claims a result its own test denies.
+
+   The next hand should start from that contradiction, not from the premise:
+   a subscription exists, the source was written, and the copy did not move
+   by the time the next IR record was stamped. Suspects, in the order I would
+   take them: the seed's "only when BEHIND" guard against a copy whose `at`
+   is not what a fresh replay thinks it is; a source Form instance replaced
+   between the sweep's attach and the CLI's write (the orphaned-writer shape,
+   from the third side); and the boot sweep being a background goroutine that
+   may attach after the write it needed to hear.
 
 2. **The reborn form (`wym.md:22`) is NOT REACHABLE TODAY, and that is the
    finding.** I went to build it and stopped at the question a fix should
