@@ -2274,3 +2274,49 @@ predecessor's version-addressed open (+338%), the fold from the reducer
 (+2000%), and my own lazy segment opening, which was correct and modest. The
 cold form open is 19 ms for 5000 patches because it decodes 5000 JSON
 patches, and the only thing that changes that is decoding fewer of them.
+
+## Phase 7 (retention): DEFERRED, and this is the decision, not a gap note
+
+The queue put retention next. I am not building it, and the reasoning is
+here rather than in a docs footnote, because the last time I recorded a
+judgement quietly Gluck had to ask.
+
+**What it would be.** Retention is not a compaction pass: it is "how many
+sealed segments a channel keeps" (§10). Every reducible channel already rolls
+segments and a reducible segment's header is the folded state at its start,
+so the fold a compacted channel needs is written by the ordinary roll. The
+bottom of it exists already — `disk.Log.TruncateFront` drops whole sealed
+segments, closes them (which now releases their payload blocks), and fsyncs
+the directory. Enforcement at ROTATION would be safe by construction: a log
+with child forks is read-only and never rotates, so retention can never eat a
+prefix a sibling reads through.
+
+**Why it is not worth building today, in order:**
+
+1. **Its only customer is the topology form, and that customer does not need
+   it.** figaro's segments are 2 MiB and a promote record is ~100 bytes, so a
+   topology form rolls its first segment after roughly TWENTY THOUSAND
+   promotes. The growth my predecessor flagged as "correct, and unbounded" is
+   unbounded at a rate of one segment per twenty thousand promotes.
+2. **figaro cannot express it per form anyway.** xwal channel options are
+   per-channel-NAME, store-wide: `chanForm` is every board in the store, and
+   boards hand out `PatchesBetween` VIEWS, which §10's own rule forbids
+   retaining. Giving the topology form a policy needs either its own channel
+   name (every node then carries an empty directory for it, and the form that
+   exists on this branch needs migrating) or a per-node option override in
+   xwal. Both are real changes serving item 1.
+3. **A knob nobody sends is the thing this project has twice refused.**
+   Session 2 declined `session`/`seq` on exactly that argument.
+
+**When it becomes worth it**: when librettos hold LT RANGES into their source
+instead of a copy (§12.3's note), retention on a source form can be driven by
+the ranges its librettos still name. That is the real customer, it arrives
+with phase 9's successor, and it will want the per-form expression problem
+solved anyway.
+
+**What I would build first when it is time**: `disk.Options.KeepSegments`
+enforced in `rotateLocked`, `ChannelSpec.KeepSegments` to carry it, and the
+type-level rule that a form with a retention policy refuses
+`PatchesBetween` — that last one is the only part that is design rather
+than plumbing, and it is the part that keeps a compacted channel from
+silently handing out a view of records it has deleted.
