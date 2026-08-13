@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -131,8 +130,12 @@ type FormLog interface {
 	// batch's appends and its publish, which is the whole of "durable before
 	// visible": one sync covers the batch.
 	SyncThrough(index uint64) error
-	// RangePatches visits every record in index order.
-	RangePatches(fn func(index uint64, payload []byte) error) error
+	// RangePatches visits records in index order, from `from` (1 or 0 is the
+	// beginning) through `upTo` (0 is the end). The BOUNDS are the point: a
+	// cold read of a range the resident window no longer holds used to start
+	// at record 1 and read its way up to the range, so a retranslate of an
+	// aria with a long board was O(records x history).
+	RangePatches(from, upTo uint64, fn func(index uint64, payload []byte) error) error
 }
 
 // OpenForm replays the log and starts the writer. The replay is the cold cost;
@@ -140,7 +143,7 @@ type FormLog interface {
 func OpenForm(log FormLog) (*Form, error) {
 	f := &Form{log: log}
 	st := &formState{}
-	if err := log.RangePatches(func(index uint64, payload []byte) error {
+	if err := log.RangePatches(0, 0, func(index uint64, payload []byte) error {
 		var p message.Patch
 		if err := json.Unmarshal(payload, &p); err != nil {
 			return err
@@ -260,22 +263,11 @@ func (f *Form) PatchesBetween(after, upTo uint64) []VersionedPatch {
 	return out
 }
 
-var errStopRange = errors.New("store: range complete")
-
 // patchesFromLog re-reads a range the resident window no longer covers.
 // Allocates, and is meant to: it is the cold path.
 func (f *Form) patchesFromLog(after, upTo uint64) ([]VersionedPatch, bool) {
 	var out []VersionedPatch
-	err := f.log.RangePatches(func(index uint64, payload []byte) error {
-		if index > upTo {
-			// Records arrive in index order, so past the range there is
-			// nothing left to find. Stopping matters: without it every cold
-			// read of an early range walks the whole log.
-			return errStopRange
-		}
-		if index <= after {
-			return nil
-		}
+	err := f.log.RangePatches(after+1, upTo, func(index uint64, payload []byte) error {
 		var p message.Patch
 		if err := json.Unmarshal(payload, &p); err != nil {
 			return err
@@ -285,7 +277,7 @@ func (f *Form) patchesFromLog(after, upTo uint64) ([]VersionedPatch, bool) {
 		}
 		return nil
 	})
-	if err != nil && !errors.Is(err, errStopRange) {
+	if err != nil {
 		slog.Warn("form patches from log", "after", after, "upTo", upTo, "err", err)
 		return nil, false
 	}
@@ -611,11 +603,17 @@ func (m *MemFormLog) AppendPatch(payload []byte) (uint64, error) {
 // SyncThrough is a no-op: memory is as durable as this log gets.
 func (m *MemFormLog) SyncThrough(uint64) error { return nil }
 
-func (m *MemFormLog) RangePatches(fn func(uint64, []byte) error) error {
+func (m *MemFormLog) RangePatches(from, upTo uint64, fn func(uint64, []byte) error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for i, rec := range m.records {
-		if err := fn(uint64(i+1), rec); err != nil {
+	if from < 1 {
+		from = 1
+	}
+	for i := from; i <= uint64(len(m.records)); i++ {
+		if upTo > 0 && i > upTo {
+			return nil
+		}
+		if err := fn(i, m.records[i-1]); err != nil {
 			return err
 		}
 	}
@@ -650,7 +648,7 @@ func (l *xwalFormLog) SyncThrough(index uint64) error {
 	return l.backend.store.trunks.SyncChannelThrough(l.ariaID, chanForm, index)
 }
 
-func (l *xwalFormLog) RangePatches(fn func(uint64, []byte) error) error {
+func (l *xwalFormLog) RangePatches(from, upTo uint64, fn func(uint64, []byte) error) error {
 	xw, err := l.backend.store.OpenNode(l.ariaID)
 	if err != nil {
 		return err
@@ -665,6 +663,12 @@ func (l *xwalFormLog) RangePatches(fn func(uint64, []byte) error) error {
 	}
 	if first == 0 && last > 0 {
 		first = 1
+	}
+	if from > first {
+		first = from // start AT the range, not at the beginning of history
+	}
+	if upTo > 0 && upTo < last {
+		last = upTo
 	}
 	for lt := first; lt >= 1 && lt <= last; lt++ {
 		rec, err := xw.ReadAt(chanForm, lt)

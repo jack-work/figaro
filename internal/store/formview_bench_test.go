@@ -228,3 +228,30 @@ func BenchmarkFormApplyManyForms(b *testing.B) {
 		wg.Wait()
 	}
 }
+
+// coldDeltaBelowWindow is the RETRANSLATE: one small range, deep in a history
+// the resident window no longer holds. The projection asks for
+// (prev, cur] once per IR record, so this cost is paid per record, and if it
+// is O(offset) the whole retranslate is O(records x history).
+//
+// The form's patch window is set small so the range is genuinely below it,
+// which is the configuration whoever tightens form_patch_window will meet.
+func coldDeltaBelowWindow(b *testing.B, history, at int) {
+	SetPatchWindow(64)
+	b.Cleanup(func() { SetPatchWindow(2048) })
+	be, id := benchFormWithHistory(b, history)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ps, err := be.FormPatchesBetween(id, uint64(at), uint64(at+1))
+		if err != nil {
+			b.Fatal(err)
+		}
+		if len(ps) != 1 {
+			b.Fatalf("want 1 patch below the window, got %d", len(ps))
+		}
+	}
+}
+
+func BenchmarkFormColdDeltaAt500(b *testing.B)  { coldDeltaBelowWindow(b, 2000, 500) }
+func BenchmarkFormColdDeltaAt1500(b *testing.B) { coldDeltaBelowWindow(b, 2000, 1500) }

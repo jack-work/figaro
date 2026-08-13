@@ -1024,3 +1024,33 @@ The second one is the point. That refusal is deferred to the round boundary
 and reaches only the daemon log, and until now the CLI printed
 `unset nosuch (figaro …)` — a write it had not made and would not make. It
 now says what it actually did: it queued something.
+
+### The quadratic is gone, and figwal never had to change
+
+`plans/progress.md` (and 6c2d7b9f, from the libretto side) had this down as
+"add `RecordsBetween` to figwal". It was not needed. figwal's `Log.Range`
+already takes a `from`, and `XWAL.ReadAt` already addresses an arbitrary
+index; the waste was entirely in figaro, whose `RangePatches` **started at
+record 1 and skipped its way up to the range it wanted**.
+
+`FormLog.RangePatches` now takes `(from, upTo)`. `xwalFormLog` starts the
+read AT the range and stops at its end, and `errStopRange` — a sentinel
+error whose only job was to abort the walk early — is deleted with it.
+
+`BenchmarkFormColdDelta*`: one small range below the patch window, which is
+what a retranslate asks for once per IR record.
+
+| | before | after | |
+|---|---|---|---|
+| range at 500, history 2000 | 142.7 µs | **3.05 µs** | **-97.9%** |
+| range at 1500, history 2000 | 384 µs | **3.4 µs** | **-99.1%** |
+| allocs, either | 29 | 29 | unchanged |
+
+The slope is the real result: before, tripling the offset roughly tripled
+the cost (O(offset)); after, it is flat (O(range)). A cold retranslate of an
+aria with a long board was O(records × history) and is now O(records).
+
+**This unblocks the note that said "do this BEFORE lowering
+`form_patch_window`".** The knob is now safe to tighten, which is the
+largest remaining memory lever on a form: 2048 decoded patches per resident
+board, kept for a cold read that now costs 3 µs from disk.
