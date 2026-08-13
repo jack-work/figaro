@@ -931,3 +931,63 @@ incrementing the librettos it names. Fork must increment before the child is
 created. The reconciliation sweep RECOMPUTES rather than adjusts, so it
 repairs under-counts too, which §12.2.1 did not say and which makes it a
 backstop for all three.
+
+### `cachedLog` is a published snapshot, and the shadow index is gone
+
+Lock audit item 2. One `RWMutex` over `rows`, `trimmed`, `bytes` and a `byFK`
+index became one immutable `logView` behind an `atomic.Pointer`, the pattern
+`formState` already uses. Readers take one load and hold nothing; mutators
+(append, trim, clear) serialize on `writeMu`, which no reader ever touches.
+
+**`byFK` is deleted outright.** It mapped FigaroLT to absolute index, and it
+answered nothing the rows cannot: entries are ascending by FigaroLT (that is
+what `ReadFrom` binary searches on), so a resident hit is a search and every
+miss already went to the inner log whenever anything had been trimmed. What
+it did do was **grow forever** — nothing pruned it on trim — so a bounded
+window carried an unbounded index of the entries it had dropped. `Lookup`
+now searches for the LAST match, which is what the map's last-write-wins
+semantics gave.
+
+Measured, `-benchtime 200x -count=5`, same box, same filesystem:
+
+| benchmark | before | after | |
+|---|---|---|---|
+| `CachedLogReadWhileAppending` | 11.45 ns | **1.30 ns** | **-88.7%** |
+| `OpenWindowed/unbounded` B/op | 7.163 Mi | **5.478 Mi** | **-23.5%** |
+| `OpenWindowed/budget=256KiB` | 3.936 ms | 3.875 ms | -1.5% |
+| `WindowAppend/window=512` | 257 ns | 207 ns | ~ |
+| `CachedLogReadLongAria/10000` | 291.3 µs | 323.9 µs | **+11.2%** |
+| `CachedLogReadLongAria/50000` | 1.487 ms | 1.686 ms | **+13.3%** |
+
+The first row is the one the change was made for, and its benchmark says so
+in its own comment: a reader mid-append paid the writer's cache update and
+now does not.
+
+**The last two rows are a regression I have not explained.** `Read()` does
+the same work either way (one branch, one `make`, one `copy`) and allocates
+identically to the byte. Five samples at 200 iterations of a millisecond-
+scale copy is thin, and the call is the documented cold path ("the reason
+nothing on the hot path calls it"), but it is unexplained and it is written
+down rather than dismissed. Re-measure with more samples before trusting
+either direction.
+
+### Phase 3, the wire half: an outcome, not an OK
+
+`SetResponse` gains `Outcome` and `Version`. Three outcomes, because three
+things can happen and all three used to be `OK` with an empty list:
+
+- **`applied`** — reduced, appended, fsynced; `Version` is the record.
+- **`unchanged`** — legal and changed nothing; `Version` is where the board
+  still stands. This is the ambiguity durable-forms §4.1 exists to remove.
+- **`queued`** — accepted by a LIVE aria, which applies a set at the next
+  round boundary by design. The verdict is not knowable yet and `Version` is
+  zero. This is the honest name for the deferral that the synchronous-`set`
+  attempt died on last session.
+
+**Deviation: `session` and `seq` are NOT added.** They are for duplicate
+suppression across a reconnect and for correlating an ack to an optimistic
+client's pending queue. Nothing replicates yet, so a server-side dedup window
+would be speculative state with no reader, and wire fields nobody sends are
+the opposite of the standing order. The outcome and the version are what the
+CLI and a script can use today. When a replica exists, the pair lands with
+its dedup window and its conformance test in one change.

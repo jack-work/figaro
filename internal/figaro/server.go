@@ -142,7 +142,10 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 			// fails: with a closure the caller can draw.
 			return nil, outfitError(err)
 		}
-		return rpc.SetResponse{OK: true, Set: set, Remove: removed}, nil
+		// QUEUED, not applied: a live aria applies a set at the next round
+		// boundary, so the keys here are what was ASKED for, not what
+		// landed, and the version is not knowable yet.
+		return rpc.SetResponse{OK: true, Set: set, Remove: removed, Outcome: rpc.OutcomeQueued}, nil
 
 	case rpc.MethodForm:
 		return rpc.FormResponse{Snapshot: a.Snapshot(), Version: a.Version()}, nil

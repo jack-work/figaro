@@ -171,7 +171,8 @@ func (h *handlers) writeForHub(id, method string, params json.RawMessage) (any, 
 		return nil, true, err
 	}
 	if req.Patch.IsEmpty() {
-		return rpc.SetResponse{OK: true}, true, nil
+		v, _ := h.angelus.Backend.FormVersion(id)
+		return rpc.SetResponse{OK: true, Outcome: rpc.OutcomeUnchanged, Version: v}, true, nil
 	}
 	intent := store.Ensure
 	if req.Assert {
@@ -186,7 +187,7 @@ func (h *handlers) writeForHub(id, method string, params json.RawMessage) (any, 
 	// says so, no delta goes out, and an aria observing this form derives no
 	// transition from it.
 	if applied.IsEmpty() {
-		return rpc.SetResponse{OK: true}, true, nil
+		return rpc.SetResponse{OK: true, Outcome: rpc.OutcomeUnchanged, Version: version}, true, nil
 	}
 	var set []string
 	for k := range applied.Set {
@@ -198,7 +199,10 @@ func (h *handlers) writeForHub(id, method string, params json.RawMessage) (any, 
 			Patch: applied, At: time.Now().UnixMilli(),
 		})
 	}
-	return rpc.SetResponse{OK: true, Set: set, Remove: applied.Remove}, true, nil
+	return rpc.SetResponse{
+		OK: true, Set: set, Remove: applied.Remove,
+		Outcome: rpc.OutcomeApplied, Version: version,
+	}, true, nil
 }
 
 // wakeForHub restores an aria on demand for a method that needs a turn loop.

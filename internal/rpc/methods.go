@@ -287,10 +287,34 @@ type SetRequest struct {
 	Assert bool `json:"assert,omitempty"`
 }
 
+// Set outcomes. Silence is not a legal answer to a command: a caller must be
+// able to tell "I changed something" from "I changed nothing" from "I will
+// find out later", and before these three all of them were OK with an empty
+// list.
+const (
+	// OutcomeApplied: reduced, appended, fsynced. Version is the record.
+	OutcomeApplied = "applied"
+	// OutcomeUnchanged: legal, and it changed nothing. No record, no event,
+	// and Version is where the board still stands.
+	OutcomeUnchanged = "unchanged"
+	// OutcomeQueued: accepted by a LIVE aria, which applies a set at the next
+	// round boundary by design. The verdict (a stale IfVersion, an Assert
+	// removal) is not known yet and Version is zero. Waiting for it here
+	// would block the caller for the length of a tool round.
+	OutcomeQueued = "queued"
+)
+
 type SetResponse struct {
 	OK     bool     `json:"ok"`
 	Set    []string `json:"set,omitempty"`
 	Remove []string `json:"remove,omitempty"`
+	// Outcome is which of the three above happened. Empty from a daemon that
+	// predates them, which reads as the old ambiguous OK.
+	Outcome string `json:"outcome,omitempty"`
+	// Version is the durable version the board stands at after this call:
+	// the new record for applied, the unmoved one for unchanged, zero for
+	// queued. It is what a follower quotes back in IfVersion.
+	Version uint64 `json:"version,omitempty"`
 }
 
 // FormResponse returns the agent's current snapshot and the durable
