@@ -365,3 +365,21 @@ FIGARO_CRASH_TEST=1 TMPDIR=/var/tmp go test ./internal/store -run Acknowledged -
 - **Do not use `fig cast` to move the role from inside an aria**: it rides
   the inbox, the inbox is running the turn that issued it, and it hangs
   until the timeout. Patch `target-aria` directly.
+
+#### A real tool loop on the WAL build
+
+The IR now syncs per message, and a tool loop is the path that appends most.
+One aria on `sonn5`, three sequential bash calls then a reply, then a warm
+second turn:
+
+```
+turn 1 (3 tool calls)   13.0 s wall, 8 messages, answered DONE
+turn 2 (1 tool call)     3.4 s wall, answered OK
+daemon                   PSS 34.1 M, anon 18.2 M, heap 7.2 M, 26 goroutines
+resident IR              11 rows, 1390 bytes
+```
+
+Eight messages is eight fsyncs, ~24 ms, inside a 13 s turn. **The IR sync is
+0.2% of a real turn.** That is the answer to whether mandatory durability is
+affordable on the conversation path: it is, comfortably, and it was the last
+open question about the WAL change.
