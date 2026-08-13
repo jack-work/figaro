@@ -2206,3 +2206,33 @@ on work" is.
 
 The third had no reclamation at all before this, which is why the first two
 kept being measured against a process that never shrank.
+
+### Validation gate, session 3
+
+```
+figwal:  go test ./log ./disk ./segment ./xwal -race -count=3   ok (x3 releases)
+         crashtest short + `-long -seed=11` (113 s)             ok
+figaro:  build, vet, full suite -count=1                        ok
+         -race -count=3 on store, actor, figaro                 ok
+         nix build .#default (vendorHash reset x4)              ok
+         fleet 12 arias x study x 300 patches                   12/12, four runs
+         live daemon on a copy of the real store                ok
+         idle sweep proved with heads pinned open               ok
+```
+
+Fleet, final build, against the four columns:
+
+| | before WAL | after WAL | end s1 | end s2 | **end s3** |
+|---|---|---|---|---|---|
+| turns answered | 12/12 | 12/12 | 12/12 | 12/12 | **12/12** |
+| history build | 4.11 s | 4.98 s | 4.99 s | 5.14 s | **4.96 s** |
+| turn wall | 4.53 s | 5.49 s | 5.01 s | 5.85 s | **4.53 s** |
+| control | 0.17 s | 0.16 s | — | 0.16 s | **0.16 s** |
+| daemon PSS loaded | 56.8 M | 58.6 M | 46.5 M | 48.3 M | **47.4 M** |
+| goroutines | 93 | 80 | 80 | 80 | **80** |
+| heap_alloc | 14.9 M | 16.0 M | 9.2 M | 10.5 M | 13.8 M |
+
+**A fleet run of mine was polluted and I nearly published it**: history build
+read 8.49 s because I had started a `nix build` in the same minute. Re-run
+alone it is 4.96 s. The control catching it (0.18 vs 0.16 s) is exactly why
+the harness has one.
