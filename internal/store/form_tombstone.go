@@ -55,3 +55,23 @@ func (f *Form) Tombstoned() bool {
 
 // errSealed is what a write to a dead form gets.
 var errSealed = fmt.Errorf("form is tombstoned: no further patches")
+
+// Reclaimable reports whether this form is dead and nobody is still reading
+// it: the condition a delete waits on before unlinking anything.
+//
+// THE LEASE REGISTRY IS THE SUBSCRIBER SET, and for a single process that is
+// not a simplification but the whole of it. A durable refcount cannot tell
+// "still reading" from "died holding a reference"; an in-memory set answers
+// both, because every holder dies when the process does and a restart is a
+// clean sweep rather than a TTL to wait out.
+//
+// A TTL only covers a holder that is alive but silent, which today is nobody
+// and later is a node on another machine. When that exists, this becomes
+// {id, holder, expires} and the sweep drops the stale; nothing above it
+// changes.
+func (f *Form) Reclaimable() bool {
+	if !f.Tombstoned() {
+		return false
+	}
+	return len(*f.subs.Load()) == 0
+}

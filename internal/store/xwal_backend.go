@@ -284,6 +284,15 @@ func (b *XwalBackend) ApplyFormIf(ariaID string, patch message.Patch, ifVersion 
 // the writer reduced the patch against the board: which is what a caller
 // reporting to a human, or fanning a delta out to listeners, should be
 // speaking about.
+// FormReclaimable reports whether a form is tombstoned with no reader left.
+func (b *XwalBackend) FormReclaimable(ariaID string) (bool, error) {
+	f, err := b.form(ariaID)
+	if err != nil {
+		return false, err
+	}
+	return f.Reclaimable(), nil
+}
+
 func (b *XwalBackend) SubscribeForm(ariaID string, buffer int) (*Subscription, error) {
 	f, err := b.form(ariaID)
 	if err != nil {

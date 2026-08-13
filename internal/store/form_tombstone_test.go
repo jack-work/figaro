@@ -89,3 +89,25 @@ func TestTombstoneSurvivesReopen(t *testing.T) {
 		t.Fatal("a reopened tombstoned form accepted a patch")
 	}
 }
+
+// Reclamation waits on readers, and the subscriber set is the registry: a
+// live subscription holds a dead form, and closing it releases.
+func TestReclaimableWaitsForReaders(t *testing.T) {
+	f := NewMemForm()
+	defer f.Close()
+
+	if f.Reclaimable() {
+		t.Fatal("a living form is not reclaimable")
+	}
+	sub := f.SubscribeFrom(4)
+	if _, err := f.Tombstone("gone"); err != nil {
+		t.Fatal(err)
+	}
+	if f.Reclaimable() {
+		t.Fatal("a dead form with a live reader was declared reclaimable")
+	}
+	sub.Close()
+	if !f.Reclaimable() {
+		t.Fatal("the last reader left and the form is still held")
+	}
+}

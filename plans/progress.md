@@ -355,7 +355,7 @@ Run it against real disk or it proves nothing: `TMPDIR=/var/tmp`.
 | 3 command/event/ack | **partial**: intent (`assert`/`ensure`) is wired end to end; command, event, ack, session and seq are not |
 | 4 schema validation | not started |
 | 5 `SubscribeFrom` | **done**, and reachable through `Backend.SubscribeForm`; no consumer yet (the libretto is its customer, and `form listen` already does register-then-read on its own) |
-| 6 tombstones and leases | **tombstone done** (`Form.Tombstone`, `system.tombstone`, sealing, idempotent, survives reopen, rides the ordinary subscription stream). Leases not started, and the delete path does not call it yet. |
+| 6 tombstones and leases | **tombstone done** (`Form.Tombstone`, `system.tombstone`, sealing, idempotent, survives reopen, rides the ordinary subscription stream). leases are the subscriber set (`Reclaimable`); the delete path does not call either yet. |
 | 7 retention policy | not started |
 | 8 topology form | not started |
 | 9 derived forms, libretto | not started |
@@ -817,7 +817,17 @@ patch and seals the form. Three properties, each tested:
 - **It survives a reopen.** The seal is rebuilt from the published state at
   open, so a dead form stays dead without anyone re-declaring it.
 
+**The lease registry is the subscriber set**, and for a single process that
+is not a simplification but the whole of it. A durable refcount cannot tell
+"still reading" from "died holding a reference"; an in-memory set answers
+both, because every holder dies when the process does and a restart is a
+clean sweep rather than a TTL to wait out. `Form.Reclaimable()` is
+tombstoned-and-unread; `Backend.FormReclaimable` exposes it.
+
+A TTL only covers a holder that is alive but silent, which today is nobody
+and later is a node on another machine. When that exists this becomes
+`{id, holder, expires}` with a sweep, and nothing above it changes.
+
 **Not wired into the delete path yet**, deliberately: `RemoveLeaf` is the
 crash-ordered boundary repair (durable-forms §2) and putting a write in the
-middle of it wants its own sitting. The remaining half of phase 6 is the
-lease registry, which is in-memory and best-effort by ruling.
+middle of it wants its own sitting. That is what remains of phase 6.
