@@ -64,9 +64,9 @@ these four:
 | 3 | the two-participant write, approved **conditionally on seeing the code** (`answers-forms.md:12`) | built since `ac3314bc`; the review was never asked for. The retry count went 5 → 32 under contention that exists because casts left the actor loop |
 | 10 | "scrap the form projection … whole-form only" (`answers-forms.md:1`) | code is whole-form; the DESIGN TEXT still carries `"paths"` in the libretto document and still lists the union projection as open `[q13]` in §17 |
 
-Also unremarked anywhere: `requireStudyTarget` admits an **outfit** as a
-study target (`figaro/study.go:79`), while §12 says derivations may subscribe
-only to primary forms.
+That last one is **closed**: Gluck ruled ("studying is something for forms;
+outfits are just the names I give the named files that seed primary forms"),
+and both halves of `requireStudyTarget` refuse an outfit now, naming it.
 
 Row 6 of that audit was "figaro stamps the libretto's cursor — not built".
 This session is that row.
