@@ -339,24 +339,50 @@ func (f *Form) ApplyEffectPrivileged(patch message.Patch, ifVersion uint64) (uin
 }
 
 func (f *Form) applyEffect(patch message.Patch, ifVersion uint64, intent Intent, priv bool) (uint64, message.Patch, error) {
-	w := &formWrite{patch: patch, ifVersion: ifVersion, intent: intent, priv: priv}
-	if err := f.q.Submit(w); err != nil {
-		return 0, message.Patch{}, fmt.Errorf("form is closed")
+	t, err := f.submit(&formWrite{patch: patch, ifVersion: ifVersion, intent: intent, priv: priv})
+	if err != nil {
+		return 0, message.Patch{}, err
 	}
-	f.await(w)
-	return w.result.version, w.result.applied, w.result.err
+	return f.Await(context.Background(), t)
 }
 
-// await parks the CALLER'S own goroutine until its submission has been
-// answered. One broadcast serves every waiter: no goroutine and no channel
-// per call.
-func (f *Form) await(w *formWrite) {
+// Ticket is a submitted write. Hold it to Await the verdict, or drop it and
+// never wait: the write lands either way.
+type Ticket struct{ w *formWrite }
+
+// Submit queues a write and returns without waiting for it. The caller that
+// does not need the version (a cursor, a derived fold) never waits at all,
+// which is the only thing that removes a parked goroutine per writer.
+func (f *Form) Submit(patch message.Patch, ifVersion uint64, intent Intent) (Ticket, error) {
+	return f.submit(&formWrite{patch: patch, ifVersion: ifVersion, intent: intent})
+}
+
+// submit is the one place a write enters the queue. Privilege never reaches
+// the public Submit: a caller that may write harness keys says so by using
+// the privileged entry point, which is a call site rather than an argument.
+func (f *Form) submit(w *formWrite) (Ticket, error) {
+	if err := f.q.Submit(w); err != nil {
+		return Ticket{}, fmt.Errorf("form is closed")
+	}
+	return Ticket{w: w}, nil
+}
+
+// Await parks the CALLER'S own goroutine until the write has been answered.
+// One broadcast serves every waiter: no goroutine and no channel per call.
+func (f *Form) Await(ctx context.Context, t Ticket) (uint64, message.Patch, error) {
+	if t.w == nil {
+		return 0, message.Patch{}, fmt.Errorf("await: no ticket")
+	}
 	for {
 		tick := *f.tick.Load()
-		if w.done.Load() {
-			return
+		if t.w.done.Load() {
+			return t.w.result.version, t.w.result.applied, t.w.result.err
 		}
-		<-tick
+		select {
+		case <-tick:
+		case <-ctx.Done():
+			return 0, message.Patch{}, ctx.Err()
+		}
 	}
 }
 

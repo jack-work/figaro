@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -205,5 +206,57 @@ func TestRemovalIntent(t *testing.T) {
 		t.Fatalf("assert must allow a removal that removes: %v", err)
 	} else if len(applied.Remove) != 1 {
 		t.Fatalf("want one removal, got %v", applied.Remove)
+	}
+}
+
+// Submit without Await is what removes a parked goroutine per writer: the
+// write lands, the caller never waits, and the ticket is there if it changes
+// its mind.
+func TestSubmitWithoutAwaitStillLands(t *testing.T) {
+	f := NewMemForm()
+	defer f.Close()
+
+	var tickets []Ticket
+	for i := 0; i < 50; i++ {
+		tk, err := f.Submit(kv(fmt.Sprintf("k%d", i), "v"), 0, Ensure)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tickets = append(tickets, tk)
+	}
+	// Await only the last: the broadcast that answers it has answered them
+	// all, because the drainer answers a batch at a time and in order.
+	if _, _, err := f.Await(context.Background(), tickets[len(tickets)-1]); err != nil {
+		t.Fatal(err)
+	}
+	snap, _ := f.Snapshot()
+	if snap.Len() != 50 {
+		t.Fatalf("want 50 keys, got %d", snap.Len())
+	}
+}
+
+// A ticket awaited after the fact returns the same verdict, and a cancelled
+// context stops waiting without disturbing the write.
+func TestAwaitIsIdempotentAndCancellable(t *testing.T) {
+	f := NewMemForm()
+	defer f.Close()
+
+	tk, err := f.Submit(kv("a", "1"), 0, Ensure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v1, _, err := f.Await(context.Background(), tk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2, _, err := f.Await(context.Background(), tk)
+	if err != nil || v1 != v2 {
+		t.Fatalf("awaiting twice must answer the same: %d, %d, %v", v1, v2, err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, err := f.Await(ctx, Ticket{}); err == nil {
+		t.Fatal("a ticket-less await must fail")
 	}
 }

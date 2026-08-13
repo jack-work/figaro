@@ -713,3 +713,26 @@ The fix is the one already on the perf list: a bounded range read in figwal
 (`RecordsBetween(channel, after, upTo)`, a thin wrapper over the segment
 index that already exists) so a cold read is O(range) rather than O(offset).
 Do that BEFORE lowering `form_patch_window`, not after.
+
+#### Phase 3's seam: Submit and Await
+
+`Form.Submit` returns a `Ticket` and does not wait; `Form.Await(ctx, t)`
+parks the caller's own goroutine on the existing broadcast. `Apply` and
+`ApplyEffect` are Submit plus Await, so nothing outside changed.
+
+This is the half of phase 3 that lives below the wire, and it is what makes
+"a handle you may await" possible instead of "a wait you cannot refuse",
+which is the lesson the synchronous-`set` deadlock taught. **A caller that
+does not need the version never waits at all**, and that is the only thing
+that removes a parked goroutine per writer. The libretto cursor is its first
+customer when it exists.
+
+**A bug I introduced and caught in the same minute**: routing `applyEffect`
+through the public `Submit` dropped the `priv` flag, so the harness's own
+boot patch started being refused. Privilege never reaches the public
+`Submit` now; both paths go through an unexported `submit` and the
+privileged one is a distinct call site, which is the whole point of not
+making it an argument.
+
+Still not done in phase 3: `session`, `seq`, the acknowledgement of a no-op
+on the wire, and intent on the RPC beyond the `assert` boolean.
