@@ -1723,3 +1723,165 @@ until reading a record can miss.
   and it hangs until the timeout.
 - **c1d55d02 stays alive as a reference** at Gluck's instruction: parenting,
   not merely handing over. Ask it; it answers.
+
+---
+
+# SESSION 3 (aria d604c755)
+
+Role `@980dc16c` moved on the handoff; the heartbeat followed it.
+
+## figwal opens an index, not a history (the first job, done)
+
+`figwal 2ff5647` + `3a14131f` + `084418c7`.
+
+**The finding that reshaped the job.** The disk layer was ALREADY lazy. A
+`segment.Segment` retains an offset per record and reads payloads by
+`codec.ReadFrame(io.ReaderAt, ...)` — a positional pread, one syscall, no
+seek state. The only thing making a channel resident was `log.buildOwnSnapshot`
+copying every payload at `Open`. So the fix was to stop copying, not to build
+a loader: **762 lines added, 368 deleted, and the deletions include
+`cacheSnapshot` and its entire parallel implementation of read, range,
+scan-from-end, the fork truncation and the parent chain** — every one of
+which duplicated logic `disk.Log` already had.
+
+**The measurement that decided the shape**, taken BEFORE any code, because
+figwal already had both paths (`Range` reads the snapshot, `RangeOwn` reads
+the files):
+
+| | from the snapshot | from disk |
+|---|---|---|
+| point read | 5 ns | 1.0–2.1 µs |
+| replay 2000 records | 3.1 µs | 1.2–2.3 ms |
+
+So **pure laziness was never an option**: a form's cold open replays its
+whole channel, and 400x on that path is the +338% lesson from the other
+direction. Segment granularity it is.
+
+### What landed in figwal
+
+- `segment` gains a lazily loaded payload block per segment behind an
+  `atomic.Pointer`, charged against a process-wide budget (32 MiB default,
+  `SetCacheBudget`), evicted least-recently-used when a load crosses it.
+  Evicting can lose nothing: the file has every byte, and a caller holding a
+  payload from an evicted block keeps it alive by ordinary GC.
+- **The active segment's block is EXTENDED by `Append`**, not invalidated, so
+  a writer's own tail stays resident without a reload per record.
+- `log.Log` keeps only the PENDING buffer — records appended and not yet
+  synced, which have no segment to be read from — and delegates everything
+  else. The pending window is captured before each disk walk and bounds it,
+  so a concurrent sync can neither duplicate nor drop a record mid-iteration.
+
+Measured after, same fixture:
+
+| | before | after |
+|---|---|---|
+| point read, warm | 5 ns | **17 ns** |
+| point read, not resident | 1–2 µs | **13 ns** |
+| replay, per record | 1.5 ns | **6 ns** |
+| open | whole history resident | **nothing** |
+
+A warm read costs three times an index into an array that held everything; a
+read that misses is a hundred times cheaper than it was.
+
+### Two semantic changes, both deliberate, both tested
+
+1. **A `Snapshot` no longer pins payloads.** Records SYNCED before the
+   capture and then moved by a fork are served by their new owner, not by the
+   stale handle. Unsynced records are still pinned, because the pending
+   buffer holds them — which is how the first draft of the test passed for
+   the wrong reason and taught me the distinction.
+   `TestSnapshotAcrossAForkServesTheKeptPrefix` states it. The guard is the
+   one that already existed: a topology mutation demands a private log
+   (`ErrSharedMutation`).
+2. **`Store.Evict` now drops the evicted log's payload blocks.** Before, an
+   idle unload released the log wrapper while the disk store kept the
+   segments open — and with them, every byte. The unload was not reclaiming
+   what everyone assumed it was.
+
+**A bug fixed in passing**: a forked child was built as
+`&Log{inner: childInner}`, leaving `maxLag` at zero, so **every write to a
+fork synced inline** regardless of the configured lag.
+
+### The figaro side
+
+`[memory] segment_cache_mb`, default 32, 0 to hold nothing. It is the bound
+the other three sit on: `ir_window_mb`, `translation_window_mb` and
+`form_patch_window` all cap DECODED copies of these same bytes.
+
+`doctor mem` prints `segment-cache=X of Y` beside loaded-heads, and the wire
+response carries both. **Loaded heads stopped being a proxy for memory** —
+the count is unchanged at 217 on the real store while the bytes fell by
+more than half, because a head now costs its index.
+
+`TestMemorySettingsReachTheirEnforcementPoints` covers it, and it is the
+first knob that test checks which is enforced in ANOTHER MODULE. Proved red
+first: unwire the call and it reports 32 MiB where 9 was configured.
+
+### The numbers, on a copy of the real store (515 arias, 590 trunks, 281 MB)
+
+Same `ListingCost` probe that found the problem:
+
+| segment budget | heap retained by one full listing |
+|---|---|
+| unbounded (before) | **116.5 MiB** |
+| 32 MiB (default) | **48.0 MiB** (31.9 held by figwal) |
+| 4 MiB | **17.6 MiB** (3.9 held by figwal) |
+
+**Residency is a dial now, and it tracks the knob to a tenth of a MiB.**
+
+Live, on a daemon with `FIGARO_PPROF=1` against that copy
+(`/var/tmp/figstate/lazylive.sh`):
+
+```
+one full listing     2.66 s   heap 73.7 MiB   segment-cache 31.4 of 32.0 MiB
+second listing       0.031 s  heap 79.1 MiB   (the status-line case)
+```
+
+The predecessor measured 208 MiB of heap after one `ls -j` on the same copy,
+and Gluck's live daemon sat at 260 MiB. The first listing is still 2.7 s
+because opening a node still SCANS every segment file to build its offset
+index; that is unchanged by this work and is the next lever (a segment
+footer index would remove it).
+
+### Validation gate
+
+```
+figwal:  go test ./log ./disk ./segment ./xwal -race -count=3    ok
+         crashtest, short                                        ok
+         crashtest -long -seed=11 (113 s)                        ok
+figaro:  go build, go vet, go test ./... -count=1                ok
+         nix build .#default (vendorHash reset, 084418c7)        ok
+         fleet: 12/12 answered, three runs                       ok
+         live daemon on a copy of the real store                 ok
+```
+
+Fleet, against the four columns above (three runs of THIS build):
+
+| | end of session 2 | session 3, x3 |
+|---|---|---|
+| turns answered | 12/12 | 12/12, 12/12, 12/12 |
+| history build | 5.14 s | 4.93 / 4.96 / 4.94 s |
+| turn wall | 5.85 s | 4.98 / 4.77 / 4.52 s |
+| control | 0.16 s | 0.16 s, all three |
+| daemon PSS loaded | 48.3 M | 49.6 / 49.0 / 59.1 M |
+| goroutines | 80 | 80, all three |
+| heap_alloc | 10.5 M | 13.7 / 10.5 / 13.1 M |
+
+**heap_alloc spreads ±3 M across three runs of one build**, so neither a
+regression nor an improvement can be read off it on this harness; the
+12-aria fleet is too small for the segment cache to matter (its arias hold
+72 IR rows between them). The real-store numbers above are where this change
+is visible, and the control being identical three times is what licenses
+reading the rest.
+
+### Deviations
+
+1. **The budget is process-wide, not per backend**, because one segment file
+   has one copy however many lineages read through it. `doctor mem` says so.
+2. **`figwal` was pushed to `origin/master` and pinned by pseudo-version**
+   (`v0.16.2-0.20260813071931-2ff564775899`), the same dance as the last
+   bump, per Gluck's 2026-08-13 ruling that figwal bumps are expected. No
+   tag was cut; say the word and one will be.
+3. **32 MiB default**, chosen so the whole author's store (281 MB) cannot be
+   held, while a busy fleet's working set can. It is a dial, and the probe
+   measures the trade in ninety seconds.
