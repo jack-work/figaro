@@ -171,6 +171,21 @@ func (b *XwalBackend) DropForm(observerID, sourceFormID string) ([]string, bool,
 	return studies, true, nil
 }
 
+// KindWord names what a caller aimed at when a verb refuses it, so the
+// refusal says WHICH rule was broken rather than only that one was. Here
+// because both halves of study -- the agent's and the hub's -- must agree
+// about what is study-able, and one wording is one rule.
+func KindWord(kind string) string {
+	switch kind {
+	case string(kindOutfit):
+		return "outfit, not a form"
+	case "":
+		return "node of no kind"
+	default:
+		return "figaro, not an unbound form"
+	}
+}
+
 // StudiedBy is the observer's declared set, from the durable board rather
 // than from any in-memory mirror of it.
 func (b *XwalBackend) StudiedBy(observerID string) ([]string, error) {

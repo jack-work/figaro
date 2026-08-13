@@ -686,3 +686,16 @@ func TestDropThatCannotUndeclareKeepsItsReference(t *testing.T) {
 		t.Fatalf("the sweep had to repair after a refused drop: %+v", audit)
 	}
 }
+
+// PRIMARY FORMS ONLY (Gluck, 2026-08-13): "studying is something for forms.
+// Outfits are just the names I give the named files that seed primary forms."
+// The refusal names what was aimed at, because "not a form" is not a useful
+// thing to tell someone who pointed at an outfit on purpose.
+func TestKindWordNamesWhatWasAimedAt(t *testing.T) {
+	if got := KindWord(string(kindOutfit)); got != "outfit, not a form" {
+		t.Errorf("outfit: %q", got)
+	}
+	if got := KindWord("conversation"); got != "figaro, not an unbound form" {
+		t.Errorf("aria: %q", got)
+	}
+}

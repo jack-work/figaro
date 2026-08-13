@@ -43,8 +43,11 @@ func (h *handlers) requireUnboundForm(formID string) error {
 	if !ok {
 		return fmt.Errorf("%s: no such form", formID)
 	}
-	if n.Kind != kindFormNode && n.Kind != "outfit" {
-		return fmt.Errorf("%s is a figaro, not an unbound form: study and cast take forms (a bound board is private to its figaro)", formID)
+	// Primary forms only; see the agent's half for the ruling. Both halves
+	// have to agree about what is study-able, exactly as they agree about
+	// where the set lives.
+	if n.Kind != kindFormNode {
+		return fmt.Errorf("%s is a %s: study and cast take unbound forms (an outfit is a seed, a bound board is private to its figaro)", formID, store.KindWord(n.Kind))
 	}
 	return nil
 }

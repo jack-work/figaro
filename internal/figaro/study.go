@@ -76,8 +76,13 @@ func (a *Agent) requireStudyTarget(formID string) error {
 	if !ok {
 		return fmt.Errorf("%s: no such form", formID)
 	}
-	if n.Kind != "form" && n.Kind != "outfit" {
-		return fmt.Errorf("%s is a figaro, not an unbound form: study and cast take forms (a bound board is private to its figaro)", formID)
+	// PRIMARY FORMS ONLY (Gluck, 2026-08-13): "studying is something for
+	// forms. Outfits are just the names I give the named files that seed
+	// primary forms." An outfit is a seed, not a subject; a bound board is
+	// private to its figaro; and a libretto is a derived form, which is not
+	// a node at all and so never reaches this check.
+	if n.Kind != "form" {
+		return fmt.Errorf("%s is a %s: study and cast take unbound forms (an outfit is a seed, a bound board is private to its figaro)", formID, store.KindWord(n.Kind))
 	}
 	return nil
 }

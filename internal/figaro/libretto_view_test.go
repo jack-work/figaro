@@ -2,6 +2,7 @@ package figaro
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/jack-work/figaro/internal/message"
@@ -71,4 +72,34 @@ func TestStrippingDoesNotEditHistory(t *testing.T) {
 	if len(original.Remove) != 2 {
 		t.Errorf("the store's own removes were rewritten: %v", original.Remove)
 	}
+}
+
+// An OUTFIT is a seed, not a subject. It used to be study-able, which
+// contradicted durable-forms §12 ("derivations may subscribe only to primary
+// forms") in the direction nobody had noticed: an outfit stump is the named
+// file a primary form is seeded FROM, and mirroring one would put a template
+// under a refcount.
+func TestStudyRefusesAnOutfitByName(t *testing.T) {
+	a := &Agent{backend: kindBackend{kind: "outfit"}, id: "a1"}
+	err := a.requireStudyTarget("@seed")
+	if err == nil {
+		t.Fatal("studying an outfit was allowed")
+	}
+	if !strings.Contains(err.Error(), "outfit, not a form") {
+		t.Fatalf("the refusal does not name the outfit: %v", err)
+	}
+	if err := (&Agent{backend: kindBackend{kind: "form"}, id: "a1"}).requireStudyTarget("@f"); err != nil {
+		t.Fatalf("an unbound form was refused: %v", err)
+	}
+}
+
+// kindBackend answers Node() with one kind and panics on anything else, so
+// the test cannot accidentally exercise a path it did not mean to.
+type kindBackend struct {
+	store.Backend
+	kind string
+}
+
+func (b kindBackend) Node(id string) (store.NodeView, bool) {
+	return store.NodeView{ID: id, Kind: b.kind}, true
 }
