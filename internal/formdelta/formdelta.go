@@ -46,6 +46,28 @@ type Backend interface {
 	Libretto(sourceFormID string) (*store.Libretto, error)
 }
 
+// Seed is where the cursors stood just before a window of entries: the
+// stamps of the record PRECEDING it. A walk from the head of the log seeds
+// zero; a backward page that omits it attributes everything before its
+// first record to that record, which is over-attribution in the direction
+// a reader cannot detect.
+type Seed struct {
+	Form    uint64
+	Studies map[string]uint64
+}
+
+// SeedFrom reads a seed off the record preceding a window.
+func SeedFrom(e store.Entry[message.Message]) Seed {
+	s := Seed{Form: e.FormChannelVersion}
+	if len(e.StudyVersions) > 0 {
+		s.Studies = make(map[string]uint64, len(e.StudyVersions))
+		for k, v := range e.StudyVersions {
+			s.Studies[k] = v
+		}
+	}
+	return s
+}
+
 // PerRecord walks the IR entries in order and returns each record's
 // deltas, keyed by the record's LT and then by "<formid>.<path>".
 //
@@ -65,12 +87,20 @@ type Backend interface {
 // pure function of durable stamps and durable patch logs, so two calls
 // over the same entries MUST return equal maps, and a test holds that.
 func PerRecord(b Backend, ariaID string, entries []store.Entry[message.Message]) map[uint64]map[string]livedoc.FormDelta {
+	return PerRecordFrom(b, ariaID, Seed{}, entries)
+}
+
+// PerRecordFrom is PerRecord with the cursors seeded; see Seed.
+func PerRecordFrom(b Backend, ariaID string, seed Seed, entries []store.Entry[message.Message]) map[uint64]map[string]livedoc.FormDelta {
 	if b == nil || ariaID == "" {
 		return nil
 	}
 	out := map[uint64]map[string]livedoc.FormDelta{}
-	var lastForm uint64
+	lastForm := seed.Form
 	lastStudy := map[string]uint64{}
+	for k, v := range seed.Studies {
+		lastStudy[k] = v
+	}
 	studied := map[string]*studiedForm{}
 
 	for _, entry := range entries {

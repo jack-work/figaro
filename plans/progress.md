@@ -2,6 +2,118 @@
 
 Live notes for whoever holds the role `@980dc16c`. Update this, not chat.
 
+## SESSION 5 AT A GLANCE (aria 94f0752b)
+
+Three acts: the burn-down, the memory triage Gluck asked for mid-session,
+and the form-deltas-in-UI-IR plan (plans/form-deltas-in-ui-ir.md) built
+end to end. Two new branches off main/v0.25.0: `red/burn-down`
+(/var/tmp/figred) and `feat/form-deltas-ui` on top of it
+(/home/gluck/dev/figaro-qua/formdeltas, the worktree Gluck devshells).
+
+### The burn-down (`d8133d24`): +79/-219, the ratio said out loud
+
+2.8 deletions per insertion, net -140. Everything bigger that LOOKED dead
+was a test seam or another package's crutch, and recording that is the
+other half of the job:
+
+- **Deleted, no caller**: `Agent.patchStudies` and the "ephemeral
+  fallback" in declareStudy -- which was a LIE, not a fallback: it would
+  nil-panic at ApplyFormIf before ever keeping "the plain board write".
+  `boardAt`+`pairedFormReader` died with it. The hub's dead trio
+  (isVersionConflict/containsAny/indexOf). `applyControlPatch`,
+  `IsSystemManaged`, `Libretto.Source()` and the `addr` field only it read.
+- **Collapsed, two implementations of one rule**: requireStudyTarget
+  (agent) ⇄ requireUnboundForm (hub) -> ONE `store.RequireStudyTarget`
+  beside KindWord; StudiesKey declared twice with a guard TEST enforcing
+  agreement -> figaro aliases store's constant, guard test deleted.
+- **Moved to tests**: `Libretto.Alive()`+boolOf; `newCachedLog` -- which my
+  first grep called dead because `newCachedLog[T](` is a BRACKET call.
+  The check that cannot match, again. Grep for generics with `[`.
+- **Kept, with reasons**: EvictNow/Restore/closeLibretto/Inbox.pending/
+  the ForTest knobs (seams observing product behavior); NewMemForm
+  (serves internal/provider's tests, so a store-side _test.go move breaks
+  them); the interrupt-sentinel READ path (historical logs still carry
+  the role); the anthropic projection wrappers (13 test callers).
+- **The four idle clocks**: verified REAL (figwal unloads at 5m under an
+  agent that lives to 15m) but it is a policy refactor spanning PINNED
+  figwal, not a deletion. Still queued.
+
+Gate on the commit: unit, -race -count=3 (store/figaro/angelus/provider),
+FIGARO_CRASH_TEST=1, nix build, and the live scripts (studylive, castlive,
+renderlive 9/9 wire checks, realstudy on 794 real rows: sweep 0.86s,
+corrects 0).
+
+### The memory triage (Gluck: "the daemon holds ~200MB")
+
+Now a role key (`triage-memory`). Measured on the live v0.25.0 daemon:
+**PSS 179MB, heap inuse 102MiB, named caches ~14MiB** (ir 10.2 + xlt 2.8 +
+segcache 0.9) -- so **~88MiB of resident heap is UNNAMED**, the antipattern
+this project has shipped twice. `loaded-heads=210, endpoints=221,
+goroutines=512` with only 4 live arias, and doctor mem's own words:
+"every resident aria has a live agent, so idle eviction can free nothing."
+
+idlemem.sh on this build: 155MB after a listing -> **78MB after one sweep**
+(the arena RETURNS) -- and then PSS **creeps ~1.1MB per 5s while idle**
+(alloc 24.6 -> 32.4MiB over 40s). On a long-lived daemon that creep plus
+four pinned agents IS the 200MB. Unattributed: pprof is not armed --
+**restart the daemon with FIGARO_PPROF=1 and take a heap profile**; that is
+the next stroke, and the numbers above are what it must explain.
+
+### Form deltas in the UI IR (feat/form-deltas-ui, all five steps)
+
+Per the plan, in order, each committed separately:
+
+1. **Types** (`13972dd2`): livedoc.FormDelta/FormKind/FormEvent;
+   Node.FormDeltas, Turn.FormDeltas, aria.Message.FormDeltas, omitempty.
+2. **Assembly** (`13972dd2`): internal/formdelta -- store-only cursor
+   arithmetic, the projection's three inherited rules enforced, tests on a
+   real xwal backend incl. determinism (render twice, assert equal) and
+   the death arriving as FormDeleted. `PerRecordFrom` takes a **Seed** (the
+   stamps of the record PRECEDING a window): a backward page that seeds
+   zero attributes all prior history to its first record.
+3. **Attachment** (`4294e53d`): the reader keeps entries, attaches by the
+   written rule (tool round -> tool node; unclaimed -> turn).
+   `TestLiveDeltaCarriesEveryNodeField` forced the live wire to carry the
+   field the moment it existed -- that test is why live and committed
+   cannot diverge. `show` needed its own path: aria.read entries now carry
+   hub-assembled `form_deltas` (the client holds neither stamps nor store),
+   and the CLI folds them with formdelta.Attach.
+4. **TUI** (`6db927a2`+): `state-dim` Kanagawa role (≈sumiInk4); one row
+   per key in the **"Figaro saw: key -> value"** voice (Gluck's revision of
+   my one-line-per-form draft, /tmp/form-ui-issues.md), two-space indent
+   under the node, a blank separator row, board rows unprefixed, studied
+   rows named by id, `removed` vs `deleted` distinguished, value cap
+   collapsed / whole on expansion, rows share the node's Block (selected
+   and yanked together, Enter expands, `show --details` on stdout).
+5. **The two sentences**: "this figaro has been forked from <parent>"
+   (named from system.forked_from in the same delta) and "role <id> recast
+   to figaro <aria>", suppressing their raw material while they draw.
+
+**Live-verified** on a fresh daemon with a real provider: two turns, the
+studied form's `phase -> "ga"` lands on exactly the turn whose window
+carried it.
+
+**Known rough edge, deliberate**: the bound board's system furniture
+(cwd/datetime/mantra) draws on turn 1 of every fresh aria and datetime
+moves per turn. Whether to filter system.* churn from the BOUND kind is
+Gluck's call -- the model really is shown it, which is the argument for
+keeping it.
+
+### The nix rule, earned (`verify-via-nix` on the role)
+
+I shipped cli/formdeltas.go UNTRACKED; go build was green and
+`nix develop .#snapshot` was broken, because a flake archives only
+TRACKED files. The rule is now a role key: git add before nix-testing,
+and nix build is part of every gate unless Gluck says otherwise.
+
+### Session 5 cleanup ledger
+
+Live-script copies made: /var/tmp/figstudy.cQIj figcast.icUi
+figrender.I01A figreal.sDAP figidle.Dk9B figdelta.a7Cf (+ figred,
+figred-live). Remove when the branches merge; figdelta.a7Cf is the
+form-deltas demo store and worth keeping until Gluck has tested.
+
+
 ## SESSION 4 AT A GLANCE (aria b2b0c543)
 
 Phase 9's second half: **the copy is now the thing that renders**. Before

@@ -84,10 +84,13 @@ func (c Composer) Message(m aria.Message, w int) []Row {
 	}
 	rows := c.inquiry(m.Inquiry, m.InquirySegments, w)
 	// The turn's own form deltas sit under the question they arrived with,
-	// in the inquiry's Block coordinate.
+	// in the inquiry's Block coordinate, after one blank row.
 	if c.State != nil && len(m.FormDeltas) > 0 {
-		for _, l := range c.State(BlockInquiry, m.FormDeltas, w) {
-			rows = append(rows, Row{Text: clip(l, w), Block: BlockInquiry})
+		if state := c.State(BlockInquiry, m.FormDeltas, w); len(state) > 0 {
+			rows = append(rows, Row{Text: "", Block: BlockInquiry})
+			for _, l := range state {
+				rows = append(rows, Row{Text: clip(l, w), Block: BlockInquiry})
+			}
 		}
 	}
 	body := c.Nodes(m.Nodes, w)
@@ -142,10 +145,14 @@ func (c Composer) Nodes(nodes []livedoc.Node, w int) []Row {
 		}
 		// The node's form deltas, below the block it explains and sharing
 		// its Block coordinate: selected and yanked alongside the node, not
-		// individually addressable.
+		// individually addressable. One blank row separates them from the
+		// block's own body.
 		if c.State != nil && len(n.FormDeltas) > 0 {
-			for _, l := range c.State(k, n.FormDeltas, w) {
-				rows = append(rows, Row{Text: clip(l, w), Block: k})
+			if state := c.State(k, n.FormDeltas, w); len(state) > 0 {
+				rows = append(rows, Row{Text: "", Block: k})
+				for _, l := range state {
+					rows = append(rows, Row{Text: clip(l, w), Block: k})
+				}
 			}
 		}
 	}

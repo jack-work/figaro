@@ -21,9 +21,15 @@ import (
 // truncates them); this is display only, and expansion shows everything.
 const formDeltaValueCap = 24
 
-// formDeltaLines renders one delta set. Collapsed: one clipped line per
-// form. Expanded (Enter on the node, or `show --details`): one line per
-// key, full values, still one screen-width each.
+// deltaIndent insets a delta row beneath the prose it follows, which
+// render.Prose insets by the same two columns.
+const deltaIndent = "  "
+
+// formDeltaLines renders one delta set: one row per key, each in the
+// "Figaro saw:" voice -- these rows answer "what was the model shown that
+// I cannot see", and the sentence should say so. Collapsed caps each
+// value; expanded (Enter on the node, or `show --details`) shows it
+// whole. Every row is clipped to the screen.
 func formDeltaLines(deltas map[string]livedoc.FormDelta, width int, expanded bool) []string {
 	if len(deltas) == 0 {
 		return nil
@@ -33,17 +39,30 @@ func formDeltaLines(deltas map[string]livedoc.FormDelta, width int, expanded boo
 	for _, formID := range order {
 		g := groups[formID]
 		if s := deltaSentence(formID, g); s != "" {
-			out = append(out, term.StateDim(truncCols(s, width)))
-			if !hasOrdinaryKeys(g) {
+			out = append(out, term.StateDim(truncCols(deltaIndent+s, width)))
+			if !hasOrdinaryKeys(g) && !g.deleted {
 				continue
 			}
 		}
-		if expanded {
-			out = append(out, expandedDeltaLines(formID, g, width)...)
-			continue
+		subject := deltaFormName(formID, g)
+		if g.deleted {
+			out = append(out, term.StateDim(truncCols(deltaIndent+"∆ Figaro saw: "+strings.TrimSpace(subject)+" deleted", width)))
 		}
-		if l := collapsedDeltaLine(formID, g, width); l != "" {
-			out = append(out, l)
+		for _, k := range g.keys {
+			if sentenceKey(g.kind, k) && deltaSentence(formID, g) != "" {
+				continue
+			}
+			d := g.byKey[k]
+			var line string
+			switch {
+			case d.Event == livedoc.FormRemoved:
+				line = deltaIndent + "∆ Figaro saw: " + subject + k + " removed"
+			case expanded:
+				line = deltaIndent + "∆ Figaro saw: " + subject + k + " -> " + string(d.Value)
+			default:
+				line = deltaIndent + "∆ Figaro saw: " + subject + k + " -> " + truncCols(string(d.Value), formDeltaValueCap)
+			}
+			out = append(out, term.StateDim(truncCols(line, width)))
 		}
 	}
 	return out
@@ -131,71 +150,18 @@ func hasOrdinaryKeys(g *deltaGroup) bool {
 	return false
 }
 
-// collapsedDeltaLine is the one-row form: marker, name, then as many
-// key=value pairs as fit, each value capped, the row clipped to width and
-// counting what it could not say.
-func collapsedDeltaLine(formID string, g *deltaGroup, width int) string {
-	var b strings.Builder
-	b.WriteString("∆ ")
-	b.WriteString(deltaFormName(formID, g))
-	if g.deleted {
-		b.WriteString(" deleted")
-	}
-	shown := 0
-	for _, k := range g.keys {
-		if sentenceKey(g.kind, k) && deltaSentence(formID, g) != "" {
-			continue
-		}
-		d := g.byKey[k]
-		b.WriteString(" ")
-		if d.Event == livedoc.FormRemoved {
-			b.WriteString("-" + k)
-		} else {
-			b.WriteString(k + "=" + truncCols(string(d.Value), formDeltaValueCap))
-		}
-		shown++
-	}
-	if shown == 0 && !g.deleted {
-		return ""
-	}
-	return term.StateDim(truncCols(b.String(), width))
-}
-
-// expandedDeltaLines is one row per key, values whole (the wire never
-// truncated them), each row still clipped to the screen.
-func expandedDeltaLines(formID string, g *deltaGroup, width int) []string {
-	name := deltaFormName(formID, g)
-	var out []string
-	if g.deleted {
-		out = append(out, term.StateDim(truncCols("∆ "+name+" deleted", width)))
-	}
-	for _, k := range g.keys {
-		if sentenceKey(g.kind, k) && deltaSentence(formID, g) != "" {
-			continue
-		}
-		d := g.byKey[k]
-		var line string
-		if d.Event == livedoc.FormRemoved {
-			line = "∆ " + name + " -" + k
-		} else {
-			line = "∆ " + name + " " + k + "=" + string(d.Value)
-		}
-		out = append(out, term.StateDim(truncCols(line, width)))
-	}
-	return out
-}
-
-// deltaFormName is how a form is spoken of on a delta row: the bound board
-// is "board" (its id is the aria's own and says nothing), a role is named
-// as one, and a studied form is its id.
+// deltaFormName is the SUBJECT prefix of a "Figaro saw:" row: the bound
+// board says nothing (the row is about this figaro's own state), a role is
+// named as one, and a studied form is its id. Non-empty forms carry a
+// trailing space so the key can be concatenated directly.
 func deltaFormName(formID string, g *deltaGroup) string {
 	switch g.kind {
 	case livedoc.FormBound:
-		return "board"
+		return ""
 	case livedoc.FormRole:
-		return "role " + formID
+		return "role " + formID + " "
 	default:
-		return formID
+		return formID + " "
 	}
 }
 

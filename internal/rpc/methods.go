@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/jack-work/figaro/internal/form"
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 )
@@ -983,6 +984,11 @@ type AriaReadRequest struct {
 type AriaReadEntry struct {
 	LT      uint64          `json:"lt"`
 	Payload json.RawMessage `json:"payload"`
+	// FormDeltas is the record's form-state window, assembled HUB-SIDE
+	// (internal/formdelta): the stamps and the patch logs live in the
+	// store, and the client holds neither. Absent when the record's
+	// windows were empty, and on every record of an ephemeral aria.
+	FormDeltas map[string]livedoc.FormDelta `json:"form_deltas,omitempty"`
 }
 
 type AriaReadResponse struct {

@@ -21,6 +21,8 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/form"
+	"github.com/jack-work/figaro/internal/formdelta"
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/outfit"
@@ -1831,10 +1833,11 @@ func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interf
 	// Keyset pagination: Before takes precedence over From.
 	if req.Before > 0 {
 		selected, total := log.ReadPage(0, req.Before, limit)
+		deltas := h.ariaReadDeltas(log, req.FigaroID, selected)
 		entries := make([]rpc.AriaReadEntry, len(selected))
 		for i, e := range selected {
 			raw, _ := json.Marshal(e.Payload)
-			entries[i] = rpc.AriaReadEntry{LT: e.LT, Payload: raw}
+			entries[i] = rpc.AriaReadEntry{LT: e.LT, Payload: raw, FormDeltas: deltas[e.LT]}
 		}
 		var nextBefore uint64
 		if len(selected) > 0 {
@@ -1848,13 +1851,14 @@ func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interf
 	if len(page) > limit {
 		page = page[:limit]
 	}
+	deltas := h.ariaReadDeltas(log, req.FigaroID, page)
 	out := make([]rpc.AriaReadEntry, 0, len(page))
 	for _, e := range page {
 		raw, mErr := json.Marshal(e.Payload)
 		if mErr != nil {
 			return nil, fmt.Errorf("aria.read: marshal LT=%d: %w", e.LT, mErr)
 		}
-		out = append(out, rpc.AriaReadEntry{LT: e.LT, Payload: raw})
+		out = append(out, rpc.AriaReadEntry{LT: e.LT, Payload: raw, FormDeltas: deltas[e.LT]})
 	}
 	var nextFrom uint64
 	if len(selected) > limit {
@@ -2077,4 +2081,21 @@ func (h *handlers) errOutfitNotFound(name string, cause error) error {
 		Message: fmt.Sprintf("outfit %q not found: %s", name, cause),
 		Data:    data,
 	}
+}
+
+// ariaReadDeltas assembles a page's form deltas hub-side, seeding the
+// cursors from the record PRECEDING the page: a backward page that seeds
+// zero attributes everything before its first record to that record,
+// which is over-attribution in the direction a reader cannot detect
+// (formdelta.Seed).
+func (h *handlers) ariaReadDeltas(log store.Log[message.Message], figaroID string, page []store.Entry[message.Message]) map[uint64]map[string]livedoc.FormDelta {
+	fb, ok := h.angelus.Backend.(formdelta.Backend)
+	if !ok || len(page) == 0 {
+		return nil
+	}
+	seed := formdelta.Seed{}
+	if prev, _ := log.ReadPage(0, page[0].LT, 1); len(prev) > 0 {
+		seed = formdelta.SeedFrom(prev[len(prev)-1])
+	}
+	return formdelta.PerRecordFrom(fb, figaroID, seed, page)
 }
