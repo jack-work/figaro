@@ -2043,3 +2043,52 @@ you are timing.
 **Bisected between my own two figwal changes**, because it mattered which:
 the cost arrived with the payload cache (the `cacheSnapshot` deletion), and
 lazy segment opening slightly IMPROVES it (10.5 µs against 11.4 µs at 200x).
+
+## Two faults in my own cache, and the second was Gluck's question
+
+`figwal e44a843`, pinned at `c2347989`.
+
+**1. Recency was a global counter stamped on every read.** An atomic
+read-modify-write on one cache line shared by every reader in the process.
+Measured with a parallel benchmark written for the purpose:
+
+| cached read | 1 core | 16 cores |
+|---|---|---|
+| counter per read | 26 ns | **47 ns** |
+| epoch (now) | 26 ns | **38 ns** |
+| the old whole-channel snapshot | — | **24.8 ns** |
+
+**Reads got SLOWER the more readers there were**, which is the signature of a
+contended atomic and the thing a single-threaded benchmark can never show.
+Recency is now an EPOCH that advances when a block is loaded and when a sweep
+runs — both rare — and a reader stores it only when its segment's stamp is
+stale.
+
+**The honest ledger for a warm read**, against the version that held every
+payload of every channel in RAM: **2.7 → 15 ns serial, 24.8 → 38 ns
+parallel.** Bought with it: residency bounded instead of unbounded, and a
+read that misses at 13 ns instead of 1–2 µs. The remaining gap is the disk
+log's RWMutex; making sealed reads lock-free is possible and not done,
+because the ACTIVE segment (where appends land, and where figaro's hot reads
+are) needs the lock either way.
+
+**2. The budget bounds a BUSY process and does nothing for a quiet one.**
+Gluck: "eviction definitely should happen when a figaro has been idle for a
+while." It does now. `segment.SweepIdle(keep)` drops every block unread for
+`keep` sweeps; `Angelus.evictIdleArias` calls it with keep=2, **riding the
+reclamation sweep that already exists rather than introducing a fourth idle
+clock**. The window is therefore `dormant_after / sweep_interval`, in the
+same family as the three around it.
+
+For the record, those clocks and their rates, since they are ordered oddly:
+
+| what | knob | default |
+|---|---|---|
+| an aria's agent and its decoded caches | `dormant_after_minutes` | 15 min |
+| figwal's lineage heads (and their blocks) | `handle_idle_minutes` | 5 min |
+| a form's writer goroutine | `actor_linger_ms` | 2 s |
+| segment payload blocks | rides the sweep, keep=2 | ~2 sweeps |
+
+figwal unloads a head at 5 minutes while the agent above it lives to 15, so a
+quiet aria drops its RAW bytes and keeps its DECODED ones. That predates this
+work and is worth fixing as one policy rather than four.
