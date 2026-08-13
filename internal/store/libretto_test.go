@@ -553,3 +553,90 @@ func TestRefcountSurvivesConcurrentMovers(t *testing.T) {
 			got, before, movers*rounds, before-got)
 	}
 }
+
+// READERS WHILE IT FOLDS. Every observer of a form now renders from ONE
+// shared Libretto instance (a second Form over that channel is an orphaned
+// reader, refused by construction elsewhere), so the copy is read by N
+// goroutines while its own fold writes it.
+//
+// That case had never been exercised: the fleet studies AFTER its patches, so
+// twelve arias never raced the writer. This is the gap, closed.
+//
+// What it asserts is what a renderer depends on: a range asked for below the
+// version the reader observed is answered without tearing, the answers are
+// monotone in version, and nothing panics under -race.
+func TestLibrettoReadersWhileItFolds(t *testing.T) {
+	be, src, _ := librettoFixture(t)
+	aria, _, err := be.ForkWith("", 0, patchOf(t, map[string]string{"aria_id": `"a1"`}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := be.StudyForm(aria, src); err != nil {
+		t.Fatal(err)
+	}
+	lib, err := be.Libretto(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stop := make(chan struct{})
+	var writer sync.WaitGroup
+	writer.Add(1)
+	go func() {
+		defer writer.Done()
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if _, err := be.ApplyForm(src, patchOf(t, map[string]string{
+				"n": fmt.Sprintf("%d", i)})); err != nil {
+				return
+			}
+		}
+	}()
+
+	const readers = 8
+	var rg sync.WaitGroup
+	bad := make(chan string, readers)
+	for r := 0; r < readers; r++ {
+		rg.Add(1)
+		go func() {
+			defer rg.Done()
+			var last uint64
+			for i := 0; i < 200; i++ {
+				at := lib.Version()
+				if at < last {
+					bad <- fmt.Sprintf("version went backwards: %d then %d", last, at)
+					return
+				}
+				last = at
+				// The renderer's exact call: an absolute window ending at a
+				// version this reader has observed.
+				for _, p := range lib.PatchesBetween(0, at) {
+					if p.Version > at {
+						bad <- fmt.Sprintf("a patch at %d came back for a window ending %d", p.Version, at)
+						return
+					}
+				}
+			}
+		}()
+	}
+	rg.Wait()
+	close(stop)
+	writer.Wait()
+	close(bad)
+	for msg := range bad {
+		t.Fatal(msg)
+	}
+
+	// And the copy is still coherent afterwards: one writer, one instance.
+	audit, err := be.ReconcileLibrettos()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if audit.Corrected != 0 {
+		t.Fatalf("the sweep had to repair after concurrent reads: %+v", audit)
+	}
+}
