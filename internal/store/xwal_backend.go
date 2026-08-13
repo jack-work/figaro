@@ -488,6 +488,11 @@ func (b *XwalBackend) ForkAt(ariaID string, atMainLT uint64) (cont, alt string, 
 // The rule this obeys, stated so a fourth site inherits it: any operation
 // that brings a board carrying a study-set into or out of existence is a
 // participant in the refcount.
+// RetainDeclaredStudies is the participant hook for any path that brings a
+// board into existence carrying a study-set it did not declare itself:
+// fork (below) and IMPORT, which restores a board wholesale.
+func (b *XwalBackend) RetainDeclaredStudies(ariaID string) { b.inheritStudies(ariaID) }
+
 func (b *XwalBackend) inheritStudies(ariaID string) {
 	snap, err := b.FormState(ariaID)
 	if err != nil {

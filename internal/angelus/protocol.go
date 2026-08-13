@@ -1156,6 +1156,16 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	if _, err := h.angelus.Backend.ApplyForm(id, patch); err != nil {
 		return nil, fmt.Errorf("import: form: %w", err)
 	}
+	// IMPORT IS A REFCOUNT PARTICIPANT (durable-forms §12.2.2). The restored
+	// board can name studied forms -- `system.studies` is an ordinary key, so
+	// an exported board carries it -- and nothing incremented the librettos
+	// it names. Left alone, the last live observer drops, refs reaches zero,
+	// and a copy the imported aria is still observing is reclaimed. The rule:
+	// any operation that brings a board carrying a study-set into existence
+	// is a participant.
+	if r, ok := h.angelus.Backend.(interface{ RetainDeclaredStudies(string) }); ok {
+		r.RetainDeclaredStudies(id)
+	}
 	// The list sidecar, so an imported aria is a first-class row in `figaro
 	// ls` rather than an id with dashes after it. Derived from what actually
 	// arrived; the token counts are the source's and are carried as history,

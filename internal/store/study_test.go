@@ -3,6 +3,8 @@ package store
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/jack-work/figaro/internal/message"
 )
 
 // The ordering is the design (durable-forms §12.2.1): every crash must leave
@@ -355,5 +357,72 @@ func TestLibrettoStumpsAreNeverListed(t *testing.T) {
 		if _, isLibretto := SourceOfLibretto(n.ID); isLibretto {
 			t.Fatalf("a libretto stump appeared among the forms: %s", n.ID)
 		}
+	}
+}
+
+// IMPORT restores a board wholesale, and `system.studies` is an ordinary key
+// that an exported board carries -- so an import can name studied forms that
+// nothing counted. durable-forms §12.2.2 lists it beside fork and kill, and
+// it is the site I first wrote off as "this store has no import verb". It
+// has one; the angelus calls this hook.
+func TestRetainDeclaredStudiesCoversAnImportedBoard(t *testing.T) {
+	be, sourceID, _ := librettoFixture(t)
+	outfit, err := be.CreateOutfit("imported", setPatch(map[string]string{"system.model": "m"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A live observer, so the libretto exists and is counted once.
+	live, err := be.CreateConversation(outfit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := be.StudyForm(live, sourceID); err != nil {
+		t.Fatal(err)
+	}
+	lib, err := be.Libretto(sourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The import: a new conversation whose restored board already names the
+	// studied form, exactly as `angelus.import` applies it.
+	imported, err := be.CreateConversation(outfit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal([]string{sourceID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := be.ApplyForm(imported, message.Patch{
+		Set: map[string]json.RawMessage{StudiesKey: raw},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := lib.Refs(); got != 1 {
+		t.Fatalf("refs before the hook = %d, want 1: the import declared a study nothing counted", got)
+	}
+	be.RetainDeclaredStudies(imported)
+	if got := lib.Refs(); got != 2 {
+		t.Fatalf("refs after the hook = %d, want 2", got)
+	}
+	audit, err := be.ReconcileLibrettos()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if audit.Corrected != 0 {
+		t.Fatalf("the sweep disagreed after an import: %+v", audit)
+	}
+
+	// And the failure it prevents: the live observer drops, and the imported
+	// aria's copy must survive.
+	if _, _, err := be.DropForm(live, sourceID); err != nil {
+		t.Fatal(err)
+	}
+	if got := lib.Refs(); got != 1 {
+		t.Fatalf("after the only OTHER observer dropped, refs = %d, want 1", got)
+	}
+	if lib.Reclaimable() {
+		t.Fatal("a libretto an imported aria is still studying reported itself reclaimable")
 	}
 }
