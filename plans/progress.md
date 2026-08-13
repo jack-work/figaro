@@ -94,6 +94,35 @@ and both halves of `requireStudyTarget` refuse an outfit now, naming it.
 Row 6 of that audit was "figaro stamps the libretto's cursor — not built".
 This session is that row.
 
+### The pair is the unit (`4046d3d5`, Gluck's ruling)
+
+The version and the snapshot must be fetched atomically, and that should be
+ENCODED rather than remembered. They were already published together —
+`Form.state` is one atomic pointer to `{snap, version}` written by the actor
+loop — and the API handed out halves, which three sites duly took apart.
+
+```go
+type FormAt struct { Snapshot form.Snapshot; Version uint64 }
+func (f *Form) Read() FormAt
+```
+
+**`Form.Version()` is deleted**, and that is what makes it structural: there
+is no longer a way to obtain the number without the state it belongs to.
+`FormState` and `FormVersion` are implemented in terms of `FormAt`, so even
+the halves come from one load.
+
+The three that were splitting it: the libretto refcount; `studiesAndVersion`,
+where a lost update is **unrecoverable** because the board is what the sweep
+recomputes FROM; and `Agent.patchStudies`, which was worse than a race — it
+read the set from the agent's in-memory MIRROR and the version from the
+STORE, two objects that can disagree with no concurrency at all.
+
+**Available and not done**: make the conditional apply take the pair
+(`ApplyFormAt(id, patch, at FormAt)`), so the type system proves the version
+was read with the state the caller edited. Not done because the wire path
+legitimately quotes a client-supplied version, so the `uint64` entry point
+must survive for it; this would be a second one, used by everything internal.
+
 ### The death, which was built and invisible (`ba3886c2`)
 
 §12.7b says a deleted source is reported IN BAND, as a key: the copy carries
