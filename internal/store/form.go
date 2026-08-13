@@ -51,6 +51,7 @@ type Form struct {
 	// sinks and closed are drainer-owned except for the CAS in OnCommit:
 	// an immutable slice behind a pointer, so emitting takes no lock.
 	sinks  atomic.Pointer[[]func(uint64, message.Patch)]
+	subs   atomic.Pointer[[]*Subscription]
 	closed atomic.Bool
 }
 
@@ -133,6 +134,7 @@ func OpenForm(log FormLog) (*Form, error) {
 	f.tick.Store(&tick)
 	empty := []func(uint64, message.Patch){}
 	f.sinks.Store(&empty)
+	subsInit(&f.subs)
 	f.q = actor.NewLazy(formBatch, formLinger, f.runBatch)
 	return f, nil
 }
@@ -325,6 +327,7 @@ func (f *Form) runBatch(batch []*formWrite) {
 	// its goroutine would silently withdraw that. The exposure is the one the
 	// write lock already had: a sink must hand off and return.
 	f.emit(events)
+	f.publish(events)
 	f.answer(batch)
 }
 
