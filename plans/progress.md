@@ -431,3 +431,35 @@ $ figaro doctor mem -j | jq -c '{mem_limit_bytes}'
 `ir_window_mb`, `soft_limit_mb` and `actor_linger_ms`. Still unwired from
 config: figwal's `IdleUnload` (the second of the three idle clocks) and the
 subscriber lease TTL (phase 6, not built).
+
+#### Final measurements for this session
+
+Read path, unchanged by everything above (this is the zero-copy view from
+the earlier perf work, still zero-copy):
+
+```
+FormDeltaPerSend100/1000/10000    45 / 48 / 53 ns/op, 0 allocs
+FormWholePerSend100/1000/10000    49 / 55 / 57 ns/op, 0 allocs
+```
+
+Independence, 16 forms patched concurrently on real disk:
+
+```
+FormApplyManyForms   5.9 ms for 16 forms
+```
+
+Sixteen fsyncs at ~3 ms each finishing in 5.9 ms of wall clock is the proof
+that the domains stay independent: one actor per form, one lock per form,
+nothing shared but the store.
+
+#### Size of the change
+
+```
+non-test Go      1784 +   179 -
+tests            2037 +    56 -
+plans and docs   2974 +    35 -
+```
+
+The green is mostly tests and design records. Deletions that matter:
+`Form`'s write mutex and sink list, `Kick` and its six call sites,
+`keepMu`, and the buffered-durability story.
