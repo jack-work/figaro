@@ -333,6 +333,37 @@ Also done outside the phase list: `ir_window_mb` bounded by default (the
 single largest memory lever, previously off), `keepMu` retired, the flake
 vendorHash reset, docs updated in `forms-design.md` and `reference/forms.md`.
 
+### Handoff summary (read this first if you are the successor)
+
+**State**: `feat/incantations`, ~50 commits ahead of main, everything green
+(suite, `-race`, devshell, `nix build`, crash test, live turns). The branch
+is the source of truth; nothing goes to main first.
+
+**Done**: phases 0, 1, 2, 5 complete; phase 3 partial (intent only); phase 4
+half (`CheckWritable` exists, not wired). Plus, outside the phase list: the
+IR window default, the patch window, `soft_limit_mb`, `actor_linger_ms`,
+`handle_idle_minutes`, `form_patch_window`, the sync instruments, mutex and
+block profiling, and the removal of `Kick` and two mutexes.
+
+**The three rules that must not be broken by later work**:
+
+1. **Durable before visible, with no buffer.** Reduce purely, append, fsync,
+   publish. A failed sync rejects; nothing is applied before the sync, so
+   there is nothing to roll back.
+2. **Batch durability, never semantics.** Each write is reduced against the
+   state as of its own position, or `ifVersion` stops meaning anything.
+3. **`PatchesBetween` is a VIEW.** Its safety rests on the published array
+   being append-only and capped. Anything that compacts, rewrites or hands
+   out an uncapped slice breaks it silently.
+   `TestFormPatchesBetweenIsAViewNotACopy` is the guard.
+
+**Two traps that cost me time and will cost you the same**:
+
+- `-race -count=1` passed three times on a real race. Run the store package
+  at `-count=3` under race.
+- `/tmp` is tmpfs here, so every durability benchmark and the crash test are
+  fiction on it. `TMPDIR=/var/tmp`.
+
 ### The next three things, in order
 
 1. **Correction, and it retires a task.** I claimed several times that
