@@ -463,3 +463,27 @@ plans and docs   2974 +    35 -
 The green is mostly tests and design records. Deletions that matter:
 `Form`'s write mutex and sink list, `Kick` and its six call sites,
 `keepMu`, and the buffered-durability story.
+
+#### Phase 4, first half only
+
+`internal/form/protect.go`: `CheckWritable(patch, privileged)` refuses an
+unprivileged write to a `KeySystemManaged` key. The mode has been in
+`WellKnownKeys` since it was written and had never been enforced.
+
+**It is NOT wired into the writer yet, on purpose.** The keys it protects
+(`system.cwd`, `system.outfit_version`, `system.forked_from`, `model`,
+`root`, `token_budget`, `truncation`) are written by the angelus during
+birth and by the harness per turn, and every one of those call sites needs
+the privileged path before anything starts refusing. Wiring it without that
+bricks aria creation.
+
+The order for whoever picks this up:
+
+1. Add the privileged entry point to `store.Form` (an unexported field on
+   the write, set only by in-process callers; no JSON tag anywhere near it).
+2. Find every harness write of a system-managed key and route it through
+   that entry point. `runtimeFillins`, `birthPatch`, `childBirthPatch`,
+   `forkDress` and the per-turn ephemeral keys are the ones I know of.
+3. THEN call `CheckWritable` from `reduceOne`, before the reduce.
+4. Only then consider shape validation, which wants a per-key validator and
+   the provider-keyed system schema, and which is a separate argument.
