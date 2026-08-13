@@ -138,25 +138,40 @@ remembering):
 
 **Group commit works**: per-patch cost falls 47x from one writer to 256.
 
-**Solo latency is the regression, and it is severe.** ~17 ms for one patch
-against roughly 5 µs before. A raw `fsync` on this box's `/var/tmp` measures
-**3.13 ms** (50 writes of 200 bytes), so the floor is high to begin with and
-we are paying something like five times the floor.
+**The 17.4 ms figure above is a HARNESS ARTIFACT. Do not quote it.** The
+benchmark spawns a goroutine and joins a WaitGroup per operation at
+`-benchtime 20x`, which is far too few iterations to be trusted. Direct
+measurement, same filesystem:
 
-Leads, in the order I would chase them:
+```
+append (buffered)      5.8 µs
+SyncThrough (fsync)    3.37 ms
+Trunks.Head (borrow)   3.0 µs      <- the "double borrow" lead was wrong
+ApplyForm end to end   3.16 ms
+FormState (control)    41 ns
+```
 
-1. **The form path borrows the trunk handle twice per patch**: once for
-   `Trunks.Append`, once for `Trunks.SyncChannelThrough`, and `Head()` takes
-   a lineage hold, a root borrow and `ensureCurrentTopology` each time. An
-   `AppendSynced` that does both under one borrow would halve it for the
-   solo case, with the separate sync kept for batches.
-2. **Count the syncs per patch.** If `SyncThrough` also `syncDir`s, or the
-   segment syncs more than once, that is multiples of 3 ms.
-3. **Preallocation plus `fdatasync`** (durable-forms §3.3). An append changes
-   the file size, so `fsync` and `fdatasync` cost the same; `fallocate` at
-   segment creation makes `fdatasync` the cheap one.
-4. **The IR now syncs per message too**, so a turn pays this per message.
-   Not yet measured end to end; the twelve-aria recipe will show it.
+**So a solo form patch costs exactly one fsync, and nothing else measurable.**
+The actor, the batch machinery and the handle borrow are all noise beside it.
+Against roughly 5 µs before, the regression is ~600x on a single write, and
+it is the price of the WAL being a WAL rather than a bug to find.
+
+The floor is the filesystem: a raw `fsync` of 200 bytes on this box's
+`/var/tmp` measures **3.13 ms** over 50 writes. Nothing in figaro can go
+faster than that per durable write.
+
+What can actually be done about it, in order:
+
+1. **Batch, which already works**: per-patch cost falls 47x from one writer
+   to 256, because one fsync covers the batch.
+2. **Preallocation plus `fdatasync`** (durable-forms §3.3): an append changes
+   the file size, so `fsync` and `fdatasync` cost the same today;
+   `fallocate` at segment creation makes `fdatasync` the cheap one. This is
+   the only lever that lowers the per-sync floor.
+3. **Accept it where it is already invisible.** A turn writes ten to fifty IR
+   messages, so 30 to 150 ms per turn against a provider round trip measured
+   in seconds. `fig set` at 3 ms is interactive-invisible. The path that
+   would hurt is a script doing hundreds of sequential writes.
 
 **Not yet done and important**: no before/after on the live stack, no
 `ariastress.sh` run, no twelve-aria recipe, no memory numbers. Gluck flagged
