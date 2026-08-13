@@ -39,13 +39,28 @@ sleep 1   # the fold is asynchronous and durable; the stamp names the COPY
 sleep 1
 "$BIN" send --id "$ARIA" -- "Reply with the single word: done" >/dev/null 2>&1
 
+# THE SOURCE DIES. Gluck's ruling (durable-forms §12.7b): a deleted source is
+# reported IN BAND, as a key -- system.libretto.alive goes false on a copy
+# that outlives its source, and that transition renders like any other key
+# change. The projection never learns about liveness. This is the half of the
+# ruling that had never been seen on a wire.
+"$BIN" kill "$FORM" || exit 1
+sleep 2
+"$BIN" send --id "$ARIA" -- "Reply with the single word: four" >/dev/null 2>&1
+
 REQ=$(ls -t "$ROOT"/wire/*/*.req.http 2>/dev/null | head -1)
 if [ -z "$REQ" ]; then echo "FAIL: no wire dump under $ROOT/wire"; echo "ROOT=$ROOT"; exit 1; fi
 echo "--- wire: $REQ"
 
 fail=0
-check() { # check <what> <expected: yes|no> <pattern>
-  n=$(grep -c "$3" "$REQ" 2>/dev/null || true)
+# PATTERNS ARE FIXED STRINGS (-F), deliberately. The body is JSON inside JSON,
+# so every quote arrives as \" and a natural-looking regex like '"ga"' or
+# 'exists":false' matches NOTHING. That produced two false FAILs in one
+# session, each of which cost a full cycle of chasing a product bug that did
+# not exist. A check that cannot pass is exactly as expensive as one that
+# cannot fail.
+check() { # check <what> <expected: yes|no> <fixed-string>
+  n=$(grep -cF "$3" "$REQ" 2>/dev/null || true)
   case "$2:$n" in
     yes:0) echo "FAIL  $1 (absent)"; fail=1 ;;
     no:0)  echo "ok    $1 (absent, as it must be)" ;;
@@ -54,13 +69,15 @@ check() { # check <what> <expected: yes|no> <pattern>
   esac
 }
 
-check "the study block is rendered"        yes 'system-reminder name=\\"study'
+check "the study block is rendered"        yes 'system-reminder name=\"study'
 check "the source's new value reached it"  yes 'merged'
 check "the second patch too"               yes "8b12f128"
-check "the LATER delta (phase ga)"         yes "phase.*ga"
+check "the LATER delta (phase ga)"         yes 'phase\":\"ga'
 check "the libretto's at is hidden"        no  'system.libretto.at'
 check "the libretto's refcount is hidden"  no  'system.libretto.refs'
 check "no stump name leaked into the block" no '@libretto::'
+check "the death arrives in band"          yes 'exists\":false'
+check "and nothing calls it an error"      no  'no longer exists'
 
 echo "--- the block, verbatim:"
 # BOUNDED. The unbounded version matched to the end of a 40 KB request body

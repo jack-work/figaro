@@ -14,6 +14,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/internal/store"
 )
 
 // StudyReminderTexts renders a message's studied transitions as ordered
@@ -120,12 +121,27 @@ func studyFold(fid string, patches []message.Patch) map[string]any {
 	set := map[string]json.RawMessage{}
 	removed := map[string]bool{}
 	changes := 0
+	dead := false
 	for _, p := range patches {
 		if p.IsEmpty() {
 			continue
 		}
 		changes++
 		for k, v := range p.Set {
+			// THE ONE SYSTEM KEY A READER IS OWED. A studied form's death is
+			// reported IN BAND, as a key on the copy that outlives it
+			// (durable-forms §12.7b), which is what keeps liveness out of the
+			// projection entirely. It arrives here as
+			// system.libretto.alive=false and would otherwise be dropped with
+			// the rest of the machinery -- so the ruling would be built,
+			// durable, correct, and invisible.
+			if k == store.KeyLibrettoAlive {
+				var alive bool
+				if json.Unmarshal(v, &alive) == nil && !alive {
+					dead = true
+				}
+				continue
+			}
 			// The harness's own namespace belongs to the machinery, not to a
 			// reader: the board's own renderer skips it for the same reason.
 			if strings.HasPrefix(k, "system.") {
@@ -142,10 +158,15 @@ func studyFold(fid string, patches []message.Patch) map[string]any {
 			delete(set, k)
 		}
 	}
-	if len(set) == 0 && len(removed) == 0 {
+	if len(set) == 0 && len(removed) == 0 && !dead {
 		return nil
 	}
 	body := map[string]any{"form": fid, "changes": changes}
+	if dead {
+		// The same word the old tombstone note used, without the error
+		// framing: the form is gone, the copy is not, and history renders.
+		body["exists"] = false
+	}
 	if len(set) > 0 {
 		body["set"] = set
 	}

@@ -280,3 +280,37 @@ func TestAssistantRecordDoesNotSwallowAStudyWindow(t *testing.T) {
 		t.Fatalf("the next user record folded %d patches, want 2 (versions 2 and 3): the window was swallowed", n)
 	}
 }
+
+// A DEATH IS REPORTED IN BAND (durable-forms §12.7b). The source is gone, so
+// the copy stops moving and says so; the projection never learns about
+// liveness, which is what keeps §12.5 a namespace change rather than a new
+// field on IncrementalProjection.
+//
+// It arrives as system.libretto.alive=false, and studyFold drops every
+// system.* key -- so without the one exception the ruling would be built,
+// durable, correct and INVISIBLE, which is how it was found: on a wire, with
+// the form killed and nothing said about it.
+func TestADeadSourceIsRenderedAsAFact(t *testing.T) {
+	msg := message.Message{StudyPatches: map[string][]message.Patch{
+		"@r": {{Set: map[string]json.RawMessage{
+			store.KeyLibrettoAlive: json.RawMessage(`false`),
+			store.KeyLibrettoAt:    json.RawMessage(`9`),
+		}}},
+	}}
+	joined := strings.Join(StudyReminderTexts(msg, form.Snapshot{}), "\n")
+	if !strings.Contains(joined, `"exists":false`) {
+		t.Fatalf("the death was not rendered: %q", joined)
+	}
+	if strings.Contains(joined, "system.libretto") {
+		t.Errorf("the machinery leaked with it: %q", joined)
+	}
+
+	// And a copy that is merely BOOKKEEPING renders nothing at all: `at`
+	// moves on every fold and is nobody's business.
+	quiet := message.Message{StudyPatches: map[string][]message.Patch{
+		"@r": {{Set: map[string]json.RawMessage{store.KeyLibrettoAt: json.RawMessage(`10`)}}},
+	}}
+	if got := StudyReminderTexts(quiet, form.Snapshot{}); len(got) != 0 {
+		t.Errorf("bookkeeping rendered a block: %v", got)
+	}
+}
