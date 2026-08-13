@@ -3217,3 +3217,29 @@ pre-existing studies migrated, nothing left missing, no caller waiting.
 `still-missing` is the number that matters on somebody else's machine — what
 the sweep could NOT repair, which today means a studied form whose node is
 gone from that store.
+
+## CLOSING GATE (session 3, final), all green
+
+```
+go build, go vet, go test ./... -count=1                        ok
+-race -count=3 on store, figaro, angelus, actor, provider       ok
+-race -count=8 on the libretto/study/cast tests                 ok
+FIGARO_CRASH_TEST=1 acknowledged patches survive SIGKILL        ok
+nix build .#default                                             ok
+fleet: 12 arias, study, 300 patches                             12/12
+```
+
+| | before WAL | after WAL | end s1 | end s2 | **end s3** |
+|---|---|---|---|---|---|
+| turns answered | 12/12 | 12/12 | 12/12 | 12/12 | **12/12** |
+| history build | 4.11 s | 4.98 s | 4.99 s | 5.14 s | **4.89 s** |
+| turn wall | 4.53 s | 5.49 s | 5.01 s | 5.85 s | **4.90 s** |
+| control | 0.17 s | 0.16 s | — | 0.16 s | **0.16 s** |
+| daemon PSS loaded | 56.8 M | 58.6 M | 46.5 M | 48.3 M | 51.8 M |
+| goroutines | 93 | 80 | 80 | 80 | 81 |
+
+**History build and turn wall are the best they have been since before the
+WAL**, with mandatory durability everywhere, a second durable write per patch
+on a studied form, and a libretto folding underneath. PSS is up 3.5 M on the
+fleet against session 2 — the libretto, its fold and the boot sweep's
+bookkeeping — and down 5 M against the pre-WAL baseline.
