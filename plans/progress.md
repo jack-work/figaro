@@ -1907,3 +1907,93 @@ the only interleaving worth writing.
 3. **32 MiB default**, chosen so the whole author's store (281 MB) cannot be
    held, while a busy fleet's working set can. It is a dial, and the probe
    measures the trade in ninety seconds.
+
+## The second half: a sealed segment is a file, not an open handle
+
+`figwal c07afc2` + `3780bcc`, pinned at `8c0a365f`. Gluck asked why the full
+lazy plan had been split; this is the other half, and the split is recorded
+above the numbers because the numbers justify only part of it.
+
+Opening a log opened every segment it had, and opening a segment scans the
+whole file — every frame, every CRC — to build its per-record offset index.
+Only the newest is opened now (it takes the appends and is the only one that
+can carry a torn tail); the rest are identified by NAME and opened by the
+read that lands in them, because a segment file is named for its base index,
+so segment i covers `[base_i, base_{i+1} - 1]` and routing needs no open at
+all.
+
+| a 32-segment log, 4000 records | before | after | |
+|---|---|---|---|
+| open | 5.42 ms / 2.20 MB / 9118 allocs | **0.19 ms / 73 KB / 618 allocs** | **-96%** |
+| open + read one record | 5.55 ms | **0.45 ms** | -92% |
+| open + read everything | 8.45 ms | 8.64 ms | +2% |
+
+**Deferred with the scan: the CRC check it performs.** Corruption in a
+segment nobody reads is found when somebody reads it rather than when the log
+opens. A torn TAIL is unaffected — only the active segment can have one.
+
+**Fork does not go near this.** `materializeLocked` opens everything before a
+fork plans anything, because fork is the most crash-fragile code in figwal
+and an on-demand open in the middle of a committed plan is not a trade worth
+making.
+
+### Two of my claims for it were wrong, and the measurements killed both
+
+1. **"It will cut the memory."** It moved the daemon-day figure 48.7 → 48.6
+   MiB. A per-record offset is eight bytes against payloads averaging a
+   kilobyte; the index was never the mass. It pays in TIME and in file
+   descriptors (the live daemon holds 539, one per segment of every open
+   head), and that is the whole of it.
+2. **"It will cut the 2.7 s first listing."** It did not move at all. In
+   process the listing is ~390 ms (topology and labels 302 ms, recency 84
+   ms), so the rest lives between the CLI and the daemon's list handler and
+   is unprofiled. I had written the segment scan into `reclamation.md` as the
+   cause; that note now says the opposite and names the measurement.
+
+## WHAT A DAEMON'S DAY COSTS (the before/after Gluck asked for)
+
+`internal/store/daemon_day_test.go`, env-gated against a COPY, run on the
+merge base (`d8428ee1`, old figwal) and on this branch. Identical work,
+identical head counts at each phase:
+
+| phase | base alloc / sys | **after** alloc / sys | heads |
+|---|---|---|---|
+| open | 0.7 / 7.5 | 0.7 / 11.5 | 0 = 0 |
+| topology | 118.6 / 195.2 | **48.7 / 95.2** | 217 = 217 |
+| listing (label + recency) | 118.6 / 199.2 | **48.7 / 111.2** | 217 = 217 |
+| **touching every board, decoding nothing** | **297.0 / 419.2** | **68.5 / 127.2** | 585 = 585 |
+| visiting every aria (50,793 IR entries decoded) | 395.4 / 603.1 | 326.9 / 487.1 | |
+| after evicting figaro's own caches | 123.7 / 601.6 | 55.1 / 485.6 | |
+
+**Merely LOOKING at every board — no decoding, no rendering — cost 297 MiB of
+heap and 419 MiB reserved from the OS. It now costs 68.5 and 127.** The
+visiting row is dominated by figaro's own decoded IR, which is bounded
+already and unchanged by this work; the row above it is figwal's footprint
+alone, and it is the row this changeset exists for.
+
+The last row is the honest cost of the new cache: **an idle daemon retains up
+to the segment budget** (32 MiB) where the old one retained whatever its
+heads still held. figwal's 5-minute head unload drops it (`Store.Evict` now
+releases the blocks), but the cache has no idle clock of its own — worth one,
+and it should borrow the head-unload clock rather than invent a fourth
+number.
+
+### The live fleet, measured while all this was running
+
+Gluck asked what his own daemon holds. It is `figaro 0.24.3` from nix, up
+eight hours, predating every fix here:
+
+```
+daemon pid 3168889   PSS 536.1 MB   RSS 562.0   anon 532.6   539 open fds
+                     heap alloc 429.5 MiB  inuse 445.7  sys 608.2
+                     live=4 resident=10 endpoints=107 goroutines=551
+                     ir cache 9101 rows, 44.4 MiB
+7 attached CLIs      ~25 MB PSS each (~50 MB RSS, mostly shared text)
+TOTAL                1731 MB of PSS across 33 figaro processes
+```
+
+**The "2 GB" is a FLEET, not a process**: one daemon at 536 MB, a second at
+129 MB, thirteen more between 17 and 59 MB, plus the CLIs. `GOMEMLIMIT`
+applies per process, so it never bit; the aggregate has no ceiling at all.
+429 MB of that daemon's heap against 44 MB of instrumented cache is exactly
+the shape "WHERE THE MEMORY IS" describes, on a binary from before the fix.
