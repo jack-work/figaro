@@ -279,6 +279,12 @@ type SetRequest struct {
 	// inside a value (an array element, a nested field) means reading it first,
 	// and without this the write cannot tell that the value moved underneath.
 	IfVersion uint64 `json:"if_version,omitempty"`
+	// Assert makes a removal of a key that is not there a REFUSAL rather
+	// than a no-op. A human or an agent deleting something absent has a
+	// wrong model of the world; birth dressing does not, because `-D` means
+	// "do not inherit this" about a closure that may never have held it.
+	// Absent (false) keeps the older, forgiving rule.
+	Assert bool `json:"assert,omitempty"`
 }
 
 type SetResponse struct {

@@ -38,6 +38,13 @@ func (a *Agent) Version() uint64 {
 // that durable version: the guard a read-modify-write needs, since editing
 // inside a value means reading it first.
 func (a *Agent) Set(patch form.Patch, ifVersion uint64) (set, removed []string, err error) {
+	return a.SetIntent(patch, ifVersion, false)
+}
+
+// SetIntent is Set with the removal rule named. assert refuses a removal of
+// a key that is not there; the refusal reaches the log rather than the
+// caller, because this path answers before the loop runs.
+func (a *Agent) SetIntent(patch form.Patch, ifVersion uint64, assert bool) (set, removed []string, err error) {
 	if a.form == nil {
 		return nil, nil, fmt.Errorf("set requires a form")
 	}
@@ -48,7 +55,7 @@ func (a *Agent) Set(patch form.Patch, ifVersion uint64) (set, removed []string, 
 		set = append(set, k)
 	}
 	removed = append(removed, patch.Remove...)
-	a.inbox.Send(event{typ: eventSet, setPatch: patch, setIfVersion: ifVersion})
+	a.inbox.Send(event{typ: eventSet, setPatch: patch, setIfVersion: ifVersion, setAssert: assert})
 	return set, removed, nil
 }
 

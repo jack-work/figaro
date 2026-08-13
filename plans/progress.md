@@ -255,3 +255,23 @@ Read it as:
   arias, where the decoded IR is 63 to 86 percent of the footprint.
 - The control is unchanged, which is what says the rest of the table is
   measuring the change rather than the afternoon.
+
+#### Assert reaches the user
+
+`fig state delete` / `fig unset` now refuse a key that is not there:
+
+```
+$ figaro state delete --id @0c479e41 nosuch
+error: set: jsonrpc error -32000: remove "nosuch": no such key
+```
+
+Threaded as `SetRequest.Assert` (absent means the older forgiving rule, so
+nothing else changes), through the hub's `ApplyFormEffectIntent` and the
+agent's `SetIntent`.
+
+**Known gap, deliberate**: `Agent.Set` answers BEFORE the loop runs, so on a
+LIVE aria the refusal is enforced but only reaches the daemon log, not the
+caller. Dormant nodes (hub-served) return it properly. The rule is applied
+on both paths; only the reporting differs. Phase 3's synchronous command and
+acknowledgement closes it, and until then this is the one place the two
+halves of a write disagree about anything.

@@ -136,7 +136,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, err
 		}
-		set, removed, err := a.Set(req.Patch, req.IfVersion)
+		set, removed, err := a.SetIntent(req.Patch, req.IfVersion, req.Assert)
 		if err != nil {
 			// A patch may name layers, so a set can fail the way a dressing
 			// fails: with a closure the caller can draw.

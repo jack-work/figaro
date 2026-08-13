@@ -121,8 +121,18 @@ func (c *Client) Set(ctx context.Context, patch rpc.FormPatch, ifVersion uint64)
 // reaches the writer is data. It is how `state outfit <names>` applies: the
 // same call every other dressing surface makes.
 func (c *Client) SetDressed(ctx context.Context, outfits []string, patch rpc.FormPatch, ifVersion uint64) (*rpc.SetResponse, error) {
+	return c.setWith(ctx, rpc.SetRequest{Outfits: outfits, Patch: patch, IfVersion: ifVersion})
+}
+
+// SetAsserting is Set for a caller who believes the keys it removes are
+// there: a removal of one that is not is refused rather than agreed with.
+func (c *Client) SetAsserting(ctx context.Context, patch rpc.FormPatch, ifVersion uint64) (*rpc.SetResponse, error) {
+	return c.setWith(ctx, rpc.SetRequest{Patch: patch, IfVersion: ifVersion, Assert: true})
+}
+
+func (c *Client) setWith(ctx context.Context, req rpc.SetRequest) (*rpc.SetResponse, error) {
 	var resp rpc.SetResponse
-	if err := c.call(ctx, rpc.MethodSet, rpc.SetRequest{Outfits: outfits, Patch: patch, IfVersion: ifVersion}, &resp); err != nil {
+	if err := c.call(ctx, rpc.MethodSet, req, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil

@@ -148,7 +148,9 @@ func runUnsetArgs(loaded *config.Loaded, ariaID string, args []string) {
 		fmt.Fprintln(os.Stderr, "unset: nothing to do")
 		return
 	}
-	resp := mustCallSet(loaded, ariaID, patch, ifVersion)
+	// A removal names something the caller believes is there, so an absent
+	// key is a refusal rather than a silent success.
+	resp := mustCallSetAsserting(loaded, ariaID, patch, ifVersion)
 	fmt.Fprintf(os.Stderr, "unset %s (figaro %s)\n", strings.Join(args, ", "), resp.figaroID)
 }
 
@@ -387,12 +389,24 @@ type setResult struct {
 	resp     *rpc.SetResponse
 }
 
+func mustCallSetAsserting(loaded *config.Loaded, ariaID string, patch rpc.FormPatch, ifVersion uint64) setResult {
+	return callSet(loaded, ariaID, patch, ifVersion, true)
+}
+
 func mustCallSet(loaded *config.Loaded, ariaID string, patch rpc.FormPatch, ifVersion uint64) setResult {
+	return callSet(loaded, ariaID, patch, ifVersion, false)
+}
+
+func callSet(loaded *config.Loaded, ariaID string, patch rpc.FormPatch, ifVersion uint64, assert bool) setResult {
 	var result setResult
 	WithSessionFor(loaded, ariaID, func(s *Session) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		resp, err := s.Figaro.Set(ctx, patch, ifVersion)
+		set := s.Figaro.Set
+		if assert {
+			set = s.Figaro.SetAsserting
+		}
+		resp, err := set(ctx, patch, ifVersion)
 		if err != nil {
 			die("set: %s", err)
 		}

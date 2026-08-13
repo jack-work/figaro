@@ -166,6 +166,11 @@ type Backend interface {
 	// speak about the reduced patch, not the requested one.
 	ApplyFormEffect(ariaID string, patch message.Patch, ifVersion uint64) (uint64, message.Patch, error)
 
+	// ApplyFormEffectIntent is ApplyFormEffect with the removal rule named:
+	// under Assert a removal of an absent key is refused rather than reduced
+	// away. See store.Intent.
+	ApplyFormEffectIntent(ariaID string, patch message.Patch, ifVersion uint64, intent Intent) (uint64, message.Patch, error)
+
 	// ApplyForm appends a state patch to the form channel,
 	// keyed to the next IR LT (the transition the next message carries).
 	ApplyForm(ariaID string, patch message.Patch) (version uint64, err error)

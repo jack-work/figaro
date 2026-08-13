@@ -11,6 +11,7 @@ import (
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/internal/store"
 )
 
 // hubs is the daemon's set of aria endpoints, one per aria that has been
@@ -172,7 +173,11 @@ func (h *handlers) writeForHub(id, method string, params json.RawMessage) (any, 
 	if req.Patch.IsEmpty() {
 		return rpc.SetResponse{OK: true}, true, nil
 	}
-	version, applied, err := h.angelus.Backend.ApplyFormEffect(id, req.Patch, req.IfVersion)
+	intent := store.Ensure
+	if req.Assert {
+		intent = store.Assert
+	}
+	version, applied, err := h.angelus.Backend.ApplyFormEffectIntent(id, req.Patch, req.IfVersion, intent)
 	if err != nil {
 		return nil, true, err
 	}
