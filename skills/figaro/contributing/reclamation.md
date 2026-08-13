@@ -194,6 +194,7 @@ ir_window              = 0    # row-count safety, floored at 64
 soft_limit_mb          = 2048 # the daemon's heap ceiling; 0 = none
 actor_linger_ms        = 2000 # how long a form's writer waits before leaving
 handle_idle_minutes    = 0    # figwal head unload; 0 = figwal's default (5m)
+form_patch_window      = 2048 # resident decoded patches per form; 0 = all
 ```
 
 **`ir_window_mb` defaults to 4 now**, not unbounded. The decoded IR is 63 to
@@ -205,6 +206,15 @@ approaches, so a high one leaves the runtime no reason to hand memory back:
 a live daemon measured 115 MB allocated against 416 MB of `heap_sys` under
 the 2 GiB default. Lowering it is the one-knob answer to a daemon holding
 too much, paid for in GC cycles. `GOMEMLIMIT` in the environment always wins.
+
+**`form_patch_window` is the store's last unbounded retention, closed.** A
+form kept every patch it ever took, decoded, for the life of the process.
+Below the window `PatchesBetween` re-reads from the log, which costs a walk
+and happens only on a cold retranslate; the hot path is still a zero-copy
+view. Trimming COPIES the tail rather than re-slicing, because the published
+array is shared by construction and a header into the middle pins all of it,
+and it copies only across a slack allowance, because copying per write is
+the O(history) cost the view exists to avoid.
 
 **Three clocks, one policy.** `dormant_after_minutes` evicts agents and their
 caches, `handle_idle_minutes` unloads figwal's in-RAM heads, and
