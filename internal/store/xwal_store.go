@@ -1486,3 +1486,10 @@ func (s *XwalStore) formTail(id string) (uint64, bool) {
 	}
 	return 0, false
 }
+
+// HandleIdleForTest and the two beside it expose the ENFORCEMENT POINTS to
+// the settings test in internal/cli. They read the package variables the
+// store consults when it opens a handle, builds a form, or trims one, which
+// is the whole point: a config test that stops at the accessor cannot tell a
+// wired knob from an unwired one.
+func HandleIdleForTest() time.Duration { return time.Duration(handleIdle.Load()) }

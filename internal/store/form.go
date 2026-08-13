@@ -681,3 +681,9 @@ func (l *xwalFormLog) RangePatches(from, upTo uint64, fn func(uint64, []byte) er
 	}
 	return nil
 }
+
+// FormLingerForTest and PatchWindowForTest: see HandleIdleForTest.
+func FormLingerForTest() time.Duration { return time.Duration(formLinger.Load()) }
+
+// PatchWindowForTest is the resident patch bound the writer trims against.
+func PatchWindowForTest() int { return int(patchWindow.Load()) }

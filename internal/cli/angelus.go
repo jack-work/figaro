@@ -79,6 +79,39 @@ func keepHushAlive(ctx context.Context) {
 // GOMEMLIMIT in the environment always wins: Go reads it at startup, and a
 // user who has set one has an opinion worth more than a default.
 
+// applyStoreSettings hands the store its clocks and bounds BEFORE the backend
+// opens: the store reads its idle window at open, and a form built earlier
+// would keep the old linger for the daemon's life.
+//
+// Extracted from the boot path so the trip from a config FILE to the place
+// each value is enforced can be tested. Two knobs in this project have
+// shipped configured-but-unwired (the IR window defaulted to off, figwal's
+// IdleUnload read nothing), and neither was catchable by a parser test.
+func applyStoreSettings(loaded *config.Loaded) {
+	store.SetFormLinger(loaded.ActorLinger())
+	store.SetHandleIdle(loaded.HandleIdle())
+	store.SetPatchWindow(loaded.FormPatchWindow())
+}
+
+// applyCacheSettings bounds the per-aria caches. It must run before any aria
+// is opened, or the first handles built are unbounded for the daemon's whole
+// life. Optional interface, for the same reason the other cache policies are:
+// a backend without a window should not have to pretend it has one.
+func applyCacheSettings(loaded *config.Loaded, backend any) bool {
+	w, ok := backend.(interface {
+		SetIRWindow(int)
+		SetIRBudget(int)
+		SetTranslationBudget(int)
+	})
+	if !ok {
+		return false
+	}
+	w.SetIRWindow(loaded.IRWindow())
+	w.SetIRBudget(loaded.IRWindowBytes())
+	w.SetTranslationBudget(loaded.TranslationWindowBytes())
+	return true
+}
+
 func armMemoryLimit(loaded *config.Loaded) {
 	if os.Getenv("GOMEMLIMIT") != "" {
 		return
@@ -114,11 +147,7 @@ func runAngelus() {
 		defer otelShutdown(context.Background())
 	}
 
-	// BEFORE the backend opens: the store reads its idle window at open, and
-	// a form built earlier would keep the old linger for the daemon's life.
-	store.SetFormLinger(loaded.ActorLinger())
-	store.SetHandleIdle(loaded.HandleIdle())
-	store.SetPatchWindow(loaded.FormPatchWindow())
+	applyStoreSettings(loaded)
 
 	backend, err := ariaBackend(loaded)
 	if err != nil {
@@ -129,19 +158,7 @@ func runAngelus() {
 
 	armMemoryLimit(loaded)
 
-	// The window has to be set before any aria is opened, or the first handles
-	// built are unbounded for the daemon's whole life. Optional interface, for
-	// the same reason the other cache policies are: a backend without a window
-	// should not have to pretend it has one.
-	if w, ok := backend.(interface {
-		SetIRWindow(int)
-		SetIRBudget(int)
-		SetTranslationBudget(int)
-	}); ok {
-		w.SetIRWindow(loaded.IRWindow())
-		w.SetIRBudget(loaded.IRWindowBytes())
-		w.SetTranslationBudget(loaded.TranslationWindowBytes())
-	}
+	applyCacheSettings(loaded, backend)
 
 	a := angelus.New(angelus.Config{
 		RuntimeDir: runtimeDir,

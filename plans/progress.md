@@ -1575,3 +1575,26 @@ column goes to `-`), a second delete of the same id errors cleanly,
 
 **Pushing to origin is Gluck's call.** The merge is local; the PR stays open
 until he says otherwise.
+
+### The config test the plan asked for, and it catches an unwired knob
+
+durable-forms §9 asks for "a config supplying all four, read through the
+loader, asserted at each enforcement point, not at the parser". It did not
+exist. It does now, and it needed a small extraction to be possible: the
+daemon set its knobs inline in `runAngelus`, so nothing could test the trip
+from a config FILE to the place a value is enforced.
+
+`applyStoreSettings` and `applyCacheSettings` are that boot step, extracted.
+`TestMemorySettingsReachTheirEnforcementPoints` writes a real `config.toml`
+with all six memory knobs, loads it through `config.Load`, applies them the
+way the daemon does, and asserts the package variables the store consults
+when it opens a handle, builds a form, or trims one.
+
+**Proved red before green**: unwire `SetPatchWindow` and it fails with
+`form patch window at the enforcement point = 2048, want 64`. That is the
+class of bug this project has shipped twice — the IR window defaulted to off,
+figwal's `IdleUnload` read nothing — and a parser test cannot catch either,
+because the parse was never the broken half.
+
+`HandleIdleForTest`, `FormLingerForTest` and `PatchWindowForTest` exist only
+to let the test read those enforcement points from another package.
