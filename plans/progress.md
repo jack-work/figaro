@@ -355,7 +355,7 @@ Run it against real disk or it proves nothing: `TMPDIR=/var/tmp`.
 | 3 command/event/ack | **partial**: intent (`assert`/`ensure`) is wired end to end; command, event, ack, session and seq are not |
 | 4 schema validation | not started |
 | 5 `SubscribeFrom` | **done**, and reachable through `Backend.SubscribeForm`; no consumer yet (the libretto is its customer, and `form listen` already does register-then-read on its own) |
-| 6 tombstones and leases | not started |
+| 6 tombstones and leases | **tombstone done** (`Form.Tombstone`, `system.tombstone`, sealing, idempotent, survives reopen, rides the ordinary subscription stream). Leases not started, and the delete path does not call it yet. |
 | 7 retention policy | not started |
 | 8 topology form | not started |
 | 9 derived forms, libretto | not started |
@@ -803,3 +803,21 @@ The one thing a reader should take away: **figaro's writes are durable
 before they are visible, and that cost one fsync per record, recovered
 under load by batching and paid for in memory by two new bounds.** The
 fleet ends 12 MB lighter in PSS than it began.
+
+#### The tombstone
+
+`Form.Tombstone(reason)` writes `system.tombstone` as an ordinary privileged
+patch and seals the form. Three properties, each tested:
+
+- **It is a RECORD.** Subscribers hear the death through the stream they
+  already read, and a replay reproduces it. A derived form that must be
+  rebuildable from the log cannot learn about a deletion nobody wrote down.
+- **It is idempotent.** A delete retried after a crash does not have to know
+  whether it got there the first time.
+- **It survives a reopen.** The seal is rebuilt from the published state at
+  open, so a dead form stays dead without anyone re-declaring it.
+
+**Not wired into the delete path yet**, deliberately: `RemoveLeaf` is the
+crash-ordered boundary repair (durable-forms §2) and putting a write in the
+middle of it wants its own sitting. The remaining half of phase 6 is the
+lease registry, which is in-memory and best-effort by ruling.

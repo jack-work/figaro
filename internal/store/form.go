@@ -65,6 +65,10 @@ type Form struct {
 	// sinks and closed are drainer-owned except for the CAS in OnCommit:
 	// an immutable slice behind a pointer, so emitting takes no lock.
 	sinks  atomic.Pointer[[]func(uint64, message.Patch)]
+	// sealed is set by a tombstone and rebuilt from the published state at
+	// open, so a dead form stays dead across a restart without anyone
+	// re-declaring it.
+	sealed atomic.Bool
 	subs   atomic.Pointer[[]*Subscription]
 	closed atomic.Bool
 }
@@ -151,6 +155,9 @@ func OpenForm(log FormLog) (*Form, error) {
 		return nil, err
 	}
 	f.state.Store(st)
+	if st.snap.Has(TombstoneKey) {
+		f.sealed.Store(true)
+	}
 	tick := make(chan struct{})
 	f.tick.Store(&tick)
 	empty := []func(uint64, message.Patch){}
@@ -490,6 +497,11 @@ type versionedApplied struct {
 func (f *Form) reduceOne(st *formState, w *formWrite) (*formState, formResult) {
 	if f.closed.Load() {
 		return nil, formResult{err: fmt.Errorf("form is closed")}
+	}
+	// A tombstone is final. The one write allowed past it is the tombstone
+	// itself, which Tombstone makes idempotent rather than repeatable.
+	if f.sealed.Load() {
+		return nil, formResult{version: st.version, err: errSealed}
 	}
 	if w.ifVersion != 0 && st.version != w.ifVersion {
 		return nil, formResult{err: fmt.Errorf(

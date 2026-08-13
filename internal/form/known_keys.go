@@ -71,6 +71,7 @@ func WellKnownKeys() []KeyDoc {
 
 		{Key: "system.cwd", Short: "Canonical working directory (set at create time)", Mode: KeySystemManaged},
 		{Key: "system.forked_from", Short: "The trunk this branch was forked from (stamped at birth)", Mode: KeySystemManaged},
+		{Key: "system.tombstone", Short: "Set when a form is deleted: the record subscribers hear the death through, after which the form is sealed", Mode: KeySystemManaged},
 		{Key: "model", Short: "Active model ID", Mode: KeySystemManaged},
 		{Key: "root", Short: "Project root path", Mode: KeySystemManaged},
 		{Key: "token_budget", Short: "Context window usage indicator", Mode: KeySystemManaged},
