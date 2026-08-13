@@ -1351,3 +1351,36 @@ here first.
 | 8 topology form | **done**, live-validated, `internal/trunk` deleted |
 | 9 libretto | not started; §12.2.2 records a design bug found before it was built |
 | 10 API refactor | not started |
+
+### The OUTFIT column stops re-opening forms
+
+A memo for the label, invalidated by any write that names an outfit key,
+registered on the form's commit sink where it is OPENED — so every writer
+passes it: the hub, the agent's own loop, a birth dressing, an outfit fold.
+The board stays the only source of truth; this is a cache of it with a
+complete invalidation, not a second copy on disk.
+
+**The cycle it breaks.** A listing reads a label per row, which opens a Form,
+whose replay opens the node, which figwal answers by materializing the whole
+channel. A form is then evicted for idleness at 15 minutes, and the next
+listing opens it again. A status line on a timer therefore cycles the store
+through memory forever. Measured on the real-store copy:
+
+```
+evict every form, then list again:
+  before   209 forms re-opened
+  after      0 forms re-opened      (resident_form_patches 0, heads unchanged)
+```
+
+**What it does NOT fix, said plainly**: the FIRST listing still costs +114
+MiB, and that arrives on the topology build rather than on the labels. Two
+instruments disagree about which call triggers it — the daemon's own heap
+profile says `buildOwnSnapshot` under `handlers.list`, and the in-test
+`ReadMemStats` deltas put it on `Conversations()` — and I have already been
+wrong once by trusting the coarse one. Whoever takes it next should isolate
+the topology build under a profile rather than a delta.
+
+**A bug in my own instrument, since it wasted three runs**: `HeapAlloc` can
+FALL between two readings when a GC collects more than the step allocated,
+and an unsigned subtraction renders that as 17592186044416 MiB. The helper
+now returns `int64` and prints signed deltas.

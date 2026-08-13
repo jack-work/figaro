@@ -28,12 +28,17 @@ func TestListingCost(t *testing.T) {
 	}
 	defer be.Close()
 
-	heap := func() uint64 {
+	// int64, and signed deltas: HeapAlloc can fall between two readings (a GC
+	// collects more than the step allocated), and an unsigned subtraction
+	// turns that into 17592186044416 MiB of nonsense. I printed exactly that
+	// for three runs before noticing.
+	heap := func() int64 {
 		runtime.GC()
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
-		return m.HeapAlloc
+		return int64(m.HeapAlloc)
 	}
+	mib := func(d int64) float64 { return float64(d) / (1 << 20) }
 	before := heap()
 	light := be.Store().listTrunks()
 	afterFirstScan := heap()
@@ -43,11 +48,11 @@ func TestListingCost(t *testing.T) {
 	afterTopology := heap()
 	t.Logf("trunks=%d", len(light))
 	t.Logf("first ListLight:  %+.1f MiB   (index hydration, retained across a GC)",
-		float64(afterFirstScan-before)/(1<<20))
+		mib(afterFirstScan-before))
 	t.Logf("second ListLight: %+.1f MiB   (what a repeated `fig ls` costs)",
-		float64(afterSecondScan-afterFirstScan)/(1<<20))
+		mib(afterSecondScan-afterFirstScan))
 	t.Logf("topology build:   %+.1f MiB",
-		float64(afterTopology-afterSecondScan)/(1<<20))
+		mib(afterTopology-afterSecondScan))
 	// This is what a listing does per row.
 	for i := range rows {
 		be.label(&rows[i])
@@ -58,10 +63,27 @@ func TestListingCost(t *testing.T) {
 	forms := len(be.forms)
 	be.mu.Unlock()
 
+	// THE STEADY STATE, which is what a status line on a timer produces:
+	// forms evicted for idleness, then a listing. Before the label memo, the
+	// second listing re-opened every form and re-hydrated every node.
+	be.EvictIdle(map[string]bool{}, 0)
+	evicted := heap()
+	rows2 := be.Conversations()
+	for i := range rows2 {
+		be.label(&rows2[i])
+	}
+	afterSecond := heap()
+	be.mu.Lock()
+	forms2 := len(be.forms)
+	be.mu.Unlock()
+	t.Logf("after evicting every form: %.1f MiB heap", mib(evicted))
+	t.Logf("SECOND listing:   %+.1f MiB  (%d forms re-opened, loaded heads %d)",
+		mib(afterSecond-evicted), forms2, be.Store().LoadedHeads())
+
 	t.Logf("rows=%d", len(rows))
-	t.Logf("topology total: %+.1f MiB", float64(afterTopology-before)/(1<<20))
+	t.Logf("topology total: %+.1f MiB", mib(afterTopology-before))
 	t.Logf("labels:         %+.1f MiB  (%d forms now resident)",
-		float64(afterLabels-afterTopology)/(1<<20), forms)
+		mib(afterLabels-afterTopology), forms)
 	t.Logf("resident form patches: %d", be.ResidentFormPatches())
-	t.Logf("per form: %.1f KiB", float64(afterLabels-afterTopology)/float64(max(forms, 1))/1024)
+	t.Logf("per form: %.1f KiB", mib(afterLabels-afterTopology)*1024/float64(max(forms, 1)))
 }

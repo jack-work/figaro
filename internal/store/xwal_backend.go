@@ -246,6 +246,15 @@ func (b *XwalBackend) form(ariaID string) (*Form, error) {
 	if err != nil {
 		return nil, err
 	}
+	// One invalidation point for the label memo, registered where the form is
+	// opened, so EVERY writer passes it: the hub, the agent's own loop, a
+	// birth dressing, an outfit fold.
+	opened.OnCommit(func(_ uint64, patch message.Patch) {
+		if namesOutfit(patch) {
+			b.labelChanged(ariaID)
+		}
+	})
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if existing := b.forms[ariaID]; existing != nil {
@@ -254,6 +263,22 @@ func (b *XwalBackend) form(ariaID string) (*Form, error) {
 	}
 	b.forms[ariaID] = opened
 	return opened, nil
+}
+
+// namesOutfit reports whether a patch could change what the OUTFIT column
+// shows. Four keys, checked on a patch that is usually one key wide.
+func namesOutfit(patch message.Patch) bool {
+	for _, k := range []string{keyOutfitName, keyOutfitVer, keyLegacyName, keyLegacyVer} {
+		if _, ok := patch.Set[k]; ok {
+			return true
+		}
+		for _, r := range patch.Remove {
+			if r == k {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // WatchForm registers a sink for every patch committed to an aria's form. It
@@ -478,19 +503,55 @@ func (b *XwalBackend) label(n *NodeView) {
 // copying its inherited prefix into its own channel, renumbering its form
 // versions, and every IR record's cursor stamp would then point at the wrong
 // patch. The old shape reads fine; it just stops being minted.
+// labelOf answers the listing's OUTFIT column.
+//
+// THE MEMO IS THE POINT, for a node with no stump. Reading the label off the
+// board opens the Form, whose replay opens the NODE, and figwal answers that
+// by materializing the node's whole channel in memory
+// (log.buildOwnSnapshot). A listing does it per row, and a form evicted for
+// idleness is re-opened by the next listing, so a status line on a timer
+// cycles the whole store through memory forever. Measured: one `fig ls` on a
+// 515-aria store, 95 MB retained, with zero arias resident by figaro's own
+// count.
+//
+// So the label outlives the form it came from, and every write to that
+// aria's board drops it (labelChanged). The board is still the only source
+// of truth; this is a cache of it with a complete invalidation, not a second
+// copy of it on disk.
 func (b *XwalBackend) labelOf(n *NodeView) outfitLabel {
 	if n.Stump != "" {
 		return b.stumpLabel(n.Stump)
+	}
+	b.mu.Lock()
+	l, ok := b.labels[n.ID]
+	b.mu.Unlock()
+	if ok {
+		return l
 	}
 	snap, err := b.FormState(n.ID)
 	if err != nil {
 		return outfitLabel{}
 	}
-	l := outfitLabel{name: snapString(snap, keyOutfitName), version: snapString(snap, keyOutfitVer)}
+	l = outfitLabel{name: snapString(snap, keyOutfitName), version: snapString(snap, keyOutfitVer)}
 	if l.name == "" {
 		l.name, l.version = snapString(snap, keyLegacyName), snapString(snap, keyLegacyVer)
 	}
+	b.mu.Lock()
+	if b.labels == nil {
+		b.labels = map[string]outfitLabel{}
+	}
+	b.labels[n.ID] = l
+	b.mu.Unlock()
 	return l
+}
+
+// labelChanged drops a memoized label. Every write to a board goes through
+// this backend, so this is the whole invalidation: an outfit fold, a birth
+// dressing, or a hand-written key all pass here.
+func (b *XwalBackend) labelChanged(ariaID string) {
+	b.mu.Lock()
+	delete(b.labels, ariaID)
+	b.mu.Unlock()
 }
 
 // stumpLabel reads a stump's name and version out of the birth patch it wrote,

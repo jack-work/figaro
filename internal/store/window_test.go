@@ -291,3 +291,53 @@ func TestTranslationBudgetReachesTheCache(t *testing.T) {
 		t.Fatalf("read below the window returned %d of 40", len(all))
 	}
 }
+
+// The OUTFIT column's memo outlives the form it came from, because reading a
+// label opens a form, which hydrates a whole node in figwal. It must still be
+// CORRECT: a write that changes the outfit has to drop it.
+func TestLabelMemoIsInvalidatedByAWrite(t *testing.T) {
+	be, err := NewXwalBackend(t.TempDir(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer be.Close()
+	outfit, err := be.CreateOutfit("first", patchSet(map[string]string{"system.model": "m"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := be.CreateConversation(outfit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := be.ApplyForm(id, patchSet(map[string]string{
+		"system.outfit_name": "first", "system.outfit_version": "v1",
+	})); err != nil {
+		t.Fatal(err)
+	}
+	n := NodeView{ID: id}
+	be.label(&n)
+	if n.Outfit != "first" {
+		t.Fatalf("label = %q, want first", n.Outfit)
+	}
+	if _, err := be.ApplyForm(id, patchSet(map[string]string{
+		"system.outfit_name": "second", "system.outfit_version": "v2",
+	})); err != nil {
+		t.Fatal(err)
+	}
+	n2 := NodeView{ID: id}
+	be.label(&n2)
+	if n2.Outfit != "second" || n2.Version != "v2" {
+		t.Fatalf("label after a redress = %q/%q, want second/v2: the memo went stale",
+			n2.Outfit, n2.Version)
+	}
+	// A write that names no outfit key must not cost the memo.
+	if _, err := be.ApplyForm(id, patchSet(map[string]string{"brief": "x"})); err != nil {
+		t.Fatal(err)
+	}
+	be.mu.Lock()
+	_, cached := be.labels[id]
+	be.mu.Unlock()
+	if !cached {
+		t.Fatal("an unrelated write dropped the memo: the listing pays for every patch")
+	}
+}
