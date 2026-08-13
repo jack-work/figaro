@@ -216,8 +216,30 @@ func (f *Form) Snapshot() (form.Snapshot, uint64) {
 	return st.snap, st.version
 }
 
-// Version is the durable index of the last patch applied.
-func (f *Form) Version() uint64 { return f.state.Load().version }
+// Read is the published pair: the state and the version it was published AT,
+// from one atomic load, as one value.
+//
+// It exists because the pair is the unit of correctness and two accessors
+// were an invitation. Every optimistic read-modify-write in this codebase
+// computes from a state and then quotes a version to a conditional apply; if
+// those come from separate loads, a writer landing between them yields a pair
+// that NEVER EXISTED, the guard passes, and the write silently overwrites a
+// change it never saw. That is unrecoverable for a board -- the board is what
+// the reconciliation sweep recomputes FROM.
+//
+// So `Version()` is gone. A caller that wants the number takes the pair and
+// reads its field, which costs nothing and cannot be split.
+func (f *Form) Read() FormAt {
+	st := f.state.Load()
+	return FormAt{Snapshot: st.snap, Version: st.version}
+}
+
+// FormAt is a form's state together with the version it was published at.
+// The zero value is an empty form at version 0.
+type FormAt struct {
+	Snapshot form.Snapshot
+	Version  uint64
+}
 
 // PatchesBetween returns the published patches in the absolute range
 // (after, upTo], as a VIEW on the published state's array: no copy.

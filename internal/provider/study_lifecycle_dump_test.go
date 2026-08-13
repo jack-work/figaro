@@ -37,7 +37,7 @@ func TestStudyLifecycleDump(t *testing.T) {
 	// The form's life before anyone watches it.
 	set(map[string]string{"brief": "ship the thing", "owner": "gluck"})
 	set(map[string]string{"status": "open"})
-	v0 := f.Version()
+	v0 := f.Read().Version
 
 	fid := "@abc123"
 	acc := &memAccessor{f: f}
@@ -56,13 +56,13 @@ func TestStudyLifecycleDump(t *testing.T) {
 	set(map[string]string{"status": "merged", "sha": "8b12f128"})
 	_, _ = log.Append(store.Entry[message.Message]{
 		Payload:       message.Message{Role: message.RoleInput},
-		StudyVersions: map[string]uint64{fid: f.Version()},
+		StudyVersions: map[string]uint64{fid: f.Read().Version},
 	})
 
 	// 3. THE FORM DOES NOT MOVE.
 	_, _ = log.Append(store.Entry[message.Message]{
 		Payload:       message.Message{Role: message.RoleInput},
-		StudyVersions: map[string]uint64{fid: f.Version()},
+		StudyVersions: map[string]uint64{fid: f.Read().Version},
 	})
 
 	// 4. A KEY IS REMOVED.
@@ -71,7 +71,7 @@ func TestStudyLifecycleDump(t *testing.T) {
 	}
 	_, _ = log.Append(store.Entry[message.Message]{
 		Payload:       message.Message{Role: message.RoleInput},
-		StudyVersions: map[string]uint64{fid: f.Version()},
+		StudyVersions: map[string]uint64{fid: f.Read().Version},
 	})
 
 	// 5. THE FORM CEASES TO EXIST while observed: stamped, no accessor.

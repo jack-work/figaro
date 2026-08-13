@@ -360,13 +360,13 @@ func (b *XwalBackend) setStudies(observerID string, ids []string, ifVersion uint
 // studiesAndVersion reads the declared set together with the version it was
 // read at, which is what makes the write above a compare-and-set.
 func (b *XwalBackend) studiesAndVersion(observerID string) ([]string, uint64, error) {
-	snap, err := b.FormState(observerID)
+	// ONE atomic load. Reading the set and the version separately hands back
+	// a pair that never existed, and the caller then writes a study set
+	// computed from the old one while quoting the new version -- so the
+	// guard passes and another aria's declaration is overwritten.
+	at, err := b.FormAt(observerID)
 	if err != nil {
 		return nil, 0, err
 	}
-	version, err := b.FormVersion(observerID)
-	if err != nil {
-		return nil, 0, err
-	}
-	return studiesOf(snap), version, nil
+	return studiesOf(at.Snapshot), at.Version, nil
 }

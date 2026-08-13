@@ -138,7 +138,7 @@ func TestLibrettoFollowsThePatchesAfterIt(t *testing.T) {
 		return got == "v19"
 	})
 	// The cursor is the SOURCE's version, and it must not run ahead of it.
-	if at, srcVersion := lib.At(), src.Version(); at > srcVersion {
+	if at, srcVersion := lib.At(), src.Read().Version; at > srcVersion {
 		t.Fatalf("libretto cursor %d is ahead of the source at %d", at, srcVersion)
 	}
 	// A removal is a fold too, not just a set.

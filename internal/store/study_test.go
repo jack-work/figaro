@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/jack-work/figaro/internal/message"
@@ -697,5 +698,58 @@ func TestKindWordNamesWhatWasAimedAt(t *testing.T) {
 	}
 	if got := KindWord("conversation"); got != "figaro, not an unbound form" {
 		t.Errorf("aria: %q", got)
+	}
+}
+
+// A PAIR THAT EXISTED. Every optimistic read-modify-write in this package
+// quotes a version alongside a value read from the same form; if the two come
+// from separate loads, a writer landing between them hands back a pair that
+// never existed, and the guarded apply then passes while overwriting a change
+// it never saw.
+//
+// The board is the case that matters: `system.studies` is edited this way,
+// and unlike a refcount there is no sweep that can recompute a board -- the
+// board is what the sweep recomputes FROM.
+func TestFormAtIsAPairThatExisted(t *testing.T) {
+	be, _, _ := librettoFixture(t)
+	aria, _, err := be.ForkWith("", 0, patchOf(t, map[string]string{"aria_id": `"a1"`}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A writer hammering the same board while a reader takes pairs: every
+	// pair must be self-consistent, which here means the version is the one
+	// at which that exact value was published.
+	stop := make(chan struct{})
+	go func() {
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			_, _ = be.ApplyForm(aria, patchOf(t, map[string]string{"n": fmt.Sprintf("%d", i)}))
+		}
+	}()
+	defer close(stop)
+
+	for i := 0; i < 200; i++ {
+		at, err := be.FormAt(aria)
+		if err != nil {
+			t.Fatal(err)
+		}
+		snap, version := at.Snapshot, at.Version
+		// The value at that version is what a conditional write would be
+		// guarding: re-reading the same version must give the same value.
+		again, err := be.FormPatchesBetween(aria, version, version)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(again) != 0 {
+			t.Fatalf("(v, v] is not empty at version %d", version)
+		}
+		if _, ok := snap.Get("aria_id"); !ok {
+			t.Fatalf("the snapshot at version %d is not this board", version)
+		}
 	}
 }

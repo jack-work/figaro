@@ -117,7 +117,7 @@ func TestBatchPreservesIfVersion(t *testing.T) {
 	if _, err := f.Apply(kv("seed", "0"), 0); err != nil {
 		t.Fatal(err)
 	}
-	v0 := f.Version()
+	v0 := f.Read().Version
 	var okCount, movedCount atomic.Int64
 	var wg sync.WaitGroup
 	for i := 0; i < 2; i++ {
@@ -147,7 +147,7 @@ func TestNoopIsAnswered(t *testing.T) {
 	if _, err := f.Apply(kv("a", "1"), 0); err != nil {
 		t.Fatal(err)
 	}
-	v := f.Version()
+	v := f.Read().Version
 	version, applied, err := f.ApplyEffect(kv("a", "1"), 0)
 	if err != nil {
 		t.Fatalf("a redundant set errored: %v", err)
@@ -188,7 +188,7 @@ func TestRemovalIntent(t *testing.T) {
 	if _, err := f.Apply(kv("here", "1"), 0); err != nil {
 		t.Fatal(err)
 	}
-	v := f.Version()
+	v := f.Read().Version
 
 	rm := message.Patch{Remove: []string{"absent"}}
 	if _, _, err := f.ApplyEffectIntent(rm, 0, Ensure); err != nil {
@@ -197,7 +197,7 @@ func TestRemovalIntent(t *testing.T) {
 	if _, _, err := f.ApplyEffectIntent(rm, 0, Assert); err == nil {
 		t.Fatal("assert must refuse a removal of a key that is not there")
 	}
-	if f.Version() != v {
+	if f.Read().Version != v {
 		t.Fatal("a refusal moved the version")
 	}
 

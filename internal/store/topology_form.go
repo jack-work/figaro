@@ -190,7 +190,7 @@ func (t *TopologyTree) Edges() map[string]string {
 
 // Rev is the form's version: it moves on every landed edit, which is exactly
 // what a listing's snapshot check wants.
-func (t *TopologyTree) Rev() uint64 { return t.form.Version() }
+func (t *TopologyTree) Rev() uint64 { return t.form.Read().Version }
 
 func (t *TopologyTree) Parent(id string) (string, bool) {
 	snap, _ := t.form.Snapshot()

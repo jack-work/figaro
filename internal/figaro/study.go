@@ -168,6 +168,26 @@ func (a *Agent) declareStudy(formID string, drop bool) ([]string, bool, error) {
 	return studies, changed, nil
 }
 
+// boardAndVersion reads the board and its version together where the backend
+// can answer both from one atomic load, and falls back to the mirror plus a
+// round trip where it cannot (an ephemeral aria, whose board has one writer
+// anyway).
+func (a *Agent) boardAt() store.FormAt {
+	if pv, ok := a.backend.(pairedFormReader); ok {
+		if at, err := pv.FormAt(a.id); err == nil {
+			return at
+		}
+	}
+	return store.FormAt{Snapshot: a.form.Snapshot(), Version: a.Version()}
+}
+
+// pairedFormReader is a backend that can answer the pair from one load.
+// Optional, because the in-memory doubles cannot all grow a method -- and an
+// ephemeral board has one writer, so the split cannot hurt there.
+type pairedFormReader interface {
+	FormAt(id string) (store.FormAt, error)
+}
+
 // studyBackend is the store's two-participant write, as an optional
 // interface: an ephemeral backend has no librettos and must not pretend.
 type studyBackend interface {
@@ -221,9 +241,15 @@ func (a *Agent) writeStudyMark(mark *message.StudyMark) {
 // changed reports whether the edit altered membership.
 func (a *Agent) patchStudies(edit func([]string) []string) ([]string, bool, error) {
 	for attempt := 0; attempt < 5; attempt++ {
-		snap := a.form.Snapshot()
-		version := a.Version()
-		before := studiesFromSnapshot(snap)
+		// The state and the version must come from ONE read, and from the
+		// same object. This used to take the set from the agent's in-memory
+		// MIRROR and the version from the store -- two different objects, so
+		// they could disagree without a race at all, and the conditional
+		// apply would then pass its guard while overwriting a declaration it
+		// had never seen. A lost study set is not repairable by the sweep:
+		// the board is what the sweep recomputes FROM.
+		at := a.boardAt()
+		before := studiesFromSnapshot(at.Snapshot)
 		ids := edit(append([]string(nil), before...))
 		if ids == nil {
 			ids = []string{}
@@ -234,7 +260,7 @@ func (a *Agent) patchStudies(edit func([]string) []string) ([]string, bool, erro
 			return nil, false, err
 		}
 		patch := form.Patch{Set: map[string]json.RawMessage{studiesKey: b}}
-		if _, err := a.backend.ApplyFormIf(a.id, patch, version); err != nil {
+		if _, err := a.backend.ApplyFormIf(a.id, patch, at.Version); err != nil {
 			if errors.Is(err, store.ErrFormMoved) {
 				continue // the board moved; re-read and retry
 			}

@@ -65,7 +65,7 @@ func formWithPatches(t testing.TB, n int) *Form {
 func TestFormPatchesBetweenMatchesOldWalk(t *testing.T) {
 	const n = 64
 	f := formWithPatches(t, n)
-	version := f.Version()
+	version := f.Read().Version
 
 	for after := uint64(0); after <= version+2; after++ {
 		for upTo := uint64(0); upTo <= version+2; upTo++ {
@@ -122,7 +122,7 @@ func TestFormPatchesBetweenCostIsWindowNotHistory(t *testing.T) {
 	var last float64
 	for _, history := range []int{100, 1000, 10000} {
 		f := formWithPatches(t, history)
-		version := f.Version()
+		version := f.Read().Version
 		allocs := testing.AllocsPerRun(200, func() {
 			if got := f.PatchesBetween(version-1, version); len(got) != 1 {
 				t.Fatalf("history %d: want 1 patch, got %d", history, len(got))
@@ -167,7 +167,7 @@ func TestFormPatchesBetweenUnderConcurrentWrites(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 2000; j++ {
-				v := f.Version()
+				v := f.Read().Version
 				for _, p := range f.PatchesBetween(0, v) {
 					if p.Version > v {
 						t.Errorf("range leaked a patch past its upper bound: %d > %d", p.Version, v)
@@ -214,7 +214,7 @@ func TestPatchesBelowTheWindowComeFromTheLog(t *testing.T) {
 	}
 
 	// And the hot path is still a view.
-	v := f.Version()
+	v := f.Read().Version
 	if hot := f.PatchesBetween(v-1, v); len(hot) != 1 {
 		t.Fatalf("the window must still answer its own range: got %d", len(hot))
 	}

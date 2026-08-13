@@ -258,12 +258,27 @@ func (b *XwalBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.R
 // appends a patch) ----
 
 func (b *XwalBackend) FormState(ariaID string) (form.Snapshot, error) {
+	at, err := b.FormAt(ariaID)
+	return at.Snapshot, err
+}
+
+// FormStateAndVersion answers both from ONE atomic load, which is the only
+// way to answer them consistently: Form publishes the pair together, and a
+// caller that asks twice can be handed a state from before a write and a
+// version from after it.
+//
+// That is not pedantry, it is the read half of every optimistic
+// read-modify-write in this package. Compute from the OLD state, quote the
+// NEW version, and the conditional apply passes its guard while overwriting a
+// change it never saw. `system.studies` is edited exactly that way, and the
+// board is the authoritative fact about who studies what -- there is no sweep
+// that can recompute a board.
+func (b *XwalBackend) FormAt(ariaID string) (FormAt, error) {
 	f, err := b.form(ariaID)
 	if err != nil {
-		return form.Snapshot{}, err
+		return FormAt{}, err
 	}
-	snap, _ := f.Snapshot()
-	return snap, nil
+	return f.Read(), nil
 }
 
 // form returns the aria's Form, opening (and replaying) it once.
@@ -351,7 +366,7 @@ func (b *XwalBackend) FormVersion(ariaID string) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return f.Version(), nil
+	return f.Read().Version, nil
 }
 
 // FormPatchesBetween is Form.PatchesBetween through the backend: a READ-ONLY

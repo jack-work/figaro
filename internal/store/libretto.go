@@ -141,7 +141,7 @@ func (l *Libretto) State() form.Snapshot { return l.formState() }
 
 // Version is the libretto's own form version: the cursor an IR record
 // stamps (durable-forms §12.5).
-func (l *Libretto) Version() uint64 { return l.form.Version() }
+func (l *Libretto) Version() uint64 { return l.form.Read().Version }
 
 // PatchesBetween is the copy's own patch view, (after, upTo], for the
 // translator. It must come from THIS instance: a second Form over the same
@@ -184,8 +184,8 @@ func (l *Libretto) addRefs(delta int) (int, error) {
 		// "release below zero" that appeared once under a loaded gate and in
 		// none of the runs that chased it: the window between two atomic
 		// loads is exactly as rare as that.
-		st, version := l.form.Snapshot()
-		from := intOf(st, KeyLibrettoRefs)
+		at := l.form.Read()
+		from := intOf(at.Snapshot, KeyLibrettoRefs)
 		next := from + delta
 		if next < 0 {
 			// A double drop is a bug in the caller, not a reason to invent a
@@ -203,7 +203,7 @@ func (l *Libretto) addRefs(delta int) (int, error) {
 				l.ID(), LibrettoLedger())
 		}
 		_, _, err := l.form.ApplyEffectPrivileged(
-			librettoPatch(map[string]any{KeyLibrettoRefs: next}), version)
+			librettoPatch(map[string]any{KeyLibrettoRefs: next}), at.Version)
 		if err == nil {
 			recordRefMove(refMove{libretto: l.ID(), delta: delta, from: from, to: next, caller: caller})
 			return next, nil
