@@ -2759,7 +2759,11 @@ history compatibility and it should be Gluck's.
 
 # WHAT IS ACTUALLY LEFT (written last; this supersedes every earlier list)
 
-Phase 9's mechanism, its verbs and its safety net are done and live-validated.
+Phase 9's mechanism, its verbs, its migration and its safety net are done and
+live-validated on a copy of the real store. Both bugs the phase was supposed
+to close are closed: the displaced `tool_result` (the study mark now rides
+the inbox) and the self-cast deadlock (the cast now does not).
+
 What remains, in the order I would take it:
 
 1. **The projection switch** (§12.5), with the migration trap above: a second
@@ -2771,12 +2775,19 @@ What remains, in the order I would take it:
    references a libretto forever. Three options are written up under "A
    constraint the libretto exposes"; the cheapest is to let the render
    degrade, and that is a decision about what an old transcript may lose.
-3. **Phase 10, the API refactor**, and with it the lock audit's first
+3. **`system.studies` should be `KeySystemManaged`** — my successor named it
+   as its first unblocked stroke and it is the right one. A hand-written
+   `fig set system.studies '["@abc"]'` declares a study nothing counted,
+   which is §12.2.2's unrecoverable direction reachable from the CLI. It has
+   real blast radius: `import` applies a caller-supplied board patch
+   UNPRIVILEGED, so protecting the key forces a decision about whether an
+   import may carry a study set at all.
+4. **Phase 10, the API refactor**, and with it the lock audit's first
    fast-follow (`figaro/agent.go`'s `mu`). The audit says it wants its own
    branch and its own pty runs; believe it.
-4. **Phase 7, retention** — deferred with its argument written down. Its real
+5. **Phase 7, retention** — deferred with its argument written down. Its real
    customer is librettos-holding-LT-ranges, not the topology form.
-5. **One idle policy instead of four.** figwal unloads a head at 5 minutes
+6. **One idle policy instead of four.** figwal unloads a head at 5 minutes
    while the agent above it lives to 15, so a quiet aria drops its RAW bytes
    and keeps its DECODED ones. The four clocks are tabulated above.
 
