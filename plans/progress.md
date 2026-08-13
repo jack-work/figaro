@@ -3765,18 +3765,56 @@ declaration never lands. `TestAFailedStudyLeavesNoReference` holds that last
 part: a study onto a SEALED board fails however often it retries, and must
 leave the refcount exactly where it found it.
 
-## HANDOFF GATE (session 4), all green
+## HANDOFF GATE (session 4), all green on `4046d3d5`+
 
 ```
 go build, go vet, go test ./... -count=1                       ok
 -race -count=3 on store, figaro, angelus, provider             ok
 FIGARO_CRASH_TEST=1 (acknowledged patches survive SIGKILL)     ok
 nix build .#default                                            ok
-fleet: 12 arias, study, 300 patches, vs a base run beside it   12/12
-live: renderlive.sh (7 checks, on the wire)                    ok
+live: studylive.sh, renderlive.sh (9 wire checks)              ok
+live: realstudy.sh on a copy of the REAL store (751 rows)      ok
+fleet: 12 arias, study, 300 patches                            12/12
 ```
 
-The one that matters for this session is `renderlive.sh`, because it is the
-only one that reads what the MODEL is sent. A green unit suite and a green
-`doctor` said the switch worked while the studied block was frozen at its
-first version on every real turn.
+Fleet, final build, against a base run made the same hour (`eaeda9f5`):
+
+| | base | **final** |
+|---|---|---|
+| turns answered | 12/12 | **12/12** |
+| history build | 4.95 s | **5.02 s** |
+| control | 0.16 s | **0.16 s** |
+| daemon PSS loaded | 50.5 M | **49.0 M** |
+| goroutines | 81 | **81** |
+| heap_alloc | 14.6 M | **13.1 M** |
+| heap_sys | 31.2 M | **31.2 M** |
+
+Projection benchmarks, `-benchtime 3s -count=3`, HEAD vs base: every case
+within ±1.6%, which is noise. **They do not measure the accessor change** —
+they inject their own fake Form — and saying so is the point: the number that
+covers the new read path is the fleet.
+
+### The one open risk, stated plainly
+
+`TestStudyAndDropRaceOnOneForm` failed ONCE under a loaded gate with *release
+below zero* — an under-count, the direction the sweep cannot repair. Six green
+runs since (isolated, with neighbours, whole package, and three full gates).
+A probable cause was found by reading and fixed (`b9ca9424`, the split pair),
+and it is NOT proven: the property test stayed green against the old code.
+
+**If it recurs, it now explains itself**: the refusal carries the last 64
+refcount moves with call sites (`5e343ec8`). Read that instead of running it
+again.
+
+### What the model is sent, end to end (renderlive.sh, on the wire)
+
+```
+study        {"form":"@id","observing":true,"state":{...}}      <- the seeded copy
+study:@id    {"changes":2,"set":{"sha":...,"status":"merged"}}  <- two patches, one window
+study:@id    {"changes":1,"set":{"phase":"ga"}}                 <- a later delta
+study:@id    {"changes":1,"exists":false,"version":8}           <- the source died
+```
+
+No `system.libretto.at`, no `refs`, no stump name. That last line is §12.7b,
+and it was built, durable, correct and invisible until a wire assertion
+looked for it.
