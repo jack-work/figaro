@@ -49,11 +49,18 @@ stream whose subject changes without the reader being told.
 `fig cast [<aria>] <@form>` does two things that must not half-happen: the
 aria STUDIES the role, and the role POINTS at the aria.
 
-Serialization is the figaro's own actor loop. Each aspirant passes through
-one loop, in order, so no two castings of one figaro interleave. There is no
-dedicated queue, no parked wait, and no park timeout: ordinary actor-call
-timeouts apply. The mechanism carries a comment saying that these are,
-literally, casting calls.
+Serialization USED to be the figaro's own actor loop, and that cost more than
+it bought: a cast issued from inside the aria's own turn waited for a loop
+that was waiting for the turn that issued it — the SELF-CAST DEADLOCK, and
+"create a role as step one" asks for exactly that shape.
+
+Since phase 9 a cast runs on the caller's goroutine, and what the loop bought
+is paid for where the writes are: the study is a version-guarded
+read-modify-write on the board (retried on conflict, in the store's own
+two-participant write), and `target-aria` is a patch on the ROLE form's
+single writer. Two concurrent casts cannot lose each other's work — and two
+casts producing two roles that both point here is what was asked for, not a
+race.
 
 The loop registers the study, then CROSS-CALLS out to the role form's own
 writer to set `target-aria`. That is safe by `store.Form`'s contract: the
@@ -182,6 +189,7 @@ not), and cross-machine behaviour of any kind.
 2. The form namespace never redirects.
 3. Roles do not chain.
 4. A bound form is never a role.
-5. Cast serializes through the figaro's actor loop and never parks.
+5. Cast never parks, and no longer needs the actor loop: each of its two
+   writes is serialized by the form that owns it.
 6. A minted role is born cast, in one fork.
 7. The studied-form block is one per form, folded, structural, deterministic.
