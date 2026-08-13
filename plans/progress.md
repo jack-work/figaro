@@ -1874,6 +1874,28 @@ regression nor an improvement can be read off it on this harness; the
 is visible, and the control being identical three times is what licenses
 reading the rest.
 
+### A bug in the evictor, found by reading my own code (`figwal 09682d7`, `34b493ec`)
+
+The evictor CASes the block pointer it read. A failed CAS means an append
+extended the block underneath it — and the first version deleted the segment
+from the held set anyway, with its bytes still on the counter. Nothing could
+evict that segment again, so **the budget shrank permanently every time the
+race was lost**.
+
+The decision moved into `dropLocked`, which reports whether it won, so the
+case is testable without a hook: install a block, extend it with an append,
+hand the evictor the stale pointer. Red before green.
+
+**The concurrent test beside it never hit the window in fifteen runs under
+`-race`**, which is why the deterministic one exists — and is the reason to
+distrust "I wrote a concurrent test" as evidence for anything narrow.
+
+A second lesson, from the same test: `Segment` is documented as unsafe for
+concurrent use and my first test raced it against itself. In production
+`Append` and `ReadIndex` are serialized by `disk.Log`'s RWMutex; the EVICTOR
+is the only thing that touches a segment from outside that lock, so that is
+the only interleaving worth writing.
+
 ### Deviations
 
 1. **The budget is process-wide, not per backend**, because one segment file
