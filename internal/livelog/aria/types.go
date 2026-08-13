@@ -67,6 +67,13 @@ type Turn struct {
 	// because Inquiry is bare text and cannot carry a timestamp of its own.
 	At int64 `json:"at,omitempty"`
 
+	// FormDeltas is the form state a reader would have needed to understand
+	// this turn's INQUIRY: the transitions whose window closed on the record
+	// that opened the turn. The inquiry is not a node, so deltas that belong
+	// to it live here, exactly as At does. Keyed "<formid>.<path>"; see
+	// livedoc.FormDelta.
+	FormDeltas map[string]livedoc.FormDelta `json:"formDeltas,omitempty"`
+
 	LTs    []uint64       `json:"lts,omitempty"`
 	Sealed bool           `json:"sealed"`
 	Nodes  []livedoc.Node `json:"nodes,omitempty"`
