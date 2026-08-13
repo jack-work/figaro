@@ -3199,3 +3199,21 @@ waiting on it. `eventCast` and the reply channel go with it.
 Live, on a real daemon: `cast` completes in **0.08 s**, the role points back
 at the caster, the caster studies it, one libretto exists with one observer,
 and the sweep corrects nothing.
+
+### The migration is observable on a live daemon (`8b825a92`)
+
+The boot sweep repairs in the background, which left one way to learn whether
+it had done anything: stop the daemon and audit by hand. `doctor mem` now
+carries the last sweep's result:
+
+```
+librettos  open=11  observers=13  (one fold goroutine each)
+           boot sweep: minted=11 corrected=11 still-missing=0
+```
+
+Measured on a copy of the real store **four seconds after boot**: all eleven
+pre-existing studies migrated, nothing left missing, no caller waiting.
+
+`still-missing` is the number that matters on somebody else's machine — what
+the sweep could NOT repair, which today means a studied form whose node is
+gone from that store.
