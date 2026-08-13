@@ -420,7 +420,7 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 	if err != nil {
 		return nil, fmt.Errorf("form.bind: mint figaro: %w", err)
 	}
-	if _, err := h.angelus.Backend.ApplyForm(id, convBootPatch(id, cwd)); err != nil {
+	if _, err := h.angelus.Backend.ApplyFormPrivileged(id, convBootPatch(id, cwd)); err != nil {
 		return nil, fmt.Errorf("form.bind: stamp aria id: %w", err)
 	}
 	hb, err := h.hubFor(id)
@@ -675,7 +675,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		// aria_id can only be stamped once the id exists, so it rides a second
 		// patch rather than the birth one: which keeps the birth patch a pure
 		// function of what was asked for, and so a stable identity.
-		if _, aerr := backend.ApplyForm(id, convBootPatch(id, cwd)); aerr != nil {
+		if _, aerr := backend.ApplyFormPrivileged(id, convBootPatch(id, cwd)); aerr != nil {
 			return nil, fmt.Errorf("stamp aria id: %w", aerr)
 		}
 		snap, serr := backend.FormState(id)

@@ -275,7 +275,8 @@ func newTestAgent(response string) *figaro.Agent {
 
 func TestAgentPersistsCompleteListMetadata(t *testing.T) {
 	backend, id := backedConv(t, t.TempDir())
-	_, applyErr := backend.ApplyForm(id, message.Patch{Set: map[string]json.RawMessage{
+	// system.cwd is harness-owned, so the harness path writes it.
+	_, applyErr := backend.ApplyFormPrivileged(id, message.Patch{Set: map[string]json.RawMessage{
 		"mantra":     json.RawMessage(`"initial"`),
 		"system.cwd": json.RawMessage(`"work"`),
 	}})

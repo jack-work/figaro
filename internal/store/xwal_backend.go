@@ -284,6 +284,15 @@ func (b *XwalBackend) ApplyFormIf(ariaID string, patch message.Patch, ifVersion 
 // the writer reduced the patch against the board: which is what a caller
 // reporting to a human, or fanning a delta out to listeners, should be
 // speaking about.
+func (b *XwalBackend) ApplyFormPrivileged(ariaID string, patch message.Patch) (uint64, error) {
+	f, err := b.form(ariaID)
+	if err != nil {
+		return 0, err
+	}
+	v, _, err := f.ApplyEffectPrivileged(patch, 0)
+	return v, err
+}
+
 func (b *XwalBackend) ApplyFormEffectIntent(ariaID string, patch message.Patch, ifVersion uint64, intent Intent) (uint64, message.Patch, error) {
 	f, err := b.form(ariaID)
 	if err != nil {

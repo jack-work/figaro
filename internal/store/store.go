@@ -167,6 +167,12 @@ type Backend interface {
 	// away. See store.Intent.
 	ApplyFormEffectIntent(ariaID string, patch message.Patch, ifVersion uint64, intent Intent) (uint64, message.Patch, error)
 
+	// ApplyFormPrivileged is the harness's own write: it may touch keys the
+	// catalog marks system-managed (the boot patch's system.cwd, and
+	// whatever follows it). There is no wire field for this and there must
+	// never be one: privilege is a property of the call site.
+	ApplyFormPrivileged(ariaID string, patch message.Patch) (uint64, error)
+
 	// ApplyForm appends a state patch to the form channel,
 	// keyed to the next IR LT (the transition the next message carries).
 	ApplyForm(ariaID string, patch message.Patch) (version uint64, err error)

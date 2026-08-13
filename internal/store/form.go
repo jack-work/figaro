@@ -74,6 +74,7 @@ type formWrite struct {
 	patch     message.Patch
 	ifVersion uint64
 	intent    Intent
+	priv      bool
 	result    formResult
 	done      atomic.Bool
 }
@@ -317,7 +318,19 @@ func (f *Form) ApplyEffect(patch message.Patch, ifVersion uint64) (uint64, messa
 // ApplyEffectIntent is ApplyEffect with the removal rule named. Under Assert
 // a removal of a key that is not there is refused rather than reduced away.
 func (f *Form) ApplyEffectIntent(patch message.Patch, ifVersion uint64, intent Intent) (uint64, message.Patch, error) {
-	w := &formWrite{patch: patch, ifVersion: ifVersion, intent: intent}
+	return f.applyEffect(patch, ifVersion, intent, false)
+}
+
+// ApplyEffectPrivileged is the harness's own write: it may touch keys the
+// catalog marks system-managed. There is no wire field for this and there
+// must never be one. Privilege is a property of the CALL SITE, checkable by
+// grep and by the compiler.
+func (f *Form) ApplyEffectPrivileged(patch message.Patch, ifVersion uint64) (uint64, message.Patch, error) {
+	return f.applyEffect(patch, ifVersion, Ensure, true)
+}
+
+func (f *Form) applyEffect(patch message.Patch, ifVersion uint64, intent Intent, priv bool) (uint64, message.Patch, error) {
+	w := &formWrite{patch: patch, ifVersion: ifVersion, intent: intent, priv: priv}
 	if err := f.q.Submit(w); err != nil {
 		return 0, message.Patch{}, fmt.Errorf("form is closed")
 	}
@@ -428,6 +441,9 @@ func (f *Form) reduceOne(st *formState, w *formWrite) (*formState, formResult) {
 	if w.ifVersion != 0 && st.version != w.ifVersion {
 		return nil, formResult{err: fmt.Errorf(
 			"form moved: at version %d, not %d: re-read and retry", st.version, w.ifVersion)}
+	}
+	if err := form.CheckWritable(w.patch, w.priv); err != nil {
+		return nil, formResult{version: st.version, err: err}
 	}
 	if w.intent == Assert {
 		for _, k := range w.patch.Remove {

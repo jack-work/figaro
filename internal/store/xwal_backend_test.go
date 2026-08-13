@@ -65,7 +65,8 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 		t.Fatalf("credo = %q, want 'be terse'", str(cbGet(snap, "system.credo")))
 	}
 	// mutate via patch; re-derive sees it
-	if _, err := b.ApplyForm(conv, patchSet(map[string]string{"system.cwd": "/tmp"})); err != nil {
+	// system.cwd is harness-owned; the harness path writes it.
+	if _, err := b.ApplyFormPrivileged(conv, patchSet(map[string]string{"system.cwd": "/tmp"})); err != nil {
 		t.Fatal(err)
 	}
 	snap, _ = b.FormState(conv)

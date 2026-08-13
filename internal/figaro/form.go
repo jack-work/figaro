@@ -51,6 +51,16 @@ func (a *Agent) SetIntent(patch form.Patch, ifVersion uint64, assert bool) (set,
 	if patch.IsEmpty() {
 		return nil, nil, nil
 	}
+	// Protection is a pure function of the patch, so it is answered HERE,
+	// before queueing, and the caller gets a real refusal. Everything else a
+	// write can be refused for (a stale version, an Assert removal) depends
+	// on state the writer sees and this path does not, and those stay
+	// deferred: a set during a tool round is applied at the next round
+	// boundary by design, so waiting for a verdict would block the caller
+	// for the length of the round.
+	if err := form.CheckWritable(patch, false); err != nil {
+		return nil, nil, err
+	}
 	for k := range patch.Set {
 		set = append(set, k)
 	}

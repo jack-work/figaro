@@ -71,10 +71,12 @@ type event struct {
 	// check rides the event to the writer, where it is atomic with the append -
 	// checking at accept would answer about a version the patch never met.
 	setIfVersion uint64
-	// setAssert makes a removal of an absent key a refusal rather than a
-	// no-op. It can only be LOGGED here: Set answers before the loop runs,
-	// so a live aria enforces the rule without being able to report it.
-	// Phase 3's synchronous command closes that.
+	// setAssert makes a removal of an absent key a refusal. Like a stale
+	// ifVersion it is answered by the WRITER, so on a live aria it reaches
+	// the log rather than the caller: a set during a tool round is applied
+	// at the next round boundary by design, and waiting for the verdict
+	// would block the caller for the length of the round. Phase 3's ticket
+	// closes it without waiting.
 	setAssert bool
 }
 

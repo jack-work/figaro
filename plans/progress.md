@@ -599,3 +599,37 @@ The last row is the honest cost of the window: a cold whole-history read of
 a form with 10,000 patches. The longest board in the author's store holds
 99, so it does not happen there, and the fix if it ever does is a bounded
 range read in figwal rather than a full walk.
+
+#### Phase 4 landed, and what the attempt taught
+
+`CheckWritable` is wired. A hand-written harness key is refused, on a live
+aria and a dormant one, with the same message:
+
+```
+$ figaro state set --id <aria> system.cwd /tmp/nope
+error: set: jsonrpc error -32000: system.cwd: written by the harness, not by hand
+```
+
+Birth, fork and ordinary keys are unaffected. `ApplyFormPrivileged` is the
+harness's own path (the boot patch's `system.cwd`), and there is no wire
+field for privilege and must never be one.
+
+**The attempt that failed, because the lesson is the valuable part.** I first
+made `Agent.Set` synchronous so a live aria could RETURN the refusal instead
+of logging it. Two tests failed, and the second was the important one:
+`TestFormSetDuringToolRoundAppliesNextRound` hung for the full 30 s timeout.
+
+A `set` arriving mid-turn is applied at the next ROUND BOUNDARY, deliberately.
+Waiting for its verdict therefore blocks the caller for the length of a tool
+round, and in that test forever. **Synchronous `set` is wrong for a live
+aria, and the deferral is a feature, not an oversight.**
+
+The resolution splits the checks by what they need:
+
+- **Protection is a pure function of the patch**, so it is answered at
+  ACCEPT time, before queueing, and the caller gets a real error with no
+  waiting.
+- **A stale `ifVersion` and an `Assert` removal need STATE**, which only the
+  writer has. They stay deferred and reach the log. Phase 3's ticket is the
+  proper close: the caller gets a handle it may await if it wants, and `set`
+  keeps not waiting by default.
