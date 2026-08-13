@@ -1543,3 +1543,35 @@ refilled in a cycle.
 figaro's: opening any node copies the whole channel into memory. Nothing on
 this side can fix it (see "A negative result"), and the fix is
 segment-granular lazy loading in figwal.
+
+### PR 16 taken, after validating it on my own harness
+
+`8d330026` (the translator skips derivation for a record it has already
+encoded, plus the splice carrying `FormVersionOfSnapshot` AND
+`LastStudyVersions`) merged into `feat/incantations` at `8f1a6853`.
+
+What I checked, because Gluck asked for it on my harness rather than theirs:
+
+| leg | result |
+|---|---|
+| `internal/provider` Observation suite, 6 samples | no regression; `Warm8` **-19.5%** (p=0.009) |
+| long history (2000-turn IR, 1 and 8 forms), added to BOTH trees | `LongCold` **-6.5%** (p=0.041), long warm unchanged |
+| full suite, vet, `-race -count=3` on store and provider | green |
+| `nix develop`, fresh | build and full suite green |
+| real store, fresh copy | 653 nodes, 647 forms, 5935 patches; warm delta reads still **35-36 ns/op, 0 B/op** |
+| ad hoc, visually checked | fork, promote, delete, normalize all correct |
+
+**Their -63% is not reproducible on my harness and must not be quoted from
+it.** These benchmarks carry no per-LT translation cache, so the cache-hit
+path their change optimizes is never taken. My harness proves the other
+half, which is the half a merge needs: nothing around it got slower.
+
+The visual leg is worth keeping as a recipe, because it exercises phase 8
+end to end at the same time: two forks draw nested, a promote climbs, a
+delete repairs the boundary (the survivor absorbs its prefix and its FORK
+column goes to `-`), a second delete of the same id errors cleanly,
+`normalize` reports already-normalized, the survivor's board is intact, and
+`loaded-heads` is 0 afterwards. `/var/tmp/figstate/prvisual.sh`.
+
+**Pushing to origin is Gluck's call.** The merge is local; the PR stays open
+until he says otherwise.
