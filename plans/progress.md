@@ -2907,3 +2907,33 @@ write the next turn will not see.
 
 47 lines added, 64 removed. **A crash-ordering rule that three call sites had
 to agree about by inspection now exists once.**
+
+### The IR-writer audit, and the participant I had written off (`0d2758f5`)
+
+The tool_result-adjacency rule (*no out-of-band IR record between a `tool_use`
+and its results*) is only as good as the list of writers it covers, so I
+walked every `Append` into an IR log:
+
+| writer | verdict |
+|---|---|
+| `Agent.appendStudyMark` | **was the defect**; rides the inbox now |
+| `handlers.markStudyForHub` | safe by construction: the hub path serves an aria with NO agent, so there is no round to land inside. Worth knowing it depends on the live/dormant dispatch staying correct |
+| `handlers.import` | safe: the conversation is created one line above; nothing is in flight |
+| provider encoders (4) | inside the round, by the loop, which is where they belong |
+| `figaro/repair.go`, `turn_repair.go` | repair paths, not turn paths |
+
+**And one line further down in the import handler, §12.2.2's third site.** I
+had recorded that import "does not exist as a verb" here. It does:
+`angelus.import` restores a board wholesale, and **`system.studies` is an
+ORDINARY key**, so an exported board carries it. The import then creates a
+board naming librettos nothing counted — the unrecoverable direction.
+`RetainDeclaredStudies` (the hook fork already used, renamed for what it does
+rather than who calls it) is now called there.
+
+**Left for the next hand, deliberately**: `system.studies` should be
+`KeySystemManaged`. A comment of mine already claimed it was, and was wrong —
+a hand-written `fig set system.studies '["@abc"]'` can still declare a study
+nothing counted. Protecting it has real blast radius (the ephemeral path
+writes it unprivileged, and import would then need the privileged entry
+point), which is exactly the shape of change that should not be slipped in at
+the end of a session.
