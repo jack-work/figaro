@@ -3157,3 +3157,29 @@ the last `nix build` produced, not what you just wrote. My first attempt at
 this check used it and I read stale output as a real result — the giveaway
 was wording I had changed an hour earlier. **Build to `/tmp` and test that**,
 or you will debug the past.
+
+## The self-cast deadlock, fixed and checked (`30dcd6ba`)
+
+It has been in these notes since session 1: *`fig cast` on your own aria from
+inside a turn hangs, because the cast rides the inbox and the inbox is
+running the turn that issued it* — and "create a role as step one" asks for
+exactly that. durable-forms says phase 9 should fix it **and should be
+checked against it**. Checked first (red), then fixed.
+
+It is the displaced `tool_result` seen from the other end: **one hangs
+because it NEEDS the loop, one corrupted because it went AROUND the loop.**
+Both are now closed, and by opposite moves — the study mark was pushed ONTO
+the loop, the cast was taken OFF it.
+
+**What the loop bought the cast was mutual exclusion between two castings of
+one figaro, and phase 9 pays for that differently**: the study is a
+version-guarded read-modify-write on the board, retried on conflict, and the
+role's `target-aria` is a patch on the ROLE form's own single writer. Two
+concurrent casts cannot lose each other's work, and two casts producing two
+roles that both point here is what was asked for rather than a race. So a
+cast runs on the caller's goroutine, and nothing waits on a loop that may be
+waiting on it. `eventCast` and the reply channel go with it.
+
+Live, on a real daemon: `cast` completes in **0.08 s**, the role points back
+at the caster, the caster studies it, one libretto exists with one observer,
+and the sweep corrects nothing.
