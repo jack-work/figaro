@@ -19,17 +19,30 @@ import (
 
 // Form is an aria's state, and the only writer of the channel that holds it.
 //
-// ONE LOCK owns the append, not one goroutine. Serialization is all the
-// writer ever needed, and a parked goroutine per open form cost the daemon
-// one goroutine for every aria anyone had listed. Readers never touch it: a
-// published state is swapped in atomically, so Snapshot is one load and
-// cannot block, cannot wake a dormant aria, and cannot be serialized behind
-// a turn.
+// ONE DRAINER owns the append, and it exists only while there is work: an
+// actor.Lazy, spawned on submit, gone after an idle window. It was a mutex,
+// and before that a permanently parked goroutine per form, which cost the
+// daemon one goroutine for every aria anyone had merely LISTED. Readers
+// never touch it: a published state is swapped in atomically, so Snapshot is
+// one load and cannot block, cannot wake a dormant aria, and cannot be
+// serialized behind a turn.
 //
-// DURABILITY PRECEDES VISIBILITY, structurally. The writer appends, and only
-// then publishes. The reverse is not a lost write but a hallucinated one: the
-// patch is projected to the model as a reminder on the next tic, so the agent
-// would act on state that will not survive a restart.
+// THREE INVARIANTS. Everything here depends on them and nothing may quietly
+// relax one:
+//
+//  1. DURABILITY PRECEDES VISIBILITY. Reduce purely, append, fsync, publish.
+//     A failed sync rejects and publishes nothing, which is safe because the
+//     reduce mutates nothing: there is never anything to roll back. The
+//     reverse ordering is not a lost write but a hallucinated one, since the
+//     patch reaches the model as a reminder on the next tic.
+//  2. BATCHING IS FOR DURABILITY, NEVER SEMANTICS. One drain covers many
+//     submissions with one fsync, and each is still reduced against the
+//     state as of its own position: otherwise the first ifVersion writer
+//     stops winning and the second stops seeing that the form moved.
+//  3. PatchesBetween IS A VIEW. Its safety rests on the published array
+//     being append-only and the returned slice being capped. Anything that
+//     compacts it, rewrites it, or hands out an uncapped slice breaks it
+//     silently. TestFormPatchesBetweenIsAViewNotACopy is the guard.
 //
 // THE WRITER DOES I/O AND NOTHING ELSE. It never calls back into an agent,
 // never renders, never waits on a turn. That is what makes Apply safe to call
