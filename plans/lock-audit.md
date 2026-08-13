@@ -17,6 +17,29 @@ The second half is what the current `store.Form` violates most sharply: its
 write mutex is held across a marshal, an append, and (after this work) an
 fsync, plus every commit sink.
 
+## What actually happened (2026-08-13)
+
+Five died, one shrank, one new one was added for a reason worth stating.
+
+**Died**: `Form.write` (the actor), `Form.mu` (the sink list, now an atomic
+pointer to an immutable slice), `XwalStore.keepMu` (one string, now an
+atomic pointer, and the lock-order hazard its comment described went with
+it). `observedMu` and `trunk.mu` still stand because the libretto and the
+topology form are not built.
+
+**Shrank**: `cachedLog.mu` no longer covers the append. It was held across
+`inner.Append`, which was cheap when that was a memcpy and is milliseconds
+now that every append syncs, so every reader of an aria's IR waited behind
+an fsync.
+
+**Added**: `cachedLog.appendMu`, which serializes APPENDERS so cache updates
+land in log order while readers wait on neither. A lock that exists to keep
+another lock off the I/O path is a good trade.
+
+**Still true**: no lock in the packages this touched is held across I/O. That
+was a style rule before the WAL change and is a real one now, and it is the
+first thing to check when adding one.
+
 ## Inventory
 
 ### Dies with the state-layer work
