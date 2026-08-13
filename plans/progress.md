@@ -353,3 +353,15 @@ acknowledgements. Run it deliberately, on real disk:
 ```
 FIGARO_CRASH_TEST=1 TMPDIR=/var/tmp go test ./internal/store -run Acknowledged -v
 ```
+
+### Succession
+
+- **Successor minted**: `c1d55d02`, briefed, told to read the plans and wait.
+  Its id is in `/var/tmp/figstate/.successor`.
+- **The role is `@980dc16c`.** On handoff:
+  `figaro state set --id @980dc16c target-aria c1d55d02`. The heartbeat
+  reads the role's `target-aria` every ten minutes, so moving it moves the
+  wakeups with it.
+- **Do not use `fig cast` to move the role from inside an aria**: it rides
+  the inbox, the inbox is running the turn that issued it, and it hangs
+  until the timeout. Patch `target-aria` directly.
