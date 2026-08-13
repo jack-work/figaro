@@ -63,7 +63,9 @@ check "the libretto's refcount is hidden"  no  'system.libretto.refs'
 check "no stump name leaked into the block" no '@libretto::'
 
 echo "--- the block, verbatim:"
-grep -oE 'system-reminder name=\\"study[^<]*' "$REQ" | head -4
+# BOUNDED. The unbounded version matched to the end of a 40 KB request body
+# and dumped the whole thing into whatever was reading the log.
+grep -oE 'name=\\"study[^}]{0,200}}' "$REQ" | head -4 | cut -c1-220
 
 echo "ROOT=$ROOT  (exit $fail)"
 exit $fail
