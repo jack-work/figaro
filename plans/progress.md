@@ -546,3 +546,25 @@ obvious next step if it shows up: figwal already has the segment index and
 blocked the actor loop, so heartbeats queued behind them. `/var/tmp/figstate/job
 <name> <cmd>` runs work as a transient user service; `/var/tmp/figstate/jobs.sh`
 lists status. Use it for anything over a few seconds.
+
+**A bug the benchmark caught, in the window itself.** The first draft decided
+"is this range below the window" by comparing against `patches[0].Version`.
+That is wrong: a no-op patch appends no record, so a form whose early
+records changed nothing legitimately starts above version 1, and reading
+that gap as a trim sent EVERY cold read to the log. The benchmark showed
+`FormWholePerSend100` at 141 µs and 1245 allocs where it should be tens of
+nanoseconds and zero.
+
+`formState.trimmed` records the highest version actually dropped, and only
+that sends a read to disk. After the fix:
+
+```
+FormWholePerSend100     55.8 ns   0 allocs   (resident)
+FormWholePerSend1000    41.8 ns   0 allocs   (resident)
+FormWholePerSend10000   12.9 ms   120k allocs (past the 2048 window: the log walk)
+```
+
+The last row is the honest cost of the window: a cold whole-history read of
+a form with 10,000 patches. The longest board in the author's store holds
+99, so it does not happen there, and the fix if it ever does is a bounded
+range read in figwal rather than a full walk.

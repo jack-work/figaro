@@ -62,6 +62,12 @@ type formState struct {
 	snap    form.Snapshot
 	version uint64
 	patches []VersionedPatch
+	// trimmed is the highest version dropped from patches, or 0 if nothing
+	// was. It is NOT inferrable from patches[0].Version: a no-op patch
+	// appends no record, so a form whose first records changed nothing
+	// legitimately starts at a version above 1, and reading the gap as a
+	// trim sent every cold read to the log.
+	trimmed uint64
 }
 
 type formWrite struct {
@@ -216,11 +222,9 @@ func (f *Form) Version() uint64 { return f.state.Load().version }
 func (f *Form) PatchesBetween(after, upTo uint64) []VersionedPatch {
 	st := f.state.Load()
 	ps := st.patches
-	// The window answers only if the range starts at or above its first
-	// version. Below that the patches are on disk and the answer costs a
-	// walk: a cold retranslate of old history goes here, the hot path does
-	// not.
-	if upTo > after && len(ps) > 0 && after+1 < ps[0].Version {
+	// Only a TRIM sends a read to disk. A cold retranslate of history the
+	// window no longer holds walks the log; everything else is the view.
+	if upTo > after && st.trimmed > 0 && after < st.trimmed {
 		if fromLog, ok := f.patchesFromLog(after, upTo); ok {
 			figOtel.RecordFormPatchRead(context.Background(), len(fromLog), len(ps))
 			return fromLog
@@ -268,14 +272,15 @@ func (f *Form) patchesFromLog(after, upTo uint64) ([]VersionedPatch, bool) {
 // finds it. The cap turns that into a reallocation.
 // trimPatches copies the tail down once the array has run a slack allowance
 // past the window. Copying is the point: re-slicing would release nothing.
-func trimPatches(ps []VersionedPatch) []VersionedPatch {
+func trimPatches(ps []VersionedPatch, trimmed uint64) ([]VersionedPatch, uint64) {
 	w := int(patchWindow.Load())
 	if w <= 0 || len(ps) <= w+patchSlack {
-		return ps
+		return ps, trimmed
 	}
+	cut := len(ps) - w
 	kept := make([]VersionedPatch, w)
-	copy(kept, ps[len(ps)-w:])
-	return kept
+	copy(kept, ps[cut:])
+	return kept, ps[cut-1].Version
 }
 
 func patchRange(ps []VersionedPatch, after, upTo uint64) []VersionedPatch {
@@ -457,7 +462,7 @@ func (f *Form) reduceOne(st *formState, w *formWrite) (*formState, formResult) {
 	// Safe because there is exactly one drainer: a published state holds a
 	// slice header with its own length, so a later append either writes past
 	// that length (which no reader reads) or reallocates.
-	next.patches = trimPatches(append(st.patches, VersionedPatch{Version: version, Patch: applied}))
+	next.patches, next.trimmed = trimPatches(append(st.patches, VersionedPatch{Version: version, Patch: applied}), st.trimmed)
 	return next, formResult{version: version, applied: applied}
 }
 
