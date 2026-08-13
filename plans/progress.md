@@ -2320,3 +2320,51 @@ type-level rule that a form with a retention policy refuses
 `PatchesBetween` — that last one is the only part that is design rather
 than plumbing, and it is the part that keeps a compacted channel from
 silently handing out a view of records it has deleted.
+
+## Phase 9, first half: the libretto exists (`ac3314bc`)
+
+The derived form itself, with its fold and its refcount, in
+`internal/store/libretto.go`. Deliberately stops at the boundary where
+another aria's files begin.
+
+**Shape**, per the rulings and §12: one per studied FORM, shared, named
+`@libretto::<formid>` (deterministic, so nothing is looked up), on a reserved
+stump (the only node figwal names by a caller-chosen string), does not fork,
+holds a COPY.
+
+**The three decisions worth arguing with:**
+
+1. **The mirror applies the source's patch VERBATIM.** Whole-form is the
+   ruling, so the fold is not a projection: the same `message.Patch` goes
+   into the libretto's own form, which means the copy shares the source's
+   immutable value nodes instead of marshalling through JSON. That is §12.7's
+   tree surgery, obtained for free by not doing anything clever.
+2. **Bookkeeping lives under `system.libretto.*`.** A verbatim mirror copies
+   arbitrary board keys, and a board may legitimately hold a key called
+   `refs`. `system.*` is the one namespace an ordinary write cannot touch, so
+   the collision is impossible rather than unlikely, and the mirror skips any
+   key in it. `TestLibrettoNeverMirrorsItsOwnBookkeeping` is the guard, and
+   it writes the collision PRIVILEGED, because that is the only way to create
+   it at all.
+3. **A resync re-seeds rather than resumes.** If the subscriber falls behind,
+   the answer is the source's current state, not the next patch: a mirror
+   that skips one patch is wrong forever and does not know it.
+
+**Two things it needed, both worth having anyway**: `ErrFormMoved` (the
+stale-`ifVersion` refusal was a bare `fmt.Errorf`, so no caller could tell
+"retry" from "wrong"), and `Subscription.Source` (a subscriber told to resync
+must re-read the form it follows, and carrying that pointer separately is how
+mirrors resync from the wrong one).
+
+**What is NOT built, and it is the wiring rather than the mechanism**: the
+study verb's two-participant write (§12.2.1), fork/import/kill as refcount
+participants (§12.2.2 — read it first, it is a design bug found before the
+thing was built), the IR's per-libretto cursors (§12.5), the reconciliation
+sweep, and reclamation of a libretto whose refs hit zero. The first three
+live in `internal/figaro/study.go`, `internal/angelus/study_hub.go` and
+`internal/provider/projection.go`, which aria 6c2d7b9f owns.
+
+**Phase 9 should also be checked against two bugs it is expected to fix**:
+the self-cast deadlock, and the displaced-`tool_result` corruption — study
+becoming an ordinary patch on a separate node is what removes the
+out-of-band IR record between a `tool_use` and its result.
