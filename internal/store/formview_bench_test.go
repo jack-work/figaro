@@ -23,6 +23,7 @@ package store
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 )
 
@@ -159,4 +160,71 @@ func BenchmarkStudiedSetPerSend50x500(b *testing.B) { studiedSetPerSend(b, 50, 5
 // BEFORE and the exercise is theatre.
 func accessorRange(be *XwalBackend, id string, after, upTo uint64) ([]VersionedPatch, error) {
 	return be.FormPatchesBetween(id, after, upTo)
+}
+
+// What a form patch costs, and how it scales with concurrency. The number to
+// watch is not ns/op alone but SYNCS PER PATCH: group commit is the reason a
+// mandatory fsync is affordable, and if the batch stops batching this is
+// where it shows.
+func applyContended(b *testing.B, writers int) {
+	be, id := benchFormWithHistory(b, 8)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var wg sync.WaitGroup
+		for w := 0; w < writers; w++ {
+			wg.Add(1)
+			go func(w int) {
+				defer wg.Done()
+				if _, err := be.ApplyForm(id, patchSet(map[string]string{
+					fmt.Sprintf("k%d", w): fmt.Sprintf("v%d", i),
+				})); err != nil {
+					b.Error(err)
+				}
+			}(w)
+		}
+		wg.Wait()
+	}
+	b.ReportMetric(float64(writers), "writers")
+}
+
+func BenchmarkFormApplyContended1(b *testing.B)   { applyContended(b, 1) }
+func BenchmarkFormApplyContended8(b *testing.B)   { applyContended(b, 8) }
+func BenchmarkFormApplyContended64(b *testing.B)  { applyContended(b, 64) }
+func BenchmarkFormApplyContended256(b *testing.B) { applyContended(b, 256) }
+
+// Independent forms must stay independent: one lock per form, one drainer
+// per form, and nothing shared but the store.
+func BenchmarkFormApplyManyForms(b *testing.B) {
+	be, err := NewXwalBackend(b.TempDir(), 0)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer be.Close()
+	const forms = 16
+	ids := make([]string, forms)
+	for i := range ids {
+		id, _, err := be.CreateForm("", patchSet(map[string]string{"seed": "0"}))
+		if err != nil {
+			b.Fatal(err)
+		}
+		ids[i] = id
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var wg sync.WaitGroup
+		for f := range ids {
+			wg.Add(1)
+			go func(f int) {
+				defer wg.Done()
+				if _, err := be.ApplyForm(ids[f], patchSet(map[string]string{
+					"k": fmt.Sprintf("v%d", i),
+				})); err != nil {
+					b.Error(err)
+				}
+			}(f)
+		}
+		wg.Wait()
+	}
 }
