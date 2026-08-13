@@ -3289,3 +3289,30 @@ following if that form ever arrives.
 
 So import became a first-class participant rather than a board-copier, which
 is what §12.2.2 asks for and better than the hook it replaces.
+
+## FINAL GATE (session 3), on `27fe08bf`
+
+```
+go build, go vet, go test ./... -count=1                        ok
+-race -count=3 on store, figaro, angelus (and -count=8 on the
+  libretto/study/cast tests earlier)                            ok
+FIGARO_CRASH_TEST=1 acknowledged patches survive SIGKILL        ok
+nix build .#default                                             ok
+fleet: 12 arias, study, 300 patches                             12/12
+  history build 4.93 s   turn wall 4.98 s   control 0.16 s
+  daemon PSS 49.2 M   goroutines 81
+figwal: -race -count=3 on log/disk/segment/xwal, crashtest -long ok
+live: every script in scripts/live/                             ok
+```
+
+**Session 3 totals**: 190 commits, 139 files, +17k/-1.2k against main
+(including earlier sessions' work on the branch). figwal released four times
+and pinned at `e44a843`, with the flake vendorHash reset each time and `nix
+build` proven after each.
+
+The one thing a reader should take away: **the memory this project has been
+chasing was never figaro's.** It was one unbounded cache in the layer below,
+and the layer below that never gave its arena back. Bounding the first and
+returning the second took a store's whole history out of RAM — 297 MiB to
+68.5 for a full pass over the real store — and every bound figaro had already
+added kept working, on top of something that finally has one too.
