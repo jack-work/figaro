@@ -227,6 +227,10 @@ func SetSegmentCacheBudget(bytes int64) { fwlog.SetPayloadCacheBudget(bytes) }
 func SegmentCacheBytes() int64  { return fwlog.PayloadCacheBytes() }
 func SegmentCacheBudget() int64 { return segment.CacheBudget() }
 
+// SweepSegmentCache drops payload blocks unread for `keep` sweeps; see
+// segment.SweepIdle.
+func SweepSegmentCache(keep int64) (int, int64) { return segment.SweepIdle(keep) }
+
 // SegmentCacheLoads counts whole-segment loads. Climbing with READS rather
 // than with distinct segments means blocks are being dropped as fast as they
 // are built, and every read is paying for a segment.

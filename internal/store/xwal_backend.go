@@ -1042,6 +1042,12 @@ func (b *XwalBackend) SegmentCacheBytes() int64  { return SegmentCacheBytes() }
 func (b *XwalBackend) SegmentCacheBudget() int64 { return SegmentCacheBudget() }
 func (b *XwalBackend) SegmentCacheLoads() int64  { return SegmentCacheLoads() }
 
+// SweepSegmentCache drops the raw payload blocks nobody has read for `keep`
+// sweeps. Process-wide, like the budget it complements.
+func (b *XwalBackend) SweepSegmentCache(keep int64) (int, int64) {
+	return SweepSegmentCache(keep)
+}
+
 // LastTS is node recency, memoized: see the lastTS field for why.
 func (b *XwalBackend) LastTS(id string) int64 {
 	b.mu.Lock()

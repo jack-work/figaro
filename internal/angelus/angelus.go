@@ -264,6 +264,27 @@ func (a *Angelus) evictIdleArias() {
 	if n := ev.EvictIdle(live, idle); n > 0 {
 		slog.Info("released idle aria caches", "evicted", n, "live", len(live), "resident", ev.Resident())
 	}
+	// And the layer below: figwal's raw segment payloads. The budget bounds a
+	// busy daemon; this is what a quiet one gives back. It rides the sweep
+	// that already exists rather than introducing a fourth idle clock, and
+	// `keep` is in SWEEPS, so the window is dormant_after / sweep_interval.
+	if sw, ok := a.Backend.(segmentSweeper); ok {
+		if dropped, freed := sw.SweepSegmentCache(segmentCacheKeepSweeps); dropped > 0 {
+			slog.Info("released idle segment payloads",
+				"blocks", dropped, "freed_bytes", freed)
+		}
+	}
+}
+
+// segmentCacheKeepSweeps is how many reclamation sweeps a segment's payloads
+// survive without a read. Two, so the window is the same order as the aria
+// dormancy it rides on, and a block used once per sweep is never dropped.
+const segmentCacheKeepSweeps = 2
+
+// segmentSweeper is figwal's half of the same contract, optional for the same
+// reason idleEvictor is.
+type segmentSweeper interface {
+	SweepSegmentCache(keep int64) (dropped int, freed int64)
 }
 
 // hibernateIdleArias reclaims the agent of every aria that has been idle
