@@ -2515,6 +2515,15 @@ In the order I would take them:
   5 minutes while the agent above it lives to 15, so a quiet aria drops its
   RAW bytes and keeps its DECODED ones. One policy, not four.
 
+### Clean up after the live scripts
+
+Every one of them copies the real store (281 MB, reflinked but not free) into
+`/var/tmp`, and a daemon started against it holds it. By the end of this
+session mine had accumulated **6.6 GB**. `rm -rf /var/tmp/figlazy.* figsweep.*
+figfd.* figidle.* figstudy.*` when a run is done; the scripts print their
+ROOT for exactly this reason, and none of them cleans up on its own because
+a failed run's store is usually the thing you want to look at.
+
 ### What I would measure again before believing anything
 
 ```
