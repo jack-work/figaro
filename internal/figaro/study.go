@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/jack-work/figaro/internal/form"
@@ -91,29 +90,16 @@ func (a *Agent) Study(formID string) ([]string, error) {
 	if err := a.requireStudyTarget(formID); err != nil {
 		return nil, err
 	}
-	// LIBRETTO FIRST (durable-forms §12.2.1). A crash between the two writes
-	// then leaves a refcount too HIGH, which the reconciliation sweep
-	// repairs; the reverse leaves a board naming a libretto nothing counted,
-	// and reclamation would collect a copy out from under a live observer.
-	// One is a leak and the other is data loss.
-	retainLibretto(a.backend, a.id, formID)
-	studies, changed, err := a.patchStudies(func(ids []string) []string {
-		for _, id := range ids {
-			if id == formID {
-				return ids
-			}
-		}
-		return append(ids, formID)
-	})
+	// ONE implementation of the two-participant write, in the store
+	// (durable-forms §12.2.1): libretto retained first, board declared
+	// second, so every crash leaves the count too HIGH -- a leak the sweep
+	// repairs -- rather than too low, which reclaims a copy a live observer
+	// still needs.
+	studies, changed, err := a.declareStudy(formID, false)
 	if err != nil {
 		return nil, err
 	}
 	a.backend.SetObservedForms(a.id, studies)
-	if !changed {
-		// Already declared: hand the reference back rather than leaving a
-		// count that only a sweep can explain.
-		releaseLibretto(a.backend, a.id, formID)
-	}
 	if changed {
 		a.appendStudyMark(formID, true)
 	}
@@ -123,68 +109,65 @@ func (a *Agent) Study(formID string) ([]string, error) {
 // Drop unsubscribes: the board first (truth), then the store's mirror
 // (stamps end at the next IR record), then the stated mark.
 func (a *Agent) Drop(formID string) ([]string, error) {
-	// BOARD FIRST on the way out, for the same reason in reverse: stop
-	// claiming it before the count comes down.
-	studies, changed, err := a.patchStudies(func(ids []string) []string {
-		out := ids[:0]
-		for _, id := range ids {
-			if id != formID {
-				out = append(out, id)
-			}
-		}
-		return out
-	})
+	// Board first on the way out, for the same reason in reverse. Same
+	// implementation.
+	studies, changed, err := a.declareStudy(formID, true)
 	if err != nil {
 		return nil, err
 	}
 	a.backend.SetObservedForms(a.id, studies)
 	if changed {
-		releaseLibretto(a.backend, a.id, formID)
 		a.appendStudyMark(formID, false)
 	}
 	return studies, nil
 }
 
-// retainLibretto and releaseLibretto move the shared derived form's refcount
-// when the backend has one. Optional interface, because an ephemeral backend
-// has no librettos and must not have to pretend it does.
+// declareStudy performs the two-participant write through the store and then
+// refreshes the agent's OWN board mirror, which is the only part of this the
+// hub does not need: an agent renders from an in-memory snapshot, and a
+// durable write it does not hear about is a write the next turn will not see.
 //
-// Best-effort by design: a libretto that cannot be reached does not block the
-// declaration, because the board is the authoritative fact and the sweep
-// recomputes the count from it (§12.2.1).
-func retainLibretto(b store.Backend, ariaID, formID string) {
-	lb, ok := b.(librettoBackend)
+// A backend without librettos (ephemeral) keeps the plain board write.
+func (a *Agent) declareStudy(formID string, drop bool) ([]string, bool, error) {
+	sb, ok := a.backend.(studyBackend)
 	if !ok {
-		return
+		return a.patchStudies(func(ids []string) []string {
+			out := ids[:0]
+			for _, id := range ids {
+				if id != formID {
+					out = append(out, id)
+				}
+			}
+			if !drop {
+				out = append(out, formID)
+			}
+			return out
+		})
 	}
-	lib, err := lb.Libretto(formID)
-	if err != nil {
-		slog.Warn("study: libretto unreachable", "aria", ariaID, "form", formID, "err", err)
-		return
+	var studies []string
+	var changed bool
+	var err error
+	if drop {
+		studies, changed, err = sb.DropForm(a.id, formID)
+	} else {
+		studies, changed, err = sb.StudyForm(a.id, formID)
 	}
-	if _, err := lib.Retain(); err != nil {
-		slog.Warn("study: retain failed", "aria", ariaID, "form", formID, "err", err)
+	if err != nil || !changed {
+		return studies, changed, err
 	}
+	raw, merr := json.Marshal(studies)
+	if merr != nil {
+		return studies, changed, merr
+	}
+	a.form.Apply(form.Patch{Set: map[string]json.RawMessage{studiesKey: raw}})
+	return studies, changed, nil
 }
 
-func releaseLibretto(b store.Backend, ariaID, formID string) {
-	lb, ok := b.(librettoBackend)
-	if !ok {
-		return
-	}
-	lib, err := lb.Libretto(formID)
-	if err != nil {
-		slog.Warn("drop: libretto unreachable", "aria", ariaID, "form", formID, "err", err)
-		return
-	}
-	if _, err := lib.Release(); err != nil {
-		slog.Warn("drop: release failed", "aria", ariaID, "form", formID, "err", err)
-	}
-}
-
-// librettoBackend is the store's half of phase 9, as an optional interface.
-type librettoBackend interface {
-	Libretto(formID string) (*store.Libretto, error)
+// studyBackend is the store's two-participant write, as an optional
+// interface: an ephemeral backend has no librettos and must not pretend.
+type studyBackend interface {
+	StudyForm(observerID, sourceFormID string) ([]string, bool, error)
+	DropForm(observerID, sourceFormID string) ([]string, bool, error)
 }
 
 // appendStudyMark QUEUES a began/stopped-observing transition. The record is
