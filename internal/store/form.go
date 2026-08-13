@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sort"
 	"sync"
 	"sync/atomic"
+	"time"
 
+	"github.com/jack-work/figaro/internal/actor"
 	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
@@ -34,15 +37,21 @@ import (
 // cycle and hang. A Form is happy to exist with no aria attached at all.
 type Form struct {
 	log   FormLog
+	q     *actor.Lazy[*formWrite]
 	state atomic.Pointer[formState]
 
-	// write serializes commits: the single writer, held across the append
-	// and the publish so durability precedes visibility.
-	write  sync.Mutex
-	closed bool
+	// tick is the broadcast: closed and replaced after every batch, so a
+	// waiter parks on it rather than on a channel of its own. Completion is
+	// per submission (formWrite.done), never a watermark: tickets are handed
+	// out before the queue is entered, so a high ticket can land in an
+	// earlier batch than a low one and a watermark would release a waiter
+	// whose result had not been written yet.
+	tick atomic.Pointer[chan struct{}]
 
-	mu       sync.Mutex
-	onCommit []func(version uint64, patch message.Patch)
+	// sinks and closed are drainer-owned except for the CAS in OnCommit:
+	// an immutable slice behind a pointer, so emitting takes no lock.
+	sinks  atomic.Pointer[[]func(uint64, message.Patch)]
+	closed atomic.Bool
 }
 
 // formState is one published version: the tree, the durable index it stands
@@ -57,6 +66,8 @@ type formState struct {
 type formWrite struct {
 	patch     message.Patch
 	ifVersion uint64
+	result    formResult
+	done      atomic.Bool
 }
 
 type formResult struct {
@@ -74,6 +85,10 @@ type formResult struct {
 type FormLog interface {
 	// AppendPatch returns the index the payload landed at.
 	AppendPatch(payload []byte) (uint64, error)
+	// SyncThrough makes every record up to index durable. It runs between a
+	// batch's appends and its publish, which is the whole of "durable before
+	// visible": one sync covers the batch.
+	SyncThrough(index uint64) error
 	// RangePatches visits every record in index order.
 	RangePatches(fn func(index uint64, payload []byte) error) error
 }
@@ -98,8 +113,23 @@ func OpenForm(log FormLog) (*Form, error) {
 		return nil, err
 	}
 	f.state.Store(st)
+	tick := make(chan struct{})
+	f.tick.Store(&tick)
+	empty := []func(uint64, message.Patch){}
+	f.sinks.Store(&empty)
+	f.q = actor.NewLazy(formBatch, formLinger, f.runBatch)
 	return f, nil
 }
+
+const (
+	// formBatch caps one drain so a burst on one form cannot hold figwal's
+	// per-lineage lock against every other node forked from the same root.
+	formBatch = 64
+	// formLinger keeps the drainer through a burst. Long enough that a tool
+	// loop's writes share one goroutine, short enough that an idle form
+	// holds nothing.
+	formLinger = 2 * time.Second
+)
 
 // Snapshot is the published state and the version it stands at. Lock-free.
 func (f *Form) Snapshot() (form.Snapshot, uint64) {
@@ -181,13 +211,25 @@ func (f *Form) Apply(patch message.Patch, ifVersion uint64) (uint64, error) {
 // a human ("set 3 keys") or fans a delta out to listeners wants THAT, not what
 // it asked for.
 func (f *Form) ApplyEffect(patch message.Patch, ifVersion uint64) (uint64, message.Patch, error) {
-	f.write.Lock()
-	defer f.write.Unlock()
-	if f.closed {
+	w := &formWrite{patch: patch, ifVersion: ifVersion}
+	if err := f.q.Submit(w); err != nil {
 		return 0, message.Patch{}, fmt.Errorf("form is closed")
 	}
-	res := f.commit(formWrite{patch: patch, ifVersion: ifVersion})
-	return res.version, res.applied, res.err
+	f.await(w)
+	return w.result.version, w.result.applied, w.result.err
+}
+
+// await parks the CALLER'S own goroutine until its submission has been
+// answered. One broadcast serves every waiter: no goroutine and no channel
+// per call.
+func (f *Form) await(w *formWrite) {
+	for {
+		tick := *f.tick.Load()
+		if w.done.Load() {
+			return
+		}
+		<-tick
+	}
 }
 
 // OnCommit registers a sink for committed patches, called AFTER the append and
@@ -199,70 +241,142 @@ func (f *Form) ApplyEffect(patch message.Patch, ifVersion uint64) (uint64, messa
 // this form stops every write to it. The routing layer's own queue is the right place to
 // put the work.
 func (f *Form) OnCommit(fn func(version uint64, patch message.Patch)) {
-	f.mu.Lock()
-	f.onCommit = append(f.onCommit, fn)
-	f.mu.Unlock()
+	for {
+		old := f.sinks.Load()
+		next := make([]func(uint64, message.Patch), len(*old), len(*old)+1)
+		copy(next, *old)
+		next = append(next, fn)
+		if f.sinks.CompareAndSwap(old, &next) {
+			return
+		}
+	}
 }
 
 // Close stops the writer. Further writes are refused rather than dropped.
 // Idempotent: eviction and a delete can both reach the same form.
 func (f *Form) Close() {
-	f.write.Lock()
-	f.closed = true
-	f.write.Unlock()
+	f.closed.Store(true)
+	f.q.Close()
 }
 
-func (f *Form) commit(w formWrite) formResult {
-	st := f.state.Load()
+// runBatch is the whole protocol: reduce each submission in turn against a
+// RUNNING state, append, ONE sync for the batch, publish, then answer and
+// emit.
+//
+// Batching is for DURABILITY, never for semantics. Each write is reduced
+// against the state as of its own position, or two writers' ifVersion guards
+// stop meaning anything: the first must win and the second must see the
+// moved version.
+func (f *Form) runBatch(batch []*formWrite) {
+	published := f.state.Load()
+	var lastRecord uint64
+	var events []versionedApplied
+
+	for _, w := range batch {
+		next, res := f.reduceOne(published, w)
+		w.result = res
+		if next != nil {
+			published = next
+			lastRecord = next.version
+			events = append(events, versionedApplied{next.version, res.applied})
+		}
+	}
+
+	if lastRecord != 0 {
+		if err := f.log.SyncThrough(lastRecord); err != nil {
+			// Nothing was published. The records are on the caller side of
+			// durability, so the honest answer is that they did not happen:
+			// every write in this batch is rejected and the state stands
+			// where it stood.
+			for _, w := range batch {
+				if w.result.err == nil {
+					w.result = formResult{err: fmt.Errorf("form sync: %w", err)}
+				}
+			}
+			f.answer(batch)
+			return
+		}
+		f.state.Store(published)
+	}
+	// Emit BEFORE answering. A caller that returns from Apply has always been
+	// able to assume the delta reached the sinks, and moving the fanout off
+	// its goroutine would silently withdraw that. The exposure is the one the
+	// write lock already had: a sink must hand off and return.
+	f.emit(events)
+	f.answer(batch)
+}
+
+type versionedApplied struct {
+	version uint64
+	applied message.Patch
+}
+
+func (f *Form) reduceOne(st *formState, w *formWrite) (*formState, formResult) {
+	if f.closed.Load() {
+		return nil, formResult{err: fmt.Errorf("form is closed")}
+	}
 	if w.ifVersion != 0 && st.version != w.ifVersion {
-		return formResult{err: fmt.Errorf(
+		return nil, formResult{err: fmt.Errorf(
 			"form moved: at version %d, not %d: re-read and retry", st.version, w.ifVersion)}
 	}
-	// REDUCE FIRST. A patch is only an event if it changes something: keys
-	// already holding the value asked for are dropped, removals of keys that
-	// are not there are dropped, and a patch that survives none of that is a
-	// no-op: no record, no version, no delta.
+	// REDUCE FIRST, and purely. A patch is only an event if it changes
+	// something, and the reduce touches nothing, which is why a failure
+	// anywhere below leaves the published state exactly as it was and there
+	// is nothing to roll back.
 	//
-	// It happens HERE, in the writer, and not in either caller, for two
-	// reasons. It is the only place where the diff is atomic with the append,
-	// so a filter cannot lose a write to a racing one (read-then-filter in a
-	// handler can: two shells, one setting a=2 and one setting a=1 against a
-	// board holding a=1, and the second silently drops the write that would
-	// have won). And it is the only place BOTH write paths pass through, so
-	// the agent's board and an agentless form obey one rule instead of two -
-	// which matters most for observation, where a no-op patch on a role would
-	// otherwise move its version and make an observing aria derive a
-	// transition that announces nothing.
+	// It happens HERE and not in either caller because this is the only
+	// place the diff is atomic with the append: read-then-filter in a
+	// handler loses a write to a racing one.
 	applied := effectivePatch(st.snap, w.patch)
 	if applied.IsEmpty() {
-		return formResult{version: st.version, applied: applied}
+		return nil, formResult{version: st.version, applied: applied}
 	}
 	payload, err := json.Marshal(applied)
 	if err != nil {
-		return formResult{err: err}
+		return nil, formResult{err: err}
 	}
 	version, err := f.log.AppendPatch(payload)
 	if err != nil {
-		return formResult{err: err}
+		return nil, formResult{err: err}
 	}
-	next := &formState{snap: st.snap.Apply(applied), version: version, patches: st.patches}
-	if !applied.IsEmpty() {
-		// Append to the SHARED backing array rather than copying the history.
-		// Safe because there is exactly one writer: a published state holds a
-		// slice header with its own length, so a later append either writes
-		// past that length (which no reader reads) or reallocates. Copying
-		// instead made every write O(history): 14µs to 40µs on an aria with a
-		// few hundred patches, and worse the longer it lived.
-		next.patches = append(st.patches, VersionedPatch{Version: version, Patch: applied})
+	next := &formState{snap: st.snap.Apply(applied), version: version}
+	// Append to the SHARED backing array rather than copying the history.
+	// Safe because there is exactly one drainer: a published state holds a
+	// slice header with its own length, so a later append either writes past
+	// that length (which no reader reads) or reallocates.
+	next.patches = append(st.patches, VersionedPatch{Version: version, Patch: applied})
+	return next, formResult{version: version, applied: applied}
+}
+
+// answer releases the batch's results and wakes every waiter once.
+func (f *Form) answer(batch []*formWrite) {
+	for _, w := range batch {
+		w.done.Store(true)
 	}
-	f.state.Store(next)
-	f.mu.Lock()
-	sinks := f.onCommit
-	f.mu.Unlock()
-	for _, fn := range sinks {
-		fn(version, applied)
+	next := make(chan struct{})
+	old := f.tick.Swap(&next)
+	close(*old)
+}
+
+// emit hands committed patches to the sinks, after the publish, never
+// before. A sink that panics must not take the drainer with it.
+func (f *Form) emit(events []versionedApplied) {
+	if len(events) == 0 {
+		return
 	}
-	return formResult{version: version, applied: applied}
+	sinks := *f.sinks.Load()
+	for _, ev := range events {
+		for _, fn := range sinks {
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						slog.Error("form commit sink panicked", "err", r)
+					}
+				}()
+				fn(ev.version, ev.applied)
+			}()
+		}
+	}
 }
 
 // effectivePatch is what a patch actually does to a state: the keys it
@@ -294,6 +408,9 @@ func (m *MemFormLog) AppendPatch(payload []byte) (uint64, error) {
 	m.records = append(m.records, append([]byte(nil), payload...))
 	return uint64(len(m.records)), nil
 }
+
+// SyncThrough is a no-op: memory is as durable as this log gets.
+func (m *MemFormLog) SyncThrough(uint64) error { return nil }
 
 func (m *MemFormLog) RangePatches(fn func(uint64, []byte) error) error {
 	m.mu.Lock()
@@ -328,6 +445,10 @@ type xwalFormLog struct {
 
 func (l *xwalFormLog) AppendPatch(payload []byte) (uint64, error) {
 	return l.backend.store.trunks.Append(l.ariaID, chanForm, 0, payload, nil)
+}
+
+func (l *xwalFormLog) SyncThrough(index uint64) error {
+	return l.backend.store.trunks.SyncChannelThrough(l.ariaID, chanForm, index)
 }
 
 func (l *xwalFormLog) RangePatches(fn func(uint64, []byte) error) error {

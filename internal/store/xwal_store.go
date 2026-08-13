@@ -203,8 +203,12 @@ func storeOptions(segmentSize int) xwal.StoreOptions {
 	// as an empty-role message in the IR.
 	genesis, _ := json.Marshal(message.Message{Role: message.RoleGenesis})
 	return xwal.StoreOptions{
-		Main:        chanIR,
-		Codec:       "jsonl",
+		Main: chanIR,
+		// figaro owns its own durability: every append syncs before anything
+		// reaches memory, so a later background pass has no opinion left to
+		// offer and could only turn a rejected write durable after the fact.
+		NoBackgroundFlush: true,
+		Codec:             "jsonl",
 		SegmentSize: int64(segmentSize),
 		Genesis:     genesis,
 		MintTrunkID: mintTrunkID,

@@ -396,6 +396,9 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 		// One in-memory read per IR append, and it reports what was
 		// actually written rather than what we believed we wrote -- which
 		// covers the next field of this kind as well as this one.
+		if serr := l.store.trunks.SyncChannelThrough(l.ariaID, l.channel, lt); serr != nil {
+			return Entry[T]{}, fmt.Errorf("sync %s: %w", l.channel, serr)
+		}
 		if stamped, ok := l.readBack(lt); ok {
 			e.FormChannelVersion = stamped.FormChannelVersion
 			e.StudyVersions = stamped.StudyVersions
@@ -405,6 +408,9 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	lt, aerr := l.store.trunks.Append(l.ariaID, l.channel, e.FigaroLT, payload, meta)
 	if aerr != nil {
 		return Entry[T]{}, aerr
+	}
+	if serr := l.store.trunks.SyncChannelThrough(l.ariaID, l.channel, lt); serr != nil {
+		return Entry[T]{}, fmt.Errorf("sync %s: %w", l.channel, serr)
 	}
 	e.LT = lt
 	return e, nil

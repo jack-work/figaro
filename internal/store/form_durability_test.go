@@ -1,0 +1,170 @@
+package store
+
+import (
+	"encoding/json"
+	"fmt"
+	"sync"
+	"sync/atomic"
+	"testing"
+
+	"github.com/jack-work/figaro/internal/message"
+)
+
+type failingLog struct {
+	MemFormLog
+	failSync atomic.Bool
+	syncs    atomic.Int64
+}
+
+func (l *failingLog) SyncThrough(uint64) error {
+	l.syncs.Add(1)
+	if l.failSync.Load() {
+		return fmt.Errorf("disk is gone")
+	}
+	return nil
+}
+
+func kv(k, v string) message.Patch {
+	raw, _ := json.Marshal(v)
+	return message.Patch{Set: map[string]json.RawMessage{k: raw}}
+}
+
+// A failed sync rejects the patch and leaves the published state exactly
+// where it stood. Nothing is applied before the sync, so there is nothing to
+// roll back, which is the property the whole ordering exists for.
+func TestFailedSyncRejectsAndPublishesNothing(t *testing.T) {
+	log := &failingLog{}
+	f, err := OpenForm(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	if _, err := f.Apply(kv("a", "1"), 0); err != nil {
+		t.Fatal(err)
+	}
+	before, beforeVer := f.Snapshot()
+
+	log.failSync.Store(true)
+	if _, err := f.Apply(kv("b", "2"), 0); err == nil {
+		t.Fatal("a failed sync was reported as success")
+	}
+
+	after, afterVer := f.Snapshot()
+	if afterVer != beforeVer {
+		t.Fatalf("version moved on a failed sync: %d -> %d", beforeVer, afterVer)
+	}
+	if _, ok := after.Get("b"); ok {
+		t.Fatal("a patch that never synced is visible")
+	}
+	if _, ok := before.Get("a"); !ok {
+		t.Fatal("the prior state was disturbed")
+	}
+}
+
+// One sync per BATCH, not per patch. This is the number that says group
+// commit works, and without it every writer pays a full fsync.
+func TestBatchSyncsOnce(t *testing.T) {
+	log := &failingLog{}
+	f, err := OpenForm(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	const writers = 32
+	var wg sync.WaitGroup
+	for i := 0; i < writers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if _, err := f.Apply(kv(fmt.Sprintf("k%d", i), "v"), 0); err != nil {
+				t.Error(err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	if n := log.syncs.Load(); n >= writers {
+		t.Fatalf("%d syncs for %d concurrent writes: nothing batched", n, writers)
+	}
+	snap, _ := f.Snapshot()
+	if snap.Len() != writers {
+		t.Fatalf("lost writes: %d keys for %d writers", snap.Len(), writers)
+	}
+}
+
+// Two compare-and-swap writers in ONE batch must behave exactly as they do in
+// two batches: the first wins, the second sees the moved version. Merging the
+// batch's semantics would make the guard meaningless.
+func TestBatchPreservesIfVersion(t *testing.T) {
+	f := NewMemForm()
+	defer f.Close()
+
+	// A version of zero means UNCONDITIONAL, so the guard needs a form that
+	// has already moved once to be testable at all.
+	if _, err := f.Apply(kv("seed", "0"), 0); err != nil {
+		t.Fatal(err)
+	}
+	v0 := f.Version()
+	var okCount, movedCount atomic.Int64
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if _, err := f.Apply(kv("contested", fmt.Sprint(i)), v0); err != nil {
+				movedCount.Add(1)
+			} else {
+				okCount.Add(1)
+			}
+		}(i)
+	}
+	wg.Wait()
+	if okCount.Load() != 1 || movedCount.Load() != 1 {
+		t.Fatalf("want exactly one winner and one refusal, got %d and %d",
+			okCount.Load(), movedCount.Load())
+	}
+}
+
+// A no-op is answered, not swallowed. A waiter that never wakes on a patch
+// that changed nothing is the bug an optimistic client cannot recover from.
+func TestNoopIsAnswered(t *testing.T) {
+	f := NewMemForm()
+	defer f.Close()
+
+	if _, err := f.Apply(kv("a", "1"), 0); err != nil {
+		t.Fatal(err)
+	}
+	v := f.Version()
+	version, applied, err := f.ApplyEffect(kv("a", "1"), 0)
+	if err != nil {
+		t.Fatalf("a redundant set errored: %v", err)
+	}
+	if version != v {
+		t.Fatalf("a no-op moved the version: %d -> %d", v, version)
+	}
+	if !applied.IsEmpty() {
+		t.Fatal("a no-op reported an applied patch")
+	}
+}
+
+// A panicking sink must not take the writer with it.
+func TestSinkPanicIsContained(t *testing.T) {
+	f := NewMemForm()
+	defer f.Close()
+
+	f.OnCommit(func(uint64, message.Patch) { panic("sink") })
+	var saw atomic.Int64
+	f.OnCommit(func(uint64, message.Patch) { saw.Add(1) })
+
+	if _, err := f.Apply(kv("a", "1"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Apply(kv("b", "2"), 0); err != nil {
+		t.Fatalf("the writer died with a sink: %v", err)
+	}
+	if saw.Load() != 2 {
+		t.Fatalf("a panicking sink starved its neighbour: %d of 2", saw.Load())
+	}
+}
