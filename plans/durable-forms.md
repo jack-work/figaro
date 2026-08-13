@@ -33,10 +33,12 @@ That is the changeset. Everything below is detail.
 
 1. **One writer per form.** An inbox with exactly one drainer. Not a mutex,
    not a convention.
-1. **Durable before visible.** A patch is synced to disk before it reaches
-   the published state. The reverse is not a lost write but a hallucinated
-   one: the model is shown state as a reminder, so a crash would leave it
-   acting on something that never happened.
+1. **Durable before visible, with no buffer in between.** A patch is
+   fsynced before it reaches the published state, on every channel including
+   the IR. A sync that fails REJECTS the patch rather than half-applying it.
+   The reverse ordering is not a lost write but a hallucinated one: the model
+   is shown state as a reminder, so a crash would leave it acting on
+   something that never happened.
 1. **Reads are lock-free.** The live state is an immutable AVL root behind an
    atomic pointer. A read is one load. It never blocks a writer, never wakes
    anything, never serializes behind a turn.
@@ -194,10 +196,24 @@ published state untouched, so there is nothing to roll back.** Reverse
 patches are a whole subsystem (derive an inverse, hold it across the window,
 apply under failure, test it) that the ordering makes unnecessary.
 
-**What is missing is only the fsync.** figwal's `Log.Write` buffers and syncs
-when pending bytes exceed `maxLag`, default **64 MiB**. A form patch is a few
-hundred bytes, so nothing syncs. The comment in `store.Form` claiming
-durability precedes visibility is true of ORDERING and false of DURABILITY.
+**What is missing is the fsync, and the buffer it hides behind.** figwal's
+`Log.Write` buffers and syncs only when pending bytes exceed `maxLag`,
+default **64 MiB**. A form patch is a few hundred bytes, so nothing syncs.
+The comment in `store.Form` claiming durability precedes visibility is true
+of ORDERING and false of DURABILITY.
+
+**Ruling (Gluck, 2026-08-12): figwal becomes a true WAL and the flusher
+goes.** Every figaro append syncs before anything reaches memory, on every
+channel including the IR. A patch that fails to sync is REJECTED: it never
+enters the published state, so there is nothing to reconcile and no
+"succeeded but might not have" outcome for a caller to handle. The lag
+buffer may survive in figwal behind a config for other users of the library,
+but figaro sets it to zero.
+
+This reverses decisions taken before the log was understood as a log, and
+it will cost. The recovery is in batching, not in buffering: one fsync per
+BATCH is the optimization, and it is available precisely because the actor
+exists.
 
 figwal needs one method: `XWAL.SyncChannelThrough(channel string, idx uint64)`.
 `Log.SyncThrough` exists; `XWAL` exposes only `Sync` and `SyncCoherent`, and
@@ -608,92 +624,127 @@ Protection follows the namespace rather than a sigil: `spec.*` is settable,
 belonged: `study -P brief,status` writes a spec entry with those paths, and
 `study` with no `-P` writes `{"*": true}`. The whole form is the default.
 
-### 12.2 The libretto is the bound derived form
+### 12.2 One libretto per STUDIED FORM, shared, refcounted
 
-Every other derived form is free-standing and created through the API. The
-libretto is the one that is **bound**: minted with its figaro, **forked with
-it**, and addressed through it. It is to a derived form what an aria's board
-is to an unbound form.
+Final shape (Gluck, 2026-08-12), reversing two earlier drafts:
 
-That settles the open question from the other thread: **the libretto forks.**
-A branch inherits its parent's observations, which is today's behaviour and
-the least surprising one.
+- **One libretto per studied form**, not per figaro. Named
+  `libretto::<formid>`, so a form can find its own libretto and a figaro can
+  derive the name from the form id it studies.
+- **Librettos do not fork.** They are free-standing derived forms with their
+  own lifetime, shared by every figaro observing that form.
+- **The figaro's bound form holds a `study-set`**: the reserved key naming
+  the forms it studies. The libretto for each is derivable from the id, so
+  the board needs only the set, not a map.
+- **The libretto holds the refcount** of figaros studying it, which is what
+  makes it reclaimable when the last one drops.
+- **`study-set` may only be written by the study verb**, and it is a
+  different actor loop from the libretto's, so the two never contend.
+
+The libretto is still a COPY (§12.3): the projected subset of the form's
+state, materialized, with its own history. Sharing it means one copy per
+form rather than one per observer, which is most of the duplication cost
+gone before it is ever paid.
+
+### 12.2.1 Study is a two-participant write
+
+`study` must leave two nodes consistent: the libretto (subscription and
+refcount up) and the figaro's board (`study-set` gains the id). Two actors,
+two logs, no shared transaction.
+
+**Not two-phase commit.** The idiom this codebase already uses for the same
+shape is the delete path: crash-safe by ORDERING, with no journal. The same
+applies here, and the trick is to choose the order so that **every crash
+fails in the safe direction**.
+
+- **study**: libretto first (refcount up, subscribe), board second.
+- **drop**: board first (stop claiming it), libretto second (refcount down).
+
+Both orders leave, on a crash, a refcount that is **too high**. Too high
+delays reclamation; too low reclaims state a live observer still needs. One
+is a leak, the other is data loss, and only one of them is recoverable.
+
+**Reconciliation makes the leak finite.** The authoritative fact is "figaro
+X studies form Y", and it lives in X's board. A sweep (at daemon start, and
+behind a repair verb) recomputes each libretto's count from the boards that
+name it. Cheap, idempotent, and it is the same discipline as the delete
+path's boundary repair.
+
+Neither half blocks the figaro's actor loop. Both may block the board's own
+writer and the libretto's writer, which is what keeps the count honest.
+
+`drop` on a form that has since been deleted is **legal**: it removes the
+subscription and decrements, and the board stops naming it. A figaro that
+does not drop keeps studying a dead form, which is meaningful: if a form
+with that id is created again the libretto resumes, because patches are
+fully persisted and the subscription survives.
 
 ### 12.3 The libretto holds a COPY, not a reference
 
-The libretto is **the figaro's view of the world, materialized**: the
-projected subset of every studied form, held as ordinary keys, with its own
-patch history.
+The libretto is the observed form's state, **materialized**: the projected
+subset, held as ordinary keys, with its own patch history, plus the
+bookkeeping.
 
 ```jsonc
 {
-  "spec.@abc123": {"*": true},
-  "spec.@def456": {"brief": true, "status": true},
+  "refs":  3,                      // figaros studying this form
+  "paths": {"brief": true, "status": true},   // the union of what subscribers asked for
+  "alive": true,                   // false once the source is deleted
 
-  "@abc123.brief":  "ship the thing",
-  "@abc123.status": "merged",
-  "@def456.brief":  "the other thing"
+  "brief":  "ship the thing",
+  "status": "merged"
 }
 ```
 
-An earlier draft had it recording INTERVALS into each source's history
-instead. That is broken, and the reason is worth keeping: the translator
-would have to read the source's patches inside those ranges, so a studied
-form could never be deleted while any libretto named a range in it, and any
-retranslation (a fingerprint bump, a cache eviction) would demand those
-records still exist. Refcounting and retention coupling, reintroduced by the
-back door. Derived state is a COPY; deriving a pointer is not derivation.
+An earlier draft had it recording INTERVALS into the source's history. That
+is broken, and the reason is worth keeping: the translator would have to read
+the source's patches inside those ranges, so a studied form could never be
+deleted while a libretto named a range in it, and any retranslation would
+demand those records still exist. Refcounting and retention coupling through
+the back door. Derived state is a COPY; deriving a pointer is not derivation.
 
-**Five things collapse out of holding the copy:**
+**What holding the copy buys:**
 
-1. **Intervals disappear.** The libretto's own patch history IS the record of
-   what was observed and when. A study is the patch that creates the keys, a
-   change is a patch, a drop is a removal.
-2. **The translator never touches a source form.** It reads
-   `PatchesBetween(prev, cur]` on the libretto and renders it: one cursor in
-   the IR, one accessor, the same code path the board already uses.
-   `studyAccessors`, the per-form windows and the missing-accessor tombstone
-   branch all go.
-3. **Source forms become freely deletable.** The libretto already holds what
-   the figaro saw, so reclamation waits only on LIVE subscribers, which is
-   why leases can stay in-memory and best-effort (§7).
-4. **The render special cases become ordinary state.** The begin-mark
+1. **The translator never touches a source form.** It reads
+   `PatchesBetween(prev, cur]` on the libretto, the same code path the board
+   already uses.
+2. **Source forms become freely deletable.** The libretto records the death,
+   sets `alive: false`, and stops listening. The copy remains, so history
+   still renders.
+3. **The render special cases become ordinary state.** The begin-mark
    baseline exists because the first window is `(0, V]` and folds to a whole
-   form; now the baseline is simply the patch that created the keys. The
-   two-block trap and the "state rides the mark" rule become unnecessary.
-5. **The libretto may not be compacted**, because the translator takes
-   `PatchesBetween` views of it. Same type-level rule as a board (§8, §10).
+   form; now it is simply the patch that created the keys.
+4. **The libretto may not be compacted**, because the translator takes
+   `PatchesBetween` views of it. Same type-level rule as a board.
+
+**NOTE, for when retention lands:** with the refcount already here, a
+libretto can later hold LT RANGES into the source instead of a copy, and
+retention on the source can be driven by the ranges its librettos still
+name. That removes the duplication entirely and is deliberately not built
+now, because it requires the retention machinery to exist first.
 
 ### 12.4 The write path, in order
 
-- **`study`** patches `spec.<formid>`. Ordinary command, ordinary writer, no
-  agent, no wake.
-- **The libretto's actor subscribes** to each form in the spec and behaves
-  like any other consumer: it folds an incoming patch through the spec's
-  projection into its own keys, hears a tombstone and records it, syncs,
-  publishes.
+- **`study`** patches the libretto (refs, paths, subscribe) then the board's
+  `study-set`. See §12.2.1 for why that order.
+- **The libretto's actor subscribes** to its one source form, folds incoming
+  patches through `paths` into its own keys, hears a tombstone and records
+  it, syncs, publishes.
 - **The figaro reads the libretto** at each IR record and stamps its version.
   It never writes it on that path (§13.1).
 
-### 12.5 The cost, stated plainly
+### 12.5 What the IR stamps, corrected
 
-**Duplication.** Every observed value is copied into every observer's
-libretto and retained there with its history. Fifty observers on one form is
-fifty copies, in memory and on disk. That is what buys the decoupling, and
-it is accepted for now.
+Because librettos are per-form, an aria observing N forms stamps **N
+cursors**, one per libretto: the same shape `StudyVersions` has today,
+pointing at librettos instead of sources. The "one cursor" claim in an
+earlier draft was a consequence of the per-figaro libretto and dies with it.
 
-In memory the mitigation is tree surgery (§12.7): the libretto's AVL points
-at the same immutable value nodes as the source, so the resident cost is
-nodes on touched paths rather than bytes. On disk it is a real copy, and the
-lever is a retention policy per libretto, which is fully persistent today
-and configurable later.
-
-The direction of travel, not built here: refcounting so that the only copy
-is the translator's, which is already a projective, byte-identical
-materialized cache on disk and cannot break unless something evicts it.
-Eviction should be explicit (`fig translator evict`) rather than automatic;
-an API rejecting historical state should be visible and require a manual
-eviction rather than silently regenerating.
+The ambiguity that used to haunt those stamps (absence meaning "not
+studying" versus "could not read") is now answered elsewhere: **the observed
+set is derivable from the board's own `study-set` at the board version the
+record already stamps.** The stamp says where each libretto stood; the board
+says which ones were being observed. Neither has to encode the other.
 
 ### 12.6 Persistence and retention
 
@@ -800,9 +851,12 @@ design, and the resolutions are load-bearing.
 
 ## 14. What this costs
 
-1. **Solo write latency**: a form patch goes from a buffered memcpy (~5 µs)
-   to a real fsync (~50 to 200 µs). `fig set`, every mantra update. The
-   number to watch.
+1. **Every append now syncs**, on every channel. A form patch goes from a
+   buffered memcpy (~5 µs) to a real fsync (~50 to 200 µs), and an IR record
+   pays the same. `fig set`, every mantra update, every message of every
+   turn. This is the cost of the WAL being a WAL, it is deliberate, and it
+   is the number to watch above all others. The recovery is batching, and
+   after that preallocation plus `fdatasync` (§3.3).
 1. **Contended throughput improves**: group commit amortizes the fsync and
    takes figwal's per-lineage lock once per batch rather than once per patch.
 1. **Goroutines drop for idle forms** and do **not** drop for blocking
@@ -1028,11 +1082,18 @@ Settled since the first draft, recorded so they are not reopened:
   (§5).
 - Command ids are **monotonic per session** (§4.1).
 - A derived form is **one form with one actor**, not a compound (§12.1).
-- The libretto **forks with its figaro** and is the sole bound derived form
-  (§12.2).
-- The libretto holds **intervals of observed revision history**, not cursors,
-  which is what retires durable refcounting (§12.3).
-- The IR stamps **one cursor**, the libretto's (§12.3).
+- **One libretto per studied FORM**, shared, refcounted, and it does **not**
+  fork (§12.2). Two earlier drafts said otherwise; this one is final.
+- The libretto holds a **copy** of the projected state, not intervals and not
+  references (§12.3).
+- The IR stamps **one cursor per observed libretto**, and the observed SET is
+  derivable from the board's own `study-set` at the board version the record
+  already carries (§12.5).
+- **Study is a two-participant write**, made safe by ordering rather than by
+  two-phase commit: every crash over-counts, and a reconciliation sweep makes
+  the leak finite (§12.2.1).
+- **figwal becomes a true WAL**: the lag buffer goes, every append syncs
+  before it is visible, a failed sync rejects the patch (§3.3).
 - Leases are **in-memory and best-effort** (§7).
 - Subscription is **register-then-snapshot**, lock-free, outside the queue
   (§6.1).
@@ -1045,11 +1106,10 @@ Settled since the first draft, recorded so they are not reopened:
 
 Still open:
 
-- **Libretto copy volume** (§12.5): every observed value is duplicated per
-  observer, with its history. Accepted for now; refcounting so the only copy
-  is the translator's is the direction of travel, not this changeset.
-  `[q12]`
-- **Does `ensure` intent stay internal** (birth dressing only) or become a
-  client-facing flag?
-- **`agent.mu` and `restoreLocks`** (`[q10]`): in scope or follow-ups?
-- **`fig form listen` on a resync** (`[q11]`): what does the pager show?
+- **The union projection** (§12.3 `paths`): two figaros studying one form
+  with different `-P` sets share one libretto, so it must hold the union and
+  each figaro filters on read. Where the per-figaro path set lives is the
+  last undecided piece of the `study-set` shape. `[q13]`
+- **How `libretto::<formid>` resolves to a node.** `[q14]`
+- **`agent.mu` and `restoreLocks`**: fast-follow, documented in
+  `plans/lock-audit.md`.
