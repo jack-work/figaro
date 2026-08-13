@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -239,12 +240,20 @@ func (f *Form) PatchesBetween(after, upTo uint64) []VersionedPatch {
 	return out
 }
 
+var errStopRange = errors.New("store: range complete")
+
 // patchesFromLog re-reads a range the resident window no longer covers.
 // Allocates, and is meant to: it is the cold path.
 func (f *Form) patchesFromLog(after, upTo uint64) ([]VersionedPatch, bool) {
 	var out []VersionedPatch
 	err := f.log.RangePatches(func(index uint64, payload []byte) error {
-		if index <= after || index > upTo {
+		if index > upTo {
+			// Records arrive in index order, so past the range there is
+			// nothing left to find. Stopping matters: without it every cold
+			// read of an early range walks the whole log.
+			return errStopRange
+		}
+		if index <= after {
 			return nil
 		}
 		var p message.Patch
@@ -256,7 +265,7 @@ func (f *Form) patchesFromLog(after, upTo uint64) ([]VersionedPatch, bool) {
 		}
 		return nil
 	})
-	if err != nil {
+	if err != nil && !errors.Is(err, errStopRange) {
 		slog.Warn("form patches from log", "after", after, "upTo", upTo, "err", err)
 		return nil, false
 	}

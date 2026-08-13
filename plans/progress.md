@@ -685,3 +685,9 @@ figwal (the only lever that lowers the 3 ms per-sync floor); a bounded range
 read in figwal so a cold `PatchesBetween` below the window stops walking the
 whole log; and 306 goroutines on a daemon with 3 live arias, which nobody
 has profiled because the running daemon predates profiling being armed.
+
+**A cold read below the window now stops at the range's end.** `RangePatches`
+visits in index order, so walking past `upTo` finds nothing; without the
+stop, every cold read of an early range walked the whole log. Still O(offset)
+rather than O(1) because `FormLog` has no bounded range read, which is the
+figwal `RecordsBetween` item in the perf list.
