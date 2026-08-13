@@ -128,6 +128,11 @@ func (a *Angelus) MemStatus() *rpc.MemStatus {
 	if lb, ok := a.Backend.(interface{ LibrettoStats() (int, int) }); ok {
 		st.Librettos, st.LibrettoObservers = lb.LibrettoStats()
 	}
+	if sweep := a.lastLibrettoSweep.Load(); sweep != nil {
+		st.LibrettoSweepMinted = sweep.Minted
+		st.LibrettoSweepCorrected = sweep.Corrected
+		st.LibrettoSweepMissing = sweep.Missing
+	}
 	if tr, ok := a.Backend.(interface {
 		ResidentTranslationRows() int
 		ResidentTranslationBytes() int

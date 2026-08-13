@@ -62,6 +62,13 @@ type Angelus struct {
 	// test that must not implement the whole backend to answer one question.
 	residentFor idleEvictor
 
+	// lastLibrettoSweep is what the boot reconciliation found, published for
+	// `doctor mem`. The sweep runs in the background and repairs quietly;
+	// without this the only way to learn whether it did anything was to stop
+	// the daemon and run the audit by hand, which is a poor way to discover
+	// that a migration happened.
+	lastLibrettoSweep atomic.Pointer[store.LibrettoAudit]
+
 	listener  net.Listener
 	cancel    context.CancelFunc
 	pprofPath string // set by StartPprof; empty when profiling is not armed
@@ -252,11 +259,12 @@ func (a *Angelus) reconcileLibrettos() {
 			slog.Warn("libretto reconciliation failed", "err", err)
 			return
 		}
-		if audit.Corrected > 0 || audit.Missing > 0 || audit.Orphaned > 0 {
+		a.lastLibrettoSweep.Store(&audit)
+		if audit.Corrected > 0 || audit.Minted > 0 || audit.Missing > 0 || audit.Orphaned > 0 {
 			slog.Info("librettos reconciled",
 				"boards", audit.Boards, "librettos", audit.Librettos,
-				"corrected", audit.Corrected, "orphaned", audit.Orphaned,
-				"missing", audit.Missing)
+				"corrected", audit.Corrected, "minted", audit.Minted,
+				"orphaned", audit.Orphaned, "missing", audit.Missing)
 		}
 	}()
 }

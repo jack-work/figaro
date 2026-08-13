@@ -203,6 +203,10 @@ func runDoctorMem(asJSON bool) error {
 		fmt.Printf("librettos  open=%d  observers=%d  (one fold goroutine each)\n",
 			m.Librettos, m.LibrettoObservers)
 	}
+	if m.LibrettoSweepMinted > 0 || m.LibrettoSweepCorrected > 0 || m.LibrettoSweepMissing > 0 {
+		fmt.Printf("           boot sweep: minted=%d corrected=%d still-missing=%d\n",
+			m.LibrettoSweepMinted, m.LibrettoSweepCorrected, m.LibrettoSweepMissing)
+	}
 	fmt.Printf("runtime    goroutines=%d  sessions=%d  gc=%d\n",
 		m.Goroutines, m.Sessions, m.NumGC)
 	fmt.Printf("heap       alloc=%s  inuse=%s  sys=%s  total-sys=%s\n",

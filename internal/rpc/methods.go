@@ -929,6 +929,12 @@ type MemStatus struct {
 	// a goroutine and a subscription; this is what studying costs.
 	Librettos         int `json:"librettos"`
 	LibrettoObservers int `json:"libretto_observers"`
+	// The boot reconciliation's result: what it repaired and what it could
+	// not. A migration that happens in the background must be observable
+	// without stopping the daemon to ask.
+	LibrettoSweepMinted    int `json:"libretto_sweep_minted"`
+	LibrettoSweepCorrected int `json:"libretto_sweep_corrected"`
+	LibrettoSweepMissing   int `json:"libretto_sweep_missing"`
 
 	HeapAllocBytes uint64 `json:"heap_alloc_bytes"` // live heap objects
 	HeapInuseBytes uint64 `json:"heap_inuse_bytes"` // spans in use, incl. fragmentation
