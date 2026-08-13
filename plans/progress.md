@@ -1104,3 +1104,38 @@ far (the IR window, the patch window) touches the other 222 MB, and nothing
 in the goroutine census accounts for it either. That is the next thing to
 measure, and it should be measured with a heap profile on a daemon that has
 `FIGARO_PPROF=1` from the start rather than guessed at.
+
+### The other cache, measured on 515 real arias
+
+The hypothesis was that the unmeasured translation caches were the missing
+222 MB. **They are not**, and the probe says so plainly
+(`realtrans_probe_test.go`, against a COPY of the real store, 515 arias
+opened at once, IR window off):
+
+```
+TOTAL   ir = 1,088,582,800 bytes    translations = 85,696,595 bytes   0.08x
+largest single aria   ir 11.4 MB / 1609 rows   xlt 2.95 MB / 1606 rows
+```
+
+Translations are **8% of the decoded IR**, and about 25% of it on the
+longest arias. So the IR remains the dominant term and the 222 MB is still
+unaccounted for; it needs a heap profile on a daemon started with
+`FIGARO_PPROF=1`, which the running one was not.
+
+**But the comparison that matters is against the BOUND, not against the
+IR.** The IR is windowed to 4 MiB per aria; the translations beside it were
+windowed to nothing at all. On any aria long enough to matter, the bounded
+cache is capped at 4 MiB while its unbounded neighbour keeps growing — so
+the unmeasured one becomes the larger half precisely where memory is worst.
+
+So: `[memory] translation_window_mb`, default 4, floored like the IR's, 0
+for unbounded. **The default binds nothing that exists today** (the largest
+real aria holds 2.95 MiB), which is the point: it caps growth that had no
+cap, and it changes no measurement taken so far.
+
+Two tests, at the two ends: `TestTranslationWindowBytesDefaults` for the
+three answers a knob owes (unset is bounded, explicit 0 is unbounded, below
+the floor is raised), and `TestTranslationBudgetReachesTheCache` for the
+thing a config test cannot see — that the budget reaches the CACHE, bounds
+residency, and loses no records, because a read below the window still
+falls through to the log.

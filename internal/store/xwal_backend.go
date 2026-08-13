@@ -56,6 +56,10 @@ type XwalBackend struct {
 	// irBudget bounds resident decoded IR in bytes. It is the knob that
 	// actually controls memory; see cachedLog.budget.
 	irBudget int
+	// transBudget bounds resident decoded translations per (aria, provider).
+	// The payload is the provider's own wire form, so the estimate is the
+	// bytes themselves rather than an inflation of them.
+	transBudget int
 }
 
 // irEntrySize estimates one IR entry's retained bytes as its encoded size
@@ -196,13 +200,14 @@ func (b *XwalBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.R
 		b.mu.Unlock()
 		return c, nil
 	}
+	// Read the budget HERE, under the lock that SetTranslationBudget writes
+	// it under. Building the cache stays outside: it reads files.
+	budget := b.transBudget
 	b.mu.Unlock()
 	ch := transChannel(providerName)
-	// Unbounded, as before: what changes here is that the entries are now
-	// MEASURED. Bounding them is a separate argument that wants these
-	// numbers first.
 	c := newWindowedLog[[]json.RawMessage](
-		newXwalLog[[]json.RawMessage](b.store, ariaID, ch, false), 0, 0, 1, transEntrySize)
+		newXwalLog[[]json.RawMessage](b.store, ariaID, ch, false),
+		0, budget, 1, transEntrySize)
 	b.mu.Lock()
 	if existing := h.trans[providerName]; existing != nil {
 		b.mu.Unlock()
@@ -618,6 +623,14 @@ func (b *XwalBackend) SetIRWindow(n int) {
 
 // SetIRBudget sets the resident decoded-IR byte budget for handles opened from
 // here on. Same "new handles only" rule as SetIRWindow.
+// SetTranslationBudget bounds the translation caches. Applies to caches
+// opened after it, which is every one on a daemon that configures at boot.
+func (b *XwalBackend) SetTranslationBudget(n int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.transBudget = n
+}
+
 func (b *XwalBackend) SetIRBudget(n int) {
 	b.mu.Lock()
 	b.irBudget = n

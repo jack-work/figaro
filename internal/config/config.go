@@ -197,6 +197,18 @@ type MemoryConfig struct {
 	// aria measured.
 	IRWindowMB *int `toml:"ir_window_mb"`
 
+	// TranslationWindowMB bounds resident decoded TRANSLATIONS per aria per
+	// provider, in mebibytes. It was the last unbounded cache in the store.
+	//
+	// Measured across 515 real arias: translations are 8% of the decoded IR
+	// in total, and the largest single aria holds 2.9 MiB of them. So the
+	// default binds nothing that exists today - it exists because the IR
+	// beside it IS bounded, which makes an unbounded neighbour the larger
+	// half on any aria long enough to matter.
+	//
+	// 0 is unbounded, which is what this was before it had a name.
+	TranslationWindowMB *int `toml:"translation_window_mb"`
+
 	// SoftLimitMB is the daemon's heap ceiling (Go's GOMEMLIMIT). Go
 	// collects harder as it approaches instead of growing to meet whatever
 	// the last big sweep asked for, so the ceiling is also a licence: a high
@@ -294,7 +306,29 @@ func (l *Loaded) IRWindowBytes() int {
 	return *l.Config.Memory.IRWindowMB << 20
 }
 
+// TranslationWindowBytes is the resident decoded-translation byte budget per
+// aria per provider, or 0 for unbounded. Floored like the IR's, and for the
+// same reason: a budget too small to hold the tail a translator is about to
+// send makes it re-read that tail from disk on every Send.
+func (l *Loaded) TranslationWindowBytes() int {
+	if l == nil || l.Config.Memory.TranslationWindowMB == nil {
+		return defaultTranslationWindowMB << 20
+	}
+	if *l.Config.Memory.TranslationWindowMB <= 0 {
+		return 0
+	}
+	if mb := *l.Config.Memory.TranslationWindowMB; mb < minIRWindowMB {
+		return minIRWindowMB << 20
+	}
+	return *l.Config.Memory.TranslationWindowMB << 20
+}
+
 const (
+	// defaultTranslationWindowMB holds the whole translation history of every
+	// aria in the author's store (largest: 2.9 MiB), so it changes nothing
+	// today and caps the growth that had no cap.
+	defaultTranslationWindowMB = 4
+
 	// minIRWindow is a floor, not taste: a window smaller than one turn's
 	// worth of messages makes an in-flight turn re-read its own tail from disk
 	// on every append.

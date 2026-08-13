@@ -136,9 +136,11 @@ func runAngelus() {
 	if w, ok := backend.(interface {
 		SetIRWindow(int)
 		SetIRBudget(int)
+		SetTranslationBudget(int)
 	}); ok {
 		w.SetIRWindow(loaded.IRWindow())
 		w.SetIRBudget(loaded.IRWindowBytes())
+		w.SetTranslationBudget(loaded.TranslationWindowBytes())
 	}
 
 	a := angelus.New(angelus.Config{

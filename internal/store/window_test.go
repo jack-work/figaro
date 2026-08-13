@@ -1,7 +1,9 @@
 package store
 
 import (
+	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -246,4 +248,46 @@ func TestWindow_RowAndByteBoundsCompose(t *testing.T) {
 	c := newWindowedLog[uint64](inner, 50, 100, 1, costOf)
 	assert.LessOrEqual(t, c.Resident(), 10)
 	assert.LessOrEqual(t, c.ResidentBytes(), 100)
+}
+
+// The budget has to reach the CACHE, not just the config struct. A window set
+// after the first handle is built would leave that aria unbounded for the
+// daemon's life, which is the bug the IR window's own comment warns about.
+func TestTranslationBudgetReachesTheCache(t *testing.T) {
+	be, err := NewXwalBackend(t.TempDir(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer be.Close()
+	be.SetTranslationBudget(4 << 10)
+
+	outfit, err := be.CreateOutfit("t", patchSet(map[string]string{"system.model": "m"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := be.CreateConversation(outfit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log, err := be.OpenTranslation(id, "anthropic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	big := json.RawMessage(`"` + strings.Repeat("x", 900) + `"`)
+	for i := 0; i < 40; i++ {
+		if _, err := log.Append(Entry[[]json.RawMessage]{Payload: []json.RawMessage{big}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c := log.(*cachedLog[[]json.RawMessage])
+	if got := c.ResidentBytes(); got > 4<<10+4<<10/2+1024 {
+		t.Fatalf("resident %d bytes against a 4 KiB budget: the budget did not reach the cache", got)
+	}
+	if c.Resident() == 0 || c.Len() != 40 {
+		t.Fatalf("bounded residency must not lose records: resident=%d len=%d", c.Resident(), c.Len())
+	}
+	// And the trimmed prefix is still readable, from the log.
+	if all := c.Read(); len(all) != 40 {
+		t.Fatalf("read below the window returned %d of 40", len(all))
+	}
 }

@@ -115,3 +115,26 @@ func TestFormPatchWindow(t *testing.T) {
 		t.Fatalf("configured: got %d", got)
 	}
 }
+
+// The translation cache was the last unbounded one in the store. Same three
+// answers as the IR's, because a reader who learns one should not have to
+// learn the other.
+func TestTranslationWindowBytesDefaults(t *testing.T) {
+	if got := (*Loaded)(nil).TranslationWindowBytes(); got != defaultTranslationWindowMB<<20 {
+		t.Fatalf("nil config: want the default budget, got %d", got)
+	}
+	var l Loaded
+	if got := l.TranslationWindowBytes(); got != defaultTranslationWindowMB<<20 {
+		t.Fatalf("unset: want the default budget, got %d", got)
+	}
+	zero := 0
+	l.Config.Memory.TranslationWindowMB = &zero
+	if got := l.TranslationWindowBytes(); got != 0 {
+		t.Fatalf("explicit 0 must mean unbounded, got %d", got)
+	}
+	small := 1
+	l.Config.Memory.TranslationWindowMB = &small
+	if got := l.TranslationWindowBytes(); got != minIRWindowMB<<20 {
+		t.Fatalf("below the floor must be raised, got %d", got)
+	}
+}
