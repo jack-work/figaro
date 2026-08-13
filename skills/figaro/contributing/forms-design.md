@@ -200,7 +200,13 @@ them:
   the value the key ends at; see [roles-design.md](roles-design.md) for why
   that is not optional.
 - Study and drop are stated IR marks, so a replay can account for when
-  observation began.
+  observation began. **The mark rides the INBOX**: written from an RPC
+  goroutine it could land between an assistant `tool_use` and its
+  `tool_result`, which every provider refuses ("tool_use ids were found
+  without tool_result blocks") and which bricked two real arias. The loop
+  writes it — immediately when idle, at a round boundary when a turn is in
+  flight. The rule it obeys, for anything that later wants to stamp the IR:
+  **no out-of-band record between a `tool_use` and its results.**
 - A form removed while observed renders a tombstone.
 - The translator asks each member for an ABSOLUTE range, `(after, upTo]`,
   and the store answers with a read-only VIEW into an immutable, published
@@ -209,6 +215,17 @@ them:
   reason a bounded question was being answered at unbounded cost.
 - What each event SAYS beyond the fact is `system.study_incantation` on the
   observer's own board. See §8c.
+- **Every studied form now has a LIBRETTO**, `@libretto::<formid>`: a derived
+  form on a reserved stump holding a COPY of the studied state, shared by
+  every observer, refcounted, never listed and never forked. `study` retains
+  it before the board declares the study; `drop` releases it after the board
+  stops claiming one; fork retains for the child before the child exists and
+  kill releases for the board it destroys. Every crash therefore leaves the
+  count too HIGH, and `figaro doctor librettos` recomputes it from the boards
+  (recompute, never adjust, so it repairs both directions). The copy outlives
+  its source: that is what makes a studied form deletable, and it is why a
+  libretto is NOT reclaimed merely because its refcount reached zero.
+  Design: `plans/durable-forms.md` §12, corrections in §12.8.
 
 ## 8c. Incantations
 
