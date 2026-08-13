@@ -715,15 +715,20 @@ fully persisted and the subscription survives.
 
 ### 12.3 The libretto holds a COPY, not a reference
 
-The libretto is the observed form's state, **materialized**: the projected
-subset, held as ordinary keys, with its own patch history, plus the
-bookkeeping.
+The libretto is the observed form's state, **materialized**: the WHOLE form,
+held as ordinary keys, with its own patch history, plus the bookkeeping.
+
+A libretto has no `paths` and takes no projection — `answers-forms.md:1`,
+"whole-form is the only option, for librettos". API-level derived forms keep
+projection; this one does not, and the built thing never had it. Bookkeeping
+lives under `system.libretto.*` (§12.8.1), because a whole-form mirror copies
+arbitrary board keys and a board may legitimately hold one called `refs`.
 
 ```jsonc
 {
-  "refs":  3,                      // figaros studying this form
-  "paths": {"brief": true, "status": true},   // the union of what subscribers asked for
-  "alive": true,                   // false once the source is deleted
+  "system.libretto.refs":  3,      // figaros studying this form
+  "system.libretto.alive": true,   // false once the source is deleted
+  "system.libretto.at":    41,     // the source version last folded in
 
   "brief":  "ship the thing",
   "status": "merged"
@@ -1310,12 +1315,22 @@ Settled since the first draft, recorded so they are not reopened:
 - The translator cache is **retained, never compacted, tail-truncated only**
   (§8).
 
+- **The union projection is DEAD**, with the projection it belonged to:
+  librettos are whole-form only (`answers-forms.md:1`), so there are no
+  per-figaro path sets to union and `[q13]` needs no answer. It was still
+  listed as open here three sessions after he settled it.
+- **`libretto::<formid>` resolves to a reserved STUMP**, not a node, and
+  `[q14]` is answered by the built thing: `LibrettoID` is deterministic from
+  the source id, the stump is named for the bare id, and a libretto is read
+  ONLY through `Libretto(source)` — never as a node, which `b.form()` now
+  refuses (§12.5d).
+- **The projection switch is BUILT** (§12.5b, §12.5c, §12.5d): the IR stamps
+  the libretto, the translator reads the copy, legacy stamps render nothing.
+
 Still open:
 
-- **The union projection** (§12.3 `paths`): two figaros studying one form
-  with different `-P` sets share one libretto, so it must hold the union and
-  each figaro filters on read. Where the per-figaro path set lives is the
-  last undecided piece of the `study-set` shape. `[q13]`
-- **How `libretto::<formid>` resolves to a node.** `[q14]`
 - **`agent.mu` and `restoreLocks`**: fast-follow, documented in
   `plans/lock-audit.md`.
+- **A form under a client-specified id** (`answers-forms.md:2`), which is
+  also what makes a REBORN form constructible; the libretto's watermark
+  reset belongs with it. See progress.md's queue.
