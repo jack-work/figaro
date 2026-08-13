@@ -15,6 +15,13 @@ import (
 	"github.com/jack-work/figaro/internal/rpc"
 )
 
+// setWait is `--wait`: the caller accepts a tool round's worth of latency in
+// exchange for the writer's verdict, instead of the acknowledgement that the
+// patch was queued. Package-level because the CLI's set surface is a family
+// of small entry points and threading a bool through all of them would be
+// noise; it is set once, by the flag, before any of them runs.
+var setWait bool
+
 // runSetArgs patches a form key. Supports dotted paths like
 // system.tags[42].cache_control.
 func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string) {
@@ -429,11 +436,24 @@ func mustCallSet(loaded *config.Loaded, ariaID string, patch rpc.FormPatch, ifVe
 func callSet(loaded *config.Loaded, ariaID string, patch rpc.FormPatch, ifVersion uint64, assert bool) setResult {
 	var result setResult
 	WithSessionFor(loaded, ariaID, func(s *Session) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		// --wait is the caller accepting a tool round's worth of latency in
+		// exchange for the writer's verdict. The timeout is longer for the
+		// same reason, and it is still a timeout: an aria mid-turn answers
+		// when the round ends, not when the patch is submitted.
+		timeout := 10 * time.Second
+		if setWait {
+			timeout = 5 * time.Minute
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		set := s.Figaro.Set
 		if assert {
 			set = s.Figaro.SetAsserting
+		}
+		if setWait {
+			set = func(ctx context.Context, p rpc.FormPatch, v uint64) (*rpc.SetResponse, error) {
+				return s.Figaro.SetWaiting(ctx, p, v, assert)
+			}
 		}
 		resp, err := set(ctx, patch, ifVersion)
 		if err != nil {

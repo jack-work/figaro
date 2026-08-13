@@ -78,6 +78,24 @@ type event struct {
 	// would block the caller for the length of the round. Phase 3's ticket
 	// closes it without waiting.
 	setAssert bool
+	// setDone, when non-nil, carries the WRITER's verdict back to a caller
+	// that asked to wait for it (`fig set --wait`). Buffered, so the drain
+	// loop never blocks on a caller that has walked away.
+	//
+	// Waiting is OPT-IN and must stay that way. A set arriving mid-turn is
+	// applied at the next round boundary by design, so a caller that waits
+	// waits for the length of a tool round; making that the default hangs
+	// TestFormSetDuringToolRoundAppliesNextRound for its full timeout, which
+	// is how the first attempt at this died.
+	setDone chan setVerdict
+}
+
+// setVerdict is what the writer decided: the version it landed at, what
+// actually landed after the reduce, and the refusal if there was one.
+type setVerdict struct {
+	version uint64
+	applied message.Patch
+	err     error
 }
 
 // Config is the constructor input for NewAgent. Configured values
@@ -932,7 +950,7 @@ func (a *Agent) act(ctx context.Context) {
 				"text", truncLog(merged.text, 60), "folded", len(batch))
 			a.runTurn(ctx, merged)
 		case eventSet:
-			a.applyControlPatch(evt.setPatch, evt.setIfVersion, evt.setAssert, "set")
+			a.applyControlPatchVerdict(evt.setPatch, evt.setIfVersion, evt.setAssert, "set", evt.setDone)
 		case eventCast:
 			a.serviceCast(evt.cast)
 		}
@@ -946,7 +964,11 @@ func (a *Agent) act(ctx context.Context) {
 func (a *Agent) serviceSets() bool {
 	evts := a.inbox.TakeReadySet()
 	for _, evt := range evts {
-		a.applyControlPatch(evt.setPatch, evt.setIfVersion, evt.setAssert, "set")
+		// THE ROUND BOUNDARY, and the reason --wait exists. A set that
+		// arrived mid-turn is applied here, so this is where a waiting
+		// caller's verdict comes from; passing nil here would leave it
+		// waiting for a turn that already applied its patch.
+		a.applyControlPatchVerdict(evt.setPatch, evt.setIfVersion, evt.setAssert, "set", evt.setDone)
 	}
 	return len(evts) > 0
 }
@@ -956,13 +978,31 @@ func (a *Agent) serviceSets() bool {
 // the next IR LT, so it rides the next turn as a transition); ephemeral
 // arias fold it onto an IR control-turn (no channel to hold it).
 func (a *Agent) applyControlPatch(patch message.Patch, ifVersion uint64, assert bool, kind string) {
+	a.applyControlPatchVerdict(patch, ifVersion, assert, kind, nil)
+}
+
+// applyControlPatchVerdict is the same write, reporting what the writer
+// decided to a caller that asked to wait. done may be nil, which is every
+// path but `--wait`.
+func (a *Agent) applyControlPatchVerdict(patch message.Patch, ifVersion uint64, assert bool, kind string, done chan setVerdict) {
+	verdict := setVerdict{}
+	if done != nil {
+		defer func() {
+			select {
+			case done <- verdict:
+			default: // nobody is listening any more; the write still happened
+			}
+		}()
+	}
 	slog.Debug("event "+kind, "aria", a.id, "set", len(patch.Set), "remove", len(patch.Remove))
 	if a.backend != nil {
 		intent := store.Ensure
 		if assert {
 			intent = store.Assert
 		}
-		if _, _, err := a.backend.ApplyFormEffectIntent(a.id, patch, ifVersion, intent); err != nil {
+		version, applied, err := a.backend.ApplyFormEffectIntent(a.id, patch, ifVersion, intent)
+		verdict.version, verdict.applied, verdict.err = version, applied, err
+		if err != nil {
 			slog.Error(kind+" form append", "aria", a.id, "err", err)
 			return
 		}
@@ -973,9 +1013,11 @@ func (a *Agent) applyControlPatch(patch message.Patch, ifVersion uint64, assert 
 			Timestamp: time.Now().UnixMilli(),
 		}
 		if _, err := a.appendMsg(msg); err != nil {
+			verdict.err = err
 			slog.Error(kind+" append", "aria", a.id, "err", err)
 			return
 		}
+		verdict.applied = patch
 	}
 	a.form.Apply(patch)
 	a.refreshMetrics()

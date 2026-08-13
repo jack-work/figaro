@@ -1268,9 +1268,12 @@ See ` + "`figaro help outfits`" + ` for the outfit syntax.`,
 		ArgsMax: 2,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria id (overrides pid binding)"},
+			{Long: "wait", IsBool: true,
+				Description: "Wait for the writer's verdict (a live aria applies a set at its next round boundary)"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
+			setWait = ctx.Flag("wait") != ""
 			runSetArgs(ld, ctx.Flag("id"), ctx.Args[0], ctx.Args[1])
 			return nil
 		},

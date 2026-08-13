@@ -1,6 +1,7 @@
 package figaro
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -67,6 +68,43 @@ func (a *Agent) SetIntent(patch form.Patch, ifVersion uint64, assert bool) (set,
 	removed = append(removed, patch.Remove...)
 	a.inbox.Send(event{typ: eventSet, setPatch: patch, setIfVersion: ifVersion, setAssert: assert})
 	return set, removed, nil
+}
+
+// SetAwaiting is SetIntent for a caller that asked to WAIT for the writer's
+// verdict (`fig set --wait`).
+//
+// It is opt-in and must stay so. A set arriving mid-turn is applied at the
+// next ROUND BOUNDARY by design, so this blocks for as long as that takes -
+// which is the right trade only when the caller chose it. Making it the
+// default hangs TestFormSetDuringToolRoundAppliesNextRound for its whole
+// timeout, and that is how the first attempt at this died.
+//
+// What it buys: the two refusals that only reach the daemon log on a live
+// aria - a stale ifVersion and an Assert removal - become answers to the
+// caller, closing the one place the dormant and live paths disagree.
+func (a *Agent) SetAwaiting(ctx context.Context, patch form.Patch, ifVersion uint64, assert bool) (uint64, form.Patch, error) {
+	if a.form == nil {
+		return 0, form.Patch{}, fmt.Errorf("set requires a form")
+	}
+	if patch.IsEmpty() {
+		return 0, form.Patch{}, nil
+	}
+	if err := form.CheckWritable(patch, false); err != nil {
+		return 0, form.Patch{}, err
+	}
+	done := make(chan setVerdict, 1)
+	a.inbox.Send(event{
+		typ: eventSet, setPatch: patch, setIfVersion: ifVersion,
+		setAssert: assert, setDone: done,
+	})
+	select {
+	case v := <-done:
+		return v.version, v.applied, v.err
+	case <-ctx.Done():
+		// The patch is still queued and will still be applied: what expired
+		// is the caller's patience, not the write.
+		return 0, form.Patch{}, ctx.Err()
+	}
 }
 
 func withoutSystemNS(s form.Snapshot) form.Snapshot {

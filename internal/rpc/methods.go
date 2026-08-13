@@ -285,6 +285,12 @@ type SetRequest struct {
 	// "do not inherit this" about a closure that may never have held it.
 	// Absent (false) keeps the older, forgiving rule.
 	Assert bool `json:"assert,omitempty"`
+	// Wait asks a LIVE aria to answer with the writer's verdict instead of
+	// `queued`. It blocks until the next round boundary, which is as long as
+	// a tool round, so it is opt-in and the default is unchanged. A dormant
+	// aria is answered by the hub and was always synchronous, so this
+	// changes nothing there.
+	Wait bool `json:"wait,omitempty"`
 }
 
 // Set outcomes. Silence is not a legal answer to a command: a caller must be

@@ -136,6 +136,26 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, err
 		}
+		if req.Wait {
+			// The caller chose to wait for the round boundary, so it gets the
+			// writer's own verdict: an applied version, an unchanged, or the
+			// refusal that otherwise only reaches the daemon log.
+			version, applied, err := a.SetAwaiting(ctx, req.Patch, req.IfVersion, req.Assert)
+			if err != nil {
+				return nil, outfitError(err)
+			}
+			if applied.IsEmpty() {
+				return rpc.SetResponse{OK: true, Outcome: rpc.OutcomeUnchanged, Version: version}, nil
+			}
+			var keys []string
+			for k := range applied.Set {
+				keys = append(keys, k)
+			}
+			return rpc.SetResponse{
+				OK: true, Set: keys, Remove: applied.Remove,
+				Outcome: rpc.OutcomeApplied, Version: version,
+			}, nil
+		}
 		set, removed, err := a.SetIntent(req.Patch, req.IfVersion, req.Assert)
 		if err != nil {
 			// A patch may name layers, so a set can fail the way a dressing

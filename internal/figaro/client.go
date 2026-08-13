@@ -130,6 +130,14 @@ func (c *Client) SetAsserting(ctx context.Context, patch rpc.FormPatch, ifVersio
 	return c.setWith(ctx, rpc.SetRequest{Patch: patch, IfVersion: ifVersion, Assert: true})
 }
 
+// SetWaiting asks a LIVE aria for the writer's verdict rather than an
+// acknowledgement that the patch was queued. It blocks until the next round
+// boundary, so the caller must have chosen it: the ctx it carries is the
+// only bound on how long that is.
+func (c *Client) SetWaiting(ctx context.Context, patch rpc.FormPatch, ifVersion uint64, assert bool) (*rpc.SetResponse, error) {
+	return c.setWith(ctx, rpc.SetRequest{Patch: patch, IfVersion: ifVersion, Assert: assert, Wait: true})
+}
+
 func (c *Client) setWith(ctx context.Context, req rpc.SetRequest) (*rpc.SetResponse, error) {
 	var resp rpc.SetResponse
 	if err := c.call(ctx, rpc.MethodSet, req, &resp); err != nil {
