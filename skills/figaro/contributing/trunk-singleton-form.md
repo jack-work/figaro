@@ -1,8 +1,30 @@
 # The trunk state, as a singleton form
 
-**Status: designed, not built.** Slated after the presentation-hierarchy
-fixes it depends on. Read this before touching `internal/trunk`,
-`trunks.json`, or anything in figwal about channels and retention.
+**Status: BUILT** (`feat/incantations`, phase 8). `internal/trunk` and
+`trunks.json` are gone; the hierarchy is `store.TopologyTree`, a form on a
+reserved stump. Read this for the WHY; read `internal/store/topology_form.go`
+for what shipped, and the differences below before changing either.
+
+## What shipped, and where it differs from this design
+
+- **The home is a reserved STUMP** (`@topology`), not an unbound form node.
+  A stump is the one node figwal names by a string the caller chooses, so
+  the form needs no marker file and no lookup, and it cannot be forked or
+  bound. An unbound form node would have needed client-specified trunk ids,
+  which figwal does not have yet (and which Gluck wants for other reasons:
+  see `plans/answers-forms.md` §2). `listStumps` filters it out, or the
+  hierarchy grows a row describing itself.
+- **Retention is NOT built.** This document asks for a single rewritten
+  segment, which needs figwal's compacting channel (phase 7). Until then the
+  topology form keeps every record, which is correct and unbounded. A
+  promote is rare, so the growth is slow, but it IS growth: whoever builds
+  phase 7 should point it here first.
+- **The migration folds `trunks.json` in on first open** and renames it to
+  `trunks.json.migrated`. Ordering, not a journal: the fold is idempotent and
+  a form that already holds edges is never migrated into again.
+- **Parity is checked, not claimed.** `internal/trunk`'s own test suite was
+  ported verbatim onto the replacement: same diagram, same claims, same
+  names, in `internal/store/topology_form_test.go`.
 
 ## The claim
 

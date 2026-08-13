@@ -1302,3 +1302,52 @@ enough that either can be judged in ninety seconds:
 box=$(mktemp -d); cp -a --reflink=auto ~/.local/state/figaro/arias $box/arias
 FIGARO_PROBE_ROOT=$box/arias go test ./internal/store -run ListingCost -v
 ```
+
+### Phase 8 landed: the hierarchy is a form
+
+`internal/trunk` (296 lines) and `trunks.json` are gone. The presentation
+hierarchy is `store.TopologyTree`, a `store.Form` on a reserved stump.
+
+**Why a stump.** The design wanted an unbound form NODE with a well-known
+id, which needs client-specified trunk ids, which figwal does not have (and
+which Gluck has already asked for: `answers-forms.md` §2). A stump is the
+one node figwal names by a caller-chosen string, so the form needs no marker
+file and no lookup, cannot be forked and cannot be bound. `listStumps`
+filters it out, or the hierarchy grows a row describing itself.
+
+**What it buys, checked rather than claimed:**
+
+- A promote is **one patch naming two edges**
+  (`TestTopologyForm_PromoteIsOneRecord`). The file it replaces rewrote the
+  whole document per edit and could half-land.
+- Durability, versioning and the single writer are the form's: reduce, append,
+  fsync, publish. `Rev()` is the form version.
+- `trunk.mu` is gone — the lock audit's fifth entry.
+- **Parity is the old package's own test suite, ported verbatim**: same
+  diagram, same claims, same names. That is what makes "it behaves as the
+  file did" checkable.
+
+**Migration**: a legacy `trunks.json` is folded in on first open and renamed
+`.migrated`. Ordering rather than a journal — the fold is idempotent, so a
+crash before the rename replays harmlessly, and a form already holding edges
+is never migrated into.
+
+**Live, on an isolated daemon**: `fig ls` draws parent→child, `promote`
+swaps them, `ls -g` shows **no** `@topology` row, and the promote survives a
+daemon restart (replayed from the channel, not re-read from a file).
+
+**Deviation: retention is not built.** durable-forms §8 says the topology
+form compacts to a single segment, which needs figwal's compacting channel
+(phase 7). Until then it keeps every record: correct, and unbounded. Promotes
+are rare so the growth is slow, but it IS growth, and phase 7 should point
+here first.
+
+| phase | state |
+|---|---|
+| 0,1,2,4,5 | done (session 1) |
+| 3 | **wire half done**: outcome + version; `session`/`seq` deliberately not built |
+| 6 | **done**: tombstone, `Reclaimable`, and the delete path calls both |
+| 7 retention | not started (needs figwal) |
+| 8 topology form | **done**, live-validated, `internal/trunk` deleted |
+| 9 libretto | not started; §12.2.2 records a design bug found before it was built |
+| 10 API refactor | not started |

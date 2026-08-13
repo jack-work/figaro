@@ -238,7 +238,7 @@ is not instant (it copies the prefix each promoted aria borrows).
 
 Implementation: `runPromote` (`internal/cli/manage.go`), the `figaro.promote`
 RPC, `PromoteResponse{FigaroID, Climbed, AtStump}`, the boundary check in
-`XwalStore.Promote`, and the override state in `internal/trunk`. The listing
+`XwalStore.Promote`, and the override state in the topology form. The listing
 carries both edges: `parent` (history, what `status` prints as forked-from)
 and `present` (where the row is drawn, what the vector follows).
 
@@ -261,16 +261,25 @@ and `present` (where the row is drawn, what the vector follows).
 A refused delete writes nothing at all: the count is taken before any
 repair, because a repair cannot be taken back.
 
-## The trunk state, and where it is going
+## The trunk state IS a form
 
-Today the presentation lives in `trunks.json` beside the store: one JSON
-object of overrides, rewritten whole on every edit, absent an override the
-topology answers.
+The presentation lives in the **topology form**: a form on the reserved
+stump `@topology`, one per store and so 1:1 with the angelus that owns it.
+It holds OVERRIDES, never a full tree, so a lost topology form degrades to
+"draw every aria where its history puts it" rather than to a wrong tree.
 
-**Slated:** move it into an unbound SINGLETON FORM, one per store and so
-1:1 with the angelus that owns it. A form is already this project's answer
-to durable, versioned, reducible state, and the trunk state is exactly that
-shape. The document, the patch stream, the migration, and what figwal must
-add for it (one segment, rewritten whole, because only the fold has value
-here) are in
+- **A promote is ONE patch naming two edges**, so the pair lands together or
+  not at all. The `trunks.json` it replaces rewrote the whole document per
+  edit and could half-land.
+- **Durability, versioning and the single writer are the form's**, not
+  bespoke: reduce purely, append, fsync, publish. `Rev()` is the form
+  version, which is what a listing's snapshot check reads.
+- **It is never listed, never forked, never bound.** `listStumps` filters it
+  out of the forest.
+- **A legacy `trunks.json` is folded in on first open** and renamed
+  `trunks.json.migrated`.
+- **Retention is not built yet**: it keeps every record until figwal grows a
+  compacting channel.
+
+Design and the deviations from it:
 [contributing/trunk-singleton-form.md](../contributing/trunk-singleton-form.md).
