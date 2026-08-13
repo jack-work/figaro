@@ -203,6 +203,11 @@ type MemoryConfig struct {
 	// one leaves the runtime no reason to give memory back. Default 2048.
 	// 0 removes the limit. GOMEMLIMIT in the environment always wins.
 	SoftLimitMB *int `toml:"soft_limit_mb"`
+
+	// ActorLingerMS is how long a form's writer goroutine waits, after
+	// draining, before leaving. Long enough that a burst shares one
+	// goroutine, short enough that an idle form holds nothing. Default 2000.
+	ActorLingerMS *int `toml:"actor_linger_ms"`
 }
 
 const (
@@ -290,6 +295,9 @@ const (
 	// working set (~40 MB fresh, a few hundred with a dozen live arias) so
 	// it only bites when something is retaining more than it should.
 	defaultSoftLimitMB = 2048
+	// defaultActorLingerMS keeps a form's writer through a tool loop's
+	// writes without keeping it through an idle afternoon.
+	defaultActorLingerMS = 2000
 	// defaultIRWindowMB bounds resident decoded IR when nothing says
 	// otherwise. It used to be unbounded, and the decoded IR is the largest
 	// thing a live aria holds: 4 to 5x its encoded bytes, measured at 12.5
@@ -312,6 +320,20 @@ func (l *Loaded) SoftLimitBytes() int64 {
 		return int64(mb) << 20
 	}
 	return 0
+}
+
+// ActorLinger is how long a form's writer lingers after draining. Nil-safe.
+// Zero or negative means leave immediately, which is legal and costs a
+// goroutine spawn per burst.
+func (l *Loaded) ActorLinger() time.Duration {
+	if l == nil || l.Config.Memory.ActorLingerMS == nil {
+		return time.Duration(defaultActorLingerMS) * time.Millisecond
+	}
+	ms := *l.Config.Memory.ActorLingerMS
+	if ms < 0 {
+		ms = 0
+	}
+	return time.Duration(ms) * time.Millisecond
 }
 
 // SegmentSize returns the WAL segment size in bytes. Nil-safe, so a store

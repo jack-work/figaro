@@ -135,19 +135,30 @@ func OpenForm(log FormLog) (*Form, error) {
 	empty := []func(uint64, message.Patch){}
 	f.sinks.Store(&empty)
 	subsInit(&f.subs)
-	f.q = actor.NewLazy(formBatch, formLinger, f.runBatch)
+	f.q = actor.NewLazy(formBatch, time.Duration(formLinger.Load()), f.runBatch)
 	return f, nil
 }
 
-const (
-	// formBatch caps one drain so a burst on one form cannot hold figwal's
-	// per-lineage lock against every other node forked from the same root.
-	formBatch = 64
-	// formLinger keeps the drainer through a burst. Long enough that a tool
-	// loop's writes share one goroutine, short enough that an idle form
-	// holds nothing.
-	formLinger = 2 * time.Second
-)
+// formBatch caps one drain so a burst on one form cannot hold figwal's
+// per-lineage lock against every other node forked from the same root.
+const formBatch = 64
+
+// formLinger is how long a drained writer waits before leaving. Package
+// level so the daemon can set it once from config before any form opens;
+// changing it later would leave already-open forms on the old value, which
+// is not worth the coordination.
+var formLinger atomic.Int64
+
+func init() { formLinger.Store(int64(2 * time.Second)) }
+
+// SetFormLinger sets the writer's affinity window. Call before opening
+// forms.
+func SetFormLinger(d time.Duration) {
+	if d < 0 {
+		d = 0
+	}
+	formLinger.Store(int64(d))
+}
 
 // Snapshot is the published state and the version it stands at. Lock-free.
 func (f *Form) Snapshot() (form.Snapshot, uint64) {

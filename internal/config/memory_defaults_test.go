@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // The resident-IR budget is the largest single lever on a live daemon's
 // memory, and it was unbounded by default. These pin the three answers:
@@ -59,5 +62,22 @@ func TestSoftLimitBytes(t *testing.T) {
 	l.Config.Memory.SoftLimitMB = &small
 	if got := l.SoftLimitBytes(); got != 256<<20 {
 		t.Fatalf("a configured ceiling must be honoured, got %d", got)
+	}
+}
+
+func TestActorLinger(t *testing.T) {
+	if got := (*Loaded)(nil).ActorLinger(); got != 2000*time.Millisecond {
+		t.Fatalf("nil config: got %v", got)
+	}
+	var l Loaded
+	ms := 250
+	l.Config.Memory.ActorLingerMS = &ms
+	if got := l.ActorLinger(); got != 250*time.Millisecond {
+		t.Fatalf("configured: got %v", got)
+	}
+	neg := -5
+	l.Config.Memory.ActorLingerMS = &neg
+	if got := l.ActorLinger(); got != 0 {
+		t.Fatalf("negative must floor at zero: got %v", got)
 	}
 }

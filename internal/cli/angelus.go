@@ -13,6 +13,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/store"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 )
 
@@ -126,6 +127,10 @@ func runAngelus() {
 	// built are unbounded for the daemon's whole life. Optional interface, for
 	// the same reason the other cache policies are: a backend without a window
 	// should not have to pretend it has one.
+	// Before any form opens, for the same reason as the IR window: a form
+	// built earlier would keep the old value for the daemon's whole life.
+	store.SetFormLinger(loaded.ActorLinger())
+
 	if w, ok := backend.(interface {
 		SetIRWindow(int)
 		SetIRBudget(int)
