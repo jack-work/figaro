@@ -1384,3 +1384,34 @@ the topology build under a profile rather than a delta.
 FALL between two readings when a GC collects more than the step allocated,
 and an unsigned subtraction renders that as 17592186044416 MiB. The helper
 now returns `int64` and prints signed deltas.
+
+### Fleet regression after this session (same harness, same box)
+
+`scripts/ariastress.sh --arias 12 --study --study-patches 300`, against the
+three columns session 1 left:
+
+| | before WAL | after WAL | end of session 1 | **end of session 2** |
+|---|---|---|---|---|
+| turns answered | 12/12 | 12/12 | 12/12 | **12/12** |
+| history build (300 CLI patches) | 4.11 s | 4.98 s | 4.99 s | 5.14 s |
+| turn wall (12 concurrent) | 4.53 s | 5.49 s | 5.01 s | 5.85 s |
+| control (12 x `ls -j`) | 0.17 s | 0.16 s | — | **0.16 s** |
+| daemon PSS loaded | 56.8 M | 58.6 M | 46.5 M | 48.3 M |
+| `Pss_anon` | 30.6 M | 32.2 M | 30.1 M | 31.8 M |
+| goroutines | 93 | 80 | 80 | **80** |
+| heap_alloc | 14.9 M | 16.0 M | 9.2 M | 10.5 M |
+| resident translation bytes | — | — | — | **194,967** |
+
+**The control is unchanged**, which is what licenses reading the rest.
+History build +3% and PSS +1.8 M are the new residents: the topology form
+(one more open form for the daemon's life), the label memo, and the
+translation accounting that now actually measures itself. Goroutines flat.
+
+**Turn wall is +0.84 s and I do not claim it as a regression.** It is
+dominated by provider round trips, it moved 5.49 → 5.01 between two runs of
+the SAME build in session 1, and nothing in this session touched the turn
+path. If it matters, it wants the twelve-aria recipe run three times on one
+build before anyone reads a number off it.
+
+The last row is new because nothing could report it before: 60 translation
+rows, 195 KB, on arias with 72 IR rows between them.
