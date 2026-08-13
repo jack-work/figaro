@@ -195,6 +195,7 @@ soft_limit_mb          = 2048 # the daemon's heap ceiling; 0 = none
 actor_linger_ms        = 2000 # how long a form's writer waits before leaving
 handle_idle_minutes    = 0    # figwal head unload; 0 = figwal's default (5m)
 form_patch_window      = 2048 # resident decoded patches per form; 0 = all
+segment_cache_mb       = 32   # raw figwal payloads, whole process; 0 = none
 ```
 
 **`ir_window_mb` defaults to 4 now**, not unbounded. The decoded IR is 63 to
@@ -216,6 +217,18 @@ array is shared by construction and a header into the middle pins all of it,
 and it copies only across a slack allowance, because copying per write is
 the O(history) cost the view exists to avoid.
 
+**`segment_cache_mb` is the bound the other three sit on.** `ir_window_mb`,
+`translation_window_mb` and `form_patch_window` all cap DECODED copies of
+bytes figwal was holding raw and without any limit: opening a channel used to
+copy its whole history into memory, so one `fig ls` on a 515-aria store
+retained 116 MiB with no aria loaded. figwal now loads a segment's payloads
+on the read that lands in one and drops them, least recently used first, at
+this budget. The same listing retains 48 MiB at the 32 MiB default and 17.6
+MiB at 4 MiB, so residency is a dial. A dropped block costs only the next
+read of it, because the file has every byte; `doctor mem` prints
+`segment-cache=X of Y` beside `loaded-heads`, and **loaded-heads stopped
+being a proxy for memory** -- a head now costs its index, not its history.
+
 **Three clocks, one policy.** `dormant_after_minutes` evicts agents and their
 caches, `handle_idle_minutes` unloads figwal's in-RAM heads, and
 `actor_linger_ms` is how long a form's writer goroutine survives a drained
@@ -232,7 +245,7 @@ minute.
 ## Seeing it
 
 `figaro doctor mem [-j]` reports live arias, resident handles, resident IR rows
-and bytes, open endpoints, attached clients, sessions, goroutines and the heap.
+and bytes, figwal's loaded heads and segment cache, open endpoints, attached clients, sessions, goroutines and the heap.
 It names out loud the state in which idle eviction can free nothing (every
 resident aria having a live agent).
 
@@ -259,5 +272,11 @@ and the counters as the sweep runs. What to look for is two numbers at once -
   would remove the search. `TODO(perf)` in `store/xwal_log.go`.
 - **The form patch list is not windowed.** It holds the board plus every
   patch. Measured at ~45 KiB, so this is design tidiness, not a memory win.
+- **Opening a node still SCANS every segment file** to build its per-record
+  offset index, which is why the first listing on a 515-aria store takes 2.7
+  seconds where the second takes 31 ms. The index is small (8 bytes a record)
+  but building it reads every byte on disk. A footer index per sealed segment,
+  or opening sealed segments only when a read needs one, would remove it; both
+  live in figwal and neither is built.
 - **Memory-pressure triggering does not exist.** The time rule and the cap are
   the only policies. Add one only if measurement demands it.
