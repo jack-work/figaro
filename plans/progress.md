@@ -3002,3 +3002,27 @@ source patch:
 Flat. Fifty figaros watching a form cost what one costs, and `doctor mem`
 says `librettos open=1 observers=50` while it happens. That is the whole
 argument for sharing, as a number rather than a paragraph.
+
+### The bug I nearly shipped: eviction ORPHANS a subscriber (`11639443`)
+
+Found by asking what the idle sweep does to a form a libretto is following.
+It evicts it — and **eviction does not stop a subscriber, it orphans one**:
+the `Form` leaves the registry, the next write constructs a NEW instance, and
+the old one, which is the instance the subscriber holds, never hears again.
+
+So the libretto stopped following its source and went on serving a stale
+copy. No error, no log line, refcount healthy, `doctor mem` content. **The
+exact failure this session kept finding in other people's code, committed by
+me four hours earlier.**
+
+The design already had the answer and I had not connected it: §7 says *the
+lease registry IS the subscriber set*. Eviction respects that lease now
+(`Form.Subscribed()`), and the other half is tested as well — a lease that
+never expires is a leak with a justification, so dropping the study must make
+the form evictable again on the very next sweep, and it does.
+
+**The lesson for the successor**: every new long-lived reader of a Form is a
+lease-holder, and the caches underneath it were written before any such
+reader existed. When phase 9's projection reads librettos, or phase 10 hands
+out streams, ask this question again — *what does the sweep do to the thing
+I am holding* — because the answer defaults to "silently the wrong thing".
