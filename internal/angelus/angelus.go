@@ -7,6 +7,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -51,6 +53,14 @@ type Angelus struct {
 	// capShortBy is the last reported shortfall against max_live_arias, so a
 	// standing condition is logged on change rather than on every sweep.
 	capShortBy atomic.Int32
+
+	// quietSweeps counts consecutive sweeps with nothing live and nothing
+	// resident. Touched only by the sweep goroutine.
+	quietSweeps int
+
+	// residentFor overrides where the latch reads the resident count, for a
+	// test that must not implement the whole backend to answer one question.
+	residentFor idleEvictor
 
 	listener  net.Listener
 	cancel    context.CancelFunc
@@ -208,9 +218,66 @@ func (a *Angelus) pidMonitor(ctx context.Context) {
 			a.capLiveArias()
 			a.evictIdleArias()
 			a.trimResident()
+			a.releaseIdleMemory()
 		}
 	}
 }
+
+// releaseIdleMemory hands free heap back to the OS once a daemon has gone
+// quiet — nothing live, nothing resident, twice running.
+//
+// Go's collector returns spans lazily and only under pressure, so a daemon
+// that has finished a burst keeps the arena it grew for it. That is fine for
+// ONE daemon and it is not what this machine has: the author's box was
+// measured at 1731 MB of PSS across 33 figaro processes, fifteen of them
+// idle daemons holding 17 to 59 MB apiece. GOMEMLIMIT is per process and
+// never bites; the aggregate has no ceiling at all.
+//
+// Once per quiet period, not per sweep: FreeOSMemory is a full stop-the-world
+// collection plus a scavenge, which is cheap when there is nothing to do and
+// pointless to repeat. Any work at all resets the latch.
+func (a *Angelus) releaseIdleMemory() {
+	if !a.idleReleaseDue() {
+		return
+	}
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	start := time.Now()
+	debug.FreeOSMemory()
+	runtime.ReadMemStats(&after)
+	slog.Info("idle daemon released free heap to the OS",
+		"heap_sys_before", before.HeapSys, "heap_sys_after", after.HeapSys,
+		"released_bytes", int64(before.HeapSys)-int64(after.HeapSys),
+		"took", time.Since(start))
+}
+
+// idleReleaseDue advances the quiet latch and reports whether this sweep is
+// the one that hands the arena back. Separated from the release so the policy
+// — fire once per quiet period, reset on any work — is testable without a
+// stop-the-world collection in a unit test.
+func (a *Angelus) idleReleaseDue() bool {
+	resident := 0
+	ev := a.residentFor
+	if ev == nil {
+		if be, ok := a.Backend.(idleEvictor); ok {
+			ev = be
+		}
+	}
+	if ev != nil {
+		resident = ev.Resident()
+	}
+	if len(a.Registry.List()) > 0 || resident > 0 {
+		a.quietSweeps = 0
+		return false
+	}
+	a.quietSweeps++
+	return a.quietSweeps == quietSweepsBeforeRelease
+}
+
+// quietSweepsBeforeRelease is how many consecutive quiet sweeps must pass
+// before the arena is handed back. Two, so a daemon between two requests is
+// not made to re-fault its heap for a pause in the conversation.
+const quietSweepsBeforeRelease = 2
 
 // Reclamation policy. Both come from [memory] in config.toml; the constants
 // here are only the fallback for a daemon started without one.
