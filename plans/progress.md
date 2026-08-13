@@ -2937,3 +2937,34 @@ nothing counted. Protecting it has real blast radius (the ephemeral path
 writes it unprivileged, and import would then need the privileged entry
 point), which is exactly the shape of change that should not be slipped in at
 the end of a session.
+
+## HANDOFF GATE (session 3), all green on `1a2d5db6`
+
+```
+go build, go vet, go test ./... -count=1                       ok
+-race -count=3 on store, figaro, angelus, actor, provider      ok
+FIGARO_CRASH_TEST=1 (acknowledged patches survive SIGKILL)     ok
+nix build .#default                                            ok
+figwal: -race -count=3 on log/disk/segment/xwal                ok
+figwal: crashtest -long, on the lazy-open AND final releases    ok
+fleet: 12 arias, study, 300 patches                            12/12
+live: studylive.sh, sweeplive.sh, lazylive.sh, idlemem.sh      ok
+```
+
+Fleet, final build, against every earlier column:
+
+| | before WAL | after WAL | end s1 | end s2 | **end s3** |
+|---|---|---|---|---|---|
+| turns answered | 12/12 | 12/12 | 12/12 | 12/12 | **12/12** |
+| history build | 4.11 s | 4.98 s | 4.99 s | 5.14 s | **4.90 s** |
+| turn wall | 4.53 s | 5.49 s | 5.01 s | 5.85 s | 5.44 s |
+| control | 0.17 s | 0.16 s | — | 0.16 s | **0.16 s** |
+| daemon PSS loaded | 56.8 M | 58.6 M | 46.5 M | 48.3 M | **49.5 M** |
+| goroutines | 93 | 80 | 80 | 80 | 81 |
+| heap_alloc | 14.9 M | 16.0 M | 9.2 M | 10.5 M | **10.5 M** |
+
+The 81st goroutine is the libretto's fold: the harness studies a form, so
+exactly one exists, and it is visible as `librettos open=1` in `doctor mem`.
+History build is the fastest it has been since before the WAL, with a
+studied form now costing a second durable write per patch — which is worth
+saying twice, because it means the fold is not on the critical path.
