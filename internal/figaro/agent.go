@@ -32,6 +32,14 @@ const (
 	eventUserPrompt eventType = iota
 	eventSet
 	eventCast
+	// eventStudyMark narrates a study/drop transition in the IR. It is an
+	// EVENT rather than a direct append because of what a direct append did:
+	// written from the RPC goroutine, it landed between an assistant
+	// tool_use and its tool_result, and every provider refuses that shape
+	// ("tool_use ids were found without tool_result blocks"). It bricked two
+	// real arias. Riding the inbox makes the record land where the loop is
+	// between rounds, which is the only place a user record is legal.
+	eventStudyMark
 )
 
 // promptSegment is one submission inside a (possibly folded) user message:
@@ -55,6 +63,9 @@ type event struct {
 
 	// eventCast
 	cast *castOp
+
+	// eventStudyMark
+	studyMark *message.StudyMark
 
 	// eventUserPrompt
 	text string
@@ -953,6 +964,8 @@ func (a *Agent) act(ctx context.Context) {
 			a.applyControlPatchVerdict(evt.setPatch, evt.setIfVersion, evt.setAssert, "set", evt.setDone)
 		case eventCast:
 			a.serviceCast(evt.cast)
+		case eventStudyMark:
+			a.writeStudyMark(evt.studyMark)
 		}
 	}
 }
@@ -964,6 +977,14 @@ func (a *Agent) act(ctx context.Context) {
 func (a *Agent) serviceSets() bool {
 	evts := a.inbox.TakeReadySet()
 	for _, evt := range evts {
+		if evt.typ == eventStudyMark {
+			// A ROUND BOUNDARY, which is the whole point: every tool_result
+			// of the round just finished is already appended, so a user
+			// record here is exactly a steering prompt's position and no
+			// provider can object to it.
+			a.writeStudyMark(evt.studyMark)
+			continue
+		}
 		// THE ROUND BOUNDARY, and the reason --wait exists. A set that
 		// arrived mid-turn is applied here, so this is where a waiting
 		// caller's verdict comes from; passing nil here would leave it

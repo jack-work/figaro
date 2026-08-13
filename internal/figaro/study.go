@@ -130,16 +130,43 @@ func (a *Agent) Drop(formID string) ([]string, error) {
 	return studies, nil
 }
 
-// appendStudyMark states a began/stopped-observing transition in the IR.
-// Best-effort: the stamps are the mechanism, the mark is the narration -
-// a failed narration is logged by the append path, never fatal.
+// appendStudyMark QUEUES a began/stopped-observing transition. The record is
+// written by the drain loop -- at a round boundary if a turn is in flight,
+// immediately if one is not.
+//
+// It used to append straight from the RPC goroutine, and that is a defect
+// with a body count. A study mark is contentless but still encodes to a user
+// message carrying a system-reminder, so landing between an assistant
+// tool_use and its tool_result displaces the result by one record, and every
+// provider refuses that shape: "tool_use ids were found without tool_result
+// blocks". Two arias in this lineage were bricked by it. The fix is not to
+// repair the history afterwards -- synthesizing a result per dangling id
+// puts two results behind one call and lies about a call that succeeded --
+// it is to make the record unable to land there.
+//
+// THE RULE, for everything phase 9 adds after it: no out-of-band IR record
+// between a tool_use and its results. The inbox is how a writer obeys it.
+//
+// Best-effort: the stamps are the mechanism, the mark is the narration, and
+// a failed narration is never fatal.
 func (a *Agent) appendStudyMark(formID string, began bool) {
 	if a.figLog == nil {
 		return
 	}
+	a.inbox.Send(event{
+		typ:       eventStudyMark,
+		studyMark: &message.StudyMark{FormID: formID, Began: began},
+	})
+}
+
+// writeStudyMark is the append itself, called only from the drain loop.
+func (a *Agent) writeStudyMark(mark *message.StudyMark) {
+	if a.figLog == nil || mark == nil {
+		return
+	}
 	_, _ = a.figLog.Append(store.Entry[message.Message]{Payload: message.Message{
 		Role:      message.RoleInput,
-		Study:     &message.StudyMark{FormID: formID, Began: began},
+		Study:     mark,
 		Timestamp: time.Now().UnixMilli(),
 	}})
 }

@@ -207,11 +207,14 @@ func (b *Inbox) Prepend(events []event) bool {
 	return true
 }
 
-// TakeReadySet removes the contiguous eventSet prefix. It never jumps a set
-// over an earlier prompt, so FIFO order across event kinds is preserved by the
+// TakeReadySet removes the contiguous prefix of events that are applied at a
+// round boundary: form patches and study marks. It never jumps one over an
+// earlier prompt, so FIFO order across event kinds is preserved by the
 // caller's drain loop.
 func (b *Inbox) TakeReadySet() []event {
-	return b.q.TakeWhile(func(e event) bool { return e.typ == eventSet })
+	return b.q.TakeWhile(func(e event) bool {
+		return e.typ == eventSet || e.typ == eventStudyMark
+	})
 }
 
 // CoalesceUserPromptRuns folds each CONTIGUOUS RUN of queued user prompts
