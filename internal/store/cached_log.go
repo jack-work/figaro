@@ -30,7 +30,12 @@ import (
 // in log.go.
 type cachedLog[T any] struct {
 	inner Log[T]
-	mu    sync.RWMutex
+	// appendMu serializes APPENDERS so cache updates land in log order. It
+	// is not mu: holding mu across inner.Append would block every reader for
+	// the length of an fsync, which is milliseconds now that figaro syncs
+	// before it publishes.
+	appendMu sync.Mutex
+	mu       sync.RWMutex
 
 	// rows is the resident window: the last len(rows) entries of the log.
 	rows []Entry[T]
@@ -250,12 +255,17 @@ func (c *cachedLog[T]) PeekTail() (Entry[T], bool) {
 }
 
 func (c *cachedLog[T]) Append(e Entry[T]) (Entry[T], error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	// The durable half runs with NO reader blocked: an append syncs, and a
+	// sync is milliseconds. Appenders serialize on appendMu so the cache
+	// still sees them in log order.
+	c.appendMu.Lock()
+	defer c.appendMu.Unlock()
 	stamped, err := c.inner.Append(e)
 	if err != nil {
 		return Entry[T]{}, err
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.byFK[stamped.FigaroLT] = c.trimmed + len(c.rows)
 	c.rows = append(c.rows, stamped)
 	c.bytes += c.sizeOfLocked(stamped)
