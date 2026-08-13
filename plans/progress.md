@@ -186,7 +186,10 @@ because it needs the loop; one corrupts because it bypasses it. Phase 9,
 which makes study an ordinary patch on a separate node, should fix both, and
 should be checked against both.
 
-**Workaround meanwhile**: patch `target-aria` directly
+**Workaround meanwhile** (SUPERSEDED by `30dcd6ba`, which removed the
+deadlock: a cast no longer rides the inbox. Still the right move against a
+daemon running an older binary, which is most of the ones on this box):
+patch `target-aria` directly
 (`figaro state set --id <role> target-aria <aria>`), which is a form write
 served by the hub with no agent and no IR record.
 
