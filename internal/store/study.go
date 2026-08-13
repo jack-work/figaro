@@ -73,12 +73,6 @@ func (b *XwalBackend) StudyForm(observerID, sourceFormID string) ([]string, bool
 			// nothing counted, which reclamation would collect out from
 			// under a live observer.
 			if _, err := lib.Retain(); err != nil {
-				if b.retryable(err, sourceFormID) {
-					if lib, err = b.libretto(sourceFormID); err != nil {
-						return nil, false, err
-					}
-					continue
-				}
 				return nil, false, err
 			}
 			retained = true
@@ -156,24 +150,8 @@ func (b *XwalBackend) DropForm(observerID, sourceFormID string) ([]string, bool,
 	if err != nil {
 		return studies, true, err
 	}
-	refs, err := lib.Release()
-	if err != nil {
-		if b.retryable(err, sourceFormID) {
-			// The instance went away under us; the fresh one holds the
-			// durable count, which is what the release has to move.
-			if lib, err = b.libretto(sourceFormID); err == nil {
-				refs, err = lib.Release()
-			}
-		}
-		if err != nil {
-			return studies, true, err
-		}
-	}
-	if refs == 0 {
-		// Nobody is reading it: stop the fold and let the copy rest. It is
-		// NOT unlinked -- an IR record references a libretto forever (see
-		// Reclaimable), so the copy has to outlive the last observer.
-		b.closeLibretto(sourceFormID)
+	if _, err := lib.Release(); err != nil {
+		return studies, true, err
 	}
 	return studies, true, nil
 }
@@ -277,47 +255,47 @@ func (b *XwalBackend) attach(lib *Libretto, sourceFormID string) error {
 	return lib.Follow(src)
 }
 
-// closeLibretto stops the fold when nobody is studying any more. It re-checks
-// the refcount while holding the registry lock, because a study arriving
-// between "refs reached zero" and this call has already taken a reference
-// through this very instance -- and tearing it down under that caller was
-// reachable in practice: "study: form is closed".
+// A LIBRETTO IS NOT TORN DOWN WHEN ITS COUNT REACHES ZERO.
 //
-// The check narrows the window; it does not close it, so the callers treat a
-// closed instance as retryable (see retryable).
-func (b *XwalBackend) closeLibretto(source string) {
-	source = strings.TrimPrefix(source, "@")
-	b.mu.Lock()
-	lib := b.librettos[source]
-	if lib != nil && lib.Refs() != 0 {
-		b.mu.Unlock()
-		return // somebody studied it again while we were deciding
-	}
-	delete(b.librettos, source)
-	b.mu.Unlock()
-	if lib != nil {
-		lib.Close()
-	}
-}
+// It was, and that was the bug b2b0c543 caught under -race: the last drop
+// closed the instance, so a verb holding it got ErrFormClosed and retried
+// its refcount move on a fresh one -- and the first move is AMBIGUOUS. The
+// conditional apply may have landed durably before the close reported the
+// sentinel, so the retry decremented twice and the next honest drop found
+// "release below zero".
+//
+// Transferring a refcount across an instance boundary cannot be made safe by
+// retrying, because the caller cannot tell whether its write landed. So the
+// boundary is removed instead: the instance lives until the backend closes,
+// exactly like any other resident Form, and the verb path has no lifecycle
+// race to retry through.
+//
+// What that costs is bounded and already measured: one fold goroutine and
+// one resident source Form per form that has been studied since this daemon
+// started, plus a second durable write per source patch while a copy is
+// current. `doctor mem` reports both numbers.
 
-// retryable reports the failures a caller should answer by fetching a fresh
-// libretto instead of failing the verb: the instance it held was torn down
-// by a concurrent drop-to-zero.
-func (b *XwalBackend) retryable(err error, source string) bool {
-	if !errors.Is(err, ErrFormClosed) {
-		return false
-	}
-	b.closeLibretto(source) // evict the corpse so the next fetch opens fresh
-	return true
-}
-
-// closeLibrettos stops every fold. Called when the backend closes.
+// closeLibrettos stops every fold. The ONLY teardown path, and it runs when
+// the backend closes -- which is the one moment no verb is in flight.
 func (b *XwalBackend) closeLibrettos() {
 	b.mu.Lock()
 	all := b.librettos
 	b.librettos = nil
 	b.mu.Unlock()
 	for _, lib := range all {
+		lib.Close()
+	}
+}
+
+// closeLibretto drops one instance. Shutdown and test teardown only: see the
+// note above for why the verbs must not do this.
+func (b *XwalBackend) closeLibretto(source string) {
+	source = strings.TrimPrefix(source, "@")
+	b.mu.Lock()
+	lib := b.librettos[source]
+	delete(b.librettos, source)
+	b.mu.Unlock()
+	if lib != nil {
 		lib.Close()
 	}
 }

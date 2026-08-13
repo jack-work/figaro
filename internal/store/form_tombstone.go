@@ -23,10 +23,12 @@ import (
 // write or clear it.
 const TombstoneKey = "system.tombstone"
 
-// ErrFormClosed is what a write to a Form whose writer has gone gets. It is
-// a sentinel because a caller holding an instance that was torn down
-// underneath it -- a libretto closed by the last drop while a study retained
-// it -- should fetch a fresh one and retry, not fail the user's verb.
+// ErrFormClosed is what a write to a Form whose writer has gone gets.
+//
+// A sentinel, but NOT a retry signal: a caller cannot retry a refcount move
+// through a fresh instance, because the move it just attempted is ambiguous
+// -- the apply may have landed durably before the close reported this. That
+// mistake produced "release below zero"; see the note in study.go.
 var ErrFormClosed = errors.New("form is closed")
 
 // ErrFormMoved is the stale-ifVersion refusal, as a sentinel: a caller doing
