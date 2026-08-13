@@ -31,31 +31,63 @@ Live notes for whoever holds the role `@980dc16c`. Update this, not chat.
 - Study's two-participant write: ordering, not two-phase commit. Show the
   code before deciding.
 
-## Why the parent aria broke
+## Why the parent aria broke (CORRECTED, read this version)
 
-`anthropic: messages.946: tool_use ids were found without tool_result blocks`
-killed the previous incarnation mid-run.
+`anthropic: messages.946: tool_use ids were found without tool_result blocks`.
 
-**Hypothesis**: `repairInterruptedTail` only repairs the TAIL. It scans back
-for the last assistant message carrying `tool_invokes` and closes any call
-without a result. A dangling pair in the INTERIOR is never repaired, because
-the scan stops at the most recent tool-bearing assistant message and that one
-is complete. Index 946 in a 952-message aria is close to the tail but not at
-it, which fits: an interrupt (or a fork) left a dangling call, later messages
-were appended after it, and the repair on the next wake looked only at the
-newest tool-bearing message.
+**My first diagnosis was wrong and the fix I queued would have made it
+worse.** Aria 6c2d7b9f read the raw IR of the poisoned aria (`arias/ir/n714`)
+and found the result is not missing at all. It is **displaced by one
+record**:
 
-**Avoidance**: do not interrupt mid-tool-call; keep tool calls short so the
-window is small. **Fix** (not yet done, worth doing): make the repair scan
-the whole suffix from the last USER message rather than stopping at the first
-tool-bearing assistant message, and synthesize results for every dangling id
-it finds, not just those in one message.
+```
+127 input   tool_result  toolu_01ByJoaN…
+128 output  tool_invoke  toolu_01Tqv3GS…   <- the call
+129 input   content:null study:{began:true, form_id:"@3c00e173"}
+130 input   tool_result  toolu_01Tqv3GS…   <- its result, one record too late
+131 input   prose
+```
 
-**Also**: `fig cast <self> <role>` from inside the aria HANGS. It is the
-self-cast deadlock the plan describes: the cast rides the inbox and the
-inbox is busy running the turn that issued it. Workaround used here:
-`figaro state set --id <role> target-aria <aria>` directly, which is a form
-patch served by the hub with no agent involved. Phase 9 removes the cause.
+Record 129 is a **study mark**: contentless, but it encodes to a user message
+carrying a study system-reminder, and it sits between the `tool_use` and its
+result. The provider requires the result in the NEXT message.
+
+**Cause**: `appendStudyMark` writes an IR record from an RPC goroutine with no
+regard for whether the drain loop is mid-turn with an open call. The trigger
+was `fig cast` from inside a tool call, which is exactly what "create a role
+as step one" asks for.
+
+**Do NOT synthesize a result for every dangling id.** That was my queued fix
+and it would put TWO tool_results behind one `tool_use`, which providers also
+reject, and would tell the model a call failed that in fact succeeded.
+
+**Being fixed by 6c2d7b9f**, on its own worktree off this branch: encoder-side
+hold-back (a user record with no tool_result is emitted after the one that
+resolves the open ids, which unbricks existing arias without editing
+history); the source fix (no out-of-band IR record between a `tool_use` and
+its results, covering study, drop, and whatever the libretto later stamps);
+and a truthful synthesized result only where a fork genuinely cut a live
+call. Its files: `internal/figaro/repair.go`, `internal/figaro/study.go`,
+`internal/angelus/study_hub.go`, the four provider encoders,
+`internal/form/incantation.go`.
+
+**Boundary while that is in flight**: this line of work stays in
+`internal/store`, `internal/actor`, `internal/trunk` and `internal/config`.
+Note that phase 4 did touch `internal/figaro/form.go` and
+`internal/figaro/agent.go` (`SetIntent`, `applyControlPatch`) and added
+`internal/form/protect.go`; none of those are on 6c2d7b9f's list.
+
+**The self-cast deadlock is the same bug from the other end.** `fig cast`
+on your own aria from inside a turn hangs, because the cast rides the inbox
+and the inbox is running the turn that issued it. The corruption above is
+the same operation going AROUND the loop instead of through it. One hangs
+because it needs the loop; one corrupts because it bypasses it. Phase 9,
+which makes study an ordinary patch on a separate node, should fix both, and
+should be checked against both.
+
+**Workaround meanwhile**: patch `target-aria` directly
+(`figaro state set --id <role> target-aria <aria>`), which is a form write
+served by the hub with no agent and no IR record.
 
 ## Devshell quirks
 
