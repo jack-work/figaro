@@ -717,11 +717,21 @@ Everything above is history. This is the queue.
    ordered so every crash over-counts.
 7. **Phase 10: the API refactor** and `angelus.hello`.
 
-**Perf work that is known and not done**: preallocation plus `fdatasync` in
-figwal (the only lever that lowers the 3 ms per-sync floor); a bounded range
-read in figwal so a cold `PatchesBetween` below the window stops walking the
-whole log; and 306 goroutines on a daemon with 3 live arias, which nobody
-has profiled because the running daemon predates profiling being armed.
+**Perf work that is known and not done**:
+
+- **Preallocation plus `fdatasync` in figwal.** The only lever that lowers
+  the 3 ms per-sync floor. An append changes the file size, so `fsync` and
+  `fdatasync` cost the same today; `fallocate` at segment creation makes the
+  cheap one available.
+- **A bounded range read in figwal** (`RecordsBetween`), so a cold
+  `PatchesBetween` below the window is O(range) rather than O(offset). Do
+  this BEFORE lowering `form_patch_window`, or the quadratic above bites.
+- **306 goroutines on a daemon with 3 live arias.** Still unprofiled.
+  `ariastress.sh` arms `FIGARO_PPROF`, but its EXIT trap rests the daemon
+  before a profile can be taken, so profiling through it needs the trap
+  suppressed or a curl inside the run. The socket lives at
+  `$FIGARO_RUNTIME_DIR/pprof.sock`; the live daemon predates profiling being
+  armed and would need a restart.
 
 **A cold read below the window now stops at the range's end.** `RangePatches`
 visits in index order, so walking past `upTo` finds nothing; without the
