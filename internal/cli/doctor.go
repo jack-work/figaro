@@ -319,7 +319,11 @@ func runDoctorLibrettos(dryRun bool) error {
 	if err != nil {
 		return err
 	}
-	if !dryRun && audit.Corrected > 0 {
+	// Corrected OR Missing: the shortcut used to test only the first, which
+	// was written before the pass could MINT anything, so a store whose only
+	// problem was a missing libretto was audited and then left alone. Found
+	// on the real store, where that is the whole of the migration.
+	if !dryRun && (audit.Corrected > 0 || audit.Missing > 0) {
 		if audit, err = be.ReconcileLibrettos(); err != nil {
 			return err
 		}
