@@ -55,6 +55,19 @@ func (b *XwalBackend) AuditLibrettos() (LibrettoAudit, error) {
 	return b.reconcileLibrettos(false)
 }
 
+// HasLibrettos reports whether this store holds any at all. It is a stump
+// name scan and touches no boards, which is what lets the boot sweep cost
+// nothing on a store that has never studied anything -- which is every store
+// until the verb is used.
+func (b *XwalBackend) HasLibrettos() bool {
+	for _, st := range b.store.trunks.Stumps() {
+		if _, ok := SourceOfLibretto(st.Name); ok {
+			return true
+		}
+	}
+	return false
+}
+
 func (b *XwalBackend) reconcileLibrettos(apply bool) (LibrettoAudit, error) {
 	var audit LibrettoAudit
 

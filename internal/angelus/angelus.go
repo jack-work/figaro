@@ -149,6 +149,7 @@ func (a *Angelus) Run(ctx context.Context) error {
 	_ = a.StartPprof(ctx)
 
 	go a.pidMonitor(ctx)
+	a.reconcileLibrettos()
 	go a.metaBackfill(ctx)
 
 	go func() {
@@ -221,6 +222,42 @@ func (a *Angelus) pidMonitor(ctx context.Context) {
 			a.releaseIdleMemory()
 		}
 	}
+}
+
+// reconcileLibrettos recounts every libretto from the boards, once, at boot.
+//
+// durable-forms §12.2.1 puts it here: the incremental count drifts across a
+// crash, and fork/import/kill can drift it DOWNWARD, which reclaims a copy a
+// live observer still needs. Recomputing at start narrows that window without
+// closing it, and the write paths' ordering is still required.
+//
+// Guarded twice so it costs nothing when there is nothing to do: a stump-name
+// scan skips a store that has never studied anything (every store, until the
+// verb is used), and the pass runs in the background, because it opens every
+// board and a daemon must not make its first caller wait for a repair.
+func (a *Angelus) reconcileLibrettos() {
+	rec, ok := a.Backend.(librettoReconciler)
+	if !ok || !rec.HasLibrettos() {
+		return
+	}
+	go func() {
+		audit, err := rec.ReconcileLibrettos()
+		if err != nil {
+			slog.Warn("libretto reconciliation failed", "err", err)
+			return
+		}
+		if audit.Corrected > 0 || audit.Missing > 0 || audit.Orphaned > 0 {
+			slog.Info("librettos reconciled",
+				"boards", audit.Boards, "librettos", audit.Librettos,
+				"corrected", audit.Corrected, "orphaned", audit.Orphaned,
+				"missing", audit.Missing)
+		}
+	}()
+}
+
+type librettoReconciler interface {
+	HasLibrettos() bool
+	ReconcileLibrettos() (store.LibrettoAudit, error)
 }
 
 // releaseIdleMemory hands free heap back to the OS once a daemon has gone

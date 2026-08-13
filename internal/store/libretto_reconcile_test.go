@@ -156,3 +156,21 @@ func TestReconcileReportsAStudiedFormWithNoLibretto(t *testing.T) {
 		t.Fatalf("examined %d librettos where none exist", audit.Librettos)
 	}
 }
+
+// The boot sweep must cost NOTHING on a store that has never studied
+// anything, which is every store until the verb is used. The guard is a
+// stump-name scan that touches no board.
+func TestHasLibrettosIsCheapAndHonest(t *testing.T) {
+	be, sourceID, _ := librettoFixture(t)
+	if be.HasLibrettos() {
+		t.Fatal("a store with no studies reported librettos")
+	}
+	lib, err := OpenLibretto(be.Store(), sourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lib.Close()
+	if !be.HasLibrettos() {
+		t.Fatal("a store with a libretto reported none: the boot sweep would never run")
+	}
+}
