@@ -3089,3 +3089,41 @@ orphaned the fold; opening the copy required opening the source. Each was
 found by asking what happens to the libretto when the source is gone, idle,
 or dead — **which is the question to keep asking**, because the design says
 they are independent and the code keeps assuming they are not.
+
+## Phase 9 meets the REAL store, and finds the migration (`943df8f5`)
+
+`/var/tmp/figstate/realstudy.sh` runs the verbs against a copy of the actual
+store — 715 rows, real boards, a topology form that has to migrate:
+
+```
+first listing            715 rows in 3.05 s
+study an existing aria   librettos open=1 observers=1
+fork it                  librettos open=1 observers=2
+drop                     librettos open=1 observers=1
+the sweep, 711 boards     0.89 s   corrected 0   orphaned 0   MISSING 11
+```
+
+**`missing 11` is the finding.** Eleven arias in the real store already study
+forms — all studied before librettos existed — and none would ever acquire
+one, because the verb mints at study time. Under the projection switch those
+studies would render nothing.
+
+So the sweep MINTS what is missing; it already had the boards (the source of
+truth) and the source forms (to seed from), and minting is exactly the repair
+a recomputing pass should perform.
+
+**And the cheap guard I added this morning had to go.** `HasLibrettos()`
+skipped a store with none — which is *every store from before phase 9*, i.e.
+precisely the ones needing migration. A guard that looks like thrift and
+excludes the only case that matters is a bug. The pass runs in the background
+at boot instead: 0.89 s on 711 boards, and no caller waits for it.
+
+**The metric lied.** `Missing` counted the pre-state, so a pass that had just
+minted four reported `missing 4`. It now counts what is still missing when
+the pass ENDS, with `Minted` reporting the work done — same class of fault as
+a check that cannot fail, caught the same way.
+
+**And the idempotence earned its keep on the first real run**: the boot sweep
+minted 7 of 11 before I stopped the daemon, and a later pass finished the
+other 4. An interrupted migration resumes; it does not corrupt and it does
+not restart.
