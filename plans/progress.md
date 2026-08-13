@@ -2985,3 +2985,20 @@ saying twice, because it means the fold is not on the critical path.
   worth its permanent dual path at all yet?** That is the right question and
   it is Gluck's.
 - **d604c755 stays alive as a reference**, as its own predecessor did.
+
+### The fifty-observer storm (`a524bec2`)
+
+§12.7 names it as the case where the derivation's cost stops being
+theoretical: *"50 × 12 MB per patch versus 50 × a few hundred bytes"*. The
+answer is not a cheaper fold — it is **one libretto per studied FORM**, which
+is the reversal Gluck made on 2026-08-12 from one-per-figaro. Measured per
+source patch:
+
+| observers | time | allocation | librettos |
+|---|---|---|---|
+| 1 | 5.9–6.5 ms | 29.8–30.0 KB | 1 |
+| **50** | **5.5–5.7 ms** | **29.8–30.0 KB** | **1** |
+
+Flat. Fifty figaros watching a form cost what one costs, and `doctor mem`
+says `librettos open=1 observers=50` while it happens. That is the whole
+argument for sharing, as a number rather than a paragraph.
