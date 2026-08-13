@@ -2941,9 +2941,10 @@ the accessor and the machinery filter. Phase 9 is complete. What remains:
 2. **Show him the two-participant write.** He approved it *conditionally on
    seeing the code* (`answers-forms.md:12`) and the review was never asked
    for. Five minutes of his time, and the retry count has since gone 5 → 32.
-3. **Strike the stale design text**: §12.3 still carries `"paths"` in the
-   libretto document and §17 still lists the union projection as open
-   `[q13]`, both settled as whole-form-only in `answers-forms.md:1`.
+3. ~~Strike the stale design text~~ **done**: `"paths"` is out of §12.3's
+   document (the built thing never had it), `[q13]` is struck as settled by
+   `answers-forms.md:1`, and `[q14]` is answered by the code — a libretto is
+   a reserved stump read only through `Libretto(source)`.
 4. **Reclamation** — DEFERRED by ruling (§12.7b), not a gap. 3.0 KB.
 5. **Phase 10, the API refactor**, and with it the lock audit's first
    fast-follow (`figaro/agent.go`'s `mu`). The audit says it wants its own
