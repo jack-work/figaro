@@ -2664,3 +2664,26 @@ durability was mandatory, and its own comment calls it a liveness guard
 rather than synchronisation. Raised to 20 s, with the arithmetic in the
 comment. **A test whose deadline is a measurement of the disk is a test that
 will lie eventually.**
+
+### Two bugs the live run found, and the lesson under them (`38b2b308`)
+
+`/var/tmp/figstate/studylive.sh` drives the real verbs on a real daemon:
+`form new`, `study`, `ls -g`, `fork`, `doctor librettos`, `drop`. It found
+two things the whole unit suite had missed.
+
+1. **`fig ls -g` drew the libretto stump.** `listStumps` filtered the
+   topology form BY NAME and nothing else, so the first study minted a row
+   describing machinery. Reserved stumps are filtered as a CLASS now, using
+   the predicate the sweep already had.
+2. **The sweep disagreed with the verbs: `would correct 1`.** A live fork
+   takes `ForkWith`; I had put the participant on `Fork` and `ForkAt`. Every
+   unit test passed because every unit test called `Fork` — **the CLI calls
+   the one I missed**. And under-counting is the unrecoverable direction, so
+   this was §12.2.2's exact failure reintroduced by an incomplete fix to
+   §12.2.2.
+
+**The lesson, and it is the one worth carrying**: a test that exercises the
+entry point the TEST chose proves nothing about the entry point the PRODUCT
+uses. The fork test now runs over both in a table, and the listing assertion
+walks `Nodes()` and `Forms()` rather than trusting one filter. Ninety seconds
+of live driving found what a green suite could not.
