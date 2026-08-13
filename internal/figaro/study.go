@@ -19,7 +19,6 @@ package figaro
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
@@ -33,19 +32,14 @@ import (
 // (the list rides the copied board) while the studied form itself is
 // never copied.
 //
-// Exported because the DORMANT half of these verbs lives in the angelus:
-// a figaro with no agent is served from the hub, exactly as `set` is, and
-// both halves must agree about where the list lives and how it is read.
-const StudiesKey = "system.studies"
-
-const studiesKey = StudiesKey
+// The store owns the constant (its reconciliation sweep reads the boards);
+// this alias re-exports it for the angelus, where the DORMANT half of these
+// verbs is served from the hub, exactly as `set` is.
+const StudiesKey = store.StudiesKey
 
 // StudiesFromSnapshot parses system.studies (a JSON array of form ids).
-func StudiesFromSnapshot(snap form.Snapshot) []string { return studiesFromSnapshot(snap) }
-
-// studiesFromSnapshot parses system.studies (a JSON array of form ids).
-func studiesFromSnapshot(snap form.Snapshot) []string {
-	raw, ok := snap.Get(studiesKey)
+func StudiesFromSnapshot(snap form.Snapshot) []string {
+	raw, ok := snap.Get(StudiesKey)
 	if !ok {
 		return nil
 	}
@@ -63,28 +57,13 @@ func (a *Agent) resumeStudies() {
 	if a.backend == nil {
 		return
 	}
-	a.backend.SetObservedForms(a.id, studiesFromSnapshot(a.form.Snapshot()))
+	a.backend.SetObservedForms(a.id, StudiesFromSnapshot(a.form.Snapshot()))
 }
 
-// requireStudyTarget names the slot errors: only an UNBOUND form is
-// study-able or castable.
+// requireStudyTarget is store.RequireStudyTarget over this agent's backend:
+// one rule, one wording, shared with the hub's half.
 func (a *Agent) requireStudyTarget(formID string) error {
-	if a.backend == nil {
-		return fmt.Errorf("study: ephemeral aria has no store")
-	}
-	n, ok := a.backend.Node(formID)
-	if !ok {
-		return fmt.Errorf("%s: no such form", formID)
-	}
-	// PRIMARY FORMS ONLY (Gluck, 2026-08-13): "studying is something for
-	// forms. Outfits are just the names I give the named files that seed
-	// primary forms." An outfit is a seed, not a subject; a bound board is
-	// private to its figaro; and a libretto is a derived form, which is not
-	// a node at all and so never reaches this check.
-	if n.Kind != "form" {
-		return fmt.Errorf("%s is a %s: study and cast take unbound forms (an outfit is a seed, a bound board is private to its figaro)", formID, store.KindWord(n.Kind))
-	}
-	return nil
+	return store.RequireStudyTarget(a.backend, formID)
 }
 
 // Study subscribes this aria to an unbound form: durable on the board,
@@ -131,23 +110,13 @@ func (a *Agent) Drop(formID string) ([]string, error) {
 // refreshes the agent's OWN board mirror, which is the only part of this the
 // hub does not need: an agent renders from an in-memory snapshot, and a
 // durable write it does not hear about is a write the next turn will not see.
-//
-// A backend without librettos (ephemeral) keeps the plain board write.
 func (a *Agent) declareStudy(formID string, drop bool) ([]string, bool, error) {
 	sb, ok := a.backend.(studyBackend)
 	if !ok {
-		return a.patchStudies(func(ids []string) []string {
-			out := ids[:0]
-			for _, id := range ids {
-				if id != formID {
-					out = append(out, id)
-				}
-			}
-			if !drop {
-				out = append(out, formID)
-			}
-			return out
-		})
+		// requireStudyTarget already refuses a nil backend on the study
+		// side; this covers drop, where a missing source is legal but a
+		// missing STORE is not.
+		return nil, false, fmt.Errorf("study: this backend cannot study")
 	}
 	var studies []string
 	var changed bool
@@ -164,28 +133,8 @@ func (a *Agent) declareStudy(formID string, drop bool) ([]string, bool, error) {
 	if merr != nil {
 		return studies, changed, merr
 	}
-	a.form.Apply(form.Patch{Set: map[string]json.RawMessage{studiesKey: raw}})
+	a.form.Apply(form.Patch{Set: map[string]json.RawMessage{StudiesKey: raw}})
 	return studies, changed, nil
-}
-
-// boardAndVersion reads the board and its version together where the backend
-// can answer both from one atomic load, and falls back to the mirror plus a
-// round trip where it cannot (an ephemeral aria, whose board has one writer
-// anyway).
-func (a *Agent) boardAt() store.FormAt {
-	if pv, ok := a.backend.(pairedFormReader); ok {
-		if at, err := pv.FormAt(a.id); err == nil {
-			return at
-		}
-	}
-	return store.FormAt{Snapshot: a.form.Snapshot(), Version: a.Version()}
-}
-
-// pairedFormReader is a backend that can answer the pair from one load.
-// Optional, because the in-memory doubles cannot all grow a method -- and an
-// ephemeral board has one writer, so the split cannot hurt there.
-type pairedFormReader interface {
-	FormAt(id string) (store.FormAt, error)
 }
 
 // studyBackend is the store's two-participant write, as an optional
@@ -234,42 +183,6 @@ func (a *Agent) writeStudyMark(mark *message.StudyMark) {
 		Study:     mark,
 		Timestamp: time.Now().UnixMilli(),
 	}})
-}
-
-// patchStudies is the read-modify-write of the studies array, guarded by
-// the board version so concurrent writers cannot lose each other.
-// changed reports whether the edit altered membership.
-func (a *Agent) patchStudies(edit func([]string) []string) ([]string, bool, error) {
-	for attempt := 0; attempt < 5; attempt++ {
-		// The state and the version must come from ONE read, and from the
-		// same object. This used to take the set from the agent's in-memory
-		// MIRROR and the version from the store -- two different objects, so
-		// they could disagree without a race at all, and the conditional
-		// apply would then pass its guard while overwriting a declaration it
-		// had never seen. A lost study set is not repairable by the sweep:
-		// the board is what the sweep recomputes FROM.
-		at := a.boardAt()
-		before := studiesFromSnapshot(at.Snapshot)
-		ids := edit(append([]string(nil), before...))
-		if ids == nil {
-			ids = []string{}
-		}
-		changed := len(ids) != len(before)
-		b, err := json.Marshal(ids)
-		if err != nil {
-			return nil, false, err
-		}
-		patch := form.Patch{Set: map[string]json.RawMessage{studiesKey: b}}
-		if _, err := a.backend.ApplyFormIf(a.id, patch, at.Version); err != nil {
-			if errors.Is(err, store.ErrFormMoved) {
-				continue // the board moved; re-read and retry
-			}
-			return nil, false, err
-		}
-		a.form.Apply(patch)
-		return ids, changed, nil
-	}
-	return nil, false, fmt.Errorf("studies: the board would not hold still")
 }
 
 // castOp WAS an inbox event, so that casts serialized in the figaro's actor
@@ -333,7 +246,7 @@ func (a *Agent) serviceCast(op *castOp) castResult {
 
 	// Ensure the study (skip if already studying).
 	already := false
-	for _, id := range studiesFromSnapshot(a.form.Snapshot()) {
+	for _, id := range StudiesFromSnapshot(a.form.Snapshot()) {
 		if id == res.roleID {
 			already = true
 			break
@@ -380,5 +293,5 @@ func (a *Agent) Cast(ctx context.Context, roleID string, rolePatch *form.Patch) 
 
 // StudyList answers figaro.study with no form id: the current set.
 func (a *Agent) StudyList() []string {
-	return studiesFromSnapshot(a.form.Snapshot())
+	return StudiesFromSnapshot(a.form.Snapshot())
 }

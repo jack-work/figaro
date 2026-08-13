@@ -989,17 +989,12 @@ func (a *Agent) serviceSets() bool {
 	return len(evts) > 0
 }
 
-// applyControlPatch persists a state-only patch. No LLM round-trip.
+// applyControlPatchVerdict persists a state-only patch. No LLM round-trip.
 // Backed arias append it to the reducible form channel (keyed to
 // the next IR LT, so it rides the next turn as a transition); ephemeral
 // arias fold it onto an IR control-turn (no channel to hold it).
-func (a *Agent) applyControlPatch(patch message.Patch, ifVersion uint64, assert bool, kind string) {
-	a.applyControlPatchVerdict(patch, ifVersion, assert, kind, nil)
-}
-
-// applyControlPatchVerdict is the same write, reporting what the writer
-// decided to a caller that asked to wait. done may be nil, which is every
-// path but `--wait`.
+// It reports what the writer decided to a caller that asked to wait.
+// done may be nil, which is every path but `--wait`.
 func (a *Agent) applyControlPatchVerdict(patch message.Patch, ifVersion uint64, assert bool, kind string, done chan setVerdict) {
 	verdict := setVerdict{}
 	if done != nil {
@@ -1080,7 +1075,7 @@ func (a *Agent) studyAccessors() map[string]provider.Form {
 	if a.backend == nil || !ok {
 		return nil
 	}
-	ids := studiesFromSnapshot(a.form.Snapshot())
+	ids := StudiesFromSnapshot(a.form.Snapshot())
 	if len(ids) == 0 {
 		return nil
 	}

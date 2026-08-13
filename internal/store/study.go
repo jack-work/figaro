@@ -186,6 +186,29 @@ func KindWord(kind string) string {
 	}
 }
 
+// RequireStudyTarget names the slot errors: only an UNBOUND form is
+// study-able or castable. PRIMARY FORMS ONLY (Gluck, 2026-08-13): "studying
+// is something for forms. Outfits are just the names I give the named files
+// that seed primary forms." An outfit is a seed, not a subject; a bound
+// board is private to its figaro; and a libretto is a derived form, which is
+// not a node at all and so never reaches this check.
+//
+// ONE implementation for the agent's half and the hub's, beside KindWord and
+// for the same reason: a rule enforced in one half only is not a rule.
+func RequireStudyTarget(b Backend, formID string) error {
+	if b == nil {
+		return fmt.Errorf("study: ephemeral aria has no store")
+	}
+	n, ok := b.Node(formID)
+	if !ok {
+		return fmt.Errorf("%s: no such form", formID)
+	}
+	if n.Kind != "form" {
+		return fmt.Errorf("%s is a %s: study and cast take unbound forms (an outfit is a seed, a bound board is private to its figaro)", formID, KindWord(n.Kind))
+	}
+	return nil
+}
+
 // StudiedBy is the observer's declared set, from the durable board rather
 // than from any in-memory mirror of it.
 func (b *XwalBackend) StudiedBy(observerID string) ([]string, error) {

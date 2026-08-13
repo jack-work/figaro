@@ -640,3 +640,18 @@ func TestLibrettoReadersWhileItFolds(t *testing.T) {
 		t.Fatalf("the sweep had to repair after concurrent reads: %+v", audit)
 	}
 }
+
+// Alive is the tests' read of the death record on the copy. The product
+// renders the key itself (system.libretto.alive); no shipped code needs
+// the accessor, so it lives with its callers.
+func (l *Libretto) Alive() bool {
+	raw, ok := l.formState().Get(KeyLibrettoAlive)
+	if !ok {
+		return true
+	}
+	var b bool
+	if err := json.Unmarshal(raw, &b); err != nil {
+		return true
+	}
+	return b
+}

@@ -74,10 +74,6 @@ type cachedLog[T any] struct {
 
 var _ Log[any] = (*cachedLog[any])(nil)
 
-func newCachedLog[T any](inner Log[T]) *cachedLog[T] {
-	return newWindowedLog[T](inner, 0, 0, 1, nil)
-}
-
 // newWindowedLog builds a cache bounded by row count, byte budget, or both.
 // Zero for either disables it; both zero retains everything.
 // inflation is how much larger a decoded entry is than its encoded record, so

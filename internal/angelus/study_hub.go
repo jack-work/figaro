@@ -22,7 +22,6 @@ package angelus
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
@@ -32,24 +31,10 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// requireUnboundForm names the slot error: only an unbound form is studiable
-// or castable. Mirrors the agent's requireStudyTarget, and must keep mirroring
-// it: a rule enforced in one half only is not a rule.
+// requireUnboundForm is store.RequireStudyTarget over the hub's backend:
+// one rule, one wording, shared with the agent's half.
 func (h *handlers) requireUnboundForm(formID string) error {
-	if h.angelus.Backend == nil {
-		return fmt.Errorf("study: no backend")
-	}
-	n, ok := h.angelus.Backend.Node(formID)
-	if !ok {
-		return fmt.Errorf("%s: no such form", formID)
-	}
-	// Primary forms only; see the agent's half for the ruling. Both halves
-	// have to agree about what is study-able, exactly as they agree about
-	// where the set lives.
-	if n.Kind != kindFormNode {
-		return fmt.Errorf("%s is a %s: study and cast take unbound forms (an outfit is a seed, a bound board is private to its figaro)", formID, store.KindWord(n.Kind))
-	}
-	return nil
+	return store.RequireStudyTarget(h.angelus.Backend, formID)
 }
 
 // studyForHub registers or removes a study subscription on a dormant aria's
@@ -87,16 +72,8 @@ func (h *handlers) studyForHub(ariaID, formID string, drop bool) ([]string, erro
 	return studies, nil
 }
 
-func isVersionConflict(err error) bool {
-	if errors.Is(err, store.ErrFormMoved) {
-		return true
-	}
-	return err != nil && containsAny(err.Error(), "form moved", "version")
-}
-
-// studyThroughStore routes to the store's two-participant write when the
-// backend has one. An ephemeral backend has no librettos and keeps the plain
-// board write, which is what it has always done.
+// studyThroughStore routes to the store's two-participant write. Only the
+// xwal backend has one; a backend without librettos cannot study.
 func studyThroughStore(b store.Backend, ariaID, formID string, drop bool) ([]string, bool, error) {
 	sb, ok := b.(studyBackend)
 	if !ok || formID == "" {
@@ -111,24 +88,6 @@ func studyThroughStore(b store.Backend, ariaID, formID string, drop bool) ([]str
 type studyBackend interface {
 	StudyForm(observerID, sourceFormID string) ([]string, bool, error)
 	DropForm(observerID, sourceFormID string) ([]string, bool, error)
-}
-
-func containsAny(s string, subs ...string) bool {
-	for _, sub := range subs {
-		if len(sub) > 0 && len(s) >= len(sub) && indexOf(s, sub) >= 0 {
-			return true
-		}
-	}
-	return false
-}
-
-func indexOf(s, sub string) int {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return -1
 }
 
 // markStudyForHub states a began/stopped transition in the dormant aria's IR.
