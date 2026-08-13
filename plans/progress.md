@@ -2538,3 +2538,66 @@ scripts/ariastress.sh --arias 12 --study --study-patches 300          # the flee
 8. **Prove the mechanism you think you are proving.** The first idle-sweep
    run showed the cache emptying — via figwal's head unload, not my sweep.
    Pinning heads open (`handle_idle_minutes = -1`) is what made it a test.
+
+## The boundary opened, and the live defect behind it (`d6b97f6e`)
+
+Aria 6c2d7b9f answered: `study.go`, `study_hub.go` and `projection.go` are
+**free**, PR 16 is merged, it holds nothing. It handed over three things with
+them, and the first is a defect with a body count.
+
+### The study mark could land inside a tool round, and did
+
+`appendStudyMark` wrote an IR record from the RPC goroutine with no regard
+for whether the drain loop was mid-round with an open call. From a real
+aria's IR (`arias/ir/n714`):
+
+```
+127 input   tool_result  toolu_01ByJoaN…
+128 output  tool_invoke  toolu_01Tqv3GS…   <- the call
+129 input   content:null study:{began:true} <- the mark
+130 input   tool_result  toolu_01Tqv3GS…   <- its result, one record late
+```
+
+A study mark is contentless and still encodes to a user message carrying a
+system-reminder, so it DISPLACES the result, and every provider refuses that:
+*tool_use ids were found without tool_result blocks*. **Two arias in this
+lineage were bricked by it.**
+
+**Fixed structurally, at the write site.** The mark is an inbox event now; the
+loop writes it — immediately when idle, at the ROUND BOUNDARY when a turn is
+in flight, which is where a queued `set` and a steering prompt already land
+and where every tool_result of the finished round is already appended. The
+record cannot land inside a round because nothing but the loop writes it.
+
+**Not a repair.** Synthesizing a `tool_result` per dangling id was the fix in
+these notes two sessions ago and it is wrong twice: two results behind one
+call is also refused, and it lies about a call that succeeded.
+
+**THE RULE for everything phase 9 adds next: no out-of-band IR record between
+a `tool_use` and its results.** Every cursor the libretto wants to stamp
+inherits it.
+
+`TestStudyMarkCannotLandInsideARound` parks a round, asserts the mark stays
+out of the IR for 300 ms (long enough that the old synchronous append would
+have landed), then asserts it arrives after the boundary — and that the
+DECLARATION landed immediately, because the board is the mechanism and the
+mark is only narration. **Verified red against the old code.**
+
+### Two more warnings from 6c2d7b9f, for whoever takes the projection
+
+1. **`projection.go` has a seam that eats new fields.** Per-libretto cursors
+   mean new fields on `IncrementalProjection`, and all four providers rebuild
+   that struct BY HAND after a live append (`anthropic.go`, `anthropicsdk.go`,
+   `copilot/responses.go`, `openaichat.go`). A field forgotten there is not
+   lost state, it is lost POSITION: the next pass believes the cursor sits at
+   zero and refolds the whole history to catch up — correctly, every turn,
+   forever. It ate `LastStudyVersions` once and `FormVersionOfSnapshot` again
+   last night. `TestSplicePreservesTheBoardPosition` guards it both ways;
+   EXTEND it rather than trusting yourself.
+2. **The cursor advance sits ABOVE the `acc == nil` branch on purpose**, so a
+   dead form advances identically whether its record was cached or encoded.
+   Keep that when adding per-libretto cursors: the hit and miss paths must
+   agree, or the per-LT cache makes whichever ran first permanent.
+
+Their branch `fix/tool-result-adjacency` exists and is EMPTY; the work landed
+here instead, so it can be deleted.
