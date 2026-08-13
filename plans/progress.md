@@ -831,3 +831,34 @@ and later is a node on another machine. When that exists this becomes
 **Not wired into the delete path yet**, deliberately: `RemoveLeaf` is the
 crash-ordered boundary repair (durable-forms §2) and putting a write in the
 middle of it wants its own sitting. That is what remains of phase 6.
+
+## END OF SESSION 1
+
+69 commits ahead of main on `feat/incantations`. Every gate green.
+
+| phase | state |
+|---|---|
+| 0 figwal sync + flush gate | done, released, pinned |
+| 1 `actor.Lazy` | done, fuzzed |
+| 2 form on the actor, group commit, fsync | done, crash-tested |
+| 3 command/event/ack | **half**: `Submit`/`Await`/`Ticket` and intent below the wire; `session`, `seq` and the no-op acknowledgement above it are not started |
+| 4 schema validation | done (`CheckWritable`, `ApplyFormPrivileged`) |
+| 5 `SubscribeFrom` | done, reachable through `Backend.SubscribeForm` |
+| 6 tombstones and leases | **most**: tombstone and `Reclaimable` done; the delete path calls neither |
+| 7 retention policy | not started (needs figwal) |
+| 8 topology form | not started |
+| 9 derived forms, libretto | not started |
+| 10 API refactor | not started |
+
+**Start here**: the NEXT STEPS queue above, then phase 6's last piece
+(calling `Tombstone` from `RemoveLeaf`, respecting its crash ordering), then
+phase 3's wire half.
+
+**Do not repeat these**: the four traps in the handoff summary; the
+synchronous-`set` deadlock; inferring a trim from `patches[0].Version`;
+routing a privileged write through the public `Submit`.
+
+**Coordinate**: aria 6c2d7b9f is fixing the displaced-tool_result bug on its
+own worktree off this branch, in `internal/figaro/repair.go`,
+`internal/figaro/study.go`, `internal/angelus/study_hub.go`, the four
+provider encoders and `internal/form/incantation.go`. Stay out of those.
