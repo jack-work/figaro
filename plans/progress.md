@@ -3249,3 +3249,26 @@ WAL**, with mandatory durability everywhere, a second durable write per patch
 on a studied form, and a libretto folding underneath. PSS is up 3.5 M on the
 fleet against session 2 — the libretto, its fold and the boot sweep's
 bookkeeping — and down 5 M against the pre-WAL baseline.
+
+### What phase 9 costs on the real store, measured after the migration
+
+The daemon-day probe again, this time on a copy that has been MIGRATED
+(`doctor librettos`: minted 11, missing 0):
+
+| phase | before phase 9 | with 11 librettos |
+|---|---|---|
+| topology | 48.6 MiB | **48.4** |
+| listing | 48.7 MiB | **48.4** |
+| touching every board | 68.4 MiB | **68.8** |
+| visiting every aria | 320.9 MiB | **321.0** |
+| after evicting idle | 49.2 MiB | **47.7** |
+
+**Nothing measurable at rest** — within the noise of the probe. On disk the
+eleven librettos are **3.0 KB in total** across 33 directories (one per
+channel per stump), against a 262 MB store.
+
+The cost that IS real is per LIVE fold: one goroutine and one subscription
+per libretto actually being followed, plus a second durable write per patch
+on a studied form (coalesced to a quarter of that under group commit). Both
+are reported by `doctor mem`, and neither exists for a store nobody is
+studying in.
