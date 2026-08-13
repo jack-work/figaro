@@ -2,6 +2,63 @@
 
 Live notes for whoever holds the role `@980dc16c`. Update this, not chat.
 
+## SESSION 4 AT A GLANCE (aria b2b0c543)
+
+Phase 9's second half: **the copy is now the thing that renders**. Before
+this, four sessions had built, refcounted, swept, migrated and instrumented a
+libretto that no render path read — every studied form paid a durable fold
+for state nothing consumed. It reads now.
+
+**Shipped** (`e0fd5c34`)
+
+| | |
+|---|---|
+| the cursor namespace | the IR stamps `libretto:<sourceid>` holding the LIBRETTO's version. Legacy `study:` stamps hold SOURCE versions, no longer match, and render nothing — the skip Gluck's ruling licensed, not a second rendering path |
+| the accessor | `studyAccessors` reads each form's libretto. **No render path touches a source form.** Keys stay source ids, so the block still names what the user knows |
+| the machinery stays hidden | `librettoView` strips `system.libretto.*` except `alive` |
+| deletions | `StudyNotes`, its field, its render branch and its tombstone: **deleted**. A dead source is `system.libretto.alive` on a copy that outlives it, rendered as an ordinary key change |
+| no new field | `IncrementalProjection` is untouched, per 6c2d7b9f's warning about that seam |
+
+**Two things found by building it, both in the direction that loses data**
+
+1. **The libretto's bookkeeping would have reached the model.** `at` moves on
+   every fold; `refs` moves whenever some OTHER aria studies the same form.
+   Reading the copy means reading the document the copy lives in, and one
+   aria's context would have carried another aria's refcount.
+2. **Stripping in place would have edited history.** The patch a view is
+   handed is the store's own published value, shared by every reader of that
+   log. `withoutBookkeeping` copies only when it must; a test asserts the
+   store's patch survives the render, because the per-LT cache would have
+   made the damage permanent.
+
+**A timing change worth knowing**: a stamp names where the COPY stood, and
+the fold is asynchronous. A source write landing just before an IR append
+renders in the NEXT block. Nothing is lost — consecutive stamps still bracket
+every patch — but a test that patches and immediately appends must WAIT for
+the fold. `TestObservedFormsStampIRAppends` does.
+
+### The drift audit Gluck asked for (built vs. originally described)
+
+Fanned out to a read-only aria against `durable-forms.md` whole, `wym.md` and
+`answers-forms.md` (Gluck's own words), and session 1. Fourteen rows; the
+honest summary is that **the refcount design is honored in full** — including
+`wym.md`'s own reversal from a study-set MAP to a SET — and the gaps are
+these four:
+
+| # | what he said | what exists |
+|---|---|---|
+| 8 | "record the deletion and **stop listening**" (`wym.md:21`) | records the death, never unsubscribes (`libretto.go:349-364`). A dead source's form stays subscribed, so it is permanently un-evictable — one pinned instance per deleted-but-studied form |
+| 9 | "if a form with the same id is created again, the system should handle it" (`wym.md:22`) | **never kept.** A reborn form's channel restarts at 1, and both the seed guard (`libretto.go:218`) and the event guard (`:309`) silently discard everything below the dead form's high-water mark. `alive` stays false. No test, no note |
+| 3 | the two-participant write, approved **conditionally on seeing the code** (`answers-forms.md:12`) | built since `ac3314bc`; the review was never asked for. The retry count went 5 → 32 under contention that exists because casts left the actor loop |
+| 10 | "scrap the form projection … whole-form only" (`answers-forms.md:1`) | code is whole-form; the DESIGN TEXT still carries `"paths"` in the libretto document and still lists the union projection as open `[q13]` in §17 |
+
+Also unremarked anywhere: `requireStudyTarget` admits an **outfit** as a
+study target (`figaro/study.go:79`), while §12 says derivations may subscribe
+only to primary forms.
+
+Row 6 of that audit was "figaro stamps the libretto's cursor — not built".
+This session is that row.
+
 ## SESSION 3 AT A GLANCE (aria d604c755)
 
 The figwal memory job in both halves, the layer nobody had reclaimed at all,
@@ -2784,29 +2841,42 @@ the inbox) and the self-cast deadlock (the cast now does not).
 
 What remains, in the order I would take it:
 
-1. **The projection switch** (§12.5), with the migration trap above: a second
-   cursor namespace, not a reinterpretation. Read that section first; it is
-   the only place in this session's work where doing the obvious thing
-   silently corrupts existing transcripts.
-2. **Reclamation of a libretto**, which needs a RULING before it needs code:
-   `refs == 0` is necessary and not sufficient, because an IR record
-   references a libretto forever. Three options are written up under "A
-   constraint the libretto exposes"; the cheapest is to let the render
-   degrade, and that is a decision about what an old transcript may lose.
-3. **Phase 10, the API refactor**, and with it the lock audit's first
+**~~The projection switch~~ is DONE** (session 4, `e0fd5c34`): the stamps,
+the accessor and the machinery filter. Phase 9 is complete. What remains:
+
+1. **The two drift items from Gluck's own words**, which are the only
+   unhonored bullets in `wym.md` and are twelve lines apart in `libretto.go`:
+   a dead source is never **unsubscribed** (so its form is permanently
+   un-evictable), and a form **reborn under the same id** is silently
+   discarded by two high-water-mark guards while `alive` stays false. Neither
+   has a test or a note. He described both as part of how a study survives
+   its source.
+2. **Show him the two-participant write.** He approved it *conditionally on
+   seeing the code* (`answers-forms.md:12`) and the review was never asked
+   for. Five minutes of his time, and the retry count has since gone 5 → 32.
+3. **Strike the stale design text**: §12.3 still carries `"paths"` in the
+   libretto document and §17 still lists the union projection as open
+   `[q13]`, both settled as whole-form-only in `answers-forms.md:1`.
+4. **Reclamation** — DEFERRED by ruling (§12.7b), not a gap. 3.0 KB.
+5. **Phase 10, the API refactor**, and with it the lock audit's first
    fast-follow (`figaro/agent.go`'s `mu`). The audit says it wants its own
    branch and its own pty runs; believe it.
-4. **Phase 7, retention** — deferred with its argument written down. Its real
-   customer is librettos-holding-LT-ranges, not the topology form.
-5. **One idle policy instead of four.** figwal unloads a head at 5 minutes
+6. **Phase 7, retention** — deferred with its argument written down. When it
+   lands, **retention must refuse a libretto BY TYPE, not by convention**
+   (§12.5b): the translator asks for arbitrary historical ranges, so a
+   libretto that dropped segments answers a wrong range silently, and once a
+   source is deleted the libretto is the only copy.
+7. **One idle policy instead of four.** figwal unloads a head at 5 minutes
    while the agent above it lives to 15, so a quiet aria drops its RAW bytes
    and keeps its DECODED ones. The four clocks are tabulated above.
 
 **The one thing I would do first if I were staying**: run
-`scripts/live/studylive.sh` and `scripts/live/sweeplive.sh` after any change
-to the study path or the caches. Ninety seconds of driving the real verbs found two
-bugs a green unit suite could not, and both were in the direction that loses
-data.
+`scripts/live/studylive.sh`, `realstudy.sh` and `renderlive.sh` after any
+change to the study path or the caches. Ninety seconds of driving the real
+verbs found two bugs a green unit suite could not, and both were in the
+direction that loses data. `renderlive.sh` is session 4's addition and covers
+the half the others never did: what the MODEL is actually sent, asserted on
+the wire dump rather than on what a model chose to say about it.
 
 ### The durability gate, run deliberately (it is the one that matters for figwal)
 

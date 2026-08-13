@@ -919,10 +919,36 @@ switch (§12.5) and reclamation. Corrections, in the order they were found:
    Every IR record ever written by a studying aria carries source-form
    versions under `study:`. Reinterpreting them as libretto versions reads
    every one against the wrong log — silently wrong ranges rather than absent
-   ones, made permanent by the per-LT cache. A second cursor namespace lets
-   old records keep their meaning; the projection then carries both paths,
-   and the accessor map can be keyed so that no new field is needed on
-   `IncrementalProjection` (the seam that has eaten two fields already).
+   ones, made permanent by the per-LT cache. A second cursor namespace is
+   what keeps that from happening.
+
+   **Superseded in part by §12.5b**: the second path is a SKIP, not a second
+   rendering path. Gluck's reclamation ruling licenses an old record losing
+   its study block, so a legacy stamp is simply not matched. No field was
+   added to `IncrementalProjection`.
+
+### 12.5c What the switch turned out to cost (built, session 4)
+
+Three edits, and two consequences worth knowing.
+
+**The libretto's machinery would otherwise reach the model.** The bookkeeping
+lives in the same document as the mirror (it must: §12.8.1), so reading the
+libretto renders `system.libretto.at` on every fold and `refs` whenever some
+OTHER aria studies the same form — cross-aria noise inside one aria's
+context. The accessor strips `system.libretto.*` except `alive`, which stays
+by §12.7b's ruling. It copies only when there is something to strip: the
+patch handed to a view is the store's own published value, and stripping in
+place edits history for every other reader.
+
+**A stamp names where the COPY stood, and the fold is asynchronous.** A
+source write landing microseconds before an IR append renders in the NEXT
+block rather than that one. Nothing is lost — consecutive stamps still
+bracket every patch — but it is a real timing change from reading the source
+directly, and any test that patches a form and immediately appends must wait
+for the fold rather than assume it.
+
+**What died with it**: `StudyNotes`, its field, its render branch, and the
+tombstone it printed. A deleted source needs no special case now.
 
 ## 13. Inconsistencies found while writing this down
 
