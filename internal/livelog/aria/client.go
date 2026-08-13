@@ -68,6 +68,12 @@ type Client struct {
 type heldInquiry struct {
 	text     string
 	segments []InquirySegment
+	// formDeltas is the TURN-level form state, parked here for the same
+	// reason the segments are: it belongs to the head slice, which may
+	// arrive frames later. Dropping it made a LIVE aria's pager blind to
+	// every delta whose window closed on an inquiry record -- which is
+	// most of them, since study stamps ride user records.
+	formDeltas map[string]livedoc.FormDelta
 }
 
 // NewClient returns a fresh client.
@@ -309,14 +315,15 @@ func (c *Client) Apply(p Page) {
 		// The inquiry is TEXT ON THE TURN, not a node, and it commits before the
 		// agent has said anything: so it arrives on a part of its own, with no
 		// nodes and no Live. Hold it until the head slice carries it away, and open
-		// the turn now so the question paints the instant it is asked.
-		if part.Inquiry != "" {
+		// the turn now so the question paints the instant it is asked. The turn's
+		// form deltas are held the same way, for the same reason.
+		if part.Inquiry != "" || len(part.FormDeltas) > 0 {
 			// RECORDING is bookkeeping and always safe: including on a
 			// clipped-head part, which is what a backward page into history is
 			// made of. It used to sit inside the ClippedHead guard, against its
 			// own comment, so paging up through an old aria never learned any of
 			// its questions and the head slice, when it arrived, drew none.
-			c.inquiry[id] = heldInquiry{text: part.Inquiry, segments: part.InquirySegments}
+			c.inquiry[id] = heldInquiry{text: part.Inquiry, segments: part.InquirySegments, formDeltas: part.FormDeltas}
 			// OPENING is what history is refused: a part whose head was clipped
 			// describes a turn we hold only the tail of, and claiming the open
 			// slot for it would destroy the live turn on its way past.
@@ -554,6 +561,7 @@ func (c *Client) message(turn, from int, nodes []livedoc.Node) Message {
 	if from == 0 {
 		held := c.inquiry[turn]
 		m.Inquiry, m.InquirySegments = held.text, held.segments
+		m.FormDeltas = held.formDeltas
 	}
 	return m
 }
