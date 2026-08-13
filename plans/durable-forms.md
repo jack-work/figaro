@@ -808,6 +808,28 @@ immediately: 50 × 12 MB per patch versus 50 × a few hundred bytes.
 It has to be the design from the first line, because it is very hard to
 retrofit once the derivation speaks JSON internally.
 
+### 12.7b Rulings (Gluck, 2026-08-13)
+
+**A deleted source is reported IN BAND, as a key.** The libretto carries
+`system.libretto.alive: false` from the moment its source dies, and that
+transition renders like any other key change in the studied block. The
+projection therefore never has to know whether a source is alive, which is
+what keeps §12.5 a namespace change instead of a new field on
+`IncrementalProjection` — the seam that has silently eaten two fields. An
+encoder MAY special-case that one key into the sentence it prints today, and
+`system.study_incantation`'s `ondrop` already exists to say what the event
+means to a particular figaro; neither is required, and neither may put
+liveness back into the translator.
+
+**Reclamation is deferred, not designed away.** Deleting an aria already
+decrements every libretto its board names (§12.2.2, built). What is NOT built
+is deleting a libretto whose count reaches zero, and it stays unbuilt for
+now: eleven librettos on the author's real store occupy **3.0 KB in total**,
+so reclamation buys kilobytes and costs replay fidelity, because an IR record
+references its libretto forever. When it is built, the cheap form is to let
+the render degrade (§1: absence is the truthful default) and the careful form
+is to reclaim only when every aria that ever stamped it is gone.
+
 ### 12.8 What was BUILT, and four corrections to the sections above
 
 Built in session 3 (aria d604c755): the libretto itself, its fold, its
