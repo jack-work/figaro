@@ -637,3 +637,52 @@ func TestStudyAndDropRaceOnOneForm(t *testing.T) {
 		return ok && string(raw) == `"after the storm"`
 	})
 }
+
+// EXHAUSTING THE RETRIES IS NOT A DROP. The board write is the participant
+// that must land FIRST; if it never lands, releasing the libretto anyway
+// takes a reference off a copy a live board still names -- the under-count
+// §12.2.1's ordering exists to make impossible, and the one the sweep cannot
+// distinguish from a legitimate observer.
+//
+// The exhaustion branch is unreachable without 32 real conflicts, so the
+// attempt budget is a var and this drives it to zero.
+func TestDropThatCannotUndeclareKeepsItsReference(t *testing.T) {
+	be, src, _ := librettoFixture(t)
+	aria, _, err := be.ForkWith("", 0, patchOf(t, map[string]string{"aria_id": `"a1"`}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := be.StudyForm(aria, src); err != nil {
+		t.Fatal(err)
+	}
+	lib, err := be.Libretto(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := lib.Refs()
+
+	saved := studyAttempts
+	studyAttempts = 0
+	_, changed, err := be.DropForm(aria, src)
+	studyAttempts = saved
+
+	if err == nil {
+		t.Fatal("a drop that never undeclared reported success")
+	}
+	if changed {
+		t.Error("a drop that changed nothing reported changed")
+	}
+	if got := lib.Refs(); got != before {
+		t.Fatalf("refs %d, want %d: the reference went back while the board still names the study", got, before)
+	}
+
+	// And the two participants still agree, which is the invariant the verb
+	// and the sweep share.
+	audit, err := be.ReconcileLibrettos()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if audit.Corrected != 0 {
+		t.Fatalf("the sweep had to repair after a refused drop: %+v", audit)
+	}
+}

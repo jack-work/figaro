@@ -104,7 +104,10 @@ func (b *XwalBackend) StudyForm(observerID, sourceFormID string) ([]string, bool
 //
 // Each attempt costs one fsync on conflict, so a generous count is cheap and
 // only spent under contention that used to be impossible.
-const studyAttempts = 32
+// A var, not a const, so a test can drive the exhaustion path: it is the
+// branch where the two participants can disagree, and it is unreachable
+// otherwise without 32 real conflicts.
+var studyAttempts = 32
 
 // backoff spreads retries so N writers of one board converge instead of
 // colliding in step. Deliberately tiny: the writes themselves are
@@ -122,6 +125,12 @@ func backoff(attempt int) {
 // the board stops naming it, and the copy stays.
 func (b *XwalBackend) DropForm(observerID, sourceFormID string) ([]string, bool, error) {
 	var studies []string
+	// The declaration must be GONE before the count comes down. Exhausting
+	// the retries is not "gone": releasing anyway would take a reference off
+	// a libretto a board still names, which is the under-count §12.2.1's
+	// ordering exists to make impossible -- and unlike an over-count, the
+	// sweep cannot tell it from a legitimate observer.
+	undeclared := false
 	for attempt := 0; attempt < studyAttempts; attempt++ {
 		var version uint64
 		var err error
@@ -144,7 +153,13 @@ func (b *XwalBackend) DropForm(observerID, sourceFormID string) ([]string, bool,
 			return nil, false, err
 		}
 		studies = next
+		undeclared = true
 		break
+	}
+	if !undeclared {
+		return studies, false, fmt.Errorf(
+			"drop: the board would not hold still after %d attempts (the study stands, and so does its reference)",
+			studyAttempts)
 	}
 	lib, err := b.libretto(sourceFormID)
 	if err != nil {
