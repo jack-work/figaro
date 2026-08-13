@@ -997,3 +997,30 @@ its dedup window and its conformance test in one change.
 live aria will apply it at the next round boundary, and `set … @V` with the
 durable version otherwise — which is the number a script quotes back as
 `if_version`.
+
+#### Live validation of the outcome, on an isolated daemon
+
+Unbound form (the hub path, no agent):
+
+```
+$ figaro state set --id @49f50c5b brief hello
+set brief = "hello" (figaro @49f50c5b) @3
+$ figaro state set --id @49f50c5b brief hello
+unchanged: brief = "hello" (figaro @49f50c5b) @3
+$ figaro state delete --id @49f50c5b nosuch
+error: set: remove "nosuch": no such key
+```
+
+Live aria (the agent path):
+
+```
+$ figaro set --id 78c19579 brief hello
+queued: brief = "hello" (figaro 78c19579)
+$ figaro unset --id 78c19579 nosuch
+queued: nosuch (figaro 78c19579)
+```
+
+The second one is the point. That refusal is deferred to the round boundary
+and reaches only the daemon log, and until now the CLI printed
+`unset nosuch (figaro …)` — a write it had not made and would not make. It
+now says what it actually did: it queued something.
