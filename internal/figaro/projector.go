@@ -105,3 +105,31 @@ func (a *Agent) materializeTurns() []aria.Turn {
 	entries := a.figLog.Read()
 	return a.attachFormDeltas(a.projTurns(unwrapMessages(entries)), entries)
 }
+
+// turnSource is the agent's half of the turn cache's recompose-on-miss:
+// read exactly the LT bracket, compose it, attach its deltas with the
+// cursor seed from the record preceding the bracket. It reads through
+// the SAME memoized log the whole agent uses, so a recompose costs
+// decoded-window reads, not disk, when the range is warm below.
+func (a *Agent) turnSource() aria.TurnSource {
+	return func(fromLT, toLT uint64) []aria.Turn {
+		log := a.figLog
+		if log == nil || toLT < fromLT {
+			return nil
+		}
+		entries, _ := log.ReadPage(fromLT, toLT+1, int(toLT-fromLT+1))
+		if len(entries) == 0 {
+			return nil
+		}
+		msgs := unwrapMessages(entries)
+		turns := a.projTurns(msgs)
+		if fb, ok := a.backend.(formdelta.Backend); ok {
+			seed := formdelta.Seed{}
+			if prev, _ := log.ReadPage(0, fromLT, 1); len(prev) > 0 {
+				seed = formdelta.SeedFrom(prev[len(prev)-1])
+			}
+			formdelta.Attach(turns, formdelta.PerRecordFrom(fb, a.id, seed, entries))
+		}
+		return turns
+	}
+}

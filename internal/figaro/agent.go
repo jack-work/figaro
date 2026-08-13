@@ -143,6 +143,11 @@ type Config struct {
 	// safe (the accessors are nil-safe and return the built-in defaults,
 	// ceiling included), so tests and ephemeral agents need not supply one.
 	Settings *config.Loaded
+
+	// UIBudget is the process-wide bound on composed UI IR, shared with
+	// every other agent and with the reader. Nil is unbounded (the old
+	// behaviour, and the ephemeral/test default).
+	UIBudget *aria.UIBudget
 }
 
 // Agent is the Figaro implementation.
@@ -273,6 +278,7 @@ func NewAgent(cfg Config) *Agent {
 	// Build sealed UI turns from canonical IR, then broadcast every aria-server
 	// change to socket subscribers as one aria.Page.
 	a.ariaSrv = aria.NewServer()
+	a.ariaSrv.BindCache(a.turnSource(), cfg.UIBudget)
 	for _, t := range a.attachFormDeltas(a.projTurns(messages), entries) {
 		a.ariaSrv.Commit(t)
 	}

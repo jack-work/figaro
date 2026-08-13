@@ -925,6 +925,14 @@ type MemStatus struct {
 	// rather than with distinct segments is the alarm: blocks are being
 	// dropped as fast as they are built.
 	SegmentCacheLoads int64 `json:"segment_cache_loads"`
+	// UIWindowBytes is the composed UI IR resident across every
+	// materialized aria, held against UIWindowBudget ([memory]
+	// ui_window_mb); UIWindowEvictions counts turns hollowed to stay
+	// under it. A turn evicted keeps its index and recomposes on the
+	// read that lands in it.
+	UIWindowBytes     int64 `json:"ui_window_bytes,omitempty"`
+	UIWindowBudget    int64 `json:"ui_window_budget,omitempty"`
+	UIWindowEvictions int   `json:"ui_window_evictions,omitempty"`
 	// Librettos is how many derived forms are open and folding, and
 	// LibrettoObservers how many figaros they carry between them. A fold is
 	// a goroutine and a subscription; this is what studying costs.

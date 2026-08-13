@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/figaro"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/store"
@@ -45,6 +46,10 @@ type Angelus struct {
 	// Settings is the loaded config, read for reclamation policy. nil is
 	// legal and means every default.
 	Settings *config.Loaded
+
+	// UIWindow is the process-wide budget for composed UI IR, shared by
+	// every agent's turn cache and by the reader. Nil is unbounded.
+	UIWindow *aria.UIBudget
 
 	// Hubs is the set of aria endpoints. Each outlives the agent behind it,
 	// so reclaiming an agent does not disconnect anybody. See ariaHub.
@@ -97,6 +102,7 @@ func New(cfg Config) *Angelus {
 		StartedAt:  time.Now(), // set-once at construction; read concurrently (Uptime)
 		Sessions:   tool.NewSessionRegistry(tool.DefaultSessionTTL),
 		Settings:   cfg.Settings,
+		UIWindow:   aria.NewUIBudget(cfg.Settings.UIWindowMB()),
 		Hubs:       newHubs(),
 	}
 	return a
