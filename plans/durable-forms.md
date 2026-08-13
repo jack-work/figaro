@@ -808,6 +808,50 @@ immediately: 50 × 12 MB per patch versus 50 × a few hundred bytes.
 It has to be the design from the first line, because it is very hard to
 retrofit once the derivation speaks JSON internally.
 
+### 12.8 What was BUILT, and four corrections to the sections above
+
+Built in session 3 (aria d604c755): the libretto itself, its fold, its
+refcount, the reconciliation sweep, `doctor librettos`, the study/drop verbs
+on both halves, and fork/kill as participants. Not built: the projection
+switch (§12.5) and reclamation. Corrections, in the order they were found:
+
+1. **A verbatim mirror must not copy the source's TOMBSTONE.** §12.3 says the
+   libretto records the death and keeps the copy. It does — but a form SEALS
+   itself when it carries `system.tombstone`, so mirroring that key made the
+   libretto commit suicide the moment its source died, which is the precise
+   opposite of the copy outliving it. The death is recorded as
+   `system.libretto.alive`, which is a fact ABOUT the source rather than an
+   instruction to this form. Bookkeeping lives under `system.libretto.*` for
+   the same class of reason: a whole-form mirror copies arbitrary board keys,
+   and a board may legitimately hold one called `refs`.
+
+2. **`refs == 0` is necessary and NOT sufficient for reclamation**, which
+   §12.2 implies and never says. An IR record stamps the libretto version it
+   was rendered against (§12.5), so an aria that studied a form and dropped
+   it still references that libretto for the whole of its history. Unlinking
+   on refs==0 makes those records unrenderable — the coupling the COPY exists
+   to remove (§12.3), reintroduced from the other end. Reclamation needs a
+   second question ("does any surviving IR reference it") and a ruling about
+   what an old transcript may lose.
+
+3. **§12.2.2's list is written in terms of VERBS and must be read in terms of
+   ENTRY POINTS.** "Fork" is three functions here (`Fork`, `ForkAt`,
+   `ForkWith`), and a live `fig fork` takes the third. Putting the refcount
+   on the first two passed every unit test — because the tests called what
+   the tests chose — and under-counted on a real daemon, which is §12.2.2's
+   own unrecoverable direction reintroduced by an incomplete fix to it. The
+   rule is better stated as: every code path that gives a board a COPY, or
+   takes one out of existence, is a participant.
+
+4. **The stamps are durable history, so §12.5 is a MIGRATION, not a switch.**
+   Every IR record ever written by a studying aria carries source-form
+   versions under `study:`. Reinterpreting them as libretto versions reads
+   every one against the wrong log — silently wrong ranges rather than absent
+   ones, made permanent by the per-LT cache. A second cursor namespace lets
+   old records keep their meaning; the projection then carries both paths,
+   and the accessor map can be keyed so that no new field is needed on
+   `IncrementalProjection` (the seam that has eaten two fields already).
+
 ## 13. Inconsistencies found while writing this down
 
 Recorded because each was a real contradiction between two turns of the
