@@ -94,6 +94,21 @@ and both halves of `requireStudyTarget` refuse an outfit now, naming it.
 Row 6 of that audit was "figaro stamps the libretto's cursor — not built".
 This session is that row.
 
+### The death, which was built and invisible (`ba3886c2`)
+
+§12.7b says a deleted source is reported IN BAND, as a key: the copy carries
+`system.libretto.alive=false` and it renders like any other key change. Every
+layer did its job — the fold recorded it, the accessor passed it through, my
+filter deliberately spared `alive` — and **`studyFold` dropped it**, because
+it skips every `system.*` key, rightly, as machinery.
+
+So killing a studied form said **nothing at all** to the model. The ruling was
+built, durable, correct and undeliverable. It renders as `"exists": false`
+now — the word the old tombstone note used, without the error framing.
+
+Only a wire assertion could have found it. Nothing was broken; the ruling
+simply was not delivered.
+
 ### What the model is actually sent, now (`renderlive.sh`, on the wire)
 
 Studying a form, patching it twice before a turn and once after, the request

@@ -14,7 +14,8 @@ lost. They are here so the next person has them.
 | script | what it drives | what it caught |
 |---|---|---|
 | `studylive.sh` | study, fork, drop, `doctor librettos` on a fresh store | the libretto stump appearing in `ls -g`; `ForkWith` missing the refcount participant |
-| `renderlive.sh` | what the MODEL is sent, from the wire dump, after §12.5 | the half the others never covered: that the studied block comes from the libretto and its bookkeeping does not |
+| `renderlive.sh` | what the MODEL is sent, from the wire dump: deltas, machinery, and the death | the studied block frozen at its first version on every real turn; a studied form's DEATH never reaching the model at all |
+| `restartlive.sh` | a studied form across a daemon restart | a study window closed by an assistant record, losing the change permanently |
 | `realstudy.sh` | the same against a COPY OF THE REAL STORE (715 rows) | the migration: eleven pre-existing studies with no libretto |
 | `migratelive.sh` | boot, then watch `doctor mem` | that the migration is observable without stopping the daemon |
 | `castlive.sh` | `fig cast`, the role pointing back, the study | the self-cast path end to end after it left the actor loop |
