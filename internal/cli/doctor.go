@@ -199,6 +199,10 @@ func runDoctorMem(asJSON bool) error {
 	fmt.Printf("figwal     loaded-heads=%d  segment-cache=%s of %s  loads=%d\n",
 		m.LoadedHeads, humanBytes(m.SegmentCacheBytes),
 		humanBytes(m.SegmentCacheBudget), m.SegmentCacheLoads)
+	if m.UIWindowBudget > 0 {
+		fmt.Printf("ui window  resident=%s of %s  evictions=%d\n",
+			humanBytes(m.UIWindowBytes), humanBytes(m.UIWindowBudget), m.UIWindowEvictions)
+	}
 	if m.Librettos > 0 || m.LibrettoObservers > 0 {
 		fmt.Printf("librettos  open=%d  observers=%d  (one fold goroutine each)\n",
 			m.Librettos, m.LibrettoObservers)

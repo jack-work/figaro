@@ -10,6 +10,11 @@ go build -o "$BIN" ./cmd/figaro || exit 1
 mkdir -p "$ROOT/config" "$ROOT/state" "$ROOT/rt"
 cp -a "${HOME}/.config/figaro/." "$ROOT/config/" 2>/dev/null || true
 cp -a --reflink=auto "${HOME}/.local/state/figaro/arias" "$ROOT/state/arias" || exit 1
+# The real config may already carry a [memory] table (it does since
+# 2026-08-13, written out explicitly); a second one is a TOML parse error
+# that leaves the daemon unable to start AT ALL -- which this probe then
+# reports as empty PSS columns. Strip and re-add.
+sed -i '/^\[memory\]/,/^\[/{/^\[memory\]/d;/^\[/!d}' "$ROOT/config/config.toml"
 cat >> "$ROOT/config/config.toml" <<CFG
 
 [memory]

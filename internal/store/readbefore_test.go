@@ -91,3 +91,11 @@ func TestTailSnapshot_CachedLogIsAscending(t *testing.T) {
 	c := newCachedLog[uint64](inner)
 	assert.Equal(t, []uint64{20, 30}, fks(TailSnapshot[uint64](c, 2)))
 }
+
+// newCachedLog is an UNBOUNDED cache: everything decoded is retained. No
+// shipped configuration builds one -- production always passes a window or a
+// budget -- so the constructor lives with the tests that want a cache whose
+// hit-rate is 100% by construction.
+func newCachedLog[T any](inner Log[T]) *cachedLog[T] {
+	return newWindowedLog[T](inner, 0, 0, 1, nil)
+}

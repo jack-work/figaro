@@ -53,6 +53,3 @@ func CheckWritable(p Patch, privileged bool) error {
 	}
 	return fmt.Errorf("%s: written by the harness, not by hand", strings.Join(bad, ", "))
 }
-
-// IsSystemManaged reports whether the harness owns this key.
-func IsSystemManaged(key string) bool { return systemManaged[key] }

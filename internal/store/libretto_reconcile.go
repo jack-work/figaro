@@ -37,9 +37,10 @@ type LibrettoAudit struct {
 	Minted    int // librettos this pass created (the migration)
 }
 
-// StudiesKey is the board key naming the forms a figaro studies. It is
-// figaro's constant; the store needs it to reconcile and must not own a
-// second copy of the name.
+// StudiesKey is the board key naming the forms a figaro studies. The store
+// owns the name -- its reconciliation sweep recomputes refcounts FROM the
+// boards -- and figaro re-exports it, because figaro imports the store and
+// not the other way around.
 const StudiesKey = "system.studies"
 
 // ReconcileLibrettos recounts every libretto from the boards. Idempotent, and

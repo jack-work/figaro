@@ -1,6 +1,9 @@
 package livedoc
 
-import "reflect"
+import (
+	"encoding/json"
+	"reflect"
+)
 
 // A live unit is an ordered, append-only list of typed Nodes. Prose and
 // tool calls are distinct node types so a consumer can render a tool as a
@@ -44,6 +47,37 @@ const (
 	RoleInput  = "input"
 	RoleOutput = "output"
 )
+
+// FormKind names what kind of form a delta happened on, decided
+// server-side so three clients do not each invent the predicate: a form
+// carrying target-aria is a role.
+type FormKind string
+
+const (
+	FormBound   FormKind = "bound"   // the aria's own board
+	FormStudied FormKind = "studied" // an observed unbound form
+	FormRole    FormKind = "role"    // a studied form carrying target-aria
+)
+
+// FormEvent distinguishes a key REMOVED from the whole form DELETED,
+// because a reader needs to know the difference between "the brief was
+// cleared" and "the brief is gone".
+type FormEvent string
+
+const (
+	FormSet     FormEvent = "set"
+	FormRemoved FormEvent = "removed"
+	FormDeleted FormEvent = "deleted" // the SOURCE died; the copy records it
+)
+
+// FormDelta is one key's transition as a reader of this node would have
+// needed it: what changed, on which form, and what kind of form it was.
+type FormDelta struct {
+	Value json.RawMessage `json:"value,omitempty"` // as seen HERE; absent on removal
+	Kind  FormKind        `json:"kind"`
+	Event FormEvent       `json:"event,omitempty"`
+	Form  string          `json:"form"` // the id, unsplit, for grouping
+}
 
 // Node is one element of a live unit. Only the fields for its Type are
 // meaningful; the rest are zero. The two long, streamed string fields -
@@ -117,6 +151,16 @@ type Node struct {
 	OpenedAt   int64 `json:"opened_at,omitempty"`
 	StartedAt  int64 `json:"started_at,omitempty"`
 	FinishedAt int64 `json:"finished_at,omitempty"`
+
+	// FormDeltas is the form state a reader would have needed to understand
+	// this node, keyed "<formid>.<path>" so a client can group by form id
+	// without parsing a nested shape, and sort stably. EVERY node type
+	// tolerates it: a list of which nodes may carry state is a list that
+	// drifts, and an absent field costs nothing.
+	//
+	// Derived server-side from durable cursor stamps, never from the
+	// provider's translated bytes; see internal/formdelta.
+	FormDeltas map[string]FormDelta `json:"formDeltas,omitempty"`
 }
 
 // OpKind discriminates a node mutation on the wire.

@@ -15,8 +15,11 @@ import (
 // receive another delta. That boundary is what a client needs to know which
 // half of a page it may cache forever.
 type Server struct {
-	mu     sync.Mutex
-	turns  []Turn
+	mu sync.Mutex
+	// cache is the sealed section: bounded, index-preserving, recompose-
+	// on-miss (turncache.go). The Server owns it and mutates it only
+	// under s.mu; the streaming half below is the part no cache can be.
+	cache  *TurnCache
 	open   *openTurn
 	subs   map[int]func(Page)
 	nextID int
@@ -39,26 +42,38 @@ type openTurn struct {
 	ver   int // next frame version (0-indexed); last emitted is ver-1
 }
 
-// NewServer returns an empty aria server.
-func NewServer() *Server { return &Server{subs: map[int]func(Page){}} }
+// NewServer returns an empty aria server, its sealed section unbounded
+// until BindCache hands it a source and a budget.
+func NewServer() *Server {
+	return &Server{subs: map[int]func(Page){}, cache: NewTurnCache(nil, nil)}
+}
+
+// BindCache arms the sealed section with a recompose source and a shared
+// byte budget. Call before history accumulates; a server never bound
+// keeps every sealed turn resident, which is the old behaviour.
+func (s *Server) BindCache(source TurnSource, budget *UIBudget) {
+	s.mu.Lock()
+	s.cache.source = source
+	s.cache.budget = budget
+	s.mu.Unlock()
+}
 
 // LastTurn returns the id of the newest known turn (0 if none): the cursor a
 // client streams from.
 func (s *Server) LastTurn() uint64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(s.turns) == 0 {
-		return 0
-	}
-	return s.turns[len(s.turns)-1].ID
+	return s.cache.LastID()
 }
 
-// Turns returns a snapshot of materialized turns, the last carrying its open
-// suffix and Live boundary when one is streaming.
+// Turns returns a snapshot of every materialized turn, the last carrying
+// its open suffix and Live boundary when one is streaming. It
+// MATERIALIZES THE WHOLE LOG and exists for tests and whole-history
+// callers; the paging path (Read/ReadBefore) never uses it.
 func (s *Server) Turns() []Turn {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.snapshotLocked()
+	return s.overlayOpen(s.cache.Slice(0, s.cache.Len()-1), true)
 }
 
 func (s *Server) HasOpen() bool {
@@ -70,7 +85,7 @@ func (s *Server) HasOpen() bool {
 // Restore replaces materialized state without broadcasting.
 func (s *Server) Restore(turns []Turn) {
 	s.mu.Lock()
-	s.turns = append([]Turn(nil), turns...)
+	s.cache.ReplaceAll(turns)
 	s.open = nil
 	s.mu.Unlock()
 }
@@ -85,10 +100,10 @@ func (s *Server) Restore(turns []Turn) {
 func (s *Server) AdoptIfEmpty(turns []Turn) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(s.turns) > 0 || s.open != nil || len(turns) == 0 {
+	if s.cache.Len() > 0 || s.open != nil || len(turns) == 0 {
 		return false
 	}
-	s.turns = append([]Turn(nil), turns...)
+	s.cache.ReplaceAll(turns)
 	return true
 }
 
@@ -99,12 +114,12 @@ func (s *Server) AdoptIfEmpty(turns []Turn) bool {
 func (s *Server) OpenTurn(id uint64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if n := len(s.turns); n == 0 || s.turns[n-1].ID != id {
-		s.turns = append(s.turns, Turn{ID: id})
+	if s.cache.Len() == 0 || s.cache.LastID() != id {
+		s.cache.Append(Turn{ID: id})
 	}
 	if s.baseTurn != id {
 		s.baseTurn = id
-		s.base = uint64(len(s.turns[len(s.turns)-1].Nodes))
+		s.base = uint64(len(s.cache.Tail().Nodes))
 	}
 	s.open = &openTurn{id: id, from: s.base}
 }
@@ -161,10 +176,9 @@ func (s *Server) Close() {
 		s.mu.Unlock()
 		return
 	}
-	i := len(s.turns) - 1
-	t := s.turns[i]
-	t.Nodes = append(t.Nodes[:s.open.from:s.open.from], s.open.nodes...)
-	s.turns[i] = t
+	tl := s.cache.Tail()
+	tl.Nodes = append(tl.Nodes[:s.open.from:s.open.from], s.open.nodes...)
+	s.cache.TailMutated()
 	lastV := s.open.ver - 1
 	if lastV < 0 {
 		lastV = 0
@@ -187,20 +201,21 @@ func (s *Server) Close() {
 // the moment the turn is written to its xwal channel.
 func (s *Server) Seal(lts []uint64) {
 	s.mu.Lock()
-	if len(s.turns) == 0 {
+	tl := s.cache.Tail()
+	if tl == nil {
 		s.mu.Unlock()
 		return
 	}
-	i := len(s.turns) - 1
-	if s.turns[i].Sealed {
+	if tl.Sealed {
 		s.mu.Unlock() // already sealed: sealing is idempotent and silent
 		return
 	}
-	s.turns[i].Sealed = true
+	tl.Sealed = true
 	if len(lts) > 0 {
-		s.turns[i].LTs = lts
+		tl.LTs = lts
 	}
-	sealed := s.turns[i]
+	s.cache.TailMutated()
+	sealed := *tl
 	subs := s.subsLocked()
 	s.mu.Unlock()
 	deliver(subs, Page{Parts: []TurnPart{{Turn: sealed}}})
@@ -218,7 +233,7 @@ func (s *Server) Abandon() {
 // Commit appends an already-complete turn and broadcasts it as a snapshot.
 func (s *Server) Commit(t Turn) {
 	s.mu.Lock()
-	s.turns = append(s.turns, t)
+	s.cache.Append(t)
 	subs := s.subsLocked()
 	s.mu.Unlock()
 	deliver(subs, Page{Parts: []TurnPart{{Turn: t}}})
@@ -243,19 +258,78 @@ func (s *Server) Subscribe(push func(Page)) (cancel func()) {
 // cut, differing only in which side of the anchor the budget is spent on -
 // that is what lets a scrolling client pull an earlier or a later page from
 // wherever it happens to be.
+//
+// Both are WINDOWED: the cache picks a chunk around the anchor from its
+// size index, materializes exactly that (recompose on miss), and the
+// paginator walks it. A page that reaches the chunk's edge with budget
+// left widens and retries; termination is the whole log. More flags are
+// corrected for the turns the window hides.
 func (s *Server) Read(at Anchor, budget int) Page {
-	return Paginate(s.Turns(), at, Forward, budget)
+	return s.page(at, Forward, budget)
 }
 
 func (s *Server) ReadBefore(at Anchor, budget int) Page {
-	return PaginateBefore(s.Turns(), at, budget)
+	return s.page(at, Backward, budget)
 }
 
-// snapshotLocked copies the turn list, attaching the streaming suffix and its
-// Live boundary to the turn that owns it.
-func (s *Server) snapshotLocked() []Turn {
-	out := append([]Turn(nil), s.turns...)
-	if s.open == nil {
+func (s *Server) page(at Anchor, dir Direction, budget int) Page {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := s.cache.Len()
+	if n == 0 && s.open == nil {
+		return Page{}
+	}
+	lo, hi := s.cache.ChunkFor(at, dir, budget)
+	for {
+		turns := s.overlayOpen(s.cache.Slice(lo, hi), hi >= n-1)
+		var p Page
+		if dir == Backward {
+			p = PaginateBefore(turns, at, budget)
+		} else {
+			p = Paginate(turns, at, dir, budget)
+		}
+		covered := lo == 0 && hi >= n-1
+		if covered {
+			return p
+		}
+		// A page ending AT the window's edge may have been cut by the
+		// window rather than by its budget; widen and re-cut. A page
+		// strictly inside the window was cut by budget alone and is
+		// exactly what the full walk would have produced.
+		touchLo := lo > 0 && len(p.Parts) > 0 && p.Parts[0].ID == turns[0].ID
+		touchHi := hi < n-1 && len(p.Parts) > 0 && p.Parts[len(p.Parts)-1].ID == turns[len(turns)-1].ID
+		if !touchLo && !touchHi {
+			if lo > 0 {
+				p.More.Before = true
+			}
+			if hi < n-1 {
+				p.More.After = true
+			}
+			return p
+		}
+		span := hi - lo + 1
+		if touchLo {
+			lo -= span
+			if lo < 0 {
+				lo = 0
+			}
+		}
+		if touchHi {
+			hi += span
+			if hi > n-1 {
+				hi = n - 1
+			}
+		}
+	}
+}
+
+// overlayOpen copies a materialized slice and, when it includes the tail,
+// attaches the streaming suffix and its Live boundary to the turn that
+// owns it. The copy matters: the slice aliases the cache, and the overlay
+// must not write through it.
+func (s *Server) overlayOpen(window []Turn, includesTail bool) []Turn {
+	out := append([]Turn(nil), window...)
+	if s.open == nil || !includesTail {
 		return out
 	}
 	i := len(out) - 1
@@ -409,6 +483,9 @@ func fullSet(id uint64, n livedoc.Node) NodeDelta {
 	if n.At != 0 {
 		set["at"] = n.At
 	}
+	if n.FormDeltas != nil {
+		set["formDeltas"] = n.FormDeltas
+	}
 	return NodeDelta{ID: id, Set: set}
 }
 
@@ -421,13 +498,14 @@ func fullSet(id uint64, n livedoc.Node) NodeDelta {
 // first token arrives.
 func (s *Server) OpenInquiry(id uint64, inquiry string, segments ...InquirySegment) {
 	s.mu.Lock()
-	if n := len(s.turns); n == 0 || s.turns[n-1].ID != id {
-		s.turns = append(s.turns, Turn{ID: id})
+	if s.cache.Len() == 0 || s.cache.LastID() != id {
+		s.cache.Append(Turn{ID: id})
 	}
-	i := len(s.turns) - 1
-	s.turns[i].Inquiry = inquiry
-	s.turns[i].InquirySegments = segments
-	from := uint64(len(s.turns[i].Nodes))
+	tl := s.cache.Tail()
+	tl.Inquiry = inquiry
+	tl.InquirySegments = segments
+	s.cache.TailMutated()
+	from := uint64(len(tl.Nodes))
 	subs := s.subsLocked()
 	s.mu.Unlock()
 	deliver(subs, Page{Parts: []TurnPart{{
@@ -484,10 +562,33 @@ func (s *Server) OpenInquiry(id uint64, inquiry string, segments ...InquirySegme
 // prompt's bytes per frame over a unix socket, and buys the invariant that a
 // part is never partial about identity.
 func (s *Server) inquiryOfLocked(id uint64) (string, []InquirySegment) {
-	for i := range s.turns {
-		if s.turns[i].ID == id {
-			return s.turns[i].Inquiry, s.turns[i].InquirySegments
-		}
+	// The id is the OPEN turn's, which is the tail or nothing: a frame
+	// narrates the turn in flight. Materializing history to answer it
+	// would defeat the window for a question only the tail can carry.
+	if tl := s.cache.Tail(); tl != nil && tl.ID == id {
+		return tl.Inquiry, tl.InquirySegments
 	}
 	return "", nil
+}
+
+// ReleaseCache returns the sealed section's budget references. Call on
+// teardown; the server remains usable but unaccounted afterwards.
+func (s *Server) ReleaseCache() {
+	s.mu.Lock()
+	s.cache.Release()
+	s.mu.Unlock()
+}
+
+// TailBracket is the newest sealed turn's LT bracket end (0 when none or
+// unbracketed). The tail is pinned resident, so this costs no
+// materialization -- it exists so a staleness probe does not have to
+// call Turns(), which would.
+func (s *Server) TailBracket() uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tl := s.cache.Tail()
+	if tl == nil || len(tl.LTs) < 2 {
+		return 0
+	}
+	return tl.LTs[1]
 }

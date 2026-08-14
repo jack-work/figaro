@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/jack-work/figaro/internal/form"
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 )
@@ -924,6 +925,14 @@ type MemStatus struct {
 	// rather than with distinct segments is the alarm: blocks are being
 	// dropped as fast as they are built.
 	SegmentCacheLoads int64 `json:"segment_cache_loads"`
+	// UIWindowBytes is the composed UI IR resident across every
+	// materialized aria, held against UIWindowBudget ([memory]
+	// ui_window_mb); UIWindowEvictions counts turns hollowed to stay
+	// under it. A turn evicted keeps its index and recomposes on the
+	// read that lands in it.
+	UIWindowBytes     int64 `json:"ui_window_bytes,omitempty"`
+	UIWindowBudget    int64 `json:"ui_window_budget,omitempty"`
+	UIWindowEvictions int   `json:"ui_window_evictions,omitempty"`
 	// Librettos is how many derived forms are open and folding, and
 	// LibrettoObservers how many figaros they carry between them. A fold is
 	// a goroutine and a subscription; this is what studying costs.
@@ -983,6 +992,11 @@ type AriaReadRequest struct {
 type AriaReadEntry struct {
 	LT      uint64          `json:"lt"`
 	Payload json.RawMessage `json:"payload"`
+	// FormDeltas is the record's form-state window, assembled HUB-SIDE
+	// (internal/formdelta): the stamps and the patch logs live in the
+	// store, and the client holds neither. Absent when the record's
+	// windows were empty, and on every record of an ephemeral aria.
+	FormDeltas map[string]livedoc.FormDelta `json:"form_deltas,omitempty"`
 }
 
 type AriaReadResponse struct {

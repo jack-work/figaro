@@ -2,6 +2,149 @@
 
 Live notes for whoever holds the role `@980dc16c`. Update this, not chat.
 
+## SESSION 5 AT A GLANCE (aria 94f0752b)
+
+Three acts: the burn-down, the memory triage Gluck asked for mid-session,
+and the form-deltas-in-UI-IR plan (plans/form-deltas-in-ui-ir.md) built
+end to end. Two new branches off main/v0.25.0: `red/burn-down`
+(/var/tmp/figred) and `feat/form-deltas-ui` on top of it
+(/home/gluck/dev/figaro-qua/formdeltas, the worktree Gluck devshells).
+
+### The burn-down (`d8133d24`): +79/-219, the ratio said out loud
+
+2.8 deletions per insertion, net -140. Everything bigger that LOOKED dead
+was a test seam or another package's crutch, and recording that is the
+other half of the job:
+
+- **Deleted, no caller**: `Agent.patchStudies` and the "ephemeral
+  fallback" in declareStudy -- which was a LIE, not a fallback: it would
+  nil-panic at ApplyFormIf before ever keeping "the plain board write".
+  `boardAt`+`pairedFormReader` died with it. The hub's dead trio
+  (isVersionConflict/containsAny/indexOf). `applyControlPatch`,
+  `IsSystemManaged`, `Libretto.Source()` and the `addr` field only it read.
+- **Collapsed, two implementations of one rule**: requireStudyTarget
+  (agent) ⇄ requireUnboundForm (hub) -> ONE `store.RequireStudyTarget`
+  beside KindWord; StudiesKey declared twice with a guard TEST enforcing
+  agreement -> figaro aliases store's constant, guard test deleted.
+- **Moved to tests**: `Libretto.Alive()`+boolOf; `newCachedLog` -- which my
+  first grep called dead because `newCachedLog[T](` is a BRACKET call.
+  The check that cannot match, again. Grep for generics with `[`.
+- **Kept, with reasons**: EvictNow/Restore/closeLibretto/Inbox.pending/
+  the ForTest knobs (seams observing product behavior); NewMemForm
+  (serves internal/provider's tests, so a store-side _test.go move breaks
+  them); the interrupt-sentinel READ path (historical logs still carry
+  the role); the anthropic projection wrappers (13 test callers).
+- **The four idle clocks**: verified REAL (figwal unloads at 5m under an
+  agent that lives to 15m) but it is a policy refactor spanning PINNED
+  figwal, not a deletion. Still queued.
+
+Gate on the commit: unit, -race -count=3 (store/figaro/angelus/provider),
+FIGARO_CRASH_TEST=1, nix build, and the live scripts (studylive, castlive,
+renderlive 9/9 wire checks, realstudy on 794 real rows: sweep 0.86s,
+corrects 0).
+
+### The memory triage (Gluck: "the daemon holds ~200MB")
+
+Now a role key (`triage-memory`). Measured on the live v0.25.0 daemon:
+**PSS 179MB, heap inuse 102MiB, named caches ~14MiB** (ir 10.2 + xlt 2.8 +
+segcache 0.9) -- so **~88MiB of resident heap is UNNAMED**, the antipattern
+this project has shipped twice. `loaded-heads=210, endpoints=221,
+goroutines=512` with only 4 live arias, and doctor mem's own words:
+"every resident aria has a live agent, so idle eviction can free nothing."
+
+idlemem.sh on this build: 155MB after a listing -> **78MB after one sweep**
+(the arena RETURNS) -- and then PSS **creeps ~1.1MB per 5s while idle**
+(alloc 24.6 -> 32.4MiB over 40s). On a long-lived daemon that creep plus
+four pinned agents IS the 200MB. Unattributed: pprof is not armed --
+**restart the daemon with FIGARO_PPROF=1 and take a heap profile**; that is
+the next stroke, and the numbers above are what it must explain.
+
+### Form deltas in the UI IR (feat/form-deltas-ui, all five steps)
+
+Per the plan, in order, each committed separately:
+
+1. **Types** (`13972dd2`): livedoc.FormDelta/FormKind/FormEvent;
+   Node.FormDeltas, Turn.FormDeltas, aria.Message.FormDeltas, omitempty.
+2. **Assembly** (`13972dd2`): internal/formdelta -- store-only cursor
+   arithmetic, the projection's three inherited rules enforced, tests on a
+   real xwal backend incl. determinism (render twice, assert equal) and
+   the death arriving as FormDeleted. `PerRecordFrom` takes a **Seed** (the
+   stamps of the record PRECEDING a window): a backward page that seeds
+   zero attributes all prior history to its first record.
+3. **Attachment** (`4294e53d`): the reader keeps entries, attaches by the
+   written rule (tool round -> tool node; unclaimed -> turn).
+   `TestLiveDeltaCarriesEveryNodeField` forced the live wire to carry the
+   field the moment it existed -- that test is why live and committed
+   cannot diverge. `show` needed its own path: aria.read entries now carry
+   hub-assembled `form_deltas` (the client holds neither stamps nor store),
+   and the CLI folds them with formdelta.Attach.
+4. **TUI** (`6db927a2`+): `state-dim` Kanagawa role (≈sumiInk4); one row
+   per key in the **"Figaro saw: key -> value"** voice (Gluck's revision of
+   my one-line-per-form draft, /tmp/form-ui-issues.md), two-space indent
+   under the node, a blank separator row, board rows unprefixed, studied
+   rows named by id, `removed` vs `deleted` distinguished, value cap
+   collapsed / whole on expansion, rows share the node's Block (selected
+   and yanked together, Enter expands, `show --details` on stdout).
+5. **The two sentences**: "this figaro has been forked from <parent>"
+   (named from system.forked_from in the same delta) and "role <id> recast
+   to figaro <aria>", suppressing their raw material while they draw.
+
+**Live-verified** on a fresh daemon with a real provider: two turns, the
+studied form's `phase -> "ga"` lands on exactly the turn whose window
+carried it.
+
+**Known rough edge, deliberate**: the bound board's system furniture
+(cwd/datetime/mantra) draws on turn 1 of every fresh aria and datetime
+moves per turn. Whether to filter system.* churn from the BOUND kind is
+Gluck's call -- the model really is shown it, which is the argument for
+keeping it.
+
+### The nix rule, earned (`verify-via-nix` on the role)
+
+I shipped cli/formdeltas.go UNTRACKED; go build was green and
+`nix develop .#snapshot` was broken, because a flake archives only
+TRACKED files. The rule is now a role key: git add before nix-testing,
+and nix build is part of every gate unless Gluck says otherwise.
+
+### PINNED FOLLOW-UP (Gluck, 2026-08-13): the windowed UI IR rehydrate
+
+Do this as soon as the delta work is in main; Gluck rates it very
+important. The finding: aria.Server is TWO things wearing one name.
+
+1. **Irreducible**: the open streaming region and the delta/version wire
+   (NodeDelta splices against the previous frame, version counters,
+   OnDesync). A stateless reader cannot serve either: mid-turn state is
+   not durable yet, and a diff protocol needs memory of the last frame.
+2. **A cache pretending to be an organ**: the sealed-turns section --
+   memoized compose output, UNBOUNDED, resident for the agent's life
+   (~6MB at bench size; a suspect slice of the 88MiB unnamed heap). The
+   reader is the other extreme: O(whole history) per PAGE, 13.1MB/op
+   thrown away at 10k msgs, because Turns() walks everything to serve
+   one window.
+
+The convergent shape: ONE windowed component, shared compose. The server
+keeps the open region + version state + a BOUNDED window of sealed turns
+with figwal-style eviction -- no on-disk store, UI IR is a pure
+derivation, evict freely and recompose on request. The reader becomes
+the same component with no open region. Seams already known: anchors
+below the window recompose that range (StampIDs is deterministic); the
+open turn is pinned, never evictable; range-compose needs decoded IR for
+the range, which cachedLog's window already bounds -- the layers align;
+the new resident structure arrives WITH its number in doctor mem;
+formdelta attachment cost gets bounded by the same window for free.
+
+This also completes the memory pyramid: figwal bytes bounded, decoded IR
+bounded, composed UI IR currently either unbounded-resident (agent) or
+absent (reader) -- afterwards, bounded everywhere.
+
+### Session 5 cleanup ledger
+
+Live-script copies made: /var/tmp/figstudy.cQIj figcast.icUi
+figrender.I01A figreal.sDAP figidle.Dk9B figdelta.a7Cf (+ figred,
+figred-live). Remove when the branches merge; figdelta.a7Cf is the
+form-deltas demo store and worth keeping until Gluck has tested.
+
+
 ## SESSION 4 AT A GLANCE (aria b2b0c543)
 
 Phase 9's second half: **the copy is now the thing that renders**. Before
@@ -3818,3 +3961,52 @@ study:@id    {"changes":1,"exists":false,"version":8}           <- the source di
 No `system.libretto.at`, no `refs`, no stump name. That last line is §12.7b,
 and it was built, durable, correct and invisible until a wire assertion
 looked for it.
+
+### Flake record (session 5, after the figwal v0.17.1 uptake)
+
+`TestFormAtIsAPairThatExisted` failed ONCE inside a whole-package run
+immediately after the uptake, then passed in isolation, 4x whole-package,
+and -race -count=2 beside its neighbours. The failure text was not
+captured (the run grepped only the FAIL line -- lesson: capture -v on
+gates). Same shape as the TestStudyAndDropRaceOnOneForm class: once,
+under load, unreproducible. NOT attributed to v0.17.1 (whose change is a
+filesystem-name encoding, identity for clean keys) and NOT proven
+innocent either. If it recurs, capture the message first; the suspect
+axes are the (v,v] emptiness (a lost-update signal, serious) versus a
+fixture-timing artifact (benign).
+
+VERDICT (same session, second occurrence WITH the message captured):
+fixture-timing, benign. "TempDir RemoveAll: directory not empty" -- the
+test signalled its writer goroutine but never WAITED for it, so a
+mid-flight ApplyForm recreated files under the tree cleanup was
+removing. Fixed by waiting (close+<-done). The pair property itself
+never failed.
+
+## REBOOT NOTE (2026-08-13 ~23:00, for Gluck's return)
+
+**Aria: 94f0752b · Role: @980dc16c** (state-layer worker, session 5 —
+still cast, still holding burn-down/triage-memory/verify-via-nix/
+current-work/post-merge keys).
+
+**State at reboot**: feat/form-deltas-ui @ a2e2b382 — form deltas +
+turn cache + one read path + figwal v0.17.2, full suite + nix green,
+.#snapshot reseeded fresh, real config.toml carries the explicit
+[memory] section (ui_window_mb=16, knob proven 16→2→16). A/B same-load:
+loaded 168.9→159.9MB, floor 81.4→79.3MB.
+
+**OPEN**: Gluck reports SEVERAL BUGS in the implementation and >1GB
+allocation on his live session — far past anything measured here, so
+something in the new work likely RETAINS. Unproven suspects: the
+reader registry materializing every touched aria's server before turns
+hollow; eviction-only-at-insert. Suspicion is not evidence.
+
+**The profiler is the next act**: FIGARO_PPROF=1 must be in the env of
+the CLI call that births the daemon (put in shell rc). Socket:
+$XDG_RUNTIME_DIR/figaro/pprof.sock. Capture:
+  go tool pprof -http=: "http+unix://$XDG_RUNTIME_DIR/figaro/pprof.sock/debug/pprof/heap"
+  curl --unix-socket $XDG_RUNTIME_DIR/figaro/pprof.sock http://x/debug/pprof/heap -o /tmp/heap-$(date +%H%M).pb.gz
+Take one snapshot near boot and one when fat; pprof -base diffs them
+and the growth names itself. Bring the bug list + heap-*.pb.gz to the
+aria above.
+
+**Deferred by order**: CLI fold refactor (own worktree, after this).

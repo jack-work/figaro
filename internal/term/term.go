@@ -139,20 +139,23 @@ type palette struct {
 
 	present string // a thing that IS there: diffAdd's autumnGreen, no wash
 	absent  string // a thing that is NOT: diffDel's autumnRed, no wash
+
+	stateDim string // sumiInk-adjacent gray-violet: form-state furniture below a node, quieter than label
 }
 
 var kanagawa = palette{
-	dim:     "\033[2m",
-	red:     "\033[31m",
-	green:   "\033[32m",
-	cyan:    "\033[36m",
-	arg:     "\033[38;5;110m",
-	body:    "\033[38;5;252m",
-	label:   "\033[38;5;242m",
-	diffAdd: "\033[38;5;108;48;5;22m",
-	diffDel: "\033[38;5;167;48;5;52m",
-	present: "\033[38;5;108m",
-	absent:  "\033[38;5;167m",
+	dim:      "\033[2m",
+	red:      "\033[31m",
+	green:    "\033[32m",
+	cyan:     "\033[36m",
+	arg:      "\033[38;5;110m",
+	body:     "\033[38;5;252m",
+	label:    "\033[38;5;242m",
+	diffAdd:  "\033[38;5;108;48;5;22m",
+	diffDel:  "\033[38;5;167;48;5;52m",
+	present:  "\033[38;5;108m",
+	absent:   "\033[38;5;167m",
+	stateDim: "\033[38;5;60m", // ≈ sumiInk4 #54546D: dimmer than label, still legible
 }
 
 // active is the palette in force. One var is the whole theme mechanism until
@@ -181,20 +184,27 @@ func DiffDel(s string) string { return paint(active.diffDel, s) }
 func Present(s string) string { return paint(active.present, s) }
 func Absent(s string) string  { return paint(active.absent, s) }
 
+// StateDim is the form-state furniture drawn beneath a node: dimmer than
+// the selection UI, so the eye ranks selection above state and state above
+// nothing. One name, one meaning: do not reuse the comment colour by
+// coincidence.
+func StateDim(s string) string { return paint(active.stateDim, s) }
+
 // roles indexes the palette by name, so a caller carrying a role as DATA (a
 // config value, a wire field) can paint with it without importing a func.
 var roles = map[string]func(string) string{
-	"dim":      Dim,
-	"red":      Red,
-	"green":    Green,
-	"cyan":     Cyan,
-	"arg":      Arg,
-	"body":     Body,
-	"label":    Label,
-	"diff-add": DiffAdd,
-	"diff-del": DiffDel,
-	"present":  Present,
-	"absent":   Absent,
+	"dim":       Dim,
+	"red":       Red,
+	"green":     Green,
+	"cyan":      Cyan,
+	"arg":       Arg,
+	"body":      Body,
+	"label":     Label,
+	"diff-add":  DiffAdd,
+	"diff-del":  DiffDel,
+	"present":   Present,
+	"absent":    Absent,
+	"state-dim": StateDim,
 }
 
 // Paint applies the named role, or returns s unchanged when the name is not a

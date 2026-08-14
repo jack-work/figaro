@@ -14,6 +14,7 @@ import (
 	"github.com/jack-work/largo"
 
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/formdelta"
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
@@ -92,6 +93,14 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 			}
 		}
 		w = showWindow{entries: entries, total: resp.Total, atHead: len(entries) >= resp.Total, pages: 1, fromHead: true}
+		for _, e := range resp.Entries {
+			if len(e.FormDeltas) > 0 {
+				if w.deltas == nil {
+					w.deltas = map[uint64]map[string]livedoc.FormDelta{}
+				}
+				w.deltas[e.LT] = e.FormDeltas
+			}
+		}
 		if !w.atHead {
 			showNote("this aria stores no turn ids (written before they existed), so its turns can only be counted from the head: showing the first %d of %d entries", len(w.entries), w.total)
 		}
@@ -114,6 +123,9 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	// fell inside it, and a turn without its prompt renders as an answer to
 	// nothing.
 	turns := trimPartialHead(composeTurns(entries), w.atHead)
+	// The hub assembled each record's form-state window; fold it onto the
+	// turns exactly as the pager does.
+	formdelta.Attach(turns, w.deltas)
 	lo, hi := selectTurnRange(turns, opts)
 	if lo < hi && opts.maxBytes > 0 {
 		if _, dropped := clipToBudget(turns[lo:hi], opts.maxBytes); dropped > 0 {
@@ -179,7 +191,8 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		// every `show` printed detail nobody had asked for.
 		rows := renderTurnRows(aria.Message{
 			Turn: int(u.ID), Role: livedoc.RoleOutput,
-			Inquiry: u.Inquiry, InquirySegments: u.InquirySegments, Nodes: u.Nodes,
+			Inquiry: u.Inquiry, InquirySegments: u.InquirySegments,
+			FormDeltas: u.FormDeltas, Nodes: u.Nodes,
 		}, width, 0, renderSettings{verbose: opts.details})
 		auditRows(rows, width, "show")
 		fmt.Println(strings.Join(rows, "\n"))

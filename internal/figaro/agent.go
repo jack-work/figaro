@@ -143,6 +143,11 @@ type Config struct {
 	// safe (the accessors are nil-safe and return the built-in defaults,
 	// ceiling included), so tests and ephemeral agents need not supply one.
 	Settings *config.Loaded
+
+	// UIBudget is the process-wide bound on composed UI IR, shared with
+	// every other agent and with the reader. Nil is unbounded (the old
+	// behaviour, and the ephemeral/test default).
+	UIBudget *aria.UIBudget
 }
 
 // Agent is the Figaro implementation.
@@ -159,9 +164,12 @@ type Agent struct {
 	proj       Projector
 	inlineBoot *form.Patch // ephemeral first-turn boot fold
 	figLog     store.Log[message.Message]
-	backend    store.Backend // nil = ephemeral
-	form       *form.State
-	settings   *config.Loaded // wire budget policy; nil-safe
+	// turnFirstLT is the IR coordinate of the record that opened the
+	// current turn, for the seal-time bracket. Zero between turns.
+	turnFirstLT uint64
+	backend     store.Backend // nil = ephemeral
+	form        *form.State
+	settings    *config.Loaded // wire budget policy; nil-safe
 
 	inbox *Inbox
 
@@ -259,7 +267,8 @@ func NewAgent(cfg Config) *Agent {
 	a.bindProvider(cfg.Provider)
 	a.inbox = NewInbox(ctx)
 
-	messages := unwrapMessages(a.figLog.Read())
+	entries := a.figLog.Read()
+	messages := unwrapMessages(entries)
 	// Metrics come off the _meta sidecar when it is current, which after
 	// Backend.Open it always is: healMeta folds any suffix past the watermark
 	// on the read path. That turns construction's metric pass from a walk of
@@ -272,7 +281,8 @@ func NewAgent(cfg Config) *Agent {
 	// Build sealed UI turns from canonical IR, then broadcast every aria-server
 	// change to socket subscribers as one aria.Page.
 	a.ariaSrv = aria.NewServer()
-	for _, t := range a.projTurns(messages) {
+	a.ariaSrv.BindCache(a.turnSource(), cfg.UIBudget)
+	for _, t := range a.attachFormDeltas(a.projTurns(messages), entries) {
 		a.ariaSrv.Commit(t)
 	}
 	a.ariaSrv.Subscribe(func(p aria.Page) {
@@ -815,6 +825,13 @@ func (a *Agent) Kill() {
 	a.teardown = nil
 	a.mu.Unlock()
 
+	// Hand the sealed section's bytes back to the shared UI budget: a
+	// reclaimed agent that kept its refs would squeeze every live cache
+	// against ghosts, forever.
+	if a.ariaSrv != nil {
+		a.ariaSrv.ReleaseCache()
+	}
+
 	for _, fn := range teardown {
 		fn()
 	}
@@ -872,7 +889,7 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 func (a *Agent) reconcileAriaServer() {
 	oldLast := a.ariaSrv.LastTurn()
 	hadOpen := a.ariaSrv.HasOpen()
-	history := a.projTurns(a.Context())
+	history := a.materializeTurns()
 	// Defensive: never wipe already-materialized state with a shorter history.
 	// reconcileAriaServer runs on mid-turn error paths whose only source of
 	// truth is a.Context() (the durable figLog). If that read returns fewer
@@ -989,17 +1006,12 @@ func (a *Agent) serviceSets() bool {
 	return len(evts) > 0
 }
 
-// applyControlPatch persists a state-only patch. No LLM round-trip.
+// applyControlPatchVerdict persists a state-only patch. No LLM round-trip.
 // Backed arias append it to the reducible form channel (keyed to
 // the next IR LT, so it rides the next turn as a transition); ephemeral
 // arias fold it onto an IR control-turn (no channel to hold it).
-func (a *Agent) applyControlPatch(patch message.Patch, ifVersion uint64, assert bool, kind string) {
-	a.applyControlPatchVerdict(patch, ifVersion, assert, kind, nil)
-}
-
-// applyControlPatchVerdict is the same write, reporting what the writer
-// decided to a caller that asked to wait. done may be nil, which is every
-// path but `--wait`.
+// It reports what the writer decided to a caller that asked to wait.
+// done may be nil, which is every path but `--wait`.
 func (a *Agent) applyControlPatchVerdict(patch message.Patch, ifVersion uint64, assert bool, kind string, done chan setVerdict) {
 	verdict := setVerdict{}
 	if done != nil {
@@ -1080,7 +1092,7 @@ func (a *Agent) studyAccessors() map[string]provider.Form {
 	if a.backend == nil || !ok {
 		return nil
 	}
-	ids := studiesFromSnapshot(a.form.Snapshot())
+	ids := StudiesFromSnapshot(a.form.Snapshot())
 	if len(ids) == 0 {
 		return nil
 	}
@@ -1205,7 +1217,19 @@ func (a *Agent) finishTurn(reason string) {
 	// The turn stopped moving. This is the one place the word "seal" means
 	// anything now: every node in the turn is immutable from here, and it is
 	// the moment a persisted UI-IR channel would write it (Phase 4).
-	a.ariaSrv.Seal(nil)
+	//
+	// SEAL WITH THE BRACKET. Seal(nil) left the tail unbracketed, which
+	// pinned it un-evictable and -- in v1 of the pin -- latched the whole
+	// cache: the convicted cause of the >1GB session (storm-triage S1).
+	// The first LT was recorded when the inquiry appended; the last is
+	// the log's tail at this moment.
+	var lts []uint64
+	if a.turnFirstLT > 0 && a.figLog != nil {
+		if last, _ := a.figLog.ReadPage(0, ^uint64(0), 1); len(last) > 0 {
+			lts = []uint64{a.turnFirstLT, last[0].LT}
+		}
+	}
+	a.ariaSrv.Seal(lts)
 	idle := a.inbox.IsIdle()
 	a.mu.Lock()
 	a.lastActive = time.Now()

@@ -42,6 +42,9 @@ func TestLiveDeltaCarriesEveryNodeField(t *testing.T) {
 		OpenedAt:   99,
 		StartedAt:  111,
 		FinishedAt: 222,
+		FormDeltas: map[string]livedoc.FormDelta{
+			"@f1.phase": {Value: json.RawMessage(`"ga"`), Kind: livedoc.FormStudied, Event: livedoc.FormSet, Form: "@f1"},
+		},
 	}
 
 	// Every settable field must actually be set, or the test proves nothing.

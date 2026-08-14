@@ -24,7 +24,7 @@ func (a *Agent) hydrate() {
 	if a.ariaSrv.LastTurn() > 0 || a.ariaSrv.HasOpen() {
 		return
 	}
-	a.ariaSrv.AdoptIfEmpty(a.projTurns(a.Context()))
+	a.ariaSrv.AdoptIfEmpty(a.materializeTurns())
 }
 
 // Read pages forward from at: the catch-up half of the same paginated read

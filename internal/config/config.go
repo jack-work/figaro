@@ -209,6 +209,17 @@ type MemoryConfig struct {
 	// 0 is unbounded, which is what this was before it had a name.
 	TranslationWindowMB *int `toml:"translation_window_mb"`
 
+	// UIWindowMB bounds resident COMPOSED UI IR (sealed turns) across every
+	// materialized aria, in mebibytes. The turn cache keeps a hollow index
+	// per turn (id, LT bracket, size) and recomposes an evicted range from
+	// the log on the read that lands in it, so eviction is always safe:
+	// UI IR is a pure derivation of fig IR and has no on-disk store to
+	// keep honest. An aria whose records predate turn-id stamps cannot be
+	// range-recomposed and stays whole, which is the old behaviour.
+	//
+	// 0 is unbounded, which is what this was before it had a name.
+	UIWindowMB *int `toml:"ui_window_mb"`
+
 	// SegmentCacheMB bounds the RAW segment payloads figwal holds in memory,
 	// across every open channel of every aria, in mebibytes.
 	//
@@ -348,6 +359,20 @@ func (l *Loaded) SegmentCacheBytes() int64 {
 	return 0
 }
 
+// UIWindowMB is the process-wide budget for composed UI IR, in mebibytes,
+// or 0 for unbounded. Nil-safe. The default holds every aria the author
+// has measured (~6 MB composed at reader-bench size) while refusing the
+// old behaviour, which was to hold all of it forever.
+func (l *Loaded) UIWindowMB() int {
+	if l == nil || l.Config.Memory.UIWindowMB == nil {
+		return defaultUIWindowMB
+	}
+	if mb := *l.Config.Memory.UIWindowMB; mb > 0 {
+		return mb
+	}
+	return 0
+}
+
 const (
 	// defaultSegmentCacheMB is figwal's own default, restated here so the
 	// daemon's number is the daemon's to choose. 32 MiB holds the working set
@@ -355,6 +380,12 @@ const (
 	// listing touches the tail of each channel) while refusing the old
 	// behaviour, which was to hold all of it.
 	defaultSegmentCacheMB = 32
+
+	// defaultUIWindowMB bounds composed UI IR. 16 MiB holds the working
+	// set of several large arias at once (the biggest measured composes
+	// to ~6 MB) while bounding the axis that was unbounded; a miss costs
+	// one range recompose (~ms), not a disk store.
+	defaultUIWindowMB = 16
 
 	// defaultTranslationWindowMB holds the whole translation history of every
 	// aria in the author's store (largest: 2.9 MiB), so it changes nothing

@@ -1,9 +1,11 @@
 package figaro
 
 import (
+	"github.com/jack-work/figaro/internal/formdelta"
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/internal/store"
 )
 
 // Projector converts fig IR into UI IR. It is the ONLY way the core reaches
@@ -71,4 +73,63 @@ func (a *Agent) projNodes(msgs []message.Message, tails, argPartials map[string]
 		return nil
 	}
 	return a.proj.Nodes(msgs, tails, argPartials)
+}
+
+// attachFormDeltas folds each record's form-state window onto sealed
+// turns, exactly as the AriaReader does for a dormant aria. A LIVE aria is
+// served by its agent, so without this the pager showed deltas only until
+// the aria woke -- the same transcript telling two stories depending on
+// liveness, which the purity invariant forbids.
+//
+// The entries are the SAME read the turns were composed from: one walk,
+// two consumers, and no moment between two reads for them to disagree in.
+//
+// The just-sealed turn's deltas appear when the server next materializes
+// from the log (hydrate, reconcile, boot): a turn's stamps are only
+// durable at its end, and the live stream never re-renders a sealed turn.
+func (a *Agent) attachFormDeltas(turns []aria.Turn, entries []store.Entry[message.Message]) []aria.Turn {
+	fb, ok := a.backend.(formdelta.Backend)
+	if !ok || len(turns) == 0 || len(entries) == 0 {
+		return turns
+	}
+	formdelta.Attach(turns, formdelta.PerRecord(fb, a.id, entries))
+	return turns
+}
+
+// materializeTurns is the one walk behind every sealed-turn
+// materialization: read the log once, compose, attach the form deltas.
+func (a *Agent) materializeTurns() []aria.Turn {
+	if a.figLog == nil {
+		return nil
+	}
+	entries := a.figLog.Read()
+	return a.attachFormDeltas(a.projTurns(unwrapMessages(entries)), entries)
+}
+
+// turnSource is the agent's half of the turn cache's recompose-on-miss:
+// read exactly the LT bracket, compose it, attach its deltas with the
+// cursor seed from the record preceding the bracket. It reads through
+// the SAME memoized log the whole agent uses, so a recompose costs
+// decoded-window reads, not disk, when the range is warm below.
+func (a *Agent) turnSource() aria.TurnSource {
+	return func(fromLT, toLT uint64) []aria.Turn {
+		log := a.figLog
+		if log == nil || toLT < fromLT {
+			return nil
+		}
+		entries, _ := log.ReadPage(fromLT, toLT+1, int(toLT-fromLT+1))
+		if len(entries) == 0 {
+			return nil
+		}
+		msgs := unwrapMessages(entries)
+		turns := a.projTurns(msgs)
+		if fb, ok := a.backend.(formdelta.Backend); ok {
+			seed := formdelta.Seed{}
+			if prev, _ := log.ReadPage(0, fromLT, 1); len(prev) > 0 {
+				seed = formdelta.SeedFrom(prev[len(prev)-1])
+			}
+			formdelta.Attach(turns, formdelta.PerRecordFrom(fb, a.id, seed, entries))
+		}
+		return turns
+	}
 }

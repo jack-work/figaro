@@ -33,6 +33,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/compose"
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
@@ -48,9 +49,12 @@ const showPage = 1000
 // reached the head of the aria, and the total the store reports.
 type showWindow struct {
 	entries []store.Entry[message.Message]
-	total   int  // entries in the whole aria, from the store
-	atHead  bool // the oldest entry held is the aria's first
-	pages   int  // backward reads issued, for the diagnostics
+	// deltas is each record's form-state window, keyed by LT, as the hub
+	// assembled it (the client holds neither the stamps nor the store).
+	deltas map[uint64]map[string]livedoc.FormDelta
+	total  int  // entries in the whole aria, from the store
+	atHead bool // the oldest entry held is the aria's first
+	pages  int  // backward reads issued, for the diagnostics
 
 	// fromHead marks the legacy fallback: the window was read FORWARD from
 	// LT 0 and may stop short of the tail. Without this a truncated forward
@@ -85,6 +89,12 @@ func gatherShowWindow(ctx context.Context, acli *angelus.Client, figaroID string
 			page[i].LT = e.LT
 			if err := json.Unmarshal(e.Payload, &page[i].Payload); err != nil {
 				return w, fmt.Errorf("parse LT=%d: %w", e.LT, err)
+			}
+			if len(e.FormDeltas) > 0 {
+				if w.deltas == nil {
+					w.deltas = map[uint64]map[string]livedoc.FormDelta{}
+				}
+				w.deltas[e.LT] = e.FormDeltas
 			}
 		}
 		w.entries = append(page, w.entries...)
