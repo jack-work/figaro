@@ -707,10 +707,25 @@ scratch roots removed.
 ### Found at close (2026-08-14 19:30), not fixed: attending a FORM mints an aria
 
 Gluck attended role @980dc16c, typed `q test`, and a NEW ARIA was
-minted. Mechanism: the bare-prompt path calls resolveTargetEndpoint
-with autoCreate=true; the attended id is a form, so nothing resolves to
-a conversation endpoint, and mintsWhenUnbound fires. No node-kind check
-exists anywhere on that path (cli/target.go).
+minted.
+
+FIRST DIAGNOSIS (WRONG, kept as the falsification): "no node-kind check
+on the resolve path." There IS a role redirect there -- redirectRole,
+cli/target.go:89 -- and prompt.go:47 documents exactly this case.
+
+ACTUAL MECHANISM, read from the code: `attend` cannot bind a form AT
+ALL. handlers.bind calls requireAria, which calls rpc.ValidateAriaID,
+which rejects an @-sigiled id. So `attend @980dc16c` FAILS and the
+shell is left unbound; the next bare prompt finds resp.Found == false
+and takes the else branch -- mustCreateAndBindOutfit -- which mints.
+
+The irony worth recording: prompt.go's role-redirect branch ("Attending
+a ROLE: the prompt reaches whoever holds it, resolved per call") is
+UNREACHABLE THROUGH attend, because bind structurally forbids the
+binding it needs. Role redirection survives only where an @-id is
+passed explicitly (send/listen/hup --id @role, via
+resolveFigaroTargetEndpoint). Gluck remembers roles intercepting sends:
+he is right, and that path still works.
 
 PRESCRIPTION (successor): minting is correct for "nothing attended"; it
 is WRONG for "attended to something that cannot hold a turn" -- that is
