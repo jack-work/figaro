@@ -160,7 +160,15 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 			_ = json.Unmarshal(params, &d)
 			lt.finishTurn(d.Reason)
 			if strings.HasPrefix(d.Reason, "error:") {
-				sessionLine(os.Stderr, "\r\n"+d.Reason)
+				// Through lt.report, not straight to stderr: report picks
+				// the right door for whichever renderer owns the terminal,
+				// so the reason lands in the status row's red notice while
+				// the pager is up instead of being written over the footer
+				// (and scrolling the grid out from under the painter). send
+				// has done it this way since the pager landed; listen was
+				// left behind, which meant a turn that failed while you were
+				// tailing it could leave no visible trace at all.
+				lt.report(d.Reason)
 			}
 		}
 	}

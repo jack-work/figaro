@@ -290,6 +290,20 @@ func printStatusPanel(out *os.File, f *rpc.FigaroInfoResponse, more bool, forkTu
 
 	fmt.Fprintf(w, "figaro\t%s\n", f.ID)
 	row("state", dash(f.State))
+	// STATE IS NOT AN OUTCOME. "idle" says the inbox is empty; it says
+	// nothing about whether the last thing the user asked for worked. An
+	// aria whose last turn died on a provider error reported "idle" and
+	// nothing else, and that gap is precisely how a failed turn gets
+	// reported as a hang. When the last turn failed, say so on the line
+	// under state, where it cannot be missed.
+	if reason := lastTurnRow(f); reason != "" {
+		row("last-turn", reason)
+	}
+	if f.UnansweredInputs > 0 {
+		// Work taken and nothing produced. Distinct from a queue backlog:
+		// these are already committed to the log.
+		row("unanswered", fmt.Sprintf("%d prompt(s) with no reply", f.UnansweredInputs))
+	}
 	row("mantra", dash(f.Mantra))
 	row("provider", dash(f.Provider))
 	row("model", dash(f.Model))
@@ -363,4 +377,24 @@ func truncateDuration(d time.Duration) string {
 	default:
 		return d.Round(time.Minute).String()
 	}
+}
+
+// lastTurnRow renders how the last turn ended, or "" when there is nothing
+// worth saying. A turn that simply completed needs no row: state already
+// covers the healthy case, and a status panel that reports every success
+// teaches people to skim past the one line that mattered.
+func lastTurnRow(f *rpc.FigaroInfoResponse) string {
+	reason := strings.TrimSpace(f.LastTurnReason)
+	if reason == "" {
+		return ""
+	}
+	low := strings.ToLower(reason)
+	failed := strings.HasPrefix(low, "error:")
+	if !failed && !strings.Contains(low, "interrupt") {
+		return ""
+	}
+	if f.LastTurnAt != 0 {
+		return fmt.Sprintf("%s (%s ago)", reason, truncateDuration(time.Since(time.UnixMilli(f.LastTurnAt))))
+	}
+	return reason
 }
