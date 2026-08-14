@@ -637,3 +637,11 @@ REMAINING OPEN: S2 (reader first-sight materialize churn), S3
 (aliasing pin), S4 (idle creep ~1.1MB/5s), S5 (release-side sjson
 +34.6MB@90 arias). Storm rigs live in /var/tmp/storm/; dev daemon
 armed at /var/tmp/figdev-storm; heap series in /var/tmp/storm/prof/.
+
+### S1: LANDED (48c02d7a, 2026-08-14 13:30, by Gluck's order)
+
+Per-turn pin, bracket at seal (turnFirstLT + log tail), counted-when-
+pinned. Each prong held by a test that fails on the old code. Empirical
+on the dev daemon: 5 live arias, meter 8.1 KiB and moving (was 0 across
+40 under the bug). Gate: full suite, race x2, aria benches, nix -- green.
+The ui-ir-tree gate is now OPEN.
