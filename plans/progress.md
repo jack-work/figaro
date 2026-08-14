@@ -3981,3 +3981,32 @@ test signalled its writer goroutine but never WAITED for it, so a
 mid-flight ApplyForm recreated files under the tree cleanup was
 removing. Fixed by waiting (close+<-done). The pair property itself
 never failed.
+
+## REBOOT NOTE (2026-08-13 ~23:00, for Gluck's return)
+
+**Aria: 94f0752b · Role: @980dc16c** (state-layer worker, session 5 —
+still cast, still holding burn-down/triage-memory/verify-via-nix/
+current-work/post-merge keys).
+
+**State at reboot**: feat/form-deltas-ui @ a2e2b382 — form deltas +
+turn cache + one read path + figwal v0.17.2, full suite + nix green,
+.#snapshot reseeded fresh, real config.toml carries the explicit
+[memory] section (ui_window_mb=16, knob proven 16→2→16). A/B same-load:
+loaded 168.9→159.9MB, floor 81.4→79.3MB.
+
+**OPEN**: Gluck reports SEVERAL BUGS in the implementation and >1GB
+allocation on his live session — far past anything measured here, so
+something in the new work likely RETAINS. Unproven suspects: the
+reader registry materializing every touched aria's server before turns
+hollow; eviction-only-at-insert. Suspicion is not evidence.
+
+**The profiler is the next act**: FIGARO_PPROF=1 must be in the env of
+the CLI call that births the daemon (put in shell rc). Socket:
+$XDG_RUNTIME_DIR/figaro/pprof.sock. Capture:
+  go tool pprof -http=: "http+unix://$XDG_RUNTIME_DIR/figaro/pprof.sock/debug/pprof/heap"
+  curl --unix-socket $XDG_RUNTIME_DIR/figaro/pprof.sock http://x/debug/pprof/heap -o /tmp/heap-$(date +%H%M).pb.gz
+Take one snapshot near boot and one when fat; pprof -base diffs them
+and the growth names itself. Bring the bug list + heap-*.pb.gz to the
+aria above.
+
+**Deferred by order**: CLI fold refactor (own worktree, after this).
