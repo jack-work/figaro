@@ -703,3 +703,21 @@ MaxRetries, and pprof aria labels.
 The role @980dc16c now points at 6ec957ee, dressed opus-5, with the
 queue in its current-work key. Worktrees clean, reminders disarmed,
 scratch roots removed.
+
+### Found at close (2026-08-14 19:30), not fixed: attending a FORM mints an aria
+
+Gluck attended role @980dc16c, typed `q test`, and a NEW ARIA was
+minted. Mechanism: the bare-prompt path calls resolveTargetEndpoint
+with autoCreate=true; the attended id is a form, so nothing resolves to
+a conversation endpoint, and mintsWhenUnbound fires. No node-kind check
+exists anywhere on that path (cli/target.go).
+
+PRESCRIPTION (successor): minting is correct for "nothing attended"; it
+is WRONG for "attended to something that cannot hold a turn" -- that is
+minting on a typo, and it silently orphans the user's intent. Either
+(a) attend refuses a non-conversation node, naming the kind, the way
+store.RequireStudyTarget already does for study/cast (KindWord exists
+for this), or better (b) attending a ROLE attends its target-aria --
+the semantic that matches "send @role reaches whoever holds it", and
+which would have put Gluck on 6ec957ee. Either way the autoCreate must
+not fire when the attended id EXISTS but is not a conversation.
