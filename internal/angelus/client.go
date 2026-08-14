@@ -53,6 +53,14 @@ func (c *Client) Status(ctx context.Context) (*rpc.StatusResponse, error) {
 	return &resp, err
 }
 
+// ProviderLedger reads the daemon's recent provider round-trips: what the
+// provider was asked, what it answered, and what is still in flight.
+func (c *Client) ProviderLedger(ctx context.Context, aria string, limit int) (*rpc.ProviderLedgerResponse, error) {
+	var resp rpc.ProviderLedgerResponse
+	err := c.call(ctx, rpc.MethodProviderLedger, rpc.ProviderLedgerRequest{Aria: aria, Limit: limit}, &resp)
+	return &resp, err
+}
+
 // Create starts a new figaro from a patch. An empty patch means the configured
 // default_outfit; a patch is folded on top of it.
 func (c *Client) Create(ctx context.Context, outfits []string, patch *rpc.FormPatch) (*rpc.CreateResponse, error) {

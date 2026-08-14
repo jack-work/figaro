@@ -876,7 +876,7 @@ slot, so a lone positional is then the aria. With no figaro available
 first: if the casting then fails, that partial is spelled out.
 
 ATTENDING A FORM, with no arguments at all, mints a figaro for it and
-casts it: the other entrance to `+"`figaro new -C`"+`, the same operation from
+casts it: the other entrance to ` + "`figaro new -C`" + `, the same operation from
 the other end. There, -O/-S dress the ARIA, because the form already
 exists; attending an ARIA they mint the ROLE, for the same reason.
 
@@ -1471,15 +1471,18 @@ flow writes both through the daemon, so a client never has to know the path.`,
 	r.Register(&cmdkit.Command{
 		Name:  "doctor",
 		Group: "System",
-		Short: "Store maintenance: gc removes dead channels; schema reports channel versions; mem reports the daemon's footprint; librettos recounts derived-form observers; skills lists what the binary ships",
-		Usage: "doctor <gc [--dry-run] | schema | term | mem [-j] | librettos [--dry-run] | skills [-j]>",
+		Short: "Store and provider health: gc removes dead channels; schema reports channel versions; mem reports the daemon's footprint; provider shows recent provider round-trips (including in-flight); librettos recounts derived-form observers; skills lists what the binary ships",
+		Usage: "doctor <gc [--dry-run] | schema | term | mem [-j] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | skills [-j]>",
 		Flags: []cmdkit.FlagDef{
 			{Long: "dry-run", Short: "n", IsBool: true, Description: "Report what would be removed without touching the store"},
-			{Long: "json", Short: "j", IsBool: true, Description: "Machine-readable output (mem)"},
+			{Long: "json", Short: "j", IsBool: true, Description: "Machine-readable output (mem, provider)"},
+			{Long: "id", Description: "Restrict to one aria (provider)"},
+			// -n is already dry-run on this command, so count takes -c.
+			{Long: "count", Short: "c", Description: "How many rows to show (provider); default 20"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			if len(ctx.Args) != 1 {
-				return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] | librettos [--dry-run] | skills [-j]>")
+				return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | skills [-j]>")
 			}
 			switch ctx.Args[0] {
 			case "gc":
@@ -1490,12 +1493,14 @@ flow writes both through the daemon, so a client never has to know the path.`,
 				return runDoctorTerm()
 			case "mem":
 				return runDoctorMem(ctx.BoolFlag("json"))
+			case "provider":
+				return runDoctorProvider(ctx.Flag("id"), ctx.Flag("count"), ctx.BoolFlag("json"))
 			case "librettos":
 				return runDoctorLibrettos(ctx.BoolFlag("dry-run"))
 			case "skills":
 				return runDoctorSkills(ctx.BoolFlag("json"))
 			}
-			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] | librettos [--dry-run] | skills [-j]>")
+			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | skills [-j]>")
 		},
 	})
 

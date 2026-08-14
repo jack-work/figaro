@@ -414,3 +414,8 @@ func Recent() *logring.Ring {
 	defer recentMu.Unlock()
 	return recent
 }
+
+// SetRecentForTest points Recent at a ring (or nil) without running Init. It
+// exists so tests of daemon handlers can install the same wiring the daemon
+// gets, instead of asserting against a package they cannot reach.
+func SetRecentForTest(r *logring.Ring) { setRecent(r) }

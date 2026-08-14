@@ -170,6 +170,10 @@ const (
 
 	MethodStatus       = "angelus.status"
 	MethodSaveBindings = "angelus.save_bindings"
+	// MethodProviderLedger reads the daemon's recent provider round-trips.
+	// It is a separate call rather than a field on angelus.status because
+	// the answer is a list of hundreds of rows and status is polled.
+	MethodProviderLedger = "angelus.provider_ledger"
 )
 
 // QuaRequest is the prompt call with optional form input.
@@ -1003,4 +1007,45 @@ type AriaReadResponse struct {
 	Entries  []AriaReadEntry `json:"entries"`
 	Total    int             `json:"total"`               // total entries in the aria
 	NextFrom uint64          `json:"next_from,omitempty"` // 0 when no more
+}
+
+// ProviderLedgerRequest reads recent provider HTTP round-trips from the
+// daemon. Aria filters to one conversation; Limit takes the newest N (0 for
+// everything retained).
+type ProviderLedgerRequest struct {
+	Aria  string `json:"aria,omitempty"`
+	Limit int    `json:"limit,omitempty"`
+}
+
+type ProviderLedgerResponse struct {
+	Rounds []ProviderRound `json:"rounds"`
+	// Retained is how many rows the ring holds at all, so a caller can tell
+	// "nothing happened" from "it happened before we started remembering".
+	Retained int `json:"retained"`
+}
+
+// ProviderRound is one provider HTTP round-trip as the daemon's transport saw
+// it. A row appears the moment the request departs, with InFlight set, and is
+// completed in place: a request that never returns is the interesting one and
+// tracing cannot show it, because spans export on end.
+type ProviderRound struct {
+	Seq  uint64 `json:"seq"`
+	Aria string `json:"aria,omitempty"`
+
+	Method string `json:"method"`
+	URL    string `json:"url"`
+
+	StartedAtMS int64 `json:"started_at_ms"`
+	DurationMS  int64 `json:"duration_ms"`
+	InFlight    bool  `json:"in_flight"`
+
+	Status    int    `json:"status,omitempty"`
+	RequestID string `json:"request_id,omitempty"`
+	ReqBytes  int64  `json:"req_bytes,omitempty"`
+
+	// RetryAfterS is the wait the provider asked for, in seconds, exactly as
+	// sent. On a 429 this is the whole explanation of an apparent hang.
+	RetryAfterS int64             `json:"retry_after_s,omitempty"`
+	RateLimit   map[string]string `json:"rate_limit,omitempty"`
+	Err         string            `json:"err,omitempty"`
 }

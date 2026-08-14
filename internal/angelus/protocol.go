@@ -23,6 +23,7 @@ import (
 	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/formdelta"
 	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/internal/logring"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/outfit"
@@ -32,6 +33,7 @@ import (
 	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/turns"
 	"github.com/jack-work/figaro/internal/uiir"
+	"github.com/jack-work/figaro/internal/wirelog"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -144,29 +146,30 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 	h.noticeUpgrade()
 	return &Handlers{
 		Map: authz.Guard(map[string]jkrpc.HandlerFunc{
-			rpc.MethodCreate:       h.create,
-			rpc.MethodFormCreate:   h.formCreate,
-			rpc.MethodFormBind:     h.formBind,
-			rpc.MethodOutfitReload: h.outfitReload,
-			rpc.MethodFork:         h.fork,
-			rpc.MethodPromote:      h.promote,
-			rpc.MethodImport:       h.importAria,
-			rpc.MethodOutfits:      h.outfits,
-			rpc.MethodConfigure:    h.configure,
-			rpc.MethodNormalize:    h.normalize,
-			rpc.MethodGC:           h.gc,
-			rpc.MethodKill:         h.kill,
-			rpc.MethodList:         h.list,
-			rpc.MethodAttach:       h.attach,
-			rpc.MethodBind:         h.bind,
-			rpc.MethodResolve:      h.resolve,
-			rpc.MethodUnbind:       h.unbind,
-			rpc.MethodStatus:       h.status,
-			rpc.MethodSaveBindings: h.saveBindings,
-			rpc.MethodAriaRead:     h.ariaRead,
-			rpc.MethodAriaPage:     h.ariaPage,
-			rpc.MethodAriaContext:  h.ariaContext,
-			rpc.MethodAriaForm:     h.ariaForm,
+			rpc.MethodCreate:         h.create,
+			rpc.MethodFormCreate:     h.formCreate,
+			rpc.MethodFormBind:       h.formBind,
+			rpc.MethodOutfitReload:   h.outfitReload,
+			rpc.MethodFork:           h.fork,
+			rpc.MethodPromote:        h.promote,
+			rpc.MethodImport:         h.importAria,
+			rpc.MethodOutfits:        h.outfits,
+			rpc.MethodConfigure:      h.configure,
+			rpc.MethodNormalize:      h.normalize,
+			rpc.MethodGC:             h.gc,
+			rpc.MethodKill:           h.kill,
+			rpc.MethodList:           h.list,
+			rpc.MethodAttach:         h.attach,
+			rpc.MethodBind:           h.bind,
+			rpc.MethodResolve:        h.resolve,
+			rpc.MethodUnbind:         h.unbind,
+			rpc.MethodStatus:         h.status,
+			rpc.MethodProviderLedger: h.providerLedger,
+			rpc.MethodSaveBindings:   h.saveBindings,
+			rpc.MethodAriaRead:       h.ariaRead,
+			rpc.MethodAriaPage:       h.ariaPage,
+			rpc.MethodAriaContext:    h.ariaContext,
+			rpc.MethodAriaForm:       h.ariaForm,
 		}, h.authenticator(), h.policy()),
 		h: h,
 	}
@@ -1789,6 +1792,114 @@ func (h *handlers) status(ctx context.Context, params json.RawMessage) (interfac
 		Build:       h.angelus.Build,
 		Mem:         h.angelus.MemStatus(),
 	}, nil
+}
+
+// providerLedger answers "what did the provider last say to this aria, and is
+// anything still in flight".
+//
+// It reads two sources, because there are two kinds of answer and only one of
+// them is history. Completed round-trips come from the daemon's LOG RING:
+// they were logged like anything else, so the same records are durable in
+// logs.jsonl and no private ledger has to exist for them. Outstanding
+// requests come from wirelog's in-flight map, because "still running" is
+// current state and no log record can express it. Spans cannot show it
+// either - they export on end - so the request that is still hanging, the
+// only one an incident is ever about, was invisible by construction.
+func (h *handlers) providerLedger(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req rpc.ProviderLedgerRequest
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, err
+		}
+	}
+
+	out := []rpc.ProviderRound{}
+	retained := 0
+	if ring := figOtel.Recent(); ring != nil {
+		entries := ring.Recent(0, func(e logring.Entry) bool { return e.Msg == wirelog.RoundLog })
+		retained = len(entries)
+		for _, e := range entries {
+			r := roundFromLog(e)
+			if req.Aria != "" && r.Aria != req.Aria {
+				continue
+			}
+			out = append(out, r)
+		}
+	}
+
+	for _, f := range wirelog.Outstanding() {
+		if req.Aria != "" && f.Aria != req.Aria {
+			continue
+		}
+		out = append(out, rpc.ProviderRound{
+			Seq: f.Seq, Aria: f.Aria, Method: f.Method, URL: f.URL,
+			StartedAtMS: f.StartedAt.UnixMilli(),
+			DurationMS:  f.Age().Milliseconds(),
+			ReqBytes:    f.ReqBytes,
+			InFlight:    true,
+		})
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].StartedAtMS < out[j].StartedAtMS })
+
+	if req.Limit > 0 && len(out) > req.Limit {
+		out = out[len(out)-req.Limit:]
+	}
+	return rpc.ProviderLedgerResponse{Rounds: out, Retained: retained}, nil
+}
+
+// roundFromLog reads back what wirelog wrote. The attribute names are the
+// whole contract between the two, and they are the only coupling: nothing
+// else in the daemon needs to know this shape.
+func roundFromLog(e logring.Entry) rpc.ProviderRound {
+	r := rpc.ProviderRound{
+		Seq:         e.Seq,
+		StartedAtMS: e.Time.UnixMilli(),
+		Aria:        logAttrString(e, "aria"),
+		Method:      logAttrString(e, "method"),
+		URL:         logAttrString(e, "url"),
+		RequestID:   logAttrString(e, "request_id"),
+		Err:         logAttrString(e, "err"),
+		Status:      int(logAttrInt(e, "status")),
+		DurationMS:  logAttrInt(e, "duration_ms"),
+		ReqBytes:    logAttrInt(e, "req_bytes"),
+		RetryAfterS: logAttrInt(e, "retry_after_s"),
+	}
+	// The record is written when the round-trip FINISHES, so back-date it:
+	// callers sort and display by start, which is what lines a refusal up
+	// against the turn that provoked it.
+	r.StartedAtMS -= r.DurationMS
+	for k, v := range e.Attrs {
+		name, ok := strings.CutPrefix(k, "ratelimit_")
+		if !ok {
+			continue
+		}
+		if r.RateLimit == nil {
+			r.RateLimit = map[string]string{}
+		}
+		r.RateLimit[strings.ReplaceAll(name, "_", "-")], _ = v.(string)
+	}
+	return r
+}
+
+func logAttrString(e logring.Entry, key string) string {
+	s, _ := e.Attrs[key].(string)
+	return s
+}
+
+// logAttrInt tolerates the numeric widths slog hands back: an attr set with an
+// int and one set with an int64 are the same fact.
+func logAttrInt(e logring.Entry, key string) int64 {
+	switch v := e.Attrs[key].(type) {
+	case int64:
+		return v
+	case int:
+		return int64(v)
+	case uint64:
+		return int64(v)
+	case float64:
+		return int64(v)
+	}
+	return 0
 }
 
 func (h *handlers) saveBindings(ctx context.Context, params json.RawMessage) (interface{}, error) {
