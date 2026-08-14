@@ -675,3 +675,31 @@ disable the otel LOG provider entirely if nothing consumes it.
 pin) remain open with rigs standing (/var/tmp/storm, /var/tmp/figdev-
 storm armed). Neither is a leak-class suspect post-S1; both are
 cost-class. v0.26.0 shipped with S1 fixed and S4/S5 named.
+## SESSION 5 CLOSE (94f0752b → 6ec957ee, 2026-08-14 19:00)
+
+Shipped: figaro v0.26.0; figwal v0.18.0 (forest). Certified by full
+suites, -race x2, read-path bench parity (6.69 vs 6.78 ns/op, 0 allocs),
+crashtest -long, and a 100-aria live storm on the full forest stack:
+87.2 MiB heap inuse at 100 arias against the prior release's 157.9 MiB
+at 90 -- with segment cache 2.1/32 MiB and ui window 73.2 KiB, both
+metered through the new shape.
+
+Verdicts: S1 convicted AND landed (the per-cache latch: the >1GB
+grower). S4 named AND fixed by fork db548fc3 (otel log records export
+synchronously; zero retention over 26 idle minutes; the bounded-batch
+alternative measured +1.0MB and was FALSIFIED). S5 acquitted as cost
+(SDK in-flight request bodies). S2/S3 open, cost-class, rigs described
+above.
+
+THE LAST LESSON, paid in 99 minutes of apparent death: an exhausted
+model tier answers 429 with a Retry-After that anthropic-sdk-go honors
+VERBATIM -- no ceiling, no event, no span (spans export on END). figaro
+renders that as a hang and `status` reports idle. Before believing an
+aria is deadlocked, check the provider tier. Parent aria ac9c3993 is
+building the instruments that would have made this legible in seconds:
+a wirelog round-trip ledger, a Retry-After clamp with explicit
+MaxRetries, and pprof aria labels.
+
+The role @980dc16c now points at 6ec957ee, dressed opus-5, with the
+queue in its current-work key. Worktrees clean, reminders disarmed,
+scratch roots removed.
