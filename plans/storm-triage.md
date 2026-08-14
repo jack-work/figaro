@@ -645,3 +645,17 @@ pinned. Each prong held by a test that fails on the old code. Empirical
 on the dev daemon: 5 live arias, meter 8.1 KiB and moving (was 0 across
 40 under the bug). Gate: full suite, race x2, aria benches, nix -- green.
 The ui-ir-tree gate is now OPEN.
+
+### S5 VERDICT (13:56): named-as-cost, acquitted-as-leak
+
+pprof -traces attribution: the +34.6MB sjson.appendRawPaths growth at 90
+arias is anthropic-sdk-go's request path (MessageService.NewStreaming ->
+WithJSONSet -> sjson.SetBytes) -- IN-FLIGHT REQUEST BODIES, one per
+concurrent turn, ~380KB average here. Scales with concurrency x context
+size; released as turns complete. Not a leak. PRESCRIPTION (optional):
+if 100-way concurrency becomes normal, cap concurrent provider calls or
+stream request bodies; otherwise accept as the price of parallel turns.
+
+### S4 in progress: idle-creep sample A banked 13:54
+(/var/tmp/storm/prof/idle-a.pb.gz, dev daemon idle, 0 arias, inuse
+77.2MiB). Sample B + -base diff at next patrol names the creep.
