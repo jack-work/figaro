@@ -164,9 +164,12 @@ type Agent struct {
 	proj       Projector
 	inlineBoot *form.Patch // ephemeral first-turn boot fold
 	figLog     store.Log[message.Message]
-	backend    store.Backend // nil = ephemeral
-	form       *form.State
-	settings   *config.Loaded // wire budget policy; nil-safe
+	// turnFirstLT is the IR coordinate of the record that opened the
+	// current turn, for the seal-time bracket. Zero between turns.
+	turnFirstLT uint64
+	backend     store.Backend // nil = ephemeral
+	form        *form.State
+	settings    *config.Loaded // wire budget policy; nil-safe
 
 	inbox *Inbox
 
@@ -1214,7 +1217,19 @@ func (a *Agent) finishTurn(reason string) {
 	// The turn stopped moving. This is the one place the word "seal" means
 	// anything now: every node in the turn is immutable from here, and it is
 	// the moment a persisted UI-IR channel would write it (Phase 4).
-	a.ariaSrv.Seal(nil)
+	//
+	// SEAL WITH THE BRACKET. Seal(nil) left the tail unbracketed, which
+	// pinned it un-evictable and -- in v1 of the pin -- latched the whole
+	// cache: the convicted cause of the >1GB session (storm-triage S1).
+	// The first LT was recorded when the inquiry appended; the last is
+	// the log's tail at this moment.
+	var lts []uint64
+	if a.turnFirstLT > 0 && a.figLog != nil {
+		if last, _ := a.figLog.ReadPage(0, ^uint64(0), 1); len(last) > 0 {
+			lts = []uint64{a.turnFirstLT, last[0].LT}
+		}
+	}
+	a.ariaSrv.Seal(lts)
 	idle := a.inbox.IsIdle()
 	a.mu.Lock()
 	a.lastActive = time.Now()

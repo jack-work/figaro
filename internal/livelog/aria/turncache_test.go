@@ -86,17 +86,66 @@ func TestTurnCacheEvictsAndRecomposes(t *testing.T) {
 	}
 }
 
-// A turn with no LT bracket cannot be recomposed; its presence pins the
-// whole cache resident rather than silently losing history.
-func TestTurnCacheLegacyPinsEverything(t *testing.T) {
+// A turn with no LT bracket cannot be recomposed; it pins ITSELF -- and
+// only itself. v1 latched the whole cache off one such turn, which
+// disabled eviction and blinded the meter for every aria after its
+// first live turn: the convicted cause of the >1GB session (S1,
+// plans/storm-triage.md). This test holds all three prongs of the fix.
+func TestUnbracketedTurnPinsOnlyItself(t *testing.T) {
 	budget := NewUIBudget(1)
-	c := NewTurnCache(nil, budget)
-	c.Append(Turn{ID: 1, Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: strings.Repeat("y", 2<<20)}}})
-	c.Append(fatTurn(2, 64))
-	for i := range c.meta {
+	history := map[uint64]Turn{}
+	var rec int
+	c := NewTurnCache(sourceFor(history, &rec), budget)
+	// One unbracketed turn (a live-path tail), then a budget-busting run
+	// of bracketed ones.
+	c.Append(Turn{ID: 1, Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: strings.Repeat("y", 256<<10)}}})
+	for id := uint64(2); id <= 40; id++ {
+		tn := fatTurn(id, 64)
+		history[id] = tn
+		c.Append(tn)
+	}
+	if !c.meta[0].resident || !c.meta[0].pinned {
+		t.Fatal("the unbracketed turn must stay resident, pinned")
+	}
+	evicted := 0
+	for i := 1; i < len(c.meta)-1; i++ {
 		if !c.meta[i].resident {
-			t.Fatal("a legacy log must stay whole: eviction would lose unrecomposable history")
+			evicted++
 		}
+	}
+	if evicted == 0 {
+		t.Fatal("bracketed turns must still evict: one unbracketed turn latched the cache (the S1 bug)")
+	}
+	res, _, _ := budget.Stats()
+	if res < 256<<10 {
+		t.Fatalf("the pinned turn's bytes must be COUNTED (meter=%d): a meter that reads zero at peak retention is the S1 blindness", res)
+	}
+}
+
+// The live path end to end: OpenTurn (bracket-less tail), stream, Close,
+// then Seal WITH a bracket -- the sealed turn must unpin, join the LRU,
+// and be evictable. Seal(nil) is the regression this pins.
+func TestSealWithBracketUnpinsTheTail(t *testing.T) {
+	budget := NewUIBudget(1)
+	c := NewServer()
+	c.BindCache(nil, budget)
+	c.OpenTurn(7)
+	c.Update([]livedoc.Node{{Type: livedoc.NodeProse, Markdown: strings.Repeat("z", 64<<10)}})
+	c.Close()
+	c.Seal([]uint64{71, 75})
+	c.mu.Lock()
+	tl := c.cache.Tail()
+	pinned := c.cache.meta[len(c.cache.meta)-1].pinned
+	counted := c.cache.meta[len(c.cache.meta)-1].counted
+	c.mu.Unlock()
+	if tl == nil || !tl.Sealed || len(tl.LTs) != 2 {
+		t.Fatalf("seal must stamp the bracket: %+v", tl)
+	}
+	if pinned {
+		t.Fatal("a bracketed sealed turn must not stay pinned")
+	}
+	if !counted {
+		t.Fatal("the sealed turn's bytes must be on the meter")
 	}
 }
 

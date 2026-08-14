@@ -324,6 +324,7 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (
 			// Segments come off the MESSAGE, not the event: the message is what
 			// the projection will re-derive them from on a re-read, so live and
 			// re-read cannot tell two different stories about who asked.
+			a.turnFirstLT = entry.LT
 			a.ariaSrv.OpenInquiry(a.turnID, prompt.text, a.projInquirySegments(msg)...)
 		}
 	}

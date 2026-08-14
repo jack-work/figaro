@@ -48,18 +48,22 @@ type TurnCache struct {
 	source TurnSource
 	budget *UIBudget
 
-	// legacyWhole pins everything resident: a turn with no LT bracket
-	// cannot be recomposed by range, so a log with any such turn keeps
-	// today's unbounded behaviour rather than silently losing history.
-	legacyWhole bool
-
 	recomposes int
 }
 
 type turnMeta struct {
 	bytes    int  // summed nodeSize at last materialization
 	resident bool // Nodes present (a hollow turn is index only)
-	elem     *list.Element
+	counted  bool // bytes are in the budget's resident total
+	// pinned: no LT bracket, so no recompose is possible -- the turn
+	// stays resident and OUT of the LRU, but its bytes are COUNTED: a
+	// meter that reads zero exactly when retention is worst is the worst
+	// possible meter (S1, plans/storm-triage.md). The pin is PER TURN;
+	// v1 latched the whole cache off one such turn, which disabled
+	// eviction and blinded doctor mem for every aria after its first
+	// live turn -- the convicted cause of the >1GB session.
+	pinned bool
+	elem   *list.Element
 }
 
 // NewTurnCache returns an empty cache. budget may be nil (unbounded) and
@@ -97,8 +101,7 @@ func (c *TurnCache) Tail() *Turn {
 // Append adds a sealed (or sealing) turn at the tail, whole.
 func (c *TurnCache) Append(t Turn) {
 	c.turns = append(c.turns, t)
-	c.meta = append(c.meta, turnMeta{bytes: turnBytes(t), resident: true})
-	c.noteLegacy(t)
+	c.meta = append(c.meta, turnMeta{bytes: turnBytes(t), resident: true, pinned: unbracketed(t)})
 	c.account(len(c.turns) - 1)
 }
 
@@ -107,10 +110,8 @@ func (c *TurnCache) ReplaceAll(turns []Turn) {
 	c.releaseAll()
 	c.turns = append([]Turn(nil), turns...)
 	c.meta = make([]turnMeta, len(c.turns))
-	c.legacyWhole = false
 	for i := range c.turns {
-		c.meta[i] = turnMeta{bytes: turnBytes(c.turns[i]), resident: true}
-		c.noteLegacy(c.turns[i])
+		c.meta[i] = turnMeta{bytes: turnBytes(c.turns[i]), resident: true, pinned: unbracketed(c.turns[i])}
 		c.account(i)
 	}
 }
@@ -239,19 +240,21 @@ func (c *TurnCache) hollow(i int) int {
 	if i < 0 || i >= len(c.turns)-1 || !c.meta[i].resident {
 		return 0
 	}
+	if c.meta[i].pinned {
+		return 0
+	}
 	t := &c.turns[i]
 	freed := c.meta[i].bytes
 	*t = Turn{ID: t.ID, LTs: t.LTs, At: t.At, Sealed: t.Sealed}
 	c.meta[i].resident = false
+	c.meta[i].counted = false
 	c.meta[i].elem = nil
 	return freed
 }
 
-func (c *TurnCache) noteLegacy(t Turn) {
-	if len(t.LTs) < 2 || t.LTs[0] == 0 {
-		c.legacyWhole = true
-	}
-}
+// unbracketed reports a turn no LT range can recompose: it pins itself
+// (and only itself).
+func unbracketed(t Turn) bool { return len(t.LTs) < 2 || t.LTs[0] == 0 }
 
 // ---- the global accountant ----
 
@@ -287,17 +290,27 @@ func NewUIBudget(limitMB int) *UIBudget {
 // that belong to THIS cache; other owners' victims are queued for them.
 func (c *TurnCache) account(i int) {
 	b := c.budget
-	if b == nil || c.legacyWhole {
+	if b == nil {
 		return
 	}
 	b.mu.Lock()
+	if !c.meta[i].counted {
+		b.total += int64(c.meta[i].bytes)
+		c.meta[i].counted = true
+	}
+	// A pinned turn is counted but never joins the LRU: it cannot be
+	// recomposed, so it must not be offered for eviction -- and the
+	// meter stays honest about what it holds.
+	if c.meta[i].pinned {
+		b.mu.Unlock()
+		return
+	}
 	if c.meta[i].elem != nil {
 		b.lru.MoveToFront(c.meta[i].elem)
 		b.mu.Unlock()
 		return
 	}
 	c.meta[i].elem = b.lru.PushFront(&turnRef{owner: c, idx: i, bytes: c.meta[i].bytes})
-	b.total += int64(c.meta[i].bytes)
 	mine, drain := b.victimsLocked(c)
 	b.mu.Unlock()
 
@@ -328,8 +341,11 @@ func (c *TurnCache) releaseAll() {
 	for i := range c.meta {
 		if e := c.meta[i].elem; e != nil {
 			b.lru.Remove(e)
-			b.total -= int64(c.meta[i].bytes)
 			c.meta[i].elem = nil
+		}
+		if c.meta[i].counted {
+			b.total -= int64(c.meta[i].bytes)
+			c.meta[i].counted = false
 		}
 	}
 	delete(b.pending, c)
@@ -445,7 +461,9 @@ func ltBracket2(t Turn) uint64 {
 
 // TailMutated re-tallies the tail's size after the Server mutated it in
 // place (Close folding the suffix in, Seal stamping LTs, OpenInquiry).
-// The tail is pinned, so this only trues the accounting, never evicts.
+// It also re-derives the pin: a Seal that stamps the bracket UNPINS the
+// tail, which is what lets a live session's sealed turns become
+// evictable without waiting for a re-materialization.
 func (c *TurnCache) TailMutated() {
 	i := len(c.turns) - 1
 	if i < 0 {
@@ -453,14 +471,26 @@ func (c *TurnCache) TailMutated() {
 	}
 	old := c.meta[i].bytes
 	c.meta[i].bytes = turnBytes(c.turns[i])
-	c.noteLegacy(c.turns[i])
-	if b := c.budget; b != nil && c.meta[i].elem != nil {
+	c.meta[i].pinned = unbracketed(c.turns[i])
+	if b := c.budget; b != nil {
 		b.mu.Lock()
-		b.total += int64(c.meta[i].bytes - old)
-		if ref, ok := c.meta[i].elem.Value.(*turnRef); ok {
-			ref.bytes = c.meta[i].bytes
+		if c.meta[i].counted {
+			b.total += int64(c.meta[i].bytes - old)
+		} else {
+			b.total += int64(c.meta[i].bytes)
+			c.meta[i].counted = true
+		}
+		if c.meta[i].elem != nil {
+			if ref, ok := c.meta[i].elem.Value.(*turnRef); ok {
+				ref.bytes = c.meta[i].bytes
+			}
 		}
 		b.mu.Unlock()
+	}
+	// An unpinned, bracketed tail joins the LRU like anything else (the
+	// tail-index guard in victimsLocked still protects the newest turn).
+	if !c.meta[i].pinned && c.meta[i].elem == nil {
+		c.account(i)
 	}
 }
 
