@@ -104,11 +104,17 @@ func New(knobs provider.Knobs, resolver auth.TokenResolver, cacheOpen func(aria 
 		rr = "tag"
 	}
 	return &Provider{
-		resolver:       resolver,
-		model:          knobs.Model,
-		maxTokens:      knobs.MaxTokens,
-		reminder:       rr,
-		httpClient:     &http.Client{Timeout: 10 * time.Minute, Transport: &wirelog.Transport{Inner: http.DefaultTransport}},
+		resolver:  resolver,
+		model:     knobs.Model,
+		maxTokens: knobs.MaxTokens,
+		reminder:  rr,
+		httpClient: &http.Client{
+			Timeout: 10 * time.Minute,
+			// retryCapTransport sits ABOVE wirelog so the ledger and the
+			// span record the Retry-After the server really sent; only the
+			// SDK's retry loop sees the clamped value.
+			Transport: &retryCapTransport{Inner: &wirelog.Transport{Inner: http.DefaultTransport}},
+		},
 		CacheOpen:      cacheOpen,
 		CacheNamespace: providerName,
 	}, nil
@@ -183,6 +189,10 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if dir := in.Snapshot.Lookup("system.environment.figaro_wire_dir"); dir != nil && *dir != "" {
 		ctx = wirelog.WithLogging(ctx, in.AriaID, *dir)
 	}
+	// The SDK discards the response once it gives up retrying, so the
+	// Retry-After that explains the failure would be lost. Carry a note the
+	// transport can write into.
+	ctx, note := withRateLimitNote(ctx)
 
 	cache, err := p.cacheFor(in.AriaID)
 	if err != nil {
@@ -227,7 +237,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		return nil
 	})
 	if err != nil {
-		return cleanAPIError(err)
+		return annotateRateLimit(cleanAPIError(err), note)
 	}
 	if len(msg.Content) == 0 {
 		return nil
