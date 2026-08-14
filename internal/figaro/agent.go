@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"runtime"
+	"runtime/pprof"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -308,7 +309,20 @@ func NewAgent(cfg Config) *Agent {
 
 	a.resumeStudies()
 	a.publishMetadata()
-	go a.runWithRecovery(ctx)
+	// Label the agent goroutine with its aria id.
+	//
+	// A hung daemon is diagnosed from a goroutine dump, and until now that
+	// dump was unattributable: eighty goroutines, a dozen of them agents,
+	// every stack identical, and no way to tell which one belonged to the
+	// aria that was not answering. The label costs a map on one goroutine
+	// and is INHERITED by every goroutine this one spawns - the turn loop,
+	// the tool dispatcher, the provider's stream reader - so the whole
+	// subtree of a stuck turn names itself.
+	//
+	// Labels show in `/debug/pprof/goroutine?debug=1` and in `go tool pprof
+	// -tagfocus`; the debug=2 full stack dump does not render them, so reach
+	// for debug=1 first when asking "which aria".
+	go pprof.Do(ctx, pprof.Labels("figaro.aria", a.id), a.runWithRecovery)
 	return a
 }
 
