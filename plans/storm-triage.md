@@ -659,3 +659,19 @@ stream request bodies; otherwise accept as the price of parallel turns.
 ### S4 in progress: idle-creep sample A banked 13:54
 (/var/tmp/storm/prof/idle-a.pb.gz, dev daemon idle, 0 arias, inuse
 77.2MiB). Sample B + -base diff at next patrol names the creep.
+
+### S4 VERDICT (14:30): NAMED — otel log BatchProcessor retention
+
+-base diff over ~50 idle minutes, 0 arias: 100% of retained growth is
+go.opentelemetry.io/otel/sdk/log.(*BatchProcessor).poll -> queue
+TryDequeue -> slices.Clone of Records (+627KB). An idle daemon accretes
+telemetry records forever -- the earlier ~1.1MB/5s figure was mostly
+GC-pending alloc churn; THIS is the true retention component.
+PRESCRIPTION: check the log exporter's endpoint config (an undeliverable
+exporter requeues forever); bound the queue with drop-on-full; or
+disable the otel LOG provider entirely if nothing consumes it.
+
+### Patrol close-out: S2 (reader re-materialize churn) and S3 (aliasing
+pin) remain open with rigs standing (/var/tmp/storm, /var/tmp/figdev-
+storm armed). Neither is a leak-class suspect post-S1; both are
+cost-class. v0.26.0 shipped with S1 fixed and S4/S5 named.
