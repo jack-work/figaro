@@ -182,7 +182,7 @@ func BenchmarkLiveFramePersistence(b *testing.B) {
 			} else {
 				nodes[0].Markdown = markdown + "b"
 			}
-			a.emitDelta(nodes, 0)
+			a.emitDelta(nil, nodes, 0)
 			if persist {
 				blob, err := json.Marshal(aria.Message{
 					Turn:  1,

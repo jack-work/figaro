@@ -55,9 +55,9 @@ func TestServer_DeltasVersionAndFold(t *testing.T) {
 
 	s.OpenInquiry(1, "q") // the question: text on the turn, not a node
 	s.OpenTurn(1)         // suffix opens at node 0
-	s.Update([]livedoc.Node{tool("running", "")}, 0)
-	s.Update([]livedoc.Node{tool("running", "a\n")}, 0)
-	s.Update([]livedoc.Node{tool("ok", "a\n")}, 0)
+	s.Update(nil, []livedoc.Node{tool("running", "")}, 0)
+	s.Update(nil, []livedoc.Node{tool("running", "a\n")}, 0)
+	s.Update(nil, []livedoc.Node{tool("ok", "a\n")}, 0)
 	s.Close()
 
 	if len(rc.pages) != 5 {
@@ -101,8 +101,8 @@ func TestServer_Unset(t *testing.T) {
 	defer s.Subscribe(rc.push)()
 
 	s.OpenTurn(1)
-	s.Update([]livedoc.Node{tool("running", "x")}, 0)
-	s.Update([]livedoc.Node{tool("running", "")}, 0)
+	s.Update(nil, []livedoc.Node{tool("running", "x")}, 0)
+	s.Update(nil, []livedoc.Node{tool("running", "")}, 0)
 
 	last := rc.pages[len(rc.pages)-1].LiveTail()
 	if last == nil || len(last.Nodes) != 1 {
@@ -126,8 +126,8 @@ func TestServer_PatchOnGrowth(t *testing.T) {
 	defer s.Subscribe(rc.push)()
 
 	s.OpenTurn(1)
-	s.Update([]livedoc.Node{prose("hello")}, 0)
-	s.Update([]livedoc.Node{prose("hello world")}, 0)
+	s.Update(nil, []livedoc.Node{prose("hello")}, 0)
+	s.Update(nil, []livedoc.Node{prose("hello world")}, 0)
 
 	last := rc.pages[len(rc.pages)-1].LiveTail()
 	if last == nil || len(last.Nodes) != 1 {
@@ -144,7 +144,7 @@ func TestServer_CloseFoldsSealDoesNot(t *testing.T) {
 	s := NewServer()
 	s.OpenInquiry(1, "q")
 	s.OpenTurn(1)
-	s.Update([]livedoc.Node{tool("ok", "out")}, 0)
+	s.Update(nil, []livedoc.Node{tool("ok", "out")}, 0)
 	s.Close()
 
 	turns := s.Turns()
@@ -159,7 +159,7 @@ func TestServer_CloseFoldsSealDoesNot(t *testing.T) {
 	// streaming region, because that is what the producer recomposes. The
 	// region replaces rather than appends, so the tool is not duplicated.
 	s.OpenTurn(1)
-	s.Update([]livedoc.Node{tool("ok", "out"), prose("answer")}, 0)
+	s.Update(nil, []livedoc.Node{tool("ok", "out"), prose("answer")}, 0)
 	s.Close()
 	turns = s.Turns()
 	if len(turns[0].Nodes) != 2 {
@@ -294,7 +294,7 @@ func TestServer_ReadSnapshotCarriesLiveOnlyAtTheTail(t *testing.T) {
 	s.Commit(sealedTurn(1, prose("old")))
 	s.OpenInquiry(2, "q")
 	s.OpenTurn(2)
-	s.Update([]livedoc.Node{tool("running", "a\n")}, 0)
+	s.Update(nil, []livedoc.Node{tool("running", "a\n")}, 0)
 
 	full := s.Read(Anchor{}, 1<<20)
 	live := full.LiveTail()

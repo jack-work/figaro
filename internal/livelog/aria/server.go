@@ -36,10 +36,28 @@ type Server struct {
 // openTurn is the streaming suffix of turns[len-1]: the nodes at ids
 // >= from, materialized so Update can diff against the previous frame.
 type openTurn struct {
-	id    uint64
-	from  uint64
-	nodes []livedoc.Node
-	ver   int // next frame version (0-indexed); last emitted is ver-1
+	id     uint64
+	from   uint64
+	prefix []livedoc.Node // settled: held by reference, never edited
+	suffix []livedoc.Node // still moving
+	ver    int            // next frame version (0-indexed); last emitted is ver-1
+}
+
+func (o *openTurn) count() int { return len(o.prefix) + len(o.suffix) }
+
+func (o *openTurn) at(i int) livedoc.Node {
+	if i < len(o.prefix) {
+		return o.prefix[i]
+	}
+	return o.suffix[i-len(o.prefix)]
+}
+
+// nodes materializes the frame. Callers that need one slice pay for it at
+// close or at a read, not once per frame.
+func (o *openTurn) nodes() []livedoc.Node {
+	out := make([]livedoc.Node, 0, o.count())
+	out = append(out, o.prefix...)
+	return append(out, o.suffix...)
 }
 
 // NewServer returns an empty aria server, its sealed section unbounded
@@ -135,34 +153,41 @@ func (s *Server) OpenTurn(id uint64) {
 //
 // nodes is RETAINED, not copied: the producer does not mutate a slice it has
 // handed over. What a reader holds is never edited, only succeeded.
-func (s *Server) Update(nodes []livedoc.Node, stable int) {
+func (s *Server) Update(prefix, suffix []livedoc.Node, stable int) {
 	s.mu.Lock()
 	if s.open == nil {
 		s.mu.Unlock()
 		return
 	}
-	if stable > len(s.open.nodes) {
-		stable = len(s.open.nodes)
+	total := len(prefix) + len(suffix)
+	if stable > s.open.count() {
+		stable = s.open.count()
 	}
-	if stable > len(nodes) {
-		stable = len(nodes)
+	if stable > total {
+		stable = total
 	}
 	if stable < 0 {
 		stable = 0
 	}
 	var deltas []NodeDelta
-	for i := stable; i < len(nodes); i++ {
-		n := nodes[i]
+	prior := s.open.count()
+	for i := stable; i < total; i++ {
+		var n livedoc.Node
+		if i < len(prefix) {
+			n = prefix[i]
+		} else {
+			n = suffix[i-len(prefix)]
+		}
 		id := s.open.from + uint64(i)
-		if i < len(s.open.nodes) {
-			if d := delta(id, s.open.nodes[i], n); !d.Empty() {
+		if i < prior {
+			if d := delta(id, s.open.at(i), n); !d.Empty() {
 				deltas = append(deltas, d)
 			}
 			continue
 		}
 		deltas = append(deltas, fullSet(id, n))
 	}
-	s.open.nodes = nodes
+	s.open.prefix, s.open.suffix = prefix, suffix
 	if len(deltas) == 0 {
 		s.mu.Unlock()
 		return
@@ -194,7 +219,7 @@ func (s *Server) Close() {
 		return
 	}
 	tl := s.cache.Tail()
-	tl.Nodes = append(tl.Nodes[:s.open.from:s.open.from], s.open.nodes...)
+	tl.Nodes = append(tl.Nodes[:s.open.from:s.open.from], s.open.nodes()...)
 	s.cache.TailMutated()
 	lastV := s.open.ver - 1
 	if lastV < 0 {
@@ -355,7 +380,7 @@ func (s *Server) overlayOpen(window []Turn, includesTail bool) []Turn {
 		i = len(out) - 1
 	}
 	t := out[i]
-	t.Nodes = append(append([]livedoc.Node(nil), t.Nodes[:s.open.from]...), s.open.nodes...)
+	t.Nodes = append(append([]livedoc.Node(nil), t.Nodes[:s.open.from]...), s.open.nodes()...)
 	v := s.open.ver - 1
 	if v < 0 {
 		v = 0

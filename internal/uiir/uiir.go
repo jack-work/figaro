@@ -41,7 +41,7 @@ func (p *Projector) Turns(msgs []message.Message) []aria.Turn {
 	return compose.Turns(msgs)
 }
 
-func (p *Projector) Nodes(msgs []message.Message, tails, argPartials map[string]string) ([]livedoc.Node, int) {
+func (p *Projector) Nodes(msgs []message.Message, tails, argPartials map[string]string) (prefix, suffix []livedoc.Node, stable int) {
 	if p.live == nil {
 		p.live = compose.NewIncremental()
 	}

@@ -40,7 +40,7 @@ type Projector interface {
 	// JSON keyed by tool_call_id. The second return is the count of leading
 	// nodes identical to those of the previous call, and the returned slice is
 	// not mutated afterwards.
-	Nodes(msgs []message.Message, tails, argPartials map[string]string) ([]livedoc.Node, int)
+	Nodes(msgs []message.Message, tails, argPartials map[string]string) (prefix, suffix []livedoc.Node, stable int)
 
 	// ResetTools clears per-turn tool timing state.
 	ResetTools()
@@ -70,9 +70,9 @@ func (a *Agent) projInquirySegments(m message.Message) []aria.InquirySegment {
 }
 
 // projNodes is the nil-safe form of Projector.Nodes.
-func (a *Agent) projNodes(msgs []message.Message, tails, argPartials map[string]string) ([]livedoc.Node, int) {
+func (a *Agent) projNodes(msgs []message.Message, tails, argPartials map[string]string) (prefix, suffix []livedoc.Node, stable int) {
 	if a.proj == nil {
-		return nil, 0
+		return nil, nil, 0
 	}
 	return a.proj.Nodes(msgs, tails, argPartials)
 }

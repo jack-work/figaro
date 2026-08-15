@@ -64,26 +64,28 @@ func (c *Incremental) Reset() {
 // that something is being reused needs a number that can read zero.
 func (c *Incremental) Stats() (composed, reused int) { return c.composed, c.reused }
 
-// Nodes composes the region, reusing the memoized prefix where it still
-// applies and composing the rest. The second return is the count of leading
-// nodes identical to those returned by the previous call.
+// Nodes composes the region and returns it in two pieces: a prefix of nodes
+// that can no longer change, and the suffix that can. stable is the count of
+// leading prefix nodes identical to those returned by the previous call.
 //
-// The returned slice is not mutated after it is returned; a consumer may
-// retain it instead of copying it.
-func (c *Incremental) Nodes(msgs []message.Message, partials, argPartials map[string]string, timings map[string]ToolTiming) ([]livedoc.Node, int) {
-	stable := stableBoundary(msgs)
+// A node enters the prefix ONLY when it can no longer change. Neither returned
+// slice is mutated after it is returned -- the prefix grows by append, which a
+// holder of the shorter slice cannot observe -- so a consumer may retain both
+// rather than copy them.
+func (c *Incremental) Nodes(msgs []message.Message, partials, argPartials map[string]string, timings map[string]ToolTiming) (prefix, suffix []livedoc.Node, stable int) {
+	bound := stableBoundary(msgs)
 	published := c.published
-	if !c.valid(msgs, stable) {
+	if !c.valid(msgs, bound) {
 		c.nodes = nil
 		c.keys = nil
 		published = 0
 	}
-	if n := len(c.keys); stable > n {
-		c.nodes = append(c.nodes, Nodes(msgs[n:stable], partials, argPartials, timings)...)
-		for _, m := range msgs[n:stable] {
+	if n := len(c.keys); bound > n {
+		c.nodes = append(c.nodes, Nodes(msgs[n:bound], partials, argPartials, timings)...)
+		for _, m := range msgs[n:bound] {
 			c.keys = append(c.keys, keyOf(m))
 		}
-		c.composed += stable - n
+		c.composed += bound - n
 	}
 	c.reused += len(c.keys)
 	if published > len(c.nodes) {
@@ -93,19 +95,7 @@ func (c *Incremental) Nodes(msgs []message.Message, partials, argPartials map[st
 
 	tail := msgs[len(c.keys):]
 	c.composed += len(tail)
-	tailNodes := Nodes(tail, partials, argPartials, timings)
-
-	out := make([]livedoc.Node, 0, len(c.nodes)+len(tailNodes))
-	out = append(out, c.nodes...)
-	out = append(out, tailNodes...)
-	if len(out) == 0 {
-		// Wholesale composition returns a nil slice for a region with nothing
-		// renderable in it. Returning an empty non-nil one instead is a
-		// difference every caller happens to survive today, which is not the
-		// same as no difference: the claim here is identity.
-		return nil, 0
-	}
-	return out, published
+	return c.nodes, Nodes(tail, partials, argPartials, timings), published
 }
 
 // valid reports whether the memo describes the same messages this region

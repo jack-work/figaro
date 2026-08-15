@@ -87,7 +87,7 @@ func TestStableCountEmitsTheSameDeltasAsAFullDiff(t *testing.T) {
 			want = append(want, d)
 		}
 		prev = f.nodes
-		s.Update(f.nodes, f.stable)
+		s.Update(nil, f.nodes, f.stable)
 	}
 
 	if len(got) != len(want) {
@@ -125,10 +125,10 @@ func TestTheOracleCatchesAnUnderReportedChange(t *testing.T) {
 				break
 			}
 			prev = g.nodes
-			s.Update(g.nodes, g.stable)
+			s.Update(nil, g.nodes, g.stable)
 		}
 		before := len(emitted)
-		s.Update(f.nodes, f.stable+1)
+		s.Update(nil, f.nodes, f.stable+1)
 		honest := fullDiff(0, prev, f.nodes)
 		if len(emitted) == before && len(honest) > 0 {
 			caught = true // a real change went unreported
@@ -155,7 +155,7 @@ func TestAnOverLargeStableCountCostsReuseNotTruth(t *testing.T) {
 	unsub := s.Subscribe(func(p Page) { emitted++ })
 	defer unsub()
 	first := []livedoc.Node{{ID: "1.0", Type: livedoc.NodeProse, Markdown: "a"}}
-	s.Update(first, 1<<20)
+	s.Update(nil, first, 1<<20)
 	if emitted != 1 {
 		t.Fatalf("first frame emitted %d times, want 1: an over-large stable count suppressed a creation", emitted)
 	}

@@ -18,7 +18,8 @@ import (
 func TestOpenRegionFixtureComposesToolNodes(t *testing.T) {
 	const rounds = 4
 	a := openRegionAgent(rounds, 200, false)
-	nodes, _ := a.composeTurn(nil)
+	pre, suf, _ := a.composeTurn(nil)
+				nodes := append(append([]livedoc.Node(nil), pre...), suf...)
 
 	var prose, tools, withOutput int
 	for _, n := range nodes {
@@ -72,7 +73,8 @@ func TestOpenRegionFixtureCanFail(t *testing.T) {
 			}
 		}
 	}
-	orphaned, _ := a.composeTurn(nil)
+	opre, osuf, _ := a.composeTurn(nil)
+	orphaned := append(append([]livedoc.Node(nil), opre...), osuf...)
 	for _, n := range orphaned {
 		if n.Type == livedoc.NodeTool && n.Output != "" {
 			t.Fatal("an orphaned tool_result still produced tool output: the fixture check cannot detect fault #7")
@@ -84,8 +86,10 @@ func TestOpenRegionFixtureCanFail(t *testing.T) {
 // as a benchmark line: one frame's node count is proportional to the whole
 // open region, not to what changed since the previous frame.
 func TestOpenRegionGrowsWithTheRegion(t *testing.T) {
-	smallNodes, _ := openRegionAgent(4, 200, false).composeTurn(nil)
-	largeNodes, _ := openRegionAgent(64, 200, false).composeTurn(nil)
+	sp, ss, _ := openRegionAgent(4, 200, false).composeTurn(nil)
+	smallNodes := append(append([]livedoc.Node(nil), sp...), ss...)
+	lp, ls, _ := openRegionAgent(64, 200, false).composeTurn(nil)
+	largeNodes := append(append([]livedoc.Node(nil), lp...), ls...)
 	small, large := len(smallNodes), len(largeNodes)
 	if large <= small {
 		t.Fatalf("open region of 64 rounds composed %d nodes, 4 rounds composed %d", large, small)

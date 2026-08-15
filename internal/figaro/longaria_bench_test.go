@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/internal/form"
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/toolout"
@@ -115,7 +116,8 @@ func BenchmarkComposeLiveTailLongAria(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				nodes, _ := a.composeTurn(nil)
+				pre, suf, _ := a.composeTurn(nil)
+				nodes := append(append([]livedoc.Node(nil), pre...), suf...)
 				runtime.KeepAlive(nodes)
 			}
 		})

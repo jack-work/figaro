@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/toolout"
@@ -89,7 +90,8 @@ func BenchmarkComposeTurnOpenRegion(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				nodes, _ := a.composeTurn(nil)
+				pre, suf, _ := a.composeTurn(nil)
+				nodes := append(append([]livedoc.Node(nil), pre...), suf...)
 				runtime.KeepAlive(nodes)
 			}
 		})
@@ -107,7 +109,8 @@ func BenchmarkComposeTurnBigDump(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				nodes, _ := a.composeTurn(nil)
+				pre, suf, _ := a.composeTurn(nil)
+				nodes := append(append([]livedoc.Node(nil), pre...), suf...)
 				runtime.KeepAlive(nodes)
 			}
 		})
@@ -131,12 +134,14 @@ func BenchmarkOpenTurnLifetime(b *testing.B) {
 					log.rows = append(log.rows[:1],
 						openRegionRounds(1, round, 200, true)...)
 					for f := 0; f < framesPerRound; f++ {
-						nodes, _ := a.composeTurn(nil)
+						pre, suf, _ := a.composeTurn(nil)
+				nodes := append(append([]livedoc.Node(nil), pre...), suf...)
 				runtime.KeepAlive(nodes)
 					}
 					log.rows = append(log.rows[:1],
 						openRegionRounds(1, round, 200, false)...)
-					nodes, _ := a.composeTurn(nil)
+					pre, suf, _ := a.composeTurn(nil)
+				nodes := append(append([]livedoc.Node(nil), pre...), suf...)
 				runtime.KeepAlive(nodes)
 				}
 			}

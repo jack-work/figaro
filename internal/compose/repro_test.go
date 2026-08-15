@@ -17,7 +17,7 @@ func drive(frames [][]message.Message) []string {
 	srv.Subscribe(func(r aria.Page) { cli.Apply(r) })
 	srv.OpenTurn(uint64(1))
 	for _, msgs := range frames {
-		srv.Update(Nodes(msgs, nil, nil, nil), 0)
+		srv.Update(nil, Nodes(msgs, nil, nil, nil), 0)
 	}
 	var out []string
 	if v := cli.View().Open; v != nil {

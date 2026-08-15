@@ -44,12 +44,12 @@ func BenchmarkServerUpdateOnly(b *testing.B) {
 			a.ariaSrv = aria.NewServer()
 			a.turnID = 1
 			a.ariaSrv.OpenTurn(a.turnID)
-			nodes, stable := a.composeTurn(nil)
-			a.emitDelta(nodes, stable)
+			pre, suf, stable := a.composeTurn(nil)
+			a.emitDelta(pre, suf, stable)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				a.ariaSrv.Update(nodes, stable)
+				a.ariaSrv.Update(pre, suf, stable)
 			}
 		})
 	}
