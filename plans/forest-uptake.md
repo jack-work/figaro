@@ -58,6 +58,29 @@ triple, `ResidentBytes`. ~90 lines replaced by a Sizer and a Keyer.
 
 `logView`, the atomic.Pointer, and every read path stay exactly as they are.
 
+### Scan pollution, and the policy it forces
+
+MEASURED, not argued: a whole-history read through `forest.Cache` evicts other
+nodes' hot tails -- one scan cost two primed neighbours a rematerialization
+each, and five listing-shaped scans did the same. forest is not at fault; a
+cache that caches what it reads is correct, and bounding a scan is not
+something it promises.
+
+So the consumer sets policy, because only the caller knows its intent:
+
+  - bounded reads NEAR the window route through the cache
+  - whole-history and backward-paging reads pass through to the source and
+    retain nothing
+
+This is not a new rule. cachedLog already states it for backward paging, in
+its own words: *"a scroll must not permanently re-resident a prefix nobody
+will read again."* The re-seat EXTENDS that policy rather than routing
+everything through `Range`. No figwal change and no new API: the pass-through
+is the code that is already there.
+
+`scan_pollution_test.go` asserts the pollution HAPPENS, so if forest ever
+bounds scans itself the test fails and the policy can be simplified.
+
 ### Open plumbing
 
 `cachedLog` does not know its lineage. `[]forest.Ref{{Node, Base}}` has to come
