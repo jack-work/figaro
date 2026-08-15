@@ -119,6 +119,7 @@ func TestEveryServedMethodIsGuarded(t *testing.T) {
 		rpc.MethodCreate, rpc.MethodFork, rpc.MethodPromote, rpc.MethodKill,
 		rpc.MethodList, rpc.MethodAttach, rpc.MethodBind, rpc.MethodResolve,
 		rpc.MethodUnbind, rpc.MethodStatus, rpc.MethodSaveBindings, rpc.MethodAriaRead,
+		rpc.MethodProviderLedger,
 	} {
 		if hs.Map[m] == nil {
 			t.Fatalf("method %s missing from the guarded map", m)
