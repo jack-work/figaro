@@ -167,23 +167,6 @@ func newSpanProcessor(exp sdktrace.SpanExporter) sdktrace.SpanProcessor {
 	return sdktrace.NewSimpleSpanProcessor(exp)
 }
 
-// newLogProcessor: log records reach the file exporter SYNCHRONOUSLY, in
-// every process. This deliberately does NOT mirror newSpanProcessor's
-// daemon-batches split, and the reason is measured twice
-// (plans/storm-triage.md S4): the batch processor's poll loop clones a
-// batch-long []Record on every exporting tick (the SDK's own TODO admits
-// it), and an idle daemon RETAINED that churn forever -- +627KB/50min at
-// default sizes, and STILL +1.0MB/26min with the batch bounded to 64/512,
-// because the clone-per-tick lives in the export queue whatever its size.
-// Zero retention requires no queue at all. The cost is one buffered file
-// append per log record -- microseconds, at a volume (a handful of
-// records per turn, a trickle at idle) nothing like the per-operation
-// span firehose that justifies batching spans. Spans keep their split;
-// logs pay the µs and hold nothing.
-func newLogProcessor(exp sdklog.Exporter) sdklog.Processor {
-	return sdklog.NewSimpleProcessor(exp)
-}
-
 // Init wires OTel providers writing to dir. Installs slog.Default().
 // configuredLevel is the [telemetry] level from config, set by the CLI
 // before Init. FIGARO_LOG_LEVEL still wins: one noisy run needs no edit.
@@ -191,6 +174,10 @@ var configuredLevel string
 
 // SetConfiguredLevel records the config-supplied floor. Call before Init.
 func SetConfiguredLevel(level string) { configuredLevel = level }
+
+// The file sink exports inline: measured, a queued one retained records
+// forever at idle (+1.0MB/26min even bounded to 64/512).
+const fileQueue = 0
 
 func Init(ctx context.Context, dir string) (func(context.Context) error, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -231,7 +218,7 @@ func Init(ctx context.Context, dir string) (func(context.Context) error, error) 
 		return nil, fmt.Errorf("log exporter: %w", err)
 	}
 	lp := sdklog.NewLoggerProvider(
-		sdklog.WithProcessor(newLogProcessor(logExp)),
+		sdklog.WithProcessor(newLogProcessor(logExp, fileQueue)),
 		sdklog.WithResource(res),
 	)
 	otellogglobal.SetLoggerProvider(lp)
