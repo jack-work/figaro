@@ -202,6 +202,24 @@ known to be able to fail.
 The oracle costs a few dead lines. The alternative costs a rendering that is
 wrong forever, because a composed node is cached and shipped.
 
+### Ask before you build, not after
+
+The check is always cheaper than the thing it authorises. Compute first and
+ask afterwards whether the result was needed, and an O(1) question becomes an
+O(n) allocation.
+
+Three instances in one subsystem, which is what made it a habit rather than
+three bugs:
+
+- `tailBound` split every line of a tool's output, then kept the last 200.
+- the live composer rebuilt every node of the open region, then diffed them.
+- `delta()` built two maps and a slice for EVERY node, then asked whether that
+  node had changed.
+
+Each is cheap to invert and each inversion was worth between 6x and 25x on the
+axis it governed. When a hot path allocates before it branches, that is the
+smell; the fix is usually to move the question up, not to make the work faster.
+
 ### Name the subject
 
 A fact about a DEPENDENCY and the fact that protects a USER are different

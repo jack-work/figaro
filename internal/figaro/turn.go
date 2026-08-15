@@ -840,7 +840,7 @@ func (a *Agent) prepareProviderRound() error {
 		}
 		split := hasRenderablePrompt(prompts)
 		if split {
-			if len(a.composeTurn(nil)) == 0 {
+			if nodes, _ := a.composeTurn(nil); len(nodes) == 0 {
 				a.abandonLive()
 			} else {
 				a.emitCommit()
@@ -1427,7 +1427,7 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 // composeTurn builds the current turn's node list: the messages appended
 // since the user prompt, plus the in-flight assistant message (nil once
 // it has appended into the log).
-func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
+func (a *Agent) composeTurn(inflight *message.Message) ([]livedoc.Node, int) {
 	entries := a.figLog.ReadFrom(a.turnStartLT+1, 0)
 	var msgs []message.Message
 	for _, e := range entries {
@@ -1463,11 +1463,11 @@ func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
 		}
 		msgs = append(msgs, m)
 	}
-	nodes := a.projNodes(msgs, a.gov.Tails(), a.argPartials)
+	nodes, stable := a.projNodes(msgs, a.gov.Tails(), a.argPartials)
 	if dir := os.Getenv("FIGARO_NODE_DEBUG"); dir != "" {
 		logComposeFrame(dir, a.id, inflight != nil, nodes)
 	}
-	return nodes
+	return nodes, stable
 }
 
 // openToolTiming stamps the start of GENERATION: the provider has opened a
@@ -1533,7 +1533,7 @@ func logComposeFrame(dir, ariaID string, hasInflight bool, nodes []livedoc.Node)
 func (a *Agent) emitSnapshot(role string, nodes []livedoc.Node) {
 	a.ariaSrv.OpenTurn(a.turnID)
 	if len(nodes) > 0 {
-		a.ariaSrv.Update(nodes)
+		a.ariaSrv.Update(nodes, 0)
 	}
 }
 
@@ -1567,8 +1567,8 @@ func (a *Agent) emitLive(inflight *message.Message, force bool) error {
 
 // emitDelta hands the current full node list to the aria server, which computes
 // the field-level delta vs the prior frame and broadcasts it (versioned).
-func (a *Agent) emitDelta(nodes []livedoc.Node) {
-	a.ariaSrv.Update(nodes)
+func (a *Agent) emitDelta(nodes []livedoc.Node, stable int) {
+	a.ariaSrv.Update(nodes, stable)
 }
 
 // emitCommit closes the open unit after it becomes a committed IR message.

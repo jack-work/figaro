@@ -115,7 +115,7 @@ func BenchmarkComposeLiveTailLongAria(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				nodes := a.composeTurn(nil)
+				nodes, _ := a.composeTurn(nil)
 				runtime.KeepAlive(nodes)
 			}
 		})

@@ -89,7 +89,8 @@ func BenchmarkComposeTurnOpenRegion(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				runtime.KeepAlive(a.composeTurn(nil))
+				nodes, _ := a.composeTurn(nil)
+				runtime.KeepAlive(nodes)
 			}
 		})
 	}
@@ -106,7 +107,8 @@ func BenchmarkComposeTurnBigDump(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				runtime.KeepAlive(a.composeTurn(nil))
+				nodes, _ := a.composeTurn(nil)
+				runtime.KeepAlive(nodes)
 			}
 		})
 	}
@@ -129,11 +131,13 @@ func BenchmarkOpenTurnLifetime(b *testing.B) {
 					log.rows = append(log.rows[:1],
 						openRegionRounds(1, round, 200, true)...)
 					for f := 0; f < framesPerRound; f++ {
-						runtime.KeepAlive(a.composeTurn(nil))
+						nodes, _ := a.composeTurn(nil)
+				runtime.KeepAlive(nodes)
 					}
 					log.rows = append(log.rows[:1],
 						openRegionRounds(1, round, 200, false)...)
-					runtime.KeepAlive(a.composeTurn(nil))
+					nodes, _ := a.composeTurn(nil)
+				runtime.KeepAlive(nodes)
 				}
 			}
 		})

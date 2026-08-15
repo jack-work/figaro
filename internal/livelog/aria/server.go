@@ -128,14 +128,31 @@ func (s *Server) OpenTurn(id uint64) {
 // deltas against the prior frame (v++ if anything changed). Node ids are
 // positional: the i'th suffix node is id from+i: so identity needs no
 // separate key.
-func (s *Server) Update(nodes []livedoc.Node) {
+//
+// stable is the count of leading nodes the producer guarantees are identical
+// to the ones it sent last time; they are not diffed. It is clamped to the
+// prior frame's length, so an over-large value costs reuse, never truth.
+//
+// nodes is RETAINED, not copied: the producer does not mutate a slice it has
+// handed over. What a reader holds is never edited, only succeeded.
+func (s *Server) Update(nodes []livedoc.Node, stable int) {
 	s.mu.Lock()
 	if s.open == nil {
 		s.mu.Unlock()
 		return
 	}
+	if stable > len(s.open.nodes) {
+		stable = len(s.open.nodes)
+	}
+	if stable > len(nodes) {
+		stable = len(nodes)
+	}
+	if stable < 0 {
+		stable = 0
+	}
 	var deltas []NodeDelta
-	for i, n := range nodes {
+	for i := stable; i < len(nodes); i++ {
+		n := nodes[i]
 		id := s.open.from + uint64(i)
 		if i < len(s.open.nodes) {
 			if d := delta(id, s.open.nodes[i], n); !d.Empty() {
@@ -145,7 +162,7 @@ func (s *Server) Update(nodes []livedoc.Node) {
 		}
 		deltas = append(deltas, fullSet(id, n))
 	}
-	s.open.nodes = append([]livedoc.Node(nil), nodes...)
+	s.open.nodes = nodes
 	if len(deltas) == 0 {
 		s.mu.Unlock()
 		return

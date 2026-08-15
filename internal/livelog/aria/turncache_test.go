@@ -130,7 +130,7 @@ func TestSealWithBracketUnpinsTheTail(t *testing.T) {
 	c := NewServer()
 	c.BindCache(nil, budget)
 	c.OpenTurn(7)
-	c.Update([]livedoc.Node{{Type: livedoc.NodeProse, Markdown: strings.Repeat("z", 64<<10)}})
+	c.Update([]livedoc.Node{{Type: livedoc.NodeProse, Markdown: strings.Repeat("z", 64<<10)}}, 0)
 	c.Close()
 	c.Seal([]uint64{71, 75})
 	c.mu.Lock()

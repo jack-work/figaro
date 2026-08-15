@@ -19,6 +19,8 @@ type Incremental struct {
 	nodes []livedoc.Node // composed nodes for the memoized prefix
 	keys  []memoKey      // one per memoized message, in order
 
+	published int // nodes handed over last call that are still identical
+
 	composed int
 	reused   int
 }
@@ -52,6 +54,7 @@ func NewIncremental() *Incremental { return &Incremental{} }
 func (c *Incremental) Reset() {
 	c.nodes = nil
 	c.keys = nil
+	c.published = 0
 	c.composed = 0
 	c.reused = 0
 }
@@ -62,12 +65,18 @@ func (c *Incremental) Reset() {
 func (c *Incremental) Stats() (composed, reused int) { return c.composed, c.reused }
 
 // Nodes composes the region, reusing the memoized prefix where it still
-// applies and composing the rest.
-func (c *Incremental) Nodes(msgs []message.Message, partials, argPartials map[string]string, timings map[string]ToolTiming) []livedoc.Node {
+// applies and composing the rest. The second return is the count of leading
+// nodes identical to those returned by the previous call.
+//
+// The returned slice is not mutated after it is returned; a consumer may
+// retain it instead of copying it.
+func (c *Incremental) Nodes(msgs []message.Message, partials, argPartials map[string]string, timings map[string]ToolTiming) ([]livedoc.Node, int) {
 	stable := stableBoundary(msgs)
+	published := c.published
 	if !c.valid(msgs, stable) {
 		c.nodes = nil
 		c.keys = nil
+		published = 0
 	}
 	if n := len(c.keys); stable > n {
 		c.nodes = append(c.nodes, Nodes(msgs[n:stable], partials, argPartials, timings)...)
@@ -77,6 +86,10 @@ func (c *Incremental) Nodes(msgs []message.Message, partials, argPartials map[st
 		c.composed += stable - n
 	}
 	c.reused += len(c.keys)
+	if published > len(c.nodes) {
+		published = len(c.nodes)
+	}
+	c.published = len(c.nodes)
 
 	tail := msgs[len(c.keys):]
 	c.composed += len(tail)
@@ -90,9 +103,9 @@ func (c *Incremental) Nodes(msgs []message.Message, partials, argPartials map[st
 		// renderable in it. Returning an empty non-nil one instead is a
 		// difference every caller happens to survive today, which is not the
 		// same as no difference: the claim here is identity.
-		return nil
+		return nil, 0
 	}
-	return out
+	return out, published
 }
 
 // valid reports whether the memo describes the same messages this region

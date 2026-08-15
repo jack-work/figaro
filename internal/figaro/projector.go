@@ -37,8 +37,10 @@ type Projector interface {
 
 	// Nodes projects the open streaming region. tails carries the governor's
 	// per-tool output tails, argPartials the still-truncated tool_use argument
-	// JSON keyed by tool_call_id.
-	Nodes(msgs []message.Message, tails, argPartials map[string]string) []livedoc.Node
+	// JSON keyed by tool_call_id. The second return is the count of leading
+	// nodes identical to those of the previous call, and the returned slice is
+	// not mutated afterwards.
+	Nodes(msgs []message.Message, tails, argPartials map[string]string) ([]livedoc.Node, int)
 
 	// ResetTools clears per-turn tool timing state.
 	ResetTools()
@@ -68,9 +70,9 @@ func (a *Agent) projInquirySegments(m message.Message) []aria.InquirySegment {
 }
 
 // projNodes is the nil-safe form of Projector.Nodes.
-func (a *Agent) projNodes(msgs []message.Message, tails, argPartials map[string]string) []livedoc.Node {
+func (a *Agent) projNodes(msgs []message.Message, tails, argPartials map[string]string) ([]livedoc.Node, int) {
 	if a.proj == nil {
-		return nil
+		return nil, 0
 	}
 	return a.proj.Nodes(msgs, tails, argPartials)
 }

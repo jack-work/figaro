@@ -163,7 +163,7 @@ func TestIncrementalEqualsWholesaleAtEveryFrame(t *testing.T) {
 	inc := NewIncremental()
 	for i, f := range frames {
 		want := Nodes(f.msgs, f.partials, f.argPartials, f.timings)
-		got := inc.Nodes(f.msgs, f.partials, f.argPartials, f.timings)
+		got, _ := inc.Nodes(f.msgs, f.partials, f.argPartials, f.timings)
 		if !reflect.DeepEqual(want, got) {
 			t.Fatalf("frame %d (%s): incremental composition diverged from wholesale\n%s",
 				i, f.what, diffNodes(want, got))
@@ -207,7 +207,7 @@ func TestIncrementalSurvivesAResetBetweenTurns(t *testing.T) {
 	inc.Reset()
 	for i, f := range turnScript(3) {
 		want := Nodes(f.msgs, f.partials, f.argPartials, f.timings)
-		if got := inc.Nodes(f.msgs, f.partials, f.argPartials, f.timings); !reflect.DeepEqual(want, got) {
+		if got, _ := inc.Nodes(f.msgs, f.partials, f.argPartials, f.timings); !reflect.DeepEqual(want, got) {
 			t.Fatalf("frame %d (%s) after Reset: %s", i, f.what, diffNodes(want, got))
 		}
 	}
@@ -235,7 +235,7 @@ func TestIncrementalDropsAMemoItCannotTrust(t *testing.T) {
 		}
 	}
 	want := Nodes(rewritten, last.partials, last.argPartials, last.timings)
-	got := inc.Nodes(rewritten, last.partials, last.argPartials, last.timings)
+	got, _ := inc.Nodes(rewritten, last.partials, last.argPartials, last.timings)
 	if !reflect.DeepEqual(want, got) {
 		t.Fatalf("a rewritten region served a stale memo:\n%s", diffNodes(want, got))
 	}
