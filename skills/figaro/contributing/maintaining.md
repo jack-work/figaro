@@ -130,6 +130,68 @@ For UI work, a pty is the only honest oracle: see
 bug from a real session rather than a guess, record and replay it:
 [tapes.md](../debugging/tapes.md).
 
+## Instrument the hazard; do not suffer it
+
+A hazard that can only be demonstrated by SUFFERING it needs an instrument
+that REPORTS instead of suffers.
+
+A test that proves a deadlock by deadlocking cannot run in a suite, so it
+never runs, so the hazard stays a paragraph in a design doc and ships. Replace
+the wait with a probe that cannot block and record what it saw.
+
+Worked example, the forest re-seat (2026-08-15): `Evicted` fires outside
+forest's locks, but a consumer calling `Put` under its own write lock can have
+eviction land the hook with that lock held, so a hook that takes the lock
+hangs. The test does not take the lock — it `TryLock`s and reports whether the
+lock was already held. Never blocks, and a true reading is evidence. The
+answer was 20 of 20 runs, which reclassified the bug: not an unlucky race, the
+common path under budget pressure, certain to ship on the first real workload.
+The number is the finding; the fix was the easy part.
+
+The same move elsewhere: a timeout that fails the test instead of wedging the
+suite, a counter of source calls instead of an assertion about contents, a
+`-race` reader that checks ordering rather than waiting for corruption.
+
+### Assert the fact, not the wish
+
+When the behaviour you dislike belongs to a component that never promised
+otherwise, do not leave a red test demanding it change. A test encoding what
+you wish another component did gets muted, then skipped, then deleted, and its
+signal never arrives.
+
+Assert what is TRUE, and let the assertion fail the day it stops being true.
+A dependency's scan pollutes a shared cache? Assert that it pollutes, and say
+in the failure message that the workaround can now be removed. That test pays
+attention while nobody is looking; a red one only accumulates apologies.
+
+### Prove the fixture can fail
+
+A check that cannot fail costs exactly what a check that cannot pass costs.
+The hard direction is applying it to your OWN test rather than to someone
+else's code.
+
+Before trusting what a fixture says, make it say the opposite. A residency
+test asserts first that a WARM read costs the layer below nothing -- without
+that line it is not measuring residency, it is measuring that nothing crashed,
+and it stays green through the regression it exists to catch. A grep that can
+never match, an absence reported before proving the thing that produces it
+ran: same failure, and it has cost this project several cycles.
+
+Prove the fixture can fail, then trust what it says.
+
+### Name the subject
+
+A fact about a DEPENDENCY and the fact that protects a USER are different
+tests, and only the second can be silently broken by your own change. "Route a
+scan through the cache and it evicts neighbours" is about the dependency.
+"A whole-history read through our public surface does not evict neighbours" is
+about us -- one branch pointed at the wrong layer and the policy is gone with
+nothing red. Write both, and know which is which.
+
+Corollary, and the reason this pays: write the instrument BEFORE the code that
+could violate the property. A hazard test written afterwards is a description
+of what you already believe.
+
 ## Releasing: `scripts/release.sh`, always
 
 **Do not cut a release by hand.** A tag is not a release here: nothing on any
