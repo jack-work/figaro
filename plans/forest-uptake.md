@@ -33,6 +33,26 @@ without inverting.
 
 ## Phase 3 — decoded IR onto forest.Cache
 
+### Where the duplication actually is: the FORK BASE, not the window edge
+
+Measured before building (`fork_residency_test.go`). Fork a 300-message aria
+near its tip and open the branch:
+
+    fork 6cc7bfa5: base=299, reads 298 rows -- 298 inherited from the parent,
+    0 its own
+
+A fresh fork's resident view is ENTIRELY its parent's rows, decoded a second
+time. So the sharing the ruling asks for is inside the resident window, not
+below it, and the re-seat's seam is at the fork base:
+
+  - rows at or above `base` are the fork's OWN: its lock-free view, untouched
+  - rows below `base` are inherited: served through the shared cache, so N
+    branches of one trunk pay one residency
+
+The below-window fall-through stays a pass-through, which the scan-pollution
+measurement independently argued for. Backing it with the cache would have
+bought little and cost the neighbours their tails.
+
 ### The seam
 
 Every read path already forks on one predicate:
