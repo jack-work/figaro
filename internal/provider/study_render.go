@@ -45,8 +45,12 @@ func StudyReminderTexts(msg message.Message, board form.Snapshot) []string {
 	// lookup, and only when this message carries a study event at all, so an
 	// aria that studies nothing pays nothing.
 	var incantation form.StudyIncantation
+	limits := form.DeltaLimits{KeyBytes: -1, TotalBytes: -1}
 	if msg.Study != nil || len(msg.StudyPatches) > 0 {
 		incantation = form.ReadStudyIncantation(board)
+		// Same board, same moment: point-in-time limits, so a cold
+		// retranslation reproduces these bytes (form/limits.go).
+		limits = form.ReadDeltaLimits(board)
 	}
 	// The mark, and the BASELINE with it. At the moment observation begins,
 	// the window is (0, V]: the form's whole history, which folds to its
@@ -68,7 +72,7 @@ func StudyReminderTexts(msg message.Message, board form.Snapshot) []string {
 			if v, ok := msg.StudyAt[msg.Study.FormID]; ok {
 				body["version"] = v
 			}
-			if fold := studyFold(msg.Study.FormID, msg.StudyPatches[msg.Study.FormID]); fold != nil {
+			if fold := studyFold(msg.Study.FormID, msg.StudyPatches[msg.Study.FormID], limits); fold != nil {
 				if set, ok := fold["set"]; ok {
 					body["state"] = set
 				}
@@ -90,7 +94,7 @@ func StudyReminderTexts(msg message.Message, board form.Snapshot) []string {
 			if fid == begun {
 				continue // its state rode the mark
 			}
-			if body := studyFold(fid, msg.StudyPatches[fid]); body != nil {
+			if body := studyFold(fid, msg.StudyPatches[fid], limits); body != nil {
 				if v, ok := msg.StudyAt[fid]; ok {
 					body["version"] = v
 				}
@@ -117,7 +121,7 @@ func studyBlock(name string, body any) string {
 // studyFold folds one form's window of patches into what a reader needs: the
 // keys that now hold new values, the keys that went away, and how many times
 // it moved. nil when nothing readable changed.
-func studyFold(fid string, patches []message.Patch) map[string]any {
+func studyFold(fid string, patches []message.Patch, limits form.DeltaLimits) map[string]any {
 	set := map[string]json.RawMessage{}
 	removed := map[string]bool{}
 	changes := 0
@@ -168,7 +172,38 @@ func studyFold(fid string, patches []message.Patch) map[string]any {
 		body["exists"] = false
 	}
 	if len(set) > 0 {
-		body["set"] = set
+		// BOUNDED, DETERMINISTICALLY. Keys are spent in sorted order so
+		// two renderings of one record agree byte for byte -- the
+		// per-LT cache makes whichever ran first permanent, and a fold
+		// that shuffled would make history disagree with itself.
+		names := make([]string, 0, len(set))
+		for k := range set {
+			names = append(names, k)
+		}
+		sort.Strings(names)
+		shown := map[string]json.RawMessage{}
+		spent, elided := 0, 0
+		for _, k := range names {
+			v := set[k]
+			cut, wasCut := form.TruncateUTF8(string(v), limits.KeyBytes)
+			if wasCut {
+				// A cut value is no longer valid JSON, so it rides as a
+				// JSON STRING: the block must stay parseable.
+				if q, err := json.Marshal(cut); err == nil {
+					v = q
+				}
+			}
+			if limits.TotalBytes > 0 && spent > 0 && spent+len(v) > limits.TotalBytes {
+				elided++
+				continue
+			}
+			shown[k] = v
+			spent += len(v)
+		}
+		body["set"] = shown
+		if note := form.EllipsisNote(fid, elided); note != "" {
+			body["elided"] = note
+		}
 	}
 	if len(removed) > 0 {
 		keys := make([]string, 0, len(removed))

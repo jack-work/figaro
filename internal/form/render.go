@@ -79,6 +79,9 @@ func Render(p Patch, prev Snapshot, tmpls *template.Template) ([]RenderedEntry, 
 	if p.IsEmpty() {
 		return nil, nil
 	}
+	// The limits come off the SAME point-in-time board this render is
+	// against, so a cold retranslation reproduces these bytes exactly.
+	limits := ReadDeltaLimits(prev)
 	entries := PatchEntries(p, prev)
 	out := make([]RenderedEntry, 0, len(entries))
 	for _, e := range entries {
@@ -91,6 +94,7 @@ func Render(p Patch, prev Snapshot, tmpls *template.Template) ([]RenderedEntry, 
 			if body == "" {
 				continue
 			}
+			body, _ = TruncateUTF8(body, limits.KeyBytes)
 			out = append(out, RenderedEntry{Key: e.Key, Body: body})
 			continue
 		}
@@ -102,6 +106,7 @@ func Render(p Patch, prev Snapshot, tmpls *template.Template) ([]RenderedEntry, 
 		if body == "" {
 			continue
 		}
+		body, _ = TruncateUTF8(body, limits.KeyBytes)
 		out = append(out, RenderedEntry{Key: e.Key, Body: body})
 	}
 	return out, nil
