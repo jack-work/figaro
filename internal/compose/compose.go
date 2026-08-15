@@ -215,15 +215,25 @@ func summaryFor(args map[string]any) string {
 
 // tailBound clamps streamed tool output to the last composeBashCap source
 // lines; the full result stays in the canonical Content IR.
+//
+// It scans backwards for the cut and returns a substring, so it costs what it
+// keeps rather than what the tool wrote, and allocates nothing.
+// tailbound_test.go holds the split-and-join implementation this replaced and
+// asserts the two agree byte for byte.
 func tailBound(text string) string {
 	if text == "" {
 		return ""
 	}
-	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
-	if len(lines) > composeBashCap {
-		lines = lines[len(lines)-composeBashCap:]
+	s := strings.TrimRight(text, "\n")
+	cut := len(s)
+	for i := 0; i < composeBashCap; i++ {
+		j := strings.LastIndexByte(s[:cut], '\n')
+		if j < 0 {
+			return s
+		}
+		cut = j
 	}
-	return strings.Join(lines, "\n")
+	return s[cut+1:]
 }
 
 // Units is gone. compose.Turns is the single projection now, a turn is one
