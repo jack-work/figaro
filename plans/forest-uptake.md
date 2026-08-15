@@ -53,6 +53,32 @@ The below-window fall-through stays a pass-through, which the scan-pollution
 measurement independently argued for. Backing it with the cache would have
 bought little and cost the neighbours their tails.
 
+### What the shared path costs, and why a fork must be seeded
+
+`forest.Cache.Range` against `cachedLog`'s lock-free view, both 64 warm units:
+
+    forest Range   parallel 1218 ns/op  4512 B/op   4 allocs
+    forest Range   serial    650 ns/op  4512 B/op   4 allocs
+    cachedLog      parallel  516 ns/op  4880 B/op   1 alloc
+    cachedLog      serial    551 ns/op  4864 B/op   1 alloc
+
+Serially they are close. Under readers they diverge and the sign flips:
+forest goes 650 -> 1218 (the mutex), the lock-free view goes 551 -> 516.
+2.4x apart at 16 readers, and widening.
+
+That matters because a fresh fork reads 298 inherited rows and 0 of its own,
+so under the corrected seam EVERY read of a new branch would take the shared
+path. Forking is how this project works; the new-branch case cannot be the
+slow one.
+
+So the child's view is SEEDED from the ancestor's resident rows at open. It
+starts warm and lock-free, and the cache serves only what neither holds.
+
+The seeding does not reintroduce the duplication, because a shallow copy of
+`[]Entry[T]` copies struct headers while the payload strings stay shared. The
+memory cost today is that each cachedLog DECODES the prefix separately, minting
+separate strings -- not that two slices point at them.
+
 ### The seam
 
 Every read path already forks on one predicate:
