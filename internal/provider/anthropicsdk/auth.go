@@ -40,6 +40,12 @@ func (p *Provider) authOptions(token, betas string) []option.RequestOption {
 	opts := []option.RequestOption{
 		option.WithoutEnvironmentDefaults(),
 		option.WithHTTPClient(p.httpClient),
+		// Set explicitly rather than inheriting the SDK's default, so the
+		// worst-case wait a turn can absorb is a property of figaro and not
+		// of a dependency's release notes. Paired with the Retry-After clamp
+		// in retry.go this bounds a rate-limited turn at maxRetries *
+		// maxRetryAfter instead of at the provider's window length.
+		option.WithMaxRetries(maxRetries),
 	}
 	if isOAuthToken(token) {
 		// Drop the SDK's default x-api-key (set to "" via WithoutEnvironmentDefaults

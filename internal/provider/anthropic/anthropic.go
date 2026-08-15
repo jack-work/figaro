@@ -970,6 +970,7 @@ func countCacheMarkers(req nativeRequest) int {
 // Send drives one turn: catch up cache, POST, stream SSE, land
 // the assistant message in figLog + cache.
 func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
+	ctx = wirelog.WithAria(ctx, in.AriaID)
 	if dir := in.Snapshot.Lookup("system.environment.figaro_wire_dir"); dir != nil && *dir != "" {
 		ctx = wirelog.WithLogging(ctx, in.AriaID, *dir)
 	}
@@ -1052,6 +1053,7 @@ type TransportFn func(ctx context.Context, body []byte) (*http.Response, error)
 // oauth controls whether the Claude Code identity preamble is injected
 // into the system prompt (false for Copilot, true for Anthropic OAuth).
 func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput, bus provider.Bus, oauth bool, fn TransportFn) error {
+	ctx = wirelog.WithAria(ctx, in.AriaID)
 	if dir := in.Snapshot.Lookup("system.environment.figaro_wire_dir"); dir != nil && *dir != "" {
 		ctx = wirelog.WithLogging(ctx, in.AriaID, *dir)
 	}
