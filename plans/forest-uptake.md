@@ -31,7 +31,40 @@ eviction order respects reads that never touched forest's mutex, and `Evicted`
 fires outside every lock so the layer below can clear its atomic pointer
 without inverting.
 
-## Phase 3 — decoded IR onto forest.Cache
+## Phase 3 — VERDICT: the decoded layer does not need forest
+
+Measured by IDENTITY, not by heap (heap is the wrong ruler and has misled this
+project before):
+
+    shared record LT 50: childA duplicated=true, childB duplicated=true
+    shallow copy: 200 of 202 entries compared, every payload string shared
+
+So the duplication is real -- opening a fork decodes the shared prefix again
+and mints strings the parent already holds -- and a shallow copy shares them.
+Seeding a child's view from its ancestor's resident rows at open therefore
+kills the duplication outright, with no forest in the path.
+
+What forest could still buy this layer, and who already has the job:
+
+| candidate | already done by |
+|---|---|
+| shared prefix across forks | seeding at open (shallow copy shares strings) |
+| a bound on the tail | the window, which survives |
+| serving rows neither holds | the pass-through, which scan pollution says to keep |
+
+All three are covered, so **phase 3 collapses from a re-seat into a
+seed-at-open**: no mutex introduced, no lock-free path disturbed, the 516ns
+benchmark untouched, and nothing added to delete later.
+
+The residue forest would have owned -- rows the ancestor has already trimmed
+that a child still needs -- is served by the pass-through, and caching it is
+what scan pollution measured as harmful.
+
+This does not speak for phase 4. The composed-UI layer has its own accountant,
+its own pins, and S1's law to preserve; whether IT needs forest is a separate
+measurement.
+
+## Phase 3 as originally planned (not taken)
 
 ### Where the duplication actually is: the FORK BASE, not the window edge
 
