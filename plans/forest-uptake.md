@@ -189,7 +189,36 @@ hold. Editing in place is the study-patch mutation class of bug; a per-LT cache
 makes the damage permanent. Test: take a `Read()`, hollow underneath it, require
 the held slice to still read correctly.
 
-## Phase 4 — composed UI onto the same type
+## Phase 4 — VERDICT: also a seed, not a re-seat
+
+Same question, same instrument, one layer up. Two branches composing one
+history, compared by identity:
+
+    120 strings compared, 40 SHARED, 80 MINTED
+
+The 40 shared are prose, which compose passes through. The 80 minted are the
+tool nodes' Input and Output, which compose REBUILDS -- S3's finding exactly
+("nodes copy, they do not alias"), and by bytes the minted ones dominate, since
+a tool result is hundreds of lines against a one-line prose block.
+
+So the duplication Gluck called generational is REAL: two branches of one trunk
+each compose the shared prefix into separate strings.
+
+And it dies the same way it did downstairs:
+
+    shallow copy of 40 turns: 120 node strings compared, every one shared
+
+Seeding a child's turn cache from its ancestor's resident turns shares every
+string. So phase 4 is a seed-at-open too, and forest is not needed here either.
+
+The difference from phase 3 is only in what was being duplicated: downstairs a
+second DECODE, upstairs a second COMPOSITION. Both are paid once by an
+ancestor that already holds the result.
+
+S1's law is untouched by this: the turn cache keeps its accountant, its pins
+stay COUNTED, and nothing about eviction changes.
+
+## Phase 4 as originally planned (not taken)
 
 Second bespoke accountant deleted. Preserve S1's law: pins are COUNTED, never
 silently skipped. Add S3's prescribed per-node constant (~400 B) to `turnBytes`,
