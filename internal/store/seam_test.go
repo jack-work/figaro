@@ -16,6 +16,9 @@ import (
 // Asserted on the LT SEQUENCE, never on contents: contents can coincide,
 // coordinates cannot. Green today, so a re-seat that moves the boundary
 // without moving the ownership fails here.
+//
+// PERMANENT, NOT MIGRATION SCAFFOLDING. This invariant predates the forest
+// re-seat and outlives it: do not retire this file with the temporary code.
 
 func seamLog(t *testing.T, n int) *cachedLog[string] {
 	t.Helper()

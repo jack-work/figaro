@@ -15,6 +15,9 @@ import (
 //
 // These assert the property as it stands today, so a re-seat that repeals it
 // fails here rather than in production.
+//
+// PERMANENT, NOT MIGRATION SCAFFOLDING. This invariant predates the forest
+// re-seat and outlives it: do not retire this file with the temporary code.
 
 func heldEntry(i int) Entry[string] {
 	return Entry[string]{Payload: fmt.Sprintf("row-%04d", i)}
