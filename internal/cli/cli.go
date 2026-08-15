@@ -136,7 +136,14 @@ func Run(progName string, args []string) {
 	initBindingPolicy()
 	args = extractNoBindFlag(args)
 
-	shutdown, err := figOtel.Init(ctx, stateDir())
+	// The sinks answer to config before they open: level and directory,
+	// with FIGARO_LOG_LEVEL still overriding for a single noisy run.
+	telemetryDir := stateDir()
+	if loaded, lerr := config.Load(config.DefaultConfigDir()); lerr == nil {
+		figOtel.SetConfiguredLevel(loaded.TelemetryLevel())
+		telemetryDir = loaded.TelemetryDir(stateDir())
+	}
+	shutdown, err := figOtel.Init(ctx, telemetryDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: otel init: %s\n", err)
 	} else {

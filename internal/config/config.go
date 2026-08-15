@@ -15,10 +15,44 @@ import (
 // Config is the top-level figaro configuration. Provider/model knobs
 // have moved into outfits; this file holds only the chosen outfit
 // and CLI-side ergonomics.
+// TelemetryConfig is the [telemetry] table.
+type TelemetryConfig struct {
+	// Dir overrides where logs.jsonl and traces.jsonl are written.
+	// Empty means the state dir, which is where they have always gone.
+	// A relative path is resolved against the state dir.
+	Dir string `toml:"dir"`
+
+	// Level is the floor for what reaches the sinks: debug, info, warn,
+	// error. Empty means info. FIGARO_LOG_LEVEL still wins, so a single
+	// noisy run needs no edit here.
+	Level string `toml:"level"`
+
+	// OTLPEndpoint, when set, ALSO exports logs and traces over OTLP to a
+	// collector (an LGTM stack, say: Grafana Alloy on :4318, which fans
+	// out to Loki and Tempo). The file sinks keep working either way --
+	// they are the record of last resort, and a collector that is down
+	// must not take the daemon's memory with it.
+	//
+	// Wire-up is deliberately NOT automatic: the exporter is only built
+	// when this is non-empty, so a machine with no collector pays
+	// nothing.
+	OTLPEndpoint string `toml:"otlp_endpoint"`
+}
+
 type Config struct {
 	// DefaultOutfit names the outfit used when -O is not specified.
 	// Empty triggers the first-run flow (see rpc.ErrNoDefaultOutfit).
 	DefaultOutfit string `toml:"default_outfit"`
+
+	// Telemetry configures the daemon's own record of itself: the
+	// rotating JSONL sinks under the state dir (logs.jsonl,
+	// traces.jsonl) and how loud they are.
+	//
+	// It exists because a failure the terminal showed for one frame and
+	// nobody wrote down is a failure nobody can investigate: the sink is
+	// where a provider rejection, a spent quota or a cache refusal has to
+	// survive the scrollback that displayed it.
+	Telemetry TelemetryConfig `toml:"telemetry"`
 
 	// Trunks enables the trunk capability: a presentation hierarchy an
 	// aria can be promoted within, independent of where its history comes
@@ -345,6 +379,35 @@ func (l *Loaded) TranslationWindowBytes() int {
 		return minIRWindowMB << 20
 	}
 	return *l.Config.Memory.TranslationWindowMB << 20
+}
+
+// TelemetryDir resolves the sink directory against the state dir.
+// Empty config means the state dir itself. Nil-safe.
+func (l *Loaded) TelemetryDir(stateDir string) string {
+	if l == nil || l.Config.Telemetry.Dir == "" {
+		return stateDir
+	}
+	if filepath.IsAbs(l.Config.Telemetry.Dir) {
+		return l.Config.Telemetry.Dir
+	}
+	return filepath.Join(stateDir, l.Config.Telemetry.Dir)
+}
+
+// TelemetryLevel is the configured sink floor ("" means info).
+// FIGARO_LOG_LEVEL overrides it; see otel.Init.
+func (l *Loaded) TelemetryLevel() string {
+	if l == nil {
+		return ""
+	}
+	return l.Config.Telemetry.Level
+}
+
+// TelemetryOTLPEndpoint is the collector to ALSO export to, or "".
+func (l *Loaded) TelemetryOTLPEndpoint() string {
+	if l == nil {
+		return ""
+	}
+	return l.Config.Telemetry.OTLPEndpoint
 }
 
 // SegmentCacheBytes is the process-wide budget for raw segment payloads held

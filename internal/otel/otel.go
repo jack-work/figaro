@@ -120,7 +120,11 @@ var (
 
 // envLogLevel resolves FIGARO_LOG_LEVEL into a slog level. Defaults to INFO.
 func envLogLevel() slog.Level {
-	switch strings.ToLower(os.Getenv("FIGARO_LOG_LEVEL")) {
+	lvl := os.Getenv("FIGARO_LOG_LEVEL")
+	if lvl == "" {
+		lvl = configuredLevel
+	}
+	switch strings.ToLower(lvl) {
 	case "debug":
 		return slog.LevelDebug
 	case "warn", "warning":
@@ -164,6 +168,13 @@ func newSpanProcessor(exp sdktrace.SpanExporter) sdktrace.SpanProcessor {
 }
 
 // Init wires OTel providers writing to dir. Installs slog.Default().
+// configuredLevel is the [telemetry] level from config, set by the CLI
+// before Init. FIGARO_LOG_LEVEL still wins: one noisy run needs no edit.
+var configuredLevel string
+
+// SetConfiguredLevel records the config-supplied floor. Call before Init.
+func SetConfiguredLevel(level string) { configuredLevel = level }
+
 func Init(ctx context.Context, dir string) (func(context.Context) error, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, fmt.Errorf("state dir: %w", err)

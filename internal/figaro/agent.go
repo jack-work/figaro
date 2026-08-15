@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -1214,6 +1215,15 @@ func (a *Agent) endTurnDiscarding(reason string) {
 }
 
 func (a *Agent) finishTurn(reason string) {
+	// A FAILED TURN BELONGS IN THE RECORD, not only on the terminal that
+	// happened to be watching. The reason already reaches the client (the
+	// status bar notice and the inline hint); logging it at ERROR puts it
+	// in the durable sink too, so a failure survives the scrollback that
+	// showed it. Found the hard way: a provider rejection was visible for
+	// one frame and absent from logs.jsonl, which held only INFO.
+	if strings.HasPrefix(reason, "error:") {
+		slog.Error("turn failed", "aria", a.id, "reason", strings.TrimSpace(strings.TrimPrefix(reason, "error:")))
+	}
 	// The turn stopped moving. This is the one place the word "seal" means
 	// anything now: every node in the turn is immutable from here, and it is
 	// the moment a persisted UI-IR channel would write it (Phase 4).
