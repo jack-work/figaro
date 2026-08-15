@@ -68,7 +68,19 @@ from the backend, which owns trunks and fork bases. This is phase 3's real work.
 The three benchmarks above at parity, plus a fork-prefix residency test showing
 N branches paying one residency, plus the hazard test below.
 
-### The hazard, per the role bearer
+### Evicted takes no lock
+
+forest fires `Evicted` outside its own locks so a lower layer can clear a fast
+pointer. The inversion is the hazard: a consumer calling `Put` under its write
+lock can have eviction pick one of its own runs, so `Evicted` runs with that
+lock held. Measured, 20/20 runs: it fires under the held lock every time.
+
+So the hook is a pointer swap and nothing else -- which cachedLog can afford,
+because `logView` is already published through an `atomic.Pointer`. Anything
+more publishes a successor view instead. Pinned in `evicted_nolock_test.go`;
+a deadlock fails as a timeout rather than wedging the suite.
+
+### The held-view hazard, per the role bearer
 
 Hollowing a frozen run must publish a NEW view, never edit the one readers
 hold. Editing in place is the study-patch mutation class of bug; a per-LT cache
