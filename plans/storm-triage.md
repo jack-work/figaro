@@ -736,3 +736,32 @@ for this), or better (b) attending a ROLE attends its target-aria --
 the semantic that matches "send @role reaches whoever holds it", and
 which would have put Gluck on 6ec957ee. Either way the autoCreate must
 not fire when the attended id EXISTS but is not a conversation.
+
+### S6 (2026-08-15, live daemon at RSS 1.86 GB): the OPEN turn is unbounded
+
+doctor mem said `ui window resident=9.1 MiB of 16.0` while the heap
+profile put compose.Nodes at 157.7 MB cumulative (44% of live heap).
+Both are true: the turn cache bounds SEALED turns; the profile's mass is
+the OPEN one. pprof -traces names the path:
+
+    driveOneRound -> composeTurn -> projNodes -> compose.Nodes
+
+The producer recomposes the WHOLE streaming region on every frame (it
+reads the turn's messages back from the log; see server.go's baseTurn
+comment). For a long agentic turn -- many tool calls, large outputs --
+that is O(turn size) per frame, live, and nothing bounds it. Four such
+arias reached 157 MB of composed nodes.
+
+Second half of the RSS number: heap inuse 854.7 MiB but sys 2.2 GiB,
+against GOMEMLIMIT 2.0 GiB. The runtime has no reason to return arena
+below its own ceiling, and RSS tracks sys, not inuse.
+
+PRESCRIPTIONS:
+1. NOW, no code: soft_limit_mb 512-1024 in [memory]. Go then collects
+   harder and hands the arena back; expect RSS to track inuse far more
+   closely.
+2. THE FIX: make the live region incremental -- recompose only the
+   nodes past the last frame's boundary instead of the whole region --
+   or bound it the way the sealed section is bounded. This belongs in
+   plans/ui-ir-tree.md's scope: that design bounds sealed turns and
+   assumed the open one was small. It is not.
