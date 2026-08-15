@@ -24,11 +24,12 @@ import (
 // needs none.
 type Projector struct {
 	timings map[string]compose.ToolTiming
+	live    *compose.Incremental
 }
 
 // New returns a Projector that renders tools using the given registry.
 func New(r *tool.Registry) *Projector {
-	return &Projector{}
+	return &Projector{live: compose.NewIncremental()}
 }
 
 // InquirySegments implements figaro.Projector.
@@ -41,10 +42,28 @@ func (p *Projector) Turns(msgs []message.Message) []aria.Turn {
 }
 
 func (p *Projector) Nodes(msgs []message.Message, tails, argPartials map[string]string) []livedoc.Node {
-	return compose.Nodes(msgs, tails, argPartials, p.timings)
+	if p.live == nil {
+		p.live = compose.NewIncremental()
+	}
+	return p.live.Nodes(msgs, tails, argPartials, p.timings)
 }
 
-func (p *Projector) ResetTools() { p.timings = map[string]compose.ToolTiming{} }
+// LiveStats reports the messages the live composer composed and reused since
+// the last ResetTools.
+func (p *Projector) LiveStats() (composed, reused int) {
+	if p.live == nil {
+		return 0, 0
+	}
+	return p.live.Stats()
+}
+
+func (p *Projector) ResetTools() {
+	p.timings = map[string]compose.ToolTiming{}
+	if p.live == nil {
+		p.live = compose.NewIncremental()
+	}
+	p.live.Reset()
+}
 
 // ToolOpened stamps the moment the model began writing a call. First stamp
 // wins: the block opens once, and a re-emitted frame must not restart the
