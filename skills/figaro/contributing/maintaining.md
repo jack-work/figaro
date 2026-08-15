@@ -179,6 +179,29 @@ ran: same failure, and it has cost this project several cycles.
 
 Prove the fixture can fail, then trust what it says.
 
+### An equivalence oracle is not scaffolding
+
+When you replace an implementation with a faster one that must behave
+IDENTICALLY, keep the old one — in the test file, permanently, as the oracle
+the new one is compared against.
+
+The instinct is to keep it "until the test passes, then delete it". That
+spends the corpus on a single moment. An equivalence claim is not a fact about
+the day of the change; it is a fact about every day after, and it stays
+checkable only while both sides are present. Delete the oracle and the corpus
+degrades into a list of hard-coded strings that some later, subtly different
+implementation will also satisfy.
+
+So: `tailBound` scans backwards and returns a substring; `tailBoundSplit`
+still splits and joins, in the test file, and 21 inputs must agree byte for
+byte — no trailing newline, exactly 199/200/201 lines, CRLF, a cut landing on
+the first byte. A companion test runs a deliberately one-line-short clamp
+against that same corpus and asserts the corpus catches it, so the oracle is
+known to be able to fail.
+
+The oracle costs a few dead lines. The alternative costs a rendering that is
+wrong forever, because a composed node is cached and shipped.
+
 ### Name the subject
 
 A fact about a DEPENDENCY and the fact that protects a USER are different
