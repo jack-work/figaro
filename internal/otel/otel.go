@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
+
+	"github.com/jack-work/figaro/internal/logring"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -206,7 +208,24 @@ func Init(ctx context.Context, dir string) (func(context.Context) error, error) 
 	)
 	otellogglobal.SetLoggerProvider(lp)
 	bridge := otelslog.NewHandler(scopeName, otelslog.WithLoggerProvider(lp))
-	slog.SetDefault(slog.New(&leveledHandler{inner: bridge, level: envLogLevel()}))
+	// Retain a bounded tail of what the daemon says, so it can be ASKED
+	// rather than grepped. Records are kept in addition to being exported,
+	// never instead: a ring that suppressed logging would die with the
+	// process, exactly when a crash makes you want it most.
+	//
+	// The default policy is WARN and above, which in normal operation is a
+	// handful of records an hour and costs one integer comparison per log
+	// call. Subsystems opt a specific INFO stream in by message, which is how
+	// a SUCCESSFUL provider round-trip is still there to compare against when
+	// the next one is refused.
+	ring := logring.New(&leveledHandler{inner: bridge, level: envLogLevel()},
+		logring.DefaultCapacity,
+		logring.Any(
+			logring.AtLeast(slog.LevelWarn),
+			logring.WithMessage(retainedMessages...),
+		))
+	setRecent(ring)
+	slog.SetDefault(slog.New(ring))
 
 	metricFile, err := newRotatingWriter(filepath.Join(dir, "metrics.jsonl"), telemetryFileMax)
 	if err != nil {
@@ -365,4 +384,33 @@ func RecordRequestDuration(ctx context.Context, d time.Duration, attrs ...attrib
 		return
 	}
 	requestDuration.Record(ctx, float64(d.Milliseconds()), otelmetric.WithAttributes(attrs...))
+}
+
+// retainedMessages are the slog messages kept in the ring regardless of
+// level. Keep this list SHORT and keep it here: a package that wants its
+// INFO-level stream to survive in memory should have to say so in one central
+// place, so the memory bound stays a decision someone made rather than a thing
+// that accreted.
+var retainedMessages = []string{
+	"provider round-trip",
+}
+
+var (
+	recentMu sync.Mutex
+	recent   *logring.Ring
+)
+
+func setRecent(r *logring.Ring) {
+	recentMu.Lock()
+	recent = r
+	recentMu.Unlock()
+}
+
+// Recent is the process's log ring, or nil before Init (in tests, and in the
+// CLI, which does not install telemetry). Callers must tolerate nil: a
+// diagnostic that panics when diagnostics are off is not a diagnostic.
+func Recent() *logring.Ring {
+	recentMu.Lock()
+	defer recentMu.Unlock()
+	return recent
 }

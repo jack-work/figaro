@@ -177,6 +177,7 @@ func (p *Provider) authorize(req *http.Request) error {
 // Send drives one turn: catch up the translation cache, assemble, POST,
 // stream, and land the assistant message.
 func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
+	ctx = wirelog.WithAria(ctx, in.AriaID)
 	if dir := in.Snapshot.Lookup("system.environment.figaro_wire_dir"); dir != nil && *dir != "" {
 		ctx = wirelog.WithLogging(ctx, in.AriaID, *dir)
 	}

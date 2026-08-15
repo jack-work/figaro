@@ -179,6 +179,7 @@ func (p *Provider) ContextLimit(model string, snapshot form.Snapshot) int {
 
 // Send drives one turn end-to-end.
 func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
+	ctx = wirelog.WithAria(ctx, in.AriaID)
 	if dir := in.Snapshot.Lookup("system.environment.figaro_wire_dir"); dir != nil && *dir != "" {
 		ctx = wirelog.WithLogging(ctx, in.AriaID, *dir)
 	}

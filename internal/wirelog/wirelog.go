@@ -31,7 +31,24 @@ func WithLogging(ctx context.Context, ariaID, dir string) context.Context {
 	if ariaID == "" || dir == "" {
 		return ctx
 	}
-	return context.WithValue(ctx, ctxKey{}, cfg{aria: ariaID, dir: dir})
+	c, _ := cfgFromContext(ctx)
+	c.aria, c.dir = ariaID, dir
+	return context.WithValue(ctx, ctxKey{}, c)
+}
+
+// WithAria attributes this call's round-trips to an aria WITHOUT turning on
+// byte dumps. Attribution and dumping used to be the same switch, which meant
+// the ledger and the span events could only name an aria in the rare case
+// someone had set figaro_wire_dir. Providers should call this on every send:
+// it costs one context value and it is the difference between "some request
+// got a 429" and "94f0752b got a 429".
+func WithAria(ctx context.Context, ariaID string) context.Context {
+	if ariaID == "" {
+		return ctx
+	}
+	c, _ := cfgFromContext(ctx)
+	c.aria = ariaID
+	return context.WithValue(ctx, ctxKey{}, c)
 }
 
 func cfgFromContext(ctx context.Context) (cfg, bool) {
@@ -50,13 +67,13 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		inner = http.DefaultTransport
 	}
 
-	logCfg, doLog := cfgFromContext(req.Context())
+	logCfg, _ := cfgFromContext(req.Context())
 	var (
 		bodyBytes []byte
 		logBase   string // file path without suffix; empty when not logging
 	)
 
-	if doLog {
+	if logCfg.dir != "" && logCfg.aria != "" {
 		dir := filepath.Join(logCfg.dir, sanitize(logCfg.aria))
 		if err := os.MkdirAll(dir, 0o700); err == nil {
 			logBase = filepath.Join(dir, fmt.Sprintf("%d", time.Now().UnixNano()))
@@ -75,10 +92,24 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	start := time.Now()
+	// reqBytes is the size of the request as SENT, which is the number that
+	// explains a slow or refused round-trip. It used to be len(bodyBytes) -
+	// and bodyBytes is only materialized when dumping to disk, so in the
+	// normal case the field was always 0. ContentLength is what the client
+	// set; fall back to the materialized body when it is unknown.
+	reqBytes := req.ContentLength
+	if reqBytes <= 0 {
+		reqBytes = int64(len(bodyBytes))
+	}
+	seq := depart(logCfg.aria, req.Method, req.URL.String(), reqBytes)
+
 	resp, err := inner.RoundTrip(req)
 	duration := time.Since(start)
 
-	emitMeta(req, resp, duration, len(bodyBytes), logBase, err)
+	if f, ok := arrive(seq); ok {
+		logRound(req.Context(), f, resp, duration, err)
+	}
+	emitMeta(req, resp, duration, reqBytes, logBase, err)
 
 	if err != nil || resp == nil {
 		return resp, err
@@ -101,19 +132,28 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
-func emitMeta(req *http.Request, resp *http.Response, duration time.Duration, reqBytes int, logBase string, err error) {
+func emitMeta(req *http.Request, resp *http.Response, duration time.Duration, reqBytes int64, logBase string, err error) {
 	attrs := []attribute.KeyValue{
 		attribute.String("http.method", req.Method),
 		attribute.String("http.url", req.URL.String()),
 		attribute.Int64("http.duration_ms", duration.Milliseconds()),
-		attribute.Int("http.req_bytes", reqBytes),
+		attribute.Int64("http.req_bytes", reqBytes),
+	}
+	if c, ok := cfgFromContext(req.Context()); ok && c.aria != "" {
+		attrs = append(attrs, attribute.String("figaro.aria", c.aria))
 	}
 	if resp != nil {
 		attrs = append(attrs, attribute.Int("http.status_code", resp.StatusCode))
-		if rid := resp.Header.Get("request-id"); rid != "" {
+		if rid := requestID(resp.Header); rid != "" {
 			attrs = append(attrs, attribute.String("http.request_id", rid))
-		} else if rid := resp.Header.Get("x-request-id"); rid != "" {
-			attrs = append(attrs, attribute.String("http.request_id", rid))
+		}
+		// The retry-after is the whole explanation of a stall, so it goes on
+		// the span whether or not anyone honors it.
+		if ra := RetryAfter(resp.Header); ra > 0 {
+			attrs = append(attrs, attribute.Int64("http.retry_after_s", int64(ra/time.Second)))
+		}
+		for k, v := range rateLimitHeaders(resp.Header) {
+			attrs = append(attrs, attribute.String("http.ratelimit."+k, v))
 		}
 	}
 	if err != nil {
