@@ -242,7 +242,60 @@ is not evidence: `TestUIWindowBoundsAResidentAgent`'s harness did a boot
 noise against it, measured with `HeapInuse` — too coarse a ruler for a 2 MiB
 delta. A fixture fault on the wrong axis, not a product one.
 
-## Phase 5 — the open turn (S6, the 157.7 MB)
+## PHASE 3 (REPRIORITIZED) — the open turn (S6). Gluck: "incremental
+## building should be priority 1, no putting that off."
+
+We were bounding and sharing a quantity we should refuse to create. Everything
+else is downstream of this: phase 3 collapsed to a seed, and phase 4's question
+about sharing composed prefixes gets smaller the moment composition stops
+rebuilding what it already has. Phase 4 is re-measured AFTER, against the new
+number.
+
+### The before-number, measured without a daemon
+
+`composeTurn` reads the whole open region and `compose.Nodes` rebuilds every
+node of it on every stream event; `Server.Update` then diffs the result and
+discards everything unchanged. ONE FRAME, by turn size:
+
+| rounds | ns/frame | B/frame | allocs/frame |
+|---|---|---|---|
+| 10 | 50,788 | 165,814 | 129 |
+| 40 | 196,509 | 667,963 | 495 |
+| 160 | 812,512 | 2,681,946 | 1,978 |
+
+4x the rounds costs 3.9-4.1x the frame, in both time and bytes. Linear in turn
+size, per frame, for work already done.
+
+And a whole 40-round turn at 8 frames per round:
+
+    38.6 ms, 152,796,098 B/op, 103,560 allocs
+
+**152.8 MB of allocation for one turn.** The live daemon attributed 157.7 MB to
+`compose.Nodes`; those are different quantities (total allocation here,
+profile attribution there) and the agreement is corroboration rather than
+proof -- but the mechanism is confirmed and it is linear.
+
+### The hazard to pin first
+
+Incremental composition must produce EXACTLY what wholesale composition
+produces, for the same inputs, AT EVERY FRAME -- not only when the turn seals.
+A composer that converges only at seal shows correct transcripts and wrong
+live frames, and live/committed divergence is forbidden by invariant here.
+Same shape as the seam test: drive N frames incrementally, compose the same
+messages wholesale, assert node-for-node equality at every frame.
+
+### What already exists (per the role bearer, who wrote in this code this week)
+
+- the waste is already diffed: `Server.Update` derives `NodeDelta`s against the
+  previous frame, so the information needed to skip the rebuild is information
+  it already computes. livedoc has splice diffing; the wire is delta-shaped
+  end to end. Only the PRODUCER is wholesale.
+- the boundary already exists: `openTurn` carries `from` and `nodes`, and
+  server.go's baseTurn comment explains why the producer recomposes the whole
+  region -- a multi-round turn must reopen at the same boundary. That is a
+  constraint to respect, not to delete.
+
+## Phase 5 as originally numbered (the open turn)
 
 `composeTurn` re-reads `figLog.ReadFrom(turnStart+1, 0)` and recomposes every
 node of the turn on every frame: 157.7 MB, 44% of live heap, while `doctor mem`
