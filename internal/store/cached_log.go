@@ -431,8 +431,21 @@ func newSeededLog[T any](inner Log[T], window, budget, inflation int, sizeOf fun
 		return newWindowedLog(inner, window, budget, inflation, sizeOf)
 	}
 	last := seed[len(seed)-1]
+	// FINGERPRINT, CHECKED IN CODE RATHER THAN PROMISED IN A COMMENT.
+	// A translation cache is keyed by encoder fingerprint and cleared
+	// WHOLESALE on mismatch, so rows rendered for another dialect are a lie
+	// that would outlive the clearing of the durable log. Every donated row
+	// must carry the SAME fingerprint, and that one is then verified against
+	// the log itself by the seam probe below. Fig IR rows carry none, where
+	// this is a comparison of empty strings and costs a pass.
+	for i := range seed {
+		if seed[i].Fingerprint != last.Fingerprint {
+			return newWindowedLog(inner, window, budget, inflation, sizeOf)
+		}
+	}
 	probe := inner.ReadFrom(last.FigaroLT, 1)
 	if len(probe) != 1 || probe[0].FigaroLT != last.FigaroLT ||
+		probe[0].Fingerprint != last.Fingerprint ||
 		!reflect.DeepEqual(probe[0].Payload, last.Payload) {
 		// The seed does not describe this log's history. Decode instead.
 		return newWindowedLog(inner, window, budget, inflation, sizeOf)
