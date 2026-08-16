@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/internal/store"
 )
 
 // Registry holds running figaros and the pid->figaro index (1:1).
@@ -314,4 +316,45 @@ func (r *Registry) BoundPIDCount() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.pidToFigaro)
+}
+
+// TurnDonor offers a newly opened aria the composed turns its nearest LIVE
+// ancestor already holds below the child's fork base.
+//
+// Phase 4, measured by identity: two branches of one trunk compose the same
+// history into separate node structs, and the minted strings are the tool
+// nodes' Input and Output, which dominate by bytes. The agent's splice
+// (internal/figaro/seed_turns.go) refuses any donation it cannot prove is a
+// prefix of its own log, so the worst case here is a wasted lookup.
+//
+// Nil is the common answer and always legal: no ancestry, no live ancestor, or
+// an ancestor that has materialized nothing yet.
+func (a *Angelus) TurnDonor(childID string) []aria.Turn {
+	lb, ok := a.Backend.(store.LineageBackend)
+	if !ok || a.Registry == nil {
+		return nil
+	}
+	refs := lb.Lineage(childID)
+	if len(refs) < 2 {
+		return nil // a root composes its own history; there is nothing above it
+	}
+	base := refs[len(refs)-1].Base
+	if base == 0 {
+		return nil
+	}
+	// Nearest ancestor first: it holds the longest shared prefix.
+	for i := len(refs) - 2; i >= 0; i-- {
+		f := a.Registry.Get(refs[i].Node)
+		if f == nil {
+			continue
+		}
+		donor, ok := f.(interface{ TurnsBelow(uint64) []aria.Turn })
+		if !ok {
+			continue
+		}
+		if turns := donor.TurnsBelow(base); len(turns) > 0 {
+			return turns
+		}
+	}
+	return nil
 }

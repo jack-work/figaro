@@ -47,3 +47,16 @@ func (s *XwalStore) Lineage(id string) []fwforest.Ref {
 	refs[0].Base = 0 // the root owns from the beginning
 	return refs
 }
+
+// Lineage on the backend is the same walk, exposed where a caller that holds a
+// Backend (the angelus) can reach it. It is an OPTIONAL interface, asserted by
+// the caller, so a backend that has no notion of ancestry needs no stub:
+//
+//	type LineageBackend interface{ Lineage(id string) []fwforest.Ref }
+func (b *XwalBackend) Lineage(id string) []fwforest.Ref { return b.store.Lineage(id) }
+
+// LineageBackend is implemented by backends that can name an aria's ancestry.
+// The composed-turn seed asks for it and does nothing when it is absent.
+type LineageBackend interface {
+	Lineage(id string) []fwforest.Ref
+}

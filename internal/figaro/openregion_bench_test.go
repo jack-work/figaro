@@ -135,14 +135,14 @@ func BenchmarkOpenTurnLifetime(b *testing.B) {
 						openRegionRounds(1, round, 200, true)...)
 					for f := 0; f < framesPerRound; f++ {
 						pre, suf, _ := a.composeTurn(nil)
-				nodes := append(append([]livedoc.Node(nil), pre...), suf...)
-				runtime.KeepAlive(nodes)
+						nodes := append(append([]livedoc.Node(nil), pre...), suf...)
+						runtime.KeepAlive(nodes)
 					}
 					log.rows = append(log.rows[:1],
 						openRegionRounds(1, round, 200, false)...)
 					pre, suf, _ := a.composeTurn(nil)
-				nodes := append(append([]livedoc.Node(nil), pre...), suf...)
-				runtime.KeepAlive(nodes)
+					nodes := append(append([]livedoc.Node(nil), pre...), suf...)
+					runtime.KeepAlive(nodes)
 				}
 			}
 		})

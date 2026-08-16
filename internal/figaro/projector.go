@@ -98,6 +98,23 @@ func (a *Agent) attachFormDeltas(turns []aria.Turn, entries []store.Entry[messag
 	return turns
 }
 
+// attachFormDeltasFrom is attachFormDeltas for a SUFFIX of the entries: the
+// per-record form cursor is seeded from the record before the suffix, exactly
+// as turnSource does for a recomposed bracket. Without the seed the spliced
+// turns would carry different deltas from the wholesale ones, which the
+// equivalence oracle in seed_turns_test.go would catch.
+func (a *Agent) attachFormDeltasFrom(turns []aria.Turn, entries []store.Entry[message.Message], at int) {
+	fb, ok := a.backend.(formdelta.Backend)
+	if !ok || len(turns) == 0 || at >= len(entries) {
+		return
+	}
+	seed := formdelta.Seed{}
+	if at > 0 {
+		seed = formdelta.SeedFrom(entries[at-1])
+	}
+	formdelta.Attach(turns, formdelta.PerRecordFrom(fb, a.id, seed, entries[at:]))
+}
+
 // materializeTurns is the one walk behind every sealed-turn
 // materialization: read the log once, compose, attach the form deltas.
 func (a *Agent) materializeTurns() []aria.Turn {
@@ -105,7 +122,7 @@ func (a *Agent) materializeTurns() []aria.Turn {
 		return nil
 	}
 	entries := a.figLog.Read()
-	return a.attachFormDeltas(a.projTurns(unwrapMessages(entries)), entries)
+	return a.composeSealedTurns(entries)
 }
 
 // turnSource is the agent's half of the turn cache's recompose-on-miss:

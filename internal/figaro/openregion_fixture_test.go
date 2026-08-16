@@ -19,7 +19,7 @@ func TestOpenRegionFixtureComposesToolNodes(t *testing.T) {
 	const rounds = 4
 	a := openRegionAgent(rounds, 200, false)
 	pre, suf, _ := a.composeTurn(nil)
-				nodes := append(append([]livedoc.Node(nil), pre...), suf...)
+	nodes := append(append([]livedoc.Node(nil), pre...), suf...)
 
 	var prose, tools, withOutput int
 	for _, n := range nodes {
