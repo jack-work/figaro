@@ -157,23 +157,38 @@ func (k memoKey) matches(m message.Message) bool {
 // an approximation: with every invoke's result inside the prefix, composing
 // the prefix and the remainder separately and concatenating them is the same
 // walk Nodes would make over the whole region.
+//
+// Invokes are matched to results BY ID, not counted. Counting says "as many
+// results as invokes have gone by", which a duplicate result for one call, or
+// a result belonging to a region that started earlier, can satisfy while the
+// call that is actually streaming has none -- and that call's node renders
+// from `partials`, which the memo key cannot see. Matching costs a linear scan
+// over the handful of calls a region has open at once, from a stack-backed
+// slice, and allocates nothing: a map per question is the pattern this
+// campaign spent four days deleting one layer down.
 func stableBoundary(msgs []message.Message) int {
 	if len(msgs) < 2 {
 		return 0
 	}
-	stable, open := 0, 0
+	var buf [8]string // the open calls; a region holds a handful, never many
+	open := buf[:0]
+	stable := 0
 	for i, m := range msgs[:len(msgs)-1] {
 		for _, c := range m.Content {
 			switch c.Type {
 			case message.ContentToolInvoke:
-				open++
+				open = append(open, c.ToolCallID)
 			case message.ContentToolResult:
-				if open > 0 {
-					open--
+				// A result for a call this region never opened closes nothing.
+				for j := range open {
+					if open[j] == c.ToolCallID {
+						open = append(open[:j], open[j+1:]...)
+						break
+					}
 				}
 			}
 		}
-		if open == 0 {
+		if len(open) == 0 {
 			stable = i + 1
 		}
 	}
