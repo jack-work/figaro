@@ -209,6 +209,13 @@ type Agent struct {
 
 	// ariaSrv materializes turn-shaped UI IR plus the newest mutable suffix. It
 	// is the single source of both figaro.aria pushes and figaro.read pulls.
+	// regionMsgs is the open turn's decoded messages, held across frames; see
+	// regionMessages. regionStart is the turnStartLT it belongs to and
+	// regionLast the highest LT folded into it.
+	regionMsgs  []message.Message
+	regionStart uint64
+	regionLast  uint64
+
 	ariaSrv *aria.Server
 	// turnDonor is Config.TurnDonor; see materializeTurns.
 	turnDonor func(childID string) []aria.Turn

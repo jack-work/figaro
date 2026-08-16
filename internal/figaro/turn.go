@@ -1428,13 +1428,7 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 // since the user prompt, plus the in-flight assistant message (nil once
 // it has appended into the log).
 func (a *Agent) composeTurn(inflight *message.Message) (prefix, suffix []livedoc.Node, stable int) {
-	entries := a.figLog.ReadFrom(a.turnStartLT+1, 0)
-	var msgs []message.Message
-	for _, e := range entries {
-		m := e.Payload
-		m.LogicalTime = e.LT
-		msgs = append(msgs, m)
-	}
+	msgs := a.regionMessages()
 	if inflight != nil {
 		// The provider appends the assistant message into the log concurrently
 		// with the drain loop's tail of buffered stream events. Once the appended
@@ -1443,7 +1437,7 @@ func (a *Agent) composeTurn(inflight *message.Message) (prefix, suffix []livedoc
 		// the message twice (under a bumped provisional LT, so the aria server
 		// folds it as a brand-new node set: the classic duplicated-thinking
 		// frame). The durable copy wins.
-		if n := len(entries); n > 0 && entries[n-1].Payload.Role == message.RoleOutput {
+		if n := len(msgs); n > 0 && msgs[n-1].Role == message.RoleOutput {
 			inflight = nil
 		}
 	}
@@ -1458,8 +1452,8 @@ func (a *Agent) composeTurn(inflight *message.Message) (prefix, suffix []livedoc
 		// the re-id as a second copy of the whole message.
 		m := *inflight
 		m.LogicalTime = a.turnStartLT + 1
-		if n := len(entries); n > 0 {
-			m.LogicalTime = entries[n-1].LT + 1
+		if n := len(msgs); n > 0 {
+			m.LogicalTime = msgs[n-1].LogicalTime + 1
 		}
 		msgs = append(msgs, m)
 	}
@@ -1734,4 +1728,41 @@ func statusOf(err error) string {
 		return "failure"
 	}
 	return "success"
+}
+
+// regionMessages is the open turn's messages, HELD across frames and extended
+// by whatever the log appended since the last one.
+//
+// Measured before it was written: re-reading the region was 45,696 B of a
+// 71,734 B frame at 64 rounds -- 64% of the frame's bytes and ~30% of its
+// time -- to re-copy 128 messages of which at most two are new. ReadFrom
+// copies the entries and the loop copies them again; this pays both once per
+// APPEND rather than once per frame.
+//
+// THE RETURNED SLICE IS CAPPED AT ITS LENGTH. composeTurn appends the
+// in-flight message to it, and an append with spare capacity would land inside
+// this memo's array, editing a slice an earlier frame may still be read
+// through: the held-view law, pinned twice in internal/store, broken one
+// package over. region_memo_test.go asks that as a capacity question, because
+// no comparison of contents can see it.
+//
+// Called only from the turn goroutine, like a.argPartials beside it.
+func (a *Agent) regionMessages() []message.Message {
+	if a.regionStart != a.turnStartLT {
+		// A new turn is a new region. A memo carried across the boundary would
+		// serve the previous turn's messages under this turn's LTs.
+		a.regionStart, a.regionMsgs, a.regionLast = a.turnStartLT, nil, 0
+	}
+	from := a.turnStartLT + 1
+	if a.regionLast >= from {
+		from = a.regionLast + 1
+	}
+	for _, e := range a.figLog.ReadFrom(from, 0) {
+		m := e.Payload
+		m.LogicalTime = e.LT
+		a.regionMsgs = append(a.regionMsgs, m)
+		a.regionLast = e.LT
+	}
+	n := len(a.regionMsgs)
+	return a.regionMsgs[:n:n]
 }
