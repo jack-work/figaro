@@ -61,24 +61,42 @@ func forkedPair(t *testing.T) (b *XwalBackend, parent, childA, childB string) {
 	return b, parent, childA, childB
 }
 
-// The duplication, established by identity: opening a fork decodes the shared
-// prefix AGAIN, minting strings the parent already holds.
-func TestOpeningAForkDuplicatesTheDecodedPrefix(t *testing.T) {
-	b, parent, childA, childB := forkedPair(t)
-	defer b.Close()
+// THE DUPLICATION THIS MEASURED IS NOW FIXED for the case that matters: with
+// the ancestor resident, opening a fork seeds from it and shares every string
+// (seed_test.go, 296 of 296). What remains, and what this test now measures,
+// is the COLD case: a process that opens a fork with no ancestor resident has
+// nothing to seed from and decodes, exactly as before.
+//
+// Keeping it in the minting direction matters. It is the canary for the
+// identity meter used to prove the fix: a meter that can only ever report
+// "shared" would report it whether or not seeding happened.
+func TestOpeningAForkWithoutAResidentAncestorDecodesItsOwnCopy(t *testing.T) {
+	b, parent, childA, _ := forkedPair(t)
+	dir := b.root
+	b.Close()
 
-	pIR, _ := b.Open(parent)
-	aIR, _ := b.Open(childA)
-	bIR, _ := b.Open(childB)
-
+	// SEQUENTIALLY, because a store admits one writer: read the parent, close
+	// it, then open the child in a fresh backend. That is exactly a cold open
+	// -- a process that holds nothing of the ancestor.
+	b1, err := NewXwalBackend(dir, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pIR, _ := b1.Open(parent)
 	p := pIR.Read()
+	b1.Close()
+
+	b2, err := NewXwalBackend(dir, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b2.Close()
+	aIR, _ := b2.Open(childA)
 	a := aIR.Read()
-	c := bIR.Read()
-	if len(p) == 0 || len(a) == 0 || len(c) == 0 {
+	if len(p) == 0 || len(a) == 0 {
 		t.Fatal("a log read nothing; the fixture cannot show duplication")
 	}
 
-	// Pick a record all three share (well below the fork point).
 	const shared = 50
 	find := func(rows []Entry[message.Message]) (Entry[message.Message], bool) {
 		for _, e := range rows {
@@ -90,27 +108,21 @@ func TestOpeningAForkDuplicatesTheDecodedPrefix(t *testing.T) {
 	}
 	pe, ok1 := find(p)
 	ae, ok2 := find(a)
-	be, ok3 := find(c)
-	if !ok1 || !ok2 || !ok3 {
-		t.Skipf("LT %d not resident in all three (%v %v %v)", shared, ok1, ok2, ok3)
+	if !ok1 || !ok2 {
+		t.Skipf("LT %d not resident in both (%v %v)", shared, ok1, ok2)
 	}
-
-	pt, at, bt := textOf(pe), textOf(ae), textOf(be)
+	pt, at := textOf(pe), textOf(ae)
 	if pt == "" {
 		t.Fatal("the chosen record carries no text; the fixture cannot compare identity")
 	}
-	if pt != at || pt != bt {
-		t.Fatalf("the three disagree on the record's CONTENT, which is a different bug")
+	if pt != at {
+		t.Fatalf("the two disagree on the record's CONTENT, which is a different bug")
 	}
-
-	dupA := !sameBytes(pt, at)
-	dupB := !sameBytes(pt, bt)
-	t.Logf("shared record LT %d: childA duplicated=%v, childB duplicated=%v", shared, dupA, dupB)
-
-	if !dupA && !dupB {
-		t.Fatal("no duplication: the forks already share the parent's strings, and " +
-			"the decoded layer needs no sharing mechanism at all")
+	if sameBytes(pt, at) {
+		t.Fatal("a cold open shared the ancestor's bytes, which no mechanism in this " +
+			"process can do: the identity meter is reporting sharing it cannot have seen")
 	}
+	t.Logf("cold open of a fork: LT %d decoded a second copy, as expected", shared)
 }
 
 // And the claim seeding rests on: a shallow copy shares the payload strings,

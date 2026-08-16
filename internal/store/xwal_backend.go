@@ -182,9 +182,10 @@ func (b *XwalBackend) handleLocked(id string) (*ariaHandle, error) {
 	}
 	_ = xw.Close()
 	h := &ariaHandle{
-		ir: newWindowedLog[message.Message](
+		ir: newSeededLog[message.Message](
 			newXwalLog[message.Message](b.store, id, chanIR, true),
-			b.irWindow, b.irBudget, irDecodeInflation, irEntrySize),
+			b.irWindow, b.irBudget, irDecodeInflation, irEntrySize,
+			b.seedRowsLocked(id)),
 		trans: map[string]*cachedLog[[]json.RawMessage]{},
 	}
 	b.open[id] = h
@@ -1211,4 +1212,38 @@ func (b *XwalBackend) wroteTo(ariaID string, at int64) {
 // SetObservedForms delegates the observed set: see XwalStore.
 func (b *XwalBackend) SetObservedForms(ariaID string, formIDs []string) {
 	b.store.SetObservedForms(ariaID, formIDs)
+}
+
+// seedRowsLocked offers a newly opened aria the resident prefix its nearest
+// OPEN ancestor already decoded. Caller holds b.mu.
+//
+// Phase 3's measurement: two forks of one trunk decode the shared prefix
+// separately and mint strings the parent holds, proven by pointer identity.
+// The ancestor's rows below the child's fork base ARE that prefix, and a
+// shallow copy shares them. Nothing is retained here that the ancestor was not
+// already retaining -- the child holds slice headers onto the same strings --
+// so this shares residency rather than adding it.
+//
+// Nil is always a legal answer: no lineage, no open ancestor, or an ancestor
+// whose window no longer reaches the base. The caller then decodes, as before.
+func (b *XwalBackend) seedRowsLocked(id string) []Entry[message.Message] {
+	refs := b.store.Lineage(id)
+	if len(refs) < 2 {
+		return nil // a root owns everything; there is no donated prefix
+	}
+	base := refs[len(refs)-1].Base
+	if base == 0 {
+		return nil
+	}
+	// Nearest ancestor first: it holds the longest shared prefix.
+	for i := len(refs) - 2; i >= 0; i-- {
+		h := b.open[refs[i].Node]
+		if h == nil || h.ir == nil {
+			continue
+		}
+		if rows := h.ir.residentBelow(base); len(rows) > 0 {
+			return rows
+		}
+	}
+	return nil
 }
