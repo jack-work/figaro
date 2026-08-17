@@ -1022,6 +1022,26 @@ type ProviderLedgerResponse struct {
 	// Retained is how many rows the ring holds at all, so a caller can tell
 	// "nothing happened" from "it happened before we started remembering".
 	Retained int `json:"retained"`
+	// Sessions are the daemon's derived credentials (Copilot session tokens
+	// and anything else exchanged from a durable secret), one row per
+	// credential rather than per aria. Bindings counts the token sources
+	// sharing a row: it is how an operator SEES that eight arias cost one
+	// exchange, and how a regression back to per-aria caching would show up
+	// as eight.
+	Sessions []SessionCredential `json:"sessions,omitempty"`
+}
+
+// SessionCredential describes one cached session token without carrying it.
+// Fingerprint is a truncated hash: enough to prove two arias hold the same
+// token, useless for presenting it anywhere.
+type SessionCredential struct {
+	Key            string `json:"key"`
+	Fingerprint    string `json:"fingerprint,omitempty"`
+	ExpiresAtMS    int64  `json:"expires_at_ms,omitempty"`
+	Exchanges      int    `json:"exchanges"`
+	Bindings       int    `json:"bindings"`
+	LastExchangeMS int64  `json:"last_exchange_ms,omitempty"`
+	Endpoint       string `json:"endpoint,omitempty"`
 }
 
 // ProviderRound is one provider HTTP round-trip as the daemon's transport saw

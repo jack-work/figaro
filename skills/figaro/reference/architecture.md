@@ -450,6 +450,52 @@ provider while the board said otherwise.
   has not seen. That makes the cache-miss encoder load-bearing: it must drop
   unsigned thinking blocks (both the SDK and raw Anthropic encoders do).
 
+### Credentials are per-CREDENTIAL, not per-aria: `internal/auth`
+
+A provider instance is per-aria, so anything cached on one is cached N times.
+That is fine for a wire projection and wrong for a credential.
+
+Two layers, and they are not the same thing:
+
+- **The durable secret** (API key, OAuth refresh/access token) lives in hush,
+  outside figaro entirely. Refresh is the hush agent's job, so every aria and
+  every figaro process already shares one copy: `auth.OAuth` only fetches the
+  current value and forces a refresh on `Invalidate`.
+- **A session token** is derived from the durable one by an exchange the
+  provider performs: GitHub access token → Copilot session token, minutes
+  long, carrying its own API endpoint. This one used to be cached on the
+  provider instance, i.e. once per aria. Eight arias meant eight exchanges
+  against `api.github.com/copilot_internal/v2/token`, eight expiries on eight
+  clocks, and a stampede whenever they aged out together. GitHub answers a
+  burst with 403 and an HTML error page, which the CLI then flattened into
+  "No provider connected" — a login prompt for a credential that was present
+  and valid the whole time.
+
+`auth.SessionCache` (`internal/auth/session.go`) holds derived credentials
+keyed by credential identity — for Copilot, `copilot|<domain>|<mode>`, which
+names everything that changes WHICH token comes back and nothing about who is
+asking. `auth.Sessions` is the process-wide instance; one angelus, one set of
+credentials, one session token each.
+
+- **Single flight.** Concurrent misses on a key collapse into one exchange;
+  the losers re-check the cache and take the winner's token.
+- **The durable secret is read INSIDE the exchange**, so a cache hit costs no
+  keystore round-trip and a miss reads the freshest credential.
+- **Invalidation is shared, and that is correct**: a revoked credential is
+  revoked for every aria, and one exchange heals all of them. It is guarded by
+  token identity so a straggler 401 from a request that departed before a
+  refresh cannot evict the good token everyone else is holding.
+- **Sharing is observable.** `figaro doctor provider` prints one row per
+  session credential with a truncated hash of the token, the exchange count,
+  and `shared by` — the number of token sources bound to it. Two arias on one
+  Copilot credential read `1 exchange / shared by 2`. A regression to
+  per-aria caching reads `2 / 2`, which is the number that would have named
+  the original bug.
+- **A failed exchange is not a missing credential.** `authFailureHint`
+  (`internal/cli/provider.go`) keeps them apart: no credential at all gets the
+  connect-a-provider menu; a failed derivation keeps the provider's own status
+  code and says to retry.
+
 ## Tools: bash & backgrounding
 
 The bash tool (`internal/tool/bash.go`, `exec_local.go`) runs each command via

@@ -1478,7 +1478,7 @@ flow writes both through the daemon, so a client never has to know the path.`,
 	r.Register(&cmdkit.Command{
 		Name:  "doctor",
 		Group: "System",
-		Short: "Store and provider health: gc removes dead channels; schema reports channel versions; mem reports the daemon's footprint; provider shows recent provider round-trips (including in-flight); librettos recounts derived-form observers; skills lists what the binary ships",
+		Short: "Store and provider health: gc removes dead channels; schema reports channel versions; mem reports the daemon's footprint; provider shows recent provider round-trips (including in-flight) plus the session credentials the daemon holds and how many arias share each; librettos recounts derived-form observers; skills lists what the binary ships",
 		Usage: "doctor <gc [--dry-run] | schema | term | mem [-j] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | skills [-j]>",
 		Flags: []cmdkit.FlagDef{
 			{Long: "dry-run", Short: "n", IsBool: true, Description: "Report what would be removed without touching the store"},

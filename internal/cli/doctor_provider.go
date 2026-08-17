@@ -62,6 +62,7 @@ func runDoctorProvider(ariaID, count string, asJSON bool) error {
 		} else {
 			fmt.Printf("no round-trips for that filter (%d retained overall)\n", resp.Retained)
 		}
+		printSessions(resp.Sessions)
 		return nil
 	}
 
@@ -97,7 +98,43 @@ func runDoctorProvider(ariaID, count string, asJSON bool) error {
 	}
 
 	summarizeProviderTrouble(resp.Rounds)
+	printSessions(resp.Sessions)
 	return nil
+}
+
+// printSessions shows the derived credentials the daemon holds: one row per
+// CREDENTIAL, with the number of token sources sharing it.
+//
+// The row exists because sharing was previously unobservable. Copilot
+// session tokens were cached on the provider instance, and provider
+// instances are per-aria, so every conversation exchanged its own token
+// against api.github.com and nothing in figaro said so - until GitHub
+// answered a burst with 403 and figaro rendered that as "no provider
+// connected". "bindings" is the number that would have named the bug:
+// bindings climbing with arias while exchanges stays at 1 is the fix
+// working.
+func printSessions(sessions []rpc.SessionCredential) {
+	if len(sessions) == 0 {
+		return
+	}
+	fmt.Println()
+	fmt.Printf("%-28s %-14s %-9s %-9s %s\n", "session credential", "fingerprint", "exchanges", "shared by", "expires")
+	for _, s := range sessions {
+		fp := s.Fingerprint
+		if fp == "" {
+			fp = "(none)"
+		}
+		exp := "-"
+		if s.ExpiresAtMS > 0 {
+			exp = time.UnixMilli(s.ExpiresAtMS).Format("15:04:05")
+			if left := time.Until(time.UnixMilli(s.ExpiresAtMS)); left > 0 {
+				exp += fmt.Sprintf(" (%s left)", left.Round(time.Second))
+			} else {
+				exp += " (stale)"
+			}
+		}
+		fmt.Printf("%-28s %-14s %-9d %-9d %s\n", s.Key, fp, s.Exchanges, s.Bindings, exp)
+	}
 }
 
 // summarizeProviderTrouble names the diagnosis rather than leaving it in the

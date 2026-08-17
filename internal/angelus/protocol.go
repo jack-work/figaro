@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
@@ -1844,7 +1845,32 @@ func (h *handlers) providerLedger(ctx context.Context, params json.RawMessage) (
 	if req.Limit > 0 && len(out) > req.Limit {
 		out = out[len(out)-req.Limit:]
 	}
-	return rpc.ProviderLedgerResponse{Rounds: out, Retained: retained}, nil
+	return rpc.ProviderLedgerResponse{Rounds: out, Retained: retained, Sessions: sessionCredentials()}, nil
+}
+
+// sessionCredentials reports the daemon's derived credentials. It reads the
+// process-wide cache directly: these are live in-memory facts, not log
+// history, and there is exactly one cache per daemon by design.
+func sessionCredentials() []rpc.SessionCredential {
+	infos := auth.Sessions.Snapshot()
+	out := make([]rpc.SessionCredential, 0, len(infos))
+	for _, s := range infos {
+		row := rpc.SessionCredential{
+			Key:         s.Key,
+			Fingerprint: s.Fingerprint,
+			Exchanges:   s.Exchanges,
+			Bindings:    s.Bindings,
+			Endpoint:    s.Endpoint,
+		}
+		if !s.ExpiresAt.IsZero() {
+			row.ExpiresAtMS = s.ExpiresAt.UnixMilli()
+		}
+		if !s.LastExchange.IsZero() {
+			row.LastExchangeMS = s.LastExchange.UnixMilli()
+		}
+		out = append(out, row)
+	}
+	return out
 }
 
 // roundFromLog reads back what wirelog wrote. The attribute names are the
