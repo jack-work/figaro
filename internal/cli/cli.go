@@ -319,13 +319,8 @@ aria (creating one if this shell has no binding): or, inside an aria's
 own bash tool, the aria itself (FIGARO_ARIA). With --id, targets
 the named aria, which must already exist (aria ids are system-minted).
 
-Persistence (--ephemeral) and formatting (--raw) are orthogonal.
-
 Flags:
   --id <id>      Target a specific existing aria
-  -e, --ephemeral
-                 Spin a one-shot in-memory aria; kill it on completion.
-                 Contradicts --id. Says nothing about formatting.
   -O, --outfit <spec>
                  Dress the aria in an outfit. On an aria THIS CALL creates it
                  is the birth outfit; on one that already exists it is folded
@@ -372,10 +367,8 @@ Keys while streaming:
   figaro send -- <prompt>              prompt the pid-bound aria, rich
   figaro send --id myid -- <prompt>    prompt a named aria (rich)
   figaro send -r -- <prompt>           bound aria, raw stream
-  figaro send -e -- <prompt>           ephemeral, rich
-  figaro send -er -- <prompt>          ephemeral + raw
-  figaro send -ex -y -- <instruction>  ephemeral exec, no confirmation
-  figaro send -O sonn5 -er -- <p>      ephemeral aria on a named outfit, raw
+  figaro send -x -y -- <instruction>   exec, no confirmation
+  figaro send -O sonn5 -r -- <p>       named outfit, raw
   figaro send -O focus --id x -- <p>   fold focus onto x, then ask
   figaro send -f --id myid -- <prompt> fire-and-forget; do not stream
   figaro send -- <nudge>               sent mid-turn, this steers that turn
@@ -1003,7 +996,7 @@ With a prompt: ` + "`figaro fork [flags] -- <prompt>`" + `: it also sends, the w
                  fold lands on the new branch's form before anything is
                  said to it, so the first turn is answered wearing it. Legal
                  with or without a prompt. See ` + "`figaro help outfits`" + `.
-  -e/--ephemeral is rejected: a fork mints a persistent branch.`,
+`,
 		PassRaw: true,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria id (defaults to this shell's); :<turn> for an interior fork"},

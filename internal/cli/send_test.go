@@ -51,33 +51,15 @@ func TestExtractSendFlags(t *testing.T) {
 			wantRest: []string{"--", "hi"},
 		},
 		{
-			name:     "ephemeral long",
-			in:       []string{"--ephemeral", "--", "p"},
-			wantOpts: sendOpts{ephemeral: true},
-			wantRest: []string{"--", "p"},
-		},
-		{
-			name:     "ephemeral short",
-			in:       []string{"-e", "--", "p"},
-			wantOpts: sendOpts{ephemeral: true},
-			wantRest: []string{"--", "p"},
-		},
-		{
 			name:     "exec short",
 			in:       []string{"-x", "--", "p"},
 			wantOpts: sendOpts{exec: true},
 			wantRest: []string{"--", "p"},
 		},
 		{
-			name:     "bundled ex",
-			in:       []string{"-ex", "--", "p"},
-			wantOpts: sendOpts{ephemeral: true, exec: true},
-			wantRest: []string{"--", "p"},
-		},
-		{
-			name:     "bundled er",
-			in:       []string{"-er", "--", "p"},
-			wantOpts: sendOpts{ephemeral: true, raw: true},
+			name:     "bundled xr",
+			in:       []string{"-xr", "--", "p"},
+			wantOpts: sendOpts{exec: true, raw: true},
 			wantRest: []string{"--", "p"},
 		},
 		{
@@ -93,9 +75,9 @@ func TestExtractSendFlags(t *testing.T) {
 			wantRest: []string{"--", "p"},
 		},
 		{
-			name:     "bundled exy",
-			in:       []string{"-exy", "--", "p"},
-			wantOpts: sendOpts{ephemeral: true, exec: true, skipYes: true},
+			name:     "bundled xy",
+			in:       []string{"-xy", "--", "p"},
+			wantOpts: sendOpts{exec: true, skipYes: true},
 			wantRest: []string{"--", "p"},
 		},
 		{
@@ -160,7 +142,7 @@ func TestExtractSendFlags(t *testing.T) {
 		},
 		{
 			name:    "no -- boundary",
-			in:      []string{"-e", "hello"},
+			in:      []string{"-r", "hello"},
 			wantErr: "the prompt must follow `--`",
 		},
 		{
@@ -202,8 +184,8 @@ func TestExtractSendFlags(t *testing.T) {
 		},
 		{
 			name:     "flags ignored after --",
-			in:       []string{"-e", "--", "-x", "should", "be", "prompt"},
-			wantOpts: sendOpts{ephemeral: true},
+			in:       []string{"-r", "--", "-x", "should", "be", "prompt"},
+			wantOpts: sendOpts{raw: true},
 			wantRest: []string{"--", "-x", "should", "be", "prompt"},
 		},
 	}
@@ -359,10 +341,10 @@ func TestBundleExpansionFollowsTheFlagTable(t *testing.T) {
 			continue
 		}
 		t.Run("-"+f.Short+" gangs", func(t *testing.T) {
-			// Pair it with -e (or -r, if this IS -e) and require both to land.
-			partner := "e"
-			if f.Short == "e" {
-				partner = "r"
+			// Pair it with -r (or -v, if this IS -r) and require both to land.
+			partner := "r"
+			if f.Short == "r" {
+				partner = "v"
 			}
 			opts, _, err := extractSendFlags([]string{"-" + f.Short + partner, "--", "p"})
 			if err != nil {
@@ -380,8 +362,6 @@ func TestBundleExpansionFollowsTheFlagTable(t *testing.T) {
 
 func flagIsSet(o sendOpts, short string) bool {
 	switch short {
-	case "e":
-		return o.ephemeral
 	case "r":
 		return o.raw
 	case "v":

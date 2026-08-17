@@ -29,7 +29,7 @@ import (
 type Angelus struct {
 	Registry   *Registry
 	Handlers   map[string]jkrpc.HandlerFunc // set before Run()
-	Backend    store.Backend                // aria persistence (nil = ephemeral-only)
+	Backend    store.Backend                // aria persistence
 	SocketPath string
 	RuntimeDir string
 	StartedAt  time.Time
@@ -82,7 +82,7 @@ type Angelus struct {
 // Config holds the settings for creating an Angelus.
 type Config struct {
 	RuntimeDir string         // e.g. $XDG_RUNTIME_DIR/figaro
-	Backend    store.Backend  // aria persistence (nil = ephemeral-only)
+	Backend    store.Backend  // aria persistence
 	Settings   *config.Loaded // reclamation policy; nil = defaults
 }
 
@@ -358,7 +358,7 @@ const (
 )
 
 // idleEvictor is the backend's half of the contract. Kept as an interface
-// rather than added to store.Backend so an ephemeral or test backend does
+// rather than added to store.Backend so a test backend does
 // not have to implement a cache policy it does not have.
 type idleEvictor interface {
 	EvictIdle(live map[string]bool, idle time.Duration) int
@@ -538,7 +538,7 @@ func (a *Angelus) irBudget() int {
 }
 
 // residentTrimmer is the backend's half of the windowing contract, an optional
-// interface for the same reason idleEvictor is one: a test or ephemeral
+// interface for the same reason idleEvictor is one: a test
 // backend has no window to trim.
 type residentTrimmer interface {
 	TrimResident(live map[string]bool, keep int) int

@@ -14,7 +14,6 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/internal/authz"
@@ -373,7 +372,7 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 	defer span.End()
 
 	if h.angelus.Backend == nil {
-		return nil, fmt.Errorf("form.create: no backend (ephemeral angelus)")
+		return nil, fmt.Errorf("form.create: no backend")
 	}
 	var req rpc.FormCreateRequest
 	if err := json.Unmarshal(params, &req); err != nil {
@@ -418,7 +417,7 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 	defer span.End()
 
 	if h.angelus.Backend == nil {
-		return nil, fmt.Errorf("form.bind: no backend (ephemeral angelus)")
+		return nil, fmt.Errorf("form.bind: no backend")
 	}
 	var req rpc.FormBindRequest
 	if err := json.Unmarshal(params, &req); err != nil {
@@ -540,7 +539,7 @@ func (h *handlers) outfitReload(ctx context.Context, params json.RawMessage) (in
 		ofit.Reload()
 	}
 	if h.angelus.Backend == nil {
-		return nil, fmt.Errorf("outfit.reload: no backend (ephemeral angelus)")
+		return nil, fmt.Errorf("outfit.reload: no backend")
 	}
 	rec, err := h.angelus.Backend.LoadDefaultForm()
 	if err != nil {
@@ -660,29 +659,17 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 
 	cwd, _ := os.Getwd()
 
-	// Ephemeral: in-memory only, no tree.
 	backend := h.angelus.Backend
-	if req.Ephemeral {
-		backend = nil
+	if backend == nil {
+		return nil, errors.New("create: no backend")
 	}
 
 	// The form channel is the durable truth; cbState is the
-	// in-memory hot view (no the form channel). System mints all ids.
+	// in-memory hot view. System mints all ids.
 	cbState, _ := form.Open("")
 	var id string
-	var inlineBoot *form.Patch
 
-	if backend == nil {
-		// Ephemeral: no channel. Seed state with the full outfit +
-		// runtime fill-ins, and fold the same patch on the first message so
-		// reminders render.
-		id = uuid.New().String()[:8]
-		boot := bootPatchEphemeral(base, "", cwd) // id filled below
-		boot = withAriaID(boot, id)
-		cbState.Apply(boot)
-		bp := boot
-		inlineBoot = &bp
-	} else {
+	{
 		// Ensure the DEFAULT FORM (stumps are legacy), then fork it: `fig
 		// new` is bind-the-default-form, and this reuse is what shares one
 		// rendered prefix, and one warm provider cache, across every
@@ -723,7 +710,6 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		Projector:       uiir.New(reg),
 		Backend:         backend,
 		Form:            cbState,
-		InlineBoot:      inlineBoot,
 		Settings:        loaded,
 		UIBudget:        h.angelus.UIWindow,
 	})
@@ -819,7 +805,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		return nil, err
 	}
 	if h.angelus.Backend == nil {
-		return nil, errors.New("fork: no backend (ephemeral angelus)")
+		return nil, errors.New("fork: no backend")
 	}
 	var cont, alt string
 	note := ""
@@ -1051,7 +1037,7 @@ func (h *handlers) gc(ctx context.Context, params json.RawMessage) (interface{},
 		}
 	}
 	if h.angelus.Backend == nil {
-		return nil, errors.New("gc: no backend (ephemeral angelus)")
+		return nil, errors.New("gc: no backend")
 	}
 
 	nodes := h.angelus.Backend.Nodes()
@@ -1097,7 +1083,7 @@ func (h *handlers) normalize(ctx context.Context, params json.RawMessage) (inter
 		return nil, err
 	}
 	if h.angelus.Backend == nil {
-		return nil, errors.New("normalize: no backend (ephemeral angelus)")
+		return nil, errors.New("normalize: no backend")
 	}
 	if req.Segments {
 		return nil, errors.New("normalize: --segments is not implemented yet")
@@ -1133,7 +1119,7 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 		return nil, err
 	}
 	if h.angelus.Backend == nil {
-		return nil, errors.New("import: no backend (ephemeral angelus)")
+		return nil, errors.New("import: no backend")
 	}
 	if req.Outfit == "" {
 		return nil, errors.New("import: no outfit named")
@@ -1223,7 +1209,7 @@ func (h *handlers) promote(ctx context.Context, params json.RawMessage) (interfa
 		return nil, err
 	}
 	if h.angelus.Backend == nil {
-		return nil, errors.New("promote: no backend (ephemeral angelus)")
+		return nil, errors.New("promote: no backend")
 	}
 	climbed, err := h.angelus.Backend.Promote(req.FigaroID, req.Levels)
 	if errors.Is(err, store.ErrNoTrunkCapability) {
@@ -1338,24 +1324,6 @@ func runtimeFillins(ariaID, cwd string) form.Patch {
 // reached a board: the birth patch was materialized, this copy was not.
 func convBootPatch(ariaID, cwd string) form.Patch {
 	return runtimeFillins(ariaID, cwd)
-}
-
-// bootPatchEphemeral is the ephemeral boot: the full resolved outfit
-// (no channel to inherit from) plus runtime fill-ins. max_tokens
-// defaults when the outfit omits it.
-func bootPatchEphemeral(base form.Patch, ariaID, cwd string) form.Patch {
-	p := form.Patch{Set: map[string]json.RawMessage{}}
-	for k, v := range base.Set {
-		p.Set[k] = v
-	}
-	p.Remove = append(p.Remove, base.Remove...)
-	for k, v := range runtimeFillins(ariaID, cwd).Set {
-		p.Set[k] = v
-	}
-	if _, ok := p.Set["system.max_tokens"]; !ok {
-		p.Set["system.max_tokens"] = json.RawMessage(`8192`)
-	}
-	return p
 }
 
 // withAriaID returns p with aria_id set (used once the ephemeral id is
@@ -1717,7 +1685,7 @@ func (h *handlers) requireAria(id string) error {
 		return nil // live: already proven
 	}
 	if h.angelus.Backend == nil {
-		return fmt.Errorf("aria %s: no backend (ephemeral angelus)", id)
+		return fmt.Errorf("aria %s: no backend", id)
 	}
 	// A topology lookup, not a read: Meta is NOT an existence check (it
 	// returns nil,nil for an unknown aria, and arias predating the sidecar
@@ -1934,7 +1902,7 @@ func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interf
 		return nil, errors.New("aria.read: empty figaro_id")
 	}
 	if h.angelus.Backend == nil {
-		return nil, errors.New("aria.read: no backend (ephemeral angelus)")
+		return nil, errors.New("aria.read: no backend")
 	}
 
 	// The backend returns the same shared, memoized IR instance the live

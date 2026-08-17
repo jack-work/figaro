@@ -526,8 +526,7 @@ type FigaroInfoResponse struct {
 // configured default_outfit, which the angelus assembles; a patch that arrives
 // is folded ON TOP of that default, so `-O mantra=x` adds rather than replaces.
 type CreateRequest struct {
-	Patch     *FormPatch `json:"patch,omitempty"`
-	Ephemeral bool       `json:"ephemeral,omitempty"`
+	Patch *FormPatch `json:"patch,omitempty"`
 	// Outfits are outfit NAMES, folded in order and UNDER Patch's own keys.
 	// The outfit axis is separate from the patch axis: names here, data
 	// there, and the daemon's ONE dressing call at the API boundary is what

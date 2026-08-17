@@ -30,8 +30,6 @@ import (
 //     any other aria never moves you: that is a fan-out, not a rescope.
 //     This is fork's own longstanding rule, pointed at the alternative
 //     instead of the continuation because that is where the prompt went.
-//   - `-e/--ephemeral` is rejected. A fork mints a persistent branch in the
-//     store; there is no such thing as an ephemeral child of it.
 //
 // Note the deliberate difference from `send <id>:<turn> --stay -- …`, where
 // --stay parks the alternative and sends to the ORIGINAL trunk. `send`'s
@@ -69,9 +67,6 @@ func planFork(args []string) (forkPlan, error) {
 
 	if _, _, perr := parseTarget(plan.spec); perr != nil {
 		return forkPlan{}, perr
-	}
-	if opts.ephemeral {
-		return forkPlan{}, fmt.Errorf("--ephemeral makes no sense here (a fork mints a persistent branch); use `figaro send -e -- <prompt>` for a throwaway aria")
 	}
 	if !plan.hasPrompt() {
 		if bad := forkPromptOnlyFlags(opts); bad != "" {

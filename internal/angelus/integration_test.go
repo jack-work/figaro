@@ -59,7 +59,10 @@ model = "mock-model"
 `), 0600))
 
 	// Create and start angelus.
-	a := angelus.New(angelus.Config{RuntimeDir: testRuntimeDir(t, dir)})
+	backend, berr := store.NewXwalBackend(t.TempDir(), 0)
+	require.NoError(t, berr)
+	t.Cleanup(func() { _ = backend.Close() })
+	a := angelus.New(angelus.Config{RuntimeDir: testRuntimeDir(t, dir), Backend: backend})
 
 	// Wire the provider factory.
 	factory := func(providerName string, knobs provider.Knobs) (provider.Provider, error) {

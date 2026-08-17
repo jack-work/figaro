@@ -22,20 +22,19 @@ import (
 
 // sendOpts captures the parsed flag state of the send command.
 type sendOpts struct {
-	id        string
-	target    string // positional [<trunk>]:<LT> target (alt to --id)
-	stay      bool   // --attend=false / --stay: don't rebind to the new branch
-	ephemeral bool
-	raw       bool // --raw / -r: raw stream, no ANSI/markdown
-	verbatim  bool // --verbatim / -v: dump raw wire frames as JSON
-	verbose   bool // --verbose / -o (or -t alias): expand tool inputs (Ctrl-O toggles live)
-	exec      bool
-	dryRun    bool     // --exec only
-	skipYes   bool     // --exec only
-	forget    bool     // --forget / -f: submit and exit; do not stream
-	json      bool     // --json / -j: emit machine-readable result on stdout ({aria_id, ...})
-	listen    bool     // --listen / -l: auto-enter the transcript at startup
-	outfit    dressing // the assembled dressing: -O names, -S keys, -D removals
+	id       string
+	target   string // positional [<trunk>]:<LT> target (alt to --id)
+	stay     bool   // --attend=false / --stay: don't rebind to the new branch
+	raw      bool   // --raw / -r: raw stream, no ANSI/markdown
+	verbatim bool   // --verbatim / -v: dump raw wire frames as JSON
+	verbose  bool   // --verbose / -o (or -t alias): expand tool inputs (Ctrl-O toggles live)
+	exec     bool
+	dryRun   bool     // --exec only
+	skipYes  bool     // --exec only
+	forget   bool     // --forget / -f: submit and exit; do not stream
+	json     bool     // --json / -j: emit machine-readable result on stdout ({aria_id, ...})
+	listen   bool     // --listen / -l: auto-enter the transcript at startup
+	outfit   dressing // the assembled dressing: -O names, -S keys, -D removals
 	// The three axes as typed, accumulated so repeats compose. -O is outfit
 	// NAMES only; -S carries k=v and JSON literals; -D carries key paths.
 	outfitText string
@@ -46,7 +45,7 @@ type sendOpts struct {
 }
 
 // extractSendFlags scans a PassRaw arg list for the send command's
-// recognized flags: --id, --ephemeral/-e, --exec/-x, --dry-run/-n,
+// recognized flags: --id, --exec/-x, --dry-run/-n,
 // --yes/-y. Returns the parsed opts and the residual args (which
 // still include the `--` boundary and the prompt body).
 //
@@ -179,10 +178,6 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 			}
 			i++
 			continue
-		case a == "--ephemeral", a == "-e":
-			opts.ephemeral = true
-			i++
-			continue
 		case a == "--raw", a == "-r":
 			opts.raw = true
 			i++
@@ -290,7 +285,6 @@ func (o *sendOpts) armOutfit() error {
 // scan and the router's parser speaking the same language.
 var sendFlagDefs = []cmdkit.FlagDef{
 	{Long: "id", Description: "Target aria id"},
-	{Long: "ephemeral", Short: "e", IsBool: true, Description: "One-shot in-memory aria"},
 	{Long: "raw", Short: "r", IsBool: true, Description: "Raw stream: no ANSI, no markdown"},
 	{Long: "verbatim", Short: "v", IsBool: true, Description: "Dump the wire frames as JSON"},
 	{Long: "verbose", Short: "o", IsBool: true, Description: "Expand full tool inputs"},
@@ -409,14 +403,10 @@ func validateSendID(id string) error {
 
 // runSend is the unified send dispatcher. Branches:
 //
-//	--ephemeral + --id    -> error (contradictory)
 //	--exec                -> bash wrapper; --raw is silently ignored
 //	                         (the script governs its own output)
-//	--ephemeral           -> one-shot in-memory aria, killed after
 //	--raw                 -> raw stream, no ANSI/markdown
 //	(no flags)            -> bound/named aria, interactive stream
-//
-// Persistence (--ephemeral) and formatting (--raw) are orthogonal.
 func runSend(loaded *config.Loaded, rawArgs []string) {
 	runSendAs(loaded, "send", rawArgs)
 }
@@ -449,7 +439,7 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 			}
 			prompt = text
 		} else {
-			flags := "[--id <id>] [-e|--ephemeral] [-r|--raw] [-v|--verbatim] [-x|--exec] [-n] [-y] -- <prompt>"
+			flags := "[--id <id>] [-r|--raw] [-v|--verbatim] [-x|--exec] [-n] [-y] -- <prompt>"
 			if verb == "send" {
 				dieUsage("usage: figaro send %s", flags)
 			}
@@ -466,9 +456,6 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 		dieUsage("%s: %s", verb, perr)
 	}
 
-	if opts.ephemeral && (opts.id != "" || opts.target != "") {
-		dieUsage("%s: --ephemeral and a target are contradictory", verb)
-	}
 	if err := validateSendOpts(opts, !at.isHead()); err != nil {
 		dieUsage("%s: %s", verb, err)
 	}
@@ -501,10 +488,6 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 		runSendVerbatim(loaded, opts, prompt)
 	case opts.exec:
 		runSendExec(loaded, opts, prompt)
-	case opts.ephemeral && opts.raw:
-		runSendEphemeralRaw(loaded, opts, prompt)
-	case opts.ephemeral:
-		runSendEphemeralRich(loaded, opts, prompt, set)
 	case opts.raw:
 		runSendRaw(loaded, opts.id, opts.outfit, prompt)
 	default:
@@ -533,33 +516,23 @@ func validateSendOpts(opts sendOpts, hasTurn bool) error {
 	if opts.forget && (opts.exec || opts.verbatim) {
 		return fmt.Errorf("--forget contradicts --exec/--verbatim")
 	}
-	if opts.forget && opts.ephemeral {
-		return fmt.Errorf("--forget contradicts --ephemeral (the aria would be killed before the turn ran)")
-	}
-	if hasTurn && (opts.ephemeral || opts.exec || opts.verbatim) {
-		return fmt.Errorf("<trunk>:<turn> is not compatible with --ephemeral/--exec/--verbatim")
+	if hasTurn && (opts.exec || opts.verbatim) {
+		return fmt.Errorf("<trunk>:<turn> is not compatible with --exec/--verbatim")
 	}
 	if opts.json {
 		if bad := jsonIncompatible(opts); bad != "" {
 			return fmt.Errorf("--json contradicts %s (--json submits and exits; there is no stream to shape)", bad)
-		}
-		if opts.ephemeral {
-			return fmt.Errorf("--json contradicts --ephemeral (the aria would be killed before the turn ran)")
 		}
 	}
 	return nil
 }
 
 // validateNewOpts holds `new`'s own rules. It shares send's parser, so it must
-// say which of send's flags it cannot honour rather than ignoring them: `new`
-// always creates, so a target contradicts it, and an ephemeral aria is `send
-// -e`'s business.
+// say which of send's flags it cannot honour rather than ignoring them.
 func validateNewOpts(opts sendOpts) error {
 	switch {
 	case opts.id != "" || opts.target != "":
 		return fmt.Errorf("new always creates an aria; drop the target (or use `send --id`)")
-	case opts.ephemeral:
-		return fmt.Errorf("--ephemeral is `send -e`; new mints a persistent aria")
 	case opts.exec || opts.dryRun || opts.skipYes:
 		return fmt.Errorf("--exec is `send -x`")
 	}
@@ -583,70 +556,6 @@ func jsonIncompatible(opts sendOpts) string {
 		return "--verbose"
 	}
 	return ""
-}
-
-// runSendEphemeralRaw spins an ephemeral aria, streams raw output
-// to stdout, kills it. Today's `figaro plain` with no --id.
-func runSendEphemeralRaw(loaded *config.Loaded, opts sendOpts, prompt string) {
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer cancel()
-
-	acli := mustConnectAngelus(loaded)
-	defer acli.Close()
-
-	createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) {
-		return acli.CreateEphemeral(ctx, opts.outfit.names, opts.outfit.patch)
-	})
-	if err != nil {
-		dieWithClosure(err, "create figaro: %s", err)
-	}
-	figaroID := createResp.FigaroID
-	figaroEP := transport.Endpoint{Scheme: createResp.Endpoint.Scheme, Address: createResp.Endpoint.Address}
-	defer func() {
-		killCtx, killCancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer killCancel()
-		_ = acli.Kill(killCtx, figaroID, false)
-	}()
-	if err := waitForSocket(figaroEP.Address, 3*time.Second); err != nil {
-		die("send: %s", err)
-	}
-
-	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
-	exitCode := plainPrompt(ctx, figaroEP, prompt, os.Stdout)
-	if exitCode != 0 {
-		os.Exit(exitCode)
-	}
-}
-
-// runSendEphemeralRich spins an ephemeral aria, interactive (rich)
-// stream, kills it. Useful for one-off conversations the user wants
-// to see formatted but not persist.
-func runSendEphemeralRich(loaded *config.Loaded, opts sendOpts, prompt string, set renderSettings) {
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer cancel()
-
-	acli := mustConnectAngelus(loaded)
-	defer acli.Close()
-
-	createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) {
-		return acli.CreateEphemeral(ctx, opts.outfit.names, opts.outfit.patch)
-	})
-	if err != nil {
-		dieWithClosure(err, "create figaro: %s", err)
-	}
-	figaroID := createResp.FigaroID
-	figaroEP := transport.Endpoint{Scheme: createResp.Endpoint.Scheme, Address: createResp.Endpoint.Address}
-	defer func() {
-		killCtx, killCancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer killCancel()
-		_ = acli.Kill(killCtx, figaroID, false)
-	}()
-	if err := waitForSocket(figaroEP.Address, 3*time.Second); err != nil {
-		die("send: %s", err)
-	}
-
-	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
-	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set)
 }
 
 // runSendRaw streams raw output from a persistent aria (bound, named, or
@@ -673,7 +582,7 @@ func runSendRaw(loaded *config.Loaded, ariaID string, d dressing, prompt string)
 
 // runSendVerbatim dumps the raw wire frames (one JSON object per line:
 // {"method","params"}) with no formatting: the literal protocol stream.
-// Ephemeral when -e, else the bound/named aria (left alive).
+// Runs against the bound/named aria, left alive.
 func runSendVerbatim(loaded *config.Loaded, opts sendOpts, prompt string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -681,29 +590,9 @@ func runSendVerbatim(loaded *config.Loaded, opts sendOpts, prompt string) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	var figaroEP transport.Endpoint
-	if opts.ephemeral {
-		createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) {
-			return acli.CreateEphemeral(ctx, opts.outfit.names, opts.outfit.patch)
-		})
-		if err != nil {
-			dieWithClosure(err, "create figaro: %s", err)
-		}
-		figaroEP = transport.Endpoint{Scheme: createResp.Endpoint.Scheme, Address: createResp.Endpoint.Address}
-		defer func() {
-			killCtx, killCancel := context.WithTimeout(context.Background(), 3*time.Second)
-			defer killCancel()
-			_ = acli.Kill(killCtx, createResp.FigaroID, false)
-		}()
-		if err := waitForSocket(figaroEP.Address, 3*time.Second); err != nil {
-			die("send: %s", err)
-		}
-	} else {
-		_, ep, err := resolveFigaroTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.outfit)
-		if err != nil {
-			die("%s", err)
-		}
-		figaroEP = ep
+	_, figaroEP, err := resolveFigaroTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.outfit)
+	if err != nil {
+		die("%s", err)
 	}
 
 	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
@@ -712,8 +601,8 @@ func runSendVerbatim(loaded *config.Loaded, opts sendOpts, prompt string) {
 	}
 }
 
-// runSendExec implements the --exec branch. Ephemeral when no --id,
-// otherwise scoped to the named aria (auto-created if missing).
+// runSendExec implements the --exec branch. Creates an aria when unbound,
+// otherwise scoped to the named aria.
 func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -722,9 +611,9 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 	defer acli.Close()
 
 	var figaroEP transport.Endpoint
-	if opts.ephemeral || opts.id == "" {
+	if opts.id == "" {
 		createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) {
-			return acli.CreateEphemeral(ctx, opts.outfit.names, opts.outfit.patch)
+			return acli.Create(ctx, opts.outfit.names, opts.outfit.patch)
 		})
 		if err != nil {
 			dieWithClosure(err, "create figaro: %s", err)

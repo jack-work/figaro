@@ -95,7 +95,7 @@ func NewAriaReaderBounded(backend store.Backend, proj Projector, budget *aria.UI
 // and the form-delta assembly reads them.
 func (r *AriaReader) messages(id string) ([]message.Message, []store.Entry[message.Message], error) {
 	if r == nil || r.backend == nil {
-		return nil, nil, errors.New("no backend (ephemeral angelus)")
+		return nil, nil, errors.New("no backend")
 	}
 	if id == "" {
 		return nil, nil, errors.New("empty aria id")
@@ -152,7 +152,7 @@ func (r *AriaReader) Page(id string, at aria.Anchor, budget int, before bool) (a
 // clothes. The tail probe costs one ReadPage(…,1), not a walk.
 func (r *AriaReader) serverFor(id string) (*readAria, error) {
 	if r == nil || r.backend == nil {
-		return nil, errors.New("no backend (ephemeral angelus)")
+		return nil, errors.New("no backend")
 	}
 	if id == "" {
 		return nil, errors.New("empty aria id")
@@ -229,7 +229,7 @@ func (r *AriaReader) turnSource(id string) aria.TurnSource {
 // tell whether the next delta follows it or whether it missed one.
 func (r *AriaReader) Form(id string) (form.Snapshot, uint64, error) {
 	if r == nil || r.backend == nil {
-		return form.Snapshot{}, 0, errors.New("no backend (ephemeral angelus)")
+		return form.Snapshot{}, 0, errors.New("no backend")
 	}
 	snap, err := r.backend.FormState(id)
 	if err != nil {
