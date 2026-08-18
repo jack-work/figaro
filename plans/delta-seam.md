@@ -202,3 +202,76 @@ the fig IR record independently and appends it; `asm` was only ever the
 live view's private copy. The question was based on a wrong picture and
 the correction narrows this work in its favour -- the durable record and
 the provider encoders are NOT touched.
+
+---
+
+# AMENDMENT, Gluck 2026-08-18: the union has TWO members, and the
+# provider never learns an LT
+
+Settled after the first draft. This replaces the "three event types"
+sketch and strengthens invariant 1 from a tested rule into a shape.
+
+## THE CARDINALITY, STATED CORRECTLY
+
+One fig IR message maps to N provider messages. THEREFORE FOR ANY
+PROVIDER MESSAGE THERE IS EXACTLY ONE FIG IR MESSAGE. The relation is
+many-natives-to-one-record, never the reverse, and the schema already
+expresses it: projection.go appends
+`Entry[[]json.RawMessage]{FigaroLT: entry.LT, Payload: encoded}` -- one
+LT, a SLICE of natives. A tool tic carrying three tool_result blocks
+becomes one Anthropic user message or three OpenAI messages; either way
+it is one entry at one LT.
+
+So a standalone translator event is not needed. Its "which LT?" is always
+answered by the message it accompanies, which makes it a FIELD, not a
+union member.
+
+## THE UNION
+
+    FigIRDelta    { block kind, tool id, text or json fragment }
+    FigIRMessage  { message.Message, native []AssistantCache }   <- DONE
+
+The fig IR message CARRIES its assistant cache, one or more messages.
+That is what `PushFigaro(msg, cache ...AssistantCache)` already does; the
+amendment is that it becomes the only completion path and the union's
+only terminal member.
+
+## THE PROVIDER NEVER LEARNS AN LT OR A TURN
+
+The provider emits deltas, then emits one message with its natives, in
+order. It does not stamp, does not append, does not hold a store handle,
+and has no ordering obligation beyond "in order". EVERYTHING COORDINATE
+IS STAMPED ON THE FIG IR SIDE, by the code that adds the records:
+  - the fig IR append yields the LT
+  - the same code stamps that LT onto the translator entry and appends it
+  - the same code stamps the TURN (see stage 3, the door records
+    decisions -- these are the same door)
+
+CONSEQUENCE FOR INVARIANT 1: "no translator record exists before its fig
+IR record has an LT" STOPS BEING A RULE THAT MUST BE TESTED AND BECOMES A
+SHAPE THAT CANNOT BE VIOLATED. There is no code path that could emit them
+out of order, because only one party has the LT and it holds both
+appends. That is strictly stronger than the ordering test the first draft
+specified, and the test becomes a regression guard rather than the
+guarantee itself.
+
+CONSEQUENCE FOR SendInput: the provider's `FigLog` handle exists mostly to
+perform the five-line append ritual and to read history for catchUp. The
+append role goes away entirely. Whether the read role can also be handed
+over as data is a separate question and is NOT decided here.
+
+## WHAT THIS DOES NOT DECIDE
+
+There are TWO producers of translator records, and only one is the
+provider:
+  1. the provider, at message completion -- the exact input-ready native
+     bytes, which matter for prompt caching and therefore must be the
+     provider's own rather than re-encoded;
+  2. ProjectIncrementally on the READ path (catchUp) -- everything else:
+     user prompts, tool tics, encoded lazily.
+That asymmetry is why AssistantCache exists as a special case at all. It
+is unchanged by this amendment. If a case is ever found where a provider
+must emit a translation with NO corresponding new fig IR record, the
+union gains a third member -- but it is not defined against a
+hypothetical. A union member that is never constructed is a permanent
+invitation to construct it wrongly.
