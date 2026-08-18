@@ -49,6 +49,20 @@ func buildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolv
 		hasOAuth = reg.HasOAuth
 	}
 
+	// A provider whose bearer must be EXCHANGED has exactly one credential
+	// source: hush, which performs the exchange and owns the result. The
+	// env var and the stored api_key are the durable secret, not a bearer;
+	// presenting either to the API would present the wrong credential. They
+	// are handed to hush once, here, and never read again.
+	if reg != nil && reg.ExchangeGrant != "" && reg.ExchangeURL != nil && reg.ExchangeURL(loaded) != "" {
+		if err := ensureExchangeCredential(loaded, hushClient, reg, providerName); err != nil {
+			return nil, err
+		}
+		// Returned bare, not wrapped in an Aggregate: it is the only
+		// source, and the provider reads the routing off it directly.
+		return &auth.OAuth{Hush: hushClient, Name: providerName}, nil
+	}
+
 	strategies := environmentStrategies(reg)
 	strategies = append(strategies,
 		&auth.ConfigValue{Get: func() string {

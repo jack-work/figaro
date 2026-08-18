@@ -14,7 +14,6 @@ import (
 	"strings"
 	"sync"
 	"text/template"
-	"time"
 
 	"github.com/anthropics/anthropic-sdk-go/option"
 
@@ -362,67 +361,43 @@ func baseURLFromToken(token, enterpriseDomain string) string {
 	return defaultBaseURL
 }
 
-// CopilotTokenSource exchanges a GitHub access token for a short-lived
-// Copilot session token. In direct mode the GitHub token is presented to the
-// API unchanged, as the Copilot CLI does.
+// CopilotTokenSource presents the credential hush holds for Copilot.
 //
-// The exchanged token is NOT held here. It lives in a SessionCache keyed by
-// credential identity (see internal/auth/session.go), because that is what
-// it belongs to: this struct is built once per aria, and one GitHub
-// credential must not mean one exchange per conversation.
+// It USED to perform the GitHub-token -> session-token exchange itself and
+// cache the result. That cache lived on the provider instance, and provider
+// instances are per-aria, so a fleet paid one exchange per conversation and
+// stampeded GitHub's exchange endpoint whenever they aged out together.
+//
+// hush owns the exchange now (grant "copilot"), which is the same place the
+// durable secret already lived: one session token per machine, renewed
+// before expiry by the agent's proactive loop, shared by every aria AND
+// every figaro process. What is left here is the shape the anthropic SDK
+// wants - Resolve, Invalidate, BaseURL - over a resolver that does the
+// asking. Nothing is cached: the socket round-trip IS the sharing.
 type CopilotTokenSource struct {
-	github       auth.TokenResolver
+	resolver     auth.TokenResolver
 	domain       string
 	direct       bool
 	baseOverride string
-	sessions     *auth.SessionCache
-	key          string
 }
 
-func NewCopilotTokenSource(github auth.TokenResolver, enterpriseDomain string) *CopilotTokenSource {
-	return newTokenSource(github, Config{EnterpriseDomain: enterpriseDomain})
+func NewCopilotTokenSource(resolver auth.TokenResolver, enterpriseDomain string) *CopilotTokenSource {
+	return newTokenSource(resolver, Config{EnterpriseDomain: enterpriseDomain})
 }
 
-func newTokenSource(github auth.TokenResolver, cfg Config) *CopilotTokenSource {
-	return newTokenSourceIn(auth.Sessions, github, cfg)
-}
-
-// newTokenSourceIn binds to an explicit cache. Production takes the
-// process-wide auth.Sessions; tests take a private one so a shared cache
-// does not carry state between them.
-func newTokenSourceIn(sessions *auth.SessionCache, github auth.TokenResolver, cfg Config) *CopilotTokenSource {
-	s := &CopilotTokenSource{
-		github:       github,
+func newTokenSource(resolver auth.TokenResolver, cfg Config) *CopilotTokenSource {
+	return &CopilotTokenSource{
+		resolver:     resolver,
 		domain:       cfg.EnterpriseDomain,
 		direct:       strings.EqualFold(strings.TrimSpace(cfg.TokenMode), "direct"),
 		baseOverride: strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
-		sessions:     sessions,
 	}
-	s.key = s.sessionKey()
-	if !s.direct {
-		sessions.Bind(s.key)
-	}
-	return s
 }
 
-// sessionKey names the CREDENTIAL, not the caller. Everything that changes
-// which token comes back belongs in it; the base-URL override does not,
-// since it rewrites where a token is spent, not which token is minted.
-func (s *CopilotTokenSource) sessionKey() string {
-	domain := s.domain
-	if domain == "" {
-		domain = "github.com"
-	}
-	mode := "exchange"
-	if s.direct {
-		mode = "direct"
-	}
-	return "copilot|" + domain + "|" + mode
-}
-
-// BaseURL reports the API host for the currently resolved credential. An
-// explicit override wins, then the endpoints.api the exchange handed back,
-// then the legacy derivation from the token body.
+// BaseURL reports the API host for the current credential. An explicit
+// override wins, then the routing the exchange chose (which hush minted
+// with the token and hands back as metadata), then the legacy derivation
+// from the token body.
 func (s *CopilotTokenSource) BaseURL() string {
 	if s.baseOverride != "" {
 		return s.baseOverride
@@ -430,96 +405,36 @@ func (s *CopilotTokenSource) BaseURL() string {
 	if s.direct {
 		return directBaseURL
 	}
-	sess, ok := s.sessions.Peek(s.key)
-	if ok && sess.Endpoint != "" {
-		return sess.Endpoint
+	carrier, _ := s.resolver.(auth.EndpointCarrier)
+	if carrier != nil {
+		if api := carrier.Endpoint(); api != "" {
+			return api
+		}
 	}
-	return baseURLFromToken(sess.Token, s.domain)
+	// Nothing has been resolved yet in this process: ask for the token,
+	// which is what fetches the routing alongside it.
+	tok, err := s.resolver.Resolve()
+	if err != nil {
+		return defaultBaseURL
+	}
+	if carrier != nil {
+		if api := carrier.Endpoint(); api != "" {
+			return api
+		}
+	}
+	return baseURLFromToken(tok, s.domain)
 }
 
 func (s *CopilotTokenSource) Resolve() (string, error) {
-	if s.direct {
-		githubToken, err := s.github.Resolve()
-		if err != nil {
-			return "", fmt.Errorf("copilot: resolve github token: %w", err)
-		}
-		return githubToken, nil
-	}
-	sess, err := s.sessions.Resolve(s.key, func() (auth.Session, error) {
-		// Resolved inside the exchange, so a cache hit costs no keystore
-		// round-trip and a miss reads the freshest durable credential.
-		githubToken, err := s.github.Resolve()
-		if err != nil {
-			return auth.Session{}, fmt.Errorf("copilot: resolve github token: %w", err)
-		}
-		tok, exp, api, err := exchangeCopilotToken(githubToken, s.domain)
-		if err != nil {
-			return auth.Session{}, err
-		}
-		return auth.Session{Token: tok, ExpiresAt: exp, Endpoint: api}, nil
-	})
+	tok, err := s.resolver.Resolve()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("copilot: resolve token: %w", err)
 	}
-	return sess.Token, nil
+	return tok, nil
 }
 
 func (s *CopilotTokenSource) Invalidate(token string) error {
-	if !s.direct {
-		s.sessions.Invalidate(s.key, token)
-	}
-	return s.github.Invalidate("")
-}
-
-// exchangeEndpoint names the token-exchange URL for a domain. A var so a
-// test can point the real exchange path at a stub server: the sharing
-// property under test is "how many times does figaro call this", which only
-// a test that owns the endpoint can observe.
-var exchangeEndpoint = func(domain string) string {
-	return fmt.Sprintf("https://api.%s/copilot_internal/v2/token", domain)
-}
-
-func exchangeCopilotToken(githubAccessToken, enterpriseDomain string) (token string, expiresAt time.Time, apiBase string, err error) {
-	domain := enterpriseDomain
-	if domain == "" {
-		domain = "github.com"
-	}
-	tokenURL := exchangeEndpoint(domain)
-	req, err := http.NewRequest("GET", tokenURL, nil)
-	if err != nil {
-		return "", time.Time{}, "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+githubAccessToken)
-	for k, v := range copilotStaticHeaders {
-		req.Header.Set(k, v)
-	}
-	for k, v := range copilotGitHubHeaders {
-		req.Header.Set(k, v)
-	}
-	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
-	if err != nil {
-		return "", time.Time{}, "", fmt.Errorf("copilot token exchange: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		return "", time.Time{}, "", fmt.Errorf("copilot token exchange %d: %s", resp.StatusCode, body)
-	}
-	var parsed struct {
-		Token     string `json:"token"`
-		ExpiresAt int64  `json:"expires_at"`
-		Endpoints struct {
-			API string `json:"api"`
-		} `json:"endpoints"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-		return "", time.Time{}, "", fmt.Errorf("copilot token parse: %w", err)
-	}
-	if parsed.Token == "" {
-		return "", time.Time{}, "", fmt.Errorf("copilot token exchange returned empty token")
-	}
-	exp := time.Unix(parsed.ExpiresAt, 0).Add(-5 * time.Minute)
-	return parsed.Token, exp, strings.TrimRight(parsed.Endpoints.API, "/"), nil
+	return s.resolver.Invalidate(token)
 }
 
 // debug helper (kept; guarded by env var)
