@@ -480,6 +480,11 @@ type interactiveInput struct {
 	tc   term.Client
 	lt   *livelogTurn
 	fcli transcriptReadClient
+	// interrupting is set by the first Ctrl-C: the turn has been asked to
+	// stop and we are waiting for turn.done to close us. A second Ctrl-C
+	// leaves immediately, because a user must never be trapped by a daemon
+	// that will not answer.
+	interrupting bool
 	// hangup is the H key's client. Nil leaves the key inert rather than
 	// crashing a session that was built without one.
 	hangup       hangupClient
@@ -1231,8 +1236,54 @@ func inputInterrupt(in *interactiveInput, ev keyEvent) keyVerdict {
 	}
 	in.cancelTranscriptSearch()
 	in.cancelSelectionCopy()
-	in.cancel()
-	return keyStop
+
+	// CTRL-C STOPS THE TURN AND THEN EXITS WHEN IT STOPS.
+	//
+	// IT USED TO JUST LEAVE. `in.cancel()` cancels the CLIENT's context and
+	// keyStop quits the process; the daemon was never told, so the turn ran
+	// on with nobody watching. The help said otherwise --
+	// "Ctrl-C  Interrupt the turn (sends figaro.interrupt)" (cli.go:367) --
+	// and a grep for MethodInterrupt across internal/cli found exactly one
+	// hit, a method-name list in replay.go. NOTHING IN THE CLIENT EVER SENT
+	// IT. Every unit test passed because they call Agent.Interrupt directly,
+	// which is the half that works.
+	//
+	// The exit is not ours to perform: turn.done with idle already closes
+	// doneCh in incipit (see onNotify), so stopping the turn IS the exit.
+	// Firing the RPC and quitting immediately would race that and abandon the
+	// turn again, differently.
+	//
+	// THE SECOND PRESS IS AN ESCAPE HATCH, and it must exist: if the daemon is
+	// wedged or the RPC never lands, a user who presses Ctrl-C must still be
+	// able to leave. Press once to stop the turn, twice to go now.
+	if in.hangup == nil {
+		in.cancel()
+		return keyStop
+	}
+	in.mu.Lock()
+	already := in.interrupting
+	in.interrupting = true
+	in.mu.Unlock()
+	if already {
+		in.cancel()
+		return keyStop
+	}
+	in.mu.Lock()
+	in.lt.report("interrupting; leaving when the turn stops (Ctrl-C again to leave now)")
+	in.mu.Unlock()
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, err := in.hangup.Hangup(ctx, rpc.QueueKeep); err != nil {
+			// The turn will not be stopping, so nothing will close doneCh for
+			// us. Leave rather than hang, and say why.
+			in.mu.Lock()
+			in.lt.report("interrupt failed: " + err.Error())
+			in.mu.Unlock()
+			in.cancel()
+		}
+	}()
+	return keyHandled
 }
 
 // inputHangUp is 'H' in the pager: stop the turn, and STAY.
