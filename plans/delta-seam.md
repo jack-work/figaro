@@ -601,3 +601,49 @@ GONE.
 AFTER: it is kept, properly closed, and visible. Losing completed work to
 a race is a worse outcome than keeping it, and the user pressed stop --
 not undo.
+
+## PART V, AMENDED: THE DOOR REPAIRS ON THE NEXT APPEND
+
+Gluck, 2026-08-18: "if the interrupt ends up writing a tool message
+without the content block that closes it, it should be repaired when the
+next append happens. That is the original premise of our changes."
+
+THIS WEAKENS THE REQUIREMENT ABOVE AND IS THE ORIGINAL PREMISE RESTORED.
+Part V as first written implied the interrupt path must close open tool
+calls AT INTERRUPT TIME, atomically. It does not. The door repairs ON THE
+NEXT APPEND -- which is what makes the fork bug die structurally in the
+first place, since a fork's birth record IS the next append.
+
+So the interrupt path may write an assistant message carrying an
+unanswered tool_invoke. That state is legal ON DISK and becomes illegal
+only if it reaches a PROVIDER, and nothing reaches a provider without
+passing through an append first. The door closes it then.
+
+CONSEQUENCE: the interrupt path needs no closing machinery of its own. It
+writes what it has and stops. Everything that makes the result legal is
+already the door's job, and was going to be built anyway.
+
+## COVERAGE GAP, NAMED BEFORE THE CHANGE RATHER THAN AFTER
+
+NOTHING IN THE TREE ASSERTS WHAT HAPPENS TO A COMPLETED ASSISTANT MESSAGE
+WHEN THE USER INTERRUPTS, in either direction. Verified:
+  TestAgent_Interrupt            asserts the DONE REASON
+  TestSmoke_ExitKeysWork         interrupts mid-stream (a `sleep 60` cut
+                                 at 12s) and asserts THE PROCESS EXITS
+Neither reads the log. So the most user-visible consequence of an
+interrupt is unguarded on the eve of inverting it.
+
+REQUIRED BEFORE PART V LANDS: a test pinning TODAY's behaviour -- the
+message is DISCARDED -- so that Part V turns it red and whoever lands it
+must invert it DELIBERATELY. It must be inverted, not deleted: it would
+be the only test that looks at the log after an interrupt.
+
+091d162e attempted this and failed at the test's own vacuity guard three
+times; the attempt is not in the tree. Recorded so the next hand skips
+the same holes: the agent Config needs a Form (from backend.FormState);
+a.Interrupt() called SYNCHRONOUSLY from inside Send DEADLOCKS, because
+Interrupt blocks until the turn winds down and the turn cannot wind down
+while Send is running; and even in a goroutine the provider's Send did
+not complete, cause undiagnosed. The guard behaved correctly every time
+-- it refused to report a result from a run where the provider never ran,
+which is the only reason the failure was visible rather than green.
