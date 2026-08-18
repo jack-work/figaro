@@ -48,6 +48,14 @@ SUBJECT=""
 NOTES_FILE=""
 TAG_MESSAGE_FILE=""
 REMOTE="origin"
+# How long to wait for a mirroring remote to carry the tag to GitHub, and the
+# command that forces the mirror by hand if it does not. Both are environment
+# knobs because they describe YOUR remote, not figaro: the script derives what
+# it can (the GitHub slug, from the remotes) and refuses to guess the rest.
+#
+#   FIGARO_MIRROR_TIMEOUT=120
+#   FIGARO_MIRROR_SYNC="ssh githost 'sync-the-mirror repo'"
+MIRROR_TIMEOUT="${FIGARO_MIRROR_TIMEOUT:-120}"
 BRANCH="main"
 RELEASE_BRANCH="release"
 
@@ -60,6 +68,82 @@ run() {
 		printf '   \033[2m$\033[0m %s\n' "$*" >&2
 		"$@"
 	fi
+}
+
+# github_slug prints owner/name for whichever remote points at GitHub, so the
+# wait can ask GitHub about the tag no matter which remote we pushed to.
+github_slug() {
+	local r url
+	for r in $(git remote); do
+		url=$(git remote get-url --push "$r" 2>/dev/null) || continue
+		case "$url" in
+			*github.com[:/]*)
+				printf '%s\n' "$url" |
+					sed -E 's#^.*github\.com[:/]+##; s#\.git$##'
+				return 0
+				;;
+		esac
+	done
+	return 1
+}
+
+# wait_for_mirror blocks until GitHub's copy of $1 points at the same COMMIT we
+# just pushed.
+#
+# It exists for the case where $REMOTE is NOT GitHub: a mirroring remote
+# accepts the push on its own merits and forwards to GitHub afterwards, often
+# in the background. `gh release create --verify-tag` asks GitHub, so without
+# this it can outrun the copy and fail on a tag that is merely late. Pushing
+# straight at GitHub skips the whole thing.
+#
+# Existence is not enough: a pathological retry can leave an older ref under
+# that name, and "the tag is there" would pass while pointing at the wrong
+# commit. release.sh writes ANNOTATED tags, so GitHub's ref points at a tag
+# object and has to be dereferenced before the comparison means anything.
+wait_for_mirror() {
+	local tag=$1 slug want obj got waited=0
+
+	# Pushing straight at GitHub: nothing to wait for.
+	git remote get-url --push "$REMOTE" 2>/dev/null | grep -q 'github\.com' && return 0
+
+	slug=$(github_slug) || {
+		say "no GitHub remote found; not waiting for a mirror"
+		return 0
+	}
+	want=$(git rev-parse "$tag^{}")
+
+	say "waiting for the mirror to carry $tag to $slug"
+	while [ "$waited" -lt "$MIRROR_TIMEOUT" ]; do
+		obj=$(gh api "repos/$slug/git/ref/tags/$tag" -q .object.sha 2>/dev/null || true)
+		if [ -n "$obj" ]; then
+			# Annotated tag: deref the tag object to its commit. A
+			# lightweight tag answers 404 here and the ref sha stands.
+			got=$(gh api "repos/$slug/git/tags/$obj" -q .object.sha 2>/dev/null || echo "$obj")
+			if [ "$got" = "$want" ]; then
+				say "mirror carried $tag after ${waited}s"
+				return 0
+			fi
+		fi
+		sleep 2
+		waited=$((waited + 2))
+	done
+
+	cat >&2 <<EOF
+
+release: $TAG is on $REMOTE but has not reached $slug after ${MIRROR_TIMEOUT}s.
+
+NOTHING IS LOST. The tag, the branch and $RELEASE_BRANCH are all on $REMOTE,
+which is the source of truth; only the copy is late. Make the mirror run,
+then resume this release:
+EOF
+	if [ -n "${FIGARO_MIRROR_SYNC:-}" ]; then
+		printf '    %s\n' "$FIGARO_MIRROR_SYNC" >&2
+	else
+		printf '    (whatever makes %s push to %s; set FIGARO_MIRROR_SYNC to name it here)\n' \
+			"$REMOTE" "$slug" >&2
+	fi
+	printf '    %s --tag-message %s\n\n' "$0" "$SAVED" >&2
+	return 1
 }
 
 usage() {
@@ -293,8 +377,22 @@ old_release=$(git rev-parse --short "$RELEASE_BRANCH" 2>/dev/null || echo "none"
 say "moving $RELEASE_BRANCH ($old_release -> $(git rev-parse --short "$BRANCH"))"
 run git branch -f "$RELEASE_BRANCH" "$BRANCH"
 
+# ONE push, carrying all three refs.
+#
+# It used to be two (branches, then the tag), which is fine against GitHub and
+# wrong against a mirroring remote. Such a remote typically forwards from a
+# post-receive hook, and typically detaches that forward so it can accept your
+# push without waiting on the far side. Two pushes seconds apart therefore race
+# two forwards at the same destination: the loser takes a non-fast-forward or a
+# lock failure, and being detached, it reports that to a log nobody is reading.
+# What you SEE is a half-arrived release - the branch moved, the tag never came,
+# or the reverse.
+#
+# One push is one hook run is one forward, and the wait below then has a single
+# well-defined event to wait for. It is also atomic from the mirror's side: it
+# carried all three refs or none of them.
 say "pushing to $REMOTE"
-if ! run git push "$REMOTE" "$BRANCH" "$RELEASE_BRANCH"; then
+if ! run git push "$REMOTE" "$BRANCH" "$RELEASE_BRANCH" "$TAG"; then
 	cat >&2 <<EOF
 release: push failed. Local state is ahead of $REMOTE. To undo:
     git tag -d $TAG
@@ -302,9 +400,14 @@ release: push failed. Local state is ahead of $REMOTE. To undo:
 EOF
 	exit 1
 fi
-run git push "$REMOTE" "$TAG"
 
 # ----------------------------------------------------------- GitHub release
+
+# When $REMOTE is not GitHub itself, the tag reaches GitHub asynchronously, so
+# `gh release create --verify-tag` has to be told to wait for it.
+if [ "$DO_GH" = 1 ] && [ "$DRY" != 1 ]; then
+	wait_for_mirror "$TAG" || exit 1
+fi
 
 if [ "$DO_GH" = 1 ]; then
 	say "creating GitHub release $TAG"
