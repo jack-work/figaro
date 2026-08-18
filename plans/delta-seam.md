@@ -526,3 +526,78 @@ change ships, and it is smaller than an oracle:
 
 No permanent oracle is needed: the mathematical property is the thing,
 not a comparison against an implementation we intend to delete.
+
+---
+
+# PART V: THE INTERRUPT CONTRACT
+
+Gluck, 2026-08-18: "all in flight messages should be written on
+interrupt, any half constructed messages ideally should be closed and
+written, but all new work should stop then."
+
+THIS IS A USER-VISIBLE BEHAVIOUR CHANGE and it is stated here once so it
+does not arrive as a surprise.
+
+## WHAT HAPPENS TODAY
+
+An interrupt DISCARDS the assistant message. driveOneRound guards the
+real append with `!a.isInterrupted()`, so a message the provider has
+already completed -- streamed, finished, handed over -- is thrown away if
+the user pressed escape a moment later. deferredAppendLog exists to make
+that possible: it fakes the append, hands the provider a PREDICTED LT
+(tail.LT + 1), stashes the entry, and lets figaro decide later whether to
+write it.
+
+WHY IT DISCARDS RATHER THAN WRITES, and this is not tidiness: a completed
+assistant message can contain tool_invoke blocks. Writing it without
+running the tools leaves a tool_use with no tool_result, the next prompt
+is refused with a 400, AND THE ARIA IS BRICKED. The same failure as the
+fork bug. So discarding was protecting the pairing invariant.
+
+## WHAT HAPPENS UNDER THIS CONTRACT
+
+    IN-FLIGHT MESSAGES ARE WRITTEN. Not discarded.
+    HALF-CONSTRUCTED MESSAGES ARE CLOSED, THEN WRITTEN.
+    ALL NEW WORK STOPS.
+
+"Closed" is the provider's premature close (Part I): the provider owns
+its accumulator, so it produces the message, with its own stop reason,
+and its native cache payload from the same accumulator state. Figaro does
+not synthesise provider-shaped content -- which is what it does today,
+across 11 repair sites, and why that path still misses the fork case.
+
+"All new work stops" means: no further provider round, no new tool
+dispatch, no new prompt drained. Cancellation already does this and needs
+no new machinery -- turnCtx exists at turn.go:141 and reaches
+prov.Send(turnCtx, ...). A context cancel is a request to STOP DOING
+WORK; it can never un-produce work already finished, which is precisely
+the gap deferredAppendLog was filling.
+
+## WHY WRITING IS NOW SAFE, WHICH IS THE WHOLE PRECONDITION
+
+Because THE DOOR CLOSES OPEN TOOL CALLS IN THE SAME CRITICAL SECTION AS
+THE APPEND (Part I, stage 3). An interrupted assistant message carrying
+an unanswered tool_invoke gets its closing tool_result stamped as it
+lands. The pairing invariant that discarding was protecting is protected
+by the door instead -- structurally, at the one place every append passes
+through, rather than by refusing to write.
+
+SO THE ORDER IS LOAD-BEARING: this contract MUST NOT ship before the
+door. Writing interrupted messages without the door re-creates the
+bricked-aria bug deliberately.
+
+## WHAT DELETES WHEN IT LANDS
+
+  deferredAppendLog and its predicted LT (turn_repair.go:258-311)
+  the "provider appended more than one assistant message" error
+  the appendedEntry.LT != assistantIdx prediction check
+  the !a.isInterrupted() append guard
+  most of repairTurnTail's synthesis of provider-shaped content
+
+## THE UX, PLAINLY
+
+TODAY: the model finishes a paragraph, you press escape, THE PARAGRAPH IS
+GONE.
+AFTER: it is kept, properly closed, and visible. Losing completed work to
+a race is a worse outcome than keeping it, and the user pressed stop --
+not undo.
