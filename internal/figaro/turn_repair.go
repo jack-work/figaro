@@ -24,25 +24,49 @@ type turnTool struct {
 }
 
 type turnState struct {
-	assistant message.Message
-	tools     []turnTool
+	asm       *asm             // the live assembly, hoisted so repair can reach it
+	final     *message.Message // the staged durable payload, once it exists
 	states    map[string]turnTool
 	committed bool
+
+	// assistantOracle/toolsOracle are written only by the equivalence oracle
+	// in turn_shadow_test.go.
+	assistantOracle message.Message
+	toolsOracle     []turnTool
 }
 
 func newTurnState() *turnState {
-	return &turnState{
-		assistant: message.Message{Role: message.RoleOutput},
-		states:    map[string]turnTool{},
-	}
+	return &turnState{states: map[string]turnTool{}}
 }
 
-func (a *Agent) noteAssistant(m *message.Message) {
-	if a.turn == nil {
+// repairView materializes what the repair needs: the aborted assistant
+// message and its tools, with outcomes folded in. Called on failure, not per
+// event.
+func (t *turnState) repairView() (message.Message, []turnTool) {
+	var src *message.Message
+	switch {
+	case t.final != nil:
+		src = t.final
+	case t.asm != nil:
+		src = t.asm.message()
+	}
+	assistant := partialAssistant(src)
+	tools := toolsFromAssistant(assistant)
+	for i := range tools {
+		if state, ok := t.states[tools[i].ToolCallID]; ok {
+			tools[i] = state
+		}
+	}
+	return assistant, tools
+}
+
+// stageAssistant records the durable candidate. A failed append must preserve
+// what the provider produced, not what the drain assembled.
+func (a *Agent) stageAssistant(e *store.Entry[message.Message]) {
+	if a.turn == nil || e == nil {
 		return
 	}
-	a.turn.assistant = partialAssistant(m)
-	a.turn.tools = mergeTurnTools(toolsFromAssistant(a.turn.assistant), a.turn.tools, a.turn.states)
+	a.turn.final = &e.Payload
 }
 
 func (a *Agent) noteTool(id, name, status string, isErr bool, terminalText ...string) {
@@ -81,12 +105,6 @@ func (a *Agent) noteTool(id, name, status string, isErr bool, terminalText ...st
 		t.OutputTail = a.gov.Tails()[id]
 	}
 	a.turn.states[id] = t
-	for i := range a.turn.tools {
-		if a.turn.tools[i].ToolCallID == id {
-			a.turn.tools[i] = t
-			break
-		}
-	}
 }
 
 func (a *Agent) repairTurnTail() ([]message.Message, error) {
@@ -95,8 +113,9 @@ func (a *Agent) repairTurnTail() ([]message.Message, error) {
 	if t == nil {
 		return nil, nil
 	}
+	assistant, turnTools := t.repairView()
 	if t.committed {
-		tools := interruptedToolResults(t.tools)
+		tools := interruptedToolResults(turnTools)
 		if len(tools) == 0 {
 			return nil, nil
 		}
@@ -108,7 +127,6 @@ func (a *Agent) repairTurnTail() ([]message.Message, error) {
 		}
 		return []message.Message{e.Payload}, nil
 	}
-	assistant := t.assistant
 	assistant.Role = message.RoleOutput
 	assistant.StopReason = message.StopAborted
 	if len(assistant.Content) == 0 {
@@ -122,7 +140,7 @@ func (a *Agent) repairTurnTail() ([]message.Message, error) {
 		return nil, fmt.Errorf("repair interrupted assistant: %w", err)
 	}
 	appended := []message.Message{e.Payload}
-	if tools := interruptedToolResults(t.tools); len(tools) > 0 {
+	if tools := interruptedToolResults(turnTools); len(tools) > 0 {
 		e, err := a.appendMsg(message.Message{
 			Role: message.RoleInput, Content: tools, Timestamp: time.Now().UnixMilli(),
 		})
@@ -187,22 +205,6 @@ func toolsFromAssistant(m message.Message) []turnTool {
 		})
 	}
 	return out
-}
-
-func mergeTurnTools(current, previous []turnTool, states map[string]turnTool) []turnTool {
-	byID := make(map[string]turnTool, len(previous))
-	for _, tool := range previous {
-		byID[tool.ToolCallID] = tool
-	}
-	for i := range current {
-		if prior, ok := byID[current[i].ToolCallID]; ok {
-			current[i] = prior
-		}
-		if state, ok := states[current[i].ToolCallID]; ok {
-			current[i] = state
-		}
-	}
-	return current
 }
 
 func interruptedToolResults(tools []turnTool) []message.Content {

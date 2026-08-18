@@ -474,6 +474,9 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	// drain loop, then drop the in-flight copy so compose reads it from the log
 	// instead: otherwise it would be counted twice.
 	asmMsg := newAsm(message.RoleOutput)
+	if a.turn != nil {
+		a.turn.asm = asmMsg
+	}
 	appendedInline := false
 	metricsReady := false
 	var roundErr error
@@ -516,11 +519,10 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 			case evFigaro:
 				force = true
 			}
-			a.noteAssistant(asmMsg.message())
 			var ackErr error
 			if ev.kind == evFigaro && roundErr == nil && !a.isInterrupted() {
 				staged := deferredLog.take(ev.msg)
-				a.noteAssistant(&staged.Payload)
+				a.stageAssistant(&staged)
 				calls := assistantToolInvokes(staged.Payload)
 				appendedEntry, err := a.appendMsg(staged.Payload)
 				if err != nil {
