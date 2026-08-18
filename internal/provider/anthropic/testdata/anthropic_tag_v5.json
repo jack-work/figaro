@@ -1,0 +1,60 @@
+[
+  [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "what is the time"
+        }
+      ]
+    }
+  ],
+  [
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "checking"
+        },
+        {
+          "type": "tool_use",
+          "id": "call_1",
+          "name": "bash",
+          "input": {
+            "command": "date"
+          }
+        }
+      ]
+    }
+  ],
+  [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "call_1",
+          "content": [
+            {
+              "type": "text",
+              "text": "Tue Aug 18"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  [
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "it is Tuesday"
+        }
+      ]
+    }
+  ]
+]
