@@ -390,3 +390,84 @@ number, not before.
     projection produces, or the per-LT cache makes a divergence
     permanent. Equivalence oracle, kept.
   - NOTHING PINS EVICTED BYTES, asserted rather than assumed.
+
+---
+
+# PART III: THE REQUEST BODY, STREAMED WHERE THE TRANSPORT ALLOWS
+
+Gluck, 2026-08-18. Follow-on to Part II with its own gate.
+
+## THE THIRD COPY
+
+Part II removes the projection's index. It does NOT remove this, at
+anthropic.go:985 and 1063 and its equivalents:
+
+    body, err := json.Marshal(req)
+    httpReq, _ := http.NewRequestWithContext(ctx, "POST", url,
+                                             bytes.NewReader(body))
+
+That is a freshly allocated CONTIGUOUS copy of the entire conversation,
+built every turn. Real bytes, not shared headers. At send there are
+currently three full representations alive: the log's resident window,
+the projection's index into it (Part II deletes this), and `body`.
+
+## THE RULING: THE PROVIDER DECIDES ITS OWN TRANSPORT
+
+Streaming is the ideal, but it is a PER-PROVIDER decision and a provider
+that must marshal the whole request into memory may do so. The seam does
+not impose a transport.
+
+  ANTHROPIC (and the other HTTP providers): HTTP/1.1 CHUNKED TRANSFER
+  ENCODING. http.NewRequest takes an io.Reader, so an io.Pipe fed by a
+  json.Encoder writing the messages array AS THE ITERATOR WALKS THE LOG
+  never materialises the body.
+
+  COPILOT RESPONSES: NOT APPLICABLE, and this was checked rather than
+  assumed -- responses.go:191 is `websocket.JSON.Send(conn, request)`
+  over golang.org/x/net/websocket. It marshals a whole frame; chunked
+  HTTP has no meaning there. Responses keeps its in-memory marshal.
+
+## WHAT STREAMING DOES AND DOES NOT BUY
+
+  DOES: peak becomes O(one segment) instead of O(conversation) per turn.
+  DOES NOT: it is not O(1). Record bytes still become resident as the
+  iterator touches each segment. For a long aria that is the difference
+  between megabytes and kilobytes per turn, which is worth having, but
+  the claim must be stated in those terms and not as "no copy".
+  UNAFFECTED: prompt caching. The bytes on the wire are identical; cache
+  keys are content, not framing.
+
+## THE THREE RISKS, AND THE ONE THAT DECIDES IT
+
+  1. CONTENT-LENGTH DISAPPEARS under chunked encoding. HTTP/1.1 permits
+     it; some API gateways and CDNs reject chunked request bodies or
+     require a length. THIS IS THE RISK THAT DECIDES FEASIBILITY and it
+     is a short experiment against each endpoint, not an argument.
+  2. RETRIES RE-WALK. http.Request.GetBody must be set so a retry can
+     replay the body; the iterator can re-walk, so this is cheap.
+  3. ERROR TIMING SHIFTS. Today a marshal failure happens BEFORE the
+     request opens. Streamed, it happens MID-BODY, so the request must
+     abort cleanly rather than send a truncated payload that the far end
+     might accept.
+
+## TESTING, AS ORDERED
+
+Risk 3 is tested in UNIT TESTS by MOCKING THE UPSTREAM DEPENDENCY and
+SIMULATING A THROW mid-body, with TEXT FIXTURES for the payloads. The
+assertion is that a mid-stream failure produces a clean abort and a
+propagated error -- never a truncated request the far end could accept as
+complete. A truncated-but-accepted request would be a silent corruption
+of the conversation, which is the worst outcome available here and the
+reason this is a unit test rather than a live experiment.
+
+## GLUCK'S STANDING INSTRUCTION ON THIS DESIGN
+
+"Assume my design is ideal, we can make it work, even if it regresses
+perf. If it does let me know and we will tune it appropriately, but I
+think removing the memory pressure will speed things up and remove code
+rather than slow things down."
+
+So a performance regression is REPORTED, not treated as a veto. The
+design is not re-litigated on a number; it is tuned. That is a deliberate
+inversion of this campaign's usual rule and it is recorded here so nobody
+later reads it as the discipline slipping.
