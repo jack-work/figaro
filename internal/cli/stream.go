@@ -195,8 +195,8 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				// and scrolled the grid out from under the painter's model.
 				// lt.report picks the right door for whichever renderer owns
 				// the terminal, and loses nothing either way.
-				if strings.Contains(d.Reason, "no credential") || strings.Contains(d.Reason, "resolve token") {
-					lt.report(providerSetupHint())
+				if hint, ok := authFailureHint(d.Reason); ok {
+					lt.report(hint)
 				} else {
 					lt.report(d.Reason)
 				}

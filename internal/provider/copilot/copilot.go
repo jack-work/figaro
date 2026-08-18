@@ -14,7 +14,6 @@ import (
 	"strings"
 	"sync"
 	"text/template"
-	"time"
 
 	"github.com/anthropics/anthropic-sdk-go/option"
 
@@ -362,129 +361,80 @@ func baseURLFromToken(token, enterpriseDomain string) string {
 	return defaultBaseURL
 }
 
-// CopilotTokenSource exchanges a GitHub access token for a short-lived
-// Copilot session token, caching it until near expiry. In direct mode the
-// GitHub token is presented to the API unchanged, as the Copilot CLI does.
+// CopilotTokenSource presents the credential hush holds for Copilot.
+//
+// It USED to perform the GitHub-token -> session-token exchange itself and
+// cache the result. That cache lived on the provider instance, and provider
+// instances are per-aria, so a fleet paid one exchange per conversation and
+// stampeded GitHub's exchange endpoint whenever they aged out together.
+//
+// hush owns the exchange now (grant "copilot"), which is the same place the
+// durable secret already lived: one session token per machine, renewed
+// before expiry by the agent's proactive loop, shared by every aria AND
+// every figaro process. What is left here is the shape the anthropic SDK
+// wants - Resolve, Invalidate, BaseURL - over a resolver that does the
+// asking. Nothing is cached: the socket round-trip IS the sharing.
 type CopilotTokenSource struct {
-	github       auth.TokenResolver
+	resolver     auth.TokenResolver
 	domain       string
 	direct       bool
 	baseOverride string
-	mu           sync.Mutex
-	token        string
-	apiBase      string
-	expiresAt    time.Time
 }
 
-func NewCopilotTokenSource(github auth.TokenResolver, enterpriseDomain string) *CopilotTokenSource {
-	return &CopilotTokenSource{github: github, domain: enterpriseDomain}
+func NewCopilotTokenSource(resolver auth.TokenResolver, enterpriseDomain string) *CopilotTokenSource {
+	return newTokenSource(resolver, Config{EnterpriseDomain: enterpriseDomain})
 }
 
-func newTokenSource(github auth.TokenResolver, cfg Config) *CopilotTokenSource {
+func newTokenSource(resolver auth.TokenResolver, cfg Config) *CopilotTokenSource {
 	return &CopilotTokenSource{
-		github:       github,
+		resolver:     resolver,
 		domain:       cfg.EnterpriseDomain,
 		direct:       strings.EqualFold(strings.TrimSpace(cfg.TokenMode), "direct"),
 		baseOverride: strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
 	}
 }
 
-// BaseURL reports the API host for the currently resolved credential. An
-// explicit override wins, then the endpoints.api the exchange handed back,
-// then the legacy derivation from the token body.
+// BaseURL reports the API host for the current credential. An explicit
+// override wins, then the routing the exchange chose (which hush minted
+// with the token and hands back as metadata), then the legacy derivation
+// from the token body.
 func (s *CopilotTokenSource) BaseURL() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.baseOverride != "" {
 		return s.baseOverride
 	}
-	if s.apiBase != "" {
-		return s.apiBase
+	if s.direct {
+		return directBaseURL
 	}
-	return baseURLFromToken(s.token, s.domain)
+	carrier, _ := s.resolver.(auth.EndpointCarrier)
+	if carrier != nil {
+		if api := carrier.Endpoint(); api != "" {
+			return api
+		}
+	}
+	// Nothing has been resolved yet in this process: ask for the token,
+	// which is what fetches the routing alongside it.
+	tok, err := s.resolver.Resolve()
+	if err != nil {
+		return defaultBaseURL
+	}
+	if carrier != nil {
+		if api := carrier.Endpoint(); api != "" {
+			return api
+		}
+	}
+	return baseURLFromToken(tok, s.domain)
 }
 
 func (s *CopilotTokenSource) Resolve() (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.direct {
-		githubToken, err := s.github.Resolve()
-		if err != nil {
-			return "", fmt.Errorf("copilot: resolve github token: %w", err)
-		}
-		if s.apiBase == "" {
-			s.apiBase = directBaseURL
-		}
-		return githubToken, nil
-	}
-	if s.token != "" && time.Now().Before(s.expiresAt) {
-		return s.token, nil
-	}
-	githubToken, err := s.github.Resolve()
+	tok, err := s.resolver.Resolve()
 	if err != nil {
-		return "", fmt.Errorf("copilot: resolve github token: %w", err)
+		return "", fmt.Errorf("copilot: resolve token: %w", err)
 	}
-	tok, exp, api, err := exchangeCopilotToken(githubToken, s.domain)
-	if err != nil {
-		return "", err
-	}
-	s.token = tok
-	s.expiresAt = exp
-	s.apiBase = api
 	return tok, nil
 }
 
 func (s *CopilotTokenSource) Invalidate(token string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.token == token {
-		s.token = ""
-		s.expiresAt = time.Time{}
-	}
-	return s.github.Invalidate("")
-}
-
-func exchangeCopilotToken(githubAccessToken, enterpriseDomain string) (token string, expiresAt time.Time, apiBase string, err error) {
-	domain := enterpriseDomain
-	if domain == "" {
-		domain = "github.com"
-	}
-	tokenURL := fmt.Sprintf("https://api.%s/copilot_internal/v2/token", domain)
-	req, err := http.NewRequest("GET", tokenURL, nil)
-	if err != nil {
-		return "", time.Time{}, "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+githubAccessToken)
-	for k, v := range copilotStaticHeaders {
-		req.Header.Set(k, v)
-	}
-	for k, v := range copilotGitHubHeaders {
-		req.Header.Set(k, v)
-	}
-	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
-	if err != nil {
-		return "", time.Time{}, "", fmt.Errorf("copilot token exchange: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		return "", time.Time{}, "", fmt.Errorf("copilot token exchange %d: %s", resp.StatusCode, body)
-	}
-	var parsed struct {
-		Token     string `json:"token"`
-		ExpiresAt int64  `json:"expires_at"`
-		Endpoints struct {
-			API string `json:"api"`
-		} `json:"endpoints"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-		return "", time.Time{}, "", fmt.Errorf("copilot token parse: %w", err)
-	}
-	if parsed.Token == "" {
-		return "", time.Time{}, "", fmt.Errorf("copilot token exchange returned empty token")
-	}
-	exp := time.Unix(parsed.ExpiresAt, 0).Add(-5 * time.Minute)
-	return parsed.Token, exp, strings.TrimRight(parsed.Endpoints.API, "/"), nil
+	return s.resolver.Invalidate(token)
 }
 
 // debug helper (kept; guarded by env var)

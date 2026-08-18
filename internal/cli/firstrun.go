@@ -39,12 +39,12 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	hush "github.com/jack-work/hush/client"
 
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/provider/copilot"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/internal/tui"
@@ -322,8 +322,15 @@ func runOAuthInline(providerName string, cfg auth.OAuthConfig) error {
 
 // runAPIKeyInline prompts for a key (no echo), encrypts it via hush,
 // and writes it as `api_key = "AGE-ENC[...]"` in providers/<name>.toml.
-// runCopilotLogin runs the device code flow, then encrypts and stores
-// the GitHub access token as the copilot provider's api_key.
+// runCopilotLogin runs the device code flow and hands the GitHub token to
+// hush under the copilot grant.
+//
+// The token is NOT written to providers/copilot.toml any more. Copilot's API
+// will not take it: it must be exchanged for a session token, and that
+// exchange is hush's - one per machine, renewed before expiry, shared by
+// every aria. Registering here also mints the first session immediately, so
+// a credential that does not work fails now, while someone is watching,
+// instead of on a turn tomorrow.
 func runCopilotLogin(loaded *config.Loaded) error {
 	line, err := term.ReadLine("       GitHub Enterprise domain (blank for github.com): ")
 	if err != nil {
@@ -336,16 +343,42 @@ func runCopilotLogin(loaded *config.Loaded) error {
 		return err
 	}
 
-	h := mustHush()
-	encrypted, err := h.Client().Encrypt(map[string]string{"api_key": githubToken})
-	if err != nil {
-		return fmt.Errorf("encrypt github token: %w", err)
+	// Keep the domain on disk: it is not a secret, and it is what tells
+	// the provider where to exchange and which host to talk to.
+	if domain != "" {
+		if err := writeCopilotDomain(loaded, domain); err != nil {
+			return err
+		}
 	}
 
-	cfg := copilot.Config{
-		APIKey:           encrypted["api_key"],
-		EnterpriseDomain: domain,
+	reg := providerPkg.Lookup("copilot")
+	if reg == nil || reg.ExchangeURL == nil {
+		return fmt.Errorf("copilot provider is not registered")
 	}
+	tokenURL := reg.ExchangeURL(loaded)
+	if tokenURL == "" {
+		return fmt.Errorf("copilot is configured for direct mode; nothing to exchange")
+	}
+
+	h := mustHush()
+	if err := h.Client().OAuthRegister(hush.OAuthRegisterRequest{
+		Name:         "copilot",
+		TokenURL:     tokenURL,
+		Grant:        hush.GrantCopilot,
+		RefreshToken: githubToken,
+	}); err != nil {
+		return fmt.Errorf("hand the GitHub token to hush: %w", err)
+	}
+	fmt.Fprintln(os.Stderr, "  "+green("\u2713")+" hush holds the Copilot credential and minted a session "+dim("(hush oauth list)"))
+	return nil
+}
+
+// writeCopilotDomain persists the enterprise domain (plaintext, not a
+// secret) without disturbing anything else in the file.
+func writeCopilotDomain(loaded *config.Loaded, domain string) error {
+	cfg := struct {
+		EnterpriseDomain string `toml:"enterprise_domain"`
+	}{EnterpriseDomain: domain}
 	path := loaded.ProviderAuthPath("copilot")
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
@@ -358,7 +391,6 @@ func runCopilotLogin(loaded *config.Loaded) error {
 	if err := toml.NewEncoder(f).Encode(cfg); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
-	fmt.Fprintln(os.Stderr, "  "+green("\u2713")+" stored encrypted GitHub token \u2192 "+dim(path))
 	return nil
 }
 

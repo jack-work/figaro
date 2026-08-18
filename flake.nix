@@ -35,7 +35,7 @@
           pname = "figaro";
           version = "0.26.1";
           src = self;
-          vendorHash = "sha256-hPSi4kpSakLMmGkBWbGZS0ruGsVNKjeSKoB0KOcOVgk=";
+          vendorHash = "sha256-lPJ9dxeNVTTR4vWNMseDsAkZ/pOir45z3qWircCW9Cs=";
 
           subPackages = [ "cmd/figaro" ];
           env.CGO_ENABLED = 0;
@@ -411,6 +411,20 @@
           name = "sandbox";
           seedConfig = true;
           hush = null;   # real credentials, so the copy can run a turn
+        };
+
+        # `nix develop .#tools` is the shell for changing what figaro
+        # DEPENDS ON. Every other shell has the built figaro on PATH, which
+        # means entering one builds the package -- and a package build fails
+        # the moment go.mod moves ahead of vendorHash. That is a deadlock:
+        # you cannot run `go get` in a shell that will not open until after
+        # the `go get`. This shell holds the toolchain and nothing else, so
+        # the order is: enter it, bump, read nix's "got:" hash, reset
+        # vendorHash, and go back to a real shell.
+        tools = pkgs.mkShell {
+          name = "figaro-tools";
+          buildInputs = with pkgs; [ go gopls gotools git ];
+          shellHook = "echo '[figaro-dev:tools] toolchain only (no figaro build); for go get / go mod tidy / vendorHash bumps'";
         };
 
         # `nix develop .#swap` enters a shell that swaps the user's

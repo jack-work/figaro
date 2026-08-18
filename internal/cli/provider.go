@@ -49,6 +49,20 @@ func buildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolv
 		hasOAuth = reg.HasOAuth
 	}
 
+	// A provider whose bearer must be EXCHANGED has exactly one credential
+	// source: hush, which performs the exchange and owns the result. The
+	// env var and the stored api_key are the durable secret, not a bearer;
+	// presenting either to the API would present the wrong credential. They
+	// are handed to hush once, here, and never read again.
+	if reg != nil && reg.ExchangeGrant != "" && reg.ExchangeURL != nil && reg.ExchangeURL(loaded) != "" {
+		if err := ensureExchangeCredential(loaded, hushClient, reg, providerName); err != nil {
+			return nil, err
+		}
+		// Returned bare, not wrapped in an Aggregate: it is the only
+		// source, and the provider reads the routing off it directly.
+		return &auth.OAuth{Hush: hushClient, Name: providerName}, nil
+	}
+
 	strategies := environmentStrategies(reg)
 	strategies = append(strategies,
 		&auth.ConfigValue{Get: func() string {
@@ -92,6 +106,15 @@ func environmentStrategies(reg *providerPkg.Registration) []auth.CredentialStrat
 
 // providerSetupHint is the user-facing guidance shown when a turn fails
 // for lack of a credential.
+//
+// It answers exactly one question - "figaro has nothing to authenticate
+// with" - and must not be shown for any other kind of auth failure. A
+// SESSION EXCHANGE that fails (GitHub answering the Copilot token endpoint
+// with 403 and an HTML error page) is a different diagnosis with a different
+// cure: the credential is present and valid, the derivation hiccuped, and
+// retrying is exactly right. Printing this menu there sends the reader to
+// re-run a login they already did, and hides the status code that would have
+// named the real problem. See sessionExchangeHint.
 func providerSetupHint() string {
 	var b strings.Builder
 	b.WriteString("No provider connected: figaro has no credential to reach a model.\n\n")
@@ -109,6 +132,34 @@ func providerSetupHint() string {
 		}
 	}
 	return b.String()
+}
+
+// sessionExchangeHint explains a failure to DERIVE a session token from a
+// credential figaro does hold, and keeps the provider's own words: the
+// status code and body are the whole diagnosis.
+func sessionExchangeHint(reason string) string {
+	var b strings.Builder
+	b.WriteString(reason)
+	if !strings.HasSuffix(reason, "\n") {
+		b.WriteString("\n")
+	}
+	b.WriteString("\nfigaro HAS a credential; exchanging it for a session token failed.\n")
+	b.WriteString("This is usually transient (the exchange endpoint rate-limits bursts):\n")
+	b.WriteString("retry the turn. If it persists, the stored credential may be revoked:\n")
+	b.WriteString("  figaro doctor provider   (session credentials, exchanges, expiry)\n")
+	return b.String()
+}
+
+// authFailureHint picks the right explanation for a failed turn: no
+// credential at all, or a credential that could not be exchanged.
+func authFailureHint(reason string) (string, bool) {
+	switch {
+	case strings.Contains(reason, "resolve token"), strings.Contains(reason, "token exchange"):
+		return sessionExchangeHint(reason), true
+	case strings.Contains(reason, "no credential"):
+		return providerSetupHint(), true
+	}
+	return "", false
 }
 
 // buildProviderFactory wires per-aria provider construction via the

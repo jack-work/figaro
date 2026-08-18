@@ -450,6 +450,54 @@ provider while the board said otherwise.
   has not seen. That makes the cache-miss encoder load-bearing: it must drop
   unsigned thinking blocks (both the SDK and raw Anthropic encoders do).
 
+### Credentials belong to hush, not to an aria: `internal/auth`
+
+A provider instance is per-aria, so anything cached on one is cached N
+times. That is fine for a wire projection and wrong for a credential.
+
+figaro holds no credential state at all. hush does — one agent per machine,
+one copy of each secret — and it does both jobs a credential needs:
+
+- **Refresh**, for an OAuth pair (anthropic): the agent renews before expiry
+  and every reader sees the current access token.
+- **Exchange**, for a credential an API will not take directly (copilot):
+  the GitHub token is traded for a ~30-minute session token, which arrives
+  with the API host to spend it at. hush's `copilot` grant performs it.
+
+Both run on the same machinery — single-flight, persist-before-publish,
+proactive renewal at 0.7 of the token's lifetime, backoff, encryption at
+rest, and a permanent-vs-transient error taxonomy. figaro asks over a unix
+socket on each resolve; **that round-trip is the sharing**. A cache in
+figaro would reintroduce exactly what this replaced: the Copilot session
+token used to be cached on the provider instance, so a fleet paid one
+exchange per conversation, and the herd of retries earned a 403 that figaro
+rendered as "No provider connected".
+
+- `provider.Registration.ExchangeGrant` / `ExchangeURL` declare that a
+  provider's bearer is minted rather than stored. `ExchangeURL` returning
+  `""` means this installation does not exchange (Copilot's direct mode
+  presents the GitHub token unchanged).
+- For such a provider the credential chain is **only** the hush strategy
+  (`internal/cli/provider.go`). The env var and the stored `api_key` are the
+  DURABLE secret, not a bearer; presenting either would present the wrong
+  credential. They are handed to hush once by
+  `ensureExchangeCredential` — which is also the migration path off
+  `providers/copilot.toml` — and never read again.
+- Routing travels with the token: hush returns `api_base` metadata,
+  `auth.OAuth` publishes it, and `auth.Endpoint` walks an `Aggregate` to
+  find it.
+- **The agent outlives the binary that spawned it.** figaro's hush is
+  embedded — figaro re-execs itself as the agent — so a new figaro can be
+  talking to an agent from the previous release, which answers a grant
+  registration with "client_id is required". `ensureAgentKnowsGrant` asks
+  the agent what grants it supports (`Client.SupportsGrant`) and, when
+  figaro owns it, restarts its own child. An external agent is the user's,
+  so figaro says what is wrong instead of killing it.
+- **A failed mint is not a missing credential.** `authFailureHint`
+  (`internal/cli/provider.go`) keeps them apart: no credential at all gets
+  the connect-a-provider menu; a failed exchange keeps the provider's own
+  status code and says to retry.
+
 ## Tools: bash & backgrounding
 
 The bash tool (`internal/tool/bash.go`, `exec_local.go`) runs each command via
