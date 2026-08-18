@@ -275,3 +275,118 @@ must emit a translation with NO corresponding new fig IR record, the
 union gains a third member -- but it is not defined against a
 hypothetical. A union member that is never constructed is a permanent
 invitation to construct it wrongly.
+
+---
+
+# PART II: ONE LOG CONTRACT, AND A DERIVED LOG THAT CARRIES SNAPSHOTS
+
+Gluck's design, 2026-08-18, recorded from his specification. This
+subsumes the splice question: with it, the provider holds no conversation
+state at all -- no LT, no turn, no projection, no bookmark -- and the four
+hand-written acceptAssistantProjection copies delete with nothing to
+replace them.
+
+## WHY THE PROJECTION MUST GO
+
+internal/provider/IncrementalProjection is a second in-memory cache of
+data the store already caches, with its own hand-maintained bookkeeping
+(Entries, LastLT, and five carried version fields). It duplicates the JOB
+of the log layer and, because it holds slices returned by the log, it
+also PINS payloads the log's window believes it evicted.
+
+RULED BY GLUCK: NOTHING MAY PIN EVICTED BYTES, for any reason. If a
+caller needs a record it reads it, and the read brings it back. That
+removes the retention question entirely rather than measuring it.
+
+RULED BY GLUCK: cachedLog IS JUST "Log" (or FigLog). That it caches is an
+IMPLEMENTATION DETAIL. It is the sole provider of append and read; the
+caller does not know or care what is resident.
+
+## THE CONTRACT
+
+One base log for events. Reads take an INDEX SPAN and return the entries;
+accessing a span brings those entries into memory, where they live until
+eviction. Writes are WAL-shaped. Everything -- fig IR, translator IR,
+forms -- is this one structure.
+
+## THE DERIVED LOG: SNAPSHOTS OVER THE SAME STRUCTURE
+
+A second log interface DERIVES the base one and adds folded state. It
+EMBEDS the base log and OVERRIDES the equivalent methods: when a segment
+file is loaded from the cache, the derived log unmarshals the header
+bytes into a snapshot and stores it in ITS OWN cache, governed by THE
+SAME EVICTION POLICY as the segment cache.
+
+  - every segment carries a HEADER SNAPSHOT, always brought into memory
+    alongside the segment itself;
+  - snapshots are evicted WITH their segment: if the segment holding a
+    snapshot's LT is evicted, the snapshot goes too;
+  - a snapshot may be a segment header, or one built incrementally to
+    answer an earlier request in the same iteration.
+
+THE BOUND THIS BUYS, and it is the point of the whole design: BECAUSE THE
+HEADER SNAPSHOT IS ALWAYS RESIDENT WHENEVER ITS SEGMENT IS, ANY SNAPSHOT
+REQUEST COSTS AT MOST ONE SEGMENT'S WORTH OF PATCH APPLICATION. Never a
+walk from the beginning of history.
+
+## THE ITERATOR
+
+Iteration accepts a lambda invoked per entry. That lambda receives a
+second lambda, GetSnapshot, which it may call or ignore. GetSnapshot
+encloses an implementation that catches the cached snapshot up FROM the
+last snapshot it built TO the requested LT.
+
+WORKED EXAMPLE (Gluck's). A form segment holds a header and ten entries,
+LTs 10-19. The iteration asks for a snapshot at LT 15 and again at 17:
+
+  LT 15: GetSnapshot takes the HEADER snapshot, already in memory beside
+         the segment, and applies 10, 11, 12, 13, 14, 15. Returns it.
+  LT 17: applies only 16 and 17 to the snapshot built at LT 15.
+  LT 20: the next segment is loaded (or its cached form read). The
+         previous segment becomes eligible for eviction.
+
+The segment stays resident for the duration of the iteration that covers
+its LTs, which is what makes the one-segment bound hold.
+
+## THE ONE OPEN CHOICE, AND MY RECOMMENDATION
+
+Gluck offered an alternative: give the iterator the LT RANGE up front and
+PIN those entries until the iteration completes, even for segments
+already passed. He judged it easier and left the choice open.
+
+RECOMMENDATION: DO NOT PIN THE WHOLE SPAN. Pin the CURRENT segment only.
+Reason: the provider's encode path iterates the WHOLE conversation, so
+pinning the span pins the entire log for the duration of every turn --
+which defeats the window on exactly the workload the window exists for,
+and re-creates the retention the projection was just deleted for. The
+segment-at-a-time rule bounds residency to one segment plus its header
+snapshot regardless of conversation length, and the snapshot bound holds
+either way.
+Span-pinning stays available for a caller that genuinely revisits
+indices; forward-only iteration, which is what encoding is, does not need
+it. If a measured case appears where re-loading a passed segment costs
+more than pinning it, that is the moment to add the option -- with the
+number, not before.
+
+## WHAT THIS DELETES
+
+  - IncrementalProjection and its five carried version fields
+  - four hand-written acceptAssistantProjection copies (~23 lines each)
+    and five call sites
+  - the five-line append ritual across four providers
+  - the provider's need for a store handle, an LT, or a turn
+
+## WHAT MUST BE PROVEN
+
+  - THE ONE-SEGMENT BOUND, asserted as a COUNT, not a time: a snapshot
+    request applies at most one segment's patches. Counting beats timing
+    wherever the question is "how many times" -- the pattern this
+    campaign already has in countingLog and in the identity oracles.
+  - SNAPSHOT/SEGMENT EVICTION LOCKSTEP: a snapshot is never resident
+    without its segment. Canaried by evicting a segment and asserting the
+    snapshot went with it.
+  - THE FOLD IS IDENTICAL to today's walk. Form state rendered into a
+    message's wire bytes must be byte-for-byte what the current
+    projection produces, or the per-LT cache makes a divergence
+    permanent. Equivalence oracle, kept.
+  - NOTHING PINS EVICTED BYTES, asserted rather than assumed.
