@@ -760,3 +760,91 @@ a LIE, in the layered-cache tradition:
   3. IT RETURNS AN ERROR, NOT A ZERO SNAPSHOT, when the fold cannot be
      performed. An empty board and an unavailable board are different
      facts, and only one of them is a form with nothing in it.
+
+---
+
+# THE FORM CHANNEL'S WRITER INVARIANT, NAMED
+
+Found and measured by aria 041454f1; ruled and recorded by d921742d (role
+@980dc16c), 2026-08-18. It is stated HERE, in the plan, and not only in
+the test that guards it, because the person who will violate it is the
+author of the NEXT append site and they will read this before they read
+a test in another package.
+
+## THE INVARIANT
+
+    EVERY WRITE TO THE FORM CHANNEL PASSES ITS PATCH THROUGH
+    encoding/json BEFORE IT REACHES Append.
+
+Three sites today, enumerated rather than assumed:
+
+    internal/store/form.go:547   Form.Apply -- the central path
+    internal/store/xwal_store.go writeBirth
+    the stump path, identically
+
+## WHY THE SEAM DEPENDS ON IT
+
+Stage 2 assembles a snapshot from two implementations: the header half is
+folded by figwal through `formReduce`, i.e. THROUGH JSON, and the tail
+half by figaro through `form.Fold`, i.e. DECODED. `encoding/json` rewrites
+bytes on the JSON route — `marshalerEncoder` (encode.go:487) compacts
+every Marshaler's output with `escapeHTML` true, and `json.RawMessage` IS
+a Marshaler, so every value passes through it. That is not our code and it
+is not avoidable while the header is produced by `json.Marshal`;
+hand-emitting the object is rejected by form.go BY NAME, because
+delegating is what makes byte-identity with the pre-tree format true by
+construction.
+
+THE TWO HALVES AGREE ANYWAY, and the reason is the third door: THE
+REWRITE IS IDEMPOTENT AND THE WRITER HAS ALREADY APPLIED IT. Every value
+on disk is already a fixed point of the JSON route, so the header half and
+the decoded half hold THE SAME BYTES rather than merely equal ones.
+
+MEASURED, at the wire and not at the snapshot: 136 (segBase, lt) pairs
+across a 15-record fixture, RENDERED WIRE BYTES identical at every one —
+both as a whole-board render and as the PREV of a further patch, so that
+`.OldString` and the board-carried delta limits participate. A divergence
+in the second would have moved TRUNCATION, which nothing was watching.
+
+## WHAT HAPPENS IF IT IS BROKEN
+
+A payload built by hand — never through `json.Marshal` — makes the two
+folds put DIFFERENT BYTES on the wire for the same LT. Since those bytes
+are what the per-LT translation cache stores and what prompt caching keys
+on, the model's prompt would depend on WHEN A SEGMENT ROTATED.
+
+`TestSeam_TheWriterCanonicalisesAndThatIsWhyItAgrees` asserts that
+divergence deliberately, so the day someone makes hand-built payloads safe
+the test goes RED and tells them an invariant they did not know about has
+moved. Assert the fact, not the wish.
+
+## THE OPEN QUESTION: CAN THIS BE A SHAPE INSTEAD OF A RULE
+
+This campaign's two best moves both converted a rule into something
+unstatable: piece A made a stray provider `Append` FAIL TO COMPILE, and
+the amendment gave the LT to exactly one party so the ordering could not
+be expressed wrongly. The analogue here is a form-channel append that
+takes a TYPED `message.Patch` and marshals it itself, so hand-built bytes
+cannot arrive. NOT BUILT, and not to be built before the shape is
+reported: whether those three are the only byte-level doors to `chanForm`,
+whether that door is reachable from outside package `store`, and what a
+typed funnel would cost in churn. If it is cheap it DELETES this section
+by making the invariant unstatable; if it is not, this section stands
+alone and says so.
+
+## AND THE ASSERTION THIS STAGE OWES, SHARPENED
+
+Part II said the one-segment bound is asserted as a COUNT rather than a
+time. THAT IS NO LONGER SUFFICIENT. An equivalence oracle is structurally
+blind to a header that reads one record TOO MANY — form patches are
+idempotent, so re-applying a record the header already holds is a no-op;
+measured, that error is caught in 0 of the 120 pairs where lt > segBase.
+
+    THE COUNT MUST BE EXACT, NOT A BOUND:
+    folds == lt − segBase + 1 on a cold memo,
+    folds == lt − lastMemoLT on a warm one.
+
+"At most one segment" is SATISFIED by a header one record ahead, which is
+precisely the case no oracle can see. Full account:
+~/notes/figaro/instrument-not-reaching-the-code.md, under "the oracle whose
+subject is invariant under the error".
