@@ -471,3 +471,58 @@ So a performance regression is REPORTED, not treated as a veto. The
 design is not re-litigated on a number; it is tuned. That is a deliberate
 inversion of this campaign's usual rule and it is recorded here so nobody
 later reads it as the discipline slipping.
+
+---
+
+# PART IV: THE ITERATOR IS THE CANONICAL INTERFACE
+
+Gluck, 2026-08-18: "the log iterator should be the canonical interface
+for interacting with any of the logs. All of the logs should use it."
+
+That is broader than the provider path and it is the point of the whole
+consolidation. NOT "the provider gets an iterator instead of a slice" but
+THE ITERATOR IS HOW ANYTHING TALKS TO ANY LOG. Fig IR, translator IR,
+forms, librettos -- one contract, one traversal, one residency policy.
+
+CONSEQUENCE FOR EVERY EXISTING READ SHAPE. Read(), ReadFrom(), ReadPage(),
+TailSnapshot(), TailAfter() and the rest are today six ways of asking the
+same question, each with its own materialisation and its own residency
+behaviour -- and ReadPage(from, 0, n) on a trimmed window ALWAYS falls
+through, which is a trap already documented in
+~/notes/layered-cache-design.md. Under one iterator they become spans over
+one traversal. Callers that genuinely want everything in memory ask for a
+span and get it; callers that stream get the same interface and never
+materialise.
+DO NOT convert them all at once. Land the iterator, move the provider
+path onto it (Part II), and convert the rest behind it as each is measured
+-- but the DESTINATION is that no caller reaches a log any other way.
+
+## CORRECTION TO PART II's TEST PLAN: THE FINGERPRINT IS THE MECHANISM
+
+An earlier draft called for a permanent equivalence oracle against
+today's folding walk. GLUCK CORRECTED THIS AND HE IS RIGHT: the guarantee
+belongs in the cache, and it is already there.
+
+Every cached translation entry carries a FINGERPRINT (anthropic's is
+"anthropic/" + reminderRenderer + "/v5"), and lookupCached REFUSES any
+entry whose fingerprint differs from the current one. So a change to how
+form state folds into wire bytes is handled by BUMPING THE VERSION: stale
+bytes become unreachable rather than detected. Same move as making the LT
+ordering structural -- a rule converted into a shape.
+
+WHAT THE FINGERPRINT DOES NOT DO: tell us the NEW fold is correct. Bump
+it and a wrong fold is permanent and consistent -- cleanly wrong,
+everywhere, forever. So one property must be proven ONCE, before the
+change ships, and it is smaller than an oracle:
+
+  1. FOLD-FROM-HEADER EQUALS FOLD-FROM-ZERO at every LT across a
+     multi-segment fixture. This is the associativity the design rests
+     on: a header snapshot must be exactly "everything before this
+     segment, already applied". If it is not, the one-segment bound is
+     unsound and this catches it immediately.
+  2. THE FINGERPRINT MOVED. A test that fails if the fold implementation
+     changes without the version string changing. Cheap, and it prevents
+     the single mistake that would make wrong bytes permanent.
+
+No permanent oracle is needed: the mathematical property is the thing,
+not a comparison against an implementation we intend to delete.
