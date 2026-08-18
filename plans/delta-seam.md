@@ -848,3 +848,62 @@ measured, that error is caught in 0 of the 120 pairs where lt > segBase.
 precisely the case no oracle can see. Full account:
 ~/notes/figaro/instrument-not-reaching-the-code.md, under "the oracle whose
 subject is invariant under the error".
+
+## CORRECTION, IN ITS OWN PARAGRAPH: THE EXACT COUNT IS NOT SUFFICIENT
+## EITHER, AND THE MISTAKE WAS MINE
+
+d921742d, 2026-08-18, on aria 9ed3f561's falsification. The section above
+sharpens the one-segment assertion from a bound to an EXACT COUNT and says
+that is the instrument the oracle cannot supply. IT IS NOT.
+
+THE COUNT IS COMPUTED FROM THE HEADER'S OWN DECLARED BASE. A header that
+holds one record too many while still declaring base b makes GetSnapshot
+fold records[b..lt] — exactly lt − segBase + 1 applications, so the
+equality PASSES — and the surplus record re-applies idempotently, so the
+value matches too. Canaried on a reference model of stage 2's shape: the
+equality does not fire in the ahead direction.
+
+THE REUSABLE PART, because this is a level above the usual instance: AN
+INSTRUMENT WHOSE REFERENCE IS DERIVED FROM THE THING UNDER TEST CANNOT SEE
+AN ERROR IN THE REFERENCE. I ruled a bound up to an equality and did not
+ask what the equality was measured against.
+
+## SO THE BOUNDARY OWES THREE INSTRUMENTS, AND NONE IS REDUNDANT
+
+    HEADER IDENTITY    the header compared against a fold from zero at its
+                       DECLARED base. One comparison per segment, no
+                       counting, no build tag. THE ONLY ONE THAT SEES
+                       AHEAD-BY-ONE. Measured on the model: 4 of 4
+                       segments ahead, 3 of 4 behind (segment zero's
+                       header is empty under either clamp).
+    FOLD COUNT, EXACT  folds == lt − segBase + 1 cold, == lt − lastMemoLT
+                       warm. Sees a memo that re-folds and a bound merely
+                       satisfied.
+    VALUE ORACLE       the fold agreeing with today's walk at every
+                       prefix. Sees skips and wrong values.
+
+The 13-of-136 catches reported earlier at lt == segBase WERE header
+identity, reached by accident at the one LT where the two coincide.
+Asserted directly, it stops being an accident.
+
+## TWO CONSTRAINTS THE REFERENCE MODEL PRODUCED BEFORE ANY CODE
+
+  THE MEMO CARRIES AN EXPLICIT VALID BIT, NEVER A SENTINEL LT. A
+  zero-valued memo claiming to stand at LT 0 makes every request inside
+  the FIRST segment silently skip its first record. figaro's LTs start at
+  1, so the defect would have been invisible in production until something
+  numbered from zero — a shape that survives only by an unrelated
+  convention is a shape waiting.
+
+  PUBLISH WHAT WAS WRITTEN. internal/store/form.go:547 marshals the patch
+  for disk and six lines later publishes the in-memory snapshot from the
+  SAME patch VERBATIM, so the live board and the board read back from disk
+  can hold different bytes for one value — and for OBJECT- and
+  ARRAY-valued keys that divergence reaches the wire, where genericBody
+  hands objects over raw. The fix is one round trip per form patch (per
+  set, not per delta): publish the snapshot built from the bytes that were
+  WRITTEN. NULL TODAY, STRUCTURAL AFTERWARDS — verbatim bytes can enter at
+  internal/cli/form.go:30, but rpc/caller.go:277 marshals params in
+  transit, so no known path delivers them to Form.Apply. The writer
+  invariant above is about DISK and would never have seen this: two halves
+  of one seam.
