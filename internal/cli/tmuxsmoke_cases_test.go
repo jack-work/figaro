@@ -155,7 +155,22 @@ func TestSmoke_SteerOrderMatchesShow(t *testing.T) {
 
 	sb := p.scrollback()
 	if c := pagerChrome(sb); c != 0 {
-		t.Skipf("view auto-promoted (chrome=%d); re-run taller", c)
+		// DO NOT "RE-RUN TALLER". That advice was here, it is false, and it
+		// cost two investigations. This pane is 100x100 -- the second tallest
+		// in the suite -- and somebody already followed the advice to get it
+		// there. Bounding the tool output to three one-line echoes was also
+		// tried and also promoted at chrome=2. Promotion is not a function of
+		// pane height or of output volume in the way the message implied, so
+		// the message sent readers to the one remedy that cannot work.
+		//
+		// THIS SKIP IS A KNOWN COVERAGE HOLE, not a flake: with it, the steer
+		// path has NO pty coverage at all, and it has been filed since
+		// ~/notes/figaro/memory-campaign-open-items.md item 3 ("unverifiable
+		// in the current harness -- it auto-promotes at 101 and 201 with
+		// chrome=2"). It belongs to the CLI/client fold refactor.
+		t.Skipf("KNOWN HOLE: view auto-promoted (chrome=%d); the steer path has no pty coverage. "+
+			"Do NOT re-run taller -- this pane is already 100x100 and bounding the output was tried too. "+
+			"See memory-campaign-open-items.md item 3.", c)
 	}
 	if got := strings.Count(sb, "↳ input"); got != 1 {
 		t.Errorf("steer marker appears %d times, want exactly 1", got)
