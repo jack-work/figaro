@@ -647,3 +647,116 @@ while Send is running; and even in a goroutine the provider's Send did
 not complete, cause undiagnosed. The guard behaved correctly every time
 -- it refused to report a result from a run where the provider never ran,
 which is the only reason the failure was visible rather than green.
+
+---
+
+# PART II STAGE 2, RULED: THE SHAPE OF THE SNAPSHOT SEAM
+
+Aria 7e151902 (role @980dc16c), 2026-08-18, before any stage-2 code was
+cut. Three of these correct the stage as WRITTEN above; they are recorded
+here as new paragraphs beside it rather than as edits to it.
+
+## THE MECHANISM EXISTS AND THE BOUND ALREADY HOLDS
+
+Part II says "every segment carries a HEADER SNAPSHOT". IT ALREADY DOES,
+and not in the place two readers of figwal first looked. The per-baseIndex
+WATERMARK FILES (`<chDir>/<base>.jsonl`) are written only at channel
+creation, recovery and fork backfill — that reading is correct and it is
+not the mechanism. The mechanism is figwal's OPAQUE BLOCK-0 SEGMENT
+HEADER: `Options.OnSegmentOpen` puts a log in header mode, `channelOpts`
+wires EVERY reducible channel to `reducibleFold`, and `openActiveLocked`
+folds `(prevHeader, sealedPayloads)` and calls `WriteHeader` on every
+segment creation — which is every rotation. `StateAt(idx)` then folds that
+header with `[segBase..idx]` and nothing earlier.
+
+MEASURED, not read (probe /var/tmp/fig-hdr-probe, counting reducer,
+figwal v0.18.0 from the module cache, 4 KiB segments, 400 patches, 8
+segments): 0 folds during the appends; 400 on the first StateAt (the
+deferred rotations settling — each record folded ONCE, ever); then exactly
+44 = idx − segBase + 1 at idx 400, 300 and 200; 1 at idx 1; and 44 again
+on the first call after Close and REOPEN, so the bound holds cold from
+disk. Full account: ~/notes/figaro/segment-headers-already-there.md.
+
+CONSEQUENCE: the write side of this design is ALREADY PAID on every aria
+on disk, and figaro has never read it — `StateAt`/`HeaderAt` have zero
+non-test callers in `internal/`.
+
+## SO STAGE 2 IS A MEMO, NOT A PERSISTENCE LAYER
+
+figwal re-folds from the header on EVERY `StateAt`; it keeps no memo of
+the snapshot it last built. The worked example above (LT 15 then LT 17
+costing 6 then 2) is therefore exactly what stage 2 must add, and all it
+must add. Nothing new is written to disk.
+
+TWO COUNTS DECIDE WHETHER IT WAS BUILT RIGHT, and neither is a time:
+
+  UNMARSHALS PER SNAPSHOT REQUEST == 1. `formReduce` (xwal_store.go:177)
+  unmarshals the state, applies one patch and marshals it back PER RECORD;
+  its own comment prices that at 97us decode / 76us encode on a 15KB
+  board. Folding through it would pay that per patch. The derived log
+  takes the HEADER BYTES, unmarshals ONCE, and folds the segment's patches
+  DECODED through `form.Fold`.
+
+  THE MEMO IS REACHED. A second request inside one iteration applies only
+  the patches BETWEEN the two LTs. This count must read ZERO before stage
+  2 by construction — figwal has no memo — which makes the counter's
+  current value a prediction that can be checked, and therefore a counter
+  proven able to fail.
+
+## THE FIGWAL CHANGE THIS NEEDS, AND IT IS ADDITIVE
+
+`xwal.Store` exposes `StateAt` but NOT `HeaderAt`; `HeaderAt` and
+`SegmentBaseIndexes` live on `disk.Log` and xwal reaches them only for a
+count in its stats. Exposing them at the store level is the whole change:
+expose what exists, rather than write new watermarks.
+
+## THE PROPERTY THAT WAS NOT WEIGHED: TWO IMPLEMENTATIONS MEET IN ONE
+## SNAPSHOT
+
+The header half of every snapshot is folded by figwal through
+`formReduce`, i.e. THROUGH JSON. The tail half is folded by figaro through
+`form.Fold`, i.e. DECODED. They agree only if `form.Snapshot`'s
+Marshal/Unmarshal round trip is EXACT — nil vs empty, key sets, unknown
+fields, ordering.
+
+So fold-from-header == fold-from-zero is necessary and NOT sufficient: it
+can pass on a fixture that happens not to carry the key the round trip
+drops. A RICH-CORPUS ROUND-TRIP IDENTITY belongs beside it, and it comes
+FIRST, because its failure is the one that gets STORED under a fingerprint
+asserting the bytes are right.
+
+## THE ALIASING QUESTION, ASKED AND ANSWERED IN THE DESIGN'S FAVOUR
+
+Part I had to ask the aliasing law as a CAPACITY question because a
+`strings.Builder` can be mutated under a published reader. THAT HAZARD
+DOES NOT EXIST HERE: `form.Snapshot` is an immutable persistent tree
+(`form/form.go`: a `root *node`, `Clone` is the identity, `Apply` returns
+a new snapshot, `FromMap` copies), and `State` publishes it through an
+atomic pointer precisely because it is safe to share. A memo may hand the
+same snapshot to any number of readers, and a later fold cannot disturb
+one already handed out.
+
+WHAT STILL MUST BE COUNTED is the other half of the rule — NOTHING PINS
+EVICTED BYTES. A snapshot retains the values folded into it; those values
+must be decoded copies, never slices of the log's resident payload. That
+is a residency count, not an argument.
+
+## THE ITERATOR SHAPE, since stage 1 shipped one without snapshots
+
+Stage 1 landed `Entries(Reader[T], Span) iter.Seq[Entry[T]]`. The snapshot
+seam is a SECOND sequence, not a change to that one:
+
+    iter.Seq2[Entry[T], func() (S, error)]
+
+Callers that do not want folded state keep the one-value form and pay
+nothing. Three rules on the accessor, each of which is a MISS rather than
+a LIE, in the layered-cache tradition:
+
+  1. IT IS VALID FOR ITS OWN STEP. Called after the iteration has moved
+     on, it returns an ERROR — never a snapshot from another position.
+  2. A BACKWARD REQUEST IS LEGAL AND BOUNDED. It re-folds from the header;
+     it must never silently rewind the memo, and the count instrument must
+     see it as what it is.
+  3. IT RETURNS AN ERROR, NOT A ZERO SNAPSHOT, when the fold cannot be
+     performed. An empty board and an unavailable board are different
+     facts, and only one of them is a form with nothing in it.
