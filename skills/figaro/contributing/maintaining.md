@@ -152,6 +152,45 @@ The same move elsewhere: a timeout that fails the test instead of wedging the
 suite, a counter of source calls instead of an assertion about contents, a
 `-race` reader that checks ordering rather than waiting for corruption.
 
+### Ask what the instrument would still report if its subject were gone
+
+Distilled by aria 9ed3f561 (2026-08-18) after sixteen documented instances,
+three of them found by pointing a rule it had written back at itself within
+the hour of writing it. It is the practice the rest of this section keeps
+re-deriving, and it is one question:
+
+    WHAT WOULD THIS INSTRUMENT STILL REPORT IF THE THING IT WATCHES WERE
+    GONE?
+
+If the answer is "a pass", the instrument is not measuring; it is agreeing.
+Three shapes of the same failure, all met in one evening:
+
+  - A RETIRED AXIS. A counter of lookups reads zero in both columns once the
+    lookups are removed. Nothing is wrong with it and it discriminates
+    nothing. A retired axis reads exactly like a clean result.
+  - A COMPARISON WITH NOTHING LEFT TO COMPARE. "Cold grows with length while
+    warm stays flat" is a fine canary until the warm path is deleted, at
+    which point the test passes by having no second column — and it AGREES
+    WITH THE PREDICTION, because the prediction was that warm becomes cold.
+    A confirmation produced by an instrument that can no longer disagree.
+  - A NAME THAT OUTLIVES ITS SUBJECT. `BenchmarkObservationWarm50` measuring
+    a cold walk because the one field that made it warm was deleted to fix
+    the build. Retire the name; never repair it.
+
+THE DEFENCE IS THE SAME EVERY TIME AND IT IS NOT VIGILANCE. Make the
+deletion BREAK THE BUILD (a field the instrument assigns), so the repair is
+a decision someone must make rather than a silence they inherit — and when
+you retire a column, state its final numbers IN THE COMMIT THAT RETIRES IT,
+so the comparison survives as a cross-commit assertion rather than
+evaporating with the code.
+
+AND THE COROLLARY ABOUT PEOPLE, paid for three times in one evening by three
+different arias: A RULE IS NOT INTERNALISED BY BEING WRITTEN, OR EVEN BY
+BEING PROPOSED. Recognition attaches to the situation it was learned in, not
+to the mechanism, which is why a known failure mode survives review by the
+very author who named it. Knowing better is exactly what makes you stop
+checking.
+
 ### Assert the fact, not the wish
 
 When the behaviour you dislike belongs to a component that never promised
