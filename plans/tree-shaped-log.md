@@ -1,3 +1,50 @@
+# COMMUNICATION AND COMPLEXITY RULES, GLUCK, 2026-08-18
+
+## 1. STANDARD TERMINOLOGY, NOT PROJECT SLOGANS
+
+Use established computer science terms even where they differ from the
+identifiers in this codebase. Say cache invalidation, residency, eviction
+policy, LRU, working set, memoization, zero-copy, serialization,
+asymptotic complexity, call graph, static analysis, lifetime, buffer.
+
+Do not use coined phrases as if they were technical vocabulary. A slogan
+compresses a finding for people who were present when it was found and is
+opaque to everyone else, which makes a document readable only by its
+authors. Findings go in plain sentences; the aphorism, if it is worth
+keeping at all, goes in a note.
+
+## 2. STANDING WATCH FOR EVERY FIGARO
+
+Every aria watches for redundant mechanisms, duplicated caches, and
+accretion of layers over the same data. This is not one campaign's task.
+
+## 3. COMPLEXITY IS NOT SPENT WITHOUT APPROVAL
+
+Do not trade asymptotic complexity for structural cleanliness. If a
+consolidation would replace a constant-time operation with a linear one,
+or a linear operation with a quadratic one -- including by making a rescan
+necessary where a memoized result was previously available -- THAT NEEDS
+GLUCK'S APPROVAL BEFORE IT LANDS.
+
+State it as a complexity change with the operation named, not as a
+benchmark result: "assembling a request body becomes O(n) in conversation
+length because the memoized prefix is gone" is the report. Whether it is
+also slower in wall-clock time is a separate question and does not replace
+this one.
+
+## 4. HOW TO HANDLE ACCUMULATED APPROVALS
+
+Work as far as possible without blocking. When a question needs his
+approval, record it and keep going on unaffected work. IF THE PENDING
+QUESTIONS ACCUMULATE TO THE POINT THAT CONTINUING WOULD PREJUDGE THEM,
+HALT ALL AFFECTED WORK AND WAIT rather than choosing the answer by
+building past it.
+
+The failure this prevents is deciding an open question implicitly, by
+having already built the thing that assumes one answer.
+
+---
+
 # FIRM RULE, GLUCK, 2026-08-18: DELETION IS THE DEFAULT
 
 Given the hour after the block below, when the role bearer under-counted a
