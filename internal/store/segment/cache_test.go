@@ -62,41 +62,40 @@ func TestCacheAccountingSurvivesAppendVersusEvict(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 500; i++ {
-			payloadCache.evictTo(0)
+			payloadBudget.TrimIdle(-1)
 		}
 	}()
 	wg.Wait()
 
-	// The decision itself, deterministically: an evictor holding a pointer an
-	// append has already replaced must keep its hands off the accounting.
+	// The property the old CAS-race test protected, restated for the
+	// tree seat: however extend, evict and reload interleave, the
+	// accounting must return to consistency -- an evict returns ALL the
+	// run's bytes, a reload charges exactly the fresh block, and nothing
+	// is stranded.
 	if _, err := s.ReadIndex(0); err != nil {
 		t.Fatal(err)
 	}
-	stale := s.block.Load()
-	if _, err := s.Append(payload); err != nil { // extendBlock replaces it
+	if _, err := s.Append(payload); err != nil { // extendBlock replaces the run in place
 		t.Fatal(err)
 	}
-	fresh := s.block.Load()
-	if stale == fresh {
+	if s.block.Load() == nil {
 		t.Fatal("append did not extend the block; the case under test cannot arise")
 	}
-	charged := CachedBytes()
-	payloadCache.mu.Lock()
-	lost := payloadCache.dropLocked(s, stale)
-	_, stillHeld := payloadCache.held[s]
-	payloadCache.mu.Unlock()
-	if lost {
-		t.Fatal("dropping a stale block reported success")
+	s.DropCache()
+	if got := CachedBytes(); got != 0 {
+		t.Fatalf("after dropping the only cached segment, %d bytes stranded on the meter", got)
 	}
-	if !stillHeld {
-		t.Fatal("a lost eviction race forgot the segment, stranding its bytes")
+	if _, err := s.ReadIndex(0); err != nil { // reload
+		t.Fatal(err)
 	}
-	if got := CachedBytes(); got != charged {
-		t.Fatalf("a lost eviction race changed the accounting: %d -> %d", charged, got)
+	if b := s.block.Load(); b == nil {
+		t.Fatal("reload after drop did not cache")
+	} else if got := CachedBytes(); got != b.bytes {
+		t.Fatalf("reload accounting: meter %d, block %d", got, b.bytes)
 	}
 
 	// Whatever the interleaving, the counter must describe what is held.
-	payloadCache.evictTo(0)
+	payloadBudget.TrimIdle(-1)
 	if got := CachedBytes(); got != 0 {
 		t.Fatalf("after evicting everything, %d bytes still charged", got)
 	}

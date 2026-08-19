@@ -1,179 +1,123 @@
 package segment
 
+// The payload cache, re-seated on tree.Cache -- the ONE window shape
+// this stack shares (see tree's package comment). What this file used
+// to be: a 278-line singleton with its own accountant, its own epoch
+// recency and its own idle sweep; each of those is tree's job now.
+// What stays HERE is the property tree must not tax: the lock-free
+// read path. A Segment keeps its atomic block pointer and its usedAt
+// stamp; tree owns budget, eviction order (through the Recency
+// oracle) and the sweep, and clears the fast pointer through the
+// Evicted hook, outside every lock.
+
 import (
-	"sort"
 	"sync"
 	"sync/atomic"
+
+	"github.com/jack-work/figaro/internal/store/tree"
 )
-
-// Payload residency is LAZY and BOUNDED.
-//
-// A segment holds an offset per record from the moment it is opened; the
-// payloads themselves are read by pread and are not retained until somebody
-// asks for one. The first read of a segment loads its payloads into one
-// immutable block published behind an atomic pointer, so every later read of
-// that segment is a slice index with no lock and no syscall.
-//
-// Blocks are charged against a process-wide budget. When a load takes the
-// total past it, the least recently used blocks are dropped: the pointer is
-// nilled, the segment keeps serving by pread, and a later read reloads it.
-// Dropping a block can never lose data — every byte of it is in the file
-// already — and a caller still holding a payload from an evicted block keeps
-// it alive on its own, because the block is a slice of ordinary garbage
-// collected bytes.
-//
-// The active segment's block is EXTENDED by Append rather than invalidated,
-// so a writer's own tail stays resident without a reload per record.
-
-const defaultCacheBudget = 32 << 20
 
 type block struct {
 	payloads [][]byte
 	bytes    int64
 }
 
-// cache is the process-wide registry of loaded blocks. It holds no payloads
-// itself: it knows which segments have one, how large it is, and when it was
-// last touched, which is everything eviction needs.
-//
-// Recency is an EPOCH, not a per-read counter. The first version stamped a
-// global counter on every cached read, which is an atomic read-modify-write
-// on one cache line shared by every reader in the process: reads measured 26
-// ns on one core and 47 ns on sixteen, getting slower the more of them there
-// were. The epoch advances when a block is loaded and when a sweep runs --
-// both rare -- and a reader only STORES it, and only when its segment's stamp
-// is stale. A shared read plus an occasional store to the segment's own line
-// costs nothing to scale.
-type cache struct {
-	budget atomic.Int64
-	bytes  atomic.Int64
-	epoch  atomic.Int64
-	loads  atomic.Int64
+// sliceHeaderBytes charges the per-record bookkeeping so a segment of
+// many tiny records is not accounted as free.
+const sliceHeaderBytes = 24
 
-	mu   sync.Mutex
-	held map[*Segment]struct{}
+// defaultCacheBudget matches the pre-tree default: 32 MiB.
+const defaultCacheBudget = 32 << 20
+
+var (
+	payloadBudget = tree.NewBudget(defaultCacheBudget)
+	payloadCache  = newPayloadCache()
+
+	loads atomic.Int64
+
+	// registry maps a coord back to its Segment, for the Evicted hook
+	// and the Recency oracle. Guarded by regMu; consulted on eviction
+	// and sweep (rare), never on the read fast path.
+	regMu    sync.Mutex
+	registry = map[tree.Coord]*Segment{}
+)
+
+func newPayloadCache() *tree.Cache[*block] {
+	c := tree.New[*block](nil, payloadBudget,
+		func(b *block) int { return int(b.bytes) },
+		func(*block) uint64 { return 1 })
+	c.Evicted = func(coord tree.Coord) {
+		regMu.Lock()
+		s := registry[coord]
+		delete(registry, coord)
+		regMu.Unlock()
+		if s != nil {
+			s.block.Store(nil)
+		}
+	}
+	c.Recency = func(coord tree.Coord) int64 {
+		regMu.Lock()
+		s := registry[coord]
+		regMu.Unlock()
+		if s == nil {
+			return 0
+		}
+		return s.usedAt.Load()
+	}
+	return c
 }
 
-var payloadCache = func() *cache {
-	c := &cache{held: make(map[*Segment]struct{})}
-	c.budget.Store(defaultCacheBudget)
-	return c
-}()
+// coordOf names a segment's run: one run per segment, keyed by the
+// identity the file already has.
+func (s *Segment) coordOf() tree.Coord {
+	return tree.Coord{Node: s.path, From: 0, To: 1}
+}
 
-// SetCacheBudget bounds the total bytes of segment payloads held in memory
-// across every open log. Zero disables caching entirely (every read becomes a
-// pread); a negative value is ignored.
+// SetCacheBudget bounds the total bytes of segment payloads held in
+// memory across every open log. Zero disables caching entirely (every
+// read becomes a pread); a negative value is ignored.
 func SetCacheBudget(bytes int64) {
 	if bytes < 0 {
 		return
 	}
-	payloadCache.budget.Store(bytes)
-	payloadCache.evictTo(bytes)
+	payloadBudget.SetLimit(bytes)
+	if bytes == 0 {
+		// Disabling drops everything held; charge(0) triggers no pass,
+		// so sweep everything regardless of age.
+		payloadBudget.TrimIdle(-1)
+	}
 }
 
-// CacheBudget and CachedBytes report the bound and what is held against it.
-func CacheBudget() int64 { return payloadCache.budget.Load() }
-func CachedBytes() int64 { return payloadCache.bytes.Load() }
+// CacheBudget reports the configured bound.
+func CacheBudget() int64 { _, limit, _ := payloadBudget.Stats(); return limit }
 
-// CacheLoads counts how many times a segment's payloads have been read into
-// memory. A number that climbs with READS rather than with distinct segments
-// is the alarm: something is dropping blocks as fast as they are built, and
-// every read is paying for a whole segment.
-func CacheLoads() int64 { return payloadCache.loads.Load() }
+// CachedBytes reports the payload bytes currently resident.
+func CachedBytes() int64 { resident, _, _ := payloadBudget.Stats(); return resident }
 
-// CachedSegments reports how many segments currently hold a block.
+// CacheLoads reports whole-segment loads to date: the thrash alarm.
+// Climbing with READS rather than with distinct segments means blocks
+// are being dropped as fast as they are built.
+func CacheLoads() int64 { return loads.Load() }
+
+// CachedSegments reports how many segments hold a resident block.
 func CachedSegments() int {
-	payloadCache.mu.Lock()
-	defer payloadCache.mu.Unlock()
-	return len(payloadCache.held)
-}
-
-// stamp marks the segment as used in the current epoch, storing only when
-// that is not already what it says.
-func (c *cache) stamp(s *Segment) {
-	now := c.epoch.Load()
-	if s.usedAt.Load() != now {
-		s.usedAt.Store(now)
-	}
-}
-
-func (c *cache) admit(s *Segment, b *block) {
-	c.mu.Lock()
-	c.held[s] = struct{}{}
-	c.mu.Unlock()
-	total := c.bytes.Add(b.bytes)
-	if budget := c.budget.Load(); total > budget {
-		c.evictTo(budget)
-	}
-}
-
-func (c *cache) charge(delta int64) { c.bytes.Add(delta) }
-
-// forget drops a segment's accounting without touching its pointer. Called
-// when the segment itself goes away.
-func (c *cache) forget(s *Segment) {
-	c.mu.Lock()
-	_, held := c.held[s]
-	delete(c.held, s)
-	c.mu.Unlock()
-	if !held {
-		return
-	}
-	if b := s.block.Swap(nil); b != nil {
-		c.bytes.Add(-b.bytes)
-	}
-}
-
-// evictTo drops least recently used blocks until the total fits. Sorting the
-// held set is affordable because it only runs when the budget is exceeded,
-// and the alternative — an intrusive LRU list — needs a lock on every read.
-func (c *cache) evictTo(budget int64) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.bytes.Load() <= budget {
-		return
-	}
-	segs := make([]*Segment, 0, len(c.held))
-	for s := range c.held {
-		segs = append(segs, s)
-	}
-	sort.Slice(segs, func(i, j int) bool {
-		return segs[i].usedAt.Load() < segs[j].usedAt.Load()
-	})
-	for _, s := range segs {
-		if c.bytes.Load() <= budget {
-			return
-		}
-		c.dropLocked(s, s.block.Load())
-	}
-}
-
-// dropLocked releases the block the evictor read, and reports whether it was
-// the one still installed. A LOST race means an append extended the block
-// between the load and the swap: the segment keeps its (larger) block and
-// stays in the held set, because forgetting it there would charge bytes to a
-// segment nothing could ever evict.
-func (c *cache) dropLocked(s *Segment, b *block) bool {
-	if b == nil {
-		delete(c.held, s)
-		return true
-	}
-	if !s.block.CompareAndSwap(b, nil) {
-		return false
-	}
-	c.bytes.Add(-b.bytes)
-	delete(c.held, s)
-	return true
+	regMu.Lock()
+	defer regMu.Unlock()
+	return len(registry)
 }
 
 // cachedPayloads returns this segment's block, loading it if the budget
-// allows. A nil result means the caller must read from the file.
+// allows. A nil result means the caller must read from the file. The
+// fast path is one atomic load and, at most, one stale-epoch store --
+// tree is not consulted at all.
 func (s *Segment) cachedPayloads() *block {
 	if b := s.block.Load(); b != nil {
-		payloadCache.stamp(s)
+		if e := payloadBudget.EpochNow(); s.usedAt.Load() != e {
+			s.usedAt.Store(e)
+		}
 		return b
 	}
-	if payloadCache.budget.Load() <= 0 {
+	if CacheBudget() <= 0 {
 		return nil
 	}
 	s.loadMu.Lock()
@@ -185,47 +129,28 @@ func (s *Segment) cachedPayloads() *block {
 	if err != nil {
 		return nil
 	}
-	payloadCache.loads.Add(1)
-	s.usedAt.Store(payloadCache.epoch.Add(1))
+	loads.Add(1)
 	if !s.block.CompareAndSwap(nil, b) {
 		return s.block.Load()
 	}
-	payloadCache.admit(s, b)
+	coord := s.coordOf()
+	regMu.Lock()
+	registry[coord] = s
+	regMu.Unlock()
+	s.usedAt.Store(payloadBudget.EpochNow())
+	payloadCache.Put(coord, []*block{b}, false)
 	return b
 }
 
-// SweepIdle drops every block not read since `keep` sweeps ago and advances
-// the epoch. It is the IDLE half of the policy: the budget bounds a busy
-// process, and this returns the memory of one that has gone quiet. A caller
-// with an idle clock of its own (figaro has three) should drive this from the
-// same sweep rather than invent a fourth number.
-//
-// Returns how many blocks were dropped and how many bytes that freed.
+// SweepIdle drops every block not read since `keep` sweeps ago and
+// advances the epoch: tree.TrimIdle with the segments' own usedAt as
+// the recency oracle. A caller with an idle clock of its own should
+// drive this from the same sweep rather than invent another number.
 func SweepIdle(keep int64) (dropped int, freed int64) {
 	if keep < 0 {
 		return 0, 0
 	}
-	now := payloadCache.epoch.Add(1)
-	cutoff := now - keep
-	payloadCache.mu.Lock()
-	defer payloadCache.mu.Unlock()
-	for s := range payloadCache.held {
-		// >= : a block stamped in the cutoff epoch has not yet gone a full
-		// `keep` sweeps without a read.
-		if s.usedAt.Load() >= cutoff {
-			continue
-		}
-		b := s.block.Load()
-		if b == nil {
-			delete(payloadCache.held, s)
-			continue
-		}
-		if payloadCache.dropLocked(s, b) {
-			dropped++
-			freed += b.bytes
-		}
-	}
-	return dropped, freed
+	return payloadBudget.TrimIdle(keep)
 }
 
 // readAllPayloads reads every record of the segment in one pass.
@@ -247,15 +172,11 @@ func (s *Segment) readAllPayloads() (*block, error) {
 	return b, nil
 }
 
-// sliceHeaderBytes charges the per-record bookkeeping so a segment of many
-// tiny records is not accounted as free.
-const sliceHeaderBytes = 24
-
-// extendBlock keeps the writer's own tail resident: when the active segment
-// already has a block, an append lands in it instead of invalidating it. The
-// CAS is what keeps the accounting honest against a concurrent eviction — if
-// the block was dropped between the load and the swap, the append is simply
-// not cached.
+// extendBlock keeps the writer's own tail resident: when the active
+// segment already has a block, an append lands in it instead of
+// invalidating it. The CAS keeps the accounting honest against a
+// concurrent eviction; the re-Put replaces the run and charges the
+// delta.
 func (s *Segment) extendBlock(payload []byte) {
 	old := s.block.Load()
 	if old == nil {
@@ -268,11 +189,20 @@ func (s *Segment) extendBlock(payload []byte) {
 		bytes:    old.bytes + int64(len(cp)) + sliceHeaderBytes,
 	}
 	if s.block.CompareAndSwap(old, nb) {
-		payloadCache.charge(nb.bytes - old.bytes)
-		payloadCache.stamp(s)
+		payloadCache.Put(s.coordOf(), []*block{nb}, false)
+		if e := payloadBudget.EpochNow(); s.usedAt.Load() != e {
+			s.usedAt.Store(e)
+		}
 	}
 }
 
 // DropCache releases this segment's payload block. The segment keeps
 // serving reads from the file; a later read reloads it.
-func (s *Segment) DropCache() { payloadCache.forget(s) }
+func (s *Segment) DropCache() {
+	coord := s.coordOf()
+	regMu.Lock()
+	delete(registry, coord)
+	regMu.Unlock()
+	s.block.Store(nil)
+	payloadCache.Drop(coord)
+}

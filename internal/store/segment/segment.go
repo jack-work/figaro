@@ -303,7 +303,7 @@ func (s *Segment) Size() int64   { return s.size }
 
 // Close releases the file handle and the segment's payload block.
 func (s *Segment) Close() error {
-	payloadCache.forget(s)
+	s.DropCache()
 	return s.f.Close()
 }
 func (s *Segment) Path() string       { return s.path }
