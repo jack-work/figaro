@@ -283,3 +283,42 @@ the assistant's native payload into the translator log. dfdfae6a's audit put
 AssistantCache on the "stays" list; by the rule's letter it is a row, not a
 cache. Left alone pending Gluck, because renaming the function and not the
 type it carries would be worse than either.
+
+# SECTION 2 PRELIMINARIES: WHAT THE SUBSTRATE ACTUALLY OFFERS (223a0986)
+
+Read in figwal and the store rather than assumed, prompted by dfdfae6a's
+caution to check ORDERING before designing around ATOMICITY.
+
+  1. THERE IS NO MULTI-CHANNEL TRANSACTION. `XWAL.AppendMain` and
+     `XWAL.Append` each take one channel's lock and write one frame to that
+     channel's own log. Nothing in the surface commits two channels together,
+     so ATOMICITY IS NOT AVAILABLE and ordering is the only lever.
+
+  2. A ROW MAY BE WRITTEN BEFORE ITS RECORD EXISTS, BY THE SUBSTRATE'S OWN
+     CONTRACT. `XWAL.Append`'s mainLT "must be >= the channel's last
+     referenced main LT (IT MAY EXCEED THE CURRENT MAIN TAIL, TO SUPPORT
+     CATCH-UP)". So the row-first ordering is legal, and it is the ordering
+     whose failure mode is survivable: an orphan row is trimmable, an orphan
+     record is fatal under "a missing row is an error".
+
+  3. AND THE THING THAT COMPLICATES IT, WHICH IS NOT THE LT. The next main LT
+     is predictable (`LastIndex()+1` under the writer's lock, and turn.go
+     already predicts it and asserts the prediction). THE STAMP IS NOT. On the
+     main channel `xwalLog.Append` calls `AppendCursors` with the store's
+     observed cursors, and then READS THE RECORD BACK to learn
+     FormChannelVersion and StudyVersions -- "fields the store stamps and the
+     caller cannot know". CatchUp encodes FROM those two fields: they decide
+     which form patches and which study blocks the row renders.
+
+     SO A ROW CANNOT BE ENCODED BEFORE ITS RECORD LANDS without recomputing
+     the stamp outside the append that owns it -- a second reader of state the
+     append reads under a lock, which is a race unless the door's lock covers
+     both. That is the real design question in section 2, and it is sharper
+     than "can figwal commit two channels in one frame": IT CAN'T, AND THE
+     ENCODING DEPENDS ON A VALUE THAT ONLY EXISTS AFTER THE WRITE.
+
+NOTHING BUILT PAST THIS. The three shapes it leaves are: row-first with the
+stamp hoisted into the door (one lock, one computation, passed to both
+writes); record-first with a repair on open (the lazy encode this work
+deletes, reintroduced); or the stamp made an input rather than an output of
+the append, which is a figwal surface change.
