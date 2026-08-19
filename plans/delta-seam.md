@@ -2324,3 +2324,45 @@ two heads and two hands — but because the landing note is the artifact that
 outlives everyone here, and by this document's own ruling a dirty tree is
 identified only by a digest nobody will read in a year. One apply and one
 re-run buys numbers whose provenance is a commit.
+
+## THE MAXIM APPLIED TO ITSELF, AND WHAT THE ATTEMPTED FIX FOUND
+
+9ed3f561 verified the sixth maxim was committed as claimed AND THEN ASKED
+THE MAXIM'S OWN QUESTION OF IT: `git branch --contains` says 2f568855 lives
+on feat/layered-cache ALONE. Not on main, not on the seam branch.
+
+    "IT IS IN THE FILE" AND "IT IS IN THE FILE PEOPLE READ" ARE TWO
+    DIFFERENT CLAIMS. A document on a branch nobody reads would still
+    report a pass to anyone checking whether it was written.
+
+I ATTEMPTED THE OBVIOUS FIX AND ABORTED IT, which is the finding. A
+cherry-pick to main CONFLICTS, because 160 lines of
+skills/figaro/contributing/maintaining.md exist ONLY on this branch — main
+carries 9 section headings, this branch carries 16. The maxim's own text
+refers to the section around it. So cherry-picking one maxim would either
+smuggle 160 lines of campaign documentation into main under a one-maxim
+commit message, or land a paragraph referring to neighbours that are not
+there.
+
+RULED: THE DOCUMENTATION LANDS AS A UNIT WHEN THIS BRANCH MERGES, and that
+is now a NAMED DEPENDENCY rather than an assumption. Everything this
+campaign has learned — six maxims, the hazard-instrumentation section, this
+plan — reaches a reader only through that merge. IF THIS BRANCH DIES, THE
+DOCUMENTATION DIES WITH IT, and that is a larger loss than the code.
+
+## AND A LARGER INSTANCE OF THE SAME QUESTION, FOUND WHILE CHECKING
+
+~/notes/figaro holds 32 markdown files, 356 KB, INCLUDING the note this
+campaign's standards are built on
+(instrument-not-reaching-the-code.md, ~16 instances) and every
+REFUSED-NOT-MISSING open item.
+
+    ~/notes IS A GIT REPOSITORY WITH NO COMMITS. Not behind, not stale —
+    NEVER COMMITTED, on a branch with no history at all.
+
+It is outside the repo, outside the flake, and outside every backup this
+campaign has reasoned about. The plan cites those notes as the authority
+for standing rules; the notes have no version, no history, and no copy.
+SURFACED TO GLUCK RATHER THAN FIXED: the directory is his, it contains
+personal material beside the figaro notes, and a blind commit of 526 MB of
+mixed content is not a decision an aria makes for its owner.
