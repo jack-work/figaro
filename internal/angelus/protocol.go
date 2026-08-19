@@ -1489,7 +1489,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		result = append(result, entry)
 	}
 
-	// Snapshot the forest once per request. Ordinary lists need conversation
+	// Snapshot the tree once per request. Ordinary lists need conversation
 	// nodes only; global listings also need the ceremonial anchors. ID-only
 	// completion skips vectors and anchors entirely.
 	var nodeList []store.NodeView
@@ -1581,7 +1581,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		}
 	}
 
-	// Forest position for every entry (live + dormant), from the snapshot -
+	// Tree position for every entry (live + dormant), from the snapshot -
 	// and the outfit columns, which come from the stump and from nowhere else.
 	// vers memoizes the re-resolve per outfit; it lives here because this pass
 	// is single-threaded, unlike the metadata fill above.
@@ -1643,8 +1643,8 @@ func (h *handlers) fillFromMeta(meta *store.AriaMeta, entry *rpc.FigaroInfoRespo
 	}
 }
 
-// fillFromNode adds the fork-forest position (vector/trunk/parent/branched-at)
-// from the tree. The forest is snapshotted by the caller (once per request)
+// fillFromNode adds the fork-tree position (vector/trunk/parent/branched-at)
+// from the tree. The tree is snapshotted by the caller (once per request)
 // and indexed by id, so this is a map lookup.
 func (h *handlers) fillFromNode(nodes map[string]store.NodeView, vers map[string][2]string, entry *rpc.FigaroInfoResponse) {
 	n, ok := nodes[entry.ID]

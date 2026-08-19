@@ -172,7 +172,7 @@ func (c *Client) List(ctx context.Context) (*rpc.ListResponse, error) {
 }
 
 // ListIDs returns the aria list with only ids populated (skips the expensive
-// per-aria form/forest fills). For completion and other id-only callers.
+// per-aria form/tree fills). For completion and other id-only callers.
 func (c *Client) ListIDs(ctx context.Context) (*rpc.ListResponse, error) {
 	var resp rpc.ListResponse
 	if err := c.call(ctx, rpc.MethodList, rpc.ListRequest{IDsOnly: true}, &resp); err != nil {

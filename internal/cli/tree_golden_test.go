@@ -6,13 +6,13 @@ import (
 	"github.com/jack-work/figaro/internal/rpc"
 )
 
-// forestFixture is a shape with everything the walkers have to get right: a
+// treeFixture is a shape with everything the walkers have to get right: a
 // root with three children, a middle child that itself branches, a second
 // top-level tree, and recency ordering that differs from vector ordering.
 // LastActive values are negative on purpose: recency is decided by comparison,
 // which negatives preserve, while relAge prints "-" for anything <= 0: so the
 // golden below does not change with the calendar.
-func forestFixture() []rpc.FigaroInfoResponse {
+func treeFixture() []rpc.FigaroInfoResponse {
 	return []rpc.FigaroInfoResponse{
 		{ID: "aaaa1111", Vector: []int{0}, Mantra: "the first tree", LastActive: -400,
 			OutfitName: "opus5-ant", OutfitVer: "v1", MessageCount: 12, ContextTokens: 12000, ContextExact: true, Cwd: "/home/x/dev/figaro", State: "idle", Kind: "conversation", Parent: "outfit-node"},
@@ -28,22 +28,22 @@ func forestFixture() []rpc.FigaroInfoResponse {
 }
 
 func globalFixture() []rpc.FigaroInfoResponse {
-	figs := forestFixture()
+	figs := treeFixture()
 	return append(figs,
 		rpc.FigaroInfoResponse{ID: "null", Kind: "null", Parent: "", LastActive: -900},
 		rpc.FigaroInfoResponse{ID: "outfit-node", Kind: "outfit", OutfitName: "opus5-ant", OutfitVer: "live", Parent: "null", LastActive: -50},
 	)
 }
 
-// renderFixture is the whole pipeline for a fixed forest at a fixed width:
+// renderFixture is the whole pipeline for a fixed tree at a fixed width:
 // walk, then lay out. It is the user-visible contract, so it is what the
 // refactor onto figtree must hold constant.
 func renderFixture(t *testing.T, width int, global bool) string {
 	t.Helper()
 	if global {
-		return renderListRows(globalForest(globalFixture(), "", 0).Rows(), width, true)
+		return renderListRows(globalTree(globalFixture(), "", 0).Rows(), width, true)
 	}
-	tree, _ := listForest(forestFixture(), "", 0)
+	tree, _ := listTree(treeFixture(), "", 0)
 	return renderListRows(tree.Rows(), width, false)
 }
 
