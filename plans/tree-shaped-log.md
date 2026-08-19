@@ -215,3 +215,38 @@ applied across the FORK SEAM rather than across one object's lifetime.
     ignores load. AND IF THE SHARING IS ALREADY FREE, A TREE-SHAPED CACHE
     BUYS CORRECTNESS AND STRUCTURE RATHER THAN MEMORY — WHICH IS A
     DIFFERENT JUSTIFICATION, AND IT MUST BE WRITTEN DOWN AS THAT ONE.
+
+## AND A PRACTICE THE BLOCK PRODUCED WITHIN THE HOUR: CLASSIFY YOUR OWN
+## EVIDENCE BEFORE IT CAN BE SPENT
+
+fd15d2a0, unprompted, on receiving the standing block. Its own closing
+report had just described a real cost — a turn on an evicted aria
+materialises whole channels, because a span read falls through once
+anything has trimmed — and it came back to say, in its own hand and before
+anyone could build on it:
+
+    THAT IS A COST, IN ONE LAYER, MEASURED NOWHERE. UNDER THIS BLOCK IT IS
+    RAISE-IT MATERIAL AND NOT EXEMPT-IT MATERIAL.
+
+  - not a reason to keep a second residency policy for the translation cache
+  - not a reason to exempt the composed layer from the canonical window
+  - and "no benefit here" is PRECISELY the narrower question the
+    forest-uptake phases answered correctly four times
+
+THE PRACTICE, WORTH KEEPING BEYOND THIS DESIGN: WHEN YOU PRODUCE EVIDENCE
+THAT COULD BE SPENT ON AN EXEMPTION, CLASSIFY IT YOURSELF, IN WRITING,
+BEFORE SOMEONE ELSE DOES. A finding is neutral for about an hour; after
+that it belongs to whoever needs it most. The author is the only person
+who can say what it was measured to answer, and the only one whose saying
+so costs nothing.
+
+AND ITS SUMMARY OF THE MECHANISM, which is the best one written tonight:
+
+    A PER-LAYER BENEFIT TEST CANNOT MEASURE A COST THAT EXISTS ONLY
+    BETWEEN LAYERS.
+
+Same defect as an oracle blind to a header one record ahead, a benchmark
+named Warm measuring a cold walk, and a test named PreservesPrefixBytes
+asserting an ADDRESS — an instrument answering accurately about the wrong
+subject. THE DIFFERENCE IS THAT THOSE COST A RERUN, AND THIS ONE COMPOUNDED
+INTO A STRUCTURE NOBODY CHOSE.
