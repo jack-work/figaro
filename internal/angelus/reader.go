@@ -19,7 +19,7 @@ import (
 type AriaReader struct {
 	backend store.Backend
 	proj    Projector
-	budget  *aria.UIBudget
+	uiCache *aria.ComposedCache
 
 	// servers is the reader's half of the ONE windowed component: an
 	// aria.Server per read aria, no open region, its sealed section the
@@ -51,10 +51,19 @@ func NewAriaReader(backend store.Backend, proj Projector) *AriaReader {
 	return NewAriaReaderBounded(backend, proj, nil)
 }
 
-// NewAriaReaderBounded is NewAriaReader against a shared UI budget.
-func NewAriaReaderBounded(backend store.Backend, proj Projector, budget *aria.UIBudget) *AriaReader {
-	return &AriaReader{backend: backend, proj: proj, budget: budget, servers: map[string]*readAria{}}
+// NewAriaReaderBounded is NewAriaReader against the shared composed cache.
+func NewAriaReaderBounded(backend store.Backend, proj Projector, uiCache *aria.ComposedCache) *AriaReader {
+	return &AriaReader{backend: backend, proj: proj, uiCache: uiCache, servers: map[string]*readAria{}}
 }
+
+// readerNode namespaces the reader's composed node. A live agent and a
+// reader can hold servers for the SAME aria at once, each with its own
+// key list and its own view of the newest turn; one node answered by two
+// tenants would let either one's Release drop the other's payloads and
+// either one's key list snap the other's brackets. Two nodes against ONE
+// budget is what this re-seat buys here; one node for both is a further
+// change (plans/composed-layer-on-tree.md).
+func readerNode(id string) string { return "read:" + id }
 
 // messages decodes the aria's IR. The backend hands back the same shared
 // instance a live agent would hold, so this is lock-free against writes.
@@ -129,7 +138,7 @@ func (r *AriaReader) serverFor(id string) (*readAria, error) {
 	ra := r.servers[id]
 	if ra == nil {
 		srv := aria.NewServer()
-		srv.BindCache(r.turnSource(id), r.budget)
+		srv.BindCache(readerNode(id), r.uiCache, r.turnSource(id))
 		ra = &readAria{srv: srv}
 		r.servers[id] = ra
 	}

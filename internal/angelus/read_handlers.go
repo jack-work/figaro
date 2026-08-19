@@ -18,7 +18,7 @@ import (
 // IR. Nothing here executes a tool.
 func (h *handlers) reader() *AriaReader {
 	h.readerOnce.Do(func() {
-		h.readerInst = NewAriaReaderBounded(h.angelus.Backend, uiir.New(nil), h.angelus.UIWindow)
+		h.readerInst = NewAriaReaderBounded(h.angelus.Backend, uiir.New(nil), h.angelus.UICache)
 	})
 	return h.readerInst
 }

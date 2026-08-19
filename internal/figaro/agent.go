@@ -133,10 +133,11 @@ type Config struct {
 	// ceiling included), so tests and ephemeral agents need not supply one.
 	Settings *config.Loaded
 
-	// UIBudget is the process-wide bound on composed UI IR, shared with
-	// every other agent and with the reader. Nil is unbounded (the old
-	// behaviour, and the ephemeral/test default).
-	UIBudget *aria.UIBudget
+	// UICache is the process-wide composed UI IR cache -- THE canonical
+	// tree, a node per aria, shared with every other agent and with the
+	// reader. Nil gives this agent a private unbounded node (the test
+	// default).
+	UICache *aria.ComposedCache
 
 	// TurnDonor offers this aria the composed turns an ANCESTOR already holds
 	// below its fork point, so a fork does not compose the shared prefix a
@@ -294,7 +295,7 @@ func NewAgent(cfg Config) *Agent {
 	// Build sealed UI turns from canonical IR, then broadcast every aria-server
 	// change to socket subscribers as one aria.Page.
 	a.ariaSrv = aria.NewServer()
-	a.ariaSrv.BindCache(a.turnSource(), cfg.UIBudget)
+	a.ariaSrv.BindCache(a.id, cfg.UICache, a.turnSource())
 	for _, t := range a.composeSealedTurns(entries) {
 		a.ariaSrv.Commit(t)
 	}

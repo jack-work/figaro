@@ -77,8 +77,9 @@ atomic.Pointer and takes nothing. Consumers should hold that line
 deliberately -- **an Evicted hook does a pointer swap and nothing else**. If
 it needs more, publish a successor value instead of mutating the held one.
 
-The LARGER consolidation lives in figaro by design: cachedLog (decoded
-IR) and TurnCache (composed UI) re-seat on tree.Cache, which deletes
-two more bespoke accountants and gives both layers prefix-shared
-residency. That is the ui-ir-tree work; tree ships first so they
-have something to seat on.
+The LARGER consolidation is done: the decoded IR and the translations
+re-seated here and cachedLog was deleted; the composed UI IR followed,
+which deleted UIBudget and its LRU. Three tenants, one budget, one
+eviction order. The composed layer addresses turns by the LT that OPENED
+them, so its coordinates and the decoded layer's are the same key space.
+See plans/composed-layer-on-tree.md.

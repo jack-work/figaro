@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/internal/livedoc"
+	fwtree "github.com/jack-work/figaro/internal/store/tree"
 )
 
 // fatTurn builds a sealed turn of roughly kb kilobytes with an LT
@@ -29,8 +30,12 @@ func sourceFor(history map[uint64]Turn, count *int) TurnSource {
 	return func(fromLT, toLT uint64) []Turn {
 		*count++
 		var out []Turn
-		for _, t := range history {
-			if ltBracket(t) >= fromLT && ltBracket2(t) <= toLT {
+		for id := uint64(1); id <= uint64(len(history)); id++ {
+			t, ok := history[id]
+			if !ok || len(t.LTs) < 2 {
+				continue
+			}
+			if t.LTs[0] >= fromLT && t.LTs[1] <= toLT {
 				out = append(out, t)
 			}
 		}
@@ -38,30 +43,49 @@ func sourceFor(history map[uint64]Turn, count *int) TurnSource {
 	}
 }
 
-// Over budget, old turns hollow -- index kept, nodes gone -- and a read
-// that lands in them recomposes exactly that range from the source.
+// boundTo is a server on its own node of a shared composed cache.
+func boundTo(cc *ComposedCache, node string, src TurnSource) *Server {
+	s := NewServer()
+	s.BindCache(node, cc, src)
+	return s
+}
+
+// residentTurns counts what the cache actually holds for a node. At is
+// the residency probe: it never faults and never allocates.
+func residentTurns(c *TurnCache) (resident int) {
+	for i := range c.keys {
+		if _, ok := c.cache.At(c.node, c.keys[i].coord()); ok {
+			resident++
+		}
+	}
+	return resident
+}
+
+// Over budget, old turns hollow -- the key list survives, the payloads
+// go -- and a read that lands in them recomposes exactly that range from
+// the source.
 func TestTurnCacheEvictsAndRecomposes(t *testing.T) {
 	history := map[uint64]Turn{}
 	var recomposed int
-	budget := NewUIBudget(1) // 1 MiB
-	c := NewTurnCache(sourceFor(history, &recomposed), budget)
+	budget := fwtree.NewBudget(1 << 20)
+	cc := NewComposedCache(budget)
+	c := NewTurnCache(nil, nil)
+	c.bind("aria", cc, sourceFor(history, &recomposed))
 
 	for id := uint64(1); id <= 40; id++ {
 		tn := fatTurn(id, 64) // 64 KiB each; 40 x 64KiB = 2.5 MiB >> 1 MiB
 		history[id] = tn
 		c.Append(tn)
 	}
-	resident := 0
-	for i := range c.meta {
-		if c.meta[i].resident {
-			resident++
-		}
+	// A charge raises pressure; the daemon's standing sweep lowers it.
+	if !budget.Settle(2e9) {
+		t.Fatal("the budget never settled")
 	}
-	if resident == 40 {
+	if resident := residentTurns(c); resident == 40 {
 		t.Fatal("nothing evicted: the budget bound nothing")
 	}
-	if c.meta[len(c.meta)-1].resident == false {
-		t.Fatal("the TAIL was evicted; it is pinned by design")
+	if c.Tail() == nil || c.Tail().ID != 40 {
+		t.Fatal("the staging tail is not in the cache and can never be evicted")
 	}
 	if got, _, _ := budget.Stats(); got > 2<<20 {
 		t.Fatalf("resident bytes %d far exceed the 1MiB budget", got)
@@ -73,43 +97,47 @@ func TestTurnCacheEvictsAndRecomposes(t *testing.T) {
 	if !ok {
 		t.Fatal("the index must survive eviction")
 	}
-	if c.meta[i].resident {
-		t.Skip("turn 3 unexpectedly resident; budget too generous for the fixture")
-	}
 	before := recomposed
 	got := c.Slice(i, i)
 	if len(got) != 1 || len(got[0].Nodes) == 0 || got[0].Inquiry != "q3" {
 		t.Fatalf("recompose did not restore turn 3: %+v", got)
 	}
-	if recomposed != before+1 {
-		t.Fatalf("expected exactly one recompose, got %d", recomposed-before)
+	if recomposed == before {
+		t.Fatal("turn 3 was served without a recompose: the fixture evicted nothing it then read")
 	}
 }
 
-// A turn with no LT bracket cannot be recomposed; it pins ITSELF -- and
-// only itself. v1 latched the whole cache off one such turn, which
-// disabled eviction and blinded the meter for every aria after its
-// first live turn: the convicted cause of the >1GB session (S1,
-// plans/storm-triage.md). This test holds all three prongs of the fix.
+// A turn with no LT bracket cannot be recomposed; it is held pinned and
+// COUNTED, and it pins ONLY itself. v1 latched the whole cache off one
+// such turn, which disabled eviction and blinded the meter for every
+// aria after its first live turn: the convicted cause of the >1GB
+// session (S1, plans/storm-triage.md).
 func TestUnbracketedTurnPinsOnlyItself(t *testing.T) {
-	budget := NewUIBudget(1)
+	budget := fwtree.NewBudget(1 << 20)
+	cc := NewComposedCache(budget)
 	history := map[uint64]Turn{}
 	var rec int
-	c := NewTurnCache(sourceFor(history, &rec), budget)
-	// One unbracketed turn (a live-path tail), then a budget-busting run
-	// of bracketed ones.
+	c := NewTurnCache(nil, nil)
+	c.bind("aria", cc, sourceFor(history, &rec))
+
 	c.Append(Turn{ID: 1, Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: strings.Repeat("y", 256<<10)}}})
 	for id := uint64(2); id <= 40; id++ {
 		tn := fatTurn(id, 64)
 		history[id] = tn
 		c.Append(tn)
 	}
-	if !c.meta[0].resident || !c.meta[0].pinned {
-		t.Fatal("the unbracketed turn must stay resident, pinned")
+	budget.Settle(2e9)
+
+	if !c.keys[0].phantom {
+		t.Fatal("an unbracketed turn must be keyed in the reserved space")
+	}
+	got := c.Slice(0, 0)
+	if len(got) != 1 || len(got[0].Nodes) != 1 || len(got[0].Nodes[0].Markdown) != 256<<10 {
+		t.Fatalf("the pinned turn must stay whole through eviction: %+v", got)
 	}
 	evicted := 0
-	for i := 1; i < len(c.meta)-1; i++ {
-		if !c.meta[i].resident {
+	for i := 1; i < len(c.keys)-1; i++ {
+		if _, ok := c.cache.At(c.node, c.keys[i].coord()); !ok {
 			evicted++
 		}
 	}
@@ -123,29 +151,28 @@ func TestUnbracketedTurnPinsOnlyItself(t *testing.T) {
 }
 
 // The live path end to end: OpenTurn (bracket-less tail), stream, Close,
-// then Seal WITH a bracket -- the sealed turn must unpin, join the LRU,
-// and be evictable. Seal(nil) is the regression this pins.
-func TestSealWithBracketUnpinsTheTail(t *testing.T) {
-	budget := NewUIBudget(1)
-	c := NewServer()
-	c.BindCache(nil, budget)
-	c.OpenTurn(7)
-	c.Update(nil, []livedoc.Node{{Type: livedoc.NodeProse, Markdown: strings.Repeat("z", 64<<10)}}, 0)
-	c.Close()
-	c.Seal([]uint64{71, 75})
-	c.mu.Lock()
-	tl := c.cache.Tail()
-	pinned := c.cache.meta[len(c.cache.meta)-1].pinned
-	counted := c.cache.meta[len(c.cache.meta)-1].counted
-	c.mu.Unlock()
-	if tl == nil || !tl.Sealed || len(tl.LTs) != 2 {
-		t.Fatalf("seal must stamp the bracket: %+v", tl)
+// then Seal WITH a bracket -- and the sealed turn, once a newer one
+// displaces it, is an ordinary evictable run rather than a pin.
+func TestSealWithBracketLeavesAnEvictableTurn(t *testing.T) {
+	cc := NewComposedCache(fwtree.NewBudget(1 << 20))
+	s := boundTo(cc, "aria", nil)
+	s.OpenTurn(7)
+	s.Update(nil, []livedoc.Node{{Type: livedoc.NodeProse, Markdown: strings.Repeat("z", 64<<10)}}, 0)
+	s.Close()
+	s.Seal([]uint64{71, 75})
+	s.Commit(fatTurn(8, 4)) // displaces turn 7 into the cache
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	k := s.cache.keys[0]
+	if k.phantom {
+		t.Fatal("a bracketed sealed turn must not be keyed as unrecomposable")
 	}
-	if pinned {
-		t.Fatal("a bracketed sealed turn must not stay pinned")
+	if _, ok := s.cache.cache.At("aria", k.coord()); !ok {
+		t.Fatal("the displaced turn must be resident in the cache")
 	}
-	if !counted {
-		t.Fatal("the sealed turn's bytes must be on the meter")
+	if res, _, _ := cc.Budget().Stats(); res < 64<<10 {
+		t.Fatalf("the sealed turn's bytes must be on the meter, got %d", res)
 	}
 }
 
@@ -174,11 +201,9 @@ func TestTurnCacheChunkForUsesTheIndex(t *testing.T) {
 func TestWindowedPageEqualsFullWalk(t *testing.T) {
 	history := map[uint64]Turn{}
 	var recomposed int
-	budget := NewUIBudget(1)
-	src := sourceFor(history, &recomposed)
-
-	bounded := NewServer()
-	bounded.BindCache(src, budget)
+	budget := fwtree.NewBudget(1 << 20)
+	cc := NewComposedCache(budget)
+	bounded := boundTo(cc, "aria", sourceFor(history, &recomposed))
 	full := NewServer()
 	for id := uint64(1); id <= 40; id++ {
 		tn := fatTurn(id, 64)
@@ -186,6 +211,7 @@ func TestWindowedPageEqualsFullWalk(t *testing.T) {
 		bounded.Commit(tn)
 		full.Commit(tn)
 	}
+	budget.Settle(2e9)
 	for _, at := range []Anchor{{}, {Turn: 3, Node: 0}, {Turn: 20, Node: 0}, {Turn: 39, Node: 0}} {
 		for _, budgetBytes := range []int{10 * 1024, 200 * 1024} {
 			a := bounded.ReadBefore(at, budgetBytes)
@@ -207,5 +233,80 @@ func TestWindowedPageEqualsFullWalk(t *testing.T) {
 	}
 	if recomposed == 0 {
 		t.Fatal("the bounded server never recomposed: the test exercised nothing")
+	}
+}
+
+// EVERY TURN COMES BACK WHOLE ACROSS A RUN BOUNDARY. The cache cuts runs
+// where its byte target falls, which is nowhere near a turn boundary, and
+// it asks the source for the coordinate span it is filling. A source
+// handed a bracket that starts mid-turn composes a turn whose opening
+// records are missing -- so the tenant snaps the bracket to whole turns
+// and clips the answer back to the coord.
+//
+// The assertion is on CONTENT, one turn at a time, after everything has
+// been evicted: a page that steps over a gap looks exactly like a page
+// that had nothing to show.
+func TestEveryTurnFaultsBackWholeAcrossRunBoundaries(t *testing.T) {
+	history := map[uint64]Turn{}
+	var rec int
+	budget := fwtree.NewBudget(256 << 10) // far below the 40 x 64 KiB history
+	cc := NewComposedCache(budget)
+	c := NewTurnCache(nil, nil)
+	c.bind("aria", cc, sourceFor(history, &rec))
+
+	for id := uint64(1); id <= 40; id++ {
+		tn := fatTurn(id, 64)
+		history[id] = tn
+		c.Append(tn)
+	}
+	budget.Settle(2e9)
+	if residentTurns(c) > 20 {
+		t.Fatalf("the fixture retained %d of 40 turns: it is not testing a fault", residentTurns(c))
+	}
+	for i := range c.keys {
+		got := c.Slice(i, i)
+		if len(got) != 1 {
+			t.Fatalf("turn index %d: %d turns back", i, len(got))
+		}
+		want := history[c.keys[i].id]
+		if got[0].ID != want.ID || got[0].Inquiry != want.Inquiry {
+			t.Fatalf("turn %d came back as an index stub: %+v", c.keys[i].id, got[0])
+		}
+		if len(got[0].Nodes) != 1 || len(got[0].Nodes[0].Markdown) != len(want.Nodes[0].Markdown) {
+			t.Fatalf("turn %d lost its content: %d nodes", c.keys[i].id, len(got[0].Nodes))
+		}
+	}
+}
+
+// AND THE SAME PROPERTY WHERE THE CACHE CUTS THE SPAN ITSELF. Above, one
+// run holds one turn and its coordinate happens to be the turn's own
+// bracket. Here the node's runs are dropped and the whole history faults
+// back through the cache's own gap chunking, which lands wherever the
+// chunk size falls -- squarely inside turns. THAT is what the snap is
+// for, and this is the fixture that can see it.
+func TestAFaultedGapStillReturnsWholeTurns(t *testing.T) {
+	history := map[uint64]Turn{}
+	var rec int
+	cc := NewComposedCache(fwtree.NewBudget(64 << 20)) // unbinding: no eviction here
+	c := NewTurnCache(nil, nil)
+	c.bind("aria", cc, sourceFor(history, &rec))
+	for id := uint64(1); id <= 40; id++ {
+		tn := fatTurn(id, 1)
+		history[id] = tn
+		c.Append(tn)
+	}
+	cc.cache.DropNode("aria") // the node's runs are gone; the key list is not
+	if n := residentTurns(c); n != 0 {
+		t.Fatalf("release left %d turns resident: the fault below is not exercised", n)
+	}
+	got := c.Slice(0, len(c.keys)-1)
+	if len(got) != 40 {
+		t.Fatalf("got %d turns of 40", len(got))
+	}
+	for i, tn := range got {
+		want := history[uint64(i + 1)]
+		if tn.ID != want.ID || len(tn.Nodes) != 1 || len(tn.Nodes[0].Markdown) != len(want.Nodes[0].Markdown) {
+			t.Fatalf("turn %d came back cut: %+v", i+1, tn)
+		}
 	}
 }

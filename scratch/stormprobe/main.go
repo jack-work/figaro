@@ -2,7 +2,7 @@
 // internal/livelog/aria.Server through the two shapes the process actually
 // uses — the AGENT shape (OpenTurn → Update → Close → Seal(nil)) and the
 // READER shape (Restore of turns composed with LT brackets) — and reports
-// what the shared UIBudget knows about each.
+// what the shared composed budget knows about each.
 //
 // It exists to settle S1 (the legacyWhole latch) deterministically, in
 // process, with no provider and no daemon: the storm proves it at scale,
@@ -18,6 +18,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
+	fwtree "github.com/jack-work/figaro/internal/store/tree"
 )
 
 // body returns a DISTINCT string per turn. Sharing one string across turns
@@ -51,9 +52,9 @@ func heapNow() uint64 {
 // agentShape is exactly what internal/figaro/agent.go does per turn:
 // aria/server.go OpenTurn appends Turn{ID: id} — no LTs — and
 // agent.go finishTurn calls Seal(nil).
-func agentShape(turns, kb int, budget *aria.UIBudget) (*aria.Server, uint64) {
+func agentShape(turns, kb int, budget *aria.ComposedCache) (*aria.Server, uint64) {
 	srv := aria.NewServer()
-	srv.BindCache(func(from, to uint64) []aria.Turn { return nil }, budget)
+	srv.BindCache("probe", budget, func(from, to uint64) []aria.Turn { return nil })
 	for i := 1; i <= turns; i++ {
 		p, t := body(kb, i), body(kb, i+1<<20)
 		srv.OpenTurn(uint64(i))
@@ -67,9 +68,9 @@ func agentShape(turns, kb int, budget *aria.UIBudget) (*aria.Server, uint64) {
 
 // readerShape is what compose.Turns + AriaReader.Restore produce: every turn
 // carries LTs{first,last}, which is the only reason the accountant sees it.
-func readerShape(turns, kb int, budget *aria.UIBudget) (*aria.Server, uint64) {
+func readerShape(turns, kb int, budget *aria.ComposedCache) (*aria.Server, uint64) {
 	srv := aria.NewServer()
-	srv.BindCache(func(from, to uint64) []aria.Turn { return nil }, budget)
+	srv.BindCache("probe", budget, func(from, to uint64) []aria.Turn { return nil })
 	all := make([]aria.Turn, 0, turns)
 	for i := 1; i <= turns; i++ {
 		p, t := body(kb, i), body(kb, i+1<<20)
@@ -83,8 +84,8 @@ func readerShape(turns, kb int, budget *aria.UIBudget) (*aria.Server, uint64) {
 	return srv, heapNow()
 }
 
-func report(tag string, b *aria.UIBudget, heapBefore, heapAfter uint64) {
-	res, lim, ev := b.Stats()
+func report(tag string, b *aria.ComposedCache, heapBefore, heapAfter uint64) {
+	res, lim, ev := b.Budget().Stats()
 	fmt.Printf("%-8s budget: resident=%7.2f MiB  limit=%6.2f MiB  evictions=%-5d | heap retained=%7.2f MiB\n",
 		tag, mib(uint64(res)), mib(uint64(lim)), ev, mib(heapAfter-heapBefore))
 }
@@ -99,12 +100,12 @@ func main() {
 		*turns, *kb, float64(*turns**kb*2)/1024, *limit)
 
 	base := heapNow()
-	bA := aria.NewUIBudget(*limit)
+	bA := aria.NewComposedCache(fwtree.NewBudget(int64(*limit) << 20))
 	srvA, hA := agentShape(*turns, *kb, bA)
 	report("AGENT", bA, base, hA)
 
 	base2 := heapNow()
-	bR := aria.NewUIBudget(*limit)
+	bR := aria.NewComposedCache(fwtree.NewBudget(int64(*limit) << 20))
 	srvR, hR := readerShape(*turns, *kb, bR)
 	report("READER", bR, base2, hR)
 
@@ -119,11 +120,9 @@ func main() {
 	}
 
 	fmt.Println()
-	fmt.Println("AGENT resident=0 with evictions=0 is the latch: turncache.go noteLegacy")
-	fmt.Println("sees len(LTs)<2 on the first turn, sets legacyWhole for the WHOLE cache,")
-	fmt.Println("and account() early-returns forever after — nothing is counted, nothing")
-	fmt.Println("can be evicted, and `doctor mem` reports a ui window of zero while the")
-	fmt.Println("aria retains every composed turn it ever ran.")
+	fmt.Println("A turn sealed with no LT bracket cannot be recomposed, so it is held")
+	fmt.Println("pinned and COUNTED, per turn. AGENT resident far below the composed")
+	fmt.Println("total would mean the accountant has stopped seeing what is retained.")
 }
 
 // roundsShape measures the SIZING churn: a turn that streams in R rounds
@@ -135,7 +134,7 @@ func roundsShape(rounds, kb int) uint64 {
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
 	srv := aria.NewServer()
-	srv.BindCache(func(from, to uint64) []aria.Turn { return nil }, aria.NewUIBudget(16))
+	srv.BindCache("probe", aria.NewComposedCache(fwtree.NewBudget(16<<20)), func(from, to uint64) []aria.Turn { return nil })
 	var all []livedoc.Node
 	srv.OpenTurn(1)
 	for r := 1; r <= rounds; r++ {

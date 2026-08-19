@@ -126,8 +126,10 @@ func (a *Angelus) MemStatus() *rpc.MemStatus {
 	if lb, ok := a.Backend.(interface{ LibrettoStats() (int, int) }); ok {
 		st.Librettos, st.LibrettoObservers = lb.LibrettoStats()
 	}
-	if a.UIWindow != nil {
-		st.UIWindowBytes, st.UIWindowBudget, st.UIWindowEvictions = a.UIWindow.Stats()
+	if a.UICache != nil {
+		var ev int64
+		st.UIWindowBytes, st.UIWindowBudget, ev = a.UICache.Budget().Stats()
+		st.UIWindowEvictions = int(ev)
 	}
 	if sweep := a.lastLibrettoSweep.Load(); sweep != nil {
 		st.LibrettoSweepMinted = sweep.Minted

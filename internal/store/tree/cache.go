@@ -100,6 +100,10 @@ func (c *Cache[U]) runTarget() int {
 	return target
 }
 
+// RunTargetBytes is the size this cache cuts runs at, so a tenant that
+// SEEDS units it already holds cuts them the same way a miss would.
+func (c *Cache[U]) RunTargetBytes() int { return c.runTarget() }
+
 // measure fills a run's bytes and density in one pass.
 func (c *Cache[U]) measure(r *run[U]) {
 	r.bytes = 0

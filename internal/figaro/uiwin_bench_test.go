@@ -7,12 +7,14 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
+	fwtree "github.com/jack-work/figaro/internal/store/tree"
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
@@ -45,16 +47,25 @@ func TestUIWindowBoundsAResidentAgent(t *testing.T) {
 			Content: []message.Content{message.TextContent(body)}}})
 	}
 
-	measure := func(budget *aria.UIBudget) uint64 {
+	var res, lim, ev int64
+	measure := func(cache *aria.ComposedCache) uint64 {
 		snap, _ := be.FormState(id)
 		cb, _ := form.Open("")
 		cb.Apply(snap.AsPatch())
 		a := figaro.NewAgent(figaro.Config{
 			ID: id, SocketPath: filepath.Join(t.TempDir(), "s.sock"),
 			Projector: uiir.New(nil),
-			Backend:   be, Form: cb, UIBudget: budget,
+			Backend:   be, Form: cb, UICache: cache,
 		})
 		a.Read(aria.Anchor{}, 64*1024) // one tail page, as a client would
+		if cache != nil {
+			// A read never evicts: charge raises pressure and the
+			// daemon's standing sweep lowers it. A test is the one
+			// caller that waits -- and it must read the meter BEFORE
+			// Kill hands the aria's bytes back.
+			cache.Budget().Settle(2 * time.Second)
+			res, lim, ev = cache.Budget().Stats()
+		}
 		a.Kill()
 		runtime.GC()
 		runtime.GC()
@@ -64,9 +75,7 @@ func TestUIWindowBoundsAResidentAgent(t *testing.T) {
 	}
 
 	unbounded := measure(nil)
-	b2 := aria.NewUIBudget(2)
-	bounded := measure(b2) // 2 MiB window
-	res, lim, ev := b2.Stats()
+	bounded := measure(aria.NewComposedCache(fwtree.NewBudget(2 << 20))) // 2 MiB window
 	t.Logf("budget: resident=%d limit=%d evictions=%d", res, lim, ev)
 	// The heap numbers are DIAGNOSTIC, not asserted: composed strings
 	// alias the decoded IR (compose TrimRight shares the backing array),

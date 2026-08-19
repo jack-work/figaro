@@ -208,3 +208,72 @@ to guess where today it is exact. Named here so it is not done by accident.
     tenant: it has no point read, and it adds runs to the same budget whose
     sweep cost is Q2's subject -- which is an argument for Q2, not against
     this.
+
+---
+
+# WHAT LANDED, AND THE TWO THINGS THE INSTRUMENTS SAID (dfdfae6a, 2026-08-19)
+
+Step A: the composed layer is on tree.Cache. `UIBudget` is gone -- the
+accountant, the `container/list` LRU, `victimsLocked`, the pending-victim
+queue, `settle`, `account`/`touch`/`hollow`/`releaseAll` and the
+process-global mutex with them. What replaced it is `ComposedCache` (one
+`tree.Cache[Turn]`, a node per aria, registered per-node source closures) and
+a `turnKey` list per tenant. 485 lines of turncache.go became 500 of which
+~180 are the key list and the Server surface; the residency policy is now
+somebody else's, counted once, swept on the daemon's standing beat beside the
+decoded budgets.
+
+`config.ui_window_mb` still tunes it, `doctor mem` still reports it -- through
+`tree.Budget.Stats()` now, which is the same three numbers every other layer
+reports.
+
+## THE PINS WENT AWAY AS PREDICTED, EXCEPT FOR THE ONE THAT CANNOT
+
+The staging tail is not in the cache at all, so `TailMutated` is a re-tally of
+one index entry and nothing is pinned for being mutable. A SEALED turn with no
+LT bracket -- a round that failed before it wrote a record -- still cannot be
+recomposed and is held pinned and COUNTED, keyed in a reserved region above
+2^63 where no logical time reaches. It pins itself and nothing else, which is
+the S1 fix restated in tree's own vocabulary rather than in a second one.
+
+## A CANARY THAT PASSED, AND WHY
+
+The first canary on the bracket snap -- replace `c.bracket(from,to)` with
+`from+1, to` -- LEFT EVERY TEST GREEN. The explanation was not that the snap
+is unnecessary:
+
+    A RUN HELD EXACTLY ONE TURN, AND ITS COORDINATE SPANNED THAT TURN'S WHOLE
+    RECORD BRACKET, so the snap was the identity function on every fixture I
+    had. The canary was measuring a case where both branches agree.
+
+The cure was not a better canary, it was a coordinate convention: a run's span
+is a KEY RANGE (from the previous turn's key to this turn's key), not a record
+range. Nothing addresses a turn by its interior records, and two Put sites had
+been spelling the span two different ways -- `flushTail` by record bracket,
+`seed` by key. With that settled the canary bites: both content tests go red
+and green on restore.
+
+    THE SECOND FIXTURE IS THE ONE THAT COULD SEE IT ANYWAY: drop the node's
+    runs and let the whole history fault back through the cache's OWN gap
+    chunking, which lands wherever runChunk falls -- squarely inside turns.
+    That is the only path where the source is asked for a bracket nobody
+    aligned, and it is exactly the path a fork's inherited prefix will take
+    in step B.
+
+## AND ONE THING THIS RE-SEAT DID NOT FIX, NAMED SO IT IS NOT MISTAKEN FOR DONE
+
+A live agent and a reader can hold servers for the SAME aria at once. They
+still hold TWO composed copies of its sealed turns -- now on two nodes
+(`id` and `read:id`) against ONE budget and one eviction order, where before
+they were two structures with two accountants. One node for both needs a
+tenant object shared by two Servers with one key list, which is a bigger
+change than this one and is not started.
+
+## STEP B, NOT STARTED
+
+The fork seam: lineage refs on the composed node (bases SNAPPED DOWN to a
+turn boundary), one backend-based composer per process replacing
+`Agent.turnSource` and `AriaReader.turnSource`, and the deletion of
+`seed_turns.go` -- the composed prefix donation, `donatedSeam` and
+`spliceDonated`. The hazard test named above (a fork MID-TURN, asserted below
+the base) belongs to that step.
