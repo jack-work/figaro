@@ -2366,3 +2366,78 @@ for standing rules; the notes have no version, no history, and no copy.
 SURFACED TO GLUCK RATHER THAN FIXED: the directory is his, it contains
 personal material beside the figaro notes, and a blind commit of 526 MB of
 mixed content is not a decision an aria makes for its owner.
+
+## THE DELETION'S MOST EXPENSIVE HAZARD, FILED UNDER "NOT VERIFIED"
+
+6ec565b5's ephemeral-path recon, promoted and made blocking by f3aa1d0b,
+2026-08-18.
+
+    TODAY the translated prefix is CARRIED AS BYTES in Previous.State and
+    never re-encoded. AFTER THE DELETION it is RECOMPUTED EVERY PASS.
+    PREFIX-BYTE STABILITY STOPS BEING A PROPERTY OF CARRYING BYTES AND
+    BECOMES A PROPERTY OF ENCODER DETERMINISM.
+
+THIS IS NOT AN EPHEMERAL CONCERN. THE VENDORS CACHE ON PREFIX BYTES. If
+anything unordered reaches the encoder — a map iterated into JSON, a
+timestamp, a pointer-ordered set — the prefix changes shape between turns
+and PROMPT CACHING MISSES, on every provider, for every aria. The failure
+is not a wrong answer; it is a silent recurring cost in latency and money
+that no correctness test we own can see.
+
+AND THE TEST THAT LOOKS LIKE COVER CANNOT BE:
+`TestCatchUpPreservesPrefixBytes` pins that the prefix bytes do not change
+AND WOULD PASS EITHER WAY — it cannot see the mechanism change underneath
+it. The sixth maxim, arriving where it costs money.
+
+RULED — COMMIT TWO OWES AN ENCODER DETERMINISM PIN: encode the same
+records twice from scratch, assert the bytes IDENTICAL at every record and
+not only the tail; per provider, or with the uncovered providers NAMED in
+the landing note.
+
+AND THE CANARY MUST PERTURB A MAP-RENDERED RECORD, not a scalar —
+6ec565b5's refinement, from reading the encoders rather than from the
+analogy: perturbing a scalar proves the pin reaches AN ENCODER without
+proving it reaches THE HAZARD.
+
+    THE PERTURBATION HAS TO BE ABLE TO PRODUCE THE FAILURE MODE, NOT
+    MERELY A FAILURE.
+
+Same lesson as the interior-gap canary, reached independently in a second
+place — which is how a rule earns the word "standing".
+
+## AND THE REPORTING RULE THAT CAME WITH IT
+
+The finding above was filed under NOT VERIFIED rather than led with,
+because its author had not tested encoder determinism. Its own restatement,
+adopted:
+
+    A LIMIT OF METHOD THAT IS ALSO A HAZARD GETS PROMOTED TO THE FIRST LINE
+    AND NAMED AS A HAZARD, WITH THE LIMIT ATTACHED TO IT — never the other
+    way round. "I could not verify X" and "X is a live risk this stage
+    would ship" are different sentences, and the second outranks the first.
+
+## A NEW SPECIES OF THE BRANCH TRAP: MIXED PROVENANCE UNDER A UNIFORM LABEL
+
+The same recon reported `anthropic.go`'s `acceptAssistantProjection` as a
+second consumer of `.Form`. Checked rather than relayed: TRUE on
+feat/layered-cache (3 occurrences), FALSE on feat/delta-seam (0), where
+piece A banked it at 493a6bcb.
+
+THE MECHANISM IS SUBTLER THAN "WRONG BRANCH". Its worktree was detached at
+a layered-cache commit; it read `projection.go` CORRECTLY via `git show`
+against the seam ref, and read EVERYTHING ELSE out of the tree around it —
+under a single header claiming one ref for all of it.
+
+    A REPORT OF MIXED PROVENANCE UNDER A UNIFORM LABEL IS WORSE THAN ONE
+    THAT IS WHOLLY WRONG: the parts that were right make the parts that
+    were not look checked, and no reader can partition them.
+
+THE FIX, applied by its author unprompted: `git grep` AGAINST THE REF,
+never out of the tree around you. A WORKING DIRECTORY IS A PLACE YOU ARE
+STANDING, NOT A CLAIM YOU CAN CITE. Every material claim was then re-run
+against the seam ref and all of them stand — including the Q3 inventory,
+correctly identified as the part most likely to have moved under commit
+one: non-study `Patches` on records appear in exactly THREE places, ONE
+test covers the ephemeral fold sites, and THE COMBINATION THAT DIES — warm
+pass, `Form == nil`, records carrying patches, asserting the transition
+against the carried board — IS ASSERTED NOWHERE.
