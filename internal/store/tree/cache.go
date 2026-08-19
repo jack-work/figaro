@@ -177,16 +177,43 @@ func (c *Cache[U]) Range(lineage []Ref, from, to uint64) ([]U, error) {
 	if len(lineage) == 0 || to < from {
 		return nil, nil
 	}
-	var out []U
-	// Split the ask across the lineage by fork bases, root first.
-	for _, cut := range c.split(lineage, from, to) {
+	// ONE CUT IS THE COMMON CASE -- an unforked aria, or a read entirely
+	// above the last fork base -- and it hands back the node's answer
+	// UNCOPIED. Concatenating a single piece into a fresh slice is a copy of
+	// the whole span for nothing.
+	cuts := c.split(lineage, from, to)
+	if len(cuts) == 1 {
+		return c.rangeInNode(cuts[0])
+	}
+	pieces := make([][]U, 0, len(cuts))
+	total := 0
+	for _, cut := range cuts {
 		units, err := c.rangeInNode(cut)
-		out = append(out, units...)
+		pieces = append(pieces, units)
+		total += len(units)
 		if err != nil {
-			return out, err
+			return concat(pieces, total), err
 		}
 	}
-	return out, nil
+	return concat(pieces, total), nil
+}
+
+// concat joins pieces with ONE allocation of the exact size. Appending piece
+// by piece regrows the destination as it goes: measured on the hot tail read,
+// the growth was 4 allocations and 3.5x the bytes of the flat window's single
+// make+copy.
+func concat[U any](pieces [][]U, total int) []U {
+	if len(pieces) == 0 || total == 0 {
+		return nil
+	}
+	if len(pieces) == 1 {
+		return pieces[0]
+	}
+	out := make([]U, 0, total)
+	for _, p := range pieces {
+		out = append(out, p...)
+	}
+	return out
 }
 
 // split maps (from..to] onto per-node coords by fork bases. lineage is
@@ -218,18 +245,31 @@ func (c *Cache[U]) split(lineage []Ref, from, to uint64) []Coord {
 // runs it names stay valid -- they are immutable -- so the reload costs a
 // pointer load and gains an up-to-date index.
 func (c *Cache[U]) rangeInNode(coord Coord) ([]U, error) {
-	var out []U
+	// PIECES, NOT AN APPEND. A span served by ONE resident run -- the hot tail,
+	// and every read smaller than a chunk -- then costs NO COPY AT ALL: the
+	// caller gets a view of the run's own units. Where several runs answer,
+	// concat allocates once at the exact size instead of regrowing.
+	var pieces [][]U
+	total := 0
+	add := func(u []U) {
+		if len(u) == 0 {
+			return
+		}
+		pieces = append(pieces, u)
+		total += len(u)
+	}
 	for pos := coord.From; pos < coord.To; {
 		r := overlapping(c.runs(coord.Node), pos, coord.To)
 		if r == nil {
 			units, err := c.fill(Coord{coord.Node, pos, coord.To})
-			return append(out, units...), err
+			add(units)
+			return concat(pieces, total), err
 		}
 		if r.coord.From > pos { // a gap ahead of this run
 			units, err := c.fill(Coord{coord.Node, pos, r.coord.From})
-			out = append(out, units...)
+			add(units)
 			if err != nil {
-				return out, err
+				return concat(pieces, total), err
 			}
 			pos = r.coord.From
 			continue
@@ -237,23 +277,23 @@ func (c *Cache[U]) rangeInNode(coord Coord) ([]U, error) {
 		if !r.resident {
 			units, err := c.refill(coord.Node, r)
 			if err != nil {
-				return out, err
+				return concat(pieces, total), err
 			}
 			// Slice the LOCAL units rather than the run: the charge inside
 			// refill may have evicted this very run again (a run larger than
 			// the whole budget can never stay resident), and the caller must
 			// still get what was fetched.
-			out = append(out, sliceUnits(c.key, units, pos, coord.To)...)
+			add(sliceUnits(c.key, units, pos, coord.To))
 		} else {
 			r.touch(c)
-			out = append(out, c.slice(r, pos, coord.To)...)
+			add(c.slice(r, pos, coord.To))
 		}
 		if r.coord.To <= pos {
 			break // no progress; refuse to spin
 		}
 		pos = r.coord.To
 	}
-	return out, nil
+	return concat(pieces, total), nil
 }
 
 // fill materializes a gap as NEW resident runs, chunked, and returns what it

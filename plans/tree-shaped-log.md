@@ -1097,3 +1097,51 @@ Range 1218ns against a lock-free view's 516ns, "and the sign flips" -- is
 UNTOUCHED BY THIS and also unverified by it: that was a different fixture on a
 different machine with sixteen readers, and nobody has reproduced it here
 either. IT SHOULD NOT BE CITED AGAIN WITHOUT BEING RE-RUN.
+
+## THE HOT TAIL, AND THE CARVE-OUT'S REAL CAUSE (dec6ef8a, 2026-08-19)
+
+plans/log-cache-policy.md carved out "LRU owns the COLD ranges, never the HOT
+TAIL" and attributed it to tree's mutex. The lock is gone and the carve-out was
+still justified -- BY SOMETHING ELSE ENTIRELY.
+
+THE PROTOCOL FIRST, since tonight taught me that: two benchmarks IN ONE BINARY
+AND ONE RUN, the flat window's tail read beside tree's Range over the same
+span, ABBA-ordered so drift across the run cancels. The FLAT LINE IS THE
+IN-RUN CONTROL: it moved 1.2% between the two builds, which is what licenses
+comparing the ratios.
+
+    BEFORE (6e8b696b)   flat 1.155us / 4.75KiB / 1 alloc
+                        tree 4.892us / 16.78KiB / 4 allocs      4.24x, 3.53x
+    AFTER               flat 1.169us / 4.75KiB / 1 alloc
+                        tree 1.480us /  4.85KiB / 4 allocs      1.27x, 1.02x
+
+WHAT WAS WRONG, AND IT WAS THE SURFACE, NOT THE POLICY: `Range` concatenated
+its answer with `append` as it walked, so a span served by ONE resident run --
+the hot tail, and every read smaller than a chunk -- paid a copy of the whole
+span plus the regrowth of the destination. Now a single-piece answer is handed
+back as A VIEW OF THE RUN'S OWN UNITS, and a multi-piece answer allocates ONCE
+at the exact size.
+
+    A CACHE THAT COPIES ITS ANSWER IS NOT A CACHE OF THE THING THE CALLER
+    WANTED. It is a cache of the work needed to produce a copy of it.
+
+AND THE TWO TENANTS FOUND THE SAME DEFECT FROM OPPOSITE ENDS ON THE SAME NIGHT.
+fd15d2a0, on the segment payload path: "a read path that wants ONE RECORD
+cannot use a surface shaped like a range without paying for the range" --
+1153 B/op for one payload. Me, on the decoded tail: a 64-unit read paying
+17 KiB. One is a point read, the other a span read, and both were paying for
+MATERIALIZATION THE INDEX HAD ALREADY DONE.
+
+### WHAT THIS DOES AND DOES NOT SETTLE
+
+It removes the largest measured objection to re-seating the decoded layer on
+tree: the hot tail is now 1.27x the flat window's read rather than 4.24x, on a
+fixture where the flat window is doing its best case (everything resident, one
+make+copy). Together with the locality gate's 2.34x fewer entries served from
+below, the trade is now legible: A TAIL READ COSTS 27% MORE AND A HOPPING
+READER FAULTS HALF AS OFTEN.
+
+It does NOT settle the re-seat, which is Gluck's question, and it does not
+touch fd15d2a0's segment finding: that gap is the KEYER's indirect call per
+comparison against arithmetic indexing, which is a different mechanism in a
+different tenant and needs its own answer.
