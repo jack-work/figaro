@@ -1242,19 +1242,29 @@ func (b *XwalBackend) SetObservedForms(ariaID string, formIDs []string) {
 	b.store.SetObservedForms(ariaID, formIDs)
 }
 
-// seedRowsLocked offers a newly opened aria the resident prefix its nearest
-// OPEN ancestor already decoded. Caller holds b.mu.
+// seedFromAncestor offers a newly opened aria the resident prefix its nearest
+// OPEN ancestor already decoded, for ONE channel: cacheOf says which.
 //
-// Phase 3's measurement: two forks of one trunk decode the shared prefix
-// separately and mint strings the parent holds, proven by pointer identity.
-// The ancestor's rows below the child's fork base ARE that prefix, and a
-// shallow copy shares them. Nothing is retained here that the ancestor was not
-// already retaining -- the child holds slice headers onto the same strings --
-// so this shares residency rather than adding it.
+// ONE WALKER, NOT TWO. The fig IR and the translations ran identical copies of
+// this -- Lineage, fewer than 2 refs is nil, base from the last ref, base 0 is
+// nil, nearest ancestor first, skipping unopened handles, first non-empty
+// residentBelow wins -- and differed only in which cache of the ancestor's
+// handle they asked. That difference is this argument.
+//
+// Phase 3's measurement is why the donation exists at all: two forks of one
+// trunk decode the shared prefix separately and mint strings the parent holds,
+// proven by pointer identity. The ancestor's rows below the child's fork base
+// ARE that prefix, and a shallow copy shares them, so this shares residency
+// rather than adding it.
 //
 // Nil is always a legal answer: no lineage, no open ancestor, or an ancestor
 // whose window no longer reaches the base. The caller then decodes, as before.
-func (b *XwalBackend) seedRowsLocked(id string) []Entry[message.Message] {
+// The seam itself is verified by newSeededLog, which degrades to a full decode
+// on any doubt -- measured, not asserted: deleting the base bound below leaves
+// the test green because the PROBE refuses the donation (77e17f93).
+//
+// Caller holds b.mu.
+func seedFromAncestor[T any](b *XwalBackend, id string, cacheOf func(*ariaHandle) *cachedLog[T]) []Entry[T] {
 	refs := b.store.Lineage(id)
 	if len(refs) < 2 {
 		return nil // a root owns everything; there is no donated prefix
@@ -1266,44 +1276,10 @@ func (b *XwalBackend) seedRowsLocked(id string) []Entry[message.Message] {
 	// Nearest ancestor first: it holds the longest shared prefix.
 	for i := len(refs) - 2; i >= 0; i-- {
 		h := b.open[refs[i].Node]
-		if h == nil || h.ir == nil {
-			continue
-		}
-		if rows := h.ir.residentBelow(base); len(rows) > 0 {
-			return rows
-		}
-	}
-	return nil
-}
-
-// seedTransRowsLocked is seedRowsLocked for a TRANSLATION namespace: the
-// resident rows the nearest open ancestor holds for the SAME provider, below
-// the child's fork base. Caller holds b.mu.
-//
-// The provider round-trips were already shared -- the translation log rides
-// xwal's fork base, so a child reads its ancestor's durable records without
-// re-translating anything. What was duplicated is the DECODE, exactly as it
-// was for the fig IR before the seed landed there.
-//
-// NAMESPACE IS STRUCTURAL, NOT A CHECK: the ancestor's handle is looked up by
-// the same providerName key the caller asked for, so a cross-namespace
-// donation cannot be constructed here. The fingerprint, which is not
-// structural, is verified inside newSeededLog.
-func (b *XwalBackend) seedTransRowsLocked(id, providerName string) []Entry[[]json.RawMessage] {
-	refs := b.store.Lineage(id)
-	if len(refs) < 2 {
-		return nil
-	}
-	base := refs[len(refs)-1].Base
-	if base == 0 {
-		return nil
-	}
-	for i := len(refs) - 2; i >= 0; i-- {
-		h := b.open[refs[i].Node]
 		if h == nil {
 			continue
 		}
-		c := h.trans[providerName]
+		c := cacheOf(h)
 		if c == nil {
 			continue
 		}
@@ -1312,4 +1288,23 @@ func (b *XwalBackend) seedTransRowsLocked(id, providerName string) []Entry[[]jso
 		}
 	}
 	return nil
+}
+
+// seedRowsLocked is the fig IR channel's donation. Caller holds b.mu.
+func (b *XwalBackend) seedRowsLocked(id string) []Entry[message.Message] {
+	return seedFromAncestor(b, id, func(h *ariaHandle) *cachedLog[message.Message] { return h.ir })
+}
+
+// seedTransRowsLocked is the TRANSLATION channel's, keyed by provider.
+//
+// NAMESPACE IS STRUCTURAL, NOT A CHECK: the ancestor's cache is looked up by
+// the same providerName key the caller asked for, so a cross-namespace
+// donation cannot be constructed here. The fingerprint, which is not
+// structural, is verified inside newSeededLog.
+//
+// Caller holds b.mu.
+func (b *XwalBackend) seedTransRowsLocked(id, providerName string) []Entry[[]json.RawMessage] {
+	return seedFromAncestor(b, id, func(h *ariaHandle) *cachedLog[[]json.RawMessage] {
+		return h.trans[providerName]
+	})
 }
