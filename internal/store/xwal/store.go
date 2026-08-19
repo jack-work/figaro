@@ -537,6 +537,21 @@ func (s *Store) StateAt(trunk, channel string, channelLT uint64) ([]byte, error)
 	return x.StateAt(channel, channelLT)
 }
 
+// SegmentHeaderAt returns the opaque block-0 header of the segment holding
+// channelLT together with that segment's base index, for a reducible
+// channel of trunk. See xwal.SegmentHeaderAt and disk.Log.SegmentHeaderAt:
+// the two facts must come from one call because HeaderAt walks the parent
+// chain and SegmentBaseIndexes does not.
+func (s *Store) SegmentHeaderAt(trunk, channel string, channelLT uint64) ([]byte, uint64, error) {
+	s.markTouched(trunk)
+	x, err := s.Trunks.Head(trunk)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer x.Close()
+	return x.SegmentHeaderAt(channel, channelLT)
+}
+
 func (s *Store) RecordsFrom(trunk, channel string, fromMainLT uint64, limit int) ([]Record, error) {
 	s.markTouched(trunk)
 	x, err := s.Trunks.Head(trunk)

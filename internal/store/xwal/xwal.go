@@ -1970,6 +1970,31 @@ func (x *XWAL) StateAt(channelName string, channelLT uint64) ([]byte, error) {
 	return ch.log.StateAt(channelLT)
 }
 
+// SegmentHeaderAt returns the opaque block-0 header of the segment holding
+// channelLT TOGETHER WITH THAT SEGMENT'S BASE INDEX, for a reducible
+// channel. Both facts come from the same segment under one lock, and the
+// parent chain is walked exactly as StateAt walks it.
+//
+// It is for a caller that wants to fold [base..channelLT] with its OWN
+// reducer -- typically a decoded one -- rather than pay StateAt's trip
+// through the channel's fold callback per record. Asking for the header and
+// the base SEPARATELY is unsafe below a fork base: see
+// disk.Log.SegmentHeaderAt.
+//
+// A miss, never a lie: distinct errors for an unknown channel, a
+// non-reducible channel, a log with no headers, an empty log and an unknown
+// index. The base is never 0 with a nil error.
+func (x *XWAL) SegmentHeaderAt(channelName string, channelLT uint64) ([]byte, uint64, error) {
+	ch := x.chans[channelName]
+	if ch == nil {
+		return nil, 0, fmt.Errorf("xwal: no channel %q", channelName)
+	}
+	if ch.kind != ChannelReducible {
+		return nil, 0, fmt.Errorf("xwal: channel %q is not reducible", channelName)
+	}
+	return ch.log.SegmentHeaderAt(channelLT)
+}
+
 // SyncChannelThrough persists one channel up to idx and no further. It is
 // what a writer calls between appending a batch and publishing it: Sync
 // would flush every channel, and SyncCoherent bounds related channels by the

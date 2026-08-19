@@ -381,6 +381,20 @@ func (l *Log) StateAt(idx uint64) ([]byte, error) {
 // SegmentBaseIndexes returns this log's own segment bases.
 func (l *Log) SegmentBaseIndexes() []uint64 { return l.inner.SegmentBaseIndexes() }
 
+// SegmentHeaderAt returns the block-0 header of the segment holding idx
+// together with that segment's base index. Like StateAt it SYNCS FIRST:
+// the header and the segment boundaries are facts about what is on disk,
+// and pending entries have no segment yet, so an unsynced answer would
+// describe a log older than the one the caller is about to fold records
+// out of. See disk.Log.SegmentHeaderAt for why the two facts must come
+// from one call.
+func (l *Log) SegmentHeaderAt(idx uint64) ([]byte, uint64, error) {
+	if err := l.Sync(); err != nil {
+		return nil, 0, err
+	}
+	return l.inner.SegmentHeaderAt(idx)
+}
+
 // Close syncs pending entries and closes the underlying disk.Log.
 // Parent logs auto-opened during Open are not closed automatically;
 // manage them via a Store or explicit handles for shared lifetimes.

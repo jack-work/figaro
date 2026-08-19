@@ -19,9 +19,14 @@ const (
 )
 
 var (
-	ErrOutOfOrder      = errors.New("write index out of order")
-	ErrNotFound        = errors.New("index not found")
-	ErrEmpty           = errors.New("log is empty")
+	ErrOutOfOrder = errors.New("write index out of order")
+	ErrNotFound   = errors.New("index not found")
+	ErrEmpty      = errors.New("log is empty")
+	// ErrNotHeaderMode is returned by SegmentHeaderAt for a log opened
+	// without an OnSegmentOpen callback, i.e. one whose segments carry no
+	// block-0 header. It is a distinct sentinel so a caller can tell "this
+	// log has no headers at all" from "this index is not here".
+	ErrNotHeaderMode   = errors.New("log is not in header mode")
 	ErrCodecMismatch   = errors.New("log directory contains segments with a different codec")
 	ErrPayloadTooLarge = errors.New("payload too large for segment size")
 	ErrReadOnly        = errors.New("log is read-only (branch point with child forks)")
@@ -499,6 +504,53 @@ func (l *Log) HeaderAt(idx uint64) ([]byte, error) {
 		return nil, ErrNotFound
 	}
 	return s.Header(), nil
+}
+
+// SegmentHeaderAt returns the opaque block-0 header of the segment that
+// holds idx TOGETHER WITH THAT SEGMENT'S BASE INDEX, both read from the
+// same segment under one lock. It walks the parent chain for indices
+// below this fork's range, exactly as StateAt and Read do.
+//
+// It exists because the two facts are not separately obtainable without
+// a hazard: HeaderAt WALKS the parent chain and SegmentBaseIndexes, by
+// its own contract, does NOT. Below a fork base, pairing them folds the
+// parent's header onto a range computed from the child's boundaries, and
+// nobody is told -- see TestHeaderFold_AcrossAForkTheNaivePairingIsWrong,
+// which asserts that hazard and is expected to keep passing. This call
+// is the answer to it, not a replacement for the two.
+//
+// It is for a caller that wants to fold [base..idx] ITSELF -- with its
+// own decoded reducer -- instead of paying StateAt's per-record trip
+// through the OnSegmentOpen callback.
+//
+// IT DIFFERS FROM HeaderAt DELIBERATELY: HeaderAt returns a nil header
+// for a log that has none, while this returns ErrNotHeaderMode. A nil
+// header handed back beside a VALID base is a lie a caller can act on --
+// it folds the segment's records onto nothing and produces a from-empty
+// state that looks entirely plausible. A miss, never a lie: the three
+// refusals (ErrNotHeaderMode, ErrEmpty, ErrNotFound) are distinct, and a
+// base of 0 is never returned with a nil error. HeaderAt's own contract
+// is unchanged; it has its own callers.
+func (l *Log) SegmentHeaderAt(idx uint64) (header []byte, base uint64, err error) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	if l.opts.OnSegmentOpen == nil {
+		return nil, 0, fmt.Errorf("SegmentHeaderAt: log %q: %w", l.dir, ErrNotHeaderMode)
+	}
+	if l.parent != nil && idx < l.forkBase {
+		return l.parent.SegmentHeaderAt(idx)
+	}
+	if l.isEmptyLocked() {
+		return nil, 0, ErrEmpty
+	}
+	s, serr := l.findSegmentLocked(idx)
+	if serr != nil {
+		return nil, 0, serr
+	}
+	if s == nil {
+		return nil, 0, ErrNotFound
+	}
+	return s.Header(), s.BaseIndex(), nil
 }
 
 // StateAt reconstructs the reducible state at idx for a header-mode log:
