@@ -22,6 +22,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
+	fwtree "github.com/jack-work/figaro/internal/store/tree"
 )
 
 var _ Backend = (*XwalBackend)(nil)
@@ -62,6 +63,13 @@ type XwalBackend struct {
 	// irBudget bounds resident decoded IR in bytes. It is the knob that
 	// actually controls memory; see cachedLog.budget.
 	irBudget int
+	// irTree is THE decoded-IR residency: one tree.Cache shared by every aria,
+	// one budget, one eviction order. It replaces the per-aria window, the
+	// per-aria byte budget, and the one-shot fork donation -- a child's prefix
+	// lives in its ancestor's node and is shared by construction.
+	irTree  *fwtree.Budget
+	irCache *fwtree.Cache[Entry[message.Message]]
+
 	// transBudget bounds resident decoded translations per (aria, provider).
 	// The payload is the provider's own wire form, so the estimate is the
 	// bytes themselves rather than an inflation of them.
@@ -75,6 +83,14 @@ type XwalBackend struct {
 const (
 	DefaultIRBudgetBytes          = 1 << 20
 	DefaultTranslationBudgetBytes = 4 << 20
+
+	// DefaultIRTreeBytes is the decoded IR budget for the WHOLE PROCESS, not
+	// per aria: the tree is one cache with one eviction order across every
+	// aria, so a daemon holding thirty arias no longer holds thirty budgets.
+	// 32 MiB is the segment cache's scale and about thirty times the per-aria
+	// figure it replaces, which is the shape of a shared window: any single
+	// aria may hold far more than 1 MiB, and all of them together may not.
+	DefaultIRTreeBytes = 32 << 20
 )
 
 // irEntrySize estimates one IR entry's retained bytes as its encoded size
@@ -109,7 +125,7 @@ func transEntrySize(e Entry[[]json.RawMessage]) int {
 }
 
 type ariaHandle struct {
-	ir    *cachedLog[message.Message]
+	ir    *treeLog[message.Message]
 	trans map[string]*cachedLog[[]json.RawMessage]
 }
 
@@ -149,7 +165,7 @@ func NewXwalBackend(root string, segmentSize int) (*XwalBackend, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &XwalBackend{
+	b := &XwalBackend{
 		root:        root,
 		store:       st,
 		open:        map[string]*ariaHandle{},
@@ -157,8 +173,15 @@ func NewXwalBackend(root string, segmentSize int) (*XwalBackend, error) {
 		metas:       map[string]*metaCache{},
 		touched:     map[string]time.Time{},
 		irBudget:    DefaultIRBudgetBytes,
+		irTree:      fwtree.NewBudget(DefaultIRTreeBytes),
 		transBudget: DefaultTranslationBudgetBytes,
-	}, nil
+	}
+	// ONE cache, a node per aria: that is what makes a fork's prefix its
+	// ancestor's runs rather than a copy.
+	b.irCache = NewIRCache[message.Message](b.irTree, func(node string) Log[message.Message] {
+		return newXwalLog[message.Message](b.store, node, chanIR, true)
+	}, irEntrySize)
+	return b, nil
 }
 
 // Normalize runs deferred topology work now. See XwalStore.Normalize.
@@ -185,10 +208,10 @@ func (b *XwalBackend) handleLocked(id string) (*ariaHandle, error) {
 	}
 	_ = xw.Close()
 	h := &ariaHandle{
-		ir: newSeededLog[message.Message](
+		ir: newTreeLog[message.Message](
 			newXwalLog[message.Message](b.store, id, chanIR, true),
-			b.irWindow, b.irBudget, irDecodeNum, irDecodeDenom, irEntrySize,
-			b.seedRowsLocked(id)),
+			id, b.irCache, irEntrySize,
+			func() []fwtree.Ref { return b.store.Lineage(id) }),
 		trans: map[string]*cachedLog[[]json.RawMessage]{},
 	}
 	b.open[id] = h
@@ -1137,11 +1160,6 @@ func seedFromAncestor[T any](b *XwalBackend, id string, cacheOf func(*ariaHandle
 		}
 	}
 	return nil
-}
-
-// seedRowsLocked is the fig IR channel's donation. Caller holds b.mu.
-func (b *XwalBackend) seedRowsLocked(id string) []Entry[message.Message] {
-	return seedFromAncestor(b, id, func(h *ariaHandle) *cachedLog[message.Message] { return h.ir })
 }
 
 // seedTransRowsLocked is the TRANSLATION channel's, keyed by provider.

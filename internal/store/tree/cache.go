@@ -114,6 +114,25 @@ func (c *Cache[U]) Close() {
 	}
 }
 
+// RunInfo is one run of a node's index: what it covers, what it costs, and
+// whether its units are here. The index survives eviction, so a tenant can ask
+// what it holds without materializing anything.
+type RunInfo struct {
+	From, To uint64
+	Bytes    int64
+	Resident bool
+}
+
+// Index reports a node's runs, oldest coordinate first. Lock-free.
+func (c *Cache[U]) Index(node string) []RunInfo {
+	runs := c.runs(node)
+	out := make([]RunInfo, 0, len(runs))
+	for _, r := range runs {
+		out = append(out, RunInfo{From: r.coord.From, To: r.coord.To, Bytes: r.bytes, Resident: r.resident})
+	}
+	return out
+}
+
 // Recomposes counts Source calls: climbing with reads rather than with
 // distinct ranges means the window is too small for its load.
 func (c *Cache[U]) Recomposes() int64 { return c.recomposes.Load() }

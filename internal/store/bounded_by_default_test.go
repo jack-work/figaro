@@ -24,15 +24,16 @@ func TestBareBackendIsBounded(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, log.Read(), "the aria must have history to hold")
 
-	// The ceiling is the budget PLUS the compaction slack, which is the bound
-	// cachedLog actually enforces: it trims in batches, so residency peaks at
-	// budget + budget*slackNum/slackDen and never above. Asserting the budget
-	// alone would be asserting a policy this cache does not implement.
-	ceiling := DefaultIRBudgetBytes + DefaultIRBudgetBytes*slackNum/slackDen
-	resident := be.ResidentIRBytes()
+	// THE BOUND IS THE PROCESS-WIDE TREE BUDGET NOW, not a per-aria window: one
+	// cache holds every aria's decoded IR under one eviction order, so a single
+	// aria may hold more than the old per-aria figure and all of them together
+	// may not.
+	resident := int64(be.ResidentIRBytes())
 	require.NotZero(t, resident, "a read must leave something resident")
-	require.LessOrEqual(t, resident, ceiling,
-		"a backend nobody configured must hold its own bound")
+	_, limit, _ := be.irTree.Stats()
+	require.NotZero(t, limit, "a backend nobody configured must carry a budget")
+	require.LessOrEqual(t, resident, limit,
+		"residency exceeded the budget the backend carries by default")
 }
 
 // And the CLI still tunes: a caller that sets a budget replaces the default
