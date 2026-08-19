@@ -190,6 +190,12 @@ func (c *Cache[U]) Range(lineage []Ref, from, to uint64) ([]U, error) {
 	// above the last fork base -- and it hands back the node's answer
 	// UNCOPIED. Concatenating a single piece into a fresh slice is a copy of
 	// the whole span for nothing.
+	// A SINGLE-NODE LINEAGE ASKS FOR NO SPLIT AT ALL. Every tenant that is not
+	// reading across a fork base is in this case, and building a one-element
+	// []Coord to hand it to the same walk is an allocation per read.
+	if len(lineage) == 1 {
+		return c.rangeInNode(Coord{Node: lineage[0].Node, From: from, To: to})
+	}
 	cuts := c.split(lineage, from, to)
 	if len(cuts) == 1 {
 		return c.rangeInNode(cuts[0])
@@ -258,27 +264,43 @@ func (c *Cache[U]) rangeInNode(coord Coord) ([]U, error) {
 	// and every read smaller than a chunk -- then costs NO COPY AT ALL: the
 	// caller gets a view of the run's own units. Where several runs answer,
 	// concat allocates once at the exact size instead of regrowing.
+	// The first piece is held in a local: the overwhelmingly common answer is
+	// ONE piece, and a [][]U for it is an allocation per read on the hot path.
+	var first []U
 	var pieces [][]U
 	total := 0
 	add := func(u []U) {
 		if len(u) == 0 {
 			return
 		}
-		pieces = append(pieces, u)
 		total += len(u)
+		if first == nil {
+			first = u
+			return
+		}
+		if pieces == nil {
+			pieces = append(pieces, first)
+		}
+		pieces = append(pieces, u)
+	}
+	joined := func() []U {
+		if pieces == nil {
+			return first
+		}
+		return concat(pieces, total)
 	}
 	for pos := coord.From; pos < coord.To; {
 		r := overlapping(c.runs(coord.Node), pos, coord.To)
 		if r == nil {
 			units, err := c.fill(Coord{coord.Node, pos, coord.To})
 			add(units)
-			return concat(pieces, total), err
+			return joined(), err
 		}
 		if r.coord.From > pos { // a gap ahead of this run
 			units, err := c.fill(Coord{coord.Node, pos, r.coord.From})
 			add(units)
 			if err != nil {
-				return concat(pieces, total), err
+				return joined(), err
 			}
 			pos = r.coord.From
 			continue
@@ -286,7 +308,7 @@ func (c *Cache[U]) rangeInNode(coord Coord) ([]U, error) {
 		if !r.resident {
 			units, err := c.refill(coord.Node, r)
 			if err != nil {
-				return concat(pieces, total), err
+				return joined(), err
 			}
 			// Slice the LOCAL units rather than the run: the charge inside
 			// refill may have evicted this very run again (a run larger than
@@ -302,7 +324,7 @@ func (c *Cache[U]) rangeInNode(coord Coord) ([]U, error) {
 		}
 		pos = r.coord.To
 	}
-	return concat(pieces, total), nil
+	return joined(), nil
 }
 
 // fill materializes a gap as NEW resident runs, chunked, and returns what it
