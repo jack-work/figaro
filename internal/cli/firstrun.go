@@ -99,8 +99,7 @@ func catalogFor(available []string) []providerChoice {
 }
 
 // createFn is the shape of the `acli.Create*` family. We accept a
-// closure so the same retry wrapper covers Create, CreateWithID, and
-// CreateEphemeral without per-call duplication.
+// closure so the same retry wrapper covers Create and CreateWithID.
 type createFn func() (*rpc.CreateResponse, error)
 
 // createWithFirstRun invokes fn once. On a typed first-run error, drives the

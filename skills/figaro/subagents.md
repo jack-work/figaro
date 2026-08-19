@@ -74,12 +74,12 @@ figaro status "$ARIA"
 figaro listen "$ARIA"
 ```
 
-## Example: ephemeral one-shots (no aria persistence)
+## Example: one-shot fan-out (kill them when done)
 
 ```bash
 # Quick parallel lookups, results only
 for topic in "goroutines" "channels" "select"; do
-  figaro send -er -- "Explain Go $topic in 3 sentences" > "/tmp/$topic.txt" 2>&1 &
+  figaro send -r -- "Explain Go $topic in 3 sentences" > "/tmp/$topic.txt" 2>&1 &
 done
 wait
 cat /tmp/goroutines.txt /tmp/channels.txt /tmp/select.txt

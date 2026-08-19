@@ -953,7 +953,7 @@ type AriaReadEntry struct {
 	// FormDeltas is the record's form-state window, assembled HUB-SIDE
 	// (internal/formdelta): the stamps and the patch logs live in the
 	// store, and the client holds neither. Absent when the record's
-	// windows were empty, and on every record of an ephemeral aria.
+	// windows were empty.
 	FormDeltas map[string]livedoc.FormDelta `json:"form_deltas,omitempty"`
 }
 

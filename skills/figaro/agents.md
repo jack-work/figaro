@@ -59,14 +59,15 @@ answered by identity rather than by guessing at file descriptors.
 ## Sub-arias
 
 ```sh
-figaro send -er -- <prompt>        one shot, ephemeral, raw. Nothing to clean up.
-figaro new -- <prompt>             a persistent sub-aria you can keep talking to
+figaro send -r -- <prompt>         one shot, raw output for a pipe
+figaro new -- <prompt>             a sub-aria you can keep talking to
 figaro send --id <id> -r -- <p>    talk to it again
 figaro kill <id>                   when done, so it stops showing up in ls
 ```
 
-`-e` (ephemeral) and `-r` (raw) are orthogonal: one is about persistence, the
-other about formatting. Fan several out in parallel when the sub-questions are
+EVERY ARIA IS PERSISTENT (2026-08-19: ephemeral arias were cut -- one behaviour
+instead of two). `-r` is about formatting only; when you are done with a
+sub-aria, `figaro kill <id>`. Fan several out in parallel when the sub-questions are
 independent. [subagents.md](subagents.md) has the fan-out patterns, and the
 **figscript** skill (not bundled: it lives in the repo's `skills/`) has the
 full scripting recipe. Neither is repeated here.
