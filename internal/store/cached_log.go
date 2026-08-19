@@ -89,7 +89,7 @@ func newWindowedLog[T any](inner Log[T], window, budget, inflation int, sizeOf f
 	v := &logView[T]{}
 
 	// A bounded cache reads only the tail it will keep, when the inner log can
-	// serve one. Reading everything and compacting afterwards worked but had to
+	// serve one. Reading everything and evicting afterwards worked but had to
 	// touch the whole channel to do it: 2556 json.Unmarshals to retain 420, and
 	// a transient allocation of the full log to hold a fraction of it. Steady
 	// state was bounded; the moment of opening was not, and a burst of opens
@@ -112,7 +112,7 @@ func newWindowedLog[T any](inner Log[T], window, budget, inflation int, sizeOf f
 	// Compact EXACTLY at construction, without the append path's slack: this is
 	// the moment the whole log was just materialized, so it is precisely the
 	// residency the window exists to avoid.
-	c.compact(v, 0)
+	c.evictWindow(v, 0)
 	c.view.Store(v)
 	return c
 }
@@ -269,7 +269,7 @@ func (c *cachedLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	// Trim on append rather than on a timer. A log growing through a long
 	// autonomous turn has to be bounded now, not at the next sweep, and doing
 	// it here costs no goroutine and no second scheduler.
-	c.compact(next, windowSlack)
+	c.evictWindow(next, windowSlack)
 	c.view.Store(next)
 	return stamped, nil
 }
@@ -294,16 +294,16 @@ func (c *cachedLog[T]) Trim(keep int) int {
 // Resident reports how many entries are in the window.
 func (c *cachedLog[T]) Resident() int { return len(c.load().rows) }
 
-// compact drops entries off the front of v until both bounds are satisfied,
+// evictWindow drops entries off the front of v until both bounds are satisfied,
 // allowing an overshoot of slack rows (and 2x the byte budget) first so the
 // copy amortizes across appends rather than running on every one.
 //
 // It trims in BATCHES. Trimming on every append past the cap was measured at
 // 4.4 µs and 51 KB per append against 308 ns and zero allocations unwindowed -
 // a 14x regression on the hottest write path in the daemon, because each
-// compaction copies the whole window. Batching amortizes that copy over
+// eviction copies the whole window. Batching amortizes that copy over
 // windowSlack appends, which brings it to within noise of untrimmed.
-func (c *cachedLog[T]) compact(v *logView[T], slack int) int {
+func (c *cachedLog[T]) evictWindow(v *logView[T], slack int) int {
 	overRows := c.window > 0 && len(v.rows) > c.window+slack
 	overBytes := c.budget > 0 && c.sizeOf != nil && v.bytes > c.budget+c.budget*slackNum/slackDen
 	if !overRows && !overBytes {
@@ -333,14 +333,14 @@ func (c *cachedLog[T]) compact(v *logView[T], slack int) int {
 	return c.trim(v, keep)
 }
 
-// slackNum/slackDen is the byte overshoot allowed before compaction: half the
+// slackNum/slackDen is the byte overshoot allowed before eviction: half the
 // budget. Same amortization argument as windowSlack.
 const (
 	slackNum = 1
 	slackDen = 2
 )
 
-// windowSlack is how far the window may overshoot before it is compacted. It
+// windowSlack is how far the window may overshoot before it is evicted down. It
 // buys O(1) amortized appends at the cost of a bounded overshoot: residency
 // peaks at window+slack, never above.
 const windowSlack = 256

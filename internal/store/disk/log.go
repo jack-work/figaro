@@ -363,7 +363,14 @@ func (l *Log) ScanFromEnd(from uint64, fn func(idx uint64, payload []byte) error
 // TruncateFront removes whole sealed segments whose LastIndex is below
 // beforeIdx. Partial segments (those containing entries on both sides
 // of beforeIdx) and the active segment are left intact; callers should
-// size segments so the compaction granularity matches their needs.
+// size segments so the UNLINK granularity matches their needs.
+//
+// "COMPACTION" IS NOT WHAT THIS DOES AND THE WORD IS RETIRED HERE. The classic
+// meaning -- rewrite the live records into fresh files to reclaim space -- IS
+// SOMETHING THIS SYSTEM NEVER DOES. TruncateFront UNLINKS WHOLE SEALED
+// SEGMENTS and rewrites nothing. The term was also carrying a third meaning in
+// cachedLog, where it named in-memory window eviction; that one is now
+// evictWindow. Three meanings, one word, and only the unlink is on disk.
 //
 // After deleting files, the directory is fsynced so the unlinks are
 // durable.
