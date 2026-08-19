@@ -448,3 +448,57 @@ ARE TWO DONATION SITES. The fig IR donation at `seedRowsLocked`
 (xwal_backend.go:1260) is UNCOVERED by this test. Two hand-written seeding
 paths for one structure is the duplication this consolidation exists to
 remove.
+
+## THE RESIDENCY DEFAULTS, DECIDED (Gluck delegated: "whatever you want to do
+## on my config that makes sense... you dont need my approval")
+
+f3aa1d0b, 2026-08-19. Decided against the census rather than chosen as a
+round number, and the important change is not a number at all.
+
+### WHAT THE NUMBERS ARE TODAY, AND WHY THEY ARE MOSTLY RIGHT
+
+    IRWindow             0        unbounded BY COUNT
+    IRWindowBytes        4 MiB    per aria, DECODED estimate
+    TranslationWindow    4 MiB    per (aria, provider), DECODED estimate
+    segment payloadBudget 32 MiB  GLOBAL, encoded bytes
+    segment size          2 MiB
+
+The per-aria budgets are denominated in DECODED estimate (`newWindowedLog`
+takes an `inflation` factor precisely so the gate and the accounting agree in
+units). This repo measures decoded fig IR at 4-5x wire, so a 4 MiB decoded
+budget holds roughly 0.8-1 MiB of encoded history.
+
+AGAINST THE CENSUS that is a defensible line: it comfortably holds a p90 aria
+(443 KiB encoded), and it EVICTS for p99 (1.7 MiB) and above. That is Gluck's
+stated target -- eviction that actually occurs, but rarely under light use --
+and it is already satisfied. I am NOT changing them, and I record that as a
+decision rather than as an omission.
+
+The global 32 MiB segment budget against a 300 MiB top decile likewise cannot
+hold the working set and therefore evicts under real load.
+
+### THE CHANGE THAT MATTERS IS STRUCTURAL, NOT NUMERIC
+
+    THE RESIDENCY POLICY LIVES IN `internal/cli`, NOT IN THE LAYER THAT OWNS
+    THE BYTES. The store's own default is UNBOUNDED; boundedness is a property
+    of ONE CALL SITE IN ONE BINARY (angelus.go:110-112).
+
+Anything else constructing a backend gets the unbounded configuration --
+`doctor.go:320` does, every test does, and any future embedding that forgets
+the wiring will. For a design whose goal is ONE canonical residency policy,
+that is a defect independent of the numbers: the policy can be silently
+absent.
+
+DECIDED: the store carries its own bounded defaults, and the CLI TUNES them
+rather than SUPPLIES them. A bare `NewXwalBackend` must be bounded. This is
+not a new mechanism -- the fields exist -- it is moving a default from a
+caller into the component whose memory it governs.
+
+### AND A UNIT HAZARD TO CARRY INTO THE CONSOLIDATION
+
+Two budgets in this system are denominated differently: the per-aria windows
+in DECODED estimate, the segment cache in ENCODED bytes. Under one uniform
+policy those must be reconciled explicitly and stated at the boundary, or a
+single "budget" number will silently mean two different quantities depending
+on which layer reads it. `newWindowedLog`'s `inflation` parameter exists
+because that mismatch was already met once.
