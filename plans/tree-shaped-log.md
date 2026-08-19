@@ -1,3 +1,54 @@
+# FIRM RULE, GLUCK, 2026-08-18: DELETION IS THE DEFAULT
+
+Given the hour after the block below, when the role bearer under-counted a
+consolidation by costing each layer as what it would BECOME rather than as
+deleted -- which is the accretion's own assumption, applied by the person
+whose job is to catch it.
+
+    EXISTING CODE DOES NOT SURVIVE IN A REDUCED FORM. Break whatever you
+    need. NO ARIAS ARE SACRED. Consolidation and cache-code removal is
+    IDEAL.
+
+    ANY LARGE DATA STRUCTURE NEEDS GLUCK'S APPROVAL BEFORE IT IS ADDED.
+
+    AND ANY EXISTING LARGE DATA STRUCTURE MADE PARTIALLY OBSOLETE NEEDS HIS
+    EXPLICIT APPROVAL BEFORE IT IS **RETAINED**. DELETING IS THE DEFAULT.
+    Keeping it is the thing that requires permission.
+
+    IF EXISTING ARIAS CANNOT BE LOADED, THEY ARE TAINTED AND REMOVED FROM
+    THE TEST SET. Serialized data on disk does not constrain the design.
+
+    BAD TESTS ARE REMOVED OUTRIGHT AND NOT REPLACED.
+
+    INLINE EXPLANATIONS ARE PURGED AT ALL COSTS.
+
+## WHY THE INVERSION MATTERS MORE THAN THE PERMISSION
+
+The usual shape is that DELETING needs justification and KEEPING is free.
+That default is what let three honest measurements leave two cache shapes
+standing: nobody ever had to argue FOR the second one. Under this rule the
+burden moves, and a layer survives only because someone made a case for it
+to a person who can say no.
+
+## AND THE LAST CLAUSE IS NOT A STYLE PREFERENCE
+
+Purging inline explanations is the same finding this campaign proved three
+times in one night, from three directions: a comment claiming a cursor was
+"built after the span is chosen" that was false when written; a comment
+promising a scan was "off the hot path" for ELEVEN MINOR VERSIONS after the
+figwal function it named had been deleted; and a test named
+PreservesPrefixBytes that asserted an ADDRESS.
+
+    A COMMENT IS A CLAIM NOBODY TESTS. A LABEL IS NOT UNDER TEST AND EVERY
+    READER TREATS IT AS IF IT WERE.
+
+An explanation that cannot go red is a liability that accrues interest. What
+survives the purge is what an instrument can assert; what does not survive
+belongs in a plan or a note, where it is dated, attributed, and known to be
+prose.
+
+---
+
 # STANDING BLOCK, GLUCK, 2026-08-18: ONE UNIFORM LAYER, AND A REGRESSION
 # IS HIS CONCERN AND NOT A REASON TO STOP
 
