@@ -164,6 +164,24 @@ A dependency's scan pollutes a shared cache? Assert that it pollutes, and say
 in the failure message that the workaround can now be removed. That test pays
 attention while nobody is looking; a red one only accumulates apologies.
 
+**Worked example, and the shape of the mistake is the useful part.**
+`TestHibernateRefusesActiveAria` waits for an aria to report `idle`, then
+asserts `require.NoError(Hibernate(id))` once. But `Registry.Hibernate`
+re-checks liveness AFTER taking the retiring flag, deliberately — *"a turn that
+opened while we were taking the flag wins"* — so between the poll and the call
+the aria may legitimately be active again, and **the refusal is correct
+behaviour reported as a test failure.** Under load it goes red; alone it passes
+12 of 12. The fix asserts the fact: `require.Eventually(Hibernate succeeds)` —
+it eventually hibernates, and the refusals along the way are the design
+working.
+
+The sibling assertion three lines above already guards itself that way, and
+carries the comment *"a flaky assertion here would be worse than none"*. **The
+same author saw the hazard on one side of a pair and not the other.** That is
+the ordinary shape of this mistake rather than carelessness: a hazard is
+usually visible from one side and invisible from the other. When you fix one,
+go and look at its twin.
+
 ### Prove the fixture can fail
 
 A check that cannot fail costs exactly what a check that cannot pass costs.
