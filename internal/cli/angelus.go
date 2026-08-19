@@ -94,10 +94,15 @@ func applyStoreSettings(loaded *config.Loaded) {
 	store.SetSegmentCacheBudget(loaded.SegmentCacheBytes())
 }
 
-// applyCacheSettings bounds the per-aria caches. It must run before any aria
-// is opened, or the first handles built are unbounded for the daemon's whole
-// life. Optional interface, for the same reason the other cache policies are:
-// a backend without a window should not have to pretend it has one.
+// applyCacheSettings TUNES the per-aria caches: the store bounds itself at
+// construction (store.DefaultIRBudgetBytes and friends), and this applies only
+// what the config file actually says. A knob nobody set is left alone, so an
+// omission here can no longer make a daemon unbounded -- which it could until
+// 2026-08-19, when these three calls WERE the residency policy and every other
+// builder of a backend (doctor, tests, embeddings) got 0/0.
+//
+// Optional interface, for the same reason the other cache policies are: a
+// backend without a window should not have to pretend it has one.
 func applyCacheSettings(loaded *config.Loaded, backend any) bool {
 	w, ok := backend.(interface {
 		SetIRWindow(int)
@@ -107,9 +112,15 @@ func applyCacheSettings(loaded *config.Loaded, backend any) bool {
 	if !ok {
 		return false
 	}
-	w.SetIRWindow(loaded.IRWindow())
-	w.SetIRBudget(loaded.IRWindowBytes())
-	w.SetTranslationBudget(loaded.TranslationWindowBytes())
+	if n := loaded.IRWindow(); n > 0 {
+		w.SetIRWindow(n)
+	}
+	if n, set := loaded.IRWindowBytes(); set {
+		w.SetIRBudget(n)
+	}
+	if n, set := loaded.TranslationWindowBytes(); set {
+		w.SetTranslationBudget(n)
+	}
 	return true
 }
 

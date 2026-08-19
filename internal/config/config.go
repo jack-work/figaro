@@ -348,37 +348,44 @@ func (l *Loaded) IRWindow() int {
 	return *l.Config.Memory.IRWindow
 }
 
-// IRWindowBytes is the resident decoded-IR byte budget per aria, or 0 for
-// unbounded. Nil-safe, floored for the same reason IRWindow is: a budget too
-// small to hold a turn makes an in-flight turn re-read its own tail.
-func (l *Loaded) IRWindowBytes() int {
+// IRWindowBytes is the CONFIGURED resident decoded-IR byte budget per aria.
+// ok is false when nothing is configured: the default belongs to the store
+// (store.DefaultIRBudgetBytes), the layer that holds the bytes, and a caller
+// that finds nothing here must leave the store's own bound alone rather than
+// substitute a number of its own. An explicit 0 is a real answer -- unbounded
+// -- and comes back with ok true.
+//
+// Floored for the same reason IRWindow is: a budget too small to hold a turn
+// makes an in-flight turn re-read its own tail.
+func (l *Loaded) IRWindowBytes() (int, bool) {
 	if l == nil || l.Config.Memory.IRWindowMB == nil {
-		return defaultIRWindowMB << 20
+		return 0, false
 	}
 	if *l.Config.Memory.IRWindowMB <= 0 {
-		return 0 // explicitly unbounded
+		return 0, true // explicitly unbounded
 	}
 	if mb := *l.Config.Memory.IRWindowMB; mb < minIRWindowMB {
-		return minIRWindowMB << 20
+		return minIRWindowMB << 20, true
 	}
-	return *l.Config.Memory.IRWindowMB << 20
+	return *l.Config.Memory.IRWindowMB << 20, true
 }
 
-// TranslationWindowBytes is the resident decoded-translation byte budget per
-// aria per provider, or 0 for unbounded. Floored like the IR's, and for the
-// same reason: a budget too small to hold the tail a translator is about to
-// send makes it re-read that tail from disk on every Send.
-func (l *Loaded) TranslationWindowBytes() int {
+// TranslationWindowBytes is the CONFIGURED resident decoded-translation byte
+// budget per aria per provider: same unset/explicit-zero contract as
+// IRWindowBytes, same floor, and the same reason for it -- a budget too small
+// to hold the tail a translator is about to send makes it re-read that tail on
+// every Send.
+func (l *Loaded) TranslationWindowBytes() (int, bool) {
 	if l == nil || l.Config.Memory.TranslationWindowMB == nil {
-		return defaultTranslationWindowMB << 20
+		return 0, false
 	}
 	if *l.Config.Memory.TranslationWindowMB <= 0 {
-		return 0
+		return 0, true
 	}
 	if mb := *l.Config.Memory.TranslationWindowMB; mb < minIRWindowMB {
-		return minIRWindowMB << 20
+		return minIRWindowMB << 20, true
 	}
-	return *l.Config.Memory.TranslationWindowMB << 20
+	return *l.Config.Memory.TranslationWindowMB << 20, true
 }
 
 // TelemetryDir resolves the sink directory against the state dir.
@@ -450,11 +457,6 @@ const (
 	// one range recompose (~ms), not a disk store.
 	defaultUIWindowMB = 16
 
-	// defaultTranslationWindowMB holds the whole translation history of every
-	// aria in the author's store (largest: 2.9 MiB), so it changes nothing
-	// today and caps the growth that had no cap.
-	defaultTranslationWindowMB = 4
-
 	// minIRWindow is a floor, not taste: a window smaller than one turn's
 	// worth of messages makes an in-flight turn re-read its own tail from disk
 	// on every append.
@@ -473,16 +475,6 @@ const (
 	// store holds 99 patches, so this only bites a form written to
 	// continuously for a very long time.
 	defaultFormPatchWindow = 2048
-	// defaultIRWindowMB bounds resident decoded IR when nothing says
-	// otherwise. It used to be unbounded, and the decoded IR is the largest
-	// thing a live aria holds: 4 to 5x its encoded bytes, measured at 12.5
-	// MiB on a 2556-message aria and 63 to 86 percent of that aria's whole
-	// footprint. Unbounded by default meant every aria anyone touched kept
-	// all of it.
-	//
-	// 4 MiB holds a comfortable working tail on every aria measured. Set
-	// ir_window_mb = 0 to go back to unbounded.
-	defaultIRWindowMB = 4
 )
 
 // SoftLimitBytes is the daemon's heap ceiling in bytes, or 0 for none.

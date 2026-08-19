@@ -6,42 +6,44 @@ import (
 )
 
 // The resident-IR budget is the largest single lever on a live daemon's
-// memory, and it was unbounded by default. These pin the three answers:
-// nothing configured is BOUNDED, an explicit zero is unbounded, and a value
-// below the floor is raised rather than honoured.
-func TestIRWindowBytesDefaults(t *testing.T) {
-	if got := (*Loaded)(nil).IRWindowBytes(); got != defaultIRWindowMB<<20 {
-		t.Fatalf("nil config: want the default budget, got %d", got)
+// memory, and CONFIG NO LONGER OWNS IT: the store bounds itself
+// (store.DefaultIRBudgetBytes) and this reports only what a config file said.
+// The three answers pinned here are the ones a caller must be able to tell
+// apart -- nothing configured, an explicit unbounded, and a value below the
+// floor -- because conflating the first two is what let a bare backend run
+// unbounded.
+func TestIRWindowBytesConfigured(t *testing.T) {
+	if got, set := (*Loaded)(nil).IRWindowBytes(); set || got != 0 {
+		t.Fatalf("nil config must configure nothing, got %d set=%v", got, set)
 	}
 
 	var l Loaded
-	if got := l.IRWindowBytes(); got != defaultIRWindowMB<<20 {
-		t.Fatalf("unset: want the default budget, got %d", got)
+	if got, set := l.IRWindowBytes(); set || got != 0 {
+		t.Fatalf("unset must configure nothing, got %d set=%v", got, set)
 	}
 
 	zero := 0
 	l.Config.Memory.IRWindowMB = &zero
-	if got := l.IRWindowBytes(); got != 0 {
-		t.Fatalf("explicit 0 must mean unbounded, got %d", got)
+	if got, set := l.IRWindowBytes(); !set || got != 0 {
+		t.Fatalf("explicit 0 is a configured unbounded, got %d set=%v", got, set)
 	}
 
-	tiny := 0
-	tiny = -3
-	l.Config.Memory.IRWindowMB = &tiny
-	if got := l.IRWindowBytes(); got != 0 {
-		t.Fatalf("negative must mean unbounded, got %d", got)
+	neg := -3
+	l.Config.Memory.IRWindowMB = &neg
+	if got, set := l.IRWindowBytes(); !set || got != 0 {
+		t.Fatalf("negative is a configured unbounded, got %d set=%v", got, set)
 	}
 
 	small := 1
 	l.Config.Memory.IRWindowMB = &small
-	if got := l.IRWindowBytes(); got != minIRWindowMB<<20 {
-		t.Fatalf("a value at the floor must survive, got %d", got)
+	if got, set := l.IRWindowBytes(); !set || got != minIRWindowMB<<20 {
+		t.Fatalf("a value at the floor must survive, got %d set=%v", got, set)
 	}
 
 	big := 32
 	l.Config.Memory.IRWindowMB = &big
-	if got := l.IRWindowBytes(); got != 32<<20 {
-		t.Fatalf("a configured value must be honoured, got %d", got)
+	if got, set := l.IRWindowBytes(); !set || got != 32<<20 {
+		t.Fatalf("a configured value must be honoured, got %d set=%v", got, set)
 	}
 }
 
@@ -116,25 +118,24 @@ func TestFormPatchWindow(t *testing.T) {
 	}
 }
 
-// The translation cache was the last unbounded one in the store. Same three
-// answers as the IR's, because a reader who learns one should not have to
-// learn the other.
-func TestTranslationWindowBytesDefaults(t *testing.T) {
-	if got := (*Loaded)(nil).TranslationWindowBytes(); got != defaultTranslationWindowMB<<20 {
-		t.Fatalf("nil config: want the default budget, got %d", got)
+// The translation cache carries the same unset/explicit-zero contract as the
+// IR's, because a reader who learns one should not have to learn the other.
+func TestTranslationWindowBytesConfigured(t *testing.T) {
+	if got, set := (*Loaded)(nil).TranslationWindowBytes(); set || got != 0 {
+		t.Fatalf("nil config must configure nothing, got %d set=%v", got, set)
 	}
 	var l Loaded
-	if got := l.TranslationWindowBytes(); got != defaultTranslationWindowMB<<20 {
-		t.Fatalf("unset: want the default budget, got %d", got)
+	if got, set := l.TranslationWindowBytes(); set || got != 0 {
+		t.Fatalf("unset must configure nothing, got %d set=%v", got, set)
 	}
 	zero := 0
 	l.Config.Memory.TranslationWindowMB = &zero
-	if got := l.TranslationWindowBytes(); got != 0 {
-		t.Fatalf("explicit 0 must mean unbounded, got %d", got)
+	if got, set := l.TranslationWindowBytes(); !set || got != 0 {
+		t.Fatalf("explicit 0 is a configured unbounded, got %d set=%v", got, set)
 	}
 	small := 1
 	l.Config.Memory.TranslationWindowMB = &small
-	if got := l.TranslationWindowBytes(); got != minIRWindowMB<<20 {
-		t.Fatalf("below the floor must be raised, got %d", got)
+	if got, set := l.TranslationWindowBytes(); !set || got != minIRWindowMB<<20 {
+		t.Fatalf("below the floor must be raised, got %d set=%v", got, set)
 	}
 }

@@ -81,6 +81,22 @@ type XwalBackend struct {
 	transBudget int
 }
 
+// The residency defaults, owned HERE because this is the layer that holds the
+// bytes. Both are DECODED-estimate budgets, per aria (IR) and per (aria,
+// provider) (translations); irWindow stays 0, so bytes bind rather than an
+// accidental row count.
+//
+// 4 MiB of decoded IR is roughly 0.8-1 MiB encoded at this repo's measured
+// 4-5x inflation. Against the author's store census that holds a p90 aria
+// (443 KiB encoded) whole and evicts from p99 (1.7 MiB) up, which is the
+// stated target: eviction that actually occurs, rarely under light use. The
+// largest translation history measured is 2.9 MiB, so 4 MiB caps an axis that
+// had no cap without changing what a real aria holds today.
+const (
+	DefaultIRBudgetBytes          = 4 << 20
+	DefaultTranslationBudgetBytes = 4 << 20
+)
+
 // irEntrySize estimates one IR entry's retained bytes as its encoded size
 // times a measured inflation factor.
 //
@@ -141,6 +157,13 @@ type metaCache struct {
 // NewXwalBackend opens the aria tree at root. segmentSize <= 0 takes the
 // configured default; the daemon passes config's, tests pass nothing.
 //
+// THE BACKEND IS BOUNDED WHEN IT IS BUILT. Residency defaults belong to the
+// layer that owns the bytes, not to one call site in one binary: until
+// 2026-08-19 a bare backend was UNBOUNDED and only internal/cli's daemon
+// wiring made it otherwise, so doctor, every test, and any future embedding
+// that forgot the wiring held every decoded entry forever. The CLI now TUNES
+// these; it does not supply them.
+//
 // The presentation hierarchy defaults to the topology. A build with the
 // trunk capability replaces it via Store().SetTree; see internal/figaro/wire.
 func NewXwalBackend(root string, segmentSize int) (*XwalBackend, error) {
@@ -149,12 +172,14 @@ func NewXwalBackend(root string, segmentSize int) (*XwalBackend, error) {
 		return nil, err
 	}
 	return &XwalBackend{
-		root:    root,
-		store:   st,
-		open:    map[string]*ariaHandle{},
-		forms:   map[string]*Form{},
-		metas:   map[string]*metaCache{},
-		touched: map[string]time.Time{},
+		root:        root,
+		store:       st,
+		open:        map[string]*ariaHandle{},
+		forms:       map[string]*Form{},
+		metas:       map[string]*metaCache{},
+		touched:     map[string]time.Time{},
+		irBudget:    DefaultIRBudgetBytes,
+		transBudget: DefaultTranslationBudgetBytes,
 	}, nil
 }
 
