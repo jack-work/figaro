@@ -125,3 +125,45 @@ func TestBudgetOwnersSurviveConcurrentRegistration(t *testing.T) {
 		t.Fatalf("after closing every cache the budget still holds %d owners", got)
 	}
 }
+
+// RANGE HANDS BACK A VIEW, NOT A COPY, when one run answers the whole span.
+// Pinned as pointer identity because it is a CONTRACT, not an optimisation: a
+// caller that mutates what it is given corrupts the cache, and a future
+// "defensive copy" would silently undo the fix that took the hot-tail read
+// from 4.24x the flat window's to 1.27x.
+func TestRangeOfOneRunAliasesTheCache(t *testing.T) {
+	var calls int
+	var mu sync.Mutex
+	c := newCache(NewBudget(0), &calls, &mu)
+	lineage := []Ref{{Node: "p"}}
+
+	// One chunk, so one run answers.
+	if _, err := c.Range(lineage, 0, runChunk); err != nil {
+		t.Fatal(err)
+	}
+	runs := c.runs("p")
+	if len(runs) != 1 {
+		t.Fatalf("fixture: %d runs, want 1", len(runs))
+	}
+
+	got, err := c.Range(lineage, 0, runChunk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != runChunk {
+		t.Fatalf("got %d units", len(got))
+	}
+	if &got[0] != &runs[0].units[0] {
+		t.Fatal("Range copied a span that one run answers: the view contract is gone")
+	}
+
+	// And eviction under a holder does not disturb it: the run is immutable and
+	// eviction publishes a successor.
+	before := append([]unit(nil), got...)
+	c.Drop(runs[0].coord)
+	for i := range got {
+		if got[i] != before[i] {
+			t.Fatalf("a holder's view changed under eviction at %d", i)
+		}
+	}
+}

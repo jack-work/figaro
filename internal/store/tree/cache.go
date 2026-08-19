@@ -173,6 +173,15 @@ func (c *Cache[U]) Drop(coord Coord) {
 // bases: the portion below each child's Base is served from -- and
 // becomes resident in -- the ANCESTOR's node, so branches share one
 // copy of their common prefix. Misses rematerialize per contiguous gap.
+//
+// THE RESULT MAY ALIAS THE CACHE. Where one run answers the whole span the
+// caller is handed A VIEW OF THAT RUN'S UNITS, which is the point: a cache
+// that copies its answer is a cache of the work needed to produce a copy. The
+// units are therefore READ-ONLY TO THE CALLER, exactly as the substrate's own
+// bytes are. Aliasing is safe against eviction by construction -- a run is
+// immutable once published and eviction publishes a HOLLOW SUCCESSOR, so a
+// holder keeps serving what it already has and the memory is collected when it
+// lets go.
 func (c *Cache[U]) Range(lineage []Ref, from, to uint64) ([]U, error) {
 	if len(lineage) == 0 || to < from {
 		return nil, nil
