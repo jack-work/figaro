@@ -61,23 +61,30 @@ func (h *handlers) studyForHub(ariaID, formID string, drop bool) ([]string, erro
 	// parallel copy of the board's read-modify-write and a parallel copy of
 	// the refcount calls; two implementations of a crash-ordering rule is one
 	// too many, and the second one is where it goes wrong.
-	studies, changed, err := studyThroughStore(b, ariaID, formID, drop)
+	decl, err := studyThroughStore(b, ariaID, formID, drop)
 	if err != nil {
 		return nil, err
 	}
-	b.SetObservedForms(ariaID, studies)
-	if changed && formID != "" {
-		h.markStudyForHub(ariaID, formID, !drop)
+	// A DORMANT aria has no board mirror to lose -- there is no agent, so
+	// nothing renders from memory here -- but the store's observed set is
+	// still a whole slice, and the hub serves one aria's verbs from RPC
+	// goroutines. Declaring only what WROTE keeps the same rule the agent
+	// keeps: a call that wrote nothing has no claim on the order.
+	if decl.Changed {
+		b.SetObservedForms(ariaID, decl.Studies)
+		if formID != "" {
+			h.markStudyForHub(ariaID, formID, !drop)
+		}
 	}
-	return studies, nil
+	return decl.Studies, nil
 }
 
 // studyThroughStore routes to the store's two-participant write. Only the
 // xwal backend has one; a backend without librettos cannot study.
-func studyThroughStore(b store.Backend, ariaID, formID string, drop bool) ([]string, bool, error) {
+func studyThroughStore(b store.Backend, ariaID, formID string, drop bool) (store.StudyDecl, error) {
 	sb, ok := b.(studyBackend)
 	if !ok || formID == "" {
-		return nil, false, fmt.Errorf("study: this backend cannot study")
+		return store.StudyDecl{}, fmt.Errorf("study: this backend cannot study")
 	}
 	if drop {
 		return sb.DropForm(ariaID, formID)
@@ -86,8 +93,8 @@ func studyThroughStore(b store.Backend, ariaID, formID string, drop bool) ([]str
 }
 
 type studyBackend interface {
-	StudyForm(observerID, sourceFormID string) ([]string, bool, error)
-	DropForm(observerID, sourceFormID string) ([]string, bool, error)
+	StudyForm(observerID, sourceFormID string) (store.StudyDecl, error)
+	DropForm(observerID, sourceFormID string) (store.StudyDecl, error)
 }
 
 // markStudyForHub states a began/stopped transition in the dormant aria's IR.

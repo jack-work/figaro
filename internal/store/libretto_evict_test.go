@@ -18,7 +18,7 @@ func TestLibrettoSurvivesEvictionOfItsSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := be.StudyForm(watcher, sourceID); err != nil {
+	if _, err := be.StudyForm(watcher, sourceID); err != nil {
 		t.Fatal(err)
 	}
 	lib, err := be.Libretto(sourceID)
@@ -73,10 +73,10 @@ func TestADroppedStudyKeepsItsSourceResident(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := be.StudyForm(watcher, sourceID); err != nil {
+	if _, err := be.StudyForm(watcher, sourceID); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := be.DropForm(watcher, sourceID); err != nil {
+	if _, err := be.DropForm(watcher, sourceID); err != nil {
 		t.Fatal(err)
 	}
 	if n := be.EvictIdle(map[string]bool{}, 0); n == 0 {

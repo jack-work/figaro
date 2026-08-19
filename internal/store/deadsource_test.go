@@ -19,14 +19,14 @@ func TestDropAfterTheSourceIsUnlinked(t *testing.T) {
 	if _, err := be.ApplyForm(sourceID, setPatch(map[string]string{"brief": "doomed"})); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := be.StudyForm(watcher, sourceID); err != nil {
+	if _, err := be.StudyForm(watcher, sourceID); err != nil {
 		t.Fatal(err)
 	}
 	// The form is DELETED, not merely tombstoned: files unlinked, node gone.
 	if err := be.Remove(sourceID, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := be.DropForm(watcher, sourceID); err != nil {
+	if _, err := be.DropForm(watcher, sourceID); err != nil {
 		t.Fatalf("dropping a study of a DELETED form was refused: %v", err)
 	}
 	studies, err := be.StudiedBy(watcher)
@@ -50,7 +50,7 @@ func TestForkWithADeadStudiedForm(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := be.StudyForm(parent, sourceID); err != nil {
+	if _, err := be.StudyForm(parent, sourceID); err != nil {
 		t.Fatal(err)
 	}
 	if err := be.Remove(sourceID, false); err != nil {
@@ -82,7 +82,7 @@ func TestDropAfterTheSourceIsUnlinkedAcrossARestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := be.StudyForm(watcher, sourceID); err != nil {
+	if _, err := be.StudyForm(watcher, sourceID); err != nil {
 		t.Fatal(err)
 	}
 	if err := be.Remove(sourceID, false); err != nil {
@@ -97,7 +97,7 @@ func TestDropAfterTheSourceIsUnlinkedAcrossARestart(t *testing.T) {
 	}
 	defer again.Close()
 
-	if _, _, err := again.DropForm(watcher, sourceID); err != nil {
+	if _, err := again.DropForm(watcher, sourceID); err != nil {
 		t.Fatalf("after a restart, dropping a study of a deleted form was refused: %v", err)
 	}
 	studies, err := again.StudiedBy(watcher)

@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jack-work/figaro/internal/form"
@@ -53,6 +54,10 @@ func StudiesFromSnapshot(snap form.Snapshot) []string {
 // resumeStudies re-declares the observed set from the board. Boot and
 // revival path; the board is the durable truth, the store's set is its
 // in-memory mirror.
+//
+// It runs once, at NewAgent, before any cast can be issued -- which is why
+// publishStudies may skip a declaration that wrote nothing: every set that
+// is already durable has been declared to the store here.
 func (a *Agent) resumeStudies() {
 	if a.backend == nil {
 		return
@@ -79,15 +84,14 @@ func (a *Agent) Study(formID string) ([]string, error) {
 	// second, so every crash leaves the count too HIGH -- a leak the sweep
 	// repairs -- rather than too low, which reclaims a copy a live observer
 	// still needs.
-	studies, changed, err := a.declareStudy(formID, false)
+	decl, err := a.declareStudy(formID, false)
 	if err != nil {
 		return nil, err
 	}
-	a.backend.SetObservedForms(a.id, studies)
-	if changed {
+	if decl.Changed {
 		a.appendStudyMark(formID, true)
 	}
-	return studies, nil
+	return decl.Studies, nil
 }
 
 // Drop unsubscribes: the board first (truth), then the store's mirror
@@ -95,53 +99,88 @@ func (a *Agent) Study(formID string) ([]string, error) {
 func (a *Agent) Drop(formID string) ([]string, error) {
 	// Board first on the way out, for the same reason in reverse. Same
 	// implementation.
-	studies, changed, err := a.declareStudy(formID, true)
+	decl, err := a.declareStudy(formID, true)
 	if err != nil {
 		return nil, err
 	}
-	a.backend.SetObservedForms(a.id, studies)
-	if changed {
+	if decl.Changed {
 		a.appendStudyMark(formID, false)
 	}
-	return studies, nil
+	return decl.Studies, nil
 }
 
 // declareStudy performs the two-participant write through the store and then
 // refreshes the agent's OWN board mirror, which is the only part of this the
 // hub does not need: an agent renders from an in-memory snapshot, and a
 // durable write it does not hear about is a write the next turn will not see.
-func (a *Agent) declareStudy(formID string, drop bool) ([]string, bool, error) {
+func (a *Agent) declareStudy(formID string, drop bool) (store.StudyDecl, error) {
 	sb, ok := a.backend.(studyBackend)
 	if !ok {
 		// requireStudyTarget already refuses a nil backend on the study
 		// side; this covers drop, where a missing source is legal but a
 		// missing STORE is not.
-		return nil, false, fmt.Errorf("study: this backend cannot study")
+		return store.StudyDecl{}, fmt.Errorf("study: this backend cannot study")
 	}
-	var studies []string
-	var changed bool
+	var decl store.StudyDecl
 	var err error
 	if drop {
-		studies, changed, err = sb.DropForm(a.id, formID)
+		decl, err = sb.DropForm(a.id, formID)
 	} else {
-		studies, changed, err = sb.StudyForm(a.id, formID)
+		decl, err = sb.StudyForm(a.id, formID)
 	}
-	if err != nil || !changed {
-		return studies, changed, err
+	if err != nil || !decl.Changed {
+		return decl, err
 	}
-	raw, merr := json.Marshal(studies)
-	if merr != nil {
-		return studies, changed, merr
+	a.publishStudies(decl)
+	return decl, nil
+}
+
+// publishStudies mirrors a declaration that WON, and refuses one that lost.
+//
+// THE LOST STUDY, and why the two lines below are not the two lines that
+// were here. declareStudy used to marshal the set it was handed and hand it
+// straight to a.form.Apply -- a WHOLE-VALUE write, with no version, from a
+// goroutine that is no longer the only writer (cast came off the actor loop
+// to cure the self-cast deadlock). Two casts then race: B computes eight
+// members and publishes, A computes the seven it read before B existed and
+// publishes SECOND, and A wins by arriving last. The durable board keeps
+// eight, the mirror keeps seven, and the mirror is what a TURN renders
+// from. Measured: 8 of 8 runs red at GOMAXPROCS=1, always the mirror short
+// and never the board (see study_mirror_race_test.go).
+//
+// The rule is the one 6b2e597a wrote on the store side a week ago, in the
+// same words: PUBLISH WHAT WAS WRITTEN. A set carries the version its write
+// landed at, and a set whose version is not newer than what the mirror
+// already shows is a set that has been superseded -- it is dropped, not
+// serialized more carefully. Ordering by version, not by arrival, is the
+// whole fix; the mutex only makes the compare-and-publish one step.
+//
+// The store's observed set (the stamp source) is declared from inside the
+// same step, for the same reason: SetObservedForms takes a whole slice too,
+// and a stale one there loses a form's stamps rather than its rendering.
+func (a *Agent) publishStudies(decl store.StudyDecl) {
+	raw, err := json.Marshal(decl.Studies)
+	if err != nil {
+		slog.Error("study: marshal declared set", "aria", a.id, "err", err)
+		return
 	}
+	a.studiesMu.Lock()
+	defer a.studiesMu.Unlock()
+	if decl.Version <= a.studiesVersion {
+		return // superseded: a newer declaration is already mirrored
+	}
+	a.studiesVersion = decl.Version
 	a.form.Apply(form.Patch{Set: map[string]json.RawMessage{StudiesKey: raw}})
-	return studies, changed, nil
+	if a.backend != nil {
+		a.backend.SetObservedForms(a.id, decl.Studies)
+	}
 }
 
 // studyBackend is the store's two-participant write, as an optional
 // interface: an ephemeral backend has no librettos and must not pretend.
 type studyBackend interface {
-	StudyForm(observerID, sourceFormID string) ([]string, bool, error)
-	DropForm(observerID, sourceFormID string) ([]string, bool, error)
+	StudyForm(observerID, sourceFormID string) (store.StudyDecl, error)
+	DropForm(observerID, sourceFormID string) (store.StudyDecl, error)
 }
 
 // appendStudyMark QUEUES a began/stopped-observing transition. The record is

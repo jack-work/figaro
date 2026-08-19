@@ -32,14 +32,35 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 )
 
+// StudyDecl is one declaration's verdict: the set that LANDED, and the board
+// VERSION it landed at.
+//
+// The version is the whole point of returning a struct rather than a slice.
+// A caller that mirrors this set in memory -- the agent does, and the mirror
+// is what a turn renders from -- cannot order two concurrent declarations by
+// looking at the sets: each is a whole value computed before the
+// compare-and-set decided anything, and publishing them in arrival order
+// lets the stale one win by being last. PUBLISH WHAT WAS WRITTEN, ORDERED BY
+// THE VERSION THAT WON. (The same sentence as 6b2e597a, one layer up: the
+// form channel used to publish the patch it was HANDED rather than the one
+// it WROTE.)
+//
+// Version is 0 exactly when Changed is false: nothing was written, so there
+// is nothing to order.
+type StudyDecl struct {
+	Studies []string // the declared set as it stands
+	Version uint64   // board version this set landed at; 0 if nothing was written
+	Changed bool     // whether this call wrote
+}
+
 // StudyForm makes observer study sourceForm: the libretto is minted if
 // absent, seeded from the source, retained, and following; then the board
 // declares it. Idempotent — studying twice is not two references, because the
 // board is a SET and the refcount is derived from the boards.
-func (b *XwalBackend) StudyForm(observerID, sourceFormID string) ([]string, bool, error) {
+func (b *XwalBackend) StudyForm(observerID, sourceFormID string) (StudyDecl, error) {
 	lib, err := b.libretto(sourceFormID)
 	if err != nil {
-		return nil, false, err
+		return StudyDecl{}, err
 	}
 	// RETAINED ONCE, not once per attempt. The reference is taken before the
 	// first board write (§12.2.1's order) and held across the retries, so
@@ -62,10 +83,12 @@ func (b *XwalBackend) StudyForm(observerID, sourceFormID string) ([]string, bool
 	for attempt := 0; attempt < studyAttempts; attempt++ {
 		studies, version, err := b.studiesAndVersion(observerID)
 		if err != nil {
-			return nil, false, err
+			return StudyDecl{}, err
 		}
 		if slices.Contains(studies, sourceFormID) {
-			return studies, false, nil // already declared, and not a second reference
+			// Already declared, and not a second reference. No version: this
+			// call wrote nothing, so it has no claim on the mirror's order.
+			return StudyDecl{Studies: studies}, nil
 		}
 		if !retained {
 			// LIBRETTO FIRST. A crash here leaves a count too high, which the
@@ -73,22 +96,22 @@ func (b *XwalBackend) StudyForm(observerID, sourceFormID string) ([]string, bool
 			// nothing counted, which reclamation would collect out from
 			// under a live observer.
 			if _, err := lib.Retain(); err != nil {
-				return nil, false, err
+				return StudyDecl{}, err
 			}
 			retained = true
 		}
 		next := append(append([]string(nil), studies...), sourceFormID)
-		err = b.setStudies(observerID, next, version)
+		landed, err := b.setStudies(observerID, next, version)
 		if err == nil {
 			retained = false // the declaration owns it now
-			return next, true, nil
+			return StudyDecl{Studies: next, Version: landed, Changed: true}, nil
 		}
 		if !errors.Is(err, ErrFormMoved) {
-			return nil, false, err
+			return StudyDecl{}, err
 		}
 		backoff(attempt)
 	}
-	return nil, false, fmt.Errorf("study: the board would not hold still after %d attempts",
+	return StudyDecl{}, fmt.Errorf("study: the board would not hold still after %d attempts",
 		studyAttempts)
 }
 
@@ -123,8 +146,9 @@ func backoff(attempt int) {
 // DropForm is the inverse, in the inverse order. Dropping a form that has
 // since been deleted is legal (durable-forms §12.2.2): the subscription goes,
 // the board stops naming it, and the copy stays.
-func (b *XwalBackend) DropForm(observerID, sourceFormID string) ([]string, bool, error) {
+func (b *XwalBackend) DropForm(observerID, sourceFormID string) (StudyDecl, error) {
 	var studies []string
+	var landed uint64
 	// The declaration must be GONE before the count comes down. Exhausting
 	// the retries is not "gone": releasing anyway would take a reference off
 	// a libretto a board still names, which is the under-count §12.2.1's
@@ -136,39 +160,41 @@ func (b *XwalBackend) DropForm(observerID, sourceFormID string) ([]string, bool,
 		var err error
 		studies, version, err = b.studiesAndVersion(observerID)
 		if err != nil {
-			return nil, false, err
+			return StudyDecl{}, err
 		}
 		idx := slices.Index(studies, sourceFormID)
 		if idx < 0 {
-			return studies, false, nil
+			return StudyDecl{Studies: studies}, nil
 		}
 		// BOARD FIRST: stop claiming it before the count comes down, so a
 		// crash between the two over-counts rather than under-counts.
 		next := slices.Delete(append([]string(nil), studies...), idx, idx+1)
-		if err := b.setStudies(observerID, next, version); err != nil {
+		v, err := b.setStudies(observerID, next, version)
+		if err != nil {
 			if errors.Is(err, ErrFormMoved) {
 				backoff(attempt)
 				continue
 			}
-			return nil, false, err
+			return StudyDecl{}, err
 		}
-		studies = next
+		studies, landed = next, v
 		undeclared = true
 		break
 	}
 	if !undeclared {
-		return studies, false, fmt.Errorf(
+		return StudyDecl{Studies: studies}, fmt.Errorf(
 			"drop: the board would not hold still after %d attempts (the study stands, and so does its reference)",
 			studyAttempts)
 	}
+	decl := StudyDecl{Studies: studies, Version: landed, Changed: true}
 	lib, err := b.libretto(sourceFormID)
 	if err != nil {
-		return studies, true, err
+		return decl, err
 	}
 	if _, err := lib.Release(); err != nil {
-		return studies, true, err
+		return decl, err
 	}
-	return studies, true, nil
+	return decl, nil
 }
 
 // KindWord names what a caller aimed at when a verb refuses it, so the
@@ -367,17 +393,19 @@ func (b *XwalBackend) studiesOfBoard(observerID string) ([]string, error) {
 //
 // Privileged, because `system.studies` is system-managed -- which is what
 // stops a hand-written `fig set` from claiming a study nothing counted.
-func (b *XwalBackend) setStudies(observerID string, ids []string, ifVersion uint64) error {
+// It answers the version the write LANDED at, which is what lets a caller
+// order its own mirror against another declaration it never saw.
+func (b *XwalBackend) setStudies(observerID string, ids []string, ifVersion uint64) (uint64, error) {
 	slices.Sort(ids)
 	ids = slices.Compact(ids)
 	raw, err := json.Marshal(ids)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	_, _, err = b.ApplyFormEffectPrivilegedIf(observerID, message.Patch{
+	version, _, err := b.ApplyFormEffectPrivilegedIf(observerID, message.Patch{
 		Set: map[string]json.RawMessage{StudiesKey: raw},
 	}, ifVersion)
-	return err
+	return version, err
 }
 
 // studiesAndVersion reads the declared set together with the version it was
