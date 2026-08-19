@@ -1836,3 +1836,116 @@ separation working: it sent the cause, the one-field fix and a fixture to
 copy the shape from, and told the arm to CHECK rather than accept that the
 change is mechanical — because if supplying a board source moves the
 honest/pinning numbers at all, that is a finding that outranks the repair.
+
+# STEP 3 SPLIT IN TWO, AND THE ORDER IS THE RULING
+
+f3aa1d0b, 2026-08-18, on fd15d2a0's finding, made by auditing a claim it
+had already sent me rather than by building on it.
+
+THE DEFECT STEP 3 WOULD HAVE CREATED. `xwalLog.Lookup` falls back to A
+FULL LINEAR SCAN OF THE CHANNEL when the index returns not-found — and it
+fires on ANY not-found, including a legitimate cache miss, scanning the
+whole channel to confirm the miss. It is guarded by a comment
+(xwal_log.go:303) reading "the channel is small in practice AND THIS IS
+OFF THE HOT PATH". True today, because only the new suffix is ever looked
+up. FALSE THE MOMENT THE WARM START DIES: a fingerprint bump or a stale
+cache then misses on ALL N records and each miss scans the whole channel.
+O(N^2) ReadAt calls on the path every turn takes.
+
+    A COMMENT THAT WAS TRUE WHEN WRITTEN, MADE FALSE BY A CHANGE THREE
+    PACKAGES AWAY, WITH NOTHING IN THE TREE ABLE TO GO RED ABOUT IT. It is
+    an unstamped gate log in prose: a claim about a context that has moved,
+    which agrees with whoever reads it.
+
+RULED — THE MERGE-JOIN IS CARRIED, AND IT IS CUT FIRST:
+
+    COMMIT ONE  the merge-join. One forward walk over the IR log and one
+                over the translation channel, joined on LT, NO Lookup at
+                all. `Previous` still alive; nothing deleted.
+    COMMIT TWO  the deletion.
+
+THREE REASONS, and the third was a gift:
+  1. THE EXPOSURE NEVER EXISTS — not shipped-and-fixed, not landed-and-named.
+  2. EACH COMMIT IS ONE IDEA. Step 3 was already the ruling-sized half.
+  3. IT MANUFACTURES A CLEAN MEASUREMENT BOUNDARY. The arm had refused to
+     call its read-counter movement a before/after because THE FIXTURE HAD
+     TO CHANGE across that boundary, confounding an API change with the
+     field it added to make the test run — and said it would want to look
+     for a boundary where the fixture does not change before promising one.
+     Commit one changes no API and needs no fixture change. ORDERING
+     COMMITS BY HAZARD PRODUCED A MEASURABLE SEAM FOR FREE.
+
+DECLINED, WITH THE REASON ON THE RECORD: the executor offered to land the
+deletion with the exposure NAMED in the commit and the landing note —
+"worse engineering, better bookkeeping". Honest bookkeeping about a defect
+we chose to ship is still shipping the defect. That call would have been
+right had the fix been expensive or unknown; it is neither.
+
+## WHAT COMMIT ONE MUST ASSERT, AND IT IS TWO PROPERTIES NOT ONE
+
+    CARDINALITY   one LT may carry SEVERAL translation entries after a
+                  fingerprint bump. A lookup plus the fingerprint refusal
+                  picks the right one BY CONSTRUCTION; a forward merge must
+                  pick it DELIBERATELY. Canary with a stale-fingerprint and
+                  a current entry at the same LT, in both orders.
+    GAPS          a merge join assumes both sides ASCENDING AND GAPLESS in
+                  the joined key. The translation channel is SPARSE BY
+                  DESIGN — only cached records are there — so it is gapped
+                  by construction, and "no entry at this LT" must be a MISS
+                  TO BE ENCODED, never a reason to advance the IR cursor. A
+                  join that advances the wrong cursor DROPS A RECORD
+                  SILENTLY and produces a projection every value oracle on
+                  a gapless fixture calls correct. Canary with an INTERIOR
+                  gap; a leading or trailing gap cannot see it.
+
+The arm's grounds for raising it are concrete, not theoretical: its own
+fixture assertion tonight found that figaro's form records START AT VERSION
+2, NOT 1. An assumption about where a key sequence begins has already been
+wrong once in this stage.
+
+## AND MY PREDICTION WAS STATED IN THE WRONG UNITS
+
+I pre-registered that per-turn cost rises with conversation LENGTH, to be
+measured on BenchmarkObservation{Cold,Warm}{0,1,8,50}. THE ARM FALSIFIED
+THE INSTRUMENT CHOICE BY READING: every one of those is FIXED AT FORTY
+RECORDS and varies only the OBSERVER count. The axis the prediction lives
+on is not in the fixture, so a null from it would have been vacuous —
+exactly the kind retracted earlier tonight.
+
+AND BOTH HALVES OF THE PREDICTION ARE COUNTABLE FACTS I DRESSED AS TIMES:
+
+    "cost rises with LENGTH not with new records"  = entries walked/turn
+    "dominated by cache lookups, not decode"       = lookups/turn, decodes/turn
+
+Nothing there needs a nanosecond. Stating it as timing made it wait for a
+quiet box it never needed and exposed it to a floor it never had to clear.
+This campaign's own standing preference is that where the question is HOW
+MANY TIMES you COUNT it, and I failed to apply it to my own prediction.
+
+RULED: the COUNT instrument is built FIRST — before commit one — so one
+instrument yields THREE points on one axis (today, after the join, after
+the deletion) instead of two comparisons across boundaries where something
+else also moved. The TIMING stays refused and dated, and THE COUNTS DECIDE
+WHETHER IT IS WORTH A QUIET BOX AT ALL.
+
+## THE WARM BENCHMARKS ARE RETIRED, NOT REPAIRED
+
+`projectWith` sets `cfg.Previous` INSIDE the timed loop, so deleting the
+field BREAKS THE BUILD LOUDLY — the hazard-test standard arriving for free.
+BUT THE OBVIOUS REPAIR IS THE TRAP: the only thing making the Warm variants
+warm IS `Previous`. Delete the assignment and
+BenchmarkObservationWarm{0,1,8,50} become byte-identical in behaviour to
+their Cold twins WHILE KEEPING NAMES THAT SAY WARM — four benchmarks
+silently changing subject, the rename hazard in its purest form, priced
+tonight at 2,488 B and a 33% phantom win. The arm ruled it; I upheld it
+without amendment. A cold walk under a name saying Warm is worse than a
+missing benchmark.
+
+## THE GENERAL FORM, THREE INDEPENDENT SIGHTINGS IN ONE EVENING
+
+9ed3f561's compression, recorded in its name because it is now a pattern
+and not an analogy: AN UNSTAMPED LOG, AN UNDATED REFUSAL, AND AN UNSTAMPED
+REHEARSAL are one defect.
+
+    ALL THREE SAY "IT WAS VERIFIED" WHERE THE USEFUL SENTENCE IS "IT WAS
+    VERIFIED AT THIS TREE, AT THIS TIME."
