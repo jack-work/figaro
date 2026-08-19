@@ -41,7 +41,6 @@ type responsesProvider struct {
 	templates  *template.Template
 	machineID  string
 	cache      store.Log[[]json.RawMessage]
-	projection *provider.IncrementalProjection[[]json.RawMessage]
 	sessionID  string
 	limits     map[string]responseContextLimits
 
@@ -228,35 +227,7 @@ func (p *responsesProvider) sendWithToken(
 		})
 	}
 	bus.PushFigaro(assistant, commit...)
-	if len(response.Output) > 0 {
-		p.acceptAssistantProjection(entry.LT, response.Output)
-	}
 	return nil
-}
-
-func (p *responsesProvider) acceptAssistantProjection(lt uint64, payload []json.RawMessage) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.projection == nil {
-		return
-	}
-	state := append([]json.RawMessage(nil), p.projection.State...)
-	state = append(state, payload...)
-	p.projection = &provider.IncrementalProjection[[]json.RawMessage]{
-		State:           state,
-		Form:            p.projection.Form,
-		Fingerprint:     p.projection.Fingerprint,
-		Entries:         p.projection.Entries + 1,
-		LastLT:          lt,
-		LastFormVersion: p.projection.LastFormVersion,
-		// EVERY FIELD THE PROJECTION CARRIES MUST BE CARRIED HERE. This
-		// splice rebuilds the projection by hand after a live append, and a
-		// field it forgets is not lost state but lost POSITION: the next pass
-		// believes the board sits at zero and folds the whole history to
-		// catch up, every turn, correctly and forever.
-		FormVersionOfSnapshot: p.projection.FormVersionOfSnapshot,
-		LastStudyVersions:     p.projection.LastStudyVersions,
-	}
 }
 
 func (p *responsesProvider) settings() (string, int, string) {
@@ -419,24 +390,18 @@ func (p *responsesProvider) invalidateCache(cache store.Log[[]json.RawMessage], 
 }
 
 func (p *responsesProvider) inputFor(in provider.SendInput) ([]json.RawMessage, error) {
-	cache, err := p.cacheFor(in.AriaID)
+	rows, err := p.cacheFor(in.AriaID)
 	if err != nil {
 		return nil, err
 	}
-	fingerprint := p.Fingerprint()
 	templates := p.templatesForEncoding()
 
-	p.mu.Lock()
-	previous := p.projection
-	p.mu.Unlock()
-
-	projection, _, err := provider.ProjectIncrementally(provider.ProjectionConfig[[]json.RawMessage]{
+	if _, err := provider.CatchUp(provider.CatchUpConfig{
 		Log:         in.FigLog,
-		Cache:       cache,
+		Rows:        rows,
 		Form:        in.Form,
 		Studies:     in.Studies,
-		Previous:    previous,
-		Fingerprint: fingerprint,
+		Fingerprint: p.Fingerprint(),
 		Encode: func(msg message.Message, snap form.Snapshot) ([]json.RawMessage, error) {
 			encoded, err := encodeResponseMessage(msg, msg.Patches, snap, templates)
 			if err != nil {
@@ -456,20 +421,21 @@ func (p *responsesProvider) inputFor(in provider.SendInput) ([]json.RawMessage, 
 			}
 			return encoded, nil
 		},
-		Append: func(input, encoded []json.RawMessage, _ uint64) []json.RawMessage {
-			return append(input, encoded...)
+		ReportWriteError: func(lt uint64, err error) {
+			slog.Error("copilot responses write row", "aria", in.AriaID, "lt", lt, "err", err)
 		},
-		HandleCacheError: func(lt uint64, err error) {
-			slog.Error("copilot responses cache message", "aria", in.AriaID, "lt", lt, "err", err)
-		},
-	})
-	if err != nil {
-		return nil, err
+	}); err != nil {
+		// A SEND THAT CANNOT WRITE ITS ROWS MUST NOT PROCEED. The history it
+		// would assemble is not the one on disk.
+		return nil, fmt.Errorf("copilot responses catch up: %w", err)
 	}
-	p.mu.Lock()
-	p.projection = projection
-	p.mu.Unlock()
-	return projection.State, nil
+
+	perMessage, _ := provider.Rows(rows)
+	var input []json.RawMessage
+	for _, row := range perMessage {
+		input = append(input, row...)
+	}
+	return input, nil
 }
 
 func (p *responsesProvider) templatesForEncoding() *template.Template {

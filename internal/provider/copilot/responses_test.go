@@ -572,8 +572,6 @@ func TestResponsesProviderDrivesFigaroToolRoundTrip(t *testing.T) {
 		}
 	})
 
-	cache := store.NewMemLog[[]json.RawMessage]()
-	p := newResponsesTestProvider(server, cache)
 	registry := tool.NewRegistry()
 	echo := &responseIntegrationTool{}
 	require.NoError(t, registry.Register(echo))
@@ -583,6 +581,13 @@ func TestResponsesProviderDrivesFigaroToolRoundTrip(t *testing.T) {
 		"system.model": json.RawMessage(`"gpt-5.6-terra"`),
 	}})
 	be, ariaID := store.NewTestAria(t, "d", message.Patch{})
+	// ONE LOG PER CHANNEL. The agent commits the assistant's native payload
+	// to the backend's translator log; a provider reading a different log
+	// serves a re-encode of the fig IR, which cannot carry an opaque
+	// reasoning block.
+	cache, err := be.OpenTranslation(ariaID, "copilot-responses")
+	require.NoError(t, err)
+	p := newResponsesTestProvider(server, cache)
 	agent := figaro.NewAgent(figaro.Config{
 		ID:         ariaID,
 		SocketPath: t.TempDir() + "/figaro.sock",

@@ -91,28 +91,6 @@ func BenchmarkInputFor(b *testing.B) {
 				}
 			}
 		})
-		b.Run("WarmDeltaEncode/"+strconv.Itoa(n), func(b *testing.B) {
-			prefix := responsesBenchLog(b, n)
-			log := responsesBenchLog(b, n)
-			appendResponsesBenchSuffix(b, log)
-			p := responsesBenchProvider(nil)
-			if _, err := p.inputFor(provider.SendInput{AriaID: "bench", FigLog: prefix}); err != nil {
-				b.Fatal(err)
-			}
-			prewarmed := p.projection
-			in := provider.SendInput{AriaID: "bench", FigLog: log}
-			b.ReportAllocs()
-			b.ResetTimer()
-			b.ReportMetric(2, "messages/op")
-			for i := 0; i < b.N; i++ {
-				b.StopTimer()
-				p.projection = prewarmed
-				b.StartTimer()
-				if _, err := p.inputFor(in); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
 		b.Run("WarmDeltaCached/"+strconv.Itoa(n), func(b *testing.B) {
 			prefix := responsesBenchLog(b, n)
 			log := responsesBenchLog(b, n)
@@ -122,7 +100,6 @@ func BenchmarkInputFor(b *testing.B) {
 			if _, err := p.inputFor(provider.SendInput{AriaID: "bench", FigLog: prefix}); err != nil {
 				b.Fatal(err)
 			}
-			prewarmed := p.projection
 			in := provider.SendInput{AriaID: "bench", FigLog: log}
 			if _, err := p.inputFor(in); err != nil {
 				b.Fatal(err)
@@ -131,9 +108,6 @@ func BenchmarkInputFor(b *testing.B) {
 			b.ResetTimer()
 			b.ReportMetric(2, "messages/op")
 			for i := 0; i < b.N; i++ {
-				b.StopTimer()
-				p.projection = prewarmed
-				b.StartTimer()
 				if _, err := p.inputFor(in); err != nil {
 					b.Fatal(err)
 				}

@@ -36,7 +36,6 @@ type Provider struct {
 	CacheOpen      func(aria string) (store.Log[[]json.RawMessage], error)
 	CacheNamespace string
 	cache          store.Log[[]json.RawMessage]
-	projection     *provider.IncrementalProjection[provider.EncodedMessages]
 
 	// markMode is the aria's configured marking strategy, refreshed from
 	// the form at the top of every Send. It participates in
@@ -188,7 +187,10 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if err != nil {
 		return err
 	}
-	perMessage, _ := p.catchUp(in.FigLog, cache, in.Form, in.Studies)
+	perMessage, _, err := p.catchUp(in.FigLog, cache, in.Form, in.Studies)
+	if err != nil {
+		return err
+	}
 	if len(perMessage) == 0 {
 		return fmt.Errorf("empty context")
 	}
@@ -255,7 +257,6 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		return fmt.Errorf("%s cache assistant: %w", p.Route.Name, err)
 	}
 	bus.PushFigaro(msg, native)
-	p.acceptAssistantProjection(entry.LT, native.Payload)
 	return nil
 }
 
@@ -391,65 +392,33 @@ func (p *Provider) invalidateIfStale(s store.Log[[]json.RawMessage]) bool {
 	}
 	if cleared {
 		slog.Info("openaichat cleared stale cache", "stored", stored, "current", want)
-		p.mu.Lock()
-		p.projection = nil
-		p.mu.Unlock()
 	}
 	return true
 }
 
-func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage],
-	form provider.Form, studies map[string]provider.Form) ([][]json.RawMessage, []uint64) {
-	fp := p.Fingerprint()
-	p.mu.Lock()
-	previous := p.projection
-	p.mu.Unlock()
-
-	projection, _, err := provider.ProjectIncrementally(provider.ProjectionConfig[provider.EncodedMessages]{
+// catchUp translates whatever the row log has not translated yet, writes
+// those rows, and hands back the rows THEMSELVES. It keeps nothing between
+// calls: the watermark is the row log's tail.
+func (p *Provider) catchUp(figLog store.Log[message.Message], rows store.Log[[]json.RawMessage],
+	form provider.Form, studies map[string]provider.Form) ([][]json.RawMessage, []uint64, error) {
+	if _, err := provider.CatchUp(provider.CatchUpConfig{
 		Log:         figLog,
-		Cache:       cache,
+		Rows:        rows,
 		Form:        form,
 		Studies:     studies,
-		Previous:    previous,
-		Fingerprint: fp,
+		Fingerprint: p.Fingerprint(),
 		Encode:      p.encode,
-		Append:      provider.AppendEncodedMessage,
 		ReportEncodeError: func(lt uint64, err error) {
 			slog.Warn("openaichat encode failed", "lt", lt, "err", err)
 		},
-		HandleCacheError: func(lt uint64, err error) {
-			slog.Warn("openaichat cache append failed", "lt", lt, "err", err)
+		ReportWriteError: func(lt uint64, err error) {
+			slog.Warn("openaichat write row failed", "lt", lt, "err", err)
 		},
-	})
-	if err != nil || projection == nil {
-		return nil, nil
+	}); err != nil {
+		// A SEND THAT CANNOT WRITE ITS ROWS MUST NOT PROCEED. The history it
+		// would assemble is not the one on disk.
+		return nil, nil, fmt.Errorf("openaichat catch up: %w", err)
 	}
-	p.mu.Lock()
-	p.projection = projection
-	p.mu.Unlock()
-	return projection.State.PerMessage, projection.State.LogicalTimes
-}
-
-func (p *Provider) acceptAssistantProjection(lt uint64, encoded []json.RawMessage) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.projection == nil {
-		return
-	}
-	state := provider.AppendEncodedMessage(p.projection.State, encoded, lt)
-	p.projection = &provider.IncrementalProjection[provider.EncodedMessages]{
-		State:           state,
-		Form:            p.projection.Form,
-		Fingerprint:     p.projection.Fingerprint,
-		Entries:         p.projection.Entries + 1,
-		LastLT:          lt,
-		LastFormVersion: p.projection.LastFormVersion,
-		// EVERY FIELD THE PROJECTION CARRIES MUST BE CARRIED HERE. This
-		// splice rebuilds the projection by hand after a live append, and a
-		// field it forgets is not lost state but lost POSITION: the next pass
-		// believes the board sits at zero and folds the whole history to
-		// catch up, every turn, correctly and forever.
-		FormVersionOfSnapshot: p.projection.FormVersionOfSnapshot,
-		LastStudyVersions:     p.projection.LastStudyVersions,
-	}
+	perMessage, lts := provider.Rows(rows)
+	return perMessage, lts, nil
 }
