@@ -141,6 +141,12 @@ func (s *Segment) register() {
 	s.registered.Store(true)
 }
 
+// SweepBudget brings the payload cache back within its budget. Eviction is no
+// longer done by the reader that crossed the limit -- charge raises pressure
+// and the daemon's standing sweep lowers it -- so this is the segment cache's
+// half of that contract, called from the same beat as SweepIdle.
+func SweepBudget() (dropped int, freed int64) { return payloadBudget.Sweep() }
+
 // SweepIdle drops every run not read since `keep` sweeps ago and advances the
 // epoch.
 func SweepIdle(keep int64) (dropped int, freed int64) {

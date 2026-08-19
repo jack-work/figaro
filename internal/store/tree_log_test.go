@@ -3,6 +3,7 @@ package store
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -92,6 +93,7 @@ func TestTreeLogResidencyIsTheTreesIndex(t *testing.T) {
 	l := newTreeLog[string](mem, "aria", cache, sizeOf, irKey[string], nil)
 
 	_ = l.ReadFrom(1, 0) // pull the whole channel through the window
+	l.cache.Budget().Settle(2 * time.Second)
 	require.LessOrEqual(t, int64(l.ResidentBytes()), budget,
 		"the tree's budget did not bound the log's residency")
 	require.NotZero(t, l.Resident(), "nothing stayed resident at all")

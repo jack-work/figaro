@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"testing"
+	"time"
 )
 
 // A PROPERTY TEST OVER THE PUBLISHED INDEX, written because the read path was
@@ -68,6 +69,7 @@ func TestRangeAnswersItsSpanUnderRandomResidency(t *testing.T) {
 			}
 		}
 		c.Close()
+		b.Settle(2 * time.Second)
 		if resident, _, _ := b.Stats(); resident != 0 {
 			t.Fatalf("seed %d: %d bytes still charged after Close -- the accountant holds a ghost", seed, resident)
 		}

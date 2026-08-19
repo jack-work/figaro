@@ -160,6 +160,9 @@ func SetHandleIdle(d time.Duration) { handleIdle.Store(int64(d)) }
 // DECODED copies of these bytes.
 func SetSegmentCacheBudget(bytes int64) { fwlog.SetPayloadCacheBudget(bytes) }
 
+// SweepSegmentBudget is the payload cache's half of the standing sweep.
+func SweepSegmentBudget() (int, int64) { return fwlog.SweepPayloadCache() }
+
 // SegmentCacheBytes reports what figwal currently holds against that budget,
 // and SegmentCacheBudget the budget itself.
 func SegmentCacheBytes() int64  { return fwlog.PayloadCacheBytes() }

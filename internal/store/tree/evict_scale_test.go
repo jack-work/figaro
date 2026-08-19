@@ -5,6 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // EVICTION VISITS EVERY RESIDENT RUN, and a full sweep therefore costs
@@ -49,6 +50,8 @@ func TestEvictionVisitsEveryResidentRun(t *testing.T) {
 			resident, _, _ := b.Stats()
 			b.SetLimit(resident - 1)
 			b.charge(0)
+			// Eviction runs on the sweeper now: ask, then wait for it.
+			b.Settle(2 * time.Second)
 
 			if _, _, ev := b.Stats(); ev != 1 {
 				t.Fatalf("want exactly one eviction, got %d", ev)

@@ -173,6 +173,10 @@ type RunInfo struct {
 	Resident bool
 }
 
+// Budget is the accountant this cache charges, so a caller that must WAIT for
+// eviction (a test, doctor) can ask it to settle. Nothing in the daemon waits.
+func (c *Cache[U]) Budget() *Budget { return c.budget }
+
 // Index reports a node's runs, oldest coordinate first. Lock-free.
 func (c *Cache[U]) Index(node string) []RunInfo {
 	runs := c.runs(node)

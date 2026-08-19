@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 type unit struct {
@@ -67,6 +68,11 @@ func TestIndexSurvivesEviction(t *testing.T) {
 	lin := []Ref{{Node: "n"}}
 	if _, err := c.Range(lin, 0, 200); err != nil { // ~200KB >> budget
 		t.Fatal(err)
+	}
+	// EVENTUAL, NOT IMMEDIATE: eviction is the sweeper's work now, so a read
+	// that overshoots returns before the budget is back within its limit.
+	if !b.Settle(2 * time.Second) {
+		t.Fatal("the sweeper did not bring the budget back within its limit")
 	}
 	res, _, ev := b.Stats()
 	if ev == 0 {
@@ -132,6 +138,7 @@ func TestBudgetIsSharedAcrossCaches(t *testing.T) {
 	if _, err := c2.Range([]Ref{{Node: "new"}}, 0, 20); err != nil {
 		t.Fatal(err)
 	}
+	b.Settle(2 * time.Second) // eviction is the sweeper's now, not the caller's
 	// THE CLAIM: pressure from c2 reaches INTO c1. Not that c1 keeps nothing
 	// colder -- eviction stops as soon as the budget fits, so it may -- but
 	// that a second cache sharing the budget costs the first its residency.

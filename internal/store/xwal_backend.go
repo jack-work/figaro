@@ -1114,6 +1114,17 @@ func (b *XwalBackend) SweepSegmentCache(keep int64) (int, int64) {
 	return SweepSegmentCache(keep)
 }
 
+// SweepCacheBudgets brings the decoded caches back within their budgets. It
+// rides the daemon's STANDING SWEEP rather than a clock of its own -- the same
+// contract SweepSegmentCache already has -- because a read must never block on
+// eviction and nothing else should be inventing background loops.
+func (b *XwalBackend) SweepCacheBudgets() (dropped int, freed int64) {
+	d1, f1 := b.irTree.Sweep()
+	d2, f2 := b.transTree.Sweep()
+	d3, f3 := SweepSegmentBudget()
+	return d1 + d2 + d3, f1 + f2 + f3
+}
+
 // LastTS is node recency, memoized: see the lastTS field for why.
 func (b *XwalBackend) LastTS(id string) int64 {
 	b.mu.Lock()

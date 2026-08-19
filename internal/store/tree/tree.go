@@ -5,6 +5,7 @@ package tree
 import (
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // Ref is one step of a lineage: a trunk node and the coordinate at
@@ -46,6 +47,10 @@ type Budget struct {
 	bytes atomic.Int64
 	epoch atomic.Int64
 
+	// pressure says the budget is over its limit. charge raises it; the
+	// daemon's standing sweep lowers it.
+	pressure atomic.Bool
+
 	// owners is PUBLISHED WHOLE: charge and TrimIdle read it on the eviction
 	// path, where a mutex would serialize every cache that shares this budget
 	ownersMu sync.Mutex // WRITERS ONLY
@@ -84,16 +89,43 @@ func (b *Budget) Stats() (resident, limit, evictions int64) {
 
 // charge admits delta bytes and evicts the globally coldest runs until
 // the budget fits. Called by caches on insert and re-tally.
+// charge accounts delta and RAISES PRESSURE. It never evicts on the caller's
+// goroutine, and it starts nothing of its own.
+//
+// GLUCK, 2026-08-19: "I don't want to block anything on eviction. The memory
+// can exceed the threshold temporarily as long as eventual consistency is
+// reached" -- and, on the shape of the cure: "if there is a standing reaper
+// pattern that it makes sense to hook onto, use that rather than defining a new
+// pattern." So this sets a flag, and the daemon's existing sweep calls Sweep on
+// its own beat, exactly as it already does for figwal's segment cache.
+//
+// THE OVERSHOOT IS BOUNDED BY THE REAPER'S CADENCE, not by a second limit.
 func (b *Budget) charge(delta int64) {
 	if b == nil {
 		return
 	}
 	b.bytes.Add(delta)
-	limit := b.limit.Load()
-	if limit <= 0 {
+	if b.limit.Load() <= 0 {
 		return
 	}
-	for b.bytes.Load() > limit {
+	if b.bytes.Load() > b.limit.Load() {
+		b.pressure.Store(true)
+	}
+}
+
+// Sweep evicts the globally coldest run until the total fits, and reports what
+// it freed. It is the ONLY place eviction happens under pressure. Cheap when
+// there is none: one atomic read.
+func (b *Budget) Sweep() (dropped int, freed int64) {
+	if b == nil || !b.pressure.Load() {
+		return 0, 0
+	}
+	for {
+		limit := b.limit.Load()
+		if limit <= 0 || b.bytes.Load() <= limit {
+			b.pressure.Store(false)
+			return dropped, freed
+		}
 		var victim owner
 		var coldestEpoch int64
 		for _, o := range *b.owners.Load() {
@@ -102,14 +134,36 @@ func (b *Budget) charge(delta int64) {
 			}
 		}
 		if victim == nil {
-			return // only pins remain; the meter still tells the truth
+			b.pressure.Store(false)
+			return dropped, freed // only pins remain; the meter still tells the truth
 		}
-		if freed := victim.evictColdest(); freed > 0 {
-			b.bytes.Add(-freed)
-			b.evictions.Add(1)
-		} else {
-			return // victim raced away; next charge retries
+		n := victim.evictColdest()
+		if n <= 0 {
+			return dropped, freed // victim raced away; the next charge raises pressure again
 		}
+		b.bytes.Add(-n)
+		b.evictions.Add(1)
+		dropped++
+		freed += n
+	}
+}
+
+// Settle sweeps until the budget fits or the deadline passes. FOR TESTS AND
+// doctor: production never waits on eviction.
+func (b *Budget) Settle(within time.Duration) bool {
+	if b == nil {
+		return true
+	}
+	deadline := time.Now().Add(within)
+	for {
+		b.Sweep()
+		if limit := b.limit.Load(); limit <= 0 || b.bytes.Load() <= limit {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 

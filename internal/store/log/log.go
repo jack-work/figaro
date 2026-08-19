@@ -36,6 +36,10 @@ type Options = disk.Options
 // across every open log in the process. Zero makes every read a pread.
 func SetPayloadCacheBudget(bytes int64) { segment.SetCacheBudget(bytes) }
 
+// SweepPayloadCache brings the payload cache within its budget: the standing
+// sweep's call, since a read no longer evicts.
+func SweepPayloadCache() (int, int64) { return segment.SweepBudget() }
+
 // PayloadCacheBytes reports what is currently held against that bound.
 func PayloadCacheBytes() int64 { return segment.CachedBytes() }
 

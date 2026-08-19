@@ -229,6 +229,7 @@ func (a *Angelus) pidMonitor(ctx context.Context) {
 			return
 		case <-ticker.C:
 			a.reapDeadPIDs()
+			a.sweepCacheBudgets()
 		case <-evict.C:
 			// Order matters: reclaim agents first, then sweep caches. An
 			// aria hibernated on this tick is no longer live, so its 12-14 MB
@@ -342,6 +343,25 @@ const (
 type idleEvictor interface {
 	EvictIdle(live map[string]bool, idle time.Duration) int
 	Resident() int
+}
+
+// budgetSweeper is the decoded caches' half of the standing sweep: charge
+// raises pressure on a read, and this lowers it here, on the beat that already
+// exists. A read never blocks on eviction.
+type budgetSweeper interface {
+	SweepCacheBudgets() (int, int64)
+}
+
+// sweepCacheBudgets brings the decoded IR and translation caches back within
+// their budgets. Cheap when there is no pressure: one atomic read per budget.
+func (a *Angelus) sweepCacheBudgets() {
+	sw, ok := a.Backend.(budgetSweeper)
+	if !ok {
+		return
+	}
+	if dropped, freed := sw.SweepCacheBudgets(); dropped > 0 {
+		slog.Debug("swept decoded cache budgets", "runs", dropped, "bytes", freed)
+	}
 }
 
 // evictIdleArias releases the cached IR, translations, board and metadata of

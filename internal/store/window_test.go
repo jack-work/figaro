@@ -142,6 +142,7 @@ func TestWindow_ByteBudgetBoundsBytes(t *testing.T) {
 
 	c := newWindowedLog[uint64](inner, 0, 3000, 1, 1, costOf)
 	c.ReadFrom(1, 0) // residency is demand-driven
+	c.cache.Budget().Settle(2 * time.Second)
 	assert.LessOrEqual(t, c.ResidentBytes(), 3000, "budget exceeded")
 	assert.Positive(t, c.Resident(), "budget trimmed everything")
 	// 3000 bytes of a 1000-byte tail buys ~3 entries, not 3000/10=300.
@@ -220,6 +221,7 @@ func TestTranslationBudgetReachesTheCache(t *testing.T) {
 	}
 	c := log.(*treeLog[[]json.RawMessage])
 	c.ReadFrom(1, 0) // residency is demand-driven
+	c.cache.Budget().Settle(2 * time.Second)
 	if got := c.ResidentBytes(); got > 4<<10+4<<10/2+1024 {
 		t.Fatalf("resident %d bytes against a 4 KiB budget: the budget did not reach the cache", got)
 	}

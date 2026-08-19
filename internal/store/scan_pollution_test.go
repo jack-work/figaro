@@ -3,6 +3,7 @@ package store
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	fwtree "github.com/jack-work/figaro/internal/store/tree"
 )
@@ -78,8 +79,11 @@ func TestWholeHistoryReadEvictsOtherAriasTails(t *testing.T) {
 			before["ariaA"], f.calls["ariaA"], before["ariaB"], f.calls["ariaB"])
 	}
 
-	// The scan: one aria's whole history, far larger than the budget.
+	// The scan: one aria's whole history, far larger than the budget. Eviction
+	// is the standing sweep's work now, so the pollution lands when the sweep
+	// runs rather than inside the read.
 	f.read("ariaC", 0, history)
+	f.cache.Budget().Settle(2 * time.Second)
 
 	warm := map[string]int{"ariaA": f.calls["ariaA"], "ariaB": f.calls["ariaB"]}
 	f.read("ariaA", 0, tailUnits)
@@ -112,6 +116,7 @@ func TestRepeatedScansEvictOtherAriasTails(t *testing.T) {
 
 	for i := 0; i < 5; i++ {
 		f.read(fmt.Sprintf("scan%d", i), 0, history)
+		f.cache.Budget().Settle(2 * time.Second)
 	}
 
 	f.read("ariaA", 0, tailUnits)

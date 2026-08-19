@@ -71,6 +71,11 @@ func TestEvictedFiresUnderTheConsumersWriteLock(t *testing.T) {
 	for i := 0; i < 200 && !c.firedUnderLock.Load(); i++ {
 		c.mu.Lock()
 		cache.Put(fwtree.Coord{Node: "n", From: uint64(i * 8), To: uint64(i*8 + 8)}, bigUnits(8), false)
+		// EVICTION IS THE STANDING SWEEP'S NOW, so the hazard this test exists
+		// for -- the hook firing while a consumer holds its own lock -- has to
+		// be provoked here, with the lock held, exactly as the daemon's sweep
+		// would while a consumer is mid-write.
+		cache.Budget().Sweep()
 		c.mu.Unlock()
 	}
 
@@ -114,6 +119,7 @@ func TestPutUnderWriteLockDoesNotDeadlock(t *testing.T) {
 		for i := 0; i < 500; i++ {
 			c.mu.Lock()
 			cache.Put(fwtree.Coord{Node: "n", From: uint64(i * 8), To: uint64(i*8 + 8)}, bigUnits(8), false)
+			cache.Budget().Sweep() // the sweep, under the consumer's own lock
 			c.mu.Unlock()
 		}
 		close(stop)

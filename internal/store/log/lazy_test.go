@@ -118,9 +118,10 @@ func TestCacheBudgetIsRespected(t *testing.T) {
 	if seen != 2000 {
 		t.Fatalf("ranged %d records, want 2000", seen)
 	}
-	// The whole log is a megabyte; the budget is 96 KiB. Eviction runs when
-	// a load crosses it, so the held total may briefly include the block
-	// that crossed -- but it cannot be the whole log.
+	// The whole log is a megabyte; the budget is 96 KiB. EVICTION IS THE
+	// STANDING SWEEP'S NOW -- a read raises pressure and returns -- so the
+	// bound holds after the sweep, not inside the read.
+	SweepPayloadCache()
 	if got := segment.CachedBytes(); got > 4*(96<<10) {
 		t.Fatalf("held %d bytes against a 96 KiB budget", got)
 	}
