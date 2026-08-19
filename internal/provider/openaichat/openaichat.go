@@ -278,18 +278,18 @@ func (p *Provider) assemble(perMessage [][]json.RawMessage, snapshot form.Snapsh
 	if sys, err := systemMessage(snapshot, plan.Blocks); err != nil {
 		return chatRequest{}, err
 	} else if sys != nil {
-		req.Messages = append(req.Messages, *sys)
+		raw, merr := json.Marshal(*sys)
+		if merr != nil {
+			return chatRequest{}, fmt.Errorf("marshal system message: %w", merr)
+		}
+		req.Messages = append(req.Messages, raw)
 	}
 	for _, entry := range perMessage {
 		for _, raw := range entry {
 			if len(raw) == 0 {
 				continue
 			}
-			var m chatMessage
-			if err := json.Unmarshal(raw, &m); err != nil {
-				return chatRequest{}, fmt.Errorf("unmarshal cached message: %w", err)
-			}
-			req.Messages = append(req.Messages, m)
+			req.Messages = append(req.Messages, raw)
 		}
 	}
 
