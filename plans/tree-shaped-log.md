@@ -935,3 +935,37 @@ plans/store-locks.md.
      `config` still owns `defaultSegmentCacheMB` beside segment's own
      `defaultCacheBudget`, and `defaultUIWindowMB` likewise. Same duplication,
      one layer down.
+
+## THE EVICTION SCAN, NOW MEASURED (dec6ef8a, 2026-08-19)
+
+The paragraph above filed this as UNMEASURED. It is measured now, by counting
+rather than by timing, because the question is "how many times".
+
+    R = 16   ->    32 run visits for ONE eviction
+    R = 64   ->   128
+    R = 256  ->   512
+    a full sweep at R=64: 63 runs dropped in 4159 visits (R^2 = 4096)
+
+Exactly 2R per eviction -- `Budget.charge` asks every owner for its `coldest`
+(one scan) and then tells the winner to `evictColdest` (a second scan) -- and
+`TrimIdle` repeats the pair per dropped run, so a full sweep is O(R^2).
+
+THE INSTRUMENT IS THE `Recency` HOOK, not a new counter: it is already called
+exactly once per candidate run per scan, and returning 0 leaves `effEpoch`'s
+answer unchanged, so measuring the scan does not change what is scanned or in
+what order.
+
+ORDER OF MAGNITUDE AT PRODUCTION SIZE, stated as arithmetic and NOT as a
+measurement: the segment cache holds 32 MiB in runs of 32 records, so R is in
+the high hundreds to low thousands for records of ~1 KiB, putting one eviction
+at a couple of thousand run visits and a full idle sweep in the millions.
+
+NOT FIXED, AND DELIBERATELY SO. The cure is an eviction index keyed by
+effective epoch, which is a data structure added to a hot layer, and the
+standing rule reserves that for Gluck. The number is here so the question can
+be asked with evidence rather than with an intuition.
+
+AND A CORRECTION TO MY OWN FIXTURE, recorded because the test caught me first:
+the sweep assertion was written as "drops all R" and went red at R-1. TrimIdle
+advances the epoch and drops what is OLDER than the cutoff, so the newest run
+survives by policy. The survivor is the design, not a leak.
