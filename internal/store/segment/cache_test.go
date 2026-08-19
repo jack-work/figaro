@@ -75,11 +75,11 @@ func TestCacheAccountingSurvivesAppendVersusEvict(t *testing.T) {
 	if _, err := s.ReadIndex(0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Append(payload); err != nil { // extendBlock replaces the run in place
+	if _, err := s.Append(payload); err != nil { // extendTail widens the run in place
 		t.Fatal(err)
 	}
-	if s.block.Load() == nil {
-		t.Fatal("append did not extend the block; the case under test cannot arise")
+	if s.resident.Load() == nil {
+		t.Fatal("append did not extend the tail run; the case under test cannot arise")
 	}
 	s.DropCache()
 	if got := CachedBytes(); got != 0 {
@@ -88,10 +88,16 @@ func TestCacheAccountingSurvivesAppendVersusEvict(t *testing.T) {
 	if _, err := s.ReadIndex(0); err != nil { // reload
 		t.Fatal(err)
 	}
-	if b := s.block.Load(); b == nil {
+	if res := s.resident.Load(); res == nil || len(res.runs) == 0 {
 		t.Fatal("reload after drop did not cache")
-	} else if got := CachedBytes(); got != b.bytes {
-		t.Fatalf("reload accounting: meter %d, block %d", got, b.bytes)
+	} else {
+		var held int64
+		for _, rn := range res.runs {
+			held += rn.bytes
+		}
+		if got := CachedBytes(); got != held {
+			t.Fatalf("reload accounting: meter %d, resident runs %d", got, held)
+		}
 	}
 
 	// Whatever the interleaving, the counter must describe what is held.
@@ -99,8 +105,8 @@ func TestCacheAccountingSurvivesAppendVersusEvict(t *testing.T) {
 	if got := CachedBytes(); got != 0 {
 		t.Fatalf("after evicting everything, %d bytes still charged", got)
 	}
-	if got := CachedSegments(); got != 0 {
-		t.Fatalf("after evicting everything, %d segments still held", got)
+	if got := CachedRanges(); got != 0 {
+		t.Fatalf("after evicting everything, %d ranges still held", got)
 	}
 	_ = os.Remove(filepath.Join(dir, "seg"))
 }
@@ -133,8 +139,8 @@ func TestSweepIdleDropsWhatNobodyReads(t *testing.T) {
 	hot, cold := mk("hot"), mk("cold")
 	defer hot.Close()
 	defer cold.Close()
-	if hot.block.Load() == nil || cold.block.Load() == nil {
-		t.Fatal("fixture failed to load both blocks")
+	if hot.resident.Load() == nil || cold.resident.Load() == nil {
+		t.Fatal("fixture failed to load both ranges")
 	}
 	before := CachedBytes()
 
@@ -149,10 +155,10 @@ func TestSweepIdleDropsWhatNobodyReads(t *testing.T) {
 		}
 		SweepIdle(2)
 	}
-	if hot.block.Load() == nil {
+	if hot.resident.Load() == nil {
 		t.Fatal("a block read on every sweep was dropped as idle")
 	}
-	if cold.block.Load() != nil {
+	if cold.resident.Load() != nil {
 		t.Fatal("a block nobody read survived three sweeps")
 	}
 	if got := CachedBytes(); got >= before {
