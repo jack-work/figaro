@@ -23,6 +23,10 @@
 //     bracket below it) pins ITSELF -- never its cache -- and its bytes
 //     stay on the meter. A meter that reads zero at peak retention is
 //     the worst possible meter (figaro S1, storm-triage, 2026-08-14).
+//
+// The consolidation survey and the fork-accessor verdict this package was
+// ported with are in docs/store/tree.md, with the claims of theirs that
+// have since gone stale corrected in place.
 package tree
 
 import (
