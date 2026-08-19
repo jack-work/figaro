@@ -13,6 +13,29 @@ import (
 )
 
 // `figaro fork [flags] [<id>[:<turn>]] [-- <prompt>]`.
+//
+// Without a prompt this is the imperative branch it always was: freeze the
+// target, mint a continuation and an empty alternative (see runFork).
+//
+// With a prompt it gains `new`'s semantics: fork, then immediately send -
+// and it is the same parser as `send`, so the send flags mean here exactly
+// what they mean there. Three rules hold the composed form together:
+//
+//   - The prompt always lands on the ALTERNATIVE (the fresh empty branch).
+//     That is the whole point of forking with something to say; the
+//     continuation carries the original line, untouched.
+//   - `--stay` governs the SHELL, not the prompt. Without it, forking your
+//     OWN bound aria moves you to the branch you just prompted (you froze
+//     the aria you were on; the branch is where the work now is). Forking
+//     any other aria never moves you: that is a fan-out, not a rescope.
+//     This is fork's own longstanding rule, pointed at the alternative
+//     instead of the continuation because that is where the prompt went.
+//
+// Note the deliberate difference from `send <id>:<turn> --stay -- …`, where
+// --stay parks the alternative and sends to the ORIGINAL trunk. `send`'s
+// subject is the message ("where does this land?"); `fork`'s subject is the
+// branch ("what did I just make?"). Under fork, the branch is always what
+// gets prompted.
 
 // forkPlan is the parsed shape of a `fork` invocation: which aria, which
 // flags, and what (if anything) to say to the new branch. Parsing and
@@ -44,9 +67,6 @@ func planFork(args []string) (forkPlan, error) {
 
 	if _, _, perr := parseTarget(plan.spec); perr != nil {
 		return forkPlan{}, perr
-	}
-	if opts.ephemeral {
-		return forkPlan{}, fmt.Errorf("--ephemeral makes no sense here (a fork mints a persistent branch); use `figaro send -e -- <prompt>` for a throwaway aria")
 	}
 	if !plan.hasPrompt() {
 		if bad := forkPromptOnlyFlags(opts); bad != "" {

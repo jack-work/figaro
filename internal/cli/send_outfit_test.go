@@ -18,10 +18,10 @@ func TestSendOutfitParses(t *testing.T) {
 		wantSet string // the -S text, as typed
 		err     string
 	}{
-		{name: "long form", in: []string{"--outfit", "sonn5", "-e", "--", "p"}, want: "sonn5"},
-		{name: "short form", in: []string{"-O", "sonn5", "-e", "--", "p"}, want: "sonn5"},
-		{name: "inline form", in: []string{"--outfit=sonn5", "-e", "--", "p"}, want: "sonn5"},
-		{name: "absent", in: []string{"-e", "--", "p"}, want: ""},
+		{name: "long form", in: []string{"--outfit", "sonn5", "-r", "--", "p"}, want: "sonn5"},
+		{name: "short form", in: []string{"-O", "sonn5", "-r", "--", "p"}, want: "sonn5"},
+		{name: "inline form", in: []string{"--outfit=sonn5", "-r", "--", "p"}, want: "sonn5"},
+		{name: "absent", in: []string{"-r", "--", "p"}, want: ""},
 		{name: "comma folds", in: []string{"-O", "a,b", "--", "p"}, want: "a,b"},
 		{name: "repeats fold", in: []string{"-O", "a", "-O", "b", "--", "p"}, want: "a,b"},
 		{name: "sugar goes to -S", in: []string{"-S", "ttl=1h", "--", "p"}, wantSet: "ttl=1h"},
@@ -32,13 +32,13 @@ func TestSendOutfitParses(t *testing.T) {
 		{name: "literal under -O is refused", in: []string{"-O", `{"ttl":"1h"}`, "--", "p"}, err: "goes in --set"},
 		{name: "a name under -S is refused", in: []string{"-S", "sonn5", "--", "p"}, err: "-O sonn5"},
 		{name: "against a target", in: []string{"--id", "abc12345", "-O", "a", "--", "p"}, want: "a"},
-		{name: "bundled with value", in: []string{"-erOsonn5", "--", "p"}, want: "sonn5"},
-		{name: "bundled, value next", in: []string{"-erO", "sonn5", "--", "p"}, want: "sonn5"},
+		{name: "bundled with value", in: []string{"-rvOsonn5", "--", "p"}, want: "sonn5"},
+		{name: "bundled, value next", in: []string{"-rvO", "sonn5", "--", "p"}, want: "sonn5"},
 		{name: "no value", in: []string{"--outfit", "--", "p"}, err: "--outfit requires a value"},
 		{name: "empty inline", in: []string{"--outfit=", "--", "p"}, err: "--outfit requires a value"},
 		{name: "bad name", in: []string{"-O", "../etc", "--", "p"}, err: "cannot contain"},
 		{name: "bad literal", in: []string{"-S", "{oops}", "--", "p"}, err: "not a JSON object"},
-		{name: "not gangable", in: []string{"-eL", "--", "p"}, err: "unknown flag"},
+		{name: "not gangable", in: []string{"-rL", "--", "p"}, err: "unknown flag"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -108,7 +108,6 @@ func TestNewRejectsSendOnlyFlags(t *testing.T) {
 		err  string
 	}{
 		{[]string{"--id", "abc12345", "--", "p"}, "always creates"},
-		{[]string{"-e", "--", "p"}, "--ephemeral"},
 		{[]string{"-x", "--", "p"}, "--exec"},
 		{[]string{"-O", "a", "--", "p"}, ""},
 		{[]string{"-j", "--", "p"}, ""},

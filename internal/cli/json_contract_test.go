@@ -51,7 +51,6 @@ func TestJSONArgvIsRejectedNotIgnored(t *testing.T) {
 		{"json with exec", sendOpts{json: true, exec: true}, "--exec"},
 		{"json with listen", sendOpts{json: true, listen: true}, "--listen"},
 		{"json with verbose", sendOpts{json: true, verbose: true}, "--verbose"},
-		{"json with ephemeral", sendOpts{json: true, ephemeral: true}, "--ephemeral"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := validateSendOpts(tc.opts, false)
@@ -77,7 +76,6 @@ func TestValidateSendOptsAcceptsTheHonourableForms(t *testing.T) {
 		{"json plus forget is the same gesture", sendOpts{json: true, forget: true}, false},
 		{"json on a fork-send", sendOpts{json: true}, true},
 		{"raw alone", sendOpts{raw: true}, false},
-		{"ephemeral raw", sendOpts{ephemeral: true, raw: true}, false},
 		{"exec with -n", sendOpts{exec: true, dryRun: true}, false},
 		{"exec with -y", sendOpts{exec: true, skipYes: true}, false},
 		{"plain forget", sendOpts{forget: true}, false},
@@ -103,8 +101,6 @@ func TestValidateSendOptsRejectsTheRest(t *testing.T) {
 		{"-y without exec", sendOpts{skipYes: true}, false, "only meaningful with --exec"},
 		{"forget with exec", sendOpts{forget: true, exec: true}, false, "--forget contradicts"},
 		{"forget with verbatim", sendOpts{forget: true, verbatim: true}, false, "--forget contradicts"},
-		{"forget with ephemeral", sendOpts{forget: true, ephemeral: true}, false, "killed before the turn ran"},
-		{"turn with ephemeral", sendOpts{ephemeral: true}, true, "not compatible"},
 		{"turn with exec", sendOpts{exec: true}, true, "not compatible"},
 		{"turn with verbatim", sendOpts{verbatim: true}, true, "not compatible"},
 	} {

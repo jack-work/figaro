@@ -126,12 +126,6 @@ type Config struct {
 	// Nil creates an empty in-memory one. Closed by Kill.
 	Form *form.State
 
-	// InlineBoot is the ephemeral-only boot patch. Backed arias hold
-	// their boot transition in the form channel; ephemeral arias
-	// have no channel, so this patch is folded onto the first IR turn so
-	// the outfit reminders still render. Ignored when Backend != nil.
-	InlineBoot *form.Patch
-
 	// Settings is the loaded user configuration. Today the agent reads only
 	// the wire page budget from it, via ClampPageBudget: which is the SINGLE
 	// policy point deciding how many bytes a paginated read may cost. Nil is
@@ -163,9 +157,8 @@ type Agent struct {
 	provFactory ProviderFactory
 	tools       *tool.Registry
 	// proj converts fig IR to UI IR. nil in a core-only build.
-	proj       Projector
-	inlineBoot *form.Patch // ephemeral first-turn boot fold
-	figLog     store.Log[message.Message]
+	proj   Projector
+	figLog store.Log[message.Message]
 	// turnFirstLT is the IR coordinate of the record that opened the
 	// current turn, for the seal-time bracket. Zero between turns.
 	turnFirstLT uint64
@@ -263,7 +256,6 @@ func NewAgent(cfg Config) *Agent {
 		provFactory: cfg.ProviderFactory,
 		tools:       cfg.Tools,
 		proj:        cfg.Projector,
-		inlineBoot:  cfg.InlineBoot,
 		backend:     cfg.Backend,
 		form:        cfg.Form,
 		settings:    cfg.Settings,
@@ -276,8 +268,6 @@ func NewAgent(cfg Config) *Agent {
 	a.figLog = a.newLog()
 	repairInterruptedTail(a.figLog, a.id)
 	if a.form == nil {
-		// Ephemeral arias get an in-memory form. Backed arias are
-		// pre-seeded from the reducible form channel by the caller.
 		a.form, _ = form.Open("")
 	}
 	// The caller built cfg.Provider from this very board, so pairing the

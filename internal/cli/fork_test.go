@@ -14,7 +14,6 @@ import (
 //   - a prompt is OPTIONAL; without one this is the imperative fork it
 //     always was, and the send-only flags are then errors, not no-ops
 //   - a bare positional is the target even with no `--` in sight
-//   - -e/--ephemeral cannot be a fork (a branch is persistent by nature)
 //   - --stay composes with everything; it governs the shell, not the prompt
 func TestPlanFork(t *testing.T) {
 	cases := []struct {
@@ -94,16 +93,6 @@ func TestPlanFork(t *testing.T) {
 			wantOpts:   sendOpts{raw: true},
 		},
 		// --- rejections ---
-		{
-			name:    "ephemeral",
-			args:    []string{"-e", "--", "p"},
-			wantErr: "--ephemeral makes no sense here",
-		},
-		{
-			name:    "ephemeral without a prompt",
-			args:    []string{"-e"},
-			wantErr: "--ephemeral makes no sense here",
-		},
 		{
 			name:    "raw without a prompt",
 			args:    []string{"-r"},

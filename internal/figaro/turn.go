@@ -164,7 +164,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		}
 	}()
 
-	if _, err := a.appendUserPrompt(prompt, true, false); err != nil {
+	if _, err := a.appendUserPrompt(prompt, false); err != nil {
 		a.endTurn(fmt.Sprintf("error: append message: %s", err))
 		return
 	}
@@ -186,7 +186,13 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 
 // appendUserPrompt persists one external prompt as its own canonical user
 // message and matching committed UI unit.
-func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (store.Entry[message.Message], error) {
+//
+// steering distinguishes the two kinds of input, and the DRAIN is the only place
+// that can decide it: it alone knows whether a turn was already in flight when
+// this prompt came off the queue. An inquiry opens a turn; a steer joins the one
+// already running. The field is persisted so a replayed log classifies the same
+// way it did live: but nothing outside this package ever supplies it.
+func (a *Agent) appendUserPrompt(prompt event, steering bool) (store.Entry[message.Message], error) {
 	msg := message.Message{
 		Role:      message.RoleInput,
 		Steering:  steering && prompt.text != "",
@@ -207,10 +213,9 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (
 		combined.Set["mantra"] = mv
 	}
 	if !combined.IsEmpty() {
+		// Durability precedes visibility: on a failed append the in-memory
+		// form is not advanced, so board and log agree after a restart.
 		if a.backend != nil {
-			// DURABILITY PRECEDES VISIBILITY. On a failed append the
-			// in-memory form is NOT advanced, so the published board and
-			// the log agree and a restart replays cleanly.
 			if _, err := a.backend.ApplyForm(a.id, combined); err != nil {
 				slog.Error("turn form append", "aria", a.id, "err", err)
 				combined = form.Patch{}
@@ -221,15 +226,6 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (
 		if !combined.IsEmpty() {
 			a.form.Apply(combined)
 		}
-	}
-	// Ephemeral first message: fold the boot patch inline so the outfit
-	// reminders render (no channel to hold the transition). State is
-	// already seeded by the caller, so this is render-only.
-	if allowInlineBoot && a.backend == nil && a.inlineBoot != nil && a.figLog.Len() == 0 {
-		if !a.inlineBoot.IsEmpty() {
-			msg.Patches = append(msg.Patches, *a.inlineBoot)
-		}
-		a.inlineBoot = nil
 	}
 	if blocks := senderRuns(prompt.segments); len(blocks) > 0 {
 		msg.Content = append(msg.Content, blocks...)
@@ -830,7 +826,7 @@ func (a *Agent) appendPromptEvents(prompts []event) error {
 	if !ok {
 		return nil
 	}
-	if _, err := a.appendUserPrompt(merged, false, true); err != nil {
+	if _, err := a.appendUserPrompt(merged, true); err != nil {
 		// All-or-nothing: the form write precedes the IR append, so do not
 		// replay it when restoring. One message means one failure unit: there is
 		// no partial tail to prepend.

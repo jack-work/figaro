@@ -127,13 +127,6 @@ func (c *Client) Fork(ctx context.Context, figaroID string, atTurn, atLT uint64,
 	return &resp, err
 }
 
-// CreateEphemeral creates an in-memory-only figaro.
-func (c *Client) CreateEphemeral(ctx context.Context, outfits []string, patch *rpc.FormPatch) (*rpc.CreateResponse, error) {
-	var resp rpc.CreateResponse
-	err := c.call(ctx, rpc.MethodCreate, rpc.CreateRequest{Outfits: outfits, Patch: patch, Ephemeral: true}, &resp)
-	return &resp, err
-}
-
 // Promote climbs a conversation trunk up `levels` stump-bounded levels (it
 // absorbs its parent trunk's run). levels <= 0 means one level.
 // Normalize forces deferred topology work to run now. Blocking by design.
