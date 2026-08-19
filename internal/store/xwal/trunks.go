@@ -1065,39 +1065,41 @@ func (t *Trunks) Head(trunk string) (*XWAL, error) {
 // Append adds a main-timeline entry at the trunk's tail. atMainLT is
 // ignored — appends never fork; ForkAt is the only forking path.
 // AppendCursors is Append for the MAIN channel with extra cursor
-// entries (see XWAL.AppendMainCursors).
-func (t *Trunks) AppendCursors(trunk string, payload, meta []byte, extra map[string]uint64) (string, uint64, error) {
+// entries (see XWAL.AppendMainCursors), and it hands back THE STAMP IT
+// WROTE so a caller need not read the record to learn it.
+func (t *Trunks) AppendCursors(trunk string, payload, meta []byte, extra map[string]uint64) (string, uint64, map[string]uint64, error) {
 	return t.appendMainWith(trunk, payload, meta, extra)
 }
 
 func (t *Trunks) Append(trunk string, atMainLT uint64, payload, meta []byte) (string, uint64, error) {
 	_ = atMainLT
-	return t.appendMainWith(trunk, payload, meta, nil)
+	node, lt, _, err := t.appendMainWith(trunk, payload, meta, nil)
+	return node, lt, err
 }
 
-func (t *Trunks) appendMainWith(trunk string, payload, meta []byte, extra map[string]uint64) (string, uint64, error) {
+func (t *Trunks) appendMainWith(trunk string, payload, meta []byte, extra map[string]uint64) (string, uint64, map[string]uint64, error) {
 	unlockLineage := t.lockLineage(trunk)
 	defer unlockLineage()
 
 	endRead, err := t.beginTrackedRead()
 	if err != nil {
-		return "", 0, err
+		return "", 0, nil, err
 	}
 	defer endRead()
 	branch, err := t.headKey(trunk)
 	if err != nil {
-		return "", 0, err
+		return "", 0, nil, err
 	}
 	x, release, err := t.borrowHotUntracked([]string{branch})
 	if err != nil {
-		return "", 0, err
+		return "", 0, nil, err
 	}
-	lt, appendErr := x.AppendMainCursors(payload, meta, extra)
+	lt, cursors, appendErr := x.AppendMainCursors(payload, meta, extra)
 	_ = release()
 	if appendErr != nil {
-		return "", 0, appendErr
+		return "", 0, nil, appendErr
 	}
-	return trunk, lt, nil
+	return trunk, lt, cursors, nil
 }
 
 // ownerOf is the nearest ancestor of node whose own range covers atMainLT.

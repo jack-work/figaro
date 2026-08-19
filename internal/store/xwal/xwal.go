@@ -1534,7 +1534,8 @@ func (x *XWAL) unkeyedCursors() map[string]uint64 {
 // channel. The returned mainLT is the channel index it landed at;
 // related-channel entries reference it.
 func (x *XWAL) AppendMain(payload, meta []byte) (uint64, error) {
-	return x.AppendMainCursors(payload, meta, nil)
+	lt, _, err := x.AppendMainCursors(payload, meta, nil)
+	return lt, err
 }
 
 // AppendMainCursors is AppendMain with caller-supplied EXTRA cursor
@@ -1544,7 +1545,11 @@ func (x *XWAL) AppendMain(payload, meta []byte) (uint64, error) {
 // observed (studied) form's version under a "study:"-prefixed key, so
 // one map carries the whole observed set. Extra keys must not collide
 // with channel names; the caller owns its namespace.
-func (x *XWAL) AppendMainCursors(payload, meta []byte, extra map[string]uint64) (uint64, error) {
+// It RETURNS THE STAMP IT WROTE. The cursor map is computed here, under the
+// main channel's lock, and a caller that needs it was previously obliged to
+// read the record back out of the log to recover what this frame already
+// held.
+func (x *XWAL) AppendMainCursors(payload, meta []byte, extra map[string]uint64) (uint64, map[string]uint64, error) {
 	ch := x.chans[x.main]
 	ch.mu.Lock()
 	defer ch.mu.Unlock()
@@ -1559,12 +1564,12 @@ func (x *XWAL) AppendMainCursors(payload, meta []byte, extra map[string]uint64) 
 	}
 	next := ch.log.LastIndex() + 1
 	if err := ch.log.Write(next, encodeStampedFrame(next, payload, meta, ch.opaque, cursors, x.stampTS())); err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	if ch.fkScan || ch.fkBuilt {
 		ch.fk[next] = next
 	}
-	return next, nil
+	return next, cursors, nil
 }
 
 // Append appends payload (with optional opaque meta) to a related

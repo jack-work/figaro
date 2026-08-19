@@ -339,22 +339,21 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	if l.isMain {
 		// The stamp moment: alongside the automatic own-channel cursors,
 		// record where every OBSERVED form stands right now. This is the
-		_, lt, aerr := l.store.trunks.AppendCursors(l.ariaID, payload, meta, l.store.observedCursors(l.ariaID))
+		_, lt, cursors, aerr := l.store.trunks.AppendCursors(l.ariaID, payload, meta, l.store.observedCursors(l.ariaID))
 		if aerr != nil {
 			return Entry[T]{}, aerr
 		}
 		e.LT = lt
 		e.FigaroLT = lt
-		// READ THE RECORD BACK. The append STAMPS the entry with the
-		// form cursor -- where the board stood at this LT -- and that
-		// struct does not have it and never did, so returning the caller's
 		if serr := l.store.trunks.SyncChannelThrough(l.ariaID, l.channel, lt); serr != nil {
 			return Entry[T]{}, fmt.Errorf("sync %s: %w", l.channel, serr)
 		}
-		if stamped, ok := l.readBack(lt); ok {
-			e.FormChannelVersion = stamped.FormChannelVersion
-			e.StudyVersions = stamped.StudyVersions
-		}
+		// THE STAMP COMES BACK FROM THE APPEND THAT WROTE IT. It is computed
+		// under the main channel's lock and was previously recovered by
+		// reading the record out of the log again -- one ReadAt per append to
+		// learn a value the writer had in hand.
+		e.FormChannelVersion = cursors[chanForm]
+		e.StudyVersions = studyCursors(cursors)
 		return e, nil
 	}
 	lt, aerr := l.store.trunks.Append(l.ariaID, l.channel, e.FigaroLT, payload, meta)
@@ -366,22 +365,6 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	}
 	e.LT = lt
 	return e, nil
-}
-
-// readBack decodes the record just appended, for the fields the store
-// stamps and the caller cannot know. Failure is not fatal: the entry is
-func (l *xwalLog[T]) readBack(lt uint64) (Entry[T], bool) {
-	var out Entry[T]
-	var ok bool
-	_ = l.openOnce(func(xw *xwal.XWAL) error {
-		r, err := xw.ReadAt(l.channel, lt)
-		if err != nil {
-			return nil
-		}
-		out, ok = decodeRecord[T](r)
-		return nil
-	})
-	return out, ok
 }
 
 // Clear goes through Store.Clear, which drops the channel's pending
