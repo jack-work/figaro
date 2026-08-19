@@ -10,15 +10,9 @@ import (
 // canonical tree cache. plans/composed-layer-on-tree.md.
 
 // Composer recomposes ONE node's sealed turns for an LT bracket, deltas
-// included: open that aria's log, read the bracket, compose, attach. It
-// is keyed by NODE and backed by the store, so it answers for an aria
-// nobody has opened -- which is what a fork reading its inherited prefix
-// asks for.
-//
-// A bracket that starts or ends mid-turn is the composer's problem, not
-// its caller's: the cache cuts runs where its byte target falls, and a
-// turn composed without the record that opened it is a turn with its
-// content missing.
+// included. It must return WHOLE turns: every turn whose OPENING record
+// falls in the bracket, complete, and no others. A bracket that cuts a
+// turn at either end is its problem, not its caller's.
 type Composer func(node string, fromLT, toLT uint64) []Turn
 
 // ComposedCache is the residency of every aria's composed UI IR: one
@@ -27,9 +21,8 @@ type ComposedCache struct {
 	cache   *fwtree.Cache[Turn]
 	compose Composer
 
-	// lineage names a node's ancestry, root first, with the LT each child
-	// diverged at. A fork's composed prefix IS its ancestor's runs; nil
-	// makes every aria a root, which is what a process with no store does.
+	// lineage names a node's ancestry, root first. nil makes every aria a
+	// root.
 	lineage func(node string) []fwtree.Ref
 }
 
@@ -57,9 +50,7 @@ func (cc *ComposedCache) Recomposes() int64 {
 	return cc.cache.Recomposes()
 }
 
-// fetch answers a miss, CLIPPED TO THE COORD: a composer that returns
-// more than the run it is filling would leave units outside the span they
-// were charged to.
+// fetch answers a miss, CLIPPED TO THE COORD.
 func (cc *ComposedCache) fetch(co fwtree.Coord) ([]Turn, error) {
 	if cc.compose == nil {
 		return nil, nil
@@ -75,11 +66,8 @@ func (cc *ComposedCache) fetch(co fwtree.Coord) ([]Turn, error) {
 }
 
 // coordOf is the coordinate a turn is addressed by: the LT of the record
-// that OPENED it. Turn brackets ascend and do not overlap, so the key
-// space is sparse and ordered, which is what tree addresses.
-//
-// A turn no LT bracket can recompose is keyed in the reserved region
-// above phantomBase, where no logical time reaches.
+// that OPENED it. Turn brackets ascend and do not overlap. A turn no LT
+// bracket can recompose is keyed above phantomBase.
 func coordOf(t Turn) uint64 {
 	if len(t.LTs) > 0 && t.LTs[0] != 0 {
 		return t.LTs[0]
@@ -88,9 +76,8 @@ func coordOf(t Turn) uint64 {
 }
 
 // phantomBase reserves the top of the key space for turns nothing can
-// recompose: a sealed turn whose records never reached the log (a round
-// that failed before writing one). They are held pinned rather than
-// dropped, because nothing below can serve them back.
+// recompose: a sealed turn whose records never reached the log. They are
+// held pinned; nothing below can serve them back.
 const phantomBase = uint64(1) << 63
 
 func phantomCoord(id uint64) uint64 { return phantomBase | id }
@@ -104,11 +91,9 @@ func phantomCoord(id uint64) uint64 { return phantomBase | id }
 const DefaultUIWindowMB = 16
 
 // TurnCache is one aria's sealed section: an ordered key list, and the
-// payloads in the shared tree. The NEWEST turn is not in the tree at all
-// -- it is the staging slot the Server mutates in place (Close folds the
-// open suffix in, Seal stamps the bracket), and a tree run is immutable
-// once published. It enters the cache when a newer turn displaces it, by
-// which time it is sealed and recomposable.
+// payloads in the shared tree. The NEWEST turn is the staging slot --
+// mutated in place by the Server, never a published run -- and it enters
+// the cache when a newer turn displaces it.
 type TurnCache struct {
 	keys []turnKey
 	tail *Turn
@@ -119,11 +104,8 @@ type TurnCache struct {
 }
 
 // turnKey is the index entry: what a page walk needs to plan without
-// materializing anything. It is the tenant's key-space map, not a second
-// residency policy -- no budget, no eviction order, no lock.
-//
-// lo is NON-DECREASING across the list, phantoms included (a phantom
-// borrows its predecessor's end), so the list is binary-searchable.
+// materializing anything. lo is NON-DECREASING across the list, phantoms
+// included (a phantom borrows its predecessor's end).
 type turnKey struct {
 	id      uint64
 	lo, hi  uint64 // the turn's LT bracket
@@ -171,10 +153,8 @@ func (c *TurnCache) prevHi() uint64 {
 	return 0
 }
 
-// NewTurnCache returns a cache with its own private, unbounded node: a
-// Server that is never bound keeps every sealed turn resident, which is
-// what tests and one-shot callers expect. BindCache re-seats it on the
-// process's shared cache.
+// NewTurnCache returns a cache on its own private, unbounded node.
+// BindCache re-seats it on the process's shared cache.
 func NewTurnCache(shared *ComposedCache) *TurnCache {
 	c := &TurnCache{node: "local"}
 	c.attach(c.node, shared)
@@ -182,8 +162,8 @@ func NewTurnCache(shared *ComposedCache) *TurnCache {
 }
 
 // attach points this tenant at a cache. Unshared, it gets a private
-// unbounded node with no source: a Server that is never bound holds
-// everything it was given and faults nothing.
+// unbounded node with no source: it holds what it was given and faults
+// nothing.
 func (c *TurnCache) attach(node string, shared *ComposedCache) {
 	c.node, c.shared = node, shared
 	if shared != nil {
@@ -236,9 +216,8 @@ func (c *TurnCache) ReplaceAll(turns []Turn) {
 	c.seed(turns)
 }
 
-// seed puts every turn but the newest into the cache, cut into runs no
-// larger than the cache's own target: a run larger than the budget can
-// never stay resident.
+// seed puts every turn but the newest into the cache, cut at the cache's
+// own run target.
 func (c *TurnCache) seed(turns []Turn) {
 	if len(turns) == 0 {
 		return
@@ -284,10 +263,8 @@ func (c *TurnCache) seed(turns []Turn) {
 	}
 }
 
-// put publishes a run of this node's OWN turns. A turn at or below the
-// fork base belongs to an ancestor's node -- it is read through the
-// lineage, not copied here, which is what makes the prefix shared rather
-// than donated.
+// put publishes a run of this node's OWN turns. A turn below the fork
+// base belongs to an ancestor's node and is read through the lineage.
 func (c *TurnCache) put(from, to uint64, turns []Turn) {
 	base := c.ownBase()
 	for len(turns) > 0 && coordOf(turns[0]) < base {
@@ -302,10 +279,8 @@ func (c *TurnCache) put(from, to uint64, turns []Turn) {
 	c.cache.Put(fwtree.Coord{Node: c.node, From: from, To: to}, turns, false)
 }
 
-// putPinned holds a turn nothing below can recompose. It is COUNTED --
-// a meter that reads zero exactly when retention is worst is the worst
-// possible meter (S1, plans/storm-triage.md) -- and pinned PER TURN, so
-// one unrecomposable turn cannot disable eviction for anything else.
+// putPinned holds a turn nothing below can recompose: counted, and
+// pinned PER TURN (S1, plans/storm-triage.md).
 func (c *TurnCache) putPinned(t Turn) {
 	k := phantomCoord(t.ID)
 	c.cache.Put(fwtree.Coord{Node: c.node, From: k - 1, To: k}, []Turn{t}, true)
@@ -338,11 +313,9 @@ func (c *TurnCache) flushTail() {
 	c.put(c.keys[i].lo-1, c.keys[i].lo, []Turn{t})
 }
 
-// Slice materializes and returns turns[lo:hi+1] (indices into the sealed
-// list), faulting whatever is missing back in through the source. A turn
-// the source cannot return comes back as its index entry alone: the
-// paginator sees an empty node list and steps over it, which degrades to
-// a gap rather than a lie about content.
+// Slice materializes turns[lo:hi+1] (indices into the sealed list),
+// faulting what is missing. A turn the source cannot return comes back as
+// its index entry alone: a gap, never a lie about content.
 func (c *TurnCache) Slice(lo, hi int) []Turn {
 	if lo < 0 {
 		lo = 0
@@ -421,16 +394,10 @@ func (c *TurnCache) rangeTurns(lo, hi int) []Turn {
 	return out
 }
 
-// lineage is this node's ancestry with every fork base SNAPPED DOWN TO A
-// TURN BOUNDARY.
-//
-// A fork base is an LT and the store hands out interior ones (ForkAt,
-// ForkWith), so a base can fall INSIDE a turn: the child's log then holds
-// that turn's opening records and its own continuation -- same turn id,
-// DIFFERENT CONTENT. Reading it from the ancestor would serve another
-// aria's history as this one's, which no single-lineage fixture can see.
-// Snapping the base below the straddling turn's key gives that turn to
-// the child, whose own records compose it whole.
+// lineage is this node's ancestry with every fork base SNAPPED TO A TURN
+// BOUNDARY. A base can fall inside a turn (ForkAt and ForkWith take
+// interior LTs), and that turn's content differs between the branches.
+// Asserted by TestAForkBelowATurnBoundaryServesItsOwnContent.
 func (c *TurnCache) lineage() []fwtree.Ref {
 	if c.shared == nil || c.shared.lineage == nil {
 		return []fwtree.Ref{{Node: c.node}}
@@ -448,9 +415,8 @@ func (c *TurnCache) lineage() []fwtree.Ref {
 }
 
 // snapBase lowers a fork base to the KEY of the turn it falls inside. A
-// base is the FIRST coordinate the child owns (the convention pinned by
-// store's forkbase test), so a turn that OPENED below the base and
-// carries records at or above it becomes the child's outright.
+// base is the FIRST coordinate the child owns (store's forkbase test), so
+// the straddling turn becomes the child's outright.
 func (c *TurnCache) snapBase(base uint64) uint64 {
 	if base == 0 || len(c.keys) == 0 {
 		return base
@@ -475,9 +441,7 @@ func (c *TurnCache) ownBase() uint64 {
 	return refs[len(refs)-1].Base
 }
 
-// materialized is every turn this tenant currently holds WITH CONTENT,
-// for a re-seat: an index stub is not a turn and must not be seeded as
-// one, or a later read would serve emptiness instead of faulting.
+// materialized is every turn this tenant holds, for a re-seat.
 func (c *TurnCache) materialized() []Turn {
 	if len(c.keys) == 0 {
 		return nil
@@ -561,8 +525,7 @@ func (c *TurnCache) TailMutated() {
 	c.keys[i] = keyOf(*c.tail, prev)
 }
 
-// Release hands this aria's composed bytes back and stops answering
-// misses for it. The server remains usable; its turns fault back in.
+// Release hands this aria's composed bytes back.
 func (c *TurnCache) Release() { c.release() }
 
 func (c *TurnCache) release() {
