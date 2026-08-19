@@ -93,6 +93,7 @@ func answerLines(capture, tok string) int {
 
 func TestSmoke_ToolImageReachesTheModel(t *testing.T) {
 	smokeEnabled(t)
+	smokeCase(t)
 	env, bin := smokeStore(t), smokeBinary(t)
 	fixture := bigTwoToneImage(t, t.TempDir())
 

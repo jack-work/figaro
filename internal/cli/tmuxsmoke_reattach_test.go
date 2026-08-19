@@ -35,6 +35,7 @@ func figCmd(t *testing.T, env []string, bin string, args ...string) string {
 
 func TestSmoke_ReattachMidStreamMatchesShow(t *testing.T) {
 	smokeEnabled(t)
+	smokeCase(t)
 	env, bin := smokeStore(t), smokeBinary(t)
 	p := newPane(t, env, bin, 100, 60)
 
@@ -51,7 +52,7 @@ func TestSmoke_ReattachMidStreamMatchesShow(t *testing.T) {
 	}
 	live := highestTick(p.visible())
 	if live < 0 {
-		t.Skipf("no ticks on screen; the model did not run the command:\n%s", p.visible())
+		decline(t, "no ticks on screen; the model did not run the command:\n%s", p.visible())
 	}
 
 	// THE LIVE VIEW MUST ADVANCE.
@@ -63,7 +64,7 @@ func TestSmoke_ReattachMidStreamMatchesShow(t *testing.T) {
 	// assertion existed. What only a live sample can see is a node that
 	// stopped moving while the tool kept writing.
 	if live >= 90 || !p.alive() {
-		t.Skipf("the tool finished before a live sample could be taken (tick-%d); nothing to observe", live)
+		decline(t, "the tool finished before a live sample could be taken (tick-%d); nothing to observe", live)
 	}
 	time.Sleep(8 * time.Second)
 	advanced := highestTick(p.visible())
@@ -85,7 +86,7 @@ func TestSmoke_ReattachMidStreamMatchesShow(t *testing.T) {
 	}
 	raw := figCmd(t, env, bin, "list", "-j")
 	if err := json.Unmarshal([]byte(raw), &arias); err != nil || len(arias) == 0 {
-		t.Skipf("cannot resolve the aria under test: %v\n%s", err, raw)
+		decline(t, "cannot resolve the aria under test: %v\n%s", err, raw)
 	}
 	id := ""
 	best := -1
@@ -95,7 +96,7 @@ func TestSmoke_ReattachMidStreamMatchesShow(t *testing.T) {
 		}
 	}
 	if id == "" {
-		t.Skipf("no aria with messages in the scratch store:\n%s", raw)
+		decline(t, "no aria with messages in the scratch store:\n%s", raw)
 	}
 
 	// KILL THE CLIENT MID-STREAM. The daemon keeps running the turn; this is a
@@ -126,7 +127,7 @@ func TestSmoke_ReattachMidStreamMatchesShow(t *testing.T) {
 	shown := figCmd(t, env, bin, "show", id)
 	liveTick, showTick := highestTick(final), highestTick(shown)
 	if showTick < 0 {
-		t.Skipf("show has no ticks; the tool never ran:\n%s", shown)
+		decline(t, "show has no ticks; the tool never ran:\n%s", shown)
 	}
 	if liveTick != showTick {
 		t.Errorf("live/committed divergence: the reattached transcript's highest tick is %d, fig show's is %d\n"+

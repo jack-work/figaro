@@ -147,12 +147,32 @@ func TestHibernateRefusesActiveAria(t *testing.T) {
 		require.Error(t, a.Registry.Hibernate(id), "reclaimed an active aria")
 	}
 
-	// Once idle it becomes reclaimable.
+	// Once idle it becomes reclaimable -- EVENTUALLY, which is the FACT rather
+	// than the wish.
+	//
+	// This asserted require.NoError(Hibernate(id)) immediately after polling
+	// for State == "idle", and under load it FAILED: "figaro 9e0ef483 is
+	// active", on a gate whose diff could not reach this package. That failure
+	// was CORRECT BEHAVIOUR being reported as a defect. Hibernate re-checks
+	// liveness AFTER taking the retiring flag on purpose -- registry.go, "a
+	// turn that opened while we were taking the flag wins" -- so a refusal
+	// between the poll and the call is the guarantee working. An assertion
+	// that contradicts a documented guarantee of the thing it tests loses to
+	// that guarantee whenever the machine is busy enough to expose it.
+	//
+	// The sibling assertion three lines up already guards itself this way, in
+	// as many words: "a flaky assertion here would be worse than none". THE
+	// SAME HAZARD WAS VISIBLE FROM ONE SIDE OF THE PAIR AND INVISIBLE FROM THE
+	// OTHER, which is the ordinary shape of this mistake rather than
+	// carelessness -- and the reason to say so here is that the next reader
+	// checks both sides.
+	//
+	// Retrying is safe: a refused Hibernate has no effect, and the first one
+	// that succeeds ends the poll.
 	require.Eventually(t, func() bool {
-		f := a.Registry.Get(id)
-		return f != nil && f.Info().State == "idle"
-	}, 10*time.Second, 20*time.Millisecond)
-	require.NoError(t, a.Registry.Hibernate(id))
+		return a.Registry.Hibernate(id) == nil
+	}, 10*time.Second, 20*time.Millisecond,
+		"an idle aria never became reclaimable: every Hibernate was refused")
 }
 
 // Hibernating twice, or hibernating something dormant, must be a clean
