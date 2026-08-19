@@ -49,6 +49,35 @@ package store
 // whose payloads it shares. A FLOOR: raw byte payloads, typed SDK structs
 // unmeasured.
 //
+// UNFINISHED, AND STOOD DOWN RATHER THAN ABANDONED (f3aa1d0b, 2026-08-19).
+// Gluck decided the direction on other grounds -- one canonical tree-shaped
+// cache, layer reduction, the actor loop as the serialization mechanism -- so
+// this measurement no longer gates a decision, and a measurement that gates
+// nothing is scope that has outlived its question. It is committed in the state
+// it reached because the honest half-artifact is worth more than a clean
+// absence, and the next hand may want the overlap number when the residency
+// work reaches it.
+//
+// THE CORRECTION IT NEEDS, WRITTEN DOWN SO NOBODY HAS TO REDISCOVER IT:
+// replace seamFixture's MemLog with a DISK-BACKED log -- a real XwalBackend on
+// a temp root, its records appended and the caches built over
+// newXwalLog rather than over an in-memory log. That is the whole fix. It makes
+// the two caches the ONLY decoded holders, so dropping the parent can actually
+// free the strings and arm B can differ from arm A. Everything else in this
+// file -- the two arms, the falsifier, the frame discipline, the canary's
+// intent -- survives that change unaltered.
+//
+// TWO THINGS THE NEXT HAND SHOULD NOT HAVE TO LEARN TWICE. The canary must
+// force the NON-SHARING path in a way that still populates the child (spoiling
+// the seed does not, because a 0/0 cache retains nothing until read). And
+// figwal's segment payload cache sits BELOW both arms and holds raw frames
+// under a global budget, so it adds a constant to both readings that this
+// method cannot separate out.
+//
+// IT IS RED. This branch must not be merged as it stands: TestForkSeamSharing
+// fails on the falsifier and TestForkSeamSharingCanary fails on the direction,
+// and both failures are the record rather than a defect to be silenced.
+//
 // IT IS WHITE-BOX ON PURPOSE. XwalBackend memoises one handle per aria, so a
 // caller dropping its reference frees nothing; measuring through the backend
 // would measure the memo. The seam under test is newSeededLog's donation, and
