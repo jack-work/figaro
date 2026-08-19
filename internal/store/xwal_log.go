@@ -70,7 +70,7 @@ func decodeRecord[T any](r xwal.Record) (Entry[T], bool) {
 // openOnce opens a fresh xwal for the aria, runs fn, closes. Errors
 // from Open, fn, and Close are propagated in that order.
 func (l *xwalLog[T]) openOnce(fn func(*xwal.XWAL) error) error {
-	xw, err := l.store.OpenNode(l.ariaID)
+	xw, err := l.store.openNode(l.ariaID)
 	if err != nil {
 		return err
 	}

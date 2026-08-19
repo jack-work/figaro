@@ -176,7 +176,7 @@ func (b *XwalBackend) handleLocked(id string) (*ariaHandle, error) {
 	}
 	// Sanity-open once at handle creation to fail fast if the aria is
 	// unknown; the underlying xwal is closed immediately after.
-	xw, err := b.store.OpenNode(id)
+	xw, err := b.store.openNode(id)
 	if err != nil {
 		return nil, err
 	}
