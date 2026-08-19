@@ -693,3 +693,51 @@ AND THE OPERATIONAL RULE UNTIL IT HAS ONE: bound the query, not the output.
 Narrow `-pkgs` to the package under study, keep `-treedepth` at 4 or 5, and
 prefer `-algo vta` -- CHA's candidate sets are what multiply. The tree is
 for reading a seam, not for printing a program.
+
+## WHERE THE ORDERING LOCKS SIT: NOT THE ACTOR LOOP, AND FOR THE IR LOG THERE
+## IS NO LOOP AT ALL
+
+f3aa1d0b, 2026-08-19, answering Gluck's question -- are the serialized writes
+the main actor loop, or an inner one? Read rather than assumed.
+
+THE FORM PATH HAS A LOOP. `form.go:169` builds
+`actor.NewLazy(formBatch, ..., f.runBatch)`: one drainer, each write reduced
+against the running state of the batch, published state immutable, "a single
+writer [that] only appends past".
+
+THE IR AND TRANSLATION PATH HAS NONE. Four provider implementations call
+`in.FigLog.Append(...)` DIRECTLY FROM THEIR OWN TURN GOROUTINES --
+anthropic.go:1033 and :1101, anthropicsdk.go:249, copilot/responses.go:216,
+openaichat.go:246 -- plus `projection.go:227` for the translation cache.
+Nothing serialises them upstream.
+
+    SO `cached_log.go`'s `writeMu` IS NOT A SECOND LAYER OF SERIALISATION.
+    IT IS THE ONLY SERIALISATION THERE IS.
+
+AND cachedLog HAS ALREADY DONE HALF OF CURE A, which is why the residue is
+shaped the way it is. Its own comment: "writeMu serializes MUTATORS so cache
+updates land in log order. NO READER EVER TAKES IT: holding a lock across
+inner.Append would block every reader for the length of an fsync... view is
+the whole of the cache's state. Readers load it; mutators build a successor
+and store it." The `RWMutex` that once covered rows, trimmed, bytes and an
+index is gone -- it cost "34 acquisitions on the hot read path, every one of
+which waited behind an append."
+
+WHAT REMAINS IS THREE MUTATOR SITES HOLDING A LOCK ACROSS AN FSYNC, PURELY TO
+KEEP APPENDS IN ORDER.
+
+## THE CONSEQUENCE FOR THE PENDING CURE DECISION
+
+ONE REQUIREMENT, TWO ANSWERS, IN ONE PACKAGE: the form path establishes order
+with a loop and gets immutability for free; the IR path establishes it with a
+mutex around disk I/O. The one holding a lock across an fsync is the one
+WITHOUT a loop.
+
+    THEREFORE THE FOUR ORDER-OF-OPERATIONS LOCKS ARE NOT REDUNDANT TODAY.
+    REMOVING THEM WITHOUT ESTABLISHING ORDER ELSEWHERE IS A CORRECTNESS
+    CHANGE, NOT A CLEANUP.
+
+That is the real content of the decision: cure B is not "delete a lock", it is
+"move the ordering requirement to where the form path already keeps it". Cure A
+alone cannot serve these four, because an atomic publish does not order two
+appends -- it only makes the result visible without a reader waiting.
