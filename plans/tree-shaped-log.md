@@ -89,3 +89,72 @@ ordinary decoding constructor, and it verifies the seam by reading the last
 seeded record back out of the log and comparing. A cache tree must keep
 that, because A WRONG LINEAGE LINK SERVES ANOTHER ARIA'S HISTORY AS YOUR
 OWN, and no value oracle on a single-lineage fixture can see it.
+
+## THE TWO HALT PARAGRAPHS, WHICH ARE THE REAL DESIGN INPUT
+
+Both arrived unprompted, in answer to "what would be lost if you were
+replaced". Both reach the same conclusion from opposite ends.
+
+### THE DELETION TRADED PINNING FOR MATERIALISING (fd15d2a0)
+
+    THE JOIN ITERATES THE CACHE WITH `store.Entries(cache, Span{})`, AND
+    THAT DOES NOT STREAM. `spanSlice` resolves a whole-log span to
+    `Read()`, and `cachedLog.Read()` FALLS THROUGH TO `inner.Read()`
+    WHENEVER ANYTHING HAS BEEN TRIMMED. The IR side does the same through
+    `TailAfter(0)`.
+
+So on an aria whose window has evicted, ONE TURN MATERIALISES THE ENTIRE
+TRANSLATION CHANNEL FROM DISK. Unmeasured, and NO INSTRUMENT IN THE TREE
+WOULD NOTICE — the registered counts are entries HANDED, which is the same
+number either way.
+
+    THE DELETION TRADED A PROJECTION THAT PINNED BYTES FOR A WALK THAT
+    MATERIALISES THEM. THE ONLY THING THAT MAKES THAT A BETTER TRADE IS
+    THAT THE WINDOW IS ALLOWED TO EVICT AFTERWARDS.
+
+Part II is not violated — "accessing a span brings those entries into
+memory, where they live until eviction" is the design as written. But it
+means RESIDENCY POLICY IS THE WHOLE BALLGAME, which is the tree-shape
+question in different clothes.
+
+THE CONCRETE PIECE: `cachedLog` DOES NOT IMPLEMENT `spanReader`, so nothing
+anywhere streams a span natively. Giving it one would make the join
+genuinely forward-only and would be the first caller that benefits.
+
+### AND THE FAILURE MODE IS ALREADY DEMONSTRATED, IN MINIATURE (fd15d2a0)
+
+figwal's `HeaderAt` WALKS THE PARENT CHAIN; `SegmentBaseIndexes` DOES NOT.
+Pairing them yields WRONG STATE AT 14 OF 29 INDICES BELOW A FORK BASE and
+is CORRECT AT EVERY INDEX AT OR ABOVE IT — which is why `SegmentHeaderAt`
+had to become ONE call, and why A SINGLE-LINEAGE TEST FINDS NOTHING.
+
+    THAT IS THE FLAT-STRUCTURE-OVER-A-FOREST DEFECT, ALREADY PROVEN ONCE,
+    WITH A PASSING TEST SUITE.
+
+FIRST HAZARD TEST OF ANY TREE-SHAPED CACHE, and the shape to copy is
+figwal's own `TestHeaderFold_AcrossAForkTheNaivePairingIsWrong`: build a
+fork, and ASSERT BELOW THE FORK BASE, because everything at or above it
+agrees whatever you do.
+
+### THE RESIDENCY QUESTION BECOMES A SHARING QUESTION (9ed3f561)
+
+The heap witness is 1.19x on a `[]json.RawMessage` state; the
+decoded-struct providers are unmeasured and will be larger. AND UNDER A
+TREE THE QUESTION CHANGES:
+
+    NOT "how much does one projection retain" BUT "how much is SHARED
+    between a parent and its forks, and what does a fork's residency cost
+    that its parent has already paid".
+
+Today a fork's retention is bounded by ONE donation at open. A tree makes
+sharing structural and continuous, and A HEAP DELTA ON ONE LIVE PROJECTION
+MEASURES A TOTAL, NOT AN OVERLAP.
+
+WHAT ANSWERS IT, and the method already exists: the same keep-versus-drop
+delta, taken with PARENT-ALIVE and PARENT-DROPPED on the SAME fixture —
+applied across the FORK SEAM rather than across one object's lifetime.
+
+    BUILD IT BEFORE THE POLICY IS CHOSEN, NOT AFTER. It is bytes, so it
+    ignores load. AND IF THE SHARING IS ALREADY FREE, A TREE-SHAPED CACHE
+    BUYS CORRECTNESS AND STRUCTURE RATHER THAN MEMORY — WHICH IS A
+    DIFFERENT JUSTIFICATION, AND IT MUST BE WRITTEN DOWN AS THAT ONE.
