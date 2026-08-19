@@ -803,3 +803,135 @@ KIND OF SYSTEM THIS IS, which misleads before a line is read.
 
 RENAME WHEN CONVENIENT, DO NOT LET IT DISTRACT: `compact` -> `evictWindow`,
 and the TruncateFront comment to say it drops sealed segments.
+
+# THE NIGHT OF 2026-08-19, BEARER dec6ef8a: WHAT LANDED AND WHAT IS OPEN
+
+Written after the work, at head 567a9cbc. Every number here was measured on
+this machine tonight; the loadavg was 15-23 throughout, because a subagent was
+building and benchmarking beside me, and that fact is what makes the A/B
+protocol below necessary rather than fussy.
+
+## ONE HEAD (e6885aa2)
+
+feat/layered-cache is MERGED INTO MAIN. main carried the code of five merges
+without the plans that govern it; both are now on one branch. The merge itself
+found a red: a campaign note cited a docs/ path that belongs to FIGWAL-CORE,
+and TestSkillPathsCitedFromOutsideResolve refuses a citation that does not
+resolve HERE. A citation that crosses a repo boundary is exactly what that test
+was written for.
+
+## THE RESIDENCY POLICY MOVED INTO THE LAYER THAT OWNS THE BYTES (0a7563f7)
+
+The defect was structural, not numeric, and 6ec565b5 named it on the way out:
+`store.NewXwalBackend` was UNBOUNDED and internal/cli's three calls at
+angelus.go:110-112 WERE the policy. doctor, every test and any future embedding
+got 0/0. A policy that can be SILENTLY ABSENT is not one canonical policy.
+
+`store.DefaultIRBudgetBytes` and `store.DefaultTranslationBudgetBytes` are the
+same 4 MiB config carried, now seeded by the constructor.
+`config.IRWindowBytes` and `TranslationWindowBytes` return `(int, bool)`,
+because a caller must tell UNSET from EXPLICITLY UNBOUNDED and the old `0` meant
+both. config's two default constants are DELETED; angelus.trimResident lost its
+two Settings helpers and its early return, because there is no longer a
+configuration under which a daemon should decline to trim.
+
+MEASURED: a 400-message aria of 8 KiB messages holds 16.4 MB decoded on a bare
+backend and 5.7 MB after -- 2.9x. The test asserts `ResidentIRBytes` after a
+read, and its ceiling is `budget + budget*slackNum/slackDen`, because THAT is
+the bound cachedLog implements: it trims in batches. A first version asserted
+the budget flat, went red at 5.7 MB, and the slack is the reason -- asserting a
+bound the cache does not implement would have been asserting a wish.
+
+## A HIT TAKES NO LOCK (63902f44)
+
+The standing goal named this lock first, and the carve-out in
+plans/log-cache-policy.md -- "LRU owns the cold ranges, NEVER the hot tail" --
+existed only because of it.
+
+Every structure a reader touches in tree.Cache is now IMMUTABLE ONCE PUBLISHED
+and reached through an atomic pointer. Writers still take c.mu; it is a real
+lock with genuinely concurrent callers, and it is held ONLY to publish -- never
+across the Source, the budget's eviction pass, or the Evicted hook, each of
+which is a call OUT of the package. `fetchUnlocked` and `chargeLocked` are gone
+with the read lock they were dancing around.
+
+    TreeRangeParallel   2.213us -> 1.242us   -43.84%  (p=0.000, n=8)
+    TreeRangeSerial     1.078us -> 1.155us   ~        (p=0.328, n=8)
+    B/op, allocs/op     identical
+
+THE PARALLEL NUMBER NOW SITS AT THE SERIAL NUMBER INSTEAD OF DOUBLE IT. The
+inversion that justified a second cache shape is gone.
+
+### THE A/B PROTOCOL, BECAUSE THE FIRST MEASUREMENT WAS UNUSABLE
+
+A single `go test -bench` run after the change looked WORSE than a run taken
+twenty minutes earlier. Both were honest and neither was comparable: the
+machine's load doubled in between. What replaced it: TWO PREBUILT TEST BINARIES
+(`go test -c` before and after), ALTERNATED EIGHT TIMES inside one script, under
+`/var/tmp/figaro-bench.lock` so the other aria's benchmarks queue rather than
+overlap, then benchstat. Interleaving is what makes the pair comparable; the
+lock is what stops two arias measuring each other.
+
+### AND THE CANARY THAT WAS DISCARDED RATHER THAN REPORTED
+
+The first canary for `TestHitTakesNoLock` wrapped the whole of `rangeInNode` in
+c.mu. It SELF-DEADLOCKS in the warm phase -- `fill` takes the same
+non-reentrant mutex -- so it never reaches the assertion and hangs. A canary
+that hangs before the property is exercised measures NOTHING, and reporting it
+as "the canary confirmed the deadlock" would have been a false claim in the
+right direction. The canary that counts takes c.mu around the INDEX LOOKUP
+only: red in 3.00s, green on restore.
+
+The test itself is the artifact worth keeping: hold c.mu, serve a warm range
+from another goroutine, and a lock anywhere on the read path deadlocks.
+
+## ONE DONATION WALKER (567a9cbc)
+
+seedRowsLocked and seedTransRowsLocked were verbatim identical but for which
+cache of the ancestor's handle they asked. That is now an argument.
+-42/+37, and one walker to delete when structural sharing replaces the
+donation. The canary makes BOTH channels red, which is the thing a merge of two
+near-identical functions can silently get wrong.
+
+## MERGED, NOT REBASED -- AND A SEMANTIC CONFLICT GIT COULD NOT SEE (2d258884)
+
+fd15d2a0's rename `compact` -> `evictWindow` was made off 9aabb260;
+feat/layered-cache had meanwhile added a THIRD caller in `newSeededLog`. The
+text merged CLEAN and the package DID NOT COMPILE.
+
+    "THE MERGE HAD NO CONFLICTS" IS NOT EVIDENCE THAT THE MERGE IS RIGHT.
+    A rename that lands on two branches at once is where that gap lives.
+
+## AND ITS FINDING, WHICH IS THE FRAME FOR THE WHOLE LOCK CAMPAIGN (fd15d2a0)
+
+    THE MUTEX WAS TWO EXCLUSIONS WEARING ONE NAME.
+        writer vs writer   dead weight -- there is only ever one writer
+        reader vs writer   REAL, and may not simply be deleted
+
+Applied literally, "the callers are serialized, drop the lock" would have
+removed a live reader/writer exclusion in MemFormLog. The cure is PUBLISH, not
+DELETE: the lock goes, the concurrency stays. That is the same shape as the
+tree cache's c.mu, where the read half was dead weight and the write half is
+real, and it is the question to ask of each of the remaining rows in
+plans/store-locks.md.
+
+## OPEN FOR GLUCK, RECORDED SO NOTHING IS DECIDED BY BUILDING PAST IT
+
+  1. EVICTION IS A LINEAR SCAN, AND THE SWEEP IS QUADRATIC. `coldest` and
+     `evictColdest` each walk every run of every node, and `Budget.TrimIdle`
+     calls the pair in a loop until the cutoff is met -- so a full sweep of R
+     resident runs costs O(R^2). Unchanged tonight, and NOT fixed on my own
+     authority: the cure is an eviction index (a heap keyed by effective
+     epoch), and adding a data structure needs his approval by the standing
+     rule. UNMEASURED at production R; the number to bring him is a sweep at
+     the segment cache's real run count.
+  2. THE BIG ONE, NOT STARTED: whether `cachedLog` -- the flat tail window, one
+     per (aria, channel) -- is re-seated on tree.Cache wholesale. Its premise
+     for staying flat was the lock that is now gone. This is the consolidation
+     itself and it is where the donation, the seam probe and the window
+     budget's DECODED-estimate unit all have to be reconciled with tree's
+     ENCODED-byte one.
+  3. The store still carries a residency policy the CLI can only tune, but
+     `config` still owns `defaultSegmentCacheMB` beside segment's own
+     `defaultCacheBudget`, and `defaultUIWindowMB` likewise. Same duplication,
+     one layer down.
