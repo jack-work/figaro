@@ -1452,3 +1452,71 @@ None of them is doubted here. They are listed so that the next person who
 spends one in an argument knows which are FRESH and which are INHERITED --
 which is the distinction I failed to make when I published a speedup this
 morning and had to retract it by lunch.
+
+# RAISE: irDecodeInflation = 5 IS ~4.4x TOO HIGH ON THIS STORE (dec6ef8a, 2026-08-19)
+
+NOT CHANGED. This is a number and a consequence, brought rather than acted on,
+because the change it implies makes every aria hold MORE heap and that is the
+axis Gluck is watching.
+
+## WHAT IT IS AND WHY IT MATTERS
+
+`irEntrySize(e) = e.EncodedBytes * irDecodeInflation`, and that estimate is BOTH
+the window's gate and its accounting. Every per-aria budget in this store is
+therefore denominated in "encoded bytes x 5". Its provenance is two real arias
+measured months ago (4.0x and 5.3x), and this file's own audit listed it as
+INHERITED AND NEVER REPRODUCED HERE.
+
+## MEASURED ON THE AUTHOR'S REAL HISTORY, TWO INSTRUMENTS AGREEING
+
+`TestDecodeInflationOnRealHistory`, skipped unless FIGARO_REAL_STORE points at a
+store root; run against a reflink copy of the live store, segment payload cache
+disabled, one aria at a time, the window built in a frame that has RETURNED (the
+fork seam paid for that lesson this morning).
+
+    aria        records   encoded B   resident B   res/enc   res/payload
+    631c7d4b        533   7,241,635    7,585,696     1.05        1.12
+    fa85679e       1120   5,829,372    6,586,696     1.13        1.27
+    4de490fd       1259   5,775,170    6,578,376     1.14        1.32
+    e83d98d3       1097   5,518,954    6,243,544     1.13        1.28
+    80a00ccb        908   4,782,891    5,405,544     1.13        1.25
+    3a995b1a        530   3,562,160    3,874,264     1.09        1.24
+    cf3fc17d       2556   3,124,885    4,186,808     1.34        2.23
+    e7201d7b        539   2,970,985    3,269,664     1.10        1.25
+    WEIGHTED OVER THE EIGHT LARGEST                  x1.13
+
+THE SECOND COLUMN IS THE CONTROL: res/payload is the heap delta against the
+SUMMED STRING LENGTHS the entries carry, which is arithmetic and cannot fail the
+way a heap delta can. It lands at 1.12-1.32x -- ordinary struct and slice-header
+overhead over the strings themselves -- and it is consistent with res/enc at
+1.13x. Every entry carried a recorded encoded size (zero missing), so the
+denominator is not guessed.
+
+## THE CONSEQUENCE, STATED AS A DIRECTION
+
+If real residency is 1.13x encoded and the accounting says 5x, then WHEN THE
+GATE BELIEVES IT IS HOLDING 4 MiB IT IS ACTUALLY HOLDING ABOUT 0.9 MiB. THE
+WINDOW EVICTS ROUGHLY 4.4x EARLIER THAN THE OPERATOR ASKED FOR, and every
+fall-through that costs is a disk read the budget was never meant to force.
+
+## WHAT I HAVE NOT RESOLVED, AND IT IS NAMED RATHER THAN SMOOTHED
+
+The old note cites a 2556-message aria at 12.5 MiB and 4.0x. THAT IS cf3fc17d,
+which is in the table above at 2556 records, 3.12 MB encoded and 4.19 MB
+resident. Same aria, same record count, a very different pair of numbers. I
+cannot re-run the original, so I do not know whether it measured a larger object
+(the whole handle, translations and board included), a different channel, or the
+aria at a different size. THE DISCREPANCY IS THE FINDING'S OWN WEAKEST POINT AND
+IT IS RECORDED HERE RATHER THAN LEFT FOR SOMEBODY ELSE TO NOTICE.
+
+## THE ASK
+
+Lowering the constant makes every windowed aria retain MORE real heap for the
+same configured number -- roughly 4x more at the same setting -- which is a
+memory decision and yours. The alternatives are (a) lower the factor and lower
+the byte budgets together, so real residency stays where it is but the number
+means what it says; (b) leave it and document that the budget is denominated in
+a fiction; (c) denominate the budget in MEASURED bytes and delete the factor,
+which is where the tree's Sizer already points.
+
+I recommend (a) or (c). I have done neither.
