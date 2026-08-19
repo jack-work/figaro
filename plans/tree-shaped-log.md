@@ -1284,3 +1284,38 @@ quantities reported ahead of timings). That is the next measurement whoever
 holds this role should make, and it should be made BEFORE Q3 is executed rather
 than after, because a re-seat designed for two tenants that must then admit a
 third is the accretion's own shape one more time.
+
+### AND IT IS NOT MERELY ANOTHER CACHE -- IT IS THE SAME DESIGN, TWICE
+
+Read rather than assumed, correspondence by correspondence:
+
+    tree.Cache / Budget                 aria.TurnCache / UIBudget
+    -------------------------------     ------------------------------------
+    run (units | hollow, bytes)         Turn + turnMeta (Nodes | hollow, bytes)
+    "THE INDEX SURVIVES EVICTION"       "THE INDEX SURVIVES EVICTION"
+    Source(Coord) rematerializes        TurnSource(fromLT,toLT) recomposes
+    Budget: bytes, limit, evictions     UIBudget: bytes, limit, evictions
+    coldest / evictColdest              victimsLocked / hollow
+    Recomposes()                        Recomposes()
+    pinned: counted, never evicted      pinned: counted, out of the LRU
+    "the hook takes no lock, victims    "NEVER calls into an owner while
+     are hollowed outside"               holding it: it returns victims"
+    epoch-based recency                 container/list LRU
+
+509 lines against tree's 644+216, and THE TWO FILES CITE THE SAME FINDING IN
+THE SAME WORDS: "a meter that reads zero exactly when retention is worst is the
+worst possible meter", attributed in both to plans/storm-triage.md's S1.
+
+    TWO IMPLEMENTATIONS THAT QUOTE THE SAME POST-MORTEM ARE NOT TWO CACHES
+    THAT HAPPEN TO BE SIMILAR. They are one design, written twice, by people
+    who had both read the same incident -- which is exactly how an accretion
+    forms among careful people rather than careless ones.
+
+THE ONE REAL DIFFERENCE is the addressing: tree names ranges in a lineage
+(Coord, Ref, fork bases) and TurnCache names an index into one aria's sealed
+turns. That is a narrower key, not a different structure -- and a narrower key
+is what the dense-coordinate question (Q1) is about at the other end of the
+stack.
+
+I have measured NOTHING here. This is a reading, and it is the reading that
+says the third layer belongs in Q3's scope rather than after it.
