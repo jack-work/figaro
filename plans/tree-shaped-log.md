@@ -1225,3 +1225,29 @@ protocol error is the useful part: INTERLEAVING IS NOT COUNTERBALANCING, and an
 A/B without an A/A is an uncalibrated instrument. Everything measured after
 that retraction uses two benchmarks in ONE binary with an in-run control, and
 reports the deterministic quantity (allocations, counts) ahead of the timing.
+
+## THE APPLY-CHECK, DONE AT THE RECIPIENT'S HEAD (dec6ef8a)
+
+fd15d2a0's branch was cut at 2d258884 and main moved eight commits under it, so
+it was apply-checked here rather than assumed. IT DOES NOT MERGE CLEANLY, and
+the conflict is in ONE FUNCTION -- the one both of us did our best work in, the
+same night:
+
+    THEIRS  split rangeInNode into rangeInNode -> rangeInNodeAt(nd, coord), so
+            a node handle does not re-hash the node's name per record.
+    MINE    rewrote that function's body so a span answered by ONE run is
+            handed back as a view instead of copied.
+
+Both are wanted; the reconciliation is their split with my body, and it is
+mechanical. It is done and gated on branch
+`prepared/segment-runs-in-tree-at-684978ad` (a301e725, worktree
+/var/tmp/fig-trial): build, full suite, and store -race all green.
+
+THAT BRANCH IS NOT FOR MAIN AS IT STANDS -- it carries the ~1.7x serial
+point-read regression that is Q1. It exists so that a yes costs a merge and a
+no costs a delete.
+
+    "IT MERGED WITHOUT CONFLICT" WAS ALREADY DISPROVED TONIGHT (2d258884, a
+    rename that merged clean and did not compile). This is the other half: a
+    branch that CONFLICTS is not a branch in trouble -- it is two arias having
+    improved the same function, and the check is what tells you which.
