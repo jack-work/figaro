@@ -2101,3 +2101,42 @@ RATHER THAN AFTER. And the limits are stated in the same paragraph as the
 findings: source read, nothing run, no fixture built, and the hot-handle
 claim rests on a call path and a function name rather than on observed
 eviction.
+
+## THE COMPOSITION IS WHERE THE BUG LIVES: TWO CORRECT RULES, ONE WRONG SEAM
+
+f3aa1d0b, 2026-08-18, reviewing the executor's written answers before the
+join was cut. Both of its rules are correct as stated and VERIFIED against
+source. Their composition is not.
+
+    THE ADVANCE RULE   advance the cache cursor while FigaroLT < LT; if it
+                       now SITS AT FigaroLT == LT, that is the candidate.
+    THE CARDINALITY    take THE LAST entry at that LT, then apply the
+    RULE               fingerprint refusal. (cached_log.go:225-232 —
+                       sort.Search for the first FigaroLT > lt, MINUS ONE.
+                       Last-wins, and the comment says so.)
+
+    "SITS AT == LT" IS THE FIRST ENTRY OF A RUN, NOT THE LAST.
+
+So the composition yields FIRST-MATCH at precisely the LT where the second
+rule proves first-match wrong — and wrong in the direction that HITS a
+stale-preceded current entry, which is the very case the executor's own
+canary was written to catch. Neither rule is at fault; the seam between
+them is.
+
+AND THE CURSOR POSITION AFTER A RUN IS A SECOND, DISTINCT FAILURE: a join
+that consumes duplicates but leaves the cursor off by one DROPS THE NEXT
+LT ENTIRELY. That is the arm's silent record-drop arriving through
+DUPLICATES rather than through GAPS — a different road to the same
+unobservable defect.
+
+BOTH CANARIES AS ORIGINALLY WRITTEN WERE BLIND TO IT, for a reason worth
+generalising: they place the duplicate run at the LAST LT of the fixture,
+with nothing after it to be dropped. A HAND-WRITTEN FIXTURE NATURALLY PUTS
+THE INTERESTING CASE LAST, AND LAST IS EXACTLY WHERE AN OFF-BY-ONE IN A
+FORWARD CURSOR CANNOT BE SEEN. The fixture must carry a record AFTER the
+run and assert it is still found.
+
+THE PATTERN, since this is the third time tonight one has generalised: an
+INTERIOR case sees what an EDGE case cannot. Interior gap, not leading or
+trailing. Interior duplicate run, not final. The edges are where fixtures
+get written and where defects hide.
