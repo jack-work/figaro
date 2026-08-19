@@ -38,17 +38,17 @@ func appendProjectedMessages(state projectedMessages, encoded []json.RawMessage,
 	return state
 }
 
-// cacheFor returns this provider's lineage cache, opening lazily.
-func (p *Provider) cacheFor(aria string) (store.Log[[]json.RawMessage], error) {
-	if aria == "" || p.CacheOpen == nil {
+// rowsFor returns this provider's lineage cache, opening lazily.
+func (p *Provider) rowsFor(aria string) (store.Log[[]json.RawMessage], error) {
+	if aria == "" || p.RowsOpen == nil {
 		return nil, nil
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.cache != nil {
-		return p.cache, nil
+	if p.rows != nil {
+		return p.rows, nil
 	}
-	s, err := p.CacheOpen(aria)
+	s, err := p.RowsOpen(aria)
 	if err != nil {
 		slog.Warn("anthropicsdk cache open failed; running uncached", "aria", aria, "err", err)
 		return nil, nil
@@ -57,14 +57,14 @@ func (p *Provider) cacheFor(aria string) (store.Log[[]json.RawMessage], error) {
 		slog.Warn("anthropicsdk cache invalidation failed; running uncached", "aria", aria)
 		return nil, nil
 	}
-	p.cache = s
+	p.rows = s
 	return s, nil
 }
 
 // invalidateIfStale clears the cache on fingerprint mismatch.
 func (p *Provider) invalidateIfStale(s store.Log[[]json.RawMessage]) bool {
 	want := p.Fingerprint()
-	stored, cleared, err := provider.ClearStaleTranslationCache(s, want)
+	stored, cleared, err := provider.ClearStaleRows(s, want)
 	if err != nil {
 		slog.Warn("anthropicsdk clear stale cache", "stored", stored, "current", want, "err", err)
 		return false

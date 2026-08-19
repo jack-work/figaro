@@ -256,3 +256,30 @@ inside its b.N loop. Those arms are effectively unrunnable at 50,000, which
 means the invariant they name has not been checked at that size in some time.
 BenchmarkRows therefore stops at 10,000 and says why. MemLog is a test fixture
 except as an emergency fallback in agent.go, so this is reported, not fixed.
+
+# THE PROVIDER SURFACE SPEAKS OF A LOG NOW (223a0986, 2026-08-19)
+
+Gluck's rule, on the role form as `vocabulary`: FIGARO CALLS A LOG, NEVER A
+CACHE -- the cache is an implementation detail contained entirely within the
+canonical log implementation. dfdfae6a pointed out that the provider surface
+still said the old word to CALLERS. Renamed, mechanically, in its own commit:
+
+    CacheOpen                -> RowsOpen        (Registration, BuildContext,
+                                                 and every provider's field)
+    cacheFor                 -> rowsFor
+    a.cache / p.cache        -> rows
+    CacheNamespace           -> RowsNamespace
+    ClearStaleTranslationCache -> ClearStaleRows
+    invalidateCache          -> invalidateRows  (copilot)
+
+WHAT DELIBERATELY DID NOT MOVE: AssistantCache, CacheControl, CachePolicy,
+CacheCaps, cache_control, MaxCacheBreakpoints and system.cache_markers. Those
+name ANTHROPIC'S PROMPT CACHE, which is a real cache belonging to the model
+vendor. The rule is about our log, not theirs.
+
+ONE PAIR LEFT, AND IT IS ONE DECISION RATHER THAN HALF A RENAME:
+`provider.AssistantCache` and `figaro.commitAssistantCache` name OUR write of
+the assistant's native payload into the translator log. dfdfae6a's audit put
+AssistantCache on the "stays" list; by the rule's letter it is a row, not a
+cache. Left alone pending Gluck, because renaming the function and not the
+type it carries would be worse than either.

@@ -15,7 +15,7 @@ import (
 )
 
 func TestAssistantCacheReencodesInputReadyMessage(t *testing.T) {
-	a := &Anthropic{ReminderRenderer: "tag", CacheNamespace: "anthropic"}
+	a := &Anthropic{ReminderRenderer: "tag", RowsNamespace: "anthropic"}
 	native, err := a.assistantCache(message.Message{
 		Role:       message.RoleOutput,
 		Content:    []message.Content{message.TextContent("salve")},
@@ -43,7 +43,7 @@ func (noOpBus) PushToolReady(message.Content)                          {}
 func (noOpBus) PushMessageEnd(string)                                  {}
 
 func TestNativeAssistantCachePreservesSignedAndRedactedThinking(t *testing.T) {
-	a := &Anthropic{ReminderRenderer: "tag", CacheNamespace: "anthropic"}
+	a := &Anthropic{ReminderRenderer: "tag", RowsNamespace: "anthropic"}
 	nm := nativeMessage{Role: "assistant", Model: "claude-test", StopReason: "tool_use", Usage: &nativeUsage{OutputTokens: 7}}
 	bus := noOpBus{}
 	a.foldSSEEvent(context.Background(), "content_block_start", []byte(`{"index":0,"content_block":{"type":"thinking"}}`), &nm, nm.Usage, &nm.StopReason, bus)
@@ -125,7 +125,7 @@ func TestAssistantCacheNativeDropsEmptyStreamedBlocks(t *testing.T) {
 		"event: message_stop\n" +
 		`data: {"type":"message_stop"}` + "\n\n"
 
-	a := &Anthropic{ReminderRenderer: "tag", CacheNamespace: "anthropic"}
+	a := &Anthropic{ReminderRenderer: "tag", RowsNamespace: "anthropic"}
 	nm, err := a.drainSSE(context.Background(), io.NopCloser(strings.NewReader(sse)), "claude-test", noOpBus{})
 	require.NoError(t, err)
 	require.Len(t, nm.Content, 3)
@@ -147,7 +147,7 @@ func TestAssistantCacheNativeDropsEmptyStreamedBlocks(t *testing.T) {
 }
 
 func TestAssistantCacheNativeEmptiesToNoPayload(t *testing.T) {
-	a := &Anthropic{ReminderRenderer: "tag", CacheNamespace: "anthropic"}
+	a := &Anthropic{ReminderRenderer: "tag", RowsNamespace: "anthropic"}
 	cache, err := a.assistantCacheNative(nativeMessage{
 		Role:    "assistant",
 		Content: []nativeBlock{{Type: "text"}, {Type: "thinking"}},
@@ -157,7 +157,7 @@ func TestAssistantCacheNativeEmptiesToNoPayload(t *testing.T) {
 }
 
 func TestAssistantCacheNativeKeepsSignedEmptyThinking(t *testing.T) {
-	a := &Anthropic{ReminderRenderer: "tag", CacheNamespace: "anthropic"}
+	a := &Anthropic{ReminderRenderer: "tag", RowsNamespace: "anthropic"}
 	cache, err := a.assistantCacheNative(nativeMessage{
 		Role: "assistant",
 		Content: []nativeBlock{
@@ -172,7 +172,7 @@ func TestAssistantCacheNativeKeepsSignedEmptyThinking(t *testing.T) {
 }
 
 func TestAssistantCacheNativeUnparsedToolInputUncacheable(t *testing.T) {
-	a := &Anthropic{ReminderRenderer: "tag", CacheNamespace: "anthropic"}
+	a := &Anthropic{ReminderRenderer: "tag", RowsNamespace: "anthropic"}
 	cache, err := a.assistantCacheNative(nativeMessage{
 		Role: "assistant",
 		Content: []nativeBlock{

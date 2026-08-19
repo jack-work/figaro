@@ -83,11 +83,11 @@ type Provider struct {
 	// request there. See internal/provider/copilot/copilot.go.
 	NoEagerToolStreaming bool
 
-	// CacheOpen opens the per-aria translation cache. nil disables caching.
-	CacheOpen      func(aria string) (store.Log[[]json.RawMessage], error)
-	CacheNamespace string
-	cache          store.Log[[]json.RawMessage]
-	projection     *provider.IncrementalProjection[projectedMessages]
+	// RowsOpen opens the per-aria translator log. nil = no rows.
+	RowsOpen      func(aria string) (store.Log[[]json.RawMessage], error)
+	RowsNamespace string
+	rows          store.Log[[]json.RawMessage]
+	projection    *provider.IncrementalProjection[projectedMessages]
 
 	// windows caches context windows learned from the models endpoint and
 	// falls back to the verified static table.
@@ -95,7 +95,7 @@ type Provider struct {
 }
 
 // New constructs the SDK-backed provider.
-func New(knobs provider.Knobs, resolver auth.TokenResolver, cacheOpen func(aria string) (store.Log[[]json.RawMessage], error)) (*Provider, error) {
+func New(knobs provider.Knobs, resolver auth.TokenResolver, rowsOpen func(aria string) (store.Log[[]json.RawMessage], error)) (*Provider, error) {
 	if resolver == nil {
 		return nil, fmt.Errorf("anthropicsdk: nil token resolver")
 	}
@@ -115,8 +115,8 @@ func New(knobs provider.Knobs, resolver auth.TokenResolver, cacheOpen func(aria 
 			// SDK's retry loop sees the clamped value.
 			Transport: &retryCapTransport{Inner: &wirelog.Transport{Inner: http.DefaultTransport}},
 		},
-		CacheOpen:      cacheOpen,
-		CacheNamespace: providerName,
+		RowsOpen:      rowsOpen,
+		RowsNamespace: providerName,
 	}, nil
 }
 
@@ -194,7 +194,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	// transport can write into.
 	ctx, note := withRateLimitNote(ctx)
 
-	cache, err := p.cacheFor(in.AriaID)
+	cache, err := p.rowsFor(in.AriaID)
 	if err != nil {
 		return err
 	}
@@ -276,7 +276,7 @@ func (p *Provider) assistantCache(acc anthropic.Message) (provider.AssistantCach
 	}
 	if len(content) == 0 {
 		return provider.AssistantCache{
-			Namespace: p.CacheNamespace, Fingerprint: p.Fingerprint(),
+			Namespace: p.RowsNamespace, Fingerprint: p.Fingerprint(),
 		}, nil
 	}
 	acc.Content = content
@@ -285,7 +285,7 @@ func (p *Provider) assistantCache(acc anthropic.Message) (provider.AssistantCach
 		return provider.AssistantCache{}, err
 	}
 	return provider.AssistantCache{
-		Namespace: p.CacheNamespace, Payload: []json.RawMessage{raw}, Fingerprint: p.Fingerprint(),
+		Namespace: p.RowsNamespace, Payload: []json.RawMessage{raw}, Fingerprint: p.Fingerprint(),
 	}, nil
 }
 

@@ -187,7 +187,7 @@ func TestClearStaleTranslationCacheChecksTail(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	stored, cleared, err := ClearStaleTranslationCache(cache, "new")
+	stored, cleared, err := ClearStaleRows(cache, "new")
 	if err != nil {
 		t.Fatal(err)
 	}

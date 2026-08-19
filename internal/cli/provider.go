@@ -158,7 +158,7 @@ func buildProviderFactory(loaded *config.Loaded, formTmpls *template.Template, b
 		if err != nil {
 			return nil, err
 		}
-		cacheOpen := func(aria string) (store.Log[[]json.RawMessage], error) {
+		rowsOpen := func(aria string) (store.Log[[]json.RawMessage], error) {
 			if backend == nil {
 				return nil, fmt.Errorf("no backend")
 			}
@@ -169,7 +169,7 @@ func buildProviderFactory(loaded *config.Loaded, formTmpls *template.Template, b
 			Knobs:     knobs,
 			Resolver:  resolver,
 			Templates: formTmpls,
-			CacheOpen: cacheOpen,
+			RowsOpen:  rowsOpen,
 			Backend:   backend,
 		})
 	}

@@ -28,18 +28,18 @@ func buildFromContext(ctx provider.BuildContext) (provider.Provider, error) {
 	if knobs.Model == "" && reg != nil {
 		knobs.Model = reg.DefaultModel
 	}
-	cacheOpen := func(aria string) (store.Log[[]json.RawMessage], error) {
+	rowsOpen := func(aria string) (store.Log[[]json.RawMessage], error) {
 		return ctx.Backend.OpenTranslation(aria, "anthropic")
 	}
 	if knobs.UseOfficialSDK {
-		p, err := anthropicsdk.New(knobs, ctx.Resolver, cacheOpen)
+		p, err := anthropicsdk.New(knobs, ctx.Resolver, rowsOpen)
 		if err != nil {
 			return nil, err
 		}
 		p.Templates = ctx.Templates
 		return p, nil
 	}
-	a, err := New(knobs, ctx.Resolver, cacheOpen)
+	a, err := New(knobs, ctx.Resolver, rowsOpen)
 	if err != nil {
 		return nil, err
 	}

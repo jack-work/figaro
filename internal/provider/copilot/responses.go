@@ -32,15 +32,15 @@ type responseTokenSource interface {
 type responseDialer func(context.Context, string, http.Header) (*websocket.Conn, error)
 
 type responsesProvider struct {
-	tokenSrc  responseTokenSource
-	cacheOpen func(string) (store.Log[[]json.RawMessage], error)
+	tokenSrc responseTokenSource
+	rowsOpen func(string) (store.Log[[]json.RawMessage], error)
 
 	mu        sync.Mutex
 	model     string
 	maxTokens int
 	templates *template.Template
 	machineID string
-	cache     store.Log[[]json.RawMessage]
+	rows      store.Log[[]json.RawMessage]
 	sessionID string
 	limits    map[string]responseContextLimits
 
@@ -52,11 +52,11 @@ func newResponsesProvider(
 	knobs provider.Knobs,
 	tokenSrc responseTokenSource,
 	enterpriseDomain string,
-	cacheOpen func(string) (store.Log[[]json.RawMessage], error),
+	rowsOpen func(string) (store.Log[[]json.RawMessage], error),
 ) *responsesProvider {
 	return &responsesProvider{
 		tokenSrc:  tokenSrc,
-		cacheOpen: cacheOpen,
+		rowsOpen:  rowsOpen,
 		model:     knobs.Model,
 		maxTokens: knobs.MaxTokens,
 		machineID: uuid.NewString(),
@@ -358,37 +358,37 @@ func (p *responsesProvider) sessionIDFor() string {
 	return p.sessionID
 }
 
-func (p *responsesProvider) cacheFor(aria string) (store.Log[[]json.RawMessage], error) {
-	if aria == "" || p.cacheOpen == nil {
+func (p *responsesProvider) rowsFor(aria string) (store.Log[[]json.RawMessage], error) {
+	if aria == "" || p.rowsOpen == nil {
 		return nil, nil
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	fingerprint := responseFingerprint(p.model)
-	if p.cache != nil {
-		if !p.invalidateCache(p.cache, fingerprint) {
-			return nil, fmt.Errorf("copilot responses cache invalidation failed for %s", aria)
+	if p.rows != nil {
+		if !p.invalidateRows(p.rows, fingerprint) {
+			return nil, fmt.Errorf("copilot responses translator log invalidation failed for %s", aria)
 		}
-		return p.cache, nil
+		return p.rows, nil
 	}
-	cache, err := p.cacheOpen(aria)
+	rows, err := p.rowsOpen(aria)
 	if err != nil {
 		return nil, fmt.Errorf("copilot responses open translator log: %w", err)
 	}
-	if !p.invalidateCache(cache, fingerprint) {
+	if !p.invalidateRows(rows, fingerprint) {
 		return nil, fmt.Errorf("copilot responses translator log invalidation failed")
 	}
-	p.cache = cache
-	return cache, nil
+	p.rows = rows
+	return rows, nil
 }
 
-func (p *responsesProvider) invalidateCache(cache store.Log[[]json.RawMessage], fingerprint string) bool {
-	_, _, err := provider.ClearStaleTranslationCache(cache, fingerprint)
+func (p *responsesProvider) invalidateRows(rows store.Log[[]json.RawMessage], fingerprint string) bool {
+	_, _, err := provider.ClearStaleRows(rows, fingerprint)
 	return err == nil
 }
 
 func (p *responsesProvider) inputFor(in provider.SendInput) ([]json.RawMessage, error) {
-	rows, err := p.cacheFor(in.AriaID)
+	rows, err := p.rowsFor(in.AriaID)
 	if err != nil {
 		return nil, err
 	}

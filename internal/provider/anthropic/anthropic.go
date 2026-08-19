@@ -46,16 +46,16 @@ type Anthropic struct {
 	// Route is where this provider sends and what that endpoint honours.
 	// It is not part of Fingerprint: per-message cache bytes are dialect
 	// state, not route state, so pointing the same provider at a proxy
-	// must not invalidate an aria's translation cache.
+	// must not invalidate an aria's translator log.
 	Route provider.Route
 
 	// Templates renders Patches as system-reminder blocks. nil = skip.
 	Templates *template.Template
 
-	// CacheOpen opens the per-aria translation cache. nil = no caching.
-	CacheOpen      func(aria string) (store.Log[[]json.RawMessage], error)
-	CacheNamespace string
-	cache          store.Log[[]json.RawMessage]
+	// RowsOpen opens the per-aria translator log. nil = no rows.
+	RowsOpen      func(aria string) (store.Log[[]json.RawMessage], error)
+	RowsNamespace string
+	rows          store.Log[[]json.RawMessage]
 
 	// windows caches context windows learned from the models endpoint and
 	// falls back to the verified static table.
@@ -63,7 +63,7 @@ type Anthropic struct {
 }
 
 // New constructs an Anthropic provider.
-func New(knobs provider.Knobs, resolver auth.TokenResolver, cacheOpen func(aria string) (store.Log[[]json.RawMessage], error)) (*Anthropic, error) {
+func New(knobs provider.Knobs, resolver auth.TokenResolver, rowsOpen func(aria string) (store.Log[[]json.RawMessage], error)) (*Anthropic, error) {
 	if resolver == nil {
 		return nil, fmt.Errorf("anthropic: nil token resolver")
 	}
@@ -77,8 +77,8 @@ func New(knobs provider.Knobs, resolver auth.TokenResolver, cacheOpen func(aria 
 		MaxTokens:        knobs.MaxTokens,
 		HTTPClient:       &http.Client{Timeout: 10 * time.Minute, Transport: &wirelog.Transport{Inner: http.DefaultTransport}},
 		ReminderRenderer: rr,
-		CacheOpen:        cacheOpen,
-		CacheNamespace:   providerName,
+		RowsOpen:         rowsOpen,
+		RowsNamespace:    providerName,
 		Route:            provider.WithBaseURLOverride(provider.AnthropicDirect(), providerName),
 	}, nil
 }
@@ -93,37 +93,37 @@ func (a *Anthropic) route() provider.Route {
 	return a.Route
 }
 
-// cacheFor returns this provider's lineage cache, opening lazily.
-func (a *Anthropic) cacheFor(aria string) (store.Log[[]json.RawMessage], error) {
-	if aria == "" || a.CacheOpen == nil {
+// rowsFor returns this provider's lineage translator log, opening lazily.
+func (a *Anthropic) rowsFor(aria string) (store.Log[[]json.RawMessage], error) {
+	if aria == "" || a.RowsOpen == nil {
 		return nil, nil
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.cache != nil {
-		return a.cache, nil
+	if a.rows != nil {
+		return a.rows, nil
 	}
-	s, err := a.CacheOpen(aria)
+	s, err := a.RowsOpen(aria)
 	if err != nil {
 		return nil, fmt.Errorf("anthropic open translator log: %w", err)
 	}
 	if !a.invalidateIfStale(s) {
 		return nil, fmt.Errorf("anthropic translator log invalidation failed")
 	}
-	a.cache = s
+	a.rows = s
 	return s, nil
 }
 
-// invalidateIfStale clears the cache on fingerprint mismatch.
+// invalidateIfStale clears the translator log on fingerprint mismatch.
 func (a *Anthropic) invalidateIfStale(s store.Log[[]json.RawMessage]) bool {
 	want := a.Fingerprint()
-	stored, cleared, err := provider.ClearStaleTranslationCache(s, want)
+	stored, cleared, err := provider.ClearStaleRows(s, want)
 	if err != nil {
-		slog.Warn("anthropic clear stale cache", "stored", stored, "current", want, "err", err)
+		slog.Warn("anthropic clear stale rows", "stored", stored, "current", want, "err", err)
 		return false
 	}
 	if cleared {
-		slog.Info("anthropic cleared stale cache", "stored", stored, "current", want)
+		slog.Info("anthropic cleared stale rows", "stored", stored, "current", want)
 	}
 	return true
 }
@@ -970,18 +970,18 @@ func countCacheMarkers(req nativeRequest) int {
 	return n
 }
 
-// Send drives one turn: catch up cache, POST, stream SSE, land
-// the assistant message in figLog + cache.
+// Send drives one turn: catch up the rows, POST, stream SSE, land
+// the assistant message in figLog and its row.
 func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
 	ctx = wirelog.WithAria(ctx, in.AriaID)
 	if dir := in.Snapshot.Lookup("system.environment.figaro_wire_dir"); dir != nil && *dir != "" {
 		ctx = wirelog.WithLogging(ctx, in.AriaID, *dir)
 	}
-	cache, err := a.cacheFor(in.AriaID)
+	rows, err := a.rowsFor(in.AriaID)
 	if err != nil {
 		return err
 	}
-	perMessage, lts, err := a.catchUp(in.FigLog, cache, in.Form, in.Studies)
+	perMessage, lts, err := a.catchUp(in.FigLog, rows, in.Form, in.Studies)
 	if err != nil {
 		return err
 	}
@@ -1031,7 +1031,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 		return nil
 	}
 
-	// Land the assistant message: figLog → push figaro → cache.
+	// Land the assistant message: figLog → push figaro → row.
 	msg := decodeNativeMessage(nm)
 	if msg.Timestamp == 0 {
 		msg.Timestamp = time.Now().UnixMilli()
@@ -1062,11 +1062,11 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 	if dir := in.Snapshot.Lookup("system.environment.figaro_wire_dir"); dir != nil && *dir != "" {
 		ctx = wirelog.WithLogging(ctx, in.AriaID, *dir)
 	}
-	cache, err := a.cacheFor(in.AriaID)
+	rows, err := a.rowsFor(in.AriaID)
 	if err != nil {
 		return err
 	}
-	perMessage, lts, err := a.catchUp(in.FigLog, cache, in.Form, in.Studies)
+	perMessage, lts, err := a.catchUp(in.FigLog, rows, in.Form, in.Studies)
 	if err != nil {
 		return err
 	}
@@ -1137,7 +1137,7 @@ func (a *Anthropic) assistantCacheNative(msg nativeMessage) (provider.AssistantC
 	}
 	if len(content) == 0 {
 		return provider.AssistantCache{
-			Namespace: a.CacheNamespace, Fingerprint: a.Fingerprint(),
+			Namespace: a.RowsNamespace, Fingerprint: a.Fingerprint(),
 		}, nil
 	}
 	msg.Content = content
@@ -1146,7 +1146,7 @@ func (a *Anthropic) assistantCacheNative(msg nativeMessage) (provider.AssistantC
 		return provider.AssistantCache{}, fmt.Errorf("marshal native assistant cache: %w", err)
 	}
 	return provider.AssistantCache{
-		Namespace: a.CacheNamespace, Payload: []json.RawMessage{raw}, Fingerprint: a.Fingerprint(),
+		Namespace: a.RowsNamespace, Payload: []json.RawMessage{raw}, Fingerprint: a.Fingerprint(),
 	}, nil
 }
 
@@ -1156,7 +1156,7 @@ func (a *Anthropic) assistantCache(msg message.Message) (provider.AssistantCache
 		return provider.AssistantCache{}, err
 	}
 	return provider.AssistantCache{
-		Namespace: a.CacheNamespace, Payload: encoded, Fingerprint: a.Fingerprint(),
+		Namespace: a.RowsNamespace, Payload: encoded, Fingerprint: a.Fingerprint(),
 	}, nil
 }
 

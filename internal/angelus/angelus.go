@@ -368,7 +368,7 @@ type budgetSweeper interface {
 	SweepCacheBudgets() (int, int64)
 }
 
-// sweepCacheBudgets brings the composed, decoded IR and translation caches
+// sweepCacheBudgets brings the composed, decoded IR and translator logs
 // back within their budgets. Cheap when there is no pressure: one atomic read per budget.
 func (a *Angelus) sweepCacheBudgets() {
 	if dropped, freed := a.UICache.Budget().Sweep(); dropped > 0 {
