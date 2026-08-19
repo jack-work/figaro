@@ -52,7 +52,23 @@ func stamp(t *testing.T, log *store.MemLog[message.Message], text string, at uin
 
 // renderedKeys records which board keys each entry was given, so a test can
 // compare two projections by what the model would actually have seen.
-func renderedKeys(config ProjectionConfig[EncodedMessages]) (*IncrementalProjection[EncodedMessages], []string, error) {
+// encodedMessages was provider.encodedMessages until the three converted
+// providers stopped needing it: with the assembler splicing stored rows,
+// nothing in production accumulates an in-memory messages array. It lives
+// here because ProjectIncrementally still does, for anthropicsdk alone, and
+// these tests are what guard its form rendering until it goes.
+type encodedMessages struct {
+	PerMessage   [][]json.RawMessage
+	LogicalTimes []uint64
+}
+
+func appendEncodedMessage(state encodedMessages, encoded []json.RawMessage, lt uint64) encodedMessages {
+	state.PerMessage = append(state.PerMessage, encoded)
+	state.LogicalTimes = append(state.LogicalTimes, lt)
+	return state
+}
+
+func renderedKeys(config ProjectionConfig[encodedMessages]) (*IncrementalProjection[encodedMessages], []string, error) {
 	var seen []string
 	config.Encode = func(msg message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 		for _, p := range msg.Patches {
@@ -62,7 +78,7 @@ func renderedKeys(config ProjectionConfig[EncodedMessages]) (*IncrementalProject
 		}
 		return []json.RawMessage{json.RawMessage(`"x"`)}, nil
 	}
-	config.Append = AppendEncodedMessage
+	config.Append = appendEncodedMessage
 	proj, _, err := ProjectIncrementally(config)
 	return proj, seen, err
 }
@@ -81,7 +97,7 @@ func TestWarmProjectionRendersWhatAColdOneWould(t *testing.T) {
 		return log
 	}
 
-	cold, coldKeys, err := renderedKeys(ProjectionConfig[EncodedMessages]{
+	cold, coldKeys, err := renderedKeys(ProjectionConfig[encodedMessages]{
 		Log: build(), Fingerprint: "v1", Form: newFakeBoard(2, 3, 4, 5),
 	})
 	if err != nil {
@@ -92,14 +108,14 @@ func TestWarmProjectionRendersWhatAColdOneWould(t *testing.T) {
 	warmLog := store.NewMemLog[message.Message]()
 	stamp(t, warmLog, "one", 2)
 	stamp(t, warmLog, "two", 4)
-	first, warmKeys, err := renderedKeys(ProjectionConfig[EncodedMessages]{
+	first, warmKeys, err := renderedKeys(ProjectionConfig[encodedMessages]{
 		Log: warmLog, Fingerprint: "v1", Form: newFakeBoard(2, 3, 4, 5),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	stamp(t, warmLog, "three", 5)
-	_, moreKeys, err := renderedKeys(ProjectionConfig[EncodedMessages]{
+	_, moreKeys, err := renderedKeys(ProjectionConfig[encodedMessages]{
 		Log: warmLog, Fingerprint: "v1", Form: newFakeBoard(2, 3, 4, 5),
 		Previous: first,
 	})
@@ -123,13 +139,13 @@ func TestEveryPatchRendersExactlyOnceAcrossResumes(t *testing.T) {
 	var all []string
 
 	// Five turns, resuming each time, the way a tool loop drives it.
-	var prev *IncrementalProjection[EncodedMessages]
+	var prev *IncrementalProjection[encodedMessages]
 	for i, mark := range []uint64{2, 3, 4, 6, 6} {
 		stamp(t, log, fmt.Sprintf("turn%d", i), mark)
 		// A FRESH cursor every pass, because that is what formAccessor()
 		// does: it is called per Send, not per turn. A test that reuses one
 		// cursor cannot reproduce the bug this file exists for.
-		proj, keys, err := renderedKeys(ProjectionConfig[EncodedMessages]{
+		proj, keys, err := renderedKeys(ProjectionConfig[encodedMessages]{
 			Log: log, Fingerprint: "v1", Form: newFakeBoard(2, 3, 4, 5, 6), Previous: prev,
 		})
 		if err != nil {

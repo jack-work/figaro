@@ -260,17 +260,6 @@ func maxU64(a, b uint64) uint64 {
 	return a
 }
 
-type EncodedMessages struct {
-	PerMessage   [][]json.RawMessage
-	LogicalTimes []uint64
-}
-
-func AppendEncodedMessage(state EncodedMessages, encoded []json.RawMessage, lt uint64) EncodedMessages {
-	state.PerMessage = append(state.PerMessage, encoded)
-	state.LogicalTimes = append(state.LogicalTimes, lt)
-	return state
-}
-
 func ClearStaleTranslationCache(cache store.Log[[]json.RawMessage], fingerprint string) (string, bool, error) {
 	entry, ok := cache.PeekTail()
 	if !ok || entry.Fingerprint == "" || entry.Fingerprint == fingerprint {

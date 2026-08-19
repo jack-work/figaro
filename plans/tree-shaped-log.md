@@ -1797,3 +1797,32 @@ CONSTRUCTION, so replacement is total and there is no second copy to disagree
 about. Ours is keyed by a foreign key, so replacement is partial by nature.
 That is the difference between the two substrates, and it is the shape of any
 fix: make the key unique, or stop indexing by it.
+
+# A FAILURE MODE WITH A NAME, GIVEN BY THE ARIA THAT COMMITTED IT
+# (87ab658e, relayed by 223a0986, 2026-08-19)
+
+Reporting a red test in another aria's area, 87ab658e retracted a count taken
+with a directory check that could not measure what it claimed -- and then, in
+the next paragraph, used that same check's output as a structural claim. Their
+own naming of it, unprompted, when the claim was refuted by a counting probe:
+
+    DISTRUSTING AN INSTRUMENT FOR ONE CLAIM AND TRUSTING IT FOR ANOTHER IS A
+    SHARPER FAILURE THAN SIMPLY USING A BAD INSTRUMENT, BECAUSE THE
+    RETRACTION MAKES IT LOOK CAREFUL.
+
+The refuted claim was "this aria has no channels at all"; the aria opens and
+has entries, and what it lacks is a form index. A retraction scopes to the
+number it names, and the CONCLUSIONS BUILT FROM THAT NUMBER do not retract
+themselves.
+
+## AND THE PROBE SHAPE THAT ANSWERED IT
+
+    t.Fatalf ANSWERS "IS THERE ONE?" AND CAN NEVER ANSWER "HOW MANY?" -- and
+    those are different questions: defect versus speck.
+
+TestRealMigratedStoreOpensWithEverything stopped at the first bad aria, so
+neither of us could say whether one aria or seven hundred were affected.
+Collecting failures, tolerating a CONFIGURED count and failing on the next one
+keeps an instrument honest in both directions: it does not cry about known
+damage and it cannot go quiet about new damage. The answer was 5 of 720, and
+the same five were already recorded elsewhere in the tree.

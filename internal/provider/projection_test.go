@@ -16,14 +16,14 @@ func TestProjectIncrementallyVisitsOnlySuffix(t *testing.T) {
 	appendProjectionMessage(t, log, "two")
 
 	encoded := 0
-	config := ProjectionConfig[EncodedMessages]{
+	config := ProjectionConfig[encodedMessages]{
 		Log:         log,
 		Fingerprint: "v1",
 		Encode: func(msg message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 			encoded++
 			return []json.RawMessage{json.RawMessage(`"` + msg.Content[0].Text + `"`)}, nil
 		},
-		Append: AppendEncodedMessage,
+		Append: appendEncodedMessage,
 	}
 	first, stats, err := ProjectIncrementally(config)
 	if err != nil {
@@ -79,7 +79,7 @@ func TestProjectIncrementallyDoesNotAdvancePastEncodeFailure(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
 	appendProjectionMessage(t, log, "one")
 	attempts := map[string]int{}
-	config := ProjectionConfig[EncodedMessages]{
+	config := ProjectionConfig[encodedMessages]{
 		Log:         log,
 		Fingerprint: "v1",
 		Encode: func(msg message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
@@ -90,7 +90,7 @@ func TestProjectIncrementallyDoesNotAdvancePastEncodeFailure(t *testing.T) {
 			}
 			return []json.RawMessage{json.RawMessage(`"` + text + `"`)}, nil
 		},
-		Append: AppendEncodedMessage,
+		Append: appendEncodedMessage,
 	}
 	first, _, err := ProjectIncrementally(config)
 	if err != nil {

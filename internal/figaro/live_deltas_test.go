@@ -9,7 +9,6 @@ import (
 	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
-	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/uiir"
 	"github.com/stretchr/testify/require"
@@ -113,5 +112,4 @@ func TestLiveAgentPagesCarryFormDeltas(t *testing.T) {
 	if !foldedHasDelta {
 		t.Fatalf("the client fold dropped the turn-level delta: %+v", folded)
 	}
-	_ = provider.EncodedMessages{}
 }
