@@ -487,14 +487,21 @@ func decodeNativeMessage(nm nativeMessage) message.Message {
 }
 
 type nativeRequest struct {
-	Model        string          `json:"model"`
-	MaxTokens    int             `json:"max_tokens"`
-	System       []systemBlock   `json:"system,omitempty"`
-	Messages     []nativeMessage `json:"messages"`
-	Tools        []nativeTool    `json:"tools,omitempty"`
-	Stream       bool            `json:"stream"`
-	Thinking     *thinkingParam  `json:"thinking,omitempty"`
-	OutputConfig *outputConfig   `json:"output_config,omitempty"`
+	Model     string        `json:"model"`
+	MaxTokens int           `json:"max_tokens"`
+	System    []systemBlock `json:"system,omitempty"`
+	// Messages are the rows AS THEY LIE ON DISK. The translator log holds
+	// wire-final messages, so the assembler splices them verbatim: it does
+	// not decode 75,200 rows into a struct and re-encode them to produce
+	// bytes that differ only in key order (measured on the real store,
+	// rows_roundtrip_probe_test.go). ONLY cache_control reaches inside a
+	// row, on at most a few of them, and those rows are decoded one at a
+	// time where they are marked.
+	Messages     []json.RawMessage `json:"messages"`
+	Tools        []nativeTool      `json:"tools,omitempty"`
+	Stream       bool              `json:"stream"`
+	Thinking     *thinkingParam    `json:"thinking,omitempty"`
+	OutputConfig *outputConfig     `json:"output_config,omitempty"`
 }
 
 type outputConfig struct {
@@ -802,11 +809,7 @@ func (a *Anthropic) projectMessagesWithLTs(perMessage [][]json.RawMessage, lts [
 			if len(raw) == 0 {
 				continue
 			}
-			var nm nativeMessage
-			if err := json.Unmarshal(raw, &nm); err != nil {
-				return nativeRequest{}, fmt.Errorf("unmarshal cached message: %w", err)
-			}
-			req.Messages = append(req.Messages, nm)
+			req.Messages = append(req.Messages, raw)
 			msgLTs = append(msgLTs, lt)
 		}
 	}
@@ -865,14 +868,11 @@ func applyMessageTags(req *nativeRequest, msgLTs []uint64, snapshot form.Snapsho
 		if !ok {
 			continue
 		}
-		m := &req.Messages[idx]
-		if k := len(m.Content); k > 0 {
-			policy := provider.ParseCachePolicy(tag.CacheControl)
-			if policy.Off() {
-				continue
-			}
-			m.Content[k-1].CacheControl = controlFor(policy, caps)
+		policy := provider.ParseCachePolicy(tag.CacheControl)
+		if policy.Off() {
+			continue
 		}
+		markRowTail(&req.Messages[idx], controlFor(policy, caps))
 	}
 }
 
@@ -914,11 +914,38 @@ func markCacheBreakpoints(req *nativeRequest, policy provider.CachePolicy, plan 
 		return
 	}
 	if n := len(req.Messages); n >= 1 && spend() {
-		m := &req.Messages[n-1]
-		if k := len(m.Content); k > 0 {
-			m.Content[k-1].CacheControl = cc
-		}
+		markRowTail(&req.Messages[n-1], cc)
 	}
+}
+
+// rowMessage decodes one spliced row. The assembler does not call it on the
+// hot path -- that is the point of the splice -- but marking, counting and
+// assertions need a typed view of a single row.
+func rowMessage(row json.RawMessage) nativeMessage {
+	var m nativeMessage
+	_ = json.Unmarshal(row, &m)
+	return m
+}
+
+// markRowTail attaches cache_control to a row's LAST content block. This is
+// the ONE edit that reaches inside a message, so it is the one place a row
+// is decoded -- at most four rows per request against N spliced verbatim,
+// and the fraction shrinks as history grows.
+func markRowTail(row *json.RawMessage, cc *cacheControl) {
+	var m nativeMessage
+	if err := json.Unmarshal(*row, &m); err != nil {
+		return // a row we cannot read is a row we must not rewrite
+	}
+	k := len(m.Content)
+	if k == 0 {
+		return
+	}
+	m.Content[k-1].CacheControl = cc
+	marked, err := json.Marshal(m)
+	if err != nil {
+		return
+	}
+	*row = marked
 }
 
 // countCacheMarkers reports how many explicit cache_control markers a
@@ -936,8 +963,8 @@ func countCacheMarkers(req nativeRequest) int {
 			n++
 		}
 	}
-	for _, m := range req.Messages {
-		for _, c := range m.Content {
+	for _, row := range req.Messages {
+		for _, c := range rowMessage(row).Content {
 			if c.CacheControl != nil {
 				n++
 			}
