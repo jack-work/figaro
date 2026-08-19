@@ -855,6 +855,42 @@ func (c *Cache[U]) coldest() (int64, bool) {
 	return best, found
 }
 
+// evictOlderThan hollows every evictable run older than cutoff in ONE pass
+// over the index, publishing each node's successor once. The hooks fire
+// outside the lock, as evictColdest's does.
+func (c *Cache[U]) evictOlderThan(cutoff int64) (dropped int, freed int64) {
+	var hooks []Coord
+	c.mu.Lock()
+	for _, n := range *c.nodes.Load() {
+		runs := n.load()
+		var next []*run[U]
+		for i, r := range runs {
+			if !r.resident || r.pinned || c.effEpoch(r) >= cutoff {
+				continue
+			}
+			if next == nil {
+				next = append([]*run[U](nil), runs...)
+			}
+			next[i] = hollow(r)
+			freed += r.bytes
+			dropped++
+			hooks = append(hooks, r.coord)
+		}
+		if next != nil {
+			n.publish(next)
+		}
+	}
+	hook := c.Evicted
+	c.mu.Unlock()
+
+	if hook != nil {
+		for _, co := range hooks {
+			hook(co)
+		}
+	}
+	return dropped, freed
+}
+
 func (c *Cache[U]) evictColdest() int64 {
 	c.mu.Lock()
 	var victim *run[U]

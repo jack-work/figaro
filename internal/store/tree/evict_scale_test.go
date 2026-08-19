@@ -66,9 +66,12 @@ func TestEvictionVisitsEveryResidentRun(t *testing.T) {
 	}
 }
 
-// The sweep is the compounding case: TrimIdle re-scans from the top for EVERY
-// run it drops. Recorded as a number rather than an assertion about the cure.
-func TestSweepRescansPerDroppedRun(t *testing.T) {
+// THE SWEEP VISITS EACH RUN ONCE. It used to re-scan from the top for every
+// run it dropped -- O(R^2), 180 ms at R=4096 -- because it asked "who is
+// coldest" once per victim when the cutoff was already fixed. One pass per
+// owner is the whole cure; no index, no data structure, nothing on the read
+// path. evict_cost_bench_test.go carries the wall-clock pair.
+func TestAFullSweepVisitsEachRunOnce(t *testing.T) {
 	const runs = 64
 	var calls int
 	var mu sync.Mutex
@@ -94,6 +97,10 @@ func TestSweepRescansPerDroppedRun(t *testing.T) {
 	if dropped != before-1 {
 		t.Fatalf("swept %d runs, want %d", dropped, before-1)
 	}
-	t.Logf("R=%d: a full sweep dropped %d runs in %d run visits (~R^2/2 = %d)",
+	t.Logf("R=%d: a full sweep dropped %d runs in %d run visits (the old scan: ~R^2/2 = %d)",
 		before, dropped, visits.Load(), before*before/2)
+	if visits.Load() > int64(before) {
+		t.Fatalf("R=%d: %d run visits for one sweep; the pass is scanning more than once per run",
+			before, visits.Load())
+	}
 }

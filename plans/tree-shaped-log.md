@@ -1679,3 +1679,75 @@ It survived: x1.13 across three runs, with cf3fc17d stable to a hundred bytes.
 But it survived by luck rather than by method, and the method is now: heap
 deltas are run three times and the spread is reported, exactly as timings are.
 reports the deterministic quantity (allocations, counts) ahead of the timing.
+# Q2 ANSWERED WITHOUT THE STRUCTURE: THE SWEEP WAS QUADRATIC BY QUESTION, NOT
+# BY SHAPE (dfdfae6a, 2026-08-19)
+
+Gluck endorsed epoch buckets over a heap for the eviction scan, with the
+standing instruction to MEASURE BUCKET MAINTENANCE AGAINST THE SCAN IT
+REPLACES BEFORE BUILDING. Measured. The structure is not needed, and the
+measurement says why.
+
+## THE TWO COSTS SIT ON DIFFERENT PATHS, WHICH IS THE WHOLE FINDING
+
+    THE SCAN     is on the daemon's standing sweep. A read never evicts, so
+                 the scan is paid by ONE goroutine, once per beat.
+    THE INDEX    would be maintained on TOUCH, and a touch is on the READ
+                 PATH, where every reader is concurrent and nothing shared is
+                 written today.
+
+So the trade was never "R^2 versus log R". It was ONE BACKGROUND WALK PER BEAT
+AGAINST A SHARED WRITE PER READ.
+
+## WHAT EACH COSTS, MEASURED (evict_cost_bench_test.go, 5800X, bench lock held)
+
+    ONE EVICTION under pressure -- what a beat actually does:
+        R=256    147 ns        R=1024   534 ns        R=4096   1.77 us
+
+    THE FULL IDLE SWEEP, before:
+        R=256    967 us        R=1024   10.65 ms      R=4096   180 ms
+
+    THE MAINTENANCE, on a ONE-UNIT read at 16 readers (a 64-unit Range copies
+    64 KiB and a mutex disappears inside it -- the fixture error that produced
+    this file's retracted -43.8%):
+        today, lock-free            7.1 - 33.5 ns/op
+        with one bucket move        105 - 119 ns/op
+
+    THE INDEX WOULD MAKE A WARM READ 4-15x MORE EXPENSIVE AND SERIALIZE EVERY
+    READER, to save a walk that costs microseconds per beat.
+
+The bucket arm is also TIGHTER than the lock-free one, which is the giveaway
+rather than a virtue: everything queues behind the same mutex, so the variance
+that comes from real parallelism disappears with the parallelism.
+
+## AND THE QUADRATIC DIED WITHOUT ANY OF IT
+
+`TrimIdle` asked "who is COLDEST?" once per victim -- a full rescan of every
+run to answer -- when the cutoff was FIXED BEFORE THE SWEEP STARTED. The
+predicate was known and the loop kept re-deriving it.
+
+`evictOlderThan(cutoff)` is one pass per owner, publishing each node's
+successor once:
+
+    FULL SWEEP      before      after      speedup
+        R=256       967 us      21.8 us      44x
+        R=1024      10.65 ms    77.1 us     138x
+        R=4096      180 ms      294 us      612x
+
+and the counting instrument agrees with the clock: a sweep at R=128 now drops
+127 runs in 128 RUN VISITS, against ~R^2/2 = 8192 before. Scaling 256 -> 4096
+(16x R) costs 13.5x, which is linear.
+
+    NO DATA STRUCTURE WAS ADDED. Nothing was written on the read path. The
+    fix is the DELETION of a question the loop did not have to ask.
+
+## THE BENCHMARK CAUGHT MY OWN QUADRATIC FIRST
+
+The first `evictOlderThan` searched the successor slice for each victim's
+index -- O(R^2) inside the very pass that was replacing an O(R^2) loop. The
+wall clock said R=4096 cost 109x what R=256 did where linear predicts 16x, and
+that ratio is the only reason it was found: the counting instrument was
+satisfied, the suite was green, and the sweep was still 31x faster than
+before, which is exactly the size of improvement that stops an investigation.
+
+    A SPEEDUP IS NOT A PROOF OF THE SHAPE YOU INTENDED. Check the exponent,
+    not the ratio.
