@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"os"
 	"runtime"
 	"sort"
@@ -123,6 +124,95 @@ func residentCostOf(st *XwalStore, id string) uint64 {
 	build := func() *cachedLog[message.Message] {
 		inner := newXwalLog[message.Message](st, id, chanIR, true)
 		c := newWindowedLog[message.Message](inner, 0, 0, irDecodeInflation, irEntrySize)
+		_ = c.Read()
+		return c
+	}
+	c := build()
+	with := heapAfterGC()
+	runtime.KeepAlive(c)
+	c = nil
+	without := heapAfterGC()
+	if with < without {
+		return 0
+	}
+	return with - without
+}
+
+// AND THE TRANSLATION CHANNEL, whose estimate takes the payload bytes THEMSELVES
+// (transEntrySize sums len(raw)+16, inflation 1). If the IR's factor of 5 is
+// wrong and this one is right, that is a sharper finding than "the estimates are
+// off": it says the two channels were calibrated by different methods and only
+// one of them was checked.
+func TestTranslationInflationOnRealHistory(t *testing.T) {
+	root := os.Getenv("FIGARO_REAL_STORE")
+	if root == "" {
+		t.Skip("set FIGARO_REAL_STORE to a store root to run this instrument")
+	}
+	provider := os.Getenv("FIGARO_REAL_PROVIDER")
+	if provider == "" {
+		provider = "anthropic"
+	}
+
+	prev := SegmentCacheBudget()
+	SetSegmentCacheBudget(0)
+	defer SetSegmentCacheBudget(prev)
+
+	st, err := OpenXwalStore(root, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	type row struct {
+		id       string
+		records  int
+		encoded  int
+		estimate int
+		resident uint64
+	}
+	var rows []row
+	for _, id := range st.ConversationIDs() {
+		enc, est, n := transEncodedOf(st, id, provider)
+		if n < 50 || enc < 1<<20 {
+			continue
+		}
+		rows = append(rows, row{id: id, records: n, encoded: enc, estimate: est,
+			resident: transResidentOf(st, id, provider)})
+	}
+	if len(rows) == 0 {
+		t.Skipf("no aria with a large %s translation channel", provider)
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].encoded > rows[j].encoded })
+
+	var sumEnc, sumRes, sumEst float64
+	for i, r := range rows {
+		if i >= 6 {
+			break
+		}
+		t.Logf("  %s  %5d rec  encoded %9d  ESTIMATE %9d  resident %9d  res/enc x%.2f  res/EST x%.2f",
+			r.id, r.records, r.encoded, r.estimate, r.resident,
+			float64(r.resident)/float64(r.encoded), float64(r.resident)/float64(r.estimate))
+		sumEnc += float64(r.encoded)
+		sumRes += float64(r.resident)
+		sumEst += float64(r.estimate)
+	}
+	t.Logf("  WEIGHTED: res/enc x%.2f   res/ESTIMATE x%.2f   (%s)", sumRes/sumEnc, sumRes/sumEst, provider)
+}
+
+func transEncodedOf(st *XwalStore, id, provider string) (encoded, estimate, n int) {
+	log := newXwalLog[[]json.RawMessage](st, id, transChannel(provider), false)
+	for _, e := range log.Read() {
+		encoded += e.EncodedBytes
+		estimate += transEntrySize(e)
+		n++
+	}
+	return encoded, estimate, n
+}
+
+func transResidentOf(st *XwalStore, id, provider string) uint64 {
+	build := func() *cachedLog[[]json.RawMessage] {
+		inner := newXwalLog[[]json.RawMessage](st, id, transChannel(provider), false)
+		c := newWindowedLog[[]json.RawMessage](inner, 0, 0, 1, transEntrySize)
 		_ = c.Read()
 		return c
 	}

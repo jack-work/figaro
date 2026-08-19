@@ -1520,3 +1520,40 @@ a fiction; (c) denominate the budget in MEASURED bytes and delete the factor,
 which is where the tree's Sizer already points.
 
 I recommend (a) or (c). I have done neither.
+
+## AND THE TRANSLATION CHANNEL, WHICH SHARPENS THE RAISE (dec6ef8a)
+
+The same instrument against `translations-v2/anthropic`, where the estimate
+takes the payload bytes THEMSELVES (`transEntrySize` sums len(raw)+16,
+inflation 1):
+
+    WEIGHTED, three repeats:   resident / ESTIMATE  =  x1.07
+
+The translation estimate is honest to 7%. The IR estimate, measured the same way
+on the same store in the same session, is 1.13x actual against a factor of 5 --
+IT OVERSTATES BY 4.4x.
+
+    SO THE TWO CHANNELS WERE CALIBRATED BY DIFFERENT METHODS AND ONLY ONE OF
+    THEM MATCHES THE HEAP. The one that takes bytes as bytes is right; the one
+    that multiplies by a remembered constant is not. That is a sharper finding
+    than "an estimate is off", and it points at the cure: denominate the budget
+    in measured bytes and delete the factor, which is option (c) above and where
+    tree's Sizer already points.
+
+### A REPEAT DISCIPLINE, LEARNED HERE RATHER THAN ASSUMED
+
+The FIRST translation run reported one aria at 9,304,944 B where the other two
+arias with the IDENTICAL channel (964 records, 5,816,376 B encoded -- forks
+sharing a lineage) reported 6,095,280 B. Same bytes, 1.5x apart, which is not a
+thing that can be true.
+
+THREE REPEATS SETTLED IT AT 6,095,280 B, to the byte, every time. The outlier
+was allocator state on the first aria measured after warm-up, and the weighted
+figure moved 1.18x -> 1.07x when it went.
+
+    A SINGLE-SHOT HEAP DELTA IS AN UNREPEATED MEASUREMENT, AND I PUBLISHED THE
+    IR NUMBER FROM ONE RUN THIS MORNING BEFORE THINKING TO REPEAT IT.
+
+It survived: x1.13 across three runs, with cf3fc17d stable to a hundred bytes.
+But it survived by luck rather than by method, and the method is now: heap
+deltas are run three times and the spread is reported, exactly as timings are.
