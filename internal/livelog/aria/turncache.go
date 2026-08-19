@@ -316,6 +316,13 @@ func (c *TurnCache) flushTail() {
 // Slice materializes turns[lo:hi+1] (indices into the sealed list),
 // faulting what is missing. A turn the source cannot return comes back as
 // its index entry alone: a gap, never a lie about content.
+//
+// THE ID COMES FROM THE KEY LIST. A composer derives ids by counting
+// openers in the records it was handed (turns.StampIDs), so a bracket
+// composed in isolation numbers from 1 -- and a third of the arias in a
+// real store carry no persisted ids to override it. The coordinate is the
+// turn's opening LT; the index knows the number and the fault does not.
+// TestAFaultDoesNotRenumberATurn.
 func (c *TurnCache) Slice(lo, hi int) []Turn {
 	if lo < 0 {
 		lo = 0
@@ -379,6 +386,7 @@ func (c *TurnCache) rangeTurns(lo, hi int) []Turn {
 			}
 			if j < len(got) && coordOf(got[j]) == co {
 				out[i-lo] = got[j]
+				out[i-lo].ID = c.keys[i].id
 				j++
 			}
 		}
@@ -389,6 +397,7 @@ func (c *TurnCache) rangeTurns(lo, hi int) []Turn {
 		}
 		if t, ok := c.cache.At(c.node, c.keys[i].coord()); ok {
 			out[i-lo] = t
+			out[i-lo].ID = c.keys[i].id
 		}
 	}
 	return out

@@ -314,3 +314,52 @@ func TestAFaultedGapStillReturnsWholeTurns(t *testing.T) {
 		}
 	}
 }
+
+// A LEGACY ARIA CARRIES NO TURN IDS, so a composer counting openers in one
+// bracket numbers that bracket from 1. Census on a real store, 2026-08-19:
+// 212 of 672 non-empty arias are fully unstamped and 1687 of 8533 opening
+// records carry no id. The cache must not renumber them on a fault -- the
+// coordinate is the turn's opening LT and the key list holds the number.
+func TestAFaultDoesNotRenumberATurn(t *testing.T) {
+	history := map[uint64]Turn{}
+	var rec int
+	// The composer numbers from 1 within whatever bracket it is asked for,
+	// which is exactly what turns.StampIDs does to unstamped records.
+	renumbering := Composer(func(node string, fromLT, toLT uint64) []Turn {
+		rec++
+		var out []Turn
+		next := uint64(1)
+		for id := uint64(1); id <= uint64(len(history)); id++ {
+			t, ok := history[id]
+			if !ok || len(t.LTs) == 0 || t.LTs[0] < fromLT || t.LTs[0] > toLT {
+				continue
+			}
+			t.ID = next
+			next++
+			out = append(out, t)
+		}
+		return out
+	})
+	budget := fwtree.NewBudget(256 << 10)
+	cc := NewComposedCache(budget, renumbering, nil)
+	c := NewTurnCache(nil)
+	c.bind("aria", cc)
+	for id := uint64(1); id <= 40; id++ {
+		tn := fatTurn(id, 64)
+		history[id] = tn
+		c.Append(tn)
+	}
+	budget.Settle(2e9)
+	if residentTurns(c) > 20 {
+		t.Fatal("nothing evicted: no fault to renumber")
+	}
+	for i := range c.keys {
+		got := c.Slice(i, i)
+		if len(got) != 1 || got[0].ID != c.keys[i].id {
+			t.Fatalf("index %d: served turn %d, the index says %d", i, got[0].ID, c.keys[i].id)
+		}
+		if got[0].Inquiry != history[c.keys[i].id].Inquiry {
+			t.Fatalf("turn %d: content %q, want %q", c.keys[i].id, got[0].Inquiry, history[c.keys[i].id].Inquiry)
+		}
+	}
+}
