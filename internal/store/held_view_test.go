@@ -5,18 +5,18 @@ import (
 	"testing"
 )
 
-// The precondition for seating the frozen prefix on forest.Cache.
+// The precondition for seating the frozen prefix on tree.Cache.
 //
 // cachedLog publishes an immutable logView behind an atomic.Pointer, and that
 // is why contended reads are lock-free. A reader therefore holds a value that
-// nobody may mutate. When the prefix moves to forest, hollowing a run must
+// nobody may mutate. When the prefix moves to tree, hollowing a run must
 // publish a SUCCESSOR view; editing the one readers hold is the study-patch
 // mutation class of bug, and a per-LT cache would make the damage permanent.
 //
 // These assert the property as it stands today, so a re-seat that repeals it
 // fails here rather than in production.
 //
-// PERMANENT, NOT MIGRATION SCAFFOLDING. This invariant predates the forest
+// PERMANENT, NOT MIGRATION SCAFFOLDING. This invariant predates the tree
 // re-seat and outlives it: do not retire this file with the temporary code.
 
 func heldEntry(i int) Entry[string] {

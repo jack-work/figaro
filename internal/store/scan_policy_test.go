@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-// The SUBJECT here is figaro, not forest.
+// The SUBJECT here is figaro, not tree.
 //
-// scan_pollution_test.go establishes a fact about forest: route a scan through
+// scan_pollution_test.go establishes a fact about tree: route a scan through
 // Range and it evicts other nodes. This asserts the fact that actually
 // protects a user -- a whole-history read through cachedLog's PUBLIC surface
 // does not cost the neighbours their residency, because it is not routed
