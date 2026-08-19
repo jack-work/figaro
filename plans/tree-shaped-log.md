@@ -1037,3 +1037,63 @@ comparison: no before-number was taken on the same box tonight, so it says the
 bounded-by-default store does not regress a live daemon, and it does not say
 what it saved. `nix build .#default` is green at the same head. The 535 MB
 store copy the probe makes was deleted.
+
+## RETRACTION: THE -43.8% IN 63902f44 DOES NOT REPRODUCE (dec6ef8a, 2026-08-19)
+
+Written beside the claim rather than over it, because the claim is in a commit
+message, in this file, and on the role board, and all three were read by other
+arias tonight.
+
+WHAT I PUBLISHED: TreeRangeParallel 2.213us -> 1.242us, -43.84%, p=0.000, n=8,
+interleaved A/B under the bench lock.
+
+WHAT I GET NOW, same protocol, binaries rebuilt from the same two versions of
+cache.go (2d258884's and today's), all under the lock:
+
+    quiet box, 64-unit Range     pre 1.367us   now 1.281us   p=0.105  NO EFFECT
+    12 spinners on 16 threads    pre 3.742us   now 3.691us   p=0.513  NO EFFECT
+    ONE-unit Range, 16 readers   pre 58.4ns    now 59.5ns    p=0.442  NO EFFECT
+    ONE-unit serial              pre 220.5ns   now 228.9ns   p=0.442  NO EFFECT
+
+The one-unit benchmark was added FOR this question: a 64-unit Range spends its
+time copying units, and a mutex acquisition disappears inside that. A lock's
+removal must not be measured on a fixture whose cost is dominated by something
+else, and my original measurement was.
+
+AND THE A/A CONTROL I SHOULD HAVE RUN FIRST: the same binary in both slots, in
+the same fixed order, gives slot1 1.383us and slot2 1.330us -- nominally the
+same direction as the original result and not significant (p=0.234). Fixed-order
+interleaving does not protect against drift WITHIN a pair; the counterbalanced
+order (ABBA) or a randomized one does. I alternated old,new,old,new and called
+it controlled.
+
+    INTERLEAVING IS NOT COUNTERBALANCING. AN A/B WITHOUT AN A/A IS AN
+    UNCALIBRATED INSTRUMENT, AND I RAN FOUR OF THEM TONIGHT BEFORE RUNNING THE
+    CONTROL.
+
+### WHAT STANDS, AND IT IS NOT NOTHING
+
+  - THE PROPERTY: TestHitTakesNoLock holds c.mu and serves a warm range from
+    another goroutine. It is an artifact, not a number, and it is still green.
+  - THE DEADLOCK SHAPES ARE GONE: no lock is held across the Source, the
+    budget's eviction pass, or the Evicted hook. That was a correctness
+    argument and never rested on the benchmark.
+  - fd15d2a0's INDEPENDENT observation on the segment hit path, which is a
+    fixture where 40ns operations make a lock visible: with the duplicate
+    structure deleted the parallel hit is faster AND ITS VARIANCE COLLAPSES
+    (51-64ns against 53-123ns). Tighter tails under contention is what removing
+    a shared mutex should look like, and it was measured by someone who was not
+    trying to defend my commit.
+
+### WHAT DOES NOT STAND
+
+The speedup as a headline. On these fixtures the lock's removal is NOT
+measurable in the mean. The honest sentence is: THE READ PATH NO LONGER TAKES A
+LOCK, WHICH REMOVES A DEADLOCK SHAPE AND A CONTENTION TAIL; ON A 2000-UNIT
+FIXTURE IT DOES NOT MOVE THE MEAN.
+
+The design conclusion the plan drew from the ORIGINAL figwal measurement --
+Range 1218ns against a lock-free view's 516ns, "and the sign flips" -- is
+UNTOUCHED BY THIS and also unverified by it: that was a different fixture on a
+different machine with sixteen readers, and nobody has reproduced it here
+either. IT SHOULD NOT BE CITED AGAIN WITHOUT BEING RE-RUN.
