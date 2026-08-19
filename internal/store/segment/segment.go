@@ -39,8 +39,8 @@ type Segment struct {
 
 	// block is this segment's lazily loaded payload cache; see cache.go.
 	// Nil means "not resident": reads fall through to the file.
-	resident atomic.Pointer[residency]
-	usedAt   atomic.Int64
+	// registered marks this segment findable by the payload cache's Source.
+	registered atomic.Bool
 }
 
 func Create(path string, codec SegmentCodec, baseIndex uint64, maxSize int64) (*Segment, error) {

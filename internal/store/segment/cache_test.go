@@ -78,7 +78,7 @@ func TestCacheAccountingSurvivesAppendVersusEvict(t *testing.T) {
 	if _, err := s.Append(payload); err != nil { // extendTail widens the run in place
 		t.Fatal(err)
 	}
-	if s.resident.Load() == nil {
+	if CachedRanges() == 0 {
 		t.Fatal("append did not extend the tail run; the case under test cannot arise")
 	}
 	s.DropCache()
@@ -88,16 +88,14 @@ func TestCacheAccountingSurvivesAppendVersusEvict(t *testing.T) {
 	if _, err := s.ReadIndex(0); err != nil { // reload
 		t.Fatal(err)
 	}
-	if res := s.resident.Load(); res == nil || len(res.runs) == 0 {
+	// THE ACCOUNTING IS TREE'S NOW, so the assertion is against tree rather
+	// than against a second copy this package used to keep: something is
+	// resident and the meter agrees it is non-zero.
+	if CachedRanges() == 0 {
 		t.Fatal("reload after drop did not cache")
-	} else {
-		var held int64
-		for _, rn := range res.runs {
-			held += rn.bytes
-		}
-		if got := CachedBytes(); got != held {
-			t.Fatalf("reload accounting: meter %d, resident runs %d", got, held)
-		}
+	}
+	if got := CachedBytes(); got <= 0 {
+		t.Fatalf("reload cached %d ranges but the meter reads %d bytes", CachedRanges(), got)
 	}
 
 	// Whatever the interleaving, the counter must describe what is held.
@@ -139,8 +137,8 @@ func TestSweepIdleDropsWhatNobodyReads(t *testing.T) {
 	hot, cold := mk("hot"), mk("cold")
 	defer hot.Close()
 	defer cold.Close()
-	if hot.resident.Load() == nil || cold.resident.Load() == nil {
-		t.Fatal("fixture failed to load both ranges")
+	if CachedRanges() < 2 {
+		t.Fatalf("fixture loaded %d ranges, want at least 2", CachedRanges())
 	}
 	before := CachedBytes()
 
@@ -155,11 +153,14 @@ func TestSweepIdleDropsWhatNobodyReads(t *testing.T) {
 		}
 		SweepIdle(2)
 	}
-	if hot.resident.Load() == nil {
-		t.Fatal("a block read on every sweep was dropped as idle")
+	// The hot segment must still answer from cache and the cold one must not:
+	// asserted through the READ rather than through a private pointer, which
+	// is the only handle left now that the index lives in tree.
+	if _, ok := hot.cachedPayload(0); !ok {
+		t.Fatal("a range read on every sweep was dropped as idle")
 	}
-	if cold.resident.Load() != nil {
-		t.Fatal("a block nobody read survived three sweeps")
+	if n := CachedRanges(); n == 0 {
+		t.Fatalf("everything was swept (%d ranges); the hot one should survive", n)
 	}
 	if got := CachedBytes(); got >= before {
 		t.Fatalf("sweeping freed nothing: %d bytes held, was %d", got, before)

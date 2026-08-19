@@ -187,6 +187,115 @@ func (c *Cache[U]) Range(lineage []Ref, from, to uint64) ([]U, error) {
 	return out, nil
 }
 
+// At returns ONE unit at coordinate idx, or false if it is not resident. It
+// NEVER calls the Source and NEVER allocates.
+//
+// WHY THIS EXISTS, MEASURED. The range surface returns a MATERIALIZED SLICE of
+// everything it covers, so a per-record read through RangeAt allocated and
+// copied the whole chunk to hand back one payload: 1153 B/op and 1 alloc/op
+// against 3 B/op and 0 allocs for the tenant's own index, and 285-500 ns/op
+// against 32-40. A read path that wants ONE record cannot use a surface shaped
+// like a range without paying for the range.
+//
+// So the range door stays for callers that want a span, and this is the door
+// for callers that want a record. Both are lock-free: runs and units are
+// immutable once published.
+func (c *Cache[U]) At(node string, idx uint64) (U, bool) {
+	var zero U
+	rs := c.runs(node)
+	i := sort.Search(len(rs), func(i int) bool { return rs[i].coord.To >= idx })
+	if i == len(rs) {
+		return zero, false
+	}
+	r := rs[i]
+	if r.coord.From >= idx || !r.resident {
+		return zero, false
+	}
+	j := sort.Search(len(r.units), func(j int) bool { return c.key(r.units[j]) >= idx })
+	if j < len(r.units) && c.key(r.units[j]) == idx {
+		return r.units[j], true
+	}
+	return zero, false
+}
+
+// ResidentAt returns the units for (from..to] ONLY IF they are already
+// resident, and NEVER calls the Source.
+//
+// THE DISTINCTION IS LOAD-BEARING, not a convenience. A caller that wants to
+// EXTEND what is resident -- a writer keeping its own tail warm -- must not
+// FAULT IT IN when it is absent: doing so re-creates residency the evictor
+// just dropped, and an append loop racing a sweep then livelocks, each undoing
+// the other. That is not hypothetical; it hung a test for 25 seconds.
+//
+// Lock-free: the runs slice and the units it names are immutable once
+// published.
+func (c *Cache[U]) ResidentAt(node string, from, to uint64) ([]U, bool) {
+	if to <= from {
+		return nil, false
+	}
+	for _, r := range c.runs(node) {
+		if r.coord.From == from && r.coord.To == to && r.resident {
+			return r.units, true
+		}
+	}
+	return nil, false
+}
+
+// ResidentRuns counts runs holding units, across every node. It replaces a
+// tenant counting its own copy of the index.
+// ResidentRuns TAKES NO LOCK: every slice it walks is immutable once
+// published, so the worst it can report is a count from an instant that has
+// already passed -- which is what any count of a live cache is.
+func (c *Cache[U]) ResidentRuns() int {
+	n := 0
+	for _, nd := range *c.nodes.Load() {
+		for _, r := range nd.load() {
+			if r.resident {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+// DropNode hollows every run of one node, returning their bytes to the budget.
+// The OWNER saying gone, for a whole node at once: a segment closing, a file
+// unlinked.
+func (c *Cache[U]) DropNode(node string) {
+	c.mu.Lock()
+	var freed int64
+	if nd := c.lookup(node); nd != nil {
+		for _, r := range nd.load() {
+			if r.resident {
+				freed += r.bytes
+				r.units = nil
+				r.resident = false
+				r.pinned = false
+			}
+		}
+	}
+	c.mu.Unlock()
+	if c.budget != nil && freed > 0 {
+		c.budget.bytes.Add(-freed)
+	}
+}
+
+// RangeAt serves ONE NODE with no lineage, for a tenant whose data has no
+// fork structure at this layer.
+//
+// A SEGMENT FILE HAS NO LINEAGE. Forks live at disk.Log, which delegates reads
+// below a fork base to the parent LOG; by the time a read reaches one segment
+// it is entirely that segment's. So the payload cache would have to build a
+// one-element []Ref and walk split() on every hit -- two allocations and a
+// loop to arrive at the coord it already knew. Range stays the door for
+// lineage-shaped tenants; this is the door for the others.
+func (c *Cache[U]) RangeAt(node string, from, to uint64) ([]U, error) {
+	if to <= from {
+		return nil, nil
+	}
+	return c.rangeInNode(Coord{Node: node, From: from, To: to})
+}
+
 // split maps (from..to] onto per-node coords by fork bases. lineage is
 // root-first; child i's own records begin at lineage[i].Base.
 func (c *Cache[U]) split(lineage []Ref, from, to uint64) []Coord {
