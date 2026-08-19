@@ -359,11 +359,9 @@ hash per record, on the write path, payload already in hand.
     under one lock, so a crash leaves AT MOST ONE orphan: the newest row. Only
     that one is verified, once per open.
 
-    REMOVAL WITHOUT A TRUNCATION API. figwal permits a channel append at a
-    mainLT EQUAL to the last (the guard is `mainLT < lastMain`), so a
-    corrected row is appended at the same FigaroLT and the ordered read
-    prefers the LAST row per FigaroLT -- one comparison on a read that is
-    already sequential. No map, no truncation, no Clear.
+    REMOVAL WITHOUT A TRUNCATION API -- PROPOSED, AND REFUTED BY ITS OWN
+    TEST. See the correction below: appending at an equal FigaroLT is legal
+    and durable, but the live handle cannot see the second row.
 
 ## AND THE STAMP BECOMES AN INPUT, WHICH PAYS FOR ITSELF
 
@@ -393,3 +391,44 @@ hoist pays for itself before the row work benefits.
      about providers" is the plan's own constraint; the encoder arrives as an
      injected writer, and the shape of that injection is the open question the
      original plan named.
+
+## CORRECTION, SAME HOUR, BY THE TEST WRITTEN FOR IT (223a0986)
+
+87ab658e asked, of the append-at-an-equal-LT trick: "that rule has to be
+believed by EVERY reader of that channel... worth enumerating the readers
+before the writer relies on it. If there is only one reader, the trick is free
+and this costs you a grep."
+
+IT COST MORE THAN A GREP, AND THE GREP WOULD HAVE PASSED IT. The semantic
+readers of a translator channel are exactly two -- provider.Rows (sequential)
+and provider.CatchUp (PeekTail) -- plus lookupCached, which dies with
+ProjectIncrementally, and the store's own byte accounting, which has no
+semantics. By enumeration the trick looked free.
+
+THE TEST SAYS OTHERWISE, on the production log rather than on MemLog
+(TestTwoRowsAtOneFigaroLTDivergeBetweenAWarmAndAColdRead):
+
+    append at an equal FigaroLT   ACCEPTED, and BOTH ROWS ARE DURABLE
+    PeekTail                      serves the LATER row
+    Lookup                        serves the FIRST row
+    Read() on the live handle      returns ONE row -- the first
+    Read() from a fresh backend    returns TWO
+
+    THE WARM READ AND THE COLD READ OF ONE CHANNEL DISAGREE. The residency
+    index is keyed by FigaroLT, which is a FOREIGN key and not unique, so a
+    second row at that coordinate is INVISIBLE UNTIL RESTART.
+
+So a corrected row would be invisible to the reader that needs it and would
+appear after a restart -- worse than the orphan it repairs, and in exactly the
+case where the first row was wrong. The refinement is withdrawn.
+
+THE REPAIR PATH IS THEREFORE: detect by content hash at open (unchanged, still
+O(1)), then CLEAR THE TRANSLATOR CHANNEL AND RE-CATCH-UP. Rows are derived
+state -- Gluck's own ruling today -- so the cost is one re-encode of one aria,
+once, and only after a crash inside the window between the two writes.
+
+AND THE DIVERGENCE IS RAISED SEPARATELY, because it is not mine and it
+outlives this design: no channel in the real store carries two rows at one
+FigaroLT today (the rows-per-record probe found zero), so it is a latent trap
+rather than a live fault. What it costs to close is a question about the
+residency index's key, which is section 4's subject already.
