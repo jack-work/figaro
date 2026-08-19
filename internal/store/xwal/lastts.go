@@ -13,9 +13,13 @@ import (
 
 // Per-node last-record-timestamp counters, retained for the life of the
 // Trunks. Design narrative: docs/store/architecture.md, "Recency: LastTS".
+// THE LOOKUP IS LOCK-FREE. The map is published whole and grows by successor;
+// mu serializes GROWTH only. What made the old shape wrong is that the counter
+// itself is already atomics -- the mutex protected nothing but the map's
+// internal structure, on a path `fig ls` walks once per aria.
 type lastTSRegistry struct {
-	mu sync.Mutex
-	m  map[string]*nodeTS
+	mu sync.Mutex // WRITERS ONLY: growth
+	m  atomic.Pointer[map[string]*nodeTS]
 }
 
 type nodeTS struct {
@@ -23,17 +27,31 @@ type nodeTS struct {
 	hydrated atomic.Bool
 }
 
-func newLastTSRegistry() *lastTSRegistry { return &lastTSRegistry{m: map[string]*nodeTS{}} }
+func newLastTSRegistry() *lastTSRegistry {
+	r := &lastTSRegistry{}
+	empty := map[string]*nodeTS{}
+	r.m.Store(&empty)
+	return r
+}
 
 // counter returns the node's retained counter, creating it on first use.
 func (r *lastTSRegistry) counter(node string) *nodeTS {
+	if n := (*r.m.Load())[node]; n != nil {
+		return n
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	n := r.m[node]
-	if n == nil {
-		n = &nodeTS{}
-		r.m[node] = n
+	cur := *r.m.Load()
+	if n := cur[node]; n != nil {
+		return n // another grower beat us
 	}
+	next := make(map[string]*nodeTS, len(cur)+1)
+	for k, v := range cur {
+		next[k] = v
+	}
+	n := &nodeTS{}
+	next[node] = n
+	r.m.Store(&next)
 	return n
 }
 
