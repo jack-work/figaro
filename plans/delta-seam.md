@@ -1392,3 +1392,81 @@ NOTE THE SIZE QUESTION IS SEPARATE AND STAYS OPEN: OPEN-projection-heap.md
 asks HOW MUCH, in bytes, and is refused tonight at load. This is the SHAPE
 question — is anything still held — and it is countable, cheap, and lands
 FIRST.
+
+## THE TYPED FUNNEL, SHAPE REPORT: THE COUNT WAS THREE AND IS FIVE, AND THE
+## DOOR THE FUNNEL WOULD CLOSE IS NOT THE DOOR THAT IS OPEN
+
+Reconnaissance by 6ec565b5 at my order, 2026-08-18; ruled and recorded by
+f3aa1d0b (role @980dc16c). READING ONLY — nothing built, and the
+consolidation itself remains Gluck's to endorse.
+
+THE SECTION ABOVE ("THE OPEN QUESTION: CAN THIS BE A SHAPE INSTEAD OF A
+RULE") names THREE byte-level doors. There are FIVE appends behind THREE
+reachable entry points, and the undercount is in a named place: the plan
+says "writeBirth" and "the stump path" as though the stump path were one
+thing. It is TWO — a FormLog implementation AND a second birth writer,
+`writeStumpBirth` (xwal_store.go:838) — and only the first sits behind the
+proposed funnel.
+
+    form.go:666          xwalFormLog.AppendPatch   the aria's board
+    topology_form.go:51  stumpFormLog.AppendPatch  topology AND every
+                                                   libretto
+    xwal_store.go:640    writeBirth
+    xwal_store.go:838    writeStumpBirth           THE ONE THE PLAN MISSED
+    form.go:618          MemFormLog.AppendPatch    memory only, no channel
+
+THE INVARIANT HOLDS TODAY AT EVERY SITE, BY CONSTRUCTION. `FormLog` takes
+`[]byte` and has exactly ONE caller in the tree — form.go:551 in
+`Form.reduceOne` — which marshals a typed `message.Patch` itself, atomically
+with the append. Both birth writers bypass `Form` entirely and also
+`json.Marshal` a typed patch on the line above. So no site puts hand-built
+bytes on the form channel today.
+
+AND THE FINDING THAT MATTERS: A TYPED FUNNEL INSIDE PACKAGE store CANNOT
+CLOSE THE DOOR THAT IS ACTUALLY OPEN. `XwalStore.OpenNode(id)` is EXPORTED
+and returns figwal's own exported `*xwal.XWAL`, whose `Append(channel
+string, key uint64, payload []byte)` takes the channel as A PLAIN STRING.
+Any package in this module can obtain a handle and append arbitrary bytes
+to the channel named "form" in one line — bypassing json.Marshal AND
+Trunks' poison and dirty bookkeeping. The funnel cannot type that away,
+because the byte door belongs to THE DEPENDENCY'S exported API.
+
+WHAT KEEPS IT SHUT IS A FACT ABOUT THE TREE, NOT ABOUT THE TYPES: only
+internal/store imports figwal's xwal, with one read-only exception
+(internal/cli/angelus_client.go, `xwal.NeedsFlatten`), and OpenNode's 7
+callers are ALL in package store — 4 production, 3 tests.
+
+    IMPORT DISCIPLINE IS A RULE. THE COMPILER IS A SHAPE. This campaign's
+    two best moves both converted the first into the second.
+
+THE CHURN, COUNTED RATHER THAN ESTIMATED: the funnel proper is 1 interface
+declaration, 3 implementations, 1 caller which DELETES its own marshal, 0
+test call sites, 0 callers outside package store = FIVE EDITED SITES. The
+two birth writers add a helper and 2 call sites = THREE MORE. TOTAL EIGHT.
+Unexporting OpenNode is 7 more, all in-package and mechanical. No test
+rewrites and no external API change in either half. One design caveat, not
+churn: both birth writers key the patch to a main LT, so a funnel with no
+key parameter leaves those two on a raw path.
+
+## RULED: THE TWO HALVES ARE INDEPENDENT AND THEY WERE BUNDLED BY ACCIDENT
+
+The visibility half — unexporting OpenNode — is NOT part of the
+consolidation and does not wait on it. It stands whatever Gluck decides
+about the funnel, it is 7 in-package call sites, and IT IS THE HALF THAT
+CLOSES THE DOOR THAT IS ACTUALLY OPEN. The typed funnel makes hand-built
+bytes unstatable at 8 sites INSIDE package store; the unexport makes the
+raw handle unreachable from OUTSIDE it. Only the second addresses the hole
+this report found.
+
+AND THE CHANGE IS ITS OWN INSTRUMENT, which is why it needs no hazard test:
+this campaign's standard is that a hazard test must be proven to reach by
+FAILING TO COMPILE. Unexporting is that proof directly — any caller outside
+package store stops compiling, today and forever, with no test to rot.
+
+THE FUNNEL ITSELF REMAINS WITH GLUCK, unchanged and unhurried, and it is now
+a better-posed question than when it was sent to him: it buys unstatability
+at 8 sites for 8 sites of churn, against an invariant that currently holds
+at every site anyway. That is insurance, priced — the same honest shape as
+the fold bound, and it should be endorsed or declined on that basis rather
+than on the assumption that it is closing a hole. The hole is elsewhere and
+costs 7 sites.
