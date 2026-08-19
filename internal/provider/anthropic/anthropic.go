@@ -56,7 +56,6 @@ type Anthropic struct {
 	CacheOpen      func(aria string) (store.Log[[]json.RawMessage], error)
 	CacheNamespace string
 	cache          store.Log[[]json.RawMessage]
-	projection     *provider.IncrementalProjection[provider.EncodedMessages]
 
 	// windows caches context windows learned from the models endpoint and
 	// falls back to the verified static table.
@@ -984,7 +983,10 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	if err != nil {
 		return err
 	}
-	perMessage, lts := a.catchUp(in.FigLog, cache, in.Form, in.Studies)
+	perMessage, lts, err := a.catchUp(in.FigLog, cache, in.Form, in.Studies)
+	if err != nil {
+		return err
+	}
 	if len(perMessage) == 0 {
 		return fmt.Errorf("empty context")
 	}
@@ -1047,7 +1049,6 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 		return fmt.Errorf("anthropic cache assistant: %w", err)
 	}
 	bus.PushFigaro(msg, native)
-	a.acceptAssistantProjection(entry.LT, native.Payload)
 	return nil
 }
 
@@ -1067,7 +1068,10 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 	if err != nil {
 		return err
 	}
-	perMessage, lts := a.catchUp(in.FigLog, cache, in.Form, in.Studies)
+	perMessage, lts, err := a.catchUp(in.FigLog, cache, in.Form, in.Studies)
+	if err != nil {
+		return err
+	}
 	if len(perMessage) == 0 {
 		return fmt.Errorf("empty context")
 	}
@@ -1115,7 +1119,6 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 		return fmt.Errorf("anthropic cache assistant: %w", err)
 	}
 	bus.PushFigaro(msg, native)
-	a.acceptAssistantProjection(entry.LT, native.Payload)
 	return nil
 }
 
@@ -1159,30 +1162,6 @@ func (a *Anthropic) assistantCache(msg message.Message) (provider.AssistantCache
 	}, nil
 }
 
-func (a *Anthropic) acceptAssistantProjection(lt uint64, encoded []json.RawMessage) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.projection == nil {
-		return
-	}
-	state := provider.AppendEncodedMessage(a.projection.State, encoded, lt)
-	a.projection = &provider.IncrementalProjection[provider.EncodedMessages]{
-		State:           state,
-		Form:            a.projection.Form,
-		Fingerprint:     a.projection.Fingerprint,
-		Entries:         a.projection.Entries + 1,
-		LastLT:          lt,
-		LastFormVersion: a.projection.LastFormVersion,
-		// EVERY FIELD THE PROJECTION CARRIES MUST BE CARRIED HERE. This
-		// splice rebuilds the projection by hand after a live append, and a
-		// field it forgets is not lost state but lost POSITION: the next pass
-		// believes the board sits at zero and folds the whole history to
-		// catch up, every turn, correctly and forever.
-		FormVersionOfSnapshot: a.projection.FormVersionOfSnapshot,
-		LastStudyVersions:     a.projection.LastStudyVersions,
-	}
-}
-
 func (a *Anthropic) resolveModel(snap form.Snapshot) string {
 	if v := snap.Lookup("system.model"); v != nil {
 		return *v
@@ -1192,35 +1171,31 @@ func (a *Anthropic) resolveModel(snap form.Snapshot) string {
 	return a.Model
 }
 
-// catchUp encodes uncached figLog entries and returns per-message
-// wire bytes.
-func (a *Anthropic) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], form provider.Form, studies map[string]provider.Form) ([][]json.RawMessage, []uint64) {
-	fp := a.Fingerprint()
-	a.mu.Lock()
-	previous := a.projection
-	a.mu.Unlock()
-
-	projection, _, err := provider.ProjectIncrementally(provider.ProjectionConfig[provider.EncodedMessages]{
+// catchUp translates whatever the log has not translated yet, writes those
+// rows, and hands back the rows THEMSELVES -- the messages array as it lies
+// on disk. It keeps nothing between calls: the watermark is the row log's
+// tail and the cursors are stamped on the record it names.
+func (a *Anthropic) catchUp(figLog store.Log[message.Message], rows store.Log[[]json.RawMessage], form provider.Form, studies map[string]provider.Form) ([][]json.RawMessage, []uint64, error) {
+	if _, err := provider.CatchUp(provider.CatchUpConfig{
 		Log:         figLog,
-		Cache:       cache,
+		Rows:        rows,
 		Form:        form,
 		Studies:     studies,
-		Previous:    previous,
-		Fingerprint: fp,
+		Fingerprint: a.Fingerprint(),
 		Encode:      a.encode,
-		Append:      provider.AppendEncodedMessage,
 		ReportEncodeError: func(lt uint64, err error) {
 			slog.Error("anthropic encode", "flt", lt, "err", err)
 		},
-	})
-	if err != nil {
-		slog.Error("anthropic project", "err", err)
-		return nil, nil
+		ReportWriteError: func(lt uint64, err error) {
+			slog.Error("anthropic write row", "flt", lt, "err", err)
+		},
+	}); err != nil {
+		// A SEND THAT CANNOT WRITE ITS ROWS MUST NOT PROCEED. The history it
+		// would assemble is not the one on disk.
+		return nil, nil, fmt.Errorf("anthropic catch up: %w", err)
 	}
-	a.mu.Lock()
-	a.projection = projection
-	a.mu.Unlock()
-	return projection.State.PerMessage, projection.State.LogicalTimes
+	perMessage, lts := provider.Rows(rows)
+	return perMessage, lts, nil
 }
 
 const sseReadTimeout = 5 * time.Minute
