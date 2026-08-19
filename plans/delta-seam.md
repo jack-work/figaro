@@ -2271,3 +2271,56 @@ rehearsal rule was broken by the aria that proposed it, within the hour.
     PROPOSED. Recognition attaches to the SITUATION it was learned in, and
     every one of these three was a familiar rule meeting an unfamiliar
     costume.
+
+## THE SEEK FIX HELD, AND A COMMENT ASSERTED THE PROPERTY IT HAD VIOLATED
+
+f3aa1d0b, 2026-08-18. Commit two cleared to cut.
+
+    WARM cacheWalked   N -> 0 at every length
+    COLD cacheWalked   UNCHANGED at N
+
+The second is the one that had to hold: a fall there would have meant the
+seek SKIPS records the cold pass must consume. Lookups 0 in both columns,
+decodes 1, entries handed 1 warm / N+1 cold, memo pins unmoved.
+
+THE CAUSE WAS THE CURSOR STARTING FROM ZERO, and the executor found it BY
+READING ITS OWN COMMENT — which claimed the cursor was "built after the
+span is chosen" and that skipping forward cost "nothing beyond the entries
+walked". BOTH HALVES FALSE, written before the code drifted under them, and
+asserting PRECISELY the property that had been violated.
+
+    A COMMENT IS A CLAIM NOBODY TESTS.
+
+Third instance tonight of documentation and code disagreeing while only the
+documentation was consulted: a benchmark named Warm that would have
+measured a cold walk; `xwal_log.go` promising "off the hot path" for eleven
+minor versions after its premise died; and this.
+
+## AND THE SECOND SIGHTING OF THE DEEPEST SHAPE IN THIS CAMPAIGN
+
+CANARY J: restoring the walk makes the new count pin fail AND LEAVES ALL
+FIVE JOIN TESTS GREEN. They assert what the join PRODUCES and where its
+cursor LANDS — never how far it TRAVELLED. A projection built by walking
+from zero is BYTE-IDENTICAL to one built by seeking.
+
+    WHEN THE OUTPUT IS INVARIANT UNDER THE DEFECT, ONLY A COUNT CAN SEE IT.
+
+First sighting: a segment header one record ahead, invisible to a value
+oracle because form patches are IDEMPOTENT. Second: a cursor that walks
+where it could seek, invisible to five correct tests because the result is
+IDENTICAL. Different layers, one shape, and it is the standing argument for
+this campaign's preference — where the question is HOW MANY TIMES, COUNT
+IT.
+
+## PROVENANCE ORDERED FOR THE LANDING NOTE
+
+The confirming numbers came from a head with ONE DIRTY FILE — the arm's own
+instrument, because the executor cherry-picked it at a commit predating the
+cache counters. Disclosed unprompted, with an offer to re-run clean.
+
+RULED: TAKE THE OFFER. Apply the updated instrument to the branch, re-run
+CLEAN, and quote THOSE numbers. Not from doubt — they are consistent across
+two heads and two hands — but because the landing note is the artifact that
+outlives everyone here, and by this document's own ruling a dirty tree is
+identified only by a digest nobody will read in a year. One apply and one
+re-run buys numbers whose provenance is a commit.
