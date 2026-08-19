@@ -129,5 +129,12 @@ func TestMain(m *testing.M) {
 				"  path (see refuseSelfSpawn in angelus_client.go). Aborting generation 1.\n")
 		os.Exit(3)
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	// The smoke ledger is read HERE because a case's Cleanup has not run until
+	// m.Run returns. It prints what participated and enforces
+	// FIGARO_TMUX_SMOKE_MIN_RAN; with no suite attempted it says nothing.
+	if !smokeParticipation() && code == 0 {
+		code = 1
+	}
+	os.Exit(code)
 }

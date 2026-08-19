@@ -25,6 +25,7 @@ import (
 // lifecycle, not in any function's return value.
 func TestSmoke_ProcessExitsAfterTurn(t *testing.T) {
 	smokeEnabled(t)
+	smokeCase(t)
 	env, bin := smokeStore(t), smokeBinary(t)
 	p := newPane(t, env, bin, 100, 30)
 
@@ -51,6 +52,7 @@ func TestSmoke_ProcessExitsAfterTurn(t *testing.T) {
 // would have passed while Ctrl-D and q were dead.
 func TestSmoke_ExitKeysWork(t *testing.T) {
 	smokeEnabled(t)
+	smokeCase(t)
 	for _, k := range []string{"C-c", "C-d"} {
 		t.Run(k, func(t *testing.T) {
 			env, bin := smokeStore(t), smokeBinary(t)
@@ -58,7 +60,7 @@ func TestSmoke_ExitKeysWork(t *testing.T) {
 			p.startTurn("use bash to sleep 60, then say SLOWDONE")
 			time.Sleep(12 * time.Second) // mid-stream, deliberately not idle
 			if !p.alive() {
-				t.Skip("turn ended before the key could be sent; lengthen the prompt")
+				decline(t, "turn ended before the key could be sent; lengthen the prompt")
 			}
 			p.key(k)
 			for i := 0; i < 20 && p.alive(); i++ {
@@ -80,6 +82,7 @@ func TestSmoke_ExitKeysWork(t *testing.T) {
 // frame scrolling away.
 func TestSmoke_OneTurnOneFooter(t *testing.T) {
 	smokeEnabled(t)
+	smokeCase(t)
 	env, bin := smokeStore(t), smokeBinary(t)
 	p := newPane(t, env, bin, 100, 30)
 
@@ -88,7 +91,7 @@ func TestSmoke_OneTurnOneFooter(t *testing.T) {
 
 	sb := p.scrollback()
 	if c := pagerChrome(sb); c != 0 {
-		t.Skipf("view auto-promoted to the pager (chrome=%d); re-run with a taller pane", c)
+		decline(t, "view auto-promoted to the pager (chrome=%d); re-run with a taller pane", c)
 	}
 	if got := footers(sb); got != 1 {
 		t.Errorf("one turn produced %d footers, want exactly 1\n%s", got, sb)
@@ -108,13 +111,14 @@ func TestSmoke_OneTurnOneFooter(t *testing.T) {
 // the ninth letter of "just", which is how the composer's trigger was found.
 func TestSmoke_LettersAreKeybindingsNotText(t *testing.T) {
 	smokeEnabled(t)
+	smokeCase(t)
 	env, bin := smokeStore(t), smokeBinary(t)
 	p := newPane(t, env, bin, 100, 40)
 
 	p.startTurn("use bash to sleep 45, then say KEYOK")
 	time.Sleep(14 * time.Second)
 	if !p.alive() {
-		t.Skip("turn ended before the key could be sent")
+		decline(t, "turn ended before the key could be sent")
 	}
 
 	p.typeSlowly("j") // a motion, not the first letter of a draft
@@ -141,13 +145,14 @@ func TestSmoke_LettersAreKeybindingsNotText(t *testing.T) {
 // single timing difference produced two contradictory bug reports.
 func TestSmoke_SteerOrderMatchesShow(t *testing.T) {
 	smokeEnabled(t)
+	smokeCase(t)
 	env, bin := smokeStore(t), smokeBinary(t)
 	p := newPane(t, env, bin, 100, 100) // tall: tool-heavy turns auto-promote
 
 	p.startTurn("run 3 readonly bash commands with sleep 8 between each, then say ORDEROK")
 	time.Sleep(14 * time.Second) // a tool has completed by now: this is the trick
 	if !p.alive() {
-		t.Skip("turn ended before the steer could land")
+		decline(t, "turn ended before the steer could land")
 	}
 	p.typeSlowly("STEERORDER mention plum")
 	p.key("Enter")
@@ -168,7 +173,7 @@ func TestSmoke_SteerOrderMatchesShow(t *testing.T) {
 		// ~/notes/figaro/memory-campaign-open-items.md item 3 ("unverifiable
 		// in the current harness -- it auto-promotes at 101 and 201 with
 		// chrome=2"). It belongs to the CLI/client fold refactor.
-		t.Skipf("KNOWN HOLE: view auto-promoted (chrome=%d); the steer path has no pty coverage. "+
+		decline(t, "KNOWN HOLE: view auto-promoted (chrome=%d); the steer path has no pty coverage. "+
 			"Do NOT re-run taller -- this pane is already 100x100 and bounding the output was tried too. "+
 			"See memory-campaign-open-items.md item 3.", c)
 	}
@@ -226,6 +231,7 @@ func TestSmoke_SteerOrderMatchesShow(t *testing.T) {
 // and surface in the ! panel) and was deliberately left to the user.
 func TestSmoke_ErrorDoesNotBleedIntoStatusBar(t *testing.T) {
 	smokeEnabled(t)
+	smokeCase(t)
 	// The invalid key must win over whatever the copied config resolves.
 	env := append(smokeStore(t), "ANTHROPIC_API_KEY=sk-ant-api03-deliberately-invalid-cherubino")
 	bin := smokeBinary(t)

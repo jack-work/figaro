@@ -51,6 +51,7 @@ import (
 // is gone. That is the only vantage from which the bug is visible.
 func TestSmoke_CtrlCStopsTheTurnOnTheDaemon(t *testing.T) {
 	smokeEnabled(t)
+	smokeCase(t)
 	env, bin := smokeStore(t), smokeBinary(t)
 	p := newPane(t, env, bin, 100, 40)
 
@@ -67,7 +68,7 @@ func TestSmoke_CtrlCStopsTheTurnOnTheDaemon(t *testing.T) {
 		time.Sleep(2 * time.Second)
 	}
 	if id == "" {
-		t.Skipf("no conversation appeared in the store within 60s:\n%s", figCmd(t, env, bin, "list", "-j"))
+		decline(t, "no conversation appeared in the store within 60s:\n%s", figCmd(t, env, bin, "list", "-j"))
 	}
 
 	// WAIT FOR THE DAEMON TO SAY IT IS RUNNING -- not for the pane to show a
@@ -103,11 +104,11 @@ func TestSmoke_CtrlCStopsTheTurnOnTheDaemon(t *testing.T) {
 		// dead end as a benchmark reporting a number without saying whether it
 		// did the work: the next person re-runs it to learn what this run
 		// already knew.
-		t.Skipf("the daemon never reported the aria active within 60s.\nstates observed for %s: %v\nall arias: %s\npane:\n%s",
+		decline(t, "the daemon never reported the aria active within 60s.\nstates observed for %s: %v\nall arias: %s\npane:\n%s",
 			id, seen, figCmd(t, env, bin, "list", "-j"), p.visible())
 	}
 	if !p.alive() {
-		t.Skip("the turn ended before it could be interrupted")
+		decline(t, "the turn ended before it could be interrupted")
 	}
 
 	// PROVE THE TURN IS LONG BEFORE INTERRUPTING IT.
@@ -127,7 +128,7 @@ func TestSmoke_CtrlCStopsTheTurnOnTheDaemon(t *testing.T) {
 	const dwell = 25 * time.Second
 	time.Sleep(dwell)
 	if st := ariaState(t, env, bin, id); st != "running" && st != "active" {
-		t.Skipf("the turn ended on its own after %s (state %q), so an interrupt could not be "+
+		decline(t, "the turn ended on its own after %s (state %q), so an interrupt could not be "+
 			"distinguished from it finishing; the model probably did not run the long command:\n%s",
 			dwell, st, p.visible())
 	}
@@ -257,6 +258,7 @@ func ariaState(t *testing.T, env []string, bin, id string) string {
 // removal a refactor makes without meaning to.
 func TestSmoke_CtrlCLeavesTheInterruptMarkWhenAToolIsInFlight(t *testing.T) {
 	smokeEnabled(t)
+	smokeCase(t)
 	env, bin := smokeStore(t), smokeBinary(t)
 	p := newPane(t, env, bin, 100, 40)
 
@@ -275,7 +277,7 @@ func TestSmoke_CtrlCLeavesTheInterruptMarkWhenAToolIsInFlight(t *testing.T) {
 		time.Sleep(2 * time.Second)
 	}
 	if id == "" {
-		t.Skipf("no conversation appeared in the store within 60s:\n%s", figCmd(t, env, bin, "list", "-j"))
+		decline(t, "no conversation appeared in the store within 60s:\n%s", figCmd(t, env, bin, "list", "-j"))
 	}
 
 	startDeadline := time.Now().Add(60 * time.Second)
@@ -291,11 +293,11 @@ func TestSmoke_CtrlCLeavesTheInterruptMarkWhenAToolIsInFlight(t *testing.T) {
 		}
 	}
 	if !started {
-		t.Skipf("the daemon never reported the aria active within 60s.\nstates observed for %s: %v\nall arias: %s\npane:\n%s",
+		decline(t, "the daemon never reported the aria active within 60s.\nstates observed for %s: %v\nall arias: %s\npane:\n%s",
 			id, seen, figCmd(t, env, bin, "list", "-j"), p.visible())
 	}
 	if !p.alive() {
-		t.Skip("the turn ended before it could be interrupted")
+		decline(t, "the turn ended before it could be interrupted")
 	}
 
 	// PROVE THE TURN IS LONG, as the case above does and for the same reason:
@@ -304,7 +306,7 @@ func TestSmoke_CtrlCLeavesTheInterruptMarkWhenAToolIsInFlight(t *testing.T) {
 	const dwell = 20 * time.Second
 	time.Sleep(dwell)
 	if st := ariaState(t, env, bin, id); st != "running" && st != "active" {
-		t.Skipf("the turn ended on its own after %s (state %q); the model probably did not run "+
+		decline(t, "the turn ended on its own after %s (state %q); the model probably did not run "+
 			"the long command:\n%s", dwell, st, p.visible())
 	}
 
@@ -314,7 +316,7 @@ func TestSmoke_CtrlCLeavesTheInterruptMarkWhenAToolIsInFlight(t *testing.T) {
 	// The harness documents the shape (bodyLines): a check whose success and
 	// whose irrelevance look identical.
 	if irContains(t, env, bin, id, figaro.InterruptedToolNotice) {
-		t.Skipf("the interrupt mark is already present BEFORE Ctrl-C; this run cannot attribute "+
+		decline(t, "the interrupt mark is already present BEFORE Ctrl-C; this run cannot attribute "+
 			"it to the keystroke:\n%s", figCmd(t, env, bin, "show", id, "-a", "-j"))
 	}
 

@@ -90,3 +90,30 @@ the bug: it passed on the broken code, twice canaried. So the case with
 the most ways to abstain is also the one whose assertion does not
 discriminate. Fixing the report does not fix that; only asserting on the
 durable log — a `turn.done` reason of "interrupted" — does.
+
+---
+
+## CORRECTION, 2026-08-18, by the same hand that wrote the report above
+
+I wrote that pager auto-promotion being FATAL in the image case and a SKIP in
+the footer case meant "they cannot both be right". THEY CAN BOTH BE RIGHT, and
+reading the two assertions rather than the two verbs shows why.
+
+  ToolImageReachesTheModel asserts ABSENCES: no base64 on the terminal, and
+  the model did not report a missing image. An absence inside a pager is not
+  an absence — earlier content sits above the tail window, which is trap 3 in
+  the tmux-testing skill. Promotion makes that fixture UNSOUND, so failing is
+  correct: the test cannot report at all.
+
+  OneTurnOneFooter COUNTS footers in the SCROLLBACK, which capture-pane -S -
+  preserves verbatim. Promotion does not hide the evidence; it changes the
+  rendering mode, so the question "did one turn produce one footer" is no
+  longer the same question. Declining is correct.
+
+THE RULE THAT SEPARATES THEM, and it generalises past these two cases:
+PROMOTION IS FATAL WHERE IT MAKES AN ASSERTION UNSOUND, AND A SKIP WHERE IT
+MERELY CHANGES THE SUBJECT. A test that cannot see is broken; a test whose
+subject moved has nothing to say.
+
+The original paragraph stays above, wrong, because it was read in that form
+and because the correction is worth more beside it than in place of it.

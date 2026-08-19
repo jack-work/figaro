@@ -109,7 +109,7 @@ func useCopilotTerra(t *testing.T, env []string) {
 	}
 	lo, err := os.ReadFile(dir + "/outfits/copilot.toml")
 	if err != nil {
-		t.Skipf("no copilot outfit in the copied config: %v", err)
+		decline(t, "no copilot outfit in the copied config: %v", err)
 	}
 	patched := strings.ReplaceAll(string(lo), "gpt-5.6-sol", "gpt-5.6-terra")
 	if err := os.WriteFile(dir+"/outfits/copilot.toml", []byte(patched), 0o600); err != nil {
@@ -119,6 +119,7 @@ func useCopilotTerra(t *testing.T, env []string) {
 
 func TestSmoke_DetachedTailAdvancesAndScreenHoldsStill(t *testing.T) {
 	smokeEnabled(t)
+	smokeCase(t)
 	env, bin := smokeStore(t), smokeBinary(t)
 	useCopilotTerra(t, env)
 	sum, _ := exec.Command("md5sum", bin).Output()
@@ -147,13 +148,13 @@ func TestSmoke_DetachedTailAdvancesAndScreenHoldsStill(t *testing.T) {
 		}
 	}
 	if highestTick(p.visible()) < 0 {
-		t.Skipf("no ticks on screen; the model did not run the command:\n%s", p.visible())
+		decline(t, "no ticks on screen; the model did not run the command:\n%s", p.visible())
 	}
 	p.key("C-t")
 	time.Sleep(2 * time.Second)
 	vis := p.visible()
 	if pagerChrome(vis) == 0 {
-		t.Skipf("Ctrl-T did not open the pager:\n%s", vis)
+		decline(t, "Ctrl-T did not open the pager:\n%s", vis)
 	}
 
 	// DETACH BY ONE NOTCH. One is the whole point: the tail stays visible, so
