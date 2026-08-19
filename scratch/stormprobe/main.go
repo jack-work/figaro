@@ -54,7 +54,7 @@ func heapNow() uint64 {
 // agent.go finishTurn calls Seal(nil).
 func agentShape(turns, kb int, budget *aria.ComposedCache) (*aria.Server, uint64) {
 	srv := aria.NewServer()
-	srv.BindCache("probe", budget, func(from, to uint64) []aria.Turn { return nil })
+	srv.BindCache("probe", budget)
 	for i := 1; i <= turns; i++ {
 		p, t := body(kb, i), body(kb, i+1<<20)
 		srv.OpenTurn(uint64(i))
@@ -70,7 +70,7 @@ func agentShape(turns, kb int, budget *aria.ComposedCache) (*aria.Server, uint64
 // carries LTs{first,last}, which is the only reason the accountant sees it.
 func readerShape(turns, kb int, budget *aria.ComposedCache) (*aria.Server, uint64) {
 	srv := aria.NewServer()
-	srv.BindCache("probe", budget, func(from, to uint64) []aria.Turn { return nil })
+	srv.BindCache("probe", budget)
 	all := make([]aria.Turn, 0, turns)
 	for i := 1; i <= turns; i++ {
 		p, t := body(kb, i), body(kb, i+1<<20)
@@ -100,12 +100,12 @@ func main() {
 		*turns, *kb, float64(*turns**kb*2)/1024, *limit)
 
 	base := heapNow()
-	bA := aria.NewComposedCache(fwtree.NewBudget(int64(*limit) << 20))
+	bA := aria.NewComposedCache(fwtree.NewBudget(int64(*limit)<<20), nil, nil)
 	srvA, hA := agentShape(*turns, *kb, bA)
 	report("AGENT", bA, base, hA)
 
 	base2 := heapNow()
-	bR := aria.NewComposedCache(fwtree.NewBudget(int64(*limit) << 20))
+	bR := aria.NewComposedCache(fwtree.NewBudget(int64(*limit)<<20), nil, nil)
 	srvR, hR := readerShape(*turns, *kb, bR)
 	report("READER", bR, base2, hR)
 
@@ -134,7 +134,7 @@ func roundsShape(rounds, kb int) uint64 {
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
 	srv := aria.NewServer()
-	srv.BindCache("probe", aria.NewComposedCache(fwtree.NewBudget(16<<20)), func(from, to uint64) []aria.Turn { return nil })
+	srv.BindCache("probe", aria.NewComposedCache(fwtree.NewBudget(16<<20), nil, nil))
 	var all []livedoc.Node
 	srv.OpenTurn(1)
 	for r := 1; r <= rounds; r++ {

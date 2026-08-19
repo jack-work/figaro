@@ -57,16 +57,16 @@ func (o *openTurn) nodes() []livedoc.Node {
 // NewServer returns an empty aria server, its sealed section unbounded
 // until BindCache hands it a source and a budget.
 func NewServer() *Server {
-	return &Server{subs: map[int]func(Page){}, cache: NewTurnCache(nil, nil)}
+	return &Server{subs: map[int]func(Page){}, cache: NewTurnCache(nil)}
 }
 
 // BindCache re-seats the sealed section on the process's shared composed
-// cache under this aria's node, with the source that answers a miss for
-// it. Call before history accumulates; a server never bound keeps every
-// sealed turn resident in a private, unbudgeted node.
-func (s *Server) BindCache(node string, shared *ComposedCache, source TurnSource) {
+// cache under this aria's node. Call before history accumulates; a
+// server never bound keeps every sealed turn resident in a private,
+// unbudgeted node.
+func (s *Server) BindCache(node string, shared *ComposedCache) {
 	s.mu.Lock()
-	s.cache.bind(node, shared, source)
+	s.cache.bind(node, shared)
 	s.mu.Unlock()
 }
 

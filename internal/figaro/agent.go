@@ -138,13 +138,6 @@ type Config struct {
 	// reader. Nil gives this agent a private unbounded node (the test
 	// default).
 	UICache *aria.ComposedCache
-
-	// TurnDonor offers this aria the composed turns an ANCESTOR already holds
-	// below its fork point, so a fork does not compose the shared prefix a
-	// second time (seed_turns.go; measured by identity, phase 4). Nil is
-	// legal and means "compose everything", which is what every process
-	// without a live ancestor does anyway.
-	TurnDonor func(childID string) []aria.Turn
 }
 
 // Agent is the Figaro implementation.
@@ -213,8 +206,6 @@ type Agent struct {
 	regionLast  uint64
 
 	ariaSrv *aria.Server
-	// turnDonor is Config.TurnDonor; see materializeTurns.
-	turnDonor func(childID string) []aria.Turn
 
 	createdAt     time.Time
 	lastActive    time.Time
@@ -277,7 +268,6 @@ func NewAgent(cfg Config) *Agent {
 	// The caller built cfg.Provider from this very board, so pairing the
 	// instance with the board's current knobs makes the first syncProvider
 	// a no-op, and any later divergence a genuine rebind.
-	a.turnDonor = cfg.TurnDonor
 	a.bindProvider(cfg.Provider)
 	a.inbox = NewInbox(ctx)
 
@@ -295,8 +285,8 @@ func NewAgent(cfg Config) *Agent {
 	// Build sealed UI turns from canonical IR, then broadcast every aria-server
 	// change to socket subscribers as one aria.Page.
 	a.ariaSrv = aria.NewServer()
-	a.ariaSrv.BindCache(a.id, cfg.UICache, a.turnSource())
-	for _, t := range a.composeSealedTurns(entries) {
+	a.ariaSrv.BindCache(a.id, cfg.UICache)
+	for _, t := range a.attachFormDeltas(a.projTurns(unwrapMessages(entries)), entries) {
 		a.ariaSrv.Commit(t)
 	}
 	a.ariaSrv.Subscribe(func(p aria.Page) {

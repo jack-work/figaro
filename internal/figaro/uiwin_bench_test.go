@@ -75,7 +75,7 @@ func TestUIWindowBoundsAResidentAgent(t *testing.T) {
 	}
 
 	unbounded := measure(nil)
-	bounded := measure(aria.NewComposedCache(fwtree.NewBudget(2 << 20))) // 2 MiB window
+	bounded := measure(aria.NewComposedCache(fwtree.NewBudget(2<<20), nil, nil)) // 2 MiB window
 	t.Logf("budget: resident=%d limit=%d evictions=%d", res, lim, ev)
 	// The heap numbers are DIAGNOSTIC, not asserted: composed strings
 	// alias the decoded IR (compose TrimRight shares the backing array),

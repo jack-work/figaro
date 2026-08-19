@@ -25,17 +25,20 @@ func fatTurn(id uint64, kb int) Turn {
 	}
 }
 
-// sourceFor answers recompositions from a fixed history, counting them.
-func sourceFor(history map[uint64]Turn, count *int) TurnSource {
-	return func(fromLT, toLT uint64) []Turn {
+// composerFor answers a miss from a fixed history, counting the calls. It
+// models the production composer's contract: it is handed an LT bracket
+// that may cut turns at either end, and it returns WHOLE turns -- every
+// turn whose OPENING record falls inside the bracket.
+func composerFor(history map[uint64]Turn, count *int) Composer {
+	return func(node string, fromLT, toLT uint64) []Turn {
 		*count++
 		var out []Turn
 		for id := uint64(1); id <= uint64(len(history)); id++ {
 			t, ok := history[id]
-			if !ok || len(t.LTs) < 2 {
+			if !ok || len(t.LTs) == 0 {
 				continue
 			}
-			if t.LTs[0] >= fromLT && t.LTs[1] <= toLT {
+			if t.LTs[0] >= fromLT && t.LTs[0] <= toLT {
 				out = append(out, t)
 			}
 		}
@@ -44,9 +47,9 @@ func sourceFor(history map[uint64]Turn, count *int) TurnSource {
 }
 
 // boundTo is a server on its own node of a shared composed cache.
-func boundTo(cc *ComposedCache, node string, src TurnSource) *Server {
+func boundTo(cc *ComposedCache, node string) *Server {
 	s := NewServer()
-	s.BindCache(node, cc, src)
+	s.BindCache(node, cc)
 	return s
 }
 
@@ -68,9 +71,9 @@ func TestTurnCacheEvictsAndRecomposes(t *testing.T) {
 	history := map[uint64]Turn{}
 	var recomposed int
 	budget := fwtree.NewBudget(1 << 20)
-	cc := NewComposedCache(budget)
-	c := NewTurnCache(nil, nil)
-	c.bind("aria", cc, sourceFor(history, &recomposed))
+	cc := NewComposedCache(budget, composerFor(history, &recomposed), nil)
+	c := NewTurnCache(nil)
+	c.bind("aria", cc)
 
 	for id := uint64(1); id <= 40; id++ {
 		tn := fatTurn(id, 64) // 64 KiB each; 40 x 64KiB = 2.5 MiB >> 1 MiB
@@ -114,11 +117,11 @@ func TestTurnCacheEvictsAndRecomposes(t *testing.T) {
 // session (S1, plans/storm-triage.md).
 func TestUnbracketedTurnPinsOnlyItself(t *testing.T) {
 	budget := fwtree.NewBudget(1 << 20)
-	cc := NewComposedCache(budget)
 	history := map[uint64]Turn{}
 	var rec int
-	c := NewTurnCache(nil, nil)
-	c.bind("aria", cc, sourceFor(history, &rec))
+	cc := NewComposedCache(budget, composerFor(history, &rec), nil)
+	c := NewTurnCache(nil)
+	c.bind("aria", cc)
 
 	c.Append(Turn{ID: 1, Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: strings.Repeat("y", 256<<10)}}})
 	for id := uint64(2); id <= 40; id++ {
@@ -154,8 +157,8 @@ func TestUnbracketedTurnPinsOnlyItself(t *testing.T) {
 // then Seal WITH a bracket -- and the sealed turn, once a newer one
 // displaces it, is an ordinary evictable run rather than a pin.
 func TestSealWithBracketLeavesAnEvictableTurn(t *testing.T) {
-	cc := NewComposedCache(fwtree.NewBudget(1 << 20))
-	s := boundTo(cc, "aria", nil)
+	cc := NewComposedCache(fwtree.NewBudget(1<<20), nil, nil)
+	s := boundTo(cc, "aria")
 	s.OpenTurn(7)
 	s.Update(nil, []livedoc.Node{{Type: livedoc.NodeProse, Markdown: strings.Repeat("z", 64<<10)}}, 0)
 	s.Close()
@@ -179,7 +182,7 @@ func TestSealWithBracketLeavesAnEvictableTurn(t *testing.T) {
 // ChunkFor picks a byte-exact range from the index, with one turn of
 // margin, whatever the residency.
 func TestTurnCacheChunkForUsesTheIndex(t *testing.T) {
-	c := NewTurnCache(nil, nil)
+	c := NewTurnCache(nil)
 	for id := uint64(1); id <= 10; id++ {
 		c.Append(fatTurn(id, 4)) // ~4KiB each
 	}
@@ -202,8 +205,8 @@ func TestWindowedPageEqualsFullWalk(t *testing.T) {
 	history := map[uint64]Turn{}
 	var recomposed int
 	budget := fwtree.NewBudget(1 << 20)
-	cc := NewComposedCache(budget)
-	bounded := boundTo(cc, "aria", sourceFor(history, &recomposed))
+	cc := NewComposedCache(budget, composerFor(history, &recomposed), nil)
+	bounded := boundTo(cc, "aria")
 	full := NewServer()
 	for id := uint64(1); id <= 40; id++ {
 		tn := fatTurn(id, 64)
@@ -250,9 +253,9 @@ func TestEveryTurnFaultsBackWholeAcrossRunBoundaries(t *testing.T) {
 	history := map[uint64]Turn{}
 	var rec int
 	budget := fwtree.NewBudget(256 << 10) // far below the 40 x 64 KiB history
-	cc := NewComposedCache(budget)
-	c := NewTurnCache(nil, nil)
-	c.bind("aria", cc, sourceFor(history, &rec))
+	cc := NewComposedCache(budget, composerFor(history, &rec), nil)
+	c := NewTurnCache(nil)
+	c.bind("aria", cc)
 
 	for id := uint64(1); id <= 40; id++ {
 		tn := fatTurn(id, 64)
@@ -287,9 +290,10 @@ func TestEveryTurnFaultsBackWholeAcrossRunBoundaries(t *testing.T) {
 func TestAFaultedGapStillReturnsWholeTurns(t *testing.T) {
 	history := map[uint64]Turn{}
 	var rec int
-	cc := NewComposedCache(fwtree.NewBudget(64 << 20)) // unbinding: no eviction here
-	c := NewTurnCache(nil, nil)
-	c.bind("aria", cc, sourceFor(history, &rec))
+	// unbinding budget: nothing evicts here, the gap comes from the drop
+	cc := NewComposedCache(fwtree.NewBudget(64<<20), composerFor(history, &rec), nil)
+	c := NewTurnCache(nil)
+	c.bind("aria", cc)
 	for id := uint64(1); id <= 40; id++ {
 		tn := fatTurn(id, 1)
 		history[id] = tn
@@ -304,7 +308,7 @@ func TestAFaultedGapStillReturnsWholeTurns(t *testing.T) {
 		t.Fatalf("got %d turns of 40", len(got))
 	}
 	for i, tn := range got {
-		want := history[uint64(i + 1)]
+		want := history[uint64(i+1)]
 		if tn.ID != want.ID || len(tn.Nodes) != 1 || len(tn.Nodes[0].Markdown) != len(want.Nodes[0].Markdown) {
 			t.Fatalf("turn %d came back cut: %+v", i+1, tn)
 		}

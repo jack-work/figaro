@@ -625,7 +625,6 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		Form:            cbState,
 		Settings:        loaded,
 		UICache:         h.angelus.UICache,
-		TurnDonor:       h.angelus.TurnDonor,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {
@@ -1914,7 +1913,6 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro
 		LastActive:      lastActive,
 		Settings:        loaded,
 		UICache:         h.angelus.UICache,
-		TurnDonor:       h.angelus.TurnDonor,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {

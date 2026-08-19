@@ -2,7 +2,6 @@ package aria
 
 import (
 	"sort"
-	"sync"
 
 	fwtree "github.com/jack-work/figaro/internal/store/tree"
 )
@@ -10,24 +9,34 @@ import (
 // The turn cache: the sealed section of an aria's UI IR, resident in THE
 // canonical tree cache. plans/composed-layer-on-tree.md.
 
-// TurnSource recomposes sealed turns from the durable log for an LT
-// bracket, deltas included. It is the owner's half of a miss: the agent
-// composes from its figLog, the reader from the backend.
-type TurnSource func(fromLT, toLT uint64) []Turn
+// Composer recomposes ONE node's sealed turns for an LT bracket, deltas
+// included: open that aria's log, read the bracket, compose, attach. It
+// is keyed by NODE and backed by the store, so it answers for an aria
+// nobody has opened -- which is what a fork reading its inherited prefix
+// asks for.
+//
+// A bracket that starts or ends mid-turn is the composer's problem, not
+// its caller's: the cache cuts runs where its byte target falls, and a
+// turn composed without the record that opened it is a turn with its
+// content missing.
+type Composer func(node string, fromLT, toLT uint64) []Turn
 
 // ComposedCache is the residency of every aria's composed UI IR: one
 // tree.Cache, a node per aria, one budget and one eviction order.
 type ComposedCache struct {
-	cache *fwtree.Cache[Turn]
+	cache   *fwtree.Cache[Turn]
+	compose Composer
 
-	mu      sync.Mutex
-	sources map[string]func(from, to uint64) []Turn
+	// lineage names a node's ancestry, root first, with the LT each child
+	// diverged at. A fork's composed prefix IS its ancestor's runs; nil
+	// makes every aria a root, which is what a process with no store does.
+	lineage func(node string) []fwtree.Ref
 }
 
 // NewComposedCache builds the process's composed cache against budget
-// (nil is unbounded).
-func NewComposedCache(budget *fwtree.Budget) *ComposedCache {
-	cc := &ComposedCache{sources: map[string]func(from, to uint64) []Turn{}}
+// (nil is unbounded). compose may be nil, which makes every miss a gap.
+func NewComposedCache(budget *fwtree.Budget, compose Composer, lineage func(node string) []fwtree.Ref) *ComposedCache {
+	cc := &ComposedCache{compose: compose, lineage: lineage}
 	cc.cache = fwtree.New[Turn](cc.fetch, budget, turnBytes, coordOf)
 	return cc
 }
@@ -48,26 +57,21 @@ func (cc *ComposedCache) Recomposes() int64 {
 	return cc.cache.Recomposes()
 }
 
-func (cc *ComposedCache) register(node string, fill func(from, to uint64) []Turn) {
-	cc.mu.Lock()
-	cc.sources[node] = fill
-	cc.mu.Unlock()
-}
-
-func (cc *ComposedCache) unregister(node string) {
-	cc.mu.Lock()
-	delete(cc.sources, node)
-	cc.mu.Unlock()
-}
-
+// fetch answers a miss, CLIPPED TO THE COORD: a composer that returns
+// more than the run it is filling would leave units outside the span they
+// were charged to.
 func (cc *ComposedCache) fetch(co fwtree.Coord) ([]Turn, error) {
-	cc.mu.Lock()
-	fill := cc.sources[co.Node]
-	cc.mu.Unlock()
-	if fill == nil {
+	if cc.compose == nil {
 		return nil, nil
 	}
-	return fill(co.From, co.To), nil
+	got := cc.compose(co.Node, co.From+1, co.To)
+	out := got[:0]
+	for _, t := range got {
+		if k := coordOf(t); k > co.From && k <= co.To {
+			out = append(out, t)
+		}
+	}
+	return out, nil
 }
 
 // coordOf is the coordinate a turn is addressed by: the LT of the record
@@ -112,7 +116,6 @@ type TurnCache struct {
 	node   string
 	shared *ComposedCache
 	cache  *fwtree.Cache[Turn]
-	source TurnSource
 }
 
 // turnKey is the index entry: what a page walk needs to plan without
@@ -172,84 +175,31 @@ func (c *TurnCache) prevHi() uint64 {
 // Server that is never bound keeps every sealed turn resident, which is
 // what tests and one-shot callers expect. BindCache re-seats it on the
 // process's shared cache.
-func NewTurnCache(source TurnSource, shared *ComposedCache) *TurnCache {
-	c := &TurnCache{node: "local", source: source}
+func NewTurnCache(shared *ComposedCache) *TurnCache {
+	c := &TurnCache{node: "local"}
 	c.attach(c.node, shared)
 	return c
 }
 
-// attach points this tenant at a cache and registers its half of a miss.
+// attach points this tenant at a cache. Unshared, it gets a private
+// unbounded node with no source: a Server that is never bound holds
+// everything it was given and faults nothing.
 func (c *TurnCache) attach(node string, shared *ComposedCache) {
 	c.node, c.shared = node, shared
 	if shared != nil {
 		c.cache = shared.cache
-		shared.register(node, c.fill)
 		return
 	}
-	c.cache = fwtree.New[Turn](func(co fwtree.Coord) ([]Turn, error) {
-		return c.fill(co.From, co.To), nil
-	}, nil, turnBytes, coordOf)
+	c.cache = fwtree.New[Turn](nil, nil, turnBytes, coordOf)
 }
 
 // bind re-seats this tenant on the shared cache under its aria's node.
-func (c *TurnCache) bind(node string, shared *ComposedCache, source TurnSource) {
+func (c *TurnCache) bind(node string, shared *ComposedCache) {
 	held := c.materialized()
 	c.release()
-	c.keys, c.tail, c.source = nil, nil, source
+	c.keys, c.tail = nil, nil
 	c.attach(node, shared)
 	c.seed(held)
-}
-
-// fill answers a miss on this node: the bracket is snapped to WHOLE
-// turns from the key list, because composing a partial turn drops the
-// records that opened it, and the answer is clipped to the coord the
-// cache asked for.
-func (c *TurnCache) fill(from, to uint64) []Turn {
-	if c.source == nil {
-		return nil
-	}
-	lo, hi := c.bracket(from, to)
-	if hi < lo {
-		return nil
-	}
-	got := c.source(lo, hi)
-	out := got[:0]
-	for _, t := range got {
-		if k := coordOf(t); k > from && k <= to {
-			out = append(out, t)
-		}
-	}
-	return out
-}
-
-// bracket is the LT span covering every turn whose coordinate falls in
-// (from..to]: from the first such turn's opening LT to the last one's
-// closing LT.
-func (c *TurnCache) bracket(from, to uint64) (lo, hi uint64) {
-	found := false
-	for i := c.search(from); i < len(c.keys); i++ {
-		k := c.keys[i]
-		co := k.coord()
-		if co <= from || k.phantom {
-			continue
-		}
-		if co > to {
-			break
-		}
-		if !found {
-			lo, found = k.lo, true
-		}
-		hi = k.hi
-	}
-	if !found {
-		return 1, 0
-	}
-	return lo, hi
-}
-
-// search is the first index whose bracket can reach past lt.
-func (c *TurnCache) search(lt uint64) int {
-	return sort.Search(len(c.keys), func(i int) bool { return c.keys[i].hi > lt })
 }
 
 // ---- the sealed-section surface the Server consumes ----
@@ -334,7 +284,21 @@ func (c *TurnCache) seed(turns []Turn) {
 	}
 }
 
+// put publishes a run of this node's OWN turns. A turn at or below the
+// fork base belongs to an ancestor's node -- it is read through the
+// lineage, not copied here, which is what makes the prefix shared rather
+// than donated.
 func (c *TurnCache) put(from, to uint64, turns []Turn) {
+	base := c.ownBase()
+	for len(turns) > 0 && coordOf(turns[0]) < base {
+		turns = turns[1:]
+		if len(turns) > 0 {
+			from = coordOf(turns[0]) - 1
+		}
+	}
+	if len(turns) == 0 {
+		return
+	}
 	c.cache.Put(fwtree.Coord{Node: c.node, From: from, To: to}, turns, false)
 }
 
@@ -457,10 +421,58 @@ func (c *TurnCache) rangeTurns(lo, hi int) []Turn {
 	return out
 }
 
-// lineage is this node's ancestry. One node today; the fork seam lands
-// with the shared source (plans/composed-layer-on-tree.md).
+// lineage is this node's ancestry with every fork base SNAPPED DOWN TO A
+// TURN BOUNDARY.
+//
+// A fork base is an LT and the store hands out interior ones (ForkAt,
+// ForkWith), so a base can fall INSIDE a turn: the child's log then holds
+// that turn's opening records and its own continuation -- same turn id,
+// DIFFERENT CONTENT. Reading it from the ancestor would serve another
+// aria's history as this one's, which no single-lineage fixture can see.
+// Snapping the base below the straddling turn's key gives that turn to
+// the child, whose own records compose it whole.
 func (c *TurnCache) lineage() []fwtree.Ref {
-	return []fwtree.Ref{{Node: c.node}}
+	if c.shared == nil || c.shared.lineage == nil {
+		return []fwtree.Ref{{Node: c.node}}
+	}
+	refs := c.shared.lineage(c.node)
+	if len(refs) == 0 {
+		return []fwtree.Ref{{Node: c.node}}
+	}
+	out := make([]fwtree.Ref, len(refs))
+	copy(out, refs)
+	for i := range out {
+		out[i].Base = c.snapBase(out[i].Base)
+	}
+	return out
+}
+
+// snapBase lowers a fork base to the KEY of the turn it falls inside. A
+// base is the FIRST coordinate the child owns (the convention pinned by
+// store's forkbase test), so a turn that OPENED below the base and
+// carries records at or above it becomes the child's outright.
+func (c *TurnCache) snapBase(base uint64) uint64 {
+	if base == 0 || len(c.keys) == 0 {
+		return base
+	}
+	i := sort.Search(len(c.keys), func(i int) bool { return c.keys[i].hi >= base })
+	if i == len(c.keys) || c.keys[i].phantom {
+		return base
+	}
+	if k := c.keys[i]; k.lo < base && base <= k.hi {
+		return k.lo
+	}
+	return base
+}
+
+// ownBase is the coordinate below which this node's turns are not its
+// own: they live in an ancestor's node and are read through the lineage.
+func (c *TurnCache) ownBase() uint64 {
+	refs := c.lineage()
+	if len(refs) < 2 {
+		return 0
+	}
+	return refs[len(refs)-1].Base
 }
 
 // materialized is every turn this tenant currently holds WITH CONTENT,
@@ -555,7 +567,6 @@ func (c *TurnCache) Release() { c.release() }
 
 func (c *TurnCache) release() {
 	if c.shared != nil {
-		c.shared.unregister(c.node)
 		c.cache.DropNode(c.node)
 		return
 	}

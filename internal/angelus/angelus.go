@@ -23,6 +23,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 	fwtree "github.com/jack-work/figaro/internal/store/tree"
 	"github.com/jack-work/figaro/internal/tool"
+	"github.com/jack-work/figaro/internal/uiir"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -50,8 +51,14 @@ type Angelus struct {
 
 	// UICache is the process-wide composed UI IR cache: the canonical
 	// tree with a node per aria, shared by every agent's turn cache and by
-	// the reader, against one budget and one eviction order.
+	// the reader, against one budget and one eviction order. Its source is
+	// composeTurns, which reads the store directly, so a node answers
+	// whether or not anything has opened that aria.
 	UICache *aria.ComposedCache
+
+	// uiProj renders fig IR as UI IR for the cache's source and the read
+	// path. One per daemon.
+	uiProj Projector
 
 	// Hubs is the set of aria endpoints. Each outlives the agent behind it,
 	// so reclaiming an agent does not disconnect anybody. See ariaHub.
@@ -99,9 +106,10 @@ func New(cfg Config) *Angelus {
 		StartedAt:  time.Now(), // set-once at construction; read concurrently (Uptime)
 		Sessions:   tool.NewSessionRegistry(tool.DefaultSessionTTL),
 		Settings:   cfg.Settings,
-		UICache:    aria.NewComposedCache(uiBudget(cfg.Settings)),
+		uiProj:     uiir.New(nil),
 		Hubs:       newHubs(),
 	}
+	a.UICache = aria.NewComposedCache(uiBudget(cfg.Settings), a.composeTurns, a.uiLineage)
 	return a
 }
 

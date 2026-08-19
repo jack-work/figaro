@@ -277,3 +277,91 @@ turn boundary), one backend-based composer per process replacing
 `seed_turns.go` -- the composed prefix donation, `donatedSeam` and
 `spliceDonated`. The hazard test named above (a fork MID-TURN, asserted below
 the base) belongs to that step.
+
+---
+
+# STEP B: THE FORK SEAM IS STRUCTURAL, AND THE DONATION IS DELETED (dfdfae6a)
+
+## WHAT WENT
+
+    internal/figaro/seed_turns.go       the composed prefix DONATION, its seam
+                                        detector and its splice (-129 lines,
+                                        -237 of test)
+    Agent.TurnDonor / turnDonor         the config knob and the field
+    Angelus.TurnDonor                   the live-ancestor walk
+    Agent.TurnsBelow / turnBelow        the donor half
+    Agent.turnSource                    one of two near-identical composers
+    AriaReader.turnSource               the other
+    aria.TurnSource                     the type they shared
+
+What replaced all seven is `Angelus.composeTurns(node, fromLT, toLT)`: ONE
+function, keyed by node, backed by the store. It answers for a live aria, a
+dormant one, and an ancestor nobody has opened, which is what a fork reading
+its inherited prefix needs and what a per-server source structurally could not
+do -- the source was reachable only through the Server that owned it.
+
+## THE PREFIX IS THE ANCESTOR'S RUNS
+
+`TurnCache.put` skips any turn whose key is below its node's fork base: those
+turns live in the ancestor's node and are read through `tree.Range`'s lineage
+walk. The seam probe is not preserved -- it is UNNECESSARY BY CONSTRUCTION,
+which is what the plan asked for: there is no copy to verify, because there is
+no copy.
+
+## AND THE BASE IS SNAPPED, WHICH THE CANARY PROVED IS LOAD-BEARING
+
+`store.ForkAt` and `ForkWith` take an interior LT, so a fork base falls inside
+a turn whenever the fork cuts mid-turn -- which is the ordinary case for an
+edit. The child's version of that turn is its opener (inherited) plus its OWN
+continuation: same turn id, different content.
+
+    TestAForkBelowATurnBoundaryServesItsOwnContent, canary applied:
+        got  "PARENT ANSWERS TWO"
+        want "CHILD ANSWERS TWO"
+
+That is a wrong lineage link -- another aria's history served as your own --
+caught by an instrument rather than by a reading. The cure is one line: a base
+that falls at or inside a turn's bracket is lowered to that turn's KEY, so the
+child owns it outright. Base is the FIRST coordinate the child owns, which is
+the convention store's own forkbase test pins, and my first draft had it off
+by one in the other direction.
+
+### THE FIXTURE'S FIRST TWO VERSIONS TESTED NOTHING, AND BOTH LOOKED FINE
+
+  1. THE STRADDLING TURN WAS THE TAIL. The tail is the staging slot: it is
+     never in the cache and never read through the lineage, so the canary
+     passed. One more turn in the child displaces it and the canary bites.
+  2. THE BRACKET REPAIR HAD NO WITNESS AT ALL. Removing
+     `tailOfLastTurn` -- the repair that completes a turn the bracket cut at
+     its END -- left the ENTIRE SUITE GREEN, because every fixture composer
+     returns whole turns by construction (they model the contract rather than
+     implement it). The witness had to be written against the real composer:
+     ask it for a bracket that ends on a turn's second record and check the
+     turn comes back with all three of its nodes.
+
+    A CANARY IS ONLY EVIDENCE ABOUT THE FIXTURE IT RAN ON. Two of the three I
+    ran today passed on the first attempt, and neither meant what it looked
+    like it meant.
+
+### AND THE STAMP THE REPAIR MUST NOT TRUST
+
+The first repair walked forward while `Payload.TurnID` stayed equal. TURN IDS
+ARE STAMPED AT COMPOSITION, NOT AT WRITE, for records written before turn ids
+existed -- the fixture's own records carry zero -- so that rule stops at the
+first unstamped record and truncates the turn silently. The boundary is
+`turns.Opens`, which is derived from the record itself.
+
+## KNOWN, NOT FIXED, AND NAMED SO IT IS NOT DISCOVERED AS A SURPRISE
+
+  - A FORK STILL COMPOSES ITS WHOLE PREFIX AT BOOT and then declines to cache
+    the part that is not its own. The donation avoided that work when a live
+    ancestor happened to be registered; the tree avoids the MEMORY always and
+    the WORK never. The fix is to compose only above the base and take the
+    prefix's key list from the ancestor's runs -- it needs per-turn sizes,
+    which only a materialization knows today, so it belongs with the lazy
+    index rather than here.
+  - THE READER AND AN AGENT SHARE ONE NODE. Reads for a live aria route to the
+    agent (handlers.liveAgent), so they overlap only while an aria is waking;
+    a reader Restore in that window drops the node and the agent refaults from
+    the store. Correct, occasionally wasteful, self-healing -- and the payoff
+    is that a dormant aria's composed turns survive its waking.
