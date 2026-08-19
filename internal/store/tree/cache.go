@@ -185,9 +185,30 @@ func (c *Cache[U]) rangeInNode(coord Coord) ([]U, error) {
 	n := c.node(coord.Node)
 	var out []U
 	pos := coord.From
-	for _, r := range n.runs {
-		if r.coord.To <= pos || r.coord.From >= coord.To {
-			continue
+	// RE-SCAN n.runs EACH STEP RATHER THAN RANGING OVER IT.
+	//
+	// Materialization now RELEASES c.mu (fetchUnlocked), so another caller may
+	// insert runs into this node while we are outside the lock. A `range
+	// n.runs` captures the slice header ONCE and would then walk a stale array
+	// -- and the desync shows up as `pos` overtaking coord.To and slice()
+	// panicking with "slice bounds out of range [15:13]". THE EXISTING
+	// TestConcurrentRange CAUGHT EXACTLY THAT under -race -count=2, before this
+	// change was believed.
+	//
+	// Re-scanning from pos is O(runs) per step instead of O(runs) per call.
+	// That is the cost of a Source that may run unlocked, and it is paid on a
+	// path that is already doing I/O.
+	for pos < coord.To {
+		var r *run[U]
+		for _, cand := range n.runs {
+			if cand.coord.To <= pos || cand.coord.From >= coord.To {
+				continue
+			}
+			r = cand
+			break
+		}
+		if r == nil {
+			break
 		}
 		// Gap before this run?
 		if r.coord.From > pos {
@@ -212,6 +233,8 @@ func (c *Cache[U]) rangeInNode(coord Coord) ([]U, error) {
 			out = append(out, sliceUnits(c.key, units, pos, coord.To)...)
 			if r.coord.To > pos {
 				pos = r.coord.To
+			} else {
+				break // no progress; refuse to spin
 			}
 			continue
 		}
@@ -219,6 +242,8 @@ func (c *Cache[U]) rangeInNode(coord Coord) ([]U, error) {
 		out = append(out, c.slice(r, pos, coord.To)...)
 		if r.coord.To > pos {
 			pos = r.coord.To
+		} else {
+			break // no progress; refuse to spin
 		}
 	}
 	if pos < coord.To {
@@ -234,8 +259,18 @@ func (c *Cache[U]) rangeInNode(coord Coord) ([]U, error) {
 }
 
 func (c *Cache[U]) slice(r *run[U], from, to uint64) []U {
+	if to <= from {
+		return nil
+	}
 	lo := sort.Search(len(r.units), func(i int) bool { return c.key(r.units[i]) > from })
 	hi := sort.Search(len(r.units), func(i int) bool { return c.key(r.units[i]) > to })
+	// A MISS, NEVER A PANIC. lo > hi is only reachable if from > to, which the
+	// guard above refuses -- but a slice expression that can panic on a
+	// bookkeeping desync turns a wrong answer into a crashed daemon, and this
+	// one did (slice bounds out of range [15:13], TestConcurrentRange).
+	if lo > hi {
+		return nil
+	}
 	return r.units[lo:hi]
 }
 
@@ -253,11 +288,27 @@ func (c *Cache[U]) materializeLocked(n *node[U], coord Coord) ([]U, error) {
 		if hi > coord.To {
 			hi = coord.To
 		}
-		units, err := c.fetch(Coord{coord.Node, lo, hi})
+		cc := Coord{Node: coord.Node, From: lo, To: hi}
+		units, err := c.fetchUnlocked(cc)
 		if err != nil {
 			return all, err
 		}
-		r := &run[U]{coord: Coord{coord.Node, lo, hi}, units: units, resident: true, epoch: c.bump()}
+		// THE LOCK WAS RELEASED, SO THE RUN LIST MAY HAVE MOVED. Another
+		// caller missing the same coord may have installed it while we were
+		// materializing.
+		//
+		// WHAT CHANGES, NAMED RATHER THAN DISCOVERED: under a held lock one
+		// caller waited and one won, so a coord was materialized exactly once.
+		// Now BOTH MAY MATERIALIZE and one result is discarded -- two racing
+		// misses cost ONE WASTED SOURCE CALL, never a double charge and never
+		// a duplicate run. The same trade the segment range unit already
+		// priced when it dropped loadMu.
+		if existing := n.at(cc); existing != nil && existing.resident {
+			all = append(all, sliceUnits(c.key, existing.units, cc.From, cc.To)...)
+			lo = hi
+			continue
+		}
+		r := &run[U]{coord: cc, units: units, resident: true, epoch: c.bump()}
 		for _, u := range units {
 			r.bytes += int64(c.size(u))
 		}
@@ -282,11 +333,18 @@ func sliceUnits[U any](key Keyer[U], units []U, from, to uint64) []U {
 	return units[lo:hi]
 }
 
-// materializeRunLocked refills a hollow run in place.
+// materializeRunLocked refills a hollow run in place. THE SOURCE RUNS
+// UNLOCKED; see fetchUnlocked.
 func (c *Cache[U]) materializeRunLocked(r *run[U]) ([]U, error) {
-	units, err := c.fetch(r.coord)
+	units, err := c.fetchUnlocked(r.coord)
 	if err != nil {
 		return nil, err
+	}
+	// The lock was released, so another caller may have refilled this run
+	// meanwhile. Theirs is already charged; discard ours rather than charge
+	// the same bytes twice.
+	if r.resident {
+		return r.units, nil
 	}
 	r.units = units
 	r.bytes = 0
@@ -298,15 +356,40 @@ func (c *Cache[U]) materializeRunLocked(r *run[U]) ([]U, error) {
 	return units, nil
 }
 
-// fetch calls the source OUTSIDE no lock today (called under c.mu; the
-// source reads a lower layer with its own locking -- the layers form a
-// DAG, never a cycle, which is what makes this safe).
-func (c *Cache[U]) fetch(coord Coord) ([]U, error) {
+// THE COMMENT THAT STOOD HERE WAS THE JUSTIFICATION FOR THE DEFECT, and it is
+// recorded rather than deleted because it is the finding. It read: "fetch
+// calls the source ... under c.mu; the source reads a lower layer with its own
+// locking -- THE LAYERS FORM A DAG, NEVER A CYCLE, WHICH IS WHAT MAKES THIS
+// SAFE."
+//
+// Nothing tested that claim, and source_lock_test.go now demonstrates the
+// cycle in three seconds. A COMMENT IS A CLAIM NOBODY TESTS -- and this one
+// asserted the exact property that made the design safe.
+//
+// fetchUnlocked RELEASES c.mu around the caller-supplied Source and re-takes
+// it, exactly as chargeLocked already does around the budget's eviction pass.
+//
+// A SOURCE MUST NOT RUN UNDER c.mu. docs/store/tree.md states the rule for the
+// other direction -- an Evicted hook takes no lock, because eviction fires
+// under a consumer's lock and a hook that needs it deadlocks, "the shape that
+// reaches production first" -- and the Source call is the same inversion
+// running the other way. A layer below that consults this same window (a fork
+// reading its parent's prefix, a composed layer asking the decoded one)
+// reaches it without anybody intending to.
+//
+// It is not live today only because the sole tenant passes src = nil. It
+// becomes live the moment a Source is installed, which is what the
+// consolidation does.
+func (c *Cache[U]) fetchUnlocked(coord Coord) ([]U, error) {
 	c.recomposes++
-	if c.src == nil {
+	src := c.src
+	if src == nil {
 		return nil, nil
 	}
-	return c.src(coord)
+	c.mu.Unlock()
+	units, err := src(coord)
+	c.mu.Lock()
+	return units, err
 }
 
 // chargeLocked releases c.mu around the budget's eviction pass, because
