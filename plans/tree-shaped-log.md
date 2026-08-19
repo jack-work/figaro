@@ -969,3 +969,56 @@ AND A CORRECTION TO MY OWN FIXTURE, recorded because the test caught me first:
 the sweep assertion was written as "drops all R" and went red at R-1. TrimIdle
 advances the epoch and drops what is OLDER than the cutoff, so the newest run
 survives by policy. The survivor is the design, not a leak.
+
+## THE LOCALITY GATE, MADE AT LAST (dec6ef8a, 2026-08-19)
+
+plans/log-cache-policy.md named this gate and left it UNMADE: "a realistic
+scroll/hop pattern counting fall-throughs below the window", with the note that
+locality would be a better justification for the tree shape than the
+fork-sharing argument that had collapsed. It is made now, and it is not a
+simulation: BOTH STRUCTURES ARE THE PRODUCTION ONES -- `newWindowedLog` and
+`tree.Cache` -- driven by the same trace against the same byte budget, counting
+ENTRIES SERVED FROM BELOW.
+
+    budget 512 KiB (BINDING)
+      flat tail window   4952 entries from below (1016 construction tail
+                              + 3936 page fall-throughs, 123 calls)
+      tree range cache   2116
+      ratio              2.34x
+
+    budget 8 MiB (THE CONTROL, unbinding)
+      flat               4000   the channel once, at construction
+      tree               2020   the ranges asked for, once
+      neither re-materialises anything
+
+The trace: forty rounds of tail work, each followed by a hop to a random older
+anchor, three pages of locality around it, and a re-read of the anchor. That is
+a reader opening a transcript, scrolling to something, reading around it, and
+coming back -- and the locality that matters is WITHIN a hop, which is exactly
+what a tail window cannot hold and an LRU over ranges can.
+
+### TWO FIXTURE FAULTS I MADE AND THE SECOND IS THE INSTRUCTIVE ONE
+
+FIRST, MemLog does not implement `tailBudgetedLog`, so the flat window read the
+WHOLE channel at construction and evicted -- a cost production does not pay,
+since `xwalLog.TailBudgeted` reads backward and decodes only what it keeps. My
+first fix was to EXCLUDE the construction read from the count.
+
+SECOND, AND IT IS WHY THE CONTROL EXISTS: with that exclusion the control row
+showed the flat window falling through ZERO times at an unbinding budget while
+the tree paid its cold start. The flat window had been handed the entire
+history for free and the tree had not, so the fixture was deciding the
+comparison. THE EXCLUSION WAS THE WRONG FIX; THE FIXTURE WAS. The harness now
+implements TailBudgeted the way production does, and construction is counted
+for both.
+
+    A CONTROL ROW IS NOT CEREMONY. It caught a bias that the headline row
+    could not show, and the headline row moved 1.86x -> 2.34x when the bias
+    was removed -- against my own instrument, in the direction that made the
+    tree look better, which is the direction I should trust least.
+
+### WHAT THIS NUMBER IS NOT
+
+It counts ENTRIES, not bytes, decode time or allocation. The trace is a STATED
+MODEL, not an observation of a real user. It is one lineage, so it says nothing
+about fork sharing. And it measures the DECODED layer only.
