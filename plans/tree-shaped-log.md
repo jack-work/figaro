@@ -1,3 +1,59 @@
+# STANDING GOAL, GLUCK, 2026-08-19: REDUCE THE MUTEXES
+
+His words: "your goal should be to reduce the mutexes. There are far too
+many, and for reasons that arent legitimate, or are seemingly legitimate,
+but by tight adherence to my principles they will reveal either poorly
+designed dependencies or poorly followed rules. be on the lookout for
+spurious locking, even where it appears valuable. it often is not, below
+the surface."
+
+## THE BASELINE, MEASURED SO THE GOAL IS CHECKABLE
+
+83 `sync.Mutex`/`sync.RWMutex` declarations in non-test code, against 11
+files using `atomic.Pointer`. By package:
+
+    store 31 · cli 10 · tool 8 · provider 7 · angelus 7 · figaro 4
+    outfit 3 · otel 3 · livelog 3 · render 2 · actor 2
+    wirelog 1 · tape 1 · logring 1
+
+THE STORE HOLDS 31 OF 83. That is the layer this consolidation is already
+rewriting, so it is where the goal is testable rather than aspirational.
+
+## WHY THIS IS NOT A STYLE PREFERENCE, EVIDENCED TWICE TONIGHT
+
+    THE TREE CACHE'S MUTEX IS WHY TWO CACHE SHAPES COEXISTED. Measured
+    2026-08-15 and recorded in plans/log-cache-policy.md: `Range` costs
+    1218 ns/op under 16 readers where the atomic-pointer view costs 516,
+    AND THE SIGN FLIPS -- it degrades as readers are added. That gap is the
+    entire reason the policy carved out "LRU owns the cold ranges, never
+    the hot tail", which is the compromise that left the flat cache
+    standing. Remove the lock and the carve-out has no reason to exist.
+
+    AND A LOCK ON THE WRONG SIDE IS A DEADLOCK, NOT A SLOWDOWN.
+    docs/store/tree.md: a consumer calling Put under its own write lock can
+    have eviction pick one of its own runs, so the hook runs with that lock
+    held; a hook that needs the lock DEADLOCKS, "and only under budget
+    pressure with concurrent readers, WHICH IS THE SHAPE THAT REACHES
+    PRODUCTION FIRST."
+
+So on this path the lock-free requirement is not chosen for speed. It is
+forced, and the speed is a consequence.
+
+## THE STANDING TEST FOR A LOCK
+
+A mutex must answer: WHAT INVARIANT SPANS THE CRITICAL SECTION THAT COULD
+NOT BE PUBLISHED AS ONE IMMUTABLE VALUE? Where the answer is "none", the
+lock is protecting a mutation that should have been a replacement, and the
+codebase's own faster component already shows the alternative --
+`cachedLog` publishes `atomic.Pointer[logView]` and readers never block.
+
+SUSPECT, in Gluck's words, EVEN WHERE IT APPEARS VALUABLE: a lock taken
+around a read; a lock protecting a map that is written once and read
+forever; a lock whose critical section calls out into a hook, a callback or
+an interface method (the deadlock shape above); and a lock that exists
+because work was moved OFF a serialized loop and optimism was substituted
+for serialization.
+
 # COMMUNICATION AND COMPLEXITY RULES, GLUCK, 2026-08-18
 
 ## 1. STANDARD TERMINOLOGY, NOT PROJECT SLOGANS
