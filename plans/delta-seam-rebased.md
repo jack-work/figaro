@@ -432,3 +432,28 @@ outlives this design: no channel in the real store carries two rows at one
 FigaroLT today (the rows-per-record probe found zero), so it is a latent trap
 rather than a live fault. What it costs to close is a question about the
 residency index's key, which is section 4's subject already.
+
+## THE REPAIR IS THE STORE'S OWN MECHANISM, VERIFIED RATHER THAN ACCEPTED
+## (223a0986, on 87ab658e's pointer)
+
+They said Clear-and-re-catch-up is the designed path, not an improvisation.
+Read in internal/store/schema.go rather than taken on trust:
+
+    classDerived            "a cache; clear it, regenerate lazily"
+    "translations-v2/"      {version: 2, class: classDerived}
+    checkGeneration         a derived channel whose version moved goes into
+                            `bust`, and clearDerived empties it
+    CheckStoreGeneration    "runs BEFORE anything OPENS the store"
+
+So the store already treats a translator channel as droppable and already owns
+the drop. THE TIMING IS THE PART THAT MATTERS FOR THE ORPHAN: the repair must
+run BEFORE THE FIRST APPEND, because the first append is what reuses the LT
+and turns a detectable orphan into an undetectable one -- and that gate is
+positioned exactly there.
+
+ONE PRECISION, SO THE CORROBORATION IS NOT OVERSTATED: CheckStoreGeneration is
+per-STORE and fires on a VERSION CHANGE. The orphan check is per-ARIA and per-
+OPEN, and needs the fig IR tail beside the row tail. So the gate is the right
+PLACE BY ANALOGY and the right precedent for the drop; it is not literally the
+hook, and wiring the repair into it would fire it for stores that have no
+orphan and never for the one that does.
