@@ -1110,3 +1110,87 @@ THE CAMPAIGN. Where work is split across branches that have not merged,
 "the code still does X" and "the code on my branch still does X" are
 different claims, and only one of them was measured. Quote the branch with
 the count, always — the same discipline as quoting n with a floor.
+
+# THE DELETION'S THIRD STEP OWES TWO ENUMERATIONS, AND A DELETED TYPE
+# TAKES ITS TESTS WITH IT
+
+f3aa1d0b (role @980dc16c), 2026-08-18, ruled BEFORE step 3 is cut, on
+fd15d2a0's report that step 2 is the accessor swap and step 3 is the
+retention cut. Step 3 needs no fresh ruling on WHETHER — Gluck already
+ruled that nothing may pin evicted bytes. This is about what it owes on
+the way out.
+
+## FIRST, THE COUNT IN THIS DOCUMENT IS RIGHT, CHECKED RATHER THAN QUOTED
+
+This plan says "five carried version fields" in four places. The struct
+has EIGHT fields. Counted: `State` and `Form` are the payload; `Entries`
+is a COUNT, not a version; and the five that carry a version are
+`Fingerprint` (the encoder's), `LastLT`, `LastFormVersion`,
+`LastStudyVersions` and `FormVersionOfSnapshot`. The phrase is exact. It
+is recorded because it was checked, and because a repeated number in a
+plan is the kind of thing that gets inherited eleven times and measured
+never.
+
+## ENUMERATION ONE: WHERE EACH CARRIED FACT LIVES AFTERWARDS
+
+Every one of those five exists because something already went wrong
+without it, and the struct says so in its own comments — "MUST survive a
+warm start: without it the next pass asks for patches from 0 and
+re-renders the whole board onto the first new message, WHICH THE PER-LT
+CACHE THEN MAKES PERMANENT." That is a paid-for defect, written down at
+the site.
+
+SO STEP 3 STATES, FIELD BY FIELD, ONE OF EXACTLY TWO THINGS:
+  - the fact now lives HERE (name the place), or
+  - the fact is NO LONGER NEEDED, and here is what makes it unnecessary.
+
+"The cursor handles it" is not one of the two. Neither is silence. A
+warm-start defect is invisible on the pass that creates it and permanent
+by the time it is seen, which is the worst possible combination for a
+property that is dropped without anyone noticing it was ever held.
+
+## ENUMERATION TWO: THE TESTS THAT NAME THE TYPE
+
+Six test files construct `IncrementalProjection` directly. When the type
+goes they will not compile, and the fastest way to make a package build
+again is to delete them — at which point the properties they guard go
+unguarded SILENTLY, in a commit whose diff reads as tidying.
+
+    form_projection_test.go      cold-equals-warm; every patch renders
+                                 exactly once across resumes
+    projection_test.go           suffix-only; fingerprint invalidation;
+                                 no advance past an encode failure
+    projection_reads_test.go     the READ COUNTERS — cached records cost
+                                 no reads; reads scale with misses
+    study_projection_test.go     the studied-form half of every rule above
+    watermark_stale_test.go      warm start stale by one message
+    observation_bench_test.go    the cold/warm observation axis
+
+EACH IS CLASSIFIED, IN THE COMMIT, AS EXACTLY ONE OF:
+  (a) A TEST OF THE MECHANISM. It asserts something about the projection's
+      own bookkeeping and has no meaning without it. Dies with it, and the
+      commit says so by name.
+  (b) A TEST OF A SYSTEM PROPERTY. The property outlives the machinery and
+      must be RE-POINTED at the replacement, still red-able. If the subject
+      changed, THE NAME CHANGES — 9ed3f561 retired `memoLanded` rather than
+      flipping it for exactly this reason, and the rename rule was priced
+      tonight at 2,488 B and a 33% phantom win. A test kept under its old
+      name over new machinery is the quiet half of that failure.
+
+MY EXPECTATION, offered so it can be falsified rather than agreed with:
+the read counters in projection_reads_test.go are (b) and are the single
+most valuable thing in the six, because they are the only instrument that
+can see the retention cut REGRESS — a cursor that pins a span reads like
+a correct projection and costs like the old one. If step 3 lands with
+those counters deleted, the stage's central claim becomes unfalsifiable on
+the same day it is made.
+
+## AND THE NUMBER ON LANDING, WITH ITS UNITS
+
+fd15d2a0 already has this right and it is restated so it survives the
+commit: the figure quoted is 200.2 MiB of ENCODED NATIVES AT REST, a LOWER
+BOUND from a file walk. The decoded figure is a heap measurement and has
+not been taken (OPEN-projection-heap.md, refused tonight because we are
+the load on Gluck's desktop, not because it is doubted). Nobody quotes a
+decoded number, and nobody quotes acceptAssistantProjection, which piece A
+already banked.
