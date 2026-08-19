@@ -1,3 +1,60 @@
+# STANDING BLOCK, GLUCK, 2026-08-18: ONE UNIFORM LAYER, AND A REGRESSION
+# IS HIS CONCERN AND NOT A REASON TO STOP
+
+READ THIS BEFORE ANY MEASUREMENT, ANY RULING, AND ANY CODE. It is a
+STANDING ORDER, not a preference, and it overrides the pattern that
+produced the accretion described further down this file.
+
+    "I REFUSE TO BELIEVE THAT THE TREE SHAPED CACHE DEMANDS A REGRESSION.
+    If any figaro finds that the tree shaped cache must be REJECTED due to
+    a regression, IT IS MY CONCERN. RAISE IT TO ME AND I WILL HELP YOU
+    ENGINEER AROUND IT. DO NOT PROCEED AROUND THIS BLOCK. HALT ALL WORK IF
+    CONVERGING ALL THESE LAYERS INTO A SINGLE UNIFORM LAYER IS VIOLATED.
+    I WILL APPROVE EVERY INSTANCE OF IT."          -- Gluck, verbatim
+
+## WHAT TRIGGERS IT, STATED SO IT CANNOT BE READ NARROWLY
+
+The block fires when ANY of these is about to happen:
+
+  - a layer is EXEMPTED from the single tree-shaped cache, for any reason;
+  - the tree-shaped shape is REJECTED or DEFERRED for a layer because a
+    measurement shows a regression, a cost, or "no benefit here";
+  - a SECOND residency policy, window, budget, eviction rule or seeding
+    path is introduced or PRESERVED beside the canonical one;
+  - or convergence is quietly descoped to "the layers where it helps".
+
+IN EVERY ONE OF THOSE CASES: STOP. DO NOT DESIGN AROUND IT. DO NOT PICK
+THE LOCALLY CHEAPER ROUTE. RAISE IT TO GLUCK AND WAIT. He has said he will
+approve every instance and will help engineer past the regression.
+
+## WHY THIS ORDER EXISTS, WHICH IS THE ONLY WAY IT SURVIVES CONTACT
+
+THE ACCRETION BELOW WAS NOT A DECISION. It was a GLOBAL decision about
+SEAM COHERENCE, re-litigated LOCALLY, layer by layer, against a NARROWER
+QUESTION -- "does THIS layer benefit?" -- and it lost every time. Each
+declination was correct on the question it asked. NONE OF THEM COULD SEE
+WHAT THE DECISION WAS ABOUT, because a per-layer benefit test cannot
+measure a cost that exists only BETWEEN layers.
+
+    A REGRESSION MEASURED IN ONE LAYER IS EXACTLY THE EVIDENCE THAT
+    PRODUCED THE ACCRETION. IT IS THEREFORE NOT ADMISSIBLE AS A REASON TO
+    EXEMPT THAT LAYER. IT IS A REASON TO RAISE IT.
+
+That is the whole of it. The measurements were honest, the arithmetic was
+right, and the outcome was two shapes over one structure -- which cost,
+demonstrably: a header pairing wrong at 14 of 29 indices below a fork
+base, a donation that cannot name the ancestor state it reflects, and a
+walk that materialises a whole channel when the window has trimmed.
+
+## AND THE OBLIGATION THAT COMES WITH IT
+
+When you raise it, raise it with THE NUMBER AND THE MECHANISM, not with a
+verdict: what regressed, measured how, on what fixture, and WHY the tree
+shape causes it. Gluck is not asking to be shielded from bad news; he is
+refusing to let bad news be spent, unilaterally, on an exemption.
+
+---
+
 # The tree-shaped log: opening the design
 
 STATUS: DISCUSSION, NOT A DESIGN. Opened by Gluck 2026-08-18 ~23:00 with
