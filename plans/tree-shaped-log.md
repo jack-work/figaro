@@ -1251,3 +1251,36 @@ no costs a delete.
     rename that merged clean and did not compile). This is the other half: a
     branch that CONFLICTS is not a branch in trouble -- it is two arias having
     improved the same function, and the check is what tells you which.
+
+## THE WHOLE BOARD: THREE RESIDENCY POLICIES, WHERE EACH STANDS TONIGHT
+
+Written so the memo's Q3 is not read as if it were the last layer. It is not.
+
+    LAYER          STRUCTURE TODAY                 STATE
+    raw segment    tree.Cache + (a duplicate       DELETION DONE, NOT LANDED.
+    payloads       runs slice, deleted on a        Q1 gates it: 1.7x on the
+                   branch)                         serial point read.
+    decoded IR     cachedLog: flat tail window,    Q3. Both numbers now exist:
+    + translations one per (aria, channel), with   2.34x fewer faults under a
+                   a one-shot fork donation        hopping trace, tail read at
+                   guarded by a seam probe         1.13-1.27x.
+    composed UI    livelog/aria.TurnCache with     UNTOUCHED, AND UNMEASURED.
+    IR             its OWN UIBudget: byte budget,  Its own comment says "a byte
+                   LRU, recompose-on-miss, a       budget, LRU, and
+                   process-global mutex, 509       recompose-on-miss" -- which
+                   lines                           is tree.Cache's sentence.
+
+THE THIRD ROW IS THE ONE NOBODY HAS ARGUED ABOUT. It re-implements the same
+policy a third time, in another package, with its own accountant and its own
+lock, and the reason it survived is the reason every layer survived: nobody
+ever had to make a case FOR it. Under the deletion default that is the state
+that needs permission, not the state that needs a reason to change.
+
+I have not measured it and I have not touched it. What it needs is the same two
+numbers the decoded layer now has -- a fault rate under a realistic trace, and
+the cost of its hot read against tree's -- taken with the protocol this file
+now carries (two benchmarks in one binary, an in-run control, deterministic
+quantities reported ahead of timings). That is the next measurement whoever
+holds this role should make, and it should be made BEFORE Q3 is executed rather
+than after, because a re-seat designed for two tenants that must then admit a
+third is the accretion's own shape one more time.
