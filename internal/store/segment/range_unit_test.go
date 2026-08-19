@@ -164,3 +164,37 @@ func TestASequentialScanDoesNotRereadRecords(t *testing.T) {
 			records, frames)
 	}
 }
+
+// AN APPEND EXTENDS WHAT IS RESIDENT AND NEVER FAULTS IT IN.
+//
+// THE PROPERTY, NOT THE SYMPTOM. An append that materializes its own tail
+// turns the cache into a FIGHT WITH ITS OWN EVICTOR: the sweep drops a run,
+// the next append re-creates it, and an append loop racing a sweep livelocks
+// with each undoing the other. It cost a 25-second hang in
+// TestCacheAccountingSurvivesAppendVersusEvict to see, and the symptom there
+// was a timeout, which names nothing.
+func TestAnAppendNeverFaultsInItsOwnTail(t *testing.T) {
+	old := CacheBudget()
+	defer SetCacheBudget(old)
+	SetCacheBudget(8 << 20)
+
+	path := segmentOfRecords(t, 64, 128)
+	cc := &countingCodec{SegmentCodec: BinaryCodec{}}
+	s, err := Open(path, cc, 1, 1<<26)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	// Nothing resident: the cache has never been read through.
+	s.DropCache()
+	before := cc.frames.Load()
+	if _, err := s.Append(make([]byte, 128)); err != nil {
+		t.Fatal(err)
+	}
+	if got := cc.frames.Load() - before; got != 0 {
+		t.Fatalf("an append READ %d records from the file. It must EXTEND what is "+
+			"resident and never FAULT IT IN -- an append that materializes re-creates "+
+			"residency the evictor just dropped, and the two then livelock", got)
+	}
+}

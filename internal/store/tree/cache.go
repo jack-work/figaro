@@ -69,11 +69,58 @@ type run[U any] struct {
 	pinned   bool // cannot rematerialize; stays resident, stays counted
 	resident bool
 	epoch    atomic.Int64
+
+	// dense says the keys of units are base, base+1, ... with no holes, and
+	// base is units[0]'s key. CHECKED ONCE, AT PUBLICATION, and true forever
+	// after -- WHICH IS ONLY SOUND BECAUSE A RUN IS IMMUTABLE. A dense run is
+	// indexed arithmetically with NO Keyer call at all, where a search costs
+	// about six and even a verified guess costs one or two, and the Keyer is a
+	// function value in a struct field so none of them inlines.
+	//
+	// The check is one pass over units at materialization, which is already
+	// O(units) -- it rides along with the loop that sums their bytes.
+	dense bool
+	base  uint64
 }
 
-// node holds one trunk node's runs, sorted by coord.From, published whole.
+// measure fills a run's bytes, and its density, in the single pass that has to
+// walk the units anyway.
+func (c *Cache[U]) measure(r *run[U]) {
+	r.bytes = 0
+	r.dense = len(r.units) > 0
+	for i, u := range r.units {
+		r.bytes += int64(c.size(u))
+		k := c.key(u)
+		if i == 0 {
+			r.base = k
+		} else if r.dense && k != r.base+uint64(i) {
+			r.dense = false
+		}
+	}
+}
+
+// node holds one trunk node's runs, sorted by coord.From, published whole --
+// together with a CONTIGUOUS ARRAY OF THEIR UPPER BOUNDS.
+//
+// WHY THE SECOND ARRAY, and it is not a cache of anything: locating a run is a
+// binary search, and searching []*run[U] dereferences a pointer to a separate
+// heap object at every probe. Searching []uint64 touches one contiguous line.
+// The profile of the segment payload path put 93% of the remaining lookup time
+// in that search once the unit lookup had been made arithmetic. The structure
+// this tenant deleted held its runs as VALUES in one slice, which is the same
+// property expressed by layout instead of by an index.
+//
+// It is published in the same store as the runs, so a reader cannot see one
+// without the other.
 type node[U any] struct {
-	runs atomic.Pointer[[]*run[U]]
+	idx atomic.Pointer[runIndex[U]]
+}
+
+// runIndex is a node's runs and their upper bounds, immutable once published.
+// tos[i] == runs[i].coord.To.
+type runIndex[U any] struct {
+	runs []*run[U]
+	tos  []uint64
 }
 
 // touch refreshes recency the cheap way: RECENCY IS AN EPOCH. The epoch
@@ -131,9 +178,7 @@ func (c *Cache[U]) Recomposes() int64 { return c.recomposes.Load() }
 func (c *Cache[U]) Put(coord Coord, units []U, pinned bool) {
 	r := &run[U]{coord: coord, units: append([]U(nil), units...), pinned: pinned, resident: true}
 	r.epoch.Store(c.bump())
-	for _, u := range units {
-		r.bytes += int64(c.size(u))
-	}
+	c.measure(r)
 	delta := r.bytes
 
 	c.mu.Lock()
@@ -231,6 +276,239 @@ func concat[U any](pieces [][]U, total int) []U {
 	return out
 }
 
+// At returns ONE unit at coordinate idx, or false if it is not resident. It
+// NEVER calls the Source and NEVER allocates.
+//
+// WHY THIS EXISTS, MEASURED. The range surface returns a MATERIALIZED SLICE of
+// everything it covers, so a per-record read through RangeAt allocated and
+// copied the whole chunk to hand back one payload: 1153 B/op and 1 alloc/op
+// against 3 B/op and 0 allocs for the tenant's own index, and 285-500 ns/op
+// against 32-40. A read path that wants ONE record cannot use a surface shaped
+// like a range without paying for the range.
+//
+// So the range door stays for callers that want a span, and this is the door
+// for callers that want a record. Both are lock-free: runs and units are
+// immutable once published.
+func (c *Cache[U]) At(node string, idx uint64) (U, bool) {
+	return atIn(c, c.runs(node), idx)
+}
+
+// ---- the node handle ----
+
+// Handle is one node, resolved ONCE.
+//
+// A TENANT THAT READS ONE NODE TEN THOUSAND TIMES MUST NOT HASH THAT NODE'S
+// NAME TEN THOUSAND TIMES. Every string-keyed accessor on Cache hashes a node
+// name before it can do anything -- for the segment payload cache that is a
+// filesystem path, hashed once per record read, and it was MEASURED as the
+// whole of a 2.2x serial regression once allocation was removed (85 ns/op
+// against 39, 0 allocs both sides).
+//
+// The name is a NAMING cost and naming happens at open. Nothing is added to
+// any index and no complexity changes: O(1) to O(1). A Handle carries the
+// *node and the methods the tenant already called, and nothing else.
+type Handle[U any] struct {
+	c    *Cache[U]
+	n    *node[U]
+	name string
+}
+
+// Node resolves a name to a handle, creating the node if it is new.
+func (c *Cache[U]) Node(name string) *Handle[U] {
+	c.mu.Lock()
+	n := c.nodeLocked(name)
+	c.mu.Unlock()
+	return &Handle[U]{c: c, n: n, name: name}
+}
+
+// At is Cache.At without the name lookup.
+//
+// A PER-HANDLE "LAST RUN" HINT WAS TRIED HERE AND REVERTED, 2026-08-19. The
+// profile said 93% of the remaining search time was the binary search over
+// RUNS, and a verified hint removes that search for a reader that stays inside
+// one run. It made the SERIAL hit no better and the PARALLEL hit SIX AND A HALF
+// TIMES WORSE -- 4.9 ns to 32 ns -- because every reader then writes the same
+// atomic on every miss, which is a shared cache line under contention.
+//
+// That is the law this package was founded on, in its own package comment:
+// RECENCY IS AN EPOCH, because "a per-read atomic stamp on a shared line made
+// reads SLOWER with more readers". I had quoted it that morning and
+// reintroduced it by lunch. A read path may GUESS, but it may not REMEMBER.
+func (h *Handle[U]) At(idx uint64) (U, bool) {
+	ix := h.n.index()
+	if ix == nil {
+		var zero U
+		return zero, false
+	}
+	u, ok, _ := atInIndex(h.c, ix, idx)
+	return u, ok
+}
+
+// Range is Cache.RangeAt without the name lookup.
+func (h *Handle[U]) Range(from, to uint64) ([]U, error) {
+	if to <= from {
+		return nil, nil
+	}
+	return h.c.rangeInNodeAt(h.n, Coord{Node: h.name, From: from, To: to})
+}
+
+// ResidentAt is Cache.ResidentAt without the name lookup.
+func (h *Handle[U]) ResidentAt(from, to uint64) ([]U, bool) {
+	return residentIn(nodeRuns(h.n), from, to)
+}
+
+// Put and DropNode are miss-path and teardown; they keep the name because they
+// are not hot and the coord carries it anyway.
+func (h *Handle[U]) Put(from, to uint64, units []U, pinned bool) {
+	h.c.Put(Coord{Node: h.name, From: from, To: to}, units, pinned)
+}
+
+func (h *Handle[U]) Drop() { h.c.DropNode(h.name) }
+
+// nodeRuns is the immutable run slice of a node, or nil.
+func nodeRuns[U any](n *node[U]) []*run[U] {
+	if n == nil {
+		return nil
+	}
+	return n.load()
+}
+
+func residentIn[U any](rs []*run[U], from, to uint64) ([]U, bool) {
+	for _, r := range rs {
+		if r.coord.From == from && r.coord.To == to && r.resident {
+			return r.units, true
+		}
+	}
+	return nil, false
+}
+
+func atIn[U any](c *Cache[U], rs []*run[U], idx uint64) (U, bool) {
+	tos := make([]uint64, len(rs))
+	for i, r := range rs {
+		tos[i] = r.coord.To
+	}
+	u, ok, _ := atInIndex(c, &runIndex[U]{runs: rs, tos: tos}, idx)
+	return u, ok
+}
+
+// atInWhere is atIn plus WHICH RUN answered, so a caller can remember it. -1
+// when no run covers idx.
+func atInIndex[U any](c *Cache[U], ix *runIndex[U], idx uint64) (U, bool, int) {
+	var zero U
+	// A CONTIGUOUS SEARCH, WRITTEN OUT. tos[i] is runs[i].coord.To, so this
+	// probes one packed array instead of chasing a pointer per step -- and it
+	// is hand-written rather than sort.Search because sort.Search takes a
+	// CLOSURE, which is an indirect call per probe that cannot inline. The
+	// profile put a third of this lookup in that closure after the unit
+	// lookup had been made arithmetic.
+	tos := ix.tos
+	lo, hi := 0, len(tos)
+	for lo < hi {
+		mid := int(uint(lo+hi) >> 1)
+		if tos[mid] < idx {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	i := lo
+	rs := ix.runs
+	if i == len(rs) {
+		return zero, false, -1
+	}
+	r := rs[i]
+	if r.coord.From >= idx || !r.resident {
+		return zero, false, -1
+	}
+	// A DENSE RUN NEEDS NO KEYER AT ALL: density was checked once when the run
+	// was published and a published run never changes.
+	if r.dense {
+		j := int(idx - r.base)
+		if j >= 0 && j < len(r.units) {
+			return r.units[j], true, i
+		}
+		return zero, false, i
+	}
+	j := c.upperBound(r.units, idx-1)
+	if j < len(r.units) && c.key(r.units[j]) == idx {
+		return r.units[j], true, i
+	}
+	return zero, false, i
+}
+
+// ResidentAt returns the units for (from..to] ONLY IF they are already
+// resident, and NEVER calls the Source.
+//
+// THE DISTINCTION IS LOAD-BEARING, not a convenience. A caller that wants to
+// EXTEND what is resident -- a writer keeping its own tail warm -- must not
+// FAULT IT IN when it is absent: doing so re-creates residency the evictor
+// just dropped, and an append loop racing a sweep then livelocks, each undoing
+// the other. That is not hypothetical; it hung a test for 25 seconds.
+//
+// Lock-free: the runs slice and the units it names are immutable once
+// published.
+func (c *Cache[U]) ResidentAt(node string, from, to uint64) ([]U, bool) {
+	if to <= from {
+		return nil, false
+	}
+	return residentIn(c.runs(node), from, to)
+}
+
+// ResidentRuns counts runs holding units, across every node. It replaces a
+// tenant counting its own copy of the index.
+// ResidentRuns TAKES NO LOCK: every slice it walks is immutable once
+// published, so the worst it can report is a count from an instant that has
+// already passed -- which is what any count of a live cache is.
+func (c *Cache[U]) ResidentRuns() int {
+	n := 0
+	for _, nd := range *c.nodes.Load() {
+		for _, r := range nd.load() {
+			if r.resident {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+// DropNode hollows every run of one node, returning their bytes to the budget.
+// The OWNER saying gone, for a whole node at once: a segment closing, a file
+// unlinked.
+func (c *Cache[U]) DropNode(node string) {
+	c.mu.Lock()
+	var freed int64
+	if nd := c.lookup(node); nd != nil {
+		for _, r := range nd.load() {
+			if r.resident {
+				freed += r.bytes
+				r.units = nil
+				r.resident = false
+				r.pinned = false
+			}
+		}
+	}
+	c.mu.Unlock()
+	if c.budget != nil && freed > 0 {
+		c.budget.bytes.Add(-freed)
+	}
+}
+
+// RangeAt serves ONE NODE with no lineage, for a tenant whose data has no
+// fork structure at this layer.
+//
+// A SEGMENT FILE HAS NO LINEAGE. Forks live at disk.Log, which delegates reads
+// below a fork base to the parent LOG; by the time a read reaches one segment
+// it is entirely that segment's. So the payload cache would have to build a
+// one-element []Ref and walk split() on every hit -- two allocations and a
+// loop to arrive at the coord it already knew. Range stays the door for
+// lineage-shaped tenants; this is the door for the others.
+func (c *Cache[U]) RangeAt(node string, from, to uint64) ([]U, error) {
+	if to <= from {
+		return nil, nil
+	}
+	return c.rangeInNode(Coord{Node: node, From: from, To: to})
+}
+
 // split maps (from..to] onto per-node coords by fork bases. lineage is
 // root-first; child i's own records begin at lineage[i].Base.
 func (c *Cache[U]) split(lineage []Ref, from, to uint64) []Coord {
@@ -260,6 +538,12 @@ func (c *Cache[U]) split(lineage []Ref, from, to uint64) []Coord {
 // runs it names stay valid -- they are immutable -- so the reload costs a
 // pointer load and gains an up-to-date index.
 func (c *Cache[U]) rangeInNode(coord Coord) ([]U, error) {
+	return c.rangeInNodeAt(c.lookup(coord.Node), coord)
+}
+
+// rangeInNodeAt is rangeInNode with the node already resolved, so a handle
+// does not re-hash the node's name on every call.
+func (c *Cache[U]) rangeInNodeAt(nd *node[U], coord Coord) ([]U, error) {
 	// PIECES, NOT AN APPEND. A span served by ONE resident run -- the hot tail,
 	// and every read smaller than a chunk -- then costs NO COPY AT ALL: the
 	// caller gets a view of the run's own units. Where several runs answer,
@@ -290,7 +574,7 @@ func (c *Cache[U]) rangeInNode(coord Coord) ([]U, error) {
 		return concat(pieces, total)
 	}
 	for pos := coord.From; pos < coord.To; {
-		r := overlapping(c.runs(coord.Node), pos, coord.To)
+		r := overlapping(nodeRuns(nd), pos, coord.To)
 		if r == nil {
 			units, err := c.fill(Coord{coord.Node, pos, coord.To})
 			add(units)
@@ -344,9 +628,7 @@ func (c *Cache[U]) fill(coord Coord) ([]U, error) {
 
 		r := &run[U]{coord: cc, units: units, resident: true}
 		r.epoch.Store(c.bump())
-		for _, u := range units {
-			r.bytes += int64(c.size(u))
-		}
+		c.measure(r)
 
 		// TWO CALLERS MAY MATERIALIZE THE SAME COORD, and the loser discards
 		// its result: one wasted Source call rather than a lock held across
@@ -380,9 +662,7 @@ func (c *Cache[U]) refill(name string, r *run[U]) ([]U, error) {
 	}
 	next := &run[U]{coord: r.coord, units: units, resident: true, pinned: r.pinned}
 	next.epoch.Store(c.bump())
-	for _, u := range units {
-		next.bytes += int64(c.size(u))
-	}
+	c.measure(next)
 
 	c.mu.Lock()
 	n := c.nodeLocked(name)
@@ -421,8 +701,8 @@ func (c *Cache[U]) slice(r *run[U], from, to uint64) []U {
 	if to <= from {
 		return nil
 	}
-	lo := c.upperBound(r.units, from)
-	hi := c.upperBound(r.units, to)
+	lo := c.upperBoundRun(r, from)
+	hi := c.upperBoundRun(r, to)
 	// A MISS, NEVER A PANIC. lo > hi is only reachable if from > to, which the
 	// guard above refuses -- but a slice expression that can panic on a
 	// bookkeeping desync turns a wrong answer into a crashed daemon, and this
@@ -458,6 +738,19 @@ func (c *Cache[U]) slice(r *run[U], from, to uint64) []U {
 // Gluck approved this shape over a declared-dense flag, 2026-08-19, on exactly
 // that reasoning: "wouldn't the index be correct in every case?" -- it would
 // not, and the check is what makes it so.
+func (c *Cache[U]) upperBoundRun(r *run[U], target uint64) int {
+	if r.dense {
+		if target < r.base {
+			return 0
+		}
+		if i := int(target-r.base) + 1; i <= len(r.units) {
+			return i
+		}
+		return len(r.units)
+	}
+	return c.upperBound(r.units, target)
+}
+
 func (c *Cache[U]) upperBound(units []U, target uint64) int {
 	if len(units) == 0 {
 		return 0
@@ -501,13 +794,21 @@ func sliceUnits[U any](key Keyer[U], units []U, from, to uint64) []U {
 // ---- the published index ----
 
 func (n *node[U]) load() []*run[U] {
-	if p := n.runs.Load(); p != nil {
-		return *p
+	if ix := n.idx.Load(); ix != nil {
+		return ix.runs
 	}
 	return nil
 }
 
-func (n *node[U]) publish(runs []*run[U]) { n.runs.Store(&runs) }
+func (n *node[U]) index() *runIndex[U] { return n.idx.Load() }
+
+func (n *node[U]) publish(runs []*run[U]) {
+	tos := make([]uint64, len(runs))
+	for i, r := range runs {
+		tos[i] = r.coord.To
+	}
+	n.idx.Store(&runIndex[U]{runs: runs, tos: tos})
+}
 
 // runs is the lock-free read of one node's index.
 func (c *Cache[U]) runs(name string) []*run[U] {
