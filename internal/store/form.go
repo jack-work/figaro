@@ -671,7 +671,7 @@ func (l *xwalFormLog) SyncThrough(index uint64) error {
 }
 
 func (l *xwalFormLog) RangePatches(from, upTo uint64, fn func(uint64, []byte) error) error {
-	xw, err := l.backend.store.OpenNode(l.ariaID)
+	xw, err := l.backend.store.openNode(l.ariaID)
 	if err != nil {
 		return err
 	}

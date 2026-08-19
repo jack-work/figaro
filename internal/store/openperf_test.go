@@ -61,7 +61,7 @@ func BenchmarkOpenLargeAria(b *testing.B) {
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		x, err := s.OpenNode(conv)
+		x, err := s.openNode(conv)
 		if err != nil {
 			b.Fatal(err)
 		}

@@ -458,9 +458,36 @@ func migrateLayout(root string) error {
 	return nil
 }
 
-// OpenNode opens the xwal for an aria id (the trunk's live head). Caller
+// openNode opens the xwal for an aria id (the trunk's live head). Caller
 // closes it.
-func (s *XwalStore) OpenNode(id string) (*xwal.XWAL, error) {
+//
+// UNEXPORTED, and that is the whole point of it. It hands back a raw
+// *xwal.XWAL, whose Append takes (channel string, key uint64, payload
+// []byte) -- so a caller holding one can put HAND-BUILT BYTES on the channel
+// named "form" in a single line: past json.Marshal, past the typed
+// message.Patch every legitimate writer goes through, and past Trunks' poison
+// and dirty bookkeeping. Every other route to an aria's board is typed
+// (Backend.ApplyForm* and *Form's methods all take message.Patch), so this
+// was the one door in the write side that took bytes from outside the
+// package.
+//
+// It was closed by VISIBILITY rather than by a test, because a test that
+// asserts "nobody outside package store calls this" is a rule that rots,
+// while an unexported identifier is the compiler saying it permanently. The
+// campaign's own standard -- a hazard test must be proven to reach by failing
+// to compile -- is satisfied here directly: the unexport IS the failure to
+// compile.
+//
+// What it does NOT close: figwal's own exported API. XwalStore.trunks is an
+// *xwal.Store, and any package in this module may import
+// github.com/jack-work/figwal/xwal and open the same directories itself. That
+// door belongs to the dependency and no visibility change here reaches it;
+// what holds it shut is import discipline, which is a rule and not a shape.
+// Only internal/store imports figwal today, with one read-only exception:
+// internal/cli/angelus_client.go calls xwal.NeedsFlatten to decide whether a
+// layout needs flattening. It survives untouched -- it reads, it never
+// appends, and it never names a channel.
+func (s *XwalStore) openNode(id string) (*xwal.XWAL, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	x, err := s.trunks.Head(id)
@@ -1504,7 +1531,7 @@ func (s *XwalStore) observedCursors(ariaID string) map[string]uint64 {
 // a conditional Set quotes, read from the hot handle without a Form
 // replay.
 func (s *XwalStore) formTail(id string) (uint64, bool) {
-	x, err := s.OpenNode(id)
+	x, err := s.openNode(id)
 	if err != nil {
 		return 0, false
 	}
