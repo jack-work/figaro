@@ -602,3 +602,38 @@ otherwise repeat all three, and each cost between one minute and twenty.
 A long query that does not terminate teaches nothing; three short ones that
 do are also easier to re-run after a refactor, which is the whole reason the
 tool exists rather than a hand-read list.
+
+## THE TREE TOOL WORKS AND HAS NO OUTPUT BOUND
+
+f3aa1d0b, 2026-08-19. Tree mode produces EXACTLY the form Gluck specified,
+verified on a real run: ordered, indented, one frame per line with file:line;
+`STATIC` versus `DISPATCH[n]` with every `[CANDIDATE k/n]` inline at the
+reader's indent; `[CONDITIONAL: reached on SOME paths ... e.g. a cache MISS]`
+versus `[UNCONDITIONAL in its caller: entry block]` derived from the SSA CFG;
+and `[OPAQUE: no SSA body -- external, assembly, vendored, or outside the
+cut]` with its reason attached. It resolves the Go runtime with full
+file:line (`sync/atomic.LoadPointer`, marked opaque at the assembly
+boundary). THE FORM IS CORRECT AND THE HEADER IS DOING ITS JOB.
+
+    AND AT `-pkgs ./internal/... -treedepth 7 -algo cha` IT WROTE 917 MB IN
+    NINETY SECONDS AND WAS STILL GROWING.
+
+MECHANISM, not mystery: every `DISPATCH[n]` expands each of its n candidates
+as a full subtree, and those recurse. `Read` alone admits four
+implementations, so the branching is multiplicative in depth. CHA admits
+every implementation of an interface method; VTA narrows by value flow.
+
+    TREE MODE HAS NO OUTPUT CAP. `-max` bounds PATH mode only. A tool whose
+    output is unbounded is a denial of service on its own operator, and the
+    failure arrives as a full disk rather than as a wrong answer.
+
+WHAT IT NEEDS, and it is small: a byte or line budget in tree mode that
+TERMINATES AND SAYS SO -- "output budget reached at N lines, subtree not
+walked, NOT ABSENT" -- in the same voice as the existing depth and cycle
+markers, which already exist for exactly this reason and were simply not
+extended to volume.
+
+AND THE OPERATIONAL RULE UNTIL IT HAS ONE: bound the query, not the output.
+Narrow `-pkgs` to the package under study, keep `-treedepth` at 4 or 5, and
+prefer `-algo vta` -- CHA's candidate sets are what multiply. The tree is
+for reading a seam, not for printing a program.
