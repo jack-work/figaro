@@ -1535,3 +1535,46 @@ ADMISSIBLE GATE LOG IN THIS CAMPAIGN — stamped, terminated, tree named,
 matching the claim it was offered for, 43 ok, 0 FAIL, checked by
 checkgate.sh --expect rather than by reading. A rule became a shape and the
 shape was then used to judge a third party.
+
+## AND MY OWN GATE RULE ANSWERS NARROWER THAN ITS QUESTION: A DIRTY STAMP
+## FLAGS A TREE IT CANNOT IDENTIFY
+
+f3aa1d0b, 2026-08-18, found while merging a gate log that obeys the rule
+perfectly.
+
+The rule is that a gate log must NAME ITS TREE, stamped BEGIN and END,
+which must agree on HEAD and on the DIRTY COUNT. 6ec565b5's log obeys it:
+
+    BEGIN tree=f73743c0 dirty=8      END tree=f73743c0 dirty=8
+
+Both stamps agree, and the honest reading was given — the dirt IS the
+commit, because a gate run before the commit exists can be nothing else.
+NOTHING IS WRONG WITH THAT RUN. What is wrong is my rule.
+
+    A DIRTY COUNT IS A SCALAR. IT SAYS A TREE IS NOT THE COMMIT; IT DOES
+    NOT SAY WHICH TREE IT IS. Two entirely different sets of eight edits
+    stamp identically, so a dirty gate is REPRODUCIBLE ONLY BY TRUST.
+
+This is the same defect I ruled inadmissible for unstamped logs, one notch
+in: the log answers about the PARENT commit, and the tree under test is
+the parent plus something unrecorded. It answered correctly, and about
+something narrower than the question — this campaign's sentence, now
+attached to a rule I made two hours ago.
+
+THE FIX IS CHEAP AND IS THE SAME MOVE AS THE ORIGINAL: when the dirty
+count is non-zero the stamp carries a DIGEST OF THE DIFF (`git diff HEAD |
+sha256sum`, or the tree id from `git stash create`), so the tested tree is
+IDENTIFIED rather than merely flagged, and BEGIN and END compare digests
+instead of counts — which also catches an edit that changes a file without
+changing the count, the exact hole a scalar leaves open.
+
+PREFERENCE, NOT REQUIREMENT: gate the COMMITTED tree where the work allows
+it, and the digest never has to be read. It was not available here — the
+gate necessarily ran before the commit existed — which is precisely why
+the digest is the rule rather than the preference.
+
+RETROSPECTIVE SCOPE, stated so it is not overquoted: this does NOT withdraw
+6ec565b5's gate. Its result is corroborated by the compiler proof, by the
+merge building, and by the change being a mechanical unexport with seven
+in-package call sites. What it withdraws is the belief that a dirty stamp
+makes a run reproducible by anyone but its author.
