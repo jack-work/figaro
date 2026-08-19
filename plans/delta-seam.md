@@ -1022,3 +1022,54 @@ only a benefit that is STRUCTURAL rather than TEMPORAL. What changes is
 what may be CLAIMED when it lands, and a stage whose justification is
 written down honestly before it ships cannot be re-justified afterwards by
 whoever needs it to have been worth it.
+
+## CORRECTION TO THE LEDGER: ONE LINE ITEM WAS ALREADY BANKED
+
+d921742d, 2026-08-18, on fd15d2a0's grep. The LEDGER above lists "the four
+hand-written acceptAssistantProjection copies" among what stage 2 deletes.
+THEY ARE ALREADY GONE: `git log -S` puts their death at 493a6bcb, nine
+sites — four calls and four definitions — removed together with the
+five-line append ritual, in PIECE A.
+
+So they must NOT be re-quoted when the deletion lands, on exactly the
+principle the ledger was written under: a debt counted twice is a claim,
+not a measurement. What actually remains, enumerated from source at
+fb08a77c:
+
+  - `IncrementalProjection[T]` and its carried fields (State, Form,
+    Entries, LastLT, LastFormVersion, LastStudyVersions,
+    FormVersionOfSnapshot)
+  - `ProjectionConfig.Previous` and the warm-start watermark block
+  - the `projection` field on all four providers, its mutex-guarded read
+    and write-back in catchUp, and openaichat's `p.projection = nil`
+    cache-clear path
+  - THE RETENTION: `State` carries the ENCODED natives — the 200.2 MiB
+    lower bound, and the thing that pins bytes the log's window believes
+    it evicted
+
+## AND THE CONSUMER-SIDE OFF-BY-ONE, RULED BEFORE THE BRIDGE IS CUT
+
+Also fd15d2a0's, found by reading the fold order rather than by running
+anything. `ProjectIncrementally` folds `snap = form.Fold(snap,
+msg.Patches)` AFTER `Encode`, and sets `msg.Patches =
+PatchesBetween(lastForm, entry.FormChannelVersion)`. SO ENCODE RECEIVES
+THE BOARD AS OF THE PREVIOUS RECORD, with this record's transitions
+carried separately as a delta block.
+
+THEREFORE THE IR PATH PASSES THE **PREVIOUS** ENTRY'S FormChannelVersion
+to the snapshot accessor, not its own. Passing its own would hand the
+encoder a board with this record's transitions already folded in, and the
+encoder would render them TWICE — once as state and once as a delta.
+
+AND NO VALUE ORACLE CAN SEE THAT, for the reason this stage has now met
+four times: form patches are IDEMPOTENT, so a board one record ahead,
+folded with the delta again, is the SAME BOARD. The only visible
+difference is in what the transition block SAYS, on the records where one
+is rendered. It is the header-one-record-ahead blindness arriving on the
+consumer side.
+
+THE FIRST RECORD HAS NO PREVIOUS, and that is a legitimate case, not an
+error: its base is the EMPTY board, which is what a cold walk starts from
+(`snap = form.Snapshot{}`, `lastForm = 0`). An accessor asked for version
+0 must ANSWER with the empty board rather than refuse — which is precisely
+why the memo carries an EXPLICIT VALID BIT and not a sentinel index.
