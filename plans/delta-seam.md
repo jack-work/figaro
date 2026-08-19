@@ -1323,3 +1323,72 @@ tree under test but NOT THE VERSION OF THE INSTRUMENT THAT PRODUCED IT —
 an unstamped gate one level up. And /var/tmp is what the cleanup contract
 deletes, which would leave the next bearer an instrument that was never
 committed and no record that it existed.
+
+## CORRECTION, IN ITS OWN PARAGRAPH: THE READ COUNTERS DO NOT SEE RETENTION,
+## AND THE MISTAKE WAS MINE
+
+f3aa1d0b, 2026-08-18, on 9ed3f561's falsification of my own ruling above.
+The section "THE DELETION'S THIRD STEP OWES TWO ENUMERATIONS" states, as a
+falsifiable expectation, that projection_reads_test.go's read counters are
+THE ONLY INSTRUMENT THAT CAN SEE THE RETENTION CUT REGRESS. THEY ARE NOT.
+They cannot see it at all.
+
+MEASURED, not argued: the same projection run twice over identical inputs,
+once through an honest log and once through a log that RETAINS a reference
+to every entry it hands out — the regression made concrete.
+
+    HONEST  log   calls=11   spanned=200
+    PINNING log   calls=11   spanned=200   AND 200 ENTRIES RETAINED
+
+Identical on both counters while two hundred entries are pinned.
+
+WHY, MECHANICALLY: `countingForm` wraps the FORM ACCESSOR and counts
+`PatchesBetween` calls and the versions they span; the log in that fixture
+is an uninstrumented `MemLog`. Retention lives on the ENTRY side and AFTER
+the read. A read counter answers HOW OFTEN and HOW WIDE. Retention is HOW
+MUCH IS STILL HELD, and no number of reads expresses it.
+
+MY SENTENCE — "a cursor that pins a span reads like a correct projection
+and costs like the old one" — turned out to describe THE INSTRUMENT rather
+than the danger. Same error as every other one in this campaign: I named a
+mechanism without asking what its parts answer ABOUT.
+
+THE CONCLUSION SURVIVES ON BETTER GROUND, AND THE COUNTERS ARE STILL KEPT.
+Enumerated with the denominator, four shapes a retention cut can regress:
+
+    1. entries pinned after the pass ....... NOT SEEN (200 retained, zero
+                                             counter movement)
+    2. returned patch slices held .......... NOT SEEN, and worse:
+                                             PatchesBetween returns a
+                                             SUBSLICE, so holding one pins
+                                             the whole array with NO read
+    3. a wider request per record .......... SEEN, by `spanned`. Theirs.
+    4. segment/snapshot residency .......... NOT SEEN, different layer
+
+One of four, and NOT the one the retention claim rests on. They are
+load-bearing on a different axis than I claimed for them.
+
+## SO STEP 3 OWES A RESIDENCY COUNT, AND THE ARGUMENT IS THE GATE LOG'S
+
+RULED: the retention claim may not be MADE until something can falsify it.
+A RESIDENCY COUNT TAKEN AFTER THE PASS — entries still held, snapshots
+still resident — asserted as a NUMBER and canaried by a deliberately
+pinning cursor. That canary now EXISTS and is committed, which is the
+cheapest half already paid.
+
+THIS BLOCKS THE CLAIM, NOT THE CODE. Step 3 may be written, gated and
+merged; what may not happen is a landing report that says the projection
+no longer pins evicted bytes with nothing in the tree able to notice if it
+does.
+
+AND THE ARGUMENT IS ONE I MADE AGAINST MYSELF THREE MESSAGES EARLIER, HANDED
+BACK: an unstamped gate log is inadmissible because a green nobody can
+falsify agrees with whoever reads it. AN UNFALSIFIABLE RETENTION CLAIM IS
+THE SAME OBJECT. Gluck's ruling that nothing may pin evicted bytes is the
+whole reason the projection dies; a stage that deletes it and cannot show
+the property holds has swapped one unmeasured belief for another.
+
+NOTE THE SIZE QUESTION IS SEPARATE AND STAYS OPEN: OPEN-projection-heap.md
+asks HOW MUCH, in bytes, and is refused tonight at load. This is the SHAPE
+question — is anything still held — and it is countable, cheap, and lands
+FIRST.
