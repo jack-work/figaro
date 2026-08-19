@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -610,32 +609,78 @@ func effectivePatch(snap form.Snapshot, p message.Patch) message.Patch {
 // MemFormLog holds a form's records in memory. It is what "a form without an
 // aria" means in practice: the algebra and the MVCC state with no store under
 // them, for a test, a tool, or a form that never needed to be durable.
+// MemFormLog's writer is SINGLE BY CONSTRUCTION and its readers are not.
+// AppendPatch is reached only from reduceOne, which is reached only from
+// runBatch, which is the actor's ONE DRAINER. RangePatches is reached from
+// patchesFromLog on whatever goroutine asks for a range.
+//
+// SO THE MUTEX WAS TWO DIFFERENT EXCLUSIONS WEARING ONE NAME. Writer-versus-
+// writer was dead weight -- there is only ever one writer. Reader-versus-writer
+// was REAL and may not simply be deleted. The cure is to publish an immutable
+// value: readers load a slice header and walk it with no lock at all, the
+// writer publishes a successor, and the concurrency survives the lock's
+// removal.
+//
+// THE APPEND DOES NOT COPY THE HISTORY. append may write into the old array's
+// spare capacity at an index PAST THE PUBLISHED LENGTH, where no reader can
+// see it; the store is what publishes it. Same idiom, and same reason, as
+// cachedLog's logView. Copy-on-write would have made N appends O(N^2), which
+// is a complexity change nobody asked for.
 type MemFormLog struct {
-	mu      sync.Mutex
-	records [][]byte
+	records atomic.Pointer[[][]byte]
+
+	// writing detects a SECOND CONCURRENT WRITER. The lock removal rests on
+	// the single-writer contract, so the contract breaking must be REPORTED
+	// rather than silently tolerated -- otherwise the removal is an assumption
+	// instead of a design.
+	writing atomic.Bool
+
+	// testHold parks a writer inside the critical region so a test can
+	// overlap two appends. nil in production.
+	testHold func()
 }
 
 func (m *MemFormLog) AppendPatch(payload []byte) (uint64, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.records = append(m.records, append([]byte(nil), payload...))
-	return uint64(len(m.records)), nil
+	if !m.writing.CompareAndSwap(false, true) {
+		return 0, fmt.Errorf("mem form log: a second concurrent AppendPatch. This log " +
+			"is lock-free on the strength of a SINGLE-WRITER contract -- appends come " +
+			"from Form.runBatch, the actor's one drainer -- and that contract has been " +
+			"broken by the caller")
+	}
+	defer m.writing.Store(false)
+	if m.testHold != nil {
+		m.testHold()
+	}
+	old := m.records.Load()
+	var cur [][]byte
+	if old != nil {
+		cur = *old
+	}
+	next := append(cur, append([]byte(nil), payload...))
+	m.records.Store(&next)
+	return uint64(len(next)), nil
 }
 
 // SyncThrough is a no-op: memory is as durable as this log gets.
 func (m *MemFormLog) SyncThrough(uint64) error { return nil }
 
+// RangePatches TAKES NO LOCK. It loads one published slice header and walks
+// it; a writer appending concurrently publishes a successor that this call
+// simply does not see, which is a consistent older history rather than a torn
+// newer one.
 func (m *MemFormLog) RangePatches(from, upTo uint64, fn func(uint64, []byte) error) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	if from < 1 {
 		from = 1
 	}
-	for i := from; i <= uint64(len(m.records)); i++ {
+	var records [][]byte
+	if p := m.records.Load(); p != nil {
+		records = *p
+	}
+	for i := from; i <= uint64(len(records)); i++ {
 		if upTo > 0 && i > upTo {
 			return nil
 		}
-		if err := fn(i, m.records[i-1]); err != nil {
+		if err := fn(i, records[i-1]); err != nil {
 			return err
 		}
 	}
