@@ -1392,3 +1392,53 @@ constant cannot.
     tenant and is right for it. It becomes a defect the moment a second tenant
     with units two orders of magnitude larger lands on the same cache, which is
     exactly what Q3 proposes.
+
+## THE PREMISE THAT STARTED IT ALL, RETIRED (dec6ef8a, 2026-08-19)
+
+plans/forest-uptake.md's table is the load-bearing citation of this whole
+campaign -- it is what plans/log-cache-policy.md turned into "LRU owns the cold
+ranges, never the hot tail", which is why figaro still runs a second cache:
+
+    forest Range   parallel 1218 ns   4512 B   4 allocs
+    cachedLog      parallel  516 ns   4880 B   1 alloc     ratio 2.36x
+
+MY HOT-TAIL BENCHMARK IS THE SAME MEASUREMENT: 64 warm units, tree's Range
+against cachedLog's published view, at 16 readers. The allocation profile
+confirms the correspondence -- the flat side is 4864 B and 1 alloc here, against
+4880 B and 1 alloc there.
+
+    flat window    1.341 us   4864 B   1 alloc
+    tree Range     1.517 us   4820 B   3 allocs           ratio 1.13x
+
+THE ABSOLUTE NUMBERS DO NOT REPRODUCE -- 516 ns there against 1341 ns here for
+the same operation -- and that is expected: a different machine, a different
+day, and nothing in this repo can re-run the original. THE RATIO IS THE
+LOAD-BEARING QUANTITY, and it has gone 2.36x -> 1.13x, with tree's allocations
+4 -> 3 and its bytes now below the flat window's.
+
+So the sentence to carry forward is:
+
+    THE GAP THAT JUSTIFIED THE SECOND CACHE SHAPE WAS A MUTEX AND A COPY. BOTH
+    ARE GONE, AND WHAT REMAINS IS 13% ON A TAIL READ AGAINST HALF THE FAULTS ON
+    A HOPPING ONE.
+
+The old table should not be cited again as a live argument. It is history: an
+honest measurement of a structure that no longer exists in that shape.
+
+### AND A SHORT AUDIT OF WHAT ELSE IS CITED BUT UNVERIFIED HERE
+
+Prompted by having retracted one of my own numbers tonight. Load-bearing
+figures in these plans that NOBODY HAS REPRODUCED ON THIS MACHINE:
+
+  - the 4-5x DECODED-STRUCT INFLATION behind irDecodeInflation (measured on two
+    real arias, but months ago and never re-run; it sizes every per-aria
+    budget in the store);
+  - the 3.0 GB / 209 arias daemon census that motivates the whole reclamation
+    campaign (a real observation, not reproducible by construction);
+  - the 1.19x heap witness on a []json.RawMessage projection, and the
+    decoded-struct multiplier that was never taken at all.
+
+None of them is doubted here. They are listed so that the next person who
+spends one in an argument knows which are FRESH and which are INHERITED --
+which is the distinction I failed to make when I published a speedup this
+morning and had to retract it by lunch.
