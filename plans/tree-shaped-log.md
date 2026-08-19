@@ -562,3 +562,43 @@ been talked out of existence.
 UNCOVERED AND NAMED: a parent whose window has TRIMMED below the child's
 base, and a grandparent donation where the nearest ancestor is unopened and
 the loop walks further. Both reachable with the existing fixture.
+
+## THE SPECIMEN RUN: THREE QUERY FAULTS, AND THE DECOMPOSITION THAT FIXES THEM
+
+f3aa1d0b, 2026-08-19. Recorded because the next person to run this tool will
+otherwise repeat all three, and each cost between one minute and twenty.
+
+  FAULT 1 -- THE SINK WAS OUTSIDE THE CUT. `-in figaro,figwal` with
+  `-sink syscall.Pread`. `-deep` does NOT override `-in`, so the walk
+  terminated at the module edge while the sink lived in the standard
+  library: unreachable BY CONSTRUCTION. Twenty minutes, one header, no
+  output. Had it terminated, an empty result would have read identically to
+  "the code does not call this".
+  THE TOOL SHOULD REFUSE THIS BEFORE WALKING: whether the sink is inside the
+  cut is knowable statically, and an unreachable-by-construction query is a
+  configuration error, not an empty result.
+
+  FAULT 2 -- THE ENTRY WAS OUTSIDE THE LOADED PACKAGES. `-pkgs
+  ./internal/store/...` with an entry in `internal/provider`. The tool caught
+  this itself and refused to report it as a finding:
+  "NO PATHS: NEITHER entry nor sink matched any symbol. THIS IS A VACUOUS
+  RUN, NOT A FINDING OF NO PATH." That refusal was built because an empty
+  result has three indistinguishable causes, and it caught its own operator.
+
+  FAULT 3 -- ONE LONG PATH THROUGH INTERFACE DISPATCH IS COMBINATORIAL.
+  From `ProjectIncrementally` to `syscall.Pread` the walk crosses `Log[T]`
+  and `Reader` dispatch, where CHA admits every implementation. Depth 18
+  over `./internal/...` did not terminate promptly even with the cut
+  corrected.
+
+    THE DECOMPOSITION: ASK FOR THE PATH IN SEGMENTS, NOT END TO END.
+    ProjectIncrementally -> cachedLog.Read
+    cachedLog.Read       -> codec.ReadFrame
+    codec.ReadFrame      -> syscall.Pread
+    Three short queries compose to the full path, each terminates, and each
+    NAMES ITS OWN SEAM -- which is what the document needs anyway, since the
+    seams are exactly where the copied/reshaped/by-reference column changes.
+
+A long query that does not terminate teaches nothing; three short ones that
+do are also easier to re-run after a refactor, which is the whole reason the
+tool exists rather than a hand-read list.
