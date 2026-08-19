@@ -2671,3 +2671,52 @@ WHAT ENFORCES IT IS NOT THE SIGNATURE, AND THAT MUST BE SAID: no Go
 signature prevents a caller storing the slice. The enforcement is the
 RESIDENCY COUNT — entries still reachable after the pass, canaried 0 -> 200
 — which now guards a design decision rather than a deletion.
+
+# THE DELETION LANDED: eeec2bc0, TREE CLEAN
+
+Verified by f3aa1d0b rather than accepted: `IncrementalProjection` appears
+THREE times in the committed tree and all three are TOMBSTONE COMMENTS —
+projection.go's "IT WAS GONE" header, a test's note about a field that no
+longer exists, and this stage's own rationale in snapshot_cursor.go. The
+type is gone. The determinism pin is committed beside it.
+
+## AND THE PIN'S FIRST CANARY WAS A FINDING THAT CORRECTS MY PREMISE
+
+I ruled that the determinism canary must perturb a MAP-RENDERED record
+because "an unordered map reaching the encoder" was the hazard, and
+6ec565b5 sharpened it to "the perturbation must be able to produce the
+failure mode". BOTH OF US WERE WRONG ABOUT THE MECHANISM, and the
+executor's CANARY K found it by PASSING:
+
+    GO'S encoding/json SORTS MAP KEYS. A map rendered into a JSON OBJECT
+    IS DETERMINISTIC BY CONSTRUCTION.
+
+Deleting `study_render.go`'s `sort.Strings` left the pin GREEN, because
+key order does not survive marshalling. THE HAZARD IS NOT ORDER IN THE
+OUTPUT — IT IS ORDER DECIDING *SELECTION*: `form.DeltaLimits` caps a
+studied block at 8192 bytes, and the renderer spends keys against that
+budget IN SORTED ORDER precisely so two renderings agree. Spend them in
+map order and A DIFFERENT SUBSET IS SHOWN, which no downstream key sorting
+can repair.
+
+    A MAP-RENDERED RECORD IS NECESSARY AND NOT SUFFICIENT. IT MUST BE A MAP
+    WHOSE ITERATION ORDER CHANGES THE OUTPUT — and where a budget forces a
+    choice is where that happens.
+
+RE-CANARIED: eight values of ~1800 B overflow the 8192 budget so it must
+choose; spending in map order FAILS the pin. TWO VACUITY GUARDS beside it —
+the board keys must reach the wire, AND THE BLOCK MUST ELIDE — the second
+because without it the pin is blind, and it was, measurably, for one
+revision.
+
+COVERAGE NAMED, NOT SWEPT: `anthropicsdk` only. `anthropic`, `openaichat`
+and `copilot/responses` have their own encoders and fingerprints and are
+UNCOVERED.
+
+## THE CANARY THAT PASSES IS THE ONE THAT TEACHES
+
+Three times tonight a passing canary was a finding rather than a
+reassurance — a test that could not see the header defect, an instrument
+that could not reach the memo, and now a premise about JSON that was simply
+false. A CANARY THAT FIRES CONFIRMS AN INSTRUMENT. A CANARY THAT PASSES
+CORRECTS A BELIEF, and the second is worth more.
