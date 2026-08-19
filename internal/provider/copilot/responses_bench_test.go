@@ -62,15 +62,15 @@ func appendResponsesBenchSuffix(b *testing.B, log store.Log[message.Message]) {
 }
 
 func responsesBenchProvider(cache store.Log[[]json.RawMessage]) *responsesProvider {
-	var rowsOpen func(string) (store.Log[[]json.RawMessage], error)
+	var cacheOpen func(string) (store.Log[[]json.RawMessage], error)
 	if cache != nil {
-		rowsOpen = func(string) (store.Log[[]json.RawMessage], error) { return cache, nil }
+		cacheOpen = func(string) (store.Log[[]json.RawMessage], error) { return cache, nil }
 	}
 	p := newResponsesProvider(
 		provider.Knobs{Model: "gpt-test"},
 		nil,
 		"",
-		rowsOpen,
+		cacheOpen,
 	)
 	return p
 }
@@ -186,7 +186,7 @@ func BenchmarkCacheValidation(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				p.invalidateRows(cache, fingerprint)
+				p.invalidateCache(cache, fingerprint)
 			}
 		})
 	}

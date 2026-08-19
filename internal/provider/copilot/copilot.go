@@ -74,7 +74,7 @@ func New(
 	// not reach it. Claude models here keep the API's buffered default; GPT
 	// models take the responses route, which streams arguments natively.
 	inner.NoEagerToolStreaming = true
-	inner.RowsNamespace = "copilot-messages"
+	inner.CacheNamespace = "copilot-messages"
 	inner.ExtraOptions = copilotRequestOptions(tokenSrc)
 
 	return &Copilot{

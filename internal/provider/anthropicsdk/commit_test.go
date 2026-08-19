@@ -23,7 +23,7 @@ func TestAssistantCachePreservesSignedThinking(t *testing.T) {
 		"stop_reason":"end_turn",
 		"usage":{"input_tokens":10,"output_tokens":2}
 	}`), &msg))
-	p := &Provider{reminder: "tag", RowsNamespace: "anthropic"}
+	p := &Provider{reminder: "tag", CacheNamespace: "anthropic"}
 	native, err := p.assistantCache(msg)
 	require.NoError(t, err)
 	require.Len(t, native.Payload, 1)

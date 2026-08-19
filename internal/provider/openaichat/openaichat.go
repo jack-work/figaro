@@ -33,14 +33,14 @@ type Provider struct {
 	// no base URL has nowhere to go.
 	Route provider.Route
 
-	RowsOpen      func(aria string) (store.Log[[]json.RawMessage], error)
-	RowsNamespace string
-	rows          store.Log[[]json.RawMessage]
+	CacheOpen      func(aria string) (store.Log[[]json.RawMessage], error)
+	CacheNamespace string
+	cache          store.Log[[]json.RawMessage]
 
 	// markMode is the aria's configured marking strategy, refreshed from
 	// the form at the top of every Send. It participates in
 	// Fingerprint because it decides the SHAPE of every encoded message,
-	// and a shape change has to invalidate the translator log rather
+	// and a shape change has to invalidate the translation cache rather
 	// than leave two shapes interleaved in one cached prefix.
 	markMode provider.MarkMode
 
@@ -51,7 +51,7 @@ type Provider struct {
 
 // New constructs a Chat Completions provider for a route.
 func New(knobs provider.Knobs, resolver auth.TokenResolver, route provider.Route,
-	rowsOpen func(aria string) (store.Log[[]json.RawMessage], error)) (*Provider, error) {
+	cacheOpen func(aria string) (store.Log[[]json.RawMessage], error)) (*Provider, error) {
 	if resolver == nil {
 		return nil, fmt.Errorf("openaichat: nil token resolver")
 	}
@@ -59,14 +59,14 @@ func New(knobs provider.Knobs, resolver auth.TokenResolver, route provider.Route
 		return nil, fmt.Errorf("openaichat: route has no base URL")
 	}
 	return &Provider{
-		auth:          resolver,
-		Model:         knobs.Model,
-		MaxTokens:     knobs.MaxTokens,
-		HTTPClient:    &http.Client{Timeout: 10 * time.Minute, Transport: &wirelog.Transport{Inner: http.DefaultTransport}},
-		Route:         route,
-		RowsOpen:      rowsOpen,
-		RowsNamespace: route.Name,
-		markMode:      provider.MarkAuto,
+		auth:           resolver,
+		Model:          knobs.Model,
+		MaxTokens:      knobs.MaxTokens,
+		HTTPClient:     &http.Client{Timeout: 10 * time.Minute, Transport: &wirelog.Transport{Inner: http.DefaultTransport}},
+		Route:          route,
+		CacheOpen:      cacheOpen,
+		CacheNamespace: route.Name,
+		markMode:       provider.MarkAuto,
 	}, nil
 }
 
@@ -173,7 +173,7 @@ func (p *Provider) authorize(req *http.Request) error {
 	return nil
 }
 
-// Send drives one turn: catch up the translator log, assemble, POST,
+// Send drives one turn: catch up the translation cache, assemble, POST,
 // stream, and land the assistant message.
 func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
 	ctx = wirelog.WithAria(ctx, in.AriaID)
@@ -183,11 +183,11 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	// Before anything reads Fingerprint: the mode decides the wire shape.
 	p.setMarkMode(provider.ResolveMarkMode(in.Snapshot))
 
-	rows, err := p.rowsFor(in.AriaID)
+	cache, err := p.cacheFor(in.AriaID)
 	if err != nil {
 		return err
 	}
-	perMessage, _, err := p.catchUp(in.FigLog, rows, in.Form, in.Studies)
+	perMessage, _, err := p.catchUp(in.FigLog, cache, in.Form, in.Studies)
 	if err != nil {
 		return err
 	}
@@ -347,18 +347,18 @@ func (p *Provider) assistantCache(msg message.Message) (provider.AssistantCache,
 		return provider.AssistantCache{}, err
 	}
 	return provider.AssistantCache{
-		Namespace:   p.RowsNamespace,
+		Namespace:   p.CacheNamespace,
 		Payload:     encoded,
 		Fingerprint: p.Fingerprint(),
 	}, nil
 }
 
-func (p *Provider) rowsFor(aria string) (store.Log[[]json.RawMessage], error) {
-	if aria == "" || p.RowsOpen == nil {
+func (p *Provider) cacheFor(aria string) (store.Log[[]json.RawMessage], error) {
+	if aria == "" || p.CacheOpen == nil {
 		return nil, nil
 	}
 	p.mu.Lock()
-	cached := p.rows
+	cached := p.cache
 	p.mu.Unlock()
 	if cached != nil {
 		if !p.invalidateIfStale(cached) {
@@ -366,7 +366,7 @@ func (p *Provider) rowsFor(aria string) (store.Log[[]json.RawMessage], error) {
 		}
 		return cached, nil
 	}
-	s, err := p.RowsOpen(aria)
+	s, err := p.CacheOpen(aria)
 	if err != nil {
 		return nil, fmt.Errorf("openaichat open translator log: %w", err)
 	}
@@ -374,23 +374,23 @@ func (p *Provider) rowsFor(aria string) (store.Log[[]json.RawMessage], error) {
 		return nil, fmt.Errorf("openaichat translator log invalidation failed")
 	}
 	p.mu.Lock()
-	p.rows = s
+	p.cache = s
 	p.mu.Unlock()
 	return s, nil
 }
 
-// invalidateIfStale clears the translator log on fingerprint mismatch:
-// which is how a change of marking mode, and so of wire shape, re-translates
-// cleanly instead of interleaving two shapes in one prefix.
+// invalidateIfStale clears the cache on fingerprint mismatch: which is how
+// a change of marking mode, and so of wire shape, re-translates cleanly
+// instead of interleaving two shapes in one prefix.
 func (p *Provider) invalidateIfStale(s store.Log[[]json.RawMessage]) bool {
 	want := p.Fingerprint()
-	stored, cleared, err := provider.ClearStaleRows(s, want)
+	stored, cleared, err := provider.ClearStaleTranslationCache(s, want)
 	if err != nil {
-		slog.Warn("openaichat clear stale rows", "stored", stored, "current", want, "err", err)
+		slog.Warn("openaichat clear stale cache", "stored", stored, "current", want, "err", err)
 		return false
 	}
 	if cleared {
-		slog.Info("openaichat cleared stale rows", "stored", stored, "current", want)
+		slog.Info("openaichat cleared stale cache", "stored", stored, "current", want)
 	}
 	return true
 }

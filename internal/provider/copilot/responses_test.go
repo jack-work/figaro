@@ -484,7 +484,7 @@ func TestResponsesProviderInvalidatesCacheOnModelSwitch(t *testing.T) {
 
 	p.SetModel("gpt-5.6-luna")
 	assert.NotEqual(t, initialFingerprint, p.Fingerprint())
-	opened, err := p.rowsFor("aria-1")
+	opened, err := p.cacheFor("aria-1")
 	require.NoError(t, err)
 	require.NotNil(t, opened)
 	assert.Empty(t, cache.Read())
@@ -801,7 +801,7 @@ func TestResponsesProviderClearsIncompatibleCache(t *testing.T) {
 
 	server := newResponseServer(t, func(conn *websocket.Conn) { conn.Close() })
 	p := newResponsesTestProvider(server, cache)
-	opened, err := p.rowsFor("aria-1")
+	opened, err := p.cacheFor("aria-1")
 	require.NoError(t, err)
 	require.NotNil(t, opened)
 	assert.Empty(t, cache.Read())
@@ -892,9 +892,9 @@ func TestCopilotSeparatesMessagesAndResponsesCaches(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	messageCache, err := p.inner.RowsOpen("aria-1")
+	messageCache, err := p.inner.CacheOpen("aria-1")
 	require.NoError(t, err)
-	responseCache, err := p.responses.rowsOpen("aria-1")
+	responseCache, err := p.responses.cacheOpen("aria-1")
 	require.NoError(t, err)
 	_, err = messageCache.Append(store.Entry[[]json.RawMessage]{
 		FigaroLT:    1,

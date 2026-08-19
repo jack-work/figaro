@@ -59,7 +59,7 @@ func appendSDKBenchSuffix(b *testing.B, log store.Log[message.Message]) {
 func sdkBenchProvider(cache store.Log[[]json.RawMessage]) *Provider {
 	return &Provider{
 		reminder: "tag",
-		rows:     cache,
+		cache:    cache,
 	}
 }
 

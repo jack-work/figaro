@@ -990,7 +990,7 @@ It carries CONTENT, not identity. Node ids, fork bases and LTs belong to the
 store an aria is in, not to the aria: so they are left behind and the
 destination mints its own. That is what makes an import unable to collide.
 
-The provider translator logs do not travel either. They are a derivable
+The provider translation caches do not travel either. They are a derivable
 wire cache; the price is one cache-miss on the first turn after an import.`,
 		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {

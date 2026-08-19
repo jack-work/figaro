@@ -56,7 +56,7 @@ type BuildContext struct {
 	Knobs     Knobs
 	Resolver  auth.TokenResolver
 	Templates *template.Template
-	RowsOpen  func(aria string) (store.Log[[]json.RawMessage], error)
+	CacheOpen func(aria string) (store.Log[[]json.RawMessage], error)
 	Backend   store.Backend
 }
 

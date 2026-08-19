@@ -90,7 +90,7 @@ func TestAssistantCacheDropsEmptyStreamedBlocks(t *testing.T) {
 	require.Len(t, msg.Content, 1)
 	assert.Equal(t, "salve", msg.Content[0].Text)
 
-	p := &Provider{reminder: "tag", RowsNamespace: "anthropic"}
+	p := &Provider{reminder: "tag", CacheNamespace: "anthropic"}
 	native, err := p.assistantCache(acc)
 	require.NoError(t, err)
 	require.Len(t, native.Payload, 1)
@@ -109,7 +109,7 @@ func TestAssistantCacheEmptiesToNoPayload(t *testing.T) {
 		"content":[{"type":"text","text":""},{"type":"thinking","thinking":"","signature":""}],
 		"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}
 	}`), &acc))
-	p := &Provider{reminder: "tag", RowsNamespace: "anthropic"}
+	p := &Provider{reminder: "tag", CacheNamespace: "anthropic"}
 	native, err := p.assistantCache(acc)
 	require.NoError(t, err)
 	assert.Empty(t, native.Payload)
@@ -122,7 +122,7 @@ func TestAssistantCacheKeepsSignedEmptyThinking(t *testing.T) {
 		"content":[{"type":"thinking","thinking":"","signature":"sig"},{"type":"tool_use","id":"t1","name":"bash","input":{"command":"ls"}}],
 		"stop_reason":"tool_use","usage":{"input_tokens":1,"output_tokens":1}
 	}`), &acc))
-	p := &Provider{reminder: "tag", RowsNamespace: "anthropic"}
+	p := &Provider{reminder: "tag", CacheNamespace: "anthropic"}
 	native, err := p.assistantCache(acc)
 	require.NoError(t, err)
 	require.Len(t, native.Payload, 1)
@@ -140,7 +140,7 @@ func TestAssistantCacheInvalidToolInputUncacheable(t *testing.T) {
 		"stop_reason":"tool_use","usage":{"input_tokens":1,"output_tokens":1}
 	}`), &acc))
 	acc.Content[1].Input = []byte(`"truncated JSON string`)
-	p := &Provider{reminder: "tag", RowsNamespace: "anthropic"}
+	p := &Provider{reminder: "tag", CacheNamespace: "anthropic"}
 	native, err := p.assistantCache(acc)
 	require.NoError(t, err)
 	assert.Empty(t, native.Payload)

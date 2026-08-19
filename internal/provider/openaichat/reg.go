@@ -104,7 +104,7 @@ func build(ctx provider.BuildContext, route provider.Route, name string, cfg Con
 			knobs.Model = reg.DefaultModel
 		}
 	}
-	rowsOpen := func(aria string) (store.Log[[]json.RawMessage], error) {
+	cacheOpen := func(aria string) (store.Log[[]json.RawMessage], error) {
 		return ctx.Backend.OpenTranslation(aria, name)
 	}
 	resolver := ctx.Resolver
@@ -118,7 +118,7 @@ func build(ctx provider.BuildContext, route provider.Route, name string, cfg Con
 		// the user exported a secret that nothing reads.
 		resolver = optionalToken{inner: resolver, fallback: cfg.APIKey}
 	}
-	p, err := New(knobs, resolver, route, rowsOpen)
+	p, err := New(knobs, resolver, route, cacheOpen)
 	if err != nil {
 		return nil, err
 	}

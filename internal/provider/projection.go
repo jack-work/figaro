@@ -271,12 +271,10 @@ func AppendEncodedMessage(state EncodedMessages, encoded []json.RawMessage, lt u
 	return state
 }
 
-// ClearStaleRows empties a translator log whose stored rows were written
-// under a different encoder fingerprint.
-func ClearStaleRows(rows store.Log[[]json.RawMessage], fingerprint string) (string, bool, error) {
-	entry, ok := rows.PeekTail()
+func ClearStaleTranslationCache(cache store.Log[[]json.RawMessage], fingerprint string) (string, bool, error) {
+	entry, ok := cache.PeekTail()
 	if !ok || entry.Fingerprint == "" || entry.Fingerprint == fingerprint {
 		return "", false, nil
 	}
-	return entry.Fingerprint, true, rows.Clear()
+	return entry.Fingerprint, true, cache.Clear()
 }
