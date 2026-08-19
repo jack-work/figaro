@@ -421,8 +421,8 @@ func (c *Cache[U]) slice(r *run[U], from, to uint64) []U {
 	if to <= from {
 		return nil
 	}
-	lo := sort.Search(len(r.units), func(i int) bool { return c.key(r.units[i]) > from })
-	hi := sort.Search(len(r.units), func(i int) bool { return c.key(r.units[i]) > to })
+	lo := c.upperBound(r.units, from)
+	hi := c.upperBound(r.units, to)
 	// A MISS, NEVER A PANIC. lo > hi is only reachable if from > to, which the
 	// guard above refuses -- but a slice expression that can panic on a
 	// bookkeeping desync turns a wrong answer into a crashed daemon, and this
@@ -431,6 +431,52 @@ func (c *Cache[U]) slice(r *run[U], from, to uint64) []U {
 		return nil
 	}
 	return r.units[lo:hi]
+}
+
+// upperBound is the first index whose key exceeds target: a GUESS THAT VERIFIES
+// ITSELF, falling back to a binary search when the guess is wrong.
+//
+// WHY A GUESS AT ALL. The keys of a run are usually DENSE -- one unit per
+// coordinate, ascending, no holes -- because that is what a substrate handing
+// back consecutive records produces. Where that holds, the answer is
+// arithmetic: target - key(units[0]) + 1. A binary search over 64 units instead
+// calls the Keyer about six times, and the Keyer is a FUNCTION VALUE IN A
+// STRUCT FIELD, so every call is indirect and none of them inlines. Measured by
+// fd15d2a0 on the segment payload path: that search is the whole of a 1.7x
+// regression against a structure that indexed arithmetically.
+//
+// WHY IT VERIFIES RATHER THAN TRUSTING A DECLARATION. Density is a property of
+// the TENANT'S KEY SPACE, not of this cache: Source may legally return fewer
+// units than its coord names ("a hole degrades to a gap, never a lie"), and a
+// decoded-IR key skips values whenever an entry is ceremonial or filtered. One
+// hole and an unchecked arithmetic index returns A DIFFERENT RECORD'S CONTENT,
+// which is the silent-wrong-answer failure this stack fears most. So the guess
+// is CHECKED -- one comparison, against the six a search would cost -- and a
+// failed check falls through to the search. A tenant cannot lie about density
+// because nobody is asked.
+//
+// Gluck approved this shape over a declared-dense flag, 2026-08-19, on exactly
+// that reasoning: "wouldn't the index be correct in every case?" -- it would
+// not, and the check is what makes it so.
+func (c *Cache[U]) upperBound(units []U, target uint64) int {
+	if len(units) == 0 {
+		return 0
+	}
+	base := c.key(units[0])
+	if target >= base {
+		if i := int(target-base) + 1; i >= 0 && i <= len(units) {
+			// The guess is right when the unit BEFORE i is the last one at or
+			// below target and the unit AT i is past it. Checking both ends is
+			// what makes a hole anywhere in between unable to fool it: a hole
+			// shifts every later key down, so the unit at i would carry a key
+			// no greater than target.
+			if (i == len(units) || c.key(units[i]) > target) &&
+				(i == 0 || c.key(units[i-1]) <= target) {
+				return i
+			}
+		}
+	}
+	return sort.Search(len(units), func(i int) bool { return c.key(units[i]) > target })
 }
 
 // runChunk bounds one run's span so eviction has granularity: a gap
