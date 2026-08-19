@@ -79,8 +79,12 @@ type Budget struct {
 	bytes atomic.Int64
 	epoch atomic.Int64
 
-	mu     sync.Mutex
-	owners map[owner]struct{}
+	// owners is PUBLISHED WHOLE: charge and TrimIdle read it on the eviction
+	// path, where a mutex would serialize every cache that shares this budget
+	// against every other. ownersMu serializes registration only, which
+	// happens at construction and teardown.
+	ownersMu sync.Mutex // WRITERS ONLY
+	owners   atomic.Pointer[[]owner]
 
 	evictions atomic.Int64
 }
@@ -95,7 +99,8 @@ type owner interface {
 
 // NewBudget bounds its caches to limit bytes; 0 is unbounded.
 func NewBudget(limit int64) *Budget {
-	b := &Budget{owners: map[owner]struct{}{}}
+	b := &Budget{}
+	b.owners.Store(&[]owner{})
 	b.limit.Store(limit)
 	return b
 }
@@ -124,15 +129,13 @@ func (b *Budget) charge(delta int64) {
 		return
 	}
 	for b.bytes.Load() > limit {
-		b.mu.Lock()
 		var victim owner
 		var coldestEpoch int64
-		for o := range b.owners {
+		for _, o := range *b.owners.Load() {
 			if e, ok := o.coldest(); ok && (victim == nil || e < coldestEpoch) {
 				victim, coldestEpoch = o, e
 			}
 		}
-		b.mu.Unlock()
 		if victim == nil {
 			return // only pins remain; the meter still tells the truth
 		}
@@ -164,13 +167,7 @@ func (b *Budget) TrimIdle(keep int64) (dropped int, freed int64) {
 		return 0, 0
 	}
 	cutoff := b.epoch.Add(1) - 1 - keep
-	b.mu.Lock()
-	owners := make([]owner, 0, len(b.owners))
-	for o := range b.owners {
-		owners = append(owners, o)
-	}
-	b.mu.Unlock()
-	for _, o := range owners {
+	for _, o := range *b.owners.Load() {
 		for {
 			e, ok := o.coldest()
 			if !ok || e >= cutoff {
@@ -193,16 +190,27 @@ func (b *Budget) adopt(o owner) {
 	if b == nil {
 		return
 	}
-	b.mu.Lock()
-	b.owners[o] = struct{}{}
-	b.mu.Unlock()
+	b.ownersMu.Lock()
+	cur := *b.owners.Load()
+	next := make([]owner, len(cur), len(cur)+1)
+	copy(next, cur)
+	next = append(next, o)
+	b.owners.Store(&next)
+	b.ownersMu.Unlock()
 }
 
 func (b *Budget) disown(o owner) {
 	if b == nil {
 		return
 	}
-	b.mu.Lock()
-	delete(b.owners, o)
-	b.mu.Unlock()
+	b.ownersMu.Lock()
+	cur := *b.owners.Load()
+	next := make([]owner, 0, len(cur))
+	for _, x := range cur {
+		if x != o {
+			next = append(next, x)
+		}
+	}
+	b.owners.Store(&next)
+	b.ownersMu.Unlock()
 }

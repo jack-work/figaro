@@ -88,3 +88,40 @@ func TestRacingMissesPublishOneRun(t *testing.T) {
 			resident, runs[0].bytes)
 	}
 }
+
+// Registering and forgetting caches must not lose a sibling: the budget's
+// owner list is published whole, and a successor built from a stale copy would
+// silently stop charging one cache -- a leak that reads as "the meter says
+// zero at peak retention", which this package's own package comment calls the
+// worst possible meter.
+func TestBudgetOwnersSurviveConcurrentRegistration(t *testing.T) {
+	b := NewBudget(0)
+	var calls int
+	var mu sync.Mutex
+
+	const n = 16
+	caches := make([]*Cache[unit], n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			caches[i] = newCache(b, &calls, &mu)
+		}(i)
+	}
+	wg.Wait()
+
+	if got := len(*b.owners.Load()); got != n {
+		t.Fatalf("registered %d caches, the budget holds %d", n, got)
+	}
+
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) { defer wg.Done(); caches[i].Close() }(i)
+	}
+	wg.Wait()
+
+	if got := len(*b.owners.Load()); got != 0 {
+		t.Fatalf("after closing every cache the budget still holds %d owners", got)
+	}
+}
