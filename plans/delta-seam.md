@@ -907,3 +907,34 @@ Asserted directly, it stops being an accident.
   transit, so no known path delivers them to Form.Apply. The writer
   invariant above is about DISK and would never have seen this: two halves
   of one seam.
+
+## PART V, ADDENDUM: TWO NEARLY IDENTICAL SENTENCES, ONE OF THEM DISCARDED
+
+Found by aria 7e151902 while building the durable-log instrument for the
+Ctrl-C case; recorded by d921742d, 2026-08-18.
+
+On an interrupt today the resultTic is NEVER APPENDED: turn.go:751 takes
+the repair branch and returns before the append at 763. So the string
+`interrupted: tool execution was cancelled`, built in collectToolResults,
+is discarded — and the string that actually reaches disk is
+`interrupted: tool execution did not complete`, written by repairTurnTail.
+
+Two sentences one word apart, one durable and one not, and nothing says
+which is which. PART V SHOULD COLLAPSE THEM RATHER THAN INHERIT THEM: it
+is rewriting exactly this path, and after it the interrupt path writes
+what it has rather than synthesising provider-shaped content, so there is
+one place for the sentence to live.
+
+AND THE DURABLE ONE IS NOW LOAD-BEARING FOR A TEST. `InterruptedToolNotice`
+is exported precisely so the pty case and production cannot drift, and it
+is the only mark reachable ONLY through the figaro.interrupt RPC —
+Agent.Interrupt sets isInterrupted, repairTurnTail runs only under it. A
+client that cancels its own context and exits cannot produce it. Whoever
+changes that string, or the branch that writes it, is changing the only
+thing that distinguishes "the turn was stopped by the interrupt" from "the
+turn stopped somehow".
+
+SCOPE, STATED BECAUSE IT IS EASY TO OVERQUOTE: that mark requires A TOOL
+IN FLIGHT. It proves Ctrl-C reaches the daemon for a turn with an open
+tool call. A PROSE-ONLY interrupt — the model mid-paragraph, no tool
+running — is a different case and is not covered by it.
