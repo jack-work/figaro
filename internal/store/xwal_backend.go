@@ -254,6 +254,20 @@ func (b *XwalBackend) Open(ariaID string) (Log[message.Message], error) {
 	return &irDoor{Log: h.ir, backend: b, ariaID: ariaID}, nil
 }
 
+// CloseOpenToolCalls closes this aria's outstanding invokes through the same
+// guarded write path every other append takes.
+func (b *XwalBackend) CloseOpenToolCalls(ariaID string) (int, error) {
+	lg, err := b.Open(ariaID)
+	if err != nil {
+		return 0, err
+	}
+	guard, ok := lg.(*irDoor)
+	if !ok {
+		return 0, fmt.Errorf("store: aria %s IR log is not guarded", ariaID)
+	}
+	return guard.CloseOpenToolCalls()
+}
+
 // recencyLog keeps the memoized recency honest. It is a one-method decorator:
 // everything else is the cache itself, and an append is the only thing that
 // makes an aria newer.

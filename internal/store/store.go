@@ -102,6 +102,19 @@ type Backend interface {
 	// OpenTranslation returns the per-provider translator Stream.
 	OpenTranslation(ariaID, providerName string) (Log[[]json.RawMessage], error)
 
+	// CloseOpenToolCalls closes every tool invoke this aria's history left
+	// outstanding, with an error result each, and reports how many. The IR
+	// write path does this on its next append anyway; calling it is for the
+	// INTERRUPT PATH, where the history must be well-formed the moment the
+	// turn ends rather than the next time somebody writes.
+	//
+	// IT IS A BACKEND OPERATION AND NOT A METHOD ON Log, because Log is what
+	// every channel implements and a translator log has no tool calls. It was
+	// previously reached by asserting an anonymous interface on the value Open
+	// returned, which made the real contract "a Log, plus a method you have to
+	// guess at".
+	CloseOpenToolCalls(ariaID string) (int, error)
+
 	// FormState folds the aria's reducible form channel to
 	// its current snapshot. The channel is the durable truth; there is
 	// no separate form file.

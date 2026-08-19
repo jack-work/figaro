@@ -1152,8 +1152,8 @@ func (a *Agent) finishTurn(reason string) {
 	// taken between the announcement and the next message would see it. Doing
 	// this after the announcement instead makes the aria look active again to
 	// anyone who asks the moment they hear turn.done.
-	if closer, ok := a.figLog.(interface{ CloseOpenToolCalls() (int, error) }); ok {
-		if n, err := closer.CloseOpenToolCalls(); err != nil {
+	if a.backend != nil {
+		if n, err := a.backend.CloseOpenToolCalls(a.id); err != nil {
 			slog.Error("close open tool calls at turn end", "aria", a.id, "err", err)
 		} else if n > 0 {
 			slog.Info("closed open tool calls at turn end", "aria", a.id, "calls", n)

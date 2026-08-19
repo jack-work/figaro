@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"runtime/debug"
 	"sync"
 	"text/template"
 	"time"
@@ -129,13 +130,36 @@ func (p *Provider) Name() string { return providerName }
 
 // Fingerprint hashes the encoder config. Bumping the suffix
 // invalidates every cached translation.
+// Fingerprint CARRIES THE VENDOR SDK'S VERSION, because this provider's rows
+// are the SDK's own marshalling of its typed request: a bump changes what
+// MessageParam serializes to, and a stored row is only good while the type
+// that wrote it is the type that will read it. The rows are derived state, so
+// invalidation costs one re-encode and needs no migration.
 func (p *Provider) Fingerprint() string {
 	rr := p.reminder
 	if rr == "" {
 		rr = "tag"
 	}
-	return "anthropic-sdk/" + rr + "/v1"
+	return "anthropic-sdk/" + rr + "/v1/" + sdkVersion()
 }
+
+// sdkVersion is read once from the binary's own module graph. It is the
+// honest source: it moves when go.mod moves and cannot drift from a constant
+// somebody forgot to bump. A test binary carries no deps and gets "unknown".
+var sdkVersion = sync.OnceValue(func() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "unknown"
+	}
+	for _, dep := range info.Deps {
+		if dep.Path == "github.com/anthropics/anthropic-sdk-go" {
+			if dep.Version != "" {
+				return dep.Version
+			}
+		}
+	}
+	return "unknown"
+})
 
 func (p *Provider) SetModel(model string) {
 	p.mu.Lock()
