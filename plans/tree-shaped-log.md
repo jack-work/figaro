@@ -803,3 +803,125 @@ KIND OF SYSTEM THIS IS, which misleads before a line is read.
 
 RENAME WHEN CONVENIENT, DO NOT LET IT DISTRACT: `compact` -> `evictWindow`,
 and the TruncateFront comment to say it drops sealed segments.
+
+---
+
+# THE SEGMENT TENANT'S DEDUPLICATION: WHAT LANDED, WHAT IT COST, AND THE ONE
+# QUESTION LEFT FOR GLUCK
+
+fd15d2a0, 2026-08-19, on branch fix/segment-runs-in-tree. NOT MERGED: the
+threshold set before the run was not met, and the raise is the deliverable.
+
+## WHAT WAS DELETED
+
+segment/cache.go carried a SECOND immutable index of the same data beside
+tree's: `s.resident`, `residency`, `run`, find/with/without, a coord->Segment
+registry, the Evicted hook, the Recency oracle and the per-segment `usedAt`
+stamp. Its stated reason was that routing the hit through tree would put a
+process-wide mutex on the hottest read path. THAT PREMISE DIED when tree's
+reads stopped taking a lock, and a duplicate kept past its reason is the
+accretion this work exists to remove.
+
+A SOURCE WAS INSTALLED AT LAST. tree.New had been called with src = nil, so
+Range, per-gap refill and hollow-keeps-the-index were UNREACHABLE from this
+tenant: the structure was built and the tenant was wired so it could not be
+entered. `registry` survives in a smaller job -- node path -> *Segment,
+consulted BY THE SOURCE ON A MISS ONLY. The hit never touches it.
+
+## THE NUMBERS, AND THE PROTOCOL THEY WERE TAKEN UNDER
+
+Interleaved A/B, n=8 alternating, THE SAME BENCHMARK FILE ON BOTH SIDES,
+baseline = this branch's parent (2d258884) so the only difference is the
+change, all under /var/tmp/figaro-bench.lock because two benchmarks on this box
+measure each other.
+
+    SERIAL HIT       base ~46 ns/op (44-57)    after ~80 (74-84)   ~1.7x WORSE
+    PARALLEL HIT     base ~57 (53-123)         after ~54 (51-64)   BETTER
+    SEQUENTIAL SCAN  base 8.3k-47k             after 26k-65k       UNRESOLVED
+
+THE PARALLEL RESULT IS THE VARIANCE COLLAPSE, and it stands on this measurement
+alone. 51-64 against 53-123: the after arm is both faster and far tighter. The
+spread in the baseline is the per-segment structure under contention; the
+immutable-publish read does not have it. THIS SECTION DELIBERATELY DOES NOT
+CREDIT IT TO ANY EARLIER LOCK WORK -- see the retraction note below.
+
+## THE MECHANISM OF THE SERIAL COST: A FACT ABOUT THE GENERIC SURFACE
+
+Two costs were found, in this order, and the first diagnosis was WRONG.
+
+1. THE RANGE SURFACE RETURNS A MATERIALIZED SLICE. A one-record read through
+   RangeAt allocated and copied the whole 32-record chunk to hand back one
+   payload: 1153 B/op and 1 alloc/op against 3 B/op and 0, and ~320 ns/op
+   against ~39. A READ PATH THAT WANTS ONE RECORD CANNOT USE A SURFACE SHAPED
+   LIKE A RANGE WITHOUT PAYING FOR THE RANGE. tree.At is the point door; Range
+   remains the door for spans.
+
+2. THE NAME HASH WAS PREDICTED AND WAS NOT THE COST. A per-node Handle,
+   resolving the name once at open instead of hashing a filesystem path per
+   record, moved 85 -> 80 ns. The prediction was mine, the authorization rested
+   on it, and the number refused it. The handle stays because it is right on
+   its own terms -- naming happens at open -- but it is not what closes the gap.
+
+3. WHAT ACTUALLY REMAINS: tree.At binary-searches units through the KEYER --
+   `c.key(r.units[j])` -- A FUNCTION VALUE CALLED ONCE PER COMPARISON, roughly
+   five per lookup, plus sort.Search's closure. The deleted duplicate DID NOT
+   SEARCH AT ALL: its coordinates are dense, so it indexed arithmetically,
+   `payloads[i-r.from]`.
+
+       GENERICITY BY KEYER COSTS AN INDIRECT CALL PER COMPARISON.
+       A TENANT WHOSE COORDINATES ARE DENSE CAN INDEX INSTEAD OF SEARCH.
+
+   THAT IS A FACT ABOUT THE GENERIC SURFACE, NOT A DEFECT IN IT. The Keyer is
+   what lets a run rebuild its index from its units and lets Range slice
+   exactly; a tenant that gives that up gives up those properties too.
+
+## THE ONE QUESTION FOR GLUCK
+
+    MAY tree GROW A DENSE-COORDINATE FAST PATH, so a tenant whose units are
+    contiguous indexes instead of searching?
+
+That is the whole of the remaining gap as far as it can be measured. The
+alternative is keeping the duplicate, which the deletion default forbids; so
+the choice is his, and it is narrow.
+
+## THE SCAN IS NOT REPORTED AS A REGRESSION
+
+THE BASELINE IS BIMODAL: 8.3k and ~44k ns/op in alternating runs of THE SAME
+BINARY. A median across a bistable system is not a measurement, and quoting the
+low mode would have made this a 3x regression with no referent. It needs an
+instrument that finds the two modes before anything is claimed. Left unreported
+deliberately.
+
+## A LAW, NOT A NOTE: EXTEND WHAT IS RESIDENT, NEVER FAULT IT IN
+
+An append that materializes its own tail turns a cache into A FIGHT WITH ITS
+OWN EVICTOR: the sweep drops a run, the next append re-creates it, and an
+append loop racing a sweep livelocks with each undoing the other. It cost a
+25-second hang to see, and the symptom was a timeout, which names nothing.
+tree.ResidentAt exists for this and says so; TestAnAppendNeverFaultsInItsOwnTail
+names the PROPERTY rather than the symptom.
+
+## RETRACTION NOTED SO TWO SECTIONS ARE NOT BOTH BELIEVED
+
+The -43.8% on TreeRangeParallel published earlier is RETRACTED by its author
+(e124f064): it did not reproduce under four protocols, and an A/A control put
+the same binary in both slots and produced the same nominal direction.
+INTERLEAVING IS NOT COUNTERBALANCING; AN A/B WITHOUT AN A/A IS AN UNCALIBRATED
+INSTRUMENT. Nothing in this section rests on it.
+
+## THE SUITE CAUGHT ME THREE TIMES ON PROPERTIES I DID NOT THINK I WAS TOUCHING
+
+  - `without` returned an EMPTY BUT NON-NIL residency, so a segment holding
+    nothing still answered "resident" to every pointer check. Caught by
+    TestSweepIdleDropsWhatNobodyReads: the run HAD been evicted and its bytes
+    returned, and ONLY THE POINTER LIED.
+  - Releasing c.mu around the Source made `for _, r := range n.runs` a STALE
+    ITERATION, which surfaced as a panic, `slice bounds out of range [15:13]`.
+    Caught by TestConcurrentRange under -race -count=2.
+  - extendTail via RangeAt FAULTED IN its own tail and livelocked against the
+    evictor. Caught by TestCacheAccountingSurvivesAppendVersusEvict.
+
+None of the three was a test I wrote, and none guarded a property I believed I
+was near. A SUITE THAT CATCHES YOU ON WHAT YOU WERE NOT THINKING ABOUT IS THE
+THING THIS PROJECT IS ACTUALLY BUILDING -- more than any single change it
+protects.
