@@ -364,16 +364,6 @@ func (l *Log) ScanFromEnd(from uint64, fn func(idx uint64, payload []byte) error
 // beforeIdx. Partial segments (those containing entries on both sides
 // of beforeIdx) and the active segment are left intact; callers should
 // size segments so the UNLINK granularity matches their needs.
-//
-// "COMPACTION" IS NOT WHAT THIS DOES AND THE WORD IS RETIRED HERE. The classic
-// meaning -- rewrite the live records into fresh files to reclaim space -- IS
-// SOMETHING THIS SYSTEM NEVER DOES. TruncateFront UNLINKS WHOLE SEALED
-// SEGMENTS and rewrites nothing. The term was also carrying a third meaning in
-// cachedLog, where it named in-memory window eviction; that one is now
-// evictWindow. Three meanings, one word, and only the unlink is on disk.
-//
-// After deleting files, the directory is fsynced so the unlinks are
-// durable.
 func (l *Log) TruncateFront(beforeIdx uint64) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -517,27 +507,6 @@ func (l *Log) HeaderAt(idx uint64) ([]byte, error) {
 // holds idx TOGETHER WITH THAT SEGMENT'S BASE INDEX, both read from the
 // same segment under one lock. It walks the parent chain for indices
 // below this fork's range, exactly as StateAt and Read do.
-//
-// It exists because the two facts are not separately obtainable without
-// a hazard: HeaderAt WALKS the parent chain and SegmentBaseIndexes, by
-// its own contract, does NOT. Below a fork base, pairing them folds the
-// parent's header onto a range computed from the child's boundaries, and
-// nobody is told -- see TestHeaderFold_AcrossAForkTheNaivePairingIsWrong,
-// which asserts that hazard and is expected to keep passing. This call
-// is the answer to it, not a replacement for the two.
-//
-// It is for a caller that wants to fold [base..idx] ITSELF -- with its
-// own decoded reducer -- instead of paying StateAt's per-record trip
-// through the OnSegmentOpen callback.
-//
-// IT DIFFERS FROM HeaderAt DELIBERATELY: HeaderAt returns a nil header
-// for a log that has none, while this returns ErrNotHeaderMode. A nil
-// header handed back beside a VALID base is a lie a caller can act on --
-// it folds the segment's records onto nothing and produces a from-empty
-// state that looks entirely plausible. A miss, never a lie: the three
-// refusals (ErrNotHeaderMode, ErrEmpty, ErrNotFound) are distinct, and a
-// base of 0 is never returned with a nil error. HeaderAt's own contract
-// is unchanged; it has its own callers.
 func (l *Log) SegmentHeaderAt(idx uint64) (header []byte, base uint64, err error) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()

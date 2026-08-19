@@ -101,13 +101,6 @@ type FlagDef struct {
 	// Subwords, when non-empty, names the sub-verbs this flag belongs to.
 	// The router refuses the flag BEFORE Run when the command's first
 	// positional is not one of them, naming where it does belong.
-	//
-	// This closes the other half of the unconsumed discipline. The dash-token
-	// branch catches a flag nobody can PARSE; this catches a flag that parses
-	// and is then dropped on the floor by a hand-written subword dispatcher -
-	// which is how `fig form -O name=charles` printed the form, ignored the
-	// flag, and reported success. A command with no subwords declares none of
-	// these and is unaffected.
 	Subwords []string
 }
 

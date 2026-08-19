@@ -1,11 +1,4 @@
 // Package cli: provider wiring for the CLI process.
-//
-// Provider factories take operational knobs (model, max_tokens,
-// reminder_renderer, use_official_sdk) extracted by the angelus
-// from the outfit's system.* form keys. Credentials are
-// resolved through the auth strategy chain: env var, plaintext
-// api_key in providers/<name>.toml, hush-encrypted api_key in
-// providers/<name>.toml, OAuth via hush.
 package cli
 
 import (
@@ -106,15 +99,6 @@ func environmentStrategies(reg *providerPkg.Registration) []auth.CredentialStrat
 
 // providerSetupHint is the user-facing guidance shown when a turn fails
 // for lack of a credential.
-//
-// It answers exactly one question - "figaro has nothing to authenticate
-// with" - and must not be shown for any other kind of auth failure. A
-// SESSION EXCHANGE that fails (GitHub answering the Copilot token endpoint
-// with 403 and an HTML error page) is a different diagnosis with a different
-// cure: the credential is present and valid, the derivation hiccuped, and
-// retrying is exactly right. Printing this menu there sends the reader to
-// re-run a login they already did, and hides the status code that would have
-// named the real problem. See sessionExchangeHint.
 func providerSetupHint() string {
 	var b strings.Builder
 	b.WriteString("No provider connected: figaro has no credential to reach a model.\n\n")

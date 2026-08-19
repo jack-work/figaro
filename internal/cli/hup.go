@@ -15,14 +15,6 @@ import (
 // The two hangups. They differ by ONE thing: what becomes of the messages
 // queued behind the turn, and that is why they are two verbs rather than one
 // verb with a negated flag:
-//
-//	hup: stop the turn, KEEP the queue. The waiting messages coalesce into
-//	      one combined message, which the aria answers next.
-//	cut: stop the turn and DISCARD the queue, handing it back so it can be
-//	      saved instead of lost.
-//
-// A flag would put the destructive choice one absent character away from the
-// safe one. A verb cannot be mistyped into its opposite.
 
 // hangupJSON is the one object -j prints. It is the whole answer: which aria,
 // whether a turn was actually stopped, what happened to the queue, and the

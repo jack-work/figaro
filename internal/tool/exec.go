@@ -7,10 +7,6 @@ import (
 )
 
 // ExecRequest is a host-agnostic shell-command invocation.
-//
-// The Executor decides how to run it; transformers may rewrite the
-// request before execution (env sanitization, cwd resolution, path
-// remapping for remote hosts, etc.).
 type ExecRequest struct {
 	// Command is the bash -c argument.
 	Command string
@@ -36,9 +32,6 @@ type ExecRequest struct {
 }
 
 // ExecResult is what an Executor returns.
-//
-// Output is streamed via the onChunk callback passed to Execute; this
-// struct only carries terminal metadata.
 type ExecResult struct {
 	ExitCode int
 	TimedOut bool
@@ -75,11 +68,6 @@ type BackgroundExecutor interface {
 }
 
 // ExecTransformer rewrites a request before the executor runs it.
-//
-// Transformers are applied in order. Typical uses: strip daemon-mode
-// env vars before they leak into children; resolve an empty Cwd from
-// a live source like the form; remap host paths for an SSH
-// executor.
 type ExecTransformer interface {
 	Apply(req ExecRequest) ExecRequest
 }

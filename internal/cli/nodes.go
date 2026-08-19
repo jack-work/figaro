@@ -41,14 +41,6 @@ type renderSettings struct {
 // user's own question under the "< figaro" header while `show` correctly
 // marked it "↳ input". Two renderers for one representation is the exact defect
 // class turn addressing exists to remove; there is now one.
-//
-// Expansion arrives twice, because a tool now has TWO collapsible parts that
-// answer to different policies. bashCap collapses the OUTPUT, and the incipit
-// always passes it uncapped, since nothing there can un-collapse after the
-// fact (architecture.md invariant #2). expanded collapses the ARGUMENTS, and
-// the incipit must NOT force that one: a streaming argument inline is a moving
-// window on something being typed, and its whole value is that it stays small
-// until asked. In the pager both come from the same gesture.
 func renderNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, expanded bool) []string {
 	switch {
 	case n.Type == livedoc.NodeTool:
@@ -107,11 +99,6 @@ func renderNodeList(nodes []livedoc.Node, width int, tick uint64, set renderSett
 // turnComposer is `show`'s composition: the shared shape, the shared chrome,
 // and: under --details: the same per-block coordinate row Ctrl-O draws in the
 // pager, instead of the timestamp line `show` used to invent for itself.
-//
-// Blocks are drawn EXPANDED, as the incipit draws them (Composer.Expanded nil):
-// `show` is a one-shot dump the reader scrolls in their own terminal, with no
-// viewport to husband and no gesture to un-collapse with, so a collapsed table
-// there could not be recovered.
 func turnComposer(turn, width int, tick uint64, set renderSettings) ldrender.Composer {
 	c := ldrender.Composer{
 		View:   &ariaView{settings: &set},
@@ -143,13 +130,6 @@ const proseIndent = "  "
 // tabs, CR) are flattened to spaces: a row must be exactly one physical
 // line or it desyncs the painter's one-row-per-line cursor math (a
 // multi-line bash command in a tool's arg summary is the common culprit).
-//
-// The overwhelmingly common case is a row that already fits and carries
-// nothing to rewrite: every row of every frame is clipped, twice (once by
-// the node renderer, once by the transcript's selection gutter), and almost
-// none of them actually need clipping. clipFits proves the rewrite is a
-// no-op with a single allocation-free byte scan; only rows that genuinely
-// change go through clipToWidthRewrite.
 func clipToWidth(s string, width int) string {
 	if clipFits(s, width) {
 		return s
@@ -260,16 +240,6 @@ func displayWidth(s string) int {
 // rather than as a picture: the footer's status line. A hard clip there ends
 // mid-token with nothing to say anything was dropped ("cost 4.5k to"); one
 // column spent on an ellipsis says it ("cost 4.5k…").
-//
-// The ellipsis is spent only when text was actually DROPPED, which is not the
-// same as "the row had to be rewritten". A row carrying a tab or a control
-// char fails clipFits and gets rewritten however short it is, and stamping it
-// with an ellipsis put a phantom "…" on the end of every tab-indented line of
-// an edit's diff.
-//
-// Body rows keep the hard clip on purpose: they are a picture, an ellipsis in
-// every wrapped paragraph would be noise, and prose is re-wrapped to the width
-// rather than truncated at it.
 func clipToWidthEllipsis(s string, width int) string {
 	if width <= 0 {
 		return ""
@@ -391,15 +361,6 @@ func proseWidth(n livedoc.Node, width int) int {
 
 // quoteGutterCells is quoteGutter's width on screen: four columns, not four
 // bytes: the rule is a three-byte rune.
-//
-// The full four are reserved even though the rule STANDS IN glamour's
-// two-column margin and so usually costs only two. A row with no margin to
-// stand in pays the whole four: a hard-wrap continuation chunk (see
-// render.hardWrapOverlong) has none, and neither does a row glamour emits
-// flush. Reserving two was measured and overflows: w=20, CJK, 22 cells in a
-// 20-column viewport. Those two columns are recoverable by teaching the hard
-// wrap to carry the leading margin onto its continuations; that is a separate
-// change with its own test, not a constant to shave here.
 const quoteGutterCells = 4
 
 // nodeProseRows renders a non-tool node's markdown, whole.
@@ -409,29 +370,6 @@ func nodeProseRows(n livedoc.Node, width int) []string {
 		return rows
 	}
 	// THE RULE IS DRAWN, NOT REPAIRED.
-	//
-	// Thinking used to be handed to glamour as markdown blockquote syntax, and
-	// glamour applies a blockquote prefix per MARKDOWN LINE, not per rendered
-	// ROW: so a paragraph long enough to wrap produced continuation rows with
-	// no rule at all. Three attempts to repair those rows AFTERWARDS each failed
-	// for one structural reason: putting a two-cell rule where glamour put a
-	// two-cell inset needs two columns the row does not have, and no post-hoc
-	// edit can create horizontal space. Only re-wrapping can. Those versions
-	// drew the rule one column left of the block (read as missing indentation),
-	// and then ate the right-hand end of any row without slack: "… +261 more
-	// table lines" came back as "… +261 more tabl".
-	//
-	// CONTRACT: a row may exceed `width` only where glamour's OWN output at the
-	// reserved width already does, a nested list, a fence, an unclosed fence
-	// (by up to 7 cells). This function adds the gutter and nothing else, and
-	// does not clip: every painter already owns its edge (renderNodeList at
-	// width, plainNodeRow at t.w-1, the incipit at w), and a clip here was one
-	// column STRICTER than the frame, deleting a character that was on screen.
-	//
-	// So the width is reserved BEFORE rendering and the rule is prefixed after.
-	// Nothing to detect, nothing to restore, nothing to clip: the defect is
-	// unrepresentable rather than tested for. Tool output has always drawn its
-	// own gutter this way.
 	dim := term.Dim(quoteGutter) // one styled rule, not one per row
 	out := make([]string, 0, len(rows))
 	for _, r := range rows {
@@ -448,15 +386,6 @@ func nodeProseRows(n livedoc.Node, width int) []string {
 // dedentProse removes one proseIndent from a rendered row, looking past the
 // SGR runs glamour emits before the first visible column. The inset is uniform,
 // so nested content keeps its relative depth.
-//
-// THE ESCAPES ARE NOT ALL AT THE FRONT. This used to skip a leading run of
-// escapes and then test for two literal spaces, which held only because
-// glamour v1 emitted its margin as one unbroken "  ". v2 splits it: space,
-// SGR, space: so the prefix test missed, the row was not dedented, and the
-// gutter cost four columns instead of two: thinking text at column 6 while the
-// prose beside it starts at 4. The farmer's 24-shape gutter fuzz caught it at
-// `emoji w=20 row 3`. So: consume two VISIBLE spaces, wherever the escapes
-// fall, and keep every escape.
 func dedentProse(row string) string {
 	var keep strings.Builder
 	i, dropped := 0, 0

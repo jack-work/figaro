@@ -19,11 +19,6 @@ const barePromptSentinel = "__bare_prompt"
 
 // currentFlag is the optional flag the shell-side scripts use to
 // pass the cursor's current partial token. Wire format:
-//
-//	__complete <verb> [--current <cur>] -- <tokens before cursor>
-//
-// Old scripts that omit it still work; the dispatcher leaves
-// CompleteContext.Current empty in that case.
 const currentFlag = "--current"
 
 // CompletionShell identifies a shell for completion script generation.
@@ -47,12 +42,6 @@ func (r *Router) SetBarePromptComplete(fn func(*CompleteContext) []string) {
 }
 
 // runComplete is the hidden __complete dispatcher. Args layout:
-//
-//	__complete <verb> [--current <cur>] -- <tokens before cursor>
-//
-// Prints one candidate per line on stdout. Unknown verb or missing
-// callback exits silently with code 0 so completion never appears
-// broken to the user.
 func (r *Router) runComplete(ctx *RunContext) error {
 	raw := ctx.RawArgs
 	// The router may have left a leading "--" boundary marker from
@@ -152,10 +141,6 @@ func (r *Router) writeBashCompletion(w io.Writer) error {
 	//     the boundary had moved to word 3.
 	//   - At word 1:  emit the verb list (unless we are already in the bare form).
 	//   - Beyond:     dispatch by verb name.
-	//
-	// The cursor's current partial token (${COMP_WORDS[COMP_CWORD]})
-	// is passed via --current so callbacks can switch pools based on
-	// a sigil prefix like "@".
 	fmt.Fprintf(w, `# bash completion for %s
 _%s_completions() {
     COMPREPLY=()
@@ -251,12 +236,6 @@ func (r *Router) writeFishCompletion(w io.Writer) error {
 	// file completion handles those cases natively and is far more
 	// polished than anything we'd reinvent: so we let it ride
 	// alongside our dynamic candidates.
-	//
-	// The dynamic function detects the bare-prompt form (`figaro --`
-	// or an alias expanding to it) and substitutes the sentinel verb
-	// so the dispatcher routes to the bare-prompt completer. The
-	// cursor's current partial token (commandline -ct) is passed via
-	// --current.
 	fmt.Fprintf(w, `# fish completion for %s
 function __%s_dynamic
     set -l tokens (commandline -opc)

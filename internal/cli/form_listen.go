@@ -17,17 +17,6 @@ import (
 )
 
 // runFormListen watches an aria's form and draws it as a live JSON tree.
-//
-// It holds its OWN copy of the state (formMirror) and patches it with what the
-// server broadcasts, rather than re-reading a snapshot per frame. That is the
-// point of the exercise: the same tree, the same algebra, the same patches, on
-// both ends of a socket. A web UI is the same client with a different painter.
-//
-//	j / k     move
-//	enter     expand / collapse
-//	y         yank (OSC 52, so it survives ssh and tmux)
-//	e / d     page down / up
-//	q, C-c    leave
 func runFormListen(loaded *config.Loaded, ariaID string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

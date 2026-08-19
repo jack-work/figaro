@@ -39,13 +39,6 @@ type Event struct {
 }
 
 // Shift/Alt/Ctrl report the modifiers held during the report.
-//
-// SHIFT IS THE ONE A PAGER WANTS, and it is worth knowing that it is not free:
-// many terminals reserve Shift+click for their OWN text selection while mouse
-// reporting is on (that is how a user copies out of a TUI), so a shift-click
-// may never reach us. A binding that needs it must degrade to something
-// reachable: for the pager, ^N/^P + Shift already extends a selection, so a
-// swallowed shift-click costs an affordance, not a capability.
 func (e Event) Shift() bool { return e.Mod&modShift != 0 }
 func (e Event) Alt() bool   { return e.Mod&modAlt != 0 }
 func (e Event) Ctrl() bool  { return e.Mod&modCtrl != 0 }
@@ -53,27 +46,6 @@ func (e Event) Ctrl() bool  { return e.Mod&modCtrl != 0 }
 var prefix = []byte{0x1b, '[', '<'}
 
 // Parse consumes a single SGR mouse sequence from the front of buf.
-//
-// A LONE 0x1b IS A BARE ESCAPE KEYPRESS, NEVER A CLAIM ON MORE INPUT. Every
-// escape decoder in the input pipeline states that rule for itself -
-// parseModifiedKey refuses a buffer shorter than two bytes, and
-// consumeEscapeSequence resolves a one-byte buffer to bare Esc: because the
-// decoders run in sequence and the first one to answer decides. This parser
-// used to disagree: `\x1b` alone is a prefix of `\x1b[<`, so it asked for more
-// input, and the input loop dutifully stashed the byte in `pending` and stopped
-// the frame.
-//
-// A bare Escape is ALWAYS exactly one byte at the end of a read, so with the
-// pager up: the one place mouse reporting is enabled, and the one place Esc
-// has a binding: Escape never dispatched on its own frame. It dispatched on
-// the NEXT keystroke, which is how Esc cleared the node selection while the
-// selection cue stayed painted until the user scrolled.
-//
-// The cost of the rule is a mouse report split by the kernel BETWEEN its 0x1b
-// and its '[', which would now read as Escape plus a stray sequence. That is
-// the classic Esc-timeout trade every terminal program makes, and it is the
-// right side of it: a split read is a rare race, whereas a dead Escape key was
-// certain.
 func Parse(buf []byte) (ev Event, consumed int, ok bool, need bool) {
 	// Not our sequence at all.
 	if !hasPrefixUpTo(buf, prefix) {

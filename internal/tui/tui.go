@@ -1,23 +1,4 @@
 // Package tui: figaro's bubbletea-based first-run components.
-//
-// Built on top of charmbracelet/huh. Two components:
-//
-//   - PassphrasePrompt: two-field form (passphrase + confirm) that
-//     validates match before returning. Used by hush's
-//     managed.Options.PromptPassphrase callback.
-//
-//   - ProviderPicker: a vertically-arranged select with vim (j/k),
-//     emacs (ctrl+p/ctrl+n), and arrow-key navigation. Returns the
-//     chosen entry.
-//
-// Both components fall back to a plain numbered prompt when:
-//   - stdin/stdout is not a TTY, or
-//   - NO_COLOR is set, or
-//   - the caller passes Interactive(false): the figaro config knob.
-//
-// The fallback path is implemented in firstrun.go's existing
-// numbered-menu helpers; the TUI components defer to those when
-// detecting non-interactive conditions.
 package tui
 
 import (
@@ -34,10 +15,6 @@ import (
 // Available reports whether a rich TUI can run in the current
 // environment. Callers should branch on this before constructing a
 // huh form; for negative cases, fall back to plain prompts.
-//
-// Conservative: requires a TTY on both stdin and stdout. NO_COLOR is
-// honored by lipgloss/huh internally; we still let the form render,
-// just without color.
 func Available() bool {
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		return false
@@ -89,10 +66,6 @@ func withFigaroKeymap(form *huh.Form) *huh.Form {
 // returns the agreed-upon bytes. Validates: non-empty, both fields
 // match. Errors propagate; aborting (esc/ctrl+c) returns
 // huh.ErrUserAborted.
-//
-// The title and description give the user context about what the
-// passphrase is for. Pass the consuming app's display name (e.g.
-// "figaro") for the appname argument.
 func PromptPassphrase(appname string) ([]byte, error) {
 	if !Available() {
 		return promptPassphraseFallback(appname)
@@ -152,8 +125,6 @@ type ProviderOption struct {
 // PickProvider shows a select with the given options. First option
 // is the default (Enter selects it without moving). Returns the
 // chosen Key.
-//
-// Falls back to a numbered prompt when Available() is false.
 func PickProvider(title string, options []ProviderOption) (string, error) {
 	if !Available() {
 		return pickProviderFallback(title, options)

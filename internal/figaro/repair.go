@@ -11,18 +11,6 @@ import (
 const tailRepairNotice = "process died mid-turn; output not captured"
 
 // repairInterruptedTail closes any tool call this aria's history left open.
-//
-// It looks for the last assistant message carrying tool_invokes and checks
-// that every one of them has a tool_result somewhere after it. Missing ones
-// get a synthesized error result appended, because a provider refuses a
-// conversation whose tool_use has no tool_result and the refusal is a 400 on
-// the NEXT prompt: the aria is bricked until someone edits history.
-//
-// It scans rather than peeking at the tail because the dangling call is not
-// always last. A HEAD FORK TAKEN MID-TURN inherits the assistant message and
-// then writes the branch's own birth record after it, so the peek saw an
-// input record, concluded there was nothing to repair, and handed the next
-// turn a conversation the provider would not accept.
 func repairInterruptedTail(stream store.Log[message.Message], ariaID string) (store.Entry[message.Message], bool) {
 	rows := stream.Read()
 	at := -1

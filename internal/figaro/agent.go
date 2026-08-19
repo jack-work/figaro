@@ -90,12 +90,6 @@ type event struct {
 	// setDone, when non-nil, carries the WRITER's verdict back to a caller
 	// that asked to wait for it (`fig set --wait`). Buffered, so the drain
 	// loop never blocks on a caller that has walked away.
-	//
-	// Waiting is OPT-IN and must stay that way. A set arriving mid-turn is
-	// applied at the next round boundary by design, so a caller that waits
-	// waits for the length of a tool round; making that the default hangs
-	// TestFormSetDuringToolRoundAppliesNextRound for its full timeout, which
-	// is how the first attempt at this died.
 	setDone chan setVerdict
 }
 
@@ -433,12 +427,6 @@ func snapshotOutfit(snapshot form.Snapshot) (name, version string) {
 }
 
 // resolveContextLimit reports the effective prompt cap for the current model.
-//
-// Precedence: an explicit system.max_context_tokens on the form wins
-// outright: it is an override, so a user pinning a smaller (or larger) window
-// must not be second-guessed by provider metadata. Only when it is unset does
-// the provider get asked. (This used to be the other way round, which made the
-// key unreachable for any provider that reported a limit.)
 func resolveContextLimit(prov provider.Provider, model string, snapshot form.Snapshot) int {
 	if limit, ok := provider.ContextLimitOverride(snapshot); ok {
 		return limit
@@ -513,11 +501,6 @@ func (a *Agent) refreshMetrics() {
 // seedMetricsFromMeta loads the checkpointed counters instead of recomputing
 // them. Returns false when the sidecar cannot be trusted, in which case the
 // caller must fall back to the full fold.
-//
-// The trust condition is the sidecar's watermark matching the log's tail: the
-// sidecar is a checkpoint, not a mirror, and healMeta only runs on the read
-// path. A mismatch means a crash mid-turn or an aria older than the sidecar,
-// both of which the walk handles and then publishMetadata repairs.
 func (a *Agent) seedMetricsFromMeta() bool {
 	if a.backend == nil {
 		return false
@@ -614,10 +597,6 @@ func (a *Agent) SubmitPromptFrom(req rpc.QuaRequest, sender string) {
 // QueuedPrompts returns a read-only snapshot of the messages this aria has
 // accepted but not yet answered, in FIFO order, plus the epoch those ids
 // belong to. The inbox is untouched.
-//
-// carriers opts in to empty-text prompts (pure form carriers): the CRUD
-// surface must be able to address everything it can delete, while every
-// display surface wants them omitted: which is what this has always done.
 func (a *Agent) QueuedPrompts(carriers bool) (string, []rpc.QueuedPrompt) {
 	events := a.inbox.SnapshotPrompts(carriers)
 	out := make([]rpc.QueuedPrompt, 0, len(events))
@@ -650,41 +629,6 @@ func (a *Agent) Interrupt() { a.Hangup(rpc.QueueKeep) }
 
 // Hangup aborts the current turn and says what became of the messages waiting
 // behind it.
-//
-// It also COALESCES the queue on the keep path: each contiguous run of
-// waiting prompts folds into one message, with the same semantics steering
-// already has (texts joined in order, form input merged so a later value
-// wins). Three messages typed during a long turn and then cut short are one
-// question to answer, not three turns to sit through.
-//
-// The fold happens only here. There is no mode threaded into the submit path
-// and no shared helper that checks whether it is being interrupted: this
-// function IS the interrupt path, and Inbox.CoalesceUserPromptRuns has exactly
-// one caller in the tree. A normal submit therefore cannot reach it by
-// construction rather than by convention.
-//
-// An IDLE aria coalesces nothing. There is no turn to interrupt, the drain
-// loop is already working through the queue, and folding under it would change
-// what a plain submit means: which is the one thing this must not do.
-//
-// Two dispositions, named rather than negated, because the CLI verbs that
-// carry them are two different intentions:
-//
-//	QueueKeep: stop the turn; the queue is answered next (`figaro hup`).
-//	QueueClear: stop the turn AND drop the queue, handing it back so it can
-//	             be persisted rather than lost (`figaro cut`).
-//
-// The response's Queue is THE QUEUE AS OF THE HANGUP either way: one field,
-// one meaning, and Cleared says which happened to it.
-//
-// Order is why clear does not simply reuse the keep path: the drain happens
-// BEFORE any fold, so what comes back is the messages as they were typed, each
-// with its own id. Coalescing first would hand back one blob and defeat the
-// point of returning it at all.
-//
-// Clearing does not require a live turn. A queue can be worth dropping between
-// turns, and refusing then would be a distinction with no meaning to the
-// person asking.
 func (a *Agent) Hangup(disposition rpc.QueueDisposition) rpc.InterruptResponse {
 	resp := rpc.InterruptResponse{OK: true, Epoch: a.inbox.Epoch()}
 
@@ -982,16 +926,6 @@ func (a *Agent) act(ctx context.Context) {
 			// notes typed while the previous turn was finishing are one
 			// question, not three turns to sit through, and that is true
 			// whether the turn ahead of them completed or was interrupted.
-			//
-			// This is the third and last drain site to fold, and it is why the
-			// fold is a property of DRAINING rather than of interrupting. The
-			// mid-turn drains (prepareProviderRound, appendSteeringPrompts)
-			// have always folded their batch; only this one, the idle path,
-			// took a single event and gave each message its own turn.
-			//
-			// A lone prompt is still exactly itself: TakeReadyUserPrompts
-			// returns nothing, mergePromptEvents short-circuits, and one
-			// submit remains one message.
 			batch := append([]event{evt}, a.inbox.TakeReadyUserPrompts()...)
 			merged, ok := mergePromptEvents(batch)
 			if !ok {
@@ -1094,14 +1028,6 @@ func (a *Agent) applyControlPatchVerdict(patch message.Patch, ifVersion uint64, 
 // formAccessor returns the per-LT transition source for the provider:
 // for backed arias, the form's patches in version order; nil for
 // ephemeral (the provider falls back to inline IR patches).
-//
-// It hands back a LIVE VIEW, not a snapshot of the history. It used to call
-// FormPatches, which copied the aria's ENTIRE patch history on every Send:
-// O(total board) work on a path that renders O(delta), and the same cost paid
-// again for every studied form. The view asks the store for the range it is
-// actually being asked about, which the store answers by binary search into
-// an immutable published array. See plans/form-projection-followups.md §1: the
-// followup that filed this is now closed by it.
 func (a *Agent) formAccessor() provider.Form {
 	if a.backend == nil {
 		return nil
@@ -1119,13 +1045,6 @@ func (a *Agent) formAccessor() provider.Form {
 // per studied form, read from that form's LIBRETTO. The source is never
 // touched at render time, so a deleted source needs no special case -- its
 // libretto carries the death as a key and outlives it.
-//
-// Keys stay SOURCE ids, because that is the name the user and the model know.
-//
-// The accessor holds the SHARED libretto instance, never a form opened over
-// its stump: a second Form over one channel replays at open and never hears
-// the fold again, so it renders the study block correctly once and then
-// freezes at that version forever.
 func (a *Agent) studyAccessors() map[string]provider.Form {
 	lb, ok := a.backend.(librettoBackend)
 	if a.backend == nil || !ok {
@@ -1200,17 +1119,6 @@ func withoutBookkeeping(p message.Patch) message.Patch {
 
 // formView answers an absolute patch range from the store, per call, holding
 // no position of its own.
-//
-// The range is absolute -- (after, upTo] -- BECAUSE the projection warm-starts
-// mid-log. A cursor that assumed "you have already been driven over everything
-// before this" replayed the whole board onto the first new message, and the
-// per-LT cache made that permanent.
-//
-// Holding no position is what lets the view be built per Send for free (it is
-// two words) and, more to the point, what lets the store answer by binary
-// search into the published array instead of handing over a copy for the
-// caller to walk. The only allocation left is the returned delta itself, which
-// is the answer, typically one patch or none.
 type formView struct {
 	backend store.Backend
 	id      string
@@ -1265,12 +1173,6 @@ func (a *Agent) finishTurn(reason string) {
 	// The turn stopped moving. This is the one place the word "seal" means
 	// anything now: every node in the turn is immutable from here, and it is
 	// the moment a persisted UI-IR channel would write it (Phase 4).
-	//
-	// SEAL WITH THE BRACKET. Seal(nil) left the tail unbracketed, which
-	// pinned it un-evictable and -- in v1 of the pin -- latched the whole
-	// cache: the convicted cause of the >1GB session (storm-triage S1).
-	// The first LT was recorded when the inquiry appended; the last is
-	// the log's tail at this moment.
 	var lts []uint64
 	if a.turnFirstLT > 0 && a.figLog != nil {
 		if last, _ := a.figLog.ReadPage(0, ^uint64(0), 1); len(last) > 0 {

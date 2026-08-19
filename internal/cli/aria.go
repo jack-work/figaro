@@ -70,11 +70,6 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	// read from LT 0 is what this used to do, and the angelus caps a single
 	// read at 1000 entries, so a long aria was shown its own prefix and told
 	// that was all of it.
-	//
-	// SEAM (Phase 3): the walk still derives turns client-side, because turns
-	// are not derivable from an LT window without composing one. The paginated
-	// turn-aware read (Page/TurnPart, byte budget, bidirectional) replaces the
-	// walk wholesale; when it lands, `show` becomes a thin client of it.
 	w, err := gatherShowWindow(ctx, acli, figaroID, opts)
 	if err != nil {
 		die("aria.read: %s", err)
@@ -201,12 +196,6 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 }
 
 // parseShowArgs turns `show`'s reassembled argv into showOpts.
-//
-// It is a named function, not a loop inside renderAria, because the flag most
-// recently broken here was broken by NOT BEING PARSED: cmdkit consumed
-// --max-bytes, the reassembly in cli.go did not pass it on, and `show`
-// exited 0 having ignored it. A parser you cannot call is a parser you cannot
-// test, and the unit test for the clipper it feeds passed the entire time.
 func parseShowArgs(args []string) showOpts {
 	opts := showOpts{last: 10, from: -1, to: -1, before: -1}
 
@@ -288,15 +277,6 @@ func mustAtoi(s string) int {
 // header prints. Before this there were three coordinate systems in one
 // command: --from/--to were slice indices, --before was an LT, and the printed
 // label was a third thing. Now there is one.
-//
-//	--all           everything
-//	--from A --to B turns A..B inclusive
-//	--before T -n N the N turns ending just before turn T (paginate backwards)
-//	default  -n N   the last N turns: paginate backwards from the end
-//
-// Pagination is bidirectional by construction: --from walks forward from an
-// anchor, --before walks backward from one, so a scrolling client can pull an
-// earlier or a later page from wherever it is.
 func selectTurnRange(turns []aria.Turn, o showOpts) (int, int) {
 	total := len(turns)
 	if o.all {

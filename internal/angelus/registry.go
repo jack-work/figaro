@@ -105,19 +105,6 @@ func (r *Registry) Kill(id string) error {
 // Hibernate reclaims an aria's agent while KEEPING everything that makes the
 // aria addressable: its pid bindings, its trunk, its endpoint. It is Kill
 // minus the deletion.
-//
-// The differences from Kill are the whole feature, so they are spelled out:
-// bindings survive (a bound shell's next bare prompt must land on the same
-// trunk, not mint a new aria), figaroPIDs survives (the sweep must not
-// silently detach a terminal), and the caller does NOT drop the hub: the
-// endpoint outliving the agent is the point.
-//
-// Refuses an aria with a turn in flight, and re-checks that immediately
-// before teardown: a prompt can arrive between the sweep's decision and this
-// call, and losing that race must cost a skipped reclamation, never a
-// dropped prompt. The id stays published until teardown completes, exactly
-// as Kill does, so a concurrent restore cannot build a second agent against
-// a still-sealing log.
 func (r *Registry) Hibernate(id string) error {
 	r.mu.Lock()
 	f, exists := r.figaros[id]
@@ -320,15 +307,6 @@ func (r *Registry) BoundPIDCount() int {
 
 // TurnDonor offers a newly opened aria the composed turns its nearest LIVE
 // ancestor already holds below the child's fork base.
-//
-// Phase 4, measured by identity: two branches of one trunk compose the same
-// history into separate node structs, and the minted strings are the tool
-// nodes' Input and Output, which dominate by bytes. The agent's splice
-// (internal/figaro/seed_turns.go) refuses any donation it cannot prove is a
-// prefix of its own log, so the worst case here is a wasted lookup.
-//
-// Nil is the common answer and always legal: no ancestry, no live ancestor, or
-// an ancestor that has materialized nothing yet.
 func (a *Angelus) TurnDonor(childID string) []aria.Turn {
 	lb, ok := a.Backend.(store.LineageBackend)
 	if !ok || a.Registry == nil {

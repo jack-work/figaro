@@ -362,18 +362,6 @@ func baseURLFromToken(token, enterpriseDomain string) string {
 }
 
 // CopilotTokenSource presents the credential hush holds for Copilot.
-//
-// It USED to perform the GitHub-token -> session-token exchange itself and
-// cache the result. That cache lived on the provider instance, and provider
-// instances are per-aria, so a fleet paid one exchange per conversation and
-// stampeded GitHub's exchange endpoint whenever they aged out together.
-//
-// hush owns the exchange now (grant "copilot"), which is the same place the
-// durable secret already lived: one session token per machine, renewed
-// before expiry by the agent's proactive loop, shared by every aria AND
-// every figaro process. What is left here is the shape the anthropic SDK
-// wants - Resolve, Invalidate, BaseURL - over a resolver that does the
-// asking. Nothing is cached: the socket round-trip IS the sharing.
 type CopilotTokenSource struct {
 	resolver     auth.TokenResolver
 	domain       string

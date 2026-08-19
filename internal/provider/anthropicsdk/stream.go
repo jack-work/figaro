@@ -23,18 +23,6 @@ const dumpBytes = 2048
 
 // drainStream consumes the SDK SSE stream, forwards deltas to the
 // bus, and returns the assembled assistant message at message_stop.
-//
-// The SDK's MessageAccumulator could fold deltas for us, but we need
-// to emit live PushDelta / PushToolInvokeStart / PushToolInvokeDelta calls,
-// so we walk the events ourselves and accumulate in parallel.
-//
-// Observability: per-tool-block byte tallies are reported on
-// `provider.tool_use.block_stop`. If `acc.Accumulate` rejects a
-// stream (typically because the model emitted malformed
-// `input_json_delta` chunks that don't reassemble into valid JSON),
-// the offending block's accumulated bytes are captured on the span
-// via `provider.accumulate.failed` so the failure is diagnosable
-// from `traces.jsonl` alone: no wire-dir replay required.
 func drainStream(ctx context.Context, stream *ssestream.Stream[anthropic.MessageStreamEventUnion], model string, bus provider.Bus) (message.Message, anthropic.Message, error) {
 	acc := anthropic.Message{Model: anthropic.Model(model)}
 	// Tracks per-tool-use indices that have already emitted a
@@ -183,10 +171,6 @@ func handleBlockStop(ctx context.Context, ev anthropic.ContentBlockStopEvent, ac
 // calling `json.Marshal` on the block at `content_block_stop`; when
 // that marshal fails (json.RawMessage validates), the malformed
 // buffer is still sitting in `Input`: we just have to read it.
-//
-// We pick the last tool_use block as the offender heuristic: text
-// and thinking blocks don't route through json.RawMessage marshaling
-// and so can't be the cause of this error class.
 func recordAccumulateFailure(ctx context.Context, ev anthropic.MessageStreamEventUnion, acc *anthropic.Message, bytesByIdx map[int]int64, cause error) {
 	attrs := []attribute.KeyValue{
 		attribute.String("event_type", ev.Type),
@@ -261,26 +245,6 @@ func jsonSyntaxOffset(err error) int64 {
 // reportUnescapedChunk is the WIRE CANARY: it fires the first time a tool
 // block receives an argument fragment that is already impossible, and it
 // carries the bytes that settle who broke it.
-//
-// `partial_json` is a JSON string whose contents are a fragment of the tool
-// input's JSON TEXT. A tab inside an argument therefore travels as the FOUR
-// bytes `\\t` and must arrive as the TWO bytes `\t`. If it arrives as one raw
-// tab, one decoding too many has happened somewhere, and JSON forbids a raw
-// control character inside a string literal, so that fragment can never
-// reassemble into anything valid. The turn is already lost at this moment,
-// several seconds before json.Marshal says so at content_block_stop.
-//
-// Whose fault it is, is decidable right here and nowhere else, because this is
-// the last place both forms exist at once:
-//
-//   - wire.doubled_escape true: the wire was correct and something below us
-//     decoded twice. TestWireIsDecodedExactlyOnce says that something is not
-//     figaro and not the SDK: so look at whatever sits between.
-//   - wire.doubled_escape false: the fragment arrived single-escaped. Nothing
-//     downstream could have produced that; the sender did.
-//
-// Once per block, capped: a 1.7 KB `edit` is fifty of these events, and the
-// first one already carries the answer.
 func reportUnescapedChunk(ctx context.Context, owner anthropic.ContentBlockUnion, idx int, chunk, rawEvent string, seen map[int]bool) {
 	if seen[idx] {
 		return

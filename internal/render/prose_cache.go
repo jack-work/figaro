@@ -8,13 +8,6 @@ import "sync"
 // window, and the live open message re-renders all of its nodes on every tick
 // even though only the last one is growing. proseCache turns those repeats into
 // a map lookup.
-//
-// The eviction policy is generational rather than an LRU: entries accumulate in
-// hot, and once hot has taken proseCacheBudget bytes it demotes to cold and a
-// fresh hot starts. A lookup that hits cold is promoted back into hot, so the
-// working set (the retained window) survives rotations and anything stale is
-// dropped wholesale on the next one. Retained bytes are bounded by roughly
-// 2 x budget, with no per-entry bookkeeping.
 const proseCacheBudget = 4 << 20
 
 type proseKey struct {

@@ -12,11 +12,6 @@ const (
 	// under-specified: "user" was a lie the moment a subagent sent a message,
 	// and figaro does not yet need to know WHO supplied input: only that it is
 	// input. A finer distinction can be added later without another rename.
-	//
-	// These are figaro's INTERNAL vocabulary. Providers require literal
-	// user/assistant on their own wire; every translator emits those literals
-	// itself (e.g. nativeMessage{Role: "user"}), so the boundary is correct by
-	// construction and this rename cannot reach a provider payload.
 	RoleInput      Role = "input"
 	RoleOutput     Role = "output"
 	RoleToolResult Role = "tool_result"
@@ -56,10 +51,6 @@ func RoleFromWire(s string) Role {
 // projection sites because a decode path that forgets to normalise is a bug
 // nobody would see until a turn rendered under the wrong voice: the same
 // class of silent drift this refactor exists to delete.
-//
-// Writing is unconditional: MarshalJSON is the default, so new entries record
-// input/output. The `ir` channel schema is bumped alongside, so an older binary
-// refuses the store outright instead of misreading it.
 func (r *Role) UnmarshalJSON(b []byte) error {
 	var s string
 	if err := json.Unmarshal(b, &s); err != nil {
@@ -172,24 +163,6 @@ type Content struct {
 	Reason InterruptReason `json:"reason,omitempty"`
 
 	// Sender attributes THIS block to whoever submitted it.
-	//
-	// A user message is not always one submission. Consecutive prompts drain
-	// and fold into ONE message (mergePromptEvents), and those prompts may come
-	// from different places: a human, a parent aria, a sibling three worktrees
-	// away. Before this they arrived as one anonymous blob and arias genuinely
-	// could not tell who was talking: there was nothing on the message to say.
-	//
-	// It lives on Content rather than on Message because Message.Content IS the
-	// list of payloads, so one field makes each payload attributed without a
-	// second parallel list for every consumer to learn and for the two to
-	// disagree about. A multi-block submission (text plus an image) is a RUN of
-	// Contents sharing a Sender; runs are self-describing, with no grouping
-	// structure that can desync from the content it groups.
-	//
-	// Rendered form, not an id: "aria 76062b18" for an authenticated aria,
-	// a bare label for an asserted one (see rpc.Attribution). Empty means
-	// unknown, and every renderer draws NOTHING rather than "unknown", a
-	// blank attribution is noise on every message that never had one.
 	Sender string `json:"sender,omitempty"`
 }
 
@@ -254,17 +227,6 @@ type Message struct {
 	// question. It is provenance, not content: the blocks are ordinary prose
 	// and every provider encodes them exactly as before, so the model reads a
 	// steer the same way it always did.
-	//
-	// It exists because the alternative: inferring steering from a prose
-	// block co-occurring with a tool_result: cannot work when a steer
-	// arrives while no tool is running, and that inference is precisely what
-	// let a steer open its own turn and truncate the turn it meant to steer.
-	// The drain that classifies is the only place that knows, so the drain
-	// records it here.
-	//
-	// Legacy logs carry no flag; prose riding on a tool_result message is
-	// still recognised as steering, so history written before this field
-	// renders unchanged.
 	Steering bool `json:"steering,omitempty"`
 
 	// TurnID names the exchange this message belongs to: one user prompt
@@ -400,18 +362,6 @@ func ToolImagesByCall(content []Content) map[string][]Content {
 
 // MalformedArgsKey is the sole key of the arguments map figaro synthesizes for
 // a tool call whose arguments DID NOT ARRIVE AS VALID JSON.
-//
-// A provider streams a tool call's arguments as a sequence of JSON fragments.
-// When the concatenation is not parseable, a raw tab where an escape was
-// owed, a string that never closes: the call cannot be executed, but the rest
-// of the turn is unharmed: the thinking, the prose, and every other tool call
-// are already in hand. So the block is QUARANTINED rather than mourned: the
-// bytes that arrived are preserved verbatim under this key, which keeps the
-// wire legal (a tool_use must replay, or its tool_result is orphaned) while
-// telling everything downstream that the call must not run.
-//
-// The key is deliberately ugly and namespaced: it shares a map with argument
-// names the model chose, and it must not collide with one.
 const MalformedArgsKey = "__figaro_malformed_tool_input__"
 
 // MalformedArgs is the arguments map for a quarantined tool call.
@@ -421,17 +371,6 @@ func MalformedArgs(raw string) map[string]interface{} {
 
 // InvalidJSONResult is the tool_result CONTENT for a quarantined call, in the
 // shape Anthropic publishes for fine-grained tool streaming:
-//
-//	{"INVALID_JSON": "<the unparseable input you received>"}
-//
-// serialized to a string, returned with is_error set. The wrapper is what
-// makes it unambiguous to the model that the input never parsed: rather than
-// prose it has to interpret, and it hands back the exact bytes that arrived,
-// which is the only copy anyone has.
-//
-// Built with the JSON encoder, never by concatenation: the payload is by
-// definition full of unescaped quotes and control characters, and this is the
-// one place they must be escaped correctly.
 func InvalidJSONResult(raw string) string {
 	b, err := json.Marshal(map[string]string{"INVALID_JSON": raw})
 	if err != nil {

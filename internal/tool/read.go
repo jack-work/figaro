@@ -105,13 +105,6 @@ func (r *ReadTool) Execute(ctx context.Context, args map[string]interface{}, onO
 }
 
 // readImage inlines an image file, made to fit the configured ceiling.
-//
-// The picture is the point, so a too-large image is SCALED, not discarded:
-// dropping it would leave the model to answer questions about something it
-// cannot see. Only an image that cannot be encoded under the ceiling at any
-// size returns text alone, and then the note says so plainly, because a model
-// that knows it is blind can ask for a crop, while a model that does not will
-// invent what it thinks it saw.
 func (r *ReadTool) readImage(absPath, mimeType string, onOutput OnOutput) ([]message.Content, error) {
 	data, err := os.ReadFile(absPath)
 	if err != nil {

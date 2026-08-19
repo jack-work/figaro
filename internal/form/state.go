@@ -19,41 +19,6 @@ type board struct {
 }
 
 // State is a per-aria form state handle.
-//
-// Concurrency contract: ONE WRITER, MANY READERS.
-//
-// The writer is the agent's inbox drain loop (Agent.act -> applyControlPatch
-// -> State.Apply). Readers are everyone else: the figaro.form RPC
-// handler, Agent.ApplyOutfit, Agent.formString/formInt via
-// Agent.Info, and they run on RPC goroutines, concurrently with the writer.
-//
-// Because a Snapshot is an immutable persistent value, publishing one through
-// an atomic.Pointer is all the synchronisation needed: readers are lock-free,
-// each sees a complete board, and the happens-before edge that the plain field
-// read used to lack is supplied by the atomic. Before this, State.Snapshot on
-// an RPC goroutine raced State.Apply on the agent goroutine, a reader could
-// range a map the writer was still filling, which is fatal-capable, not benign.
-//
-// THERE IS NO LONGER EXACTLY ONE WRITER, and this doc used to say what to do
-// about that: "a second writer would need CompareAndSwap on the update path."
-// Cast came off the agent's actor loop (the self-cast deadlock), so a cast
-// publishes its study set from the CALLER's goroutine while the drain loop
-// publishes a `set` from its own. Apply's old load-modify-publish then lost
-// whichever finished second -- not a data race the detector can see (the
-// pointer is atomic and snapshots are immutable), a LOST UPDATE, which is
-// worse for being invisible.
-//
-// So Apply is a CAS retry loop now. It is cheap: the contended window is the
-// tree apply, publication is one pointer swap, and a retry recomputes against
-// a snapshot that is immutable by construction.
-//
-// A CAS makes each publication atomic; it does NOT make a stale whole-value
-// write correct, and no lock can. A writer that computes a whole key from a
-// read taken before someone else's write must order itself some other way --
-// see Agent.publishStudies, which orders by the durable version its write
-// landed at. Save, which runs only after the drain loop has exited
-// (Agent.Kill waits on it), clears the dirty flag with a single non-looping
-// CAS so that it cannot clobber a concurrent publication.
 type State struct {
 	published atomic.Pointer[board]
 	path      string
@@ -103,10 +68,6 @@ func (s *State) Snapshot() Snapshot {
 
 // Apply advances the state by the patch and returns the new board.
 // Writer-side only: see the concurrency contract on State.
-//
-// A patch that changes nothing publishes nothing and does not mark the
-// state dirty: the tree returns a pointer-identical root for a
-// semantically equal write, so there is no new state to persist.
 func (s *State) Apply(p Patch) Snapshot {
 	if p.IsEmpty() {
 		return s.load().snapshot

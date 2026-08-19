@@ -40,21 +40,6 @@ func SetPayloadCacheBudget(bytes int64) { segment.SetCacheBudget(bytes) }
 func PayloadCacheBytes() int64 { return segment.CachedBytes() }
 
 // Log is a figwal write-ahead log.
-//
-// A record lives in exactly one of two places: the PENDING buffer, which
-// holds what has been appended and not yet synced, or the segment files.
-// Reads consult the pending buffer first and fall through to the segments,
-// whose payloads are loaded lazily and held against a process-wide budget
-// (see figwal/segment). Opening a log therefore costs its index, not its
-// history: a channel nobody reads holds no payloads at all.
-//
-// The pending buffer is published behind an atomic pointer, so a reader of
-// unsynced records takes no lock; below it, a read takes the disk log's read
-// lock, which an append holds only for the write syscall and never for an
-// fsync.
-//
-// Forks reshape the on-disk log only. A child reads its inherited prefix
-// through the parent handle, which is where that prefix has always lived.
 const defaultMaxUnflushedBytes = 64 << 20
 
 type Log struct {
@@ -208,13 +193,6 @@ func (l *Log) write(idx uint64, payload []byte) error {
 }
 
 // Sync persists every pending entry and fsyncs.
-//
-// A synced record leaves the pending buffer and is served from its segment
-// thereafter, whose payloads are cached lazily and evictably. Nothing is
-// lost by the move: the bytes are on disk before the buffer is trimmed.
-//
-// Appends are only briefly blocked (queue bookkeeping); the disk IO runs
-// outside the writer mutex.
 func (l *Log) Sync() error { return l.SyncThrough(^uint64(0)) }
 
 // SyncThrough persists pending entries with index <= target and fsyncs.

@@ -130,10 +130,6 @@ func parseKeyNumber(buf []byte) (value, consumed int, complete bool) {
 // F-key (\x1bOP), or an OSC (\x1b]…ST). CSI-u sequences we DO recognize
 // are already handled by parseModifiedKey: this is the catch-all so bare
 // Esc can drive its own binding without a spurious CSI prefix triggering it.
-//
-// Returns consumed=0, need=false for a bare Esc (either the buffer holds
-// just 0x1b, or 0x1b is followed by a byte that does not begin a known
-// sequence). Returns need=true when a sequence is split across reads.
 func consumeEscapeSequence(data []byte) (consumed int, need bool) {
 	if len(data) == 0 || data[0] != 0x1b {
 		return 0, false
@@ -180,17 +176,6 @@ func consumeEscapeSequence(data []byte) (consumed int, need bool) {
 // two keeps the delimiter (which owns the "bare Esc vs. sequence prefix"
 // guarantee and the split-read `need`) untouched, and makes classification a
 // total function over a finished sequence.
-//
-// Anything not in the navigation vocabulary: F-keys, OSC replies, cursor
-// position reports, Left/Right: returns ok=false and stays swallowed exactly
-// as before.
-//
-// Both encodings are accepted: CSI (\x1b[A, the normal cursor mode) and SS3
-// (\x1bOA, which terminals emit for the arrows once an application turns on
-// DECCKM: vim, less and the pager's own alt-screen entry all can). Home and
-// End are the worst-behaved keys in the terminal world: xterm sends \x1b[H /
-// \x1b[F, the VT220 lineage sends \x1b[1~ / \x1b[4~, and rxvt sends
-// \x1b[7~ / \x1b[8~. All six are honored.
 func navKeyFor(seq []byte) (modifiedKey, bool) {
 	if len(seq) < 3 || seq[0] != 0x1b {
 		return modifiedKey{}, false

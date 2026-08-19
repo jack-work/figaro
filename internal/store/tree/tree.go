@@ -1,7 +1,5 @@
 // Package tree is the ONE shape every derived cache in this stack
 // shares: a window of materialized units over a durable substrate,
-//
-//	bracket below it) pins ITSELF -- never its cache -- and its bytes
 package tree
 
 import (

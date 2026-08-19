@@ -10,19 +10,6 @@ import (
 
 // The refcount ledger: the last few moves of every libretto's count, kept so
 // that a refusal can EXPLAIN ITSELF.
-//
-// "release below zero" means some release had no matching retain, and that is
-// an UNDER-count: the direction the reconciliation sweep cannot repair,
-// because recomputing from the boards would simply count the survivor. It has
-// appeared once, under a loaded full gate, and four green runs since have
-// said nothing about it -- which is the problem with hunting a rare race by
-// repetition: a green run is not evidence, and the run that fails is the one
-// you were not watching.
-//
-// So the failure carries its own diagnosis. The cost is a mutex and a struct
-// copy on an operation that already performs an fsync, which is nothing, and
-// it is paid in production deliberately: the run that matters is the one on
-// somebody's real store at 3am, not the one under a test harness.
 const librettoLedgerSize = 64
 
 type refMove struct {

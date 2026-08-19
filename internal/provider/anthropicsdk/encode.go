@@ -43,12 +43,6 @@ func (p *Provider) renderMessage(msg message.Message, prevSnap *form.Snapshot) (
 				// each with its own sender. Announce a sender when it CHANGES,
 				// so a run of blocks from one caller costs one line and the
 				// model still reads an unambiguous "who said what".
-				//
-				// A message with no senders emits exactly what it always did:
-				// no extra block, byte-identical wire. That is not tidiness -
-				// the provider wire cache is keyed by LT and holds signed
-				// thinking blocks, so silently re-encoding old messages would
-				// invalidate caches and replay unsigned blocks as 400s.
 				if c.Sender != "" && c.Sender != lastSender {
 					blocks = append(blocks, anthropic.NewTextBlock(senderReminder(c.Sender)))
 				}

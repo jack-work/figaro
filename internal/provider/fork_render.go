@@ -1,17 +1,6 @@
 package provider
 
 // The FORK incantation: what a branch is told about being a branch.
-//
-// Until now, nothing. `system.forked_from` lands on the child's board at
-// birth, and form.Render skips the whole `system.` namespace, so a forked aria
-// received no word of its own forking: it simply woke up with its parent's
-// history and no idea it was not the parent. That silence is the default this
-// key overrides.
-//
-// The block only appears when an incantation is set. An aria with no
-// system.fork_incantation renders exactly what it rendered before, which is
-// nothing: a lifecycle event nobody asked to hear about should not start
-// appearing in every branch in the store.
 
 import (
 	"encoding/json"
@@ -23,9 +12,6 @@ import (
 
 // ForkReminderTexts renders the fork incantation when this message carries the
 // patch that marks a branch's birth. One block, or none.
-//
-// Provider-neutral, like StudyReminderTexts, so every dialect folds the same
-// derivation into its own block type.
 func ForkReminderTexts(msg message.Message, board form.Snapshot) []string {
 	parent, forked := forkedFrom(msg.Patches)
 	if !forked {

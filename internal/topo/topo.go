@@ -1,23 +1,4 @@
 // Package topo is the aria hierarchy figaro renders and deletes by.
-//
-// There are two hierarchies over the same arias and they answer different
-// questions:
-//
-//   - TOPOLOGY, on disk as .from plus a per-channel .fork base: where my
-//     history comes from. Fixed at fork time; changing it changes what an
-//     aria can read. This is correctness, and figwal owns it.
-//   - PRESENTATION, this package: what an aria appears under, and what a
-//     delete takes with it. This is intent, and nothing on disk can
-//     reconstruct it.
-//
-// Without the trunk capability the two are the same tree and Tree reads
-// straight through to the topology. With it, internal/trunk supplies a
-// pstate-backed tree that may differ, a promoted aria appears above the
-// ancestor it still inherits from.
-//
-// The rule that keeps this safe: FORKING NEVER CONSULTS A Tree. Owner and
-// ForkAt climb .from. A presentation edge must never decide where data
-// comes from.
 package topo
 
 import (
@@ -92,11 +73,6 @@ func (x topoTree) DeleteSet(id string) []string {
 
 // Present is the hierarchy a listing draws: the topology with every sound
 // override applied.
-//
-// An override is REFUSED, not obeyed, when it names an aria that no longer
-// exists or when it would close a cycle. A promote cannot produce either,
-// but a state file written by an older figaro can, and a listing that walks
-// a cycle never returns.
 func Present(parent map[string]string, edges map[string]string) map[string]string {
 	out := make(map[string]string, len(parent))
 	maps.Copy(out, parent)
@@ -157,10 +133,6 @@ func lowestMoved(parent map[string]string, on string, moved map[string]bool) str
 }
 
 // DescendantClosure is id plus everything under it, breadth-first.
-//
-// Takes the whole parent->children adjacency in ONE pass. Asking a Tree for
-// Children per node makes this O(n^2), because both implementations answer
-// that by scanning every node.
 func DescendantClosure(kids map[string][]string, id string) []string {
 	seen := map[string]bool{id: true}
 	out := []string{id}
@@ -193,9 +165,6 @@ func ChildIndex(t Topology, parentOf func(string) (string, bool)) map[string][]s
 // Boundary is the survivors a delete would orphan: arias outside the delete
 // set whose TOPOLOGY ancestry runs through it. They must absorb the prefix
 // they borrow before any directory in the set is unlinked.
-//
-// Empty whenever the presentation tree is normalized, which is why a
-// trunkless figaro never repairs anything.
 func Boundary(t Topology, deleteSet []string) []string {
 	doomed := make(map[string]bool, len(deleteSet))
 	for _, id := range deleteSet {

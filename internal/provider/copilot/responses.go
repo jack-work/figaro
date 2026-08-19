@@ -727,12 +727,6 @@ type responseContent struct {
 }
 
 // promptCacheBreakpoint is the GPT-5.6+ explicit cache marker.
-//
-// Deliberately paired with NO prompt_cache_options.mode="explicit": a bare
-// breakpoint is ADDITIVE, leaving OpenAI's automatic breakpoints in place,
-// so a bad placement costs nothing. Setting the mode disables the automatic
-// ones, and then a single misplaced mark forfeits the whole prefix on every
-// turn, at the 1.25x cache-write rate GPT-5.6 introduced.
 type promptCacheBreakpoint struct {
 	Type string `json:"type"`
 }
@@ -1267,23 +1261,6 @@ func toolImageCaption(c message.Content) string {
 
 // markPromptCacheBreakpoint stamps one explicit breakpoint at the end of the
 // last completed exchange, and reports how many it placed.
-//
-// Placement is deliberately BEHIND the newest turn. GPT-5.6 already carries
-// an implicit breakpoint at the latest user/tool message, and: unlike
-// earlier models: it does NOT fall back to the longest matching unmarked
-// prefix when that fails. So a changed tail returns cached_tokens=0 even
-// though thousands of leading tokens are identical. A mark on the last
-// assistant item is a boundary that existed, byte for byte, on the previous
-// turn, which gives the miss somewhere to land.
-//
-// The first turn of an aria has no assistant item and gets no mark: there is
-// nothing behind it that was ever cached, and the implicit breakpoint
-// already covers what there is.
-// It returns a COPY. inputFor hands back projection.State, the live slice the
-// provider retains between turns, so stamping in place would bake this
-// turn's marker into the per-LT cache permanently: it could never move
-// forward, the next turn would add a second one, and the bytes of an item
-// already inside a cached prefix would have changed underneath it.
 func markPromptCacheBreakpoint(input []json.RawMessage) ([]json.RawMessage, int) {
 	for i := len(input) - 1; i >= 0; i-- {
 		var item responseInputItem
@@ -1316,13 +1293,6 @@ func markPromptCacheBreakpoint(input []json.RawMessage) ([]json.RawMessage, int)
 }
 
 // logPromptCacheEconomics records what the cache actually did.
-//
-// This route speaks websocket, so wirelog: which wraps an http
-// RoundTripper: cannot see it and FIGARO_WIRE_DIR yields nothing here. The
-// usage numbers are the only instrument available, and on GPT-5.6 they are
-// the ones that matter: writes are billed at 1.25x the uncached rate, so a
-// breakpoint that re-writes every turn costs more than not caching at all.
-// Reads-per-write is the number that tells you which you have.
 func logPromptCacheEconomics(usage responseUsage, breakpoints int) {
 	reads := usage.InputTokensDetails.CachedTokens
 	writes := usage.InputTokensDetails.CacheWriteTokens

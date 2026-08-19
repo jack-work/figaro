@@ -1,22 +1,4 @@
 // Immutable AVL tree for form snapshots.
-//
-// Lifted from github.com/jack-work/pstate (tree.go, MIT, same author) and
-// adapted. Changes from the original:
-//
-//   - Tree -> ptree, and the type is package-private: Snapshot is the public
-//     handle, the tree is its guts.
-//   - Set is a no-op when the new value is semantically Equal to the stored
-//     one: it returns the receiver, root pointer and all. See Set's doc.
-//   - Delete already returned the receiver for an absent key; Set now matches,
-//     so "nothing changed" is observable as pointer identity everywhere.
-//   - All() iter.Seq2 alongside Range.
-//   - pstate's Tree.Apply(ordered edit list) is dropped: form's Patch is
-//     a key-idempotent {Set, Remove}, applied by the Snapshot layer.
-//
-// The structure is persistent: Set and Delete copy only the O(log n) nodes on
-// the path from the root to the edit and share every other subtree with the
-// receiver. That is what makes Clone free, and it is what diffTrees exploits -
-// an untouched subtree is *pointer-identical* between the two trees.
 
 package form
 
@@ -101,18 +83,6 @@ func (t ptree) Has(key string) bool {
 }
 
 // Set returns a tree containing key bound to value. The receiver is unchanged.
-//
-// If key is already bound to a value that Equals value, the receiver is
-// returned as-is: same root pointer, and the ORIGINAL raw bytes are kept, not
-// the incoming ones. This is deliberate and load-bearing:
-//
-//   - it keeps "semantically identical write" free of allocation,
-//   - it makes diffTrees short-circuit instantly on such a write,
-//   - and it is why re-serialising an object whose keys were merely reordered
-//     does not perturb the form channel or fire a reminder at the agent.
-//
-// The corollary the caller must know: after t.Set(k, v), t.Get(k) may return
-// bytes that differ from v.Raw() while being semantically equal to it.
 func (t ptree) Set(key string, value Value) ptree {
 	root := setNode(t.root, key, value)
 	if root == t.root {

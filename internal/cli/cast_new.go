@@ -1,29 +1,6 @@
 package cli
 
 // AUTOCASTING: minting a figaro and a role in one gesture.
-//
-// The pair was always two commands, and the second one was always the same
-// two commands:
-//
-//	fig new -O reviewer          then   fig cast @role
-//	fig form new -S name=x       then   fig cast <aria> @thatform
-//
-// `-C` folds the second into the first, from either end. `fig new -C` mints
-// the figaro and casts it; `fig cast` while attending a FORM mints the figaro
-// for it. Same operation, two entrances, one implementation.
-//
-// WHICH THING -O AND -S DRESS depends on which thing does not exist yet, and
-// that is the only reading in which each invocation is unambiguous:
-//
-//	fig new -C @role -O sonn5    the ROLE exists; -O dresses the ARIA
-//	fig new -CO reviewer         no role named; -O mints the ROLE
-//	fig cast -O reviewer         (attending an aria) -O mints the ROLE
-//	fig cast -O sonn5            (attending a form)  -O dresses the ARIA
-//
-// PARTIAL FAILURE IS A STATE, NOT A CRASH. Two objects are created across two
-// writers and there is no transaction across them. When the figaro exists and
-// the casting did not land, that is reported as exactly that, with the id, so
-// nothing is orphaned silently and a human can finish the job by hand.
 
 import (
 	"context"
@@ -106,12 +83,6 @@ func reportCast(out castOutcome, asJSON bool) {
 
 // liftRoleArg removes the role positional from an argument list and returns
 // it: the one bare `@`-sigiled word before the prompt boundary.
-//
-// It runs BEFORE the prompt parser, which refuses bare arguments outright.
-// That refusal is correct for `new` generally, so rather than teaching it an
-// exception, the one argument that is legal here is taken out of its way. The
-// sigil makes it lexical: nothing after `--` is touched, so an `@handle`
-// inside a prompt is prose.
 func liftRoleArg(args []string) (string, []string, error) {
 	role := ""
 	kept := make([]string, 0, len(args))
@@ -134,12 +105,6 @@ func liftRoleArg(args []string) (string, []string, error) {
 
 // mintFigaroFor creates an aria and returns its id. The `fig new` path,
 // reused so that an autocast-born figaro is born exactly like a hand-made one.
-//
-// It always binds, because that is what minting an aria means to this shell,
-// and attendAfterCast decides where the shell ENDS UP once the casting is
-// known. Doing it in two steps rather than one keeps the failure case honest:
-// a mint that succeeds and a cast that does not leaves the shell attending
-// something real.
 func mintFigaroFor(loaded *config.Loaded, d dressing) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -155,15 +120,6 @@ func mintFigaroFor(loaded *config.Loaded, d dressing) (string, error) {
 
 // attendAfterCast puts this shell where the casting left the interesting
 // thing.
-//
-// THE RULE: when the call MINTED a role, attend the role. That is the object
-// you just created and the one you are most likely to edit next, and attending
-// it costs nothing, because a role redirects every turn-shaped verb to its
-// holder. So prompts still reach the new aria while `state` and `set` reach
-// the role. When no role was minted (you named an existing one, or you were
-// already standing in front of it) the shell stays where it was.
-//
-// --stay opts out of the move entirely, in either direction.
 func attendAfterCast(loaded *config.Loaded, roleID string, minted, stay bool) {
 	if stay || !minted || roleID == "" || bindingDisabled() {
 		return
@@ -194,11 +150,6 @@ func restoreAttendance(loaded *config.Loaded, id string) {
 }
 
 // runNewCast is `fig new -C`: mint the figaro, then cast it.
-//
-// With a role id, the role exists and the dressing dresses the ARIA. Without
-// one, the dressing mints the ROLE and the aria takes the default outfit:
-// there is nothing else -O could mean when the thing being named does not
-// exist yet.
 func runNewCast(loaded *config.Loaded, roleID string, d dressing, prompt string, set renderSettings, stay bool) {
 	ariaDress, roleDress := d, dressing{}
 	if roleID == "" {

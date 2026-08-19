@@ -1,25 +1,4 @@
 // Pointer-identity diff over the persistent form tree.
-//
-// The thesis: Set and Delete path-copy, so every subtree that an edit did not
-// touch is *the same pointer* in both trees. `prev == next` therefore proves a
-// whole subtree is unchanged and can be skipped without looking inside it. A
-// patch touching k keys leaves only O(k log n) nodes un-shared, so the diff
-// costs O(k log n) instead of O(n).
-//
-// The correctness hazard: AVL rebalancing moves nodes, so the two trees need
-// not have the same shape and a naive "walk both structures in lockstep" is
-// wrong. This walks by KEY, not by shape: at each step the pivot is next's key
-// and prev is split around it, which is exactly a merge-join over two sorted
-// key sequences. The pointer check is a pure short-circuit layered on top -
-// removing every `prev == next` line would leave a correct (slower) diff.
-//
-// Cost: the common case (same root key all the way down, i.e. a path copy with
-// no rotation at the root) splits at the root's exact match, which returns
-// prev's ORIGINAL child pointers, so the short-circuit keeps firing all the way
-// down. Where rotations did move things, splitNode rebuilds a small spine of
-// scratch nodes and the short-circuit stops helping on that path; the diff
-// stays correct and degrades to O(n log n) for two wholly unrelated trees.
-// Scratch nodes never escape into a stored tree: nothing here mutates.
 
 package form
 
@@ -82,12 +61,6 @@ func (d *differ) walk(prev, next *node) {
 }
 
 // split partitions n by key into (keys <, the binding at key, keys >).
-//
-// An exact hit at n returns n's original child pointers untouched, which is
-// what keeps the pointer short-circuit alive through an un-rotated path copy.
-// Otherwise the spine is rebuilt with makeNode; the result is a valid BST with
-// correct size/height metadata but is NOT guaranteed AVL-balanced. That is
-// fine: these nodes are read by this diff and then dropped.
 func (d *differ) split(n *node, key string) (left *node, value Value, found bool, right *node) {
 	if n == nil {
 		return nil, Value{}, false, nil

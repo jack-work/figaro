@@ -8,10 +8,9 @@ import (
 
 // Cache is a byte-budgeted window of materialized units over a durable
 // substrate, per node, LRU by epoch, with an index that survives eviction.
-//
 // A HIT TAKES NO LOCK: everything a reader touches is immutable once published.
-// Writers hold c.mu only to publish, never across the Source, the budget's
-// eviction pass, or the Evicted hook. Rationale: plans/tree-shaped-log.md.
+// Writers hold c.mu only to publish -- never across the Source, the budget's
+// eviction pass, or the Evicted hook. See plans/tree-shaped-log.md.
 type Cache[U any] struct {
 	src    Source[U]
 	size   Sizer[U]
@@ -161,9 +160,6 @@ func (c *Cache[U]) Drop(coord Coord) {
 
 // Range returns the units in (from..to] along lineage, walking fork bases so
 // branches share one copy of their common prefix. Misses rematerialize per gap.
-//
-// THE RESULT MAY ALIAS THE CACHE and is READ-ONLY to the caller. Safe against
-// eviction: runs are immutable and eviction publishes a hollow successor.
 func (c *Cache[U]) Range(lineage []Ref, from, to uint64) ([]U, error) {
 	if len(lineage) == 0 || to < from {
 		return nil, nil
@@ -212,17 +208,6 @@ func concat[U any](pieces [][]U, total int) []U {
 
 // At returns ONE unit at coordinate idx, or false if it is not resident. It
 // NEVER calls the Source and NEVER allocates.
-//
-// WHY THIS EXISTS, MEASURED. The range surface returns a MATERIALIZED SLICE of
-// everything it covers, so a per-record read through RangeAt allocated and
-// copied the whole chunk to hand back one payload: 1153 B/op and 1 alloc/op
-// against 3 B/op and 0 allocs for the tenant's own index, and 285-500 ns/op
-// against 32-40. A read path that wants ONE record cannot use a surface shaped
-// like a range without paying for the range.
-//
-// So the range door stays for callers that want a span, and this is the door
-// for callers that want a record. Both are lock-free: runs and units are
-// immutable once published.
 func (c *Cache[U]) At(node string, idx uint64) (U, bool) {
 	return atIn(c, c.runs(node), idx)
 }
@@ -345,15 +330,6 @@ func atInIndex[U any](c *Cache[U], ix *runIndex[U], idx uint64) (U, bool, int) {
 
 // ResidentAt returns the units for (from..to] ONLY IF they are already
 // resident, and NEVER calls the Source.
-//
-// THE DISTINCTION IS LOAD-BEARING, not a convenience. A caller that wants to
-// EXTEND what is resident -- a writer keeping its own tail warm -- must not
-// FAULT IT IN when it is absent: doing so re-creates residency the evictor
-// just dropped, and an append loop racing a sweep then livelocks, each undoing
-// the other. That is not hypothetical; it hung a test for 25 seconds.
-//
-// Lock-free: the runs slice and the units it names are immutable once
-// published.
 func (c *Cache[U]) ResidentAt(node string, from, to uint64) ([]U, bool) {
 	if to <= from {
 		return nil, false
@@ -402,13 +378,6 @@ func (c *Cache[U]) DropNode(node string) {
 
 // RangeAt serves ONE NODE with no lineage, for a tenant whose data has no
 // fork structure at this layer.
-//
-// A SEGMENT FILE HAS NO LINEAGE. Forks live at disk.Log, which delegates reads
-// below a fork base to the parent LOG; by the time a read reaches one segment
-// it is entirely that segment's. So the payload cache would have to build a
-// one-element []Ref and walk split() on every hit -- two allocations and a
-// loop to arrive at the coord it already knew. Range stays the door for
-// lineage-shaped tenants; this is the door for the others.
 func (c *Cache[U]) RangeAt(node string, from, to uint64) ([]U, error) {
 	if to <= from {
 		return nil, nil

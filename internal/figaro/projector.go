@@ -10,20 +10,6 @@ import (
 
 // Projector converts fig IR into UI IR. It is the ONLY way the core reaches
 // the projection, and it may be nil.
-//
-// The core transacts in fig IR: it runs turns, appends message.Message to the
-// xwal, mints turn ids, forks. None of that needs a rendering. A build that
-// supplies no Projector still does all of it: it simply produces no UI frames
-// and serves empty reads. That is the point: figaro-the-engine is usable
-// without figaro-the-display, so a binary can ship without the conversion.
-//
-// The core still names the UI IR *shape* (aria.Turn, livedoc.Node) because it
-// serves those types over the wire. What it no longer depends on is the
-// *conversion*: internal/compose: which is the dependency that made the
-// engine inseparable from the renderer. projector_boundary_test.go pins that.
-//
-// Tool timings live here rather than on the Agent because they exist only to
-// be rendered; the engine never reads them back.
 type Projector interface {
 	// Turns projects sealed history into committed turns.
 	Turns(msgs []message.Message) []aria.Turn
@@ -82,13 +68,6 @@ func (a *Agent) projNodes(msgs []message.Message, tails, argPartials map[string]
 // served by its agent, so without this the pager showed deltas only until
 // the aria woke -- the same transcript telling two stories depending on
 // liveness, which the purity invariant forbids.
-//
-// The entries are the SAME read the turns were composed from: one walk,
-// two consumers, and no moment between two reads for them to disagree in.
-//
-// The just-sealed turn's deltas appear when the server next materializes
-// from the log (hydrate, reconcile, boot): a turn's stamps are only
-// durable at its end, and the live stream never re-renders a sealed turn.
 func (a *Agent) attachFormDeltas(turns []aria.Turn, entries []store.Entry[message.Message]) []aria.Turn {
 	fb, ok := a.backend.(formdelta.Backend)
 	if !ok || len(turns) == 0 || len(entries) == 0 {

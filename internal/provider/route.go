@@ -39,14 +39,6 @@ const (
 // CacheCaps is what a route will actually honour on the wire. Nothing here
 // is guessed at request time: a route either advertises a capability or
 // figaro does not use it.
-//
-// This exists because sending a marker where it is not understood is not
-// harmless. LiteLLM had to add cache_control filtering after it caused hard
-// failures on OpenRouter (BerriAI/litellm#12787); OpenClaw only injects
-// markers when the configured base URL actually resolves to openrouter.ai.
-// And Anthropic's own OpenAI-compatible shim silently DROPS cache_control,
-// so a route can look like it is caching while paying full price every turn
-// (NousResearch/hermes-agent#20957).
 type CacheCaps struct {
 	// BlockMarkers means per-content-block cache_control is honoured.
 	// Requires content to be a block list; a bare string has nowhere to
@@ -137,13 +129,6 @@ type MarkPlan struct {
 func (p MarkPlan) Marking() bool { return p.Blocks || p.TopLevel }
 
 // MarkPlan resolves capabilities and configured mode into a plan.
-//
-// Auto prefers the request-level directive wherever a route offers one. A
-// client cannot know which model a ROUTER will choose: that is the whole
-// point of a router, the arm is picked after the request arrives, and both
-// the minimum cacheable prompt size and the breakpoint budget are
-// per-model. Only the endpoint that resolves the arm can place breakpoints
-// correctly, so figaro hands it the intent and lets it place them.
 func (r Route) MarkPlan(mode MarkMode) MarkPlan {
 	switch mode {
 	case MarkNone:
@@ -225,12 +210,6 @@ func OpenRouterRoute() Route {
 
 // GatewayRoute is a local OpenAI-compatible gateway (coding-router and
 // friends) that speaks the OpenRouter dialect.
-//
-// It advertises the top-level directive, so auto mode sends bare strings and
-// one request-level cache_control and lets the gateway place breakpoints for
-// whichever arm it resolved. `figaro set system.cache_markers blocks` forces
-// per-block marking instead, for a gateway that only preserves and tops up
-// what it receives.
 func GatewayRoute(baseURL string) Route {
 	return Route{
 		Name:         "gateway",
@@ -306,12 +285,6 @@ func (r Route) QualifyModel(model string) string {
 const sessionKeyMaxLen = 256
 
 // SessionKey derives the sticky-routing key for an aria.
-//
-// It is a hash rather than the aria id itself: the value leaves the machine,
-// and a gateway has no business learning figaro's identifier space. The hash
-// is stable across turns and across restarts (the whole point: it is what
-// keeps a router pinned to one upstream and one warm cache), opaque, and
-// maps to nothing. It must never be recorded in telemetry.
 func SessionKey(ariaID string) string {
 	if ariaID == "" {
 		return ""

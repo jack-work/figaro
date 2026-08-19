@@ -3,19 +3,6 @@ package cli
 import "github.com/jack-work/figaro/internal/livelog/aria"
 
 // A line index over the retained message window.
-//
-// The transcript's line space is the concatenation of every retained message's
-// rendered rows, with a ""/rule/"" separator triple injected between messages.
-// Materializing that whole space costs O(retained rows): tens of thousands of
-// clipToWidth calls: yet a frame paints ~40 of them and a pure viewport move
-// (j/k, wheel, u/d, gg/G) changes none of the content.
-//
-// lineIndex records, per message, only where its rows START in line space. It
-// is rebuilt every frame, but the rebuild is O(#messages) map lookups and
-// arithmetic (committed rows come straight out of rowCache), so it never
-// touches row text. Absolute line -> row is then a binary search, and
-// selection decoration plus search highlighting are applied lazily, only to
-// the rows actually painted.
 
 // lineEntry is one message's contribution to the transcript's line space.
 // start is the absolute line of the entry's first line: the separator's
@@ -43,34 +30,10 @@ func (e *lineEntry) isGap() bool { return e.gap != nil }
 // sepRows is the height of the separator between two messages: a blank, then
 // the RULE, and the next message's voice header directly beneath it, with no
 // gap.
-//
-// THE RULE IS THE HEADER'S OVERLINE, not the previous message's underline.
-// That is already the shape renderMsgBase draws inside a message, between a
-// turn's question and the reply to it ("> input" / blank / text / blank / RULE
-// / "< figaro"), and TestInquiryChromeAgreesAcrossViews pins it. The separator
-// BETWEEN messages used to be a three-row triple: blank, rule, blank: so the
-// same rule grew a trailing blank whenever it happened to fall on a message
-// boundary, and "> input" sat one row lower than "< figaro" for no reason a
-// reader could see.
-//
-// The asymmetry was a residue: the question used to be its own message, so both
-// of its seams were message boundaries and both were loose. Once the inquiry
-// became text on the turn (e7fb039) the seam below it moved inside a message
-// and tightened, while the seam above it stayed behind.
 const sepRows = 2
 
 // sepHeight is how many lines THIS entry spends on its leading separator: the
 // separator's height when it has one, zero otherwise.
-//
-// Every conversion between entry-relative and absolute line space goes through
-// here rather than testing e.sep and naming the constant again. That is not
-// tidiness. Of the places that encode the separator's height, only entryLine
-// paints a row; the other two: rebuildLineLT's anchor fill and nodeSpanOf's
-// span arithmetic: live in INDEX space, so when they disagree with the real
-// height nothing on screen looks wrong. A stale value there instead puts the
-// resize anchor and selection scroll-into-view one line further out of phase
-// per preceding separator, degrading with distance down the transcript, and no
-// frame golden can see it. Asking the entry beats naming the number.
 func (e *lineEntry) sepHeight() int {
 	if e.sep {
 		return sepRows
@@ -79,12 +42,6 @@ func (e *lineEntry) sepHeight() int {
 }
 
 // height is the number of lines the entry occupies, separator included.
-//
-// A GAP IS EXACTLY ONE ROW, whatever it hides. Not a proportional placeholder:
-// row height is only knowable by rendering, so a hole of twelve turns might be
-// forty rows or four thousand, and a placeholder sized from the turn count
-// would be a number we invented. One sentinel row is the honest
-// representation (skills/figaro/contributing/range-store.md, "Gaps and rendering").
 func (e *lineEntry) height() int {
 	if e.isGap() {
 		return e.sepHeight() + 1
@@ -95,11 +52,6 @@ func (e *lineEntry) height() int {
 // refAt is the node a line of this entry belongs to, or the zero nodeRef for a
 // line that belongs to no node: a separator row, a gap sentinel, or an
 // out-of-range index.
-//
-// It is the mirror of entryLine and shares its arithmetic deliberately, a
-// click resolves a screen row to a node through here while the painter resolves
-// the same row to text through there, and the two disagreeing would put the
-// selection cue on a different node than the one under the pointer.
 func (e *lineEntry) refAt(rel int) nodeRef {
 	rel -= e.sepHeight() // separator rows go negative: they belong to no node
 	if rel < 0 || e.isGap() || rel >= len(e.rows) {
@@ -174,9 +126,6 @@ func (t *transcript) buildIndex() {
 	// than closing over it, so it walks the window as SEGMENTS: runs, and the
 	// holes between them. Everything else in the pager stays gap-blind (see
 	// forEachMessage) and is simply told less.
-	//
-	// Neither callback allocates: rows come out of the row cache, and the gap
-	// entry carries the hole itself rather than a rendered row.
 	t.client.ForEachSegment(t.from, windowEnd, func(m aria.Message) bool {
 		rows, ok := t.rowCache[keyOf(m)]
 		if !ok {
@@ -253,12 +202,6 @@ func gapKey(g aria.Gap) sliceKey {
 
 // forEachWindowRow walks absolute lines [a, b) and hands each to fn as the
 // (entry, entry-relative row) it comes from.
-//
-// It is the ONE walker over the window's line space. window materializes row
-// TEXT through it and rowRefs collects row REFS through it, so the two cannot
-// drift about which entry a given absolute line fell in: the failure mode
-// being a click that highlights the node above or below the one it landed on,
-// which no golden frame test can see because the frame is correct either way.
 func (t *transcript) forEachWindowRow(a, b int, fn func(e *lineEntry, rel int)) {
 	if a < 0 {
 		a = 0
@@ -300,11 +243,6 @@ func (t *transcript) window(a, b int, dst []string) []string {
 // rowRefs collects the node each of absolute lines [a, b) belongs to, in the
 // same order window materializes them: so index i of the two results describes
 // one row: its text and the node it addresses.
-//
-// This is what makes a POINTER usable in the pager. Every other gesture
-// addresses a node symbolically (^N walks the ref list, `:12.3` names a
-// coordinate), but a click names a SCREEN ROW, and only the painted frame knows
-// what was on it.
 func (t *transcript) rowRefs(a, b int, dst []nodeRef) []nodeRef {
 	dst = dst[:0]
 	t.forEachWindowRow(a, b, func(e *lineEntry, rel int) {

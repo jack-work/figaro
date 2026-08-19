@@ -64,17 +64,6 @@ const (
 )
 
 // MethodNeedsAgent reports whether a method requires a running turn loop.
-//
-// The false set is the read half: history, context and form are pure
-// functions of the store, so an aria endpoint can answer them while the aria
-// is dormant and nothing has to be woken. Everything else: prompting,
-// interrupting, patching the board, touching the queue: either mutates
-// durable state through the agent's serialization or needs in-flight state
-// that only a live turn has, and must wake.
-//
-// Default is TRUE. A method added later and not classified here wakes the
-// aria, which is the safe direction to be wrong in: a needless restore costs
-// milliseconds, while serving a mutation from a stale read costs correctness.
 func MethodNeedsAgent(method string) bool {
 	switch method {
 	case MethodRead, MethodContext, MethodForm:
@@ -345,13 +334,6 @@ type QueuedRequest struct {
 }
 
 // QueuedResponse carries the queued messages in FIFO order (oldest first).
-//
-// Epoch names the INBOX GENERATION these ids belong to. It is minted afresh
-// every time an agent is constructed, a daemon restart, a dormant→attach -
-// and ids restart with it, so an id is only meaningful when paired with the
-// epoch it was read against. Mutators require it back (QueueDeleteRequest);
-// that is what stops a stale id from deleting a different message that happens
-// to hold that number now.
 type QueuedResponse struct {
 	Epoch   string         `json:"epoch"`
 	Prompts []QueuedPrompt `json:"prompts"`
@@ -387,12 +369,6 @@ type QueuedPrompt struct {
 }
 
 // QueueOutcome is what happened to ONE requested mutation.
-//
-// There is deliberately no summary "ok" on either mutator response: reading
-// the per-id outcome is the only way to learn anything, so it cannot be
-// skipped and defaulted to success. A refusal is a legitimate decision by the
-// agent: not a fault: so it travels as data, and the JSON-RPC error channel
-// stays reserved for transport and malformed requests.
 type QueueOutcome string
 
 const (
@@ -435,10 +411,6 @@ type QueueResult struct {
 }
 
 // QueueDeleteRequest asks the aria to drop queued messages.
-//
-// Epoch is the generation IDs were read against and is REQUIRED whenever IDs
-// is non-empty: it is a compare-and-swap token, not decoration. All names no
-// id at all ("whatever is queued now"), so it needs no epoch.
 type QueueDeleteRequest struct {
 	Epoch string   `json:"epoch,omitempty"`
 	IDs   []uint64 `json:"ids,omitempty"`
@@ -622,23 +594,11 @@ type ForkRequest struct {
 	// (`fig fork <id>:12`) and the one `fig show` prints. Turn N's fork
 	// point is the LT that ENDS turn N-1, so the branch retains everything
 	// through the previous exchange and the new prompt becomes turn N.
-	//
-	// The server owns that translation. It used to be done client-side,
-	// which meant every caller read the aria's whole message list to
-	// convert -- and one of them then sent the CONVERTED LT in this field,
-	// a number the server read back as a turn. Since an LT is far larger
-	// than the turn count, `send <id>:<turn>` failed every time with "aria
-	// has no turn N".
 	AtTurn uint64 `json:"at_turn,omitempty"`
 	// AtLT is the same request in the MODEL's coordinate: the IR logical
 	// time to fork at, exactly (`fig fork <id>.42` -- the dot form). It is
 	// for callers that already hold an LT, and for forking where no turn
 	// boundary exists, which a turn cannot express.
-	//
-	// Two named fields rather than one plus a flag, because the bug above
-	// was a uint64 in the wrong slot: with separate names a misplaced
-	// coordinate is a stated error in the handler instead of a plausible
-	// number that means something else. Setting both is refused.
 	AtLT uint64 `json:"at_lt,omitempty"`
 	// Patch dresses the ALTERNATIVE the moment it exists, before anything is
 	// said to it: it lands on the child's form in the same call that
@@ -703,11 +663,6 @@ type PromoteResponse struct {
 // content, a fresh conversation is spawned under it, and Messages are appended
 // through the ordinary path: so node ids, fork bases and LTs are the
 // destination's own and can never collide with what is already there.
-//
-// WasID is the id the aria had where it came from. It is PROVENANCE, not a
-// request: the destination mints its own, because a trunk id is unique per
-// store and honouring the old one would be the first collision an import is
-// built to avoid. It is echoed back so the caller can say what moved.
 type ImportRequest struct {
 	Outfit      string            `json:"outfit"`
 	OutfitPatch message.Patch     `json:"outfit_patch,omitempty"`

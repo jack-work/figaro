@@ -3,14 +3,6 @@ package actor
 // Lazy is a single-writer queue whose goroutine exists only while there is
 // work. Submit wakes it, a drained queue lingers for an affinity window, and
 // then the goroutine leaves.
-//
-// Queue (actor.go) keeps its goroutine for the object's whole life, which is
-// right for an aria's inbox and wrong for anything opened on sight: a listing
-// reads a form per row, so the daemon held one parked goroutine per aria
-// anyone had LOOKED at.
-//
-// It is not a worker pool. Exactly one drainer runs at a time, which is what
-// makes this a serialization point rather than a buffer.
 
 import (
 	"errors"

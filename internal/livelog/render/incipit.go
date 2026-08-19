@@ -47,8 +47,6 @@ func diffRange(old, next []string) (first, last int) {
 // just the open message: the bounded, mutable part: so committed history is
 // never reflowed. That is the structural fix for the resize/duplication class:
 // the immutability boundary (a frozen message) is also the resize boundary.
-//
-// Not safe for concurrent use; the caller serializes Open/Freeze/Tick/Resize.
 type Incipit struct {
 	term    Terminal
 	view    NodeView
@@ -68,18 +66,6 @@ type Incipit struct {
 
 	// atRule records that the last row already in scrollback is a BARE RULE, and
 	// therefore that the next message must draw no top margin of its own.
-	//
-	// THE RULE IS THE OVERLINE OF THE HEADER BENEATH IT. messageRows already
-	// draws the seam that way inside a message: the question, a blank, the rule,
-	// then "< figaro" hard against it. A message boundary is the same seam, but
-	// the rule arrives from the PREVIOUS message's closer (or, for the first
-	// message, from OpenRule), so without this the next message added its own
-	// leading blank and "> input" sat one row lower than "< figaro" for no reason
-	// a reader could see.
-	//
-	// It is false after an ASSISTANT message on purpose: that closer is the two
-	// row bookend, so the last row in scrollback is the status TEXT, not a rule,
-	// and a header hard against a status line would read as part of it.
 	atRule bool
 
 	// Open-message live region:
@@ -101,11 +87,6 @@ func NewIncipit(term Terminal, view NodeView) *Incipit {
 
 // OpenRule prints the rule that separates the caller's shell prompt from the
 // stream, and records that the next message sits directly under it.
-//
-// The caller used to print this line itself, which left the seam with no owner:
-// the rule came from one place and the blank row under it from another, so the
-// first message in a session was the one place "> input" could not hug its own
-// overline. Printing it here keeps the rule and the margin decision together.
 func (i *Incipit) OpenRule() {
 	if i.Rule == nil {
 		return
@@ -127,25 +108,6 @@ func (i *Incipit) topMargin() []string {
 // Freeze finalizes a closed message. If it's the message currently live, its
 // rows are already on screen: drop the cursor below them and release the
 // region. Otherwise print its rows fresh, prefaced with a blank line.
-//
-// A thinking placeholder is a footer-only region pinned at submit, before the
-// prompt has even round-tripped. A message printed while it is up must land
-// ABOVE it in scrollback, so erase the placeholder, print, and repaint it in
-// place: otherwise the footer would be stranded above the very message it
-// belongs under.
-// A message IS the live region only when it starts where the region starts.
-// LT alone is not identity: aria.Message.LT carries the TURN id, so every
-// message in a turn shares it. Testing LT alone made freezing a one-node
-// steering interjection drop the whole streaming region: seventeen rows of
-// it: into scrollback, after which the rest of the turn was frozen again and
-// the entire post-steer block printed twice.
-// A message IS the live region only when it covers the SAME EXTENT. Start
-// alone is not identity either: while the agent streams, the open suffix begins
-// at the steer's own index, so a one-node steering interjection and a
-// four-node streaming region both report From=1. Matching on start made Freeze
-// treat the steer as the whole region and dropBelow() nineteen rows of
-// in-flight output into scrollback, after which the server reopened past the
-// steer and the same body was frozen again.
 func (i *Incipit) isLiveRegion(m aria.Message) bool {
 	return i.liveTurn != 0 && m.Turn == i.liveTurn &&
 		m.From == i.liveFrom && len(m.Nodes) == i.liveCount
@@ -230,14 +192,6 @@ func (i *Incipit) Freeze(m aria.Message) {
 // bookend follows the assistant only), and: if a message is still streaming -
 // starts a fresh live region. The cursor lands on a new line below everything,
 // so input resumes after the content like `figaro show`.
-//
-// maxRows CAPS WHAT REACHES SCROLLBACK, counted in physical rows, keeping the
-// LAST maxRows (0 = unbounded). Leaving the pager used to replay every message
-// the pager had shown, an hour of tool output, thousands of rows, dumped into
-// the shell in one burst on Ctrl-T. The tail is what a reader wants back; the
-// rest is a `figaro show` away. The clip is applied to the assembled rows, not
-// per message, so the boundary lands mid-message when that is where row 100
-// falls.
 func (i *Incipit) Resume(closed []aria.Message, open *aria.Message, maxRows int) {
 	// CR first: the column \x1b[?1049l restores to is the terminal's answer,
 	// not ours (microsoft/terminal#381).
@@ -256,13 +210,6 @@ func (i *Incipit) Resume(closed []aria.Message, open *aria.Message, maxRows int)
 // rows are in hand, then returns them in order clipped to that budget, plus
 // the atRule state the last message leaves behind. ok is false when nothing
 // renders (every message empty, or none given).
-//
-// It walks BACKWARDS on purpose: a hundred rows off the end of a ten-thousand
-// row conversation must not cost ten thousand rows of rendering. That is only
-// sound because the one piece of cross-message state a message's rows depend
-// on, atRule, i.e. "is the row above me already my overline": is a pure
-// function of the PREVIOUS message's role (see closer), so it can be answered
-// without having rendered anything before it.
 func (i *Incipit) tailRows(closed []aria.Message, maxRows int) (rows []string, endsInRule, ok bool) {
 	var chunks [][]string
 	total := 0
@@ -406,10 +353,6 @@ func (i *Incipit) LiveHeight() int { return len(i.live) }
 // escape hatch from the inherent inline limit (skills/figaro/reference/ui-stream.md): a live
 // region taller than the viewport scrolls rows into native history, where they
 // can never be repainted, stranding half-drawn frames forever.
-//
-// Drawing only the footer there costs a live preview that was already broken
-// and buys back the guarantee that matters: the completed message reaches
-// scrollback exactly once, via Freeze.
 const minInlineHeight = 10
 
 // bodyHidden reports whether the live region is footer-only at this size.
@@ -429,10 +372,6 @@ func (i *Incipit) viewportHeight() int {
 // be repainted: so at the extreme the suppressed footer (rule + status, two
 // rows) overflowed a one-row viewport, stranded a partial frame in scrollback
 // and lost the completed reply.
-//
-// The TAIL survives, because the status line is the row the user needs; the
-// rule above it is decoration. h <= 0 means the size is unknown, so clip
-// nothing rather than guess.
 func clipRows(rows []string, h int) []string {
 	if h <= 0 || len(rows) <= h {
 		return rows
@@ -518,11 +457,6 @@ func (i *Incipit) footer() []string {
 // status bookend after an assistant message, otherwise a plain full-width rule
 // (so the user's prompt is still separated from the reply). Empty if neither
 // is configured.
-//
-// endsInRule says whether the LAST row is a bare rule, which is what the next
-// message reads to decide whether it needs a top margin. It is returned rather
-// than re-derived by the caller so the two cannot drift: the bookend's last row
-// is status TEXT, and only the branches below know which shape was taken.
 func (i *Incipit) closer(role string) (rows []string, endsInRule bool) {
 	if role == livedoc.RoleOutput && i.Bookend != nil {
 		return i.Bookend(), false
@@ -593,9 +527,6 @@ func (i *Incipit) vmove(b *strings.Builder, target int) {
 // line on a fresh row as a visual boundary, so the next stream lands on clean
 // ground. Use this when the agent dies mid-turn, the user disconnects with
 // Ctrl-D, or an interrupt times out.
-//
-// line is typically a dim rule with a reason label: the caller owns the
-// formatting (CLI policy). Without a live region, line is still printed.
 func (i *Incipit) AbandonOpen(line string) {
 	var b strings.Builder
 	if i.liveTurn != 0 {

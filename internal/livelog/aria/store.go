@@ -13,13 +13,6 @@ import (
 // CONTIGUOUS INTERVALS over (turn, node) space, rather than a list plus a pile
 // of booleans. See skills/figaro/contributing/range-store.md; that document is the contract and this
 // is its implementation.
-//
-// The bug class it exists to prevent is FABRICATED ADJACENCY: handing a caller
-// a flat []Message that spans a hole, so it believes two messages are
-// neighbours when a hundred turns sit between them. Message's own doc records
-// three separate bugs from mistaking Turn for an identity; this is the same
-// disease at range scale. Query returns Segments precisely so that a caller
-// CANNOT be handed that lie.
 
 // maxNode is the largest representable node ordinal. It appears only as the
 // predecessor sentinel for node 0 (see Anchor.Prev).
@@ -79,13 +72,6 @@ type Gap struct {
 
 // Turns is how many turns the hole swallows WHOLE: the count a one-row gap
 // sentinel prints ("13 turns not loaded").
-//
-// The endpoints are excluded when they are only partly missing, and that is
-// the honest count rather than the convenient one: a hole runs from the anchor
-// after the last thing we hold to the anchor before the next, so if we hold
-// the HEAD of a turn its id is g.From.Turn even though most of that turn is
-// here. Counting it would tell a reader a turn is gone when they are looking
-// at it. Zero is a real answer: the tail of one turn, and nothing else.
 func (g Gap) Turns() int {
 	lo, hi := g.From.Turn, g.To.Turn
 	if g.From.Node > 0 {
@@ -114,9 +100,6 @@ type Segment struct {
 // drain. It has NO server coordinate, because only the drain can assign one -
 // it alone knows whether a turn was in flight when the prompt came off the
 // queue.
-//
-// PHASE 1: type only. Nothing constructs or renders one yet; the lifecycle
-// (submitted -> committed -> acked) lands in phase 4.
 type Pending struct {
 	Text string
 	At   time.Time
@@ -227,8 +210,6 @@ func sliceNodes(m Message, lo, hi uint64) Message {
 // (see Anchor.Next). A turn that produced no nodes but carried an inquiry
 // occupies one anchor: its phantom node 0: because that is what the client
 // materializes for it.
-//
-// Learning a length can make two existing ranges adjacent, so this coalesces.
 func (s *Store) SetTurnLen(turn uint64, n uint64) {
 	if s.ends == nil {
 		s.ends = map[uint64]uint64{}
@@ -306,9 +287,6 @@ func (s *Store) mergeAt(i int) bool {
 // again. Keeping it would grow `ends` with the number of turns the aria has
 // ever had; dropping it keeps the map proportional to the number of range
 // boundaries, which for an ordinary conversation is one.
-//
-// A merge INSIDE a turn consumes nothing: that turn's extent is still what the
-// next turn boundary will be judged by.
 func (s *Store) consume(boundary, to Anchor) {
 	if boundary.Turn < to.Turn {
 		delete(s.ends, boundary.Turn)
@@ -507,11 +485,6 @@ func (s *Store) keep(r Range, lo, hi Anchor) *Range {
 // TrimOldestTo forgets the oldest messages until at most limit remain. This is
 // today's bottom-only retention expressed as eviction; it cannot make a hole,
 // because it only ever removes a prefix.
-//
-// It does not copy. Reslicing off the front and zeroing what it drops keeps
-// the retained window allocation-free per trim: this runs on EVERY Apply once
-// an aria is longer than the limit: while still releasing the dropped
-// messages' nodes to the collector, which a bare reslice would not.
 func (s *Store) TrimOldestTo(limit int) {
 	if limit < 0 {
 		limit = 0
@@ -551,14 +524,6 @@ func (s *Store) ForEach(fn func(Message) bool) {
 
 // Query reports what the store HOLDS over [from, to]. It never fetches and
 // never blocks. A caller that does not care about gaps writes
-//
-//	for _, seg := range store.Query(a, b) { use(seg.Msgs) }
-//
-// ignores .Gap, and is NEVER LIED TO: it simply gets less.
-//
-// Segment.Msgs ALIASES the store's own slices and MUST NOT BE MUTATED. This is
-// what makes a repaint free: the common query: the whole of what we hold -
-// allocates nothing but the segment header.
 func (s *Store) Query(from, to Anchor) []Segment {
 	if to.Less(from) {
 		return nil
@@ -626,8 +591,6 @@ func (s *Store) Query(from, to Anchor) []Segment {
 // message straddles the window and has to be cut; a pager's interior messages
 // never do, and the whole-range case (every repaint of an aria nobody has
 // scrolled) then costs nothing at all.
-//
-// The result ALIASES the store. Segment.Msgs is read-only; see Query.
 func (s *Store) window(r Range, lo, hi Anchor) []Message {
 	if lo == r.From && hi == r.To {
 		return r.Msgs
@@ -670,12 +633,6 @@ func fuseGaps(in []Segment) []Segment {
 
 // Ensure fills every hole in [from, to], fetching as needed, so that Query
 // over the same interval then returns exactly one Segment with a nil Gap.
-//
-// THE STORE IS NOT THREAD-SAFE, and this one blocks on I/O: so a concurrent
-// owner must NOT call it: Client.Ensure runs the same loop with the fetch
-// OUTSIDE its lock, which is what keeps a five-second read off the render
-// path. Both share firstGap and fillAt so there is one definition of "which
-// hole, and what read closes it".
 func (s *Store) Ensure(ctx context.Context, from, to Anchor) error {
 	for range ensureRounds {
 		if err := ctx.Err(); err != nil {
@@ -771,10 +728,6 @@ func (s *Store) ForEachIn(from, to Anchor, fn func(Message) bool) {
 // runs, and the holes between them. It is the GAP-AWARE mirror of ForEachIn
 // (the gap-blind default), and it allocates nothing, a pager rebuilding its
 // line index every frame cannot pay for a Segment slice per frame.
-//
-// gap is called for each hole; returning false from either callback stops the
-// walk. The bounds are clamped exactly as Query clamps them, so "the whole
-// window" over a store with no holes reports no gaps.
 func (s *Store) ForEachSegment(from, to Anchor, msg func(Message) bool, gap func(Gap) bool) {
 	if to.Less(from) || len(s.ranges) == 0 {
 		return
@@ -864,10 +817,6 @@ func (s *Store) Skip(a Anchor, n int) (Anchor, bool) {
 // not an error: the store hands back its own oldest and says how far it got,
 // because "take another page of what you already have" wants whatever is
 // there.
-//
-// This is the job the pager's payload LRU used to do. With one owner the
-// messages are already here: extending the window over them costs a backward
-// walk of its own length, no round trip, and no second copy.
 func (s *Store) Before(a Anchor, n int) (Anchor, int) {
 	if n <= 0 {
 		return a, 0
@@ -907,12 +856,6 @@ func (s *Store) First() *Message {
 }
 
 // All flattens every retained message into one slice, in (Turn, From) order.
-//
-// THIS IS THE ONE PLACE THAT SPANS HOLES, and it exists only for the phase-1
-// shim: Client.View() has always returned exactly this flat list, holes and
-// all, and the migration's whole claim is that the substrate swap is invisible
-// from outside. Consumers move to Query one at a time afterwards. Do not add
-// callers.
 func (s *Store) All() []Message {
 	out := make([]Message, 0, s.Count())
 	for _, r := range s.ranges {

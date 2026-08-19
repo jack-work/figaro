@@ -14,24 +14,6 @@ import (
 // form channel — and it is here rather than there because the manifest is
 // figwal's private format, and old-format knowledge belongs in the code that
 // owns the format.
-//
-// It must run with the store CLOSED. There is no lock to take: an open store
-// holds file handles on the directory being moved, and on the manifest it would
-// then be told to disbelieve. The caller runs it in the same place a layout
-// migration runs, before anything opens the store.
-//
-// It is idempotent in the useful direction. A store already renamed (no `from`
-// in the manifest, `to` present) reports nothing to do rather than failing, so a
-// migration that dies between the move and the manifest write can be re-run:
-// the directory move happens first and the manifest is repaired second, and
-// either half alone is recognised.
-//
-// The reducer NAME travels with the channel when it matched the old channel
-// name. A reducer is resolved by its own name first and the channel's second
-// (resolveReducer), so a channel called "x" with reducer "x" renamed to "y"
-// must look for "y" — otherwise the consumer registers its reducer under the
-// new name and the open fails with "no reducer registered", which is exactly
-// the failure this whole migration exists to avoid.
 func RenameChannel(root, from, to string) error {
 	if err := validChannelName(from); err != nil {
 		return fmt.Errorf("xwal: rename channel: from: %w", err)

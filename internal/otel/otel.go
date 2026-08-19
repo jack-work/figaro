@@ -102,9 +102,6 @@ var (
 	// how long the history it was drawn from was. A duration tells you it got
 	// slow; the pair tells you whether a bounded read is still bounded, which
 	// is the failure mode this path can actually have in production.
-	//
-	// Histograms rather than counters, because the tail is the bug: a mean of
-	// 1.2 patches returned hides the one Send that walked forty thousand.
 	formPatchesReturned otelmetric.Int64Histogram
 	formPatchesHistory  otelmetric.Int64Histogram
 
@@ -227,12 +224,6 @@ func Init(ctx context.Context, dir string) (func(context.Context) error, error) 
 	// rather than grepped. Records are kept in addition to being exported,
 	// never instead: a ring that suppressed logging would die with the
 	// process, exactly when a crash makes you want it most.
-	//
-	// The default policy is WARN and above, which in normal operation is a
-	// handful of records an hour and costs one integer comparison per log
-	// call. Subsystems opt a specific INFO stream in by message, which is how
-	// a SUCCESSFUL provider round-trip is still there to compare against when
-	// the next one is refused.
 	ring := logring.New(&leveledHandler{inner: bridge, level: envLogLevel()},
 		logring.DefaultCapacity,
 		logring.Any(
@@ -338,13 +329,6 @@ func RecordSync(ctx context.Context, d time.Duration, patches int, attrs ...attr
 
 // RecordFormPatchRead records one form patch-range read: how many patches the
 // caller got, and how long the history it was drawn from was.
-//
-// The PAIR is the point. Before the view, a read returned one patch and copied
-// the entire history, and no instrument in the binary could say so: the only
-// metric figaro had was request duration, and a copy hides comfortably inside
-// a network round trip. Returned-versus-history makes the difference a number,
-// and a returned distribution that starts tracking history is the regression
-// alarm for anything built on this path later.
 func RecordFormPatchRead(ctx context.Context, returned, history int, attrs ...attribute.KeyValue) {
 	if formPatchesReturned != nil {
 		formPatchesReturned.Record(ctx, int64(returned), otelmetric.WithAttributes(attrs...))

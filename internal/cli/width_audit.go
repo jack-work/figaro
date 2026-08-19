@@ -12,35 +12,6 @@ import (
 
 // The width audit: figaro tells us when it writes past the edge, in the
 // reporter's own terminal.
-//
-// WHY IT IS INSIDE THE PROCESS. A right-edge overflow was reported four times
-// and could not be reproduced from outside, because every external instrument
-// answers a blurrier question: a tmux sweep of `show`, the pager and a live
-// turn was clean at every width from 20 to 200; `capture-pane -J` rejoins a
-// wrapped line, so its "worst offender" was 120 cells of trailing PADDING; and
-// a captured pane also holds rows frozen at a PREVIOUS width, and the shell's
-// own echo. Nothing that cannot separate what figaro WROTE from what the
-// terminal REMEMBERS can convict figaro: or clear it.
-//
-// WHY IT IS ALWAYS ON. Asking a reporter to set a variable, reproduce on
-// demand and send a log is three chances to lose the evidence. The cost is one
-// cell-count per emitted row, capped at 20 reports and de-duplicated, written
-// to <cache>/width-overruns.log, and the file is not created until something
-// is wrong.
-//
-//	FIGARO_WIDTH_AUDIT=1                 report to stderr
-//	FIGARO_WIDTH_AUDIT=/tmp/audit.log    report to a file (recommended: stderr
-//	                                     is inside the region being painted)
-//	FIGARO_WIDTH_AUDIT=off               disable
-//
-// Every report names the width, the overrun, and the row verbatim, so the next
-// question is "which surface produced THAT" rather than "does it happen".
-//
-// WHAT IT ANSWERED. Driven against the reporter's own aria in a 66x30 pane,
-// this log stayed EMPTY while the prose was visibly broken: which is how the
-// hunt left the painter and went to the renderer, where glamour was wrapping
-// every paragraph twice (30aae84). An instrument that clears the accused is
-// worth as much as one that convicts.
 type widthAudit struct {
 	inner   interface{ Write([]byte) (int, error) }
 	size    func() (int, int)
@@ -96,16 +67,6 @@ func (a *widthAudit) Write(p []byte) (int, error) {
 }
 
 // check splits a write into the rows it paints and measures each one.
-//
-// SPLITTING IS THE WHOLE DIFFICULTY. The incipit separates rows with CR-LF, but
-// the pager positions each row with CUP (ESC [ row ; col H) and never emits a
-// newline at all: so splitting on CR-LF alone measured an entire FRAME as one
-// row and reported 1,634 cells in a 100-column terminal. That is a broken
-// instrument reporting a spectacular bug, which is worse than reporting
-// nothing: it buries the one real hit (a 128-cell status rule) under noise.
-//
-// So a row ends at CR-LF, at a bare CR, or at any cursor-positioning escape.
-// Everything between those is what lands on one line of the screen.
 func (a *widthAudit) check(s string) {
 	w, _ := a.size()
 	if w <= 0 {
@@ -124,13 +85,6 @@ func (a *widthAudit) check(s string) {
 		return // a broken frame would otherwise report forever
 	}
 	// THE COLUMN A ROW STARTS AT IS PART OF ITS WIDTH.
-	//
-	// This audit began by measuring rows as though each started at column 1,
-	// which is a second way to be blind: a row emitted from a stale cursor
-	// column overflows by exactly the offset, and both the row and the width
-	// look innocent on their own. So the write is replayed as a cursor -
-	// CR/CUP set the column, text advances it, and what is reported is where
-	// the row ENDS.
 	for _, row := range splitPaintedRowsAt(s, &a.col) {
 		if row.text == "" {
 			continue

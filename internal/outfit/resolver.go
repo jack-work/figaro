@@ -13,33 +13,6 @@ import (
 )
 
 // The resolver: epochs, snapshots, and a cache that stops stat-ing.
-//
-// Commissioned by Gluck, 2026-08-11, with the shape he specified: snapshot
-// the files on load so a resolution cannot straddle an edit; hand back
-// materialized patches by name behind an interface; keep a short-lived cache
-// with eviction because large outfits are anticipated; build the closure tree
-// lazily, warm it in the background, never block startup; detect cycles
-// lazily, cache the verdict, taint what is inside one, and never sort more
-// than you have to.
-//
-// WHAT IT REPLACED, and why it was not merely a nicety. The previous cache
-// validated a result by stat-ing every file it was built from. Honest, never
-// stale, and O(closure) syscalls on EVERY read, plus a dependency list that
-// each parent merged from each child by linear scan. On a real-shaped tree of
-// 800 files that came to 2.4ms warm and 2.72 SECONDS cold, nearly all of it
-// spent proving that nothing had moved. An epoch proves it once for everyone.
-//
-// THE EPOCH is a consistent view of the outfits directory. The first read of
-// a file in an epoch copies its bytes into a content-addressed snapshot store
-// and records the hash; everything derived in that epoch is derived from those
-// bytes. Within an epoch a cached answer is valid by definition: no stats, no
-// dependency lists. The epoch advances on `fig outfit reload`, and on the
-// lazy revalidation below.
-//
-// STALENESS. A hand edit with no `reload` is noticed by a revalidation pass
-// that runs at most once per staleWindow: it stats only the files this epoch
-// actually touched, and bumps the epoch if any of them moved. That is O(files
-// in cache) syscalls per second at worst, instead of O(closure) per read.
 
 // defaultStaleWindow is how long an epoch is trusted without re-checking the
 // disk. It is deliberately SHORT: a human who edits an outfit and runs the

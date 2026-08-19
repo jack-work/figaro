@@ -7,32 +7,6 @@ import (
 )
 
 // SGR normalization.
-//
-// glamour's dark style emits its colour per *cell*: a padded prose row comes
-// back as `ESC[38;5;252m<space>ESC[0m` repeated forty times, which is 76% ANSI
-// by weight. Those sequences are redundant: between two adjacent cells the
-// reset/set pair returns the terminal to the state it was already in: so they
-// cost retained memory in the row cache and, worse, bytes down the pipe on
-// every painted frame (the thing you feel over ssh or inside tmux).
-//
-// collapseSGR removes them. It is deliberately *subtractive*: it only ever
-// drops whole escape sequences, and never synthesizes or reorders one. That is
-// what makes "visually identical" a provable property rather than a hope, a
-// dropped sequence is one whose effect on the rendition state was nil at the
-// point it appeared, so every printable cell is written under exactly the
-// rendition it had before, and the state at the end of the row is unchanged.
-//
-// Two conservative choices are load-bearing:
-//
-//   - The rendition state on entry is treated as UNKNOWN, not as default. So a
-//     row whose leading escape run resolves to "default" still keeps one
-//     `ESC[0m`: the row asserts its own starting state instead of trusting the
-//     row above it. That upholds the painter's invariant (every row starts and
-//     ends in default SGR) for four bytes a row.
-//   - Any escape that is not plainly an SGR sequence is opaque: it passes
-//     through byte-for-byte, and unless it is one of the few CSI finals that
-//     provably cannot touch the rendition (cursor motion, erases), the state
-//     afterwards is treated as unknown again, so nothing around it is dropped.
 
 // sgrColorKind distinguishes the four ways SGR can name a colour.
 type sgrColorKind uint8

@@ -13,23 +13,6 @@ import (
 )
 
 // How a tool is drawn.
-//
-// WHERE THIS LIVES, and why: one table, in the CLI, keyed by the tool NAME the
-// wire already carries. It is presentation policy: the server has no business
-// knowing that a shell wants a `$`, and it is the only place any of it is
-// written down. A second frontend lifts this table rather than the renderer.
-//
-// It replaces the per-tool `Summarize()` methods that used to live beside the
-// tools themselves: those were the same idea (which argument speaks for this
-// call) split across the server, the projector and four files.
-//
-//	minimized                        expanded
-//	⠧ $ grep -n bass opera.md [4ms]  ✓ bash [1.4s]
-//	  │ … last 10 of 32 lines          │ grep -n bass opera.md
-//	  │ 15:13. Figaro is a baritone.    │ started 2026-08-06 01:33:48.347 EDT
-//	                                    │ finished 2026-08-06 01:33:48.365 EDT
-//	                                    │
-//	                                    │ 15:13. Figaro is a baritone.
 type toolStyle struct {
 	// Label replaces the tool's name on the minimized header. A shell is
 	// better announced by its prompt than by the word "bash".
@@ -86,23 +69,6 @@ func toolArgFields(n livedoc.Node) []partialjson.Field {
 
 // flattenArg turns one argument into the fields a reader can actually read,
 // naming nested ones by PATH: `edits[0].new_text` rather than `edits`.
-//
-// It used to be `fmt.Sprintf("%v", v)` for anything that was not a string,
-// which is Go's syntax, not the model's: an `edit` rendered as
-//
-//	edits [map[new_text:// render draws one block… old_text:…]]
-//
-// : map order unspecified, the strings' newlines and tabs collapsed into one
-// unreadable line, and the actual edit invisible at any width or expansion.
-// Worse, it was a REGRESSION at the moment of settling: while the arguments
-// were still arriving the streaming parser showed the raw JSON, which at
-// least parsed by eye.
-//
-// Flattening instead of pretty-printing is what makes the strings readable:
-// each leaf is handed over as ITS OWN VALUE, so the tool block wraps and
-// clamps it exactly as it does `content` or `command`: real newlines, real
-// tabs, no escapes. There is no per-tool control flow here and no tool name
-// is consulted; `edit` simply happens to be the only shape that needed it.
 func flattenArg(out []partialjson.Field, name string, v any, depth int) []partialjson.Field {
 	const maxDepth = 4
 	switch t := v.(type) {
@@ -143,11 +109,6 @@ func flattenArg(out []partialjson.Field, name string, v any, depth int) []partia
 // all: the first one there is. The fallback is what lets `process` be drawn
 // like a shell without having a `command`: it gets its `action`, the nearest
 // thing it has to one.
-//
-// settled gates the fallback, and that gate matters: while the arguments are
-// still arriving, an absent `path` means NOT YET, not never, and standing in
-// the first field that happens to have landed would put the file's contents
-// where its name belongs.
 func pick(fields []partialjson.Field, name string, settled bool) (partialjson.Field, bool) {
 	for _, f := range fields {
 		if f.Name == name {

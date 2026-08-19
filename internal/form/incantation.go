@@ -1,29 +1,6 @@
 package form
 
 // INCANTATIONS: the words the harness says to a figaro at a lifecycle event.
-//
-// The machinery states facts. A study block says which form moved and what it
-// now holds; a fork says which trunk a branch came from. What those facts MEAN
-// to a particular figaro is not the harness's business, and hard-coding a
-// sentence about it into the renderer makes every aria wear one outfit's idea
-// of the moment.
-//
-// So the sentence is data. `system.study_incantation` and
-// `system.fork_incantation` live on the BOUND form: an aria's own board, where
-// every other system setting lives, and nowhere else. A studied form does not
-// get to put words in its observer's mouth, and an outfit that wants to can
-// simply set the key at birth like any other.
-//
-// TOLERANCE IS DELIBERATE AND ASYMMETRIC. A malformed incantation must never
-// cost a turn: the phrase is decoration on a fact the model still receives, so
-// a bad type is logged and skipped, key by key, and everything coherent beside
-// it still speaks. A strict parse here would mean a typo in an outfit silently
-// breaking every fork in it.
-//
-// TODO(notifications): these warnings go to the daemon log, which nobody
-// reads. They belong in a `fig notifications` verb that shows a human the
-// things their configuration did wrong without making them tail a file. Not
-// now: logging is enough to debug with, and the verb is a surface of its own.
 
 import (
 	"bytes"
@@ -59,12 +36,6 @@ func (s StudyIncantation) IsEmpty() bool {
 
 // ForkIncantation is the phrase a branch is shown at birth. It accepts two
 // spellings, because one of them is what a human reaches for first:
-//
-//	system.fork_incantation = "you are a branch; the trunk continues without you"
-//	system.fork_incantation = {"onfork": "…"}
-//
-// The bare string is the object with onfork set. Both parse; neither is
-// deprecated.
 type ForkIncantation struct {
 	OnFork string `json:"onfork,omitempty"`
 }
@@ -75,10 +46,6 @@ func (f ForkIncantation) IsEmpty() bool { return f.OnFork == "" }
 var studyIncantationFields = []string{"onstudy", "onupdate", "ondrop"}
 
 // ReadStudyIncantation reads system.study_incantation off a board.
-//
-// Returns the zero value when the key is absent, which is the common case and
-// costs one lookup. Every incoherence is logged with the key that caused it
-// and the shape that was expected, and skipped.
 func ReadStudyIncantation(snap Snapshot) StudyIncantation {
 	raw, ok := snap.Get(StudyIncantationKey)
 	if !ok {
@@ -89,9 +56,6 @@ func ReadStudyIncantation(snap Snapshot) StudyIncantation {
 	// no diagnostics to assemble for problems that do not exist. Only a value
 	// that fails this decode pays for the explanation of why, and a strict
 	// decoder is what makes "fails" include the typo case.
-	//
-	// It matters because this runs per encoded message on the study path, and
-	// the map-per-read version cost 2.3x what rendering the block costs.
 	var fast StudyIncantation
 	if strictDecode(raw, &fast) == nil {
 		fast.OnStudy = strings.TrimSpace(fast.OnStudy)

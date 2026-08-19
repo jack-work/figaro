@@ -3,18 +3,6 @@
 // is the producer-side translation, analogous to a provider Encode -
 // pure, deterministic, and dependency-light (no renderer/glamour), so the
 // agent can compose without importing the terminal renderer.
-//
-// Block → node mapping (each assistant content block is one node, in
-// order, so an edit to one block localizes to a single node op):
-//   - text      → prose node (markdown)
-//   - thinking  → thinking node (rendered dim/blockquote by the client)
-//   - tool_invoke → tool node {name, args, status, output}; its result
-//     (or streamed partial) folds in as output, status running→ok/error
-//
-// The spinner is the consumer's concern (animated locally per running
-// tool); compose emits no sentinel. Tool-result messages (user role) fold
-// under their invoke via tool_call_id; the user's own prompt is a
-// separate committed unit and is not part of the agent turn.
 package compose
 
 import (
@@ -136,12 +124,6 @@ func toolNode(inv message.Content, lt uint64, block int, results map[string]resu
 	// legal (message.MalformedArgs): but that envelope is bookkeeping, not
 	// something a reader asked to see, and rendering it would put a sentinel
 	// key where the arguments belong AND hide the very bytes worth looking at.
-	//
-	// So the envelope is unwrapped back into Input, which is the field for
-	// exactly this: the raw, still-unparsed argument text. Unlike the live
-	// prefix it survives a reload, because it travels on the message rather
-	// than in the turn's scratch map: the failed call reads the same tomorrow
-	// as it did while it was streaming.
 	rawArgs, quarantined := message.MalformedArgsOf(inv)
 	if quarantined {
 		args = nil
@@ -215,11 +197,6 @@ func summaryFor(args map[string]any) string {
 
 // tailBound clamps streamed tool output to the last composeBashCap source
 // lines; the full result stays in the canonical Content IR.
-//
-// It scans backwards for the cut and returns a substring, so it costs what it
-// keeps rather than what the tool wrote, and allocates nothing.
-// tailbound_test.go holds the split-and-join implementation this replaced and
-// asserts the two agree byte for byte.
 func tailBound(text string) string {
 	if text == "" {
 		return ""

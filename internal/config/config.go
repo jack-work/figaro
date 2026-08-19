@@ -32,10 +32,6 @@ type TelemetryConfig struct {
 	// out to Loki and Tempo). The file sinks keep working either way --
 	// they are the record of last resort, and a collector that is down
 	// must not take the daemon's memory with it.
-	//
-	// Wire-up is deliberately NOT automatic: the exporter is only built
-	// when this is non-empty, so a machine with no collector pays
-	// nothing.
 	OTLPEndpoint string `toml:"otlp_endpoint"`
 }
 
@@ -47,31 +43,16 @@ type Config struct {
 	// Telemetry configures the daemon's own record of itself: the
 	// rotating JSONL sinks under the state dir (logs.jsonl,
 	// traces.jsonl) and how loud they are.
-	//
-	// It exists because a failure the terminal showed for one frame and
-	// nobody wrote down is a failure nobody can investigate: the sink is
-	// where a provider rejection, a spent quota or a cache refusal has to
-	// survive the scrollback that displayed it.
 	Telemetry TelemetryConfig `toml:"telemetry"`
 
 	// Trunks enables the trunk capability: a presentation hierarchy an
 	// aria can be promoted within, independent of where its history comes
 	// from, and a delete that follows it. Default true.
-	//
-	// With it off, figaro has no trunk pstate at all: the hierarchy IS the
-	// fork topology, `fig promote` reports that the server cannot serve it,
-	// and a delete can never orphan a survivor because the two agree.
 	Trunks *bool `toml:"trunks"`
 
 	// BundledSkills controls whether the skills that ship inside the binary
 	// (today: the `figaro` skill, unpacked from the embedded copy) take part
 	// in composing a form. Default true.
-	//
-	// False is for the user who keeps their own `figaro` skill in
-	// ~/.config/figaro/skills and does not want an upgrade correcting it.
-	// That is the whole trade: bundled skills WIN over a same-named copy in
-	// the config dir, precisely so an install can fix a stale one, and this
-	// is the switch that says "I will maintain mine myself".
 	BundledSkills *bool `toml:"bundled_skills"`
 
 	// CLI holds the settings a client owns: how it echoes, paces and colours
@@ -142,26 +123,16 @@ type CLIConfig struct {
 
 // AuthzConfig selects the authentication provider and the authorization
 // policy for the RPC surface (see internal/authz).
-//
-// Both default OFF, so a config that says nothing behaves exactly as figaro
-// did before authorization existed. Turning them on is a deliberate act,
-// which is the whole point: a credential nobody can disable is not a
-// credential, and a policy nobody can select is not a policy.
 type AuthzConfig struct {
 	// CallerIdentity enables the authn provider that reads the caller's aria
 	// id from the x-internal-figaro-id params field (rpc.CallerKey). When
 	// false, every request is anonymous no matter what it presented: the
 	// server has chosen not to trust the wire.
-	//
-	// Pointer so unset is distinguishable from an explicit false.
 	CallerIdentity *bool `toml:"caller_identity"`
 
 	// Policy names the authorization policy. "" or "allow-all" gates
 	// nothing; "default" selects authz.DefaultRules (today: refuse a
 	// self-fork issued from inside a running turn).
-	//
-	// A name rather than a bool because the policy is a seam, not a switch:
-	// the next policy is a different table, not a second flag.
 	Policy string `toml:"policy"`
 }
 
@@ -182,12 +153,6 @@ type StoreConfig struct {
 type MemoryConfig struct {
 	// DormantAfterMinutes is how long an aria must sit idle: no turn in
 	// flight, nothing queued: before the daemon reclaims it. Default 15.
-	//
-	// Do not set this low. Restore is O(history): ~15 ms to open the xwal
-	// head at 600 messages, ~9 ms to rebuild the UI at 10k, ~42 ms at 50k.
-	// Paid once it is invisible; paid every thirty seconds it is a flap that
-	// costs more than the memory it saves. Zero or negative disables
-	// reclamation entirely, which is a debugging setting, not a tuning one.
 	DormantAfterMinutes *int `toml:"dormant_after_minutes"`
 
 	// SweepIntervalSeconds is how often the daemon looks. Default 120.
@@ -199,48 +164,19 @@ type MemoryConfig struct {
 	// correct for a desktop: the time rule already bounds a normal session,
 	// and a cap set below the working set turns into a restore flap that
 	// costs more than the memory it saves.
-	//
-	// It is a SOFT cap. An aria mid-turn counts toward it and cannot be
-	// reclaimed, because the alternative is killing turns to hit a number.
 	MaxLiveArias *int `toml:"max_live_arias"`
 
 	// IRWindow bounds how many decoded IR entries stay resident per aria.
 	// 0 (default) retains everything, which is the behaviour figaro has always
 	// had.
-	//
-	// The decoded fig IR is the largest thing a live aria holds: 4-5x its
-	// encoded bytes, measured at 12.5 MiB on a 2500-message aria, and almost
-	// none of it is needed: translation reads the suffix past its watermark,
-	// rendering reads recent turns, and backward paging is served from the
-	// store by the angelus reader without touching this window.
-	//
-	// Do not set it below one turn's worth of messages. A turn that appends
-	// past the window mid-flight re-reads its own tail from disk, which is
-	// correct but pointless. 512 is generous for every observed aria.
 	IRWindow *int `toml:"ir_window"`
 
 	// IRWindowMB bounds resident decoded IR per aria in mebibytes, and is the
 	// knob to reach for: it bounds the axis that actually costs.
-	//
-	// Row count does not. Measured on a real 2556-message aria, dropping 80%
-	// of ROWS released only 26% of BYTES, a long agentic conversation puts
-	// short prose at the head and large tool results at the tail, so a row
-	// budget bounds the wrong end of a skewed distribution.
-	//
-	// 0 (default) is unbounded. 4 holds a comfortable working tail on every
-	// aria measured.
 	IRWindowMB *int `toml:"ir_window_mb"`
 
 	// TranslationWindowMB bounds resident decoded TRANSLATIONS per aria per
 	// provider, in mebibytes. It was the last unbounded cache in the store.
-	//
-	// Measured across 515 real arias: translations are 8% of the decoded IR
-	// in total, and the largest single aria holds 2.9 MiB of them. So the
-	// default binds nothing that exists today - it exists because the IR
-	// beside it IS bounded, which makes an unbounded neighbour the larger
-	// half on any aria long enough to matter.
-	//
-	// 0 is unbounded, which is what this was before it had a name.
 	TranslationWindowMB *int `toml:"translation_window_mb"`
 
 	// UIWindowMB bounds resident COMPOSED UI IR (sealed turns) across every
@@ -250,21 +186,10 @@ type MemoryConfig struct {
 	// UI IR is a pure derivation of fig IR and has no on-disk store to
 	// keep honest. An aria whose records predate turn-id stamps cannot be
 	// range-recomposed and stays whole, which is the old behaviour.
-	//
-	// 0 is unbounded, which is what this was before it had a name.
 	UIWindowMB *int `toml:"ui_window_mb"`
 
 	// SegmentCacheMB bounds the RAW segment payloads figwal holds in memory,
 	// across every open channel of every aria, in mebibytes.
-	//
-	// It is the bound the other three sit on top of: `ir_window_mb`,
-	// `translation_window_mb` and `form_patch_window` all cap DECODED copies
-	// of bytes figwal was holding raw and without limit. A segment's payloads
-	// are loaded on the first read that lands in it and dropped, least
-	// recently used first, when the total crosses this line; a dropped block
-	// costs nothing but the next read of it, because the file has every byte.
-	//
-	// 0 makes every read a pread, which is legal and slow.
 	SegmentCacheMB *int `toml:"segment_cache_mb"`
 
 	// SoftLimitMB is the daemon's heap ceiling (Go's GOMEMLIMIT). Go
@@ -354,9 +279,6 @@ func (l *Loaded) IRWindow() int {
 // that finds nothing here must leave the store's own bound alone rather than
 // substitute a number of its own. An explicit 0 is a real answer -- unbounded
 // -- and comes back with ok true.
-//
-// Floored for the same reason IRWindow is: a budget too small to hold a turn
-// makes an in-flight turn re-read its own tail.
 func (l *Loaded) IRWindowBytes() (int, bool) {
 	if l == nil || l.Config.Memory.IRWindowMB == nil {
 		return 0, false
@@ -533,16 +455,6 @@ const (
 
 // InlineImageBudget is the SINGLE policy point for how many base64 bytes of
 // tool imagery one tool_result record may carry.
-//
-// It is derived, not chosen. The tic is ONE figwal record and a record larger
-// than a segment fails the append outright, taking the turn with it: so the
-// ceiling has to move with `store.segment_size` rather than being a constant
-// pinned to the smallest legal configuration. A user who raises the segment
-// size to hold bigger screenshots gets bigger screenshots; one who lowers it
-// to the floor gets a proportionally tighter budget instead of a broken store.
-//
-// The provider ceiling caps the top end: past ~5MB per image the APIs refuse
-// it anyway, so a 64MiB segment buys context cost, not capability.
 func (l *Loaded) InlineImageBudget() int {
 	budget := l.SegmentSize() / imageShareDen * imageShareNum
 	if budget > maxInlineImageBytes {
@@ -936,9 +848,6 @@ func Load(configDir string) (*Loaded, error) {
 	// `echo_prompt = false` at the top level yielded EchoPrompt() == true with
 	// no error and no warning. A setting that quietly stops applying is worse
 	// than one that fails loudly, because nobody goes looking.
-	//
-	// [cli] wins wherever it says anything; the old spelling only fills what
-	// it left unset. Drop this once no config in the wild predates the move.
 	var preSection CLIConfig
 	if err := toml.Unmarshal(data, &preSection); err == nil {
 		c := &cfg.CLI

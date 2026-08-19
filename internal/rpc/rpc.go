@@ -1,9 +1,5 @@
 // Package rpc defines JSON-RPC 2.0 types shared between figaro and
 // angelus sockets.
-//
-// The live-render wire is aria.Page (see internal/livelog/aria), pushed via
-// MethodAriaFrame and pulled for catch-up/paging via MethodRead. Snapshot nodes
-// ride directly in TurnParts; only the newest mutable suffix uses NodeDelta.
 package rpc
 
 // Notification is a JSON-RPC 2.0 notification.

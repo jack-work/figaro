@@ -92,10 +92,6 @@ func (*ConfigValue) Invalidate(string) error { return nil }
 // credential is refreshed (OAuth) or exchanged (a Copilot session token);
 // this strategy only fetches the current value and forces a mint on
 // Invalidate so the next call sees a new token.
-//
-// One hush agent per machine means one token per credential, shared by
-// every aria and every figaro process, renewed once. Nothing here caches:
-// the socket round-trip IS the sharing.
 type OAuth struct {
 	Hush *hush.Client
 	Name string

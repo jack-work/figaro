@@ -13,15 +13,6 @@ import (
 
 // runDoctorTerm prints what figaro believes about this terminal, and what the
 // terminal itself says when asked.
-//
-// It exists because a right-edge overflow was reported repeatedly and could not
-// be reproduced from another machine: every surface, every width from 20 to 200,
-// live turns, resizes, nvim's embedded terminal, all clean. What cannot be
-// checked from here is whether the reporter's terminal DRAWS a glyph the width
-// figaro measured it to be, and if it does not, every row figaro builds is
-// wrong by the difference, invisibly.
-//
-// One command, run where the trouble is, answers it.
 func runDoctorTerm() error {
 	w, h := term.Width(), term.Height()
 	fmt.Printf("TERM         %s\n", envOr("TERM", "(unset)"))

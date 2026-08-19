@@ -12,21 +12,6 @@ import (
 )
 
 // Inbox is the per-aria user-RPC event queue.
-//
-// IDENTITY. Every queued user prompt carries an id, minted here, so the CRUD
-// surface has something to address. Ids are dense and per-INBOX, which makes
-// them typeable (`figaro queue rm 3`) but NOT durable: a new Inbox, a daemon
-// restart, a dormant→attach, a panic-restart of the drain loop: starts again
-// at 1. A client holding an id from a previous generation would otherwise
-// delete whatever holds that number now.
-//
-// So the inbox also mints an EPOCH: 8 bytes of crypto/rand, hex, once per
-// inbox. Every mutation must present the epoch its ids were read against, and
-// a mismatch is refused rather than resolved. The epoch is compared only for
-// EQUALITY: never ordered: which is exactly why a random nonce is the right
-// primitive here and a clock is not (a clock can go backwards), nor the log
-// tail (it does not advance when an agent boots, queues, and dies without
-// appending: the precise case that reproduces a colliding id).
 type Inbox struct {
 	// q is the runtime: internal/actor, the same single-writer queue a Form
 	// writes through. Everything below it is prompt bookkeeping, which is what
@@ -219,28 +204,6 @@ func (b *Inbox) TakeReadySet() []event {
 
 // CoalesceUserPromptRuns folds each CONTIGUOUS RUN of queued user prompts
 // into one event, parked at that run's first position and keeping its id.
-//
-// Called from Agent.Interrupt and NOWHERE ELSE. That is the whole guard: the
-// normal submit path (Send), the mid-turn steering drain
-// (TakeReadyUserPrompts) and the durability retry (Prepend) have no way to
-// reach this, so no flag has to be threaded anywhere and no shared helper has
-// to ask whether it is being interrupted. The result is an ORDINARY queue -
-// the drain loop cannot tell a fold happened, because there is nothing to
-// tell: one event holding one multi-line message is a shape it already
-// handles.
-//
-// A QUEUED SET OR FORK IS A BARRIER and is never crossed. All three takers
-// above are prefix-only precisely so FIFO across event kinds is preserved,
-// and this must not be the one place that reorders across them: a `set`
-// exists to change context BEFORE the prompt behind it, so folding that
-// prompt in front of the set would answer it against a form it was
-// never written against: with no error, no log line, and nothing to notice.
-// Across a fork it is worse: the message would land in the wrong trunk.
-//
-// In the gesture this exists for, a person with several messages typed
-// during one long turn, hitting Ctrl-C: set and fork arrive by CLI rather
-// than the composer, so there is no interleaved control event and run
-// coalescing IS whole-queue coalescing.
 func (b *Inbox) CoalesceUserPromptRuns() {
 	b.q.Do(func(pending []event) []event {
 		if len(pending) < 2 {
@@ -270,10 +233,6 @@ func (b *Inbox) CoalesceUserPromptRuns() {
 // VERBATIM, in FIFO order, each with its own id: not folded. Control events
 // (sets, forks) are left in the queue: this drops the questions, it does not
 // cancel the form mutation or the fork someone else asked for.
-//
-// Verbatim is the point. What is drained is handed back so it can be written
-// to disk instead of lost, and a caller who typed three messages wants their
-// three messages back: not one blob that has to be unpicked.
 func (b *Inbox) DrainUserPrompts() []event {
 	var drained []event
 	b.q.Do(func(pending []event) []event {
@@ -295,20 +254,6 @@ func (b *Inbox) DrainUserPrompts() []event {
 }
 
 // DeletePrompts drops queued messages and reports, PER ID, what happened.
-//
-// A refusal is a decision, not a fault: an id the drain loop has already
-// lifted, or already answered, or that an interrupt folded into another
-// message, each get their own reason so the caller can act on the difference
-// instead of guessing at "it didn't work".
-//
-// epoch is a compare-and-swap token and is required whenever ids are named:
-// ids restart with every inbox, so resolving one against the wrong generation
-// would delete a different message than the caller read. A mismatch refuses
-// the WHOLE request: nothing is mutated: rather than deleting the ids that
-// happen to exist in both.
-//
-// The all-form names no id, so it needs no epoch and reports one result per
-// message actually removed (possibly none).
 func (b *Inbox) DeletePrompts(epoch string, ids []uint64, all bool) (string, []rpc.QueueResult) {
 	var epochOut string
 	var results []rpc.QueueResult
@@ -456,9 +401,6 @@ func (b *Inbox) IsIdle() bool { return b.q.IsIdle() }
 // form carriers), which is what every display surface wants and what
 // this has always returned; the CRUD surface asks for them because it must be
 // able to address what it can delete.
-//
-// Non-prompt events (sets, forks) are skipped by design: this is the "what am
-// I about to be asked next?" view, not a dump of the actor's mailbox.
 func (b *Inbox) SnapshotPrompts(carriers bool) []event {
 	var out []event
 	b.q.Read(func(pending []event) {

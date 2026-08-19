@@ -180,11 +180,6 @@ type channel struct {
 
 // lookupAtOrBelow is the greatest channel LT whose record is keyed at or
 // below mainLT — the boundary a fork sharing main [1..mainLT] inherits.
-//
-// NOT lookup: that is an EXACT match on mainLT, and a related channel is
-// sparse, so most main LTs have no record of their own. Using it as a
-// boundary made every fork at an unkeyed LT claim base 1, which severs the
-// channel from its ancestors and silently drops inherited state.
 func (ch *channel) lookupAtOrBelow(mainLT uint64) (uint64, bool, error) {
 	found, ok := uint64(0), false
 	err := ch.log.ScanFromEnd(ch.log.LastIndex(), func(idx uint64, payload []byte) error {
@@ -261,11 +256,6 @@ type manifest struct {
 	// Layout is the on-disk TOPOLOGY version: 4 is flat, absent (0) is the
 	// nested v3 layout this build cannot read. It is stamped on creation and
 	// by Flatten, and openTrunks refuses anything else.
-	//
-	// UnstampedRecords marks a store that came through Flatten, and so holds
-	// main records written before the cursor stamp existed (the stamp and
-	// this layout shipped together). It is what sanctions the migration-era
-	// fallback in CursorAt, and the ONLY thing that does.
 	Layout           int  `json:"layout,omitempty"`
 	UnstampedRecords bool `json:"unstamped_records,omitempty"`
 }
@@ -357,14 +347,6 @@ func open(dir string, cfg Config, store *log.Store, branch ...string) (*XWAL, er
 		}
 		cdir := x.channelDir(mc.Name)
 		// Flat nodes name their parent; nested ones let disk walk "..".
-		//
-		// When openFlatParent returns nil -- no parent, or an ancestor with
-		// no directory and nothing above it -- opts.Parent stays nil and
-		// disk.Open falls back to walking "..", which in the flat layout is
-		// the CHANNEL ROOT. That is correct only because the null root's key
-		// is the empty string, so the root node's log IS the channel
-		// directory. Renaming the root key would sever every depth-1 node,
-		// silently, as fewer records rather than an error.
 		if cfg.ParentOf != nil && len(branch) == 1 {
 			p, perr := x.openFlatParent(mc.Name, cfg.ParentOf(branch[0]), opts, store)
 			if perr != nil {
@@ -554,18 +536,6 @@ func loadOrCreateManifest(dir string, cfg Config) (manifest, error) {
 	// they are; writing a fresh one over live data silently drops every
 	// channel the caller does not currently declare, and stamps the store
 	// as this build's layout without anything having looked at its shape.
-	//
-	// A fuzz worker turned that into total, silent loss: delete xwal.json
-	// from a NESTED store and the failing open still wrote a manifest
-	// stamped layout=4, so NeedsFlatten then answered no, the migration
-	// never ran, and the next open reported ZERO arias at exit 0 -- with
-	// 430 nodes untouched on disk. That is exactly what the layout gate
-	// exists to prevent, defeated by the stamp being written first.
-	// EMPTINESS, not existence. A bare directory -- a botched copy, an
-	// interrupted restore, a caller that mkdir'd ahead -- holds no nodes,
-	// no segments, no channels to drop and no layout to misjudge, so it
-	// goes to the create path. Refusing it would brick a store that has
-	// nothing in it, with a message about data that is not there.
 	if hasChannelContent(filepath.Join(dir, cfg.Main)) {
 		return manifest{}, fmt.Errorf(
 			"xwal: %s holds data in %q but no %s; refusing to invent one, because a fresh "+
@@ -836,25 +806,6 @@ func channelFromManifest(cfg Config, mc manifestChannel) (*channel, error) {
 // authoritative for a store that exists, and materializeManifestChannels
 // only ever added MISSING directories -- so a property introduced after a
 // store was created never reached it.
-//
-// That was not a theoretical gap. The chalkboard became UNKEYED and no
-// store anyone already had adopted it: the whole design (append without
-// reading the timeline, no lock, a `set` that lands mid-turn) applied to
-// stores created by the new build and to nothing else, silently. A fuzz
-// worker found it from outside as a `set` the parent kept and a tail
-// fork's child never saw, and as a `set` that a SIGKILL lost although its
-// bytes were already on disk -- crash recovery trims a related record
-// keyed ahead of the durable main tail, and a keyed board patch written
-// between turns is exactly that.
-//
-// KEYED -> UNKEYED ONLY. The reverse is refused: records already written
-// carry no main LT, and reading them as keyed reads every one as key 0.
-// There is no converter that could invent a key.
-//
-// OPAQUE DRIFTS IN BOTH DIRECTIONS, and safely, because the decoder keys
-// off the FRAME and not off the channel: frameObj.payload() base64-decodes
-// when the record has a p64 field and does not when it has p. A channel
-// that changes its mind therefore reads back mixed records correctly.
 func reconcileChannelProps(dir string, cfg Config, man manifest) (manifest, error) {
 	declared := make(map[string]ChannelSpec, len(cfg.Channels))
 	for _, c := range cfg.Channels {
@@ -887,15 +838,6 @@ func reconcileChannelProps(dir string, cfg Config, man manifest) (manifest, erro
 		// a reconciliation, and dropping a fold abandons state readers
 		// depend on. Neither direction has a converter, so neither is
 		// guessed.
-		//
-		// THE REDUCER NAME IS NOT PART OF THAT, and comparing it was a
-		// near-miss that would have bricked every existing store: a real
-		// store carries reducer "jsonmerge" while this caller registers
-		// the same fold under "chalkboard", so a refusal on the name
-		// rejected a store whose records are exactly what the caller
-		// expects. The name is a REGISTRY KEY, not a property of the
-		// records, and resolveReducer already resolves it three ways --
-		// by name, by channel, then the builtins. It stays the manifest's.
 		if want.Kind.String() != mc.Kind {
 			return man, fmt.Errorf(
 				"xwal: channel %q is %q on disk but the caller declares %q; "+
@@ -914,17 +856,6 @@ func reconcileChannelProps(dir string, cfg Config, man manifest) (manifest, erro
 
 // hasChannelContent reports whether a channel directory holds anything a
 // store would own: a node directory or a segment.
-//
-// Dot-entries do not count, and the exception is safe for ONE reason worth
-// stating rather than inferring: every store this build writes puts the
-// genesis record in the main channel's root, so a real store always has a
-// segment file there and can never be judged empty. A directory holding
-// only dotfiles -- a restore that copied .fork and no segments, a stray
-// .absorb-* from an interrupted Detach -- is debris with no records to
-// lose, and gets a fresh manifest rather than a permanent refusal.
-//
-// If the genesis ever stops being written, this exception stops being safe
-// and the test becomes "any entry at all".
 func hasChannelContent(dir string) bool {
 	ents, err := os.ReadDir(dir)
 	if err != nil {
@@ -1054,13 +985,6 @@ func (x *XWAL) Clear(channelName string) error {
 // trunks) has a matching, empty, correctly-rooted node. Without this a
 // lazily-added channel would exist only on the branch it was added from, and
 // forks could not propagate it. The handle is then opened at THIS branch.
-//
-// Backfilled nodes carry no own segments — their content is derivable (a log
-// channel is empty; a reducible channel seeds each node with the reducer's
-// Initial watermark so StateAt folds from a defined base). Per-channel
-// forkBases are recomputed for an empty channel (every fork lands at the
-// channel's own first index), never copied from the main channel — the index
-// spaces differ. Reducible channels must name a registered reducer.
 func (x *XWAL) addChannel(spec ChannelSpec) error {
 	if err := x.ensurePrivate(); err != nil {
 		return err
@@ -1599,12 +1523,6 @@ func recoverAtomicReplacement(final string) error {
 
 // writeSyncedFile replaces path atomically: a reader sees the whole old
 // content or the whole new content, never a torn or empty file.
-//
-// It writes a temp file, fsyncs it, renames it over the target and fsyncs
-// the directory. Truncating in place would leave a ZERO-BYTE marker if the
-// process died between the truncate and the write -- and every .fork and
-// .from on disk is written through here, so that would turn one badly timed
-// crash into an unreadable node.
 func writeSyncedFile(path string, body []byte) error {
 	// A UNIQUE temp: a fixed path+".tmp" lets two writers of the same marker
 	// clobber each other's scratch, and leaves a stale one beside the marker
@@ -1974,16 +1892,6 @@ func (x *XWAL) StateAt(channelName string, channelLT uint64) ([]byte, error) {
 // channelLT TOGETHER WITH THAT SEGMENT'S BASE INDEX, for a reducible
 // channel. Both facts come from the same segment under one lock, and the
 // parent chain is walked exactly as StateAt walks it.
-//
-// It is for a caller that wants to fold [base..channelLT] with its OWN
-// reducer -- typically a decoded one -- rather than pay StateAt's trip
-// through the channel's fold callback per record. Asking for the header and
-// the base SEPARATELY is unsafe below a fork base: see
-// disk.Log.SegmentHeaderAt.
-//
-// A miss, never a lie: distinct errors for an unknown channel, a
-// non-reducible channel, a log with no headers, an empty log and an unknown
-// index. The base is never 0 with a nil error.
 func (x *XWAL) SegmentHeaderAt(channelName string, channelLT uint64) ([]byte, uint64, error) {
 	ch := x.chans[channelName]
 	if ch == nil {
@@ -2174,32 +2082,10 @@ type frameObj struct {
 	// xwal at append time — mandatory on every new record, never supplied
 	// by the caller. Legacy records simply lack it and read back as zero
 	// ("we can tolerate without them").
-	//
-	// DECLARED IN ALPHABETICAL POSITION (after p64, before x), and that
-	// placement is load-bearing: the JSONL codec re-canonicalizes every
-	// line into alphabetical key order on disk, so a frame read back from
-	// a segment is m,p,t,x regardless of what the encoder emitted. The
-	// first draft declared T after X — encoder bytes and disk bytes then
-	// DISAGREED, the fast decoder matched only the encoder's order, and
-	// every meta-carrying record read from disk silently paid the
-	// reflection path: StateAt +283%, LookupHot +354% on the long-aria
-	// bench. Keeping struct order == canonical order makes encoder
-	// output and disk output byte-identical, one grammar for both.
 	T int64           `json:"t,omitempty"`
 	X json.RawMessage `json:"x,omitempty"`
 	// C is the cursor stamp, present only on MAIN records: the tail of every
 	// UNKEYED channel at the moment this record was written.
-	//
-	// An unkeyed channel carries no main LT, so it can be appended with no
-	// reference to the timeline and no lock against it -- which is the whole
-	// point. But a fork still has to decide what such a channel inherits,
-	// and "records keyed at or below the fork point" is not available. The
-	// cursor answers it from the other side: the main record AT the fork
-	// point already says where that channel stood.
-	//
-	// Written by main's writer, which is single-writer-per-lineage already,
-	// so stamping costs a read of an in-memory tail and no coordination on
-	// the unkeyed channel's own append path.
 	C map[string]uint64 `json:"c,omitempty"`
 }
 
@@ -2275,10 +2161,6 @@ func decodeFrame(f []byte) (uint64, []byte, error) {
 // decodeRecord decodes a related-channel frame. isMain selects the slow
 // path, because only a MAIN record carries a cursor stamp and the fast
 // decode does not look for one.
-//
-// Keyed off the channel, NOT off the bytes: probing a payload for `"c":`
-// would let any user content that happens to contain that literal -- a
-// chalkboard key named c -- silently take the slow path forever.
 func decodeRecord(channelLT uint64, f []byte) (Record, error) {
 	return decodeRecordFrom(channelLT, f, false)
 }
@@ -2526,15 +2408,6 @@ func (x *XWAL) openFlatParent(chName, node string, opts disk.Options, store *log
 
 // CursorAt is where an unkeyed channel stood when main record `at` was
 // written, from that record's cursor stamp.
-//
-// Unkeyed decouples the WRITE path from the timeline; a reader that wants
-// to attribute records to turns still can, from this.
-//
-// LAZY MIGRATION: a record written before stamping existed carries no
-// cursor. The channel's OLD main-LT key is still on disk, so the answer is
-// derivable — the highest index in that channel keyed at or below at. No
-// rewrite, no migration gate; the derivation simply retires as old records
-// scroll out of the prefix.
 func (x *XWAL) CursorAt(at uint64, channel string) (uint64, error) {
 	if at == 0 {
 		return 0, nil
@@ -2556,10 +2429,6 @@ func (x *XWAL) CursorAt(at uint64, channel string) (uint64, error) {
 	// A store this build created cannot want that: its unkeyed records carry
 	// main LT 0, so the lookup would answer "every record so far" for any
 	// `at` -- a fork would inherit records written after it branched.
-	//
-	// It retires when no store carrying pre-stamp records remains, i.e. when
-	// a converter rewrites canonical IR. Until then this is the sanctioned
-	// path and the flag is its gate.
 	if !x.unstampedRecords {
 		return 0, nil
 	}

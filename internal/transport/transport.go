@@ -23,11 +23,6 @@ func UnixEndpoint(path string) Endpoint {
 // Tap is middleware over a live connection: it is handed the raw conn and
 // returns the conn the RPC layer will actually use. A nil Tap is the identity,
 // which is what every caller but the recorder passes.
-//
-// It sits HERE, below jkrpc, because this is the only place that sees both
-// directions as bytes. A tap higher up, a NotifyHandler wrapper, say: would
-// see notifications but not the responses to our own calls, and would see the
-// values OUR decoder produced rather than the bytes the server sent.
 type Tap func(net.Conn) net.Conn
 
 // Dial connects to an endpoint and returns a jkrpc.Conn.

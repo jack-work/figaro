@@ -49,11 +49,6 @@ type Bus interface {
 	// PushToolReady fires when a tool_use block's input JSON is fully
 	// decoded: typically at content_block_stop. The harness may dispatch
 	// the tool immediately, before PushFigaro / message_stop arrives.
-	//
-	// The content must be a ContentToolInvoke with ToolCallID, ToolName,
-	// and Arguments populated. Providers that don't support per-block
-	// dispatch may omit calls to this method; the harness falls back to
-	// dispatching from PushFigaro's assembled message.
 	PushToolReady(call message.Content)
 	// PushMessageEnd fires at message_stop, before PushFigaro. Under the
 	// log.* model the figaro side ignores it (the stop reason rides the
@@ -80,21 +75,6 @@ type AssistantCache struct {
 // each turn and never cached per-LT.
 // Form supplies the board patches that landed before a turn, so the
 // projection can render a `set` inline where it happened.
-//
-// PatchesBetween takes form VERSIONS, not IR LTs. The board is
-// unkeyed -- a patch is written with no reference to the timeline -- and
-// the association runs the other way: each IR entry records how far the
-// board had advanced when it was written. The projection hands over the
-// previous entry's mark and this one's, and gets the patches that landed
-// between them: (after, upTo].
-//
-// It is deliberately ABSOLUTE rather than a cursor. A cursor has to be
-// driven exactly once, in order, from the beginning -- and the projection
-// does no such thing: it warm-starts at previous.Entries and walks only the
-// untranslated suffix. A fresh cursor pointed at that suffix replayed the
-// WHOLE board onto the first new message, and the encoder baked it into the
-// per-LT cache, so every provider round-trip permanently re-sent all of the
-// aria's state. An absolute range cannot express that bug.
 type Form interface {
 	PatchesBetween(after, upTo uint64) []message.Patch
 }

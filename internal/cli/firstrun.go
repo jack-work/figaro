@@ -1,29 +1,4 @@
 // Package cli: first-run setup wizard.
-//
-// The wizard fires when the user runs any prompt-producing command
-// before figaro has enough configuration to satisfy it. It runs in
-// three stations, each independent and skippable:
-//
-//  1. Hush identity (owned by hush's `managed` package; we just call
-//     EnsureReady and let it prompt for a passphrase + persist to the
-//     OS keyring). Invisible if the identity already exists.
-//
-//  2. Provider + credentials. Picks a provider/mode from a numbered
-//     menu, then runs that mode's credential setup (OAuth flow or
-//     API-key prompt). Stores the result through hush so secrets
-//     never touch disk in plaintext.
-//
-//  3. Default outfit. Scaffolds a minimal `outfits/default.toml`
-//     bound to the provider chosen in (2) and points config.toml's
-//     default_outfit at it. So `fig "..."` works after this returns.
-//
-// Triggers: angelus emits a typed JSON-RPC error
-// (ErrNoDefaultOutfit / ErrNoProvider). createWithFirstRun catches
-// it, drives the wizard, retries the underlying call.
-//
-// Non-TTY callers get a clear error directing them to set things up
-// interactively; we never auto-mutate config silently when there's no
-// human at the keyboard.
 package cli
 
 import (
@@ -80,9 +55,6 @@ func init() {
 // catalog is the menu shown for each underlying provider. Ordering
 // matters: first entry is "recommended" by virtue of position. Add
 // new providers here and they appear in the wizard automatically.
-//
-// Today there's only one underlying provider (anthropic) with two
-// modes. When OpenAI/etc. land, append two more entries here.
 var providerCatalog = []providerChoice{
 	{
 		label:    "GitHub Copilot (device code login)",
@@ -133,11 +105,6 @@ type createFn func() (*rpc.CreateResponse, error)
 
 // createWithFirstRun invokes fn once. On a typed first-run error, drives the
 // wizard and retries.
-//
-// spec is what the caller ASKED for. The wizard scaffolds a default outfit and
-// points config.toml at it, which is the right answer for a store that has
-// none and the wrong answer for `-O pair` where pair exists and simply sets no
-// provider: naming an outfit is not asking to be reconfigured.
 func createWithFirstRun(ctx context.Context, loaded *config.Loaded, d dressing, fn createFn) (*rpc.CreateResponse, error) {
 	resp, err := fn()
 	if err == nil {
@@ -324,13 +291,6 @@ func runOAuthInline(providerName string, cfg auth.OAuthConfig) error {
 // and writes it as `api_key = "AGE-ENC[...]"` in providers/<name>.toml.
 // runCopilotLogin runs the device code flow and hands the GitHub token to
 // hush under the copilot grant.
-//
-// The token is NOT written to providers/copilot.toml any more. Copilot's API
-// will not take it: it must be exchanged for a session token, and that
-// exchange is hush's - one per machine, renewed before expiry, shared by
-// every aria. Registering here also mints the first session immediately, so
-// a credential that does not work fails now, while someone is watching,
-// instead of on a turn tomorrow.
 func runCopilotLogin(loaded *config.Loaded) error {
 	line, err := term.ReadLine("       GitHub Enterprise domain (blank for github.com): ")
 	if err != nil {
@@ -489,8 +449,6 @@ provider = %q
 }
 
 // --- pretty bits -----------------------------------------------------------
-//
-// Routed through internal/term so NO_COLOR / non-TTY are respected.
 
 func dim(s string) string   { return term.Dim(s) }
 func cyan(s string) string  { return term.Cyan(s) }

@@ -1,16 +1,5 @@
 // Package anthropicmodels holds the context-window knowledge shared by the
 // two Anthropic providers (the hand-rolled HTTP one and the SDK one).
-//
-// Two sources, in priority order:
-//
-//  1. a Catalog learned from the provider's own /v1/models endpoint, whose
-//     ModelInfo carries max_input_tokens, authoritative, but only populated
-//     once something has listed models in this process;
-//  2. a static prefix table for the models we have verified, so a fresh
-//     process still reports a window.
-//
-// Unrecognised models return 0: "unknown". A missing number is honest; a
-// wrong one is not.
 package anthropicmodels
 
 import (
@@ -24,24 +13,6 @@ import (
 // windowTable maps a normalized model-id prefix to that model's total context
 // window in tokens. Longest matching prefix wins, so "claude-opus-4-6" beats
 // "claude-opus-4".
-//
-// Verified against the provider's own /v1/models response (max_input_tokens),
-// captured 2026-07-25:
-//
-//	claude-opus-5               1000000   claude-opus-4-5-20251101    200000
-//	claude-sonnet-5             1000000   claude-haiku-4-5-20251001   200000
-//	claude-fable-5              1000000   claude-opus-4-1-20250805    200000
-//	claude-opus-4-8/4-7/4-6     1000000
-//	claude-sonnet-4-6           1000000
-//	claude-sonnet-4-5-20250929  1000000
-//
-// For Opus 5, 1M is both the default and the maximum: there is no smaller
-// variant and no beta header is involved (context-1m-2025-08-07 was retired in
-// April 2026 and is ignored: which is also why Sonnet 4.5 now reports 1M by
-// default). Claude 3 and the undated Opus 4 / Haiku 4 ids predate the listing
-// above and are the long-standing 200k.
-//
-// Anything not listed here is deliberately absent rather than guessed.
 var windowTable = map[string]int{
 	"claude-opus-5":     1_000_000,
 	"claude-opus-4-8":   1_000_000,

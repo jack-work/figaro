@@ -16,38 +16,6 @@ import (
 
 // AriaReader answers the read half of the aria contract: history, context
 // and form: straight from the store, with no agent.
-//
-// It exists because reading was the last thing pinning an agent in memory.
-// A transcript pager, a `figaro show`, a browser tab left open for a week:
-// none of them need a turn loop, a provider or a tool registry, and none of
-// them should keep 32 MB of composed UI resident to page through history.
-//
-// It is deliberately NOT a cache, and that is the whole memory argument: a
-// hundred connected terminals do not pin a hundred transcripts. Each call
-// rebuilds from the backend's ONE memoized log instance: the same instance
-// EvictIdle drops, and drops the projection on return. Resident cost is
-// per-aria and bounded; it does not scale with readers.
-//
-// The bill moves to churn, and it is not small (reader_bench_test.go):
-//
-//	Page      600 msgs   477 µs    916 KB/op
-//	Page       10k msgs  4.63 ms  13.1 MB/op
-//	Context    10k msgs   534 µs   2.8 MB/op   (decode only, no projection)
-//	Form            257 ns     51 B/op
-//
-// So ~10 MB of the 13 is projection, thrown away each call: this is
-// O(whole history) per page, not O(page). Against an agent's ~6 MB of
-// permanently-resident composed UI at the same size, the trade is good for
-// an aria read rarely and bad for one paged hard: which is exactly why
-// handlers route a LIVE aria to its agent instead of here. A
-// range-projecting reader that composes only the window would remove the
-// asymmetry; it is the obvious next step and deliberately not this one.
-//
-// A LIVE agent must be preferred over this reader. The agent holds
-// in-flight state: the open streaming region, partial tool arguments, the
-// current turn: that is not in the store yet, and serving a stale page to
-// a client watching a live turn would look like a hang. Callers route on
-// liveness; see handlers.readerFor.
 type AriaReader struct {
 	backend store.Backend
 	proj    Projector

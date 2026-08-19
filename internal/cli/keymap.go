@@ -7,34 +7,6 @@ import (
 )
 
 // The keymap: one declarative table naming every keybinding in the live TTY.
-//
-// Before this file the answer to "what does this key do?" was spread across
-// five places that had to agree by hand: the input loop's control-key switch,
-// the pager's key switch, the search sub-mode switch, a hand-kept list of keys
-// that may open the pager, and a hand-written help panel. They did not agree:
-// '!' acted inside the pager but no key could get you there.
-//
-// Now a binding is DATA: the chord it matches, the modes it is live in,
-// whether it opens the pager from incipit, its action, and the help row it is
-// documented by. The opener set and the help panel are derived from the table,
-// so neither can drift from the behaviour again.
-//
-// Dispatch is two-level, because the keyboard genuinely is:
-//
-//	input level   (interactiveInput): keys that own the process: interrupt,
-//	              detach, listen, clipboard. Live in incipit AND in the pager.
-//	pager level   (transcript): motions, search, panels, selection.
-//	              Only reachable with the pager up.
-//
-// A key is looked up at the input level first; if no row is live in the
-// current mode, it falls through to the pager (which is how 'y' and 'q' become
-// literal text while the search prompt is up: they have no search-mode row).
-//
-// Performance: the table is compiled once, at init, into fixed-size arrays of
-// the actions themselves, keyed [mode][chord]. A keystroke costs one array
-// load and one indirect call: no map, no closure built per key, nothing
-// allocated. (A parallel index of row numbers serves everything that is NOT
-// on the keystroke path: the openers, the help panel, the tests.)
 
 // keyMode is the input mode a keystroke lands in. The pager's sub-modes are
 // modes proper, not flags checked ad hoc inside the handler.
@@ -259,10 +231,6 @@ var keymap = []keyBinding{
 		// keep watching. Ctrl-C ends the session with it (keyStop, exit 130);
 		// this one returns keyHandled, so the pager stays up and the aria
 		// stays ready for the next thing you type.
-		//
-		// Transcript-only by design. In incipit a printable byte composes a
-		// steer, and an incipit session closes on turn.done anyway: there is
-		// no "and stay" to offer there.
 		chord: byteChord('H'), modes: inTranscript | inPanel,
 		open: staysInline, why: "it addresses a turn that is streaming in the view you are already in",
 		help: helpHangUp, input: inputHangUp,
@@ -449,15 +417,6 @@ func helpBody() []string {
 
 // ---------------------------------------------------------------------------
 // The compiled dispatch tables. Built once, at init, from the rows above.
-//
-// Two shapes, from one table, so neither can drift from the other:
-//
-//	pagerAct / inputAct: the ACTION, keyed [mode][chord]. This is the hot
-//	                       path: one array load and an indirect call, no
-//	                       intermediate row lookup, nothing allocated.
-//	pagerIndex/inputIndex: the row INDEX, for everything off the keystroke
-//	                       path (openers, help, the tests that walk the map).
-// ---------------------------------------------------------------------------
 
 const noBinding = int8(-1)
 

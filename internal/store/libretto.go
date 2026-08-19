@@ -2,28 +2,6 @@ package store
 
 // The libretto: a studied form's state, materialized, shared by every figaro
 // observing it.
-//
-// One per studied FORM, not per observer (Gluck, 2026-08-12). Named
-// `@libretto::<formid>` so a form can find its own libretto and an observer
-// can derive the name from the id it studies. It does not fork, it is
-// refcounted by the figaros studying it, and it holds a COPY rather than a
-// pointer into the source's history (durable-forms §12.3): deriving a
-// pointer is not derivation, and a range into someone else's log couples
-// retention to observation through the back door.
-//
-// What the copy buys, in one line each: the translator never touches a
-// source form; a studied form becomes freely deletable, because the libretto
-// records the death and keeps the copy; and the render's special cases turn
-// into ordinary state.
-//
-// It lives on a reserved STUMP for the same reason the topology form does -
-// a stump is the one node figwal names by a string the caller chooses.
-//
-// WHAT THIS FILE IS NOT. It is the libretto and its fold, nothing else. The
-// study verb's two-participant write (§12.2.1), the fork/import/kill
-// refcount participants (§12.2.2) and the IR's per-libretto cursors (§12.5)
-// are the wiring, they live in files another aria owns, and they are the
-// next worker's job.
 
 import (
 	"encoding/json"
@@ -164,26 +142,12 @@ func (l *Libretto) addRefs(delta int) (int, error) {
 		// writer land between the two, and then the count is computed from
 		// the OLD state while the conditional apply quotes the NEW version --
 		// so the guard passes and the update is lost.
-		//
-		// A lost retain over-counts (a leak the sweep repairs). A lost
-		// release under-counts, and the count then drifts low until some
-		// later, legitimate release finds zero and is refused. That is the
-		// "release below zero" that appeared once under a loaded gate and in
-		// none of the runs that chased it: the window between two atomic
-		// loads is exactly as rare as that.
 		at := l.form.Read()
 		from := intOf(at.Snapshot, KeyLibrettoRefs)
 		next := from + delta
 		if next < 0 {
 			// A double drop is a bug in the caller, not a reason to invent a
 			// negative refcount that reclamation would never collect.
-			//
-			// THE LEDGER COMES WITH IT. This is an under-count, the direction
-			// the sweep cannot repair, and it has appeared once in a loaded
-			// run and never again in four. A message that says only "below
-			// zero" leaves the next person doing what I did -- running it
-			// again and learning nothing -- so the refusal carries the moves
-			// that led to it.
 			recordRefMove(refMove{libretto: l.ID(), delta: delta, from: from, to: next, refused: true, caller: caller})
 			return from, fmt.Errorf(
 				"libretto %s: release below zero\nrecent refcount moves (oldest first):\n%s",
@@ -204,26 +168,11 @@ func (l *Libretto) addRefs(delta int) (int, error) {
 // Reclaimable reports that nobody is STUDYING this any more. It is necessary
 // for reclamation and it is NOT sufficient, which is worth stating where the
 // method is rather than where the sweep is:
-//
-// an IR record stamps the libretto version it was rendered against (§12.5),
-// so an aria that studied a form and dropped it still references this
-// libretto for the whole of its history. Unlinking on refs==0 would make
-// those records unrenderable -- the exact coupling the COPY was introduced
-// to remove, reintroduced from the other end.
-//
-// So reclamation needs a second question, "does any surviving IR reference
-// it", and that question has no answer in this package today. Until it does,
-// this is the flag a caller may act on for a libretto whose observers are
-// gone AND whose referencing arias are gone with them -- which today means
-// only the delete path.
 func (l *Libretto) Reclaimable() bool { return l.Refs() == 0 }
 
 // Follow subscribes to the source and folds its patches in, forever, until
 // Close. Register-then-read: the subscription carries the snapshot it was
 // registered at, so nothing between the two is missed.
-//
-// The first fold writes the source's whole state, because a libretto that
-// starts mid-history would render a form that never existed.
 func (l *Libretto) Follow(src *Form) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -307,10 +256,6 @@ func (l *Libretto) fold(sub *Subscription, stop <-chan struct{}, done chan<- str
 				// refuses to evict anything subscribed, correctly, so the
 				// corpse of every studied-and-deleted form would be held for
 				// the daemon's life.
-				//
-				// Detaching from THIS goroutine, so it cannot join itself:
-				// Close() waits on `done`, and `done` is closed by our own
-				// defer.
 				l.detach(sub)
 				return
 			}
@@ -331,11 +276,6 @@ func (l *Libretto) detach(sub *Subscription) {
 }
 
 // applyBatch folds a run of source events into ONE patch on the copy.
-//
-// Later events win, per key, in both directions: a key set and then removed
-// leaves a removal, and one removed and then set leaves a set. Getting that
-// backwards is how a mirror ends up holding a value the source does not.
-// It reports whether the source is DEAD, which ends the following.
 func (l *Libretto) applyBatch(sub *Subscription, batch []Event) bool {
 	set := map[string]json.RawMessage{}
 	removed := map[string]bool{}
@@ -426,13 +366,6 @@ func (l *Libretto) Close() {
 }
 
 // isLibrettoKey names the keys a verbatim mirror must NOT copy.
-//
-// The bookkeeping namespace, because the copy would overwrite the refcount.
-// And the TOMBSTONE, because a form seals itself when it carries one: mirror
-// the source's death record and the libretto commits suicide the moment its
-// source dies, which is the precise opposite of the copy outliving it. The
-// death is recorded as system.libretto.alive instead, which is a fact about
-// the source rather than an instruction about this form.
 func isLibrettoKey(k string) bool {
 	return strings.HasPrefix(k, "system.libretto.") || k == TombstoneKey
 }
@@ -442,10 +375,6 @@ func isLibrettoKey(k string) bool {
 // machinery would otherwise fold into the studied block: system.libretto.at
 // moves on every fold, and refs moves whenever some OTHER aria studies or
 // drops the same form, which is cross-aria noise inside one aria's context.
-//
-// alive is deliberately not hidden. A dead source is reported in band, as a
-// key transition like any other, which is what keeps liveness out of the
-// projection entirely.
 func HiddenLibrettoKey(k string) bool {
 	return strings.HasPrefix(k, "system.libretto.") && k != KeyLibrettoAlive
 }

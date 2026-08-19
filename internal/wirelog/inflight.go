@@ -11,19 +11,6 @@ import (
 )
 
 // What this file keeps, and what it deliberately does not.
-//
-// Every provider round-trip is LOGGED, as an ordinary slog record with typed
-// attributes. That makes it durable in logs.jsonl and, because the daemon
-// installs a logring handler, queryable in memory - one mechanism, shared with
-// every other subsystem, instead of a private ring per package.
-//
-// The one thing a log cannot express is "still running". A record is a point
-// in time; an outstanding request is a piece of CURRENT STATE, and it is
-// precisely the thing you want during an incident and the thing tracing cannot
-// show you either (spans export on end). So this file keeps exactly that and
-// nothing else: a small map of requests that have departed and not returned.
-//
-// History lives in the log. Only the present lives here.
 
 // RoundLog is the slog message every provider round-trip is recorded under.
 // The daemon's log ring retains records with this message regardless of level,
@@ -87,12 +74,6 @@ func Outstanding() []InFlight {
 }
 
 // logRound records one completed round-trip.
-//
-// Note what is on it that used to be on nothing at all: the wait the provider
-// asked for, the limit it says was hit, the size of what we sent, and which
-// aria it was for. A 429 whose retry_after is an hour is a usage window, not a
-// throttle, and that single number is the difference between "figaro is
-// broken" and "the account is out of credit until 20:00".
 func logRound(ctx context.Context, f InFlight, resp *http.Response, d time.Duration, err error) {
 	level := slog.LevelInfo
 	attrs := []any{

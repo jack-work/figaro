@@ -16,37 +16,6 @@ import (
 )
 
 // Form is an aria's state, and the only writer of the channel that holds it.
-//
-// ONE DRAINER owns the append, and it exists only while there is work: an
-// actor.Lazy, spawned on submit, gone after an idle window. It was a mutex,
-// and before that a permanently parked goroutine per form, which cost the
-// daemon one goroutine for every aria anyone had merely LISTED. Readers
-// never touch it: a published state is swapped in atomically, so Snapshot is
-// one load and cannot block, cannot wake a dormant aria, and cannot be
-// serialized behind a turn.
-//
-// THREE INVARIANTS. Everything here depends on them and nothing may quietly
-// relax one:
-//
-//  1. DURABILITY PRECEDES VISIBILITY. Reduce purely, append, fsync, publish.
-//     A failed sync rejects and publishes nothing, which is safe because the
-//     reduce mutates nothing: there is never anything to roll back. The
-//     reverse ordering is not a lost write but a hallucinated one, since the
-//     patch reaches the model as a reminder on the next tic.
-//  2. BATCHING IS FOR DURABILITY, NEVER SEMANTICS. One drain covers many
-//     submissions with one fsync, and each is still reduced against the
-//     state as of its own position: otherwise the first ifVersion writer
-//     stops winning and the second stops seeing that the form moved.
-//  3. PatchesBetween IS A VIEW. Its safety rests on the published array
-//     being append-only and the returned slice being capped. Anything that
-//     compacts it, rewrites it, or hands out an uncapped slice breaks it
-//     silently. TestFormPatchesBetweenIsAViewNotACopy is the guard.
-//
-// THE WRITER DOES I/O AND NOTHING ELSE. It never calls back into an agent,
-// never renders, never waits on a turn. That is what makes Apply safe to call
-// from inside a turn: even from a tool call: where the older design, which
-// routed storage through the queue that also owns turns, could close a wait
-// cycle and hang. A Form is happy to exist with no aria attached at all.
 type Form struct {
 	log   FormLog
 	q     *actor.Lazy[*formWrite]
@@ -175,12 +144,6 @@ const formBatch = 64
 
 // patchWindow bounds the DECODED patch history a form keeps resident, and
 // patchSlack is how far past it the array may run before it is copied down.
-//
-// Slack, because trimming is a COPY. The published array is shared by
-// construction (that is what makes PatchesBetween a view), so re-slicing the
-// front off releases nothing: a header into the middle pins the whole array.
-// Copying on every write would be the O(history) cost this design removed,
-// so it happens once per slack allowance instead.
 var (
 	patchWindow atomic.Int64
 	patchSlack  = 256
@@ -217,17 +180,6 @@ func (f *Form) Snapshot() (form.Snapshot, uint64) {
 
 // Read is the published pair: the state and the version it was published AT,
 // from one atomic load, as one value.
-//
-// It exists because the pair is the unit of correctness and two accessors
-// were an invitation. Every optimistic read-modify-write in this codebase
-// computes from a state and then quotes a version to a conditional apply; if
-// those come from separate loads, a writer landing between them yields a pair
-// that NEVER EXISTED, the guard passes, and the write silently overwrites a
-// change it never saw. That is unrecoverable for a board -- the board is what
-// the reconciliation sweep recomputes FROM.
-//
-// So `Version()` is gone. A caller that wants the number takes the pair and
-// reads its field, which costs nothing and cannot be split.
 func (f *Form) Read() FormAt {
 	st := f.state.Load()
 	return FormAt{Snapshot: st.snap, Version: st.version}
@@ -242,29 +194,6 @@ type FormAt struct {
 
 // PatchesBetween returns the published patches in the absolute range
 // (after, upTo], as a VIEW on the published state's array: no copy.
-//
-// The view is safe for the same reason commit's shared-array append is safe,
-// and it is the read half of that decision. A published formState is
-// immutable: its slice header carries its own length, and the single writer
-// (one at a time, under f.write) only ever appends PAST that length or
-// reallocates, so bytes a reader can see never change under it. The returned
-// slice is capped (ps[lo:hi:hi]) so a caller that appends to it reallocates
-// instead of scribbling into the writer's array.
-//
-// The writer became a mutex rather than a goroutine in the trunk-presentation
-// work, which changes nothing here: what the view needs is that commits
-// SERIALIZE and that state is published atomically, and both still hold.
-//
-// It replaces Patches(), which copied the entire history on every call: once
-// per studied form per provider Send, to answer a question whose answer is
-// almost always one patch or none. That copy was defending against a mutation
-// this type structurally cannot perform.
-//
-// Absolute rather than cursor-relative because the projection warm-starts
-// mid-log: see the note on the caller side about what a relative cursor did.
-// Binary search on both ends, so a pass costs O(log n) per call and holds no
-// position between calls, which is what lets one accessor be shared and long
-// lived instead of rebuilt per Send.
 func (f *Form) PatchesBetween(after, upTo uint64) []VersionedPatch {
 	st := f.state.Load()
 	ps := st.patches
@@ -307,14 +236,6 @@ func (f *Form) patchesFromLog(after, upTo uint64) ([]VersionedPatch, bool) {
 
 // patchRange is the range itself: binary search on both ends of a
 // version-ordered, immutable array.
-//
-// The capped slice (ps[lo:hi:hi]) is not decoration. Without the cap, a caller
-// that appends to the returned slice writes into the writer's backing array,
-// past the length every published state can see but inside the capacity the
-// next commit will append into: a lost write with no crash and no test that
-// finds it. The cap turns that into a reallocation.
-// trimPatches copies the tail down once the array has run a slack allowance
-// past the window. Copying is the point: re-slicing would release nothing.
 func trimPatches(ps []VersionedPatch, trimmed uint64) ([]VersionedPatch, uint64) {
 	w := int(patchWindow.Load())
 	if w <= 0 || len(ps) <= w+patchSlack {
@@ -339,11 +260,6 @@ func patchRange(ps []VersionedPatch, after, upTo uint64) []VersionedPatch {
 }
 
 // Apply appends a patch and publishes it, returning its durable version.
-//
-// ifVersion, when non-zero, refuses unless the form still stands at that
-// version. The comparison happens in the writer, where it is atomic with the
-// append: which is what makes a read-modify-write (an array element, a nested
-// field) safe against a second shell doing the same thing.
 func (f *Form) Apply(patch message.Patch, ifVersion uint64) (uint64, error) {
 	version, _, err := f.ApplyEffect(patch, ifVersion)
 	return version, err
@@ -422,11 +338,6 @@ func (f *Form) Await(ctx context.Context, t Ticket) (uint64, message.Patch, erro
 // OnCommit registers a sink for committed patches, called AFTER the append and
 // the publish: never before, so an observer can never see state that would not
 // survive a restart.
-//
-// It runs UNDER THE WRITE LOCK, so it obeys the writer's law: hand the delta
-// off and return. A sink that blocks on anything which might be waiting on
-// this form stops every write to it. The routing layer's own queue is the right place to
-// put the work.
 func (f *Form) OnCommit(fn func(version uint64, patch message.Patch)) {
 	for {
 		old := f.sinks.Load()
@@ -449,11 +360,6 @@ func (f *Form) Close() {
 // runBatch is the whole protocol: reduce each submission in turn against a
 // RUNNING state, append, ONE sync for the batch, publish, then answer and
 // emit.
-//
-// Batching is for DURABILITY, never for semantics. Each write is reduced
-// against the state as of its own position, or two writers' ifVersion guards
-// stop meaning anything: the first must win and the second must see the
-// moved version.
 func (f *Form) runBatch(batch []*formWrite) {
 	published := f.state.Load()
 	var lastRecord uint64
@@ -535,10 +441,6 @@ func (f *Form) reduceOne(st *formState, w *formWrite) (*formState, formResult) {
 	// something, and the reduce touches nothing, which is why a failure
 	// anywhere below leaves the published state exactly as it was and there
 	// is nothing to roll back.
-	//
-	// It happens HERE and not in either caller because this is the only
-	// place the diff is atomic with the append: read-then-filter in a
-	// handler loses a write to a racing one.
 	applied := effectivePatch(st.snap, w.patch)
 	if applied.IsEmpty() {
 		return nil, formResult{version: st.version, applied: applied}
@@ -613,19 +515,6 @@ func effectivePatch(snap form.Snapshot, p message.Patch) message.Patch {
 // AppendPatch is reached only from reduceOne, which is reached only from
 // runBatch, which is the actor's ONE DRAINER. RangePatches is reached from
 // patchesFromLog on whatever goroutine asks for a range.
-//
-// SO THE MUTEX WAS TWO DIFFERENT EXCLUSIONS WEARING ONE NAME. Writer-versus-
-// writer was dead weight -- there is only ever one writer. Reader-versus-writer
-// was REAL and may not simply be deleted. The cure is to publish an immutable
-// value: readers load a slice header and walk it with no lock at all, the
-// writer publishes a successor, and the concurrency survives the lock's
-// removal.
-//
-// THE APPEND DOES NOT COPY THE HISTORY. append may write into the old array's
-// spare capacity at an index PAST THE PUBLISHED LENGTH, where no reader can
-// see it; the store is what publishes it. Same idiom, and same reason, as
-// cachedLog's logView. Copy-on-write would have made N appends O(N^2), which
-// is a complexity change nobody asked for.
 type MemFormLog struct {
 	records atomic.Pointer[[][]byte]
 
@@ -697,11 +586,6 @@ func NewMemForm() *Form {
 }
 
 // xwalFormLog is the durable half of a backed Form: the aria's form channel.
-//
-// The append goes through Trunks.Append, not the raw channel, so the poison
-// gate and the dirty/touch bookkeeping see form writes. It does not read the
-// timeline: the channel is unkeyed, so a patch is written with no reference to
-// the turn in flight, which is what lets a set land mid-turn.
 type xwalFormLog struct {
 	backend *XwalBackend
 	ariaID  string

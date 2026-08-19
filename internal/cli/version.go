@@ -10,12 +10,6 @@ import (
 )
 
 // commit and commitTime are populated via -ldflags at build time:
-//
-//	go install -ldflags="-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-parse HEAD)" ./cmd/figaro
-//
-// debug.ReadBuildInfo provides the same data automatically for normal
-// repos; the ldflags path is the fallback for git worktrees and bare-repo
-// layouts where Go's VCS auto-detection comes up empty.
 var (
 	commit     = ""
 	commitTime = ""
@@ -40,13 +34,6 @@ func runVersion() {
 // debug.ReadBuildInfo otherwise. Empty when neither knows (a bare `go build`
 // outside a repo), in which case callers must skip build comparisons rather
 // than treat unknown as mismatched.
-//
-// `go install <module>/cmd/figaro@vX.Y.Z` records no VCS settings at all -
-// the module proxy ships a zip, not a checkout: so the module version is the
-// only identity such a binary has. It is a real one: two binaries reporting
-// the same module version are the same source. Falling back to it keeps the
-// daemon handshake honest for the install path most users actually take;
-// without it every proxy-built CLI reports "unknown" and mismatches go silent.
 func buildRevision() string {
 	if commit != "" {
 		return commit
@@ -143,17 +130,6 @@ func currentExe() string {
 }
 
 // buildIdentityKind names WHICH identity scheme a build string belongs to.
-//
-// Two schemes coexist and are not comparable. A source build (nix, or
-// `go build` in a checkout) reports a git revision; a `go install
-// <module>@vX.Y.Z` reports the module version, because the proxy ships a zip
-// with no VCS metadata at all. Both are real identities and neither can be
-// converted into the other, so "different string" does NOT imply "different
-// source" across schemes, a nix daemon and a proxy-installed CLI built from
-// the SAME release will never compare equal.
-//
-// checkDaemonBuild uses this to refuse only within a scheme, and to warn
-// across one. Comparing like with like is the whole rule.
 func buildIdentityKind(s string) string {
 	if s == "" {
 		return "unknown"

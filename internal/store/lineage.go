@@ -6,11 +6,6 @@ import (
 
 // Lineage renders a trunk's ancestry as forest refs, root first, so a cache
 // read below the window resolves through the ancestors that own it.
-//
-// Ref.Base is the first coordinate the node OWNS. figwal writes that same
-// value into each node's .fork marker and figaro carries it as BranchedLT, so
-// no arithmetic is needed here; forkbase_convention_test.go pins the three
-// against each other.
 func (s *XwalStore) Lineage(id string) []fwtree.Ref {
 	s.mu.Lock()
 	infos := s.trunks.ListLight()
@@ -51,8 +46,6 @@ func (s *XwalStore) Lineage(id string) []fwtree.Ref {
 // Lineage on the backend is the same walk, exposed where a caller that holds a
 // Backend (the angelus) can reach it. It is an OPTIONAL interface, asserted by
 // the caller, so a backend that has no notion of ancestry needs no stub:
-//
-//	type LineageBackend interface{ Lineage(id string) []fwtree.Ref }
 func (b *XwalBackend) Lineage(id string) []fwtree.Ref { return b.store.Lineage(id) }
 
 // LineageBackend is implemented by backends that can name an aria's ancestry.

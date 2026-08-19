@@ -1,17 +1,6 @@
 // Package livedoc is the canonical core of the live-render protocol: a
 // document is one UTF-8 markdown string ("the blob") that mutates only
 // by single-region splices ("deltas"). No rendering, no I/O.
-//
-// A Delta replaces the half-open byte range [At, At+Del) of a blob with
-// Ins. Diff derives the minimal single-region delta between two blobs
-// (longest common prefix + suffix, differing middle). Both the producer
-// and every consumer share this file, so a blob evolves identically on
-// all sides: Apply(old, Diff(old, new)) == new.
-//
-// Invariant: every delta lands on UTF-8 rune boundaries. The byte-level
-// prefix/suffix scan can fall mid-glyph (the blob carries braille
-// spinners, ✓/✗); Diff backs each boundary off to the nearest rune
-// start so Ins/Del never split a rune and the blob stays valid UTF-8.
 package livedoc
 
 import "unicode/utf8"

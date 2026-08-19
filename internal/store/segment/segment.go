@@ -17,9 +17,6 @@ var (
 )
 
 // Segment is one append-only file framed by a SegmentCodec.
-//
-// Segment is not safe for concurrent use. Callers (such as Log) must
-// serialize access externally.
 type Segment struct {
 	f         *os.File
 	path      string

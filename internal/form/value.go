@@ -1,34 +1,4 @@
 // Canonical JSON value for the persistent form tree.
-//
-// Lifted from github.com/jack-work/pstate (value.go, MIT, same author) and
-// adapted. The one substantive change from the original: pstate canonicalises
-// *in place* (it stores only the canonical encoding and throws the caller's
-// bytes away). We cannot do that here: the form channel must round-trip
-// byte-for-byte and rendered <system-reminder> bodies must not shift under
-// users: so a Value keeps both encodings side by side.
-//
-// ============================ THE INVARIANT ============================
-//
-//	raw   is EXACTLY the bytes the caller supplied. Every user-visible byte
-//: MarshalJSON, String, Raw, rendered reminder bodies, the on-disk
-//	      the form channel, the RPC FormResponse: comes from raw.
-//	      Nothing else. raw is never rewritten, reordered, or compacted.
-//
-//	canon is raw compacted with every object's keys sorted recursively.
-//	      It exists for ONE purpose: Equal. It is never emitted, never
-//	      stored, never rendered. It is computed LAZILY, on the first
-//	      comparison that actually needs it, and memoised in a box shared
-//	      by every copy of the Value: canonicalising a whole board eagerly
-//	      at load time cost more than the equality checks ever save (see
-//	      the reducer fold regressed 5x before this was lazy).
-//
-// So {"a":1,"b":2} and {"b":2,"a":1} are Equal (no spurious reminder fires at
-// the agent) while each still serialises back as the author wrote it.
-//
-// Do not "simplify" this by canonicalising raw. That is the single most
-// misunderstandable decision in this package, which is why it is shouted here.
-//
-// =======================================================================
 
 package form
 
@@ -43,9 +13,6 @@ import (
 
 // Value is an immutable JSON value: the caller's exact bytes plus a canonical
 // form used only for equality. The zero Value is the JSON null literal.
-//
-// Values are compared with Equal, never with ==: a Value holds slices, so ==
-// does not compile, and byte equality is the wrong question anyway.
 type Value struct {
 	raw json.RawMessage // exactly as supplied: the only bytes ever emitted
 	c   *canonBox       // memoised canonical form; nil only for the zero Value
@@ -64,15 +31,6 @@ type canonBox struct {
 // NewValue wraps raw bytes. It never fails and never parses: bytes that are
 // not valid JSON are kept verbatim and, when a comparison eventually needs a
 // canonical form and cannot get one, Equal falls back to byte-exact equality.
-//
-// Empty input becomes the null literal. Empty bytes are not a JSON value and
-// encoding/json already emits a nil json.RawMessage as null, so normalising
-// here loses nothing and buys an important guarantee: what a Value stores is
-// exactly what Raw emits, with no substitution at read time.
-//
-// The caller must not modify raw afterwards. Values are shared freely between
-// snapshots (that is the whole point of the persistent tree), so a mutation
-// through a retained slice header corrupts every snapshot at once.
 func NewValue(raw json.RawMessage) Value {
 	if len(raw) == 0 {
 		raw = json.RawMessage("null")
@@ -122,24 +80,6 @@ func (v Value) IsJSON() bool { return v.canonical() != nil }
 
 // Equal reports semantic JSON equality: whitespace and object key order are
 // insignificant, so {"a":1,"b":2} equals {"b":2,"a":1}.
-//
-// Identical bytes short-circuit, so the overwhelmingly common cases, a value
-// re-set to what it already held, a diff walking two boards that agree on most
-// keys: cost one memcmp and never parse anything.
-//
-// Two values that are not valid JSON are equal only if their bytes match
-// exactly. A valid and an invalid value are never equal (their raw bytes
-// cannot match, since validity is a function of the bytes), so Equal remains a
-// proper equivalence relation across the mix.
-//
-// Numbers are compared by their literal token, not by numeric value: 1 and 1.0
-// are NOT equal, nor are 1e2 and 100. Deliberate: comparing numerically would
-// mean choosing a precision policy for arbitrary-precision JSON numbers, and
-// the form has no key where two spellings of one number are meaningfully
-// "the same edit". Cheap and lossless beats clever and lossy here.
-//
-// Duplicate keys within one object follow encoding/json: last occurrence wins,
-// so {"a":1,"a":2} equals {"a":2}.
 func (v Value) Equal(other Value) bool {
 	if bytes.Equal(v.raw, other.raw) {
 		return true
@@ -172,10 +112,6 @@ func (v *Value) UnmarshalJSON(data []byte) error {
 
 // canonicalJSON returns data compacted with object keys sorted recursively.
 // It fails on bytes that are not exactly one JSON value.
-//
-// The sort comes from encoding/json's documented behaviour of emitting map
-// keys in sorted order; canonicalFormPinned in the tests locks that in so a
-// toolchain change cannot silently alter equality semantics.
 func canonicalJSON(data []byte) ([]byte, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber() // keep number literals verbatim: no float round-tripping

@@ -38,17 +38,6 @@ type XwalBackend struct {
 	// "one libretto per studied form" buys.
 	librettos map[string]*Libretto
 	// lastTS is aria id -> newest record timestamp, memoized.
-	//
-	// A listing asks for recency PER ROW, and figwal answers from the open
-	// handle's counter, so a cold node is HYDRATED to answer it: its whole
-	// channel is copied into memory (log.buildOwnSnapshot). The node is then
-	// unloaded for idleness and the next listing hydrates it again, so a
-	// status line on a timer cycles the store through memory forever. Same
-	// disease as the label memo above it, same cure: memoize, and let the
-	// writes invalidate.
-	//
-	// Invalidation is complete because every append this daemon makes passes
-	// through Open (the IR) or a Form (the board), and both are wrapped.
 	lastTS map[string]int64
 
 	// labels is stump id -> what its birth record says it is. Never evicted
@@ -63,9 +52,6 @@ type XwalBackend struct {
 	// an entry. Measured on a real daemon: 209 arias resident, 107,439
 	// messages, 3.0 GB private -- against 424 MB of IR on disk, because Go
 	// structs run 3-5x the encoded bytes.
-	//
-	// Every one of them is rebuildable from the store, so residency is a
-	// cache decision and wants a cache's discipline.
 	touched map[string]time.Time
 
 	// irWindow bounds resident decoded IR entries per aria. 0 retains
@@ -86,21 +72,6 @@ type XwalBackend struct {
 // bytes. Both are DECODED-estimate budgets, per aria (IR) and per (aria,
 // provider) (translations); irWindow stays 0, so bytes bind rather than an
 // accidental row count.
-//
-// THE IR BUDGET IS 1 MiB AND THAT IS THE SAME MEMORY AS THE OLD 4 MiB. When
-// the estimate was 5x, a 4 MiB budget admitted ~0.8 MiB of encoded history and
-// therefore ~0.9 MiB of actual heap. With the estimate corrected to 1.15x
-// (see irDecodeNum: re-measured at 1.13x weighted on the author's live store),
-// 1 MiB of budget admits ~0.9 MiB of actual heap. REAL RESIDENCY IS UNCHANGED;
-// what changed is that the number now means what it says.
-//
-// Against the store census that still holds a p90 aria (443 KiB encoded, ~510
-// KiB resident) whole and evicts from p99 (1.7 MiB) up, which is the stated
-// target: eviction that actually occurs, rarely under light use.
-//
-// The translation budget stays at 4 MiB: its estimate takes the payload bytes
-// themselves and was re-measured at 1.07x actual, so its number was already
-// honest. The largest translation history measured is 2.9 MiB.
 const (
 	DefaultIRBudgetBytes          = 1 << 20
 	DefaultTranslationBudgetBytes = 4 << 20
@@ -108,17 +79,6 @@ const (
 
 // irEntrySize estimates one IR entry's retained bytes as its encoded size
 // times a measured inflation factor.
-//
-// Deriving it from the decoded struct instead was tried and abandoned: it
-// means guessing allocator rounding for every string, slice and boxed
-// map[string]interface{} value, and the attempt came out 3x low (4.1 MiB
-// estimated against 12.1 MiB measured on a real aria). The encoded size is
-// known for free at decode, and the ratio between the two is stable: 4.0x and
-// 5.3x on two real arias: so one constant beats a model.
-//
-// An entry appended this process has no encoded size recorded by the caller;
-// fall back to the content bytes, which is the right order of magnitude and
-// self-corrects on the next restore.
 func irEntrySize(e Entry[message.Message]) int {
 	if e.EncodedBytes > 0 {
 		return e.EncodedBytes * irDecodeNum / irDecodeDenom
@@ -131,38 +91,6 @@ func irEntrySize(e Entry[message.Message]) int {
 }
 
 // irDecodeInflation is how much larger decoded IR is than its wire bytes.
-//
-// RE-MEASURED 2026-08-19 ON THE AUTHOR'S REAL HISTORY AND CORRECTED, 5 -> 1.35
-// (a numerator over irDecodeDenom, because a constant cannot be a fraction).
-//
-// AND THE SAMPLE MATTERS, WHICH IS HOW THE FIRST CORRECTION WENT WRONG. The
-// eight LARGEST arias weigh a weighted 1.13x their encoded size, so I set the
-// factor to 1.15 -- and TestTheEstimateMatchesTheHeap, run against EVERY aria
-// over a megabyte, came back at 1.13x resident per estimated byte, i.e. the
-// estimate was 13% LOW. Small arias carry more per-entry overhead against less
-// payload, so the broad population runs about 1.30x. 1.35 is the round number
-// above that, which keeps the error in the direction where a budget UNDER-holds.
-//
-// THE LESSON IS THE INSTRUMENT'S, NOT THE CONSTANT'S: a factor calibrated on
-// the eight biggest arias is a factor for the eight biggest arias. The
-// artifact check that caught it compares what the store ESTIMATES against what
-// dropping the window actually frees, over the whole population.
-//
-// WHAT WAS WRONG WITH 5: its provenance is two arias measured months ago at
-// 4.0x and 5.3x. One of them is cf3fc17d, which is in the new table at 1.34x.
-// I cannot re-run the original to say what it measured -- most likely a whole
-// aria's footprint (board, translations and handle included) rather than the IR
-// window this constant governs. The consequence of the old value was that a
-// window believing it held 4 MiB held about 0.9 MiB, so every aria evicted
-// roughly 4.4x earlier than its configured number claimed.
-//
-// AND WHY THE ENCODED SIZE REMAINS THE BASIS, against my own recommendation to
-// Gluck. I proposed denominating in MEASURED bytes and deleting the factor. The
-// data refuses it: resident/encoded is 1.05-1.34 across those arias, while
-// resident/PAYLOAD-STRINGS is 1.12-2.23. THE ENCODED SIZE PREDICTS THE HEAP
-// BETTER THAN THE STRINGS DO, because it captures the structure -- tool
-// arguments, maps, nested blocks -- that a sum of text lengths cannot see. A
-// measured factor over a good predictor beats an exact sum of the wrong thing.
 const (
 	irDecodeNum   = 27 // 27/20 = 1.35
 	irDecodeDenom = 20
@@ -172,10 +100,6 @@ const (
 // The payload is the provider's own wire form, so its encoded size is the
 // bytes themselves rather than an estimate, and the inflation is the decode
 // into []json.RawMessage headers.
-//
-// It exists to make the caches VISIBLE. They are opened unbounded (see
-// OpenTranslation) and they were counted by nothing, so a daemon holding
-// hundreds of megabytes of them reported only its IR.
 func transEntrySize(e Entry[[]json.RawMessage]) int {
 	n := 0
 	for _, raw := range e.Payload {
@@ -190,16 +114,6 @@ type ariaHandle struct {
 }
 
 // metaCache is one aria's sidecar, memoized.
-//
-// THE READ PATH TAKES NO LOCK. state is published whole -- loaded and value
-// were always ONE value wearing two fields -- and a listing reads the sidecar
-// of every aria in the store, which is the path that was paying for the lock.
-//
-// THE WRITE PATH KEEPS ITS MUTEX, and that is not an oversight: two SetMeta
-// calls on one aria must not have the file land in one order and the memo in
-// the other, and no publish can express that. Writer-vs-writer here is REAL
-// where reader-vs-writer was dead weight -- the distinction MemFormLog's cure
-// turned on (ddc030ad).
 type metaCache struct {
 	mu    sync.Mutex // WRITERS ONLY: file write then publish, in that order
 	state atomic.Pointer[metaState]
@@ -230,16 +144,6 @@ func (c *metaCache) loadOnce(path string) (*metaState, error) {
 
 // NewXwalBackend opens the aria tree at root. segmentSize <= 0 takes the
 // configured default; the daemon passes config's, tests pass nothing.
-//
-// THE BACKEND IS BOUNDED WHEN IT IS BUILT. Residency defaults belong to the
-// layer that owns the bytes, not to one call site in one binary: until
-// 2026-08-19 a bare backend was UNBOUNDED and only internal/cli's daemon
-// wiring made it otherwise, so doctor, every test, and any future embedding
-// that forgot the wiring held every decoded entry forever. The CLI now TUNES
-// these; it does not supply them.
-//
-// The presentation hierarchy defaults to the topology. A build with the
-// trunk capability replaces it via Store().SetTree; see internal/figaro/wire.
 func NewXwalBackend(root string, segmentSize int) (*XwalBackend, error) {
 	st, err := OpenXwalStore(root, segmentSize)
 	if err != nil {
@@ -369,13 +273,6 @@ func (b *XwalBackend) FormState(ariaID string) (form.Snapshot, error) {
 // way to answer them consistently: Form publishes the pair together, and a
 // caller that asks twice can be handed a state from before a write and a
 // version from after it.
-//
-// That is not pedantry, it is the read half of every optimistic
-// read-modify-write in this package. Compute from the OLD state, quote the
-// NEW version, and the conditional apply passes its guard while overwriting a
-// change it never saw. `system.studies` is edited exactly that way, and the
-// board is the authoritative fact about who studies what -- there is no sweep
-// that can recompute a board.
 func (b *XwalBackend) FormAt(ariaID string) (FormAt, error) {
 	f, err := b.form(ariaID)
 	if err != nil {
@@ -391,11 +288,6 @@ func (b *XwalBackend) form(ariaID string) (*Form, error) {
 	// stump replays at open and never hears that writer again, so its reader
 	// freezes at the version it opened at. Silently, and permanently, because
 	// the per-LT cache keeps whichever rendering ran first.
-	//
-	// That is not hypothetical: it is how the translator's first cut of §12.5
-	// rendered one correct study block and then froze. Refused by
-	// construction rather than by a comment, because the correct call
-	// (Libretto(source)) is one the compiler cannot suggest.
 	if source, ok := SourceOfLibretto(ariaID); ok {
 		return nil, fmt.Errorf(
 			"form %s: a libretto must be read through Libretto(%q), not as a node", ariaID, source)
@@ -610,25 +502,6 @@ func (b *XwalBackend) ForkAt(ariaID string, atMainLT uint64) (cont, alt string, 
 }
 
 // inheritStudies is FORK's half of the refcount (durable-forms §12.2.2).
-//
-// A child inherits its parent's board, therefore its `system.studies`,
-// therefore every study the parent held -- and nothing incremented the
-// librettos it names. Fork, then let the parent drop: refs reaches zero, the
-// libretto is reclaimed, and the child is still observing it. That is the
-// UNRECOVERABLE direction, so the increment happens BEFORE the child exists.
-// A crash between the two over-counts, which the sweep repairs.
-//
-// The rule this obeys, stated so a fourth site inherits it: any operation
-// that brings a board carrying a study-set into or out of existence is a
-// participant in the refcount.
-// RetainDeclaredStudies is the participant hook for any path that brings a
-// board into existence carrying a study-set it did not declare itself.
-//
-// FORK is its caller: a child inherits the parent's board wholesale, so it
-// inherits the studies without ever running the verb. IMPORT used to be the
-// other one and no longer needs it -- it lifts `system.studies` out of the
-// imported patch and replays each id through the verb, which is stronger,
-// because the verb mints and seeds the libretto as well as counting it.
 func (b *XwalBackend) RetainDeclaredStudies(ariaID string) { b.inheritStudies(ariaID) }
 
 func (b *XwalBackend) inheritStudies(ariaID string) {
@@ -716,31 +589,6 @@ func (b *XwalBackend) label(n *NodeView) {
 }
 
 // labelOf answers what an aria is wearing, from the one place that states it.
-//
-// An aria born since ForkWith says so on its OWN form: the birth patch carries
-// system.outfit_name and the content hash of itself. An aria born before that
-// hangs under a stump, and the stump's birth record is where the name lives -
-// read once and memoized, which immutability licenses.
-//
-// Two shapes, and no migration between them: re-parenting an old aria would mean
-// copying its inherited prefix into its own channel, renumbering its form
-// versions, and every IR record's cursor stamp would then point at the wrong
-// patch. The old shape reads fine; it just stops being minted.
-// labelOf answers the listing's OUTFIT column.
-//
-// THE MEMO IS THE POINT, for a node with no stump. Reading the label off the
-// board opens the Form, whose replay opens the NODE, and figwal answers that
-// by materializing the node's whole channel in memory
-// (log.buildOwnSnapshot). A listing does it per row, and a form evicted for
-// idleness is re-opened by the next listing, so a status line on a timer
-// cycles the whole store through memory forever. Measured: one `fig ls` on a
-// 515-aria store, 95 MB retained, with zero arias resident by figaro's own
-// count.
-//
-// So the label outlives the form it came from, and every write to that
-// aria's board drops it (labelChanged). The board is still the only source
-// of truth; this is a cache of it with a complete invalidation, not a second
-// copy of it on disk.
 func (b *XwalBackend) labelOf(n *NodeView) outfitLabel {
 	if n.Stump != "" {
 		return b.stumpLabel(n.Stump)
@@ -884,21 +732,6 @@ func (b *XwalBackend) held() map[string]struct{} {
 // EvictIdle drops the cached IR, translations, board and metadata of every
 // aria that is NOT live and has not been used for idle. It returns how
 // many it released.
-//
-// Two rules, and the first is not negotiable. An aria with a LIVE AGENT is
-// never evicted: cachedLog is shared per (aria, channel) precisely so a
-// reader sees the writer's appends, and dropping it mid-life would hand the
-// next reader a second instance built from disk while the agent still holds
-// the first. Everything here is rebuildable, but rebuildable is not the same
-// as interchangeable while someone is writing.
-//
-// The second is that eviction is a CACHE decision, so it costs only the next
-// read. The store below has always had this discipline (xwal.Store unloads an
-// idle lineage's head); this layer simply never participated in it, which is
-// the whole of the leak.
-// SetIRWindow sets the resident decoded-IR cap for handles opened from here
-// on. Existing handles keep their window: changing it under a live agent
-// mid-turn is not worth the coordination, and a restart applies it everywhere.
 func (b *XwalBackend) SetIRWindow(n int) {
 	b.mu.Lock()
 	b.irWindow = n
@@ -924,10 +757,6 @@ func (b *XwalBackend) SetIRBudget(n int) {
 // TrimResident trims every non-live aria's IR window to keep entries and
 // reports how many rows were released. It is the reaper's control surface: the
 // caller decides WHEN, this decides how.
-//
-// Live arias are skipped for the same reason EvictIdle skips them: one
-// cachedLog is shared between the writing agent and concurrent readers, and a
-// window is only safe to shrink when nobody is mid-fold across it.
 func (b *XwalBackend) TrimResident(live map[string]bool, keep int) int {
 	b.mu.Lock()
 	handles := make([]*ariaHandle, 0, len(b.open))
@@ -1171,10 +1000,6 @@ func (b *XwalBackend) Remove(ariaID string, recursive bool) error {
 // caches. Every id in the set, not just the one named: a recursive delete
 // used to unlink a subtree while leaving its children's forms and handles
 // resident, pointed at files that no longer exist.
-//
-// A tombstone that cannot be written is LOGGED, not fatal. Deleting is the
-// recovery for an aria whose disk is misbehaving, and refusing the delete
-// because the death record failed would take that away.
 func (b *XwalBackend) bury(doomed []string) {
 	for _, id := range doomed {
 		// KILL's half of the refcount (§12.2.2): a board going out of
@@ -1302,26 +1127,6 @@ func (b *XwalBackend) SetObservedForms(ariaID string, formIDs []string) {
 
 // seedFromAncestor offers a newly opened aria the resident prefix its nearest
 // OPEN ancestor already decoded, for ONE channel: cacheOf says which.
-//
-// ONE WALKER, NOT TWO. The fig IR and the translations ran identical copies of
-// this -- Lineage, fewer than 2 refs is nil, base from the last ref, base 0 is
-// nil, nearest ancestor first, skipping unopened handles, first non-empty
-// residentBelow wins -- and differed only in which cache of the ancestor's
-// handle they asked. That difference is this argument.
-//
-// Phase 3's measurement is why the donation exists at all: two forks of one
-// trunk decode the shared prefix separately and mint strings the parent holds,
-// proven by pointer identity. The ancestor's rows below the child's fork base
-// ARE that prefix, and a shallow copy shares them, so this shares residency
-// rather than adding it.
-//
-// Nil is always a legal answer: no lineage, no open ancestor, or an ancestor
-// whose window no longer reaches the base. The caller then decodes, as before.
-// The seam itself is verified by newSeededLog, which degrades to a full decode
-// on any doubt -- measured, not asserted: deleting the base bound below leaves
-// the test green because the PROBE refuses the donation (77e17f93).
-//
-// Caller holds b.mu.
 func seedFromAncestor[T any](b *XwalBackend, id string, cacheOf func(*ariaHandle) *cachedLog[T]) []Entry[T] {
 	refs := b.store.Lineage(id)
 	if len(refs) < 2 {
@@ -1354,13 +1159,6 @@ func (b *XwalBackend) seedRowsLocked(id string) []Entry[message.Message] {
 }
 
 // seedTransRowsLocked is the TRANSLATION channel's, keyed by provider.
-//
-// NAMESPACE IS STRUCTURAL, NOT A CHECK: the ancestor's cache is looked up by
-// the same providerName key the caller asked for, so a cross-namespace
-// donation cannot be constructed here. The fingerprint, which is not
-// structural, is verified inside newSeededLog.
-//
-// Caller holds b.mu.
 func (b *XwalBackend) seedTransRowsLocked(id, providerName string) []Entry[[]json.RawMessage] {
 	return seedFromAncestor(b, id, func(h *ariaHandle) *cachedLog[[]json.RawMessage] {
 		return h.trans[providerName]

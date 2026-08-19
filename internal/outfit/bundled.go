@@ -18,19 +18,6 @@ import (
 // half a skill: the form hands the model a `filePath`, and the model follows
 // links from that file to the chapters beside it. Holding the bytes in memory
 // would give the model a body it cannot navigate.
-//
-// The unpack directory is named by the CONTENT HASH of the embedded tree, so:
-//
-//   - two figaro versions with different skills never fight over one path;
-//   - an upgrade MOVES the root, which is exactly the signal the angelus
-//     already watches to remint the default form (see noticeUpgrade);
-//   - a rebuild that did not change a skill lands on the same path and costs
-//     one stat.
-//
-// Nothing prunes old hash directories. An older binary may still be running
-// against its own root, and a form minted last week records the filePath it
-// was composed with; deleting that tree to reclaim a few hundred kilobytes
-// would break reads that still resolve today.
 
 var (
 	bundledMu      sync.Mutex
@@ -44,9 +31,6 @@ var (
 // maintains their own copy of the figaro skill wants: config.toml's
 // `bundled_skills = false` reaches this. Startup calls it once, before any
 // outfit is folded.
-//
-// FIGARO_BUNDLED_SKILLS still wins over this: an env var is the tool you have
-// when the config file is the thing you are debugging.
 func SetBundledSkills(enabled bool) {
 	bundledMu.Lock()
 	defer bundledMu.Unlock()
@@ -65,11 +49,6 @@ func BundledSkillsRoot() string { return bundledSkillsRoot() }
 // bundledSkillsRoot returns the directory whose child `skills/` holds the
 // first-party skills, so a `dirName = "skills"` reference resolves to
 // <root>/skills/figaro. Precedence, highest first:
-//
-//	FIGARO_BUNDLED_SKILLS=<path>   use that root verbatim (tests, dev trees)
-//	FIGARO_BUNDLED_SKILLS=0|off    no bundled skills at all
-//	SetBundledSkills(false)        no bundled skills at all (config.toml)
-//	otherwise                      unpack the embedded tree and use that
 func bundledSkillsRoot() string {
 	if v, ok := os.LookupEnv("FIGARO_BUNDLED_SKILLS"); ok {
 		switch strings.ToLower(strings.TrimSpace(v)) {
@@ -103,10 +82,6 @@ func bundledSkillsRoot() string {
 // It follows internal/cli's stateDir precedence on purpose: a dev shell that
 // isolates FIGARO_STATE_DIR must get its own unpacked skills too, or two
 // figaros with different skills would read one tree.
-//
-// State, not cache: a form records the filePath it was composed with, so this
-// tree is referenced by data that outlives the process. A cache is a place
-// things are allowed to disappear from.
 func bundledSkillsDir() string {
 	base := ""
 	switch {
@@ -127,10 +102,6 @@ func bundledSkillsDir() string {
 // unpackBundledSkills writes the embedded tree under dir/<hash> and returns
 // that root. It is idempotent: a root whose .stamp already names the hash is
 // complete and is returned untouched.
-//
-// The write is staged in a sibling temp directory and renamed into place, so
-// a process killed mid-unpack leaves a `.unpack-*` directory behind rather
-// than a half-populated root that the next run would happily read as whole.
 func unpackBundledSkills(dir string) (string, error) {
 	hash, err := embeddedSkillsHash()
 	if err != nil {

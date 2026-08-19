@@ -21,24 +21,6 @@ import (
 // reminder strings. Deterministic (members sorted, keys sorted by
 // encoding/json) because encoded bytes land in the per-LT cache and must be
 // stable across retranslations of unchanged history.
-//
-// THE BODY IS STRUCTURE, NOT PROSE (Gluck, 2026-08-11). A reminder states
-// state; the skills are what contextualize it. So each block is one compact
-// JSON object naming the form and what moved, and nothing else.
-//
-// Each block carries the form VERSION its window ends at, so two blocks about
-// one form can be ordered by a reader without inferring anything from
-// position. That is not decoration either: with fifty haiku observers, one
-// answered from the earlier of two blocks about the same key.
-//
-// ONE BLOCK PER FORM, NOT PER PATCH, and it states the RESULT rather than the
-// history. That rule was bought at the haiku tier, in a storm of fifty
-// observers: a window carrying three patches used to render three bare
-// {"set":{...}} envelopes, and a model reading two blocks that both set
-// `brief` has no way to know which is current. One of them answered from the
-// FIRST, reporting the value the form held before the change it was being
-// asked about. An intermediate value inside one window is not information, it
-// is a trap.
 func StudyReminderTexts(msg message.Message, board form.Snapshot) []string {
 	var out []string
 	// The board is read for ONE thing: the incantation. Reading it costs a

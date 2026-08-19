@@ -10,25 +10,6 @@ import (
 )
 
 // The bare prompt form: `figaro [send-flags] -- <prompt>`.
-//
-// It is the daily driver (the `q` alias is `figaro -- …`), so it gets the
-// same parser as `figaro send` rather than a reduced one of its own. Before
-// this existed, the fast path called runPrompt(loaded, prompt,
-// renderSettings{}) and every token before `--` was discarded in silence:
-// --id, -o, -l, -f, -j all vanished, and `figaro --id X -- hi` prompted the
-// pid-bound aria (minting a new one if the shell had no binding). Not a
-// regression: it had always been so.
-//
-// Two rules hold the form together:
-//
-//   - `--` stays MANDATORY. It is unambiguous, and it keeps a typo'd
-//     subcommand (`figaro shwo -- x`) an error instead of a prompt.
-//   - Nothing before `--` is dropped. An unrecognized token is an error.
-//
-// A bare positional target (`figaro <aria> -- hi`, `figaro :3 -- hi`) is
-// deliberately NOT accepted here: at argv[0], a bare word is far more likely
-// a mistyped subcommand than an aria id, and swallowing it would forfeit the
-// did-you-mean. Name the aria with --id, or use the explicit `send` verb.
 
 // hasDashBoundary reports whether argv contains a bare `--` token: the
 // boundary that turns an invocation into a prompt.

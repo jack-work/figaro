@@ -36,23 +36,6 @@ func SetRefSigil(s string) {
 // terminator that marks a reference: without it, any @ is literal.
 // This is what keeps email addresses, code snippets, and other
 // stray @-tokens out of the expansion path with zero ambiguity.
-//
-// Reference grammar:
-//
-//	@ <key> !
-//	key = [a-zA-Z_] [a-zA-Z0-9_.]*
-//
-// Permissive on unknown keys: an `@nope!` where "nope" isn't in
-// the snapshot is left literal (including the !), so typos surface
-// to the user instead of silently dropping content.
-//
-// Brace form (@{...}) is NOT supported. The "!" terminator is
-// consumed by the expansion (it's punctuation belonging to the
-// reference syntax, not to the prompt text).
-//
-// Non-string snapshot values are rendered via JSON unmarshal:
-// strings unwrap to their text, everything else is re-marshaled
-// to a compact JSON form. Empty snapshot is a valid no-op.
 func expandAtRefs(prompt string, snap form.Snapshot) string {
 	if snap.Len() == 0 || !strings.ContainsRune(prompt, rune(refSigil)) {
 		return prompt

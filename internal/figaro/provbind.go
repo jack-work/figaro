@@ -38,11 +38,6 @@ func providerKnobs(snap form.Snapshot) provider.Knobs {
 }
 
 // sameBuild reports whether two knob sets yield the same provider instance.
-//
-// Model is deliberately excluded: every provider resolves `system.model`
-// from the per-turn snapshot inside Send, so a model change needs no
-// rebuild, and rebuilding would throw away the in-memory wire projection
-// for nothing.
 func sameBuild(a, b provider.Knobs) bool {
 	return a.MaxTokens == b.MaxTokens &&
 		a.ReminderRenderer == b.ReminderRenderer &&
@@ -91,10 +86,6 @@ func (a *Agent) providerName() string {
 // top of every provider round, so `figaro set system.provider …` (or a
 // re-applied outfit that moves the aria to another provider) takes effect
 // on the very next round: no restart, no fork.
-//
-// A conversation is provider-agnostic by construction: the IR is canonical
-// and each provider keeps its own translation channel, so the new provider
-// simply re-projects the history it has not seen.
 func (a *Agent) syncProvider() error {
 	snap := a.Snapshot()
 	name := snapshotString(snap, "system.provider")

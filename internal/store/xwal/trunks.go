@@ -20,20 +20,6 @@ import (
 // continuation chain across all channels (the triune forked as a unit);
 // it is the stable handle a caller addresses, while the per-fork node is
 // plumbing.
-//
-// DISK IS THE SOLE SOURCE OF TRUTH. The node tree is the main channel's
-// directory tree (dirs + .fork). The ONLY datum not derivable from that
-// tree is a node's trunk id, so that — and only that — is persisted, in a
-// `.trunk` file in each node's main-channel dir (alongside .fork). This
-// in-memory structure is a derived cache, rebuilt by one walk on open; it
-// cannot diverge from disk because it is read from disk.
-//
-// Identity rules:
-//   - A fork freezes the node; the continuation INHERITS the trunk (same
-//     id, head advances), the alternative FOUNDS a new trunk.
-//   - An empty node has no logical time of its own — it IS its parent's
-//     tail position. So forking an empty head redirects to an N-ary fork
-//     of the parent; an empty node never becomes a parent.
 type Trunks struct {
 	root string
 	cfg  Config
@@ -275,10 +261,6 @@ func (t *Trunks) rebuild() error {
 
 // Version returns the current topology version. It increases (never
 // resets) every time the in-memory index is rebuilt from disk.
-//
-// Consumers cache derived state (e.g. head-of-trunk lookups, node
-// listings) against the version they last observed; if Version()
-// changes, the cache is stale. Cheap: one atomic load, no lock.
 func (t *Trunks) Version() uint64 { return t.idx.Version() }
 
 // Refresh re-scans the on-disk markers and re-derives the index. The escape
@@ -1178,9 +1160,6 @@ func (t *Trunks) forkTailLocked(trunk string) (string, error) {
 
 // forkFlat mints a depth-1 sibling sharing the parent prefix. Nothing the
 // parent owns is written: no freeze, no continuation, no rehome.
-//
-// .trunk is the commit point, written last. A conversation without it is an
-// unfinished fork; the walk skips it.
 func (t *Trunks) forkFlat(parentKey, kind string, mintTrunk bool) (string, error) {
 	child := t.mintNode()
 	var trunk string
@@ -1239,10 +1218,6 @@ func (t *Trunks) forkFlatNamed(parentKey, name, kind string) error {
 // [1..at]. ONE rule for tail and interior forks alike: main starts at at+1,
 // and a related channel inherits only what is keyed at or below at, never
 // past what the parent itself exposes, never below where its segments start.
-//
-// at == 0 means "the parent's tail", i.e. a tail fork. That sentinel is
-// safe only because LTs are 1-based, so 0 is not a position anyone can
-// fork at; if that ever changes, this needs a second parameter.
 func (t *Trunks) channelBases(node string, at uint64) (map[string]uint64, error) {
 	x, err := t.openHotTopology(node)
 	if err != nil {
@@ -1469,10 +1444,6 @@ func (t *Trunks) remove(trunk string, recursive bool) ([]TrunkID, error) {
 // WITHOUT a continuation: the parent's node becomes (or stays) a frozen
 // branch point that only hosts children. (ForkTail, by contrast, gives the
 // parent a continuation.) Returns the new child trunk id.
-//
-// In the root/stumps layout the ceremonial parents are the root and the
-// stumps, addressed with SpawnUnderRoot / SpawnUnderStump. SpawnChild
-// remains for spawning a fresh child under an existing trunk.
 func (t *Trunks) SpawnChild(parent TrunkID) (TrunkID, error) {
 	return t.SpawnChildKind(parent, "conversation")
 }
@@ -1521,17 +1492,6 @@ func (t *Trunks) CreateStump(name string) error {
 }
 
 // RemoveStump deletes a childless stump.
-//
-// A stump is the cauterization boundary: its birth record is the shared prefix
-// every trunk beneath it reads through, so it is removable only once nothing
-// is beneath it. That is a MECHANISM, not a policy — this refuses a stump with
-// children rather than removing them, and it never decides on its own that an
-// empty stump is garbage. Callers that mint stumps by content hash (figaro
-// names them <outfit>@<hash>) collect them on their own delete path.
-//
-// Refusing rather than no-op'ing on a surviving child is deliberate: a caller
-// checks Stumps() first, so arriving here with children means the two raced,
-// and a silent success would hide it.
 func (t *Trunks) RemoveStump(name string) error {
 	endMutation, err := t.beginTopologyMutation()
 	if err != nil {

@@ -13,21 +13,6 @@ import (
 
 // applyAmbiguousWidth decides how wide ─ and │ are, and it asks the terminal
 // rather than guessing.
-//
-// Precedence, and each step exists for a reason:
-//
-//	FIGARO_AMBIGUOUS_WIDE   an explicit answer always wins. Someone who knows
-//	                        their terminal should never be argued with, and it
-//	                        is the escape hatch when the probe is wrong.
-//	a cached answer         keyed by $TERM: the probe costs a round trip to the
-//	                        terminal, and the answer cannot change for a given
-//	                        terminal type. Probing on every invocation would put
-//	                        an escape sequence and a read in front of `figaro
-//	                        list` forever.
-//	the probe               draw ─, ask where the cursor landed, believe it.
-//	nothing                 no tty, no answer, or an unparseable one: keep the
-//	                        default. A guess here would be wrong on every
-//	                        terminal instead of on the unusual one.
 func applyAmbiguousWidth() {
 	if v := strings.TrimSpace(os.Getenv("FIGARO_AMBIGUOUS_WIDE")); v != "" {
 		runewidth.DefaultCondition.EastAsianWidth = envTruthy(v)

@@ -58,15 +58,6 @@ var channelSchemas = map[string]channelSchema{
 	// real one. Reading an old store is transparent: a record with no stamp
 	// falls back to deriving the boundary from the form's old main-LT
 	// key, so nothing is rewritten and no converter is needed.
-	//
-	// The bump is for the OTHER direction, and it is why it lives HERE
-	// rather than on the form. An older binary has no notion of a
-	// stamp and would read the form's main LT of 0 as real, bucketing
-	// every board patch at LT 0: inline state transitions silently vanish,
-	// and a fork would inherit the wrong slice of the board. Gating on the
-	// IR version refuses that store outright, which covers the form's
-	// change too -- a form bump would instead demand a v1->v2
-	// converter for a migration that needs no data to move.
 	chanIR:   {version: 4, class: classCanonical},
 	chanForm: {version: 1, class: classReducible},
 	// v2: not a shape change -- a POISON sweep. A projection bug rendered the
@@ -99,22 +90,6 @@ func schemaFor(name string) (channelSchema, string, bool) {
 // storeVersion is the generation of MEANING this build writes: not the shape
 // of a record (that is a channel schema) and not the arrangement on disk (that
 // is figwal's layout), but what correctly-shaped data is taken to mean.
-//
-// 1: a stump's id is its content version alone. The name is inside the hashed
-// content and inside the birth record, so nothing parses an id.
-//
-// 2: the form is the FORM, and its channel directory is named "form".
-// Outfits are no longer a wire type either, a client sends a patch whose
-// `layers` directive the server materializes: but that is a protocol change,
-// not a store one. The directory rename is what makes this a generation: a
-// generation-1 store read by this build would present an empty form for every
-// aria, so it is refused and exported/imported instead.
-//
-// It exists so that the next change of meaning is a comparison rather than a
-// probe. Detection logic infers "have I run?" from the data and is wrong the
-// day the data has another reason to look that way; a recorded number states
-// it. A store minted from here on is stamped at creation, and a store with no
-// stamp is generation 0 -- the one inference, made once per store, ever.
 const storeVersion = 2
 
 type schemaFile struct {
@@ -153,13 +128,6 @@ func writeSchema(root string, f schemaFile) error {
 }
 
 // ensureSchema gates opening the store on the on-disk channel schemas.
-//
-// Forward incompatibility is a hard stop: a store written by a NEWER figaro is
-// refused rather than silently misread: the one failure mode nothing covered
-// before. Backward migration is by class: derived caches are cleared here
-// (rm -rf, cheap) and regenerate lazily on next use; the canonical record is
-// never cleared, only ever derived-on-read; a reducible channel needs a real
-// converter and fails loudly until one is registered.
 func ensureSchema(root string, trunks *xwal.Store) error {
 	f, err := readSchema(root)
 	if err != nil {

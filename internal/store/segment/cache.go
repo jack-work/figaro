@@ -1,9 +1,6 @@
 package segment
 
 // The payload cache. THE RUNS LIVE IN tree AND NOWHERE ELSE.
-//
-// THAT PREMISE DIED AT 63902f44. tree's reads take no lock: every structure a
-// publish -- never across the Source, the budget's eviction pass, or the
 
 import (
 	"sync"
@@ -93,8 +90,6 @@ func CacheLoads() int64 { return loads.Load() }
 func CachedRanges() int { return payloadCache.ResidentRuns() }
 
 // cachedPayload returns record i's payload if the cache can serve it.
-//
-// THE HIT TAKES NO LOCK, and it takes no lock because TREE's read path takes
 func (s *Segment) cachedPayload(i uint64) ([]byte, bool) {
 	if CacheBudget() <= 0 {
 		return nil, false
@@ -122,8 +117,6 @@ func (s *Segment) cachedPayload(i uint64) ([]byte, bool) {
 }
 
 // handle resolves this segment's node in the payload cache ONCE and keeps it.
-//
-// read path that touches one node per record must not pay a hash per record --
 func (s *Segment) handle() *tree.Handle[unit] {
 	if h := s.h.Load(); h != nil {
 		return h

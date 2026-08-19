@@ -1,15 +1,6 @@
 package store
 
 // A tombstone is STATE, not an event in memory.
-//
-// A derived form that must be rebuildable from the log cannot learn about a
-// deletion nobody wrote down, and a subscriber that was offline when one
-// happened has nothing to catch up to. So a dying form's last act is an
-// ordinary patch on its own channel, which every subscriber hears through
-// the mechanism it already uses, and which a replay reproduces exactly.
-//
-// After it, the form is SEALED: further writes are refused. The record is
-// the truth and there is nothing left to say.
 
 import (
 	"encoding/json"
@@ -24,11 +15,6 @@ import (
 const TombstoneKey = "system.tombstone"
 
 // ErrFormClosed is what a write to a Form whose writer has gone gets.
-//
-// A sentinel, but NOT a retry signal: a caller cannot retry a refcount move
-// through a fresh instance, because the move it just attempted is ambiguous
-// -- the apply may have landed durably before the close reported this. That
-// mistake produced "release below zero"; see the note in study.go.
 var ErrFormClosed = errors.New("form is closed")
 
 // ErrFormMoved is the stale-ifVersion refusal, as a sentinel: a caller doing
@@ -72,26 +58,6 @@ var errSealed = fmt.Errorf("form is tombstoned: no further patches")
 
 // Reclaimable reports whether this form is dead and nobody is still reading
 // it: the condition a delete waits on before unlinking anything.
-//
-// THE LEASE REGISTRY IS THE SUBSCRIBER SET, and for a single process that is
-// not a simplification but the whole of it. A durable refcount cannot tell
-// "still reading" from "died holding a reference"; an in-memory set answers
-// both, because every holder dies when the process does and a restart is a
-// clean sweep rather than a TTL to wait out.
-//
-// A TTL only covers a holder that is alive but silent, which today is nobody
-// and later is a node on another machine. When that exists, this becomes
-// {id, holder, expires} and the sweep drops the stale; nothing above it
-// changes.
-// Subscribed reports whether anything is streaming from this form.
-//
-// It is the LEASE (durable-forms §7: "the lease registry is the subscriber
-// set"), and eviction has to respect it for a reason that is not obvious:
-// dropping a Form from the registry does not stop its subscribers, it
-// ORPHANS them. The next write constructs a new Form instance, and the old
-// one -- which is the one the subscriber holds -- never hears anything
-// again. The mirror then stops following with no error anywhere, which is
-// the worst way for a cache to be wrong.
 func (f *Form) Subscribed() bool { return len(*f.subs.Load()) > 0 }
 
 func (f *Form) Reclaimable() bool {

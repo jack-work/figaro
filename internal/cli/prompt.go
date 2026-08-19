@@ -133,12 +133,6 @@ func submitAndExit(ctx context.Context, loaded *config.Loaded, ariaID, prompt st
 // to the trunk we end up attended to. By default we rebind this shell to the
 // new alternative and send there; with stay (--attend=false) we leave the shell
 // on the original trunk and send there (the alternative is parked at the turn).
-//
-// The turn's first LT is its prompt, and atMainLT is exclusive of the frozen
-// prefix, so the branch shares everything strictly before the question and
-// replaces the question onward. That boundary is always a user message, so the
-// frozen history always ends on a complete assistant message: no tool_invoke
-// is left dangling and no interrupted-tool synthesis can occur.
 func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, asJSON bool, prompt string, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()

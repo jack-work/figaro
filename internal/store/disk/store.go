@@ -11,10 +11,6 @@ import (
 // when many forks share a common ancestor: opening a child fork via
 // the store reuses the already-open parent instead of re-reading its
 // segments into memory.
-//
-// A Store is owned by the caller and has an explicit lifetime; Close
-// shuts down everything it holds. Plain log.Open still works for
-// callers that do not need sharing.
 type Store struct {
 	mu     sync.Mutex
 	logs   map[string]*Log

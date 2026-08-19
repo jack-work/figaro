@@ -109,11 +109,6 @@ type chatUsage struct {
 }
 
 // toIR maps gateway usage into figaro's four buckets.
-//
-// prompt_tokens is INCLUSIVE of cache reads and writes, while figaro's
-// InputTokens is the uncached remainder: tokens.ContextFromUsage sums all
-// four, so double-counting here would inflate every cached aria's context
-// figure by the size of its own cache.
 func (u chatUsage) toIR() *message.Usage {
 	if u.PromptTokens == 0 && u.CompletionTokens == 0 {
 		return nil
@@ -373,12 +368,6 @@ func projectTools(tools []provider.Tool) []chatTool {
 }
 
 // markRequest applies the resolved plan.
-//
-// Per-block mode marks the system prefix and the rolling tail: two markers,
-// not three: this dialect carries tool definitions in a sibling array with
-// nowhere to hang a marker, so the tool breakpoint of the Anthropic path has
-// no equivalent here. The tail is stamped LAST in wire order, because a
-// gateway lowering these to Gemini keeps only the final one.
 func markRequest(req *chatRequest, policy provider.CachePolicy, plan provider.MarkPlan, caps provider.CacheCaps) int {
 	if policy.Off() || !plan.Marking() {
 		return 0

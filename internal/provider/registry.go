@@ -39,10 +39,6 @@ type Registration struct {
 	// take the stored credential directly (Copilot: a GitHub token must
 	// be exchanged for a session token). Empty means the stored
 	// credential IS the bearer, which is the common case.
-	//
-	// When set, hush owns the derived token: one exchange per machine,
-	// renewed before expiry, shared by every aria and every figaro
-	// process. figaro does not cache it and must not.
 	ExchangeGrant string
 
 	// ExchangeURL is the endpoint the grant mints at, resolved from

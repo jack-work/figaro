@@ -12,10 +12,6 @@ import (
 // disk.Store and creates exactly one immutable cache snapshot per physical
 // log. Fork children point at the same parent snapshot rather than copying
 // their inherited history.
-//
-// A Store owns all returned logs. Close the Store, not the individual logs.
-// Writes are safe through the shared handles; filesystem topology mutations
-// must retire the Store generation and reopen a private Log first.
 type Store struct {
 	mu      sync.Mutex
 	disk    *disk.Store

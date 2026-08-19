@@ -8,26 +8,6 @@ import (
 )
 
 // A sealed segment is a FILE, not an open handle.
-//
-// Opening a log used to open every one of its segments, and opening a segment
-// scans the whole file to build its per-record offset index (and, for the
-// binary codec, to verify every CRC). A node with four segments therefore
-// read four files end to end before anyone asked it for a record, which is
-// why the first listing on a 515-aria store cost seconds while the second
-// cost milliseconds.
-//
-// Everything a log needs in order to ROUTE a read is in the directory
-// listing: a segment file is named for its base index, so segment i covers
-// [base_i, base_{i+1} - 1], and the newest sealed one ends where the active
-// segment begins. So sealed segments are identified at open and OPENED on
-// the first read that lands in one.
-//
-// What is deferred with them: the frame scan, and the CRC check it performs.
-// Corruption in a segment nobody reads is discovered when somebody reads it
-// rather than when the log opens. A torn TAIL is a different matter and is
-// still repaired at open, because only the active segment can have one --
-// sealing happens on rotation, after the sealed file is synced, and nothing
-// appends to it again.
 type sealedSeg struct {
 	base uint64
 	last uint64

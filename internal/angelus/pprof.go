@@ -32,8 +32,6 @@ func (a *Angelus) PprofSocketPath() string {
 
 // StartPprof serves net/http/pprof on a unix socket when PprofEnv is set,
 // and does nothing otherwise. Attach with:
-//
-//	go tool pprof -http=: 'http+unix://$XDG_RUNTIME_DIR/figaro/pprof.sock/debug/pprof/heap'
 func (a *Angelus) StartPprof(ctx context.Context) error {
 	if os.Getenv(PprofEnv) == "" {
 		return nil

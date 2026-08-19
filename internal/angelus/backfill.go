@@ -12,11 +12,6 @@ import (
 // so every dormant aria listed as a bare "aria <id>" row. The truth still
 // lives in each aria's form; fold it in once and the sidecar is current
 // forever after (live actors republish full meta on every turn).
-//
-// Runs in the background at startup. Only metas missing ALL identity fields
-// are touched, so a completed sweep is a near-free scan on later starts, and
-// an aria whose form genuinely has no identity is retried harmlessly.
-// Live arias are skipped: their actor owns the sidecar.
 func (a *Angelus) metaBackfill(ctx context.Context) {
 	if a.Backend == nil {
 		return

@@ -14,8 +14,8 @@ import (
 	"github.com/jack-work/figaro/internal/figaro/wire"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
-	"github.com/jack-work/figaro/internal/transport"
 	"github.com/jack-work/figaro/internal/store/xwal"
+	"github.com/jack-work/figaro/internal/transport"
 )
 
 // ariaBackend constructs the XWAL aria tree under the configured state root,
@@ -84,14 +84,6 @@ func startupDiagnosis() string {
 
 // refuseSelfSpawn stops the bootstrap when the executable about to be
 // forked is not figaro.
-//
-// ensureAngelus starts the daemon by re-executing os.Executable(), which in
-// a test binary is `cli.test`: so a test touching any daemon-connecting
-// path spawns a detached copy of the TEST BINARY, which re-runs the suite,
-// which spawns another. On 2026-07-30 that put 1391 cli.test processes in
-// the OOM task dump (45.8G + 50.2G swap) and took the desktop session with
-// it. FIGARO_NO_SELF_SPAWN=1 arms the same refusal for harnesses whose
-// binary is not named *.test.
 func refuseSelfSpawn(exe string) {
 	if envTruthy(os.Getenv("FIGARO_NO_SELF_SPAWN")) {
 		die("refusing to spawn an angelus: FIGARO_NO_SELF_SPAWN is set\n" +
@@ -228,11 +220,6 @@ const (
 	// silently, and startupNoticeEvery keeps explaining: one hopeful
 	// sentence followed by ten minutes of silence reads exactly like the
 	// hang the sentence told the user not to interrupt.
-	//
-	// startupHardCap is the only thing that can call a LIVE daemon a
-	// failure, and it is deliberately far past any migration measured
-	// (about 5s for 483 nodes) so that a bigger store is slow rather than
-	// broken. Every notice names it, so the silence has a stated end.
 	startupNoticeAfter = 3 * time.Second
 	startupNoticeEvery = 30 * time.Second
 	startupHardCap     = 10 * time.Minute
@@ -285,13 +272,6 @@ func mustCreateAndBindOutfit(ctx context.Context, acli *angelus.Client, loaded *
 // not fail loudly: it renders NOTHING, which reads as a broken terminal
 // rather than a stale process. Naming both revisions turns an hour of
 // confusion into one command.
-//
-// An unknown revision must not be treated as mismatched: but it must not be
-// treated as fine either. A plain `go build` in a git worktree stamps nothing
-// (Go auto-detects VCS only when .git is a directory), which is exactly how
-// this project is developed, so unknown is the COMMON case: when one side is
-// unknown and the other is not we warn. Only unknown-vs-unknown is silent,
-// because then there is nothing provable to say.
 func checkDaemonBuild(cli *angelus.Client) {
 	mine := buildRevision()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -336,18 +316,6 @@ func checkDaemonBuild(cli *angelus.Client) {
 
 // buildHandshake is the whole decision, pure so it can be tested as a matrix
 // rather than through a daemon.
-//
-// The rule is COMPARE LIKE WITH LIKE. A source build reports a git revision; a
-// `go install <module>@vX.Y.Z` reports the module version, because the proxy
-// ships a zip with no VCS metadata. Neither converts into the other, so across
-// schemes a difference proves nothing, a nix daemon beside a proxy CLI of the
-// SAME release can never compare equal.
-//
-// Refusing there would brick a legitimate pair with no path back: the user's
-// only tools are the two binaries now refusing each other. Within a scheme a
-// difference is real and the wire may differ, so it still refuses. `figaro
-// stop` dials the socket directly (system.go) and does not consult this check,
-// which is what keeps the remedy reachable in every branch below.
 func buildHandshake(daemon, mine string) handshakeVerdict {
 	switch {
 	case daemon == mine:

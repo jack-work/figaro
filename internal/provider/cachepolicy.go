@@ -42,24 +42,6 @@ type CachePolicy struct {
 func (p CachePolicy) Off() bool { return p.Type == "" }
 
 // ResolveCachePolicy decides the automatic cache_control setting for a turn.
-//
-// Caching is ON by default at the short (5m) ephemeral retention: the static
-// prefix (system + tools) becomes a cache read on every turn after the first,
-// and the rolling breakpoint caches the growing transcript so the next turn
-// reads all prior history. system.cache_control overrides:
-//
-//	none | off | false     disable entirely
-//	ephemeral | short | 5m  short retention (the default)
-//	long | 1h               1-hour retention
-//
-// An unrecognised value falls back to the default rather than being passed
-// through as a literal type. Passing it through is how {"type":"1h"} reached
-// the wire, which the API rejects.
-//
-// Neither TTL requires a beta header: Anthropic's 1-hour retention went GA and
-// `ttl` now rides inside cache_control. (It costs 2x base input on the write
-// versus 1.25x for 5m, so it pays off only across a session long enough to
-// have re-written the short cache at least twice.)
 func ResolveCachePolicy(snap form.Snapshot) CachePolicy {
 	setting := ""
 	if cc := snap.Lookup(CacheControlKey); cc != nil {
@@ -85,10 +67,6 @@ func ParseCachePolicy(setting string) CachePolicy {
 // cacheMinTokens is the minimum cacheable prompt length per model family.
 // Below it the provider ignores a breakpoint outright, so marking spends a
 // slot and buys nothing.
-//
-// Source: Anthropic's cache limitations table, cross-checked against
-// OpenRouter's per-model minimums (both consulted 2026-08-03). Longest
-// fragments first so "opus-4-5" cannot be shadowed by "opus-4".
 var cacheMinTokens = []struct {
 	fragments []string
 	min       int
@@ -140,18 +118,6 @@ func EstimateWireTokens(bytes int) int {
 
 // UsageFromInclusivePrompt maps an OpenAI-family usage block into figaro's
 // four buckets.
-//
-// The OpenAI wire (both Chat Completions' prompt_tokens and the Responses
-// API's input_tokens) reports a prompt count that is INCLUSIVE of the cache
-// reads and writes broken out beside it, and confirms it arithmetically:
-// total_tokens = prompt + output. Anthropic reports the same three numbers
-// DISJOINT. figaro's InputTokens is the uncached remainder, because
-// tokens.ContextFromUsage sums all four: so a provider that copies an
-// inclusive prompt count straight into InputTokens counts every cached
-// token twice, and a fully cached aria reports nearly double its real size.
-//
-// One definition, so the Chat Completions and Responses paths cannot drift
-// apart on it.
 func UsageFromInclusivePrompt(promptTokens, cachedTokens, cacheWriteTokens, outputTokens int) *message.Usage {
 	if promptTokens == 0 && outputTokens == 0 && cachedTokens == 0 && cacheWriteTokens == 0 {
 		return nil

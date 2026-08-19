@@ -11,10 +11,6 @@ import (
 // (figaro's chalkboard). figaro and the figwal CLI both fold through
 // reduceMap, so the persistent-map semantics are defined and validated in
 // one place rather than reimplemented per consumer.
-//
-// On disk a patch is a small JSON object, e.g.
-//
-//	{"set":[{"path":["system","tags","42"],"value":{"cache":"x"}}],"remove":[["mantra"]]}
 type MapPatch struct {
 	Set    []MapSet   `json:"set,omitempty"`
 	Remove [][]string `json:"remove,omitempty"`

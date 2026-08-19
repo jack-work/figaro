@@ -2,17 +2,6 @@
 // the user apply the upgrade against whichever install channel they
 // chose. It is intentionally humble: it never mutates the binary on
 // its own, it only *nudges*.
-//
-// The check pings proxy.golang.org for the latest tag on
-// github.com/jack-work/figaro. That module proxy is what `go install`
-// already trusts and it needs no auth or GitHub-API rate limit dance.
-// The result is cached on disk with a TTL so repeated CLI invocations
-// stay quiet.
-//
-// Detection of the install channel is best-effort: os.Executable()
-// under /nix/store means Nix; under $(go env GOPATH)/bin (or one that
-// looks like it) means `go install`; otherwise "unknown", which
-// downgrades any actionable suggestion to a generic advisory.
 package update
 
 import (
@@ -124,9 +113,6 @@ func channelFor(exe string) Channel {
 // CurrentVersion returns the semver-ish version stamped on the module,
 // or "(devel)" for `go run`, or a short git rev for -ldflags-stamped
 // worktree builds.
-//
-// commitFallback is the ldflags-injected VCS revision from
-// internal/cli.version.go: pass it in so we don't create a cycle.
 func CurrentVersion(commitFallback string) string {
 	info, ok := debug.ReadBuildInfo()
 	if ok && info.Main.Version != "" && info.Main.Version != "(devel)" {

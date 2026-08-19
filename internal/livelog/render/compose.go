@@ -9,18 +9,6 @@ import (
 )
 
 // A message has ONE shape, and this is where it is decided.
-//
-// It used to be decided three times: Incipit.messageRows for the live view,
-// transcript.renderMsgBase for the pager, cli.renderTurnRows for `show`: each
-// with its own inquiry renderer, its own node walk and its own idea of where
-// the blanks go. They drifted, as three copies do: the pager rendered nodes two
-// columns narrower than the incipit and indented them one further, and `show`
-// printed verbose detail nobody had asked for. Conformance is not something you
-// can test three implementations into; it is something you get by having one.
-//
-// Composer is that one. Every surface supplies what is genuinely its own: the
-// view that draws a block, the chrome hooks, whether a block is expanded, and
-// receives the same rows in the same order.
 
 // Block indices that are not a node's. A row carries the index of the block it
 // belongs to, which is what lets the pager address, select and highlight a row
@@ -37,9 +25,6 @@ type Row struct {
 }
 
 // Composer turns one message into rows.
-//
-// The zero value composes nothing but the nodes: every chrome hook is optional,
-// and a nil hook draws nothing rather than a placeholder.
 type Composer struct {
 	View NodeView // draws one block; required
 
@@ -71,13 +56,6 @@ type expandable interface {
 // Message composes one message: the turn's opening question under the input
 // header, the rule that closes it, then the nodes under the speaker's header,
 // one blank row between blocks.
-//
-// The question is TEXT ON THE TURN, not a node, so no node walk can produce it
-// : which is why it is drawn here and nowhere else.
-//
-// No header over an empty run: a message whose blocks all render to nothing
-// (minted-but-empty prose, a tool already drawn) must not print a header over
-// empty space.
 func (c Composer) Message(m aria.Message, w int) []Row {
 	if w <= 0 {
 		w = 80
@@ -102,10 +80,6 @@ func (c Composer) Message(m aria.Message, w int) []Row {
 	// a page window that opened mid-turn, or a unit cut off an oversize turn,
 	// and announcing the speaker again asserts a boundary the turn does not
 	// have.
-	//
-	// Named, because the test is not "are there rows" but "was a question
-	// drawn": rows can only have come from c.inquiry today, and anything
-	// prepended above would silently bring the ghost back.
 	seam := len(rows) > 0
 	if seam {
 		rows = append(rows, chrome(""))
@@ -168,12 +142,6 @@ func (c Composer) render(n livedoc.Node, w, block int) []string {
 }
 
 // inquiry draws the question that opened the turn, attributed when it can be.
-//
-// ONE header for the whole question however many people wrote it: the
-// submissions folded into one message, and a header apiece would say otherwise.
-// Senders are drawn per segment instead, dim, above their text, and an UNKNOWN
-// sender draws NOTHING: most messages ever written carry none, and a
-// placeholder on each would be noise where there used to be none.
 func (c Composer) inquiry(inquiry string, segments []aria.InquirySegment, w int) []Row {
 	if strings.TrimSpace(inquiry) == "" {
 		return nil

@@ -8,12 +8,6 @@ import (
 )
 
 // Server materializes one aria's turns and broadcasts changes as Pages.
-//
-// State is a turn list whose last entry may still be growing. Within a growing
-// turn, `open` holds the suffix currently being streamed: its nodes are
-// mutable and versioned, everything below `open.from` is closed and can never
-// receive another delta. That boundary is what a client needs to know which
-// half of a page it may cache forever.
 type Server struct {
 	mu sync.Mutex
 	// cache is the sealed section: bounded, index-preserving, recompose-
@@ -146,13 +140,6 @@ func (s *Server) OpenTurn(id uint64) {
 // deltas against the prior frame (v++ if anything changed). Node ids are
 // positional: the i'th suffix node is id from+i: so identity needs no
 // separate key.
-//
-// stable is the count of leading nodes the producer guarantees are identical
-// to the ones it sent last time; they are not diffed. It is clamped to the
-// prior frame's length, so an over-large value costs reuse, never truth.
-//
-// nodes is RETAINED, not copied: the producer does not mutate a slice it has
-// handed over. What a reader holds is never edited, only succeeded.
 func (s *Server) Update(prefix, suffix []livedoc.Node, stable int) {
 	s.mu.Lock()
 	if s.open == nil {
@@ -300,12 +287,6 @@ func (s *Server) Subscribe(push func(Page)) (cancel func()) {
 // cut, differing only in which side of the anchor the budget is spent on -
 // that is what lets a scrolling client pull an earlier or a later page from
 // wherever it happens to be.
-//
-// Both are WINDOWED: the cache picks a chunk around the anchor from its
-// size index, materializes exactly that (recompose on miss), and the
-// paginator walks it. A page that reaches the chunk's edge with budget
-// left widens and retries; termination is the whole log. More flags are
-// corrected for the turns the window hides.
 func (s *Server) Read(at Anchor, budget int) Page {
 	return s.page(at, Forward, budget)
 }
@@ -534,10 +515,6 @@ func fullSet(id uint64, n livedoc.Node) NodeDelta {
 // OpenInquiry records the question that opened a turn and broadcasts it. The
 // inquiry is turn metadata, not a node: an exchange begins with exactly one of
 // them, so it is a property of the turn rather than an element of its list.
-//
-// It is the whole of the prompt's UI IR, which is why it broadcasts: a watching
-// client must show the question the instant it commits, not when the agent's
-// first token arrives.
 func (s *Server) OpenInquiry(id uint64, inquiry string, segments ...InquirySegment) {
 	s.mu.Lock()
 	if s.cache.Len() == 0 || s.cache.LastID() != id {
@@ -559,50 +536,6 @@ func (s *Server) OpenInquiry(id uint64, inquiry string, segments ...InquirySegme
 
 // inquiryOfLocked is the recorded question for a turn: its text AND the
 // segments naming who asked it: or the zero values if none. Caller holds s.mu.
-//
-// WHICH FRAMES CARRY IT, and why it is not all of them.
-//
-// It used to ride exactly ONE frame, the OpenInquiry broadcast. A client that
-// had not folded that single frame before nodes arrived held a turn with
-// content and no question, and nothing later re-supplied it: only the seal
-// carries the whole Turn, which is why the question appeared when the turn
-// ENDED and not before. The fix was to put it on every part.
-//
-// That fix was too broad. A part is a DELTA against a turn the client already
-// holds, and the client has always kept the question it was given
-// (Client.inquiry, re-applied in Client.message): so an absent inquiry means
-// UNCHANGED, exactly as an absent node field does. Restating it on every frame
-// of a streaming turn was 38% of the bytes pushed on a measured tape.
-//
-// So it rides the frames that ESTABLISH a turn, which is every frame a client
-// can legitimately see FIRST:
-//
-//   - OpenInquiry, when the question is recorded;
-//   - the first frame of each streaming suffix (v == 0), which closes the race
-//     the original bug was about: a client that subscribed after OpenInquiry
-//     and before any node;
-//   - Close, the suffix's own end marker;
-//   - Seal, and every snapshot: so `figaro.read` always answers with it, which
-//     is what a client joining mid-turn is required to issue anyway.
-//
-// What it does NOT ride is the 2nd..Nth delta of a suffix, which is all of the
-// traffic and none of the information.
-//
-// It returns the SEGMENTS for the same reason, and that half was missing:
-// re-supplying the text alone made every streaming frame a part that named the
-// question but not its askers, and the client holds what a part last said
-// (heldInquiry): so the attributed inquiry OpenInquiry had just broadcast was
-// overwritten with an unattributed copy by the very next frame. `figaro show`
-// re-derives segments from the IR and was right; the live surfaces were told
-// the question came from nobody. A steer was unaffected: it is a node, and a
-// node carries its own sender.
-//
-// A part is a description of a turn, so it states what the turn IS. The
-// question is not a delta and cannot be reconstructed from one; leaving it off
-// made a part that says "here are nodes for turn 7" without saying what turn 7
-// asked, which is a hole the client cannot fill. Repeating it costs the
-// prompt's bytes per frame over a unix socket, and buys the invariant that a
-// part is never partial about identity.
 func (s *Server) inquiryOfLocked(id uint64) (string, []InquirySegment) {
 	// The id is the OPEN turn's, which is the tail or nothing: a frame
 	// narrates the turn in flight. Materializing history to answer it

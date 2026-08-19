@@ -49,14 +49,6 @@ type sendOpts struct {
 // recognized flags: --id, --ephemeral/-e, --exec/-x, --dry-run/-n,
 // --yes/-y. Returns the parsed opts and the residual args (which
 // still include the `--` boundary and the prompt body).
-//
-// Bundled short flags (e.g. -ex, -ey) are expanded. Everything
-// after `--` is untouched.
-//
-// Nothing before `--` is discarded: a token that is neither a known flag
-// nor the single positional target is an error. Silently swallowing argv
-// is how `--id` came to be ignored on the bare `figaro -- <prompt>` form
-// for the life of the tool.
 func extractSendFlags(args []string) (sendOpts, []string, error) {
 	return extractPromptFlags(args, false)
 }
@@ -330,18 +322,6 @@ func argsFromBoundary(args []string) []string {
 
 // forkPoint is WHERE in an aria a fork lands, in whichever coordinate the
 // user named. Zero value = the head.
-//
-// Two coordinates, one type, because they are not interchangeable and used
-// to be passed as bare uint64s in adjacent parameters -- which is how an LT
-// came to be sent in the turn field, making `send <id>:<turn>` fail every
-// time it was used.
-//
-//	:<n>   TURN   the exchange: your question and everything the agent did
-//	              about it. What `fig show` prints, and what a human means.
-//	.<n>   LT     the model's logical time: one step of the model's
-//	              experience. Most LTs sit mid-tool, where a fork would
-//	              strand a tool_invoke without its result -- so it is the
-//	              precise form, not the friendly one.
 type forkPoint struct {
 	turn uint64
 	lt   uint64
@@ -363,15 +343,6 @@ func (f forkPoint) String() string {
 
 // parseTarget splits a target spec into a trunk id and an optional fork
 // point: ":<n>" is a turn, ".<n>" is an LT.
-//
-//	""       -> bound trunk, at its head
-//	":6"     -> bound trunk at turn 6
-//	"t1:6"   -> trunk t1 at turn 6
-//	"t1.42"  -> trunk t1 at LT 42
-//	"t1"     -> trunk t1, at its head
-//
-// Shared by `send` and `fork` so the two cannot drift apart on what a
-// coordinate means.
 func parseTarget(spec string) (trunk string, at forkPoint, err error) {
 	if spec == "" {
 		return "", forkPoint{}, nil
@@ -408,15 +379,6 @@ func validateSendID(id string) error {
 }
 
 // runSend is the unified send dispatcher. Branches:
-//
-//	--ephemeral + --id    -> error (contradictory)
-//	--exec                -> bash wrapper; --raw is silently ignored
-//	                         (the script governs its own output)
-//	--ephemeral           -> one-shot in-memory aria, killed after
-//	--raw                 -> raw stream, no ANSI/markdown
-//	(no flags)            -> bound/named aria, interactive stream
-//
-// Persistence (--ephemeral) and formatting (--raw) are orthogonal.
 func runSend(loaded *config.Loaded, rawArgs []string) {
 	runSendAs(loaded, "send", rawArgs)
 }
@@ -434,11 +396,6 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 		// A boundary with nothing after it is an INVITATION, not a mistake:
 		// open the editor and send what gets written. That is what lets a `q`
 		// alias expanding to `figaro --` be typed with no arguments at all.
-		//
-		// Only when a boundary was actually given. `figaro send` with no `--`
-		// at all is still a usage error, because the boundary is what says "a
-		// prompt belongs here" and dropping that would make every typo'd flag
-		// open an editor.
 		if hasDashBoundary(rest) {
 			text, cerr := composePrompt("Write a prompt. Markdown is fine.")
 			if cerr != nil {
@@ -522,10 +479,6 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 // That matters: inline in runSendAs, the only way to test a rejection was
 // to call the dispatcher, and a dispatcher past its guard reaches
 // mustConnectAngelus, which in a test binary is a fork bomb.
-//
-// --json is a MODE (submit, one object, exit), so anything that renders,
-// streams or takes the terminal contradicts it. Saying so is the point:
-// dropping -j quietly made `send -j` a no-op for the life of the flag.
 func validateSendOpts(opts sendOpts, hasTurn bool) error {
 	if (opts.dryRun || opts.skipYes) && !opts.exec {
 		return fmt.Errorf("-n / -y only meaningful with --exec")
@@ -797,11 +750,6 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 	// 30s, not 10: this call may now MINT the aria before submitting, and a
 	// cold daemon plus a first-run outfit render does not fit in ten.
-	//
-	// TODO(perf): put this back to 10s once the `new`/`fork` latency work
-	// lands. The extra 20s buys exactly one thing: the create, and that
-	// cost is the thing being fixed there. A timeout widened for a slow path
-	// outlives the slowness unless someone writes down when to close it.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

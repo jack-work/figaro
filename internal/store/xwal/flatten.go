@@ -1,20 +1,4 @@
 // flatten.go: the v3 -> v4 layout migration.
-//
-// A v3 store nested a node inside its parent's directory, so lineage WAS the
-// path: ir/config@6bd4/n4/n6 read n6 as a child of n4. A v4 store puts every
-// node at depth 1 and records lineage in the node's own .node marker.
-//
-// The flat build cannot open a nested store, and does not say so: Index
-// RebuildFrom reads ONE directory, and a v3 node carries neither .node nor
-// .from, so it is skipped as an unfinished fork. A real store opens
-// "successfully" with its loadout stumps and none of its conversations.
-// That silence is why this migration must run before anything walks.
-//
-// It moves directories and writes markers. No record is parsed, no log is
-// opened, and NO FORK BASE IS EVER READ OR WRITTEN. An LT does not change
-// when a directory moves: a base is relative to the parent's numbering, the
-// parent keeps its own segments, and .node names the same parent the nesting
-// did. Recomputing a base here would be a misunderstanding, not a repair.
 package xwal
 
 import (
@@ -117,10 +101,6 @@ func PlanFlatten(root string) (*FlattenPlan, error) {
 				// channel does not call its parent. Lineage comes from main,
 				// so flattening would re-home this channel's data: the base
 				// in its .fork is an index in ITS parent's numbering.
-				//
-				// Only a MISMATCH is a divergence. A node main has already
-				// moved is not one -- that is what an interrupted migration
-				// looks like from here, and it must resume, not refuse.
 				if want, known := parentOf[leaf]; known && want != p {
 					divergent = append(divergent, fmt.Sprintf(
 						"%s: %q is nested under %q, but the main channel's lineage says %q", ch, rel, p, want))
@@ -199,18 +179,6 @@ func checkLeafCollisions(chanDir, ch string) error {
 // what a node's marker should say depends on the other nodes carrying the
 // same trunk id, which is a property of the whole channel, not of one
 // directory.
-//
-// In the nested layout a trunk was a CHAIN of nodes -- a continuation forked
-// a child that inherited the trunk id, and the head was the deepest of them.
-// Flat, a trunk has exactly one head and two live heads is an open error
-// ("trunk %q has multiple live heads"), which is how this was found: on a
-// real store, 44 of 340 trunks span 2 to 22 nodes each.
-//
-// So the deepest node of a chain keeps the trunk id and the ancestors are
-// demoted to plain lineage. Deepest is the live one, and that is measured
-// rather than assumed: across every chain in that store the fork base rises
-// strictly with depth (90 links, no exception), so the deepest node holds
-// the newest records.
 func planMainMarkers(mainDir string) (map[string]nodeMarker, error) {
 	paths, err := nodePaths(mainDir)
 	if err != nil {
@@ -316,17 +284,6 @@ func lineageDepths(mainDir string, paths []string, byLeaf map[string]string) map
 // isLineageChain reports whether rels, ordered shallowest first, lie on ONE
 // LINE OF DESCENT. Ancestry, not parenthood, and the difference destroyed a
 // store.
-//
-// The migration demotes the middle of a chain as it goes. Killed between two
-// of those writes, the nodes still claiming a trunk are a grandparent and a
-// grandchild -- one descent, with the demoted node between them, and NOT
-// adjacent. Testing immediate parentage called that tangled and refused the
-// store, permanently: every later run made the same judgement, and 340
-// conversations whose bytes were entirely intact could not be opened.
-//
-// A fuzz worker measured the window by node count rather than time: kills at
-// 57 through 441 of 483 main nodes all poisoned the store, ~80% of the main
-// phase. It is not a race, it is the ordinary case.
 func isLineageChain(mainDir string, rels []string, byLeaf map[string]string) bool {
 	for i := 1; i < len(rels); i++ {
 		if !isAncestorOf(mainDir, byLeaf, rels[i-1], rels[i]) {
@@ -423,13 +380,6 @@ func NeedsFlatten(root string) (bool, error) {
 // no segment at 1 the base would be derived at open from the node's parent,
 // and after flattening that parent is the channel root rather than the node
 // it was nested under.
-//
-// THIS GUARD IS WHAT MAKES A FLAT CHAIN READ. After the move an ancestor is
-// reached by opening its log explicitly, and it delegates further up only
-// because it carries a base. A nested container directory that held a child
-// and no records of its own would flatten into an empty log claiming to own
-// its numbering from 1, and would cut the head off from everything above
-// it. Refused instead, because that reads as data loss months later.
 type errNoForkBase struct{ ch, rel string }
 
 func (e *errNoForkBase) Error() string {
@@ -495,18 +445,6 @@ type FlattenReport struct {
 
 // Flatten plans and applies in one call, under the store lock, so it refuses
 // to run against a live daemon.
-//
-// It is RESUMABLE from any interrupted state and needs no journal to be:
-// every state it can stop in is re-derivable from the tree itself. An
-// unmoved node still names its parent by nesting; a moved node carries that
-// parent in its .node. The one ordering that matters is in the main channel
-// — the marker is written and FSYNCED (writeSyncedFile) before the rename
-// that destroys the nesting it was derived from — so no crash can leave a
-// node at depth 1 with no record of where it came from.
-//
-// It is NOT atomic. Interrupted, it leaves a store part flat and part
-// nested. Such a store must be re-flattened, not opened; NestedNodes is how
-// a caller tells the difference.
 func Flatten(root string) (FlattenReport, error) {
 	plan, err := PlanFlatten(root)
 	if err != nil {

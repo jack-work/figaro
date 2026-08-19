@@ -26,8 +26,6 @@ func (c *Cache) path() string { return filepath.Join(c.dir, "update-check.json")
 // Read returns the cached Info if it exists and is younger than ttl.
 // A miss (no file, unreadable, expired, unparseable) returns nil with
 // no error: the caller should treat it as "check now".
-//
-// ttl <= 0 always misses (the caller wants a fresh check).
 func (c *Cache) Read(ttl time.Duration) *Info {
 	if c == nil || c.dir == "" {
 		return nil
@@ -72,10 +70,6 @@ func (c *Cache) Write(info *Info) error {
 // Check returns cached Info if fresh; otherwise fetches from the
 // module proxy, writes the cache, and returns the new Info. Never
 // blocks longer than the FetchLatest client timeout (~5s) on the wire.
-//
-// currentVersion is what to compare against; pass the ldflags-injected
-// commit if you don't have a real semver.
-// module is e.g. "github.com/jack-work/figaro".
 func Check(ctx context.Context, cache *Cache, ttl time.Duration, module, currentVersion string) *Info {
 	if info := cache.Read(ttl); info != nil {
 		// Recompute Available in case the running binary was upgraded
@@ -106,11 +100,6 @@ func Check(ctx context.Context, cache *Cache, ttl time.Duration, module, current
 // Nudge returns a one-line message when a newer version is available
 // on a channel we can point at, "" otherwise. Formatted to stand out
 // briefly in stderr without dominating the CLI's real output.
-//
-// A non-semver current version (a "dev-<commit>" stamp: the flake
-// package doesn't carry the tag) stays silent: Compare treats it as
-// -inf, so ANY release tag would claim "available", including ones the
-// dev build already contains. `figaro update` still shows full detail.
 func Nudge(info *Info, module string) string {
 	if info == nil || !info.Available || info.Latest == "" {
 		return ""

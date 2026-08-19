@@ -78,11 +78,6 @@ func isStderrTTY() bool {
 // runUpdate implements `figaro update`. Default behavior is advisory:
 // print the current version, the latest available version, the install
 // channel, and the exact command the user should run to upgrade.
-//
-//	--check   force a network check (ignore the cache)
-//	--json    machine-readable output
-//	--apply   only meaningful on go-install channel: shell out to
-//	          `go install ...@<latest>` and report the result.
 func runUpdate(loaded *config.Loaded, args []string) error {
 	var (
 		force  bool

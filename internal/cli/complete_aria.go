@@ -41,10 +41,6 @@ func softFetchAriaIDs() []string {
 // completeAriaIDsAfterFlag returns aria ids when the previous token
 // is --id (i.e. the cursor is about to type the flag's value). For
 // every other position it falls through to inner (which may be nil).
-//
-// Tokens-before-cursor only: if the user already typed a prefix like
-// `--id my`, the shell-side filter still narrows the candidate list
-// against `my`, so emitting the full set here is correct.
 func completeAriaIDsAfterFlag(inner func(*cmdkit.CompleteContext) []string) func(*cmdkit.CompleteContext) []string {
 	return func(c *cmdkit.CompleteContext) []string {
 		if c != nil && len(c.Args) > 0 && c.Args[len(c.Args)-1] == "--id" {
@@ -60,9 +56,6 @@ func completeAriaIDsAfterFlag(inner func(*cmdkit.CompleteContext) []string) func
 // completeAriaIDsPositionalOrFlag combines two behaviors used by
 // commands like `kill` and `status` that accept the aria id either
 // as a positional or after --id:
-//
-//   - cursor right after --id  -> aria ids
-//   - cursor at first positional (no prior args) -> aria ids
 func completeAriaIDsPositionalOrFlag(c *cmdkit.CompleteContext) []string {
 	if c == nil {
 		return nil

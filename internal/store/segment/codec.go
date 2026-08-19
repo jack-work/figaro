@@ -127,19 +127,6 @@ func (BinaryCodec) ScanFrames(r io.Reader, fn func(off int64, frameLen int) erro
 
 // JSONLCodec stores entries as one flat JSON object per line, with the
 // payload's keys at the top level alongside two reserved sidecar keys:
-//
-//	{"_hash":"<16 hex>","_idx":N,"<payload keys>":...}
-//
-// `_idx` is the global log index of the entry. `_hash` is the truncated
-// value-stable hash of the canonical JSON form of the payload (the
-// object with `_idx` and `_hash` removed). Key order on disk is
-// alphabetical because `_` sorts before letters, so the sidecar keys
-// always lead the line.
-//
-// Payloads must be JSON objects. Frame returns ErrNotObject for scalars
-// or arrays, and ErrReservedKey if the payload contains `_idx` or
-// `_hash`. ReadFrame returns ErrCorrupt if the envelope is malformed or
-// the hash does not match the payload.
 type JSONLCodec struct{}
 
 func (JSONLCodec) Name() string    { return "jsonl" }
@@ -258,9 +245,6 @@ func (JSONLCodec) ScanFrames(r io.Reader, fn func(off int64, frameLen int) error
 // canonical-slice path is used when the line matches the on-disk format
 // Frame emits, with a parsing fallback for lines that have been hand
 // edited (e.g. re-pretty-printed by jq).
-//
-// In the fast path the returned slice aliases line; in the slow path it
-// is a freshly allocated canonical re-marshal.
 func decodeJSONLLine(line []byte, verify bool) ([]byte, error) {
 	if n := len(line); n > 0 && line[n-1] == '\n' {
 		line = line[:n-1]
@@ -298,9 +282,6 @@ const (
 // byte of line (the comma between _idx and the first payload key) to
 // splice in a leading `{`; the returned slice then aliases the input
 // buffer. Callers must pass a buffer they own.
-//
-// Returns (nil, false) if the line isn't in canonical form. The slow
-// path is then responsible for handling it.
 func fastDecodeCanonicalLine(line []byte) ([]byte, bool) {
 	min := len(hashPrefix) + hashHexLen + len(idxPrefix) + 1 + 1
 	if len(line) < min {

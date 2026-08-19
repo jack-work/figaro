@@ -9,25 +9,6 @@ import (
 
 // ContextFromUsage is the single definition of "context used" as of the turn
 // that reported u.
-//
-// The figure is **prompt + that turn's output**: every token the provider
-// counted on the way in, plus the assistant reply that is now part of the
-// transcript. It is therefore the size the next request's prompt starts from
-// (modulo anything appended since), not the size of the request that was sent.
-//
-// All three input buckets must be summed. Figaro stamps cache breakpoints on
-// every turn by default (see the cache-control skill), so after the first turn
-// nearly the whole prompt comes back as CacheReadTokens and InputTokens is
-// only the uncached tail. Anthropic reports these as disjoint counts:
-//
-//	prompt = InputTokens + CacheReadTokens + CacheWriteTokens
-//
-// Summing only Input+Output, as this code used to: under-reports a cached
-// conversation by one to two orders of magnitude.
-//
-// Every caller that derives a context size from a Usage block must go through
-// here so the incremental (agent.refreshMetrics) and full-fold (ContextSize)
-// paths cannot drift.
 func ContextFromUsage(u *message.Usage) int {
 	if u == nil {
 		return 0

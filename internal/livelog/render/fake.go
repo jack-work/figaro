@@ -13,8 +13,6 @@ import (
 // would show: deterministically, no tty. It is a public type on purpose: it's
 // the shared mock for isolation-testing the renderer and the end-to-end
 // pipeline.
-//
-// Not safe for concurrent use.
 type FakeTerminal struct {
 	lines    [][]rune
 	row, col int

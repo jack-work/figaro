@@ -35,9 +35,6 @@ type StoreOptions struct {
 	// second, later opinion about when a record becomes durable, and a
 	// background flush that can turn a REJECTED write durable afterwards is
 	// worse than no flush at all.
-	//
-	// Off by default: existing callers keep the buffered behaviour.
-	// TODO: remove once nothing relies on the lazy path.
 	NoBackgroundFlush bool
 }
 
@@ -251,10 +248,6 @@ func (s *Store) Remove(trunk string, recursive bool) error {
 
 // RemoveStump deletes a childless stump. See Trunks.RemoveStump: it refuses
 // while any trunk is still beneath it.
-//
-// The pending flush is drained first for the same reason Remove drains it: a
-// buffered record for a lineage whose directory is about to vanish would be
-// written back by the flusher into a tree that no longer has a home for it.
 func (s *Store) RemoveStump(name string) error {
 	s.syncDirty()
 	if err := s.Trunks.RemoveStump(name); err != nil {

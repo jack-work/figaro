@@ -56,10 +56,6 @@ type Runner interface {
 }
 
 // BashTool implements both Runner and the generic Tool interface.
-//
-// The actual subprocess invocation is delegated to an Executor; the
-// tool just translates between figaro's tool-call shape and
-// ExecRequest/ExecResult, plus formats the captured output.
 type BashTool struct {
 	// CwdFn returns the working directory for each invocation.
 	// Called at run time so updates to the form (system.cwd)

@@ -1,10 +1,4 @@
 // Package cli: `figaro gc` command.
-//
-// Collects outfit stumps nothing is using. A stump is content-addressed
-// (<outfit>@<hash>), so one accumulates per outfit VERSION: every edit mints a
-// new stump the next time an aria is born under it. Killing an aria now
-// collects its stump when it was the last child; gc is the sweep for
-// everything that predates that, and the way to see the backlog.
 package cli
 
 import (

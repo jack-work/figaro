@@ -1,31 +1,6 @@
 // Package formdelta derives, for each IR record, the form state a reader
 // of a transcript would have needed to understand it: what changed on the
 // bound board, on every studied form, and the moment a role was recast.
-//
-// It is assembled FROM THE STORE, by the same cursor arithmetic the
-// provider projection uses (internal/provider/projection.go), and never
-// from the provider's translated bytes. That is the load-bearing
-// constraint: the provider cache holds RENDERED bytes for one dialect,
-// keyed by a fingerprint, so deriving UI state from it would make the UI a
-// function of which provider last spoke -- and it is the layer that has
-// twice made a wrong rendering permanent.
-//
-// Three rules inherited from the projection, each of which was a bug
-// there first:
-//
-//   - a libretto is read through Libretto(source), never as a node: a
-//     second Form over that channel replays once and never hears the fold
-//     again, so its reader is orphaned at the version it opened at.
-//   - system.libretto.* is stripped except `alive`: `at` moves on every
-//     fold and `refs` moves when ANOTHER aria studies the same form.
-//     Neither is this reader's business.
-//   - the cursor ADVANCES on every stamped record, whatever else happens:
-//     a cursor is where a form stood, which is true of a form that has
-//     since been deleted too.
-//
-// Legacy "study:" stamps (source versions, from before librettos) never
-// reach this package: store.Entry.StudyVersions carries only the
-// "libretto:" namespace, so an old transcript simply shows no form deltas.
 package formdelta
 
 import (
@@ -70,22 +45,6 @@ func SeedFrom(e store.Entry[message.Message]) Seed {
 
 // PerRecord walks the IR entries in order and returns each record's
 // deltas, keyed by the record's LT and then by "<formid>.<path>".
-//
-// A WINDOW CLOSES ON THE RECORD THAT CARRIES THE STAMP. For the model the
-// rule was RoleInput (only a user message can carry a study block); for
-// the UI IR every record projects to something a client can attach state
-// to -- an input record is the turn's inquiry or a steering node, an
-// output record is prose, thinking or a tool node -- so the natural
-// window is (previous stamp, this stamp], attributed to this record. The
-// projector decides which visible unit that LT lands on; nothing here is
-// dropped on the floor, which is the failure mode this rule exists to
-// prevent (see the displaced study window, plans/progress.md session 4).
-//
-// Assembly is best-effort per form: a libretto that cannot be opened
-// contributes nothing for that form, exactly as the projection's nil
-// accessor renders nothing. Determinism is a contract: the deltas are a
-// pure function of durable stamps and durable patch logs, so two calls
-// over the same entries MUST return equal maps, and a test holds that.
 func PerRecord(b Backend, ariaID string, entries []store.Entry[message.Message]) map[uint64]map[string]livedoc.FormDelta {
 	return PerRecordFrom(b, ariaID, Seed{}, entries)
 }

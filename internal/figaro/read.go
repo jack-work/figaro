@@ -9,17 +9,6 @@ import (
 // agent freshly restored for a DORMANT aria holds nothing and every read would
 // come back empty: history visible to `fig show` (which reads the log) but
 // absent from the pager (which reads this RPC).
-//
-// Composing here keeps ONE read path: the RPC always serves turns, and whether
-// they came from a live agent's memory or from the log on demand is an
-// implementation detail behind it. The alternative: letting the client compose
-// : would be a second implementation of the projection, which is the exact
-// duplication this design removes.
-//
-// Cost is one compose over the log (~4.2ms at 800 turns) on the first read of a
-// dormant aria, then never again: AdoptIfEmpty declines once anything is
-// materialized. Deliberately uncached; a persisted turn cache was measured
-// 2.1-2.5x SLOWER to open than composing.
 func (a *Agent) hydrate() {
 	if a.ariaSrv.LastTurn() > 0 || a.ariaSrv.HasOpen() {
 		return

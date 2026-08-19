@@ -64,10 +64,6 @@ func (hs *hubs) closeAll() {
 // hubFor returns the aria's endpoint, creating and binding the listener on
 // first use. Idempotent, and cheap: a hub is a listener and a map, and
 // building one constructs no agent.
-//
-// It must be called before anyone is handed the socket path, because a unix
-// socket has no lazy activation, a client that dials a path with no listener
-// gets ECONNREFUSED, not a wakeup.
 func (h *handlers) hubFor(id string) (*ariaHub, error) {
 	if hb := h.angelus.Hubs.get(id); hb != nil {
 		return hb, nil
@@ -109,23 +105,6 @@ func (h *handlers) bindAgentToHub(id string, agent subscribableAgent) (func(), e
 // naked-figaro deadlock: `fig bind null` births a figaro whose wake fails
 // for want of provider keys, and this is the only path that can patch
 // those keys in.
-//
-// One writer, always: the backend's Form is the single writer per node
-// whether an agent is live or not: the agent itself writes through
-// backend.ApplyFormIf: so this is the same writer reached earlier, not a
-// second one.
-//
-// It applies the patch VERBATIM, and since 2026-08-11 that is correct by
-// construction rather than a seam: route() dressed the request on the way
-// in, so outfit names became keys at the API boundary and nothing arrives
-// here needing expansion. This used to be the ONE write path that never
-// materialized, and an attended form has no agent, so it comes exactly
-// here, which is how `fig form outfit test` stored {"layers":["test"]} on a
-// board and reported success.
-//
-// The committed delta is fanned out to the node's attached listeners by
-// hand: the agent's WatchForm sink does this when an agent is live, and
-// this path exists precisely when none is.
 func (h *handlers) writeForHub(id, method string, params json.RawMessage) (any, bool, error) {
 	if h.angelus.Backend == nil {
 		return nil, false, nil

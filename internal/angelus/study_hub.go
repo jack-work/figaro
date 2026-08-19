@@ -1,24 +1,6 @@
 package angelus
 
 // The DORMANT half of study, drop and cast.
-//
-// These verbs used to demand the figaro's actor loop, which is right when a
-// figaro is live (a cast must not interleave with a turn) and wrong the rest
-// of the time: reaching the loop means WAKING the aria, and waking constructs
-// a provider. So `fig cast` on a dormant figaro cost a wake, and on a NAKED
-// one it failed outright:
-//
-//	hub 97db57ee: wake: restore: create provider: unknown provider: ""
-//
-// which is the naked-figaro deadlock one verb further out. M1 solved the same
-// problem for `set` by serving it from the hub, from the store's own writers,
-// with no agent at all. This is that, for the casting verbs.
-//
-// The rule is the hub's rule everywhere: if an agent is live, route() sent the
-// request to it long before this file was consulted, and the actor loop's
-// serialization stands. If none is live there is no turn to interleave with,
-// and the store's single writer per node is all the serialization these verbs
-// ever needed.
 
 import (
 	"encoding/json"
@@ -40,12 +22,6 @@ func (h *handlers) requireUnboundForm(formID string) error {
 // studyForHub registers or removes a study subscription on a dormant aria's
 // own board, declares the observed set to the store, and states the mark in
 // the IR.
-//
-// The mark is not narration any more. The renderer keys the BASELINE off it:
-// a mark carries the form's state at the moment observation began, and
-// without one the first turn after a wake renders the form's whole history as
-// though it were a change, which is precisely the shape a small model reads
-// backwards.
 func (h *handlers) studyForHub(ariaID, formID string, drop bool) ([]string, error) {
 	b := h.angelus.Backend
 	if b == nil {

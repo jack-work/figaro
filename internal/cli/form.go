@@ -57,14 +57,6 @@ func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string) {
 }
 
 // runFormSet is `fig form set`, in both spellings the grammar allows:
-//
-//	fig form set mantra "hello"     key then value: one path, the common case
-//	fig form set a=1,b="two"        the -S grammar: several keys, one call
-//
-// Two positionals is the pair form; anything else is read as -S terms, which
-// is what makes `set` the same language as the flag. Revived at Gluck's ask
-// (2026-08-11): the single-path set is the ergonomic verb, and the form family
-// has room for it at position 2.
 func runFormSet(loaded *config.Loaded, ariaID string, args []string) error {
 	switch len(args) {
 	case 0:
@@ -182,10 +174,6 @@ func runForm(loaded *config.Loaded, ariaID string) {
 // nestSnapshot rebuilds the tree the dotted keys describe. Flatness is how the
 // form is STORED: one key, one value, one patch record: not what it is: a
 // reader wants `system.model` under `system`, and a script wants to walk it.
-//
-// A key whose prefix is already a leaf keeps its dotted name rather than
-// overwriting that leaf: `a` and `a.b` can both be set, and neither may make
-// the other unreadable.
 func nestSnapshot(snap form.Snapshot) map[string]any {
 	root := map[string]any{}
 	for k, v := range snap.All() {

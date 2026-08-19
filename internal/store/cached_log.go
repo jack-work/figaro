@@ -175,9 +175,6 @@ func (c *cachedLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) {
 }
 
 // Lookup finds an entry by FigaroLT.
-//
-// search, and every miss goes to the inner log whenever anything was trimmed.
-// What it did do was grow forever - it was never pruned on trim - so a
 func (c *cachedLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
 	v := c.load()
 	// The LAST match, not the first: the map it replaces kept the newest

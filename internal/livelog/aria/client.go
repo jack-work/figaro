@@ -13,15 +13,6 @@ import (
 // close marker is accepted only when the seen record version matches. Any
 // mismatch fires OnDesync with the highest fully sealed turn so the caller can
 // re-read.
-//
-// OnClosed fires when a message finalizes; OnLive fires with the open message
-// (its suffix nodes, and the turn's inquiry while the suffix starts the turn);
-// OnDesync requests a catch-up from the given sealed-turn cursor.
-// Since the range store landed (skills/figaro/contributing/range-store.md, phase 1) the retained
-// closed set is NOT a list: it is a set of contiguous intervals over (turn,
-// node) space, held by Store. Client is the shim that preserves the old API -
-// View/Open/OnClosed/OnLive: over the new substrate. Nothing outside this
-// package changed, which is what makes the swap reviewable and revertable.
 type Client struct {
 	mu sync.Mutex
 
@@ -93,19 +84,6 @@ func (c *Client) Store() *Store {
 
 // Merge folds messages a caller fetched ITSELF: the pager's backward read,
 // incipit's catch-up page: into the store, WITHOUT firing OnClosed or OnLive.
-//
-// That silence is the point. A page applied through Apply comes back out
-// through OnClosed, whose inline branch freezes to native scrollback, so
-// history fetched merely to orient a reader would be dumped into their
-// terminal. The old answer was to keep such a page out of the client entirely
-// and have the pager hold a SECOND copy of it (transcript.seed, merged into
-// the tail window on every rebuild); with one owner there is nowhere else to
-// put it, and no reason to want one.
-//
-// extents is turn -> how many anchors that turn occupies, for the parts the
-// server did not clip at the tail. It is what lets the store decide that
-// (t, last) and (t+1, 0) are neighbours rather than a hole, and it is applied
-// BEFORE the insert so the run coalesces on the way in.
 func (c *Client) Merge(msgs []Message, extents map[int]uint64) {
 	if len(msgs) == 0 {
 		return
@@ -148,13 +126,6 @@ func (c *Client) SetFetcher(f Fetcher) {
 
 // Ensure fills every hole in [from, to] so that Query over the same interval
 // then returns exactly one Segment with a nil Gap.
-//
-// IT IS THE SAME LOOP AS Store.Ensure WITH THE FETCH OUTSIDE THE LOCK. That is
-// the whole reason it exists here: a fill is a five-second-timeout read, and
-// holding the client's mutex across it would freeze every frame the renderer
-// wanted to draw while it ran. The lock is taken to ask what is missing and
-// taken again to fold what came back; in between, the pager keeps painting the
-// gap row.
 func (c *Client) Ensure(ctx context.Context, from, to Anchor) error {
 	for range ensureRounds {
 		if err := ctx.Err(); err != nil {
@@ -291,13 +262,6 @@ func (c *Client) OpenAnimating() bool {
 
 // Apply folds one page.
 // Apply folds a Page into the local view.
-//
-// A part is one of three things. Sealed: the turn stopped moving: finalize it
-// from the part's snapshot, or from what we streamed if the part is just the
-// marker. Live with deltas: fold them at their positional ids. Live without
-// deltas: the streaming suffix closed but the turn continues, so keep holding
-// it open. A part whose window sits entirely below Live.From carries no Live
-// at all, which is exactly why such a page never needs re-fetching.
 func (c *Client) Apply(p Page) {
 	c.mu.Lock()
 	var finalized []Message
@@ -334,9 +298,6 @@ func (c *Client) Apply(p Page) {
 
 		// Adopt any nodes the part carries. From is the positional id of
 		// Nodes[0], so a clipped part slots into place rather than replacing.
-		//
-		// STAGED parts only. A sealed part carries its own run at its own offset
-		// and is released directly below: it never needs the buffer.
 		if len(part.Nodes) > 0 && staged {
 			c.store.ClaimOpen(id)
 			// A part CLIPPED off the head of a turn is ALL we hold of it: the
@@ -484,35 +445,6 @@ func (c *Client) Apply(p Page) {
 
 // claimsOpen reports whether a part is entitled to the OPEN-TURN SLOTS -
 // openTurn, openFrom, openV and openNodesSlice.
-//
-// Those four are a single staging buffer, and exactly one turn may hold them at
-// a time. Apply used to let every branch decide for itself, which meant a page
-// of sealed HISTORY could claim them (the inquiry branch and the nodes branch
-// both did `if c.openTurn != id { resetOpen(); openTurn = id }`) and then the
-// sealed branch, seeing openTurn == id, called resetOpen() and threw the LIVE
-// turn away.
-//
-// That is the ^T bug: submitting to an existing, not-running aria paints the
-// question in incipit, and entering the pager does a catch-up ReadBefore whose
-// page is all sealed history: which silently closed the turn the question
-// belonged to. It needed prior history to show, because seenClosed() is false
-// for turns this process has never seen, and it healed itself the moment the
-// model's first node re-opened the turn.
-//
-// The rule, in order:
-//
-//   - the turn we ALREADY hold is still ours, sealed or not: that is how a
-//     streaming turn folds its deltas and then closes from what we buffered.
-//   - a turn OLDER than the open one never displaces it. Newer output cannot be
-//     invalidated by older, and a backward read is full of older.
-//   - a part carrying Live is live BY THE SERVER'S OWN STATEMENT. This is what
-//     lets a catch-up read join a turn already in flight.
-//   - a SEALED part is history. It carries its whole run at a known offset and
-//     is released directly; it has nothing to stage.
-//   - a turn already finalized is never re-opened.
-//
-// Anything left is an unsealed, unseen, not-older turn: the inquiry push that
-// opens a turn before the model has said a word.
 func (c *Client) claimsOpen(part TurnPart) bool {
 	id := int(part.ID)
 	switch {
@@ -546,16 +478,6 @@ func turnRole(nodes []livedoc.Node) string {
 // THE QUESTION, and no other does: a turn is an inquiry followed by the answer
 // to it, and a question drawn above node 64 of 130 says an exchange began where
 // the reader is merely standing.
-//
-// The rule is `from == 0` and it holds for the live suffix too. That matters:
-// once a long turn releases its head to scrollback the open region sits at
-// from>0, so a rule that let a later slice speak made every long turn re-ask
-// its own question halfway down, in the pager AND inline.
-//
-// A reader who holds only the tail of a turn therefore sees no question. That
-// is the honest state: the head is not here, and it is temporary: paging up
-// delivers the head, and the question comes with it
-// (TestScrollingBackCompletesATurnsHead).
 func (c *Client) message(turn, from int, nodes []livedoc.Node) Message {
 	m := Message{Turn: turn, From: uint64(from), Role: turnRole(nodes), Nodes: nodes}
 	if from == 0 {
@@ -646,11 +568,6 @@ func (c *Client) ClosedRevision() uint64 {
 // Open returns just the open, in-flight message (nil when none). View copies
 // and sorts the whole retained closed set; callers that only want the live
 // message: every transcript frame asks for it: should not pay for that.
-//
-// It is the open SUFFIX, for the same reason the push path is (see Apply):
-// nodes below openFrom were already released as closed messages, so carrying
-// them here prints them twice and wraps the prompt in the agent's header. From
-// is the suffix's offset within the turn, so a caller can place it.
 func (c *Client) Open() *Message {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -668,10 +585,6 @@ func (c *Client) View() View {
 	// Ordered by the FULL identity (Turn, From), which the store maintains: a
 	// turn arrives as several slices, and arrival order interleaves when a
 	// live-sealed message precedes a catch-up Read of older history.
-	//
-	// This is the flat list View has always returned: the one place a hole is
-	// invisible. It is the phase-1 shim; consumers move to Store.Query, which
-	// cannot lie about adjacency, one at a time afterwards.
 	v := View{Closed: c.store.All()}
 	if c.store.OpenTurn() != 0 {
 		m := c.openMessage()

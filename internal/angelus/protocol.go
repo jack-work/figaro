@@ -66,18 +66,6 @@ type Handlers struct {
 
 // noticeUpgrade marks the default form for recomputation when the BINARY's
 // bundled skills have moved since it was minted.
-//
-// Without this, `nix profile upgrade` ships new first-party skills that no
-// aria ever wears. The default-form pointer is reused with no comparison
-// while it is clean (that reuse is what shares the rendered prefix in the
-// provider's cache, so it is not a shortcut to give up), and only `fig outfit
-// reload` ever set the flag. A user who upgrades and never runs that verb
-// keeps minting arias against the skills of the build they replaced.
-//
-// The trigger is the bundled root path, which carries the store hash and so
-// moves on every upgrade. It only sets the FLAG: whether anything is reminted
-// is still decided by the hash comparison in ensureDefaultForm, so a rebuild
-// with identical skills costs one comparison and keeps the same form.
 func (h *handlers) noticeUpgrade() {
 	b := h.angelus.Backend
 	if b == nil {
@@ -184,11 +172,6 @@ func (h *handlers) authenticator() authz.Authenticator {
 // policy builds the configured authorization policy. The turn-active predicate
 // is read off the live registry: a dormant or unknown aria has no turn in
 // flight, so it cannot be mid-turn, and a fork of it is free to proceed.
-//
-// TurnActive is used rather than Info().State because Info takes the agent's
-// lock and can block (TestRegistryListDoesNotHoldRegistryLockDuringInfo); a
-// policy check that stalls on the very agent it is guarding would reintroduce
-// the hazard this rule exists to catch.
 func (h *handlers) policy() authz.Policy {
 	name := "allow-all"
 	if h.config != nil {
@@ -299,11 +282,6 @@ func (h *handlers) openAriaForm(ariaID string) *form.State {
 
 // currentOutfitHash is the content hash the outfit would have right now
 // (recomputed from the on-disk definition), or "" if it can't be loaded.
-//
-// This used to memoize with a 3-second TTL, because folding an outfit re-read
-// every skill file and `list` calls this once per aria. The Outfitter now
-// caches its folds against the files they were built from, so the repeat cost
-// is a stat per dependency: cheaper than the TTL was, and never stale.
 func (h *handlers) currentOutfitHash(name string) (current, legacy string) {
 	_, ofit := h.settings()
 	if ofit == nil {
@@ -324,12 +302,6 @@ func (h *handlers) currentOutfitHash(name string) (current, legacy string) {
 
 // outfitVer is the version column for one row: re-resolve the outfit named by
 // the stamp, and compare.
-//
-// A listing asks this once per ROW and the answer only depends on the outfit,
-// so it carries a per-request memo. Without one, a store of 200 arias on one
-// outfit re-marshalled and re-hashed that outfit's whole patch: skills and
-// all: 200 times, and twice each since the legacy generation joined the
-// comparison. The fold underneath is cached; the hashing was not.
 func (h *handlers) outfitVer(vers map[string][2]string, stamped, name string) string {
 	hashes, ok := vers[name]
 	if !ok {
@@ -344,10 +316,6 @@ func (h *handlers) outfitVer(vers map[string][2]string, stamped, name string) st
 
 // outfitVerLabel renders the version column: "live" when the stamped hash
 // matches the current one, else the stamped hash's first 8 chars.
-//
-// legacy is the same fold hashed the pre-name way. An aria minted by an older
-// build carries that stamp and its outfit has not changed, so calling it stale
-// would be a lie told by a hash input, not by an outfit. Goes when it can.
 func outfitVerLabel(stamped, current, legacy string) string {
 	if stamped == "" {
 		return ""
@@ -470,12 +438,6 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 // birthParent is the node a fresh aria forks from: the shared default form
 // when the caller named no outfit, and an outfit node for the named closure
 // when it did.
-//
-// Both are content-addressed, so two arias asking for the same thing get the
-// same parent, one set of records and one rendered prefix. CreateOutfit is the
-// older half of that mechanism and it already reuses by (name, content
-// version); the default form is the newer half and it is a single slot,
-// because there is only ever one default.
 func (h *handlers) birthParent(backend store.Backend, closure form.Patch, outfitName string, named bool) (string, error) {
 	if !named {
 		return h.ensureDefaultForm(backend, closure, outfitName)
@@ -568,46 +530,9 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 
 	// Resolve the outfit name. Empty request → configured default →
 	// typed JSON-RPC error so the client can drive first-run setup.
-	//
-	// We re-read config.toml from disk first so that wizard-driven
-	// changes (the first-run flow scaffolds an outfit + sets
-	// default_outfit, then retries this Create call) are picked up
-	// without a daemon restart. One os.ReadFile + toml.Unmarshal per
-	// request is cheap relative to anything downstream.
 	loaded, _ := h.settings()
 
 	// TWO PATCHES, and which is which is the whole economy of this.
-	//
-	// The PARENT carries a closure and nothing else, so its identity is a pure
-	// function of that closure: every aria wearing it shares one node, one set
-	// of records, and one rendered prefix in the provider's cache.
-	//
-	// The CHILD carries what is per-aria: the caller's KEYS, the runtime
-	// fill-ins, its own id.
-	//
-	// The default closure is resolved through the reserved `default` layer,
-	// the one LENIENT name: a configured default that is not on disk yet folds
-	// to nothing rather than failing, because that absence is what the
-	// first-run flow rides on, surfacing downstream as the missing provider it
-	// actually is.
-	// -O OVERRIDES THE DEFAULT; it does not layer on top of it (Gluck,
-	// 2026-08-12). `fig new -O sonn5` wears sonn5's closure and nothing the
-	// configured default happened to add, which is what naming an outfit
-	// plainly means and what every other verb taking -O already does.
-	//
-	// The reason it used to layer has expired. In 0.22.1 the caller's -O was
-	// folded into the STUMP, and -O could carry key literals, so `-O
-	// mantra=x` minted a private stump per literal and destroyed the sharing
-	// stumps exist for. The fix then was to move -O to the child. But -O has
-	// since become NAMES ONLY (keys travel on -S), so a named closure is
-	// shared by name and content version like any other, and it can go back
-	// under the fork where it belongs.
-	//
-	// So the parent node is the closure the caller asked for: the DEFAULT
-	// FORM when nothing was named, an outfit node for that name otherwise.
-	// Both are content-addressed and both are shared by every aria wearing
-	// them, which is what keeps one rendered prefix and one warm provider
-	// cache per outfit.
 	outfitName := loaded.Config.DefaultOutfit
 	named := len(req.Outfits) > 0
 	if named {
@@ -759,18 +684,6 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 // fork branches a conversation at its head. The addressed trunk keeps its id
 // and remains live; the alternative is a new dormant conversation.
 // forkPointOf maps a turn id to the main-LT a fork takes.
-//
-// Turn N's fork point is the LT that ENDS turn N-1: the branch then retains
-// everything through the previous exchange and the caller's new prompt becomes
-// turn N. That boundary is the tail of a completed exchange, so a tool_invoke
-// is never left without its result.
-//
-// figwal retains [First, atMainLT] INCLUSIVE and the branch begins at
-// atMainLT+1, which is why this is first-1 and not first.
-// checkForkLT refuses an LT past the aria's own tail. A turn is validated
-// by lookup ("it has turns 1..N"); an LT is a raw coordinate, so without
-// this a typo forks at a point that does not exist yet and the branch
-// silently inherits everything instead of the prefix the user asked for.
 func (h *handlers) checkForkLT(ariaID string, lt uint64) error {
 	if lt == 0 {
 		return nil
@@ -899,23 +812,6 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	}
 
 	// Run the fork here, not on the target's actor.
-	//
-	// It used to be handed to the agent's inbox and waited on, so that a fork
-	// could not re-home the log while the agent was appending to it. figwal
-	// already guarantees that: Trunks.Append and the flat creators both take
-	// lockLineage(trunk), so they are mutually excluded whoever calls them.
-	// The inbox hop was a second lock over the first.
-	//
-	// And it was the second lock that deadlocked. A figaro forking ITSELF does
-	// so from a tool call, which runs on its own drain loop; the fork then
-	// queued behind a turn that could not finish until the tool call returned,
-	// and the tool call could not return until the fork ran. An aria could not
-	// fork itself, which is the one caller that most wants to.
-	//
-	// This is the cure the deferred note here asked for, arrived at from the
-	// other end: rather than move trunk state off the actor, stop routing the
-	// fork through the actor at all. authz.NoSelfForkDuringTurn stays as a
-	// guardrail, but it no longer guards a hang.
 	if err := runFork(); err != nil {
 		return nil, fmt.Errorf("fork %q: %w", req.FigaroID, err)
 	}
@@ -1034,16 +930,6 @@ func (h *handlers) messageCountAt(id string, atMainLT uint64) int {
 // its parent trunk's run). A live agent on the trunk keeps its id (promotion
 // only relabels ancestor markers), so no agent is killed.
 // gc collects outfit stumps nothing is using.
-//
-// A stump is content-addressed (<outfit>@<hash>), so one accumulates per outfit
-// VERSION: every edit to an outfit mints a new one the next time an aria is
-// born under it, and until stumps became collectible nothing ever took the old
-// ones away. Killing an aria now collects its stump when it was the last
-// child; this is the sweep for everything that predates that.
-//
-// Collecting loses nothing: the next aria wanting that outfit re-mints the
-// same id: so the only question is whether anything is still under it, which
-// the topology answers directly.
 func (h *handlers) gc(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.GCRequest
 	if len(params) > 0 {
@@ -1115,19 +1001,6 @@ func (h *handlers) normalize(ctx context.Context, params json.RawMessage) (inter
 }
 
 // importAria restores an exported aria as a NEW conversation.
-//
-// It grafts nothing. The outfit is resolved by content (CreateOutfit is
-// content-addressed, so an identical outfit is reused rather than
-// duplicated), a conversation is spawned under it, and the messages are
-// appended through the ordinary path. Every identity: node id, fork base, LT
-// : is minted by THIS store, which is why an import can never collide with
-// what is already here and never needs a renumbering pass.
-//
-// What it deliberately does not carry: the provider translation caches. They
-// are a derivable wire cache, and the price of dropping them is one cache-miss
-// on the next turn (which, per the anthropic assembler, replays without
-// thinking blocks rather than with unsigned ones). Exactness is the graft's
-// job: see proposals/aria-graft.md: not this one's.
 func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.ImportRequest
 	if err := json.Unmarshal(params, &req); err != nil {
@@ -1334,9 +1207,6 @@ func runtimeFillins(ariaID, cwd string) form.Patch {
 // convBootPatch is the conversation's boot transition: the runtime fill-ins,
 // and nothing else. What the caller asked for is already in the birth patch -
 // inherited through the fork watermark and rendered once in the shared prefix.
-//
-// It used to re-state the request here too, which is how the `layers` directive
-// reached a board: the birth patch was materialized, this copy was not.
 func convBootPatch(ariaID, cwd string) form.Patch {
 	return runtimeFillins(ariaID, cwd)
 }
@@ -1797,15 +1667,6 @@ func (h *handlers) status(ctx context.Context, params json.RawMessage) (interfac
 
 // providerLedger answers "what did the provider last say to this aria, and is
 // anything still in flight".
-//
-// It reads two sources, because there are two kinds of answer and only one of
-// them is history. Completed round-trips come from the daemon's LOG RING:
-// they were logged like anything else, so the same records are durable in
-// logs.jsonl and no private ledger has to exist for them. Outstanding
-// requests come from wirelog's in-flight map, because "still running" is
-// current state and no log record can express it. Spans cannot show it
-// either - they export on end - so the request that is still hanging, the
-// only one an incident is ever about, was invisible by construction.
 func (h *handlers) providerLedger(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.ProviderLedgerRequest
 	if len(params) > 0 {
@@ -2144,9 +2005,6 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro
 // cwdFromForm returns a closure that reads system.cwd from
 // cbState at call time, falling back to fallback when the key is
 // unset, the form is nil, or the value isn't a JSON string.
-//
-// This is the seam that lets the bash tool honor a runtime
-// `figaro set system.cwd …` without rebuilding the registry.
 func cwdFromForm(cbState *form.State, fallback string) func() string {
 	return func() string {
 		if cbState == nil {

@@ -182,12 +182,6 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 
 // appendUserPrompt persists one external prompt as its own canonical user
 // message and matching committed UI unit.
-//
-// steering distinguishes the two kinds of input, and the DRAIN is the only place
-// that can decide it: it alone knows whether a turn was already in flight when
-// this prompt came off the queue. An inquiry opens a turn; a steer joins the one
-// already running. The field is persisted so a replayed log classifies the same
-// way it did live: but nothing outside this package ever supplies it.
 func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (store.Entry[message.Message], error) {
 	msg := message.Message{
 		Role:      message.RoleInput,
@@ -213,18 +207,6 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (
 			// DURABILITY PRECEDES VISIBILITY. On a failed append the
 			// in-memory form is NOT advanced, so the published board and
 			// the log agree and a restart replays cleanly.
-			//
-			// The reverse: which this did: is not a lost write but a
-			// hallucinated one: the patch is projected to the model as a
-			// <system-reminder> on the next tic, so the agent acts on state
-			// that will not exist after a restart. applyControlPatch has always
-			// bailed here; this path did not, and the asymmetry was the bug.
-			//
-			// The turn CONTINUES rather than aborting. The patch is a
-			// transition riding the turn, not the turn's content, and killing a
-			// live exchange over a form write is a worse failure than
-			// proceeding without it: the error is logged and the message still
-			// reaches the model.
 			if _, err := a.backend.ApplyForm(a.id, combined); err != nil {
 				slog.Error("turn form append", "aria", a.id, "err", err)
 				combined = form.Patch{}
@@ -257,11 +239,6 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (
 		// runs ahead of the one the projection derives, the client sees a new
 		// turn, and the turn being steered is abandoned mid-stream with its
 		// closing prose never rendered.
-		//
-		// Keyed on the CONTENT, not on which branch produced it. Attaching this
-		// to one of the two paths above is exactly the bug that shipped for a
-		// moment here: the attributed path skipped openTurn, so the second turn
-		// recomposed the first and the reply arrived twice.
 		if !steering {
 			a.openTurn()
 		}
@@ -283,17 +260,6 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (
 	// question is also the frame that carries the footer's context count and
 	// the mantra this very prompt just seeded. Refreshing first is what makes
 	// that frame describe a world which already contains the question.
-	//
-	// It is not a latency cost worth reclaiming. Measured
-	// (BenchmarkPromptBroadcastGap, Ryzen 7 5800X): the steady-state
-	// incremental refresh is 0.6-0.8µs and FLAT from 100 to 5,000 messages,
-	// because it folds exactly the row just appended. The O(n) fallback
-	// (refreshMetricsFrom: 282µs at 5k messages) is unreachable from here:
-	// it is guarded on tail.LT < metricsLT, i.e. the log rewound under the
-	// agent, and a successful appendMsg has just put the tail strictly ahead.
-	// Broadcasting first would save ~0.6µs and cost a footer with no mantra
-	// and no ctx for as long as the model takes to send its first frame -
-	// ~1.4s in a pty A/B. Pinned by TestInquiryFrameCarriesFreshMetrics.
 	a.refreshMetrics()
 
 	if prompt.text != "" {
@@ -304,10 +270,6 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (
 		// Commit makes the message appear only when the transcript truly holds
 		// it: the aria frame carries {Role, Nodes} on the first hop and the
 		// client short-circuits to OnClosed with no OnLive event.
-		//
-		// Gated on the projector: the inquiry is UI IR, and a build without the
-		// projection must render nothing at all rather than a stream of bare
-		// prompts with no replies.
 		if a.proj != nil {
 			if steering {
 				// A steer joins the turn already in flight: no inquiry to record
@@ -336,14 +298,6 @@ func (a *Agent) startAssistantUnit() {
 	// aria.Server.OpenTurn recomputes its base only when the turn id changes,
 	// because the producer is contracted to recompose the WHOLE region every
 	// frame so that a reopen replaces rather than appends.
-	//
-	// So the compose window must be pinned the same way. Recomputing it from the
-	// tail on every round silently narrowed it: after a steer drained, the
-	// backup stopped at the preceding tool_result, so the window became
-	// [steer, reply] while the server's region still began at the TOOL's index.
-	// The shorter region then overwrote the tool in place: it was never frozen,
-	// appeared nowhere on screen despite being in the IR, and left its voice-run
-	// header stranded with nothing under it.
 	if a.turnStartTurn != a.turnID || a.turnStartLT == 0 {
 		a.turnStartTurn = a.turnID
 		a.turnStartLT = 0
@@ -867,26 +821,6 @@ func hasRenderablePrompt(prompts []event) bool {
 }
 
 // appendPromptEvents drains queued prompts INTO A RUNNING TURN, as ONE message.
-//
-// The batch is the contiguous run of user prompts Inbox.TakeReadyUserPrompts
-// lifted in a single locked pass: it stops at the first fork or form set,
-// because those need ordering. So the batch boundary is already exactly the set
-// that belongs together, and we join it rather than splitting it: three nudges
-// typed during one tool round are ONE message of three lines at ONE LT, not
-// three messages the model must reconcile.
-//
-// Both callers run inside the turn loop, so by construction everything reaching
-// here was drawn from the queue while a turn was in flight. That is the whole
-// classification rule and this is the only place it is made: a prompt drained
-// mid-turn IS a steer; a prompt that opens a turn goes through appendUserPrompt
-// directly with steering=false. Nothing upstream declares it, a prompt
-// pipelined by a script and one typed by someone watching are identical on the
-// wire, and the drain is the only point that knows the turn boundary as the
-// agent itself sees it rather than as a client call returning. One message means
-// one steering decision, taken once.
-//
-// Backcompat is read-only: logs written before this carry N separate user
-// messages and keep reading exactly as they did. Nothing on disk is migrated.
 func (a *Agent) appendPromptEvents(prompts []event) error {
 	merged, ok := mergePromptEvents(prompts)
 	if !ok {
@@ -912,10 +846,6 @@ func (a *Agent) appendPromptEvents(prompts []event) error {
 // mergePromptEvents folds a drained batch into one prompt: texts joined by a
 // newline in queue order, form input merged in the same order so a later
 // prompt's value wins. Reports false when the batch is empty.
-//
-// Identity folds with the content: the result keeps the FIRST id (it is the
-// same message, continued) and records every other id in merged, so a client
-// that read the queue a moment ago can still find where its id went.
 func mergePromptEvents(prompts []event) (event, bool) {
 	if len(prompts) == 0 {
 		return event{}, false
@@ -952,18 +882,6 @@ func mergePromptEvents(prompts []event) (event, bool) {
 
 // senderRuns folds attributed segments into one Content per RUN of consecutive
 // segments sharing a sender.
-//
-// NOT one Content per segment. Within a run the texts are joined by a BLANK
-// line, which is the separator mergePromptEvents chose and for the reason it
-// chose it: prose renders as markdown, where a lone newline is a soft break, so
-// glamour would rejoin three messages into one garbled sentence. Splitting a
-// run into separate blocks would hand that same problem to the provider, which
-// concatenates a user message's text blocks.
-//
-// So the common case: several nudges from ONE sender, or from none at all -
-// is exactly one block, byte-identical to what the fold produced before
-// attribution existed. A block appears only where the sender actually CHANGES,
-// which is the only place a reader needs telling.
 func senderRuns(segments []promptSegment) []message.Content {
 	var out []message.Content
 	for _, seg := range segments {
@@ -1166,15 +1084,6 @@ func (a *Agent) assembleToolResults(
 
 // toolImageBudget is the base64 ceiling for ALL tool imagery on one
 // tool_result tic, derived from the configured WAL segment size.
-//
-// It is a hard safety limit, not taste: the tic is appended to the IR as ONE
-// figwal record, and a record that does not fit inside a single WAL segment
-// fails the append outright and takes the turn with it. config owns the
-// derivation (segment size, its floor, and the provider ceiling above which
-// bigger buys nothing) so the number moves with the store geometry instead of
-// being pinned to the smallest legal configuration, a user who raises
-// store.segment_size gets the headroom they paid for. Nil-safe: an agent
-// constructed without settings gets the same default the store would use.
 func (a *Agent) toolImageBudget() int { return a.settings.InlineImageBudget() }
 
 // harvestToolImages pulls the image blocks out of one tool's outcome, tags
@@ -1182,14 +1091,6 @@ func (a *Agent) toolImageBudget() int { return a.settings.InlineImageBudget() }
 // a note for any image it had to alter or could not carry. Images ride along
 // even when the tool errored: a screenshot attached to a failure is usually
 // the whole point.
-//
-// An image over the remaining budget is RESCALED, not discarded. The read tool
-// already fits each image to the whole-message budget at ingest, so the only
-// way to arrive here is several images in one parallel round competing for one
-// record, and dropping the losers would reproduce, at a different threshold,
-// the silent blindness this path exists to end. Dropping is reserved for an
-// image that cannot be encoded legibly in the space that is left, and it is
-// announced in that tool's own result text.
 func harvestToolImages(tc message.Content, oc toolOutcome, remaining, total int) (kept []message.Content, notes []string, spent int) {
 	for _, c := range oc.content {
 		if c.Type != message.ContentImage || c.Data == "" {
@@ -1221,12 +1122,6 @@ func harvestToolImages(tc message.Content, oc toolOutcome, remaining, total int)
 // refitToolImage re-encodes one already-inlined image to fit the bytes still
 // free on this record, and returns the note that keeps the model's coordinates
 // honest.
-//
-// The factor is reported as a FURTHER multiplier rather than an absolute one:
-// the ingest note already told the model how this image relates to the file on
-// disk, and this pass only knows how the new pixels relate to the ones it was
-// handed. Two composable factors are correct; one absolute-looking factor that
-// silently measures from the wrong baseline is not.
 func refitToolImage(c message.Content, limit int) (tool.FittedImage, string, bool) {
 	raw, err := base64.StdEncoding.DecodeString(c.Data)
 	if err != nil {
@@ -1672,20 +1567,6 @@ func assistantToolInvokes(m message.Message) []message.Content {
 
 // combineFormInput merges client-supplied form input
 // with the persisted snapshot.
-//
-// Two shapes, two contracts:
-//
-//   - Context is *purely additive*. It carries the client's view of
-//     state-at-send-time; the agent sets keys whose values differ
-//     from the snapshot but never derives removals from absence.
-//     This lets clients ship a full form copy without racing
-//     concurrent set/unset from another shell.
-//   - Patch is explicit set + remove; mutations the client really
-//     means. `figaro set`/`unset` land here.
-//
-// system.* on Context is dropped: the harness owns that namespace,
-// and a stale client view must not clobber it. Patch is left intact
-// (it's the user explicitly mutating; trust them).
 func (a *Agent) combineFormInput(input *rpc.FormInput) form.Patch {
 	if a.form == nil || input == nil {
 		return form.Patch{}
@@ -1716,11 +1597,6 @@ func (a *Agent) combineFormInput(input *rpc.FormInput) form.Patch {
 // additivePatch returns a Set-only patch with ctx entries whose values
 // differ from snap. Keys present in snap but absent from ctx are NOT
 // removed: Context is purely additive by contract.
-//
-// Equality is the form's own (semantic JSON equality via the tree),
-// not bytes.Equal: a semantically equal Set keeps the board's existing
-// bytes, so a byte comparison would re-report the same key every turn and
-// fire a redundant <system-reminder> each time.
 func additivePatch(ctx, snap form.Snapshot) form.Patch {
 	return snap.Apply(ctx.AsPatch()).Diff(snap)
 }
@@ -1734,21 +1610,6 @@ func statusOf(err error) string {
 
 // regionMessages is the open turn's messages, HELD across frames and extended
 // by whatever the log appended since the last one.
-//
-// Measured before it was written: re-reading the region was 45,696 B of a
-// 71,734 B frame at 64 rounds -- 64% of the frame's bytes and ~30% of its
-// time -- to re-copy 128 messages of which at most two are new. ReadFrom
-// copies the entries and the loop copies them again; this pays both once per
-// APPEND rather than once per frame.
-//
-// THE RETURNED SLICE IS CAPPED AT ITS LENGTH. composeTurn appends the
-// in-flight message to it, and an append with spare capacity would land inside
-// this memo's array, editing a slice an earlier frame may still be read
-// through: the held-view law, pinned twice in internal/store, broken one
-// package over. region_memo_test.go asks that as a capacity question, because
-// no comparison of contents can see it.
-//
-// Called only from the turn goroutine, like a.argPartials beside it.
 func (a *Agent) regionMessages() []message.Message {
 	if a.regionStart != a.turnStartLT {
 		// A new turn is a new region. A memo carried across the boundary would

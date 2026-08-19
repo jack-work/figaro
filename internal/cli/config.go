@@ -123,11 +123,6 @@ func mustHush() *managed.Hush {
 }
 
 // ensureHush initializes hush. Must be called from the CLI process.
-//
-// The first-run identity flow (prompt for passphrase, init the age
-// identity, persist to keyring) is owned by hush's managed package -
-// figaro is just a consumer here. Anything more elaborate (provider
-// selection, default outfit) is layered above via runFirstRunIfNeeded.
 func ensureHush() {
 	h := mustHush()
 	if err := h.EnsureReady(); err != nil {

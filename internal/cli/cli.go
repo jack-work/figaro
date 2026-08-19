@@ -32,47 +32,9 @@ func Run(progName string, args []string) {
 	}
 
 	// AMBIGUOUS-WIDTH GLYPHS: believe the terminal, not the default table.
-	//
-	// U+2500 (─) and U+2502 (│) are East Asian AMBIGUOUS: one cell in most
-	// terminals, TWO where ambiguous-wide is configured. Every rule figaro draws
-	// is made of ─ and every thinking gutter of │, and every row is built on
-	// go-runewidth's answer of ONE. On an ambiguous-wide terminal each of those
-	// rows is drawn twice as wide as figaro measured it, so a full-width rule
-	// lands at 200 cells in a 100-column pane and runs off the edge.
-	//
-	// Measured on the same captured output at width 100: zero rows over as a
-	// normal terminal, 48 rows over as an ambiguous-wide one, worst +100. That
-	// is invisible to every test that measures figaro against figaro, which is
-	// why three rounds of sweeps came back clean while the report stood.
-	//
-	// One switch, consulted once, and it reaches every measurement: the CLI's
-	// displayWidth, render's cells, livelog's clip and hardWrap all resolve
-	// through go-runewidth's DefaultCondition.
-	//
-	//	FIGARO_AMBIGUOUS_WIDE=1   ─ │ … are two cells, as your terminal draws them
-	//
-	// scripts/term-ambiwidth.sh asks your terminal which it is.
 	applyAmbiguousWidth()
 
 	// Arm the console we WRITE to, before the first escape leaves the process.
-	//
-	// On Windows nothing ever enabled ENABLE_VIRTUAL_TERMINAL_PROCESSING on
-	// stdout, so figaro's escapes were honoured only where something else had
-	// already turned it on: measured at stdout mode 0x0003 under a bare conhost
-	// (inert) against 0x0007 under Windows Terminal. Where it is off,
-	// \x1b[?1049h does nothing and the pager's frames land in the PRIMARY
-	// buffer as ordinary text: the transcript dumped into the user's
-	// scrollback. It rides here rather than inside MakeRaw because MakeRaw is
-	// about the console we READ and only runs on an interactive path, while
-	// the first escapes (autowrapOff+cursorHide) are written before any raw
-	// session exists and `figaro show` renders ANSI without one at all.
-	//
-	// Off Windows this is a no-op. A redirected stdout degrades to a no-op
-	// too: `figaro list -j | jq` is the ordinary case, not an error.
-	// OnceFunc because both paths fire on a normal return: the defer runs, and
-	// then exitNow's hooks would run it again. (No nil check: neither platform
-	// returns one: Windows hands back a no-op restore when there is no console
-	// to arm, and off Windows the whole function is a no-op.)
 	restoreConsole := sync.OnceFunc(term.ArmOutput())
 	defer restoreConsole()
 	atExit(restoreConsole)
@@ -174,34 +136,6 @@ func Run(progName string, args []string) {
 // buildRouter is the whole command surface, declared once. Every command is a
 // cmdkit.Command value here; the router owns dispatch, help, arg counts and
 // completion, so a Command declares what it accepts and Run does the work.
-//
-// Two shapes, one field apart:
-//
-//   - Parsed (default). Flags is the table. The router parses argv, expands
-//     short bundles (a value-taking short ends the bundle: -erOsonn5 is
-//     -e -r -O sonn5), refuses unknown flags, enforces ArgsMin/ArgsMax.
-//     `state`, `set`, `attend`, `gc`, `kill`.
-//   - PassRaw. Run gets the untouched tail, for grammars the router cannot
-//     express: everything after `--` is a prompt and must not be inspected,
-//     and a positional may be <id>:<turn>. `send`, `new`, `fork`: sharing one
-//     parser (extractPromptFlags, send.go) that reads the same table
-//     (sendFlagDefs) the router would have. One table, so a flag cannot be
-//     documented in help and unparsed in practice.
-//
-// -O traces both. On the prompt verbs extractPromptFlags parses it into
-// sendOpts.outfit and parks it in promptOutfit, so buildPromptForm puts
-// it on the same RPC as the message: no verb assembles its own prompt, so
-// none can carry the flag and forget the fold. On `state outfit` it is the
-// verb's first positional, and reaches the same ParseSpec and the same fold.
-//
-// Run bodies: manage.go (list/fork/kill/promote), prompt.go and send.go
-// (prompting), outfit.go (state outfit), form.go (state/set/unset),
-// portable.go (export/import), firstrun.go (the wizard create falls into).
-// Completions are CompleteArgs callbacks in complete_*.go.
-//
-// figaro:
-// There has to be a better way to maintain these, like in declarative configurations perhaps.
-// Evaluate the necessity and the churn in the source's version history.
 func buildRouter(progName string, loaded *config.Loaded) *cmdkit.Router {
 	r := cmdkit.NewRouter(progName)
 	r.Extra = loaded

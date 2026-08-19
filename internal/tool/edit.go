@@ -50,23 +50,6 @@ func (e *EditTool) Description() string {
 }
 
 // Parameters: EVERY VALUE IS A SCALAR STRING, AND THAT IS THE POINT.
-//
-// Claude's tool-call format says it: "String and scalar parameters should be
-// specified as is, while lists and objects should use JSON format." A scalar
-// is handed over verbatim and the SERVER encodes it; a list or an object is
-// JSON the MODEL has to author by hand, escaping every tab, newline and quote
-// inside it.
-//
-// This tool used to take `edits: [{old_text, new_text}]`: the only
-// array-of-objects in figaro's tool tree, and it was the only tool that ever
-// produced malformed arguments: measured over one day, 5 failures in 24 large
-// `edit` calls against 0 in 277 large `bash` and `write` calls, which carry
-// payloads just as big through scalar strings. The nesting was the whole
-// difference. One replacement per call costs a second tool call and buys back
-// an entire class of failure.
-//
-// It is also the shape Anthropic ships for its own editor
-// (str_replace_based_edit_tool: command/path/old_str/new_str, no arrays).
 func (e *EditTool) Parameters() interface{} {
 	return map[string]interface{}{
 		"type": "object",
@@ -162,13 +145,6 @@ func (e *EditTool) Edit(ctx context.Context, req EditRequest) (EditResult, error
 }
 
 // parseEditArgs lifts the arg map into EditRequest.
-//
-// The scalar form is the tool's shape. The legacy `edits: [...]` array is
-// still ACCEPTED, and deliberately so: a long aria's history is full of calls
-// in the old shape, and a model reads its own transcript as an example of how
-// this tool is used. Refusing would turn every such imitation into a wasted
-// round trip. Nothing advertises it: the schema offers scalars only: so it
-// fades as histories turn over, and it can be deleted then.
 func parseEditArgs(args map[string]interface{}) (EditRequest, error) {
 	path, _ := args["path"].(string)
 	if path == "" {

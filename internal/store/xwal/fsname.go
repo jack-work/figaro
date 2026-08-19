@@ -6,17 +6,6 @@ import (
 )
 
 // A NODE KEY IS NOT A FILENAME.
-//
-// Node keys are chosen by the caller and used verbatim as path components, so
-// a key that is legal in the id namespace can be illegal on a filesystem.
-// Windows reserves < > : " | ? * in a path component (and \ / everywhere), and
-// figaro names a derived form "@libretto::<id>" -- which mkdir refuses on
-// Windows and accepts on Linux, so the same store is portable in one direction
-// only.
-//
-// Percent-encoding, because it has the one property that matters here: it is
-// the IDENTITY for every key that contains no reserved character. Existing
-// stores are byte-for-byte unchanged, and nothing needs migrating.
 const fsReserved = `<>:"|?*%`
 
 // fsEncode gates the whole mechanism to the platform that needs it. The

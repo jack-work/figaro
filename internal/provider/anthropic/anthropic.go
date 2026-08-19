@@ -733,11 +733,6 @@ func projectTools(tools []provider.Tool) []nativeTool {
 }
 
 // systemBlocks builds the system prefix: preamble + credo.
-//
-// The credo lives on the form at `system.credo`. It may be a
-// bare string (inline TOML) or a ContentEnvelope object emitted by
-// the outfitter's fileName loader: {content, frontmatter, filePath}.
-// Prefer content, fall back to frontmatter, then to a bare string.
 func systemBlocks(snapshot form.Snapshot, oauth bool) []systemBlock {
 	var out []systemBlock
 	systemText := readCredo(snapshot)
@@ -896,11 +891,6 @@ func controlFor(p provider.CachePolicy, caps provider.CacheCaps) *cacheControl {
 // message), caching the whole prompt-so-far so the next turn reads it back.
 // That is 3 of Anthropic's 4 breakpoints; the fourth is left for a
 // downstream gateway to top up, and for the per-fork long-retention marker.
-//
-// The tail is marked LAST in wire order deliberately. Anthropic honours
-// every breakpoint, but a gateway lowering these markers to Gemini keeps
-// only the final one: LiteLLM shipped a first-found bug over exactly this
-// (litellm#17201), so the ordering is a contract, not an accident.
 func markCacheBreakpoints(req *nativeRequest, policy provider.CachePolicy, plan provider.MarkPlan, caps provider.CacheCaps) {
 	cc := controlFor(policy, caps)
 	budget := caps.MaxMarkers

@@ -292,11 +292,6 @@ func listTree(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree.T
 		// argument is the exact class of trap this project exists to remove
 		// (the old comment claimed the two were the same; they never were
 		// after turn addressing, and are off by a whole exchange).
-		//
-		// Resolving LT -> turn needs the trunk's message log, which `list`
-		// deliberately does not read: it would be one full log read per
-		// branch on every listing. `figaro status <id>` does read it and
-		// prints the exact `parent:turn` you can fork with.
 		fork := "-"
 		if len(f.Vector) > 1 && f.BranchedLT > 1 {
 			fork = "yes"
@@ -344,12 +339,6 @@ func globalTree(figs []rpc.FigaroInfoResponse, boundID string, ppid int) figtree
 // treeFrom grows the same tree globalTree does, from an arbitrary root and
 // to a bounded depth. rootID "" means the null genesis root; maxDepth < 0 means
 // no limit, and 0 means the root alone.
-//
-// It exists so that attending a FORM can be shown in the tree that already
-// knows how to draw forms, rather than in the flat aria table that cannot: the
-// scoped `fig ls` used to fall back to the home listing, silently, because
-// figaro.list returns figaros only and the form could not be placed. The
-// result was byte-identical to attending nothing at all.
 func treeFrom(figs []rpc.FigaroInfoResponse, rootID string, maxDepth int, boundID string, ppid int) figtree.Tree {
 	byID := map[string]rpc.FigaroInfoResponse{}
 	childrenOf := map[string][]string{}
@@ -738,14 +727,6 @@ func runKillByID(loaded *config.Loaded, figaroID string, recursive bool) {
 // on the continuation and mints ONE new aria, the alternative; the target
 // is NOT frozen and stays live at the same id. An INTERIOR fork (<id>:<turn>)
 // splits at that turn instead.
-//
-// spec is the target: "" (the shell-bound aria), `<id>`, or `<id>:<turn>`
-// for an interior fork at that turn.
-//
-// Rescoping: when you fork your OWN bound aria, the shell stays on the
-// continuation, which KEEPS the target's id, trunk and mantra: the aria
-// is not frozen and nothing addressing it breaks. Forking any OTHER aria,
-// or passing --stay, is a maintenance fork: your session is left untouched.
 func runFork(loaded *config.Loaded, spec string, opts sendOpts) {
 	stay, asJSON := opts.stay, opts.json
 	// Split an optional :<turn> suffix off the target. Shared parser: fork and

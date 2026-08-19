@@ -11,17 +11,6 @@ import (
 )
 
 // Composing a prompt in a terminal editor.
-//
-// `figaro send --` and the bare `figaro --` with NOTHING after the boundary
-// used to be a usage error. They are now an invitation: open a multi-line
-// editor and send what gets written. That is what makes a `q` alias expanding
-// to `figaro --` usable with no arguments at all.
-//
-// This is `gum write` without gum. The component gum wraps is
-// bubbles/textarea, already a direct dependency here (glamour and huh drag
-// bubbletea in besides), so embedding the editor costs no new module and no
-// exec of a binary that may not be installed. It also means the editor cannot
-// disagree with figaro about terminal state: one process, one raw-mode owner.
 
 // composeCancelled reports that the user dismissed the editor. Callers exit
 // quietly rather than treating it as a failure, abandoning a draft is a
@@ -88,9 +77,6 @@ func (m composeModel) View() string {
 }
 
 // composePrompt opens the editor and returns what was written.
-//
-// Returns composeCancelled when the user dismissed it, and when the buffer is
-// blank: an empty draft submitted by accident must not open a turn.
 func composePrompt(placeholder string) (string, error) {
 	if !term.IsTerminal(int(os.Stdin.Fd())) || !term.IsTerminal(int(os.Stdout.Fd())) {
 		return "", fmt.Errorf("a prompt is required when stdin or stdout is not a terminal " +

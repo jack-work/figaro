@@ -8,27 +8,6 @@ import (
 )
 
 // Delta limits: how much of a form change an aria is shown.
-//
-// A patch is not a document. A key whose value is a 40 KB blob does not
-// become more legible by arriving whole, and a fold of thirty keys does
-// not become more legible than a fold of five plus a count -- but both
-// cost the model's context on every turn they ride, and a studied
-// block rides every turn after it lands. So the render is bounded and
-// the reader is told where the rest lives.
-//
-// THE LIMITS LIVE ON THE FORM, not in a process's config, and that is
-// the load-bearing choice: the translator renders each record against
-// the board AS IT STOOD at that record -- the projection already
-// replays patches to build that snapshot, for templates and for the
-// incantation -- so limits read from there are point-in-time. Lose the
-// derived translation cache entirely and a cold retranslation rebuilds
-// the same boards, reads the same limits, and produces BYTE-IDENTICAL
-// output. A value read from config.toml could not promise that: the
-// file can change between runs, and history would silently re-render
-// under today's numbers.
-//
-// Absent or zero means the built-in default; NEGATIVE means unbounded,
-// which is what figaro did before these existed.
 const (
 	// DeltaKeyBytesKey caps ONE property's rendered value.
 	DeltaKeyBytesKey = "system.delta_key_bytes"

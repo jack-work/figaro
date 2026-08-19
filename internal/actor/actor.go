@@ -1,16 +1,5 @@
 // Package actor is the single-writer runtime: a FIFO queue, one goroutine
 // draining it, and the close semantics that go with both.
-//
-// There is one implementation because there are two users with the same
-// problem. An aria's prompt inbox and a form's writer both need "callers
-// enqueue, one goroutine owns the resource, order is FIFO, close refuses rather
-// than drops", and when that was written twice, one copy grew a deadlock the
-// other did not have.
-//
-// THE HANDLER DOES ITS OWN WORK AND NOTHING ELSE. It must not call back into
-// something that could be waiting on this queue. That rule is why a form's
-// writer is safe to call from inside a turn, and why routing storage through the
-// queue that also owns turns hung figaro for a release: the wait graph closed.
 package actor
 
 import (
@@ -21,10 +10,6 @@ import (
 // Coalescer folds the head of the queue into one item. It is how two users with
 // one runtime keep their own semantics: prompts concatenate with sender tags,
 // form patches merge in order.
-//
-// Coalesce is called with the pending queue and returns how many items it
-// consumed and what they became. taken == 0 means "no fold": the head is
-// delivered as it stands.
 type Coalescer[E any] interface {
 	Coalesce(pending []E) (taken int, folded E)
 }
@@ -44,8 +29,6 @@ type Queue[E any] struct {
 // calling Recv itself: the aria's turn loop does that, because what it does
 // between items (run a turn, wait on a provider) is not a handler's business.
 // Either way there is exactly one consumer, which is the whole point.
-//
-// The context closing stops the queue.
 func Start[E any](ctx context.Context, handle func(E), fold Coalescer[E]) *Queue[E] {
 	q := &Queue[E]{fold: fold, done: make(chan struct{})}
 	q.cond = sync.NewCond(&q.mu)
@@ -167,12 +150,6 @@ func (q *Queue[E]) Closed() bool {
 
 // Close refuses future sends and unblocks the drain. What was ALREADY ACCEPTED
 // is still delivered: Recv returns false only once the queue is empty.
-//
-// That asymmetry is load-bearing, not sloppiness. A caller past Send is often
-// waiting on a reply the handler produces: Form.Apply blocks on exactly that -
-// so dropping accepted items would leave it waiting forever. The line is drawn
-// at acceptance: Send refuses (returns false) after Close, and anything it
-// already took is answered.
 func (q *Queue[E]) Close() {
 	q.mu.Lock()
 	already := q.closed

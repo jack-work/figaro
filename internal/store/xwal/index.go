@@ -1,9 +1,4 @@
 // index.go: the node/trunk index.
-//
-// Trunks used to derive this by walking every node directory and reading a
-// .trunk marker, twice per spawn, at roughly 0.9ms per existing node on a cold
-// filesystem. Minting node 400 was a function of nodes 1 through 399. Now a
-// spawn patches the index with the delta it already knows and never walks.
 package xwal
 
 import (
@@ -19,13 +14,6 @@ import (
 
 // Index is the node/trunk index: the tree shape, and where each trunk's
 // live head is.
-//
-// Readers (Node, Head, All, LiveTrunks, Version) run on RPC goroutines while
-// a mutation is in flight, so they take the read lock. Mutators run under the
-// topology lock and need not be safe against each other.
-//
-// The .trunk markers on disk stay ground truth; this is a derived cache and
-// RebuildFrom recovers it.
 type Index struct {
 	mu       sync.RWMutex
 	nodes    map[string]*NodeInfo
@@ -111,8 +99,6 @@ func (x *Index) SpawnFlat(parent, child, trunk, kind string) {
 
 // ChildrenOf is every node forked from key. Derived, not stored: a flat
 // fork writes only the child's own .from, so the parent has no list.
-//
-// Calling this in a loop over the tree is O(n^2); use ChildIndex once.
 func (x *Index) ChildrenOf(key string) []string {
 	x.mu.RLock()
 	defer x.mu.RUnlock()
@@ -253,22 +239,6 @@ func (x *Index) bumpSeqsLocked(key, trunkID string) {
 }
 
 // A node's identity lives in ONE file, .node:
-//
-//	from=n0
-//	kind=conversation
-//	trunk=t1
-//
-// Its absence marks the null root, or a fork that did not finish. One file
-// rather than the .from/.trunk pair it replaces, for two reasons.
-//
-// ATOMICITY. The pair was written in sequence, so a crash between them left
-// a node with lineage and no trunk id: real debris, invisible as a head. A
-// single atomic replacement either exists whole or not at all.
-//
-// SYSCALLS. Rebuilding the index reads every node's markers, and the cost is
-// per-FILE, not per-byte: ~15us here, ~900us on the NTFS+Defender box this
-// was reported from. Halving the file count halves the cold-start walk on
-// the platform that actually hurts.
 const nodeMarkerName = ".node"
 
 // Legacy names. The reader below no longer knows them: old-format

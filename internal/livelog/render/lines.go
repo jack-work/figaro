@@ -11,10 +11,6 @@ import (
 // emitted row is exactly one physical line: the invariant the renderer's
 // cursor math depends on. ANSI escape sequences pass through uncounted; a reset
 // is appended if the line was cut mid-style so color can't bleed.
-//
-// Width is approximated as one column per rune (no East-Asian-width table) to
-// keep the module dependency-free; that is sufficient for the rendering algorithm
-// and easy to swap later.
 func clip(s string, width int) string {
 	if width <= 0 {
 		return ""

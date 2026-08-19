@@ -1,24 +1,6 @@
 // Package logring keeps a bounded, in-memory tail of slog records so a
 // running daemon can be asked what it has been saying, without anyone
 // grepping a file.
-//
-// Why this exists, concretely: an aria stopped answering, and the operator's
-// options were `figaro status` (which said "idle"), a 10 MB logs.jsonl of OTel
-// envelopes, and a trace file that only lands records when a span ENDS. The
-// daemon knew perfectly well that the provider had refused it four times in
-// the last hour. Nothing could ask.
-//
-// The design is deliberately small and deliberately NOT a log sink of its own:
-//
-//   - It is a slog.Handler that forwards EVERYTHING to an inner handler and
-//     retains a copy of some of it. Retention never replaces emission. A ring
-//     that suppressed logging would be a liability, since it dies with the
-//     process - exactly when a crash makes you want it most.
-//   - It retains slog.Record CLONES, not formatted strings and not JSON. The
-//     hot path costs one small slice copy; rendering happens when a human
-//     runs `figaro doctor`, which is to say approximately never.
-//   - What it retains is decided by a predicate, so the common case (WARN and
-//     above, a handful of records an hour) costs one integer comparison.
 package logring
 
 import (

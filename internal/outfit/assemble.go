@@ -16,15 +16,6 @@ const NameDefault = "default"
 
 // The grammar, since 2026-08-11 (Gluck's ruling): outfits and patches are
 // SEPARATE AXES, and neither is smuggled inside the other.
-//
-//	-O sonn5,focus            names only        → ParseNames
-//	-S ttl=1h,{"n":3}         keys only         → ParseSet
-//	-D system.tags,mantra     key paths only    → ParseDelete
-//
-// They compose in one call, and the order is fixed: outfits fold first, then
-// --set, then --delete. `layers` survives in exactly one place: the unmarshal
-// that builds a patch from an outfit FILE: so a patch is data all the way
-// down and no writer below the API boundary ever touches a disk.
 
 // ParseNames reads the `-O` syntax: a comma-separated list of outfit names,
 // in order, later names winning. Nothing else is admitted, a `k=v` or a JSON
@@ -58,11 +49,6 @@ func ParseNames(text string) ([]string, error) {
 // JSON-object literals, comma-separated, later terms winning. It touches no
 // disk and reads no config, and it resolves nothing, a `layers` key written
 // here is ordinary data, stored as typed.
-//
-//	ttl=1h,mantra="cool thing"  {"ttl":"1h","mantra":"cool thing"}
-//	{"ttl":"1h"},n=3            {"ttl":"1h","n":3}
-//
-// A bare name is refused: that is an outfit, and outfits arrive through -O.
 func ParseSet(text string) (form.Patch, error) {
 	parts, err := splitTerms(text)
 	if err != nil {
@@ -122,13 +108,6 @@ func ParseDelete(text string) ([]string, error) {
 // names become keys. Names fold in order, then the caller's patch lands on
 // top, a client that wrote a key meant its own value, and the removals ride
 // through untouched.
-//
-// It runs at the API boundary, ABOVE the store's single writer and above the
-// agent's inbox, so everything below holds pure data and needs nothing from
-// the filesystem. defaultName is what the reserved name `default` stands for;
-// it alone is lenient (an unset or not-yet-written default folds nothing,
-// which is what the first-run flow rides on, surfacing downstream as the
-// missing provider it is). Every other name is strict, a typo is a typo.
 func (o *Outfitter) Dress(names []string, patch form.Patch, defaultName string) (form.Patch, error) {
 	if len(names) == 0 {
 		return patch, nil

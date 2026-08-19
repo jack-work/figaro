@@ -1,11 +1,5 @@
 // fitcmd is a hand inspector for the image fitter: it prints what FitImage did
 // to a file and writes the fitted bytes out so a human can LOOK at them.
-//
-// It exists because the unit tests can only assert that a picture fits and
-// still decodes: they cannot tell you whether it is still legible, which is
-// the only property that actually matters to a model reading a screenshot.
-//
-//	go run ./internal/tool/testdata/fitcmd <in> <out> [maxBase64Bytes]
 package main
 
 import (

@@ -15,23 +15,6 @@ import (
 
 // formMirror is a client's OWN copy of an aria's form, kept live by applying the
 // patches the server broadcasts.
-//
-// It is the same code the server runs: internal/form, the same persistent tree,
-// the same semantic equality: so "the client's view" and "the aria's state" are
-// not two implementations that have to be argued into agreement. A form is a
-// state object; this is a second holder of one.
-//
-// RESYNC IS THE CONTRACT, not an error path. A delta whose version is not
-// exactly one past ours means we missed something (a reconnect, a slow reader,
-// an aria that moved while we were dialing), and the cure is to ask for the
-// snapshot again: which is idempotent, because the version IS the durable
-// index. Guessing, or applying out of order, is how a mirror silently diverges.
-//
-// A SCHEMA mismatch is a different failure wearing the same clothes, and it must
-// not share an answer with a gap. A gap is transient and re-reading cures it; a
-// peer speaking a shape we do not know will send the next delta in that same
-// shape, so re-reading cures nothing and asking again per delta is a refetch
-// storm against someone who will never agree. Say it once, stop applying.
 type formMirror struct {
 	mu      sync.Mutex
 	snap    form.Snapshot

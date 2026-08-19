@@ -1,24 +1,5 @@
 // Package authz is the authentication and authorization seam for the figaro
 // RPC surface.
-//
-// It exists to keep access decisions out of handler bodies. The shape is the
-// one a server uses: a pluggable AUTHENTICATOR turns a request's credential
-// into an Identity, and a single POLICY maps (identity, method, payload) to
-// allow or deny-with-reason. Config selects both. Handlers do not consult
-// booleans, do not know which rules exist, and cannot be individually forgotten
-// when a rule is added: Guard wraps the whole handler map at once.
-//
-// Two properties are deliberate:
-//
-//   - The authenticator is DISABLEABLE. That is the entire point of moving
-//     caller identity onto the wire (see rpc.CallerKey): FIGARO_ARIA cannot be
-//     turned off, so a server has no state in which it may doubt it, and a
-//     credential that cannot be doubted is not authenticating anything. With a
-//     switch, "was this request authenticated" becomes a real question.
-//
-//   - The policy is ONE function, not a set of hooks. A rule that needs to run
-//     everywhere gets to, and a future policy can be data (a table) or code (a
-//     func) without touching a single call site.
 package authz
 
 import (
@@ -46,23 +27,10 @@ type Identity struct {
 	Authenticated bool
 	// Label is an ASSERTED caller name (rpc.CallerLabelKey / FIGARO_CALLER),
 	// carried for ATTRIBUTION ONLY.
-	//
-	// IT MUST NEVER REACH AN AUTHORIZATION DECISION. Anyone who can set an
-	// environment variable can set it to anything, so a policy keyed on it is
-	// one `FIGARO_CALLER=…` away from being bypassed. It is a separate field
-	// from FigaroID rather than a fallback into it precisely so that rule is
-	// enforced by the type and not by everyone remembering it, a rule that
-	// lives only in a comment is a rule that gets broken.
 	Label string
 }
 
 // Attribution renders who is speaking, for the model and for the UI.
-//
-// An authenticated aria renders "aria <id>"; an asserted label renders BARE.
-// The asymmetry is the point: rpc.SanitizeLabel strips the reserved "aria "
-// prefix from labels, so an assertion can never dress itself as an
-// authenticated identity. Empty means unknown, and callers render nothing
-// rather than guessing.
 func (i Identity) Attribution() string {
 	if i.Authenticated {
 		return rpc.Attribution(i.FigaroID, i.Label)
@@ -94,28 +62,11 @@ type Authenticator interface {
 // rpc.WithCaller. Enabled is the switch that makes it a credential: when false
 // every request is anonymous no matter what it presented, and the policy sees a
 // server that has chosen not to trust the wire.
-//
-// The id is validated by rpc.CallerOf on the way in: it reaches paths that
-// name on-disk aria directories, so it is never taken on faith.
-//
-// This is trust-on-assertion, not proof: an aria's own shell-out is the only
-// thing that normally sets FIGARO_ARIA, but nothing stops a process on the
-// same machine from claiming any id. That is honest for a unix socket whose
-// security model is filesystem permissions (0600), and it is exactly why this
-// is an interface: a transport that can actually prove peer identity
-// (SO_PEERCRED, or a token over HTTP) drops in here without any policy or
-// handler changing.
 type AriaHeader struct {
 	Enabled bool
 }
 
 // Authenticate implements Authenticator.
-//
-// The asserted Label is read REGARDLESS of Enabled. Attribution is not gated
-// by authentication: a human at a terminal is never authenticated and is
-// exactly the caller whose name the model most needs. Disabling the provider
-// withholds AUTHORITY, not identity: with it off, a presented aria id is
-// ignored for policy purposes but the request is still attributable.
 func (a AriaHeader) Authenticate(_ string, params json.RawMessage) Identity {
 	// LabelOf, not the whole ref: the DUKE placeholder has no name until a
 	// server resolves it against an aria's form, and authz has no
@@ -205,9 +156,6 @@ func AllowAll() Policy {
 // Rules is a data-driven policy: an ordered list consulted until one denies.
 // It is the "table" half of the promise that a policy can be data or code -
 // a Rule is itself a PolicyFunc, so the two compose without a second concept.
-//
-// FIRST DENIAL WINS, and an empty table allows. Ordering is the caller's, so a
-// broad rule can be placed after a narrow exception.
 type Rules []Rule
 
 // Rule is one named entry in a table. The name appears in logs, not in the
@@ -239,9 +187,6 @@ const ErrCode = -32020
 // the MAP rather than each handler is the point: a rule cannot be forgotten at
 // one call site, and the set of guarded methods is exactly the set of served
 // methods, by construction.
-//
-// A denial returns a typed *jkrpc.Error carrying the reason verbatim, so the
-// prose a rule wrote is what the caller reads.
 func Guard(handlers map[string]jkrpc.HandlerFunc, authn Authenticator, policy Policy) map[string]jkrpc.HandlerFunc {
 	if authn == nil && policy == nil {
 		return handlers

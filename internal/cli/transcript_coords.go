@@ -8,38 +8,6 @@ import (
 )
 
 // COORDINATES: the address of a thing, drawn on the thing.
-//
-// The pager can now be told to go somewhere (`:12.3`, see transcript_jump.go).
-// A gesture that names a coordinate is useless if no coordinate is ever shown,
-// so Ctrl-O: the verbosity toggle, which already reveals tool timings and
-// argument dumps, additionally draws one dim row above every rendered node:
-//
-//	 12.3 · 01:23:45
-//
-// turn id, node id, and when the node was written. The inquiry gets the same
-// row with its VIRTUAL node id (inquiryNode, -1), because the question is
-// addressable exactly like a node is: it selects, copies and highlights
-// through the same nodeRef, and hiding its id would make the one thing at the
-// top of every turn the one thing you cannot jump to.
-//
-// Three constraints the shape has to satisfy, all of them load-bearing:
-//
-//   - ONE PHYSICAL ROW. It goes through plainNodeRow/clipToWidth like every
-//     other row, so a narrow pane truncates it instead of wrapping and
-//     desynchronising the painter's one-row-per-line cursor math.
-//   - IT MUST NOT SEPARATE A VOICE HEADER FROM ITS RULE. The rule is the
-//     header's overline (TestVoiceHeaderHugsItsRule); so the coordinate sits
-//     BELOW the header, on the node's own side of the chrome: it labels the
-//     node, not the voice.
-//   - THE DEFAULT PATH MUST NOT PAY. The row is minted inside renderMsgBase,
-//     which is memoized in rowCache, and only when verbose is on. With Ctrl-O
-//     off the cost is one bool read per message render, and no frame, no
-//     golden and no row count moves at all.
-//
-// It carries the NODE'S ref, deliberately: the coordinate is part of the
-// node's span, so selection washes over it, ^N scrolls it into view with the
-// node, and nodeSpanOf/ensureSelectionVisible stay in agreement without
-// either of them learning that a label exists.
 
 // coordSep is the middot between the address and the time. Kept here so the
 // search prefilter (messageMayRenderQuery) and the row builder cannot disagree

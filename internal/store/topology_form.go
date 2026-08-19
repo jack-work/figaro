@@ -2,22 +2,6 @@ package store
 
 // The topology form: the presentation hierarchy as a FORM rather than as a
 // hand-rolled file.
-//
-// `trunks.json` wanted the four things a form already has - durable,
-// versioned, reducible, one writer - and had its own answer for each: an
-// atomic-rename save(), a revision counter beside it, a whole-file rewrite
-// per edit, and a mutex. A promote edits TWO edges, so a whole-file rewrite
-// could half-land where one patch cannot.
-//
-// It lives on a reserved STUMP, because a stump is the one node figwal names
-// by a string the caller chooses: no marker file, nothing to look up, and
-// the id is the same on every store. It is not a conversation, cannot be
-// forked, has no outfit, and is filtered out of every listing (see
-// listStumps).
-//
-// It holds OVERRIDES, never a full tree (durable-forms §1: absence is the
-// truthful default), so a lost topology form degrades to "draw every aria
-// where its history puts it" rather than to a wrong tree.
 
 import (
 	"encoding/json"
@@ -138,11 +122,6 @@ func (s *XwalStore) ensureStump(name string) error {
 }
 
 // migrate folds a legacy trunks.json into the form, ONCE, and renames it.
-//
-// Ordering, not a journal: the fold is idempotent (the same overrides
-// reduce to the same state), so a crash before the rename replays it
-// harmlessly. The rename is what says the file has been read, and a form
-// that already holds edges is never migrated into again.
 func (t *TopologyTree) migrate(path string) error {
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {

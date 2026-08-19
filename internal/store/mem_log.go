@@ -7,9 +7,6 @@ import (
 )
 
 // MemLog[T] is an in-memory Log[T] with no persistence.
-//
-// READS TAKE NO LOCK. entries, byFigaroLT and nextLT were three fields that
-// must not both claim the same LT.
 type MemLog[T any] struct {
 	mu    sync.Mutex // WRITERS ONLY
 	state atomic.Pointer[memState[T]]

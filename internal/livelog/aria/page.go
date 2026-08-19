@@ -22,10 +22,6 @@ const (
 // Anchor addresses one node in the conversation. It is the UI coordinate -
 // turn id plus the node's positional ordinal within that turn. LT never
 // appears here: that is the model's coordinate, carried on nodes as metadata.
-//
-// The zero Anchor means "the natural end for this direction": the very first
-// node when paging Forward, the very last when paging Backward. So a backward
-// read with no anchor is the tail: what `fig show -n N` asks for.
 type Anchor struct {
 	Turn uint64 `json:"turn"`
 	Node uint64 `json:"node"`
@@ -45,12 +41,6 @@ type More struct {
 // TurnPart is one turn as it appears on a page: the turn itself plus where
 // this window sits inside it. A part carries a contiguous run of nodes, so
 // ids are positional: Nodes[i] has id From+i, and are omitted from the wire.
-//
-// Only a page's boundary turns can be clipped; inner turns are whole. That is
-// a consequence of the window being contiguous, not a rule the paginator has
-// to enforce. The flags are stated explicitly anyway so a client never has to
-// infer clipping from a part's position, which would break the day we serve a
-// sparse fetch (search results, bookmarks).
 type TurnPart struct {
 	Turn
 	From        uint64 `json:"from"`
@@ -177,16 +167,6 @@ func step(turns []Turn, c cursor, dir Direction) (cursor, bool) {
 
 // Paginate cuts one Page out of turns, walking from at in dir until budget
 // bytes are spent. It is pure: same inputs, same page, no clock, no state.
-//
-// Budget is in bytes and granularity is in nodes, a node is never split, and
-// at least one node is always emitted even if it alone busts the budget. That
-// is safe only because tool output is already clamped upstream (compose's
-// 200-source-line tailBound), so a single node is bounded.
-//
-// Live rides on a part only when the window actually overlaps the open suffix.
-// A page that stops short of Live.From is therefore as immutable as a sealed
-// page, which is what makes scrolling back through a streaming turn cost the
-// same as scrolling back through a finished one.
 func Paginate(turns []Turn, at Anchor, dir Direction, budget int) Page {
 	if len(turns) == 0 || budget <= 0 {
 		return Page{}
@@ -232,11 +212,6 @@ func Paginate(turns []Turn, at Anchor, dir Direction, budget int) Page {
 // that node actually exists. "Before" means before: the caller already holds
 // the anchor: it is the oldest thing in its window and it asked for what
 // precedes it. Returning it again duplicates a message at every page boundary.
-//
-// An anchor past the last turn is a TAIL request (recentCursor). It names no
-// existing node, so there is nothing to exclude and it yields the tail
-// inclusively. That asymmetry is why this is a named function and not a flag:
-// the two callers mean genuinely different things by the same anchor.
 func PaginateBefore(turns []Turn, at Anchor, budget int) Page {
 	if len(turns) == 0 {
 		return Page{}

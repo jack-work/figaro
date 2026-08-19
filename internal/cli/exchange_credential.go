@@ -15,26 +15,8 @@ import (
 // Some providers will not accept the credential a human owns. GitHub Copilot
 // is the standing example: the API refuses a GitHub token outright, and
 // wants a session token exchanged from it, good for about half an hour.
-//
-// That exchange belongs to hush, next to the durable secret, for the same
-// reason the refresh of an OAuth token does: hush is one process per machine
-// with one copy of each credential, and it renews before expiry rather than
-// when someone trips over a 401. figaro doing it meant figaro caching it,
-// and figaro's provider instances are per-aria, so the cost scaled with
-// conversations and the retries arrived in a herd.
-//
-// What figaro still owns is the BOOTSTRAP: hush cannot register a
-// credential it has never been told about. ensureExchangeCredential hands
-// over whatever this installation already has - an env var, or the
-// encrypted api_key from providers/<name>.toml written by an older figaro -
-// and from then on the credential is hush's.
 
 // exchangeSetupMu serializes credential bootstrap within this process.
-//
-// Provider construction is per-aria and arias start in parallel, so without
-// this two of them race: both find the agent stale, both shut it down, and
-// the loser dials a socket the winner already removed. One at a time, and
-// the second finds the work done.
 var exchangeSetupMu sync.Mutex
 
 // ensureExchangeCredential registers the provider's durable secret with hush

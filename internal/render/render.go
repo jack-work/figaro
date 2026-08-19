@@ -20,14 +20,6 @@ import (
 // surrounding blank lines, chroma syntax highlighting). A trailing
 // unclosed fence (mid-stream) is synth-closed so a code block renders with
 // a stable structure as it streams in.
-//
-// Results are memoized (see prose_cache.go): the output is a pure function of
-// (markdown, width), and the callers ask for the same block over and over.
-//
-// Every returned row is run through SanitizeForTerminal so embedded
-// terminal-state escapes (alt-screen, cursor visibility, line wrap,
-// mouse modes, OSC) from tool output or model-emitted text can never
-// reach the host terminal.
 func Prose(md string, width int) []string {
 	// Sanitize on the way IN. glamour drops the ESC byte of an escape it does
 	// not understand and keeps the parameter bytes as visible text: while
@@ -36,14 +28,6 @@ func Prose(md string, width int) []string {
 	// width, with "[31m" printed. Models paste ANSI out of tool output
 	// constantly, so this is a live path, and a bare ESC could also shift a
 	// gutter's column by riding along in the row prefix.
-	//
-	// StripEscapes, NOT SanitizeForTerminal: that one is an OUTPUT sanitizer and
-	// deliberately keeps SGR verbatim, so it left this bug exactly as it was -
-	// and I claimed otherwise for a whole commit because no test contradicted me.
-	//
-	// Fixing it here rather than clipping the result keeps the defect out of
-	// the pipeline entirely: nothing downstream has to know that a row's byte
-	// count and its cell count disagree.
 	md = StripEscapes(md)
 	if strings.Count(md, "```")%2 == 1 {
 		md += "\n```"
@@ -75,11 +59,6 @@ func renderMarkdown(text string, width int) (rows []string) {
 	// back to plain text when Render returns an error, but a panic blew straight
 	// through that, and figaro renders from detached goroutines (refreshQueued),
 	// so it took the whole CLI down instead of spoiling one frame.
-	//
-	// Observed: a table row carrying more cells than the table's Alignments
-	// ("index out of range [3] with length 3" in TableElement.setStyles). That
-	// particular one is fixed by the lock below, but glamour parses untrusted
-	// model output and this is the boundary where that stops being fatal.
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Warn("markdown render panicked; falling back to plain text",
@@ -95,19 +74,6 @@ func renderMarkdown(text string, width int) (rows []string) {
 }
 
 // renderLocked renders under the renderer lock.
-//
-// A glamour TermRenderer IS NOT SAFE FOR CONCURRENT USE: it accumulates state
-// on itself while walking the document: the block stack, and a table's rows
-// and headers, reset only in the table's Finish. Two goroutines rendering at
-// the same width shared one cached renderer and interleaved cells into a single
-// row; the row then had more cells than the table's Alignments, which glamour
-// indexes by column, and it panicked.
-//
-// The mutex used to guard only the cache lookup and was released before the
-// caller rendered, which protected the map and nothing else. Holding it across
-// Render serializes rendering per process. That is acceptable because Prose is
-// memoized (lookupProse) so repeat frames never reach here, and because the
-// alternative, a renderer per call: re-parses the style sheet every time.
 func renderLocked(text string, width int) (string, error) {
 	rendererMu.Lock()
 	defer rendererMu.Unlock()
@@ -134,16 +100,6 @@ func rendererForLocked(width int) *glamour.TermRenderer {
 	// width+2 therefore lands rows at exactly width, which is the ceiling -
 	// a row that overflows the viewport auto-wraps in the terminal and
 	// desyncs the live painter's one-row-per-line cursor math.
-	//
-	// Measured across widths 8..140 on tables with CJK, code spans and
-	// three columns: no table row exceeds width at this bias (the probe is
-	// TestProse_TableRowsHoldPainterInvariant). Prose with an UNBREAKABLE
-	// token still overruns at any bias: glamour will not hyphenate: which
-	// is why every caller clips (clipToWidth) and why that is not this
-	// function's job.
-	//
-	// The bias is unchanged under glamour v2; re-measured at widths 40/60/64/80,
-	// the widest row is exactly `width`.
 	wrap := width + 2
 	if wrap < 1 {
 		wrap = 1
@@ -164,10 +120,6 @@ func rendererForLocked(width int) *glamour.TermRenderer {
 		// first line of text, and a blank: the remainder discarded by the
 		// cell's MaxWidth. Table text was destroyed here, upstream of
 		// anything a view could do about it.
-		//
-		// This is also the one lever for the wrap-vs-truncate taste call:
-		// WithTableWrap(false) restores single-line cells, but truncated
-		// with an explicit "…" rather than silently blanked.
 		glamour.WithTableWrap(true),
 	}
 	r, err := glamour.NewTermRenderer(opts...)
@@ -247,17 +199,6 @@ func cells(s string) int {
 }
 
 // hardWrapOverlong is the fallback for content glamour will not break.
-//
-// glamour wraps on word boundaries, so a token longer than the wrap width, a
-// URL, a long identifier, a CJK run: is emitted whole and the row overruns the
-// width it was given. An UNCLOSED FENCE is worse: it ignores the wrap width
-// entirely, overrunning by 11 cells at w=20. Downstream every painter clips, so
-// the overrun did not corrupt the screen: it silently ATE THE TAIL of whatever
-// would not fit, which is the same class of loss as a truncated table note.
-//
-// Wrapping is the honest answer: the text is all still there, on the next row.
-// Rows that already fit are returned untouched, which is every ordinary row at
-// every ordinary width, so this costs one width measurement per row.
 func hardWrapOverlong(rows []string, width int) []string {
 	if width <= 0 {
 		return rows

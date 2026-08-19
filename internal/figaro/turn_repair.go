@@ -16,12 +16,6 @@ import (
 // finished because the turn was interrupted. It is EXPORTED because it is the
 // only DURABLE mark an interrupt leaves: repairTurnTail runs when the agent
 // knows it was interrupted, and a client that merely dies never makes it run.
-//
-// TestSmoke_CtrlCLeavesTheInterruptMarkWhenAToolIsInFlight asserts on this string
-// from internal/cli, which is why it is a shared constant rather than two
-// copies: a literal in a test is a copy that can drift out from under the
-// property it claims to check, silently, and that test is the only thing that
-// can tell the interrupt fix from the interrupt bug.
 const InterruptedToolNotice = "interrupted: tool execution did not complete"
 
 type turnTool struct {

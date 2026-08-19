@@ -16,12 +16,6 @@ import (
 )
 
 // LocalExecutor runs commands as direct child processes via exec.Command.
-//
-// Before exec, every transformer in Transformers is applied in order.
-// EnvSanitizer transformers additionally strip their Denylist from the
-// inherited os.Environ() base: that step is folded in here rather
-// than the transformer chain so a transformer doesn't have to
-// materialize a full env slice.
 type LocalExecutor struct {
 	Transformers []ExecTransformer
 

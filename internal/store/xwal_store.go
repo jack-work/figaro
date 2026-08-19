@@ -3,41 +3,6 @@ package store
 // XwalStore is figaro's aria tree, a thin policy layer over figwal's
 // xwal.Trunks (which owns the fork/trunk mechanics on disk). figaro keeps
 // only policy:
-//
-//	root (null) ──CreateStump──> outfit (stump) ──SpawnUnderStump──> conversation
-//	                                                ──ForkTail/interior fork──> branch…
-//
-//   - root: the channel dir itself (xwal.CreateTrunks genesis). Markerless,
-//     ceremonial: the "null" anchor. Addressed by the rootID sentinel.
-//   - outfit: a markerless stump (CreateStump) holding a renderable RoleInput
-//     birth message that carries the outfit's form stamp
-//     (system.outfit_name/version). One per (name, content-version), and its
-//     id IS that version, so the dedup map lives on disk (Stumps()): no
-//     policy side-file. Ceremonial.
-//   - conversation: SpawnUnderStump(outfit): inherits the outfit's
-//     rendered prefix via the fork watermark. A live trunk.
-//
-// The aria id IS the trunk id (stable across forks: the continuation keeps
-// it). Trunk identity, the node tree, and fork mechanics live on disk in
-// figwal; figaro derives outfits/null from the stump/root structure.
-//
-// WHERE THIS IS GOING (cast objects). A stump is very nearly a cast object
-// already: a durable reducible thing that an aria observes. The difference is
-// one rule, a stump cannot be PATCHED, only forked, and that rule is what
-// makes everything above true. Minting an aria will become "fork a cast
-// object; the fork backs the figaro, the object keeps its own history", which
-// is exactly SpawnUnderStump with the parent allowed to go on living.
-//
-// So the vocabulary settles as: an OUTFIT is a named spec; a spec materializes
-// as a cast object; a cast object is a stump when it is closed to patches, and
-// an ordinary object when it is not; a stump can be used as a spec in turn,
-// and can be forked for a regular object as well as for an aria. Something may
-// eventually re-materialize stumps from specs when the files change.
-//
-// Stump VERSIONING is a different axis from an object's history, and stays
-// that way: a new version is a whole new stump with a different hash, because
-// no version can ever be produced FROM a stump. That is why the id here is a
-// content hash and nothing else, and why nothing renames one.
 
 import (
 	"crypto/rand"
@@ -87,9 +52,6 @@ func (s *XwalStore) listStumps() []xwal.StumpInfo {
 	// list builds (left in, the hierarchy grows a row about itself), and a
 	// libretto is a derived copy of a form the user already sees. Both are
 	// "never listed, never forked, never bound" (durable-forms §11, §12.2).
-	//
-	// Found live rather than in a test: `fig ls -g` drew a @libretto:: row
-	// the moment the study verb minted one.
 	out := all[:0:0]
 	for _, st := range all {
 		if isReservedStump(st.Name) {
@@ -165,15 +127,6 @@ const (
 
 // formReduce folds a message.Patch (JSON) onto a form
 // snapshot (JSON state): figaro's reducer for the form channel.
-//
-// The Snapshot's MarshalJSON/UnmarshalJSON are called DIRECTLY rather than
-// through json.Marshal/json.Unmarshal, and that is not a style tic: for a
-// type with custom JSON hooks, encoding/json pre-scans the input before
-// handing it to an Unmarshaler and re-scans a Marshaler's output before
-// emitting it. On a 15KB board each of those doubles the cost (measured:
-// 97µs -> 188µs decode, 76µs -> 152µs encode), and this reducer runs once
-// per WAL record on segment rollover and fork. The bytes are identical
-// either way: TestSnapshotDirectCodecMatchesEncodingJSON pins that.
 func formReduce(state, patch []byte) ([]byte, error) {
 	snap := form.Snapshot{}
 	if len(state) > 0 {
@@ -195,26 +148,6 @@ func formReduce(state, patch []byte) ([]byte, error) {
 // nothing has ever rolled and nothing ever would, which makes
 // SegmentBaseIndexes: the coarse "which file holds LT N" index a lazy read
 // wants, a constant function.
-//
-// 2MiB gives ~1300 entries per segment at the measured density: the largest
-// real aria rolls, an ordinary one still fits in one file. The floor on the
-// choice is that a single record must fit inside a segment (disk.Log returns
-// ErrPayloadTooLarge otherwise). The largest record anywhere in the store is
-// 128KB, so 2MiB is 16x headroom; the only unbounded producer is an inlined
-// base64 image from the read tool, which is why this is not 1MiB.
-//
-// It is a default, not a law: `[store] segment_size` overrides it, and
-// config.SegmentSize is the single place the number and its floor live. The
-// zero passed here means "whatever config says", which for a test or a tool
-// that opens a store without config is exactly the default above.
-//
-// Affects new segments only: existing arias keep their oversized files and
-// simply stop growing them.
-// handleIdle is figwal's IdleUnload: how long a lineage's in-RAM head
-// survives without an append or a read. The second of the three idle clocks
-// (agent eviction, this, the writer's linger), and the only one that was
-// never wired to config. Package level and set before the store opens, like
-// the others.
 var handleIdle atomic.Int64
 
 // SetHandleIdle sets figwal's head-unload window. Call before opening the
@@ -272,11 +205,6 @@ func storeOptions(segmentSize int) xwal.StoreOptions {
 		// The form is UNKEYED: a patch is a declaration of intent, not
 		// a fact about a turn, so it should not have to read the timeline to
 		// be written. That is what lets a `set` land mid-turn.
-		//
-		// The translations channels stay KEYED, and deliberately: their main
-		// LT is a lookup key ("the provider message for turn k"), and a
-		// translation is derived AFTER its turn exists, so there is no
-		// moment at which the main record could stamp a cursor for it.
 		Unkeyed: []string{chanForm},
 	}
 }
@@ -299,11 +227,6 @@ type XwalStore struct {
 
 	// observed: ariaID → the form ids its IR appends stamp (study
 	// subscriptions). In-memory; the aria's board is the durable truth.
-	//
-	// PUBLISHED WHOLE, so the read on every IR append takes no lock: the map
-	// and the slices in it are immutable once stored, and a declaration builds
-	// a successor. observedMu serializes DECLARERS only -- two agents
-	// declaring at once would otherwise lose one of the two maps.
 	observedMu sync.Mutex // WRITERS ONLY
 	observed   atomic.Pointer[map[string][]string]
 	now        func() int64
@@ -446,8 +369,6 @@ func (s *XwalStore) Close() error { return s.trunks.Close() }
 // automatic because the alternative is a daemon that refuses to start until
 // the user runs a command he has not heard of -- but it is not silent, and
 // it is not partial. Either it finishes or the open fails.
-//
-// The check costs one file read on a store that needs nothing.
 func migrateLayout(root string) error {
 	need, err := xwal.NeedsFlatten(root)
 	if err != nil || !need {
@@ -466,33 +387,6 @@ func migrateLayout(root string) error {
 
 // openNode opens the xwal for an aria id (the trunk's live head). Caller
 // closes it.
-//
-// UNEXPORTED, and that is the whole point of it. It hands back a raw
-// *xwal.XWAL, whose Append takes (channel string, key uint64, payload
-// []byte) -- so a caller holding one can put HAND-BUILT BYTES on the channel
-// named "form" in a single line: past json.Marshal, past the typed
-// message.Patch every legitimate writer goes through, and past Trunks' poison
-// and dirty bookkeeping. Every other route to an aria's board is typed
-// (Backend.ApplyForm* and *Form's methods all take message.Patch), so this
-// was the one door in the write side that took bytes from outside the
-// package.
-//
-// It was closed by VISIBILITY rather than by a test, because a test that
-// asserts "nobody outside package store calls this" is a rule that rots,
-// while an unexported identifier is the compiler saying it permanently. The
-// campaign's own standard -- a hazard test must be proven to reach by failing
-// to compile -- is satisfied here directly: the unexport IS the failure to
-// compile.
-//
-// What it does NOT close: figwal's own exported API. XwalStore.trunks is an
-// *xwal.Store, and any package in this module may import
-// github.com/jack-work/figwal/xwal and open the same directories itself. That
-// door belongs to the dependency and no visibility change here reaches it;
-// what holds it shut is import discipline, which is a rule and not a shape.
-// Only internal/store imports figwal today, with one read-only exception:
-// internal/cli/angelus_client.go calls xwal.NeedsFlatten to decide whether a
-// layout needs flattening. It survives untouched -- it reads, it never
-// appends, and it never names a channel.
 func (s *XwalStore) openNode(id string) (*xwal.XWAL, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -513,21 +407,10 @@ func (s *XwalStore) openNode(id string) (*xwal.XWAL, error) {
 // name is already inside the hash (see OutfitVersion) and inside the birth
 // record the stump writes, so putting it in the id too would be a compound key
 // for something with one key. The "@" makes it unmistakably not an aria id.
-//
-// Stumps minted before this carry "<name>@<version>". They are not renamed and
-// need no migration: nothing parses a stump id, and their label is read from
-// their own record like every other stump's.
 func outfitStump(ver string) string { return "@" + ver }
 
 // CreateOutfit returns the outfit id for this outfit, materializing it as a
 // markerless stump under the root if it does not exist yet.
-//
-// The id is `<name>@<version>`, and the VERSION is the identity: the name is
-// folded into the hashed content (see OutfitVersion), so the name in the id is
-// a readable restatement of something the hash already covers, not a second
-// key. Two spellings that produce the same name and the same patch are the
-// same outfit and share a stump; two outfits with identical bodies and
-// different names are different outfits and do not.
 func (s *XwalStore) CreateOutfit(name string, patch message.Patch) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -569,26 +452,6 @@ func (s *XwalStore) CreateOutfit(name string, patch message.Patch) (string, erro
 
 // ForkWith is the ONE birth verb: fork a node and land a patch on the child, in
 // one critical section.
-//
-// parent == "" forks the null root: which is what `fig new` is. A non-empty
-// parent branches that aria: at.MainLT == 0 takes the head, otherwise the
-// interior point (cauterizing to a fresh child when that point is owned by the
-// root or a stump, which is what ForkAt already decides). A FORM parent spawns
-// a NEW trunk beneath the live form: binding: because ForkTail on a form
-// would be a continuation, and a form is a forking point, not a conversation
-// to continue. The form stays appendable; the child snapshots it at its tail.
-//
-// THE PATCH IS REQUIRED. A fork that transforms nothing is a fork nobody can
-// name: the child's identity IS the hash of the patch it was born carrying, and
-// at minimum that patch re-stamps aria_id, because a child inheriting its
-// parent's id cannot fork itself afterwards.
-//
-// The patch is appended BEFORE the child's first main record, and that order is
-// the whole point. A main record carries a cursor stamp: where each unkeyed
-// channel stood when it was written, and the projection renders exactly the
-// patches at or below it. Writing the record first stamped it one index BELOW
-// the patch it introduces, so nothing rendered: no skills, no credo, nothing the
-// birth patch set. This function is now the only place that ordering lives.
 func (s *XwalStore) ForkWith(parent string, atMainLT uint64, patch message.Patch) (child string, version uint64, err error) {
 	return s.forkWithKind(parent, atMainLT, patch, string(kindConversation))
 }
@@ -744,12 +607,6 @@ func (s *XwalStore) Fork(id string) (cont, alt string, err error) {
 // ForkAt branches at an interior main-LT (imperative: no message): shares
 // [1..atMainLT], mints an empty alternative diverging at atMainLT+1; the id is
 // stable (cont == id). At/past the tail it degenerates to a tail fork.
-//
-// Cauterization: if atMainLT is owned by the root or an outfit stump, it is
-// NOT re-split into a continuation, a fresh conversation is spawned beneath
-// the owner (an outfitless conversation under the root, or one sharing that
-// outfit). Forking a conversation's own turns (or a parent conversation's)
-// re-splits normally.
 func (s *XwalStore) ForkAt(id string, atMainLT uint64) (cont, alt string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -786,11 +643,6 @@ func (s *XwalStore) forkAtLocked(id string, atMainLT uint64) (string, error) {
 // pstate and writes nothing to any aria's history, so it is O(1) in history
 // length. ErrAtStump means there is nothing above to promote into, or the
 // build has no trunk capability at all.
-//
-// The climb stops at the outfit boundary. Only conversations nest: an
-// outfit stump and the genesis root are structure, and a hierarchy that
-// hung one of them under a conversation would put every aria in the store
-// inside one aria's subtree.
 func (s *XwalStore) Promote(id string, levels int) (int, error) {
 	// NO s.mu here: the tree resolves lineage through Node, which refreshes
 	// the topology snapshot under s.mu. Holding it across the tree call
@@ -851,22 +703,6 @@ func (s *XwalStore) writeStumpBirth(stump string, cbPatch *message.Patch) error 
 	pb, _ := json.Marshal(patch)
 
 	// THE BOARD PATCH GOES FIRST, and the order is the whole point.
-	//
-	// A main record carries a CURSOR STAMP: where each unkeyed channel stood
-	// when the record was written. The outfit's reminders are meant to
-	// render at THIS record -- once, in the prefix every conversation under
-	// the stump inherits -- and the projection renders exactly the patches at
-	// or below the record's stamp. Writing the record first stamped it one
-	// index BELOW the patch it introduces, so PatchesUpTo() returned nothing
-	// and no aria created under the stump ever rendered its skills, its credo
-	// or anything else the outfit sets.
-	//
-	// The patch is keyed to the LT the birth record is about to take, which is
-	// what it was keyed to before (the record's own LT) and is the reducible
-	// one-ahead convention the flush coherence rule already allows. On an
-	// unkeyed form the key is ignored and the stamp is what matters;
-	// keying it correctly keeps the keyed case honest rather than relying on
-	// the channel happening to be unkeyed.
 	next := mainTailOf(x) + 1
 	if _, err := x.Append(chanForm, next, pb, nil); err != nil {
 		return err
@@ -903,13 +739,6 @@ func mainTailOf(x *xwal.XWAL) uint64 {
 
 // OutfitVersion is an outfit's IDENTITY: the value-stable hash of the birth
 // record it writes, minus the version field, which cannot cover its own hash.
-//
-// The name is inside the hash, not merely alongside it. That is what lets
-// everything else key on content alone: where a literal sits in a spec changes
-// the fold and not the identity, so `base,x=1` and `x=1,base` are one outfit
-// when they do not collide -- while `a` and `b` with byte-identical bodies stay
-// two outfits, because a listing that reported an aria under a name nobody
-// asked for would be worse than a duplicate stump.
 func OutfitVersion(name string, patch message.Patch) (string, error) {
 	return contentVersion(withOutfitName(patch, name))
 }
@@ -953,13 +782,6 @@ func withKey(p message.Patch, key, value string) message.Patch {
 }
 
 // NodeView is a read-only snapshot of an aria (trunk) for listing/lineage.
-//
-// It carries no `Frozen`/`Children`/`Depth`: those belonged to figaro's own
-// pre-trunk tree, where forking froze the target into a read-only index
-// node and minted two fresh children. Since the trunk migration the aria id
-// is stable: the continuation IS the aria you forked: so no aria is ever
-// frozen, and node-level children/depth are figwal's business, not a
-// listing's.
 type NodeView struct {
 	ID     string
 	Parent string
@@ -1226,20 +1048,6 @@ func (s *XwalStore) Node(id string) (NodeView, bool) {
 
 // RemoveLeaf deletes an aria via xwal.Trunks. Trunk-addressed; refuses one
 // with live branches unless recursive.
-//
-// The two hierarchies split the work. What is REFUSED is counted on the
-// drawn tree, so the warning matches what `fig ls` shows. What is REMOVED
-// is the history subtree, because that is what owns bytes. An aria merely
-// promoted under the target therefore survives, and forgetting its edge
-// returns it to where its history puts it.
-//
-// Survivors that read their history through the delete set absorb the
-// prefix they borrow BEFORE anything is unlinked, so a crash between the
-// two leaves them reading through directories still present.
-// bury, when non-nil, is handed the whole delete set AFTER the refusal and
-// BEFORE any repair or unlink. It is where the dying forms record their own
-// death (durable-forms §7): the record must precede the unlink, or a crash
-// between them leaves a live-looking form whose files are half gone.
 func (s *XwalStore) RemoveLeaf(id string, recursive bool, bury func([]string)) error {
 	s.deleting.Lock()
 	defer s.deleting.Unlock()
@@ -1338,12 +1146,6 @@ func (s *XwalStore) collectStumpAfterDelete(stump string) {
 // survivingHome is the nearest place above id that outlives this delete: the
 // first drawn ancestor still standing, or failing that the outfit it was
 // born under.
-//
-// The fallback is the difference between a top-level aria and a fossil. A
-// detach empties the node's .from, and with it figwal's record of which
-// stump the aria hangs from, so an aria whose whole lineage was deleted
-// would be drawn directly under the genesis root with no outfit above it -
-// which is exactly the shape a store full of old recursive kills is in.
 func (s *XwalStore) survivingHome(id string, taken []string) string {
 	doomed := make(map[string]bool, len(taken))
 	for _, t := range taken {
@@ -1374,15 +1176,6 @@ func (s *XwalStore) CollectStump(id string) error {
 }
 
 // collectStump removes a stump that has just lost its last child.
-//
-// An outfit stump is content-addressed, so it is minted afresh
-// by the next aria that wants it: collecting one loses nothing and is what
-// keeps a store from accumulating a directory per outfit version forever. A
-// recursive delete can take several children at once, which is why this asks
-// the topology rather than counting: whatever is left is what is left.
-//
-// A failure here is logged, not returned: the aria IS deleted by this point,
-// and failing the delete because the collection failed would be a lie.
 func (s *XwalStore) collectStump(name string) {
 	if name == "" {
 		return
@@ -1418,10 +1211,6 @@ func (s *XwalStore) collectStump(name string) {
 // presented under: each one absorbs the history prefix it reads through an
 // ancestor. After it, a delete's boundary is empty whatever the
 // presentation hierarchy says, so nothing is ever owed at delete time.
-//
-// This is the DEFERRED work made immediate. It is O(absorbed bytes), so it
-// is the one operation here that is not instant; everything else stays so
-// precisely because this can be postponed.
 func (s *XwalStore) Normalize() (int, error) {
 	done := 0
 	for _, id := range s.tree.Overridden() {
@@ -1477,11 +1266,6 @@ const KindForm = string(kindForm)
 // librettoCursorPrefix namespaces observed-form positions inside the main
 // record's cursor map, beside the node's own channel entries. The value is
 // the LIBRETTO's version, never the source's.
-//
-// Records written before librettos existed carry the older "study:" prefix
-// holding SOURCE versions. Those no longer match, so they render no study
-// block at all -- which is the point: reading a source version against a
-// libretto's log answers a wrong range silently.
 const librettoCursorPrefix = "libretto:"
 
 // studyCursors extracts the observed-form half of a cursor stamp,

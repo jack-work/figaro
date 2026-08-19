@@ -17,16 +17,6 @@ import (
 
 // runDoctorProvider answers the question no figaro surface could answer:
 // "this aria is not responding - what is the provider actually doing?"
-//
-// `status` said idle. `queue` was empty. The log said nothing. The trace file
-// had the answer - a 429 with an hour-long Retry-After - but only for turns
-// that had already ended, because spans export on end, and only to someone
-// willing to write a JSON scanner. Meanwhile the request that was STILL
-// hanging appeared nowhere at all.
-//
-// This reads the transport's own ring: rows are written at departure and
-// completed in place, so an in-flight request is visible while it is the
-// problem rather than after it is history.
 func runDoctorProvider(ariaID, count string, asJSON bool) error {
 	limit := 20
 	if count != "" {

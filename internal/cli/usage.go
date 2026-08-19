@@ -38,8 +38,6 @@ var exitProcess = os.Exit
 // message painted on a buffer about to be abandoned. `figaro send -l` whose
 // Qua fails is that path today (stream.go dies after --listen has opened the
 // pager), and so is the Ctrl-C 130 exit.
-//
-// LIFO, like defers, because that is the order the registrations assume.
 var exitHooks []func()
 
 func atExit(f func()) { exitHooks = append(exitHooks, f) }

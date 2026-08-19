@@ -33,11 +33,6 @@ type assembled struct {
 
 // drainSSE consumes a streamed Chat Completions response, pushing deltas to
 // the bus as they arrive and accumulating the final assistant message.
-//
-// Tool-call fragments are keyed by their index, not their position: a
-// gateway may interleave two calls across frames, and appending by arrival
-// order concatenates one call's arguments onto another's, producing JSON
-// that parses but means something else.
 func drainSSE(ctx context.Context, body io.Reader, bus provider.Bus) (assembled, error) {
 	var out assembled
 	byIndex := map[int]*toolCall{}

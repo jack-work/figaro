@@ -120,10 +120,6 @@ func WithImageBudget(maxBase64 int) RegistryOption {
 }
 
 // DefaultRegistry returns a registry with bash, read, write, edit.
-//
-// The bash tool gets a LocalExecutor with the default daemon-env
-// sanitizer wired in, so child processes don't inherit
-// _FIGARO_DAEMON / HUSH_* and silently re-enter daemon mode.
 func DefaultRegistry(cwd string, opts ...RegistryOption) *Registry {
 	return DefaultRegistryFn(func() string { return cwd }, opts...)
 }
@@ -139,10 +135,6 @@ func DefaultRegistryFn(cwdFn func() string, opts ...RegistryOption) *Registry {
 // bash tool exports FIGARO_ARIA=<ariaID> to its children, so nested
 // `figaro` calls are statically attended to the aria that spawned
 // them. Pass "" when there is no aria (tests, one-off registries).
-//
-// The aria id is also the SESSION SCOPE, which matters once a caller
-// passes WithSessions: with a private registry the scope is cosmetic, with
-// a shared one it is the isolation boundary.
 func DefaultRegistryForAria(ariaID string, cwdFn func() string, opts ...RegistryOption) *Registry {
 	settings := registryOpts{imageLimits: DefaultImageLimits()}
 	for _, opt := range opts {

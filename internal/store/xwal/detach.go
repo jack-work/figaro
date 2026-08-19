@@ -12,22 +12,6 @@ import (
 
 // Detach makes a node self-sufficient: it absorbs the history prefix it
 // currently reads through an ancestor, and stops pointing at one.
-//
-// This is what a delete owes a BOUNDARY SURVIVOR — an aria outside the
-// delete set whose lineage runs through it. Once every such survivor has
-// detached, the doomed directories carry nothing anyone still reads and can
-// be unlinked.
-//
-// Crash-safe and idempotent by ordering, with no journal: the absorbed
-// records are written FIRST, as segments below the node's own fork base,
-// where every read still delegates to the ancestor and so cannot see them.
-// Only the marker flip publishes them, and that is a rename. Crash before
-// it and the node still reads through its ancestor, with some ignored files
-// that the next Detach overwrites; crash after and it is independent.
-//
-// Copy, not adopt: it touches nothing the ancestor owns and nothing the
-// node's own writer is using, so it needs no quiesce. Adopting the
-// ancestor's directory would be cheaper in bytes and would require one.
 func (t *Trunks) Detach(node string) error {
 	if node == "" {
 		return fmt.Errorf("xwal: cannot detach the root")
@@ -94,12 +78,6 @@ func (t *Trunks) Detach(node string) error {
 
 // absorbPrefix copies [1, base) out of the parent chain into dir as ONE
 // segment based at 1, streaming straight from the read.
-//
-// One segment, not many: a reducible channel's segment header is the folded
-// state at its start, and only the segment based at 1 can honestly carry the
-// INITIAL state. Chunking would have to re-fold a watermark per chunk, and
-// getting that subtly wrong reproduces the wrong state on every later read.
-// Packing is segment normalization's job, and it is deferred.
 func absorbPrefix(dir string, src *log.Log, base uint64, initial []byte, codec segment.SegmentCodec) error {
 	if base <= 1 {
 		return nil
@@ -109,10 +87,6 @@ func absorbPrefix(dir string, src *log.Log, base uint64, initial []byte, codec s
 	// make every retry fail with EEXIST -- and crash recovery here IS
 	// re-running Detach, so that would leave the store unrecoverable by the
 	// one mechanism meant to recover it.
-	//
-	// The name is pid-scoped, so no live writer can collide, and it is
-	// removed first: a crash leaves OUR scratch behind, and O_EXCL would
-	// then reject the retry for exactly the reason we are avoiding.
 	tmpName := filepath.Join(dir, fmt.Sprintf(".absorb-%d", os.Getpid()))
 	if err := os.Remove(tmpName); err != nil && !os.IsNotExist(err) {
 		return err

@@ -10,19 +10,6 @@ import (
 )
 
 // The API boundary's ONE materialization point.
-//
-// Outfitting is figaro API, not part of the single-writer action-reduction
-// core (Gluck, 2026-08-11). Every request that carries dressing carries it as
-// NAMES: `outfits: ["sonn5","focus"]`: beside a patch that is pure data, and
-// exactly one function turns the first into the second. Below this line the
-// store's writer, the agent's inbox and the hub's verbatim apply all hold data
-// that needs nothing from the filesystem; a key spelled `layers` on a patch is
-// a key, not a directive.
-//
-// Before this, five call sites materialized (create, fork, form.create,
-// form.bind, the agent's own accept path) and one did not: writeForHub, the
-// path an attended FORM takes: which is how `fig form outfit test` stored
-// {"layers":["test"]} on a board and nobody complained.
 
 // dress folds the named outfits and lands the caller's patch on top. It is the
 // only place in the daemon that reads an outfit file on a request's behalf.

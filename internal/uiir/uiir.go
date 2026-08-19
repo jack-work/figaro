@@ -1,14 +1,5 @@
 // Package uiir is the UI IR projection, packaged as a collaborator the core
 // can do without.
-//
-// internal/figaro declares a Projector interface and never imports this
-// package; the wiring happens where an Agent is constructed. Ship a build that
-// supplies no Projector and the engine still runs turns, persists fig IR, mints
-// turn ids and forks: it just renders nothing.
-//
-// Everything here is a thin adapter over internal/compose. The value is not the
-// code, it is the direction of the arrow: conversion depends on the engine, not
-// the other way round.
 package uiir
 
 import (

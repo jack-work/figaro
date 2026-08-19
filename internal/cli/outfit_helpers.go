@@ -18,10 +18,6 @@ import (
 
 // encryptedAPIKey reads an AGE-encrypted api_key from a provider auth
 // TOML file and decrypts it through hush. Mtime-cached.
-//
-// Plaintext api_key values are handled by the upstream auth.ConfigValue
-// strategy; this one only fires when the on-disk value carries the
-// "AGE-ENC[" prefix.
 type encryptedAPIKey struct {
 	Hush       *hush.Client
 	ConfigPath string

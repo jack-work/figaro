@@ -75,18 +75,10 @@ func keepHushAlive(ctx context.Context) {
 // sweep asked for, which makes the ceiling a licence as much as a limit: a
 // high one leaves the runtime no reason to give memory back. It is a
 // backstop, not the fix -- idle-aria eviction is the fix.
-//
-// GOMEMLIMIT in the environment always wins: Go reads it at startup, and a
-// user who has set one has an opinion worth more than a default.
 
 // applyStoreSettings hands the store its clocks and bounds BEFORE the backend
 // opens: the store reads its idle window at open, and a form built earlier
 // would keep the old linger for the daemon's life.
-//
-// Extracted from the boot path so the trip from a config FILE to the place
-// each value is enforced can be tested. Two knobs in this project have
-// shipped configured-but-unwired (the IR window defaulted to off, figwal's
-// IdleUnload read nothing), and neither was catchable by a parser test.
 func applyStoreSettings(loaded *config.Loaded) {
 	store.SetFormLinger(loaded.ActorLinger())
 	store.SetHandleIdle(loaded.HandleIdle())
@@ -102,9 +94,6 @@ func applyStoreSettings(loaded *config.Loaded) {
 // omission here can no longer make a daemon unbounded -- which it could until
 // 2026-08-19, when these three calls WERE the residency policy and every other
 // builder of a backend (doctor, tests, embeddings) got 0/0.
-//
-// Optional interface, for the same reason the other cache policies are: a
-// backend without a window should not have to pretend it has one.
 func applyCacheSettings(loaded *config.Loaded, backend any) bool {
 	w, ok := backend.(interface {
 		SetIRWindow(int)

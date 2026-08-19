@@ -374,10 +374,6 @@ type Field struct {
 // stopping at the first truncation. Like StringField it never errors: it
 // returns what is safely readable so far, so repeated calls on a growing
 // input are monotonic and a live view never rewrites what it showed.
-//
-// It exists so a renderer can show a tool's arguments while they stream
-// WITHOUT knowing anything about the tool. The alternative, asking each tool
-// which single argument to preview: is what this replaced.
 func Fields(data []byte) []Field {
 	p := parser{b: data}
 	if !p.skipWS() || p.peek() != '{' {

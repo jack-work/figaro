@@ -1,24 +1,6 @@
 package store
 
 // study and drop, as the store performs them.
-//
-// A study leaves TWO nodes consistent: the libretto (refcount up, following)
-// and the observer's board (`system.studies` gains the id). Two actors, two
-// logs, no shared transaction, and durable-forms §12.2.1 says what to do
-// about that: not two-phase commit, but ORDERING chosen so every crash fails
-// in the safe direction.
-//
-//	study: libretto FIRST (retain), board SECOND
-//	drop:  board FIRST (stop claiming it), libretto SECOND (release)
-//
-// Both leave, on a crash, a refcount that is too HIGH. Too high delays
-// reclamation; too low reclaims a copy a live observer still needs. One is a
-// leak and the other is data loss, and only the leak is recoverable — by
-// `ReconcileLibrettos`, which recomputes from the boards.
-//
-// The verb above this (in internal/figaro) owns the user-facing rules: which
-// forms are study-able, what a projection means, and what the agent's
-// in-memory mirror does. This owns the two writes and their order.
 
 import (
 	"encoding/json"
@@ -34,19 +16,6 @@ import (
 
 // StudyDecl is one declaration's verdict: the set that LANDED, and the board
 // VERSION it landed at.
-//
-// The version is the whole point of returning a struct rather than a slice.
-// A caller that mirrors this set in memory -- the agent does, and the mirror
-// is what a turn renders from -- cannot order two concurrent declarations by
-// looking at the sets: each is a whole value computed before the
-// compare-and-set decided anything, and publishing them in arrival order
-// lets the stale one win by being last. PUBLISH WHAT WAS WRITTEN, ORDERED BY
-// THE VERSION THAT WON. (The same sentence as 6b2e597a, one layer up: the
-// form channel used to publish the patch it was HANDED rather than the one
-// it WROTE.)
-//
-// Version is 0 exactly when Changed is false: nothing was written, so there
-// is nothing to order.
 type StudyDecl struct {
 	Studies []string // the declared set as it stands
 	Version uint64   // board version this set landed at; 0 if nothing was written
@@ -116,20 +85,6 @@ func (b *XwalBackend) StudyForm(observerID, sourceFormID string) (StudyDecl, err
 }
 
 // studyAttempts sizes the optimistic retry on `system.studies`.
-//
-// It used to be five, which was enough while a figaro's casts were
-// serialized by its actor loop. Taking the cast off that loop (the self-cast
-// deadlock) replaced serialization with optimism, and optimism has to be
-// sized for the contention it now meets: eight concurrent casts of one
-// figaro exhausted five attempts and failed with "the board would not hold
-// still", losing studies for roles that had already been pointed at the
-// caster.
-//
-// Each attempt costs one fsync on conflict, so a generous count is cheap and
-// only spent under contention that used to be impossible.
-// A var, not a const, so a test can drive the exhaustion path: it is the
-// branch where the two participants can disagree, and it is unreachable
-// otherwise without 32 real conflicts.
 var studyAttempts = 32
 
 // backoff spreads retries so N writers of one board converge instead of
@@ -218,9 +173,6 @@ func KindWord(kind string) string {
 // that seed primary forms." An outfit is a seed, not a subject; a bound
 // board is private to its figaro; and a libretto is a derived form, which is
 // not a node at all and so never reaches this check.
-//
-// ONE implementation for the agent's half and the hub's, beside KindWord and
-// for the same reason: a rule enforced in one half only is not a rule.
 func RequireStudyTarget(b Backend, formID string) error {
 	if b == nil {
 		return fmt.Errorf("study: ephemeral aria has no store")
@@ -243,11 +195,6 @@ func (b *XwalBackend) StudiedBy(observerID string) ([]string, error) {
 
 // Libretto returns the libretto for a studied form, minting and following it
 // if it is not already open. Exported for the verb and for the translator.
-//
-// The sigil matters in exactly one direction: an unbound form is addressed as
-// "@abc123" and its libretto's STUMP is named for the bare id, so the name is
-// stripped and the LOOKUP is not. Getting that backwards produces "unknown
-// trunk", which is how this was found.
 func (b *XwalBackend) Libretto(sourceFormID string) (*Libretto, error) {
 	return b.libretto(sourceFormID)
 }
@@ -273,12 +220,6 @@ func (b *XwalBackend) libretto(sourceFormID string) (*Libretto, error) {
 
 // librettoInstance is THE instance for this source: one Libretto, therefore
 // one store.Form, therefore ONE WRITER on that stump's channel.
-//
-// The rule is the base rule of the whole design and it was broken by the
-// reconciliation sweep, which opened its own Libretto per libretto examined:
-// a copy already open and following then had a second writer appending to its
-// log, each computing versions from its own replayed state. Whoever needs a
-// libretto asks here.
 func (b *XwalBackend) librettoInstance(sourceFormID string) (*Libretto, error) {
 	key := strings.TrimPrefix(sourceFormID, "@")
 	b.mu.Lock()
@@ -335,24 +276,6 @@ func (b *XwalBackend) attach(lib *Libretto, sourceFormID string) error {
 }
 
 // A LIBRETTO IS NOT TORN DOWN WHEN ITS COUNT REACHES ZERO.
-//
-// It was, and that was the bug b2b0c543 caught under -race: the last drop
-// closed the instance, so a verb holding it got ErrFormClosed and retried
-// its refcount move on a fresh one -- and the first move is AMBIGUOUS. The
-// conditional apply may have landed durably before the close reported the
-// sentinel, so the retry decremented twice and the next honest drop found
-// "release below zero".
-//
-// Transferring a refcount across an instance boundary cannot be made safe by
-// retrying, because the caller cannot tell whether its write landed. So the
-// boundary is removed instead: the instance lives until the backend closes,
-// exactly like any other resident Form, and the verb path has no lifecycle
-// race to retry through.
-//
-// What that costs is bounded and already measured: one fold goroutine and
-// one resident source Form per form that has been studied since this daemon
-// started, plus a second durable write per source patch while a copy is
-// current. `doctor mem` reports both numbers.
 
 // closeLibrettos stops every fold. The ONLY teardown path, and it runs when
 // the backend closes -- which is the one moment no verb is in flight.
@@ -390,11 +313,6 @@ func (b *XwalBackend) studiesOfBoard(observerID string) ([]string, error) {
 // setStudies writes the declared set, guarded by the board version so a
 // concurrent writer cannot be lost: two arias studying different forms at
 // once must not overwrite each other's declaration.
-//
-// Privileged, because `system.studies` is system-managed -- which is what
-// stops a hand-written `fig set` from claiming a study nothing counted.
-// It answers the version the write LANDED at, which is what lets a caller
-// order its own mirror against another declaration it never saw.
 func (b *XwalBackend) setStudies(observerID string, ids []string, ifVersion uint64) (uint64, error) {
 	slices.Sort(ids)
 	ids = slices.Compact(ids)

@@ -88,11 +88,6 @@ type Config struct {
 
 // New creates an Angelus. Call Run() to start it.
 // Set a.Handlers before calling Run() to enable JSON-RPC.
-//
-// The backend (XwalBackend) owns each aria's shared log instance and
-// closes it on Fork/Remove/Close, so there is no separate log cache:
-// Open returns the same memoized instance to the live agent and to
-// concurrent aria.read RPCs.
 func New(cfg Config) *Angelus {
 	a := &Angelus{
 		Registry:   NewRegistry(),
@@ -249,22 +244,6 @@ func (a *Angelus) pidMonitor(ctx context.Context) {
 }
 
 // reconcileLibrettos recounts every libretto from the boards, once, at boot.
-//
-// durable-forms §12.2.1 puts it here: the incremental count drifts across a
-// crash, and fork/import/kill can drift it DOWNWARD, which reclaims a copy a
-// live observer still needs. Recomputing at start narrows that window without
-// closing it, and the write paths' ordering is still required.
-//
-// It also MINTS a libretto for a studied form that has none, which is the
-// migration: a store from before phase 9 carries studies whose librettos
-// were never created, and the verb cannot mint them because it only runs at
-// study time. The author's store has eleven.
-//
-// That is why the cheap "does this store have any librettos" guard is GONE.
-// It skipped exactly the stores that needed migrating -- the ones with none
-// yet -- which is the kind of guard that looks like thrift and is a bug.
-// The pass runs in the background instead, because it reads every board:
-// 0.89 s on a 711-board store, and no caller waits for it.
 func (a *Angelus) reconcileLibrettos() {
 	rec, ok := a.Backend.(librettoReconciler)
 	if !ok {
@@ -293,17 +272,6 @@ type librettoReconciler interface {
 
 // releaseIdleMemory hands free heap back to the OS once a daemon has gone
 // quiet — nothing live, nothing resident, twice running.
-//
-// Go's collector returns spans lazily and only under pressure, so a daemon
-// that has finished a burst keeps the arena it grew for it. That is fine for
-// ONE daemon and it is not what this machine has: the author's box was
-// measured at 1731 MB of PSS across 33 figaro processes, fifteen of them
-// idle daemons holding 17 to 59 MB apiece. GOMEMLIMIT is per process and
-// never bites; the aggregate has no ceiling at all.
-//
-// Once per quiet period, not per sweep: FreeOSMemory is a full stop-the-world
-// collection plus a scavenge, which is cheap when there is nothing to do and
-// pointless to repeat. Any work at all resets the latch.
 func (a *Angelus) releaseIdleMemory() {
 	if !a.idleReleaseDue() {
 		return
@@ -378,11 +346,6 @@ type idleEvictor interface {
 
 // evictIdleArias releases the cached IR, translations, board and metadata of
 // every aria with no live agent that nobody has touched recently.
-//
-// An aria with an agent is NEVER evicted: the backend shares one cachedLog
-// per (aria, channel) so a reader sees the writer's appends, and dropping it
-// mid-life would hand the next reader a second instance built from disk.
-// Everything evicted is rebuilt from the store on the next read.
 func (a *Angelus) evictIdleArias() {
 	ev, ok := a.Backend.(idleEvictor)
 	if !ok {
@@ -424,21 +387,6 @@ type segmentSweeper interface {
 
 // hibernateIdleArias reclaims the agent of every aria that has been idle
 // longer than the configured window.
-//
-// The predicate is only what it needs to be:
-//
-//	state == "idle" && now - LastActive > dormantAfter
-//
-// Notably absent: bound pids, attached clients, and running background
-// sessions. Each of those used to be a reason to refuse, and each would have
-// made hibernation impossible for exactly the arias that cost the most, a
-// terminal left open all afternoon is the common case. They are gone because
-// what they protected moved: bindings survive Hibernate, clients hang off the
-// hub rather than the agent, and sessions live on the daemon.
-//
-// LastActive is the key, not "time since the sweep last looked": restore is
-// O(history), so an aria woken a moment ago must not be reclaimed again on
-// the next tick. That is the flap the memo warned about.
 func (a *Angelus) hibernateIdleArias() {
 	idle := a.dormantAfter()
 	if idle <= 0 {
@@ -464,16 +412,6 @@ func (a *Angelus) hibernateIdleArias() {
 
 // capLiveArias enforces max_live_arias by reclaiming the least recently active
 // idle agents until the count is under the cap.
-//
-// It is a SOFT cap and deliberately so: an aria mid-turn counts toward it and
-// is skipped, because hitting a number is never worth killing a turn. When the
-// cap cannot be met it says so once per sweep, so a value set below the
-// working set is visible rather than silently burning restores.
-//
-// LastActive is the LRU key, which Registry.List already carries. It is also
-// the flap guard: an aria woken moments ago is exempt, since restore is
-// O(history) and evicting the thing that just paid for itself is how a cap
-// becomes more expensive than the memory it saves.
 func (a *Angelus) capLiveArias() {
 	max := a.maxLiveArias()
 	if max <= 0 {
@@ -542,11 +480,6 @@ type residentTrimmer interface {
 }
 
 // trimResident shrinks the IR window of every aria with no live agent.
-//
-// The window already bounds itself on append, so this is not what keeps a busy
-// aria in check: it is the lifecycle half: an aria that has just been
-// reclaimed is holding a full window it will not read again until someone
-// wakes it, and only the daemon knows that transition happened.
 func (a *Angelus) trimResident() {
 	// The row cap is the only half a daemon still supplies: the byte budget is
 	// the store's own (store.DefaultIRBudgetBytes), so there is no longer a
@@ -578,11 +511,6 @@ const trimRowsUnbounded = 1 << 30
 // EvictNow drops the cached IR, translations and board of every aria with no
 // live agent, regardless of how recently it was touched and regardless of
 // whether the timed sweep is enabled at all.
-//
-// It deliberately bypasses the policy rather than reusing it: the policy
-// answers "has nobody wanted this for a while", and this answers "reclaim
-// what is reclaimable, now". A measurement that had to wait out the ticker
-// would be measuring the ticker.
 func (a *Angelus) EvictNow() int {
 	ev, ok := a.Backend.(idleEvictor)
 	if !ok {

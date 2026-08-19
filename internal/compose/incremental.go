@@ -7,14 +7,6 @@ import (
 
 // Incremental composes the open region by reusing the nodes it already
 // composed for the part of that region which can no longer change.
-//
-// Nodes(msgs, ...) returns exactly what the wholesale Nodes(msgs, ...)
-// returns, on every call. incremental_test.go drives a whole turn frame by
-// frame and asserts that node for node; a composer that agreed only at seal
-// would render correct transcripts over wrong live frames.
-//
-// Why the reuse is sound, and what the guard is for, is in
-// ~/notes/figaro/s6-incremental-prediction.md.
 type Incremental struct {
 	nodes []livedoc.Node // composed nodes for the memoized prefix
 	keys  []memoKey      // one per memoized message, in order
@@ -27,11 +19,6 @@ type Incremental struct {
 
 // memoKey identifies a memoized message closely enough to detect that the
 // region it belongs to is not the one that was composed.
-//
-// The texts are compared with Go string equality, which returns on pointer
-// identity before it looks at any byte. The log hands back the same string
-// headers every frame, so the check costs a pointer compare per block; it
-// degrades to a byte compare, still correct, if that sharing ever stops.
 type memoKey struct {
 	lt     uint64
 	role   message.Role
@@ -67,11 +54,6 @@ func (c *Incremental) Stats() (composed, reused int) { return c.composed, c.reus
 // Nodes composes the region and returns it in two pieces: a prefix of nodes
 // that can no longer change, and the suffix that can. stable is the count of
 // leading prefix nodes identical to those returned by the previous call.
-//
-// A node enters the prefix ONLY when it can no longer change. Neither returned
-// slice is mutated after it is returned -- the prefix grows by append, which a
-// holder of the shorter slice cannot observe -- so a consumer may retain both
-// rather than copy them.
 func (c *Incremental) Nodes(msgs []message.Message, partials, argPartials map[string]string, timings map[string]ToolTiming) (prefix, suffix []livedoc.Node, stable int) {
 	bound := stableBoundary(msgs)
 	published := c.published
@@ -146,26 +128,6 @@ func (k memoKey) matches(m message.Message) bool {
 
 // stableBoundary returns the count of leading messages whose composition can
 // no longer change.
-//
-// Two things move a node after it was first composed: its own message is still
-// being written, and a tool_invoke composed before its result arrives (status
-// running -> ok, streamed partial -> the durable clamped text). So a prefix is
-// stable when every tool_invoke inside it has its result inside it too, and it
-// stops one short of the last message, which may still be growing.
-//
-// Splitting the region there is what makes the reuse an identity rather than
-// an approximation: with every invoke's result inside the prefix, composing
-// the prefix and the remainder separately and concatenating them is the same
-// walk Nodes would make over the whole region.
-//
-// Invokes are matched to results BY ID, not counted. Counting says "as many
-// results as invokes have gone by", which a duplicate result for one call, or
-// a result belonging to a region that started earlier, can satisfy while the
-// call that is actually streaming has none -- and that call's node renders
-// from `partials`, which the memo key cannot see. Matching costs a linear scan
-// over the handful of calls a region has open at once, from a stack-backed
-// slice, and allocates nothing: a map per question is the pattern this
-// campaign spent four days deleting one layer down.
 func stableBoundary(msgs []message.Message) int {
 	if len(msgs) < 2 {
 		return 0

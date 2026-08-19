@@ -6,30 +6,6 @@ import (
 )
 
 // The turn cache: the sealed section of an aria's UI IR, bounded.
-//
-// aria.Server was two organs wearing one name. The open streaming region
-// and the delta/version wire are irreducible: mid-turn state is not
-// durable yet, and a diff protocol needs memory of the last frame. The
-// sealed-turns section was a cache pretending to be an organ -- memoized
-// compose output, unbounded, resident for the agent's life. This type is
-// that section, named for what it is and bounded like every other cache
-// in the process (figwal's segment cache, the IR window, the translation
-// window): a byte budget, LRU, and recompose-on-miss, with no on-disk
-// store because UI IR is a pure derivation of fig IR -- eviction is
-// always safe and a miss costs one bounded recompose.
-//
-// THE INDEX SURVIVES EVICTION. Every sealed turn keeps a hollow entry --
-// id, LT bracket, byte size -- which is what makes a miss BOUNDED: the
-// LT bracket names exactly the records to recompose, and the sizes make
-// chunk selection for a byte-budgeted page exact rather than guessed.
-//
-// Locking: a TurnCache is owned by its Server and mutated only under the
-// Server's mutex; it has no lock of its own. The global accountant
-// (UIBudget) has its own lock and NEVER calls into an owner while
-// holding it: it returns victims, and each owner hollows its own turns
-// under its own lock. Cross-owner victims are queued and drained on that
-// owner's next entry. The budget can therefore overshoot transiently,
-// which is the same trade the segment cache made.
 
 // TurnSource recomposes sealed turns from the durable log for an LT
 // bracket, deltas included. It is the owner's half of a miss: the agent

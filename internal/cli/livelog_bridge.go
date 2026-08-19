@@ -51,11 +51,6 @@ type livelogTurn struct {
 	// everything past it is (re)printed to scrollback, so the turn you watched in
 	// the pager is left behind like a normal command. A zero lt means nothing was
 	// frozen inline (we entered the pager cold, e.g. `figaro listen`).
-	//
-	// It is a (turn, node-offset) PAIR, not a bare turn id. appendTurnSlices cuts
-	// one turn into several messages that all carry the same LT with a rising
-	// From, so a turn-granular boundary either replays a slice already on screen
-	// or: the bug this replaced: skips every slice after the first.
 	lastFrozen  sliceCursor
 	pagerClosed []aria.Message
 
@@ -81,12 +76,6 @@ type livelogTurn struct {
 	// APPLIED to aria.Client: a page folded through Apply comes back through
 	// OnClosed and re-freezes history into scrollback, which is the whole trap
 	// this design is built around. Merge is the silent door.
-	//
-	// seedExtents is turn -> anchors occupied, for the parts the server did not
-	// clip at the tail: what lets the store call two turns neighbours instead of
-	// leaving a phantom hole between them. seedMore is the wire's answer to "is
-	// there anything before this page", which the pager reads back as "can I
-	// still page older history".
 	seeded      []aria.Message
 	seedExtents map[int]uint64
 	seedMore    bool
@@ -212,30 +201,12 @@ const transcriptFrameInterval = time.Second / 120
 
 // transcriptResyncInterval is how long the painter may trust its own model of
 // the screen before re-earning it with an unconditional full frame.
-//
-// It exists because figaro is not the only writer to the terminal: while the
-// pager is up, ANY write that bypasses the frame buffer (an error hint, an
-// interrupt notice, a library, the Go runtime) lands on the alt grid at the
-// cursor and, with a leading newline, scrolls every row out from under the
-// painter's model: which then paints row TAILS onto rows whose left half is
-// something else entirely, forever. See (*transcript).screenMoved.
-//
-// Known writers call screenMoved and are repaired on the next frame; this is
-// the bound for the unknown ones. Two seconds is chosen to be well under the
-// time it takes a reader to decide the screen is broken, and far above the
-// frame interval, so it costs one full frame per two seconds of ACTIVE
-// painting and nothing at all when the pager is idle.
 const transcriptResyncInterval = 2 * time.Second
 
 // framePacer is the transcript's frame-rate gate. It answers "may I paint
 // now?" and, when the answer is no, owes a trailing flush so the settled state
 // always reaches the screen: dropping the LAST frame of a burst is the one
 // failure mode a rate limiter must not have.
-//
-// Every field is guarded by the caller's render mutex: allow() and painted()
-// run under it (all render paths hold it), and the trailing timer takes it
-// before flushing. No second lock, and therefore no lock ordering to get
-// wrong.
 type framePacer struct {
 	min     time.Duration
 	lock    sync.Locker
@@ -324,15 +295,6 @@ func (t *livelogTurn) openOverflows(nodes []livedoc.Node) bool {
 // armThinking pins the footer the instant a submit is accepted: before the
 // prompt has round-tripped, before the model's first token. The footer is a
 // permanent fixture of the view, so it must not wait on the stream.
-//
-// It used to arm a flag consumed when the prompt froze, which required the
-// prompt to arrive as its own CLOSED message. Once the prompt merged into the
-// turn it no longer reliably does, and the footer went missing until the first
-// token: so paint it here instead of waiting to be told.
-//
-// No-op in the pager (it renders the footer itself), and no-op when a
-// placeholder is already pinned: OpenThinking drops the current region to
-// scrollback on its way out, so arming twice would strand a footer there.
 func (t *livelogTurn) armThinking() {
 	if t.tr.active || t.thinkingOpen {
 		return
@@ -364,18 +326,6 @@ func (t *livelogTurn) holdFrames() { t.hold = true }
 // openInline places the opening of an inline session in the ONE order that
 // works, and is the only way to release the held frames: the order is not a
 // convention to remember at the call site, it is the method.
-//
-//  1. the preamble, if we are watching a turn we did not open;
-//  2. the submit footer, which the preamble's erase would otherwise take with
-//     it;
-//  3. the frames held since before the socket was dialed.
-//
-// Reversing 2 and 3 is not cosmetic: the footer is pinned at submit and the
-// turn's first frame ADOPTS that region, so releasing first paints the
-// question as one live region and the footer as a SECOND one below it: two
-// status bars, and a stale region the pager's exit erase then misses, after
-// which the question reaches scrollback twice. A pty found that; the suite was
-// green through it, which is why the order now lives here and not in stream.go.
 func (t *livelogTurn) openInline(fetched historyPage) {
 	// The pager's copy: printed or not, the fetch is kept (and merged into the
 	// store when the pager opens: see enterPager).
@@ -401,26 +351,6 @@ const preambleMinRows = 6
 
 // seedContext prints a bounded tail of the conversation ABOVE this session's
 // question, and declares ALL of the history it was given already committed.
-//
-// Two things have to be true at once. A prompt sent to an aria with history
-// used to open on a rule and nothing else: you could not see where you were
-// until the model spoke. And a naive fix (apply the catch-up page to the
-// client) is worse than the bug: every historical message would come back
-// through OnClosed, whose inline branch Freezes to NATIVE SCROLLBACK, so every
-// prompt would re-dump the retained history into the user's terminal.
-//
-// So the page never reaches the client. The caller folds it separately
-// (committedMessages) and hands the messages here, where a bounded slice is
-// printed ONCE, deliberately, and lastFrozen is seeded from the NEWEST message
-// : including the ones the budget elided. That is the freeze boundary
-// flushTail already reasons about: everything at or below it is treated as
-// already on screen, so leaving the pager replays only what this session
-// produced. Nothing can reach scrollback twice, because nothing else in this
-// process will ever emit these messages.
-//
-// No-op with no history (a new or ephemeral aria) or when the pager is up (it
-// renders history itself, and printing to scrollback under the alt screen is
-// how content gets lost).
 func (t *livelogTurn) seedContext(msgs []aria.Message) {
 	if len(msgs) == 0 || t.tr.active {
 		return
@@ -515,9 +445,6 @@ func (t *livelogTurn) transcriptActive() bool { return t.tr.active }
 // abandon closes a live region left mid-turn: flush the pager's tail, park
 // below the region, set the footer's status. Nothing is printed past the
 // status bookend: it already says "disconnected".
-//
-// A turn that ALREADY FINISHED is not abandoned: the pager was closed after
-// the fact, so the tail is flushed and the real outcome kept.
 func (t *livelogTurn) abandon(st turnStatus) {
 	if t.finished {
 		t.leaveTranscript()
@@ -553,15 +480,6 @@ func (t *livelogTurn) tick() {
 // inline drawing cannot fix: the terminal scrolls those rows into native
 // scrollback before our code runs, so they are unreachable for in-place
 // repaint. The pager has no live region to lose.
-//
-// This is the complement of openOverflows, which catches the same hazard from
-// the other direction (content growing past a fixed viewport), and it promotes
-// the same cheap way: tr.enter() renders from the client model already in
-// hand. Doing a catch-up read here instead would stall the resize handler for
-// seconds while incipit kept painting into a viewport that no longer fits it.
-//
-// Gated on minPagerHeight so a pane too small for the pager's own chrome does
-// not thrash into it.
 func (t *livelogTurn) resize(w, h int) {
 	t.term.SetSize(w, h)
 	if !t.tr.active {
@@ -632,23 +550,6 @@ func (t *livelogTurn) enterTranscript() { t.enterPager() }
 // lands on a turn it did not open buys a little context, the inline view
 // prints a bounded slice of it, and the pager opens on the whole of it: no
 // read, and that much less to page in.
-//
-// The page goes into the ONE owner, silently (aria.Client.Merge fires no
-// OnClosed, so nothing is re-frozen into scrollback: the trap this design is
-// built around). The pager's window is the store's own tail, so a merged page
-// IS history the pager opens on; there is no second copy and no per-frame
-// merge (transcript.seed/withSeed/mergeSeed, deleted).
-//
-// WITH NO PAGE IN HAND, THE DOOR OWES A READ. Three doors reach this method
-// and only one of them used to arrive with history: Ctrl-T reads first
-// (interactiveInput.enterTranscript), but the two AUTOMATIC promotions, an
-// open turn taller than the viewport, and a resize that makes the live region
-// unpaintable: called it with an empty seed and an empty store. The pager
-// then opened on the running turn alone, with MoreBefore false, and
-// atAriaFloor reported the question the user had just asked as the beginning
-// of the aria: no history above it and no page ever requested, so scrolling up
-// found nothing. catchUp is that missing read, asked for HERE: where the
-// promotion actually happens: rather than at each door.
 func (t *livelogTurn) enterPager() {
 	t.client.Merge(t.seeded, t.seedExtents)
 	if len(t.seeded) > 0 {
@@ -688,16 +589,6 @@ func (t *livelogTurn) invalidateTranscriptRows() { t.tr.invalidateRows() }
 // report is where trouble goes: an error reason, a provider hint, an interrupt
 // notice. ONE call site decides how it reaches the user, because the answer
 // depends on which renderer owns the terminal:
-//
-//   - pager up: into the FRAME BUFFER as the red left-hand token of the status
-//     row, and remembered so leaveTranscript can reprint it in full to the
-//     shell. Nothing is written to the alt grid, so nothing scrolls the
-//     painter's model away (see transcript.screenMoved) and nothing is lost.
-//   - inline: straight to stderr, as before. The live region really is torn
-//     down there and real scrollback really does exist below it: the reasoning
-//     in stream.go's comment, which was only ever false for the pager.
-//
-// Caller holds the render mutex.
 func (t *livelogTurn) report(text string) {
 	if strings.TrimSpace(text) == "" {
 		return
@@ -937,22 +828,6 @@ func pagerView(v ldrender.NodeView) ldrender.NodeView {
 }
 
 // Render draws a node in its DEFAULT form for the live incipit.
-//
-// The incipit does not collapse prose, and that is a measured decision rather
-// than an omission. Two reasons, and the second is the load-bearing one:
-//
-//   - The incipit appends into NATIVE TERMINAL SCROLLBACK, which the terminal
-//     itself scrolls. Vertical space is not scarce there the way it is inside a
-//     managed viewport, so a tall table costs nothing but a scroll.
-//   - Nothing in the incipit can un-collapse after the fact. Flushed nodes are
-//     frozen in scrollback and never re-rendered (architecture.md invariant
-//     #2), so Ctrl-O reaches only the still-live tail. Driven in a real pty: a
-//     table clamped to "… +4 more table lines" was STILL clamped after Ctrl-O,
-//     because its prose node had already been flushed. A collapsed form with no
-//     reachable expansion is not a preview, it is data loss.
-//
-// So the collapsed form lives exactly where there is a gesture to undo it: the
-// transcript, which has a selection, an expanded map, and RenderExpanded below.
 func (v *ariaView) Render(n livedoc.Node, width, tick int) []string {
 	return v.RenderExpanded(n, width, tick, true)
 }
@@ -967,13 +842,6 @@ func (v *ariaView) RenderExpanded(n livedoc.Node, width, tick int, fullOutput bo
 	// Expansion is a per-node GESTURE, and only the pager has one. A surface
 	// without one draws the minimized form: clamped body, `… last N of M
 	// lines` above it: rather than the fullest one.
-	//
-	// That reverses an older decision for the incipit, deliberately. It used
-	// to draw every row of a tool's output on the grounds that inline rows
-	// freeze to scrollback and a collapse there can never be undone. True, but
-	// it was written when a collapse was SILENT: the banner now says exactly
-	// what was elided, `figaro show` has the rest, and a 60-line file written
-	// inline buried the conversation it belonged to.
 	expand := verbose || (v.gesture && fullOutput)
 	cap := nodeBashCapDefault
 	if expand {
@@ -988,17 +856,6 @@ func (v *ariaView) RenderExpanded(n livedoc.Node, width, tick int, fullOutput bo
 func (t *livelogTurn) openRule() { t.in.OpenRule() }
 
 // The queue, shown rather than echoed.
-//
-// A prompt sent to a busy aria is classified by the DRAIN, not by us: it
-// becomes a steering aside inside the running turn, or opens a turn of its
-// own, and only the agent knows which. Until it is placed, the honest thing to
-// say is not "here is your message" but "your message is WAITING": so figaro
-// shows the queue itself, the same list `Q` has always shown, and shows it
-// without being asked.
-//
-// One list, both views: incipit draws it in the live trailer above the bookend
-// (see Incipit.Queued), the pager opens its footer panel. Neither renders it as
-// content, because it is not content yet.
 func (t *livelogTurn) setQueued(prompts []string, errMsg string) {
 	t.queued, t.queuedErr = prompts, errMsg
 	// The panel opens itself when there is something to show and closes when

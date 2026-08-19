@@ -10,40 +10,6 @@ import (
 
 // ---------------------------------------------------------------------------
 // Paint-layer byte compaction.
-//
-// The node renderers compose rows out of styled segments (reflow's padding
-// writer restyles every padding cell), so a rendered row is mostly SGR churn:
-// a full-width blank row arrives as 96 repetitions of "\x1b[38;5;252m \x1b[0m"
-//: 1539 bytes to paint nothing. Over a pipe or an ssh link that is the
-// dominant cost of a frame, and it is invisible in a benchmark that writes to
-// io.Discard.
-//
-// compactRow is a pure, renderer-agnostic rewrite of one row into the shortest
-// byte sequence producing the same cells. It is deliberately at the paint
-// layer rather than in the renderers: it fixes every producer at once, it
-// cannot change what the row *means*, and it keeps t.prev holding the original
-// rows so the frame diff is unaffected.
-//
-// Three transforms, each provably appearance-preserving:
-//
-//  1. Lazy SGR: an escape that is never followed by text it can affect is
-//     dropped. Style state is tracked and emitted only just before text that
-//     needs it.
-//  2. Invisible-space styling: a run of spaces under a style with default
-//     background, no reverse, no underline and no strikethrough is
-//     indistinguishable from an unstyled run of spaces, so no style change is
-//     emitted for it.
-//  3. Trailing-blank trim: such spaces at end of row are dropped entirely -
-//     paint has already cleared the row (or covered it), so they paint blank
-//     on blank.
-//
-// Invariant established for callers: compactRow's output starts assuming
-// default SGR and always leaves the terminal in default SGR. paint relies on
-// that both ways (an erase-line inherits the current background, and a row
-// that opens with no escape must not inherit the previous row's colour).
-// Rows are already required to be self-contained, a diffing painter may skip
-// the row above entirely: so this only removes a latent hazard.
-// ---------------------------------------------------------------------------
 
 // sgrStyleMax caps how many distinct SGR sequences we track for one row before
 // giving up and emitting it verbatim. Real rows use one or two.
@@ -338,27 +304,6 @@ func trimTrailingSpaces(s string) string {
 
 // ---------------------------------------------------------------------------
 // Shifted-frame painting (scroll regions).
-//
-// A one-line scroll changes EVERY body row: row r now shows what row r+1
-// showed. The full-frame diff therefore finds nothing in common and
-// retransmits the whole viewport: which is what makes holding j/k feel like
-// dragging. Terminals have had the answer since the VT100: set a scroll region
-// (DECSTBM) and shift it (SU/SD), then paint only the newly exposed rows.
-//
-// The shift is *detected*, not assumed. planScroll compares the new screen
-// against the last painted one, finds the largest run of rows that merely
-// moved, and predicts the exact grid the terminal will hold after the scroll.
-// paint then diffs against that prediction, so any row the scroll got wrong -
-// live content that changed in the same frame, the footer, the newly exposed
-// rows: is repainted normally. Correctness does not depend on the guess being
-// good, only on the terminal implementing DECSTBM/SU/SD; a bad guess merely
-// costs bytes, and the plan is rejected unless it saves more than it costs.
-//
-// SGR safety: SU/SD blank the rolled-in rows with the *current* background.
-// The scroll is emitted at the top of a frame, and compactRow guarantees every
-// painted row leaves the terminal in default SGR, so the background is default
-// there by construction.
-// ---------------------------------------------------------------------------
 
 const (
 	// maxScrollShift bounds the search. Beyond a half page or so, a repaint of
@@ -530,29 +475,6 @@ func growStrings(s []string, n int) []string {
 
 // ---------------------------------------------------------------------------
 // Shared-prefix row updates.
-//
-// The rows that survive the scroll-region path are dominated by the footer
-// rule: a hundred columns of box-drawing dashes (three bytes each) with a
-// position counter on the end. It changes every frame, and every frame it is
-// retransmitted whole to alter fourteen characters at the right margin.
-//
-// commonRowPrefix walks the old and new row in lockstep over escape/rune
-// tokens and returns where they diverge, which COLUMN that is, and the SGR
-// state in effect there. paint can then address the cursor to that column and
-// emit only the tail. The state has to be re-established explicitly: SGR is
-// terminal state, not cell state, so the escapes that styled the prefix in an
-// earlier frame are long gone.
-//
-// Guards, because a column miscount is visible corruption rather than mere
-// waste:
-//
-//   - every rune in the prefix must be exactly one column wide (runewidth
-//     agreement with the terminal is guaranteed for ASCII and box drawing;
-//     wide glyphs, combining marks and emoji fall back to a full row)
-//   - the prefix must contain only SGR escapes, whose effect we model
-//   - the saving must clear a threshold, so a short prefix never pays for a
-//     cursor address
-// ---------------------------------------------------------------------------
 
 // minPrefixColumns is the shortest shared prefix worth a cursor address. Below
 // this the escape costs about as much as the text it skips.

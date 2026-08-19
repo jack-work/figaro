@@ -1,8 +1,4 @@
 // Package outfit assembles an aria's form from on-disk config.
-//
-// Load reads a named outfit TOML chain and returns a form patch.
-// Providers read `system.credo` (and other system keys) straight off
-// the form: no derivation step.
 package outfit
 
 import (
@@ -221,10 +217,6 @@ func (o *Outfitter) resolveNode(ep *epoch, name string, stack []string, memo map
 }
 
 // layerNames extracts and validates the layers key.
-//
-// `source` was the single-parent spelling this replaced. It is rejected rather
-// than ignored: left alone it would flatten into a form key named
-// "source", which is the silent kind of wrong.
 func layerNames(path string, raw map[string]any) ([]string, error) {
 	if _, ok := raw["source"]; ok {
 		return nil, fmt.Errorf("outfit: %s: `source` is no longer read; use `layers = [\"name\"]`", path)
@@ -287,11 +279,6 @@ func closureError(root *Closure) error {
 // own, so the nearest declaration wins. Cached per name per epoch, which makes
 // a layer shared by several others cheap at each of its positions, and, since
 // an epoch is a consistent view, costs nothing to validate.
-//
-// stack carries the chain being folded. A name that reappears on it is a
-// cycle: the loop is named in the error and every name ON it is TAINTED, so a
-// second ask answers from the taint instead of walking the graph again. The
-// taint dies with the epoch.
 func (o *Outfitter) foldIn(ep *epoch, name string, stack []string) (map[string]json.RawMessage, error) {
 	if err := o.taintOf(ep, name); err != nil {
 		return nil, err
@@ -392,21 +379,6 @@ func (o *Outfitter) resolvePath(name string, r *reader) (string, error) {
 
 // flatten walks a TOML tree into dotted form keys, expanding
 // fileName/dirName single-key tables.
-//
-// `fileName` produces a content-envelope object at the table's key:
-//
-//	{ "frontmatter": "...", "filePath": "..." }   // if file begins with ---
-//	{ "content":     "...", "filePath": "..." }   // otherwise
-//
-// `dirName` fans each file out as its own dotted key under the
-// table: `skills = { dirName = "skills" }` yields `skills.<base>`
-// entries, each carrying a full envelope. This shape lets completion
-// pickers see each item individually rather than receiving one opaque
-// JSON blob.
-//
-// `frontmatter` is the raw frontmatter text (between the fences),
-// unparsed; the agent reads the file when it wants the body. When
-// no frontmatter is present, the full body lands in `content`.
 func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]json.RawMessage, r *reader) error {
 	for k, v := range in {
 		key := k
@@ -435,19 +407,6 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 			if dn, ok := val["dirName"].(string); ok && len(val) == 1 {
 				// The user's config dir loads first; BUNDLED (first-party,
 				// shipped with the binary) skills load second and win by name.
-				//
-				// That order used to be the other way round, and it was a trap
-				// with no alarm on it. A copy in ~/.config outranked the
-				// shipped skill FOREVER: an upgrade could not reach it, so the
-				// copy silently fell behind the binary it documented: one such
-				// shadow in this repo's history ended up 201 lines stale while
-				// holding the only copy of a section that had moved. A skill
-				// that ships with figaro is part of figaro, and an install must
-				// be able to correct it.
-				//
-				// A name the binary does not ship is untouched, so a user's own
-				// skills are safe; to override a bundled one, give it a
-				// different name.
 				m := map[string]ContentEnvelope{}
 				udir, uerr := assetPath(o.configDir, dn)
 				if uerr != nil {
@@ -498,19 +457,6 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 
 // assetPath resolves a fileName/dirName reference against the root it is
 // allowed to read, and refuses anything that leaves it.
-//
-// The reference is DATA. It arrives from an outfit file today, and an outfit
-// file is the user's own: but the loader is the thing that turns a string into
-// a file read inside the daemon, and the daemon reads with the daemon's
-// privileges on the daemon's filesystem. Before the spec collapse a client could
-// send `-O '{"x":{"fileName":"../../.ssh/id_ed25519"}}'` and have the contents
-// folded onto its own form and rendered to a provider: a confused deputy with a
-// one-flag trigger. That path is gone (a literal's keys never reach the loader
-// now), and this makes sure it cannot come back by another door.
-//
-// Symlinks are followed and then checked, so a link inside the root pointing
-// out of it is refused too: that is the version of this bug that survives a
-// naive prefix test.
 func assetPath(root, ref string) (string, error) {
 	if ref == "" {
 		return "", fmt.Errorf("empty path")
@@ -564,13 +510,6 @@ func contentEnvelope(body, path string) ContentEnvelope {
 // block is found. The body must begin with a `---` fence on its own
 // line (BOM and leading whitespace are not tolerated: frontmatter is
 // opt-in), but the line ending may be LF or CRLF.
-//
-// CRLF is not a nicety. The failure is SILENT AND EXPENSIVE: a skill whose
-// fence is not recognised falls through to the full-body envelope, so the
-// WHOLE FILE lands in the form and is inherited by every aria minted
-// from that outfit. Six skills saved with Windows line endings put 101KB -
-// roughly 25k tokens: into every new aria on this author's box, none of it
-// asked for and none of it visible as anything but a large context.
 func extractFrontmatter(body string) (string, bool) {
 	rest, ok := strings.CutPrefix(body, "---\n")
 	if !ok {

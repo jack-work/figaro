@@ -30,18 +30,6 @@ func tapeTap(w *tape.Writer) transport.Tap {
 // ---------------------------------------------------------------------------
 
 // runReplay plays a wire tape back to a REAL CLI.
-//
-// THE POINT IS THAT NOTHING IS FAKED ON THE CLIENT SIDE. The replayer stands
-// up a unix socket, speaks the recorded frames over it, and then calls
-// tailFigaro: the same function `figaro listen` calls, with the same
-// renderer, the same pager, the same catch-up read and the same frame pacer.
-// A harness that instead fed pages into the renderer by hand would be testing
-// a second implementation of the client, which is the one thing a repro must
-// not do.
-//
-// No angelus, no agent, no provider, no tokens, and no aria store: the tape is
-// the entire world. That is what makes it runnable in CI and on a laptop with
-// no credentials.
 func runReplay(loaded *config.Loaded, path string, speed float64, note bool) {
 	h, frames, err := tape.Read(path)
 	if err != nil {
@@ -119,21 +107,6 @@ func printTapeSummary(w *os.File, h tape.Header, frames []tape.Frame) {
 }
 
 // tapeServer answers a real CLI from a recording.
-//
-// It is NOT a rewind. A replayed client is a live program: it asks for what it
-// wants when it wants it (the pager's catch-up read fires when the pager
-// opens, a scroll-up fetch fires when the reader scrolls), and those requests
-// do not arrive in the recorded order or in the recorded number. So the tape
-// is used two different ways:
-//
-//   - REQUESTS are answered by lookup. The recorded response for the same
-//     method is replayed, oldest unused first, because a client asking the
-//     same method twice is walking a cursor and the recording walked it in
-//     that order. An unmatched method gets a null result rather than an
-//     error: the pager treats a failed read as a desync and retries forever.
-//   - NOTIFICATIONS are pushed on the CLOCK, on the recorded schedule. That is
-//     the half that reproduces a paint bug, because a paint bug is usually
-//     about WHEN frames arrive, not only what is in them.
 type tapeServer struct {
 	frames []tape.Frame
 	speed  float64

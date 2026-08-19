@@ -1,25 +1,5 @@
 // SanitizeForTerminal: strips terminal-state-mutating ANSI sequences
 // from text destined for figaro's live region.
-//
-// Tool output (bash stdout, model-emitted text, anything originating
-// outside figaro's painter) can carry embedded ANSI control sequences
-// that mutate global terminal state: alt-screen mode, cursor
-// visibility, line wrap, mouse modes, scroll regions, the OS window
-// title. If those bytes reach the host terminal, figaro's render loop
-// becomes incoherent: the painter thinks it owns the cursor; the
-// terminal thinks it's in alt-screen. Recovery is a `tput reset` or,
-// pathologically, restarting figaro.
-//
-// We're tight and conservative: drop everything that touches terminal
-// state, keep SGR (colors/style) and the cursor primitives glamour
-// itself emits. Applied at every Prose render and as defense-in-depth
-// at the painter's write boundary.
-//
-// References:
-//   - DEC private modes (CSI ? Pn h/l): xterm/ECMA-48 set/reset.
-//   - OSC: operating system command (set title, palette, hyperlink).
-//   - DECSC/DECRC (ESC 7 / ESC 8): cursor save/restore.
-//   - RIS (ESC c): full terminal reset.
 
 package render
 
@@ -31,26 +11,6 @@ import (
 // SanitizeForTerminal returns s with terminal-state-mutating ANSI
 // sequences removed. Pure function; preserves SGR and cursor/erase
 // primitives. Safe to call repeatedly.
-//
-// Drops:
-//
-//	CSI ? N {h,l}    DEC private modes (alt-screen 1049/47, cursor
-//	                 visibility 25, line wrap 7, mouse 1000-1006,
-//	                 application cursor keys 1, bracketed paste 2004).
-//	ESC ] ... BEL    OSC (set title, palette, hyperlink). Also
-//	ESC ] ... ESC \  ST-terminated OSC.
-//	ESC c            RIS: full terminal reset.
-//	ESC 7, ESC 8     DECSC / DECRC: cursor save / restore.
-//	ESC =, ESC >     Application / numeric keypad mode.
-//	ESC ( B/0        Charset selection.
-//	CSI N r          DECSTBM: scroll region.
-//	CSI N s/u        Cursor save / restore (CSI variant).
-//
-// Kept:
-//
-//	CSI N m          SGR (color, bold, italic). The whole point.
-//	CSI N {A-H,J,K}  Cursor moves and erase: figaro's painter uses
-//	                 these; glamour emits them too.
 func SanitizeForTerminal(s string) string {
 	if s == "" || !strings.ContainsRune(s, 0x1b) {
 		return s
@@ -174,19 +134,6 @@ func isCursorOrEraseFinal(b byte) bool {
 
 // StripEscapes removes every ESC-introduced sequence, and any stray ESC, from
 // text that is about to be RENDERED AS MARKDOWN.
-//
-// It is the input-side counterpart to SanitizeForTerminal, and it exists
-// because that function is the wrong tool here: SanitizeForTerminal's job is to
-// protect the host terminal from state-mutating sequences in output figaro is
-// about to print, so it deliberately KEEPS SGR verbatim. Handing markdown to
-// glamour with SGR still in it produced a row four cells wider than the width
-// it was given, at every width, with "[31m" printed as visible text: glamour
-// drops the ESC byte, keeps the parameter bytes as content, and has already
-// wrapped as though the whole sequence were zero-width.
-//
-// Models paste ANSI out of tool output constantly, so this is a live path. The
-// right answer for markdown is that an escape is not content and not styling:
-// it is noise, and it goes.
 func StripEscapes(s string) string {
 	if !strings.ContainsRune(s, 0x1b) {
 		return s // the overwhelmingly common case, untouched and unallocated
@@ -215,15 +162,6 @@ func SkipEscape(s string, i int) int { return skipEscape(s, i) }
 // skipEscape returns the index just past the escape sequence beginning at i
 // (s[i] == ESC), consuming the WHOLE sequence for every form the terminal
 // grammar defines. Each arm below is a leak that was measured, not imagined:
-//
-//	CSI      ESC [ params intermediates final: '?' is a PARAMETER byte, and
-//	         omitting it left "\x1b[?25l" printing "25l". That is cursor-hide;
-//	         with alt-screen it is what every pasted tool transcript carries.
-//	OSC      ESC ] … BEL or ST
-//	DCS/…    ESC P, ESC _, ESC ^, ESC X … ST: payloads, not two-byte escapes
-//	SS2/SS3  ESC N, ESC O + one byte: "\x1bOP" printed "P"
-//	charset  ESC ( ) * + - . / + one byte: "\x1b(B" printed "B"
-//	other    ESC + one byte
 func skipEscape(s string, i int) int {
 	i++ // ESC
 	if i >= len(s) {

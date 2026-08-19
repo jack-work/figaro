@@ -11,10 +11,6 @@ package figaro
 // no watcher: observation is sampled at main-record boundaries, which
 // is not a limitation but the design: the stamp IS the moment of
 // observation.
-//
-// Spec of record: plans/forms-and-roles-v2.md §7 plus Gluck's course
-// corrections of 2026-08-11 (unify with the bound-form mechanism; fold
-// studied patches into the provider IR like the form's).
 
 import (
 	"context"
@@ -32,10 +28,6 @@ import (
 // form, so revival re-declares and a fork inherits the RELATIONSHIP
 // (the list rides the copied board) while the studied form itself is
 // never copied.
-//
-// The store owns the constant (its reconciliation sweep reads the boards);
-// this alias re-exports it for the angelus, where the DORMANT half of these
-// verbs is served from the hub, exactly as `set` is.
 const StudiesKey = store.StudiesKey
 
 // StudiesFromSnapshot parses system.studies (a JSON array of form ids).
@@ -54,10 +46,6 @@ func StudiesFromSnapshot(snap form.Snapshot) []string {
 // resumeStudies re-declares the observed set from the board. Boot and
 // revival path; the board is the durable truth, the store's set is its
 // in-memory mirror.
-//
-// It runs once, at NewAgent, before any cast can be issued -- which is why
-// publishStudies may skip a declaration that wrote nothing: every set that
-// is already durable has been declared to the store here.
 func (a *Agent) resumeStudies() {
 	if a.backend == nil {
 		return
@@ -136,28 +124,6 @@ func (a *Agent) declareStudy(formID string, drop bool) (store.StudyDecl, error) 
 }
 
 // publishStudies mirrors a declaration that WON, and refuses one that lost.
-//
-// THE LOST STUDY, and why the two lines below are not the two lines that
-// were here. declareStudy used to marshal the set it was handed and hand it
-// straight to a.form.Apply -- a WHOLE-VALUE write, with no version, from a
-// goroutine that is no longer the only writer (cast came off the actor loop
-// to cure the self-cast deadlock). Two casts then race: B computes eight
-// members and publishes, A computes the seven it read before B existed and
-// publishes SECOND, and A wins by arriving last. The durable board keeps
-// eight, the mirror keeps seven, and the mirror is what a TURN renders
-// from. Measured: 8 of 8 runs red at GOMAXPROCS=1, always the mirror short
-// and never the board (see study_mirror_race_test.go).
-//
-// The rule is the one 6b2e597a wrote on the store side a week ago, in the
-// same words: PUBLISH WHAT WAS WRITTEN. A set carries the version its write
-// landed at, and a set whose version is not newer than what the mirror
-// already shows is a set that has been superseded -- it is dropped, not
-// serialized more carefully. Ordering by version, not by arrival, is the
-// whole fix; the mutex only makes the compare-and-publish one step.
-//
-// The store's observed set (the stamp source) is declared from inside the
-// same step, for the same reason: SetObservedForms takes a whole slice too,
-// and a stale one there loses a form's stamps rather than its rendering.
 func (a *Agent) publishStudies(decl store.StudyDecl) {
 	raw, err := json.Marshal(decl.Studies)
 	if err != nil {
@@ -186,22 +152,6 @@ type studyBackend interface {
 // appendStudyMark QUEUES a began/stopped-observing transition. The record is
 // written by the drain loop -- at a round boundary if a turn is in flight,
 // immediately if one is not.
-//
-// It used to append straight from the RPC goroutine, and that is a defect
-// with a body count. A study mark is contentless but still encodes to a user
-// message carrying a system-reminder, so landing between an assistant
-// tool_use and its tool_result displaces the result by one record, and every
-// provider refuses that shape: "tool_use ids were found without tool_result
-// blocks". Two arias in this lineage were bricked by it. The fix is not to
-// repair the history afterwards -- synthesizing a result per dangling id
-// puts two results behind one call and lies about a call that succeeded --
-// it is to make the record unable to land there.
-//
-// THE RULE, for everything phase 9 adds after it: no out-of-band IR record
-// between a tool_use and its results. The inbox is how a writer obeys it.
-//
-// Best-effort: the stamps are the mechanism, the mark is the narration, and
-// a failed narration is never fatal.
 func (a *Agent) appendStudyMark(formID string, began bool) {
 	if a.figLog == nil {
 		return
@@ -232,17 +182,6 @@ func (a *Agent) writeStudyMark(mark *message.StudyMark) {
 // that. It is the same bug as the displaced tool_result from the other end:
 // one hangs because it NEEDS the loop, one corrupted because it went AROUND
 // the loop (durable-forms, phase 9: fixing study should fix both).
-//
-// What the loop bought was mutual exclusion between two castings of one
-// figaro. Phase 9 pays for that differently, and better: the study is a
-// version-guarded read-modify-write on the board (retried on conflict), and
-// the role's target-aria is a patch on the ROLE form's own single writer.
-// Two concurrent casts cannot lose each other's work -- and two casts
-// producing two roles that both point here is what was asked for, not a
-// race.
-//
-// So a cast runs on the caller's goroutine now, and nothing waits on a loop
-// that may be waiting on it.
 type castOp struct {
 	roleID    string      // existing role; "" when rolePatch mints one
 	rolePatch *form.Patch // -O case: the role is BORN cast
@@ -315,10 +254,6 @@ func (a *Agent) serviceCast(op *castOp) castResult {
 // Cast performs one casting call on the CALLER's goroutine. See castOp for
 // why it no longer rides the inbox: a cast issued from inside this aria's own
 // turn used to wait for a loop that was waiting for the turn that issued it.
-//
-// ctx is honoured before the work starts; the writes themselves are each
-// bounded by their own form's writer and are not interruptible half way,
-// which is the same contract `set` has.
 func (a *Agent) Cast(ctx context.Context, roleID string, rolePatch *form.Patch) (castResult, error) {
 	if a.backend == nil {
 		return castResult{}, fmt.Errorf("cast: ephemeral aria has no store")

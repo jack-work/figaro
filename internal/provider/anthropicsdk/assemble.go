@@ -269,14 +269,6 @@ func toolInputSchema(params any) anthropic.ToolInputSchemaParam {
 
 // resolveCacheControl is provider.ResolveCachePolicy: kept as a named
 // wrapper because the FUTURE note below is about this call site.
-//
-// FUTURE (conversation forks): retention becomes a per-span score rather than
-// one flat setting. When the IR carries a fork graph, a provider-implemented
-// scorer will read each cache-eligible span's node range plus a pointer into
-// that graph: chiefly its descendant/child count, i.e. how many branches
-// reuse the prefix: memoize the score across breakpoints (so a shared prefix
-// isn't recomputed per fork), and promote spans above a threshold to long (1h)
-// retention. Keep that decision funnelled through here.
 func resolveCacheControl(snap form.Snapshot) provider.CachePolicy {
 	return provider.ResolveCachePolicy(snap)
 }

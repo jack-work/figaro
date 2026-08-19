@@ -26,11 +26,6 @@ const (
 // canvas with a bounded message window, it is both resize-clean and scrollable
 // without retaining or re-rendering the whole aria. At the bottom it follows
 // the shared client's live tail; otherwise it holds the current page window.
-//
-// Keys: j/k line, u/d half-page, gg/G top/bottom, / literal search, n/N
-// next/prev match, y copy selection (or aria id when nothing is selected),
-// ? help panel. Exit is Ctrl-D/Ctrl-C at the input loop. Not safe for
-// concurrent use; the caller serializes all entry points.
 type transcript struct {
 	out    io.Writer
 	view   ldrender.NodeView
@@ -65,21 +60,6 @@ type transcript struct {
 	lineKey  []sliceKey // slice owning each line of lines(), for resize anchoring
 	offset   int        // top line of the viewport into lines()
 	// wantTop is a STANDING request for the beginning, armed by Home/gg.
-	//
-	// It exists because "top of the retained window" is not a place that holds
-	// still. Sitting at offset 0 is what arms the backward prefetch; when that
-	// page lands, older rows are prepended and restoreViewportAnchor — rightly,
-	// for an ordinary scroll — keeps the reader on the content they were
-	// looking at, which is now a long way down. Measured on a 206-message aria,
-	// five presses of Home in a row:
-	//
-	//	126–148/620 → 83–105/702 → 251–273/952 → 63–85/1014 → 273–295/1286
-	//
-	// The window grows every time and the reader never arrives. So the gesture
-	// records an INTENT rather than a position: while it stands, a landing
-	// re-pins to 0 instead of restoring the anchor, and each landing arms the
-	// next fetch, so the walk to the floor happens on the paging path and never
-	// blocks a keystroke. Any deliberate move elsewhere retracts it.
 	wantTop bool
 	follow  bool // stick to the bottom on new content
 	pendG   bool // saw one 'g' (for gg)
@@ -107,36 +87,11 @@ type transcript struct {
 	// Lazy history paging: the pager opens on the store's tail and pulls older
 	// history via keyset ReadBefore only when the viewport comes near the window
 	// floor ("like Twitter").
-	//
-	// THERE IS NO ARMED FLAG. checkOlder/checkNewer/noMoreOlder were one bit per
-	// edge standing in for "is there more, and where": the pile of booleans the
-	// range store exists to replace. Whether we want a page is now a pure
-	// function of three facts nobody has to remember to set: where the viewport
-	// sits, what the store holds below the floor, and what the WIRE has said
-	// about the beginning (Client.MoreBefore).
 	search *transcriptSearch
 
 	// THE WINDOW IS THE STORE'S OWN TAIL, not a copy of it: the half-open
 	// interval [from, ∞), whose floor is the anchor of its oldest message. There
 	// is no second copy of anything, in either direction.
-	//
-	// This is what dissolves the frozen detached tail (skills/figaro/contributing/range-store.md, bug
-	// B). The pager used to snapshot the closed tail into t.pages and freeze the
-	// open message beside it (heldOpen), because client.Open() is the open
-	// SUFFIX: as Live.From advances, nodes LEAVE the suffix and become closed
-	// messages, which a frozen window does not hold: so rendering live would
-	// make content vanish, and it rendered stale instead. With one owner those
-	// released nodes land in the store's head range, which IS the window, so
-	// there is nothing to freeze and nothing to lose. from stays pinned while
-	// detached, growth appends at the END of line space, the prefix above is
-	// unchanged, and t.offset stays valid: the screen genuinely holds still
-	// while the bottom block advances.
-	//
-	// Scrolling up LOWERS the floor: over history the store already holds it is
-	// free (Client.Before), and below that a ReadBefore is merged into the store
-	// silently (Client.Merge) and the floor drops onto it. Phase 2a still put
-	// fetched history in t.pages, which took the window off the tail and left
-	// openMessage nothing to draw; both are gone.
 	from aria.Anchor
 
 	// tailTuned latches the one row-budget retune allowed per tail window.
@@ -171,10 +126,6 @@ type transcript struct {
 	// (the whole-window materialization, off the frame path), paintBuf to the
 	// painter, and screenSpare is the composed frame paint displaced when it
 	// retained the previous one as t.prev.
-	//
-	// predBuf/keysNew/keysOld belong to the painter too: they are the
-	// scroll-region machinery (the predicted post-shift grid and the row
-	// fingerprints that propose the shift), touched only inside planScroll.
 	rowBuf      []string     // the visible window, valid until the next render()
 	frameRefs   []nodeRef    // the node behind each BODY row of the last painted frame
 	lineBuf     []string     // whole-window rows, valid until the next lines()
@@ -227,12 +178,6 @@ func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria
 // this is a fixed-canvas pager, and a single wide glyph tipping the bottom-right
 // cell past the last column with autowrap ON scrolls the whole screen up by a
 // row: which reads as the status line "eating" the line above it.
-//
-// The switch RIDES THE FIRST FRAME rather than being written ahead of it. Sent
-// on its own it leaves an EMPTY alt screen on the terminal for as long as the
-// first frame takes to compose: milliseconds of row rendering, which a 20 ms
-// sampler catches blank, and which reads as the conversation blinking out on
-// the way into the pager.
 func (t *transcript) enter() {
 	t.active, t.follow, t.prev = true, true, nil
 	t.pendG, t.inSearch, t.query, t.matchQuery = false, false, "", ""
@@ -249,18 +194,6 @@ func (t *transcript) enter() {
 	// QUEUED, NOT WRITTEN: the switch rides the next frame, so a pager that
 	// never paints never switches the terminal at all. leave() must honour the
 	// same condition: that is what altPending/altOn record.
-	//
-	// TWO ESCAPES ARE GONE FROM THIS LINE, both provably redundant:
-	//
-	//   \x1b[2J: DECSET 1049 switches to the alternate buffer "clearing it
-	//               first" (xterm ctlseqs). On a terminal that honours 1049 the
-	//               erase is a no-op; on one that does not, it is the exact
-	//               instruction that wipes the user's real screen: the hazard
-	//               just removed from leave(), sitting here in its other copy.
-	//   autowrapOff + cursorHide
-	//: both entry points already emit them before a pager can
-	//               exist (stream.go, listen.go), newLivelogTurn has no third
-	//               caller, and nothing between there and here restores either.
 	t.prefix = altScreenOn + ldmouse.Enable
 	t.altPending = true
 	t.render()
@@ -269,25 +202,6 @@ func (t *transcript) enter() {
 // leave restores the normal screen: but ONLY if enter() ever actually reached
 // it. Mouse reporting is disabled before the alt-screen swap so no stray
 // \x1b[<…M leaks into the shell.
-//
-// THE PAIRING IS THE WHOLE POINT, and it was broken. enter() only QUEUES the
-// switch (t.prefix, emitted by the next paint), and a frame is not guaranteed:
-// renderFrame returns early under 4 rows, and render() can defer behind the
-// frame-rate gate. leave() nonetheless wrote the exit sequence unconditionally
-// : so on a terminal we had never switched, \x1b[2J erased THE USER'S OWN
-// SCREEN and \x1b[?1049l swapped away from a buffer we were not in. Measured
-// in a real pty at 3 rows: ?1049h = 0, ?1049l = 1, 2J = 1.
-//
-// The irony is that leave() already knew: it clears t.prefix with the comment
-// "a frame that never painted must not switch us back", and then switched
-// back anyway. altOn closes that asymmetry.
-//
-// The erase is gone too, and its absence is deliberate. \x1b[?1049l RESTORES
-// the primary screen by definition, so clearing the alt buffer first buys
-// nothing on a conforming terminal; on one that does not honour 1049 (conhost
-// without VT processing: where the pager's frames land in the primary buffer
-// as ordinary text, which is the Windows symptom) it is the one instruction
-// that destroys what the user was looking at.
 func (t *transcript) leave() {
 	t.active = false
 	t.selection = nodeSelection{} // no selection survives outside the pager
@@ -307,17 +221,6 @@ func (t *transcript) leave() {
 // from a stale value: zero on a pager that had not painted a frame yet, which
 // is how one 'k' from the inline view landed at the top of a window it had
 // never seen.
-//
-// It no longer ARMS anything. The history prefetch is asked for by geometry
-// (pageCursor), so travelling up is not a fact that has to be remembered
-// across the frame: it is visible in the offset the gesture leaves behind.
-//
-// A downward scroll that leaves the viewport past the last row: into the
-// live padding: re-attaches. Reaching the last row is not enough: the padding
-// is the one row of overscroll you have to ask for, so a reader parked at the
-// bottom of a finished turn stays parked. The decision belongs to the GESTURE,
-// not to the frame: an offset put out of range by anything else (a search jump,
-// a page landing, a resize) is clamped, as it always was.
 func (t *transcript) scroll(delta int) {
 	t.wantTop = false
 	t.stopFollowing()
@@ -354,18 +257,6 @@ func (t *transcript) scrollBy(delta int) {
 
 // transcriptPageSize is the ceiling on how many older messages a single
 // scroll-up fetch pulls; transcriptWindowRows is the real budget.
-//
-// Message COUNT is a bad unit for a render window: a message is anywhere from
-// 4 rows (a one-line answer) to 400 (a tool dump), so a fixed 30-message page
-// is a window of 180 rows in one aria and 1400 in the next, and the frame
-// costs what the window holds. The geometry is therefore expressed in ROWS:
-// transcriptWindowRows is how many rendered rows the pager keeps hot across
-// all retained pages, and the per-fetch message count is derived from the
-// measured rows-per-message of the aria you are actually reading
-// (pageMessages), clamped to [transcriptMinPageSize, transcriptPageSize].
-//
-// Light arias never reach the row budget, so they keep exactly the old
-// 3x30-message geometry. Heavy arias converge to ~8-message pages.
 const (
 	transcriptPageSize    = 30
 	transcriptMinPageSize = 6
@@ -377,55 +268,12 @@ const (
 // not a const, so the geometry sweep in transcript_geometry_bench_test.go can
 // measure the tradeoff it encodes. See skills/figaro/contributing/notes/transcript-paging.md for the
 // numbers behind the chosen value.
-//
-// RE-DERIVED FOR THE MERGED STACK. Axis D measured the knee at 1200 rows
-// because back then every retained row cost CPU on every frame (a 1377-row
-// window was a 4.22 ms frame, a 300-row window 0.89 ms). Axis A's line index
-// removed that: on the merged code a scroll frame is 11-13 µs and a live-follow
-// frame 13.6-14.7 µs, FLAT from 600 to 4800 retained rows. The curve that
-// picked 1200 no longer exists.
-//
-// What is left is churn vs retained memory, and the sweep says the crossover is
-// set by how deep the user scrolls, not by the budget (journey depth x budget,
-// heavy aria: see TestTranscriptGeometryDepthReport):
-//
-//	depth 120: budget 1200 -> 16 fetches, 0 refetched, 544 renders, 1.9 MB peak
-//	           budget 2400 ->  8 fetches, 0 refetched, 612 renders, 2.4 MB peak
-//	depth 240: budget 1200 -> 46 fetches, 120 refetched, 1504 renders, 1.9 MB
-//	           budget 2400 -> 16 fetches,   0 refetched, 1156 renders, 4.1 MB
-//
-// 1200 only bought churn-freedom for a journey of ~120 messages, because the
-// history the pager retains is the window plus transcriptPayloadLRULimit pages
-// of it, i.e. ~5x the budget in rows. 2400 doubles the depth that is free, and
-// for deep trips it is cheaper in CPU too. It costs ~2 MB more retained rows and
-// ~1 ms more on Ctrl-T (cold enter renders one page: 3.8 ms -> 4.8 ms): both
-// less than ONE pre-merge frame's 4 MB of allocation.
-//
-// The upper bound is principled rather than arbitrary: at 4800 the derived page
-// size saturates the transcriptPageSize ceiling (1600/46 > 30), so the rows-based
-// geometry degenerates into exactly the message-count geometry it replaced.
 var transcriptWindowRows = 2400
 
 // heldWindow is the EXACT size of the retained window in line space: rendered
 // rows (inter-message rules included) and the number of committed messages
 // they belong to. It reads axis A's line index, which already computes both as
 // a side effect of every frame.
-//
-// Axis D had to estimate this by averaging len(rows) over the row cache, and
-// listed "a per-page row count would make the geometry exact" as future work.
-// Two reasons that estimate was worse than it looks, both of which the index
-// fixes for free:
-//
-//   - the row cache is no longer the retained window. D's own change (rows
-//     follow payloads into the LRU) means the cache holds up to
-//     transcriptPayloadLRULimit extra pages of *history*, so the average was
-//     taken over messages the window does not hold and never counted the
-//     open message the viewport is actually looking at.
-//   - it approximated the separator as a flat +3 per message, including for
-//     the first one, which has none.
-//
-// The open entry is excluded: it is the live message, it changes height every
-// token, and the geometry is about how much committed history to keep.
 func (t *transcript) heldWindow() (rows, messages int) {
 	for k := range t.index.entries {
 		e := &t.index.entries[k]
@@ -510,19 +358,6 @@ func (t *transcript) wantOlder() bool {
 // atAriaFloor reports whether the window already stands on the beginning of
 // the aria: the store holds nothing below the floor and the wire says there is
 // nothing before it.
-//
-// This is the old noMoreOlder bit, un-latched. "Is there older history" is a
-// fact only the WIRE knows, a backward read reports it and an empty backward
-// read proves it: so it is kept where the wire's answer is (Client.MoreBefore)
-// rather than mirrored into a pager boolean that every path moving the window
-// has to remember to reset.
-//
-// Turn 1 node 0 short-circuits it: the head slice of the first turn is the
-// oldest thing that can exist, so standing on it needs no round trip to
-// confirm. (Only that slice. A window holding the TAIL of turn 1 still has
-// that turn's own head to fetch, and the question with it, and a FORKED
-// aria's first turn is not 1 at all, which is why the wire's answer is still
-// the general case.)
 func (t *transcript) atAriaFloor() bool {
 	if t.client.Count() == 0 {
 		return !t.client.MoreBefore()
@@ -571,13 +406,6 @@ func (t *transcript) lowerFloor(a aria.Anchor) {
 // reachedFloor is what to do when the walk can go no further: a search that
 // found nothing goes home, and a jump resolves against the beginning it was
 // waiting for (`:0` lands on the lowest turn that actually exists).
-//
-// A standing Home is satisfied here too. The floor is proven two ways — a page
-// that lands on it (absorbOlder, which clears the request as it re-pins) and an
-// EMPTY backward read, which is this path and is the only proof for an aria
-// whose oldest turn the wire will not hand over again. Clearing in one place
-// and not the other left the request standing forever on the commoner of the
-// two, which is a stale intent waiting for a later landing to act on.
 func (t *transcript) reachedFloor() {
 	t.wantTop = false
 	t.finishSearch(false)
@@ -588,10 +416,6 @@ func (t *transcript) reachedFloor() {
 // pageCursor asks whether the pager wants a page of older history, and from
 // where. It is called after every input chunk and again after every landing;
 // the answer is derived, not remembered.
-//
-// FREE HISTORY FIRST. What the store still holds below the floor costs no round
-// trip, so the window is extended over it until either the asker is satisfied
-// or the store runs out; only then does the wire get asked.
 func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 	for t.active && t.wantOlder() {
 		anchor, within := t.viewportAnchor()
@@ -655,9 +479,6 @@ func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 // window, whether it came from the store or from the wire: re-anchor the
 // viewport on the line it was showing, let a search look at what arrived, and
 // let a jump resolve against it.
-//
-// The order is load-bearing. The anchor is restored BEFORE the jump advances,
-// so a landing overwrites the anchor rather than the other way round.
 func (t *transcript) absorbOlder(gained []aria.Message, anchor sliceKey, within int) {
 	if t.search != nil {
 		if t.findPage(t.search.query, gained) {
@@ -681,12 +502,6 @@ func (t *transcript) absorbOlder(gained []aria.Message, anchor sliceKey, within 
 
 // applyPage folds a fetched page of older history into the ONE owner and drops
 // the window's floor onto it.
-//
-// The page goes through Client.Merge, which is SILENT: it fires no OnClosed,
-// whose inline branch would freeze every historical message into the user's
-// native scrollback. That silence is why history no longer needs a second home
-// (t.pages, deleted): there is nowhere else to put it and no reason to want
-// one.
 func (t *transcript) applyPage(req transcriptPageRequest, page historyPage) {
 	if !t.active {
 		return
@@ -697,13 +512,6 @@ func (t *transcript) applyPage(req transcriptPageRequest, page historyPage) {
 		// booleans: there is more before, there is more after: so the floor
 		// can be proven only by asking for what is below it and being handed
 		// nothing.
-		//
-		// It is not that a fork starts high. A fork shares its parent's prefix
-		// and can read it, so its history opens where the parent's did: every
-		// aria in this store, forks included, opens at turn 1 (measured across
-		// 35 of them, three generations deep: 1-10, then 1-17, then 1-20).
-		// The floor is unassumable because it is unreported, not because it
-		// moves.
 		t.client.SetMoreBefore(false)
 		t.reachedFloor()
 		return
@@ -772,13 +580,6 @@ func committedPage(p aria.Page) historyPage {
 // units. A part carrying nodes is content; a bare marker carries none and is
 // skipped. Message.Turn holds the turn id; Message.From holds the node offset
 // within it, so the slices of one tall turn stay distinct units.
-//
-// A turn is NOT a bounded thing, which is why the slicing exists. Measured on
-// the largest real aria (1624 messages, 38 turns): median 119 rendered rows,
-// p99 3063, max 4598, and THREE turns each exceed the entire 2400-row
-// retained-window budget on their own. A whole-turn unit would blow the window
-// on a single entry and leave no way to scroll into it. Slicing at node
-// boundaries restores the 4..400-row unit the row geometry was tuned against.
 func committedMessages(p aria.Page) []aria.Message {
 	messages := make([]aria.Message, 0, len(p.Parts))
 	for _, part := range p.Parts {
@@ -820,15 +621,6 @@ func nodeChars(n livedoc.Node) int {
 // appendTurnSlices cuts a turn into bounded units at node boundaries,
 // appending into dst. A node is never split: the smallest unit is one node,
 // however large, because tool output is already clamped by composeBashCap.
-//
-// One cut, at transcriptUnitChars, so one enormous turn still pages. There is
-// no voice cut any more: every node is agent output (the inquiry is text on the
-// turn, a steer is an inline annotation), so a turn is one voice throughout and
-// the unit's single header is always the right one.
-//
-// The whole-turn case is the overwhelming majority (38 turns -> 41 units on the
-// largest real aria) and is allocation-free: this is on the page-refetch path,
-// where an intermediate slice per part cost 25-37% of selection rehydrate.
 func appendTurnSlices(dst []aria.Message, id uint64, from uint64, inquiry string, turnDeltas map[string]livedoc.FormDelta, nodes []livedoc.Node) []aria.Message {
 	unit := func(off int, seg []livedoc.Node) aria.Message {
 		m := aria.Message{
@@ -889,13 +681,6 @@ func (k sliceKey) turn() int { return int(k >> sliceKeyFromBits) }
 // "rebuilding" it is recomputing one anchor: the floor, tailKeep messages
 // back from the end, which Store.TailFrom walks BACKWARD and which therefore
 // costs the window's own size, not the aria's.
-//
-// That is why tailRev is gone. It existed because the rebuild was expensive
-// (View() of the whole closed set, a seed merge, a page-descriptor hash and a
-// cache scan, per frame), so the pager cached the result and needed the
-// client's revision to know when the cache had gone stale. Deriving the floor
-// is cheaper than checking whether a copy of it is current, and a copy can
-// disagree with the store, which is the disease this phase treats.
 func (t *transcript) resetToTail() {
 	t.wantTop = false
 	keep := t.tailKeep()
@@ -960,30 +745,6 @@ func (t *transcript) evictStale() {
 // frame taught us about how tall this aria's messages are. It grows a window
 // that does not fill its budget (or the viewport) and shrinks one that overshot
 // it, and reports whether the window changed so the caller can re-materialize.
-//
-// Invisible by construction: the tail window is anchored at the newest message
-// and the viewport is pinned to the bottom while following, so adding or
-// dropping messages at the TOP of the window changes only what is retained.
-// Latches once converged, per client revision (a newly committed message
-// re-tunes), so a steady stream of frames does no paging work at all.
-//
-// It reads the line index directly rather than being handed len(t.lines()):
-// axis D had only that one number, but the budget and the "is the viewport
-// full" check want two different ones. The budget is about retained COMMITTED
-// rows; the viewport is about everything on screen, live message included.
-// Conflating them let a 400-row streaming reply push the window past
-// budget*5/4 and shrink the retained history out from under it.
-// withSeed merges the handed-over catch-up page into the tail window. Nothing
-// the client already holds is added twice: identity is (Turn, From), the same
-// pair everything else in the pager keys on, and the caller's row budget then
-// governs the union, so a seed can be trimmed away like any other history.
-//
-// DELETED at phase 2. The seed existed because a fetched page could not go
-// into the client (Apply fires OnClosed, whose inline branch freezes to native
-// scrollback), so the pager held a second copy and re-merged it into the tail
-// window on every rebuild. aria.Client.Merge folds it into the ONE owner
-// silently instead, which is the same page in the same order with no second
-// copy and no merge on the frame path. See livelogTurn.enterPager.
 func (t *transcript) tuneTail() bool {
 	if t.tailTuned || !t.follow {
 		return false
@@ -1013,14 +774,6 @@ func (t *transcript) tuneTail() bool {
 	// budget (or the viewport). Ask for more. The average is used HERE, as a
 	// hint for how far to jump, and nowhere else, a wrong hint costs one extra
 	// pass, where before it was the control law and could not settle.
-	//
-	// TWO CEILINGS, because they bound different costs. The ROW budget bounds
-	// what a frame and a scroll-back cost, and it is the one the cut above
-	// enforces. The MESSAGE ceiling bounds what the per-frame index rebuild
-	// costs, which is O(messages) regardless of how short they are: without it
-	// an aria of one-line answers would retain thousands of them inside the row
-	// budget. Both yield to the viewport: a window that cannot fill the screen
-	// is not a window, so an unfilled viewport grows past either.
 	full := rows >= budget || have >= transcriptPageSize
 	if full && t.index.total >= t.h {
 		t.tailWant = have
@@ -1041,28 +794,6 @@ func (t *transcript) tuneTail() bool {
 // tailFit walks the retained window from the NEWEST committed message
 // backwards, adding real measured heights, and reports how many messages fit
 // inside budget rows (at least one) and how many rows they are.
-//
-// THIS IS THE FIXED POINT the old geometry did not have. tuneTail used to size
-// the window as budget/(average height of the window that sizing produced) -
-// a controller whose feedback was its own output, damped by a 600/1000-row
-// hysteresis band. An average is the wrong instrument the moment the
-// distribution has a spike, and this distribution always does: a tool dump is
-// 400 rows and an "ok" is 4. One message taller than the band left the loop
-// with NO fixed point, so the window alternated between two floors on every
-// frame, forever, and the range row in the footer wavered with it
-// (1043-1072/1072+ / 546-575/575+, measured 2026-08-01). settle() ran three
-// passes per frame, an odd number, so consecutive frames landed on opposite
-// phases of the cycle.
-//
-// A suffix sum of measured heights cannot do that. It is a pure function of
-// the heights, so the same window yields the same cut; and the cut is only
-// ever taken when the window ALREADY overflows, so the message beyond it has
-// been measured too.
-//
-// The open message is excluded, as it was: the budget governs how much
-// committed history to retain, and the live message changes height on every
-// token. A zero-height entry still counts as one row, or a run of them would
-// let the walk take the whole aria.
 func (t *transcript) tailFit(budget int) (messages, rows int) {
 	for k := len(t.index.entries) - 1; k >= 0; k-- {
 		e := &t.index.entries[k]
@@ -1084,10 +815,6 @@ func (t *transcript) tailFit(budget int) (messages, rows int) {
 // through it, and it publishes the fact to the line index: windowRev++, which
 // buildIndex records, so a moved window always refills lineKey instead of
 // relying on the shape diff to notice.
-//
-// It used to clear tailRev as well, so the next resetToTail would rebuild the
-// pages from the client. There is no snapshot to invalidate any more: the tail
-// window is derived from the store on the spot.
 func (t *transcript) invalidateWindow() { t.windowRev++ }
 
 func (t *transcript) pruneCaches() {
@@ -1134,10 +861,6 @@ func (t *transcript) pruneCaches() {
 // forEachMessage walks the retained window without materializing a slice of
 // it: it is called from the frame path, where one allocation and a copy of
 // every retained message header per frame is pure waste.
-//
-// GAP-BLIND BY CHOICE, which is the contract's default mode: over the store's
-// window interval it asks for what is held and is never lied to about
-// adjacency: it simply gets less. See skills/figaro/contributing/range-store.md, "The two verbs".
 func (t *transcript) forEachMessage(fn func(aria.Message)) {
 	t.client.ForEachIn(t.from, windowEnd, func(m aria.Message) bool {
 		fn(m)
@@ -1161,16 +884,6 @@ func (t *transcript) messages() []aria.Message {
 func (t *transcript) oldestFrom() uint64 { return t.from.Node }
 
 // setSize records a new viewport for a transcript that is NOT on screen.
-//
-// The pager can be entered long after a resize: the frame path enters it by
-// itself the moment the live region grows taller than the viewport, and until
-// this existed it entered with the width it was CONSTRUCTED with. A session
-// started at 100 columns and resized to 40 painted its first pager frame, and
-// every frame after it, at 100: measured at 68 rows past the edge, up to 100
-// cells into a 40-column pane, from (*transcript).paint.
-//
-// So the hidden pager is kept current. No paint, no index rebuild: just the
-// size, and the two things that are only true of the old one.
 func (t *transcript) setSize(w, h int) {
 	if w == t.w && h == t.h {
 		return
@@ -1192,16 +905,6 @@ func (t *transcript) resize(w, h int) {
 	// reads it rather than re-rendering: so without this line a width change
 	// re-serves rows composed for the OLD width, forever, and the pager paints
 	// them into the new viewport.
-	//
-	// MEASURED, from inside the process (FIGARO_WIDTH_AUDIT), on one resize from
-	// 100 to 40 columns with six seconds of settling first: 67 rows written past
-	// the edge, up to 100 cells into a 40-column pane, still going fourteen
-	// seconds later. Every one of them came from (*transcript).paint. That is
-	// the reported "text beyond the right side that goes away on a rerender" -
-	// a later resize happens to rebuild the entries the anchor restore touches.
-	//
-	// invalidateRows already existed for this shape of problem and was wired
-	// only to the verbosity toggle; a width change is the same event.
 	t.invalidateRows()
 	// Nil means "I know nothing about the screen", and paint honours that by
 	// repainting every row: including the blank ones, which is the whole point.
@@ -1209,9 +912,6 @@ func (t *transcript) resize(w, h int) {
 	// missing base row as "", so every legitimately-blank row compared equal and
 	// was skipped, leaving the terminal's own post-resize leftovers in the gaps
 	// between nodes. See the comment in paint.
-	//
-	// Still no \x1b[2J: clearing flickers, and it is not needed once the frame
-	// actually covers every row.
 	t.prev = nil
 	t.buildIndex() // re-render at the new width, repopulating lineKey
 	t.restoreViewportAnchor(anchor, within)
@@ -1254,39 +954,9 @@ func (t *transcript) invalidateRows() {
 // screenMoved voids the painter's model of the terminal: something wrote to
 // the screen outside the frame buffer, so t.prev: "the frame the terminal is
 // holding": is now fiction, and the next frame must repaint in full.
-//
-// THE PAINTER IS NOT THE ONLY WRITER. While the pager is up the cursor is
-// parked on the last row (the painter finishes every frame there), the alt
-// screen has no scrollback, and a stray write of "\n"+text therefore SCROLLS
-// THE WHOLE GRID UP ONE ROW and drops text on it. Nothing about that reaches
-// the painter: on the next frame every row that composes identically compares
-// equal to prev and is skipped, and the rows that do differ are updated from a
-// shared-prefix divergence column (appendRowUpdate): so the update writes a
-// TAIL onto a row whose left half now holds scrolled-up content. The visible
-// result is a stale status/rule fragment, frozen mid-spinner, sitting to the
-// right of unrelated prose, on row after row, for as long as the session
-// lasts: measured, and matching the user's report glyph for glyph.
-//
-// It persisted because nothing invalidated prev. A resize did (resize() nils
-// it), which is exactly why resizing or toggling fullscreen "fixed" it by
-// hand. This is that repair, made available to the writers that cause the
-// damage. Idempotent and free: the cost is one full frame.
 func (t *transcript) screenMoved() { t.prev = nil }
 
 // resyncDue reports whether the painter owes an unconditional full frame.
-//
-// screenMoved covers the writers we know about; this covers the ones we do
-// not, a library, the Go runtime, a provider SDK warning, anything holding
-// fd 1 or 2. A diff-based painter cannot detect that its model went stale, so
-// the only honest guarantee is a bounded one: whatever desynchronizes the
-// screen, it is corrected within transcriptResyncInterval rather than
-// persisting for the life of the session.
-//
-// The cost is one full frame per interval AND ONLY WHILE PAINTING, a pager
-// sitting idle paints nothing and so resyncs nothing (there is nothing to
-// repair: an idle screen no one is writing to cannot drift). A 100x40 frame is
-// ~4KB, so at the default interval this is under 1.5 KB/s in the worst case,
-// against a live stream that is already far noisier.
 func (t *transcript) resyncDue() bool {
 	if transcriptResyncInterval <= 0 {
 		return false
@@ -1300,16 +970,6 @@ func (t *transcript) resyncDue() bool {
 // lines renders the retained message window and live tail to physical rows.
 // Committed messages are immutable, so their rendered rows are cached by turn;
 // only the open message renders every frame.
-//
-// This is the whole-transcript materialization: O(retained rows). It is NOT on
-// the render path any more (that goes through buildIndex + window, which is
-// O(viewport)); it survives for the tests and goldens that want to see the
-// whole line space at once, and it is the shape the legacyLines oracle mirrors.
-//
-// The row buffer is reused across calls: the result is only valid until the
-// next lines(), which every caller already honours. Nothing else aliases it -
-// render() composes through t.rowBuf and paint()'s frame buffers: so keeping
-// C's zero-alloc contract here costs A's virtualization nothing.
 func (t *transcript) lines() []string {
 	t.buildIndex()
 	t.lineBuf = t.window(0, t.index.total, t.lineBuf)
@@ -1327,40 +987,11 @@ func (t *transcript) transRule() string {
 
 // openMessage is the live region: the open turn's suffix, straight from the
 // client, EVEN WHEN THE READER HAS SCROLLED AWAY.
-//
-// It used to hand back a snapshot frozen at stopFollowing (heldOpen), which is
-// what made the detached tail stop advancing until you re-attached. The freeze
-// was not laziness: client.Open() is the open SUFFIX, and as Live.From advances
-// nodes leave it and become closed messages, so a window that had frozen its
-// own copy of the closed set would have watched them disappear. Now the window
-// IS the store's tail interval, released nodes land in it, and nothing is lost
-// by rendering live.
-//
-// UNCONDITIONAL since phase 2a-part-2. It used to go quiet once history had
-// been paged in, because the fetched page took the window off the tail and
-// drawing the live turn beneath a window that no longer reached it would have
-// fabricated an adjacency. History lands in the store now and the window keeps
-// its head at the tail whatever its floor does, so there is nothing to go
-// quiet about, and a selection anchored on the LIVE turn survives paging
-// history in, which is what that compromise cost.
 func (t *transcript) openMessage() *aria.Message { return t.client.Open() }
 
 // stopFollowing detaches the viewport from the live tail and PINS it where it
 // was. Two things must happen before follow drops, because both are only true
 // while following:
-//
-//   - the tail window has to converge (settle). Detaching freezes whatever
-//     window is current, and a pager promoted BY a scroll key detaches in the
-//     same input chunk that created it: before any frame, so before the
-//     catch-up read has been folded into the window. That is why 'k' from the
-//     inline view opened on the cold, near-empty window the pager was
-//     constructed with, while Ctrl-T (which paints a following frame first)
-//     showed the whole tail.
-//   - the offset has to be re-derived for the DETACHED geometry, where the
-//     live padding row becomes content: the same lines, plus one.
-//
-// What it no longer does is snapshot the open message. Detaching pins the
-// window's FLOOR; its head stays open, so the live turn keeps arriving.
 func (t *transcript) stopFollowing() {
 	if !t.follow {
 		return
@@ -1400,11 +1031,6 @@ func (t *transcript) footLines() []string {
 // layout splits the viewport into the content body and the bottom chrome: the
 // rule and the status row always, the open panel when there is one, and: ONLY
 // while following: one blank padding row above the rule.
-//
-// That row is the live affordance, not decoration. While live it is the gap new
-// output flows into; once you scroll away it is given back to content, so the
-// last row sits flush against the rule and the screen says plainly that it is
-// holding still. Scrolling down INTO it is what re-attaches.
 func (t *transcript) layout(foot int) (body, maxOff int) {
 	body = t.h - 2 - foot
 	if t.follow {
@@ -1418,12 +1044,6 @@ func (t *transcript) layout(foot int) (body, maxOff int) {
 
 // renderMsgBase renders one message without selection decoration. Committed
 // instances are cached; open messages are rebuilt on every live frame.
-//
-// The SHAPE of the message: question, rule, header, blocks, blanks: is the
-// composer's (ldrender.Composer), shared with the incipit and with `show`. What
-// is the pager's own is what it does with the rows: address them, so selection,
-// search and the coordinate jump can find a block; store them in their resting
-// form; and collapse the rendition churn on the way into the cache.
 func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 	composed := t.composer(m).Message(m, t.w)
 	rows := make([]transcriptRow, 0, len(composed))
@@ -1447,18 +1067,6 @@ func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 		// 3/4 of the retained row text, and of the bytes each painted frame puts
 		// on the wire. It is applied here, on the way into the cache, so the
 		// saving is paid once and collected on every frame; see sgr.go.
-		//
-		// FUTURE WORK, evaluated and deferred at the B+E merge: E proposed
-		// doing the collapse inside the memoized render.Prose instead, so the
-		// cost is paid once per (markdown, width) rather than once per row-cache
-		// fill, and the live inline path benefits too. Measured on this stack
-		// the prize is real: with the Prose memo warm, the collapse is 1.2 ms
-		// and ~316 KB of the 3.1 ms it takes to fill the cache for a heavy aria
-		// (BenchmarkTranscriptHeavyEnter: 1.86 ms without it, 3.08 ms with).
-		// It is deferred because collapseSGR would have to live in
-		// internal/render while its proof apparatus (sgr_vt_test.go's VT model)
-		// is needed by tests on both sides, so the model wants a third package
-		// before the transform can move at all.
 		rows = append(rows, transcriptRow{text: sgrCollapse(plainNodeRow(r.Text, t.w)), ref: ref})
 	}
 	return cachedMessage{rows: rows}
@@ -1508,11 +1116,6 @@ func (t *transcript) render() {
 	// is read off the frame path too: viewportAnchor indexes lineKey with it
 	// when a prefetched page lands, and the search wrap-around takes it modulo
 	// the row total, and a negative index is a panic, not a wrong pixel.
-	//
-	// Only the low side: it is free, whereas the high clamp needs the row total
-	// (and so the index), which is exactly the work the gate exists to skip.
-	// Overshooting the bottom is benign: every off-frame reader range-checks
-	// the high side, and renderFrame still clamps it when the frame is drawn.
 	if t.offset < 0 {
 		t.offset = 0
 	}
@@ -1530,11 +1133,6 @@ func (t *transcript) render() {
 // beginBatch/endBatch bracket a run of state changes that must produce ONE
 // frame. Every mutation inside still calls render(); render just records that
 // the screen is stale and returns. endBatch draws the settled state once.
-//
-// This is what a mouse-wheel flick needs: the terminal hands us a burst of
-// scroll reports in a single read, and nobody wants to see the twenty-three
-// intermediate viewports: they only cost latency, because the frame the user
-// is waiting for is the last one.
 func (t *transcript) beginBatch() { t.batch++ }
 
 func (t *transcript) endBatch() {
@@ -1616,23 +1214,6 @@ func (t *transcript) renderFrame() {
 
 // footerRows is the transcript's two-row footer, shared with the incipit
 // bookend so both modes speak one visual language:
-//
-//	─────────…──────────────── aria <id> · 48–97/97+ live ───
-//	<mantra> · thinking ⠧ · ctx … · cost … · <time> · ? help · ! status
-//
-// The rule row carries the identity + scroll position right-aligned; the
-// status row is plain left-aligned text (fig status at a glance). In search,
-// the status row becomes the query prompt.
-//
-// THE TOTAL IS ROWS WE HOLD, NOT ROWS THAT EXIST, and it never was anything
-// else: the pager cannot know how tall an unrendered turn is. Once a hole can
-// render, a bare "97" would read as the size of the conversation, so an
-// incomplete buffer marks the total with a trailing `+`: "at least this many,
-// and there is more we do not hold". MARKED RATHER THAN DROPPED, deliberately:
-// the position within what we hold is the number a reader actually navigates
-// by, and "48–97" with no total is less useful without being more honest. The
-// mark is on whenever the window contains a gap OR history exists below its
-// floor.
 func (t *transcript) footerRows(total, body int) (rule, status string) {
 	pos := ""
 	if total > body {
@@ -1736,10 +1317,6 @@ func (t *transcript) openQueuedPanel() {
 // wipes it. (Deliberately a bottom panel, not a floating overlay: the terminal
 // has exactly one alternate buffer, and compositing a float into every live
 // repaint buys nothing over this.)
-//
-// The rows are GENERATED from the keymap (see keymap.go), so help that says a
-// key exists and a key that exists cannot drift apart. This function owns only
-// what the table cannot know: the pane's geometry and its dimming.
 func (t *transcript) helpLines() []string {
 	body := helpBody()
 	rows := make([]string, 0, len(body)+5)
@@ -1786,18 +1363,6 @@ func (t *transcript) nextScreen() []string {
 // the renderers leave behind (see transcript_paint.go): same cells, a
 // fraction of the bytes. The scratch buffer is retained across frames so a
 // steady scroll allocates nothing here.
-//
-// When the frame is mostly the previous frame shifted (any scroll), the rows
-// are moved with a scroll region instead of being retransmitted; the diff then
-// runs against the predicted post-scroll grid, so a mis-detected shift costs
-// bytes and never correctness.
-//
-// The erase-line stays: compactRow trims trailing blanks, so the row no longer
-// overwrites what it does not cover.
-//
-// Buffer ownership (A/C's discipline, unchanged): paintBuf/predBuf/keysNew/
-// keysOld are the painter's; the composed frame is retained as t.prev and the
-// frame it displaces goes back to screenSpare for the next compose.
 func (t *transcript) paint(screen []string) {
 	buf := append(t.paintBuf[:0], t.prefix...)
 	// THE SWITCH HAS NOW REACHED THE TERMINAL: record it, because leave() is
@@ -1832,19 +1397,6 @@ func (t *transcript) paint(screen []string) {
 		// base[r] }` and then comparing made a missing record indistinguishable
 		// from a record of an empty row, so every row whose new content is ""
 		// compared EQUAL to a base that did not exist and was skipped entirely.
-		//
-		// resize() nils prev precisely to say "the terminal reflowed under me, I
-		// know nothing", and blank rows are everywhere, because entryLine
-		// returns "" for row 0 of every message separator. So each separator's
-		// blank row kept whatever the terminal had slid into it and stayed wrong
-		// until the viewport moved enough to make that row differ from t.prev:
-		// "the gaps in between nodes are populated with text that shouldn't be
-		// there from some other line... fixed upon return". Measured with a
-		// width-only resize, so no terminal row-shift is needed to provoke it.
-		//
-		// Guarding the compare on `r < len(base)` fixes the short-base case too
-		// (a screen taller than the record), and costs nothing on the hot path:
-		// when base is prev or predBuf it is always len(screen).
 		if r < len(base) && screen[r] == base[r] {
 			continue
 		}
@@ -1904,28 +1456,11 @@ func (t *transcript) key(b byte) { t.dispatch(keyEvent{b: b}) }
 // navMotion drives a logical navigation key. The arrow cluster shares the
 // letter keys' motions as a peer: Up and k are one action bound twice -
 // rather than by translating itself back into a byte:
-//
-//	Up/Down         k/j    one line
-//	PageUp/PageDown u/d    half a screen
-//	Home/End        gg/G   top / bottom
-//
-// Half a screen (rather than a full one) because the pager's page unit already
-// IS the half-page: u/d, the rows-based paging cursor and the prefetch window
-// are all sized against it, and there is no full-page motion to route through.
 func (t *transcript) navMotion(n navKey) { t.dispatch(keyEvent{nav: n}) }
 
 // dispatch runs one keystroke through the keymap (see keymap.go). Three rules
 // live here rather than in the table, because each is a property of a MODE
 // rather than of any one binding:
-//
-//   - the search box swallows the arrow cluster whole (an arrow is not text,
-//     and it must not scroll behind the prompt either);
-//   - anything the search box has no row for is literal text;
-//   - a panel swallows its own keys, and any OTHER key wipes it and then acts
-//     normally: which is why panel mode falls through to the transcript rows.
-//
-// The trailing pendG update is the gg gesture's whole state machine: only 'g'
-// arms it, and every other key: bound or not: clears it.
 func (t *transcript) dispatch(ev keyEvent) {
 	switch t.mode() {
 	case modeSearch:
@@ -1995,10 +1530,6 @@ func pagerTail(t *transcript) {
 }
 
 // pagerTop goes to the beginning (Home, and the second g).
-//
-// Still the CHEAP gesture — no walk is armed, nothing blocks, and a reader
-// already standing on the floor simply lands. What it adds is that the request
-// SURVIVES the fetch it provokes; see transcript.wantTop.
 func pagerTop(t *transcript) {
 	t.stopFollowing()
 	t.offset = 0
@@ -2279,10 +1810,6 @@ func (t *transcript) findPage(q string, messages []aria.Message) bool {
 // match), or -1. It never allocates: the alternative: building the stripped
 // row and calling strings.Contains: cost one allocation per row per frame
 // for every row on screen while a search was active.
-//
-// Candidate starts are always visible bytes: the scan only ever steps one
-// byte past a visible byte, and an escape's interior can only follow the ESC
-// byte itself, which is always skipped whole.
 func visibleIndex(row, q string) int {
 	if q == "" {
 		return 0
@@ -2447,15 +1974,6 @@ func dimTransRule(w int) string {
 }
 
 // gapRow is a hole, drawn as EXACTLY ONE ROW:
-//
-//	──────── 13 turns not loaded ────────
-//
-// Not a proportional placeholder. Paging libraries can size a placeholder
-// because item height is known; here a row count is only knowable by
-// RENDERING, and a hole of twelve turns might be forty rows or four thousand.
-// A sized placeholder would be a number we invented, which is exactly the lie
-// this design exists to prevent: so the row says what it knows (how many
-// TURNS the hole touches, which the anchors do state) and nothing else.
 func (t *transcript) gapRow(g *aria.Gap) string {
 	label := " the rest of this turn is not loaded "
 	switch n := g.Turns(); {
@@ -2480,10 +1998,6 @@ func (t *transcript) gapRow(g *aria.Gap) string {
 // before it has to paint: THE PREFETCH DISTANCE, the same
 // transcriptPrefetchScreens the window floor uses. A sentinel that is about to
 // come on screen is a fetch we are already late for.
-//
-// Binding a gap row IS the fetch trigger; this is what "binding" means for a
-// row that carries no node: the viewport binds it by coming within a couple of
-// screens of it. That is why the sentinel usually never paints.
 func (t *transcript) gapNear() *aria.Gap {
 	t.buildIndex() // the window may have moved since the last frame
 	body, _ := t.layout(len(t.footLines()))

@@ -56,16 +56,6 @@ type ProjectionConfig[T any] struct {
 
 // ProjectIncrementally validates one append-only watermark, then visits only
 // the untranslated suffix. The retained state is in-memory and derivable.
-//
-// It READS only the suffix too, which it did not used to: the whole log was
-// materialized and then sliced, so a warm pass that touched three messages
-// still required all N to be decoded and resident. Since the decoded fig IR
-// runs 4-5x its wire bytes and is the largest thing a live aria holds, that
-// slice was the single biggest reason an agent could not be made cheap.
-//
-// What the wire needs in full is the ENCODED projection, carried in
-// Previous.State: bytes, not structs, and unavoidable because it is the
-// request body. The decoded prefix was never needed for anything.
 func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjection[T], ProjectionStats, error) {
 	state := config.Initial
 	snap := form.Snapshot{}
@@ -116,9 +106,6 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 		// read plus one read per observed form, per record, on every cold
 		// pass over a warm cache -- which is what a fingerprint bump or a
 		// rejected watermark produces.
-		//
-		// The cursors still advance, from the entry's own stamps. A stamp is
-		// where a form stood, and knowing that never required reading it.
 		if cached, ok := lookupCached(config, entry); ok {
 			stats.Cached++
 			lastForm = maxU64(lastForm, entry.FormChannelVersion)
@@ -171,16 +158,6 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 			// record that consumed its window would compute a block, drop it
 			// on the floor, and leave the next user record asking for
 			// (v, v] -- so the change would never be shown, to anyone, ever.
-			//
-			// That is not hypothetical and it is not rare with a libretto:
-			// the fold is asynchronous, so a source change written during a
-			// turn lands in the window that closes on the TURN'S OWN ANSWER.
-			// Found by restarting a daemon and watching `afterrestart`
-			// vanish between two turns.
-			//
-			// The rule is a function of the record's ROLE, so a cached record
-			// and an encoded one still agree, which is what the advance being
-			// unconditional was protecting.
 			goto encode
 		}
 		for fid, upTo := range entry.StudyVersions {

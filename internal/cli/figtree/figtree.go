@@ -1,15 +1,5 @@
 // Package figtree renders a tree of records as an indented table: one row per
 // node, tree glyphs in the first cell, named fields in the columns after it.
-//
-// It exists because two callers need the same picture of a hierarchy: `figaro
-// ls` drawing the aria tree, and an outfit layer closure explaining which
-// layer could not be found, and a tree walker copied twice is a tree walker
-// that will disagree with itself.
-//
-// Colour is data here, not code. A caller supplies FieldColors: "look at this
-// field, and if its value is that, paint the label this role." The role names
-// are the ones internal/term publishes, so a tree cannot invent a colour the
-// rest of figaro does not already use.
 package figtree
 
 import (
@@ -183,12 +173,6 @@ func (t Tree) colorOf(n *Node) string {
 
 // Render lays the rows out in columns and clips each line to width. Width 0
 // leaves lines unclipped.
-//
-// The padding is computed here rather than by text/tabwriter because tabwriter
-// measures a cell in runes and counts an ANSI escape as several of them: one
-// painted label silently widens its whole column. Measuring with
-// term.VisibleLen instead is both colour-correct and, for unpainted text,
-// identical to what tabwriter produced (TestRenderMatchesTabwriter pins that).
 func (t Tree) Render(width int) string {
 	return RenderRows(t.Rows(), t.Columns, width)
 }

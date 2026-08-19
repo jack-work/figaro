@@ -1,25 +1,5 @@
 // Package tape records and replays the aria wire: every JSON-RPC message that
 // crosses the CLI↔agent socket, with the time it crossed.
-//
-// WHY A WIRE TAPE AND NOT A FIXTURE. A paint bug lives in the interaction
-// between what the server said and WHEN it said it, a delta that lands
-// mid-frame, a catch-up read that races a live push, a turn that streams for
-// ninety seconds and re-tunes the pager's window on every token. A
-// hand-written fixture encodes what we THINK the server does; a tape encodes
-// what it did. The difference is the whole value: a tape of a bad aria is a
-// regression test nobody had to imagine.
-//
-// THE TAPE IS NDJSON, one record per line, because the wire already is
-// (jkrpc: "minimal JSON-RPC 2.0 over NDJSON"). The first line is a Header; the
-// rest are Frames in wire order. Nothing is re-encoded: Frame.Msg is the exact
-// bytes that crossed, so a replay cannot drift from the recording by way of a
-// struct that gained a field.
-//
-// RECORDING IS OPT-IN AND CARRIES CONVERSATION CONTENT. A tape holds the
-// aria's prose, tool output, cwd and form: everything the pager could
-// paint. It is written only where the caller asked for it, never by default,
-// and a tape promoted to a committed fixture wants a read before it is
-// committed. See skills/figaro/debugging/tapes.md.
 package tape
 
 import (
@@ -66,12 +46,6 @@ const (
 )
 
 // Frame is one JSON-RPC message and the moment it crossed.
-//
-// T is SECONDS SINCE THE HEADER'S Started, not a wall clock: a tape must be
-// replayable at a different hour and at a different speed, and a relative
-// clock is the only form in which both are meaningful. Nanosecond resolution
-// survives the float: 1e-9 of a few thousand seconds is well inside float64's
-// 2^-52 of relative precision.
 type Frame struct {
 	T   float64         `json:"t"`
 	Dir Direction       `json:"dir"`
@@ -199,12 +173,6 @@ func (t *Writer) Close() error {
 // ---------------------------------------------------------------------------
 
 // Tap wraps a connection so every NDJSON message crossing it is recorded.
-//
-// It splits on newlines rather than decoding, because the wire IS newline
-// delimited (encoding/json escapes every newline inside a string, and jkrpc
-// writes one value per Encode). Splitting keeps the recorded bytes VERBATIM -
-// a re-encode would silently normalize key order and numeric formatting, and a
-// replay would then be reproducing our marshaller rather than the server.
 func Tap(c net.Conn, w *Writer) net.Conn {
 	if w == nil {
 		return c

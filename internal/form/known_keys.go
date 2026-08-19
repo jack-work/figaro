@@ -4,11 +4,6 @@ package form
 // are arbitrary, values are raw JSON. WellKnownKeys is a *partial*
 // schema, a curated list of keys the harness reads or writes today,
 // used to drive CLI completion and as a discoverability surface.
-//
-// Future direction: tighten this into a real partial schema (per-key
-// value shape, namespace rules) while keeping the surrounding map
-// open. Anything not in the catalog remains valid; the catalog is
-// advisory, never enforced.
 
 // KeyMode classifies a known key by who normally writes it.
 type KeyMode int

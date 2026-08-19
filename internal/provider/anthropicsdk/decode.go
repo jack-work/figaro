@@ -131,24 +131,6 @@ func mapStopReason(s anthropic.StopReason) message.StopReason {
 // quarantineMalformedToolInput rescues a turn whose tool_use block carries
 // arguments that are not JSON, by replacing the wreckage with a legal envelope
 // that says so and keeps the bytes.
-//
-// ONE RULE: IF IT DOES NOT PARSE, IT DOES NOT RUN. That is the contract
-// Anthropic publishes for fine-grained tool streaming: the API streams a
-// tool's input without buffering or validating it, so invalid JSON is a
-// documented outcome, not a defect to be mended: "you cannot run the tool, so
-// report the failure back to Claude instead."
-//
-// MEASURED, five times in one day, always an `edit` carrying Go source, and
-// the damage is never uniform: 83 escape characters in one payload, zero in
-// another, and in that one a required argument (`old_text`) that was never
-// transmitted at all. There is no transformation to invert.
-//
-// So the call is REFUSED, and refusing costs one tool call instead of an
-// entire turn. The envelope is a JSON object, which is what keeps the wire
-// legal: the assistant message replays with its tool_use, its tool_result
-// pairs with it, and the cache path (cacheableAccumulatedBlock) sees an object
-// rather than a fatal block. Downstream, message.MalformedArgs is the whole
-// contract: it never executes, and the model is handed the bytes that arrived.
 func quarantineMalformedToolInput(ctx context.Context, acc *anthropic.Message, cause error) bool {
 	for i := len(acc.Content) - 1; i >= 0; i-- {
 		cb := &acc.Content[i]

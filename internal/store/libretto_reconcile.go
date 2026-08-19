@@ -2,23 +2,6 @@ package store
 
 // Reconciliation: recompute every libretto's refcount from the boards that
 // name it (durable-forms §12.2.1, §12.2.2).
-//
-// The authoritative fact is "figaro X studies form Y", and it lives in X's
-// board as `system.studies`. The refcount on the libretto is a DERIVED
-// number, kept incrementally by the study verb because reclamation needs to
-// answer "is anyone still reading this" without a scan.
-//
-// Incremental counts drift. The study path is ordered so a crash always
-// leaves the count too HIGH (a leak, recoverable), but three write sites
-// outside that path break it in the unrecoverable direction: a FORK gives a
-// child its parent's study-set with nothing incrementing the librettos it
-// names, an IMPORT restores a board wholesale, and a KILL removes one
-// without decrementing.
-//
-// So this RECOMPUTES rather than adjusts, which is what makes it a backstop
-// for both directions rather than for the safe one only. It runs at daemon
-// start or on demand; it narrows the window rather than closing it, and the
-// orderings in the write paths are still required.
 
 import (
 	"encoding/json"

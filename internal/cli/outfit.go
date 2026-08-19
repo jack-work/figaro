@@ -1,8 +1,4 @@
 // Package cli: `figaro state outfit`.
-//
-// Applies a spec additively to the current aria's form. Names are
-// resolved by the aria (the daemon owns the configDir); the CLI parses the
-// syntax, so a typo costs no round trip, and forwards JSON.
 package cli
 
 import (
@@ -266,10 +262,6 @@ func outfitClosureMarker(l *rpc.OutfitLayer) string {
 }
 
 // runOutfitTree prints an outfit's layer closure without applying anything.
-//
-// The angelus resolves it: the outfits directory is the server's state. Exit
-// status follows the closure: 0 when every layer was found, 1 when the picture
-// has red in it, so it can gate a script.
 func runOutfitTree(loaded *config.Loaded, arg string) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()

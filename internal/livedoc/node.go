@@ -133,12 +133,6 @@ type Node struct {
 	// JSON prefix the provider is streaming. Args is the same thing decoded,
 	// and only exists once the whole object parses, so Input is what there is
 	// to show while the model is still writing it.
-	//
-	// It is a STREAMED field (spliced by livedoc.Diff, like markdown and
-	// output), and it is not append-only: a bounded tail drops leading bytes
-	// as it slides, and it is cleared when Args lands. Both are ordinary
-	// deltas: Delta carries Del as well as Ins: so a shrink costs one splice
-	// and needs nothing new on the wire.
 	Input   string `json:"input,omitempty"`
 	Output  string `json:"output,omitempty"`  // streamed result text
 	Summary string `json:"summary,omitempty"` // producer-computed one-line tool description (client renders verbatim)
@@ -157,9 +151,6 @@ type Node struct {
 	// without parsing a nested shape, and sort stably. EVERY node type
 	// tolerates it: a list of which nodes may carry state is a list that
 	// drifts, and an absent field costs nothing.
-	//
-	// Derived server-side from durable cursor stamps, never from the
-	// provider's translated bytes; see internal/formdelta.
 	FormDeltas map[string]FormDelta `json:"formDeltas,omitempty"`
 }
 

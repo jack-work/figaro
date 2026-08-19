@@ -255,14 +255,6 @@ func humanBytes(n int64) string {
 
 // runDoctorSkills prints the first-party skill the binary carries: where it
 // unpacked to, and every file in it.
-//
-// It exists because embedding made the shipped skills INVISIBLE. When they
-// travelled beside the executable you could list a directory and see what a
-// build contained; now the only way to be sure a chapter is in the artifact
-// (and not merely in your worktree, unstaged and therefore not embedded) is to
-// ask the binary. Running this also forces the unpack, which is the other half
-// of the check: a root that cannot be written is reported here rather than as
-// a form that quietly lacks its skills.
 func runDoctorSkills(asJSON bool) error {
 	root := outfit.BundledSkillsRoot()
 	if root == "" {
@@ -306,12 +298,6 @@ func runDoctorSkills(asJSON bool) error {
 }
 
 // runDoctorLibrettos recounts every libretto from the boards that name it.
-//
-// Offline, like gc: it opens the store directly, and the daemon holds that
-// store. The count it repairs is a DERIVED number kept incrementally, and
-// three write sites outside the study verb (fork, import, kill) can leave it
-// too LOW, which is the direction that reclaims state a live observer still
-// needs. Recomputing is the backstop for both directions.
 func runDoctorLibrettos(dryRun bool) error {
 	if cli, err := angelus.DialClient(transport.UnixEndpoint(angelusSocketPath())); err == nil {
 		cli.Close()

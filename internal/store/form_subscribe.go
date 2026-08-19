@@ -2,14 +2,6 @@ package store
 
 // Subscription: a snapshot and the stream that continues it, with no gap
 // between them.
-//
-// The obvious code reads a snapshot and then subscribes, and a patch landing
-// in the window is in NEITHER. Reversing the order makes the same patch land
-// in BOTH, which is a duplicate the reader drops by version. Duplicates are
-// recoverable; gaps are not, and the ordering is the whole of the difference.
-//
-// So this needs no serialization point and no queue: two atomic operations,
-// register then read, and a version filter.
 
 import (
 	"sync/atomic"
@@ -103,10 +95,6 @@ func (s *Subscription) Close() {
 
 // publish hands one batch to every subscriber. Called on the drainer, after
 // the state is published and never before.
-//
-// It must not block on a consumer: a slow reader would otherwise stop every
-// write to the form. So a full buffer drops, counts, and the next event that
-// fits carries the count as a resync marker.
 func (f *Form) publish(events []versionedApplied) {
 	subs := f.subs.Load()
 	if len(*subs) == 0 {

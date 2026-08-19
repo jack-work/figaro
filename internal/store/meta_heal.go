@@ -1,25 +1,6 @@
 package store
 
 // Lazy self-healing for the _meta sidecar.
-//
-// The sidecar is a checkpoint, not a mirror: the agent rewrites it at turn
-// boundaries (Agent.publishMetadata), so a RUNNING aria is legitimately
-// behind its log between checkpoints, and a crash mid-turn leaves it behind
-// for good. AriaMeta.LastFigaroLT is the watermark that says how far the
-// checkpoint got.
-//
-// healMeta closes that gap on the READ path only: no startup sweep, no
-// background job. It folds exactly the entries after the watermark with the
-// same rules as Agent.refreshMetrics, so the two paths cannot drift, and it
-// rewrites the sidecar. When the watermark is already at the tail (212 of 213
-// arias in the author's store) it does nothing at all.
-//
-// What it does NOT touch: mantra/cwd/outfit/provider/model (form- and
-// agent-owned, unknowable from an IR suffix: metaBackfill owns those).
-// Recency is not here at all anymore: every figwal record carries a server
-// timestamp now, and Backend.LastTS reads the newest one straight from the
-// store: the sidecar's LastActiveMS died with the premise that "the IR
-// carries no wall clock".
 
 import (
 	"log/slog"

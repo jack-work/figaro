@@ -1,19 +1,4 @@
 // Image fitting for tool-produced imagery.
-//
-// A tool that returns a picture (today: read, on an image file) hands the turn
-// loop base64 that must survive two independent ceilings:
-//
-//  1. the PROVIDER's inline-image limit, and the resolution past which a
-//     provider downscales server-side anyway: bytes above it buy nothing; and
-//  2. the STORE's: the tool_result tic is ONE figwal record, and a record that
-//     does not fit inside a WAL segment fails the append and takes the turn
-//     with it.
-//
-// Dropping the image satisfies both and helps nobody: it reproduces, at a
-// different threshold, exactly the blindness this path exists to end. Fitting
-// it satisfies both and keeps the picture. So the ceiling is a target to
-// encode toward, not a wall to fall off: scale down, try lossless first, and
-// only refuse an image that cannot be made to fit at any size.
 package tool
 
 import (
@@ -149,12 +134,6 @@ func (e ErrImageUnfittable) Error() string {
 
 // FitImage makes raw fit inside lim, preferring the least destructive step
 // that works:
-//
-//	pass through -> scale to MaxDim -> PNG -> JPEG down a quality ladder ->
-//	scale down 25% and try again -> ... -> refuse
-//
-// PNG is tried before JPEG at every rung so a screenshot of text stays
-// lossless whenever lossless is affordable.
 func FitImage(raw []byte, mime string, lim ImageLimits) (FittedImage, error) {
 	lim = lim.withDefaults()
 	// A budget too small to hold a legible picture cannot be met by shrinking;
@@ -232,12 +211,6 @@ func passthrough(raw []byte, cfg image.Config, format, mime string) FittedImage 
 }
 
 // encodeUnder returns the first encoding of img that lands under limit.
-//
-// The order follows the SOURCE. A screenshot arrives lossless and survives PNG
-// far better than it survives a quality ladder, so PNG is tried first and
-// abandoned only when it genuinely does not fit. A photograph arrives as JPEG
-// and has already paid for its artifacts: re-encoding it as PNG would faithfully
-// preserve those artifacts at several times the size, which is the worst of both.
 func encodeUnder(img image.Image, limit int, lossy bool) (data, mime string, ok bool) {
 	tryPNG := func() (string, string, bool) {
 		var buf bytes.Buffer

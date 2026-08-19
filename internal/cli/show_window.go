@@ -1,28 +1,6 @@
 package cli
 
 // The backward walk that makes `show` reach the tail of any aria.
-//
-// THE BUG THIS EXISTS TO KILL. `show` used to pull its history with one
-// forward read from LT 0, and the angelus caps a single aria.read at
-// ariaReadHardCap (1000) entries. Every selector then paged that prefix in
-// memory. On a 4000 message aria the result was not a clipped view, it was a
-// CONFIDENT WRONG ONE: `show` printed "499 turns", `show -a` printed turns
-// 1..499 as if that were everything, and `--from 1900` answered "no turn in
-// range". The tail was unreachable at any N, and nothing anywhere said so,
-// because the response's Total was read and discarded.
-//
-// The fix is to walk BACKWARD from the tail instead, a page at a time, and to
-// stop as soon as the requested window is covered. `show` is a tail-first
-// verb: the default view is the last N turns, and the tail is the one region
-// that must always be reachable, no matter how long the aria is.
-//
-// The store already supports this: aria.read's Before cursor is a keyset read
-// that returns the LAST n entries below a cursor (store.readPage), so paging
-// backward costs one call per page and never scans the head.
-//
-// This does not replace the turn-aware server-side paging the SEAM comment in
-// aria.go describes. It is the client-side walk that makes `show` correct
-// today, with the same call it always made.
 
 import (
 	"context"
@@ -64,12 +42,6 @@ type showWindow struct {
 }
 
 // gatherShowWindow walks backward until opts is satisfiable.
-//
-// It reads whole pages, so it usually holds somewhat more than the selection
-// needs; that slack is what lets the composer see a turn's head before the
-// turn is rendered. A turn cut in half by a page boundary is dropped rather
-// than shown as if it began there (see trimPartialHead), because a turn whose
-// prompt is missing renders as an answer to nothing.
 func gatherShowWindow(ctx context.Context, acli *angelus.Client, figaroID string, opts showOpts) (showWindow, error) {
 	var w showWindow
 	before := uint64(math.MaxUint64)
@@ -155,13 +127,6 @@ func composeTurns(entries []store.Entry[message.Message]) []aria.Turn {
 // derivedIDs reports whether any message in the window arrived WITHOUT a
 // stored turn id, which means StampIDs derived it by counting from the first
 // entry held.
-//
-// That is only honest when the window starts at the head. A legacy aria
-// (written before turn ids were stored) read from the tail would be numbered
-// from 1 at an arbitrary point in its history, and `show` prints those
-// numbers as the coordinate `send`/`fork <id>:<turn>` takes. Printing a
-// confident wrong address is the failure this whole file is about, so the
-// caller falls back to the forward read when this is true.
 func derivedIDs(entries []store.Entry[message.Message]) bool {
 	for i := range entries {
 		if entries[i].Payload.TurnID == 0 && turns.Opens(entries[i].Payload) {
@@ -184,9 +149,6 @@ func trimPartialHead(ts []aria.Turn, atHead bool) []aria.Turn {
 
 // clipToBudget drops turns from the OLDEST end until the rendered size fits
 // maxBytes, and reports how many it dropped. Zero means no budget.
-//
-// Which end is clipped is the whole point: `show` is how a tail gets
-// snapshotted, so the newest turn is the one that must survive a budget.
 func clipToBudget(ts []aria.Turn, maxBytes int) ([]aria.Turn, int) {
 	if maxBytes <= 0 || len(ts) == 0 {
 		return ts, 0

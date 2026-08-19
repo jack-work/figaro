@@ -26,12 +26,6 @@ import (
 // live frames, supports Ctrl-T transcript mode, and stays open until
 // the user closes it. Ctrl-C still sends figaro.interrupt (just like
 // inside a send stream); Ctrl-D disconnects without touching the turn.
-//
-// With no ariaID, the pid-bound aria is used.
-//
-// recordPath, when set, tees the aria wire into a tape (see internal/tape):
-// the testing affordance that turns a bug someone SAW into a bug CI can
-// replay. It is inert when empty: no file, no wrapper, no cost.
 func runListen(loaded *config.Loaded, ariaID, recordPath, note string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

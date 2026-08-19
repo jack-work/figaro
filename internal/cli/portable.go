@@ -15,23 +15,6 @@ import (
 )
 
 // Moving an aria between stores.
-//
-// The store is ONE figwal trunk store, not a directory per aria: node ids are
-// positional in a flat namespace, fork bases are indices into a parent's log,
-// and a trunk id is unique per store. So two stores cannot simply be poured
-// together: the identities collide, and a collision is SILENT, giving a store
-// that opens, lists and renders subtly wrong.
-//
-// Export/import sidesteps all of it by carrying CONTENT rather than identity.
-// The destination mints its own node ids, its own fork bases and its own LTs
-// through the ordinary spawn path, so nothing can collide by construction, and
-// the failure mode is a refusal rather than a corruption.
-//
-// What that costs, stated plainly: the provider translation caches do not
-// travel, so the first turn after an import re-translates (and replays without
-// thinking blocks rather than with unsigned ones). Exact fidelity: node ids,
-// LTs, branches, the wire caches: is the graft's job, and the graft is a
-// design in proposals/aria-graft.md rather than code.
 
 // portableAria is the file format. Deliberately plain: a JSON object a human
 // can read, diff and hand-edit, with the messages verbatim as they sit in the

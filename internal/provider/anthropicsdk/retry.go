@@ -15,41 +15,11 @@ import (
 )
 
 // Why this file exists.
-//
-// anthropic-sdk-go computes its own retry delay, and its rule is:
-//
-//	if retryAfterDelay, ok := parseRetryAfterHeader(res); ok {
-//		return max(0, retryAfterDelay)   // no ceiling
-//	}
-//
-// The 8-second cap in that function applies only to the FALLBACK exponential
-// path. When the server sends a Retry-After the SDK sleeps for exactly that
-// long, inside RequestConfig.Execute, with no callback, no log line and no
-// stream event.
-//
-// That is fine for a per-minute throttle. It is not fine for a long-window
-// usage cap, where Retry-After is "seconds until your window resets" and can
-// be thousands. An aria sat in that sleep for 77 minutes, twice, and every
-// surface figaro has reported it as idle-but-unresponsive. There is no wait
-// long enough to be worth serving in silence: a caller who is told "rate
-// limited until 20:00" can fork, downshift the model, or go to lunch, and a
-// caller who is told nothing can only conclude the program is broken.
-//
-// So: clamp the header on the way in, cap the retry count explicitly rather
-// than inheriting a default, log every clamp, and put the number the server
-// actually asked for into the error we finally return.
 
 var (
 	// maxRetryAfter is the longest wait we are willing to sit through inside
 	// a turn. Under it, retrying is the right thing: a brief throttle clears
 	// and the turn continues.
-	//
-	// OVER it, retrying is not just useless but harmful. A wait measured in
-	// tens of minutes is a usage WINDOW - a spent balance or a quota period -
-	// and no amount of sleeping inside this turn will change the answer. All
-	// it does is hold the aria busy, so the human who could fork, downshift
-	// the model, or top up the account cannot even get a prompt in. We refuse
-	// the retry, return the 429 immediately, and hand the aria back.
 	maxRetryAfter = 60 * time.Second
 
 	// maxRetries is set explicitly instead of inheriting the SDK's default,
@@ -109,9 +79,6 @@ func noteFromContext(ctx context.Context) *rateLimitNote {
 
 // retryCapTransport clamps an over-long Retry-After before the SDK's retry
 // loop can honor it.
-//
-// It sits ABOVE wirelog in the chain so the ledger and the span record the
-// header the server really sent; only the SDK sees the clamped value.
 type retryCapTransport struct {
 	Inner http.RoundTripper
 	Max   time.Duration
@@ -169,10 +136,6 @@ func (t *retryCapTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		// makes Execute return this response NOW instead of sleeping: the
 		// turn fails, the error carries the wait, and the aria is idle and
 		// promptable again within the second.
-		//
-		// Retry-After is clamped as well, so that any other consumer of this
-		// response - a future SDK that stops honoring x-should-retry, a
-		// middleware, a test - still cannot be talked into an hour-long nap.
 		resp.Header.Set("x-should-retry", "false")
 		resp.Header.Set("Retry-After", formatSeconds(max))
 	}
@@ -214,12 +177,6 @@ func firstResetHint(h http.Header) string {
 }
 
 // annotateRateLimit turns a bare "429" into an answer.
-//
-// By the time the SDK gives up it has thrown away the response, so the error
-// that reaches the user says "rate_limit_error (429)" and nothing about how
-// long the wait actually is. That is the difference between a user who forks
-// or downshifts and a user who files a bug about a hang. The note carries
-// what the transport saw.
 func annotateRateLimit(err error, note *rateLimitNote) error {
 	if err == nil || note == nil {
 		return err

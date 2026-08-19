@@ -1,9 +1,5 @@
 // Package figaro implements the agent: a long-lived process owning
 // a chat context, provider, model, and form.
-//
-// One inbox goroutine per agent. User prompts drive synchronous
-// runTurn (turn.go) which owns provider streaming and tool dispatch.
-// Each figaro listens on a unix socket speaking JSON-RPC 2.0.
 package figaro
 
 import (

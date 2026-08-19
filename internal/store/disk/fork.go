@@ -176,32 +176,6 @@ const (
 // atIdx (if any) move into a same-named "old future" subdir; a fresh
 // subdir named childName is created, empty and writable from atIdx.
 // The new fork is returned, opened with this log as its parent.
-//
-// The optional variadic argument overrides the old-future subdir
-// name (default: path.Base(l.dir)). Pass at most one override; an
-// empty string keeps the default.
-//
-// Branch points are N-ary and re-splittable:
-//   - Forking again at the same point (atIdx == LastIndex+1) just adds
-//     another sibling child; no data moves.
-//   - Forking BELOW an existing branch point (atIdx < its split index)
-//     inserts an intermediate branch point: the suffix and all existing
-//     child forks are re-homed into the old-future, since they descend
-//     from it. Re-homing is a directory move; `..`-walk parent
-//     resolution adapts automatically.
-//
-// Constraints:
-//   - atIdx must be in (FirstIndex, LastIndex+1]; the prefix retains
-//     at least one entry. An empty log may fork only at its first writable
-//     index (1 for a root, forkBase for a child).
-//   - childName must be a clean filename, must not equal the old-future
-//     subdir name, and must not collide with an existing sibling.
-//   - oldFutureName (when provided) must also be a clean filename.
-//
-// Crash safety: a .fork-pending sentinel file is written before any
-// destructive change and removed after the fork completes. If a crash
-// leaves the sentinel behind, Open refuses to proceed and the
-// operator must resolve manually.
 func (l *Log) Fork(atIdx uint64, childName string, oldFutureNameOpt ...string) (*Log, error) {
 	if len(oldFutureNameOpt) > 1 {
 		return nil, fmt.Errorf("Fork: at most one oldFutureName override permitted, got %d",

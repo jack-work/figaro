@@ -18,27 +18,6 @@ import (
 // ariaHub owns one aria's endpoint. It is angelus-side and its lifetime is
 // independent of the agent's, which is the inversion the whole hibernation
 // plan rests on.
-//
-// Before this, the AGENT owned its listener: restoreOne ran
-// `go agent.StartSocket(ctx)` on the agent context and every accepted
-// connection Subscribe'd directly to the agent. Killing the agent therefore
-// closed the listener and EOF'd every client. That made "reclaim an idle
-// agent" and "keep attached shells alive" mutually exclusive, and it meant
-// any open transcript pinned an aria in memory forever: the common case,
-// not the rare one.
-//
-// So: the hub holds the listener and the connections; the agent is a
-// producer the hub binds and unbinds. Creating a hub is a listener and a map
-// and does NOT construct an agent, which is what lets a dormant aria answer
-// a dial at all. A unix socket cannot be lazily activated: connect() to a
-// path with no listener fails outright: so the endpoint has to exist before
-// the client arrives, and the daemon is the only thing that can guarantee
-// that.
-//
-// One connection is one aria today. The Subscribe surface is deliberately
-// per-(conn, aria) rather than per-conn so that multiplexing later: one
-// pooled connection, many arias, target id in the envelope: is a change of
-// listener count rather than a change of architecture.
 type ariaHub struct {
 	id       string
 	sockPath string

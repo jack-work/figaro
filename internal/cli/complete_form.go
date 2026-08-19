@@ -47,13 +47,6 @@ const (
 // `unset`: no mode filtering, the runtime decides what's actionable.
 // Templated keys like "system.environment.<name>" are expanded to
 // one entry per allowlist member.
-//
-// When an aria is bound but its form cannot be fetched, this declines
-// to offer anything rather than presenting the catalog as if it were
-// the board's state (see liveKeysStatus). Completion still never
-// blocks, prompts, or autostarts a daemon: the decline is one line on
-// stderr, which the shell-side completion glue discards (2>/dev/null)
-// and a human running `figaro __complete …` by hand can read.
 func completeFormKeys(c *cmdkit.CompleteContext) []string {
 	live, status, err := softFetchLiveKeys()
 	if status == liveKeysFetchFailed {

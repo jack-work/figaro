@@ -30,14 +30,6 @@ func (a *Agent) Version() uint64 {
 }
 
 // Set applies a form patch. No LLM round-trip.
-//
-// The patch arrives as DATA. Outfit names were resolved at the daemon's API
-// boundary (angelus.dress) before this call was routed, so the actor loop
-// reads no file, and a key spelled `layers` here is a key like any other.
-//
-// ifVersion, when non-zero, refuses the patch unless the board is still at
-// that durable version: the guard a read-modify-write needs, since editing
-// inside a value means reading it first.
 func (a *Agent) Set(patch form.Patch, ifVersion uint64) (set, removed []string, err error) {
 	return a.SetIntent(patch, ifVersion, false)
 }
@@ -72,16 +64,6 @@ func (a *Agent) SetIntent(patch form.Patch, ifVersion uint64, assert bool) (set,
 
 // SetAwaiting is SetIntent for a caller that asked to WAIT for the writer's
 // verdict (`fig set --wait`).
-//
-// It is opt-in and must stay so. A set arriving mid-turn is applied at the
-// next ROUND BOUNDARY by design, so this blocks for as long as that takes -
-// which is the right trade only when the caller chose it. Making it the
-// default hangs TestFormSetDuringToolRoundAppliesNextRound for its whole
-// timeout, and that is how the first attempt at this died.
-//
-// What it buys: the two refusals that only reach the daemon log on a live
-// aria - a stale ifVersion and an Assert removal - become answers to the
-// caller, closing the one place the dormant and live paths disagree.
 func (a *Agent) SetAwaiting(ctx context.Context, patch form.Patch, ifVersion uint64, assert bool) (uint64, form.Patch, error) {
 	if a.form == nil {
 		return 0, form.Patch{}, fmt.Errorf("set requires a form")

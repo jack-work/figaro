@@ -1,9 +1,5 @@
 // Package form manages structured per-aria state surfaced to
 // providers as system reminders.
-//
-// Snapshot is a full key-value view. Patch is the delta: keys to set
-// plus keys to remove. Schema is open (keys are arbitrary, values are
-// raw JSON). See render.go for value-to-body templates.
 package form
 
 import (
@@ -17,16 +13,6 @@ import (
 
 // Snapshot is an untyped key-value view. Values are raw JSON;
 // callers json.Unmarshal what they need.
-//
-// Treat it as an opaque immutable value: read through Get/Has/Len/All,
-// construct through FromMap, and derive new snapshots with Apply. The
-// underlying representation is not part of the contract.
-//
-// Internally a Snapshot is a handle on an immutable AVL tree (tree.go)
-// with structural sharing, so copying a Snapshot is copying two words:
-// Clone is the identity function, Apply copies only the O(k log n)
-// nodes on the paths it touches, and Diff prunes whole subtrees on
-// pointer identity (treediff.go).
 type Snapshot struct {
 	root *node
 }
@@ -35,9 +21,6 @@ type Snapshot struct {
 // same depth as Clone was before the tree swap), so later mutation of m
 // : or of the value bytes in it: does not affect the returned Snapshot
 // and vice versa.
-//
-// This is the seam: every construction of a Snapshot from a map goes
-// through here.
 func FromMap(m map[string]json.RawMessage) Snapshot {
 	entries := make([]treeEntry, 0, len(m))
 	for k, v := range m {
@@ -50,9 +33,6 @@ func FromMap(m map[string]json.RawMessage) Snapshot {
 func (s Snapshot) tree() ptree { return ptree{root: s.root} }
 
 // Get returns the raw value for key and whether it was present.
-//
-// The returned bytes alias the snapshot's storage and are shared with
-// every other snapshot descended from it: treat them as read-only.
 func (s Snapshot) Get(key string) (json.RawMessage, bool) {
 	v, ok := s.tree().Get(key)
 	if !ok {
@@ -95,11 +75,6 @@ func (s Snapshot) Lookup(key string) *string {
 type Patch = message.Patch
 
 // Diff computes a patch that transforms prev into s.
-//
-// Equality is semantic JSON equality (see Value.Equal): whitespace and
-// object key order are insignificant, so a value re-serialised with its
-// keys in a different order is not reported as a change. Numbers are
-// compared by literal token, so 1 and 1.0 differ.
 func (s Snapshot) Diff(prev Snapshot) Patch {
 	return diffTrees(prev.root, s.root)
 }
@@ -119,22 +94,12 @@ func (s Snapshot) AsPatch() Patch {
 
 // Additive keeps only what p would actually change on s: keys s does not hold,
 // and keys holding a different value. Removals are dropped.
-//
-// It is what dressing an aria in an outfit means, and it is one function
-// because every place that does it must agree. Setting a semantically equal
-// value would otherwise persist a patch record and render a <system-reminder>
-// announcing a change that did not happen.
 func Additive(s Snapshot, p Patch) Patch {
 	return s.Apply(Patch{Set: p.Set}).Diff(s)
 }
 
 // Apply returns a new snapshot with the patch applied. The receiver is
 // unchanged; the result shares every subtree the patch did not touch.
-//
-// A patch that changes nothing (every Set semantically equal to what is
-// already there, every Remove absent) returns the receiver itself,
-// pointer-identical: which is what lets Diff answer "no change" in
-// constant time.
 func (s Snapshot) Apply(p Patch) Snapshot {
 	t := s.tree()
 	for k, v := range p.Set {
@@ -152,15 +117,6 @@ func (s Snapshot) Apply(p Patch) Snapshot {
 // MarshalJSON emits the flat object form: {"key": value, ...} with keys
 // in lexical order: which is what the form channel on disk, the RPC
 // FormResponse and store.formReduce all consume.
-//
-// It delegates to encoding/json over the map representation this type
-// replaced, which makes byte-identity with the old format true by
-// construction rather than by argument. That matters more than it looks:
-// encoding/json compacts a raw message and rewrites <, > and & as
-// \u003c, \u003e, \u0026, so hand-rolling the object would silently
-// change bytes that are already on disk, and the WAL's reducer state
-// records are content-hashed, so "silently" would mean "loudly, later".
-// Measured faster than marshalling each value separately, too.
 func (s Snapshot) MarshalJSON() ([]byte, error) {
 	m := make(map[string]json.RawMessage, s.Len())
 	s.tree().Range(func(k string, v Value) bool {
