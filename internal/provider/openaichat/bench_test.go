@@ -55,9 +55,16 @@ func benchProvider(b *testing.B, mode provider.MarkMode) *Provider {
 	return p
 }
 
-// BenchmarkCatchUp guards invariant 14: normal synchronisation is O(new
-// messages), not O(history). WarmDelta must not grow with n: if it does,
-// the catch-up is rescanning the prefix.
+// BenchmarkCatchUp measures ONE SEND'S WHOLE TRANSLATION PATH on this
+// dialect: the catch-up AND the assembly read that follows it.
+//
+// IT IS NOT AN O(new) GUARD, and it stopped being one when the memo went.
+// catchUp ends in provider.Rows, which reads the whole row log: assembly is
+// O(history) per send BY DESIGN (the provider asks the log for the full
+// history and marshals it). The O(new) property now belongs to
+// provider.CatchUp alone and is asserted by count in
+// TestCatchUpVisitsOnlyWhatIsNew; what O(history) costs is measured by
+// BenchmarkRows.
 func BenchmarkCatchUp(b *testing.B) {
 	for _, n := range []int{1_000, 10_000, 50_000} {
 		b.Run("Cold/"+strconv.Itoa(n), func(b *testing.B) {

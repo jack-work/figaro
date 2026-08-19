@@ -368,11 +368,10 @@ func (p *Provider) cacheFor(aria string) (store.Log[[]json.RawMessage], error) {
 	}
 	s, err := p.CacheOpen(aria)
 	if err != nil {
-		slog.Warn("openaichat cache open failed; running uncached", "aria", aria, "err", err)
-		return nil, nil
+		return nil, fmt.Errorf("openaichat open translator log: %w", err)
 	}
 	if !p.invalidateIfStale(s) {
-		return nil, nil
+		return nil, fmt.Errorf("openaichat translator log invalidation failed")
 	}
 	p.mu.Lock()
 	p.cache = s

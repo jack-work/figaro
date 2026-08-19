@@ -181,3 +181,78 @@ done.
     request, which is a delta-seam question, not an assembler one).
   - rows_roundtrip_probe_test.go and the rows-per-record probe are permanent,
     env-gated instruments against a real store copy.
+
+# RAISE: anthropicsdk's CONVERSION IS AN O(history) UNMARSHAL PER SEND
+# (223a0986, 2026-08-19)
+
+NOT DONE. This is a complexity change reported before it lands, under rule 3,
+with the operation named. openaichat and copilot/responses ARE converted
+(37d7fe94); anthropicsdk is the one that does not fit, and ProjectIncrementally
+cannot be deleted until it is answered.
+
+## THE MECHANISM
+
+The three converted providers hand STORED BYTES to the wire. Their
+whole-history read is slice headers over payloads the log already owns.
+
+anthropicsdk hands `[]anthropic.MessageParam` VALUES to the vendor SDK, which
+owns marshalling the request. A read that keeps no representation must
+therefore UNMARSHAL THE ENTIRE CONVERSATION ON EVERY SEND, where the deleted
+memo parsed each row ONCE, when it first arrived.
+
+    OPERATION: assembling a request body on anthropicsdk goes from O(new
+    messages) parsed to O(conversation length) parsed, every turn.
+
+## WHAT IT COSTS, MEASURED (BenchmarkParseRowsToMessageParams, 5800X, bench
+## lock held, n=50 x 3 repeats). ALLOCATIONS FIRST, THEY ARE DETERMINISTIC:
+
+    messages   allocs/op     B/op        ns/op
+       1,000      73,001     5.87 MB     10.5-11.3 ms
+      10,000     730,003    58.7 MB      108-113 ms
+      50,000   3,650,002   293.6 MB      486-494 ms
+
+73 allocations and 5.87 KB PER MESSAGE, exactly linear at three sizes.
+
+AGAINST THE CONVERTED PROVIDERS' READ (BenchmarkRows, same box, same lock):
+
+    messages   allocs/op     B/op        ns/op
+       1,000           2     32.8 KB     5.8-6.9 us
+      10,000           2    327.7 KB     77-112 us
+
+TWO ALLOCATIONS, CONSTANT IN n, and 32.768 BYTES PER MESSAGE -- one slice
+header plus one uint64. The payloads are shared with the log, never copied.
+So the SDK path would pay ~36,000x the allocations of the raw path for the
+same conversation.
+
+## THE OPTIONS, WITHOUT A RECOMMENDATION
+
+  (a) CONVERT AS-IS and pay the numbers above per send. At a 2,556-record aria
+      (the largest in the real store) that is ~27 ms and ~15 MB per turn.
+  (b) STOP HANDING THE SDK TYPED MESSAGES: if the vendor client can be given a
+      pre-marshalled request body, the SDK provider splices stored rows
+      verbatim like anthropic does and the question disappears. UNVERIFIED --
+      Gluck's standing instruction is that SDK guidance is validated against
+      the docs (brave) rather than assumed, and it has not been.
+  (c) RETIRE anthropicsdk. It is reachable two ways: `anthropic` with
+      knobs.UseOfficialSDK, and copilot's `copilot-messages`, which wraps it
+      unconditionally. So this is a deletion with a live caller, not a dead
+      branch.
+
+WHAT IS BLOCKED UNTIL THIS IS ANSWERED: ProjectIncrementally,
+IncrementalProjection, ProjectionConfig, EncodedMessages, AppendEncodedMessage
+and lookupCached all still stand for this ONE provider. Nothing has been built
+past any of the three answers.
+
+## AND A FIXTURE FACT FOUND WHILE MEASURING, NOT A DEFECT IN THE CODE
+
+`store.MemLog.Append` copies the entries slice AND REBUILDS `byFigaroLT`
+ENTIRELY on every append, so BUILDING a MemLog is quadratic with a map rebuild
+per element. Measured on this box: 121 ms at 1,000 entries, 5.01 s at 10,000,
+2 m 20 s at 50,000.
+
+EVERY PROVIDER BENCHMARK THAT BUILDS A 50,000-ENTRY MemLog PAYS THAT PER
+FIXTURE, untimed but in wall clock, and anthropic's Cold arm rebuilds one
+inside its b.N loop. Those arms are effectively unrunnable at 50,000, which
+means the invariant they name has not been checked at that size in some time.
+BenchmarkRows therefore stops at 10,000 and says why. MemLog is a test fixture
+except as an emergency fallback in agent.go, so this is reported, not fixed.

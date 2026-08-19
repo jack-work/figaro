@@ -105,12 +105,10 @@ func (a *Anthropic) cacheFor(aria string) (store.Log[[]json.RawMessage], error) 
 	}
 	s, err := a.CacheOpen(aria)
 	if err != nil {
-		slog.Warn("anthropic cache open failed; running uncached", "aria", aria, "err", err)
-		return nil, nil
+		return nil, fmt.Errorf("anthropic open translator log: %w", err)
 	}
 	if !a.invalidateIfStale(s) {
-		slog.Warn("anthropic cache invalidation failed; running uncached", "aria", aria)
-		return nil, nil
+		return nil, fmt.Errorf("anthropic translator log invalidation failed")
 	}
 	a.cache = s
 	return s, nil

@@ -35,14 +35,14 @@ type responsesProvider struct {
 	tokenSrc  responseTokenSource
 	cacheOpen func(string) (store.Log[[]json.RawMessage], error)
 
-	mu         sync.Mutex
-	model      string
-	maxTokens  int
-	templates  *template.Template
-	machineID  string
-	cache      store.Log[[]json.RawMessage]
-	sessionID  string
-	limits     map[string]responseContextLimits
+	mu        sync.Mutex
+	model     string
+	maxTokens int
+	templates *template.Template
+	machineID string
+	cache     store.Log[[]json.RawMessage]
+	sessionID string
+	limits    map[string]responseContextLimits
 
 	baseURL func(string) string
 	dial    responseDialer
@@ -373,12 +373,10 @@ func (p *responsesProvider) cacheFor(aria string) (store.Log[[]json.RawMessage],
 	}
 	cache, err := p.cacheOpen(aria)
 	if err != nil {
-		slog.Warn("copilot responses cache open failed; running uncached", "aria", aria, "err", err)
-		return nil, nil
+		return nil, fmt.Errorf("copilot responses open translator log: %w", err)
 	}
 	if !p.invalidateCache(cache, fingerprint) {
-		slog.Warn("copilot responses cache invalidation failed; running uncached", "aria", aria)
-		return nil, nil
+		return nil, fmt.Errorf("copilot responses translator log invalidation failed")
 	}
 	p.cache = cache
 	return cache, nil
