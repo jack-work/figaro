@@ -1,6 +1,7 @@
 package tree
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -164,6 +165,56 @@ func TestRangeOfOneRunAliasesTheCache(t *testing.T) {
 	for i := range got {
 		if got[i] != before[i] {
 			t.Fatalf("a holder's view changed under eviction at %d", i)
+		}
+	}
+}
+
+// THE ARITHMETIC GUESS MUST NOT SURVIVE A HOLE. A Source may legally return
+// fewer units than its coord names, so a run's keys are not always dense; an
+// unchecked index into a holed run returns A DIFFERENT UNIT'S CONTENT, which
+// is a wrong answer that looks exactly like a right one.
+func TestLookupIsCorrectAcrossHoles(t *testing.T) {
+	// Every third key is missing: keys 1,2,4,5,7,8,...
+	holed := func(c Coord) ([]unit, error) {
+		var out []unit
+		for k := c.From + 1; k <= c.To; k++ {
+			if k%3 == 0 {
+				continue
+			}
+			out = append(out, unit{k: k, s: fmt.Sprintf("u-%d", k)})
+		}
+		return out, nil
+	}
+	c := New(holed, NewBudget(0), func(u unit) int { return len(u.s) }, func(u unit) uint64 { return u.k })
+	defer c.Close()
+	lineage := []Ref{{Node: "p"}}
+
+	if _, err := c.Range(lineage, 0, 90); err != nil {
+		t.Fatal(err)
+	}
+	// Every sub-span must contain exactly the keys that exist in it, in order.
+	for from := uint64(0); from < 80; from += 7 {
+		for _, width := range []uint64{1, 2, 5, 13} {
+			to := from + width
+			got, err := c.Range(lineage, from, to)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var want []uint64
+			for k := from + 1; k <= to; k++ {
+				if k%3 != 0 {
+					want = append(want, k)
+				}
+			}
+			if len(got) != len(want) {
+				t.Fatalf("(%d..%d]: got %d units, want %d", from, to, len(got), len(want))
+			}
+			for i := range want {
+				if got[i].k != want[i] {
+					t.Fatalf("(%d..%d] index %d: got key %d (%q), want %d -- an arithmetic "+
+						"index walked past a hole", from, to, i, got[i].k, got[i].s, want[i])
+				}
+			}
 		}
 	}
 }

@@ -69,11 +69,58 @@ type run[U any] struct {
 	pinned   bool // cannot rematerialize; stays resident, stays counted
 	resident bool
 	epoch    atomic.Int64
+
+	// dense says the keys of units are base, base+1, ... with no holes, and
+	// base is units[0]'s key. CHECKED ONCE, AT PUBLICATION, and true forever
+	// after -- WHICH IS ONLY SOUND BECAUSE A RUN IS IMMUTABLE. A dense run is
+	// indexed arithmetically with NO Keyer call at all, where a search costs
+	// about six and even a verified guess costs one or two, and the Keyer is a
+	// function value in a struct field so none of them inlines.
+	//
+	// The check is one pass over units at materialization, which is already
+	// O(units) -- it rides along with the loop that sums their bytes.
+	dense bool
+	base  uint64
 }
 
-// node holds one trunk node's runs, sorted by coord.From, published whole.
+// measure fills a run's bytes, and its density, in the single pass that has to
+// walk the units anyway.
+func (c *Cache[U]) measure(r *run[U]) {
+	r.bytes = 0
+	r.dense = len(r.units) > 0
+	for i, u := range r.units {
+		r.bytes += int64(c.size(u))
+		k := c.key(u)
+		if i == 0 {
+			r.base = k
+		} else if r.dense && k != r.base+uint64(i) {
+			r.dense = false
+		}
+	}
+}
+
+// node holds one trunk node's runs, sorted by coord.From, published whole --
+// together with a CONTIGUOUS ARRAY OF THEIR UPPER BOUNDS.
+//
+// WHY THE SECOND ARRAY, and it is not a cache of anything: locating a run is a
+// binary search, and searching []*run[U] dereferences a pointer to a separate
+// heap object at every probe. Searching []uint64 touches one contiguous line.
+// The profile of the segment payload path put 93% of the remaining lookup time
+// in that search once the unit lookup had been made arithmetic. The structure
+// this tenant deleted held its runs as VALUES in one slice, which is the same
+// property expressed by layout instead of by an index.
+//
+// It is published in the same store as the runs, so a reader cannot see one
+// without the other.
 type node[U any] struct {
-	runs atomic.Pointer[[]*run[U]]
+	idx atomic.Pointer[runIndex[U]]
+}
+
+// runIndex is a node's runs and their upper bounds, immutable once published.
+// tos[i] == runs[i].coord.To.
+type runIndex[U any] struct {
+	runs []*run[U]
+	tos  []uint64
 }
 
 // touch refreshes recency the cheap way: RECENCY IS AN EPOCH. The epoch
@@ -131,9 +178,7 @@ func (c *Cache[U]) Recomposes() int64 { return c.recomposes.Load() }
 func (c *Cache[U]) Put(coord Coord, units []U, pinned bool) {
 	r := &run[U]{coord: coord, units: append([]U(nil), units...), pinned: pinned, resident: true}
 	r.epoch.Store(c.bump())
-	for _, u := range units {
-		r.bytes += int64(c.size(u))
-	}
+	c.measure(r)
 	delta := r.bytes
 
 	c.mu.Lock()
@@ -277,7 +322,27 @@ func (c *Cache[U]) Node(name string) *Handle[U] {
 }
 
 // At is Cache.At without the name lookup.
-func (h *Handle[U]) At(idx uint64) (U, bool) { return atIn(h.c, nodeRuns(h.n), idx) }
+//
+// A PER-HANDLE "LAST RUN" HINT WAS TRIED HERE AND REVERTED, 2026-08-19. The
+// profile said 93% of the remaining search time was the binary search over
+// RUNS, and a verified hint removes that search for a reader that stays inside
+// one run. It made the SERIAL hit no better and the PARALLEL hit SIX AND A HALF
+// TIMES WORSE -- 4.9 ns to 32 ns -- because every reader then writes the same
+// atomic on every miss, which is a shared cache line under contention.
+//
+// That is the law this package was founded on, in its own package comment:
+// RECENCY IS AN EPOCH, because "a per-read atomic stamp on a shared line made
+// reads SLOWER with more readers". I had quoted it that morning and
+// reintroduced it by lunch. A read path may GUESS, but it may not REMEMBER.
+func (h *Handle[U]) At(idx uint64) (U, bool) {
+	ix := h.n.index()
+	if ix == nil {
+		var zero U
+		return zero, false
+	}
+	u, ok, _ := atInIndex(h.c, ix, idx)
+	return u, ok
+}
 
 // Range is Cache.RangeAt without the name lookup.
 func (h *Handle[U]) Range(from, to uint64) ([]U, error) {
@@ -318,20 +383,57 @@ func residentIn[U any](rs []*run[U], from, to uint64) ([]U, bool) {
 }
 
 func atIn[U any](c *Cache[U], rs []*run[U], idx uint64) (U, bool) {
+	tos := make([]uint64, len(rs))
+	for i, r := range rs {
+		tos[i] = r.coord.To
+	}
+	u, ok, _ := atInIndex(c, &runIndex[U]{runs: rs, tos: tos}, idx)
+	return u, ok
+}
+
+// atInWhere is atIn plus WHICH RUN answered, so a caller can remember it. -1
+// when no run covers idx.
+func atInIndex[U any](c *Cache[U], ix *runIndex[U], idx uint64) (U, bool, int) {
 	var zero U
-	i := sort.Search(len(rs), func(i int) bool { return rs[i].coord.To >= idx })
+	// A CONTIGUOUS SEARCH, WRITTEN OUT. tos[i] is runs[i].coord.To, so this
+	// probes one packed array instead of chasing a pointer per step -- and it
+	// is hand-written rather than sort.Search because sort.Search takes a
+	// CLOSURE, which is an indirect call per probe that cannot inline. The
+	// profile put a third of this lookup in that closure after the unit
+	// lookup had been made arithmetic.
+	tos := ix.tos
+	lo, hi := 0, len(tos)
+	for lo < hi {
+		mid := int(uint(lo+hi) >> 1)
+		if tos[mid] < idx {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	i := lo
+	rs := ix.runs
 	if i == len(rs) {
-		return zero, false
+		return zero, false, -1
 	}
 	r := rs[i]
 	if r.coord.From >= idx || !r.resident {
-		return zero, false
+		return zero, false, -1
 	}
-	j := sort.Search(len(r.units), func(j int) bool { return c.key(r.units[j]) >= idx })
+	// A DENSE RUN NEEDS NO KEYER AT ALL: density was checked once when the run
+	// was published and a published run never changes.
+	if r.dense {
+		j := int(idx - r.base)
+		if j >= 0 && j < len(r.units) {
+			return r.units[j], true, i
+		}
+		return zero, false, i
+	}
+	j := c.upperBound(r.units, idx-1)
 	if j < len(r.units) && c.key(r.units[j]) == idx {
-		return r.units[j], true
+		return r.units[j], true, i
 	}
-	return zero, false
+	return zero, false, i
 }
 
 // ResidentAt returns the units for (from..to] ONLY IF they are already
@@ -526,9 +628,7 @@ func (c *Cache[U]) fill(coord Coord) ([]U, error) {
 
 		r := &run[U]{coord: cc, units: units, resident: true}
 		r.epoch.Store(c.bump())
-		for _, u := range units {
-			r.bytes += int64(c.size(u))
-		}
+		c.measure(r)
 
 		// TWO CALLERS MAY MATERIALIZE THE SAME COORD, and the loser discards
 		// its result: one wasted Source call rather than a lock held across
@@ -562,9 +662,7 @@ func (c *Cache[U]) refill(name string, r *run[U]) ([]U, error) {
 	}
 	next := &run[U]{coord: r.coord, units: units, resident: true, pinned: r.pinned}
 	next.epoch.Store(c.bump())
-	for _, u := range units {
-		next.bytes += int64(c.size(u))
-	}
+	c.measure(next)
 
 	c.mu.Lock()
 	n := c.nodeLocked(name)
@@ -603,8 +701,8 @@ func (c *Cache[U]) slice(r *run[U], from, to uint64) []U {
 	if to <= from {
 		return nil
 	}
-	lo := sort.Search(len(r.units), func(i int) bool { return c.key(r.units[i]) > from })
-	hi := sort.Search(len(r.units), func(i int) bool { return c.key(r.units[i]) > to })
+	lo := c.upperBoundRun(r, from)
+	hi := c.upperBoundRun(r, to)
 	// A MISS, NEVER A PANIC. lo > hi is only reachable if from > to, which the
 	// guard above refuses -- but a slice expression that can panic on a
 	// bookkeeping desync turns a wrong answer into a crashed daemon, and this
@@ -613,6 +711,65 @@ func (c *Cache[U]) slice(r *run[U], from, to uint64) []U {
 		return nil
 	}
 	return r.units[lo:hi]
+}
+
+// upperBound is the first index whose key exceeds target: a GUESS THAT VERIFIES
+// ITSELF, falling back to a binary search when the guess is wrong.
+//
+// WHY A GUESS AT ALL. The keys of a run are usually DENSE -- one unit per
+// coordinate, ascending, no holes -- because that is what a substrate handing
+// back consecutive records produces. Where that holds, the answer is
+// arithmetic: target - key(units[0]) + 1. A binary search over 64 units instead
+// calls the Keyer about six times, and the Keyer is a FUNCTION VALUE IN A
+// STRUCT FIELD, so every call is indirect and none of them inlines. Measured by
+// fd15d2a0 on the segment payload path: that search is the whole of a 1.7x
+// regression against a structure that indexed arithmetically.
+//
+// WHY IT VERIFIES RATHER THAN TRUSTING A DECLARATION. Density is a property of
+// the TENANT'S KEY SPACE, not of this cache: Source may legally return fewer
+// units than its coord names ("a hole degrades to a gap, never a lie"), and a
+// decoded-IR key skips values whenever an entry is ceremonial or filtered. One
+// hole and an unchecked arithmetic index returns A DIFFERENT RECORD'S CONTENT,
+// which is the silent-wrong-answer failure this stack fears most. So the guess
+// is CHECKED -- one comparison, against the six a search would cost -- and a
+// failed check falls through to the search. A tenant cannot lie about density
+// because nobody is asked.
+//
+// Gluck approved this shape over a declared-dense flag, 2026-08-19, on exactly
+// that reasoning: "wouldn't the index be correct in every case?" -- it would
+// not, and the check is what makes it so.
+func (c *Cache[U]) upperBoundRun(r *run[U], target uint64) int {
+	if r.dense {
+		if target < r.base {
+			return 0
+		}
+		if i := int(target-r.base) + 1; i <= len(r.units) {
+			return i
+		}
+		return len(r.units)
+	}
+	return c.upperBound(r.units, target)
+}
+
+func (c *Cache[U]) upperBound(units []U, target uint64) int {
+	if len(units) == 0 {
+		return 0
+	}
+	base := c.key(units[0])
+	if target >= base {
+		if i := int(target-base) + 1; i >= 0 && i <= len(units) {
+			// The guess is right when the unit BEFORE i is the last one at or
+			// below target and the unit AT i is past it. Checking both ends is
+			// what makes a hole anywhere in between unable to fool it: a hole
+			// shifts every later key down, so the unit at i would carry a key
+			// no greater than target.
+			if (i == len(units) || c.key(units[i]) > target) &&
+				(i == 0 || c.key(units[i-1]) <= target) {
+				return i
+			}
+		}
+	}
+	return sort.Search(len(units), func(i int) bool { return c.key(units[i]) > target })
 }
 
 // runChunk bounds one run's span so eviction has granularity: a gap
@@ -637,13 +794,21 @@ func sliceUnits[U any](key Keyer[U], units []U, from, to uint64) []U {
 // ---- the published index ----
 
 func (n *node[U]) load() []*run[U] {
-	if p := n.runs.Load(); p != nil {
-		return *p
+	if ix := n.idx.Load(); ix != nil {
+		return ix.runs
 	}
 	return nil
 }
 
-func (n *node[U]) publish(runs []*run[U]) { n.runs.Store(&runs) }
+func (n *node[U]) index() *runIndex[U] { return n.idx.Load() }
+
+func (n *node[U]) publish(runs []*run[U]) {
+	tos := make([]uint64, len(runs))
+	for i, r := range runs {
+		tos[i] = r.coord.To
+	}
+	n.idx.Store(&runIndex[U]{runs: runs, tos: tos})
+}
 
 // runs is the lock-free read of one node's index.
 func (c *Cache[U]) runs(name string) []*run[U] {

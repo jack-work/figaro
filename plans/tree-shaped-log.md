@@ -1304,7 +1304,14 @@ drop 63 runs at R=64.
 THE ASK: a heap keyed by effective epoch. That is a data structure added to a
 hot layer, which your standing rule reserves for you. Not built.
 
-## Q3. IS cachedLog RE-SEATED ON tree WHOLESALE?
+## Q3. IS cachedLog RE-SEATED ON tree WHOLESALE -- AND THE COMPOSED LAYER WITH IT?
+
+(AMENDED after the memo was written. The composed UI cache is tree's design
+written a second time -- correspondence read line by line -- and it faults
+within 1.3% of tree once run granularity is matched. It belongs in this
+question, not after it. A fourth number arrived with it: run length is a RECORD
+COUNT and wants to be a BYTE TARGET before two tenants with very different unit
+sizes share the cache.)
 
 This is the consolidation itself: one residency policy for the decoded IR and
 translations instead of a flat tail window beside tree. The two numbers that
@@ -1321,7 +1328,17 @@ were missing are now in hand.
     lock.
 
 SO THE TRADE IS: A TAIL READ COSTS ~15-27% MORE AND A HOPPING READER FAULTS
-HALF AS OFTEN. Plus one policy instead of two, one seeding path instead of two
+HALF AS OFTEN.
+
+AND A THIRD NUMBER ARRIVED AFTER THIS MEMO WAS WRITTEN (b862851c), from the
+branch that was committed red and stood down: A FORK'S RESIDENT PREFIX IS
+ALREADY 93.3% SHARED WITH ITS PARENT under today's one-shot donation (A =
+204,688 B against B = 3,056,928 B, ratio 0.067). SO THE TREE'S STRUCTURAL
+SHARING BUYS CORRECTNESS AND STRUCTURE, NOT MEMORY -- a lineage a copy can
+name, no seam probe silently carrying the guarantee, no second seeding path --
+and the plan's own instruction from 9ed3f561 applies: if the sharing is already
+free, that is a DIFFERENT JUSTIFICATION and it must be written down as that
+one. It is written down as that one here. Plus one policy instead of two, one seeding path instead of two
 (the donation walker is already unified, 567a9cbc), and the fork seam becoming
 structural rather than a one-shot donation guarded by a probe.
 
@@ -1345,4 +1362,320 @@ I published a -43.8% that does not reproduce and retracted it (e124f064). The
 protocol error is the useful part: INTERLEAVING IS NOT COUNTERBALANCING, and an
 A/B without an A/A is an uncalibrated instrument. Everything measured after
 that retraction uses two benchmarks in ONE binary with an in-run control, and
+reports the deterministic quantity (allocations, counts) ahead of the timing.
+
+## THE APPLY-CHECK, DONE AT THE RECIPIENT'S HEAD (dec6ef8a)
+
+fd15d2a0's branch was cut at 2d258884 and main moved eight commits under it, so
+it was apply-checked here rather than assumed. IT DOES NOT MERGE CLEANLY, and
+the conflict is in ONE FUNCTION -- the one both of us did our best work in, the
+same night:
+
+    THEIRS  split rangeInNode into rangeInNode -> rangeInNodeAt(nd, coord), so
+            a node handle does not re-hash the node's name per record.
+    MINE    rewrote that function's body so a span answered by ONE run is
+            handed back as a view instead of copied.
+
+Both are wanted; the reconciliation is their split with my body, and it is
+mechanical. It is done and gated on branch
+`prepared/segment-runs-in-tree-at-684978ad` (a301e725, worktree
+/var/tmp/fig-trial): build, full suite, and store -race all green.
+
+THAT BRANCH IS NOT FOR MAIN AS IT STANDS -- it carries the ~1.7x serial
+point-read regression that is Q1. It exists so that a yes costs a merge and a
+no costs a delete.
+
+    "IT MERGED WITHOUT CONFLICT" WAS ALREADY DISPROVED TONIGHT (2d258884, a
+    rename that merged clean and did not compile). This is the other half: a
+    branch that CONFLICTS is not a branch in trouble -- it is two arias having
+    improved the same function, and the check is what tells you which.
+
+## THE WHOLE BOARD: THREE RESIDENCY POLICIES, WHERE EACH STANDS TONIGHT
+
+Written so the memo's Q3 is not read as if it were the last layer. It is not.
+
+    LAYER          STRUCTURE TODAY                 STATE
+    raw segment    tree.Cache + (a duplicate       DELETION DONE, NOT LANDED.
+    payloads       runs slice, deleted on a        Q1 gates it: 1.7x on the
+                   branch)                         serial point read.
+    decoded IR     cachedLog: flat tail window,    Q3. Both numbers now exist:
+    + translations one per (aria, channel), with   2.34x fewer faults under a
+                   a one-shot fork donation        hopping trace, tail read at
+                   guarded by a seam probe         1.13-1.27x.
+    composed UI    livelog/aria.TurnCache with     UNTOUCHED, AND UNMEASURED.
+    IR             its OWN UIBudget: byte budget,  Its own comment says "a byte
+                   LRU, recompose-on-miss, a       budget, LRU, and
+                   process-global mutex, 509       recompose-on-miss" -- which
+                   lines                           is tree.Cache's sentence.
+
+THE THIRD ROW IS THE ONE NOBODY HAS ARGUED ABOUT. It re-implements the same
+policy a third time, in another package, with its own accountant and its own
+lock, and the reason it survived is the reason every layer survived: nobody
+ever had to make a case FOR it. Under the deletion default that is the state
+that needs permission, not the state that needs a reason to change.
+
+I have not measured it and I have not touched it. What it needs is the same two
+numbers the decoded layer now has -- a fault rate under a realistic trace, and
+the cost of its hot read against tree's -- taken with the protocol this file
+now carries (two benchmarks in one binary, an in-run control, deterministic
+quantities reported ahead of timings). That is the next measurement whoever
+holds this role should make, and it should be made BEFORE Q3 is executed rather
+than after, because a re-seat designed for two tenants that must then admit a
+third is the accretion's own shape one more time.
+
+### AND IT IS NOT MERELY ANOTHER CACHE -- IT IS THE SAME DESIGN, TWICE
+
+Read rather than assumed, correspondence by correspondence:
+
+    tree.Cache / Budget                 aria.TurnCache / UIBudget
+    -------------------------------     ------------------------------------
+    run (units | hollow, bytes)         Turn + turnMeta (Nodes | hollow, bytes)
+    "THE INDEX SURVIVES EVICTION"       "THE INDEX SURVIVES EVICTION"
+    Source(Coord) rematerializes        TurnSource(fromLT,toLT) recomposes
+    Budget: bytes, limit, evictions     UIBudget: bytes, limit, evictions
+    coldest / evictColdest              victimsLocked / hollow
+    Recomposes()                        Recomposes()
+    pinned: counted, never evicted      pinned: counted, out of the LRU
+    "the hook takes no lock, victims    "NEVER calls into an owner while
+     are hollowed outside"               holding it: it returns victims"
+    epoch-based recency                 container/list LRU
+
+509 lines against tree's 644+216, and THE TWO FILES CITE THE SAME FINDING IN
+THE SAME WORDS: "a meter that reads zero exactly when retention is worst is the
+worst possible meter", attributed in both to plans/storm-triage.md's S1.
+
+    TWO IMPLEMENTATIONS THAT QUOTE THE SAME POST-MORTEM ARE NOT TWO CACHES
+    THAT HAPPEN TO BE SIMILAR. They are one design, written twice, by people
+    who had both read the same incident -- which is exactly how an accretion
+    forms among careful people rather than careless ones.
+
+THE ONE REAL DIFFERENCE is the addressing: tree names ranges in a lineage
+(Coord, Ref, fork bases) and TurnCache names an index into one aria's sealed
+turns. That is a narrower key, not a different structure -- and a narrower key
+is what the dense-coordinate question (Q1) is about at the other end of the
+stack.
+
+I have measured NOTHING here. This is a reading, and it is the reading that
+says the third layer belongs in Q3's scope rather than after it.
+
+### AND NOW THE NUMBER: THE COMPOSED LAYER FAULTS AT PARITY WITH tree
+
+Same trace, same budget, both production structures, counting TURNS SERVED
+FROM BELOW (400 sealed turns of 8 KiB, a budget holding ~40 of them, a
+tail-and-hop trace of 200 reads asking for 1600 turns):
+
+    COMPOSED (aria.TurnCache)   612 turns from below, 131 recompose calls
+    CANONICAL (tree.Cache)      722 turns from below, 141 source calls
+
+tree faults 1.18x more on this fixture. THAT IS PARITY FOR A DECISION OF THIS
+KIND: the question was never whether the third implementation is a better cache
+than the canonical one, it is whether 509 lines of a second implementation buy
+anything, and 18% on one synthetic trace is not a case for keeping them --
+particularly since the same 18% is a knob (see below) rather than a property.
+
+HYPOTHESIS FOR THE GAP, UNVERIFIED AND NAMED AS SUCH: EVICTION GRANULARITY.
+tree hollows a whole RUN (here up to eight turns at a time); TurnCache hollows
+ONE TURN. Under a budget of ~40 turns, dropping eight to make room for one
+costs more subsequent faults than dropping one. THE EXPERIMENT THAT WOULD
+SETTLE IT: re-run with runChunk driven down to 1 and see whether the two
+numbers converge -- if they do, the gap is granularity and tunable; if they do
+not, something else is going on and this paragraph is wrong.
+
+WHAT THIS DOES NOT SAY: nothing about the COST of a fault. The composed layer's
+recompose is a walk over fig IR; the fixture's is a map filter. Fault RATE is
+what was asked and fault rate is what was answered.
+
+    AND THE RUN LENGTH IS A COUNT, NOT A BYTE TARGET (runChunk = 64). For
+    8 KiB units that is a half-megabyte run; the code already knows the shape
+    of this problem -- "a run larger than the whole budget can never stay
+    resident" is a comment in the refill path -- but nothing sizes a run by
+    bytes. If the decoded and composed layers land on tree, THAT is the knob
+    that decides their fault rate, and it is currently a constant chosen for
+    segment records.
+
+#### THE HYPOTHESIS, RUN RATHER THAN LEFT STANDING
+
+The paragraph above named an experiment: drive runChunk down and see whether
+the two numbers converge. Done in the same hour, because a hypothesis left in a
+plan is read as a finding by the next person.
+
+    runChunk    turns from below      source calls
+       1              620                 620
+       4              681                 183
+      16              722                 141
+      64              722                 141
+    COMPOSED          612                 131
+
+IT CONVERGES. At runChunk = 1 the canonical cache faults within 1.3% of the
+second implementation. THE 18% GAP WAS GRANULARITY AND NOTHING ELSE, and the
+third residency policy buys no fault-rate advantage that a constant does not
+already explain.
+
+AND THE TABLE SHOWS THE TRADE THAT REPLACES IT: at runChunk = 1 the turns
+wasted fall to nothing and the SOURCE CALLS RISE FROM 141 TO 620. Fine-grained
+runs waste fewer bytes and pay more calls; coarse runs do the reverse. That is
+the ordinary granularity trade, and it says the knob should be A BYTE TARGET
+PER RUN rather than a record count -- one number that means the same thing for
+a 200-byte segment record and an 8 KiB composed turn, which the current
+constant cannot.
+
+    THE CONSTANT IS NOT A DEFECT TODAY: 64 records was chosen for the segment
+    tenant and is right for it. It becomes a defect the moment a second tenant
+    with units two orders of magnitude larger lands on the same cache, which is
+    exactly what Q3 proposes.
+
+## THE PREMISE THAT STARTED IT ALL, RETIRED (dec6ef8a, 2026-08-19)
+
+plans/forest-uptake.md's table is the load-bearing citation of this whole
+campaign -- it is what plans/log-cache-policy.md turned into "LRU owns the cold
+ranges, never the hot tail", which is why figaro still runs a second cache:
+
+    forest Range   parallel 1218 ns   4512 B   4 allocs
+    cachedLog      parallel  516 ns   4880 B   1 alloc     ratio 2.36x
+
+MY HOT-TAIL BENCHMARK IS THE SAME MEASUREMENT: 64 warm units, tree's Range
+against cachedLog's published view, at 16 readers. The allocation profile
+confirms the correspondence -- the flat side is 4864 B and 1 alloc here, against
+4880 B and 1 alloc there.
+
+    flat window    1.341 us   4864 B   1 alloc
+    tree Range     1.517 us   4820 B   3 allocs           ratio 1.13x
+
+THE ABSOLUTE NUMBERS DO NOT REPRODUCE -- 516 ns there against 1341 ns here for
+the same operation -- and that is expected: a different machine, a different
+day, and nothing in this repo can re-run the original. THE RATIO IS THE
+LOAD-BEARING QUANTITY, and it has gone 2.36x -> 1.13x, with tree's allocations
+4 -> 3 and its bytes now below the flat window's.
+
+So the sentence to carry forward is:
+
+    THE GAP THAT JUSTIFIED THE SECOND CACHE SHAPE WAS A MUTEX AND A COPY. BOTH
+    ARE GONE, AND WHAT REMAINS IS 13% ON A TAIL READ AGAINST HALF THE FAULTS ON
+    A HOPPING ONE.
+
+The old table should not be cited again as a live argument. It is history: an
+honest measurement of a structure that no longer exists in that shape.
+
+### AND A SHORT AUDIT OF WHAT ELSE IS CITED BUT UNVERIFIED HERE
+
+Prompted by having retracted one of my own numbers tonight. Load-bearing
+figures in these plans that NOBODY HAS REPRODUCED ON THIS MACHINE:
+
+  - the 4-5x DECODED-STRUCT INFLATION behind irDecodeInflation (measured on two
+    real arias, but months ago and never re-run; it sizes every per-aria
+    budget in the store);
+  - the 3.0 GB / 209 arias daemon census that motivates the whole reclamation
+    campaign (a real observation, not reproducible by construction);
+  - the 1.19x heap witness on a []json.RawMessage projection, and the
+    decoded-struct multiplier that was never taken at all.
+
+None of them is doubted here. They are listed so that the next person who
+spends one in an argument knows which are FRESH and which are INHERITED --
+which is the distinction I failed to make when I published a speedup this
+morning and had to retract it by lunch.
+
+# RAISE: irDecodeInflation = 5 IS ~4.4x TOO HIGH ON THIS STORE (dec6ef8a, 2026-08-19)
+
+NOT CHANGED. This is a number and a consequence, brought rather than acted on,
+because the change it implies makes every aria hold MORE heap and that is the
+axis Gluck is watching.
+
+## WHAT IT IS AND WHY IT MATTERS
+
+`irEntrySize(e) = e.EncodedBytes * irDecodeInflation`, and that estimate is BOTH
+the window's gate and its accounting. Every per-aria budget in this store is
+therefore denominated in "encoded bytes x 5". Its provenance is two real arias
+measured months ago (4.0x and 5.3x), and this file's own audit listed it as
+INHERITED AND NEVER REPRODUCED HERE.
+
+## MEASURED ON THE AUTHOR'S REAL HISTORY, TWO INSTRUMENTS AGREEING
+
+`TestDecodeInflationOnRealHistory`, skipped unless FIGARO_REAL_STORE points at a
+store root; run against a reflink copy of the live store, segment payload cache
+disabled, one aria at a time, the window built in a frame that has RETURNED (the
+fork seam paid for that lesson this morning).
+
+    aria        records   encoded B   resident B   res/enc   res/payload
+    631c7d4b        533   7,241,635    7,585,696     1.05        1.12
+    fa85679e       1120   5,829,372    6,586,696     1.13        1.27
+    4de490fd       1259   5,775,170    6,578,376     1.14        1.32
+    e83d98d3       1097   5,518,954    6,243,544     1.13        1.28
+    80a00ccb        908   4,782,891    5,405,544     1.13        1.25
+    3a995b1a        530   3,562,160    3,874,264     1.09        1.24
+    cf3fc17d       2556   3,124,885    4,186,808     1.34        2.23
+    e7201d7b        539   2,970,985    3,269,664     1.10        1.25
+    WEIGHTED OVER THE EIGHT LARGEST                  x1.13
+
+THE SECOND COLUMN IS THE CONTROL: res/payload is the heap delta against the
+SUMMED STRING LENGTHS the entries carry, which is arithmetic and cannot fail the
+way a heap delta can. It lands at 1.12-1.32x -- ordinary struct and slice-header
+overhead over the strings themselves -- and it is consistent with res/enc at
+1.13x. Every entry carried a recorded encoded size (zero missing), so the
+denominator is not guessed.
+
+## THE CONSEQUENCE, STATED AS A DIRECTION
+
+If real residency is 1.13x encoded and the accounting says 5x, then WHEN THE
+GATE BELIEVES IT IS HOLDING 4 MiB IT IS ACTUALLY HOLDING ABOUT 0.9 MiB. THE
+WINDOW EVICTS ROUGHLY 4.4x EARLIER THAN THE OPERATOR ASKED FOR, and every
+fall-through that costs is a disk read the budget was never meant to force.
+
+## WHAT I HAVE NOT RESOLVED, AND IT IS NAMED RATHER THAN SMOOTHED
+
+The old note cites a 2556-message aria at 12.5 MiB and 4.0x. THAT IS cf3fc17d,
+which is in the table above at 2556 records, 3.12 MB encoded and 4.19 MB
+resident. Same aria, same record count, a very different pair of numbers. I
+cannot re-run the original, so I do not know whether it measured a larger object
+(the whole handle, translations and board included), a different channel, or the
+aria at a different size. THE DISCREPANCY IS THE FINDING'S OWN WEAKEST POINT AND
+IT IS RECORDED HERE RATHER THAN LEFT FOR SOMEBODY ELSE TO NOTICE.
+
+## THE ASK
+
+Lowering the constant makes every windowed aria retain MORE real heap for the
+same configured number -- roughly 4x more at the same setting -- which is a
+memory decision and yours. The alternatives are (a) lower the factor and lower
+the byte budgets together, so real residency stays where it is but the number
+means what it says; (b) leave it and document that the budget is denominated in
+a fiction; (c) denominate the budget in MEASURED bytes and delete the factor,
+which is where the tree's Sizer already points.
+
+I recommend (a) or (c). I have done neither.
+
+## AND THE TRANSLATION CHANNEL, WHICH SHARPENS THE RAISE (dec6ef8a)
+
+The same instrument against `translations-v2/anthropic`, where the estimate
+takes the payload bytes THEMSELVES (`transEntrySize` sums len(raw)+16,
+inflation 1):
+
+    WEIGHTED, three repeats:   resident / ESTIMATE  =  x1.07
+
+The translation estimate is honest to 7%. The IR estimate, measured the same way
+on the same store in the same session, is 1.13x actual against a factor of 5 --
+IT OVERSTATES BY 4.4x.
+
+    SO THE TWO CHANNELS WERE CALIBRATED BY DIFFERENT METHODS AND ONLY ONE OF
+    THEM MATCHES THE HEAP. The one that takes bytes as bytes is right; the one
+    that multiplies by a remembered constant is not. That is a sharper finding
+    than "an estimate is off", and it points at the cure: denominate the budget
+    in measured bytes and delete the factor, which is option (c) above and where
+    tree's Sizer already points.
+
+### A REPEAT DISCIPLINE, LEARNED HERE RATHER THAN ASSUMED
+
+The FIRST translation run reported one aria at 9,304,944 B where the other two
+arias with the IDENTICAL channel (964 records, 5,816,376 B encoded -- forks
+sharing a lineage) reported 6,095,280 B. Same bytes, 1.5x apart, which is not a
+thing that can be true.
+
+THREE REPEATS SETTLED IT AT 6,095,280 B, to the byte, every time. The outlier
+was allocator state on the first aria measured after warm-up, and the weighted
+figure moved 1.18x -> 1.07x when it went.
+
+    A SINGLE-SHOT HEAP DELTA IS AN UNREPEATED MEASUREMENT, AND I PUBLISHED THE
+    IR NUMBER FROM ONE RUN THIS MORNING BEFORE THINKING TO REPEAT IT.
+
+It survived: x1.13 across three runs, with cf3fc17d stable to a hundred bytes.
+But it survived by luck rather than by method, and the method is now: heap
+deltas are run three times and the spread is reported, exactly as timings are.
 reports the deterministic quantity (allocations, counts) ahead of the timing.
