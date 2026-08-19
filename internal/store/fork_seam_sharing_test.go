@@ -15,68 +15,56 @@ package store
 // parent DROPPED. It counts BYTES, so it does not move with load and needs
 // neither a quiet box nor the bench lock.
 //
-// THIS INSTRUMENT FAILED, AND IT IS COMMITTED FAILING ON PURPOSE (503b9650's
-// evidence, f3aa1d0b's ruling): the diff to the commit that fixes it is the
-// correction, and a fixture that measures its own harness is worth seeing once.
+// FINISHED 2026-08-19 (dec6ef8a). THE RESULT:
 //
-//	A  child marginal cost, PARENT ALIVE  = 204,912 B
-//	B  child cost, PARENT DROPPED         = 204,912 B   IDENTICAL TO THE BYTE
-//	CANARY: seed ACCEPTED = 204,896 B; seed REJECTED = 112 B
+//	A  child marginal cost, PARENT ALIVE   =   204,688 B
+//	B  child cost, PARENT DROPPED          = 3,056,928 B
+//	SHARED = B - A                         = 2,852,240 B   A/B = 0.067
+//	CANARY: seed ACCEPTED 204,912 B; seed REJECTED 3,060,672 B
 //
-// TWO NUMBERS AGREEING TO THE BYTE ARE A SUSPECT, NOT A FINDING, and the cause
-// is below this comment rather than in the code under test: BOTH ARMS READ ONE
-// MemLog THAT THE HARNESS KEEPS ALIVE, and a MemLog retains every decoded
-// record forever. The payload strings are therefore held by the fixture in both
-// arms, dropping the parent frees nothing, and B measures the same object A
-// does. The precondition the whole experiment rests on -- that dropping the
-// parent leaves the child the sole owner of those strings -- is violated by the
-// harness itself. The fix is a disk-backed log, where the caches are the only
-// decoded holders.
+// A FORK'S RESIDENT PREFIX IS 93.3% SHARED WITH ITS PARENT. The child pays 6.7%
+// of what the same prefix costs it when it is the sole owner -- 205 B per record
+// of Entry struct against a 2,326 B record whose payload it does not copy.
 //
-// THE CANARY FIRED IN THE WRONG DIRECTION, AND THAT PART IS ABOUT THE CODE.
-// Spoiling the seed was predicted to make the child DECODE its own copy, so the
-// marginal cost would RISE. It FELL, three orders of magnitude, because
-// newWindowedLog PRE-READS NOTHING when window and budget are both zero: the
-// eager tail read is guarded by `budget > 0 || window > 0`. So newSeededLog's
-// documented degradation is not "decode a copy now", it is "RETAIN NOTHING
-// UNTIL SOMEONE READS". That is a property of the constructor that nothing else
-// in the tree asserts, and it is why this file is committed red rather than
-// deleted.
+// IT TOOK TWO CORRECTIONS, AND BOTH WERE THE INSTRUMENT RATHER THAN THE CODE.
 //
-// WHAT SURVIVES AND IS NOT IN DOUBT: on the ACCEPTED path the child costs
-// 204,912 B for a 1000-record donated prefix -- ~205 B per record against a
-// 2,326 B mean record, i.e. ~8.8% of encoded size in Entry structs for a prefix
-// whose payloads it shares. A FLOOR: raw byte payloads, typed SDK structs
-// unmeasured.
+// FIRST, THE HARNESS HELD THE STRINGS. Both arms read one MemLog that the
+// fixture kept alive, and a MemLog retains every decoded record forever, so
+// dropping the parent freed nothing and B measured the same object A did --
+// 204,912 B twice, TO THE BYTE. Two numbers agreeing to the byte are a suspect,
+// not a finding. The fix is the disk-backed fixture above.
 //
-// UNFINISHED, AND STOOD DOWN RATHER THAN ABANDONED (f3aa1d0b, 2026-08-19).
-// Gluck decided the direction on other grounds -- one canonical tree-shaped
-// cache, layer reduction, the actor loop as the serialization mechanism -- so
-// this measurement no longer gates a decision, and a measurement that gates
-// nothing is scope that has outlived its question. It is committed in the state
-// it reached because the honest half-artifact is worth more than a clean
-// absence, and the next hand may want the overlap number when the residency
-// work reaches it.
+// SECOND, AND ONLY VISIBLE AFTER THE FIRST WAS FIXED: `parent = nil` DID NOT
+// DROP THE PARENT. The pointer survived in a stack slot the collector still
+// scans, so the child never became the sole owner and B stayed at 204,896 --
+// still within a hair of A, still looking like a finding. What exposed it was
+// running the same sequence in a DIFFERENT FRAME SHAPE, where the identical arm
+// produced 3,061,184 B. The parent is now built inside a function that RETURNS,
+// and the parent-alive arm holds it in a package-level variable instead of a
+// local.
 //
-// THE CORRECTION IT NEEDS, WRITTEN DOWN SO NOBODY HAS TO REDISCOVER IT:
-// replace seamFixture's MemLog with a DISK-BACKED log -- a real XwalBackend on
-// a temp root, its records appended and the caches built over
-// newXwalLog rather than over an in-memory log. That is the whole fix. It makes
-// the two caches the ONLY decoded holders, so dropping the parent can actually
-// free the strings and arm B can differ from arm A. Everything else in this
-// file -- the two arms, the falsifier, the frame discipline, the canary's
-// intent -- survives that change unaltered.
+//	A DEAD POINTER IN A LIVE STACK SLOT IS INDISTINGUISHABLE, TO THIS
+//	INSTRUMENT, FROM AN OBJECT SOMEBODY MEANT TO KEEP.
 //
-// TWO THINGS THE NEXT HAND SHOULD NOT HAVE TO LEARN TWICE. The canary must
-// force the NON-SHARING path in a way that still populates the child (spoiling
-// the seed does not, because a 0/0 cache retains nothing until read). And
-// figwal's segment payload cache sits BELOW both arms and holds raw frames
-// under a global budget, so it adds a constant to both readings that this
-// method cannot separate out.
+// AND THE CANARY WAS RIGHT BOTH TIMES, WHICH IS WHY IT IS FIRST-CLASS HERE.
+// Under the original MemLog fixture it fired in the WRONG DIRECTION -- spoiling
+// the seed made the marginal cost FALL three orders of magnitude -- because
+// newWindowedLog PRE-READS NOTHING when window and budget are both zero. So
+// newSeededLog's documented degradation is not "decode a copy now", it is
+// "RETAIN NOTHING UNTIL SOMEONE READS", a property of the constructor that
+// nothing else in the tree asserts. With a disk-backed fixture the canary
+// reports what it was built to report.
 //
-// IT IS RED. This branch must not be merged as it stands: TestForkSeamSharing
-// fails on the falsifier and TestForkSeamSharingCanary fails on the direction,
-// and both failures are the record rather than a defect to be silenced.
+// WHAT THIS MEANS FOR THE CONSOLIDATION, stated so the number is not spent on
+// the wrong question: TODAY'S ONE-SHOT DONATION ALREADY SHARES 93% OF A FORK'S
+// PREFIX. A tree-shaped cache whose prefix residency is structural therefore
+// buys CORRECTNESS AND STRUCTURE -- a lineage a copy can name, no probe
+// carrying the guarantee, no second seeding path -- and NOT memory. That is a
+// different justification and it must be argued as that one.
+//
+// LIMITS. Raw byte payloads: typed SDK structs are unmeasured and will share
+// less. One lineage, one depth. And the segment payload cache is DISABLED for
+// the duration rather than tolerated as a constant.
 //
 // IT IS WHITE-BOX ON PURPOSE. XwalBackend memoises one handle per aria, so a
 // caller dropping its reference frees nothing; measuring through the backend
@@ -101,28 +89,82 @@ func heapAfterGC() uint64 {
 	return m.HeapAlloc
 }
 
-// seamFixture builds n records of recordBytes each in a fresh MemLog. Scale is
-// taken from the owner's real store rather than from taste: the census this
-// aria ran measured translation channels at p99 2,463,337 B with a mean record
-// of 2,326 B, so 1000 x 2326 is the p99 shape.
-func seamFixture(t *testing.T, n, recordBytes int) *MemLog[message.Message] {
+// seamFixture builds n records of recordBytes each in a REAL DISK-BACKED aria
+// and returns a log over it. Scale is taken from the owner's real store rather
+// than from taste: the census this aria ran measured translation channels at
+// p99 2,463,337 B with a mean record of 2,326 B, so 1000 x 2326 is the p99
+// shape.
+//
+// DISK-BACKED IS THE WHOLE CORRECTION (dec6ef8a, 2026-08-19, on the note this
+// file was committed red with). The first version read both arms from one
+// MemLog THAT THE HARNESS KEPT ALIVE, and a MemLog retains every decoded record
+// forever: the payload strings were held by the fixture in both arms, so
+// dropping the parent freed nothing and arm B measured the same object arm A
+// did -- 204,912 B twice, to the byte. The precondition the experiment rests on
+// (that dropping the parent leaves the child the sole owner of those strings)
+// was violated by the instrument.
+//
+// AND THE SEGMENT PAYLOAD CACHE IS DISABLED FOR THE DURATION. It sits BELOW
+// both arms holding raw frames under a process-global budget, which the
+// original note called out as a constant this method cannot separate. It can be
+// removed rather than tolerated: a zero budget drops what is held and makes
+// every read a pread, so what remains resident is the two caches under test and
+// nothing else.
+func seamFixture(t *testing.T, n, recordBytes int) Log[message.Message] {
 	t.Helper()
-	inner := NewMemLog[message.Message]()
+
+	prev := SegmentCacheBudget()
+	SetSegmentCacheBudget(0)
+	t.Cleanup(func() { SetSegmentCacheBudget(prev) })
+
+	root := t.TempDir()
+	be, err := NewXwalBackend(root, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	outfit, err := be.CreateOutfit("seam", message.Patch{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := be.CreateConversation(outfit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log, err := be.Open(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob := make([]byte, recordBytes)
+	for j := range blob {
+		blob[j] = 'x'
+	}
 	for i := 0; i < n; i++ {
-		blob := make([]byte, recordBytes)
-		for j := range blob {
-			blob[j] = 'x'
-		}
-		if _, err := inner.Append(Entry[message.Message]{
+		if _, err := log.Append(Entry[message.Message]{
 			Payload: message.Message{
 				Role:    message.RoleInput,
-				Content: []message.Content{message.TextContent(string(blob))},
+				Content: []message.Content{message.TextContent(fmt.Sprintf("%d%s", i, blob))},
 			},
 		}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	return inner
+	// THE WRITING BACKEND IS CLOSED AND THE READER OPENS THE STORE AFRESH.
+	// XwalBackend memoises ONE cachedLog per aria, and that memo retains every
+	// decoded row for the life of the backend -- a THIRD holder of the very
+	// strings this experiment is trying to attribute to two. Evicting it is not
+	// enough to trust: closing the backend and opening a new store leaves
+	// nothing behind that could hold them.
+	if err := be.Close(); err != nil {
+		t.Fatal(err)
+	}
+	st, err := OpenXwalStore(root, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	return newXwalLog[message.Message](st, id, chanIR, true)
 }
 
 // seamRun performs ONE keep-versus-drop measurement INSIDE ITS OWN FRAME and
@@ -141,8 +183,28 @@ func seamRun(t *testing.T, n, recordBytes int, parentAlive, spoilSeed bool) (chi
 	t.Helper()
 	inner := seamFixture(t, n, recordBytes)
 
-	parent := newWindowedLog[message.Message](inner, 0, 0, irDecodeInflation, irEntrySize)
-	seed := parent.Read() // resident rows, the donation
+	// THE PARENT IS DROPPED BY CONSTRUCTION, NOT BY ASSIGNMENT (dec6ef8a,
+	// 2026-08-19). `parent = nil` in this frame is not enough: the pointer
+	// survives in a stack slot the collector still scans, so the parent's rows
+	// stay reachable and the child never becomes the sole owner. That is
+	// exactly how this instrument reported A == B to the byte -- twice, once
+	// with a MemLog holding the strings and once with a stack slot holding the
+	// parent -- and a diagnostic in a DIFFERENT frame shape produced 3,061,184
+	// B for the same arm, which is the tell.
+	//
+	// Building the parent inside a function that returns only the seed puts it
+	// in a frame that has RETURNED. There is no slot left to scan.
+	makeSeed := func() []Entry[message.Message] {
+		parent := newWindowedLog[message.Message](inner, 0, 0, irDecodeInflation, irEntrySize)
+		seed := parent.Read() // a COPY of the rows; the strings are shared
+		if parentAlive {
+			keptParent = parent // package-level, so the parent outlives this frame
+		}
+		runtime.KeepAlive(parent)
+		return seed
+	}
+	seed := makeSeed()
+
 	if spoilSeed {
 		// A seed the seam probe must reject: same length, wrong content at the
 		// last row, so newSeededLog falls back to decoding. Not a fabricated
@@ -157,27 +219,30 @@ func seamRun(t *testing.T, n, recordBytes int, parentAlive, spoilSeed bool) (chi
 
 	child := newSeededLog[message.Message](inner, 0, 0, irDecodeInflation, irEntrySize, seed)
 	_ = child.Read() // force the child's own residency
-
-	if !parentAlive {
-		parent = nil
-		seed = nil
-	}
+	seed = nil
 
 	withChild := heapAfterGC()
 	runtime.KeepAlive(child)
 	child = nil
 	withoutChild := heapAfterGC()
 
-	// The parent (and the inner log) must survive BOTH readings in the
-	// parent-alive arm, or the delta includes bytes nobody was asking about.
-	runtime.KeepAlive(parent)
+	// The inner log must survive both readings, or the delta includes bytes
+	// nobody was asking about.
 	runtime.KeepAlive(inner)
+	keptParent = nil
 
 	if withChild < withoutChild {
 		return 0 // GC noise swamped the signal; reported as zero, never negative
 	}
 	return withChild - withoutChild
 }
+
+// keptParent holds the parent for the PARENT-ALIVE arm from outside every
+// measuring frame. A package-level variable is the bluntest possible way to say
+// "this is alive on purpose", and bluntness is the point: the arm that needs
+// the parent alive must not depend on a stack slot, since the arm that needs it
+// DEAD was ruined by one.
+var keptParent *cachedLog[message.Message]
 
 // TestForkSeamSharing is the measurement. It ASSERTS the falsifier registered
 // at 44c82ab6 and prints the numbers either way: a measurement that only
