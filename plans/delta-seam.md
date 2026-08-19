@@ -2140,3 +2140,55 @@ THE PATTERN, since this is the third time tonight one has generalised: an
 INTERIOR case sees what an EDGE case cannot. Interior gap, not leading or
 trailing. Interior duplicate run, not final. The edges are where fixtures
 get written and where defects hide.
+
+## PINS ARE NOT HAZARDS, AND ATTRIBUTION IS PER COMMIT
+
+fd15d2a0's distinction, adopted by f3aa1d0b, 2026-08-18, at commit one's
+boundary.
+
+COMMIT ONE (the merge-join) landed with FIVE tests, of which ONE went red
+before the code (the lookup count: 20, must be 0) and FOUR PASSED AGAINST
+THE OLD CODE. Its author did not treat that as a weakness and was right:
+
+    A HAZARD TEST guards a property the change could VIOLATE. It must be
+    RED FIRST, and this campaign's standard is that it be proven to reach
+    by failing before the code exists.
+    A PIN guards a property the change must PRESERVE. GREEN FROM BIRTH IS
+    THE CORRECT STATE, because the old code already has the property — and
+    the only meaningful proof of its power is a CANARY.
+
+Saying which is which IN THE COMMIT is the load-bearing part, so that
+nobody later reads five green-from-birth tests as five vacuous ones. And
+the canary table is the model, because DIFFERENT SABOTAGES FAILED
+DIFFERENT SUBSETS — keep the FIRST of a run fails one; a miss advancing
+the passenger fails two; a cursor left INSIDE the run fails ALL FIVE. That
+distribution is itself evidence the five are not one test wearing five
+names.
+
+## AND THE ATTRIBUTION RULE, WHICH IS THE 2,488-BYTE LESSON IN PROSE
+
+The draft landing note said: "per-turn work moves from constant to linear,
+in counts, WITH THE LOOKUP TERM REMOVED ENTIRELY." Read as one sentence
+about the deletion, THAT CREDITS COMMIT TWO WITH COMMIT ONE'S WIN. The
+lookups were removed by the join, on a shape that already existed, and
+measured there (cold 401 -> 0). The deletion does not remove lookups; it
+ADDS THE WALK the lookups would have multiplied.
+
+That is the phantom-improvement failure priced tonight at 2,488 B and 33%
+— a stage credited with a win belonging to a change beside it — ARRIVING
+IN PROSE RATHER THAN IN A BENCHMARK NAME. Same defence:
+
+    ATTRIBUTE PER COMMIT, NEVER PER STAGE.
+
+    COMMIT ONE   lookups N+1 -> 0 cold, 1 -> 0 warm. Decodes and
+                 entries-handed UNCHANGED — registered as falsifiers before
+                 the run, and unmoved.
+    COMMIT TWO   per-turn work CONSTANT -> LINEAR in length. Entries handed
+                 1 -> N+1. Decodes unchanged at 1.
+    TOGETHER     the projection is gone and the walk replacing it carries no
+                 lookup per record — which is WHY the join was cut first:
+                 not to make the deletion look better, but so the exposure
+                 never existed.
+
+The two results are on DIFFERENT AXES and neither cancels the other.
+Written that way, no future reader can quote the pair as one number.
