@@ -1760,3 +1760,79 @@ is honest and must be said in the landing note rather than papered over.
 
 THE QUIET-BOX TICKET THEREFORE DISPATCHES THE HEAP MEASUREMENT FIRST, and
 now for a stronger reason than "it is the number people will want".
+
+## STEP 3'S UNPRICED COST: DELETING `Previous` DELETES THE WARM START
+
+f3aa1d0b, 2026-08-18, ruled at the step-2 boundary from the executor's own
+field enumeration, BEFORE step 3 is cut.
+
+Two lines of that enumeration, read together, say something neither says
+alone:
+
+    LastLT / Entries   "the watermark and its validity check ... with no
+                       warm start there is nothing to validate"
+    State              "the encoded natives. REBUILT EACH PASS from the
+                       translation cache by LT"
+
+    THEREFORE EVERY TURN BECOMES A COLD WALK OVER THE WHOLE CONVERSATION.
+
+`ProjectIncrementally`'s own doc says avoiding that is why it exists: "It
+READS only the suffix too, which it did not used to: the whole log was
+materialized and then sliced, so a warm pass that touched three messages
+still required all N to be decoded and resident." Deleting `Previous`
+turns `TailAfter(watermark)` back into `TailAfter(0)`.
+
+THIS IS NOT A VETO, and it is important that it is not. Gluck's standing
+instruction on this design is that a regression is REPORTED AND TUNED,
+never treated as a veto, and the design reason is his ruling: nothing may
+pin evicted bytes, and if a caller needs a record it reads it. WHAT MAY NOT
+HAPPEN is the cost being discovered after landing by someone whose turn got
+slower.
+
+PRE-REGISTERED, BEFORE THE CUT:
+
+  a. DO THE EXISTING INSTRUMENTS REACH? BenchmarkColdWalkWarmCache, its
+     8Observed variant, ColdWalkColdCache and the
+     BenchmarkObservationWarm{0,1,8,50} axis were built for this exact
+     question. If they take a `Previous` and the field is gone, they
+     measure a shape that no longer exists — THEIR SUBJECT CHANGED, so
+     their NAMES change. Same rule that retired `memoLanded` and
+     `InterruptRepair10000`.
+  b. THE PREDICTION IS WRITTEN FIRST, WITH FALSIFIERS. Mine, offered to be
+     beaten: per-turn cost rises with conversation LENGTH rather than with
+     new records, and the rise is dominated by CACHE LOOKUPS — one read per
+     record — rather than by decode, since the cached path skips derivation.
+  c. THE MEASUREMENT IS THE ARM'S. The executor does not grade its own cut.
+  d. IF IT REGRESSES IT GOES IN THE LANDING NOTE. The ledger's own sentence
+     applies to costs as much as to benefits: a stage whose cost is written
+     down honestly before it ships cannot be re-justified afterwards by
+     whoever needs it to have been worth it.
+
+AND THE RULING IS ITSELF UNVERIFIED, which is stated here rather than
+discovered later: it is read off an enumeration and a doc comment, not off
+a measurement. If the cache lookup is O(1) in a resident map, or the warm
+start is already dead on this branch, or the walk is bounded by something
+unread, the executor takes it and says so in the first line.
+
+## AND A REHEARSAL IS A LIVENESS CLAIM
+
+The cross-aria handoff rule — apply-check against the RECIPIENT'S head
+before sending — was obeyed exactly, and the residency fixtures still
+landed RED: the executor's next commit made `Form` set with `Boards` nil an
+ERROR rather than a default, and the fixtures used the only shape that was
+legal when they were written. Its own sentence: the check "verified
+everything it could — right up until my head moved underneath it."
+
+    A REHEARSAL IS A LIVENESS CLAIM AND LIVENESS CLAIMS EXPIRE. THE SENDER
+    STAMPS THE HEAD IT REHEARSED AT; THE RECIPIENT COMPARES THAT STAMP TO
+    ITS OWN HEAD BEFORE APPLYING AND RE-REHEARSES IF IT MOVED.
+
+Same shape as the gate stamp one level over: not "it was verified" but "it
+was verified AT THIS TREE", so the recipient can tell whether the
+verification still applies instead of learning it from a red test.
+
+AND THE EXECUTOR DID NOT REPAIR THE INSTRUMENT THAT GRADES IT, which is the
+separation working: it sent the cause, the one-field fix and a fixture to
+copy the shape from, and told the arm to CHECK rather than accept that the
+change is mechanical — because if supplying a board source moves the
+honest/pinning numbers at all, that is a finding that outranks the repair.
