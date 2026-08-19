@@ -224,7 +224,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		}
 		// Before names a turn cursor; Limit is a byte budget hint. A zero
 		// Before with a backward read means the tail.
-		if req.Before > 0 {
+		if req.Before > 0 || req.Backward {
 			at := aria.Anchor{Turn: uint64(req.Before), Node: uint64(req.BeforeNode)}
 			return a.ReadBefore(at, req.Limit), nil
 		}

@@ -365,3 +365,97 @@ first unstamped record and truncates the turn silently. The boundary is
     a reader Restore in that window drops the node and the agent refaults from
     the store. Correct, occasionally wasteful, self-healing -- and the payoff
     is that a dormant aria's composed turns survive its waking.
+
+---
+
+# STEP C: `fig show` GOES THROUGH THE API (Gluck, 2026-08-19)
+
+His words: "fig show should probably go through the cache", then "the cli
+should never read any of the aria state directly, all should be through the
+api", and "fig show should call a jsonrpc api that composes the turn server
+side and renders on the client. No client turn construction from raw ir should
+be on the client" -- with the concession that "if the cli client keeps a
+duplicate of the ir for rendering that might be fine since it crosses a
+runtime".
+
+## WHAT IT WAS
+
+`show` read RAW IR (`aria.read`, a backward walk in 1000-entry pages) and
+called `compose.Turns` IN THE CLI. It then rendered `[]aria.Turn` and, under
+`-j`, printed an `aria.Page` -- the same shape the daemon serves. So the
+client was doing the daemon's composition to reach the daemon's own output
+type: A THIRD COMPOSITION OF THE SAME DATA, after the agent's and the
+reader's, and the one that could disagree with both.
+
+`aria.page` -- the RPC that answers exactly this question -- HAD NO CALLER IN
+THE REPO. That is the tell: the API existed and `show` never adopted it.
+
+## WHAT IT IS
+
+`show` pages composed turns from the daemon and renders them. The client's
+only assembly left is rejoining a turn the WIRE BUDGET cut in half
+(`TurnPart.From`), which is a seam the transport introduced, not a projection.
+`--verbose/--literal` still read raw IR, because those views render RECORDS
+and construct no turns.
+
+Deleted from the CLI: `gatherShowWindow`'s turn arithmetic, `composeTurns`,
+`windowSatisfies`, `derivedIDs`, `trimPartialHead`.
+
+## THE PARITY CHECK, WHICH IS THE ONLY REASON TO BELIEVE ANY OF THIS
+
+Old binary and new binary, the SAME daemon, a reflinked copy of the real
+store, 12 arias x 4 selectors (`-a`, `-n 5`, `--from 2 --to 4`, `--before 3`),
+`-j` output compared with `cmp`:
+
+    33 of 48 BYTE-IDENTICAL, and the 15 that differ are two classes, both
+    understood and neither accidental.
+
+### AND THE THREE DEFECTS THE REAL STORE FOUND THAT NO FIXTURE DID
+
+  1. A ZERO ANCHOR MEANS THE HEAD, NOT THE TAIL. `aria.page` chose its
+     direction by `Before > 0`, so "the last 40 turns" with no anchor asked
+     for a FORWARD page from the head and got the FIRST 40 -- a confident
+     wrong answer with no error. ReadRequest/AriaPageRequest grew `Backward`.
+  2. A BACKWARD ANCHOR IS (TURN, NODE), NOT A TURN. Paging back from a turn
+     id alone asks for everything before that turn's NODE 0, silently dropping
+     the rest of a turn the budget had cut. Measured: a 143-node turn came
+     back with 9.
+  3. A TURN SPLIT ACROSS TWO PAGES MUST BE WELDED. Without it the same turn
+     appears twice, and a consumer keyed by turn id keeps whichever fragment
+     it saw last.
+
+    ALL THREE PRODUCED PLAUSIBLE, NON-EMPTY, WRONG OUTPUT. The unit suite was
+    green through every one of them, and the instrument that caught them was
+    a byte comparison against the code being replaced.
+
+### AN UNANSWERED QUESTION WAS INVISIBLE TO EVERY PAGINATED READ
+
+Two arias of twelve came back EMPTY through the API and showed their content
+through the raw one. Their whole history is one prompt with no answer, and
+`Paginate` walks (turn, node) positions: a turn with an inquiry and no nodes
+has NO positions, so it cannot be located, cannot be stepped to, and an aria
+made of one returns an empty page. This was never a `show` defect -- THE PAGER
+HAS THE SAME BLIND SPOT, and nobody had looked through that door.
+
+Fixed in the paginator, not in `show`: a turn with an inquiry occupies one
+position whether or not it has nodes. TestAnInquiryWithNoAnswerIsStillAPage.
+
+### THE ONE DIFFERENCE THAT IS A FIX
+
+`--before N` reported `more.after: false` unconditionally. It is now true when
+turns exist after the anchor, which they do.
+
+### AND THE ONE RAISED TO GLUCK, NOT DECIDED HERE
+
+For a fork's INHERITED records, the bound-board form deltas are now keyed by
+the ANCESTOR node that owns them rather than by the aria being read:
+
+    -  "86d12409.cwd": {"form": "86d12409"}   the reader
+    +  "01efd291.cwd": {"form": "01efd291"}   the owner
+
+`formdelta` keys a bound delta "<ariaID>.<path>", and the composed turn for an
+inherited record is composed ONCE, in the ancestor's node, and shared. It
+cannot carry the reader's id without being recomposed per descendant, which is
+the duplication the re-seat deletes. Owner-keyed is truthful and keeps one
+copy; reader-keyed keeps the old wire and kills the sharing. RAISED WITH THE
+MECHANISM AND THE DIFF; the current behaviour is owner-keyed.

@@ -14,7 +14,6 @@ import (
 	"github.com/jack-work/largo"
 
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/formdelta"
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
@@ -65,63 +64,40 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		figaroID = r.FigaroID
 	}
 
-	// Read the IR through the angelus's shared LogCache, walking BACKWARD from
-	// the tail until the selector is covered (see show_window.go). One forward
-	// read from LT 0 is what this used to do, and the angelus caps a single
-	// read at 1000 entries, so a long aria was shown its own prefix and told
-	// that was all of it.
-	w, err := gatherShowWindow(ctx, acli, figaroID, opts)
-	if err != nil {
-		die("aria.read: %s", err)
-	}
-	// A pre-turn-id aria can only be numbered from its head: see derivedIDs.
-	if !w.atHead && derivedIDs(w.entries) {
-		resp, rerr := acli.AriaRead(ctx, figaroID, 0, 0)
-		if rerr != nil {
-			die("aria.read: %s", rerr)
-		}
-		entries := make([]store.Entry[message.Message], len(resp.Entries))
-		for i, e := range resp.Entries {
-			entries[i].LT = e.LT
-			if uerr := json.Unmarshal(e.Payload, &entries[i].Payload); uerr != nil {
-				die("aria.read: parse LT=%d: %s", e.LT, uerr)
-			}
-		}
-		w = showWindow{entries: entries, total: resp.Total, atHead: len(entries) >= resp.Total, pages: 1, fromHead: true}
-		for _, e := range resp.Entries {
-			if len(e.FormDeltas) > 0 {
-				if w.deltas == nil {
-					w.deltas = map[uint64]map[string]livedoc.FormDelta{}
-				}
-				w.deltas[e.LT] = e.FormDeltas
-			}
-		}
-		if !w.atHead {
-			showNote("this aria stores no turn ids (written before they existed), so its turns can only be counted from the head: showing the first %d of %d entries", len(w.entries), w.total)
-		}
-	}
-	if len(w.entries) == 0 && w.total == 0 {
-		fmt.Fprintln(os.Stderr, "(empty aria)")
-		return
-	}
-	entries := w.entries
-
-	// --verbose / --literal: the raw IR path (inline transitions + extras,
-	// or unrendered IR markdown).
+	// --verbose / --literal are the RAW IR view: records, not turns. They
+	// read entries through the api and render them as records; nothing
+	// here builds a turn out of IR.
 	if opts.verbose || opts.literal {
+		w, err := gatherShowWindow(ctx, acli, figaroID, opts)
+		if err != nil {
+			die("aria.read: %s", err)
+		}
+		if len(w.entries) == 0 && w.total == 0 {
+			fmt.Fprintln(os.Stderr, "(empty aria)")
+			return
+		}
 		renderAriaIR(loaded, figaroID, w, opts)
 		return
 	}
 
-	// Default + --json: conversational units derived from the IR. A window
-	// that does not start at the head drops its oldest turn: the page boundary
-	// fell inside it, and a turn without its prompt renders as an answer to
-	// nothing.
-	turns := trimPartialHead(composeTurns(entries), w.atHead)
-	// The hub assembled each record's form-state window; fold it onto the
-	// turns exactly as the pager does.
-	formdelta.Attach(turns, w.deltas)
-	lo, hi := selectTurnRange(turns, opts)
+	// THE DAEMON COMPOSES. It owns the IR, the projection and the composed
+	// cache; this walks its pages until the selector is covered. A client
+	// that built turns out of raw IR would be a third composition of the
+	// same data, disagreeing with the pager and the stream at every seam.
+	w, err := gatherShowTurns(ctx, acli, figaroID, opts)
+	if err != nil {
+		die("aria.page: %s", err)
+	}
+	// NOTHING IN RANGE IS NOT AN EMPTY ARIA. A selector past the end of a
+	// short aria selects nothing and must still print the empty page (-j)
+	// or the "no turn in range" line; only an aria with no turns at all is
+	// empty, and saying so on stdout would put prose in a json pipe.
+	if len(w.turns) == 0 && opts.from < 0 && opts.before < 0 {
+		fmt.Fprintln(os.Stderr, "(empty aria)")
+		return
+	}
+	turns := w.turns
+	lo, hi := selectShowRange(turns, opts)
 	if lo < hi && opts.maxBytes > 0 {
 		if _, dropped := clipToBudget(turns[lo:hi], opts.maxBytes); dropped > 0 {
 			showNote("--max-bytes %d dropped the %d oldest turn(s) of this selection; a budget clips the head, never the tail", opts.maxBytes, dropped)
@@ -130,18 +106,13 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	}
 
 	if opts.jsonOut {
-		// The UI IR wire shape VERBATIM, an aria.Page, exactly what figaro.read
-		// returns and figaro.aria pushes. Not a bare []Turn, not a shadow struct:
-		// the same bytes a client folds, so `show --json` and the live stream can
-		// never describe a conversation differently.
+		// The UI IR wire shape VERBATIM, an aria.Page: the same bytes the
+		// pager folds and the stream pushes.
 		page := aria.Page{Parts: make([]aria.TurnPart, 0, hi-lo)}
 		for _, t := range turns[lo:hi] {
-			// Whole turns: `show` selects by turn, so no part is ever clipped.
 			page.Parts = append(page.Parts, aria.TurnPart{Turn: t, From: 0})
 		}
-		// Before is true when anything older exists, whether it was sliced
-		// off here or simply never walked to.
-		page.More = aria.More{Before: lo > 0 || !w.atHead, After: hi < len(turns)}
+		page.More = aria.More{Before: lo > 0 || !w.atHead, After: hi < len(turns) || !w.atTail}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(page); err != nil {
@@ -157,24 +128,18 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	if lo >= hi {
 		if w.atHead {
 			fmt.Printf("# aria %s: %d turns (no turn in range)\n\n", figaroID, len(turns))
-		} else if w.fromHead {
-			fmt.Printf("# aria %s: no turn in that range within the first %d turns\n\n", figaroID, len(turns))
 		} else {
 			// The count is NOT known here: the walk stopped as soon as the
 			// selector was covered, so len(turns) is the size of the window,
-			// not of the aria. Printing it as a total restates the old bug.
+			// not of the aria.
 			fmt.Printf("# aria %s: no turn in that range within the %d turns walked back from the tail\n\n", figaroID, len(turns))
 		}
 		return
 	}
 	if w.atHead {
 		fmt.Printf("# aria %s: %d turns (showing %d..%d) · [N] is the turn to fork/send at\n\n", figaroID, len(turns), turns[lo].ID, turns[hi-1].ID)
-	} else if w.fromHead {
-		// The legacy path: a forward read that stopped at the angelus's cap.
-		// Say FIRST, because that is what it is.
-		fmt.Printf("# aria %s: turns %d..%d, the first %d of %d entries · [N] is the turn to fork/send at\n\n", figaroID, turns[lo].ID, turns[hi-1].ID, len(w.entries), w.total)
 	} else {
-		fmt.Printf("# aria %s: turns %d..%d, walked back from the tail of %d entries · [N] is the turn to fork/send at\n\n", figaroID, turns[lo].ID, turns[hi-1].ID, w.total)
+		fmt.Printf("# aria %s: turns %d..%d, walked back from the tail · [N] is the turn to fork/send at\n\n", figaroID, turns[lo].ID, turns[hi-1].ID)
 	}
 	for i := lo; i < hi; i++ {
 		u := turns[i]

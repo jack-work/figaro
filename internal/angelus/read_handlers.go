@@ -50,11 +50,12 @@ func (h *handlers) ariaPage(ctx context.Context, params json.RawMessage) (interf
 		return srv.Handle(ctx, rpc.MethodRead, mustJSON(rpc.ReadRequest{
 			SinceLT: req.SinceLT, Before: req.Before,
 			BeforeNode: req.BeforeNode, Limit: req.Limit,
+			Backward: req.Backward,
 		}))
 	}
 	at := aria.Anchor{Turn: uint64(req.SinceLT)}
-	before := req.Before > 0
-	if before {
+	before := req.Before > 0 || req.Backward
+	if req.Before > 0 {
 		at = aria.Anchor{Turn: uint64(req.Before), Node: uint64(req.BeforeNode)}
 	}
 	return h.reader().Page(req.FigaroID, at, req.Limit, before)

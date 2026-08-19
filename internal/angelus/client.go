@@ -3,6 +3,7 @@ package angelus
 import (
 	"context"
 
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/transport"
 	"github.com/jack-work/jkrpc"
@@ -217,6 +218,18 @@ func (c *Client) SaveBindings(ctx context.Context) (*rpc.SaveBindingsResponse, e
 		return nil, err
 	}
 	return &resp, nil
+}
+
+// AriaPage fetches ONE window of an aria's COMPOSED history: turns, built
+// by whoever owns them (the live agent, or the reader over the store) and
+// held in the process-wide composed cache. A client renders these; it does
+// not build turns out of raw IR.
+func (c *Client) AriaPage(ctx context.Context, req rpc.AriaPageRequest) (aria.Page, error) {
+	var page aria.Page
+	if err := c.call(ctx, rpc.MethodAriaPage, req, &page); err != nil {
+		return aria.Page{}, err
+	}
+	return page, nil
 }
 
 // AriaRead fetches IR entries for an aria through the angelus's
