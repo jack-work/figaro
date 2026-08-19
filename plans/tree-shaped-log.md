@@ -1207,7 +1207,17 @@ were missing are now in hand.
     lock.
 
 SO THE TRADE IS: A TAIL READ COSTS ~15-27% MORE AND A HOPPING READER FAULTS
-HALF AS OFTEN. Plus one policy instead of two, one seeding path instead of two
+HALF AS OFTEN.
+
+AND A THIRD NUMBER ARRIVED AFTER THIS MEMO WAS WRITTEN (b862851c), from the
+branch that was committed red and stood down: A FORK'S RESIDENT PREFIX IS
+ALREADY 93.3% SHARED WITH ITS PARENT under today's one-shot donation (A =
+204,688 B against B = 3,056,928 B, ratio 0.067). SO THE TREE'S STRUCTURAL
+SHARING BUYS CORRECTNESS AND STRUCTURE, NOT MEMORY -- a lineage a copy can
+name, no seam probe silently carrying the guarantee, no second seeding path --
+and the plan's own instruction from 9ed3f561 applies: if the sharing is already
+free, that is a DIFFERENT JUSTIFICATION and it must be written down as that
+one. It is written down as that one here. Plus one policy instead of two, one seeding path instead of two
 (the donation walker is already unified, 567a9cbc), and the fork seam becoming
 structural rather than a one-shot donation guarded by a probe.
 
