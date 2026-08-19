@@ -278,6 +278,14 @@ type turnRef struct {
 	bytes int
 }
 
+// DefaultUIWindowMB bounds composed UI IR, and it lives HERE because this is
+// the package that holds those bytes. 16 MiB holds the working set of several
+// large arias at once (the biggest measured composes to ~6 MB) while bounding
+// an axis that was unbounded; a miss costs one range recompose (~ms), not a
+// disk read. A caller with a configured number TUNES this; it does not supply
+// it, for the reason store.DefaultIRBudgetBytes states.
+const DefaultUIWindowMB = 16
+
 // NewUIBudget bounds shared caches to limitMB mebibytes. 0 is unbounded.
 func NewUIBudget(limitMB int) *UIBudget {
 	if limitMB <= 0 {

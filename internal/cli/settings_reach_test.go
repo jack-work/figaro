@@ -89,3 +89,59 @@ func TestCacheSettingsSkipABackendWithoutWindows(t *testing.T) {
 		t.Fatal("a backend with no setters reported that it took the settings")
 	}
 }
+
+// AND THE OTHER HALF, which is the one that was broken: A KEY NOBODY SET MUST
+// NOT OVERWRITE THE OWNER'S BOUND. Until 2026-08-19 these calls SUPPLIED the
+// residency policy rather than tuning it, so the layers that hold the bytes
+// had no bound of their own and anything built outside this path ran
+// unbounded. The assertion is order-independent on purpose: it compares the
+// enforcement point BEFORE and AFTER, so it cannot be satisfied by whatever a
+// neighbouring test left behind.
+func TestAnUnsetKeyLeavesTheOwnersBound(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[memory]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	before := store.SegmentCacheBudget()
+	applyStoreSettings(loaded)
+	if after := store.SegmentCacheBudget(); after != before {
+		t.Errorf("an unset segment_cache_mb moved the budget %d -> %d", before, after)
+	}
+
+	spy := &settingsSpy{irWindow: -1, irBudget: -1, transBudget: -1}
+	if !applyCacheSettings(loaded, spy) {
+		t.Fatal("the backend interface check refused a backend that implements all three")
+	}
+	if spy.irWindow != -1 || spy.irBudget != -1 || spy.transBudget != -1 {
+		t.Errorf("an empty config called a setter: window=%d budget=%d trans=%d",
+			spy.irWindow, spy.irBudget, spy.transBudget)
+	}
+}
+
+// An explicit zero is a REAL ANSWER and must still reach the store: the user
+// asking for unbounded is not the same as the user saying nothing, and
+// conflating them is what let 0 mean both.
+func TestAnExplicitZeroIsHonoured(t *testing.T) {
+	dir := t.TempDir()
+	body := "[memory]\nir_window_mb = 0\ntranslation_window_mb = 0\n"
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spy := &settingsSpy{irBudget: -1, transBudget: -1}
+	if !applyCacheSettings(loaded, spy) {
+		t.Fatal("the backend interface check refused a backend that implements all three")
+	}
+	if spy.irBudget != 0 || spy.transBudget != 0 {
+		t.Errorf("explicit zeros did not reach the store: budget=%d trans=%d",
+			spy.irBudget, spy.transBudget)
+	}
+}

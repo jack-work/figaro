@@ -417,46 +417,35 @@ func (l *Loaded) TelemetryOTLPEndpoint() string {
 	return l.Config.Telemetry.OTLPEndpoint
 }
 
-// SegmentCacheBytes is the process-wide budget for raw segment payloads held
-// in memory by figwal, or 0 to hold none. Nil-safe.
-func (l *Loaded) SegmentCacheBytes() int64 {
+// SegmentCacheBytes is the CONFIGURED process-wide budget for raw segment
+// payloads, with the same contract as IRWindowBytes: ok is false when nothing
+// is set, and the default belongs to the package that holds the bytes
+// (internal/store/segment bounds itself at 32 MiB). An explicit 0 is a real
+// answer -- hold none -- and comes back ok.
+func (l *Loaded) SegmentCacheBytes() (int64, bool) {
 	if l == nil || l.Config.Memory.SegmentCacheMB == nil {
-		return int64(defaultSegmentCacheMB) << 20
+		return 0, false
 	}
 	if mb := *l.Config.Memory.SegmentCacheMB; mb > 0 {
-		return int64(mb) << 20
+		return int64(mb) << 20, true
 	}
-	return 0
+	return 0, true
 }
 
-// UIWindowMB is the process-wide budget for composed UI IR, in mebibytes,
-// or 0 for unbounded. Nil-safe. The default holds every aria the author
-// has measured (~6 MB composed at reader-bench size) while refusing the
-// old behaviour, which was to hold all of it forever.
-func (l *Loaded) UIWindowMB() int {
+// UIWindowMB is the CONFIGURED budget for composed UI IR, in mebibytes, with
+// the same contract; the default belongs to internal/livelog/aria, which owns
+// the composed turns.
+func (l *Loaded) UIWindowMB() (int, bool) {
 	if l == nil || l.Config.Memory.UIWindowMB == nil {
-		return defaultUIWindowMB
+		return 0, false
 	}
 	if mb := *l.Config.Memory.UIWindowMB; mb > 0 {
-		return mb
+		return mb, true
 	}
-	return 0
+	return 0, true
 }
 
 const (
-	// defaultSegmentCacheMB is figwal's own default, restated here so the
-	// daemon's number is the daemon's to choose. 32 MiB holds the working set
-	// of a busy fleet (the author's whole store is 281 MB on disk, and a
-	// listing touches the tail of each channel) while refusing the old
-	// behaviour, which was to hold all of it.
-	defaultSegmentCacheMB = 32
-
-	// defaultUIWindowMB bounds composed UI IR. 16 MiB holds the working
-	// set of several large arias at once (the biggest measured composes
-	// to ~6 MB) while bounding the axis that was unbounded; a miss costs
-	// one range recompose (~ms), not a disk store.
-	defaultUIWindowMB = 16
-
 	// minIRWindow is a floor, not taste: a window smaller than one turn's
 	// worth of messages makes an in-flight turn re-read its own tail from disk
 	// on every append.

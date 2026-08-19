@@ -13,8 +13,8 @@ import (
 
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/store"
 	figOtel "github.com/jack-work/figaro/internal/otel"
+	"github.com/jack-work/figaro/internal/store"
 )
 
 // lockStore takes a non-blocking exclusive flock on the aria store so only one
@@ -91,7 +91,9 @@ func applyStoreSettings(loaded *config.Loaded) {
 	store.SetFormLinger(loaded.ActorLinger())
 	store.SetHandleIdle(loaded.HandleIdle())
 	store.SetPatchWindow(loaded.FormPatchWindow())
-	store.SetSegmentCacheBudget(loaded.SegmentCacheBytes())
+	if n, set := loaded.SegmentCacheBytes(); set {
+		store.SetSegmentCacheBudget(n)
+	}
 }
 
 // applyCacheSettings TUNES the per-aria caches: the store bounds itself at

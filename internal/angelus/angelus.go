@@ -102,10 +102,21 @@ func New(cfg Config) *Angelus {
 		StartedAt:  time.Now(), // set-once at construction; read concurrently (Uptime)
 		Sessions:   tool.NewSessionRegistry(tool.DefaultSessionTTL),
 		Settings:   cfg.Settings,
-		UIWindow:   aria.NewUIBudget(cfg.Settings.UIWindowMB()),
+		UIWindow:   aria.NewUIBudget(uiWindowMB(cfg.Settings)),
 		Hubs:       newHubs(),
 	}
 	return a
+}
+
+// uiWindowMB is the composed-UI bound: the package that holds those bytes owns
+// the default, and a config file TUNES it. Nil settings and an unconfigured
+// key both mean "leave the owner's number alone"; an explicit 0 is the user
+// asking for unbounded and is honoured.
+func uiWindowMB(settings *config.Loaded) int {
+	if mb, set := settings.UIWindowMB(); set {
+		return mb
+	}
+	return aria.DefaultUIWindowMB
 }
 
 // FigaroSocketDir returns the directory for figaro sockets.
