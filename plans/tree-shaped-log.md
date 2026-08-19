@@ -502,3 +502,63 @@ policy those must be reconciled explicitly and stated at the boundary, or a
 single "budget" number will silently mean two different quantities depending
 on which layer reads it. `newWindowedLog`'s `inflation` parameter exists
 because that mismatch was already met once.
+
+## THE SEEDING SPECIFICATION, WRITTEN DOWN (fd15d2a0, 77e17f93)
+
+Both donation sites are now covered by tests at the fork seam, and the
+comparison IS the specification for whatever replaces them.
+
+IDENTICAL, VERBATIM IN BOTH: `Lineage(id)`; fewer than 2 refs -> nil; base
+from the last ref; base 0 -> nil; NEAREST ANCESTOR FIRST, walking upward,
+skipping unopened handles, first non-empty `residentBelow(base)` wins.
+
+DIFFERENT -- and this tuple is the whole of it:
+
+                      FIG IR                  TRANSLATION
+    handle field      h.ir                    h.trans[providerName]
+    keyed by          nothing                 providerName
+    window            b.irWindow              0, HARDCODED
+    budget            b.irBudget              b.transBudget
+    inflation         irDecodeInflation       1
+    sizeOf            irEntrySize             transEntrySize
+    channel           chanIR, isMain=true     transChannel(p), isMain=false
+    fingerprint       ROWS CARRY NONE         keyed by it, cleared wholesale
+
+    THE SEEDING ALGORITHM IS GENERIC; THE PER-CHANNEL POLICY IS A TUPLE.
+
+### AND THE IR PATH HAS NO REDUNDANCY BEHIND THE PROBE
+
+Because IR rows carry NO fingerprint, `newSeededLog`'s fingerprint sweep
+compares empty strings and CAN NEVER REFUSE ANYTHING there. It is INERT BY
+CONSTRUCTION on the fig IR path. So of its two guards, exactly one is
+load-bearing -- THE SEAM PROBE -- which is the same guard the translation
+experiment showed was carrying the guarantee. The warning that a
+consolidation must preserve the probe's role, or make it unnecessary by
+construction, applies to the IR side WITH NOTHING BEHIND IT.
+
+### TWO INSTRUMENT FAULTS, AND THE SECOND IS A GENERAL RULE
+
+POINTER IDENTITY HAS A FLOOR ABOVE ZERO. The "donation was used" bar was
+`shared > 0`. Under the canary the IR arm fell from 20 shared rows to 2 and
+the test called it a PASS -- because IDENTICAL SHORT STRING LITERALS ARE
+INTERNED TO ONE ADDRESS, so pointer identity is true BY ACCIDENT for them.
+An identity oracle over interned values has a nonzero floor, and an
+instrument that does not know its own floor cannot use a threshold. The bar
+is now EVERY row below the base.
+
+AND THE ONE TO KEEP:
+
+    A PLAUSIBLE EXPLANATION FOR A GREEN CANARY IS THE MOST EXPENSIVE THING
+    AN INSTRUMENT CAN PRODUCE, BECAUSE IT ENDS THE INVESTIGATION.
+
+Its author reasoned its way to a story for why the canary stayed green --
+that the child's handle must already exist before the hazard does -- and the
+story was FALSE (`ForkAt` does not open child handles). The number said
+2-of-20 and the story said "not exercised"; only the measurement was right.
+This is the companion to the standing rule that a passing canary is a
+FINDING: a passing canary WITH AN EXPLANATION ATTACHED is a finding that has
+been talked out of existence.
+
+UNCOVERED AND NAMED: a parent whose window has TRIMMED below the child's
+base, and a grandparent donation where the nearest ancestor is unopened and
+the loop walks further. Both reachable with the existing fixture.
