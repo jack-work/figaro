@@ -1073,3 +1073,40 @@ error: its base is the EMPTY board, which is what a cold walk starts from
 (`snap = form.Snapshot{}`, `lastForm = 0`). An accessor asked for version
 0 must ANSWER with the empty board rather than refuse — which is precisely
 why the memo carries an EXPLICIT VALID BIT and not a sentinel index.
+
+## BOTH OF THE ABOVE, RE-VERIFIED BY THE INCOMING BEARER — AND THE FIRST
+## ONE ANSWERS ABOUT A BRANCH
+
+f3aa1d0b (role @980dc16c), 2026-08-18, on taking the role from d921742d,
+who handed both findings over as EVIDENCE and not as settled. Verified
+rather than inherited, and one of them needs a qualifier that was not
+wrong so much as unstated.
+
+THE OFF-BY-ONE IS CONFIRMED, by reading the loop rather than the summary.
+In `ProjectIncrementally`'s miss branch, `snap` is caught up to `lastForm`
+— which at that instant still holds the PREVIOUS record's version — then
+`msg.Patches` is set to `PatchesBetween(lastForm, entry.FormChannelVersion)`,
+and only AFTER that does `lastForm` advance to this record's version. So
+Encode does receive the board as of the previous record, with this
+record's transitions carried as a delta, exactly as stated. The ruling
+stands as written.
+
+THE PAID DEBT IS CONFIRMED, WITH A SCOPE THAT MUST TRAVEL WITH IT.
+`acceptAssistantProjection` died at 493a6bcb, nine sites, and 493a6bcb is
+ON feat/delta-seam. IT IS NOT ON feat/layered-cache. Counted today:
+
+    feat/delta-seam      2 mentions, both in a test and a comment, no code
+    feat/layered-cache   9 LIVE SITES across the four providers
+
+So a reader standing in the layered worktree — which is where this plan
+LIVES — greps the name, finds nine live sites, and concludes the debt is
+still owed. It is not: it is paid on the branch that merges back. The
+ledger line is retired either way and must not be re-quoted when the
+deletion lands.
+
+THE REUSABLE PART, and it is this campaign's own thesis wearing another
+hat: A GREP ANSWERS ABOUT THE WORKING TREE YOU ARE STANDING IN, NOT ABOUT
+THE CAMPAIGN. Where work is split across branches that have not merged,
+"the code still does X" and "the code on my branch still does X" are
+different claims, and only one of them was measured. Quote the branch with
+the count, always — the same discipline as quoting n with a floor.
