@@ -1578,3 +1578,59 @@ RETROSPECTIVE SCOPE, stated so it is not overquoted: this does NOT withdraw
 merge building, and by the change being a mechanical unexport with seven
 in-package call sites. What it withdraws is the belief that a dirty stamp
 makes a run reproducible by anyone but its author.
+
+## THE DIGEST, AND A HOLE IN MY SPECIFICATION THAT THE BUILDER CLOSED
+
+9ed3f561, recorded by f3aa1d0b, 2026-08-18. The digest rule two sections
+up is built and canaried FOUR ways, all firing: a clean run stays
+admissible; a dirty run records its digest; A MID-RUN EDIT AT AN UNCHANGED
+DIRTY COUNT IS REFUSED (the case the scalar could not see, which is the
+whole point); and a dirty log with its digest stripped is refused.
+
+AND THE DIGEST COVERS UNTRACKED FILE CONTENTS, WHICH MY SPEC DID NOT SAY.
+I specified `git diff HEAD | sha256sum`. `git diff HEAD` CANNOT SEE
+UNTRACKED FILES AT ALL, while a dirty count from `status --porcelain`
+happily counts them — so my digest would have been blind to exactly the
+files most likely to be a scratch canary or a probe, and blind in the
+direction that keeps a log admissible. The builder added status, diff and
+untracked CONTENTS, and canaried that claim SEPARATELY rather than
+asserting it in a comment: an untracked file edited at an unchanged dirty
+count moves the digest. A comment making a claim its test does not check is
+a claim nobody will ever verify.
+
+BACKWARD COMPATIBILITY CHECKED RATHER THAN ASSUMED: the campaign's first
+admissible log is still admissible, because the digest is required only
+when dirty is non-zero.
+
+## AND A STANDING RULE FOR CROSS-ARIA HANDOFF: CHECK THE ARTIFACT AGAINST
+## THE RECIPIENT'S HEAD
+
+`git format-patch` on that commit EMITTED THE SAME DIFF TWICE — 251 lines
+where `git show` gives 130, one tree entry per path, no format.* config set,
+and earlier patches from the same worktree exported correctly. UNDIAGNOSED,
+and deliberately so: a patch carrying a hunk twice cannot apply, so it
+would have failed in the executor's hands and read as a CONFLICT WITH ITS
+WORK rather than as a defect in the sender's export.
+
+The builder refused to ship it, switched to fetch-and-cherry-pick, and
+verified THAT mechanism end to end — applies at the recipient's head,
+authorship preserved, scripts parse, checker still green.
+
+    RULED: EVERY CROSS-ARIA CODE HANDOFF IS `git apply --check` (or a
+    cherry-pick into a scratch worktree) AGAINST THE RECIPIENT'S ACTUAL
+    HEAD BEFORE IT IS SENT. Not the sender's head. Not "it exported
+    cleanly".
+
+WE DO NOT NEED THE DIAGNOSIS, WHICH IS WHY THE RULE IS THE ANSWER: a
+cheap universal check makes the cause irrelevant, and chasing git's
+internals would cost more than it buys. The anomaly is recorded here with
+its symptoms so that whoever meets it again starts from a sighting rather
+than from disbelief.
+
+THE FAMILY THIS BELONGS TO, and it is the third instance in one evening:
+A COMMAND THAT SUCCEEDED IS NOT AN ARTIFACT THAT IS CORRECT. Tonight: a
+cherry-pick that silently did nothing, a patch naming the wrong commits,
+and a patch file duplicating its own hunks. IN ALL THREE THE COMMAND
+EXITED ZERO. It is the status-versus-artifact rule one level out — there
+the status field lied about the work, here the exit code told the truth
+about a process that produced a wrong thing.
