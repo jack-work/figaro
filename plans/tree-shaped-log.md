@@ -250,3 +250,44 @@ named Warm measuring a cold walk, and a test named PreservesPrefixBytes
 asserting an ADDRESS — an instrument answering accurately about the wrong
 subject. THE DIFFERENCE IS THAT THOSE COST A RERUN, AND THIS ONE COMPOUNDED
 INTO A STRUCTURE NOBODY CHOSE.
+
+## THE FOURTH READING OF AN EMPTY RESULT (6ec565b5)
+
+`tools/callpath` documents three ways its output can be empty: no call
+path; the bytes crossed BY VALUE rather than by call; or the symbol is
+outside the cut. A FOURTH EXISTS AND IS THE INTERESTING ONE:
+
+    THE EDGE EXISTS AT RUNTIME AND THE ANALYSIS CANNOT SEE IT.
+
+That is what a FUNC VALUE IN A STRUCT FIELD looks like from the outside,
+and `config.Encode` (projection.go:297) is exactly one — every read path
+ends there. The decisive query, with its control, because the two answer
+different questions and THE DIFFERENCE IS THE FINDING:
+
+    callpath -pkgs ./internal/provider/... -entry ProjectIncrementally \
+             -sink renderPatchBlocks -algo vta -max 40
+    (and the same with -algo cha, as the control)
+
+  VTA SILENT, CHA CONNECTS -> the closure's flow does not survive the
+      ProjectionConfig struct, and the last edge before the wire is a
+      CANDIDATE SET rather than a fact.
+  VTA CONNECTS -> those frames are static and the path is complete to the
+      encoder.
+
+An empty result from an unstated fourth reading is indistinguishable from
+"no such path", which is the tool's own version of every defect in
+~/notes/figaro/instrument-not-reaching-the-code.md. THE HEADER MUST STATE
+ALL FOUR.
+
+## AND THE DIVISION WHEN HAND-READ AND HARNESS DISAGREE
+
+    call EDGES ........... the harness wins
+    ALIASING (copied / reshaped / by reference) ... the hand-read [R]
+                           column wins, because no callgraph infers it
+    WHETHER A FRAME EXISTS AT ALL ... THE HARNESS WINS OUTRIGHT
+
+The third is 6ec565b5's own addition, against its own document, and its
+reason is the honest statement of a hand-read list's limit: THAT IS
+EXACTLY THE CASE WHERE A READER'S EYE SUPPLIES A CALL THE CODE DOES NOT
+MAKE. It has no evidence it did so anywhere, and no way to be sure it did
+not.
