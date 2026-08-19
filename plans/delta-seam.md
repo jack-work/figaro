@@ -2192,3 +2192,82 @@ IN PROSE RATHER THAN IN A BENCHMARK NAME. Same defence:
 
 The two results are on DIFFERENT AXES and neither cancels the other.
 Written that way, no future reader can quote the pair as one number.
+
+## THE WARM PATH REGRESSED, OUTSIDE EVERY REGISTERED FALSIFIER
+
+9ed3f561, ruled by f3aa1d0b, 2026-08-18. Commit two is HELD on it.
+
+    length-invariant          WARM                       COLD
+    c8bfd149 (before join)  lookups=1  cacheWalked=0   lookups=N+1 walked=0
+    1a53d773 (after join)   lookups=0  cacheWalked=N   lookups=0   walked=N
+
+THE COLD COLUMN IS THE WIN THE JOIN WAS CUT FOR. THE WARM COLUMN IS A
+TRADE NOBODY REGISTERED: one lookup becomes a walk of N cache entries.
+CONSTANT BECOMES LINEAR IN CONVERSATION LENGTH, ON THE PATH EVERY LIVE
+TURN TAKES, TODAY, BEFORE THE DELETION EXISTS.
+
+THREE PREDICTIONS WERE REGISTERED AND ALL THREE HELD. The executor's
+falsifiers were entries-handed and decodes — both on the IR SIDE. The
+arm's was "each entry visited AT MOST ONCE" — which this SATISFIES.
+
+    VISITING EACH ENTRY ONCE IS NOT THE SAME AS VISITING ANY AT ALL ON A
+    WARM TURN.
+
+The regression sat outside all three because every falsifier described the
+side of the join that was being fixed, and the cost moved to the side that
+was merely being traversed. This note's own thesis, arriving through a
+pre-registration rather than through an instrument.
+
+AND THE INSTRUMENT ONLY SAW IT BECAUSE ITS AUTHOR NOTICED ITS AXIS HAD
+RETIRED: when lookups fell to zero in both columns, a counter reading zero
+on both sides stopped discriminating anything, so it extended the
+instrument to count WHAT REPLACED THE LOOKUPS. A retired axis reads
+exactly like a clean result.
+
+RULED — SEEK, DO NOT WALK. A warm pass reads the IR side from
+`TailAfter(watermark)`; the cache cursor must be POSITIONED at the first
+entry above that watermark by a search, not reached by walking from zero.
+`cached_log.go`'s own Lookup comment states the ground: entries are
+ASCENDING BY FigaroLT and `ReadFrom` BINARY SEARCHES ON EXACTLY THAT. The
+join then keeps "each entry visited at most once" AND regains the warm
+path's constant cost.
+
+AND WHY THIS BLOCKS COMMIT TWO RATHER THAN DISSOLVING INTO IT — the warm
+path dies at commit two, so the regression is arguably transient:
+  1. COMMIT ONE MUST STAND ALONE. It is a separate commit precisely so its
+     result is attributable. A commit excused by a LATER commit is a stage
+     justified as a whole, which is what splitting it up was for.
+  2. THE COSTS COMPOUND RATHER THAN REPLACE. After the deletion every turn
+     takes the cold path; if the cache side also walks from zero, the pass
+     walks the IR log linearly AND the cache log linearly, and the second
+     walk is the one nobody has priced.
+
+## AND A RETRACTED REHEARSAL STAMP, DISCLOSED RATHER THAN REPAIRED
+
+The same message ended "REHEARSED AT 1a53d773". IT WAS FALSE WHEN WRITTEN:
+the checkout back to that commit had FAILED — an untracked file blocked
+it, git printed "error: ... Aborting" — and the next action assumed
+success. The branch did not carry the counters at all. Now true and
+verified: 8638bdc2, parent 1a53d773, green there.
+
+THE FINDING IS UNAFFECTED: both columns came from real runs at both
+commits with the same instrument, and were re-run since.
+
+WHAT IT TEACHES, and it is a NEW DIRECTION rather than a repeat:
+
+    THE DEFENCE THIS CAMPAIGN BUILT IS FOR SILENT FAILURE — assert the
+    artifact, never the status field, because a command that succeeded is
+    not an artifact that is correct. HERE THE COMMAND FAILED LOUDLY AND
+    THE OUTPUT WENT UNREAD. A defence against silence does not cover
+    noise.
+
+AND THE PATTERN WITH THREE INSTANCES TONIGHT, worth naming because it is
+about people and not instruments: the arm rebuilt, an hour later and in
+another corner, the exact false negative it had refused; I found my own
+gate rule weaker than I had thought two hours after making it; and the
+rehearsal rule was broken by the aria that proposed it, within the hour.
+
+    A RULE IS NOT INTERNALISED BY BEING WRITTEN, OR EVEN BY BEING
+    PROPOSED. Recognition attaches to the SITUATION it was learned in, and
+    every one of these three was a familiar rule meeting an unfamiliar
+    costume.
