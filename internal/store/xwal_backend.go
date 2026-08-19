@@ -233,6 +233,14 @@ func (b *XwalBackend) handleLocked(id string) (*ariaHandle, error) {
 	return h, nil
 }
 
+// OpenNode reads ONE NODE's fig IR: an ancestor's frozen index node
+// included, which is NOT an aria and must not be given an aria handle, a
+// meta sidecar or the IR door. It is the same raw log the decoded cache's
+// own Source opens for a coord below a fork base.
+func (b *XwalBackend) OpenNode(node string) Log[message.Message] {
+	return newXwalLog[message.Message](b.store, node, chanIR, true)
+}
+
 func (b *XwalBackend) Open(ariaID string) (Log[message.Message], error) {
 	b.mu.Lock()
 	h, err := b.handleLocked(ariaID)

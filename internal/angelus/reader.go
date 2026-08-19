@@ -19,7 +19,7 @@ import (
 type AriaReader struct {
 	backend store.Backend
 	proj    Projector
-	budget  *aria.UIBudget
+	uiCache *aria.ComposedCache
 
 	// servers is the reader's half of the ONE windowed component: an
 	// aria.Server per read aria, no open region, its sealed section the
@@ -51,9 +51,9 @@ func NewAriaReader(backend store.Backend, proj Projector) *AriaReader {
 	return NewAriaReaderBounded(backend, proj, nil)
 }
 
-// NewAriaReaderBounded is NewAriaReader against a shared UI budget.
-func NewAriaReaderBounded(backend store.Backend, proj Projector, budget *aria.UIBudget) *AriaReader {
-	return &AriaReader{backend: backend, proj: proj, budget: budget, servers: map[string]*readAria{}}
+// NewAriaReaderBounded is NewAriaReader against the shared composed cache.
+func NewAriaReaderBounded(backend store.Backend, proj Projector, uiCache *aria.ComposedCache) *AriaReader {
+	return &AriaReader{backend: backend, proj: proj, uiCache: uiCache, servers: map[string]*readAria{}}
 }
 
 // messages decodes the aria's IR. The backend hands back the same shared
@@ -129,7 +129,7 @@ func (r *AriaReader) serverFor(id string) (*readAria, error) {
 	ra := r.servers[id]
 	if ra == nil {
 		srv := aria.NewServer()
-		srv.BindCache(r.turnSource(id), r.budget)
+		srv.BindCache(id, r.uiCache)
 		ra = &readAria{srv: srv}
 		r.servers[id] = ra
 	}
@@ -160,35 +160,6 @@ func (r *AriaReader) serverFor(id string) (*readAria, error) {
 	ra.srv.Restore(turns)
 	ra.metrics = r.metrics(id, msgs)
 	return ra, nil
-}
-
-// turnSource recomposes an LT bracket for the windowed cache, deltas
-// included, exactly as the agent”s source does.
-func (r *AriaReader) turnSource(id string) aria.TurnSource {
-	return func(fromLT, toLT uint64) []aria.Turn {
-		log, err := r.backend.Open(id)
-		if err != nil || toLT < fromLT || r.proj == nil {
-			return nil
-		}
-		entries, _ := log.ReadPage(fromLT, toLT+1, int(toLT-fromLT+1))
-		if len(entries) == 0 {
-			return nil
-		}
-		msgs := make([]message.Message, len(entries))
-		for i, e := range entries {
-			msgs[i] = e.Payload
-			msgs[i].LogicalTime = e.LT
-		}
-		turns := r.proj.Turns(msgs)
-		if fb, ok := r.backend.(formdelta.Backend); ok {
-			seed := formdelta.Seed{}
-			if prev, _ := log.ReadPage(0, fromLT, 1); len(prev) > 0 {
-				seed = formdelta.SeedFrom(prev[len(prev)-1])
-			}
-			formdelta.Attach(turns, formdelta.PerRecordFrom(fb, id, seed, entries))
-		}
-		return turns
-	}
 }
 
 // Form reads the reducible form channel, which is the durable truth, AND the

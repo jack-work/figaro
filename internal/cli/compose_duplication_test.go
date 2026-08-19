@@ -5,6 +5,7 @@ import (
 	"testing"
 	"unsafe"
 
+	"github.com/jack-work/figaro/internal/compose"
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
@@ -54,6 +55,19 @@ func composeFixture(n int) []store.Entry[message.Message] {
 		add(message.RoleInput, turn, message.ToolResultContent(call, "bash", long, false))
 	}
 	return out
+}
+
+// composeTurns is the projection the DAEMON runs (compose.Turns). The CLI
+// no longer composes anything -- it renders what the api hands it -- so
+// this measurement calls the composer directly rather than through a CLI
+// helper that no longer exists.
+func composeTurns(entries []store.Entry[message.Message]) []aria.Turn {
+	msgs := make([]message.Message, len(entries))
+	for i, e := range entries {
+		msgs[i] = e.Payload
+		msgs[i].LogicalTime = e.LT
+	}
+	return compose.Turns(msgs)
 }
 
 // nodeTexts returns every non-empty string a node carries, since a tool node

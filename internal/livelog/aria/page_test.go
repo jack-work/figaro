@@ -333,3 +333,35 @@ func TestPaginateBefore_TailIsInclusive(t *testing.T) {
 		t.Fatalf("tail read must include the last turn: %+v", p.Parts)
 	}
 }
+
+// AN UNANSWERED QUESTION IS CONTENT. A turn with an inquiry and no nodes is
+// an ordinary state -- a prompt whose answer never arrived, or an aria whose
+// whole history is one question -- and a walk that counts only nodes cannot
+// see it: it cannot be located, cannot be stepped to, and an aria made of one
+// returns an EMPTY PAGE. Found on a real store: two arias of twelve showed
+// nothing through the paginated read and their questions through the raw one.
+func TestAnInquiryWithNoAnswerIsStillAPage(t *testing.T) {
+	only := []Turn{{ID: 1, Inquiry: "what model are you", Sealed: true}}
+	p := Paginate(only, Anchor{}, Backward, 1<<20)
+	if len(p.Parts) != 1 {
+		t.Fatalf("an aria of one unanswered question returned %d parts", len(p.Parts))
+	}
+	if p.Parts[0].Inquiry != "what model are you" || len(p.Parts[0].Nodes) != 0 {
+		t.Fatalf("the part must carry the question and no nodes: %+v", p.Parts[0])
+	}
+
+	// And in the middle of a history: the walk must step OVER it without
+	// dropping it from the assembled page.
+	mixed := []Turn{
+		{ID: 1, Inquiry: "one", Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "a"}}},
+		{ID: 2, Inquiry: "unanswered", Sealed: true},
+		{ID: 3, Inquiry: "three", Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "c"}}},
+	}
+	p = Paginate(mixed, Anchor{}, Forward, 1<<20)
+	if len(p.Parts) != 3 {
+		t.Fatalf("want all three turns, got %d: %+v", len(p.Parts), p.Parts)
+	}
+	if p.Parts[1].ID != 2 || p.Parts[1].Inquiry != "unanswered" {
+		t.Fatalf("the unanswered turn is missing from the middle: %+v", p.Parts)
+	}
+}

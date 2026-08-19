@@ -57,16 +57,16 @@ func (o *openTurn) nodes() []livedoc.Node {
 // NewServer returns an empty aria server, its sealed section unbounded
 // until BindCache hands it a source and a budget.
 func NewServer() *Server {
-	return &Server{subs: map[int]func(Page){}, cache: NewTurnCache(nil, nil)}
+	return &Server{subs: map[int]func(Page){}, cache: NewTurnCache(nil)}
 }
 
-// BindCache arms the sealed section with a recompose source and a shared
-// byte budget. Call before history accumulates; a server never bound
-// keeps every sealed turn resident, which is the old behaviour.
-func (s *Server) BindCache(source TurnSource, budget *UIBudget) {
+// BindCache re-seats the sealed section on the process's shared composed
+// cache under this aria's node. Call before history accumulates; a
+// server never bound keeps every sealed turn resident in a private,
+// unbudgeted node.
+func (s *Server) BindCache(node string, shared *ComposedCache) {
 	s.mu.Lock()
-	s.cache.source = source
-	s.cache.budget = budget
+	s.cache.bind(node, shared)
 	s.mu.Unlock()
 }
 
@@ -546,8 +546,9 @@ func (s *Server) inquiryOfLocked(id uint64) (string, []InquirySegment) {
 	return "", nil
 }
 
-// ReleaseCache returns the sealed section's budget references. Call on
-// teardown; the server remains usable but unaccounted afterwards.
+// ReleaseCache hands this aria's composed bytes back and stops answering
+// misses for it. TEARDOWN ONLY: the server keeps its key list but its
+// payloads are gone and nothing will fault them back.
 func (s *Server) ReleaseCache() {
 	s.mu.Lock()
 	s.cache.Release()

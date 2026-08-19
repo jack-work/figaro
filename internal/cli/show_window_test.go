@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
@@ -45,75 +46,103 @@ func turnEntries(firstID uint64, n int, firstLT uint64) []store.Entry[message.Me
 	return out
 }
 
-func TestWindowSatisfiesAsksForOneMoreTurnThanItShows(t *testing.T) {
+// The page walk's decisions, without a daemon: when it has read enough,
+// how it rejoins a turn the wire budget cut, and which slice the selector
+// names. What it does NOT do any more is compose: the turns arrive whole
+// from the api, so the "oldest turn may be missing its prompt" case that
+// shaped the old IR walk cannot arise.
+
+func turnsOf(firstID uint64, n int) []aria.Turn {
+	out := make([]aria.Turn, 0, n)
+	for i := 0; i < n; i++ {
+		out = append(out, aria.Turn{ID: firstID + uint64(i), Sealed: true})
+	}
+	return out
+}
+
+func TestTurnsSatisfyAsksForOneMoreTurnThanItShows(t *testing.T) {
 	base := showOpts{last: 10, from: -1, to: -1, before: -1}
 
-	// Exactly the requested count is NOT enough: the oldest turn held may have
-	// lost its prompt to the page boundary, so it is dropped before rendering.
-	ten := showWindow{entries: turnEntries(1, 10, 1), total: 100}
-	if windowSatisfies(ten, base) {
-		t.Fatal("10 turns held must not satisfy a request for the last 10: the oldest may be partial")
+	if turnsSatisfy(showTurns{turns: turnsOf(1, 10)}, base) {
+		t.Fatal("10 turns held must not satisfy a request for the last 10")
 	}
-	eleven := showWindow{entries: turnEntries(1, 11, 1), total: 100}
-	if !windowSatisfies(eleven, base) {
+	if !turnsSatisfy(showTurns{turns: turnsOf(1, 11)}, base) {
 		t.Fatal("11 turns held answers the last 10")
 	}
 
 	// -a is satisfied by reaching the head and by nothing else. This is the
-	// case the old code got wrong in the most expensive way.
+	// case the old walk got wrong in the most expensive way: it reported a
+	// page as the whole aria.
 	all := base
 	all.all = true
-	if windowSatisfies(showWindow{entries: turnEntries(1, 500, 1), total: 100000}, all) {
+	if turnsSatisfy(showTurns{turns: turnsOf(1, 500)}, all) {
 		t.Fatal("--all must walk to the head, not stop at a page")
 	}
-	if !windowSatisfies(showWindow{entries: turnEntries(1, 3, 1), total: 6, atHead: true}, all) {
+	if !turnsSatisfy(showTurns{turns: turnsOf(1, 3), atHead: true}, all) {
 		t.Fatal("--all is satisfied at the head")
 	}
 
-	// --from wants a turn strictly older than the one asked for, which is the
-	// proof that the requested turn itself is whole.
+	// --before N counts only turns OLDER than N, and wants one spare.
+	before := base
+	before.before = 100
+	held := showTurns{turns: append(turnsOf(90, 10), turnsOf(100, 5)...)}
+	if turnsSatisfy(held, before) {
+		t.Fatal("10 turns older than 100 must not satisfy a request for 10 before it")
+	}
+	held = showTurns{turns: append(turnsOf(89, 11), turnsOf(100, 5)...)}
+	if !turnsSatisfy(held, before) {
+		t.Fatal("11 turns older than 100 answers it")
+	}
+}
+
+// A WIRE BUDGET CAN CUT A TURN IN HALF (TurnPart.From), and `show` draws
+// turns. Rejoining the parts is the only assembly left on the client, and
+// it must not mistake two adjacent whole turns for one split one.
+func TestJoinPartsRebuildsASplitTurn(t *testing.T) {
+	page := aria.Page{Parts: []aria.TurnPart{
+		{Turn: aria.Turn{ID: 7, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "a"}}}, From: 0},
+		{Turn: aria.Turn{ID: 7, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "b"}}}, From: 1},
+		{Turn: aria.Turn{ID: 8, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "c"}}}, From: 0},
+	}}
+	got := joinParts(page)
+	if len(got) != 2 {
+		t.Fatalf("want 2 turns, got %d: %+v", len(got), got)
+	}
+	if len(got[0].Nodes) != 2 || got[0].Nodes[0].Markdown != "a" || got[0].Nodes[1].Markdown != "b" {
+		t.Fatalf("the split turn was not rejoined in order: %+v", got[0])
+	}
+	if got[1].ID != 8 || len(got[1].Nodes) != 1 {
+		t.Fatalf("the following turn was folded into its predecessor: %+v", got[1])
+	}
+}
+
+func TestSelectShowRangeNamesTheSelectorsSlice(t *testing.T) {
+	ts := turnsOf(10, 10) // turns 10..19
+	base := showOpts{last: 3, from: -1, to: -1, before: -1}
+
+	lo, hi := selectShowRange(ts, base)
+	if ts[lo].ID != 17 || hi != 10 {
+		t.Fatalf("last 3 is turns 17..19, got %d..%d", ts[lo].ID, ts[hi-1].ID)
+	}
+
+	all := base
+	all.all = true
+	if lo, hi = selectShowRange(ts, all); lo != 0 || hi != 10 {
+		t.Fatalf("--all is everything held, got %d..%d", lo, hi)
+	}
+
 	from := base
-	from.from = 1900
-	held := showWindow{entries: turnEntries(1900, 5, 1), total: 100000}
-	if windowSatisfies(held, from) {
-		t.Fatal("a window starting exactly at turn 1900 cannot prove 1900 is complete")
+	from.from, from.to = 12, 14
+	lo, hi = selectShowRange(ts, from)
+	if ts[lo].ID != 12 || ts[hi-1].ID != 14 {
+		t.Fatalf("--from 12 --to 14, got %d..%d", ts[lo].ID, ts[hi-1].ID)
 	}
-	held = showWindow{entries: turnEntries(1899, 6, 1), total: 100000}
-	if !windowSatisfies(held, from) {
-		t.Fatal("holding turn 1899 proves 1900 is whole")
-	}
-}
 
-func TestTrimPartialHeadKeepsTheTail(t *testing.T) {
-	ts := []aria.Turn{{ID: 7}, {ID: 8}, {ID: 9}}
-	if got := trimPartialHead(ts, true); len(got) != 3 {
-		t.Fatalf("a window at the head keeps every turn, got %d", len(got))
-	}
-	got := trimPartialHead(ts, false)
-	if len(got) != 2 || got[0].ID != 8 {
-		t.Fatalf("a partial window drops its oldest turn, got %+v", got)
-	}
-	// Never to nothing: one turn is better than an empty screen.
-	if len(trimPartialHead(ts[:1], false)) != 1 {
-		t.Fatal("the last remaining turn must survive")
-	}
-}
-
-// A legacy aria (no stored turn ids) read from the tail would be numbered
-// from 1 at an arbitrary point, and `show` prints those numbers as the
-// coordinate `fork <id>:<turn>` takes. Detecting that is what sends the
-// caller back to the forward read.
-func TestDerivedIDsSpotsAnUnnumberedAria(t *testing.T) {
-	stored := turnEntries(40, 2, 1)
-	if derivedIDs(stored) {
-		t.Fatal("stored turn ids must not look derived")
-	}
-	legacy := []store.Entry[message.Message]{
-		{LT: 1, Payload: msg(message.RoleInput, 0, "q")},
-		{LT: 2, Payload: msg(message.RoleOutput, 0, "a")},
-	}
-	if !derivedIDs(legacy) {
-		t.Fatal("a prompt with no stored turn id means the numbering was derived")
+	before := base
+	before.before = 15
+	lo, hi = selectShowRange(ts, before)
+	if ts[lo].ID != 12 || ts[hi-1].ID != 14 {
+		t.Fatalf("--before 15 with last 3, got %d..%d", ts[lo].ID, ts[hi-1].ID)
 	}
 }
 

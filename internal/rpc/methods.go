@@ -448,6 +448,11 @@ type ReadRequest struct {
 	Before     int `json:"before,omitempty"`
 	BeforeNode int `json:"before_node,omitempty"`
 	Limit      int `json:"limit,omitempty"`
+	// Backward pages toward the head. With no anchor that is THE TAIL
+	// PAGE -- the newest turns -- which a zero SinceLT cannot ask for: a
+	// forward read from a zero anchor starts at the HEAD, and a reader
+	// that meant "the last N" gets the first N and no error.
+	Backward bool `json:"backward,omitempty"`
 }
 
 type FigaroInfoResponse struct {
@@ -933,6 +938,8 @@ type AriaPageRequest struct {
 	Before     int    `json:"before,omitempty"`
 	BeforeNode int    `json:"before_node,omitempty"`
 	Limit      int    `json:"limit,omitempty"`
+	// Backward pages toward the head; see ReadRequest.Backward.
+	Backward bool `json:"backward,omitempty"`
 }
 
 // AriaReadRequest names the aria and the window of entries to return.

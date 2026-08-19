@@ -88,6 +88,29 @@ func nodeSize(n livedoc.Node) int {
 // cursor is a position in the flattened (turn, node) space.
 type cursor struct{ turn, node int }
 
+// units is how many positions a turn occupies. A turn with NO NODES but an
+// INQUIRY has one: the question is content -- a prompt that was never
+// answered, or one whose answer has not arrived -- and a walk that counts
+// only nodes cannot reach it, cannot anchor on it, and returns an empty
+// page for an aria whose whole history is one unanswered question.
+func units(t Turn) int {
+	if n := len(t.Nodes); n > 0 {
+		return n
+	}
+	if t.Inquiry != "" || len(t.InquirySegments) > 0 {
+		return 1
+	}
+	return 0
+}
+
+// unitSize is a position's cost against the page budget.
+func unitSize(t Turn, i int) int {
+	if i < len(t.Nodes) {
+		return nodeSize(t.Nodes[i])
+	}
+	return len(t.Inquiry) + 1
+}
+
 // locate resolves an anchor to a cursor, and reports whether anything lies in
 // the direction of travel. An anchor outside the materialized range is not an
 // error: it is how a caller says "the end": a backward read from beyond the
@@ -100,7 +123,7 @@ func locate(turns []Turn, a Anchor, dir Direction) (cursor, bool) {
 		return cursor{}, false
 	}
 	last := len(turns) - 1
-	tail := cursor{last, len(turns[last].Nodes) - 1}
+	tail := cursor{last, units(turns[last]) - 1}
 	if tail.node < 0 {
 		tail.node = 0
 	}
@@ -132,7 +155,7 @@ func locate(turns []Turn, a Anchor, dir Direction) (cursor, bool) {
 		ti = 0
 	}
 	ni := int(a.Node)
-	if n := len(turns[ti].Nodes); ni >= n {
+	if n := units(turns[ti]); ni >= n {
 		ni = n - 1
 	}
 	if ni < 0 {
@@ -148,17 +171,17 @@ func step(turns []Turn, c cursor, dir Direction) (cursor, bool) {
 			return cursor{c.turn, c.node - 1}, true
 		}
 		for t := c.turn - 1; t >= 0; t-- {
-			if n := len(turns[t].Nodes); n > 0 {
+			if n := units(turns[t]); n > 0 {
 				return cursor{t, n - 1}, true
 			}
 		}
 		return c, false
 	}
-	if c.node+1 < len(turns[c.turn].Nodes) {
+	if c.node+1 < units(turns[c.turn]) {
 		return cursor{c.turn, c.node + 1}, true
 	}
 	for t := c.turn + 1; t < len(turns); t++ {
-		if len(turns[t].Nodes) > 0 {
+		if units(turns[t]) > 0 {
 			return cursor{t, 0}, true
 		}
 	}
@@ -175,7 +198,7 @@ func Paginate(turns []Turn, at Anchor, dir Direction, budget int) Page {
 	if !ok {
 		return Page{}
 	}
-	if len(turns[start.turn].Nodes) == 0 {
+	if units(turns[start.turn]) == 0 {
 		if next, ok := step(turns, start, dir); ok {
 			start = next
 		} else {
@@ -187,7 +210,7 @@ func Paginate(turns []Turn, at Anchor, dir Direction, budget int) Page {
 	// first node so a page can never be empty.
 	spent, end := 0, start
 	for c, ok := start, true; ok; c, ok = step(turns, c, dir) {
-		sz := nodeSize(turns[c.turn].Nodes[c.node])
+		sz := unitSize(turns[c.turn], c.node)
 		if c != start && spent+sz > budget {
 			break
 		}
@@ -241,6 +264,14 @@ func assemble(turns []Turn, lo, hi cursor) []TurnPart {
 		}
 		if ti == hi.turn {
 			last = hi.node
+		}
+		if len(t.Nodes) == 0 {
+			// An inquiry with no answer: one position, no nodes.
+			if units(t) == 0 {
+				continue
+			}
+			parts = append(parts, TurnPart{Turn: t, From: 0})
+			continue
 		}
 		if first > last {
 			continue

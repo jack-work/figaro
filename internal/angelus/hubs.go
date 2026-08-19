@@ -223,8 +223,8 @@ func (h *handlers) readForHub(id, method string, params json.RawMessage) (any, b
 			}
 		}
 		at := aria.Anchor{Turn: uint64(req.SinceLT)}
-		before := req.Before > 0
-		if before {
+		before := req.Before > 0 || req.Backward
+		if req.Before > 0 {
 			at = aria.Anchor{Turn: uint64(req.Before), Node: uint64(req.BeforeNode)}
 		}
 		page, err := r.Page(id, at, req.Limit, before)
