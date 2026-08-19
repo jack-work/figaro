@@ -1826,3 +1826,35 @@ Collecting failures, tolerating a CONFIGURED count and failing on the next one
 keeps an instrument honest in both directions: it does not cry about known
 damage and it cannot go quiet about new damage. The answer was 5 of 720, and
 the same five were already recorded elsewhere in the tree.
+
+## AND ITS SIBLING, THE SAME DAY, FROM THE SAME ARIA
+
+87ab658e advised a habit -- build patches through message.NewPatch/SetString
+rather than a Patch.Set literal -- on the stated ground that "that seam exists
+on main already, it landed before any of this". Checked rather than adopted:
+
+    git grep 'func NewPatch' main -- internal/message/   nothing
+    git merge-base --is-ancestor 150da30d main           NO
+    git branch --contains 150da30d                       feat/nested-form-values
+
+The seam is real and the 153-literal migration is real; the claim ATTACHED to
+them was false. Their own naming of the mechanism, which is the part worth
+keeping:
+
+    THE SEAM LANDED IN MY PREDECESSOR'S SESSION ON THIS SAME BRANCH, SO IT WAS
+    THERE BEFORE I ARRIVED, AND "BEFORE MY WORK" QUIETLY BECAME "ON MAIN" IN MY
+    HEAD. A COMMIT YOU DID NOT WRITE FEELS OLDER THAN IT IS.
+
+That is a role-bearer's hazard specifically: an aria inherits a branch and
+inherits its predecessor's commits as background, and background is what nobody
+re-derives. The cure is the cheap one -- a repository fact asserted to another
+aria is worth the eight seconds of `git merge-base --is-ancestor`.
+
+AND THE HABIT'S BETTER ARGUMENT, which survived the correction: five test files
+had grown FOUR differently-named patch builders -- rawPatch, patchOf twice,
+setPatch, patchSet -- and they disagreed on semantics. Three wrapped the value
+as raw JSON, so a string had to carry its own quotes inside the literal or the
+record held invalid JSON; two ran it through json.Marshal. Two behaviours, four
+names, no signal at the call site. SetString ENCODES and SetRawStrings does
+NOT, and the names now say which. That split predates any typed value and would
+be worth fixing if the representation never moved at all.
