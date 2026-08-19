@@ -206,3 +206,38 @@ func TestDoorIgnoresCeremonialMessages(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, openInvokes(log.Read()))
 }
+
+// The interrupt path closes in flight calls BEFORE the turn ends, so a fork or
+// a read taken between the interrupt and the next message sees a well-formed
+// history rather than one waiting to be healed.
+func TestDoorClosesOnDemandForTheInterruptPath(t *testing.T) {
+	log, _, _ := doorAria(t)
+	_, err := log.Append(Entry[message.Message]{Payload: invoke("t1", "bash")})
+	require.NoError(t, err)
+
+	closer, ok := log.(interface{ CloseOpenToolCalls() (int, error) })
+	require.True(t, ok, "the IR log must offer the interrupt path a way to close")
+
+	n, err := closer.CloseOpenToolCalls()
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+	require.Empty(t, openInvokes(log.Read()), "the call was not closed")
+
+	// Idempotent: a second interrupt closes nothing and writes nothing.
+	before := len(log.Read())
+	n, err = closer.CloseOpenToolCalls()
+	require.NoError(t, err)
+	require.Zero(t, n)
+	require.Len(t, log.Read(), before, "a second close wrote a record")
+}
+
+// An EPHEMERAL aria has no backend and used to bypass every guard. It goes
+// through the same door.
+func TestEphemeralLogGetsTheSameInvariant(t *testing.T) {
+	log := GuardIR(NewMemLog[message.Message]())
+	_, err := log.Append(Entry[message.Message]{Payload: invoke("t1", "bash")})
+	require.NoError(t, err)
+	_, err = log.Append(Entry[message.Message]{Payload: prose("changed my mind")})
+	require.NoError(t, err)
+	require.Empty(t, openInvokes(log.Read()), "an ephemeral aria kept a dangling invoke")
+}

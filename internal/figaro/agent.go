@@ -338,7 +338,7 @@ func NewAgent(cfg Config) *Agent {
 // closes what Open returns.
 func (a *Agent) newLog() store.Log[message.Message] {
 	if a.backend == nil {
-		return store.NewMemLog[message.Message]()
+		return store.GuardIR(store.NewMemLog[message.Message]())
 	}
 	log, err := a.backend.Open(a.id)
 	if err != nil {
@@ -352,7 +352,7 @@ func (a *Agent) newLog() store.Log[message.Message] {
 		if a.figLog != nil {
 			return a.figLog
 		}
-		return store.NewMemLog[message.Message]()
+		return store.GuardIR(store.NewMemLog[message.Message]())
 	}
 	return log
 }

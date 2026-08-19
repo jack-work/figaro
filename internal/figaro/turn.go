@@ -152,14 +152,18 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		a.mu.Unlock()
 		a.turnRunning.Store(false)
 		cancel()
+		// An interrupted turn leaves the history well-formed BEFORE it ends: a
+		// fork or a read taken between now and the next message would
+		// otherwise see an invoke with no result.
+		if closer, ok := a.figLog.(interface{ CloseOpenToolCalls() (int, error) }); ok {
+			if n, err := closer.CloseOpenToolCalls(); err != nil {
+				slog.Error("close open tool calls at turn end", "aria", a.id, "err", err)
+			} else if n > 0 {
+				slog.Info("closed open tool calls at turn end", "aria", a.id, "calls", n)
+			}
+		}
 	}()
 
-	// Belt-and-suspenders: if a prior turn died after the assistant
-	// tool_use was logged but before tool_results were appended, the
-	// IR still has a dangling tool_use at the tail. Boot-time repair
-	// usually catches this, but cover the case where the boot check
-	// missed (e.g. dangling state appeared after boot).
-	repairInterruptedTail(a.figLog, a.id)
 	if _, err := a.appendUserPrompt(prompt, true, false); err != nil {
 		a.endTurn(fmt.Sprintf("error: append message: %s", err))
 		return

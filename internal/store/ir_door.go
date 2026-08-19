@@ -117,6 +117,42 @@ func (l *irDoor) Append(e Entry[message.Message]) (Entry[message.Message], error
 	return stamped, nil
 }
 
+// GuardIR wraps any fig IR log in the door, so an ephemeral aria gets the same
+// tool-call invariant as a backed one. A backendless door skips the recency
+// stamp and does nothing else differently.
+func GuardIR(inner Log[message.Message]) Log[message.Message] {
+	return &irDoor{Log: inner}
+}
+
+// CloseOpenToolCalls closes every outstanding invoke with an error result and
+// reports how many it closed. The door does this on the next append anyway;
+// calling it directly is for the INTERRUPT PATH, where the history must be
+// well-formed the moment the turn ends rather than the next time somebody
+// writes -- a fork or a read taken in between would otherwise see a call with
+// no result.
+func (l *irDoor) CloseOpenToolCalls() (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.loaded {
+		l.pending = outstandingInvokes(l.Log.Read())
+		l.loaded = true
+	}
+	if len(l.pending) == 0 {
+		return 0, nil
+	}
+	closing := message.Message{Role: message.RoleInput}
+	for _, inv := range l.pending {
+		closing.Content = append(closing.Content,
+			message.ToolResultContent(inv.ToolCallID, inv.ToolName, toolClosedNotice, true))
+	}
+	n := len(l.pending)
+	l.pending = nil
+	if _, err := l.write(Entry[message.Message]{Payload: closing}); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func (l *irDoor) write(e Entry[message.Message]) (Entry[message.Message], error) {
 	stamped, err := l.Log.Append(e)
 	if err == nil && l.backend != nil {
