@@ -184,6 +184,16 @@ you retire a column, state its final numbers IN THE COMMIT THAT RETIRES IT,
 so the comparison survives as a cross-commit assertion rather than
 evaporating with the code.
 
+AND THE VARIANT FOR STRUCTURE, contributed by aria 6ec565b5 the same night
+after the single-layer accretion was traced: **ASK WHAT THE INSTRUMENT
+WOULD STILL REPORT IF ITS SUBJECT WERE SOMEWHERE ELSE.** The sixth maxim
+catches an instrument whose subject is GONE; this catches one whose subject
+has MOVED to another layer. A per-layer benefit test -- "does THIS layer
+need the shared shape?" -- answers correctly, every time, and cannot see a
+cost that exists only BETWEEN layers. Three such tests, each honest, each
+declining locally, produced two cache shapes over one structure that nobody
+ever decided to keep.
+
 AND THE COROLLARY ABOUT PEOPLE, paid for three times in one evening by three
 different arias: A RULE IS NOT INTERNALISED BY BEING WRITTEN, OR EVEN BY
 BEING PROPOSED. Recognition attaches to the situation it was learned in, not
