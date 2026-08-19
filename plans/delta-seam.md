@@ -2441,3 +2441,69 @@ one: non-study `Patches` on records appear in exactly THREE places, ONE
 test covers the ephemeral fold sites, and THE COMBINATION THAT DIES — warm
 pass, `Form == nil`, records carrying patches, asserting the transition
 against the carried board — IS ASSERTED NOWHERE.
+
+## THE DELETION, GRADED — AND A TEST NAME THAT WAS A CLAIM NOBODY TESTED
+
+9ed3f561's grading of commit two, recorded by f3aa1d0b, 2026-08-18.
+MEASURED AND, AT THE TIME OF THIS ENTRY, UNCOMMITTED — see the caution at
+the end, which is mine.
+
+DECODES FIRST, because it was the ordered falsifier: 1 IN EVERY CELL, at
+50, 100, 200 and 400. Nothing rebuilds what the cache should hand over.
+
+    handed        1 -> N+1
+    cacheWalked   0 -> N
+    lookups       0 throughout
+    cold column   unmoved from ef7cdcb2
+
+WARM BECAME COLD. That is the trade, not a regression — and it is
+measurable against a warm column THAT NO LONGER EXISTS, only because its
+final numbers were written into the commit that retired it. The
+cross-commit assertion was built as pre-registered, with TWO REACHABLE
+FAILING STATES ("the warm start appears to be ALIVE" and "the seek is no
+longer bounding the walk"), rather than a canary that evaporated with its
+second column.
+
+## THE BEST FINDING OF THE STAGE IS NOT A NUMBER
+
+`TestCatchUpPreservesPrefixBytes` went RED — and what it had been asserting
+was `assert.Same`, POINTER IDENTITY, on a decoded block, while the BYTE
+assertion beneath it passed in the same run.
+
+    THE NAME SAID BYTES. THE CHECK WAS AN ADDRESS. AND THE ADDRESS WAS AN
+    ARTIFACT OF RETAINING THE VERY SLICE THIS DELETION REMOVES.
+
+So the test would have gone red for a change that preserved every byte it
+claimed to guard, and the cheap repair — delete the failing assertion —
+would have taken the REAL check out with the fake one. It is the exact
+justification for the determinism pin, arriving from the other side: the
+instrument that looked like cover for prefix-byte stability was never
+checking bytes at all.
+
+    A TEST NAME IS A CLAIM NOBODY TESTS.
+
+Companion to the two already recorded tonight — a COMMENT is a claim nobody
+tests (the cursor "built after the span is chosen"; "off the hot path" for
+eleven minor versions), and a BENCHMARK NAME is a claim nobody tests
+(`ObservationWarm50` over a cold walk). Three faces of one defect: THE
+LABEL IS NOT UNDER TEST, AND EVERY READER TREATS IT AS IF IT WERE.
+
+Both were caught by READING THE FAILURE rather than the summary.
+
+## AND A CAUTION AGAINST MYSELF, RECORDED BECAUSE I ALMOST SHIPPED IT UPWARD
+
+I nearly reported to Gluck that the deletion had LANDED, on the strength of
+a grading report that was scrupulously honest about its provenance — it
+said, in its own words, that it graded a SCRATCH WORKTREE carrying the
+executor's UNCOMMITTED work. I checked the branch instead: HEAD unchanged,
+17 files dirty, `IncrementalProjection` still present four times in the
+committed tree.
+
+    THE GRADE WAS REAL AND THE ARTIFACT DID NOT EXIST. The report answered
+    about the code's BEHAVIOUR; I was about to quote it as an answer about
+    the REPOSITORY'S STATE.
+
+Same shape as everything else in this document, one level up and pointed at
+the person whose job is to catch it. A measured-but-uncommitted tree is the
+most fragile state in this campaign: the numbers exist, the artifact does
+not, and no stamped gate can name a tree that has no commit.
