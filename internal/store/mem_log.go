@@ -9,17 +9,7 @@ import (
 // MemLog[T] is an in-memory Log[T] with no persistence.
 //
 // READS TAKE NO LOCK. entries, byFigaroLT and nextLT were three fields that
-// only ever moved together -- one value wearing three names -- so they are one
-// immutable memState published by pointer, and every reader loads it. mu
-// serializes WRITERS, which is the half a publish cannot express: two appends
 // must not both claim the same LT.
-//
-// Appending copies the index map, which is O(n) per append against O(1)
-// before. THAT IS DELIBERATE AND BOUNDED HERE: MemLog is the backendless
-// fallback (an agent with no store, or an Open that failed loudly) and the
-// test double, never the daemon's durable path -- cachedLog over xwalLog is
-// that. A structure with a hot append path would need a different shape, and
-// this comment is the reason it does not have one.
 type MemLog[T any] struct {
 	mu    sync.Mutex // WRITERS ONLY
 	state atomic.Pointer[memState[T]]

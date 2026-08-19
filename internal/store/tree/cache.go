@@ -6,47 +6,26 @@ import (
 	"sync/atomic"
 )
 
-// Cache is the window itself: per-node runs of materialized units, an
-// index that survives eviction, prefix-shared residency across a
-// lineage. One instance per layer; the type parameter is the unit.
+// Cache is a byte-budgeted window of materialized units over a durable
+// substrate, per node, LRU by epoch, with an index that survives eviction.
 //
-// A HIT TAKES NO LOCK. Every structure a reader touches -- the node map, a
-// node's run slice, a run and its units -- is IMMUTABLE ONCE PUBLISHED, and a
-// writer builds a successor and stores a pointer to it. That is not a
-// performance preference: it is what lets one uniform window serve a hot tail
-// AND a cold range, which a mutex could not. Measured on this package's own
-// benchmark, 2026-08-19: under the mutex a 64-unit Range cost 1.4 us serial
-// and 2.3 us with readers -- it got SLOWER as readers were added, and that
-// inversion is the entire reason a second, flat cache shape survived beside
-// this one (plans/log-cache-policy.md, "LRU owns the cold ranges, never the
-// hot tail").
-//
-// WRITERS still take c.mu, and it is a real lock with real concurrent callers:
-// two arias materializing into one cache is the ordinary case. It is held ONLY
-// to publish a successor -- never across a Source call, never across the
-// budget's eviction pass, never across the Evicted hook. Each of those three
-// is a call OUT of this package, and a lock held across a call out is the
-// deadlock this stack has already met (docs/store/tree.md).
+// A HIT TAKES NO LOCK: everything a reader touches is immutable once published.
+// Writers hold c.mu only to publish, never across the Source, the budget's
+// eviction pass, or the Evicted hook. Rationale: plans/tree-shaped-log.md.
 type Cache[U any] struct {
 	src    Source[U]
 	size   Sizer[U]
 	key    Keyer[U]
 	budget *Budget
 
-	// Evicted, when set, fires after a run is hollowed (outside all
-	// locks): the hook a lower layer uses to clear its lock-free fast
-	// pointer. It receives the coord only; the units are already gone.
+	// Evicted fires after a run is hollowed, outside all locks.
 	Evicted func(Coord)
 
-	// Recency, when set, is the layer-below's recency oracle: a coord's
-	// LAST-READ epoch, maintained by that layer on its own lock-free
-	// path (a segment stamps usedAt in nanoseconds; tree must not tax
-	// that read with a lock). Eviction orders by max(run epoch, oracle).
+	// Recency is the layer-below's last-read epoch for a coord; eviction orders
+	// by max(run epoch, oracle).
 	Recency func(Coord) int64
 
-	// nodes is an immutable map published by pointer. Node CREATION copies it;
-	// that happens once per node, while run publication (frequent) copies only
-	// the one node's run slice.
+	// nodes is an immutable map published by pointer.
 	nodes atomic.Pointer[map[string]*node[U]]
 
 	mu sync.Mutex // WRITERS ONLY
@@ -54,14 +33,9 @@ type Cache[U any] struct {
 	recomposes atomic.Int64
 }
 
-// run is a contiguous materialized span within one node. Hollowing
-// drops units and keeps {coord, bytes}: the index that makes the next
-// miss BOUNDED.
-//
-// IMMUTABLE ONCE PUBLISHED, epoch excepted. A reader that is holding a run
-// while it is evicted keeps serving the units it already has -- they are
-// canonical bytes, not a view of something that changed -- and the run is
-// collected when that reader lets go.
+// run is a contiguous materialized span within one node. Hollowing drops the
+// units and keeps {coord, bytes}: the index that bounds the next miss.
+// IMMUTABLE ONCE PUBLISHED, epoch excepted.
 type run[U any] struct {
 	coord    Coord
 	units    []U // nil when hollow
@@ -70,21 +44,14 @@ type run[U any] struct {
 	resident bool
 	epoch    atomic.Int64
 
-	// dense says the keys of units are base, base+1, ... with no holes, and
-	// base is units[0]'s key. CHECKED ONCE, AT PUBLICATION, and true forever
-	// after -- WHICH IS ONLY SOUND BECAUSE A RUN IS IMMUTABLE. A dense run is
-	// indexed arithmetically with NO Keyer call at all, where a search costs
-	// about six and even a verified guess costs one or two, and the Keyer is a
-	// function value in a struct field so none of them inlines.
-	//
-	// The check is one pass over units at materialization, which is already
-	// O(units) -- it rides along with the loop that sums their bytes.
+	// dense: keys are base, base+1, ... with no holes. Checked once at
+	// publication, which is sound only because a run is immutable; a dense run
+	// is indexed with no Keyer call.
 	dense bool
 	base  uint64
 }
 
-// measure fills a run's bytes, and its density, in the single pass that has to
-// walk the units anyway.
+// measure fills a run's bytes and density in one pass.
 func (c *Cache[U]) measure(r *run[U]) {
 	r.bytes = 0
 	r.dense = len(r.units) > 0
@@ -99,35 +66,20 @@ func (c *Cache[U]) measure(r *run[U]) {
 	}
 }
 
-// node holds one trunk node's runs, sorted by coord.From, published whole --
-// together with a CONTIGUOUS ARRAY OF THEIR UPPER BOUNDS.
-//
-// WHY THE SECOND ARRAY, and it is not a cache of anything: locating a run is a
-// binary search, and searching []*run[U] dereferences a pointer to a separate
-// heap object at every probe. Searching []uint64 touches one contiguous line.
-// The profile of the segment payload path put 93% of the remaining lookup time
-// in that search once the unit lookup had been made arithmetic. The structure
-// this tenant deleted held its runs as VALUES in one slice, which is the same
-// property expressed by layout instead of by an index.
-//
-// It is published in the same store as the runs, so a reader cannot see one
-// without the other.
+// node holds one node's runs, sorted by coord.From, published whole with a
+// contiguous array of their upper bounds so locating a run touches one line.
 type node[U any] struct {
 	idx atomic.Pointer[runIndex[U]]
 }
 
-// runIndex is a node's runs and their upper bounds, immutable once published.
-// tos[i] == runs[i].coord.To.
+// runIndex is immutable once published; tos[i] == runs[i].coord.To.
 type runIndex[U any] struct {
 	runs []*run[U]
 	tos  []uint64
 }
 
-// touch refreshes recency the cheap way: RECENCY IS AN EPOCH. The epoch
-// advances only on load and sweep (rare); a touched run only STORES it,
-// and only when stale. A bump per read was measured making reads slower
-// with more readers (segment cache, 2026-08); the generic must not
-// reintroduce what the concrete already paid to remove.
+// touch stores the current epoch, and only when stale: a per-read bump made
+// reads slower with more readers.
 func (r *run[U]) touch(c *Cache[U]) {
 	if e := c.budget.EpochNow(); r.epoch.Load() != e {
 		r.epoch.Store(e)
@@ -143,8 +95,7 @@ func New[U any](src Source[U], b *Budget, size Sizer[U], key Keyer[U]) *Cache[U]
 	return c
 }
 
-// Close hands every counted byte back. An owner torn down without this
-// poisons the accountant with ghosts (figaro learned this the hard way).
+// Close hands every counted byte back to the budget.
 func (c *Cache[U]) Close() {
 	c.mu.Lock()
 	var freed int64
@@ -164,17 +115,13 @@ func (c *Cache[U]) Close() {
 	}
 }
 
-// Recomposes reports source calls to date, for the thrash alarm: a
-// count climbing with READS rather than with distinct ranges means the
-// window is too small for its load.
+// Recomposes counts Source calls: climbing with reads rather than with
+// distinct ranges means the window is too small for its load.
 func (c *Cache[U]) Recomposes() int64 { return c.recomposes.Load() }
 
-// Put seeds units the caller already holds (a seal, a decode already
-// paid for), so the freshest data never costs a rematerialize. Pinned
-// marks a unit range no Source can rebuild -- it stays resident and
-// counted until Trim or Close. A Put at an existing run's exact coord
-// REPLACES it (the writer's tail growing in place), and the budget is
-// charged the delta.
+// Put seeds units the caller already holds. A Put at an existing run's exact
+// coord replaces it and the budget is charged the delta. Pinned units stay
+// resident and counted until Trim or Close.
 func (c *Cache[U]) Put(coord Coord, units []U, pinned bool) {
 	r := &run[U]{coord: coord, units: append([]U(nil), units...), pinned: pinned, resident: true}
 	r.epoch.Store(c.bump())
@@ -193,9 +140,7 @@ func (c *Cache[U]) Put(coord Coord, units []U, pinned bool) {
 	c.budget.charge(delta)
 }
 
-// Drop hollows the run at exactly coord (a sealed segment released, a
-// node deleted), returning its bytes to the budget. Pinned runs drop
-// too: Drop is the OWNER saying gone, not the sweep asking.
+// Drop hollows the run at exactly coord, pinned or not, and returns its bytes.
 func (c *Cache[U]) Drop(coord Coord) {
 	c.mu.Lock()
 	var freed int64
@@ -214,19 +159,11 @@ func (c *Cache[U]) Drop(coord Coord) {
 	}
 }
 
-// Range returns the units in (from..to] along lineage, walking fork
-// bases: the portion below each child's Base is served from -- and
-// becomes resident in -- the ANCESTOR's node, so branches share one
-// copy of their common prefix. Misses rematerialize per contiguous gap.
+// Range returns the units in (from..to] along lineage, walking fork bases so
+// branches share one copy of their common prefix. Misses rematerialize per gap.
 //
-// THE RESULT MAY ALIAS THE CACHE. Where one run answers the whole span the
-// caller is handed A VIEW OF THAT RUN'S UNITS, which is the point: a cache
-// that copies its answer is a cache of the work needed to produce a copy. The
-// units are therefore READ-ONLY TO THE CALLER, exactly as the substrate's own
-// bytes are. Aliasing is safe against eviction by construction -- a run is
-// immutable once published and eviction publishes a HOLLOW SUCCESSOR, so a
-// holder keeps serving what it already has and the memory is collected when it
-// lets go.
+// THE RESULT MAY ALIAS THE CACHE and is READ-ONLY to the caller. Safe against
+// eviction: runs are immutable and eviction publishes a hollow successor.
 func (c *Cache[U]) Range(lineage []Ref, from, to uint64) ([]U, error) {
 	if len(lineage) == 0 || to < from {
 		return nil, nil
@@ -258,10 +195,7 @@ func (c *Cache[U]) Range(lineage []Ref, from, to uint64) ([]U, error) {
 	return concat(pieces, total), nil
 }
 
-// concat joins pieces with ONE allocation of the exact size. Appending piece
-// by piece regrows the destination as it goes: measured on the hot tail read,
-// the growth was 4 allocations and 3.5x the bytes of the flat window's single
-// make+copy.
+// concat joins pieces with one allocation of the exact size.
 func concat[U any](pieces [][]U, total int) []U {
 	if len(pieces) == 0 || total == 0 {
 		return nil
@@ -295,18 +229,8 @@ func (c *Cache[U]) At(node string, idx uint64) (U, bool) {
 
 // ---- the node handle ----
 
-// Handle is one node, resolved ONCE.
-//
-// A TENANT THAT READS ONE NODE TEN THOUSAND TIMES MUST NOT HASH THAT NODE'S
-// NAME TEN THOUSAND TIMES. Every string-keyed accessor on Cache hashes a node
-// name before it can do anything -- for the segment payload cache that is a
-// filesystem path, hashed once per record read, and it was MEASURED as the
-// whole of a 2.2x serial regression once allocation was removed (85 ns/op
-// against 39, 0 allocs both sides).
-//
-// The name is a NAMING cost and naming happens at open. Nothing is added to
-// any index and no complexity changes: O(1) to O(1). A Handle carries the
-// *node and the methods the tenant already called, and nothing else.
+// Handle is one node resolved once, so a tenant reading it repeatedly does not
+// hash its name per read.
 type Handle[U any] struct {
 	c    *Cache[U]
 	n    *node[U]
@@ -321,19 +245,8 @@ func (c *Cache[U]) Node(name string) *Handle[U] {
 	return &Handle[U]{c: c, n: n, name: name}
 }
 
-// At is Cache.At without the name lookup.
-//
-// A PER-HANDLE "LAST RUN" HINT WAS TRIED HERE AND REVERTED, 2026-08-19. The
-// profile said 93% of the remaining search time was the binary search over
-// RUNS, and a verified hint removes that search for a reader that stays inside
-// one run. It made the SERIAL hit no better and the PARALLEL hit SIX AND A HALF
-// TIMES WORSE -- 4.9 ns to 32 ns -- because every reader then writes the same
-// atomic on every miss, which is a shared cache line under contention.
-//
-// That is the law this package was founded on, in its own package comment:
-// RECENCY IS AN EPOCH, because "a per-read atomic stamp on a shared line made
-// reads SLOWER with more readers". I had quoted it that morning and
-// reintroduced it by lunch. A read path may GUESS, but it may not REMEMBER.
+// At is Cache.At without the name lookup. A per-handle last-run hint was tried
+// and reverted: it made parallel reads 6.5x worse (plans/tree-shaped-log.md).
 func (h *Handle[U]) At(idx uint64) (U, bool) {
 	ix := h.n.index()
 	if ix == nil {
@@ -395,12 +308,7 @@ func atIn[U any](c *Cache[U], rs []*run[U], idx uint64) (U, bool) {
 // when no run covers idx.
 func atInIndex[U any](c *Cache[U], ix *runIndex[U], idx uint64) (U, bool, int) {
 	var zero U
-	// A CONTIGUOUS SEARCH, WRITTEN OUT. tos[i] is runs[i].coord.To, so this
-	// probes one packed array instead of chasing a pointer per step -- and it
-	// is hand-written rather than sort.Search because sort.Search takes a
-	// CLOSURE, which is an indirect call per probe that cannot inline. The
-	// profile put a third of this lookup in that closure after the unit
-	// lookup had been made arithmetic.
+	// Written out rather than sort.Search: a closure is an indirect call per probe.
 	tos := ix.tos
 	lo, hi := 0, len(tos)
 	for lo < hi {
@@ -420,8 +328,7 @@ func atInIndex[U any](c *Cache[U], ix *runIndex[U], idx uint64) (U, bool, int) {
 	if r.coord.From >= idx || !r.resident {
 		return zero, false, -1
 	}
-	// A DENSE RUN NEEDS NO KEYER AT ALL: density was checked once when the run
-	// was published and a published run never changes.
+	// A dense run needs no Keyer call.
 	if r.dense {
 		j := int(idx - r.base)
 		if j >= 0 && j < len(r.units) {
@@ -509,8 +416,7 @@ func (c *Cache[U]) RangeAt(node string, from, to uint64) ([]U, error) {
 	return c.rangeInNode(Coord{Node: node, From: from, To: to})
 }
 
-// split maps (from..to] onto per-node coords by fork bases. lineage is
-// root-first; child i's own records begin at lineage[i].Base.
+// split maps (from..to] onto per-node coords by fork base; lineage is root-first.
 func (c *Cache[U]) split(lineage []Ref, from, to uint64) []Coord {
 	var cuts []Coord
 	lo := from
@@ -530,13 +436,8 @@ func (c *Cache[U]) split(lineage []Ref, from, to uint64) []Coord {
 	return cuts
 }
 
-// rangeInNode serves one node's coord, materializing gaps.
-//
-// THE RUN SLICE IS RELOADED EVERY STEP, and that is not defensive: another
-// caller publishes a successor while this one is inside a Source, so a slice
-// captured once would walk an index that no longer describes the node. The
-// runs it names stay valid -- they are immutable -- so the reload costs a
-// pointer load and gains an up-to-date index.
+// rangeInNode serves one node's coord, materializing gaps. The run slice is
+// reloaded each step because a Source may run unlocked and publish successors.
 func (c *Cache[U]) rangeInNode(coord Coord) ([]U, error) {
 	return c.rangeInNodeAt(c.lookup(coord.Node), coord)
 }
@@ -544,12 +445,7 @@ func (c *Cache[U]) rangeInNode(coord Coord) ([]U, error) {
 // rangeInNodeAt is rangeInNode with the node already resolved, so a handle
 // does not re-hash the node's name on every call.
 func (c *Cache[U]) rangeInNodeAt(nd *node[U], coord Coord) ([]U, error) {
-	// PIECES, NOT AN APPEND. A span served by ONE resident run -- the hot tail,
-	// and every read smaller than a chunk -- then costs NO COPY AT ALL: the
-	// caller gets a view of the run's own units. Where several runs answer,
-	// concat allocates once at the exact size instead of regrowing.
-	// The first piece is held in a local: the overwhelmingly common answer is
-	// ONE piece, and a [][]U for it is an allocation per read on the hot path.
+	// One piece is the common answer and costs no copy; several allocate once.
 	var first []U
 	var pieces [][]U
 	total := 0
@@ -611,8 +507,8 @@ func (c *Cache[U]) rangeInNodeAt(nd *node[U], coord Coord) ([]U, error) {
 	return joined(), nil
 }
 
-// fill materializes a gap as NEW resident runs, chunked, and returns what it
-// fetched. THE SOURCE RUNS WITH NO LOCK HELD.
+// fill materializes a gap as new resident runs, chunked. The Source runs with
+// no lock held.
 func (c *Cache[U]) fill(coord Coord) ([]U, error) {
 	var all []U
 	for lo := coord.From; lo < coord.To; {
@@ -630,10 +526,7 @@ func (c *Cache[U]) fill(coord Coord) ([]U, error) {
 		r.epoch.Store(c.bump())
 		c.measure(r)
 
-		// TWO CALLERS MAY MATERIALIZE THE SAME COORD, and the loser discards
-		// its result: one wasted Source call rather than a lock held across
-		// I/O. The same trade the segment range unit priced when it dropped
-		// loadMu.
+		// Two callers may materialize one coord; the loser discards its result.
 		c.mu.Lock()
 		n := c.nodeLocked(cc.Node)
 		runs := n.load()
@@ -653,8 +546,7 @@ func (c *Cache[U]) fill(coord Coord) ([]U, error) {
 	return all, nil
 }
 
-// refill rebuilds a hollow run in place -- a successor at the same coord --
-// and returns the units it fetched.
+// refill rebuilds a hollow run as a successor at the same coord.
 func (c *Cache[U]) refill(name string, r *run[U]) ([]U, error) {
 	units, err := c.fetch(r.coord)
 	if err != nil {
@@ -679,16 +571,8 @@ func (c *Cache[U]) refill(name string, r *run[U]) ([]U, error) {
 	return units, nil
 }
 
-// fetch calls the Source with NO LOCK HELD.
-//
-// THE COMMENT THAT STOOD HERE WAS THE JUSTIFICATION FOR A DEFECT, and it is
-// recorded rather than deleted because it is the finding. It read: "fetch
-// calls the source ... under c.mu; the source reads a lower layer with its own
-// locking -- THE LAYERS FORM A DAG, NEVER A CYCLE, WHICH IS WHAT MAKES THIS
-// SAFE." Nothing tested that claim, and source_lock_test.go demonstrates the
-// cycle in three seconds. A layer below that consults this same window (a fork
-// reading its parent's prefix, a composed layer asking the decoded one)
-// reaches it without anybody intending to.
+// fetch calls the Source with no lock held: a Source may re-enter this cache,
+// and source_lock_test.go demonstrates the cycle when it does not.
 func (c *Cache[U]) fetch(coord Coord) ([]U, error) {
 	c.recomposes.Add(1)
 	if c.src == nil {
@@ -703,41 +587,16 @@ func (c *Cache[U]) slice(r *run[U], from, to uint64) []U {
 	}
 	lo := c.upperBoundRun(r, from)
 	hi := c.upperBoundRun(r, to)
-	// A MISS, NEVER A PANIC. lo > hi is only reachable if from > to, which the
-	// guard above refuses -- but a slice expression that can panic on a
-	// bookkeeping desync turns a wrong answer into a crashed daemon, and this
-	// one did (slice bounds out of range [15:13], TestConcurrentRange).
+	// A miss, never a panic: a desync must not crash the daemon.
 	if lo > hi {
 		return nil
 	}
 	return r.units[lo:hi]
 }
 
-// upperBound is the first index whose key exceeds target: a GUESS THAT VERIFIES
-// ITSELF, falling back to a binary search when the guess is wrong.
-//
-// WHY A GUESS AT ALL. The keys of a run are usually DENSE -- one unit per
-// coordinate, ascending, no holes -- because that is what a substrate handing
-// back consecutive records produces. Where that holds, the answer is
-// arithmetic: target - key(units[0]) + 1. A binary search over 64 units instead
-// calls the Keyer about six times, and the Keyer is a FUNCTION VALUE IN A
-// STRUCT FIELD, so every call is indirect and none of them inlines. Measured by
-// fd15d2a0 on the segment payload path: that search is the whole of a 1.7x
-// regression against a structure that indexed arithmetically.
-//
-// WHY IT VERIFIES RATHER THAN TRUSTING A DECLARATION. Density is a property of
-// the TENANT'S KEY SPACE, not of this cache: Source may legally return fewer
-// units than its coord names ("a hole degrades to a gap, never a lie"), and a
-// decoded-IR key skips values whenever an entry is ceremonial or filtered. One
-// hole and an unchecked arithmetic index returns A DIFFERENT RECORD'S CONTENT,
-// which is the silent-wrong-answer failure this stack fears most. So the guess
-// is CHECKED -- one comparison, against the six a search would cost -- and a
-// failed check falls through to the search. A tenant cannot lie about density
-// because nobody is asked.
-//
-// Gluck approved this shape over a declared-dense flag, 2026-08-19, on exactly
-// that reasoning: "wouldn't the index be correct in every case?" -- it would
-// not, and the check is what makes it so.
+// upperBound is the first index whose key exceeds target: an arithmetic guess
+// that verifies both ends and falls back to a binary search. A dense run skips
+// it entirely. Rationale and numbers: plans/tree-shaped-log.md.
 func (c *Cache[U]) upperBoundRun(r *run[U], target uint64) int {
 	if r.dense {
 		if target < r.base {
@@ -758,11 +617,6 @@ func (c *Cache[U]) upperBound(units []U, target uint64) int {
 	base := c.key(units[0])
 	if target >= base {
 		if i := int(target-base) + 1; i >= 0 && i <= len(units) {
-			// The guess is right when the unit BEFORE i is the last one at or
-			// below target and the unit AT i is past it. Checking both ends is
-			// what makes a hole anywhere in between unable to fool it: a hole
-			// shifts every later key down, so the unit at i would carry a key
-			// no greater than target.
 			if (i == len(units) || c.key(units[i]) > target) &&
 				(i == 0 || c.key(units[i-1]) <= target) {
 				return i
@@ -772,10 +626,7 @@ func (c *Cache[U]) upperBound(units []U, target uint64) int {
 	return sort.Search(len(units), func(i int) bool { return c.key(units[i]) > target })
 }
 
-// runChunk bounds one run's span so eviction has granularity: a gap
-// larger than this becomes several runs, and no single run can exceed
-// the budget by construction of its span (bytes may still vary; the
-// guarantee is granularity, not equality).
+// runChunk bounds one run's span, so eviction has granularity.
 const runChunk = 64
 
 // sliceUnits is slice over a local units slice by key bracket.
@@ -837,17 +688,9 @@ func (c *Cache[U]) nodeLocked(name string) *node[U] {
 	return n
 }
 
-// replace builds the successor slice with r at its coord: an exact-coord
-// replacement, or an insertion keeping the sort by From. O(runs) in the copy,
-// which is what the old in-place insert already paid.
-//
-// SEVERAL RUNS MAY SHARE A From. A tenant that widens its tail Puts (a..b] and
-// then (a..b+1], so an index keyed only by From holds two runs at one starting
-// coordinate; the equal-From block is scanned rather than assumed to be one
-// entry. Found by TestRangeAnswersItsSpanUnderRandomResidency: with the
-// assumption in place, eviction INSERTED a hollow duplicate instead of
-// replacing its victim, the victim stayed resident, coldest kept returning it,
-// and TrimIdle spun until the test timed out.
+// replace builds the successor slice with r at its coord, replacing an exact
+// match or inserting in From order. Several runs may share a From, so the
+// equal-From block is scanned rather than assumed to hold one entry.
 func replace[U any](runs []*run[U], r *run[U]) []*run[U] {
 	i := sort.Search(len(runs), func(i int) bool { return runs[i].coord.From >= r.coord.From })
 	for j := i; j < len(runs) && runs[j].coord.From == r.coord.From; j++ {
@@ -864,11 +707,9 @@ func replace[U any](runs []*run[U], r *run[U]) []*run[U] {
 	return append(next, runs[i:]...)
 }
 
-// replaceIdentity swaps ONE run for its successor BY POINTER. Eviction and
-// Drop use this rather than replace: a coord lookup can miss, and a miss there
-// does not fail loudly -- it leaves the victim resident while the budget
-// believes its bytes were freed, which is a meter that lies in the safe-looking
-// direction.
+// replaceIdentity swaps one run for its successor BY POINTER. Eviction and Drop
+// use it: a coord lookup can miss, and a miss there leaves a run resident while
+// the budget believes its bytes were freed.
 func replaceIdentity[U any](runs []*run[U], old, next *run[U]) ([]*run[U], bool) {
 	for i, r := range runs {
 		if r == old {
@@ -891,12 +732,8 @@ func at[U any](runs []*run[U], coord Coord) *run[U] {
 	return nil
 }
 
-// overlapping is the first run intersecting [pos, limit), scanned in order.
-//
-// LINEAR, AND DELIBERATELY. Runs are sorted by From, but their To values need
-// not ascend once a tenant Puts overlapping spans, so a binary search on To
-// answers about an order the index does not have. The locked walk this replaced
-// scanned too; the scan is over ONE node's runs, which chunking bounds.
+// overlapping is the first run intersecting [pos, limit). Linear: To values do
+// not ascend once a tenant Puts overlapping spans.
 func overlapping[U any](runs []*run[U], pos, limit uint64) *run[U] {
 	for _, r := range runs {
 		if r.coord.From >= limit {
@@ -909,8 +746,7 @@ func overlapping[U any](runs []*run[U], pos, limit uint64) *run[U] {
 	return nil
 }
 
-// hollow is the evicted successor of r: same coord, same bytes on the index,
-// no units.
+// hollow is the evicted successor of r: same coord and bytes, no units.
 func hollow[U any](r *run[U]) *run[U] {
 	h := &run[U]{coord: r.coord, bytes: r.bytes}
 	h.epoch.Store(r.epoch.Load())
@@ -936,9 +772,7 @@ func (c *Cache[U]) effEpoch(r *run[U]) int64 {
 	return e
 }
 
-// coldest scans lock-free: every slice it walks is immutable, so the worst a
-// concurrent publish costs is a victim chosen from an index one step old, and
-// evictColdest re-checks under c.mu before hollowing anything.
+// coldest scans lock-free; evictColdest re-checks under c.mu.
 func (c *Cache[U]) coldest() (int64, bool) {
 	best, found := int64(0), false
 	for _, n := range *c.nodes.Load() {

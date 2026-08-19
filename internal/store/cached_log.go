@@ -9,28 +9,6 @@ import (
 
 // cachedLog is a memoized read-through view over a Log[T]. It materializes a
 // WINDOW of the channel's entries in memory and serves reads from there,
-// appending incrementally and falling through to the inner log for anything
-// below the window. One cachedLog is shared per (aria, channel) by the
-// backend, so a reader (aria.page) sees the writer's (agent's) appends.
-//
-// It used to hold every entry for the aria's whole life. That is the largest
-// thing a live aria pins: the decoded fig IR runs 4-5x its encoded bytes, and
-// a real 2500-message aria measured 12.5 MiB of it against 2.0 MiB of composed
-// UI and 48 KiB of form.
-//
-// The window is a window and not an LRU on purpose. Figaro's access pattern on
-// the IR is append at the tail, translate the tail (provider.TailAfter),
-// render recent turns, and occasionally page backward on a user scroll. A
-// window over that is a slice header and one counter; an LRU would be a map, a
-// list, per-entry bookkeeping and a second lock for the same reclamation. The
-// backward-paging case is served from the store by the angelus reader without
-// touching this window at all.
-//
-// Caching stays invisible to consumers: every method below satisfies Log[T]
-// with identical semantics whether or not a row is resident. What changed is
-// that "all of it is in RAM" is no longer free: see the note on store.Snapshot
-// in log.go.
-// logView is the published window: immutable once stored, so a reader takes
 // it with one atomic load and holds no lock at all.
 type logView[T any] struct {
 	// rows is the resident window: the last len(rows) entries of the log.
@@ -47,13 +25,9 @@ type cachedLog[T any] struct {
 	inner Log[T]
 	// writeMu serializes MUTATORS so cache updates land in log order. No
 	// reader ever takes it: holding a lock across inner.Append would block
-	// every reader for the length of an fsync, which is milliseconds now
-	// that figaro syncs before it publishes.
 	writeMu sync.Mutex
 	// view is the whole of the cache's state. Readers load it; mutators
 	// build a successor and store it. Replaces an RWMutex over rows,
-	// trimmed, bytes and a byFK index: 34 acquisitions on the hot read path,
-	// every one of which waited behind an append.
 	view atomic.Pointer[logView[T]]
 
 	// window is the maximum number of resident entries, enforced on append.
@@ -63,10 +37,6 @@ type cachedLog[T any] struct {
 
 	// budget bounds resident entries in BYTES, and is the knob that actually
 	// controls memory. Row count does not: measured on a real 2556-message
-	// aria, dropping 80% of ROWS released only 26% of BYTES, because a long
-	// agentic conversation puts its large tool results at the tail and its
-	// short prose at the head. A row budget bounds the wrong axis of a skewed
-	// distribution. 0 disables.
 	budget int
 	// sizeOf estimates one entry's retained bytes. nil means unmeasurable, in
 	// which case budget is ignored and only window applies.
@@ -77,11 +47,7 @@ var _ Log[any] = (*cachedLog[any])(nil)
 
 // newWindowedLog builds a cache bounded by row count, byte budget, or both.
 // Zero for either disables it; both zero retains everything.
-// inflation is how much larger a decoded entry is than its encoded record, so
-// the tail read's byte gate is denominated in the same units as sizeOf. Passing
-// them separately is the price of gating BEFORE decode: the gate sees encoded
 // bytes, the accounting sees decoded estimates, and the two must agree or the
-// window holds the wrong amount.
 func newWindowedLog[T any](inner Log[T], window, budget, num, denom int, sizeOf func(Entry[T]) int) *cachedLog[T] {
 	if num < 1 || denom < 1 {
 		num, denom = 1, 1
@@ -91,10 +57,6 @@ func newWindowedLog[T any](inner Log[T], window, budget, num, denom int, sizeOf 
 
 	// A bounded cache reads only the tail it will keep, when the inner log can
 	// serve one. Reading everything and evicting afterwards worked but had to
-	// touch the whole channel to do it: 2556 json.Unmarshals to retain 420, and
-	// a transient allocation of the full log to hold a fraction of it. Steady
-	// state was bounded; the moment of opening was not, and a burst of opens
-	// stacked those peaks.
 	if tb, ok := inner.(tailBudgetedLog[T]); ok && (budget > 0 || window > 0) {
 		rows, total := tb.TailBudgeted(budget, window, num, denom)
 		v.rows = rows
@@ -175,8 +137,6 @@ func (c *cachedLog[T]) ReadFrom(figaroLT uint64, n int) []Entry[T] {
 
 // TailAfter serves the suffix without copying the prefix. rows are ascending
 // by LT (channel order in, appends at the tail), so this is a binary search.
-// It is the read the incremental translator uses, and the one the window is
-// shaped for: a warm watermark is always inside it.
 func (c *cachedLog[T]) TailAfter(lt uint64) ([]Entry[T], int) {
 	v := c.load()
 	// A watermark below the window means a cold consumer, which needs the
@@ -216,12 +176,8 @@ func (c *cachedLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) {
 
 // Lookup finds an entry by FigaroLT.
 //
-// There used to be a byFK map from FigaroLT to absolute index beside the
-// window. It answered nothing the rows cannot: entries are ascending by
-// FigaroLT (ReadFrom binary searches on exactly that), so a resident hit is a
 // search, and every miss goes to the inner log whenever anything was trimmed.
 // What it did do was grow forever - it was never pruned on trim - so a
-// bounded window carried an unbounded index of the entries it had dropped.
 func (c *cachedLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
 	v := c.load()
 	// The LAST match, not the first: the map it replaces kept the newest
@@ -277,9 +233,6 @@ func (c *cachedLog[T]) Append(e Entry[T]) (Entry[T], error) {
 
 // Trim drops all but the last keep entries from the window and reports how
 // many were released. keep <= 0 releases everything but the tail entry, which
-// PeekTail and the append path both need.
-//
-// This is the reaper's control surface, reached through the optional
 // windowedLog interface: the caller says when, never how.
 func (c *cachedLog[T]) Trim(keep int) int {
 	c.writeMu.Lock()
@@ -297,13 +250,6 @@ func (c *cachedLog[T]) Resident() int { return len(c.load().rows) }
 
 // evictWindow drops entries off the front of v until both bounds are satisfied,
 // allowing an overshoot of slack rows (and 2x the byte budget) first so the
-// copy amortizes across appends rather than running on every one.
-//
-// It trims in BATCHES. Trimming on every append past the cap was measured at
-// 4.4 µs and 51 KB per append against 308 ns and zero allocations unwindowed -
-// a 14x regression on the hottest write path in the daemon, because each
-// eviction copies the whole window. Batching amortizes that copy over
-// windowSlack appends, which brings it to within noise of untrimmed.
 func (c *cachedLog[T]) evictWindow(v *logView[T], slack int) int {
 	overRows := c.window > 0 && len(v.rows) > c.window+slack
 	overBytes := c.budget > 0 && c.sizeOf != nil && v.bytes > c.budget+c.budget*slackNum/slackDen
@@ -409,23 +355,8 @@ func (c *cachedLog[T]) residentBelow(figaroLT uint64) []Entry[T] {
 
 // newSeededLog builds a cache whose resident prefix is DONATED by an ancestor
 // instead of decoded a second time. seed must be the ancestor's resident rows
-// below the child's fork base, ascending.
-//
-// Measured, not assumed: opening a fork re-decodes the shared prefix and mints
 // every string the parent already holds (decode_duplication_test.go), and a
-// shallow copy shares all of them. So the child pays slice headers where it
-// used to pay a decode.
-//
 // IT DEGRADES TO A MISS, NEVER TO A LIE. Every doubt -- an empty seed, a
-// non-ascending one, a seam that does not match the log -- falls back to the
-// ordinary decoding constructor. The seam is verified by reading the last
-// seeded record back out of the log and comparing it: one decode, once per
-// open, against serving another aria's history from memory.
-//
-// trimmed is derived as Len() - len(rows). Len() counts RECORDS and rows
-// counts records that decoded, so trimmed can only ever be an OVER-estimate,
-// which sends a read to disk that memory could have served. The opposite error
-// would report a truncated window as complete.
 func newSeededLog[T any](inner Log[T], window, budget, num, denom int, sizeOf func(Entry[T]) int, seed []Entry[T]) *cachedLog[T] {
 	if len(seed) == 0 || !ascending(seed) {
 		return newWindowedLog(inner, window, budget, num, denom, sizeOf)
@@ -433,11 +364,7 @@ func newSeededLog[T any](inner Log[T], window, budget, num, denom int, sizeOf fu
 	last := seed[len(seed)-1]
 	// FINGERPRINT, CHECKED IN CODE RATHER THAN PROMISED IN A COMMENT.
 	// A translation cache is keyed by encoder fingerprint and cleared
-	// WHOLESALE on mismatch, so rows rendered for another dialect are a lie
-	// that would outlive the clearing of the durable log. Every donated row
 	// must carry the SAME fingerprint, and that one is then verified against
-	// the log itself by the seam probe below. Fig IR rows carry none, where
-	// this is a comparison of empty strings and costs a pass.
 	for i := range seed {
 		if seed[i].Fingerprint != last.Fingerprint {
 			return newWindowedLog(inner, window, budget, num, denom, sizeOf)

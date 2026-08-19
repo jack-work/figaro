@@ -1,32 +1,7 @@
 // Package tree is the ONE shape every derived cache in this stack
 // shares: a window of materialized units over a durable substrate,
-// budgeted in bytes, LRU by epoch, whose INDEX survives eviction and
-// whose misses rematerialize exactly the range they name from the layer
-// below.
 //
-// It exists because the same pattern was hand-rolled three times -- the
-// segment payload cache here, the decoded-IR window and the composed-UI
-// turn cache in figaro -- each with its own vocabulary, its own
-// accountant, and its own copy of the bugs. Gluck's ruling (2026-08-14):
-// one generic type, type-parameterized units, abstraction over
-// convention; and the trunk tree's PREFIX SHARING becomes a property
-// of the cache, not just of the addressing: a fork's read of the shared
-// prefix hits its ancestor's runs, so N branches of one trunk pay one
-// residency for the common history.
-//
-// Two laws carried in from the field, each paid for in production:
-//
-//   - RECENCY IS AN EPOCH. A per-read atomic stamp on a shared line made
-//     reads SLOWER with more readers (figwal, 2026-08). Touch bumps a
-//     coarse epoch counter; eviction compares epochs, not timestamps.
-//   - COUNT WHAT YOU PIN. A unit that cannot be rematerialized (no
-//     bracket below it) pins ITSELF -- never its cache -- and its bytes
-//     stay on the meter. A meter that reads zero at peak retention is
-//     the worst possible meter (figaro S1, storm-triage, 2026-08-14).
-//
-// The consolidation survey and the fork-accessor verdict this package was
-// ported with are in docs/store/tree.md, with the claims of theirs that
-// have since gone stale corrected in place.
+//	bracket below it) pins ITSELF -- never its cache -- and its bytes
 package tree
 
 import (
@@ -36,8 +11,6 @@ import (
 
 // Ref is one step of a lineage: a trunk node and the coordinate at
 // which its child diverged (the fork base). A read below the base
-// belongs to the ancestor; at or above it, to the child. The LAST Ref
-// is the node being read; ancestors precede it, root first.
 type Ref struct {
 	Node string
 	Base uint64 // first coordinate that is the CHILD's own; 0 for the root
@@ -54,7 +27,6 @@ type Coord struct {
 // Source rematerializes the units of a coord from the layer below.
 // Returning fewer units than the coord names is legal (a hole degrades
 // to a gap, never a lie); returning an error poisons nothing -- the
-// range is simply not resident and the next read retries.
 type Source[U any] func(Coord) ([]U, error)
 
 // Sizer estimates one unit's resident bytes. An estimate at insert,
@@ -71,9 +43,6 @@ type Keyer[U any] func(U) uint64
 // Budget is the shared byte bound across every Cache that holds it.
 // One per concern (raw / decoded / composed today; one pool tomorrow is
 // a config choice, not a rewrite). It never calls an owner while
-// holding its lock: eviction collects victims under the lock and
-// hollows them after, so lock order cannot invert (the segment cache's
-// own trade, kept).
 type Budget struct {
 	limit atomic.Int64
 	bytes atomic.Int64
@@ -81,8 +50,6 @@ type Budget struct {
 
 	// owners is PUBLISHED WHOLE: charge and TrimIdle read it on the eviction
 	// path, where a mutex would serialize every cache that shares this budget
-	// against every other. ownersMu serializes registration only, which
-	// happens at construction and teardown.
 	ownersMu sync.Mutex // WRITERS ONLY
 	owners   atomic.Pointer[[]owner]
 
@@ -150,8 +117,6 @@ func (b *Budget) charge(delta int64) {
 
 // epochNow reads the current epoch without advancing it: touches load,
 // loads and sweeps advance.
-// EpochNow reads the current epoch without advancing it: touches and
-// layer-below stamps load it; loads and sweeps advance it.
 func (b *Budget) EpochNow() int64 {
 	if b == nil {
 		return 0

@@ -11,35 +11,17 @@ type Entry[T any] struct {
 	Fingerprint string
 	// FormChannelVersion, on IR entries only: how far the form had advanced
 	// when this turn was written. The board is unkeyed, so a patch carries
-	// no turn; this is the other side of that association, and it rides
-	// along on a record the reader is already holding.
 	FormChannelVersion uint64
 	// StudyVersions, on IR entries of a STUDYING aria: where each observed
 	// form stood when this record was written, keyed by form id: the
-	// study:-prefixed half of the same cursor stamp FormChannelVersion rides.
-	// The projection derives each member's patch-fold between consecutive
-	// stamps, exactly as it derives the own board's from FormChannelVersion.
 	StudyVersions map[string]uint64
 	// EncodedBytes is the record's on-disk payload size, captured at decode
 	// because that is the one place it is known for free.
-	//
-	// It exists to size the cache. Estimating retained bytes from the decoded
-	// struct means guessing at allocator rounding on every string, slice and
-	// boxed map value, an attempt at that came out 3x low. The encoded size,
-	// times a measured inflation factor, is both cheaper and closer: decoded
-	// IR ran 4.0x and 5.3x its encoded bytes on two real arias.
 	EncodedBytes int
 }
 
 // Log is one column of an aria's write-ahead log. Logs are
 // append-only; dangling state at the tail is repaired with an
-// interrupt sentinel, not by truncation. Clear is supported for
-// translator caches that invalidate wholesale on fingerprint
-// mismatch.
-//
-// Two backing implementations: MemLog (ephemeral) and xwalLog (figwal
-// segments). Translator caches use the same Log interface; they are
-// not independently fork-able: forks ride along with the IR log.
 type Log[T any] interface {
 	// TODO: Pass direction iota, ascending or descending.
 	Read() []Entry[T]
@@ -74,18 +56,6 @@ type tailAfterLog[T any] interface {
 
 // TailAfter returns the entries strictly after channel LT lt, ascending, plus
 // the log's total entry count.
-//
-// It exists so an incremental consumer can read the suffix it needs WITHOUT
-// materializing the prefix it does not. That distinction is the difference
-// between a translator holding 12 MiB of decoded IR and holding the handful
-// of messages it is about to encode: the fig IR is 4-5x its wire bytes, so
-// the prefix is the single largest thing a live aria pins.
-//
-// The total is returned alongside because the caller needs both halves to
-// validate its watermark: prefix length is total-len(suffix), and comparing
-// that against the count it last saw proves the log has only been appended
-// to. Returning them together makes that check one atomic read rather than
-// two that can disagree.
 func TailAfter[T any](log Log[T], lt uint64) ([]Entry[T], int) {
 	if t, ok := log.(tailAfterLog[T]); ok {
 		return t.TailAfter(lt)
@@ -104,10 +74,6 @@ type tailSnapshotLog[T any] interface {
 
 // store.Snapshot is gone on purpose. It returned the cache's own backing
 // slice when the log happened to be materialized, which made "the entire log
-// is in RAM" free at the call site and therefore load-bearing everywhere.
-// Both users wanted a suffix; they use TailAfter. A consumer that genuinely
-// needs every entry calls Read and pays for the copy, which is the honest
-// price once the prefix may not be resident.
 
 // TailSnapshot returns a read-only ascending view of the last n entries.
 func TailSnapshot[T any](log Log[T], n int) []Entry[T] {

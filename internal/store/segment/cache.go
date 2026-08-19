@@ -2,28 +2,8 @@ package segment
 
 // The payload cache. THE RUNS LIVE IN tree AND NOWHERE ELSE.
 //
-// This file used to carry a SECOND INDEX of the same data beside tree's: an
-// immutable `residency` of `run`s behind an atomic pointer, with find/with/
-// without, a coord->Segment registry and an Evicted hook to keep the two in
-// step. Its stated reason is in this file's history: "Routing this through
-// tree.Range would put a process-wide mutex on the hottest path in the read
-// stack; it is not done, it was not approved."
-//
 // THAT PREMISE DIED AT 63902f44. tree's reads take no lock: every structure a
-// reader touches is immutable once published, and writers hold c.mu only to
 // publish -- never across the Source, the budget's eviction pass, or the
-// Evicted hook. So the duplicate has no reason left, and a duplicate kept past
-// its reason is the accretion this consolidation exists to remove.
-//
-// WHAT WENT WITH IT: `residency`, `run`, find/with/without, the CAS dance in
-// extendTail, the Evicted hook, the Recency oracle and the per-segment usedAt
-// stamp. tree already tracks a run's recency on its own read path, so the
-// oracle was telling it something it now knows.
-//
-// WHAT REMAINS HERE IS THE ONE THING TREE CANNOT DO: turn a coord back into
-// the file that answers it. `registry` is now node-path -> *Segment, consulted
-// by the SOURCE on a miss, and it exists because tree names nodes by string
-// and cannot open a segment.
 
 import (
 	"sync"
@@ -35,7 +15,6 @@ import (
 // chunkRecords bounds a materialized range. A miss reads the ALIGNED chunk
 // containing the record asked for, so a sequential scan materializes each
 // chunk exactly once and never re-reads a record -- the traversal the fig IR
-// encode path performs on every turn.
 const chunkRecords = 32
 
 // unit is one record's payload with the coordinate tree slices by. A bare
@@ -74,8 +53,6 @@ func newPayloadCache() *tree.Cache[unit] {
 	return tree.New[unit](
 		// THE SOURCE. tree could not rematerialize anything before this: the
 		// cache was built with src = nil, so Range, per-gap refill and
-		// hollow-keeps-the-index were UNREACHABLE from this tenant. Installing
-		// it is what lets the runs live there at all.
 		func(coord tree.Coord) ([]unit, error) {
 			s := segmentFor(coord.Node)
 			if s == nil {
@@ -110,11 +87,6 @@ func CachedBytes() int64 { resident, _, _ := payloadBudget.Stats(); return resid
 
 // CacheLoads reports RANGE materializations to date: the thrash alarm.
 // Climbing with READS rather than with distinct ranges means runs are
-// being dropped as fast as they are built.
-//
-// THE UNIT OF THIS NUMBER IS A RANGE, NOT A SEGMENT. It is surfaced as
-// segment_cache_loads (rpc) and printed by doctor, and it is NOT comparable
-// with values recorded before the cache unit became a range.
 func CacheLoads() int64 { return loads.Load() }
 
 // CachedRanges reports how many resident ranges tree holds for segments.
@@ -123,19 +95,12 @@ func CachedRanges() int { return payloadCache.ResidentRuns() }
 // cachedPayload returns record i's payload if the cache can serve it.
 //
 // THE HIT TAKES NO LOCK, and it takes no lock because TREE's read path takes
-// none -- not because this package keeps its own copy of the index. RangeAt
-// rather than Range: a segment file has no lineage (forks live at disk.Log,
-// which delegates below a fork base to the parent LOG), so building a
-// one-element []Ref and walking split() on every hit would be two allocations
-// to arrive at a coord already known.
 func (s *Segment) cachedPayload(i uint64) ([]byte, bool) {
 	if CacheBudget() <= 0 {
 		return nil, false
 	}
 	// THE HIT IS A POINT LOOKUP, NOT A RANGE READ. Asking the range surface
 	// for one record allocated and copied the whole chunk to answer -- 1153
-	// B/op against 3, measured -- so the hit takes tree.At and only a MISS
-	// widens to a chunk.
 	if u, ok := s.handle().At(i + 1); ok {
 		return u.b, true
 	}
@@ -158,10 +123,7 @@ func (s *Segment) cachedPayload(i uint64) ([]byte, bool) {
 
 // handle resolves this segment's node in the payload cache ONCE and keeps it.
 //
-// The name is a filesystem path and every string-keyed accessor hashes it. A
 // read path that touches one node per record must not pay a hash per record --
-// measured as the whole of a 2.2x serial regression once allocation was gone.
-// Naming happens at open.
 func (s *Segment) handle() *tree.Handle[unit] {
 	if h := s.h.Load(); h != nil {
 		return h
@@ -219,14 +181,6 @@ func (s *Segment) readRange(from, to uint64) ([]unit, error) {
 
 // extendTail keeps the writer's own tail resident. It is now a tree.Put at the
 // tail coord, which tree documents as replace-in-place with the budget charged
-// the delta -- the CAS dance this file used to run against its own pointer is
-// gone with the pointer.
-//
-// APPEND WIDENS THE LAST RUN rather than starting a new one, and the reason is
-// unchanged: the number of runs is the only term a lookup pays, and a new run
-// per append grows it without bound over a long autonomous turn -- the exact
-// workload the window exists for. IF THAT NUMBER IS EVER MEASURED GROWING FOR
-// A WRITER'S TAIL, THIS REASONING IS WRONG.
 func (s *Segment) extendTail(payload []byte) {
 	if CacheBudget() <= 0 {
 		return
@@ -235,9 +189,6 @@ func (s *Segment) extendTail(payload []byte) {
 	lo := (last / chunkRecords) * chunkRecords
 	// ResidentAt, NOT RangeAt: an append must EXTEND what is resident and must
 	// never FAULT IT IN. Materializing here re-creates residency the evictor
-	// just dropped, and an append loop racing a sweep livelocks -- each undoes
-	// the other. Measured: it hung TestCacheAccountingSurvivesAppendVersusEvict
-	// for 25 seconds before this line said ResidentAt.
 	units, ok := s.handle().ResidentAt(lo, last)
 	if !ok {
 		return // the tail chunk is not resident; nothing to extend

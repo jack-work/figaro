@@ -2,13 +2,6 @@ package store
 
 // xwalLog adapts one channel of an aria's xwal to the store.Log[T]
 // interface. It is stateless with respect to xwal handles: every read
-// and write opens a fresh *xwal.XWAL via the store, performs the op,
-// and closes it. Trunks.Append and Trunks.AppendChannel serialize
-// against Fork/Promote inside figwal (via Trunks.mu), so no aria-level
-// coordination is needed on the figaro side.
-//
-// Reads route through cachedLog for speed; xwalLog only sees Read
-// during boot to materialize the in-memory row cache.
 
 import (
 	"encoding/json"
@@ -126,21 +119,6 @@ func channelBounds(xw *xwal.XWAL, channel string) (first, last uint64, ok bool) 
 
 // TailBudgeted reads BACKWARD from the channel tail, decoding only entries it
 // keeps, and stops once the accumulated encoded bytes would exceed budget or
-// the count would exceed maxRows. It returns the entries ascending, plus the
-// channel's total entry count.
-//
-// It exists because building a windowed cache used to read and json.Unmarshal
-// the whole channel and then throw most of it away: 2556 decodes to keep 420,
-// with a transient allocation of the full 12 MiB to hold 2. Steady state was
-// bounded; the moment of opening was not, and a burst of opens (a daemon
-// restart, several attends) stacked those peaks.
-//
-// The saving is possible because xwal.ReadAt is random access by LT and a
-// record's encoded size is known BEFORE it is decoded, so the budget can be
-// satisfied without unmarshalling a single entry that will be dropped.
-//
-// budget <= 0 and maxRows <= 0 both mean unbounded, in which case this is
-// Read with extra steps; callers should not do that.
 func (l *xwalLog[T]) TailBudgeted(budget, maxRows, num, denom int) ([]Entry[T], int) {
 	var (
 		out   []Entry[T]
@@ -238,18 +216,6 @@ func (l *xwalLog[T]) ReadFrom(figaroLT uint64, n int) []Entry[T] {
 			} else {
 				// A side channel's main-LT is non-decreasing but not equal to
 				// its channel-LT, so the start has to be found. Binary search
-				// over ReadAt, which is itself O(1): figwal's cacheSnapshot
-				// indexes entries by (idx - firstIdx) in memory rather than
-				// scanning segments, so this costs log2(N) array reads and no
-				// disk I/O.
-				//
-				// TODO(perf): make this O(1) too. A per-channel index of
-				// main-LT -> channel-LT would do it, and figwal already builds
-				// one for Lookup (ch.lookup); exposing a "first channel-LT at
-				// or after this main-LT" query would remove the search
-				// entirely. Deferred because side-channel suffix reads are not
-				// on the hot path: the IR is, and the IR takes the O(1) branch
-				// above.
 				lo, hi := first, last
 				for lo < hi {
 					mid := lo + (hi-lo)/2
@@ -299,8 +265,6 @@ func (l *xwalLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
 		}
 		// figwal's mid-life-added channels have an empty FK on reopen
 		// (buildFK bails when FirstIndex walks to an empty parent).
-		// Fall back to a linear scan; the channel is small in practice
-		// (one entry per message) and this is off the hot path.
 		var first, last uint64
 		for _, c := range xw.Channels() {
 			if c.Name == l.channel {
@@ -375,8 +339,6 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	if l.isMain {
 		// The stamp moment: alongside the automatic own-channel cursors,
 		// record where every OBSERVED form stands right now. This is the
-		// provider's snapshot point for the whole observed set: the same
-		// instant, one map (see AppendMainCursors in figwal).
 		_, lt, aerr := l.store.trunks.AppendCursors(l.ariaID, payload, meta, l.store.observedCursors(l.ariaID))
 		if aerr != nil {
 			return Entry[T]{}, aerr
@@ -385,17 +347,7 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 		e.FigaroLT = lt
 		// READ THE RECORD BACK. The append STAMPS the entry with the
 		// form cursor -- where the board stood at this LT -- and that
-		// stamp is what the projection renders deltas against. The caller's
 		// struct does not have it and never did, so returning the caller's
-		// struct handed the cache an entry whose FormChannelVersion was zero for
-		// the life of the process: every reminder was filtered out by
-		// PatchesUpTo(0), and the aria saw none of its own state. It looked
-		// right after a restart, because the cache is rebuilt by decoding
-		// the log, which has the stamp.
-		//
-		// One in-memory read per IR append, and it reports what was
-		// actually written rather than what we believed we wrote -- which
-		// covers the next field of this kind as well as this one.
 		if serr := l.store.trunks.SyncChannelThrough(l.ariaID, l.channel, lt); serr != nil {
 			return Entry[T]{}, fmt.Errorf("sync %s: %w", l.channel, serr)
 		}
@@ -418,8 +370,6 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 
 // readBack decodes the record just appended, for the fields the store
 // stamps and the caller cannot know. Failure is not fatal: the entry is
-// still valid, it simply lacks a stamp, which is what the caller had
-// before asking.
 func (l *xwalLog[T]) readBack(lt uint64) (Entry[T], bool) {
 	var out Entry[T]
 	var ok bool
