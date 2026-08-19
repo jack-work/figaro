@@ -445,7 +445,7 @@ position whether or not it has nodes. TestAnInquiryWithNoAnswerIsStillAPage.
 `--before N` reported `more.after: false` unconditionally. It is now true when
 turns exist after the anchor, which they do.
 
-### AND THE ONE RAISED TO GLUCK, NOT DECIDED HERE
+### AND THE ONE RAISED TO GLUCK, NOW ANSWERED BY THE FORK MODEL
 
 For a fork's INHERITED records, the bound-board form deltas are now keyed by
 the ANCESTOR node that owns them rather than by the aria being read:
@@ -453,9 +453,25 @@ the ANCESTOR node that owns them rather than by the aria being read:
     -  "86d12409.cwd": {"form": "86d12409"}   the reader
     +  "01efd291.cwd": {"form": "01efd291"}   the owner
 
-`formdelta` keys a bound delta "<ariaID>.<path>", and the composed turn for an
-inherited record is composed ONCE, in the ancestor's node, and shared. It
-cannot carry the reader's id without being recomposed per descendant, which is
-the duplication the re-seat deletes. Owner-keyed is truthful and keeps one
-copy; reader-keyed keeps the old wire and kills the sharing. RAISED WITH THE
-MECHANISM AND THE DIFF; the current behaviour is owner-keyed.
+ANSWERED, GLUCK 2026-08-19: "for bound forms, the fork should create its own
+forked form at the fork point... Once a child is forked, its bound form is
+unique. All latter patches to the ancestors form should happen on the
+ancestors branch. For unbound forms, the identity is independent from figaro,
+so whatever form id figaro sees is what should be recorded."
+
+THAT IS WHAT THE STORE ALREADY DOES, and `CreateForm` says so in its own
+words: "a bound form's fork is the aria's fork and it goes through ForkWith".
+A bound form has no separate identity -- it IS the aria's chanForm channel on
+the aria's trunk node -- so forking the aria forks the form at the fork point.
+
+SO THE OWNER-KEYED LABEL IS NOT A PREFERENCE, IT IS THE MODEL: a record below
+the fork base changed the ANCESTOR'S board, because the child's bound form did
+not exist yet. The old label asserted that a form changed before it existed.
+
+AND IT WAS NOT ONLY A LABEL. The old path called FormPatchesBetween(CHILD, ...)
+for an inherited record -- asking the child's form for a version range stamped
+on the ancestor's. The new path asks the aria that owns those versions, so the
+change corrected a READ as well as a name.
+
+Unbound forms are untouched and already match: foldStudied keys by the form id
+carried in the record's own StudyVersions.
