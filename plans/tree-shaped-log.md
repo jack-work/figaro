@@ -1183,7 +1183,14 @@ drop 63 runs at R=64.
 THE ASK: a heap keyed by effective epoch. That is a data structure added to a
 hot layer, which your standing rule reserves for you. Not built.
 
-## Q3. IS cachedLog RE-SEATED ON tree WHOLESALE?
+## Q3. IS cachedLog RE-SEATED ON tree WHOLESALE -- AND THE COMPOSED LAYER WITH IT?
+
+(AMENDED after the memo was written. The composed UI cache is tree's design
+written a second time -- correspondence read line by line -- and it faults
+within 1.3% of tree once run granularity is matched. It belongs in this
+question, not after it. A fourth number arrived with it: run length is a RECORD
+COUNT and wants to be a BYTE TARGET before two tenants with very different unit
+sizes share the cache.)
 
 This is the consolidation itself: one residency policy for the decoded IR and
 translations instead of a flat tail window beside tree. The two numbers that
