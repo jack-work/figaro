@@ -1,0 +1,210 @@
+# Q3'S THIRD TENANT: THE COMPOSED UI IR ON THE CANONICAL TREE
+
+dfdfae6a, 2026-08-19, holding @980dc16c. Written BEFORE any code, because the
+handoff named one decision as the thing to make first and in writing: the
+composed layer's API is POSITIONAL where the two tenants already re-seated were
+LT-KEYED.
+
+The reading and the parity number are dec6ef8a's, in plans/tree-shaped-log.md
+("the whole board", and the runChunk table): `internal/livelog/aria.TurnCache`
+is tree.Cache's design written a third time -- hollow entries, an index that
+survives eviction, a source that rematerializes, a budget with the same three
+numbers, per-entry pinning that stays counted, and both files quote the same
+post-mortem in the same words. At matched run granularity it faults within 1.3%
+of tree. Nothing below re-argues that; this decides HOW it lands.
+
+## THE DECISION: THE COORDINATE IS THE TURN'S OPENING LT, AND THE TENANT KEEPS
+## AN ORDERED KEY LIST
+
+Two candidates were considered. Both were checked against the code rather than
+against the shape of the API.
+
+    TURN ID AS THE COORDINATE. Turn ids are dense (turns.StampIDs, a.turnID++)
+    and they are what a reader passes -- Anchor.Turn is a turn id. tree would
+    get its dense fast path for free.
+
+    THE TURN'S OPENING LT AS THE COORDINATE. Sparse. Not what a reader passes.
+
+LT WINS ON THE TWO SEAMS THAT MATTER, and both are seams the turn-id key would
+have to invent a translation for:
+
+  1. THE LINEAGE. `tree.Ref.Base` is a fork base, and every fork base in this
+     system is an LT (store.Lineage, and treeLog's refs). Under LT coordinates
+     the composed cache reuses THE SAME lineage function the decoded IR tenant
+     already has, and a fork's composed prefix is its ancestor's runs by
+     construction. Under turn-id coordinates every base needs an LT -> turn-id
+     translation, which is a read of the record at the base to learn its
+     TurnID -- a lookup that can miss, in the one place the plan says a miss
+     becomes a lie about whose history you are serving.
+
+  2. THE SOURCE. `TurnSource(fromLT, toLT)` is already an LT bracket on both
+     implementations (Agent.turnSource, AriaReader.turnSource), and both spend
+     it directly on `log.ReadPage(fromLT, toLT+1, ...)`. Under LT coordinates
+     the source signature SURVIVES UNCHANGED and `Source(Coord)` is a rename.
+     Under turn-id coordinates the source must translate a turn range into an
+     LT bracket on every miss.
+
+And the cost of choosing LT is the one thing that does not matter here: the key
+space is sparse, so `tree.At`'s dense fast path does not apply. THE COMPOSED
+LAYER HAS NO POINT READ. Every read on this tenant is `Slice(lo, hi)` from
+`Server.page`, i.e. a range; the point-read cost that made Q1 a question for the
+segment tenant does not exist on this one.
+
+    THE COMPOSED CACHE AND THE DECODED IR CACHE END UP ADDRESSED IN THE SAME
+    COORDINATE SPACE, BY THE SAME LINEAGE, OVER THE SAME SUBSTRATE. That is
+    what "one uniform layer" buys that a third structure cannot: a composed
+    run and the IR run it was composed from name the same bracket.
+
+`compose.Turns` sets `LTs: []uint64{first, last}` per turn, first = the LT of
+the message that OPENS the turn, last = the LT of its final message. So turn
+brackets ascend and do not overlap (they have gaps: boot/state tics before the
+first prompt belong to no turn). That is a legal sparse key space for tree: a
+run is a bracket, not a row -- the same property the translation channel already
+relies on, where one coordinate holds several units.
+
+### THE POSITIONAL HALF, WHICH DOES NOT GO AWAY AND SHOULD NOT
+
+`Len`, `IndexOf`, `ChunkFor` and `Slice(lo,hi)` are index-shaped, and
+`ChunkFor` plans a page FROM THE PER-TURN SIZES -- "exact, not guessed". tree
+cannot serve that: hollowing keeps `{coord, bytes}` PER RUN and drops the
+units, so per-turn keys, brackets and sizes are gone the moment a run is
+hollowed.
+
+    SO THE TENANT KEEPS AN ORDERED KEY LIST: id, LT bracket, At, Sealed, bytes.
+    ~48 B per turn; a 400-turn aria's whole index is under 20 KiB.
+
+THIS IS NOT THE SECOND RESIDENCY POLICY THE STANDING BLOCK FORBIDS, and the
+distinction is worth stating plainly because it is exactly the kind of thing
+that gets waved through: the key list has NO budget, NO eviction order, NO LRU,
+NO pinning and NO lock. It is the tenant's KEY SPACE MAP -- the same smaller
+job `registry` (node path -> *Segment) kept when the segment tenant's duplicate
+residency structure was deleted. Residency, eviction and rematerialization all
+become tree's, and there is exactly one of each.
+
+## WHAT IS DELETED
+
+    UIBudget                        the whole accountant: limit/total/lru,
+                                    victimsLocked, pending, settle, evictions,
+                                    the process-global mutex
+    turnMeta.resident/counted/elem  residency bookkeeping
+    hollow/account/touch/releaseAll the eviction path
+    pinned + unbracketed            see below: pins stop existing
+    seed_turns.go                   the composed prefix DONATION and its seam
+                                    (donatedSeam, spliceDonated) -- the fourth
+                                    hand-written seeding path in this system,
+                                    replaced by lineage
+
+`aria.NewUIBudget` becomes a `tree.Budget` with the same config number
+(`ui_window_mb`), swept on the daemon's standing beat beside the other two
+(`Angelus.sweepCacheBudgets`), and `doctor mem`'s UIWindow* fields read
+`Budget.Stats()` as they already do.
+
+### AND THE PINS STOP EXISTING, WHICH IS THE SECOND SIMPLIFICATION
+
+Today the tail is pinned because the Server MUTATES IT IN PLACE (Close folds
+the open suffix in, Seal stamps the bracket, OpenInquiry writes the question),
+and a tree run is immutable once published. `TailMutated` re-tallies it and
+re-derives the pin; `victimsLocked` carries a tail-index guard; `unbracketed`
+exists for it.
+
+    THE TAIL IS NOT PUT IN THE CACHE AT ALL. It is a staging slot on the
+    tenant -- the newest turn, whatever its state -- and it enters the tree
+    when a NEWER turn displaces it, by which time it is sealed and its LT
+    bracket is known, so it is recomposable like everything else.
+
+An unbracketed SEALED turn (a legacy record at LT 0) is the one remaining case
+that cannot be recomposed; it is `Put` pinned, which is tree's own word for it,
+and it is a property of that turn rather than a latch on the cache. The v1
+defect the comment records -- one such turn disabling eviction for every aria
+after it -- cannot recur in a shape where the pin is a run flag.
+
+## THE HAZARD, AND IT IS THE ONE THE PLAN DEMANDS BE TESTED BELOW A FORK BASE
+
+A fork base is an LT and it can fall INSIDE a turn. The child's log then holds
+that turn's opening messages (inherited) plus its own continuation: SAME TURN
+ID, DIFFERENT CONTENT. If the straddling turn's key (its opening LT) is below
+the base, a lineage read serves the PARENT'S composed turn for it -- a wrong
+lineage link, which is the failure mode "a wrong lineage link serves another
+aria's history as your own", invisible to any single-lineage fixture.
+
+    THE CURE, BY CONSTRUCTION: THE COMPOSED LINEAGE'S FORK BASE IS THE IR BASE
+    SNAPPED DOWN TO A TURN BOUNDARY -- to the opening LT of the turn that
+    contains it, minus one. The straddling turn then belongs to the child's own
+    node and is composed from the child's own records.
+
+The snap is computable from the tenant's own key list (the child composes its
+own history today, so it knows every bracket) and it costs one binary search
+per lineage build, not per read.
+
+FIRST TEST WRITTEN, before the code compiles: a parent, a child forked
+MID-TURN, and an assertion on the straddling turn's content against a fresh
+unseeded composition of the child's own log -- plus the canary that removes the
+snap and must go red. Everything at or above the base agrees whatever you do,
+which is why the assertion is below it.
+
+### THE STRADDLE IS NOT HYPOTHETICAL -- CHECKED AFTER THE PARAGRAPH ABOVE WAS
+### WRITTEN, WHICH IS THE WRONG ORDER AND IS RECORDED AS SUCH
+
+`store.ForkAt(ariaID, atMainLT)` is documented as "an interior fork" and takes
+an arbitrary main-LT; `ForkWith` (the edit path) takes one too. `Lineage`
+renders `Ref{Node, Base: t.BranchedLT}` -- a raw LT, with no turn boundary
+anywhere in it. So a fork base falling inside a turn is a shape the store
+offers on purpose, not an edge case I invented. The snap is required.
+
+## THE SOURCE DISPATCH, WHICH THE SHARED CACHE FORCES AND WHICH DELETES A
+## SECOND DUPLICATE
+
+One cache with a node per aria is what makes fork sharing structural (the
+decoded IR tenant's own comment: "a cache per log would give each aria its own
+nodes map and share nothing"). But `tree.Source` is per-CACHE and receives
+`Coord.Node`, while `TurnSource` today is per-SERVER and bound by whoever owns
+the Server -- `Agent.turnSource` for a live aria, `AriaReader.turnSource` for a
+dormant one, TWO NEARLY IDENTICAL FUNCTIONS (read the LT bracket, compose,
+attach form deltas with a seed from the record before the bracket).
+
+A child reading its inherited prefix asks for the ANCESTOR'S node, and the
+ancestor is frequently not open in this process. Under a per-Server source that
+read cannot be served at all and the page would show a gap -- which is how the
+decoded tenant's `openNode` came to exist: it resolves an ancestor node to its
+SUBSTRATE rather than to a live handle.
+
+    THE COMPOSED SOURCE IS THEREFORE ONE FUNCTION PER PROCESS, KEYED BY NODE
+    AND BACKED BY THE BACKEND: open node N's log, read the bracket, compose,
+    attach deltas. It serves a live aria and a dormant one identically, because
+    below it sits the same decoded-IR tree, warm or not.
+
+`Agent.turnSource` and `AriaReader.turnSource` both go. That is a fifth
+duplicate removed by this re-seat, and it was not visible from the API shape --
+it fell out of asking who answers a miss on a node nobody has opened.
+
+## COMPLEXITY, STATED AS THE RULE REQUIRES
+
+No operation changes asymptotic class:
+
+    Server.page / Slice      range read              unchanged (Range vs a
+                                                     slice of the same span)
+    IndexOf                  binary search over the key list        unchanged
+    ChunkFor                 walk from an anchor, budget-bounded    unchanged
+    recompose                one source call per contiguous gap     unchanged
+    boot (Restore)           composes the whole history, as today   unchanged
+
+The one thing that gets CHEAPER is a fork's open: today `seed_turns.go` splices
+a donated prefix and composes the suffix; under lineage the prefix is the
+ancestor's runs and nothing is composed for it. Making boot LAZY (index without
+composing) is a further change and is NOT part of this one -- the index carries
+per-turn byte sizes that only a materialization knows, and ChunkFor would have
+to guess where today it is exact. Named here so it is not done by accident.
+
+## WHAT I AM NOT DECIDING, AND WHY IT IS NOT BLOCKING
+
+  - ONE POOL VS THREE BUDGETS. This lands as a third `tree.Budget` carrying
+    `ui_window_mb`, which is what tree's own comment already anticipates ("one
+    per concern... one pool tomorrow is a config choice, not a rewrite"). It
+    does not prejudge the pool question either way.
+  - THE RUN LENGTH KNOB. dec6ef8a measured that fault rate follows granularity
+    and that `runChunk` wants to be a BYTE TARGET, and `cutByBytes`/`runTarget`
+    already cut by bytes on the current head. Nothing here re-opens it.
+  - Q1 (the dense fast path) and Q2 (the eviction index) are untouched by this
+    tenant: it has no point read, and it adds runs to the same budget whose
+    sweep cost is Q2's subject -- which is an argument for Q2, not against
+    this.
