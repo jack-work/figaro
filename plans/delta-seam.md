@@ -2025,3 +2025,79 @@ price it in nanoseconds and would NOT establish the shape, which is already
 established. It stays refused tonight — and now for a stronger reason than
 load: NOT NEEDED, rather than NOT AFFORDABLE. That is the better kind of
 refusal and it is the one that should be inherited.
+
+## THE LOOKUP FALLBACK: THE COMMENT NAMES A FUNCTION THAT NO LONGER EXISTS
+
+6ec565b5's reconnaissance, ruled by f3aa1d0b, 2026-08-18. MY PREDICTION WAS
+FALSIFIED IN ITS REASON AND CONFIRMED IN ITS SHAPE — the outcome is a
+NARROWED fallback, reached by a different road than the one I predicted.
+
+THE COMMENT IS FALSE AT THE PIN. `xwal_log.go:303` justifies the linear
+scan by figwal's "mid-life-added channels have an empty FK on reopen".
+`buildFK` exists in figwal v0.5.0 through v0.7.7 and is ABSENT FROM v0.7.8
+ONWARD (checked across all 40 versions in the module cache). We pin
+v0.18.1 on the seam branch and v0.18.0 on layered — eleven-plus minor
+versions past the last release where that function existed. The fk is now
+built LAZILY AND INCREMENTALLY, scanning backward from the tail and
+memoizing as it goes, with three O(1) short-circuits; EMPTY-ON-REOPEN IS
+NO LONGER A DEFECT, IT IS THE NORMAL INITIAL STATE OF A SELF-BUILDING
+INDEX. And the specific hazard it feared — an index blind to records
+inherited from a fork parent — is closed AND TESTED at the pin
+(`ScanFromEnd` recurses into the parent chain; `TestScanFromEndAcrossFork`).
+
+    A COMMENT CAN GO STALE BY A DEPENDENCY MOVING UNDER IT, WITH NOTHING
+    IN OUR TREE CHANGING AT ALL. Nothing goes red. Nothing gets reviewed.
+    The justification simply stops being true while the code it justifies
+    keeps running.
+
+AND THE EXPOSED CLASS IS NARROWER THAN ANYONE ASSUMED: the 1,218 form
+channels NEVER REACH THIS PATH — they are unkeyed, they go through
+Form/FormLog, and Lookup is not part of that interface. `xwalLog` is
+constructed exactly twice, for the IR channel and the per-provider
+translation channels, and ON THE MAIN CHANNEL FIGWAL NEVER CONSULTS THE FK
+at all (an identity path, bounds-checked). Only the translation channels
+are exposed.
+
+## BUT IT IS STILL LOAD-BEARING, FOR A CASE NOBODY WROTE DOWN
+
+figwal's fk scan ABORTS THE WHOLE LOOKUP with an error on the first frame
+whose main-LT will not decode; our fallback SKIPS an unreadable record and
+keeps scanning. SO ONE CORRUPT OR FOREIGN FRAME IN A TRANSLATION CHANNEL
+MAKES FIGWAL'S LOOKUP RETURN AN ERROR FOR EVERY LT, and the fallback still
+answers correctly for every other record. That is CORRUPTION TOLERANCE,
+real and undocumented, and it is not what the comment claims.
+
+RULED, and it is exactly the shape I predicted by a road I did not:
+
+    THE FALLBACK FIRES ON figwal's ERROR, NOT ON ITS DEFINITIVE MISS.
+    Today it fires on both — on `(false, nil)`, a definitive not-found
+    after figwal's own memoized scan, and on `(_, err)`, the decode abort.
+    ONLY THE SECOND IS A CASE FIGWAL CANNOT ANSWER. Narrowing drops the
+    O(N) confirmation of a legitimate miss and keeps the only behaviour the
+    fallback uniquely provides.
+
+THREE OBLIGATIONS ON THAT CHANGE:
+  1. THE COMMENT IS REPLACED BY WHAT IS TRUE — the corruption-tolerance
+     reason, not the buildFK reason. A stale justification is not repaired
+     by a correct code change beside it.
+  2. THE ASSUMPTION IS PINNED BY A TEST. Narrowing bakes in "a definitive
+     not-found from figwal is trustworthy". THAT IS A CLAIM ABOUT A
+     DEPENDENCY WE BUMP, so it must fail loudly on a bump that breaks it —
+     a fixture where a record exists and figwal reports it, canaried.
+  3. THE PRICE OF BEING WRONG IS NAMED WHERE IT IS PAID: `lookupCached`
+     treats not-found as "not cached" and re-encodes, so a wrong not-found
+     costs a re-translation and a cache append (last wins) — COST AND
+     CHURN, not a wrong rendering. The corrupt-frame case is the one that
+     bites: without the fallback, one bad frame turns a cache into a
+     PERMANENT MISS. Silent unbounded re-encoding, not corruption.
+
+## AND THE RECON'S OWN NEAR-MISS, WHICH IS WHY IT IS TRUSTED
+
+It was about to report that main-channel records carry `m=0`, making the
+fallback structurally unable to match on main. `encodeStampedFrame` says
+otherwise — main frames carry their own index as `m` — so the correct
+reason is the bounds argument, not a missing field. CHECKED BEFORE WRITING
+RATHER THAN AFTER. And the limits are stated in the same paragraph as the
+findings: source read, nothing run, no fixture built, and the hot-handle
+claim rests on a call path and a function name rather than on observed
+eviction.
