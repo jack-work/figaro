@@ -1022,3 +1022,18 @@ for both.
 It counts ENTRIES, not bytes, decode time or allocation. The trace is a STATED
 MODEL, not an observation of a real user. It is one lineage, so it says nothing
 about fork sharing. And it measures the DECODED layer only.
+
+## A LIVE DAEMON ON THE REAL STORE, AFTER THE NIGHT'S CHANGES (dec6ef8a)
+
+scripts/live/idlemem.sh against a reflinked copy of the author's store, at head
+3932015f, under the bench lock so it did not race a subagent's benchmark:
+
+    after a full listing   PSS 120.2 MB   alloc 69.5 MiB
+    idle, +5s onward       PSS  79.5 MB   alloc 30.7 MiB, flat for 40s
+    listing again          PSS  88.4 MB
+
+The arena comes back and stays back. This is a PRESENCE check, not a
+comparison: no before-number was taken on the same box tonight, so it says the
+bounded-by-default store does not regress a live daemon, and it does not say
+what it saved. `nix build .#default` is green at the same head. The 535 MB
+store copy the probe makes was deleted.
