@@ -1694,3 +1694,69 @@ AT, and it is worth naming as a practice: an instrument's author reporting
 what it CANNOT see, unprompted, is the cheapest possible version of every
 lesson in ~/notes/figaro/instrument-not-reaching-the-code.md. Sixteen
 instances in that note were bought at the price of a wrong claim first.
+
+## CORRECTION, WITHIN THE HOUR: THE BEFORE-NUMBER IS ZERO AND IT IS ABOUT
+## THE WRONG OBJECT — AND THE SHAPE QUESTION IS THE SIZE QUESTION
+
+9ed3f561, breaking a stand-by order to stop a run being spent on a number
+it already had; ruled and recorded by f3aa1d0b, 2026-08-18. This CORRECTS
+the section immediately above, which ordered the residency count run
+against today's code and its before-number recorded.
+
+IT WAS RUN. IT READS ZERO. And two obvious explanations were tested before
+the zero was reported rather than after:
+
+    keep the returned projection, as the daemon does ......... STILL ZERO
+    State = accumulated encoded payloads, not a counter ...... STILL ZERO
+
+AND THE SECOND PROBE WAS UNSOUND IN THE FLATTERING DIRECTION, caught by
+its own author before it was sent: it attached a finalizer to a `*[]byte`
+and handed the projection a `json.RawMessage` SHARING THE BACKING ARRAY,
+so the pointer died immediately while the array lived and the object was
+counted as COLLECTED. That is the exact false negative refused for shape 2
+an hour earlier, rebuilt in a different corner by the person who refused
+it. Had its output been sent, this document would now record "the
+instrument does not reach the defect" as a MEASURED FINDING, in the
+direction that would have made me withdraw a requirement.
+
+THE HONEST STATE OF THE INSTRUMENT:
+
+    IT MEASURES       entries handed out by the log still reachable after
+                      the pass. Sound, canaried 0 -> 200, because the
+                      pinning log retains THE ENTRY STRUCTS, which are the
+                      tracked objects.
+    IT DOES NOT       the projection's retention of ENCODED OUTPUT.
+                      Entries and encoded payloads are DIFFERENT OBJECTS
+                      and only the first is tracked.
+
+    A ZERO SAYS THE PROJECTION DOES NOT HOLD THE LOG'S ENTRY STRUCTS. IT
+    DOES NOT SAY THE PROJECTION HOLDS NO BYTES.
+
+SO THE BEFORE/AFTER FRAMING IS WITHDRAWN, and "0 before, 0 after" MUST NOT
+BE WRITTEN ANYWHERE: that pair reads as "there was never any retention" to
+every future reader, and it would be quoted that way. The series still
+lands, because shape 1 is a real property worth guarding.
+
+## AND THE TWO OPEN ITEMS COLLAPSE INTO ONE
+
+A FINALIZER CANNOT CHEAPLY TRACK A SLICE'S BACKING ARRAY. That obstacle
+was named for shape 2 (retained patch subslices) and it turns out to block
+the encoded-output question too. ONE OBSTACLE, NOT TWO.
+
+What measures it is a HEAP DELTA, not a finalizer count: allocate large
+encoded payloads, force collection, compare HeapAlloc with the projection
+KEPT versus DROPPED. THAT IS EXACTLY OPEN-projection-heap.md, already
+written up and dated-refused.
+
+    THE SHAPE QUESTION AND THE SIZE QUESTION ARE ONE QUESTION WEARING TWO
+    COATS.
+
+CONSEQUENCE, AND IT RAISES THE PRIORITY: the heap measurement was filed as
+the nice-to-have decoded figure behind the 200.2 MiB lower bound. IT IS
+NOT. It is THE ONLY INSTRUMENT for the property this whole stage is
+justified by — Gluck's ruling that nothing may pin evicted bytes. Until it
+is taken, the deletion lands with its central property UNWITNESSED, which
+is honest and must be said in the landing note rather than papered over.
+
+THE QUIET-BOX TICKET THEREFORE DISPATCHES THE HEAP MEASUREMENT FIRST, and
+now for a stronger reason than "it is the number people will want".
