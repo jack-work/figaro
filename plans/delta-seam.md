@@ -2590,3 +2590,84 @@ the party whose whole job is to catch it — which is the strongest evidence
 yet for that note's thesis: the error is not carelessness, it is a correct
 answer to a narrower question, and shared context makes two people narrow
 it the same way.
+
+# CAPITAL PRIORITY (GLUCK, 2026-08-18): THE CACHE IS THE PROJECTION, AND
+# THE ACCUMULATOR TAKES A LITERAL SLICE OVER A RANGE
+
+Gluck's design, recorded by f3aa1d0b the hour it was given. HIS WORDS: the
+projection "was probably supposed to be EXACTLY the contents of the cache,
+so that marshalling the bytes is just calling the accumulator with the
+necessary range and getting the full bytes in memory" — and returning the
+LITERAL SLICE over that range is ideal, and a CAPITAL PRIORITY of this work.
+
+## WHAT IT MEANS AND WHY IT DISSOLVES THE TRADE WE JUST PRICED
+
+The stage that just landed replaced a carried projection with a WALK: N
+entries handed per turn, zero lookups, one decode. That walk exists ONLY
+because the canonical bytes are stored PER ENTRY — one `[]json.RawMessage`
+per record — so assembling a request means visiting each record.
+
+IF THE CANONICAL BYTES ARE ONE CONTIGUOUS ARRAY PER ARIA, INDEXED BY LT,
+THEN A RANGE IS A SUBSLICE AND THE WALK IS O(1). Marshalling stops being
+an accumulation and becomes an address. The constant-to-linear trade this
+document spent the evening pricing DOES NOT NEED TO BE PAID — it was the
+price of a storage shape, not of the retention rule.
+
+    THE RETENTION RULE IS UNTOUCHED. "Nothing may pin evicted bytes" is
+    about RETAINING past a call. A subslice used within a borrow and
+    released is not retention, and the residency counter built tonight is
+    exactly the instrument that tells the two apart. That instrument
+    becomes load-bearing for a design rather than for a deletion.
+
+## THE SHAPE THIS NEEDS IN STORAGE
+
+    blocks []json.RawMessage   flat, LT-ordered, THE canonical copy
+    index  per fig-IR LT -> [start,end) into blocks
+    base   the first LT the window holds
+
+An entry stops owning its bytes and starts naming a range of them.
+
+## THE THREE WRINKLES, NAMED BEFORE ANYONE BUILDS
+
+  RETRANSLATION is the easy one and it is nearly free: a fingerprint bump
+  invalidates the WHOLE prefix by design (Part IV: stale bytes become
+  UNREACHABLE rather than detected), so the answer is REBUILD THE ARRAY,
+  not patch it. The expensive-sounding case is the one that never needs to
+  be surgical.
+
+  TRIM/EVICTION cuts the HEAD. A tail window re-slices from the front and
+  stays contiguous; the cost is amortised copying only if the array is
+  compacted, and it need not be.
+
+  FORKS ARE THE REAL ONE. A forked aria continues its parent's lineage, so
+  its records begin above 1 and its prefix lives in the parent. Either the
+  child MATERIALISES ITS OWN ARRAY at fork (simple, costs a copy once, and
+  a fork is already a semantic copy), or a range spanning the fork boundary
+  returns TWO RUNS and the signature must admit that. THE DECISION IS
+  WHETHER THE ACCESSOR RETURNS ONE SLICE OR A SMALL NUMBER OF RUNS, and it
+  should be made deliberately rather than discovered by a test that only
+  ever forks at the edges.
+
+## THE SIGNATURE QUESTION, WHICH IS ABOUT LIFETIME AND NOT ABOUT BYTES
+
+Go cannot express "you may look and not keep" in a type. Three idioms, and
+the campaign's own rules pick between them:
+
+  BORROW SCOPE (recommended as the primitive)
+      func (c *Cache) WithPayloads(from, through uint64,
+                                   fn func([]json.RawMessage) error) error
+  The slice cannot outlive the call without deliberate effort, which is the
+  nearest thing to making retention unstatable. Same move as the snapshot
+  accessor's "valid for its own step".
+
+  BORROW + RELEASE (the alternative, if request assembly cannot nest)
+      blocks, release, err := c.Payloads(from, through); defer release()
+
+  AND `io.WriterTo` ON TOP OF EITHER, for the request body — the borrow
+  lasts exactly as long as the write, nothing is ever accumulated, and this
+  is PART III of this document arriving from the other direction.
+
+WHAT ENFORCES IT IS NOT THE SIGNATURE, AND THAT MUST BE SAID: no Go
+signature prevents a caller storing the slice. The enforcement is the
+RESIDENCY COUNT — entries still reachable after the pass, canaried 0 -> 200
+— which now guards a design decision rather than a deletion.
