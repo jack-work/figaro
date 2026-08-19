@@ -1751,3 +1751,49 @@ before, which is exactly the size of improvement that stops an investigation.
 
     A SPEEDUP IS NOT A PROOF OF THE SHAPE YOU INTENDED. Check the exponent,
     not the ratio.
+
+# A LAW ABOUT INDEX KEYS, EARNED BY A TEST THAT REFUTED ITS OWN AUTHOR
+# (223a0986 with 87ab658e, 2026-08-19)
+
+    AN INDEX MAY BE KEYED ONLY BY SOMETHING THE CHANNEL GUARANTEES UNIQUE.
+
+The residency index in `treeLog` is keyed by FigaroLT, which is a FOREIGN KEY
+into another channel and unique only BY CONVENTION. When two rows of one
+channel share a FigaroLT the index holds one of them and the segments hold
+both, so WHICH ONE A READER SEES DEPENDS ON WHETHER IT IS READING THE INDEX OR
+THE LOG -- measured, not reasoned:
+
+    append at an equal FigaroLT   ACCEPTED, and both rows DURABLE
+    Read() on the LIVE handle     ONE row (the first)
+    Read() from a FRESH backend   TWO rows
+    Lookup                        the FIRST row
+    PeekTail                      the LATER row
+
+TestTwoRowsAtOneFigaroLTDivergeBetweenAWarmAndAColdRead, f731cb7a. No channel
+in the real store carries two rows at one FigaroLT today, so this is a LATENT
+TRAP and not a live fault; the test is what makes it a reproducer rather than
+a rumour.
+
+## THE METHOD POINT, WHICH IS 87ab658e'S AND IS THE REUSABLE PART
+
+They warned that a rule of the form "readers prefer the last row" must be
+believed by EVERY reader, and said enumerating them would cost a grep. The
+grep passed it -- there are two semantic readers and both were fine. What the
+enumeration could not ask:
+
+    A GREP ANSWERS "WHO READS". IT CANNOT ASK WHETHER A READER AGREES WITH ITS
+    OWN RESTART.
+
+And the fixture decided it: THE SAME TEST ON MemLog WOULD HAVE AGREED WITH
+ITSELF AND CLEARED THE TRICK. It only failed because it ran against the
+production log, which is the standing rule of this campaign arriving from a
+new direction -- an in-memory implementation cannot exhibit a warm/cold
+divergence, because it has no cold.
+
+## AND THE CONTRAST THAT NAMES THE CURE
+
+87ab658e's form tree is keyed by the FORM KEY, which is unique BY
+CONSTRUCTION, so replacement is total and there is no second copy to disagree
+about. Ours is keyed by a foreign key, so replacement is partial by nature.
+That is the difference between the two substrates, and it is the shape of any
+fix: make the key unique, or stop indexing by it.
