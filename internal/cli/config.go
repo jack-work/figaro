@@ -149,13 +149,12 @@ func ensureHush() {
 var promptDressing dressing
 
 func buildPromptForm() *rpc.FormInput {
-	cwd, _ := os.Getwd()
+	// `cwd` IS NOT SENT. system.cwd is the canonical working directory, written
+	// by the harness at create time through the privileged path; the CLI used
+	// to write a second, unprivileged spelling of the same fact on every
+	// prompt. Gluck, 2026-08-19: keep whichever is canonical, a stale cwd is
+	// acceptable.
 	snap := map[string]json.RawMessage{}
-	if cwd != "" {
-		if b, err := json.Marshal(cwd); err == nil {
-			snap["cwd"] = b
-		}
-	}
 	dt := time.Now().Format("Monday, January 2, 2006, 3PM MST")
 	if b, err := json.Marshal(dt); err == nil {
 		snap["datetime"] = b

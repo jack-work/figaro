@@ -73,7 +73,6 @@ func WellKnownKeys() []KeyDoc {
 		{Key: "token_budget", Short: "Context window usage indicator", Mode: KeySystemManaged},
 		{Key: "truncation", Short: "Last tool truncation notice", Mode: KeySystemManaged},
 
-		{Key: "cwd", Short: "Per-turn shell working directory: where the SENDER of the last prompt stood. For aria-to-aria mail that is the other aria's directory, not yours; the durable one is system.cwd", Mode: KeyEphemeralPerTurn},
 		{Key: "datetime", Short: "Per-turn wall-clock time", Mode: KeyEphemeralPerTurn},
 	}
 }
