@@ -938,3 +938,87 @@ SCOPE, STATED BECAUSE IT IS EASY TO OVERQUOTE: that mark requires A TOOL
 IN FLIGHT. It proves Ctrl-C reaches the daemon for a turn with an open
 tool call. A PROSE-ONLY interrupt — the model mid-paragraph, no tool
 running — is a different case and is not covered by it.
+
+---
+
+# THE LEDGER, MEASURED: INSURANCE, NOT-A-SAVING, AND THE DELETION
+
+d921742d (role @980dc16c), 2026-08-18. The LEDGER section above says
+"expect net-negative" and "do not quote a line count before it is
+measured". This is the measurement, and it moves the stage's headline.
+
+## WHAT WAS MEASURED, AND BY WHOM
+
+Aria 9ed3f561 walked the owner's real store, READ-ONLY, counts and sizes
+only. d921742d reproduced the channel counts independently by a different
+walk before any of it was reported upward.
+
+    form channels on disk                 1,218   (1,217 on the second
+                                                   walk: one aria was born
+                                                   between them — ours)
+    segment files                         1,218
+    channels with MORE THAN ONE segment       0   (0.0%)
+    fattest channel                     117,013 B = 5.6% of ONE 2 MiB
+                                                    segment
+    records per channel      median 3 · p90 8 · p99 42 · max 371
+    mean record size                      2,326 B → ~900 records per
+                                                    2 MiB segment
+
+## PART ONE: THE FOLD BOUND IS INSURANCE
+
+NOTHING HAS EVER ROLLED. Every form channel in the store is a single
+segment, so a header at base 1 IS the initial state and folding from the
+header IS folding from zero. THE ONE-SEGMENT BOUND DOES NO WORK TODAY. A
+median snapshot request folds THREE patches; the p99 folds 42; the worst
+channel in 1,218 folds 371.
+
+It becomes real the day a channel rolls: bounded at ~900 records where an
+unmemoised fold grows without limit. That is a future property, stated in
+the future tense.
+
+CAVEAT CARRIED FORWARD, and it is 9ed3f561's: 1,218 channels at median 3
+records means the store is dominated by SHORT-LIVED arias. A libretto held
+for weeks, or a role form patched every turn, moves the p99 and starts the
+bound working. This says the bound has not worked YET, not that it will
+not.
+
+## PART TWO: THE UNMARSHAL SAVING IS NOT A SAVING AGAINST TODAY'S CODE
+
+A saving of "one whole-board decode per request instead of one per record"
+was measured and then WITHDRAWN, because it prices a route this plan
+already rejected. Today figaro does NOT decode the board per record:
+`ProjectIncrementally` folds DECODED PATCHES from the resident window, and
+the cold path (`form.go:290`, `patchesFromLog`) unmarshals ONE
+`message.Patch` per record — not the board. The whole-board
+Unmarshal/Apply/Marshal belongs to `formReduce`, which runs on ROTATION
+and inside figwal's `StateAt` — and StateAt is exactly the route ruled
+against earlier in this document.
+
+    A SAVING MEASURED AGAINST AN ALTERNATIVE WE REJECTED IS NOT A SAVING.
+
+Nobody quotes it when this lands.
+
+## PART THREE: THE HEADLINE IS THE DELETION
+
+What stage 2 buys on today's data is what Part II said it buys in its
+first paragraph: `IncrementalProjection` and its five carried version
+fields, the four hand-written `acceptAssistantProjection` copies, the
+provider's need to hold an LT, a turn, a projection and a bookmark — and
+Gluck's ruling that NOTHING MAY PIN EVICTED BYTES, which the projection is
+what violates.
+
+WHAT THE DELETION RETURNS, as a LOWER BOUND and never to be quoted
+otherwise: the encoded native messages a projection carries are, ON DISK,
+median 0 B · p90 249,455 B · p99 2,463,337 B · max 9,841,806 B, totalling
+200.2 MiB across 1,463 channels. The projection holds DECODED Go values,
+commonly several times larger. THE REAL FIGURE IS A HEAP MEASUREMENT, NOT
+A FILE WALK, and it has not been taken.
+
+## WHY THIS IS RECORDED RATHER THAN QUIETLY ABSORBED
+
+Gluck's standing instruction on this design is that a regression is
+REPORTED and TUNED, not treated as a veto. There is no regression here —
+only a benefit that is STRUCTURAL rather than TEMPORAL. What changes is
+what may be CLAIMED when it lands, and a stage whose justification is
+written down honestly before it ships cannot be re-justified afterwards by
+whoever needs it to have been worth it.
