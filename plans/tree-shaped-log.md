@@ -1145,3 +1145,83 @@ It does NOT settle the re-seat, which is Gluck's question, and it does not
 touch fd15d2a0's segment finding: that gap is the KEYER's indirect call per
 comparison against arithmetic indexing, which is a different mechanism in a
 different tenant and needs its own answer.
+
+# DECISION MEMO FOR GLUCK, 2026-08-19 MORNING (dec6ef8a)
+
+Three questions, each with the number that makes it answerable. Nothing below
+has been built past its answer.
+
+## Q1. MAY tree GROW A DENSE-COORDINATE FAST PATH?
+
+WHERE IT BITES: the segment payload cache. fd15d2a0 deleted its duplicate
+residency structure (branch fix/segment-runs-in-tree, head fff67d86, NOT
+merged) and the deletion costs ~1.7x on the SERIAL point read -- 46ns to 80ns
+-- while making the PARALLEL read faster and far tighter (51-64ns against
+53-123ns).
+
+MECHANISM, read after the first diagnosis was refuted by its own number:
+tree.At binary-searches units through the KEYER, an indirect call per
+comparison, about five per lookup. The deleted structure did not search at all:
+its coordinates are DENSE, so it indexed arithmetically.
+
+THE ASK: may a tenant whose units are contiguous declare that, and index
+instead of search? It is surface on a shared package, which is why it is your
+call and not mine.
+
+IF NO: the segment deletion does not land, and one tenant keeps two structures
+over one data -- which the standing block forbids, so a NO here needs a third
+option rather than the status quo.
+
+## Q2. MAY tree GROW AN EVICTION INDEX?
+
+MEASURED (677d5768): `Budget.charge` asks every owner for its coldest run (one
+full scan) and then tells the winner to evict (a second), so ONE EVICTION
+VISITS 2R RUNS -- 32 at R=16, 128 at R=64, 512 at R=256 -- and `TrimIdle`
+repeats the pair per dropped run, making a full sweep O(R^2): 4159 visits to
+drop 63 runs at R=64.
+
+THE ASK: a heap keyed by effective epoch. That is a data structure added to a
+hot layer, which your standing rule reserves for you. Not built.
+
+## Q3. IS cachedLog RE-SEATED ON tree WHOLESALE?
+
+This is the consolidation itself: one residency policy for the decoded IR and
+translations instead of a flat tail window beside tree. The two numbers that
+were missing are now in hand.
+
+    THE FAULT RATE (3932015f, the gate log-cache-policy.md named and nobody
+    made): under a scroll/hop trace at a binding budget, the flat window serves
+    4952 entries from below and the tree 2116 -- 2.34x. With a control row at
+    an unbinding budget where neither re-materialises.
+
+    THE TAIL COST (81d5f5b0, 8f569d90): tree's hot-tail read was 4.24x the flat
+    window's and is now 1.13-1.27x, with allocations at 3 against 1. The gap
+    was the SURFACE -- Range copied its answer -- not the policy and not the
+    lock.
+
+SO THE TRADE IS: A TAIL READ COSTS ~15-27% MORE AND A HOPPING READER FAULTS
+HALF AS OFTEN. Plus one policy instead of two, one seeding path instead of two
+(the donation walker is already unified, 567a9cbc), and the fork seam becoming
+structural rather than a one-shot donation guarded by a probe.
+
+WHAT MUST BE RECONCILED IF YOU SAY YES, stated so a yes is not a blank cheque:
+  - THE BUDGET UNITS DISAGREE. The per-aria windows are denominated in DECODED
+    ESTIMATE (newWindowedLog takes an `inflation` factor for exactly this) and
+    tree's budget in the units the Sizer returns. One number called "budget"
+    would otherwise mean two quantities depending on which layer read it.
+  - THE SEAM PROBE IS CARRYING THE CORRECTNESS. Measured, not read: deleting
+    the fork-base bound leaves the tests green because the probe refuses the
+    donation. Structural sharing must preserve that role or make it
+    unnecessary BY CONSTRUCTION.
+  - `cachedLog.Read` FALLS THROUGH TO THE WHOLE CHANNEL once anything has
+    trimmed, and the cold projection path genuinely needs the prefix. A tree
+    does not fix that by itself -- the fix is the projection memo, i.e. the
+    cache IS the projection -- and the re-seat should not be sold as if it did.
+
+## AND ONE THING THAT NEEDS NO DECISION, ONLY YOUR EYE
+
+I published a -43.8% that does not reproduce and retracted it (e124f064). The
+protocol error is the useful part: INTERLEAVING IS NOT COUNTERBALANCING, and an
+A/B without an A/A is an uncalibrated instrument. Everything measured after
+that retraction uses two benchmarks in ONE binary with an in-run control, and
+reports the deterministic quantity (allocations, counts) ahead of the timing.
