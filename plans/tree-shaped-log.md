@@ -741,3 +741,65 @@ That is the real content of the decision: cure B is not "delete a lock", it is
 "move the ordering requirement to where the form path already keeps it". Cure A
 alone cannot serve these four, because an atomic publish does not order two
 appends -- it only makes the result visible without a reader waiting.
+
+## THE CURE QUESTION, ANSWERED (Gluck, 2026-08-19)
+
+    "the actor loop is suitable but we should try to converge layers of
+     serialized writes if we can."
+    "the absence of the lock around the translator and fig ir is not absent,
+     the main actor loop ensures no concurrent writes."
+
+SO BOTH CURES ARE AVAILABLE AND CONVERGENCE IS THE GOAL. The store today has
+TWO serialization mechanisms: the actor loop (form's runBatch, and the agent
+loop above the IR path) and mutexes standing in for it where no loop was
+known to exist. Converge on the loop; delete the locks that existed only for
+its absence.
+
+AND THE ROOT CAUSE, which explains why there are so many: FIGWAL'S INTERNAL
+LOCKING IS DEFENSIVE CONCURRENCY WRITTEN FOR AN UNKNOWN CALLER. Its own
+words -- "FLUSHER-UNAWARE: on a raw handle nothing stops a concurrent
+store", "Concurrent callers receive the same *Log", "Concurrent opens of
+the...". Correct for a published library; it WAS one until this morning.
+figaro serializes its writes through the agent loop and figwal assumed
+nothing, and neither side could know about the other across a module
+boundary that no longer exists.
+
+    THE CONCURRENCY-DOMAIN MISMATCH IS AN ARTIFACT OF THE BOUNDARY WE
+    DELETED. The cure is to STATE THE CONTRACT -- mutating methods are
+    called from a single goroutine, readers are concurrent -- ASSERTED
+    WHERE IT CAN FAIL rather than commented, and then delete the locks that
+    existed only for its absence.
+
+THE CLEANEST INSTANCE: form's runBatch is one drainer with immutable
+published state, and `MemFormLog` beneath it takes a mutex on every append
+anyway, because it was written not knowing a loop existed above it.
+
+## THE ESCALATION RULE FOR THIS WORK (Gluck, 2026-08-19)
+
+    ANY LOCK FOUND TO HAVE GENUINELY CONCURRENT CALLERS IS RAISED TO GLUCK,
+    NOT WORKED AROUND. Work around it ONLY if he is absent and reminders are
+    accumulating -- and DOCUMENT IT AS A FOLLOW-UP either way.
+
+A lock with real concurrent callers is not a cleanup target; it is evidence
+about the design, which is the thing he asked to be shown.
+
+## FOLLOW-UP, LOGGED SO IT IS NOT LOST: "COMPACT" NAMES A MECHANISM WE DO
+## NOT HAVE
+
+Gluck caught the bearer using "compaction" for work this system never does.
+THE WORD IS OVERLOADED THREE WAYS:
+
+  1. `cachedLog.compact` -- in-memory WINDOW EVICTION on a slice: keep the
+     newest rows within a row count and a byte budget, drop the rest.
+  2. `disk.Log.TruncateFront`'s comment -- "size segments so the COMPACTION
+     GRANULARITY matches their needs" -- meaning UNLINKING WHOLE SEALED
+     SEGMENT FILES. Deletion, not compaction.
+  3. The classic meaning, rewriting live data to reclaim space, WHICH THIS
+     SYSTEM DELIBERATELY DOES NOT DO AT ALL.
+
+Three referents, one word, and the only one a reader assumes is the one that
+does not exist. Not a false claim about code -- A FALSE CLAIM ABOUT WHAT
+KIND OF SYSTEM THIS IS, which misleads before a line is read.
+
+RENAME WHEN CONVENIENT, DO NOT LET IT DISTRACT: `compact` -> `evictWindow`,
+and the TruncateFront comment to say it drops sealed segments.
