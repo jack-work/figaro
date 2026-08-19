@@ -17,11 +17,11 @@ func liveLeaves(t *Trunks, trunk string) []string {
 	return out
 }
 
-// TestForest_RepeatedTailForkOneHead drives the user's flow — send a turn,
+// TestTree_RepeatedTailForkOneHead drives the user's flow — send a turn,
 // tail-fork, send, tail-fork … — and asserts the forked trunk keeps EXACTLY
 // ONE live head/leaf throughout. The single-leaf invariant must hold for every
 // trunk after every op.
-func TestForest_RepeatedTailForkOneHead(t *testing.T) {
+func TestTree_RepeatedTailForkOneHead(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, conv := seedTrunkBirth(t, dir, "L@h")
 	if _, _, err := f.Append(conv, 0, []byte(`"u1"`), nil); err != nil {

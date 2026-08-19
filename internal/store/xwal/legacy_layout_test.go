@@ -69,7 +69,7 @@ func TestLegacyPairIsRefusedThenMigrated(t *testing.T) {
 }
 
 // The refusal is the whole point of the stamp: a nested store must not
-// open, least of all "successfully" with an almost-empty forest.
+// open, least of all "successfully" with an almost-empty tree.
 func TestOpenRefusesANestedStoreRatherThanReportingItEmpty(t *testing.T) {
 	dir, before := buildNestedFixture(t)
 	_, err := OpenStore(dir, testStoreOptions())

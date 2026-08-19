@@ -280,7 +280,7 @@ func TestAManifestIsNotInventedForAStoreThatHasData(t *testing.T) {
 			t.Fatalf("open %d: %v", attempt, err)
 		}
 		// And it must not have written one, or the SECOND open would take
-		// the fresh-store path and report an empty forest.
+		// the fresh-store path and report an empty tree.
 		if _, statErr := os.Stat(filepath.Join(dir, manifestName)); !os.IsNotExist(statErr) {
 			t.Fatalf("open %d wrote a manifest while refusing (err %v)", attempt, statErr)
 		}

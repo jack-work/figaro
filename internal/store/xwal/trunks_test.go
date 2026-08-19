@@ -63,7 +63,7 @@ func headPayloads(t *testing.T, f *Trunks, trunk TrunkID) []string {
 	return out
 }
 
-func TestForest_TailAppendNoFork(t *testing.T) {
+func TestTree_TailAppendNoFork(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, root := seedTrunk(t, dir)
 	// Tail appends (atMainLT 0) keep the same trunk.
@@ -82,7 +82,7 @@ func TestForest_TailAppendNoFork(t *testing.T) {
 	}
 }
 
-func TestForest_InteriorForkKeepsExistingTrunk(t *testing.T) {
+func TestTree_InteriorForkKeepsExistingTrunk(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, root := seedTrunk(t, dir)
 	// Build root: genesis(1) u1(2) a1(3) u2(4)  -> tail 4
@@ -128,7 +128,7 @@ func TestForest_InteriorForkKeepsExistingTrunk(t *testing.T) {
 	}
 }
 
-func TestForest_ChalkboardForksAlong(t *testing.T) {
+func TestTree_ChalkboardForksAlong(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, root := seedTrunk(t, dir)
 	// turn 1: append + a chalkboard patch keyed to the committed LT
@@ -162,7 +162,7 @@ func TestForest_ChalkboardForksAlong(t *testing.T) {
 	}
 }
 
-func TestForest_ForkTailBisectsPresent(t *testing.T) {
+func TestTree_ForkTailBisectsPresent(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, root := seedTrunk(t, dir)
 	for _, m := range []string{`"u1"`, `"a1"`} {

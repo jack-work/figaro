@@ -8,13 +8,13 @@ import (
 	"testing"
 )
 
-// TestForest_FuzzSequential drives a long random sequence of trunk ops
+// TestTree_FuzzSequential drives a long random sequence of trunk ops
 // (send/set/interior-fork/tail-fork) and after every op asserts global
 // invariants: every trunk's head opens, its IR reads end-to-end, and its
 // reducible map folds — no errors, no panics. Finally it reopens the
-// forest from disk and asserts every trunk's IR tail + folded state match.
+// tree from disk and asserts every trunk's IR tail + folded state match.
 // Deterministic seed -> reproducible.
-func TestForest_FuzzSequential(t *testing.T) {
+func TestTree_FuzzSequential(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, root := seedMapTrunk(t, dir)
 	rng := rand.New(rand.NewSource(1))

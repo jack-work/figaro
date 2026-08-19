@@ -744,7 +744,7 @@ func (t *Trunks) beginFlatCreate() (func(), error) {
 		t.mu.Unlock()
 		return nil, fmt.Errorf("xwal: refusing create, hot flush failing: %w", err)
 	}
-	// A PEER moved the forest: re-read it. Cheap (one atomic load) and
+	// A PEER moved the tree: re-read it. Cheap (one atomic load) and
 	// skipping it would let us fork from a node we do not know about.
 	if epoch := rootTopologyEpoch(t.registryRoot); t.rootEpoch.Load() != epoch {
 		if err := t.rebuild(); err != nil {
@@ -782,7 +782,7 @@ func (t *Trunks) beginTopologyMutation() (func(), error) {
 			t.mu.Unlock()
 			return nil, fmt.Errorf("xwal: refusing topology mutation, hot flush failing: %w", err)
 		}
-		// Re-read the forest only when a PEER moved it. end() stamps the new
+		// Re-read the tree only when a PEER moved it. end() stamps the new
 		// epoch onto us, so after our own mutation we are already current and
 		// walking again teaches nothing. A repair that rewrites markers calls
 		if epoch := rootTopologyEpoch(t.registryRoot); t.rootEpoch.Load() != epoch {

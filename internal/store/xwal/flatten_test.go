@@ -16,14 +16,14 @@ import (
 // bytes a test author imagined. What Flatten must restore is then a
 // comparison against a state that was really produced, not asserted.
 
-type forestSnapshot struct {
+type treeSnapshot struct {
 	trunks map[string]uint64            // trunk id -> main tail
 	main   map[string][]string          // trunk id -> ir payloads, in order
 	board  map[string]string            // trunk id -> reduced chalkboard state
 	bases  map[string]map[string]uint64 // channel -> node leaf -> .fork base
 }
 
-func buildNestedFixture(t *testing.T) (dir string, before forestSnapshot) {
+func buildNestedFixture(t *testing.T) (dir string, before treeSnapshot) {
 	t.Helper()
 	dir = t.TempDir()
 	s, err := OpenStore(dir, testStoreOptions())
@@ -79,7 +79,7 @@ func buildNestedFixture(t *testing.T) (dir string, before forestSnapshot) {
 	if _, err := s.Append(string(rooted), "ir", 0, []byte(`{"rooted":1}`), nil); err != nil {
 		t.Fatal(err)
 	}
-	before = snapshotForest(t, s, dir)
+	before = snapshotTree(t, s, dir)
 	folded := false
 	for _, b := range before.board {
 		if b != "" && b != "{}" {
@@ -96,9 +96,9 @@ func buildNestedFixture(t *testing.T) (dir string, before forestSnapshot) {
 	return dir, before
 }
 
-func snapshotForest(t *testing.T, s *Store, dir string) forestSnapshot {
+func snapshotTree(t *testing.T, s *Store, dir string) treeSnapshot {
 	t.Helper()
-	snap := forestSnapshot{
+	snap := treeSnapshot{
 		trunks: map[string]uint64{},
 		main:   map[string][]string{},
 		board:  map[string]string{},
@@ -283,7 +283,7 @@ func nest(t *testing.T, dir string) {
 	}
 }
 
-func TestFlattenRestoresANestedForest(t *testing.T) {
+func TestFlattenRestoresANestedTree(t *testing.T) {
 	dir, before := buildNestedFixture(t)
 
 	nestedCount, err := NestedNodes(dir)
@@ -318,7 +318,7 @@ func TestFlattenRestoresANestedForest(t *testing.T) {
 		t.Fatalf("open migrated store: %v", err)
 	}
 	defer s.Close()
-	after := snapshotForest(t, s, dir)
+	after := snapshotTree(t, s, dir)
 	if len(after.trunks) != len(before.trunks) {
 		t.Fatalf("trunks after migration: %d, before: %d", len(after.trunks), len(before.trunks))
 	}
@@ -391,7 +391,7 @@ func TestFlattenResumesAfterAMarkerWithoutItsRename(t *testing.T) {
 	if left, err := NestedNodes(dir); err != nil || left != 0 {
 		t.Fatalf("after the resumed migration: %d nested nodes left (err %v)", left, err)
 	}
-	after := snapshotForest(t, s, dir)
+	after := snapshotTree(t, s, dir)
 	if len(after.trunks) != len(before.trunks) {
 		t.Fatalf("trunks after the resumed migration: %d, want %d", len(after.trunks), len(before.trunks))
 	}
@@ -447,7 +447,7 @@ func TestFlattenResumesWithOnlyTheMainChannelMigrated(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	after := snapshotForest(t, s, dir)
+	after := snapshotTree(t, s, dir)
 	if len(after.trunks) != len(before.trunks) {
 		t.Fatalf("trunks after resume: %d, want %d", len(after.trunks), len(before.trunks))
 	}

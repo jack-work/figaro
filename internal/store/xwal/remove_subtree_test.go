@@ -10,7 +10,7 @@ import (
 // A recursive remove must take the whole subtree off disk. The flat layout
 // puts every node in its own sibling directory, so deleting the founding
 // node alone leaves its descendants behind with a .from nobody can follow:
-// the index then reads them as roots, and a listing draws a forest that
+// the index then reads them as roots, and a listing draws a tree that
 // never existed.
 func TestRemoveRecursiveTakesTheWholeSubtree(t *testing.T) {
 	dir := t.TempDir()

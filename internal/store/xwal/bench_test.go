@@ -205,7 +205,7 @@ func BenchmarkXWALLongAria(b *testing.B) {
 
 func buildLongTrunk(b *testing.B, records int) (*Trunks, Config, TrunkID, uint64) {
 	b.Helper()
-	dir := filepath.Join(b.TempDir(), "forest")
+	dir := filepath.Join(b.TempDir(), "tree")
 	cfg := benchConfig()
 	trunks, err := createTrunks(dir, cfg)
 	if err != nil {

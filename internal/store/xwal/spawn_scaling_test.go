@@ -12,8 +12,8 @@ import (
 // This counts rebuilds rather than timing them on purpose. The cost is
 // filesystem syscalls, so a wall-clock assertion passes on a fast local disk
 // and only fails on the machine that reported the problem. The invariant is
-// "does not re-read the forest", and that is observable directly.
-func TestSpawnWalksTheForestOnce(t *testing.T) {
+// "does not re-read the tree", and that is observable directly.
+func TestSpawnWalksTheTreeOnce(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
 	f, err := createTrunks(dir, trunksCfg())
 	if err != nil {
@@ -30,7 +30,7 @@ func TestSpawnWalksTheForestOnce(t *testing.T) {
 		}
 	}
 	if got := f.idx.rebuilds.Load() - base; got != 0 {
-		t.Fatalf("10 spawns triggered %d forest walks, want 0", got)
+		t.Fatalf("10 spawns triggered %d tree walks, want 0", got)
 	}
 
 	// And the index still answers correctly: every trunk has a live head.

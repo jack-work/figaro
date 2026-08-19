@@ -830,7 +830,7 @@ func channelFromManifest(cfg Config, mc manifestChannel) (*channel, error) {
 // disk never got: a store written before the channel existed, or a crash
 // between the manifest write and the backfill with no sentinel left behind.
 // A partial backfill is the sentinel's job, so the root dir is the whole
-// test — no forest walk.
+// test — no tree walk.
 // reconcileChannelProps brings an existing manifest's per-channel
 // properties up to what the caller now declares. The manifest is
 // authoritative for a store that exists, and materializeManifestChannels

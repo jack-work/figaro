@@ -17,7 +17,7 @@ import (
 	"sync/atomic"
 )
 
-// Index is the node/trunk index: the forest shape, and where each trunk's
+// Index is the node/trunk index: the tree shape, and where each trunk's
 // live head is.
 //
 // Readers (Node, Head, All, LiveTrunks, Version) run on RPC goroutines while
@@ -58,7 +58,7 @@ func (x *Index) Head(trunk string) (string, bool) {
 	return k, ok
 }
 
-// All is a point-in-time copy, for the cold paths that iterate the forest
+// All is a point-in-time copy, for the cold paths that iterate the tree
 // (promote, remove, lineage). Hot paths use Node/Head.
 func (x *Index) All() map[string]*NodeInfo {
 	x.mu.RLock()
@@ -93,7 +93,7 @@ func (x *Index) LiveTrunks() []string {
 
 // Version increases on every change AND on every rebuild. Consumers cache
 // derived state against it; Refresh means "I re-read the disk", so it must
-// invalidate even when the forest came back identical.
+// invalidate even when the tree came back identical.
 func (x *Index) Version() uint64 { return x.version.Load() }
 
 // SpawnFlat records a sibling node forked from parent at LT. The parent is
@@ -112,7 +112,7 @@ func (x *Index) SpawnFlat(parent, child, trunk, kind string) {
 // ChildrenOf is every node forked from key. Derived, not stored: a flat
 // fork writes only the child's own .from, so the parent has no list.
 //
-// Calling this in a loop over the forest is O(n^2); use ChildIndex once.
+// Calling this in a loop over the tree is O(n^2); use ChildIndex once.
 func (x *Index) ChildrenOf(key string) []string {
 	x.mu.RLock()
 	defer x.mu.RUnlock()
