@@ -313,3 +313,83 @@ stamp hoisted into the door (one lock, one computation, passed to both
 writes); record-first with a repair on open (the lazy encode this work
 deletes, reintroduced); or the stamp made an input rather than an output of
 the append, which is a figwal surface change.
+
+# SECTION 2, THE SHAPE: ROW FIRST, IDENTITY FROM CONTENT, STAMP AS AN INPUT
+# (223a0986 with 87ab658e, 2026-08-19)
+
+Gluck ruled the two appends are not to be designed around: write the ROW
+FIRST, at the LT the record is about to take, then the record. Ordering
+substitutes for atomicity because THE TWO ORPHANS ARE NOT EQUALLY BAD -- an
+orphan record is fatal under "a missing row is an error", an orphan row is
+not.
+
+## THE HAZARD, AND WHY IT IS NOT A GAP BUT A LIE
+
+A crash between the two writes leaves a row at an LT THE NEXT APPEND WILL HAND
+TO A DIFFERENT MESSAGE, because the next main LT is PREDICTED, NOT RESERVED:
+disk.Log.LastIndex() derives from segment contents and no counter is
+persisted. The orphan then reads as a legitimate translation of a record it
+does not describe, and the model is shown a message that was never in the
+conversation.
+
+TWO WAYS OUT WERE CHECKED AND ARE ABSENT: there is no durable reservation, and
+there is NO TAIL TRUNCATION anywhere in the substrate (disk.Log has
+TruncateFront only; XWAL.Clear takes the whole channel).
+
+## THE ANSWER, WHICH IS 87ab658e'S D10 APPLIED TO A DIFFERENT LOG
+
+    IDENTITY FROM CONTENT, NOT FROM POSITION. The row carries the CONTENT HASH
+    of the record it translates. LT reuse then cannot produce a
+    legitimate-looking orphan: the row either matches the record at that
+    position or it does not.
+
+Their words, from the form campaign where the same shape was ruled: outfit
+identity was the hash of the PATCH, which made identity a function of the path
+taken rather than the state reached; Gluck's ruling was to hash the RESULTING
+VALUE. It does not buy atomicity. IT BUYS DETECTABILITY, which is the thing
+actually missing -- the failure's problem was never its frequency.
+
+THE SUBSTRATE ALREADY HAS THE MECHANISM: segment.ValueHash is truncated
+SHA-256 over CANONICAL JSON (keys sorted, 16 hex chars), and the JSONL codec
+already writes a `_hash` sidecar per record for integrity. xwal.Record does
+not surface it, so the door hashes the payload it is about to write -- one
+hash per record, on the write path, payload already in hand.
+
+    AND THE CHECK IS O(1), NOT O(history). The door writes row-then-record
+    under one lock, so a crash leaves AT MOST ONE orphan: the newest row. Only
+    that one is verified, once per open.
+
+    REMOVAL WITHOUT A TRUNCATION API. figwal permits a channel append at a
+    mainLT EQUAL to the last (the guard is `mainLT < lastMain`), so a
+    corrected row is appended at the same FigaroLT and the ordered read
+    prefers the LAST row per FigaroLT -- one comparison on a read that is
+    already sequential. No map, no truncation, no Clear.
+
+## AND THE STAMP BECOMES AN INPUT, WHICH PAYS FOR ITSELF
+
+The row's encoding is a function of FormChannelVersion and StudyVersions.
+Today xwalLog.Append computes the cursors inside the append and then READS THE
+RECORD BACK to recover them -- "fields the store stamps and the caller cannot
+know".
+
+87ab658e names it as the defect they had already deleted once: a value's type
+erased at the storage boundary and reconstructed by parsing on the way out.
+"The fix was not to parse faster, it was to stop discarding what the writer
+already knew."
+
+So the door computes the stamp, encodes the row against it, and PASSES IT INTO
+the append. The record then carries exactly the stamp its row was encoded
+against, and no form patch can land in between -- the race is closed by the
+shape rather than by a lock. IT ALSO DELETES ONE ReadAt PER APPEND, so the
+hoist pays for itself before the row work benefits.
+
+## WHAT NEEDS GLUCK BEFORE IT LANDS
+
+  1. A FIELD ON EVERY STORED ROW (the record's content hash). Not a data
+     structure, but it changes what is written, and EVERY EXISTING ROW LACKS
+     IT. Rows are DERIVED STATE -- his own ruling today -- so the migration is
+     a clear and a re-catch-up, which costs one re-encode per aria, once.
+  2. WHETHER THE DOOR MAY HOLD AN ENCODER AT ALL. "The store must not learn
+     about providers" is the plan's own constraint; the encoder arrives as an
+     injected writer, and the shape of that injection is the open question the
+     original plan named.
