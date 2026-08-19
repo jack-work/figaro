@@ -136,7 +136,7 @@ func (s *Segment) cachedPayload(i uint64) ([]byte, bool) {
 	// for one record allocated and copied the whole chunk to answer -- 1153
 	// B/op against 3, measured -- so the hit takes tree.At and only a MISS
 	// widens to a chunk.
-	if u, ok := payloadCache.At(s.path, i+1); ok {
+	if u, ok := s.handle().At(i + 1); ok {
 		return u.b, true
 	}
 	s.register()
@@ -147,13 +147,30 @@ func (s *Segment) cachedPayload(i uint64) ([]byte, bool) {
 	if hi > s.count {
 		hi = s.count
 	}
-	if _, err := payloadCache.RangeAt(s.path, lo, hi); err != nil {
+	if _, err := s.handle().Range(lo, hi); err != nil {
 		return nil, false
 	}
-	if u, ok := payloadCache.At(s.path, i+1); ok {
+	if u, ok := s.handle().At(i + 1); ok {
 		return u.b, true
 	}
 	return nil, false
+}
+
+// handle resolves this segment's node in the payload cache ONCE and keeps it.
+//
+// The name is a filesystem path and every string-keyed accessor hashes it. A
+// read path that touches one node per record must not pay a hash per record --
+// measured as the whole of a 2.2x serial regression once allocation was gone.
+// Naming happens at open.
+func (s *Segment) handle() *tree.Handle[unit] {
+	if h := s.h.Load(); h != nil {
+		return h
+	}
+	h := payloadCache.Node(s.path)
+	if !s.h.CompareAndSwap(nil, h) {
+		return s.h.Load()
+	}
+	return h
 }
 
 // register makes this segment findable by the Source. Idempotent and off the
@@ -221,20 +238,19 @@ func (s *Segment) extendTail(payload []byte) {
 	// just dropped, and an append loop racing a sweep livelocks -- each undoes
 	// the other. Measured: it hung TestCacheAccountingSurvivesAppendVersusEvict
 	// for 25 seconds before this line said ResidentAt.
-	units, ok := payloadCache.ResidentAt(s.path, lo, last)
+	units, ok := s.handle().ResidentAt(lo, last)
 	if !ok {
 		return // the tail chunk is not resident; nothing to extend
 	}
 	cp := make([]byte, len(payload))
 	copy(cp, payload)
-	payloadCache.Put(tree.Coord{Node: s.path, From: lo, To: last + 1},
-		append(units, unit{idx: last + 1, b: cp}), false)
+	s.handle().Put(lo, last+1, append(units, unit{idx: last + 1, b: cp}), false)
 }
 
 // DropCache releases every resident range of this segment. The segment keeps
 // serving reads from the file; a later read reloads the chunk it needs.
 func (s *Segment) DropCache() {
-	payloadCache.DropNode(s.path)
+	s.handle().Drop()
 	regMu.Lock()
 	delete(registry, s.path)
 	regMu.Unlock()

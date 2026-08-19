@@ -3,6 +3,7 @@ package segment
 import (
 	"errors"
 	"fmt"
+	"github.com/jack-work/figaro/internal/store/tree"
 	"log/slog"
 	"os"
 	"sync/atomic"
@@ -41,6 +42,8 @@ type Segment struct {
 	// Nil means "not resident": reads fall through to the file.
 	// registered marks this segment findable by the payload cache's Source.
 	registered atomic.Bool
+	// h is this segment's node in the payload cache, resolved once.
+	h atomic.Pointer[tree.Handle[unit]]
 }
 
 func Create(path string, codec SegmentCodec, baseIndex uint64, maxSize int64) (*Segment, error) {

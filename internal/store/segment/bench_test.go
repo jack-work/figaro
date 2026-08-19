@@ -101,3 +101,30 @@ func benchHit(b *testing.B, parallel bool) {
 
 func BenchmarkSegmentHitSerial(b *testing.B)   { benchHit(b, false) }
 func BenchmarkSegmentHitParallel(b *testing.B) { benchHit(b, true) }
+
+// THE SEQUENTIAL SCAN, which is the traversal the fig IR encode path runs
+// EVERY TURN and the one a chunked range unit could ruin quietly: fix the
+// single-record case, break the walk, and nobody notices until a turn is slow.
+func BenchmarkSegmentScan(b *testing.B) {
+	const n = 1024
+	old := CacheBudget()
+	defer SetCacheBudget(old)
+	SetCacheBudget(64 << 20)
+
+	s := buildSegment(b, BinaryCodec{}, "small", n)
+	defer s.Close()
+	for i := uint64(0); i < n; i++ {
+		if _, err := s.ReadIndex(i); err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		for j := uint64(0); j < n; j++ {
+			if _, err := s.ReadIndex(j); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+}

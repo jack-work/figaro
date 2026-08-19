@@ -201,8 +201,80 @@ func (c *Cache[U]) Range(lineage []Ref, from, to uint64) ([]U, error) {
 // for callers that want a record. Both are lock-free: runs and units are
 // immutable once published.
 func (c *Cache[U]) At(node string, idx uint64) (U, bool) {
+	return atIn(c, c.runs(node), idx)
+}
+
+// ---- the node handle ----
+
+// Handle is one node, resolved ONCE.
+//
+// A TENANT THAT READS ONE NODE TEN THOUSAND TIMES MUST NOT HASH THAT NODE'S
+// NAME TEN THOUSAND TIMES. Every string-keyed accessor on Cache hashes a node
+// name before it can do anything -- for the segment payload cache that is a
+// filesystem path, hashed once per record read, and it was MEASURED as the
+// whole of a 2.2x serial regression once allocation was removed (85 ns/op
+// against 39, 0 allocs both sides).
+//
+// The name is a NAMING cost and naming happens at open. Nothing is added to
+// any index and no complexity changes: O(1) to O(1). A Handle carries the
+// *node and the methods the tenant already called, and nothing else.
+type Handle[U any] struct {
+	c    *Cache[U]
+	n    *node[U]
+	name string
+}
+
+// Node resolves a name to a handle, creating the node if it is new.
+func (c *Cache[U]) Node(name string) *Handle[U] {
+	c.mu.Lock()
+	n := c.nodeLocked(name)
+	c.mu.Unlock()
+	return &Handle[U]{c: c, n: n, name: name}
+}
+
+// At is Cache.At without the name lookup.
+func (h *Handle[U]) At(idx uint64) (U, bool) { return atIn(h.c, nodeRuns(h.n), idx) }
+
+// Range is Cache.RangeAt without the name lookup.
+func (h *Handle[U]) Range(from, to uint64) ([]U, error) {
+	if to <= from {
+		return nil, nil
+	}
+	return h.c.rangeInNodeAt(h.n, Coord{Node: h.name, From: from, To: to})
+}
+
+// ResidentAt is Cache.ResidentAt without the name lookup.
+func (h *Handle[U]) ResidentAt(from, to uint64) ([]U, bool) {
+	return residentIn(nodeRuns(h.n), from, to)
+}
+
+// Put and DropNode are miss-path and teardown; they keep the name because they
+// are not hot and the coord carries it anyway.
+func (h *Handle[U]) Put(from, to uint64, units []U, pinned bool) {
+	h.c.Put(Coord{Node: h.name, From: from, To: to}, units, pinned)
+}
+
+func (h *Handle[U]) Drop() { h.c.DropNode(h.name) }
+
+// nodeRuns is the immutable run slice of a node, or nil.
+func nodeRuns[U any](n *node[U]) []*run[U] {
+	if n == nil {
+		return nil
+	}
+	return n.load()
+}
+
+func residentIn[U any](rs []*run[U], from, to uint64) ([]U, bool) {
+	for _, r := range rs {
+		if r.coord.From == from && r.coord.To == to && r.resident {
+			return r.units, true
+		}
+	}
+	return nil, false
+}
+
+func atIn[U any](c *Cache[U], rs []*run[U], idx uint64) (U, bool) {
 	var zero U
-	rs := c.runs(node)
 	i := sort.Search(len(rs), func(i int) bool { return rs[i].coord.To >= idx })
 	if i == len(rs) {
 		return zero, false
@@ -233,12 +305,7 @@ func (c *Cache[U]) ResidentAt(node string, from, to uint64) ([]U, bool) {
 	if to <= from {
 		return nil, false
 	}
-	for _, r := range c.runs(node) {
-		if r.coord.From == from && r.coord.To == to && r.resident {
-			return r.units, true
-		}
-	}
-	return nil, false
+	return residentIn(c.runs(node), from, to)
 }
 
 // ResidentRuns counts runs holding units, across every node. It replaces a
@@ -325,9 +392,15 @@ func (c *Cache[U]) split(lineage []Ref, from, to uint64) []Coord {
 // runs it names stay valid -- they are immutable -- so the reload costs a
 // pointer load and gains an up-to-date index.
 func (c *Cache[U]) rangeInNode(coord Coord) ([]U, error) {
+	return c.rangeInNodeAt(c.lookup(coord.Node), coord)
+}
+
+// rangeInNodeAt is rangeInNode with the node already resolved, so a handle
+// does not re-hash the node's name on every call.
+func (c *Cache[U]) rangeInNodeAt(nd *node[U], coord Coord) ([]U, error) {
 	var out []U
 	for pos := coord.From; pos < coord.To; {
-		r := overlapping(c.runs(coord.Node), pos, coord.To)
+		r := overlapping(nodeRuns(nd), pos, coord.To)
 		if r == nil {
 			units, err := c.fill(Coord{coord.Node, pos, coord.To})
 			return append(out, units...), err
