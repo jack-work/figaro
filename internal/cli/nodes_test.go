@@ -211,18 +211,6 @@ func boxContentText(plain string) string {
 	return strings.TrimSpace(plain[i+len("│"):])
 }
 
-func assertRows(t *testing.T, got, want []string) {
-	t.Helper()
-	if len(got) != len(want) {
-		t.Fatalf("got %d rows, want %d:\n%s", len(got), len(want), strings.Join(got, "\n"))
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("row %d:\n got %q\nwant %q", i, got[i], want[i])
-		}
-	}
-}
-
 // renderNodeRows renders a node and strips styling, so assertions are about
 // layout rather than escape codes.
 func renderNodeRows(t *testing.T, n livedoc.Node, width, cap int, expand bool) []string {

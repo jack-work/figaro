@@ -1656,20 +1656,6 @@ func (t *Trunks) Owner(trunk TrunkID, atMainLT uint64) (Owner, error) {
 	return Owner{Trunk: n.Trunk, Stump: stumpName(ob, n), IsRoot: n.IsRoot}, nil
 }
 
-// foundingNode returns the shallowest node carrying a trunk id (its parent is
-// in another trunk, a stump, or the root). One exists per live trunk.
-func (t *Trunks) foundingNode(trunk TrunkID) (string, bool) {
-	for key, n := range t.idx.All() {
-		if n.Trunk != trunk {
-			continue
-		}
-		if p := t.node(n.From); p == nil || p.Trunk != trunk {
-			return key, true
-		}
-	}
-	return "", false
-}
-
 // StumpInfo is a read-only view of a stump.
 type StumpInfo struct {
 	Name     string
@@ -1884,17 +1870,6 @@ func (t *Trunks) Nodes() map[string]NodeInfo {
 func (t *Trunks) mintNode() string { return t.idx.MintNode() }
 
 func (t *Trunks) mintTrunk(kind string) string { return t.idx.MintTrunk(kind) }
-
-// trunkExists reports whether any cached node already carries this trunk id
-// (collision check for a custom minter). Caller holds t.mu.
-func (t *Trunks) trunkExists(id string) bool {
-	for _, n := range t.idx.All() {
-		if n.Trunk == id {
-			return true
-		}
-	}
-	return false
-}
 
 // irDir is a node's main-channel directory. A flat key is one path element;
 // the root is the channel dir itself.

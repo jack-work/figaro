@@ -68,19 +68,6 @@ func nodeTexts(n livedoc.Node) []string {
 	return out
 }
 
-func nodeText(n livedoc.Node) string { return n.Markdown }
-
-func firstText(turns []aria.Turn) (string, bool) {
-	for _, t := range turns {
-		for _, n := range t.Nodes {
-			if s := nodeText(n); s != "" {
-				return s, true
-			}
-		}
-	}
-	return "", false
-}
-
 func sameString(a, b string) bool {
 	return len(a) == len(b) && unsafe.StringData(a) == unsafe.StringData(b)
 }

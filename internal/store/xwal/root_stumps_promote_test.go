@@ -280,15 +280,3 @@ func findTrunk(infos []TrunkInfo, id TrunkID) *TrunkInfo {
 }
 
 // --- Task 3: Promote ---
-
-// parentRun returns the trunk id of the node directly above a trunk's
-// founding node, and whether that node is a stump.
-func parentRun(t *testing.T, f *Trunks, trunk TrunkID) (TrunkID, bool) {
-	t.Helper()
-	fk, ok := f.foundingNode(trunk)
-	if !ok {
-		t.Fatalf("no founding node for %s", trunk)
-	}
-	p := f.node(f.node(fk).From)
-	return p.Trunk, p.Kind == "loadout"
-}

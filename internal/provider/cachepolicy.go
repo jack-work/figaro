@@ -106,16 +106,6 @@ func EligibleForCache(model string, estTokens int) bool {
 	return estTokens >= CacheMinTokens(model)
 }
 
-// EstimateWireTokens is the coarse chars/4 estimate used to compare an
-// assembled request against CacheMinTokens. It matches internal/tokens'
-// estimator so the two never disagree about whether a prompt is "big".
-func EstimateWireTokens(bytes int) int {
-	if bytes <= 0 {
-		return 0
-	}
-	return (bytes + 3) / 4
-}
-
 // UsageFromInclusivePrompt maps an OpenAI-family usage block into figaro's
 // four buckets.
 func UsageFromInclusivePrompt(promptTokens, cachedTokens, cacheWriteTokens, outputTokens int) *message.Usage {

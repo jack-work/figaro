@@ -885,48 +885,6 @@ func materializeManifestChannels(root string, cfg Config, man manifest) (manifes
 	return man, nil
 }
 
-func channelNodeStructurallyComplete(
-	dir string,
-	root bool,
-	ch *channel,
-	codec segment.SegmentCodec,
-) (bool, error) {
-	info, err := os.Stat(dir)
-	if errors.Is(err, os.ErrNotExist) || err == nil && !info.IsDir() {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	base := uint64(1)
-	if !root {
-		base, err = readForkBaseFile(filepath.Join(dir, ".fork"))
-		if err != nil {
-			first, ok, firstErr := firstSegmentBase(dir, codec)
-			if firstErr != nil {
-				return false, firstErr
-			}
-			if !ok || first != 1 {
-				return false, nil
-			}
-			base = 1
-		}
-	}
-	if ch.kind != ChannelReducible {
-		return true, nil
-	}
-	info, err = os.Stat(watermarkPath(dir, base, codec))
-	return err == nil && info.Mode().IsRegular() && info.Size() > 0, nil
-}
-
-func validForkNode(dir string, codec segment.SegmentCodec) bool {
-	if _, err := readForkBaseFile(filepath.Join(dir, ".fork")); err == nil {
-		return true
-	}
-	first, ok, err := firstSegmentBase(dir, codec)
-	return err == nil && ok && first == 1
-}
-
 func (x *XWAL) channelOpts(ch *channel) disk.Options {
 	opts := disk.Options{
 		Codec: x.codec, SegmentSize: x.cfg.SegmentSize, MaxUnflushedBytes: x.cfg.MaxUnflushedBytes,

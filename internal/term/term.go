@@ -4,7 +4,6 @@ package term
 
 import (
 	"os"
-	"sort"
 	"sync"
 
 	"golang.org/x/term"
@@ -202,16 +201,6 @@ func Paint(role, s string) string {
 		return f(s)
 	}
 	return s
-}
-
-// Roles returns every role name, sorted. For validation and completion.
-func Roles() []string {
-	out := make([]string, 0, len(roles))
-	for name := range roles {
-		out = append(out, name)
-	}
-	sort.Strings(out)
-	return out
 }
 
 // VisibleLen returns visible columns ignoring ANSI escapes.

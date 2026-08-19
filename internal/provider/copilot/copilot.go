@@ -369,10 +369,6 @@ type CopilotTokenSource struct {
 	baseOverride string
 }
 
-func NewCopilotTokenSource(resolver auth.TokenResolver, enterpriseDomain string) *CopilotTokenSource {
-	return newTokenSource(resolver, Config{EnterpriseDomain: enterpriseDomain})
-}
-
 func newTokenSource(resolver auth.TokenResolver, cfg Config) *CopilotTokenSource {
 	return &CopilotTokenSource{
 		resolver:     resolver,
