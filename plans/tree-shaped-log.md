@@ -389,3 +389,62 @@ reason is the honest statement of a hand-read list's limit: THAT IS
 EXACTLY THE CASE WHERE A READER'S EYE SUPPLIES A CALL THE CODE DOES NOT
 MAKE. It has no evidence it did so anywhere, and no way to be sure it did
 not.
+
+## THE FORK SEAM IS CORRECT, AND NOT FOR THE REASON THE CODE CLAIMS
+
+fd15d2a0, 2026-08-19, commit d2700da7. Fixture: a parent with 60
+translations, TWO children forked at different bases (21 and 41), and TEN
+RECORDS APPENDED TO THE PARENT AFTER THE FORKS -- records belonging to the
+parent's lineage alone, which must never reach a child. The oracle is a
+fresh UNSEEDED log over the child's own channel, so a defect in the
+donation cannot corrupt the reference it is checked against.
+
+CANARY L deleted the fork-base bound from `residentBelow` entirely, so the
+parent donates its whole window including post-fork rows. THE TEST STAYED
+GREEN.
+
+MECHANISM, measured rather than read: with the bound gone, the last donated
+row is a post-fork parent record; `newSeededLog`'s SEAM PROBE reads that row
+back out of the child's own log, fails to match, and FALLS BACK TO A FULL
+DECODE. The child then serves its own correct rows and nothing downstream
+can tell the donation was refused.
+
+    SO CORRECTNESS HERE IS PROVIDED BY THE PROBE, NOT BY THE BOUND. And
+    "IT DEGRADES TO A MISS, NEVER TO A LIE" is now demonstrated by
+    experiment rather than asserted in a comment.
+
+THAT MATTERS FOR THE CONSOLIDATION: if structural sharing replaces the
+one-shot donation, the probe's role must be preserved or made unnecessary
+BY CONSTRUCTION. Removing the donation without noticing that the probe was
+carrying the correctness would remove the thing that was actually working.
+
+THE ASSERTION THAT DISTINGUISHES THEM: pointer identity on the payload,
+true only if the child is serving the parent's own bytes. A correctness
+check alone cannot tell "bounded correctly" from "rescued by the probe".
+With it, canaries L and M both go red.
+
+THE BOUND'S FAILURE DIRECTIONS ARE BOTH MISSES: too low donates fewer rows,
+all correct; too high is caught by the probe. No direction was found that
+produces a lie.
+
+## A NEW SPECIES: A CANARY THAT DID NOT APPLY LOOKS EXACTLY LIKE ONE THAT PASSED
+
+Canary M never modified the file and reported "ok". Its patch anchor matched
+TWICE -- because THERE ARE TWO DONATION SITES, `seedRowsLocked` for the fig
+IR and `seedTransRowsLocked` for translations -- so the patcher aborted, and
+the script printed a pass.
+
+    A CANARY THAT FAILED TO APPLY IS INDISTINGUISHABLE FROM A CANARY THAT
+    PASSED, AND BOTH ARE INDISTINGUISHABLE FROM WORKING CODE.
+
+Every arm now PROVES IT CHANGED THE FILE before it may run -- and the first
+version of that guard was itself broken, looking for the wrong backup path
+and returning success, caught only by making the guard PRINT THE DIFF IT
+CLAIMS TO HAVE APPLIED. The guard is checked by its output, not its exit
+code.
+
+AND THE ACCIDENT IS ITSELF A FINDING: the double match revealed that THERE
+ARE TWO DONATION SITES. The fig IR donation at `seedRowsLocked`
+(xwal_backend.go:1260) is UNCOVERED by this test. Two hand-written seeding
+paths for one structure is the duplication this consolidation exists to
+remove.
