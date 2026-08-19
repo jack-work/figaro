@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -40,9 +39,8 @@ type Segment struct {
 
 	// block is this segment's lazily loaded payload cache; see cache.go.
 	// Nil means "not resident": reads fall through to the file.
-	block  atomic.Pointer[block]
-	usedAt atomic.Int64
-	loadMu sync.Mutex
+	resident atomic.Pointer[residency]
+	usedAt   atomic.Int64
 }
 
 func Create(path string, codec SegmentCodec, baseIndex uint64, maxSize int64) (*Segment, error) {
@@ -217,7 +215,7 @@ func (s *Segment) Append(payload []byte) (offset int64, err error) {
 	s.size += int64(n)
 	s.offsets = append(s.offsets, offset)
 	s.count++
-	s.extendBlock(payload)
+	s.extendTail(payload)
 	return offset, nil
 }
 
@@ -270,8 +268,8 @@ func (s *Segment) ReadIndex(i uint64) ([]byte, error) {
 	if i >= s.count {
 		return nil, ErrOutOfRange
 	}
-	if b := s.cachedPayloads(); b != nil && i < uint64(len(b.payloads)) {
-		return b.payloads[i], nil
+	if p, ok := s.cachedPayload(i); ok {
+		return p, nil
 	}
 	off := s.offsets[i]
 	nextOff := s.size
