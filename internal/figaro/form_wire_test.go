@@ -323,3 +323,24 @@ func mustForm(t *testing.T) *form.State {
 	require.NoError(t, err)
 	return st
 }
+
+// A REFUSED KEY REACHES THE CALLER. The form input is applied when the prompt
+// is submitted, so a harness-owned key comes back as an error on the reply the
+// caller is already waiting for -- where it used to be applied inside the turn,
+// long after the RPC returned, and could only be logged.
+func TestRefusedFormInputIsReportedToTheCaller(t *testing.T) {
+	a, _, _ := newAgentWithForm(t)
+
+	err := a.SubmitPromptFrom(rpc.QuaRequest{
+		Text: "set a key that is not mine to set",
+		Form: &rpc.FormInput{Patch: &rpc.FormPatch{Set: map[string]json.RawMessage{
+			"model": json.RawMessage(`"claude-opus"`),
+		}}},
+	}, "")
+	require.Error(t, err, "a harness-owned key must be refused to the caller's face")
+	require.Contains(t, err.Error(), "model")
+
+	// And the refusal is atomic: nothing from that patch landed.
+	_, ok := a.Snapshot().Get("model")
+	require.False(t, ok)
+}

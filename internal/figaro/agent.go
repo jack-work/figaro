@@ -564,21 +564,32 @@ func (a *Agent) refreshMetricsFrom(msgs []message.Message) {
 }
 
 // SubmitPrompt enqueues a prompt; the reply streams as log.* frames.
-func (a *Agent) SubmitPrompt(req rpc.QuaRequest) { a.SubmitPromptFrom(req, "") }
+func (a *Agent) SubmitPrompt(req rpc.QuaRequest) { _ = a.SubmitPromptFrom(req, "") }
 
 // SubmitPromptFrom is SubmitPrompt with the caller's rendered attribution.
 // sender is "" when nobody said who they were, which stays unattributed all
 // the way down rather than becoming "unknown".
-func (a *Agent) SubmitPromptFrom(req rpc.QuaRequest, sender string) {
+// FORM INPUT IS APPLIED HERE, SYNCHRONOUSLY, AND THE CALLER LEARNS IF IT IS
+// REFUSED. It used to ride the queued prompt and get applied inside the turn,
+// which is why a refusal -- a harness-owned key, say -- could only be logged:
+// the RPC had returned long before. A patch is data about the board, not about
+// the turn, so it lands when it is submitted.
+func (a *Agent) SubmitPromptFrom(req rpc.QuaRequest, sender string) error {
+	if patch := a.combineFormInput(req.Form); !patch.IsEmpty() {
+		if _, err := a.backend.ApplyForm(a.id, patch); err != nil {
+			return err
+		}
+		a.form.Apply(patch)
+	}
 	evt := event{
 		typ:  eventUserPrompt,
 		text: req.Text,
-		form: req.Form,
 	}
 	if req.Text != "" {
 		evt.segments = []promptSegment{{sender: sender, text: req.Text}}
 	}
 	a.inbox.Send(evt)
+	return nil
 }
 
 // QueuedPrompts returns a read-only snapshot of the messages this aria has

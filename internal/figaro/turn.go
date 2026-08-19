@@ -188,10 +188,9 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (store.Entry[messa
 		Steering:  steering && prompt.text != "",
 		Timestamp: time.Now().UnixMilli(),
 	}
+	// The client's form input landed at SUBMIT time; what remains here is the
+	// harness's own write.
 	var combined form.Patch
-	if prompt.form != nil {
-		combined = a.combineFormInput(prompt.form)
-	}
 	// Seed the mantra from the first user message's opening text, so every
 	// conversation has a stable title (the first n chars) without the agent
 	// having to set one. Only when unset, so it stays fixed to the opener.
