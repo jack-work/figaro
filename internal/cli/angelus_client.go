@@ -15,7 +15,7 @@ import (
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/transport"
-	"github.com/jack-work/figwal/xwal"
+	"github.com/jack-work/figaro/internal/store/xwal"
 )
 
 // ariaBackend constructs the XWAL aria tree under the configured state root,

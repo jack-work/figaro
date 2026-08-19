@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/internal/message"
-	"github.com/jack-work/figwal/xwal"
+	"github.com/jack-work/figaro/internal/store/xwal"
 )
 
 // TestMain silences figwal's INFO segment/log chatter (it logs via the

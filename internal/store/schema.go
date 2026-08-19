@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jack-work/figwal/xwal"
+	"github.com/jack-work/figaro/internal/store/xwal"
 )
 
 // schemaFileName is figaro's channel-schema sidecar, kept next to figwal's

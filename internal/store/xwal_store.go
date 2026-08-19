@@ -57,9 +57,9 @@ import (
 	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/topo"
-	fwlog "github.com/jack-work/figwal/log"
-	"github.com/jack-work/figwal/segment"
-	"github.com/jack-work/figwal/xwal"
+	fwlog "github.com/jack-work/figaro/internal/store/log"
+	"github.com/jack-work/figaro/internal/store/segment"
+	"github.com/jack-work/figaro/internal/store/xwal"
 )
 
 // trunkScanCount counts calls into figwal's trunk-listing accessors
