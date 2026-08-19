@@ -257,18 +257,25 @@ func submitSteer(a *figaro.Agent, text string) {
 
 // --- Tests ---
 
-func newTestAgent(response string) *figaro.Agent {
+func newTestAgent(t *testing.T, response string) *figaro.Agent {
+	t.Helper()
 	cb, _ := form.Open("")
 	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
 		"system.model":      json.RawMessage(`"mock-model-v1"`),
 		"system.provider":   json.RawMessage(`"mock"`),
 		"system.max_tokens": json.RawMessage(`1024`),
 	}})
+	be, id := store.NewTestAria(t, "d", message.Patch{Set: map[string]json.RawMessage{
+		"system.model":      json.RawMessage(`"mock-model-v1"`),
+		"system.provider":   json.RawMessage(`"mock"`),
+		"system.max_tokens": json.RawMessage(`1024`),
+	}})
 	return figaro.NewAgent(figaro.Config{
 		Projector:  uiir.New(nil),
-		ID:         "test-001",
+		ID:         id,
 		SocketPath: "/tmp/test-figaro.sock",
 		Provider:   &mockProvider{response: response},
+		Backend:    be,
 		Form:       cb,
 	})
 }
@@ -368,19 +375,20 @@ func nonGenesis(msgs []message.Message) []message.Message {
 }
 
 func TestAgent_ID(t *testing.T) {
-	a := newTestAgent("hi")
+	a := newTestAgent(t, "hi")
 	defer a.Kill()
-	assert.Equal(t, "test-001", a.ID())
+	// The id is the store's now, not the harness's: every aria is backed.
+	assert.NotEmpty(t, a.ID())
 }
 
 func TestAgent_SocketPath(t *testing.T) {
-	a := newTestAgent("hi")
+	a := newTestAgent(t, "hi")
 	defer a.Kill()
 	assert.Equal(t, "/tmp/test-figaro.sock", a.SocketPath())
 }
 
 func TestAgent_PromptAndSubscribe(t *testing.T) {
-	a := newTestAgent("4")
+	a := newTestAgent(t, "4")
 	defer a.Kill()
 
 	// Subscribe before prompting.
@@ -420,9 +428,11 @@ func TestAgentContextMetricsTrackCurrentSession(t *testing.T) {
 		"system.model": json.RawMessage(`"gpt-5.6-terra"`),
 		"mantra":       json.RawMessage(`"keep session accounting visible"`),
 	}})
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
+		Backend:    testBE,
 		Projector:  uiir.New(nil),
-		ID:         "metrics-001",
+		ID:         testID,
 		SocketPath: "/tmp/metrics-test.sock",
 		Provider:   metricsProvider{},
 		Form:       cb,
@@ -467,9 +477,11 @@ func TestAgentFirstLiveFrameUsesResolvedContextLimit(t *testing.T) {
 	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
 		"system.model": json.RawMessage(`"gpt-5.6-terra"`),
 	}})
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
+		Backend:    testBE,
 		Projector:  uiir.New(nil),
-		ID:         "late-limit-001",
+		ID:         testID,
 		SocketPath: "/tmp/late-limit-test.sock",
 		Provider:   &lateLimitProvider{},
 		Form:       cb,
@@ -503,7 +515,7 @@ done:
 }
 
 func TestAgent_ReadCatchUp(t *testing.T) {
-	a := newTestAgent("the reply")
+	a := newTestAgent(t, "the reply")
 	defer a.Kill()
 
 	// Idle, empty: nothing to catch up.
@@ -560,13 +572,16 @@ func nodesContain(nodes []livedoc.Node, sub string) bool {
 }
 
 func TestAgent_Context(t *testing.T) {
-	a := newTestAgent("hello")
+	a := newTestAgent(t, "hello")
 	defer a.Kill()
 
 	ch, _ := subscribeChan(a)
 
-	// Initially empty.
-	assert.Empty(t, a.Context())
+	// Initially no conversation: the ceremonial records (genesis, birth) are
+	// there because every aria is backed, and they are not messages.
+	for _, m := range a.Context() {
+		assert.True(t, message.IsCeremonial(m), "unexpected message before the first prompt: %+v", m)
+	}
 
 	submitPrompt(a, "say hi")
 
@@ -585,7 +600,12 @@ func TestAgent_Context(t *testing.T) {
 done:
 
 	// Should have user + assistant messages.
-	msgs := a.Context()
+	var msgs []message.Message
+	for _, m := range a.Context() {
+		if !message.IsCeremonial(m) {
+			msgs = append(msgs, m)
+		}
+	}
 	require.GreaterOrEqual(t, len(msgs), 2)
 	assert.Equal(t, message.RoleInput, msgs[0].Role)
 	assert.Equal(t, message.RoleOutput, msgs[1].Role)
@@ -598,12 +618,14 @@ func TestAgent_FIFOOrdering(t *testing.T) {
 	// is lifted joins it: which is the point (four chained sends should be one
 	// question, not four turns to sit through). What must never change is the
 	// order they reach the model in.
-	a := newTestAgent("")
+	a := newTestAgent(t, "")
 	a.Kill() // kill the default one
 
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a = figaro.NewAgent(figaro.Config{
+		Backend:    testBE,
 		Projector:  uiir.New(nil),
-		ID:         "fifo-test",
+		ID:         testID,
 		SocketPath: "/tmp/test-fifo.sock",
 		Provider:   &mockProvider{response: "ok"},
 	})
@@ -652,7 +674,7 @@ func TestAgent_FIFOOrdering(t *testing.T) {
 }
 
 func TestAgent_MultipleSubscribers(t *testing.T) {
-	a := newTestAgent("hi")
+	a := newTestAgent(t, "hi")
 	defer a.Kill()
 
 	ch1, _ := subscribeChan(a)
@@ -680,7 +702,7 @@ func TestAgent_MultipleSubscribers(t *testing.T) {
 }
 
 func TestAgent_Unsubscribe(t *testing.T) {
-	a := newTestAgent("hi")
+	a := newTestAgent(t, "hi")
 	defer a.Kill()
 
 	ch, unsub := subscribeChan(a)
@@ -692,7 +714,7 @@ func TestAgent_Unsubscribe(t *testing.T) {
 }
 
 func TestAgent_Kill(t *testing.T) {
-	a := newTestAgent("hi")
+	a := newTestAgent(t, "hi")
 	ch, _ := subscribeChan(a)
 
 	a.Kill()
@@ -738,9 +760,11 @@ func TestAgent_PanicRecovery(t *testing.T) {
 	// Provider panics on the first call, succeeds on the second.
 	prov := &panicProvider{panicCount: 1, response: "recovered"}
 
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
+		Backend:    testBE,
 		Projector:  uiir.New(nil),
-		ID:         "panic-test",
+		ID:         testID,
 		SocketPath: "/tmp/panic-test.sock",
 		Provider:   prov,
 	})
@@ -800,9 +824,11 @@ func TestAgent_PanicRecovery_ContextReset(t *testing.T) {
 	// Provider panics on first call.
 	prov := &panicProvider{panicCount: 1, response: "ok"}
 
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
+		Backend:    testBE,
 		Projector:  uiir.New(nil),
-		ID:         "panic-ctx-test",
+		ID:         testID,
 		SocketPath: "/tmp/panic-ctx-test.sock",
 		Provider:   prov,
 	})
@@ -841,11 +867,11 @@ errorReceived:
 }
 
 func TestAgent_Info(t *testing.T) {
-	a := newTestAgent("hi")
+	a := newTestAgent(t, "hi")
 	defer a.Kill()
 
 	info := a.Info()
-	assert.Equal(t, "test-001", info.ID)
+	assert.Equal(t, a.ID(), info.ID)
 	assert.Equal(t, "mock", info.Provider)
 	assert.Equal(t, "mock-model-v1", info.Model)
 	assert.False(t, info.CreatedAt.IsZero())
@@ -1053,9 +1079,11 @@ func TestAgent_EphemeralWhenNoBackend(t *testing.T) {
 	// No Backend: should behave as before (no files written).
 	tmpDir := t.TempDir()
 
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
+		Backend:    testBE,
 		Projector:  uiir.New(nil),
-		ID:         "ephemeral-001",
+		ID:         testID,
 		SocketPath: "/tmp/ephemeral-test.sock",
 		Provider:   &mockProvider{response: "gone"},
 		// Backend deliberately omitted.
@@ -1111,9 +1139,11 @@ func (s *slowProvider) Send(ctx context.Context, _ provider.SendInput, bus provi
 // agent idle and usable for a second prompt.
 func TestAgent_Interrupt(t *testing.T) {
 	started := make(chan struct{})
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
+		Backend:    testBE,
 		Projector:  uiir.New(nil),
-		ID:         "interrupt-001",
+		ID:         testID,
 		SocketPath: "/tmp/interrupt-test.sock",
 		Provider:   &slowProvider{started: started},
 	})
@@ -1157,15 +1187,26 @@ loop:
 	// Agent should be idle and reusable after the interrupt.
 	// (Avoid reissuing a prompt with the slow provider; just assert the
 	// loop didn't die.)
-	info := a.Info()
-	assert.Equal(t, "idle", info.State, "agent should be idle after interrupt")
+	// Eventually idle, not instantly: an aria is backed now, so a form watch
+	// can still be delivering the birth patch when turn.done lands, and
+	// Info() calls that "active" until the inbox drains.
+	var state string
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
+		if state = a.Info().State; state == "idle" {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	assert.Equal(t, "idle", state, "agent should be idle after interrupt")
 }
 
 func TestAgentInfoReportsRunningTurnActive(t *testing.T) {
 	started := make(chan struct{})
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
+		Backend:    testBE,
 		Projector:  uiir.New(nil),
-		ID:         "active-001",
+		ID:         testID,
 		SocketPath: "/tmp/active-test.sock",
 		Provider:   &slowProvider{started: started},
 	})
@@ -1184,7 +1225,7 @@ func TestAgentInfoReportsRunningTurnActive(t *testing.T) {
 // TestAgent_InterruptWhenIdle is a no-op: Interrupt on an idle agent
 // must not emit spurious Done/Error notifications.
 func TestAgent_InterruptWhenIdle(t *testing.T) {
-	a := newTestAgent("hi")
+	a := newTestAgent(t, "hi")
 	defer a.Kill()
 
 	ch, _ := subscribeChan(a)
@@ -1332,7 +1373,7 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 // appears, the CLI paints an intermediate state before the durable transcript
 // contains the message: the behavior we're deliberately eliminating.
 func TestAgent_UserPromptCommitsWithoutLiveFrame(t *testing.T) {
-	a := newTestAgent("the reply")
+	a := newTestAgent(t, "the reply")
 	defer a.Kill()
 
 	ch, unsub := subscribeChan(a)
@@ -1404,9 +1445,11 @@ func TestAgent_QueuedPromptsRPC(t *testing.T) {
 		"system.provider":   json.RawMessage(`"mock"`),
 		"system.max_tokens": json.RawMessage(`1024`),
 	}})
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
+		Backend:    testBE,
 		Projector:  uiir.New(nil),
-		ID:         "q-001",
+		ID:         testID,
 		SocketPath: "/tmp/test-figaro-q.sock",
 		Provider:   prov,
 		Form:       cb,

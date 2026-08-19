@@ -146,9 +146,11 @@ func rebindAgent(t *testing.T, f *rebindFactory, boot map[string]json.RawMessage
 	}
 	prov, err := f.build(name, provider.Knobs{})
 	require.NoError(t, err)
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
+		Backend:         testBE,
 		Projector:       uiir.New(nil),
-		ID:              "rebind-" + t.Name(),
+		ID:              testID,
 		SocketPath:      "/tmp/figaro-rebind-test.sock",
 		Provider:        prov,
 		ProviderFactory: f.build,

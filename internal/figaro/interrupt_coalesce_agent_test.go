@@ -2,6 +2,7 @@ package figaro_test
 
 import (
 	"encoding/json"
+	"github.com/jack-work/figaro/internal/message"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
@@ -27,9 +29,11 @@ func newQueuedAgent(t *testing.T, id string) (*figaro.Agent, *blockedProvider, f
 		"system.provider":   json.RawMessage(`"mock"`),
 		"system.max_tokens": json.RawMessage(`1024`),
 	}})
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
+		Backend:    testBE,
 		Projector:  uiir.New(nil),
-		ID:         id,
+		ID:         testID,
 		SocketPath: "/tmp/test-" + id + ".sock",
 		Provider:   prov,
 		Form:       cb,

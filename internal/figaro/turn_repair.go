@@ -157,7 +157,7 @@ func (a *Agent) repairTurnTail() ([]message.Message, error) {
 }
 
 func (a *Agent) commitAssistantCache(lt uint64, cache *provider.AssistantCache) error {
-	if cache == nil || a.backend == nil {
+	if cache == nil {
 		return nil
 	}
 	if cache.Namespace == "" {

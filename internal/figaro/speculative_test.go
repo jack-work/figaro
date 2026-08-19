@@ -197,9 +197,11 @@ func TestSpeculativeDispatch_StartsBeforeStreamEnd(t *testing.T) {
 		"system.model":    json.RawMessage(`"mock"`),
 		"system.provider": json.RawMessage(`"staggered"`),
 	}})
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
+		Backend:    testBE,
 		Projector:  uiir.New(nil),
-		ID:         "spec-001",
+		ID:         testID,
 		SocketPath: "/tmp/spec-test.sock",
 		Provider:   prov,
 		Tools:      reg,
@@ -274,9 +276,11 @@ func TestSpeculativeDispatch_ResultOrdering(t *testing.T) {
 		"system.model":    json.RawMessage(`"mock"`),
 		"system.provider": json.RawMessage(`"staggered"`),
 	}})
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
+		Backend:    testBE,
 		Projector:  uiir.New(nil),
-		ID:         "spec-002",
+		ID:         testID,
 		SocketPath: "/tmp/spec-test-2.sock",
 		Provider:   prov,
 		Tools:      reg,
@@ -360,9 +364,11 @@ func TestToolTurn_IRStructure(t *testing.T) {
 		"system.model":    json.RawMessage(`"mock"`),
 		"system.provider": json.RawMessage(`"staggered"`),
 	}})
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
+		Backend:    testBE,
 		Projector:  uiir.New(nil),
-		ID:         "invoke-001",
+		ID:         testID,
 		SocketPath: "/tmp/invoke-test.sock",
 		Provider:   prov,
 		Tools:      reg,
@@ -376,7 +382,7 @@ func TestToolTurn_IRStructure(t *testing.T) {
 
 	// The turn lands the right message sequence in the IR: user prompt,
 	// assistant (tool_invoke), tool_result, assistant (final reply).
-	msgs := a.Context()
+	msgs := conversationOnly(a.Context())
 	roles := make([]message.Role, len(msgs))
 	for i, m := range msgs {
 		roles[i] = m.Role
@@ -407,4 +413,16 @@ func assistantToolInvokeIDs(m message.Message) []string {
 		}
 	}
 	return ids
+}
+
+// conversationOnly drops the ceremonial records every backed aria begins with:
+// genesis and the birth patch are structure, not conversation.
+func conversationOnly(msgs []message.Message) []message.Message {
+	var out []message.Message
+	for _, m := range msgs {
+		if !message.IsCeremonial(m) {
+			out = append(out, m)
+		}
+	}
+	return out
 }

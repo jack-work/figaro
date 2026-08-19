@@ -239,6 +239,9 @@ type Agent struct {
 
 // NewAgent creates and starts a figaro agent.
 func NewAgent(cfg Config) *Agent {
+	if cfg.Backend == nil {
+		panic("figaro.NewAgent: Backend is required -- there is no ephemeral aria (store.NewTestBackend in tests)")
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	now := time.Now()
 	createdAt := cfg.CreatedAt
@@ -327,9 +330,6 @@ func NewAgent(cfg Config) *Agent {
 // rows, lock-free), and closes it on Fork/Remove/Close: the agent never
 // closes what Open returns.
 func (a *Agent) newLog() store.Log[message.Message] {
-	if a.backend == nil {
-		return store.GuardIR(store.NewMemLog[message.Message]())
-	}
 	log, err := a.backend.Open(a.id)
 	if err != nil {
 		// Falling back to memory here would silently orphan the on-disk
@@ -492,9 +492,6 @@ func (a *Agent) refreshMetrics() {
 // them. Returns false when the sidecar cannot be trusted, in which case the
 // caller must fall back to the full fold.
 func (a *Agent) seedMetricsFromMeta() bool {
-	if a.backend == nil {
-		return false
-	}
 	meta, err := a.backend.Meta(a.id)
 	if err != nil || meta == nil || meta.LastFigaroLT == 0 {
 		return false
@@ -1019,9 +1016,6 @@ func (a *Agent) applyControlPatchVerdict(patch message.Patch, ifVersion uint64, 
 // for backed arias, the form's patches in version order; nil for
 // ephemeral (the provider falls back to inline IR patches).
 func (a *Agent) formAccessor() provider.Form {
-	if a.backend == nil {
-		return nil
-	}
 	// Probe once: a form that cannot be opened disables transitions for the
 	// turn, exactly as the copying version did when its read failed.
 	if _, err := a.backend.FormVersion(a.id); err != nil {
@@ -1037,7 +1031,7 @@ func (a *Agent) formAccessor() provider.Form {
 // libretto carries the death as a key and outlives it.
 func (a *Agent) studyAccessors() map[string]provider.Form {
 	lb, ok := a.backend.(librettoBackend)
-	if a.backend == nil || !ok {
+	if !ok {
 		return nil
 	}
 	ids := StudiesFromSnapshot(a.form.Snapshot())
@@ -1151,6 +1145,18 @@ func (a *Agent) endTurnDiscarding(reason string) {
 }
 
 func (a *Agent) finishTurn(reason string) {
+	// THE HISTORY IS WELL-FORMED BEFORE THE TURN IS ANNOUNCED OVER. An
+	// interrupted turn can leave an invoke with no result, and a fork or a read
+	// taken between the announcement and the next message would see it. Doing
+	// this after the announcement instead makes the aria look active again to
+	// anyone who asks the moment they hear turn.done.
+	if closer, ok := a.figLog.(interface{ CloseOpenToolCalls() (int, error) }); ok {
+		if n, err := closer.CloseOpenToolCalls(); err != nil {
+			slog.Error("close open tool calls at turn end", "aria", a.id, "err", err)
+		} else if n > 0 {
+			slog.Info("closed open tool calls at turn end", "aria", a.id, "calls", n)
+		}
+	}
 	// A FAILED TURN BELONGS IN THE RECORD, not only on the terminal that
 	// happened to be watching. The reason already reaches the client (the
 	// status bar notice and the inline hint); logging it at ERROR puts it
@@ -1185,9 +1191,6 @@ func (a *Agent) finishTurn(reason string) {
 
 // publishMetadata persists and fans out one actor-owned metrics snapshot.
 func (a *Agent) publishMetadata() {
-	if a.backend == nil {
-		return
-	}
 	a.mu.RLock()
 	meta := &store.AriaMeta{
 		MessageCount:     a.messageCount,

@@ -25,6 +25,7 @@ import (
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/uiir"
 )
@@ -62,9 +63,11 @@ func TestToolTimingIsStampedNoLaterThanItsDurableResult(t *testing.T) {
 		t.Fatal(err)
 	}
 	prov := &twoRoundProvider{}
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
+		Backend:    testBE,
 		Projector:  uiir.New(nil),
-		ID:         "timing-order-001",
+		ID:         testID,
 		SocketPath: "/tmp/test-figaro-timing-order.sock",
 		Provider:   prov,
 		Tools:      reg,

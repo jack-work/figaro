@@ -19,9 +19,6 @@ func (a *Agent) Snapshot() form.Snapshot {
 // Version is the durable version the agent's board stands at: the index of the
 // last patch appended to its form channel. Zero when there is no store.
 func (a *Agent) Version() uint64 {
-	if a.backend == nil {
-		return 0
-	}
 	v, err := a.backend.FormVersion(a.id)
 	if err != nil {
 		return 0

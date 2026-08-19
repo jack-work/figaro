@@ -104,9 +104,11 @@ func newAgentWithForm(t *testing.T) (*figaro.Agent, *formSpyProvider, *form.Stat
 	require.NoError(t, err)
 
 	prov := &formSpyProvider{}
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
+		Backend:    testBE,
 		Projector:  uiir.New(nil),
-		ID:         "test-aria",
+		ID:         testID,
 		SocketPath: dir + "/sock",
 		Provider:   prov,
 		Tools:      tool.NewRegistry(),
@@ -152,9 +154,10 @@ func TestWire_ContextOnly_DiffsAndApplies(t *testing.T) {
 	}
 	runOneTurn(t, a, "first", cb1)
 	require.Equal(t, 2, prov.sendCount())
-	patches := prov.lastTurnPatches()
-	require.Len(t, patches, 1, "first turn should attach 1 combined patch")
-	assert.ElementsMatch(t, []string{"cwd"}, patchSets(patches))
+	// The patch lands in the FORM CHANNEL, not on the message: an aria is
+	// always backed, so there is no inline-patch path any more.
+	cwd, _ := a.Snapshot().Get("cwd")
+	assert.Equal(t, `"/home/alpha"`, string(cwd))
 }
 
 func TestWire_ContextOnly_NoChange_NoPatch(t *testing.T) {
@@ -185,9 +188,8 @@ func TestWire_PatchOnly_AppliesDirectly(t *testing.T) {
 	}
 	runOneTurn(t, a, "second", cb)
 	require.Equal(t, 2, prov.sendCount())
-	patches := prov.lastTurnPatches()
-	require.Len(t, patches, 1)
-	assert.ElementsMatch(t, []string{"cwd"}, patchSets(patches))
+	cwd, _ := a.Snapshot().Get("cwd")
+	assert.Equal(t, `"/home/beta"`, string(cwd))
 }
 
 func TestWire_ContextAndPatch_Combined(t *testing.T) {
@@ -200,15 +202,21 @@ func TestWire_ContextAndPatch_Combined(t *testing.T) {
 		},
 		Patch: &rpc.FormPatch{
 			Set: map[string]json.RawMessage{
-				"model": json.RawMessage(`"claude-opus"`),
+				// NOT "model": that key is harness-owned, and an unprivileged
+				// write to it is refused -- which takes the whole patch down
+				// with it. The ephemeral path used to hide that by stapling the
+				// patch to the message instead of applying it.
+				"note": json.RawMessage(`"combined"`),
 			},
 		},
 	}
 	runOneTurn(t, a, "first", cb)
 	require.Equal(t, 2, prov.sendCount())
-	patches := prov.lastTurnPatches()
-	require.Len(t, patches, 1, "context + patch are merged into one combined patch")
-	assert.ElementsMatch(t, []string{"cwd", "model"}, patchSets(patches))
+	snap := a.Snapshot()
+	cwd, _ := snap.Get("cwd")
+	note, _ := snap.Get("note")
+	assert.Equal(t, `"/home/alpha"`, string(cwd), "context and patch must merge into ONE applied write")
+	assert.Equal(t, `"combined"`, string(note))
 }
 
 func TestWire_NeitherContextNorPatch_NoOp(t *testing.T) {

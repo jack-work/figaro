@@ -2,6 +2,7 @@ package figaro_test
 
 import (
 	"encoding/json"
+	"github.com/jack-work/figaro/internal/message"
 	"path/filepath"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/internal/store"
 )
 
 // A figaro with NO Projector is the shippable core: it runs turns and persists
@@ -29,9 +31,11 @@ func TestCoreOnlyAgentRunsTurnsAndPersistsFigIR(t *testing.T) {
 		"system.max_tokens": json.RawMessage(`1024`),
 	}})
 
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
+		Backend: testBE,
 		// Projector deliberately omitted: this IS the test.
-		ID:         "core-only-001",
+		ID:         testID,
 		SocketPath: filepath.Join(t.TempDir(), "figaro.sock"),
 		Provider:   &mockProvider{response: "pong"},
 		Form:       cb,
@@ -44,7 +48,7 @@ func TestCoreOnlyAgentRunsTurnsAndPersistsFigIR(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	var msgs int
 	for time.Now().Before(deadline) {
-		if msgs = len(a.Context()); msgs >= 2 {
+		if msgs = len(conversationOnly(a.Context())); msgs >= 2 {
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -55,6 +59,9 @@ func TestCoreOnlyAgentRunsTurnsAndPersistsFigIR(t *testing.T) {
 	// Turn ids are fig IR, not projection: they must be stamped anyway.
 	var stamped bool
 	for _, m := range a.Context() {
+		if message.IsCeremonial(m) {
+			continue // ceremony carries no turn
+		}
 		if m.TurnID != 0 {
 			stamped = true
 		}

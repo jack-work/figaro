@@ -582,11 +582,13 @@ func TestResponsesProviderDrivesFigaroToolRoundTrip(t *testing.T) {
 	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
 		"system.model": json.RawMessage(`"gpt-5.6-terra"`),
 	}})
+	be, ariaID := store.NewTestAria(t, "d", message.Patch{})
 	agent := figaro.NewAgent(figaro.Config{
-		ID:         "responses-round-trip",
+		ID:         ariaID,
 		SocketPath: t.TempDir() + "/figaro.sock",
 		Provider:   &responseAgentProvider{responsesProvider: p},
 		Tools:      registry,
+		Backend:    be,
 		Form:       cb,
 	})
 	defer agent.Kill()
@@ -616,7 +618,12 @@ func TestResponsesProviderDrivesFigaroToolRoundTrip(t *testing.T) {
 	assert.Contains(t, joined, `"type":"function_call_output"`)
 	assert.Contains(t, joined, `"output":"tool:ciao"`)
 
-	context := agent.Context()
+	var context []message.Message
+	for _, m := range agent.Context() {
+		if !message.IsCeremonial(m) {
+			context = append(context, m)
+		}
+	}
 	require.Len(t, context, 4)
 	assert.Equal(t, message.RoleInput, context[0].Role)
 	assert.Equal(t, message.StopToolInvoke, context[1].StopReason)

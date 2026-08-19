@@ -100,15 +100,16 @@ func TestDrain_InterruptedTurnDoesNotSwallowTheQueue(t *testing.T) {
 		t.Run(drain.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			a := newDrainTestAgent(ctx)
+			a := newDrainTestAgent(t, ctx)
 
+			base := a.figLog.Len() // genesis and the birth record
 			a.inbox.Send(event{typ: eventUserPrompt, text: "one"})
 			a.inbox.Send(event{typ: eventUserPrompt, text: "two"})
 
 			// Not interrupted: the drain does its job, as it always has.
 			require.NoError(t, drain.call(a))
 			require.True(t, a.inbox.IsIdle(), "an uninterrupted drain takes the batch")
-			require.Equal(t, 1, a.figLog.Len(), "and appends it as ONE message")
+			require.Equal(t, base+1, a.figLog.Len(), "and appends it as ONE message")
 
 			// Interrupted: it takes nothing.
 			a.inbox.Send(event{typ: eventUserPrompt, text: "three"})
@@ -120,7 +121,7 @@ func TestDrain_InterruptedTurnDoesNotSwallowTheQueue(t *testing.T) {
 			require.NoError(t, drain.call(a))
 			assert.False(t, a.inbox.IsIdle(),
 				"a cancelled turn must leave the queue for the next turn to ask")
-			assert.Equal(t, 1, a.figLog.Len(),
+			assert.Equal(t, base+1, a.figLog.Len(),
 				"and must not commit messages it cannot answer")
 			assert.Equal(t, []string{"three", "four"},
 				promptTexts(a.inbox.SnapshotPrompts(true)))
@@ -131,12 +132,19 @@ func TestDrain_InterruptedTurnDoesNotSwallowTheQueue(t *testing.T) {
 // newDrainTestAgent builds the smallest Agent the drain paths touch, WITHOUT
 // starting the actor: the point is to call the drain deliberately, and a
 // running drain loop would race the test for its own queue.
-func newDrainTestAgent(ctx context.Context) *Agent {
+func newDrainTestAgent(t *testing.T, ctx context.Context) *Agent {
+	t.Helper()
 	board, _ := form.Open("")
+	be, id := store.NewTestAria(t, "d", message.Patch{})
+	log, err := be.Open(id)
+	if err != nil {
+		t.Fatal(err)
+	}
 	return &Agent{
-		id:          "drain-test",
+		id:          id,
+		backend:     be,
 		inbox:       NewInbox(ctx),
-		figLog:      store.NewMemLog[message.Message](),
+		figLog:      log,
 		form:        board,
 		ariaSrv:     aria.NewServer(),
 		gov:         toolout.New(liveOutputTail),

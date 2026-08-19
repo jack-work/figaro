@@ -117,9 +117,11 @@ func runImageTurn(t *testing.T, id string, reg *tool.Registry, calls []message.C
 		"system.model":    json.RawMessage(`"mock"`),
 		"system.provider": json.RawMessage(`"oneround"`),
 	}})
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
+		Backend:    testBE,
 		Projector:  uiir.New(nil),
-		ID:         id,
+		ID:         testID,
 		SocketPath: "/tmp/" + id + ".sock",
 		Provider:   prov,
 		Tools:      reg,

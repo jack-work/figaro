@@ -11,11 +11,13 @@ package figaro_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/internal/message"
 	"testing"
 	"time"
 
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/form"
+	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/uiir"
 	"github.com/stretchr/testify/require"
@@ -33,8 +35,11 @@ func TestSetDoesNotWaitByDefaultDuringAToolRound(t *testing.T) {
 	}
 	cb, _ := form.Open("")
 	cb.Apply(form.Patch{Set: map[string]json.RawMessage{"system.model": json.RawMessage(`"before"`)}})
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
-		Projector: uiir.New(nil), ID: "nowait-set", SocketPath: "/tmp/nowait-set.sock",
+		ID:        testID,
+		Backend:   testBE,
+		Projector: uiir.New(nil), SocketPath: "/tmp/nowait-set.sock",
 		Provider: prov, Tools: reg, Form: cb,
 	})
 	defer a.Kill()
@@ -75,8 +80,11 @@ func TestSetAwaitingAnswersAtTheRoundBoundary(t *testing.T) {
 	}
 	cb, _ := form.Open("")
 	cb.Apply(form.Patch{Set: map[string]json.RawMessage{"system.model": json.RawMessage(`"before"`)}})
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
-		Projector: uiir.New(nil), ID: "wait-set", SocketPath: "/tmp/wait-set.sock",
+		ID:        testID,
+		Backend:   testBE,
+		Projector: uiir.New(nil), SocketPath: "/tmp/wait-set.sock",
 		Provider: prov, Tools: reg, Form: cb,
 	})
 	defer a.Kill()
@@ -128,8 +136,11 @@ func TestSetAwaitingAnswersAtTheRoundBoundary(t *testing.T) {
 // and still lands, because what expired is the wait, not the write.
 func TestSetAwaitingHonoursItsContext(t *testing.T) {
 	cb, _ := form.Open("")
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
-		Projector: uiir.New(nil), ID: "wait-ctx", SocketPath: "/tmp/wait-ctx.sock",
+		ID:        testID,
+		Backend:   testBE,
+		Projector: uiir.New(nil), SocketPath: "/tmp/wait-ctx.sock",
 		Form: cb,
 	})
 	defer a.Kill()

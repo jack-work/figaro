@@ -2,6 +2,7 @@ package figaro_test
 
 import (
 	"encoding/json"
+	"github.com/jack-work/figaro/internal/message"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/uiir"
 )
@@ -38,9 +40,11 @@ func TestInquiryFrameCarriesFreshMetrics(t *testing.T) {
 		"system.model":    json.RawMessage(`"mock-model-v1"`),
 		"system.provider": json.RawMessage(`"idle-test"`),
 	}})
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
+		Backend:    testBE,
 		Projector:  uiir.New(nil),
-		ID:         "inquiry-frame-metrics",
+		ID:         testID,
 		SocketPath: "/tmp/inquiry-frame-metrics.sock",
 		Provider:   &idleProvider{},
 		Tools:      tool.NewRegistry(),

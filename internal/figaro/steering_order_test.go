@@ -3,9 +3,11 @@ package figaro_test
 import (
 	"context"
 	"encoding/json"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	"testing"
 	"time"
+
+	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/internal/store"
 
 	"github.com/stretchr/testify/require"
 
@@ -60,9 +62,11 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 		"system.model":    json.RawMessage(`"mock"`),
 		"system.provider": json.RawMessage(`"staggered"`),
 	}})
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
+		Backend:    testBE,
 		Projector:  uiir.New(nil),
-		ID:         "steering-order",
+		ID:         testID,
 		SocketPath: "/tmp/steering-order.sock",
 		Provider:   prov,
 		Tools:      reg,
@@ -86,7 +90,7 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 	// tool round, so TakeReadyUserPrompts lifts them together and the drain
 	// joins them with a newline: one message, one LT, one steering decision -
 	// not two messages for the model to reconcile.
-	msgs := a.Context()
+	msgs := conversationOnly(a.Context())
 	require.Len(t, msgs, 5)
 	require.Equal(t, []message.Role{
 		message.RoleInput,
@@ -161,9 +165,11 @@ func TestMidTurnPromptJoinsTheRunningTurn(t *testing.T) {
 		"system.model":    json.RawMessage(`"mock"`),
 		"system.provider": json.RawMessage(`"staggered"`),
 	}})
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
+		Backend:    testBE,
 		Projector:  uiir.New(nil),
-		ID:         "unmarked-midturn",
+		ID:         testID,
 		SocketPath: "/tmp/unmarked-midturn.sock",
 		Provider:   prov,
 		Tools:      reg,
@@ -224,9 +230,11 @@ func TestFormSetDuringToolRoundAppliesNextRound(t *testing.T) {
 		"system.model":    json.RawMessage(`"before"`),
 		"system.provider": json.RawMessage(`"staggered"`),
 	}})
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
+		Backend:    testBE,
 		Projector:  uiir.New(nil),
-		ID:         "midturn-set",
+		ID:         testID,
 		SocketPath: "/tmp/midturn-set.sock",
 		Provider:   prov,
 		Tools:      reg,

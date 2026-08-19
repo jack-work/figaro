@@ -152,16 +152,6 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		a.mu.Unlock()
 		a.turnRunning.Store(false)
 		cancel()
-		// An interrupted turn leaves the history well-formed BEFORE it ends: a
-		// fork or a read taken between now and the next message would
-		// otherwise see an invoke with no result.
-		if closer, ok := a.figLog.(interface{ CloseOpenToolCalls() (int, error) }); ok {
-			if n, err := closer.CloseOpenToolCalls(); err != nil {
-				slog.Error("close open tool calls at turn end", "aria", a.id, "err", err)
-			} else if n > 0 {
-				slog.Info("closed open tool calls at turn end", "aria", a.id, "calls", n)
-			}
-		}
 	}()
 
 	if _, err := a.appendUserPrompt(prompt, false); err != nil {
@@ -215,13 +205,9 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (store.Entry[messa
 	if !combined.IsEmpty() {
 		// Durability precedes visibility: on a failed append the in-memory
 		// form is not advanced, so board and log agree after a restart.
-		if a.backend != nil {
-			if _, err := a.backend.ApplyForm(a.id, combined); err != nil {
-				slog.Error("turn form append", "aria", a.id, "err", err)
-				combined = form.Patch{}
-			}
-		} else {
-			msg.Patches = append(msg.Patches, combined)
+		if _, err := a.backend.ApplyForm(a.id, combined); err != nil {
+			slog.Error("turn form append", "aria", a.id, "err", err)
+			combined = form.Patch{}
 		}
 		if !combined.IsEmpty() {
 			a.form.Apply(combined)

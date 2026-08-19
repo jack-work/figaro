@@ -47,9 +47,6 @@ func StudiesFromSnapshot(snap form.Snapshot) []string {
 // revival path; the board is the durable truth, the store's set is its
 // in-memory mirror.
 func (a *Agent) resumeStudies() {
-	if a.backend == nil {
-		return
-	}
 	a.backend.SetObservedForms(a.id, StudiesFromSnapshot(a.form.Snapshot()))
 }
 
@@ -255,9 +252,6 @@ func (a *Agent) serviceCast(op *castOp) castResult {
 // why it no longer rides the inbox: a cast issued from inside this aria's own
 // turn used to wait for a loop that was waiting for the turn that issued it.
 func (a *Agent) Cast(ctx context.Context, roleID string, rolePatch *form.Patch) (castResult, error) {
-	if a.backend == nil {
-		return castResult{}, fmt.Errorf("cast: ephemeral aria has no store")
-	}
 	if err := ctx.Err(); err != nil {
 		return castResult{}, fmt.Errorf("cast: %w", err)
 	}

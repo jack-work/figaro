@@ -78,9 +78,11 @@ func TestOpenFrameIsNotResetPerRound(t *testing.T) {
 		"system.provider": json.RawMessage(`"mock"`),
 	}})
 	prov := &twoRoundProvider{}
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
+		Backend:    testBE,
 		Projector:  uiir.New(nil),
-		ID:         "rounds-001",
+		ID:         testID,
 		SocketPath: "/tmp/test-figaro-rounds.sock",
 		Provider:   prov,
 		Tools:      tool.NewRegistry(),
@@ -154,9 +156,11 @@ func TestOpenFrameIsReplacedByARenderableSteer(t *testing.T) {
 		"system.provider": json.RawMessage(`"mock"`),
 	}})
 	prov := &twoRoundProvider{}
+	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
+		Backend:    testBE,
 		Projector:  uiir.New(nil),
-		ID:         "rounds-002",
+		ID:         testID,
 		SocketPath: "/tmp/test-figaro-rounds2.sock",
 		Provider:   prov,
 		Tools:      tool.NewRegistry(),

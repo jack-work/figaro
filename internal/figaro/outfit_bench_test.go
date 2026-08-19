@@ -2,6 +2,7 @@ package figaro_test
 
 import (
 	"fmt"
+	"github.com/jack-work/figaro/internal/message"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/outfit"
+	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/uiir"
 )
@@ -54,9 +56,11 @@ func benchAgent(b *testing.B, configDir string, initial form.Patch) *figaro.Agen
 	if !initial.IsEmpty() {
 		cb.Apply(initial)
 	}
+	testBE, testID := store.NewTestAria(b, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
+		Backend:    testBE,
 		Projector:  uiir.New(nil),
-		ID:         "outfit-bench",
+		ID:         testID,
 		SocketPath: filepath.Join(b.TempDir(), "sock"),
 		Provider:   &formSpyProvider{},
 		Tools:      tool.NewRegistry(),
