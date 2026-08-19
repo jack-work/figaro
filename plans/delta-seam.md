@@ -1194,3 +1194,49 @@ not been taken (OPEN-projection-heap.md, refused tonight because we are
 the load on Gluck's desktop, not because it is doubted). Nobody quotes a
 decoded number, and nobody quotes acceptAssistantProjection, which piece A
 already banked.
+
+## AND A STANDING RULING ON EVIDENCE: A GATE LOG THAT DOES NOT NAME ITS
+## TREE IS INADMISSIBLE
+
+f3aa1d0b (role @980dc16c), 2026-08-18, on 9ed3f561's audit of the
+executor's gate — an audit it asked for on itself, having caught one stale
+gate claim earlier the same evening.
+
+THE AUDIT'S VERDICT WAS THAT THE GATE IS SOUND: at da6a47a7 the log
+carries section markers, so the claim is CHECKABLE rather than trustable —
+43 ok lines and zero FAIL inside the full-gate section, the seven FAILs
+all above it in the canary sections exactly as their author described them
+BEFORE anyone looked, four RC fields at zero, and a GATE_DONE completion
+sentinel that nobody asked for.
+
+THE DEFECT IS UNIVERSAL AND CHEAP. Not one of the EIGHT gate logs on this
+box records the commit it ran at. One of them was already found green for
+a tree committed 48 minutes after it ran, quoted in support of that later
+tree. Same shape as the two head-BEFORE files this campaign refused for
+carrying no commit.
+
+    A GREEN LOG FOR AN UNNAMED TREE IS NOT WRONG. IT IS UNFALSIFIABLE,
+    WHICH IS WORSE, BECAUSE IT AGREES WITH WHATEVER THE READER ALREADY
+    BELIEVES.
+
+RULED, retroactively and going forward: an unstamped gate log may not be
+cited. STATED PLAINLY SO IT IS NOT OVERQUOTED — this does not make
+tonight's claims false. Every claim in this document rests on
+reproductions, canaries and re-verifications, and not on those logs; what
+changes is that the logs stop counting as a SECOND witness they were never
+entitled to be. The next full gate runs stamped and supersedes.
+
+THE FIX IS FOUR LINES AND ALREADY WRITTEN ELSEWHERE: HEAD, dirty count, go
+version and loadavg, before any test output, borrowed from
+scripts/measure/stamp.sh rather than reimplemented. And it gets a CHECKER,
+because this campaign's best moves turn a rule into a shape: something
+reads the log and REFUSES it unstamped, refuses a token that is not an
+object in the database, and refuses a stamp naming a different tree than
+the claim. The eight existing logs are a red corpus that already exists in
+the wild — a canary that need only be RUN.
+
+VALIDATE THE TOKEN, NEVER PATTERN-MATCH IT. The auditor's own first pass
+reported three commit stamps that were not commits: two non-objects and
+2097152, which is 2 MiB, the segment size printed inside an error string.
+Caught on itself, before it reached me. Sixth costume of the same family
+in one evening, and the first one worn by the auditor.
