@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jack-work/figaro/internal/form"
@@ -148,10 +149,43 @@ type ariaHandle struct {
 	trans map[string]*cachedLog[[]json.RawMessage]
 }
 
+// metaCache is one aria's sidecar, memoized.
+//
+// THE READ PATH TAKES NO LOCK. state is published whole -- loaded and value
+// were always ONE value wearing two fields -- and a listing reads the sidecar
+// of every aria in the store, which is the path that was paying for the lock.
+//
+// THE WRITE PATH KEEPS ITS MUTEX, and that is not an oversight: two SetMeta
+// calls on one aria must not have the file land in one order and the memo in
+// the other, and no publish can express that. Writer-vs-writer here is REAL
+// where reader-vs-writer was dead weight -- the distinction MemFormLog's cure
+// turned on (ddc030ad).
 type metaCache struct {
-	mu     sync.Mutex
-	loaded bool
-	value  *AriaMeta
+	mu    sync.Mutex // WRITERS ONLY: file write then publish, in that order
+	state atomic.Pointer[metaState]
+}
+
+// metaState is the memo, immutable once published. A nil Value means the
+// sidecar is absent, which is different from not having looked.
+type metaState struct{ Value *AriaMeta }
+
+// loadOnce publishes the sidecar the first time anybody asks, WITH NO LOCK
+// HELD. Two racing readers cost one wasted file read; a reader racing a
+// SetMeta loses the CAS and discards its own, so a file read taken before a
+// write can never overwrite the value that write published.
+func (c *metaCache) loadOnce(path string) (*metaState, error) {
+	if st := c.state.Load(); st != nil {
+		return st, nil
+	}
+	value, err := readJSON[AriaMeta](path)
+	if err != nil {
+		return nil, err
+	}
+	fresh := &metaState{Value: value}
+	if !c.state.CompareAndSwap(nil, fresh) {
+		return c.state.Load(), nil
+	}
+	return fresh, nil
 }
 
 // NewXwalBackend opens the aria tree at root. segmentSize <= 0 takes the
@@ -1042,15 +1076,14 @@ func writeJSON(path string, v any) error {
 
 func (b *XwalBackend) Meta(ariaID string) (*AriaMeta, error) {
 	c := b.metaCache(ariaID)
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if err := b.loadMetaLocked(ariaID, c); err != nil {
+	st, err := c.loadOnce(b.metaPath(ariaID))
+	if err != nil {
 		return nil, err
 	}
-	if c.value == nil {
+	if st.Value == nil {
 		return nil, nil
 	}
-	value := *c.value
+	value := *st.Value
 	return &value, nil
 }
 func (b *XwalBackend) SetMeta(ariaID string, meta *AriaMeta) error {
@@ -1060,27 +1093,12 @@ func (b *XwalBackend) SetMeta(ariaID string, meta *AriaMeta) error {
 	if err := writeJSON(b.metaPath(ariaID), meta); err != nil {
 		return err
 	}
-	c.loaded = true
-	if meta == nil {
-		c.value = nil
-	} else {
+	st := &metaState{}
+	if meta != nil {
 		value := *meta
-		c.value = &value
+		st.Value = &value
 	}
-	return nil
-}
-
-// loadMetaLocked fills the cache from the sidecar once. Caller holds c.mu.
-func (b *XwalBackend) loadMetaLocked(ariaID string, c *metaCache) error {
-	if c.loaded {
-		return nil
-	}
-	value, err := readJSON[AriaMeta](b.metaPath(ariaID))
-	if err != nil {
-		return err
-	}
-	c.value = value
-	c.loaded = true
+	c.state.Store(st)
 	return nil
 }
 

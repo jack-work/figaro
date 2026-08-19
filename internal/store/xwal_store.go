@@ -299,8 +299,13 @@ type XwalStore struct {
 
 	// observed: ariaID → the form ids its IR appends stamp (study
 	// subscriptions). In-memory; the aria's board is the durable truth.
-	observedMu sync.Mutex
-	observed   map[string][]string
+	//
+	// PUBLISHED WHOLE, so the read on every IR append takes no lock: the map
+	// and the slices in it are immutable once stored, and a declaration builds
+	// a successor. observedMu serializes DECLARERS only -- two agents
+	// declaring at once would otherwise lose one of the two maps.
+	observedMu sync.Mutex // WRITERS ONLY
+	observed   atomic.Pointer[map[string][]string]
 	now        func() int64
 	// tree is the PRESENTATION hierarchy: what fig ls draws and what a
 	// delete takes. Never consulted for forking: that reads .from.
@@ -425,9 +430,10 @@ func OpenXwalStore(root string, segmentSize int) (*XwalStore, error) {
 	}
 	x := &XwalStore{
 		root: root, trunks: st,
-		observed: map[string][]string{},
-		now:      func() int64 { return time.Now().UnixMilli() },
+		now: func() int64 { return time.Now().UnixMilli() },
 	}
+	empty := map[string][]string{}
+	x.observed.Store(&empty)
 	x.tree = topo.FromTopology(xwalTopology{x})
 	return x, nil
 }
@@ -1500,11 +1506,17 @@ func studyCursors(cursors map[string]uint64) map[string]uint64 {
 // agent re-declares on boot.
 func (s *XwalStore) SetObservedForms(ariaID string, formIDs []string) {
 	s.observedMu.Lock()
-	if len(formIDs) == 0 {
-		delete(s.observed, ariaID)
-	} else {
-		s.observed[ariaID] = append([]string(nil), formIDs...)
+	cur := *s.observed.Load()
+	next := make(map[string][]string, len(cur)+1)
+	for k, v := range cur {
+		next[k] = v
 	}
+	if len(formIDs) == 0 {
+		delete(next, ariaID)
+	} else {
+		next[ariaID] = append([]string(nil), formIDs...)
+	}
+	s.observed.Store(&next)
 	s.observedMu.Unlock()
 }
 
@@ -1512,9 +1524,7 @@ func (s *XwalStore) SetObservedForms(ariaID string, formIDs []string) {
 // moment. The source form is never touched: the libretto is the copy the
 // translator renders from, and it outlives its source.
 func (s *XwalStore) observedCursors(ariaID string) map[string]uint64 {
-	s.observedMu.Lock()
-	ids := s.observed[ariaID]
-	s.observedMu.Unlock()
+	ids := (*s.observed.Load())[ariaID]
 	if len(ids) == 0 {
 		return nil
 	}
