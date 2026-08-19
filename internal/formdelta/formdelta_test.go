@@ -109,7 +109,8 @@ func TestStudiedFormDeltas(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	studies, _, err := be.StudyForm(aria, src)
+	studiesDecl, err := be.StudyForm(aria, src)
+	studies := studiesDecl.Studies
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +161,8 @@ func TestRoleKindIsDecidedServerSide(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	studies, _, err := be.StudyForm(aria, role)
+	studiesDecl, err := be.StudyForm(aria, role)
+	studies := studiesDecl.Studies
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +202,8 @@ func TestDeletedSourceRendersAsDeleted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	studies, _, err := be.StudyForm(aria, src)
+	studiesDecl, err := be.StudyForm(aria, src)
+	studies := studiesDecl.Studies
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +253,8 @@ func TestAssemblyIsDeterministic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	studies, _, err := be.StudyForm(aria, src)
+	studiesDecl, err := be.StudyForm(aria, src)
+	studies := studiesDecl.Studies
 	if err != nil {
 		t.Fatal(err)
 	}

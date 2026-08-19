@@ -179,6 +179,14 @@ type Agent struct {
 	form        *form.State
 	settings    *config.Loaded // wire budget policy; nil-safe
 
+	// The study mirror's order. A cast runs on the CALLER's goroutine (see
+	// castOp), so N concurrent casts publish N whole study sets into a board
+	// that has no idea which durable write won. studiesVersion is the board
+	// version the mirrored set landed at, and publishStudies refuses anything
+	// not newer: the mirror follows the durable order, not the arrival order.
+	studiesMu      sync.Mutex
+	studiesVersion uint64
+
 	inbox *Inbox
 
 	// Turn state. Guarded by mu for Interrupt().
@@ -1052,6 +1060,19 @@ func (a *Agent) applyControlPatchVerdict(patch message.Patch, ifVersion uint64, 
 			slog.Error(kind+" form append", "aria", a.id, "err", err)
 			return
 		}
+		// PUBLISH WHAT WAS WRITTEN. The writer reduces the patch against the
+		// state it appends to (effectivePatch, atomic with the append) and
+		// hands back what it actually wrote; publishing the REQUESTED patch
+		// instead puts the caller's bytes on the board for a write the log
+		// never received. Today the divergence is masked -- ptree.Set is
+		// also a no-op that keeps the stored spelling for a semantically
+		// equal value -- so a re-set of {"k":[1,2]} as {"k":[ 1 , 2 ]} agrees
+		// by coincidence of two suppressions. Removing the tree's, as a
+		// canary, made the mirror hold [ 1 , 2 ] while the log held [1,2]:
+		// semantically equal, byte-different, and for array- and
+		// object-valued keys that reaches the wire. Same sentence as the
+		// lost study and as 6b2e597a; this is its third instance.
+		patch = applied
 	} else {
 		msg := message.Message{
 			Role:      message.RoleInput,
