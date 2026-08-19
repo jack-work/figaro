@@ -205,26 +205,12 @@ func (b *XwalBackend) Open(ariaID string) (Log[message.Message], error) {
 	// Reading the content is where a trailing sidecar gets caught up; see
 	// meta_heal.go. No-op unless the watermark lags the tail.
 	b.healMeta(ariaID, h.ir)
-	return &recencyLog{Log: h.ir, backend: b, ariaID: ariaID}, nil
+	return &irDoor{Log: h.ir, backend: b, ariaID: ariaID}, nil
 }
 
 // recencyLog keeps the memoized recency honest. It is a one-method decorator:
 // everything else is the cache itself, and an append is the only thing that
 // makes an aria newer.
-type recencyLog struct {
-	Log[message.Message]
-	backend *XwalBackend
-	ariaID  string
-}
-
-func (l *recencyLog) Append(e Entry[message.Message]) (Entry[message.Message], error) {
-	stamped, err := l.Log.Append(e)
-	if err == nil {
-		l.backend.wroteTo(l.ariaID, time.Now().UnixMilli())
-	}
-	return stamped, err
-}
-
 func transChannel(provider string) string { return "translations-v2/" + provider }
 
 func (b *XwalBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.RawMessage], error) {
