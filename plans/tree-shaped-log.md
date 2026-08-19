@@ -1319,3 +1319,38 @@ stack.
 
 I have measured NOTHING here. This is a reading, and it is the reading that
 says the third layer belongs in Q3's scope rather than after it.
+
+### AND NOW THE NUMBER: THE COMPOSED LAYER FAULTS AT PARITY WITH tree
+
+Same trace, same budget, both production structures, counting TURNS SERVED
+FROM BELOW (400 sealed turns of 8 KiB, a budget holding ~40 of them, a
+tail-and-hop trace of 200 reads asking for 1600 turns):
+
+    COMPOSED (aria.TurnCache)   612 turns from below, 131 recompose calls
+    CANONICAL (tree.Cache)      722 turns from below, 141 source calls
+
+tree faults 1.18x more on this fixture. THAT IS PARITY FOR A DECISION OF THIS
+KIND: the question was never whether the third implementation is a better cache
+than the canonical one, it is whether 509 lines of a second implementation buy
+anything, and 18% on one synthetic trace is not a case for keeping them --
+particularly since the same 18% is a knob (see below) rather than a property.
+
+HYPOTHESIS FOR THE GAP, UNVERIFIED AND NAMED AS SUCH: EVICTION GRANULARITY.
+tree hollows a whole RUN (here up to eight turns at a time); TurnCache hollows
+ONE TURN. Under a budget of ~40 turns, dropping eight to make room for one
+costs more subsequent faults than dropping one. THE EXPERIMENT THAT WOULD
+SETTLE IT: re-run with runChunk driven down to 1 and see whether the two
+numbers converge -- if they do, the gap is granularity and tunable; if they do
+not, something else is going on and this paragraph is wrong.
+
+WHAT THIS DOES NOT SAY: nothing about the COST of a fault. The composed layer's
+recompose is a walk over fig IR; the fixture's is a map filter. Fault RATE is
+what was asked and fault rate is what was answered.
+
+    AND THE RUN LENGTH IS A COUNT, NOT A BYTE TARGET (runChunk = 64). For
+    8 KiB units that is a half-megabyte run; the code already knows the shape
+    of this problem -- "a run larger than the whole budget can never stay
+    resident" is a comment in the refill path -- but nothing sizes a run by
+    bytes. If the decoded and composed layers land on tree, THAT is the knob
+    that decides their fault rate, and it is currently a constant chosen for
+    segment records.
