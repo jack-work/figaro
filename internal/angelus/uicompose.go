@@ -19,8 +19,8 @@ func (a *Angelus) composeTurns(node string, fromLT, toLT uint64) []aria.Turn {
 	if a == nil || a.Backend == nil || toLT < fromLT {
 		return nil
 	}
-	log, err := a.Backend.Open(node)
-	if err != nil || log == nil {
+	log := a.openNodeIR(node)
+	if log == nil {
 		return nil
 	}
 	entries, _ := log.ReadPage(fromLT, toLT+1, int(toLT-fromLT+1))
@@ -43,6 +43,22 @@ func (a *Angelus) composeTurns(node string, fromLT, toLT uint64) []aria.Turn {
 		formdelta.Attach(out, formdelta.PerRecordFrom(fb, node, seed, entries))
 	}
 	return out
+}
+
+// openNodeIR reads a node's fig IR. An ANCESTOR node is an index node, not
+// an aria: opening it as one would mint a handle and heal a sidecar for a
+// frozen trunk, so a backend that can read a bare node is asked first.
+func (a *Angelus) openNodeIR(node string) store.Log[message.Message] {
+	if o, ok := a.Backend.(interface {
+		OpenNode(string) store.Log[message.Message]
+	}); ok {
+		return o.OpenNode(node)
+	}
+	log, err := a.Backend.Open(node)
+	if err != nil {
+		return nil
+	}
+	return log
 }
 
 // uiLineage is a node's ancestry for the composed cache: the same walk the
