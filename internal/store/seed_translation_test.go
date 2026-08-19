@@ -262,6 +262,7 @@ func TestTranslationSeedSharesTheAncestorsBytes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			pl.ReadFrom(1, 0) // residency is demand-driven: Read peeks
 			p := pl.Read()
 			byLT := map[uint64]json.RawMessage{}
 			for _, e := range p {
@@ -333,7 +334,7 @@ func TestTheFingerprintCheckBlocksOnlyAfterADialectChange(t *testing.T) {
 	// (1) The normal case fires: measured by the identity test above; here we
 	// assert only that a donation is available and legal.
 	base := uint64(41) // ForkAt(parent, 40): the child owns from 41
-	donated := pl.(*cachedLog[[]json.RawMessage]).residentBelow(base)
+	donated := pl.(*treeLog[[]json.RawMessage]).residentBelow(base)
 	if len(donated) == 0 {
 		t.Fatal("no rows are resident below the fork base; the seed could never fire")
 	}

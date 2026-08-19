@@ -50,6 +50,56 @@ type run[U any] struct {
 	base  uint64
 }
 
+// cutByBytes splits fetched units into runs no larger than runTargetBytes,
+// each covering the coordinate span of the units it holds.
+func (c *Cache[U]) cutByBytes(units []U, cc Coord) []*run[U] {
+	if len(units) == 0 {
+		r := &run[U]{coord: cc, units: nil, resident: true}
+		r.epoch.Store(c.bump())
+		return []*run[U]{r}
+	}
+	target := c.runTarget()
+	var out []*run[U]
+	start := 0
+	bytes := 0
+	from := cc.From
+	for i, u := range units {
+		bytes += c.size(u)
+		last := i == len(units)-1
+		if !last && (bytes < target || i-start+1 < runMinimumUnits) {
+			continue
+		}
+		to := c.key(units[i])
+		if last {
+			to = cc.To
+		}
+		r := &run[U]{coord: Coord{Node: cc.Node, From: from, To: to}, units: units[start : i+1], resident: true}
+		r.epoch.Store(c.bump())
+		c.measure(r)
+		out = append(out, r)
+		start, bytes, from = i+1, 0, to
+	}
+	return out
+}
+
+// runTarget is the byte size to cut runs at: the fixed target, or a fraction
+// of the budget when the budget is smaller. A RUN LARGER THAN THE BUDGET CAN
+// NEVER STAY RESIDENT, so a cache with a small budget must cut small runs or
+// it retains nothing at all -- which is what a 3 KiB budget did to 1 KiB units
+// while the target was a flat 32 KiB.
+func (c *Cache[U]) runTarget() int {
+	target := runTargetBytes
+	if c.budget != nil {
+		if limit := c.budget.limit.Load(); limit > 0 && limit/4 < int64(target) {
+			target = int(limit / 4)
+		}
+	}
+	if target < 1 {
+		target = 1
+	}
+	return target
+}
+
 // measure fills a run's bytes and density in one pass.
 func (c *Cache[U]) measure(r *run[U]) {
 	r.bytes = 0
@@ -510,10 +560,6 @@ func (c *Cache[U]) fill(coord Coord) ([]U, error) {
 			return all, err
 		}
 
-		r := &run[U]{coord: cc, units: units, resident: true}
-		r.epoch.Store(c.bump())
-		c.measure(r)
-
 		// Two callers may materialize one coord; the loser discards its result.
 		c.mu.Lock()
 		n := c.nodeLocked(cc.Node)
@@ -524,10 +570,23 @@ func (c *Cache[U]) fill(coord Coord) ([]U, error) {
 			lo = hi
 			continue
 		}
-		n.publish(replace(runs, r))
 		c.mu.Unlock()
 
-		c.budget.charge(r.bytes)
+		// Cut the fetched units into runs by BYTES, so one run cannot exceed
+		// what the budget can hold.
+		for _, part := range c.cutByBytes(units, cc) {
+			c.mu.Lock()
+			nn := c.nodeLocked(part.coord.Node)
+			nr := nn.load()
+			if existing := at(nr, part.coord); existing != nil && existing.resident {
+				c.mu.Unlock()
+				continue
+			}
+			nn.publish(replace(nr, part))
+			c.mu.Unlock()
+			c.budget.charge(part.bytes)
+		}
+		_ = n
 		all = append(all, units...)
 		lo = hi
 	}
@@ -614,8 +673,21 @@ func (c *Cache[U]) upperBound(units []U, target uint64) int {
 	return sort.Search(len(units), func(i int) bool { return c.key(units[i]) > target })
 }
 
-// runChunk bounds one run's span, so eviction has granularity.
-const runChunk = 64
+// runChunk bounds one run's span in UNITS, and runTargetBytes bounds it in
+// BYTES: a run is cut at whichever comes first.
+//
+// THE BYTE TARGET IS THE LOAD-BEARING ONE. A count alone is a bound on the
+// wrong axis for a tenant whose units are large -- 64 composed turns of 8 KiB
+// is half a megabyte, and a run larger than the whole budget can never stay
+// resident, so a small budget retains NOTHING. Measured while re-seating the
+// decoded IR: a byte budget under one run's worth evicted everything it was
+// given, which reads as a cache that does not work rather than as a run that
+// is too big.
+const (
+	runChunk        = 64
+	runTargetBytes  = 32 << 10
+	runMinimumUnits = 1
+)
 
 // sliceUnits is slice over a local units slice by key bracket.
 func sliceUnits[U any](key Keyer[U], units []U, from, to uint64) []U {

@@ -28,7 +28,7 @@ import (
 // flat window's published-view slice, and the tree's Range over the same span.
 // Both are lock-free on the read path since 63902f44.
 
-func hotTailFixture(entries, body int) (*cachedLog[string], *fwtree.Cache[Entry[string]], []fwtree.Ref) {
+func hotTailFixture(entries, body int) (*treeLog[string], *fwtree.Cache[Entry[string]], []fwtree.Ref) {
 	mem := NewMemLog[string]()
 	payload := string(make([]byte, body))
 	for i := 0; i < entries; i++ {

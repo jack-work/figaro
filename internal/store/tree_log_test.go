@@ -21,8 +21,8 @@ func TestTreeLogAnswersLikeItsSubstrate(t *testing.T) {
 				require.NoError(t, err)
 			}
 			sizeOf := func(e Entry[string]) int { return len(e.Payload) + 48 }
-			cache := NewIRCache[string](fwtree.NewBudget(budget), func(string) Log[string] { return mem }, sizeOf)
-			l := newTreeLog[string](mem, "aria", cache, sizeOf, nil)
+			cache := NewIRCache[string](fwtree.NewBudget(budget), func(string) Log[string] { return mem }, sizeOf, irKey[string])
+			l := newTreeLog[string](mem, "aria", cache, sizeOf, irKey[string], nil)
 
 			require.Equal(t, mem.Len(), l.Len())
 
@@ -61,8 +61,8 @@ func TestTreeLogAnswersLikeItsSubstrate(t *testing.T) {
 func TestTreeLogSeedsWhatItWrites(t *testing.T) {
 	mem := NewMemLog[string]()
 	sizeOf := func(e Entry[string]) int { return len(e.Payload) + 48 }
-	cache := NewIRCache[string](fwtree.NewBudget(0), func(string) Log[string] { return mem }, sizeOf)
-	l := newTreeLog[string](mem, "aria", cache, sizeOf, nil)
+	cache := NewIRCache[string](fwtree.NewBudget(0), func(string) Log[string] { return mem }, sizeOf, irKey[string])
+	l := newTreeLog[string](mem, "aria", cache, sizeOf, irKey[string], nil).seedingTail()
 
 	stamped, err := l.Append(Entry[string]{Payload: "first"})
 	require.NoError(t, err)
@@ -88,8 +88,8 @@ func TestTreeLogResidencyIsTheTreesIndex(t *testing.T) {
 	// run-granularity-in-bytes question in plans/tree-shaped-log.md. 300 rows
 	// of ~560 B in runs of 64 is ~36 KB per run.
 	budget := int64(128 << 10)
-	cache := NewIRCache[string](fwtree.NewBudget(budget), func(string) Log[string] { return mem }, sizeOf)
-	l := newTreeLog[string](mem, "aria", cache, sizeOf, nil)
+	cache := NewIRCache[string](fwtree.NewBudget(budget), func(string) Log[string] { return mem }, sizeOf, irKey[string])
+	l := newTreeLog[string](mem, "aria", cache, sizeOf, irKey[string], nil)
 
 	_ = l.ReadFrom(1, 0) // pull the whole channel through the window
 	require.LessOrEqual(t, int64(l.ResidentBytes()), budget,
@@ -108,8 +108,8 @@ func TestTreeLogForkSharesThePrefixStructurally(t *testing.T) {
 	sizeOf := func(e Entry[string]) int { return len(e.Payload) + 48 }
 	// One cache, two tenants: parent and child are nodes in the same tree.
 	subs := map[string]Log[string]{"parent": parentMem}
-	cache := NewIRCache[string](fwtree.NewBudget(0), func(node string) Log[string] { return subs[node] }, sizeOf)
-	parent := newTreeLog[string](parentMem, "parent", cache, sizeOf, nil)
+	cache := NewIRCache[string](fwtree.NewBudget(0), func(node string) Log[string] { return subs[node] }, sizeOf, irKey[string])
+	parent := newTreeLog[string](parentMem, "parent", cache, sizeOf, irKey[string], nil)
 	require.Len(t, parent.ReadFrom(1, 0), 40)
 
 	// The child's own log carries only its own records; everything below the

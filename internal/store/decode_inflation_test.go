@@ -121,7 +121,7 @@ func payloadBytesOf(st *XwalStore, id string) (payload, zeroEncoded int) {
 // as what dropping it frees. The window is built inside a function that returns
 // so nothing but the returned handle can reach it.
 func residentCostOf(st *XwalStore, id string) uint64 {
-	build := func() *cachedLog[message.Message] {
+	build := func() *treeLog[message.Message] {
 		inner := newXwalLog[message.Message](st, id, chanIR, true)
 		c := newWindowedLog[message.Message](inner, 0, 0, irDecodeNum, irDecodeDenom, irEntrySize)
 		_ = c.Read()
@@ -210,7 +210,7 @@ func transEncodedOf(st *XwalStore, id, provider string) (encoded, estimate, n in
 }
 
 func transResidentOf(st *XwalStore, id, provider string) uint64 {
-	build := func() *cachedLog[[]json.RawMessage] {
+	build := func() *treeLog[[]json.RawMessage] {
 		inner := newXwalLog[[]json.RawMessage](st, id, transChannel(provider), false)
 		c := newWindowedLog[[]json.RawMessage](inner, 0, 0, 1, 1, transEntrySize)
 		_ = c.Read()
@@ -274,4 +274,16 @@ func TestTheEstimateMatchesTheHeap(t *testing.T) {
 	if ratio < 0.5 || ratio > 1.5 {
 		t.Errorf("the store's estimate is off by more than half: x%.2f", ratio)
 	}
+}
+
+// heapAfterGC is the residency reading these instruments share: three cycles,
+// then HeapAlloc. It lived in the fork-seam experiment, which was deleted with
+// the donation it measured.
+func heapAfterGC() uint64 {
+	var m runtime.MemStats
+	for i := 0; i < 3; i++ {
+		runtime.GC()
+	}
+	runtime.ReadMemStats(&m)
+	return m.HeapAlloc
 }

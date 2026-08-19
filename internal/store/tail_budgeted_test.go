@@ -121,7 +121,7 @@ func TestTailBudgeted_ByteBudget(t *testing.T) {
 // to an unwindowed one on every read, while holding only the tail.
 func TestWindowedOverRealStore_Equivalent(t *testing.T) {
 	be, id := realAria(t, 80, 256)
-	mk := func(window, budget int) *cachedLog[message.Message] {
+	mk := func(window, budget int) *treeLog[message.Message] {
 		return newWindowedLog[message.Message](
 			newXwalLog[message.Message](be.Store(), id, chanIR, true),
 			window, budget, 1, 1, irEntrySize)
@@ -129,8 +129,9 @@ func TestWindowedOverRealStore_Equivalent(t *testing.T) {
 	full := mk(0, 0)
 	win := mk(10, 0)
 
-	require.Equal(t, 10, win.Resident(), "window not applied")
-	require.Less(t, win.Resident(), full.Resident(), "window held everything")
+	// The ROW-COUNT WINDOW IS GONE: residency is bytes, demand-driven, and one
+	// budget for every aria. What survives is the claim this test was really
+	// about -- the cache answers exactly as the substrate does.
 	assert.Equal(t, full.Len(), win.Len(), "Len must report the channel")
 
 	fullRows := full.Read()

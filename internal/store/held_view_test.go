@@ -23,7 +23,7 @@ func heldEntry(i int) Entry[string] {
 	return Entry[string]{Payload: fmt.Sprintf("row-%04d", i)}
 }
 
-func heldLog(t *testing.T, n int) *cachedLog[string] {
+func heldLog(t *testing.T, n int) *treeLog[string] {
 	t.Helper()
 	inner := NewMemLog[string]()
 	for i := 1; i <= n; i++ {
@@ -38,6 +38,7 @@ func heldLog(t *testing.T, n int) *cachedLog[string] {
 func TestHeldReadSurvivesTrimUnderneath(t *testing.T) {
 	c := heldLog(t, 500)
 
+	c.ReadFrom(1, 0) // materialize: Read peeks, it does not populate
 	held := c.Read()
 	if len(held) != 500 {
 		t.Fatalf("held %d rows, want 500", len(held))
@@ -56,8 +57,10 @@ func TestHeldReadSurvivesTrimUnderneath(t *testing.T) {
 			t.Fatalf("row %d mutated under a held Read: %q -> %q", i, want[i], e.Payload)
 		}
 	}
-	if got := c.Resident(); got != 50 {
-		t.Errorf("resident = %d, want 50", got)
+	// AT MOST keep, not exactly keep: the tree evicts whole runs, so a trim
+	// lands on a run boundary rather than on a row count.
+	if got := c.Resident(); got > 50 {
+		t.Errorf("resident = %d, want at most 50", got)
 	}
 }
 

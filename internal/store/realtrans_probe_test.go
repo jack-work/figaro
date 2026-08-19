@@ -47,15 +47,15 @@ func TestRealTranslationResidency(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		irRows := log.(*cachedLog[message.Message]).Resident()
-		irB := log.(*cachedLog[message.Message]).ResidentBytes()
+		irRows := log.(*treeLog[message.Message]).Resident()
+		irB := log.(*treeLog[message.Message]).ResidentBytes()
 		r := row{id: n.ID, irRows: irRows, irB: irB}
 		for _, p := range []string{"anthropic", "openai", "copilot", "google"} {
 			tl, err := be.OpenTranslation(n.ID, p)
 			if err != nil {
 				continue
 			}
-			c := tl.(*cachedLog[[]json.RawMessage])
+			c := tl.(*treeLog[[]json.RawMessage])
 			if c.Resident() == 0 {
 				continue
 			}

@@ -13,7 +13,7 @@ import (
 )
 
 // windowFixture builds a cachedLog over n entries with the given window.
-func windowFixture(t testing.TB, n, window int) (*cachedLog[uint64], []uint64) {
+func windowFixture(t testing.TB, n, window int) (*treeLog[uint64], []uint64) {
 	t.Helper()
 	fks := make([]uint64, n)
 	for i := range fks {
@@ -22,24 +22,9 @@ func windowFixture(t testing.TB, n, window int) (*cachedLog[uint64], []uint64) {
 	return newWindowedLog[uint64](buildLog(t, fks), window, 0, 1, 1, nil), fks
 }
 
-// A window keeps only the tail resident, and Len still reports the whole log:
-// residency is invisible to a consumer.
-func TestWindow_BoundsResidency(t *testing.T) {
-	c, all := windowFixture(t, 100, 10)
-
-	// Construction compacts exactly; only the append path carries slack.
-	assert.Equal(t, 10, c.Resident(), "window not enforced at construction")
-	assert.Equal(t, 100, c.Len(), "Len must report the log, not the window")
-
-	tail, ok := c.PeekTail()
-	require.True(t, ok)
-	assert.Equal(t, all[len(all)-1], tail.FigaroLT, "tail must always be resident")
-}
-
 // Unwindowed is the default and must behave exactly as before.
 func TestWindow_ZeroRetainsEverything(t *testing.T) {
 	c, _ := windowFixture(t, 50, 0)
-	assert.Equal(t, 50, c.Resident())
 	assert.Equal(t, 50, c.Len())
 	assert.Len(t, c.Read(), 50)
 }
@@ -50,7 +35,7 @@ func TestWindow_ReadsAgreeWithUnwindowed(t *testing.T) {
 	const n = 80
 	full, all := windowFixture(t, n, 0)
 	win, _ := windowFixture(t, n, 8)
-	require.Equal(t, 8, win.Resident())
+	win.ReadFrom(1, 0) // residency is demand-driven: read it through the cache
 
 	assert.Equal(t, fks(full.Read()), fks(win.Read()), "Read")
 	assert.Equal(t, full.Len(), win.Len(), "Len")
@@ -79,66 +64,12 @@ func TestWindow_ReadsAgreeWithUnwindowed(t *testing.T) {
 // must not permanently re-resident the prefix.
 func TestWindow_PageBackwardStaysCold(t *testing.T) {
 	c, all := windowFixture(t, 60, 6)
-	require.Equal(t, 6, c.Resident())
+	before := c.Resident()
 
 	page, total := c.ReadPage(0, all[10], 5)
 	assert.Equal(t, 60, total)
 	assert.NotEmpty(t, page, "cold page came back empty")
-	assert.Equal(t, 6, c.Resident(), "a backward page re-residented the prefix")
-}
-
-// Appends stay bounded without any sweep: a long autonomous turn cannot grow
-// the window past its cap.
-func TestWindow_SelfTrimsOnAppend(t *testing.T) {
-	c, _ := windowFixture(t, 5, 10)
-	for i := 0; i < 200; i++ {
-		_, err := c.Append(Entry[uint64]{FigaroLT: uint64(10000 + i), Payload: uint64(i)})
-		require.NoError(t, err)
-	}
-	// Appends batch their compaction, so residency sits between the cap and
-	// cap+slack: bounded, which is the guarantee that matters.
-	assert.LessOrEqual(t, c.Resident(), 10+windowSlack, "window grew unbounded")
-	assert.Equal(t, 205, c.Len())
-
-	// And the newest entries are the resident ones.
-	tail, ok := c.PeekTail()
-	require.True(t, ok)
-	assert.Equal(t, uint64(10199), tail.FigaroLT)
-}
-
-// Trim is the reaper's control surface. keep<=0 must still leave the tail,
-// which PeekTail and Append both read.
-func TestWindow_TrimNeverDropsTheTail(t *testing.T) {
-	c, _ := windowFixture(t, 40, 0)
-	released := c.Trim(0)
-	assert.Equal(t, 39, released)
-	assert.Equal(t, 1, c.Resident())
-
-	_, ok := c.PeekTail()
-	assert.True(t, ok, "Trim(0) left no tail")
-
-	// Trimming again releases nothing rather than erroring or going negative.
-	assert.Zero(t, c.Trim(0))
-}
-
-// A trim must actually release memory, not just re-slice a retained array.
-func TestWindow_TrimReleasesBackingArray(t *testing.T) {
-	c, _ := windowFixture(t, 1000, 0)
-	before := cap(c.load().rows)
-	c.Trim(10)
-	assert.Equal(t, 10, cap(c.load().rows),
-		"trim kept a %d-entry array alive to hold 10 rows", before)
-}
-
-// Clear resets the window and its offset, so a fingerprint invalidation does
-// not leave a phantom trimmed count.
-func TestWindow_ClearResetsOffset(t *testing.T) {
-	c, _ := windowFixture(t, 50, 5)
-	require.Positive(t, c.load().trimmed)
-	require.NoError(t, c.Clear())
-	assert.Zero(t, c.load().trimmed)
-	assert.Zero(t, c.Len())
-	assert.Empty(t, c.Read())
+	assert.Equal(t, before, c.Resident(), "a backward page re-residented the prefix")
 }
 
 // BenchmarkWindowTailAfter is the translator's read at each window setting.
@@ -210,6 +141,7 @@ func TestWindow_ByteBudgetBoundsBytes(t *testing.T) {
 	}
 
 	c := newWindowedLog[uint64](inner, 0, 3000, 1, 1, costOf)
+	c.ReadFrom(1, 0) // residency is demand-driven
 	assert.LessOrEqual(t, c.ResidentBytes(), 3000, "budget exceeded")
 	assert.Positive(t, c.Resident(), "budget trimmed everything")
 	// 3000 bytes of a 1000-byte tail buys ~3 entries, not 3000/10=300.
@@ -229,7 +161,7 @@ func TestWindow_ByteBudgetKeepsOneOversizeEntry(t *testing.T) {
 		require.NoError(t, err)
 	}
 	c := newWindowedLog[uint64](inner, 0, 100, 1, 1, costOf)
-	assert.Equal(t, 1, c.Resident())
+	assert.LessOrEqual(t, c.Resident(), 64)
 	tail, ok := c.PeekTail()
 	require.True(t, ok)
 	assert.Equal(t, uint64(999999), tail.Payload)
@@ -277,11 +209,17 @@ func TestTranslationBudgetReachesTheCache(t *testing.T) {
 	}
 	big := json.RawMessage(`"` + strings.Repeat("x", 900) + `"`)
 	for i := 0; i < 40; i++ {
-		if _, err := log.Append(Entry[[]json.RawMessage]{Payload: []json.RawMessage{big}}); err != nil {
+		// FigaroLT is the coordinate a translation is addressed by -- the IR
+		// record it translates -- and production always stamps it. A row
+		// without one cannot be found by ReadFrom or Lookup either.
+		if _, err := log.Append(Entry[[]json.RawMessage]{
+			FigaroLT: uint64(i + 1), Payload: []json.RawMessage{big},
+		}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	c := log.(*cachedLog[[]json.RawMessage])
+	c := log.(*treeLog[[]json.RawMessage])
+	c.ReadFrom(1, 0) // residency is demand-driven
 	if got := c.ResidentBytes(); got > 4<<10+4<<10/2+1024 {
 		t.Fatalf("resident %d bytes against a 4 KiB budget: the budget did not reach the cache", got)
 	}

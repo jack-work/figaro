@@ -70,6 +70,11 @@ type XwalBackend struct {
 	irTree  *fwtree.Budget
 	irCache *fwtree.Cache[Entry[message.Message]]
 
+	// transTree is the translations' shared budget; transCaches holds one
+	// cache per provider, each with a node per aria.
+	transTree   *fwtree.Budget
+	transCaches map[string]*fwtree.Cache[Entry[[]json.RawMessage]]
+
 	// transBudget bounds resident decoded translations per (aria, provider).
 	// The payload is the provider's own wire form, so the estimate is the
 	// bytes themselves rather than an inflation of them.
@@ -91,6 +96,11 @@ const (
 	// figure it replaces, which is the shape of a shared window: any single
 	// aria may hold far more than 1 MiB, and all of them together may not.
 	DefaultIRTreeBytes = 32 << 20
+
+	// DefaultTransTreeBytes is the same shape for translations: one budget for
+	// every aria's records of one provider, rather than 4 MiB per (aria,
+	// provider).
+	DefaultTransTreeBytes = 32 << 20
 )
 
 // irEntrySize estimates one IR entry's retained bytes as its encoded size
@@ -126,7 +136,7 @@ func transEntrySize(e Entry[[]json.RawMessage]) int {
 
 type ariaHandle struct {
 	ir    *treeLog[message.Message]
-	trans map[string]*cachedLog[[]json.RawMessage]
+	trans map[string]*treeLog[[]json.RawMessage]
 }
 
 // metaCache is one aria's sidecar, memoized.
@@ -174,13 +184,15 @@ func NewXwalBackend(root string, segmentSize int) (*XwalBackend, error) {
 		touched:     map[string]time.Time{},
 		irBudget:    DefaultIRBudgetBytes,
 		irTree:      fwtree.NewBudget(DefaultIRTreeBytes),
+		transTree:   fwtree.NewBudget(DefaultTransTreeBytes),
+		transCaches: map[string]*fwtree.Cache[Entry[[]json.RawMessage]]{},
 		transBudget: DefaultTranslationBudgetBytes,
 	}
 	// ONE cache, a node per aria: that is what makes a fork's prefix its
 	// ancestor's runs rather than a copy.
 	b.irCache = NewIRCache[message.Message](b.irTree, func(node string) Log[message.Message] {
 		return newXwalLog[message.Message](b.store, node, chanIR, true)
-	}, irEntrySize)
+	}, irEntrySize, irKey[message.Message])
 	return b, nil
 }
 
@@ -210,9 +222,12 @@ func (b *XwalBackend) handleLocked(id string) (*ariaHandle, error) {
 	h := &ariaHandle{
 		ir: newTreeLog[message.Message](
 			newXwalLog[message.Message](b.store, id, chanIR, true),
-			id, b.irCache, irEntrySize,
-			func() []fwtree.Ref { return b.store.Lineage(id) }),
-		trans: map[string]*cachedLog[[]json.RawMessage]{},
+			id, b.irCache, irEntrySize, irKey[message.Message],
+			func() []fwtree.Ref { return b.store.Lineage(id) }).
+			withNodeOpener(func(node string) Log[message.Message] {
+				return newXwalLog[message.Message](b.store, node, chanIR, true)
+			}).seedingTail(),
+		trans: map[string]*treeLog[[]json.RawMessage]{},
 	}
 	b.open[id] = h
 	return h, nil
@@ -249,17 +264,16 @@ func (b *XwalBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.R
 		b.mu.Unlock()
 		return c, nil
 	}
-	// Read the budget HERE, under the lock that SetTranslationBudget writes
-	// it under. Building the cache stays outside: it reads files.
-	budget := b.transBudget
+	cache := b.transCacheFor(providerName)
 	b.mu.Unlock()
 	ch := transChannel(providerName)
-	b.mu.Lock()
-	seed := b.seedTransRowsLocked(ariaID, providerName)
-	b.mu.Unlock()
-	c := newSeededLog[[]json.RawMessage](
+	c := newTreeLog[[]json.RawMessage](
 		newXwalLog[[]json.RawMessage](b.store, ariaID, ch, false),
-		0, budget, 1, 1, transEntrySize, seed)
+		ariaID, cache, transEntrySize, transKey[[]json.RawMessage],
+		func() []fwtree.Ref { return b.store.Lineage(ariaID) }).
+		withNodeOpener(func(node string) Log[[]json.RawMessage] {
+			return newXwalLog[[]json.RawMessage](b.store, node, ch, false)
+		})
 	b.mu.Lock()
 	if existing := h.trans[providerName]; existing != nil {
 		b.mu.Unlock()
@@ -751,16 +765,23 @@ func (b *XwalBackend) SetIRWindow(n int) {
 // here on. Same "new handles only" rule as SetIRWindow.
 // SetTranslationBudget bounds the translation caches. Applies to caches
 // opened after it, which is every one on a daemon that configures at boot.
+// SetTranslationBudget bounds the decoded translations of EVERY aria together:
+// the cache is one tree with one budget, so this is a process-wide number now
+// rather than a per-(aria, provider) one.
 func (b *XwalBackend) SetTranslationBudget(n int) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	b.transBudget = n
+	b.mu.Unlock()
+	b.transTree.SetLimit(int64(n))
 }
 
+// SetIRBudget bounds the decoded IR of EVERY aria together, for the same
+// reason: one tree, one budget, one eviction order.
 func (b *XwalBackend) SetIRBudget(n int) {
 	b.mu.Lock()
 	b.irBudget = n
 	b.mu.Unlock()
+	b.irTree.SetLimit(int64(n))
 }
 
 // TrimResident trims every non-live aria's IR window to keep entries and
@@ -1134,37 +1155,19 @@ func (b *XwalBackend) SetObservedForms(ariaID string, formIDs []string) {
 	b.store.SetObservedForms(ariaID, formIDs)
 }
 
-// seedFromAncestor offers a newly opened aria the resident prefix its nearest
-// OPEN ancestor already decoded, for ONE channel: cacheOf says which.
-func seedFromAncestor[T any](b *XwalBackend, id string, cacheOf func(*ariaHandle) *cachedLog[T]) []Entry[T] {
-	refs := b.store.Lineage(id)
-	if len(refs) < 2 {
-		return nil // a root owns everything; there is no donated prefix
+// transCacheFor is the translation cache of ONE PROVIDER: a node per aria, so a
+// fork reads its ancestor's translations exactly as it reads its ancestor's IR.
+// One cache per provider rather than one for all of them, because a node is an
+// aria and two providers hold different records for the same aria. Caller holds
+// b.mu.
+func (b *XwalBackend) transCacheFor(providerName string) *fwtree.Cache[Entry[[]json.RawMessage]] {
+	if c := b.transCaches[providerName]; c != nil {
+		return c
 	}
-	base := refs[len(refs)-1].Base
-	if base == 0 {
-		return nil
-	}
-	// Nearest ancestor first: it holds the longest shared prefix.
-	for i := len(refs) - 2; i >= 0; i-- {
-		h := b.open[refs[i].Node]
-		if h == nil {
-			continue
-		}
-		c := cacheOf(h)
-		if c == nil {
-			continue
-		}
-		if rows := c.residentBelow(base); len(rows) > 0 {
-			return rows
-		}
-	}
-	return nil
-}
-
-// seedTransRowsLocked is the TRANSLATION channel's, keyed by provider.
-func (b *XwalBackend) seedTransRowsLocked(id, providerName string) []Entry[[]json.RawMessage] {
-	return seedFromAncestor(b, id, func(h *ariaHandle) *cachedLog[[]json.RawMessage] {
-		return h.trans[providerName]
-	})
+	ch := transChannel(providerName)
+	c := NewIRCache[[]json.RawMessage](b.transTree, func(node string) Log[[]json.RawMessage] {
+		return newXwalLog[[]json.RawMessage](b.store, node, ch, false)
+	}, transEntrySize, transKey[[]json.RawMessage])
+	b.transCaches[providerName] = c
+	return c
 }

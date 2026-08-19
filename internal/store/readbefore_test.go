@@ -81,7 +81,7 @@ func TestTailAfter_SuffixAndTotal(t *testing.T) {
 // onlyLog hides the optional interfaces so TailAfter takes its generic path.
 type onlyLog[T any] struct{ Log[T] }
 
-func tailOf[T any](c *cachedLog[T], lt uint64) []Entry[T] {
+func tailOf[T any](c *treeLog[T], lt uint64) []Entry[T] {
 	out, _ := c.TailAfter(lt)
 	return out
 }
@@ -96,6 +96,6 @@ func TestTailSnapshot_CachedLogIsAscending(t *testing.T) {
 // shipped configuration builds one -- production always passes a window or a
 // budget -- so the constructor lives with the tests that want a cache whose
 // hit-rate is 100% by construction.
-func newCachedLog[T any](inner Log[T]) *cachedLog[T] {
+func newCachedLog[T any](inner Log[T]) *treeLog[T] {
 	return newWindowedLog[T](inner, 0, 0, 1, 1, nil)
 }

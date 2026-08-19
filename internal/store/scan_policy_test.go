@@ -42,7 +42,7 @@ func (c *countingLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) 
 	return c.Log.ReadPage(from, before, n)
 }
 
-func windowedAria(t *testing.T, name string, n, window int) (*cachedLog[string], *countingLog[string]) {
+func windowedAria(t *testing.T, name string, n, window int) (*treeLog[string], *countingLog[string]) {
 	t.Helper()
 	inner := NewMemLog[string]()
 	for i := 1; i <= n; i++ {
@@ -64,12 +64,12 @@ func TestWholeHistoryReadKeepsNeighboursResident(t *testing.T) {
 
 	// Warm both tails, then establish that a tail read costs the layer below
 	// nothing. If it does, the fixture is not measuring residency.
-	a.ReadFrom(a.load().rows[0].FigaroLT, window)
-	b.ReadFrom(b.load().rows[0].FigaroLT, window)
+	a.ReadFrom(firstResidentLT(a), window)
+	b.ReadFrom(firstResidentLT(b), window)
 	aWarm, bWarm := aInner.reads.Load(), bInner.reads.Load()
 
-	a.ReadFrom(a.load().rows[0].FigaroLT, window)
-	b.ReadFrom(b.load().rows[0].FigaroLT, window)
+	a.ReadFrom(firstResidentLT(a), window)
+	b.ReadFrom(firstResidentLT(b), window)
 	if aInner.reads.Load() != aWarm || bInner.reads.Load() != bWarm {
 		t.Fatalf("a warm tail read fell through (A %d->%d, B %d->%d); fixture is wrong",
 			aWarm, aInner.reads.Load(), bWarm, bInner.reads.Load())
@@ -82,8 +82,8 @@ func TestWholeHistoryReadKeepsNeighboursResident(t *testing.T) {
 
 	// The assertion: the neighbours' tails are still served from their windows.
 	before := [2]int64{aInner.reads.Load(), bInner.reads.Load()}
-	a.ReadFrom(a.load().rows[0].FigaroLT, window)
-	b.ReadFrom(b.load().rows[0].FigaroLT, window)
+	a.ReadFrom(firstResidentLT(a), window)
+	b.ReadFrom(firstResidentLT(b), window)
 	lostA := aInner.reads.Load() - before[0]
 	lostB := bInner.reads.Load() - before[1]
 
@@ -103,9 +103,9 @@ func TestBackwardPagingKeepsNeighboursResident(t *testing.T) {
 	a, aInner := windowedAria(t, "ariaA", 200, window)
 	c, _ := windowedAria(t, "ariaC", 4000, window)
 
-	a.ReadFrom(a.load().rows[0].FigaroLT, window)
+	a.ReadFrom(firstResidentLT(a), window)
 	warm := aInner.reads.Load()
-	a.ReadFrom(a.load().rows[0].FigaroLT, window)
+	a.ReadFrom(firstResidentLT(a), window)
 	if aInner.reads.Load() != warm {
 		t.Fatal("warm tail read fell through; fixture is wrong")
 	}
@@ -116,9 +116,27 @@ func TestBackwardPagingKeepsNeighboursResident(t *testing.T) {
 	}
 
 	before := aInner.reads.Load()
-	a.ReadFrom(a.load().rows[0].FigaroLT, window)
+	a.ReadFrom(firstResidentLT(a), window)
 	if lost := aInner.reads.Load() - before; lost > 0 {
 		t.Fatalf("a backward scroll cost a neighbour %d fall-throughs; "+
 			"paging must be served from the source", lost)
 	}
+}
+
+// firstResidentLT is the oldest coordinate this log holds resident, read from
+// the tree's index rather than from a window's private slice.
+func firstResidentLT[T any](l *treeLog[T]) uint64 {
+	first := uint64(0)
+	for _, r := range l.cache.Index(l.node) {
+		if !r.Resident {
+			continue
+		}
+		if first == 0 || r.From+1 < first {
+			first = r.From + 1
+		}
+	}
+	if first == 0 {
+		return 1
+	}
+	return first
 }

@@ -120,14 +120,29 @@ func TestBudgetIsSharedAcrossCaches(t *testing.T) {
 	if _, err := c1.Range([]Ref{{Node: "old"}}, 0, 20); err != nil {
 		t.Fatal(err)
 	}
+	filled := 0
+	for _, r := range c1.Index("old") {
+		if r.Resident {
+			filled++
+		}
+	}
+	if filled == 0 {
+		t.Fatal("fixture: c1 holds nothing to lose")
+	}
 	if _, err := c2.Range([]Ref{{Node: "new"}}, 0, 20); err != nil {
 		t.Fatal(err)
 	}
-	// c2's insert should have evicted c1's colder runs, not its own.
-	if cold, ok := c1.coldest(); ok {
-		if cold2, ok2 := c2.coldest(); ok2 && cold < cold2 {
-			t.Fatal("c1 still holds runs colder than c2's after cross-cache pressure")
+	// THE CLAIM: pressure from c2 reaches INTO c1. Not that c1 keeps nothing
+	// colder -- eviction stops as soon as the budget fits, so it may -- but
+	// that a second cache sharing the budget costs the first its residency.
+	after := 0
+	for _, r := range c1.Index("old") {
+		if r.Resident {
+			after++
 		}
+	}
+	if after >= filled {
+		t.Fatalf("c2's insert cost c1 nothing: %d resident runs before, %d after", filled, after)
 	}
 	c1.Close()
 	res, _, _ := b.Stats()

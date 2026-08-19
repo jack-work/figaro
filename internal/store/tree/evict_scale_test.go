@@ -33,8 +33,12 @@ func TestEvictionVisitsEveryResidentRun(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if got := len(c.runs("p")); got != runs {
-				t.Fatalf("fixture: %d runs resident, want %d", got, runs)
+			// Runs are cut by BYTES now (runTargetBytes), so a 64-unit ask of
+			// 1 KiB units becomes two runs. The scan's cost is per RUN, so the
+			// fixture counts what it actually built.
+			residentRuns := len(c.runs("p"))
+			if residentRuns < runs {
+				t.Fatalf("fixture: %d runs resident, want at least %d", residentRuns, runs)
 			}
 
 			var visits atomic.Int64
@@ -49,11 +53,11 @@ func TestEvictionVisitsEveryResidentRun(t *testing.T) {
 			if _, _, ev := b.Stats(); ev != 1 {
 				t.Fatalf("want exactly one eviction, got %d", ev)
 			}
-			t.Logf("R=%d resident runs -> %d run visits for ONE eviction", runs, visits.Load())
-			if visits.Load() < int64(runs) {
+			t.Logf("R=%d resident runs -> %d run visits for ONE eviction", residentRuns, visits.Load())
+			if visits.Load() < int64(residentRuns) {
 				t.Fatalf("R=%d: %d visits; the scan is expected to be linear in R "+
 					"and this instrument says it is not -- check the instrument before the claim",
-					runs, visits.Load())
+					residentRuns, visits.Load())
 			}
 		})
 	}
@@ -82,10 +86,11 @@ func TestSweepRescansPerDroppedRun(t *testing.T) {
 	// than the cutoff, and the newest run was stamped at the epoch the sweep
 	// starts from. Written as `runs` first, red at 63, and the survivor is the
 	// policy rather than a leak.
+	before := len(c.runs("p"))
 	dropped, _ := b.TrimIdle(0)
-	if dropped != runs-1 {
-		t.Fatalf("swept %d runs, want %d", dropped, runs-1)
+	if dropped != before-1 {
+		t.Fatalf("swept %d runs, want %d", dropped, before-1)
 	}
 	t.Logf("R=%d: a full sweep dropped %d runs in %d run visits (~R^2/2 = %d)",
-		runs, dropped, visits.Load(), runs*runs/2)
+		before, dropped, visits.Load(), before*before/2)
 }

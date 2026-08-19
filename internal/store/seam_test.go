@@ -20,7 +20,7 @@ import (
 // PERMANENT, NOT MIGRATION SCAFFOLDING. This invariant predates the forest
 // re-seat and outlives it: do not retire this file with the temporary code.
 
-func seamLog(t *testing.T, n int) *cachedLog[string] {
+func seamLog(t *testing.T, n int) *treeLog[string] {
 	t.Helper()
 	inner := NewMemLog[string]()
 	for i := 1; i <= n; i++ {
@@ -61,14 +61,17 @@ func contiguous(t *testing.T, what string, got []Entry[string]) {
 func TestReadsSpanningTheSeamReturnEachLTExactlyOnce(t *testing.T) {
 	const total = 400
 	c := seamLog(t, total)
+	c.ReadFrom(1, 0) // materialize: Read peeks, it does not populate
 	if dropped := c.Trim(100); dropped == 0 {
 		t.Fatal("nothing trimmed; there is no seam and the test proves nothing")
 	}
-	v := c.load()
-	if v.trimmed == 0 || len(v.rows) == 0 {
-		t.Fatal("no seam: the window holds everything or nothing")
+	// The seam is where residency ends: below the first resident coordinate the
+	// answer comes from the substrate, above it from the cache. Read from the
+	// tree's index rather than a window's private slice.
+	boundary := firstResidentLT(c)
+	if boundary <= 1 {
+		t.Fatal("no seam: the cache holds everything or nothing")
 	}
-	boundary := v.rows[0].FigaroLT // first resident LT; below it is the other side
 
 	t.Run("Read", func(t *testing.T) {
 		got := c.Read()

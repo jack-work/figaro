@@ -79,14 +79,22 @@ func TestRacingMissesPublishOneRun(t *testing.T) {
 	}
 	wg.Wait()
 
+	// Runs are cut by BYTES, so one ask can become several -- what must NOT
+	// happen is a coord materialized twice or charged twice.
 	runs := c.runs("p")
-	if len(runs) != 1 {
-		t.Fatalf("want one run in the index, got %d", len(runs))
+	var total int64
+	seen := map[Coord]bool{}
+	for _, r := range runs {
+		if seen[r.coord] {
+			t.Fatalf("coord %+v appears twice in the index", r.coord)
+		}
+		seen[r.coord] = true
+		total += r.bytes
 	}
 	resident, _, _ := b.Stats()
-	if resident != runs[0].bytes {
-		t.Fatalf("budget holds %d bytes for a run of %d: a racing miss double-charged",
-			resident, runs[0].bytes)
+	if resident != total {
+		t.Fatalf("budget holds %d bytes for runs totalling %d: a racing miss double-charged",
+			resident, total)
 	}
 }
 
@@ -138,30 +146,31 @@ func TestRangeOfOneRunAliasesTheCache(t *testing.T) {
 	c := newCache(NewBudget(0), &calls, &mu)
 	lineage := []Ref{{Node: "p"}}
 
-	// One chunk, so one run answers.
+	// One RUN's worth, whatever that is in units once the byte target has cut
+	// it: read the first run's span back and it must be handed over uncopied.
 	if _, err := c.Range(lineage, 0, runChunk); err != nil {
 		t.Fatal(err)
 	}
 	runs := c.runs("p")
-	if len(runs) != 1 {
-		t.Fatalf("fixture: %d runs, want 1", len(runs))
+	if len(runs) == 0 {
+		t.Fatal("fixture: nothing resident")
 	}
-
-	got, err := c.Range(lineage, 0, runChunk)
+	first := runs[0]
+	got, err := c.Range(lineage, first.coord.From, first.coord.To)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != runChunk {
-		t.Fatalf("got %d units", len(got))
+	if len(got) != len(first.units) {
+		t.Fatalf("got %d units, the run holds %d", len(got), len(first.units))
 	}
-	if &got[0] != &runs[0].units[0] {
+	if &got[0] != &first.units[0] {
 		t.Fatal("Range copied a span that one run answers: the view contract is gone")
 	}
 
 	// And eviction under a holder does not disturb it: the run is immutable and
 	// eviction publishes a successor.
 	before := append([]unit(nil), got...)
-	c.Drop(runs[0].coord)
+	c.Drop(first.coord)
 	for i := range got {
 		if got[i] != before[i] {
 			t.Fatalf("a holder's view changed under eviction at %d", i)
