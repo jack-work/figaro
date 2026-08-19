@@ -62,7 +62,20 @@ func TestIdleLineageEvictsAndReloads(t *testing.T) {
 	if err != nil || m != lts[4] || string(payload) != `{"n":4}` {
 		t.Fatalf("read after evict: m=%d payload=%s err=%v", m, payload, err)
 	}
-	if s.LoadedHeads() == 0 {
+	// THE RELOAD IS OBSERVED WITH A RETRY, NOT AT AN INSTANT. IdleUnload is
+	// 30ms in this fixture and the unloader runs in the background, so under a
+	// loaded machine it can unload the head again between the read and the
+	// check -- which is a correct system and a racing assertion. Two arias saw
+	// this fail once each (fd15d2a0 and 041454f1, 2026-08-19) and neither could
+	// reproduce it in isolation, which is the signature of exactly that window.
+	reloaded := s.LoadedHeads() != 0
+	for deadline := time.Now().Add(time.Second); !reloaded && time.Now().Before(deadline); {
+		if _, _, err := s.Read(tr, "ir", lts[4]); err != nil {
+			t.Fatalf("re-read after evict: %v", err)
+		}
+		reloaded = s.LoadedHeads() != 0
+	}
+	if !reloaded {
 		t.Fatal("read did not reload the head")
 	}
 	rec, ok, err := s.Lookup(tr, "chalkboard", lts[4])
