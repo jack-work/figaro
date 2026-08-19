@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	fwforest "github.com/jack-work/figwal/forest"
+	fwforest "github.com/jack-work/figaro/internal/store/tree"
 )
 
 // EVICTED TAKES NO LOCK.

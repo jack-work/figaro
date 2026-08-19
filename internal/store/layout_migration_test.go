@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/internal/message"
-	"github.com/jack-work/figwal/xwal"
+	"github.com/jack-work/figaro/internal/store/xwal"
 )
 
 // The seam this covers: figaro migrates a store BEFORE it opens it. Nothing

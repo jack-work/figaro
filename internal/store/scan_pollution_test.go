@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	fwforest "github.com/jack-work/figwal/forest"
+	fwforest "github.com/jack-work/figaro/internal/store/tree"
 )
 
 // SCAN POLLUTION, measured: a whole-history read through forest.Cache DOES

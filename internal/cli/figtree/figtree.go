@@ -2,7 +2,7 @@
 // node, tree glyphs in the first cell, named fields in the columns after it.
 //
 // It exists because two callers need the same picture of a hierarchy: `figaro
-// ls` drawing the aria forest, and an outfit layer closure explaining which
+// ls` drawing the aria tree, and an outfit layer closure explaining which
 // layer could not be found, and a tree walker copied twice is a tree walker
 // that will disagree with itself.
 //

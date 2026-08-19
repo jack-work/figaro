@@ -101,7 +101,7 @@ func Span(msgs []message.Message, turn uint64) (first, last uint64, ok bool) {
 }
 
 // At is the inverse of Span: it reports which turn owns an LT. Display
-// surfaces need this because the forest records a fork point as an LT
+// surfaces need this because the tree records a fork point as an LT
 // (NodeView.BranchedLT) while the user's coordinate is a turn: printing the
 // raw LT and calling it a fork argument is a lie, since `fork <id>:N` takes N
 // as a turn.

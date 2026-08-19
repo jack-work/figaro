@@ -136,9 +136,9 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		}
 		figs := resp.Figaros
 
-		// Scope. `<id>` → that subtree. `-h`/--home → the whole forest (● stays
+		// Scope. `<id>` → that subtree. `-h`/--home → the whole tree (● stays
 		// on you). Default: attended scopes to your conversation's tree;
-		// detached shows the whole forest. "/" forces the whole forest.
+		// detached shows the whole tree. "/" forces the whole tree.
 		rootID := o.rootID
 		switch {
 		case rootID == "/":
@@ -174,7 +174,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		}
 
 		ppid := shellPID
-		tree, roots := listForest(figs, rootID, ppid)
+		tree, roots := listTree(figs, rootID, ppid)
 		rows := tree.Rows()
 
 		total := len(rows)
@@ -217,11 +217,11 @@ func runList(loaded *config.Loaded, o lsOpts) {
 	})
 }
 
-// listForest builds the rendered rows for the scoped fork forest, and the
+// listTree builds the rendered rows for the scoped fork tree, and the
 // top-level roots it grouped them under. Pure: the caller has already
 // fetched and scoped figs.
-func listForest(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree.Tree, []rpc.FigaroInfoResponse) {
-	// Build the fork forest: index by vector, group children, collect
+func listTree(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree.Tree, []rpc.FigaroInfoResponse) {
+	// Build the fork tree: index by vector, group children, collect
 	// roots (depth-0 conversations). Trees float up by their most-recent
 	// member; within a tree, children sort by branch order (vector).
 	byVec := map[string]rpc.FigaroInfoResponse{}
@@ -286,7 +286,7 @@ func listForest(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree
 				ctxStr = "~" + ctxStr
 			}
 		}
-		// Branches are MARKED, not numbered. The forest records a fork point
+		// Branches are MARKED, not numbered. The tree records a fork point
 		// as an LT (BranchedLT), but the coordinate `send/fork <id>:N` takes
 		// is a TURN: printing the LT here and letting it read as a fork
 		// argument is the exact class of trap this project exists to remove
@@ -334,14 +334,14 @@ func listForest(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree
 // renderGlobal prints the full hierarchy: null → outfits → conversations →
 // branches: by parent links. ● marks the attended aria, or, when detached,
 // the live outfit (your implicit home).
-// globalForest builds the rendered rows for the whole hierarchy, walked by
+// globalTree builds the rendered rows for the whole hierarchy, walked by
 // the DRAWN edge (promote's override, else history). Pure, so its shape can
 // be pinned without an angelus.
-func globalForest(figs []rpc.FigaroInfoResponse, boundID string, ppid int) figtree.Tree {
-	return forestFrom(figs, "", -1, boundID, ppid)
+func globalTree(figs []rpc.FigaroInfoResponse, boundID string, ppid int) figtree.Tree {
+	return treeFrom(figs, "", -1, boundID, ppid)
 }
 
-// forestFrom grows the same tree globalForest does, from an arbitrary root and
+// treeFrom grows the same tree globalTree does, from an arbitrary root and
 // to a bounded depth. rootID "" means the null genesis root; maxDepth < 0 means
 // no limit, and 0 means the root alone.
 //
@@ -350,7 +350,7 @@ func globalForest(figs []rpc.FigaroInfoResponse, boundID string, ppid int) figtr
 // scoped `fig ls` used to fall back to the home listing, silently, because
 // figaro.list returns figaros only and the form could not be placed. The
 // result was byte-identical to attending nothing at all.
-func forestFrom(figs []rpc.FigaroInfoResponse, rootID string, maxDepth int, boundID string, ppid int) figtree.Tree {
+func treeFrom(figs []rpc.FigaroInfoResponse, rootID string, maxDepth int, boundID string, ppid int) figtree.Tree {
 	byID := map[string]rpc.FigaroInfoResponse{}
 	childrenOf := map[string][]string{}
 	nullID := ""
@@ -487,7 +487,7 @@ func renderFormScope(figs []rpc.FigaroInfoResponse, formID string, limit int) {
 	if root == "" {
 		root, depth = formID, 1
 	}
-	rows := forestFrom(figs, root, depth, formID, shellPID).Rows()
+	rows := treeFrom(figs, root, depth, formID, shellPID).Rows()
 	total := len(rows)
 	shown := total
 	if limit > 0 && total > limit {
@@ -508,7 +508,7 @@ func renderFormScope(figs []rpc.FigaroInfoResponse, formID string, limit int) {
 }
 
 func renderGlobal(figs []rpc.FigaroInfoResponse, boundID string, limit int) {
-	rows := globalForest(figs, boundID, shellPID).Rows()
+	rows := globalTree(figs, boundID, shellPID).Rows()
 	total := len(rows)
 	shown := total
 	if limit > 0 && total > limit {
@@ -621,7 +621,7 @@ func topLevelAncestor(figs []rpc.FigaroInfoResponse, id string) string {
 	return id
 }
 
-// hasVecPrefix reports whether v lies at or below prefix in the fork forest
+// hasVecPrefix reports whether v lies at or below prefix in the fork tree
 // (prefix is an ancestor-or-self of v).
 func hasVecPrefix(v, prefix []int) bool {
 	if len(v) < len(prefix) {

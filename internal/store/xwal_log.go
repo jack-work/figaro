@@ -14,7 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/jack-work/figwal/xwal"
+	"github.com/jack-work/figaro/internal/store/xwal"
 )
 
 type xwalLog[T any] struct {

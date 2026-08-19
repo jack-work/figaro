@@ -3,7 +3,7 @@ package store
 import (
 	"testing"
 
-	fwforest "github.com/jack-work/figwal/forest"
+	fwforest "github.com/jack-work/figaro/internal/store/tree"
 )
 
 // A fresh fork holds 298 inherited rows and 0 of its own, so under the

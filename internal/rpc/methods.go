@@ -499,7 +499,7 @@ type FigaroInfoResponse struct {
 	OutfitVer        string `json:"outfit_ver,omitempty"`    // "live" if the stamped hash matches the current outfit, else its short hash
 	BoundPIDs        []int  `json:"bound_pids"`
 
-	// Fork-forest position (conversation nodes). Vector is the
+	// Fork-tree position (conversation nodes). Vector is the
 	// child-index path (0, 0.0, 0.1, …); Trunk is the thread id that
 	// flows down the continuation line; Parent is the aria branched from.
 	// There is no "frozen" here: a fork leaves its target live under the
@@ -821,7 +821,7 @@ type AttachResponse struct {
 	Endpoint Endpoint `json:"endpoint"`
 }
 
-// ListRequest options. IDsOnly skips the per-aria form + forest fills
+// ListRequest options. IDsOnly skips the per-aria form + tree fills
 // (mantra, cwd, outfit hash, vector): much cheaper when the caller only needs
 // the ids (e.g. shell completion). Global also includes the ceremonial anchors
 // (the null genesis trunk + every versioned outfit) with Kind/Parent set, for

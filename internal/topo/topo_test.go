@@ -33,12 +33,12 @@ func (f fake) ChildrenOf(id string) []string {
 // which is the only node with no .from and the one ancestor no delete can
 // take. Leaving it out would make A look like a root and quietly change
 // what "has an ancestor to lose" means.
-func forest() fake {
+func parentMap() fake {
 	return fake{"null": "", "A": "null", "B": "A", "C": "A", "D": "C"}
 }
 
 func TestTrunklessDeleteTakesTheSubtree(t *testing.T) {
-	tree := FromTopology(forest())
+	tree := FromTopology(parentMap())
 	got := tree.DeleteSet("C")
 	sort.Strings(got)
 	if len(got) != 2 || got[0] != "C" || got[1] != "D" {
@@ -50,7 +50,7 @@ func TestTrunklessDeleteTakesTheSubtree(t *testing.T) {
 // orphan anyone. This is the property that lets a trunkless figaro skip
 // boundary repair entirely.
 func TestTrunklessBoundaryIsAlwaysEmpty(t *testing.T) {
-	f := forest()
+	f := parentMap()
 	tree := FromTopology(f)
 	for _, id := range f.Nodes() {
 		if b := Boundary(f, tree.DeleteSet(id)); len(b) != 0 {
@@ -62,7 +62,7 @@ func TestTrunklessBoundaryIsAlwaysEmpty(t *testing.T) {
 // The hole promotion opens: delete A's trunk-subtree and B, which still
 // inherits A's prefix, is left pointing at a directory that is gone.
 func TestBoundaryCatchesTheOrphan(t *testing.T) {
-	f := forest()
+	f := parentMap()
 	b := Boundary(f, []string{"A", "C", "D"}) // the trunk closure after B is promoted
 	if len(b) != 1 || b[0] != "B" {
 		t.Fatalf("Boundary = %v, want [B]: B inherits A's prefix", b)
@@ -70,7 +70,7 @@ func TestBoundaryCatchesTheOrphan(t *testing.T) {
 }
 
 func TestTrunklessPromoteIsNotSilent(t *testing.T) {
-	if err := FromTopology(forest()).Promote("B"); !errors.Is(err, ErrNoPromote) {
+	if err := FromTopology(parentMap()).Promote("B"); !errors.Is(err, ErrNoPromote) {
 		t.Fatalf("Promote error = %v, want ErrNoPromote", err)
 	}
 }

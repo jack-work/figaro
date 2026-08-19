@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	fwforest "github.com/jack-work/figwal/forest"
+	fwforest "github.com/jack-work/figaro/internal/store/tree"
 )
 
 // A run materialized in the ANCESTOR can span a child's fork base: nothing

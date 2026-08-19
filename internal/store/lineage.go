@@ -1,7 +1,7 @@
 package store
 
 import (
-	fwforest "github.com/jack-work/figwal/forest"
+	fwforest "github.com/jack-work/figaro/internal/store/tree"
 )
 
 // Lineage renders a trunk's ancestry as forest refs, root first, so a cache

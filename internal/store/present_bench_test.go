@@ -17,7 +17,7 @@ import (
 //	trunkless  the capability off: no edges, no second walk
 //	idle       the capability on, nothing promoted
 //	promoted   one in eight arias promoted
-func benchForest(b *testing.B, n int, trunks bool, promoteEvery int) *store.XwalBackend {
+func benchTree(b *testing.B, n int, trunks bool, promoteEvery int) *store.XwalBackend {
 	b.Helper()
 	root := b.TempDir()
 	back, err := store.NewXwalBackend(root, 0)
@@ -32,7 +32,7 @@ func benchForest(b *testing.B, n int, trunks bool, promoteEvery int) *store.Xwal
 	if err != nil {
 		b.Fatal(err)
 	}
-	// A forest of eight-deep chains: the shape a promote actually lives in.
+	// A tree of eight-deep chains: the shape a promote actually lives in.
 	var chain string
 	for i := 0; i < n; i++ {
 		var id string
@@ -67,7 +67,7 @@ func BenchmarkListSnapshot(b *testing.B) {
 	for _, n := range []int{64, 512} {
 		for _, arm := range arms {
 			b.Run(fmt.Sprintf("arias=%d/%s", n, arm.name), func(b *testing.B) {
-				back := benchForest(b, n, arm.trunks, arm.promoteEvery)
+				back := benchTree(b, n, arm.trunks, arm.promoteEvery)
 				b.ReportAllocs()
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
@@ -81,9 +81,9 @@ func BenchmarkListSnapshot(b *testing.B) {
 }
 
 // A promote invalidates the snapshot, so this is the cold path: the whole
-// forest walk plus the presentation pass, once per promote.
+// tree walk plus the presentation pass, once per promote.
 func BenchmarkPromoteThenList(b *testing.B) {
-	back := benchForest(b, 512, true, 0)
+	back := benchTree(b, 512, true, 0)
 	ids := back.ConversationIDs()
 	b.ReportAllocs()
 	b.ResetTimer()
