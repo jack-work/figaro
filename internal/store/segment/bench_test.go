@@ -60,3 +60,71 @@ func BenchmarkReadBinarySmall(b *testing.B)  { benchRead(b, BinaryCodec{}, "smal
 func BenchmarkReadBinaryMedium(b *testing.B) { benchRead(b, BinaryCodec{}, "medium") }
 func BenchmarkReadJSONLSmall(b *testing.B)   { benchRead(b, JSONLCodec{}, "small") }
 func BenchmarkReadJSONLMedium(b *testing.B)  { benchRead(b, JSONLCodec{}, "medium") }
+
+// THE CACHE HIT, WHICH IS THE HOTTEST PATH IN THE READ STACK: one call per
+// record, per read, per channel. The serial arm prices the lookup; THE
+// PARALLEL ARM IS THE ONE THAT MATTERS, because the question when runs move
+// into tree is whether readers contend.
+func benchHit(b *testing.B, parallel bool) {
+	const n = 1024
+	old := CacheBudget()
+	defer SetCacheBudget(old)
+	SetCacheBudget(64 << 20) // everything resident; this measures HITS
+
+	s := buildSegment(b, BinaryCodec{}, "small", n)
+	defer s.Close()
+	for i := uint64(0); i < n; i++ { // warm every chunk
+		if _, err := s.ReadIndex(i); err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.ResetTimer()
+	b.ReportAllocs()
+	if parallel {
+		b.RunParallel(func(pb *testing.PB) {
+			rng := rand.New(rand.NewSource(7))
+			for pb.Next() {
+				if _, err := s.ReadIndex(uint64(rng.Intn(n))); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+		return
+	}
+	rng := rand.New(rand.NewSource(7))
+	for i := 0; i < b.N; i++ {
+		if _, err := s.ReadIndex(uint64(rng.Intn(n))); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkSegmentHitSerial(b *testing.B)   { benchHit(b, false) }
+func BenchmarkSegmentHitParallel(b *testing.B) { benchHit(b, true) }
+
+// THE SEQUENTIAL SCAN, which is the traversal the fig IR encode path runs
+// EVERY TURN and the one a chunked range unit could ruin quietly: fix the
+// single-record case, break the walk, and nobody notices until a turn is slow.
+func BenchmarkSegmentScan(b *testing.B) {
+	const n = 1024
+	old := CacheBudget()
+	defer SetCacheBudget(old)
+	SetCacheBudget(64 << 20)
+
+	s := buildSegment(b, BinaryCodec{}, "small", n)
+	defer s.Close()
+	for i := uint64(0); i < n; i++ {
+		if _, err := s.ReadIndex(i); err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		for j := uint64(0); j < n; j++ {
+			if _, err := s.ReadIndex(j); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+}
