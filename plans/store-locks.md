@@ -120,3 +120,61 @@ on concurrency and that choice is pending with Gluck. It does not order the
 rows by value. It does not claim any lock is contended. And it does not treat
 "NONE" as a verdict: a lock guarding one publishable value may still be the
 cheapest correct thing in a section nobody reaches twice.
+
+---
+
+# WHAT HAS BEEN CURED SINCE THE SURVEY (2026-08-19, dec6ef8a and fd15d2a0)
+
+The survey stands as written; this is the ledger against it. Every cure below
+is PUBLISH, not delete, and each kept whatever half of its exclusion was real.
+
+    row 5   MemFormLog.mu     CURED (ddc030ad, fd15d2a0). And the finding that
+                              frames the rest: THE MUTEX WAS TWO EXCLUSIONS
+                              WEARING ONE NAME -- writer/writer dead (one
+                              drainer), reader/writer REAL (patchesFromLog runs
+                              anywhere). The contract now reports itself
+                              breaking: a second concurrent writer is refused
+                              with an error that names it.
+    row 14  Budget.mu         CURED (5fbd307b). It was taken ON THE EVICTION
+                              PATH to read a set that changes only at
+                              construction. Published; ownersMu serializes
+                              registration. Canary: without it, 14 of 16
+                              registrations survive.
+    row 27  metaCache.mu      CURED for readers (e9f12a5b). It held a lock
+                              ACROSS FILE I/O on the path a listing walks for
+                              every aria. The WRITE lock stays: file-then-memo
+                              order cannot be published.
+    row 29  observedMu        CURED (e9f12a5b). Read on every IR append,
+                              published whole; declarers still serialize.
+    row 12  segment regMu     IN FLIGHT (fd15d2a0), inside the larger deletion
+                              of segment/cache.go's duplicate residency
+                              structure.
+
+NOT IN THE TABLE, BUT THE SAME CAMPAIGN: tree.Cache's c.mu (63902f44). Reads
+take no lock at all; writers hold it only to publish, never across the Source,
+the budget's eviction pass, or the Evicted hook. Interleaved A/B: parallel
+Range 2.213us -> 1.242us, and the parallel number now sits at the serial one
+instead of double it.
+
+## THE PATTERN THE CURES SHARE, WORTH MORE THAN THE COUNT
+
+In every case the lock was doing TWO jobs and exactly one of them was real. The
+question that separated them each time was not "is this lock necessary" but:
+
+    WHO IS EXCLUDED FROM WHOM, AND WHICH OF THOSE PAIRS ACTUALLY EXISTS?
+
+reader/writer was dead weight four times out of four, because the guarded thing
+was one value that could be published. writer/writer was real three times out
+of four -- ordering a file write against a memo, not losing a sibling from a
+copied map, keeping two appends in log order -- and A PUBLISH CANNOT EXPRESS
+ORDER BETWEEN TWO WRITERS. That is the boundary between cure A and cure B, and
+it is legible per lock rather than per package.
+
+## AND THE COUNT, WHICH IS THE LEAST INTERESTING PART
+
+    83 -> 82 non-test mutex declarations; 31 -> 29 in internal/store.
+
+Two removed outright, four moved off a read path, and one hot path (segment's)
+in flight. THE COUNT IS NOT THE GOAL: a mutex nobody contends costs a cache
+line, and a mutex on a path every reader takes costs the shape of the whole
+design -- which is what kept two cache shapes alive in this stack for a month.
