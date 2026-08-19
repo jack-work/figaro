@@ -1354,3 +1354,34 @@ what was asked and fault rate is what was answered.
     bytes. If the decoded and composed layers land on tree, THAT is the knob
     that decides their fault rate, and it is currently a constant chosen for
     segment records.
+
+#### THE HYPOTHESIS, RUN RATHER THAN LEFT STANDING
+
+The paragraph above named an experiment: drive runChunk down and see whether
+the two numbers converge. Done in the same hour, because a hypothesis left in a
+plan is read as a finding by the next person.
+
+    runChunk    turns from below      source calls
+       1              620                 620
+       4              681                 183
+      16              722                 141
+      64              722                 141
+    COMPOSED          612                 131
+
+IT CONVERGES. At runChunk = 1 the canonical cache faults within 1.3% of the
+second implementation. THE 18% GAP WAS GRANULARITY AND NOTHING ELSE, and the
+third residency policy buys no fault-rate advantage that a constant does not
+already explain.
+
+AND THE TABLE SHOWS THE TRADE THAT REPLACES IT: at runChunk = 1 the turns
+wasted fall to nothing and the SOURCE CALLS RISE FROM 141 TO 620. Fine-grained
+runs waste fewer bytes and pay more calls; coarse runs do the reverse. That is
+the ordinary granularity trade, and it says the knob should be A BYTE TARGET
+PER RUN rather than a record count -- one number that means the same thing for
+a 200-byte segment record and an 8 KiB composed turn, which the current
+constant cannot.
+
+    THE CONSTANT IS NOT A DEFECT TODAY: 64 records was chosen for the segment
+    tenant and is right for it. It becomes a defect the moment a second tenant
+    with units two orders of magnitude larger lands on the same cache, which is
+    exactly what Q3 proposes.
