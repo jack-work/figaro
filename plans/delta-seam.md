@@ -1470,3 +1470,68 @@ at every site anyway. That is insurance, priced — the same honest shape as
 the fold bound, and it should be endorsed or declined on that basis rather
 than on the assumption that it is closing a hole. The hole is elsewhere and
 costs 7 sites.
+
+## THE RESIDENCY INSTRUMENT EXISTS, AND A CLAIM MAY REACH EXACTLY AS FAR AS
+## ITS INSTRUMENT DOES
+
+9ed3f561, ruled and recorded by f3aa1d0b, 2026-08-18. The requirement two
+sections up is now SATISFIED FOR SHAPE 1 and explicitly not for the rest.
+
+    HONEST  pass     0 of 200 tracked objects still held after collection
+    PINNING pass   200 of 200 still held
+
+Reachability proven 0 -> 200, and the instrument FAILS LOUDLY if both
+agree rather than reporting a comfortable zero — an instrument that says
+"nothing is held" must first be shown able to say "something is held".
+Mechanism: a finalizer per tracked object, the test's own reference
+dropped, THREE GC cycles rather than one (a finalizer becomes runnable in
+the cycle that finds the object unreachable and RUNS afterwards on another
+goroutine, so one GC under-reports), and the pass run in its own frame so
+the test does not measure its own stack. The GC is asked, rather than a
+proxy inferred from — the same correction as validating a commit against
+the object database instead of pattern-matching hex.
+
+AND ITS FIRST VERSION REPORTED THE OPPOSITE, WHICH IS THE PART WORTH
+KEEPING. It set the pinning wrapper to nil BEFORE forcing collection, so
+the simulated leak became unreachable and both passes reported zero: A
+NULL ABOUT A RETENTION IT HAD JUST DESTROYED. Stable, reproducible, false,
+and pointed at withdrawing a requirement that is in fact satisfiable. The
+fix is the finding: A REAL LEAK IS HELD BY SOMETHING THAT OUTLIVES THE
+PASS — a cursor, a returned projection, a cache — and dropping the holder
+before measuring is not conservatism, it is measuring a different scenario
+and calling it this one.
+
+SHAPE 2 IS OPEN, WITH ITS OBSTACLE NAMED AND ITS CLAIM REFUSED. A finalizer
+attaches to the START of an allocation, and a retained PATCH SUBSLICE keeps
+the BACKING ARRAY alive while any sentinel pointer becomes unreachable
+independently — so the naive version reports "collected" for an array that
+is still pinned. THAT IS A FALSE NEGATIVE, THE WORST DIRECTION, and it was
+refused as coverage rather than shipped as it. Measurable via a finalizer
+on the array's first element, but that is a claim about Go's allocator that
+has not been canaried, and an uncanaried mechanism is not coverage.
+
+## SO THE RULING SHARPENS: THE CLAIM'S SCOPE IS THE INSTRUMENT'S REACH
+
+When step 3 lands, the retention claim may be made EXACTLY AS FAR AS shape
+1 goes and no further:
+
+    SAYABLE      no ENTRY handed out by the log is still held after the
+                 pass, counted, canaried at 0 -> 200
+    NOT SAYABLE  "nothing pins evicted bytes", full stop. Patch subslices
+                 (shape 2) and segment/snapshot residency (shape 4) are
+                 uninstrumented, and shape 2's naive instrument fails in
+                 the direction that would flatter us.
+
+This is the campaign's own thesis applied to CLAIMS rather than to
+instruments: an instrument answers about something narrower than the
+question, so A CLAIM QUOTED WIDER THAN ITS INSTRUMENT IS THE SAME DEFECT
+WITH THE SIGN FLIPPED. The honest landing note names the shape it proved
+and the shapes it did not, and that note is worth more than the wider
+sentence would have been.
+
+AND THE GATE RULE PASSED ITS FIRST REAL USE, on someone else's work, within
+the hour of being made: fd15d2a0's step-2 log at 70d6dbf7 is THE FIRST
+ADMISSIBLE GATE LOG IN THIS CAMPAIGN — stamped, terminated, tree named,
+matching the claim it was offered for, 43 ok, 0 FAIL, checked by
+checkgate.sh --expect rather than by reading. A rule became a shape and the
+shape was then used to judge a third party.
