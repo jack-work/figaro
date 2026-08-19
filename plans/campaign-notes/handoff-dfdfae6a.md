@@ -47,14 +47,37 @@ the original plan, and every number taken today. START THERE, AT SECTION 1.
     THE ASSEMBLER         anthropic and openaichat splice stored rows
                           verbatim. Allocations at 50,000 messages: 600,064
                           -> 88, CONSTANT IN CONVERSATION LENGTH.
+    THE CATCH-UP          provider.CatchUp exists and anthropic runs on it:
+                          it writes rows and keeps no representation.
 
 ## WHAT IS OPEN, IN ORDER
 
-1. THE CATCH-UP. One `provider.CatchUp` replacing ProjectIncrementally and
-   the four per-provider `catchUp` wrappers: walk the fig IR from THE LOG'S
-   OWN watermark (the translator log's tail FigaroLT), encode what is
-   missing, append, return stats. No State, Append, Initial, Previous or
-   generic parameter -- those five build the representation being deleted.
+1. THE CATCH-UP, HALF DONE. `provider.CatchUp` EXISTS and ANTHROPIC IS
+   CONVERTED (ac647f32): it walks the fig IR from the ROW LOG'S OWN tail
+   FigaroLT, encodes what is missing, appends, returns counts, and keeps
+   nothing. The memo is safe to drop because THE RECORD AT THE WATERMARK
+   CARRIES THE CURSORS (FormChannelVersion, StudyVersions).
+
+   WHAT REMAINS: convert `anthropicsdk`, `openaichat` and `copilot/responses`
+   the same way -- each has a `catchUp` wrapper around ProjectIncrementally
+   with its own accumulator type -- then DELETE ProjectIncrementally,
+   IncrementalProjection, ProjectionConfig, EncodedMessages,
+   AppendEncodedMessage, projectedMessages/appendProjectedMessages, and the
+   `projection` field on each provider. Each provider's read becomes
+   `provider.Rows(rows)`.
+
+   THREE THINGS TO CARRY WITH YOU:
+     - A SEND THAT CANNOT WRITE ITS ROWS MUST FAIL (provider.ErrNoRows), not
+       encode a second copy in memory. Anthropic's Send propagates it.
+     - acceptAssistantProjection DELETES WITH NOTHING REPLACING IT:
+       commitAssistantCache already writes that row durably.
+     - A bench arm that prewarms `a.projection` is measuring the memo. Remove
+       it rather than repair it (BenchmarkCatchUp/WarmDeltaEncode was one).
+
+   REPORTED TO GLUCK AND APPROVED (rule 3): rebuilding the board in a
+   catch-up is O(form patches) folded from zero where the memo made it
+   O(new patches). Measured across 1,130 real form channels: p50=5, p90=20,
+   p99=74, max=371, mean=9.3.
 2. ROWS AT WRITE TIME, in `store.irDoor.write`. It is the only site that can:
    single write path, it MINTS records nobody else knows about (tool-close,
    late-result note), and it REWRITES the payload before it lands. Two open
