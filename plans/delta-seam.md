@@ -1634,3 +1634,63 @@ and a patch file duplicating its own hunks. IN ALL THREE THE COMMAND
 EXITED ZERO. It is the status-versus-artifact rule one level out — there
 the status field lied about the work, here the exit code told the truth
 about a process that produced a wrong thing.
+
+## THE RESIDENCY COUNT MUST BE RUN AGAINST TODAY'S CODE, BEFORE THE DELETION
+
+f3aa1d0b, 2026-08-18, on learning the instrument is written, rehearsed and
+NOT YET IN THE TREE while step 3 is being cut.
+
+I had ruled only that it must exist before the landing NOTE. THAT IS TOO
+WEAK, and the reason is the campaign's own red-first standard applied to a
+property rather than to a hazard.
+
+THE PROJECTION HOLDS SLICES RETURNED BY THE LOG. That is stated in Part II
+as the reason it must go — "because it holds slices returned by the log, it
+also PINS payloads the log's window believes it evicted" — and it is the
+whole ground of Gluck's ruling that nothing may pin evicted bytes. SO THE
+RESIDENCY COUNT, RUN AGAINST TODAY'S CODE, SHOULD READ NON-ZERO. It is not
+merely a guard for afterwards; it is the only chance this campaign has to
+MEASURE THE DEFECT IT IS DELETING.
+
+    RULED: the instrument lands and is RUN against the pre-deletion tree,
+    and the number it reads there is RECORDED, before step 3 commits.
+
+AND THE OUTCOME THAT WOULD BE MOST VALUABLE IS THE INCONVENIENT ONE: IF IT
+READS ZERO TODAY, THE INSTRUMENT DOES NOT REACH THE DEFECT WE ARE DELETING
+— and we would learn that before the claim rather than after, which is
+exactly the failure mode this campaign has documented sixteen times. A
+before-number of zero is a finding about the instrument, not a
+disappointment about the code.
+
+TIMING, so it does not disrupt work in flight: the executor applies it AT
+ITS NEXT CLEAN BOUNDARY, not into a tree with fourteen dirty files. The
+application is already rehearsed at the recipient's exact head under the
+new handoff rule, cherry-picked and RUN green in a scratch worktree, so the
+command is known-good before it is typed.
+
+## AND A SCOPE LIMIT ON THAT INSTRUMENT, VOLUNTEERED BEFORE IT WAS ASKED FOR
+
+The fixture's log is a `MemLog`, WHICH NEVER EVICTS, and the test drops the
+store before measuring. So it answers: DOES ANYTHING OUTSIDE THE STORE
+STILL HOLD ENTRIES AFTER THE PASS. That is the right question for "the
+projection retains nothing of its own".
+
+IT IS NOT THE QUESTION "THE CURSOR DOES NOT PREVENT EVICTION". An
+implementation holding a reference THE STORE ALSO HOLDS reads as zero here
+and would still pin bytes a real `cachedLog` wanted to evict on its window
+and budget.
+
+    SO THE LANDING NOTE MAY SAY: no entry handed out by the log is still
+    held after the pass, counted and canaried at 0 -> 200.
+    IT MAY NOT SAY: the cursor cannot prevent eviction.
+
+The second needs eviction to actually HAPPEN in the fixture — the same
+fixture driven through a `cachedLog` with a small window, asserting the
+resident count falls. OPEN, with the obstacle named, beside shape 2. Not
+taken tonight.
+
+THIS IS THE THIRD LIMIT ITS BUILDER HAS VOLUNTEERED RATHER THAN BEEN CAUGHT
+AT, and it is worth naming as a practice: an instrument's author reporting
+what it CANNOT see, unprompted, is the cheapest possible version of every
+lesson in ~/notes/figaro/instrument-not-reaching-the-code.md. Sixteen
+instances in that note were bought at the price of a wrong claim first.
