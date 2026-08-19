@@ -152,7 +152,7 @@ func localityRun(t *testing.T, budget int) {
 
 	// --- the flat tail window, production code, production policy ---
 	inner := &countingInner[string]{Log: mem}
-	flat := newWindowedLog[string](inner, 0, budget, 1, sizeOf)
+	flat := newWindowedLog[string](inner, 0, budget, 1, 1, sizeOf)
 	// CONSTRUCTION IS COUNTED FOR BOTH, and the fixture implements
 	// TailBudgeted so the flat window pays what production pays: the tail it
 	// keeps. An earlier version of this test EXCLUDED the construction read

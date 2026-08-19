@@ -58,7 +58,7 @@ func TestATranslationSeedWithAForeignFingerprintIsRefused(t *testing.T) {
 		foreign = append(foreign, e)
 	}
 
-	seeded := newSeededLog[[]json.RawMessage](inner, 0, 0, 1, transEntrySize, foreign)
+	seeded := newSeededLog[[]json.RawMessage](inner, 0, 0, 1, 1, transEntrySize, foreign)
 	got := seeded.Read()
 	for _, e := range got {
 		if e.Fingerprint != "fp-A" {
@@ -81,7 +81,7 @@ func TestATranslationSeedWithAMatchingFingerprintIsUsed(t *testing.T) {
 		}
 	}
 	rows := inner.Read()
-	seeded := newSeededLog[[]json.RawMessage](inner, 0, 0, 1, transEntrySize, rows[:3])
+	seeded := newSeededLog[[]json.RawMessage](inner, 0, 0, 1, 1, transEntrySize, rows[:3])
 	got := seeded.Read()
 	if len(got) != len(rows) {
 		t.Fatalf("seeded log serves %d rows, the log holds %d", len(got), len(rows))
@@ -354,7 +354,7 @@ func TestTheFingerprintCheckBlocksOnlyAfterADialectChange(t *testing.T) {
 		foreign[i].Fingerprint = "fp-OTHER-DIALECT"
 	}
 	inner := newXwalLog[[]json.RawMessage](b.store, childA, transChannel("anthropic"), false)
-	seeded := newSeededLog[[]json.RawMessage](inner, 0, 0, 1, transEntrySize, foreign)
+	seeded := newSeededLog[[]json.RawMessage](inner, 0, 0, 1, 1, transEntrySize, foreign)
 	for _, e := range seeded.Read() {
 		if e.Fingerprint == "fp-OTHER-DIALECT" {
 			t.Fatal("a foreign-dialect donation was served to a child; the durable log says otherwise")

@@ -202,6 +202,15 @@ segment_cache_mb       = 32   # raw figwal payloads, whole process; 0 = none
 86 percent of a real aria's footprint, so leaving the one bound that governs
 it switched off meant every aria anyone touched kept all of it.
 
+**AND THE NUMBER NOW MEANS REAL BYTES** (2026-08-19). `ir_window_mb` used to be
+denominated in an ESTIMATE of decoded bytes: encoded size times a factor of 5,
+where the factor measures 1.13x on the largest arias and about 1.30x across the
+whole store. A window believing it held 4 MiB held about 0.9 MiB, so it evicted
+roughly 4.4x earlier than its number claimed. The factor is now 1.35 (chosen
+above the measured 1.30 so a budget under-holds) and THE DEFAULT DROPPED FROM 4
+MiB TO 1 MiB, WHICH IS THE SAME REAL MEMORY AS BEFORE. `TestTheEstimateMatchesTheHeap`
+compares what the store estimates against what dropping the window frees: 0.96.
+
 **AND THE DEFAULT IS THE STORE'S, NOT THE CONFIG'S** (2026-08-19). It used to
 live in `internal/config` and reach the store through three calls in the
 daemon's boot path, which meant a `store.NewXwalBackend` built anywhere else —

@@ -35,7 +35,7 @@ func hotTailFixture(entries, body int) (*cachedLog[string], *fwtree.Cache[Entry[
 		mem.Append(Entry[string]{Payload: fmt.Sprintf("%d%s", i, payload)})
 	}
 	sizeOf := func(e Entry[string]) int { return len(e.Payload) }
-	flat := newWindowedLog[string](mem, 0, 64<<20, 1, sizeOf)
+	flat := newWindowedLog[string](mem, 0, 64<<20, 1, 1, sizeOf)
 
 	all := mem.Read()
 	cache := fwtree.New[Entry[string]](

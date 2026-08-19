@@ -97,5 +97,5 @@ func TestTailSnapshot_CachedLogIsAscending(t *testing.T) {
 // budget -- so the constructor lives with the tests that want a cache whose
 // hit-rate is 100% by construction.
 func newCachedLog[T any](inner Log[T]) *cachedLog[T] {
-	return newWindowedLog[T](inner, 0, 0, 1, nil)
+	return newWindowedLog[T](inner, 0, 0, 1, 1, nil)
 }

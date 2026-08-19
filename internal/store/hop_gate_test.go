@@ -87,7 +87,7 @@ func realisticAria(t *testing.T, n int) (*cachedLog[string], *rangeRecorder[stri
 		}
 	}
 	rec := newRangeRecorder[string](inner)
-	c := newWindowedLog[string](rec, 0, 4<<20, 1, func(e Entry[string]) int { return len(e.Payload) + 48 })
+	c := newWindowedLog[string](rec, 0, 4<<20, 1, 1, func(e Entry[string]) int { return len(e.Payload) + 48 })
 	return c, rec
 }
 

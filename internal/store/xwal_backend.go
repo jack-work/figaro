@@ -87,14 +87,22 @@ type XwalBackend struct {
 // provider) (translations); irWindow stays 0, so bytes bind rather than an
 // accidental row count.
 //
-// 4 MiB of decoded IR is roughly 0.8-1 MiB encoded at this repo's measured
-// 4-5x inflation. Against the author's store census that holds a p90 aria
-// (443 KiB encoded) whole and evicts from p99 (1.7 MiB) up, which is the
-// stated target: eviction that actually occurs, rarely under light use. The
-// largest translation history measured is 2.9 MiB, so 4 MiB caps an axis that
-// had no cap without changing what a real aria holds today.
+// THE IR BUDGET IS 1 MiB AND THAT IS THE SAME MEMORY AS THE OLD 4 MiB. When
+// the estimate was 5x, a 4 MiB budget admitted ~0.8 MiB of encoded history and
+// therefore ~0.9 MiB of actual heap. With the estimate corrected to 1.15x
+// (see irDecodeNum: re-measured at 1.13x weighted on the author's live store),
+// 1 MiB of budget admits ~0.9 MiB of actual heap. REAL RESIDENCY IS UNCHANGED;
+// what changed is that the number now means what it says.
+//
+// Against the store census that still holds a p90 aria (443 KiB encoded, ~510
+// KiB resident) whole and evicts from p99 (1.7 MiB) up, which is the stated
+// target: eviction that actually occurs, rarely under light use.
+//
+// The translation budget stays at 4 MiB: its estimate takes the payload bytes
+// themselves and was re-measured at 1.07x actual, so its number was already
+// honest. The largest translation history measured is 2.9 MiB.
 const (
-	DefaultIRBudgetBytes          = 4 << 20
+	DefaultIRBudgetBytes          = 1 << 20
 	DefaultTranslationBudgetBytes = 4 << 20
 )
 
@@ -113,20 +121,52 @@ const (
 // self-corrects on the next restore.
 func irEntrySize(e Entry[message.Message]) int {
 	if e.EncodedBytes > 0 {
-		return e.EncodedBytes * irDecodeInflation
+		return e.EncodedBytes * irDecodeNum / irDecodeDenom
 	}
 	n := 0
 	for _, c := range e.Payload.Content {
 		n += len(c.Text) + len(c.Data)
 	}
-	return n * irDecodeInflation
+	return n * irDecodeNum / irDecodeDenom
 }
 
 // irDecodeInflation is how much larger decoded IR is than its wire bytes.
-// Measured, not assumed: 4.0x on a 2556-message aria and 5.3x on a
-// 1760-message one. The higher of the two, so a budget under-holds rather than
-// over-holds: being wrong toward less memory is the safe direction here.
-const irDecodeInflation = 5
+//
+// RE-MEASURED 2026-08-19 ON THE AUTHOR'S REAL HISTORY AND CORRECTED, 5 -> 1.35
+// (a numerator over irDecodeDenom, because a constant cannot be a fraction).
+//
+// AND THE SAMPLE MATTERS, WHICH IS HOW THE FIRST CORRECTION WENT WRONG. The
+// eight LARGEST arias weigh a weighted 1.13x their encoded size, so I set the
+// factor to 1.15 -- and TestTheEstimateMatchesTheHeap, run against EVERY aria
+// over a megabyte, came back at 1.13x resident per estimated byte, i.e. the
+// estimate was 13% LOW. Small arias carry more per-entry overhead against less
+// payload, so the broad population runs about 1.30x. 1.35 is the round number
+// above that, which keeps the error in the direction where a budget UNDER-holds.
+//
+// THE LESSON IS THE INSTRUMENT'S, NOT THE CONSTANT'S: a factor calibrated on
+// the eight biggest arias is a factor for the eight biggest arias. The
+// artifact check that caught it compares what the store ESTIMATES against what
+// dropping the window actually frees, over the whole population.
+//
+// WHAT WAS WRONG WITH 5: its provenance is two arias measured months ago at
+// 4.0x and 5.3x. One of them is cf3fc17d, which is in the new table at 1.34x.
+// I cannot re-run the original to say what it measured -- most likely a whole
+// aria's footprint (board, translations and handle included) rather than the IR
+// window this constant governs. The consequence of the old value was that a
+// window believing it held 4 MiB held about 0.9 MiB, so every aria evicted
+// roughly 4.4x earlier than its configured number claimed.
+//
+// AND WHY THE ENCODED SIZE REMAINS THE BASIS, against my own recommendation to
+// Gluck. I proposed denominating in MEASURED bytes and deleting the factor. The
+// data refuses it: resident/encoded is 1.05-1.34 across those arias, while
+// resident/PAYLOAD-STRINGS is 1.12-2.23. THE ENCODED SIZE PREDICTS THE HEAP
+// BETTER THAN THE STRINGS DO, because it captures the structure -- tool
+// arguments, maps, nested blocks -- that a sum of text lengths cannot see. A
+// measured factor over a good predictor beats an exact sum of the wrong thing.
+const (
+	irDecodeNum   = 27 // 27/20 = 1.35
+	irDecodeDenom = 20
+)
 
 // transEntrySize estimates one cached TRANSLATION entry's retained bytes.
 // The payload is the provider's own wire form, so its encoded size is the
@@ -243,7 +283,7 @@ func (b *XwalBackend) handleLocked(id string) (*ariaHandle, error) {
 	h := &ariaHandle{
 		ir: newSeededLog[message.Message](
 			newXwalLog[message.Message](b.store, id, chanIR, true),
-			b.irWindow, b.irBudget, irDecodeInflation, irEntrySize,
+			b.irWindow, b.irBudget, irDecodeNum, irDecodeDenom, irEntrySize,
 			b.seedRowsLocked(id)),
 		trans: map[string]*cachedLog[[]json.RawMessage]{},
 	}
@@ -306,7 +346,7 @@ func (b *XwalBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.R
 	b.mu.Unlock()
 	c := newSeededLog[[]json.RawMessage](
 		newXwalLog[[]json.RawMessage](b.store, ariaID, ch, false),
-		0, budget, 1, transEntrySize, seed)
+		0, budget, 1, 1, transEntrySize, seed)
 	b.mu.Lock()
 	if existing := h.trans[providerName]; existing != nil {
 		b.mu.Unlock()

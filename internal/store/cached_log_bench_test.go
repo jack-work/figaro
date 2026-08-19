@@ -18,7 +18,7 @@ func benchLog(n int) *cachedLog[string] {
 	for i := 1; i <= n; i++ {
 		inner.Append(Entry[string]{Payload: benchEntry(uint64(i)).Payload})
 	}
-	return newWindowedLog[string](inner, 0, 1<<20, 1, func(e Entry[string]) int { return len(e.Payload) + 48 })
+	return newWindowedLog[string](inner, 0, 1<<20, 1, 1, func(e Entry[string]) int { return len(e.Payload) + 48 })
 }
 
 // THE READ THE atomic.Pointer EXISTS FOR: many readers against a live writer,

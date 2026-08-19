@@ -82,9 +82,9 @@ var _ Log[any] = (*cachedLog[any])(nil)
 // them separately is the price of gating BEFORE decode: the gate sees encoded
 // bytes, the accounting sees decoded estimates, and the two must agree or the
 // window holds the wrong amount.
-func newWindowedLog[T any](inner Log[T], window, budget, inflation int, sizeOf func(Entry[T]) int) *cachedLog[T] {
-	if inflation < 1 {
-		inflation = 1
+func newWindowedLog[T any](inner Log[T], window, budget, num, denom int, sizeOf func(Entry[T]) int) *cachedLog[T] {
+	if num < 1 || denom < 1 {
+		num, denom = 1, 1
 	}
 	c := &cachedLog[T]{inner: inner, window: window, budget: budget, sizeOf: sizeOf}
 	v := &logView[T]{}
@@ -96,7 +96,7 @@ func newWindowedLog[T any](inner Log[T], window, budget, inflation int, sizeOf f
 	// state was bounded; the moment of opening was not, and a burst of opens
 	// stacked those peaks.
 	if tb, ok := inner.(tailBudgetedLog[T]); ok && (budget > 0 || window > 0) {
-		rows, total := tb.TailBudgeted(budget, window, inflation)
+		rows, total := tb.TailBudgeted(budget, window, num, denom)
 		v.rows = rows
 		v.trimmed = total - len(rows)
 		for _, e := range rows {
@@ -426,9 +426,9 @@ func (c *cachedLog[T]) residentBelow(figaroLT uint64) []Entry[T] {
 // counts records that decoded, so trimmed can only ever be an OVER-estimate,
 // which sends a read to disk that memory could have served. The opposite error
 // would report a truncated window as complete.
-func newSeededLog[T any](inner Log[T], window, budget, inflation int, sizeOf func(Entry[T]) int, seed []Entry[T]) *cachedLog[T] {
+func newSeededLog[T any](inner Log[T], window, budget, num, denom int, sizeOf func(Entry[T]) int, seed []Entry[T]) *cachedLog[T] {
 	if len(seed) == 0 || !ascending(seed) {
-		return newWindowedLog(inner, window, budget, inflation, sizeOf)
+		return newWindowedLog(inner, window, budget, num, denom, sizeOf)
 	}
 	last := seed[len(seed)-1]
 	// FINGERPRINT, CHECKED IN CODE RATHER THAN PROMISED IN A COMMENT.
@@ -440,7 +440,7 @@ func newSeededLog[T any](inner Log[T], window, budget, inflation int, sizeOf fun
 	// this is a comparison of empty strings and costs a pass.
 	for i := range seed {
 		if seed[i].Fingerprint != last.Fingerprint {
-			return newWindowedLog(inner, window, budget, inflation, sizeOf)
+			return newWindowedLog(inner, window, budget, num, denom, sizeOf)
 		}
 	}
 	probe := inner.ReadFrom(last.FigaroLT, 1)
@@ -448,10 +448,10 @@ func newSeededLog[T any](inner Log[T], window, budget, inflation int, sizeOf fun
 		probe[0].Fingerprint != last.Fingerprint ||
 		!reflect.DeepEqual(probe[0].Payload, last.Payload) {
 		// The seed does not describe this log's history. Decode instead.
-		return newWindowedLog(inner, window, budget, inflation, sizeOf)
+		return newWindowedLog(inner, window, budget, num, denom, sizeOf)
 	}
-	if inflation < 1 {
-		inflation = 1
+	if num < 1 || denom < 1 {
+		num, denom = 1, 1
 	}
 	c := &cachedLog[T]{inner: inner, window: window, budget: budget, sizeOf: sizeOf}
 	own := inner.ReadFrom(last.FigaroLT+1, 0)

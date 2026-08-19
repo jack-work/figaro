@@ -195,7 +195,7 @@ func seamRun(t *testing.T, n, recordBytes int, parentAlive, spoilSeed bool) (chi
 	// Building the parent inside a function that returns only the seed puts it
 	// in a frame that has RETURNED. There is no slot left to scan.
 	makeSeed := func() []Entry[message.Message] {
-		parent := newWindowedLog[message.Message](inner, 0, 0, irDecodeInflation, irEntrySize)
+		parent := newWindowedLog[message.Message](inner, 0, 0, irDecodeNum, irDecodeDenom, irEntrySize)
 		seed := parent.Read() // a COPY of the rows; the strings are shared
 		if parentAlive {
 			keptParent = parent // package-level, so the parent outlives this frame
@@ -217,7 +217,7 @@ func seamRun(t *testing.T, n, recordBytes int, parentAlive, spoilSeed bool) (chi
 		seed = spoiled
 	}
 
-	child := newSeededLog[message.Message](inner, 0, 0, irDecodeInflation, irEntrySize, seed)
+	child := newSeededLog[message.Message](inner, 0, 0, irDecodeNum, irDecodeDenom, irEntrySize, seed)
 	_ = child.Read() // force the child's own residency
 	seed = nil
 

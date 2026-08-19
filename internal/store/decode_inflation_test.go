@@ -74,7 +74,7 @@ func TestDecodeInflationOnRealHistory(t *testing.T) {
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].encoded > rows[j].encoded })
 
-	t.Logf("irDecodeInflation is %d; the store's own constant", irDecodeInflation)
+	t.Logf("the store's own estimate is x%.2f (%d/%d)", float64(irDecodeNum)/float64(irDecodeDenom), irDecodeNum, irDecodeDenom)
 	var sumEnc, sumRes float64
 	for i, r := range rows {
 		if i >= 8 {
@@ -123,7 +123,7 @@ func payloadBytesOf(st *XwalStore, id string) (payload, zeroEncoded int) {
 func residentCostOf(st *XwalStore, id string) uint64 {
 	build := func() *cachedLog[message.Message] {
 		inner := newXwalLog[message.Message](st, id, chanIR, true)
-		c := newWindowedLog[message.Message](inner, 0, 0, irDecodeInflation, irEntrySize)
+		c := newWindowedLog[message.Message](inner, 0, 0, irDecodeNum, irDecodeDenom, irEntrySize)
 		_ = c.Read()
 		return c
 	}
@@ -212,7 +212,7 @@ func transEncodedOf(st *XwalStore, id, provider string) (encoded, estimate, n in
 func transResidentOf(st *XwalStore, id, provider string) uint64 {
 	build := func() *cachedLog[[]json.RawMessage] {
 		inner := newXwalLog[[]json.RawMessage](st, id, transChannel(provider), false)
-		c := newWindowedLog[[]json.RawMessage](inner, 0, 0, 1, transEntrySize)
+		c := newWindowedLog[[]json.RawMessage](inner, 0, 0, 1, 1, transEntrySize)
 		_ = c.Read()
 		return c
 	}
@@ -225,4 +225,53 @@ func transResidentOf(st *XwalStore, id, provider string) uint64 {
 		return 0
 	}
 	return with - without
+}
+
+// THE ARTIFACT CHECK FOR THE CORRECTED FACTOR: what the store ESTIMATES an
+// aria's window costs, against what dropping it actually frees. Before the
+// correction this ratio was ~4.4; the estimate is only worth having if it is
+// near 1.
+func TestTheEstimateMatchesTheHeap(t *testing.T) {
+	root := os.Getenv("FIGARO_REAL_STORE")
+	if root == "" {
+		t.Skip("set FIGARO_REAL_STORE to a store root to run this instrument")
+	}
+	prev := SegmentCacheBudget()
+	SetSegmentCacheBudget(0)
+	defer SetSegmentCacheBudget(prev)
+
+	st, err := OpenXwalStore(root, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	var sumEst, sumRes float64
+	shown := 0
+	for _, id := range st.ConversationIDs() {
+		enc, n := encodedBytesOf(st, id)
+		if n < 200 || enc < 1<<20 {
+			continue
+		}
+		est := 0
+		for _, e := range newXwalLog[message.Message](st, id, chanIR, true).Read() {
+			est += irEntrySize(e)
+		}
+		res := residentCostOf(st, id)
+		sumEst += float64(est)
+		sumRes += float64(res)
+		if shown < 6 {
+			t.Logf("  %s  estimate %9d B  resident %9d B  resident/estimate x%.2f",
+				id, est, res, float64(res)/float64(est))
+			shown++
+		}
+	}
+	if sumEst == 0 {
+		t.Skip("no aria large enough")
+	}
+	ratio := sumRes / sumEst
+	t.Logf("  WEIGHTED resident/ESTIMATE = x%.2f (was ~x0.23 under the old factor of 5)", ratio)
+	if ratio < 0.5 || ratio > 1.5 {
+		t.Errorf("the store's estimate is off by more than half: x%.2f", ratio)
+	}
 }

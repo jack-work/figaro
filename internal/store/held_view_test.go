@@ -31,7 +31,7 @@ func heldLog(t *testing.T, n int) *cachedLog[string] {
 			t.Fatal(err)
 		}
 	}
-	return newWindowedLog[string](inner, 0, 0, 1, func(e Entry[string]) int { return len(e.Payload) + 48 })
+	return newWindowedLog[string](inner, 0, 0, 1, 1, func(e Entry[string]) int { return len(e.Payload) + 48 })
 }
 
 // A Read() taken before a Trim must still read correctly after it.

@@ -63,7 +63,7 @@ type Log[T any] interface {
 // implementation that cannot do it gets the read-everything-then-compact path,
 // which is correct and merely wasteful.
 type tailBudgetedLog[T any] interface {
-	TailBudgeted(budget, maxRows, inflation int) ([]Entry[T], int)
+	TailBudgeted(budget, maxRows, num, denom int) ([]Entry[T], int)
 }
 
 // tailAfterLog is the suffix read. Optional so an implementation without a

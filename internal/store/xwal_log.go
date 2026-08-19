@@ -141,7 +141,7 @@ func channelBounds(xw *xwal.XWAL, channel string) (first, last uint64, ok bool) 
 //
 // budget <= 0 and maxRows <= 0 both mean unbounded, in which case this is
 // Read with extra steps; callers should not do that.
-func (l *xwalLog[T]) TailBudgeted(budget, maxRows, inflation int) ([]Entry[T], int) {
+func (l *xwalLog[T]) TailBudgeted(budget, maxRows, num, denom int) ([]Entry[T], int) {
 	var (
 		out   []Entry[T]
 		total int
@@ -164,7 +164,7 @@ func (l *xwalLog[T]) TailBudgeted(budget, maxRows, inflation int) ([]Entry[T], i
 			}
 			// The size gate runs on the ENCODED record, before decode. Always
 			// keep at least one entry: PeekTail and the append path read it.
-			cost := len(r.Payload) * inflation
+			cost := len(r.Payload) * num / denom
 			if len(out) > 0 {
 				if budget > 0 && bytes+cost > budget {
 					break

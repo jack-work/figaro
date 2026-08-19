@@ -51,7 +51,7 @@ func windowedAria(t *testing.T, name string, n, window int) (*cachedLog[string],
 		}
 	}
 	counted := &countingLog[string]{Log: inner}
-	return newWindowedLog[string](counted, window, 0, 1,
+	return newWindowedLog[string](counted, window, 0, 1, 1,
 		func(e Entry[string]) int { return len(e.Payload) + 48 }), counted
 }
 

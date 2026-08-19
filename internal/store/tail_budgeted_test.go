@@ -54,7 +54,7 @@ func TestTailBudgeted_MatchesFullRead(t *testing.T) {
 	require.NotEmpty(t, full)
 
 	for _, maxRows := range []int{1, 5, 17, len(full), len(full) + 10} {
-		got, total := inner.TailBudgeted(0, maxRows, 1)
+		got, total := inner.TailBudgeted(0, maxRows, 1, 1)
 		assert.Equal(t, len(full), total, "total for maxRows=%d", maxRows)
 
 		want := full
@@ -80,7 +80,7 @@ func TestTailBudgeted_AscendingWithSizes(t *testing.T) {
 	be, id := realAria(t, 20, 64)
 	inner := newXwalLog[message.Message](be.Store(), id, chanIR, true)
 
-	got, _ := inner.TailBudgeted(0, 8, 1)
+	got, _ := inner.TailBudgeted(0, 8, 1, 1)
 	require.Len(t, got, 8)
 	for i := 1; i < len(got); i++ {
 		assert.Greater(t, got[i].LT, got[i-1].LT, "not ascending at %d", i)
@@ -101,19 +101,19 @@ func TestTailBudgeted_ByteBudget(t *testing.T) {
 	require.Positive(t, perEntry)
 
 	// Room for about three entries at inflation 1.
-	got, total := inner.TailBudgeted(perEntry*3+perEntry/2, 0, 1)
+	got, total := inner.TailBudgeted(perEntry*3+perEntry/2, 0, 1, 1)
 	assert.Equal(t, len(full), total)
 	assert.GreaterOrEqual(t, len(got), 3)
 	assert.LessOrEqual(t, len(got), 5, "budget kept more than it could afford")
 	assert.Equal(t, full[len(full)-1].LT, got[len(got)-1].LT, "did not keep the tail")
 
 	// A budget smaller than one entry still yields one.
-	one, _ := inner.TailBudgeted(1, 0, 1)
+	one, _ := inner.TailBudgeted(1, 0, 1, 1)
 	assert.Len(t, one, 1)
 	assert.Equal(t, full[len(full)-1].LT, one[0].LT)
 
 	// Inflation scales the gate: 5x the factor buys ~1/5 the entries.
-	inflated, _ := inner.TailBudgeted(perEntry*5, 0, 5)
+	inflated, _ := inner.TailBudgeted(perEntry*5, 0, 5, 1)
 	assert.LessOrEqual(t, len(inflated), 2, "inflation did not tighten the gate")
 }
 
@@ -124,7 +124,7 @@ func TestWindowedOverRealStore_Equivalent(t *testing.T) {
 	mk := func(window, budget int) *cachedLog[message.Message] {
 		return newWindowedLog[message.Message](
 			newXwalLog[message.Message](be.Store(), id, chanIR, true),
-			window, budget, 1, irEntrySize)
+			window, budget, 1, 1, irEntrySize)
 	}
 	full := mk(0, 0)
 	win := mk(10, 0)
@@ -170,7 +170,7 @@ func BenchmarkOpenWindowed(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				c := newWindowedLog[message.Message](
 					newXwalLog[message.Message](be.Store(), id, chanIR, true),
-					0, budget, 1, irEntrySize)
+					0, budget, 1, 1, irEntrySize)
 				if c.Len() != 2002 {
 					b.Fatalf("Len = %d", c.Len())
 				}
