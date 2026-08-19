@@ -1240,3 +1240,86 @@ reported three commit stamps that were not commits: two non-objects and
 2097152, which is 2 MiB, the segment size printed inside an error string.
 Caught on itself, before it reached me. Sixth costume of the same family
 in one evening, and the first one worn by the auditor.
+
+## THE FORK IN STEP 2, RULED: THE SIGNATURE COULD NOT EXPRESS THE MAPPING
+
+f3aa1d0b (role @980dc16c), 2026-08-18, on fd15d2a0's fork, brought BEFORE
+any line of projection.go moved.
+
+THE FORK AS POSED. (A) put the board on the accessor —
+`provider.Form` gains `SnapshotAt(version)`, and `store.EntriesWithState`
+is then called by nobody and should be deleted as speculative. (B) put the
+board on the iterator — the projection walks with `EntriesWithState`,
+which is the shape Part II ruled canonical. They conflict: under B the
+accessor method is redundant, under A the Seq2 is dead.
+
+RULED: B, WITH ITS SIGNATURE CORRECTED, AND `foldedIndex` DELETED.
+
+THE REASON, and it is the question this campaign's two falsified rulings
+both skipped — WHAT DOES EACH PART ANSWER ABOUT:
+
+    foldedIndex func(Entry[T]) uint64
+
+says THE FOLDED INDEX IS A FUNCTION OF THE ENTRY. IT IS NOT. The index
+wanted is the PREVIOUS entry's FormChannelVersion — a function of the
+ITERATION'S POSITION. fd15d2a0 found the symptom exactly (the closure must
+become stateful, resting on a call-order invariant `EntriesWithState` does
+not state and holds only by accident of writing) and proposed to pin it
+with a test. THAT TEST WOULD HAVE PINNED A WORKAROUND. The cause is one
+level up: a signature that cannot express the mapping is satisfied by
+smuggling the truth into a closure.
+
+So the accessor takes the index:
+
+    iter.Seq2[Entry[T], func(idx uint64) (S, error)]
+
+The mapping becomes visible at the call site — `get(prevFormVersion)` on
+the IR path, `get(e.LT)` for a form log iterating itself. KEPT: the memo,
+its counts, the one-segment bound, and all three accessor rules including
+"valid for its own step", whose step check is untouched. DELETED: a
+stateful closure, an unstated invariant, and the test that would have
+guarded it. COST: one signature change on an API with ZERO CALLERS — one
+commit now, nothing later.
+
+AND THE THIRD ARGUMENT AGAINST A, CHECKED RATHER THAN ARGUED: `provider.Form`
+has TWO implementations, `formView` and `librettoView` (agent.go:1198,
+1141), and the studied-form half uses `PatchesBetween` ONLY
+(projection.go:201). Under A, `librettoView` implements `SnapshotAt` to
+satisfy a type, for a caller that does not exist — fd15d2a0's own "two
+doors justified by a caller who does not exist", arriving once per
+implementation.
+
+RECORDED BECAUSE IT IS A PATTERN NOW: the executor recommended B and said
+it was not confident enough to act alone. It was right about the
+destination and right to doubt the vehicle — the discomfort it could not
+name WAS the signature. Second time tonight a worker's unease located a
+defect its argument had not yet reached.
+
+## AND THE GATE STAMP, IMPROVED BY THE ARM THAT WAS ORDERED TO BUILD IT
+
+9ed3f561, adopted by f3aa1d0b the same hour. My ruling above specified a
+stamp at gate start. INSUFFICIENT: a full gate runs for minutes, and an
+executor who edits during it produces a log that is STAMPED, GREEN AND
+LYING — the failure the stamp exists to prevent, wearing the stamp's own
+clothes.
+
+    THE STAMP IS WRITTEN TWICE, BEGIN AND END, AND THEY MUST AGREE ON HEAD
+    AND ON THE DIRTY COUNT. A tree that moved mid-run is REFUSED, not
+    believed.
+
+AND: INADMISSIBLE AS EVIDENCE IS NOT USELESS. The eight unstamped logs are
+KEPT. They are how the arm located which canary produced which red line,
+and they are the only red corpus we have — which paid for itself
+immediately by being refused eight times out of eight, each refusal clause
+carrying its own canary. What they may not do is support a claim about a
+tree.
+
+THE SCRIPTS LIVE IN THE REPO, TRACKED, authored by the measurement arm and
+RUN by the executor, who may not edit them. Not because scratch is untidy:
+BECAUSE AN INSTRUMENT IN THE TREE IT GATES STAMPS ITSELF. The log records
+HEAD and the dirty count of the tree under test, so a changed gate script
+changes them and the log says so. Invoked from /var/tmp, the log names the
+tree under test but NOT THE VERSION OF THE INSTRUMENT THAT PRODUCED IT —
+an unstamped gate one level up. And /var/tmp is what the cleanup contract
+deletes, which would leave the next bearer an instrument that was never
+committed and no record that it existed.
