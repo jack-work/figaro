@@ -51,10 +51,10 @@ func BenchmarkStreamedInputServerToClient(b *testing.B) {
 		srv.Subscribe(func(p Page) { cli.Apply(p) })
 		srv.OpenTurn(1)
 		for _, f := range frames {
-			srv.Update([]livedoc.Node{{
+			srv.Update(nil, []livedoc.Node{{
 				Type: livedoc.NodeTool, ID: "t1", ToolCallID: "t1",
 				Name: "write", Status: livedoc.StatusRunning, Input: f,
-			}})
+			}}, 0)
 		}
 	}
 }
@@ -80,10 +80,10 @@ func TestStreamedInputWireBytesStayProportional(t *testing.T) {
 	})
 	srv.OpenTurn(1)
 	for _, f := range frames {
-		srv.Update([]livedoc.Node{{
+		srv.Update(nil, []livedoc.Node{{
 			Type: livedoc.NodeTool, ID: "t1", ToolCallID: "t1",
 			Name: "write", Status: livedoc.StatusRunning, Input: f,
-		}})
+		}}, 0)
 	}
 
 	// Every byte typed crosses once, plus per-frame envelope. Whole-value sets

@@ -29,7 +29,7 @@ func TestAbandon_DropsOpenWithoutFolding(t *testing.T) {
 	s.Subscribe(func(p Page) { frames = append(frames, p) })
 
 	s.OpenTurn(1)
-	s.Update([]livedoc.Node{{Type: livedoc.NodeProse, Markdown: "partial thinking"}})
+	s.Update(nil, []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "partial thinking"}}, 0)
 	before := contentParts(frames)
 
 	s.Abandon()
@@ -50,7 +50,7 @@ func TestAbandon_DropsOpenWithoutFolding(t *testing.T) {
 
 	// A fresh turn still folds and seals normally.
 	s.OpenTurn(2)
-	s.Update([]livedoc.Node{{Type: livedoc.NodeProse, Markdown: "real answer"}})
+	s.Update(nil, []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "real answer"}}, 0)
 	s.Close()
 	s.Seal(nil)
 

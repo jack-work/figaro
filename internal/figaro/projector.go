@@ -37,8 +37,10 @@ type Projector interface {
 
 	// Nodes projects the open streaming region. tails carries the governor's
 	// per-tool output tails, argPartials the still-truncated tool_use argument
-	// JSON keyed by tool_call_id.
-	Nodes(msgs []message.Message, tails, argPartials map[string]string) []livedoc.Node
+	// JSON keyed by tool_call_id. The second return is the count of leading
+	// nodes identical to those of the previous call, and the returned slice is
+	// not mutated afterwards.
+	Nodes(msgs []message.Message, tails, argPartials map[string]string) (prefix, suffix []livedoc.Node, stable int)
 
 	// ResetTools clears per-turn tool timing state.
 	ResetTools()
@@ -68,9 +70,9 @@ func (a *Agent) projInquirySegments(m message.Message) []aria.InquirySegment {
 }
 
 // projNodes is the nil-safe form of Projector.Nodes.
-func (a *Agent) projNodes(msgs []message.Message, tails, argPartials map[string]string) []livedoc.Node {
+func (a *Agent) projNodes(msgs []message.Message, tails, argPartials map[string]string) (prefix, suffix []livedoc.Node, stable int) {
 	if a.proj == nil {
-		return nil
+		return nil, nil, 0
 	}
 	return a.proj.Nodes(msgs, tails, argPartials)
 }
@@ -96,6 +98,23 @@ func (a *Agent) attachFormDeltas(turns []aria.Turn, entries []store.Entry[messag
 	return turns
 }
 
+// attachFormDeltasFrom is attachFormDeltas for a SUFFIX of the entries: the
+// per-record form cursor is seeded from the record before the suffix, exactly
+// as turnSource does for a recomposed bracket. Without the seed the spliced
+// turns would carry different deltas from the wholesale ones, which the
+// equivalence oracle in seed_turns_test.go would catch.
+func (a *Agent) attachFormDeltasFrom(turns []aria.Turn, entries []store.Entry[message.Message], at int) {
+	fb, ok := a.backend.(formdelta.Backend)
+	if !ok || len(turns) == 0 || at >= len(entries) {
+		return
+	}
+	seed := formdelta.Seed{}
+	if at > 0 {
+		seed = formdelta.SeedFrom(entries[at-1])
+	}
+	formdelta.Attach(turns, formdelta.PerRecordFrom(fb, a.id, seed, entries[at:]))
+}
+
 // materializeTurns is the one walk behind every sealed-turn
 // materialization: read the log once, compose, attach the form deltas.
 func (a *Agent) materializeTurns() []aria.Turn {
@@ -103,7 +122,7 @@ func (a *Agent) materializeTurns() []aria.Turn {
 		return nil
 	}
 	entries := a.figLog.Read()
-	return a.attachFormDeltas(a.projTurns(unwrapMessages(entries)), entries)
+	return a.composeSealedTurns(entries)
 }
 
 // turnSource is the agent's half of the turn cache's recompose-on-miss:

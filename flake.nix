@@ -25,6 +25,10 @@
       });
     in
     {
+      # benchstat is NOT in nixpkgs, so it is built here rather than assumed
+      # to be on somebody's PATH. It parses the documented Go benchmark
+      # format; hand-rolled positional parsing of that output is what
+      # produced this campaign's worst instrument failure.
       overlays.default = final: prev: {
         figaro = final.buildGoModule rec {
           pname = "figaro";
@@ -109,6 +113,27 @@
 
       devShells = forAllSystems ({ pkgs }: let
         figaroPkg = self.packages.${pkgs.system}.default;
+
+        # benchstat is NOT in nixpkgs, so it is BUILT here rather than
+        # assumed to be on somebody's PATH. It parses the DOCUMENTED Go
+        # benchmark format, with named units; hand-rolled positional parsing
+        # of that output produced this campaign's worst instrument failure --
+        # b.ReportMetric shifts every column after it, so awk reading "field
+        # 5" silently compared a hardcoded metric value against itself across
+        # a sabotage and reported a clean result. A wrong number survives
+        # every check a missing number fails.
+        benchstatPkg = pkgs.buildGoModule {
+          pname = "benchstat";
+          version = "0.0-x-perf";
+          src = pkgs.fetchFromGitHub {
+            owner = "golang";
+            repo = "perf";
+            rev = "fd4a688df89207abdabe0a0cf5b2cd9ccfd376d2";
+            hash = "sha256-YgMIIF9DAjyAPpZJtVoOKSatNhRPg/nPOYr0P06Fi5s=";
+          };
+          vendorHash = "sha256-AZx9tPzsPvjc5kpmiBa6eYKtrw0hczYi0sbcd/lkiiA=";
+          subPackages = [ "cmd/benchstat" ];
+        };
 
         # Each override knob is an attribute on a profile. A null
         # value means "inherit from the real user environment": the
@@ -226,6 +251,13 @@
           inherit name;
           buildInputs = with pkgs; [
             go gopls gotools
+            # benchstat parses the DOCUMENTED Go benchmark format (named
+            # units), which a positional parser does not. b.ReportMetric
+            # shifts every column after it, so awk reading "field 5" silently
+            # read a hardcoded metric value as B/op and compared it against
+            # itself across a sabotage -- a stable, reproducible, plausible
+            # WRONG NUMBER. Never hand-roll this parse.
+            benchstatPkg
           ] ++ [ figaroPkg ];
 
           shellHook = ''
@@ -418,7 +450,7 @@
         # vendorHash, and go back to a real shell.
         tools = pkgs.mkShell {
           name = "figaro-tools";
-          buildInputs = with pkgs; [ go gopls gotools git ];
+          buildInputs = with pkgs; [ go gopls gotools git ] ++ [ benchstatPkg ];
           shellHook = "echo '[figaro-dev:tools] toolchain only (no figaro build); for go get / go mod tidy / vendorHash bumps'";
         };
 

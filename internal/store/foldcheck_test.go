@@ -43,7 +43,7 @@ func TestColdOpenVersusFold(t *testing.T) {
 		replay := time.Since(start)
 
 		// The fold figwal already holds: the watermark at the tail.
-		xw, err := be.store.OpenNode(id)
+		xw, err := be.store.openNode(id)
 		if err != nil {
 			t.Fatal(err)
 		}

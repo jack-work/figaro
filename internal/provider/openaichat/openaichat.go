@@ -331,20 +331,12 @@ func (p *Provider) encode(msg message.Message, prevSnapshot form.Snapshot) ([]js
 // renderPatches turns form patches into reminder text. One string per
 // patched key, in the order the patches arrived.
 func (p *Provider) renderPatches(patches []message.Patch, snap form.Snapshot) []string {
-	if len(patches) == 0 || p.Templates == nil {
-		return nil
-	}
 	var out []string
-	for _, patch := range patches {
-		rendered, err := form.Render(patch, snap, p.Templates)
-		if err != nil {
-			slog.Warn("openaichat: render patch", "err", err)
-		}
-		for _, r := range rendered {
+	form.FoldRender(snap, patches, p.Templates,
+		func(r form.RenderedEntry) {
 			out = append(out, fmt.Sprintf("<system-reminder name=%q>\n%s\n</system-reminder>", r.Key, r.Body))
-		}
-		snap = snap.Apply(patch)
-	}
+		},
+		func(err error) { slog.Warn("openaichat: render patch", "err", err) })
 	return out
 }
 

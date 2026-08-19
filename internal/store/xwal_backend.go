@@ -176,15 +176,16 @@ func (b *XwalBackend) handleLocked(id string) (*ariaHandle, error) {
 	}
 	// Sanity-open once at handle creation to fail fast if the aria is
 	// unknown; the underlying xwal is closed immediately after.
-	xw, err := b.store.OpenNode(id)
+	xw, err := b.store.openNode(id)
 	if err != nil {
 		return nil, err
 	}
 	_ = xw.Close()
 	h := &ariaHandle{
-		ir: newWindowedLog[message.Message](
+		ir: newSeededLog[message.Message](
 			newXwalLog[message.Message](b.store, id, chanIR, true),
-			b.irWindow, b.irBudget, irDecodeInflation, irEntrySize),
+			b.irWindow, b.irBudget, irDecodeInflation, irEntrySize,
+			b.seedRowsLocked(id)),
 		trans: map[string]*cachedLog[[]json.RawMessage]{},
 	}
 	b.open[id] = h
@@ -241,9 +242,12 @@ func (b *XwalBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.R
 	budget := b.transBudget
 	b.mu.Unlock()
 	ch := transChannel(providerName)
-	c := newWindowedLog[[]json.RawMessage](
+	b.mu.Lock()
+	seed := b.seedTransRowsLocked(ariaID, providerName)
+	b.mu.Unlock()
+	c := newSeededLog[[]json.RawMessage](
 		newXwalLog[[]json.RawMessage](b.store, ariaID, ch, false),
-		0, budget, 1, transEntrySize)
+		0, budget, 1, transEntrySize, seed)
 	b.mu.Lock()
 	if existing := h.trans[providerName]; existing != nil {
 		b.mu.Unlock()
@@ -1211,4 +1215,76 @@ func (b *XwalBackend) wroteTo(ariaID string, at int64) {
 // SetObservedForms delegates the observed set: see XwalStore.
 func (b *XwalBackend) SetObservedForms(ariaID string, formIDs []string) {
 	b.store.SetObservedForms(ariaID, formIDs)
+}
+
+// seedRowsLocked offers a newly opened aria the resident prefix its nearest
+// OPEN ancestor already decoded. Caller holds b.mu.
+//
+// Phase 3's measurement: two forks of one trunk decode the shared prefix
+// separately and mint strings the parent holds, proven by pointer identity.
+// The ancestor's rows below the child's fork base ARE that prefix, and a
+// shallow copy shares them. Nothing is retained here that the ancestor was not
+// already retaining -- the child holds slice headers onto the same strings --
+// so this shares residency rather than adding it.
+//
+// Nil is always a legal answer: no lineage, no open ancestor, or an ancestor
+// whose window no longer reaches the base. The caller then decodes, as before.
+func (b *XwalBackend) seedRowsLocked(id string) []Entry[message.Message] {
+	refs := b.store.Lineage(id)
+	if len(refs) < 2 {
+		return nil // a root owns everything; there is no donated prefix
+	}
+	base := refs[len(refs)-1].Base
+	if base == 0 {
+		return nil
+	}
+	// Nearest ancestor first: it holds the longest shared prefix.
+	for i := len(refs) - 2; i >= 0; i-- {
+		h := b.open[refs[i].Node]
+		if h == nil || h.ir == nil {
+			continue
+		}
+		if rows := h.ir.residentBelow(base); len(rows) > 0 {
+			return rows
+		}
+	}
+	return nil
+}
+
+// seedTransRowsLocked is seedRowsLocked for a TRANSLATION namespace: the
+// resident rows the nearest open ancestor holds for the SAME provider, below
+// the child's fork base. Caller holds b.mu.
+//
+// The provider round-trips were already shared -- the translation log rides
+// xwal's fork base, so a child reads its ancestor's durable records without
+// re-translating anything. What was duplicated is the DECODE, exactly as it
+// was for the fig IR before the seed landed there.
+//
+// NAMESPACE IS STRUCTURAL, NOT A CHECK: the ancestor's handle is looked up by
+// the same providerName key the caller asked for, so a cross-namespace
+// donation cannot be constructed here. The fingerprint, which is not
+// structural, is verified inside newSeededLog.
+func (b *XwalBackend) seedTransRowsLocked(id, providerName string) []Entry[[]json.RawMessage] {
+	refs := b.store.Lineage(id)
+	if len(refs) < 2 {
+		return nil
+	}
+	base := refs[len(refs)-1].Base
+	if base == 0 {
+		return nil
+	}
+	for i := len(refs) - 2; i >= 0; i-- {
+		h := b.open[refs[i].Node]
+		if h == nil {
+			continue
+		}
+		c := h.trans[providerName]
+		if c == nil {
+			continue
+		}
+		if rows := c.residentBelow(base); len(rows) > 0 {
+			return rows
+		}
+	}
+	return nil
 }

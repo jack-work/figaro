@@ -59,7 +59,7 @@ func channelLast(tb testing.TB, root, conv, name string) (uint64, bool) {
 		tb.Fatal(err)
 	}
 	defer s.trunks.Close()
-	x, err := s.OpenNode(conv)
+	x, err := s.openNode(conv)
 	if err != nil {
 		tb.Fatal(err)
 	}

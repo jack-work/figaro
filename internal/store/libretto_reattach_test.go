@@ -27,7 +27,7 @@ func TestLibrettoFollowsAgainAfterARestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := be.StudyForm(watcher, sourceID); err != nil {
+	if _, err := be.StudyForm(watcher, sourceID); err != nil {
 		t.Fatal(err)
 	}
 	be.Close()

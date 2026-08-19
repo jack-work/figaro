@@ -1,0 +1,805 @@
+# STANDING GOAL, GLUCK, 2026-08-19: REDUCE THE MUTEXES
+
+His words: "your goal should be to reduce the mutexes. There are far too
+many, and for reasons that arent legitimate, or are seemingly legitimate,
+but by tight adherence to my principles they will reveal either poorly
+designed dependencies or poorly followed rules. be on the lookout for
+spurious locking, even where it appears valuable. it often is not, below
+the surface."
+
+## THE BASELINE, MEASURED SO THE GOAL IS CHECKABLE
+
+83 `sync.Mutex`/`sync.RWMutex` declarations in non-test code, against 11
+files using `atomic.Pointer`. By package:
+
+    store 31 · cli 10 · tool 8 · provider 7 · angelus 7 · figaro 4
+    outfit 3 · otel 3 · livelog 3 · render 2 · actor 2
+    wirelog 1 · tape 1 · logring 1
+
+THE STORE HOLDS 31 OF 83. That is the layer this consolidation is already
+rewriting, so it is where the goal is testable rather than aspirational.
+
+## WHY THIS IS NOT A STYLE PREFERENCE, EVIDENCED TWICE TONIGHT
+
+    THE TREE CACHE'S MUTEX IS WHY TWO CACHE SHAPES COEXISTED. Measured
+    2026-08-15 and recorded in plans/log-cache-policy.md: `Range` costs
+    1218 ns/op under 16 readers where the atomic-pointer view costs 516,
+    AND THE SIGN FLIPS -- it degrades as readers are added. That gap is the
+    entire reason the policy carved out "LRU owns the cold ranges, never
+    the hot tail", which is the compromise that left the flat cache
+    standing. Remove the lock and the carve-out has no reason to exist.
+
+    AND A LOCK ON THE WRONG SIDE IS A DEADLOCK, NOT A SLOWDOWN.
+    docs/store/tree.md: a consumer calling Put under its own write lock can
+    have eviction pick one of its own runs, so the hook runs with that lock
+    held; a hook that needs the lock DEADLOCKS, "and only under budget
+    pressure with concurrent readers, WHICH IS THE SHAPE THAT REACHES
+    PRODUCTION FIRST."
+
+So on this path the lock-free requirement is not chosen for speed. It is
+forced, and the speed is a consequence.
+
+## THE STANDING TEST FOR A LOCK
+
+A mutex must answer: WHAT INVARIANT SPANS THE CRITICAL SECTION THAT COULD
+NOT BE PUBLISHED AS ONE IMMUTABLE VALUE? Where the answer is "none", the
+lock is protecting a mutation that should have been a replacement, and the
+codebase's own faster component already shows the alternative --
+`cachedLog` publishes `atomic.Pointer[logView]` and readers never block.
+
+SUSPECT, in Gluck's words, EVEN WHERE IT APPEARS VALUABLE: a lock taken
+around a read; a lock protecting a map that is written once and read
+forever; a lock whose critical section calls out into a hook, a callback or
+an interface method (the deadlock shape above); and a lock that exists
+because work was moved OFF a serialized loop and optimism was substituted
+for serialization.
+
+# COMMUNICATION AND COMPLEXITY RULES, GLUCK, 2026-08-18
+
+## 1. STANDARD TERMINOLOGY, NOT PROJECT SLOGANS
+
+Use established computer science terms even where they differ from the
+identifiers in this codebase. Say cache invalidation, residency, eviction
+policy, LRU, working set, memoization, zero-copy, serialization,
+asymptotic complexity, call graph, static analysis, lifetime, buffer.
+
+Do not use coined phrases as if they were technical vocabulary. A slogan
+compresses a finding for people who were present when it was found and is
+opaque to everyone else, which makes a document readable only by its
+authors. Findings go in plain sentences; the aphorism, if it is worth
+keeping at all, goes in a note.
+
+## 2. STANDING WATCH FOR EVERY FIGARO
+
+Every aria watches for redundant mechanisms, duplicated caches, and
+accretion of layers over the same data. This is not one campaign's task.
+
+## 3. COMPLEXITY IS NOT SPENT WITHOUT APPROVAL
+
+Do not trade asymptotic complexity for structural cleanliness. If a
+consolidation would replace a constant-time operation with a linear one,
+or a linear operation with a quadratic one -- including by making a rescan
+necessary where a memoized result was previously available -- THAT NEEDS
+GLUCK'S APPROVAL BEFORE IT LANDS.
+
+State it as a complexity change with the operation named, not as a
+benchmark result: "assembling a request body becomes O(n) in conversation
+length because the memoized prefix is gone" is the report. Whether it is
+also slower in wall-clock time is a separate question and does not replace
+this one.
+
+## 4. HOW TO HANDLE ACCUMULATED APPROVALS
+
+Work as far as possible without blocking. When a question needs his
+approval, record it and keep going on unaffected work. IF THE PENDING
+QUESTIONS ACCUMULATE TO THE POINT THAT CONTINUING WOULD PREJUDGE THEM,
+HALT ALL AFFECTED WORK AND WAIT rather than choosing the answer by
+building past it.
+
+The failure this prevents is deciding an open question implicitly, by
+having already built the thing that assumes one answer.
+
+---
+
+# FIRM RULE, GLUCK, 2026-08-18: DELETION IS THE DEFAULT
+
+Given the hour after the block below, when the role bearer under-counted a
+consolidation by costing each layer as what it would BECOME rather than as
+deleted -- which is the accretion's own assumption, applied by the person
+whose job is to catch it.
+
+    EXISTING CODE DOES NOT SURVIVE IN A REDUCED FORM. Break whatever you
+    need. NO ARIAS ARE SACRED. Consolidation and cache-code removal is
+    IDEAL.
+
+    ANY LARGE DATA STRUCTURE NEEDS GLUCK'S APPROVAL BEFORE IT IS ADDED.
+
+    AND ANY EXISTING LARGE DATA STRUCTURE MADE PARTIALLY OBSOLETE NEEDS HIS
+    EXPLICIT APPROVAL BEFORE IT IS **RETAINED**. DELETING IS THE DEFAULT.
+    Keeping it is the thing that requires permission.
+
+    IF EXISTING ARIAS CANNOT BE LOADED, THEY ARE TAINTED AND REMOVED FROM
+    THE TEST SET. Serialized data on disk does not constrain the design.
+
+    BAD TESTS ARE REMOVED OUTRIGHT AND NOT REPLACED.
+
+    INLINE EXPLANATIONS ARE PURGED AT ALL COSTS.
+
+## WHY THE INVERSION MATTERS MORE THAN THE PERMISSION
+
+The usual shape is that DELETING needs justification and KEEPING is free.
+That default is what let three honest measurements leave two cache shapes
+standing: nobody ever had to argue FOR the second one. Under this rule the
+burden moves, and a layer survives only because someone made a case for it
+to a person who can say no.
+
+## AND THE LAST CLAUSE IS NOT A STYLE PREFERENCE
+
+Purging inline explanations is the same finding this campaign proved three
+times in one night, from three directions: a comment claiming a cursor was
+"built after the span is chosen" that was false when written; a comment
+promising a scan was "off the hot path" for ELEVEN MINOR VERSIONS after the
+figwal function it named had been deleted; and a test named
+PreservesPrefixBytes that asserted an ADDRESS.
+
+    A COMMENT IS A CLAIM NOBODY TESTS. A LABEL IS NOT UNDER TEST AND EVERY
+    READER TREATS IT AS IF IT WERE.
+
+An explanation that cannot go red is a liability that accrues interest. What
+survives the purge is what an instrument can assert; what does not survive
+belongs in a plan or a note, where it is dated, attributed, and known to be
+prose.
+
+---
+
+# STANDING BLOCK, GLUCK, 2026-08-18: ONE UNIFORM LAYER, AND A REGRESSION
+# IS HIS CONCERN AND NOT A REASON TO STOP
+
+READ THIS BEFORE ANY MEASUREMENT, ANY RULING, AND ANY CODE. It is a
+STANDING ORDER, not a preference, and it overrides the pattern that
+produced the accretion described further down this file.
+
+    "I REFUSE TO BELIEVE THAT THE TREE SHAPED CACHE DEMANDS A REGRESSION.
+    If any figaro finds that the tree shaped cache must be REJECTED due to
+    a regression, IT IS MY CONCERN. RAISE IT TO ME AND I WILL HELP YOU
+    ENGINEER AROUND IT. DO NOT PROCEED AROUND THIS BLOCK. HALT ALL WORK IF
+    CONVERGING ALL THESE LAYERS INTO A SINGLE UNIFORM LAYER IS VIOLATED.
+    I WILL APPROVE EVERY INSTANCE OF IT."          -- Gluck, verbatim
+
+## WHAT TRIGGERS IT, STATED SO IT CANNOT BE READ NARROWLY
+
+The block fires when ANY of these is about to happen:
+
+  - a layer is EXEMPTED from the single tree-shaped cache, for any reason;
+  - the tree-shaped shape is REJECTED or DEFERRED for a layer because a
+    measurement shows a regression, a cost, or "no benefit here";
+  - a SECOND residency policy, window, budget, eviction rule or seeding
+    path is introduced or PRESERVED beside the canonical one;
+  - or convergence is quietly descoped to "the layers where it helps".
+
+IN EVERY ONE OF THOSE CASES: STOP. DO NOT DESIGN AROUND IT. DO NOT PICK
+THE LOCALLY CHEAPER ROUTE. RAISE IT TO GLUCK AND WAIT. He has said he will
+approve every instance and will help engineer past the regression.
+
+## WHY THIS ORDER EXISTS, WHICH IS THE ONLY WAY IT SURVIVES CONTACT
+
+THE ACCRETION BELOW WAS NOT A DECISION. It was a GLOBAL decision about
+SEAM COHERENCE, re-litigated LOCALLY, layer by layer, against a NARROWER
+QUESTION -- "does THIS layer benefit?" -- and it lost every time. Each
+declination was correct on the question it asked. NONE OF THEM COULD SEE
+WHAT THE DECISION WAS ABOUT, because a per-layer benefit test cannot
+measure a cost that exists only BETWEEN layers.
+
+    A REGRESSION MEASURED IN ONE LAYER IS EXACTLY THE EVIDENCE THAT
+    PRODUCED THE ACCRETION. IT IS THEREFORE NOT ADMISSIBLE AS A REASON TO
+    EXEMPT THAT LAYER. IT IS A REASON TO RAISE IT.
+
+That is the whole of it. The measurements were honest, the arithmetic was
+right, and the outcome was two shapes over one structure -- which cost,
+demonstrably: a header pairing wrong at 14 of 29 indices below a fork
+base, a donation that cannot name the ancestor state it reflects, and a
+walk that materialises a whole channel when the window has trimmed.
+
+## AND THE OBLIGATION THAT COMES WITH IT
+
+When you raise it, raise it with THE NUMBER AND THE MECHANISM, not with a
+verdict: what regressed, measured how, on what fixture, and WHY the tree
+shape causes it. Gluck is not asking to be shielded from bad news; he is
+refusing to let bad news be spent, unilaterally, on an exemption.
+
+---
+
+# The tree-shaped log: opening the design
+
+STATUS: DISCUSSION, NOT A DESIGN. Opened by Gluck 2026-08-18 ~23:00 with
+"halt all ongoing work... the log must be tree-shaped. we need to engineer
+more." Recorded by f3aa1d0b (role @980dc16c). Nothing here is ruled.
+
+All stage-2 work is HALTED and LANDED, not reverted: feat/delta-seam at
+8fe7b895 (gate ADMISSIBLE at eeec2bc0), the cast fix and the openNode
+unexport merged on feat/layered-cache. Three workers stood down, clean
+trees, instruments preserved.
+
+## WHAT ALREADY EXISTS, READ RATHER THAN ASSUMED
+
+THE SHAPE IS BUILT AND SHIPPED. `figwal/forest.Cache[U]` — runs, LRU by
+epoch, an index that survives eviction, rematerialize on miss, one shared
+byte Budget. ITS FIRST TENANT, THE SEGMENT PAYLOAD CACHE, SHIPPED IN
+v0.18.0, which is the version figaro pins. The tree-shaped range cache is
+not a proposal; it is a dependency we already run on.
+
+THE POLICY IS DECIDED AND RECORDED: `plans/log-cache-policy.md` on main,
+Gluck 2026-08-15 — "One cache shape for every tree-shaped log", LRU over
+ranges rather than a tail window, because where a log is never paged
+backward LRU costs nothing extra and where it IS paged backward a tail
+window re-decodes every hop. ONE SHAPE SERVES BOTH; TWO SHAPES SERVE ONE
+EACH AND DISAGREE AT THE SEAM.
+
+THE UPTAKE WAS ATTEMPTED AND PARTIALLY DECLINED, ON MEASUREMENT. Branch
+`phase/forest-uptake`: "the decoded layer does not need forest — phase 3 is
+a seed, not a re-seat"; "the composed layer does not need forest either —
+phase 4 is a seed too." THE JUSTIFICATION THAT COLLAPSED WAS FORK-SHARING;
+a one-shot seed sufficed. The policy's own gate was left UNMADE: a
+realistic scroll/hop pattern counting fall-throughs below the window, i.e.
+prove LOCALITY, which the note itself calls the better justification.
+
+WHAT FIGARO HAS TODAY INSTEAD: `cachedLog`, one per (aria, channel), a
+FLAT TAIL WINDOW with a byte budget, plus `newSeededLog` — an ancestor
+DONATES its resident rows below the child's fork base, once, at open. The
+bytes are shared; the structure is not.
+
+## WHAT CHANGED TONIGHT, WHICH IS WHY THIS REOPENS
+
+  1. THE PROJECTION IS DELETED. The translation cache is now read IN FULL,
+     EVERY TURN, by every open aria. It moved from a side structure to the
+     hot path, and the access pattern that declined forest is not the
+     access pattern we now have.
+  2. GLUCK'S CAPITAL PRIORITY: the accumulator takes a LITERAL SLICE over a
+     RANGE. That asks storage for exactly one thing — contiguous canonical
+     bytes addressable by range — which is what forest.Cache's RUNS are.
+  3. FORKS MAKE A RANGE SEVERAL RUNS, not as an elegance but because a
+     child's prefix genuinely lives in its parent.
+
+## TWO PRINCIPLES CONTRIBUTED BEFORE ANY DESIGN, BOTH EARNED TONIGHT
+
+FROM 6ec565b5, who fixed the mirror race and read the fallback:
+
+  A CACHED NODE MUST CARRY THE COORDINATE OF THE ANCESTOR STATE IT
+  REFLECTS. Tonight's mirror bug was a FLAT in-memory copy of a DURABLE
+  structure that had gained a second writer, and the fix was NOT to
+  synchronise the copy harder but to make it carry the durable ORDER — the
+  version its write landed at — so a stale value could be REFUSED rather
+  than merely serialised. `newSeededLog` is the same silhouette one level
+  up: a flat copy of a forest, correct at the instant taken, WITH NO
+  CARRIED COORDINATE THAT DISTINGUISHES A CURRENT DONATION FROM A
+  SUPERSEDED ONE. So the residency question is not "when do we re-donate"
+  but "what does a node carry that says WHICH ancestor state it reflects".
+  The defect was invisible precisely where a copy could not name the thing
+  it copied.
+
+  THE FIGWAL CLAIMS BELONG IN ONE PLACE. `xwalLog.Lookup`'s comment named
+  `buildFK`, a figwal function GONE FOR ELEVEN MINOR VERSIONS, and nothing
+  in our tree could go red about it. A TREE-SHAPED CACHE MULTIPLIES THE
+  CLAIMS WE MAKE ABOUT FIGWAL'S SHAPE — fork bases, parent chains, what
+  ScanFromEnd traverses — AND EVERY ONE IS A CLAIM ABOUT A DEPENDENCY WE
+  BUMP. The design must state which figwal properties it depends on, in one
+  place, SO THAT THE NEXT BUMP HAS SOMETHING TO BREAK instead of a comment
+  to quietly falsify.
+
+## THE OPEN QUESTION PUT TO GLUCK, UNANSWERED AT TIME OF WRITING
+
+One cache shape everywhere, or forest where the range access is REAL (the
+translation log, now read whole every turn and paged backward on scroll)
+and seeds where measurement already put them (decoded, composed)?
+
+## AND THE PROPERTY ANY ANSWER MUST KEEP
+
+`newSeededLog` DEGRADES TO A MISS, NEVER TO A LIE: every doubt — an empty
+seed, a non-ascending one, a seam that does not match — falls back to the
+ordinary decoding constructor, and it verifies the seam by reading the last
+seeded record back out of the log and comparing. A cache tree must keep
+that, because A WRONG LINEAGE LINK SERVES ANOTHER ARIA'S HISTORY AS YOUR
+OWN, and no value oracle on a single-lineage fixture can see it.
+
+## THE TWO HALT PARAGRAPHS, WHICH ARE THE REAL DESIGN INPUT
+
+Both arrived unprompted, in answer to "what would be lost if you were
+replaced". Both reach the same conclusion from opposite ends.
+
+### THE DELETION TRADED PINNING FOR MATERIALISING (fd15d2a0)
+
+    THE JOIN ITERATES THE CACHE WITH `store.Entries(cache, Span{})`, AND
+    THAT DOES NOT STREAM. `spanSlice` resolves a whole-log span to
+    `Read()`, and `cachedLog.Read()` FALLS THROUGH TO `inner.Read()`
+    WHENEVER ANYTHING HAS BEEN TRIMMED. The IR side does the same through
+    `TailAfter(0)`.
+
+So on an aria whose window has evicted, ONE TURN MATERIALISES THE ENTIRE
+TRANSLATION CHANNEL FROM DISK. Unmeasured, and NO INSTRUMENT IN THE TREE
+WOULD NOTICE — the registered counts are entries HANDED, which is the same
+number either way.
+
+    THE DELETION TRADED A PROJECTION THAT PINNED BYTES FOR A WALK THAT
+    MATERIALISES THEM. THE ONLY THING THAT MAKES THAT A BETTER TRADE IS
+    THAT THE WINDOW IS ALLOWED TO EVICT AFTERWARDS.
+
+Part II is not violated — "accessing a span brings those entries into
+memory, where they live until eviction" is the design as written. But it
+means RESIDENCY POLICY IS THE WHOLE BALLGAME, which is the tree-shape
+question in different clothes.
+
+THE CONCRETE PIECE: `cachedLog` DOES NOT IMPLEMENT `spanReader`, so nothing
+anywhere streams a span natively. Giving it one would make the join
+genuinely forward-only and would be the first caller that benefits.
+
+### AND THE FAILURE MODE IS ALREADY DEMONSTRATED, IN MINIATURE (fd15d2a0)
+
+figwal's `HeaderAt` WALKS THE PARENT CHAIN; `SegmentBaseIndexes` DOES NOT.
+Pairing them yields WRONG STATE AT 14 OF 29 INDICES BELOW A FORK BASE and
+is CORRECT AT EVERY INDEX AT OR ABOVE IT — which is why `SegmentHeaderAt`
+had to become ONE call, and why A SINGLE-LINEAGE TEST FINDS NOTHING.
+
+    THAT IS THE FLAT-STRUCTURE-OVER-A-FOREST DEFECT, ALREADY PROVEN ONCE,
+    WITH A PASSING TEST SUITE.
+
+FIRST HAZARD TEST OF ANY TREE-SHAPED CACHE, and the shape to copy is
+figwal's own `TestHeaderFold_AcrossAForkTheNaivePairingIsWrong`: build a
+fork, and ASSERT BELOW THE FORK BASE, because everything at or above it
+agrees whatever you do.
+
+### THE RESIDENCY QUESTION BECOMES A SHARING QUESTION (9ed3f561)
+
+The heap witness is 1.19x on a `[]json.RawMessage` state; the
+decoded-struct providers are unmeasured and will be larger. AND UNDER A
+TREE THE QUESTION CHANGES:
+
+    NOT "how much does one projection retain" BUT "how much is SHARED
+    between a parent and its forks, and what does a fork's residency cost
+    that its parent has already paid".
+
+Today a fork's retention is bounded by ONE donation at open. A tree makes
+sharing structural and continuous, and A HEAP DELTA ON ONE LIVE PROJECTION
+MEASURES A TOTAL, NOT AN OVERLAP.
+
+WHAT ANSWERS IT, and the method already exists: the same keep-versus-drop
+delta, taken with PARENT-ALIVE and PARENT-DROPPED on the SAME fixture —
+applied across the FORK SEAM rather than across one object's lifetime.
+
+    BUILD IT BEFORE THE POLICY IS CHOSEN, NOT AFTER. It is bytes, so it
+    ignores load. AND IF THE SHARING IS ALREADY FREE, A TREE-SHAPED CACHE
+    BUYS CORRECTNESS AND STRUCTURE RATHER THAN MEMORY — WHICH IS A
+    DIFFERENT JUSTIFICATION, AND IT MUST BE WRITTEN DOWN AS THAT ONE.
+
+## AND A PRACTICE THE BLOCK PRODUCED WITHIN THE HOUR: CLASSIFY YOUR OWN
+## EVIDENCE BEFORE IT CAN BE SPENT
+
+fd15d2a0, unprompted, on receiving the standing block. Its own closing
+report had just described a real cost — a turn on an evicted aria
+materialises whole channels, because a span read falls through once
+anything has trimmed — and it came back to say, in its own hand and before
+anyone could build on it:
+
+    THAT IS A COST, IN ONE LAYER, MEASURED NOWHERE. UNDER THIS BLOCK IT IS
+    RAISE-IT MATERIAL AND NOT EXEMPT-IT MATERIAL.
+
+  - not a reason to keep a second residency policy for the translation cache
+  - not a reason to exempt the composed layer from the canonical window
+  - and "no benefit here" is PRECISELY the narrower question the
+    forest-uptake phases answered correctly four times
+
+THE PRACTICE, WORTH KEEPING BEYOND THIS DESIGN: WHEN YOU PRODUCE EVIDENCE
+THAT COULD BE SPENT ON AN EXEMPTION, CLASSIFY IT YOURSELF, IN WRITING,
+BEFORE SOMEONE ELSE DOES. A finding is neutral for about an hour; after
+that it belongs to whoever needs it most. The author is the only person
+who can say what it was measured to answer, and the only one whose saying
+so costs nothing.
+
+AND ITS SUMMARY OF THE MECHANISM, which is the best one written tonight:
+
+    A PER-LAYER BENEFIT TEST CANNOT MEASURE A COST THAT EXISTS ONLY
+    BETWEEN LAYERS.
+
+Same defect as an oracle blind to a header one record ahead, a benchmark
+named Warm measuring a cold walk, and a test named PreservesPrefixBytes
+asserting an ADDRESS — an instrument answering accurately about the wrong
+subject. THE DIFFERENCE IS THAT THOSE COST A RERUN, AND THIS ONE COMPOUNDED
+INTO A STRUCTURE NOBODY CHOSE.
+
+## THE FOURTH READING OF AN EMPTY RESULT (6ec565b5)
+
+`tools/callpath` documents three ways its output can be empty: no call
+path; the bytes crossed BY VALUE rather than by call; or the symbol is
+outside the cut. A FOURTH EXISTS AND IS THE INTERESTING ONE:
+
+    THE EDGE EXISTS AT RUNTIME AND THE ANALYSIS CANNOT SEE IT.
+
+That is what a FUNC VALUE IN A STRUCT FIELD looks like from the outside,
+and `config.Encode` (projection.go:297) is exactly one — every read path
+ends there. The decisive query, with its control, because the two answer
+different questions and THE DIFFERENCE IS THE FINDING:
+
+    callpath -pkgs ./internal/provider/... -entry ProjectIncrementally \
+             -sink renderPatchBlocks -algo vta -max 40
+    (and the same with -algo cha, as the control)
+
+  VTA SILENT, CHA CONNECTS -> the closure's flow does not survive the
+      ProjectionConfig struct, and the last edge before the wire is a
+      CANDIDATE SET rather than a fact.
+  VTA CONNECTS -> those frames are static and the path is complete to the
+      encoder.
+
+An empty result from an unstated fourth reading is indistinguishable from
+"no such path", which is the tool's own version of every defect in
+~/notes/figaro/instrument-not-reaching-the-code.md. THE HEADER MUST STATE
+ALL FOUR.
+
+## AND THE DIVISION WHEN HAND-READ AND HARNESS DISAGREE
+
+    call EDGES ........... the harness wins
+    ALIASING (copied / reshaped / by reference) ... the hand-read [R]
+                           column wins, because no callgraph infers it
+    WHETHER A FRAME EXISTS AT ALL ... THE HARNESS WINS OUTRIGHT
+
+The third is 6ec565b5's own addition, against its own document, and its
+reason is the honest statement of a hand-read list's limit: THAT IS
+EXACTLY THE CASE WHERE A READER'S EYE SUPPLIES A CALL THE CODE DOES NOT
+MAKE. It has no evidence it did so anywhere, and no way to be sure it did
+not.
+
+## THE FORK SEAM IS CORRECT, AND NOT FOR THE REASON THE CODE CLAIMS
+
+fd15d2a0, 2026-08-19, commit d2700da7. Fixture: a parent with 60
+translations, TWO children forked at different bases (21 and 41), and TEN
+RECORDS APPENDED TO THE PARENT AFTER THE FORKS -- records belonging to the
+parent's lineage alone, which must never reach a child. The oracle is a
+fresh UNSEEDED log over the child's own channel, so a defect in the
+donation cannot corrupt the reference it is checked against.
+
+CANARY L deleted the fork-base bound from `residentBelow` entirely, so the
+parent donates its whole window including post-fork rows. THE TEST STAYED
+GREEN.
+
+MECHANISM, measured rather than read: with the bound gone, the last donated
+row is a post-fork parent record; `newSeededLog`'s SEAM PROBE reads that row
+back out of the child's own log, fails to match, and FALLS BACK TO A FULL
+DECODE. The child then serves its own correct rows and nothing downstream
+can tell the donation was refused.
+
+    SO CORRECTNESS HERE IS PROVIDED BY THE PROBE, NOT BY THE BOUND. And
+    "IT DEGRADES TO A MISS, NEVER TO A LIE" is now demonstrated by
+    experiment rather than asserted in a comment.
+
+THAT MATTERS FOR THE CONSOLIDATION: if structural sharing replaces the
+one-shot donation, the probe's role must be preserved or made unnecessary
+BY CONSTRUCTION. Removing the donation without noticing that the probe was
+carrying the correctness would remove the thing that was actually working.
+
+THE ASSERTION THAT DISTINGUISHES THEM: pointer identity on the payload,
+true only if the child is serving the parent's own bytes. A correctness
+check alone cannot tell "bounded correctly" from "rescued by the probe".
+With it, canaries L and M both go red.
+
+THE BOUND'S FAILURE DIRECTIONS ARE BOTH MISSES: too low donates fewer rows,
+all correct; too high is caught by the probe. No direction was found that
+produces a lie.
+
+## A NEW SPECIES: A CANARY THAT DID NOT APPLY LOOKS EXACTLY LIKE ONE THAT PASSED
+
+Canary M never modified the file and reported "ok". Its patch anchor matched
+TWICE -- because THERE ARE TWO DONATION SITES, `seedRowsLocked` for the fig
+IR and `seedTransRowsLocked` for translations -- so the patcher aborted, and
+the script printed a pass.
+
+    A CANARY THAT FAILED TO APPLY IS INDISTINGUISHABLE FROM A CANARY THAT
+    PASSED, AND BOTH ARE INDISTINGUISHABLE FROM WORKING CODE.
+
+Every arm now PROVES IT CHANGED THE FILE before it may run -- and the first
+version of that guard was itself broken, looking for the wrong backup path
+and returning success, caught only by making the guard PRINT THE DIFF IT
+CLAIMS TO HAVE APPLIED. The guard is checked by its output, not its exit
+code.
+
+AND THE ACCIDENT IS ITSELF A FINDING: the double match revealed that THERE
+ARE TWO DONATION SITES. The fig IR donation at `seedRowsLocked`
+(xwal_backend.go:1260) is UNCOVERED by this test. Two hand-written seeding
+paths for one structure is the duplication this consolidation exists to
+remove.
+
+## THE RESIDENCY DEFAULTS, DECIDED (Gluck delegated: "whatever you want to do
+## on my config that makes sense... you dont need my approval")
+
+f3aa1d0b, 2026-08-19. Decided against the census rather than chosen as a
+round number, and the important change is not a number at all.
+
+### WHAT THE NUMBERS ARE TODAY, AND WHY THEY ARE MOSTLY RIGHT
+
+    IRWindow             0        unbounded BY COUNT
+    IRWindowBytes        4 MiB    per aria, DECODED estimate
+    TranslationWindow    4 MiB    per (aria, provider), DECODED estimate
+    segment payloadBudget 32 MiB  GLOBAL, encoded bytes
+    segment size          2 MiB
+
+The per-aria budgets are denominated in DECODED estimate (`newWindowedLog`
+takes an `inflation` factor precisely so the gate and the accounting agree in
+units). This repo measures decoded fig IR at 4-5x wire, so a 4 MiB decoded
+budget holds roughly 0.8-1 MiB of encoded history.
+
+AGAINST THE CENSUS that is a defensible line: it comfortably holds a p90 aria
+(443 KiB encoded), and it EVICTS for p99 (1.7 MiB) and above. That is Gluck's
+stated target -- eviction that actually occurs, but rarely under light use --
+and it is already satisfied. I am NOT changing them, and I record that as a
+decision rather than as an omission.
+
+The global 32 MiB segment budget against a 300 MiB top decile likewise cannot
+hold the working set and therefore evicts under real load.
+
+### THE CHANGE THAT MATTERS IS STRUCTURAL, NOT NUMERIC
+
+    THE RESIDENCY POLICY LIVES IN `internal/cli`, NOT IN THE LAYER THAT OWNS
+    THE BYTES. The store's own default is UNBOUNDED; boundedness is a property
+    of ONE CALL SITE IN ONE BINARY (angelus.go:110-112).
+
+Anything else constructing a backend gets the unbounded configuration --
+`doctor.go:320` does, every test does, and any future embedding that forgets
+the wiring will. For a design whose goal is ONE canonical residency policy,
+that is a defect independent of the numbers: the policy can be silently
+absent.
+
+DECIDED: the store carries its own bounded defaults, and the CLI TUNES them
+rather than SUPPLIES them. A bare `NewXwalBackend` must be bounded. This is
+not a new mechanism -- the fields exist -- it is moving a default from a
+caller into the component whose memory it governs.
+
+### AND A UNIT HAZARD TO CARRY INTO THE CONSOLIDATION
+
+Two budgets in this system are denominated differently: the per-aria windows
+in DECODED estimate, the segment cache in ENCODED bytes. Under one uniform
+policy those must be reconciled explicitly and stated at the boundary, or a
+single "budget" number will silently mean two different quantities depending
+on which layer reads it. `newWindowedLog`'s `inflation` parameter exists
+because that mismatch was already met once.
+
+## THE SEEDING SPECIFICATION, WRITTEN DOWN (fd15d2a0, 77e17f93)
+
+Both donation sites are now covered by tests at the fork seam, and the
+comparison IS the specification for whatever replaces them.
+
+IDENTICAL, VERBATIM IN BOTH: `Lineage(id)`; fewer than 2 refs -> nil; base
+from the last ref; base 0 -> nil; NEAREST ANCESTOR FIRST, walking upward,
+skipping unopened handles, first non-empty `residentBelow(base)` wins.
+
+DIFFERENT -- and this tuple is the whole of it:
+
+                      FIG IR                  TRANSLATION
+    handle field      h.ir                    h.trans[providerName]
+    keyed by          nothing                 providerName
+    window            b.irWindow              0, HARDCODED
+    budget            b.irBudget              b.transBudget
+    inflation         irDecodeInflation       1
+    sizeOf            irEntrySize             transEntrySize
+    channel           chanIR, isMain=true     transChannel(p), isMain=false
+    fingerprint       ROWS CARRY NONE         keyed by it, cleared wholesale
+
+    THE SEEDING ALGORITHM IS GENERIC; THE PER-CHANNEL POLICY IS A TUPLE.
+
+### AND THE IR PATH HAS NO REDUNDANCY BEHIND THE PROBE
+
+Because IR rows carry NO fingerprint, `newSeededLog`'s fingerprint sweep
+compares empty strings and CAN NEVER REFUSE ANYTHING there. It is INERT BY
+CONSTRUCTION on the fig IR path. So of its two guards, exactly one is
+load-bearing -- THE SEAM PROBE -- which is the same guard the translation
+experiment showed was carrying the guarantee. The warning that a
+consolidation must preserve the probe's role, or make it unnecessary by
+construction, applies to the IR side WITH NOTHING BEHIND IT.
+
+### TWO INSTRUMENT FAULTS, AND THE SECOND IS A GENERAL RULE
+
+POINTER IDENTITY HAS A FLOOR ABOVE ZERO. The "donation was used" bar was
+`shared > 0`. Under the canary the IR arm fell from 20 shared rows to 2 and
+the test called it a PASS -- because IDENTICAL SHORT STRING LITERALS ARE
+INTERNED TO ONE ADDRESS, so pointer identity is true BY ACCIDENT for them.
+An identity oracle over interned values has a nonzero floor, and an
+instrument that does not know its own floor cannot use a threshold. The bar
+is now EVERY row below the base.
+
+AND THE ONE TO KEEP:
+
+    A PLAUSIBLE EXPLANATION FOR A GREEN CANARY IS THE MOST EXPENSIVE THING
+    AN INSTRUMENT CAN PRODUCE, BECAUSE IT ENDS THE INVESTIGATION.
+
+Its author reasoned its way to a story for why the canary stayed green --
+that the child's handle must already exist before the hazard does -- and the
+story was FALSE (`ForkAt` does not open child handles). The number said
+2-of-20 and the story said "not exercised"; only the measurement was right.
+This is the companion to the standing rule that a passing canary is a
+FINDING: a passing canary WITH AN EXPLANATION ATTACHED is a finding that has
+been talked out of existence.
+
+UNCOVERED AND NAMED: a parent whose window has TRIMMED below the child's
+base, and a grandparent donation where the nearest ancestor is unopened and
+the loop walks further. Both reachable with the existing fixture.
+
+## THE SPECIMEN RUN: THREE QUERY FAULTS, AND THE DECOMPOSITION THAT FIXES THEM
+
+f3aa1d0b, 2026-08-19. Recorded because the next person to run this tool will
+otherwise repeat all three, and each cost between one minute and twenty.
+
+  FAULT 1 -- THE SINK WAS OUTSIDE THE CUT. `-in figaro,figwal` with
+  `-sink syscall.Pread`. `-deep` does NOT override `-in`, so the walk
+  terminated at the module edge while the sink lived in the standard
+  library: unreachable BY CONSTRUCTION. Twenty minutes, one header, no
+  output. Had it terminated, an empty result would have read identically to
+  "the code does not call this".
+  THE TOOL SHOULD REFUSE THIS BEFORE WALKING: whether the sink is inside the
+  cut is knowable statically, and an unreachable-by-construction query is a
+  configuration error, not an empty result.
+
+  FAULT 2 -- THE ENTRY WAS OUTSIDE THE LOADED PACKAGES. `-pkgs
+  ./internal/store/...` with an entry in `internal/provider`. The tool caught
+  this itself and refused to report it as a finding:
+  "NO PATHS: NEITHER entry nor sink matched any symbol. THIS IS A VACUOUS
+  RUN, NOT A FINDING OF NO PATH." That refusal was built because an empty
+  result has three indistinguishable causes, and it caught its own operator.
+
+  FAULT 3 -- ONE LONG PATH THROUGH INTERFACE DISPATCH IS COMBINATORIAL.
+  From `ProjectIncrementally` to `syscall.Pread` the walk crosses `Log[T]`
+  and `Reader` dispatch, where CHA admits every implementation. Depth 18
+  over `./internal/...` did not terminate promptly even with the cut
+  corrected.
+
+    THE DECOMPOSITION: ASK FOR THE PATH IN SEGMENTS, NOT END TO END.
+    ProjectIncrementally -> cachedLog.Read
+    cachedLog.Read       -> codec.ReadFrame
+    codec.ReadFrame      -> syscall.Pread
+    Three short queries compose to the full path, each terminates, and each
+    NAMES ITS OWN SEAM -- which is what the document needs anyway, since the
+    seams are exactly where the copied/reshaped/by-reference column changes.
+
+A long query that does not terminate teaches nothing; three short ones that
+do are also easier to re-run after a refactor, which is the whole reason the
+tool exists rather than a hand-read list.
+
+## THE TREE TOOL WORKS AND HAS NO OUTPUT BOUND
+
+f3aa1d0b, 2026-08-19. Tree mode produces EXACTLY the form Gluck specified,
+verified on a real run: ordered, indented, one frame per line with file:line;
+`STATIC` versus `DISPATCH[n]` with every `[CANDIDATE k/n]` inline at the
+reader's indent; `[CONDITIONAL: reached on SOME paths ... e.g. a cache MISS]`
+versus `[UNCONDITIONAL in its caller: entry block]` derived from the SSA CFG;
+and `[OPAQUE: no SSA body -- external, assembly, vendored, or outside the
+cut]` with its reason attached. It resolves the Go runtime with full
+file:line (`sync/atomic.LoadPointer`, marked opaque at the assembly
+boundary). THE FORM IS CORRECT AND THE HEADER IS DOING ITS JOB.
+
+    AND AT `-pkgs ./internal/... -treedepth 7 -algo cha` IT WROTE 917 MB IN
+    NINETY SECONDS AND WAS STILL GROWING.
+
+MECHANISM, not mystery: every `DISPATCH[n]` expands each of its n candidates
+as a full subtree, and those recurse. `Read` alone admits four
+implementations, so the branching is multiplicative in depth. CHA admits
+every implementation of an interface method; VTA narrows by value flow.
+
+    TREE MODE HAS NO OUTPUT CAP. `-max` bounds PATH mode only. A tool whose
+    output is unbounded is a denial of service on its own operator, and the
+    failure arrives as a full disk rather than as a wrong answer.
+
+WHAT IT NEEDS, and it is small: a byte or line budget in tree mode that
+TERMINATES AND SAYS SO -- "output budget reached at N lines, subtree not
+walked, NOT ABSENT" -- in the same voice as the existing depth and cycle
+markers, which already exist for exactly this reason and were simply not
+extended to volume.
+
+AND THE OPERATIONAL RULE UNTIL IT HAS ONE: bound the query, not the output.
+Narrow `-pkgs` to the package under study, keep `-treedepth` at 4 or 5, and
+prefer `-algo vta` -- CHA's candidate sets are what multiply. The tree is
+for reading a seam, not for printing a program.
+
+## WHERE THE ORDERING LOCKS SIT: NOT THE ACTOR LOOP, AND FOR THE IR LOG THERE
+## IS NO LOOP AT ALL
+
+f3aa1d0b, 2026-08-19, answering Gluck's question -- are the serialized writes
+the main actor loop, or an inner one? Read rather than assumed.
+
+THE FORM PATH HAS A LOOP. `form.go:169` builds
+`actor.NewLazy(formBatch, ..., f.runBatch)`: one drainer, each write reduced
+against the running state of the batch, published state immutable, "a single
+writer [that] only appends past".
+
+THE IR AND TRANSLATION PATH HAS NONE. Four provider implementations call
+`in.FigLog.Append(...)` DIRECTLY FROM THEIR OWN TURN GOROUTINES --
+anthropic.go:1033 and :1101, anthropicsdk.go:249, copilot/responses.go:216,
+openaichat.go:246 -- plus `projection.go:227` for the translation cache.
+Nothing serialises them upstream.
+
+    SO `cached_log.go`'s `writeMu` IS NOT A SECOND LAYER OF SERIALISATION.
+    IT IS THE ONLY SERIALISATION THERE IS.
+
+AND cachedLog HAS ALREADY DONE HALF OF CURE A, which is why the residue is
+shaped the way it is. Its own comment: "writeMu serializes MUTATORS so cache
+updates land in log order. NO READER EVER TAKES IT: holding a lock across
+inner.Append would block every reader for the length of an fsync... view is
+the whole of the cache's state. Readers load it; mutators build a successor
+and store it." The `RWMutex` that once covered rows, trimmed, bytes and an
+index is gone -- it cost "34 acquisitions on the hot read path, every one of
+which waited behind an append."
+
+WHAT REMAINS IS THREE MUTATOR SITES HOLDING A LOCK ACROSS AN FSYNC, PURELY TO
+KEEP APPENDS IN ORDER.
+
+## THE CONSEQUENCE FOR THE PENDING CURE DECISION
+
+ONE REQUIREMENT, TWO ANSWERS, IN ONE PACKAGE: the form path establishes order
+with a loop and gets immutability for free; the IR path establishes it with a
+mutex around disk I/O. The one holding a lock across an fsync is the one
+WITHOUT a loop.
+
+    THEREFORE THE FOUR ORDER-OF-OPERATIONS LOCKS ARE NOT REDUNDANT TODAY.
+    REMOVING THEM WITHOUT ESTABLISHING ORDER ELSEWHERE IS A CORRECTNESS
+    CHANGE, NOT A CLEANUP.
+
+That is the real content of the decision: cure B is not "delete a lock", it is
+"move the ordering requirement to where the form path already keeps it". Cure A
+alone cannot serve these four, because an atomic publish does not order two
+appends -- it only makes the result visible without a reader waiting.
+
+## THE CURE QUESTION, ANSWERED (Gluck, 2026-08-19)
+
+    "the actor loop is suitable but we should try to converge layers of
+     serialized writes if we can."
+    "the absence of the lock around the translator and fig ir is not absent,
+     the main actor loop ensures no concurrent writes."
+
+SO BOTH CURES ARE AVAILABLE AND CONVERGENCE IS THE GOAL. The store today has
+TWO serialization mechanisms: the actor loop (form's runBatch, and the agent
+loop above the IR path) and mutexes standing in for it where no loop was
+known to exist. Converge on the loop; delete the locks that existed only for
+its absence.
+
+AND THE ROOT CAUSE, which explains why there are so many: FIGWAL'S INTERNAL
+LOCKING IS DEFENSIVE CONCURRENCY WRITTEN FOR AN UNKNOWN CALLER. Its own
+words -- "FLUSHER-UNAWARE: on a raw handle nothing stops a concurrent
+store", "Concurrent callers receive the same *Log", "Concurrent opens of
+the...". Correct for a published library; it WAS one until this morning.
+figaro serializes its writes through the agent loop and figwal assumed
+nothing, and neither side could know about the other across a module
+boundary that no longer exists.
+
+    THE CONCURRENCY-DOMAIN MISMATCH IS AN ARTIFACT OF THE BOUNDARY WE
+    DELETED. The cure is to STATE THE CONTRACT -- mutating methods are
+    called from a single goroutine, readers are concurrent -- ASSERTED
+    WHERE IT CAN FAIL rather than commented, and then delete the locks that
+    existed only for its absence.
+
+THE CLEANEST INSTANCE: form's runBatch is one drainer with immutable
+published state, and `MemFormLog` beneath it takes a mutex on every append
+anyway, because it was written not knowing a loop existed above it.
+
+## THE ESCALATION RULE FOR THIS WORK (Gluck, 2026-08-19)
+
+    ANY LOCK FOUND TO HAVE GENUINELY CONCURRENT CALLERS IS RAISED TO GLUCK,
+    NOT WORKED AROUND. Work around it ONLY if he is absent and reminders are
+    accumulating -- and DOCUMENT IT AS A FOLLOW-UP either way.
+
+A lock with real concurrent callers is not a cleanup target; it is evidence
+about the design, which is the thing he asked to be shown.
+
+## FOLLOW-UP, LOGGED SO IT IS NOT LOST: "COMPACT" NAMES A MECHANISM WE DO
+## NOT HAVE
+
+Gluck caught the bearer using "compaction" for work this system never does.
+THE WORD IS OVERLOADED THREE WAYS:
+
+  1. `cachedLog.compact` -- in-memory WINDOW EVICTION on a slice: keep the
+     newest rows within a row count and a byte budget, drop the rest.
+  2. `disk.Log.TruncateFront`'s comment -- "size segments so the COMPACTION
+     GRANULARITY matches their needs" -- meaning UNLINKING WHOLE SEALED
+     SEGMENT FILES. Deletion, not compaction.
+  3. The classic meaning, rewriting live data to reclaim space, WHICH THIS
+     SYSTEM DELIBERATELY DOES NOT DO AT ALL.
+
+Three referents, one word, and the only one a reader assumes is the one that
+does not exist. Not a false claim about code -- A FALSE CLAIM ABOUT WHAT
+KIND OF SYSTEM THIS IS, which misleads before a line is read.
+
+RENAME WHEN CONVENIENT, DO NOT LET IT DISTRACT: `compact` -> `evictWindow`,
+and the TruncateFront comment to say it drops sealed segments.

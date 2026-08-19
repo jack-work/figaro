@@ -46,10 +46,153 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
+
+// ---------------------------------------------------------------------------
+// THE PARTICIPATION LEDGER: what a green run actually proves.
+//
+// `go test` prints NOTHING for a skip without -v, and this suite declines on
+// live-model weather -- the turn ended before the key landed, the model did not
+// run the command, a long reply promoted the pager. So a green smoke run and a
+// run in which eight of ten cases declined produce THE SAME BYTES. That is this
+// project's standing failure ("no output" is both success and never-ran) in a
+// terminal's clothes, and eight of the ten cases carry at least one such site.
+//
+// TWO MECHANISMS, AND ONLY THE FIRST IS THE GUARANTEE:
+//
+//	smokeCase(t)   records RAN vs DECLINED from testing's OWN knowledge, in a
+//	               Cleanup that runs after the case ends. A case added later is
+//	               counted without its author knowing this exists, and a raw
+//	               t.Skip cannot hide it. IT DOES NOT DEPEND ON DISCIPLINE AT
+//	               FOURTEEN SKIP SITES.
+//	decline(t, …)  records the REASON and then skips. If someone bypasses it the
+//	               count is still right; only the reason is lost.
+//
+// smokeCase is called AFTER smokeEnabled, so a switched-off suite registers
+// nothing and prints nothing: the ledger speaks only about runs that were
+// actually attempted.
+//
+// WHAT IS DELIBERATELY NOT DONE: the fourteen model-weather skips are NOT
+// converted into failures. They decline for reasons that are not defects, and a
+// suite that cries wolf is muted, then skipped, then deleted. The fix for an
+// invisible abstention is DISCLOSURE, not strictness. See
+// plans/smoke-skip-profile.md.
+var (
+	smokeLedgerMu sync.Mutex
+	smokeRan      []string
+	smokeDeclined []string
+	smokeReasons  = map[string]string{}
+	// smokeFloor is read inside smokeCase, never in the summary: see the
+	// comment there for the caching trap that decides where this is read.
+	smokeFloor int
+)
+
+// smokeStart is when THIS BINARY started, stamped into the participation
+// summary so that a CACHED transcript confesses instead of impersonating a
+// live run.
+//
+// It does not prevent the cache and is not meant to: go test replays a
+// previous run's output byte for byte, so the only defence available from
+// inside the binary is to print something a replay cannot refresh. A reader
+// who sees a start time from an hour ago knows no terminal was driven. Same
+// move as stamping the commit and the instrument hash into every measurement
+// file: provenance that is absent reads exactly like provenance that is right.
+var smokeStart = time.Now()
+
+// envFloor is FIGARO_TMUX_SMOKE_MIN_RAN, or zero.
+func envFloor() int {
+	if v := os.Getenv("FIGARO_TMUX_SMOKE_MIN_RAN"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return 0
+}
+
+func smokeCase(t *testing.T) {
+	t.Helper()
+	// READ THE FLOOR HERE, INSIDE A TEST, AND NOT IN smokeParticipation.
+	//
+	// go test CACHES a package result and REPLAYS ITS OUTPUT, and the replay is
+	// byte-identical to a live run -- including the participation summary
+	// below, which then describes a run that did not happen. Worse, the cache
+	// key is built from what the test binary consults WHILE TESTS ARE RUNNING;
+	// an os.Getenv in TestMain after m.Run() is not in that window, so changing
+	// the floor did not invalidate the cache and the floor never evaluated.
+	// Measured: with FIGARO_TMUX_SMOKE_MIN_RAN=2 and one case, `ok (cached)`,
+	// EXIT=0, and a summary printed from the previous run.
+	//
+	// Reading it here puts it in the cache key, so a changed floor forces a
+	// real run. It does NOT make a live-provider suite hermetic: RUN THIS SUITE
+	// WITH -count=1. A cached pass for a suite whose whole purpose is to drive a
+	// real terminal and a real provider is a green tick for work nobody did.
+	smokeLedgerMu.Lock()
+	smokeFloor = envFloor()
+	smokeLedgerMu.Unlock()
+	t.Cleanup(func() {
+		smokeLedgerMu.Lock()
+		defer smokeLedgerMu.Unlock()
+		if t.Skipped() {
+			why := smokeReasons[t.Name()]
+			if why == "" {
+				why = "(reason not recorded: a raw t.Skip; use decline)"
+			}
+			smokeDeclined = append(smokeDeclined, t.Name()+" — "+firstLine(why))
+			return
+		}
+		smokeRan = append(smokeRan, t.Name())
+	})
+}
+
+// decline is t.Skipf with the reason recorded for the ledger.
+func decline(t *testing.T, format string, args ...any) {
+	t.Helper()
+	smokeLedgerMu.Lock()
+	smokeReasons[t.Name()] = fmt.Sprintf(format, args...)
+	smokeLedgerMu.Unlock()
+	t.Skipf(format, args...)
+}
+
+// smokeParticipation prints the ledger and reports whether the floor was met.
+// TestMain calls it AFTER m.Run(), because the last case's Cleanup has not run
+// until then.
+//
+// FIGARO_TMUX_SMOKE_MIN_RAN is the floor and it DEFAULTS TO ZERO: this reports,
+// it does not newly fail anyone. Whoever runs the suite deliberately sets a
+// number, and from then on a run the weather ate is a FAILURE rather than a
+// green tick.
+func smokeParticipation() bool {
+	smokeLedgerMu.Lock()
+	defer smokeLedgerMu.Unlock()
+	if len(smokeRan)+len(smokeDeclined) == 0 {
+		return true // the suite never ran; it has nothing to say
+	}
+	fmt.Fprintf(os.Stderr, "\nsmoke participation: %d ran, %d declined\n",
+		len(smokeRan), len(smokeDeclined))
+	fmt.Fprintf(os.Stderr,
+		"  run started %s (pid %d) -- IF THAT IS NOT JUST NOW, THIS TRANSCRIPT WAS\n"+
+			"  REPLAYED FROM CACHE and no terminal, daemon or provider was touched. Use -count=1.\n",
+		smokeStart.Format(time.RFC3339), os.Getpid())
+	for _, d := range smokeDeclined {
+		fmt.Fprintf(os.Stderr, "  DECLINED  %s\n", d)
+	}
+	for _, r := range smokeRan {
+		fmt.Fprintf(os.Stderr, "  ran       %s\n", r)
+	}
+	min := smokeFloor
+	if len(smokeRan) < min {
+		fmt.Fprintf(os.Stderr,
+			"smoke participation FLOOR NOT MET: %d ran, FIGARO_TMUX_SMOKE_MIN_RAN=%d\n",
+			len(smokeRan), min)
+		return false
+	}
+	return true
+}
 
 // smokeEnabled gates the suite. Two doors, both explicit: the env var, and the
 // presence of tmux. Never auto-enable, a test that silently costs tokens is a
@@ -204,10 +347,15 @@ func newPane(t *testing.T, env []string, bin string, w, h int) *pane {
 	return p
 }
 
+// A TMUX COMMAND THAT FAILS IS A BROKEN FIXTURE, NOT A CASE THAT DECLINED.
+// These two sites used to Skipf, so a harness that could not drive the terminal
+// reported as an abstention -- indistinguishable from the model being fast. A
+// guard that cannot report on the day it matters is not a guard.
 func (p *pane) tmux(args ...string) {
 	p.t.Helper()
 	if out, err := p.run(args...); err != nil {
-		p.t.Skipf("tmux %v failed (%v): %s", args, err, out)
+		p.t.Fatalf("tmux %v failed (%v): %s\nthe harness could not drive the terminal; "+
+			"this is a broken fixture, not a case declining", args, err, out)
 	}
 }
 
@@ -215,7 +363,8 @@ func (p *pane) tmuxOut(args ...string) string {
 	p.t.Helper()
 	out, err := p.run(args...)
 	if err != nil {
-		p.t.Skipf("tmux %v failed (%v): %s", args, err, out)
+		p.t.Fatalf("tmux %v failed (%v): %s\nthe harness could not drive the terminal; "+
+			"this is a broken fixture, not a case declining", args, err, out)
 	}
 	return out
 }

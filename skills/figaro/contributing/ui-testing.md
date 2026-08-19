@@ -20,7 +20,7 @@ file can run a hunt end to end; a test suite cannot yet.
 | **tmux-testing skill** (`~/.config/figaro/skills/tmux-testing.md`) | the ELEVEN ENVIRONMENT TRAPS: pane heights, `-e PATH` being ignored, counting tokens, capture vs scrollback. Read it first; it is why each step below is shaped the way it is. |
 | **`docs/paint-repro.md`** | one subsystem's cookbook: the pager's geometry, the store fixtures, and the findings of the paint hunts (§8.1, §8.4). |
 | **`scripts/paintpane.sh`** + `paint-jogdiff.sh`, `paint-gapcheck.sh` | the runnable shell harness (`pp_*` verbs) and two packaged oracles. |
-| **`internal/cli/tmuxsmoke_*_test.go`** | the automated end of the same method: `FIGARO_TMUX_SMOKE=1 go test ./internal/cli/ -run TestSmoke`. Real binary, real pty, real provider, skipped by default. |
+| **`internal/cli/tmuxsmoke_*_test.go`** | the automated end of the same method: `FIGARO_TMUX_SMOKE=1 go test ./internal/cli/ -count=1 -run TestSmoke`. Real binary, real pty, real provider, skipped by default. |
 | **[tapes.md](../debugging/tapes.md)** | recording a live aria's wire and replaying it: the honest fixture when the bug needs a real session's shape, and the CI end of one. |
 | **this file** | the PROCEDURE that stitches them together, and the promotion path from a hunt to a case. |
 

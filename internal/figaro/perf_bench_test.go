@@ -67,13 +67,81 @@ func BenchmarkAgentRestoreHistory10000(b *testing.B) {
 	}
 }
 
-func BenchmarkInterruptRepair10000(b *testing.B) {
+// BenchmarkInterruptRepair10000 MEASURES THE SCAN THAT FINDS NOTHING, and its
+// name does not say so.
+//
+// longMemLog builds every message with message.TextContent only -- prose, no
+// tool invokes -- so assistantToolInvokes returns empty for all 10,000 rows,
+// `at` stays -1, and repairInterruptedTail RETURNS AT ITS FIRST GUARD:
+//
+//	if at < 0 { return store.Entry[message.Message]{}, false }
+//
+// Hence 53us for a 10,000-row backwards walk at ZERO allocations: it never
+// builds a repair result because it never reaches the repair logic. The zero
+// is what gave it away. Found by aria 3a9225b1 while using this benchmark as a
+// tripwire for piece A, after reporting it as one.
+//
+// IT IS KEPT, because the scan is real and worth pricing -- the common case IS
+// a log with nothing to repair, and that walk happens on every open. What it
+// must not be is the only benchmark named "InterruptRepair", because Part V of
+// plans/delta-seam.md changes the REPAIR path and this cannot see the repair
+// path at all.
+func BenchmarkInterruptRepairScanOnly10000(b *testing.B) {
 	log := longMemLog(b, 10_000)
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		repairInterruptedTail(log, "perf")
+	}
+}
+
+// danglingToolLog is longMemLog with a DANGLING TOOL CALL at the tail: an
+// assistant message carrying a tool_invoke that nothing answers. That is the
+// state an interrupt leaves behind, and it is the only input that drives
+// repairInterruptedTail past its first guard into the work the function is
+// named for.
+func danglingToolLog(tb testing.TB, n int) store.Log[message.Message] {
+	tb.Helper()
+	log := longMemLog(tb, n)
+	_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+		Role: message.RoleOutput,
+		Content: []message.Content{
+			message.TextContent("about to run something"),
+			{Type: message.ContentToolInvoke, ToolCallID: "call_dangling", ToolName: "bash",
+				Arguments: map[string]any{"command": "sleep 90"}},
+		},
+	}})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return log
+}
+
+// BenchmarkInterruptRepairDangling10000 prices the path Part V changes.
+//
+// GUARDED, because a benchmark for a branch that is not entered is worse than
+// no benchmark: repairInterruptedTail must actually REPAIR here, so the
+// fixture is asserted before it is timed. Without this the fixture could drift
+// back to prose-only and the benchmark would go quietly back to measuring the
+// scan -- which is exactly how it spent its life until now.
+func BenchmarkInterruptRepairDangling10000(b *testing.B) {
+	log := danglingToolLog(b, 10_000)
+	if _, repaired := repairInterruptedTail(log, "guard"); !repaired {
+		b.Fatal("the fixture was not repaired, so this benchmark measures the scan and not the repair; " +
+			"danglingToolLog must leave an unanswered tool_invoke at the tail")
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// Each iteration rebuilds: repairInterruptedTail APPENDS its synthetic
+		// results, so a shared log is repaired once and scans thereafter --
+		// the same trap one level down, and the reason this is not hoisted.
+		b.StopTimer()
+		fresh := danglingToolLog(b, 10_000)
+		b.StartTimer()
+		repairInterruptedTail(fresh, "perf")
 	}
 }
 
@@ -182,7 +250,7 @@ func BenchmarkLiveFramePersistence(b *testing.B) {
 			} else {
 				nodes[0].Markdown = markdown + "b"
 			}
-			a.emitDelta(nodes)
+			a.emitDelta(nil, nodes, 0)
 			if persist {
 				blob, err := json.Marshal(aria.Message{
 					Turn:  1,

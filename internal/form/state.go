@@ -34,10 +34,26 @@ type board struct {
 // an RPC goroutine raced State.Apply on the agent goroutine, a reader could
 // range a map the writer was still filling, which is fatal-capable, not benign.
 //
-// A second writer would need CompareAndSwap on the update path. There is
-// exactly one, so Apply stores unconditionally; Save, which runs only after the
-// drain loop has exited (Agent.Kill waits on it), clears the dirty flag with a
-// single non-looping CAS so that it cannot clobber a concurrent publication.
+// THERE IS NO LONGER EXACTLY ONE WRITER, and this doc used to say what to do
+// about that: "a second writer would need CompareAndSwap on the update path."
+// Cast came off the agent's actor loop (the self-cast deadlock), so a cast
+// publishes its study set from the CALLER's goroutine while the drain loop
+// publishes a `set` from its own. Apply's old load-modify-publish then lost
+// whichever finished second -- not a data race the detector can see (the
+// pointer is atomic and snapshots are immutable), a LOST UPDATE, which is
+// worse for being invisible.
+//
+// So Apply is a CAS retry loop now. It is cheap: the contended window is the
+// tree apply, publication is one pointer swap, and a retry recomputes against
+// a snapshot that is immutable by construction.
+//
+// A CAS makes each publication atomic; it does NOT make a stale whole-value
+// write correct, and no lock can. A writer that computes a whole key from a
+// read taken before someone else's write must order itself some other way --
+// see Agent.publishStudies, which orders by the durable version its write
+// landed at. Save, which runs only after the drain loop has exited
+// (Agent.Kill waits on it), clears the dirty flag with a single non-looping
+// CAS so that it cannot clobber a concurrent publication.
 type State struct {
 	published atomic.Pointer[board]
 	path      string
@@ -92,16 +108,26 @@ func (s *State) Snapshot() Snapshot {
 // state dirty: the tree returns a pointer-identical root for a
 // semantically equal write, so there is no new state to persist.
 func (s *State) Apply(p Patch) Snapshot {
-	cur := s.load()
 	if p.IsEmpty() {
-		return cur.snapshot
+		return s.load().snapshot
 	}
-	next := cur.snapshot.Apply(p)
-	if next.root == cur.snapshot.root {
-		return cur.snapshot
+	for {
+		old := s.published.Load()
+		var cur board
+		if old != nil {
+			cur = *old
+		}
+		next := cur.snapshot.Apply(p)
+		if next.root == cur.snapshot.root {
+			return cur.snapshot
+		}
+		// Publish only against the board we computed from. A losing swap
+		// means someone else published in between, and their state is the
+		// one this patch must be applied to.
+		if s.published.CompareAndSwap(old, &board{snapshot: next, dirty: true}) {
+			return next
+		}
 	}
-	s.publish(board{snapshot: next, dirty: true})
-	return next
 }
 
 // Save flushes to disk if dirty. Atomic via tmp+rename.

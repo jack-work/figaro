@@ -130,6 +130,176 @@ For UI work, a pty is the only honest oracle: see
 bug from a real session rather than a guess, record and replay it:
 [tapes.md](../debugging/tapes.md).
 
+## Instrument the hazard; do not suffer it
+
+A hazard that can only be demonstrated by SUFFERING it needs an instrument
+that REPORTS instead of suffers.
+
+A test that proves a deadlock by deadlocking cannot run in a suite, so it
+never runs, so the hazard stays a paragraph in a design doc and ships. Replace
+the wait with a probe that cannot block and record what it saw.
+
+Worked example, the forest re-seat (2026-08-15): `Evicted` fires outside
+forest's locks, but a consumer calling `Put` under its own write lock can have
+eviction land the hook with that lock held, so a hook that takes the lock
+hangs. The test does not take the lock — it `TryLock`s and reports whether the
+lock was already held. Never blocks, and a true reading is evidence. The
+answer was 20 of 20 runs, which reclassified the bug: not an unlucky race, the
+common path under budget pressure, certain to ship on the first real workload.
+The number is the finding; the fix was the easy part.
+
+The same move elsewhere: a timeout that fails the test instead of wedging the
+suite, a counter of source calls instead of an assertion about contents, a
+`-race` reader that checks ordering rather than waiting for corruption.
+
+### Ask what the instrument would still report if its subject were gone
+
+Distilled by aria 9ed3f561 (2026-08-18) after sixteen documented instances,
+three of them found by pointing a rule it had written back at itself within
+the hour of writing it. It is the practice the rest of this section keeps
+re-deriving, and it is one question:
+
+    WHAT WOULD THIS INSTRUMENT STILL REPORT IF THE THING IT WATCHES WERE
+    GONE?
+
+If the answer is "a pass", the instrument is not measuring; it is agreeing.
+Three shapes of the same failure, all met in one evening:
+
+  - A RETIRED AXIS. A counter of lookups reads zero in both columns once the
+    lookups are removed. Nothing is wrong with it and it discriminates
+    nothing. A retired axis reads exactly like a clean result.
+  - A COMPARISON WITH NOTHING LEFT TO COMPARE. "Cold grows with length while
+    warm stays flat" is a fine canary until the warm path is deleted, at
+    which point the test passes by having no second column — and it AGREES
+    WITH THE PREDICTION, because the prediction was that warm becomes cold.
+    A confirmation produced by an instrument that can no longer disagree.
+  - A NAME THAT OUTLIVES ITS SUBJECT. `BenchmarkObservationWarm50` measuring
+    a cold walk because the one field that made it warm was deleted to fix
+    the build. Retire the name; never repair it.
+
+THE DEFENCE IS THE SAME EVERY TIME AND IT IS NOT VIGILANCE. Make the
+deletion BREAK THE BUILD (a field the instrument assigns), so the repair is
+a decision someone must make rather than a silence they inherit — and when
+you retire a column, state its final numbers IN THE COMMIT THAT RETIRES IT,
+so the comparison survives as a cross-commit assertion rather than
+evaporating with the code.
+
+AND THE VARIANT FOR STRUCTURE, contributed by aria 6ec565b5 the same night
+after the single-layer accretion was traced: **ASK WHAT THE INSTRUMENT
+WOULD STILL REPORT IF ITS SUBJECT WERE SOMEWHERE ELSE.** The sixth maxim
+catches an instrument whose subject is GONE; this catches one whose subject
+has MOVED to another layer. A per-layer benefit test -- "does THIS layer
+need the shared shape?" -- answers correctly, every time, and cannot see a
+cost that exists only BETWEEN layers. Three such tests, each honest, each
+declining locally, produced two cache shapes over one structure that nobody
+ever decided to keep.
+
+AND THE COROLLARY ABOUT PEOPLE, paid for three times in one evening by three
+different arias: A RULE IS NOT INTERNALISED BY BEING WRITTEN, OR EVEN BY
+BEING PROPOSED. Recognition attaches to the situation it was learned in, not
+to the mechanism, which is why a known failure mode survives review by the
+very author who named it. Knowing better is exactly what makes you stop
+checking.
+
+### Assert the fact, not the wish
+
+When the behaviour you dislike belongs to a component that never promised
+otherwise, do not leave a red test demanding it change. A test encoding what
+you wish another component did gets muted, then skipped, then deleted, and its
+signal never arrives.
+
+Assert what is TRUE, and let the assertion fail the day it stops being true.
+A dependency's scan pollutes a shared cache? Assert that it pollutes, and say
+in the failure message that the workaround can now be removed. That test pays
+attention while nobody is looking; a red one only accumulates apologies.
+
+**Worked example, and the shape of the mistake is the useful part.**
+`TestHibernateRefusesActiveAria` waits for an aria to report `idle`, then
+asserts `require.NoError(Hibernate(id))` once. But `Registry.Hibernate`
+re-checks liveness AFTER taking the retiring flag, deliberately — *"a turn that
+opened while we were taking the flag wins"* — so between the poll and the call
+the aria may legitimately be active again, and **the refusal is correct
+behaviour reported as a test failure.** Under load it goes red; alone it passes
+12 of 12. The fix asserts the fact: `require.Eventually(Hibernate succeeds)` —
+it eventually hibernates, and the refusals along the way are the design
+working.
+
+The sibling assertion three lines above already guards itself that way, and
+carries the comment *"a flaky assertion here would be worse than none"*. **The
+same author saw the hazard on one side of a pair and not the other.** That is
+the ordinary shape of this mistake rather than carelessness: a hazard is
+usually visible from one side and invisible from the other. When you fix one,
+go and look at its twin.
+
+### Prove the fixture can fail
+
+A check that cannot fail costs exactly what a check that cannot pass costs.
+The hard direction is applying it to your OWN test rather than to someone
+else's code.
+
+Before trusting what a fixture says, make it say the opposite. A residency
+test asserts first that a WARM read costs the layer below nothing -- without
+that line it is not measuring residency, it is measuring that nothing crashed,
+and it stays green through the regression it exists to catch. A grep that can
+never match, an absence reported before proving the thing that produces it
+ran: same failure, and it has cost this project several cycles.
+
+Prove the fixture can fail, then trust what it says.
+
+### An equivalence oracle is not scaffolding
+
+When you replace an implementation with a faster one that must behave
+IDENTICALLY, keep the old one — in the test file, permanently, as the oracle
+the new one is compared against.
+
+The instinct is to keep it "until the test passes, then delete it". That
+spends the corpus on a single moment. An equivalence claim is not a fact about
+the day of the change; it is a fact about every day after, and it stays
+checkable only while both sides are present. Delete the oracle and the corpus
+degrades into a list of hard-coded strings that some later, subtly different
+implementation will also satisfy.
+
+So: `tailBound` scans backwards and returns a substring; `tailBoundSplit`
+still splits and joins, in the test file, and 21 inputs must agree byte for
+byte — no trailing newline, exactly 199/200/201 lines, CRLF, a cut landing on
+the first byte. A companion test runs a deliberately one-line-short clamp
+against that same corpus and asserts the corpus catches it, so the oracle is
+known to be able to fail.
+
+The oracle costs a few dead lines. The alternative costs a rendering that is
+wrong forever, because a composed node is cached and shipped.
+
+### Ask before you build, not after
+
+The check is always cheaper than the thing it authorises. Compute first and
+ask afterwards whether the result was needed, and an O(1) question becomes an
+O(n) allocation.
+
+Three instances in one subsystem, which is what made it a habit rather than
+three bugs:
+
+- `tailBound` split every line of a tool's output, then kept the last 200.
+- the live composer rebuilt every node of the open region, then diffed them.
+- `delta()` built two maps and a slice for EVERY node, then asked whether that
+  node had changed.
+
+Each is cheap to invert and each inversion was worth between 6x and 25x on the
+axis it governed. When a hot path allocates before it branches, that is the
+smell; the fix is usually to move the question up, not to make the work faster.
+
+### Name the subject
+
+A fact about a DEPENDENCY and the fact that protects a USER are different
+tests, and only the second can be silently broken by your own change. "Route a
+scan through the cache and it evicts neighbours" is about the dependency.
+"A whole-history read through our public surface does not evict neighbours" is
+about us -- one branch pointed at the wrong layer and the policy is gone with
+nothing red. Write both, and know which is which.
+
+Corollary, and the reason this pays: write the instrument BEFORE the code that
+could violate the property. A hazard test written afterwards is a description
+of what you already believe.
+
 ## Releasing: `scripts/release.sh`, always
 
 **Do not cut a release by hand.** A tag is not a release here: nothing on any

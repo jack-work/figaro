@@ -96,7 +96,7 @@ func TestImportRestoresStudiesThroughTheVerb(t *testing.T) {
 	imported, err := be.CreateConversation(outfit)
 	require.NoError(t, err)
 
-	_, _, err = studyThroughStore(be, imported, formID, false)
+	_, err = studyThroughStore(be, imported, formID, false)
 	require.NoError(t, err)
 
 	lib, err := be.Libretto(formID)

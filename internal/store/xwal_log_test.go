@@ -11,7 +11,7 @@ type tp struct {
 // mustBackendWithConv creates a fresh backend, seeds an outfit + one
 // conversation, and returns them. The conversation id is a real trunk
 // id; xwalLog operations against it exercise the full store path
-// (OpenNode → Trunks.Head / Trunks.Append).
+// (openNode → Trunks.Head / Trunks.Append).
 func mustBackendWithConv(t *testing.T) (*XwalBackend, string) {
 	t.Helper()
 	b, err := NewXwalBackend(t.TempDir(), 0)

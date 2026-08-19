@@ -75,8 +75,10 @@ func (p *Provider) renderMessage(msg message.Message, prevSnap *form.Snapshot) (
 		}
 		// Taken before renderPatchBlocks advances prevSnap: see the note in
 		// the anthropic encoder.
-		board := derefSnap(prevSnap)
-		blocks = append(blocks, p.renderPatchBlocks(msg.Patches, prevSnap)...)
+		board := *prevSnap
+		patchBlocks, advanced := p.renderPatchBlocks(msg.Patches, board)
+		*prevSnap = advanced
+		blocks = append(blocks, patchBlocks...)
 		for _, text := range provider.StudyReminderTexts(msg, board) {
 			blocks = append(blocks, anthropic.NewTextBlock(text))
 		}
@@ -146,31 +148,18 @@ func toolInput(args map[string]interface{}) interface{} {
 
 // renderPatchBlocks projects form patches as system-reminder
 // text blocks and advances the snapshot.
-func (p *Provider) renderPatchBlocks(patches []message.Patch, prevSnap *form.Snapshot) []anthropic.ContentBlockParamUnion {
-	if len(patches) == 0 || p.Templates == nil {
-		for _, patch := range patches {
-			*prevSnap = prevSnap.Apply(patch)
-		}
-		return nil
-	}
-	if p.reminder == "tool" {
+func (p *Provider) renderPatchBlocks(patches []message.Patch, snap form.Snapshot) ([]anthropic.ContentBlockParamUnion, form.Snapshot) {
+	if p.Templates != nil && p.reminder == "tool" {
 		slog.Warn("anthropicsdk: reminder_renderer=tool not supported inline; using tag")
 	}
 	var out []anthropic.ContentBlockParamUnion
-	for _, patch := range patches {
-		rendered, err := form.Render(patch, *prevSnap, p.Templates)
-		if err != nil {
-			slog.Warn("anthropicsdk: render patch", "err", err)
-		} else {
-			for _, r := range rendered {
-				text := fmt.Sprintf("<system-reminder name=\"%s\">\n%s\n</system-reminder>",
-					escapeAttr(r.Key), r.Body)
-				out = append(out, anthropic.NewTextBlock(text))
-			}
-		}
-		*prevSnap = prevSnap.Apply(patch)
-	}
-	return out
+	snap = form.FoldRender(snap, patches, p.Templates,
+		func(r form.RenderedEntry) {
+			out = append(out, anthropic.NewTextBlock(fmt.Sprintf(
+				"<system-reminder name=\"%s\">\n%s\n</system-reminder>", escapeAttr(r.Key), r.Body)))
+		},
+		func(err error) { slog.Warn("anthropicsdk: render patch", "err", err) })
+	return out, snap
 }
 
 func escapeAttr(s string) string {
@@ -217,15 +206,4 @@ func toolResultBlock(toolUseID, text string, isErr bool, images []message.Conten
 // "harness metadata inside a message" rather than two.
 func senderReminder(sender string) string {
 	return "<system-reminder name=\"sender\">" + sender + "</system-reminder>"
-}
-
-// derefSnap is the board or the empty one. This encoder threads the previous
-// snapshot as a pointer (nil at the head of a cold walk), and the reminder
-// renderers take a value: a Snapshot is two words and its zero is legitimately
-// "an empty board", so there is nothing to guard beyond the nil.
-func derefSnap(s *form.Snapshot) form.Snapshot {
-	if s == nil {
-		return form.Snapshot{}
-	}
-	return *s
 }

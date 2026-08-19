@@ -726,6 +726,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		InlineBoot:      inlineBoot,
 		Settings:        loaded,
 		UIBudget:        h.angelus.UIWindow,
+		TurnDonor:       h.angelus.TurnDonor,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {
@@ -1187,7 +1188,7 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	// names a form this store does not have is not an error -- the libretto
 	// holds an empty copy and starts following if that form ever arrives.
 	for _, formID := range studies {
-		if _, _, err := studyThroughStore(h.angelus.Backend, id, formID, false); err != nil {
+		if _, err := studyThroughStore(h.angelus.Backend, id, formID, false); err != nil {
 			slog.Warn("import: could not restore a study",
 				"aria", id, "form", formID, "err", err)
 		}
@@ -2120,6 +2121,7 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro
 		LastActive:      lastActive,
 		Settings:        loaded,
 		UIBudget:        h.angelus.UIWindow,
+		TurnDonor:       h.angelus.TurnDonor,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {

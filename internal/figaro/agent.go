@@ -149,6 +149,13 @@ type Config struct {
 	// every other agent and with the reader. Nil is unbounded (the old
 	// behaviour, and the ephemeral/test default).
 	UIBudget *aria.UIBudget
+
+	// TurnDonor offers this aria the composed turns an ANCESTOR already holds
+	// below its fork point, so a fork does not compose the shared prefix a
+	// second time (seed_turns.go; measured by identity, phase 4). Nil is
+	// legal and means "compose everything", which is what every process
+	// without a live ancestor does anyway.
+	TurnDonor func(childID string) []aria.Turn
 }
 
 // Agent is the Figaro implementation.
@@ -171,6 +178,14 @@ type Agent struct {
 	backend     store.Backend // nil = ephemeral
 	form        *form.State
 	settings    *config.Loaded // wire budget policy; nil-safe
+
+	// The study mirror's order. A cast runs on the CALLER's goroutine (see
+	// castOp), so N concurrent casts publish N whole study sets into a board
+	// that has no idea which durable write won. studiesVersion is the board
+	// version the mirrored set landed at, and publishStudies refuses anything
+	// not newer: the mirror follows the durable order, not the arrival order.
+	studiesMu      sync.Mutex
+	studiesVersion uint64
 
 	inbox *Inbox
 
@@ -202,7 +217,16 @@ type Agent struct {
 
 	// ariaSrv materializes turn-shaped UI IR plus the newest mutable suffix. It
 	// is the single source of both figaro.aria pushes and figaro.read pulls.
+	// regionMsgs is the open turn's decoded messages, held across frames; see
+	// regionMessages. regionStart is the turnStartLT it belongs to and
+	// regionLast the highest LT folded into it.
+	regionMsgs  []message.Message
+	regionStart uint64
+	regionLast  uint64
+
 	ariaSrv *aria.Server
+	// turnDonor is Config.TurnDonor; see materializeTurns.
+	turnDonor func(childID string) []aria.Turn
 
 	createdAt     time.Time
 	lastActive    time.Time
@@ -265,6 +289,7 @@ func NewAgent(cfg Config) *Agent {
 	// The caller built cfg.Provider from this very board, so pairing the
 	// instance with the board's current knobs makes the first syncProvider
 	// a no-op, and any later divergence a genuine rebind.
+	a.turnDonor = cfg.TurnDonor
 	a.bindProvider(cfg.Provider)
 	a.inbox = NewInbox(ctx)
 
@@ -283,7 +308,7 @@ func NewAgent(cfg Config) *Agent {
 	// change to socket subscribers as one aria.Page.
 	a.ariaSrv = aria.NewServer()
 	a.ariaSrv.BindCache(a.turnSource(), cfg.UIBudget)
-	for _, t := range a.attachFormDeltas(a.projTurns(messages), entries) {
+	for _, t := range a.composeSealedTurns(entries) {
 		a.ariaSrv.Commit(t)
 	}
 	a.ariaSrv.Subscribe(func(p aria.Page) {
@@ -1035,6 +1060,19 @@ func (a *Agent) applyControlPatchVerdict(patch message.Patch, ifVersion uint64, 
 			slog.Error(kind+" form append", "aria", a.id, "err", err)
 			return
 		}
+		// PUBLISH WHAT WAS WRITTEN. The writer reduces the patch against the
+		// state it appends to (effectivePatch, atomic with the append) and
+		// hands back what it actually wrote; publishing the REQUESTED patch
+		// instead puts the caller's bytes on the board for a write the log
+		// never received. Today the divergence is masked -- ptree.Set is
+		// also a no-op that keeps the stored spelling for a semantically
+		// equal value -- so a re-set of {"k":[1,2]} as {"k":[ 1 , 2 ]} agrees
+		// by coincidence of two suppressions. Removing the tree's, as a
+		// canary, made the mirror hold [ 1 , 2 ] while the log held [1,2]:
+		// semantically equal, byte-different, and for array- and
+		// object-valued keys that reaches the wire. Same sentence as the
+		// lost study and as 6b2e597a; this is its third instance.
+		patch = applied
 	} else {
 		msg := message.Message{
 			Role:      message.RoleInput,

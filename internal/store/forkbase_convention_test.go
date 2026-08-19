@@ -13,17 +13,6 @@ import (
 	fwtree "github.com/jack-work/figaro/internal/store/tree"
 )
 
-// PORTED FROM feat/layered-cache (872ac168) BEFORE THE RANGE WORK, AND THAT
-// ORDER IS THE POINT. This pin does not exist on main: the fork-base
-// convention it asserts is UNPINNED there, and the range-unit change is about
-// to DEPEND on it, because prefix sharing across a lineage is the whole reason
-// to have ranges at all. A convention everything depends on and nothing
-// asserts is the exact silhouette just removed from the donation's fork seam;
-// it is not worth building on twice.
-//
-// The only change from the original is the package move: figwal/forest is now
-// internal/store/tree. No assertion, threshold or fixture was touched.
-//
 // Pins the fork-base convention across three parties that must agree, because
 // if they ever disagree nothing fails loudly: a fork reads one record of its
 // sibling's history, which looks like correct data from the wrong branch.

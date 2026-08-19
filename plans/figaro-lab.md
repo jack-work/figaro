@@ -58,7 +58,7 @@ alone closes the largest gap in the project and costs nothing per run.
 
 ### T1: pty smoke and fuzz. This is what wants a real container.
 
-`FIGARO_TMUX_SMOKE=1 go test ./internal/cli -run TestSmoke`, `paint-fuzz.sh`,
+`FIGARO_TMUX_SMOKE=1 go test ./internal/cli -count=1 -run TestSmoke`, `paint-fuzz.sh`,
 `queue-fuzz.sh`, `paintpane.sh` sweeps. Requirements the nix sandbox cannot
 give you:
 

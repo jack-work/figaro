@@ -58,7 +58,7 @@ func agentShape(turns, kb int, budget *aria.UIBudget) (*aria.Server, uint64) {
 		p, t := body(kb, i), body(kb, i+1<<20)
 		srv.OpenTurn(uint64(i))
 		srv.OpenInquiry(uint64(i), fmt.Sprintf("question %d", i))
-		srv.Update(nodes(p, t))
+		srv.Update(nil, nodes(p, t), 0)
 		srv.Close()
 		srv.Seal(nil) // <- agent.go:1217
 	}
@@ -140,7 +140,7 @@ func roundsShape(rounds, kb int) uint64 {
 	srv.OpenTurn(1)
 	for r := 1; r <= rounds; r++ {
 		all = append(all, nodes(body(kb, r), body(kb, r+1<<20))...)
-		srv.Update(all)
+		srv.Update(nil, all, 0)
 		srv.Close()     // folds the suffix in, calls TailMutated
 		srv.OpenTurn(1) // the next round of the SAME turn
 	}

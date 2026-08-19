@@ -131,9 +131,7 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 			// the record itself, so there is nothing to catch up from later.
 			// They are already decoded here; applying them costs no read.
 			if config.Form == nil {
-				for _, patch := range msg.Patches {
-					snap = snap.Apply(patch)
-				}
+				snap = form.Fold(snap, msg.Patches)
 			}
 			if len(cached) > 0 {
 				state = config.Append(state, cached, entry.LT)
@@ -152,9 +150,7 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 			// segment-backed accessor would otherwise perform to be told
 			// nothing, and this loop runs once per record forever.
 			if snapAt < lastForm {
-				for _, p := range config.Form.PatchesBetween(snapAt, lastForm) {
-					snap = snap.Apply(p)
-				}
+				snap = form.Fold(snap, config.Form.PatchesBetween(snapAt, lastForm))
 				snapAt = lastForm
 			}
 			// (after, upTo]: the previous entry's mark and this one's. Absolute,
@@ -235,9 +231,7 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 		if len(encoded) > 0 {
 			state = config.Append(state, encoded, entry.LT)
 		}
-		for _, patch := range msg.Patches {
-			snap = snap.Apply(patch)
-		}
+		snap = form.Fold(snap, msg.Patches)
 		snapAt = maxU64(snapAt, entry.FormChannelVersion)
 	}
 

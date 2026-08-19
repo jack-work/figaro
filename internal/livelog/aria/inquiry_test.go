@@ -27,9 +27,9 @@ func TestClientAlwaysHasTheQuestion(t *testing.T) {
 	drive := func(s *Server) {
 		s.OpenInquiry(1, q, segs...)
 		s.OpenTurn(1)
-		s.Update([]livedoc.Node{{Type: livedoc.NodeProse, Markdown: "answering"}})
-		s.Update([]livedoc.Node{{Type: livedoc.NodeProse, Markdown: "answering more"}})
-		s.Update([]livedoc.Node{{Type: livedoc.NodeProse, Markdown: "answering yet more"}})
+		s.Update(nil, []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "answering"}}, 0)
+		s.Update(nil, []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "answering more"}}, 0)
+		s.Update(nil, []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "answering yet more"}}, 0)
 		s.Close()
 		s.Seal(nil)
 	}
@@ -73,12 +73,12 @@ func TestLateJoinerRecoversTheQuestionFromARead(t *testing.T) {
 	s := NewServer()
 	s.OpenInquiry(1, q)
 	s.OpenTurn(1)
-	s.Update([]livedoc.Node{{Type: livedoc.NodeProse, Markdown: "answering"}})
+	s.Update(nil, []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "answering"}}, 0)
 
 	// Subscribing now: everything so far was missed.
 	var late []Page
 	s.Subscribe(func(p Page) { late = append(late, p) })
-	s.Update([]livedoc.Node{{Type: livedoc.NodeProse, Markdown: "more"}})
+	s.Update(nil, []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "more"}}, 0)
 
 	c := NewClient()
 	for _, f := range late {
@@ -134,7 +134,7 @@ func TestQuestionIsNotRestatedOnEveryFrame(t *testing.T) {
 		s.OpenInquiry(1, q)
 		s.OpenTurn(1)
 		for i := 0; i < 40; i++ {
-			s.Update([]livedoc.Node{{Type: livedoc.NodeProse, Markdown: strings.Repeat("x", i+1)}})
+			s.Update(nil, []livedoc.Node{{Type: livedoc.NodeProse, Markdown: strings.Repeat("x", i+1)}}, 0)
 		}
 		s.Close()
 		return
@@ -177,10 +177,10 @@ func BenchmarkTurnPushBytes(b *testing.B) {
 		s.OpenInquiry(1, q, InquirySegment{Sender: "aria e83ae209", Text: q})
 		s.OpenTurn(1)
 		for i := 0; i < 40; i++ {
-			s.Update([]livedoc.Node{{
+			s.Update(nil, []livedoc.Node{{
 				Type: livedoc.NodeTool, ID: "t1", Name: "write", Status: livedoc.StatusRunning,
 				Input: strings.Repeat("a line of the file being written\n", i+1),
-			}})
+			}}, 0)
 		}
 		s.Close()
 		s.Seal(nil)

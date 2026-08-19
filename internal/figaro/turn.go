@@ -474,6 +474,9 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	// drain loop, then drop the in-flight copy so compose reads it from the log
 	// instead: otherwise it would be counted twice.
 	asmMsg := newAsm(message.RoleOutput)
+	if a.turn != nil {
+		a.turn.asm = asmMsg
+	}
 	appendedInline := false
 	metricsReady := false
 	var roundErr error
@@ -516,11 +519,10 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 			case evFigaro:
 				force = true
 			}
-			a.noteAssistant(asmMsg.message())
 			var ackErr error
 			if ev.kind == evFigaro && roundErr == nil && !a.isInterrupted() {
 				staged := deferredLog.take(ev.msg)
-				a.noteAssistant(&staged.Payload)
+				a.stageAssistant(&staged)
 				calls := assistantToolInvokes(staged.Payload)
 				appendedEntry, err := a.appendMsg(staged.Payload)
 				if err != nil {
@@ -840,7 +842,7 @@ func (a *Agent) prepareProviderRound() error {
 		}
 		split := hasRenderablePrompt(prompts)
 		if split {
-			if len(a.composeTurn(nil)) == 0 {
+			if pre, suf, _ := a.composeTurn(nil); len(pre)+len(suf) == 0 {
 				a.abandonLive()
 			} else {
 				a.emitCommit()
@@ -1427,14 +1429,8 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 // composeTurn builds the current turn's node list: the messages appended
 // since the user prompt, plus the in-flight assistant message (nil once
 // it has appended into the log).
-func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
-	entries := a.figLog.ReadFrom(a.turnStartLT+1, 0)
-	var msgs []message.Message
-	for _, e := range entries {
-		m := e.Payload
-		m.LogicalTime = e.LT
-		msgs = append(msgs, m)
-	}
+func (a *Agent) composeTurn(inflight *message.Message) (prefix, suffix []livedoc.Node, stable int) {
+	msgs := a.regionMessages()
 	if inflight != nil {
 		// The provider appends the assistant message into the log concurrently
 		// with the drain loop's tail of buffered stream events. Once the appended
@@ -1443,7 +1439,7 @@ func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
 		// the message twice (under a bumped provisional LT, so the aria server
 		// folds it as a brand-new node set: the classic duplicated-thinking
 		// frame). The durable copy wins.
-		if n := len(entries); n > 0 && entries[n-1].Payload.Role == message.RoleOutput {
+		if n := len(msgs); n > 0 && msgs[n-1].Role == message.RoleOutput {
 			inflight = nil
 		}
 	}
@@ -1458,16 +1454,16 @@ func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
 		// the re-id as a second copy of the whole message.
 		m := *inflight
 		m.LogicalTime = a.turnStartLT + 1
-		if n := len(entries); n > 0 {
-			m.LogicalTime = entries[n-1].LT + 1
+		if n := len(msgs); n > 0 {
+			m.LogicalTime = msgs[n-1].LogicalTime + 1
 		}
 		msgs = append(msgs, m)
 	}
-	nodes := a.projNodes(msgs, a.gov.Tails(), a.argPartials)
+	pre, suf, stab := a.projNodes(msgs, a.gov.Tails(), a.argPartials)
 	if dir := os.Getenv("FIGARO_NODE_DEBUG"); dir != "" {
-		logComposeFrame(dir, a.id, inflight != nil, nodes)
+		logComposeFrame(dir, a.id, inflight != nil, append(append([]livedoc.Node(nil), pre...), suf...))
 	}
-	return nodes
+	return pre, suf, stab
 }
 
 // openToolTiming stamps the start of GENERATION: the provider has opened a
@@ -1533,7 +1529,7 @@ func logComposeFrame(dir, ariaID string, hasInflight bool, nodes []livedoc.Node)
 func (a *Agent) emitSnapshot(role string, nodes []livedoc.Node) {
 	a.ariaSrv.OpenTurn(a.turnID)
 	if len(nodes) > 0 {
-		a.ariaSrv.Update(nodes)
+		a.ariaSrv.Update(nil, nodes, 0)
 	}
 }
 
@@ -1567,8 +1563,8 @@ func (a *Agent) emitLive(inflight *message.Message, force bool) error {
 
 // emitDelta hands the current full node list to the aria server, which computes
 // the field-level delta vs the prior frame and broadcasts it (versioned).
-func (a *Agent) emitDelta(nodes []livedoc.Node) {
-	a.ariaSrv.Update(nodes)
+func (a *Agent) emitDelta(prefix, suffix []livedoc.Node, stable int) {
+	a.ariaSrv.Update(prefix, suffix, stable)
 }
 
 // emitCommit closes the open unit after it becomes a committed IR message.
@@ -1734,4 +1730,41 @@ func statusOf(err error) string {
 		return "failure"
 	}
 	return "success"
+}
+
+// regionMessages is the open turn's messages, HELD across frames and extended
+// by whatever the log appended since the last one.
+//
+// Measured before it was written: re-reading the region was 45,696 B of a
+// 71,734 B frame at 64 rounds -- 64% of the frame's bytes and ~30% of its
+// time -- to re-copy 128 messages of which at most two are new. ReadFrom
+// copies the entries and the loop copies them again; this pays both once per
+// APPEND rather than once per frame.
+//
+// THE RETURNED SLICE IS CAPPED AT ITS LENGTH. composeTurn appends the
+// in-flight message to it, and an append with spare capacity would land inside
+// this memo's array, editing a slice an earlier frame may still be read
+// through: the held-view law, pinned twice in internal/store, broken one
+// package over. region_memo_test.go asks that as a capacity question, because
+// no comparison of contents can see it.
+//
+// Called only from the turn goroutine, like a.argPartials beside it.
+func (a *Agent) regionMessages() []message.Message {
+	if a.regionStart != a.turnStartLT {
+		// A new turn is a new region. A memo carried across the boundary would
+		// serve the previous turn's messages under this turn's LTs.
+		a.regionStart, a.regionMsgs, a.regionLast = a.turnStartLT, nil, 0
+	}
+	from := a.turnStartLT + 1
+	if a.regionLast >= from {
+		from = a.regionLast + 1
+	}
+	for _, e := range a.figLog.ReadFrom(from, 0) {
+		m := e.Payload
+		m.LogicalTime = e.LT
+		a.regionMsgs = append(a.regionMsgs, m)
+		a.regionLast = e.LT
+	}
+	n := len(a.regionMsgs)
+	return a.regionMsgs[:n:n]
 }

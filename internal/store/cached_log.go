@@ -1,6 +1,7 @@
 package store
 
 import (
+	"reflect"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -390,4 +391,89 @@ func (c *cachedLog[T]) Clear() error {
 	}
 	c.view.Store(&logView[T]{})
 	return nil
+}
+
+// --- seeding a fork from an ancestor that already decoded the prefix ---
+
+// residentBelow returns the resident rows strictly below figaroLT, as a slice
+// of the published view. The rows are never mutated after publication (the
+// held-view law), so handing them out is safe and costs a slice header.
+func (c *cachedLog[T]) residentBelow(figaroLT uint64) []Entry[T] {
+	v := c.load()
+	k := sort.Search(len(v.rows), func(i int) bool { return v.rows[i].FigaroLT >= figaroLT })
+	if k == 0 {
+		return nil
+	}
+	return v.rows[:k]
+}
+
+// newSeededLog builds a cache whose resident prefix is DONATED by an ancestor
+// instead of decoded a second time. seed must be the ancestor's resident rows
+// below the child's fork base, ascending.
+//
+// Measured, not assumed: opening a fork re-decodes the shared prefix and mints
+// every string the parent already holds (decode_duplication_test.go), and a
+// shallow copy shares all of them. So the child pays slice headers where it
+// used to pay a decode.
+//
+// IT DEGRADES TO A MISS, NEVER TO A LIE. Every doubt -- an empty seed, a
+// non-ascending one, a seam that does not match the log -- falls back to the
+// ordinary decoding constructor. The seam is verified by reading the last
+// seeded record back out of the log and comparing it: one decode, once per
+// open, against serving another aria's history from memory.
+//
+// trimmed is derived as Len() - len(rows). Len() counts RECORDS and rows
+// counts records that decoded, so trimmed can only ever be an OVER-estimate,
+// which sends a read to disk that memory could have served. The opposite error
+// would report a truncated window as complete.
+func newSeededLog[T any](inner Log[T], window, budget, inflation int, sizeOf func(Entry[T]) int, seed []Entry[T]) *cachedLog[T] {
+	if len(seed) == 0 || !ascending(seed) {
+		return newWindowedLog(inner, window, budget, inflation, sizeOf)
+	}
+	last := seed[len(seed)-1]
+	// FINGERPRINT, CHECKED IN CODE RATHER THAN PROMISED IN A COMMENT.
+	// A translation cache is keyed by encoder fingerprint and cleared
+	// WHOLESALE on mismatch, so rows rendered for another dialect are a lie
+	// that would outlive the clearing of the durable log. Every donated row
+	// must carry the SAME fingerprint, and that one is then verified against
+	// the log itself by the seam probe below. Fig IR rows carry none, where
+	// this is a comparison of empty strings and costs a pass.
+	for i := range seed {
+		if seed[i].Fingerprint != last.Fingerprint {
+			return newWindowedLog(inner, window, budget, inflation, sizeOf)
+		}
+	}
+	probe := inner.ReadFrom(last.FigaroLT, 1)
+	if len(probe) != 1 || probe[0].FigaroLT != last.FigaroLT ||
+		probe[0].Fingerprint != last.Fingerprint ||
+		!reflect.DeepEqual(probe[0].Payload, last.Payload) {
+		// The seed does not describe this log's history. Decode instead.
+		return newWindowedLog(inner, window, budget, inflation, sizeOf)
+	}
+	if inflation < 1 {
+		inflation = 1
+	}
+	c := &cachedLog[T]{inner: inner, window: window, budget: budget, sizeOf: sizeOf}
+	own := inner.ReadFrom(last.FigaroLT+1, 0)
+	v := &logView[T]{rows: make([]Entry[T], 0, len(seed)+len(own))}
+	v.rows = append(v.rows, seed...) // shallow: shares every payload string
+	v.rows = append(v.rows, own...)
+	if total := inner.Len(); total > len(v.rows) {
+		v.trimmed = total - len(v.rows)
+	}
+	for _, e := range v.rows {
+		v.bytes += c.size(e)
+	}
+	c.compact(v, 0)
+	c.view.Store(v)
+	return c
+}
+
+func ascending[T any](rows []Entry[T]) bool {
+	for i := 1; i < len(rows); i++ {
+		if rows[i].FigaroLT <= rows[i-1].FigaroLT {
+			return false
+		}
+	}
+	return true
 }

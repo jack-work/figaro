@@ -474,7 +474,7 @@ you a regression test insulated from capture artifacts.
 | `internal/cli/transcript_paint_test.go` | **the VT harness lives here** (`newVT(w,h)`, `vtScreen`, `assertSameGrid`, `teeVT`, `scrollTranscript`): *not* in a `vt_test.go`; the brief's path is stale. `naivePaint` is the reference painter to diff against. |
 | `internal/cli/transcript_paint_tmux_test.go` | replays the pager's real escape stream into tmux and compares to `t.prev`. **This is the test that already catches "the painter's belief ≠ the screen".** Extend it; it is the closest thing to the three bugs. |
 | `internal/cli/transcript_frames_golden_test.go` | frame goldens |
-| `internal/cli/tmuxsmoke_test.go` + `_cases_test.go` | `FIGARO_TMUX_SMOKE=1 go test ./internal/cli/ -run TestSmoke -v`: real binary, real pty, **real provider** (costs tokens). Read the case comments: each names the shipped bug it exists to catch. |
+| `internal/cli/tmuxsmoke_test.go` + `_cases_test.go` | `FIGARO_TMUX_SMOKE=1 go test ./internal/cli/ -count=1 -run TestSmoke -v`: real binary, real pty, **real provider** (costs tokens). Read the case comments: each names the shipped bug it exists to catch. **`-count=1` is not optional**: without it `go test` can answer from cache and REPLAY a previous run's output verbatim — `ok (cached)`, exit 0, the participation summary printed — for a suite whose entire purpose is to drive a real terminal. A green tick for work nobody did. The run also prints `smoke participation: N ran, M declined`; `FIGARO_TMUX_SMOKE_MIN_RAN` fails the run when fewer than N cases executed. |
 
 Useful existing helpers to imitate rather than rewrite: `newPane`/`waitIdle`/
 `pagerChrome`/`bodyLines`/`footers`/`close` in `tmuxsmoke_test.go`, and
