@@ -157,8 +157,10 @@ func (c *Cache[U]) Drop(coord Coord) {
 	if n := c.lookup(coord.Node); n != nil {
 		runs := n.load()
 		if r := at(runs, coord); r != nil && r.resident {
-			freed = r.bytes
-			n.publish(replace(runs, hollow(r)))
+			if next, ok := replaceIdentity(runs, r, hollow(r)); ok {
+				freed = r.bytes
+				n.publish(next)
+			}
 		}
 	}
 	c.mu.Unlock()
@@ -420,13 +422,23 @@ func (c *Cache[U]) nodeLocked(name string) *node[U] {
 // replace builds the successor slice with r at its coord: an exact-coord
 // replacement, or an insertion keeping the sort by From. O(runs) in the copy,
 // which is what the old in-place insert already paid.
+//
+// SEVERAL RUNS MAY SHARE A From. A tenant that widens its tail Puts (a..b] and
+// then (a..b+1], so an index keyed only by From holds two runs at one starting
+// coordinate; the equal-From block is scanned rather than assumed to be one
+// entry. Found by TestRangeAnswersItsSpanUnderRandomResidency: with the
+// assumption in place, eviction INSERTED a hollow duplicate instead of
+// replacing its victim, the victim stayed resident, coldest kept returning it,
+// and TrimIdle spun until the test timed out.
 func replace[U any](runs []*run[U], r *run[U]) []*run[U] {
 	i := sort.Search(len(runs), func(i int) bool { return runs[i].coord.From >= r.coord.From })
-	if i < len(runs) && runs[i].coord == r.coord {
-		next := make([]*run[U], len(runs))
-		copy(next, runs)
-		next[i] = r
-		return next
+	for j := i; j < len(runs) && runs[j].coord.From == r.coord.From; j++ {
+		if runs[j].coord == r.coord {
+			next := make([]*run[U], len(runs))
+			copy(next, runs)
+			next[j] = r
+			return next
+		}
 	}
 	next := make([]*run[U], 0, len(runs)+1)
 	next = append(next, runs[:i]...)
@@ -434,19 +446,47 @@ func replace[U any](runs []*run[U], r *run[U]) []*run[U] {
 	return append(next, runs[i:]...)
 }
 
+// replaceIdentity swaps ONE run for its successor BY POINTER. Eviction and
+// Drop use this rather than replace: a coord lookup can miss, and a miss there
+// does not fail loudly -- it leaves the victim resident while the budget
+// believes its bytes were freed, which is a meter that lies in the safe-looking
+// direction.
+func replaceIdentity[U any](runs []*run[U], old, next *run[U]) ([]*run[U], bool) {
+	for i, r := range runs {
+		if r == old {
+			out := make([]*run[U], len(runs))
+			copy(out, runs)
+			out[i] = next
+			return out, true
+		}
+	}
+	return runs, false
+}
+
 func at[U any](runs []*run[U], coord Coord) *run[U] {
 	i := sort.Search(len(runs), func(i int) bool { return runs[i].coord.From >= coord.From })
-	if i < len(runs) && runs[i].coord == coord {
-		return runs[i]
+	for ; i < len(runs) && runs[i].coord.From == coord.From; i++ {
+		if runs[i].coord == coord {
+			return runs[i]
+		}
 	}
 	return nil
 }
 
-// overlapping is the first run intersecting [pos, limit).
+// overlapping is the first run intersecting [pos, limit), scanned in order.
+//
+// LINEAR, AND DELIBERATELY. Runs are sorted by From, but their To values need
+// not ascend once a tenant Puts overlapping spans, so a binary search on To
+// answers about an order the index does not have. The locked walk this replaced
+// scanned too; the scan is over ONE node's runs, which chunking bounds.
 func overlapping[U any](runs []*run[U], pos, limit uint64) *run[U] {
-	i := sort.Search(len(runs), func(i int) bool { return runs[i].coord.To > pos })
-	if i < len(runs) && runs[i].coord.From < limit {
-		return runs[i]
+	for _, r := range runs {
+		if r.coord.From >= limit {
+			break // sorted by From: nothing later can intersect
+		}
+		if r.coord.To > pos {
+			return r
+		}
 	}
 	return nil
 }
@@ -515,7 +555,14 @@ func (c *Cache[U]) evictColdest() int64 {
 	}
 	freed := victim.bytes
 	coord := victim.coord
-	victimNode.publish(replace(victimNode.load(), hollow(victim)))
+	next, ok := replaceIdentity(victimNode.load(), victim, hollow(victim))
+	if !ok {
+		// The victim left the index while we were choosing it. Free nothing:
+		// whoever removed it accounted for it.
+		c.mu.Unlock()
+		return 0
+	}
+	victimNode.publish(next)
 	hook := c.Evicted
 	c.mu.Unlock()
 

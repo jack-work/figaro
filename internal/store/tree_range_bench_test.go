@@ -57,3 +57,29 @@ func BenchmarkTreeRangeSerial(b *testing.B) {
 		_, _ = c.Range(lineage, 1500, 1564)
 	}
 }
+
+// A SINGLE-UNIT read under many readers: the shape where a lock on the read
+// path can actually show. BenchmarkTreeRange* above asks for 64 units, so its
+// cost is dominated by copying them and a mutex acquisition disappears inside
+// it -- which is why a lock's removal must not be measured there.
+func BenchmarkTreeRangeOneUnitParallel(b *testing.B) {
+	c, lineage := benchCache(2000)
+	defer c.Close()
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_, _ = c.Range(lineage, 1500, 1501)
+		}
+	})
+}
+
+func BenchmarkTreeRangeOneUnitSerial(b *testing.B) {
+	c, lineage := benchCache(2000)
+	defer c.Close()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = c.Range(lineage, 1500, 1501)
+	}
+}
