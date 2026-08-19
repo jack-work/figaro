@@ -1949,3 +1949,79 @@ REHEARSAL are one defect.
 
     ALL THREE SAY "IT WAS VERIFIED" WHERE THE USEFUL SENTENCE IS "IT WAS
     VERIFIED AT THIS TREE, AT THIS TIME."
+
+## THE COST, MEASURED IN COUNTS, TODAY, WITHOUT THE CHANGE EXISTING
+
+9ed3f561, recorded by f3aa1d0b, 2026-08-18. Both halves of the
+pre-registered prediction confirmed, on a box at load 20, with no floor to
+clear and no quiet box to wait for — because the question was countable
+all along.
+
+    length     WARM handed/lookups/decodes     COLD handed/lookups/decodes
+       50              1 / 1 / 1                     51 /  51 / 1
+      100              1 / 1 / 1                    101 / 101 / 1
+      200              1 / 1 / 1                    201 / 201 / 1
+      400              1 / 1 / 1                    401 / 401 / 1
+
+COLD GROWS LINEARLY IN LENGTH WHILE WARM IS FLAT AT ONE. And it is LOOKUPS
+that grow, N+1 of them, while DECODES STAY AT EXACTLY 1 — the lookup axis
+is precisely what the merge-join removes, and the decode axis was never the
+cost.
+
+THE COLD COLUMN IS NOT A CONTROL, IT IS THE REGRESSION. A pass with no
+`Previous` IS the cold walk that deleting the warm start creates, so the
+instrument measures the change before the change exists, using a shape the
+code already supports. The canary is built into the table rather than
+bolted beside it: an instrument that cannot see cold growing cannot see the
+deletion, and the test FAILS SAYING SO rather than reporting a comfortable
+null.
+
+## SO THE TRADE, STATED PLAINLY BEFORE IT LANDS
+
+    TODAY            one entry handed per turn, one lookup, one decode.
+                     Bought with a retained projection that PINS what the
+                     log's window believes it evicted.
+    AFTER, WITH THE  N entries handed per turn, ZERO lookups, one decode.
+    MERGE-JOIN       Bought with a walk.
+
+THE DELETION TRADES O(1) PER-TURN WORK FOR O(N), AND BUYS BACK THE
+RETENTION. That is not a regression discovered late; it is the trade Part
+II rules FOR, in Gluck's own words — nothing may pin evicted bytes, and if
+a caller needs a record it reads it. The merge-join removes the multiplier
+on that walk; it does not remove the walk, and nothing can, because the
+walk IS the alternative to holding the bytes.
+
+WHAT MAY BE SAID WHEN IT LANDS: the per-turn cost goes from constant to
+linear in conversation length, measured in counts, and the lookup term —
+which is the one that would have gone quadratic through the linear-scan
+fallback — is removed entirely. WHAT MAY NOT BE SAID: that the deletion is
+free.
+
+## TWO INSTRUMENT FAULTS DISCLOSED BEFORE THEY REACHED ME
+
+FIRST: the first version reported THE WARM START ALREADY BROKEN — warm
+growing 51 -> 401, which reads as "it already walks the conversation before
+anything was deleted". Artifact: `store.TailAfter` has an OPTIONAL FAST
+PATH, `MemLog` does not implement it, and the fallback calls `Read()` and
+MATERIALISES THE WHOLE LOG before slicing. Real for MemLog, not necessarily
+real for a cachedLog. Now counted as two quantities — MATERIALISED (what
+the log produced) and HANDED (what the projection received) — and the cost
+question is about the second.
+
+SECOND, AND IT IS A NEW MECHANISM FOR THE INSTRUMENT NOTE: A COUNTING
+WRAPPER THAT OVERRIDES `Read` BUT NOT `TailAfter` COUNTS THE WRONG THING —
+and on a log that HAS the fast path, GO'S EMBEDDING PROMOTES THE INNER
+METHOD AND BYPASSES THE OVERRIDE ENTIRELY. The counter would report ZERO
+while the projection iterated thousands.
+
+    EMBEDDING HANDS YOU A SILENT BYPASS FOR FREE. A wrapper is an
+    instrument, and a promoted method is an instrument that does not reach
+    the code — with the reader's own type system doing the concealing.
+
+## AND THE TIMING QUESTION IS NOW DECIDABLE ON BETTER GROUNDS
+
+The counts establish that the walk grows with length. So a timing run would
+price it in nanoseconds and would NOT establish the shape, which is already
+established. It stays refused tonight — and now for a stronger reason than
+load: NOT NEEDED, rather than NOT AFFORDABLE. That is the better kind of
+refusal and it is the one that should be inherited.
