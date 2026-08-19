@@ -2507,3 +2507,86 @@ Same shape as everything else in this document, one level up and pointed at
 the person whose job is to catch it. A measured-but-uncommitted tree is the
 most fragile state in this campaign: the numbers exist, the artifact does
 not, and no stamped gate can name a tree that has no commit.
+
+# THE HEAP NUMBER, TAKEN — AND IT CORRECTS THIS DOCUMENT'S OWN HEADLINE
+# DOWNWARD
+
+9ed3f561, measured at ef7cdcb2 (PRE-deletion, the only tree where the
+subject still exists), commit b9925789 on meas/projection-heap. Recorded
+by f3aa1d0b, 2026-08-18.
+
+    1000 records x 2,326 B encoded   =   2.22 MiB encoded
+    heap, projection ALIVE               3,206,632 B
+    heap, projection DROPPED               445,160 B
+    RETAINED BY THE LIVE PROJECTION      2,761,472 B  =  2.63 MiB
+
+    MULTIPLIER OVER ENCODED-AT-REST: 1.19x
+
+REACHABILITY PROVEN, NOT ASSUMED: padding each retained payload by 4,096 B
+should move the figure by ~4,096,000 B and moved it by 3,840,000 B — 94%.
+A heap reading without that canary is a number, not an attribution.
+
+## THIS DOCUMENT GUESSED "COMMONLY SEVERAL TIMES LARGER". IT IS 1.19x
+
+The LEDGER section says: "The projection holds DECODED Go values, commonly
+several times larger. THE REAL FIGURE IS A HEAP MEASUREMENT, NOT A FILE
+WALK, and it has not been taken." IT HAS NOW BEEN TAKEN AND THE GUESS WAS
+WRONG IN THE CONSERVATIVE DIRECTION — the note warned a reader the true
+figure might be MULTIPLES of 200 MiB, and on this shape it is 1.19x.
+
+## AND A SECOND CORRECTION, WHICH IS MINE AND WHICH MATTERS MORE
+
+    200.2 MiB IS A TOTAL ACROSS 1,463 CHANNELS AT REST ON DISK. A LIVE
+    DAEMON HOLDS A PROJECTION ONLY FOR AN ARIA THAT IS OPEN.
+
+So the deletion does NOT return 200.2 MiB. It returns, per OPEN aria,
+about 1.19x that aria's encoded size:
+
+    a typical open aria (mean record 2,326 B)      ~2.6 MiB per 1000 records
+    a p99 aria (2,463,337 B encoded)               ~2.9 MiB
+    the largest on disk (9,841,806 B)             ~11.7 MiB
+
+The 200.2 MiB figure is the CEILING IF EVERY ARIA WERE OPEN AT ONCE, which
+never happens. Ten concurrently open arias at p99 is ~29 MiB. That is the
+number a reader should carry, and this document must not be quoted as
+promising 200.
+
+THE STRUCTURAL CASE IS UNCHANGED AND IS STILL THE REASON: Gluck's ruling
+that NOTHING MAY PIN EVICTED BYTES. The projection made the store's window
+a fiction — memory it believed released was not — and that is a
+correctness property about the memory system, not a quantity. It was
+always the headline; the ledger said so ("the benefit is STRUCTURAL rather
+than TEMPORAL"). What changes is that nobody may now dress it in a
+200 MiB coat.
+
+## THE GAP, NAMED BY THE MEASURER RATHER THAN FOUND LATER
+
+The fixture's `State` is `[]json.RawMessage` — RAW BYTES, so retention is
+~1:1 plus slice headers. THE PROVIDERS THAT DECODE INTO TYPED SDK STRUCTS
+— `anthropicsdk`'s `projectedMessages` — WILL HAVE A HIGHER MULTIPLIER AND
+IT IS UNMEASURED.
+
+    1.19x IS A FLOOR ON THE MULTIPLIER, NOT THE MULTIPLIER.
+
+The landing note says the witness exists for the RAW-BYTES shape and not
+yet for the DECODED-STRUCT shape.
+
+## AND THE INSTANCE THAT COST THE MOST AND WAS FOUND BY THE OWNER
+
+This measurement was REFUSED THREE TIMES, on the ground that we are the
+load and it is Gluck's desktop. IT COUNTS BYTES. Bytes and allocations are
+load- and machine-independent — this campaign's own note says so
+(ns-does-not-travel.md: allocation counts IDENTICAL across two machines,
+wall time moving 10-15%).
+
+    A REFUSAL RECORDED FOR LOAD WAS INHERITED WITHOUT ANYONE ASKING WHAT
+    THE MEASUREMENT WAS MADE OF.
+
+The arm inherited it. The role bearer inherited it and upheld it three
+times. NEITHER ASKED, AND THE OWNER PROMPTED IT BY ASKING AN ORDINARY
+QUESTION ABOUT HIS OWN MACHINE. It is the sixteenth instance in the
+instrument note, committed simultaneously by the party that measures and
+the party whose whole job is to catch it — which is the strongest evidence
+yet for that note's thesis: the error is not carelessness, it is a correct
+answer to a narrower question, and shared context makes two people narrow
+it the same way.
