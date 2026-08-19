@@ -3,11 +3,30 @@ package tree
 import (
 	"sort"
 	"sync"
+	"sync/atomic"
 )
 
 // Cache is the window itself: per-node runs of materialized units, an
 // index that survives eviction, prefix-shared residency across a
 // lineage. One instance per layer; the type parameter is the unit.
+//
+// A HIT TAKES NO LOCK. Every structure a reader touches -- the node map, a
+// node's run slice, a run and its units -- is IMMUTABLE ONCE PUBLISHED, and a
+// writer builds a successor and stores a pointer to it. That is not a
+// performance preference: it is what lets one uniform window serve a hot tail
+// AND a cold range, which a mutex could not. Measured on this package's own
+// benchmark, 2026-08-19: under the mutex a 64-unit Range cost 1.4 us serial
+// and 2.3 us with readers -- it got SLOWER as readers were added, and that
+// inversion is the entire reason a second, flat cache shape survived beside
+// this one (plans/log-cache-policy.md, "LRU owns the cold ranges, never the
+// hot tail").
+//
+// WRITERS still take c.mu, and it is a real lock with real concurrent callers:
+// two arias materializing into one cache is the ordinary case. It is held ONLY
+// to publish a successor -- never across a Source call, never across the
+// budget's eviction pass, never across the Evicted hook. Each of those three
+// is a call OUT of this package, and a lock held across a call out is the
+// deadlock this stack has already met (docs/store/tree.md).
 type Cache[U any] struct {
 	src    Source[U]
 	size   Sizer[U]
@@ -25,25 +44,37 @@ type Cache[U any] struct {
 	// that read with a lock). Eviction orders by max(run epoch, oracle).
 	Recency func(Coord) int64
 
-	mu    sync.Mutex
-	nodes map[string]*node[U]
+	// nodes is an immutable map published by pointer. Node CREATION copies it;
+	// that happens once per node, while run publication (frequent) copies only
+	// the one node's run slice.
+	nodes atomic.Pointer[map[string]*node[U]]
 
-	recomposes int64
+	mu sync.Mutex // WRITERS ONLY
+
+	recomposes atomic.Int64
 }
 
 // run is a contiguous materialized span within one node. Hollowing
 // drops units and keeps {coord, bytes}: the index that makes the next
 // miss BOUNDED.
+//
+// IMMUTABLE ONCE PUBLISHED, epoch excepted. A reader that is holding a run
+// while it is evicted keeps serving the units it already has -- they are
+// canonical bytes, not a view of something that changed -- and the run is
+// collected when that reader lets go.
 type run[U any] struct {
 	coord    Coord
 	units    []U // nil when hollow
 	bytes    int64
-	epoch    int64
 	pinned   bool // cannot rematerialize; stays resident, stays counted
 	resident bool
+	epoch    atomic.Int64
 }
 
-type node[U any] struct{ runs []*run[U] } // sorted by coord.From
+// node holds one trunk node's runs, sorted by coord.From, published whole.
+type node[U any] struct {
+	runs atomic.Pointer[[]*run[U]]
+}
 
 // touch refreshes recency the cheap way: RECENCY IS AN EPOCH. The epoch
 // advances only on load and sweep (rare); a touched run only STORES it,
@@ -51,14 +82,16 @@ type node[U any] struct{ runs []*run[U] } // sorted by coord.From
 // with more readers (segment cache, 2026-08); the generic must not
 // reintroduce what the concrete already paid to remove.
 func (r *run[U]) touch(c *Cache[U]) {
-	if e := c.budget.EpochNow(); r.epoch != e {
-		r.epoch = e
+	if e := c.budget.EpochNow(); r.epoch.Load() != e {
+		r.epoch.Store(e)
 	}
 }
 
 // New builds a cache over src, accounted against b (nil = unbounded).
 func New[U any](src Source[U], b *Budget, size Sizer[U], key Keyer[U]) *Cache[U] {
-	c := &Cache[U]{src: src, size: size, key: key, budget: b, nodes: map[string]*node[U]{}}
+	c := &Cache[U]{src: src, size: size, key: key, budget: b}
+	empty := map[string]*node[U]{}
+	c.nodes.Store(&empty)
 	b.adopt(c)
 	return c
 }
@@ -68,14 +101,15 @@ func New[U any](src Source[U], b *Budget, size Sizer[U], key Keyer[U]) *Cache[U]
 func (c *Cache[U]) Close() {
 	c.mu.Lock()
 	var freed int64
-	for _, n := range c.nodes {
-		for _, r := range n.runs {
+	for _, n := range *c.nodes.Load() {
+		for _, r := range n.load() {
 			if r.resident {
 				freed += r.bytes
 			}
 		}
 	}
-	c.nodes = map[string]*node[U]{}
+	empty := map[string]*node[U]{}
+	c.nodes.Store(&empty)
 	c.mu.Unlock()
 	if c.budget != nil {
 		c.budget.bytes.Add(-freed)
@@ -86,11 +120,7 @@ func (c *Cache[U]) Close() {
 // Recomposes reports source calls to date, for the thrash alarm: a
 // count climbing with READS rather than with distinct ranges means the
 // window is too small for its load.
-func (c *Cache[U]) Recomposes() int64 {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.recomposes
-}
+func (c *Cache[U]) Recomposes() int64 { return c.recomposes.Load() }
 
 // Put seeds units the caller already holds (a seal, a decode already
 // paid for), so the freshest data never costs a rematerialize. Pinned
@@ -99,23 +129,22 @@ func (c *Cache[U]) Recomposes() int64 {
 // REPLACES it (the writer's tail growing in place), and the budget is
 // charged the delta.
 func (c *Cache[U]) Put(coord Coord, units []U, pinned bool) {
-	c.mu.Lock()
-	n := c.node(coord.Node)
 	r := &run[U]{coord: coord, units: append([]U(nil), units...), pinned: pinned, resident: true}
-	r.epoch = c.bump()
+	r.epoch.Store(c.bump())
 	for _, u := range units {
 		r.bytes += int64(c.size(u))
 	}
 	delta := r.bytes
-	if old := n.at(coord); old != nil {
-		if old.resident {
-			delta -= old.bytes
-		}
-		*old = *r
-	} else {
-		n.insert(r)
+
+	c.mu.Lock()
+	n := c.nodeLocked(coord.Node)
+	old := n.load()
+	if prev := at(old, coord); prev != nil && prev.resident {
+		delta -= prev.bytes
 	}
+	n.publish(replace(old, r))
 	c.mu.Unlock()
+
 	c.budget.charge(delta)
 }
 
@@ -125,11 +154,12 @@ func (c *Cache[U]) Put(coord Coord, units []U, pinned bool) {
 func (c *Cache[U]) Drop(coord Coord) {
 	c.mu.Lock()
 	var freed int64
-	if r := c.node(coord.Node).at(coord); r != nil && r.resident {
-		freed = r.bytes
-		r.units = nil
-		r.resident = false
-		r.pinned = false
+	if n := c.lookup(coord.Node); n != nil {
+		runs := n.load()
+		if r := at(runs, coord); r != nil && r.resident {
+			freed = r.bytes
+			n.publish(replace(runs, hollow(r)))
+		}
 	}
 	c.mu.Unlock()
 	if c.budget != nil && freed > 0 {
@@ -147,13 +177,12 @@ func (c *Cache[U]) Range(lineage []Ref, from, to uint64) ([]U, error) {
 	}
 	var out []U
 	// Split the ask across the lineage by fork bases, root first.
-	cuts := c.split(lineage, from, to)
-	for _, cut := range cuts {
+	for _, cut := range c.split(lineage, from, to) {
 		units, err := c.rangeInNode(cut)
+		out = append(out, units...)
 		if err != nil {
 			return out, err
 		}
-		out = append(out, units...)
 	}
 	return out, nil
 }
@@ -180,82 +209,139 @@ func (c *Cache[U]) split(lineage []Ref, from, to uint64) []Coord {
 }
 
 // rangeInNode serves one node's coord, materializing gaps.
+//
+// THE RUN SLICE IS RELOADED EVERY STEP, and that is not defensive: another
+// caller publishes a successor while this one is inside a Source, so a slice
+// captured once would walk an index that no longer describes the node. The
+// runs it names stay valid -- they are immutable -- so the reload costs a
+// pointer load and gains an up-to-date index.
 func (c *Cache[U]) rangeInNode(coord Coord) ([]U, error) {
-	c.mu.Lock()
-	n := c.node(coord.Node)
 	var out []U
-	pos := coord.From
-	// RE-SCAN n.runs EACH STEP RATHER THAN RANGING OVER IT.
-	//
-	// Materialization now RELEASES c.mu (fetchUnlocked), so another caller may
-	// insert runs into this node while we are outside the lock. A `range
-	// n.runs` captures the slice header ONCE and would then walk a stale array
-	// -- and the desync shows up as `pos` overtaking coord.To and slice()
-	// panicking with "slice bounds out of range [15:13]". THE EXISTING
-	// TestConcurrentRange CAUGHT EXACTLY THAT under -race -count=2, before this
-	// change was believed.
-	//
-	// Re-scanning from pos is O(runs) per step instead of O(runs) per call.
-	// That is the cost of a Source that may run unlocked, and it is paid on a
-	// path that is already doing I/O.
-	for pos < coord.To {
-		var r *run[U]
-		for _, cand := range n.runs {
-			if cand.coord.To <= pos || cand.coord.From >= coord.To {
-				continue
-			}
-			r = cand
-			break
-		}
+	for pos := coord.From; pos < coord.To; {
+		r := overlapping(c.runs(coord.Node), pos, coord.To)
 		if r == nil {
-			break
+			units, err := c.fill(Coord{coord.Node, pos, coord.To})
+			return append(out, units...), err
 		}
-		// Gap before this run?
-		if r.coord.From > pos {
-			units, err := c.materializeLocked(n, Coord{coord.Node, pos, r.coord.From})
-			if err != nil {
-				c.mu.Unlock()
-				return out, err
-			}
+		if r.coord.From > pos { // a gap ahead of this run
+			units, err := c.fill(Coord{coord.Node, pos, r.coord.From})
 			out = append(out, units...)
-		}
-		if !r.resident {
-			units, err := c.materializeRunLocked(r)
 			if err != nil {
-				c.mu.Unlock()
 				return out, err
 			}
-			// Slice the LOCAL units, not the run: the charge inside
-			// materialize may have evicted this very run again (a run
-			// larger than the whole budget can never stay resident),
-			// and the caller must still get what was fetched.
-			r.epoch = c.bump()
-			out = append(out, sliceUnits(c.key, units, pos, coord.To)...)
-			if r.coord.To > pos {
-				pos = r.coord.To
-			} else {
-				break // no progress; refuse to spin
-			}
+			pos = r.coord.From
 			continue
 		}
-		r.touch(c)
-		out = append(out, c.slice(r, pos, coord.To)...)
-		if r.coord.To > pos {
-			pos = r.coord.To
+		if !r.resident {
+			units, err := c.refill(coord.Node, r)
+			if err != nil {
+				return out, err
+			}
+			// Slice the LOCAL units rather than the run: the charge inside
+			// refill may have evicted this very run again (a run larger than
+			// the whole budget can never stay resident), and the caller must
+			// still get what was fetched.
+			out = append(out, sliceUnits(c.key, units, pos, coord.To)...)
 		} else {
+			r.touch(c)
+			out = append(out, c.slice(r, pos, coord.To)...)
+		}
+		if r.coord.To <= pos {
 			break // no progress; refuse to spin
 		}
+		pos = r.coord.To
 	}
-	if pos < coord.To {
-		units, err := c.materializeLocked(n, Coord{coord.Node, pos, coord.To})
-		if err != nil {
-			c.mu.Unlock()
-			return out, err
-		}
-		out = append(out, units...)
-	}
-	c.mu.Unlock()
 	return out, nil
+}
+
+// fill materializes a gap as NEW resident runs, chunked, and returns what it
+// fetched. THE SOURCE RUNS WITH NO LOCK HELD.
+func (c *Cache[U]) fill(coord Coord) ([]U, error) {
+	var all []U
+	for lo := coord.From; lo < coord.To; {
+		hi := lo + runChunk
+		if hi > coord.To {
+			hi = coord.To
+		}
+		cc := Coord{Node: coord.Node, From: lo, To: hi}
+		units, err := c.fetch(cc)
+		if err != nil {
+			return all, err
+		}
+
+		r := &run[U]{coord: cc, units: units, resident: true}
+		r.epoch.Store(c.bump())
+		for _, u := range units {
+			r.bytes += int64(c.size(u))
+		}
+
+		// TWO CALLERS MAY MATERIALIZE THE SAME COORD, and the loser discards
+		// its result: one wasted Source call rather than a lock held across
+		// I/O. The same trade the segment range unit priced when it dropped
+		// loadMu.
+		c.mu.Lock()
+		n := c.nodeLocked(cc.Node)
+		runs := n.load()
+		if existing := at(runs, cc); existing != nil && existing.resident {
+			c.mu.Unlock()
+			all = append(all, sliceUnits(c.key, existing.units, cc.From, cc.To)...)
+			lo = hi
+			continue
+		}
+		n.publish(replace(runs, r))
+		c.mu.Unlock()
+
+		c.budget.charge(r.bytes)
+		all = append(all, units...)
+		lo = hi
+	}
+	return all, nil
+}
+
+// refill rebuilds a hollow run in place -- a successor at the same coord --
+// and returns the units it fetched.
+func (c *Cache[U]) refill(name string, r *run[U]) ([]U, error) {
+	units, err := c.fetch(r.coord)
+	if err != nil {
+		return nil, err
+	}
+	next := &run[U]{coord: r.coord, units: units, resident: true, pinned: r.pinned}
+	next.epoch.Store(c.bump())
+	for _, u := range units {
+		next.bytes += int64(c.size(u))
+	}
+
+	c.mu.Lock()
+	n := c.nodeLocked(name)
+	runs := n.load()
+	if cur := at(runs, r.coord); cur != nil && cur.resident {
+		// Another caller refilled it; theirs is already charged.
+		c.mu.Unlock()
+		return cur.units, nil
+	}
+	n.publish(replace(runs, next))
+	c.mu.Unlock()
+
+	c.budget.charge(next.bytes)
+	return units, nil
+}
+
+// fetch calls the Source with NO LOCK HELD.
+//
+// THE COMMENT THAT STOOD HERE WAS THE JUSTIFICATION FOR A DEFECT, and it is
+// recorded rather than deleted because it is the finding. It read: "fetch
+// calls the source ... under c.mu; the source reads a lower layer with its own
+// locking -- THE LAYERS FORM A DAG, NEVER A CYCLE, WHICH IS WHAT MAKES THIS
+// SAFE." Nothing tested that claim, and source_lock_test.go demonstrates the
+// cycle in three seconds. A layer below that consults this same window (a fork
+// reading its parent's prefix, a composed layer asking the decoded one)
+// reaches it without anybody intending to.
+func (c *Cache[U]) fetch(coord Coord) ([]U, error) {
+	c.recomposes.Add(1)
+	if c.src == nil {
+		return nil, nil
+	}
+	return c.src(coord)
 }
 
 func (c *Cache[U]) slice(r *run[U], from, to uint64) []U {
@@ -280,46 +366,6 @@ func (c *Cache[U]) slice(r *run[U], from, to uint64) []U {
 // guarantee is granularity, not equality).
 const runChunk = 64
 
-// materializeLocked fills a gap as NEW resident runs, chunked.
-func (c *Cache[U]) materializeLocked(n *node[U], coord Coord) ([]U, error) {
-	var all []U
-	for lo := coord.From; lo < coord.To; {
-		hi := lo + runChunk
-		if hi > coord.To {
-			hi = coord.To
-		}
-		cc := Coord{Node: coord.Node, From: lo, To: hi}
-		units, err := c.fetchUnlocked(cc)
-		if err != nil {
-			return all, err
-		}
-		// THE LOCK WAS RELEASED, SO THE RUN LIST MAY HAVE MOVED. Another
-		// caller missing the same coord may have installed it while we were
-		// materializing.
-		//
-		// WHAT CHANGES, NAMED RATHER THAN DISCOVERED: under a held lock one
-		// caller waited and one won, so a coord was materialized exactly once.
-		// Now BOTH MAY MATERIALIZE and one result is discarded -- two racing
-		// misses cost ONE WASTED SOURCE CALL, never a double charge and never
-		// a duplicate run. The same trade the segment range unit already
-		// priced when it dropped loadMu.
-		if existing := n.at(cc); existing != nil && existing.resident {
-			all = append(all, sliceUnits(c.key, existing.units, cc.From, cc.To)...)
-			lo = hi
-			continue
-		}
-		r := &run[U]{coord: cc, units: units, resident: true, epoch: c.bump()}
-		for _, u := range units {
-			r.bytes += int64(c.size(u))
-		}
-		n.insert(r)
-		c.chargeLocked(r.bytes)
-		all = append(all, units...)
-		lo = hi
-	}
-	return all, nil
-}
-
 // sliceUnits is slice over a local units slice by key bracket.
 func sliceUnits[U any](key Keyer[U], units []U, from, to uint64) []U {
 	lo := 0
@@ -333,81 +379,84 @@ func sliceUnits[U any](key Keyer[U], units []U, from, to uint64) []U {
 	return units[lo:hi]
 }
 
-// materializeRunLocked refills a hollow run in place. THE SOURCE RUNS
-// UNLOCKED; see fetchUnlocked.
-func (c *Cache[U]) materializeRunLocked(r *run[U]) ([]U, error) {
-	units, err := c.fetchUnlocked(r.coord)
-	if err != nil {
-		return nil, err
+// ---- the published index ----
+
+func (n *node[U]) load() []*run[U] {
+	if p := n.runs.Load(); p != nil {
+		return *p
 	}
-	// The lock was released, so another caller may have refilled this run
-	// meanwhile. Theirs is already charged; discard ours rather than charge
-	// the same bytes twice.
-	if r.resident {
-		return r.units, nil
-	}
-	r.units = units
-	r.bytes = 0
-	for _, u := range units {
-		r.bytes += int64(c.size(u))
-	}
-	r.resident = true
-	c.chargeLocked(r.bytes)
-	return units, nil
+	return nil
 }
 
-// THE COMMENT THAT STOOD HERE WAS THE JUSTIFICATION FOR THE DEFECT, and it is
-// recorded rather than deleted because it is the finding. It read: "fetch
-// calls the source ... under c.mu; the source reads a lower layer with its own
-// locking -- THE LAYERS FORM A DAG, NEVER A CYCLE, WHICH IS WHAT MAKES THIS
-// SAFE."
-//
-// Nothing tested that claim, and source_lock_test.go now demonstrates the
-// cycle in three seconds. A COMMENT IS A CLAIM NOBODY TESTS -- and this one
-// asserted the exact property that made the design safe.
-//
-// fetchUnlocked RELEASES c.mu around the caller-supplied Source and re-takes
-// it, exactly as chargeLocked already does around the budget's eviction pass.
-//
-// A SOURCE MUST NOT RUN UNDER c.mu. docs/store/tree.md states the rule for the
-// other direction -- an Evicted hook takes no lock, because eviction fires
-// under a consumer's lock and a hook that needs it deadlocks, "the shape that
-// reaches production first" -- and the Source call is the same inversion
-// running the other way. A layer below that consults this same window (a fork
-// reading its parent's prefix, a composed layer asking the decoded one)
-// reaches it without anybody intending to.
-//
-// It is not live today only because the sole tenant passes src = nil. It
-// becomes live the moment a Source is installed, which is what the
-// consolidation does.
-func (c *Cache[U]) fetchUnlocked(coord Coord) ([]U, error) {
-	c.recomposes++
-	src := c.src
-	if src == nil {
-		return nil, nil
+func (n *node[U]) publish(runs []*run[U]) { n.runs.Store(&runs) }
+
+// runs is the lock-free read of one node's index.
+func (c *Cache[U]) runs(name string) []*run[U] {
+	if n := c.lookup(name); n != nil {
+		return n.load()
 	}
-	c.mu.Unlock()
-	units, err := src(coord)
-	c.mu.Lock()
-	return units, err
+	return nil
 }
 
-// chargeLocked releases c.mu around the budget's eviction pass, because
-// the budget may pick THIS cache as its victim and evictColdest takes
-// c.mu. Re-entrancy by unlock, the simplest correct shape.
-func (c *Cache[U]) chargeLocked(delta int64) {
-	c.mu.Unlock()
-	c.budget.charge(delta)
-	c.mu.Lock()
-}
+func (c *Cache[U]) lookup(name string) *node[U] { return (*c.nodes.Load())[name] }
 
-func (c *Cache[U]) node(name string) *node[U] {
-	n := c.nodes[name]
-	if n == nil {
-		n = &node[U]{}
-		c.nodes[name] = n
+// nodeLocked returns the node, creating it by publishing a copied map.
+// Caller holds c.mu.
+func (c *Cache[U]) nodeLocked(name string) *node[U] {
+	cur := *c.nodes.Load()
+	if n := cur[name]; n != nil {
+		return n
 	}
+	next := make(map[string]*node[U], len(cur)+1)
+	for k, v := range cur {
+		next[k] = v
+	}
+	n := &node[U]{}
+	next[name] = n
+	c.nodes.Store(&next)
 	return n
+}
+
+// replace builds the successor slice with r at its coord: an exact-coord
+// replacement, or an insertion keeping the sort by From. O(runs) in the copy,
+// which is what the old in-place insert already paid.
+func replace[U any](runs []*run[U], r *run[U]) []*run[U] {
+	i := sort.Search(len(runs), func(i int) bool { return runs[i].coord.From >= r.coord.From })
+	if i < len(runs) && runs[i].coord == r.coord {
+		next := make([]*run[U], len(runs))
+		copy(next, runs)
+		next[i] = r
+		return next
+	}
+	next := make([]*run[U], 0, len(runs)+1)
+	next = append(next, runs[:i]...)
+	next = append(next, r)
+	return append(next, runs[i:]...)
+}
+
+func at[U any](runs []*run[U], coord Coord) *run[U] {
+	i := sort.Search(len(runs), func(i int) bool { return runs[i].coord.From >= coord.From })
+	if i < len(runs) && runs[i].coord == coord {
+		return runs[i]
+	}
+	return nil
+}
+
+// overlapping is the first run intersecting [pos, limit).
+func overlapping[U any](runs []*run[U], pos, limit uint64) *run[U] {
+	i := sort.Search(len(runs), func(i int) bool { return runs[i].coord.To > pos })
+	if i < len(runs) && runs[i].coord.From < limit {
+		return runs[i]
+	}
+	return nil
+}
+
+// hollow is the evicted successor of r: same coord, same bytes on the index,
+// no units.
+func hollow[U any](r *run[U]) *run[U] {
+	h := &run[U]{coord: r.coord, bytes: r.bytes}
+	h.epoch.Store(r.epoch.Load())
+	return h
 }
 
 func (c *Cache[U]) bump() int64 {
@@ -417,25 +466,10 @@ func (c *Cache[U]) bump() int64 {
 	return c.budget.epoch.Add(1)
 }
 
-func (n *node[U]) at(coord Coord) *run[U] {
-	i := sort.Search(len(n.runs), func(i int) bool { return n.runs[i].coord.From >= coord.From })
-	if i < len(n.runs) && n.runs[i].coord == coord {
-		return n.runs[i]
-	}
-	return nil
-}
-
-func (n *node[U]) insert(r *run[U]) {
-	i := sort.Search(len(n.runs), func(i int) bool { return n.runs[i].coord.From >= r.coord.From })
-	n.runs = append(n.runs, nil)
-	copy(n.runs[i+1:], n.runs[i:])
-	n.runs[i] = r
-}
-
 // ---- the owner half of the accountant ----
 
 func (c *Cache[U]) effEpoch(r *run[U]) int64 {
-	e := r.epoch
+	e := r.epoch.Load()
 	if c.Recency != nil {
 		if o := c.Recency(r.coord); o > e {
 			e = o
@@ -444,12 +478,13 @@ func (c *Cache[U]) effEpoch(r *run[U]) int64 {
 	return e
 }
 
+// coldest scans lock-free: every slice it walks is immutable, so the worst a
+// concurrent publish costs is a victim chosen from an index one step old, and
+// evictColdest re-checks under c.mu before hollowing anything.
 func (c *Cache[U]) coldest() (int64, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	best, found := int64(0), false
-	for _, n := range c.nodes {
-		for _, r := range n.runs {
+	for _, n := range *c.nodes.Load() {
+		for _, r := range n.load() {
 			if r.resident && !r.pinned {
 				if e := c.effEpoch(r); !found || e < best {
 					best, found = e, true
@@ -463,12 +498,13 @@ func (c *Cache[U]) coldest() (int64, bool) {
 func (c *Cache[U]) evictColdest() int64 {
 	c.mu.Lock()
 	var victim *run[U]
+	var victimNode *node[U]
 	var victimE int64
-	for _, n := range c.nodes {
-		for _, r := range n.runs {
+	for _, n := range *c.nodes.Load() {
+		for _, r := range n.load() {
 			if r.resident && !r.pinned {
 				if e := c.effEpoch(r); victim == nil || e < victimE {
-					victim, victimE = r, e
+					victim, victimNode, victimE = r, n, e
 				}
 			}
 		}
@@ -478,11 +514,11 @@ func (c *Cache[U]) evictColdest() int64 {
 		return 0
 	}
 	freed := victim.bytes
-	victim.units = nil
-	victim.resident = false
 	coord := victim.coord
+	victimNode.publish(replace(victimNode.load(), hollow(victim)))
 	hook := c.Evicted
 	c.mu.Unlock()
+
 	if hook != nil {
 		hook(coord) // outside every lock: the layer below may lock itself
 	}
