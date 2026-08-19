@@ -102,10 +102,21 @@ func New(cfg Config) *Angelus {
 		StartedAt:  time.Now(), // set-once at construction; read concurrently (Uptime)
 		Sessions:   tool.NewSessionRegistry(tool.DefaultSessionTTL),
 		Settings:   cfg.Settings,
-		UIWindow:   aria.NewUIBudget(cfg.Settings.UIWindowMB()),
+		UIWindow:   aria.NewUIBudget(uiWindowMB(cfg.Settings)),
 		Hubs:       newHubs(),
 	}
 	return a
+}
+
+// uiWindowMB is the composed-UI bound: the package that holds those bytes owns
+// the default, and a config file TUNES it. Nil settings and an unconfigured
+// key both mean "leave the owner's number alone"; an explicit 0 is the user
+// asking for unbounded and is honoured.
+func uiWindowMB(settings *config.Loaded) int {
+	if mb, set := settings.UIWindowMB(); set {
+		return mb
+	}
+	return aria.DefaultUIWindowMB
 }
 
 // FigaroSocketDir returns the directory for figaro sockets.
@@ -521,22 +532,6 @@ func (a *Angelus) maxLiveArias() int {
 	return a.Settings.MaxLiveArias()
 }
 
-// irWindow is the resident decoded-IR row cap per aria.
-func (a *Angelus) irWindow() int {
-	if a.Settings == nil {
-		return 0
-	}
-	return a.Settings.IRWindow()
-}
-
-// irBudget is the resident decoded-IR byte budget per aria.
-func (a *Angelus) irBudget() int {
-	if a.Settings == nil {
-		return 0
-	}
-	return a.Settings.IRWindowBytes()
-}
-
 // residentTrimmer is the backend's half of the windowing contract, an optional
 // interface for the same reason idleEvictor is one: a test or ephemeral
 // backend has no window to trim.
@@ -553,14 +548,15 @@ type residentTrimmer interface {
 // reclaimed is holding a full window it will not read again until someone
 // wakes it, and only the daemon knows that transition happened.
 func (a *Angelus) trimResident() {
-	keep := a.irWindow()
-	if keep <= 0 && a.irBudget() <= 0 {
-		return
-	}
-	if keep <= 0 {
-		// Byte-budgeted only: pass a row cap the budget will bind before, so
-		// the trim is decided by bytes rather than by an accidental row count.
-		keep = trimRowsUnbounded
+	// The row cap is the only half a daemon still supplies: the byte budget is
+	// the store's own (store.DefaultIRBudgetBytes), so there is no longer a
+	// configuration under which this should decline to run. Unset means "let
+	// the bytes decide" -- a row cap the budget binds before.
+	keep := trimRowsUnbounded
+	if a.Settings != nil {
+		if n := a.Settings.IRWindow(); n > 0 {
+			keep = n
+		}
 	}
 	tr, ok := a.Backend.(residentTrimmer)
 	if !ok {

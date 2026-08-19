@@ -202,6 +202,16 @@ segment_cache_mb       = 32   # raw figwal payloads, whole process; 0 = none
 86 percent of a real aria's footprint, so leaving the one bound that governs
 it switched off meant every aria anyone touched kept all of it.
 
+**AND THE DEFAULT IS THE STORE'S, NOT THE CONFIG'S** (2026-08-19). It used to
+live in `internal/config` and reach the store through three calls in the
+daemon's boot path, which meant a `store.NewXwalBackend` built anywhere else —
+`figaro doctor`, every test, any future embedding — was UNBOUNDED. The store
+now bounds itself at construction (`store.DefaultIRBudgetBytes`,
+`store.DefaultTranslationBudgetBytes`) and these keys TUNE it: a key you do
+not set is a key that leaves the store's own bound alone, and an explicit `0`
+is still a real answer meaning unbounded. Measured on a 400-message aria of
+8 KiB messages: 16.4 MB resident unbounded against 5.7 MB bounded.
+
 **`soft_limit_mb` is a ceiling AND a licence.** Go collects harder only as it
 approaches, so a high one leaves the runtime no reason to hand memory back:
 a live daemon measured 115 MB allocated against 416 MB of `heap_sys` under

@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jack-work/figaro/internal/form"
@@ -81,6 +82,22 @@ type XwalBackend struct {
 	transBudget int
 }
 
+// The residency defaults, owned HERE because this is the layer that holds the
+// bytes. Both are DECODED-estimate budgets, per aria (IR) and per (aria,
+// provider) (translations); irWindow stays 0, so bytes bind rather than an
+// accidental row count.
+//
+// 4 MiB of decoded IR is roughly 0.8-1 MiB encoded at this repo's measured
+// 4-5x inflation. Against the author's store census that holds a p90 aria
+// (443 KiB encoded) whole and evicts from p99 (1.7 MiB) up, which is the
+// stated target: eviction that actually occurs, rarely under light use. The
+// largest translation history measured is 2.9 MiB, so 4 MiB caps an axis that
+// had no cap without changing what a real aria holds today.
+const (
+	DefaultIRBudgetBytes          = 4 << 20
+	DefaultTranslationBudgetBytes = 4 << 20
+)
+
 // irEntrySize estimates one IR entry's retained bytes as its encoded size
 // times a measured inflation factor.
 //
@@ -132,14 +149,54 @@ type ariaHandle struct {
 	trans map[string]*cachedLog[[]json.RawMessage]
 }
 
+// metaCache is one aria's sidecar, memoized.
+//
+// THE READ PATH TAKES NO LOCK. state is published whole -- loaded and value
+// were always ONE value wearing two fields -- and a listing reads the sidecar
+// of every aria in the store, which is the path that was paying for the lock.
+//
+// THE WRITE PATH KEEPS ITS MUTEX, and that is not an oversight: two SetMeta
+// calls on one aria must not have the file land in one order and the memo in
+// the other, and no publish can express that. Writer-vs-writer here is REAL
+// where reader-vs-writer was dead weight -- the distinction MemFormLog's cure
+// turned on (ddc030ad).
 type metaCache struct {
-	mu     sync.Mutex
-	loaded bool
-	value  *AriaMeta
+	mu    sync.Mutex // WRITERS ONLY: file write then publish, in that order
+	state atomic.Pointer[metaState]
+}
+
+// metaState is the memo, immutable once published. A nil Value means the
+// sidecar is absent, which is different from not having looked.
+type metaState struct{ Value *AriaMeta }
+
+// loadOnce publishes the sidecar the first time anybody asks, WITH NO LOCK
+// HELD. Two racing readers cost one wasted file read; a reader racing a
+// SetMeta loses the CAS and discards its own, so a file read taken before a
+// write can never overwrite the value that write published.
+func (c *metaCache) loadOnce(path string) (*metaState, error) {
+	if st := c.state.Load(); st != nil {
+		return st, nil
+	}
+	value, err := readJSON[AriaMeta](path)
+	if err != nil {
+		return nil, err
+	}
+	fresh := &metaState{Value: value}
+	if !c.state.CompareAndSwap(nil, fresh) {
+		return c.state.Load(), nil
+	}
+	return fresh, nil
 }
 
 // NewXwalBackend opens the aria tree at root. segmentSize <= 0 takes the
 // configured default; the daemon passes config's, tests pass nothing.
+//
+// THE BACKEND IS BOUNDED WHEN IT IS BUILT. Residency defaults belong to the
+// layer that owns the bytes, not to one call site in one binary: until
+// 2026-08-19 a bare backend was UNBOUNDED and only internal/cli's daemon
+// wiring made it otherwise, so doctor, every test, and any future embedding
+// that forgot the wiring held every decoded entry forever. The CLI now TUNES
+// these; it does not supply them.
 //
 // The presentation hierarchy defaults to the topology. A build with the
 // trunk capability replaces it via Store().SetTree; see internal/figaro/wire.
@@ -149,12 +206,14 @@ func NewXwalBackend(root string, segmentSize int) (*XwalBackend, error) {
 		return nil, err
 	}
 	return &XwalBackend{
-		root:    root,
-		store:   st,
-		open:    map[string]*ariaHandle{},
-		forms:   map[string]*Form{},
-		metas:   map[string]*metaCache{},
-		touched: map[string]time.Time{},
+		root:        root,
+		store:       st,
+		open:        map[string]*ariaHandle{},
+		forms:       map[string]*Form{},
+		metas:       map[string]*metaCache{},
+		touched:     map[string]time.Time{},
+		irBudget:    DefaultIRBudgetBytes,
+		transBudget: DefaultTranslationBudgetBytes,
 	}, nil
 }
 
@@ -1017,15 +1076,14 @@ func writeJSON(path string, v any) error {
 
 func (b *XwalBackend) Meta(ariaID string) (*AriaMeta, error) {
 	c := b.metaCache(ariaID)
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if err := b.loadMetaLocked(ariaID, c); err != nil {
+	st, err := c.loadOnce(b.metaPath(ariaID))
+	if err != nil {
 		return nil, err
 	}
-	if c.value == nil {
+	if st.Value == nil {
 		return nil, nil
 	}
-	value := *c.value
+	value := *st.Value
 	return &value, nil
 }
 func (b *XwalBackend) SetMeta(ariaID string, meta *AriaMeta) error {
@@ -1035,27 +1093,12 @@ func (b *XwalBackend) SetMeta(ariaID string, meta *AriaMeta) error {
 	if err := writeJSON(b.metaPath(ariaID), meta); err != nil {
 		return err
 	}
-	c.loaded = true
-	if meta == nil {
-		c.value = nil
-	} else {
+	st := &metaState{}
+	if meta != nil {
 		value := *meta
-		c.value = &value
+		st.Value = &value
 	}
-	return nil
-}
-
-// loadMetaLocked fills the cache from the sidecar once. Caller holds c.mu.
-func (b *XwalBackend) loadMetaLocked(ariaID string, c *metaCache) error {
-	if c.loaded {
-		return nil
-	}
-	value, err := readJSON[AriaMeta](b.metaPath(ariaID))
-	if err != nil {
-		return err
-	}
-	c.value = value
-	c.loaded = true
+	c.state.Store(st)
 	return nil
 }
 
@@ -1217,19 +1260,29 @@ func (b *XwalBackend) SetObservedForms(ariaID string, formIDs []string) {
 	b.store.SetObservedForms(ariaID, formIDs)
 }
 
-// seedRowsLocked offers a newly opened aria the resident prefix its nearest
-// OPEN ancestor already decoded. Caller holds b.mu.
+// seedFromAncestor offers a newly opened aria the resident prefix its nearest
+// OPEN ancestor already decoded, for ONE channel: cacheOf says which.
 //
-// Phase 3's measurement: two forks of one trunk decode the shared prefix
-// separately and mint strings the parent holds, proven by pointer identity.
-// The ancestor's rows below the child's fork base ARE that prefix, and a
-// shallow copy shares them. Nothing is retained here that the ancestor was not
-// already retaining -- the child holds slice headers onto the same strings --
-// so this shares residency rather than adding it.
+// ONE WALKER, NOT TWO. The fig IR and the translations ran identical copies of
+// this -- Lineage, fewer than 2 refs is nil, base from the last ref, base 0 is
+// nil, nearest ancestor first, skipping unopened handles, first non-empty
+// residentBelow wins -- and differed only in which cache of the ancestor's
+// handle they asked. That difference is this argument.
+//
+// Phase 3's measurement is why the donation exists at all: two forks of one
+// trunk decode the shared prefix separately and mint strings the parent holds,
+// proven by pointer identity. The ancestor's rows below the child's fork base
+// ARE that prefix, and a shallow copy shares them, so this shares residency
+// rather than adding it.
 //
 // Nil is always a legal answer: no lineage, no open ancestor, or an ancestor
 // whose window no longer reaches the base. The caller then decodes, as before.
-func (b *XwalBackend) seedRowsLocked(id string) []Entry[message.Message] {
+// The seam itself is verified by newSeededLog, which degrades to a full decode
+// on any doubt -- measured, not asserted: deleting the base bound below leaves
+// the test green because the PROBE refuses the donation (77e17f93).
+//
+// Caller holds b.mu.
+func seedFromAncestor[T any](b *XwalBackend, id string, cacheOf func(*ariaHandle) *cachedLog[T]) []Entry[T] {
 	refs := b.store.Lineage(id)
 	if len(refs) < 2 {
 		return nil // a root owns everything; there is no donated prefix
@@ -1241,44 +1294,10 @@ func (b *XwalBackend) seedRowsLocked(id string) []Entry[message.Message] {
 	// Nearest ancestor first: it holds the longest shared prefix.
 	for i := len(refs) - 2; i >= 0; i-- {
 		h := b.open[refs[i].Node]
-		if h == nil || h.ir == nil {
-			continue
-		}
-		if rows := h.ir.residentBelow(base); len(rows) > 0 {
-			return rows
-		}
-	}
-	return nil
-}
-
-// seedTransRowsLocked is seedRowsLocked for a TRANSLATION namespace: the
-// resident rows the nearest open ancestor holds for the SAME provider, below
-// the child's fork base. Caller holds b.mu.
-//
-// The provider round-trips were already shared -- the translation log rides
-// xwal's fork base, so a child reads its ancestor's durable records without
-// re-translating anything. What was duplicated is the DECODE, exactly as it
-// was for the fig IR before the seed landed there.
-//
-// NAMESPACE IS STRUCTURAL, NOT A CHECK: the ancestor's handle is looked up by
-// the same providerName key the caller asked for, so a cross-namespace
-// donation cannot be constructed here. The fingerprint, which is not
-// structural, is verified inside newSeededLog.
-func (b *XwalBackend) seedTransRowsLocked(id, providerName string) []Entry[[]json.RawMessage] {
-	refs := b.store.Lineage(id)
-	if len(refs) < 2 {
-		return nil
-	}
-	base := refs[len(refs)-1].Base
-	if base == 0 {
-		return nil
-	}
-	for i := len(refs) - 2; i >= 0; i-- {
-		h := b.open[refs[i].Node]
 		if h == nil {
 			continue
 		}
-		c := h.trans[providerName]
+		c := cacheOf(h)
 		if c == nil {
 			continue
 		}
@@ -1287,4 +1306,23 @@ func (b *XwalBackend) seedTransRowsLocked(id, providerName string) []Entry[[]jso
 		}
 	}
 	return nil
+}
+
+// seedRowsLocked is the fig IR channel's donation. Caller holds b.mu.
+func (b *XwalBackend) seedRowsLocked(id string) []Entry[message.Message] {
+	return seedFromAncestor(b, id, func(h *ariaHandle) *cachedLog[message.Message] { return h.ir })
+}
+
+// seedTransRowsLocked is the TRANSLATION channel's, keyed by provider.
+//
+// NAMESPACE IS STRUCTURAL, NOT A CHECK: the ancestor's cache is looked up by
+// the same providerName key the caller asked for, so a cross-namespace
+// donation cannot be constructed here. The fingerprint, which is not
+// structural, is verified inside newSeededLog.
+//
+// Caller holds b.mu.
+func (b *XwalBackend) seedTransRowsLocked(id, providerName string) []Entry[[]json.RawMessage] {
+	return seedFromAncestor(b, id, func(h *ariaHandle) *cachedLog[[]json.RawMessage] {
+		return h.trans[providerName]
+	})
 }

@@ -1,7 +1,7 @@
 package store
 
 import (
-	fwforest "github.com/jack-work/figwal/forest"
+	fwtree "github.com/jack-work/figaro/internal/store/tree"
 )
 
 // Lineage renders a trunk's ancestry as forest refs, root first, so a cache
@@ -11,7 +11,7 @@ import (
 // value into each node's .fork marker and figaro carries it as BranchedLT, so
 // no arithmetic is needed here; forkbase_convention_test.go pins the three
 // against each other.
-func (s *XwalStore) Lineage(id string) []fwforest.Ref {
+func (s *XwalStore) Lineage(id string) []fwtree.Ref {
 	s.mu.Lock()
 	infos := s.trunks.ListLight()
 	s.mu.Unlock()
@@ -21,7 +21,7 @@ func (s *XwalStore) Lineage(id string) []fwforest.Ref {
 		by[t.ID] = i
 	}
 
-	var refs []fwforest.Ref
+	var refs []fwtree.Ref
 	seen := map[string]struct{}{}
 	for cur := id; cur != ""; {
 		i, ok := by[cur]
@@ -35,7 +35,7 @@ func (s *XwalStore) Lineage(id string) []fwforest.Ref {
 		}
 		seen[cur] = struct{}{}
 		t := infos[i]
-		refs = append(refs, fwforest.Ref{Node: t.ID, Base: t.BranchedLT})
+		refs = append(refs, fwtree.Ref{Node: t.ID, Base: t.BranchedLT})
 		cur = t.Parent
 	}
 	if len(refs) == 0 {
@@ -52,11 +52,11 @@ func (s *XwalStore) Lineage(id string) []fwforest.Ref {
 // Backend (the angelus) can reach it. It is an OPTIONAL interface, asserted by
 // the caller, so a backend that has no notion of ancestry needs no stub:
 //
-//	type LineageBackend interface{ Lineage(id string) []fwforest.Ref }
-func (b *XwalBackend) Lineage(id string) []fwforest.Ref { return b.store.Lineage(id) }
+//	type LineageBackend interface{ Lineage(id string) []fwtree.Ref }
+func (b *XwalBackend) Lineage(id string) []fwtree.Ref { return b.store.Lineage(id) }
 
 // LineageBackend is implemented by backends that can name an aria's ancestry.
 // The composed-turn seed asks for it and does nothing when it is absent.
 type LineageBackend interface {
-	Lineage(id string) []fwforest.Ref
+	Lineage(id string) []fwtree.Ref
 }

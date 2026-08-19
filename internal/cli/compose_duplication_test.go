@@ -11,7 +11,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// PHASE 4, ASKED BEFORE IT IS DESIGNED: what would forest buy the COMPOSED
+// PHASE 4, ASKED BEFORE IT IS DESIGNED: what would tree buy the COMPOSED
 // layer that the turn cache does not already provide?
 //
 // There is one candidate and Gluck named it generational: forks do not share
@@ -140,7 +140,7 @@ func TestTwoBranchesComposingOneHistoryDuplicateTheNodes(t *testing.T) {
 		compared, shared, minted)
 
 	if minted == 0 {
-		t.Fatal("composition shares every string across branches; forest has no " +
+		t.Fatal("composition shares every string across branches; tree has no " +
 			"sharing job in this layer either")
 	}
 }

@@ -104,7 +104,7 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOu
 			enc.SetIndent("", "  ")
 			return enc.Encode(f)
 		}
-		// The forest records a fork point as an LT, but the user's coordinate is
+		// The tree records a fork point as an LT, but the user's coordinate is
 		// a turn: resolve it so the panel can name what `fork <id>:N` takes.
 		//
 		// Resolve against the PARENT, not this aria: BranchedLT is the first LT

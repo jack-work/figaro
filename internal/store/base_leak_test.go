@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	fwforest "github.com/jack-work/figwal/forest"
+	fwtree "github.com/jack-work/figaro/internal/store/tree"
 )
 
 // A run materialized in the ANCESTOR can span a child's fork base: nothing
@@ -17,17 +17,17 @@ import (
 //
 // PERMANENT, NOT MIGRATION SCAFFOLDING.
 
-func leakCache(t *testing.T) *fwforest.Cache[string] {
+func leakCache(t *testing.T) *fwtree.Cache[string] {
 	t.Helper()
-	return fwforest.New(
-		func(c fwforest.Coord) ([]string, error) {
+	return fwtree.New(
+		func(c fwtree.Coord) ([]string, error) {
 			out := make([]string, 0, c.To-c.From)
 			for i := c.From + 1; i <= c.To; i++ {
 				out = append(out, fmt.Sprintf("%s@%d", c.Node, i))
 			}
 			return out, nil
 		},
-		fwforest.NewBudget(1<<20),
+		fwtree.NewBudget(1<<20),
 		func(s string) int { return len(s) + 16 },
 		func(s string) uint64 {
 			var n uint64
@@ -53,9 +53,9 @@ func TestAncestorRunSpanningTheBaseDoesNotLeakIntoTheChild(t *testing.T) {
 	for i := uint64(251); i <= 320; i++ {
 		units = append(units, fmt.Sprintf("parent@%d", i))
 	}
-	c.Put(fwforest.Coord{Node: "parent", From: 250, To: 320}, units, false)
+	c.Put(fwtree.Coord{Node: "parent", From: 250, To: 320}, units, false)
 
-	lineage := []fwforest.Ref{{Node: "parent", Base: 0}, {Node: "child", Base: base}}
+	lineage := []fwtree.Ref{{Node: "parent", Base: 0}, {Node: "child", Base: base}}
 
 	t.Run("below the base only", func(t *testing.T) {
 		got, err := c.Range(lineage, 250, base-1)
@@ -113,9 +113,9 @@ func TestWarmAncestorRunRespectsTheBase(t *testing.T) {
 	for i := uint64(51); i <= 150; i++ {
 		units = append(units, fmt.Sprintf("parent@%d", i))
 	}
-	c.Put(fwforest.Coord{Node: "parent", From: 50, To: 150}, units, false)
+	c.Put(fwtree.Coord{Node: "parent", From: 50, To: 150}, units, false)
 
-	lineage := []fwforest.Ref{{Node: "parent", Base: 0}, {Node: "child", Base: base}}
+	lineage := []fwtree.Ref{{Node: "parent", Base: 0}, {Node: "child", Base: base}}
 	for i := 0; i < 3; i++ { // warm it, then read again
 		got, err := c.Range(lineage, 50, base-1)
 		if err != nil {

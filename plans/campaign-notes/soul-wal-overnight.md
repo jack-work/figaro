@@ -62,7 +62,8 @@ semantics (0=default-5m, negative=never).
 - T0 landed on figaro main 4ccbd0f, installed (nix profile): migration gate
   deleted (−745/+19), providers degrade to uncached, verified against a copy
   of the real store — 942fb59e and e6e77a26 open cleanly.
-- W1 API freeze: figwal memory-first branch, docs/memory-first.md (e37f70c).
+- W1 API freeze: figwal memory-first branch, the memory-first design doc in
+  figwal-core (e37f70c) -- a file of THAT repo, never of this one.
 
 ## Wave 1 (running)
 - A1 figwal core (~/dev/figwal-core, memory-first): flock/OpenStore committed

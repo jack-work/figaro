@@ -56,19 +56,19 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
+	fwlog "github.com/jack-work/figaro/internal/store/log"
+	"github.com/jack-work/figaro/internal/store/segment"
+	"github.com/jack-work/figaro/internal/store/xwal"
 	"github.com/jack-work/figaro/internal/topo"
-	fwlog "github.com/jack-work/figwal/log"
-	"github.com/jack-work/figwal/segment"
-	"github.com/jack-work/figwal/xwal"
 )
 
 // trunkScanCount counts calls into figwal's trunk-listing accessors
 // (Trunks.ListLight + Trunks.Stumps). It is the proxy the benchmark asserts
-// on to catch a fan-out regression (a listing that rescans the forest N times
+// on to catch a fan-out regression (a listing that rescans the tree N times
 // instead of once). ListLight itself no longer opens trunk heads.
 var trunkScanCount atomic.Int64
 
-// listTrunks / listStumps wrap the figwal accessors so every forest scan is
+// listTrunks / listStumps wrap the figwal accessors so every tree scan is
 // counted. Always go through these inside the store.
 func (s *XwalStore) listTrunks() []xwal.TrunkInfo {
 	trunkScanCount.Add(1)
@@ -299,8 +299,13 @@ type XwalStore struct {
 
 	// observed: ariaID → the form ids its IR appends stamp (study
 	// subscriptions). In-memory; the aria's board is the durable truth.
-	observedMu sync.Mutex
-	observed   map[string][]string
+	//
+	// PUBLISHED WHOLE, so the read on every IR append takes no lock: the map
+	// and the slices in it are immutable once stored, and a declaration builds
+	// a successor. observedMu serializes DECLARERS only -- two agents
+	// declaring at once would otherwise lose one of the two maps.
+	observedMu sync.Mutex // WRITERS ONLY
+	observed   atomic.Pointer[map[string][]string]
 	now        func() int64
 	// tree is the PRESENTATION hierarchy: what fig ls draws and what a
 	// delete takes. Never consulted for forking: that reads .from.
@@ -425,9 +430,10 @@ func OpenXwalStore(root string, segmentSize int) (*XwalStore, error) {
 	}
 	x := &XwalStore{
 		root: root, trunks: st,
-		observed: map[string][]string{},
-		now:      func() int64 { return time.Now().UnixMilli() },
+		now: func() int64 { return time.Now().UnixMilli() },
 	}
+	empty := map[string][]string{}
+	x.observed.Store(&empty)
 	x.tree = topo.FromTopology(xwalTopology{x})
 	return x, nil
 }
@@ -949,7 +955,7 @@ func withKey(p message.Patch, key, value string) message.Patch {
 // NodeView is a read-only snapshot of an aria (trunk) for listing/lineage.
 //
 // It carries no `Frozen`/`Children`/`Depth`: those belonged to figaro's own
-// pre-trunk forest, where forking froze the target into a read-only index
+// pre-trunk tree, where forking froze the target into a read-only index
 // node and minted two fresh children. Since the trunk migration the aria id
 // is stable: the continuation IS the aria you forked: so no aria is ever
 // frozen, and node-level children/depth are figwal's business, not a
@@ -986,7 +992,7 @@ func (s *XwalStore) view(t xwal.TrunkInfo, at map[string]place) NodeView {
 	}
 	p := at[t.ID]
 	// The trunk's OWN kind, from its figwal marker: form trunks joined
-	// conversations in the forest, and hardcoding conversation here is how
+	// conversations in the tree, and hardcoding conversation here is how
 	// a form once got an agent woken for it. Legacy markers all say
 	// conversation already; empty (never written) falls back to it.
 	kind := t.Kind
@@ -999,12 +1005,12 @@ func (s *XwalStore) view(t xwal.TrunkInfo, at map[string]place) NodeView {
 	}
 }
 
-// vectorsLocked assigns each conversation trunk its fork-forest vector: the
+// vectorsLocked assigns each conversation trunk its fork-tree vector: the
 // child-index path among conversation trunks: roots are [0],[1],…, a branch
 // is parentVec+[k]. Siblings are ordered by id (stable; display re-sorts by
 // recency). The trunk list is passed in so callers compute it once per
 // request (it costs a full disk scan). Caller holds mu.
-// place is where a trunk sits: its fork-forest vector, and the stump it was
+// place is where a trunk sits: its fork-tree vector, and the stump it was
 // born under. One map for both, because they are found by the same walk and
 // a second map of the same keys is a second allocation per node.
 type place struct {
@@ -1015,7 +1021,7 @@ type place struct {
 func (s *XwalStore) vectorsLocked(infos []xwal.TrunkInfo) map[string]place {
 	live := make(map[string]bool, len(infos))
 	for _, ti := range infos {
-		// Forms are not part of the conversation fork-forest: a form-born
+		// Forms are not part of the conversation fork-tree: a form-born
 		// aria is a TOP-LEVEL conversation (its born-of shows in the
 		// listing's OUTFIT column), not a branch of an invisible parent -
 		// which is exactly how a vector under a never-listed node made
@@ -1163,7 +1169,7 @@ func (s *XwalStore) topologySnapshot() *topologySnapshot {
 	ids := make([]string, 0, len(nodes))
 	byID := make(map[string]NodeView, len(nodes))
 	for _, node := range nodes {
-		// Split the forest by species: `fig ls` lists conversations, and a
+		// Split the tree by species: `fig ls` lists conversations, and a
 		// form leaking in would be an aria-shaped row for a thing with no
 		// turns. Forms get their own accessor and the global view carries
 		// both.
@@ -1190,7 +1196,7 @@ func (s *XwalStore) topologySnapshot() *topologySnapshot {
 }
 
 // Conversations returns a view of every conversation trunk, including
-// fork-forest vectors but excluding ceremonial anchors.
+// fork-tree vectors but excluding ceremonial anchors.
 func (s *XwalStore) Conversations() []NodeView {
 	return append([]NodeView(nil), s.topologySnapshot().conversations...)
 }
@@ -1500,11 +1506,17 @@ func studyCursors(cursors map[string]uint64) map[string]uint64 {
 // agent re-declares on boot.
 func (s *XwalStore) SetObservedForms(ariaID string, formIDs []string) {
 	s.observedMu.Lock()
-	if len(formIDs) == 0 {
-		delete(s.observed, ariaID)
-	} else {
-		s.observed[ariaID] = append([]string(nil), formIDs...)
+	cur := *s.observed.Load()
+	next := make(map[string][]string, len(cur)+1)
+	for k, v := range cur {
+		next[k] = v
 	}
+	if len(formIDs) == 0 {
+		delete(next, ariaID)
+	} else {
+		next[ariaID] = append([]string(nil), formIDs...)
+	}
+	s.observed.Store(&next)
 	s.observedMu.Unlock()
 }
 
@@ -1512,9 +1524,7 @@ func (s *XwalStore) SetObservedForms(ariaID string, formIDs []string) {
 // moment. The source form is never touched: the libretto is the copy the
 // translator renders from, and it outlives its source.
 func (s *XwalStore) observedCursors(ariaID string) map[string]uint64 {
-	s.observedMu.Lock()
-	ids := s.observed[ariaID]
-	s.observedMu.Unlock()
+	ids := (*s.observed.Load())[ariaID]
 	if len(ids) == 0 {
 		return nil
 	}

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Baseline for the forest re-seat. cachedLog serves reads from an
+// Baseline for the tree re-seat. cachedLog serves reads from an
 // atomic.Pointer view and takes no lock; the re-seat must not reintroduce one.
 func benchEntry(lt uint64) Entry[string] {
 	return Entry[string]{FigaroLT: lt, LT: lt, Payload: fmt.Sprintf("row-%d-%s", lt, string(make([]byte, 256)))}

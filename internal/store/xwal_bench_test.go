@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/internal/message"
-	"github.com/jack-work/figwal/xwal"
+	"github.com/jack-work/figaro/internal/store/xwal"
 )
 
 // TestMain silences figwal's INFO segment/log chatter (it logs via the
@@ -28,7 +28,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// seedTree builds a representative aria forest: `stumps` outfits, each with
+// seedTree builds a representative aria tree: `stumps` outfits, each with
 // `convs` top-level conversations, each conversation forked `branches` times
 // (so the tree has real lineage/depth, not a flat list). Every trunk gets a
 // couple of real turns so it has a non-empty head + form to open.
@@ -81,7 +81,7 @@ func turn(tb testing.TB, b *XwalBackend, id string, n int) {
 }
 
 // TestNodes_TrunkScanCount pins the topology snapshot: one List + one Stumps
-// on first use, then no forest scans while Trunks.Version is unchanged.
+// on first use, then no tree scans while Trunks.Version is unchanged.
 func TestNodes_TrunkScanCount(t *testing.T) {
 	b, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
@@ -142,7 +142,7 @@ func TestConversationList_TrunkScanCount(t *testing.T) {
 		w, ok := want[n.ID]
 		if !ok || n.Parent != w.Parent || n.Trunk != w.Trunk ||
 			n.BranchedLT != w.BranchedLT || !slices.Equal(n.Vector, w.Vector) {
-			t.Fatalf("conversation view for %s differs from full forest: got %#v, want %#v", n.ID, n, w)
+			t.Fatalf("conversation view for %s differs from full tree: got %#v, want %#v", n.ID, n, w)
 		}
 	}
 
@@ -173,7 +173,7 @@ func TestConversationList_TrunkScanCount(t *testing.T) {
 	}
 }
 
-// BenchmarkNodes measures store.Nodes() (the forest fill) and reports the
+// BenchmarkNodes measures store.Nodes() (the tree fill) and reports the
 // trunk-scan count as a custom metric so the fan-out is visible numerically.
 func BenchmarkNodes(b *testing.B) {
 	be, err := NewXwalBackend(b.TempDir(), 0)
@@ -211,12 +211,12 @@ func BenchmarkConversations(b *testing.B) {
 	b.ReportMetric(float64(n), "trunks")
 }
 
-// BenchmarkListPathFill is the angelus list path's forest fill: one
+// BenchmarkListPathFill is the angelus list path's tree fill: one
 // Backend.Nodes() snapshot, indexed by id, however many rows follow.
 //
 // It used to be a pair, bracketing the O(N^2) it replaced -- the handler
 // called Backend.Node(id) per result and each call recomputed the whole
-// forest. The "before" arm is gone: the topology snapshot is cached by
+// tree. The "before" arm is gone: the topology snapshot is cached by
 // version now, so the pattern it measured no longer costs what it cost, and a
 // benchmark whose premise has expired reports a number nobody can read.
 func BenchmarkListPathFill(b *testing.B) {

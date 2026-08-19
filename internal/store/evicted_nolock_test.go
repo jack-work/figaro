@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	fwforest "github.com/jack-work/figwal/forest"
+	fwtree "github.com/jack-work/figaro/internal/store/tree"
 )
 
 // EVICTED TAKES NO LOCK.
@@ -30,7 +30,7 @@ type lockingConsumer struct {
 }
 
 // evicted is the hook as it must be written: a pointer swap and nothing else.
-func (c *lockingConsumer) evicted(fwforest.Coord) {
+func (c *lockingConsumer) evicted(fwtree.Coord) {
 	c.fired.Add(1)
 	// TryLock stands in for "would a locking hook have blocked here". It never
 	// waits, so a true reading is evidence rather than a deadlock.
@@ -50,10 +50,10 @@ func bigUnits(n int) []string {
 	return out
 }
 
-func newPressuredCache(c *lockingConsumer, budget int64) *fwforest.Cache[string] {
-	cache := fwforest.New(
-		func(co fwforest.Coord) ([]string, error) { return bigUnits(int(co.To - co.From)), nil },
-		fwforest.NewBudget(budget),
+func newPressuredCache(c *lockingConsumer, budget int64) *fwtree.Cache[string] {
+	cache := fwtree.New(
+		func(co fwtree.Coord) ([]string, error) { return bigUnits(int(co.To - co.From)), nil },
+		fwtree.NewBudget(budget),
 		func(s string) int { return len(s) + 16 },
 		func(s string) uint64 { return 0 },
 	)
@@ -70,7 +70,7 @@ func TestEvictedFiresUnderTheConsumersWriteLock(t *testing.T) {
 
 	for i := 0; i < 200 && !c.firedUnderLock.Load(); i++ {
 		c.mu.Lock()
-		cache.Put(fwforest.Coord{Node: "n", From: uint64(i * 8), To: uint64(i*8 + 8)}, bigUnits(8), false)
+		cache.Put(fwtree.Coord{Node: "n", From: uint64(i * 8), To: uint64(i*8 + 8)}, bigUnits(8), false)
 		c.mu.Unlock()
 	}
 
@@ -90,7 +90,7 @@ func TestPutUnderWriteLockDoesNotDeadlock(t *testing.T) {
 	cache := newPressuredCache(c, 128<<10)
 	defer cache.Close()
 
-	lineage := []fwforest.Ref{{Node: "n", Base: 0}}
+	lineage := []fwtree.Ref{{Node: "n", Base: 0}}
 	done := make(chan struct{})
 
 	go func() {
@@ -113,7 +113,7 @@ func TestPutUnderWriteLockDoesNotDeadlock(t *testing.T) {
 		}
 		for i := 0; i < 500; i++ {
 			c.mu.Lock()
-			cache.Put(fwforest.Coord{Node: "n", From: uint64(i * 8), To: uint64(i*8 + 8)}, bigUnits(8), false)
+			cache.Put(fwtree.Coord{Node: "n", From: uint64(i * 8), To: uint64(i*8 + 8)}, bigUnits(8), false)
 			c.mu.Unlock()
 		}
 		close(stop)

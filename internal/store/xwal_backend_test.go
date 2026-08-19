@@ -294,7 +294,7 @@ func TestXwalBackend_CauterizedOutfitFork(t *testing.T) {
 	}
 }
 
-func TestXwalBackend_ForestVectors(t *testing.T) {
+func TestXwalBackend_TreeVectors(t *testing.T) {
 	b, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
 		t.Fatal(err)

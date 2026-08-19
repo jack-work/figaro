@@ -348,37 +348,44 @@ func (l *Loaded) IRWindow() int {
 	return *l.Config.Memory.IRWindow
 }
 
-// IRWindowBytes is the resident decoded-IR byte budget per aria, or 0 for
-// unbounded. Nil-safe, floored for the same reason IRWindow is: a budget too
-// small to hold a turn makes an in-flight turn re-read its own tail.
-func (l *Loaded) IRWindowBytes() int {
+// IRWindowBytes is the CONFIGURED resident decoded-IR byte budget per aria.
+// ok is false when nothing is configured: the default belongs to the store
+// (store.DefaultIRBudgetBytes), the layer that holds the bytes, and a caller
+// that finds nothing here must leave the store's own bound alone rather than
+// substitute a number of its own. An explicit 0 is a real answer -- unbounded
+// -- and comes back with ok true.
+//
+// Floored for the same reason IRWindow is: a budget too small to hold a turn
+// makes an in-flight turn re-read its own tail.
+func (l *Loaded) IRWindowBytes() (int, bool) {
 	if l == nil || l.Config.Memory.IRWindowMB == nil {
-		return defaultIRWindowMB << 20
+		return 0, false
 	}
 	if *l.Config.Memory.IRWindowMB <= 0 {
-		return 0 // explicitly unbounded
+		return 0, true // explicitly unbounded
 	}
 	if mb := *l.Config.Memory.IRWindowMB; mb < minIRWindowMB {
-		return minIRWindowMB << 20
+		return minIRWindowMB << 20, true
 	}
-	return *l.Config.Memory.IRWindowMB << 20
+	return *l.Config.Memory.IRWindowMB << 20, true
 }
 
-// TranslationWindowBytes is the resident decoded-translation byte budget per
-// aria per provider, or 0 for unbounded. Floored like the IR's, and for the
-// same reason: a budget too small to hold the tail a translator is about to
-// send makes it re-read that tail from disk on every Send.
-func (l *Loaded) TranslationWindowBytes() int {
+// TranslationWindowBytes is the CONFIGURED resident decoded-translation byte
+// budget per aria per provider: same unset/explicit-zero contract as
+// IRWindowBytes, same floor, and the same reason for it -- a budget too small
+// to hold the tail a translator is about to send makes it re-read that tail on
+// every Send.
+func (l *Loaded) TranslationWindowBytes() (int, bool) {
 	if l == nil || l.Config.Memory.TranslationWindowMB == nil {
-		return defaultTranslationWindowMB << 20
+		return 0, false
 	}
 	if *l.Config.Memory.TranslationWindowMB <= 0 {
-		return 0
+		return 0, true
 	}
 	if mb := *l.Config.Memory.TranslationWindowMB; mb < minIRWindowMB {
-		return minIRWindowMB << 20
+		return minIRWindowMB << 20, true
 	}
-	return *l.Config.Memory.TranslationWindowMB << 20
+	return *l.Config.Memory.TranslationWindowMB << 20, true
 }
 
 // TelemetryDir resolves the sink directory against the state dir.
@@ -410,51 +417,35 @@ func (l *Loaded) TelemetryOTLPEndpoint() string {
 	return l.Config.Telemetry.OTLPEndpoint
 }
 
-// SegmentCacheBytes is the process-wide budget for raw segment payloads held
-// in memory by figwal, or 0 to hold none. Nil-safe.
-func (l *Loaded) SegmentCacheBytes() int64 {
+// SegmentCacheBytes is the CONFIGURED process-wide budget for raw segment
+// payloads, with the same contract as IRWindowBytes: ok is false when nothing
+// is set, and the default belongs to the package that holds the bytes
+// (internal/store/segment bounds itself at 32 MiB). An explicit 0 is a real
+// answer -- hold none -- and comes back ok.
+func (l *Loaded) SegmentCacheBytes() (int64, bool) {
 	if l == nil || l.Config.Memory.SegmentCacheMB == nil {
-		return int64(defaultSegmentCacheMB) << 20
+		return 0, false
 	}
 	if mb := *l.Config.Memory.SegmentCacheMB; mb > 0 {
-		return int64(mb) << 20
+		return int64(mb) << 20, true
 	}
-	return 0
+	return 0, true
 }
 
-// UIWindowMB is the process-wide budget for composed UI IR, in mebibytes,
-// or 0 for unbounded. Nil-safe. The default holds every aria the author
-// has measured (~6 MB composed at reader-bench size) while refusing the
-// old behaviour, which was to hold all of it forever.
-func (l *Loaded) UIWindowMB() int {
+// UIWindowMB is the CONFIGURED budget for composed UI IR, in mebibytes, with
+// the same contract; the default belongs to internal/livelog/aria, which owns
+// the composed turns.
+func (l *Loaded) UIWindowMB() (int, bool) {
 	if l == nil || l.Config.Memory.UIWindowMB == nil {
-		return defaultUIWindowMB
+		return 0, false
 	}
 	if mb := *l.Config.Memory.UIWindowMB; mb > 0 {
-		return mb
+		return mb, true
 	}
-	return 0
+	return 0, true
 }
 
 const (
-	// defaultSegmentCacheMB is figwal's own default, restated here so the
-	// daemon's number is the daemon's to choose. 32 MiB holds the working set
-	// of a busy fleet (the author's whole store is 281 MB on disk, and a
-	// listing touches the tail of each channel) while refusing the old
-	// behaviour, which was to hold all of it.
-	defaultSegmentCacheMB = 32
-
-	// defaultUIWindowMB bounds composed UI IR. 16 MiB holds the working
-	// set of several large arias at once (the biggest measured composes
-	// to ~6 MB) while bounding the axis that was unbounded; a miss costs
-	// one range recompose (~ms), not a disk store.
-	defaultUIWindowMB = 16
-
-	// defaultTranslationWindowMB holds the whole translation history of every
-	// aria in the author's store (largest: 2.9 MiB), so it changes nothing
-	// today and caps the growth that had no cap.
-	defaultTranslationWindowMB = 4
-
 	// minIRWindow is a floor, not taste: a window smaller than one turn's
 	// worth of messages makes an in-flight turn re-read its own tail from disk
 	// on every append.
@@ -473,16 +464,6 @@ const (
 	// store holds 99 patches, so this only bites a form written to
 	// continuously for a very long time.
 	defaultFormPatchWindow = 2048
-	// defaultIRWindowMB bounds resident decoded IR when nothing says
-	// otherwise. It used to be unbounded, and the decoded IR is the largest
-	// thing a live aria holds: 4 to 5x its encoded bytes, measured at 12.5
-	// MiB on a 2556-message aria and 63 to 86 percent of that aria's whole
-	// footprint. Unbounded by default meant every aria anyone touched kept
-	// all of it.
-	//
-	// 4 MiB holds a comfortable working tail on every aria measured. Set
-	// ir_window_mb = 0 to go back to unbounded.
-	defaultIRWindowMB = 4
 )
 
 // SoftLimitBytes is the daemon's heap ceiling in bytes, or 0 for none.

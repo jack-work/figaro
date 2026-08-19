@@ -46,18 +46,19 @@ func (b *XwalBackend) healMeta(ariaID string, log Log[message.Message]) {
 		return
 	}
 	c := b.metaCache(ariaID)
-	c.mu.Lock()
+	c.mu.Lock() // a writer: the file write and the publish must stay in order
 	defer c.mu.Unlock()
-	if err := b.loadMetaLocked(ariaID, c); err != nil || c.value == nil {
+	st, err := c.loadOnce(b.metaPath(ariaID))
+	if err != nil || st.Value == nil {
 		return
 	}
 	// LastFigaroLT == 0 means "no watermark" (a pre-watermark sidecar): the
 	// counts are absolute, not resumable, so folding from LT 1 would double
 	// them. Leave it to the owning agent; healing is a suffix, never a scan.
-	if c.value.LastFigaroLT == 0 || c.value.LastFigaroLT >= tail.LT {
+	if st.Value.LastFigaroLT == 0 || st.Value.LastFigaroLT >= tail.LT {
 		return
 	}
-	meta := *c.value
+	meta := *st.Value
 	folded := int64(0)
 	for _, e := range log.ReadFrom(meta.LastFigaroLT+1, 0) {
 		m := e.Payload
@@ -85,6 +86,6 @@ func (b *XwalBackend) healMeta(ariaID string, log Log[message.Message]) {
 	if err := writeJSON(b.metaPath(ariaID), &meta); err != nil {
 		return
 	}
-	slog.Info("meta healed", "aria", ariaID, "from", c.value.LastFigaroLT, "to", meta.LastFigaroLT, "folded", folded)
-	c.value = &meta
+	slog.Info("meta healed", "aria", ariaID, "from", st.Value.LastFigaroLT, "to", meta.LastFigaroLT, "folded", folded)
+	c.state.Store(&metaState{Value: &meta})
 }

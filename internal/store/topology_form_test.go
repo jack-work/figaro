@@ -43,13 +43,13 @@ func (f fake) ChildrenOf(id string) []string {
 // which is the only node with no .from and the one ancestor no delete can
 // take. Leaving it out would make A look like a root and quietly change
 // what "has an ancestor to lose" means.
-func forest() fake {
+func tree() fake {
 	return fake{"null": "", "A": "null", "B": "A", "C": "A", "D": "C"}
 }
 
 func openTopo(t *testing.T) (*TopologyTree, fake) {
 	t.Helper()
-	f := forest()
+	f := tree()
 	x, _ := openTopoIn(t, t.TempDir(), f)
 	return x, f
 }
@@ -122,7 +122,7 @@ func TestTopologyForm_PromoteOpensABoundary(t *testing.T) {
 
 func TestTopologyForm_OverridesSurviveReopen(t *testing.T) {
 	dir := t.TempDir()
-	f := forest()
+	f := tree()
 	x, be := openTopoIn(t, dir, f)
 	if err := x.Promote("B"); err != nil {
 		t.Fatal(err)
@@ -210,7 +210,7 @@ func TestTopologyForm_PromoteIsOneRecord(t *testing.T) {
 // The fold is idempotent, so a crash before the rename replays harmlessly.
 func TestTopologyForm_MigratesTrunksJSON(t *testing.T) {
 	dir := t.TempDir()
-	f := forest()
+	f := tree()
 	legacy := filepath.Join(dir, "trunks.json")
 	if err := os.WriteFile(legacy,
 		[]byte(`{"version":1,"parent":{"A":"B","B":"null"}}`), 0o644); err != nil {
@@ -232,7 +232,7 @@ func TestTopologyForm_MigratesTrunksJSON(t *testing.T) {
 // a migrated store must not fold anything.
 func TestTopologyForm_MigrationIsOnce(t *testing.T) {
 	dir := t.TempDir()
-	f := forest()
+	f := tree()
 	if err := os.WriteFile(filepath.Join(dir, "trunks.json"),
 		[]byte(`{"version":1,"parent":{"A":"B"}}`), 0o644); err != nil {
 		t.Fatal(err)
@@ -254,7 +254,7 @@ func TestTopologyForm_MigrationIsOnce(t *testing.T) {
 // putting the file back rather than by killing a process.
 func TestTopologyForm_CrashBetweenFoldAndRename(t *testing.T) {
 	dir := t.TempDir()
-	f := forest()
+	f := tree()
 	legacy := filepath.Join(dir, "trunks.json")
 	body := []byte(`{"version":1,"parent":{"A":"B"}}`)
 	if err := os.WriteFile(legacy, body, 0o644); err != nil {

@@ -4,7 +4,13 @@ import (
 	"fmt"
 	"testing"
 
-	fwforest "github.com/jack-work/figwal/forest"
+	// ALIASED, and the reason is worth a line: commit 3c793c85 renamed this
+	// package's own fixture helper forest() -> tree(), so the bare package
+	// name now collides with an identifier already declared in
+	// topology_form_test.go. c64cacf2 predicted this class of collision when
+	// it described the rename; it arrived through an identifier rather than a
+	// call site.
+	fwtree "github.com/jack-work/figaro/internal/store/tree"
 )
 
 // Pins the fork-base convention across three parties that must agree, because
@@ -15,15 +21,15 @@ import (
 // figwal .fork marker base=3, first record present in the node _idx=3,
 // figaro branched_lt=3. Base is the FIRST coordinate the child owns.
 
-func forkLineage(base uint64) []fwforest.Ref {
-	return []fwforest.Ref{{Node: "parent", Base: 0}, {Node: "child", Base: base}}
+func forkLineage(base uint64) []fwtree.Ref {
+	return []fwtree.Ref{{Node: "parent", Base: 0}, {Node: "child", Base: base}}
 }
 
 // nodeSource answers with the node that served each unit, so a read can be
 // attributed to a branch rather than merely checked for content.
-func nodeSource(t *testing.T, served map[string]int) fwforest.Source[string] {
+func nodeSource(t *testing.T, served map[string]int) fwtree.Source[string] {
 	t.Helper()
-	return func(c fwforest.Coord) ([]string, error) {
+	return func(c fwtree.Coord) ([]string, error) {
 		served[c.Node]++
 		out := make([]string, 0, c.To-c.From)
 		for i := c.From + 1; i <= c.To; i++ {
@@ -42,7 +48,7 @@ func TestForkBaseSplitsAtTheChildsFirstRecord(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			served := map[string]int{}
-			c := fwforest.New(nodeSource(t, served), fwforest.NewBudget(1<<20),
+			c := fwtree.New(nodeSource(t, served), fwtree.NewBudget(1<<20),
 				func(s string) int { return len(s) + 16 },
 				func(s string) uint64 { var n uint64; fmt.Sscanf(s[len(s)-1:], "%d", &n); return n })
 			defer c.Close()
@@ -80,7 +86,7 @@ func TestForkBaseSplitsAtTheChildsFirstRecord(t *testing.T) {
 func TestForkBaseBoundaryRecordBelongsToTheChild(t *testing.T) {
 	const base = 5
 	served := map[string]int{}
-	c := fwforest.New(nodeSource(t, served), fwforest.NewBudget(1<<20),
+	c := fwtree.New(nodeSource(t, served), fwtree.NewBudget(1<<20),
 		func(s string) int { return len(s) + 16 },
 		func(s string) uint64 { var n uint64; fmt.Sscanf(s[len(s)-1:], "%d", &n); return n })
 	defer c.Close()
@@ -105,13 +111,13 @@ func TestForkBaseBoundaryRecordBelongsToTheChild(t *testing.T) {
 // separately.
 func TestForksShareOnePrefixResidency(t *testing.T) {
 	served := map[string]int{}
-	c := fwforest.New(nodeSource(t, served), fwforest.NewBudget(1<<20),
+	c := fwtree.New(nodeSource(t, served), fwtree.NewBudget(1<<20),
 		func(s string) int { return len(s) + 16 },
 		func(s string) uint64 { var n uint64; fmt.Sscanf(s[len(s)-1:], "%d", &n); return n })
 	defer c.Close()
 
-	a := []fwforest.Ref{{Node: "parent", Base: 0}, {Node: "childA", Base: 8}}
-	b := []fwforest.Ref{{Node: "parent", Base: 0}, {Node: "childB", Base: 8}}
+	a := []fwtree.Ref{{Node: "parent", Base: 0}, {Node: "childA", Base: 8}}
+	b := []fwtree.Ref{{Node: "parent", Base: 0}, {Node: "childB", Base: 8}}
 
 	if _, err := c.Range(a, 0, 7); err != nil {
 		t.Fatal(err)

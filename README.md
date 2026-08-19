@@ -139,7 +139,7 @@ prints a bare token count.
 
 ## Core concepts
 
-- **Arias**: persistent conversations, append-only IR log, fork-tree storage via [figwal](https://github.com/jack-work/figwal).
+- **Arias**: persistent conversations, append-only IR log, fork-tree storage in `internal/store` (originally the separate [figwal](https://github.com/jack-work/figwal) module, merged in-tree 2026-08-19).
 - **Forking**: branch at a turn boundary; both sides share the canonical IR prefix. `attend` is your `cd`.
 - **Form**: per-aria key-value state, travels as patches, surfaces as system reminders.
 - **Outfits**: TOML profiles (provider, model, credo, skills) inherited by new arias.

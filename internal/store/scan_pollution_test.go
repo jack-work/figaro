@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"testing"
 
-	fwforest "github.com/jack-work/figwal/forest"
+	fwtree "github.com/jack-work/figaro/internal/store/tree"
 )
 
-// SCAN POLLUTION, measured: a whole-history read through forest.Cache DOES
+// SCAN POLLUTION, measured: a whole-history read through tree.Cache DOES
 // evict other nodes' hot tails. Both tests below assert that it happens.
 //
-// forest is not at fault -- a cache that caches what it reads is correct, and
+// tree is not at fault -- a cache that caches what it reads is correct, and
 // bounding a scan is not something it promises. The conclusion is a POLICY for
 // the consumer: only bounded reads near the window are routed through the
 // cache; a whole-history read passes through to the source, retaining nothing.
@@ -20,20 +20,20 @@ import (
 // -- and the re-seat must extend it rather than route everything through
 // Range. These tests are why.
 //
-// If forest ever bounds scans itself, these fail, and the policy can be
+// If tree ever bounds scans itself, these fail, and the policy can be
 // simplified. That is the point of asserting the fact rather than the wish.
 //
 // PERMANENT, NOT MIGRATION SCAFFOLDING.
 
 type scanFixture struct {
-	cache  *fwforest.Cache[string]
-	source func(fwforest.Coord) ([]string, error)
+	cache  *fwtree.Cache[string]
+	source func(fwtree.Coord) ([]string, error)
 	calls  map[string]int
 }
 
 func newScanFixture(budgetBytes int64) *scanFixture {
 	f := &scanFixture{calls: map[string]int{}}
-	f.source = func(c fwforest.Coord) ([]string, error) {
+	f.source = func(c fwtree.Coord) ([]string, error) {
 		f.calls[c.Node]++
 		out := make([]string, 0, c.To-c.From)
 		for i := c.From + 1; i <= c.To; i++ {
@@ -41,14 +41,14 @@ func newScanFixture(budgetBytes int64) *scanFixture {
 		}
 		return out, nil
 	}
-	f.cache = fwforest.New(f.source, fwforest.NewBudget(budgetBytes),
+	f.cache = fwtree.New(f.source, fwtree.NewBudget(budgetBytes),
 		func(s string) int { return len(s) + 16 },
 		func(s string) uint64 { return 0 })
 	return f
 }
 
 func (f *scanFixture) read(node string, from, to uint64) int {
-	got, err := f.cache.Range([]fwforest.Ref{{Node: node, Base: 0}}, from, to)
+	got, err := f.cache.Range([]fwtree.Ref{{Node: node, Base: 0}}, from, to)
 	if err != nil {
 		panic(err)
 	}
@@ -88,7 +88,7 @@ func TestWholeHistoryReadEvictsOtherAriasTails(t *testing.T) {
 	lostA := f.calls["ariaA"] - warm["ariaA"]
 	lostB := f.calls["ariaB"] - warm["ariaB"]
 	if lostA == 0 && lostB == 0 {
-		t.Fatal("forest now bounds a whole-history scan; the pass-through policy " +
+		t.Fatal("tree now bounds a whole-history scan; the pass-through policy " +
 			"in cachedLog can be simplified, and this test should say so")
 	}
 	t.Logf("scan pollution confirmed: one whole-history read cost the neighbours "+
@@ -119,7 +119,7 @@ func TestRepeatedScansEvictOtherAriasTails(t *testing.T) {
 	lostA := f.calls["ariaA"] - warm["ariaA"]
 	lostB := f.calls["ariaB"] - warm["ariaB"]
 	if lostA == 0 && lostB == 0 {
-		t.Fatal("forest now bounds listing-shaped scans; revisit the pass-through policy")
+		t.Fatal("tree now bounds listing-shaped scans; revisit the pass-through policy")
 	}
 	t.Logf("listing-shaped load: neighbours cost %d and %d rematerializations "+
 		"across 5 whole-history reads", lostA, lostB)

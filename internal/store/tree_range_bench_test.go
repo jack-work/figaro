@@ -3,7 +3,7 @@ package store
 import (
 	"testing"
 
-	fwforest "github.com/jack-work/figwal/forest"
+	fwtree "github.com/jack-work/figaro/internal/store/tree"
 )
 
 // A fresh fork holds 298 inherited rows and 0 of its own, so under the
@@ -17,26 +17,26 @@ type benchUnit struct {
 	body string
 }
 
-func benchCache(units int) (*fwforest.Cache[benchUnit], []fwforest.Ref) {
+func benchCache(units int) (*fwtree.Cache[benchUnit], []fwtree.Ref) {
 	body := string(make([]byte, 256))
-	c := fwforest.New(
-		func(co fwforest.Coord) ([]benchUnit, error) {
+	c := fwtree.New(
+		func(co fwtree.Coord) ([]benchUnit, error) {
 			out := make([]benchUnit, 0, co.To-co.From)
 			for i := co.From + 1; i <= co.To; i++ {
 				out = append(out, benchUnit{lt: i, body: body})
 			}
 			return out, nil
 		},
-		fwforest.NewBudget(64<<20),
+		fwtree.NewBudget(64<<20),
 		func(u benchUnit) int { return len(u.body) + 48 },
 		func(u benchUnit) uint64 { return u.lt },
 	)
-	lineage := []fwforest.Ref{{Node: "parent", Base: 0}, {Node: "child", Base: uint64(units + 1)}}
+	lineage := []fwtree.Ref{{Node: "parent", Base: 0}, {Node: "child", Base: uint64(units + 1)}}
 	c.Range(lineage, 0, uint64(units)) // warm
 	return c, lineage
 }
 
-func BenchmarkForestRangeParallel(b *testing.B) {
+func BenchmarkTreeRangeParallel(b *testing.B) {
 	c, lineage := benchCache(2000)
 	defer c.Close()
 	b.ReportAllocs()
@@ -48,12 +48,38 @@ func BenchmarkForestRangeParallel(b *testing.B) {
 	})
 }
 
-func BenchmarkForestRangeSerial(b *testing.B) {
+func BenchmarkTreeRangeSerial(b *testing.B) {
 	c, lineage := benchCache(2000)
 	defer c.Close()
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = c.Range(lineage, 1500, 1564)
+	}
+}
+
+// A SINGLE-UNIT read under many readers: the shape where a lock on the read
+// path can actually show. BenchmarkTreeRange* above asks for 64 units, so its
+// cost is dominated by copying them and a mutex acquisition disappears inside
+// it -- which is why a lock's removal must not be measured there.
+func BenchmarkTreeRangeOneUnitParallel(b *testing.B) {
+	c, lineage := benchCache(2000)
+	defer c.Close()
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_, _ = c.Range(lineage, 1500, 1501)
+		}
+	})
+}
+
+func BenchmarkTreeRangeOneUnitSerial(b *testing.B) {
+	c, lineage := benchCache(2000)
+	defer c.Close()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = c.Range(lineage, 1500, 1501)
 	}
 }
