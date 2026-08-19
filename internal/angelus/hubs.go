@@ -106,9 +106,6 @@ func (h *handlers) bindAgentToHub(id string, agent subscribableAgent) (func(), e
 // for want of provider keys, and this is the only path that can patch
 // those keys in.
 func (h *handlers) writeForHub(id, method string, params json.RawMessage) (any, bool, error) {
-	if h.angelus.Backend == nil {
-		return nil, false, nil
-	}
 	switch method {
 	case rpc.MethodSet:
 		// below

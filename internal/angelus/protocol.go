@@ -264,7 +264,7 @@ func (h *handlers) settings() (*config.Loaded, *outfit.Outfitter) {
 // aria, seeded from its reducible form channel (the durable
 // truth: there is no the form channel). nil on failure.
 func (h *handlers) openAriaForm(ariaID string) *form.State {
-	if h.formTmpls == nil || h.angelus.Backend == nil {
+	if h.formTmpls == nil {
 		return nil
 	}
 	snap, err := h.angelus.Backend.FormState(ariaID)
@@ -339,9 +339,6 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 	_, span := figOtel.Start(ctx, "angelus.formCreate")
 	defer span.End()
 
-	if h.angelus.Backend == nil {
-		return nil, fmt.Errorf("form.create: no backend")
-	}
 	var req rpc.FormCreateRequest
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
@@ -384,9 +381,6 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 	_, span := figOtel.Start(ctx, "angelus.formBind")
 	defer span.End()
 
-	if h.angelus.Backend == nil {
-		return nil, fmt.Errorf("form.bind: no backend")
-	}
 	var req rpc.FormBindRequest
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
@@ -500,9 +494,6 @@ func (h *handlers) outfitReload(ctx context.Context, params json.RawMessage) (in
 	if _, ofit := h.settings(); ofit != nil {
 		ofit.Reload()
 	}
-	if h.angelus.Backend == nil {
-		return nil, fmt.Errorf("outfit.reload: no backend")
-	}
 	rec, err := h.angelus.Backend.LoadDefaultForm()
 	if err != nil {
 		return nil, err
@@ -585,9 +576,6 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	cwd, _ := os.Getwd()
 
 	backend := h.angelus.Backend
-	if backend == nil {
-		return nil, errors.New("create: no backend")
-	}
 
 	// The form channel is the durable truth; cbState is the
 	// in-memory hot view. System mints all ids.
@@ -717,9 +705,6 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	var req rpc.ForkRequest
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
-	}
-	if h.angelus.Backend == nil {
-		return nil, errors.New("fork: no backend")
 	}
 	var cont, alt string
 	note := ""
@@ -923,9 +908,6 @@ func (h *handlers) gc(ctx context.Context, params json.RawMessage) (interface{},
 			return nil, err
 		}
 	}
-	if h.angelus.Backend == nil {
-		return nil, errors.New("gc: no backend")
-	}
 
 	nodes := h.angelus.Backend.Nodes()
 	children := map[string]int{}
@@ -969,9 +951,6 @@ func (h *handlers) normalize(ctx context.Context, params json.RawMessage) (inter
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	if h.angelus.Backend == nil {
-		return nil, errors.New("normalize: no backend")
-	}
 	if req.Segments {
 		return nil, errors.New("normalize: --segments is not implemented yet")
 	}
@@ -991,9 +970,6 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	var req rpc.ImportRequest
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
-	}
-	if h.angelus.Backend == nil {
-		return nil, errors.New("import: no backend")
 	}
 	if req.Outfit == "" {
 		return nil, errors.New("import: no outfit named")
@@ -1081,9 +1057,6 @@ func (h *handlers) promote(ctx context.Context, params json.RawMessage) (interfa
 	var req rpc.PromoteRequest
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
-	}
-	if h.angelus.Backend == nil {
-		return nil, errors.New("promote: no backend")
 	}
 	climbed, err := h.angelus.Backend.Promote(req.FigaroID, req.Levels)
 	if errors.Is(err, store.ErrNoTrunkCapability) {
@@ -1436,7 +1409,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 }
 
 func (h *handlers) enrichList(result []rpc.FigaroInfoResponse, tasks []listEnrichment) {
-	if h.angelus.Backend == nil || len(tasks) == 0 {
+	if len(tasks) == 0 {
 		return
 	}
 	workers := min(8, len(tasks))
@@ -1554,9 +1527,6 @@ func (h *handlers) requireAria(id string) error {
 	}
 	if h.angelus.Registry.Get(id) != nil {
 		return nil // live: already proven
-	}
-	if h.angelus.Backend == nil {
-		return fmt.Errorf("aria %s: no backend", id)
 	}
 	// A topology lookup, not a read: Meta is NOT an existence check (it
 	// returns nil,nil for an unknown aria, and arias predating the sidecar
@@ -1763,9 +1733,6 @@ func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interf
 	if req.FigaroID == "" {
 		return nil, errors.New("aria.read: empty figaro_id")
 	}
-	if h.angelus.Backend == nil {
-		return nil, errors.New("aria.read: no backend")
-	}
 
 	// The backend returns the same shared, memoized IR instance the live
 	// agent holds, so reads run lock-free against its writes.
@@ -1825,9 +1792,6 @@ func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interf
 func (h *handlers) restoreByID(ctx context.Context, ariaID string) (figaro.Figaro, error) {
 	if f := h.angelus.Registry.Get(ariaID); f != nil {
 		return f, nil
-	}
-	if h.angelus.Backend == nil {
-		return nil, fmt.Errorf("no backend configured")
 	}
 	// SINGLE FLIGHT. Two requests for a dormant aria must not build two
 	// agents, and the second must not wait on a lock that outlives the wake.

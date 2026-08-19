@@ -105,9 +105,6 @@ func build(ctx provider.BuildContext, route provider.Route, name string, cfg Con
 		}
 	}
 	cacheOpen := func(aria string) (store.Log[[]json.RawMessage], error) {
-		if ctx.Backend == nil {
-			return nil, fmt.Errorf("no backend")
-		}
 		return ctx.Backend.OpenTranslation(aria, name)
 	}
 	resolver := ctx.Resolver

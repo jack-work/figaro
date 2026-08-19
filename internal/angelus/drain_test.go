@@ -50,7 +50,7 @@ func TestShutdownDrainSealsPartialTurn(t *testing.T) {
 		ID: conv, Provider: prov, Backend: backend, Tools: tool.NewRegistry(),
 	})
 
-	a := angelus.New(angelus.Config{RuntimeDir: testRuntimeDir(t, t.TempDir())})
+	a := angelus.New(angelus.Config{Backend: store.NewTestBackend(t), RuntimeDir: testRuntimeDir(t, t.TempDir())})
 	require.NoError(t, a.Registry.Register(agent))
 
 	agent.SubmitPrompt(rpc.QuaRequest{Text: "go"})

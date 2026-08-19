@@ -13,9 +13,6 @@ import (
 // lives in each aria's form; fold it in once and the sidecar is current
 // forever after (live actors republish full meta on every turn).
 func (a *Angelus) metaBackfill(ctx context.Context) {
-	if a.Backend == nil {
-		return
-	}
 	filled := 0
 	for _, id := range a.Backend.ConversationIDs() {
 		select {

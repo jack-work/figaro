@@ -2,6 +2,7 @@ package angelus_test
 
 import (
 	"context"
+	"github.com/jack-work/figaro/internal/store"
 	"net"
 	"os"
 	"os/exec"
@@ -19,6 +20,7 @@ func newTestAngelus(t *testing.T) (*angelus.Angelus, context.CancelFunc) {
 	t.Helper()
 	dir := t.TempDir()
 	a := angelus.New(angelus.Config{
+		Backend:    store.NewTestBackend(t),
 		RuntimeDir: testRuntimeDir(t, dir),
 	})
 
@@ -115,6 +117,7 @@ func TestAngelus_StaleSocketCleanup(t *testing.T) {
 	require.NoError(t, os.WriteFile(sockPath, []byte("stale"), 0600))
 
 	a := angelus.New(angelus.Config{
+		Backend:    store.NewTestBackend(t),
 		RuntimeDir: runtimeDir,
 	})
 

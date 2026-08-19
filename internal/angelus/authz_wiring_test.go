@@ -2,6 +2,7 @@ package angelus
 
 import (
 	"context"
+	"github.com/jack-work/figaro/internal/store"
 	"strings"
 	"testing"
 
@@ -18,7 +19,7 @@ import (
 
 func authzHandlers(t *testing.T, callerIdentity bool, policy string, live *liveForkFigaro) *Handlers {
 	t.Helper()
-	a := &Angelus{Registry: NewRegistry()}
+	a := &Angelus{Registry: NewRegistry(), Backend: store.NewTestBackend(t)}
 	if live != nil {
 		if err := a.Registry.Register(live); err != nil {
 			t.Fatalf("register: %v", err)
@@ -38,7 +39,7 @@ func authzHandlers(t *testing.T, callerIdentity bool, policy string, live *liveF
 // the provider directly.
 func TestForkPolicyOffByDefault(t *testing.T) {
 	// A config that says nothing must behave exactly as figaro did before.
-	a := &Angelus{Registry: NewRegistry()}
+	a := &Angelus{Registry: NewRegistry(), Backend: store.NewTestBackend(t)}
 	live := &liveForkFigaro{id: "aria0001", turnActive: true}
 	if err := a.Registry.Register(live); err != nil {
 		t.Fatalf("register: %v", err)
@@ -52,7 +53,7 @@ func TestForkPolicyOffByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WithCaller: %v", err)
 	}
-	// It will fail for lack of a Backend, but it must NOT fail with a denial:
+	// It may fail for want of that aria, but it must NOT fail with a denial:
 	// the request has to reach the handler.
 	_, ferr := hs.Map[rpc.MethodFork](context.Background(), params)
 	if ferr != nil && strings.Contains(ferr.Error(), "deadlock") {
@@ -131,7 +132,7 @@ func TestEveryServedMethodIsGuarded(t *testing.T) {
 // the predicate treated "not in the registry" as active, every fork of a
 // dormant aria would be denied.
 func TestTurnActivePredicateHandlesUnknownAria(t *testing.T) {
-	a := &Angelus{Registry: NewRegistry()}
+	a := &Angelus{Registry: NewRegistry(), Backend: store.NewTestBackend(t)}
 	hs := NewHandlers(ServerConfig{Angelus: a, Config: &config.Loaded{}, Ctx: context.Background()})
 	if hs.h.turnActive("nobody") {
 		t.Fatal("unknown aria reported as mid-turn")

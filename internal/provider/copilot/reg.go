@@ -77,15 +77,9 @@ func buildFromContext(ctx provider.BuildContext) (provider.Provider, error) {
 	}
 	cfg := loadConfig(ctx.Loaded)
 	messagesCacheOpen := func(aria string) (store.Log[[]json.RawMessage], error) {
-		if ctx.Backend == nil {
-			return nil, fmt.Errorf("no backend")
-		}
 		return ctx.Backend.OpenTranslation(aria, "copilot-messages")
 	}
 	responsesCacheOpen := func(aria string) (store.Log[[]json.RawMessage], error) {
-		if ctx.Backend == nil {
-			return nil, fmt.Errorf("no backend")
-		}
 		return ctx.Backend.OpenTranslation(aria, "copilot-responses")
 	}
 	p, err := New(knobs, ctx.Resolver, cfg, messagesCacheOpen, responsesCacheOpen)

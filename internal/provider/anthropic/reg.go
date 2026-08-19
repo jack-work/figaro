@@ -2,7 +2,6 @@ package anthropic
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/anthropicsdk"
@@ -30,9 +29,6 @@ func buildFromContext(ctx provider.BuildContext) (provider.Provider, error) {
 		knobs.Model = reg.DefaultModel
 	}
 	cacheOpen := func(aria string) (store.Log[[]json.RawMessage], error) {
-		if ctx.Backend == nil {
-			return nil, fmt.Errorf("no backend")
-		}
 		return ctx.Backend.OpenTranslation(aria, "anthropic")
 	}
 	if knobs.UseOfficialSDK {
