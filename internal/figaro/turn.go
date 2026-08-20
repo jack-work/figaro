@@ -358,10 +358,9 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		return true
 	}
 	bus := newTurnBus(turnCtx)
-	deferredLog := newDeferredAppendLog(a.figLog)
 	in := provider.SendInput{
 		AriaID:    a.id,
-		FigLog:    deferredLog,
+		FigLog:    a.figLog,
 		Snapshot:  a.form.Snapshot(),
 		Form:      a.formAccessor(),
 		Studies:   a.studyAccessors(),
@@ -460,7 +459,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 			}
 			var ackErr error
 			if ev.kind == evFigaro && roundErr == nil && !a.isInterrupted() {
-				staged := deferredLog.take(ev.msg)
+				staged := store.Entry[message.Message]{Payload: ev.msg}
 				a.stageAssistant(&staged)
 				calls := assistantToolInvokes(staged.Payload)
 				appendedEntry, err := a.appendMsg(staged.Payload)
@@ -470,12 +469,14 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 					if a.turn != nil {
 						a.turn.committed = true
 					}
-					if appendedEntry.LT != assistantIdx || appendedEntry.FigaroLT != assistantIdx {
-						roundErr = fmt.Errorf(
-							"assistant append LT mismatch: predicted %d, got lt=%d main_lt=%d",
-							assistantIdx, appendedEntry.LT, appendedEntry.FigaroLT,
-						)
-					} else if err := a.commitAssistantCache(assistantIdx, ev.cache); err != nil {
+					// THE LT IS WHAT THE APPEND RETURNED. It used to be
+					// PREDICTED before the provider ran -- the provider's
+					// append was staged against a guessed next index and this
+					// checked the guess -- and a prediction that can be wrong
+					// is a prediction somebody has to check. There is nothing
+					// left to disagree with.
+					assistantIdx = appendedEntry.LT
+					if err := a.commitAssistantCache(assistantIdx, ev.cache); err != nil {
 						roundErr = err
 					} else {
 						appendedInline = true

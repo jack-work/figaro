@@ -93,11 +93,6 @@ func (p *gateProvider) Send(ctx context.Context, in provider.SendInput, bus prov
 		Content:    []message.Content{message.TextContent("ok from " + p.name)},
 		StopReason: message.StopEnd,
 	}
-	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
-	if err != nil {
-		return err
-	}
-	msg.LogicalTime = entry.LT
 	bus.PushMessageEnd(string(msg.StopReason))
 	bus.PushFigaro(msg)
 	return nil

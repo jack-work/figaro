@@ -1036,11 +1036,10 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	if msg.Timestamp == 0 {
 		msg.Timestamp = time.Now().UnixMilli()
 	}
-	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
-	if err != nil {
-		return fmt.Errorf("append assistant: %w", err)
-	}
-	msg.LogicalTime = entry.LT
+	// THE PROVIDER DOES NOT OWN THE LOG. It hands the message to the bus and
+	// the fig IR side appends it: only that side has the LT, so "the fig IR
+	// entry exists before anything that names it" is a SHAPE rather than a
+	// rule five call sites had to remember.
 	bus.PushMessageEnd(string(msg.StopReason))
 	native, err := a.assistantCacheNative(nm)
 	if err != nil {
@@ -1106,11 +1105,10 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 	if msg.Timestamp == 0 {
 		msg.Timestamp = time.Now().UnixMilli()
 	}
-	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
-	if err != nil {
-		return fmt.Errorf("append assistant: %w", err)
-	}
-	msg.LogicalTime = entry.LT
+	// THE PROVIDER DOES NOT OWN THE LOG. It hands the message to the bus and
+	// the fig IR side appends it: only that side has the LT, so "the fig IR
+	// entry exists before anything that names it" is a SHAPE rather than a
+	// rule five call sites had to remember.
 	bus.PushMessageEnd(string(msg.StopReason))
 	native, err := a.assistantCacheNative(nm)
 	if err != nil {

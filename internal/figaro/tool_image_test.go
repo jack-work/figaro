@@ -80,11 +80,6 @@ func (p *oneRoundProvider) Send(ctx context.Context, in provider.SendInput, bus 
 			Content:    []message.Content{message.TextContent("done")},
 			StopReason: message.StopEnd,
 		}
-		entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
-		if err != nil {
-			return err
-		}
-		msg.LogicalTime = entry.LT
 		bus.PushMessageEnd(string(msg.StopReason))
 		bus.PushFigaro(msg)
 		return nil
@@ -98,11 +93,6 @@ func (p *oneRoundProvider) Send(ctx context.Context, in provider.SendInput, bus 
 		Content:    p.calls,
 		StopReason: message.StopToolInvoke,
 	}
-	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
-	if err != nil {
-		return err
-	}
-	msg.LogicalTime = entry.LT
 	bus.PushMessageEnd(string(msg.StopReason))
 	bus.PushFigaro(msg)
 	return nil

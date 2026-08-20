@@ -59,11 +59,6 @@ func (p *switchProvider) Send(ctx context.Context, in provider.SendInput, bus pr
 		Content:    []message.Content{message.TextContent(p.fastText)},
 		StopReason: message.StopEnd,
 	}
-	e, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
-	if err != nil {
-		return err
-	}
-	msg.LogicalTime = e.LT
 	bus.PushFigaro(msg)
 	return nil
 }

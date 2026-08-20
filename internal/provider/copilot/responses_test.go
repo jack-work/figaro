@@ -704,7 +704,11 @@ func TestResponsesProviderSuppliesCacheWithoutAppendingIt(t *testing.T) {
 	require.Len(t, bus.messages, 1)
 	require.Len(t, bus.cache, 1)
 	assert.Equal(t, "salve", bus.messages[0].Content[0].Text)
-	assert.Len(t, log.Read(), 2)
+	// THE PROVIDER NO LONGER APPENDS. It hands the message to the bus and the
+	// fig IR side writes it, so the log still holds only what was there before
+	// the send. The name of this test was already the rule; now it is the
+	// shape.
+	assert.Len(t, log.Read(), 1)
 }
 
 func TestResponsesProviderRejectsMalformedFunctionArguments(t *testing.T) {
@@ -1154,8 +1158,18 @@ func TestPromptCacheBreakpointOnTheWireAcrossTurns(t *testing.T) {
 	}, &responseTestBus{}))
 	first := <-requests
 
-	// Turn 2: a completed exchange now sits behind the new prompt.
+	// THE FIG IR SIDE APPENDS THE ASSISTANT, NOT THE PROVIDER. In production
+	// the drain loop does it on PushFigaro; this test has no loop, so it plays
+	// that part -- without it there is no completed exchange behind turn 2 and
+	// the breakpoint has nothing to sit after.
 	_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+		Role:    message.RoleOutput,
+		Content: []message.Content{message.TextContent("first reply")},
+	}})
+	require.NoError(t, err)
+
+	// Turn 2: a completed exchange now sits behind the new prompt.
+	_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{
 		Role:    message.RoleInput,
 		Content: []message.Content{message.TextContent("again")},
 	}})

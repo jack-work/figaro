@@ -191,11 +191,6 @@ func (p *activeForkProvider) Send(ctx context.Context, in provider.SendInput, bu
 		Content:    []message.Content{message.TextContent("complete")},
 		StopReason: message.StopEnd,
 	}
-	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
-	if err != nil {
-		return err
-	}
-	msg.LogicalTime = entry.LT
 	bus.PushMessageEnd(string(msg.StopReason))
 	bus.PushFigaro(msg)
 	return nil
@@ -333,11 +328,6 @@ func (p *activeToolProvider) Send(_ context.Context, in provider.SendInput, bus 
 			StopReason: message.StopEnd,
 		}
 	}
-	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
-	if err != nil {
-		return err
-	}
-	msg.LogicalTime = entry.LT
 	bus.PushMessageEnd(string(msg.StopReason))
 	bus.PushFigaro(msg)
 	return nil
