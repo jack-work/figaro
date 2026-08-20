@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -227,6 +228,20 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 
 	out, err := drainSSE(ctx, resp.Body, bus)
 	if err != nil {
+		// A CANCELLED TURN IS A PREMATURE CLOSE. What the accumulator holds
+		// was produced by this provider from this wire, so it is handed over
+		// marked aborted rather than dropped -- a dropped partial made figaro
+		// synthesise one of its own, with no provider-native payload behind
+		// it. Any other stream failure still drops.
+		partial := out.toIRMessage()
+		if !errors.Is(err, context.Canceled) || len(partial.Content) == 0 {
+			return err
+		}
+		partial.StopReason = message.StopAborted
+		partial.Timestamp = time.Now().UnixMilli()
+		if perr := p.handOver(partial, bus); perr != nil {
+			return perr
+		}
 		return err
 	}
 	if out.Usage == nil {
@@ -245,12 +260,16 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	}
 	msg.Timestamp = time.Now().UnixMilli()
 
-	// THE PROVIDER DOES NOT OWN THE LOG. It hands the message to the bus and
-	// the fig IR side appends it: only that side has the LT, so "the fig IR
-	// entry exists before anything that names it" is a SHAPE rather than a
-	// rule five call sites had to remember.
-	bus.PushMessageEnd(string(msg.StopReason))
+	return p.handOver(msg, bus)
+}
 
+// handOver gives the fig IR side the message and its native payload. The
+// normal close and the premature close both go through it, so a partial
+// message cannot be shaped differently from a whole one.
+//
+// THE PROVIDER DOES NOT OWN THE LOG: only the fig IR side has the LT.
+func (p *Provider) handOver(msg message.Message, bus provider.Bus) error {
+	bus.PushMessageEnd(string(msg.StopReason))
 	native, err := p.assistantCache(msg)
 	if err != nil {
 		return fmt.Errorf("%s cache assistant: %w", p.Route.Name, err)

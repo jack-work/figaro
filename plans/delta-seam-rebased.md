@@ -673,3 +673,32 @@ premature close. That was always a CORRECTNESS argument -- figaro synthesises
 provider-shaped content for a partial message, which is why that path has
 eleven repair sites and still misses the fork case -- and it stands whatever
 asm costs.
+
+# 3(c): THREE PROVIDERS OWN THEIR PREMATURE CLOSE, AND THE FOURTH CANNOT
+# (223a0986, 2026-08-20)
+
+anthropic, anthropicsdk and openaichat now hand over what their accumulator
+holds when a turn is cancelled, marked StopAborted, through the SAME handOver
+the normal close uses. copilot/responses does NOT, and the reason is
+structural rather than an omission:
+
+    THAT PROVIDER HAS NO PARTIAL ACCUMULATOR TO HAND OVER. readResponseStream
+    forwards deltas to the bus and builds nothing; the message is produced
+    ONLY at "response.completed", from the server's own responseObject. A
+    cancelled stream there genuinely has nothing but the deltas -- which is
+    exactly what figaro's asm accumulates.
+
+TWO CONSEQUENCES, BOTH WORTH KNOWING BEFORE 3(b):
+
+  1. THE REPAIR PATH IS NOT DEAD CODE. It is the fallback for a provider that
+     cannot close prematurely, it is still covered by
+     TestInterruptRepairsPartialTurn's four modes, and it must stay until that
+     provider grows an accumulator.
+  2. SO asm CANNOT BE DELETED YET. Its last reader is the repair path, and
+     the repair path has a live caller. The plan's 3(b) is blocked on giving
+     copilot/responses a text accumulator -- which is a provider-side change,
+     roughly what the other three already have -- and not on the UI IR.
+
+WHAT IT WOULD TAKE: accumulate output_text and reasoning deltas alongside the
+call state readResponseStream already keeps (calls/items/byIndex are partial
+state today), and return that on ctx.Err(). Not started.

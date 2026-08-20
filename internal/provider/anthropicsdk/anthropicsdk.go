@@ -253,6 +253,15 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		stream := client.Messages.NewStreaming(ctx, params, opts...)
 		assembled, raw, serr := drainStream(ctx, stream, model, bus)
 		if serr != nil {
+			// A CANCELLED TURN IS A PREMATURE CLOSE, NOT A LOST ONE. The
+			// accumulator's content is real -- this provider produced it from
+			// this wire -- so it is handed over marked aborted, through the
+			// same path a normal close takes. Anything else that ends a stream
+			// still fails the send and drops.
+			if errors.Is(serr, context.Canceled) && len(assembled.Content) > 0 {
+				assembled.StopReason = message.StopAborted
+				msg, acc = assembled, raw
+			}
 			return serr
 		}
 		msg = assembled
@@ -260,6 +269,15 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		return nil
 	})
 	if err != nil {
+		if len(msg.Content) == 0 {
+			return annotateRateLimit(cleanAPIError(err), note)
+		}
+		// The partial reaches the fig IR side and the error still ends the
+		// turn: the caller learns the send failed, and the history keeps what
+		// the model actually produced.
+		if perr := p.handOver(msg, acc, bus); perr != nil {
+			return perr
+		}
 		return annotateRateLimit(cleanAPIError(err), note)
 	}
 	if len(msg.Content) == 0 {
@@ -269,10 +287,17 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		msg.Timestamp = time.Now().UnixMilli()
 	}
 
-	// THE PROVIDER DOES NOT OWN THE LOG. It hands the message to the bus and
-	// the fig IR side appends it: only that side has the LT, so "the fig IR
-	// entry exists before anything that names it" is a SHAPE rather than a
-	// rule five call sites had to remember.
+	return p.handOver(msg, acc, bus)
+}
+
+// handOver gives the fig IR side the message and the native payload from ONE
+// accumulator. The normal close and the premature close both go through it,
+// so a partial message cannot be shaped differently from a whole one.
+//
+// THE PROVIDER DOES NOT OWN THE LOG: only the fig IR side has the LT, so "the
+// entry exists before anything that names it" is a shape rather than a rule
+// five call sites had to remember.
+func (p *Provider) handOver(msg message.Message, acc anthropic.Message, bus provider.Bus) error {
 	bus.PushMessageEnd(string(msg.StopReason))
 	// ToParam preserves thinking signatures and redacted thinking verbatim.
 	native, err := p.assistantCache(acc)

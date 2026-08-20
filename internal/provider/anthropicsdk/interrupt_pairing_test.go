@@ -55,9 +55,7 @@ func (p *interruptedToolProvider) Send(ctx context.Context, in provider.SendInpu
 		Content:   []message.Content{{Type: message.ContentThinking, Text: "half a thought"}, call},
 		Timestamp: time.Now().UnixMilli(),
 	}
-	if _, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
-		return err
-	}
+	// The provider does not append; the fig IR side does, on PushFigaro.
 	bus.PushFigaro(msg)
 	return nil
 }
