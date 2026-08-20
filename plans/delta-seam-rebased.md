@@ -621,3 +621,27 @@ temp worktrees or store copies of mine (the census copy and the migration copy
 are deleted; /var/tmp/fig-base-223a is removed). The tree is clean at
 50a7b4e3, the full suite is green, and NOTHING IS PUSHED -- the branch is
 local, so a restart that does not build from it changes nothing at all.
+
+# FOLLOW-UP, GLUCK 2026-08-20: THE SYSTEM PROMPT IS NOT IN THE HISTORY
+
+The board has TWO temporalities today and only one of them is recorded:
+
+    board-as-current   the SYSTEM PROMPT. turn.go samples a.form.Snapshot()
+                       once per send and systemBlocks() builds the block from
+                       it. Nothing is stored, so editing system.credo changes
+                       the system prompt of every past conversation the next
+                       time each is sent.
+    board-as-of-LT     the in-message form transitions. Each fig IR entry
+                       carries FormChannelVersion; the Deriver folds
+                       PatchesBetween at that stamp, so a re-translation
+                       renders the reminder the model actually saw.
+
+GLUCK: "note the follow up work to make the credo and starting message a
+proper entry in the fig ir and translator ir history, but for now, we can
+leave as is."
+
+WHAT IT WOULD BUY: a replay reproduces the exact request, and the first thing
+a figaro was told becomes part of its history rather than a function of
+today's config. WHAT IT COSTS: a credo edit stops reaching arias that already
+exist, so an outfit change becomes a migration rather than a fact.
+NOT STARTED.
