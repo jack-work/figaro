@@ -810,3 +810,63 @@ and the validation is done.
      is buffered.
   3. copilot/responses is UNCHANGED and stays so: websocket.JSON.Send
      marshals a whole frame, as Part III already found.
+
+# RAISE: SECTION 4 SHIPPED A LIVE REGRESSION AND THE SUITE COULD NOT SEE IT
+# (ede92072, 2026-08-20)
+
+FOUND AND FIXED (b48fa289). Recorded here because the interesting part is the
+instrument, not the patch.
+
+## WHAT WAS BROKEN
+
+EVERY SEND ON A NEW ARIA FAILED WITH "empty context" on feat/layered-cache.
+Not my commits: reproduced at 06384fa3, and main is clean. The fig IR was
+intact and the translator rows were on disk; the READ returned nothing, so the
+provider correctly refused to send a conversation it could not read.
+
+    branch, fresh scratch store   error: empty context
+    main, same script             completed ✓
+    cold, in-process, on the store the failing run left:
+      lineage=[{@3a81c962 0} {3b7d2fc0 3}]  irRead=4  rowsLen=1  rowsRead=0
+
+## THE MECHANISM: TWO KEY SPACES, ONE SUBTRACTION
+
+26c21eb0 re-addressed the translator channel by its OWN LT, which is right and
+is the law about index keys. `treeLog.cuts` kept splitting the span across the
+lineage by `Ref.Base`, WHICH IS A MAIN-CHANNEL LT. With a fork base of 3 and
+one row at channel LT 1, the whole span was attributed to the ancestor -- which
+holds no rows of that channel.
+
+THE NUMBER THAT IS NEITHER is the channel's OWN fork base: figwal keeps it per
+log (`disk.Log.ForkBase`, "the first index this log owns") and `xwal.Channels`
+simply did not surface it. It does now.
+
+    AND THE BOUND I WROTE FIRST WAS ALSO WRONG, AND THE WHOLE SUITE PASSED IT.
+    Cutting at the ANCESTOR'S TAIL is a lie for a fork that has appended past
+    its inherited prefix: parent and child hold DIFFERENT records at the same
+    coordinate. No fixture in the suite had a fork write its own translator
+    rows, so the wrong bound was green -- the same shape as every defect this
+    campaign has recorded, an instrument answering accurately about the wrong
+    subject.
+
+## THE PART THAT SHOULD CHANGE HOW WE RUN THE LIVE SCRIPTS
+
+`onappendlive.sh` -- the instrument the handoff says to run before believing
+anything about the write path -- HAS BEEN PASSING WHILE ITS FIRST SEND FAILED.
+It sends with `>/dev/null 2>&1` and asserts only on the study that follows, and
+the study path does not need the provider. Its own fig IR dump shows the user
+record with no assistant reply beside it.
+
+    A LIVE SCRIPT THAT DISCARDS THE OUTPUT OF A STEP IT DEPENDS ON IS A UNIT
+    TEST WITH A DAEMON ATTACHED. The step it ignored is the one the product is
+    made of.
+
+Every live script should assert the OUTCOME of each real verb it drives, not
+only the state left behind. streambodylive.sh does.
+
+## WHAT IT COST, AS A COUNT
+
+720-odd arias in the real store; 55% have no translator rows, and for those the
+first send after this branch is installed would have failed outright. For the
+rest, any row below the aria's main-channel fork base was served from an
+ancestor that does not have it.
