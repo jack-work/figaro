@@ -25,8 +25,13 @@ type TranslatorEncoder interface {
 	Provider() string
 	// EncodeEntry returns the wire messages for this entry and the
 	// fingerprint of the encoder that produced them. An entry that
-	// translates to nothing returns none, and no entry is written.
-	EncodeEntry(e Entry[message.Message]) ([]json.RawMessage, string, error)
+	// translates to nothing returns none, and nothing is written.
+	//
+	// source IS THE FIG IR THE ENTRY CAME FROM. An encoder that keeps a
+	// cursor needs to seed it from the entry a watermark names, which is an
+	// EARLIER entry than this one -- so it is handed the log rather than
+	// asked to find it.
+	EncodeEntry(ariaID string, source Log[message.Message], e Entry[message.Message]) ([]json.RawMessage, string, error)
 }
 
 // translatorEncoders is the injected set, keyed by provider name. It is
@@ -36,16 +41,21 @@ type translatorEncoders struct {
 	by map[string]TranslatorEncoder
 }
 
-func (t *translatorEncoders) set(encs []TranslatorEncoder) {
-	next := make(map[string]TranslatorEncoder, len(encs))
+// add registers encoders WITHOUT dropping the ones already there. Providers
+// are built one at a time -- one per aria, as arias open -- so a set that
+// replaced would leave whichever provider registered last as the only one
+// translating, and the others silently back on the catch-up.
+func (t *translatorEncoders) add(encs []TranslatorEncoder) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.by == nil {
+		t.by = map[string]TranslatorEncoder{}
+	}
 	for _, e := range encs {
 		if e != nil && e.Provider() != "" {
-			next[e.Provider()] = e
+			t.by[e.Provider()] = e
 		}
 	}
-	t.mu.Lock()
-	t.by = next
-	t.mu.Unlock()
 }
 
 func (t *translatorEncoders) get(provider string) (TranslatorEncoder, bool) {
@@ -61,13 +71,13 @@ func (t *translatorEncoders) empty() bool {
 	return len(t.by) == 0
 }
 
-// SetTranslatorEncoders injects the encoders the fig IR write path uses to
-// translate each entry as it lands. Wiring is the CLI's job, because that is
-// where providers are built; a backend with none writes no translations and
-// every provider catches up on its next send, which is the behaviour that
-// predates this.
-func (b *XwalBackend) SetTranslatorEncoders(encs ...TranslatorEncoder) {
-	b.encoders.set(encs)
+// AddTranslatorEncoders registers encoders the fig IR write path uses to
+// translate each entry as it lands, keyed by provider. Wiring is the CLI's
+// job, because that is where providers are built; a backend with none writes
+// no translations and every provider catches up on its next send, which is
+// the behaviour that predates this.
+func (b *XwalBackend) AddTranslatorEncoders(encs ...TranslatorEncoder) {
+	b.encoders.add(encs)
 }
 
 // translateOnAppend writes one translator entry per channel the aria ALREADY
@@ -85,7 +95,7 @@ func (b *XwalBackend) SetTranslatorEncoders(encs ...TranslatorEncoder) {
 // has landed; a translation that did not is derived, missing, and rebuilt by
 // the next catch-up. That asymmetry is the whole reason the fig IR is written
 // first.
-func (b *XwalBackend) translateOnAppend(ariaID string, e Entry[message.Message]) {
+func (b *XwalBackend) translateOnAppend(ariaID string, source Log[message.Message], e Entry[message.Message]) {
 	if b == nil || b.encoders.empty() {
 		return
 	}
@@ -115,7 +125,7 @@ func (b *XwalBackend) translateOnAppend(ariaID string, e Entry[message.Message])
 			// TestTwoEntriesAtOneFigaroLTDivergeBetweenAWarmAndAColdRead).
 			continue
 		}
-		encoded, fingerprint, err := enc.EncodeEntry(e)
+		encoded, fingerprint, err := enc.EncodeEntry(ariaID, source, e)
 		if err != nil {
 			slog.Warn("translate on append: encode", "aria", ariaID, "provider", provider, "flt", e.LT, "err", err)
 			continue

@@ -10,6 +10,7 @@ import (
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/figaro"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
 
@@ -164,7 +165,7 @@ func buildProviderFactory(loaded *config.Loaded, formTmpls *template.Template, b
 			}
 			return backend.OpenTranslator(aria, providerName)
 		}
-		return reg.Build(providerPkg.BuildContext{
+		p, err := reg.Build(providerPkg.BuildContext{
 			Loaded:    loaded,
 			Knobs:     knobs,
 			Resolver:  resolver,
@@ -172,7 +173,42 @@ func buildProviderFactory(loaded *config.Loaded, formTmpls *template.Template, b
 			CacheOpen: cacheOpen,
 			Backend:   backend,
 		})
+		if err != nil {
+			return nil, err
+		}
+		registerOnAppend(backend, p)
+		return p, nil
 	}
+}
+
+// registerOnAppend puts a provider's encoder behind the fig IR write path, so
+// an entry is translated WHEN IT LANDS -- by the only site that holds its
+// repaired payload -- instead of by the next send's catch-up.
+//
+// A PROVIDER THAT DOES NOT IMPLEMENT EntryEncoder IS SIMPLY NOT REGISTERED,
+// and its channel is filled by the catch-up exactly as before. That is the
+// whole fallback: no flag, no mode, and no second code path.
+func registerOnAppend(backend store.Backend, p providerPkg.Provider) {
+	setter, ok := backend.(interface {
+		AddTranslatorEncoders(...store.TranslatorEncoder)
+	})
+	if !ok {
+		return
+	}
+	enc, ok := p.(providerPkg.EntryEncoder)
+	if !ok || enc.TranslatorChannel() == "" {
+		return
+	}
+	setter.AddTranslatorEncoders(providerPkg.NewOnAppend(
+		enc.TranslatorChannel(),
+		enc.EncodeMessage,
+		enc.Fingerprint,
+		func(aria string) providerPkg.Form { return figaro.BoardAccessorFor(backend, aria) },
+		func(aria string) map[string]providerPkg.Form { return figaro.StudyAccessorsFor(backend, aria) },
+		func(aria string) (store.Log[[]json.RawMessage], error) {
+			return backend.OpenTranslator(aria, enc.TranslatorChannel())
+		},
+	))
 }
 
 // buildProvider constructs a one-off provider for read-only flows

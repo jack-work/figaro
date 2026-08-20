@@ -421,3 +421,12 @@ func (p *Provider) catchUp(figLog store.Log[message.Message], rows store.Log[[]j
 	perMessage, lts := provider.Translations(rows)
 	return perMessage, lts, nil
 }
+
+// EncodeMessage and TranslatorChannel put this provider's encoder behind
+// provider.EntryEncoder, so the fig IR write path can translate an entry when
+// it lands using the same function a catch-up uses.
+func (p *Provider) EncodeMessage(msg message.Message, prev form.Snapshot) ([]json.RawMessage, error) {
+	return p.encode(msg, prev)
+}
+
+func (p *Provider) TranslatorChannel() string { return p.CacheNamespace }

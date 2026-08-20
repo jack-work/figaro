@@ -28,7 +28,7 @@ type readBenchBackend struct {
 	log store.Log[message.Message]
 }
 
-func (b readBenchBackend) Open(string) (store.Log[message.Message], error) {
+func (b readBenchBackend) OpenFigIR(string) (store.Log[message.Message], error) {
 	return b.log, nil
 }
 

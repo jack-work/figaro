@@ -17,7 +17,7 @@ type countingEncoder struct {
 
 func (e *countingEncoder) Provider() string { return e.provider }
 
-func (e *countingEncoder) EncodeEntry(en Entry[message.Message]) ([]json.RawMessage, string, error) {
+func (e *countingEncoder) EncodeEntry(_ string, _ Log[message.Message], en Entry[message.Message]) ([]json.RawMessage, string, error) {
 	e.calls++
 	e.seen = append(e.seen, en.LT)
 	if e.fail {
@@ -48,7 +48,7 @@ func TestAnAppendTranslatesIntoTheChannelsTheAriaAlreadyHas(t *testing.T) {
 	be, aria := NewTestAria(t, "d", message.Patch{})
 	anth := &countingEncoder{provider: "anthropic"}
 	never := &countingEncoder{provider: "a-provider-this-aria-never-used"}
-	be.SetTranslatorEncoders(anth, never)
+	be.AddTranslatorEncoders(anth, never)
 
 	// The aria has an anthropic channel because something opened it once.
 	trans, err := be.OpenTranslator(aria, "anthropic")
@@ -98,7 +98,7 @@ func TestAnAppendTranslatesIntoTheChannelsTheAriaAlreadyHas(t *testing.T) {
 func TestATranslationFailureDoesNotFailTheFigIRAppend(t *testing.T) {
 	be, aria := NewTestAria(t, "d", message.Patch{})
 	bad := &countingEncoder{provider: "anthropic", fail: true}
-	be.SetTranslatorEncoders(bad)
+	be.AddTranslatorEncoders(bad)
 	if _, err := be.OpenTranslator(aria, "anthropic"); err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestATranslationFailureDoesNotFailTheFigIRAppend(t *testing.T) {
 func TestTheWritePathTranslatesTheRecordsItMintsItself(t *testing.T) {
 	be, aria := NewTestAria(t, "d", message.Patch{})
 	enc := &countingEncoder{provider: "anthropic"}
-	be.SetTranslatorEncoders(enc)
+	be.AddTranslatorEncoders(enc)
 	if _, err := be.OpenTranslator(aria, "anthropic"); err != nil {
 		t.Fatal(err)
 	}
@@ -182,5 +182,35 @@ func TestTheWritePathTranslatesTheRecordsItMintsItself(t *testing.T) {
 		if got[i].FigaroLT != appended[i].LT {
 			t.Fatalf("translation %d names FigaroLT %d, want %d", i, got[i].FigaroLT, appended[i].LT)
 		}
+	}
+}
+
+// REGISTRATION IS ADDITIVE, because providers are built one at a time as arias
+// open. A set that replaced would leave the last one registered as the only
+// translator and put every other provider silently back on the catch-up --
+// which looks exactly like working software.
+func TestRegisteringASecondEncoderKeepsTheFirst(t *testing.T) {
+	be, aria := NewTestAria(t, "d", message.Patch{})
+	first := &countingEncoder{provider: "anthropic"}
+	second := &countingEncoder{provider: "copilot-messages"}
+	be.AddTranslatorEncoders(first)
+	be.AddTranslatorEncoders(second)
+
+	for _, p := range []string{"anthropic", "copilot-messages"} {
+		if _, err := be.OpenTranslator(aria, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	log, err := be.OpenFigIR(aria)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFigIR(t, log, "one")
+
+	if first.calls != 1 {
+		t.Fatalf("the FIRST encoder ran %d times, want 1: a later registration dropped it", first.calls)
+	}
+	if second.calls != 1 {
+		t.Fatalf("the second encoder ran %d times, want 1", second.calls)
 	}
 }

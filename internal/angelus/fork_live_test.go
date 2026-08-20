@@ -48,7 +48,7 @@ type liveForkBackend struct {
 
 // Open backs forkPointOf, which maps a turn id to a fork LT. The log holds one
 // completed exchange so turn 1 resolves.
-func (f *liveForkBackend) Open(string) (store.Log[message.Message], error) {
+func (f *liveForkBackend) OpenFigIR(string) (store.Log[message.Message], error) {
 	if f.log == nil {
 		l := store.NewMemLog[message.Message]()
 		l.Append(store.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput, TurnID: 1}})

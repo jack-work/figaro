@@ -79,6 +79,21 @@ type Form interface {
 	PatchesBetween(after, upTo uint64) []message.Patch
 }
 
+// EntryEncoder is the optional interface a provider implements to have its
+// translations written WHEN AN ENTRY LANDS rather than on the next send.
+//
+// It is the same function the catch-up calls; exposing it is what lets one
+// encoder serve both paths, so a history written live and a history rebuilt
+// later cannot differ.
+type EntryEncoder interface {
+	// TranslatorChannel names the provider channel these bytes belong to.
+	TranslatorChannel() string
+	// EncodeMessage renders one message against the board as it stood
+	// BEFORE it.
+	EncodeMessage(msg message.Message, prev form.Snapshot) ([]json.RawMessage, error)
+	Fingerprint() string
+}
+
 // SendInput is one turn's input.
 type SendInput struct {
 	AriaID   string

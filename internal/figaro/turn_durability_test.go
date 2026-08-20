@@ -559,7 +559,7 @@ type mismatchBackend struct {
 	log store.Log[message.Message]
 }
 
-func (b mismatchBackend) Open(string) (store.Log[message.Message], error) {
+func (b mismatchBackend) OpenFigIR(string) (store.Log[message.Message], error) {
 	return b.log, nil
 }
 
@@ -620,7 +620,7 @@ type failingAssistantCacheBackend struct {
 	namespace string
 }
 
-func (b failingAssistantCacheBackend) OpenTranslation(ariaID, namespace string) (store.Log[[]json.RawMessage], error) {
+func (b failingAssistantCacheBackend) OpenTranslator(ariaID, namespace string) (store.Log[[]json.RawMessage], error) {
 	log, err := b.Backend.OpenTranslator(ariaID, namespace)
 	if err != nil || namespace != b.namespace {
 		return log, err

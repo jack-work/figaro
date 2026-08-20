@@ -1503,3 +1503,12 @@ func imageBlock(c message.Content) nativeBlock {
 		},
 	}
 }
+
+// EncodeMessage and TranslatorChannel put this provider's encoder behind
+// provider.EntryEncoder, so the fig IR write path can translate an entry when
+// it lands using the same function a catch-up uses.
+func (a *Anthropic) EncodeMessage(msg message.Message, prev form.Snapshot) ([]json.RawMessage, error) {
+	return a.encode(msg, prev)
+}
+
+func (a *Anthropic) TranslatorChannel() string { return a.CacheNamespace }

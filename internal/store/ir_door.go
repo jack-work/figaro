@@ -164,7 +164,7 @@ func (l *figIRLog) write(e Entry[message.Message]) (Entry[message.Message], erro
 	// crash happens there, the translator IR should self-heal." It does: a
 	// torn frame is truncated at open, so a translation is either whole or
 	// absent, and an absent one is rebuilt by the next catch-up.
-	l.backend.translateOnAppend(l.ariaID, stamped)
+	l.backend.translateOnAppend(l.ariaID, l.Log, stamped)
 	return stamped, nil
 }
 

@@ -90,96 +90,13 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 		return stats, nil
 	}
 
-	// THE CURSORS COME OFF THE WATERMARK RECORD. Where the boards stood when
-	// the last translated record was written is stamped on that record; a
-	// memo carried between calls was a copy of it.
-	lastForm := uint64(0)
-	lastStudy := map[string]uint64{}
-	if watermark > 0 {
-		if at, ok := cfg.Log.Lookup(watermark); ok {
-			lastForm = at.FormChannelVersion
-			for fid, v := range at.StudyVersions {
-				lastStudy[fid] = v
-			}
-		}
-	}
-
-	// The board as it stood at the watermark. Folded from zero, which costs
-	// one patch application per form patch: measured across a real store at
-	// p50=5, p99=74, max=371 -- the fold the five carried version fields
-	// existed to avoid.
-	snap := form.Snapshot{}
-	switch {
-	case cfg.Form != nil:
-		if lastForm > 0 {
-			snap = form.Fold(snap, cfg.Form.PatchesBetween(0, lastForm))
-		}
-	case watermark > 0:
-		// AN EPHEMERAL ARIA HAS NO ACCESSOR AND CARRIES ITS PATCHES ON THE
-		// RECORDS THEMSELVES, so the board it reached is only recoverable by
-		// folding the records already translated. Skipping them left the
-		// snapshot at zero and rendered a transition from nothing:
-		// "=>new" where the aria had said "old=>new".
-		//
-		// COMPLEXITY, NAMED: this is O(records before the watermark) per
-		// catch-up, and it applies ONLY where there is no form channel to
-		// ask. With an accessor the board is one range read, as above.
-		prefix, _ := store.TailAfter(cfg.Log, 0)
-		for _, e := range prefix {
-			if e.LT > watermark {
-				break
-			}
-			snap = form.Fold(snap, e.Payload.Patches)
-		}
-	}
+	d := NewDeriver(cfg.Form, cfg.Studies)
+	d.SeedAt(cfg.Log, watermark)
 
 	for _, entry := range entries {
-		msg := entry.Payload
-		msg.LogicalTime = entry.LT
-		if msg.Role == message.RoleGenesis {
-			// Genesis is furniture: it advances the cursors and translates
-			// to nothing.
-			lastForm = maxVersion(lastForm, entry.FormChannelVersion)
-			for fid, upTo := range entry.StudyVersions {
-				lastStudy[fid] = maxVersion(lastStudy[fid], upTo)
-			}
+		msg, snap, translatable := d.Next(entry)
+		if !translatable {
 			continue
-		}
-
-		if cfg.Form != nil {
-			// (after, upTo]: the previous record's mark and this one's.
-			msg.Patches = cfg.Form.PatchesBetween(lastForm, entry.FormChannelVersion)
-		}
-		lastForm = maxVersion(lastForm, entry.FormChannelVersion)
-
-		// A WINDOW MAY ONLY CLOSE ON A RECORD THAT CAN CARRY THE BLOCK. A
-		// studied form's transitions ride a USER message: every encoder
-		// renders them under RoleInput and nowhere else. An assistant record
-		// that consumed its window would compute a block, drop it, and leave
-		// the next user record asking for (v, v] -- so the change would never
-		// be shown to anyone, ever.
-		if carriesStudy(msg) {
-			for fid, upTo := range entry.StudyVersions {
-				// ADVANCE FIRST, whatever happens below: the cursor is where
-				// the form STOOD at this stamp, which is true of a form that
-				// has since been deleted too.
-				prev := lastStudy[fid]
-				lastStudy[fid] = maxVersion(prev, upTo)
-				acc := cfg.Studies[fid]
-				if acc == nil {
-					continue
-				}
-				if ps := acc.PatchesBetween(prev, upTo); len(ps) > 0 {
-					if msg.StudyPatches == nil {
-						msg.StudyPatches = map[string][]message.Patch{}
-					}
-					msg.StudyPatches[fid] = ps
-					if msg.StudyAt == nil {
-						msg.StudyAt = map[string]uint64{}
-					}
-					msg.StudyAt[fid] = upTo
-				}
-			}
 		}
 
 		encoded, err := cfg.Encode(msg, snap)
@@ -189,7 +106,6 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 			}
 			return stats, fmt.Errorf("encode at %d: %w", entry.LT, err)
 		}
-		snap = form.Fold(snap, msg.Patches)
 		if len(encoded) == 0 {
 			stats.Unwritten++
 			continue

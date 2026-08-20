@@ -1287,3 +1287,45 @@ func (a *Agent) DeleteQueued(epoch string, ids []uint64, all bool) (string, []rp
 func (a *Agent) UpdateQueued(epoch string, id uint64, text string) (string, rpc.QueueResult) {
 	return a.inbox.UpdatePrompt(epoch, id, text)
 }
+
+// BoardAccessorFor and StudyAccessorsFor are the agent's own derivations,
+// exposed for the fig IR write path: the encoder that runs when an entry
+// LANDS needs exactly what the encoder that runs on a SEND needs, and two
+// derivations of "which patches belong to this entry" would be two answers.
+//
+// They take a backend and an aria rather than an agent because the write path
+// has no agent -- an entry can land through a daemon, a repair or a study
+// sweep, and it must translate the same way in all of them.
+func BoardAccessorFor(backend store.Backend, ariaID string) provider.Form {
+	if backend == nil {
+		return nil
+	}
+	if _, err := backend.FormVersion(ariaID); err != nil {
+		return nil
+	}
+	return formView{backend: backend, id: ariaID}
+}
+
+func StudyAccessorsFor(backend store.Backend, ariaID string) map[string]provider.Form {
+	lb, ok := backend.(librettoBackend)
+	if !ok {
+		return nil
+	}
+	snap, err := backend.FormState(ariaID)
+	if err != nil {
+		return nil
+	}
+	ids := StudiesFromSnapshot(snap)
+	if len(ids) == 0 {
+		return nil
+	}
+	out := make(map[string]provider.Form, len(ids))
+	for _, id := range ids {
+		lib, err := lb.Libretto(id)
+		if err != nil || lib == nil {
+			continue
+		}
+		out[id] = librettoView{lib: lib}
+	}
+	return out
+}
