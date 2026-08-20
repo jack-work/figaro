@@ -107,6 +107,10 @@ func TailSnapshot[T any](log Log[T], n int) []Entry[T] {
 	return entries[len(entries)-n:]
 }
 
+// readPage pages a channel IN ITS OWN COORDINATES. It filtered by FigaroLT,
+// which is identity on the fig IR -- every caller pages that -- and a FOREIGN
+// key everywhere else: a side channel paged in another log's numbering. LT is
+// the same value on the main channel and the right one on the others.
 func readPage[T any](rows []Entry[T], from, before uint64, n int) ([]Entry[T], int) {
 	total := len(rows)
 	if before > 0 {
@@ -115,7 +119,7 @@ func readPage[T any](rows []Entry[T], from, before uint64, n int) ([]Entry[T], i
 		}
 		out := make([]Entry[T], 0, n)
 		for i := len(rows) - 1; i >= 0 && len(out) < n; i-- {
-			if rows[i].FigaroLT < before {
+			if rows[i].LT < before {
 				out = append(out, rows[i])
 			}
 		}
@@ -127,7 +131,7 @@ func readPage[T any](rows []Entry[T], from, before uint64, n int) ([]Entry[T], i
 	start := 0
 	if from > 0 {
 		start = sort.Search(len(rows), func(i int) bool {
-			return rows[i].FigaroLT >= from
+			return rows[i].LT >= from
 		})
 	}
 	end := len(rows)

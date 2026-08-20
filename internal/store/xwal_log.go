@@ -209,7 +209,16 @@ func (l *xwalLog[T]) Len() int {
 	return n
 }
 
-func (l *xwalLog[T]) ReadFrom(figaroLT uint64, n int) []Entry[T] {
+// ReadFrom returns up to n entries from a coordinate in THIS CHANNEL'S OWN
+// index. It used to take a FigaroLT on every channel, which on a side channel
+// is a FOREIGN key: the start had to be found by BINARY SEARCH with a ReadAt
+// per probe, and every entry read was then re-checked against it.
+//
+// Both are gone. A channel is addressed by its own LT -- the main channel
+// always was (figwal guarantees main-LT == channel-LT there) and the
+// translation channels are now too -- so the start index IS the coordinate,
+// at O(1) and with no per-entry predicate.
+func (l *xwalLog[T]) ReadFrom(lt uint64, n int) []Entry[T] {
 	var out []Entry[T]
 	_ = l.openOnce(func(xw *xwal.XWAL) error {
 		first, last, ok := channelBounds(xw, l.channel)
@@ -219,40 +228,13 @@ func (l *xwalLog[T]) ReadFrom(figaroLT uint64, n int) []Entry[T] {
 		if n > 0 {
 			out = make([]Entry[T], 0, n)
 		}
-		// Seek to the watermark instead of scanning to it. This used to ReadAt
-		// every record from the head and merely skip the ones below figaroLT,
-		// which made a suffix read O(N) reads for O(suffix) results.
 		start := first
-		if figaroLT > first {
-			if l.isMain {
-				// The main channel is identity: figwal guarantees
-				// main-LT == channel-LT there: so the start index IS the
-				// watermark. O(1), no search.
-				start = figaroLT
-			} else {
-				// A side channel's main-LT is non-decreasing but not equal to
-				// its channel-LT, so the start has to be found. Binary search
-				lo, hi := first, last
-				for lo < hi {
-					mid := lo + (hi-lo)/2
-					r, err := xw.ReadAt(l.channel, mid)
-					if err != nil {
-						// A hole: step past it rather than guess a half.
-						lo = mid + 1
-						continue
-					}
-					if r.MainLT < figaroLT {
-						lo = mid + 1
-					} else {
-						hi = mid
-					}
-				}
-				start = lo
-			}
+		if lt > first {
+			start = lt
 		}
-		for lt := start; lt <= last && (n <= 0 || len(out) < n); lt++ {
-			r, err := xw.ReadAt(l.channel, lt)
-			if err != nil || r.MainLT < figaroLT {
+		for i := start; i <= last && (n <= 0 || len(out) < n); i++ {
+			r, err := xw.ReadAt(l.channel, i)
+			if err != nil {
 				continue
 			}
 			if e, ok := decodeRecord[T](r); ok {

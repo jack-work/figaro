@@ -27,16 +27,26 @@ func fks(entries []Entry[uint64]) []uint64 {
 	return out
 }
 
+// A CHANNEL IS PAGED IN ITS OWN COORDINATES. This used to page by FigaroLT,
+// which is identity on the fig IR -- the only channel anything pages -- and a
+// FOREIGN key everywhere else. The fixture below is the shape that makes the
+// difference visible: five entries whose own LTs are 1..5 and whose FigaroLTs
+// are 10..50, i.e. a side channel.
 func TestReadPage(t *testing.T) {
 	c := newCachedLog[uint64](buildLog(t, []uint64{10, 20, 30, 40, 50}))
 
-	page, total := c.ReadPage(20, 0, 2)
+	page, total := c.ReadPage(2, 0, 2)
 	assert.Equal(t, 5, total)
-	assert.Equal(t, []uint64{20, 30}, fks(page))
+	assert.Equal(t, []uint64{20, 30}, fks(page), "from=2 is the channel's second entry")
 
-	page, total = c.ReadPage(0, 50, 2)
+	page, total = c.ReadPage(0, 5, 2)
 	assert.Equal(t, 5, total)
-	assert.Equal(t, []uint64{30, 40}, fks(page))
+	assert.Equal(t, []uint64{30, 40}, fks(page), "before=5 is the channel's fifth entry")
+
+	// AND THE FOREIGN KEY NO LONGER ADDRESSES ANYTHING: 20 is a FigaroLT here,
+	// not a coordinate, so paging from it reads past the end.
+	page, _ = c.ReadPage(20, 0, 2)
+	assert.Empty(t, fks(page), "a FigaroLT must not select a page")
 }
 
 // Read is point-in-time by construction: it copies. This used to be
