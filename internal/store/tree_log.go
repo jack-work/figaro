@@ -318,12 +318,14 @@ func (l *treeLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) {
 	return rows, total
 }
 
-// Lookup addresses by FigaroLT, WHICH IS NOT ALWAYS THIS CACHE'S COORDINATE.
-// On the fig IR the two are the same and the cache answers; on the translation
-// channel FigaroLT is a foreign key -- every row of a turn carries the IR
-// record it translates -- so the substrate answers, because it owns that
-// addressing and the cache does not.
+// Lookup addresses by FigaroLT, which is this cache's coordinate ONLY on the
+// fig IR. Where the channel is addressed by its own LT, FigaroLT is a foreign
+// key and a span over it names unrelated rows, so the substrate answers --
+// it owns that addressing and the cache does not.
 func (l *treeLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
+	if l.seedOnAppend {
+		return l.inner.Lookup(figaroLT)
+	}
 	for _, e := range l.span(figaroLT-1, figaroLT) {
 		if e.FigaroLT == figaroLT {
 			return e, true

@@ -134,18 +134,24 @@ type ContextLimitProvider interface {
 // with. It overrides whatever the provider would otherwise report.
 const ContextLimitOverrideKey = "system.max_context_tokens"
 
-// StreamRequestBodyKey turns on the streamed request framing.
+// StreamRequestBodyKey chooses the request framing. DEFAULT ON: the body is
+// written as it is sent. Setting it false on an aria's board -- or on its
+// outfit -- buffers the whole conversation again.
 const StreamRequestBodyKey = "system.stream_request_body"
 
 // StreamsRequestBody reports whether this aria sends its request body as it is
-// written instead of copying the conversation into one buffer first.
+// written instead of copying the conversation into one buffer first. The bytes
+// are identical either way; only the peak is not.
 func StreamsRequestBody(snapshot form.Snapshot) bool {
 	raw, ok := snapshot.Get(StreamRequestBodyKey)
 	if !ok {
-		return false
+		return true
 	}
 	var on bool
-	return json.Unmarshal(raw, &on) == nil && on
+	if json.Unmarshal(raw, &on) != nil {
+		return true
+	}
+	return on
 }
 
 // ContextLimitOverride reads the user's pinned context window off the

@@ -870,3 +870,38 @@ only the state left behind. streambodylive.sh does.
 first send after this branch is installed would have failed outright. For the
 rest, any row below the aria's main-channel fork base was served from an
 ancestor that does not have it.
+
+# THE STREAMED FRAMING IS THE DEFAULT, AND THE BOARD DECIDES IT (ede92072)
+
+Gluck, 2026-08-20: "if its stable it can default to on."
+
+`system.stream_request_body` now defaults ON: absent means streamed, and only
+an explicit `false` buffers. It is an ORDINARY BOARD KEY read per send off the
+snapshot, so it is settable on an aria (`fig set --id <aria>
+system.stream_request_body false`) and on an outfit, and it takes effect on the
+NEXT SEND -- no rebind, because framing is transport and not dialect.
+
+MEASURED THROUGH THE DAEMON, not argued (scripts/live/framinglive.sh). One
+aria, three sends, the value changed between them, against a local HTTP/1.1
+sink -- HTTP/1.1 because that is where the framing is VISIBLE as
+Transfer-Encoding, while over HTTP/2 it is merely an absent length:
+
+    stream_request_body=true    transfer-encoding=chunked  content-length=-1
+    stream_request_body=false   transfer-encoding=none     content-length=28537
+    stream_request_body=true    transfer-encoding=chunked  content-length=-1
+
+The body grows across the three because the conversation does. That is the
+whole chain -- board, snapshot, provider, transport -- and no unit test can
+cover it, because the wiring lives in the daemon.
+
+## AND A SECOND COORDINATE MIX, FOUND BY THE SAME AUDIT AND UNREACHABLE TODAY
+
+`treeLog.Lookup(figaroLT)` resolved its answer through `span(figaroLT-1,
+figaroLT)` -- CACHE coordinates. On a channel addressed by its own LT that
+names unrelated rows, so the lookup could answer "no" for a row that exists.
+No caller outside the store looks a translator row up by FigaroLT today
+(checked, not assumed), so it was latent. It goes to the substrate now, which
+owns that addressing.
+
+The doc comment above it ALREADY SAID "the substrate answers" while the code
+asked the cache. A comment is a claim nobody tests.
