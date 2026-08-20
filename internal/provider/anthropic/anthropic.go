@@ -3,7 +3,6 @@ package anthropic
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -999,16 +998,17 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	if err != nil {
 		return err
 	}
-	body, err := json.Marshal(req)
+	body, err := provider.NewRequestBody(bodyFunc(req), provider.StreamsRequestBody(in.Snapshot))
 	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
+		return fmt.Errorf("encode request: %w", err)
 	}
 
 	resp, _, err := a.doWithAuthRetry(ctx, func(token string) (*http.Request, error) {
-		httpReq, herr := http.NewRequestWithContext(ctx, "POST", a.route().MessagesURL(), bytes.NewReader(body))
+		httpReq, herr := http.NewRequestWithContext(ctx, "POST", a.route().MessagesURL(), nil)
 		if herr != nil {
 			return nil, fmt.Errorf("create request: %w", herr)
 		}
+		body.Attach(httpReq)
 		httpReq.Header.Set("Content-Type", "application/json")
 		a.setAuthHeaders(httpReq, token, betaMessages)
 		return httpReq, nil
@@ -1080,8 +1080,8 @@ func (a *Anthropic) handOver(nm nativeMessage, bus provider.Bus) error {
 	return nil
 }
 
-// TransportFn executes a single HTTP request given a serialized body.
-type TransportFn func(ctx context.Context, body []byte) (*http.Response, error)
+// TransportFn executes a single HTTP request carrying body.
+type TransportFn func(ctx context.Context, body *provider.RequestBody) (*http.Response, error)
 
 // SendWithTransport is like Send but delegates the HTTP call to fn
 // instead of using the built-in auth retry + Anthropic endpoint.
@@ -1109,9 +1109,9 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 	if err != nil {
 		return err
 	}
-	body, err := json.Marshal(req)
+	body, err := provider.NewRequestBody(bodyFunc(req), provider.StreamsRequestBody(in.Snapshot))
 	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
+		return fmt.Errorf("encode request: %w", err)
 	}
 
 	resp, err := fn(ctx, body)

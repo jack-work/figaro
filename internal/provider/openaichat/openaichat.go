@@ -1,7 +1,6 @@
 package openaichat
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -200,15 +199,16 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if err != nil {
 		return err
 	}
-	body, err := json.Marshal(req)
+	body, err := provider.NewRequestBody(bodyFunc(req), provider.StreamsRequestBody(in.Snapshot))
 	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
+		return fmt.Errorf("encode request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", p.Route.MessagesURL(), bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", p.Route.MessagesURL(), nil)
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
+	body.Attach(httpReq)
 	httpReq.Header.Set("Content-Type", "application/json")
 	if req.SessionID != "" {
 		httpReq.Header.Set("x-session-id", req.SessionID)

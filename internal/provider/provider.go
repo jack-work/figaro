@@ -134,6 +134,20 @@ type ContextLimitProvider interface {
 // with. It overrides whatever the provider would otherwise report.
 const ContextLimitOverrideKey = "system.max_context_tokens"
 
+// StreamRequestBodyKey turns on the streamed request framing.
+const StreamRequestBodyKey = "system.stream_request_body"
+
+// StreamsRequestBody reports whether this aria sends its request body as it is
+// written instead of copying the conversation into one buffer first.
+func StreamsRequestBody(snapshot form.Snapshot) bool {
+	raw, ok := snapshot.Get(StreamRequestBodyKey)
+	if !ok {
+		return false
+	}
+	var on bool
+	return json.Unmarshal(raw, &on) == nil && on
+}
+
 // ContextLimitOverride reads the user's pinned context window off the
 // form. One implementation so every provider spells the override the
 // same way.

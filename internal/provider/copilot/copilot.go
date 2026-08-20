@@ -96,16 +96,17 @@ func New(
 // endpoint is decided per request: the proxy-ep inside the Copilot token
 // names the host, so it cannot be fixed at construction.
 func (c *Copilot) copilotTransport(client *http.Client) anthropic.TransportFn {
-	return func(ctx context.Context, body []byte) (*http.Response, error) {
+	return func(ctx context.Context, body *provider.RequestBody) (*http.Response, error) {
 		token, err := c.tokenSrc.Resolve()
 		if err != nil {
 			return nil, err
 		}
 		req, err := http.NewRequestWithContext(ctx, "POST",
-			c.tokenSrc.BaseURL()+"/messages", bytes.NewReader(body))
+			c.tokenSrc.BaseURL()+"/messages", nil)
 		if err != nil {
 			return nil, err
 		}
+		body.Attach(req)
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("anthropic-version", copilotAnthropicVersion)
 		req.Header.Set("Authorization", "Bearer "+token)
