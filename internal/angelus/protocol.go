@@ -1485,6 +1485,11 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 			Mantra:           info.Mantra,
 			Cwd:              info.Cwd,
 			BoundPIDs:        boundPIDs[info.ID],
+			LastTurnReason:   info.LastTurnReason,
+			UnansweredInputs: info.UnansweredInputs,
+		}
+		if !info.LastTurnAt.IsZero() {
+			entry.LastTurnAt = info.LastTurnAt.UnixMilli()
 		}
 		result = append(result, entry)
 	}

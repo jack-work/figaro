@@ -204,23 +204,28 @@ type Agent struct {
 	// is the single source of both figaro.aria pushes and figaro.read pulls.
 	ariaSrv *aria.Server
 
-	createdAt     time.Time
-	lastActive    time.Time
-	tokensIn      int
-	tokensOut     int
-	cacheRead     int
-	cacheWrite    int
-	messageCount  int
-	turnCount     int
-	metricsLT     uint64
-	contextTokens int
-	contextLimit  int
-	contextExact  bool
-	model         string
-	mantra        string
-	cwd           string
-	outfitName    string
-	outfitVer     string
+	createdAt  time.Time
+	lastActive time.Time
+	// lastTurnReason is how the most recent turn ENDED - a stop reason, or
+	// "interrupted", or "error: ...". State says whether a turn is running;
+	// this says whether the last one worked.
+	lastTurnReason string
+	lastTurnAt     time.Time
+	tokensIn       int
+	tokensOut      int
+	cacheRead      int
+	cacheWrite     int
+	messageCount   int
+	turnCount      int
+	metricsLT      uint64
+	contextTokens  int
+	contextLimit   int
+	contextExact   bool
+	model          string
+	mantra         string
+	cwd            string
+	outfitName     string
+	outfitVer      string
 
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -781,8 +786,11 @@ func (a *Agent) Info() FigaroInfo {
 		OutfitName:       a.outfitName,
 		OutfitVersion:    a.outfitVer,
 		LastFigaroLT:     a.metricsLT,
+		LastTurnReason:   a.lastTurnReason,
+		LastTurnAt:       a.lastTurnAt,
 	}
 	a.mu.RUnlock()
+	info.UnansweredInputs = a.unansweredInputs()
 	return info
 }
 
@@ -1243,6 +1251,15 @@ func (a *Agent) finishTurn(reason string) {
 	idle := a.inbox.IsIdle()
 	a.mu.Lock()
 	a.lastActive = time.Now()
+	// REMEMBER HOW THE TURN ENDED. The reason has always been computed here
+	// and fanned out to whoever happened to be attached at that instant, then
+	// dropped. So an aria whose last turn died on a provider error reported
+	// "idle" forever after, which is true and useless: idle is a statement
+	// about the inbox, not about whether the last thing you asked for
+	// worked. Retaining one string is the difference between "it is not
+	// responding" and "its last turn failed nine minutes ago, here is why".
+	a.lastTurnReason = reason
+	a.lastTurnAt = a.lastActive
 	a.mu.Unlock()
 	a.fanOut(rpc.Notification{
 		JSONRPC: "2.0",
@@ -1352,3 +1369,39 @@ func (a *Agent) DeleteQueued(epoch string, ids []uint64, all bool) (string, []rp
 func (a *Agent) UpdateQueued(epoch string, id uint64, text string) (string, rpc.QueueResult) {
 	return a.inbox.UpdatePrompt(epoch, id, text)
 }
+
+// unansweredInputs counts input messages at the tail of the log with no
+// assistant message after them.
+//
+// It exists because of a state figaro had no word for: three prompts sitting
+// in the log, consumed off the queue (so `queue ls` is empty) and answered by
+// nothing (so the conversation ends in user messages), while `status` reported
+// "idle". Every surface was individually truthful and the aggregate was a lie.
+// A nonzero count here means the aria took work and produced nothing - which
+// is the definition of the failure people report as "it hangs".
+//
+// Bounded read: only the tail can be unanswered, and a healthy aria answers
+// within one message, so a short page is enough. A pathological run of more
+// than unansweredScanDepth inputs reports the depth, which is already alarming
+// enough to act on.
+func (a *Agent) unansweredInputs() int {
+	if a.figLog == nil {
+		return 0
+	}
+	page, _ := a.figLog.ReadPage(0, ^uint64(0), unansweredScanDepth)
+	if len(page) == 0 {
+		return 0
+	}
+	n := 0
+	// The page is ascending, so walk it backwards from the tail.
+	for i := len(page) - 1; i >= 0; i-- {
+		if page[i].Payload.Role != message.RoleInput {
+			return n
+		}
+		n++
+	}
+	return n
+}
+
+// unansweredScanDepth bounds the tail scan. Past this the answer is "many".
+const unansweredScanDepth = 32

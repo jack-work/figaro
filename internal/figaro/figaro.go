@@ -7,6 +7,7 @@
 package figaro
 
 import (
+	"strings"
 	"time"
 )
 
@@ -47,4 +48,23 @@ type FigaroInfo struct {
 	OutfitName       string    `json:"outfit_name"`
 	OutfitVersion    string    `json:"outfit_version"`
 	LastFigaroLT     uint64    `json:"last_figaro_lt"`
+
+	// LastTurnReason is how the most recent turn ENDED: a stop reason,
+	// "interrupted", or "error: ...". State reports whether a turn is running
+	// now; this reports whether the last one worked, and the two answer
+	// different questions. An aria whose last turn died on a provider error
+	// is idle, and saying only "idle" is how a failure reads as a hang.
+	LastTurnReason string    `json:"last_turn_reason,omitempty"`
+	LastTurnAt     time.Time `json:"last_turn_at,omitempty"`
+	// UnansweredInputs counts prompts at the tail of the log that no
+	// assistant message followed. Nonzero means the aria took work and
+	// produced nothing.
+	UnansweredInputs int `json:"unanswered_inputs,omitempty"`
+}
+
+// LastTurnFailed reports whether the most recent turn ended in an error. The
+// reason string is the wire format the turn loop already produced; this is the
+// one place that knows its shape.
+func (i FigaroInfo) LastTurnFailed() bool {
+	return strings.HasPrefix(i.LastTurnReason, "error:")
 }

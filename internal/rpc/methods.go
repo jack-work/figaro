@@ -499,6 +499,16 @@ type FigaroInfoResponse struct {
 	OutfitVer        string `json:"outfit_ver,omitempty"`    // "live" if the stamped hash matches the current outfit, else its short hash
 	BoundPIDs        []int  `json:"bound_pids"`
 
+	// LastTurnReason is how the most recent turn ENDED: a stop reason,
+	// "interrupted", or "error: ...". State answers "is a turn running"; this
+	// answers "did the last one work", and reporting only the first is how a
+	// failed turn reads as a hang. LastTurnAt is when it ended, unix millis.
+	LastTurnReason string `json:"last_turn_reason,omitempty"`
+	LastTurnAt     int64  `json:"last_turn_at,omitempty"`
+	// UnansweredInputs counts prompts at the tail of the log that no
+	// assistant message followed: work taken and nothing produced.
+	UnansweredInputs int `json:"unanswered_inputs,omitempty"`
+
 	// Fork-forest position (conversation nodes). Vector is the
 	// child-index path (0, 0.0, 0.1, …); Trunk is the thread id that
 	// flows down the continuation line; Parent is the aria branched from.
