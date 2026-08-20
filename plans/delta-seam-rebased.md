@@ -645,3 +645,31 @@ a figaro was told becomes part of its history rather than a function of
 today's config. WHAT IT COSTS: a credo edit stops reaching arias that already
 exist, so an outfit change becomes a migration rather than a fact.
 NOT STARTED.
+
+# SECTION 3(b) LOSES ITS PERFORMANCE ARGUMENT (223a0986, 2026-08-20)
+
+plans/delta-seam.md justified deleting `asm` partly on the quadratic in
+addText. THE QUADRATIC IS GONE WITHOUT THE DELETION (8c4eb61f): a
+strings.Builder per block took 1,024 deltas from 36,100,019 B and 1,026
+allocations to 285,608 B and 23, and the EXPONENT moved -- 4x the deltas now
+costs 4.5x the bytes where it used to cost 16.3x.
+
+SO THE REMAINING COST WAS MEASURED RATHER THAN ASSUMED. The live loop
+recomposes the IN-FLIGHT message every emitted frame (~11/sec); the stable
+prefix is memoized by compose.Incremental and is not recomposed:
+
+    BenchmarkComposeInFlightTail   16 deltas   217 ns   320 B   4 allocs
+                                  256 deltas   320 ns   320 B   4 allocs
+                                 1024 deltas   334 ns   320 B   4 allocs
+
+FLAT IN REPLY LENGTH, because the text is a shared string rather than a copy.
+Four allocations and 320 bytes, eleven times a second.
+
+    SO DELETING asm IS NOW A TIDINESS CHANGE -- one accumulator instead of two
+    -- AND NOT A PERFORMANCE ONE. It should be argued on that, or deferred.
+
+WHAT IS NOT AFFECTED: section 3(c), the interrupt becoming a provider-owned
+premature close. That was always a CORRECTNESS argument -- figaro synthesises
+provider-shaped content for a partial message, which is why that path has
+eleven repair sites and still misses the fork case -- and it stands whatever
+asm costs.

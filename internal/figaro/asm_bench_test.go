@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/compose"
 	"github.com/jack-work/figaro/internal/message"
 )
 
@@ -54,6 +55,33 @@ func BenchmarkAsmMessageAfterNDeltas(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				if m := s.message(); m == nil {
 					b.Fatal("no message")
+				}
+			}
+		})
+	}
+}
+
+// WHAT (b) WOULD ACTUALLY SAVE, priced so the deletion is argued on its own
+// number rather than on the quadratic's. The live loop composes the IN-FLIGHT
+// message's nodes on every emitted frame (~11/sec); the stable prefix is
+// memoized by compose.Incremental and is NOT recomposed. So the question is
+// what one frame costs as the reply grows.
+func BenchmarkComposeInFlightTail(b *testing.B) {
+	for _, n := range []int{16, 256, 1024} {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			s := newAsm(message.RoleOutput)
+			delta := strings.Repeat("x", 64)
+			for j := 0; j < n; j++ {
+				s.addText(message.ContentProse, delta)
+			}
+			msgs := []message.Message{*s.message()}
+			c := compose.NewIncremental()
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, suffix, _ := c.Nodes(msgs, nil, nil, nil)
+				if len(suffix) == 0 {
+					b.Fatal("no nodes")
 				}
 			}
 		})
