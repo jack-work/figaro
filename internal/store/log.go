@@ -1,6 +1,11 @@
 package store
 
-import "sort"
+import (
+	"encoding/json"
+	"sort"
+
+	"github.com/jack-work/figaro/internal/store/segment"
+)
 
 // Entry is one record on a Log. LT/FigaroLT are stamped on append.
 // Fingerprint detects encoder-config drift in translations.
@@ -18,6 +23,18 @@ type Entry[T any] struct {
 	// EncodedBytes is the record's on-disk payload size, captured at decode
 	// because that is the one place it is known for free.
 	EncodedBytes int
+	// RecordHash, on TRANSLATOR rows only: the content hash of the fig IR
+	// record this row translates.
+	//
+	// IT IS AN IDENTITY, NOT A CHECKSUM. A row names its record by FigaroLT,
+	// which is a POSITION, and a position can be reissued -- the next main LT
+	// is derived from what is durable, not reserved, so a row written for a
+	// record that never landed would be adopted by whatever lands there next.
+	// The row would then read as a legitimate translation of a message that
+	// was never in the conversation. Hashing the CONTENT makes that
+	// detectable: the row either describes the record at that position or it
+	// does not.
+	RecordHash string
 }
 
 // Log is one column of an aria's write-ahead log. Logs are
@@ -120,4 +137,17 @@ func readPage[T any](rows []Entry[T], from, before uint64, n int) ([]Entry[T], i
 	out := make([]Entry[T], end-start)
 	copy(out, rows[start:end])
 	return out, total
+}
+
+// RecordHash is the content identity of a fig IR record: the truncated
+// SHA-256 of its canonical JSON, which is the same function the segment codec
+// already stamps on every record it writes. Two records that differ only in
+// key order or whitespace hash alike, which is what makes it an identity of
+// the VALUE rather than of a particular serialization.
+func RecordHash[T any](payload T) (string, error) {
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	return segment.ValueHash(b)
 }

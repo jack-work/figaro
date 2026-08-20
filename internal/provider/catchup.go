@@ -63,6 +63,25 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 	var watermark uint64
 	if tail, ok := cfg.Rows.PeekTail(); ok {
 		watermark = tail.FigaroLT
+		// THE NEWEST ROW IS THE ONLY ONE THAT CAN BE LYING. A row names its
+		// record by position, and a position can be reissued: a row written
+		// for a record that never landed is adopted by whatever lands there
+		// next. Only the tail can be in that state -- everything below it is
+		// followed by a record that did land -- so ONE comparison settles it,
+		// not a scan.
+		if tail.RecordHash != "" {
+			if at, ok := cfg.Log.Lookup(watermark); ok {
+				if have, err := store.RecordHash(at.Payload); err == nil && have != tail.RecordHash {
+					// The row describes a record that is not there. Clear and
+					// re-derive: rows are derived state and this is the one
+					// canonical moment at which they regenerate.
+					if cerr := cfg.Rows.Clear(); cerr != nil {
+						return stats, fmt.Errorf("clear misaligned rows at %d: %w", watermark, cerr)
+					}
+					watermark = 0
+				}
+			}
+		}
 	}
 	entries, total := store.TailAfter(cfg.Log, watermark)
 	stats.Entries = total
@@ -175,10 +194,15 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 			stats.Unwritten++
 			continue
 		}
+		hash, herr := store.RecordHash(entry.Payload)
+		if herr != nil {
+			return stats, fmt.Errorf("hash record at %d: %w", entry.LT, herr)
+		}
 		if _, werr := cfg.Rows.Append(store.Entry[[]json.RawMessage]{
 			FigaroLT:    entry.LT,
 			Payload:     encoded,
 			Fingerprint: cfg.Fingerprint,
+			RecordHash:  hash,
 		}); werr != nil {
 			if cfg.ReportWriteError != nil {
 				cfg.ReportWriteError(entry.LT, werr)

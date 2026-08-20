@@ -68,7 +68,11 @@ var channelSchemas = map[string]channelSchema{
 	// six seats sat at 95-101% of their context limit because of it.
 	// Bumping a derived channel drops it; the projection regenerates it lazily
 	// and correctly. Nothing canonical moves.
-	"translations-v2/": {version: 2, class: classDerived},
+	// v3: a row's sidecar carries the CONTENT HASH of the fig IR record it
+	// translates, beside the fingerprint. v2 rows have no hash and cannot
+	// grow one, so they are dropped and re-derived -- which is what the
+	// derived class is for.
+	"translations-v2/": {version: 3, class: classDerived},
 	chanUI:             {version: 1, class: classDerived},
 }
 

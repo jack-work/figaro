@@ -25,21 +25,36 @@ func newXwalLog[T any](store *XwalStore, ariaID, channel string, isMain bool) *x
 
 // encodeMeta/decodeMeta carry Entry.Fingerprint through xwal's opaque
 // meta slot as a JSON string.
-func encodeMeta(fp string) []byte {
-	if fp == "" {
+// entryMeta is the sidecar a row carries beside its payload. It was a bare
+// JSON string holding the fingerprint; it is an object now because a row also
+// names the record it translates BY CONTENT (see Entry.RecordHash).
+//
+// A BARE STRING STILL DECODES: rows written before this shape carry a JSON
+// string and are read as a fingerprint with no hash, which is what they are.
+type entryMeta struct {
+	Fingerprint string `json:"fp,omitempty"`
+	RecordHash  string `json:"rec,omitempty"`
+}
+
+func encodeMeta(fp, recordHash string) []byte {
+	if fp == "" && recordHash == "" {
 		return nil
 	}
-	b, _ := json.Marshal(fp)
+	b, _ := json.Marshal(entryMeta{Fingerprint: fp, RecordHash: recordHash})
 	return b
 }
 
-func decodeMeta(meta []byte) string {
+func decodeMeta(meta []byte) (fingerprint, recordHash string) {
 	if len(meta) == 0 {
-		return ""
+		return "", ""
 	}
-	var fp string
-	_ = json.Unmarshal(meta, &fp)
-	return fp
+	var obj entryMeta
+	if err := json.Unmarshal(meta, &obj); err == nil {
+		return obj.Fingerprint, obj.RecordHash
+	}
+	var legacy string
+	_ = json.Unmarshal(meta, &legacy)
+	return legacy, ""
 }
 
 func decodeRecord[T any](r xwal.Record) (Entry[T], bool) {
@@ -53,7 +68,8 @@ func decodeRecord[T any](r xwal.Record) (Entry[T], bool) {
 		LT:                 r.ChannelLT,
 		FigaroLT:           r.MainLT,
 		Payload:            v,
-		Fingerprint:        decodeMeta(r.Meta),
+		Fingerprint:        fingerprintOf(r.Meta),
+		RecordHash:         recordHashOf(r.Meta),
 		FormChannelVersion: r.Cursors[chanForm],
 		StudyVersions:      studyCursors(r.Cursors),
 		EncodedBytes:       len(r.Payload),
@@ -335,7 +351,7 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	if err != nil {
 		return Entry[T]{}, fmt.Errorf("xwalLog append marshal: %w", err)
 	}
-	meta := encodeMeta(e.Fingerprint)
+	meta := encodeMeta(e.Fingerprint, e.RecordHash)
 	if l.isMain {
 		// The stamp moment: alongside the automatic own-channel cursors,
 		// record where every OBSERVED form stands right now. This is the
@@ -373,3 +389,7 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 func (l *xwalLog[T]) Clear() error {
 	return l.store.trunks.Clear(l.ariaID, l.channel)
 }
+
+func fingerprintOf(meta []byte) string { fp, _ := decodeMeta(meta); return fp }
+
+func recordHashOf(meta []byte) string { _, h := decodeMeta(meta); return h }
