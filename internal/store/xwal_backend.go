@@ -40,6 +40,9 @@ type XwalBackend struct {
 	librettos map[string]*Libretto
 	// lastTS is aria id -> newest record timestamp, memoized.
 	lastTS map[string]int64
+	// encoders translate each fig IR entry as it lands, one per provider
+	// channel the aria already has. Injected; empty by default.
+	encoders translatorEncoders
 
 	// labels is stump id -> what its birth record says it is. Never evicted
 	// and never invalidated: a stump id is the hash of content that contains
@@ -271,7 +274,9 @@ func (b *XwalBackend) CloseOpenToolCalls(ariaID string) (int, error) {
 // recencyLog keeps the memoized recency honest. It is a one-method decorator:
 // everything else is the cache itself, and an append is the only thing that
 // makes an aria newer.
-func transChannel(provider string) string { return "translations-v2/" + provider }
+const translationPrefix = "translations-v2/"
+
+func transChannel(provider string) string { return translationPrefix + provider }
 
 func (b *XwalBackend) OpenTranslator(ariaID, providerName string) (Log[[]json.RawMessage], error) {
 	b.mu.Lock()

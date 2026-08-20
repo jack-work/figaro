@@ -155,10 +155,17 @@ func (l *figIRLog) CloseOpenToolCalls() (int, error) {
 
 func (l *figIRLog) write(e Entry[message.Message]) (Entry[message.Message], error) {
 	stamped, err := l.Log.Append(e)
-	if err == nil && l.backend != nil {
-		l.backend.wroteTo(l.ariaID, time.Now().UnixMilli())
+	if err != nil || l.backend == nil {
+		return stamped, err
 	}
-	return stamped, err
+	l.backend.wroteTo(l.ariaID, time.Now().UnixMilli())
+	// THE FIG IR ENTRY IS CANONICAL AND HAS LANDED; ITS TRANSLATIONS ARE
+	// DERIVED AND FOLLOW. Gluck, 2026-08-20: "fig ir entry first... if a
+	// crash happens there, the translator IR should self-heal." It does: a
+	// torn frame is truncated at open, so a translation is either whole or
+	// absent, and an absent one is rebuilt by the next catch-up.
+	l.backend.translateOnAppend(l.ariaID, stamped)
+	return stamped, nil
 }
 
 func (l *figIRLog) isPending(id string) bool {
