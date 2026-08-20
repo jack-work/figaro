@@ -1470,10 +1470,18 @@ func firstChars(s string, n int) string {
 }
 
 // asm assembles the in-flight assistant message from provider Bus events
-// so the turn blob can be recomposed mid-stream (before the provider
+// so the turn blob can be recomposed mid-stream (before the fig IR side
 // appends it into the log).
+//
+// TEXT ACCUMULATES IN A BUILDER, NOT BY CONCATENATION. It used to do
+// s.msg.Content[n-1].Text += text, and Go strings are immutable, so every
+// delta reallocated everything before it: measured at 36 MB of allocation to
+// accumulate 64 KB over 1,024 deltas, bytes quadratic while allocations
+// stayed linear -- which is why a run that counts allocs alone sees nothing.
+// A Builder appends amortized O(1) and its String() does not copy.
 type asm struct {
 	msg     message.Message
+	text    []*strings.Builder // per content block; nil for non-text blocks
 	toolIdx map[string]int
 }
 
@@ -1486,17 +1494,21 @@ func (s *asm) addText(kind message.ContentType, text string) {
 		return
 	}
 	n := len(s.msg.Content)
-	if n > 0 && s.msg.Content[n-1].Type == kind {
-		s.msg.Content[n-1].Text += text
+	if n > 0 && s.msg.Content[n-1].Type == kind && s.text[n-1] != nil {
+		s.text[n-1].WriteString(text)
 		return
 	}
-	s.msg.Content = append(s.msg.Content, message.Content{Type: kind, Text: text})
+	b := &strings.Builder{}
+	b.WriteString(text)
+	s.msg.Content = append(s.msg.Content, message.Content{Type: kind})
+	s.text = append(s.text, b)
 }
 
 func (s *asm) toolOpen(id, name string) {
 	s.toolIdx[id] = len(s.msg.Content)
 	s.msg.Content = append(s.msg.Content,
 		message.Content{Type: message.ContentToolInvoke, ToolCallID: id, ToolName: name})
+	s.text = append(s.text, nil)
 }
 
 func (s *asm) toolReady(id, name string, args map[string]interface{}) {
@@ -1515,9 +1527,17 @@ func (s *asm) toolReady(id, name string, args map[string]interface{}) {
 }
 
 // message returns the in-flight message, or nil when nothing has streamed.
+// Builder.String() hands back the accumulated buffer WITHOUT copying it, and
+// a later Write that grows the buffer leaves the returned string valid -- so
+// a frame already composed keeps the text it was given.
 func (s *asm) message() *message.Message {
 	if len(s.msg.Content) == 0 {
 		return nil
+	}
+	for i, b := range s.text {
+		if b != nil {
+			s.msg.Content[i].Text = b.String()
+		}
 	}
 	return &s.msg
 }
