@@ -522,3 +522,58 @@ AND THE OTHER HALF OF THE NUMBER MATTERS MORE: 55% OF ARIAS HAVE NO TRANSLATOR
 ROWS AT ALL. For them the door writes nothing at record time and the first send
 still catches up -- which is why the catch-up survives this section rather than
 being deleted by it.
+
+# BEFORE BUILDING SECTION 2: I DOUBT THE PREMISE OF ROW-FIRST (223a0986)
+
+Raised rather than built past, because the ruling and the reason for it came to
+me relayed, and one step of the reason no longer holds.
+
+## THE REASON GIVEN FOR ROW-FIRST
+
+"An orphan record -- a record with no row -- is FATAL under 'a missing row is
+an error'; an orphan row is not. Reversing the order converts the fatal
+failure into the benign one."
+
+## WHY I THINK THE FIRST HALF IS FALSE
+
+A RECORD WITH NO ROW IS REPAIRABLE, FAITHFULLY, BY THE CATCH-UP THAT ALREADY
+EXISTS. The door rewrites the payload BEFORE it lands, so what is on disk IS
+the post-repair payload; a later encode of that record produces exactly what
+the door would have produced. Nothing is lost by encoding it a moment later --
+which is precisely why the catch-up is correct today.
+
+"A missing row is an error" is a rule about the SEND PATH: a send that cannot
+read its own conversation must fail rather than assemble a different one. It
+is not a claim that a gap can never be filled.
+
+## WHAT EACH ORDER ACTUALLY COSTS
+
+    RECORD FIRST   crash window leaves a record with no row. Repaired by the
+                   catch-up, which stays anyway for the first send through a
+                   provider (55% of arias have no rows at all). NO HASH
+                   NEEDED for safety. The stamp is already an OUTPUT of the
+                   append, so nothing more is required -- the hoist is done.
+
+    ROW FIRST      crash window leaves a row at an LT the next append
+                   reissues, which is a LIE and not a gap, so it needs the
+                   content hash to be detectable. AND IT NEEDS THE STAMP
+                   BEFORE THE APPEND, which is the half that is NOT done: the
+                   cursors are computed inside xwal under the main channel's
+                   lock, and the form channel has its own writer, so a door
+                   that reads them first can be overtaken between the read and
+                   the append.
+
+## SO THE QUESTION FOR GLUCK, NARROWLY
+
+Row-first buys: no repair path in the common case. It costs: a hash field, and
+an xwal surface change to make the stamp an input, with a race to close that
+record-first does not have.
+
+Record-first buys: it works with what is already built, today. It costs: the
+crash window is repaired by the catch-up rather than by construction.
+
+I RECOMMEND RECORD-FIRST AND I MAY BE WRONG -- the hash is approved either way
+and is worth having as an alignment check, and if he wants "every record has a
+row BY CONSTRUCTION" as a property rather than as a repair, row-first is the
+only order that gives it. That is a design preference I should not settle by
+building.
