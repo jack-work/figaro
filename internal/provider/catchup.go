@@ -14,15 +14,9 @@ import (
 // WRITES THEM TO THE LOG. It keeps no representation of its own: what it
 // produces lives in the log, and the caller reads the log.
 //
-// It replaces ProjectIncrementally and the four per-provider wrappers that
-// each carried a different accumulator. Those existed to hand the assembler
-// an in-memory messages array; the assembler now splices the rows.
-//
-// THE WATERMARK IS THE LOG'S, NOT A MEMO'S: the newest row names the last
-// fig IR record that has a translation. And THE RECORD AT THE WATERMARK
-// CARRIES THE CURSORS -- its FormChannelVersion and StudyVersions are where
-// the boards stood when it was written -- so the five version fields the old
-// projection carried between calls are recoverable from the logs themselves.
+// The watermark is the log's -- the newest row names the last fig IR record
+// that has a translation -- and the record at the watermark carries the
+// cursors, so nothing is held between calls.
 type CatchUpConfig struct {
 	// Log is the fig IR.
 	Log store.Log[message.Message]
@@ -63,18 +57,15 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 	var watermark uint64
 	if tail, ok := cfg.Translator.PeekTail(); ok {
 		watermark = tail.FigaroLT
-		// THE NEWEST ROW IS THE ONLY ONE THAT CAN BE LYING. A row names its
-		// record by position, and a position can be reissued: a row written
-		// for a record that never landed is adopted by whatever lands there
-		// next. Only the tail can be in that state -- everything below it is
-		// followed by a record that did land -- so ONE comparison settles it,
-		// not a scan.
+		// THE NEWEST ROW IS THE ONLY ONE THAT CAN BE LYING: a position can be
+		// reissued, so a row written for a record that never landed is adopted
+		// by whatever lands there next. Everything below the tail is followed
+		// by a record that did land, so one comparison settles it.
 		if tail.FigaroHash != "" {
 			if at, ok := cfg.Log.Lookup(watermark); ok {
 				if have, err := store.FigaroHash(at.Payload); err == nil && have != tail.FigaroHash {
-					// The row describes a record that is not there. Clear and
-					// re-derive: rows are derived state and this is the one
-					// canonical moment at which they regenerate.
+					// The row describes a record that is not there: clear and
+					// re-derive.
 					if cerr := cfg.Translator.Clear(); cerr != nil {
 						return stats, fmt.Errorf("clear misaligned rows at %d: %w", watermark, cerr)
 					}
@@ -130,8 +121,8 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 	return stats, nil
 }
 
-// Rows reads a translator log whole, in order: the messages array, as it
-// lies on disk. This is the read that replaced the projection's accumulator.
+// Translations reads a translator log whole, in order: the messages array, as
+// it lies on disk.
 func Translations(rows store.Log[[]json.RawMessage]) (perMessage [][]json.RawMessage, lts []uint64) {
 	if rows == nil {
 		return nil, nil
@@ -154,11 +145,10 @@ func Translations(rows store.Log[[]json.RawMessage]) (perMessage [][]json.RawMes
 // RoleInput. A record that cannot carry one must not consume a window.
 func carriesStudy(msg message.Message) bool { return msg.Role == message.RoleInput }
 
-// ClearStaleRows empties a translator log whose stored rows were written under
-// a different encoder fingerprint. THIS IS THE ONE CANONICAL MOMENT at which
-// derived rows are regenerated: a provider checks it when it opens the log,
-// and everything downstream may then assume the rows were written by the
-// encoder that is about to read them.
+// ClearStaleTranslationCache empties a translator log whose stored rows were
+// written under a different encoder fingerprint. A provider checks it when it
+// opens the log, so everything downstream may assume the rows were written by
+// the encoder about to read them.
 func ClearStaleTranslationCache(rows store.Log[[]json.RawMessage], fingerprint string) (string, bool, error) {
 	entry, ok := rows.PeekTail()
 	if !ok || entry.Fingerprint == "" || entry.Fingerprint == fingerprint {

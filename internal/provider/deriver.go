@@ -10,15 +10,12 @@ import (
 // the board as it stood BEFORE that entry, the form patches the entry
 // introduced, and the studied forms' transitions it may carry.
 //
-// THERE IS ONE OF THESE AND TWO CALLERS, which is the point. A catch-up walks
-// a suffix and calls Next per entry; the fig IR write path holds one per
-// (aria, provider) and calls Next as each entry lands. Two derivations would
-// be two answers to "what did the board look like then", and the two paths
-// write to the same channel.
+// One implementation, two callers -- the catch-up and the fig IR write path --
+// because both write to the same channel and two derivations would be two
+// answers to "what did the board look like then".
 //
-// IT IS A CURSOR, NOT A CACHE. Everything it holds is recoverable from the
-// logs -- SeedAt rebuilds it from the entry a watermark names -- and it holds
-// no encoded bytes at all.
+// It is a cursor, not a cache: SeedAt rebuilds it from the logs and it holds
+// no encoded bytes.
 type Deriver struct {
 	form    Form
 	studies map[string]Form
@@ -32,11 +29,9 @@ func NewDeriver(board Form, studies map[string]Form) *Deriver {
 	return &Deriver{form: board, studies: studies, lastStudy: map[string]uint64{}, snap: form.Snapshot{}}
 }
 
-// SeedAt positions the cursor at a watermark: the newest fig IR entry that has
-// already been translated. THE ENTRY AT THE WATERMARK CARRIES THE CURSORS --
-// its FormChannelVersion and StudyVersions are where the boards stood when it
-// was written -- so the position is read from the log rather than carried
-// between calls.
+// SeedAt positions the cursor at a watermark: the newest fig IR entry already
+// translated. The entry at the watermark carries the cursors, so the position
+// is read from the log rather than carried between calls.
 func (d *Deriver) SeedAt(log store.Log[message.Message], watermark uint64) {
 	d.lastForm = 0
 	d.lastStudy = map[string]uint64{}
@@ -52,21 +47,13 @@ func (d *Deriver) SeedAt(log store.Log[message.Message], watermark uint64) {
 	}
 	switch {
 	case d.form != nil:
-		// The board as it stood at the watermark, folded from zero: one patch
-		// application per form patch, measured across a real store at p50=5,
-		// p99=74, max=371.
 		if d.lastForm > 0 {
 			d.snap = form.Fold(d.snap, d.form.PatchesBetween(0, d.lastForm))
 		}
 	default:
-		// AN EPHEMERAL ARIA HAS NO ACCESSOR AND CARRIES ITS PATCHES ON THE
-		// ENTRIES THEMSELVES, so the board it reached is only recoverable by
-		// folding the entries already translated. Skipping them left the
-		// snapshot at zero and rendered a transition from nothing: "=>new"
-		// where the aria had said "old=>new".
-		//
-		// COMPLEXITY, NAMED: O(entries before the watermark), and ONLY where
-		// there is no form channel to ask.
+		// No accessor: the patches ride the entries, so the board is only
+		// recoverable by folding them.
+		// COMPLEXITY: O(entries before the watermark), only on this branch.
 		prefix, _ := store.TailAfter(log, 0)
 		for _, e := range prefix {
 			if e.LT > watermark {
@@ -77,15 +64,13 @@ func (d *Deriver) SeedAt(log store.Log[message.Message], watermark uint64) {
 	}
 }
 
-// At reports the cursor's position: the newest fig IR LT it has consumed is
-// not tracked, but the board version is, which is what a caller needs to know
-// whether the cursor is stale for an entry.
+// At reports the board version the cursor has consumed to.
 func (d *Deriver) At() uint64 { return d.lastForm }
 
 // Next consumes one entry and returns what to encode: the message with its
 // patches and study blocks attached, and the board as it stood BEFORE it.
 // translatable is false for entries that advance the cursors and render to
-// nothing -- genesis is furniture.
+// nothing.
 //
 // IT MUST BE CALLED IN LOG ORDER, EXACTLY ONCE PER ENTRY. Skipping one loses
 // the patches it introduced; repeating one renders them twice.
@@ -106,16 +91,11 @@ func (d *Deriver) Next(entry store.Entry[message.Message]) (msg message.Message,
 	}
 	d.lastForm = maxVersion(d.lastForm, entry.FormChannelVersion)
 
-	// A WINDOW MAY ONLY CLOSE ON AN ENTRY THAT CAN CARRY THE BLOCK. A studied
-	// form's transitions ride a USER message: every encoder renders them under
-	// RoleInput and nowhere else. An assistant entry that consumed its window
-	// would compute a block, drop it, and leave the next user entry asking for
-	// (v, v] -- so the change would never be shown to anyone, ever.
+	// A WINDOW MAY ONLY CLOSE ON AN ENTRY THAT CAN CARRY THE BLOCK: an entry
+	// that consumed a window it cannot render loses the change permanently.
 	if carriesStudy(msg) {
 		for fid, upTo := range entry.StudyVersions {
-			// ADVANCE FIRST, whatever happens below: the cursor is where the
-			// form STOOD at this stamp, which is true of a form that has since
-			// been deleted too.
+			// Advance first, whatever happens below: true of a deleted form too.
 			prev := d.lastStudy[fid]
 			d.lastStudy[fid] = maxVersion(prev, upTo)
 			acc := d.studies[fid]
@@ -135,9 +115,8 @@ func (d *Deriver) Next(entry store.Entry[message.Message]) (msg message.Message,
 		}
 	}
 
-	// The board the ENCODER sees is the one this entry arrived at, before its
-	// own patches are folded: an encoder renders a transition as
-	// old -> new, and old is what it needs.
+	// The encoder renders old -> new, so it needs the board this entry
+	// arrived at, before its own patches fold in.
 	before := d.snap
 	d.snap = form.Fold(d.snap, msg.Patches)
 	return msg, before, true
