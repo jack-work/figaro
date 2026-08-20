@@ -58,7 +58,7 @@ func TestRealMigratedStoreOpensWithEverything(t *testing.T) {
 		formFailed            []string
 	)
 	for _, n := range convs {
-		lg, err := be.Open(n.ID)
+		lg, err := be.OpenFigIR(n.ID)
 		if err != nil {
 			openFailed = append(openFailed, fmt.Sprintf("%s: %v", n.ID, err))
 			continue
@@ -118,7 +118,7 @@ func TestRealMigratedStoreOpensWithEverything(t *testing.T) {
 	// cold-cache number: the store is open and the pages are warm.
 	if deepest != "" {
 		start := time.Now()
-		lg, err := be.Open(deepest)
+		lg, err := be.OpenFigIR(deepest)
 		if err != nil {
 			t.Fatal(err)
 		}

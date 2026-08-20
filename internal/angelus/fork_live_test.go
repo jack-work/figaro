@@ -272,12 +272,12 @@ func TestForkDuringActiveStreamKeepsContinuationRunning(t *testing.T) {
 	default:
 	}
 
-	alternative, err := backend.Open(response.Alternative)
+	alternative, err := backend.OpenFigIR(response.Alternative)
 	require.NoError(t, err)
 	require.Equal(t, 1, message.CountMessages(unwrapMessages(alternative.Read())))
 
 	release()
-	continuation, err := backend.Open(id)
+	continuation, err := backend.OpenFigIR(id)
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
 		return agent.Info().State == "idle" && message.CountMessages(unwrapMessages(continuation.Read())) == 2
@@ -439,13 +439,13 @@ func TestForkDuringActiveToolKeepsToolAndContinuationRunning(t *testing.T) {
 	default:
 	}
 
-	alternative, err := backend.Open(response.Alternative)
+	alternative, err := backend.OpenFigIR(response.Alternative)
 	require.NoError(t, err)
 	alternativeCount := message.CountMessages(unwrapMessages(alternative.Read()))
 	require.GreaterOrEqual(t, alternativeCount, 1)
 
 	release()
-	continuation, err := backend.Open(id)
+	continuation, err := backend.OpenFigIR(id)
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
 		return agent.Info().State == "idle" && message.CountMessages(unwrapMessages(continuation.Read())) == 4

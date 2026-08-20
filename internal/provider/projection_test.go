@@ -25,7 +25,7 @@ func TestAFailedEncodeLeavesTheWatermarkWhereItWas(t *testing.T) {
 	attempts := map[string]int{}
 	cfg := CatchUpConfig{
 		Log:         log,
-		Rows:        rows,
+		Translator:  rows,
 		Fingerprint: "v1",
 		Encode: func(msg message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 			text := msg.Content[0].Text

@@ -80,7 +80,7 @@ func (p *idleProvider) callCount() int {
 func TestOpenAfterCrashBeforeAssistantAppend(t *testing.T) {
 	b, id := newBackedConversation(t)
 	defer b.Close()
-	ir, err := b.Open(id)
+	ir, err := b.OpenFigIR(id)
 	require.NoError(t, err)
 	_, err = ir.Append(store.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("crashed mid-stream")},
@@ -101,7 +101,7 @@ func TestOpenAfterCrashBeforeAssistantAppend(t *testing.T) {
 func TestOpenAfterCrashWithUnresolvedTools(t *testing.T) {
 	b, id := newBackedConversation(t)
 	defer b.Close()
-	ir, err := b.Open(id)
+	ir, err := b.OpenFigIR(id)
 	require.NoError(t, err)
 	_, err = ir.Append(store.Entry[message.Message]{Payload: message.Message{
 		Role:       message.RoleOutput,
@@ -566,7 +566,7 @@ func (b mismatchBackend) Open(string) (store.Log[message.Message], error) {
 func TestAssistantAppendRejectsPredictedLTMismatch(t *testing.T) {
 	real, id := newBackedConversation(t)
 	defer real.Close()
-	base, err := real.Open(id)
+	base, err := real.OpenFigIR(id)
 	require.NoError(t, err)
 	backend := mismatchBackend{Backend: real, log: mismatchLog{Log: base}}
 	a := figaro.NewAgent(figaro.Config{
@@ -621,7 +621,7 @@ type failingAssistantCacheBackend struct {
 }
 
 func (b failingAssistantCacheBackend) OpenTranslation(ariaID, namespace string) (store.Log[[]json.RawMessage], error) {
-	log, err := b.Backend.OpenTranslation(ariaID, namespace)
+	log, err := b.Backend.OpenTranslator(ariaID, namespace)
 	if err != nil || namespace != b.namespace {
 		return log, err
 	}
@@ -641,12 +641,12 @@ func TestCacheAppendFailureEndsTurnKeepsAssistant(t *testing.T) {
 	a.Kill()
 	assert.Contains(t, reason, "native cache unavailable")
 
-	ir, err := real.Open(id)
+	ir, err := real.OpenFigIR(id)
 	require.NoError(t, err)
 	tail, ok := ir.PeekTail()
 	require.True(t, ok)
 	assert.Equal(t, message.RoleOutput, tail.Payload.Role)
-	cache, err := real.OpenTranslation(id, "atomic-cache")
+	cache, err := real.OpenTranslator(id, "atomic-cache")
 	require.NoError(t, err)
 	_, ok = cache.Lookup(tail.LT)
 	assert.False(t, ok)

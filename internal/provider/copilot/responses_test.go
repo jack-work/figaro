@@ -585,7 +585,7 @@ func TestResponsesProviderDrivesFigaroToolRoundTrip(t *testing.T) {
 	// to the backend's translator log; a provider reading a different log
 	// serves a re-encode of the fig IR, which cannot carry an opaque
 	// reasoning block.
-	cache, err := be.OpenTranslation(ariaID, "copilot-responses")
+	cache, err := be.OpenTranslator(ariaID, "copilot-responses")
 	require.NoError(t, err)
 	p := newResponsesTestProvider(server, cache)
 	agent := figaro.NewAgent(figaro.Config{

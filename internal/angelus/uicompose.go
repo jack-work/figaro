@@ -54,7 +54,7 @@ func (a *Angelus) openNodeIR(node string) store.Log[message.Message] {
 	}); ok {
 		return o.OpenNode(node)
 	}
-	log, err := a.Backend.Open(node)
+	log, err := a.Backend.OpenFigIR(node)
 	if err != nil {
 		return nil
 	}

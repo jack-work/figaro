@@ -54,7 +54,7 @@ func TestTranslatorChannelCensus(t *testing.T) {
 		examined   int
 	)
 	for _, id := range ids {
-		ir, err := be.Open(id)
+		ir, err := be.OpenFigIR(id)
 		if err != nil {
 			continue
 		}
@@ -74,7 +74,7 @@ func TestTranslatorChannelCensus(t *testing.T) {
 				continue
 			}
 			provider := strings.TrimPrefix(info.Name, "translations-v2/")
-			rows, err := be.OpenTranslation(id, provider)
+			rows, err := be.OpenTranslator(id, provider)
 			if err != nil {
 				continue
 			}

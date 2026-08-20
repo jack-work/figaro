@@ -163,7 +163,7 @@ func (a *Agent) commitAssistantCache(lt uint64, cache *provider.AssistantCache) 
 	if cache.Namespace == "" {
 		return fmt.Errorf("provider assistant cache namespace is empty")
 	}
-	native, err := a.backend.OpenTranslation(a.id, cache.Namespace)
+	native, err := a.backend.OpenTranslator(a.id, cache.Namespace)
 	if err != nil {
 		return fmt.Errorf("open assistant cache %s: %w", cache.Namespace, err)
 	}

@@ -241,7 +241,7 @@ func (b *XwalBackend) OpenNode(node string) Log[message.Message] {
 	return newXwalLog[message.Message](b.store, node, chanIR, true)
 }
 
-func (b *XwalBackend) Open(ariaID string) (Log[message.Message], error) {
+func (b *XwalBackend) OpenFigIR(ariaID string) (Log[message.Message], error) {
 	b.mu.Lock()
 	h, err := b.handleLocked(ariaID)
 	b.mu.Unlock()
@@ -251,17 +251,17 @@ func (b *XwalBackend) Open(ariaID string) (Log[message.Message], error) {
 	// Reading the content is where a trailing sidecar gets caught up; see
 	// meta_heal.go. No-op unless the watermark lags the tail.
 	b.healMeta(ariaID, h.ir)
-	return &irDoor{Log: h.ir, backend: b, ariaID: ariaID}, nil
+	return &figIRLog{Log: h.ir, backend: b, ariaID: ariaID}, nil
 }
 
 // CloseOpenToolCalls closes this aria's outstanding invokes through the same
 // guarded write path every other append takes.
 func (b *XwalBackend) CloseOpenToolCalls(ariaID string) (int, error) {
-	lg, err := b.Open(ariaID)
+	lg, err := b.OpenFigIR(ariaID)
 	if err != nil {
 		return 0, err
 	}
-	guard, ok := lg.(*irDoor)
+	guard, ok := lg.(*figIRLog)
 	if !ok {
 		return 0, fmt.Errorf("store: aria %s IR log is not guarded", ariaID)
 	}
@@ -273,7 +273,7 @@ func (b *XwalBackend) CloseOpenToolCalls(ariaID string) (int, error) {
 // makes an aria newer.
 func transChannel(provider string) string { return "translations-v2/" + provider }
 
-func (b *XwalBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.RawMessage], error) {
+func (b *XwalBackend) OpenTranslator(ariaID, providerName string) (Log[[]json.RawMessage], error) {
 	b.mu.Lock()
 	h, err := b.handleLocked(ariaID)
 	b.mu.Unlock()

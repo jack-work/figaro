@@ -33,7 +33,7 @@ func TestUIWindowBoundsAResidentAgent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	log, err := be.Open(id)
+	log, err := be.OpenFigIR(id)
 	if err != nil {
 		t.Fatal(err)
 	}

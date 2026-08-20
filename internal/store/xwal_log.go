@@ -27,20 +27,20 @@ func newXwalLog[T any](store *XwalStore, ariaID, channel string, isMain bool) *x
 // meta slot as a JSON string.
 // entryMeta is the sidecar a row carries beside its payload. It was a bare
 // JSON string holding the fingerprint; it is an object now because a row also
-// names the record it translates BY CONTENT (see Entry.RecordHash).
+// names the record it translates BY CONTENT (see Entry.FigaroHash).
 //
 // A BARE STRING STILL DECODES: rows written before this shape carry a JSON
 // string and are read as a fingerprint with no hash, which is what they are.
 type entryMeta struct {
 	Fingerprint string `json:"fp,omitempty"`
-	RecordHash  string `json:"rec,omitempty"`
+	FigaroHash  string `json:"rec,omitempty"`
 }
 
 func encodeMeta(fp, recordHash string) []byte {
 	if fp == "" && recordHash == "" {
 		return nil
 	}
-	b, _ := json.Marshal(entryMeta{Fingerprint: fp, RecordHash: recordHash})
+	b, _ := json.Marshal(entryMeta{Fingerprint: fp, FigaroHash: recordHash})
 	return b
 }
 
@@ -50,7 +50,7 @@ func decodeMeta(meta []byte) (fingerprint, recordHash string) {
 	}
 	var obj entryMeta
 	if err := json.Unmarshal(meta, &obj); err == nil {
-		return obj.Fingerprint, obj.RecordHash
+		return obj.Fingerprint, obj.FigaroHash
 	}
 	var legacy string
 	_ = json.Unmarshal(meta, &legacy)
@@ -69,7 +69,7 @@ func decodeRecord[T any](r xwal.Record) (Entry[T], bool) {
 		FigaroLT:           r.MainLT,
 		Payload:            v,
 		Fingerprint:        fingerprintOf(r.Meta),
-		RecordHash:         recordHashOf(r.Meta),
+		FigaroHash:         recordHashOf(r.Meta),
 		FormChannelVersion: r.Cursors[chanForm],
 		StudyVersions:      studyCursors(r.Cursors),
 		EncodedBytes:       len(r.Payload),
@@ -351,7 +351,7 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	if err != nil {
 		return Entry[T]{}, fmt.Errorf("xwalLog append marshal: %w", err)
 	}
-	meta := encodeMeta(e.Fingerprint, e.RecordHash)
+	meta := encodeMeta(e.Fingerprint, e.FigaroHash)
 	if l.isMain {
 		// The stamp moment: alongside the automatic own-channel cursors,
 		// record where every OBSERVED form stands right now. This is the

@@ -120,7 +120,7 @@ func TestRealAriaMemory(t *testing.T) {
 	runtime.ReadMemStats(&allocPre)
 
 	irBytes, logKeep := heapDelta(func() any {
-		log, err := backend.Open(id)
+		log, err := backend.OpenFigIR(id)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -182,7 +182,7 @@ func TestRealAriaMemory(t *testing.T) {
 	transBytes, transKeep := heapDelta(func() any {
 		var held []any
 		for _, prov := range []string{"anthropic", "copilot-messages", "copilot-responses", "openai"} {
-			if tl, err := backend.OpenTranslation(id, prov); err == nil {
+			if tl, err := backend.OpenTranslator(id, prov); err == nil {
 				held = append(held, tl.Read())
 			}
 		}

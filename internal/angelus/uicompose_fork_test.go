@@ -32,7 +32,7 @@ func TestAForkBelowATurnBoundaryServesItsOwnContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plog, err := be.Open(parent)
+	plog, err := be.OpenFigIR(parent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestAForkBelowATurnBoundaryServesItsOwnContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	clog, err := be.Open(child)
+	clog, err := be.OpenFigIR(child)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestABracketThatCutsATurnComposesItWhole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	log, err := be.Open(id)
+	log, err := be.OpenFigIR(id)
 	if err != nil {
 		t.Fatal(err)
 	}

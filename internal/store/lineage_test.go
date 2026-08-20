@@ -18,7 +18,7 @@ func TestLineageWalksToTheRootWithOwnedBases(t *testing.T) {
 	l, _ := b.CreateOutfit("d", patchSet(map[string]string{"system.model": "m"}))
 	conv, _ := b.CreateConversation(l)
 
-	ir, _ := b.Open(conv)
+	ir, _ := b.OpenFigIR(conv)
 	for i := 0; i < 6; i++ {
 		if _, err := ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
 			t.Fatal(err)
@@ -82,7 +82,7 @@ func TestLineageBaseMatchesTheTrunkBranchPoint(t *testing.T) {
 
 	l, _ := b.CreateOutfit("d", patchSet(map[string]string{"system.model": "m"}))
 	conv, _ := b.CreateConversation(l)
-	ir, _ := b.Open(conv)
+	ir, _ := b.OpenFigIR(conv)
 	for i := 0; i < 6; i++ {
 		ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}})
 	}

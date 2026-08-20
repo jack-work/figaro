@@ -82,7 +82,7 @@ func (p *Provider) catchUp(figLog store.Log[message.Message], rows store.Log[[]j
 	t0 := time.Now()
 	stats, err := provider.CatchUp(provider.CatchUpConfig{
 		Log:         figLog,
-		Rows:        rows,
+		Translator:  rows,
 		Form:        form,
 		Studies:     studies,
 		Fingerprint: p.Fingerprint(),
@@ -100,7 +100,7 @@ func (p *Provider) catchUp(figLog store.Log[message.Message], rows store.Log[[]j
 		return nil, nil, fmt.Errorf("anthropicsdk catch up: %w", err)
 	}
 
-	perMessage, lts := provider.Rows(rows)
+	perMessage, lts := provider.Translations(rows)
 	msgs, msgLTs, perr := rowsToMessageParams(perMessage, lts)
 	if perr != nil {
 		return nil, nil, perr

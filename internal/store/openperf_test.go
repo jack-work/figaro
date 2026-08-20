@@ -25,7 +25,7 @@ func seedLargeAria(tb testing.TB, nMsgs, msgBytes int) (string, string) {
 	if err != nil {
 		tb.Fatal(err)
 	}
-	lg, err := be.Open(conv)
+	lg, err := be.OpenFigIR(conv)
 	if err != nil {
 		tb.Fatal(err)
 	}

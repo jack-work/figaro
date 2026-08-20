@@ -73,9 +73,9 @@ func projectWith(b *testing.B, turns, observed int, warm bool) {
 
 	newCfg := func() provider.CatchUpConfig {
 		return provider.CatchUpConfig{
-			Log:     log,
-			Rows:    store.NewMemLog[[]json.RawMessage](),
-			Studies: studies,
+			Log:        log,
+			Translator: store.NewMemLog[[]json.RawMessage](),
+			Studies:    studies,
 			Encode: func(m message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 				// Encode is the provider's business; count the studied folds
 				// so the compiler cannot elide the derivation.

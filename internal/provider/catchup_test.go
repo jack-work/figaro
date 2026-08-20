@@ -13,8 +13,8 @@ import (
 
 func catchUpTestConfig(log store.Log[message.Message], rows store.Log[[]json.RawMessage]) CatchUpConfig {
 	return CatchUpConfig{
-		Log:  log,
-		Rows: rows,
+		Log:        log,
+		Translator: rows,
 		Encode: func(msg message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 			body, err := json.Marshal(map[string]any{"role": string(msg.Role), "lt": msg.LogicalTime})
 			if err != nil {
@@ -79,8 +79,8 @@ func TestCatchUpVisitsOnlyWhatIsNew(t *testing.T) {
 func TestCatchUpWithoutRowsIsAnError(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
 	appendProjectionMessage(t, log, "body")
-	if _, err := CatchUp(catchUpTestConfig(log, nil)); !errors.Is(err, ErrNoRows) {
-		t.Fatalf("err=%v, want ErrNoRows", err)
+	if _, err := CatchUp(catchUpTestConfig(log, nil)); !errors.Is(err, ErrNoTranslator) {
+		t.Fatalf("err=%v, want ErrNoTranslator", err)
 	}
 }
 
@@ -92,14 +92,14 @@ func TestCatchUpWithoutRowsIsAnError(t *testing.T) {
 // at a position the NEXT append reissues, so it is adopted by a different
 // message. Without the content hash the row reads as a legitimate translation
 // of a conversation that never happened.
-func TestARowWhoseRecordHashDoesNotMatchIsRefused(t *testing.T) {
+func TestARowWhoseFigaroHashDoesNotMatchIsRefused(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
 	rows := store.NewMemLog[[]json.RawMessage]()
 	first := appendProjectionMessage(t, log, "the real one")
 
 	// A row for that LT, but describing a DIFFERENT record: exactly the shape
 	// a reissued LT produces.
-	wrongHash, err := store.RecordHash(message.Message{
+	wrongHash, err := store.FigaroHash(message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("a message that never landed")},
 	})
 	if err != nil {
@@ -108,7 +108,7 @@ func TestARowWhoseRecordHashDoesNotMatchIsRefused(t *testing.T) {
 	if _, err := rows.Append(store.Entry[[]json.RawMessage]{
 		FigaroLT:   first.LT,
 		Payload:    []json.RawMessage{json.RawMessage(`{"orphan":true}`)},
-		RecordHash: wrongHash,
+		FigaroHash: wrongHash,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -128,14 +128,14 @@ func TestARowWhoseRecordHashDoesNotMatchIsRefused(t *testing.T) {
 	if string(served[0].Payload[0]) == `{"orphan":true}` {
 		t.Fatal("the orphan row survived and would reach the wire")
 	}
-	if served[0].RecordHash == "" {
+	if served[0].FigaroHash == "" {
 		t.Fatal("the re-derived row carries no record hash, so the next pass cannot check it")
 	}
 }
 
 // AND A ROW THAT DOES MATCH IS A WATERMARK, so the check costs one comparison
 // and does not re-derive a healthy channel.
-func TestAMatchingRecordHashLeavesTheChannelAlone(t *testing.T) {
+func TestAMatchingFigaroHashLeavesTheChannelAlone(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
 	rows := store.NewMemLog[[]json.RawMessage]()
 	appendProjectionMessage(t, log, "one")

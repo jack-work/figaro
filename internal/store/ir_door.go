@@ -8,7 +8,7 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 )
 
-// irDoor is the ONE write path into an aria's fig IR channel: every Append,
+// figIRLog is the ONE write path into an aria's fig IR channel: every Append,
 // from any provider or any caller, passes through it, and it is where the
 // tool-call invariant is enforced rather than patrolled.
 //
@@ -24,7 +24,7 @@ import (
 //
 // APPEND-ONLY: the door never edits a record already written. It completes the
 // message it is given before writing it, and appends its own records after.
-type irDoor struct {
+type figIRLog struct {
 	Log[message.Message]
 	backend *XwalBackend
 	ariaID  string
@@ -42,7 +42,7 @@ const (
 	lateResultNotice = "a tool result arrived after its call was closed"
 )
 
-func (l *irDoor) Append(e Entry[message.Message]) (Entry[message.Message], error) {
+func (l *figIRLog) Append(e Entry[message.Message]) (Entry[message.Message], error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if !l.loaded {
@@ -121,7 +121,7 @@ func (l *irDoor) Append(e Entry[message.Message]) (Entry[message.Message], error
 // tool-call invariant as a backed one. A backendless door skips the recency
 // stamp and does nothing else differently.
 func GuardIR(inner Log[message.Message]) Log[message.Message] {
-	return &irDoor{Log: inner}
+	return &figIRLog{Log: inner}
 }
 
 // CloseOpenToolCalls closes every outstanding invoke with an error result and
@@ -130,7 +130,7 @@ func GuardIR(inner Log[message.Message]) Log[message.Message] {
 // well-formed the moment the turn ends rather than the next time somebody
 // writes -- a fork or a read taken in between would otherwise see a call with
 // no result.
-func (l *irDoor) CloseOpenToolCalls() (int, error) {
+func (l *figIRLog) CloseOpenToolCalls() (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if !l.loaded {
@@ -153,7 +153,7 @@ func (l *irDoor) CloseOpenToolCalls() (int, error) {
 	return n, nil
 }
 
-func (l *irDoor) write(e Entry[message.Message]) (Entry[message.Message], error) {
+func (l *figIRLog) write(e Entry[message.Message]) (Entry[message.Message], error) {
 	stamped, err := l.Log.Append(e)
 	if err == nil && l.backend != nil {
 		l.backend.wroteTo(l.ariaID, time.Now().UnixMilli())
@@ -161,7 +161,7 @@ func (l *irDoor) write(e Entry[message.Message]) (Entry[message.Message], error)
 	return stamped, err
 }
 
-func (l *irDoor) isPending(id string) bool {
+func (l *figIRLog) isPending(id string) bool {
 	for _, c := range l.pending {
 		if c.ToolCallID == id {
 			return true

@@ -402,7 +402,7 @@ func (p *Provider) catchUp(figLog store.Log[message.Message], rows store.Log[[]j
 	form provider.Form, studies map[string]provider.Form) ([][]json.RawMessage, []uint64, error) {
 	if _, err := provider.CatchUp(provider.CatchUpConfig{
 		Log:         figLog,
-		Rows:        rows,
+		Translator:  rows,
 		Form:        form,
 		Studies:     studies,
 		Fingerprint: p.Fingerprint(),
@@ -418,6 +418,6 @@ func (p *Provider) catchUp(figLog store.Log[message.Message], rows store.Log[[]j
 		// would assemble is not the one on disk.
 		return nil, nil, fmt.Errorf("openaichat catch up: %w", err)
 	}
-	perMessage, lts := provider.Rows(rows)
+	perMessage, lts := provider.Translations(rows)
 	return perMessage, lts, nil
 }

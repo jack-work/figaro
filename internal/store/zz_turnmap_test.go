@@ -19,7 +19,7 @@ func TestZZTurnMap(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer be.Close()
-	lg, err := be.Open(os.Getenv("TURNMAP_ARIA"))
+	lg, err := be.OpenFigIR(os.Getenv("TURNMAP_ARIA"))
 	if err != nil {
 		t.Fatal(err)
 	}

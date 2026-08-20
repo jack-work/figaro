@@ -43,7 +43,7 @@ func TestRealTranslationResidency(t *testing.T) {
 	var totIR, totTR int
 
 	for _, n := range be.Conversations() {
-		log, err := be.Open(n.ID)
+		log, err := be.OpenFigIR(n.ID)
 		if err != nil {
 			continue
 		}
@@ -51,7 +51,7 @@ func TestRealTranslationResidency(t *testing.T) {
 		irB := log.(*treeLog[message.Message]).ResidentBytes()
 		r := row{id: n.ID, irRows: irRows, irB: irB}
 		for _, p := range []string{"anthropic", "openai", "copilot", "google"} {
-			tl, err := be.OpenTranslation(n.ID, p)
+			tl, err := be.OpenTranslator(n.ID, p)
 			if err != nil {
 				continue
 			}

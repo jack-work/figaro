@@ -47,7 +47,7 @@ func TestGenerateNumberedFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	log, err := backend.Open(id)
+	log, err := backend.OpenFigIR(id)
 	if err != nil {
 		t.Fatal(err)
 	}

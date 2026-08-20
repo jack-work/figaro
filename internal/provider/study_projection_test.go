@@ -46,9 +46,9 @@ func TestProjectionFoldsStudiedPatchesBetweenStamps(t *testing.T) {
 
 	var folded []message.Message
 	_, err := CatchUp(CatchUpConfig{
-		Log:     stamped,
-		Rows:    store.NewMemLog[[]json.RawMessage](),
-		Studies: map[string]Form{"@r": role},
+		Log:        stamped,
+		Translator: store.NewMemLog[[]json.RawMessage](),
+		Studies:    map[string]Form{"@r": role},
 		Encode: func(m message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 			folded = append(folded, m)
 			return []json.RawMessage{json.RawMessage(`{}`)}, nil
@@ -261,9 +261,9 @@ func TestAssistantRecordDoesNotSwallowAStudyWindow(t *testing.T) {
 
 	var folded []message.Message
 	_, err := CatchUp(CatchUpConfig{
-		Log:     &stampedLog{entries: entries},
-		Rows:    store.NewMemLog[[]json.RawMessage](),
-		Studies: map[string]Form{"@r": role},
+		Log:        &stampedLog{entries: entries},
+		Translator: store.NewMemLog[[]json.RawMessage](),
+		Studies:    map[string]Form{"@r": role},
 		Encode: func(m message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 			folded = append(folded, m)
 			return []json.RawMessage{json.RawMessage(`{}`)}, nil

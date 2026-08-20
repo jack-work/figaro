@@ -20,7 +20,7 @@ func TestBareBackendIsBounded(t *testing.T) {
 	// irDecodeInflation on top: several times the 4 MiB budget either way.
 	be, id := realAria(t, 400, 8<<10)
 
-	log, err := be.Open(id)
+	log, err := be.OpenFigIR(id)
 	require.NoError(t, err)
 	require.NotEmpty(t, log.Read(), "the aria must have history to hold")
 

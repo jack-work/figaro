@@ -109,7 +109,7 @@ func BenchmarkDormantList(b *testing.B) {
 					}}); err != nil {
 						b.Fatal(err)
 					}
-					log, err := backend.Open(id)
+					log, err := backend.OpenFigIR(id)
 					if err != nil {
 						b.Fatal(err)
 					}

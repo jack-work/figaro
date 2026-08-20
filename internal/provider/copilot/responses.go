@@ -396,7 +396,7 @@ func (p *responsesProvider) inputFor(in provider.SendInput) ([]json.RawMessage, 
 
 	if _, err := provider.CatchUp(provider.CatchUpConfig{
 		Log:         in.FigLog,
-		Rows:        rows,
+		Translator:  rows,
 		Form:        in.Form,
 		Studies:     in.Studies,
 		Fingerprint: p.Fingerprint(),
@@ -428,7 +428,7 @@ func (p *responsesProvider) inputFor(in provider.SendInput) ([]json.RawMessage, 
 		return nil, fmt.Errorf("copilot responses catch up: %w", err)
 	}
 
-	perMessage, _ := provider.Rows(rows)
+	perMessage, _ := provider.Translations(rows)
 	var input []json.RawMessage
 	for _, row := range perMessage {
 		input = append(input, row...)

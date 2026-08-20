@@ -58,7 +58,7 @@ func renderedKeys(log store.Log[message.Message], rows store.Log[[]json.RawMessa
 	var seen []string
 	_, err := CatchUp(CatchUpConfig{
 		Log:         log,
-		Rows:        rows,
+		Translator:  rows,
 		Form:        board,
 		Fingerprint: "v1",
 		Encode: func(msg message.Message, _ form.Snapshot) ([]json.RawMessage, error) {

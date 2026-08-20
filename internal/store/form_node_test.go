@@ -224,7 +224,7 @@ func TestObservedFormsStampIRAppends(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	log, err := be.Open(aria)
+	log, err := be.OpenFigIR(aria)
 	if err != nil {
 		t.Fatal(err)
 	}

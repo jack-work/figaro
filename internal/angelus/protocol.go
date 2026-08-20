@@ -661,7 +661,7 @@ func (h *handlers) checkForkLT(ariaID string, lt uint64) error {
 	if lt == 0 {
 		return nil
 	}
-	log, err := h.angelus.Backend.Open(ariaID)
+	log, err := h.angelus.Backend.OpenFigIR(ariaID)
 	if err != nil {
 		return fmt.Errorf("fork: open %s: %w", ariaID, err)
 	}
@@ -680,7 +680,7 @@ func (h *handlers) forkPointOf(ariaID string, turn uint64) (uint64, error) {
 	if turn == 0 {
 		return 0, nil // head fork
 	}
-	log, err := h.angelus.Backend.Open(ariaID)
+	log, err := h.angelus.Backend.OpenFigIR(ariaID)
 	if err != nil {
 		return 0, fmt.Errorf("fork: open %s: %w", ariaID, err)
 	}
@@ -981,7 +981,7 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	if err != nil {
 		return nil, fmt.Errorf("import: create conversation: %w", err)
 	}
-	log, err := h.angelus.Backend.Open(id)
+	log, err := h.angelus.Backend.OpenFigIR(id)
 	if err != nil {
 		return nil, fmt.Errorf("import: open %q: %w", id, err)
 	}
@@ -1735,7 +1735,7 @@ func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interf
 
 	// The backend returns the same shared, memoized IR instance the live
 	// agent holds, so reads run lock-free against its writes.
-	log, err := h.angelus.Backend.Open(req.FigaroID)
+	log, err := h.angelus.Backend.OpenFigIR(req.FigaroID)
 	if err != nil {
 		return nil, fmt.Errorf("aria.read: open: %w", err)
 	}

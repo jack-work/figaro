@@ -56,7 +56,7 @@ data: {"type":"message_stop"}`,
 	defer srv.Close()
 
 	be, aria := store.NewTestAria(t, "d", message.Patch{})
-	figLog, err := be.Open(aria)
+	figLog, err := be.OpenFigIR(aria)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ data: {"type":"message_stop"}`,
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := be.OpenTranslation(aria, "copilot-messages")
+	rows, err := be.OpenTranslator(aria, "copilot-messages")
 	if err != nil {
 		t.Fatal(err)
 	}

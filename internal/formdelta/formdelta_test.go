@@ -59,7 +59,7 @@ func TestBoundBoardDeltasBracketTheWindows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	log, err := be.Open(aria)
+	log, err := be.OpenFigIR(aria)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestStudiedFormDeltas(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	log, err := be.Open(aria)
+	log, err := be.OpenFigIR(aria)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestRoleKindIsDecidedServerSide(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	log, err := be.Open(aria)
+	log, err := be.OpenFigIR(aria)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +212,7 @@ func TestDeletedSourceRendersAsDeleted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	log, err := be.Open(aria)
+	log, err := be.OpenFigIR(aria)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,7 +263,7 @@ func TestAssemblyIsDeterministic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	log, err := be.Open(aria)
+	log, err := be.OpenFigIR(aria)
 	if err != nil {
 		t.Fatal(err)
 	}

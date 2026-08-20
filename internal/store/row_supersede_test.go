@@ -38,7 +38,7 @@ import (
 // costs to close is a question about the residency index's key.
 func TestTwoRowsAtOneFigaroLTDivergeBetweenAWarmAndAColdRead(t *testing.T) {
 	be, aria := NewTestAria(t, "d", message.Patch{})
-	ir, err := be.Open(aria)
+	ir, err := be.OpenFigIR(aria)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestTwoRowsAtOneFigaroLTDivergeBetweenAWarmAndAColdRead(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rows, err := be.OpenTranslation(aria, "anthropic")
+	rows, err := be.OpenTranslator(aria, "anthropic")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestTwoRowsAtOneFigaroLTDivergeBetweenAWarmAndAColdRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cold.Close()
-	coldRows, err := cold.OpenTranslation(aria, "anthropic")
+	coldRows, err := cold.OpenTranslator(aria, "anthropic")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -38,7 +38,7 @@ func TestLiveAgentPagesCarryFormDeltas(t *testing.T) {
 	require.NoError(t, err)
 
 	// Two records with a studied-form change folded between their stamps.
-	log, err := backend.Open(id)
+	log, err := backend.OpenFigIR(id)
 	require.NoError(t, err)
 	_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, TurnID: 1,

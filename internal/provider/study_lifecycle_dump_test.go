@@ -95,9 +95,9 @@ func TestStudyLifecycleDump(t *testing.T) {
 	}
 	i := 0
 	cfg := provider.CatchUpConfig{
-		Log:     log,
-		Rows:    store.NewMemLog[[]json.RawMessage](),
-		Studies: studies,
+		Log:        log,
+		Translator: store.NewMemLog[[]json.RawMessage](),
+		Studies:    studies,
 		Encode: func(m message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 			texts := provider.StudyReminderTexts(m, form.Snapshot{})
 			fmt.Printf("\n──── %s ────\n", labels[i])

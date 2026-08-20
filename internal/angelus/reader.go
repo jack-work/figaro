@@ -68,7 +68,7 @@ func (r *AriaReader) messages(id string) ([]message.Message, []store.Entry[messa
 	if id == "" {
 		return nil, nil, errors.New("empty aria id")
 	}
-	log, err := r.backend.Open(id)
+	log, err := r.backend.OpenFigIR(id)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open %s: %w", id, err)
 	}
@@ -135,7 +135,7 @@ func (r *AriaReader) serverFor(id string) (*readAria, error) {
 	}
 	r.mu.Unlock()
 
-	log, err := r.backend.Open(id)
+	log, err := r.backend.OpenFigIR(id)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", id, err)
 	}

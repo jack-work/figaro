@@ -162,7 +162,7 @@ func buildProviderFactory(loaded *config.Loaded, formTmpls *template.Template, b
 			if backend == nil {
 				return nil, fmt.Errorf("no backend")
 			}
-			return backend.OpenTranslation(aria, providerName)
+			return backend.OpenTranslator(aria, providerName)
 		}
 		return reg.Build(providerPkg.BuildContext{
 			Loaded:    loaded,

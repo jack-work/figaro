@@ -18,7 +18,7 @@ import (
 // value is ever derived a second way, this is what goes red.
 func TestTheAppendedEntryCarriesTheSameStampTheLogServes(t *testing.T) {
 	be, aria := NewTestAria(t, "d", message.Patch{})
-	ir, err := be.Open(aria)
+	ir, err := be.OpenFigIR(aria)
 	if err != nil {
 		t.Fatal(err)
 	}

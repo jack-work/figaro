@@ -13,7 +13,7 @@ import (
 // wrote it.
 func BenchmarkIRAppend(b *testing.B) {
 	be, aria := NewTestAria(b, "d", message.Patch{})
-	ir, err := be.Open(aria)
+	ir, err := be.OpenFigIR(aria)
 	if err != nil {
 		b.Fatal(err)
 	}

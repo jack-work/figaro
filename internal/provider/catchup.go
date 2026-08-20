@@ -27,7 +27,7 @@ type CatchUpConfig struct {
 	// Log is the fig IR.
 	Log store.Log[message.Message]
 	// Rows is the translator log for this provider.
-	Rows store.Log[[]json.RawMessage]
+	Translator store.Log[[]json.RawMessage]
 	// Form is the bound board's patch accessor; nil for a log with none.
 	Form Form
 	// Studies are the observed forms' accessors, keyed by form id.
@@ -48,20 +48,20 @@ type CatchUpStats struct {
 	Unwritten int // records that encoded to nothing (genesis, empty)
 }
 
-// ErrNoRows is returned when there is no translator log to write to. A send
+// ErrNoTranslator is returned when there is no translator log to write to. A send
 // that cannot read its own conversation back must fail rather than encode a
 // second copy in memory and send that: "degrade to a miss" here means showing
 // the model a different conversation than the one on disk.
-var ErrNoRows = errors.New("provider: no translator log")
+var ErrNoTranslator = errors.New("provider: no translator log")
 
 func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 	var stats CatchUpStats
-	if cfg.Rows == nil {
-		return stats, ErrNoRows
+	if cfg.Translator == nil {
+		return stats, ErrNoTranslator
 	}
 
 	var watermark uint64
-	if tail, ok := cfg.Rows.PeekTail(); ok {
+	if tail, ok := cfg.Translator.PeekTail(); ok {
 		watermark = tail.FigaroLT
 		// THE NEWEST ROW IS THE ONLY ONE THAT CAN BE LYING. A row names its
 		// record by position, and a position can be reissued: a row written
@@ -69,13 +69,13 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 		// next. Only the tail can be in that state -- everything below it is
 		// followed by a record that did land -- so ONE comparison settles it,
 		// not a scan.
-		if tail.RecordHash != "" {
+		if tail.FigaroHash != "" {
 			if at, ok := cfg.Log.Lookup(watermark); ok {
-				if have, err := store.RecordHash(at.Payload); err == nil && have != tail.RecordHash {
+				if have, err := store.FigaroHash(at.Payload); err == nil && have != tail.FigaroHash {
 					// The row describes a record that is not there. Clear and
 					// re-derive: rows are derived state and this is the one
 					// canonical moment at which they regenerate.
-					if cerr := cfg.Rows.Clear(); cerr != nil {
+					if cerr := cfg.Translator.Clear(); cerr != nil {
 						return stats, fmt.Errorf("clear misaligned rows at %d: %w", watermark, cerr)
 					}
 					watermark = 0
@@ -194,15 +194,15 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 			stats.Unwritten++
 			continue
 		}
-		hash, herr := store.RecordHash(entry.Payload)
+		hash, herr := store.FigaroHash(entry.Payload)
 		if herr != nil {
 			return stats, fmt.Errorf("hash record at %d: %w", entry.LT, herr)
 		}
-		if _, werr := cfg.Rows.Append(store.Entry[[]json.RawMessage]{
+		if _, werr := cfg.Translator.Append(store.Entry[[]json.RawMessage]{
 			FigaroLT:    entry.LT,
 			Payload:     encoded,
 			Fingerprint: cfg.Fingerprint,
-			RecordHash:  hash,
+			FigaroHash:  hash,
 		}); werr != nil {
 			if cfg.ReportWriteError != nil {
 				cfg.ReportWriteError(entry.LT, werr)
@@ -216,7 +216,7 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 
 // Rows reads a translator log whole, in order: the messages array, as it
 // lies on disk. This is the read that replaced the projection's accumulator.
-func Rows(rows store.Log[[]json.RawMessage]) (perMessage [][]json.RawMessage, lts []uint64) {
+func Translations(rows store.Log[[]json.RawMessage]) (perMessage [][]json.RawMessage, lts []uint64) {
 	if rows == nil {
 		return nil, nil
 	}

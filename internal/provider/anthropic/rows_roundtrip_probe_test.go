@@ -56,7 +56,7 @@ func TestRowsRoundTripThroughTheAssembler(t *testing.T) {
 		lostKeys                          = map[string]int{}
 	)
 	for _, node := range be.Nodes() {
-		log, err := be.OpenTranslation(node.ID, "anthropic")
+		log, err := be.OpenTranslator(node.ID, "anthropic")
 		if err != nil {
 			continue
 		}

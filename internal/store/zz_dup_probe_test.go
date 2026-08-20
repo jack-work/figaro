@@ -22,7 +22,7 @@ func TestTranslationRowsPerRecord(t *testing.T) {
 	var arias, rows, dupRecords, maxPer int
 	fps := map[string]int{}
 	for _, n := range be.Nodes() {
-		log, err := be.OpenTranslation(n.ID, "anthropic")
+		log, err := be.OpenTranslator(n.ID, "anthropic")
 		if err != nil {
 			continue
 		}

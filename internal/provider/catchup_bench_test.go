@@ -36,7 +36,7 @@ func benchRowLog(b *testing.B, n int) *store.MemLog[[]json.RawMessage] {
 	return rows
 }
 
-// BenchmarkRows is the ASSEMBLY read, and it is O(history) per send by
+// BenchmarkTranslations is the ASSEMBLY read, and it is O(history) per send by
 // design: the provider asks the log for the whole conversation and marshals
 // it. What it costs is SLICE HEADERS, not payloads -- the rows are shared
 // with the log, never copied -- which is the quantity to read off B/op.
@@ -45,14 +45,14 @@ func benchRowLog(b *testing.B, n int) *store.MemLog[[]json.RawMessage] {
 // MemLog.Append copies the entries slice AND REBUILDS byFigaroLT on every
 // append, so building the log costs 121 ms at 1,000, 5.01 s at 10,000 and
 // 2 m 20 s at 50,000 on this machine.
-func BenchmarkRows(b *testing.B) {
+func BenchmarkTranslations(b *testing.B) {
 	for _, n := range []int{1_000, 10_000} {
 		b.Run(strconv.Itoa(n), func(b *testing.B) {
 			rows := benchRowLog(b, n)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				perMessage, lts := Rows(rows)
+				perMessage, lts := Translations(rows)
 				if len(perMessage) != n || len(lts) != n {
 					b.Fatalf("got %d rows, want %d", len(perMessage), n)
 				}

@@ -28,7 +28,7 @@ func TestWhereTheForkPrefixIsResident(t *testing.T) {
 	l, _ := b.CreateOutfit("d", patchSet(map[string]string{"system.model": "m"}))
 	conv, _ := b.CreateConversation(l)
 
-	ir, _ := b.Open(conv)
+	ir, _ := b.OpenFigIR(conv)
 	const history = 300
 	for i := 0; i < history; i++ {
 		if _, err := ir.Append(Entry[message.Message]{Payload: message.Message{
@@ -45,7 +45,7 @@ func TestWhereTheForkPrefixIsResident(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	altIR, err := b.Open(alt)
+	altIR, err := b.OpenFigIR(alt)
 	if err != nil {
 		t.Fatal(err)
 	}

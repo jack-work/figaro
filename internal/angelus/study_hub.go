@@ -78,7 +78,7 @@ type studyBackend interface {
 // the board, so a failed narration is logged by the append path rather than
 // failing the verb.
 func (h *handlers) markStudyForHub(ariaID, formID string, began bool) {
-	log, err := h.angelus.Backend.Open(ariaID)
+	log, err := h.angelus.Backend.OpenFigIR(ariaID)
 	if err != nil {
 		return
 	}

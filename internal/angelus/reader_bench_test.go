@@ -30,7 +30,7 @@ func benchStore(tb testing.TB, n int) (store.Backend, string) {
 	if err != nil {
 		tb.Fatal(err)
 	}
-	log, err := backend.Open(id)
+	log, err := backend.OpenFigIR(id)
 	if err != nil {
 		tb.Fatal(err)
 	}

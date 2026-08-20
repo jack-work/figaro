@@ -23,7 +23,7 @@ func realAria(t testing.TB, n, textBytes int) (*XwalBackend, string) {
 	id, err := be.CreateConversation(outfit)
 	require.NoError(t, err)
 
-	log, err := be.Open(id)
+	log, err := be.OpenFigIR(id)
 	require.NoError(t, err)
 	body := make([]byte, textBytes)
 	for i := range body {

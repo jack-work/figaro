@@ -321,7 +321,7 @@ func NewAgent(cfg Config) *Agent {
 // rows, lock-free), and closes it on Fork/Remove/Close: the agent never
 // closes what Open returns.
 func (a *Agent) newLog() store.Log[message.Message] {
-	log, err := a.backend.Open(a.id)
+	log, err := a.backend.OpenFigIR(a.id)
 	if err != nil {
 		// Falling back to memory here would silently orphan the on-disk
 		// content: subsequent Reads return 0 units and any live-subscribe

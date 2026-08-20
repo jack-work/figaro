@@ -136,7 +136,7 @@ func newDrainTestAgent(t *testing.T, ctx context.Context) *Agent {
 	t.Helper()
 	board, _ := form.Open("")
 	be, id := store.NewTestAria(t, "d", message.Patch{})
-	log, err := be.Open(id)
+	log, err := be.OpenFigIR(id)
 	if err != nil {
 		t.Fatal(err)
 	}

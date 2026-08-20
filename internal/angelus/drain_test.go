@@ -65,7 +65,7 @@ func TestShutdownDrainSealsPartialTurn(t *testing.T) {
 	a.Shutdown(2 * time.Second)
 	assert.Less(t, time.Since(start), 5*time.Second)
 
-	ir, err := backend.Open(conv)
+	ir, err := backend.OpenFigIR(conv)
 	require.NoError(t, err)
 	tail, ok := ir.PeekTail()
 	require.True(t, ok)
@@ -91,7 +91,7 @@ model = "mock-model"
 	require.NoError(t, err)
 	conv, err := backend.CreateConversation(outfit)
 	require.NoError(t, err)
-	ir, err := backend.Open(conv)
+	ir, err := backend.OpenFigIR(conv)
 	require.NoError(t, err)
 	_, err = ir.Append(store.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("run it")},

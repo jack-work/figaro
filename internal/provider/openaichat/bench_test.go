@@ -64,7 +64,7 @@ func benchProvider(b *testing.B, mode provider.MarkMode) *Provider {
 // history and marshals it). The O(new) property now belongs to
 // provider.CatchUp alone and is asserted by count in
 // TestCatchUpVisitsOnlyWhatIsNew; what O(history) costs is measured by
-// BenchmarkRows.
+// BenchmarkTranslations.
 func BenchmarkCatchUp(b *testing.B) {
 	for _, n := range []int{1_000, 10_000, 50_000} {
 		b.Run("Cold/"+strconv.Itoa(n), func(b *testing.B) {

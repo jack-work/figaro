@@ -115,10 +115,10 @@ func translatedTrunk(t *testing.T, namespaces ...string) (b *XwalBackend, parent
 	l, _ := b.CreateOutfit("d", patchSet(map[string]string{"system.model": "m"}))
 	parent, _ = b.CreateConversation(l)
 
-	ir, _ := b.Open(parent)
+	ir, _ := b.OpenFigIR(parent)
 	trans := map[string]Log[[]json.RawMessage]{}
 	for _, ns := range namespaces {
-		tl, terr := b.OpenTranslation(parent, ns)
+		tl, terr := b.OpenTranslator(parent, ns)
 		if terr != nil {
 			t.Fatal(terr)
 		}
@@ -159,12 +159,12 @@ func TestATranslationSeedNeverCrossesNamespaces(t *testing.T) {
 	defer b.Close()
 
 	for _, ns := range []string{"anthropic", "copilot-messages"} {
-		if _, err := b.OpenTranslation(parent, ns); err != nil {
+		if _, err := b.OpenTranslator(parent, ns); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for _, ns := range []string{"anthropic", "copilot-messages"} {
-		l, err := b.OpenTranslation(childA, ns)
+		l, err := b.OpenTranslator(childA, ns)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -200,7 +200,7 @@ func TestSeededTranslationEqualsAnUnseededOne(t *testing.T) {
 	b, parent, childA, _ := forkedPair(t)
 	dir := b.root
 
-	pl, err := b.OpenTranslation(parent, "anthropic")
+	pl, err := b.OpenTranslator(parent, "anthropic")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestSeededTranslationEqualsAnUnseededOne(t *testing.T) {
 		}
 	}
 	_ = pl.Read()
-	cl, err := b.OpenTranslation(childA, "anthropic")
+	cl, err := b.OpenTranslator(childA, "anthropic")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ func TestSeededTranslationEqualsAnUnseededOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer b2.Close()
-	cl2, err := b2.OpenTranslation(childA, "anthropic")
+	cl2, err := b2.OpenTranslator(childA, "anthropic")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +258,7 @@ func TestTranslationSeedSharesTheAncestorsBytes(t *testing.T) {
 			b, parent, childA, childB := translatedTrunk(t, ns)
 			defer b.Close()
 
-			pl, err := b.OpenTranslation(parent, ns)
+			pl, err := b.OpenTranslator(parent, ns)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -273,7 +273,7 @@ func TestTranslationSeedSharesTheAncestorsBytes(t *testing.T) {
 
 			compared, shared := 0, 0
 			for _, child := range []string{childA, childB} {
-				cl, cerr := b.OpenTranslation(child, ns)
+				cl, cerr := b.OpenTranslator(child, ns)
 				if cerr != nil {
 					t.Fatal(cerr)
 				}
@@ -322,7 +322,7 @@ func TestTheFingerprintCheckBlocksOnlyAfterADialectChange(t *testing.T) {
 	b, parent, childA, _ := translatedTrunk(t, "anthropic")
 	defer b.Close()
 
-	pl, err := b.OpenTranslation(parent, "anthropic")
+	pl, err := b.OpenTranslator(parent, "anthropic")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -910,7 +910,7 @@ firstDone:
 
 	// Re-open the IR through the backend: the user + assistant turns are
 	// durable (the backend returns the same shared, persisted log).
-	log, err := backend.Open(conv)
+	log, err := backend.OpenFigIR(conv)
 	require.NoError(t, err)
 	turns := nonGenesis(unwrapForTest(log.Read()))
 	require.GreaterOrEqual(t, len(turns), 2, "user + assistant should be durable")
@@ -1022,7 +1022,7 @@ done:
 	b2, err := store.NewXwalBackend(storeDir, 0)
 	require.NoError(t, err)
 	defer b2.Close()
-	log, err := b2.Open(conv)
+	log, err := b2.OpenFigIR(conv)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(nonGenesis(unwrapForTest(log.Read()))), 2)
 }
@@ -1035,7 +1035,7 @@ func TestAgent_BootRepairsDanglingToolUse(t *testing.T) {
 	storeDir := t.TempDir()
 	backend, conv := backedConv(t, storeDir)
 
-	pre, err := backend.Open(conv)
+	pre, err := backend.OpenFigIR(conv)
 	require.NoError(t, err)
 	_, err = pre.Append(store.Entry[message.Message]{
 		Payload: message.Message{

@@ -134,7 +134,7 @@ func BenchmarkParseCachedMessages(b *testing.B) {
 			if _, _, err := p.catchUp(log, cache, nil, nil); err != nil {
 				b.Fatal(err)
 			}
-			perMessage, lts := provider.Rows(cache)
+			perMessage, lts := provider.Translations(cache)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {

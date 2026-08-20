@@ -1176,7 +1176,7 @@ func (a *Anthropic) resolveModel(snap form.Snapshot) string {
 func (a *Anthropic) catchUp(figLog store.Log[message.Message], rows store.Log[[]json.RawMessage], form provider.Form, studies map[string]provider.Form) ([][]json.RawMessage, []uint64, error) {
 	if _, err := provider.CatchUp(provider.CatchUpConfig{
 		Log:         figLog,
-		Rows:        rows,
+		Translator:  rows,
 		Form:        form,
 		Studies:     studies,
 		Fingerprint: a.Fingerprint(),
@@ -1192,7 +1192,7 @@ func (a *Anthropic) catchUp(figLog store.Log[message.Message], rows store.Log[[]
 		// would assemble is not the one on disk.
 		return nil, nil, fmt.Errorf("anthropic catch up: %w", err)
 	}
-	perMessage, lts := provider.Rows(rows)
+	perMessage, lts := provider.Translations(rows)
 	return perMessage, lts, nil
 }
 

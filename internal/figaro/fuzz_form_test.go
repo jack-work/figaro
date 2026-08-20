@@ -351,7 +351,7 @@ func TestFuzzFormUnkeyed(t *testing.T) {
 		}
 		marks := make([]mark, 0, turns)
 
-		log, err := backend.Open(id)
+		log, err := backend.OpenFigIR(id)
 		require.NoError(t, err)
 
 		for k := 0; k < turns; k++ {

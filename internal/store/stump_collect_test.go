@@ -72,7 +72,7 @@ func TestCollectingAStumpLeavesSiblingsIntact(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("stumps = %v, want only keep's", got)
 	}
-	if _, err := b.Open(kept); err != nil {
+	if _, err := b.OpenFigIR(kept); err != nil {
 		t.Fatalf("survivor unreadable after a sibling stump was collected: %v", err)
 	}
 }
@@ -108,7 +108,7 @@ func TestACollectedStumpIsRemintedByTheNextAria(t *testing.T) {
 	if err != nil {
 		t.Fatalf("spawn under a re-minted stump: %v", err)
 	}
-	if _, err := b.Open(revived); err != nil {
+	if _, err := b.OpenFigIR(revived); err != nil {
 		t.Fatalf("aria under a re-minted stump: %v", err)
 	}
 }

@@ -43,7 +43,7 @@ func forkedPair(t *testing.T) (b *XwalBackend, parent, childA, childB string) {
 	l, _ := b.CreateOutfit("d", patchSet(map[string]string{"system.model": "m"}))
 	parent, _ = b.CreateConversation(l)
 
-	ir, _ := b.Open(parent)
+	ir, _ := b.OpenFigIR(parent)
 	for i := 0; i < 200; i++ {
 		if _, err := ir.Append(Entry[message.Message]{Payload: message.Message{
 			Role:    message.RoleInput,
@@ -82,7 +82,7 @@ func TestOpeningAForkWithoutAResidentAncestorDecodesItsOwnCopy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pIR, _ := b1.Open(parent)
+	pIR, _ := b1.OpenFigIR(parent)
 	p := pIR.Read()
 	b1.Close()
 
@@ -91,7 +91,7 @@ func TestOpeningAForkWithoutAResidentAncestorDecodesItsOwnCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer b2.Close()
-	aIR, _ := b2.Open(childA)
+	aIR, _ := b2.OpenFigIR(childA)
 	a := aIR.Read()
 	if len(p) == 0 || len(a) == 0 {
 		t.Fatal("a log read nothing; the fixture cannot show duplication")
@@ -131,7 +131,7 @@ func TestShallowCopyOfEntriesSharesPayloadStrings(t *testing.T) {
 	b, parent, _, _ := forkedPair(t)
 	defer b.Close()
 
-	pIR, _ := b.Open(parent)
+	pIR, _ := b.OpenFigIR(parent)
 	rows := pIR.Read()
 	if len(rows) == 0 {
 		t.Fatal("nothing resident")
