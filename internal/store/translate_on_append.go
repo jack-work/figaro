@@ -99,6 +99,26 @@ func (b *XwalBackend) translateOnAppend(ariaID string, source Log[message.Messag
 	if b == nil || b.encoders.empty() {
 		return
 	}
+	// AN ASSISTANT ENTRY IS TRANSLATED BY THE PROVIDER THAT PRODUCED IT, NOT
+	// HERE. Its wire form is the provider's OWN bytes -- thinking signatures,
+	// encrypted reasoning -- which the fig IR deliberately does not hold, and
+	// the turn commits them durably when the turn ends.
+	//
+	// A RENDERING WRITTEN HERE WOULD BE A SECOND ENTRY AT ONE FigaroLT, and
+	// that is not a tie: the residency index is keyed by FigaroLT, a warm read
+	// serves the FIRST entry and a cold read serves both
+	// (TestTwoEntriesAtOneFigaroLTDivergeBetweenAWarmAndAColdRead). The
+	// rendering lands first, so the model would be shown the UNSIGNED text
+	// and the signed original would sit underneath it, unreachable until a
+	// restart. Caught by scripts/live/onappendlive.sh, which read "4 5 5"
+	// where the fig IR had 3 4 5.
+	//
+	// An assistant entry whose native commit never happens -- a repair, an
+	// interrupted turn -- is translated by the next catch-up, exactly as
+	// before.
+	if e.Payload.Role == message.RoleOutput {
+		return
+	}
 	infos, err := b.store.trunks.Channels(ariaID)
 	if err != nil {
 		slog.Warn("translate on append: channels", "aria", ariaID, "err", err)

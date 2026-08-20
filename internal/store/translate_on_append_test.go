@@ -173,15 +173,31 @@ func TestTheWritePathTranslatesTheRecordsItMintsItself(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := trans.Read()
-	if len(got) != len(appended) {
-		t.Fatalf("appended %d fig IR entries but %d translations: a minted record was not translated",
-			len(appended), len(got))
-	}
-	for i := range appended {
-		if got[i].FigaroLT != appended[i].LT {
-			t.Fatalf("translation %d names FigaroLT %d, want %d", i, got[i].FigaroLT, appended[i].LT)
+	// The ASSISTANT entry belongs to the provider that produced it, so what
+	// must be translated here is the minted tool-close and the message after
+	// it -- and the minted one is the whole point: nobody upstream knows it
+	// exists.
+	var want []uint64
+	for _, e := range appended {
+		if e.Payload.Role != message.RoleOutput {
+			want = append(want, e.LT)
 		}
+	}
+	var got []uint64
+	for _, e := range trans.Read() {
+		got = append(got, e.FigaroLT)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("translations name %v, want %v -- the minted record must be among them", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("translations name %v, want %v", got, want)
+		}
+	}
+	if want[0] != appended[1].LT {
+		t.Fatalf("the first translated entry is %d, but the MINTED tool-close is %d",
+			want[0], appended[1].LT)
 	}
 }
 
@@ -212,5 +228,54 @@ func TestRegisteringASecondEncoderKeepsTheFirst(t *testing.T) {
 	}
 	if second.calls != 1 {
 		t.Fatalf("the second encoder ran %d times, want 1", second.calls)
+	}
+}
+
+// AN ASSISTANT ENTRY IS LEFT TO THE PROVIDER THAT PRODUCED IT.
+//
+// Its wire form carries provider-native material the fig IR does not hold, and
+// the turn commits that durably. A rendering written here would be a SECOND
+// entry at one FigaroLT -- and the residency index cannot represent that: a
+// warm read serves the first, so the model would get the unsigned rendering
+// while the signed original sat underneath it until a restart.
+//
+// Found live, not in a fixture: scripts/live/onappendlive.sh read translations
+// naming LTs "4 5 5" against fig IR entries "3 4 5".
+func TestAnAssistantEntryIsNotTranslatedOnAppend(t *testing.T) {
+	be, aria := NewTestAria(t, "d", message.Patch{})
+	enc := &countingEncoder{provider: "anthropic"}
+	be.AddTranslatorEncoders(enc)
+	if _, err := be.OpenTranslator(aria, "anthropic"); err != nil {
+		t.Fatal(err)
+	}
+	log, err := be.OpenFigIR(aria)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	writeFigIR(t, log, "a user message")
+	if _, err := log.Append(Entry[message.Message]{Payload: message.Message{
+		Role:    message.RoleOutput,
+		Content: []message.Content{message.TextContent("an assistant message")},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	trans, err := be.OpenTranslator(aria, "anthropic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[uint64]int{}
+	for _, e := range trans.Read() {
+		seen[e.FigaroLT]++
+	}
+	for lt, n := range seen {
+		if n > 1 {
+			t.Fatalf("FigaroLT %d has %d translations: a second entry at one coordinate "+
+				"is invisible to a warm read", lt, n)
+		}
+	}
+	if enc.calls != 1 {
+		t.Fatalf("the encoder ran %d times, want 1 -- the assistant entry belongs to the provider", enc.calls)
 	}
 }
