@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/jack-work/figaro/internal/message"
 )
@@ -28,37 +29,48 @@ type TranslatorEncoder interface {
 }
 
 // translatorEncoders is the injected set, keyed by provider name.
+//
+// PUBLISHED, NOT LOCKED. It is written when a provider is built -- rarely,
+// once per provider -- and read on EVERY fig IR append. A reader takes no
+// lock: it loads one immutable map. Writers still exclude each other, because
+// add is read-modify-write and there is more than one of them.
 type translatorEncoders struct {
-	mu sync.RWMutex
-	by map[string]TranslatorEncoder
+	writeMu sync.Mutex
+	by      atomic.Pointer[map[string]TranslatorEncoder]
 }
 
 // add registers encoders WITHOUT dropping the ones already there: providers
-// are built one at a time, as arias open.
+// are built one at a time, as arias open. It builds a successor and publishes
+// it, so a reader mid-flight keeps the map it loaded.
 func (t *translatorEncoders) add(encs []TranslatorEncoder) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.by == nil {
-		t.by = map[string]TranslatorEncoder{}
+	t.writeMu.Lock()
+	defer t.writeMu.Unlock()
+	next := map[string]TranslatorEncoder{}
+	if cur := t.by.Load(); cur != nil {
+		for k, v := range *cur {
+			next[k] = v
+		}
 	}
 	for _, e := range encs {
 		if e != nil && e.Provider() != "" {
-			t.by[e.Provider()] = e
+			next[e.Provider()] = e
 		}
 	}
+	t.by.Store(&next)
 }
 
 func (t *translatorEncoders) get(provider string) (TranslatorEncoder, bool) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	e, ok := t.by[provider]
+	cur := t.by.Load()
+	if cur == nil {
+		return nil, false
+	}
+	e, ok := (*cur)[provider]
 	return e, ok
 }
 
 func (t *translatorEncoders) empty() bool {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return len(t.by) == 0
+	cur := t.by.Load()
+	return cur == nil || len(*cur) == 0
 }
 
 // AddTranslatorEncoders registers encoders the fig IR write path uses to

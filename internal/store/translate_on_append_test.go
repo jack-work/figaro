@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/jack-work/figaro/internal/message"
 )
@@ -278,4 +279,41 @@ func TestAnAssistantEntryIsNotTranslatedOnAppend(t *testing.T) {
 	if enc.calls != 1 {
 		t.Fatalf("the encoder ran %d times, want 1 -- the assistant entry belongs to the provider", enc.calls)
 	}
+}
+
+// A READ OF THE ENCODER SET TAKES NO LOCK, so a fig IR append is never held up
+// by a provider being built for some other aria. The property is the artifact:
+// hold the WRITER's lock and serve a read from another goroutine. Under the
+// RWMutex this test deadlocks; under an atomic publish it returns.
+//
+// CANARY: restore `writeMu` around the body of get() and this goes red by
+// timeout.
+func TestReadingTheEncoderSetTakesNoLock(t *testing.T) {
+	var set translatorEncoders
+	set.add([]TranslatorEncoder{fakeEncoder{name: "anthropic"}})
+
+	set.writeMu.Lock()
+	defer set.writeMu.Unlock()
+
+	done := make(chan bool, 1)
+	go func() {
+		_, ok := set.get("anthropic")
+		done <- ok
+	}()
+	select {
+	case ok := <-done:
+		if !ok {
+			t.Fatal("the read did not find the encoder it was given")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("a read blocked behind a writer: the encoder set is on the append path " +
+			"and a provider being built for another aria must not hold it up")
+	}
+}
+
+type fakeEncoder struct{ name string }
+
+func (f fakeEncoder) Provider() string { return f.name }
+func (f fakeEncoder) EncodeEntry(string, Log[message.Message], Entry[message.Message]) ([]json.RawMessage, string, error) {
+	return nil, "", nil
 }

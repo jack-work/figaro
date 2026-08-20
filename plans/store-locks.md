@@ -178,3 +178,56 @@ Two removed outright, four moved off a read path, and one hot path (segment's)
 in flight. THE COUNT IS NOT THE GOAL: a mutex nobody contends costs a cache
 line, and a mutex on a path every reader takes costs the shape of the whole
 design -- which is what kept two cache shapes alive in this stack for a month.
+
+# THE TWO LOCKS THIS CAMPAIGN ITSELF ADDED (ede92072, 2026-08-20)
+
+The standing goal is to reduce the mutexes, and the count has moved 83 -> 81 in
+the whole campaign. Both of the locks the campaign's own new code introduced
+are audited here against the standing test -- WHAT INVARIANT SPANS THE CRITICAL
+SECTION THAT COULD NOT BE PUBLISHED AS ONE IMMUTABLE VALUE?
+
+## 1. translatorEncoders.mu -- REMOVED (published instead)
+
+It guarded a map WRITTEN ONCE PER PROVIDER AND READ ON EVERY FIG IR APPEND.
+That is the standing test's own named suspect: "a lock protecting a map that is
+written once and read forever". The answer to the question is "none", so the
+cure is the one this campaign has used before -- PUBLISH, don't delete: readers
+load an immutable map through an atomic pointer, writers still exclude each
+other because add() is read-modify-write.
+
+    TestReadingTheEncoderSetTakesNoLock holds the WRITER's lock and serves a
+    read from another goroutine. Canary: put writeMu back around get() and it
+    goes red by timeout in 3.00s.
+
+## 2. OnAppend.mu -- RAISED, NOT TOUCHED
+
+RAISED under the escalation rule ("any lock found to have genuinely concurrent
+callers is raised to Gluck, not worked around"), because the cure depends on a
+contract I should not assume.
+
+WHAT IT IS: ONE process-wide mutex on the OnAppend adapter, guarding a
+map[ariaID]*Deriver. Two properties, both worth his eye:
+
+  a. IT IS HELD ACROSS THE DERIVATION, not just the map lookup. So every
+     aria's translation serializes against every other aria's, on one lock, on
+     the fig IR write path.
+
+  b. IT IS HELD ACROSS CALLS OUT OF THE PACKAGE -- o.translator(ariaID),
+     trans.PeekTail(), and d.SeedAt(source, watermark) which does a log
+     Lookup. That is the deadlock shape this campaign already documented: "a
+     lock whose critical section calls out into a hook, a callback or an
+     interface method".
+
+WHAT WOULD FIX IT, AND WHY IT IS NOT MINE TO DO: the per-aria Deriver needs no
+lock at all IF appends for one aria are serialized -- and they appear to be,
+because figIRLog (the door) is PER ARIA and carries its own mutex. Then the
+map lock need only cover fetch-or-create, and the derivation runs outside it.
+
+    THAT IS THE CONCURRENCY-DOMAIN QUESTION THIS FILE ALREADY NAMES: the cure
+    is to STATE THE CONTRACT -- one writer per aria, concurrent readers --
+    ASSERTED WHERE IT CAN FAIL rather than commented. Asserting it is the work;
+    assuming it is the defect.
+
+I have not measured what (a) costs. The honest quantity would be appends
+serialized per second across N concurrent arias, and no instrument in the tree
+reports it.
