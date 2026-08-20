@@ -298,6 +298,10 @@ func (b *XwalBackend) OpenTranslator(ariaID, providerName string) (Log[[]json.Ra
 		newXwalLog[[]json.RawMessage](b.store, ariaID, ch, false),
 		ariaID, cache, transEntrySize, transKey[[]json.RawMessage],
 		func() []fwtree.Ref { return b.store.Lineage(ariaID) }).
+		// A COORDINATE NOW HOLDS EXACTLY ONE ENTRY, because the channel is
+		// addressed by its own LT, so the writer's append can be published
+		// rather than fetched back.
+		seedingTail().
 		withNodeOpener(func(node string) Log[[]json.RawMessage] {
 			return newXwalLog[[]json.RawMessage](b.store, node, ch, false)
 		})

@@ -91,11 +91,19 @@ func newTreeLog[T any](inner Log[T], node string, cache *fwtree.Cache[Entry[T]],
 // irKey addresses a channel whose FigaroLT is unique per record: the fig IR.
 func irKey[T any](e Entry[T]) uint64 { return e.FigaroLT }
 
-// transKey addresses the translation channel: FigaroLT, the IR record a row
-// translates, which is what every reader passes and what the substrate seeks
-// by. A row written WITHOUT one cannot be addressed by any reader either, so it
-// is not a case this cache can rescue -- it is a malformed write.
-func transKey[T any](e Entry[T]) uint64 { return e.FigaroLT }
+// transKey addresses the translation channel BY ITS OWN CHANNEL LT.
+//
+// IT USED TO BE FigaroLT, WHICH IS A FOREIGN KEY. An index may be keyed only
+// by something the channel guarantees unique, and FigaroLT there names an
+// entry in ANOTHER channel: nothing stops two entries carrying the same one,
+// and when that happened the index held one while the segments held both --
+// a warm read served one entry and a cold read served two.
+//
+// The channel's own LT is unique and DENSE by construction, which also makes
+// a coordinate hold exactly one entry (so the writer can seed its own append)
+// and puts the arithmetic fast path within reach. FigaroLT stays on the entry
+// as the field that names what a row translates; it is no longer the address.
+func transKey[T any](e Entry[T]) uint64 { return e.LT }
 
 // seedingTail marks a channel whose coordinate holds exactly one entry, so the
 // writer's own append can be published without replacing anything.

@@ -1858,3 +1858,35 @@ record held invalid JSON; two ran it through json.Marshal. Two behaviours, four
 names, no signal at the call site. SetString ENCODES and SetRawStrings does
 NOT, and the names now say which. That split predates any typed value and would
 be worth fixing if the representation never moved at all.
+
+## THE LAW'S FIRST APPLICATION, AND THE INSTRUMENT WROTE ITS OWN REPLACEMENT
+## (223a0986, 2026-08-20)
+
+    AN INDEX MAY BE KEYED ONLY BY SOMETHING THE CHANNEL GUARANTEES UNIQUE.
+
+The translation channel was addressed by FigaroLT -- a FOREIGN key naming an
+entry in another channel, unique only by convention. It is addressed by its
+OWN channel LT now, which is unique and dense by construction. FigaroLT stays
+on the entry as the field that says what a row translates; it is no longer the
+address.
+
+WHAT THAT CLOSED, measured by the test that used to assert the defect: two
+entries at one FigaroLT gave warm=1 and cold=2 -- a live handle and a fresh
+process reading one channel differently -- and now give 2 and 2.
+
+AND THE TEST TOLD ME WHAT TO DO WITH IT. Its failure message, written when the
+divergence was found and could not be fixed then, said: "if these now AGREE
+the divergence is closed and this test should assert equality instead." It
+now asserts equality, and the canary is the old key: restoring transKey to
+FigaroLT reproduces warm=1 cold=2 exactly.
+
+    A TEST THAT NAMES THE CONDITION FOR ITS OWN REWRITE SURVIVES THE FIX. The
+    alternative -- deleting it as "no longer applicable" -- loses the only
+    reproducer of a defect class that will recur the next time somebody keys
+    an index by a convenient number.
+
+TWO THINGS CAME FREE WITH IT: a coordinate now holds exactly one entry, so the
+translator log seeds its own append instead of fetching it back
+(seedingTail), and the coordinates are DENSE, which is the precondition for
+the arithmetic fast path that Q1 was asking about at the other end of the
+stack.
