@@ -1024,7 +1024,21 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 
 	nm, err := a.drainSSE(ctx, resp.Body, model, bus)
 	if err != nil {
-		// Broken stream: drop partial data.
+		// A CANCELLED TURN IS A PREMATURE CLOSE, NOT A BROKEN STREAM. What the
+		// accumulator holds is real: it was produced by this provider from
+		// this wire, so the message and its native payload agree by
+		// construction. Dropping it made figaro synthesise a partial from its
+		// OWN text accumulator -- a message with no native payload, whose
+		// translation had to be re-encoded and lost every signed thinking
+		// block. Anything else that ends a stream (a scanner fault, a
+		// truncated body) is still a broken stream and still drops.
+		if !errors.Is(err, context.Canceled) || len(nm.Content) == 0 {
+			return err
+		}
+		nm.StopReason = string(message.StopAborted)
+		if perr := a.handOver(nm, bus); perr != nil {
+			return perr
+		}
 		return err
 	}
 	if len(nm.Content) == 0 {
@@ -1040,6 +1054,23 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	// the fig IR side appends it: only that side has the LT, so "the fig IR
 	// entry exists before anything that names it" is a SHAPE rather than a
 	// rule five call sites had to remember.
+	bus.PushMessageEnd(string(msg.StopReason))
+	native, err := a.assistantCacheNative(nm)
+	if err != nil {
+		return fmt.Errorf("anthropic cache assistant: %w", err)
+	}
+	bus.PushFigaro(msg, native)
+	return nil
+}
+
+// handOver gives the fig IR side the message and the native payload from ONE
+// accumulator. The normal close and the premature close both go through it,
+// so a partial message cannot be shaped differently from a whole one.
+func (a *Anthropic) handOver(nm nativeMessage, bus provider.Bus) error {
+	msg := decodeNativeMessage(nm)
+	if msg.Timestamp == 0 {
+		msg.Timestamp = time.Now().UnixMilli()
+	}
 	bus.PushMessageEnd(string(msg.StopReason))
 	native, err := a.assistantCacheNative(nm)
 	if err != nil {
@@ -1095,6 +1126,21 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 
 	nm, err := a.drainSSE(ctx, resp.Body, model, bus)
 	if err != nil {
+		// A CANCELLED TURN IS A PREMATURE CLOSE, NOT A BROKEN STREAM. What the
+		// accumulator holds is real: it was produced by this provider from
+		// this wire, so the message and its native payload agree by
+		// construction. Dropping it made figaro synthesise a partial from its
+		// OWN text accumulator -- a message with no native payload, whose
+		// translation had to be re-encoded and lost every signed thinking
+		// block. Anything else that ends a stream (a scanner fault, a
+		// truncated body) is still a broken stream and still drops.
+		if !errors.Is(err, context.Canceled) || len(nm.Content) == 0 {
+			return err
+		}
+		nm.StopReason = string(message.StopAborted)
+		if perr := a.handOver(nm, bus); perr != nil {
+			return perr
+		}
 		return err
 	}
 	if len(nm.Content) == 0 {

@@ -83,11 +83,17 @@ func (b *turnBus) PushFigaro(m message.Message, caches ...provider.AssistantCach
 		cache = &copy
 	}
 	ack := make(chan error, 1)
-	select {
-	case b.events <- busEvent{kind: evFigaro, msg: m, cache: cache, ack: ack}:
-	case <-b.ctx.Done():
-		panic(b.ctx.Err())
-	}
+	// THE HAND-OVER IS NOT RACED AGAINST THE CANCELLATION IT REPORTS. This
+	// used to select on b.ctx.Done() and PANIC when it won -- so a provider
+	// closing prematurely, which happens precisely because the context was
+	// cancelled, could never deliver its partial message. The panic was
+	// recovered into a send error, so the symptom was a missing translation
+	// and nothing in the log to say why.
+	//
+	// A PLAIN SEND CANNOT HANG HERE: the drain loop reads until bus.events is
+	// CLOSED, and it is closed after Send returns -- so the reader is alive
+	// for as long as a provider can still push.
+	b.events <- busEvent{kind: evFigaro, msg: m, cache: cache, ack: ack}
 	select {
 	case err := <-ack:
 		if err != nil {
@@ -458,7 +464,17 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 				force = true
 			}
 			var ackErr error
-			if ev.kind == evFigaro && roundErr == nil && !a.isInterrupted() {
+			// AN INTERRUPTED TURN STILL ACCEPTS THE PROVIDER'S MESSAGE. A
+			// provider that closes early hands over what its OWN accumulator
+			// holds, with its native payload; figaro's repair can only
+			// synthesise the text, so the translation of a partial message had
+			// to be re-encoded and lost every provider-native block --
+			// thinking signatures, encrypted reasoning. Taking the provider's
+			// message here means the interrupt path and the normal path
+			// produce a message the same way, differing only in the stop
+			// reason. A provider that pushes nothing on cancellation is
+			// unaffected: repairTurnTail still synthesises for it.
+			if ev.kind == evFigaro && roundErr == nil {
 				staged := store.Entry[message.Message]{Payload: ev.msg}
 				a.stageAssistant(&staged)
 				calls := assistantToolInvokes(staged.Payload)
