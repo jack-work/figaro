@@ -309,9 +309,12 @@ func TestSetRefusesAStaleVersion(t *testing.T) {
 	require.Eventually(t, func() bool { return a.Version() > read }, time.Second, 5*time.Millisecond)
 	moved := a.Version()
 
+	// THE REFUSAL REACHES THE CALLER NOW. It used to happen at the writer, a
+	// round boundary later, and reach nobody but the daemon log -- a
+	// conditional write that vanished. The set is applied by the form's own
+	// actor before this returns, so the stale version is answered here.
 	_, _, err = a.Set(form.Patch{Set: map[string]json.RawMessage{"a": json.RawMessage(`3`)}}, read)
-	require.NoError(t, err, "the refusal happens at the writer, not at accept")
-	time.Sleep(50 * time.Millisecond)
+	require.Error(t, err, "a stale conditional set must be refused to the caller")
 	v, _ := a.Snapshot().Get("a")
 	assert.Equal(t, `1`, string(v), "a stale conditional set must not land")
 	assert.Equal(t, moved, a.Version(), "and must not advance the form")

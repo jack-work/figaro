@@ -109,21 +109,20 @@ func TestSetAwaitingAnswersAtTheRoundBoundary(t *testing.T) {
 		got <- result{applied, err}
 	}()
 
-	// It must NOT have answered yet: the round is still in flight.
-	select {
-	case r := <-got:
-		t.Fatalf("SetAwaiting answered mid-round: %+v", r)
-	case <-time.After(200 * time.Millisecond):
-	}
-
-	close(bt.release)
+	// IT MUST ANSWER NOW, WITH THE ROUND STILL IN FLIGHT. This assertion is
+	// the inverse of the one it replaces. A set used to ride the figaro's
+	// inbox and be applied at a round boundary, so a caller waiting for the
+	// verdict waited for the tool; the form has its own actor and the figaro
+	// is no longer between them.
 	select {
 	case r := <-got:
 		require.NoError(t, r.err)
 		require.Contains(t, r.applied.Set, "brief", "the verdict must name what landed")
-	case <-time.After(5 * time.Second):
-		t.Fatal("SetAwaiting never answered after the round boundary")
+	case <-time.After(2 * time.Second):
+		t.Fatal("a set waited for the round to end: the figaro is still in the way")
 	}
+
+	close(bt.release)
 	waitTurnDone(t, frames)
 
 	snap := a.Snapshot()
@@ -132,9 +131,11 @@ func TestSetAwaitingAnswersAtTheRoundBoundary(t *testing.T) {
 	require.Equal(t, "awaited", *v)
 }
 
-// A caller whose patience runs out stops waiting; the patch is still queued
-// and still lands, because what expired is the wait, not the write.
-func TestSetAwaitingHonoursItsContext(t *testing.T) {
+// A CANCELLED CONTEXT NO LONGER REFUSES A SET, because nothing waits. The
+// write is applied by the form's actor before the call returns, so there is
+// no window in which a caller's patience can expire -- and refusing here
+// would lose a write for a reason that no longer exists.
+func TestACancelledContextStillApplies(t *testing.T) {
 	cb, _ := form.Open("")
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
@@ -146,8 +147,9 @@ func TestSetAwaitingHonoursItsContext(t *testing.T) {
 	defer a.Kill()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, _, err := a.SetAwaiting(ctx, form.Patch{Set: map[string]json.RawMessage{
+	_, applied, err := a.SetAwaiting(ctx, form.Patch{Set: map[string]json.RawMessage{
 		"brief": json.RawMessage(`"x"`),
 	}}, 0, false)
-	require.Error(t, err)
+	require.NoError(t, err)
+	require.Contains(t, applied.Set, "brief")
 }

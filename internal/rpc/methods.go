@@ -297,11 +297,11 @@ const (
 	// OutcomeUnchanged: legal, and it changed nothing. No record, no event,
 	// and Version is where the board still stands.
 	OutcomeUnchanged = "unchanged"
-	// OutcomeQueued: accepted by a LIVE aria, which applies a set at the next
-	// round boundary by design. The verdict (a stale IfVersion, an Assert
-	// removal) is not known yet and Version is zero. Waiting for it here
-	// would block the caller for the length of a tool round.
-	OutcomeQueued = "queued"
+	// OutcomeQueued IS GONE. It meant "accepted by a live aria, which applies
+	// a set at the next round boundary" -- a bound-form set rode the figaro's
+	// inbox, so the verdict was unknowable and Version was zero. Sets go to
+	// the form's own actor now and every one of them is applied before the
+	// response is written, so there is no third outcome to report.
 )
 
 type SetResponse struct {

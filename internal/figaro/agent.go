@@ -32,7 +32,6 @@ type eventType int
 // Inbox event types (user-RPC only).
 const (
 	eventUserPrompt eventType = iota
-	eventSet
 	// eventStudyMark narrates a study/drop transition in the IR. It is an
 	// EVENT rather than a direct append because of what a direct append did:
 	// written from the RPC goroutine, it landed between an assistant
@@ -73,24 +72,6 @@ type event struct {
 	// a folded message keeps WHO SAID WHAT instead of flattening it into one
 	// anonymous blob. text stays the joined display/mantra form.
 	segments []promptSegment
-
-	// eventSet
-	setPatch message.Patch
-	// setIfVersion refuses the patch unless the form still stands there. The
-	// check rides the event to the writer, where it is atomic with the append -
-	// checking at accept would answer about a version the patch never met.
-	setIfVersion uint64
-	// setAssert makes a removal of an absent key a refusal. Like a stale
-	// ifVersion it is answered by the WRITER, so on a live aria it reaches
-	// the log rather than the caller: a set during a tool round is applied
-	// at the next round boundary by design, and waiting for the verdict
-	// would block the caller for the length of the round. Phase 3's ticket
-	// closes it without waiting.
-	setAssert bool
-	// setDone, when non-nil, carries the WRITER's verdict back to a caller
-	// that asked to wait for it (`fig set --wait`). Buffered, so the drain
-	// loop never blocks on a caller that has walked away.
-	setDone chan setVerdict
 }
 
 // setVerdict is what the writer decided: the version it landed at, what
@@ -923,8 +904,6 @@ func (a *Agent) act(ctx context.Context) {
 			slog.Debug("event UserPrompt", "aria", a.id,
 				"text", truncLog(merged.text, 60), "folded", len(batch))
 			a.runTurn(ctx, merged)
-		case eventSet:
-			a.applyControlPatchVerdict(evt.setPatch, evt.setIfVersion, evt.setAssert, "set", evt.setDone)
 		case eventStudyMark:
 			a.writeStudyMark(evt.studyMark)
 		}
@@ -938,19 +917,12 @@ func (a *Agent) act(ctx context.Context) {
 func (a *Agent) serviceSets() bool {
 	evts := a.inbox.TakeReadySet()
 	for _, evt := range evts {
-		if evt.typ == eventStudyMark {
-			// A ROUND BOUNDARY, which is the whole point: every tool_result
-			// of the round just finished is already appended, so a user
-			// record here is exactly a steering prompt's position and no
-			// provider can object to it.
-			a.writeStudyMark(evt.studyMark)
-			continue
-		}
-		// THE ROUND BOUNDARY, and the reason --wait exists. A set that
-		// arrived mid-turn is applied here, so this is where a waiting
-		// caller's verdict comes from; passing nil here would leave it
-		// waiting for a turn that already applied its patch.
-		a.applyControlPatchVerdict(evt.setPatch, evt.setIfVersion, evt.setAssert, "set", evt.setDone)
+		// A ROUND BOUNDARY, which is the whole point: every tool_result of
+		// the round just finished is already appended, so a user record here
+		// is exactly a steering prompt's position and no provider can object
+		// to it. Sets no longer come through here at all -- they go straight
+		// to the form's own actor -- so a study mark is all this drains.
+		a.writeStudyMark(evt.studyMark)
 	}
 	return len(evts) > 0
 }
@@ -961,7 +933,20 @@ func (a *Agent) serviceSets() bool {
 // arias fold it onto an IR control-turn (no channel to hold it).
 // It reports what the writer decided to a caller that asked to wait.
 // done may be nil, which is every path but `--wait`.
-func (a *Agent) applyControlPatchVerdict(patch message.Patch, ifVersion uint64, assert bool, kind string, done chan setVerdict) {
+// applyFormPatch writes a bound-form patch through the FORM's actor and
+// answers with what actually landed. It is called from whatever goroutine
+// asked -- the figaro's own loop no longer stands between a set and the form.
+//
+// SAFE OFF THE LOOP because both structures it touches publish rather than
+// mutate: the durable write is serialized by store.Form's actor, and the
+// in-memory board is a form.State whose Apply is a CAS over an immutable
+// snapshot ("publish only against the board we computed from").
+func (a *Agent) applyFormPatch(patch message.Patch, ifVersion uint64, assert bool, kind string) (uint64, message.Patch, error) {
+	v := a.applyControlPatchVerdict(patch, ifVersion, assert, kind, nil)
+	return v.version, v.applied, v.err
+}
+
+func (a *Agent) applyControlPatchVerdict(patch message.Patch, ifVersion uint64, assert bool, kind string, done chan setVerdict) setVerdict {
 	verdict := setVerdict{}
 	if done != nil {
 		defer func() {
@@ -981,7 +966,7 @@ func (a *Agent) applyControlPatchVerdict(patch message.Patch, ifVersion uint64, 
 		verdict.version, verdict.applied, verdict.err = version, applied, err
 		if err != nil {
 			slog.Error(kind+" form append", "aria", a.id, "err", err)
-			return
+			return verdict
 		}
 		// PUBLISH WHAT WAS WRITTEN. The writer reduces the patch against the
 		// state it appends to (effectivePatch, atomic with the append) and
@@ -1005,13 +990,14 @@ func (a *Agent) applyControlPatchVerdict(patch message.Patch, ifVersion uint64, 
 		if _, err := a.appendMsg(msg); err != nil {
 			verdict.err = err
 			slog.Error(kind+" append", "aria", a.id, "err", err)
-			return
+			return verdict
 		}
 		verdict.applied = patch
 	}
 	a.form.Apply(patch)
 	a.refreshMetrics()
 	a.publishMetadata()
+	return verdict
 }
 
 // formAccessor returns the per-LT transition source for the provider:
