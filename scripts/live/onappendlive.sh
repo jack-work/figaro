@@ -34,7 +34,17 @@ trans_mains() { cat "$ROOT/state/arias/translations-v2/anthropic/$(basename "$1"
                 grep -oE '"m":[0-9]+' | cut -d: -f2 | tr '\n' ' '; }
 
 echo "--- one send, so the aria has a translator channel at all"
-"$BIN" send --id "$ARIA" -- "reply with exactly: one" >/dev/null 2>&1
+# ASSERT THE SEND, DO NOT DISCARD IT. This step ran into /dev/null for a whole
+# campaign, and on 2026-08-20 it had been FAILING with "empty context" while
+# this script printed PASS: the study it asserts on does not need a provider.
+# A live script that throws away the outcome of a real verb is a unit test with
+# a daemon attached.
+SEND_OUT=$("$BIN" send --id "$ARIA" -- "reply with exactly: one" 2>&1)
+case "$SEND_OUT" in
+  *"completed ✓"*) echo "    send: completed" ;;
+  *) echo "FAIL: the send did not complete: $(echo "$SEND_OUT" | tr -d '\n' | tail -c 200)"
+     echo "root: $ROOT (delete it)"; exit 1 ;;
+esac
 NODE=$(node_dir "reply with exactly: one")
 [ -z "$NODE" ] && { echo "FAIL: could not find the aria's node dir"; exit 1; }
 echo "    node $(basename "$NODE")"
