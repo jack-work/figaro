@@ -294,6 +294,26 @@ func (l *xwalLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
 	return decodeRecord[T](rec)
 }
 
+// ForkBase is the first coordinate THIS node owns of this channel, in the
+// CHANNEL'S OWN key space -- 0 where nothing is inherited. It is not the main
+// channel's fork base and the two are not interchangeable.
+func (l *xwalLog[T]) ForkBase() (uint64, bool) {
+	var (
+		base  uint64
+		found bool
+	)
+	_ = l.openOnce(func(xw *xwal.XWAL) error {
+		for _, c := range xw.Channels() {
+			if c.Name == l.channel {
+				base, found = c.ForkBase, true
+				break
+			}
+		}
+		return nil
+	})
+	return base, found
+}
+
 func (l *xwalLog[T]) PeekTail() (Entry[T], bool) {
 	var (
 		rec xwal.Record

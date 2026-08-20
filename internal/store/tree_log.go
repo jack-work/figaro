@@ -196,10 +196,60 @@ func (l *treeLog[T]) peek(from, to uint64) []Entry[T] {
 	return out
 }
 
+// channelForkBase reports a node's first OWN coordinate of this channel.
+type channelForkBase interface{ ForkBase() (uint64, bool) }
+
+// rebase restates the lineage's fork bases in this channel's coordinates.
+//
+// A Ref.Base is a MAIN-channel LT. A channel addressed by its own LT is a
+// DIFFERENT KEY SPACE, and cutting one by the other hands a child's rows to an
+// ancestor that does not have them: measured on a real aria, a fork base of 3
+// with one row at channel LT 1 read as an EMPTY channel and every send failed
+// with "empty context". Cutting at the ancestor's TAIL instead is wrong in the
+// other direction -- the ancestor then serves coordinates the child has
+// written for itself.
+//
+// The number that is neither is the channel's OWN fork base, which figwal
+// keeps per log: the first index this node owns.
+func (l *treeLog[T]) rebase(refs []fwtree.Ref) []fwtree.Ref {
+	out := make([]fwtree.Ref, len(refs))
+	copy(out, refs)
+	for i := 1; i < len(out); i++ {
+		sub, ok := l.substrateOf(out[i].Node).(channelForkBase)
+		if !ok {
+			return []fwtree.Ref{{Node: l.node}}
+		}
+		base, known := sub.ForkBase()
+		if !known {
+			return []fwtree.Ref{{Node: l.node}}
+		}
+		if base == 0 {
+			// Nothing inherited: this node owns the channel from the start,
+			// so no ancestor may serve any of it.
+			base = 1
+		}
+		out[i].Base = base
+	}
+	return out
+}
+
+func (l *treeLog[T]) substrateOf(node string) Log[T] {
+	if node == l.node {
+		return l.inner
+	}
+	if l.openNode == nil {
+		return nil
+	}
+	return l.openNode(node)
+}
+
 // cuts splits (from..to] across the lineage by fork base, root first: the same
 // division tree.Range makes, so a peek and a materializing read see one shape.
 func (l *treeLog[T]) cuts(from, to uint64) []fwtree.Coord {
 	refs := l.refs()
+	if l.seedOnAppend && len(refs) > 1 {
+		refs = l.rebase(refs)
+	}
 	var out []fwtree.Coord
 	lo := from
 	for i, ref := range refs {

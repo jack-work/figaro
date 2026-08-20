@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"unsafe"
 
@@ -363,4 +364,56 @@ func TestTheFingerprintCheckBlocksOnlyAfterADialectChange(t *testing.T) {
 	}
 	t.Logf("fires on a uniform ancestor (%d rows below the base, fingerprint %q); refuses after a dialect change",
 		len(donated), fp)
+}
+
+// AND THE CHILD'S OWN ROWS ARE ITS OWN. The ancestor may serve the inherited
+// prefix and NOT ONE COORDINATE MORE: past the channel's own fork base the
+// two lineages hold DIFFERENT records at the same number, so an ancestor
+// asked for them answers with another conversation's rows.
+//
+// This is what distinguishes the channel's own fork base from the ancestor's
+// tail, which is why it is a test and not a comment.
+func TestAForkServesItsOwnRowsAboveTheChannelsForkBase(t *testing.T) {
+	b, parent, childA, _ := translatedTrunk(t, "anthropic")
+	defer b.Close()
+
+	pl, err := b.OpenTranslator(parent, "anthropic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cl, err := b.OpenTranslator(childA, "anthropic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inherited := len(cl.Read())
+	if inherited == 0 {
+		t.Fatal("the child inherited nothing; this measurement would be vacuous")
+	}
+
+	// The parent keeps writing, and so does the child: from here their
+	// coordinates collide and their contents must not.
+	for i := 0; i < 3; i++ {
+		if _, err := pl.Append(Entry[[]json.RawMessage]{
+			FigaroLT: uint64(900 + i),
+			Payload:  []json.RawMessage{json.RawMessage(`{"role":"user","content":"PARENT ONLY"}`)},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := cl.Append(Entry[[]json.RawMessage]{
+			FigaroLT: uint64(900 + i),
+			Payload:  []json.RawMessage{json.RawMessage(`{"role":"user","content":"CHILD ONLY"}`)},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rows := cl.Read()
+	if len(rows) != inherited+3 {
+		t.Fatalf("the child reads %d rows, want %d", len(rows), inherited+3)
+	}
+	for _, e := range rows[inherited:] {
+		if got := string(e.Payload[0]); !strings.Contains(got, "CHILD ONLY") {
+			t.Fatalf("the child was served %s -- that row belongs to the parent", got)
+		}
+	}
 }

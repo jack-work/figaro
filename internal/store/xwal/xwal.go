@@ -1895,12 +1895,16 @@ func (x *XWAL) tailMain(ch *channel) (uint64, bool, error) {
 
 // ChannelInfo is a read-only snapshot of a channel's bounds.
 type ChannelInfo struct {
-	Name     string
-	Kind     Kind
-	Reducer  string
-	Opaque   bool
-	First    uint64
-	Last     uint64
+	Name    string
+	Kind    Kind
+	Reducer string
+	Opaque  bool
+	First   uint64
+	Last    uint64
+	// ForkBase is the first index THIS node owns of this channel; 0 on a log
+	// with no parent to inherit from. It is the fork base IN THE CHANNEL'S OWN
+	// COORDINATES, which is not the main channel's.
+	ForkBase uint64
 	Segments int
 }
 
@@ -1916,6 +1920,7 @@ func (x *XWAL) Channels() []ChannelInfo {
 			Opaque:   ch.opaque,
 			First:    ch.log.FirstIndex(),
 			Last:     ch.log.LastIndex(),
+			ForkBase: ch.log.ForkBase(),
 			Segments: len(ch.log.SegmentBaseIndexes()),
 		})
 	}

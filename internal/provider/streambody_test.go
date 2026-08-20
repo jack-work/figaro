@@ -169,3 +169,56 @@ func TestBothFramingsPutTheSameBytesOnTheWire(t *testing.T) {
 		}
 	}
 }
+
+// The two framings differ in EXACTLY ONE THING on the wire: whether the
+// request declares its length. Over HTTP/1.1 that is chunked transfer
+// encoding; over HTTP/2 -- which api.anthropic.com, api.openai.com and
+// api.githubcopilot.com all negotiate -- it is simply an absent length.
+func TestTheFramingsDifferOnlyInTheirLength(t *testing.T) {
+	write := func(w io.Writer) error {
+		_, err := io.WriteString(w, `{"model":"m"}`)
+		return err
+	}
+	for _, tc := range []struct {
+		streamed bool
+		chunked  bool
+		length   int64
+	}{{false, false, 13}, {true, true, -1}} {
+		var gotChunked bool
+		var gotLength int64
+		var gotBody string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			b, _ := io.ReadAll(r.Body)
+			gotBody, gotLength = string(b), r.ContentLength
+			for _, e := range r.TransferEncoding {
+				if e == "chunked" {
+					gotChunked = true
+				}
+			}
+		}))
+		req, err := http.NewRequest("POST", srv.URL, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rb, err := provider.NewRequestBody(write, tc.streamed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rb.Attach(req)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("streamed=%v: %v", tc.streamed, err)
+		}
+		resp.Body.Close()
+		srv.Close()
+		if gotBody != `{"model":"m"}` {
+			t.Fatalf("streamed=%v: body %q", tc.streamed, gotBody)
+		}
+		if gotChunked != tc.chunked {
+			t.Fatalf("streamed=%v: chunked=%v, want %v", tc.streamed, gotChunked, tc.chunked)
+		}
+		if gotLength != tc.length {
+			t.Fatalf("streamed=%v: server saw Content-Length %d, want %d", tc.streamed, gotLength, tc.length)
+		}
+	}
+}
