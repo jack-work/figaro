@@ -60,7 +60,7 @@ func headerFoldAt(t *testing.T, l *Log, idx uint64) ([]byte, error) {
 	return sumFold(header, sealed)
 }
 
-// TestHeaderFold_OnATrunkTheNaivePairingIsCorRect: the control. On a log with
+// TestHeaderFold_OnATrunkTheNaivePairingIsCorrect: the control. On a log with
 // no parent, HeaderAt and SegmentBaseIndexes describe the same lineage, so
 // the naive pairing reproduces StateAt at every index. If this fails, the
 // test below proves nothing about forks -- it would only prove the harness
@@ -97,7 +97,7 @@ func TestHeaderFold_OnATrunkTheNaivePairingIsCorrect(t *testing.T) {
 	}
 }
 
-// TestHeaderFold_AcrossAForkTheNaivePairingIsWRONG is the hazard.
+// TestHeaderFold_AcrossAForkTheNaivePairingIsWrong is the hazard.
 //
 // AMENDED BY ba221ff1 AFTER SegmentHeaderAt LANDED, on d921742d's ruling.
 // This test was written expecting to be INVERTED once an exposure handed

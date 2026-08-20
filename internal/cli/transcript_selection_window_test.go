@@ -10,8 +10,8 @@ import (
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 )
 
-// TestTranscript_OpenSelectionExtendsIntoHistoryWithoutAGap is what became of
-// TestTranscript_OpenSelectionLoadsGapBeforeExtending.
+// TestTranscript_OpenSelectionExtendsIntoHistoryWithoutAGap replaces
+// TestTranscript_OpenSelectionLoadsGapBeforeExtending, which is deleted.
 //
 // The old test pinned a hazard that no longer exists: the pager held a frozen
 // copy of the closed tail (t.pages) plus a frozen open message (heldOpen), and

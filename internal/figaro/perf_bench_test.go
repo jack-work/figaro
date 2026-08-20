@@ -67,7 +67,7 @@ func BenchmarkAgentRestoreHistory10000(b *testing.B) {
 	}
 }
 
-// BenchmarkInterruptRepair10000 MEASURES THE SCAN THAT FINDS NOTHING, and its
+// BenchmarkInterruptRepairScanOnly10000 MEASURES THE SCAN THAT FINDS NOTHING, and its
 // name does not say so.
 //
 // longMemLog builds every message with message.TextContent only -- prose, no

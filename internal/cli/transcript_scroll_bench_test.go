@@ -161,7 +161,7 @@ func BenchmarkTranscriptScrollHeavySearch(b *testing.B) {
 	}
 }
 
-// BenchmarkTranscriptHeavyMemory reports steady-state retained bytes rather
+// BenchmarkTranscriptHeavyEnter reports steady-state retained bytes rather
 // than per-op cost: enter, scroll a while, and let -benchmem show the churn.
 func BenchmarkTranscriptHeavyEnter(b *testing.B) {
 	client := aria.NewClient()

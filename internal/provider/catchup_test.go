@@ -31,7 +31,7 @@ func catchUpTestConfig(log store.Log[message.Message], rows store.Log[[]json.Raw
 // since MemLog has no TailAfter of its own.
 //
 // The assembly read (Rows) is deliberately O(history) and is NOT this
-// property -- see BenchmarkRows.
+// property -- see BenchmarkTranslations.
 func TestCatchUpVisitsOnlyWhatIsNew(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
 	rows := store.NewMemLog[[]json.RawMessage]()
