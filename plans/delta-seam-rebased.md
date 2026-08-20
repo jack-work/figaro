@@ -577,3 +577,47 @@ and is worth having as an alignment check, and if he wants "every record has a
 row BY CONSTRUCTION" as a property rather than as a repair, row-first is the
 only order that gives it. That is a design preference I should not settle by
 building.
+
+# BEFORE A RESTART, READ THIS (223a0986, 2026-08-20 02:00)
+
+## THE ONE THING THAT BITES: THE SCHEMA BUMP IS ONE-WAY IN PRACTICE
+
+`translations-v2/` moved v2 -> v3 (rows carry the record's content hash).
+checkGeneration REFUSES A STORE WRITTEN BY A NEWER BUILD:
+
+    "store channel %q is schema v%d but this figaro understands v%d:
+     refusing to open a store written by a newer build (upgrade figaro)"
+
+    SO: IF A BINARY BUILT FROM feat/layered-cache OPENS THE LIVE STORE, THE
+    INSTALLED RELEASE CAN NO LONGER OPEN IT until it is upgraded to a build
+    that understands v3. The refusal is by version and does not care that the
+    channel is derived.
+
+That is not a corruption and nothing canonical moves -- the fix is to run a
+newer figaro -- but it is a door that only swings one way, and it should be
+walked through deliberately rather than by accident.
+
+    RUN THIS BRANCH AGAINST A COPY UNTIL IT IS MEANT TO BE INSTALLED.
+    Every probe in this campaign already does (FIGARO_REAL_STORE /
+    FIGARO_MIGRATED_STORE take a COPY, and the tests say so).
+
+## WHAT ELSE CHANGES ON A RESTART OF A BUILD FROM THIS BRANCH
+
+  1. EVERY ARIA'S TRANSLATOR ROWS ARE DROPPED ONCE and re-derived on that
+     aria's next send. 324 of 726 arias have rows; the rest have none. The
+     cost is one catch-up per aria, at its next send, and it is the mechanism
+     the derived class exists for.
+  2. NEW ARIAS TAKE THE RAW ANTHROPIC PROVIDER. ~/.config/figaro/outfits/
+     house.toml now sets use_official_sdk = false. EXISTING arias carry the
+     old value on their own boards and keep the SDK path until patched.
+  3. COPILOT-MESSAGES RUNS ON THE RAW PROVIDER regardless of that key, and its
+     fingerprint changed with it -- subsumed by (1), since the rows drop
+     anyway.
+
+## WHAT IS IN FLIGHT: NOTHING
+
+No background jobs, no benchmark runs, no reminders armed for this role, no
+temp worktrees or store copies of mine (the census copy and the migration copy
+are deleted; /var/tmp/fig-base-223a is removed). The tree is clean at
+50a7b4e3, the full suite is green, and NOTHING IS PUSHED -- the branch is
+local, so a restart that does not build from it changes nothing at all.
