@@ -101,6 +101,50 @@ NOTHING HERE HAS BEEN RUN.
       cut. It is on the peek path. If C1 or C2 regresses, THAT is the cause
       and it is a cache away from being fixed.
 
+## THE HOST QUESTION, RECONNOITRED (f921a944, 2026-08-20)
+
+Gluck asked whether spain or another tailscale box could give a quiet hour.
+Measured by logging in, not read off a config:
+
+    SPAIN   Intel N100, 4 cores, NO SMT, 15Gi + 7.7Gi zram. / and /var/tmp are
+            REAL ext4 on NVMe. Idle load 0.09, background CPU ~2.3% of four
+            cores. 14 live services; kfin-sync (~6h) and logrotate (hourly)
+            WILL fire mid-run. No go binary, but `nix shell nixpkgs#go
+            nixpkgs#gcc` builds the tree (cgo needs the gcc).
+
+    FIXED-WORK JITTER (sha256 of 32MB x12)
+        spain   129-131 ms   +-1.5%
+        gluck    19-25  ms   +-30%     at load 0.2, i.e. idle-ish
+
+    REAL BENCHMARK SPREAD (internal/angelus, -count=5, max/min-1)
+        arm                      gluck    spain
+        AriaReaderForm (61ns)     3.7%    18.7%
+        Context/600              46.2%    14.1%
+        Context/10000            14.9%     1.7%
+        ReaderPage/10000            -      0.5%
+
+    Spain is 4.1x SLOWER in wall clock (729s vs 178s for the package).
+
+THE RECOMMENDATION IS NOT UNIFORM, AND THE REPORT'S OWN NUMBERS ARE WHY.
+Spain is better on the LONG arms and WORSE on the SHORT one. This plan has
+both -- a ~40-60ns point read and multi-second scans -- so a single host is
+not obviously right for all of it. The stated cause of the short-arm spread is
+frequency ramping under the powersave governor; THAT IS A HYPOTHESIS AND THE
+EXPERIMENT IS QUEUED (governor=performance, same arm, same count).
+
+AND ABSOLUTE NUMBERS DO NOT CROSS HOSTS at 4.1x. Only same-host A/B deltas
+mean anything, which is the discipline this file already imposes for a
+different reason.
+
+NOISE THAT SURVIVES ON SPAIN, named rather than waved at: cloudflared and
+tailscaled must stay up (tailscaled is the access path); journald writes 68.5k
+lines/day to the same NVMe; an N100 is a 6W part whose sustained-load
+behaviour was NOT characterized; zram swap makes a memory-heavy arm pay
+compression CPU; and 4 cores without SMT contend far sooner than the 5800X.
+
+UNVERIFIABLE: gioco answers on the LAN with no open ports at all, and
+bedrock-linux refuses the key. Nothing is known about either.
+
 ## WHAT THIS NEEDS FROM GLUCK BEFORE IT RUNS
 
   1. A REAL-ROW CORPUS. Every A-arm on synthetic 130-byte rows measures the
