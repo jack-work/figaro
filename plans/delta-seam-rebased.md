@@ -457,3 +457,33 @@ OPEN, and needs the fig IR tail beside the row tail. So the gate is the right
 PLACE BY ANALOGY and the right precedent for the drop; it is not literally the
 hook, and wiring the repair into it would fire it for stores that have no
 orphan and never for the one that does.
+
+# THE ENCODER INJECTION HAS A FAN-OUT QUESTION (223a0986, 2026-08-19)
+
+Gluck approved the injection: "i guess irDoor should hold an injected
+encoder." One thing has to be decided before it is wired, because the two
+answers differ in WORK PER APPEND and not in structure.
+
+    A ROW IS PER PROVIDER. The door writes one record; how many rows does it
+    write?
+
+  (a) ONE PER CONFIGURED PROVIDER. Every append encodes for every provider the
+      binary knows about, whether or not the aria has ever used it. A user
+      with four providers configured and one in use pays 4x the encoding on
+      every append, forever, for rows nobody reads.
+
+  (b) ONE PER TRANSLATOR CHANNEL THAT ALREADY EXISTS FOR THAT ARIA. The store
+      can see which channels an aria has WITHOUT knowing what a provider is --
+      the channel is a name under translations-v2/ -- so the door encodes for
+      exactly the providers this aria has actually spoken to. A first send
+      through a new provider finds no channel, and the catch-up fills it once,
+      which is the path that already exists and is already correct.
+
+(b) is the one that keeps the store ignorant of providers AND keeps the work
+proportional to use. Its cost is that the FIRST send on a new provider is
+still a catch-up over the whole history -- which is exactly what happens today
+and is why the catch-up does not disappear when rows move to write time.
+
+WHAT DOES DISAPPEAR UNDER (b): the steady-state read-path write. After the
+first send, every record's row is written by the door at record time, and the
+catch-up finds nothing to do -- which is the property the section exists for.
