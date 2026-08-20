@@ -699,6 +699,15 @@ TWO CONSEQUENCES, BOTH WORTH KNOWING BEFORE 3(b):
      copilot/responses a text accumulator -- which is a provider-side change,
      roughly what the other three already have -- and not on the UI IR.
 
-WHAT IT WOULD TAKE: accumulate output_text and reasoning deltas alongside the
-call state readResponseStream already keeps (calls/items/byIndex are partial
-state today), and return that on ctx.Err(). Not started.
+WHAT IT TOOK, DONE THE SAME HOUR: responsePartial accumulates output_text and
+reasoning deltas beside the call state readResponseStream already kept, and
+renders them as the SERVER'S OWN output items on ctx.Err() -- so the partial
+goes through the same decoder and the same hand-over a whole response does.
+All four providers own their premature close now.
+
+SO 3(b) IS UNBLOCKED, and what remains is only the argument for it: asm's last
+reader is the repair path, the repair path is now reached only by a provider
+that pushes NOTHING on cancellation, and no shipped provider does that any
+more. The repair stays as the fallback for one that does not (a panic, a
+provider that returns early), and TestInterruptRepairsPartialTurn still covers
+its four modes.

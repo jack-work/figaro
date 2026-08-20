@@ -3,10 +3,12 @@ package copilot
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"text/template"
@@ -193,6 +195,19 @@ func (p *responsesProvider) sendWithToken(
 
 	response, err := readResponseStream(ctx, conn, bus)
 	if err != nil {
+		// A CANCELLED TURN HANDS OVER WHAT IT HAS, marked aborted, through the
+		// same decoder and the same push a whole response takes. Any other
+		// stream failure still drops.
+		if !errors.Is(err, context.Canceled) || len(response.Output) == 0 {
+			return err
+		}
+		partial, derr := decodeResponseAssistant(response)
+		if derr != nil || len(partial.Content) == 0 {
+			return err
+		}
+		partial.StopReason = message.StopAborted
+		partial.Timestamp = time.Now().UnixMilli()
+		p.handOver(partial, response.Output, bus)
 		return err
 	}
 	assistant, err := decodeResponseAssistant(response)
@@ -212,21 +227,27 @@ func (p *responsesProvider) sendWithToken(
 		return nil
 	}
 	assistant.Timestamp = time.Now().UnixMilli()
-	// THE PROVIDER DOES NOT OWN THE LOG. It hands the message to the bus and
-	// the fig IR side appends it: only that side has the LT, so "the fig IR
-	// entry exists before anything that names it" is a SHAPE rather than a
-	// rule five call sites had to remember.
+	p.handOver(assistant, response.Output, bus)
+	return nil
+}
+
+// handOver gives the fig IR side the message and the native output items from
+// ONE accumulator, so a partial message cannot be shaped differently from a
+// whole one.
+//
+// THE PROVIDER DOES NOT OWN THE LOG: only the fig IR side has the LT, so "the
+// entry exists before anything that names it" is a shape rather than a rule.
+func (p *responsesProvider) handOver(assistant message.Message, output []json.RawMessage, bus provider.Bus) {
 	bus.PushMessageEnd(string(assistant.StopReason))
 	var commit []provider.AssistantCache
-	if len(response.Output) > 0 {
+	if len(output) > 0 {
 		commit = append(commit, provider.AssistantCache{
 			Namespace:   "copilot-responses",
-			Payload:     response.Output,
+			Payload:     output,
 			Fingerprint: p.Fingerprint(),
 		})
 	}
 	bus.PushFigaro(assistant, commit...)
-	return nil
 }
 
 func (p *responsesProvider) settings() (string, int, string) {
@@ -975,6 +996,58 @@ type responseOutputItem struct {
 	Arguments json.RawMessage   `json:"arguments"`
 }
 
+// responsePartial accumulates what a cancelled stream has produced so far, in
+// the SERVER'S OWN output-item shape -- so a partial reaches the fig IR side
+// through exactly the decoder a whole response goes through.
+type responsePartial struct {
+	text      strings.Builder
+	reasoning strings.Builder
+}
+
+func (p *responsePartial) outputItems(byIndex map[int]*responseCall) []json.RawMessage {
+	var out []json.RawMessage
+	if r := p.reasoning.String(); r != "" {
+		if b, err := json.Marshal(map[string]any{
+			"type":    "reasoning",
+			"summary": []map[string]any{{"type": "summary_text", "text": r}},
+		}); err == nil {
+			out = append(out, b)
+		}
+	}
+	if t := p.text.String(); t != "" {
+		if b, err := json.Marshal(map[string]any{
+			"type":    "message",
+			"role":    "assistant",
+			"content": []map[string]any{{"type": "output_text", "text": t}},
+		}); err == nil {
+			out = append(out, b)
+		}
+	}
+	// Tool calls in the order the server opened them; an argument stream cut
+	// mid-JSON is dropped rather than sent, because a tool_use whose input
+	// never parsed cannot be replayed.
+	idxs := make([]int, 0, len(byIndex))
+	for i := range byIndex {
+		idxs = append(idxs, i)
+	}
+	sort.Ints(idxs)
+	for _, i := range idxs {
+		call := byIndex[i]
+		if call == nil || !call.ready {
+			continue
+		}
+		if b, err := json.Marshal(map[string]any{
+			"type":      "function_call",
+			"call_id":   call.ID,
+			"name":      call.Name,
+			"arguments": call.arguments.String(),
+		}); err == nil {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
 type responseCall struct {
 	ID        string
 	Name      string
@@ -996,11 +1069,22 @@ func readResponseStream(ctx context.Context, conn *websocket.Conn, bus provider.
 	calls := map[string]*responseCall{}
 	items := map[string]*responseCall{}
 	byIndex := map[int]*responseCall{}
+	// THE PARTIAL, so a cancelled stream has something to hand over. This
+	// provider's message otherwise exists only at "response.completed", built
+	// from the server's own object -- so an interrupt had nothing but the
+	// deltas, and figaro synthesised a message with no native payload behind
+	// it. The deltas are accumulated here, in the provider that knows their
+	// wire shape.
+	var partial responsePartial
 	for {
 		var raw json.RawMessage
 		if err := websocket.JSON.Receive(conn, &raw); err != nil {
 			if ctx.Err() != nil {
-				return responseObject{}, ctx.Err()
+				// A PREMATURE CLOSE, NOT AN EMPTY ONE. What comes back is the
+				// wire shape this provider would have received, built from
+				// what it did receive, so the message and the native payload
+				// are one accumulator's answer.
+				return responseObject{Output: partial.outputItems(byIndex)}, ctx.Err()
 			}
 			return responseObject{}, fmt.Errorf("copilot responses: receive: %w", err)
 		}
@@ -1011,10 +1095,12 @@ func readResponseStream(ctx context.Context, conn *websocket.Conn, bus provider.
 		switch event.Type {
 		case "response.output_text.delta":
 			if event.Delta != "" {
+				partial.text.WriteString(event.Delta)
 				bus.PushDelta(message.Content{Type: message.ContentProse, Text: event.Delta})
 			}
 		case "response.reasoning.delta", "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
 			if event.Delta != "" {
+				partial.reasoning.WriteString(event.Delta)
 				bus.PushDelta(message.Content{Type: message.ContentThinking, Text: event.Delta})
 			}
 		case "response.output_item.added":

@@ -9,6 +9,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"golang.org/x/net/websocket"
 
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
@@ -124,6 +127,8 @@ func (s staticResolver) Invalidate(string) error  { return nil }
 
 type captureBus struct {
 	sawFigaro bool
+	lastStop  string
+	caches    []provider.AssistantCache
 	text      strings.Builder
 }
 
@@ -131,7 +136,61 @@ func (b *captureBus) PushDelta(c message.Content)        { b.text.WriteString(c.
 func (b *captureBus) PushToolInvokeStart(string, string) {}
 func (b *captureBus) PushToolInvokeDelta(string, string) {}
 func (b *captureBus) PushToolReady(message.Content)      {}
-func (b *captureBus) PushMessageEnd(string)              {}
-func (b *captureBus) PushFigaro(message.Message, ...provider.AssistantCache) {
+func (b *captureBus) PushMessageEnd(stop string)         { b.lastStop = stop }
+func (b *captureBus) PushFigaro(_ message.Message, caches ...provider.AssistantCache) {
 	b.sawFigaro = true
+	b.caches = append(b.caches, caches...)
+}
+
+// A CANCELLED RESPONSES STREAM HANDS OVER WHAT IT ACCUMULATED.
+//
+// This provider's message otherwise exists only at "response.completed",
+// built from the server's own object -- so an interrupt had nothing but the
+// deltas and figaro synthesised a message with NO native payload, whose
+// translation had to be re-encoded from text. The accumulator is in the
+// provider now, and its output items are the server's own wire shape.
+func TestACancelledResponsesStreamHandsOverItsPartial(t *testing.T) {
+	streaming := make(chan struct{})
+	srv := newResponseServer(t, func(conn *websocket.Conn) {
+		defer conn.Close()
+		var req responseCreateRequest
+		if err := websocket.JSON.Receive(conn, &req); err != nil {
+			return
+		}
+		_ = websocket.JSON.Send(conn, map[string]any{
+			"type": "response.output_text.delta", "delta": "half a thou",
+		})
+		close(streaming)
+		select {} // never completes: the turn is cancelled under it
+	})
+	defer srv.Close()
+
+	p := newResponsesTestProvider(srv, store.NewMemLog[[]json.RawMessage]())
+	bus := &captureBus{}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-streaming
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	err := p.Send(ctx, provider.SendInput{
+		AriaID: "aria-cancel",
+		FigLog: newResponsesInputLog(t),
+	}, bus)
+	if err == nil {
+		t.Fatal("a cancelled send must still report the cancellation")
+	}
+	if !bus.sawFigaro {
+		t.Fatal("the partial never reached the bus: an interrupted turn loses what the model produced")
+	}
+	if len(bus.caches) == 0 {
+		t.Fatal("the partial carries no native payload, so its translation would be a re-encode")
+	}
+	if got := string(bus.caches[0].Payload[0]); !strings.Contains(got, "half a thou") {
+		t.Fatalf("the native payload does not carry what streamed: %s", got)
+	}
+	if bus.lastStop != string(message.StopAborted) {
+		t.Fatalf("stop reason %q, want %q", bus.lastStop, message.StopAborted)
+	}
 }
