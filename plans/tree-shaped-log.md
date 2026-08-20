@@ -1927,3 +1927,57 @@ different reasons.
 
 Recorded on the role board as `crash-gate`, and the handoff's gate line now
 carries the variable rather than the intention.
+
+# A PROXY ASSERTION IS LOAD-SENSITIVE WHERE THE PROPERTY IS NOT
+# (ede92072, 2026-08-20)
+
+Found by running the crash gate WITH its missing half (the note above): the
+first honest full-suite run went red on
+`TestSpeculativeDispatch_StartsBeforeStreamEnd`, which had never failed for me
+before because I had never run the suite under that much of its own load.
+
+## IT WAS NOT MINE, AND THAT WAS MEASURED BEFORE ANYTHING WAS TOUCHED
+
+    HEAD, isolated, TMPDIR=/var/tmp      pass, pass, pass
+    HEAD, isolated, /tmp (tmpfs)         pass, pass, pass
+    HEAD, full suite                     FAIL  tc_3 444ms, tc_2 394ms
+    06384fa3 (predecessor), full suite   FAIL  tc_1 350.4ms, tc_2 400.7ms
+
+DIFFERENT TOOLS AND DIFFERENT NUMBERS EACH RUN, which is the signature of
+jitter rather than a defect, and the test's origin commit (ef28f7de) is ON
+MAIN. So: pre-existing, load-dependent, and mine only in the sense that I was
+the first to run the gate properly.
+
+## THE MECHANISM: THE ASSERTION WAS A PROXY FOR THE PROPERTY
+
+The property is SPECULATIVE DISPATCH -- a tool begins when its PushToolReady
+arrives, not when the stream ends. The test asserted `start < 350ms`, with
+streamEnd at 400ms and a comment calling the slack "generous... to absorb
+scheduling jitter".
+
+    350ms WAS A STAND-IN FOR "BEFORE streamEnd". Under load BOTH the tool and
+    the stream slide later, together -- so the ORDER holds while the clock
+    readings do not, and the test asserted the reading.
+
+Now the provider sets a flag immediately before it pushes the final assistant
+message, and the tool records that flag AT EXECUTE ENTRY. The assertion is a
+HAPPENS-BEFORE, and no amount of load can perturb it. The lower bound stays a
+duration, because it IS one: load can only make a start later, never earlier.
+
+CANARIED: disabling speculation in turnBus.PushToolReady makes all three tools
+report "began only after the final assistant message: that is sequential
+dispatch, not speculative", and restoring it goes green.
+
+## THE GENERAL FORM, WHICH IS THIS CAMPAIGN'S OWN LAW ARRIVING FROM A NEW SIDE
+
+The file already says: report the deterministic quantity ahead of the timing.
+That was written about BENCHMARKS. It is equally true of assertions:
+
+    WHEN A TEST MEANS "A BEFORE B", ASSERT "A BEFORE B" -- NOT "A UNDER N
+    MILLISECONDS". A duration standing in for an order is an instrument that
+    is correct only while the machine is quiet, and the machine is quiet
+    exactly when nothing else is being tested.
+
+AND IT IS WHY THE GATE'S MISSING TMPDIR MATTERED TWICE OVER: the run that
+exposed this is the run that was also, finally, testing durability on a disk.
+One incomplete recipe was hiding two things.

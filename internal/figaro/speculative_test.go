@@ -33,6 +33,12 @@ type staggeredProvider struct {
 	streamEnd time.Duration // when to PushFigaro after Send starts
 	calls     atomic.Int32  // counts Send invocations
 
+	// streamEnded is set immediately before the final assistant message is
+	// pushed. A tool that observes it FALSE was dispatched speculatively;
+	// one that observes it true was not. This is the property the test
+	// asserts, and it is a happens-before rather than a duration.
+	streamEnded atomic.Bool
+
 	modelMu sync.Mutex
 	models  []string // system.model seen at each Send, in call order
 }
@@ -125,6 +131,7 @@ func (p *staggeredProvider) Send(ctx context.Context, in provider.SendInput, bus
 		Content:    calls,
 		StopReason: message.StopToolInvoke,
 	}
+	p.streamEnded.Store(true)
 	bus.PushMessageEnd(string(msg.StopReason))
 	bus.PushFigaro(msg)
 	return nil
@@ -137,6 +144,9 @@ type recordingTool struct {
 	dur    time.Duration
 	zero   time.Time
 	starts sync.Map // map[toolCallID]time.Duration
+	// streamEnded, when set, is read AT EXECUTE ENTRY and recorded per call.
+	streamEnded *atomic.Bool
+	late        sync.Map // map[toolCallID]bool -- true if the stream had ended
 }
 
 func (rt *recordingTool) Name() string        { return rt.name }
@@ -145,6 +155,9 @@ func (rt *recordingTool) Parameters() any     { return map[string]any{} }
 
 func (rt *recordingTool) Execute(ctx context.Context, args map[string]any, _ tool.OnOutput) ([]message.Content, error) {
 	id, _ := args["id"].(string)
+	if rt.streamEnded != nil {
+		rt.late.Store(id, rt.streamEnded.Load())
+	}
 	rt.starts.Store(id, time.Since(rt.zero))
 	select {
 	case <-time.After(rt.dur):
@@ -162,11 +175,22 @@ func (rt *recordingTool) startTimeOf(id string) (time.Duration, bool) {
 	return v.(time.Duration), true
 }
 
+// startedAfterStreamEnd reports whether this call began only once the final
+// assistant message was on its way -- which is what sequential dispatch looks
+// like from inside the tool.
+func (rt *recordingTool) startedAfterStreamEnd(id string) (bool, bool) {
+	v, ok := rt.late.Load(id)
+	if !ok {
+		return false, false
+	}
+	return v.(bool), true
+}
+
 // TestSpeculativeDispatch_StartsBeforeStreamEnd is the cornerstone of
-// Slice A: each tool's Execute must begin within ~PushToolReady latency
-// of its readyAt, not blocked until streamEnd. With 3 tools staged
-// 50/100/150ms in and a stream that doesn't end until 300ms, the
-// third tool's start should still occur near 150ms.
+// Slice A: each tool's Execute must begin when its PushToolReady arrives, not
+// when the stream ends. Three tools are staged 50/100/150ms in and the stream
+// does not end until 400ms, so sequential dispatch is visible as a tool that
+// starts only after the final assistant message.
 func TestSpeculativeDispatch_StartsBeforeStreamEnd(t *testing.T) {
 	zero := time.Now()
 	rec := &recordingTool{name: "rec", dur: 50 * time.Millisecond, zero: zero}
@@ -181,6 +205,7 @@ func TestSpeculativeDispatch_StartsBeforeStreamEnd(t *testing.T) {
 		},
 		streamEnd: 400 * time.Millisecond,
 	}
+	rec.streamEnded = &prov.streamEnded
 
 	cb, _ := form.Open("")
 	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
@@ -216,21 +241,30 @@ func TestSpeculativeDispatch_StartsBeforeStreamEnd(t *testing.T) {
 		}
 	}
 
-	// Each tool's Execute should have begun close to its readyAt.
-	// Sequential execution (the pre-Slice-A behavior) would have all
-	// three starting after streamEnd (≥400ms).
+	// EACH TOOL MUST HAVE BEGUN BEFORE THE STREAM ENDED. Sequential dispatch
+	// -- the pre-Slice-A behaviour -- starts all three only after the final
+	// assistant message, and that is what this catches.
+	//
+	// IT IS A HAPPENS-BEFORE AND NOT A DURATION. This assertion used to be
+	// `start < 350ms`, a PROXY for "before streamEnd=400ms", and the proxy is
+	// load-sensitive where the property is not: under a full parallel suite
+	// the same starts land at 350-444ms and the test went red on both this
+	// branch and its parent while passing 6/6 in isolation. The tools and the
+	// stream are delayed by the same load, so their ORDER survives what their
+	// clock readings do not.
 	for id, want := range map[string]time.Duration{
 		"tc_1": 50 * time.Millisecond,
 		"tc_2": 100 * time.Millisecond,
 		"tc_3": 150 * time.Millisecond,
 	} {
-		got, ok := rec.startTimeOf(id)
+		late, ok := rec.startedAfterStreamEnd(id)
 		require.True(t, ok, "tool %s never recorded a start", id)
-		// Generous slack to absorb scheduling jitter on shared CI.
-		// The key check is that the start is well below streamEnd.
-		assert.Less(t, got, 350*time.Millisecond,
-			"%s started at %v; expected near %v, well before streamEnd=%v",
-			id, got, want, prov.streamEnd)
+		assert.False(t, late,
+			"%s began only after the final assistant message: that is sequential dispatch, not speculative", id)
+
+		// AND NOT BEFORE IT WAS READY, which load cannot cause: it only makes
+		// things later. This half stays a duration because it is one.
+		got, _ := rec.startTimeOf(id)
 		assert.GreaterOrEqual(t, got, want-20*time.Millisecond,
 			"%s started at %v; expected at or after readyAt %v",
 			id, got, want)
