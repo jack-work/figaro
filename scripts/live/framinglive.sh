@@ -59,9 +59,11 @@ func main() {
 	panic(http.ListenAndServe(os.Args[1], nil))
 }
 GO
-go run "$ROOT/sink.go" 127.0.0.1:8791 "$ROOT/framing.log" &
+# Redirected: a background child holding the script's stdout keeps the pipe
+# open after the script exits, and a caller reading through `tail` hangs.
+go run "$ROOT/sink.go" 127.0.0.1:8791 "$ROOT/framing.log" >"$ROOT/sink.out" 2>&1 &
 SINK=$!
-trap 'kill $SINK 2>/dev/null' EXIT
+trap 'kill $SINK 2>/dev/null; pkill -f "$ROOT/figaro" 2>/dev/null' EXIT
 sleep 3
 
 export FIGARO_STATE_DIR="$ROOT/state" FIGARO_RUNTIME_DIR="$ROOT/rt" FIGARO_CONFIG_DIR="$ROOT/config"
