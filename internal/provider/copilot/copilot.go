@@ -15,12 +15,10 @@ import (
 	"sync"
 	"text/template"
 
-	"github.com/anthropics/anthropic-sdk-go/option"
-
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/provider/anthropicsdk"
+	"github.com/jack-work/figaro/internal/provider/anthropic"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -29,6 +27,9 @@ const (
 	defaultBaseURL    = "https://api.individual.githubcopilot.com"
 	directBaseURL     = "https://api.enterprise.githubcopilot.com"
 	copilotAPIVersion = "2026-06-01"
+	// The Anthropic messages dialect version this endpoint speaks. Not the
+	// GitHub API version above: two different headers, two different vendors.
+	copilotAnthropicVersion = "2023-06-01"
 )
 
 var copilotStaticHeaders = map[string]string{
@@ -43,7 +44,7 @@ var copilotGitHubHeaders = map[string]string{
 }
 
 type Copilot struct {
-	inner     *anthropicsdk.Provider
+	inner     *anthropic.Anthropic
 	responses *responsesProvider
 	tokenSrc  *CopilotTokenSource
 
@@ -64,18 +65,23 @@ func New(
 	}
 	tokenSrc := newTokenSource(githubToken, cfg)
 
-	inner, err := anthropicsdk.New(knobs, tokenSrc, messagesCacheOpen)
+	// THE HAND-ROLLED ANTHROPIC PROVIDER, NOT THE VENDOR SDK. Gluck, 2026-08-20:
+	// "prefer anthropic provider please." It reaches the wire through
+	// SendWithTransport, which exists for exactly this caller -- its own
+	// comment says oauth is "false for Copilot" -- and it costs 45-66us and 6
+	// allocations per send against the SDK path's 11.2ms and 73,008, all of
+	// which was the SDK's parse of stored rows into typed values.
+	//
+	// NOTHING IS LOST HERE. The one capability the SDK path has that this one
+	// does not is eager_input_streaming, and this endpoint REJECTS it outright
+	// -- the SDK build set NoEagerToolStreaming for that reason. Claude models
+	// here keep the API's buffered default; GPT models take the responses
+	// route, which streams arguments natively.
+	inner, err := anthropic.New(knobs, tokenSrc, messagesCacheOpen)
 	if err != nil {
 		return nil, err
 	}
-	inner.NoOAuthIdentity = true
-	// The Copilot Anthropic-dialect endpoint rejects eager_input_streaming
-	// outright (it used to ignore it silently), so the form opt-in must
-	// not reach it. Claude models here keep the API's buffered default; GPT
-	// models take the responses route, which streams arguments natively.
-	inner.NoEagerToolStreaming = true
 	inner.CacheNamespace = "copilot-messages"
-	inner.ExtraOptions = copilotRequestOptions(tokenSrc)
 
 	return &Copilot{
 		inner:     inner,
@@ -86,31 +92,34 @@ func New(
 	}, nil
 }
 
-func copilotRequestOptions(tokenSrc *CopilotTokenSource) []option.RequestOption {
-	opts := []option.RequestOption{
-		option.WithHeaderDel("x-api-key"),
-		option.WithMiddleware(func(req *http.Request, next option.MiddlewareNext) (*http.Response, error) {
-			// Resolve the Copilot token and set the base URL dynamically
-			// (the proxy-ep in the token determines the API host).
-			token, err := tokenSrc.Resolve()
-			if err != nil {
-				return nil, err
-			}
-			baseURL := tokenSrc.BaseURL()
-			// Rewrite the URL to the Copilot endpoint
-			req.URL.Scheme = "https"
-			req.URL.Host = baseURL[len("https://"):]
-			req.Header.Set("Authorization", "Bearer "+token)
-			req.Header.Set("anthropic-dangerous-direct-browser-access", "true")
-			req.Header.Set("Openai-Intent", "conversation-edits")
-			req.Header.Set("X-Initiator", "user")
-			for k, v := range copilotStaticHeaders {
-				req.Header.Set(k, v)
-			}
-			return next(req)
-		}),
+// copilotTransport is the messages-dialect HTTP call, built here because the
+// endpoint is decided per request: the proxy-ep inside the Copilot token
+// names the host, so it cannot be fixed at construction.
+func (c *Copilot) copilotTransport(client *http.Client) anthropic.TransportFn {
+	return func(ctx context.Context, body []byte) (*http.Response, error) {
+		token, err := c.tokenSrc.Resolve()
+		if err != nil {
+			return nil, err
+		}
+		req, err := http.NewRequestWithContext(ctx, "POST",
+			c.tokenSrc.BaseURL()+"/messages", bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("anthropic-version", copilotAnthropicVersion)
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("anthropic-dangerous-direct-browser-access", "true")
+		req.Header.Set("Openai-Intent", "conversation-edits")
+		req.Header.Set("X-Initiator", "user")
+		for k, v := range copilotStaticHeaders {
+			req.Header.Set(k, v)
+		}
+		for k, v := range copilotGitHubHeaders {
+			req.Header.Set(k, v)
+		}
+		return client.Do(req)
 	}
-	return opts
 }
 
 func (c *Copilot) Name() string { return providerName }
@@ -157,7 +166,9 @@ func (c *Copilot) Send(ctx context.Context, in provider.SendInput, bus provider.
 		c.mu.RUnlock()
 		return c.responses.Send(ctx, in, bus)
 	}
-	return c.inner.Send(ctx, in, bus)
+	// oauth=false: the Claude Code identity preamble belongs to Anthropic's
+	// own OAuth path and not to this endpoint.
+	return c.inner.SendWithTransport(ctx, in, bus, false, c.copilotTransport(c.inner.HTTPClient))
 }
 
 func (c *Copilot) Models(ctx context.Context) ([]provider.ModelInfo, error) {

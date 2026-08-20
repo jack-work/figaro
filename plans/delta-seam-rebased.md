@@ -487,3 +487,38 @@ and is why the catch-up does not disappear when rows move to write time.
 WHAT DOES DISAPPEAR UNDER (b): the steady-state read-path write. After the
 first send, every record's row is written by the door at record time, and the
 catch-up finds nothing to do -- which is the property the section exists for.
+
+# THE FAN-OUT, DECIDED BY A CENSUS OF THE REAL STORE (223a0986, 2026-08-20)
+
+Gluck approved "one row per translator channel the aria already has", with the
+caution that it "might automatically get all of them, and it probably
+shouldnt". 87ab658e sharpened it into a requirement: a channel that EXISTS is
+not evidence a provider is IN USE, and the set only grows.
+
+MEASURED BEFORE CHOOSING (TestTranslatorChannelCensus, a copy of the real
+store, 726 arias). A channel is LIVE if its newest row names a fig IR record
+within 50 records of the aria's tail:
+
+    arias with no translator rows at all      402 of 726  (55%)
+    channels per aria (of the other 324)      p50=1 p90=1 p99=2 max=3 mean=1.10
+    LIVE channels per aria                    p50=1 p90=1 p99=2 max=3 mean=1.03
+    fossil channels in the WHOLE store        22
+
+    anthropic          exists on 207 arias, live on 188
+    copilot-messages   exists on 139,        live on 136
+    copilot-responses  exists on  11,        live on  11
+
+SO EXISTENCE AND RECENCY ARE THE SAME RULE ON THIS STORE: 1.10 against 1.03
+channels per aria, and 22 fossils in total. Writing to every existing channel
+costs about 6% more encoder work than writing only to live ones, and the worst
+aria in the store has three.
+
+    DECIDED: EXISTENCE, because a recency rule buys 6% and adds a threshold --
+    a number that would have to be chosen, tuned and explained, and that can be
+    wrong in both directions. The census is the evidence, and it is repeatable:
+    if fossils ever grow, the same probe says so and the rule changes then.
+
+AND THE OTHER HALF OF THE NUMBER MATTERS MORE: 55% OF ARIAS HAVE NO TRANSLATOR
+ROWS AT ALL. For them the door writes nothing at record time and the first send
+still catches up -- which is why the catch-up survives this section rather than
+being deleted by it.
