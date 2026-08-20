@@ -711,3 +711,102 @@ that pushes NOTHING on cancellation, and no shipped provider does that any
 more. The repair stays as the fallback for one that does not (a panic, a
 provider that returns early), and TestInterruptRepairsPartialTurn still covers
 its four modes.
+
+# SECTION 5: THE STREAMED REQUEST BODY, AND THE SDK GUIDANCE VALIDATED
+# (ede92072, 2026-08-20)
+
+Gluck's instruction for this section was that the API and SDK guidance be
+VALIDATED AGAINST THE DOCS rather than assumed. Both halves below are read
+out of the vendor source at the version this repo pins and off the wire; the
+web search only pointed at where to read.
+
+## WHAT LANDED (ad779b9b)
+
+anthropic (direct and through copilot's transport) and openaichat write the
+request body as it is sent. The count is in the commit message; the shape is
+that O(conversation) bytes per send became O(frame + largest row), 1,448,136 B
+-> 663 B at 10,000 messages.
+
+The setting is `system.stream_request_body`, read PER SEND off the snapshot.
+It is not a Knob: transport is not dialect, it does not enter Fingerprint, and
+it must not rebind a provider mid-conversation.
+
+    AND ONE THING THAT IS NOT GATED, STATED PLAINLY BECAUSE IT WOULD BE FAIR
+    TO EXPECT OTHERWISE: the setting chooses the FRAMING, not the encoder.
+    With it off, the body is still produced by the new encoder into a buffer.
+    Two encoders behind a flag is the accretion this campaign exists to
+    remove, and byte-identity with json.Marshal is a test (plus a fuzz target
+    at 850,070 executions) rather than an intention.
+
+## THE FACT THAT DECIDED THE ENCODER, MEASURED NOT ASSUMED
+
+A verbatim splice of stored rows is NOT what json.Marshal writes today.
+Marshal compacts a json.RawMessage AND HTML-ESCAPES `<`, `>` and `&` inside
+it. On this corpus that is every message carrying code or a shell redirect,
+so "the rows are wire-final, write them through" would have changed the bytes
+on the wire for most sends. The encoder reproduces Marshal exactly
+(json.Compact then json.HTMLEscape into reused buffers, zero steady-state
+allocation) and the oracle is equality with json.Marshal.
+
+## THE TRANSPORT, CHECKED ON THE WIRE
+
+    api.anthropic.com      ALPN h2
+    api.openai.com         ALPN h2
+    api.githubcopilot.com  ALPN h2
+
+Part III named HTTP/1.1 CHUNKED TRANSFER ENCODING as the mechanism and its
+rejection by gateways as "the risk that decides feasibility". On these three
+endpoints that risk is not on the normal path at all: under HTTP/2 a body of
+unknown length is DATA frames and Content-Length is simply absent. Chunked
+encoding is what net/http falls back to if a connection is HTTP/1.1.
+
+Risk 2 (retries re-walk) is why GetBody is set, and it is load-bearing for a
+reason the plan did not name: Go's HTTP/2 transport replays a request whose
+connection took a GOAWAY, and without GetBody that replay is a hard failure.
+
+Risk 3 (error timing shifts) is tested as ordered -- a mocked upstream and a
+throw mid-body -- and the canary DEMONSTRATED the failure the test forbids:
+with pw.Close() instead of pw.CloseWithError(), the server read the truncated
+body and answered 200.
+
+## THE SDK HALF: FEASIBLE, VERIFIED, AND BLOCKED ON AN EARLIER QUESTION
+
+    option.WithRequestBody(contentType string, body any) RequestOption
+    "body accepts an io.Reader or raw []bytes"
+
+anthropic-sdk-go v1.42.0 (the pinned version), option/requestoption.go:356.
+It sets RequestConfig.Body, and cfg.Apply(opts...) runs AFTER the params are
+serialized in NewRequestConfig, so a raw body REPLACES the typed one rather
+than racing it. So the answer to option (b) of the anthropicsdk raise above
+is YES, THE VENDOR CLIENT CAN BE GIVEN A PRE-MARSHALLED REQUEST BODY, and it
+can be given a streamed one.
+
+AND THE COST, WHICH IS IN THE SAME FILE AND IS NOT IN THE DOCS
+(internal/requestconfig/requestconfig.go:396-466):
+
+  - A *bytes.Buffer or *bytes.Reader body gets ContentLength and GetBody.
+  - ANY OTHER io.Reader -- an io.Pipe -- gets NEITHER, and the retry loop
+    then breaks out at "Can't actually refresh the body, so we don't attempt
+    to retry here".
+
+    SO STREAMING THE BODY THROUGH THE OFFICIAL SDK SILENTLY DISABLES THE
+    SDK'S OWN TWO RETRIES, and the transport-level GOAWAY replay with them.
+    A buffered raw body keeps both. That is a real trade and it belongs to
+    Gluck, not to me.
+
+WHY IT IS NOT BUILT: handing the SDK stored bytes instead of typed
+MessageParams IS option (b) of the raise above, which is open. Building it
+would answer that question by having built the thing that assumes one answer
+-- exactly what rule 4 forbids. What section 5 owed here was the validation,
+and the validation is done.
+
+## WHAT IS OPEN FOR GLUCK ON THIS SECTION
+
+  1. DEFAULT. `system.stream_request_body` defaults OFF. The bytes are
+     identical either way, so turning it on is a memory decision, not a
+     compatibility one.
+  2. THE SDK, which is the anthropicsdk raise and not a new question: (b) is
+     now verified feasible, and its price is the SDK's retry unless the body
+     is buffered.
+  3. copilot/responses is UNCHANGED and stays so: websocket.JSON.Send
+     marshals a whole frame, as Part III already found.
