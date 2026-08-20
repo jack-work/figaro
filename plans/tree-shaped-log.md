@@ -1890,3 +1890,40 @@ translator log seeds its own append instead of fetching it back
 (seedingTail), and the coordinates are DENSE, which is the precondition for
 the arithmetic fast path that Q1 was asking about at the other end of the
 stack.
+
+# THE CRASH GATE HAS A MISSING HALF, AND WITHOUT IT THE GATE CANNOT FAIL
+# (ede92072, 2026-08-20)
+
+Every handoff in this campaign carries the same gate line, and its third item
+is `FIGARO_CRASH_TEST=1`. That is half a recipe.
+
+    df -T /tmp        tmpfs
+    df -T /var/tmp    btrfs on /dev/nvme1n1p2
+
+`t.TempDir()` lands under `$TMPDIR`, which is unset, which is `/tmp`, which is
+TMPFS. And the crash test's OWN COMMENT, written by whoever made it opt-in,
+says what that means:
+
+    "it is meaningless on tmpfs, where a 'sync' costs nothing and the child
+     spins fast enough to bury the parent in acknowledgements"
+
+IT DOES NOT SKIP THERE. It runs, it passes, and it proves nothing about
+durability -- which is the one thing it exists to prove. The gate line as
+written is a check that cannot fail, run by every bearer who copied it.
+
+    THE GATE IS:  FIGARO_CRASH_TEST=1 TMPDIR=/var/tmp go test ./... -count=1
+
+## AND THE DISCIPLINE ALREADY EXISTED ONE ROOM OVER
+
+plans/campaign-notes/tmpfs-benchmarks.md and dev-root-in-ram.md worked this
+out for MEASUREMENT and made it standing: "all measurement panels now run with
+TMPDIR=/var/tmp". The reasoning is identical and it was never carried across
+to the correctness gate, because the two were written by different hands for
+different reasons.
+
+    A DISCIPLINE ADOPTED FOR BENCHMARKS DOES NOT PROPAGATE TO TESTS BY ITSELF.
+    Both were asking the same question -- is this filesystem the one the
+    product runs on -- and only one of them had been answered.
+
+Recorded on the role board as `crash-gate`, and the handoff's gate line now
+carries the variable rather than the intention.
