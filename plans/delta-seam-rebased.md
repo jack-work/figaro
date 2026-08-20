@@ -905,3 +905,65 @@ owns that addressing.
 
 The doc comment above it ALREADY SAID "the substrate answers" while the code
 asked the cache. A comment is a claim nobody tests.
+
+# RETRACTION: "40% OF ARIAS CARRY A MALFORMED-REQUEST SHAPE" IS NOT A WIRE
+# CLAIM (ede92072, 2026-08-20)
+
+Written beside the claim rather than over it, because I put the number in front
+of Gluck before I had tested it end to end.
+
+## WHAT I PUBLISHED
+
+Probing a snapshot of the real store for fig IR records with adjacent
+same-role neighbours: 742 arias with history, 184,818 records, 300 arias
+affected (40.4%), 2,503 pairs. I paired it with a true finding -- the raw
+anthropic provider does not merge adjacent same-role messages where the SDK
+provider does -- and inferred that sweeping arias onto the raw provider would
+send malformed requests for 40% of them.
+
+## WHAT THE END-TO-END TEST SAYS
+
+The smallest affected aria (ab2a053d), forced onto the raw provider in the
+snapshot shell and SENT FOR REAL, with figaro's own wire dump read afterwards:
+
+    messages on the wire   5
+    roles                  user, assistant, user, assistant, user
+    adjacent same-role     0
+    the send               succeeded
+
+## THE MECHANISM, WHICH IS THE PART WORTH KEEPING
+
+    ADJACENT SAME-ROLE FIG IR RECORDS DO NOT IMPLY ADJACENT SAME-ROLE WIRE
+    ROWS. A record that encodes to nothing produces no row at all, and the
+    row sequence closes over the gap.
+
+That aria's fig IR is genesis, input, input(1 block), input(1 block),
+input(1 block), output, ... and its rows begin at FigaroLT 5: the two adjacent
+inputs at 3 and 4 produced NO ROWS. The wire alternates because the encoder,
+not the record sequence, decides what a message is.
+
+## SO WHAT STANDS AND WHAT DOES NOT
+
+    STANDS   the raw provider does not coalesce, measured directly: two
+             same-role rows in, two same-role messages out, where the SDK
+             merges them to one.
+    STANDS   the API rejects consecutive same-role messages (Anthropic's own
+             issue tracker, including against Claude Code).
+    RETRACTED  the 40.4% as a statement about requests. It is a statement
+             about RECORDS, and the layer between them removes most of it.
+    UNKNOWN  whether any real aria produces adjacent same-role ROWS. Not
+             measured, and the risk is therefore unquantified.
+
+## AND A VACUOUS RUN I NEARLY READ AS A NEGATIVE
+
+The wire-row probe -- the right layer to have asked first -- reported "0 arias
+with rows, 0 affected" and I moved past it. THAT WAS NOT A CLEAN NEGATIVE: the
+v3 schema bump had cleared every derived translator channel when my binary
+opened the snapshot, so the probe counted an empty set. An empty result has
+several indistinguishable causes and this file has said so before about
+callpath; I met the same trap from a different direction and did not name it
+until the end-to-end test forced me back.
+
+WHAT WOULD SETTLE IT: count adjacent same-role among rows AFTER a catch-up has
+re-derived them for every aria, or read the snapshot with a v2-era binary
+before the bump clears anything. Neither is done.
