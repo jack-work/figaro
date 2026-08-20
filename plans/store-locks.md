@@ -186,7 +186,7 @@ the whole campaign. Both of the locks the campaign's own new code introduced
 are audited here against the standing test -- WHAT INVARIANT SPANS THE CRITICAL
 SECTION THAT COULD NOT BE PUBLISHED AS ONE IMMUTABLE VALUE?
 
-## 1. translatorEncoders.mu -- REMOVED (published instead)
+## 1. translatorEncoders.mu -- PUBLISHED (and the COUNT DOES NOT MOVE)
 
 It guarded a map WRITTEN ONCE PER PROVIDER AND READ ON EVERY FIG IR APPEND.
 That is the standing test's own named suspect: "a lock protecting a map that is
@@ -198,6 +198,17 @@ other because add() is read-modify-write.
     TestReadingTheEncoderSetTakesNoLock holds the WRITER's lock and serves a
     read from another goroutine. Canary: put writeMu back around get() and it
     goes red by timeout in 3.00s.
+
+AND THE DECLARATION COUNT IS 81 BEFORE AND 81 AFTER, because an RWMutex became
+a Mutex. I published "80" before checking. What happened is the campaign's own
+finding again -- THE MUTEX WAS TWO EXCLUSIONS WEARING ONE NAME -- and only the
+reader/writer half, the half on the hot path, is gone.
+
+    A GOAL COUNTED IN DECLARATIONS CANNOT SEE THE CHANGE THAT MATTERS HERE.
+    "83 -> 81" measures how many locks exist, not how many are taken on a read
+    path, and those are different questions. The second is the one the standing
+    order is actually about ("be on the lookout for spurious locking, even
+    where it appears valuable"), and nothing in the tree reports it.
 
 ## 2. OnAppend.mu -- RAISED, NOT TOUCHED
 
