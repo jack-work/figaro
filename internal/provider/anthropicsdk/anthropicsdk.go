@@ -88,7 +88,6 @@ type Provider struct {
 	CacheOpen      func(aria string) (store.Log[[]json.RawMessage], error)
 	CacheNamespace string
 	cache          store.Log[[]json.RawMessage]
-	projection     *provider.IncrementalProjection[projectedMessages]
 
 	// windows caches context windows learned from the models endpoint and
 	// falls back to the verified static table.
@@ -218,15 +217,15 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	// transport can write into.
 	ctx, note := withRateLimitNote(ctx)
 
-	cache, err := p.cacheFor(in.AriaID)
+	rows, err := p.cacheFor(in.AriaID)
 	if err != nil {
 		return err
 	}
-	projected, err := p.catchUp(in.FigLog, cache, in.Form, in.Studies)
+	messages, messageLTs, err := p.catchUp(in.FigLog, rows, in.Form, in.Studies)
 	if err != nil {
 		return err
 	}
-	if len(projected.Messages) == 0 {
+	if len(messages) == 0 {
 		return fmt.Errorf("empty context")
 	}
 
@@ -249,7 +248,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		if terr != nil {
 			return fmt.Errorf("resolve token: %w", terr)
 		}
-		params := buildParams(projected.Messages, projected.LogicalTimes, in.Snapshot, in.Tools, int64(maxTokens), isOAuthToken(tok) && !p.NoOAuthIdentity, model, !p.NoEagerToolStreaming)
+		params := buildParams(messages, messageLTs, in.Snapshot, in.Tools, int64(maxTokens), isOAuthToken(tok) && !p.NoOAuthIdentity, model, !p.NoEagerToolStreaming)
 		client := anthropic.NewClient(opts...)
 		stream := client.Messages.NewStreaming(ctx, params, opts...)
 		assembled, raw, serr := drainStream(ctx, stream, model, bus)
@@ -282,7 +281,6 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		return fmt.Errorf("anthropicsdk cache assistant ToParam: %w", err)
 	}
 	bus.PushFigaro(msg, native)
-	p.acceptAssistantProjection(entry.LT, native.Payload)
 	return nil
 }
 
@@ -311,30 +309,6 @@ func (p *Provider) assistantCache(acc anthropic.Message) (provider.AssistantCach
 	return provider.AssistantCache{
 		Namespace: p.CacheNamespace, Payload: []json.RawMessage{raw}, Fingerprint: p.Fingerprint(),
 	}, nil
-}
-
-func (p *Provider) acceptAssistantProjection(lt uint64, encoded []json.RawMessage) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.projection == nil {
-		return
-	}
-	state := appendProjectedMessages(p.projection.State, encoded, lt)
-	p.projection = &provider.IncrementalProjection[projectedMessages]{
-		State:           state,
-		Form:            p.projection.Form,
-		Fingerprint:     p.projection.Fingerprint,
-		Entries:         p.projection.Entries + 1,
-		LastLT:          lt,
-		LastFormVersion: p.projection.LastFormVersion,
-		// EVERY FIELD THE PROJECTION CARRIES MUST BE CARRIED HERE. This
-		// splice rebuilds the projection by hand after a live append, and a
-		// field it forgets is not lost state but lost POSITION: the next pass
-		// believes the board sits at zero and folds the whole history to
-		// catch up, every turn, correctly and forever.
-		FormVersionOfSnapshot: p.projection.FormVersionOfSnapshot,
-		LastStudyVersions:     p.projection.LastStudyVersions,
-	}
 }
 
 func (p *Provider) resolveModel(snap form.Snapshot) string {

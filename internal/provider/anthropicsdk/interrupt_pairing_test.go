@@ -128,10 +128,12 @@ func TestInterruptedTurn_BuiltRequestPairsEveryToolUse(t *testing.T) {
 	}
 
 	p := &Provider{}
-	projection, err := p.catchUp(figLog, nil, nil, nil)
-	require.NoError(t, err, "the post-interrupt IR must project to a request at all")
+	// A ROW LOG IS NOT OPTIONAL ANY MORE: a send that cannot write its rows
+	// fails rather than encoding a second copy in memory.
+	messages, _, err := p.catchUp(figLog, store.NewMemLog[[]json.RawMessage](), nil, nil)
+	require.NoError(t, err, "the post-interrupt IR must translate to a request at all")
 
-	assertToolUsePairing(t, projection.Messages)
+	assertToolUsePairing(t, messages)
 }
 
 // assertToolUsePairing is the invariant the API enforces and a 400 reports

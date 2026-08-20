@@ -94,8 +94,9 @@ func TestStudyLifecycleDump(t *testing.T) {
 		"6. DROP",
 	}
 	i := 0
-	cfg := provider.ProjectionConfig[int]{
+	cfg := provider.CatchUpConfig{
 		Log:     log,
+		Rows:    store.NewMemLog[[]json.RawMessage](),
 		Studies: studies,
 		Encode: func(m message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 			texts := provider.StudyReminderTexts(m, form.Snapshot{})
@@ -109,9 +110,8 @@ func TestStudyLifecycleDump(t *testing.T) {
 			}
 			return []json.RawMessage{json.RawMessage(`{}`)}, nil
 		},
-		Append: func(s int, _ []json.RawMessage, _ uint64) int { return s + 1 },
 	}
-	if _, _, err := provider.ProjectIncrementally(cfg); err != nil {
+	if _, err := provider.CatchUp(cfg); err != nil {
 		t.Fatal(err)
 	}
 	fmt.Println()

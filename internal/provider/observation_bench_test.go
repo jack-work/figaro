@@ -71,32 +71,38 @@ func projectWith(b *testing.B, turns, observed int, warm bool) {
 		})
 	}
 
-	cfg := provider.ProjectionConfig[int]{
-		Log:     log,
-		Studies: studies,
-		Encode: func(m message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
-			// Encode is the provider's business; count the studied folds so
-			// the compiler cannot elide the derivation.
-			n := len(m.StudyPatches)
-			return []json.RawMessage{json.RawMessage(fmt.Sprintf(`{"n":%d}`, n))}, nil
-		},
-		Append: func(s int, enc []json.RawMessage, _ uint64) int { return s + len(enc) },
+	newCfg := func() provider.CatchUpConfig {
+		return provider.CatchUpConfig{
+			Log:     log,
+			Rows:    store.NewMemLog[[]json.RawMessage](),
+			Studies: studies,
+			Encode: func(m message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
+				// Encode is the provider's business; count the studied folds
+				// so the compiler cannot elide the derivation.
+				n := len(m.StudyPatches)
+				return []json.RawMessage{json.RawMessage(fmt.Sprintf(`{"n":%d}`, n))}, nil
+			},
+		}
 	}
 
-	var previous *provider.IncrementalProjection[int]
+	// WARM IS A ROW LOG THAT IS ALREADY CAUGHT UP, not a memo: the second
+	// pass over the same rows visits only what has no row yet, which for a
+	// steady log is nothing.
+	warmCfg := newCfg()
 	if warm {
-		p, _, err := provider.ProjectIncrementally(cfg)
-		if err != nil {
+		if _, err := provider.CatchUp(warmCfg); err != nil {
 			b.Fatal(err)
 		}
-		previous = p
 	}
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		cfg.Previous = previous
-		if _, _, err := provider.ProjectIncrementally(cfg); err != nil {
+		cfg := warmCfg
+		if !warm {
+			cfg = newCfg()
+		}
+		if _, err := provider.CatchUp(cfg); err != nil {
 			b.Fatal(err)
 		}
 	}

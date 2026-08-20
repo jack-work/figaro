@@ -90,8 +90,28 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 	// p50=5, p99=74, max=371 -- the fold the five carried version fields
 	// existed to avoid.
 	snap := form.Snapshot{}
-	if cfg.Form != nil && lastForm > 0 {
-		snap = form.Fold(snap, cfg.Form.PatchesBetween(0, lastForm))
+	switch {
+	case cfg.Form != nil:
+		if lastForm > 0 {
+			snap = form.Fold(snap, cfg.Form.PatchesBetween(0, lastForm))
+		}
+	case watermark > 0:
+		// AN EPHEMERAL ARIA HAS NO ACCESSOR AND CARRIES ITS PATCHES ON THE
+		// RECORDS THEMSELVES, so the board it reached is only recoverable by
+		// folding the records already translated. Skipping them left the
+		// snapshot at zero and rendered a transition from nothing:
+		// "=>new" where the aria had said "old=>new".
+		//
+		// COMPLEXITY, NAMED: this is O(records before the watermark) per
+		// catch-up, and it applies ONLY where there is no form channel to
+		// ask. With an accessor the board is one range read, as above.
+		prefix, _ := store.TailAfter(cfg.Log, 0)
+		for _, e := range prefix {
+			if e.LT > watermark {
+				break
+			}
+			snap = form.Fold(snap, e.Payload.Patches)
+		}
 	}
 
 	for _, entry := range entries {
@@ -187,6 +207,24 @@ func Rows(rows store.Log[[]json.RawMessage]) (perMessage [][]json.RawMessage, lt
 		lts = append(lts, e.FigaroLT)
 	}
 	return perMessage, lts
+}
+
+// carriesStudy reports whether a record can carry a studied-form block. Only
+// a user message can: every encoder renders StudyReminderTexts under
+// RoleInput. A record that cannot carry one must not consume a window.
+func carriesStudy(msg message.Message) bool { return msg.Role == message.RoleInput }
+
+// ClearStaleRows empties a translator log whose stored rows were written under
+// a different encoder fingerprint. THIS IS THE ONE CANONICAL MOMENT at which
+// derived rows are regenerated: a provider checks it when it opens the log,
+// and everything downstream may then assume the rows were written by the
+// encoder that is about to read them.
+func ClearStaleTranslationCache(rows store.Log[[]json.RawMessage], fingerprint string) (string, bool, error) {
+	entry, ok := rows.PeekTail()
+	if !ok || entry.Fingerprint == "" || entry.Fingerprint == fingerprint {
+		return "", false, nil
+	}
+	return entry.Fingerprint, true, rows.Clear()
 }
 
 func maxVersion(a, b uint64) uint64 {
