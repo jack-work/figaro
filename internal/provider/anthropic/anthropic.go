@@ -810,6 +810,10 @@ func (a *Anthropic) projectMessagesWithLTs(perMessage [][]json.RawMessage, lts [
 		}
 	}
 
+	// BEFORE ANY MARKING: cache breakpoints and per-LT tags address messages by
+	// INDEX, so merging after them would move the marks onto other messages.
+	req.Messages, msgLTs = coalesceRows(req.Messages, msgLTs)
+
 	if policy := provider.ResolveCachePolicy(snapshot); !policy.Off() {
 		route := a.route()
 		// Deliberately NOT gated on the model's minimum cacheable size.
