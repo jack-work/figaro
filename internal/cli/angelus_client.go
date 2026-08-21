@@ -241,18 +241,21 @@ func mustConnectAngelus(loaded *config.Loaded) *sdk.Angelus {
 	return cli
 }
 
-// mustCreateAndBindOutfit mints an aria and binds this shell to it. An empty
-// dressing means "as usual": the angelus folds the configured default.
-func mustCreateAndBindOutfit(ctx context.Context, acli *sdk.Angelus, loaded *config.Loaded, ppid int, d dressing) (string, transport.Endpoint) {
+// mustCreate mints an aria. An empty dressing means "as usual": the angelus
+// folds the configured default.
+//
+// IT DOES NOT ATTEND. Minting used to bind this shell as a side effect, which
+// made attendance a property of the helper rather than of the verb -- five
+// verbs, five rules, and a restoreAttendance whose whole job was to undo a
+// bind its own mint should never have done. Now every birth verb says what it
+// means with attendNew, and a verb that does not say it does not move the
+// shell.
+func mustCreate(ctx context.Context, acli *sdk.Angelus, loaded *config.Loaded, d dressing) (string, transport.Endpoint) {
 	createResp, err := createWithFirstRun(ctx, loaded, d, func() (*rpc.CreateResponse, error) {
 		return acli.Create(ctx, d.names, d.patch)
 	})
 	if err != nil {
 		dieWithClosure(err, "create figaro: %s", err)
-	}
-
-	if err := bindBinding(ctx, acli, ppid, createResp.FigaroID, 0); err != nil {
-		die("bind: %s", err)
 	}
 
 	ep := transport.Endpoint{
@@ -265,6 +268,18 @@ func mustCreateAndBindOutfit(ctx context.Context, acli *sdk.Angelus, loaded *con
 	}
 
 	return createResp.FigaroID, ep
+}
+
+// attendNew moves this shell onto a thing a verb just created. THE ONE LAW:
+// a verb that creates something FOR you attends it; a verb that creates
+// something BESIDE you (a fan-out fork, an ephemeral send) does not; --stay
+// suppresses the move wherever it is offered; and `attend` is the only verb
+// whose purpose IS the move. Binding disabled makes this a silent no-op, so a
+// script gets its aria without acquiring a binding it never asked for.
+func attendNew(ctx context.Context, acli *sdk.Angelus, id string) {
+	if err := bindBinding(ctx, acli, shellPID, id, 0); err != nil {
+		die("attend %s: %s", id, err)
+	}
 }
 
 // checkDaemonBuild refuses to speak to a daemon built from a different

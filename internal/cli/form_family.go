@@ -79,7 +79,13 @@ func createFormAndReport(loaded *config.Loaded, parent string, d dressing, asJSO
 	} else {
 		fmt.Printf("forked %s from %s (version %d)\n", resp.FormID, parent, resp.Version)
 	}
-	fmt.Fprintf(os.Stderr, "attend it with `fig at %s`; it binds with `fig bind %s`\n", resp.FormID, resp.FormID)
+	// A form you just minted is a thing created FOR you, so the shell moves
+	// onto it -- the same law every other birth verb obeys. It was the lone
+	// exception (Gluck, 2026-08-21: "fig form new should attend"), and being
+	// an exception is the whole of what was wrong with it: attendance was a
+	// property of which helper a verb happened to call.
+	attendNew(ctx, acli, resp.FormID)
+	fmt.Fprintf(os.Stderr, "attending %s (it binds with `fig bind %s`)\n", resp.FormID, resp.FormID)
 }
 
 // runFormLs lists unbound forms: the form rows of the global listing,

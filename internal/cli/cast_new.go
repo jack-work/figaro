@@ -104,14 +104,15 @@ func liftRoleArg(args []string) (string, []string, error) {
 }
 
 // mintFigaroFor creates an aria and returns its id. The `fig new` path,
-// reused so that an autocast-born figaro is born exactly like a hand-made one.
+// reused so that an autocast-born figaro is born exactly like a hand-made
+// one. It does NOT attend: attendAfterCast decides that, once, for the whole
+// cast family.
 func mintFigaroFor(loaded *config.Loaded, d dressing) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
-	unbindBinding(ctx, acli, shellPID)
-	id, _ := mustCreateAndBindOutfit(ctx, acli, loaded, shellPID, d)
+	id, _ := mustCreate(ctx, acli, loaded, d)
 	if id == "" {
 		return "", fmt.Errorf("the daemon minted no aria")
 	}
@@ -133,20 +134,6 @@ func attendAfterCast(loaded *config.Loaded, roleID string, minted, stay bool) {
 		return
 	}
 	fmt.Fprintf(os.Stderr, "attending %s (--stay to keep your previous attendance)\n", roleID)
-}
-
-// restoreAttendance puts the shell back where it was. The mint rebinds as a
-// side effect of being a mint, so a verb that should not have moved the shell
-// has to move it back.
-func restoreAttendance(loaded *config.Loaded, id string) {
-	if id == "" || bindingDisabled() {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	acli := mustConnectAngelus(loaded)
-	defer acli.Close()
-	_ = bindBinding(ctx, acli, shellPID, id, 0)
 }
 
 // runNewCast is `fig new -C`: mint the figaro, then cast it.
@@ -198,11 +185,10 @@ func runCastFromAttendedForm(loaded *config.Loaded, formID string, d dressing, a
 	fmt.Fprintf(os.Stderr, "attending %s: minted %s to play it\n", formID, ariaID)
 	out := autocast(loaded, ariaID, formID, dressing{})
 	out.Minted = true
-	// No role was minted here: the form was already in front of us. The mint
-	// rebound this shell to the aria as a side effect, so put it back.
-	if !stay {
-		restoreAttendance(loaded, formID)
-	}
+	// The shell stays on the FORM it was attending: the aria was minted to
+	// play the role, not to take the shell. Nothing to undo -- the mint no
+	// longer moves anyone.
+	_ = stay
 	reportCast(out, asJSON)
 }
 

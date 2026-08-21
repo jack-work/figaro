@@ -51,7 +51,8 @@ func runPrompt(loaded *config.Loaded, d dressing, prompt string, set renderSetti
 			die("%s", rerr)
 		}
 	} else {
-		figaroID, figaroEP = mustCreateAndBindOutfit(ctx, acli, loaded, ppid, d)
+		figaroID, figaroEP = mustCreate(ctx, acli, loaded, d)
+		attendNew(ctx, acli, figaroID)
 	}
 	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set)
@@ -70,7 +71,8 @@ func runNewPrompt(loaded *config.Loaded, prompt string, d dressing, set renderSe
 	ppid := shellPID
 	unbindBinding(ctx, acli, ppid)
 
-	figaroID, figaroEP := mustCreateAndBindOutfit(ctx, acli, loaded, ppid, d)
+	figaroID, figaroEP := mustCreate(ctx, acli, loaded, d)
+	attendNew(ctx, acli, figaroID)
 	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 
 	if set.jsonMode {
@@ -299,7 +301,8 @@ func runNewFromOutfit(loaded *config.Loaded, d dressing, set renderSettings) {
 	defer acli.Close()
 	ppid := shellPID
 	unbindBinding(ctx, acli, ppid)
-	figaroID, _ := mustCreateAndBindOutfit(ctx, acli, loaded, ppid, d)
+	figaroID, _ := mustCreate(ctx, acli, loaded, d)
+	attendNew(ctx, acli, figaroID)
 	if set.jsonMode {
 		enc := json.NewEncoder(os.Stdout)
 		_ = enc.Encode(struct {

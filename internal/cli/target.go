@@ -42,7 +42,8 @@ func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *sdk
 			// Mint one, on the named outfit, and bind this shell to it -
 			// bindBinding is a no-op when binding is disabled, so a script
 			// gets the aria without acquiring a binding it never asked for.
-			id, ep := mustCreateAndBindOutfit(ctx, acli, loaded, ppid, d)
+			id, ep := mustCreate(ctx, acli, loaded, d)
+			attendNew(ctx, acli, id)
 			return id, ep, nil
 		}
 		return r.FigaroID, transport.Endpoint{Scheme: r.Endpoint.Scheme, Address: r.Endpoint.Address}, nil
