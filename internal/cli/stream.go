@@ -389,9 +389,17 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		// q / Ctrl-D. If the turn already finished while the pager was up this
 		// is a clean exit, not an abandonment: no rule, no follow hint, and the
 		// completed tail reaches scrollback intact.
+		//
+		// UNDER mu LIKE EVERY OTHER RENDERER CALL IN THIS FILE. The spinner,
+		// the notification handler and the pacer's trailing render are still
+		// running here: their defers have not fired.
+		mu.Lock()
 		lt.abandon(turnStatusDisconnected)
+		mu.Unlock()
 	case <-fcli.Done():
+		mu.Lock()
 		lt.abandon(turnStatusError)
+		mu.Unlock()
 		os.Exit(1)
 	case <-ctx.Done():
 		// Ctrl-C: interrupt the in-flight turn; if nothing's running (e.g.
@@ -412,7 +420,9 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			case <-doneCh:
 			case <-fcli.Done():
 			case <-time.After(3 * time.Second):
+				mu.Lock()
 				lt.abandon(turnStatusInterrupted)
+				mu.Unlock()
 			}
 			mu.Lock()
 			lt.report("interrupted")

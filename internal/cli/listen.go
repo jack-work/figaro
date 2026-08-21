@@ -231,21 +231,30 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 		}
 	}
 
+	// EVERY RENDERER ENTRY POINT UNDER mu, INCLUDING THE LAST ONE. The spinner
+	// goroutine, the notification handler and the pacer's trailing render are
+	// all still live while this runs -- they are stopped by defers that have
+	// not fired yet -- so an unlocked teardown paints against them.
+	locked := func(fn func()) {
+		mu.Lock()
+		defer mu.Unlock()
+		fn()
+	}
 	select {
 	case <-doneCh:
 	case <-opt.end:
 		// The tape ran out. Leave the way a finished turn leaves.
-		lt.finishTurn("")
+		locked(func() { lt.finishTurn("") })
 	case <-disconnectCh:
-		lt.abandon(turnStatusDisconnected)
+		locked(func() { lt.abandon(turnStatusDisconnected) })
 	case <-fcli.Done():
-		lt.abandon(turnStatusError)
+		locked(func() { lt.abandon(turnStatusError) })
 	case <-ctx.Done():
 		// Ctrl-C from signal.NotifyContext: interrupt the turn, then leave.
 		sessionLine(os.Stderr, "\r\ninterrupting...")
 		intCtx, intCancel := context.WithTimeout(context.Background(), 3*time.Second)
 		_ = fcli.Interrupt(intCtx)
 		intCancel()
-		lt.abandon(turnStatusInterrupted)
+		locked(func() { lt.abandon(turnStatusInterrupted) })
 	}
 }
