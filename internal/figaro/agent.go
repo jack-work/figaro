@@ -1133,6 +1133,16 @@ func (a *Agent) endTurnDiscarding(reason string) {
 }
 
 func (a *Agent) finishTurn(reason string) {
+	// THE IN-FLIGHT ASSEMBLY DIES WITH ITS TURN. asm holds a strings.Builder
+	// per content block, so a finished turn that keeps it keeps the whole
+	// streamed reply resident until the NEXT turn happens to overwrite it --
+	// on an idle aria, indefinitely. Only the round currently streaming needs
+	// it; every reader of it (the live compose, the repair view) has run by
+	// the time a turn is finishing.
+	if a.turn != nil {
+		a.turn.asm = nil
+	}
+
 	// THE HISTORY IS WELL-FORMED BEFORE THE TURN IS ANNOUNCED OVER. An
 	// interrupted turn can leave an invoke with no result, and a fork or a read
 	// taken between the announcement and the next message would see it. Doing
