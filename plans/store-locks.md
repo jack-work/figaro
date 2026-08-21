@@ -242,3 +242,54 @@ map lock need only cover fetch-or-create, and the derivation runs outside it.
 I have not measured what (a) costs. The honest quantity would be appends
 serialized per second across N concurrent arias, and no instrument in the tree
 reports it.
+
+# THE INSTRUMENT THE STANDING GOAL WAS MISSING (ede92072, 2026-08-20)
+
+The goal has been measured by a count of DECLARATIONS -- 83 then, 81 now. That
+counts how many locks EXIST. The order is about something else: "spurious
+locking, even where it appears valuable", which is a question about locks
+TAKEN ON A READ PATH, and nothing in the tree answered it.
+
+scripts/lockpaths.sh answers it, statically, over the existing callpath tool.
+A tool and not a list, for callpath's own stated reason.
+
+## WHAT IT SAYS TODAY, AND IT IS NOT WHAT THE CACHE WORK IMPLIED
+
+Every decoded read reaches a mutex, and the tree cache is not the one:
+
+    Read (translations)   lineage.go:9, xwal_store.go:393, xwal_log.go:82,
+                          xwal_backend.go:300
+    Read (fig IR)         lineage.go:9, xwal_store.go:393, xwal_log.go:82,
+                          xwal_backend.go:229
+    ReadFrom, Lookup      the same four
+    PeekTail              xwal_store.go:393, xwal_log.go:82
+
+TWO SITES ACCOUNT FOR ALL OF IT, and both are the store's own `s.mu`:
+
+  XwalStore.Lineage (lineage.go:9) takes s.mu to call trunks.ListLight().
+      treeLog.refs() calls it ON EVERY peek, so EVERY READ that consults the
+      lineage takes a process-wide lock -- to obtain an answer that changes
+      only when an aria is forked or created.
+
+  XwalStore.openNode (xwal_store.go:393) takes s.mu for the whole open, and
+      xwalLog.openOnce calls it PER READ -- so every substrate read of every
+      channel of every aria queues on one lock.
+
+    SO "A HIT TAKES NO LOCK" IS TRUE OF tree.Cache AND FALSE OF THE READ. The
+    campaign removed the lock from the cache and left two process-wide locks
+    on the path that reaches it, which no per-layer measurement would show --
+    the same shape as "a per-layer benefit test cannot measure a cost that
+    exists only BETWEEN layers".
+
+## WHAT I HAVE NOT DONE
+
+Neither is touched. Both are `s.mu` with genuinely concurrent callers, which
+the escalation rule reserves for Gluck, and the lineage one has the shape the
+standing test names as curable -- an answer that changes rarely, recomputed
+under a lock on every read, i.e. a candidate for publishing rather than
+locking.
+
+AND THE NUMBER TO BRING HIM IS NOT MEASURED: how long a read waits on s.mu
+under N concurrent arias. The static path says the lock IS taken; it says
+nothing about contention, and this file has been burned before by treating one
+as the other.
