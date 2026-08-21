@@ -3,10 +3,10 @@ package cli
 import (
 	"context"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"time"
 
-	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/api/rpc"
 )
 
@@ -17,7 +17,7 @@ type forkCallResult struct {
 
 func waitForFork(
 	ctx context.Context,
-	client *angelus.Client,
+	client *sdk.Angelus,
 	ariaID string,
 	at forkPoint,
 	d dressing,

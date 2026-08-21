@@ -3,16 +3,16 @@ package cli
 import (
 	"context"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"path/filepath"
 	"syscall"
 	"text/tabwriter"
 	"time"
 
-	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/config"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/transport"
 )
 
 func runRestWithFlags(force, keepPIDs bool) {
@@ -20,7 +20,7 @@ func runRestWithFlags(force, keepPIDs bool) {
 	sockPath := angelusSocketPath()
 	ep := transport.UnixEndpoint(sockPath)
 	if keepPIDs {
-		cli, err := angelus.DialClient(ep)
+		cli, err := sdk.DialAngelus(ep)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "angelus is not running")
 			return
@@ -34,7 +34,7 @@ func runRestWithFlags(force, keepPIDs bool) {
 			die("save-bindings: %s", err)
 		}
 		fmt.Fprintf(os.Stderr, "persisted %d pid binding(s)\n", resp.Count)
-	} else if cli, err := angelus.DialClient(ep); err == nil {
+	} else if cli, err := sdk.DialAngelus(ep); err == nil {
 		cli.Close()
 	} else {
 		fmt.Fprintln(os.Stderr, "angelus is not running")

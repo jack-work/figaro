@@ -9,14 +9,14 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/sdk"
 	"io"
 	"log/slog"
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/transport"
+	"github.com/jack-work/figaro/api/transport"
 )
 
 func benchPatch(kv map[string]string) *rpc.FormPatch {
@@ -42,7 +42,7 @@ func BenchmarkCast(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	fc, err := figaro.DialClient(transport.Endpoint{Scheme: created.Endpoint.Scheme, Address: created.Endpoint.Address}, nil)
+	fc, err := sdk.DialAria(transport.Endpoint{Scheme: created.Endpoint.Scheme, Address: created.Endpoint.Address}, nil)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func BenchmarkRoleRedirectRead(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	rc, err := figaro.DialClient(transport.Endpoint{Scheme: role.Endpoint.Scheme, Address: role.Endpoint.Address}, nil)
+	rc, err := sdk.DialAria(transport.Endpoint{Scheme: role.Endpoint.Scheme, Address: role.Endpoint.Address}, nil)
 	if err != nil {
 		b.Fatal(err)
 	}

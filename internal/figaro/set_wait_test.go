@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/uiir"

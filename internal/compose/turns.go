@@ -3,8 +3,8 @@ package compose
 import (
 	"strings"
 
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/turns"
 )
 

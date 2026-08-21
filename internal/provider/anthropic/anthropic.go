@@ -18,9 +18,9 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/auth"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/anthropicmodels"

@@ -10,8 +10,8 @@ import (
 	"os"
 	"sync"
 
-	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/jkrpc"
 )
 

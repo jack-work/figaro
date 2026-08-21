@@ -5,8 +5,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/uiir"
 )
 

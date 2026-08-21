@@ -10,18 +10,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/config"
 )
 
 // resolveStudyArgs applies the positional grammar shared by study/drop/
 // cast: [<aria>] <form>, with kind validation naming its slot errors.
-func resolveStudyArgs(ctx context.Context, acli *angelus.Client, args []string, formInFlags bool, verb string) (ariaID, formID string, err error) {
+func resolveStudyArgs(ctx context.Context, acli *sdk.Angelus, args []string, formInFlags bool, verb string) (ariaID, formID string, err error) {
 	switch {
 	case len(args) == 2:
 		ariaID, formID = args[0], args[1]

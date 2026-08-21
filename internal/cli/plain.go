@@ -4,16 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"io"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/api/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/transport"
+	"github.com/jack-work/figaro/api/transport"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 )
 
 // stripBashFences removes markdown code fences.
@@ -40,7 +40,7 @@ func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out 
 	sink := newPlainSink(out)
 	doneCh := sink.doneCh
 
-	fcli, err := figaro.DialClient(ep, sink.handle)
+	fcli, err := sdk.DialAria(ep, sink.handle)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error: connect figaro:", err)
 		return 1
@@ -86,7 +86,7 @@ func verbatimPrompt(ctx context.Context, ep transport.Endpoint, prompt string, o
 	sink := &verbatimSink{out: out, doneCh: make(chan struct{}, 1)}
 	doneCh := sink.doneCh
 
-	fcli, err := figaro.DialClient(ep, sink.handle)
+	fcli, err := sdk.DialAria(ep, sink.handle)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error: connect figaro:", err)
 		return 1

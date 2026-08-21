@@ -6,18 +6,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"strings"
 
 	jkrpc "github.com/jack-work/jkrpc"
 
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/cli/figtree"
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/outfit"
-	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/transport"
 )
 
 // runStateOutfit is `figaro state outfit …`: the apply, the closure and the
@@ -129,7 +129,7 @@ func runOutfit(loaded *config.Loaded, ariaID, arg string) {
 		die("%s", terr)
 	}
 
-	fcli, err := figaro.DialClient(transport.Endpoint{Scheme: ep.Scheme, Address: ep.Address}, nil)
+	fcli, err := sdk.DialAria(transport.Endpoint{Scheme: ep.Scheme, Address: ep.Address}, nil)
 	if err != nil {
 		die("dial aria: %s", err)
 	}

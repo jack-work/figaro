@@ -2,29 +2,28 @@ package cli
 
 import (
 	"context"
+	"github.com/jack-work/figaro/sdk"
 	"time"
 
-	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/figaro/internal/transport"
 )
 
 // Session holds the resolved connections for a CLI command.
 type Session struct {
 	Loaded   *config.Loaded
-	Angelus  *angelus.Client
-	Figaro   *figaro.Client
+	Angelus  *sdk.Angelus
+	Figaro   *sdk.Aria
 	AriaID   string
 	Endpoint transport.Endpoint
 }
 
 // WithAngelus connects to the angelus and calls fn.
-func WithAngelus(loaded *config.Loaded, fn func(acli *angelus.Client) error) {
+func WithAngelus(loaded *config.Loaded, fn func(acli *sdk.Angelus) error) {
 	ensureHush()
 	ensureAngelus()
 	ep := transport.UnixEndpoint(angelusSocketPath())
-	acli, err := angelus.DialClient(ep)
+	acli, err := sdk.DialAngelus(ep)
 	if err != nil {
 		die("connect angelus: %s", err)
 	}
@@ -37,7 +36,7 @@ func WithAngelus(loaded *config.Loaded, fn func(acli *angelus.Client) error) {
 // WithSessionFor resolves the target aria (explicit id > pid binding)
 // and calls fn. When explicitID is empty, falls back to the pid binding.
 func WithSessionFor(loaded *config.Loaded, explicitID string, fn func(s *Session) error) {
-	WithAngelus(loaded, func(acli *angelus.Client) error {
+	WithAngelus(loaded, func(acli *sdk.Angelus) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
@@ -66,7 +65,7 @@ func WithSessionFor(loaded *config.Loaded, explicitID string, fn func(s *Session
 			ep = transport.Endpoint{Scheme: r.Endpoint.Scheme, Address: r.Endpoint.Address}
 		}
 
-		fcli, err := figaro.DialClient(ep, nil)
+		fcli, err := sdk.DialAria(ep, nil)
 		if err != nil {
 			return err
 		}

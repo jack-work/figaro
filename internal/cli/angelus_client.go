@@ -3,19 +3,19 @@ package cli
 import (
 	"context"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro/wire"
-	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/store/xwal"
-	"github.com/jack-work/figaro/internal/transport"
 )
 
 // ariaBackend constructs the XWAL aria tree under the configured state root,
@@ -110,7 +110,7 @@ func isTestBinary(exe string) bool {
 func ensureAngelus() {
 	sockPath := angelusSocketPath()
 	ep := transport.UnixEndpoint(sockPath)
-	if cli, err := angelus.DialClient(ep); err == nil {
+	if cli, err := sdk.DialAngelus(ep); err == nil {
 		checkDaemonBuild(cli)
 		cli.Close()
 		return
@@ -161,7 +161,7 @@ func ensureAngelus() {
 	var lastNotice time.Time
 	notified := false
 	for {
-		if cli, err := angelus.DialClient(ep); err == nil {
+		if cli, err := sdk.DialAngelus(ep); err == nil {
 			cli.Close()
 			if notified {
 				fmt.Fprintln(os.Stderr, "angelus: ready")
@@ -229,12 +229,12 @@ const (
 	incumbentGrace = 10 * time.Second
 )
 
-func mustConnectAngelus(loaded *config.Loaded) *angelus.Client {
+func mustConnectAngelus(loaded *config.Loaded) *sdk.Angelus {
 	_ = loaded
 	ensureHush()
 	ensureAngelus()
 	ep := transport.UnixEndpoint(angelusSocketPath())
-	cli, err := angelus.DialClient(ep)
+	cli, err := sdk.DialAngelus(ep)
 	if err != nil {
 		die("connect angelus: %s", err)
 	}
@@ -243,7 +243,7 @@ func mustConnectAngelus(loaded *config.Loaded) *angelus.Client {
 
 // mustCreateAndBindOutfit mints an aria and binds this shell to it. An empty
 // dressing means "as usual": the angelus folds the configured default.
-func mustCreateAndBindOutfit(ctx context.Context, acli *angelus.Client, loaded *config.Loaded, ppid int, d dressing) (string, transport.Endpoint) {
+func mustCreateAndBindOutfit(ctx context.Context, acli *sdk.Angelus, loaded *config.Loaded, ppid int, d dressing) (string, transport.Endpoint) {
 	createResp, err := createWithFirstRun(ctx, loaded, d, func() (*rpc.CreateResponse, error) {
 		return acli.Create(ctx, d.names, d.patch)
 	})
@@ -272,7 +272,7 @@ func mustCreateAndBindOutfit(ctx context.Context, acli *angelus.Client, loaded *
 // not fail loudly: it renders NOTHING, which reads as a broken terminal
 // rather than a stale process. Naming both revisions turns an hour of
 // confusion into one command.
-func checkDaemonBuild(cli *angelus.Client) {
+func checkDaemonBuild(cli *sdk.Angelus) {
 	mine := buildRevision()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()

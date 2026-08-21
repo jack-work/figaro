@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/livedoc"
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
-	"github.com/jack-work/figaro/api/rpc"
 )
 
 // THE PREAMBLE IS PRINTED ONCE, BY HAND, AND NEVER BY THE CLIENT.

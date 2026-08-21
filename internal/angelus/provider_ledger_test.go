@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/logring"
 	figOtel "github.com/jack-work/figaro/internal/otel"
-	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/wirelog"
 )
 

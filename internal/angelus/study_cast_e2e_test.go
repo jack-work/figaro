@@ -3,28 +3,29 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/sdk"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/transport"
+	"github.com/jack-work/figaro/api/transport"
+	"github.com/jack-work/figaro/internal/figaro"
 )
 
 // studyClient wraps a node endpoint: calls, plus a turn.done latch for
 // the aria case.
 type studyClient struct {
-	c    *figaro.Client
+	c    *sdk.Aria
 	done chan struct{}
 }
 
 func dialNode(t *testing.T, ep rpc.Endpoint) *studyClient {
 	t.Helper()
 	sc := &studyClient{done: make(chan struct{}, 4)}
-	c, err := figaro.DialClient(transport.Endpoint{Scheme: ep.Scheme, Address: ep.Address},
+	c, err := sdk.DialAria(transport.Endpoint{Scheme: ep.Scheme, Address: ep.Address},
 		func(method string, _ json.RawMessage) {
 			if method == "turn.done" {
 				select {
@@ -236,7 +237,7 @@ func TestCastServesADormantFigaroWithoutWaking(t *testing.T) {
 		t.Fatalf("form create: %v", err)
 	}
 
-	fc, err := figaro.DialClient(transport.Endpoint{
+	fc, err := sdk.DialAria(transport.Endpoint{
 		Scheme: naked.Endpoint.Scheme, Address: naked.Endpoint.Address}, nil)
 	if err != nil {
 		t.Fatalf("dial: %v", err)

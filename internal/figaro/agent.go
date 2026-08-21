@@ -13,13 +13,13 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/api/form"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tokens"
 	"github.com/jack-work/figaro/internal/tool"

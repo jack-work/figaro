@@ -4,15 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"os/signal"
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/figaro/internal/transport"
 )
 
 // runPrompt resolves the shell-bound figaro and prompts it. spec dresses the
@@ -75,7 +74,7 @@ func runNewPrompt(loaded *config.Loaded, prompt string, d dressing, set renderSe
 	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 
 	if set.jsonMode {
-		fcli, derr := figaro.DialClient(figaroEP, func(string, json.RawMessage) {})
+		fcli, derr := sdk.DialAria(figaroEP, func(string, json.RawMessage) {})
 		if derr != nil {
 			die("connect figaro: %s", derr)
 		}
@@ -115,7 +114,7 @@ func submitAndExit(ctx context.Context, loaded *config.Loaded, ariaID, prompt st
 	}
 	prompt = expandAtRefsForEndpoint(ctx, ep, prompt)
 
-	fcli, derr := figaro.DialClient(ep, func(string, json.RawMessage) {})
+	fcli, derr := sdk.DialAria(ep, func(string, json.RawMessage) {})
 	if derr != nil {
 		die("connect figaro: %s", derr)
 	}
@@ -229,7 +228,7 @@ func promptAria(loaded *config.Loaded, ariaID, prompt string, set renderSettings
 // resolveAria attaches to an existing named aria. Aria ids are
 // system-minted, so an unknown id is an error, a new conversation
 // comes from the no-id flow (`figaro`), not by naming one here.
-func resolveAria(ctx context.Context, acli *angelus.Client, ariaID string) (transport.Endpoint, error) {
+func resolveAria(ctx context.Context, acli *sdk.Angelus, ariaID string) (transport.Endpoint, error) {
 	attachCtx, attachCancel := context.WithTimeout(ctx, 10*time.Second)
 	resp, err := acli.Attach(attachCtx, ariaID)
 	attachCancel()

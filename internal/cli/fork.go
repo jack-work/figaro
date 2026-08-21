@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"os/signal"
 	"strings"
 
-	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
 )
 
@@ -157,7 +157,7 @@ func runForkPrompt(loaded *config.Loaded, spec string, opts sendOpts, prompt str
 	}
 
 	branch := ""
-	WithAngelus(loaded, func(acli *angelus.Client) error {
+	WithAngelus(loaded, func(acli *sdk.Angelus) error {
 		ctx := context.Background()
 		ppid := shellPID
 

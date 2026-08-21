@@ -5,10 +5,10 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/jack-work/figaro/internal/compose"
 	"github.com/jack-work/figaro/api/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/compose"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/store"
 )
 

@@ -4,21 +4,21 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"os/signal"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldmouse "github.com/jack-work/figaro/internal/livelog/render/mouse"
 	figOtel "github.com/jack-work/figaro/internal/otel"
-	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/tape"
 	"github.com/jack-work/figaro/internal/term"
-	"github.com/jack-work/figaro/internal/transport"
 )
 
 // runListen tails an aria with the same renderer the rich send uses,
@@ -159,7 +159,7 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 		}
 	}
 
-	fcli, err := figaro.DialClientWith(ep, onNotify, tapeTap(opt.tape))
+	fcli, err := sdk.DialAriaWith(ep, onNotify, tapeTap(opt.tape))
 	if err != nil {
 		die("connect figaro: %s", err)
 	}

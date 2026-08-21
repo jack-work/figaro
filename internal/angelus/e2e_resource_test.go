@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"net"
 	"os"
 	"runtime"
@@ -13,12 +14,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/store"
-	"github.com/jack-work/figaro/internal/transport"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -230,7 +231,7 @@ func deltaB(before, after uint64) string {
 
 // benchDaemon is daemonFixture with reclamation off, so the sweep never
 // fires behind the measurement's back.
-func benchDaemon(t *testing.T) (*angelus.Angelus, *angelus.Client, context.Context) {
+func benchDaemon(t *testing.T) (*angelus.Angelus, *sdk.Angelus, context.Context) {
 	t.Helper()
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(dir+"/outfits", 0700))
@@ -277,7 +278,7 @@ dormant_after_minutes = 0
 	t.Cleanup(func() { a.Shutdown(0) })
 	waitForAngelus(t, a.SocketPath)
 
-	acli, err := angelus.DialClient(transport.UnixEndpoint(a.SocketPath))
+	acli, err := sdk.DialAngelus(transport.UnixEndpoint(a.SocketPath))
 	require.NoError(t, err)
 	t.Cleanup(func() { acli.Close() })
 	return a, acli, ctx

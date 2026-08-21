@@ -3,6 +3,7 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"sync"
 	"testing"
@@ -11,13 +12,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/store"
-	"github.com/jack-work/figaro/internal/transport"
 )
 
 // The hangup disposition, over a real angelus + a real aria socket: the same
@@ -76,7 +76,7 @@ model = "m"
 	go a.Run(ctx)
 	waitForAngelus(t, a.SocketPath)
 
-	acli, err := angelus.DialClient(transport.UnixEndpoint(a.SocketPath))
+	acli, err := sdk.DialAngelus(transport.UnixEndpoint(a.SocketPath))
 	require.NoError(t, err)
 	create, err := acli.Create(ctx, dress(t, "parked"), nil)
 	require.NoError(t, err)
@@ -88,7 +88,7 @@ model = "m"
 }
 
 // queueUp parks a turn and leaves `texts` waiting behind it.
-func queueUp(t *testing.T, cli *figaro.Client, prov *parkedProvider, texts ...string) {
+func queueUp(t *testing.T, cli *sdk.Aria, prov *parkedProvider, texts ...string) {
 	t.Helper()
 	ctx := context.Background()
 	_, _, err := cli.Qua(ctx, "the turn that parks", nil)
@@ -118,7 +118,7 @@ func TestHangup_KeepOverTheWire(t *testing.T) {
 	ep, prov, done := hangupFixture(t)
 	defer done()
 
-	cli, err := figaro.DialClient(ep, func(string, json.RawMessage) {})
+	cli, err := sdk.DialAria(ep, func(string, json.RawMessage) {})
 	require.NoError(t, err)
 	defer cli.Close()
 
@@ -137,7 +137,7 @@ func TestHangup_ClearOverTheWire(t *testing.T) {
 	ep, prov, done := hangupFixture(t)
 	defer done()
 
-	cli, err := figaro.DialClient(ep, func(string, json.RawMessage) {})
+	cli, err := sdk.DialAria(ep, func(string, json.RawMessage) {})
 	require.NoError(t, err)
 	defer cli.Close()
 
@@ -170,7 +170,7 @@ func TestHangup_BareInterruptKeepsTheQueue(t *testing.T) {
 	ep, prov, done := hangupFixture(t)
 	defer done()
 
-	cli, err := figaro.DialClient(ep, func(string, json.RawMessage) {})
+	cli, err := sdk.DialAria(ep, func(string, json.RawMessage) {})
 	require.NoError(t, err)
 	defer cli.Close()
 	ctx := context.Background()
@@ -221,7 +221,7 @@ func TestQueueMutators_OverTheWire(t *testing.T) {
 	ep, prov, done := hangupFixture(t)
 	defer done()
 
-	cli, err := figaro.DialClient(ep, func(string, json.RawMessage) {})
+	cli, err := sdk.DialAria(ep, func(string, json.RawMessage) {})
 	require.NoError(t, err)
 	defer cli.Close()
 	ctx := context.Background()

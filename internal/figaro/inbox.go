@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jack-work/figaro/internal/actor"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/actor"
 )
 
 // Inbox is the per-aria user-RPC event queue.

@@ -4,14 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/config"
 )
 
 // The `fig form new|fork|ls|rm` family: unbound forms as first-class
@@ -143,7 +143,7 @@ func runFormLs(loaded *config.Loaded, asJSON bool) {
 // attendedFormScope maps this shell's attendance to a form-tree scope: the
 // attended form itself, or an attended figaro's nearest unbound ancestor.
 // "" means unscoped (top level, attending null, or nothing resolvable).
-func attendedFormScope(ctx context.Context, acli *angelus.Client, byID map[string]rpc.FigaroInfoResponse) string {
+func attendedFormScope(ctx context.Context, acli *sdk.Angelus, byID map[string]rpc.FigaroInfoResponse) string {
 	r, err := resolveBinding(ctx, acli, shellPID)
 	if err != nil || r == nil || !r.Found {
 		return ""

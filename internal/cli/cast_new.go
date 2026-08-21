@@ -6,13 +6,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/config"
 )
 
 // castOutcome is what an autocast did, step by step, so a caller can report a
@@ -209,7 +209,7 @@ func runCastFromAttendedForm(loaded *config.Loaded, formID string, d dressing, a
 // attendedForm reports the form this shell is attending, if it is attending a
 // form rather than an aria. The `@` sigil is what makes this lexical instead
 // of a lookup.
-func attendedForm(ctx context.Context, acli *angelus.Client) string {
+func attendedForm(ctx context.Context, acli *sdk.Angelus) string {
 	r, err := resolveBinding(ctx, acli, shellPID)
 	if err != nil || r == nil || !r.Found {
 		return ""

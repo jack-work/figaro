@@ -4,15 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/transport"
+	"github.com/jack-work/figaro/api/transport"
 )
 
 // runDoctorProvider answers the question no figaro surface could answer:
@@ -27,7 +27,7 @@ func runDoctorProvider(ariaID, count string, asJSON bool) error {
 		limit = n
 	}
 
-	cli, err := angelus.DialClient(transport.UnixEndpoint(angelusSocketPath()))
+	cli, err := sdk.DialAngelus(transport.UnixEndpoint(angelusSocketPath()))
 	if err != nil {
 		return fmt.Errorf("no angelus running: %w", err)
 	}

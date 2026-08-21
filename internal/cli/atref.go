@@ -4,12 +4,12 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/sdk"
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/api/form"
-	"github.com/jack-work/figaro/internal/transport"
+	"github.com/jack-work/figaro/api/transport"
 )
 
 // atExpandTimeout bounds the snapshot fetch used by @-expansion. The
@@ -146,7 +146,7 @@ func formatAny(v any) string {
 func fetchSnapshotForEndpoint(parent context.Context, ep transport.Endpoint) form.Snapshot {
 	ctx, cancel := context.WithTimeout(parent, atExpandTimeout)
 	defer cancel()
-	fcli, err := figaro.DialClient(ep, nil)
+	fcli, err := sdk.DialAria(ep, nil)
 	if err != nil {
 		return form.Snapshot{}
 	}

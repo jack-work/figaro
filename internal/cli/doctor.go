@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -11,11 +12,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
-	"github.com/jack-work/figaro/internal/transport"
 )
 
 // deadChannels name store channels nothing reads or writes: turn-wal (drain +
@@ -30,7 +31,7 @@ func deadChannel(name string) bool {
 }
 
 func runDoctorGC(dryRun bool) error {
-	if cli, err := angelus.DialClient(transport.UnixEndpoint(angelusSocketPath())); err == nil {
+	if cli, err := sdk.DialAngelus(transport.UnixEndpoint(angelusSocketPath())); err == nil {
 		cli.Close()
 		return fmt.Errorf("angelus is running; stop it first (figaro stop)")
 	}
@@ -167,7 +168,7 @@ func runDoctorSchema() error {
 // sessions or goroutines the number is attached to. It reports the
 // daemon's accounting, never this process's.
 func runDoctorMem(asJSON bool) error {
-	cli, err := angelus.DialClient(transport.UnixEndpoint(angelusSocketPath()))
+	cli, err := sdk.DialAngelus(transport.UnixEndpoint(angelusSocketPath()))
 	if err != nil {
 		return fmt.Errorf("no angelus running: %w", err)
 	}
@@ -299,7 +300,7 @@ func runDoctorSkills(asJSON bool) error {
 
 // runDoctorLibrettos recounts every libretto from the boards that name it.
 func runDoctorLibrettos(dryRun bool) error {
-	if cli, err := angelus.DialClient(transport.UnixEndpoint(angelusSocketPath())); err == nil {
+	if cli, err := sdk.DialAngelus(transport.UnixEndpoint(angelusSocketPath())); err == nil {
 		cli.Close()
 		return fmt.Errorf("angelus is running; stop it first (figaro stop)")
 	}

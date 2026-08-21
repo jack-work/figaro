@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/config"
 )
 
 // bigPNG makes an incompressible PNG of roughly the requested base64 size, so

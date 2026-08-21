@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"slices"
 	"sort"
@@ -11,10 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/cli/figtree"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/term"
 )
 
@@ -78,7 +78,7 @@ func listColumns(width int, global bool) []figtree.Column {
 }
 
 func runList(loaded *config.Loaded, o lsOpts) {
-	WithAngelus(loaded, func(acli *angelus.Client) error {
+	WithAngelus(loaded, func(acli *sdk.Angelus) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
@@ -711,7 +711,7 @@ func runKill(loaded *config.Loaded, idFlag string, args []string, recursive bool
 }
 
 func runKillByID(loaded *config.Loaded, figaroID string, recursive bool) {
-	WithAngelus(loaded, func(acli *angelus.Client) error {
+	WithAngelus(loaded, func(acli *sdk.Angelus) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := acli.Kill(ctx, figaroID, recursive); err != nil {
@@ -736,7 +736,7 @@ func runFork(loaded *config.Loaded, spec string, opts sendOpts) {
 		dieUsage("fork: %s", perr)
 	}
 
-	WithAngelus(loaded, func(acli *angelus.Client) error {
+	WithAngelus(loaded, func(acli *sdk.Angelus) error {
 		ctx := context.Background()
 		ppid := shellPID
 
@@ -822,7 +822,7 @@ func runFork(loaded *config.Loaded, spec string, opts sendOpts) {
 // from where its history lives absorbs that history, after which no delete
 // can owe a boundary repair. Blocking on purpose.
 func runNormalize(loaded *config.Loaded, segments bool) {
-	WithAngelus(loaded, func(acli *angelus.Client) error {
+	WithAngelus(loaded, func(acli *sdk.Angelus) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
 		resp, err := acli.Normalize(ctx, segments)
@@ -863,7 +863,7 @@ func runPromote(loaded *config.Loaded, idFlag string, args []string) {
 		}
 		levels = n
 	}
-	WithAngelus(loaded, func(acli *angelus.Client) error {
+	WithAngelus(loaded, func(acli *sdk.Angelus) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if target == "" {
@@ -920,7 +920,7 @@ func runAttend(loaded *config.Loaded, spec string) {
 	if err != nil {
 		die("attend: %s", err)
 	}
-	WithAngelus(loaded, func(acli *angelus.Client) error {
+	WithAngelus(loaded, func(acli *sdk.Angelus) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		ppid := shellPID

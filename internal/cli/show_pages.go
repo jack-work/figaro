@@ -6,11 +6,11 @@ package cli
 
 import (
 	"context"
+	"github.com/jack-work/figaro/sdk"
 
-	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/api/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 )
 
 // showPageBytes is one page's byte budget. The daemon clamps it to its own
@@ -27,7 +27,7 @@ type showTurns struct {
 }
 
 // gatherShowTurns pulls composed pages until opts is satisfiable.
-func gatherShowTurns(ctx context.Context, acli *angelus.Client, figaroID string, opts showOpts) (showTurns, error) {
+func gatherShowTurns(ctx context.Context, acli *sdk.Angelus, figaroID string, opts showOpts) (showTurns, error) {
 	var w showTurns
 	if opts.from >= 0 {
 		return gatherForward(ctx, acli, figaroID, opts)
@@ -88,7 +88,7 @@ func prepend(older, newer []aria.Turn) []aria.Turn {
 
 // gatherForward walks up from --from, since that selector names its OLDEST
 // turn and a backward walk would have to reach the head to find it.
-func gatherForward(ctx context.Context, acli *angelus.Client, figaroID string, opts showOpts) (showTurns, error) {
+func gatherForward(ctx context.Context, acli *sdk.Angelus, figaroID string, opts showOpts) (showTurns, error) {
 	var w showTurns
 	since := opts.from
 	for {

@@ -4,16 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"sync"
 	"time"
 
-	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/api/transport"
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/term"
-	"github.com/jack-work/figaro/internal/transport"
 )
 
 // runFormListen watches an aria's form and draws it as a live JSON tree.
@@ -35,7 +35,7 @@ func runFormListen(loaded *config.Loaded, ariaID string) {
 	// would drop whatever landed in between; subscribing first means the seed
 	// may be older than a delta already in hand, which the mirror's version
 	// check catches and resyncs.
-	fcli, err := figaro.DialClient(transport.Endpoint{Scheme: ep.Scheme, Address: ep.Address},
+	fcli, err := sdk.DialAria(transport.Endpoint{Scheme: ep.Scheme, Address: ep.Address},
 		func(method string, params json.RawMessage) {
 			if method != rpc.MethodFormDelta {
 				return

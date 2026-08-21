@@ -3,14 +3,14 @@ package cli
 import (
 	"context"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/transport"
+	"github.com/jack-work/figaro/api/transport"
 
-	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/outfit"
 )
 
 // dressing is what the three dressing flags produced: the text as typed, for
@@ -107,7 +107,7 @@ func parseNames(text string) ([]string, error) {
 func softFetchOutfitNames() []string {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	acli, err := angelus.DialClient(transport.UnixEndpoint(angelusSocketPath()))
+	acli, err := sdk.DialAngelus(transport.UnixEndpoint(angelusSocketPath()))
 	if err != nil {
 		return nil
 	}

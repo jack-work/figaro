@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/outfit"
-	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/jkrpc"
 )
 

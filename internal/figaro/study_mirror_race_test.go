@@ -37,8 +37,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/stretchr/testify/require"
 )
 

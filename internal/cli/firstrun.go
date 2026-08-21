@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"path/filepath"
 	"sort"
@@ -16,11 +17,10 @@ import (
 	"github.com/BurntSushi/toml"
 	hush "github.com/jack-work/hush/client"
 
-	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/internal/tui"
 	"github.com/jack-work/jkrpc"
@@ -399,7 +399,7 @@ func runAPIKeyInline(loaded *config.Loaded, providerName string) error {
 // default-<provider>.toml if that name is taken) and point default_outfit at
 // it. The wizard composes the body: that is client ergonomics: but the file
 // and the config are the server's state, so the server writes them.
-func createDefaultOutfit(ctx context.Context, acli *angelus.Client, existing []string, providerName, model string) (string, error) {
+func createDefaultOutfit(ctx context.Context, acli *sdk.Angelus, existing []string, providerName, model string) (string, error) {
 	name := "default"
 	for _, n := range existing {
 		if n == name {
@@ -475,7 +475,7 @@ func printDone() {
 
 // Compile-time check: angelus.Client.Create matches createFn shape
 // when bound (modulo context: caller supplies one).
-var _ = func(acli *angelus.Client, ctx context.Context) createFn {
+var _ = func(acli *sdk.Angelus, ctx context.Context) createFn {
 	return func() (*rpc.CreateResponse, error) {
 		return acli.Create(ctx, nil, nil)
 	}

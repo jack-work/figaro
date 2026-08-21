@@ -5,14 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"strconv"
 	"time"
 
-	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/cli/figtree"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/api/rpc"
 )
 
 // Fields the gc report reads.
@@ -34,7 +34,7 @@ var gcColors = []figtree.FieldColor{{
 }}
 
 func runGC(loaded *config.Loaded, dryRun, jsonOut bool) {
-	WithAngelus(loaded, func(acli *angelus.Client) error {
+	WithAngelus(loaded, func(acli *sdk.Angelus) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
 

@@ -3,13 +3,14 @@ package figaro
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/transport"
+	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -51,7 +52,7 @@ func TestAgentClientPresentsCallerAcrossTheSecondHop(t *testing.T) {
 		}
 	}()
 
-	cli, err := DialClient(transport.UnixEndpoint(sock), nil)
+	cli, err := sdk.DialAria(transport.UnixEndpoint(sock), nil)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}

@@ -2,10 +2,10 @@ package cli
 
 import (
 	"context"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"strings"
 
-	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/term"
 )
@@ -118,7 +118,7 @@ func envTruthy(v string) bool {
 // resolveBinding wraps acli.Resolve with the binding policy: returns
 // a not-found response (no error) when binding is disabled, so callers
 // can uniformly treat the absent case as "nothing bound."
-func resolveBinding(ctx context.Context, acli *angelus.Client, ppid int) (*rpc.ResolveResponse, error) {
+func resolveBinding(ctx context.Context, acli *sdk.Angelus, ppid int) (*rpc.ResolveResponse, error) {
 	if id := envAriaID(); id != "" {
 		return resolveEnvAria(ctx, acli, id)
 	}
@@ -132,7 +132,7 @@ func resolveBinding(ctx context.Context, acli *angelus.Client, ppid int) (*rpc.R
 // hands back the endpoint and revives a dormant aria without touching
 // the pid map; in the common case (an aria's own shell-out, so the
 // aria is live) it is a registry lookup on the daemon side.
-func resolveEnvAria(ctx context.Context, acli *angelus.Client, id string) (*rpc.ResolveResponse, error) {
+func resolveEnvAria(ctx context.Context, acli *sdk.Angelus, id string) (*rpc.ResolveResponse, error) {
 	resp, err := acli.Attach(ctx, id)
 	if err != nil {
 		return &rpc.ResolveResponse{Found: false}, nil
@@ -145,7 +145,7 @@ func resolveEnvAria(ctx context.Context, acli *angelus.Client, id string) (*rpc.
 }
 
 // bindBinding wraps acli.Bind: no-op under bindingDisabled.
-func bindBinding(ctx context.Context, acli *angelus.Client, ppid int, figaroID string, atLT uint64) error {
+func bindBinding(ctx context.Context, acli *sdk.Angelus, ppid int, figaroID string, atLT uint64) error {
 	if bindingDisabled() {
 		return nil
 	}
@@ -153,7 +153,7 @@ func bindBinding(ctx context.Context, acli *angelus.Client, ppid int, figaroID s
 }
 
 // unbindBinding wraps acli.Unbind: no-op under bindingDisabled.
-func unbindBinding(ctx context.Context, acli *angelus.Client, ppid int) error {
+func unbindBinding(ctx context.Context, acli *sdk.Angelus, ppid int) error {
 	if bindingDisabled() {
 		return nil
 	}

@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 
-	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/turns"
 )
@@ -14,7 +14,7 @@ import (
 // logical times attached. The LT lives on the store entry, not in the payload
 // (it is the frame index, populated on read), so it has to be stitched back on
 // here: every caller that forgets produces messages that silently claim LT 0.
-func ariaMessages(ctx context.Context, acli *angelus.Client, ariaID string) ([]message.Message, error) {
+func ariaMessages(ctx context.Context, acli *sdk.Angelus, ariaID string) ([]message.Message, error) {
 	resp, err := acli.IR(ctx, ariaID, 0, 0)
 	if err != nil {
 		return nil, err
@@ -30,7 +30,7 @@ func ariaMessages(ctx context.Context, acli *angelus.Client, ariaID string) ([]m
 }
 
 // resolveTurn turns a user-facing turn id into the atMainLT a fork takes.
-func resolveTurn(ctx context.Context, acli *angelus.Client, ariaID string, turn uint64) (uint64, error) {
+func resolveTurn(ctx context.Context, acli *sdk.Angelus, ariaID string, turn uint64) (uint64, error) {
 	msgs, err := ariaMessages(ctx, acli, ariaID)
 	if err != nil {
 		return 0, err

@@ -4,14 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/term"
 )
 
@@ -33,7 +33,7 @@ type queueResultJSON struct {
 // needs both and half of them need two round trips.
 type queueSession struct {
 	id   string
-	cli  *figaro.Client
+	cli  *sdk.Aria
 	done func()
 }
 
@@ -47,7 +47,7 @@ func openQueueSession(loaded *config.Loaded, ariaID string) (*queueSession, cont
 		cancel()
 		die("%s", err)
 	}
-	fcli, derr := figaro.DialClient(ep, func(string, json.RawMessage) {})
+	fcli, derr := sdk.DialAria(ep, func(string, json.RawMessage) {})
 	if derr != nil {
 		acli.Close()
 		cancel()

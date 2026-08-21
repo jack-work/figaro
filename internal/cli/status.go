@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"strings"
 	"text/tabwriter"
@@ -11,10 +12,9 @@ import (
 
 	"sort"
 
-	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/turns"
 )
 
@@ -30,7 +30,7 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOu
 		nameArg = args[0]
 	}
 
-	WithAngelus(loaded, func(acli *angelus.Client) error {
+	WithAngelus(loaded, func(acli *sdk.Angelus) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 

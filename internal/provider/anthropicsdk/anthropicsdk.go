@@ -20,9 +20,9 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 
-	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/anthropicmodels"
 	"github.com/jack-work/figaro/internal/store"

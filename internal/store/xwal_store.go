@@ -18,9 +18,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/config"
 	fwlog "github.com/jack-work/figaro/internal/store/log"
 	"github.com/jack-work/figaro/internal/store/segment"
 	"github.com/jack-work/figaro/internal/store/xwal"

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"net"
 	"os"
 	"testing"
@@ -12,24 +13,24 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/store"
-	"github.com/jack-work/figaro/internal/transport"
 	"github.com/jack-work/jkrpc"
 )
 
 // daemonFixture is a real angelus over a real store with a mock provider.
-func daemonFixture(t testing.TB) (*angelus.Angelus, *angelus.Client, context.Context) {
+func daemonFixture(t testing.TB) (*angelus.Angelus, *sdk.Angelus, context.Context) {
 	a, acli, ctx, _ := daemonFixtureDir(t)
 	return a, acli, ctx
 }
 
 // daemonFixtureDir is daemonFixture plus the config dir, for tests that
 // rewrite outfit files.
-func daemonFixtureDir(t testing.TB) (*angelus.Angelus, *angelus.Client, context.Context, string) {
+func daemonFixtureDir(t testing.TB) (*angelus.Angelus, *sdk.Angelus, context.Context, string) {
 	t.Helper()
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(dir+"/outfits", 0700))
@@ -75,7 +76,7 @@ model = "mock-model"
 	t.Cleanup(func() { a.Shutdown(0) })
 	waitForAngelus(t, a.SocketPath)
 
-	acli, err := angelus.DialClient(transport.UnixEndpoint(a.SocketPath))
+	acli, err := sdk.DialAngelus(transport.UnixEndpoint(a.SocketPath))
 	require.NoError(t, err)
 	t.Cleanup(func() { acli.Close() })
 	return a, acli, ctx, dir

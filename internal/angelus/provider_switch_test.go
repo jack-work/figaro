@@ -3,6 +3,7 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"sync"
 	"testing"
@@ -11,14 +12,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/store"
-	"github.com/jack-work/figaro/internal/transport"
 )
 
 // namedMockProvider answers with its own name, so the transcript records
@@ -82,7 +82,7 @@ model = "mock-model"
 	defer a.Shutdown(0)
 	waitForAngelus(t, a.SocketPath)
 
-	acli, err := angelus.DialClient(transport.UnixEndpoint(a.SocketPath))
+	acli, err := sdk.DialAngelus(transport.UnixEndpoint(a.SocketPath))
 	require.NoError(t, err)
 	defer acli.Close()
 
@@ -93,7 +93,7 @@ model = "mock-model"
 	waitForFigaro(t, ep)
 
 	doneCh := make(chan struct{}, 4)
-	fcli, err := figaro.DialClient(ep, func(method string, _ json.RawMessage) {
+	fcli, err := sdk.DialAria(ep, func(method string, _ json.RawMessage) {
 		if method == "turn.done" {
 			select {
 			case doneCh <- struct{}{}:

@@ -6,13 +6,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"math"
 	"os"
 
-	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/api/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -42,7 +42,7 @@ type showWindow struct {
 // gatherShowWindow walks the RAW IR backward for --verbose/--literal, the
 // two views that render records rather than turns. Everything else pages
 // composed turns from the daemon (show_pages.go).
-func gatherShowWindow(ctx context.Context, acli *angelus.Client, figaroID string, opts showOpts) (showWindow, error) {
+func gatherShowWindow(ctx context.Context, acli *sdk.Angelus, figaroID string, opts showOpts) (showWindow, error) {
 	var w showWindow
 	before := uint64(math.MaxUint64)
 

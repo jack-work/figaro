@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/internal/outfit"
-	"github.com/jack-work/figaro/api/rpc"
 )
 
 // setWait is `--wait`: the caller accepts a tool round's worth of latency in

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/internal/cmdkit"
 )
 
 func TestContainsShellUnsafe(t *testing.T) {

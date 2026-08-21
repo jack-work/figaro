@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/api/rpc"
 )
 
 // These go through the REAL handler map built by NewHandlers, not a

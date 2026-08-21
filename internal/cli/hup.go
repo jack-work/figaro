@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"time"
 
-	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/config"
 )
 
 // The two hangups. They differ by ONE thing: what becomes of the messages
@@ -41,7 +41,7 @@ func runHangup(loaded *config.Loaded, ariaID string, disposition rpc.QueueDispos
 		die("%s", err)
 	}
 
-	fcli, derr := figaro.DialClient(ep, func(string, json.RawMessage) {})
+	fcli, derr := sdk.DialAria(ep, func(string, json.RawMessage) {})
 	if derr != nil {
 		die("connect figaro: %s", derr)
 	}

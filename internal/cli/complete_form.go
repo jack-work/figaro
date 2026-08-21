@@ -8,11 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/cmdkit"
-	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/api/form"
-	"github.com/jack-work/figaro/internal/transport"
+	"github.com/jack-work/figaro/api/transport"
+	"github.com/jack-work/figaro/internal/cmdkit"
+	"github.com/jack-work/figaro/sdk"
 )
 
 // liveKeysStatus names the three distinct answers a live-key fetch can
@@ -98,7 +97,7 @@ func softFetchLiveKeys() ([]string, liveKeysStatus, error) {
 	ep := transport.UnixEndpoint(angelusSocketPath())
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	acli, err := angelus.DialClient(ep)
+	acli, err := sdk.DialAngelus(ep)
 	if err != nil {
 		// No daemon, so no aria can be bound: the catalog is all that
 		// is knowable, not a substitute for anything.
@@ -113,7 +112,7 @@ func softFetchLiveKeys() ([]string, liveKeysStatus, error) {
 		return nil, liveKeysUnbound, nil
 	}
 	fep := transport.Endpoint{Scheme: r.Endpoint.Scheme, Address: r.Endpoint.Address}
-	fcli, err := figaro.DialClient(fep, nil)
+	fcli, err := sdk.DialAria(fep, nil)
 	if err != nil {
 		return nil, liveKeysFetchFailed, fmt.Errorf("dial aria %s: %w", r.FigaroID, err)
 	}

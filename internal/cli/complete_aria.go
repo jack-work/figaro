@@ -2,12 +2,12 @@ package cli
 
 import (
 	"context"
+	"github.com/jack-work/figaro/sdk"
 	"sort"
 	"time"
 
-	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/cmdkit"
-	"github.com/jack-work/figaro/internal/transport"
 )
 
 // softFetchAriaIDs best-effort fetches the list of known aria ids
@@ -19,7 +19,7 @@ func softFetchAriaIDs() []string {
 	ep := transport.UnixEndpoint(angelusSocketPath())
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	acli, err := angelus.DialClient(ep)
+	acli, err := sdk.DialAngelus(ep)
 	if err != nil {
 		return nil
 	}

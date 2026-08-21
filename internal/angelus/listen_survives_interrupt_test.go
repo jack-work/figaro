@@ -3,6 +3,7 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -11,14 +12,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/store"
-	"github.com/jack-work/figaro/internal/transport"
 )
 
 // switchProvider returns different behavior on each Send call: the
@@ -108,7 +108,7 @@ model = "m"
 	defer a.Shutdown(0)
 	waitForAngelus(t, a.SocketPath)
 
-	acli, err := angelus.DialClient(transport.UnixEndpoint(a.SocketPath))
+	acli, err := sdk.DialAngelus(transport.UnixEndpoint(a.SocketPath))
 	require.NoError(t, err)
 	defer acli.Close()
 
@@ -119,7 +119,7 @@ model = "m"
 
 	// -- Listener: subscribes and stays connected across both sends. --
 	listenerFrames := make(chan rpc.Notification, 256)
-	listener, err := figaro.DialClient(figEP, func(method string, params json.RawMessage) {
+	listener, err := sdk.DialAria(figEP, func(method string, params json.RawMessage) {
 		select {
 		case listenerFrames <- rpc.Notification{Method: method, Params: append(json.RawMessage(nil), params...)}:
 		default:
@@ -130,7 +130,7 @@ model = "m"
 
 	// -- Send 1: submit + wait mid-turn + interrupt + disconnect --
 	send1Frames := make(chan rpc.Notification, 128)
-	sender1, err := figaro.DialClient(figEP, func(method string, params json.RawMessage) {
+	sender1, err := sdk.DialAria(figEP, func(method string, params json.RawMessage) {
 		select {
 		case send1Frames <- rpc.Notification{Method: method, Params: append(json.RawMessage(nil), params...)}:
 		default:
@@ -165,7 +165,7 @@ model = "m"
 
 	// -- Send 2: submit a fresh prompt on a NEW connection. --
 	send2Done := make(chan struct{}, 1)
-	sender2, err := figaro.DialClient(figEP, func(method string, params json.RawMessage) {
+	sender2, err := sdk.DialAria(figEP, func(method string, params json.RawMessage) {
 		if method == rpc.MethodTurnDone {
 			select {
 			case send2Done <- struct{}{}:

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"testing"
 	"time"
@@ -12,18 +13,18 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/transport"
 	"github.com/jack-work/jkrpc"
 )
 
 // bootAngelus starts an angelus rooted at dir with the given config.
 // Returns a connected client and a teardown function. The factory is
 // shared with the integration tests' mockProviderForIntegration shape.
-func bootAngelus(t *testing.T, dir string, loaded *config.Loaded) (*angelus.Client, func()) {
+func bootAngelus(t *testing.T, dir string, loaded *config.Loaded) (*sdk.Angelus, func()) {
 	t.Helper()
 	a := angelus.New(angelus.Config{Backend: store.NewTestBackend(t), RuntimeDir: testRuntimeDir(t, dir)})
 
@@ -46,7 +47,7 @@ func bootAngelus(t *testing.T, dir string, loaded *config.Loaded) (*angelus.Clie
 
 	waitForAngelus(t, a.SocketPath)
 
-	acli, err := angelus.DialClient(transport.UnixEndpoint(a.SocketPath))
+	acli, err := sdk.DialAngelus(transport.UnixEndpoint(a.SocketPath))
 	require.NoError(t, err)
 
 	teardown := func() {

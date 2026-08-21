@@ -4,21 +4,21 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"io"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldmouse "github.com/jack-work/figaro/internal/livelog/render/mouse"
 	figOtel "github.com/jack-work/figaro/internal/otel"
-	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/tape"
 	"github.com/jack-work/figaro/internal/term"
-	"github.com/jack-work/figaro/internal/transport"
 )
 
 const spinnerFPS = 11 // spinner frames per second (~90ms/frame)
@@ -239,7 +239,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		}()
 	}
 
-	fcli, err := figaro.DialClientWith(ep, onNotify, tapeTap(rec))
+	fcli, err := sdk.DialAriaWith(ep, onNotify, tapeTap(rec))
 	if err != nil {
 		die("connect figaro: %s", err)
 	}

@@ -1,13 +1,13 @@
 package angelus_test
 
 import (
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"runtime"
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/transport"
+	"github.com/jack-work/figaro/api/transport"
 )
 
 func testRuntimeDir(t testing.TB, fallback string) string {
@@ -28,7 +28,7 @@ func waitForAngelus(t testing.TB, path string) {
 	deadline := time.Now().Add(3 * time.Second)
 	var lastErr error
 	for time.Now().Before(deadline) {
-		client, err := angelus.DialClient(transport.UnixEndpoint(path))
+		client, err := sdk.DialAngelus(transport.UnixEndpoint(path))
 		if err == nil {
 			_ = client.Close()
 			return

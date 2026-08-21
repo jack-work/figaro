@@ -7,9 +7,9 @@ import (
 	"sync"
 
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/formdelta"
 	"github.com/jack-work/figaro/internal/livelog/aria"
-	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tokens"
 )

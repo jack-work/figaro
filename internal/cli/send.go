@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -12,12 +13,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/term"
-	"github.com/jack-work/figaro/internal/transport"
 )
 
 // sendOpts captures the parsed flag state of the send command.
@@ -661,7 +661,7 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 
 	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 
-	fcli, derr := figaro.DialClient(figaroEP, func(string, json.RawMessage) {})
+	fcli, derr := sdk.DialAria(figaroEP, func(string, json.RawMessage) {})
 	if derr != nil {
 		die("connect figaro: %s", derr)
 	}

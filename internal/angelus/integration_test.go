@@ -3,6 +3,7 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"testing"
 	"time"
@@ -10,14 +11,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/store"
-	"github.com/jack-work/figaro/internal/transport"
 )
 
 // mockProviderForIntegration echoes "42" through the new bus shape.
@@ -82,7 +82,7 @@ model = "mock-model"
 	waitForAngelus(t, a.SocketPath)
 
 	// --- Angelus client: create a figaro ---
-	acli, err := angelus.DialClient(transport.UnixEndpoint(a.SocketPath))
+	acli, err := sdk.DialAngelus(transport.UnixEndpoint(a.SocketPath))
 	require.NoError(t, err)
 	defer acli.Close()
 
@@ -117,7 +117,7 @@ model = "mock-model"
 	// Connect with notification handler to wait for turn.done.
 	// Notifications are delivered in wire order: no envelopes, no reordering.
 	doneCh := make(chan struct{}, 1)
-	fcli, err := figaro.DialClient(figaroEP, func(method string, params json.RawMessage) {
+	fcli, err := sdk.DialAria(figaroEP, func(method string, params json.RawMessage) {
 		if method == "turn.done" {
 			select {
 			case doneCh <- struct{}{}:
@@ -190,7 +190,7 @@ model = "mock-model"
 
 	waitForAngelus(t, a.SocketPath)
 
-	acli, err := angelus.DialClient(transport.UnixEndpoint(a.SocketPath))
+	acli, err := sdk.DialAngelus(transport.UnixEndpoint(a.SocketPath))
 	require.NoError(t, err)
 	defer acli.Close()
 
@@ -242,7 +242,7 @@ model = "mock-model"
 	defer a.Shutdown(0)
 
 	waitForAngelus(t, a.SocketPath)
-	acli, err := angelus.DialClient(transport.UnixEndpoint(a.SocketPath))
+	acli, err := sdk.DialAngelus(transport.UnixEndpoint(a.SocketPath))
 	require.NoError(t, err)
 	defer acli.Close()
 
@@ -252,7 +252,7 @@ model = "mock-model"
 	figEP := transport.Endpoint{Scheme: created.Endpoint.Scheme, Address: created.Endpoint.Address}
 	waitForFigaro(t, figEP)
 	doneCh := make(chan struct{}, 1)
-	fcli, err := figaro.DialClient(figEP, func(method string, _ json.RawMessage) {
+	fcli, err := sdk.DialAria(figEP, func(method string, _ json.RawMessage) {
 		if method == "turn.done" {
 			select {
 			case doneCh <- struct{}{}:

@@ -9,9 +9,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/jack-work/figaro/internal/actor"
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/actor"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 )
 

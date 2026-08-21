@@ -14,10 +14,10 @@ import (
 	hushconfig "github.com/jack-work/hush/config"
 	"github.com/jack-work/hush/managed"
 
-	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/api/form"
-	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/tui"
 )
 

@@ -3,6 +3,7 @@ package angelus
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/sdk"
 	"net"
 	"os"
 	"path/filepath"
@@ -10,7 +11,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/transport"
+	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -85,7 +86,7 @@ func TestAngelusClientPresentsCallerOnBothParamShapes(t *testing.T) {
 	rs := startRecordingServer(t, rpc.MethodFork, rpc.MethodSaveBindings)
 
 	// caller is captured at dial, so the env has to be set first.
-	cli, err := DialClient(transport.UnixEndpoint(rs.sock))
+	cli, err := sdk.DialAngelus(transport.UnixEndpoint(rs.sock))
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
@@ -123,7 +124,7 @@ func TestAngelusClientPresentsCallerOnBothParamShapes(t *testing.T) {
 func TestAngelusClientOmitsCallerWhenUnset(t *testing.T) {
 	t.Setenv("FIGARO_ARIA", "")
 	rs := startRecordingServer(t, rpc.MethodFork)
-	cli, err := DialClient(transport.UnixEndpoint(rs.sock))
+	cli, err := sdk.DialAngelus(transport.UnixEndpoint(rs.sock))
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}

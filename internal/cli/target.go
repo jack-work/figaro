@@ -3,14 +3,13 @@ package cli
 import (
 	"context"
 	"fmt"
+	"github.com/jack-work/figaro/sdk"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/figaro/internal/transport"
 )
 
 // resolveTargetEndpoint resolves both id and endpoint. Used by verbs
@@ -18,7 +17,7 @@ import (
 // Aria ids are system-minted, so a missing explicitID is always an
 // error: there is no create-by-name. autoCreate is retained for call
 // compatibility but no longer creates.
-func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *angelus.Client, explicitID string, autoCreate bool, d dressing) (string, transport.Endpoint, error) {
+func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *sdk.Angelus, explicitID string, autoCreate bool, d dressing) (string, transport.Endpoint, error) {
 	if explicitID == "" {
 		ppid := shellPID
 		r, err := resolveBinding(ctx, acli, ppid)
@@ -78,7 +77,7 @@ func mintsWhenUnbound(autoCreate bool) bool { return autoCreate }
 // form listen, state outfit address the form itself and use the raw
 // resolver. Resolution is LATE, per call: repoint target-aria and the
 // next invocation reaches the successor; nothing chases mid-stream.
-func resolveFigaroTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *angelus.Client, explicitID string, autoCreate bool, d dressing) (string, transport.Endpoint, error) {
+func resolveFigaroTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *sdk.Angelus, explicitID string, autoCreate bool, d dressing) (string, transport.Endpoint, error) {
 	id, ep, err := resolveTargetEndpoint(ctx, loaded, acli, explicitID, autoCreate, d)
 	if err != nil {
 		return id, ep, err
@@ -90,11 +89,11 @@ func resolveFigaroTargetEndpoint(ctx context.Context, loaded *config.Loaded, acl
 // form (no target-aria) refuses by name; a target that is itself a form
 // refuses too: target-aria names an aria, and a chain of roles is a
 // misconfiguration better reported than walked.
-func redirectRole(ctx context.Context, loaded *config.Loaded, acli *angelus.Client, id string, ep transport.Endpoint) (string, transport.Endpoint, error) {
+func redirectRole(ctx context.Context, loaded *config.Loaded, acli *sdk.Angelus, id string, ep transport.Endpoint) (string, transport.Endpoint, error) {
 	if !strings.HasPrefix(id, "@") && !strings.Contains(id, "@") {
 		return id, ep, nil
 	}
-	fcli, err := figaro.DialClient(ep, nil)
+	fcli, err := sdk.DialAria(ep, nil)
 	if err != nil {
 		return "", transport.Endpoint{}, fmt.Errorf("read form %s: %w", id, err)
 	}
