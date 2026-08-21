@@ -5,6 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jack-work/figaro/api/livedoc"
+	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/formdelta"
+	"github.com/jack-work/figaro/internal/store"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/figaro"
@@ -147,7 +151,87 @@ func ariaIDParam(params json.RawMessage, method string) (string, error) {
 	return req.FigaroID, nil
 }
 
-func mustJSON(v any) json.RawMessage {
-	b, _ := json.Marshal(v)
-	return b
+// ariaRead serves IR entries for an aria through the shared LogCache.
+// Live agents share the same Log instance, so reads run lock-free
+// against the agent's writes. For dormant arias the cache opens on
+// miss and the entry TTLs out naturally.
+func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req rpc.IRRequest
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, fmt.Errorf("aria.read: parse params: %w", err)
+		}
+	}
+	if req.FigaroID == "" {
+		return nil, errors.New("aria.read: empty figaro_id")
+	}
+
+	// The backend returns the same shared, memoized IR instance the live
+	// agent holds, so reads run lock-free against its writes.
+	log, err := h.angelus.Backend.OpenFigIR(req.FigaroID)
+	if err != nil {
+		return nil, fmt.Errorf("aria.read: open: %w", err)
+	}
+
+	limit := req.Limit
+	if limit <= 0 || limit > ariaReadHardCap {
+		limit = ariaReadHardCap
+	}
+
+	// Keyset pagination: Before takes precedence over From.
+	if req.Before > 0 {
+		selected, total := log.ReadPage(0, req.Before, limit)
+		deltas := h.ariaReadDeltas(log, req.FigaroID, selected)
+		entries := make([]rpc.IREntry, len(selected))
+		for i, e := range selected {
+			raw, _ := json.Marshal(e.Payload)
+			entries[i] = rpc.IREntry{LT: e.LT, Payload: raw, FormDeltas: deltas[e.LT]}
+		}
+		var nextBefore uint64
+		if len(selected) > 0 {
+			nextBefore = selected[0].LT
+		}
+		return &rpc.IRResponse{Entries: entries, Total: total, NextFrom: nextBefore}, nil
+	}
+
+	selected, total := log.ReadPage(req.From, 0, limit+1)
+	page := selected
+	if len(page) > limit {
+		page = page[:limit]
+	}
+	deltas := h.ariaReadDeltas(log, req.FigaroID, page)
+	out := make([]rpc.IREntry, 0, len(page))
+	for _, e := range page {
+		raw, mErr := json.Marshal(e.Payload)
+		if mErr != nil {
+			return nil, fmt.Errorf("aria.read: marshal LT=%d: %w", e.LT, mErr)
+		}
+		out = append(out, rpc.IREntry{LT: e.LT, Payload: raw, FormDeltas: deltas[e.LT]})
+	}
+	var nextFrom uint64
+	if len(selected) > limit {
+		nextFrom = selected[limit].LT
+	}
+	return rpc.IRResponse{
+		Entries:  out,
+		Total:    total,
+		NextFrom: nextFrom,
+	}, nil
+}
+
+// ariaReadDeltas assembles a page's form deltas hub-side, seeding the
+// cursors from the record PRECEDING the page: a backward page that seeds
+// zero attributes everything before its first record to that record,
+// which is over-attribution in the direction a reader cannot detect
+// (formdelta.Seed).
+func (h *handlers) ariaReadDeltas(log store.Log[message.Message], figaroID string, page []store.Entry[message.Message]) map[uint64]map[string]livedoc.FormDelta {
+	fb, ok := h.angelus.Backend.(formdelta.Backend)
+	if !ok || len(page) == 0 {
+		return nil
+	}
+	seed := formdelta.Seed{}
+	if prev, _ := log.ReadPage(0, page[0].LT, 1); len(prev) > 0 {
+		seed = formdelta.SeedFrom(prev[len(prev)-1])
+	}
+	return formdelta.PerRecordFrom(fb, figaroID, seed, page)
 }

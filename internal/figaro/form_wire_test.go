@@ -118,21 +118,6 @@ func newAgentWithForm(t *testing.T) (*figaro.Agent, *formSpyProvider, *form.Stat
 	return a, prov, cb
 }
 
-// patchSets collects the set keys from a slice of patches.
-func patchSets(ps []message.Patch) []string {
-	seen := map[string]struct{}{}
-	for _, p := range ps {
-		for k := range p.Set {
-			seen[k] = struct{}{}
-		}
-	}
-	out := make([]string, 0, len(seen))
-	for k := range seen {
-		out = append(out, k)
-	}
-	return out
-}
-
 // --- Wire-protocol coverage ---
 //
 // With log unification, the agent attaches one combined patch to the

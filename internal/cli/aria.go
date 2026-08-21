@@ -86,7 +86,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	// same data, disagreeing with the pager and the stream at every seam.
 	w, err := gatherShowTurns(ctx, acli, figaroID, opts)
 	if err != nil {
-		die("aria.page: %s", err)
+		die("read %s: %s", figaroID, err)
 	}
 	// NOTHING IN RANGE IS NOT AN EMPTY ARIA. A selector past the end of a
 	// short aria selects nothing and must still print the empty page (-j)
