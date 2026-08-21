@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 )
 
@@ -41,13 +42,20 @@ func (b *XwalBackend) AuditLibrettos() (LibrettoAudit, error) {
 	return b.reconcileLibrettos(false)
 }
 
-// HasLibrettos reports whether this store holds any at all. It is a stump
-// name scan and touches no boards, which is what lets the boot sweep cost
-// nothing on a store that has never studied anything -- which is every store
-// until the verb is used.
-func (b *XwalBackend) HasLibrettos() bool {
+// RefsNeedMigration reports whether any libretto still carries a COUNT where
+// the backref set belongs. Reads only the librettos, never the boards, so a
+// migrated store answers in O(librettos) and never scans again.
+func (b *XwalBackend) RefsNeedMigration() bool {
 	for _, st := range b.store.trunks.Stumps() {
-		if _, ok := SourceOfLibretto(st.Name); ok {
+		source, ok := SourceOfLibretto(st.Name)
+		if !ok {
+			continue
+		}
+		lib, err := b.librettoInstance(source)
+		if err != nil {
+			continue
+		}
+		if !lib.RefsMigrated() {
 			return true
 		}
 	}
@@ -58,7 +66,7 @@ func (b *XwalBackend) reconcileLibrettos(apply bool) (LibrettoAudit, error) {
 	var audit LibrettoAudit
 
 	// What the boards actually say.
-	want := map[string]int{}
+	want := map[string][]string{}
 	for _, n := range b.store.Nodes() {
 		if isReservedStump(n.ID) {
 			continue
@@ -69,7 +77,8 @@ func (b *XwalBackend) reconcileLibrettos(apply bool) (LibrettoAudit, error) {
 		}
 		audit.Boards++
 		for _, formID := range studiesOf(snap) {
-			want[strings.TrimPrefix(formID, "@")]++
+			src := strings.TrimPrefix(formID, "@")
+			want[src] = append(want[src], n.ID)
 		}
 	}
 
@@ -89,12 +98,12 @@ func (b *XwalBackend) reconcileLibrettos(apply bool) (LibrettoAudit, error) {
 			return audit, fmt.Errorf("reconcile %s: %w", st.Name, err)
 		}
 		n := want[source]
-		if n == 0 {
+		if len(n) == 0 {
 			audit.Orphaned++
 		}
-		if lib.Refs() != n {
+		if !lib.RefsMigrated() || !slices.Equal(lib.RefSet(), sortedIDs(n)) {
 			if apply {
-				if err := lib.setRefs(n); err != nil {
+				if err := lib.SetRefs(n); err != nil {
 					return audit, fmt.Errorf("reconcile %s: %w", st.Name, err)
 				}
 			}
@@ -129,9 +138,9 @@ func (b *XwalBackend) reconcileLibrettos(apply bool) (LibrettoAudit, error) {
 		audit.Missing--
 		audit.Minted++
 		slog.Info("reconcile: minted a libretto for a pre-existing study",
-			"libretto", lib.ID(), "source", source, "refs", want[source])
-		if lib.Refs() != want[source] {
-			if err := lib.setRefs(want[source]); err != nil {
+			"libretto", lib.ID(), "source", source, "refs", len(want[source]))
+		if !slices.Equal(lib.RefSet(), sortedIDs(want[source])) {
+			if err := lib.SetRefs(want[source]); err != nil {
 				return audit, fmt.Errorf("reconcile mint %s: %w", source, err)
 			}
 			audit.Corrected++
@@ -140,13 +149,14 @@ func (b *XwalBackend) reconcileLibrettos(apply bool) (LibrettoAudit, error) {
 	return audit, nil
 }
 
-// setRefs writes the recomputed count. Privileged and unconditional: the
-// sweep's whole point is that it knows better than the incremental value it
-// is replacing.
-func (l *Libretto) setRefs(n int) error {
-	_, _, err := l.form.ApplyEffectPrivileged(
-		librettoPatch(map[string]any{KeyLibrettoRefs: n}), 0)
-	return err
+// sortedIDs is the durable order of a backref set.
+func sortedIDs(ids []string) []string {
+	out := slices.Clone(ids)
+	for i := range out {
+		out[i] = strings.TrimPrefix(out[i], "@")
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
 }
 
 // studiesOf reads a board's declared study set.

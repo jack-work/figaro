@@ -55,7 +55,7 @@ func TestReconcileRepairsBothDirections(t *testing.T) {
 
 	// UNDER-count, which is the unrecoverable direction: a fork inherited the
 	// study set and nothing incremented.
-	if err := lib.setRefs(0); err != nil {
+	if err := lib.SetRefs(nil); err != nil {
 		t.Fatal(err)
 	}
 	audit, err := be.ReconcileLibrettos()
@@ -74,7 +74,7 @@ func TestReconcileRepairsBothDirections(t *testing.T) {
 	}
 
 	// OVER-count: a crash between the libretto write and the board write.
-	if err := again.setRefs(7); err != nil {
+	if err := again.SetRefs([]string{"n0", "n1", "n2", "n3"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := be.ReconcileLibrettos(); err != nil {
@@ -110,7 +110,7 @@ func TestReconcileZeroesAnOrphan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := lib.Retain(); err != nil {
+	if _, err := lib.Retain("nobody"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -159,7 +159,7 @@ func TestReconcileReportsAStudiedFormWithNoLibretto(t *testing.T) {
 	if audit.Librettos != 0 {
 		t.Fatalf("examined %d librettos where none exist", audit.Librettos)
 	}
-	if be.HasLibrettos() {
+	if be.RefsNeedMigration() {
 		t.Fatal("the audit created a libretto")
 	}
 
@@ -198,20 +198,33 @@ func TestReconcileReportsAStudiedFormWithNoLibretto(t *testing.T) {
 	}
 }
 
-// The boot sweep must cost NOTHING on a store that has never studied
-// anything, which is every store until the verb is used. The guard is a
-// stump-name scan that touches no board.
-func TestHasLibrettosIsCheapAndHonest(t *testing.T) {
+func TestRefsNeedMigrationIsFalseOnceTheSetsExist(t *testing.T) {
 	be, sourceID, _ := librettoFixture(t)
-	if be.HasLibrettos() {
-		t.Fatal("a store with no studies reported librettos")
+	if be.RefsNeedMigration() {
+		t.Fatal("a store with no librettos wants a migration")
 	}
-	lib, err := OpenLibretto(be.Store(), sourceID)
+	lib, err := be.Libretto(sourceID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer lib.Close()
-	if !be.HasLibrettos() {
-		t.Fatal("a store with a libretto reported none: the boot sweep would never run")
+	if _, err := lib.Retain("n7"); err != nil {
+		t.Fatal(err)
+	}
+	if be.RefsNeedMigration() {
+		t.Fatal("a libretto written with a backref set still wants a migration")
+	}
+	// A libretto written by an older build carries a COUNT.
+	if _, _, err := lib.form.ApplyEffectPrivileged(
+		librettoPatch(map[string]any{KeyLibrettoRefs: 1}), 0); err != nil {
+		t.Fatal(err)
+	}
+	if !be.RefsNeedMigration() {
+		t.Fatal("a count was not recognised as unmigrated: the boards would never be read")
+	}
+	if _, err := be.ReconcileLibrettos(); err != nil {
+		t.Fatal(err)
+	}
+	if be.RefsNeedMigration() {
+		t.Fatal("the migration ran and the store still wants one")
 	}
 }

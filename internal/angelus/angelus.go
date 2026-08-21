@@ -184,7 +184,7 @@ func (a *Angelus) Run(ctx context.Context) error {
 	_ = a.StartPprof(ctx)
 
 	go a.pidMonitor(ctx)
-	a.reconcileLibrettos()
+	a.migrateLibrettoRefs()
 
 	go func() {
 		<-ctx.Done()
@@ -260,29 +260,27 @@ func (a *Angelus) pidMonitor(ctx context.Context) {
 }
 
 // reconcileLibrettos recounts every libretto from the boards, once, at boot.
-func (a *Angelus) reconcileLibrettos() {
+func (a *Angelus) migrateLibrettoRefs() {
 	rec, ok := a.Backend.(librettoReconciler)
-	if !ok {
+	if !ok || !rec.RefsNeedMigration() {
 		return
 	}
 	go func() {
 		audit, err := rec.ReconcileLibrettos()
 		if err != nil {
-			slog.Warn("libretto reconciliation failed", "err", err)
+			slog.Warn("libretto refs migration failed", "err", err)
 			return
 		}
 		a.lastLibrettoSweep.Store(&audit)
-		if audit.Corrected > 0 || audit.Minted > 0 || audit.Missing > 0 || audit.Orphaned > 0 {
-			slog.Info("librettos reconciled",
-				"boards", audit.Boards, "librettos", audit.Librettos,
-				"corrected", audit.Corrected, "minted", audit.Minted,
-				"orphaned", audit.Orphaned, "missing", audit.Missing)
-		}
+		slog.Info("libretto backrefs built from the boards",
+			"boards", audit.Boards, "librettos", audit.Librettos,
+			"corrected", audit.Corrected, "minted", audit.Minted,
+			"orphaned", audit.Orphaned, "missing", audit.Missing)
 	}()
 }
 
 type librettoReconciler interface {
-	HasLibrettos() bool
+	RefsNeedMigration() bool
 	ReconcileLibrettos() (store.LibrettoAudit, error)
 }
 

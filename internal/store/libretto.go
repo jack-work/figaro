@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"runtime"
+	"slices"
 	"strings"
 	"sync"
 
@@ -122,47 +122,73 @@ func (l *Libretto) PatchesBetween(after, upTo uint64) []VersionedPatch {
 }
 
 // Refs is how many figaros are studying the source.
-func (l *Libretto) Refs() int { return intOf(l.formState(), KeyLibrettoRefs) }
-
 // At is the source version last folded in.
 func (l *Libretto) At() uint64 { return uint64(intOf(l.formState(), KeyLibrettoAt)) }
 
-// Retain and Release move the refcount. They are ordinary privileged patches
-// on this form's own actor, so they serialize against the fold rather than
-// racing it -- which is what makes "refs reached zero" a fact rather than a
-// sample.
-func (l *Libretto) Retain() (int, error)  { return l.addRefs(1) }
-func (l *Libretto) Release() (int, error) { return l.addRefs(-1) }
+// Retain and Release move the backref set: the ids of the boards that
+// declare a study of this libretto's source. Idempotent, so a repeated retain
+// or a lost release cannot drift the way an increment could. They are
+// privileged patches on this form's own actor, so they serialize against the
+// fold rather than racing it.
+func (l *Libretto) Retain(observer string) (int, error)  { return l.moveRef(observer, true) }
+func (l *Libretto) Release(observer string) (int, error) { return l.moveRef(observer, false) }
 
-func (l *Libretto) addRefs(delta int) (int, error) {
-	caller, _, _, _ := runtime.Caller(2)
+// Refs is how many boards declare this study.
+func (l *Libretto) Refs() int { return len(refsOf(l.formState())) }
+
+// RefSet is WHICH boards declare it, sorted.
+func (l *Libretto) RefSet() []string { return refsOf(l.formState()) }
+
+func (l *Libretto) moveRef(observer string, add bool) (int, error) {
+	observer = strings.TrimPrefix(observer, "@")
+	if observer == "" {
+		return l.Refs(), fmt.Errorf("libretto %s: a ref move needs an observer", l.ID())
+	}
 	for {
-		// ONE READ, NOT TWO. Form.Snapshot() publishes the state and its
-		// version from a single atomic load; taking them separately lets a
-		// writer land between the two, and then the count is computed from
-		// the OLD state while the conditional apply quotes the NEW version --
-		// so the guard passes and the update is lost.
 		at := l.form.Read()
-		from := intOf(at.Snapshot, KeyLibrettoRefs)
-		next := from + delta
-		if next < 0 {
-			// A double drop is a bug in the caller, not a reason to invent a
-			// negative refcount that reclamation would never collect.
-			recordRefMove(refMove{libretto: l.ID(), delta: delta, from: from, to: next, refused: true, caller: caller})
-			return from, fmt.Errorf(
-				"libretto %s: release below zero\nrecent refcount moves (oldest first):\n%s",
-				l.ID(), LibrettoLedger())
+		from := refsOf(at.Snapshot)
+		next, changed := withRef(from, observer, add)
+		if !changed {
+			return len(from), nil
 		}
 		_, _, err := l.form.ApplyEffectPrivileged(
 			librettoPatch(map[string]any{KeyLibrettoRefs: next}), at.Version)
 		if err == nil {
-			recordRefMove(refMove{libretto: l.ID(), delta: delta, from: from, to: next, caller: caller})
-			return next, nil
+			return len(next), nil
 		}
 		if !errors.Is(err, ErrFormMoved) {
 			return 0, err
 		}
 	}
+}
+
+// withRef returns the set with observer added or removed, and whether it
+// moved. Sorted, so the durable value of a set does not depend on the order
+// its members arrived in.
+func withRef(set []string, observer string, add bool) ([]string, bool) {
+	i, found := slices.BinarySearch(set, observer)
+	switch {
+	case add && found, !add && !found:
+		return set, false
+	case add:
+		return slices.Insert(slices.Clone(set), i, observer), true
+	default:
+		return slices.Delete(slices.Clone(set), i, i+1), true
+	}
+}
+
+// SetRefs replaces the whole set. The reconciliation pass knows better than
+// the value it replaces, and it is the only caller.
+func (l *Libretto) SetRefs(observers []string) error {
+	next := slices.Clone(observers)
+	for i := range next {
+		next[i] = strings.TrimPrefix(next[i], "@")
+	}
+	slices.Sort(next)
+	next = slices.Compact(next)
+	_, _, err := l.form.ApplyEffectPrivileged(
+		librettoPatch(map[string]any{KeyLibrettoRefs: next}), 0)
+	return err
 }
 
 // Reclaimable reports that nobody is STUDYING this any more. It is necessary
@@ -390,6 +416,35 @@ func librettoPatch(kv map[string]any) message.Patch {
 	}
 	return message.Patch{Set: set}
 }
+
+// refsOf reads the backref set. A libretto written before the set existed
+// carries a NUMBER here; it reads as empty, and the migration pass rebuilds
+// it from the boards. The array is its own version stamp.
+func refsOf(s form.Snapshot) []string {
+	raw, ok := s.Get(KeyLibrettoRefs)
+	if !ok {
+		return nil
+	}
+	var ids []string
+	if err := json.Unmarshal(raw, &ids); err != nil {
+		return nil
+	}
+	slices.Sort(ids)
+	return slices.Compact(ids)
+}
+
+// refsMigrated reports whether this libretto's refs are a SET, not a count.
+func refsMigrated(s form.Snapshot) bool {
+	raw, ok := s.Get(KeyLibrettoRefs)
+	if !ok {
+		return false
+	}
+	var ids []string
+	return json.Unmarshal(raw, &ids) == nil
+}
+
+// RefsMigrated reports whether this libretto carries a backref set.
+func (l *Libretto) RefsMigrated() bool { return refsMigrated(l.formState()) }
 
 func intOf(s form.Snapshot, key string) int {
 	raw, ok := s.Get(key)

@@ -3,7 +3,6 @@ package store
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -195,10 +194,10 @@ func TestLibrettoRefcountIsSerializedAndRefusesToGoNegative(t *testing.T) {
 	const observers = 32
 	done := make(chan error, observers)
 	for i := 0; i < observers; i++ {
-		go func() {
-			_, err := lib.Retain()
+		go func(i int) {
+			_, err := lib.Retain(fmt.Sprintf("n%d", i))
 			done <- err
-		}()
+		}(i)
 	}
 	for i := 0; i < observers; i++ {
 		if err := <-done; err != nil {
@@ -212,10 +211,10 @@ func TestLibrettoRefcountIsSerializedAndRefusesToGoNegative(t *testing.T) {
 		t.Fatal("a libretto with observers reported itself reclaimable")
 	}
 	for i := 0; i < observers; i++ {
-		go func() {
-			_, err := lib.Release()
+		go func(i int) {
+			_, err := lib.Release(fmt.Sprintf("n%d", i))
 			done <- err
-		}()
+		}(i)
 	}
 	for i := 0; i < observers; i++ {
 		if err := <-done; err != nil {
@@ -228,8 +227,8 @@ func TestLibrettoRefcountIsSerializedAndRefusesToGoNegative(t *testing.T) {
 	if !lib.Reclaimable() {
 		t.Fatal("a libretto nobody studies is not reclaimable")
 	}
-	if _, err := lib.Release(); err == nil {
-		t.Fatal("releasing below zero was allowed: reclamation would never collect it")
+	if n, err := lib.Release("n0"); err != nil || n != 0 {
+		t.Fatalf("releasing an id that is not in the set = (%d, %v), want (0, nil)", n, err)
 	}
 }
 
@@ -247,7 +246,7 @@ func TestLibrettoSurvivesAReopen(t *testing.T) {
 	if err := lib.Follow(src); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := lib.Retain(); err != nil {
+	if _, err := lib.Retain("observer"); err != nil {
 		t.Fatal(err)
 	}
 	at := lib.At()
@@ -287,7 +286,7 @@ func TestLibrettoNeverMirrorsItsOwnBookkeeping(t *testing.T) {
 	if err := lib.Follow(src); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := lib.Retain(); err != nil {
+	if _, err := lib.Retain("observer"); err != nil {
 		t.Fatal(err)
 	}
 	// Privileged, because system.* is exactly what an ordinary write cannot
@@ -465,106 +464,39 @@ func TestLibrettoStopsListeningWhenItsSourceDies(t *testing.T) {
 	}
 }
 
-// The refusal must EXPLAIN ITSELF. A release with no matching retain is an
-// under-count, the direction the sweep cannot repair, and it has so far
-// appeared once in a loaded run and in none of the four that chased it.
-// Repetition is not a hunting method for that; a message that names the moves
-// which led to it is.
-func TestReleaseBelowZeroCarriesTheLedger(t *testing.T) {
+func TestConcurrentMoversDoNotLoseAReference(t *testing.T) {
 	be, src, _ := librettoFixture(t)
 	lib, err := be.Libretto(src)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := lib.Retain(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := lib.Release(); err != nil {
-		t.Fatal(err)
-	}
-	_, err = lib.Release() // one too many, deliberately
-	if err == nil {
-		t.Fatal("releasing below zero was allowed")
-	}
-	msg := err.Error()
-	for _, want := range []string{"release below zero", "recent refcount moves", "retain", "release"} {
-		if !strings.Contains(msg, want) {
-			t.Errorf("the refusal does not carry %q:\n%s", want, msg)
-		}
-	}
-	// And it names WHERE, so the caller with no matching retain is visible
-	// rather than inferred.
-	if !strings.Contains(msg, "libretto_test.go") {
-		t.Errorf("the ledger names no call site:\n%s", msg)
-	}
-}
-
-// The refcount survives concurrent movers. Each goroutine retains and
-// releases in balanced pairs, so the count must end exactly where it began --
-// and no release may ever be refused, because none of them is unmatched.
-//
-// HONESTY ABOUT WHAT THIS PROVES: it does NOT prove the two-atomic-loads fix.
-// Run against the old two-load version -- 8 runs, 1600 balanced pairs, under
-// -race -- it stayed green: the window between two atomic loads is narrower
-// than this harness can hit. It guards the property from here on; the
-// argument for the fix is that the window EXISTS by construction, not that
-// this test found it. The ledger on a refusal is what will read out the real
-// occurrence if the window is not the cause.
-func TestRefcountSurvivesConcurrentMovers(t *testing.T) {
-	be, src, _ := librettoFixture(t)
-	lib, err := be.Libretto(src)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// A floor, so a lost update cannot be masked by the below-zero refusal.
-	for i := 0; i < 8; i++ {
-		if _, err := lib.Retain(); err != nil {
-			t.Fatal(err)
-		}
-	}
-	before := lib.Refs()
-
 	const movers, rounds = 8, 25
 	var wg sync.WaitGroup
 	errs := make(chan error, movers)
-	for i := 0; i < movers; i++ {
+	for i := range movers {
 		wg.Add(1)
-		go func() {
+		go func(i int) {
 			defer wg.Done()
-			for r := 0; r < rounds; r++ {
-				if _, err := lib.Retain(); err != nil {
-					errs <- err
-					return
-				}
-				if _, err := lib.Release(); err != nil {
+			mine := fmt.Sprintf("n%d", i)
+			for range rounds {
+				if _, err := lib.Retain(mine); err != nil {
 					errs <- err
 					return
 				}
 			}
-		}()
+		}(i)
 	}
 	wg.Wait()
 	close(errs)
 	for err := range errs {
-		t.Fatalf("a balanced mover was refused: %v", err)
+		t.Fatalf("a mover was refused: %v", err)
 	}
-	if got := lib.Refs(); got != before {
-		t.Fatalf("refs = %d, want %d: %d balanced pairs lost %d references",
-			got, before, movers*rounds, before-got)
+	if got := lib.Refs(); got != movers {
+		t.Fatalf("refs = %d after %d observers retained under contention, want %d",
+			got, movers, movers)
 	}
 }
 
-// READERS WHILE IT FOLDS. Every observer of a form now renders from ONE
-// shared Libretto instance (a second Form over that channel is an orphaned
-// reader, refused by construction elsewhere), so the copy is read by N
-// goroutines while its own fold writes it.
-//
-// That case had never been exercised: the fleet studies AFTER its patches, so
-// twelve arias never raced the writer. This is the gap, closed.
-//
-// What it asserts is what a renderer depends on: a range asked for below the
-// version the reader observed is answered without tearing, the answers are
-// monotone in version, and nothing panics under -race.
 func TestLibrettoReadersWhileItFolds(t *testing.T) {
 	be, src, _ := librettoFixture(t)
 	aria, _, err := be.ForkWith("", 0, patchOf(t, map[string]string{"aria_id": `"a1"`}))

@@ -510,11 +510,11 @@ func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Pat
 	// this is the one a live `fig fork` takes. Missing it under-counted on a
 	// real daemon while every unit test passed, because the tests called
 	// Fork and the CLI calls this.
-	b.inheritStudies(parent)
 	child, version, err := b.store.ForkWith(parent, atMainLT, patch)
 	if err != nil {
 		return "", 0, err
 	}
+	b.inheritStudies(child)
 	// The Form for a node born a moment ago must not be a replay of a channel
 	// that was empty when someone else opened it first. Close what is
 	// dropped: a Form holds a writer, and a dropped one nobody closed is a
@@ -547,15 +547,23 @@ func (b *XwalBackend) CreateConversation(outfitID string) (string, error) {
 	return b.store.CreateConversation(outfitID)
 }
 func (b *XwalBackend) Fork(ariaID string) (cont, alt string, err error) {
-	b.inheritStudies(ariaID)
-	return b.store.Fork(ariaID)
+	cont, alt, err = b.store.Fork(ariaID)
+	if err == nil {
+		b.inheritStudies(alt)
+	}
+	return cont, alt, err
 }
 func (b *XwalBackend) ForkAt(ariaID string, atMainLT uint64) (cont, alt string, err error) {
-	b.inheritStudies(ariaID)
-	return b.store.ForkAt(ariaID, atMainLT)
+	cont, alt, err = b.store.ForkAt(ariaID, atMainLT)
+	if err == nil {
+		b.inheritStudies(alt)
+	}
+	return cont, alt, err
 }
 
-// inheritStudies is FORK's half of the refcount (durable-forms §12.2.2).
+// inheritStudies is FORK's half of the backref set (durable-forms §12.2.2):
+// the id whose BOARD declares the study is the id the libretto records, so it
+// runs on the child, after the child exists.
 func (b *XwalBackend) RetainDeclaredStudies(ariaID string) { b.inheritStudies(ariaID) }
 
 func (b *XwalBackend) inheritStudies(ariaID string) {
@@ -569,7 +577,7 @@ func (b *XwalBackend) inheritStudies(ariaID string) {
 			slog.Warn("fork: libretto unreachable", "aria", ariaID, "form", formID, "err", err)
 			continue
 		}
-		if _, err := lib.Retain(); err != nil {
+		if _, err := lib.Retain(ariaID); err != nil {
 			slog.Warn("fork: retain failed", "aria", ariaID, "form", formID, "err", err)
 		}
 	}
@@ -1118,7 +1126,7 @@ func (b *XwalBackend) releaseStudies(ariaID string) {
 			slog.Warn("kill: libretto unreachable", "aria", ariaID, "form", formID, "err", err)
 			continue
 		}
-		if _, err := lib.Release(); err != nil {
+		if _, err := lib.Release(ariaID); err != nil {
 			slog.Warn("kill: release failed", "aria", ariaID, "form", formID, "err", err)
 		}
 	}
