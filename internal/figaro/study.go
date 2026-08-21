@@ -47,7 +47,29 @@ func StudiesFromSnapshot(snap form.Snapshot) []string {
 // revival path; the board is the durable truth, the store's set is its
 // in-memory mirror.
 func (a *Agent) resumeStudies() {
-	a.backend.SetObservedForms(a.id, StudiesFromSnapshot(a.form.Snapshot()))
+	ids := StudiesFromSnapshot(a.form.Snapshot())
+	a.backend.SetObservedForms(a.id, ids)
+
+	// AND OPEN THE LIBRETTOS, BEFORE ANY PROMPT CAN BE STAMPED.
+	//
+	// Declaring the observed set makes every IR append stamp each studied
+	// form's LIBRETTO version -- and a libretto only catches up to its source
+	// once something opens it and Follow seeds it. Until this ran, the first
+	// thing to open them was studyAccessors(), inside the send, AFTER
+	// appendUserPrompt had already stamped the entry. So a patch that landed
+	// while this aria was not loaded was absent from the copy the stamp read,
+	// the delta range came out empty, and the change waited a turn.
+	//
+	// Measured: store.TestTheThreeNumbersBehindTheRestartLag, where the
+	// range is (3,3] in the daemon's old order and (3,4] when the librettos
+	// are opened first.
+	if lb, ok := a.backend.(librettoBackend); ok {
+		for _, fid := range ids {
+			if _, err := lb.Libretto(fid); err != nil {
+				slog.Warn("resume study: open libretto", "aria", a.id, "form", fid, "err", err)
+			}
+		}
+	}
 }
 
 // requireStudyTarget is store.RequireStudyTarget over this agent's backend:
