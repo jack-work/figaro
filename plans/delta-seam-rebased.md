@@ -967,3 +967,57 @@ until the end-to-end test forced me back.
 WHAT WOULD SETTLE IT: count adjacent same-role among rows AFTER a catch-up has
 re-derived them for every aria, or read the snapshot with a v2-era binary
 before the bump clears anything. Neither is done.
+
+# THE RESTART LAG IS NOT THE WINDOW BUG, AND IT SURVIVES THE FIX (ede92072)
+
+Recorded so the two are not confused, because they LOOK identical from a
+terminal: a studied form's change does not reach the model, and appears a turn
+later.
+
+    THE WINDOW BUG            an entry that could carry the block consumed the
+                              window and wrote no row. FIXED (commit on write);
+                              Gluck's own example is the test.
+    THE RESTART LAG           after a daemon restart the first turn is one
+                              behind. STILL REPRODUCES at head, measured by
+                              scripts/live/restartlive.sh after the fix landed.
+
+They are different, and the second is pre-existing on main and normalised
+inside the instrument that finds it ("0 is the known lag").
+
+## THE HYPOTHESIS, AND WHY IT IS ONLY THAT
+
+The stamp reads the LIBRETTO's version, not the source form's:
+store.observedCursors -> formTail(LibrettoID(fid)). The libretto is a COPY kept
+current by an ASYNCHRONOUS fold goroutine (`go l.fold(...)` in libretto.go).
+So a patch applied to the source is not visible to a stamp taken before the
+fold has run, and the entry carries the OLD version -- no delta, and the change
+waits for the next entry.
+
+THE STUDIES ACCESSOR READS THE LIBRETTO TOO (StudyAccessorsFor hands out
+librettoView), so the stamp and the patches agree with each other; both are
+simply behind the source. That coherence is why the fix for the window bug does
+not touch this one: there is no delta being dropped, there is no delta yet.
+
+WHY THIS IS NOT YET THE ANSWER: a previous bearer recorded that "attaching the
+fold at boot does NOT fix the first turn, so the cause is not what it looks
+like." I have not reproduced that attempt, and until the two versions are read
+side by side at the instant before the send, this remains a reading.
+
+    THE DISCRIMINATING MEASUREMENT, now printed by the script: the SOURCE
+    form's version and the LIBRETTO's, immediately before the first send after
+    a restart. Differ -> the fold is behind and the stamp is honest about a
+    stale copy. Agree, and the turn is still one behind -> the cause is
+    downstream of the stamp and this section is wrong.
+
+## AND IT BEARS ON GLUCK'S DESIGN INSTRUCTION
+
+He said the fig IR should not know that librettos or studies exist -- "figaro
+doesnt even need to read the libretto, it just needs to communicate a delta on
+the bound form like any other property ... the libretto implementation is
+purely up to the provider to get right."
+
+Under that design this lag cannot happen, because there is no second copy to
+be behind: the board's own version is stamped, and resolving it to a libretto
+is the provider's problem, done at translation time from a durable log rather
+than from a goroutine's progress. THAT IS AN ARGUMENT FOR HIS DESIGN THAT I DID
+NOT HAVE WHEN HE GAVE IT, and it is worth more than the lag is worth.
