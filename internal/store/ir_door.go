@@ -179,19 +179,16 @@ func (l *figIRLog) isPending(id string) bool {
 
 // outstandingInvokes reports the invokes of the last assistant message that
 // still lack results, which is the door's state after a restart or a fork.
+// outstandingInvokes is every invoke in the history with no result anywhere
+// after it. It reads the WHOLE history: it used to examine only the last
+// invoke-bearing message, so an orphan with a well-formed round after it was
+// invisible to every repair figaro has, and the aria was refused by every
+// provider on every send, forever (Gluck, 0.28.1: "messages.98: tool_use ids
+// were found without tool_result blocks"). The door prevents new ones, so
+// these come from history written before the door existed.
 func outstandingInvokes(rows []Entry[message.Message]) []message.Content {
-	at := -1
-	for i := len(rows) - 1; i >= 0; i-- {
-		if len(assistantInvokes(rows[i].Payload)) > 0 {
-			at = i
-			break
-		}
-	}
-	if at < 0 {
-		return nil
-	}
 	answered := map[string]bool{}
-	for _, e := range rows[at+1:] {
+	for _, e := range rows {
 		for _, c := range e.Payload.Content {
 			if c.Type == message.ContentToolResult {
 				answered[c.ToolCallID] = true
@@ -199,9 +196,11 @@ func outstandingInvokes(rows []Entry[message.Message]) []message.Content {
 		}
 	}
 	var open []message.Content
-	for _, inv := range assistantInvokes(rows[at].Payload) {
-		if !answered[inv.ToolCallID] {
-			open = append(open, inv)
+	for _, e := range rows {
+		for _, inv := range assistantInvokes(e.Payload) {
+			if !answered[inv.ToolCallID] {
+				open = append(open, inv)
+			}
 		}
 	}
 	return open

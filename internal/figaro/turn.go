@@ -136,6 +136,20 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	a.lastActive = time.Now()
 	a.mu.Unlock()
 
+	// AN ORPHANED INVOKE IS CLOSED BEFORE THE HISTORY IS ASSEMBLED, not only
+	// when a turn ends. finishTurn was the sole closer, so a history that
+	// reached this point carrying one -- a fork taken over a dead tool call,
+	// a daemon killed mid-round -- was refused by every provider ("tool_use
+	// ids were found without tool_result blocks") on every send, forever.
+	// Turn start is the safe moment: no round is in flight by definition.
+	if a.backend != nil {
+		if n, err := a.backend.CloseOpenToolCalls(a.id); err != nil {
+			slog.Error("close orphaned tool calls at turn start", "aria", a.id, "err", err)
+		} else if n > 0 {
+			slog.Info("closed orphaned tool calls at turn start", "aria", a.id, "calls", n)
+		}
+	}
+
 	turnCtx, span := figOtel.Start(ctx, "figaro.qua",
 		figOtel.WithAttributes(
 			attribute.String("figaro.id", a.id),
