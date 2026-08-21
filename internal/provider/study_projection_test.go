@@ -45,14 +45,14 @@ func TestProjectionFoldsStudiedPatchesBetweenStamps(t *testing.T) {
 	}}
 
 	var folded []message.Message
-	_, _, err := ProjectIncrementally(ProjectionConfig[int]{
-		Log:     stamped,
-		Studies: map[string]Form{"@r": role},
+	_, err := CatchUp(CatchUpConfig{
+		Log:        stamped,
+		Translator: store.NewMemLog[[]json.RawMessage](),
+		Studies:    map[string]Form{"@r": role},
 		Encode: func(m message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 			folded = append(folded, m)
 			return []json.RawMessage{json.RawMessage(`{}`)}, nil
 		},
-		Append: func(s int, _ []json.RawMessage, _ uint64) int { return s + 1 },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -260,14 +260,14 @@ func TestAssistantRecordDoesNotSwallowAStudyWindow(t *testing.T) {
 	}}
 
 	var folded []message.Message
-	_, _, err := ProjectIncrementally(ProjectionConfig[int]{
-		Log:     &stampedLog{entries: entries},
-		Studies: map[string]Form{"@r": role},
+	_, err := CatchUp(CatchUpConfig{
+		Log:        &stampedLog{entries: entries},
+		Translator: store.NewMemLog[[]json.RawMessage](),
+		Studies:    map[string]Form{"@r": role},
 		Encode: func(m message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 			folded = append(folded, m)
 			return []json.RawMessage{json.RawMessage(`{}`)}, nil
 		},
-		Append: func(s int, _ []json.RawMessage, _ uint64) int { return s + 1 },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -282,9 +282,9 @@ func TestAssistantRecordDoesNotSwallowAStudyWindow(t *testing.T) {
 }
 
 // A DEATH IS REPORTED IN BAND (durable-forms §12.7b). The source is gone, so
-// the copy stops moving and says so; the projection never learns about
+// the copy stops moving and says so; the catch-up never learns about
 // liveness, which is what keeps §12.5 a namespace change rather than a new
-// field on IncrementalProjection.
+// field on the catch-up.
 //
 // It arrives as system.libretto.alive=false, and studyFold drops every
 // system.* key -- so without the one exception the ruling would be built,

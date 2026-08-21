@@ -13,29 +13,29 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-type projectedMessages struct {
-	Messages     []anthropic.MessageParam
-	LogicalTimes []uint64
-	err          error
-}
-
-func appendProjectedMessages(state projectedMessages, encoded []json.RawMessage, lt uint64) projectedMessages {
-	if state.err != nil {
-		return state
-	}
-	for _, raw := range encoded {
-		if len(raw) == 0 {
-			continue
+// rowsToMessageParams turns stored rows into the SDK's typed messages.
+//
+// THE ROWS ARE ALREADY THE SDK'S OWN MARSHALLING: this provider writes what
+// MessageParam serializes to, and the round trip is byte-identical (see
+// TestMessageParamRoundTripsThroughJSONWithoutLoss). So the read is a parse,
+// never a re-encode, and what reaches the wire is what is on disk.
+func rowsToMessageParams(perMessage [][]json.RawMessage, lts []uint64) ([]anthropic.MessageParam, []uint64, error) {
+	msgs := make([]anthropic.MessageParam, 0, len(perMessage))
+	out := make([]uint64, 0, len(perMessage))
+	for i, row := range perMessage {
+		for _, raw := range row {
+			if len(raw) == 0 {
+				continue
+			}
+			var msg anthropic.MessageParam
+			if err := json.Unmarshal(raw, &msg); err != nil {
+				return nil, nil, fmt.Errorf("unmarshal stored message at %d: %w", lts[i], err)
+			}
+			msgs = append(msgs, msg)
+			out = append(out, lts[i])
 		}
-		var msg anthropic.MessageParam
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			state.err = fmt.Errorf("unmarshal cached message: %w", err)
-			return state
-		}
-		state.Messages = append(state.Messages, msg)
-		state.LogicalTimes = append(state.LogicalTimes, lt)
 	}
-	return state
+	return msgs, out, nil
 }
 
 // cacheFor returns this provider's lineage cache, opening lazily.
@@ -75,47 +75,45 @@ func (p *Provider) invalidateIfStale(s store.Log[[]json.RawMessage]) bool {
 	return true
 }
 
-// catchUp projects untranslated entries into immutable typed messages.
-// Cached raw bytes are parsed only when their entry first joins the projection.
-func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], form provider.Form, studies map[string]provider.Form) (projectedMessages, error) {
+// catchUp translates whatever the row log has not translated yet, writes those
+// rows, and hands back the SDK's typed messages parsed from them. It keeps
+// nothing between calls: the watermark is the row log's tail.
+func (p *Provider) catchUp(figLog store.Log[message.Message], rows store.Log[[]json.RawMessage], form provider.Form, studies map[string]provider.Form) ([]anthropic.MessageParam, []uint64, error) {
 	t0 := time.Now()
-	fp := p.Fingerprint()
-	p.mu.Lock()
-	previous := p.projection
-	p.mu.Unlock()
-
-	projection, stats, err := provider.ProjectIncrementally(provider.ProjectionConfig[projectedMessages]{
+	stats, err := provider.CatchUp(provider.CatchUpConfig{
 		Log:         figLog,
-		Cache:       cache,
+		Translator:  rows,
 		Form:        form,
 		Studies:     studies,
-		Previous:    previous,
-		Fingerprint: fp,
+		Fingerprint: p.Fingerprint(),
 		Encode:      p.encode,
-		Append:      appendProjectedMessages,
 		ReportEncodeError: func(lt uint64, err error) {
 			slog.Error("anthropicsdk encode", "flt", lt, "err", err)
 		},
+		ReportWriteError: func(lt uint64, err error) {
+			slog.Error("anthropicsdk write row", "flt", lt, "err", err)
+		},
 	})
 	if err != nil {
-		return projectedMessages{}, fmt.Errorf("project messages: %w", err)
+		// A SEND THAT CANNOT WRITE ITS ROWS MUST NOT PROCEED. The history it
+		// would assemble is not the one on disk.
+		return nil, nil, fmt.Errorf("anthropicsdk catch up: %w", err)
 	}
-	if projection.State.err != nil {
-		return projectedMessages{}, projection.State.err
-	}
-	p.mu.Lock()
-	p.projection = projection
-	p.mu.Unlock()
 
-	tTotal := time.Since(t0)
-	if tTotal > 200*time.Millisecond {
+	perMessage, lts := provider.Translations(rows)
+	msgs, msgLTs, perr := rowsToMessageParams(perMessage, lts)
+	if perr != nil {
+		return nil, nil, perr
+	}
+
+	if total := time.Since(t0); total > 200*time.Millisecond {
 		slog.Warn("anthropicsdk catchUp slow",
-			"total", tTotal,
+			"total", total,
 			"entries", stats.Entries,
-			"startIdx", stats.StartIndex,
-			"cached", stats.Cached,
+			"visited", stats.Visited,
 			"encoded", stats.Encoded,
+			"messages", len(msgs),
 		)
 	}
-	return projection.State, nil
+	return msgs, msgLTs, nil
 }

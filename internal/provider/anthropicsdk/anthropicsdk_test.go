@@ -59,18 +59,16 @@ func encodeAll(p *Provider, msgs []message.Message) [][]json.RawMessage {
 	return out
 }
 
-func projectAll(t testing.TB, perMessage [][]json.RawMessage, lts []uint64) projectedMessages {
+type parsedMessages struct {
+	Messages     []anthropic.MessageParam
+	LogicalTimes []uint64
+}
+
+func projectAll(t testing.TB, perMessage [][]json.RawMessage, lts []uint64) parsedMessages {
 	t.Helper()
-	var projected projectedMessages
-	for i, encoded := range perMessage {
-		var lt uint64
-		if i < len(lts) {
-			lt = lts[i]
-		}
-		projected = appendProjectedMessages(projected, encoded, lt)
-	}
-	require.NoError(t, projected.err)
-	return projected
+	msgs, msgLTs, err := rowsToMessageParams(perMessage, lts)
+	require.NoError(t, err)
+	return parsedMessages{Messages: msgs, LogicalTimes: msgLTs}
 }
 
 func legacyBuildParams(perMessage [][]json.RawMessage, lts []uint64, snap form.Snapshot, tools []provider.Tool, maxTokens int64, oauth bool, model string) (anthropic.MessageNewParams, error) {

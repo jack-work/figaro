@@ -110,7 +110,7 @@ func TestGCLeavesLiveAriasReadable(t *testing.T) {
 	if got := runGCHandler(t, h, false); got.Collected != 1 {
 		t.Fatalf("collected %d, want 1", got.Collected)
 	}
-	if _, err := backend.Open(conv); err != nil {
+	if _, err := backend.OpenFigIR(conv); err != nil {
 		t.Fatalf("live aria unreadable after gc: %v", err)
 	}
 }

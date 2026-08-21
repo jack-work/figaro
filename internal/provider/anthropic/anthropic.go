@@ -3,7 +3,6 @@ package anthropic
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -56,7 +55,6 @@ type Anthropic struct {
 	CacheOpen      func(aria string) (store.Log[[]json.RawMessage], error)
 	CacheNamespace string
 	cache          store.Log[[]json.RawMessage]
-	projection     *provider.IncrementalProjection[provider.EncodedMessages]
 
 	// windows caches context windows learned from the models endpoint and
 	// falls back to the verified static table.
@@ -106,12 +104,10 @@ func (a *Anthropic) cacheFor(aria string) (store.Log[[]json.RawMessage], error) 
 	}
 	s, err := a.CacheOpen(aria)
 	if err != nil {
-		slog.Warn("anthropic cache open failed; running uncached", "aria", aria, "err", err)
-		return nil, nil
+		return nil, fmt.Errorf("anthropic open translator log: %w", err)
 	}
 	if !a.invalidateIfStale(s) {
-		slog.Warn("anthropic cache invalidation failed; running uncached", "aria", aria)
-		return nil, nil
+		return nil, fmt.Errorf("anthropic translator log invalidation failed")
 	}
 	a.cache = s
 	return s, nil
@@ -487,14 +483,21 @@ func decodeNativeMessage(nm nativeMessage) message.Message {
 }
 
 type nativeRequest struct {
-	Model        string          `json:"model"`
-	MaxTokens    int             `json:"max_tokens"`
-	System       []systemBlock   `json:"system,omitempty"`
-	Messages     []nativeMessage `json:"messages"`
-	Tools        []nativeTool    `json:"tools,omitempty"`
-	Stream       bool            `json:"stream"`
-	Thinking     *thinkingParam  `json:"thinking,omitempty"`
-	OutputConfig *outputConfig   `json:"output_config,omitempty"`
+	Model     string        `json:"model"`
+	MaxTokens int           `json:"max_tokens"`
+	System    []systemBlock `json:"system,omitempty"`
+	// Messages are the rows AS THEY LIE ON DISK. The translator log holds
+	// wire-final messages, so the assembler splices them verbatim: it does
+	// not decode 75,200 rows into a struct and re-encode them to produce
+	// bytes that differ only in key order (measured on the real store,
+	// rows_roundtrip_probe_test.go). ONLY cache_control reaches inside a
+	// row, on at most a few of them, and those rows are decoded one at a
+	// time where they are marked.
+	Messages     []json.RawMessage `json:"messages"`
+	Tools        []nativeTool      `json:"tools,omitempty"`
+	Stream       bool              `json:"stream"`
+	Thinking     *thinkingParam    `json:"thinking,omitempty"`
+	OutputConfig *outputConfig     `json:"output_config,omitempty"`
 }
 
 type outputConfig struct {
@@ -802,14 +805,14 @@ func (a *Anthropic) projectMessagesWithLTs(perMessage [][]json.RawMessage, lts [
 			if len(raw) == 0 {
 				continue
 			}
-			var nm nativeMessage
-			if err := json.Unmarshal(raw, &nm); err != nil {
-				return nativeRequest{}, fmt.Errorf("unmarshal cached message: %w", err)
-			}
-			req.Messages = append(req.Messages, nm)
+			req.Messages = append(req.Messages, raw)
 			msgLTs = append(msgLTs, lt)
 		}
 	}
+
+	// BEFORE ANY MARKING: cache breakpoints and per-LT tags address messages by
+	// INDEX, so merging after them would move the marks onto other messages.
+	req.Messages, msgLTs = coalesceRows(req.Messages, msgLTs)
 
 	if policy := provider.ResolveCachePolicy(snapshot); !policy.Off() {
 		route := a.route()
@@ -865,14 +868,11 @@ func applyMessageTags(req *nativeRequest, msgLTs []uint64, snapshot form.Snapsho
 		if !ok {
 			continue
 		}
-		m := &req.Messages[idx]
-		if k := len(m.Content); k > 0 {
-			policy := provider.ParseCachePolicy(tag.CacheControl)
-			if policy.Off() {
-				continue
-			}
-			m.Content[k-1].CacheControl = controlFor(policy, caps)
+		policy := provider.ParseCachePolicy(tag.CacheControl)
+		if policy.Off() {
+			continue
 		}
+		markRowTail(&req.Messages[idx], controlFor(policy, caps))
 	}
 }
 
@@ -914,11 +914,38 @@ func markCacheBreakpoints(req *nativeRequest, policy provider.CachePolicy, plan 
 		return
 	}
 	if n := len(req.Messages); n >= 1 && spend() {
-		m := &req.Messages[n-1]
-		if k := len(m.Content); k > 0 {
-			m.Content[k-1].CacheControl = cc
-		}
+		markRowTail(&req.Messages[n-1], cc)
 	}
+}
+
+// rowMessage decodes one spliced row. The assembler does not call it on the
+// hot path -- that is the point of the splice -- but marking, counting and
+// assertions need a typed view of a single row.
+func rowMessage(row json.RawMessage) nativeMessage {
+	var m nativeMessage
+	_ = json.Unmarshal(row, &m)
+	return m
+}
+
+// markRowTail attaches cache_control to a row's LAST content block. This is
+// the ONE edit that reaches inside a message, so it is the one place a row
+// is decoded -- at most four rows per request against N spliced verbatim,
+// and the fraction shrinks as history grows.
+func markRowTail(row *json.RawMessage, cc *cacheControl) {
+	var m nativeMessage
+	if err := json.Unmarshal(*row, &m); err != nil {
+		return // a row we cannot read is a row we must not rewrite
+	}
+	k := len(m.Content)
+	if k == 0 {
+		return
+	}
+	m.Content[k-1].CacheControl = cc
+	marked, err := json.Marshal(m)
+	if err != nil {
+		return
+	}
+	*row = marked
 }
 
 // countCacheMarkers reports how many explicit cache_control markers a
@@ -936,8 +963,8 @@ func countCacheMarkers(req nativeRequest) int {
 			n++
 		}
 	}
-	for _, m := range req.Messages {
-		for _, c := range m.Content {
+	for _, row := range req.Messages {
+		for _, c := range rowMessage(row).Content {
 			if c.CacheControl != nil {
 				n++
 			}
@@ -957,7 +984,10 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	if err != nil {
 		return err
 	}
-	perMessage, lts := a.catchUp(in.FigLog, cache, in.Form, in.Studies)
+	perMessage, lts, err := a.catchUp(in.FigLog, cache, in.Form, in.Studies)
+	if err != nil {
+		return err
+	}
 	if len(perMessage) == 0 {
 		return fmt.Errorf("empty context")
 	}
@@ -972,16 +1002,17 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	if err != nil {
 		return err
 	}
-	body, err := json.Marshal(req)
+	body, err := provider.NewRequestBody(bodyFunc(req), provider.StreamsRequestBody(in.Snapshot))
 	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
+		return fmt.Errorf("encode request: %w", err)
 	}
 
 	resp, _, err := a.doWithAuthRetry(ctx, func(token string) (*http.Request, error) {
-		httpReq, herr := http.NewRequestWithContext(ctx, "POST", a.route().MessagesURL(), bytes.NewReader(body))
+		httpReq, herr := http.NewRequestWithContext(ctx, "POST", a.route().MessagesURL(), nil)
 		if herr != nil {
 			return nil, fmt.Errorf("create request: %w", herr)
 		}
+		body.Attach(httpReq)
 		httpReq.Header.Set("Content-Type", "application/json")
 		a.setAuthHeaders(httpReq, token, betaMessages)
 		return httpReq, nil
@@ -997,7 +1028,21 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 
 	nm, err := a.drainSSE(ctx, resp.Body, model, bus)
 	if err != nil {
-		// Broken stream: drop partial data.
+		// A CANCELLED TURN IS A PREMATURE CLOSE, NOT A BROKEN STREAM. What the
+		// accumulator holds is real: it was produced by this provider from
+		// this wire, so the message and its native payload agree by
+		// construction. Dropping it made figaro synthesise a partial from its
+		// OWN text accumulator -- a message with no native payload, whose
+		// translation had to be re-encoded and lost every signed thinking
+		// block. Anything else that ends a stream (a scanner fault, a
+		// truncated body) is still a broken stream and still drops.
+		if !errors.Is(err, context.Canceled) || len(nm.Content) == 0 {
+			return err
+		}
+		nm.StopReason = string(message.StopAborted)
+		if perr := a.handOver(nm, bus); perr != nil {
+			return perr
+		}
 		return err
 	}
 	if len(nm.Content) == 0 {
@@ -1009,23 +1054,38 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	if msg.Timestamp == 0 {
 		msg.Timestamp = time.Now().UnixMilli()
 	}
-	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
-	if err != nil {
-		return fmt.Errorf("append assistant: %w", err)
-	}
-	msg.LogicalTime = entry.LT
+	// THE PROVIDER DOES NOT OWN THE LOG. It hands the message to the bus and
+	// the fig IR side appends it: only that side has the LT, so "the fig IR
+	// entry exists before anything that names it" is a SHAPE rather than a
+	// rule five call sites had to remember.
 	bus.PushMessageEnd(string(msg.StopReason))
 	native, err := a.assistantCacheNative(nm)
 	if err != nil {
 		return fmt.Errorf("anthropic cache assistant: %w", err)
 	}
 	bus.PushFigaro(msg, native)
-	a.acceptAssistantProjection(entry.LT, native.Payload)
 	return nil
 }
 
-// TransportFn executes a single HTTP request given a serialized body.
-type TransportFn func(ctx context.Context, body []byte) (*http.Response, error)
+// handOver gives the fig IR side the message and the native payload from ONE
+// accumulator. The normal close and the premature close both go through it,
+// so a partial message cannot be shaped differently from a whole one.
+func (a *Anthropic) handOver(nm nativeMessage, bus provider.Bus) error {
+	msg := decodeNativeMessage(nm)
+	if msg.Timestamp == 0 {
+		msg.Timestamp = time.Now().UnixMilli()
+	}
+	bus.PushMessageEnd(string(msg.StopReason))
+	native, err := a.assistantCacheNative(nm)
+	if err != nil {
+		return fmt.Errorf("anthropic cache assistant: %w", err)
+	}
+	bus.PushFigaro(msg, native)
+	return nil
+}
+
+// TransportFn executes a single HTTP request carrying body.
+type TransportFn func(ctx context.Context, body *provider.RequestBody) (*http.Response, error)
 
 // SendWithTransport is like Send but delegates the HTTP call to fn
 // instead of using the built-in auth retry + Anthropic endpoint.
@@ -1040,7 +1100,10 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 	if err != nil {
 		return err
 	}
-	perMessage, lts := a.catchUp(in.FigLog, cache, in.Form, in.Studies)
+	perMessage, lts, err := a.catchUp(in.FigLog, cache, in.Form, in.Studies)
+	if err != nil {
+		return err
+	}
 	if len(perMessage) == 0 {
 		return fmt.Errorf("empty context")
 	}
@@ -1050,9 +1113,9 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 	if err != nil {
 		return err
 	}
-	body, err := json.Marshal(req)
+	body, err := provider.NewRequestBody(bodyFunc(req), provider.StreamsRequestBody(in.Snapshot))
 	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
+		return fmt.Errorf("encode request: %w", err)
 	}
 
 	resp, err := fn(ctx, body)
@@ -1067,6 +1130,21 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 
 	nm, err := a.drainSSE(ctx, resp.Body, model, bus)
 	if err != nil {
+		// A CANCELLED TURN IS A PREMATURE CLOSE, NOT A BROKEN STREAM. What the
+		// accumulator holds is real: it was produced by this provider from
+		// this wire, so the message and its native payload agree by
+		// construction. Dropping it made figaro synthesise a partial from its
+		// OWN text accumulator -- a message with no native payload, whose
+		// translation had to be re-encoded and lost every signed thinking
+		// block. Anything else that ends a stream (a scanner fault, a
+		// truncated body) is still a broken stream and still drops.
+		if !errors.Is(err, context.Canceled) || len(nm.Content) == 0 {
+			return err
+		}
+		nm.StopReason = string(message.StopAborted)
+		if perr := a.handOver(nm, bus); perr != nil {
+			return perr
+		}
 		return err
 	}
 	if len(nm.Content) == 0 {
@@ -1077,18 +1155,16 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 	if msg.Timestamp == 0 {
 		msg.Timestamp = time.Now().UnixMilli()
 	}
-	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
-	if err != nil {
-		return fmt.Errorf("append assistant: %w", err)
-	}
-	msg.LogicalTime = entry.LT
+	// THE PROVIDER DOES NOT OWN THE LOG. It hands the message to the bus and
+	// the fig IR side appends it: only that side has the LT, so "the fig IR
+	// entry exists before anything that names it" is a SHAPE rather than a
+	// rule five call sites had to remember.
 	bus.PushMessageEnd(string(msg.StopReason))
 	native, err := a.assistantCacheNative(nm)
 	if err != nil {
 		return fmt.Errorf("anthropic cache assistant: %w", err)
 	}
 	bus.PushFigaro(msg, native)
-	a.acceptAssistantProjection(entry.LT, native.Payload)
 	return nil
 }
 
@@ -1132,30 +1208,6 @@ func (a *Anthropic) assistantCache(msg message.Message) (provider.AssistantCache
 	}, nil
 }
 
-func (a *Anthropic) acceptAssistantProjection(lt uint64, encoded []json.RawMessage) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.projection == nil {
-		return
-	}
-	state := provider.AppendEncodedMessage(a.projection.State, encoded, lt)
-	a.projection = &provider.IncrementalProjection[provider.EncodedMessages]{
-		State:           state,
-		Form:            a.projection.Form,
-		Fingerprint:     a.projection.Fingerprint,
-		Entries:         a.projection.Entries + 1,
-		LastLT:          lt,
-		LastFormVersion: a.projection.LastFormVersion,
-		// EVERY FIELD THE PROJECTION CARRIES MUST BE CARRIED HERE. This
-		// splice rebuilds the projection by hand after a live append, and a
-		// field it forgets is not lost state but lost POSITION: the next pass
-		// believes the board sits at zero and folds the whole history to
-		// catch up, every turn, correctly and forever.
-		FormVersionOfSnapshot: a.projection.FormVersionOfSnapshot,
-		LastStudyVersions:     a.projection.LastStudyVersions,
-	}
-}
-
 func (a *Anthropic) resolveModel(snap form.Snapshot) string {
 	if v := snap.Lookup("system.model"); v != nil {
 		return *v
@@ -1165,35 +1217,31 @@ func (a *Anthropic) resolveModel(snap form.Snapshot) string {
 	return a.Model
 }
 
-// catchUp encodes uncached figLog entries and returns per-message
-// wire bytes.
-func (a *Anthropic) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], form provider.Form, studies map[string]provider.Form) ([][]json.RawMessage, []uint64) {
-	fp := a.Fingerprint()
-	a.mu.Lock()
-	previous := a.projection
-	a.mu.Unlock()
-
-	projection, _, err := provider.ProjectIncrementally(provider.ProjectionConfig[provider.EncodedMessages]{
+// catchUp translates whatever the log has not translated yet, writes those
+// rows, and hands back the rows THEMSELVES -- the messages array as it lies
+// on disk. It keeps nothing between calls: the watermark is the row log's
+// tail and the cursors are stamped on the record it names.
+func (a *Anthropic) catchUp(figLog store.Log[message.Message], rows store.Log[[]json.RawMessage], form provider.Form, studies map[string]provider.Form) ([][]json.RawMessage, []uint64, error) {
+	if _, err := provider.CatchUp(provider.CatchUpConfig{
 		Log:         figLog,
-		Cache:       cache,
+		Translator:  rows,
 		Form:        form,
 		Studies:     studies,
-		Previous:    previous,
-		Fingerprint: fp,
+		Fingerprint: a.Fingerprint(),
 		Encode:      a.encode,
-		Append:      provider.AppendEncodedMessage,
 		ReportEncodeError: func(lt uint64, err error) {
 			slog.Error("anthropic encode", "flt", lt, "err", err)
 		},
-	})
-	if err != nil {
-		slog.Error("anthropic project", "err", err)
-		return nil, nil
+		ReportWriteError: func(lt uint64, err error) {
+			slog.Error("anthropic write row", "flt", lt, "err", err)
+		},
+	}); err != nil {
+		// A SEND THAT CANNOT WRITE ITS ROWS MUST NOT PROCEED. The history it
+		// would assemble is not the one on disk.
+		return nil, nil, fmt.Errorf("anthropic catch up: %w", err)
 	}
-	a.mu.Lock()
-	a.projection = projection
-	a.mu.Unlock()
-	return projection.State.PerMessage, projection.State.LogicalTimes
+	perMessage, lts := provider.Translations(rows)
+	return perMessage, lts, nil
 }
 
 const sseReadTimeout = 5 * time.Minute
@@ -1503,3 +1551,12 @@ func imageBlock(c message.Content) nativeBlock {
 		},
 	}
 }
+
+// EncodeMessage and TranslatorChannel put this provider's encoder behind
+// provider.EntryEncoder, so the fig IR write path can translate an entry when
+// it lands using the same function a catch-up uses.
+func (a *Anthropic) EncodeMessage(msg message.Message, prev form.Snapshot) ([]json.RawMessage, error) {
+	return a.encode(msg, prev)
+}
+
+func (a *Anthropic) TranslatorChannel() string { return a.CacheNamespace }

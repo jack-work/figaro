@@ -40,6 +40,9 @@ type XwalBackend struct {
 	librettos map[string]*Libretto
 	// lastTS is aria id -> newest record timestamp, memoized.
 	lastTS map[string]int64
+	// encoders translate each fig IR entry as it lands, one per provider
+	// channel the aria already has. Injected; empty by default.
+	encoders translatorEncoders
 
 	// labels is stump id -> what its birth record says it is. Never evicted
 	// and never invalidated: a stump id is the hash of content that contains
@@ -241,7 +244,7 @@ func (b *XwalBackend) OpenNode(node string) Log[message.Message] {
 	return newXwalLog[message.Message](b.store, node, chanIR, true)
 }
 
-func (b *XwalBackend) Open(ariaID string) (Log[message.Message], error) {
+func (b *XwalBackend) OpenFigIR(ariaID string) (Log[message.Message], error) {
 	b.mu.Lock()
 	h, err := b.handleLocked(ariaID)
 	b.mu.Unlock()
@@ -251,15 +254,31 @@ func (b *XwalBackend) Open(ariaID string) (Log[message.Message], error) {
 	// Reading the content is where a trailing sidecar gets caught up; see
 	// meta_heal.go. No-op unless the watermark lags the tail.
 	b.healMeta(ariaID, h.ir)
-	return &irDoor{Log: h.ir, backend: b, ariaID: ariaID}, nil
+	return &figIRLog{Log: h.ir, backend: b, ariaID: ariaID}, nil
+}
+
+// CloseOpenToolCalls closes this aria's outstanding invokes through the same
+// guarded write path every other append takes.
+func (b *XwalBackend) CloseOpenToolCalls(ariaID string) (int, error) {
+	lg, err := b.OpenFigIR(ariaID)
+	if err != nil {
+		return 0, err
+	}
+	guard, ok := lg.(*figIRLog)
+	if !ok {
+		return 0, fmt.Errorf("store: aria %s IR log is not guarded", ariaID)
+	}
+	return guard.CloseOpenToolCalls()
 }
 
 // recencyLog keeps the memoized recency honest. It is a one-method decorator:
 // everything else is the cache itself, and an append is the only thing that
 // makes an aria newer.
-func transChannel(provider string) string { return "translations-v2/" + provider }
+const translationPrefix = "translations-v2/"
 
-func (b *XwalBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.RawMessage], error) {
+func transChannel(provider string) string { return translationPrefix + provider }
+
+func (b *XwalBackend) OpenTranslator(ariaID, providerName string) (Log[[]json.RawMessage], error) {
 	b.mu.Lock()
 	h, err := b.handleLocked(ariaID)
 	b.mu.Unlock()
@@ -279,6 +298,10 @@ func (b *XwalBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.R
 		newXwalLog[[]json.RawMessage](b.store, ariaID, ch, false),
 		ariaID, cache, transEntrySize, transKey[[]json.RawMessage],
 		func() []fwtree.Ref { return b.store.Lineage(ariaID) }).
+		// A COORDINATE NOW HOLDS EXACTLY ONE ENTRY, because the channel is
+		// addressed by its own LT, so the writer's append can be published
+		// rather than fetched back.
+		seedingTail().
 		withNodeOpener(func(node string) Log[[]json.RawMessage] {
 			return newXwalLog[[]json.RawMessage](b.store, node, ch, false)
 		})

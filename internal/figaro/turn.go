@@ -83,11 +83,17 @@ func (b *turnBus) PushFigaro(m message.Message, caches ...provider.AssistantCach
 		cache = &copy
 	}
 	ack := make(chan error, 1)
-	select {
-	case b.events <- busEvent{kind: evFigaro, msg: m, cache: cache, ack: ack}:
-	case <-b.ctx.Done():
-		panic(b.ctx.Err())
-	}
+	// THE HAND-OVER IS NOT RACED AGAINST THE CANCELLATION IT REPORTS. This
+	// used to select on b.ctx.Done() and PANIC when it won -- so a provider
+	// closing prematurely, which happens precisely because the context was
+	// cancelled, could never deliver its partial message. The panic was
+	// recovered into a send error, so the symptom was a missing translation
+	// and nothing in the log to say why.
+	//
+	// A PLAIN SEND CANNOT HANG HERE: the drain loop reads until bus.events is
+	// CLOSED, and it is closed after Send returns -- so the reader is alive
+	// for as long as a provider can still push.
+	b.events <- busEvent{kind: evFigaro, msg: m, cache: cache, ack: ack}
 	select {
 	case err := <-ack:
 		if err != nil {
@@ -358,10 +364,9 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		return true
 	}
 	bus := newTurnBus(turnCtx)
-	deferredLog := newDeferredAppendLog(a.figLog)
 	in := provider.SendInput{
 		AriaID:    a.id,
-		FigLog:    deferredLog,
+		FigLog:    a.figLog,
 		Snapshot:  a.form.Snapshot(),
 		Form:      a.formAccessor(),
 		Studies:   a.studyAccessors(),
@@ -459,8 +464,18 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 				force = true
 			}
 			var ackErr error
-			if ev.kind == evFigaro && roundErr == nil && !a.isInterrupted() {
-				staged := deferredLog.take(ev.msg)
+			// AN INTERRUPTED TURN STILL ACCEPTS THE PROVIDER'S MESSAGE. A
+			// provider that closes early hands over what its OWN accumulator
+			// holds, with its native payload; figaro's repair can only
+			// synthesise the text, so the translation of a partial message had
+			// to be re-encoded and lost every provider-native block --
+			// thinking signatures, encrypted reasoning. Taking the provider's
+			// message here means the interrupt path and the normal path
+			// produce a message the same way, differing only in the stop
+			// reason. A provider that pushes nothing on cancellation is
+			// unaffected: repairTurnTail still synthesises for it.
+			if ev.kind == evFigaro && roundErr == nil {
+				staged := store.Entry[message.Message]{Payload: ev.msg}
 				a.stageAssistant(&staged)
 				calls := assistantToolInvokes(staged.Payload)
 				appendedEntry, err := a.appendMsg(staged.Payload)
@@ -470,12 +485,14 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 					if a.turn != nil {
 						a.turn.committed = true
 					}
-					if appendedEntry.LT != assistantIdx || appendedEntry.FigaroLT != assistantIdx {
-						roundErr = fmt.Errorf(
-							"assistant append LT mismatch: predicted %d, got lt=%d main_lt=%d",
-							assistantIdx, appendedEntry.LT, appendedEntry.FigaroLT,
-						)
-					} else if err := a.commitAssistantCache(assistantIdx, ev.cache); err != nil {
+					// THE LT IS WHAT THE APPEND RETURNED. It used to be
+					// PREDICTED before the provider ran -- the provider's
+					// append was staged against a guessed next index and this
+					// checked the guess -- and a prediction that can be wrong
+					// is a prediction somebody has to check. There is nothing
+					// left to disagree with.
+					assistantIdx = appendedEntry.LT
+					if err := a.commitAssistantCache(assistantIdx, ev.cache); err != nil {
 						roundErr = err
 					} else {
 						appendedInline = true
@@ -1469,10 +1486,18 @@ func firstChars(s string, n int) string {
 }
 
 // asm assembles the in-flight assistant message from provider Bus events
-// so the turn blob can be recomposed mid-stream (before the provider
+// so the turn blob can be recomposed mid-stream (before the fig IR side
 // appends it into the log).
+//
+// TEXT ACCUMULATES IN A BUILDER, NOT BY CONCATENATION. It used to do
+// s.msg.Content[n-1].Text += text, and Go strings are immutable, so every
+// delta reallocated everything before it: measured at 36 MB of allocation to
+// accumulate 64 KB over 1,024 deltas, bytes quadratic while allocations
+// stayed linear -- which is why a run that counts allocs alone sees nothing.
+// A Builder appends amortized O(1) and its String() does not copy.
 type asm struct {
 	msg     message.Message
+	text    []*strings.Builder // per content block; nil for non-text blocks
 	toolIdx map[string]int
 }
 
@@ -1485,17 +1510,21 @@ func (s *asm) addText(kind message.ContentType, text string) {
 		return
 	}
 	n := len(s.msg.Content)
-	if n > 0 && s.msg.Content[n-1].Type == kind {
-		s.msg.Content[n-1].Text += text
+	if n > 0 && s.msg.Content[n-1].Type == kind && s.text[n-1] != nil {
+		s.text[n-1].WriteString(text)
 		return
 	}
-	s.msg.Content = append(s.msg.Content, message.Content{Type: kind, Text: text})
+	b := &strings.Builder{}
+	b.WriteString(text)
+	s.msg.Content = append(s.msg.Content, message.Content{Type: kind})
+	s.text = append(s.text, b)
 }
 
 func (s *asm) toolOpen(id, name string) {
 	s.toolIdx[id] = len(s.msg.Content)
 	s.msg.Content = append(s.msg.Content,
 		message.Content{Type: message.ContentToolInvoke, ToolCallID: id, ToolName: name})
+	s.text = append(s.text, nil)
 }
 
 func (s *asm) toolReady(id, name string, args map[string]interface{}) {
@@ -1514,9 +1543,17 @@ func (s *asm) toolReady(id, name string, args map[string]interface{}) {
 }
 
 // message returns the in-flight message, or nil when nothing has streamed.
+// Builder.String() hands back the accumulated buffer WITHOUT copying it, and
+// a later Write that grows the buffer leaves the returned string valid -- so
+// a frame already composed keeps the text it was given.
 func (s *asm) message() *message.Message {
 	if len(s.msg.Content) == 0 {
 		return nil
+	}
+	for i, b := range s.text {
+		if b != nil {
+			s.msg.Content[i].Text = b.String()
+		}
 	}
 	return &s.msg
 }

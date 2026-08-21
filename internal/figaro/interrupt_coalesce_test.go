@@ -3,6 +3,7 @@ package figaro
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/internal/message"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -45,7 +46,7 @@ func TestCoalesce_AQueuedSetBlocksTheFold(t *testing.T) {
 
 	b.Send(event{typ: eventUserPrompt, text: "one"})
 	b.Send(event{typ: eventUserPrompt, text: "two"})
-	b.Send(event{typ: eventSet})
+	b.Send(event{typ: eventStudyMark, studyMark: &message.StudyMark{}})
 	b.Send(event{typ: eventUserPrompt, text: "three"})
 
 	b.CoalesceUserPromptRuns()
@@ -53,7 +54,7 @@ func TestCoalesce_AQueuedSetBlocksTheFold(t *testing.T) {
 	require.Len(t, b.pending(), 3, "the set must survive between the two runs")
 	assert.Equal(t, eventUserPrompt, b.pending()[0].typ)
 	assert.Equal(t, "one\n\ntwo", b.pending()[0].text)
-	assert.Equal(t, eventSet, b.pending()[1].typ, "order across event kinds is preserved")
+	assert.Equal(t, eventStudyMark, b.pending()[1].typ, "order across event kinds is preserved")
 	assert.Equal(t, eventUserPrompt, b.pending()[2].typ)
 	assert.Equal(t, "three", b.pending()[2].text, "a prompt behind a set is NOT folded in front of it")
 }

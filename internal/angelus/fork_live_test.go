@@ -48,7 +48,7 @@ type liveForkBackend struct {
 
 // Open backs forkPointOf, which maps a turn id to a fork LT. The log holds one
 // completed exchange so turn 1 resolves.
-func (f *liveForkBackend) Open(string) (store.Log[message.Message], error) {
+func (f *liveForkBackend) OpenFigIR(string) (store.Log[message.Message], error) {
 	if f.log == nil {
 		l := store.NewMemLog[message.Message]()
 		l.Append(store.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput, TurnID: 1}})
@@ -191,11 +191,6 @@ func (p *activeForkProvider) Send(ctx context.Context, in provider.SendInput, bu
 		Content:    []message.Content{message.TextContent("complete")},
 		StopReason: message.StopEnd,
 	}
-	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
-	if err != nil {
-		return err
-	}
-	msg.LogicalTime = entry.LT
 	bus.PushMessageEnd(string(msg.StopReason))
 	bus.PushFigaro(msg)
 	return nil
@@ -272,12 +267,12 @@ func TestForkDuringActiveStreamKeepsContinuationRunning(t *testing.T) {
 	default:
 	}
 
-	alternative, err := backend.Open(response.Alternative)
+	alternative, err := backend.OpenFigIR(response.Alternative)
 	require.NoError(t, err)
 	require.Equal(t, 1, message.CountMessages(unwrapMessages(alternative.Read())))
 
 	release()
-	continuation, err := backend.Open(id)
+	continuation, err := backend.OpenFigIR(id)
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
 		return agent.Info().State == "idle" && message.CountMessages(unwrapMessages(continuation.Read())) == 2
@@ -333,11 +328,6 @@ func (p *activeToolProvider) Send(_ context.Context, in provider.SendInput, bus 
 			StopReason: message.StopEnd,
 		}
 	}
-	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
-	if err != nil {
-		return err
-	}
-	msg.LogicalTime = entry.LT
 	bus.PushMessageEnd(string(msg.StopReason))
 	bus.PushFigaro(msg)
 	return nil
@@ -439,13 +429,13 @@ func TestForkDuringActiveToolKeepsToolAndContinuationRunning(t *testing.T) {
 	default:
 	}
 
-	alternative, err := backend.Open(response.Alternative)
+	alternative, err := backend.OpenFigIR(response.Alternative)
 	require.NoError(t, err)
 	alternativeCount := message.CountMessages(unwrapMessages(alternative.Read()))
 	require.GreaterOrEqual(t, alternativeCount, 1)
 
 	release()
-	continuation, err := backend.Open(id)
+	continuation, err := backend.OpenFigIR(id)
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
 		return agent.Info().State == "idle" && message.CountMessages(unwrapMessages(continuation.Read())) == 4

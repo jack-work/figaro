@@ -64,7 +64,7 @@ func TestFarmerFrameRowsFitEveryWidth(t *testing.T) {
 	}
 }
 
-// TestFarmerResizeIsNotRepair: a transcript resized DOWN then back must paint
+// TestFarmerResizeStable: a transcript resized DOWN then back must paint
 // the same frame as one born at that width. A fuzzer whose own driving heals
 // the defect reports clean against broken code, so this compares the resized
 // frame against a freshly built one rather than merely re-checking invariants.

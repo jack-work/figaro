@@ -174,7 +174,7 @@ func TestTailRepair_FileBackedPersists(t *testing.T) {
 	require.NoError(t, err)
 	conv, err := b1.CreateConversation(l)
 	require.NoError(t, err)
-	log1, err := b1.Open(conv)
+	log1, err := b1.OpenFigIR(conv)
 	require.NoError(t, err)
 	_, err = log1.Append(store.Entry[message.Message]{
 		Payload: message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("run it")}},
@@ -193,7 +193,7 @@ func TestTailRepair_FileBackedPersists(t *testing.T) {
 	// Reopen, run repair, close.
 	b2, err := store.NewXwalBackend(dir, 0)
 	require.NoError(t, err)
-	log2, err := b2.Open(conv)
+	log2, err := b2.OpenFigIR(conv)
 	require.NoError(t, err)
 	repairInterruptedTail(log2, conv)
 	require.NoError(t, b2.Close())
@@ -202,7 +202,7 @@ func TestTailRepair_FileBackedPersists(t *testing.T) {
 	b3, err := store.NewXwalBackend(dir, 0)
 	require.NoError(t, err)
 	defer b3.Close()
-	log3, err := b3.Open(conv)
+	log3, err := b3.OpenFigIR(conv)
 	require.NoError(t, err)
 	entries := log3.Read()
 	require.NotEmpty(t, entries)

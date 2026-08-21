@@ -54,7 +54,7 @@ func (b *metadataListBackend) FormState(string) (form.Snapshot, error) {
 	return form.Snapshot{}, nil
 }
 
-func (b *metadataListBackend) Open(string) (store.Log[message.Message], error) {
+func (b *metadataListBackend) OpenFigIR(string) (store.Log[message.Message], error) {
 	b.logReads.Add(1)
 	return store.NewMemLog[message.Message](), nil
 }

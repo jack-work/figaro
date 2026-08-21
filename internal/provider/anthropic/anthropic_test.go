@@ -116,9 +116,9 @@ func TestProjectMessages_CacheBreakpoints(t *testing.T) {
 
 	require.GreaterOrEqual(t, len(req.Messages), 2, "expect at least two messages")
 	stm := req.Messages[len(req.Messages)-1]
-	require.NotEmpty(t, stm.Content, "tail message must have content")
-	require.NotNil(t, stm.Content[len(stm.Content)-1].CacheControl, "the tail message's last content block must have cache_control set")
-	assert.Equal(t, "ephemeral", stm.Content[len(stm.Content)-1].CacheControl.Type)
+	require.NotEmpty(t, rowMessage(stm).Content, "tail message must have content")
+	require.NotNil(t, rowMessage(stm).Content[len(rowMessage(stm).Content)-1].CacheControl, "the tail message's last content block must have cache_control set")
+	assert.Equal(t, "ephemeral", rowMessage(stm).Content[len(rowMessage(stm).Content)-1].CacheControl.Type)
 
 	// The tail marker deliberately covers the new user prompt. The old rule
 	// here ("leave the leaf unmarked, it isn't stable yet") cost a message of
@@ -141,8 +141,8 @@ func TestProjectMessages_SingleMessageStillMarksTheTail(t *testing.T) {
 	req, _ := a.projectMessagesWithModel(a.encodeAll(msgs), systemSnapshot(t, "you are a test agent"), nil, 1024, false, "claude-test")
 
 	require.Len(t, req.Messages, 1)
-	require.NotEmpty(t, req.Messages[0].Content)
-	assert.NotNil(t, req.Messages[0].Content[0].CacheControl, "the opening turn must write the cache")
+	require.NotEmpty(t, rowMessage(req.Messages[0]).Content)
+	assert.NotNil(t, rowMessage(req.Messages[0]).Content[0].CacheControl, "the opening turn must write the cache")
 }
 
 // TestProjectMessages_StableAcrossCalls verifies that the same input
@@ -216,15 +216,15 @@ func TestProjectMessages_PerLTTag(t *testing.T) {
 
 	// The assistant turn at LT 11 (index 1) should carry the marker.
 	tagged := req.Messages[1]
-	require.NotEmpty(t, tagged.Content)
-	require.NotNil(t, tagged.Content[len(tagged.Content)-1].CacheControl,
+	require.NotEmpty(t, rowMessage(tagged).Content)
+	require.NotNil(t, rowMessage(tagged).Content[len(rowMessage(tagged).Content)-1].CacheControl,
 		"message at LT 11 must carry cache_control from system.tags")
-	assert.Equal(t, "ephemeral", tagged.Content[len(tagged.Content)-1].CacheControl.Type)
+	assert.Equal(t, "ephemeral", rowMessage(tagged).Content[len(rowMessage(tagged).Content)-1].CacheControl.Type)
 
 	// The untagged, non-tail message carries nothing; the tail carries the
 	// automatic rolling marker (caching is on by default).
-	assert.Nil(t, req.Messages[0].Content[0].CacheControl)
-	assert.NotNil(t, req.Messages[2].Content[0].CacheControl, "the rolling tail marker is automatic")
+	assert.Nil(t, rowMessage(req.Messages[0]).Content[0].CacheControl)
+	assert.NotNil(t, rowMessage(req.Messages[2]).Content[0].CacheControl, "the rolling tail marker is automatic")
 	assert.LessOrEqual(t, countCacheMarkers(req), provider.MaxCacheBreakpoints,
 		"per-LT tags layer on top of the automatic markers and must not breach the API cap")
 }
@@ -337,7 +337,7 @@ func TestPerLTTagNoneDisablesRatherThanEmittingGarbage(t *testing.T) {
 	snap := withKey(systemSnapshot(t, "credo"), "system.tags", json.RawMessage(`{"10":{"cache_control":"none"}}`))
 	req, err := a.projectMessagesWithLTs(a.encodeAll(msgs), []uint64{10, 11}, snap, nil, 1024, false, "claude-test")
 	require.NoError(t, err)
-	assert.Nil(t, req.Messages[0].Content[0].CacheControl, `a "none" tag must not stamp a marker`)
+	assert.Nil(t, rowMessage(req.Messages[0]).Content[0].CacheControl, `a "none" tag must not stamp a marker`)
 }
 
 // The ttl is dropped on a route that does not honour it rather than sent to

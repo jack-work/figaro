@@ -397,8 +397,6 @@ func (r setResult) verb(did string) string {
 	switch r.resp.Outcome {
 	case rpc.OutcomeUnchanged:
 		return "unchanged:"
-	case rpc.OutcomeQueued:
-		return "queued:"
 	default:
 		return did
 	}

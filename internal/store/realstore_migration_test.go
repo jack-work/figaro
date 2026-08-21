@@ -45,15 +45,23 @@ func TestRealMigratedStoreOpensWithEverything(t *testing.T) {
 		t.Errorf("conversations=%d, want %d", len(convs), want)
 	}
 
+	// FAILURES ARE COLLECTED, NOT FATAL. A walk that stops at the first bad
+	// aria answers "is there one?" and cannot answer "how many?" -- and the
+	// second question is the one that says whether a store has a defect or a
+	// speck. Every failure below is counted and the ids are reported in
+	// bounded number.
 	var (
 		read, boards, entries int
 		deepest               string
 		deepestDepth          int
+		openFailed            []string
+		formFailed            []string
 	)
 	for _, n := range convs {
-		lg, err := be.Open(n.ID)
+		lg, err := be.OpenFigIR(n.ID)
 		if err != nil {
-			t.Fatalf("aria %s: %v", n.ID, err)
+			openFailed = append(openFailed, fmt.Sprintf("%s: %v", n.ID, err))
+			continue
 		}
 		got := len(lg.ReadFrom(0, 0))
 		entries += got
@@ -62,7 +70,8 @@ func TestRealMigratedStoreOpensWithEverything(t *testing.T) {
 		}
 		snap, err := be.FormState(n.ID)
 		if err != nil {
-			t.Fatalf("aria %s form: %v", n.ID, err)
+			formFailed = append(formFailed, fmt.Sprintf("%s: %v", n.ID, err))
+			continue
 		}
 		if snap.Len() > 0 {
 			boards++
@@ -73,6 +82,34 @@ func TestRealMigratedStoreOpensWithEverything(t *testing.T) {
 	}
 	t.Logf("arias with entries=%d/%d total_entries=%d arias_with_a_board=%d deepest_node_chain=%d",
 		read, len(convs), entries, boards, deepestDepth)
+	// KNOWN, PRE-EXISTING DAMAGE IS TOLERATED BY COUNT, NEW DAMAGE IS NOT.
+	// realform_probe_test.go recorded the same five arias in 2026-08 --
+	// "index not found" for their form channel, boards never written -- and
+	// they read that way in the LIVE store, so a copy is not the cause. They
+	// are TAINTED under the standing rule that serialized data does not
+	// constrain the design; what this test owes is to notice a SIXTH.
+	allowed := 0
+	if v := os.Getenv("FIGARO_PROBE_ALLOW_UNREADABLE"); v != "" {
+		if _, err := fmt.Sscanf(v, "%d", &allowed); err != nil {
+			t.Fatalf("FIGARO_PROBE_ALLOW_UNREADABLE: %v", err)
+		}
+	}
+	if len(openFailed) > 0 {
+		t.Errorf("open failed on %d/%d arias", len(openFailed), len(convs))
+		for _, s := range firstN(openFailed, 5) {
+			t.Errorf("  open: %s", s)
+		}
+	}
+	if len(formFailed) > allowed {
+		t.Errorf("form failed on %d/%d arias, tolerating %d (set FIGARO_PROBE_ALLOW_UNREADABLE)",
+			len(formFailed), len(convs), allowed)
+		for _, s := range firstN(formFailed, 5) {
+			t.Errorf("  form: %s", s)
+		}
+	} else if len(formFailed) > 0 {
+		t.Logf("form failed on %d/%d arias, within the tolerated %d: %v",
+			len(formFailed), len(convs), allowed, firstN(formFailed, 5))
+	}
 
 	// The cost flattening makes explicit: a node chain is walked by opening
 	// each ancestor's log, per channel, per read. Nesting hid it inside the
@@ -81,7 +118,7 @@ func TestRealMigratedStoreOpensWithEverything(t *testing.T) {
 	// cold-cache number: the store is open and the pages are warm.
 	if deepest != "" {
 		start := time.Now()
-		lg, err := be.Open(deepest)
+		lg, err := be.OpenFigIR(deepest)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -116,4 +153,11 @@ func nodeChainDepth(be *XwalBackend, ariaID string) int {
 		}
 		cur = n.From
 	}
+}
+
+func firstN(in []string, n int) []string {
+	if len(in) <= n {
+		return in
+	}
+	return in[:n]
 }

@@ -3,10 +3,12 @@ package copilot
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"text/template"
@@ -35,15 +37,14 @@ type responsesProvider struct {
 	tokenSrc  responseTokenSource
 	cacheOpen func(string) (store.Log[[]json.RawMessage], error)
 
-	mu         sync.Mutex
-	model      string
-	maxTokens  int
-	templates  *template.Template
-	machineID  string
-	cache      store.Log[[]json.RawMessage]
-	projection *provider.IncrementalProjection[[]json.RawMessage]
-	sessionID  string
-	limits     map[string]responseContextLimits
+	mu        sync.Mutex
+	model     string
+	maxTokens int
+	templates *template.Template
+	machineID string
+	cache     store.Log[[]json.RawMessage]
+	sessionID string
+	limits    map[string]responseContextLimits
 
 	baseURL func(string) string
 	dial    responseDialer
@@ -194,6 +195,19 @@ func (p *responsesProvider) sendWithToken(
 
 	response, err := readResponseStream(ctx, conn, bus)
 	if err != nil {
+		// A CANCELLED TURN HANDS OVER WHAT IT HAS, marked aborted, through the
+		// same decoder and the same push a whole response takes. Any other
+		// stream failure still drops.
+		if !errors.Is(err, context.Canceled) || len(response.Output) == 0 {
+			return err
+		}
+		partial, derr := decodeResponseAssistant(response)
+		if derr != nil || len(partial.Content) == 0 {
+			return err
+		}
+		partial.StopReason = message.StopAborted
+		partial.Timestamp = time.Now().UnixMilli()
+		p.handOver(partial, response.Output, bus)
 		return err
 	}
 	assistant, err := decodeResponseAssistant(response)
@@ -213,50 +227,27 @@ func (p *responsesProvider) sendWithToken(
 		return nil
 	}
 	assistant.Timestamp = time.Now().UnixMilli()
-	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: assistant})
-	if err != nil {
-		return fmt.Errorf("copilot responses: append assistant: %w", err)
-	}
-	assistant.LogicalTime = entry.LT
+	p.handOver(assistant, response.Output, bus)
+	return nil
+}
+
+// handOver gives the fig IR side the message and the native output items from
+// ONE accumulator, so a partial message cannot be shaped differently from a
+// whole one.
+//
+// THE PROVIDER DOES NOT OWN THE LOG: only the fig IR side has the LT, so "the
+// entry exists before anything that names it" is a shape rather than a rule.
+func (p *responsesProvider) handOver(assistant message.Message, output []json.RawMessage, bus provider.Bus) {
 	bus.PushMessageEnd(string(assistant.StopReason))
 	var commit []provider.AssistantCache
-	if len(response.Output) > 0 {
+	if len(output) > 0 {
 		commit = append(commit, provider.AssistantCache{
 			Namespace:   "copilot-responses",
-			Payload:     response.Output,
+			Payload:     output,
 			Fingerprint: p.Fingerprint(),
 		})
 	}
 	bus.PushFigaro(assistant, commit...)
-	if len(response.Output) > 0 {
-		p.acceptAssistantProjection(entry.LT, response.Output)
-	}
-	return nil
-}
-
-func (p *responsesProvider) acceptAssistantProjection(lt uint64, payload []json.RawMessage) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.projection == nil {
-		return
-	}
-	state := append([]json.RawMessage(nil), p.projection.State...)
-	state = append(state, payload...)
-	p.projection = &provider.IncrementalProjection[[]json.RawMessage]{
-		State:           state,
-		Form:            p.projection.Form,
-		Fingerprint:     p.projection.Fingerprint,
-		Entries:         p.projection.Entries + 1,
-		LastLT:          lt,
-		LastFormVersion: p.projection.LastFormVersion,
-		// EVERY FIELD THE PROJECTION CARRIES MUST BE CARRIED HERE. This
-		// splice rebuilds the projection by hand after a live append, and a
-		// field it forgets is not lost state but lost POSITION: the next pass
-		// believes the board sits at zero and folds the whole history to
-		// catch up, every turn, correctly and forever.
-		FormVersionOfSnapshot: p.projection.FormVersionOfSnapshot,
-		LastStudyVersions:     p.projection.LastStudyVersions,
-	}
 }
 
 func (p *responsesProvider) settings() (string, int, string) {
@@ -402,12 +393,10 @@ func (p *responsesProvider) cacheFor(aria string) (store.Log[[]json.RawMessage],
 	}
 	cache, err := p.cacheOpen(aria)
 	if err != nil {
-		slog.Warn("copilot responses cache open failed; running uncached", "aria", aria, "err", err)
-		return nil, nil
+		return nil, fmt.Errorf("copilot responses open translator log: %w", err)
 	}
 	if !p.invalidateCache(cache, fingerprint) {
-		slog.Warn("copilot responses cache invalidation failed; running uncached", "aria", aria)
-		return nil, nil
+		return nil, fmt.Errorf("copilot responses translator log invalidation failed")
 	}
 	p.cache = cache
 	return cache, nil
@@ -419,24 +408,18 @@ func (p *responsesProvider) invalidateCache(cache store.Log[[]json.RawMessage], 
 }
 
 func (p *responsesProvider) inputFor(in provider.SendInput) ([]json.RawMessage, error) {
-	cache, err := p.cacheFor(in.AriaID)
+	rows, err := p.cacheFor(in.AriaID)
 	if err != nil {
 		return nil, err
 	}
-	fingerprint := p.Fingerprint()
 	templates := p.templatesForEncoding()
 
-	p.mu.Lock()
-	previous := p.projection
-	p.mu.Unlock()
-
-	projection, _, err := provider.ProjectIncrementally(provider.ProjectionConfig[[]json.RawMessage]{
+	if _, err := provider.CatchUp(provider.CatchUpConfig{
 		Log:         in.FigLog,
-		Cache:       cache,
+		Translator:  rows,
 		Form:        in.Form,
 		Studies:     in.Studies,
-		Previous:    previous,
-		Fingerprint: fingerprint,
+		Fingerprint: p.Fingerprint(),
 		Encode: func(msg message.Message, snap form.Snapshot) ([]json.RawMessage, error) {
 			encoded, err := encodeResponseMessage(msg, msg.Patches, snap, templates)
 			if err != nil {
@@ -456,20 +439,21 @@ func (p *responsesProvider) inputFor(in provider.SendInput) ([]json.RawMessage, 
 			}
 			return encoded, nil
 		},
-		Append: func(input, encoded []json.RawMessage, _ uint64) []json.RawMessage {
-			return append(input, encoded...)
+		ReportWriteError: func(lt uint64, err error) {
+			slog.Error("copilot responses write row", "aria", in.AriaID, "lt", lt, "err", err)
 		},
-		HandleCacheError: func(lt uint64, err error) {
-			slog.Error("copilot responses cache message", "aria", in.AriaID, "lt", lt, "err", err)
-		},
-	})
-	if err != nil {
-		return nil, err
+	}); err != nil {
+		// A SEND THAT CANNOT WRITE ITS ROWS MUST NOT PROCEED. The history it
+		// would assemble is not the one on disk.
+		return nil, fmt.Errorf("copilot responses catch up: %w", err)
 	}
-	p.mu.Lock()
-	p.projection = projection
-	p.mu.Unlock()
-	return projection.State, nil
+
+	perMessage, _ := provider.Translations(rows)
+	var input []json.RawMessage
+	for _, row := range perMessage {
+		input = append(input, row...)
+	}
+	return input, nil
 }
 
 func (p *responsesProvider) templatesForEncoding() *template.Template {
@@ -1012,6 +996,58 @@ type responseOutputItem struct {
 	Arguments json.RawMessage   `json:"arguments"`
 }
 
+// responsePartial accumulates what a cancelled stream has produced so far, in
+// the SERVER'S OWN output-item shape -- so a partial reaches the fig IR side
+// through exactly the decoder a whole response goes through.
+type responsePartial struct {
+	text      strings.Builder
+	reasoning strings.Builder
+}
+
+func (p *responsePartial) outputItems(byIndex map[int]*responseCall) []json.RawMessage {
+	var out []json.RawMessage
+	if r := p.reasoning.String(); r != "" {
+		if b, err := json.Marshal(map[string]any{
+			"type":    "reasoning",
+			"summary": []map[string]any{{"type": "summary_text", "text": r}},
+		}); err == nil {
+			out = append(out, b)
+		}
+	}
+	if t := p.text.String(); t != "" {
+		if b, err := json.Marshal(map[string]any{
+			"type":    "message",
+			"role":    "assistant",
+			"content": []map[string]any{{"type": "output_text", "text": t}},
+		}); err == nil {
+			out = append(out, b)
+		}
+	}
+	// Tool calls in the order the server opened them; an argument stream cut
+	// mid-JSON is dropped rather than sent, because a tool_use whose input
+	// never parsed cannot be replayed.
+	idxs := make([]int, 0, len(byIndex))
+	for i := range byIndex {
+		idxs = append(idxs, i)
+	}
+	sort.Ints(idxs)
+	for _, i := range idxs {
+		call := byIndex[i]
+		if call == nil || !call.ready {
+			continue
+		}
+		if b, err := json.Marshal(map[string]any{
+			"type":      "function_call",
+			"call_id":   call.ID,
+			"name":      call.Name,
+			"arguments": call.arguments.String(),
+		}); err == nil {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
 type responseCall struct {
 	ID        string
 	Name      string
@@ -1033,11 +1069,22 @@ func readResponseStream(ctx context.Context, conn *websocket.Conn, bus provider.
 	calls := map[string]*responseCall{}
 	items := map[string]*responseCall{}
 	byIndex := map[int]*responseCall{}
+	// THE PARTIAL, so a cancelled stream has something to hand over. This
+	// provider's message otherwise exists only at "response.completed", built
+	// from the server's own object -- so an interrupt had nothing but the
+	// deltas, and figaro synthesised a message with no native payload behind
+	// it. The deltas are accumulated here, in the provider that knows their
+	// wire shape.
+	var partial responsePartial
 	for {
 		var raw json.RawMessage
 		if err := websocket.JSON.Receive(conn, &raw); err != nil {
 			if ctx.Err() != nil {
-				return responseObject{}, ctx.Err()
+				// A PREMATURE CLOSE, NOT AN EMPTY ONE. What comes back is the
+				// wire shape this provider would have received, built from
+				// what it did receive, so the message and the native payload
+				// are one accumulator's answer.
+				return responseObject{Output: partial.outputItems(byIndex)}, ctx.Err()
 			}
 			return responseObject{}, fmt.Errorf("copilot responses: receive: %w", err)
 		}
@@ -1048,10 +1095,12 @@ func readResponseStream(ctx context.Context, conn *websocket.Conn, bus provider.
 		switch event.Type {
 		case "response.output_text.delta":
 			if event.Delta != "" {
+				partial.text.WriteString(event.Delta)
 				bus.PushDelta(message.Content{Type: message.ContentProse, Text: event.Delta})
 			}
 		case "response.reasoning.delta", "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
 			if event.Delta != "" {
+				partial.reasoning.WriteString(event.Delta)
 				bus.PushDelta(message.Content{Type: message.ContentThinking, Text: event.Delta})
 			}
 		case "response.output_item.added":

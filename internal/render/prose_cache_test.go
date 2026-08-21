@@ -124,7 +124,7 @@ func BenchmarkProseUncached(b *testing.B) {
 	}
 }
 
-// TestProseCacheDoesNotHoardStreamingPartials pins the streaming eviction: a
+// TestProseCacheStreamingLeavesOneEntry pins the streaming eviction: a
 // node that grows by append must occupy one entry, not one per tick, so it
 // cannot bury the entries worth keeping.
 func TestProseCacheStreamingLeavesOneEntry(t *testing.T) {

@@ -91,11 +91,19 @@ func newTreeLog[T any](inner Log[T], node string, cache *fwtree.Cache[Entry[T]],
 // irKey addresses a channel whose FigaroLT is unique per record: the fig IR.
 func irKey[T any](e Entry[T]) uint64 { return e.FigaroLT }
 
-// transKey addresses the translation channel: FigaroLT, the IR record a row
-// translates, which is what every reader passes and what the substrate seeks
-// by. A row written WITHOUT one cannot be addressed by any reader either, so it
-// is not a case this cache can rescue -- it is a malformed write.
-func transKey[T any](e Entry[T]) uint64 { return e.FigaroLT }
+// transKey addresses the translation channel BY ITS OWN CHANNEL LT.
+//
+// IT USED TO BE FigaroLT, WHICH IS A FOREIGN KEY. An index may be keyed only
+// by something the channel guarantees unique, and FigaroLT there names an
+// entry in ANOTHER channel: nothing stops two entries carrying the same one,
+// and when that happened the index held one while the segments held both --
+// a warm read served one entry and a cold read served two.
+//
+// The channel's own LT is unique and DENSE by construction, which also makes
+// a coordinate hold exactly one entry (so the writer can seed its own append)
+// and puts the arithmetic fast path within reach. FigaroLT stays on the entry
+// as the field that names what a row translates; it is no longer the address.
+func transKey[T any](e Entry[T]) uint64 { return e.LT }
 
 // seedingTail marks a channel whose coordinate holds exactly one entry, so the
 // writer's own append can be published without replacing anything.
@@ -188,10 +196,60 @@ func (l *treeLog[T]) peek(from, to uint64) []Entry[T] {
 	return out
 }
 
+// channelForkBase reports a node's first OWN coordinate of this channel.
+type channelForkBase interface{ ForkBase() (uint64, bool) }
+
+// rebase restates the lineage's fork bases in this channel's coordinates.
+//
+// A Ref.Base is a MAIN-channel LT. A channel addressed by its own LT is a
+// DIFFERENT KEY SPACE, and cutting one by the other hands a child's rows to an
+// ancestor that does not have them: measured on a real aria, a fork base of 3
+// with one row at channel LT 1 read as an EMPTY channel and every send failed
+// with "empty context". Cutting at the ancestor's TAIL instead is wrong in the
+// other direction -- the ancestor then serves coordinates the child has
+// written for itself.
+//
+// The number that is neither is the channel's OWN fork base, which figwal
+// keeps per log: the first index this node owns.
+func (l *treeLog[T]) rebase(refs []fwtree.Ref) []fwtree.Ref {
+	out := make([]fwtree.Ref, len(refs))
+	copy(out, refs)
+	for i := 1; i < len(out); i++ {
+		sub, ok := l.substrateOf(out[i].Node).(channelForkBase)
+		if !ok {
+			return []fwtree.Ref{{Node: l.node}}
+		}
+		base, known := sub.ForkBase()
+		if !known {
+			return []fwtree.Ref{{Node: l.node}}
+		}
+		if base == 0 {
+			// Nothing inherited: this node owns the channel from the start,
+			// so no ancestor may serve any of it.
+			base = 1
+		}
+		out[i].Base = base
+	}
+	return out
+}
+
+func (l *treeLog[T]) substrateOf(node string) Log[T] {
+	if node == l.node {
+		return l.inner
+	}
+	if l.openNode == nil {
+		return nil
+	}
+	return l.openNode(node)
+}
+
 // cuts splits (from..to] across the lineage by fork base, root first: the same
 // division tree.Range makes, so a peek and a materializing read see one shape.
 func (l *treeLog[T]) cuts(from, to uint64) []fwtree.Coord {
 	refs := l.refs()
+	if l.seedOnAppend && len(refs) > 1 {
+		refs = l.rebase(refs)
+	}
 	var out []fwtree.Coord
 	lo := from
 	for i, ref := range refs {
@@ -260,12 +318,14 @@ func (l *treeLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) {
 	return rows, total
 }
 
-// Lookup addresses by FigaroLT, WHICH IS NOT ALWAYS THIS CACHE'S COORDINATE.
-// On the fig IR the two are the same and the cache answers; on the translation
-// channel FigaroLT is a foreign key -- every row of a turn carries the IR
-// record it translates -- so the substrate answers, because it owns that
-// addressing and the cache does not.
+// Lookup addresses by FigaroLT, which is this cache's coordinate ONLY on the
+// fig IR. Where the channel is addressed by its own LT, FigaroLT is a foreign
+// key and a span over it names unrelated rows, so the substrate answers --
+// it owns that addressing and the cache does not.
 func (l *treeLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
+	if l.seedOnAppend {
+		return l.inner.Lookup(figaroLT)
+	}
 	for _, e := range l.span(figaroLT-1, figaroLT) {
 		if e.FigaroLT == figaroLT {
 			return e, true

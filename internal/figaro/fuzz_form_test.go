@@ -93,11 +93,6 @@ func (p *gateProvider) Send(ctx context.Context, in provider.SendInput, bus prov
 		Content:    []message.Content{message.TextContent("ok from " + p.name)},
 		StopReason: message.StopEnd,
 	}
-	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
-	if err != nil {
-		return err
-	}
-	msg.LogicalTime = entry.LT
 	bus.PushMessageEnd(string(msg.StopReason))
 	bus.PushFigaro(msg)
 	return nil
@@ -351,7 +346,7 @@ func TestFuzzFormUnkeyed(t *testing.T) {
 		}
 		marks := make([]mark, 0, turns)
 
-		log, err := backend.Open(id)
+		log, err := backend.OpenFigIR(id)
 		require.NoError(t, err)
 
 		for k := 0; k < turns; k++ {

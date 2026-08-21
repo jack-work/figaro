@@ -1,9 +1,9 @@
 package openaichat
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -36,7 +36,6 @@ type Provider struct {
 	CacheOpen      func(aria string) (store.Log[[]json.RawMessage], error)
 	CacheNamespace string
 	cache          store.Log[[]json.RawMessage]
-	projection     *provider.IncrementalProjection[provider.EncodedMessages]
 
 	// markMode is the aria's configured marking strategy, refreshed from
 	// the form at the top of every Send. It participates in
@@ -188,7 +187,10 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if err != nil {
 		return err
 	}
-	perMessage, _ := p.catchUp(in.FigLog, cache, in.Form, in.Studies)
+	perMessage, _, err := p.catchUp(in.FigLog, cache, in.Form, in.Studies)
+	if err != nil {
+		return err
+	}
 	if len(perMessage) == 0 {
 		return fmt.Errorf("empty context")
 	}
@@ -197,15 +199,16 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if err != nil {
 		return err
 	}
-	body, err := json.Marshal(req)
+	body, err := provider.NewRequestBody(bodyFunc(req), provider.StreamsRequestBody(in.Snapshot))
 	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
+		return fmt.Errorf("encode request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", p.Route.MessagesURL(), bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", p.Route.MessagesURL(), nil)
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
+	body.Attach(httpReq)
 	httpReq.Header.Set("Content-Type", "application/json")
 	if req.SessionID != "" {
 		httpReq.Header.Set("x-session-id", req.SessionID)
@@ -225,6 +228,20 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 
 	out, err := drainSSE(ctx, resp.Body, bus)
 	if err != nil {
+		// A CANCELLED TURN IS A PREMATURE CLOSE. What the accumulator holds
+		// was produced by this provider from this wire, so it is handed over
+		// marked aborted rather than dropped -- a dropped partial made figaro
+		// synthesise one of its own, with no provider-native payload behind
+		// it. Any other stream failure still drops.
+		partial := out.toIRMessage()
+		if !errors.Is(err, context.Canceled) || len(partial.Content) == 0 {
+			return err
+		}
+		partial.StopReason = message.StopAborted
+		partial.Timestamp = time.Now().UnixMilli()
+		if perr := p.handOver(partial, bus); perr != nil {
+			return perr
+		}
 		return err
 	}
 	if out.Usage == nil {
@@ -243,19 +260,21 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	}
 	msg.Timestamp = time.Now().UnixMilli()
 
-	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
-	if err != nil {
-		return fmt.Errorf("append assistant: %w", err)
-	}
-	msg.LogicalTime = entry.LT
-	bus.PushMessageEnd(string(msg.StopReason))
+	return p.handOver(msg, bus)
+}
 
+// handOver gives the fig IR side the message and its native payload. The
+// normal close and the premature close both go through it, so a partial
+// message cannot be shaped differently from a whole one.
+//
+// THE PROVIDER DOES NOT OWN THE LOG: only the fig IR side has the LT.
+func (p *Provider) handOver(msg message.Message, bus provider.Bus) error {
+	bus.PushMessageEnd(string(msg.StopReason))
 	native, err := p.assistantCache(msg)
 	if err != nil {
 		return fmt.Errorf("%s cache assistant: %w", p.Route.Name, err)
 	}
 	bus.PushFigaro(msg, native)
-	p.acceptAssistantProjection(entry.LT, native.Payload)
 	return nil
 }
 
@@ -278,18 +297,18 @@ func (p *Provider) assemble(perMessage [][]json.RawMessage, snapshot form.Snapsh
 	if sys, err := systemMessage(snapshot, plan.Blocks); err != nil {
 		return chatRequest{}, err
 	} else if sys != nil {
-		req.Messages = append(req.Messages, *sys)
+		raw, merr := json.Marshal(*sys)
+		if merr != nil {
+			return chatRequest{}, fmt.Errorf("marshal system message: %w", merr)
+		}
+		req.Messages = append(req.Messages, raw)
 	}
 	for _, entry := range perMessage {
 		for _, raw := range entry {
 			if len(raw) == 0 {
 				continue
 			}
-			var m chatMessage
-			if err := json.Unmarshal(raw, &m); err != nil {
-				return chatRequest{}, fmt.Errorf("unmarshal cached message: %w", err)
-			}
-			req.Messages = append(req.Messages, m)
+			req.Messages = append(req.Messages, raw)
 		}
 	}
 
@@ -367,11 +386,10 @@ func (p *Provider) cacheFor(aria string) (store.Log[[]json.RawMessage], error) {
 	}
 	s, err := p.CacheOpen(aria)
 	if err != nil {
-		slog.Warn("openaichat cache open failed; running uncached", "aria", aria, "err", err)
-		return nil, nil
+		return nil, fmt.Errorf("openaichat open translator log: %w", err)
 	}
 	if !p.invalidateIfStale(s) {
-		return nil, nil
+		return nil, fmt.Errorf("openaichat translator log invalidation failed")
 	}
 	p.mu.Lock()
 	p.cache = s
@@ -391,65 +409,42 @@ func (p *Provider) invalidateIfStale(s store.Log[[]json.RawMessage]) bool {
 	}
 	if cleared {
 		slog.Info("openaichat cleared stale cache", "stored", stored, "current", want)
-		p.mu.Lock()
-		p.projection = nil
-		p.mu.Unlock()
 	}
 	return true
 }
 
-func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage],
-	form provider.Form, studies map[string]provider.Form) ([][]json.RawMessage, []uint64) {
-	fp := p.Fingerprint()
-	p.mu.Lock()
-	previous := p.projection
-	p.mu.Unlock()
-
-	projection, _, err := provider.ProjectIncrementally(provider.ProjectionConfig[provider.EncodedMessages]{
+// catchUp translates whatever the row log has not translated yet, writes
+// those rows, and hands back the rows THEMSELVES. It keeps nothing between
+// calls: the watermark is the row log's tail.
+func (p *Provider) catchUp(figLog store.Log[message.Message], rows store.Log[[]json.RawMessage],
+	form provider.Form, studies map[string]provider.Form) ([][]json.RawMessage, []uint64, error) {
+	if _, err := provider.CatchUp(provider.CatchUpConfig{
 		Log:         figLog,
-		Cache:       cache,
+		Translator:  rows,
 		Form:        form,
 		Studies:     studies,
-		Previous:    previous,
-		Fingerprint: fp,
+		Fingerprint: p.Fingerprint(),
 		Encode:      p.encode,
-		Append:      provider.AppendEncodedMessage,
 		ReportEncodeError: func(lt uint64, err error) {
 			slog.Warn("openaichat encode failed", "lt", lt, "err", err)
 		},
-		HandleCacheError: func(lt uint64, err error) {
-			slog.Warn("openaichat cache append failed", "lt", lt, "err", err)
+		ReportWriteError: func(lt uint64, err error) {
+			slog.Warn("openaichat write row failed", "lt", lt, "err", err)
 		},
-	})
-	if err != nil || projection == nil {
-		return nil, nil
+	}); err != nil {
+		// A SEND THAT CANNOT WRITE ITS ROWS MUST NOT PROCEED. The history it
+		// would assemble is not the one on disk.
+		return nil, nil, fmt.Errorf("openaichat catch up: %w", err)
 	}
-	p.mu.Lock()
-	p.projection = projection
-	p.mu.Unlock()
-	return projection.State.PerMessage, projection.State.LogicalTimes
+	perMessage, lts := provider.Translations(rows)
+	return perMessage, lts, nil
 }
 
-func (p *Provider) acceptAssistantProjection(lt uint64, encoded []json.RawMessage) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.projection == nil {
-		return
-	}
-	state := provider.AppendEncodedMessage(p.projection.State, encoded, lt)
-	p.projection = &provider.IncrementalProjection[provider.EncodedMessages]{
-		State:           state,
-		Form:            p.projection.Form,
-		Fingerprint:     p.projection.Fingerprint,
-		Entries:         p.projection.Entries + 1,
-		LastLT:          lt,
-		LastFormVersion: p.projection.LastFormVersion,
-		// EVERY FIELD THE PROJECTION CARRIES MUST BE CARRIED HERE. This
-		// splice rebuilds the projection by hand after a live append, and a
-		// field it forgets is not lost state but lost POSITION: the next pass
-		// believes the board sits at zero and folds the whole history to
-		// catch up, every turn, correctly and forever.
-		FormVersionOfSnapshot: p.projection.FormVersionOfSnapshot,
-		LastStudyVersions:     p.projection.LastStudyVersions,
-	}
+// EncodeMessage and TranslatorChannel put this provider's encoder behind
+// provider.EntryEncoder, so the fig IR write path can translate an entry when
+// it lands using the same function a catch-up uses.
+func (p *Provider) EncodeMessage(msg message.Message, prev form.Snapshot) ([]json.RawMessage, error) {
+	return p.encode(msg, prev)
 }
+
+func (p *Provider) TranslatorChannel() string { return p.CacheNamespace }

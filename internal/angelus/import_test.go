@@ -64,7 +64,7 @@ func TestImportLandsAsAWholeConversation(t *testing.T) {
 	require.Equal(t, "23a5a06d", resp.WasID)
 	require.Equal(t, len(msgs), resp.Messages)
 
-	log, err := backend.Open(resp.FigaroID)
+	log, err := backend.OpenFigIR(resp.FigaroID)
 	require.NoError(t, err)
 	var got []string
 	for _, e := range log.Read() {
@@ -124,7 +124,7 @@ func TestImportLeavesExistingAriasAlone(t *testing.T) {
 	require.NoError(t, err)
 	resident, err := backend.CreateConversation(outfit)
 	require.NoError(t, err)
-	rlog, err := backend.Open(resident)
+	rlog, err := backend.OpenFigIR(resident)
 	require.NoError(t, err)
 	_, err = rlog.Append(store.Entry[message.Message]{Payload: say(message.RoleOutput, "I was here first")})
 	require.NoError(t, err)
@@ -135,7 +135,7 @@ func TestImportLeavesExistingAriasAlone(t *testing.T) {
 	})
 	require.NotEqual(t, resident, imported.FigaroID)
 
-	after, err := backend.Open(resident)
+	after, err := backend.OpenFigIR(resident)
 	require.NoError(t, err)
 	require.Len(t, after.Read(), before, "the resident aria must be untouched")
 	var texts []string

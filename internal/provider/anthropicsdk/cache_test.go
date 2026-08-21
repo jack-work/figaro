@@ -24,10 +24,9 @@ func TestCatchUpPreservesPrefixBytes(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	first, err := p.catchUp(log, cache, nil, nil)
+	first, _, err := p.catchUp(log, cache, nil, nil)
 	require.NoError(t, err)
-	require.Len(t, first.Messages, 2)
-	firstBlock := first.Messages[0].Content[0].OfText
+	require.Len(t, first, 2)
 	prefixEntry, ok := cache.Lookup(1)
 	require.True(t, ok)
 	prefix := append([]byte(nil), prefixEntry.Payload[0]...)
@@ -35,11 +34,15 @@ func TestCatchUpPreservesPrefixBytes(t *testing.T) {
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("next")},
 	}})
 	require.NoError(t, err)
-	second, err := p.catchUp(log, cache, nil, nil)
+	second, _, err := p.catchUp(log, cache, nil, nil)
 	require.NoError(t, err)
 
-	require.Len(t, second.Messages, 3)
-	assert.Same(t, firstBlock, second.Messages[0].Content[0].OfText)
+	require.Len(t, second, 3)
+	// THE STORED BYTES ARE THE PROPERTY, NOT THE ADDRESS. The old assertion
+	// here was assert.Same on a parsed block -- an address, which was true
+	// only because a memo handed back the same object, and which this
+	// campaign's own notes name as one of three claims no instrument could
+	// check. What must hold is that the row on disk did not move.
 	prefixEntry, ok = cache.Lookup(1)
 	require.True(t, ok)
 	assert.Equal(t, prefix, []byte(prefixEntry.Payload[0]))
@@ -68,12 +71,12 @@ func TestCatchUpReplaysCachedPrefixSnapshot(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	projected, err := p.catchUp(log, cache, nil, nil)
+	messages, _, err := p.catchUp(log, cache, nil, nil)
 	require.NoError(t, err)
-	require.Len(t, projected.Messages, 2)
-	require.Len(t, projected.Messages[1].Content, 2)
-	require.NotNil(t, projected.Messages[1].Content[1].OfText)
-	assert.Contains(t, projected.Messages[1].Content[1].OfText.Text, "old=>new")
+	require.Len(t, messages, 2)
+	require.Len(t, messages[1].Content, 2)
+	require.NotNil(t, messages[1].Content[1].OfText)
+	assert.Contains(t, messages[1].Content[1].OfText.Text, "old=>new")
 }
 
 func TestInvalidateIfStaleUsesTailFingerprint(t *testing.T) {

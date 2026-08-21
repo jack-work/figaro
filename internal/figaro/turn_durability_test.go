@@ -80,7 +80,7 @@ func (p *idleProvider) callCount() int {
 func TestOpenAfterCrashBeforeAssistantAppend(t *testing.T) {
 	b, id := newBackedConversation(t)
 	defer b.Close()
-	ir, err := b.Open(id)
+	ir, err := b.OpenFigIR(id)
 	require.NoError(t, err)
 	_, err = ir.Append(store.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("crashed mid-stream")},
@@ -101,7 +101,7 @@ func TestOpenAfterCrashBeforeAssistantAppend(t *testing.T) {
 func TestOpenAfterCrashWithUnresolvedTools(t *testing.T) {
 	b, id := newBackedConversation(t)
 	defer b.Close()
-	ir, err := b.Open(id)
+	ir, err := b.OpenFigIR(id)
 	require.NoError(t, err)
 	_, err = ir.Append(store.Entry[message.Message]{Payload: message.Message{
 		Role:       message.RoleOutput,
@@ -159,9 +159,6 @@ func (p *interruptProvider) Send(ctx context.Context, in provider.SendInput, bus
 		msg := message.Message{
 			Role: message.RoleOutput, StopReason: message.StopToolInvoke,
 			Content: []message.Content{call}, Timestamp: time.Now().UnixMilli(),
-		}
-		if _, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
-			return err
 		}
 		bus.PushFigaro(msg)
 		return nil
@@ -267,9 +264,6 @@ func (p *mixedToolProvider) Send(_ context.Context, in provider.SendInput, bus p
 	msg := message.Message{
 		Role: message.RoleOutput, StopReason: message.StopToolInvoke,
 		Content: calls, Timestamp: time.Now().UnixMilli(),
-	}
-	if _, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
-		return err
 	}
 	bus.PushFigaro(msg)
 	return nil
@@ -410,9 +404,6 @@ func (canonicalThenFrameProvider) Send(_ context.Context, in provider.SendInput,
 		Role: message.RoleOutput, Content: []message.Content{message.TextContent("canonical assistant")},
 		StopReason: message.StopEnd, Timestamp: time.Now().UnixMilli(),
 	}
-	if _, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
-		return err
-	}
 	bus.PushFigaro(msg)
 	return nil
 }
@@ -468,9 +459,6 @@ func (p *panicQueueProvider) Send(ctx context.Context, in provider.SendInput, bu
 	msg := message.Message{
 		Role: message.RoleOutput, StopReason: message.StopEnd,
 		Content: []message.Content{message.TextContent("queued prompt completed")}, Timestamp: time.Now().UnixMilli(),
-	}
-	if _, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
-		return err
 	}
 	bus.PushFigaro(msg)
 	return nil
@@ -543,45 +531,12 @@ func TestPanicRecoveryPreservesQueuedPrompt(t *testing.T) {
 	assert.True(t, sawCompletion)
 }
 
-type mismatchLog struct {
-	store.Log[message.Message]
-}
-
-func (l mismatchLog) Append(entry store.Entry[message.Message]) (store.Entry[message.Message], error) {
-	stamped, err := l.Log.Append(entry)
-	stamped.LT++
-	stamped.FigaroLT++
-	return stamped, err
-}
-
-type mismatchBackend struct {
-	store.Backend
-	log store.Log[message.Message]
-}
-
-func (b mismatchBackend) Open(string) (store.Log[message.Message], error) {
-	return b.log, nil
-}
-
-func TestAssistantAppendRejectsPredictedLTMismatch(t *testing.T) {
-	real, id := newBackedConversation(t)
-	defer real.Close()
-	base, err := real.Open(id)
-	require.NoError(t, err)
-	backend := mismatchBackend{Backend: real, log: mismatchLog{Log: base}}
-	a := figaro.NewAgent(figaro.Config{
-		Projector: uiir.New(nil),
-		ID:        id, Provider: canonicalThenFrameProvider{}, Backend: backend, Tools: tool.NewRegistry(),
-	})
-	defer a.Kill()
-	ch, _ := subscribeChan(a)
-	a.SubmitPrompt(rpc.QuaRequest{Text: "go"})
-	reason := waitDoneReason(t, ch)
-	assert.Contains(t, reason, "assistant append LT mismatch")
-	history := a.Context()
-	require.NotEmpty(t, history)
-	assert.Equal(t, message.RoleOutput, history[len(history)-1].Role)
-}
+// TestAssistantAppendRejectsPredictedLTMismatch IS DELETED WITH THE
+// PREDICTION IT GUARDED. The provider's append used to be STAGED against a
+// guessed next index (deferredAppendLog) and the loop checked the guess; the
+// provider does not append at all now, so the LT is whatever the append
+// returned and there is nothing to disagree with. mismatchLog and
+// mismatchBackend went with it: they existed to make the prediction wrong.
 
 type nativeCommitProvider struct {
 	namespace   string
@@ -597,9 +552,6 @@ func (p *nativeCommitProvider) Send(_ context.Context, in provider.SendInput, bu
 	msg := message.Message{
 		Role: message.RoleOutput, Content: []message.Content{message.TextContent("appended")},
 		StopReason: message.StopEnd, Timestamp: time.Now().UnixMilli(),
-	}
-	if _, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
-		return err
 	}
 	bus.PushFigaro(msg, provider.AssistantCache{
 		Namespace: p.namespace, Payload: p.payload, Fingerprint: p.fingerprint,
@@ -620,8 +572,8 @@ type failingAssistantCacheBackend struct {
 	namespace string
 }
 
-func (b failingAssistantCacheBackend) OpenTranslation(ariaID, namespace string) (store.Log[[]json.RawMessage], error) {
-	log, err := b.Backend.OpenTranslation(ariaID, namespace)
+func (b failingAssistantCacheBackend) OpenTranslator(ariaID, namespace string) (store.Log[[]json.RawMessage], error) {
+	log, err := b.Backend.OpenTranslator(ariaID, namespace)
 	if err != nil || namespace != b.namespace {
 		return log, err
 	}
@@ -641,12 +593,12 @@ func TestCacheAppendFailureEndsTurnKeepsAssistant(t *testing.T) {
 	a.Kill()
 	assert.Contains(t, reason, "native cache unavailable")
 
-	ir, err := real.Open(id)
+	ir, err := real.OpenFigIR(id)
 	require.NoError(t, err)
 	tail, ok := ir.PeekTail()
 	require.True(t, ok)
 	assert.Equal(t, message.RoleOutput, tail.Payload.Role)
-	cache, err := real.OpenTranslation(id, "atomic-cache")
+	cache, err := real.OpenTranslator(id, "atomic-cache")
 	require.NoError(t, err)
 	_, ok = cache.Lookup(tail.LT)
 	assert.False(t, ok)

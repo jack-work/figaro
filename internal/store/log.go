@@ -1,6 +1,11 @@
 package store
 
-import "sort"
+import (
+	"encoding/json"
+	"sort"
+
+	"github.com/jack-work/figaro/internal/store/segment"
+)
 
 // Entry is one record on a Log. LT/FigaroLT are stamped on append.
 // Fingerprint detects encoder-config drift in translations.
@@ -18,6 +23,18 @@ type Entry[T any] struct {
 	// EncodedBytes is the record's on-disk payload size, captured at decode
 	// because that is the one place it is known for free.
 	EncodedBytes int
+	// FigaroHash, on TRANSLATOR rows only: the content hash of the fig IR
+	// record this row translates.
+	//
+	// IT IS AN IDENTITY, NOT A CHECKSUM. A row names its record by FigaroLT,
+	// which is a POSITION, and a position can be reissued -- the next main LT
+	// is derived from what is durable, not reserved, so a row written for a
+	// record that never landed would be adopted by whatever lands there next.
+	// The row would then read as a legitimate translation of a message that
+	// was never in the conversation. Hashing the CONTENT makes that
+	// detectable: the row either describes the record at that position or it
+	// does not.
+	FigaroHash string
 }
 
 // Log is one column of an aria's write-ahead log. Logs are
@@ -90,6 +107,10 @@ func TailSnapshot[T any](log Log[T], n int) []Entry[T] {
 	return entries[len(entries)-n:]
 }
 
+// readPage pages a channel IN ITS OWN COORDINATES. It filtered by FigaroLT,
+// which is identity on the fig IR -- every caller pages that -- and a FOREIGN
+// key everywhere else: a side channel paged in another log's numbering. LT is
+// the same value on the main channel and the right one on the others.
 func readPage[T any](rows []Entry[T], from, before uint64, n int) ([]Entry[T], int) {
 	total := len(rows)
 	if before > 0 {
@@ -98,7 +119,7 @@ func readPage[T any](rows []Entry[T], from, before uint64, n int) ([]Entry[T], i
 		}
 		out := make([]Entry[T], 0, n)
 		for i := len(rows) - 1; i >= 0 && len(out) < n; i-- {
-			if rows[i].FigaroLT < before {
+			if rows[i].LT < before {
 				out = append(out, rows[i])
 			}
 		}
@@ -110,7 +131,7 @@ func readPage[T any](rows []Entry[T], from, before uint64, n int) ([]Entry[T], i
 	start := 0
 	if from > 0 {
 		start = sort.Search(len(rows), func(i int) bool {
-			return rows[i].FigaroLT >= from
+			return rows[i].LT >= from
 		})
 	}
 	end := len(rows)
@@ -120,4 +141,17 @@ func readPage[T any](rows []Entry[T], from, before uint64, n int) ([]Entry[T], i
 	out := make([]Entry[T], end-start)
 	copy(out, rows[start:end])
 	return out, total
+}
+
+// FigaroHash is the content identity of a fig IR record: the truncated
+// SHA-256 of its canonical JSON, which is the same function the segment codec
+// already stamps on every record it writes. Two records that differ only in
+// key order or whitespace hash alike, which is what makes it an identity of
+// the VALUE rather than of a particular serialization.
+func FigaroHash[T any](payload T) (string, error) {
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	return segment.ValueHash(b)
 }

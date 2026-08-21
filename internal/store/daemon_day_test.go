@@ -83,7 +83,7 @@ func TestDaemonDayMemory(t *testing.T) {
 		if limit > 0 && visited >= limit {
 			break
 		}
-		lg, err := be.Open(rows[i].ID)
+		lg, err := be.OpenFigIR(rows[i].ID)
 		if err != nil {
 			continue
 		}

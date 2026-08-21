@@ -44,7 +44,7 @@ func TestStudyMarkCannotLandInsideARound(t *testing.T) {
 	awaitEntered(t, entered) // the round is genuinely in flight
 
 	studyMarks := func() int {
-		lg, err := backend.Open(id)
+		lg, err := backend.OpenFigIR(id)
 		require.NoError(t, err)
 		n := 0
 		for _, e := range lg.Read() {

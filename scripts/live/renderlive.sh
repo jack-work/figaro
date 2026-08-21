@@ -11,6 +11,15 @@ cd /home/gluck/dev/figaro-qua/incant
 ROOT=$(mktemp -d /var/tmp/figrender.XXXX)
 BIN=$ROOT/figaro
 go build -o "$BIN" ./cmd/figaro || exit 1
+
+assert_send() { # $1 = label, $2 = the send's whole output
+  case "$2" in
+    *"completed ✓"*) echo "    send ($1): completed" ;;
+    *) echo "FAIL: the send ($1) did not complete: $(echo "$2" | tr -d '
+' | tail -c 200)"; exit 1 ;;
+  esac
+}
+
 mkdir -p "$ROOT/config" "$ROOT/state" "$ROOT/rt" "$ROOT/wire"
 cp -a "${HOME}/.config/figaro/." "$ROOT/config/" 2>/dev/null || true
 export FIGARO_STATE_DIR="$ROOT/state" FIGARO_RUNTIME_DIR="$ROOT/rt" FIGARO_CONFIG_DIR="$ROOT/config"
@@ -32,12 +41,12 @@ echo "form=$FORM aria=$ARIA"
 "$BIN" set --id "$FORM" sha 8b12f128 || exit 1
 sleep 1   # the fold is asynchronous and durable; the stamp names the COPY
 
-"$BIN" send --id "$ARIA" -- "Reply with the single word: ok" >/dev/null 2>&1
+SEND_OUT=$("$BIN" send --id "$ARIA" -- "Reply with the single word: ok" 2>&1); assert_send "Reply with the single word: ok" "$SEND_OUT"
 # A second turn: the FIRST record after a study carries the whole copy as its
 # baseline, so the transition only shows as a delta on the next one.
 "$BIN" set --id "$FORM" phase ga || exit 1
 sleep 1
-"$BIN" send --id "$ARIA" -- "Reply with the single word: done" >/dev/null 2>&1
+SEND_OUT=$("$BIN" send --id "$ARIA" -- "Reply with the single word: done" 2>&1); assert_send "Reply with the single word: done" "$SEND_OUT"
 
 # THE SOURCE DIES. Gluck's ruling (durable-forms §12.7b): a deleted source is
 # reported IN BAND, as a key -- system.libretto.alive goes false on a copy
@@ -46,7 +55,7 @@ sleep 1
 # ruling that had never been seen on a wire.
 "$BIN" kill "$FORM" || exit 1
 sleep 2
-"$BIN" send --id "$ARIA" -- "Reply with the single word: four" >/dev/null 2>&1
+SEND_OUT=$("$BIN" send --id "$ARIA" -- "Reply with the single word: four" 2>&1); assert_send "Reply with the single word: four" "$SEND_OUT"
 
 REQ=$(ls -t "$ROOT"/wire/*/*.req.http 2>/dev/null | head -1)
 if [ -z "$REQ" ]; then echo "FAIL: no wire dump under $ROOT/wire"; echo "ROOT=$ROOT"; exit 1; fi

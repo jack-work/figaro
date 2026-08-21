@@ -16,10 +16,16 @@ import (
 
 // chatRequest is one Chat Completions call.
 type chatRequest struct {
-	Model    string        `json:"model"`
-	Messages []chatMessage `json:"messages"`
-	Tools    []chatTool    `json:"tools,omitempty"`
-	Stream   bool          `json:"stream"`
+	Model string `json:"model"`
+	// Messages are the rows AS THEY LIE ON DISK, spliced verbatim. The
+	// translator log holds wire-final messages; decoding each one into a
+	// struct and re-encoding it produced bytes that differ only in key
+	// order. The system message is ours, constructed per request, and it
+	// is marshalled once and prepended -- so a system message can only be
+	// at index 0, which is what the marker relies on.
+	Messages []json.RawMessage `json:"messages"`
+	Tools    []chatTool        `json:"tools,omitempty"`
+	Stream   bool              `json:"stream"`
 	// StreamOptions asks for a usage block on the final chunk. Without it a
 	// streamed response reports no tokens at all, and figaro's context
 	// figure silently flatlines.
@@ -386,32 +392,46 @@ func markRequest(req *chatRequest, policy provider.CachePolicy, plan provider.Ma
 		budget = provider.AutoCacheBreakpoints
 	}
 	marks := 0
-	for i := range req.Messages {
-		if req.Messages[i].Role != "system" {
-			continue
-		}
-		if budget <= 0 {
-			break
-		}
-		if stampLeafCache(&req.Messages[i], cc) {
+	// THE SYSTEM MESSAGE IS AT INDEX 0 OR NOWHERE: it is constructed here
+	// and prepended before any row.
+	if budget > 0 && len(req.Messages) > 0 {
+		if m := rowChat(req.Messages[0]); m.Role == "system" && stampLeafRow(&req.Messages[0], cc) {
 			budget--
 			marks++
 		}
-		break
 	}
 	if !plan.Tail || budget <= 0 {
 		return marks
 	}
-	for i := len(req.Messages) - 1; i >= 0; i-- {
-		if req.Messages[i].Role == "system" {
-			break
-		}
-		if stampLeafCache(&req.Messages[i], cc) {
+	if n := len(req.Messages); n > 0 {
+		if m := rowChat(req.Messages[n-1]); m.Role != "system" && stampLeafRow(&req.Messages[n-1], cc) {
 			marks++
 		}
-		break
 	}
 	return marks
+}
+
+// rowChat decodes one spliced row. Off the assembly path by design: only
+// marking, counting and assertions need a typed view of a single row.
+func rowChat(row json.RawMessage) chatMessage {
+	var m chatMessage
+	_ = json.Unmarshal(row, &m)
+	return m
+}
+
+// stampLeafRow is stampLeafCache on a spliced row: decode ONE row, stamp
+// it, re-encode it. At most two rows per request carry a marker.
+func stampLeafRow(row *json.RawMessage, cc *cacheControl) bool {
+	m := rowChat(*row)
+	if !stampLeafCache(&m, cc) {
+		return false
+	}
+	stamped, err := json.Marshal(m)
+	if err != nil {
+		return false
+	}
+	*row = stamped
+	return true
 }
 
 // countCacheMarkers reports the explicit markers on a request, request-level
@@ -422,9 +442,9 @@ func countCacheMarkers(req chatRequest) int {
 	if req.CacheControl != nil {
 		n++
 	}
-	for _, m := range req.Messages {
+	for _, row := range req.Messages {
 		var parts []contentPart
-		if json.Unmarshal(m.Content, &parts) != nil {
+		if json.Unmarshal(rowChat(row).Content, &parts) != nil {
 			continue
 		}
 		for _, p := range parts {

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/jack-work/figaro/internal/message"
@@ -163,7 +162,7 @@ func (a *Agent) commitAssistantCache(lt uint64, cache *provider.AssistantCache) 
 	if cache.Namespace == "" {
 		return fmt.Errorf("provider assistant cache namespace is empty")
 	}
-	native, err := a.backend.OpenTranslation(a.id, cache.Namespace)
+	native, err := a.backend.OpenTranslator(a.id, cache.Namespace)
 	if err != nil {
 		return fmt.Errorf("open assistant cache %s: %w", cache.Namespace, err)
 	}
@@ -257,59 +256,4 @@ func cloneRawMessages(in []json.RawMessage) []json.RawMessage {
 		out[i] = append(json.RawMessage(nil), in[i]...)
 	}
 	return out
-}
-
-type deferredAppendLog struct {
-	base store.Log[message.Message]
-	mu   sync.Mutex
-	next uint64
-	item *store.Entry[message.Message]
-}
-
-func newDeferredAppendLog(base store.Log[message.Message]) *deferredAppendLog {
-	next := uint64(1)
-	if tail, ok := base.PeekTail(); ok {
-		next = tail.LT + 1
-	}
-	return &deferredAppendLog{base: base, next: next}
-}
-
-func (l *deferredAppendLog) Read() []store.Entry[message.Message] {
-	return l.base.Read()
-}
-func (l *deferredAppendLog) Len() int { return l.base.Len() }
-func (l *deferredAppendLog) ReadFrom(lt uint64, n int) []store.Entry[message.Message] {
-	return l.base.ReadFrom(lt, n)
-}
-func (l *deferredAppendLog) ReadPage(from, before uint64, n int) ([]store.Entry[message.Message], int) {
-	return l.base.ReadPage(from, before, n)
-}
-func (l *deferredAppendLog) Lookup(lt uint64) (store.Entry[message.Message], bool) {
-	return l.base.Lookup(lt)
-}
-func (l *deferredAppendLog) PeekTail() (store.Entry[message.Message], bool) {
-	return l.base.PeekTail()
-}
-func (l *deferredAppendLog) Clear() error { return l.base.Clear() }
-
-func (l *deferredAppendLog) Append(e store.Entry[message.Message]) (store.Entry[message.Message], error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if l.item != nil {
-		return store.Entry[message.Message]{}, fmt.Errorf("provider appended more than one assistant message")
-	}
-	e.LT = l.next
-	e.FigaroLT = l.next
-	copy := e
-	l.item = &copy
-	return e, nil
-}
-
-func (l *deferredAppendLog) take(fallback message.Message) store.Entry[message.Message] {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if l.item != nil {
-		return *l.item
-	}
-	return store.Entry[message.Message]{Payload: fallback}
 }

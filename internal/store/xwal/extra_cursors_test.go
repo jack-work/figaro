@@ -23,7 +23,7 @@ func TestAppendMainCursorsMergesExtra(t *testing.T) {
 	if _, err := f.AppendChannel(string(trunk), "chalkboard", 0, patch, nil); err != nil {
 		t.Fatal(err)
 	}
-	_, lt, err := f.AppendCursors(trunk, []byte(`"turn"`), nil, map[string]uint64{
+	_, lt, _, err := f.AppendCursors(trunk, []byte(`"turn"`), nil, map[string]uint64{
 		"study:@r1": 7,
 		"study:@r2": 42,
 	})

@@ -31,7 +31,7 @@ func unseededOpen(t *testing.T, dir, id string) []Entry[message.Message] {
 		t.Fatal(err)
 	}
 	defer b.Close()
-	l, err := b.Open(id)
+	l, err := b.OpenFigIR(id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestSeededForkAnswersIdenticallyToAnUnseededOne(t *testing.T) {
 	}
 	lay, _ := b.CreateOutfit("d", patchSet(map[string]string{"system.model": "m"}))
 	parent, _ := b.CreateConversation(lay)
-	pIR, _ := b.Open(parent)
+	pIR, _ := b.OpenFigIR(parent)
 	for i := 0; i < 200; i++ {
 		if _, err := pIR.Append(Entry[message.Message]{Payload: message.Message{
 			Role:    message.RoleInput,
@@ -72,7 +72,7 @@ func TestSeededForkAnswersIdenticallyToAnUnseededOne(t *testing.T) {
 	// above the base, so seed+own degenerates to seed and an off-by-one at the
 	// seam is invisible -- proven: a deliberate +2 mutation passed this test
 	// before this paragraph existed.
-	cIR, err := b.Open(child)
+	cIR, err := b.OpenFigIR(child)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,10 +92,10 @@ func TestSeededForkAnswersIdenticallyToAnUnseededOne(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.Open(parent); err != nil {
+	if _, err := b.OpenFigIR(parent); err != nil {
 		t.Fatal(err)
 	}
-	cIR, err = b.Open(child)
+	cIR, err = b.OpenFigIR(child)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,10 +145,10 @@ func TestSeededForkSharesTheAncestorsStrings(t *testing.T) {
 	b, parent, childA, childB := forkedPair(t)
 	defer b.Close()
 
-	pIR, _ := b.Open(parent)
+	pIR, _ := b.OpenFigIR(parent)
 	p := pIR.Read()
-	aIR, _ := b.Open(childA)
-	bIR, _ := b.Open(childB)
+	aIR, _ := b.OpenFigIR(childA)
+	bIR, _ := b.OpenFigIR(childB)
 	a, c := aIR.Read(), bIR.Read()
 
 	byLT := func(rows []Entry[message.Message]) map[uint64]Entry[message.Message] {

@@ -55,7 +55,7 @@ func TestStumpBirthRecordIsStampedAtItsOwnOutfitPatch(t *testing.T) {
 		t.Fatal("the conversation does not inherit the outfit patch at all")
 	}
 
-	lg, err := be.Open(aria)
+	lg, err := be.OpenFigIR(aria)
 	if err != nil {
 		t.Fatal(err)
 	}

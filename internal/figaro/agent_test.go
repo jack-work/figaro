@@ -66,10 +66,7 @@ func (m *streamingMockProvider) Send(_ context.Context, in provider.SendInput, b
 		Content:    []message.Content{message.TextContent(m.response)},
 		StopReason: message.StopEnd,
 	}
-	if entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err == nil {
-		msg.LogicalTime = entry.LT
-	}
-	time.Sleep(30 * time.Millisecond) // appended-but-evFigaro-unprocessed window
+	time.Sleep(30 * time.Millisecond) // pre-append window: the loop has not seen it yet
 	bus.PushFigaro(msg)
 	return nil
 }
@@ -91,11 +88,6 @@ func (metricsProvider) Send(_ context.Context, in provider.SendInput, bus provid
 			OutputTokens: 3000,
 		},
 	}
-	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
-	if err != nil {
-		return err
-	}
-	msg.LogicalTime = entry.LT
 	bus.PushDelta(message.TextContent("done"))
 	bus.PushFigaro(msg)
 	return nil
@@ -125,11 +117,6 @@ func (p *lateLimitProvider) Send(_ context.Context, in provider.SendInput, bus p
 		Content:    []message.Content{message.TextContent("done")},
 		StopReason: message.StopEnd,
 	}
-	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
-	if err != nil {
-		return err
-	}
-	msg.LogicalTime = entry.LT
 	bus.PushFigaro(msg)
 	return nil
 }
@@ -910,7 +897,7 @@ firstDone:
 
 	// Re-open the IR through the backend: the user + assistant turns are
 	// durable (the backend returns the same shared, persisted log).
-	log, err := backend.Open(conv)
+	log, err := backend.OpenFigIR(conv)
 	require.NoError(t, err)
 	turns := nonGenesis(unwrapForTest(log.Read()))
 	require.GreaterOrEqual(t, len(turns), 2, "user + assistant should be durable")
@@ -1022,7 +1009,7 @@ done:
 	b2, err := store.NewXwalBackend(storeDir, 0)
 	require.NoError(t, err)
 	defer b2.Close()
-	log, err := b2.Open(conv)
+	log, err := b2.OpenFigIR(conv)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(nonGenesis(unwrapForTest(log.Read()))), 2)
 }
@@ -1035,7 +1022,7 @@ func TestAgent_BootRepairsDanglingToolUse(t *testing.T) {
 	storeDir := t.TempDir()
 	backend, conv := backedConv(t, storeDir)
 
-	pre, err := backend.Open(conv)
+	pre, err := backend.OpenFigIR(conv)
 	require.NoError(t, err)
 	_, err = pre.Append(store.Entry[message.Message]{
 		Payload: message.Message{

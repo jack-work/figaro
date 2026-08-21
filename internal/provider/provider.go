@@ -79,6 +79,21 @@ type Form interface {
 	PatchesBetween(after, upTo uint64) []message.Patch
 }
 
+// EntryEncoder is the optional interface a provider implements to have its
+// translations written WHEN AN ENTRY LANDS rather than on the next send.
+//
+// It is the same function the catch-up calls; exposing it is what lets one
+// encoder serve both paths, so a history written live and a history rebuilt
+// later cannot differ.
+type EntryEncoder interface {
+	// TranslatorChannel names the provider channel these bytes belong to.
+	TranslatorChannel() string
+	// EncodeMessage renders one message against the board as it stood
+	// BEFORE it.
+	EncodeMessage(msg message.Message, prev form.Snapshot) ([]json.RawMessage, error)
+	Fingerprint() string
+}
+
 // SendInput is one turn's input.
 type SendInput struct {
 	AriaID   string
@@ -118,6 +133,26 @@ type ContextLimitProvider interface {
 // ContextLimitOverrideKey is the form key a user pins a context window
 // with. It overrides whatever the provider would otherwise report.
 const ContextLimitOverrideKey = "system.max_context_tokens"
+
+// StreamRequestBodyKey chooses the request framing. DEFAULT ON: the body is
+// written as it is sent. Setting it false on an aria's board -- or on its
+// outfit -- buffers the whole conversation again.
+const StreamRequestBodyKey = "system.stream_request_body"
+
+// StreamsRequestBody reports whether this aria sends its request body as it is
+// written instead of copying the conversation into one buffer first. The bytes
+// are identical either way; only the peak is not.
+func StreamsRequestBody(snapshot form.Snapshot) bool {
+	raw, ok := snapshot.Get(StreamRequestBodyKey)
+	if !ok {
+		return true
+	}
+	var on bool
+	if json.Unmarshal(raw, &on) != nil {
+		return true
+	}
+	return on
+}
 
 // ContextLimitOverride reads the user's pinned context window off the
 // form. One implementation so every provider spells the override the

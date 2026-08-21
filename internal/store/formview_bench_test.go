@@ -3,8 +3,8 @@ package store
 // What the PROVIDER pays, per Send, to learn what a form did between two
 // stamps.
 //
-// This is the benchmark the copy hid. `BenchmarkFormPatches10000` measured the
-// old API honestly -- and the old API was the wrong question. A translate asks
+// This is the benchmark the copy hid. BenchmarkFormPatches10000, now deleted,
+// measured the old API honestly -- and the old API was the wrong question. A translate asks
 // "what changed between the last stamp and this one", whose answer is one
 // patch or none; the accessor answered it by handing over a copy of the whole
 // history and letting the caller walk to the end. A tool loop is many Sends,

@@ -51,28 +51,34 @@ func stamp(t *testing.T, log *store.MemLog[message.Message], text string, at uin
 }
 
 // renderedKeys records which board keys each entry was given, so a test can
-// compare two projections by what the model would actually have seen.
-func renderedKeys(config ProjectionConfig[EncodedMessages]) (*IncrementalProjection[EncodedMessages], []string, error) {
+// compare two catch-ups by what the model would actually have seen. The rows
+// log is the CURSOR: a second call over the same rows is a resume, which is
+// what a warm start now means with no memo between calls.
+func renderedKeys(log store.Log[message.Message], rows store.Log[[]json.RawMessage], board Form) ([]string, error) {
 	var seen []string
-	config.Encode = func(msg message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
-		for _, p := range msg.Patches {
-			for k := range p.Set {
-				seen = append(seen, k)
+	_, err := CatchUp(CatchUpConfig{
+		Log:         log,
+		Translator:  rows,
+		Form:        board,
+		Fingerprint: "v1",
+		Encode: func(msg message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
+			for _, p := range msg.Patches {
+				for k := range p.Set {
+					seen = append(seen, k)
+				}
 			}
-		}
-		return []json.RawMessage{json.RawMessage(`"x"`)}, nil
-	}
-	config.Append = AppendEncodedMessage
-	proj, _, err := ProjectIncrementally(config)
-	return proj, seen, err
+			return []json.RawMessage{json.RawMessage(`"x"`)}, nil
+		},
+	})
+	return seen, err
 }
 
-// COLD EQUALS WARM. The projection warm-starts mid-log, so the patches it
-// renders must not depend on where it resumed. They did: a fresh cursor
-// pointed at the newest entry replayed the WHOLE board onto the first new
-// message, and the per-LT cache made that permanent: every round-trip
-// re-sent the aria's entire state.
-func TestWarmProjectionRendersWhatAColdOneWould(t *testing.T) {
+// COLD EQUALS WARM. A catch-up resumes from the row log's tail, so the
+// patches it renders must not depend on where it resumed. They did once: a
+// fresh cursor pointed at the newest entry replayed the WHOLE board onto the
+// first new message, and the stored row made that permanent -- every
+// round-trip re-sent the aria's entire state.
+func TestAResumedCatchUpRendersWhatAColdOneWould(t *testing.T) {
 	build := func() *store.MemLog[message.Message] {
 		log := store.NewMemLog[message.Message]()
 		stamp(t, log, "one", 2)   // the outfit patch lands here
@@ -81,38 +87,33 @@ func TestWarmProjectionRendersWhatAColdOneWould(t *testing.T) {
 		return log
 	}
 
-	cold, coldKeys, err := renderedKeys(ProjectionConfig[EncodedMessages]{
-		Log: build(), Fingerprint: "v1", Form: newFakeBoard(2, 3, 4, 5),
-	})
+	coldKeys, err := renderedKeys(build(), store.NewMemLog[[]json.RawMessage](), newFakeBoard(2, 3, 4, 5))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// The same log, projected in two passes with a warm start between them.
+	// The same log, caught up in two passes over ONE row log: the second
+	// call resumes from the first call's tail.
 	warmLog := store.NewMemLog[message.Message]()
+	rows := store.NewMemLog[[]json.RawMessage]()
 	stamp(t, warmLog, "one", 2)
 	stamp(t, warmLog, "two", 4)
-	first, warmKeys, err := renderedKeys(ProjectionConfig[EncodedMessages]{
-		Log: warmLog, Fingerprint: "v1", Form: newFakeBoard(2, 3, 4, 5),
-	})
+	warmKeys, err := renderedKeys(warmLog, rows, newFakeBoard(2, 3, 4, 5))
 	if err != nil {
 		t.Fatal(err)
 	}
 	stamp(t, warmLog, "three", 5)
-	_, moreKeys, err := renderedKeys(ProjectionConfig[EncodedMessages]{
-		Log: warmLog, Fingerprint: "v1", Form: newFakeBoard(2, 3, 4, 5),
-		Previous: first,
-	})
+	moreKeys, err := renderedKeys(warmLog, rows, newFakeBoard(2, 3, 4, 5))
 	if err != nil {
 		t.Fatal(err)
 	}
 	warm := append(append([]string{}, warmKeys...), moreKeys...)
 
 	if strings.Join(warm, ",") != strings.Join(coldKeys, ",") {
-		t.Errorf("warm start renders differently from cold:\n cold %v\n warm %v", coldKeys, warm)
+		t.Errorf("a resume renders differently from a cold pass:\n cold %v\n warm %v", coldKeys, warm)
 	}
-	if cold.LastFormVersion == 0 {
-		t.Error("a cold projection reports LastFormVersion 0; a warm resume would restart from the beginning")
+	if len(coldKeys) == 0 {
+		t.Error("a cold pass rendered no patches at all, so the comparison above proves nothing")
 	}
 }
 
@@ -120,23 +121,19 @@ func TestWarmProjectionRendersWhatAColdOneWould(t *testing.T) {
 // twice: the two failure modes this seam has actually had, in that order.
 func TestEveryPatchRendersExactlyOnceAcrossResumes(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
+	rows := store.NewMemLog[[]json.RawMessage]()
 	var all []string
 
-	// Five turns, resuming each time, the way a tool loop drives it.
-	var prev *IncrementalProjection[EncodedMessages]
+	// Five turns, resuming each time, the way a tool loop drives it. A FRESH
+	// board cursor every pass, because that is what formAccessor() does: it
+	// is called per Send, not per turn.
 	for i, mark := range []uint64{2, 3, 4, 6, 6} {
 		stamp(t, log, fmt.Sprintf("turn%d", i), mark)
-		// A FRESH cursor every pass, because that is what formAccessor()
-		// does: it is called per Send, not per turn. A test that reuses one
-		// cursor cannot reproduce the bug this file exists for.
-		proj, keys, err := renderedKeys(ProjectionConfig[EncodedMessages]{
-			Log: log, Fingerprint: "v1", Form: newFakeBoard(2, 3, 4, 5, 6), Previous: prev,
-		})
+		keys, err := renderedKeys(log, rows, newFakeBoard(2, 3, 4, 5, 6))
 		if err != nil {
 			t.Fatal(err)
 		}
 		all = append(all, keys...)
-		prev = proj
 	}
 
 	counts := map[string]int{}

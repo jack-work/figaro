@@ -204,7 +204,7 @@ func TestTranslationBudgetReachesTheCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	log, err := be.OpenTranslation(id, "anthropic")
+	log, err := be.OpenTranslator(id, "anthropic")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +317,7 @@ func TestRecencyMemoAdvancesOnAWrite(t *testing.T) {
 		t.Fatalf("recency did not advance on a board write: %d -> %d", first, second)
 	}
 	// An IR append must move it too.
-	log, err := be.Open(id)
+	log, err := be.OpenFigIR(id)
 	if err != nil {
 		t.Fatal(err)
 	}

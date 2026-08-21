@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"unsafe"
 
@@ -115,10 +116,10 @@ func translatedTrunk(t *testing.T, namespaces ...string) (b *XwalBackend, parent
 	l, _ := b.CreateOutfit("d", patchSet(map[string]string{"system.model": "m"}))
 	parent, _ = b.CreateConversation(l)
 
-	ir, _ := b.Open(parent)
+	ir, _ := b.OpenFigIR(parent)
 	trans := map[string]Log[[]json.RawMessage]{}
 	for _, ns := range namespaces {
-		tl, terr := b.OpenTranslation(parent, ns)
+		tl, terr := b.OpenTranslator(parent, ns)
 		if terr != nil {
 			t.Fatal(terr)
 		}
@@ -159,12 +160,12 @@ func TestATranslationSeedNeverCrossesNamespaces(t *testing.T) {
 	defer b.Close()
 
 	for _, ns := range []string{"anthropic", "copilot-messages"} {
-		if _, err := b.OpenTranslation(parent, ns); err != nil {
+		if _, err := b.OpenTranslator(parent, ns); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for _, ns := range []string{"anthropic", "copilot-messages"} {
-		l, err := b.OpenTranslation(childA, ns)
+		l, err := b.OpenTranslator(childA, ns)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -200,7 +201,7 @@ func TestSeededTranslationEqualsAnUnseededOne(t *testing.T) {
 	b, parent, childA, _ := forkedPair(t)
 	dir := b.root
 
-	pl, err := b.OpenTranslation(parent, "anthropic")
+	pl, err := b.OpenTranslator(parent, "anthropic")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +214,7 @@ func TestSeededTranslationEqualsAnUnseededOne(t *testing.T) {
 		}
 	}
 	_ = pl.Read()
-	cl, err := b.OpenTranslation(childA, "anthropic")
+	cl, err := b.OpenTranslator(childA, "anthropic")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +227,7 @@ func TestSeededTranslationEqualsAnUnseededOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer b2.Close()
-	cl2, err := b2.OpenTranslation(childA, "anthropic")
+	cl2, err := b2.OpenTranslator(childA, "anthropic")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +259,7 @@ func TestTranslationSeedSharesTheAncestorsBytes(t *testing.T) {
 			b, parent, childA, childB := translatedTrunk(t, ns)
 			defer b.Close()
 
-			pl, err := b.OpenTranslation(parent, ns)
+			pl, err := b.OpenTranslator(parent, ns)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -273,7 +274,7 @@ func TestTranslationSeedSharesTheAncestorsBytes(t *testing.T) {
 
 			compared, shared := 0, 0
 			for _, child := range []string{childA, childB} {
-				cl, cerr := b.OpenTranslation(child, ns)
+				cl, cerr := b.OpenTranslator(child, ns)
 				if cerr != nil {
 					t.Fatal(cerr)
 				}
@@ -322,7 +323,7 @@ func TestTheFingerprintCheckBlocksOnlyAfterADialectChange(t *testing.T) {
 	b, parent, childA, _ := translatedTrunk(t, "anthropic")
 	defer b.Close()
 
-	pl, err := b.OpenTranslation(parent, "anthropic")
+	pl, err := b.OpenTranslator(parent, "anthropic")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,4 +364,56 @@ func TestTheFingerprintCheckBlocksOnlyAfterADialectChange(t *testing.T) {
 	}
 	t.Logf("fires on a uniform ancestor (%d rows below the base, fingerprint %q); refuses after a dialect change",
 		len(donated), fp)
+}
+
+// AND THE CHILD'S OWN ROWS ARE ITS OWN. The ancestor may serve the inherited
+// prefix and NOT ONE COORDINATE MORE: past the channel's own fork base the
+// two lineages hold DIFFERENT records at the same number, so an ancestor
+// asked for them answers with another conversation's rows.
+//
+// This is what distinguishes the channel's own fork base from the ancestor's
+// tail, which is why it is a test and not a comment.
+func TestAForkServesItsOwnRowsAboveTheChannelsForkBase(t *testing.T) {
+	b, parent, childA, _ := translatedTrunk(t, "anthropic")
+	defer b.Close()
+
+	pl, err := b.OpenTranslator(parent, "anthropic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cl, err := b.OpenTranslator(childA, "anthropic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inherited := len(cl.Read())
+	if inherited == 0 {
+		t.Fatal("the child inherited nothing; this measurement would be vacuous")
+	}
+
+	// The parent keeps writing, and so does the child: from here their
+	// coordinates collide and their contents must not.
+	for i := 0; i < 3; i++ {
+		if _, err := pl.Append(Entry[[]json.RawMessage]{
+			FigaroLT: uint64(900 + i),
+			Payload:  []json.RawMessage{json.RawMessage(`{"role":"user","content":"PARENT ONLY"}`)},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := cl.Append(Entry[[]json.RawMessage]{
+			FigaroLT: uint64(900 + i),
+			Payload:  []json.RawMessage{json.RawMessage(`{"role":"user","content":"CHILD ONLY"}`)},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rows := cl.Read()
+	if len(rows) != inherited+3 {
+		t.Fatalf("the child reads %d rows, want %d", len(rows), inherited+3)
+	}
+	for _, e := range rows[inherited:] {
+		if got := string(e.Payload[0]); !strings.Contains(got, "CHILD ONLY") {
+			t.Fatalf("the child was served %s -- that row belongs to the parent", got)
+		}
+	}
 }

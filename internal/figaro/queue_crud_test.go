@@ -2,6 +2,7 @@ package figaro
 
 import (
 	"context"
+	"github.com/jack-work/figaro/internal/message"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -115,7 +116,7 @@ func TestQueueDelete_AllNeedsNoEpochAndSparesControlEvents(t *testing.T) {
 	defer cancel()
 	b := NewInbox(ctx)
 	b.Send(event{typ: eventUserPrompt, text: "one"})
-	b.Send(event{typ: eventSet})
+	b.Send(event{typ: eventStudyMark, studyMark: &message.StudyMark{}})
 	b.Send(event{typ: eventUserPrompt, text: "two"})
 
 	_, results := b.DeletePrompts("", nil, true)
@@ -124,7 +125,7 @@ func TestQueueDelete_AllNeedsNoEpochAndSparesControlEvents(t *testing.T) {
 	assert.Equal(t, rpc.QueueDeleted, results[0].Outcome)
 	assert.Empty(t, b.SnapshotPrompts(true))
 	require.Len(t, b.pending(), 1, "a queued set is not a question and is not dropped")
-	assert.Equal(t, eventSet, b.pending()[0].typ)
+	assert.Equal(t, eventStudyMark, b.pending()[0].typ)
 }
 
 func TestQueueDelete_UnknownID(t *testing.T) {

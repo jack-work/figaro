@@ -22,6 +22,7 @@ lost. They are here so the next person has them.
 | `sweeplive.sh` | the segment cache's idle sweep, with heads PINNED | that the first green run was proving figwal's head unload, not the sweep |
 | `lazylive.sh` | listing cost and `doctor mem` on the real store | the segment cache's live numbers |
 | `idlemem.sh` | PSS of an idle daemon, before and after | that the base never returns its arena (251 → 259 MB) and this build does (141 → 51) |
+| `onappendlive.sh` | the fig IR write path translating an entry AS IT LANDS, discriminated by a `study` that appends an entry and sends nothing | a SECOND translation at one FigaroLT: the write path rendered the assistant message that the provider was about to commit natively, and a warm read serves the FIRST -- so the model would have been shown unsigned text with the signed original unreachable beneath it |
 | `fdcount.sh` | file descriptors held by a listing | that lazy segment opening does NOT save descriptors, killing a claim I had made in a commit message |
 
 ## Rules

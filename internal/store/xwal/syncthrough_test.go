@@ -19,7 +19,7 @@ func TestSyncChannelThroughPersists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, lt, err := st.AppendCursors(trunk, []byte(`{"a":1}`), nil, nil)
+	_, lt, _, err := st.AppendCursors(trunk, []byte(`{"a":1}`), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -178,3 +178,118 @@ Two removed outright, four moved off a read path, and one hot path (segment's)
 in flight. THE COUNT IS NOT THE GOAL: a mutex nobody contends costs a cache
 line, and a mutex on a path every reader takes costs the shape of the whole
 design -- which is what kept two cache shapes alive in this stack for a month.
+
+# THE TWO LOCKS THIS CAMPAIGN ITSELF ADDED (ede92072, 2026-08-20)
+
+The standing goal is to reduce the mutexes, and the count has moved 83 -> 81 in
+the whole campaign. Both of the locks the campaign's own new code introduced
+are audited here against the standing test -- WHAT INVARIANT SPANS THE CRITICAL
+SECTION THAT COULD NOT BE PUBLISHED AS ONE IMMUTABLE VALUE?
+
+## 1. translatorEncoders.mu -- PUBLISHED (and the COUNT DOES NOT MOVE)
+
+It guarded a map WRITTEN ONCE PER PROVIDER AND READ ON EVERY FIG IR APPEND.
+That is the standing test's own named suspect: "a lock protecting a map that is
+written once and read forever". The answer to the question is "none", so the
+cure is the one this campaign has used before -- PUBLISH, don't delete: readers
+load an immutable map through an atomic pointer, writers still exclude each
+other because add() is read-modify-write.
+
+    TestReadingTheEncoderSetTakesNoLock holds the WRITER's lock and serves a
+    read from another goroutine. Canary: put writeMu back around get() and it
+    goes red by timeout in 3.00s.
+
+AND THE DECLARATION COUNT IS 81 BEFORE AND 81 AFTER, because an RWMutex became
+a Mutex. I published "80" before checking. What happened is the campaign's own
+finding again -- THE MUTEX WAS TWO EXCLUSIONS WEARING ONE NAME -- and only the
+reader/writer half, the half on the hot path, is gone.
+
+    A GOAL COUNTED IN DECLARATIONS CANNOT SEE THE CHANGE THAT MATTERS HERE.
+    "83 -> 81" measures how many locks exist, not how many are taken on a read
+    path, and those are different questions. The second is the one the standing
+    order is actually about ("be on the lookout for spurious locking, even
+    where it appears valuable"), and nothing in the tree reports it.
+
+## 2. OnAppend.mu -- RAISED, NOT TOUCHED
+
+RAISED under the escalation rule ("any lock found to have genuinely concurrent
+callers is raised to Gluck, not worked around"), because the cure depends on a
+contract I should not assume.
+
+WHAT IT IS: ONE process-wide mutex on the OnAppend adapter, guarding a
+map[ariaID]*Deriver. Two properties, both worth his eye:
+
+  a. IT IS HELD ACROSS THE DERIVATION, not just the map lookup. So every
+     aria's translation serializes against every other aria's, on one lock, on
+     the fig IR write path.
+
+  b. IT IS HELD ACROSS CALLS OUT OF THE PACKAGE -- o.translator(ariaID),
+     trans.PeekTail(), and d.SeedAt(source, watermark) which does a log
+     Lookup. That is the deadlock shape this campaign already documented: "a
+     lock whose critical section calls out into a hook, a callback or an
+     interface method".
+
+WHAT WOULD FIX IT, AND WHY IT IS NOT MINE TO DO: the per-aria Deriver needs no
+lock at all IF appends for one aria are serialized -- and they appear to be,
+because figIRLog (the door) is PER ARIA and carries its own mutex. Then the
+map lock need only cover fetch-or-create, and the derivation runs outside it.
+
+    THAT IS THE CONCURRENCY-DOMAIN QUESTION THIS FILE ALREADY NAMES: the cure
+    is to STATE THE CONTRACT -- one writer per aria, concurrent readers --
+    ASSERTED WHERE IT CAN FAIL rather than commented. Asserting it is the work;
+    assuming it is the defect.
+
+I have not measured what (a) costs. The honest quantity would be appends
+serialized per second across N concurrent arias, and no instrument in the tree
+reports it.
+
+# THE INSTRUMENT THE STANDING GOAL WAS MISSING (ede92072, 2026-08-20)
+
+The goal has been measured by a count of DECLARATIONS -- 83 then, 81 now. That
+counts how many locks EXIST. The order is about something else: "spurious
+locking, even where it appears valuable", which is a question about locks
+TAKEN ON A READ PATH, and nothing in the tree answered it.
+
+scripts/lockpaths.sh answers it, statically, over the existing callpath tool.
+A tool and not a list, for callpath's own stated reason.
+
+## WHAT IT SAYS TODAY, AND IT IS NOT WHAT THE CACHE WORK IMPLIED
+
+Every decoded read reaches a mutex, and the tree cache is not the one:
+
+    Read (translations)   lineage.go:9, xwal_store.go:393, xwal_log.go:82,
+                          xwal_backend.go:300
+    Read (fig IR)         lineage.go:9, xwal_store.go:393, xwal_log.go:82,
+                          xwal_backend.go:229
+    ReadFrom, Lookup      the same four
+    PeekTail              xwal_store.go:393, xwal_log.go:82
+
+TWO SITES ACCOUNT FOR ALL OF IT, and both are the store's own `s.mu`:
+
+  XwalStore.Lineage (lineage.go:9) takes s.mu to call trunks.ListLight().
+      treeLog.refs() calls it ON EVERY peek, so EVERY READ that consults the
+      lineage takes a process-wide lock -- to obtain an answer that changes
+      only when an aria is forked or created.
+
+  XwalStore.openNode (xwal_store.go:393) takes s.mu for the whole open, and
+      xwalLog.openOnce calls it PER READ -- so every substrate read of every
+      channel of every aria queues on one lock.
+
+    SO "A HIT TAKES NO LOCK" IS TRUE OF tree.Cache AND FALSE OF THE READ. The
+    campaign removed the lock from the cache and left two process-wide locks
+    on the path that reaches it, which no per-layer measurement would show --
+    the same shape as "a per-layer benefit test cannot measure a cost that
+    exists only BETWEEN layers".
+
+## WHAT I HAVE NOT DONE
+
+Neither is touched. Both are `s.mu` with genuinely concurrent callers, which
+the escalation rule reserves for Gluck, and the lineage one has the shape the
+standing test names as curable -- an answer that changes rarely, recomputed
+under a lock on every read, i.e. a candidate for publishing rather than
+locking.
+
+AND THE NUMBER TO BRING HIM IS NOT MEASURED: how long a read waits on s.mu
+under N concurrent arias. The static path says the lock IS taken; it says
+nothing about contention, and this file has been burned before by treating one
+as the other.

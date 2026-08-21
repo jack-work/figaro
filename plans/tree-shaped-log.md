@@ -1751,3 +1751,233 @@ before, which is exactly the size of improvement that stops an investigation.
 
     A SPEEDUP IS NOT A PROOF OF THE SHAPE YOU INTENDED. Check the exponent,
     not the ratio.
+
+# A LAW ABOUT INDEX KEYS, EARNED BY A TEST THAT REFUTED ITS OWN AUTHOR
+# (223a0986 with 87ab658e, 2026-08-19)
+
+    AN INDEX MAY BE KEYED ONLY BY SOMETHING THE CHANNEL GUARANTEES UNIQUE.
+
+The residency index in `treeLog` is keyed by FigaroLT, which is a FOREIGN KEY
+into another channel and unique only BY CONVENTION. When two rows of one
+channel share a FigaroLT the index holds one of them and the segments hold
+both, so WHICH ONE A READER SEES DEPENDS ON WHETHER IT IS READING THE INDEX OR
+THE LOG -- measured, not reasoned:
+
+    append at an equal FigaroLT   ACCEPTED, and both rows DURABLE
+    Read() on the LIVE handle     ONE row (the first)
+    Read() from a FRESH backend   TWO rows
+    Lookup                        the FIRST row
+    PeekTail                      the LATER row
+
+TestTwoRowsAtOneFigaroLTDivergeBetweenAWarmAndAColdRead, f731cb7a. No channel
+in the real store carries two rows at one FigaroLT today, so this is a LATENT
+TRAP and not a live fault; the test is what makes it a reproducer rather than
+a rumour.
+
+## THE METHOD POINT, WHICH IS 87ab658e'S AND IS THE REUSABLE PART
+
+They warned that a rule of the form "readers prefer the last row" must be
+believed by EVERY reader, and said enumerating them would cost a grep. The
+grep passed it -- there are two semantic readers and both were fine. What the
+enumeration could not ask:
+
+    A GREP ANSWERS "WHO READS". IT CANNOT ASK WHETHER A READER AGREES WITH ITS
+    OWN RESTART.
+
+And the fixture decided it: THE SAME TEST ON MemLog WOULD HAVE AGREED WITH
+ITSELF AND CLEARED THE TRICK. It only failed because it ran against the
+production log, which is the standing rule of this campaign arriving from a
+new direction -- an in-memory implementation cannot exhibit a warm/cold
+divergence, because it has no cold.
+
+## AND THE CONTRAST THAT NAMES THE CURE
+
+87ab658e's form tree is keyed by the FORM KEY, which is unique BY
+CONSTRUCTION, so replacement is total and there is no second copy to disagree
+about. Ours is keyed by a foreign key, so replacement is partial by nature.
+That is the difference between the two substrates, and it is the shape of any
+fix: make the key unique, or stop indexing by it.
+
+# A FAILURE MODE WITH A NAME, GIVEN BY THE ARIA THAT COMMITTED IT
+# (87ab658e, relayed by 223a0986, 2026-08-19)
+
+Reporting a red test in another aria's area, 87ab658e retracted a count taken
+with a directory check that could not measure what it claimed -- and then, in
+the next paragraph, used that same check's output as a structural claim. Their
+own naming of it, unprompted, when the claim was refuted by a counting probe:
+
+    DISTRUSTING AN INSTRUMENT FOR ONE CLAIM AND TRUSTING IT FOR ANOTHER IS A
+    SHARPER FAILURE THAN SIMPLY USING A BAD INSTRUMENT, BECAUSE THE
+    RETRACTION MAKES IT LOOK CAREFUL.
+
+The refuted claim was "this aria has no channels at all"; the aria opens and
+has entries, and what it lacks is a form index. A retraction scopes to the
+number it names, and the CONCLUSIONS BUILT FROM THAT NUMBER do not retract
+themselves.
+
+## AND THE PROBE SHAPE THAT ANSWERED IT
+
+    t.Fatalf ANSWERS "IS THERE ONE?" AND CAN NEVER ANSWER "HOW MANY?" -- and
+    those are different questions: defect versus speck.
+
+TestRealMigratedStoreOpensWithEverything stopped at the first bad aria, so
+neither of us could say whether one aria or seven hundred were affected.
+Collecting failures, tolerating a CONFIGURED count and failing on the next one
+keeps an instrument honest in both directions: it does not cry about known
+damage and it cannot go quiet about new damage. The answer was 5 of 720, and
+the same five were already recorded elsewhere in the tree.
+
+## AND ITS SIBLING, THE SAME DAY, FROM THE SAME ARIA
+
+87ab658e advised a habit -- build patches through message.NewPatch/SetString
+rather than a Patch.Set literal -- on the stated ground that "that seam exists
+on main already, it landed before any of this". Checked rather than adopted:
+
+    git grep 'func NewPatch' main -- internal/message/   nothing
+    git merge-base --is-ancestor 150da30d main           NO
+    git branch --contains 150da30d                       feat/nested-form-values
+
+The seam is real and the 153-literal migration is real; the claim ATTACHED to
+them was false. Their own naming of the mechanism, which is the part worth
+keeping:
+
+    THE SEAM LANDED IN MY PREDECESSOR'S SESSION ON THIS SAME BRANCH, SO IT WAS
+    THERE BEFORE I ARRIVED, AND "BEFORE MY WORK" QUIETLY BECAME "ON MAIN" IN MY
+    HEAD. A COMMIT YOU DID NOT WRITE FEELS OLDER THAN IT IS.
+
+That is a role-bearer's hazard specifically: an aria inherits a branch and
+inherits its predecessor's commits as background, and background is what nobody
+re-derives. The cure is the cheap one -- a repository fact asserted to another
+aria is worth the eight seconds of `git merge-base --is-ancestor`.
+
+AND THE HABIT'S BETTER ARGUMENT, which survived the correction: five test files
+had grown FOUR differently-named patch builders -- rawPatch, patchOf twice,
+setPatch, patchSet -- and they disagreed on semantics. Three wrapped the value
+as raw JSON, so a string had to carry its own quotes inside the literal or the
+record held invalid JSON; two ran it through json.Marshal. Two behaviours, four
+names, no signal at the call site. SetString ENCODES and SetRawStrings does
+NOT, and the names now say which. That split predates any typed value and would
+be worth fixing if the representation never moved at all.
+
+## THE LAW'S FIRST APPLICATION, AND THE INSTRUMENT WROTE ITS OWN REPLACEMENT
+## (223a0986, 2026-08-20)
+
+    AN INDEX MAY BE KEYED ONLY BY SOMETHING THE CHANNEL GUARANTEES UNIQUE.
+
+The translation channel was addressed by FigaroLT -- a FOREIGN key naming an
+entry in another channel, unique only by convention. It is addressed by its
+OWN channel LT now, which is unique and dense by construction. FigaroLT stays
+on the entry as the field that says what a row translates; it is no longer the
+address.
+
+WHAT THAT CLOSED, measured by the test that used to assert the defect: two
+entries at one FigaroLT gave warm=1 and cold=2 -- a live handle and a fresh
+process reading one channel differently -- and now give 2 and 2.
+
+AND THE TEST TOLD ME WHAT TO DO WITH IT. Its failure message, written when the
+divergence was found and could not be fixed then, said: "if these now AGREE
+the divergence is closed and this test should assert equality instead." It
+now asserts equality, and the canary is the old key: restoring transKey to
+FigaroLT reproduces warm=1 cold=2 exactly.
+
+    A TEST THAT NAMES THE CONDITION FOR ITS OWN REWRITE SURVIVES THE FIX. The
+    alternative -- deleting it as "no longer applicable" -- loses the only
+    reproducer of a defect class that will recur the next time somebody keys
+    an index by a convenient number.
+
+TWO THINGS CAME FREE WITH IT: a coordinate now holds exactly one entry, so the
+translator log seeds its own append instead of fetching it back
+(seedingTail), and the coordinates are DENSE, which is the precondition for
+the arithmetic fast path that Q1 was asking about at the other end of the
+stack.
+
+# THE CRASH GATE HAS A MISSING HALF, AND WITHOUT IT THE GATE CANNOT FAIL
+# (ede92072, 2026-08-20)
+
+Every handoff in this campaign carries the same gate line, and its third item
+is `FIGARO_CRASH_TEST=1`. That is half a recipe.
+
+    df -T /tmp        tmpfs
+    df -T /var/tmp    btrfs on /dev/nvme1n1p2
+
+`t.TempDir()` lands under `$TMPDIR`, which is unset, which is `/tmp`, which is
+TMPFS. And the crash test's OWN COMMENT, written by whoever made it opt-in,
+says what that means:
+
+    "it is meaningless on tmpfs, where a 'sync' costs nothing and the child
+     spins fast enough to bury the parent in acknowledgements"
+
+IT DOES NOT SKIP THERE. It runs, it passes, and it proves nothing about
+durability -- which is the one thing it exists to prove. The gate line as
+written is a check that cannot fail, run by every bearer who copied it.
+
+    THE GATE IS:  FIGARO_CRASH_TEST=1 TMPDIR=/var/tmp go test ./... -count=1
+
+## AND THE DISCIPLINE ALREADY EXISTED ONE ROOM OVER
+
+plans/campaign-notes/tmpfs-benchmarks.md and dev-root-in-ram.md worked this
+out for MEASUREMENT and made it standing: "all measurement panels now run with
+TMPDIR=/var/tmp". The reasoning is identical and it was never carried across
+to the correctness gate, because the two were written by different hands for
+different reasons.
+
+    A DISCIPLINE ADOPTED FOR BENCHMARKS DOES NOT PROPAGATE TO TESTS BY ITSELF.
+    Both were asking the same question -- is this filesystem the one the
+    product runs on -- and only one of them had been answered.
+
+Recorded on the role board as `crash-gate`, and the handoff's gate line now
+carries the variable rather than the intention.
+
+# A PROXY ASSERTION IS LOAD-SENSITIVE WHERE THE PROPERTY IS NOT
+# (ede92072, 2026-08-20)
+
+Found by running the crash gate WITH its missing half (the note above): the
+first honest full-suite run went red on
+`TestSpeculativeDispatch_StartsBeforeStreamEnd`, which had never failed for me
+before because I had never run the suite under that much of its own load.
+
+## IT WAS NOT MINE, AND THAT WAS MEASURED BEFORE ANYTHING WAS TOUCHED
+
+    HEAD, isolated, TMPDIR=/var/tmp      pass, pass, pass
+    HEAD, isolated, /tmp (tmpfs)         pass, pass, pass
+    HEAD, full suite                     FAIL  tc_3 444ms, tc_2 394ms
+    06384fa3 (predecessor), full suite   FAIL  tc_1 350.4ms, tc_2 400.7ms
+
+DIFFERENT TOOLS AND DIFFERENT NUMBERS EACH RUN, which is the signature of
+jitter rather than a defect, and the test's origin commit (ef28f7de) is ON
+MAIN. So: pre-existing, load-dependent, and mine only in the sense that I was
+the first to run the gate properly.
+
+## THE MECHANISM: THE ASSERTION WAS A PROXY FOR THE PROPERTY
+
+The property is SPECULATIVE DISPATCH -- a tool begins when its PushToolReady
+arrives, not when the stream ends. The test asserted `start < 350ms`, with
+streamEnd at 400ms and a comment calling the slack "generous... to absorb
+scheduling jitter".
+
+    350ms WAS A STAND-IN FOR "BEFORE streamEnd". Under load BOTH the tool and
+    the stream slide later, together -- so the ORDER holds while the clock
+    readings do not, and the test asserted the reading.
+
+Now the provider sets a flag immediately before it pushes the final assistant
+message, and the tool records that flag AT EXECUTE ENTRY. The assertion is a
+HAPPENS-BEFORE, and no amount of load can perturb it. The lower bound stays a
+duration, because it IS one: load can only make a start later, never earlier.
+
+CANARIED: disabling speculation in turnBus.PushToolReady makes all three tools
+report "began only after the final assistant message: that is sequential
+dispatch, not speculative", and restoring it goes green.
+
+## THE GENERAL FORM, WHICH IS THIS CAMPAIGN'S OWN LAW ARRIVING FROM A NEW SIDE
+
+The file already says: report the deterministic quantity ahead of the timing.
+That was written about BENCHMARKS. It is equally true of assertions:
+
+    WHEN A TEST MEANS "A BEFORE B", ASSERT "A BEFORE B" -- NOT "A UNDER N
+    MILLISECONDS". A duration standing in for an order is an instrument that
+    is correct only while the machine is quiet, and the machine is quiet
+    exactly when nothing else is being tested.
+
+AND IT IS WHY THE GATE'S MISSING TMPDIR MATTERED TWICE OVER: the run that
+exposed this is the run that was also, finally, testing durability on a disk.
+One incomplete recipe was hiding two things.

@@ -41,27 +41,42 @@ func (a *Agent) SetIntent(patch form.Patch, ifVersion uint64, assert bool) (set,
 	if patch.IsEmpty() {
 		return nil, nil, nil
 	}
-	// Protection is a pure function of the patch, so it is answered HERE,
-	// before queueing, and the caller gets a real refusal. Everything else a
-	// write can be refused for (a stale version, an Assert removal) depends
-	// on state the writer sees and this path does not, and those stay
-	// deferred: a set during a tool round is applied at the next round
-	// boundary by design, so waiting for a verdict would block the caller
-	// for the length of the round.
+	// Protection is a pure function of the patch, so it is answered HERE and
+	// the caller gets a real refusal.
 	if err := form.CheckWritable(patch, false); err != nil {
 		return nil, nil, err
 	}
-	for k := range patch.Set {
+	// A SET DOES NOT RIDE THE FIGARO'S QUEUE. Gluck, 2026-08-20: "sets should
+	// not be blocked by an active figaro. bound form sets should have their
+	// own actor loop and their own queue."
+	//
+	// THEY ALREADY HAVE ONE -- store.Form runs actor.NewLazy(formBatch, ...)
+	// and every durable form write is serialized there. Routing a set through
+	// the figaro's inbox as well made the WRITER wait for the READER: a set
+	// during a tool round was applied at the next round boundary, and the
+	// caller was told "queued" with no version.
+	//
+	// The property that deferral was buying -- the board cannot move under a
+	// turn in flight -- does not come from the queue. A turn samples the
+	// board ONCE, at send (turn.go: Snapshot: a.form.Snapshot()), and nothing
+	// re-reads it mid-turn. TestASetMidTurnDoesNotMoveTheBoardUnderTheTurnIn
+	// Flight is that property's falsifier, and it holds without the hop.
+	_, applied, err := a.applyFormPatch(patch, ifVersion, assert, "set")
+	if err != nil {
+		return nil, nil, err
+	}
+	for k := range applied.Set {
 		set = append(set, k)
 	}
-	removed = append(removed, patch.Remove...)
-	a.inbox.Send(event{typ: eventSet, setPatch: patch, setIfVersion: ifVersion, setAssert: assert})
+	removed = append(removed, applied.Remove...)
 	return set, removed, nil
 }
 
-// SetAwaiting is SetIntent for a caller that asked to WAIT for the writer's
-// verdict (`fig set --wait`).
-func (a *Agent) SetAwaiting(ctx context.Context, patch form.Patch, ifVersion uint64, assert bool) (uint64, form.Patch, error) {
+// SetAwaiting is Set for a caller that asked for the writer's verdict. It is
+// the same call now: a set is applied by the form's own actor, so the version
+// and the effective patch are known before this returns. The ctx argument is
+// kept because the RPC surface passes one.
+func (a *Agent) SetAwaiting(_ context.Context, patch form.Patch, ifVersion uint64, assert bool) (uint64, form.Patch, error) {
 	if a.form == nil {
 		return 0, form.Patch{}, fmt.Errorf("set requires a form")
 	}
@@ -71,19 +86,7 @@ func (a *Agent) SetAwaiting(ctx context.Context, patch form.Patch, ifVersion uin
 	if err := form.CheckWritable(patch, false); err != nil {
 		return 0, form.Patch{}, err
 	}
-	done := make(chan setVerdict, 1)
-	a.inbox.Send(event{
-		typ: eventSet, setPatch: patch, setIfVersion: ifVersion,
-		setAssert: assert, setDone: done,
-	})
-	select {
-	case v := <-done:
-		return v.version, v.applied, v.err
-	case <-ctx.Done():
-		// The patch is still queued and will still be applied: what expired
-		// is the caller's patience, not the write.
-		return 0, form.Patch{}, ctx.Err()
-	}
+	return a.applyFormPatch(patch, ifVersion, assert, "set")
 }
 
 func withoutSystemNS(s form.Snapshot) form.Snapshot {

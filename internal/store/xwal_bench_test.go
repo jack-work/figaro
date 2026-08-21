@@ -66,7 +66,7 @@ func seedTree(tb testing.TB, b *XwalBackend, stumps, convs, branches int) int {
 
 func turn(tb testing.TB, b *XwalBackend, id string, n int) {
 	tb.Helper()
-	ir, err := b.Open(id)
+	ir, err := b.OpenFigIR(id)
 	if err != nil {
 		tb.Fatal(err)
 	}

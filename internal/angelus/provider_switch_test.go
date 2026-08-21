@@ -38,11 +38,6 @@ func (m *namedMockProvider) Send(_ context.Context, in provider.SendInput, bus p
 		Content:    []message.Content{message.TextContent("served by " + m.name)},
 		StopReason: message.StopEnd,
 	}
-	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
-	if err != nil {
-		return err
-	}
-	msg.LogicalTime = entry.LT
 	bus.PushMessageEnd(string(msg.StopReason))
 	bus.PushFigaro(msg)
 	return nil

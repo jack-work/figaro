@@ -21,7 +21,7 @@ func TestStampCensus(t *testing.T) {
 	var arias, legacy, mixed, empty int
 	var legacyRecs, allRecs int
 	for _, n := range be.Nodes() {
-		log, err := be.Open(n.ID)
+		log, err := be.OpenFigIR(n.ID)
 		if err != nil {
 			continue
 		}

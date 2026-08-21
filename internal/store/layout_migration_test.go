@@ -36,7 +36,7 @@ func seedForkedArias(t *testing.T, root string) (ids []string, boards map[string
 	// every child inherits a prefix of its parent's timeline.
 	for gen := 0; gen < 3; gen++ {
 		ids = append(ids, aria)
-		lg, err := be.Open(aria)
+		lg, err := be.OpenFigIR(aria)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -124,7 +124,7 @@ func TestOpenMigratesANestedStoreAndFindsEveryAria(t *testing.T) {
 		if b := boardOf(t, be, id); b != boards[id] {
 			t.Errorf("aria %s form after migration: got %q want %q", id, b, boards[id])
 		}
-		lg, err := be.Open(id)
+		lg, err := be.OpenFigIR(id)
 		if err != nil {
 			t.Fatalf("aria %s: %v", id, err)
 		}

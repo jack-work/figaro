@@ -68,7 +68,7 @@ func TestDrain_SetStillBlocksTheIdleFold(t *testing.T) {
 
 	b.Send(event{typ: eventUserPrompt, text: "one"})
 	b.Send(event{typ: eventUserPrompt, text: "two"})
-	b.Send(event{typ: eventSet})
+	b.Send(event{typ: eventStudyMark, studyMark: &message.StudyMark{}})
 	b.Send(event{typ: eventUserPrompt, text: "three"})
 
 	first, _ := b.Recv()
@@ -77,7 +77,7 @@ func TestDrain_SetStillBlocksTheIdleFold(t *testing.T) {
 
 	assert.Equal(t, "one\n\ntwo", merged.text)
 	require.Len(t, b.pending(), 2, "the set and the prompt behind it stay queued")
-	assert.Equal(t, eventSet, b.pending()[0].typ)
+	assert.Equal(t, eventStudyMark, b.pending()[0].typ)
 }
 
 // THE BUG BEHIND "the messages were received, but the turn ended abruptly".
@@ -136,7 +136,7 @@ func newDrainTestAgent(t *testing.T, ctx context.Context) *Agent {
 	t.Helper()
 	board, _ := form.Open("")
 	be, id := store.NewTestAria(t, "d", message.Patch{})
-	log, err := be.Open(id)
+	log, err := be.OpenFigIR(id)
 	if err != nil {
 		t.Fatal(err)
 	}

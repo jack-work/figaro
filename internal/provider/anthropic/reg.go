@@ -29,7 +29,7 @@ func buildFromContext(ctx provider.BuildContext) (provider.Provider, error) {
 		knobs.Model = reg.DefaultModel
 	}
 	cacheOpen := func(aria string) (store.Log[[]json.RawMessage], error) {
-		return ctx.Backend.OpenTranslation(aria, "anthropic")
+		return ctx.Backend.OpenTranslator(aria, "anthropic")
 	}
 	if knobs.UseOfficialSDK {
 		p, err := anthropicsdk.New(knobs, ctx.Resolver, cacheOpen)

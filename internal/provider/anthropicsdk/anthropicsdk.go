@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"runtime/debug"
 	"sync"
 	"text/template"
 	"time"
@@ -87,7 +88,6 @@ type Provider struct {
 	CacheOpen      func(aria string) (store.Log[[]json.RawMessage], error)
 	CacheNamespace string
 	cache          store.Log[[]json.RawMessage]
-	projection     *provider.IncrementalProjection[projectedMessages]
 
 	// windows caches context windows learned from the models endpoint and
 	// falls back to the verified static table.
@@ -129,13 +129,36 @@ func (p *Provider) Name() string { return providerName }
 
 // Fingerprint hashes the encoder config. Bumping the suffix
 // invalidates every cached translation.
+// Fingerprint CARRIES THE VENDOR SDK'S VERSION, because this provider's rows
+// are the SDK's own marshalling of its typed request: a bump changes what
+// MessageParam serializes to, and a stored row is only good while the type
+// that wrote it is the type that will read it. The rows are derived state, so
+// invalidation costs one re-encode and needs no migration.
 func (p *Provider) Fingerprint() string {
 	rr := p.reminder
 	if rr == "" {
 		rr = "tag"
 	}
-	return "anthropic-sdk/" + rr + "/v1"
+	return "anthropic-sdk/" + rr + "/v1/" + sdkVersion()
 }
+
+// sdkVersion is read once from the binary's own module graph. It is the
+// honest source: it moves when go.mod moves and cannot drift from a constant
+// somebody forgot to bump. A test binary carries no deps and gets "unknown".
+var sdkVersion = sync.OnceValue(func() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "unknown"
+	}
+	for _, dep := range info.Deps {
+		if dep.Path == "github.com/anthropics/anthropic-sdk-go" {
+			if dep.Version != "" {
+				return dep.Version
+			}
+		}
+	}
+	return "unknown"
+})
 
 func (p *Provider) SetModel(model string) {
 	p.mu.Lock()
@@ -194,15 +217,15 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	// transport can write into.
 	ctx, note := withRateLimitNote(ctx)
 
-	cache, err := p.cacheFor(in.AriaID)
+	rows, err := p.cacheFor(in.AriaID)
 	if err != nil {
 		return err
 	}
-	projected, err := p.catchUp(in.FigLog, cache, in.Form, in.Studies)
+	messages, messageLTs, err := p.catchUp(in.FigLog, rows, in.Form, in.Studies)
 	if err != nil {
 		return err
 	}
-	if len(projected.Messages) == 0 {
+	if len(messages) == 0 {
 		return fmt.Errorf("empty context")
 	}
 
@@ -225,11 +248,20 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		if terr != nil {
 			return fmt.Errorf("resolve token: %w", terr)
 		}
-		params := buildParams(projected.Messages, projected.LogicalTimes, in.Snapshot, in.Tools, int64(maxTokens), isOAuthToken(tok) && !p.NoOAuthIdentity, model, !p.NoEagerToolStreaming)
+		params := buildParams(messages, messageLTs, in.Snapshot, in.Tools, int64(maxTokens), isOAuthToken(tok) && !p.NoOAuthIdentity, model, !p.NoEagerToolStreaming)
 		client := anthropic.NewClient(opts...)
 		stream := client.Messages.NewStreaming(ctx, params, opts...)
 		assembled, raw, serr := drainStream(ctx, stream, model, bus)
 		if serr != nil {
+			// A CANCELLED TURN IS A PREMATURE CLOSE, NOT A LOST ONE. The
+			// accumulator's content is real -- this provider produced it from
+			// this wire -- so it is handed over marked aborted, through the
+			// same path a normal close takes. Anything else that ends a stream
+			// still fails the send and drops.
+			if errors.Is(serr, context.Canceled) && len(assembled.Content) > 0 {
+				assembled.StopReason = message.StopAborted
+				msg, acc = assembled, raw
+			}
 			return serr
 		}
 		msg = assembled
@@ -237,6 +269,15 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		return nil
 	})
 	if err != nil {
+		if len(msg.Content) == 0 {
+			return annotateRateLimit(cleanAPIError(err), note)
+		}
+		// The partial reaches the fig IR side and the error still ends the
+		// turn: the caller learns the send failed, and the history keeps what
+		// the model actually produced.
+		if perr := p.handOver(msg, acc, bus); perr != nil {
+			return perr
+		}
 		return annotateRateLimit(cleanAPIError(err), note)
 	}
 	if len(msg.Content) == 0 {
@@ -246,11 +287,17 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		msg.Timestamp = time.Now().UnixMilli()
 	}
 
-	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
-	if err != nil {
-		return fmt.Errorf("append assistant: %w", err)
-	}
-	msg.LogicalTime = entry.LT
+	return p.handOver(msg, acc, bus)
+}
+
+// handOver gives the fig IR side the message and the native payload from ONE
+// accumulator. The normal close and the premature close both go through it,
+// so a partial message cannot be shaped differently from a whole one.
+//
+// THE PROVIDER DOES NOT OWN THE LOG: only the fig IR side has the LT, so "the
+// entry exists before anything that names it" is a shape rather than a rule
+// five call sites had to remember.
+func (p *Provider) handOver(msg message.Message, acc anthropic.Message, bus provider.Bus) error {
 	bus.PushMessageEnd(string(msg.StopReason))
 	// ToParam preserves thinking signatures and redacted thinking verbatim.
 	native, err := p.assistantCache(acc)
@@ -258,7 +305,6 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		return fmt.Errorf("anthropicsdk cache assistant ToParam: %w", err)
 	}
 	bus.PushFigaro(msg, native)
-	p.acceptAssistantProjection(entry.LT, native.Payload)
 	return nil
 }
 
@@ -289,30 +335,6 @@ func (p *Provider) assistantCache(acc anthropic.Message) (provider.AssistantCach
 	}, nil
 }
 
-func (p *Provider) acceptAssistantProjection(lt uint64, encoded []json.RawMessage) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.projection == nil {
-		return
-	}
-	state := appendProjectedMessages(p.projection.State, encoded, lt)
-	p.projection = &provider.IncrementalProjection[projectedMessages]{
-		State:           state,
-		Form:            p.projection.Form,
-		Fingerprint:     p.projection.Fingerprint,
-		Entries:         p.projection.Entries + 1,
-		LastLT:          lt,
-		LastFormVersion: p.projection.LastFormVersion,
-		// EVERY FIELD THE PROJECTION CARRIES MUST BE CARRIED HERE. This
-		// splice rebuilds the projection by hand after a live append, and a
-		// field it forgets is not lost state but lost POSITION: the next pass
-		// believes the board sits at zero and folds the whole history to
-		// catch up, every turn, correctly and forever.
-		FormVersionOfSnapshot: p.projection.FormVersionOfSnapshot,
-		LastStudyVersions:     p.projection.LastStudyVersions,
-	}
-}
-
 func (p *Provider) resolveModel(snap form.Snapshot) string {
 	if v := snap.Lookup("system.model"); v != nil {
 		return *v
@@ -321,3 +343,12 @@ func (p *Provider) resolveModel(snap form.Snapshot) string {
 	defer p.mu.Unlock()
 	return p.model
 }
+
+// EncodeMessage and TranslatorChannel put this provider's encoder behind
+// provider.EntryEncoder, so the fig IR write path can translate an entry when
+// it lands using the same function a catch-up uses.
+func (p *Provider) EncodeMessage(msg message.Message, prev form.Snapshot) ([]json.RawMessage, error) {
+	return p.encode(msg, prev)
+}
+
+func (p *Provider) TranslatorChannel() string { return p.CacheNamespace }

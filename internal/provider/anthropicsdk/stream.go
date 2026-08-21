@@ -37,7 +37,13 @@ func drainStream(ctx context.Context, stream *ssestream.Stream[anthropic.Message
 
 	for stream.Next() {
 		if err := ctx.Err(); err != nil {
-			return message.Message{}, anthropic.Message{}, err
+			// A PREMATURE CLOSE HANDS BACK WHAT THE ACCUMULATOR HOLDS. It used
+			// to return an empty message and an empty accumulator, so figaro
+			// synthesised the partial from its own text and the native payload
+			// -- thinking signatures, redacted blocks -- was lost. The caller
+			// decides what to do with a partial; this decides only that it is
+			// not thrown away.
+			return decodeAssistantMessage(acc), acc, err
 		}
 		event := stream.Current()
 

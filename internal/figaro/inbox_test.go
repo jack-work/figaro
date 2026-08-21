@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/message"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -34,7 +36,7 @@ func TestInbox_TakeReadySetContiguousPrefix(t *testing.T) {
 	defer cancel()
 	b := NewInbox(ctx)
 	b.Send(event{typ: eventUserPrompt, text: "p"})
-	b.Send(event{typ: eventSet})
+	b.Send(event{typ: eventStudyMark, studyMark: &message.StudyMark{}})
 
 	// A set behind a prompt is not taken until the prompt clears: the
 	// drain loop preserves FIFO across kinds.
@@ -48,9 +50,9 @@ func TestInbox_SetPromptSetBoundaries(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	b := NewInbox(ctx)
-	b.Send(event{typ: eventSet})
+	b.Send(event{typ: eventStudyMark, studyMark: &message.StudyMark{}})
 	b.Send(event{typ: eventUserPrompt, text: "mid"})
-	b.Send(event{typ: eventSet})
+	b.Send(event{typ: eventStudyMark, studyMark: &message.StudyMark{}})
 
 	require.Len(t, b.TakeReadySet(), 1) // leading set
 	assert.Empty(t, b.TakeReadySet())   // now blocked by the prompt
@@ -163,7 +165,7 @@ func TestInbox_SnapshotPromptsFIFOAndReadOnly(t *testing.T) {
 	// the default snapshot omits it. Non-prompt events (Set, Fork) are also
 	// skipped.
 	b.Send(event{typ: eventUserPrompt, text: "first"})
-	b.Send(event{typ: eventSet})
+	b.Send(event{typ: eventStudyMark, studyMark: &message.StudyMark{}})
 	b.Send(event{typ: eventUserPrompt, text: ""}) // carrier
 	b.Send(event{typ: eventUserPrompt, text: "second"})
 
@@ -195,7 +197,7 @@ func TestInbox_PromptIDsAreDenseAndUnique(t *testing.T) {
 	b := NewInbox(ctx)
 
 	b.Send(event{typ: eventUserPrompt, text: "one"})
-	b.Send(event{typ: eventSet})
+	b.Send(event{typ: eventStudyMark, studyMark: &message.StudyMark{}})
 	b.Send(event{typ: eventUserPrompt, text: "two"})
 
 	snap := b.SnapshotPrompts(false)

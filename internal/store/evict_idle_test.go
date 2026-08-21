@@ -39,7 +39,7 @@ func TestIdleAriasAreEvictedAndRebuildIdentically(t *testing.T) {
 		}}); err != nil {
 			t.Fatal(err)
 		}
-		lg, err := be.Open(id)
+		lg, err := be.OpenFigIR(id)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -82,7 +82,7 @@ func TestIdleAriasAreEvictedAndRebuildIdentically(t *testing.T) {
 		if string(raw) != before[id] {
 			t.Errorf("aria %s rebuilt differently:\n before %s\n after  %s", id, before[id], raw)
 		}
-		lg, err := be.Open(id)
+		lg, err := be.OpenFigIR(id)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -108,7 +108,7 @@ func TestRecentlyTouchedAriasSurviveEviction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := be.Open(id); err != nil {
+	if _, err := be.OpenFigIR(id); err != nil {
 		t.Fatal(err)
 	}
 	if n := be.EvictIdle(nil, time.Hour); n != 0 {

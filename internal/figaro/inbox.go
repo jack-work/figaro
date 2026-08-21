@@ -198,7 +198,7 @@ func (b *Inbox) Prepend(events []event) bool {
 // caller's drain loop.
 func (b *Inbox) TakeReadySet() []event {
 	return b.q.TakeWhile(func(e event) bool {
-		return e.typ == eventSet || e.typ == eventStudyMark
+		return e.typ == eventStudyMark
 	})
 }
 

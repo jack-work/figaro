@@ -55,7 +55,7 @@ func TestEveryPatchIsShownToTheAria(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	lg, err := be.Open(aria)
+	lg, err := be.OpenFigIR(aria)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestAForkedAriaIsShownItsNewAriaID(t *testing.T) {
 	}
 	say := func(aria, text string) {
 		t.Helper()
-		lg, err := be.Open(aria)
+		lg, err := be.OpenFigIR(aria)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -173,7 +173,7 @@ func TestAForkedAriaIsShownItsNewAriaID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lg, err := be.Open(alt)
+	lg, err := be.OpenFigIR(alt)
 	if err != nil {
 		t.Fatal(err)
 	}

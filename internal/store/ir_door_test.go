@@ -17,7 +17,7 @@ func doorAria(t *testing.T) (Log[message.Message], *XwalBackend, string) {
 	require.NoError(t, err)
 	id, err := be.CreateConversation(outfit)
 	require.NoError(t, err)
-	log, err := be.Open(id)
+	log, err := be.OpenFigIR(id)
 	require.NoError(t, err)
 	return log, be, id
 }
@@ -182,7 +182,7 @@ func TestDoorHealsAForkTakenMidToolCall(t *testing.T) {
 
 	_, alt, err := be.Fork(id)
 	require.NoError(t, err)
-	childLog, err := be.Open(alt)
+	childLog, err := be.OpenFigIR(alt)
 	require.NoError(t, err)
 
 	require.NotEmpty(t, openInvokes(childLog.Read()), "fixture: the child must inherit an open call")

@@ -100,7 +100,8 @@ func TestGatewayAutoSendsStringsAndOneDirective(t *testing.T) {
 	if req.CacheControl == nil || req.CacheControl.Type != "ephemeral" {
 		t.Fatalf("want one request-level directive, got %+v", req.CacheControl)
 	}
-	for i, m := range req.Messages {
+	for i, row := range req.Messages {
+		m := rowChat(row)
 		var s string
 		if err := json.Unmarshal(m.Content, &s); err != nil {
 			t.Errorf("message %d content is not a bare string: %s", i, m.Content)
@@ -134,7 +135,8 @@ func TestGatewayBlocksModeMarksSystemAndTailOnly(t *testing.T) {
 func markedIndexes(t *testing.T, req chatRequest) []int {
 	t.Helper()
 	var out []int
-	for i, m := range req.Messages {
+	for i, row := range req.Messages {
+		m := rowChat(row)
 		var parts []contentPart
 		if json.Unmarshal(m.Content, &parts) != nil {
 			continue

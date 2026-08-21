@@ -35,7 +35,7 @@ func healFixtureSized(t *testing.T, dir string, n, segmentSize int) (*XwalBacken
 	if err != nil {
 		t.Fatal(err)
 	}
-	ir, err := b.Open(conv)
+	ir, err := b.OpenFigIR(conv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestMetaHealsOnReadBounded(t *testing.T) {
 	}
 
 	before := MetaHealFolded()
-	if _, err := b.Open(conv); err != nil { // the read path
+	if _, err := b.OpenFigIR(conv); err != nil { // the read path
 		t.Fatal(err)
 	}
 	folded := MetaHealFolded() - before
@@ -127,7 +127,7 @@ func TestMetaHealNoopWhenCurrent(t *testing.T) {
 	}
 
 	before := MetaHealFolded()
-	if _, err := b.Open(conv); err != nil {
+	if _, err := b.OpenFigIR(conv); err != nil {
 		t.Fatal(err)
 	}
 	if folded := MetaHealFolded() - before; folded != 0 {
@@ -147,7 +147,7 @@ func TestMetaHealNoopWhenCurrent(t *testing.T) {
 		t.Fatal(err)
 	}
 	before = MetaHealFolded()
-	if _, err := b.Open(conv); err != nil {
+	if _, err := b.OpenFigIR(conv); err != nil {
 		t.Fatal(err)
 	}
 	if folded := MetaHealFolded() - before; folded != 0 {
@@ -172,7 +172,7 @@ func TestSegmentRollsAtSegmentSize(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			b, conv, _ := healFixtureSized(t, dir, 0, tc.opt)
-			ir, err := b.Open(conv)
+			ir, err := b.OpenFigIR(conv)
 			if err != nil {
 				t.Fatal(err)
 			}

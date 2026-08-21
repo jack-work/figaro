@@ -31,11 +31,11 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 	}
 
 	// IR + translation logs (memoized, shared per aria)
-	ir, err := b.Open(conv)
+	ir, err := b.OpenFigIR(conv)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tr, err := b.OpenTranslation(conv, "anthropic")
+	tr, err := b.OpenTranslator(conv, "anthropic")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	// re-Open returns the SAME memoized instance -> sees the append
-	ir2, _ := b.Open(conv)
+	ir2, _ := b.OpenFigIR(conv)
 	if got := ir2.Read(); len(got) == 0 || got[len(got)-1].Payload.Role != message.RoleInput {
 		t.Fatalf("memoized IR did not reflect append: %+v", got)
 	}
@@ -153,7 +153,7 @@ func TestXwalBackendForkKeepsLiveLogUsable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	live, err := b.Open(conv)
+	live, err := b.OpenFigIR(conv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestXwalBackendForkKeepsLiveLogUsable(t *testing.T) {
 	if got := message.CountMessages(messages(live.Read())); got != 2 {
 		t.Fatalf("live continuation count = %d, want 2", got)
 	}
-	alternative, err := b.Open(alt)
+	alternative, err := b.OpenFigIR(alt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func TestXwalBackendOpenUnknownDoesNotCreateTrunk(t *testing.T) {
 	}
 	defer b.Close()
 	before := b.ConversationIDs()
-	if _, err := b.Open("missing"); err == nil {
+	if _, err := b.OpenFigIR("missing"); err == nil {
 		t.Fatal("Open(missing) succeeded")
 	}
 	after := b.ConversationIDs()
@@ -216,7 +216,7 @@ func TestXwalBackend_ForkAtInterior(t *testing.T) {
 	l, _ := b.CreateOutfit("d", patchSet(map[string]string{"system.model": "m"}))
 	conv, _ := b.CreateConversation(l)
 
-	ir, _ := b.Open(conv)
+	ir, _ := b.OpenFigIR(conv)
 	for _, r := range []message.Role{message.RoleInput, message.RoleOutput, message.RoleInput} {
 		if _, err := ir.Append(Entry[message.Message]{Payload: message.Message{Role: r}}); err != nil {
 			t.Fatal(err)
@@ -241,7 +241,7 @@ func TestXwalBackend_ForkAtInterior(t *testing.T) {
 	if str(cbGet(snap, "system.model")) != "m" {
 		t.Fatalf("alt lost inherited model: %q", str(cbGet(snap, "system.model")))
 	}
-	altIR, err := b.Open(alt)
+	altIR, err := b.OpenFigIR(alt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,7 +260,7 @@ func TestXwalBackend_CauterizedOutfitFork(t *testing.T) {
 	conv, _ := b.CreateConversation(l)
 	// Give conv a couple own turns so LT 2 (the outfit birth) is clearly an
 	// inherited, ceremonial LT.
-	ir, _ := b.Open(conv)
+	ir, _ := b.OpenFigIR(conv)
 	for i := 0; i < 2; i++ {
 		ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}})
 	}
@@ -284,7 +284,7 @@ func TestXwalBackend_CauterizedOutfitFork(t *testing.T) {
 	if str(cbGet(snap, "system.model")) != "m" {
 		t.Fatalf("sib lost the shared outfit model: %q", str(cbGet(snap, "system.model")))
 	}
-	sibIR, _ := b.Open(sib)
+	sibIR, _ := b.OpenFigIR(sib)
 	if _, err := sibIR.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
 		t.Fatalf("send to cauterized sibling: %v", err)
 	}
@@ -304,7 +304,7 @@ func TestXwalBackend_TreeVectors(t *testing.T) {
 	c1, _ := b.CreateConversation(l) // root [0]
 	c2, _ := b.CreateConversation(l) // root [1]
 	// give c1 a turn so it's interior-forkable, then fork it -> a branch [0,0]
-	ir, _ := b.Open(c1)
+	ir, _ := b.OpenFigIR(c1)
 	ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}})
 	_, alt, err := b.Fork(c1)
 	if err != nil {
@@ -349,7 +349,7 @@ func TestNoStranding_SiblingPromoteDoesNotInvalidate(t *testing.T) {
 	convB, _ := b.CreateConversation(l)
 
 	// Agent A grabs its Log at boot and holds it.
-	logA, err := b.Open(convA)
+	logA, err := b.OpenFigIR(convA)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -390,7 +390,7 @@ func TestNoStranding_ConcurrentAppendsAcrossArias(t *testing.T) {
 	for i := range arias {
 		id, _ := b.CreateConversation(l)
 		arias[i] = id
-		logs[i], _ = b.Open(id)
+		logs[i], _ = b.OpenFigIR(id)
 	}
 
 	var wg sync.WaitGroup

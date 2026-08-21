@@ -9,7 +9,6 @@ import (
 	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
-	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/uiir"
 	"github.com/stretchr/testify/require"
@@ -39,7 +38,7 @@ func TestLiveAgentPagesCarryFormDeltas(t *testing.T) {
 	require.NoError(t, err)
 
 	// Two records with a studied-form change folded between their stamps.
-	log, err := backend.Open(id)
+	log, err := backend.OpenFigIR(id)
 	require.NoError(t, err)
 	_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, TurnID: 1,
@@ -113,5 +112,4 @@ func TestLiveAgentPagesCarryFormDeltas(t *testing.T) {
 	if !foldedHasDelta {
 		t.Fatalf("the client fold dropped the turn-level delta: %+v", folded)
 	}
-	_ = provider.EncodedMessages{}
 }

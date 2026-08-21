@@ -139,3 +139,35 @@ func TestTreeLogForkSharesThePrefixStructurally(t *testing.T) {
 	require.Equal(t, before, parent.cache.Recomposes(),
 		"the child re-materialized a prefix its parent already holds")
 }
+
+// A CHANNEL ADDRESSED BY ITS OWN LT MAY NOT BE CUT BY A FORK BASE MEASURED IN
+// ANOTHER CHANNEL'S COORDINATES.
+//
+// The translator channel is keyed by its own dense LT (1, 2, 3 ...) since
+// 26c21eb0; the lineage's Base is a MAIN-channel LT. Read() splits (0..tail]
+// across the lineage by that Base, so on a real aria -- fork base 3, one
+// translator row at channel LT 1 -- the WHOLE span is attributed to the
+// PARENT node, which holds no rows of that channel, and the provider assembles
+// an EMPTY conversation. Live symptom: every send on a new aria fails with
+// "empty context" (scripts/live/streambodylive.sh, and onappendlive.sh's first
+// send was failing silently into /dev/null).
+func TestAChannelKeyedByItsOwnLTIsNotCutByAnotherChannelsForkBase(t *testing.T) {
+	child := NewMemLog[string]()
+	_, err := child.Append(Entry[string]{FigaroLT: 6, Payload: "the only row"})
+	require.NoError(t, err)
+
+	sizeOf := func(e Entry[string]) int { return len(e.Payload) + 48 }
+	open := func(node string) Log[string] {
+		if node == "child" {
+			return child
+		}
+		return NewMemLog[string]() // the parent has no rows of this channel
+	}
+	cache := NewIRCache[string](fwtree.NewBudget(0), open, sizeOf, transKey[string])
+	l := newTreeLog[string](child, "child", cache, sizeOf, transKey[string],
+		func() []fwtree.Ref { return []fwtree.Ref{{Node: "parent"}, {Node: "child", Base: 3}} }).
+		seedingTail().
+		withNodeOpener(open)
+
+	require.Len(t, l.Read(), 1, "the row is attributed to the parent node and the conversation reads empty")
+}

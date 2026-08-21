@@ -10,77 +10,22 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-func TestProjectIncrementallyVisitsOnlySuffix(t *testing.T) {
+// A FAILED ENCODE LEAVES THE WATERMARK WHERE IT WAS. The catch-up writes a row
+// per record as it goes, so the watermark is the last row written -- a record
+// that failed to encode has no row, and the retry starts exactly there and
+// re-attempts it.
+//
+// Under the deleted memo this needed three assertions about a published
+// watermark, a start index and a carried entry count. It needs one now: the
+// row log IS the watermark, so "did not advance" is a count of rows.
+func TestAFailedEncodeLeavesTheWatermarkWhereItWas(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
-	appendProjectionMessage(t, log, "one")
-	appendProjectionMessage(t, log, "two")
-
-	encoded := 0
-	config := ProjectionConfig[EncodedMessages]{
-		Log:         log,
-		Fingerprint: "v1",
-		Encode: func(msg message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
-			encoded++
-			return []json.RawMessage{json.RawMessage(`"` + msg.Content[0].Text + `"`)}, nil
-		},
-		Append: AppendEncodedMessage,
-	}
-	first, stats, err := ProjectIncrementally(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stats.StartIndex != 0 || encoded != 2 {
-		t.Fatalf("cold projection start=%d encoded=%d", stats.StartIndex, encoded)
-	}
-
-	appendProjectionMessage(t, log, "three")
-	config.Previous = first
-	second, stats, err := ProjectIncrementally(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stats.StartIndex != 2 || encoded != 3 {
-		t.Fatalf("warm projection start=%d total encoded=%d", stats.StartIndex, encoded)
-	}
-	if len(second.State.PerMessage) != 3 {
-		t.Fatalf("messages=%d, want 3", len(second.State.PerMessage))
-	}
-}
-
-func TestProjectIncrementallyInvalidatesFingerprint(t *testing.T) {
-	log := store.NewMemLog[message.Message]()
-	appendProjectionMessage(t, log, "one")
-	previous := &IncrementalProjection[int]{
-		State:       1,
-		Fingerprint: "old",
-		Entries:     1,
-		LastLT:      1,
-	}
-	encoded := 0
-	projection, stats, err := ProjectIncrementally(ProjectionConfig[int]{
-		Log:         log,
-		Previous:    previous,
-		Fingerprint: "new",
-		Encode: func(message.Message, form.Snapshot) ([]json.RawMessage, error) {
-			encoded++
-			return []json.RawMessage{json.RawMessage(`{}`)}, nil
-		},
-		Append: func(state int, _ []json.RawMessage, _ uint64) int { return state + 1 },
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stats.StartIndex != 0 || encoded != 1 || projection.State != 1 {
-		t.Fatalf("start=%d encoded=%d state=%d", stats.StartIndex, encoded, projection.State)
-	}
-}
-
-func TestProjectIncrementallyDoesNotAdvancePastEncodeFailure(t *testing.T) {
-	log := store.NewMemLog[message.Message]()
+	rows := store.NewMemLog[[]json.RawMessage]()
 	appendProjectionMessage(t, log, "one")
 	attempts := map[string]int{}
-	config := ProjectionConfig[EncodedMessages]{
+	cfg := CatchUpConfig{
 		Log:         log,
+		Translator:  rows,
 		Fingerprint: "v1",
 		Encode: func(msg message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 			text := msg.Content[0].Text
@@ -90,93 +35,35 @@ func TestProjectIncrementallyDoesNotAdvancePastEncodeFailure(t *testing.T) {
 			}
 			return []json.RawMessage{json.RawMessage(`"` + text + `"`)}, nil
 		},
-		Append: AppendEncodedMessage,
 	}
-	first, _, err := ProjectIncrementally(config)
-	if err != nil {
+	if _, err := CatchUp(cfg); err != nil {
 		t.Fatal(err)
+	}
+	if got := len(rows.Read()); got != 1 {
+		t.Fatalf("rows=%d after the first pass, want 1", got)
 	}
 
 	appendProjectionMessage(t, log, "two")
 	appendProjectionMessage(t, log, "three")
-	config.Previous = first
-	failed, stats, err := ProjectIncrementally(config)
-	if err == nil {
+	if _, err := CatchUp(cfg); err == nil {
 		t.Fatal("expected encode failure")
 	}
-	if failed != nil {
-		t.Fatal("failed projection must not publish a later watermark")
-	}
-	if stats.StartIndex != 1 || first.Entries != 1 {
-		t.Fatalf("start=%d prior entries=%d", stats.StartIndex, first.Entries)
+	if got := len(rows.Read()); got != 1 {
+		t.Fatalf("rows=%d after the failed pass: a record that did not encode must not be recorded as translated", got)
 	}
 
-	retried, stats, err := ProjectIncrementally(config)
+	stats, err := CatchUp(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.StartIndex != 1 || attempts["two"] != 2 || attempts["three"] != 1 {
-		t.Fatalf("start=%d attempts=%v", stats.StartIndex, attempts)
+	if attempts["two"] != 2 || attempts["three"] != 1 {
+		t.Fatalf("attempts=%v -- the retry must re-attempt the failure and no more", attempts)
 	}
-	if retried.Entries != 3 || len(retried.State.PerMessage) != 3 {
-		t.Fatalf("entries=%d messages=%d", retried.Entries, len(retried.State.PerMessage))
+	if stats.Visited != 2 || stats.Encoded != 2 {
+		t.Fatalf("retry visited=%d encoded=%d, want 2/2", stats.Visited, stats.Encoded)
 	}
-}
-
-func TestProjectIncrementallyUsesInputReadyCache(t *testing.T) {
-	log := store.NewMemLog[message.Message]()
-	entry := appendProjectionMessage(t, log, "one")
-	cache := store.NewMemLog[[]json.RawMessage]()
-	want := []json.RawMessage{json.RawMessage(`{"cached":true}`)}
-	if _, err := cache.Append(store.Entry[[]json.RawMessage]{FigaroLT: entry.LT, Payload: want}); err != nil {
-		t.Fatal(err)
-	}
-
-	projection, stats, err := ProjectIncrementally(ProjectionConfig[[]json.RawMessage]{
-		Log:         log,
-		Cache:       cache,
-		Fingerprint: "v1",
-		Encode: func(message.Message, form.Snapshot) ([]json.RawMessage, error) {
-			return nil, errors.New("cache miss")
-		},
-		Append: func(state, encoded []json.RawMessage, _ uint64) []json.RawMessage {
-			return append(state, encoded...)
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stats.Cached != 1 || len(projection.State) != 1 || string(projection.State[0]) != string(want[0]) {
-		t.Fatalf("cached=%d state=%s", stats.Cached, projection.State)
-	}
-}
-
-func TestProjectIncrementallyRejectsStaleCacheEntry(t *testing.T) {
-	log := store.NewMemLog[message.Message]()
-	entry := appendProjectionMessage(t, log, "one")
-	cache := store.NewMemLog[[]json.RawMessage]()
-	if _, err := cache.Append(store.Entry[[]json.RawMessage]{
-		FigaroLT: entry.LT, Payload: []json.RawMessage{json.RawMessage(`{"stale":true}`)}, Fingerprint: "old",
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	encoded := 0
-	_, stats, err := ProjectIncrementally(ProjectionConfig[int]{
-		Log:         log,
-		Cache:       cache,
-		Fingerprint: "new",
-		Encode: func(message.Message, form.Snapshot) ([]json.RawMessage, error) {
-			encoded++
-			return []json.RawMessage{json.RawMessage(`{"fresh":true}`)}, nil
-		},
-		Append: func(state int, _ []json.RawMessage, _ uint64) int { return state + 1 },
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stats.Cached != 0 || stats.Encoded != 1 || encoded != 1 {
-		t.Fatalf("cached=%d encoded=%d calls=%d", stats.Cached, stats.Encoded, encoded)
+	if got := len(rows.Read()); got != 3 {
+		t.Fatalf("rows=%d, want 3", got)
 	}
 }
 

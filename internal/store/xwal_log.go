@@ -25,21 +25,36 @@ func newXwalLog[T any](store *XwalStore, ariaID, channel string, isMain bool) *x
 
 // encodeMeta/decodeMeta carry Entry.Fingerprint through xwal's opaque
 // meta slot as a JSON string.
-func encodeMeta(fp string) []byte {
-	if fp == "" {
+// entryMeta is the sidecar a row carries beside its payload. It was a bare
+// JSON string holding the fingerprint; it is an object now because a row also
+// names the record it translates BY CONTENT (see Entry.FigaroHash).
+//
+// A BARE STRING STILL DECODES: rows written before this shape carry a JSON
+// string and are read as a fingerprint with no hash, which is what they are.
+type entryMeta struct {
+	Fingerprint string `json:"fp,omitempty"`
+	FigaroHash  string `json:"rec,omitempty"`
+}
+
+func encodeMeta(fp, recordHash string) []byte {
+	if fp == "" && recordHash == "" {
 		return nil
 	}
-	b, _ := json.Marshal(fp)
+	b, _ := json.Marshal(entryMeta{Fingerprint: fp, FigaroHash: recordHash})
 	return b
 }
 
-func decodeMeta(meta []byte) string {
+func decodeMeta(meta []byte) (fingerprint, recordHash string) {
 	if len(meta) == 0 {
-		return ""
+		return "", ""
 	}
-	var fp string
-	_ = json.Unmarshal(meta, &fp)
-	return fp
+	var obj entryMeta
+	if err := json.Unmarshal(meta, &obj); err == nil {
+		return obj.Fingerprint, obj.FigaroHash
+	}
+	var legacy string
+	_ = json.Unmarshal(meta, &legacy)
+	return legacy, ""
 }
 
 func decodeRecord[T any](r xwal.Record) (Entry[T], bool) {
@@ -53,7 +68,8 @@ func decodeRecord[T any](r xwal.Record) (Entry[T], bool) {
 		LT:                 r.ChannelLT,
 		FigaroLT:           r.MainLT,
 		Payload:            v,
-		Fingerprint:        decodeMeta(r.Meta),
+		Fingerprint:        fingerprintOf(r.Meta),
+		FigaroHash:         recordHashOf(r.Meta),
 		FormChannelVersion: r.Cursors[chanForm],
 		StudyVersions:      studyCursors(r.Cursors),
 		EncodedBytes:       len(r.Payload),
@@ -193,7 +209,16 @@ func (l *xwalLog[T]) Len() int {
 	return n
 }
 
-func (l *xwalLog[T]) ReadFrom(figaroLT uint64, n int) []Entry[T] {
+// ReadFrom returns up to n entries from a coordinate in THIS CHANNEL'S OWN
+// index. It used to take a FigaroLT on every channel, which on a side channel
+// is a FOREIGN key: the start had to be found by BINARY SEARCH with a ReadAt
+// per probe, and every entry read was then re-checked against it.
+//
+// Both are gone. A channel is addressed by its own LT -- the main channel
+// always was (figwal guarantees main-LT == channel-LT there) and the
+// translation channels are now too -- so the start index IS the coordinate,
+// at O(1) and with no per-entry predicate.
+func (l *xwalLog[T]) ReadFrom(lt uint64, n int) []Entry[T] {
 	var out []Entry[T]
 	_ = l.openOnce(func(xw *xwal.XWAL) error {
 		first, last, ok := channelBounds(xw, l.channel)
@@ -203,40 +228,13 @@ func (l *xwalLog[T]) ReadFrom(figaroLT uint64, n int) []Entry[T] {
 		if n > 0 {
 			out = make([]Entry[T], 0, n)
 		}
-		// Seek to the watermark instead of scanning to it. This used to ReadAt
-		// every record from the head and merely skip the ones below figaroLT,
-		// which made a suffix read O(N) reads for O(suffix) results.
 		start := first
-		if figaroLT > first {
-			if l.isMain {
-				// The main channel is identity: figwal guarantees
-				// main-LT == channel-LT there: so the start index IS the
-				// watermark. O(1), no search.
-				start = figaroLT
-			} else {
-				// A side channel's main-LT is non-decreasing but not equal to
-				// its channel-LT, so the start has to be found. Binary search
-				lo, hi := first, last
-				for lo < hi {
-					mid := lo + (hi-lo)/2
-					r, err := xw.ReadAt(l.channel, mid)
-					if err != nil {
-						// A hole: step past it rather than guess a half.
-						lo = mid + 1
-						continue
-					}
-					if r.MainLT < figaroLT {
-						lo = mid + 1
-					} else {
-						hi = mid
-					}
-				}
-				start = lo
-			}
+		if lt > first {
+			start = lt
 		}
-		for lt := start; lt <= last && (n <= 0 || len(out) < n); lt++ {
-			r, err := xw.ReadAt(l.channel, lt)
-			if err != nil || r.MainLT < figaroLT {
+		for i := start; i <= last && (n <= 0 || len(out) < n); i++ {
+			r, err := xw.ReadAt(l.channel, i)
+			if err != nil {
 				continue
 			}
 			if e, ok := decodeRecord[T](r); ok {
@@ -296,6 +294,26 @@ func (l *xwalLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
 	return decodeRecord[T](rec)
 }
 
+// ForkBase is the first coordinate THIS node owns of this channel, in the
+// CHANNEL'S OWN key space -- 0 where nothing is inherited. It is not the main
+// channel's fork base and the two are not interchangeable.
+func (l *xwalLog[T]) ForkBase() (uint64, bool) {
+	var (
+		base  uint64
+		found bool
+	)
+	_ = l.openOnce(func(xw *xwal.XWAL) error {
+		for _, c := range xw.Channels() {
+			if c.Name == l.channel {
+				base, found = c.ForkBase, true
+				break
+			}
+		}
+		return nil
+	})
+	return base, found
+}
+
 func (l *xwalLog[T]) PeekTail() (Entry[T], bool) {
 	var (
 		rec xwal.Record
@@ -335,26 +353,25 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	if err != nil {
 		return Entry[T]{}, fmt.Errorf("xwalLog append marshal: %w", err)
 	}
-	meta := encodeMeta(e.Fingerprint)
+	meta := encodeMeta(e.Fingerprint, e.FigaroHash)
 	if l.isMain {
 		// The stamp moment: alongside the automatic own-channel cursors,
 		// record where every OBSERVED form stands right now. This is the
-		_, lt, aerr := l.store.trunks.AppendCursors(l.ariaID, payload, meta, l.store.observedCursors(l.ariaID))
+		_, lt, cursors, aerr := l.store.trunks.AppendCursors(l.ariaID, payload, meta, l.store.observedCursors(l.ariaID))
 		if aerr != nil {
 			return Entry[T]{}, aerr
 		}
 		e.LT = lt
 		e.FigaroLT = lt
-		// READ THE RECORD BACK. The append STAMPS the entry with the
-		// form cursor -- where the board stood at this LT -- and that
-		// struct does not have it and never did, so returning the caller's
 		if serr := l.store.trunks.SyncChannelThrough(l.ariaID, l.channel, lt); serr != nil {
 			return Entry[T]{}, fmt.Errorf("sync %s: %w", l.channel, serr)
 		}
-		if stamped, ok := l.readBack(lt); ok {
-			e.FormChannelVersion = stamped.FormChannelVersion
-			e.StudyVersions = stamped.StudyVersions
-		}
+		// THE STAMP COMES BACK FROM THE APPEND THAT WROTE IT. It is computed
+		// under the main channel's lock and was previously recovered by
+		// reading the record out of the log again -- one ReadAt per append to
+		// learn a value the writer had in hand.
+		e.FormChannelVersion = cursors[chanForm]
+		e.StudyVersions = studyCursors(cursors)
 		return e, nil
 	}
 	lt, aerr := l.store.trunks.Append(l.ariaID, l.channel, e.FigaroLT, payload, meta)
@@ -368,25 +385,13 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	return e, nil
 }
 
-// readBack decodes the record just appended, for the fields the store
-// stamps and the caller cannot know. Failure is not fatal: the entry is
-func (l *xwalLog[T]) readBack(lt uint64) (Entry[T], bool) {
-	var out Entry[T]
-	var ok bool
-	_ = l.openOnce(func(xw *xwal.XWAL) error {
-		r, err := xw.ReadAt(l.channel, lt)
-		if err != nil {
-			return nil
-		}
-		out, ok = decodeRecord[T](r)
-		return nil
-	})
-	return out, ok
-}
-
 // Clear goes through Store.Clear, which drops the channel's pending
 // flush buffer atomically with the on-disk wipe, a raw XWAL.Clear
 // would race the flusher into resurrecting wiped records.
 func (l *xwalLog[T]) Clear() error {
 	return l.store.trunks.Clear(l.ariaID, l.channel)
 }
+
+func fingerprintOf(meta []byte) string { fp, _ := decodeMeta(meta); return fp }
+
+func recordHashOf(meta []byte) string { _, h := decodeMeta(meta); return h }

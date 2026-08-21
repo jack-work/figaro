@@ -55,9 +55,7 @@ func (p *interruptedToolProvider) Send(ctx context.Context, in provider.SendInpu
 		Content:   []message.Content{{Type: message.ContentThinking, Text: "half a thought"}, call},
 		Timestamp: time.Now().UnixMilli(),
 	}
-	if _, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
-		return err
-	}
+	// The provider does not append; the fig IR side does, on PushFigaro.
 	bus.PushFigaro(msg)
 	return nil
 }
@@ -128,10 +126,12 @@ func TestInterruptedTurn_BuiltRequestPairsEveryToolUse(t *testing.T) {
 	}
 
 	p := &Provider{}
-	projection, err := p.catchUp(figLog, nil, nil, nil)
-	require.NoError(t, err, "the post-interrupt IR must project to a request at all")
+	// A ROW LOG IS NOT OPTIONAL ANY MORE: a send that cannot write its rows
+	// fails rather than encoding a second copy in memory.
+	messages, _, err := p.catchUp(figLog, store.NewMemLog[[]json.RawMessage](), nil, nil)
+	require.NoError(t, err, "the post-interrupt IR must translate to a request at all")
 
-	assertToolUsePairing(t, projection.Messages)
+	assertToolUsePairing(t, messages)
 }
 
 // assertToolUsePairing is the invariant the API enforces and a 400 reports

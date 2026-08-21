@@ -94,13 +94,32 @@ type OwnerInfo struct {
 // owns each aria's shared log instance until Remove / Close: callers
 // never close what Open returns.
 type Backend interface {
-	// Open returns the figaro IR Stream for an aria. The same shared,
-	// memoized instance is returned for every call (so a live agent
-	// and a concurrent aria.read see the same rows, lock-free reads).
-	Open(ariaID string) (Log[message.Message], error)
+	// AN ARIA HAS TWO KINDS OF LOG AND THEY DIFFER ONLY IN THEIR ENTRY TYPE.
+	// Both are Log[T] of Entry[T]; what changes is T and who may derive it.
+	//
+	// OpenFigIR returns the fig IR: Entry[message.Message], CANONICAL, the
+	// aria's own history, derivable from nothing. The same shared, memoized
+	// instance is returned for every call, so a live agent and a concurrent
+	// reader see the same entries with lock-free reads.
+	OpenFigIR(ariaID string) (Log[message.Message], error)
 
-	// OpenTranslation returns the per-provider translator Stream.
-	OpenTranslation(ariaID, providerName string) (Log[[]json.RawMessage], error)
+	// OpenTranslator returns one provider's translation of that history:
+	// Entry[[]json.RawMessage], DERIVED, rebuildable from the fig IR by a
+	// catch-up. Each entry names the fig IR entry it translates.
+	OpenTranslator(ariaID, providerName string) (Log[[]json.RawMessage], error)
+
+	// CloseOpenToolCalls closes every tool invoke this aria's history left
+	// outstanding, with an error result each, and reports how many. The IR
+	// write path does this on its next append anyway; calling it is for the
+	// INTERRUPT PATH, where the history must be well-formed the moment the
+	// turn ends rather than the next time somebody writes.
+	//
+	// IT IS A BACKEND OPERATION AND NOT A METHOD ON Log, because Log is what
+	// every channel implements and a translator log has no tool calls. It was
+	// previously reached by asserting an anonymous interface on the value Open
+	// returned, which made the real contract "a Log, plus a method you have to
+	// guess at".
+	CloseOpenToolCalls(ariaID string) (int, error)
 
 	// FormState folds the aria's reducible form channel to
 	// its current snapshot. The channel is the durable truth; there is
