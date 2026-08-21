@@ -1405,8 +1405,8 @@ flow writes both through the daemon, so a client never has to know the path.`,
 	r.Register(&cmdkit.Command{
 		Name:  "doctor",
 		Group: "System",
-		Short: "Store and provider health: gc removes dead channels; schema reports channel versions; mem reports the daemon's footprint; provider shows recent provider round-trips (including in-flight); librettos recounts derived-form observers; skills lists what the binary ships",
-		Usage: "doctor <gc [--dry-run] | schema | term | mem [-j] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | skills [-j]>",
+		Short: "Store and provider health: gc removes dead channels; schema reports channel versions; mem reports the daemon's footprint; provider shows recent provider round-trips (including in-flight); librettos recounts derived-form observers; skills lists what the binary ships; ttl lists the nodes carrying a lifetime and when it is spent",
+		Usage: "doctor <gc [--dry-run] | schema | term | mem [-j] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | skills [-j] | ttl [-j]>",
 		Flags: []cmdkit.FlagDef{
 			{Long: "dry-run", Short: "n", IsBool: true, Description: "Report what would be removed without touching the store"},
 			{Long: "json", Short: "j", IsBool: true, Description: "Machine-readable output (mem, provider)"},
@@ -1416,7 +1416,7 @@ flow writes both through the daemon, so a client never has to know the path.`,
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			if len(ctx.Args) != 1 {
-				return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | skills [-j]>")
+				return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | skills [-j] | ttl [-j]>")
 			}
 			switch ctx.Args[0] {
 			case "gc":
@@ -1433,8 +1433,10 @@ flow writes both through the daemon, so a client never has to know the path.`,
 				return runDoctorLibrettos(ctx.BoolFlag("dry-run"))
 			case "skills":
 				return runDoctorSkills(ctx.BoolFlag("json"))
+			case "ttl":
+				return runDoctorTTL(ctx.BoolFlag("json"))
 			}
-			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | skills [-j]>")
+			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | skills [-j] | ttl [-j]>")
 		},
 	})
 

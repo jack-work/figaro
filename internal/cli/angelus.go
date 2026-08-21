@@ -184,6 +184,8 @@ func runAngelus() {
 		FormTemplates:      formTmpls,
 	})
 	a.Handlers = handlers.Map
+	// The TTL sweep deletes through the same four steps `figaro kill` does.
+	a.RemoveAria = handlers.RemoveAria
 
 	// Keep the embedded hush agent alive for the daemon's life. The agent
 	// self-terminates after its TTL, and the daemon (unlike the CLI) issues no
