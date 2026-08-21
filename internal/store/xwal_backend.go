@@ -1014,12 +1014,23 @@ func (b *XwalBackend) Meta(ariaID string) (*AriaMeta, error) {
 		return nil, nil
 	}
 	value := *st.Value
+	if value.MetaVersion < CurrentMetaVersion {
+		if up := b.healIdentity(ariaID, st, &value); up != nil {
+			return up, nil
+		}
+	}
 	return &value, nil
 }
-func (b *XwalBackend) SetMeta(ariaID string, meta *AriaMeta) error {
-	c := b.metaCache(ariaID)
-	c.mu.Lock()
-	defer c.mu.Unlock()
+
+// writeMetaLocked stamps the sidecar with the current shape, writes it, and
+// publishes it to the cache. The ONE writer for the three producers (the
+// agent's publish, the count healer, the identity healer), so "written
+// implies current" is a property of the write rather than a rule three
+// callers must remember. Caller holds c.mu.
+func (b *XwalBackend) writeMetaLocked(ariaID string, c *metaCache, meta *AriaMeta) error {
+	if meta != nil {
+		meta.MetaVersion = CurrentMetaVersion
+	}
 	if err := writeJSON(b.metaPath(ariaID), meta); err != nil {
 		return err
 	}
@@ -1030,6 +1041,13 @@ func (b *XwalBackend) SetMeta(ariaID string, meta *AriaMeta) error {
 	}
 	c.state.Store(st)
 	return nil
+}
+
+func (b *XwalBackend) SetMeta(ariaID string, meta *AriaMeta) error {
+	c := b.metaCache(ariaID)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return b.writeMetaLocked(ariaID, c, meta)
 }
 
 // metaCache does NOT touch. Reading the sidecar is what a LISTING does, to

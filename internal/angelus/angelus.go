@@ -185,7 +185,6 @@ func (a *Angelus) Run(ctx context.Context) error {
 
 	go a.pidMonitor(ctx)
 	a.reconcileLibrettos()
-	go a.metaBackfill(ctx)
 
 	go func() {
 		<-ctx.Done()

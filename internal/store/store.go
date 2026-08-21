@@ -56,7 +56,19 @@ type AriaMeta struct {
 	ContextLimit     int    `json:"context_limit,omitempty"`
 	ContextExact     bool   `json:"context_exact,omitempty"`
 	CreatedAtMS      int64  `json:"created_at_ms,omitempty"`
+	// MetaVersion is the shape this sidecar was last written for. A sidecar
+	// below CurrentMetaVersion is upgraded by the identity healer the next
+	// time anything READS it, and the stamp is what lets that finish: the
+	// boot pass it replaces had no completion marker and re-read every
+	// sidecar on every boot, forever, to find nothing.
+	MetaVersion int `json:"meta_version,omitempty"`
 }
+
+// CurrentMetaVersion is the sidecar shape this build writes.
+//
+//	0 -> 1  the form-derived identity fields (mantra, cwd, outfit) that
+//	        sidecars predating the metadata-only dormant listing lack.
+const CurrentMetaVersion = 1
 
 // UnmarshalJSON accepts the pre-rename loadout_* keys existing sidecars carry;
 // only outfit_* is written back.
