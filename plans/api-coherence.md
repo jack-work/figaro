@@ -152,3 +152,35 @@ it is Gluck's.
    leaves a running daemon), so a break is felt as a broken session rather
    than an error. `checkDaemonBuild` exists; does it refuse, or just warn?
 3. Priority against the boot-sweep work (`fix/daemon-lifecycle`, ede92072).
+
+## 7. What landed (2026-08-21, branch `refactor/api-coherence`)
+
+| step | commit | result |
+|---|---|---|
+| 3 — one read surface | `a6388674` | the live-or-store predicate existed **three** times (per-method in `read_handlers.go`, again as `readForHub`, again in the CLI); now `routeRead` and `readFromStore`, once each. `aria.page`/`aria.context`/`aria.form` and `AriaPageRequest` deleted; `aria.read` → `figaro.ir` |
+| contract purity | `df03bfb0` | `api/…` depends on `api/…` and stdlib only, asserted by `api/rpc/contract_test.go`. `message`, `livedoc`, `form` moved whole; the read API's wire types split to `api/aria` |
+| sdk | `6a91fd32` | `sdk.Angelus` / `sdk.Aria`. CLI files importing a server package: **36 → 4** |
+| 2 — attendance | `d7542c16` | the mint binds nothing; `attendNew` is the one move; `restoreAttendance` deleted; `fig form new` attends |
+| 4+5 — tidiness | `3610cbd3` | `methods.go` 1,012 → 118 lines, grouped by kind, one family per file; `angelus/protocol.go` 2,011 → 371 |
+
+### What the instruments caught that reasoning did not
+
+- **`fig kill` is a deletion, not a sleep.** The first run of
+  `apiregresslive.sh` asserted dormant reads against a trunk it had just
+  removed, and blamed the router. `topology_handlers.go` says so plainly; I
+  had not read it.
+- **Binding is off without a TTY.** `attendlive.sh` failed six of seven on its
+  first run with every verb a silent no-op. Live scripts need `--bind`.
+- **A stale `aria.page:` in an error message**, surviving the rename because
+  it was a string, not an identifier. The one line a stuck user reads.
+- **`--bind` outranks `FIGARO_NO_BIND`**, so a test passing both asserts
+  nothing. My test, not the code.
+
+### Open
+
+`internal/store/crashtest` failed once during the gate, under concurrent load,
+on a model divergence (`next chanLT 12, child reports 3`) — NOT the
+`[append-lost]` lines beside it, which are documented known gaps. 20 unloaded
+runs across both branches: 0 failures. Attribution under load is in progress;
+the branch touches no store code, and the finding belongs to the store
+campaign if it reproduces on main.
