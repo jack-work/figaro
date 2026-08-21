@@ -47,7 +47,7 @@ func gatherShowWindow(ctx context.Context, acli *angelus.Client, figaroID string
 	before := uint64(math.MaxUint64)
 
 	for {
-		resp, err := acli.AriaReadBefore(ctx, figaroID, 0, before, showPage)
+		resp, err := acli.IRBefore(ctx, figaroID, 0, before, showPage)
 		if err != nil {
 			return w, err
 		}

@@ -119,7 +119,7 @@ func TestEveryServedMethodIsGuarded(t *testing.T) {
 	for _, m := range []string{
 		rpc.MethodCreate, rpc.MethodFork, rpc.MethodPromote, rpc.MethodKill,
 		rpc.MethodList, rpc.MethodAttach, rpc.MethodBind, rpc.MethodResolve,
-		rpc.MethodUnbind, rpc.MethodStatus, rpc.MethodSaveBindings, rpc.MethodAriaRead,
+		rpc.MethodUnbind, rpc.MethodStatus, rpc.MethodSaveBindings, rpc.MethodIR,
 		rpc.MethodProviderLedger,
 	} {
 		if hs.Map[m] == nil {

@@ -37,64 +37,100 @@ func (h *handlers) liveAgent(id string) figaro.AgentServer {
 	return srv
 }
 
-// ariaPage serves one window of an aria's history without waking it.
-func (h *handlers) ariaPage(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	var req rpc.AriaPageRequest
+// readFromStore answers a read WITHOUT an agent, and it is the only place
+// that knows how. Both doors reach it through routeRead, and the hub hands it
+// to a per-aria connection directly: one implementation, so "what a dormant
+// aria reads like" cannot differ between the two.
+func (h *handlers) readFromStore(id, method string, params json.RawMessage) (any, bool, error) {
+	r := h.reader()
+	switch method {
+	case rpc.MethodForm:
+		snap, version, err := r.Form(id)
+		if err != nil {
+			return nil, true, err
+		}
+		return rpc.FormResponse{Snapshot: snap, Version: version}, true, nil
+
+	case rpc.MethodContext:
+		msgs, metrics, err := r.Context(id)
+		if err != nil {
+			return nil, true, err
+		}
+		out := make([]any, len(msgs))
+		for i, m := range msgs {
+			out[i] = m
+		}
+		return rpc.ContextResponse{Messages: out, Metrics: metrics}, true, nil
+
+	case rpc.MethodRead:
+		var req rpc.ReadRequest
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &req); err != nil {
+				return nil, true, err
+			}
+		}
+		at := aria.Anchor{Turn: uint64(req.SinceLT)}
+		before := req.Before > 0 || req.Backward
+		if req.Before > 0 {
+			at = aria.Anchor{Turn: uint64(req.Before), Node: uint64(req.BeforeNode)}
+		}
+		page, err := r.Page(id, at, req.Limit, before)
+		if err != nil {
+			return nil, true, err
+		}
+		return page, true, nil
+	}
+	return nil, false, nil
+}
+
+// routeRead is THE router, and the only one. A read has one name on both
+// doors; this decides where the answer comes from. A live agent holds the
+// open streaming region, partial tool arguments and the in-flight turn, none
+// of which are in the store, so it answers for itself; a dormant aria is
+// answered from the store without being woken. The hub calls this for the
+// per-aria socket and the three handlers below call it for the angelus door,
+// so the two cannot drift -- which they had, as aria.page/figaro.read and
+// their two copies of the same predicate.
+func (h *handlers) routeRead(ctx context.Context, id, method string, params json.RawMessage) (any, error) {
+	if err := rpc.ValidateAriaID(id); err != nil {
+		return nil, err
+	}
+	if srv := h.liveAgent(id); srv != nil {
+		return srv.Handle(ctx, method, params)
+	}
+	v, ok, err := h.readFromStore(id, method, params)
+	if !ok {
+		return nil, fmt.Errorf("%s: not a read", method)
+	}
+	return v, err
+}
+
+// read serves one window of an aria's history: MethodRead, arriving on the
+// angelus door with the aria named in the request.
+func (h *handlers) read(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req rpc.ReadRequest
 	if err := json.Unmarshal(params, &req); err != nil {
-		return nil, fmt.Errorf("aria.page: parse params: %w", err)
+		return nil, fmt.Errorf("%s: parse params: %w", rpc.MethodRead, err)
 	}
-	if err := rpc.ValidateAriaID(req.FigaroID); err != nil {
-		return nil, err
-	}
-	if srv := h.liveAgent(req.FigaroID); srv != nil {
-		return srv.Handle(ctx, rpc.MethodRead, mustJSON(rpc.ReadRequest{
-			SinceLT: req.SinceLT, Before: req.Before,
-			BeforeNode: req.BeforeNode, Limit: req.Limit,
-			Backward: req.Backward,
-		}))
-	}
-	at := aria.Anchor{Turn: uint64(req.SinceLT)}
-	before := req.Before > 0 || req.Backward
-	if req.Before > 0 {
-		at = aria.Anchor{Turn: uint64(req.Before), Node: uint64(req.BeforeNode)}
-	}
-	return h.reader().Page(req.FigaroID, at, req.Limit, before)
+	return h.routeRead(ctx, req.FigaroID, rpc.MethodRead, params)
 }
 
-// ariaContext serves an aria's fig IR without waking it.
-func (h *handlers) ariaContext(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	id, err := ariaIDParam(params, "aria.context")
+// context serves the fig IR plus render metrics.
+func (h *handlers) context(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	id, err := ariaIDParam(params, rpc.MethodContext)
 	if err != nil {
 		return nil, err
 	}
-	if srv := h.liveAgent(id); srv != nil {
-		return srv.Handle(ctx, rpc.MethodContext, nil)
-	}
-	msgs, metrics, err := h.reader().Context(id)
-	if err != nil {
-		return nil, fmt.Errorf("aria.context: %w", err)
-	}
-	out := make([]any, len(msgs))
-	for i, m := range msgs {
-		out[i] = m
-	}
-	return rpc.ContextResponse{Messages: out, Metrics: metrics}, nil
+	return h.routeRead(ctx, id, rpc.MethodContext, nil)
 }
 
-// ariaForm serves an aria's form without waking it.
-func (h *handlers) ariaForm(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	id, err := ariaIDParam(params, "aria.form")
+// form serves an aria's durable board.
+func (h *handlers) form(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	id, err := ariaIDParam(params, rpc.MethodForm)
 	if err != nil {
 		return nil, err
 	}
-	if srv := h.liveAgent(id); srv != nil {
-		return srv.Handle(ctx, rpc.MethodForm, nil)
-	}
-	snap, version, err := h.reader().Form(id)
-	if err != nil {
-		return nil, fmt.Errorf("aria.form: %w", err)
-	}
-	return rpc.FormResponse{Snapshot: snap, Version: version}, nil
+	return h.routeRead(ctx, id, rpc.MethodForm, nil)
 }
 
 func ariaIDParam(params json.RawMessage, method string) (string, error) {

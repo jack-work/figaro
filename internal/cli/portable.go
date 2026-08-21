@@ -105,7 +105,7 @@ func runExport(loaded *config.Loaded, args []string) {
 // exportAria gathers everything portable about one aria, through the angelus -
 // so it works while the aria is live, and never touches the store's flock.
 func exportAria(ctx context.Context, acli *angelus.Client, loaded *config.Loaded, id string) (portableAria, error) {
-	resp, err := acli.AriaRead(ctx, id, 0, 0)
+	resp, err := acli.IR(ctx, id, 0, 0)
 	if err != nil {
 		return portableAria{}, fmt.Errorf("read %s: %w", id, err)
 	}

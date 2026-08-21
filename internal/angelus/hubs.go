@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -70,7 +69,7 @@ func (h *handlers) hubFor(id string) (*ariaHub, error) {
 	}
 	hb := newAriaHub(id, filepath.Join(h.angelus.FigaroSocketDir(), id+".sock"))
 	hb.wake = h.wakeForHub
-	hb.read = h.readForHub
+	hb.read = h.readFromStore
 	hb.write = h.writeForHub
 	hb.dress = h.dressParams
 	if h.angelus.Backend != nil {
@@ -194,44 +193,3 @@ func (h *handlers) wakeForHub(ctx context.Context, id string) (figaro.AgentServe
 // readForHub answers the read methods from the store. ok=false hands the
 // request back to the wake path, so an unclassified method can never be
 // silently answered from stale bytes.
-func (h *handlers) readForHub(id, method string, params json.RawMessage) (any, bool, error) {
-	r := h.reader()
-	switch method {
-	case rpc.MethodForm:
-		snap, version, err := r.Form(id)
-		if err != nil {
-			return nil, true, err
-		}
-		return rpc.FormResponse{Snapshot: snap, Version: version}, true, nil
-
-	case rpc.MethodContext:
-		msgs, metrics, err := r.Context(id)
-		if err != nil {
-			return nil, true, err
-		}
-		out := make([]any, len(msgs))
-		for i, m := range msgs {
-			out[i] = m
-		}
-		return rpc.ContextResponse{Messages: out, Metrics: metrics}, true, nil
-
-	case rpc.MethodRead:
-		var req rpc.ReadRequest
-		if len(params) > 0 {
-			if err := json.Unmarshal(params, &req); err != nil {
-				return nil, true, err
-			}
-		}
-		at := aria.Anchor{Turn: uint64(req.SinceLT)}
-		before := req.Before > 0 || req.Backward
-		if req.Before > 0 {
-			at = aria.Anchor{Turn: uint64(req.Before), Node: uint64(req.BeforeNode)}
-		}
-		page, err := r.Page(id, at, req.Limit, before)
-		if err != nil {
-			return nil, true, err
-		}
-		return page, true, nil
-	}
-	return nil, false, nil
-}

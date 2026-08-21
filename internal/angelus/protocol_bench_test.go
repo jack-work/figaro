@@ -36,7 +36,7 @@ func (b readBenchBackend) Node(id string) (store.NodeView, bool) {
 	return store.NodeView{ID: id, Kind: conversationKind}, id == "perf"
 }
 
-func newReadBench(b *testing.B, req rpc.AriaReadRequest) (*handlers, []byte) {
+func newReadBench(b *testing.B, req rpc.IRRequest) (*handlers, []byte) {
 	b.Helper()
 	log := &readBenchLog{MemLog: store.NewMemLog[message.Message]()}
 	for i := 0; i < 10_000; i++ {
@@ -55,7 +55,7 @@ func newReadBench(b *testing.B, req rpc.AriaReadRequest) (*handlers, []byte) {
 }
 
 func BenchmarkAriaReadPage10000(b *testing.B) {
-	h, params := newReadBench(b, rpc.AriaReadRequest{From: 9_900, Limit: 100})
+	h, params := newReadBench(b, rpc.IRRequest{From: 9_900, Limit: 100})
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -67,7 +67,7 @@ func BenchmarkAriaReadPage10000(b *testing.B) {
 }
 
 func BenchmarkAriaReadBefore10000(b *testing.B) {
-	h, params := newReadBench(b, rpc.AriaReadRequest{Before: 9_900, Limit: 100})
+	h, params := newReadBench(b, rpc.IRRequest{Before: 9_900, Limit: 100})
 
 	b.ReportAllocs()
 	b.ResetTimer()

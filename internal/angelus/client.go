@@ -220,27 +220,27 @@ func (c *Client) SaveBindings(ctx context.Context) (*rpc.SaveBindingsResponse, e
 	return &resp, nil
 }
 
-// AriaPage fetches ONE window of an aria's COMPOSED history: turns, built
+// Read fetches ONE window of an aria's COMPOSED history: turns, built
 // by whoever owns them (the live agent, or the reader over the store) and
 // held in the process-wide composed cache. A client renders these; it does
 // not build turns out of raw IR.
-func (c *Client) AriaPage(ctx context.Context, req rpc.AriaPageRequest) (aria.Page, error) {
+func (c *Client) Read(ctx context.Context, req rpc.ReadRequest) (aria.Page, error) {
 	var page aria.Page
-	if err := c.call(ctx, rpc.MethodAriaPage, req, &page); err != nil {
+	if err := c.call(ctx, rpc.MethodRead, req, &page); err != nil {
 		return aria.Page{}, err
 	}
 	return page, nil
 }
 
-// AriaRead fetches IR entries for an aria through the angelus's
+// IR fetches IR entries for an aria through the angelus's
 // shared LogCache.
-func (c *Client) AriaRead(ctx context.Context, figaroID string, from uint64, limit int) (*rpc.AriaReadResponse, error) {
-	return c.AriaReadBefore(ctx, figaroID, from, 0, limit)
+func (c *Client) IR(ctx context.Context, figaroID string, from uint64, limit int) (*rpc.IRResponse, error) {
+	return c.IRBefore(ctx, figaroID, from, 0, limit)
 }
 
-func (c *Client) AriaReadBefore(ctx context.Context, figaroID string, from, before uint64, limit int) (*rpc.AriaReadResponse, error) {
-	var resp rpc.AriaReadResponse
-	err := c.call(ctx, rpc.MethodAriaRead, rpc.AriaReadRequest{
+func (c *Client) IRBefore(ctx context.Context, figaroID string, from, before uint64, limit int) (*rpc.IRResponse, error) {
+	var resp rpc.IRResponse
+	err := c.call(ctx, rpc.MethodIR, rpc.IRRequest{
 		FigaroID: figaroID, From: from, Before: before, Limit: limit,
 	}, &resp)
 	if err != nil {

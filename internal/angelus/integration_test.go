@@ -294,7 +294,7 @@ model = "mock-model"
 
 	// Both children see the pre-fork prompt (shared prefix).
 	countUser := func(id, want string) int {
-		resp, rerr := acli.AriaRead(ctx, id, 0, 0)
+		resp, rerr := acli.IR(ctx, id, 0, 0)
 		require.NoError(t, rerr)
 		n := 0
 		for _, e := range resp.Entries {

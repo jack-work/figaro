@@ -37,7 +37,7 @@ func gatherShowTurns(ctx context.Context, acli *angelus.Client, figaroID string,
 		before = opts.before
 	}
 	for {
-		page, err := acli.AriaPage(ctx, rpc.AriaPageRequest{
+		page, err := acli.Read(ctx, rpc.ReadRequest{
 			FigaroID: figaroID, Before: before, BeforeNode: beforeNode,
 			Backward: true, Limit: showPageBytes,
 		})
@@ -92,7 +92,7 @@ func gatherForward(ctx context.Context, acli *angelus.Client, figaroID string, o
 	var w showTurns
 	since := opts.from
 	for {
-		page, err := acli.AriaPage(ctx, rpc.AriaPageRequest{
+		page, err := acli.Read(ctx, rpc.ReadRequest{
 			FigaroID: figaroID, SinceLT: since, Limit: showPageBytes,
 		})
 		if err != nil {

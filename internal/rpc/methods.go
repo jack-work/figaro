@@ -51,17 +51,14 @@ const (
 	MethodRead = "figaro.read"
 )
 
-// The angelus-side read methods. They take an aria id and are answered
-// from the store when no agent is live, so a dormant aria is readable
-// without waking it: reading was the last thing that pinned an agent in
-// memory. The per-aria equivalents above stay exactly as they are: when an
-// agent IS live it holds in-flight state the store does not have, and
-// these delegate to it.
-const (
-	MethodAriaPage    = "aria.page"    // one aria.Page window of sealed history
-	MethodAriaContext = "aria.context" // fig IR plus render metrics
-	MethodAriaForm    = "aria.form"    // the durable form snapshot
-)
+// A READ HAS ONE NAME. MethodRead, MethodContext and MethodForm are served
+// on BOTH doors -- an aria's own socket, where the connection says which
+// aria, and the angelus, where ReadRequest.FigaroID does. The door decides
+// nothing about the answer: one router (readRouter) forwards to a live agent
+// when there is one and reads the store when there is not, so a dormant aria
+// is readable without waking it and a client never has to know which case it
+// is in. Three duplicate names (aria.page, aria.context, aria.form) and a
+// duplicate request type died here, 2026-08-21; see plans/api-coherence.md.
 
 // MethodNeedsAgent reports whether a method requires a running turn loop.
 func MethodNeedsAgent(method string) bool {
@@ -139,10 +136,11 @@ const (
 	MethodResolve = "pid.resolve"
 	MethodUnbind  = "pid.unbind"
 
-	// MethodAriaRead returns IR entries for an aria, serving through
-	// the angelus's shared LogCache so live writes and reads don't
-	// race across processes.
-	MethodAriaRead = "aria.read"
+	// MethodIR returns raw fig IR entries for an aria, serving through the
+	// angelus's shared LogCache so live writes and reads do not race across
+	// processes. It is the one read with no per-aria twin: MethodContext is
+	// the composed view, this is the log itself.
+	MethodIR = "figaro.ir"
 
 	// MethodOutfits answers what outfits exist and how one composes. The
 	// outfits directory is the SERVER's state, so a client asks rather than
@@ -444,10 +442,15 @@ type QueueUpdateResponse struct {
 // exact node is excluded because the caller already holds it; preserving the
 // node offset keeps a clipped turn's head reachable. Limit is a byte budget.
 type ReadRequest struct {
-	SinceLT    int `json:"sinceLT,omitempty"`
-	Before     int `json:"before,omitempty"`
-	BeforeNode int `json:"before_node,omitempty"`
-	Limit      int `json:"limit,omitempty"`
+	// FigaroID names the aria when the request arrives on the ANGELUS door.
+	// On an aria's own socket the connection already says which aria, and
+	// this is empty. One request type, two doors: the field is how a client
+	// addresses a read it did not open a per-aria connection for.
+	FigaroID   string `json:"figaro_id,omitempty"`
+	SinceLT    int    `json:"sinceLT,omitempty"`
+	Before     int    `json:"before,omitempty"`
+	BeforeNode int    `json:"before_node,omitempty"`
+	Limit      int    `json:"limit,omitempty"`
 	// Backward pages toward the head. With no anchor that is THE TAIL
 	// PAGE -- the newest turns -- which a zero SinceLT cannot ask for: a
 	// forward read from a zero anchor starts at the HEAD, and a reader
@@ -929,32 +932,19 @@ type AriaIDRequest struct {
 	FigaroID string `json:"figaro_id"`
 }
 
-// AriaPageRequest is ReadRequest plus the aria it addresses. The cursor
-// fields keep ReadRequest's names and meanings so a client can move between
-// the per-aria socket and the angelus without reshaping its paging.
-type AriaPageRequest struct {
-	FigaroID   string `json:"figaro_id"`
-	SinceLT    int    `json:"sinceLT,omitempty"`
-	Before     int    `json:"before,omitempty"`
-	BeforeNode int    `json:"before_node,omitempty"`
-	Limit      int    `json:"limit,omitempty"`
-	// Backward pages toward the head; see ReadRequest.Backward.
-	Backward bool `json:"backward,omitempty"`
-}
-
-// AriaReadRequest names the aria and the window of entries to return.
+// IRRequest names the aria and the window of entries to return.
 // From is inclusive; Limit==0 means "no upper bound". The angelus
 // caps responses to a sensible upper bound regardless.
-type AriaReadRequest struct {
+type IRRequest struct {
 	FigaroID string `json:"figaro_id"`
 	From     uint64 `json:"from,omitempty"`
 	Before   uint64 `json:"before,omitempty"` // keyset pagination: return entries with LT < Before
 	Limit    int    `json:"limit,omitempty"`
 }
 
-// AriaReadEntry is one IR entry on the wire, with LT separated from
+// IREntry is one IR entry on the wire, with LT separated from
 // the payload so clients can ignore the figaro-internal envelope.
-type AriaReadEntry struct {
+type IREntry struct {
 	LT      uint64          `json:"lt"`
 	Payload json.RawMessage `json:"payload"`
 	// FormDeltas is the record's form-state window, assembled HUB-SIDE
@@ -964,10 +954,10 @@ type AriaReadEntry struct {
 	FormDeltas map[string]livedoc.FormDelta `json:"form_deltas,omitempty"`
 }
 
-type AriaReadResponse struct {
-	Entries  []AriaReadEntry `json:"entries"`
-	Total    int             `json:"total"`               // total entries in the aria
-	NextFrom uint64          `json:"next_from,omitempty"` // 0 when no more
+type IRResponse struct {
+	Entries  []IREntry `json:"entries"`
+	Total    int       `json:"total"`               // total entries in the aria
+	NextFrom uint64    `json:"next_from,omitempty"` // 0 when no more
 }
 
 // ProviderLedgerRequest reads recent provider HTTP round-trips from the

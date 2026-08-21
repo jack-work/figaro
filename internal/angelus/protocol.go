@@ -153,10 +153,10 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 			rpc.MethodStatus:         h.status,
 			rpc.MethodProviderLedger: h.providerLedger,
 			rpc.MethodSaveBindings:   h.saveBindings,
-			rpc.MethodAriaRead:       h.ariaRead,
-			rpc.MethodAriaPage:       h.ariaPage,
-			rpc.MethodAriaContext:    h.ariaContext,
-			rpc.MethodAriaForm:       h.ariaForm,
+			rpc.MethodIR:             h.ariaRead,
+			rpc.MethodRead:           h.read,
+			rpc.MethodContext:        h.context,
+			rpc.MethodForm:           h.form,
 		}, h.authenticator(), h.policy()),
 		h: h,
 	}
@@ -1723,7 +1723,7 @@ const ariaReadHardCap = 1000
 // against the agent's writes. For dormant arias the cache opens on
 // miss and the entry TTLs out naturally.
 func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	var req rpc.AriaReadRequest
+	var req rpc.IRRequest
 	if len(params) > 0 {
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, fmt.Errorf("aria.read: parse params: %w", err)
@@ -1749,16 +1749,16 @@ func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interf
 	if req.Before > 0 {
 		selected, total := log.ReadPage(0, req.Before, limit)
 		deltas := h.ariaReadDeltas(log, req.FigaroID, selected)
-		entries := make([]rpc.AriaReadEntry, len(selected))
+		entries := make([]rpc.IREntry, len(selected))
 		for i, e := range selected {
 			raw, _ := json.Marshal(e.Payload)
-			entries[i] = rpc.AriaReadEntry{LT: e.LT, Payload: raw, FormDeltas: deltas[e.LT]}
+			entries[i] = rpc.IREntry{LT: e.LT, Payload: raw, FormDeltas: deltas[e.LT]}
 		}
 		var nextBefore uint64
 		if len(selected) > 0 {
 			nextBefore = selected[0].LT
 		}
-		return &rpc.AriaReadResponse{Entries: entries, Total: total, NextFrom: nextBefore}, nil
+		return &rpc.IRResponse{Entries: entries, Total: total, NextFrom: nextBefore}, nil
 	}
 
 	selected, total := log.ReadPage(req.From, 0, limit+1)
@@ -1767,19 +1767,19 @@ func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interf
 		page = page[:limit]
 	}
 	deltas := h.ariaReadDeltas(log, req.FigaroID, page)
-	out := make([]rpc.AriaReadEntry, 0, len(page))
+	out := make([]rpc.IREntry, 0, len(page))
 	for _, e := range page {
 		raw, mErr := json.Marshal(e.Payload)
 		if mErr != nil {
 			return nil, fmt.Errorf("aria.read: marshal LT=%d: %w", e.LT, mErr)
 		}
-		out = append(out, rpc.AriaReadEntry{LT: e.LT, Payload: raw, FormDeltas: deltas[e.LT]})
+		out = append(out, rpc.IREntry{LT: e.LT, Payload: raw, FormDeltas: deltas[e.LT]})
 	}
 	var nextFrom uint64
 	if len(selected) > limit {
 		nextFrom = selected[limit].LT
 	}
-	return rpc.AriaReadResponse{
+	return rpc.IRResponse{
 		Entries:  out,
 		Total:    total,
 		NextFrom: nextFrom,
