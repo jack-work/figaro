@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/form"
+	"github.com/jack-work/figaro/api/form"
 )
 
 // Arias minted before the rename carry system.loadout_* on their form,

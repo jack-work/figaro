@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/jkrpc"
 )
 

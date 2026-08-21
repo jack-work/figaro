@@ -3,7 +3,7 @@ package render
 import (
 	"strings"
 
-	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	fig "github.com/jack-work/figaro/internal/render"
 )

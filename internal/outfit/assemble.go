@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/jack-work/figaro/internal/form"
+	"github.com/jack-work/figaro/api/form"
 )
 
 // NameDefault, as an outfit name, means whatever config calls the default

@@ -8,7 +8,7 @@ import (
 	"slices"
 	"sort"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // Snapshot is an untyped key-value view. Values are raw JSON;

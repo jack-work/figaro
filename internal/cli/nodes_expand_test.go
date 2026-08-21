@@ -6,7 +6,7 @@ import (
 
 	"github.com/mattn/go-runewidth"
 
-	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/api/livedoc"
 )
 
 // tallTableMarkdown is a table that needs well over a dozen physical rows once

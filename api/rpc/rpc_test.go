@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/api/rpc"
 )
 
 // roundTripValue marshals v, unmarshals it back, and asserts equality.

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
 )

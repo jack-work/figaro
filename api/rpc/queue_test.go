@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/api/rpc"
 )
 
 // The queue wire: identity (epoch + id), the hangup's queue disposition, and

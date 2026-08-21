@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/api/rpc"
 )
 
 type forkCallResult struct {

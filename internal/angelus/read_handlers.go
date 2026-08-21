@@ -8,7 +8,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/livelog/aria"
-	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/uiir"
 )
 

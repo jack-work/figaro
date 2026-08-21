@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/internal/partialjson"
 	"github.com/jack-work/figaro/internal/render"
 	"github.com/jack-work/figaro/internal/term"

@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/tokens"
 )
 

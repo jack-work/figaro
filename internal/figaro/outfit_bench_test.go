@@ -2,14 +2,14 @@ package figaro_test
 
 import (
 	"fmt"
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/figaro/internal/form"
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/api/livedoc"
 )
 
 // AN EDIT MUST SHOW THE EDIT.

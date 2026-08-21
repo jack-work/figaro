@@ -5,7 +5,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/api/livedoc"
 )
 
 func benchmarkServer(n int) *Server {

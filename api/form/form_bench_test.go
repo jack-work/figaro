@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/form"
+	"github.com/jack-work/figaro/api/form"
 )
 
 // Form microbenchmarks: the BEFORE measurement for the

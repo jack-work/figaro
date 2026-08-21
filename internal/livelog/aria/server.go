@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/api/livedoc"
 )
 
 // Server materializes one aria's turns and broadcasts changes as Pages.

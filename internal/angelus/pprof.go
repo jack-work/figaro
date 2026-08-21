@@ -12,7 +12,7 @@ import (
 	"runtime"
 	"runtime/debug"
 
-	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/api/rpc"
 )
 
 // PprofEnv arms the profiler when set. Off by default because pprof's

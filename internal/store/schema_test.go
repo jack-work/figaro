@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // seedSchemaStore builds a store with one conversation carrying IR messages

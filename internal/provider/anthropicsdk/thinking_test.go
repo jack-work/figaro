@@ -6,7 +6,7 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 
-	"github.com/jack-work/figaro/internal/form"
+	"github.com/jack-work/figaro/api/form"
 )
 
 const budgetModel = "claude-3-5-sonnet" // not adaptive → budget-based thinking

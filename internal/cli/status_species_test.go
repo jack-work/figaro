@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/form"
-	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/rpc"
 )
 
 // status must answer for every species, and say which one it is answering

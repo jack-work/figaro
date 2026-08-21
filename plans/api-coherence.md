@@ -24,9 +24,10 @@ gone; `internal/figaro/server.go` owns the method table; the figaro-side
 `protocol.go` is **14 lines** — the plan hoped for ~60.
 
 **Then the plan was deleted** by `4b5f40b7` (2026-05-10, "migrate plans/ and
-docs/ to figaro-la/docs"). It is on no branch of this repo. Its sibling,
-`docs/cli-architecture-dossier.md` (`1cffcaaf`), is what produced `cmdkit` and
-router-based dispatch — the same fate.
+docs/ to figaro-la/docs"). It is on no branch of this repo. Its sibling — the CLI architecture dossier added by `1cffcaaf`, deleted in
+the same migration, and named here by revision because the path no longer
+resolves (`git show 1cffcaaf --stat`) — is what produced `cmdkit` and
+router-based dispatch.
 
 **And the surface re-accreted.** Five methods on the figaro socket in May;
 today:
@@ -126,7 +127,23 @@ it is Gluck's.
 | 4 | regroup `methods.go` by kind; delete what nothing calls | `deadcode -test` as the oracle, as W9 did (−492 lines then) |
 | 5 | slim `angelus/protocol.go` — the handler table is a table, the handlers move out | line count, and no behaviour change |
 
-## 5. Open questions for Gluck
+## 5. Rulings (Gluck, 2026-08-21)
+
+1. **`fig form new` attends.** Attendance is not a species difference.
+2. **No protos yet.** There is no IDL today and never was: the contract is Go
+   structs with json tags, imported by both sides. When a browser client is
+   real, the recommendation is buf + Connect (protos as IDL, JSON over
+   HTTP/1.1, no proxy, streaming maps onto the existing pushes) rather than
+   gRPC proper, and only AFTER the contract is plain data -- generating an IDL
+   from types that embed `aria.Page` and `form.Snapshot` relocates the
+   coupling into the `.proto` instead of removing it.
+3. **Future constraints recorded**: a browser client; middleware split (the
+   promotion layer entirely); the topology form's deviation from the on-disk
+   topology should be ADDITIVE. Note that step 3 below is the prerequisite for
+   all three -- while the CLI picks its socket by whether an agent is live,
+   nothing can sit between client and daemon.
+
+## 6. Open questions for Gluck
 
 1. Does `fig form new` attend? (§2.3)
 2. Is a wire break acceptable again? The May plan said "old clients fail

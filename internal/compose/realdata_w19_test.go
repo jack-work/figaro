@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // Real-data proof for S32: every turn in a genuine 173-message aria: written

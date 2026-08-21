@@ -1,8 +1,8 @@
 package compose
 
 import (
-	"github.com/jack-work/figaro/internal/livedoc"
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/livedoc"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // Incremental composes the open region by reusing the nodes it already

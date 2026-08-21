@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // The libretto is a COPY that follows one source. These are the properties

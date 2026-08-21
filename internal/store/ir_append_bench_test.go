@@ -3,7 +3,7 @@ package store
 import (
 	"testing"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // BenchmarkIRAppend is one fig IR append on a real backend, which is the

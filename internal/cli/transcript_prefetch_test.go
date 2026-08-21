@@ -8,7 +8,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
-	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/api/rpc"
 )
 
 // slowHistoryReader serves history after a fixed delay, modelling a daemon RPC

@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 const crashChildEnv = "FIGARO_FORM_CRASH_CHILD"

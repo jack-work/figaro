@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/form"
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // The cache-miss fallback (encode from the provider-agnostic IR) must

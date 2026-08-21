@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/api/livedoc"
 )
 
 // COORDINATES: the address of a thing, drawn on the thing.

@@ -3,8 +3,8 @@ package compose
 import (
 	"testing"
 
-	"github.com/jack-work/figaro/internal/livedoc"
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/livedoc"
+	"github.com/jack-work/figaro/api/message"
 )
 
 func assistant(blocks ...message.Content) message.Message {

@@ -9,7 +9,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/api/rpc"
 )
 
 // The two hangups. They differ by ONE thing: what becomes of the messages

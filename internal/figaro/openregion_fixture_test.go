@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/api/livedoc"
 )
 
 // The benchmarks in openregion_bench_test.go are only worth their numbers if

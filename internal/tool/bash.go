@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // Default knobs for the bash tool.

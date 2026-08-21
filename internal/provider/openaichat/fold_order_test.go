@@ -6,8 +6,8 @@ import (
 	"testing"
 	"text/template"
 
-	"github.com/jack-work/figaro/internal/form"
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // Each patch renders against the board BEFORE it. Stage 1 rewrote this

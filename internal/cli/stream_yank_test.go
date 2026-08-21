@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/livelog/aria"
-	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/api/rpc"
 )
 
 // recordingTerminal is a searchInputTerminal that also records clipboard writes.

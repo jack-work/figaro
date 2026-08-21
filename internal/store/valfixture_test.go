@@ -18,7 +18,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 func TestGenerateNumberedFixture(t *testing.T) {

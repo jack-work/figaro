@@ -7,7 +7,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // THE DECODE INFLATION, RE-MEASURED ON REAL HISTORY.

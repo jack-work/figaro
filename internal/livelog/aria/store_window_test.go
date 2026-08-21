@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/api/livedoc"
 )
 
 // The phase-2 surface: what a WINDOWED reader (the pager) needs of the store

@@ -3,7 +3,7 @@ package aria
 import (
 	"testing"
 
-	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/api/livedoc"
 )
 
 // contentParts counts parts that actually carry nodes, i.e. content rather

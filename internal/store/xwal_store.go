@@ -19,8 +19,8 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/form"
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/message"
 	fwlog "github.com/jack-work/figaro/internal/store/log"
 	"github.com/jack-work/figaro/internal/store/segment"
 	"github.com/jack-work/figaro/internal/store/xwal"

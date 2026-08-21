@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // THE MEMO NEVER GOES BACKWARD. Meta reads the sidecar with NO LOCK HELD when

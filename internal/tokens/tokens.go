@@ -4,7 +4,7 @@ package tokens
 import (
 	"encoding/json"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // ContextFromUsage is the single definition of "context used" as of the turn

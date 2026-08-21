@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 func TestDaemonLikeBash(t *testing.T) {

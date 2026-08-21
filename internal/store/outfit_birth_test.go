@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // An outfit's reminders render ONCE, at the stump's birth record, in the

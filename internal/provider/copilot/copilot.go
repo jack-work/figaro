@@ -16,7 +16,7 @@ import (
 	"text/template"
 
 	"github.com/jack-work/figaro/internal/auth"
-	"github.com/jack-work/figaro/internal/form"
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/anthropic"
 	"github.com/jack-work/figaro/internal/store"

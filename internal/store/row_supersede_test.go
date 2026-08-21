@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // TWO ENTRIES AT ONE FigaroLT ARE BOTH VISIBLE, WARM AND COLD.

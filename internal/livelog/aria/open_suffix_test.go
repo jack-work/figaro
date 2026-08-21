@@ -3,7 +3,7 @@ package aria
 import (
 	"testing"
 
-	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/api/livedoc"
 )
 
 // Apply's push path already states the rule: "The live region is the OPEN

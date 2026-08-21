@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/api/livedoc"
 )
 
 // A streamed tool argument is the largest string the delta path has ever been

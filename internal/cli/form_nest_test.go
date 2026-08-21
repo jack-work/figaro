@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/form"
+	"github.com/jack-work/figaro/api/form"
 )
 
 // The form is stored flat: one dotted key, one value, one patch record: but

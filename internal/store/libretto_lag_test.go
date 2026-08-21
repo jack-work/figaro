@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // IS THE LIBRETTO BEHIND THE SOURCE AT THE MOMENT A FIG IR ENTRY IS STAMPED?

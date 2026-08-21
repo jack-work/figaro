@@ -11,8 +11,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/jack-work/figaro/internal/form"
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // librettoPrefix names the reserved stump. An outfit stump is "@" plus a hex

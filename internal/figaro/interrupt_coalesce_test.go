@@ -3,13 +3,13 @@ package figaro
 import (
 	"context"
 	"encoding/json"
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/api/rpc"
 )
 
 // The interrupt-time fold. These are the unit-level half; the agent-level

@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/form"
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/internal/livelog/aria"
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/toolout"
 

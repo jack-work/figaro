@@ -3,7 +3,7 @@ package form_test
 import (
 	"encoding/json"
 
-	"github.com/jack-work/figaro/internal/form"
+	"github.com/jack-work/figaro/api/form"
 )
 
 // THE SEAM.

@@ -6,54 +6,13 @@ import (
 	"sort"
 	"time"
 
-	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/api/livedoc"
 )
 
 // This file is the RANGE STORE: the client's model of one aria as a SET OF
 // CONTIGUOUS INTERVALS over (turn, node) space, rather than a list plus a pile
 // of booleans. See skills/figaro/contributing/range-store.md; that document is the contract and this
 // is its implementation.
-
-// maxNode is the largest representable node ordinal. It appears only as the
-// predecessor sentinel for node 0 (see Anchor.Prev).
-const maxNode = ^uint64(0)
-
-// Less orders anchors lexicographically on (Turn, Node). This is THE ordering;
-// nothing else in the tree may open-code the comparison.
-func (a Anchor) Less(b Anchor) bool {
-	if a.Turn != b.Turn {
-		return a.Turn < b.Turn
-	}
-	return a.Node < b.Node
-}
-
-// Next is the immediately following anchor. Within a turn it is the next node.
-// It does NOT otherwise cross a turn boundary, because an anchor does not
-// encode its turn's length: whether (t, n) is the last node of turn t is
-// knowledge the STORE holds (see Store.SetTurnLen and Store.adjacent), not
-// something the coordinate can answer alone. The one exception is the node
-// ceiling, where the lexicographic successor is unambiguous and wrapping to
-// (t, 0) would silently invert the ordering.
-func (a Anchor) Next() Anchor {
-	if a.Node == maxNode {
-		return Anchor{Turn: a.Turn + 1}
-	}
-	return Anchor{Turn: a.Turn, Node: a.Node + 1}
-}
-
-// Prev is the immediately preceding anchor: the mirror of Next. In (turn,
-// node) space ordered lexicographically the predecessor of (t, 0) is the last
-// node of turn t-1, which with uint64 ordinals is (t-1, maxNode). The zero
-// anchor is its own predecessor: it is the floor.
-func (a Anchor) Prev() Anchor {
-	if a.Node > 0 {
-		return Anchor{Turn: a.Turn, Node: a.Node - 1}
-	}
-	if a.Turn == 0 {
-		return a
-	}
-	return Anchor{Turn: a.Turn - 1, Node: maxNode}
-}
 
 // Range is a contiguous, fully-materialized run. From/To are inclusive and
 // describe the SLICE COVERAGE, not just the first and last message: a range

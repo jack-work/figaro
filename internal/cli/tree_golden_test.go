@@ -3,7 +3,7 @@ package cli
 import (
 	"testing"
 
-	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/api/rpc"
 )
 
 // treeFixture is a shape with everything the walkers have to get right: a

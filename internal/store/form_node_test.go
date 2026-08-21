@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 func patchOf(t *testing.T, kv map[string]string) message.Patch {

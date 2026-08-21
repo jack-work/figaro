@@ -3,7 +3,7 @@ package aria
 import (
 	"testing"
 
-	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/api/livedoc"
 )
 
 // These assert the shim's side of the phase-1 contract: the store beneath

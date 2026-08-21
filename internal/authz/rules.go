@@ -1,7 +1,7 @@
 package authz
 
 import (
-	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/api/rpc"
 )
 
 // TurnActiveFunc reports whether the named aria has a turn in flight.

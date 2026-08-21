@@ -3,7 +3,7 @@ package store
 import (
 	"testing"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // WHERE IS THE DUPLICATION, actually?

@@ -3,7 +3,7 @@ package aria
 import (
 	"testing"
 
-	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/api/livedoc"
 )
 
 // A catch-up read of a turn TOO BIG FOR ONE PAGE comes back clipped at the

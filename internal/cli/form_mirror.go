@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/jack-work/figaro/internal/form"
-	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/rpc"
 )
 
 // formMirror is a client's OWN copy of an aria's form, kept live by applying the

@@ -6,7 +6,7 @@ package turns
 import (
 	"strings"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // Opens reports whether m begins a new turn.

@@ -11,8 +11,8 @@ import (
 
 	"github.com/jack-work/jkrpc"
 
-	"github.com/jack-work/figaro/internal/form"
-	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/rpc"
 )
 
 func TestCompleteFormKeys_IncludesAllKnownAndExpandsEnv(t *testing.T) {

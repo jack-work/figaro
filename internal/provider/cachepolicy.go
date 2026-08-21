@@ -3,8 +3,8 @@ package provider
 import (
 	"strings"
 
-	"github.com/jack-work/figaro/internal/form"
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // CacheControlKey is the form key that overrides the automatic

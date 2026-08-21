@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/api/livedoc"
 )
 
 func fd(form string, kind livedoc.FormKind, event livedoc.FormEvent, val string) livedoc.FormDelta {

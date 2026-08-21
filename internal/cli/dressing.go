@@ -10,7 +10,7 @@ import (
 	"github.com/jack-work/figaro/internal/transport"
 
 	"github.com/jack-work/figaro/internal/outfit"
-	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/api/rpc"
 )
 
 // dressing is what the three dressing flags produced: the text as typed, for

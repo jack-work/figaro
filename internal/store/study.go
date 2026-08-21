@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // StudyDecl is one declaration's verdict: the set that LANDED, and the board

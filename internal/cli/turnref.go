@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/turns"
 )
 

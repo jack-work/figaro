@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // THE ENTRY AN APPEND RETURNS CARRIES THE SAME STAMP THE LOG DOES.

@@ -2,7 +2,7 @@ package figaro_test
 
 import (
 	"encoding/json"
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 	"testing"
 	"time"
 
@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/figaro/internal/form"
-	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/uiir"
 )

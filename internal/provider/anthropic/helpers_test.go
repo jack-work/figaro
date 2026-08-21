@@ -3,8 +3,8 @@ package anthropic
 import (
 	"encoding/json"
 
-	"github.com/jack-work/figaro/internal/form"
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // projectMessages renders a whole IR slice for tests that want

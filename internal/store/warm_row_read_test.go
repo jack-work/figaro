@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // A ROW APPENDED MUST BE VISIBLE TO THE VERY NEXT READ ON THE SAME HANDLE.

@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 func TestGeneratePerformanceFixture(t *testing.T) {

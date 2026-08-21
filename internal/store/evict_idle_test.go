@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // The daemon held every aria it had ever touched: cachedLog decodes a whole

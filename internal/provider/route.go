@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/jack-work/figaro/internal/form"
+	"github.com/jack-work/figaro/api/form"
 )
 
 // Dialect names the wire format a route speaks. It is deliberately separate

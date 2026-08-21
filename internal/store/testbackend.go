@@ -1,6 +1,6 @@
 package store
 
-import "github.com/jack-work/figaro/internal/message"
+import "github.com/jack-work/figaro/api/message"
 
 // TestingTB is the slice of *testing.T this package needs. It is declared here
 // so the store does not import "testing" -- which would register test flags in

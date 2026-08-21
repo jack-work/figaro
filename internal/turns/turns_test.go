@@ -3,7 +3,7 @@ package turns
 import (
 	"testing"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 func userMsg(cs ...message.Content) message.Message {

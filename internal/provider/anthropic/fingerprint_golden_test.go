@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/form"
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // THE FINGERPRINT IS THE MECHANISM; THIS IS ITS TRIPWIRE.

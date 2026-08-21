@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/api/rpc"
 )
 
 // The verdict is the product. A table of HTTP statuses is evidence; an

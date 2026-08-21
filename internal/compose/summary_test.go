@@ -3,7 +3,7 @@ package compose
 import (
 	"testing"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 func TestNodes_Summary_IsGenericKeyValues(t *testing.T) {

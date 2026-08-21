@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // ProcessTool operates on backgrounded exec sessions created by the

@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // figIRLog is the ONE write path into an aria's fig IR channel: every Append,

@@ -3,7 +3,7 @@ package aria
 import (
 	"testing"
 
-	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/api/livedoc"
 )
 
 // A steer is an INLINE ANNOTATION, not a voice change.

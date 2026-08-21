@@ -1,6 +1,6 @@
 package render
 
-import "github.com/jack-work/figaro/internal/livedoc"
+import "github.com/jack-work/figaro/api/livedoc"
 
 // defaultFrames is the braille spinner used for running blocks.
 var defaultFrames = []rune("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")

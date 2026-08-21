@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/term"
 )
 

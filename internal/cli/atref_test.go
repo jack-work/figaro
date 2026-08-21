@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/form"
+	"github.com/jack-work/figaro/api/form"
 )
 
 func mkSnap(t *testing.T, kv map[string]any) form.Snapshot {

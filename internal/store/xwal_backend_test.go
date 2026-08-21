@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/form"
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/message"
 )
 
 func TestXwalBackend_EndToEnd(t *testing.T) {

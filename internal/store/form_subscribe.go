@@ -6,8 +6,8 @@ package store
 import (
 	"sync/atomic"
 
-	"github.com/jack-work/figaro/internal/form"
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // Event is one committed patch, as a subscriber sees it.

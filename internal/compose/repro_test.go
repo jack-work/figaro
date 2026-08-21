@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/internal/livelog/aria"
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // drive feeds a sequence of frames (each a full turn message set, as

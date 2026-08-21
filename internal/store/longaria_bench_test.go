@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 func BenchmarkCachedLogReadLongAria(b *testing.B) {

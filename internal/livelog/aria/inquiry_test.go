@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/api/livedoc"
 )
 
 // A CLIENT ALWAYS HAS THE QUESTION, AND KNOWS WHO ASKED IT.

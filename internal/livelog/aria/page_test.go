@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/api/livedoc"
 )
 
 // padNode builds a node whose serialized size is dominated by markdown of the

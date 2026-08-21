@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/jack-work/figaro/internal/form"
+	"github.com/jack-work/figaro/api/form"
 )
 
 // Benchmark fixtures. Three boards, all deterministic:

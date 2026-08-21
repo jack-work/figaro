@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/mattn/go-runewidth"

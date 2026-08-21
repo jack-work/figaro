@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/jack-work/figaro/internal/livelog/aria"
-	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/transport"
 	"github.com/jack-work/jkrpc"
 )

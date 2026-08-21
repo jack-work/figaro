@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // A CALL WHOSE ARGUMENTS NEVER ARRIVED IS REFUSED, NOT GUESSED.

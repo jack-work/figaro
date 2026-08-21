@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/tape"
 	"github.com/jack-work/figaro/internal/transport"
 	"github.com/jack-work/jkrpc"

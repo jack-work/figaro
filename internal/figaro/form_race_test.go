@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/internal/form"
+	"github.com/jack-work/figaro/api/form"
 )
 
 // TestFormRPCRaceRepro drives the two goroutines that the design

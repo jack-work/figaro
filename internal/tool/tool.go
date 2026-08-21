@@ -3,7 +3,7 @@ package tool
 import (
 	"context"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // OnOutput is called with streaming output chunks. nil = no streaming.

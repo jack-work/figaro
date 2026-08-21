@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/internal/compose"
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 // THE QUADRATIC THE DELTA SEAM WAS OPENED FOR, priced before it is touched.
