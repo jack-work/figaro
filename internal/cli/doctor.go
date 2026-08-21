@@ -341,3 +341,48 @@ func runDoctorLibrettos(dryRun bool) error {
 		map[bool]string{true: "; run without --dry-run", false: ""}[dryRun])
 	return nil
 }
+
+// runDoctorToolCalls closes tool invokes that no result ever answered.
+//
+// The door keeps this from happening going forward, so what this finds is
+// history written by a figaro older than the door. An aria carrying one is
+// refused by every provider on every send -- "tool_use ids were found without
+// tool_result blocks" -- and cannot be used again until it is closed.
+func runDoctorToolCalls(dryRun bool) error {
+	if cli, err := sdk.DialAngelus(transport.UnixEndpoint(angelusSocketPath())); err == nil {
+		cli.Close()
+		return fmt.Errorf("angelus is running; stop it first (figaro stop)")
+	}
+	be, err := store.NewXwalBackend(ariaRoot(), 0)
+	if err != nil {
+		return err
+	}
+	defer be.Close()
+
+	arias, repaired := 0, 0
+	for _, cv := range be.Conversations() {
+		n, err := be.UnmatchedToolCalls(cv.ID)
+		if err != nil || n == 0 {
+			continue
+		}
+		arias++
+		fmt.Printf("%-10s %d unanswered tool call(s)\n", cv.ID, n)
+		if dryRun {
+			continue
+		}
+		if fixed, err := be.RepairToolCalls(cv.ID); err != nil {
+			fmt.Fprintf(os.Stderr, "  %s: %v\n", cv.ID, err)
+		} else {
+			repaired += fixed
+		}
+	}
+	switch {
+	case arias == 0:
+		fmt.Println("no aria carries an unanswered tool call")
+	case dryRun:
+		fmt.Printf("\n%d aria(s) would be repaired; run without --dry-run\n", arias)
+	default:
+		fmt.Printf("\nclosed %d call(s) across %d aria(s)\n", repaired, arias)
+	}
+	return nil
+}

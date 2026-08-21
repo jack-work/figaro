@@ -34,6 +34,14 @@ type figIRLog struct {
 	loaded  bool
 }
 
+// roundLookback bounds the tail read that resolves outstanding invokes. THE
+// FIG IR IS CORRECT BY CONSTRUCTION: every append through this door closes
+// what it opened, so the only invokes that can be open when a door is created
+// belong to the LAST round -- an assistant message and the results after it.
+// A whole-history read to find them would be O(history) on a path every
+// append takes, to answer a question about the tail.
+const roundLookback = 64
+
 const (
 	// toolClosedNotice is the result text for an invoke the door had to close.
 	toolClosedNotice = "tool call closed without a result (interrupt, fork, or fault)"
@@ -45,10 +53,7 @@ const (
 func (l *figIRLog) Append(e Entry[message.Message]) (Entry[message.Message], error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if !l.loaded {
-		l.pending = outstandingInvokes(l.Log.Read())
-		l.loaded = true
-	}
+	l.resolvePending()
 
 	results, others := splitToolResults(e.Payload)
 	var late []message.Content
@@ -133,10 +138,7 @@ func GuardIR(inner Log[message.Message]) Log[message.Message] {
 func (l *figIRLog) CloseOpenToolCalls() (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if !l.loaded {
-		l.pending = outstandingInvokes(l.Log.Read())
-		l.loaded = true
-	}
+	l.resolvePending()
 	if len(l.pending) == 0 {
 		return 0, nil
 	}
@@ -179,16 +181,32 @@ func (l *figIRLog) isPending(id string) bool {
 
 // outstandingInvokes reports the invokes of the last assistant message that
 // still lack results, which is the door's state after a restart or a fork.
-// outstandingInvokes is every invoke in the history with no result anywhere
-// after it. It reads the WHOLE history: it used to examine only the last
-// invoke-bearing message, so an orphan with a well-formed round after it was
-// invisible to every repair figaro has, and the aria was refused by every
-// provider on every send, forever (Gluck, 0.28.1: "messages.98: tool_use ids
-// were found without tool_result blocks"). The door prevents new ones, so
-// these come from history written before the door existed.
+// resolvePending reads what is open, ONCE, from the tail. Never at load: a
+// door that is created and never written costs nothing, and one that is
+// written resolves the current round rather than the history.
+func (l *figIRLog) resolvePending() {
+	if l.loaded {
+		return
+	}
+	l.pending = outstandingInvokes(TailSnapshot(l.Log, roundLookback))
+	l.loaded = true
+}
+
+// outstandingInvokes is the invokes of the last invoke-bearing message that
+// nothing after it answered. rows is a TAIL, not a history.
 func outstandingInvokes(rows []Entry[message.Message]) []message.Content {
+	at := -1
+	for i := len(rows) - 1; i >= 0; i-- {
+		if len(assistantInvokes(rows[i].Payload)) > 0 {
+			at = i
+			break
+		}
+	}
+	if at < 0 {
+		return nil
+	}
 	answered := map[string]bool{}
-	for _, e := range rows {
+	for _, e := range rows[at+1:] {
 		for _, c := range e.Payload.Content {
 			if c.Type == message.ContentToolResult {
 				answered[c.ToolCallID] = true
@@ -196,11 +214,9 @@ func outstandingInvokes(rows []Entry[message.Message]) []message.Content {
 		}
 	}
 	var open []message.Content
-	for _, e := range rows {
-		for _, inv := range assistantInvokes(e.Payload) {
-			if !answered[inv.ToolCallID] {
-				open = append(open, inv)
-			}
+	for _, inv := range assistantInvokes(rows[at].Payload) {
+		if !answered[inv.ToolCallID] {
+			open = append(open, inv)
 		}
 	}
 	return open
@@ -238,4 +254,65 @@ func keepContent(in []message.Content, keep func(message.Content) bool) []messag
 		}
 	}
 	return out
+}
+
+// UnmatchedToolCalls counts the invokes in an aria's history that no result
+// answered. Read-only; the audit half of RepairToolCalls.
+func (b *XwalBackend) UnmatchedToolCalls(ariaID string) (int, error) {
+	b.mu.Lock()
+	h, err := b.handleLocked(ariaID)
+	b.mu.Unlock()
+	if err != nil {
+		return 0, err
+	}
+	return len(unansweredInvokes(h.ir.Read())), nil
+}
+
+// unansweredInvokes is every invoke in rows with no result anywhere after it.
+func unansweredInvokes(rows []Entry[message.Message]) []message.Content {
+	answered := map[string]bool{}
+	for _, e := range rows {
+		for _, c := range e.Payload.Content {
+			if c.Type == message.ContentToolResult {
+				answered[c.ToolCallID] = true
+			}
+		}
+	}
+	var open []message.Content
+	for _, e := range rows {
+		for _, inv := range assistantInvokes(e.Payload) {
+			if !answered[inv.ToolCallID] {
+				open = append(open, inv)
+			}
+		}
+	}
+	return open
+}
+
+// RepairToolCalls closes every unanswered invoke in an aria's whole history
+// and reports how many it closed. It is the ONE place that reads the history
+// to find them: the door maintains the invariant going forward, so this
+// exists for arias whose records predate it. Run by `figaro doctor toolcalls`,
+// never on a read path.
+func (b *XwalBackend) RepairToolCalls(ariaID string) (int, error) {
+	b.mu.Lock()
+	h, err := b.handleLocked(ariaID)
+	b.mu.Unlock()
+	if err != nil {
+		return 0, err
+	}
+	open := unansweredInvokes(h.ir.Read())
+	if len(open) == 0 {
+		return 0, nil
+	}
+	closing := message.Message{Role: message.RoleInput}
+	for _, inv := range open {
+		closing.Content = append(closing.Content,
+			message.ToolResultContent(inv.ToolCallID, inv.ToolName, toolClosedNotice, true))
+	}
+	guard := &figIRLog{Log: h.ir, backend: b, ariaID: ariaID}
+	if _, err := guard.write(Entry[message.Message]{Payload: closing}); err != nil {
+		return 0, err
+	}
+	return len(open), nil
 }

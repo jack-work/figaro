@@ -28,19 +28,19 @@ func unmatchedInvokes(rows []Entry[message.Message]) []string {
 	return open
 }
 
-// AN ORPHANED INVOKE BURIED IN HISTORY MUST STILL BE CLOSABLE.
+// THE DOOR IS BOUNDED, AND REPAIRING HISTORY IS NOT ITS JOB.
 //
-// Gluck, 0.28.1: "messages.98: tool_use ids were found without tool_result
-// blocks immediately after", on an aria whose tail was past 440. The door
-// stops NEW orphans -- it completes a set the moment anything else lands --
-// so a buried one can only come from history written before the door
-// existed, which every aria upgraded from an older figaro has.
+// Gluck's rule: the fig IR is correct BY CONSTRUCTION -- every append closes
+// what it opened -- so nothing may scan the history to find out. The only
+// invokes that can be open belong to the last round, and that is all the door
+// looks at.
 //
-// outstandingInvokes scanned BACKWARD FOR THE LAST invoke-bearing message and
-// examined only that one. With a well-formed round after it, the buried
-// orphan was invisible to the door, to CloseOpenToolCalls, and therefore to
-// every repair figaro has -- and the aria could never send again.
-func TestABuriedOrphanedInvokeIsClosed(t *testing.T) {
+// A buried orphan therefore SURVIVES the door, deliberately. It can only come
+// from history written before the door existed (Gluck, 0.28.1: "messages.98:
+// tool_use ids were found without tool_result blocks", on an aria past 440),
+// and that is damage, repaired once by RepairToolCalls -- not a tax on every
+// append forever.
+func TestTheDoorDoesNotScanHistoryForOrphans(t *testing.T) {
 	be, err := NewXwalBackend(t.TempDir(), 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { be.Close() })
@@ -70,9 +70,16 @@ func TestABuriedOrphanedInvokeIsClosed(t *testing.T) {
 	}
 	require.Equal(t, []string{"toolu_buried"}, unmatchedInvokes(raw.Read()), "fixture")
 
+	// The door sees the last round, which is well formed, and closes nothing.
 	n, err := be.CloseOpenToolCalls(aria)
 	require.NoError(t, err)
-	require.Equal(t, 1, n, "the repair reported closing nothing")
+	require.Zero(t, n, "the door scanned past the current round")
+	require.Equal(t, []string{"toolu_buried"}, unmatchedInvokes(raw.Read()))
+
+	// The explicit repair is what heals damage, and it reports what it did.
+	fixed, err := be.RepairToolCalls(aria)
+	require.NoError(t, err)
+	require.Equal(t, 1, fixed, "the repair closed nothing")
 	require.Empty(t, unmatchedInvokes(raw.Read()),
 		"a buried orphan survived the repair, so this aria is refused by every "+
 			"provider on every send, forever")

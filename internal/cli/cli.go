@@ -1416,7 +1416,7 @@ flow writes both through the daemon, so a client never has to know the path.`,
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			if len(ctx.Args) != 1 {
-				return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | skills [-j] | ttl [-j]>")
+				return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | toolcalls [--dry-run] | skills [-j] | ttl [-j]>")
 			}
 			switch ctx.Args[0] {
 			case "gc":
@@ -1431,12 +1431,14 @@ flow writes both through the daemon, so a client never has to know the path.`,
 				return runDoctorProvider(ctx.Flag("id"), ctx.Flag("count"), ctx.BoolFlag("json"))
 			case "librettos":
 				return runDoctorLibrettos(ctx.BoolFlag("dry-run"))
+			case "toolcalls":
+				return runDoctorToolCalls(ctx.BoolFlag("dry-run"))
 			case "skills":
 				return runDoctorSkills(ctx.BoolFlag("json"))
 			case "ttl":
 				return runDoctorTTL(ctx.BoolFlag("json"))
 			}
-			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | skills [-j] | ttl [-j]>")
+			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | toolcalls [--dry-run] | skills [-j] | ttl [-j]>")
 		},
 	})
 
