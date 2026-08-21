@@ -56,6 +56,9 @@ type AriaMeta struct {
 	ContextLimit     int    `json:"context_limit,omitempty"`
 	ContextExact     bool   `json:"context_exact,omitempty"`
 	CreatedAtMS      int64  `json:"created_at_ms,omitempty"`
+	// TTLMS is the lifetime the node's board states (system.ttl), mirrored
+	// here so the sweep can find what is due without opening a single node.
+	TTLMS int64 `json:"ttl_ms,omitempty"`
 }
 
 // UnmarshalJSON accepts the pre-rename loadout_* keys existing sidecars carry;
@@ -262,6 +265,11 @@ type Backend interface {
 
 	// SetMeta sets the aria metadata.
 	SetMeta(ariaID string, meta *AriaMeta) error
+
+	// UpdateMeta mutates the aria metadata in place, under the sidecar's own
+	// lock. The record has more than one writer, and a whole-record write from
+	// either drops what the other put there.
+	UpdateMeta(ariaID string, mutate func(*AriaMeta)) error
 
 	// Remove deletes a trunk (its subtree). Close the agent first. recursive
 	// also removes any live branches; without it, a trunk with branches is

@@ -1190,7 +1190,7 @@ func (a *Agent) finishTurn(reason string) {
 // publishMetadata persists and fans out one actor-owned metrics snapshot.
 func (a *Agent) publishMetadata() {
 	a.mu.RLock()
-	meta := &store.AriaMeta{
+	mine := store.AriaMeta{
 		MessageCount:     a.messageCount,
 		TurnCount:        a.turnCount,
 		TokensIn:         a.tokensIn,
@@ -1210,7 +1210,15 @@ func (a *Agent) publishMetadata() {
 		LastFigaroLT:     a.metricsLT,
 	}
 	a.mu.RUnlock()
-	if err := a.backend.SetMeta(a.id, meta); err != nil {
+	// Read-modify-write: the agent owns the counts and the identity fields,
+	// and NOT the whole record. system.ttl is mirrored here by a board commit,
+	// and a whole-record write from this side used to erase it on the next
+	// turn -- a lifetime that lasted until the aria was next spoken to.
+	if err := a.backend.UpdateMeta(a.id, func(m *store.AriaMeta) {
+		ttl := m.TTLMS
+		*m = mine
+		m.TTLMS = ttl
+	}); err != nil {
 		slog.Warn("write aria meta", "aria", a.id, "err", err)
 	}
 }

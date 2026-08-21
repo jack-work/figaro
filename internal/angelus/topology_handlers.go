@@ -599,11 +599,21 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
+	if err := h.RemoveAria(req.FigaroID, req.Recursive); err != nil {
+		return nil, err // surface "has live branches" etc. to the caller
+	}
+	return rpc.KillResponse{OK: true}, nil
+}
 
+// RemoveAria is the whole of a deletion: the live agent, its background
+// sessions, the bytes, and the endpoint. Exported because the TTL sweep
+// deletes too, and a second spelling of "remove an aria" is how one of the
+// four steps goes missing.
+func (h *handlers) RemoveAria(id string, recursive bool) error {
 	// Kill live agent or just remove dormant from disk.
-	if h.angelus.Registry.Get(req.FigaroID) != nil {
-		if err := h.angelus.Registry.Kill(req.FigaroID); err != nil {
-			return nil, err
+	if h.angelus.Registry.Get(id) != nil {
+		if err := h.angelus.Registry.Kill(id); err != nil {
+			return err
 		}
 	}
 
@@ -611,24 +621,24 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 	// background jobs with it. Unconditional, because a hibernated aria has
 	// no live agent and still owns running children.
 	if h.angelus.Sessions != nil {
-		if n := h.angelus.Sessions.KillScope(req.FigaroID); n > 0 {
-			slog.Info("killed aria sessions", "id", req.FigaroID, "sessions", n)
+		if n := h.angelus.Sessions.KillScope(id); n > 0 {
+			slog.Info("killed aria sessions", "id", id, "sessions", n)
 		}
 	}
 
 	if h.angelus.Backend != nil {
-		if err := h.angelus.Backend.Remove(req.FigaroID, req.Recursive); err != nil {
-			return nil, err // surface "has live branches" etc. to the caller
+		if err := h.angelus.Backend.Remove(id, recursive); err != nil {
+			return err
 		}
 	}
 
 	// The endpoint outlives the AGENT, not the aria. A deleted aria has no
 	// address, so the hub goes with it and connected clients get their EOF -
 	// which is correct here and exactly what must not happen on hibernate.
-	if hb := h.angelus.Hubs.drop(req.FigaroID); hb != nil {
+	if hb := h.angelus.Hubs.drop(id); hb != nil {
 		hb.Close()
 	}
 
-	slog.Info("killed figaro", "id", req.FigaroID)
-	return rpc.KillResponse{OK: true}, nil
+	slog.Info("killed figaro", "id", id)
+	return nil
 }

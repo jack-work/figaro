@@ -166,6 +166,12 @@ func (hs *Handlers) Restore(ctx context.Context, ariaID string) (figaro.Figaro, 
 // OpenEndpoint makes an aria dialable without waking it. It is what binding
 // needs: the socket has to be listening before anyone is handed the path,
 // and nothing more than that has to exist.
+// RemoveAria deletes a node and everything a deletion owes: see the handler
+// of the same name. It is what the TTL sweep calls.
+func (hs *Handlers) RemoveAria(id string, recursive bool) error {
+	return hs.h.RemoveAria(id, recursive)
+}
+
 func (hs *Handlers) OpenEndpoint(ariaID string) error {
 	if err := hs.h.requireAria(ariaID); err != nil {
 		return err

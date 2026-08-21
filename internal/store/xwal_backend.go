@@ -40,6 +40,14 @@ type XwalBackend struct {
 	librettos map[string]*Libretto
 	// lastTS is aria id -> newest record timestamp, memoized.
 	lastTS map[string]int64
+
+	// ttl is the deadline set: only nodes carrying system.ttl, an opt-in
+	// key, so it is empty on a store nobody has asked to expire anything on.
+	// nil until the first read seeds it from the sidecars. Its own lock: the
+	// sweep reads it on a ticker and must not queue behind a cold node open
+	// holding b.mu.
+	ttlMu sync.Mutex
+	ttl   map[string]TTLEntry
 	// encoders translate each fig IR entry as it lands, one per provider
 	// channel the aria already has. Injected; empty by default.
 	encoders translatorEncoders
@@ -368,6 +376,7 @@ func (b *XwalBackend) form(ariaID string) (*Form, error) {
 		if namesOutfit(patch) {
 			b.labelChanged(ariaID)
 		}
+		b.ttlCommitted(ariaID, patch)
 	})
 
 	b.mu.Lock()
@@ -1016,6 +1025,34 @@ func (b *XwalBackend) Meta(ariaID string) (*AriaMeta, error) {
 	value := *st.Value
 	return &value, nil
 }
+
+// UpdateMeta is a read-modify-write of the sidecar under its own lock. The
+// record has TWO writers -- the agent publishes its counts, and a board commit
+// mirrors policy (system.ttl) -- and a whole-record SetMeta from either one
+// silently dropped whatever the other had written. That is how the first
+// lifetime set on a live aria vanished at the next turn.
+func (b *XwalBackend) UpdateMeta(ariaID string, mutate func(*AriaMeta)) error {
+	c := b.metaCache(ariaID)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	st, err := c.loadOnce(b.metaPath(ariaID))
+	if err != nil {
+		return err
+	}
+	meta := &AriaMeta{}
+	if st.Value != nil {
+		value := *st.Value
+		meta = &value
+	}
+	mutate(meta)
+	if err := writeJSON(b.metaPath(ariaID), meta); err != nil {
+		return err
+	}
+	value := *meta
+	c.state.Store(&metaState{Value: &value})
+	return nil
+}
+
 func (b *XwalBackend) SetMeta(ariaID string, meta *AriaMeta) error {
 	c := b.metaCache(ariaID)
 	c.mu.Lock()

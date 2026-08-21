@@ -39,6 +39,12 @@ type Angelus struct {
 	// CLI can refuse to speak to a daemon from a different build.
 	Build string
 
+	// RemoveAria deletes a node the way `figaro kill` does -- agent,
+	// sessions, bytes, endpoint. Wired from the handlers, because the TTL
+	// sweep must delete through the SAME four steps and not a fifth spelling
+	// of them. nil disables the sweep's deletions.
+	RemoveAria func(id string, recursive bool) error
+
 	// Sessions is the daemon-wide registry of backgrounded exec sessions,
 	// keyed by aria id as scope. Deliberately not per-agent: an agent that
 	// is killed or hibernated must not take its children's addressability
@@ -253,6 +259,7 @@ func (a *Angelus) pidMonitor(ctx context.Context) {
 			// waiting a whole extra cycle to be noticed.
 			a.hibernateIdleArias()
 			a.capLiveArias()
+			a.expireTTL()
 			a.evictIdleArias()
 			a.trimResident()
 			a.releaseIdleMemory()
@@ -380,6 +387,67 @@ func (a *Angelus) sweepCacheBudgets() {
 	}
 	if dropped, freed := sw.SweepCacheBudgets(); dropped > 0 {
 		slog.Debug("swept decoded cache budgets", "runs", dropped, "bytes", freed)
+	}
+}
+
+// ttlKeeper is the backend's half of the retention contract. An interface for
+// the same reason idleEvictor is one: a test backend should not have to own a
+// policy it does not have.
+type ttlKeeper interface {
+	TTLDue(nowMS int64) []store.TTLEntry
+	TTLForget(ids ...string)
+}
+
+// expireTTL removes the nodes whose stated lifetime is spent. It runs on the
+// sweep that already exists, and it reads only sidecars: finding what is due
+// opens no node.
+//
+// SKIP UNTIL DORMANT is the whole of the live policy. An expired aria with an
+// agent, or with a shell bound to it, keeps its deadline and is taken on a
+// later tick -- a lifetime is a promise about storage, and nothing about it
+// justifies deleting the aria somebody is typing into.
+//
+// The delete is RECURSIVE by construction. Branches go with their ancestor
+// however new they are, and the removal is addressed at the PRESENTATION
+// hierarchy, so a child promoted past an expired parent survives it: the
+// parent's delete set no longer contains the child, and the child, which reads
+// its history through the doomed prefix, is detached first (RemoveLeaf's
+// boundary repair -- disk normalisation, forced exactly when it is owed).
+//
+// KNOWN SHORTCOMING, and it is Gluck's to weigh: a fork inherits its parent's
+// board, so it inherits system.ttl and expires on its OWN creation time. A
+// child therefore cannot outlive an ancestor's policy by being younger than
+// it; it can only start its own clock later. Noted, not solved.
+func (a *Angelus) expireTTL() {
+	keeper, ok := a.Backend.(ttlKeeper)
+	if !ok || a.RemoveAria == nil {
+		return
+	}
+	due := keeper.TTLDue(time.Now().UnixMilli())
+	if len(due) == 0 {
+		return
+	}
+	bound := a.Registry.BoundPIDsByFigaro()
+	for _, e := range due {
+		if a.Registry.Get(e.ID) != nil {
+			slog.Info("lifetime spent, waiting for the aria to go dormant",
+				"node", e.ID, "ttl", e.TTL)
+			continue
+		}
+		if len(bound[e.ID]) > 0 {
+			slog.Info("lifetime spent, waiting for the bound shell to leave",
+				"node", e.ID, "ttl", e.TTL, "pids", bound[e.ID])
+			continue
+		}
+		if err := a.RemoveAria(e.ID, true); err != nil {
+			slog.Warn("lifetime spent, removal failed", "node", e.ID, "err", err)
+			continue
+		}
+		keeper.TTLForget(e.ID)
+		slog.Info("removed a node whose lifetime was spent",
+			"node", e.ID, "ttl", e.TTL,
+			"created", time.UnixMilli(e.CreatedAtMS),
+			"expired", time.UnixMilli(e.DeadlineMS))
 	}
 }
 
