@@ -984,7 +984,40 @@ later.
 They are different, and the second is pre-existing on main and normalised
 inside the instrument that finds it ("0 is the known lag").
 
-## THE HYPOTHESIS, AND WHY IT IS ONLY THAT
+## THE HYPOTHESIS IS REFUTED. TWO EXPERIMENTS, BOTH NEGATIVE (ede92072)
+
+Written over the section below rather than beside it, because that section is
+now wrong and leaving a plausible story standing is worse than leaving a gap.
+
+    STEADY STATE (TestWhetherTheLibrettoIsBehindWhenAnEntryIsStamped):
+    patch the source and append an entry as immediately as a send does, forty
+    times. STALE STAMPS: 0 of 40. The fold keeps up.
+
+    THE RESTART SHAPE (TestTheLibrettoAfterAReattachIsCurrentBeforeTheNextStamp):
+    patch the source with NOTHING FOLLOWING -- a daemon that is down -- then
+    re-attach and stamp, which is the order a restarted daemon takes. Source at
+    3, LIBRETTO AT 4, the first entry stamped 4. The copy is current BEFORE the
+    stamp, and the seed-if-behind path did its job.
+
+SO THE STAMP IS NOT STALE AND THE FOLD IS NOT BEHIND. A previous bearer wrote
+"attaching the fold at boot does NOT fix the first turn, so the cause is not
+what it looks like", and they were right; I found a mechanism that reads
+convincingly and does not happen.
+
+    A PLAUSIBLE EXPLANATION FOR A DEFECT IS THE MOST EXPENSIVE THING AN
+    INVESTIGATION CAN PRODUCE, because it ends the search. This file has that
+    law already, about a green canary. It applies to a red one too.
+
+WHAT REMAINS TO BE ASKED, narrowed by what is now excluded: the stamp is
+right, so the loss is downstream of it -- in what the deriver's cursor is
+SEEDED to after a restart (SeedAt reads the watermark entry's StudyVersions,
+and the watermark is the last row, which is the ASSISTANT entry the provider
+committed), or in the translator rows themselves. The next person should start
+by printing, on the first turn after a restart: the watermark row's FigaroLT,
+the StudyVersions of the entry it names, and the StudyVersions of the entry
+being translated. Those three numbers decide it.
+
+## THE ORIGINAL HYPOTHESIS, KEPT SO THE REFUTATION HAS A SUBJECT
 
 The stamp reads the LIBRETTO's version, not the source form's:
 store.observedCursors -> formTail(LibrettoID(fid)). The libretto is a COPY kept
