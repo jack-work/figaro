@@ -102,7 +102,7 @@ func (c *Copilot) copilotTransport(client *http.Client) anthropic.TransportFn {
 			return nil, err
 		}
 		req, err := http.NewRequestWithContext(ctx, "POST",
-			c.tokenSrc.BaseURL()+"/messages", nil)
+			c.tokenSrc.BaseURL()+"/v1/messages", nil)
 		if err != nil {
 			return nil, err
 		}

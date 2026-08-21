@@ -90,8 +90,12 @@ data: {"type":"message_stop"}`,
 		t.Fatalf("send: %v", err)
 	}
 
-	if gotPath != "/messages" {
-		t.Errorf("path=%q, want /messages", gotPath)
+	// /v1, because that is what the endpoint answers. The SDK path this
+	// replaced built "v1/messages" itself (anthropic-sdk-go message.go), so
+	// moving to a hand-rolled transport silently dropped the version segment:
+	// POST /v1/messages => 400 (alive), POST /messages => 404.
+	if gotPath != "/v1/messages" {
+		t.Errorf("path=%q, want /v1/messages", gotPath)
 	}
 	if got := gotHeader.Get("Authorization"); !strings.HasPrefix(got, "Bearer ") {
 		t.Errorf("Authorization=%q, want a bearer token from the token source", got)
