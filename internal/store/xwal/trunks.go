@@ -123,7 +123,13 @@ type (
 const genesisMarker = `{"genesis":true}`
 
 // mainTail returns the main channel's last index for an opened branch.
-func mainTail(x *XWAL) uint64 { return x.chans[x.main].log.LastIndex() }
+func mainTail(x *XWAL) uint64 {
+	l, err := x.chans[x.main].Log()
+	if err != nil {
+		return 0
+	}
+	return l.LastIndex()
+}
 
 // CreateTrunks initializes a fresh trunk store at dir (creating the xwal
 // from cfg) and seeds the genesis at the root. The root is the channel
@@ -169,6 +175,7 @@ func createTrunks(dir string, cfg Config) (*Trunks, error) {
 
 	t := &Trunks{root: dir, registryRoot: root, cfg: cfg, main: cfg.Main, idx: newIndex(cfg.MintTrunkID), ltsReg: newLastTSRegistry()}
 	t.cfg.ltsReg = t.ltsReg
+	t.cfg.probeTS = t.probeLastTS
 	t.cfg.ParentOf = t.idx.ParentOf
 	if err := t.rebuild(); err != nil {
 		return nil, err
@@ -228,6 +235,7 @@ func openTrunks(dir string, cfg Config) (*Trunks, error) {
 	}
 	t := &Trunks{root: dir, registryRoot: root, cfg: cfg, main: main, idx: newIndex(cfg.MintTrunkID), ltsReg: newLastTSRegistry()}
 	t.cfg.ltsReg = t.ltsReg
+	t.cfg.probeTS = t.probeLastTS
 	t.cfg.ParentOf = t.idx.ParentOf
 	if err := t.rebuild(); err != nil {
 		return nil, err
@@ -479,7 +487,11 @@ func (t *Trunks) evictLineage(trunk string) (bool, error) {
 	t.hotMu.Unlock()
 
 	for _, name := range head.x.order {
-		if err := head.x.chans[name].log.Sync(); err != nil {
+		l := head.x.chans[name].opened()
+		if l == nil {
+			continue
+		}
+		if err := l.Sync(); err != nil {
 			return false, err
 		}
 	}
@@ -1936,7 +1948,11 @@ func mainChannelName(dir string) (string, error) {
 
 // ownFirstIdx is the head's own first main index (forkBase, or 1 at root).
 func ownFirstIdx(x *XWAL) uint64 {
-	if fb := x.chans[x.main].log.ForkBase(); fb > 0 {
+	l, err := x.chans[x.main].Log()
+	if err != nil {
+		return 1
+	}
+	if fb := l.ForkBase(); fb > 0 {
 		return fb
 	}
 	return 1

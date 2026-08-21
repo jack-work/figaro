@@ -605,13 +605,7 @@ func (l *xwalFormLog) RangePatches(from, upTo uint64, fn func(uint64, []byte) er
 		return err
 	}
 	defer xw.Close()
-	var first, last uint64
-	for _, ch := range xw.Channels() {
-		if ch.Name == chanForm {
-			first, last = ch.First, ch.Last
-			break
-		}
-	}
+	first, last, _ := xw.ChannelBounds(chanForm)
 	if first == 0 && last > 0 {
 		first = 1
 	}

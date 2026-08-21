@@ -138,7 +138,7 @@ func TestSegmentHeaderAt_SurvivesEveryLayerAcrossATrunkFork(t *testing.T) {
 	if err := head.SyncCoherent(); err != nil {
 		t.Fatal(err)
 	}
-	parentBases := len(head.chans["chalkboard"].log.SegmentBaseIndexes())
+	parentBases := len(head.chans["chalkboard"].mustLog().SegmentBaseIndexes())
 	head.Close()
 	if parentBases < 3 {
 		t.Fatalf("fixture did not rotate enough: %d chalkboard segments, want >= 3",
@@ -195,7 +195,7 @@ func TestSegmentHeaderAt_SurvivesEveryLayerAcrossATrunkFork(t *testing.T) {
 	if err := parentHead.SyncCoherent(); err != nil {
 		t.Fatal(err)
 	}
-	parentBaseList := append([]uint64(nil), parentHead.chans["chalkboard"].log.SegmentBaseIndexes()...)
+	parentBaseList := append([]uint64(nil), parentHead.chans["chalkboard"].mustLog().SegmentBaseIndexes()...)
 	parentHead.Close()
 	if len(parentBaseList) < 2 {
 		t.Fatalf("the parent owns %d chalkboard segments: with fewer than two, "+
@@ -212,7 +212,7 @@ func TestSegmentHeaderAt_SurvivesEveryLayerAcrossATrunkFork(t *testing.T) {
 		return best
 	}
 
-	childForkBase := child.chans["chalkboard"].log.ForkBase()
+	childForkBase := child.chans["chalkboard"].mustLog().ForkBase()
 	if childForkBase == 0 {
 		t.Fatal("the child's chalkboard log has no fork base, so this test is not " +
 			"exercising a fork at all")

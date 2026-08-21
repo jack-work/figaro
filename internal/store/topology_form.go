@@ -50,13 +50,7 @@ func (l *stumpFormLog) RangePatches(from, upTo uint64, fn func(uint64, []byte) e
 		return err
 	}
 	defer x.Close()
-	var first, last uint64
-	for _, ch := range x.Channels() {
-		if ch.Name == chanForm {
-			first, last = ch.First, ch.Last
-			break
-		}
-	}
+	first, last, _ := x.ChannelBounds(chanForm)
 	if first == 0 && last > 0 {
 		first = 1
 	}
