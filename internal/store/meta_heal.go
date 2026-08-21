@@ -76,34 +76,15 @@ var metaIdentityHealed atomic.Int64
 // MetaIdentityHealed reports how many sidecars were migrated on read.
 func MetaIdentityHealed() int64 { return metaIdentityHealed.Load() }
 
-// healIdentity folds a board's identity keys into a sidecar written before
-// the metadata-only dormant listing carried them, and stamps the version.
-// Returns the upgraded copy, or nil to leave the caller's own.
-//
-// It rides the READ, because the reader that wants these fields is `list`,
-// which deliberately opens no content (so the count healer on OpenFigIR
-// cannot serve it). One aria pays one board fold, once, the first time
-// anybody looks at it; an aria nobody lists pays nothing, ever.
-//
-// The stamp -- not the emptiness of the fields -- is the completion marker.
-// The boot pass this replaces asked "are mantra, cwd and outfit all empty?",
-// which cannot distinguish a sidecar that was never migrated from an aria
-// that is genuinely blank, so a blank aria was re-folded at every boot for
-// the life of the store.
-// The caller passes the state it read FROM, because this healer is a write
-// on the read path: between its board fold and its own publish, an ordinary
-// SetMeta may have superseded what it based the upgrade on, and republishing
-// then would put the memo back to the older value. It abandons instead --
-// nothing is lost, because every SetMeta stamps, so the value that won is
-// already current.
+// healIdentity folds a board's identity keys into a sidecar below
+// CurrentMetaVersion and stamps it, on the read that wanted those fields.
+// Returns the upgraded copy, or nil for the caller's own. `from` is the state
+// it was read from: a write on the read path abandons when that state was
+// superseded while the board was folding. See plans/lazy-store-passes.md.
 func (b *XwalBackend) healIdentity(ariaID string, from *metaState, meta *AriaMeta) *AriaMeta {
-	// The board read happens BEFORE the sidecar lock: it opens the node and
-	// takes the store's own lock, and a healer must never hold one to wait
-	// for the other.
+	// Before the sidecar lock: this takes the store's own.
 	snap, err := b.FormState(ariaID)
 	if err != nil {
-		// A board that cannot be read is not a migration that succeeded.
-		// Leaving it unstamped costs one retry on the next read.
 		return nil
 	}
 	get := func(key string) string { return snapString(snap, key) }
@@ -132,7 +113,7 @@ func (b *XwalBackend) healIdentity(ariaID string, from *metaState, meta *AriaMet
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.state.Load() != from {
-		return nil // somebody published while we folded; theirs is newer
+		return nil
 	}
 	if err := b.writeMetaLocked(ariaID, c, &up); err != nil {
 		return nil
@@ -140,4 +121,3 @@ func (b *XwalBackend) healIdentity(ariaID string, from *metaState, meta *AriaMet
 	metaIdentityHealed.Add(1)
 	return &up
 }
-

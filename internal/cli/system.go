@@ -64,11 +64,6 @@ func runRestWithFlags(force, keepPIDs bool) {
 
 	killPid(pid, syscall.SIGTERM)
 
-	// Wait for the PROCESS, not the socket. The socket is removed before the
-	// daemon's own teardown (telemetry shutdown, deferred closes) and before
-	// the store lock is released -- so a stop that returned at socket-removal
-	// handed the user a window in which the next daemon failed the lock and
-	// exited, printing "another angelus already owns this store".
 	if waitForExit(pid, 15*time.Second) {
 		fmt.Fprintf(os.Stderr, "angelus (pid %d) put to rest\n", pid)
 		return
@@ -79,8 +74,7 @@ func runRestWithFlags(force, keepPIDs bool) {
 }
 
 // waitForExit polls until pid is gone or the deadline passes; reports whether
-// it is gone. Signal 0 is the only witness that outlives every file the daemon
-// removes on its way out.
+// it is gone. Signal 0 outlives every file the daemon removes on its way out.
 func waitForExit(pid int, within time.Duration) bool {
 	deadline := time.Now().Add(within)
 	for {

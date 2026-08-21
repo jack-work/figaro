@@ -18,24 +18,12 @@ import (
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-// lockHandoff is how long a starting daemon waits for a DYING incumbent to
-// release the store. `figaro rest` returns when the socket is gone, but the
-// lock outlives the socket by the length of the daemon's own teardown, and
-// anything started in that window used to fail the lock and exit -- which is
-// exactly the window a user restarting his daemon types into.
+// lockHandoff bounds the wait for a dying incumbent to release the store.
 const lockHandoff = 10 * time.Second
 
-// lockStore takes an exclusive flock on the aria store so only one angelus
-// ever has it open. Returns the open handle (keep it alive for the daemon's
-// lifetime: closing it releases the lock) and whether it was acquired. A
-// crashed holder's lock is released by the kernel, so the next daemon can
-// take over.
-//
-// A failed lock is retried until lockHandoff, because "another angelus owns
-// the store" and "another angelus is 200ms from releasing the store" are the
-// same observation at the instant it is made. The retry stops early the
-// moment a LIVE incumbent answers on the socket: that one is not dying, and
-// standing down for it immediately is what makes a startup race cheap.
+// lockStore takes the exclusive flock that admits one angelus per store, and
+// keeps the handle: closing it releases the lock. Retries until lockHandoff,
+// or until a live incumbent answers the socket.
 func lockStore() (*os.File, bool) {
 	// Keep the daemon lock outside the XWAL tree.
 	dir := stateDir()

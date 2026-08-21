@@ -34,12 +34,8 @@ func WithAngelus(loaded *config.Loaded, fn func(acli *angelus.Client) error) {
 	}
 }
 
-// WithAngelusIfRunning is WithAngelus for a QUERY: it never starts a daemon
-// and never unlocks the vault. A question about live sessions must not create
-// the thing it asks about -- the shell prompt asks one per keystroke-of-Enter,
-// in every pane, so `figaro rest` was followed by a fleet of daemons racing to
-// resurrect the one the user had just stopped, and each loser logged "another
-// angelus already owns this store".
+// WithAngelusIfRunning connects to a RUNNING angelus and calls fn. It starts
+// no daemon and unlocks no vault: a query must not create what it asks about.
 func WithAngelusIfRunning(loaded *config.Loaded, fn func(acli *angelus.Client) error) {
 	ep := transport.UnixEndpoint(angelusSocketPath())
 	acli, err := angelus.DialClient(ep)

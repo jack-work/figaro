@@ -6,17 +6,13 @@ import (
 	"testing"
 )
 
-// writeLegacySidecar puts a pre-migration sidecar on disk: no version stamp,
-// and no identity fields, which is what every sidecar written before the
-// metadata-only dormant listing looks like.
+// writeLegacySidecar puts an unstamped sidecar on disk and forgets the memo.
 func writeLegacySidecar(t *testing.T, b *XwalBackend, ariaID string, m AriaMeta) {
 	t.Helper()
 	m.MetaVersion = 0
 	if err := writeJSON(b.metaPath(ariaID), &m); err != nil {
 		t.Fatal(err)
 	}
-	// Forget the cached copy so the next read comes off disk, as it would
-	// for a sidecar this build has never seen.
 	b.mu.Lock()
 	delete(b.metas, ariaID)
 	b.mu.Unlock()
@@ -35,9 +31,6 @@ func readSidecar(t *testing.T, b *XwalBackend, ariaID string) AriaMeta {
 	return m
 }
 
-// TestMetaIdentityHealsOnRead is the whole of the migration-on-read contract:
-// a legacy sidecar acquires its board's identity fields the first time
-// anything reads it, and the file it leaves behind is stamped.
 func TestMetaIdentityHealsOnRead(t *testing.T) {
 	b, aria, _ := healFixture(t, t.TempDir(), 2)
 	if _, err := b.ApplyFormPrivileged(aria, patchSet(map[string]string{
@@ -64,11 +57,7 @@ func TestMetaIdentityHealsOnRead(t *testing.T) {
 	}
 }
 
-// TestMetaIdentityHealsOnce is the property the boot pass could not have. A
-// BLANK aria -- no mantra, no cwd, no outfit -- is indistinguishable from an
-// unmigrated one by its fields, so the old candidacy test re-folded it at
-// every boot forever. The stamp ends it after one.
-func TestMetaIdentityHealsOnce(t *testing.T) {
+func TestABlankAriaIsMigratedExactlyOnce(t *testing.T) {
 	b, aria, _ := healFixture(t, t.TempDir(), 1)
 	writeLegacySidecar(t, b, aria, AriaMeta{MessageCount: 1})
 
@@ -79,13 +68,11 @@ func TestMetaIdentityHealsOnce(t *testing.T) {
 		}
 	}
 	if folded := MetaIdentityHealed() - before; folded != 1 {
-		t.Fatalf("a blank aria was folded %d times; the stamp is meant to make it exactly 1", folded)
+		t.Fatalf("a blank aria was folded %d times, want exactly 1", folded)
 	}
 }
 
-// TestSetMetaStamps: every writer publishes a current sidecar, so nothing a
-// running daemon writes is ever a migration candidate.
-func TestSetMetaStamps(t *testing.T) {
+func TestSetMetaStampsSoNothingItWritesIsAMigrationCandidate(t *testing.T) {
 	b, aria, _ := healFixture(t, t.TempDir(), 1)
 	if err := b.SetMeta(aria, &AriaMeta{MessageCount: 7}); err != nil {
 		t.Fatal(err)

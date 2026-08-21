@@ -56,11 +56,8 @@ type AriaMeta struct {
 	ContextLimit     int    `json:"context_limit,omitempty"`
 	ContextExact     bool   `json:"context_exact,omitempty"`
 	CreatedAtMS      int64  `json:"created_at_ms,omitempty"`
-	// MetaVersion is the shape this sidecar was last written for. A sidecar
-	// below CurrentMetaVersion is upgraded by the identity healer the next
-	// time anything READS it, and the stamp is what lets that finish: the
-	// boot pass it replaces had no completion marker and re-read every
-	// sidecar on every boot, forever, to find nothing.
+	// MetaVersion is the shape this sidecar was last written for; below
+	// CurrentMetaVersion it is upgraded by healIdentity on the next read.
 	MetaVersion int `json:"meta_version,omitempty"`
 }
 

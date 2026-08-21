@@ -1022,11 +1022,8 @@ func (b *XwalBackend) Meta(ariaID string) (*AriaMeta, error) {
 	return &value, nil
 }
 
-// writeMetaLocked stamps the sidecar with the current shape, writes it, and
-// publishes it to the cache. The ONE writer for the three producers (the
-// agent's publish, the count healer, the identity healer), so "written
-// implies current" is a property of the write rather than a rule three
-// callers must remember. Caller holds c.mu.
+// writeMetaLocked stamps, writes and publishes the sidecar: the one writer
+// for all three producers. Caller holds c.mu.
 func (b *XwalBackend) writeMetaLocked(ariaID string, c *metaCache, meta *AriaMeta) error {
 	if meta != nil {
 		meta.MetaVersion = CurrentMetaVersion
