@@ -11,17 +11,20 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/sdk"
 )
 
-// lockStore takes a non-blocking exclusive flock on the aria store so only one
-// angelus ever has it open. Returns the open handle (keep it alive for the
-// daemon's lifetime: closing it releases the lock) and whether it was
-// acquired. A crashed holder's lock is released by the kernel, so the next
-// daemon can take over.
+// lockHandoff bounds the wait for a dying incumbent to release the store.
+const lockHandoff = 10 * time.Second
+
+// lockStore takes the exclusive flock that admits one angelus per store, and
+// keeps the handle: closing it releases the lock. Retries until lockHandoff,
+// or until a live incumbent answers the socket.
 func lockStore() (*os.File, bool) {
 	// Keep the daemon lock outside the XWAL tree.
 	dir := stateDir()
@@ -32,11 +35,27 @@ func lockStore() (*os.File, bool) {
 	if err != nil {
 		return nil, false
 	}
-	if err := tryLockFile(f); err != nil {
-		f.Close()
-		return nil, false
+	deadline := time.Now().Add(lockHandoff)
+	for {
+		if err := tryLockFile(f); err == nil {
+			return f, true
+		}
+		if incumbentAnswers() || time.Now().After(deadline) {
+			f.Close()
+			return nil, false
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
-	return f, true
+}
+
+// incumbentAnswers reports whether a live daemon is serving the socket.
+func incumbentAnswers() bool {
+	cli, err := sdk.DialAngelus(transport.UnixEndpoint(angelusSocketPath()))
+	if err != nil {
+		return false
+	}
+	cli.Close()
+	return true
 }
 
 // runAngelus runs the supervisor side of the binary.

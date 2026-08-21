@@ -31,31 +31,20 @@ echo "--- patch the studied form; the daemon restarts to serve this"
 "$BIN" doctor mem 2>&1 | grep -iE "librett" || echo "  (no libretto line: nothing is following)"
 sleep 3
 SEND_OUT=$("$BIN" send --id "$ARIA" -- "say: two" 2>&1); assert_send "say: two" "$SEND_OUT"
-# TWO turns, because the first one after a restart is known to be one behind
-# and the thing that must never be true is that it is LOST. See the notes:
-# attaching the fold at boot does NOT fix the first turn, so the cause is not
-# what it looks like.
-# THE MECHANISM, PRINTED BESIDE THE SYMPTOM. The stamp on a fig IR entry reads
-# the LIBRETTO's version (store.observedCursors -> formTail(LibrettoID(fid))),
-# and the libretto is a COPY kept current by an ASYNCHRONOUS fold goroutine
-# (store/libretto.go: `go l.fold(...)`). If the libretto has not folded the
-# patch when the entry is stamped, the entry carries the OLD version, there is
-# no delta to render, and the change waits for the next entry -- which is
-# exactly one turn late.
-#
-# HYPOTHESIS, NOT YET CONFIRMED: a previous bearer recorded that "attaching the
-# fold at boot does NOT fix the first turn, so the cause is not what it looks
-# like", so do not treat this note as the answer. THE DISCRIMINATING NUMBERS
-# are the source form's version and the libretto's, read at the instant before
-# the send. If they differ, the fold is behind and the stamp is telling the
-# truth about a stale copy. If they AGREE and the turn is still one behind, the
-# cause is downstream of the stamp and this comment is wrong.
+# The lag this script was written for: the first turn after a restart carried
+# the OLD libretto version, so a patch made while the daemon was down showed
+# up one turn late. MEASURED 2026-08-21 (ede92072): 8/8 runs put the change in
+# the FIRST post-restart request -- 4 on main, 4 on the channel-granular
+# branch. It does not reproduce on either. Do not treat its absence as a fix
+# by anything on this branch; treat the number below as the assertion, and if
+# the symptom returns by hand it needs a new instrument, not this one.
+# History and the refuted hypotheses: plans/lazy-store-passes.md.
 echo "--- source vs libretto version, immediately before the first send:"
 "$BIN" state show --id "$FORM" -j 2>/dev/null | python3 -c 'import sys,json;d=json.load(sys.stdin);print("    source form keys:",sorted(k for k in d if not k.startswith("libretto")))' 2>/dev/null || echo "    (could not read the form)"
 
 echo "--- first turn after the restart:"
 REQ=$(ls -t "$ROOT"/wire/*/*.req.http | head -1)
-echo "    afterrestart: $(grep -c afterrestart "$REQ")  (0 is the known lag)"
+echo "    afterrestart: $(grep -c afterrestart "$REQ")  (1 = in the first post-restart request; 0 was the lag)"
 SEND_OUT=$("$BIN" send --id "$ARIA" -- "say: three" 2>&1); assert_send "say: three" "$SEND_OUT"
 REQ=$(ls -t "$ROOT"/wire/*/*.req.http | head -1)
 n=$(grep -c afterrestart "$REQ")

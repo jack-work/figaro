@@ -97,6 +97,9 @@ type Config struct {
 	MintTrunkID func(kind string) string
 	// ParentOf resolves a flat node's logical parent. Empty means none.
 	ParentOf func(node string) string
+	// probeTS reads a node's newest record timestamp from its segment FILES,
+	// without opening a channel. Set by the owning Trunks.
+	probeTS func(node string) int64
 	// ltsReg, when set by the owning Trunks, retains each node's lastTS
 	// counter across open/close/evict cycles. Package-private on purpose.
 	ltsReg *lastTSRegistry
@@ -141,6 +144,11 @@ type XWAL struct {
 	// A POINTER because sharedView hands out copies of this struct and
 	// every view must advance the one counter the hot handle hydrated.
 	lastTS *atomic.Int64
+	// hydrated guards the one-time seed of lastTS. Deferred to the first
+	// STAMP: a read of one channel must not read every channel's tail.
+	hydrated *atomic.Bool
+	// key is this node's registry key (its branch, or "").
+	key string
 	// unstampedRecords: this store came through Flatten, so its main
 	// records predate the cursor stamp. Gates the fallback in CursorAt.
 	unstampedRecords bool
@@ -159,12 +167,18 @@ type XWAL struct {
 }
 
 type channel struct {
-	mu      sync.Mutex
-	name    string
-	kind    Kind
-	rname   string
-	dir     string
-	log     *log.Log
+	mu    sync.Mutex
+	name  string
+	kind  Kind
+	rname string
+	dir   string
+	// log is nil until the channel is first USED. opener holds everything
+	// its open needs; openErr remembers a failure so a broken channel is
+	// not retried on every touch.
+	openMu  sync.Mutex
+	opener  func() (*log.Log, error)
+	openErr error
+	lg      *log.Log
 	reduce  ReduceFunc
 	initial []byte
 	opaque  bool
@@ -178,11 +192,45 @@ type channel struct {
 	fkScan  bool
 }
 
+// Log opens this channel's log on first use.
+func (ch *channel) Log() (*log.Log, error) {
+	ch.openMu.Lock()
+	defer ch.openMu.Unlock()
+	if ch.lg != nil || ch.openErr != nil {
+		return ch.lg, ch.openErr
+	}
+	l, err := ch.opener()
+	if err != nil {
+		ch.openErr = err
+		return nil, err
+	}
+	ch.lg = l
+	return l, nil
+}
+
+// setLog publishes a log opened by a path that rebuilds the channel.
+func (ch *channel) setLog(l *log.Log) {
+	ch.openMu.Lock()
+	defer ch.openMu.Unlock()
+	ch.lg, ch.openErr = l, nil
+}
+
+// opened is the log if this channel has one, without opening it.
+func (ch *channel) opened() *log.Log {
+	ch.openMu.Lock()
+	defer ch.openMu.Unlock()
+	return ch.lg
+}
+
 // lookupAtOrBelow is the greatest channel LT whose record is keyed at or
 // below mainLT — the boundary a fork sharing main [1..mainLT] inherits.
 func (ch *channel) lookupAtOrBelow(mainLT uint64) (uint64, bool, error) {
+	l, oerr := ch.Log()
+	if oerr != nil {
+		return 0, false, oerr
+	}
 	found, ok := uint64(0), false
-	err := ch.log.ScanFromEnd(ch.log.LastIndex(), func(idx uint64, payload []byte) error {
+	err := l.ScanFromEnd(l.LastIndex(), func(idx uint64, payload []byte) error {
 		m, derr := decodeMainLT(payload)
 		if derr != nil {
 			return derr
@@ -208,12 +256,16 @@ func (ch *channel) lookup(mainLT uint64) (uint64, bool, error) {
 	if ch.fkBuilt || (ch.fkScan && mainLT >= ch.fkFloor) {
 		return 0, false, nil
 	}
+	l, oerr := ch.Log()
+	if oerr != nil {
+		return 0, false, oerr
+	}
 	if !ch.fkScan {
-		ch.fkNext = ch.log.LastIndex()
+		ch.fkNext = l.LastIndex()
 		ch.fkScan = true
 	}
 	stopped := false
-	err := ch.log.ScanFromEnd(ch.fkNext, func(idx uint64, payload []byte) error {
+	err := l.ScanFromEnd(ch.fkNext, func(idx uint64, payload []byte) error {
 		m, err := decodeMainLT(payload)
 		if err != nil {
 			return err
@@ -346,29 +398,32 @@ func open(dir string, cfg Config, store *log.Store, branch ...string) (*XWAL, er
 			opts.OnSegmentOpen = reducibleFold(ch.reduce, ch.initial)
 		}
 		cdir := x.channelDir(mc.Name)
-		// Flat nodes name their parent; nested ones let disk walk "..".
-		if cfg.ParentOf != nil && len(branch) == 1 {
-			p, perr := x.openFlatParent(mc.Name, cfg.ParentOf(branch[0]), opts, store)
-			if perr != nil {
-				x.Close()
-				return nil, perr
+		name := mc.Name
+		ch.opener = func() (*log.Log, error) {
+			opts := opts
+			// Flat nodes name their parent; nested ones let disk walk "..".
+			if cfg.ParentOf != nil && len(branch) == 1 {
+				p, perr := x.openFlatParent(name, cfg.ParentOf(branch[0]), opts, store)
+				if perr != nil {
+					return nil, perr
+				}
+				if p != nil {
+					opts.Parent = p.Disk()
+				}
 			}
-			if p != nil {
-				opts.Parent = p.Disk()
+			var l *log.Log
+			var err error
+			if store == nil {
+				l, err = log.Open(cdir, opts)
+			} else {
+				l, err = store.Open(cdir, opts)
 			}
-		}
-		var l *log.Log
-		if store == nil {
-			l, err = log.Open(cdir, opts)
-		} else {
-			l, err = store.Open(cdir, opts)
-		}
-		if err != nil {
-			x.Close()
-			return nil, fmt.Errorf("xwal: open channel %q: %w", mc.Name, err)
+			if err != nil {
+				return nil, fmt.Errorf("xwal: open channel %q: %w", name, err)
+			}
+			return l, nil
 		}
 		ch.dir = cdir
-		ch.log = l
 		// Lookup indexes related channels lazily from the tail. Most opens
 		// never need a foreign-key index at all.
 		ch.fk = map[uint64]uint64{}
@@ -376,19 +431,17 @@ func open(dir string, cfg Config, store *log.Store, branch ...string) (*XWAL, er
 		x.order = append(x.order, mc.Name)
 	}
 	x.nowMS = unixMilliClock(cfg.Now)
+	if len(branch) > 0 {
+		x.key = branch[0]
+	}
 	if cfg.ltsReg != nil {
-		key := ""
-		if len(branch) > 0 {
-			key = branch[0]
-		}
+		key := x.key
 		n := cfg.ltsReg.counter(key)
 		x.lastTS = &n.ts
-		if n.hydrated.CompareAndSwap(false, true) {
-			x.hydrateLastTS()
-		}
+		x.hydrated = &n.hydrated
 	} else {
 		x.lastTS = new(atomic.Int64)
-		x.hydrateLastTS()
+		x.hydrated = new(atomic.Bool)
 	}
 	return x, nil
 }
@@ -406,6 +459,7 @@ func unixMilliClock(now func() time.Time) func() int64 {
 // every append path; the CAS loop is for cross-channel concurrency (each
 // channel serializes its own appends, but two channels may append at once).
 func (x *XWAL) stampTS() int64 {
+	x.ensureHydrated()
 	ts := x.nowMS()
 	for {
 		cur := x.lastTS.Load()
@@ -419,7 +473,23 @@ func (x *XWAL) stampTS() int64 {
 // milliseconds — hydrated from channel tails at open, advanced on every
 // append. Zero when the node has no timestamped records (empty, or written
 // entirely before timestamps existed). Lock-free.
-func (x *XWAL) LastTS() int64 { return x.lastTS.Load() }
+func (x *XWAL) LastTS() int64 {
+	x.ensureHydrated()
+	return x.lastTS.Load()
+}
+
+// ensureHydrated seeds lastTS once, on the first append. The file probe is
+// preferred: it reads a tail frame per channel DIRECTORY and opens no log.
+func (x *XWAL) ensureHydrated() {
+	if x.hydrated.Load() || !x.hydrated.CompareAndSwap(false, true) {
+		return
+	}
+	if x.cfg.probeTS != nil {
+		mergeMax(x.lastTS, x.cfg.probeTS(x.key))
+		return
+	}
+	x.hydrateLastTS()
+}
 
 // hydrateLastTS seeds lastTS from the tail record of every channel. One
 // frame read per non-empty channel, at open only. Legacy tails without a
@@ -428,11 +498,15 @@ func (x *XWAL) hydrateLastTS() {
 	var max int64
 	for _, name := range x.order {
 		ch := x.chans[name]
-		last := ch.log.LastIndex()
+		l, err := ch.Log()
+		if err != nil {
+			continue
+		}
+		last := l.LastIndex()
 		if last == 0 {
 			continue
 		}
-		f, err := ch.log.Read(last)
+		f, err := l.Read(last)
 		if err != nil {
 			continue
 		}
@@ -910,8 +984,10 @@ func (x *XWAL) Clear(channelName string) error {
 	if ch == nil {
 		return fmt.Errorf("xwal: no channel %q", channelName)
 	}
-	if err := ch.log.Close(); err != nil {
-		return err
+	if l := ch.opened(); l != nil {
+		if err := l.Close(); err != nil {
+			return err
+		}
 	}
 	if err := os.RemoveAll(ch.dir); err != nil {
 		return err
@@ -930,7 +1006,7 @@ func (x *XWAL) Clear(channelName string) error {
 	if err != nil {
 		return err
 	}
-	ch.log = l
+	ch.setLog(l)
 	ch.fk = map[uint64]uint64{}
 	ch.fkBuilt = true // wiped channel: the empty index is current
 	return nil
@@ -990,7 +1066,7 @@ func (x *XWAL) addChannel(spec ChannelSpec) error {
 		return err
 	}
 	ch.dir = cdir
-	ch.log = l
+	ch.setLog(l)
 	ch.fk = map[uint64]uint64{} // indexed lazily from the tail on Lookup
 	x.chans[spec.Name] = ch
 	x.order = append(x.order, spec.Name)
@@ -1522,10 +1598,14 @@ func (x *XWAL) unkeyedCursors() map[string]uint64 {
 		if ch == nil || !ch.unkeyed {
 			continue
 		}
+		l, err := ch.Log()
+		if err != nil {
+			continue
+		}
 		if out == nil {
 			out = make(map[string]uint64, 2)
 		}
-		out[name] = ch.log.LastIndex()
+		out[name] = l.LastIndex()
 	}
 	return out
 }
@@ -1562,8 +1642,12 @@ func (x *XWAL) AppendMainCursors(payload, meta []byte, extra map[string]uint64) 
 			cursors[k] = v
 		}
 	}
-	next := ch.log.LastIndex() + 1
-	if err := ch.log.Write(next, encodeStampedFrame(next, payload, meta, ch.opaque, cursors, x.stampTS())); err != nil {
+	l, err := ch.Log()
+	if err != nil {
+		return 0, nil, err
+	}
+	next := l.LastIndex() + 1
+	if err := l.Write(next, encodeStampedFrame(next, payload, meta, ch.opaque, cursors, x.stampTS())); err != nil {
 		return 0, nil, err
 	}
 	if ch.fkScan || ch.fkBuilt {
@@ -1591,9 +1675,13 @@ func (x *XWAL) Append(channelName string, mainLT uint64, payload, meta []byte) (
 	// entire point: a caller can append here while a turn is in flight, and
 	// the record is durable on its own terms. Its fork boundary comes from
 	// the cursor main stamps, not from a key stored here.
+	l, oerr := ch.Log()
+	if oerr != nil {
+		return 0, oerr
+	}
 	if ch.unkeyed {
-		next := ch.log.LastIndex() + 1
-		if err := ch.log.Write(next, encodeChannelFrame(0, payload, meta, ch.opaque, x.stampTS())); err != nil {
+		next := l.LastIndex() + 1
+		if err := l.Write(next, encodeChannelFrame(0, payload, meta, ch.opaque, x.stampTS())); err != nil {
 			return 0, err
 		}
 		return next, nil
@@ -1604,8 +1692,8 @@ func (x *XWAL) Append(channelName string, mainLT uint64, payload, meta []byte) (
 		return 0, fmt.Errorf("xwal: channel %q main-LT must be non-decreasing: got %d, last %d",
 			channelName, mainLT, lastMain)
 	}
-	next := ch.log.LastIndex() + 1
-	if err := ch.log.Write(next, encodeChannelFrame(mainLT, payload, meta, ch.opaque, x.stampTS())); err != nil {
+	next := l.LastIndex() + 1
+	if err := l.Write(next, encodeChannelFrame(mainLT, payload, meta, ch.opaque, x.stampTS())); err != nil {
 		return 0, err
 	}
 	if ch.fkScan || ch.fkBuilt {
@@ -1616,15 +1704,21 @@ func (x *XWAL) Append(channelName string, mainLT uint64, payload, meta []byte) (
 
 func (x *XWAL) syncAll() error {
 	if ch := x.chans[x.main]; ch != nil {
-		if err := ch.log.Sync(); err != nil {
-			return err
+		if l := ch.opened(); l != nil {
+			if err := l.Sync(); err != nil {
+				return err
+			}
 		}
 	}
 	for _, name := range x.order {
 		if name == x.main {
 			continue
 		}
-		if err := x.chans[name].log.Sync(); err != nil {
+		l := x.chans[name].opened()
+		if l == nil {
+			continue
+		}
+		if err := l.Sync(); err != nil {
 			return err
 		}
 	}
@@ -1645,23 +1739,30 @@ func (x *XWAL) syncCoherent() error {
 	if main == nil {
 		return x.syncAll()
 	}
-	if err := main.log.Sync(); err != nil {
+	mainLog := main.opened()
+	if mainLog == nil {
+		return nil // nothing written through this handle
+	}
+	if err := mainLog.Sync(); err != nil {
 		return err
 	}
 	// The cut is bounded by the DURABLE main tail: an append racing this
 	// pass may already sit in the memory snapshot, and admitting it would
 	// let related records reach disk ahead of their referent.
-	mainTail := main.log.Disk().LastIndex()
+	mainTail := mainLog.Disk().LastIndex()
 	for _, name := range x.order {
 		if name == x.main {
 			continue
 		}
 		ch := x.chans[name]
+		if ch.opened() == nil {
+			continue
+		}
 		target, err := coherentTarget(ch, mainTail)
 		if err != nil {
 			return err
 		}
-		if err := ch.log.SyncThrough(target); err != nil {
+		if err := ch.opened().SyncThrough(target); err != nil {
 			return err
 		}
 	}
@@ -1675,7 +1776,7 @@ func (x *XWAL) syncCoherent() error {
 // open-time trim preserves the same slack). Records are main-LT-non-
 // decreasing, so everything at or below the target is safe.
 func coherentTarget(ch *channel, mainTail uint64) (uint64, error) {
-	first, last, ok := ch.log.PendingBounds()
+	first, last, ok := ch.opened().PendingBounds()
 	if !ok {
 		return 0, nil
 	}
@@ -1684,7 +1785,7 @@ func coherentTarget(ch *channel, mainTail uint64) (uint64, error) {
 		limit++
 	}
 	for idx := last; idx >= first; idx-- {
-		f, err := ch.log.Read(idx)
+		f, err := ch.opened().Read(idx)
 		if err != nil {
 			return 0, err
 		}
@@ -1717,7 +1818,11 @@ func (x *XWAL) ReadAt(channelName string, channelLT uint64) (Record, error) {
 	if ch == nil {
 		return Record{}, fmt.Errorf("xwal: no channel %q", channelName)
 	}
-	f, err := ch.log.Read(channelLT)
+	l, err := ch.Log()
+	if err != nil {
+		return Record{}, err
+	}
+	f, err := l.Read(channelLT)
 	if err != nil {
 		return Record{}, err
 	}
@@ -1734,7 +1839,11 @@ func (x *XWAL) Lookup(channelName string, mainLT uint64) (Record, bool, error) {
 	// The main channel is identity (main-LT == channel-LT), so it needs no fk
 	// index: read directly at mainLT, treating out-of-range as "not found".
 	if channelName == x.main {
-		first, last := ch.log.FirstIndex(), ch.log.LastIndex()
+		l, err := ch.Log()
+		if err != nil {
+			return Record{}, false, err
+		}
+		first, last := l.FirstIndex(), l.LastIndex()
 		if first == 0 || mainLT < first || mainLT > last {
 			return Record{}, false, nil
 		}
@@ -1771,7 +1880,11 @@ func (x *XWAL) RecordsFrom(channelName string, fromMainLT uint64, limit int) ([]
 	if ch == nil {
 		return nil, fmt.Errorf("xwal: no channel %q", channelName)
 	}
-	snapshot := ch.log.Snapshot()
+	l, oerr := ch.Log()
+	if oerr != nil {
+		return nil, oerr
+	}
+	snapshot := l.Snapshot()
 
 	var first uint64
 	err := snapshot.ScanFromEnd(0, func(idx uint64, frame []byte) error {
@@ -1820,9 +1933,13 @@ func (x *XWAL) LatestChannelRecord(channelName string, minMainLT uint64) (Record
 	if ch == nil {
 		return Record{}, false, fmt.Errorf("xwal: no channel %q", channelName)
 	}
+	l, oerr := ch.Log()
+	if oerr != nil {
+		return Record{}, false, oerr
+	}
 	var latest Record
 	found := false
-	err := ch.log.Snapshot().ScanFromEnd(0, func(idx uint64, frame []byte) error {
+	err := l.Snapshot().ScanFromEnd(0, func(idx uint64, frame []byte) error {
 		record, err := decodeRecordFrom(idx, frame, channelName == x.main)
 		if err != nil {
 			return err
@@ -1848,7 +1965,11 @@ func (x *XWAL) StateAt(channelName string, channelLT uint64) ([]byte, error) {
 	if ch.kind != ChannelReducible {
 		return nil, fmt.Errorf("xwal: channel %q is not reducible", channelName)
 	}
-	return ch.log.StateAt(channelLT)
+	l, err := ch.Log()
+	if err != nil {
+		return nil, err
+	}
+	return l.StateAt(channelLT)
 }
 
 // SegmentHeaderAt returns the opaque block-0 header of the segment holding
@@ -1863,7 +1984,11 @@ func (x *XWAL) SegmentHeaderAt(channelName string, channelLT uint64) ([]byte, ui
 	if ch.kind != ChannelReducible {
 		return nil, 0, fmt.Errorf("xwal: channel %q is not reducible", channelName)
 	}
-	return ch.log.SegmentHeaderAt(channelLT)
+	l, err := ch.Log()
+	if err != nil {
+		return nil, 0, err
+	}
+	return l.SegmentHeaderAt(channelLT)
 }
 
 // SyncChannelThrough persists one channel up to idx and no further. It is
@@ -1875,17 +2000,25 @@ func (x *XWAL) SyncChannelThrough(channelName string, idx uint64) error {
 	if ch == nil {
 		return fmt.Errorf("xwal: no channel %q", channelName)
 	}
-	return ch.log.SyncThrough(idx)
+	l, err := ch.Log()
+	if err != nil {
+		return err
+	}
+	return l.SyncThrough(idx)
 }
 
 // tailMain returns the main LT of the channel's last entry.
 func (x *XWAL) tailMain(ch *channel) (uint64, bool, error) {
-	last := ch.log.LastIndex()
-	first := ch.log.FirstIndex()
+	l, err := ch.Log()
+	if err != nil {
+		return 0, false, err
+	}
+	last := l.LastIndex()
+	first := l.FirstIndex()
 	if first == 0 || last < first {
 		return 0, false, nil
 	}
-	f, err := ch.log.Read(last)
+	f, err := l.Read(last)
 	if err != nil {
 		return 0, false, err
 	}
@@ -1908,21 +2041,38 @@ type ChannelInfo struct {
 	Segments int
 }
 
-// Channels reports each channel's current bounds, in declared order.
+// ChannelBounds reports ONE channel's bounds, opening only that channel.
+// ok is false when the channel is unknown or cannot be opened.
+func (x *XWAL) ChannelBounds(name string) (first, last uint64, ok bool) {
+	ch := x.chans[name]
+	if ch == nil {
+		return 0, 0, false
+	}
+	l, err := ch.Log()
+	if err != nil {
+		return 0, 0, false
+	}
+	return l.FirstIndex(), l.LastIndex(), true
+}
+
+// ChannelNames lists the channels in declared order, from the manifest. No
+// channel is opened.
+func (x *XWAL) ChannelNames() []string { return append([]string(nil), x.order...) }
+
+// Channels reports each channel's current bounds, in declared order. It OPENS
+// every channel to read them; ChannelBounds is the one-channel question.
 func (x *XWAL) Channels() []ChannelInfo {
 	out := make([]ChannelInfo, 0, len(x.order))
 	for _, name := range x.order {
 		ch := x.chans[name]
-		out = append(out, ChannelInfo{
-			Name:     name,
-			Kind:     ch.kind,
-			Reducer:  ch.rname,
-			Opaque:   ch.opaque,
-			First:    ch.log.FirstIndex(),
-			Last:     ch.log.LastIndex(),
-			ForkBase: ch.log.ForkBase(),
-			Segments: len(ch.log.SegmentBaseIndexes()),
-		})
+		info := ChannelInfo{Name: name, Kind: ch.kind, Reducer: ch.rname, Opaque: ch.opaque}
+		if l, err := ch.Log(); err == nil {
+			info.First = l.FirstIndex()
+			info.Last = l.LastIndex()
+			info.ForkBase = l.ForkBase()
+			info.Segments = len(l.SegmentBaseIndexes())
+		}
+		out = append(out, info)
 	}
 	return out
 }
@@ -1955,6 +2105,8 @@ func (x *XWAL) sharedView(release func() error, releaseRoot func(), retire func(
 		// these two.)
 		nowMS:       x.nowMS,
 		lastTS:      x.lastTS,
+		hydrated:    x.hydrated,
+		key:         x.key,
 		release:     release,
 		releaseRoot: releaseRoot,
 		retire:      retire,
@@ -1980,8 +2132,8 @@ func (x *XWAL) Close() error {
 			return
 		}
 		for _, ch := range x.chans {
-			if ch.log != nil {
-				if err := ch.log.Close(); err != nil && x.closeErr == nil {
+			if l := ch.opened(); l != nil {
+				if err := l.Close(); err != nil && x.closeErr == nil {
 					x.closeErr = err
 				}
 			}
@@ -2380,7 +2532,11 @@ func (x *XWAL) CursorAt(at uint64, channel string) (uint64, error) {
 	if at == 0 {
 		return 0, nil
 	}
-	frame, err := x.chans[x.main].log.Read(at)
+	mainLog, err := x.chans[x.main].Log()
+	if err != nil {
+		return 0, err
+	}
+	frame, err := mainLog.Read(at)
 	if err != nil {
 		return 0, fmt.Errorf("xwal: cursor for %q at main %d: %w", channel, at, err)
 	}

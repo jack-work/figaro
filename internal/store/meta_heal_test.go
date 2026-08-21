@@ -94,6 +94,7 @@ func TestMetaHealsOnReadBounded(t *testing.T) {
 		TokensIn: 500, TokensOut: 50, CacheReadTokens: 25, CacheWriteTokens: 5,
 		LastFigaroLT: lts[9], Mantra: "keep me", Model: "keep-me-too",
 		ContextTokens: got.ContextTokens, ContextExact: got.ContextExact,
+		MetaVersion: CurrentMetaVersion,
 	}
 	if *got != want {
 		t.Fatalf("healed meta =\n%+v\nwant\n%+v", *got, want)

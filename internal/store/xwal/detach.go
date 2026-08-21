@@ -37,7 +37,12 @@ func (t *Trunks) Detach(node string) error {
 			return serr
 		}
 		dirs = append(dirs, dir)
-		base := ch.log.ForkBase()
+		chLog, lerr := ch.Log()
+		if lerr != nil {
+			x.Close()
+			return lerr
+		}
+		base := chLog.ForkBase()
 		if base <= 1 {
 			continue // already its own root in this channel
 		}
@@ -45,7 +50,7 @@ func (t *Trunks) Detach(node string) error {
 		if ch.kind == ChannelReducible {
 			initial = ch.initial
 		}
-		if err := absorbPrefix(dir, ch.log, base, initial, x.codec); err != nil {
+		if err := absorbPrefix(dir, chLog, base, initial, x.codec); err != nil {
 			x.Close()
 			return fmt.Errorf("xwal: detach %q channel %q: %w", node, c.Name, err)
 		}

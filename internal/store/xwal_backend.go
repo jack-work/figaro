@@ -519,11 +519,11 @@ func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Pat
 	// this is the one a live `fig fork` takes. Missing it under-counted on a
 	// real daemon while every unit test passed, because the tests called
 	// Fork and the CLI calls this.
-	b.inheritStudies(parent)
 	child, version, err := b.store.ForkWith(parent, atMainLT, patch)
 	if err != nil {
 		return "", 0, err
 	}
+	b.inheritStudies(child)
 	// The Form for a node born a moment ago must not be a replay of a channel
 	// that was empty when someone else opened it first. Close what is
 	// dropped: a Form holds a writer, and a dropped one nobody closed is a
@@ -556,15 +556,23 @@ func (b *XwalBackend) CreateConversation(outfitID string) (string, error) {
 	return b.store.CreateConversation(outfitID)
 }
 func (b *XwalBackend) Fork(ariaID string) (cont, alt string, err error) {
-	b.inheritStudies(ariaID)
-	return b.store.Fork(ariaID)
+	cont, alt, err = b.store.Fork(ariaID)
+	if err == nil {
+		b.inheritStudies(alt)
+	}
+	return cont, alt, err
 }
 func (b *XwalBackend) ForkAt(ariaID string, atMainLT uint64) (cont, alt string, err error) {
-	b.inheritStudies(ariaID)
-	return b.store.ForkAt(ariaID, atMainLT)
+	cont, alt, err = b.store.ForkAt(ariaID, atMainLT)
+	if err == nil {
+		b.inheritStudies(alt)
+	}
+	return cont, alt, err
 }
 
-// inheritStudies is FORK's half of the refcount (durable-forms §12.2.2).
+// inheritStudies is FORK's half of the backref set (durable-forms §12.2.2):
+// the id whose BOARD declares the study is the id the libretto records, so it
+// runs on the child, after the child exists.
 func (b *XwalBackend) RetainDeclaredStudies(ariaID string) { b.inheritStudies(ariaID) }
 
 func (b *XwalBackend) inheritStudies(ariaID string) {
@@ -578,7 +586,7 @@ func (b *XwalBackend) inheritStudies(ariaID string) {
 			slog.Warn("fork: libretto unreachable", "aria", ariaID, "form", formID, "err", err)
 			continue
 		}
-		if _, err := lib.Retain(); err != nil {
+		if _, err := lib.Retain(ariaID); err != nil {
 			slog.Warn("fork: retain failed", "aria", ariaID, "form", formID, "err", err)
 		}
 	}
@@ -1023,6 +1031,11 @@ func (b *XwalBackend) Meta(ariaID string) (*AriaMeta, error) {
 		return nil, nil
 	}
 	value := *st.Value
+	if value.MetaVersion < CurrentMetaVersion {
+		if up := b.healIdentity(ariaID, st, &value); up != nil {
+			return up, nil
+		}
+	}
 	return &value, nil
 }
 
@@ -1045,18 +1058,15 @@ func (b *XwalBackend) UpdateMeta(ariaID string, mutate func(*AriaMeta)) error {
 		meta = &value
 	}
 	mutate(meta)
-	if err := writeJSON(b.metaPath(ariaID), meta); err != nil {
-		return err
-	}
-	value := *meta
-	c.state.Store(&metaState{Value: &value})
-	return nil
+	return b.writeMetaLocked(ariaID, c, meta)
 }
 
-func (b *XwalBackend) SetMeta(ariaID string, meta *AriaMeta) error {
-	c := b.metaCache(ariaID)
-	c.mu.Lock()
-	defer c.mu.Unlock()
+// writeMetaLocked stamps, writes and publishes the sidecar: the one writer
+// for all producers. Caller holds c.mu.
+func (b *XwalBackend) writeMetaLocked(ariaID string, c *metaCache, meta *AriaMeta) error {
+	if meta != nil {
+		meta.MetaVersion = CurrentMetaVersion
+	}
 	if err := writeJSON(b.metaPath(ariaID), meta); err != nil {
 		return err
 	}
@@ -1067,6 +1077,13 @@ func (b *XwalBackend) SetMeta(ariaID string, meta *AriaMeta) error {
 	}
 	c.state.Store(st)
 	return nil
+}
+
+func (b *XwalBackend) SetMeta(ariaID string, meta *AriaMeta) error {
+	c := b.metaCache(ariaID)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return b.writeMetaLocked(ariaID, c, meta)
 }
 
 // metaCache does NOT touch. Reading the sidecar is what a LISTING does, to
@@ -1140,7 +1157,7 @@ func (b *XwalBackend) releaseStudies(ariaID string) {
 			slog.Warn("kill: libretto unreachable", "aria", ariaID, "form", formID, "err", err)
 			continue
 		}
-		if _, err := lib.Release(); err != nil {
+		if _, err := lib.Release(ariaID); err != nil {
 			slog.Warn("kill: release failed", "aria", ariaID, "form", formID, "err", err)
 		}
 	}

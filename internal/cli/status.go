@@ -30,7 +30,7 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOu
 		nameArg = args[0]
 	}
 
-	WithAngelus(loaded, func(acli *sdk.Angelus) error {
+	WithAngelusIfRunning(loaded, func(acli *sdk.Angelus) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 

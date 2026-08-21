@@ -59,7 +59,16 @@ type AriaMeta struct {
 	// TTLMS is the lifetime the node's board states (system.ttl), mirrored
 	// here so the sweep can find what is due without opening a single node.
 	TTLMS int64 `json:"ttl_ms,omitempty"`
+	// MetaVersion is the shape this sidecar was last written for; below
+	// CurrentMetaVersion it is upgraded by healIdentity on the next read.
+	MetaVersion int `json:"meta_version,omitempty"`
 }
+
+// CurrentMetaVersion is the sidecar shape this build writes.
+//
+//	0 -> 1  the form-derived identity fields (mantra, cwd, outfit) that
+//	        sidecars predating the metadata-only dormant listing lack.
+const CurrentMetaVersion = 1
 
 // UnmarshalJSON accepts the pre-rename loadout_* keys existing sidecars carry;
 // only outfit_* is written back.

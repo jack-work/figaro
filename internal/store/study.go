@@ -31,18 +31,12 @@ func (b *XwalBackend) StudyForm(observerID, sourceFormID string) (StudyDecl, err
 	if err != nil {
 		return StudyDecl{}, err
 	}
-	// RETAINED ONCE, not once per attempt. The reference is taken before the
-	// first board write (§12.2.1's order) and held across the retries, so
-	// contention costs extra board writes rather than extra durable writes
-	// on the libretto -- eight concurrent casts were paying a retain and a
-	// release per attempt each.
-	retained := false
+	// A ref move is idempotent, so a retry costs no durable write and a
+	// release that never retained is a no-op.
+	declared := false
 	defer func() {
-		// Whatever the outcome, a reference this call took and did not use
-		// goes back: a failed study must not leave a count only a sweep can
-		// explain.
-		if retained {
-			if _, err := lib.Release(); err != nil {
+		if !declared {
+			if _, err := lib.Release(observerID); err != nil {
 				slog.Warn("study: could not release after a failed attempt",
 					"aria", observerID, "form", sourceFormID, "err", err)
 			}
@@ -55,24 +49,22 @@ func (b *XwalBackend) StudyForm(observerID, sourceFormID string) (StudyDecl, err
 			return StudyDecl{}, err
 		}
 		if slices.Contains(studies, sourceFormID) {
-			// Already declared, and not a second reference. No version: this
-			// call wrote nothing, so it has no claim on the mirror's order.
-			return StudyDecl{Studies: studies}, nil
-		}
-		if !retained {
-			// LIBRETTO FIRST. A crash here leaves a count too high, which the
-			// sweep repairs. The reverse leaves a board naming a libretto
-			// nothing counted, which reclamation would collect out from
-			// under a live observer.
-			if _, err := lib.Retain(); err != nil {
+			// The board already declares it: make the backref agree.
+			if _, err := lib.Retain(observerID); err != nil {
 				return StudyDecl{}, err
 			}
-			retained = true
+			declared = true
+			return StudyDecl{Studies: studies}, nil
+		}
+		// Libretto first (durable-forms 12.2.1): the reverse leaves a board
+		// naming a libretto nothing counted.
+		if _, err := lib.Retain(observerID); err != nil {
+			return StudyDecl{}, err
 		}
 		next := append(append([]string(nil), studies...), sourceFormID)
 		landed, err := b.setStudies(observerID, next, version)
 		if err == nil {
-			retained = false // the declaration owns it now
+			declared = true
 			return StudyDecl{Studies: next, Version: landed, Changed: true}, nil
 		}
 		if !errors.Is(err, ErrFormMoved) {
@@ -146,7 +138,7 @@ func (b *XwalBackend) DropForm(observerID, sourceFormID string) (StudyDecl, erro
 	if err != nil {
 		return decl, err
 	}
-	if _, err := lib.Release(); err != nil {
+	if _, err := lib.Release(observerID); err != nil {
 		return decl, err
 	}
 	return decl, nil

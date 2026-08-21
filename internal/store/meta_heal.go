@@ -64,9 +64,60 @@ func (b *XwalBackend) healMeta(ariaID string, log Log[message.Message]) {
 		folded++
 	}
 	metaHealFolded.Add(folded)
-	if err := writeJSON(b.metaPath(ariaID), &meta); err != nil {
+	if err := b.writeMetaLocked(ariaID, c, &meta); err != nil {
 		return
 	}
 	slog.Info("meta healed", "aria", ariaID, "from", st.Value.LastFigaroLT, "to", meta.LastFigaroLT, "folded", folded)
-	c.state.Store(&metaState{Value: &meta})
+}
+
+// metaIdentityHealed counts sidecars the identity healer has upgraded, ever.
+var metaIdentityHealed atomic.Int64
+
+// MetaIdentityHealed reports how many sidecars were migrated on read.
+func MetaIdentityHealed() int64 { return metaIdentityHealed.Load() }
+
+// healIdentity folds a board's identity keys into a sidecar below
+// CurrentMetaVersion and stamps it, on the read that wanted those fields.
+// Returns the upgraded copy, or nil for the caller's own. `from` is the state
+// it was read from: a write on the read path abandons when that state was
+// superseded while the board was folding. See plans/lazy-store-passes.md.
+func (b *XwalBackend) healIdentity(ariaID string, from *metaState, meta *AriaMeta) *AriaMeta {
+	// Before the sidecar lock: this takes the store's own.
+	snap, err := b.FormState(ariaID)
+	if err != nil {
+		return nil
+	}
+	get := func(key string) string { return snapString(snap, key) }
+	up := *meta
+	if up.Mantra == "" {
+		up.Mantra = get("mantra")
+	}
+	if up.Cwd == "" {
+		up.Cwd = get("system.cwd")
+	}
+	if up.OutfitName == "" {
+		up.OutfitName = get(keyOutfitName)
+		up.OutfitVersion = get(keyOutfitVer)
+		if up.OutfitName == "" {
+			up.OutfitName, up.OutfitVersion = get(keyLegacyName), get(keyLegacyVer)
+		}
+	}
+	if up.Provider == "" {
+		up.Provider = get("system.provider")
+	}
+	if up.Model == "" {
+		up.Model = get("system.model")
+	}
+
+	c := b.metaCache(ariaID)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.state.Load() != from {
+		return nil
+	}
+	if err := b.writeMetaLocked(ariaID, c, &up); err != nil {
+		return nil
+	}
+	metaIdentityHealed.Add(1)
+	return &up
 }

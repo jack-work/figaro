@@ -33,6 +33,20 @@ func WithAngelus(loaded *config.Loaded, fn func(acli *sdk.Angelus) error) {
 	}
 }
 
+// WithAngelusIfRunning connects to a RUNNING angelus and calls fn. It starts
+// no daemon and unlocks no vault: a query must not create what it asks about.
+func WithAngelusIfRunning(loaded *config.Loaded, fn func(acli *sdk.Angelus) error) {
+	ep := transport.UnixEndpoint(angelusSocketPath())
+	acli, err := sdk.DialAngelus(ep)
+	if err != nil {
+		die("angelus is not running")
+	}
+	defer acli.Close()
+	if err := fn(acli); err != nil {
+		die("%s", err)
+	}
+}
+
 // WithSessionFor resolves the target aria (explicit id > pid binding)
 // and calls fn. When explicitID is empty, falls back to the pid binding.
 func WithSessionFor(loaded *config.Loaded, explicitID string, fn func(s *Session) error) {

@@ -110,15 +110,10 @@ func (l *xwalLog[T]) Read() []Entry[T] {
 	return out
 }
 
-// channelBoundsLocked reports the channel's first and last LT. ok is false for
-// an empty channel. Cheap: it reads the manifest, not the segments.
+// channelBounds reports the channel's first and last LT. ok is false for an
+// empty channel. It opens THAT channel and no other.
 func channelBounds(xw *xwal.XWAL, channel string) (first, last uint64, ok bool) {
-	for _, c := range xw.Channels() {
-		if c.Name == channel {
-			first, last = c.First, c.Last
-			break
-		}
-	}
+	first, last, _ = xw.ChannelBounds(channel)
 	// first == 0 with last > 0 means "channel starts at index 1 with no parent
 	// to inherit from" (common for a channel added mid-life). Normalize.
 	if first == 0 {

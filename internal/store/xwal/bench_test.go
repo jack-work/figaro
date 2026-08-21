@@ -134,7 +134,7 @@ func BenchmarkXWALLongAria(b *testing.B) {
 				b.ReportAllocs()
 				for i := 0; i < b.N; i++ {
 					seen := 0
-					err := x.chans["ir"].log.ScanFromEnd(uint64(records), func(uint64, []byte) error {
+					err := x.chans["ir"].mustLog().ScanFromEnd(uint64(records), func(uint64, []byte) error {
 						seen++
 						if seen == 256 {
 							return errStopRange

@@ -27,7 +27,7 @@ func TestSweepDoesNotCreateASecondWriter(t *testing.T) {
 		t.Fatalf("refs = %d before the sweep", got)
 	}
 	// Force a correction the sweep must make.
-	if err := lib.setRefs(9); err != nil {
+	if err := lib.SetRefs([]string{"n0", "n1", "n2"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := be.ReconcileLibrettos(); err != nil {
