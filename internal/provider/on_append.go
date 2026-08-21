@@ -96,7 +96,7 @@ func (o *OnAppend) EncodeEntry(ariaID string, source store.Log[message.Message],
 	if len(encoded) == 0 {
 		// NO ROW, NO COMMIT. The store drops an empty encode, so committing
 		// here would consume a window that nothing renders -- the defect
-		// TestAContentlessEntryEatsTheStudyWindow reproduces.
+		// TestAContentlessEntryDoesNotEatTheStudyWindow reproduces.
 		o.mu.Unlock()
 		return nil, "", nil
 	}

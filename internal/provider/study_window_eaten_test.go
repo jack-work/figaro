@@ -116,3 +116,79 @@ func (v patchAt) PatchesBetween(after, upTo uint64) []message.Patch {
 	}
 	return []message.Patch{{Set: map[string]json.RawMessage{"role-purpose": json.RawMessage(`"carry the razor"`)}}}
 }
+
+// GLUCK'S OWN EXAMPLE, 2026-08-20, as the specification:
+//
+//	translated   fig IR message, cursor at 6
+//	untranslated fig IR message, cursor at 7
+//	untranslated fig IR message, cursor at 15   (many patches in between)
+//	translated   fig IR message, cursor at 15
+//
+//	"translator should look back in figaro ir, see 15, but know that it was an
+//	 untranslated message, so it needs to look further ... then it sees the
+//	 cursor at 6, the fig IR message is translatable, and so it gets a cursor
+//	 delta of 9, and folds the patch from libretto LTs 6-15"
+//
+// THE FIG IR STAMP ALWAYS ADVANCES -- it is written at append time and is a
+// fact about the record. What must not advance is the TRANSLATOR's notion of
+// what the model has actually been shown, and walking the log forward that is
+// simply "commit on write": the range stays open across every entry that
+// produced no row, so the next one that does gets (6, 15].
+func TestTheDeltaSpansEveryUntranslatedMessageBetween(t *testing.T) {
+	const fid = "@studied"
+	studies := map[string]Form{fid: patchesEvery{}}
+
+	entry := func(stamp uint64, body string) store.Entry[message.Message] {
+		m := message.Message{Role: message.RoleInput}
+		if body != "" {
+			m.Content = []message.Content{message.TextContent(body)}
+		}
+		return store.Entry[message.Message]{StudyVersions: map[string]uint64{fid: stamp}, Payload: m}
+	}
+
+	d := NewDeriver(nil, studies)
+	// The first translated message sets where the model's knowledge stands.
+	msg, _, ok := d.Next(entry(6, "seen"))
+	if !ok {
+		t.Fatal("the opening message must be translatable")
+	}
+	d.Commit(entry(6, "seen"), msg)
+
+	// Two records land that translate to nothing. Their stamps advance in the
+	// fig IR; the translator's cursor must not.
+	for _, at := range []uint64{7, 15} {
+		e := entry(at, "")
+		m, _, _ := d.Next(e)
+		if len(m.Content) != 0 {
+			t.Fatalf("fixture: the record at %d should encode to nothing", at)
+		}
+		// No row is written, so no Commit -- exactly what both callers do.
+	}
+
+	// The next message that DOES translate must carry the whole span.
+	m, _, ok := d.Next(entry(15, "next real prompt"))
+	if !ok {
+		t.Fatal("the following prompt must be translatable")
+	}
+	got := m.StudyPatches[fid]
+	if len(got) != 9 {
+		t.Fatalf("the delta spans %d patches, want 9 -- libretto 6 to 15, across "+
+			"both untranslated messages. Gluck's example is the specification.", len(got))
+	}
+	if at := m.StudyAt[fid]; at != 15 {
+		t.Fatalf("the block names libretto version %d, want 15", at)
+	}
+}
+
+// patchesEvery yields one patch per version in (after, upTo], statelessly.
+type patchesEvery struct{}
+
+func (patchesEvery) PatchesBetween(after, upTo uint64) []message.Patch {
+	var out []message.Patch
+	for v := after + 1; v <= upTo; v++ {
+		out = append(out, message.Patch{Set: map[string]json.RawMessage{
+			"k": json.RawMessage(`"v"`),
+		}})
+	}
+	return out
+}
