@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/api/message"
 )
 
 func unmatchedInvokes(rows []Entry[message.Message]) []string {

@@ -74,11 +74,11 @@ func runRestWithFlags(force, keepPIDs bool) {
 }
 
 // waitForExit polls until pid is gone or the deadline passes; reports whether
-// it is gone. Signal 0 outlives every file the daemon removes on its way out.
+// it is gone.
 func waitForExit(pid int, within time.Duration) bool {
 	deadline := time.Now().Add(within)
 	for {
-		if err := syscall.Kill(pid, 0); err != nil {
+		if !pidAlive(pid) {
 			return true
 		}
 		if time.Now().After(deadline) {
