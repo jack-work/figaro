@@ -162,7 +162,7 @@ func Open(dir string, opts Options) (*Log, error) {
 				ErrForkMismatch, base, firstBase)
 		}
 	}
-	slog.Info("log opened",
+	slog.Debug("log opened",
 		"dir", dir,
 		"codec", l.codec.Name(),
 		"segmentSize", opts.SegmentSize,

@@ -181,7 +181,7 @@ func (s *Segment) recover() error {
 				"path", s.path, "bytes", tornBytes)
 		}
 	}
-	slog.Info("segment recovered",
+	slog.Debug("segment recovered",
 		"codec", s.codec.Name(),
 		"path", s.path,
 		"baseIndex", s.baseIndex,

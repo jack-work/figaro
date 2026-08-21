@@ -15,13 +15,27 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/transport"
 )
 
-// lockStore takes a non-blocking exclusive flock on the aria store so only one
-// angelus ever has it open. Returns the open handle (keep it alive for the
-// daemon's lifetime: closing it releases the lock) and whether it was
-// acquired. A crashed holder's lock is released by the kernel, so the next
-// daemon can take over.
+// lockHandoff is how long a starting daemon waits for a DYING incumbent to
+// release the store. `figaro rest` returns when the socket is gone, but the
+// lock outlives the socket by the length of the daemon's own teardown, and
+// anything started in that window used to fail the lock and exit -- which is
+// exactly the window a user restarting his daemon types into.
+const lockHandoff = 10 * time.Second
+
+// lockStore takes an exclusive flock on the aria store so only one angelus
+// ever has it open. Returns the open handle (keep it alive for the daemon's
+// lifetime: closing it releases the lock) and whether it was acquired. A
+// crashed holder's lock is released by the kernel, so the next daemon can
+// take over.
+//
+// A failed lock is retried until lockHandoff, because "another angelus owns
+// the store" and "another angelus is 200ms from releasing the store" are the
+// same observation at the instant it is made. The retry stops early the
+// moment a LIVE incumbent answers on the socket: that one is not dying, and
+// standing down for it immediately is what makes a startup race cheap.
 func lockStore() (*os.File, bool) {
 	// Keep the daemon lock outside the XWAL tree.
 	dir := stateDir()
@@ -32,11 +46,27 @@ func lockStore() (*os.File, bool) {
 	if err != nil {
 		return nil, false
 	}
-	if err := tryLockFile(f); err != nil {
-		f.Close()
-		return nil, false
+	deadline := time.Now().Add(lockHandoff)
+	for {
+		if err := tryLockFile(f); err == nil {
+			return f, true
+		}
+		if incumbentAnswers() || time.Now().After(deadline) {
+			f.Close()
+			return nil, false
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
-	return f, true
+}
+
+// incumbentAnswers reports whether a live daemon is serving the socket.
+func incumbentAnswers() bool {
+	cli, err := angelus.DialClient(transport.UnixEndpoint(angelusSocketPath()))
+	if err != nil {
+		return false
+	}
+	cli.Close()
+	return true
 }
 
 // runAngelus runs the supervisor side of the binary.

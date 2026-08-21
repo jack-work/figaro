@@ -56,6 +56,7 @@ func runRestWithFlags(force, keepPIDs bool) {
 
 	if force {
 		killPid(pid, syscall.SIGKILL)
+		waitForExit(pid, 5*time.Second)
 		os.Remove(sockPath)
 		fmt.Fprintf(os.Stderr, "angelus (pid %d) forcefully terminated\n", pid)
 		return
@@ -63,17 +64,34 @@ func runRestWithFlags(force, keepPIDs bool) {
 
 	killPid(pid, syscall.SIGTERM)
 
-	deadline := time.Now().Add(15 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(sockPath); os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "angelus (pid %d) put to rest\n", pid)
-			return
-		}
-		time.Sleep(100 * time.Millisecond)
+	// Wait for the PROCESS, not the socket. The socket is removed before the
+	// daemon's own teardown (telemetry shutdown, deferred closes) and before
+	// the store lock is released -- so a stop that returned at socket-removal
+	// handed the user a window in which the next daemon failed the lock and
+	// exited, printing "another angelus already owns this store".
+	if waitForExit(pid, 15*time.Second) {
+		fmt.Fprintf(os.Stderr, "angelus (pid %d) put to rest\n", pid)
+		return
 	}
 
 	fmt.Fprintf(os.Stderr,
 		"angelus (pid %d) did not rest within 15s; try `figaro rest --force`\n", pid)
+}
+
+// waitForExit polls until pid is gone or the deadline passes; reports whether
+// it is gone. Signal 0 is the only witness that outlives every file the daemon
+// removes on its way out.
+func waitForExit(pid int, within time.Duration) bool {
+	deadline := time.Now().Add(within)
+	for {
+		if err := syscall.Kill(pid, 0); err != nil {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 // dashCount renders a token count for the models table, "-" when unknown.
