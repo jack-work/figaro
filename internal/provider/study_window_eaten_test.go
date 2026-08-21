@@ -192,3 +192,67 @@ func (patchesEvery) PatchesBetween(after, upTo uint64) []message.Patch {
 	}
 	return out
 }
+
+// THE TRANSLATOR ASSUMES THE STORE WRITES WHAT IT HANDS BACK, and this is what
+// happens when that assumption breaks.
+//
+// Gluck's constraint: the fig IR side must not know which blocks were
+// translated, so nothing reports a write back to it. The cursor therefore
+// advances when the translator RETURNS bytes, not when they land -- and a
+// store-side append failure leaves the in-memory cursor ahead of the log.
+//
+// It is not lost, because the catch-up derives its watermark from the last
+// WRITTEN row and re-walks everything after it. That is the self-healing half
+// of the two-path design, and it is asserted here rather than believed.
+func TestACatchUpRecoversAWindowAWriteFailureSkipped(t *testing.T) {
+	const fid = "@studied"
+	studies := map[string]Form{fid: patchesEvery{}}
+
+	log := store.NewMemLog[message.Message]()
+	for _, at := range []uint64{6, 15} {
+		if _, err := log.Append(store.Entry[message.Message]{
+			StudyVersions: map[string]uint64{fid: at},
+			Payload: message.Message{
+				Role: message.RoleInput, Content: []message.Content{message.TextContent("m")},
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// The write path handled BOTH entries and its cursor is at 15 -- but the
+	// store accepted NO rows, as a failing append would leave it.
+	adapter := NewOnAppend("fake",
+		func(msg message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
+			return []json.RawMessage{json.RawMessage(`{"role":"user"}`)}, nil
+		},
+		func() string { return "fp/v1" },
+		func(string) Form { return nil },
+		func(string) map[string]Form { return studies },
+		func(string) (store.Log[[]json.RawMessage], error) { return store.NewMemLog[[]json.RawMessage](), nil },
+	)
+	for _, e := range log.Read() {
+		if _, _, err := adapter.EncodeEntry("aria", log, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// The next send catches up. Its watermark is the last WRITTEN row -- there
+	// is none -- so it must render the whole span, not trust anyone's cursor.
+	var seen int
+	trans := store.NewMemLog[[]json.RawMessage]()
+	if _, err := CatchUp(CatchUpConfig{
+		Log: log, Translator: trans, Studies: studies, Fingerprint: "fp/v1",
+		Encode: func(msg message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
+			seen += len(msg.StudyPatches[fid])
+			return []json.RawMessage{json.RawMessage(`{"role":"user"}`)}, nil
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if seen != 15 {
+		t.Fatalf("the catch-up rendered %d patches, want 15: a write failure must not "+
+			"cost a window, because the watermark is the last WRITTEN row and not a "+
+			"cursor anybody kept", seen)
+	}
+}
