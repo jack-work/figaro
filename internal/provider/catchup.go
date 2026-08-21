@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"sync"
 
 	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
@@ -40,6 +42,9 @@ type CatchUpStats struct {
 	Visited   int // records at or after the watermark
 	Encoded   int // records translated and written
 	Unwritten int // records that encoded to nothing (genesis, empty)
+	// RepairedAt is the fig IR LT of a hole found BELOW the watermark, which
+	// clears the rows and re-derives them whole. Zero when there was none.
+	RepairedAt uint64
 }
 
 // ErrNoTranslator is returned when there is no translator log to write to. A send
@@ -74,6 +79,21 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 			}
 		}
 	}
+	if watermark > 0 {
+		if _, done := verifiedLogs.Load(cfg.Translator); !done {
+			if gap, found := firstGap(cfg, watermark); found {
+				slog.Warn("translator rows have a hole; re-deriving from the fig IR",
+					"figaro_lt", gap, "watermark", watermark)
+				if cerr := cfg.Translator.Clear(); cerr != nil {
+					return stats, fmt.Errorf("clear rows with a hole at %d: %w", gap, cerr)
+				}
+				stats.RepairedAt = gap
+				watermark = 0
+			}
+			verifiedLogs.Store(cfg.Translator, struct{}{})
+		}
+	}
+
 	entries, total := store.TailAfter(cfg.Log, watermark)
 	stats.Entries = total
 	stats.Visited = len(entries)
@@ -122,6 +142,43 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 		stats.Encoded++
 	}
 	return stats, nil
+}
+
+// verifiedLogs remembers which translator logs this process has checked for a
+// hole below the watermark. The handle is cached per aria, so the check runs
+// once per aria per daemon lifetime -- which is when a hole can appear, since
+// making one takes a crash between the canonical append and the derived one.
+var verifiedLogs sync.Map
+
+// firstGap is the earliest fig IR record at or below the watermark that would
+// have written a row and has none. The watermark alone cannot see one: it is
+// the newest row's LT, so a record whose row was lost while later records got
+// theirs sits below it forever.
+func firstGap(cfg CatchUpConfig, watermark uint64) (uint64, bool) {
+	have := make(map[uint64]struct{})
+	for _, r := range cfg.Translator.Read() {
+		have[r.FigaroLT] = struct{}{}
+	}
+	d := NewDeriver(cfg.Form, cfg.Studies)
+	for _, entry := range cfg.Log.Read() {
+		if entry.LT > watermark {
+			break
+		}
+		msg, snap, translatable := d.Next(entry)
+		if !translatable {
+			continue
+		}
+		if _, ok := have[entry.LT]; ok {
+			d.Commit(entry, msg)
+			continue
+		}
+		// No row is a hole only where a row was owed: an entry that encodes
+		// to nothing never had one, and its patches ride the next entry.
+		if encoded, err := cfg.Encode(msg, snap); err == nil && len(encoded) > 0 {
+			return entry.LT, true
+		}
+	}
+	return 0, false
 }
 
 // Translations reads a translator log whole, in order: the messages array, as

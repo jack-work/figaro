@@ -159,3 +159,94 @@ func TestAMatchingFigaroHashLeavesTheChannelAlone(t *testing.T) {
 		t.Fatalf("the first row moved: rows=%d", len(after))
 	}
 }
+
+// THE HOLE THE WATERMARK CANNOT SEE (2026-08-21, from a live incident). A
+// daemon killed between the canonical fig IR append and the derived row leaves
+// a record with no row; the records after it get theirs, so the watermark
+// moves past the hole and nothing revisits it. The aria then sends a
+// tool_result whose tool_use was never translated, and the provider rejects
+// every turn forever.
+func TestCatchUpFillsAHoleBelowTheWatermark(t *testing.T) {
+	log := store.NewMemLog[message.Message]()
+	rows := store.NewMemLog[[]json.RawMessage]()
+	for i := range 6 {
+		appendProjectionMessage(t, log, "body "+strconv.Itoa(i))
+	}
+	cfg := catchUpTestConfig(log, rows)
+	if _, err := CatchUp(cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	// Punch the hole: drop one row from the middle, as a crash between the
+	// two appends would have left it.
+	all := rows.Read()
+	if len(all) < 6 {
+		t.Fatalf("fixture wrote %d rows", len(all))
+	}
+	missing := all[3].FigaroLT
+	if err := rows.Clear(); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range all {
+		if r.FigaroLT == missing {
+			continue
+		}
+		if _, err := rows.Append(store.Entry[[]json.RawMessage]{
+			FigaroLT: r.FigaroLT, Payload: r.Payload,
+			Fingerprint: r.Fingerprint, FigaroHash: r.FigaroHash,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	verifiedLogs.Delete(cfg.Translator) // a fresh process would not have looked yet
+
+	stats, err := CatchUp(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.RepairedAt != missing {
+		t.Fatalf("RepairedAt=%d, want the hole at %d", stats.RepairedAt, missing)
+	}
+	got := map[uint64]bool{}
+	for _, r := range rows.Read() {
+		got[r.FigaroLT] = true
+	}
+	for _, e := range log.Read() {
+		if !got[e.LT] {
+			t.Fatalf("fig IR %d still has no row after catch-up", e.LT)
+		}
+	}
+}
+
+// And the repair is not a per-send tax: once a log has been checked, the
+// watermark fast path is what every later send takes.
+func TestCatchUpChecksForHolesOncePerLog(t *testing.T) {
+	log := store.NewMemLog[message.Message]()
+	rows := store.NewMemLog[[]json.RawMessage]()
+	for i := range 4 {
+		appendProjectionMessage(t, log, "body "+strconv.Itoa(i))
+	}
+	cfg := catchUpTestConfig(log, rows)
+	verifiedLogs.Delete(cfg.Translator)
+	// Cold: there are no rows yet, so there is nothing to check.
+	if _, err := CatchUp(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := verifiedLogs.Load(cfg.Translator); ok {
+		t.Fatal("an empty translator was checked for holes")
+	}
+	if _, err := CatchUp(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := verifiedLogs.Load(cfg.Translator); !ok {
+		t.Fatal("the log was not marked checked")
+	}
+	appendProjectionMessage(t, log, "another")
+	stats, err := CatchUp(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Visited != 1 {
+		t.Fatalf("visited=%d after the check, want 1: the watermark path is the hot one", stats.Visited)
+	}
+}
