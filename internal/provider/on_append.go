@@ -84,15 +84,24 @@ func (o *OnAppend) EncodeEntry(ariaID string, source store.Log[message.Message],
 		o.at[ariaID] = d
 	}
 	msg, snap, translatable := d.Next(e)
-	o.mu.Unlock()
-
 	if !translatable {
+		o.mu.Unlock()
 		return nil, "", nil
 	}
 	encoded, err := o.encode(msg, snap)
 	if err != nil {
+		o.mu.Unlock()
 		return nil, "", err
 	}
+	if len(encoded) == 0 {
+		// NO ROW, NO COMMIT. The store drops an empty encode, so committing
+		// here would consume a window that nothing renders -- the defect
+		// TestAContentlessEntryEatsTheStudyWindow reproduces.
+		o.mu.Unlock()
+		return nil, "", nil
+	}
+	d.Commit(e, msg)
+	o.mu.Unlock()
 	return encoded, o.fingerprint(), nil
 }
 

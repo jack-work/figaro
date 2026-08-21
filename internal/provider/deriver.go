@@ -67,42 +67,39 @@ func (d *Deriver) SeedAt(log store.Log[message.Message], watermark uint64) {
 // At reports the board version the cursor has consumed to.
 func (d *Deriver) At() uint64 { return d.lastForm }
 
-// Next consumes one entry and returns what to encode: the message with its
+// Next reads one entry and returns what to encode: the message with its
 // patches and study blocks attached, and the board as it stood BEFORE it.
-// translatable is false for entries that advance the cursors and render to
-// nothing.
+// translatable is false for an entry that renders to nothing.
 //
-// IT MUST BE CALLED IN LOG ORDER, EXACTLY ONCE PER ENTRY. Skipping one loses
-// the patches it introduced; repeating one renders them twice.
+// IT MUST BE CALLED IN LOG ORDER, EXACTLY ONCE PER ENTRY.
+//
+// IT DOES NOT ADVANCE THE CURSORS. Commit does, and only the caller knows
+// whether a row was actually written: an entry can be translatable, carry a
+// delta, and still encode to nothing, and a cursor advanced for such an entry
+// consumes a window that no row ever renders. The delta then rides the next
+// entry that DOES write, which is what "look back to the most recent message
+// that actually has a translation" means when the log is walked forward.
 func (d *Deriver) Next(entry store.Entry[message.Message]) (msg message.Message, snap form.Snapshot, translatable bool) {
 	msg = entry.Payload
 	msg.LogicalTime = entry.LT
 	if msg.Role == message.RoleGenesis {
-		d.lastForm = maxVersion(d.lastForm, entry.FormChannelVersion)
-		for fid, upTo := range entry.StudyVersions {
-			d.lastStudy[fid] = maxVersion(d.lastStudy[fid], upTo)
-		}
+		d.Skip(entry)
 		return msg, d.snap, false
 	}
 
 	if d.form != nil {
-		// (after, upTo]: the previous entry's mark and this one's.
+		// (after, upTo]: the last COMMITTED mark and this entry's.
 		msg.Patches = d.form.PatchesBetween(d.lastForm, entry.FormChannelVersion)
 	}
-	d.lastForm = maxVersion(d.lastForm, entry.FormChannelVersion)
 
-	// A WINDOW MAY ONLY CLOSE ON AN ENTRY THAT CAN CARRY THE BLOCK: an entry
-	// that consumed a window it cannot render loses the change permanently.
+	// A WINDOW MAY ONLY CLOSE ON AN ENTRY THAT CAN CARRY THE BLOCK.
 	if carriesStudy(msg) {
 		for fid, upTo := range entry.StudyVersions {
-			// Advance first, whatever happens below: true of a deleted form too.
-			prev := d.lastStudy[fid]
-			d.lastStudy[fid] = maxVersion(prev, upTo)
 			acc := d.studies[fid]
 			if acc == nil {
 				continue
 			}
-			if ps := acc.PatchesBetween(prev, upTo); len(ps) > 0 {
+			if ps := acc.PatchesBetween(d.lastStudy[fid], upTo); len(ps) > 0 {
 				if msg.StudyPatches == nil {
 					msg.StudyPatches = map[string][]message.Patch{}
 				}
@@ -117,7 +114,33 @@ func (d *Deriver) Next(entry store.Entry[message.Message]) (msg message.Message,
 
 	// The encoder renders old -> new, so it needs the board this entry
 	// arrived at, before its own patches fold in.
-	before := d.snap
+	return msg, d.snap, true
+}
+
+// Commit advances the cursors past an entry whose row WAS written, and folds
+// its patches into the board. Until it is called the ranges stay open, so an
+// entry that encoded to nothing leaves its delta for the next entry that does
+// not.
+//
+// A caller that never commits renders the same patches on every entry; a
+// caller that commits unconditionally loses the ones that were never written.
+// Both callers of Next commit exactly when the store accepted a row.
+func (d *Deriver) Commit(entry store.Entry[message.Message], msg message.Message) {
+	d.lastForm = maxVersion(d.lastForm, entry.FormChannelVersion)
+	if carriesStudy(msg) {
+		for fid, upTo := range entry.StudyVersions {
+			d.lastStudy[fid] = maxVersion(d.lastStudy[fid], upTo)
+		}
+	}
 	d.snap = form.Fold(d.snap, msg.Patches)
-	return msg, before, true
+}
+
+// Skip advances the cursors past an entry that is NOT translatable at all --
+// genesis, and anything the deriver itself refuses. Such an entry can carry no
+// block, so holding its window open would render nothing and cost a rescan.
+func (d *Deriver) Skip(entry store.Entry[message.Message]) {
+	d.lastForm = maxVersion(d.lastForm, entry.FormChannelVersion)
+	for fid, upTo := range entry.StudyVersions {
+		d.lastStudy[fid] = maxVersion(d.lastStudy[fid], upTo)
+	}
 }

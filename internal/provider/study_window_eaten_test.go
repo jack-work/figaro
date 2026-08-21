@@ -25,19 +25,23 @@ import (
 // every pass. The write path holds its cursor IN MEMORY for the life of the
 // daemon, so for it the window is simply gone.
 //
-// IT ASSERTS THE DEFECT AS IT STANDS, not the cure, so the gate stays green
-// for everyone rebasing onto this branch while the reproducer survives. The
-// precedent is this campaign's warm/cold divergence test, which asserted the
-// divergence and named the condition for its own rewrite.
+// FIXED (Gluck's design): a cursor advances only when a row is WRITTEN. The
+// deriver computes in Next and moves in Commit, and both callers commit
+// exactly when the store accepted a row -- so an entry that encodes to nothing
+// leaves its window open and the delta rides the next entry that does not.
 //
-//	IF THIS TEST FAILS, THE WINDOW IS NO LONGER EATEN. That is the fix
-//	landing, and this test should then assert that the study patch REACHES
-//	the following prompt -- swap the two branches below and delete this note.
-func TestAContentlessEntryEatsTheStudyWindow(t *testing.T) {
+// This test asserted the DEFECT until the fix landed, and its failure message
+// told its author to invert it, which is what happened.
+func TestAContentlessEntryDoesNotEatTheStudyWindow(t *testing.T) {
 	const fid = "@studied"
 
 	// The studied form gained one patch, at libretto version 7.
-	studies := map[string]Form{fid: newFakeBoard(7)}
+	//
+	// A STATELESS ACCESSOR, deliberately. newFakeBoard's cursor CONSUMES: it
+	// yields each version once and never again, so a test using it cannot tell
+	// "the deriver never asked" from "the fake had nothing left" -- and this
+	// test's whole subject is whether the range is asked for twice.
+	studies := map[string]Form{fid: patchAt(7)}
 
 	log := store.NewMemLog[message.Message]()
 	// 1: a CONTENTLESS input record, stamped with the new study version. It
@@ -94,12 +98,21 @@ func TestAContentlessEntryEatsTheStudyWindow(t *testing.T) {
 		}
 	}
 
-	if len(sawStudyOn) != 0 {
-		t.Fatalf("THE WINDOW IS NO LONGER EATEN (study patches reached %v). That is the "+
-			"defect fixed: rewrite this test to assert the patch REACHES the prompt.",
-			sawStudyOn)
+	if len(sawStudyOn) == 0 {
+		t.Fatal("THE STUDY CHANGE WAS LOST: the contentless record consumed the window " +
+			"at version 7 and wrote no row, so the prompt that followed carried nothing. " +
+			"This is the shape of Gluck's vanished role-purpose, and the cure is that a " +
+			"cursor advances only when a row is written.")
 	}
-	t.Log("DEFECT PRESENT, as designed for this reproducer: the contentless record " +
-		"consumed the study window at version 7 and wrote no row, so the prompt that " +
-		"followed carried nothing. This is the shape of Gluck's vanished role-purpose.")
+}
+
+// patchAt answers PatchesBetween honestly and repeatedly: one patch at the
+// given version, for any range that contains it.
+type patchAt uint64
+
+func (v patchAt) PatchesBetween(after, upTo uint64) []message.Patch {
+	if uint64(v) <= after || uint64(v) > upTo {
+		return nil
+	}
+	return []message.Patch{{Set: map[string]json.RawMessage{"role-purpose": json.RawMessage(`"carry the razor"`)}}}
 }

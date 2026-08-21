@@ -98,6 +98,8 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 			return stats, fmt.Errorf("encode at %d: %w", entry.LT, err)
 		}
 		if len(encoded) == 0 {
+			// NO ROW, NO COMMIT: the window stays open and its patches ride
+			// the next entry that writes one.
 			stats.Unwritten++
 			continue
 		}
@@ -116,6 +118,7 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 			}
 			return stats, fmt.Errorf("write row at %d: %w", entry.LT, werr)
 		}
+		d.Commit(entry, msg)
 		stats.Encoded++
 	}
 	return stats, nil
