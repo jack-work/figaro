@@ -2038,7 +2038,31 @@ type ChannelInfo struct {
 	// with no parent to inherit from. It is the fork base IN THE CHANNEL'S OWN
 	// COORDINATES, which is not the main channel's.
 	ForkBase uint64
+	// Err is why this channel could not be opened. The bounds are then
+	// meaningless and must not be read as an empty channel.
+	Err      error
 	Segments int
+}
+
+// DurableThrough is the highest index in a channel that has reached the disk:
+// everything at or below it survives a kill. Zero when nothing has. It is the
+// receipt a durability test needs -- the alternative is inferring durability
+// from a wall clock, which measures the machine's load and calls it the
+// store's promise.
+func (x *XWAL) DurableThrough(name string) uint64 {
+	ch := x.chans[name]
+	if ch == nil {
+		return 0
+	}
+	l := ch.opened()
+	if l == nil {
+		return 0
+	}
+	first, _, pending := l.PendingBounds()
+	if !pending {
+		return l.LastIndex()
+	}
+	return first - 1
 }
 
 // ChannelBounds reports ONE channel's bounds, opening only that channel.
@@ -2055,6 +2079,19 @@ func (x *XWAL) ChannelBounds(name string) (first, last uint64, ok bool) {
 	return l.FirstIndex(), l.LastIndex(), true
 }
 
+// ChannelForkBase is one channel's fork base, opening only that channel.
+func (x *XWAL) ChannelForkBase(name string) (uint64, bool) {
+	ch := x.chans[name]
+	if ch == nil {
+		return 0, false
+	}
+	l, err := ch.Log()
+	if err != nil {
+		return 0, false
+	}
+	return l.ForkBase(), true
+}
+
 // ChannelNames lists the channels in declared order, from the manifest. No
 // channel is opened.
 func (x *XWAL) ChannelNames() []string { return append([]string(nil), x.order...) }
@@ -2066,12 +2103,20 @@ func (x *XWAL) Channels() []ChannelInfo {
 	for _, name := range x.order {
 		ch := x.chans[name]
 		info := ChannelInfo{Name: name, Kind: ch.kind, Reducer: ch.rname, Opaque: ch.opaque}
-		if l, err := ch.Log(); err == nil {
-			info.First = l.FirstIndex()
-			info.Last = l.LastIndex()
-			info.ForkBase = l.ForkBase()
-			info.Segments = len(l.SegmentBaseIndexes())
+		l, err := ch.Log()
+		if err != nil {
+			// A CHANNEL THAT WILL NOT OPEN IS NOT AN EMPTY CHANNEL. Before
+			// channels opened lazily this was an error from xwal.open and
+			// nothing downstream could mistake it; reporting zero bounds
+			// here would tell a caller the history is gone.
+			info.Err = err
+			out = append(out, info)
+			continue
 		}
+		info.First = l.FirstIndex()
+		info.Last = l.LastIndex()
+		info.ForkBase = l.ForkBase()
+		info.Segments = len(l.SegmentBaseIndexes())
 		out = append(out, info)
 	}
 	return out

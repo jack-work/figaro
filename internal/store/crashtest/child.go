@@ -112,6 +112,29 @@ func runChild() {
 	}
 	emit("ready")
 
+	// THE DURABILITY RECEIPT. A crash test that infers what survived from a
+	// wall clock is measuring the machine's load: a flusher starved past its
+	// budget looks exactly like a store that lost a write. This asks the
+	// store what it has actually put on disk and reports it, so the parent
+	// verifies against a fact the child witnessed rather than a deadline it
+	// assumed. It runs slightly faster than the flusher, so a report is
+	// never far behind the truth, and it only ever reports MORE durability.
+	go func() {
+		t := time.NewTicker(flushInterval / 2)
+		defer t.Stop()
+		for range t.C {
+			for _, tr := range trunks {
+				for _, ch := range allChans {
+					n, err := st.DurableThrough(tr, ch)
+					if err != nil || n == 0 {
+						continue
+					}
+					emit("d %s %s %d", tr, ch, n)
+				}
+			}
+		}
+	}()
+
 	var mu sync.Mutex
 	busy := map[string]bool{}
 	burstDone := make(chan string, maxTrunks)

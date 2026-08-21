@@ -187,16 +187,12 @@ func (l *xwalLog[T]) TailBudgeted(budget, maxRows, num, denom int) ([]Entry[T], 
 func (l *xwalLog[T]) Len() int {
 	n := 0
 	_ = l.openOnce(func(xw *xwal.XWAL) error {
-		for _, c := range xw.Channels() {
-			if c.Name == l.channel && c.Last > 0 {
-				first := c.First
-				if first == 0 {
-					first = 1
-				}
-				if c.Last >= first {
-					n = int(c.Last-first) + 1
-				}
-				break
+		if first, last, ok := xw.ChannelBounds(l.channel); ok && last > 0 {
+			if first == 0 {
+				first = 1
+			}
+			if last >= first {
+				n = int(last-first) + 1
 			}
 		}
 		return nil
@@ -258,13 +254,7 @@ func (l *xwalLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
 		}
 		// figwal's mid-life-added channels have an empty FK on reopen
 		// (buildFK bails when FirstIndex walks to an empty parent).
-		var first, last uint64
-		for _, c := range xw.Channels() {
-			if c.Name == l.channel {
-				first, last = c.First, c.Last
-				break
-			}
-		}
+		first, last, _ := xw.ChannelBounds(l.channel)
 		if first == 0 && last > 0 {
 			first = 1
 		}
@@ -298,12 +288,7 @@ func (l *xwalLog[T]) ForkBase() (uint64, bool) {
 		found bool
 	)
 	_ = l.openOnce(func(xw *xwal.XWAL) error {
-		for _, c := range xw.Channels() {
-			if c.Name == l.channel {
-				base, found = c.ForkBase, true
-				break
-			}
-		}
+		base, found = xw.ChannelForkBase(l.channel)
 		return nil
 	})
 	return base, found
@@ -315,13 +300,7 @@ func (l *xwalLog[T]) PeekTail() (Entry[T], bool) {
 		hit bool
 	)
 	_ = l.openOnce(func(xw *xwal.XWAL) error {
-		var first, last uint64
-		for _, c := range xw.Channels() {
-			if c.Name == l.channel {
-				first, last = c.First, c.Last
-				break
-			}
-		}
+		first, last, _ := xw.ChannelBounds(l.channel)
 		if first == 0 && last > 0 {
 			first = 1
 		}

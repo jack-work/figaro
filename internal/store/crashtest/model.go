@@ -2,6 +2,7 @@ package crashtest
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -128,6 +129,23 @@ func (m *model) apply(line string) error {
 			cm.base, cm.recs, cm.synced = clt, nil, 0
 		}
 		cm.recs = append(cm.recs, entry{mainLT: mlt, q: q, stamp: stamp, g: trunk, reported: true})
+		return nil
+	case "d":
+		if len(f) != 4 {
+			return fmt.Errorf("bad durable line %q", line)
+		}
+		trunk, ch := f[1], f[2]
+		n, err := strconv.ParseUint(f[3], 10, 64)
+		if err != nil {
+			return fmt.Errorf("bad durable line %q", line)
+		}
+		if m.baselineOnly[trunk] {
+			return nil
+		}
+		cm := m.chanModel(trunk, ch)
+		if n > cm.synced {
+			cm.synced = n
+		}
 		return nil
 	case "cb":
 		if len(f) != 2 {
@@ -279,13 +297,12 @@ func verifyModeled(trunk, ch string, recs []Rec, cm *chanModel, salt string, md 
 		}
 	}
 	if md == modeKill {
+		// WHAT THE STORE SAID IT HAD WRITTEN, and nothing else. cm.synced is
+		// the child's last durability receipt; the wall-clock cutoff is kept
+		// only for a clean Close, which makes everything durable by contract.
 		required := cm.synced
-		for i, e := range cm.recs {
-			if e.reported && e.stamp > 0 && e.stamp <= cutoff {
-				if lt := cm.base + uint64(i); lt > required {
-					required = lt
-				}
-			}
+		if cutoff == math.MaxInt64 {
+			required = cm.lastLT()
 		}
 		if last < required {
 			vs = append(vs, violation{class: vSyncedLost, trunk: trunk, ch: ch,

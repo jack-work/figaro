@@ -141,10 +141,17 @@ func (b *trunksStore) MainTail(trunk string) (uint64, error) {
 	}
 	for _, ci := range infos {
 		if ci.Name == chanMain {
+			if ci.Err != nil {
+				return 0, ci.Err
+			}
 			return ci.Last, nil
 		}
 	}
 	return 0, nil
+}
+
+func (b *trunksStore) DurableThrough(trunk, channel string) (uint64, error) {
+	return b.s.DurableThrough(trunk, channel)
 }
 
 func (b *trunksStore) State(trunk string) ([]byte, error) {

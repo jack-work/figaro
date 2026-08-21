@@ -27,6 +27,9 @@ type Store interface {
 	ReadAll(trunk, channel string) ([]Rec, error)
 	TailRecord(trunk, channel string) (Rec, bool, error)
 	MainTail(trunk string) (uint64, error)
+	// DurableThrough is what the store says survives a kill right now. The
+	// harness reports it instead of inferring durability from a stopwatch.
+	DurableThrough(trunk, channel string) (uint64, error)
 	State(trunk string) ([]byte, error)
 	Close() error
 }

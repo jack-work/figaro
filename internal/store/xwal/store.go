@@ -565,6 +565,17 @@ func (s *Store) Channels(trunk string) ([]ChannelInfo, error) {
 	return x.Channels(), nil
 }
 
+// DurableThrough is the highest index in a trunk's channel that has reached
+// the disk. See XWAL.DurableThrough.
+func (s *Store) DurableThrough(trunk, channel string) (uint64, error) {
+	x, err := s.Trunks.Head(trunk)
+	if err != nil {
+		return 0, err
+	}
+	defer x.Close()
+	return x.DurableThrough(channel), nil
+}
+
 func (s *Store) Close() error {
 	s.closeOnce.Do(func() {
 		close(s.stop)
