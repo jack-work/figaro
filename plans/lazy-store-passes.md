@@ -143,3 +143,28 @@ so load on one arm alone would bias the comparison.
 `scratch/sweepcost` is the instrument. Re-run it against a COPY of a real
 store (never the live one — the daemon holds the flock, and a second opener
 bypasses it) and the table above is reproducible in one command.
+
+## The restart lag, closed as not-reproducible (2026-08-21)
+
+The standing open item -- "the first turn after a restart is one behind, and
+there is a second cause still out there" -- does not reproduce. A/B with
+scripts/live/restartlive.sh, 4 runs per arm: main 4/4 and the channel-granular
+branch 4/4 put the patch in the FIRST post-restart request.
+
+So it is not fixed BY this branch, and the honest reading is that the script
+can no longer catch it. The likeliest earlier cause is e083dfa3 (open the
+librettos when the aria loads, not inside the send), which shipped in v0.28.0.
+The script's own comment still said "0 is the known lag", which had become a
+false claim printed at every run; it now states the measurement and its date.
+
+If Gluck sees the symptom by hand, it needs a NEW instrument. This one passes.
+
+## Still open, found on the way
+
+- An intermittent crashtest failure: 1 of 20 runs on main, 0 of 20 on this
+  branch, with NO violation line -- so it fails on something other than a
+  durability check. Pre-existing, unexplained, and it is the most
+  safety-critical test in the repo.
+- `fig state show --id @libretto::<id>` is refused by the id validator
+  ("invalid char ':'"), so a libretto's own board cannot be read by the verb
+  that reads boards. doctor reads them another way, which is why nobody hit it.
