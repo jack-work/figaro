@@ -91,3 +91,45 @@ func TestTheAssemblerNeverEmitsTwoConsecutiveUserMessages(t *testing.T) {
 }
 
 var _ = provider.MaxCacheBreakpoints
+
+// GLUCK'S SHAPE, 0.28.2: the closing notice written twice, so the second
+// tool_result has no tool_use left to pair with and the API refuses the whole
+// history -- "messages.682.content.2: unexpected tool_use_id found in
+// tool_result blocks". The fig IR keeps both records (it is append-only and
+// both really happened); the WIRE must carry one.
+func TestADuplicateToolResultNeverReachesTheWire(t *testing.T) {
+	rows := []json.RawMessage{
+		json.RawMessage(`{"role":"assistant","content":[{"type":"tool_use","id":"X","name":"bash","input":{}}]}`),
+		json.RawMessage(`{"role":"user","content":[{"type":"tool_result","tool_use_id":"X","content":"closed"}]}`),
+		json.RawMessage(`{"role":"user","content":[{"type":"tool_result","tool_use_id":"X","content":"closed again"}]}`),
+		json.RawMessage(`{"role":"user","content":[{"type":"text","text":"carry on"}]}`),
+	}
+	got := dropDuplicateResults(rows)
+
+	results := 0
+	for _, raw := range got {
+		var m nativeMessage
+		require.NoError(t, json.Unmarshal(raw, &m))
+		for _, b := range m.Content {
+			if b.Type == "tool_result" && b.ToolUseID == "X" {
+				results++
+			}
+		}
+	}
+	require.Equal(t, 1, results, "the wire carries %d results for one call", results)
+	require.Len(t, got, 3, "a message left with no blocks must be dropped, not sent empty")
+}
+
+// And a history with no duplicate is returned BYTE-IDENTICAL: whitespace and
+// key order are the wire bytes, and re-encoding them changes what ships.
+func TestAHistoryWithoutDuplicatesIsUntouched(t *testing.T) {
+	rows := []json.RawMessage{
+		json.RawMessage("{\n  \"role\": \"user\",\n  \"content\": []\n}"),
+		json.RawMessage(`{"role":"user","content":[{"type":"tool_result","tool_use_id":"X"}]}`),
+	}
+	got := dropDuplicateResults(rows)
+	require.Len(t, got, 2)
+	for i := range rows {
+		require.Equal(t, string(rows[i]), string(got[i]))
+	}
+}

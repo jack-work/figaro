@@ -241,6 +241,34 @@ func (l *xwalLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) {
 	return readPage(l.Read(), from, before, n)
 }
 
+// TailSnapshot is the last n entries, ascending, read from the tail
+// COORDINATE rather than by materializing the channel. Without it the generic
+// helper falls back to Read(), so a caller asking for the last few entries on
+// every append pays the whole history each time -- which is quadratic over a
+// conversation, and is exactly what it cost before this existed.
+func (l *xwalLog[T]) TailSnapshot(n int) []Entry[T] {
+	if n <= 0 {
+		return nil
+	}
+	var first, last uint64
+	var ok bool
+	_ = l.openOnce(func(xw *xwal.XWAL) error {
+		first, last, ok = xw.ChannelBounds(l.channel)
+		return nil
+	})
+	if !ok || last == 0 {
+		return nil
+	}
+	if first == 0 {
+		first = 1
+	}
+	from := last - uint64(n) + 1
+	if n >= int(last) || from < first {
+		from = first
+	}
+	return l.ReadFrom(from, n)
+}
+
 func (l *xwalLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
 	var (
 		rec xwal.Record

@@ -29,9 +29,12 @@ type figIRLog struct {
 	backend *XwalBackend
 	ariaID  string
 
-	mu      sync.Mutex
-	pending []message.Content // outstanding invokes, oldest first
-	loaded  bool
+	// mu serializes this door's own appends. It does NOT make the door the
+	// only writer: OpenFigIR mints one per call, so what is open must be read
+	// from the LOG on every append rather than remembered. Two doors holding
+	// their own idea of it closed one call twice, which the provider refuses
+	// (Gluck, 0.28.2: "messages.682.content.2: unexpected tool_use_id").
+	mu sync.Mutex
 }
 
 // roundLookback bounds the tail read that resolves outstanding invokes. THE
@@ -53,7 +56,7 @@ const (
 func (l *figIRLog) Append(e Entry[message.Message]) (Entry[message.Message], error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.resolvePending()
+	pending := l.openInvokes()
 
 	results, others := splitToolResults(e.Payload)
 	var late []message.Content
@@ -62,7 +65,7 @@ func (l *figIRLog) Append(e Entry[message.Message]) (Entry[message.Message], err
 	case len(results) > 0:
 		matched := map[string]bool{}
 		for _, r := range results {
-			if l.isPending(r.ToolCallID) {
+			if isOpen(pending, r.ToolCallID) {
 				matched[r.ToolCallID] = true
 			} else {
 				late = append(late, r)
@@ -78,22 +81,20 @@ func (l *figIRLog) Append(e Entry[message.Message]) (Entry[message.Message], err
 		// Complete the set: anything still open is closed here, in this very
 		// message, because a provider wants the results immediately after the
 		// call and a second record would not be immediately after.
-		for _, inv := range l.pending {
+		for _, inv := range pending {
 			if !matched[inv.ToolCallID] {
 				e.Payload.Content = append(e.Payload.Content,
 					message.ToolResultContent(inv.ToolCallID, inv.ToolName, toolClosedNotice, true))
 			}
 		}
-		l.pending = nil
 
-	case len(l.pending) > 0 && !message.IsCeremonial(e.Payload):
+	case len(pending) > 0 && !message.IsCeremonial(e.Payload):
 		// A message that is not the awaited results. Close the calls first.
 		closing := message.Message{Role: message.RoleInput}
-		for _, inv := range l.pending {
+		for _, inv := range pending {
 			closing.Content = append(closing.Content,
 				message.ToolResultContent(inv.ToolCallID, inv.ToolName, toolClosedNotice, true))
 		}
-		l.pending = nil
 		if _, err := l.write(Entry[message.Message]{Payload: closing}); err != nil {
 			return Entry[message.Message]{}, err
 		}
@@ -103,11 +104,6 @@ func (l *figIRLog) Append(e Entry[message.Message]) (Entry[message.Message], err
 	stamped, err := l.write(e)
 	if err != nil {
 		return stamped, err
-	}
-
-	// The message just written may itself open calls.
-	if inv := assistantInvokes(e.Payload); len(inv) > 0 {
-		l.pending = inv
 	}
 
 	for _, r := range late {
@@ -138,17 +134,16 @@ func GuardIR(inner Log[message.Message]) Log[message.Message] {
 func (l *figIRLog) CloseOpenToolCalls() (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.resolvePending()
-	if len(l.pending) == 0 {
+	pending := l.openInvokes()
+	if len(pending) == 0 {
 		return 0, nil
 	}
 	closing := message.Message{Role: message.RoleInput}
-	for _, inv := range l.pending {
+	for _, inv := range pending {
 		closing.Content = append(closing.Content,
 			message.ToolResultContent(inv.ToolCallID, inv.ToolName, toolClosedNotice, true))
 	}
-	n := len(l.pending)
-	l.pending = nil
+	n := len(pending)
 	if _, err := l.write(Entry[message.Message]{Payload: closing}); err != nil {
 		return 0, err
 	}
@@ -170,26 +165,22 @@ func (l *figIRLog) write(e Entry[message.Message]) (Entry[message.Message], erro
 	return stamped, nil
 }
 
-func (l *figIRLog) isPending(id string) bool {
-	for _, c := range l.pending {
+// outstandingInvokes reports the invokes of the last assistant message that
+// still lack results, which is the door's state after a restart or a fork.
+// openInvokes reads what is open FROM THE LOG, at every append. Bounded to
+// the round, never the history, and never cached: a cached copy is a second
+// answer that can disagree with the first.
+func (l *figIRLog) openInvokes() []message.Content {
+	return outstandingInvokes(TailSnapshot(l.Log, roundLookback))
+}
+
+func isOpen(pending []message.Content, id string) bool {
+	for _, c := range pending {
 		if c.ToolCallID == id {
 			return true
 		}
 	}
 	return false
-}
-
-// outstandingInvokes reports the invokes of the last assistant message that
-// still lack results, which is the door's state after a restart or a fork.
-// resolvePending reads what is open, ONCE, from the tail. Never at load: a
-// door that is created and never written costs nothing, and one that is
-// written resolves the current round rather than the history.
-func (l *figIRLog) resolvePending() {
-	if l.loaded {
-		return
-	}
-	l.pending = outstandingInvokes(TailSnapshot(l.Log, roundLookback))
-	l.loaded = true
 }
 
 // outstandingInvokes is the invokes of the last invoke-bearing message that
@@ -266,6 +257,37 @@ func (b *XwalBackend) UnmatchedToolCalls(ariaID string) (int, error) {
 		return 0, err
 	}
 	return len(unansweredInvokes(h.ir.Read())), nil
+}
+
+// duplicateResults is every tool_result block that answers a call some EARLIER
+// result already answered. The wire pairs one result with one invoke, so a
+// second one has nothing left to pair with and the provider refuses the whole
+// history. Returns the entry LT and the offending block, in log order.
+func duplicateResults(rows []Entry[message.Message]) []struct {
+	LT    uint64
+	Block message.Content
+} {
+	seen := map[string]bool{}
+	var out []struct {
+		LT    uint64
+		Block message.Content
+	}
+	for _, e := range rows {
+		for _, c := range e.Payload.Content {
+			if c.Type != message.ContentToolResult || c.ToolCallID == "" {
+				continue
+			}
+			if seen[c.ToolCallID] {
+				out = append(out, struct {
+					LT    uint64
+					Block message.Content
+				}{e.LT, c})
+				continue
+			}
+			seen[c.ToolCallID] = true
+		}
+	}
+	return out
 }
 
 // unansweredInvokes is every invoke in rows with no result anywhere after it.
