@@ -84,3 +84,61 @@ func mergeRows(a, b json.RawMessage) (json.RawMessage, bool) {
 	}
 	return merged, true
 }
+
+// dropDuplicateResults removes a tool_result block whose call an EARLIER block
+// already answered. The wire pairs one result with one invoke, so a second is
+// refused with "unexpected tool_use_id found in tool_result blocks" and the
+// whole history becomes unsendable.
+//
+// The fig IR is append-only and keeps both records, which is honest: two
+// closings really were written. This is the last gate before the wire, and
+// unmatched on the wire is a hard error -- the same rule the door applies to a
+// late result. A row with no duplicate is returned untouched, bytes and all.
+func dropDuplicateResults(rows []json.RawMessage) []json.RawMessage {
+	seen := map[string]bool{}
+	out := rows
+	rewritten := false
+	for i, raw := range rows {
+		var m nativeMessage
+		if json.Unmarshal(raw, &m) != nil {
+			continue // a row we cannot read is a row we must not rewrite
+		}
+		keep := make([]nativeBlock, 0, len(m.Content))
+		dropped := false
+		for _, b := range m.Content {
+			if b.Type == "tool_result" && b.ToolUseID != "" {
+				if seen[b.ToolUseID] {
+					dropped = true
+					continue
+				}
+				seen[b.ToolUseID] = true
+			}
+			keep = append(keep, b)
+		}
+		if !dropped {
+			continue
+		}
+		if !rewritten {
+			out = append([]json.RawMessage(nil), rows...)
+			rewritten = true
+		}
+		if len(keep) == 0 {
+			out[i] = nil // an empty message is skipped by the splice
+			continue
+		}
+		m.Content = keep
+		if fixed, err := json.Marshal(m); err == nil {
+			out[i] = fixed
+		}
+	}
+	if !rewritten {
+		return rows
+	}
+	compact := out[:0]
+	for _, raw := range out {
+		if len(raw) > 0 {
+			compact = append(compact, raw)
+		}
+	}
+	return compact
+}
