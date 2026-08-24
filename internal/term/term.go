@@ -127,6 +127,11 @@ type palette struct {
 	absent  string // a thing that is NOT: diffDel's autumnRed, no wash
 
 	stateDim string // sumiInk-adjacent gray-violet: form-state furniture below a node, quieter than label
+
+	// notice is trouble reported INSIDE an already-dimmed row. It carries its
+	// own re-light (22 = not-dim) because a dim red reads as decoration; the
+	// whole point of a notice is that it does not.
+	notice string
 }
 
 var kanagawa = palette{
@@ -141,7 +146,8 @@ var kanagawa = palette{
 	diffDel:  "\033[38;5;167;48;5;52m",
 	present:  "\033[38;5;108m",
 	absent:   "\033[38;5;167m",
-	stateDim: "\033[38;5;60m", // ≈ sumiInk4 #54546D: dimmer than label, still legible
+	stateDim: "\033[38;5;60m",     // ≈ sumiInk4 #54546D: dimmer than label, still legible
+	notice:   "\033[22;38;5;167m", // autumnRed #C34043, the palette's own red
 }
 
 // active is the palette in force. One var is the whole theme mechanism until
@@ -169,6 +175,27 @@ func DiffAdd(s string) string { return paint(active.diffAdd, s) }
 func DiffDel(s string) string { return paint(active.diffDel, s) }
 func Present(s string) string { return paint(active.present, s) }
 func Absent(s string) string  { return paint(active.absent, s) }
+
+// NoticeInDim paints trouble that lives inside a row the caller has already
+// dimmed, and hands the row back exactly as it found it: default foreground,
+// still dim. It is not Red: basic 31 is the terminal's red rather than the
+// theme's, and it was the one string in the status row painted by a literal
+// SGR instead of the palette.
+//
+// The hand-back is the reason this is a function and not a role. Every other
+// role closes with a full reset, which would drop the dim for the rest of the
+// row; this one has to close with 39;2, and a caller open-coding that pair is
+// how the literal got there the first time.
+func NoticeInDim(s string) string {
+	if !Enabled() {
+		return s
+	}
+	return active.notice + s + dimHandBack
+}
+
+// dimHandBack restores default foreground and re-dims: the state a dimmed row
+// was in before the notice interrupted it.
+const dimHandBack = "\033[39;2m"
 
 // StateDim is the form-state furniture drawn beneath a node: dimmer than
 // the selection UI, so the eye ranks selection above state and state above

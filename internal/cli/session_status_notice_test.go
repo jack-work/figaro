@@ -2,6 +2,8 @@ package cli
 
 import (
 	"strings"
+
+	"github.com/jack-work/figaro/internal/term"
 	"testing"
 	"time"
 
@@ -26,12 +28,21 @@ func statusFixture(mantra string) *sessionStatus {
 }
 
 func TestStatusNoticeIsRedAndLeftmost(t *testing.T) {
+	// Arm colour: a test binary's stdout is not a TTY, and the notice now
+	// honours that like every other painted token. It did not before -- the
+	// literal SGR went out even with colour off, which is the second thing
+	// routing it through the palette fixes.
+	defer term.SetColorMode(term.ColorAlways)()
+
 	s := statusFixture("a perfectly ordinary mantra")
 	s.setNotice("error: overloaded")
 	line := s.statusLine(200, true)
 
-	if !strings.HasPrefix(line, "\x1b[22;31merror: overloaded\x1b[39;2m") {
-		t.Fatalf("notice must open the row, re-lit red against the dim wrapper: %q", line)
+	// Through the palette, not a literal: the assertion asks the theme what a
+	// notice looks like, so a palette change moves the test with the code
+	// instead of against it.
+	if !strings.HasPrefix(line, term.NoticeInDim("error: overloaded")) {
+		t.Fatalf("notice must open the row, re-lit against the dim wrapper: %q", line)
 	}
 	if i, j := strings.Index(line, "overloaded"), strings.Index(line, "ordinary"); i > j {
 		t.Errorf("notice must precede the mantra: %q", line)
@@ -133,10 +144,12 @@ func TestClipToWidthEllipsis(t *testing.T) {
 // run as columns, a dim wrapper alone measures eight columns of nothing, and
 // the footer would shed tokens that fit.
 func TestDisplayWidthIgnoresEscapes(t *testing.T) {
+	defer term.SetColorMode(term.ColorAlways)()
+
 	if got := displayWidth("\x1b[2mfive!\x1b[0m"); got != 5 {
 		t.Errorf("displayWidth = %d, want 5", got)
 	}
-	if got := displayWidth("\x1b[22;31mred\x1b[39;2m"); got != 3 {
+	if got := displayWidth(term.NoticeInDim("red")); got != 3 {
 		t.Errorf("displayWidth = %d, want 3", got)
 	}
 	if got := displayWidth("日本"); got != 4 {

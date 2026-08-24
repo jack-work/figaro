@@ -181,7 +181,7 @@ func (s *sessionStatus) statusLine(width int, hints bool) string {
 	// re-lit against the caller's dim wrapper (22 = not-dim) and handed back
 	// dim + default-foreground, so the rest of the row is unchanged.
 	if s.notice != "" {
-		tokens = append(tokens, tok{"\x1b[22;31m" + s.notice + "\x1b[39;2m", 6})
+		tokens = append(tokens, tok{term.NoticeInDim(s.notice), 6})
 	}
 	if mantra := strings.Join(strings.Fields(s.metrics.Mantra), " "); mantra != "" {
 		tokens = append(tokens, tok{truncRunes(mantra, 32), 0})
