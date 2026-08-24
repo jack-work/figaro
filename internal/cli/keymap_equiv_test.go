@@ -97,8 +97,8 @@ func offToken(tr *transcript, base int) string {
 func oracleSignature(tr *transcript, base int) string {
 	return fmt.Sprintf("%s fol=%v srch=%v q=%q mq=%q h=%v s=%v Q=%v g=%v sel=%v exp=%d jmp=%v jq=%q",
 		offToken(tr, base), tr.follow, tr.inSearch, tr.query, tr.matchQuery,
-		tr.showHelp, tr.showStatus, tr.showQueued, tr.pendG, tr.selection.active,
-		len(tr.expanded), tr.inJump, tr.jumpQuery)
+		tr.showing("help"), tr.showing("status"), tr.showing("queue"), tr.pendG, tr.selection.active,
+		len(tr.expanded), tr.inJump, tr.cmdline.String())
 }
 
 // inertOffset is where the offset sits after a key this state does not bind,
@@ -186,6 +186,17 @@ var oracleStates = map[string]func(*transcript){
 // reach the box's own rows: which is where '/' is proved to be literal text
 // in there, the mirror of the rule above.
 //
+// REGENERATED AGAIN for the DRAWER (drawer.go). One structural change, and it
+// moved 18 cells in the pager table and 9 here: the ':' and '/' boxes used to
+// write themselves into the STATUS ROW, and now they are drawers, so opening
+// one costs the transcript two rows. While following, the offset therefore
+// lands at the new bottom rather than staying put -- which is the same PLACE,
+// described by a different token (off:bottom, not off:same).
+//
+// That cost is the deliberate trade: the status bar carries the mantra, the
+// context percentage and the cost, and it used to disappear the moment you
+// typed '/'.
+//
 // Regenerated mechanically, not hand-edited.
 var pagerOracle = []struct {
 	state string
@@ -196,8 +207,8 @@ var pagerOracle = []struct {
 		"0x0e": "off:sel fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\"",
 		"0x10": "off:sel fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\"",
 		"0x21": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
-		"0x2f": "off:same fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
-		"0x3a": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\"",
+		"0x2f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
+		"0x3a": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\"",
 		"0x51": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\"",
 		"0x67": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=true sel=false exp=0 jmp=false jq=\"\"",
 		"0x6b": "off:-1 fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
@@ -205,12 +216,20 @@ var pagerOracle = []struct {
 		"Home": "off:top fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
 		"PgUp": "off:-5 fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
 		"Up":   "off:-1 fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
+		"0x78": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
 	}},
 	{"jump", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"12\"", map[string]string{
 		"0x08": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"1\"",
 		"0x0a": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
 		"0x0d": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
-		"0x1b": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
+		// THE COMMAND LINE HAS EMACS MOTIONS NOW, and these two are the only
+		// ones this oracle can see: the signature records the LINE, so ^A/^E/^B/^F
+		// (cursor) and Tab/^N/^P (no completer, empty history in a fixture) are
+		// indistinguishable from inert here. ^U kills to the start and ^W kills a
+		// word, and both empty a two-character line.
+		"0x15": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\"",
+		"0x17": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\"",
+		"0x1b": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
 		"0x20": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"12 \"",
 		"0x21": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"12!\"",
 		"0x22": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"12\\\"\"",
@@ -326,13 +345,14 @@ var pagerOracle = []struct {
 		"PgDn": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\"",
 		"PgUp": "off:sel fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\"",
 		"Up":   "off:sel fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\"",
+		"0x78": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\"",
 	}},
 	{"queued", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"", map[string]string{
 		"0x0e": "off:sel fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\"",
 		"0x10": "off:sel fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\"",
 		"0x21": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
-		"0x2f": "off:same fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
-		"0x3a": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\"",
+		"0x2f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
+		"0x3a": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\"",
 		"0x3f": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
 		"0x67": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=true sel=false exp=0 jmp=false jq=\"\"",
 		"0x6b": "off:-1 fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
@@ -340,12 +360,13 @@ var pagerOracle = []struct {
 		"Home": "off:top fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
 		"PgUp": "off:-5 fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
 		"Up":   "off:-1 fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
+		"0x78": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\"",
 	}},
 	{"search", "off:same fol=true srch=true q=\"ms\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"", map[string]string{
 		"0x08": "off:same fol=true srch=true q=\"m\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
-		"0x0a": "off:-1 fol=false srch=false q=\"ms\" mq=\"ms\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
-		"0x0d": "off:-1 fol=false srch=false q=\"ms\" mq=\"ms\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
-		"0x1b": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
+		"0x0a": "off:-50 fol=false srch=false q=\"ms\" mq=\"ms\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
+		"0x0d": "off:-50 fol=false srch=false q=\"ms\" mq=\"ms\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
+		"0x1b": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
 		"0x20": "off:same fol=true srch=true q=\"ms \" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
 		"0x21": "off:same fol=true srch=true q=\"ms!\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
 		"0x22": "off:same fol=true srch=true q=\"ms\\\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
@@ -548,8 +569,8 @@ var pagerOracle = []struct {
 	{"status", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"", map[string]string{
 		"0x0e": "off:sel fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\"",
 		"0x10": "off:sel fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\"",
-		"0x2f": "off:same fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
-		"0x3a": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\"",
+		"0x2f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
+		"0x3a": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\"",
 		"0x3f": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
 		"0x51": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\"",
 		"0x67": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=true sel=false exp=0 jmp=false jq=\"\"",
@@ -558,13 +579,14 @@ var pagerOracle = []struct {
 		"Home": "off:top fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
 		"PgUp": "off:-5 fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
 		"Up":   "off:-1 fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
+		"0x78": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
 	}},
 	{"transcript", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"", map[string]string{
 		"0x0e": "off:sel fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\"",
 		"0x10": "off:sel fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\"",
 		"0x21": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
-		"0x2f": "off:same fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
-		"0x3a": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\"",
+		"0x2f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
+		"0x3a": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\"",
 		"0x3f": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
 		"0x51": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\"",
 		"0x67": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=true sel=false exp=0 jmp=false jq=\"\"",
@@ -578,8 +600,8 @@ var pagerOracle = []struct {
 		"0x0e": "off:sel fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\"",
 		"0x10": "off:sel fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\"",
 		"0x21": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
-		"0x2f": "off:same fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
-		"0x3a": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\"",
+		"0x2f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
+		"0x3a": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\"",
 		"0x3f": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
 		"0x51": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\"",
 		"0x67": "off:top fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/jack-work/figaro/sdk"
-	"os"
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
@@ -34,7 +33,7 @@ func waitForFork(
 	case result := <-done:
 		return result.response, result.err
 	case <-timer.C:
-		fmt.Fprintf(os.Stderr, "forking %s; waiting for a safe actor/storage boundary...\n", ariaID)
+		fmt.Fprintf(stderrw, "forking %s; waiting for a safe actor/storage boundary...\n", ariaID)
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}

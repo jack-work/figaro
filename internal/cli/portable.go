@@ -99,7 +99,7 @@ func runExport(loaded *config.Loaded, args []string) {
 	if err := os.WriteFile(out, blob, 0o600); err != nil {
 		die("export: %s", err)
 	}
-	fmt.Fprintf(os.Stderr, "exported %s (%d messages) to %s\n", id, len(doc.Messages), out)
+	fmt.Fprintf(stderrw, "exported %s (%d messages) to %s\n", id, len(doc.Messages), out)
 }
 
 // exportAria gathers everything portable about one aria, through the angelus -
@@ -229,10 +229,10 @@ func runImport(loaded *config.Loaded, args []string) {
 	if err != nil {
 		die("import: %s", err)
 	}
-	fmt.Fprintf(os.Stderr, "imported %d messages as %s (outfit %s)\n",
+	fmt.Fprintf(stderrw, "imported %d messages as %s (outfit %s)\n",
 		resp.Messages, resp.FigaroID, resp.Outfit)
 	if resp.WasID != "" {
-		fmt.Fprintf(os.Stderr, "  it was %s where it came from: a trunk id is unique per store, so this one is new\n", resp.WasID)
+		fmt.Fprintf(stderrw, "  it was %s where it came from: a trunk id is unique per store, so this one is new\n", resp.WasID)
 	}
 }
 

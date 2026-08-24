@@ -1,6 +1,8 @@
 // Package cmdkit is a minimal CLI command-routing framework.
 package cmdkit
 
+import "io"
+
 // Command defines a single CLI subcommand.
 type Command struct {
 	// Name is the primary command name (e.g. "list", "kill").
@@ -38,6 +40,10 @@ type Command struct {
 	// Run is the command implementation. It receives the parsed context.
 	// Return nil on success, an error on failure.
 	Run func(ctx *RunContext) error
+
+	// Live, when set, makes this a verb that is HOSTED rather than run: it
+	// returns a model that renders rows and takes keys. See LiveView.
+	Live LiveFunc
 
 	// PassRaw means the router should not parse flags or args -
 	// everything after the command name goes into RunContext.RawArgs.
@@ -118,6 +124,13 @@ type RunContext struct {
 	// Extra is caller-provided data (e.g. *config.Loaded, dependencies).
 	Extra interface{}
 
+	// In, Out and Err are this command's streams. They exist so a verb can be
+	// run somewhere that is not a process -- inside the pager's drawer, in a
+	// test -- without the package reaching for os.Stdout behind everyone's
+	// back. Nil means the router's own, which means the process's.
+	In       io.Reader
+	Out, Err io.Writer
+
 	// Router is the table this command was dispatched from, so a subword
 	// dispatcher can delegate to the router's own knowledge: `fig form help
 	// <topic>` printing the same page `fig help <topic>` does, rather than a
@@ -156,3 +169,48 @@ func (c *RunContext) BoolFlag(name string) bool {
 	v, ok := c.Flags[name]
 	return ok && v != "false"
 }
+
+// ---------------------------------------------------------------------------
+// LIVE VIEWS: a verb that is hosted rather than run.
+// ---------------------------------------------------------------------------
+
+// LiveView is what a verb becomes when it does not finish: `form listen`
+// watches a form until you quit it, `doctor provider --follow` would do the
+// same. Such a verb cannot be "run and captured" -- it has no output, it has a
+// SCREEN, and it reads keys.
+//
+// The naive way to host one inside another program is to hand it a pipe and
+// let it keep reading os.Stdin. That is worse than it sounds: two readers on
+// one fd, each swallowing half the user's keystrokes, and a verb that paints
+// with absolute cursor positioning into a region it does not own.
+//
+// So a live verb is a MODEL instead. It renders rows for a viewport it is
+// given and it takes keys as method calls. The host owns the screen, decides
+// where the rows go, and decides which keys to forward -- which is what lets
+// the same `form listen` be a full-screen command at a shell and a drawer in
+// the pager, with one implementation and no pipe between them.
+type LiveView interface {
+	// Rows renders the view for a viewport of w columns and h rows. It must
+	// return at most h rows and must not position the cursor: the host places
+	// them.
+	Rows(w, h int) []string
+
+	// Key offers one keystroke. Reporting false leaves it to the host, which
+	// is how Esc closes a drawer without the view having to know what a drawer
+	// is.
+	Key(b byte) bool
+
+	// Hint is what the view can do, for the HOST to place -- on a status line,
+	// on a drawer's rule, wherever the host keeps affordances. It is not a row,
+	// because a view that draws its own footer inside a host that also draws
+	// one shows the same sentence twice.
+	Hint() string
+
+	// Close releases whatever the view is holding (a subscription, a socket).
+	Close()
+}
+
+// Live, when set, makes this a live verb: it is HOSTED, not run. A command
+// with both Live and Run set uses Live; Run is then the non-interactive
+// fallback a script gets.
+type LiveFunc func(ctx *RunContext) (LiveView, error)

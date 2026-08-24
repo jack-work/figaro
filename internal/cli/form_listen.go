@@ -17,15 +17,23 @@ import (
 )
 
 // runFormListen watches an aria's form and draws it as a live JSON tree.
-func runFormListen(loaded *config.Loaded, ariaID string) {
+// openFormView dials an aria, subscribes to its form deltas and returns a view
+// that follows them. onChange fires whenever the view has something new to
+// show, which is how a HOST repaints: the shell host paints a screen, the
+// drawer host asks the pager to render.
+//
+// Extracted from runFormListen so the two hosts share one setup. They used to
+// be one function that dialled, subscribed, painted and read keys, which is
+// why hosting it anywhere else meant copying all four.
+func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formView, func(), error) {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	acli := mustConnectAngelus(loaded)
-	defer acli.Close()
 	resolvedID, ep, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, false, dressing{})
 	if err != nil {
-		die("%s", err)
+		cancel()
+		acli.Close()
+		return nil, nil, err
 	}
 
 	mirror := &formMirror{}
@@ -48,18 +56,18 @@ func runFormListen(loaded *config.Loaded, ariaID string) {
 			case formResync:
 				view.resync()
 			case formIncompatible:
-				// Said once, and then we stop: refetching per delta would be a
-				// storm against a peer that cannot agree with us.
 				view.stop(fmt.Sprintf("this daemon speaks form schema %d, this client speaks %d: not tracking",
 					d.Schema, rpc.FormDeltaSchema))
-			default:
-				view.paint()
+			}
+			if onChange != nil {
+				onChange()
 			}
 		})
 	if err != nil {
-		die("dial aria: %s", err)
+		cancel()
+		acli.Close()
+		return nil, nil, fmt.Errorf("dial aria: %w", err)
 	}
-	defer fcli.Close()
 	view.refetch = func() (form.Snapshot, uint64, error) {
 		rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer rcancel()
@@ -70,15 +78,28 @@ func runFormListen(loaded *config.Loaded, ariaID string) {
 		return resp.Snapshot, resp.Version, nil
 	}
 	view.resync()
+	return view, func() { fcli.Close(); acli.Close(); cancel() }, nil
+}
+
+func runFormListen(loaded *config.Loaded, ariaID string) {
+	// The pump repaints THIS host; a drawer host passes its own render instead.
+	var view *formView
+	view, closeView, err := openFormView(ariaID, loaded, func() { view.paint() })
+	// The SHELL host paints a screen it owns.
+	if err != nil {
+		die("%s", err)
+	}
+	defer closeView()
+	view.repaint = view.paint
 
 	restore, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
 		die("form listen needs a terminal: %s", err)
 	}
 	defer restore()
-	fmt.Fprint(os.Stdout, altScreenOn+cursorHide)
-	defer fmt.Fprint(os.Stdout, cursorShow+altScreenOff)
-	atExit(func() { fmt.Fprint(os.Stdout, cursorShow+altScreenOff) })
+	fmt.Fprint(stdout, altScreenOn+cursorHide)
+	defer fmt.Fprint(stdout, cursorShow+altScreenOff)
+	atExit(func() { fmt.Fprint(stdout, cursorShow+altScreenOff) })
 
 	view.paint()
 	keys := make([]byte, 8)
@@ -87,30 +108,12 @@ func runFormListen(loaded *config.Loaded, ariaID string) {
 		if rerr != nil || n == 0 {
 			return
 		}
-		switch keys[0] {
-		case 'q', 3: // q, C-c
+		// 'q' and ^C are the HOST's: see formView.Key.
+		if keys[0] == 'q' || keys[0] == 3 {
 			return
-		case 'j':
-			view.move(1)
-		case 'k':
-			view.move(-1)
-		case 'e':
-			view.page(1)
-		case 'd':
-			view.page(-1)
-		case 'y':
-			view.yank()
-		case '\r', '\n':
-			view.toggle()
-		case 27: // an arrow, or a bare escape
-			if n >= 3 && keys[1] == '[' {
-				switch keys[2] {
-				case 'B':
-					view.move(1)
-				case 'A':
-					view.move(-1)
-				}
-			}
+		}
+		if view.Key(keys[0]) {
+			view.paint()
 		}
 	}
 }
@@ -119,17 +122,31 @@ func runFormListen(loaded *config.Loaded, ariaID string) {
 // which branches are open. Every entry point takes the lock, because a delta
 // arrives on the notifier's goroutine while a keystroke is being handled.
 type formView struct {
-	mu      sync.Mutex
-	mirror  *formMirror
-	out     *os.File
-	aria    string
-	open    map[string]bool
-	rows    []*formNode
-	cursor  int
-	top     int
-	notice  string
-	stopped bool
-	refetch func() (form.Snapshot, uint64, error)
+	mu        sync.Mutex
+	mirror    *formMirror
+	out       *os.File
+	aria      string
+	open      map[string]bool
+	rows      []*formNode
+	cursor    int
+	top       int
+	notice    string
+	stopped   bool
+	refetch   func() (form.Snapshot, uint64, error)
+	closeConn func()
+	// repaint is THE HOST's, and every path that changes the view calls it
+	// rather than painting itself. Before this, move/page/toggle/yank/resync
+	// each called paint() -- which writes to os.Stdout with absolute cursor
+	// positioning -- so hosting the view in a drawer put its footer on the
+	// pager's status row, twice, from inside a region it did not own.
+	repaint func()
+}
+
+// changed is what a mutating method calls instead of painting.
+func (v *formView) changed() {
+	if v.repaint != nil {
+		v.repaint()
+	}
 }
 
 // stop parks the view: the notice stays, and nothing is applied or refetched
@@ -142,7 +159,7 @@ func (v *formView) stop(reason string) {
 	}
 	v.stopped, v.notice = true, reason
 	v.mu.Unlock()
-	v.paint()
+	v.changed()
 }
 
 // resync re-reads the snapshot. The mirror asks for this when a delta does not
@@ -160,7 +177,7 @@ func (v *formView) resync() {
 		return
 	}
 	v.mirror.reset(snap, version)
-	v.paint()
+	v.changed()
 }
 
 func (v *formView) setNotice(text string) {
@@ -173,7 +190,7 @@ func (v *formView) move(delta int) {
 	v.mu.Lock()
 	v.cursor = clampInt(v.cursor+delta, 0, len(v.rows)-1)
 	v.mu.Unlock()
-	v.paint()
+	v.changed()
 }
 
 func (v *formView) page(delta int) {
@@ -187,7 +204,7 @@ func (v *formView) toggle() {
 		openBranch(v.rows[v.cursor], v.open)
 	}
 	v.mu.Unlock()
-	v.paint()
+	v.changed()
 }
 
 func (v *formView) yank() {
@@ -202,12 +219,19 @@ func (v *formView) yank() {
 	}
 	copyToClipboard(v.out, text)
 	v.setNotice(fmt.Sprintf("yanked %d bytes", len(text)))
-	v.paint()
+	v.changed()
 }
 
-func (v *formView) paint() {
+// Rows renders the view for a viewport, and positions nothing. It is the whole
+// of what the view LOOKS like, so a host -- a full screen at a shell, a drawer
+// in the pager -- can put those rows wherever it owns.
+//
+// This used to be paint(): one function that decided the content AND wrote it
+// to a *os.File with \x1b[H\x1b[2J and an absolute jump to the last line. That
+// is why `form listen` could not be hosted: it did not render, it TOOK a
+// screen.
+func (v *formView) Rows(width, height int) []string {
 	snap, version, gaps := v.mirror.state()
-	width, height := term.Width(), term.Height()
 	if width <= 0 {
 		width = 80
 	}
@@ -229,24 +253,84 @@ func (v *formView) paint() {
 	}
 	v.top = clampInt(v.top, 0, max(0, len(v.rows)-1))
 
-	var b []byte
-	b = append(b, "\x1b[H\x1b[2J"...)
 	head := fmt.Sprintf("form %s · v%d · %d keys · %d rows", v.aria, version, snap.Len(), len(v.rows))
 	if gaps > 0 {
 		head += fmt.Sprintf(" · %d resync", gaps)
 	}
-	b = append(b, clipLine(head, width)...)
-	b = append(b, "\r\n"...)
+	out := make([]string, 0, body+1)
+	out = append(out, clipLine(head, width))
 	for i := v.top; i < len(v.rows) && i < v.top+body; i++ {
-		b = append(b, renderFormRow(v.rows[i], width, i == v.cursor)...)
+		out = append(out, renderFormRow(v.rows[i], width, i == v.cursor))
+	}
+	return out
+}
+
+// Hint is what the view can do, for the HOST to place. It is not a row: the
+// shell host puts it on the last line of a screen it owns, and the drawer puts
+// it on its closing rule -- and when Rows carried it itself, both hosts drew
+// it AND the drawer drew its own, so the affordance appeared twice.
+func (v *formView) Hint() string {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	hint := "j/k move · Enter expand · y yank · e/d page"
+	if v.notice != "" {
+		return v.notice + " · " + hint
+	}
+	return hint
+}
+
+// Key offers one keystroke, and reports whether the view took it. 'q' and ^C
+// are NOT taken: leaving is the host's decision -- at a shell it ends the
+// command, in a drawer it closes the drawer -- and a view that swallowed them
+// would be a view you could not get out of in either place.
+func (v *formView) Key(b byte) bool {
+	switch b {
+	case 'j':
+		v.move(1)
+	case 'k':
+		v.move(-1)
+	case 'e':
+		v.page(1)
+	case 'd':
+		v.page(-1)
+	case '\r', '\n':
+		v.toggle()
+	case 'y':
+		v.yank()
+	default:
+		return false
+	}
+	return true
+}
+
+// Close is the LiveView half of teardown; the connection belongs to whoever
+// dialled it, so there is nothing here yet.
+func (v *formView) Close() {
+	if v.closeConn != nil {
+		v.closeConn()
+	}
+}
+
+// paint is the SHELL host: the same rows, positioned on a screen this process
+// owns. The pager's host is drawer-shaped and lives in transcript.go.
+func (v *formView) paint() {
+	width, height := term.Width(), term.Height()
+	if width <= 0 {
+		width = 80
+	}
+	if height <= 0 {
+		height = 24
+	}
+	rows := v.Rows(width, height)
+	var b []byte
+	b = append(b, "\x1b[H\x1b[2J"...)
+	for _, r := range rows {
+		b = append(b, r...)
 		b = append(b, "\r\n"...)
 	}
-	foot := "j/k move · enter expand · y yank · e/d page · q quit"
-	if v.notice != "" {
-		foot = v.notice + " · " + foot
-	}
+	// The shell host owns a whole screen, so it puts the hint on the last line.
 	b = append(b, "\x1b["+fmt.Sprint(height)+";1H"...)
-	b = append(b, clipLine(foot, width)...)
+	b = append(b, clipLine(v.Hint()+" · q quit", width)...)
 	_, _ = v.out.Write(b)
 }
 

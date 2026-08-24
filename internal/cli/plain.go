@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/jack-work/figaro/sdk"
 	"io"
-	"os"
 	"strings"
 	"time"
 
@@ -42,14 +41,14 @@ func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out 
 
 	fcli, err := sdk.DialAria(ep, sink.handle)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error: connect figaro:", err)
+		fmt.Fprintln(stderrw, "error: connect figaro:", err)
 		return 1
 	}
 	defer fcli.Close()
 
 	if _, _, err := fcli.Qua(ctx, prompt, buildPromptForm()); err != nil {
 		if !reportClosure(err, "prompt: %s", err) {
-			fmt.Fprintln(os.Stderr, "error: prompt:", err)
+			fmt.Fprintln(stderrw, "error: prompt:", err)
 		}
 		return 1
 	}
@@ -61,7 +60,7 @@ func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out 
 		}
 		return 0
 	case <-fcli.Done():
-		fmt.Fprintln(os.Stderr, "error: agent disconnected before turn completed")
+		fmt.Fprintln(stderrw, "error: agent disconnected before turn completed")
 		return 1
 	case <-ctx.Done():
 		intCtx, intCancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -88,14 +87,14 @@ func verbatimPrompt(ctx context.Context, ep transport.Endpoint, prompt string, o
 
 	fcli, err := sdk.DialAria(ep, sink.handle)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error: connect figaro:", err)
+		fmt.Fprintln(stderrw, "error: connect figaro:", err)
 		return 1
 	}
 	defer fcli.Close()
 
 	if _, _, err := fcli.Qua(ctx, prompt, buildPromptForm()); err != nil {
 		if !reportClosure(err, "prompt: %s", err) {
-			fmt.Fprintln(os.Stderr, "error: prompt:", err)
+			fmt.Fprintln(stderrw, "error: prompt:", err)
 		}
 		return 1
 	}
@@ -107,7 +106,7 @@ func verbatimPrompt(ctx context.Context, ep transport.Endpoint, prompt string, o
 		}
 		return 0
 	case <-fcli.Done():
-		fmt.Fprintln(os.Stderr, "error: agent disconnected before turn completed")
+		fmt.Fprintln(stderrw, "error: agent disconnected before turn completed")
 		return 1
 	case <-ctx.Done():
 		intCtx, intCancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -196,7 +195,7 @@ func (s *plainSink) handle(method string, params json.RawMessage) {
 		var d rpc.DoneEntry
 		_ = json.Unmarshal(params, &d)
 		if strings.HasPrefix(d.Reason, "error:") {
-			fmt.Fprintln(os.Stderr, d.Reason)
+			fmt.Fprintln(stderrw, d.Reason)
 			s.sawError = true
 		}
 		select {

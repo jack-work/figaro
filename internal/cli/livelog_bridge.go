@@ -56,7 +56,13 @@ type livelogTurn struct {
 
 	// queued is the agent's accepted-but-unplaced prompts, as figaro.queued
 	// last reported them. Shown, never echoed; see setQueued.
-	queued    []string
+	//
+	// IT KEEPS THE IDS. This used to be []string, flattened at the fetch,
+	// because the panel could only ever draw a queue -- and `figaro queue rm`
+	// addresses a message BY ID. The moment the drawer could act on a row (`x`
+	// to drop, `y` to yank) the flattening became the thing standing between a
+	// reader and the queue they are looking at.
+	queued    []queuedItem
 	queuedErr string
 
 	// held buffers pages while the opening of the session is being decided.
@@ -122,11 +128,23 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 	in.Sender = dimSender
 	t := &livelogTurn{in: in, term: term, client: aria.NewClient(), view: view, status: status}
 	in.Queued = t.queuedRows // the queue is live chrome in the inline view too
-	t.client.SetClosedLimit(transcriptTailLimit)
 	t.tr = newTranscript(audited, w, h, view, t.client, figaroID, startedAt)
 	if status != nil {
 		t.tr.status = status
-		t.client.OnMetrics = status.update
+	}
+	t.wireClient()
+	return t
+}
+
+// wireClient installs the retention limit and the three folds on t.client.
+// Extracted from newLivelogTurn so that RETARGETING -- pointing this renderer
+// at a different aria -- can mint a fresh client and wire it the same way,
+// instead of keeping a second copy of the fold in the switch path. The closures
+// capture t, never the client, so they follow the retarget by construction.
+func (t *livelogTurn) wireClient() {
+	t.client.SetClosedLimit(transcriptTailLimit)
+	if t.status != nil {
+		t.client.OnMetrics = t.status.update
 	}
 	t.client.OnClosed = func(m aria.Message) {
 		if t.tr.active {
@@ -188,7 +206,6 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 			t.in.Open(m)
 		}
 	}
-	return t
 }
 
 // transcriptFrameInterval is the pager's frame-rate ceiling. Live aria frames
@@ -795,7 +812,7 @@ func (t *livelogTurn) transcriptPageFailed() {
 func (t *livelogTurn) setQueuedFetch(fn func()) { t.tr.queuedFetch = fn }
 
 // setTranscriptQueued updates the queued-prompts panel snapshot.
-func (t *livelogTurn) setTranscriptQueued(prompts []string, errMsg string) {
+func (t *livelogTurn) setTranscriptQueued(prompts []queuedItem, errMsg string) {
 	t.setQueued(prompts, errMsg)
 }
 
@@ -856,7 +873,7 @@ func (v *ariaView) RenderExpanded(n livedoc.Node, width, tick int, fullOutput bo
 func (t *livelogTurn) openRule() { t.in.OpenRule() }
 
 // The queue, shown rather than echoed.
-func (t *livelogTurn) setQueued(prompts []string, errMsg string) {
+func (t *livelogTurn) setQueued(prompts []queuedItem, errMsg string) {
 	t.queued, t.queuedErr = prompts, errMsg
 	// The panel opens itself when there is something to show and closes when
 	// there is not. Auto-close is skipped once the user has opened it by hand,
@@ -867,6 +884,7 @@ func (t *livelogTurn) setQueued(prompts []string, errMsg string) {
 		t.tr.showQueuedAuto(false)
 	}
 	t.tr.queuedRows = t.queuedRows()
+	t.tr.queued = t.queued
 }
 
 // queuedRows is the ONE rendering of the queue, so the inline trailer and the
@@ -885,7 +903,8 @@ func (t *livelogTurn) queuedRows() []string {
 	if h > 0 && h/3 < max {
 		max = h / 3
 	}
-	for i, p := range t.queued {
+	for i, q := range t.queued {
+		p := q.text
 		if i >= max {
 			rows = append(rows, term.Dim(clipToWidth(
 				fmt.Sprintf("   … and %d more", len(t.queued)-i), w)))
@@ -907,3 +926,54 @@ const queuedRowsMax = 5
 // the store but not yet in the index; this is what puts them within reach of a
 // scroll.
 func (t *livelogTurn) invalidateTranscriptWindow() { t.tr.invalidateWindow() }
+
+// retarget points this renderer at a DIFFERENT aria: the transcript's subject
+// changes, and everything aria-scoped is rebuilt around the new one.
+//
+// It is a true reload, deliberately: a fresh client, an empty store, a cold
+// window. The cheaper thing -- keeping the turns the two arias SHARE, which for
+// a fork is nearly all of them -- needs the wire to say where two arias diverge,
+// and it does not yet. See plans/transcript-subject.md §3; this function is the
+// seam that work optimises, and it is the only one.
+//
+// Called with the render lock held.
+func (t *livelogTurn) retarget(figaroID string, status *sessionStatus) {
+	t.client = aria.NewClient()
+	t.status = status
+	t.wireClient()
+
+	// Everything below is state ABOUT the old aria, and every field of it that
+	// survives is a way for the new transcript to render the old conversation.
+	t.open = aria.Message{}
+	t.pending = nil
+	t.finished = false
+	t.thinkingOpen = false
+	t.lastFrozen = sliceCursor{}
+	t.pagerClosed = nil
+	t.queued, t.queuedErr = nil, ""
+	t.hold, t.held = false, nil
+	t.seeded, t.seedExtents, t.seedMore = nil, nil, false
+	t.pendingReport = nil
+
+	t.tr.retarget(t.client, figaroID, status)
+}
+
+// setCommandRunner wires the ':' box's non-coordinate half to whoever owns the
+// RPC clients, for the same reason setQueuedFetch and setHistoryFetcher are:
+// the renderer must not know how to reach a daemon.
+func (t *livelogTurn) setCommandRunner(fn func(string)) { t.tr.command = fn }
+
+// setTranscriptCmdOut shows a command's captured output in the footer panel.
+func (t *livelogTurn) setTranscriptCmdOut(title string, rows []string) {
+	t.tr.setCmdOut(title, rows)
+}
+
+// setCommandCompleter wires Tab in the ':' box to the router's completion.
+func (t *livelogTurn) setCommandCompleter(fn func(string) []string) { t.tr.completer = fn }
+
+// queuedItem is one queued message as the UI holds it: the text to show and the
+// ID a verb addresses. See livelogTurn.queued for why the id survives.
+type queuedItem struct {
+	id   uint64
+	text string
+}

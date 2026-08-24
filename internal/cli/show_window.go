@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"github.com/jack-work/figaro/sdk"
 	"math"
-	"os"
 
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
@@ -113,5 +112,5 @@ func clipToBudget(ts []aria.Turn, maxBytes int) ([]aria.Turn, int) {
 // Stderr on purpose: `figaro show > snapshot.txt` must not have diagnostics
 // land in the file it is snapshotting.
 func showNote(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "show: "+format+"\n", args...)
+	fmt.Fprintf(stderrw, "show: "+format+"\n", args...)
 }

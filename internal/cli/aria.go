@@ -73,7 +73,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 			die("aria.read: %s", err)
 		}
 		if len(w.entries) == 0 && w.total == 0 {
-			fmt.Fprintln(os.Stderr, "(empty aria)")
+			fmt.Fprintln(stderrw, "(empty aria)")
 			return
 		}
 		renderAriaIR(loaded, figaroID, w, opts)
@@ -93,7 +93,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	// or the "no turn in range" line; only an aria with no turns at all is
 	// empty, and saying so on stdout would put prose in a json pipe.
 	if len(w.turns) == 0 && opts.from < 0 && opts.before < 0 {
-		fmt.Fprintln(os.Stderr, "(empty aria)")
+		fmt.Fprintln(stderrw, "(empty aria)")
 		return
 	}
 	turns := w.turns
@@ -113,7 +113,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 			page.Parts = append(page.Parts, aria.TurnPart{Turn: t, From: 0})
 		}
 		page.More = aria.More{Before: lo > 0 || !w.atHead, After: hi < len(turns) || !w.atTail}
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(page); err != nil {
 			die("json: %s", err)
@@ -127,24 +127,24 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	// coordinate system in the one command that just collapsed three.
 	if lo >= hi {
 		if w.atHead {
-			fmt.Printf("# aria %s: %d turns (no turn in range)\n\n", figaroID, len(turns))
+			fmt.Fprintf(stdout, "# aria %s: %d turns (no turn in range)\n\n", figaroID, len(turns))
 		} else {
 			// The count is NOT known here: the walk stopped as soon as the
 			// selector was covered, so len(turns) is the size of the window,
 			// not of the aria.
-			fmt.Printf("# aria %s: no turn in that range within the %d turns walked back from the tail\n\n", figaroID, len(turns))
+			fmt.Fprintf(stdout, "# aria %s: no turn in that range within the %d turns walked back from the tail\n\n", figaroID, len(turns))
 		}
 		return
 	}
 	if w.atHead {
-		fmt.Printf("# aria %s: %d turns (showing %d..%d) · [N] is the turn to fork/send at\n\n", figaroID, len(turns), turns[lo].ID, turns[hi-1].ID)
+		fmt.Fprintf(stdout, "# aria %s: %d turns (showing %d..%d) · [N] is the turn to fork/send at\n\n", figaroID, len(turns), turns[lo].ID, turns[hi-1].ID)
 	} else {
-		fmt.Printf("# aria %s: turns %d..%d, walked back from the tail · [N] is the turn to fork/send at\n\n", figaroID, turns[lo].ID, turns[hi-1].ID)
+		fmt.Fprintf(stdout, "# aria %s: turns %d..%d, walked back from the tail · [N] is the turn to fork/send at\n\n", figaroID, turns[lo].ID, turns[hi-1].ID)
 	}
 	for i := lo; i < hi; i++ {
 		u := turns[i]
-		fmt.Println(term.Dim(fmt.Sprintf("[%d]", u.ID)))
-		fmt.Println()
+		fmt.Fprintln(stdout, term.Dim(fmt.Sprintf("[%d]", u.ID)))
+		fmt.Fprintln(stdout)
 		// The DEFAULT is what `figaro listen` draws: the same composer, the
 		// same rows, no metadata. `-o` adds the addresses and timestamps Ctrl-O
 		// shows in the pager: it used to be on unconditionally, which meant
@@ -155,8 +155,8 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 			FormDeltas: u.FormDeltas, Nodes: u.Nodes,
 		}, width, 0, renderSettings{verbose: opts.details})
 		auditRows(rows, width, "show")
-		fmt.Println(strings.Join(rows, "\n"))
-		fmt.Println()
+		fmt.Fprintln(stdout, strings.Join(rows, "\n"))
+		fmt.Fprintln(stdout)
 	}
 }
 
@@ -319,10 +319,10 @@ func renderAriaIR(loaded *config.Loaded, figaroID string, win showWindow, opts s
 	if !opts.verbose {
 		return
 	}
-	fmt.Println()
-	fmt.Println("---")
-	fmt.Println("## credo")
-	fmt.Println()
+	fmt.Fprintln(stdout)
+	fmt.Fprintln(stdout, "---")
+	fmt.Fprintln(stdout, "## credo")
+	fmt.Fprintln(stdout)
 	// The form is a reducible channel now (there is no the form channel);
 	// fetch the live snapshot through the angelus. Best-effort: the credo and
 	// form sections degrade to empty rather than aborting the dump.
@@ -337,30 +337,30 @@ func renderAriaIR(loaded *config.Loaded, figaroID string, win showWindow, opts s
 		}
 		switch {
 		case json.Unmarshal(raw, &env) == nil && env.Content != "":
-			fmt.Println(env.Content)
+			fmt.Fprintln(stdout, env.Content)
 		case env.Frontmatter != "":
-			fmt.Println(env.Frontmatter)
+			fmt.Fprintln(stdout, env.Frontmatter)
 		default:
 			var s string
 			if json.Unmarshal(raw, &s) == nil {
-				fmt.Println(s)
+				fmt.Fprintln(stdout, s)
 			} else {
-				fmt.Println(string(raw))
+				fmt.Fprintln(stdout, string(raw))
 			}
 		}
 	} else {
-		fmt.Println("(no system.credo on form)")
+		fmt.Fprintln(stdout, "(no system.credo on form)")
 	}
-	fmt.Println()
-	fmt.Println("---")
-	fmt.Println("## state transitions")
-	fmt.Println()
+	fmt.Fprintln(stdout)
+	fmt.Fprintln(stdout, "---")
+	fmt.Fprintln(stdout, "## state transitions")
+	fmt.Fprintln(stdout)
 	printTransitions(os.Stdout, entries)
-	fmt.Println()
-	fmt.Println("---")
-	fmt.Println("## form")
-	fmt.Println()
-	enc := json.NewEncoder(os.Stdout)
+	fmt.Fprintln(stdout)
+	fmt.Fprintln(stdout, "---")
+	fmt.Fprintln(stdout, "## form")
+	fmt.Fprintln(stdout)
+	enc := json.NewEncoder(stdout)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(nestSnapshot(snap))
 }

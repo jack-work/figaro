@@ -27,7 +27,7 @@ func mustLoadConfig() *config.Loaded {
 		slog.Warn("outfit migration", "dir", dir, "err", mErr)
 	} else {
 		for _, c := range changes {
-			fmt.Fprintln(os.Stderr, "figaro: "+c)
+			fmt.Fprintln(stderrw, "figaro: "+c)
 		}
 	}
 	loaded, err := config.Load(dir)
@@ -129,10 +129,10 @@ func ensureHush() {
 		// A saved passphrase that stopped decrypting is otherwise a dead
 		// end: every command fails and nothing names the lever.
 		if strings.Contains(err.Error(), "incorrect passphrase") {
-			fmt.Fprintf(os.Stderr, "figaro: hush: %s\n\n", err)
-			fmt.Fprintln(os.Stderr, "The saved passphrase does not decrypt this vault.")
-			fmt.Fprintln(os.Stderr, "  figaro vault status    inspect it")
-			fmt.Fprintln(os.Stderr, "  figaro vault forget    clear it and be prompted again")
+			fmt.Fprintf(stderrw, "figaro: hush: %s\n\n", err)
+			fmt.Fprintln(stderrw, "The saved passphrase does not decrypt this vault.")
+			fmt.Fprintln(stderrw, "  figaro vault status    inspect it")
+			fmt.Fprintln(stderrw, "  figaro vault forget    clear it and be prompted again")
 			os.Exit(1)
 		}
 		die("hush: %s", err)

@@ -330,7 +330,18 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			in = &interactiveInput{
 				tc: tc, lt: lt, fcli: fcli, hangup: fcli, mu: &mu, set: &set,
 				figaroID: figaroID, cancel: cancel, disconnectCh: disconnectCh,
+				subject: fcli, loaded: loaded, subjectDead: make(chan struct{}, 1),
 			}
+			// THE PAGER HAS TWO FRONT DOORS -- here and listen.go -- and they do
+			// not share a constructor. Command mode has to be wired at both, and
+			// the first cut wired only listen: `:send` answered "commands need a
+			// live session" inside a `figaro send`, which is the surface most
+			// users are looking at. See plans/transcript-command-mode.md; the
+			// fix in the real work is ONE constructor, not two call sites kept
+			// in step by hand.
+			in.lt.setCommandRunner(in.runCommand)
+			in.lt.setCommandCompleter(in.complete)
+			in.lt.tr.dropRow = in.dropDrawerRow
 			in.lt.setQueuedFetch(in.refreshQueued) // 'Q' works before the pager is ever opened
 			// Both are inert until the PAGER is up (a fetcher is only consulted by
 			// Store.Ensure, i.e. the prefetch worker), and both must be in place
@@ -453,6 +464,31 @@ type interactiveInput struct {
 	tc   term.Client
 	lt   *livelogTurn
 	fcli transcriptReadClient
+	// THE SUBJECT: the aria this pager is showing, and the machinery to change
+	// it. subject is the same connection fcli names, held concretely because a
+	// switch has to close it and `:send` has to Qua on it; acli and loaded are
+	// what a verb needs to resolve a spec into an endpoint. subjectGen fences
+	// the OLD connection's handlers off the renderer the instant a switch
+	// begins, and subjectDead reports the death of whichever connection is
+	// current. See command.go.
+	subject *sdk.Aria
+	acli    *sdk.Angelus
+	loaded  *config.Loaded
+	tap     transport.Tap
+	// ownsSubject says whether THIS loop dialled the connection and may close
+	// it. In `figaro send` the connection belongs to the caller, which is
+	// blocked on its Done() channel: closing it there ended the session
+	// mid-turn, with the pager vanishing and the shell prompt back while the
+	// agent was still working. A switch may only close what it opened.
+	ownsSubject bool
+	subjectGen  uint64
+	subjectDead chan struct{}
+	// queueEpoch is the version of the queue as last READ. Every queue mutation
+	// is a compare-and-set against it -- the daemon refuses a delete with no
+	// epoch ("read the queue first, then mutate against what you read"), which
+	// is exactly right: the ids in a queue you have not re-read may have been
+	// drained, merged or renumbered under you.
+	queueEpoch string
 	// interrupting is set by the first Ctrl-C: the turn has been asked to
 	// stop and we are waiting for turn.done to close us. A second Ctrl-C
 	// leaves immediately, because a user must never be trapped by a daemon
@@ -884,11 +920,12 @@ func (in *interactiveInput) refreshQueued() {
 			in.lt.render()
 			return
 		}
-		texts := make([]string, 0, len(resp.Prompts))
+		in.queueEpoch = resp.Epoch
+		items := make([]queuedItem, 0, len(resp.Prompts))
 		for _, p := range resp.Prompts {
-			texts = append(texts, p.Text)
+			items = append(items, queuedItem{id: p.ID, text: p.Text})
 		}
-		in.lt.setTranscriptQueued(texts, "")
+		in.lt.setTranscriptQueued(items, "")
 		in.lt.render()
 	}()
 }
@@ -1247,6 +1284,17 @@ func inputToggleVerbose(in *interactiveInput, _ keyEvent) keyVerdict {
 func inputYank(in *interactiveInput, ev keyEvent) keyVerdict {
 	if ev.mode != modeIncipit {
 		in.mu.Lock()
+		// A DRAWER WITH A SELECTION OWNS 'y'. The row knows what it is worth
+		// copying -- a queued message's text, an aria id out of `:ls` -- and the
+		// transcript's node selection is a different question that is not being
+		// asked while a list is up.
+		if row, ok := in.lt.tr.drawer.selected(); ok && row.yank != "" {
+			in.lt.tr.drawer.flash = "yanked " + row.yank + " · Esc close"
+			in.lt.tr.render()
+			in.mu.Unlock()
+			in.tc.SetClipboard(row.yank)
+			return keyHandled
+		}
 		plan, selected := in.lt.transcriptSelectionPlan()
 		if selected && in.copyCancel == nil && !in.copyFailed {
 			copyCtx, copyCancel := context.WithTimeout(context.Background(), 30*time.Second)

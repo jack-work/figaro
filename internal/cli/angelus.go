@@ -164,7 +164,7 @@ func runAngelus() {
 
 	otelShutdown, err := figOtel.Init(context.Background(), stateDir())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: otel init: %s\n", err)
+		fmt.Fprintf(stderrw, "warning: otel init: %s\n", err)
 	} else {
 		defer otelShutdown(context.Background())
 	}
@@ -174,7 +174,7 @@ func runAngelus() {
 	backend, err := ariaBackend(loaded)
 	if err != nil {
 		slog.Error("angelus aria backend", "err", err)
-		fmt.Fprintf(os.Stderr, "angelus: aria backend: %v\n", err)
+		fmt.Fprintf(stderrw, "angelus: aria backend: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -244,7 +244,7 @@ func runAngelus() {
 	os.Remove(a.SocketPath)
 	if err != nil {
 		slog.Error("angelus run", "err", err)
-		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
+		fmt.Fprintf(stderrw, "angelus: %v\n", err)
 		os.Exit(1)
 	}
 }

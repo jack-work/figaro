@@ -172,14 +172,20 @@ func TestJumpToAnUnreachableTargetReports(t *testing.T) {
 	if !strings.Contains(tr.jumpNote, "999") {
 		t.Fatalf("the note does not name the target: %q", tr.jumpNote)
 	}
-	if tr.offset != before || !tr.follow {
-		t.Fatalf("a failed jump moved the reader: offset %d->%d follow %v",
-			before, tr.offset, tr.follow)
+	// STILL WHERE THEY WERE, which while FOLLOWING means still at the tail. The
+	// raw offset is no longer the right comparison: reporting the failure opens
+	// a message drawer, the drawer costs the body two rows, and a follower's
+	// offset therefore lands at the new bottom. Same place, different number.
+	if !tr.follow {
+		t.Fatalf("a failed jump detached the reader from the tail (offset %d->%d)", before, tr.offset)
 	}
-	if line, own := tr.jumpFooter(); !own || line != tr.jumpNote {
-		t.Fatalf("the footer does not carry the note: %q %v", line, own)
+	if _, maxOff := tr.layoutNow(); tr.offset != maxOff {
+		t.Fatalf("a failed jump moved the reader off the tail: offset %d, tail %d", tr.offset, maxOff)
 	}
-	// And the report is TRANSIENT: the next key gives the status row back.
+	if !tr.showing("message") {
+		t.Fatal("the failure is not in the drawer")
+	}
+	// And the report is TRANSIENT: the next key closes the drawer.
 	// A sticky note would eat the mantra/ctx/cost line for the whole session.
 	tr.key('j')
 	if tr.jumpNote != "" {
@@ -226,15 +232,15 @@ func TestJumpBoxTakesSlashAsText(t *testing.T) {
 	for _, b := range []byte("1/2") {
 		tr.key(b)
 	}
-	if tr.jumpQuery != "1/2" {
-		t.Fatalf("jump box holds %q, want %q", tr.jumpQuery, "1/2")
+	if tr.cmdline.String() != "1/2" {
+		t.Fatalf("jump box holds %q, want %q", tr.cmdline.String(), "1/2")
 	}
 	if tr.inSearch {
 		t.Fatal("'/' opened the search box from inside the jump box")
 	}
 	tr.key(0x1b) // Esc cancels the typing
-	if tr.inJump || tr.jumpQuery != "" {
-		t.Fatalf("Esc left the box open: inJump=%v q=%q", tr.inJump, tr.jumpQuery)
+	if tr.inJump || tr.cmdline.String() != "" {
+		t.Fatalf("Esc left the box open: inJump=%v q=%q", tr.inJump, tr.cmdline.String())
 	}
 }
 

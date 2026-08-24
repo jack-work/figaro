@@ -70,7 +70,7 @@ func ensureExchangeCredential(loaded *config.Loaded, h *hush.Client, reg *provid
 	}); err != nil {
 		return fmt.Errorf("hush: register %s credential from %s: %w", name, source, err)
 	}
-	fmt.Fprintf(os.Stderr, "figaro: handed the %s credential (%s) to hush; it owns the session token now\n", name, source)
+	fmt.Fprintf(stderrw, "figaro: handed the %s credential (%s) to hush; it owns the session token now\n", name, source)
 	return nil
 }
 

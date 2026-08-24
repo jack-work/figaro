@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jack-work/figaro/sdk"
-	"os"
 	"strings"
 
 	jkrpc "github.com/jack-work/jkrpc"
@@ -140,12 +139,12 @@ func runOutfit(loaded *config.Loaded, ariaID, arg string) {
 		dieOutfitFailure(label, err)
 	}
 	if len(resp.Set) == 0 {
-		fmt.Fprintf(os.Stderr, "outfit %s: no changes (form already matches)\n", label)
+		fmt.Fprintf(stderrw, "outfit %s: no changes (form already matches)\n", label)
 		return
 	}
-	fmt.Fprintf(os.Stderr, "outfit %s applied (%d keys):\n", label, len(resp.Set))
+	fmt.Fprintf(stderrw, "outfit %s applied (%d keys):\n", label, len(resp.Set))
 	for _, k := range resp.Set {
-		fmt.Fprintf(os.Stderr, "  %s\n", k)
+		fmt.Fprintf(stderrw, "  %s\n", k)
 	}
 }
 
@@ -173,9 +172,9 @@ func reportClosure(err error, format string, args ...any) bool {
 	if closure == nil {
 		return false
 	}
-	fmt.Fprintf(os.Stderr, "error: "+format+"\n\n", args...)
-	fmt.Fprint(os.Stderr, renderOutfitClosure(closure))
-	fmt.Fprintln(os.Stderr)
+	fmt.Fprintf(stderrw, "error: "+format+"\n\n", args...)
+	fmt.Fprint(stderrw, renderOutfitClosure(closure))
+	fmt.Fprintln(stderrw)
 	return true
 }
 
@@ -272,9 +271,9 @@ func runOutfitTree(loaded *config.Loaded, arg string) {
 	if resp.Closure == nil {
 		die("state outfit --tree: name an outfit, or set a default with the first-run flow")
 	}
-	fmt.Print(renderOutfitClosure(resp.Closure))
+	fmt.Fprint(stdout, renderOutfitClosure(resp.Closure))
 	if broken := outfitClosureBroken(resp.Closure); len(broken) > 0 {
-		fmt.Fprintf(os.Stderr, "\n%d unresolved: %s\n", len(broken), strings.Join(broken, ", "))
+		fmt.Fprintf(stderrw, "\n%d unresolved: %s\n", len(broken), strings.Join(broken, ", "))
 		exitNow(1)
 	}
 }
@@ -302,7 +301,7 @@ func runOutfitRefresh(loaded *config.Loaded) {
 	if _, err := acli.Configure(context.Background(), rpc.ConfigureRequest{Refresh: true}); err != nil {
 		die("state outfit --refresh: %s", err)
 	}
-	fmt.Fprintln(os.Stderr, "outfits refreshed")
+	fmt.Fprintln(stderrw, "outfits refreshed")
 }
 
 // runOutfitList prints the outfits the server has on disk.
@@ -314,7 +313,7 @@ func runOutfitList(loaded *config.Loaded) {
 		die("state outfit --list: %s", err)
 	}
 	if len(resp.Names) == 0 {
-		fmt.Fprintln(os.Stderr, "no outfits found")
+		fmt.Fprintln(stderrw, "no outfits found")
 		return
 	}
 	for _, n := range resp.Names {
@@ -322,6 +321,6 @@ func runOutfitList(loaded *config.Loaded) {
 		if n == resp.Default {
 			marker = " (default)"
 		}
-		fmt.Printf("%s%s\n", n, marker)
+		fmt.Fprintf(stdout, "%s%s\n", n, marker)
 	}
 }

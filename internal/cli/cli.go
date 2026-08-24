@@ -21,6 +21,11 @@ import (
 // (e.g. "figaro" or "fig"); it threads through to the router so help,
 // errors, and shell completion reflect the name the user actually typed.
 func Run(progName string, args []string) {
+	// THE ABORT BOUNDARY. die() unwinds rather than calling os.Exit, so that the
+	// same verb can be run in-process (command mode) without taking the process
+	// with it. This is where an abort means what it has always meant at a shell.
+	defer recoverExit()
+
 	if progName == "" {
 		progName = "figaro"
 	}
@@ -107,7 +112,7 @@ func Run(progName string, args []string) {
 	}
 	shutdown, err := figOtel.Init(ctx, telemetryDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: otel init: %s\n", err)
+		fmt.Fprintf(stderrw, "warning: otel init: %s\n", err)
 	} else {
 		defer shutdown(ctx)
 	}
@@ -750,9 +755,9 @@ Folding an outfit onto a LIVE aria is a different act: see
 				die("outfit reload: %s", err)
 			}
 			if resp.Flagged {
-				fmt.Printf("default form %s flagged; the next `fig new` recomputes from the outfit files\n", resp.FormID)
+				fmt.Fprintf(stdout, "default form %s flagged; the next `fig new` recomputes from the outfit files\n", resp.FormID)
 			} else {
-				fmt.Println("no default form minted yet; the next `fig new` computes from the files regardless")
+				fmt.Fprintln(stdout, "no default form minted yet; the next `fig new` computes from the files regardless")
 			}
 			return nil
 		},

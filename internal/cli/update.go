@@ -62,7 +62,7 @@ func runUpdateCheck(loaded *config.Loaded) {
 	defer cancel()
 	info := update.Check(ctx, updateCache(), ttl, figaroModule, update.CurrentVersion(commit))
 	if msg := update.Nudge(info, figaroModule); msg != "" {
-		fmt.Fprintln(os.Stderr, msg)
+		fmt.Fprintln(stderrw, msg)
 	}
 }
 
@@ -93,7 +93,7 @@ func runUpdate(loaded *config.Loaded, args []string) error {
 		case "--apply":
 			apply = true
 		case "-h", "--help":
-			fmt.Println("usage: figaro update [--check] [--json] [--apply]")
+			fmt.Fprintln(stdout, "usage: figaro update [--check] [--json] [--apply]")
 			return nil
 		default:
 			return fmt.Errorf("update: unknown flag %q", a)
@@ -111,50 +111,50 @@ func runUpdate(loaded *config.Loaded, args []string) error {
 	info := update.Check(ctx, cache, ttl, figaroModule, current)
 
 	if asJSON {
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(info)
 	}
 
 	channel := string(info.Channel)
-	fmt.Printf("figaro %s installed (channel: %s)\n", info.Current, channel)
+	fmt.Fprintf(stdout, "figaro %s installed (channel: %s)\n", info.Current, channel)
 	if info.Exe != "" {
-		fmt.Printf("  exe:     %s\n", info.Exe)
+		fmt.Fprintf(stdout, "  exe:     %s\n", info.Exe)
 	}
 	if info.FetchError != "" {
-		fmt.Printf("  latest:  (unavailable: %s)\n", info.FetchError)
+		fmt.Fprintf(stdout, "  latest:  (unavailable: %s)\n", info.FetchError)
 		return nil
 	}
-	fmt.Printf("  latest:  %s\n", info.Latest)
+	fmt.Fprintf(stdout, "  latest:  %s\n", info.Latest)
 	if !info.Available {
-		fmt.Println("  status:  up to date  ✓")
+		fmt.Fprintln(stdout, "  status:  up to date  ✓")
 		return nil
 	}
 	cmd := update.UpgradeCommand(info.Channel, figaroModule, info.Latest)
 	if cmd == "" {
-		fmt.Println("  status:  new release available")
-		fmt.Println("  no automatic upgrade command for this install channel;")
-		fmt.Println("  refer to README.md § Releasing for guidance.")
+		fmt.Fprintln(stdout, "  status:  new release available")
+		fmt.Fprintln(stdout, "  no automatic upgrade command for this install channel;")
+		fmt.Fprintln(stdout, "  refer to README.md § Releasing for guidance.")
 		return nil
 	}
-	fmt.Println("  status:  new release available")
-	fmt.Printf("  to upgrade: %s\n", cmd)
+	fmt.Fprintln(stdout, "  status:  new release available")
+	fmt.Fprintf(stdout, "  to upgrade: %s\n", cmd)
 	if !apply {
 		return nil
 	}
 	if info.Channel != update.ChannelGoInstall {
 		return fmt.Errorf("update --apply only supported on the go-install channel (got: %s)", info.Channel)
 	}
-	fmt.Println()
-	fmt.Printf("→ running: %s\n", cmd)
+	fmt.Fprintln(stdout)
+	fmt.Fprintf(stdout, "→ running: %s\n", cmd)
 	c := exec.CommandContext(ctx, "go", "install", figaroModule+"/cmd/figaro@"+info.Latest)
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
 	if err := c.Run(); err != nil {
 		return fmt.Errorf("go install failed: %w", err)
 	}
-	fmt.Println()
-	fmt.Println("done. restart the daemon so the next command picks up the new binary:")
-	fmt.Println("  figaro stop")
+	fmt.Fprintln(stdout)
+	fmt.Fprintln(stdout, "done. restart the daemon so the next command picks up the new binary:")
+	fmt.Fprintln(stdout, "  figaro stop")
 	return nil
 }

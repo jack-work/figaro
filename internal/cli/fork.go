@@ -188,7 +188,7 @@ func runForkPrompt(loaded *config.Loaded, spec string, opts sendOpts, prompt str
 		rescoped := false
 		if target == bound && !opts.stay {
 			if berr := bindBinding(ctx, acli, ppid, resp.Alternative, 0); berr != nil {
-				fmt.Fprintf(os.Stderr, "warning: could not attend %s: %s\n", resp.Alternative, berr)
+				fmt.Fprintf(stderrw, "warning: could not attend %s: %s\n", resp.Alternative, berr)
 			} else {
 				rescoped = true
 			}
@@ -196,7 +196,7 @@ func runForkPrompt(loaded *config.Loaded, spec string, opts sendOpts, prompt str
 
 		if opts.json {
 			// aria_id is the aria the prompt goes to, always the branch.
-			enc := json.NewEncoder(os.Stdout)
+			enc := json.NewEncoder(stdout)
 			_ = enc.Encode(struct {
 				AriaID       string `json:"aria_id"`
 				Parent       string `json:"parent"`
@@ -220,13 +220,13 @@ func runForkPrompt(loaded *config.Loaded, spec string, opts sendOpts, prompt str
 		}
 
 		if resp.OwnerNote != "" {
-			fmt.Fprintf(os.Stderr, "%s\n", resp.OwnerNote)
+			fmt.Fprintf(stderrw, "%s\n", resp.OwnerNote)
 		}
 		altNote := "(prompting)"
 		if rescoped {
 			altNote = "(prompting; this shell)"
 		}
-		fmt.Fprintf(os.Stderr,
+		fmt.Fprintf(stderrw,
 			"forked %s at %s (now a frozen fork point)\n  continuation %s  (attend to continue)\n  alternative  %s  %s\n",
 			resp.Parent, at, resp.Continuation, resp.Alternative, altNote)
 		return nil

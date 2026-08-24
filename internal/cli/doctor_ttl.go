@@ -3,7 +3,6 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"sort"
 	"time"
 
@@ -33,18 +32,18 @@ func runDoctorTTL(jsonOut bool) error {
 				"expired":       e.Expired(time.Now().UnixMilli()),
 			})
 		}
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(out)
 	}
 
 	if len(rows) == 0 {
-		fmt.Fprintln(os.Stderr,
+		fmt.Fprintln(stderrw,
 			"no node states a lifetime (set one with: figaro set --id <id> system.ttl 30d)")
 		return nil
 	}
 	now := time.Now()
-	fmt.Printf("%-10s %-8s %-20s %-20s %s\n", "NODE", "TTL", "CREATED", "EXPIRES", "STATUS")
+	fmt.Fprintf(stdout, "%-10s %-8s %-20s %-20s %s\n", "NODE", "TTL", "CREATED", "EXPIRES", "STATUS")
 	due := 0
 	for _, e := range rows {
 		deadline := time.UnixMilli(e.DeadlineMS)
@@ -53,12 +52,12 @@ func runDoctorTTL(jsonOut bool) error {
 			status = "DUE"
 			due++
 		}
-		fmt.Printf("%-10s %-8s %-20s %-20s %s\n",
+		fmt.Fprintf(stdout, "%-10s %-8s %-20s %-20s %s\n",
 			e.ID, e.TTL.String(),
 			time.UnixMilli(e.CreatedAtMS).Format("2006-01-02 15:04"),
 			deadline.Format("2006-01-02 15:04"), status)
 	}
-	fmt.Fprintf(os.Stderr, "\n%d with a lifetime, %d due. The daemon's sweep takes what is due"+
+	fmt.Fprintf(stderrw, "\n%d with a lifetime, %d due. The daemon's sweep takes what is due"+
 		" once the aria is dormant and no shell is bound to it.\n", len(rows), due)
 	return nil
 }

@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -49,7 +48,7 @@ const (
 func completeFormKeys(c *cmdkit.CompleteContext) []string {
 	live, status, err := softFetchLiveKeys()
 	if status == liveKeysFetchFailed {
-		fmt.Fprintf(os.Stderr, "figaro: completion: aria bound but form unreadable, offering no keys: %v\n", err)
+		fmt.Fprintf(stderrw, "figaro: completion: aria bound but form unreadable, offering no keys: %v\n", err)
 		return nil
 	}
 	seen := map[string]struct{}{}

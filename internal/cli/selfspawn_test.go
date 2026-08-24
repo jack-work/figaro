@@ -104,6 +104,8 @@ func captureStderr(t *testing.T, fn func()) string {
 	}
 	prev := os.Stderr
 	os.Stderr = w
+	prevStderrw := stderrw
+	stderrw = w
 
 	done := make(chan string, 1)
 	go func() {
@@ -114,6 +116,7 @@ func captureStderr(t *testing.T, fn func()) string {
 	fn() // captureExit recovers inside, so this returns normally
 
 	os.Stderr = prev
+	stderrw = prevStderrw
 	w.Close()
 	out := <-done
 	r.Close()

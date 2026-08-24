@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/jack-work/figaro/sdk"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -41,21 +40,21 @@ func runDoctorProvider(ariaID, count string, asJSON bool) error {
 	}
 
 	if asJSON {
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(resp)
 	}
 
 	if len(resp.Rounds) == 0 {
 		if resp.Retained == 0 {
-			fmt.Println("no provider round-trips recorded yet")
+			fmt.Fprintln(stdout, "no provider round-trips recorded yet")
 		} else {
-			fmt.Printf("no round-trips for that filter (%d retained overall)\n", resp.Retained)
+			fmt.Fprintf(stdout, "no round-trips for that filter (%d retained overall)\n", resp.Retained)
 		}
 		return nil
 	}
 
-	fmt.Printf("%-12s %-9s %-6s %-9s %-9s %-8s %s\n",
+	fmt.Fprintf(stdout, "%-12s %-9s %-6s %-9s %-9s %-8s %s\n",
 		"time", "aria", "status", "duration", "req", "retry", "endpoint")
 	for _, r := range resp.Rounds {
 		when := time.UnixMilli(r.StartedAtMS).Format("15:04:05.000")
@@ -82,7 +81,7 @@ func runDoctorProvider(ariaID, count string, asJSON bool) error {
 			retry = (time.Duration(r.RetryAfterS) * time.Second).String()
 		}
 
-		fmt.Printf("%-12s %-9s %-6s %-9s %-9s %-8s %s\n",
+		fmt.Fprintf(stdout, "%-12s %-9s %-6s %-9s %-9s %-8s %s\n",
 			when, aria, status, dur, humanBytes(r.ReqBytes), retry, shortEndpoint(r.URL))
 	}
 
@@ -115,20 +114,20 @@ func summarizeProviderTrouble(rounds []rpc.ProviderRound) {
 	if refused == 0 && inFlight == 0 {
 		return
 	}
-	fmt.Println()
+	fmt.Fprintln(stdout)
 	if refused > 0 {
-		fmt.Printf("%d of %d round-trips were refused for quota.\n", refused, len(rounds))
+		fmt.Fprintf(stdout, "%d of %d round-trips were refused for quota.\n", refused, len(rounds))
 		if worstRetry > 0 {
-			fmt.Printf("the provider asked for up to %s; a wait that long is a usage window,\n",
+			fmt.Fprintf(stdout, "the provider asked for up to %s; a wait that long is a usage window,\n",
 				(time.Duration(worstRetry) * time.Second).String())
-			fmt.Println("not a throttle, and no amount of retrying will shorten it.")
+			fmt.Fprintln(stdout, "not a throttle, and no amount of retrying will shorten it.")
 		}
 		if reset != "" {
-			fmt.Printf("limit resets %s\n", reset)
+			fmt.Fprintf(stdout, "limit resets %s\n", reset)
 		}
 	}
 	if inFlight > 0 {
-		fmt.Printf("%d request(s) still in flight.\n", inFlight)
+		fmt.Fprintf(stdout, "%d request(s) still in flight.\n", inFlight)
 	}
 }
 

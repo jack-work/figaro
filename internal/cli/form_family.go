@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/jack-work/figaro/sdk"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -66,7 +65,7 @@ func createFormAndReport(loaded *config.Loaded, parent string, d dressing, asJSO
 		die("form: %s", err)
 	}
 	if asJSON {
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(stdout)
 		_ = enc.Encode(map[string]any{
 			"form_id": resp.FormID,
 			"version": resp.Version,
@@ -75,9 +74,9 @@ func createFormAndReport(loaded *config.Loaded, parent string, d dressing, asJSO
 		return
 	}
 	if parent == "" {
-		fmt.Printf("minted %s (version %d)\n", resp.FormID, resp.Version)
+		fmt.Fprintf(stdout, "minted %s (version %d)\n", resp.FormID, resp.Version)
 	} else {
-		fmt.Printf("forked %s from %s (version %d)\n", resp.FormID, parent, resp.Version)
+		fmt.Fprintf(stdout, "forked %s from %s (version %d)\n", resp.FormID, parent, resp.Version)
 	}
 	// A form you just minted is a thing created FOR you, so the shell moves
 	// onto it -- the same law every other birth verb obeys. It was the lone
@@ -85,7 +84,7 @@ func createFormAndReport(loaded *config.Loaded, parent string, d dressing, asJSO
 	// an exception is the whole of what was wrong with it: attendance was a
 	// property of which helper a verb happened to call.
 	attendNew(ctx, acli, resp.FormID)
-	fmt.Fprintf(os.Stderr, "attending %s (it binds with `fig bind %s`)\n", resp.FormID, resp.FormID)
+	fmt.Fprintf(stderrw, "attending %s (it binds with `fig bind %s`)\n", resp.FormID, resp.FormID)
 }
 
 // runFormLs lists unbound forms: the form rows of the global listing,
@@ -127,21 +126,21 @@ func runFormLs(loaded *config.Loaded, asJSON bool) {
 	sort.SliceStable(forms, func(i, j int) bool { return forms[i].LastActive > forms[j].LastActive })
 
 	if asJSON {
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(stdout)
 		_ = enc.Encode(forms)
 		return
 	}
 	if len(forms) == 0 {
-		fmt.Fprintln(os.Stderr, "no unbound forms; mint one with `fig form new -S name='…'`")
+		fmt.Fprintln(stderrw, "no unbound forms; mint one with `fig form new -S name='…'`")
 		return
 	}
-	fmt.Printf("%-14s %-22s %-10s %-8s %s\n", "FORM", "NAME", "TARGET", "AGE", "PARENT")
+	fmt.Fprintf(stdout, "%-14s %-22s %-10s %-8s %s\n", "FORM", "NAME", "TARGET", "AGE", "PARENT")
 	for _, f := range forms {
 		age := "-"
 		if f.LastActive != 0 {
 			age = relAge(f.LastActive)
 		}
-		fmt.Printf("%-14s %-22s %-10s %-8s %s\n",
+		fmt.Fprintf(stdout, "%-14s %-22s %-10s %-8s %s\n",
 			f.ID, truncRunes(dash(f.Name), 22), dash(f.TargetAria), age, dash(f.Parent))
 	}
 }
@@ -219,10 +218,10 @@ func runBind(loaded *config.Loaded, target, outfits, set, del string, asJSON boo
 		die("bind: %s", err)
 	}
 	if asJSON {
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(stdout)
 		_ = enc.Encode(map[string]any{"figaro_id": resp.FigaroID, "form_id": target})
 		return
 	}
-	fmt.Printf("bound %s from %s\n", resp.FigaroID, target)
-	fmt.Fprintf(os.Stderr, "dormant until first use; attend it with `fig at %s`\n", resp.FigaroID)
+	fmt.Fprintf(stdout, "bound %s from %s\n", resp.FigaroID, target)
+	fmt.Fprintf(stderrw, "dormant until first use; attend it with `fig at %s`\n", resp.FigaroID)
 }

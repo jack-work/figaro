@@ -87,7 +87,7 @@ func runNewPrompt(loaded *config.Loaded, prompt string, d dressing, set renderSe
 			dieWithClosure(qerr, "prompt: %s", qerr)
 		}
 		qcancel()
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(stdout)
 		_ = enc.Encode(struct {
 			AriaID string `json:"aria_id"`
 			Mode   string `json:"mode"`
@@ -98,7 +98,7 @@ func runNewPrompt(loaded *config.Loaded, prompt string, d dressing, set renderSe
 	// In no-bind mode nothing was bound to the shell, so print the id
 	// to stderr so callers can capture it (mirrors `send -f`'s notice).
 	if bindingDisabled() {
-		fmt.Fprintf(os.Stderr, "created %s\n", figaroID)
+		fmt.Fprintf(stderrw, "created %s\n", figaroID)
 	}
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set)
 }
@@ -160,27 +160,27 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, as
 		die("send: fork %s at %s: %s", trunkID, at, err)
 	}
 	if fr.OwnerNote != "" {
-		fmt.Fprintf(os.Stderr, "%s\n", fr.OwnerNote)
+		fmt.Fprintf(stderrw, "%s\n", fr.OwnerNote)
 	}
 
 	target := fr.Alternative
 	if stay {
 		target = trunkID // parked alternative; shell stays on the original
 		if !asJSON {
-			fmt.Fprintf(os.Stderr, "forked %s at %s -> %s (parked; staying on %s)\n", trunkID, at, fr.Alternative, trunkID)
+			fmt.Fprintf(stderrw, "forked %s at %s -> %s (parked; staying on %s)\n", trunkID, at, fr.Alternative, trunkID)
 		}
 	} else {
 		// Registry.Bind rebinds in place; no Unbind needed first.
 		if err := bindBinding(ctx, acli, ppid, fr.Alternative, 0); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not attend %s: %s\n", fr.Alternative, err)
+			fmt.Fprintf(stderrw, "warning: could not attend %s: %s\n", fr.Alternative, err)
 		}
 		if !asJSON {
-			fmt.Fprintf(os.Stderr, "forked %s at %s -> attending %s\n", trunkID, at, fr.Alternative)
+			fmt.Fprintf(stderrw, "forked %s at %s -> attending %s\n", trunkID, at, fr.Alternative)
 		}
 	}
 
 	if asJSON {
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(stdout)
 		_ = enc.Encode(struct {
 			AriaID       string `json:"aria_id"`
 			Parent       string `json:"parent"`
@@ -285,9 +285,9 @@ func runUnattend(loaded *config.Loaded) {
 	}
 	_ = unbindBinding(ctx, acli, ppid)
 	if bound != "" {
-		fmt.Fprintf(os.Stderr, "home: unattended %s; new conversations use the default outfit\n", bound)
+		fmt.Fprintf(stderrw, "home: unattended %s; new conversations use the default outfit\n", bound)
 	} else {
-		fmt.Fprintln(os.Stderr, "no aria bound to this shell")
+		fmt.Fprintln(stderrw, "no aria bound to this shell")
 	}
 }
 
@@ -304,7 +304,7 @@ func runNewFromOutfit(loaded *config.Loaded, d dressing, set renderSettings) {
 	figaroID, _ := mustCreate(ctx, acli, loaded, d)
 	attendNew(ctx, acli, figaroID)
 	if set.jsonMode {
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(stdout)
 		_ = enc.Encode(struct {
 			AriaID string `json:"aria_id"`
 			Mode   string `json:"mode"`
@@ -315,5 +315,5 @@ func runNewFromOutfit(loaded *config.Loaded, d dressing, set renderSettings) {
 	if !d.IsEmpty() {
 		dressed = "outfit " + d.label()
 	}
-	fmt.Fprintf(os.Stderr, "created %s under %s (attended; no prompt sent)\n", figaroID, dressed)
+	fmt.Fprintf(stderrw, "created %s under %s (attended; no prompt sent)\n", figaroID, dressed)
 }

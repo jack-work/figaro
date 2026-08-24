@@ -10,7 +10,6 @@ import (
 // Exit-code contract: 1 = it ran and failed, 2 = argv was rejected. The
 
 // captureExit swaps the process-exit hook and returns the code die/dieUsage
-type exitPanic int
 
 func captureExit(t *testing.T, fn func()) (code int, ok bool) {
 	t.Helper()

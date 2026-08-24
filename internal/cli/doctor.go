@@ -40,7 +40,7 @@ func runDoctorGC(dryRun bool) error {
 	raw, err := os.ReadFile(manPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			fmt.Println("no store; nothing to do")
+			fmt.Fprintln(stdout, "no store; nothing to do")
 			return nil
 		}
 		return err
@@ -70,7 +70,7 @@ func runDoctorGC(dryRun bool) error {
 		}
 	}
 	if len(dead) == 0 {
-		fmt.Println("store clean; nothing to do")
+		fmt.Fprintln(stdout, "store clean; nothing to do")
 		return nil
 	}
 
@@ -80,7 +80,7 @@ func runDoctorGC(dryRun bool) error {
 		freed += dirSize(dir)
 	}
 	if dryRun {
-		fmt.Printf("would remove %d dead channel(s) (%s): %s\n", len(dead), tool.FormatSize(int(freed)), strings.Join(dead, ", "))
+		fmt.Fprintf(stdout, "would remove %d dead channel(s) (%s): %s\n", len(dead), tool.FormatSize(int(freed)), strings.Join(dead, ", "))
 		return nil
 	}
 
@@ -109,7 +109,7 @@ func runDoctorGC(dryRun bool) error {
 			_ = os.Remove(filepath.Dir(dir)) // drop the legacy parent once empty
 		}
 	}
-	fmt.Printf("removed %d dead channel(s), freed %s: %s\n", len(dead), tool.FormatSize(int(freed)), strings.Join(dead, ", "))
+	fmt.Fprintf(stdout, "removed %d dead channel(s), freed %s: %s\n", len(dead), tool.FormatSize(int(freed)), strings.Join(dead, ", "))
 	return nil
 }
 
@@ -144,7 +144,7 @@ func runDoctorSchema() error {
 		case disk < known:
 			note = "  ← stamped on next open"
 		}
-		fmt.Printf("%-20s disk=%-4d binary=%-4d%s\n", "store-version", disk, known, note)
+		fmt.Fprintf(stdout, "%-20s disk=%-4d binary=%-4d%s\n", "store-version", disk, known, note)
 	}
 	for _, r := range reports {
 		disk := fmt.Sprint(r.OnDisk)
@@ -158,7 +158,7 @@ func runDoctorSchema() error {
 		case "behind":
 			note = "  ← migrates on next open"
 		}
-		fmt.Printf("%-20s disk=%-4s binary=%-4d %s%s\n", r.Channel, disk, r.Known, r.Status, note)
+		fmt.Fprintf(stdout, "%-20s disk=%-4s binary=%-4d %s%s\n", r.Channel, disk, r.Known, r.Status, note)
 	}
 	return nil
 }
@@ -184,37 +184,37 @@ func runDoctorMem(asJSON bool) error {
 		return fmt.Errorf("the running angelus predates memory accounting; `figaro stop` and retry")
 	}
 	if asJSON {
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(st.Mem)
 	}
 
 	m := st.Mem
-	fmt.Printf("arias      live=%d  resident=%d  bound-pids=%d\n",
+	fmt.Fprintf(stdout, "arias      live=%d  resident=%d  bound-pids=%d\n",
 		m.LiveArias, m.ResidentArias, st.BoundPIDs)
-	fmt.Printf("endpoints  open=%d  attached-clients=%d\n", m.Endpoints, m.AttachedClients)
-	fmt.Printf("ir cache   resident-rows=%d  resident=%s\n",
+	fmt.Fprintf(stdout, "endpoints  open=%d  attached-clients=%d\n", m.Endpoints, m.AttachedClients)
+	fmt.Fprintf(stdout, "ir cache   resident-rows=%d  resident=%s\n",
 		m.ResidentIRRows, humanBytes(int64(m.ResidentIRBytes)))
-	fmt.Printf("xlt cache  resident-rows=%d  resident=%s\n",
+	fmt.Fprintf(stdout, "xlt cache  resident-rows=%d  resident=%s\n",
 		m.ResidentTranslationRows, humanBytes(int64(m.ResidentTranslationBytes)))
-	fmt.Printf("figwal     loaded-heads=%d  segment-cache=%s of %s  loads=%d\n",
+	fmt.Fprintf(stdout, "figwal     loaded-heads=%d  segment-cache=%s of %s  loads=%d\n",
 		m.LoadedHeads, humanBytes(m.SegmentCacheBytes),
 		humanBytes(m.SegmentCacheBudget), m.SegmentCacheLoads)
 	if m.UIWindowBudget > 0 {
-		fmt.Printf("ui window  resident=%s of %s  evictions=%d\n",
+		fmt.Fprintf(stdout, "ui window  resident=%s of %s  evictions=%d\n",
 			humanBytes(m.UIWindowBytes), humanBytes(m.UIWindowBudget), m.UIWindowEvictions)
 	}
 	if m.Librettos > 0 || m.LibrettoObservers > 0 {
-		fmt.Printf("librettos  open=%d  observers=%d  (one fold goroutine each)\n",
+		fmt.Fprintf(stdout, "librettos  open=%d  observers=%d  (one fold goroutine each)\n",
 			m.Librettos, m.LibrettoObservers)
 	}
 	if m.LibrettoSweepMinted > 0 || m.LibrettoSweepCorrected > 0 || m.LibrettoSweepMissing > 0 {
-		fmt.Printf("           boot sweep: minted=%d corrected=%d still-missing=%d\n",
+		fmt.Fprintf(stdout, "           boot sweep: minted=%d corrected=%d still-missing=%d\n",
 			m.LibrettoSweepMinted, m.LibrettoSweepCorrected, m.LibrettoSweepMissing)
 	}
-	fmt.Printf("runtime    goroutines=%d  sessions=%d  gc=%d\n",
+	fmt.Fprintf(stdout, "runtime    goroutines=%d  sessions=%d  gc=%d\n",
 		m.Goroutines, m.Sessions, m.NumGC)
-	fmt.Printf("heap       alloc=%s  inuse=%s  sys=%s  total-sys=%s\n",
+	fmt.Fprintf(stdout, "heap       alloc=%s  inuse=%s  sys=%s  total-sys=%s\n",
 		humanBytes(int64(m.HeapAllocBytes)), humanBytes(int64(m.HeapInuseBytes)),
 		humanBytes(int64(m.HeapSysBytes)), humanBytes(int64(m.SysBytes)))
 
@@ -222,19 +222,19 @@ func runDoctorMem(asJSON bool) error {
 	if m.MemLimitBytes != angelus.UnlimitedMemLimit {
 		limit = humanBytes(m.MemLimitBytes)
 	}
-	fmt.Printf("limit      %s (GOMEMLIMIT, soft)\n", limit)
+	fmt.Fprintf(stdout, "limit      %s (GOMEMLIMIT, soft)\n", limit)
 
 	if m.PprofSocket == "" {
-		fmt.Printf("pprof      not armed: restart the daemon with %s=1\n", angelus.PprofEnv)
+		fmt.Fprintf(stdout, "pprof      not armed: restart the daemon with %s=1\n", angelus.PprofEnv)
 	} else {
-		fmt.Printf("pprof      %s\n", m.PprofSocket)
-		fmt.Printf("           go tool pprof -http=: 'http+unix://%s/debug/pprof/heap'\n", m.PprofSocket)
+		fmt.Fprintf(stdout, "pprof      %s\n", m.PprofSocket)
+		fmt.Fprintf(stdout, "           go tool pprof -http=: 'http+unix://%s/debug/pprof/heap'\n", m.PprofSocket)
 	}
 
 	// A live aria pins its resident handle, so eviction cannot touch it.
 	// Saying so beats making the reader remember the rule.
 	if m.LiveArias > 0 && m.LiveArias == m.ResidentArias {
-		fmt.Printf("\nevery resident aria has a live agent, so idle eviction can free nothing.\n")
+		fmt.Fprintf(stdout, "\nevery resident aria has a live agent, so idle eviction can free nothing.\n")
 	}
 	return nil
 }
@@ -260,9 +260,9 @@ func runDoctorSkills(asJSON bool) error {
 	root := outfit.BundledSkillsRoot()
 	if root == "" {
 		if asJSON {
-			return json.NewEncoder(os.Stdout).Encode(map[string]any{"bundled": false})
+			return json.NewEncoder(stdout).Encode(map[string]any{"bundled": false})
 		}
-		fmt.Println("bundled skills: disabled (config bundled_skills = false, or FIGARO_BUNDLED_SKILLS)")
+		fmt.Fprintln(stdout, "bundled skills: disabled (config bundled_skills = false, or FIGARO_BUNDLED_SKILLS)")
 		return nil
 	}
 	dir := filepath.Join(root, "skills")
@@ -287,13 +287,13 @@ func runDoctorSkills(asJSON bool) error {
 	slices.Sort(files)
 
 	if asJSON {
-		return json.NewEncoder(os.Stdout).Encode(map[string]any{
+		return json.NewEncoder(stdout).Encode(map[string]any{
 			"bundled": true, "root": root, "files": files,
 		})
 	}
-	fmt.Printf("bundled skills: %d files, unpacked at\n  %s\n\n", len(files), dir)
+	fmt.Fprintf(stdout, "bundled skills: %d files, unpacked at\n  %s\n\n", len(files), dir)
 	for _, f := range files {
-		fmt.Println("  " + f)
+		fmt.Fprintln(stdout, "  "+f)
 	}
 	return nil
 }
@@ -327,15 +327,15 @@ func runDoctorLibrettos(dryRun bool) error {
 	if dryRun {
 		verb = "would correct"
 	}
-	fmt.Printf("boards read      %d\n", audit.Boards)
-	fmt.Printf("librettos        %d\n", audit.Librettos)
-	fmt.Printf("%-16s %d\n", verb, audit.Corrected)
+	fmt.Fprintf(stdout, "boards read      %d\n", audit.Boards)
+	fmt.Fprintf(stdout, "librettos        %d\n", audit.Librettos)
+	fmt.Fprintf(stdout, "%-16s %d\n", verb, audit.Corrected)
 	if audit.Minted > 0 {
-		fmt.Printf("minted           %d  (pre-existing studies migrated)\n", audit.Minted)
+		fmt.Fprintf(stdout, "minted           %d  (pre-existing studies migrated)\n", audit.Minted)
 	}
-	fmt.Printf("orphaned         %d  (no board names them: reclaimable when nothing renders them)\n",
+	fmt.Fprintf(stdout, "orphaned         %d  (no board names them: reclaimable when nothing renders them)\n",
 		audit.Orphaned)
-	fmt.Printf("%-16s %d  (studied forms still without one%s)\n",
+	fmt.Fprintf(stdout, "%-16s %d  (studied forms still without one%s)\n",
 		map[bool]string{true: "would mint", false: "missing"}[dryRun],
 		audit.Missing,
 		map[bool]string{true: "; run without --dry-run", false: ""}[dryRun])
@@ -366,23 +366,23 @@ func runDoctorToolCalls(dryRun bool) error {
 			continue
 		}
 		arias++
-		fmt.Printf("%-10s %d unanswered tool call(s)\n", cv.ID, n)
+		fmt.Fprintf(stdout, "%-10s %d unanswered tool call(s)\n", cv.ID, n)
 		if dryRun {
 			continue
 		}
 		if fixed, err := be.RepairToolCalls(cv.ID); err != nil {
-			fmt.Fprintf(os.Stderr, "  %s: %v\n", cv.ID, err)
+			fmt.Fprintf(stderrw, "  %s: %v\n", cv.ID, err)
 		} else {
 			repaired += fixed
 		}
 	}
 	switch {
 	case arias == 0:
-		fmt.Println("no aria carries an unanswered tool call")
+		fmt.Fprintln(stdout, "no aria carries an unanswered tool call")
 	case dryRun:
-		fmt.Printf("\n%d aria(s) would be repaired; run without --dry-run\n", arias)
+		fmt.Fprintf(stdout, "\n%d aria(s) would be repaired; run without --dry-run\n", arias)
 	default:
-		fmt.Printf("\nclosed %d call(s) across %d aria(s)\n", repaired, arias)
+		fmt.Fprintf(stdout, "\nclosed %d call(s) across %d aria(s)\n", repaired, arias)
 	}
 	return nil
 }

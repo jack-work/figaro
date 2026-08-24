@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -52,7 +51,7 @@ func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string) {
 
 	patch := rpc.FormPatch{Set: map[string]json.RawMessage{top: topValue}}
 	resp := mustCallSet(loaded, ariaID, patch, ifVersion)
-	fmt.Fprintf(os.Stderr, "%s %s = %s (figaro %s)%s\n",
+	fmt.Fprintf(stderrw, "%s %s = %s (figaro %s)%s\n",
 		resp.verb("set"), keyArg, value, resp.figaroID, resp.at())
 }
 
@@ -75,7 +74,7 @@ func runFormSet(loaded *config.Loaded, ariaID string, args []string) error {
 		return fmt.Errorf("form set: %q sets nothing", strings.Join(args, " "))
 	}
 	resp := mustCallSet(loaded, ariaID, rpc.FormPatch{Set: patch.Set}, 0)
-	fmt.Fprintf(os.Stderr, "%s %s (figaro %s)%s\n",
+	fmt.Fprintf(stderrw, "%s %s (figaro %s)%s\n",
 		resp.verb("set"), strings.Join(resp.resp.Set, ", "), resp.figaroID, resp.at())
 	return nil
 }
@@ -146,13 +145,13 @@ func runUnsetArgs(loaded *config.Loaded, ariaID string, args []string) {
 		patch.Set[top] = pruned
 	}
 	if len(patch.Set) == 0 && len(patch.Remove) == 0 {
-		fmt.Fprintln(os.Stderr, "unset: nothing to do")
+		fmt.Fprintln(stderrw, "unset: nothing to do")
 		return
 	}
 	// A removal names something the caller believes is there, so an absent
 	// key is a refusal rather than a silent success.
 	resp := mustCallSetAsserting(loaded, ariaID, patch, ifVersion)
-	fmt.Fprintf(os.Stderr, "%s %s (figaro %s)%s\n",
+	fmt.Fprintf(stderrw, "%s %s (figaro %s)%s\n",
 		resp.verb("unset"), strings.Join(args, ", "), resp.figaroID, resp.at())
 }
 
@@ -165,7 +164,7 @@ func runForm(loaded *config.Loaded, ariaID string) {
 		if err != nil {
 			die("form: %s", err)
 		}
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(nestSnapshot(resp.Snapshot))
 	})

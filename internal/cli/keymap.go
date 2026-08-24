@@ -170,11 +170,16 @@ var keymap = []keyBinding{
 		// portable fallback) extends the selection instead of moving it.
 		// Distinct from the raw 0x0e/0x10 bytes below, which cannot carry a
 		// modifier and go through the pager.
-		chord: ctrlChord('n'), modes: inAnyBox,
+		// NOT IN THE COMMAND BOX. inAnyBox includes it, and these are
+		// INPUT-level rows, so they ran before the box's own ^N/^P and node
+		// selection ate the completion menu the keys were meant to walk. A box
+		// that has its own meaning for a chord must be excluded from the rows
+		// that claim it globally.
+		chord: ctrlChord('n'), modes: inAnyBox &^ inJumpBox,
 		open: opensPager, help: helpSelectExtend, input: inputSelectNext,
 	},
 	{
-		chord: ctrlChord('p'), modes: inAnyBox,
+		chord: ctrlChord('p'), modes: inAnyBox &^ inJumpBox,
 		open: opensPager, help: helpSelectExtend, input: inputSelectPrev,
 	},
 
@@ -213,10 +218,14 @@ var keymap = []keyBinding{
 	{
 		// ':' is a printable byte, and in incipit a printable byte composes a
 		// steer. It is also a gesture that addresses a VIEWPORT, and there is
-		// none until the pager is up: jumping to turn 12 in a view that shows
-		// only the live tail has nothing to snap.
+		// ':' IS THE COMMAND LINE, and it opens the pager to get one. It used to
+		// stay inline, on the grounds that "a coordinate needs a viewport to
+		// land in" -- true of `:12`, and false of every verb that came after:
+		// `:open`, `:attend`, `:send` are things a reader means from anywhere,
+		// and the pager is where their result is shown. So the key yanks the
+		// pager up first, exactly as '?' and '!' do.
 		chord: byteChord(':'), modes: inTranscript,
-		open: staysInline, why: "in incipit a printable byte composes a steer, and a coordinate needs a viewport to land in",
+		open: opensPager,
 		help: helpJump, pager: pagerJumpPrompt,
 	},
 
@@ -244,6 +253,18 @@ var keymap = []keyBinding{
 		chord: byteChord('X'), modes: inTranscript | inPanel,
 		open: staysInline, why: "it addresses a turn that is streaming in the view you are already in",
 		help: helpHangUpDrop, input: inputHangUpDrop,
+	},
+
+	// 'x' DROPS THE SELECTED ROW in a drawer that has one -- today the queue,
+	// where it is `figaro queue rm <id>` under a keystroke. It is inert
+	// everywhere else, which is why it is a pager row rather than an input one:
+	// a key that means "delete" must not be live in a view with nothing to
+	// delete. (Note 'X' above is hang-up-and-drop-the-whole-queue, and the two
+	// being one letter apart is uncomfortable; see the plan.)
+	{
+		chord: byteChord('x'), modes: inPanel,
+		open: staysInline, why: "it acts on a row in a drawer that is already open",
+		help: helpDrawerDrop, pager: pagerDrawerDrop,
 	},
 
 	// -- pager level: selection --------------------------------------------
@@ -317,6 +338,48 @@ var keymap = []keyBinding{
 		open: staysInline, why: "only reachable with the jump prompt already up",
 		help: helpJump, pager: jumpCancel,
 	},
+	// -- the command line's EMACS MOTIONS ---------------------------------
+	// bash/readline, not vim: this is a command line, and the fingers that
+	// press these keys learned them at a shell prompt. ^N/^P are HISTORY here
+	// rather than node selection -- the one deliberate remap, and the reason is
+	// that a box with history and a box with a node cursor are different boxes.
+	{chord: byteChord(0x01), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHome},
+	{chord: byteChord(0x05), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdEnd},
+	{chord: byteChord(0x02), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdLeft},
+	{chord: byteChord(0x06), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdRight},
+	{chord: byteChord(0x0b), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdKillToEnd},
+	{chord: byteChord(0x15), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdKillToStart},
+	{chord: byteChord(0x17), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdKillWord},
+	// ^D IS NOT DELETE-FORWARD HERE, though readline says it should be: 0x04
+	// is DETACH at the input level, in every mode, and the two action arrays
+	// must agree about a chord (TestKeymap_ActionArraysAgreeWithTheIndex).
+	// Between "the key that gets you out of a terminal program" and "delete one
+	// character forward", the escape hatch wins -- a user hammering ^D must
+	// never discover it was editing instead. See the plan's dodginess list.
+	{chord: byteChord(0x10), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistPrev},
+	{chord: byteChord(0x0e), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistNext},
+	{chord: byteChord(0x09), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdComplete, pager: cmdComplete},
+	// AND THE SAME KEYS AS CSI-u CHORDS. figaro turns on modified-key
+	// reporting, so on a real terminal ^N arrives as \x1b[110;5u and reduces to
+	// keyEvent{ctrl:'n'}, never to the byte 0x0e -- and a table that binds only
+	// byteChord(0x0e) silently does nothing there. Measured in a pty: Tab built
+	// the completion menu and ^N walked past it into the void, because the row
+	// meant to catch it was keyed on an encoding that terminal never sends.
+	{chord: ctrlChord('n'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistNext},
+	{chord: ctrlChord('p'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistPrev},
+	{chord: ctrlChord('a'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHome},
+	{chord: ctrlChord('e'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdEnd},
+	{chord: ctrlChord('b'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdLeft},
+	{chord: ctrlChord('f'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdRight},
+	{chord: ctrlChord('k'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdKillToEnd},
+	{chord: ctrlChord('u'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdKillToStart},
+	{chord: ctrlChord('w'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdKillWord},
+
+	{chord: navChord(navUp), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistPrev},
+	{chord: navChord(navDown), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistNext},
+	{chord: navChord(navHome), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHome},
+	{chord: navChord(navEnd), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdEnd},
+
 	{
 		chord: byteChord(0x7f), modes: inJumpBox,
 		open: staysInline, why: "only reachable with the jump prompt already up",
@@ -360,6 +423,9 @@ const (
 	helpStatusPanel
 	helpQueuedPanel
 	helpHelpPanel
+	helpCmdHistory
+	helpCmdComplete
+	helpDrawerDrop
 )
 
 // helpRow is one line of the panel: the key column and what it does. The key
@@ -383,7 +449,10 @@ var helpRows = []helpRow{
 	{helpHomeEnd, "Home / End", "top / bottom"},
 	{helpSearch, "/", "search (Enter jump · Esc cancel typing)"},
 	{helpSearchRepeat, "n / N", "next / previous match"},
-	{helpJump, ":", "jump to turn[.node] · :0 = the beginning"},
+	{helpJump, ":", "command line: any figaro verb, or a coordinate (:12, :12.3, :0)"},
+	{helpCmdHistory, "(in :) ^P/^N · Up/Down", "command history"},
+	{helpCmdComplete, "(in :) Tab", "complete the verb, an id, or a flag"},
+	{helpDrawerDrop, "(in a list) x", "drop the selected entry (queue)"},
 	{helpYank, "y", "copy selection (or aria id if none)"},
 	{helpVerbose, "^O", "toggle verbose tool output"},
 	{helpSelect, "^N/^P", "select next/previous node"},

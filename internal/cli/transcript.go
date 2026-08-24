@@ -4,12 +4,15 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/mattn/go-runewidth"
 
 	"github.com/jack-work/figaro/api/livedoc"
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	ldmouse "github.com/jack-work/figaro/internal/livelog/render/mouse"
@@ -32,15 +35,42 @@ type transcript struct {
 	client *aria.Client
 	status *sessionStatus
 
-	active      bool
-	showHelp    bool     // '?': the footer grows into a key-reference panel
-	showStatus  bool     // '!': the footer grows into the figaro-status panel
-	showQueued  bool     // the footer grows into the queued-prompts panel
-	queuedByKey bool     // ...because the user pressed 'Q', not because it filled
-	queuedRows  []string // pre-rendered by livelogTurn; see queuedPanelLines
-	queuedFetch func()   // async refresh of the queued snapshot; set by the input loop
-	w, h        int
-	tick        int
+	active bool
+	// drawer is THE transient region below the transcript: help, figaro status,
+	// the queue, a command's output, an error, the completion list. One at a
+	// time, Esc closes it, and none of them may touch the status bar. See
+	// drawer.go for why that last clause is the point of the type.
+	drawer      drawer
+	queuedByKey bool // ...because the user pressed 'Q', not because it filled
+	// queueDismissed latches a DELIBERATE close of the queue drawer, so the
+	// next poll does not put it straight back. This is Gluck's bug: `fig send`
+	// that queues a message and enters the pager showed the queue, Esc closed
+	// it, and the very next figaro.queued reopened it -- because the queue was
+	// still non-empty and nothing anywhere recorded that the reader said no. An
+	// auto-opening panel needs an auto-open SUPPRESSOR or it cannot be
+	// dismissed at all.
+	queueDismissed bool
+	queuedRows     []string     // pre-rendered by livelogTurn, for the inline trailer
+	queued         []queuedItem // the queue itself, ids intact, for the drawer
+	queuedFetch    func()       // async refresh of the queued snapshot; set by the input loop
+	// command runs a ':' line that is not a coordinate. Set by the input loop,
+	// which owns the RPC clients; nil in a fixture, where the box still takes
+	// coordinates and says so for anything else.
+	//
+	// IT IS CALLED UNDER THE RENDER LOCK, like every other key action, so an
+	// implementation MUST hand off rather than work: taking the lock deadlocks
+	// the input goroutine against itself, and blocking on an RPC stops the
+	// keyboard. See interactiveInput.runCommand, which is one `go` statement
+	// for exactly this reason.
+	command func(string)
+	// completer returns Tab candidates for a partially typed command line. Set
+	// by the input loop, which owns the router.
+	completer func(string) []string
+	// dropRow is 'x' on a selected drawer row: the owner decides what dropping
+	// means for that drawer's name.
+	dropRow func(drawer, id string)
+	w, h    int
+	tick    int
 
 	prev   []string // last painted screen (the frame the terminal is holding)
 	prefix string   // one-shot escapes emitted with the next frame (see enter)
@@ -79,10 +109,22 @@ type transcript struct {
 	// The ':' coordinate jump (transcript_jump.go). inJump/jumpQuery are the
 	// command line, exactly as inSearch/query are the search box; jump is a
 	// walk in progress; jumpNote is what the footer says about the last one.
-	inJump    bool
-	jumpQuery string
-	jumpNote  string
-	jump      *transcriptJump
+	inJump bool
+	// cmdline is the ':' box's editor: runes, a cursor, emacs motions and
+	// history. It replaced a `q += string(b)` string for the reasons in
+	// lineedit.go -- the short one being that the old box could not represent
+	// "café", let alone a cursor.
+	cmdline lineEditor
+	// completions is the last Tab's candidate list and which of them is
+	// selected. THE MENU IS BOUNDED: it draws at most completionMenuRows rows
+	// inside the drawer, because a completion list that grows with the number
+	// of arias is a completion list that eats the screen -- which is what the
+	// first cut did with forty verbs.
+	completions   []string
+	completionIdx int // -1 = nothing selected; the common prefix was inserted
+	completionAt  int // rune index where the completed word starts
+	jumpNote      string
+	jump          *transcriptJump
 
 	// Lazy history paging: the pager opens on the store's tail and pulls older
 	// history via keyset ReadBefore only when the viewport comes near the window
@@ -181,7 +223,9 @@ func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria
 func (t *transcript) enter() {
 	t.active, t.follow, t.prev = true, true, nil
 	t.pendG, t.inSearch, t.query, t.matchQuery = false, false, "", ""
-	t.inJump, t.jumpQuery, t.jumpNote, t.jump = false, "", "", nil
+	t.inJump, t.jumpNote, t.jump = false, "", nil
+	t.cmdline.reset()
+	t.completions = nil
 	// THE PAGER OWNS RETENTION while it is up. The client's count-based trim
 	// drops the OLDEST messages, which is precisely wrong once the window is the
 	// store itself: a reader scrolled up, or a catch-up page merged in to open on
@@ -1016,16 +1060,88 @@ func (t *transcript) settle() {
 
 // footLines is the open bottom panel, if any: it grows upward from the footer
 // and shrinks the body by exactly its height.
+// footLines is the DRAWER's body: everything between the transcript's rule and
+// the drawer's closing rule. One renderer now, where there were five with three
+// different clipping rules between them. See drawer.go.
 func (t *transcript) footLines() []string {
-	switch {
-	case t.showHelp:
-		return t.helpLines()
-	case t.showStatus:
-		return t.statusPanelLines()
-	case t.showQueued:
-		return t.queuedPanelLines()
+	// THE TYPING BOXES ARE DRAWERS TOO. They used to write themselves into the
+	// status row, which is how typing `/` made the mantra, the context
+	// percentage and the cost disappear. A box is transient UI; transient UI
+	// lives here.
+	rows := t.inputDrawerLines()
+	if rows == nil {
+		if !t.drawer.open() {
+			return nil
+		}
+		rows = t.drawer.lines(t.w, t.h)
 	}
-	return nil
+	// THE TRANSCRIPT'S RULE OPENS THE REGION, above the drawer's body -- so the
+	// screen reads top to bottom as: conversation, the rule that ends it, the
+	// drawer, the rule that ends THAT, and the status bar. renderFrame puts the
+	// closing rule on the second-to-last row; this is everything above it.
+	return append([]string{t.transcriptRule()}, rows...)
+}
+
+// transcriptRule is the rule that closes the conversation: the aria, and where
+// in it you are.
+func (t *transcript) transcriptRule() string {
+	total := t.index.total
+	body, _ := t.layoutNow()
+	pos := ""
+	if total > body {
+		end := min(t.offset+body, total)
+		mark := ""
+		if !t.whole() {
+			mark = "+"
+		}
+		pos = fmt.Sprintf("%d–%d/%d%s", t.offset+1, end, total, mark)
+	}
+	if t.follow {
+		pos = strings.TrimSpace(pos + " live")
+	}
+	return "\x1b[2m" + t.status.ruleLine(t.w, pos) + "\x1b[0m"
+}
+
+// layoutNow is layout against the CURRENT stanza height, without re-entering
+// footLines (which calls transcriptRule, which would call this).
+func (t *transcript) layoutNow() (body, maxOff int) {
+	foot := 0
+	if rows := t.inputDrawerLines(); rows != nil {
+		foot = len(rows)
+	} else if t.drawer.open() {
+		foot = len(t.drawer.lines(t.w, t.h))
+	}
+	return t.layout(foot + 1) // +1 for the transcript rule above the drawer
+}
+
+// padTo right-pads to n display columns.
+func padTo(s string, n int) string {
+	if w := runewidth.StringWidth(s); w < n {
+		return s + strings.Repeat(" ", n-w)
+	}
+	return s
+}
+
+// setCmdOut shows a command's output panel.
+func (t *transcript) setCmdOut(title string, rows []string) {
+	t.queuedByKey = false
+	drows := make([]drawerRow, 0, len(rows))
+	for _, r := range rows {
+		// A HEADER IS NOT A ROW YOU CAN ACT ON. Raw command output has no
+		// structure to read, so the rule is textual and deliberately crude: a
+		// blank line, or a line with no aria-shaped id in it, is chrome. It is
+		// better than making the summary line selectable, which is what the
+		// first cut did, and worse than a verb that returns rows -- which is
+		// the fix, and is the same fix as everything else in the dodge list.
+		// SELECTABLE MEANS "HAS AN ID", and yanking gives you the id -- Gluck:
+		// "y should work on that row to yank the id of that aria or form". A
+		// summary line or a column header has none, so it is chrome and ^N
+		// steps over it.
+		id := rowID(r)
+		drows = append(drows, drawerRow{text: r, yank: id, id: id})
+	}
+	t.drawer.showList("output", ":"+title, drows, true)
+	t.render()
 }
 
 // layout splits the viewport into the content body and the bottom chrome: the
@@ -1199,14 +1315,27 @@ func (t *transcript) renderFrame() {
 	// path documents for its viewport seed. See transcript_mouse.go.
 	t.frameRefs = t.rowRefs(t.offset, t.offset+body, t.frameRefs)
 	copy(screen[:body], t.rowBuf)
-	for k, l := range foot {
-		if r := body + k; r < t.h-2 {
-			screen[r] = l
+	// BOTTOM-ALIGNED, and that is the fix for a stray blank line. layout() takes
+	// one row off the body while following (the live padding), so writing the
+	// stanza from `body` upward left the slack at the BOTTOM -- an empty row
+	// between the drawer's last entry and its closing rule. The padding belongs
+	// above the transcript's rule, where the live region ends; anchoring the
+	// stanza to the bottom of the screen puts it there.
+	if start := t.h - 2 - len(foot); start >= 0 {
+		for k, l := range foot {
+			if r := start + k; r >= 0 && r < t.h-2 {
+				screen[r] = l
+			}
 		}
 	}
 	// The row above the rule (screen[t.h-3]) is left blank while following -
 	// layout reserved it, and is content otherwise. See layout.
 	rule, status := t.footerRows(total, body)
+	if t.drawer.open() || t.inSearch || t.inJump {
+		// The drawer owns the bottom edge; its opening rule was drawn by
+		// footLines, above its body.
+		rule = closingRule(t.w, t.drawerHint())
+	}
 	screen[t.h-2] = rule
 	screen[t.h-1] = status
 	t.paint(screen)
@@ -1214,6 +1343,13 @@ func (t *transcript) renderFrame() {
 
 // footerRows is the transcript's two-row footer, shared with the incipit
 // bookend so both modes speak one visual language:
+// footerRows is the transcript's own rule and THE STATUS BAR.
+//
+// THE STATUS BAR IS INVIOLABLE. It used to be a contended resource: the search
+// box wrote its query there, the command line wrote itself there, and every
+// error wrote its text there -- so the mantra, the context percentage and the
+// cost vanished exactly when something had gone wrong. All three now live in
+// the drawer (see drawer.go), and this row shows what is always true.
 func (t *transcript) footerRows(total, body int) (rule, status string) {
 	pos := ""
 	if total > body {
@@ -1234,14 +1370,6 @@ func (t *transcript) footerRows(total, body int) (rule, status string) {
 		pos = strings.TrimSpace(pos + " live")
 	}
 	rule = "\x1b[2m" + t.status.ruleLine(t.w, pos) + "\x1b[0m"
-	if t.inSearch {
-		return rule, "\x1b[2m" + clipToWidth("/"+t.query, t.w) + "\x1b[0m"
-	}
-	// The jump owns the status row while it is being typed, while it walks,
-	// and to report a target it could not reach: see jumpFooter.
-	if line, own := t.jumpFooter(); own {
-		return rule, "\x1b[2m" + clipToWidth(line, t.w) + "\x1b[0m"
-	}
 	return rule, "\x1b[2m" + t.status.statusLine(t.w, true) + "\x1b[0m"
 }
 
@@ -1266,11 +1394,31 @@ func (t *transcript) statusPanelLines() []string {
 // auto-closed: draining the queue must not yank away a view they asked for.
 func (t *transcript) showQueuedAuto(on bool) {
 	if on {
-		t.showQueued = true
+		if t.showing("queue") {
+			t.refreshQueuedDrawer()
+			return
+		}
+		// Dismissed by hand, or a DELIBERATE drawer is up (help, status, a
+		// command's output): either way the reader has said what they want on
+		// screen and it is not this. A transient message is not deliberate and
+		// does not block the queue -- guarding on drawer.open() alone meant a
+		// "sent" confirmation suppressed the very queue it had just added to.
+		if t.queueDismissed || (t.drawer.open() && t.drawer.name != "message") {
+			return
+		}
+		t.openQueuedDrawer()
 		return
 	}
-	if !t.queuedByKey {
-		t.showQueued = false
+	// The queue is empty: the suppressor has nothing left to suppress, so a
+	// LATER queue can open the drawer again.
+	t.queueDismissed = false
+	// A DRAWER THE USER OPENED IS NEVER AUTO-CLOSED, and -- the bug Gluck
+	// reported -- a drawer the user CLOSED is never auto-reopened. `fig send`
+	// that queues a message and enters the pager used to have the queue drawer
+	// come straight back after Esc, because the queue was still non-empty and
+	// nothing recorded that the reader had dismissed it.
+	if !t.queuedByKey && t.showing("queue") {
+		t.drawer.close()
 	}
 }
 
@@ -1306,10 +1454,50 @@ func firstLineTrim(s string) string {
 // an async refresh. The stale snapshot renders immediately so the user sees
 // something even if the RPC lags; the refresh replaces it in place.
 func (t *transcript) openQueuedPanel() {
-	t.showQueued, t.queuedByKey = true, true
+	t.queuedByKey, t.queueDismissed = true, false
+	t.openQueuedDrawer()
 	if t.queuedFetch != nil {
 		t.queuedFetch()
 	}
+}
+
+// openQueuedDrawer builds the queue as a SELECTABLE list: `y` yanks a message's
+// text and `x` drops it, which is what turns the queue from a thing you watch
+// into a thing you can act on.
+func (t *transcript) openQueuedDrawer() {
+	t.drawer.showList("queue", "↳ queued messages", t.queuedDrawerRows(), true)
+}
+
+// refreshQueuedDrawer replaces the rows in place, keeping the selection where
+// the reader put it: a queue that re-sorts under the cursor on every poll is a
+// queue nobody can hit `x` on.
+func (t *transcript) refreshQueuedDrawer() {
+	sel, had := t.drawer.selected()
+	t.drawer.rows = t.queuedDrawerRows()
+	if had {
+		for i, r := range t.drawer.rows {
+			if r.id == sel.id && r.id != "" {
+				t.drawer.cursor = i
+				t.drawer.scrollToCursor()
+				return
+			}
+		}
+	}
+	t.drawer.cursor = t.drawer.nextSelectable(-1, 1)
+	t.drawer.scrollToCursor()
+}
+
+func (t *transcript) queuedDrawerRows() []drawerRow {
+	if len(t.queued) == 0 {
+		return []drawerRow{staticRow("   (none)")}
+	}
+	rows := make([]drawerRow, 0, len(t.queued))
+	for _, q := range t.queued {
+		rows = append(rows, drawerRow{
+			text: firstLineTrim(q.text), yank: q.text, id: strconv.FormatUint(q.id, 10),
+		})
+	}
+	return rows
 }
 
 // helpLines is the '?' panel: the footer grown upward into a key reference,
@@ -1441,7 +1629,7 @@ func (t *transcript) mode() keyMode {
 		return modeSearch
 	case t.inJump:
 		return modeJump
-	case t.showHelp || t.showStatus || t.showQueued:
+	case t.drawer.open() && t.drawer.kind != drawerInput:
 		return modePanel
 	default:
 		return modeTranscript
@@ -1475,10 +1663,15 @@ func (t *transcript) dispatch(ev keyEvent) {
 		t.render()
 		return
 	case modeJump:
-		// Identical to the search box, deliberately: an arrow is not text and
-		// must not scroll behind the prompt either, and every unbound printable
-		// byte is a character of the coordinate.
+		// THE ARROW CLUSTER IS LIVE HERE, unlike in the search box: Up/Down are
+		// history and Home/End are motions, which is what a command line means
+		// by them. An arrow with no row is still swallowed rather than allowed
+		// to scroll the transcript behind the prompt.
 		if ev.nav != navNone {
+			if act := pagerAct.pager(modeJump, ev); act != nil {
+				act(t)
+				t.render()
+			}
 			return
 		}
 		if act := pagerAct.pager(modeJump, ev); act != nil {
@@ -1492,6 +1685,25 @@ func (t *transcript) dispatch(ev keyEvent) {
 		if act := pagerAct.pager(modePanel, ev); act != nil {
 			act(t)
 			t.render()
+			return
+		}
+		// A SELECTABLE DRAWER KEEPS ITS OWN KEYS. The any-key-dismisses rule is
+		// right for help and status -- you glance and move on -- and wrong the
+		// moment a drawer is a thing you navigate: ^N used to move the
+		// selection and dismiss the list it was selecting in, in that order.
+		// A HOSTED VERB GETS FIRST REFUSAL on every key. It reports what it
+		// took; anything it declines falls through to the dismissal below, so
+		// Esc still closes the drawer without the view knowing what one is.
+		if t.drawer.kind == drawerLive && ev.nav == navNone && t.drawer.live.Key(ev.b) {
+			t.render()
+			return
+		}
+		if t.drawer.kind == drawerList && t.drawer.cursor >= 0 && drawerOwnsKey(ev) {
+			t.drawer.flash = "" // any key clears the last confirmation
+			if act := pagerAct.pager(modeTranscript, ev); act != nil {
+				act(t)
+				t.render()
+			}
 			return
 		}
 		t.closePanels()
@@ -1547,12 +1759,24 @@ func pagerPendingTop(t *transcript) {
 func pagerSearchPrompt(t *transcript) { t.inSearch, t.query = true, "" }
 func pagerFindNext(t *transcript)     { t.findRepeat(1) }
 func pagerFindPrev(t *transcript)     { t.findRepeat(-1) }
-func pagerHelpPanel(t *transcript)    { t.showHelp = true }
-func pagerStatusPanel(t *transcript)  { t.showStatus = true }
+func pagerHelpPanel(t *transcript)    { t.openHelpDrawer() }
+func pagerStatusPanel(t *transcript)  { t.openStatusDrawer() }
 func pagerQueuedPanel(t *transcript)  { t.openQueuedPanel() }
-func pagerSelectNext(t *transcript)   { t.selectNode(1, false) }
-func pagerSelectPrev(t *transcript)   { t.selectNode(-1, false) }
-func pagerToggleTools(t *transcript)  { t.toggleSelectedNodes() }
+
+// ^N/^P MOVE THE DRAWER'S SELECTION WHEN ONE IS UP, and the transcript's node
+// selection otherwise. The reader's eye is on the list; a key that scrolled the
+// conversation behind it would be answering a question nobody asked.
+func pagerSelectNext(t *transcript) { t.selectDown(1) }
+func pagerSelectPrev(t *transcript) { t.selectDown(-1) }
+
+func (t *transcript) selectDown(dir int) {
+	if t.drawer.kind == drawerList && t.drawer.cursor >= 0 {
+		t.drawer.moveSelection(dir, t.h)
+		return
+	}
+	t.selectNode(dir, false)
+}
+func pagerToggleTools(t *transcript) { t.toggleSelectedNodes() }
 
 // pagerClearSelection is Esc in the pager: drop the active selection, and do
 // nothing at all when there is none.
@@ -1562,35 +1786,59 @@ func pagerClearSelection(t *transcript) {
 	}
 }
 
-// closePanels hides all three bottom panels.
+// closePanels shuts the drawer.
 func (t *transcript) closePanels() {
-	t.showHelp, t.showStatus, t.showQueued = false, false, false
+	if t.showing("queue") {
+		t.queueDismissed = true
+	}
+	t.drawer.close()
+	t.queuedByKey = false
 }
 
-// panelToggleHelp/Status/Queued are the panel-mode rows: a panel's own key
-// closes it, another panel's key switches straight over.
-func panelToggleHelp(t *transcript) {
-	was := t.showHelp
+// showing reports whether the named drawer is the one that is open.
+func (t *transcript) showing(name string) bool {
+	return t.drawer.open() && t.drawer.name == name
+}
+
+// panelToggleHelp/Status/Queued: a drawer's own key closes it, another
+// drawer's key switches straight over.
+func panelToggleHelp(t *transcript) { t.toggleDrawer("help", t.openHelpDrawer) }
+
+func panelToggleStatus(t *transcript) { t.toggleDrawer("status", t.openStatusDrawer) }
+
+func panelToggleQueued(t *transcript) { t.toggleDrawer("queue", t.openQueuedPanel) }
+
+func (t *transcript) toggleDrawer(name string, open func()) {
+	was := t.showing(name)
 	t.closePanels()
 	if !was {
-		t.showHelp = true
+		open()
 	}
 }
 
-func panelToggleStatus(t *transcript) {
-	was := t.showStatus
-	t.closePanels()
-	if !was {
-		t.showStatus = true
+// openHelpDrawer is '?': the key reference, unselectable.
+func (t *transcript) openHelpDrawer() {
+	rows := make([]drawerRow, 0, 24)
+	for _, l := range helpBody() {
+		rows = append(rows, staticRow(l))
 	}
+	rows = append(rows, staticRow(""))
+	for _, l := range mouseHelpRows() {
+		rows = append(rows, staticRow(l))
+	}
+	if v := helpVersionLine(); v != "" {
+		rows = append(rows, staticRow(""), staticRow("  "+v))
+	}
+	t.drawer.showList("help", "", rows, false)
 }
 
-func panelToggleQueued(t *transcript) {
-	was := t.showQueued
-	t.closePanels()
-	if !was {
-		t.openQueuedPanel()
+// openStatusDrawer is '!': this figaro's own numbers.
+func (t *transcript) openStatusDrawer() {
+	rows := make([]drawerRow, 0, 12)
+	for _, l := range t.status.panelLines() {
+		rows = append(rows, staticRow(l))
 	}
+	t.drawer.showList("status", "", rows, false)
 }
 
 // panelDismiss is Esc with a panel up: close it, and leave the selection
@@ -2045,4 +2293,221 @@ func (t *transcript) dropTurnsRows(lts map[int]struct{}) {
 			delete(t.rowCache, k)
 		}
 	}
+}
+
+// retarget points the pager at a different aria's client. The WINDOW, the row
+// cache, the selection and every derived index describe the conversation that
+// was on screen a moment ago, so all of them go: what is kept is the reader's
+// posture -- the pane, the panels they had open, the verbose toggle -- because
+// those are about the READER, not about the aria.
+//
+// Called with the render lock held, from livelogTurn.retarget.
+func (t *transcript) retarget(client *aria.Client, figaroID string, status *sessionStatus) {
+	t.client = client
+	if status != nil {
+		t.status = status
+	}
+	// The window and everything derived from it.
+	t.from = aria.Anchor{}
+	t.offset = 0
+	t.follow = true
+	t.tailTuned, t.tailWant = false, 0
+	t.rowCache = map[sliceKey]cachedMessage{}
+	t.expanded = map[nodeRef]bool{}
+	t.selection = nodeSelection{}
+	t.index = lineIndex{}
+	t.lineKey = t.lineKey[:0]
+	t.frameRefs = t.frameRefs[:0]
+	t.invalidateWindow()
+
+	// A walk or a search aimed at the OLD aria's coordinates must not survive
+	// into the new one: `:0` still pending when the subject changes would
+	// resolve against a conversation nobody asked it about.
+	t.jump, t.jumpNote = nil, ""
+	t.search = nil
+	t.inSearch, t.query, t.matchQuery = false, "", ""
+	t.pendG = false
+
+	// The pager is repainted whole rather than diffed: prev describes rows that
+	// belong to a conversation that is no longer on screen.
+	t.prev = nil
+	if t.active {
+		t.client.SetClosedLimit(0) // the pager owns retention while it is up
+	}
+}
+
+// inputDrawerLines renders the search box or the command line, with Tab's
+// candidates under it when there are any. Nil when neither box is up.
+func (t *transcript) inputDrawerLines() []string {
+	var rows []string
+	switch {
+	case t.inSearch:
+		rows = []string{drawerGray(clipToWidth("/"+t.query, t.w))}
+	case t.inJump:
+		rows = []string{t.cmdline.render(":", t.w)}
+	default:
+		return nil
+	}
+	for _, l := range t.completionLines() {
+		rows = append(rows, l)
+	}
+	if line, own := t.jumpFooter(); own {
+		rows = append(rows, drawerGray(clipToWidth("  "+line, t.w)))
+	}
+	return rows
+}
+
+// completionMenuRows is how tall the completion menu may get. Fixed, and
+// small: the menu lives inside the drawer, above an inviolable status bar, and
+// a menu that grows with the candidate count is a menu that swallows the
+// conversation it is supposed to be helping you talk about.
+const completionMenuRows = 2
+
+// completionLines draws the menu: the candidates around the selected one, in
+// columns, with a marker for what is out of view on either side. bash shows a
+// list and fish highlights a selection; this does both, because the selection
+// is what ^N/^P and repeated Tab move.
+func (t *transcript) completionLines() []string {
+	if len(t.completions) == 0 {
+		return nil
+	}
+	const perRow = 4
+	// The window slides to keep the SELECTED candidate visible, so cycling with
+	// ^N past the edge scrolls the menu instead of losing the cursor.
+	per := perRow * completionMenuRows
+	start := 0
+	if t.completionIdx >= 0 {
+		start = (t.completionIdx / per) * per
+	}
+	end := min(start+per, len(t.completions))
+
+	var out []string
+	for i := start; i < end; i += perRow {
+		stop := min(i+perRow, end)
+		cells := make([]string, 0, perRow)
+		for k := i; k < stop; k++ {
+			cell := padTo(t.completions[k], 18)
+			if k == t.completionIdx {
+				cell = "\x1b[48;5;237m" + cell + "\x1b[49m"
+			}
+			cells = append(cells, cell)
+		}
+		out = append(out, drawerGray("  "+strings.Join(cells, " ")))
+	}
+	// One honest line about what is not shown, on either side.
+	if start > 0 || end < len(t.completions) {
+		note := fmt.Sprintf("  %d–%d of %d", start+1, end, len(t.completions))
+		out = append(out, drawerGray(clipToWidth(note, t.w)))
+	}
+	return out
+}
+
+// clearCompletions drops the menu: any edit to the line makes it a lie.
+func (t *transcript) clearCompletions() {
+	t.completions, t.completionIdx, t.completionAt = nil, -1, 0
+}
+
+// cycleCompletion is ^N/^P and repeated Tab: move through the candidates and
+// put the selected one IN THE LINE, the way bash's menu-complete and fish both
+// do. The word being completed is replaced each time, so cycling never
+// concatenates candidates onto each other.
+func (t *transcript) cycleCompletion(dir int) {
+	if len(t.completions) == 0 {
+		return
+	}
+	n := len(t.completions)
+	switch {
+	case t.completionIdx < 0 && dir > 0:
+		t.completionIdx = 0
+	case t.completionIdx < 0:
+		t.completionIdx = n - 1
+	default:
+		t.completionIdx = (t.completionIdx + dir + n) % n
+	}
+	// Replace from where the word started to the cursor.
+	for t.cmdline.cursor > t.completionAt {
+		t.cmdline.backspace()
+	}
+	t.cmdline.insert(t.completions[t.completionIdx])
+}
+
+// drawerOwnsKey reports whether a selectable drawer answers this key itself
+// rather than being dismissed by it: the selection motions and the row verbs.
+func drawerOwnsKey(ev keyEvent) bool {
+	switch {
+	case ev.nav == navUp || ev.nav == navDown:
+		return true
+	case ev.b == 0x0e || ev.b == 0x10: // ^N / ^P
+		return true
+	case ev.b == 'y' || ev.b == 'x':
+		return true
+	}
+	return false
+}
+
+// drawerHint is what the closing rule says about leaving.
+func (t *transcript) drawerHint() string {
+	if t.inSearch || t.inJump {
+		return "Enter run · Tab complete · Esc cancel"
+	}
+	return t.drawer.hint()
+}
+
+// rowID pulls an aria/form id out of a line of command output, so `y` on a
+// `:ls` row yanks the ID rather than the whole rendered line.
+func rowID(line string) string {
+	for _, f := range strings.Fields(line) {
+		f = strings.Trim(f, "@·│ \t")
+		if len(f) != 8 || rpc.ValidateAriaID(f) != nil {
+			continue
+		}
+		return f
+	}
+	return ""
+}
+
+// showLiveDrawer hosts a live verb in the drawer.
+func (t *transcript) showLiveDrawer(name string, v cmdkit.LiveView) {
+	t.queuedByKey = false
+	t.drawer.showLive(name, v)
+	t.render()
+}
+
+// setCommandNote is how a command reports back into the footer's status row -
+// the same row the jump box writes its failures to, because to a reader they
+// are the same thing: the last thing I typed, and what came of it.
+func (t *transcript) setCommandNote(note string) {
+	if note == "" {
+		if t.showing("message") {
+			t.drawer.close()
+		}
+		t.render()
+		return
+	}
+	// A CONFIRMATION MUST NOT DESTROY A DRAWER THE READER IS USING. Measured:
+	// `:send` while the queue was open replaced the queue with the word "sent",
+	// the next poll re-opened the queue from scratch, and the selection was
+	// back on row one -- so an `x` aimed at the second message dropped the
+	// first. One-line results flash on the closing rule of a list you are
+	// navigating; only a drawer nobody is steering gets replaced outright.
+	if t.drawer.kind == drawerList && t.drawer.cursor >= 0 {
+		t.drawer.flash = note
+		t.render()
+		return
+	}
+	t.drawer.showMessage(note)
+	t.render()
+}
+
+// pagerDrawerDrop is 'x' on a selected row: ask the owner to drop it. The
+// transcript does not know what dropping means -- for the queue it is
+// `figaro queue rm <id>`, an RPC -- so it hands the id up, exactly as the ':'
+// box hands a command line up.
+func pagerDrawerDrop(t *transcript) {
+	row, ok := t.drawer.selected()
+	if !ok || row.id == "" || t.dropRow == nil {
+		return
+	}
+	t.dropRow(t.drawer.name, row.id)
+	t.drawer.removeSelected() // optimistic: the refresh confirms it
 }

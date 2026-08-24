@@ -90,9 +90,14 @@ func TestReportQueueResults_RefusalRunsExitHooks(t *testing.T) {
 	exitProcess = func(c int) { code = c }
 	atExit(func() { restored = true })
 
-	reportQueueResults("a", "e", []rpc.QueueResult{
-		{ID: 1, Outcome: rpc.QueueRejected, Reason: rpc.RejectCommitted},
-	}, false)
+	// The abort unwinds to a boundary, which is what runs the hooks; see
+	// exitPanic and TestExitHooksRunBeforeTheProcessGoes.
+	func() {
+		defer recoverExit()
+		reportQueueResults("a", "e", []rpc.QueueResult{
+			{ID: 1, Outcome: rpc.QueueRejected, Reason: rpc.RejectCommitted},
+		}, false)
+	}()
 
 	if !restored {
 		t.Error("the terminal-restore hook did not run on the refusal exit")

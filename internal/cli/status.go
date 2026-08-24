@@ -93,14 +93,14 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOu
 				if targetState != "" {
 					st["target_state"] = targetState
 				}
-				return json.NewEncoder(os.Stdout).Encode(st)
+				return json.NewEncoder(stdout).Encode(st)
 			}
 			printFormStatusPanel(os.Stdout, f, snap, version, targetState, more)
 			return nil
 		}
 
 		if jsonOut {
-			enc := json.NewEncoder(os.Stdout)
+			enc := json.NewEncoder(stdout)
 			enc.SetIndent("", "  ")
 			return enc.Encode(f)
 		}

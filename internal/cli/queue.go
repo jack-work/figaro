@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/jack-work/figaro/sdk"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -83,15 +82,15 @@ func runQueueList(loaded *config.Loaded, ariaID string, asJSON bool) {
 		if merr != nil {
 			die("encode: %s", merr)
 		}
-		fmt.Fprintln(os.Stdout, string(out))
+		fmt.Fprintln(stdout, string(out))
 		return
 	}
 
 	if len(queue) == 0 {
-		fmt.Printf("queue %s: empty\n", s.id)
+		fmt.Fprintf(stdout, "queue %s: empty\n", s.id)
 		return
 	}
-	fmt.Printf("queue %s: %s waiting\n", s.id, plural(len(queue), "message"))
+	fmt.Fprintf(stdout, "queue %s: %s waiting\n", s.id, plural(len(queue), "message"))
 	width := termWidth() - 24
 	if width < 20 {
 		width = 20
@@ -110,9 +109,9 @@ func runQueueList(loaded *config.Loaded, ariaID string, asJSON bool) {
 		if p.At > 0 {
 			age = time.Since(time.UnixMilli(p.At)).Truncate(time.Second).String()
 		}
-		fmt.Printf("  %-4d %-11s %-7s %s\n", p.ID, p.State, age, text)
+		fmt.Fprintf(stdout, "  %-4d %-11s %-7s %s\n", p.ID, p.State, age, text)
 		if len(p.Merged) > 0 {
-			fmt.Printf("       %s\n", term.Dim(fmt.Sprintf("folded in by an interrupt: %v", p.Merged)))
+			fmt.Fprintf(stdout, "       %s\n", term.Dim(fmt.Sprintf("folded in by an interrupt: %v", p.Merged)))
 		}
 	}
 }
@@ -167,9 +166,9 @@ func reportQueueResults(ariaID, epoch string, results []rpc.QueueResult, asJSON 
 		if err != nil {
 			die("encode: %s", err)
 		}
-		fmt.Fprintln(os.Stdout, string(out))
+		fmt.Fprintln(stdout, string(out))
 	} else if len(results) == 0 {
-		fmt.Println("nothing was queued")
+		fmt.Fprintln(stdout, "nothing was queued")
 	} else {
 		for _, r := range results {
 			switch r.Outcome {
@@ -181,9 +180,9 @@ func reportQueueResults(ariaID, epoch string, results []rpc.QueueResult, asJSON 
 				if r.Into != 0 {
 					line += fmt.Sprintf(" (try %d)", r.Into)
 				}
-				fmt.Fprintln(os.Stderr, line)
+				fmt.Fprintln(stderrw, line)
 			default:
-				fmt.Printf("  %-4d %s\n", r.ID, r.Outcome)
+				fmt.Fprintf(stdout, "  %-4d %s\n", r.ID, r.Outcome)
 			}
 		}
 	}

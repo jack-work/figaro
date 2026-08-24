@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/jack-work/figaro/internal/cmdkit"
@@ -44,13 +43,15 @@ func runBarePrompt(progName string, router *cmdkit.Router, loaded *config.Loaded
 // nor something the bare prompt form accepts, and exits. It mirrors the
 // router's own did-you-mean, and points at the two ways to mean an aria.
 func unknownBareCommand(progName string, router *cmdkit.Router, word string) {
-	fmt.Fprintf(os.Stderr, "error: unknown command %q\n", word)
+	fmt.Fprintf(stderrw, "error: unknown command %q\n", word)
 	if s := router.Suggest(word); s != "" {
-		fmt.Fprintf(os.Stderr, "  did you mean: %s %s\n", progName, s)
+		fmt.Fprintf(stderrw, "  did you mean: %s %s\n", progName, s)
 	}
-	fmt.Fprintf(os.Stderr, "  to prompt an aria:  %s --id %s -- <prompt>\n", progName, word)
-	fmt.Fprintf(os.Stderr, "  or the explicit verb: %s send %s -- <prompt>\n", progName, word)
+	fmt.Fprintf(stderrw, "  to prompt an aria:  %s --id %s -- <prompt>\n", progName, word)
+	fmt.Fprintf(stderrw, "  or the explicit verb: %s send %s -- <prompt>\n", progName, word)
 	// Misuse, not failure: the router answers an unknown command with 2, and
-	// the bare form is the same mistake reached by a different door.
-	exitProcess(2)
+	// the bare form is the same mistake reached by a different door. exitNow,
+	// not exitProcess: an abort unwinds to its boundary so the hooks run and an
+	// in-process caller is not killed by it.
+	exitNow(2)
 }

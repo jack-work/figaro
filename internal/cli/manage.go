@@ -91,7 +91,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 			}
 			figs := resp.Figaros
 			sort.SliceStable(figs, func(i, j int) bool { return vectorLess(figs[i].Vector, figs[j].Vector) })
-			enc := json.NewEncoder(os.Stdout)
+			enc := json.NewEncoder(stdout)
 			enc.SetIndent("", "  ")
 			if err := enc.Encode(figs); err != nil {
 				die("list --json: %s", err)
@@ -207,11 +207,11 @@ func runList(loaded *config.Loaded, o lsOpts) {
 			summary = fmt.Sprintf("%d top-level aria(s), %d branch(es) · showing %d of %d%s        ●=here ▸=running ○=idle",
 				len(roots), branches, shown, total, hint)
 		}
-		fmt.Fprintln(os.Stderr, truncateVisible(summary, width))
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprint(os.Stdout, renderListRows(rows, width, false))
+		fmt.Fprintln(stderrw, truncateVisible(summary, width))
+		fmt.Fprintln(stderrw)
+		fmt.Fprint(stdout, renderListRows(rows, width, false))
 		if limit > 0 && total > limit {
-			fmt.Fprintf(os.Stderr, "\n… %d more (-a for all, -n N for N)\n", total-limit)
+			fmt.Fprintf(stderrw, "\n… %d more (-a for all, -n N for N)\n", total-limit)
 		}
 		return nil
 	})
@@ -488,11 +488,11 @@ func renderFormScope(figs []rpc.FigaroInfoResponse, formID string, limit int) {
 	if width < listCompactWidth {
 		summary = fmt.Sprintf("form %s · %d/%d · ● here ▸ running ○ idle", label, shown, total)
 	}
-	fmt.Fprintln(os.Stderr, truncateVisible(summary, width))
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprint(os.Stdout, renderListRows(rows, width, true))
+	fmt.Fprintln(stderrw, truncateVisible(summary, width))
+	fmt.Fprintln(stderrw)
+	fmt.Fprint(stdout, renderListRows(rows, width, true))
 	if limit > 0 && total > limit {
-		fmt.Fprintf(os.Stderr, "\n… %d more (-a for all, -n N for N)\n", total-limit)
+		fmt.Fprintf(stderrw, "\n… %d more (-a for all, -n N for N)\n", total-limit)
 	}
 }
 
@@ -515,11 +515,11 @@ func renderGlobal(figs []rpc.FigaroInfoResponse, boundID string, limit int) {
 	} else {
 		summary = fmt.Sprintf("global · showing %d of %d%s        ●=here ▸=running ○=idle", shown, total, hint)
 	}
-	fmt.Fprintln(os.Stderr, truncateVisible(summary, width))
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprint(os.Stdout, renderListRows(rows, width, true))
+	fmt.Fprintln(stderrw, truncateVisible(summary, width))
+	fmt.Fprintln(stderrw)
+	fmt.Fprint(stdout, renderListRows(rows, width, true))
 	if limit > 0 && total > limit {
-		fmt.Fprintf(os.Stderr, "\n… %d more (-a for all, -n N for N)\n", total-limit)
+		fmt.Fprintf(stderrw, "\n… %d more (-a for all, -n N for N)\n", total-limit)
 	}
 }
 
@@ -717,7 +717,7 @@ func runKillByID(loaded *config.Loaded, figaroID string, recursive bool) {
 		if err := acli.Kill(ctx, figaroID, recursive); err != nil {
 			die("kill: %s", err)
 		}
-		fmt.Fprintf(os.Stderr, "killed %s\n", figaroID)
+		fmt.Fprintf(stderrw, "killed %s\n", figaroID)
 		return nil
 	})
 }
@@ -766,7 +766,7 @@ func runFork(loaded *config.Loaded, spec string, opts sendOpts) {
 		rescoped := false
 		if target == bound && !stay {
 			if err := bindBinding(ctx, acli, ppid, resp.Continuation, 0); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: could not bind shell to continuation: %s\n", err)
+				fmt.Fprintf(stderrw, "warning: could not bind shell to continuation: %s\n", err)
 			} else {
 				rescoped = true
 			}
@@ -781,7 +781,7 @@ func runFork(loaded *config.Loaded, spec string, opts sendOpts) {
 			if rescoped {
 				ariaID = resp.Continuation
 			}
-			enc := json.NewEncoder(os.Stdout)
+			enc := json.NewEncoder(stdout)
 			_ = enc.Encode(struct {
 				AriaID       string `json:"aria_id"`
 				Parent       string `json:"parent"`
@@ -805,13 +805,13 @@ func runFork(loaded *config.Loaded, spec string, opts sendOpts) {
 		}
 
 		if resp.OwnerNote != "" {
-			fmt.Fprintf(os.Stderr, "%s\n", resp.OwnerNote)
+			fmt.Fprintf(stderrw, "%s\n", resp.OwnerNote)
 		}
 		contNote := "(attend to continue)"
 		if rescoped {
 			contNote = "(this shell)"
 		}
-		fmt.Fprintf(os.Stderr,
+		fmt.Fprintf(stderrw,
 			"forked %s at %s\n  continuation %s  %s\n  alternative  %s  (attend it to diverge)\n",
 			resp.Parent, at, resp.Continuation, contNote, resp.Alternative)
 		return nil
@@ -835,11 +835,11 @@ func runNormalize(loaded *config.Loaded, segments bool) {
 		}
 		switch resp.Detached {
 		case 0:
-			fmt.Fprintln(os.Stderr, "normalize: already normalized, nothing to absorb")
+			fmt.Fprintln(stderrw, "normalize: already normalized, nothing to absorb")
 		case 1:
-			fmt.Fprintln(os.Stderr, "normalize: 1 aria now owns its history outright")
+			fmt.Fprintln(stderrw, "normalize: 1 aria now owns its history outright")
 		default:
-			fmt.Fprintf(os.Stderr, "normalize: %d arias now own their history outright\n", resp.Detached)
+			fmt.Fprintf(stderrw, "normalize: %d arias now own their history outright\n", resp.Detached)
 		}
 		return nil
 	})
@@ -887,7 +887,7 @@ func runPromote(loaded *config.Loaded, idFlag string, args []string) {
 			die("promote: nothing above %s but an outfit, and only conversations nest;\n"+
 				"  edit the outfit instead, or promote something under this one", target)
 		}
-		fmt.Fprintf(os.Stderr, "promoted %s by %d level(s): `figaro ls` now draws it there\n", target, resp.Climbed)
+		fmt.Fprintf(stderrw, "promoted %s by %d level(s): `figaro ls` now draws it there\n", target, resp.Climbed)
 		return nil
 	})
 }
@@ -956,9 +956,9 @@ func runAttend(loaded *config.Loaded, spec string) {
 			die("attend: %s", err)
 		}
 		if !at.isHead() {
-			fmt.Fprintf(os.Stderr, "attending %s at %s (next prompt forks there)\n", trunk, at)
+			fmt.Fprintf(stderrw, "attending %s at %s (next prompt forks there)\n", trunk, at)
 		} else {
-			fmt.Fprintf(os.Stderr, "attending %s\n", trunk)
+			fmt.Fprintf(stderrw, "attending %s\n", trunk)
 		}
 		return nil
 	})

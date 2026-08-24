@@ -27,7 +27,7 @@ func TestInputConsume_BangOpensStatusPanel(t *testing.T) {
 	if !lt.transcriptActive() {
 		t.Fatal("! must keep the transcript pager up")
 	}
-	if !lt.tr.showStatus {
+	if !lt.tr.showing("status") {
 		t.Fatal("! must raise the figaro status panel")
 	}
 }

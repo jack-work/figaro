@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/jack-work/figaro/sdk"
-	"os"
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
@@ -67,29 +66,29 @@ func runHangup(loaded *config.Loaded, ariaID string, disposition rpc.QueueDispos
 		if merr != nil {
 			die("encode: %s", merr)
 		}
-		fmt.Fprintln(os.Stdout, string(out))
+		fmt.Fprintln(stdout, string(out))
 		return
 	}
 
-	fmt.Printf("%s %s\n", verbFor(disposition), resolvedID)
+	fmt.Fprintf(stdout, "%s %s\n", verbFor(disposition), resolvedID)
 	// Say what happened to the queue even when it is empty: the difference
 	// between the two verbs is invisible otherwise, and a user who typed `cut`
 	// deserves to see that it had nothing to discard rather than wonder.
 	switch {
 	case resp.Cleared && len(queue) == 0:
-		fmt.Println("  queue: nothing was waiting")
+		fmt.Fprintln(stdout, "  queue: nothing was waiting")
 	case resp.Cleared:
-		fmt.Printf("  queue: %s discarded (re-run with -j to keep %s)\n",
+		fmt.Fprintf(stdout, "  queue: %s discarded (re-run with -j to keep %s)\n",
 			queueCount(queue), theyThem(len(queue)))
 		for _, p := range queue {
-			fmt.Printf("    %d  %s\n", p.ID, queueRowText(p.Text))
+			fmt.Fprintf(stdout, "    %d  %s\n", p.ID, queueRowText(p.Text))
 		}
 	case len(queue) == 0:
-		fmt.Println("  queue: nothing was waiting")
+		fmt.Fprintln(stdout, "  queue: nothing was waiting")
 	default:
-		fmt.Printf("  queue: %s kept, to be answered next\n", queueCount(queue))
+		fmt.Fprintf(stdout, "  queue: %s kept, to be answered next\n", queueCount(queue))
 		for _, p := range queue {
-			fmt.Printf("    %d  %s\n", p.ID, queueRowText(p.Text))
+			fmt.Fprintf(stdout, "    %d  %s\n", p.ID, queueRowText(p.Text))
 		}
 	}
 }

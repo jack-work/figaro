@@ -31,9 +31,9 @@ func runCompletionInstall(r *cmdkit.Router, shellArg string) error {
 	if err := r.WriteCompletion(f, shell); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "wrote %s completion to %s\n", shell, path)
+	fmt.Fprintf(stderrw, "wrote %s completion to %s\n", shell, path)
 	if note != "" {
-		fmt.Fprintln(os.Stderr, note)
+		fmt.Fprintln(stderrw, note)
 	}
 	return nil
 }

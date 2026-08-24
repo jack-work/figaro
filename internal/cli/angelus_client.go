@@ -164,7 +164,7 @@ func ensureAngelus() {
 		if cli, err := sdk.DialAngelus(ep); err == nil {
 			cli.Close()
 			if notified {
-				fmt.Fprintln(os.Stderr, "angelus: ready")
+				fmt.Fprintln(stderrw, "angelus: ready")
 			}
 			return
 		}
@@ -190,7 +190,7 @@ func ensureAngelus() {
 		if time.Since(lastNotice) > startupNoticeEvery && time.Since(start) > startupNoticeAfter {
 			lastNotice = time.Now()
 			notified = true
-			fmt.Fprintf(os.Stderr, "angelus: %s (waited %s; giving up at %s)\n",
+			fmt.Fprintf(stderrw, "angelus: %s (waited %s; giving up at %s)\n",
 				startupActivity(), time.Since(start).Round(time.Second), startupHardCap)
 		}
 		time.Sleep(50 * time.Millisecond)
@@ -302,18 +302,18 @@ func checkDaemonBuild(cli *sdk.Angelus) {
 		// We cannot prove incompatibility, but silence is the failure mode we
 		// are here to kill: warn loudly rather than let the user stare at an
 		// empty screen.
-		fmt.Fprintf(os.Stderr,
+		fmt.Fprintf(stderrw,
 			"figaro: this CLI's build is unknown, so it cannot be checked against\n"+
 				"        the running angelus (%s). If output is missing or garbled,\n"+
 				"        run `figaro stop` and retry; see the tmux-testing skill to\n"+
 				"        build a stamped binary.\n", short12(st.Build))
 	case handshakeDaemonOld:
-		fmt.Fprintf(os.Stderr,
+		fmt.Fprintf(stderrw,
 			"figaro: the running angelus predates the build check, so it is older\n"+
 				"        than this CLI (%s). If output is missing or garbled,\n"+
 				"        run `figaro stop` and retry.\n", short12(mine))
 	case handshakeMixedSchemes:
-		fmt.Fprintf(os.Stderr,
+		fmt.Fprintf(stderrw,
 			"figaro: this CLI and the running angelus name their builds differently,\n"+
 				"        so they cannot be compared:\n"+
 				"          daemon %s (%s)\n          cli    %s (%s)\n"+

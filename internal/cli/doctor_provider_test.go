@@ -82,6 +82,8 @@ func captureStdout(t *testing.T, fn func()) string {
 	}
 	prev := os.Stdout
 	os.Stdout = w
+	prevStdout := stdout
+	stdout = w
 
 	done := make(chan string, 1)
 	go func() {
@@ -92,6 +94,7 @@ func captureStdout(t *testing.T, fn func()) string {
 	fn()
 
 	os.Stdout = prev
+	stdout = prevStdout
 	w.Close()
 	out := <-done
 	r.Close()

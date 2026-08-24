@@ -172,7 +172,15 @@ func TestExitHooksRunBeforeTheProcessGoes(t *testing.T) {
 	atExit(func() { order = append(order, "first") })
 	atExit(func() { order = append(order, "second") })
 
-	exitNow(1)
+	// AN ABORT UNWINDS TO ITS BOUNDARY, and the boundary is what runs the
+	// hooks -- so the test has to have one, the way cli.Run does. Before this,
+	// exitNow ran the hooks itself and called os.Exit inline; it now panics, so
+	// that the same die() can abort ONE in-process command without ending the
+	// process (see exitPanic).
+	func() {
+		defer recoverExit()
+		exitNow(1)
+	}()
 
 	// LIFO like defers, and the process leaves last.
 	want := []string{"second", "first", "exit"}
@@ -202,7 +210,12 @@ func TestDieRunsExitHooks(t *testing.T) {
 			exitHooks = nil
 			exitProcess = func(c int) { code = c }
 			atExit(func() { restored = true })
-			tc.call()
+			// Through the boundary, as every real caller is: die() unwinds and
+			// recoverExit runs the hooks. See exitPanic.
+			func() {
+				defer recoverExit()
+				tc.call()
+			}()
 			if !restored {
 				t.Error("the terminal-restore hook did not run")
 			}

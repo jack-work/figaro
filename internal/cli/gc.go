@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/jack-work/figaro/sdk"
-	"os"
 	"strconv"
 	"time"
 
@@ -44,7 +43,7 @@ func runGC(loaded *config.Loaded, dryRun, jsonOut bool) {
 		}
 
 		if jsonOut {
-			enc := json.NewEncoder(os.Stdout)
+			enc := json.NewEncoder(stdout)
 			enc.SetIndent("", "  ")
 			if err := enc.Encode(resp); err != nil {
 				die("gc --json: %s", err)
@@ -53,7 +52,7 @@ func runGC(loaded *config.Loaded, dryRun, jsonOut bool) {
 		}
 
 		if len(resp.Stumps) == 0 {
-			fmt.Fprintln(os.Stderr, "no outfit stumps in this store")
+			fmt.Fprintln(stderrw, "no outfit stumps in this store")
 			return nil
 		}
 
@@ -69,17 +68,17 @@ func runGC(loaded *config.Loaded, dryRun, jsonOut bool) {
 		for _, st := range resp.Stumps {
 			tree.Roots = append(tree.Roots, gcNode(st, resp.DryRun))
 		}
-		fmt.Fprint(os.Stdout, tree.Render(listOutputWidth()))
+		fmt.Fprint(stdout, tree.Render(listOutputWidth()))
 
-		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(stderrw)
 		switch {
 		case resp.DryRun && resp.Collected == 0:
-			fmt.Fprintf(os.Stderr, "%d stump(s), none collectable\n", len(resp.Stumps))
+			fmt.Fprintf(stderrw, "%d stump(s), none collectable\n", len(resp.Stumps))
 		case resp.DryRun:
-			fmt.Fprintf(os.Stderr, "%d of %d stump(s) would be collected · run `figaro gc` to do it\n",
+			fmt.Fprintf(stderrw, "%d of %d stump(s) would be collected · run `figaro gc` to do it\n",
 				resp.Collected, len(resp.Stumps))
 		default:
-			fmt.Fprintf(os.Stderr, "collected %d of %d stump(s)\n", resp.Collected, len(resp.Stumps))
+			fmt.Fprintf(stderrw, "collected %d of %d stump(s)\n", resp.Collected, len(resp.Stumps))
 		}
 		return nil
 	})

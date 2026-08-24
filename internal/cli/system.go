@@ -22,7 +22,7 @@ func runRestWithFlags(force, keepPIDs bool) {
 	if keepPIDs {
 		cli, err := sdk.DialAngelus(ep)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "angelus is not running")
+			fmt.Fprintln(stderrw, "angelus is not running")
 			return
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -33,24 +33,24 @@ func runRestWithFlags(force, keepPIDs bool) {
 		if err != nil {
 			die("save-bindings: %s", err)
 		}
-		fmt.Fprintf(os.Stderr, "persisted %d pid binding(s)\n", resp.Count)
+		fmt.Fprintf(stderrw, "persisted %d pid binding(s)\n", resp.Count)
 	} else if cli, err := sdk.DialAngelus(ep); err == nil {
 		cli.Close()
 	} else {
-		fmt.Fprintln(os.Stderr, "angelus is not running")
+		fmt.Fprintln(stderrw, "angelus is not running")
 		return
 	}
 
 	pidBytes, err := os.ReadFile(filepath.Join(angelusRuntimeDir(), "angelus.pid"))
 	if err != nil {
 		os.Remove(sockPath)
-		fmt.Fprintln(os.Stderr, "angelus pid file missing; socket removed")
+		fmt.Fprintln(stderrw, "angelus pid file missing; socket removed")
 		return
 	}
 	var pid int
 	if _, err := fmt.Sscanf(string(pidBytes), "%d", &pid); err != nil {
 		os.Remove(sockPath)
-		fmt.Fprintln(os.Stderr, "angelus pid file unreadable; socket removed")
+		fmt.Fprintln(stderrw, "angelus pid file unreadable; socket removed")
 		return
 	}
 
@@ -58,18 +58,18 @@ func runRestWithFlags(force, keepPIDs bool) {
 		killPid(pid, syscall.SIGKILL)
 		waitForExit(pid, 5*time.Second)
 		os.Remove(sockPath)
-		fmt.Fprintf(os.Stderr, "angelus (pid %d) forcefully terminated\n", pid)
+		fmt.Fprintf(stderrw, "angelus (pid %d) forcefully terminated\n", pid)
 		return
 	}
 
 	killPid(pid, syscall.SIGTERM)
 
 	if waitForExit(pid, 15*time.Second) {
-		fmt.Fprintf(os.Stderr, "angelus (pid %d) put to rest\n", pid)
+		fmt.Fprintf(stderrw, "angelus (pid %d) put to rest\n", pid)
 		return
 	}
 
-	fmt.Fprintf(os.Stderr,
+	fmt.Fprintf(stderrw,
 		"angelus (pid %d) did not rest within 15s; try `figaro rest --force`\n", pid)
 }
 
@@ -118,7 +118,7 @@ func runModels(loaded *config.Loaded) {
 		}
 		models, err := prov.Models(ctx)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: %s: %s\n", name, err)
+			fmt.Fprintf(stderrw, "warning: %s: %s\n", name, err)
 			continue
 		}
 		for _, m := range models {

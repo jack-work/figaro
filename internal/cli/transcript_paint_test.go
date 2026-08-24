@@ -475,7 +475,7 @@ func TestTranscriptPaint_MatchesNaiveRepaint(t *testing.T) {
 		tr.scrollBy(-2)
 		step(fmt.Sprintf("highlighted scroll %d", i))
 	}
-	tr.showHelp = true
+	tr.openHelpDrawer()
 	tr.render()
 	step("help panel")
 	tr.key('G')

@@ -615,17 +615,17 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 	}
 
 	if opts.dryRun {
-		fmt.Print(script)
+		fmt.Fprint(stdout, script)
 		if !strings.HasSuffix(script, "\n") {
-			fmt.Println()
+			fmt.Fprintln(stdout)
 		}
 		return
 	}
 
 	if !opts.skipYes && term.IsTerminal(int(os.Stdin.Fd())) {
-		fmt.Fprintln(os.Stderr, "--- figaro send --exec: about to execute ---")
-		fmt.Fprintln(os.Stderr, script)
-		fmt.Fprintln(os.Stderr, "--- press enter to run, ctrl-c to abort ---")
+		fmt.Fprintln(stderrw, "--- figaro send --exec: about to execute ---")
+		fmt.Fprintln(stderrw, script)
+		fmt.Fprintln(stderrw, "--- press enter to run, ctrl-c to abort ---")
 		_, _ = term.ReadLine("")
 	}
 
@@ -671,12 +671,12 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 		dieWithClosure(qerr, "prompt: %s", qerr)
 	}
 	if opts.json {
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(stdout)
 		_ = enc.Encode(struct {
 			AriaID string `json:"aria_id"`
 			Mode   string `json:"mode"`
 		}{AriaID: ariaID, Mode: "forget"})
 		return
 	}
-	fmt.Fprintf(os.Stderr, "forgot %s: use `figaro listen %s` to follow\n", ariaID, ariaID)
+	fmt.Fprintf(stderrw, "forgot %s: use `figaro listen %s` to follow\n", ariaID, ariaID)
 }

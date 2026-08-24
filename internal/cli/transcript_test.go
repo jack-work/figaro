@@ -182,7 +182,7 @@ func TestTranscript_HelpPanel(t *testing.T) {
 	tr := newTranscript(ft, 60, 14, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
 	tr.key('?')
-	if !tr.showHelp {
+	if !tr.showing("help") {
 		t.Fatalf("? should open the help panel")
 	}
 	// A row from the TOP of the panel: helpLines clamps to the pane height and
@@ -194,12 +194,12 @@ func TestTranscript_HelpPanel(t *testing.T) {
 		t.Fatalf("help panel content missing:\n%s", scr)
 	}
 	tr.key('?')
-	if tr.showHelp {
+	if tr.showing("help") {
 		t.Fatalf("? should close the help panel")
 	}
 	tr.key('?')
 	tr.key('j') // any key wipes the panel and still acts
-	if tr.showHelp {
+	if tr.showing("help") {
 		t.Fatalf("a nav key should wipe the help panel")
 	}
 	if !tr.active {

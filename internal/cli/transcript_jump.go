@@ -102,14 +102,109 @@ type transcriptJump struct {
 // ---------------------------------------------------------------------------
 
 // pagerJumpPrompt is ':': open the command line.
-func pagerJumpPrompt(t *transcript) { t.inJump, t.jumpQuery, t.jumpNote = true, "", "" }
+func pagerJumpPrompt(t *transcript) {
+	t.inJump, t.jumpNote = true, ""
+	t.cmdline.reset()
+	t.completions = nil
+}
 
-func jumpCancel(t *transcript) { t.inJump, t.jumpQuery = false, "" }
-
-func jumpBackspace(t *transcript) {
-	if len(t.jumpQuery) > 0 {
-		t.jumpQuery = t.jumpQuery[:len(t.jumpQuery)-1]
+func jumpCancel(t *transcript) {
+	// ESC DISMISSES THE MENU FIRST, and the box only when there is no menu --
+	// which is what a shell does: the first Esc takes back the offer, the
+	// second takes back the line.
+	if len(t.completions) > 0 {
+		t.clearCompletions()
+		return
 	}
+	t.inJump = false
+	t.cmdline.reset()
+}
+
+func jumpBackspace(t *transcript) { t.edit(func(e *lineEditor) { e.backspace() }) }
+
+// edit runs one editing motion and drops the completion list: any change to
+// the line makes the last Tab's candidates a lie.
+func (t *transcript) edit(fn func(*lineEditor)) {
+	fn(&t.cmdline)
+	t.clearCompletions()
+}
+
+// The emacs/readline motions, one row each in the keymap. Names are readline's
+// because the fingers pressing these keys learned them there.
+func cmdHome(t *transcript)      { t.edit(func(e *lineEditor) { e.home() }) }
+func cmdEnd(t *transcript)       { t.edit(func(e *lineEditor) { e.end() }) }
+func cmdLeft(t *transcript)      { t.edit(func(e *lineEditor) { e.left() }) }
+func cmdRight(t *transcript)     { t.edit(func(e *lineEditor) { e.right() }) }
+func cmdKillToEnd(t *transcript) { t.edit(func(e *lineEditor) { e.killToEnd() }) }
+func cmdKillToStart(t *transcript) {
+	t.edit(func(e *lineEditor) { e.killToStart() })
+}
+func cmdKillWord(t *transcript)  { t.edit(func(e *lineEditor) { e.killWordBack() }) }
+func cmdDeleteFwd(t *transcript) { t.edit(func(e *lineEditor) { e.deleteForward() }) }
+
+// ^P/^N are HISTORY when there is no completion menu and MENU MOVEMENT when
+// there is -- which is what a shell does, and what Gluck asked for: the menu
+// takes the keys while it is up and the history has them back the moment it is
+// not.
+func cmdHistPrev(t *transcript) {
+	if len(t.completions) > 0 {
+		t.cycleCompletion(-1)
+		return
+	}
+	t.edit(func(e *lineEditor) { e.historyPrev() })
+}
+
+func cmdHistNext(t *transcript) {
+	if len(t.completions) > 0 {
+		t.cycleCompletion(1)
+		return
+	}
+	t.edit(func(e *lineEditor) { e.historyNext() })
+}
+
+// cmdComplete is Tab. The candidates come from the ROUTER's own completion --
+// the same __complete verb the shell scripts call -- so aria ids, form ids and
+// flags are completed here by the code that already knew how.
+func cmdComplete(t *transcript) {
+	// A SECOND TAB CYCLES, it does not recompute: that is what makes Tab Tab
+	// Tab walk the list, as it does in bash's menu-complete and in fish.
+	if len(t.completions) > 0 {
+		t.cycleCompletion(1)
+		return
+	}
+	if t.completer == nil {
+		return
+	}
+	line := t.cmdline.String()
+	cands := t.completer(line)
+	t.clearCompletions()
+	if len(cands) == 0 {
+		return
+	}
+	word := lastWord(line)
+	t.completionAt = t.cmdline.cursor - len([]rune(word))
+	// FIRST TAB INSERTS THE LONGEST THING THAT CANNOT BE WRONG, which is what
+	// both shells do before they offer to show you anything.
+	if pre := commonPrefix(cands); len(pre) > len(word) {
+		t.cmdline.insert(pre[len(word):])
+	}
+	if len(cands) == 1 {
+		t.cmdline.insert(" ") // an unambiguous completion moves you along
+		return
+	}
+	t.completions, t.completionIdx = cands, -1
+}
+
+// lastWord is the partial token under the cursor, for measuring what a
+// completion still has to add.
+func lastWord(line string) string {
+	if line == "" || strings.HasSuffix(line, " ") {
+		return ""
+	}
+	if i := strings.LastIndexAny(line, " \t"); i >= 0 {
+		return line[i+1:]
+	}
+	return line
 }
 
 // jumpLiteral is the box's fallback: a printable key is text, not a binding -
@@ -117,21 +212,38 @@ func jumpBackspace(t *transcript) {
 // search box. The keymap does not enumerate "every printable byte"; see
 // searchLiteral, whose contract this mirrors exactly.
 func (t *transcript) jumpLiteral(b byte) {
-	if b >= 0x20 && b < 0x7f {
-		t.jumpQuery += string(b)
+	if t.cmdline.insertByte(b) {
+		t.clearCompletions()
 	}
 }
 
-// jumpAccept is Enter in the jump box.
+// jumpAccept is Enter in the ':' box, which is a COMMAND LINE with a
+// coordinate shorthand -- exactly the arrangement vim has, where `:12` goes to
+// line 12 and `:w` writes. A bare coordinate is handled here, because it needs
+// nothing but the window; anything else is handed to the owner of this
+// transcript, which is the only thing in the process holding an RPC client.
+//
+// The transcript therefore knows nothing about the command language. It knows
+// "this is not a coordinate" and who to give it to.
 func jumpAccept(t *transcript) {
-	text := t.jumpQuery
-	t.inJump, t.jumpQuery, t.jumpNote = false, "", ""
-	tg, err := parseJumpTarget(text)
-	if err != nil {
-		t.jumpNote = err.Error()
+	text := strings.TrimSpace(t.cmdline.String())
+	t.cmdline.remember(text)
+	t.cmdline.reset()
+	t.inJump, t.jumpNote = false, ""
+	t.completions = nil
+	if text == "" {
 		return
 	}
-	t.startJump(tg)
+	if tg, err := parseJumpTarget(text); err == nil {
+		t.startJump(tg)
+		return
+	}
+	if t.command == nil {
+		t.noteOrClear("commands need a live session")
+		return
+	}
+	t.jumpNote = "" // the runner owns the row from here; see setCommandNote
+	t.command(text)
 }
 
 // ---------------------------------------------------------------------------
@@ -154,7 +266,7 @@ func (t *transcript) startJump(tg jumpTarget) {
 		t.landJump(line, ref)
 		return
 	case jumpAbsent:
-		t.jumpNote = tg.missing()
+		t.noteOrClear(tg.missing())
 		return
 	}
 	t.jump = &transcriptJump{
@@ -364,28 +476,35 @@ func (t *transcript) selectRef(ref nodeRef, extend bool) bool {
 // walk silently (a second ':' replacing the first).
 func (t *transcript) abandonJump(note string) {
 	if t.jump == nil {
-		t.jumpNote = note
+		t.noteOrClear(note)
 		return
 	}
 	origin := t.jump
 	t.jump = nil
 	t.offset = origin.offset
 	t.follow = origin.follow
-	t.jumpNote = note
+	t.noteOrClear(note)
 	t.pruneCaches()
 }
 
-// jumpFooter is the status row while a jump owns it: the box being typed
-// into, the walk in progress, or what went wrong. Empty means the ordinary
-// status line keeps the row.
+// noteOrClear puts a note in the message drawer, or closes it when empty.
+func (t *transcript) noteOrClear(note string) {
+	t.jumpNote = note
+	if note == "" {
+		if t.showing("message") {
+			t.drawer.close()
+		}
+		return
+	}
+	t.drawer.showMessage(note)
+}
+
+// jumpFooter is what a WALK IN PROGRESS says while it runs. The box itself and
+// its failures are drawn by the drawer now (see transcript.inputDrawerLines and
+// noteOrClear); this is only the transient "jumping to turn 12…".
 func (t *transcript) jumpFooter() (string, bool) {
-	switch {
-	case t.inJump:
-		return ":" + t.jumpQuery, true
-	case t.jump != nil:
+	if t.jump != nil {
 		return "jumping to " + t.jump.target.String() + "…", true
-	case t.jumpNote != "":
-		return t.jumpNote, true
 	}
 	return "", false
 }

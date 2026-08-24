@@ -210,11 +210,17 @@ func TestKeymap_IndexAgreesWithTheTable(t *testing.T) {
 // TestOpensTranscript_MatchesTheHandKeptList is the migration oracle: the
 // table's opener set is byte-for-byte the list opensTranscriptFor used to
 // carry by hand (including the '!' fix that landed just before it).
+//
+// ONE DELIBERATE ADDITION SINCE: ':'. It was a coordinate box, which needs a
+// viewport to land in and so stayed inline; it is now the COMMAND LINE, and
+// :open/:attend/:send are things a reader means from anywhere. So it yanks the
+// pager up exactly as '?' and '!' do.
 func TestOpensTranscript_MatchesTheHandKeptList(t *testing.T) {
 	old := map[byte]bool{}
 	for _, b := range []byte{
 		'j', 'k', 'u', 'd', 'g', 'G', // scroll
 		'/',           // search prompt
+		':',           // command line (see above)
 		'?', '!', 'Q', // help / figaro status / queued-prompt panels
 		0x0f,       // ^O verbosity
 		0x0e, 0x10, // ^N/^P node selection
@@ -304,7 +310,10 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  Home / End          top / bottom",
 		"  /                   search (Enter jump · Esc cancel typing)",
 		"  n / N               next / previous match",
-		"  :                   jump to turn[.node] · :0 = the beginning",
+		"  :                   command line: any figaro verb, or a coordinate (:12, :12.3, :0)",
+		"  (in :) ^P/^N · Up/Down command history",
+		"  (in :) Tab          complete the verb, an id, or a flag",
+		"  (in a list) x       drop the selected entry (queue)",
 		"  y                   copy selection (or aria id if none)",
 		"  ^O                  toggle verbose tool output",
 		"  ^N/^P               select next/previous node",

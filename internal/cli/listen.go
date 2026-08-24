@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"github.com/jack-work/figaro/sdk"
 	"os"
@@ -11,10 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldmouse "github.com/jack-work/figaro/internal/livelog/render/mouse"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/tape"
@@ -62,7 +59,7 @@ func runListen(loaded *config.Loaded, ariaID, recordPath, note string) {
 		}()
 	}
 
-	tailFigaro(ctx, cancel, figaroEP, resolvedID, loaded, tailOpts{tape: rec})
+	tailFigaro(ctx, cancel, figaroEP, resolvedID, loaded, tailOpts{acli: acli, tape: rec})
 }
 
 // tailFigaro is the read-only twin of mustPromptFigaro. It opens the
@@ -75,6 +72,11 @@ func runListen(loaded *config.Loaded, ariaID, recordPath, note string) {
 // value is `figaro listen` exactly, which is why they are a struct and not
 // three more positional parameters: the ordinary path names none of them.
 type tailOpts struct {
+	// acli is the angelus door, which the SUBJECT needs: resolving `:open <id>`
+	// to an endpoint is an angelus read, and `:attend` binds through it. The
+	// zero value leaves command mode's aria-changing verbs inert, which is what
+	// a replay wants -- a tape has no daemon behind it.
+	acli *sdk.Angelus
 	// tape records the wire (nil = record nothing).
 	tape *tape.Writer
 	// end closes when the stream is over by the caller's own reckoning: the
@@ -138,59 +140,27 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 	// and so needs the same lock.
 	lt.setRenderLock(&mu)
 
-	onNotify := func(method string, params json.RawMessage) {
-		mu.Lock()
-		defer mu.Unlock()
-		switch method {
-		case rpc.MethodAriaFrame:
-			var r aria.Page
-			if json.Unmarshal(params, &r) == nil {
-				lt.apply(r)
-			}
-		case rpc.MethodTurnDone:
-			// listen is a tail: we don't exit on turn boundaries.
-			// Just surface error reasons so the user sees them.
-			var d rpc.DoneEntry
-			_ = json.Unmarshal(params, &d)
-			lt.finishTurn(d.Reason)
-			if strings.HasPrefix(d.Reason, "error:") {
-				sessionLine(os.Stderr, "\r\n"+d.Reason)
-			}
-		}
-	}
-
-	fcli, err := sdk.DialAriaWith(ep, onNotify, tapeTap(opt.tape))
-	if err != nil {
-		die("connect figaro: %s", err)
-	}
-	defer fcli.Close()
-
-	// On desync, re-read from the highest fully sealed turn.
-	lt.setDesync(func(sinceLT int) {
-		go func() {
-			rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer rcancel()
-			r, rerr := fcli.Read(rctx, sinceLT)
-			if rerr != nil {
-				return
-			}
-			mu.Lock()
-			lt.apply(r)
-			mu.Unlock()
-		}()
-	})
-
-	// figaro listen opens directly in the transcript (its home): load the recent
-	// window; older history pages in on scroll-up and live frames follow.
+	// THE SUBJECT COMES IN THROUGH THE SAME DOOR IT LATER SWITCHES THROUGH.
+	// in.retarget dials, wires the notify pump and the desync hook, points the
+	// renderer at the aria and seeds the pager -- and `:open` calls exactly the
+	// same function. A startup path that differs from the switch path is a
+	// switch path exercised once per bug report; see command.go.
 	in := &interactiveInput{
-		tc: tc, lt: lt, fcli: fcli, hangup: fcli, mu: &mu, set: &set,
-		figaroID: figaroID, cancel: cancel, disconnectCh: disconnectCh,
+		tc: tc, lt: lt, mu: &mu, set: &set,
+		cancel: cancel, disconnectCh: disconnectCh,
+		acli: opt.acli, loaded: loaded, tap: tapeTap(opt.tape),
+		ownsSubject: true, subjectDead: make(chan struct{}, 1),
 	}
-	// listen opens the pager through the deliberate door below, which reads; the
-	// hook is armed anyway so a promotion that happens some other way (a resize
-	// after an explicit exit, say) still owes and pays for its history.
+	defer func() {
+		if in.subject != nil {
+			in.subject.Close()
+		}
+	}()
+
 	in.lt.setCatchUp(in.pagerCatchUp)
-	in.enterTranscript()
+	if err := in.retarget(ctx, figaroID, ep); err != nil {
+		die("%s", err)
+	}
 
 	// Local spinner animation.
 	stopTick := make(chan struct{})
@@ -247,13 +217,15 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 		locked(func() { lt.finishTurn("") })
 	case <-disconnectCh:
 		locked(func() { lt.abandon(turnStatusDisconnected) })
-	case <-fcli.Done():
+	case <-in.subjectDead:
 		locked(func() { lt.abandon(turnStatusError) })
 	case <-ctx.Done():
 		// Ctrl-C from signal.NotifyContext: interrupt the turn, then leave.
 		sessionLine(os.Stderr, "\r\ninterrupting...")
 		intCtx, intCancel := context.WithTimeout(context.Background(), 3*time.Second)
-		_ = fcli.Interrupt(intCtx)
+		if cli := in.aria(); cli != nil {
+			_ = cli.Interrupt(intCtx)
+		}
 		intCancel()
 		locked(func() { lt.abandon(turnStatusInterrupted) })
 	}

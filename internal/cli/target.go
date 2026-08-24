@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/jack-work/figaro/sdk"
-	"os"
 	"strings"
 	"time"
 
@@ -112,6 +111,6 @@ func redirectRole(ctx context.Context, loaded *config.Loaded, acli *sdk.Angelus,
 	if strings.Contains(*target, "@") {
 		return "", transport.Endpoint{}, fmt.Errorf("role %s: target-aria %q is a form, not an aria; roles do not chain", id, *target)
 	}
-	fmt.Fprintf(os.Stderr, "role %s → aria %s\n", id, *target)
+	fmt.Fprintf(stderrw, "role %s → aria %s\n", id, *target)
 	return resolveTargetEndpoint(ctx, loaded, acli, *target, false, dressing{})
 }
