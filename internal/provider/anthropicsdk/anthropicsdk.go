@@ -139,7 +139,7 @@ func (p *Provider) Fingerprint() string {
 	if rr == "" {
 		rr = "tag"
 	}
-	return "anthropic-sdk/" + rr + "/v1/" + sdkVersion()
+	return "anthropic-sdk/" + rr + "/v2/" + sdkVersion()
 }
 
 // sdkVersion is read once from the binary's own module graph. It is the

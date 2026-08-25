@@ -21,6 +21,8 @@ import (
 type ImageLimits struct {
 	// MaxDim is the longest edge in pixels. Anthropic scales anything above
 	// 1568px down on its own, so pixels past it cost bytes and buy nothing.
+	// It is a TARGET: an image already under the byte budget may be left
+	// larger when shrinking it would cost more bytes than it saves.
 	MaxDim int
 	// MaxBase64 caps the encoded payload: the number that actually decides
 	// whether the WAL record fits.
@@ -35,6 +37,11 @@ const (
 	// DefaultMaxImageDim is Anthropic's own downscale threshold. Above it the
 	// API resizes server-side, so sending more is pure waste.
 	DefaultMaxImageDim = 1568
+	// DefaultMaxSendDim is the longest edge that may reach a provider, and
+	// unlike MaxDim it is absolute. Anthropic accepts 8000px in an ordinary
+	// request and only 2000px once one carries more than twenty image or
+	// document blocks, rejecting the WHOLE request if a single image is over.
+	DefaultMaxSendDim = 2000
 	// DefaultMaxImagePixels caps decode cost at ~64Mpx (~256MB as RGBA).
 	DefaultMaxImagePixels = 64 << 20
 	// ProviderImageCeiling is the smallest inline-image limit across the
@@ -181,12 +188,8 @@ func FitImage(raw []byte, mime string, lim ImageLimits) (FittedImage, error) {
 				Resized: w != origW || h != origH,
 				Recoded: mt != canonicalMIME(format, mime),
 			}
-			// Resizing to MaxDim is an OPTIMIZATION, not a requirement: the
-			// providers accept larger images, they merely downscale them. So when
-			// the original already fit the byte budget, only take the re-encode if
-			// it actually saved bytes. Re-encoding a 2% oversized PNG, or a photo
-			// that lands larger as PNG than it was as JPEG, is pure loss.
-			if fits && len(fitted.Data) >= base64.StdEncoding.EncodedLen(len(raw)) {
+			cheaperToPassThrough := fits && len(fitted.Data) >= base64.StdEncoding.EncodedLen(len(raw))
+			if cheaperToPassThrough && withinDim(cfg.Width, cfg.Height, DefaultMaxSendDim) {
 				return passthrough(raw, cfg, format, mime), nil
 			}
 			return fitted, nil
@@ -199,6 +202,9 @@ func FitImage(raw []byte, mime string, lim ImageLimits) (FittedImage, error) {
 	}
 	return FittedImage{}, ErrImageUnfittable{W: origW, H: origH, Limit: lim.MaxBase64}
 }
+
+// withinDim reports whether both edges are inside limit.
+func withinDim(w, h, limit int) bool { return w <= limit && h <= limit }
 
 // passthrough forwards the bytes exactly as they sit on disk.
 func passthrough(raw []byte, cfg image.Config, format, mime string) FittedImage {
@@ -329,4 +335,29 @@ func canonicalMIME(format, fallback string) string {
 		return "image/webp"
 	}
 	return fallback
+}
+
+// FitSendable refits an image that is already base64, which is how one looks
+// once it is on a message. changed reports whether anything had to be done;
+// ok=false means the picture cannot be made sendable at all, leaving the
+// caller to say so in words rather than send what a provider will reject.
+func FitSendable(data, mime string, lim ImageLimits) (fitted FittedImage, changed, ok bool) {
+	lim = lim.withDefaults()
+	raw, err := base64.StdEncoding.DecodeString(data)
+	if err != nil {
+		return FittedImage{}, false, true
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
+	if err != nil {
+		return FittedImage{}, false, true
+	}
+	if withinDim(cfg.Width, cfg.Height, DefaultMaxSendDim) &&
+		base64.StdEncoding.EncodedLen(len(raw)) <= lim.MaxBase64 {
+		return FittedImage{}, false, true
+	}
+	f, err := FitImage(raw, mime, lim)
+	if err != nil {
+		return FittedImage{}, true, false
+	}
+	return f, true, true
 }

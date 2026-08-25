@@ -1107,16 +1107,24 @@ func (a *Agent) toolImageBudget() int { return a.settings.InlineImageBudget() }
 // a note for any image it had to alter or could not carry. Images ride along
 // even when the tool errored: a screenshot attached to a failure is usually
 // the whole point.
+//
+// An image is refitted when it does not fit the budget left on this message OR
+// when it is over what a provider accepts in a request carrying many images:
+// byte size alone used to decide, and a small file with large dimensions became
+// a 400 that no later turn could get past.
 func harvestToolImages(tc message.Content, oc toolOutcome, remaining, total int) (kept []message.Content, notes []string, spent int) {
 	for _, c := range oc.content {
 		if c.Type != message.ContentImage || c.Data == "" {
 			continue
 		}
 		left := remaining - spent
-		if len(c.Data) <= left {
+		if _, needed, _ := tool.FitSendable(c.Data, c.MimeType, tool.DefaultImageLimits()); len(c.Data) <= left && !needed {
 			spent += len(c.Data)
 			kept = append(kept, message.ToolImageContent(tc.ToolCallID, tc.ToolName, c.MimeType, c.Data))
 			continue
+		}
+		if left > total {
+			left = total
 		}
 		fitted, note, ok := refitToolImage(c, left)
 		if !ok {

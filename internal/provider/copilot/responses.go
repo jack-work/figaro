@@ -24,7 +24,7 @@ import (
 	"github.com/jack-work/figaro/internal/tokens"
 )
 
-const responsesFingerprintPrefix = "copilot-responses/v2"
+const responsesFingerprintPrefix = "copilot-responses/v3"
 
 type responseTokenSource interface {
 	Resolve() (string, error)

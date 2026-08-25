@@ -110,6 +110,7 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 			continue
 		}
 
+		msg, _ = SendableImages(msg)
 		encoded, err := cfg.Encode(msg, snap)
 		if err != nil {
 			if cfg.ReportEncodeError != nil {
@@ -174,7 +175,8 @@ func firstGap(cfg CatchUpConfig, watermark uint64) (uint64, bool) {
 		}
 		// No row is a hole only where a row was owed: an entry that encodes
 		// to nothing never had one, and its patches ride the next entry.
-		if encoded, err := cfg.Encode(msg, snap); err == nil && len(encoded) > 0 {
+		sendable, _ := SendableImages(msg)
+		if encoded, err := cfg.Encode(sendable, snap); err == nil && len(encoded) > 0 {
 			return entry.LT, true
 		}
 	}

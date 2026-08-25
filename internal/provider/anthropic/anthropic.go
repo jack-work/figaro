@@ -365,7 +365,7 @@ func (a *Anthropic) Fingerprint() string {
 	if rr == "" {
 		rr = "tag"
 	}
-	return "anthropic/" + rr + "/v5"
+	return "anthropic/" + rr + "/v6"
 }
 
 func (a *Anthropic) SetModel(model string) {
