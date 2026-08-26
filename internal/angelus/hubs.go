@@ -72,6 +72,11 @@ func (h *handlers) hubFor(id string) (*ariaHub, error) {
 	hb.read = h.readFromStore
 	hb.write = h.writeForHub
 	hb.dress = h.dressParams
+	// The aria socket serves the AGENCY methods -- qua, set, study, cast,
+	// interrupt, the queue verbs -- and until this line existed it served
+	// them with no policy at all, while the angelus door beside it was
+	// guarded. One guard, both doors: the guarded set is now the served set.
+	hb.guard = h.guardHandlers
 	if h.angelus.Backend != nil {
 		if n, ok := h.angelus.Backend.Node(id); ok {
 			hb.kind = n.Kind
