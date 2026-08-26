@@ -134,13 +134,6 @@ func (h *handlers) authenticator() authz.Authenticator {
 	return authz.AriaHeader{Enabled: h.config != nil && h.config.CallerIdentityEnabled()}
 }
 
-// guardHandlers wraps a handler map with THIS daemon's authn and policy. It is
-// handed to every aria hub so the agency methods are gated by the same seam
-// that gates the angelus door: see ariaHub.guard for what it was like before.
-func (h *handlers) guardHandlers(m map[string]jkrpc.HandlerFunc) map[string]jkrpc.HandlerFunc {
-	return authz.Guard(m, h.authenticator(), h.policy())
-}
-
 // policy builds the configured authorization policy. The turn-active predicate
 // is read off the live registry: a dormant or unknown aria has no turn in
 // flight, so it cannot be mid-turn, and a fork of it is free to proceed.

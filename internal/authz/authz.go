@@ -3,12 +3,10 @@
 package authz
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/jkrpc"
 )
 
 // Identity is the outcome of authentication: who the server is willing to say
@@ -189,34 +187,3 @@ func (rs Rules) Check(r Request) Decision {
 // figaro's other typed codes in internal/rpc.
 const ErrCode = -32020
 
-// Guard wraps a handler map so every method consults the policy first. Wrapping
-// the MAP rather than each handler is the point: a rule cannot be forgotten at
-// one call site, and the set of guarded methods is exactly the set of served
-// methods, by construction.
-func Guard(handlers map[string]jkrpc.HandlerFunc, authn Authenticator, policy Policy) map[string]jkrpc.HandlerFunc {
-	if authn == nil && policy == nil {
-		return handlers
-	}
-	if authn == nil {
-		authn = AriaHeader{Enabled: false}
-	}
-	if policy == nil {
-		policy = AllowAll()
-	}
-	out := make(map[string]jkrpc.HandlerFunc, len(handlers))
-	for name, h := range handlers {
-		method, next := name, h
-		out[method] = func(ctx context.Context, params json.RawMessage) (any, error) {
-			req := Request{
-				Identity: authn.Authenticate(method, params),
-				Method:   method,
-				Params:   params,
-			}
-			if d := policy.Check(req); !d.Allow {
-				return nil, &jkrpc.Error{Code: ErrCode, Message: d.Reason}
-			}
-			return next(ctx, params)
-		}
-	}
-	return out
-}

@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/middleware"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -71,12 +73,21 @@ func (h *handlers) hubFor(id string) (*ariaHub, error) {
 	hb.wake = h.wakeForHub
 	hb.read = h.readFromStore
 	hb.write = h.writeForHub
-	hb.dress = h.dressParams
+	// THE ORDER IS THE POINT. Authorization is outermost, so an unauthorized
+	// caller is refused before dressing resolves an outfit name by reading
+	// files from disk. Written as a chain, that is a property of this
+	// argument list; written as calls inside route(), it was a property of
+	// where somebody happened to put a line.
+	//
 	// The aria socket serves the AGENCY methods -- qua, set, study, cast,
-	// interrupt, the queue verbs -- and until this line existed it served
-	// them with no policy at all, while the angelus door beside it was
-	// guarded. One guard, both doors: the guarded set is now the served set.
-	hb.guard = h.guardHandlers
+	// interrupt, the queue verbs -- and until this existed it served them
+	// with no policy at all, while the angelus door beside it was guarded.
+	// One decision, both doors: authz.Middleware is what authz.Guard is
+	// built from.
+	hb.dispatch = middleware.Chain(
+		authz.Middleware(h.authenticator(), h.policy()),
+		dressing(h.dressParams),
+	)(hb.route)
 	if h.angelus.Backend != nil {
 		if n, ok := h.angelus.Backend.Node(id); ok {
 			hb.kind = n.Kind

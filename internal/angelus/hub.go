@@ -36,12 +36,6 @@ type ariaHub struct {
 	// writer per node whether an agent is live or not (the agent itself
 	// writes through the backend), so this is the same writer, earlier.
 	write func(id, method string, params json.RawMessage) (v any, ok bool, err error)
-	// dress resolves a request's outfit NAMES into keys before it is routed
-	// anywhere. It is the API boundary's one materialization point: whatever
-	// the request reaches next, a live agent's inbox, the store's agentless
-	// writer: receives pure data, and no writer below this line reads a
-	// file. A request naming no outfit is returned byte for byte.
-	dress func(method string, params json.RawMessage) (json.RawMessage, error)
 	// kind is the node's species from its figwal marker ("conversation",
 	// "form", …). A form has no agent to wake, ever: methods that reach
 	// the wake path on a form node get a named refusal instead of a
@@ -52,17 +46,17 @@ type ariaHub struct {
 	ln    net.Listener
 	conns map[*jkrpc.Server]struct{}
 	agent figaro.AgentServer
-	// guard wraps the served handler map with authentication and policy. It
-	// is a field rather than a call in handlers() because the hub is built in
-	// internal/angelus and the policy is assembled beside the angelus map:
-	// one guard, both doors.
+	// dispatch is the hub's decorated handler: authorization, then dressing,
+	// then route. It is set by hubFor and is NEVER nil in production --
+	// handlers() falls back to bare route only so a test can build a hub
+	// without a policy, and hub_guard_test pins that distinction.
 	//
-	// A NIL GUARD SERVES UNGUARDED, and that is what this endpoint did for
-	// its whole life before 2026-08-25: figaro.qua, figaro.set, study/cast/
-	// drop, interrupt and the queue verbs were reachable on an aria socket
-	// with no policy consulted, while authz.Guard wrapped only the angelus.
-	// The guarded set must equal the served set, so hubs.go always sets this.
-	guard func(map[string]jkrpc.HandlerFunc) map[string]jkrpc.HandlerFunc
+	// Before this was a chain, the two concerns it composes were expressed
+	// two different ways: dressing was hand-inlined at the top of route(),
+	// and authorization did not exist here at all, so figaro.qua, figaro.set,
+	// study/cast/drop, interrupt and the queue verbs were served with no
+	// policy consulted while authz.Guard wrapped only the angelus door.
+	dispatch rpc.MethodHandler
 	// Nothing is buffered on purpose: a frame produced while no client is
 	// attached is owed to nobody, and a client that attaches catches up with
 	// a read rather than a replay.
@@ -238,34 +232,32 @@ type subscribableAgent interface {
 var errDormantMethod = errors.New("aria is dormant and this method needs a live agent")
 
 func (hb *ariaHub) handlers() map[string]jkrpc.HandlerFunc {
+	// One decorated handler, adapted to the map jkrpc wants. The method name
+	// travels as an ARGUMENT rather than as N captured closures, which is
+	// what makes the chain above possible at all.
+	dispatch := hb.dispatch
+	if dispatch == nil {
+		dispatch = hb.route
+	}
 	methods := figaro.AgentMethods()
 	out := make(map[string]jkrpc.HandlerFunc, len(methods))
 	for _, m := range methods {
 		method := m
 		out[method] = func(ctx context.Context, params json.RawMessage) (any, error) {
-			return hb.route(ctx, method, params)
+			return dispatch(ctx, method, params)
 		}
-	}
-	if hb.guard != nil {
-		return hb.guard(out)
 	}
 	return out
 }
 
 // route sends a request to the agent, waking the aria when the method needs
 // a turn loop and answering from the store when it does not.
+//
+// It is the INNERMOST handler of the chain hubFor builds: everything
+// cross-cutting -- authorization, and the outfit dressing that used to be
+// hand-inlined right here -- is middleware above it now. What is left is
+// routing, which is the only thing this function was ever named for.
 func (hb *ariaHub) route(ctx context.Context, method string, params json.RawMessage) (any, error) {
-	// Dress FIRST, before any of the three destinations. A spec that names
-	// nothing on disk fails here, at the boundary, rather than landing as a
-	// literal on a board (which is exactly what `fig form outfit test` did
-	// while the hub's writer applied patches verbatim).
-	if hb.dress != nil {
-		dressed, err := hb.dress(method, params)
-		if err != nil {
-			return nil, err
-		}
-		params = dressed
-	}
 	if agent := hb.boundAgent(); agent != nil {
 		return agent.Handle(ctx, method, params)
 	}
