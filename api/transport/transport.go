@@ -19,33 +19,12 @@ import (
 type Endpoint struct {
 	Scheme  string `json:"scheme"`
 	Address string `json:"address"`
-	// Bearer is the credential presented when Scheme is http(s). It is
-	// carried on the Endpoint rather than looked up at dial time so that
-	// exactly one place -- the CLI's origin resolver -- decides which secret
-	// belongs to which host, and nothing below this line reads a keyring.
+	// Bearer is the credential presented when Scheme is http(s).
 	//
 	// It is never serialized: a credential has no business in the JSON an
-	// endpoint travels as (attach responses hand endpoints back to clients).
+	// endpoint travels as, and attach responses hand endpoints back to
+	// clients.
 	Bearer string `json:"-"`
-}
-
-// Remote reports whether this endpoint leaves the machine. A remote daemon is
-// never auto-started, and pid bindings are meaningless against one.
-func (e Endpoint) Remote() bool {
-	return e.Scheme == "http" || e.Scheme == "https"
-}
-
-// HTTPEndpoint constructs a gateway endpoint from a base URL.
-func HTTPEndpoint(rawURL, bearer string) (Endpoint, error) {
-	u := strings.TrimRight(rawURL, "/")
-	switch {
-	case strings.HasPrefix(u, "https://"):
-		return Endpoint{Scheme: "https", Address: strings.TrimPrefix(u, "https://"), Bearer: bearer}, nil
-	case strings.HasPrefix(u, "http://"):
-		return Endpoint{Scheme: "http", Address: strings.TrimPrefix(u, "http://"), Bearer: bearer}, nil
-	default:
-		return Endpoint{}, fmt.Errorf("origin %q: want an http:// or https:// URL", rawURL)
-	}
 }
 
 // UnixEndpoint is a convenience constructor for unix socket endpoints.
