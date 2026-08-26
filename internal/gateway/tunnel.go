@@ -12,6 +12,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -21,6 +22,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/jack-work/figaro/internal/authz"
 )
 
 // Dialer opens a connection to the daemon this gateway fronts. It is a
@@ -59,10 +61,38 @@ type Tunnel struct {
 	// operator stops typing -- a failure that never shows up in a test and
 	// always shows up in use. Zero disables, which is only safe locally.
 	Keepalive time.Duration
-	Log       *slog.Logger
+	// Authn establishes who is calling, ONCE, at the upgrade. Nil admits
+	// everyone, which only a unix socket may do.
+	Authn authenticator
+	// Policy decides which methods an identity may call. Nil allows all --
+	// stated, not defaulted.
+	Policy MethodPolicy
+	Log    *slog.Logger
+}
+
+// MethodPolicy decides whether an identity may call a method.
+type MethodPolicy interface {
+	Allow(id authz.Identity, method string) Decision
 }
 
 func (t *Tunnel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// AUTHENTICATE BEFORE UPGRADING. A refusal must be an HTTP status the
+	// client can read, not a WebSocket that opens and then closes: the
+	// second is indistinguishable from a network fault.
+	//
+	// Note what this cannot do: forward authentication happens HERE and
+	// only here. Once the socket is open no frame is re-authorized, so the
+	// grant lasts as long as the connection -- which is what MaxAge bounds.
+	id := authz.Identity{Label: "gateway"}
+	if t.Authn != nil {
+		var aerr error
+		id, aerr = t.Authn.authenticate(r)
+		if aerr != nil {
+			http.Error(w, aerr.Error(), http.StatusUnauthorized)
+			return
+		}
+	}
+
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		OriginPatterns: t.Origins,
 		// The payload is NDJSON, which compresses well, but the frames are
@@ -115,6 +145,23 @@ func (t *Tunnel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = upstream.Close()
 	}()
 
+	// One filter per connection, closed over THIS caller's identity, so one
+	// connection's authorization can never become another's.
+	filter := t.Filter
+	if filter == nil && (t.Policy != nil || t.Authn != nil) {
+		filter = &Filter{}
+	}
+	if filter != nil {
+		scoped := *filter
+		if t.Policy != nil {
+			scoped.Check = func(method string) Decision { return t.Policy.Allow(id, method) }
+		}
+		scoped.Rewrite = func(p json.RawMessage) (json.RawMessage, error) {
+			return rewriteEnvelope(p, id)
+		}
+		filter = &scoped
+	}
+
 	var wg sync.WaitGroup
 	wg.Add(2)
 
@@ -123,8 +170,8 @@ func (t *Tunnel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer wg.Done()
 		var err error
-		if t.Filter != nil {
-			err = t.Filter.Pump(down, upstream)
+		if filter != nil {
+			err = filter.Pump(down, upstream)
 		} else {
 			_, err = io.Copy(upstream, down)
 		}
