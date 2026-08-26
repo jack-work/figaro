@@ -324,20 +324,94 @@ the daemon**, not the CLI. That is the one thing rev 1 got backwards.
 
 ## 7. Deployment on spain
 
-Ops review found §8 of rev 1 to be "one paragraph of aspiration standing on
-four load-bearing assumptions the stack does not honor." Corrections:
+The King of Spain was consulted (aria `8460cea6`) and overruled parts of rev 2.
+His answers, which are load-bearing:
 
-- figaro is **not** a Python web app. It needs `HOME`, a writable store,
-  `XDG_RUNTIME_DIR`, provider credentials via `hush`, and network egress.
-  `DynamicUser` + `StateDirectory` does not fit unmodified.
-- Two units: `figaro-angelus.service` (owns `RuntimeDirectory=figaro`,
-  `StateDirectory`) and `figaro-gateway.service` with `BindsTo=` +
-  `After=` — `BindsTo` so a dead angelus takes the gateway down rather than
-  leaving it 502-ing.
-- Secrets arrive as `LoadCredential` from sops, surfaced as `*_file` config
-  keys. **Blocking figaro-side work**: `doorkey_file`,
-  `FIGARO_HUSH_PASSPHRASE_FILE`, per-provider `api_key_file`.
-- Confirm WebSocket and SSE survive Cloudflare tunnel + Caddy timeouts.
+### WebSockets survive the stack — with two caveats
+
+Caddy needs no configuration (`reverse_proxy` detects `Upgrade` and switches to
+transparent bidirectional streaming), and Cloudflare tunnel supports WebSocket
+natively. Direct evidence on the box: Synapse at `chat.kelliher.info` holds
+`/sync` open 30s+ through the identical path.
+
+- **Cloudflare reaps idle WebSockets at ~100s**, not configurable on a tunnel.
+  Application-level keepalive is **mandatory from day one**, not a later fix:
+  without it the connection dies exactly when the operator stops typing, which
+  works in every test and fails in every use. *(Done: 30s server ping.)*
+- **`forward_auth` runs on the UPGRADE REQUEST ONLY.** Once upgraded, no frame
+  is re-authorized, so a WebSocket **outlives its authorization** — revoke the
+  operator in lldap and an established socket keeps executing shell until it
+  drops. Acceptable on a single-admin box, but it must be a *stated* decision.
+  Mitigated by a connection-lifetime cap that forces re-upgrade. **"Authelia
+  gates it" must not stand unqualified: what it gates is the handshake.**
+  *(Done: 8h cap on TCP.)*
+
+### Unit topology — dedicated user, not `DynamicUser`
+
+`DynamicUser` means a new uid per activation, and the figwal store is long-lived
+on-disk state whose ownership must survive redeploys. `mkPythonService`'s shape
+suits stateless request handlers; figaro is not one.
+
+- dedicated user, `StateDirectory=figaro`, `RuntimeDirectory=figaro`
+- `figaro-angelus.service` + `figaro-gateway.service` with `BindsTo=`/`After=`
+- `Type=exec`, foreground, self-spawn disabled
+- `KillMode=mixed` so agent grandchildren die with the unit instead of being
+  reparented to pid 1 and surviving into the next activation
+- `MemoryMax` and `CPUQuota` — **spain is the house router**, and a runaway
+  agent must not take DNS down with it
+- `ProtectSystem=strict` and `PrivateTmp`, but **not** `NoNewPrivileges` or a
+  syscall filter: this workload's *purpose* is running arbitrary commands, so a
+  sandbox tight enough to matter breaks it and one loose enough to work is
+  documentation rather than protection. Ship the honest one and say which.
+
+### One group, not split capabilities
+
+`fig.kelliher.info`, `requiredGroups = [ "figaro-admin" ]`. The platform derives
+the lldap group from `allRequiredGroups` and the 2FA rule from
+`allAuthenticatedHostnames`; neither `identity.nix` nor the tfvars needs a hand
+edit. Splitting capabilities is meaningless when every capability reduces to
+"runs arbitrary shell as the figaro user" — **a read-only figaro role would be
+a lie.**
+
+### Secrets: sops, and hush stays off the server
+
+> hush is a HUMAN-plane agent: it exists so a person's keyring unlocks their
+> credentials, and it deliberately dies with a session. Spain has no user
+> session and no keyring. A passphrase in sops that the machine can decrypt
+> unattended has all of hush's ceremony and none of its property.
+
+The line spain already draws: **machine secrets live in sops, person secrets
+live in hush.** A hosted figaro's provider keys belong to the machine. So the
+blocking figaro-side feature is plain `api_key_file` config keys fed from
+`LoadCredential`, and hush is left out of the server entirely.
+
+### Budget, and one thing to decide
+
+15 GB RAM (14 available), 423 GB free, load 0.01 over twelve days. Fine. But the
+disk is a **single NVMe with no backups and no redundancy** — a figwal store on
+spain is a store with one copy. Decide deliberately whether it is disposable or
+precious. And ~500 MB of conversation state accumulated on the workstation in a
+few months; plan retention before it is a problem.
+
+### Sequencing — not technical, and not optional
+
+The router branch is parked in `spain-flake`, verified four times, and **the
+next deploy for any reason carries it and restarts dnsmasq**, the house's only
+resolver. So this lands as its own single-purpose watched deploy.
+
+**Merging to `spain-flake` master and letting it sit is the forbidden move**: it
+lets somebody else's routine keel push carry the gateway and the router
+together. Deploy alone, or wait. Do not queue.
+
+Cost when the window comes: 1 flake input, 1 tofu apply for the tunnel hostname,
+1 spain deploy, **0 reboots**.
+
+### The blocker rev 2 missed
+
+`kelliher-web`'s Caddy module emits `reverse_proxy ${proxyHost}:${proxyTo}` —
+**host and port only, no unix socket support**. So the gateway binds loopback
+TCP on spain and the refusal table is what makes that defensible, rather than
+special-casing the platform.
 
 ## 8. Build order
 
@@ -362,10 +436,17 @@ there is no point gating a door into an ungated house.
       lines hand-inlined at the top of `route()` — is middleware beside it.
       **Order is tested, not commented**: authz outermost, so a refused caller
       never reaches the step that reads outfit files off disk.
-- [ ] 3. The refusal table: (authn × bind reachability), every cell tested;
-      bind-then-inspect `listener.Addr()`; `Host` allowlist (C5).
+- [x] **3. The refusal table.** `(authn × bind reachability)`, all nine cells
+      enumerated and tested, plus a totality test that fails when someone adds
+      an authenticator without deciding what its cells mean. **Judged against
+      the bound listener, never the config string** — `":9090"`, `"0.0.0.0"`,
+      `"::ffff:127.0.0.1"` all defeat a parse. `Host` allowlist against DNS
+      rebinding. Tunnels capped (8h default on TCP) and pinged every 30s.
 - [ ] 4. Envelope rewriting on ingress (the THIRD params-rewriting hook, and
-      now it can only be written as middleware); `upstream` + `doorkey`.
+      now it can only be written as middleware); `upstream` + `doorkey`
+      authenticator implementations behind the tunnel.
+- [ ] 4b. **`api_key_file`** — provider credentials from a path. Blocking for
+      spain: hush is a human-plane agent and does not belong on a server.
 - [ ] 5. Form face: GET/PATCH/SSE, pooled per-aria connections.
 - [ ] 6. Wire gaps: `SubscribeFrom` on the wire, typed `ErrVersionConflict`,
       golden vectors.
