@@ -242,6 +242,13 @@ in
             "--listen tcp://127.0.0.1:${toString cfg.port}"
             "--authn upstream"
             "--host ${cfg.hostname}"
+            # THE GROUP GATE, and it is not redundant with the platform.
+            # kelliher-web creates the lldap group from requiredGroups and
+            # writes an Authelia rule from the hostname -- but that rule is
+            # `policy: two_factor` with no subject restriction, so every
+            # directory user who passes 2FA reaches this port. Authelia
+            # authenticates; the app authorizes. This is the app.
+            "--require-group ${lib.concatStringsSep "," cfg.requiredGroups}"
             "--max-conn-age ${cfg.maxConnAge}"
           ];
           Restart = "on-failure";
