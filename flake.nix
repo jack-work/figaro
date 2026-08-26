@@ -111,6 +111,18 @@
         default = figaro;
       });
 
+      # The NixOS module, so a host can run figaro as a service. It lives
+      # here rather than in a separate repo because the knowledge it encodes
+      # -- that the angelus must not self-spawn, that agents are grandchildren
+      # needing KillMode=mixed, that the store's ownership must survive a
+      # redeploy -- is figaro's own, and would rot anywhere else.
+      # The DAEMON: units, user, resource caps. Works on any NixOS host.
+      nixosModules.default = import ./nix/module.nix;
+      nixosModules.figaro = self.nixosModules.default;
+      # The PLATFORM COUPLING: registers the site with kelliher-web. Kept
+      # apart so a host without that platform never evaluates its options.
+      nixosModules.site = import ./nix/site.nix;
+
       devShells = forAllSystems ({ pkgs }: let
         figaroPkg = self.packages.${pkgs.system}.default;
 

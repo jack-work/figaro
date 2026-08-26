@@ -35,6 +35,9 @@ type Config struct {
 	// not apply to WebSocket upgrades, so a page carrying an ambient session
 	// cookie could otherwise open a tunnel and speak raw JSON-RPC.
 	Origins []string
+	// Policy gates methods once an identity is known. Nil allows every
+	// method, which is a decision the caller states rather than inherits.
+	Policy MethodPolicy
 	// Hosts is the Host: header allowlist. Empty accepts any Host, which is
 	// only safe on a unix socket; a loopback TCP bind wants this set, or a
 	// DNS rebinding attack reaches it from a browser on the same machine.
@@ -135,6 +138,10 @@ func New(cfg Config) (*Server, error) {
 	if log == nil {
 		log = slog.Default()
 	}
+	authn, err := newAuthenticator(cfg)
+	if err != nil {
+		return nil, err
+	}
 	s := &Server{cfg: cfg, log: log}
 
 	mux := http.NewServeMux()
@@ -143,6 +150,8 @@ func New(cfg Config) (*Server, error) {
 		Origins:   cfg.Origins,
 		MaxAge:    cfg.MaxConnAge,
 		Keepalive: cfg.Keepalive,
+		Authn:     authn,
+		Policy:    cfg.Policy,
 		Log:       log,
 	})
 	mux.HandleFunc("GET /v1/health", func(w http.ResponseWriter, r *http.Request) {

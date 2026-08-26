@@ -4,6 +4,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"text/template"
 
@@ -58,6 +59,11 @@ func buildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolv
 	}
 
 	strategies := environmentStrategies(reg)
+	// The FILE comes before the stored key and before hush: it is what a
+	// SERVER has. A machine has no keyring for hush to unlock, so where this
+	// is set it is the only source that can work; where it is not set it
+	// costs one stat and the chain falls through to a person's credentials.
+	strategies = append(strategies, &auth.FileValue{Path: apiKeyFile(loaded, providerName)})
 	strategies = append(strategies,
 		&auth.ConfigValue{Get: func() string {
 			var pa config.ProviderAuth
@@ -79,6 +85,18 @@ func buildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolv
 		})
 	}
 	return &auth.Aggregate{Strategies: strategies}, nil
+}
+
+// apiKeyFile resolves the credential path for a provider: the per-provider
+// config file first, then a conventional environment variable so a unit can
+// point at $CREDENTIALS_DIRECTORY without a config file at all.
+func apiKeyFile(loaded *config.Loaded, providerName string) string {
+	var pa config.ProviderAuth
+	_ = loaded.LoadProviderAuth(providerName, &pa)
+	if pa.APIKeyFile != "" {
+		return pa.APIKeyFile
+	}
+	return os.Getenv("FIGARO_" + strings.ToUpper(providerName) + "_API_KEY_FILE")
 }
 
 func environmentStrategies(reg *providerPkg.Registration) []auth.CredentialStrategy {

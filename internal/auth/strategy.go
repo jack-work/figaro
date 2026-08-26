@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync/atomic"
 
 	hush "github.com/jack-work/hush/client"
@@ -168,3 +169,53 @@ func (o *OAuth) Invalidate(token string) error {
 type EndpointCarrier interface {
 	Endpoint() string
 }
+
+// FileValue reads a token from a file on disk.
+//
+// IT EXISTS FOR MACHINES. hush is a human-plane agent: it unlocks a person's
+// credentials from a person's keyring and deliberately dies with a session. A
+// server has no session and no keyring, so putting a hush passphrase in a
+// secret store the machine can decrypt unattended keeps all of hush's
+// ceremony and none of its property -- it is sops with extra steps.
+//
+// The line the platform already draws is the right one: secrets belonging to
+// a MACHINE live in the machine's secret store; secrets belonging to a PERSON
+// live in hush. A hosted figaro's provider keys belong to the machine, and
+// this is how they arrive -- systemd LoadCredential drops a file into
+// $CREDENTIALS_DIRECTORY and hands us the path.
+type FileValue struct {
+	// Path to a file whose contents are the token. Surrounding whitespace is
+	// trimmed, because every mechanism that writes one of these -- a heredoc,
+	// an editor, `echo` -- leaves a trailing newline, and a bearer with \n on
+	// the end fails authentication in a way that reads like a wrong key.
+	Path string
+}
+
+func (f *FileValue) TryResolve() (string, bool, error) {
+	if f.Path == "" {
+		return "", false, nil
+	}
+	b, err := os.ReadFile(f.Path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Absent is "not my turn", not a failure: this strategy sits in
+			// an Aggregate beside env vars and hush, and a config that names
+			// no file must fall through rather than fail the chain.
+			return "", false, nil
+		}
+		// Present but unreadable IS a failure, and a loud one. The usual
+		// cause is a credential mode or owner that does not match the
+		// service user, and silently falling through would surface it as
+		// "no credential available" three layers away from the mistake.
+		return "", false, fmt.Errorf("read credential file %s: %w", f.Path, err)
+	}
+	v := strings.TrimSpace(string(b))
+	if v == "" {
+		return "", false, fmt.Errorf("credential file %s is empty", f.Path)
+	}
+	return v, true, nil
+}
+
+// Invalidate is a no-op: the file is the source of truth and this process
+// does not get to decide it is wrong. Rotating it is the operator's job.
+func (*FileValue) Invalidate(string) error { return nil }

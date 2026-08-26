@@ -739,6 +739,17 @@ type ProviderAuth struct {
 	// encrypted; plain string otherwise.
 	APIKey string `toml:"api_key"`
 
+	// APIKeyFile names a file whose contents are the credential. It is the
+	// MACHINE's way in: systemd LoadCredential drops a file into
+	// $CREDENTIALS_DIRECTORY from sops and hands over the path, and nothing
+	// secret ever enters the nix store or this config file.
+	//
+	// It is tried BEFORE the stored api_key and before hush. A server has no
+	// keyring for hush to talk to, so on a host the file is the only source
+	// that works; on a workstation it is simply absent and the chain falls
+	// through to the credentials a person owns.
+	APIKeyFile string `toml:"api_key_file"`
+
 	// OAuth tokens (AGE-encrypted when present).
 	AccessToken  string `toml:"access_token"`
 	RefreshToken string `toml:"refresh_token"`

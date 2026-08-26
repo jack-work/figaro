@@ -186,4 +186,3 @@ func (rs Rules) Check(r Request) Decision {
 // the -32000..-32099 application range reserved by JSON-RPC 2.0, alongside
 // figaro's other typed codes in internal/rpc.
 const ErrCode = -32020
-

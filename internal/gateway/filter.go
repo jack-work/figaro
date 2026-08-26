@@ -27,11 +27,17 @@ type Decision struct {
 	Reason string
 }
 
-// Filter checks each request's method before forwarding it.
+// Filter inspects each client->server frame. It is where the two things that
+// must happen per-frame live: the method policy, and the attribution rewrite
+// that stops a remote caller naming itself any aria.
 type Filter struct {
-	// Check is consulted once per request frame. Notifications and responses
-	// from the client (there are none in practice) pass untouched.
+	// Check is consulted once per request frame. Nil allows everything --
+	// which is a decision the caller makes explicitly, not a default.
 	Check func(method string) Decision
+	// Rewrite replaces a frame's params before forwarding. Nil forwards the
+	// original bytes verbatim. See rewriteEnvelope for why the payload is
+	// still never re-encoded even when this is set.
+	Rewrite func(params json.RawMessage) (json.RawMessage, error)
 }
 
 // frame is the sliver of JSON-RPC the filter needs. Everything else in the
@@ -40,6 +46,7 @@ type Filter struct {
 type frame struct {
 	Method string           `json:"method"`
 	ID     *json.RawMessage `json:"id"`
+	Params json.RawMessage  `json:"params"`
 }
 
 // Pump copies src to dst, refusing frames the policy denies. A denied
@@ -83,10 +90,48 @@ func (f *Filter) Pump(src io.ReadWriter, dst io.Writer) error {
 			}
 		}
 
+		// ATTRIBUTION IS REPLACED, never trusted. Only the params object is
+		// rebuilt; the surrounding frame is reassembled from the fields we
+		// decoded, and every params key we do not own survives byte-exact
+		// as a RawMessage.
+		if f.Rewrite != nil && fr.Method != "" {
+			rebuilt, err := f.rewriteLine(line, fr)
+			if err != nil {
+				if fr.ID != nil {
+					if werr := writeRefusal(src, *fr.ID, fr.Method, "malformed request envelope"); werr != nil {
+						return werr
+					}
+				}
+				continue
+			}
+			line = rebuilt
+		}
+
 		if _, werr := dst.Write(line); werr != nil {
 			return werr
 		}
 	}
+}
+
+// rewriteLine rebuilds one frame with rewritten params. It decodes the whole
+// message into a raw map so that any top-level field this gateway has never
+// heard of -- a jsonrpc extension, a future envelope slot -- is carried
+// across untouched rather than dropped by a typed round trip.
+func (f *Filter) rewriteLine(line []byte, fr frame) ([]byte, error) {
+	var msg map[string]json.RawMessage
+	if err := json.Unmarshal(line, &msg); err != nil {
+		return nil, err
+	}
+	next, err := f.Rewrite(fr.Params)
+	if err != nil {
+		return nil, err
+	}
+	msg["params"] = next
+	out, err := json.Marshal(msg)
+	if err != nil {
+		return nil, err
+	}
+	return append(out, '\n'), nil
 }
 
 // readLine returns one NDJSON line INCLUDING its terminating newline, so the
