@@ -20,6 +20,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/middleware"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -29,13 +30,13 @@ import (
 func TestHubHandlersAreGuarded(t *testing.T) {
 	var seen []string
 	hb := newAriaHub("test", "")
-	hb.guard = func(m map[string]jkrpc.HandlerFunc) map[string]jkrpc.HandlerFunc {
-		return authz.Guard(m, authz.AriaHeader{Enabled: false},
+	hb.dispatch = middleware.Chain(
+		authz.Middleware(authz.AriaHeader{Enabled: false},
 			authz.PolicyFunc(func(r authz.Request) authz.Decision {
 				seen = append(seen, r.Method)
 				return authz.Deny("policy consulted")
-			}))
-	}
+			})),
+	)(hb.route)
 
 	served := hb.handlers()
 	methods := figaro.AgentMethods()
@@ -95,13 +96,13 @@ func TestAgencyMethodsAreOnTheGuardedDoor(t *testing.T) {
 	}
 }
 
-// A nil guard serves unguarded. That is the pre-fix behaviour, kept only so
-// the hub can be built in tests without a policy -- and pinned here so nobody
-// mistakes it for the production path. hubFor always sets a guard.
-func TestNilGuardServesUnguarded(t *testing.T) {
+// A nil dispatch falls back to bare route. That is kept ONLY so a test can
+// build a hub without a policy, and it is pinned here so nobody mistakes it
+// for the production path: hubFor always composes a chain.
+func TestNilDispatchFallsBackToBareRoute(t *testing.T) {
 	hb := newAriaHub("test", "")
-	if hb.guard != nil {
-		t.Fatal("a freshly built hub should carry no guard until hubFor sets one")
+	if hb.dispatch != nil {
+		t.Fatal("a freshly built hub should carry no dispatch until hubFor sets one")
 	}
 	if len(hb.handlers()) != len(figaro.AgentMethods()) {
 		t.Fatal("an unguarded hub should still serve the full method set")

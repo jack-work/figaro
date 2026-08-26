@@ -344,7 +344,7 @@ four load-bearing assumptions the stack does not honor." Corrections:
 **Step 0 blocks everything**: C3. Until the guard sits below hub dispatch,
 there is no point gating a door into an ungated house.
 
-- [x] **0. Guard below hub dispatch.** `ariaHub.guard`, set by `hubFor`.
+- [x] **0. Guard below hub dispatch.** `ariaHub.dispatch`, composed by `hubFor`.
       The agency methods — `qua`, `set`, `study`, `cast`, `drop`,
       `interrupt`, the queue verbs — were served with no policy at all.
       Enumeration test so a new method cannot slip through.
@@ -354,9 +354,18 @@ there is no point gating a door into an ungated house.
       to assert the refusal.
 - [x] **2. `figaro serve`, unix socket only.** A `tcp://` address is refused
       rather than downgraded. Browser origins denied by default.
+- [x] **2b. Interception is one concept.** `internal/middleware` holds a
+      generic `Middleware[H any]` and one `Chain[H any]`; `rpc.MethodHandler`
+      carries the method as an argument so a handler can be decorated at all.
+      `authz.Middleware` is the single policy decision (`authz.Guard` is now
+      an adapter onto it for the map-shaped angelus door), and dressing — four
+      lines hand-inlined at the top of `route()` — is middleware beside it.
+      **Order is tested, not commented**: authz outermost, so a refused caller
+      never reaches the step that reads outfit files off disk.
 - [ ] 3. The refusal table: (authn × bind reachability), every cell tested;
       bind-then-inspect `listener.Addr()`; `Host` allowlist (C5).
-- [ ] 4. Envelope rewriting on ingress; `upstream` + `doorkey` authenticators.
+- [ ] 4. Envelope rewriting on ingress (the THIRD params-rewriting hook, and
+      now it can only be written as middleware); `upstream` + `doorkey`.
 - [ ] 5. Form face: GET/PATCH/SSE, pooled per-aria connections.
 - [ ] 6. Wire gaps: `SubscribeFrom` on the wire, typed `ErrVersionConflict`,
       golden vectors.
