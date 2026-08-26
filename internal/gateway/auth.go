@@ -32,16 +32,56 @@ type authenticator interface {
 }
 
 func newAuthenticator(c Config) (authenticator, error) {
+	var base authenticator
 	switch c.Authn {
 	case AuthnNone:
-		return anonymousAuth{}, nil
+		base = anonymousAuth{}
 	case AuthnUpstream:
-		return upstreamAuth{}, nil
+		base = upstreamAuth{}
 	case AuthnDoorkey:
-		return doorkeyAuth{secret: c.Doorkey}, nil
+		base = doorkeyAuth{secret: c.Doorkey}
 	default:
 		return nil, fmt.Errorf("unknown authn %q", c.Authn)
 	}
+	if len(c.RequireGroups) > 0 {
+		return requireGroups{next: base, want: c.RequireGroups}, nil
+	}
+	return base, nil
+}
+
+// requireGroups is the ADMISSION gate: authentication says who you are, this
+// says whether you may be here at all.
+//
+// It exists because of a gap that is easy to miss and was live on spain. The
+// platform derives an lldap group from a site's requiredGroups and CREATES
+// it, and it derives a 2FA rule from the hostname -- but the Authelia rule
+// it writes is `policy: two_factor` with no subject restriction. So the group
+// exists, the config names it, and NOTHING CHECKS IT: every user who can
+// pass 2FA reaches the backend.
+//
+// That is the documented division of labour (the proxy authenticates, the
+// app authorizes), and every other service on the platform does its own
+// group check. This is figaro's.
+type requireGroups struct {
+	next authenticator
+	want []string
+}
+
+func (g requireGroups) authenticate(r *http.Request) (authz.Identity, error) {
+	id, err := g.next.authenticate(r)
+	if err != nil {
+		return id, err
+	}
+	for _, w := range g.want {
+		for _, have := range id.Groups {
+			if have == w {
+				return id, nil
+			}
+		}
+	}
+	return authz.Identity{}, fmt.Errorf(
+		"%s is not in %s: this door admits those groups and no others",
+		id.String(), strings.Join(g.want, " or "))
 }
 
 // anonymousAuth admits everyone. Legitimate only on a unix socket, which the

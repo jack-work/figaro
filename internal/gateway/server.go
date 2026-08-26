@@ -35,6 +35,11 @@ type Config struct {
 	// not apply to WebSocket upgrades, so a page carrying an ambient session
 	// cookie could otherwise open a tunnel and speak raw JSON-RPC.
 	Origins []string
+	// RequireGroups admits only callers holding one of these groups. Empty
+	// admits anyone the authenticator accepted, which is correct for a
+	// doorkey (holding the key IS the authorization) and dangerous behind a
+	// proxy that authenticates a whole directory.
+	RequireGroups []string
 	// Policy gates methods once an identity is known. Nil allows every
 	// method, which is a decision the caller states rather than inherits.
 	Policy MethodPolicy

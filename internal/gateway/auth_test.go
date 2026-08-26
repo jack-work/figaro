@@ -207,3 +207,67 @@ func TestUnauthorizedUpgradeIsAStatusNotASocket(t *testing.T) {
 		t.Fatalf("status = %d, want 401", resp.StatusCode)
 	}
 }
+
+// ── the admission gate ───────────────────────────────────────────────────
+//
+// This is the gap that was LIVE ON SPAIN. kelliher-web derives an lldap
+// group from a site's requiredGroups and creates it, and derives a 2FA rule
+// from the hostname -- but the Authelia rule is `policy: two_factor` with no
+// subject restriction. The group existed, the config named it, and nothing
+// checked it: every directory user who could pass 2FA reached the daemon.
+
+func TestRequireGroupsAdmitsOnlyNamedGroups(t *testing.T) {
+	gate := requireGroups{next: upstreamAuth{}, want: []string{"figaro-admin"}}
+
+	req := func(user, groups string) *http.Request {
+		r := httptest.NewRequest("GET", "/v1/socket", nil)
+		r.Header.Set("Remote-User", user)
+		if groups != "" {
+			r.Header.Set("Remote-Groups", groups)
+		}
+		return r
+	}
+
+	if _, err := gate.authenticate(req("gluck", "figaro-admin")); err != nil {
+		t.Fatalf("an admin was refused: %v", err)
+	}
+	if _, err := gate.authenticate(req("gluck", "keel-admin,figaro-admin")); err != nil {
+		t.Fatalf("an admin holding several groups was refused: %v", err)
+	}
+
+	// THE ONES THAT MATTER: authenticated, but not admitted.
+	for _, groups := range []string{"", "keel-admin", "files-admin,matrix-user"} {
+		_, err := gate.authenticate(req("someone", groups))
+		if err == nil {
+			t.Fatalf("a 2FA-authenticated user with groups %q was ADMITTED; "+
+				"Authelia does not check the group, so this gate is the only one", groups)
+		}
+		if !strings.Contains(err.Error(), "figaro-admin") {
+			t.Errorf("refusal does not name the required group: %v", err)
+		}
+	}
+}
+
+// The gate must not paper over a failed authentication: a caller with no
+// Remote-User is refused for THAT reason, before groups are consulted.
+func TestRequireGroupsDoesNotRescueABadIdentity(t *testing.T) {
+	gate := requireGroups{next: upstreamAuth{}, want: []string{"figaro-admin"}}
+	r := httptest.NewRequest("GET", "/v1/socket", nil)
+	r.Header.Set("Remote-Groups", "figaro-admin") // groups but no user
+	if _, err := gate.authenticate(r); err == nil {
+		t.Fatal("groups alone authenticated a caller with no Remote-User")
+	}
+}
+
+// A doorkey holder is admitted because holding the key IS the authorization;
+// the authenticator stamps the admin group itself. Without this, configuring
+// both would lock out the peer path.
+func TestRequireGroupsAdmitsDoorkeyHolder(t *testing.T) {
+	const secret = "0123456789abcdef0123456789abcdef"
+	gate := requireGroups{next: doorkeyAuth{secret: secret}, want: []string{"figaro-admin"}}
+	r := httptest.NewRequest("GET", "/v1/socket", nil)
+	r.Header.Set("Authorization", "Bearer "+secret)
+	if _, err := gate.authenticate(r); err != nil {
+		t.Fatalf("a doorkey holder was refused by the group gate: %v", err)
+	}
+}

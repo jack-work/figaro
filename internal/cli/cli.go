@@ -1445,6 +1445,7 @@ serve does not start the daemon. It fronts one that is already running.`,
 			{Long: "doorkey-file", Description: "File holding the shared secret for --authn doorkey"},
 			{Long: "origin", Description: "Comma-separated browser origins allowed to open a tunnel"},
 			{Long: "host", Description: "Comma-separated Host: header allowlist (set this on any TCP bind)"},
+			{Long: "require-group", Description: "Admit only callers holding one of these groups (comma-separated)"},
 			{Long: "tls-terminated", IsBool: true, Description: "Assert that something in front terminates TLS"},
 			{Long: "max-conn-age", Description: "Cap one tunnel's lifetime, e.g. 8h. Forces re-authorization (default 8h on TCP)"},
 		},
@@ -1459,12 +1460,13 @@ serve does not start the daemon. It fronts one that is already running.`,
 				return out
 			}
 			o := ServeOpts{
-				Listen:      ctx.Flag("listen"),
-				Authn:       ctx.Flag("authn"),
-				DoorkeyFile: ctx.Flag("doorkey-file"),
-				Origins:     split(ctx.Flag("origin")),
-				Hosts:       split(ctx.Flag("host")),
-				TLSDone:     ctx.BoolFlag("tls-terminated"),
+				Listen:        ctx.Flag("listen"),
+				Authn:         ctx.Flag("authn"),
+				DoorkeyFile:   ctx.Flag("doorkey-file"),
+				Origins:       split(ctx.Flag("origin")),
+				Hosts:         split(ctx.Flag("host")),
+				RequireGroups: split(ctx.Flag("require-group")),
+				TLSDone:       ctx.BoolFlag("tls-terminated"),
 			}
 			if v := ctx.Flag("max-conn-age"); v != "" {
 				d, err := time.ParseDuration(v)

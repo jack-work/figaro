@@ -32,6 +32,7 @@ HOSTS="$HOSTNAME_ALLOWED,127.0.0.1"
 pass=0 fail=0
 
 cleanup() {
+	[ -n "${GW3_PID:-}" ] && kill "$GW3_PID" 2>/dev/null
 	[ -n "${GW2_PID:-}" ] && kill "$GW2_PID" 2>/dev/null
 	[ -n "${GW_PID:-}" ] && kill "$GW_PID" 2>/dev/null
 	[ -n "${DAEMON_PID:-}" ] && kill "$DAEMON_PID" 2>/dev/null
@@ -109,6 +110,28 @@ c=$(code -H "Host: $HOSTNAME_ALLOWED" \
 	-H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: AAAAAAAAAAAAAAAAAAAAAA==" \
 	"http://127.0.0.1:$PORT/v1/socket")
 [ "$c" = "401" ] && ok "upgrade with no Remote-User -> 401" || bad "no Remote-User -> $c, want 401"
+
+step "5b. the group gate -- authenticated is not the same as admitted"
+# Authelia's rule for the hostname is two_factor with NO subject restriction,
+# so every directory user who passes 2FA reaches this port. The group check
+# is the application's, and this is it.
+GATE_PORT=$((PORT + 2))
+"$FIG" serve --listen "tcp://127.0.0.1:$GATE_PORT" --authn upstream \
+	--host "$HOSTS" --require-group figaro-admin >"$RT/gw3.log" 2>&1 &
+GW3_PID=$!
+for _ in $(seq 1 60); do
+	curl -sf -m 1 -H "Host: $HOSTNAME_ALLOWED" "http://127.0.0.1:$GATE_PORT/v1/health" >/dev/null 2>&1 && break
+	sleep 0.2
+done
+up() {
+	code -H "Host: $HOSTNAME_ALLOWED" -H "Remote-User: $1" ${2:+-H "Remote-Groups: $2"} \
+		-H "Connection: Upgrade" -H "Upgrade: websocket" \
+		-H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: AAAAAAAAAAAAAAAAAAAAAA==" \
+		"http://127.0.0.1:$GATE_PORT/v1/socket"
+}
+c=$(up gluck figaro-admin);  [ "$c" = "101" ] && ok "admin admitted" || bad "admin -> $c"
+c=$(up someone keel-admin);  [ "$c" = "401" ] && ok "2FA user in the WRONG group refused" || bad "wrong group -> $c, want 401"
+c=$(up someone "");          [ "$c" = "401" ] && ok "2FA user in NO group refused" || bad "no group -> $c, want 401"
 
 step "6. an authenticated upgrade succeeds (Caddy's headers, simulated)"
 c=$(code -H "Host: $HOSTNAME_ALLOWED" \

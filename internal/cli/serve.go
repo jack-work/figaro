@@ -29,13 +29,14 @@ func defaultGatewaySocket() string {
 
 // ServeOpts is what the verb collected from the command line.
 type ServeOpts struct {
-	Listen      string
-	Authn       string
-	DoorkeyFile string
-	Origins     []string
-	Hosts       []string
-	TLSDone     bool
-	MaxConnAge  time.Duration
+	Listen        string
+	Authn         string
+	DoorkeyFile   string
+	Origins       []string
+	RequireGroups []string
+	Hosts         []string
+	TLSDone       bool
+	MaxConnAge    time.Duration
 }
 
 func runServe(loaded *config.Loaded, o ServeOpts) error {
@@ -87,6 +88,7 @@ func runServe(loaded *config.Loaded, o ServeOpts) error {
 		Authn:         gateway.Authn(o.Authn),
 		Doorkey:       doorkey,
 		Origins:       o.Origins,
+		RequireGroups: o.RequireGroups,
 		Hosts:         o.Hosts,
 		TLSTerminated: o.TLSDone,
 		MaxConnAge:    o.MaxConnAge,
