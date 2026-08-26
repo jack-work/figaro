@@ -442,11 +442,18 @@ there is no point gating a door into an ungated house.
       the bound listener, never the config string** — `":9090"`, `"0.0.0.0"`,
       `"::ffff:127.0.0.1"` all defeat a parse. `Host` allowlist against DNS
       rebinding. Tunnels capped (8h default on TCP) and pinged every 30s.
-- [ ] 4. Envelope rewriting on ingress (the THIRD params-rewriting hook, and
-      now it can only be written as middleware); `upstream` + `doorkey`
-      authenticator implementations behind the tunnel.
-- [ ] 4b. **`api_key_file`** — provider credentials from a path. Blocking for
-      spain: hush is a human-plane agent and does not belong on a server.
+- [x] **4. Authenticators and the envelope rewrite.** `upstream`, `doorkey`,
+      `none`, plus a `--require-group` admission gate. Every frame's
+      attribution is stripped and replaced with what the gateway
+      authenticated, so a remote caller cannot name itself another aria.
+- [x] **4b. `api_key_file`.** Provider credentials from a path, tried before
+      the stored key and before hush. Machine secrets in sops; hush stays off
+      the server.
+- [x] **4c. Deployed on spain.** `fig.kelliher.info`, two units, loopback TCP
+      behind Caddy + Authelia, `--require-group figaro-admin`. Verified
+      against the live box: admin 101, wrong group 401, no group 401, no
+      Remote-User 401, wrong Host 421. A form was minted on spain from the
+      workstation through the tunnel and is durable in its WAL.
 - [ ] 5. Form face: GET/PATCH/SSE, pooled per-aria connections.
 - [ ] 6. Wire gaps: `SubscribeFrom` on the wire, typed `ErrVersionConflict`,
       golden vectors.
@@ -474,6 +481,25 @@ Steps 0–2 are in. The security argument for stopping exactly there:
 
 The next increment that changes the trust story is step 3, and it must not
 land without its table of tests.
+
+## 8b. What the spain deploy found
+
+**Authelia was not checking the group.** kelliher-web derives the lldap group
+from `requiredGroups` and creates it, and derives a 2FA rule from the
+hostname — but the rule is `policy: two_factor` with **no subject
+restriction**. So `figaro-admin` existed, the config named it, and nothing
+enforced it: every directory user who could pass 2FA reached a daemon that
+runs arbitrary shell.
+
+This is the platform's documented division of labour rather than a platform
+bug — the proxy authenticates, the app authorizes, and keel's `may_comment`
+is the same shape. figaro simply was not doing its half. `--require-group` is
+that half, and the nix module wires it from the same option that creates the
+group, so the two cannot drift apart again.
+
+**Still open on spain:** no provider key is deployed, so spain can list, mint
+and serve state but cannot run a turn. Deliberate — the key is Jack's to
+place, and the recipe is in the flake comment.
 
 ## 9. Testing
 
