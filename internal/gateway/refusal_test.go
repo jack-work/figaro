@@ -18,28 +18,32 @@ func TestRefusalTable(t *testing.T) {
 	cases := []struct {
 		authn Authn
 		reach reach
+		tls   bool
 		allow bool
 		why   string
 	}{
 		// none: the kernel is the only gate it has.
-		{AuthnNone, reachUnix, true, "filesystem permissions are a real gate"},
-		{AuthnNone, reachLoopback, false, "every local uid is an admin"},
-		{AuthnNone, reachOpen, false, "anonymous remote shell execution"},
+		{AuthnNone, reachUnix, false, true, "filesystem permissions are a real gate"},
+		{AuthnNone, reachLoopback, false, false, "every local uid is an admin"},
+		{AuthnNone, reachOpen, false, false, "anonymous remote shell execution"},
 
 		// upstream: believable only where nothing but the proxy can arrive.
-		{AuthnUpstream, reachUnix, true, "only the proxy can reach the inode"},
-		{AuthnUpstream, reachLoopback, true, "the house pattern: proxy on the same box"},
-		{AuthnUpstream, reachOpen, false, "anyone can claim Remote-Groups: admin"},
+		{AuthnUpstream, reachUnix, false, true, "only the proxy can reach the inode"},
+		{AuthnUpstream, reachLoopback, false, true, "the house pattern: proxy on the same box"},
+		{AuthnUpstream, reachOpen, false, false, "anyone can claim Remote-Groups: admin"},
 
 		// doorkey: carries its own proof, so exposure is a TLS question and
 		// Config.Check owns it, not this table.
-		{AuthnDoorkey, reachUnix, true, "belt and braces"},
-		{AuthnDoorkey, reachLoopback, true, "a credential on every request"},
-		{AuthnDoorkey, reachOpen, true, "a credential on every request"},
+		{AuthnDoorkey, reachUnix, false, true, "belt and braces"},
+		{AuthnDoorkey, reachLoopback, false, true, "a credential on every request"},
+		// Plaintext on a routable address is the one doorkey refusal, and it
+		// is a confidentiality question rather than an authentication one.
+		{AuthnDoorkey, reachOpen, false, false, "a bearer in plaintext on the wire"},
+		{AuthnDoorkey, reachOpen, true, true, "TLS terminated in front"},
 	}
 
 	for _, c := range cases {
-		err := admit(c.authn, c.reach)
+		err := admit(c.authn, c.reach, c.tls)
 		if c.allow && err != nil {
 			t.Errorf("admit(%s, %s) refused but should allow (%s): %v",
 				c.authn, c.reach, c.why, err)
@@ -52,6 +56,7 @@ func TestRefusalTable(t *testing.T) {
 			// A refusal that does not say what to do instead is a wall.
 			if !strings.Contains(err.Error(), "unix socket") &&
 				!strings.Contains(err.Error(), "loopback") &&
+				!strings.Contains(err.Error(), "TLS") &&
 				!strings.Contains(err.Error(), "authenticator") {
 				t.Errorf("admit(%s, %s) refuses without a remedy: %v", c.authn, c.reach, err)
 			}
@@ -64,17 +69,17 @@ func TestRefusalTable(t *testing.T) {
 func TestTableIsTotal(t *testing.T) {
 	reaches := []reach{reachUnix, reachLoopback, reachOpen}
 	if len(KnownAuthn)*len(reaches) != 9 {
-		t.Fatalf("the table has %d cells; TestRefusalTable enumerates 9. "+
+		t.Fatalf("the table has %d cells; TestRefusalTable enumerates 9 (plus a TLS variant). "+
 			"Add the new cells there, deliberately, rather than letting them default.",
 			len(KnownAuthn)*len(reaches))
 	}
 	for _, a := range KnownAuthn {
 		for _, r := range reaches {
 			// Must not panic and must give a definite answer either way.
-			_ = admit(a, r)
+			_ = admit(a, r, false)
 		}
 	}
-	if err := admit(Authn("invented"), reachUnix); err == nil {
+	if err := admit(Authn("invented"), reachUnix, false); err == nil {
 		t.Fatal("an unknown authenticator was admitted: it must refuse")
 	}
 }
@@ -186,22 +191,27 @@ func TestDoorkeyValidation(t *testing.T) {
 		}
 	})
 
-	t.Run("plaintext tcp refuses without a TLS promise", func(t *testing.T) {
-		c := base
-		c.Listen, c.Doorkey = "tcp://0.0.0.0:9099", strings.Repeat("k", 32)
-		err := c.Defaults().Check()
+	// Loopback plaintext is FINE: the bytes never leave the machine. This
+	// refused once, from Config.Check judging the "tcp://" prefix -- the
+	// exact mistake of trusting a string that classify() exists to avoid.
+	t.Run("loopback plaintext is allowed", func(t *testing.T) {
+		if err := admit(AuthnDoorkey, reachLoopback, false); err != nil {
+			t.Fatalf("a bearer on loopback was refused: %v", err)
+		}
+	})
+
+	t.Run("routable plaintext refuses", func(t *testing.T) {
+		err := admit(AuthnDoorkey, reachOpen, false)
 		if err == nil {
-			t.Fatal("a bearer token was about to cross plaintext TCP")
+			t.Fatal("a bearer token was about to cross a routable link in plaintext")
 		}
 		if !strings.Contains(err.Error(), "plaintext") {
 			t.Fatalf("wrong refusal: %v", err)
 		}
 	})
 
-	t.Run("tcp is fine once TLS is asserted", func(t *testing.T) {
-		c := base
-		c.Listen, c.Doorkey, c.TLSTerminated = "tcp://0.0.0.0:9099", strings.Repeat("k", 32), true
-		if err := c.Defaults().Check(); err != nil {
+	t.Run("routable is fine once TLS is asserted", func(t *testing.T) {
+		if err := admit(AuthnDoorkey, reachOpen, true); err != nil {
 			t.Fatalf("refused a TLS-fronted doorkey: %v", err)
 		}
 	})
@@ -231,7 +241,7 @@ func TestDefaultsAreConservative(t *testing.T) {
 		t.Fatalf("default keepalive is %v; Cloudflare reaps at ~100s", c.Keepalive)
 	}
 	// And the default authn must then be unable to serve anything exposed.
-	if admit(c.Authn, reachOpen) == nil {
+	if admit(c.Authn, reachOpen, false) == nil {
 		t.Fatal("the DEFAULT configuration would serve an open port")
 	}
 }

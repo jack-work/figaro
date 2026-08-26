@@ -77,7 +77,7 @@ func (c Config) Defaults() Config {
 // address is well-formed, the authenticator is known, and its secret is
 // present. Exposure is judged later, by admit(), against the real listener.
 func (c Config) Check() error {
-	scheme, addr, err := splitListen(c.Listen)
+	_, addr, err := splitListen(c.Listen)
 	if err != nil {
 		return err
 	}
@@ -97,11 +97,9 @@ func (c Config) Check() error {
 		if len(c.Doorkey) < 16 {
 			return errors.New("doorkey is shorter than 16 bytes: use real randomness")
 		}
-		if scheme == "tcp" && !c.TLSTerminated {
-			return fmt.Errorf(
-				"authn=doorkey would send a bearer token in plaintext to %s.\n"+
-					"Terminate TLS in front and pass --tls-terminated, or bind a unix socket", c.Listen)
-		}
+		// The plaintext question is answered by admit() against the BOUND
+		// address, not here: "tcp://" says nothing about whether the socket
+		// is routable, and loopback plaintext is fine.
 	}
 	return nil
 }
@@ -207,7 +205,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	// decide. Judging the config string instead would miss ":9090",
 	// "0.0.0.0", "::ffff:127.0.0.1", and a hostname resolving off-box.
 	r := classify(ln)
-	if err := admit(s.cfg.Authn, r); err != nil {
+	if err := admit(s.cfg.Authn, r, s.cfg.TLSTerminated); err != nil {
 		ln.Close()
 		return fmt.Errorf("refusing to serve: %w", err)
 	}

@@ -110,7 +110,7 @@ func classify(ln net.Listener) reach {
 // unreachable except through the proxy; `doorkey` carries its own proof and
 // so is the only cell that survives exposure, and even then only with TLS
 // terminated in front.
-func admit(a Authn, r reach) error {
+func admit(a Authn, r reach, tlsTerminated bool) error {
 	switch a {
 	case AuthnNone:
 		if r == reachUnix {
@@ -138,9 +138,23 @@ func admit(a Authn, r reach) error {
 		}
 
 	case AuthnDoorkey:
-		// A bearer proves something on every request, so exposure is a
-		// transport-confidentiality question rather than an authentication
-		// one. Config.Check gates the plaintext case separately.
+		// A bearer proves something on every request, so the question is not
+		// authentication but CONFIDENTIALITY: can anyone read the token off
+		// the wire.
+		//
+		// On a unix socket or loopback the answer is no -- the bytes never
+		// leave the machine, and anyone positioned to read them could read
+		// the process memory holding the secret anyway. It is only once the
+		// traffic is routable that plaintext matters.
+		//
+		// This check lived in Config.Check() and refused loopback too, which
+		// was wrong for exactly the reason the rest of this file exists: it
+		// was judging a config string instead of the address that got bound.
+		if r == reachOpen && !tlsTerminated {
+			return fmt.Errorf(
+				"authn=doorkey would send a bearer token in plaintext over %s.\n"+
+					"Terminate TLS in front and pass --tls-terminated, or bind loopback", r)
+		}
 		return nil
 
 	default:
