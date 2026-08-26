@@ -1414,33 +1414,66 @@ flow writes both through the daemon, so a client never has to know the path.`,
 		Long: `Serves two things on one listener: a tunnel at /v1/socket that carries the
 whole JSON-RPC surface unchanged, and a health endpoint at /v1/health.
 
-The listener is a UNIX SOCKET. A tcp:// address is refused rather than
-quietly downgraded: the authenticators and bind-address checks that would
-make a port safe are not built yet, and a unix socket inherits the same
-"you had to be me to reach it" argument the angelus socket already rests on.
-Put Caddy (or any reverse proxy) in front of the socket to reach it from a
-network.
+WHICH AUTHENTICATOR MAY SERVE WHICH ADDRESS is a table, and it is checked
+against the address the kernel ACTUALLY bound -- not the string you typed,
+because ":9090", "0.0.0.0" and "::ffff:127.0.0.1" all defeat a config parse.
+
+  authn=none      unix socket only. Anyone who reaches the port is an admin.
+  authn=upstream  unix or loopback. Trusts Remote-User/Remote-Groups, which
+                  only a reverse proxy on the same box should be able to set.
+  authn=doorkey   anywhere, but plaintext TCP needs --tls-terminated.
+
+A refused combination does not start. Loopback is not a principal boundary:
+every local uid reaches it, and a published container port or an ssh -L tunnel
+re-exposes it. Where that is not enough the answer is a credential.
 
 Browser origins are DENIED by default. CORS does not apply to WebSocket
 upgrades, so a page carrying an ambient session cookie could otherwise open
-a tunnel and speak raw JSON-RPC; --origin is the opt-in.
+a tunnel and speak raw JSON-RPC; --origin is the opt-in. On any TCP bind set
+--host too, or a browser reaches you by DNS rebinding.
+
+TUNNELS ARE CAPPED (8h by default on TCP). Forward authentication happens on
+the upgrade request only: once a WebSocket is established no frame is ever
+re-authorized, so a revoked operator keeps a live shell until the socket
+drops. The cap forces a re-upgrade, and a re-upgrade is re-authorized.
 
 serve does not start the daemon. It fronts one that is already running.`,
-		Usage: "serve [--listen unix:///path] [--origin <url>[,<url>]]",
+		Usage: "serve [--listen <uri>] [--authn <n>] [--doorkey-file <p>] [--origin <urls>] [--host <names>]",
 		Flags: []cmdkit.FlagDef{
-			{Long: "listen", Description: "unix:///path to bind (default: gateway.sock beside the angelus socket)"},
+			{Long: "listen", Description: "unix:///path or tcp://host:port (default: gateway.sock beside the angelus socket)"},
+			{Long: "authn", Default: "none", Description: "none | upstream | doorkey"},
+			{Long: "doorkey-file", Description: "File holding the shared secret for --authn doorkey"},
 			{Long: "origin", Description: "Comma-separated browser origins allowed to open a tunnel"},
+			{Long: "host", Description: "Comma-separated Host: header allowlist (set this on any TCP bind)"},
+			{Long: "tls-terminated", IsBool: true, Description: "Assert that something in front terminates TLS"},
+			{Long: "max-conn-age", Description: "Cap one tunnel's lifetime, e.g. 8h. Forces re-authorization (default 8h on TCP)"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
-			var origins []string
-			if o := ctx.Flag("origin"); o != "" {
-				for _, s := range strings.Split(o, ",") {
+			split := func(v string) []string {
+				var out []string
+				for _, s := range strings.Split(v, ",") {
 					if s = strings.TrimSpace(s); s != "" {
-						origins = append(origins, s)
+						out = append(out, s)
 					}
 				}
+				return out
 			}
-			return runServe(mustLoadConfig(), ctx.Flag("listen"), origins)
+			o := ServeOpts{
+				Listen:      ctx.Flag("listen"),
+				Authn:       ctx.Flag("authn"),
+				DoorkeyFile: ctx.Flag("doorkey-file"),
+				Origins:     split(ctx.Flag("origin")),
+				Hosts:       split(ctx.Flag("host")),
+				TLSDone:     ctx.BoolFlag("tls-terminated"),
+			}
+			if v := ctx.Flag("max-conn-age"); v != "" {
+				d, err := time.ParseDuration(v)
+				if err != nil {
+					return fmt.Errorf("--max-conn-age: %w", err)
+				}
+				o.MaxConnAge = d
+			}
+			return runServe(mustLoadConfig(), o)
 		},
 	})
 

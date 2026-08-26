@@ -13,7 +13,9 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/gateway"
@@ -25,9 +27,44 @@ func defaultGatewaySocket() string {
 	return filepath.Join(angelusRuntimeDir(), "gateway.sock")
 }
 
-func runServe(loaded *config.Loaded, listen string, origins []string) error {
+// ServeOpts is what the verb collected from the command line.
+type ServeOpts struct {
+	Listen      string
+	Authn       string
+	DoorkeyFile string
+	Origins     []string
+	Hosts       []string
+	TLSDone     bool
+	MaxConnAge  time.Duration
+}
+
+func runServe(loaded *config.Loaded, o ServeOpts) error {
+	listen := o.Listen
 	if listen == "" {
 		listen = "unix://" + defaultGatewaySocket()
+	}
+
+	// An uncapped tunnel on a NETWORK bind is an unbounded authorization:
+	// forward_auth runs on the upgrade only, so the socket outlives the
+	// session that opened it. Eight hours is a working day, and a re-upgrade
+	// is a re-authorization. A unix socket needs no cap -- reaching it
+	// already required being the right uid.
+	if o.MaxConnAge == 0 && strings.HasPrefix(listen, "tcp://") {
+		o.MaxConnAge = 8 * time.Hour
+	}
+
+	// THE SECRET COMES FROM A FILE, never a flag. An argument is visible in
+	// /proc, in a shell history, and in the process table of every other
+	// user on the box; a file is a path plus a mode. It is also what
+	// systemd LoadCredential hands you, which is how this arrives in
+	// production.
+	var doorkey string
+	if o.DoorkeyFile != "" {
+		b, err := os.ReadFile(o.DoorkeyFile)
+		if err != nil {
+			return fmt.Errorf("doorkey file: %w", err)
+		}
+		doorkey = strings.TrimSpace(string(b))
 	}
 
 	// The gateway fronts a LOCAL angelus, so one must be running. We do not
@@ -47,7 +84,12 @@ func runServe(loaded *config.Loaded, listen string, origins []string) error {
 	srv, err := gateway.New(gateway.Config{
 		Listen:        listen,
 		AngelusSocket: sock,
-		Origins:       origins,
+		Authn:         gateway.Authn(o.Authn),
+		Doorkey:       doorkey,
+		Origins:       o.Origins,
+		Hosts:         o.Hosts,
+		TLSTerminated: o.TLSDone,
+		MaxConnAge:    o.MaxConnAge,
 	})
 	if err != nil {
 		return err
@@ -57,7 +99,7 @@ func runServe(loaded *config.Loaded, listen string, origins []string) error {
 	defer stop()
 
 	fmt.Fprintf(stderrw, "figaro gateway on %s -> %s\n", listen, sock)
-	if len(origins) == 0 {
+	if len(o.Origins) == 0 {
 		// Say it out loud. An empty allowlist is the SAFE default, but it is
 		// also the one that makes a browser client fail with a handshake
 		// error that says nothing useful, so the operator should hear about
