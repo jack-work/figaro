@@ -1408,6 +1408,43 @@ flow writes both through the daemon, so a client never has to know the path.`,
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:  "serve",
+		Group: "System",
+		Short: "Expose this daemon over HTTP on a unix socket, so a reverse proxy or a browser can reach it",
+		Long: `Serves two things on one listener: a tunnel at /v1/socket that carries the
+whole JSON-RPC surface unchanged, and a health endpoint at /v1/health.
+
+The listener is a UNIX SOCKET. A tcp:// address is refused rather than
+quietly downgraded: the authenticators and bind-address checks that would
+make a port safe are not built yet, and a unix socket inherits the same
+"you had to be me to reach it" argument the angelus socket already rests on.
+Put Caddy (or any reverse proxy) in front of the socket to reach it from a
+network.
+
+Browser origins are DENIED by default. CORS does not apply to WebSocket
+upgrades, so a page carrying an ambient session cookie could otherwise open
+a tunnel and speak raw JSON-RPC; --origin is the opt-in.
+
+serve does not start the daemon. It fronts one that is already running.`,
+		Usage: "serve [--listen unix:///path] [--origin <url>[,<url>]]",
+		Flags: []cmdkit.FlagDef{
+			{Long: "listen", Description: "unix:///path to bind (default: gateway.sock beside the angelus socket)"},
+			{Long: "origin", Description: "Comma-separated browser origins allowed to open a tunnel"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			var origins []string
+			if o := ctx.Flag("origin"); o != "" {
+				for _, s := range strings.Split(o, ",") {
+					if s = strings.TrimSpace(s); s != "" {
+						origins = append(origins, s)
+					}
+				}
+			}
+			return runServe(mustLoadConfig(), ctx.Flag("listen"), origins)
+		},
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:  "doctor",
 		Group: "System",
 		Short: "Store and provider health: gc removes dead channels; schema reports channel versions; mem reports the daemon's footprint; provider shows recent provider round-trips (including in-flight); librettos recounts derived-form observers; skills lists what the binary ships; ttl lists the nodes carrying a lifetime and when it is spent",

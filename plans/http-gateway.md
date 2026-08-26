@@ -66,6 +66,49 @@ arias, or host none and act purely as a client-participant. **There is no
 server.** What this codebase occasionally calls "the server" is a peer that
 happens to own more.
 
+### Node identity and credentials (rev 3)
+
+Angeli resolve **to each other over HTTPS**, and every call between them is
+authenticated. That needs a notion of node identity figaro does not have yet:
+
+- **App registration.** A node is configured with a secret and an identity.
+  The credential it presents **encodes the figaro identity on whose behalf it
+  is calling**, so a remote node can authorize *different figaros
+  differently* rather than treating a whole peer as one principal. This is
+  the OAuth client-registration shape: node = client, figaro = subject.
+- **Short-lived bearer tokens.** The registration secret is the *long-lived*
+  credential and never travels on a request. It mints **short-TTL bearers**,
+  which are what the wire carries. This is the answer to the security
+  review's "no revocation on long-lived connections": a token that expires in
+  minutes bounds a leak without needing a revocation channel.
+- **A static entry point.** Remote configuration matters *even when a local
+  figaro is running*, because the useful shape is "connect to a remote figaro
+  endpoint that resolves to one gateway angelus on public DNS." That node is
+  a rendezvous, not an owner: it answers *who owns what* and the caller then
+  goes direct. It is the ring's bootstrap node.
+
+**Why this must wait for sandboxing to be *useful*, but not to be *built*.**
+Per-figaro authorization across nodes is exactly the "differentiated
+privilege" the doorkey argument said needs containment first. Building the
+credential *plumbing* now is fine — it is inert until a policy keys on it.
+Building a policy that *grants agency* to a subject on the strength of it is
+not. The plumbing is rev 3; the grants are post-sandbox.
+
+### Containerization
+
+The target deployment is one node per container: NixOS systemd-nspawn,
+compose-style actors, or k8s. Two constraints this puts on everything above:
+
+- **No ambient local state in the trust story.** A node's identity comes from
+  injected configuration (`LoadCredential`, a mounted secret), never from
+  "you had to be on this machine." The unix-socket argument that makes rev 3
+  step 1 safe does *not* survive containerization, so the network path must
+  be genuinely authenticated before a container ships.
+- **The angelus must be a foreground process** with no detaching grandchild.
+  `ensureAngelus` forks a detached daemon, which under `Type=exec` escapes
+  the supervisor. Containers need `figaro --angelus` as PID 1 of its unit and
+  `figaro serve` as a sibling with `BindsTo=`.
+
 > **Open for confirmation.** "Aria/form APIs come directly from the node" —
 > I read *directly* as contrasting with *through the remote angelus's control
 > plane*, with the connection still opened by the **local daemon** on the
@@ -301,18 +344,46 @@ four load-bearing assumptions the stack does not honor." Corrections:
 **Step 0 blocks everything**: C3. Until the guard sits below hub dispatch,
 there is no point gating a door into an ungated house.
 
-0. Move `authz.Guard` below hub dispatch; exhaustive method-class test.
-1. `Grants` policy, zero value denies; unknown policy name is fatal (C1, C2).
-2. Refusal table, bound-address check, `Host` allowlist (C5).
-3. `figaro serve`: tunnel face, envelope rewriting, mandatory Origin (C4).
-4. Form face: GET/PATCH/SSE with pooled per-aria connections.
-5. `since` on subscribe; typed `ErrVersionConflict`; golden vectors.
-6. Peer registry in the daemon: `figaro peer *`, credentials in `hush`,
-   federated `figaro.list`.
-7. Direct data-plane connections to the owning node.
-8. Nix module; deploy on spain.
+- [x] **0. Guard below hub dispatch.** `ariaHub.guard`, set by `hubFor`.
+      The agency methods — `qua`, `set`, `study`, `cast`, `drop`,
+      `interrupt`, the queue verbs — were served with no policy at all.
+      Enumeration test so a new method cannot slip through.
+- [x] **1. Fail closed.** `authz.Grants` (zero value denies), unknown policy
+      name refuses to start (`config.ValidateAuthz`, called before the lock
+      in `runAngelus`). The test that asserted the old fail-open is rewritten
+      to assert the refusal.
+- [x] **2. `figaro serve`, unix socket only.** A `tcp://` address is refused
+      rather than downgraded. Browser origins denied by default.
+- [ ] 3. The refusal table: (authn × bind reachability), every cell tested;
+      bind-then-inspect `listener.Addr()`; `Host` allowlist (C5).
+- [ ] 4. Envelope rewriting on ingress; `upstream` + `doorkey` authenticators.
+- [ ] 5. Form face: GET/PATCH/SSE, pooled per-aria connections.
+- [ ] 6. Wire gaps: `SubscribeFrom` on the wire, typed `ErrVersionConflict`,
+      golden vectors.
+- [ ] 7. Node identity: app registration, short-TTL bearers.
+- [ ] 8. Peer registry in the daemon; federated `figaro.list`.
+- [ ] 9. Direct data-plane connections to the owning node.
+- [ ] 10. Nix module; deploy on spain; container topology.
 
-Steps 0–5 are pure figaro. Step 6 is where the mesh begins.
+### What shipped in the first increment, and why it is the minimal safe one
+
+Steps 0–2 are in. The security argument for stopping exactly there:
+
+- A **unix socket is the trust model figaro already has.** The angelus socket
+  is 0600 and rests on "you had to be me to reach it." The gateway socket
+  inherits that argument unchanged and adds nothing new to trust.
+- **No TCP listener means the network findings are unreachable, not
+  unsolved.** Loopback detection, DNS rebinding, `X-Forwarded-For`, header
+  smuggling — none of them apply to a door with no port. That is a much
+  stronger claim than having fixed them.
+- It is **deployable behind Caddy today** (reverse proxies speak to unix
+  sockets), so spain is reachable without figaro opening a port itself.
+- And it closes **three real pre-existing holes** on the way: the ungated
+  agency surface, the fail-open policy factory, and the un-representable
+  deny-by-default.
+
+The next increment that changes the trust story is step 3, and it must not
+land without its table of tests.
 
 ## 9. Testing
 

@@ -28,6 +28,12 @@ type Identity struct {
 	// Label is an ASSERTED caller name (rpc.CallerLabelKey / FIGARO_CALLER),
 	// carried for ATTRIBUTION ONLY.
 	Label string
+	// Groups the authenticator vouched for. Empty for every credential that
+	// carries no group claim, which is every one of them today except the
+	// gateway's upstream authenticator (Remote-Groups). A grant table keys on
+	// these, so an authenticator that cannot vouch for a group can never
+	// satisfy one -- which is the correct failure direction.
+	Groups []string
 }
 
 // Attribution renders who is speaking, for the model and for the UI.

@@ -3,8 +3,10 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -132,9 +134,31 @@ type AuthzConfig struct {
 
 	// Policy names the authorization policy. "" or "allow-all" gates
 	// nothing; "default" selects authz.DefaultRules (today: refuse a
-	// self-fork issued from inside a running turn).
+	// self-fork issued from inside a running turn); "grants" selects the
+	// deny-by-default table in Grants below.
+	//
+	// AN UNKNOWN NAME IS A STARTUP ERROR, not a fallback to allow-all. See
+	// Validate.
 	Policy string `toml:"policy"`
+
+	// Grants is the table consulted when Policy is "grants". An EMPTY table
+	// under that policy denies everything, which is deliberate: the failure
+	// mode of a misconfigured grant list must be a daemon nobody can use, not
+	// a daemon anybody can use.
+	Grants []GrantConfig `toml:"grant"`
 }
+
+// GrantConfig is one [[authz.grant]] row.
+type GrantConfig struct {
+	Groups  []string `toml:"groups"`
+	Methods []string `toml:"methods"`
+}
+
+// KnownAuthzPolicies is the closed set of policy names. It is exported so a
+// test can assert that config validation and the angelus factory agree: the
+// factory panics on a name it does not know, and that panic is only
+// unreachable while these two lists match.
+var KnownAuthzPolicies = []string{"allow-all", "default", "grants"}
 
 // StoreConfig sizes the aria log on disk.
 type StoreConfig struct {
@@ -622,6 +646,32 @@ func (l *Loaded) AuthzPolicy() string {
 	default:
 		return p
 	}
+}
+
+// ValidateAuthz refuses a policy name this binary does not implement.
+//
+// It exists because the alternative is catastrophic and was the status quo:
+// the angelus factory used to answer an unknown name with allow-all, so
+// `policy = "rules"` -- a name nobody implemented -- silently produced a
+// daemon that gated nothing, and the config LOOKED locked down. A typo, an
+// older binary, or a policy renamed between releases all had the same
+// effect. Refusing to start is the only safe answer: an operator who wrote a
+// policy meant to have one.
+func (l *Loaded) ValidateAuthz() error {
+	name := l.AuthzPolicy()
+	if slices.Contains(KnownAuthzPolicies, name) {
+		if name == "grants" && len(l.Config.Authz.Grants) == 0 {
+			// Not an error -- an empty table is a legitimate "nobody may do
+			// anything" -- but it is never what someone MEANT, so say it.
+			slog.Warn("authz policy is `grants` with an empty table: every request will be refused")
+		}
+		return nil
+	}
+	return fmt.Errorf(
+		"config: authz.policy = %q is not a policy this figaro implements (known: %s).\n"+
+			"Refusing to start rather than falling back to allow-all, which would gate nothing "+
+			"while the config claimed otherwise",
+		l.Config.Authz.Policy, strings.Join(KnownAuthzPolicies, ", "))
 }
 
 // RefSigil returns the form reference sigil. Default "@".

@@ -52,6 +52,17 @@ type ariaHub struct {
 	ln    net.Listener
 	conns map[*jkrpc.Server]struct{}
 	agent figaro.AgentServer
+	// guard wraps the served handler map with authentication and policy. It
+	// is a field rather than a call in handlers() because the hub is built in
+	// internal/angelus and the policy is assembled beside the angelus map:
+	// one guard, both doors.
+	//
+	// A NIL GUARD SERVES UNGUARDED, and that is what this endpoint did for
+	// its whole life before 2026-08-25: figaro.qua, figaro.set, study/cast/
+	// drop, interrupt and the queue verbs were reachable on an aria socket
+	// with no policy consulted, while authz.Guard wrapped only the angelus.
+	// The guarded set must equal the served set, so hubs.go always sets this.
+	guard func(map[string]jkrpc.HandlerFunc) map[string]jkrpc.HandlerFunc
 	// Nothing is buffered on purpose: a frame produced while no client is
 	// attached is owed to nobody, and a client that attaches catches up with
 	// a read rather than a replay.
@@ -234,6 +245,9 @@ func (hb *ariaHub) handlers() map[string]jkrpc.HandlerFunc {
 		out[method] = func(ctx context.Context, params json.RawMessage) (any, error) {
 			return hb.route(ctx, method, params)
 		}
+	}
+	if hb.guard != nil {
+		return hb.guard(out)
 	}
 	return out
 }

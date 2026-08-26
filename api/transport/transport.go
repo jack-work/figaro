@@ -105,19 +105,37 @@ func dialGateway(ep Endpoint) (net.Conn, error) {
 	if ep.Bearer != "" {
 		hdr.Set("Authorization", "Bearer "+ep.Bearer)
 	}
+	opts := &websocket.DialOptions{HTTPHeader: hdr}
+
+	// A gateway on a unix socket is addressed "unix:/path/to.sock". There is
+	// no host to put in a URL, so we keep a placeholder authority (which the
+	// server ignores) and teach the HTTP client to dial the socket instead.
+	// This is the local shape: `figaro serve` binds a unix socket, and a
+	// reverse proxy -- or a test -- reaches it without a port existing.
+	addr := ep.Address
+	if sock, ok := strings.CutPrefix(addr, "unix:"); ok {
+		opts.HTTPClient = &http.Client{
+			Transport: &http.Transport{
+				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+					var d net.Dialer
+					return d.DialContext(ctx, "unix", sock)
+				},
+			},
+		}
+		ws, addr = "ws", "figaro.local"
+	}
 
 	// The handshake gets a deadline; the resulting conn does not inherit it,
 	// which is why the context is detached below.
 	ctx, cancel := context.WithTimeout(context.Background(), gatewayHandshake)
 	defer cancel()
 
-	c, resp, err := websocket.Dial(ctx, ws+"://"+ep.Address+"/v1/socket",
-		&websocket.DialOptions{HTTPHeader: hdr})
+	c, resp, err := websocket.Dial(ctx, ws+"://"+addr+"/v1/socket", opts)
 	if err != nil {
 		if resp != nil {
 			switch resp.StatusCode {
 			case http.StatusUnauthorized, http.StatusForbidden:
-				return nil, fmt.Errorf("gateway %s refused this credential (%s): check `figaro origin`",
+				return nil, fmt.Errorf("gateway %s refused this credential (%s)",
 					ep.Address, resp.Status)
 			case http.StatusNotFound:
 				return nil, fmt.Errorf("gateway %s has no tunnel at /v1/socket (%s): is that a figaro gateway?",

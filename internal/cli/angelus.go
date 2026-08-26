@@ -148,6 +148,15 @@ func armMemoryLimit(loaded *config.Loaded) {
 
 func runAngelus() {
 	loaded := mustLoadConfig()
+	// BEFORE the lock, the store, or the socket: a policy this binary cannot
+	// build is a refusal to start, not a warning. The alternative -- which
+	// this daemon shipped until 2026-08-25 -- was to fall back to allow-all,
+	// so a config naming an unimplemented policy produced a daemon that gated
+	// nothing while reading as locked down.
+	if err := loaded.ValidateAuthz(); err != nil {
+		fmt.Fprintf(stderrw, "%s\n", err)
+		os.Exit(1)
+	}
 	runtimeDir := angelusRuntimeDir()
 
 	// One angelus per store. A second daemon (e.g. from an ensureAngelus

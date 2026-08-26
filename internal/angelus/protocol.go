@@ -134,20 +134,54 @@ func (h *handlers) authenticator() authz.Authenticator {
 	return authz.AriaHeader{Enabled: h.config != nil && h.config.CallerIdentityEnabled()}
 }
 
+// guardHandlers wraps a handler map with THIS daemon's authn and policy. It is
+// handed to every aria hub so the agency methods are gated by the same seam
+// that gates the angelus door: see ariaHub.guard for what it was like before.
+func (h *handlers) guardHandlers(m map[string]jkrpc.HandlerFunc) map[string]jkrpc.HandlerFunc {
+	return authz.Guard(m, h.authenticator(), h.policy())
+}
+
 // policy builds the configured authorization policy. The turn-active predicate
 // is read off the live registry: a dormant or unknown aria has no turn in
 // flight, so it cannot be mid-turn, and a fork of it is free to proceed.
+//
+// AN UNKNOWN NAME IS FATAL, and that is the whole point of the panic below.
+// This switch used to end in `default: return AllowAll()`, so a config naming
+// a policy this binary did not know -- a typo, an old binary, a policy not yet
+// written -- silently opened the daemon completely. Configuration validation
+// rejects unknown names before we get here (config.AuthzPolicy), so reaching
+// this line means the two lists have drifted, and failing loudly beats failing
+// open.
 func (h *handlers) policy() authz.Policy {
 	name := "allow-all"
 	if h.config != nil {
 		name = h.config.AuthzPolicy()
 	}
 	switch name {
+	case "allow-all":
+		return authz.AllowAll()
 	case "default":
 		return authz.DefaultRules(h.turnActive)
+	case "grants":
+		return h.grantsPolicy()
 	default:
-		return authz.AllowAll()
+		panic(fmt.Sprintf("authz policy %q is not known to this binary: "+
+			"config validation should have refused it (internal/config.AuthzPolicy)", name))
 	}
+}
+
+// grantsPolicy is the deny-by-default table. Its ZERO VALUE DENIES: an empty
+// or unparsed grant list refuses everything rather than allowing everything,
+// which is the opposite of what authz.Rules does and the reason grants are a
+// separate policy type rather than more Rules.
+func (h *handlers) grantsPolicy() authz.Policy {
+	var grants []authz.Grant
+	if h.config != nil {
+		for _, g := range h.config.Config.Authz.Grants {
+			grants = append(grants, authz.Grant{Groups: g.Groups, Methods: g.Methods})
+		}
+	}
+	return authz.Grants{Table: grants, Extra: authz.DefaultRules(h.turnActive)}
 }
 
 func (h *handlers) turnActive(ariaID string) bool {
