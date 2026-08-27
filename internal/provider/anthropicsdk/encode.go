@@ -82,7 +82,8 @@ func (p *Provider) renderMessage(msg message.Message, prevSnap *form.Snapshot) (
 		if len(blocks) == 0 {
 			return anthropic.MessageParam{}, false
 		}
-		return anthropic.NewUserMessage(blocks...), true
+		// Results lead the turn: see resultsFirst.
+		return anthropic.NewUserMessage(resultsFirst(blocks)...), true
 
 	case message.RoleOutput:
 		var blocks []anthropic.ContentBlockParamUnion

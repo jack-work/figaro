@@ -651,7 +651,10 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *form.Snapshot) 
 		if len(blocks) == 0 {
 			return nativeMessage{}, false
 		}
-		return nativeMessage{Role: "user", Content: blocks}, true
+		// Results lead the turn: see resultsFirst. One message can hold both
+		// a closing result the door appended and the prose it was appended
+		// to, and the API takes them in only one order.
+		return nativeMessage{Role: "user", Content: resultsFirst(blocks)}, true
 
 	case message.RoleOutput:
 		var blocks []nativeBlock

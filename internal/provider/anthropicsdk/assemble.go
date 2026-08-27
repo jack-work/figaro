@@ -66,6 +66,11 @@ func coalesceMessages(msgs []anthropic.MessageParam, lts []uint64) ([]anthropic.
 			content := make([]anthropic.ContentBlockParamUnion, len(outMsgs[last].Content)+len(msgs[i].Content))
 			copy(content, outMsgs[last].Content)
 			copy(content[len(outMsgs[last].Content):], msgs[i].Content)
+			if outMsgs[last].Role == anthropic.MessageParamRoleUser {
+				// The merge is where a fork notice, a patch or a reminder
+				// gets in front of the results: see resultsFirst.
+				content = resultsFirst(content)
+			}
 			outMsgs[last].Content = content
 			if i < len(lts) {
 				outLTs[last] = lts[i]
@@ -78,6 +83,37 @@ func coalesceMessages(msgs []anthropic.MessageParam, lts []uint64) ([]anthropic.
 		}
 	}
 	return outMsgs, outLTs
+}
+
+// resultsFirst hoists tool_result blocks to the front of a user turn, keeping
+// the order within each group. THE PAIRING RULE IS POSITIONAL: the API wants
+// the results at the HEAD of the message after the invoke, not merely
+// somewhere in it, and refuses the whole request otherwise ("tool_use ids were
+// found without tool_result blocks immediately after"). The legacy encoder
+// holds the same rule and the reasons for it, in anthropic/coalesce.go.
+func resultsFirst(blocks []anthropic.ContentBlockParamUnion) []anthropic.ContentBlockParamUnion {
+	first := -1
+	for i, b := range blocks {
+		if b.OfToolResult != nil {
+			first = i
+			break
+		}
+	}
+	if first <= 0 {
+		return blocks
+	}
+	out := make([]anthropic.ContentBlockParamUnion, 0, len(blocks))
+	for _, b := range blocks {
+		if b.OfToolResult != nil {
+			out = append(out, b)
+		}
+	}
+	for _, b := range blocks {
+		if b.OfToolResult == nil {
+			out = append(out, b)
+		}
+	}
+	return out
 }
 
 // applyThinking enables extended thinking when system.thinking_budget is a
