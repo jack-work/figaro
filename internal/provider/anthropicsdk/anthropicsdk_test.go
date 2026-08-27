@@ -66,7 +66,7 @@ type parsedMessages struct {
 
 func projectAll(t testing.TB, perMessage [][]json.RawMessage, lts []uint64) parsedMessages {
 	t.Helper()
-	msgs, msgLTs, err := rowsToMessageParams(perMessage, lts)
+	msgs, msgLTs, err := rowsToMessageParams(provider.PerMessageRows(perMessage, lts))
 	require.NoError(t, err)
 	return parsedMessages{Messages: msgs, LogicalTimes: msgLTs}
 }

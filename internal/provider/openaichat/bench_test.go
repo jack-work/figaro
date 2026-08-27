@@ -75,7 +75,7 @@ func BenchmarkCatchUp(b *testing.B) {
 				cache := newCopyingBenchLog[[]json.RawMessage]()
 				p := benchProvider(b, provider.MarkAuto)
 				b.StartTimer()
-				_, _, _ = p.catchUp(log, cache, nil, nil)
+				drainCatchUp(p.catchUp(log, cache, nil, nil))
 			}
 		})
 		b.Run("WarmDelta/"+strconv.Itoa(n), func(b *testing.B) {
@@ -91,13 +91,13 @@ func BenchmarkCatchUp(b *testing.B) {
 			}
 			cache := newCopyingBenchLog[[]json.RawMessage]()
 			p := benchProvider(b, provider.MarkAuto)
-			_, _, _ = p.catchUp(prefix, cache, nil, nil)
-			_, _, _ = p.catchUp(log, cache, nil, nil)
+			drainCatchUp(p.catchUp(prefix, cache, nil, nil))
+			drainCatchUp(p.catchUp(log, cache, nil, nil))
 			b.ReportAllocs()
 			b.ResetTimer()
 			b.ReportMetric(2, "messages/op")
 			for i := 0; i < b.N; i++ {
-				_, _, _ = p.catchUp(log, cache, nil, nil)
+				drainCatchUp(p.catchUp(log, cache, nil, nil))
 			}
 		})
 	}
@@ -115,7 +115,7 @@ func BenchmarkAssemble(b *testing.B) {
 			b.Run(string(mode)+"/"+strconv.Itoa(n), func(b *testing.B) {
 				p := benchProvider(b, mode)
 				log := benchLog(b, n)
-				perMessage, _, err := p.catchUp(log, newCopyingBenchLog[[]json.RawMessage](), nil, nil)
+				perMessage, err := p.catchUp(log, newCopyingBenchLog[[]json.RawMessage](), nil, nil)
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -139,7 +139,7 @@ func BenchmarkMarkRequest(b *testing.B) {
 		b.Run(strconv.Itoa(n), func(b *testing.B) {
 			p := benchProvider(b, provider.MarkBlocks)
 			log := benchLog(b, n)
-			perMessage, _, err := p.catchUp(log, newCopyingBenchLog[[]json.RawMessage](), nil, nil)
+			perMessage, err := p.catchUp(log, newCopyingBenchLog[[]json.RawMessage](), nil, nil)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -159,4 +159,18 @@ func BenchmarkMarkRequest(b *testing.B) {
 			}
 		})
 	}
+}
+
+// drainCatchUp walks the sequence a catch-up hands back: the sequence is lazy,
+// so a benchmark that only calls catchUp measures the translation and not the
+// read.
+func drainCatchUp(seq provider.RowSeq, err error) int {
+	if err != nil || seq == nil {
+		return 0
+	}
+	n := 0
+	for range seq {
+		n++
+	}
+	return n
 }

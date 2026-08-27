@@ -7,6 +7,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -23,6 +24,18 @@ func (l *copyingBenchLog[T]) Read() []store.Entry[T] {
 	out := make([]store.Entry[T], len(entries))
 	copy(out, entries)
 	return out
+}
+
+// ScanRange copies ONE ENTRY AT A TIME, because that is what this fixture is
+// for: a substrate where a read costs a copy per record, like a real one where
+// it costs a decode. Inheriting MemLog's scan would copy nothing and flatter
+// the walk into looking free.
+func (l *copyingBenchLog[T]) ScanRange(from, to uint64, yield func(store.Entry[T]) bool) {
+	l.MemLog.ScanRange(from, to, func(e store.Entry[T]) bool {
+		one := make([]store.Entry[T], 1)
+		one[0] = e
+		return yield(one[0])
+	})
 }
 
 func directBenchLog(b *testing.B, n int) *copyingBenchLog[message.Message] {
@@ -66,7 +79,7 @@ func BenchmarkCatchUp(b *testing.B) {
 				cache := newCopyingBenchLog[[]json.RawMessage]()
 				a := &Anthropic{ReminderRenderer: "tag"}
 				b.StartTimer()
-				_, _, _ = a.catchUp(log, cache, nil, nil)
+				drainCatchUp(a.catchUp(log, cache, nil, nil))
 			}
 		})
 		b.Run("WarmDeltaCached/"+strconv.Itoa(n), func(b *testing.B) {
@@ -75,24 +88,24 @@ func BenchmarkCatchUp(b *testing.B) {
 			appendDirectBenchSuffix(b, log)
 			cache := newCopyingBenchLog[[]json.RawMessage]()
 			a := &Anthropic{ReminderRenderer: "tag"}
-			_, _, _ = a.catchUp(prefix, cache, nil, nil)
-			_, _, _ = a.catchUp(log, cache, nil, nil)
+			drainCatchUp(a.catchUp(prefix, cache, nil, nil))
+			drainCatchUp(a.catchUp(log, cache, nil, nil))
 			b.ReportAllocs()
 			b.ResetTimer()
 			b.ReportMetric(2, "messages/op")
 			for i := 0; i < b.N; i++ {
-				_, _, _ = a.catchUp(log, cache, nil, nil)
+				drainCatchUp(a.catchUp(log, cache, nil, nil))
 			}
 		})
 		b.Run("WarmSteady/"+strconv.Itoa(n), func(b *testing.B) {
 			log := directBenchLog(b, n)
 			cache := newCopyingBenchLog[[]json.RawMessage]()
 			a := &Anthropic{ReminderRenderer: "tag"}
-			_, _, _ = a.catchUp(log, cache, nil, nil)
+			drainCatchUp(a.catchUp(log, cache, nil, nil))
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				_, _, _ = a.catchUp(log, cache, nil, nil)
+				drainCatchUp(a.catchUp(log, cache, nil, nil))
 			}
 		})
 	}
@@ -131,4 +144,18 @@ func BenchmarkInvalidateIfStale(b *testing.B) {
 			}
 		})
 	}
+}
+
+// drainCatchUp walks the sequence a catch-up hands back. THE WALK IS THE WORK:
+// the sequence is lazy, so a benchmark that only calls catchUp measures the
+// translation and not the read it used to pay for.
+func drainCatchUp(seq provider.RowSeq, err error) int {
+	if err != nil || seq == nil {
+		return 0
+	}
+	n := 0
+	for range seq {
+		n++
+	}
+	return n
 }

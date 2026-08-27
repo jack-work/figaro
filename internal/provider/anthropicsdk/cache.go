@@ -13,27 +13,30 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// rowsToMessageParams turns stored rows into the SDK's typed messages.
+// rowsToMessageParams turns a walk over the stored rows into the SDK's typed
+// messages.
 //
 // THE ROWS ARE ALREADY THE SDK'S OWN MARSHALLING: this provider writes what
 // MessageParam serializes to, and the round trip is byte-identical (see
 // TestMessageParamRoundTripsThroughJSONWithoutLoss). So the read is a parse,
 // never a re-encode, and what reaches the wire is what is on disk.
-func rowsToMessageParams(perMessage [][]json.RawMessage, lts []uint64) ([]anthropic.MessageParam, []uint64, error) {
-	msgs := make([]anthropic.MessageParam, 0, len(perMessage))
-	out := make([]uint64, 0, len(perMessage))
-	for i, row := range perMessage {
-		for _, raw := range row {
-			if len(raw) == 0 {
-				continue
-			}
-			var msg anthropic.MessageParam
-			if err := json.Unmarshal(raw, &msg); err != nil {
-				return nil, nil, fmt.Errorf("unmarshal stored message at %d: %w", lts[i], err)
-			}
-			msgs = append(msgs, msg)
-			out = append(out, lts[i])
+func rowsToMessageParams(src provider.RowSeq) ([]anthropic.MessageParam, []uint64, error) {
+	var (
+		msgs []anthropic.MessageParam
+		out  []uint64
+		err  error
+	)
+	for raw, lt := range src {
+		var msg anthropic.MessageParam
+		if uerr := json.Unmarshal(raw, &msg); uerr != nil {
+			err = fmt.Errorf("unmarshal stored message at %d: %w", lt, uerr)
+			break
 		}
+		msgs = append(msgs, msg)
+		out = append(out, lt)
+	}
+	if err != nil {
+		return nil, nil, err
 	}
 	return msgs, out, nil
 }
@@ -100,8 +103,11 @@ func (p *Provider) catchUp(figLog store.Log[message.Message], rows store.Log[[]j
 		return nil, nil, fmt.Errorf("anthropicsdk catch up: %w", err)
 	}
 
-	perMessage, lts := provider.Translations(rows)
-	msgs, msgLTs, perr := rowsToMessageParams(perMessage, lts)
+	// THE SDK'S FRAME IS TYPED, so this tenant holds the parsed messages by
+	// shape. It no longer holds the raw rows as well: the walk feeds the
+	// parser one row at a time.
+	to, _ := provider.TranslationTail(rows)
+	msgs, msgLTs, perr := rowsToMessageParams(provider.TranslationRows(rows, to))
 	if perr != nil {
 		return nil, nil, perr
 	}

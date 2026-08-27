@@ -110,6 +110,40 @@ func (l *xwalLog[T]) Read() []Entry[T] {
 	return out
 }
 
+// ScanRange walks (from..to] under ONE open, decoding a record and handing it
+// over before the next is read, so the walk holds one entry and not the
+// channel. Read is this function with an append: see scan.go for why the
+// append is the part worth removing.
+func (l *xwalLog[T]) ScanRange(from, to uint64, yield func(Entry[T]) bool) {
+	_ = l.openOnce(func(xw *xwal.XWAL) error {
+		first, last, ok := channelBounds(xw, l.channel)
+		if !ok {
+			return nil
+		}
+		start := first
+		if from+1 > start {
+			start = from + 1
+		}
+		if to > 0 && to < last {
+			last = to
+		}
+		for lt := start; lt <= last; lt++ {
+			r, err := xw.ReadAt(l.channel, lt)
+			if err != nil {
+				continue
+			}
+			e, ok := decodeRecord[T](r)
+			if !ok {
+				continue
+			}
+			if !yield(e) {
+				return nil
+			}
+		}
+		return nil
+	})
+}
+
 // channelBounds reports the channel's first and last LT. ok is false for an
 // empty channel. It opens THAT channel and no other.
 func channelBounds(xw *xwal.XWAL, channel string) (first, last uint64, ok bool) {

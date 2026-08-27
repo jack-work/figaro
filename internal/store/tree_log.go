@@ -2,6 +2,7 @@ package store
 
 import (
 	"sort"
+	"sync/atomic"
 
 	fwtree "github.com/jack-work/figaro/internal/store/tree"
 )
@@ -33,6 +34,7 @@ type treeLog[T any] struct {
 
 	// seedOnAppend is true only where a coordinate holds exactly one entry.
 	seedOnAppend bool
+	verified     atomic.Bool
 	cache        *fwtree.Cache[Entry[T]]
 	lineage      func() []fwtree.Ref
 	node         string
@@ -196,6 +198,88 @@ func (l *treeLog[T]) peek(from, to uint64) []Entry[T] {
 	return out
 }
 
+// ScanRange is peek without the array: (from..to] streamed, resident runs
+// handed over as the ancestor's own units and everything else read from the
+// substrate one record at a time. THE POLICY IS PEEK'S, UNCHANGED -- it
+// materializes nothing into the cache, so a whole-history walk still costs
+// the neighbours nothing.
+func (l *treeLog[T]) ScanRange(from, to uint64, yield func(Entry[T]) bool) {
+	if to == 0 {
+		tail, ok := l.inner.PeekTail()
+		if !ok {
+			return
+		}
+		to = l.key(tail)
+	}
+	if to <= from {
+		return
+	}
+	live := true
+	hand := func(e Entry[T]) bool {
+		if !live {
+			return false
+		}
+		live = yield(e)
+		return live
+	}
+	for _, cut := range l.cuts(from, to) {
+		p := cut.From
+		for _, r := range l.cache.Index(cut.Node) {
+			if !r.Resident || r.To <= p || r.From >= cut.To {
+				continue
+			}
+			if r.From > p {
+				l.substrateScan(cut.Node, p, r.From, hand)
+				if !live {
+					return
+				}
+			}
+			units, ok := l.cache.ResidentAt(cut.Node, r.From, r.To)
+			if !ok {
+				l.substrateScan(cut.Node, r.From, r.To, hand)
+				if !live {
+					return
+				}
+			} else {
+				for _, u := range units {
+					if k := l.key(u); k > p && k <= cut.To {
+						if !hand(u) {
+							return
+						}
+					}
+				}
+			}
+			if r.To > p {
+				p = r.To
+			}
+		}
+		if p < cut.To {
+			l.substrateScan(cut.Node, p, cut.To, hand)
+			if !live {
+				return
+			}
+		}
+	}
+}
+
+// substrateScan streams a bracket from the durable log of ONE node, never the
+// cache: substrate's walk, clipped the same way.
+func (l *treeLog[T]) substrateScan(node string, from, to uint64, yield func(Entry[T]) bool) {
+	if to <= from {
+		return
+	}
+	sub := l.substrateOf(node)
+	if sub == nil {
+		return
+	}
+	Scan(sub, from, to, func(e Entry[T]) bool {
+		if k := l.key(e); k <= from || k > to {
+			return true
+		}
+		return yield(e)
+	})
+}
+
 // channelForkBase reports a node's first OWN coordinate of this channel.
 type channelForkBase interface{ ForkBase() (uint64, bool) }
 
@@ -299,6 +383,10 @@ func clipToBracket[T any](rows []Entry[T], from, to uint64, key func(Entry[T]) u
 }
 
 func (l *treeLog[T]) Len() int { return l.inner.Len() }
+
+// VerifyOnce is the once-per-handle flag: see store.VerifyOnce. It lives on
+// the log so it is collected with it.
+func (l *treeLog[T]) VerifyOnce() bool { return l.verified.CompareAndSwap(false, true) }
 
 func (l *treeLog[T]) ReadFrom(figaroLT uint64, n int) []Entry[T] {
 	if figaroLT == 0 {

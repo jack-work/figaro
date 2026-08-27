@@ -14,11 +14,11 @@ import (
 // pairing reports tool_result ids that no preceding tool_use declares -- the
 // exact condition Anthropic rejects with "unexpected tool_use_id found in
 // tool_result blocks", reproduced locally over assembled rows.
-func pairing(t *testing.T, perMessage [][]json.RawMessage) (orphans []string) {
+func pairing(t *testing.T, rows []json.RawMessage) (orphans []string) {
 	t.Helper()
 	declared := map[string]bool{}
-	for _, row := range perMessage {
-		for _, raw := range row {
+	{
+		for _, raw := range rows {
 			var m struct {
 				Role    string `json:"role"`
 				Content []struct {
@@ -72,7 +72,7 @@ func TestCatchUpRepairsARealHole(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	before, _ := provider.Translations(rows)
+	before, _ := provider.CollectRows(provider.TranslationRows(rows, 0))
 	orphansBefore := pairing(t, before)
 	t.Logf("before: %d rows, %d orphaned tool_result(s): %v", len(before), len(orphansBefore), orphansBefore)
 	if len(orphansBefore) == 0 {
@@ -80,10 +80,11 @@ func TestCatchUpRepairsARealHole(t *testing.T) {
 	}
 
 	a := &Anthropic{Model: "claude-opus-5", ReminderRenderer: "tag"}
-	after, _, err := a.catchUp(figLog, rows, nil, nil)
+	seq, err := a.catchUp(figLog, rows, nil, nil)
 	if err != nil {
 		t.Fatalf("catch up: %v", err)
 	}
+	after, _ := provider.CollectRows(seq)
 	if orphans := pairing(t, after); len(orphans) != 0 {
 		t.Fatalf("after catch-up %d tool_result(s) still have no tool_use: %v", len(orphans), orphans)
 	}
