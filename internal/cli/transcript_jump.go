@@ -109,22 +109,50 @@ func pagerJumpPrompt(t *transcript) {
 }
 
 func jumpCancel(t *transcript) {
-	// ESC DISMISSES THE MENU FIRST, and the box only when there is no menu --
-	// which is what a shell does: the first Esc takes back the offer, the
-	// second takes back the line.
+	// ESC IS THE LADDER OUT, one rung per press, and it takes back the most
+	// recent thing first: a running history search, then the completion menu's
+	// offer, then the box itself. That is what a shell does, and it is why the
+	// same key can be "toggle command mode off" without ever discarding a line
+	// you were still looking at.
+	if t.cmdline.searching() {
+		t.cmdline.endSearch()
+		return
+	}
 	if len(t.completions) > 0 {
 		t.clearCompletions()
 		return
 	}
-	t.inJump = false
-	t.cmdline.reset()
+	jumpClose(t)
 }
 
-func jumpBackspace(t *transcript) { t.edit(func(e *lineEditor) { e.backspace() }) }
+// jumpClose puts the box away. The line goes with it -- ^C at a shell prompt
+// does not leave its text lying around either.
+func jumpClose(t *transcript) {
+	t.inJump = false
+	t.cmdline.reset()
+	t.clearCompletions()
+}
+
+func jumpBackspace(t *transcript) {
+	// While a history search runs, Backspace shortens the NEEDLE: that is what
+	// it does at a shell, and it is the only way to back out of a failed
+	// search without abandoning it.
+	if t.cmdline.searching() {
+		t.cmdline.searchBackspace()
+		return
+	}
+	t.edit(func(e *lineEditor) { e.backspace() })
+}
 
 // edit runs one editing motion and drops the completion list: any change to
 // the line makes the last Tab's candidates a lie.
+//
+// IT ALSO ENDS A HISTORY SEARCH, keeping what the search found. readline's
+// rule: any key that is not part of the search accepts the line it landed on
+// and then acts. Putting it here rather than in each action is what makes that
+// true of every binding, including ones added later.
 func (t *transcript) edit(fn func(*lineEditor)) {
+	t.cmdline.endSearch()
 	fn(&t.cmdline)
 	t.clearCompletions()
 }
@@ -135,12 +163,98 @@ func cmdHome(t *transcript)      { t.edit(func(e *lineEditor) { e.home() }) }
 func cmdEnd(t *transcript)       { t.edit(func(e *lineEditor) { e.end() }) }
 func cmdLeft(t *transcript)      { t.edit(func(e *lineEditor) { e.left() }) }
 func cmdRight(t *transcript)     { t.edit(func(e *lineEditor) { e.right() }) }
+func cmdWordLeft(t *transcript)  { t.edit(func(e *lineEditor) { e.wordLeft() }) }
+func cmdWordRight(t *transcript) { t.edit(func(e *lineEditor) { e.wordRight() }) }
 func cmdKillToEnd(t *transcript) { t.edit(func(e *lineEditor) { e.killToEnd() }) }
 func cmdKillToStart(t *transcript) {
 	t.edit(func(e *lineEditor) { e.killToStart() })
 }
-func cmdKillWord(t *transcript)  { t.edit(func(e *lineEditor) { e.killWordBack() }) }
-func cmdDeleteFwd(t *transcript) { t.edit(func(e *lineEditor) { e.deleteForward() }) }
+func cmdKillWord(t *transcript)      { t.edit(func(e *lineEditor) { e.killWordBack() }) }
+func cmdKillWordAlpha(t *transcript) { t.edit(func(e *lineEditor) { e.killWordBackAlpha() }) }
+func cmdKillWordFwd(t *transcript)   { t.edit(func(e *lineEditor) { e.killWordForward() }) }
+func cmdDeleteSpace(t *transcript)   { t.edit(func(e *lineEditor) { e.deleteHorizontalSpace() }) }
+func cmdYank(t *transcript)          { t.edit(func(e *lineEditor) { e.yank() }) }
+func cmdTranspose(t *transcript)     { t.edit(func(e *lineEditor) { e.transposeChars() }) }
+func cmdTransposeWord(t *transcript) { t.edit(func(e *lineEditor) { e.transposeWords() }) }
+func cmdUpcase(t *transcript)        { t.edit(func(e *lineEditor) { e.caseWord('u') }) }
+func cmdDowncase(t *transcript)      { t.edit(func(e *lineEditor) { e.caseWord('l') }) }
+func cmdCapitalize(t *transcript)    { t.edit(func(e *lineEditor) { e.caseWord('c') }) }
+func cmdRevert(t *transcript)        { t.edit(func(e *lineEditor) { e.revert() }) }
+func cmdHistFirst(t *transcript)     { t.edit(func(e *lineEditor) { e.historyFirst() }) }
+func cmdHistLast(t *transcript)      { t.edit(func(e *lineEditor) { e.historyLast() }) }
+func cmdPrefixPrev(t *transcript)    { t.edit(func(e *lineEditor) { e.historyPrefix(-1) }) }
+func cmdPrefixNext(t *transcript)    { t.edit(func(e *lineEditor) { e.historyPrefix(1) }) }
+func cmdYankLastArg(t *transcript)   { t.edit(func(e *lineEditor) { e.yankLastArg() }) }
+
+// cmdYankPop is M-y. It must NOT go through edit(): edit ends a search and
+// clears completions, neither of which matters here, but it would also be the
+// wrong place to hide the one rule this key has -- it only follows a yank, and
+// the editor is what knows whether the last thing that happened was one.
+func cmdYankPop(t *transcript) {
+	if !t.cmdline.yankPop() {
+		return
+	}
+	t.clearCompletions()
+}
+
+// cmdUndo is ^_ : one step back, and it says so when there is nothing left,
+// because a key that silently does nothing is indistinguishable from a key
+// that is not bound.
+func cmdUndo(t *transcript) {
+	t.cmdline.endSearch()
+	t.clearCompletions()
+	if !t.cmdline.undoOne() {
+		t.noteOrClear("nothing to undo")
+	}
+}
+
+// cmdDeleteFwd is ^D, and it carries the ONE rule that made unbinding detach
+// inside this box safe: on an EMPTY line it closes the box instead of deleting
+// nothing. That is bash's ^D exactly -- delete the character under the cursor,
+// or leave when there is no line -- and it keeps the escape hatch one press
+// deeper rather than removing it: ^D on an empty box closes it, and the next
+// ^D detaches the session as it always did.
+func cmdDeleteFwd(t *transcript) {
+	if t.cmdline.searching() {
+		t.cmdline.endSearch()
+		return
+	}
+	if t.cmdline.empty() {
+		jumpClose(t)
+		return
+	}
+	t.edit(func(e *lineEditor) { e.deleteForward() })
+}
+
+// cmdAbort is ^G, and ^C: abandon the line, keep the pager. readline's ^G.
+// Inside a search it puts back the line the search was started from, which is
+// the only way to say "no, never mind" to a search that has walked far away.
+func cmdAbort(t *transcript) {
+	if t.cmdline.searching() {
+		t.cmdline.abortSearch()
+		return
+	}
+	jumpClose(t)
+}
+
+// cmdRedraw is ^L: readline's clear-screen. The pager owns the whole grid, so
+// clearing it means painting it again from nothing -- which is also the repair
+// for a screen some other program has scribbled on.
+func cmdRedraw(t *transcript) {
+	t.prev = nil
+	t.render()
+}
+
+// cmdSearchPrev / cmdSearchNext are ^R / ^S: the incremental history search.
+func cmdSearchPrev(t *transcript) {
+	t.clearCompletions()
+	t.cmdline.searchAgain(-1)
+}
+
+func cmdSearchNext(t *transcript) {
+	t.clearCompletions()
+	t.cmdline.searchAgain(1)
+}
 
 // ^P/^N are HISTORY when there is no completion menu and MENU MOVEMENT when
 // there is -- which is what a shell does, and what Gluck asked for: the menu
@@ -160,6 +274,43 @@ func cmdHistNext(t *transcript) {
 		return
 	}
 	t.edit(func(e *lineEditor) { e.historyNext() })
+}
+
+// cmdListComplete is M-?: show the candidates and insert nothing. Tab is the
+// key that commits; this is the one you press when you only want to look.
+func cmdListComplete(t *transcript) {
+	if t.completer == nil {
+		return
+	}
+	t.cmdline.endSearch()
+	cands := t.completer(t.cmdline.String())
+	t.clearCompletions()
+	if len(cands) == 0 {
+		t.noteOrClear("no completions")
+		return
+	}
+	t.completionAt = t.cmdline.cursor - len([]rune(lastWord(t.cmdline.String())))
+	t.completions, t.completionIdx = cands, -1
+}
+
+// cmdInsertComplete is M-*: put every candidate in the line, space-separated.
+// Rare, and cheap to have: it is how you turn "which arias are there" into a
+// line you then edit down.
+func cmdInsertComplete(t *transcript) {
+	if t.completer == nil {
+		return
+	}
+	t.cmdline.endSearch()
+	cands := t.completer(t.cmdline.String())
+	if len(cands) == 0 {
+		return
+	}
+	word := lastWord(t.cmdline.String())
+	t.clearCompletions()
+	for range []rune(word) {
+		t.cmdline.backspace()
+	}
+	t.cmdline.insert(strings.Join(cands, " ") + " ")
 }
 
 // cmdComplete is Tab. The candidates come from the ROUTER's own completion --
@@ -211,10 +362,30 @@ func lastWord(line string) string {
 // which is what makes '/' an ordinary character in here, as ':' is in the
 // search box. The keymap does not enumerate "every printable byte"; see
 // searchLiteral, whose contract this mirrors exactly.
+//
+// While a history search runs the same bytes grow the NEEDLE instead. One
+// acceptor, two destinations: that is the whole of what ^R changes about
+// typing, and it is why ^R needs no mode of the pager's own.
 func (t *transcript) jumpLiteral(b byte) {
+	if t.cmdline.searching() {
+		if r, ok := searchRune(b); ok {
+			t.cmdline.searchType(r)
+		}
+		return
+	}
 	if t.cmdline.insertByte(b) {
 		t.clearCompletions()
 	}
+}
+
+// searchRune keeps the needle ASCII-simple: the editor's UTF-8 reassembly
+// belongs to the line, and a needle built one byte at a time out of a
+// multi-byte rune would search for half a character.
+func searchRune(b byte) (rune, bool) {
+	if b < 0x20 || b >= 0x7f {
+		return 0, false
+	}
+	return rune(b), true
 }
 
 // jumpAccept is Enter in the ':' box, which is a COMMAND LINE with a
@@ -226,6 +397,10 @@ func (t *transcript) jumpLiteral(b byte) {
 // The transcript therefore knows nothing about the command language. It knows
 // "this is not a coordinate" and who to give it to.
 func jumpAccept(t *transcript) {
+	// Enter DURING a search accepts what the search found, and runs it: the
+	// line on screen is the line, and a reader who has found it and pressed
+	// Enter has said so.
+	t.cmdline.endSearch()
 	text := strings.TrimSpace(t.cmdline.String())
 	t.cmdline.remember(text)
 	t.cmdline.reset()

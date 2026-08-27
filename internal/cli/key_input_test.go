@@ -131,9 +131,13 @@ func TestNavKeyFor(t *testing.T) {
 		// Modified arrows still name the same key.
 		{"ctrl up", "\x1b[1;5A", navUp},
 		{"shift pagedown", "\x1b[6;2~", navPageDown},
+		// Left and Right ARE navigation keys now: the pager still has no use
+		// for them (no row binds them there, so they stay inert), and the ':'
+		// box walks its line with them.
+		{"left", "\x1b[D", navLeft},
+		{"right", "\x1b[C", navRight},
+		{"ctrl left", "\x1b[1;5D", navLeft},
 		// Not navigation: stays swallowed exactly as before.
-		{"left", "\x1b[D", navNone},
-		{"right", "\x1b[C", navNone},
 		{"delete", "\x1b[3~", navNone},
 		{"f1 ss3", "\x1bOP", navNone},
 		{"f5", "\x1b[15~", navNone},

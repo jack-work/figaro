@@ -14,6 +14,12 @@ const (
 	navPageDown
 	navHome
 	navEnd
+	// Left and Right are motions the PAGER has no use for -- it has no
+	// horizontal axis -- and the ':' box cannot do without: a command line you
+	// cannot walk with the arrow keys is a command line with a hole in it.
+	// Modes that do not bind them ignore them, exactly as they ignore PgUp.
+	navLeft
+	navRight
 )
 
 type modifiedKey struct {
@@ -35,11 +41,33 @@ func (k modifiedKey) asByte() (byte, bool) {
 		case k.code >= 'A' && k.code <= 'Z':
 			return k.code & 0x1f, true
 		}
+		// THE PUNCTUATION CONTROLS, which a CSI-u terminal reports as
+		// Ctrl+<punctuation> and a legacy one sends as the bare byte. Ctrl-[ is
+		// the one that matters: it IS Escape, and a reader who presses it to
+		// close the ':' box must not find it dead because the terminal was
+		// polite enough to say which key it was.
+		if b, ok := ctrlPunctuation[k.code]; ok {
+			return b, true
+		}
 	}
 	if !k.alt && !k.ctrl {
 		return k.code, true
 	}
 	return 0, false
+}
+
+// ctrlPunctuation is the ASCII table's own answer to "what byte is Ctrl+X",
+// for the X that are not letters. C0 codes 0x00 and 0x1b-0x1f, plus DEL.
+var ctrlPunctuation = map[byte]byte{
+	'@':  0x00,
+	' ':  0x00, // Ctrl-Space is Ctrl-@ on every terminal that reports either
+	'[':  0x1b, // Escape
+	'\\': 0x1c,
+	']':  0x1d,
+	'^':  0x1e,
+	'_':  0x1f,
+	'-':  0x1f, // Ctrl-- is how a keyboard without a shifted _ sends Ctrl-_
+	'?':  0x7f, // DEL
 }
 
 const (
@@ -122,6 +150,66 @@ func parseKeyNumber(buf []byte) (value, consumed int, complete bool) {
 		consumed++
 	}
 	return value, consumed, consumed < len(buf)
+}
+
+// ---------------------------------------------------------------------------
+// Meta (Alt). Three encodings of one modifier, decoded in one place.
+// ---------------------------------------------------------------------------
+
+// metaKey pulls a Meta chord out of a CSI-u report: Alt held, Ctrl not (a
+// Ctrl+Alt report is a chord this program has no rows for, and reducing it to
+// Meta would silently drop the Ctrl the user pressed).
+func metaKey(key modifiedKey) (byte, bool) {
+	if !key.alt || key.ctrl || key.nav != navNone {
+		return 0, false
+	}
+	if key.code == 0 || key.code >= 128 {
+		return 0, false
+	}
+	return metaFold(key.code), true
+}
+
+// metaEscapePrefix decodes the portable spelling, ESC <byte>, which is what
+// every terminal without CSI-u sends for Alt+<byte>. It claims the pair only
+// in a mode that binds Meta: see modeBindsMeta for why that gate, and not a
+// timeout, is what resolves ESC's ambiguity here.
+//
+// ESC ESC is never Meta-Escape: it is two Escapes, because the reader who
+// pressed Escape twice meant to leave twice.
+func metaEscapePrefix(data []byte, mode keyMode) (byte, bool) {
+	if len(data) < 2 || data[0] != 0x1b {
+		return 0, false
+	}
+	b := data[1]
+	if b == 0x1b || b > 0x7f {
+		return 0, false
+	}
+	// Printable keys and DEL (M-DEL is backward-kill-word). Control bytes are
+	// left alone: ESC ^C is not a chord anything wants, and swallowing it
+	// would eat an interrupt.
+	if b != 0x7f && b < 0x20 {
+		return 0, false
+	}
+	if !modeBindsMeta(mode) {
+		return 0, false
+	}
+	return metaFold(b), true
+}
+
+// metaForCtrlArrow turns Ctrl+Left / Ctrl+Right into M-b / M-f. That mapping
+// is not an invention: it is the line every distribution ships in
+// /etc/inputrc, and the reason those keys walk words at a bash prompt at all.
+func metaForCtrlArrow(key modifiedKey) (byte, bool) {
+	if !key.ctrl {
+		return 0, false
+	}
+	switch key.nav {
+	case navLeft:
+		return 'b', true
+	case navRight:
+		return 'f', true
+	}
+	return 0, false
 }
 
 // consumeEscapeSequence eats an unhandled ANSI escape sequence starting at
@@ -229,8 +317,12 @@ func navForFinal(final byte) (navKey, bool) {
 		return navHome, true
 	case 'F':
 		return navEnd, true
+	case 'C':
+		return navRight, true
+	case 'D':
+		return navLeft, true
 	}
-	return navNone, false // C/D are Left/Right: the pager has no horizontal axis
+	return navNone, false
 }
 
 func navForTilde(code int) (navKey, bool) {

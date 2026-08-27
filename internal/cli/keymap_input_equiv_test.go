@@ -426,12 +426,22 @@ var inputOracle = []struct {
 		"nav:Up":          "stop=false rest=\"\" act=true off:+740 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 	}},
 	{"jump", "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"", map[string]string{
-		"0x03": "stop=true rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=true clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"",
-		"0x04": "stop=true rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"",
-		"0x08": "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"1\"",
-		"0x0a": "stop=false rest=\"\" act=true off:sel fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
-		"0x0d": "stop=false rest=\"\" act=true off:sel fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
-		"0x0f": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"",
+		// THE NINE CELLS THE READLINE PASS MOVED, all in this state and none
+		// outside it: while the ':' box is up, ^C ^D ^G ^L ^O ^T (and their
+		// CSI-u spellings) belong to the LINE rather than to the process. See
+		// keymap.go's `&^ inJumpBox`, and cmdDeleteFwd for why unbinding
+		// detach here does not remove the escape hatch: ^D on an EMPTY box
+		// closes the box, and the ^D after that detaches exactly as before.
+		"0x03":    "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"0x04":    "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"",
+		"0x07":    "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"0x14":    "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"21\"",
+		"0x1f":    "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"\"",
+		"csiu ^t": "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"21\"",
+		"0x08":    "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"1\"",
+		"0x0a":    "stop=false rest=\"\" act=true off:sel fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"0x0d":    "stop=false rest=\"\" act=true off:sel fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"0x0f":    "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"",
 		// The command line's emacs motions; see the pager oracle for why only
 		// these two are visible to a signature that records the LINE.
 		"0x15":            "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"\"",
@@ -536,9 +546,9 @@ var inputOracle = []struct {
 		"alt ^n fallback": "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"",
 		"alt ^p fallback": "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"",
 		"csiu ^N+shift":   "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"",
-		"csiu ^d":         "stop=true rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"",
+		"csiu ^d":         "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"",
 		"csiu ^n":         "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"",
-		"csiu ^o":         "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"",
+		"csiu ^o":         "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"",
 		"csiu ^p":         "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"",
 		"csiu ^p+alt":     "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"",
 	}},

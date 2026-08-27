@@ -2344,7 +2344,10 @@ func (t *transcript) inputDrawerLines() []string {
 	case t.inSearch:
 		rows = []string{drawerGray(clipToWidth("/"+t.query, t.w))}
 	case t.inJump:
-		rows = []string{t.cmdline.render(":", t.w)}
+		// The PROMPT is the editor's, not a constant: while ^R runs it reads
+		// `(reverse-i-search)`needle':` exactly as a shell's does, which is the
+		// only thing on screen that says the box is in a search at all.
+		rows = []string{t.cmdline.render(t.cmdline.prompt(":"), t.w)}
 	default:
 		return nil
 	}
@@ -2447,8 +2450,14 @@ func drawerOwnsKey(ev keyEvent) bool {
 
 // drawerHint is what the closing rule says about leaving.
 func (t *transcript) drawerHint() string {
-	if t.inSearch || t.inJump {
+	if t.inSearch {
 		return "Enter run · Tab complete · Esc cancel"
+	}
+	if t.inJump {
+		if t.cmdline.searching() {
+			return "^R older · Esc keep · ^G cancel"
+		}
+		return "Enter run · Tab complete · ^R history · Esc cancel"
 	}
 	return t.drawer.hint()
 }

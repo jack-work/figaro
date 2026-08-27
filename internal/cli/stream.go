@@ -1018,11 +1018,18 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 			break
 		} else if ok {
 			i += consumed
-			if letter, isCtrl := ctrlChordLetter(key); isCtrl {
-				// A Ctrl+letter the table binds as a CSI-u chord, modifiers
+			if letter, isCtrl := ctrlChordLetter(key); isCtrl && ctrlChordBoundIn(mode, letter) {
+				// A Ctrl+letter THIS MODE binds as a CSI-u chord, modifiers
 				// intact (Shift/Alt extend the node selection). Every other
-				// CSI-u key reduces to the byte it would have arrived as.
+				// CSI-u key reduces to the byte it would have arrived as --
+				// including a Ctrl+letter some OTHER mode claims as a chord,
+				// which is what keeps ^D detaching in the pager while the ':'
+				// box has it as delete-forward.
 				ev = keyEvent{ctrl: letter, shift: key.shift, alt: key.alt, mode: mode}
+			} else if m, isMeta := metaKey(key); isMeta && modeBindsMeta(mode) {
+				// Alt+<key>, reported with the Alt bit set. The same chord a
+				// legacy terminal spells ESC <byte>, arriving pre-delimited.
+				ev = keyEvent{meta: m, shift: key.shift, alt: true, mode: mode}
 			} else {
 				b, representable := key.asByte()
 				if !representable {
@@ -1051,7 +1058,22 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 				if !ok {
 					continue
 				}
-				ev = keyEvent{nav: key.nav, shift: key.shift, alt: key.alt, mode: mode}
+				if m, isMeta := metaForCtrlArrow(key); isMeta && modeBindsMeta(mode) {
+					// Ctrl+Left / Ctrl+Right, which every distro's inputrc
+					// binds to the word motions. It is one key on the keyboard
+					// and M-b's meaning; naming it here is where terminal
+					// encodings are supposed to be named.
+					ev = keyEvent{meta: m, alt: true, mode: mode}
+				} else {
+					ev = keyEvent{nav: key.nav, shift: key.shift, alt: key.alt, mode: mode}
+				}
+			} else if m, isMeta := metaEscapePrefix(data[i:], mode); isMeta {
+				// ESC <byte>: the portable spelling of Alt+<byte>. Claimed
+				// only where a row binds it (see metaBoundIn), so a bare Esc
+				// followed by an ordinary key behaves as it always has.
+				i += 2
+				in.lastNL = 0
+				ev = keyEvent{meta: m, alt: true, mode: mode}
 			} else {
 				// Bare Esc: a key in its own right.
 				b := data[i]
