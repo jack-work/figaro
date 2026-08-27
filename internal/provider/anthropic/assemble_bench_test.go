@@ -80,11 +80,6 @@ func TestStreamedAssemblyDoesNotRetainTheConversation(t *testing.T) {
 	})
 	a := &Anthropic{Model: "claude-opus-5", ReminderRenderer: "tag"}
 
-	// The store's own cache holds what this daemon appended, which is neither
-	// path's doing and is bounded by the translation budget. It is measured
-	// once and subtracted, so what remains is what THE ASSEMBLY retains.
-	base := liveHeap()
-
 	sliceLive := func() uint64 {
 		perMessage, lts := provider.CollectRows(provider.TranslationRows(rows, 0))
 		req, err := a.projectMessagesWithLTs(oneRowEach(perMessage), lts, snap, nil, 4096, false, "claude-opus-5")
@@ -104,26 +99,22 @@ func TestStreamedAssemblyDoesNotRetainTheConversation(t *testing.T) {
 		return w.live
 	}()
 
+	// NO BASELINE, AND THAT IS THE POINT. Subtracting a floor measured before
+	// the runs made this test flaky: the floor includes the fixture's own
+	// garbage, the heap falls below it once that is collected, and an
+	// unsigned subtraction then reports zero held for BOTH paths -- which
+	// passes or fails depending on the collector's mood.
+	//
+	// The two runs are measured the same way in the same process, so their
+	// DIFFERENCE is the conversation and nothing else. The slice assembler is
+	// holding a body's worth that the streamed one is not.
 	body := bodyBytes(t, a, rows, snap)
-	// SIGNED, AND CLAMPED. The floor is measured before the first write and
-	// the heap can fall BELOW it once the fixture's own garbage is collected,
-	// which underflowed an unsigned subtraction into 18 exabytes and made the
-	// assertion pass for the wrong reason in one direction and fail in the
-	// other.
-	held := func(live uint64) uint64 {
-		if live < base {
-			return 0
-		}
-		return live - base
-	}
-	sliceHeld := held(sliceLive)
-	streamedHeld := held(streamedLive)
-	t.Logf("held while writing: slice=%d KiB streamed=%d KiB (body=%d KiB, base=%d KiB)",
-		sliceHeld>>10, streamedHeld>>10, body>>10, base>>10)
-	require.Less(t, streamedHeld, sliceHeld/2,
-		"the streamed assembler must not hold the conversation the slice one held")
-	require.Less(t, streamedHeld, body/2,
-		"a streamed body must not retain a body's worth of anything")
+	t.Logf("live heap while writing: slice=%d KiB streamed=%d KiB (body=%d KiB)",
+		sliceLive>>10, streamedLive>>10, body>>10)
+	require.Greater(t, sliceLive, streamedLive,
+		"the slice assembler must hold more than the streamed one")
+	require.GreaterOrEqual(t, sliceLive-streamedLive, body/2,
+		"the gap between them should be most of a body: the conversation the slice path holds")
 }
 
 // liveHeap is the live heap after a collection: the floor a measurement is
