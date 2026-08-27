@@ -2475,6 +2475,11 @@ func fastDecodeFrame(f []byte) (uint64, []byte, []byte, int64, bool) {
 	return mainLT, payload, f[i:end], ts, true
 }
 
+// JSONValueEnd is exported so the store's row splitter uses THIS scanner
+// rather than growing a second one. A JSON grammar implemented twice is a
+// JSON grammar that disagrees with itself on the row that matters.
+func JSONValueEnd(b []byte, start int) (int, bool) { return jsonValueEnd(b, start) }
+
 func jsonValueEnd(b []byte, start int) (int, bool) {
 	if start >= len(b) {
 		return 0, false
@@ -2517,8 +2522,12 @@ func jsonValueEnd(b []byte, start int) (int, bool) {
 		}
 		return 0, false
 	default:
+		// A bare scalar ends at the first structural byte that can follow it.
+		// ']' belongs in that set: it cannot occur INSIDE a number, true,
+		// false or null, and without it an array's last scalar element runs
+		// off the end of the array.
 		for i := start; i < len(b); i++ {
-			if b[i] == ',' || b[i] == '}' {
+			if b[i] == ',' || b[i] == '}' || b[i] == ']' {
 				return i, i > start
 			}
 		}
