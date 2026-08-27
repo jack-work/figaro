@@ -172,6 +172,24 @@ func (c *Angelus) List(ctx context.Context) (*rpc.ListResponse, error) {
 
 // ListIDs returns the aria list with only ids populated (skips the expensive
 // per-aria form/tree fills). For completion and other id-only callers.
+// ListWith is List with explicit options, for the federation fan-out.
+func (c *Angelus) ListWith(ctx context.Context, req rpc.ListRequest) (*rpc.ListResponse, error) {
+	var resp rpc.ListResponse
+	if err := c.call(ctx, rpc.MethodList, req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// Peers reads, adds or removes federated nodes.
+func (c *Angelus) Peers(ctx context.Context, req rpc.PeerRequest) (*rpc.PeerResponse, error) {
+	var resp rpc.PeerResponse
+	if err := c.call(ctx, rpc.MethodPeers, req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *Angelus) ListIDs(ctx context.Context) (*rpc.ListResponse, error) {
 	var resp rpc.ListResponse
 	if err := c.call(ctx, rpc.MethodList, rpc.ListRequest{IDsOnly: true}, &resp); err != nil {

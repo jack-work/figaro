@@ -32,21 +32,63 @@ type authenticator interface {
 }
 
 func newAuthenticator(c Config) (authenticator, error) {
-	var base authenticator
-	switch c.Authn {
-	case AuthnNone:
-		base = anonymousAuth{}
-	case AuthnUpstream:
-		base = upstreamAuth{}
-	case AuthnDoorkey:
-		base = doorkeyAuth{secret: c.Doorkey}
-	default:
-		return nil, fmt.Errorf("unknown authn %q", c.Authn)
+	if len(c.Authn) == 0 {
+		return nil, fmt.Errorf("no authenticator configured")
+	}
+	var chain []authenticator
+	for _, a := range c.Authn {
+		switch a {
+		case AuthnNone:
+			chain = append(chain, anonymousAuth{})
+		case AuthnUpstream:
+			chain = append(chain, upstreamAuth{})
+		case AuthnDoorkey:
+			chain = append(chain, doorkeyAuth{secret: c.Doorkey})
+		default:
+			return nil, fmt.Errorf("unknown authn %q", a)
+		}
+	}
+	var base authenticator = anyOf(chain)
+	if len(chain) == 1 {
+		base = chain[0]
 	}
 	if len(c.RequireGroups) > 0 {
 		return requireGroups{next: base, want: c.RequireGroups}, nil
 	}
 	return base, nil
+}
+
+// anyOf tries each authenticator and takes the first that succeeds.
+//
+// TWO CREDENTIAL SHAPES REACH ONE DOOR, and that is not an accident of
+// configuration -- it is what the platform does. Caddy forward-auths only
+// requests WITHOUT a bearer:
+//
+//	@no_bearer not header Authorization Bearer*
+//	forward_auth @no_bearer …
+//
+// so a browser arrives carrying Remote-User (upstream authenticates it) and
+// a machine arrives carrying a bearer that Caddy passed straight through
+// (doorkey authenticates it). One listener, two populations.
+//
+// THE SECURITY CONSEQUENCE, stated plainly: a caller CHOOSES which
+// credential to present, so the door is exactly as strong as its weakest
+// authenticator. That is why Serve admits an exposure only when EVERY
+// configured authenticator is legal on it, rather than when any one is.
+type anyOf []authenticator
+
+func (list anyOf) authenticate(r *http.Request) (authz.Identity, error) {
+	var first error
+	for _, a := range list {
+		id, err := a.authenticate(r)
+		if err == nil {
+			return id, nil
+		}
+		if first == nil {
+			first = err
+		}
+	}
+	return authz.Identity{}, first
 }
 
 // requireGroups is the ADMISSION gate: authentication says who you are, this

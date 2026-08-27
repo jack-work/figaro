@@ -32,6 +32,7 @@ type lsOpts struct {
 const (
 	fieldID     = "id"
 	fieldOutfit = "outfit"
+	fieldNode   = "node"
 	fieldVer    = "ver"
 	fieldFork   = "fork"
 	fieldAge    = "age"
@@ -72,6 +73,7 @@ func listColumns(width int, global bool) []figtree.Column {
 			{Header: "AGE", Field: fieldAge},
 			{Header: "MSGS", Field: fieldMsgs},
 			{Header: "CTX", Field: fieldCtx},
+			{Header: "NODE", Field: fieldNode, Max: 10},
 			{Header: "CWD", Field: fieldCwd},
 		}
 	}
@@ -302,12 +304,15 @@ func listTree(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree.T
 			Fields: map[string]string{
 				fieldID:     f.ID,
 				fieldOutfit: dash(bornOf(f)),
-				fieldVer:    dash(f.OutfitVer),
-				fieldFork:   fork,
-				fieldAge:    relAge(f.LastActive),
-				fieldMsgs:   fmt.Sprintf("%d", f.MessageCount),
-				fieldCtx:    ctxStr,
-				fieldCwd:    shortCwd(f.Cwd),
+				// Empty for a local aria, which is most of them: the column
+				// only earns its width when a federation is configured.
+				fieldNode: dash(f.Node),
+				fieldVer:  dash(f.OutfitVer),
+				fieldFork: fork,
+				fieldAge:  relAge(f.LastActive),
+				fieldMsgs: fmt.Sprintf("%d", f.MessageCount),
+				fieldCtx:  ctxStr,
+				fieldCwd:  shortCwd(f.Cwd),
 			},
 		}
 	}

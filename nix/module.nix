@@ -148,6 +148,23 @@ in
       description = "CPU cap, for the same reason as memoryMax.";
     };
 
+    doorkeyFile = mkOption {
+      type = types.nullOr types.path;
+      default = null;
+      description = ''
+        Path to a file holding the shared bearer for MACHINE callers.
+
+        Two credential shapes reach one door, and that is the platform's
+        doing rather than a choice: Caddy forward-auths only requests
+        WITHOUT a bearer, so a browser arrives carrying Remote-User and a
+        machine arrives carrying a bearer Caddy passed straight through.
+        Setting this turns on the second path, for peer daemons.
+
+        A PATH, never a value: a literal would be rendered into the
+        world-readable nix store.
+      '';
+    };
+
     providerKeyFiles = mkOption {
       type = types.attrsOf types.path;
       default = { };
@@ -237,10 +254,10 @@ in
           Type = "exec";
           User = cfg.user;
           Group = cfg.user;
-          ExecStart = lib.concatStringsSep " " [
+          ExecStart = lib.concatStringsSep " " ([
             "${cfg.package}/bin/figaro serve"
             "--listen tcp://127.0.0.1:${toString cfg.port}"
-            "--authn upstream"
+            (if cfg.doorkeyFile != null then "--authn upstream,doorkey" else "--authn upstream")
             "--host ${cfg.hostname}"
             # THE GROUP GATE, and it is not redundant with the platform.
             # kelliher-web creates the lldap group from requiredGroups and
@@ -250,11 +267,17 @@ in
             # authenticates; the app authorizes. This is the app.
             "--require-group ${lib.concatStringsSep "," cfg.requiredGroups}"
             "--max-conn-age ${cfg.maxConnAge}"
-          ];
+            # %d is systemd's specifier for $CREDENTIALS_DIRECTORY. Using the
+            # specifier rather than the variable means systemd substitutes it
+            # while parsing the unit, so a typo is a unit that fails to load
+            # rather than a flag that silently reads an empty path.
+          ] ++ lib.optional (cfg.doorkeyFile != null) "--doorkey-file %d/doorkey");
           Restart = "on-failure";
           RestartSec = 5;
           # It consumes the angelus's runtime dir; it must not create one.
           MemoryMax = "512M";
+          LoadCredential = lib.optional (cfg.doorkeyFile != null)
+            "doorkey:${toString cfg.doorkeyFile}";
         };
       };
   };

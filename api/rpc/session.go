@@ -44,6 +44,10 @@ type FigaroInfoResponse struct {
 	Present string `json:"present,omitempty"`
 	Kind    string `json:"kind,omitempty"` // "conversation" | "form" | "outfit" | "null" (set in global listings)
 
+	// Node names the PEER this row came from, empty for local. A federated
+	// listing without it is a pile of ids the reader cannot act on.
+	Node string `json:"node,omitempty"`
+
 	// Unbound-form rows only: the form's "name" key, and: when the form is
 	// a role (duck-typed by the key's presence): its target-aria.
 	Name       string `json:"name,omitempty"`
@@ -78,6 +82,31 @@ type ListRequest struct {
 
 type ListResponse struct {
 	Figaros []FigaroInfoResponse `json:"figaros"`
+	// PeerErrors maps a peer name to why it could not be asked. It is
+	// REPORTED rather than swallowed: a listing that silently omits an
+	// unreachable machine tells the reader those arias are gone, which is a
+	// different and much worse claim than "I could not ask".
+	PeerErrors map[string]string `json:"peer_errors,omitempty"`
+}
+
+// PeerSpec is one federated node as the wire carries it.
+type PeerSpec struct {
+	Name      string `json:"name"`
+	URL       string `json:"url"`
+	TokenFile string `json:"token_file,omitempty"`
+}
+
+// PeerRequest is add (Peer set), remove (Remove set), or list (neither).
+type PeerRequest struct {
+	Peer   *PeerSpec `json:"peer,omitempty"`
+	Remove string    `json:"remove,omitempty"`
+}
+
+type PeerResponse struct {
+	Peers []PeerSpec `json:"peers"`
+	// Reachable maps a peer name to its build string, or to the error that
+	// stopped us. Filled only when the request asked for a probe.
+	Reachable map[string]string `json:"reachable,omitempty"`
 }
 
 type BindRequest struct {

@@ -160,6 +160,15 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		}
 	}
 
+	// FEDERATE. The local rows are always answered even when a peer is
+	// unreachable: a listing that blocks on the worst node is worse than one
+	// that names it, and a listing that silently omits it is worse still --
+	// it tells the reader those arias are gone.
+	if h.angelus.Peers != nil {
+		remote, errs := h.angelus.Peers.federate(ctx, req)
+		result = append(result, remote...)
+		return rpc.ListResponse{Figaros: result, PeerErrors: errs}, nil
+	}
 	return rpc.ListResponse{Figaros: result}, nil
 }
 

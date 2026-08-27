@@ -193,6 +193,7 @@ func runAngelus() {
 
 	a := angelus.New(angelus.Config{
 		RuntimeDir: runtimeDir,
+		StateDir:   stateDir(),
 		Backend:    backend,
 		Settings:   loaded,
 	})

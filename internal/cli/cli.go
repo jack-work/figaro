@@ -1408,6 +1408,37 @@ flow writes both through the daemon, so a client never has to know the path.`,
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:  "peer",
+		Group: "System",
+		Short: "Federate with another figaro daemon: list, add or remove peers",
+		Long: `Peers are OTHER ANGELI this daemon talks to. Adding one makes its arias
+appear in ` + "`figaro ls`" + `, tagged with the node they live on.
+
+The CLI never dials a peer itself and never holds a credential. It asks the
+local daemon, which owns the peer list, owns the tokens, and does the fan-out
+— so every other verb keeps working unchanged across a federation.
+
+  figaro peer                          list peers and whether they answer
+  figaro peer add spain https://fig.kelliher.info --token-file ~/.figaro/spain.key
+  figaro peer rm spain
+
+--token-file names a FILE, never the secret itself: an argument is visible in
+/proc and in every other user's process table.`,
+		Usage: "peer [ls] | peer add <name> <url> [--token-file <path>] | peer rm <name>",
+		Flags: []cmdkit.FlagDef{
+			{Long: "json", Short: "j", IsBool: true, Description: "Machine-readable output"},
+			{Long: "token-file", Description: "File holding the bearer token for this peer"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			args := ctx.Args
+			if tf := ctx.Flag("token-file"); tf != "" {
+				args = append(args, "--token-file", tf)
+			}
+			return runPeer(mustLoadConfig(), args, ctx.BoolFlag("json"))
+		},
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:  "serve",
 		Group: "System",
 		Short: "Expose this daemon over HTTP on a unix socket, so a reverse proxy or a browser can reach it",
@@ -1441,7 +1472,7 @@ serve does not start the daemon. It fronts one that is already running.`,
 		Usage: "serve [--listen <uri>] [--authn <n>] [--doorkey-file <p>] [--origin <urls>] [--host <names>]",
 		Flags: []cmdkit.FlagDef{
 			{Long: "listen", Description: "unix:///path or tcp://host:port (default: gateway.sock beside the angelus socket)"},
-			{Long: "authn", Default: "none", Description: "none | upstream | doorkey"},
+			{Long: "authn", Default: "none", Description: "Comma-separated, tried in order: none | upstream | doorkey"},
 			{Long: "doorkey-file", Description: "File holding the shared secret for --authn doorkey"},
 			{Long: "origin", Description: "Comma-separated browser origins allowed to open a tunnel"},
 			{Long: "host", Description: "Comma-separated Host: header allowlist (set this on any TCP bind)"},
