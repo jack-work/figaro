@@ -436,6 +436,57 @@ The arrow cluster is an alias for the letter motions, and: like them: pressing
 one while a turn streams inline opens the pager first, so the gesture acts on
 arrival instead of looking like a dead keyboard.
 
+### The `:` box is a readline line, and the pager's keys stand down inside it
+
+While the box is up it holds **readline's emacs keymap**, not the pager's. That
+includes the keys the pager reserves for itself everywhere else: `^C`, `^D`,
+`^L`, `^O` and `^T` mean what bash means by them in here, and go back to
+meaning detach/interrupt/listen/verbose the moment the box closes.
+
+| Key | Does |
+| --- | --- |
+| `^A` / `^E` | start / end of line |
+| `^B` / `^F` · `←` / `→` | character left / right |
+| `M-b` / `M-f` · `^←` / `^→` | word left / right |
+| `^D` | delete forward — **on an empty line, close the box** |
+| `Backspace` / `^H` | delete backward |
+| `^T` / `M-t` | transpose characters / words |
+| `M-u` / `M-l` / `M-c` | upcase / downcase / capitalize the word |
+| `^K` / `^U` | kill to end / to start |
+| `^W` | kill the shell word behind the cursor (whitespace-delimited) |
+| `M-d` / `M-DEL` | kill the readline word forward / back (alphanumeric) |
+| `M-\` | delete the whitespace around the cursor |
+| `^Y` / `M-y` | yank the last kill / rotate the kill ring |
+| `^P` / `^N` · `↑` / `↓` | previous / next in history |
+| `M-<` / `M->` | first / last history entry |
+| `^R` / `^S` | incremental history search backward / forward |
+| `M-p` / `M-n` | history search on what you have typed as a prefix |
+| `M-.` / `M-_` | insert the last word of the previous command (repeat to walk back) |
+| `^_` / `M-r` | undo one edit / revert the line to how it was fetched |
+| `Tab` · `M-?` / `M-*` | complete · list candidates / insert them all |
+| `^L` | repaint |
+| `Esc` / `^[` · `^C` / `^G` | leave: a search, then the completion menu, then the box |
+
+**`Esc` (and `^[`, which is the same byte) is the ladder out, one rung per
+press**: it ends a running `^R` search first, then dismisses the completion
+menu, then closes the box. `^C` and `^G` skip the rungs and abandon the line.
+
+Two consequences worth naming:
+
+- **`^D` does not detach while the box is open.** It edits. On an empty line it
+  closes the box, and the `^D` after that detaches exactly as it always did —
+  the escape hatch is one press further away, not gone.
+- **`Esc` is also the Meta prefix.** A terminal sends `M-b` as the two bytes
+  `ESC b`. Inside the box, `ESC <key>` is therefore a Meta chord (an unbound one
+  is swallowed rather than closing the box); outside it, where nothing binds
+  Meta, `ESC` is still a plain Escape followed by an ordinary key. On a terminal
+  that reports modified keys (`CSI u`), no ambiguity arises at all.
+
+Not bound, deliberately: `^V`/`^Q` (every printable byte is already literal text
+here), the `^X` prefix map and its macros, the mark (`M-Space`, `^X^X`),
+character search (`^]`), `M-#`, and numeric arguments. `keymap.go` carries the
+reason next to each.
+
 These tables are a summary. The canonical list is the **keymap** in
 `internal/cli/keymap.go`: one declarative row per binding: the chord, the modes
 it is live in, whether it opens the pager from incipit, its action, and its help

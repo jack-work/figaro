@@ -222,13 +222,30 @@ var pagerOracle = []struct {
 		"0x08": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"1\"",
 		"0x0a": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
 		"0x0d": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
-		// THE COMMAND LINE HAS EMACS MOTIONS NOW, and these two are the only
-		// ones this oracle can see: the signature records the LINE, so ^A/^E/^B/^F
-		// (cursor) and Tab/^N/^P (no completer, empty history in a fixture) are
-		// indistinguishable from inert here. ^U kills to the start and ^W kills a
-		// word, and both empty a two-character line.
+		// THE COMMAND LINE HAS THE EMACS BINDINGS NOW, and these are the ones
+		// this oracle can see: the signature records the LINE, so ^A/^E/^B/^F
+		// (cursor), ^L (repaint), ^R/^S (a search whose needle is empty) and
+		// Tab/^N/^P/^Y (no completer, empty history, empty kill ring in a
+		// fixture) are indistinguishable from inert here. ^U kills to the
+		// start and ^W kills a word, and both empty a two-character line.
 		"0x15": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\"",
 		"0x17": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\"",
+		// THE FOUR CELLS THE READLINE PASS MOVED, each because a key that used
+		// to belong to the process now belongs to the line while the box is up
+		// (keymap.go, `&^ inJumpBox`). Nothing outside jump mode moved: the
+		// other four states in this table passed unchanged.
+		//   ^C and ^G abandon the line and close the box (they used to end the
+		//   session and be inert respectively) -- off:bottom because closing
+		//   the drawer gives the transcript its two rows back, exactly as Esc
+		//   at 0x1b already did.
+		"0x03": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
+		"0x07": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
+		//   ^T transposes the two characters of "12"; it used to re-enter a
+		//   pager that was already up.
+		"0x14": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"21\"",
+		//   ^_ undoes the typing that put "12" there. A run of insertions is
+		//   ONE undo step, which is why the line goes empty rather than to "1".
+		"0x1f": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\"",
 		"0x1b": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
 		"0x20": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"12 \"",
 		"0x21": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"12!\"",

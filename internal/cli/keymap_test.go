@@ -21,6 +21,11 @@ func (c chord) String() string {
 		return "nav:" + navName(c.nav)
 	case chordCtrlLetter:
 		return fmt.Sprintf("csi-u ctrl-%c", c.b)
+	case chordMeta:
+		if c.b == 0x7f {
+			return "M-DEL"
+		}
+		return fmt.Sprintf("M-%c", c.b)
 	default:
 		if c.b < 0x20 || c.b == 0x7f {
 			return fmt.Sprintf("0x%02x", c.b)
@@ -80,9 +85,17 @@ func navSequence(n navKey) string {
 		return "\x1b[H"
 	case navEnd:
 		return "\x1b[F"
+	case navLeft:
+		return "\x1b[D"
+	case navRight:
+		return "\x1b[C"
 	}
 	return ""
 }
+
+// metaSequence is the portable encoding of a Meta chord: ESC then the byte.
+// (key_meta_test.go covers the CSI-u spelling and the Ctrl+arrow aliases.)
+func metaSequence(b byte) string { return "\x1b" + string(b) }
 
 // ctrlSequence is a CSI-u report for Ctrl+<letter>, optionally with Shift.
 func ctrlSequence(letter byte, shift bool) string {
@@ -100,6 +113,8 @@ func bindingInput(b *keyBinding) string {
 		return navSequence(b.chord.nav)
 	case chordCtrlLetter:
 		return ctrlSequence(b.chord.b, false)
+	case chordMeta:
+		return metaSequence(b.chord.b)
 	default:
 		return string(b.chord.b)
 	}
@@ -163,6 +178,11 @@ func TestKeymap_EveryRowIsWellFormed(t *testing.T) {
 		if bd.chord.kind == chordNav && (bd.chord.nav == navNone || int(bd.chord.nav) >= navCount) {
 			t.Errorf("%s: not a navigation key", bd.chord)
 		}
+		// A Meta chord names a byte a terminal can put Alt on: the low 128,
+		// and not a control byte (ESC ^X is not a chord anything sends).
+		if bd.chord.kind == chordMeta && (bd.chord.b >= 128 || (bd.chord.b < 0x20 && bd.chord.b != 0x7f)) {
+			t.Errorf("%s: not a key Meta can be held for", bd.chord)
+		}
 		// A pager row can never be live in incipit: the pager is not up.
 		if bd.pager != nil && bd.modes&inIncipit != 0 {
 			t.Errorf("%s: a pager action cannot run in incipit", bd.chord)
@@ -186,6 +206,8 @@ func TestKeymap_IndexAgreesWithTheTable(t *testing.T) {
 			ev.nav = bd.chord.nav
 		case chordCtrlLetter:
 			ev.ctrl = bd.chord.b
+		case chordMeta:
+			ev.meta = bd.chord.b
 		default:
 			ev.b = bd.chord.b
 		}
@@ -311,8 +333,10 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  /                   search (Enter jump · Esc cancel typing)",
 		"  n / N               next / previous match",
 		"  :                   command line: any figaro verb, or a coordinate (:12, :12.3, :0)",
-		"  (in :) ^P/^N · Up/Down command history",
+		"  (in :) ^P/^N · ^R   command history · search it",
 		"  (in :) Tab          complete the verb, an id, or a flag",
+		"  (in :) ^A ^E ^W ^K ^Y emacs/readline editing, the whole set",
+		"  (in :) Esc / ^C / ^G abandon the line, close the box",
 		"  (in a list) x       drop the selected entry (queue)",
 		"  y                   copy selection (or aria id if none)",
 		"  ^O                  toggle verbose tool output",

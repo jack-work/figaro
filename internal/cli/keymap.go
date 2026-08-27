@@ -38,26 +38,31 @@ const (
 	inAnyBox = inIncipit | inPager
 )
 
-// chordKind distinguishes the three shapes a physical key arrives in.
+// chordKind distinguishes the four shapes a physical key arrives in.
 type chordKind uint8
 
 const (
 	chordByte       chordKind = iota // a plain byte (raw, or a CSI-u key that reduces to one)
-	chordNav                         // the arrow cluster: Up/Down/PgUp/PgDn/Home/End
+	chordNav                         // the arrow cluster: Up/Down/PgUp/PgDn/Home/End/Left/Right
 	chordCtrlLetter                  // a CSI-u Ctrl+<letter> report, modifiers intact
+	chordMeta                        // Alt/Meta + a byte: ESC-prefixed, or CSI-u with the Alt bit
 )
 
 // chord is the logical key a binding matches. Terminal encodings are the
 // business of key_input.go; by the time a chord exists the bytes are gone.
 type chord struct {
 	kind chordKind
-	b    byte   // chordByte: the byte. chordCtrlLetter: the lowercase letter.
+	b    byte   // chordByte: the byte. chordCtrlLetter: the lowercase letter. chordMeta: the byte Alt was held for.
 	nav  navKey // chordNav
 }
 
 func byteChord(b byte) chord      { return chord{kind: chordByte, b: b} }
 func navChord(n navKey) chord     { return chord{kind: chordNav, nav: n} }
 func ctrlChord(letter byte) chord { return chord{kind: chordCtrlLetter, b: letter} }
+
+// metaChord is Alt+<byte>: M-b, M-d, M-<, M-DEL. Only the low 128 are
+// addressable, which is every key a terminal can put Meta on.
+func metaChord(b byte) chord { return chord{kind: chordMeta, b: b} }
 
 // openPolicy says what a key does when it is pressed during inline (incipit)
 // streaming. It is deliberately a tri-state with no usable zero value: a new
@@ -84,6 +89,7 @@ type keyEvent struct {
 	b    byte   // chordByte value (0 for the other kinds)
 	nav  navKey // chordNav value
 	ctrl byte   // chordCtrlLetter value (lowercase letter)
+	meta byte   // chordMeta value: the byte Alt was held for
 
 	shift bool // carried for the rows that read modifiers (node-selection extend)
 	alt   bool
@@ -97,6 +103,8 @@ func (ev keyEvent) chord() chord {
 		return navChord(ev.nav)
 	case ev.ctrl != 0:
 		return ctrlChord(ev.ctrl)
+	case ev.meta != 0:
+		return metaChord(ev.meta)
 	default:
 		return byteChord(ev.b)
 	}
@@ -126,13 +134,22 @@ func (b *keyBinding) hidden() bool { return b.help == helpNone }
 
 var keymap = []keyBinding{
 	// -- input level: the keys that own the process ------------------------
+	//
+	// NOTE THE HOLE IN EVERY ONE OF THEM: `&^ inJumpBox`. A command line that
+	// answers to the pager's escape hatches is not a command line -- ^D would
+	// detach instead of deleting a character, ^C would end the session instead
+	// of abandoning the line, ^L would re-enter a pager already up, and ^T
+	// would do anything except transpose. Inside the box these keys are
+	// readline's; outside it they are unchanged. The escape hatches are not
+	// removed, only moved one press further away: ^D on an EMPTY box closes
+	// the box, and the next ^D detaches (see cmdDeleteFwd).
 	{
-		chord: byteChord(0x03), modes: inAnyBox,
+		chord: byteChord(0x03), modes: inAnyBox &^ inJumpBox,
 		open: staysInline, why: "interrupt; handled whether or not the pager is up",
 		help: helpInterrupt, input: inputInterrupt,
 	},
 	{
-		chord: byteChord(0x04), modes: inAnyBox,
+		chord: byteChord(0x04), modes: inAnyBox &^ inJumpBox,
 		open: staysInline, why: "detach; handled whether or not the pager is up",
 		help: helpDetach, input: inputDisconnect,
 	},
@@ -145,17 +162,17 @@ var keymap = []keyBinding{
 		help: helpDetach, input: inputDisconnect,
 	},
 	{
-		chord: byteChord(0x0c), modes: inAnyBox,
+		chord: byteChord(0x0c), modes: inAnyBox &^ inJumpBox,
 		open: staysInline, why: "enters the pager through its own action",
 		help: helpListen, input: inputEnterTranscript,
 	},
 	{
-		chord: byteChord(0x14), modes: inAnyBox,
+		chord: byteChord(0x14), modes: inAnyBox &^ inJumpBox,
 		open: staysInline, why: "^T enters the pager through its own action",
 		help: helpNone, input: inputEnterTranscript,
 	},
 	{
-		chord: byteChord(0x0f), modes: inAnyBox,
+		chord: byteChord(0x0f), modes: inAnyBox &^ inJumpBox,
 		open: opensPager, help: helpVerbose, input: inputToggleVerbose,
 	},
 	{
@@ -338,47 +355,128 @@ var keymap = []keyBinding{
 		open: staysInline, why: "only reachable with the jump prompt already up",
 		help: helpJump, pager: jumpCancel,
 	},
-	// -- the command line's EMACS MOTIONS ---------------------------------
+	// -- the command line's EMACS BINDINGS --------------------------------
+	//
 	// bash/readline, not vim: this is a command line, and the fingers that
-	// press these keys learned them at a shell prompt. ^N/^P are HISTORY here
-	// rather than node selection -- the one deliberate remap, and the reason is
-	// that a box with history and a box with a node cursor are different boxes.
-	{chord: byteChord(0x01), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHome},
-	{chord: byteChord(0x05), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdEnd},
-	{chord: byteChord(0x02), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdLeft},
-	{chord: byteChord(0x06), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdRight},
-	{chord: byteChord(0x0b), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdKillToEnd},
-	{chord: byteChord(0x15), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdKillToStart},
-	{chord: byteChord(0x17), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdKillWord},
-	// ^D IS NOT DELETE-FORWARD HERE, though readline says it should be: 0x04
-	// is DETACH at the input level, in every mode, and the two action arrays
-	// must agree about a chord (TestKeymap_ActionArraysAgreeWithTheIndex).
-	// Between "the key that gets you out of a terminal program" and "delete one
-	// character forward", the escape hatch wins -- a user hammering ^D must
-	// never discover it was editing instead. See the plan's dodginess list.
+	// press these keys learned them at a shell prompt. The set is readline's
+	// own emacs keymap -- the manual's four blocks: moving, history, changing
+	// text, killing and yanking -- pared to what a ONE-LINE box can honour.
+	// What is deliberately absent, and why, is the list at the end of the
+	// block. ^N/^P are HISTORY here rather than node selection: the one
+	// deliberate remap, and the reason is that a box with history and a box
+	// with a node cursor are different boxes.
+	//
+	// EVERY CHORD IS BOUND TWICE where a terminal has two ways to send it: the
+	// raw control byte, and the CSI-u report a modern terminal sends instead.
+	// figaro turns modified-key reporting on, so ^N arrives as \x1b[110;5u and
+	// never as the byte 0x0e -- a table that binds only the byte silently does
+	// nothing there. Measured in a pty: Tab built the completion menu and ^N
+	// walked past it into the void, because the row meant to catch it was
+	// keyed on an encoding that terminal never sends.
+
+	// Moving.
+	{chord: byteChord(0x01), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdHome},
+	{chord: byteChord(0x05), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdEnd},
+	{chord: byteChord(0x02), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdLeft},
+	{chord: byteChord(0x06), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdRight},
+	{chord: metaChord('b'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdWordLeft},
+	{chord: metaChord('f'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdWordRight},
+	{chord: byteChord(0x0c), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdRedraw},
+
+	// Changing text.
+	{chord: byteChord(0x04), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdDeleteFwd},
+	{chord: byteChord(0x14), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdTranspose},
+	{chord: metaChord('t'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdTransposeWord},
+	{chord: metaChord('u'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdUpcase},
+	{chord: metaChord('l'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdDowncase},
+	{chord: metaChord('c'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdCapitalize},
+
+	// Killing and yanking. Every kill feeds the kill ring, which is what makes
+	// ^Y paste whatever any of them cut, and M-y walk back through the rest.
+	{chord: byteChord(0x0b), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdKillToEnd},
+	{chord: byteChord(0x15), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdKillToStart},
+	{chord: byteChord(0x17), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdKillWord},
+	{chord: metaChord('d'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdKillWordFwd},
+	{chord: metaChord(0x7f), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdKillWordAlpha},
+	{chord: metaChord('\\'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdDeleteSpace},
+	{chord: byteChord(0x19), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdYank},
+	{chord: metaChord('y'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdYankPop},
+
+	// History, including the incremental search.
 	{chord: byteChord(0x10), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistPrev},
 	{chord: byteChord(0x0e), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistNext},
+	{chord: metaChord('<'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHistFirst},
+	{chord: metaChord('>'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHistLast},
+	{chord: byteChord(0x12), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdSearchPrev},
+	{chord: byteChord(0x13), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdSearchNext},
+	{chord: metaChord('p'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdPrefixPrev},
+	{chord: metaChord('n'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdPrefixNext},
+	{chord: metaChord('.'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdYankLastArg},
+	{chord: metaChord('_'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdYankLastArg},
+
+	// Undo, and the two ways to abandon a line.
+	{chord: byteChord(0x1f), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdUndo},
+	{chord: metaChord('r'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdRevert},
+	{chord: byteChord(0x07), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdAbort, pager: cmdAbort},
+	{chord: byteChord(0x03), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdAbort, pager: cmdAbort},
+
+	// Completion.
 	{chord: byteChord(0x09), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdComplete, pager: cmdComplete},
-	// AND THE SAME KEYS AS CSI-u CHORDS. figaro turns on modified-key
-	// reporting, so on a real terminal ^N arrives as \x1b[110;5u and reduces to
-	// keyEvent{ctrl:'n'}, never to the byte 0x0e -- and a table that binds only
-	// byteChord(0x0e) silently does nothing there. Measured in a pty: Tab built
-	// the completion menu and ^N walked past it into the void, because the row
-	// meant to catch it was keyed on an encoding that terminal never sends.
-	{chord: ctrlChord('n'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistNext},
-	{chord: ctrlChord('p'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistPrev},
+	{chord: metaChord('?'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdListComplete},
+	{chord: metaChord('*'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdInsertComplete},
+
+	// The same keys as CSI-u chords: see the note at the top of this block.
+	// These are the rows that actually fire on a terminal that answers
+	// \x1b[>1u, and the byte rows above are the ones that never do.
 	{chord: ctrlChord('a'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHome},
 	{chord: ctrlChord('e'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdEnd},
 	{chord: ctrlChord('b'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdLeft},
 	{chord: ctrlChord('f'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdRight},
+	{chord: ctrlChord('d'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdDeleteFwd},
+	{chord: ctrlChord('t'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdTranspose},
 	{chord: ctrlChord('k'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdKillToEnd},
 	{chord: ctrlChord('u'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdKillToStart},
 	{chord: ctrlChord('w'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdKillWord},
+	{chord: ctrlChord('y'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdYank},
+	{chord: ctrlChord('n'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHistNext},
+	{chord: ctrlChord('p'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHistPrev},
+	{chord: ctrlChord('r'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdSearchPrev},
+	{chord: ctrlChord('s'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdSearchNext},
+	{chord: ctrlChord('g'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdAbort},
+	{chord: ctrlChord('l'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdRedraw},
+	{chord: ctrlChord('h'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: jumpBackspace},
 
+	// NOT BOUND, each for a reason:
+	//
+	//   ^V / ^Q (quoted-insert)  Every printable byte in this box is ALREADY
+	//                            literal text -- there is no binding to escape
+	//                            past -- and the only thing quoting could add
+	//                            is a control character the line can neither
+	//                            render nor send.
+	//   ^X <anything>            readline's second keymap: macros (^X( ^X) ^Xe),
+	//                            ^X^U (undo, which ^_ already is), ^X Del (^U),
+	//                            ^X^R (re-read inputrc, meaningless here). A
+	//                            prefix map for three aliases and a macro
+	//                            recorder is state the keymap cannot see.
+	//   M-Space / ^@ / ^X^X      The mark. Nothing in a one-line box acts on a
+	//                            region, so a mark is a coordinate with no verb.
+	//   ^] / M-^]                Character search: vim's f/F under a chord
+	//                            nobody presses, on a line 40 columns wide.
+	//   M-#                      Comment the line. There is no history file for
+	//                            a comment to be parked in.
+	//   M-<digit>, M--           Numeric arguments. Every verb here is one
+	//                            press by design; a count is a second grammar.
+	//   ^E, ^M-j (editing mode)  There is no vi mode to switch to, and ^E is
+	//                            end-of-line.
+
+	// The arrow cluster, which the box means literally: Up/Down are history,
+	// Left/Right are the cursor, Home/End are the ends of the line.
 	{chord: navChord(navUp), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistPrev},
 	{chord: navChord(navDown), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistNext},
 	{chord: navChord(navHome), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHome},
 	{chord: navChord(navEnd), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdEnd},
+	{chord: navChord(navLeft), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdLeft},
+	{chord: navChord(navRight), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdRight},
 
 	{
 		chord: byteChord(0x7f), modes: inJumpBox,
@@ -425,6 +523,8 @@ const (
 	helpHelpPanel
 	helpCmdHistory
 	helpCmdComplete
+	helpCmdEdit
+	helpCmdAbort
 	helpDrawerDrop
 )
 
@@ -450,8 +550,15 @@ var helpRows = []helpRow{
 	{helpSearch, "/", "search (Enter jump · Esc cancel typing)"},
 	{helpSearchRepeat, "n / N", "next / previous match"},
 	{helpJump, ":", "command line: any figaro verb, or a coordinate (:12, :12.3, :0)"},
-	{helpCmdHistory, "(in :) ^P/^N · Up/Down", "command history"},
+	{helpCmdHistory, "(in :) ^P/^N · ^R", "command history · search it"},
 	{helpCmdComplete, "(in :) Tab", "complete the verb, an id, or a flag"},
+	// ONE ROW FOR THIRTY BINDINGS, on purpose. The ':' box is readline's
+	// emacs keymap (keymap.go), and a panel that lists it key by key stops
+	// being the answer to "how do I scroll". The full table is in
+	// skills/figaro/reference/ui-stream.md; the promise here is the one a
+	// shell user needs, which is that their fingers already know this box.
+	{helpCmdEdit, "(in :) ^A ^E ^W ^K ^Y", "emacs/readline editing, the whole set"},
+	{helpCmdAbort, "(in :) Esc / ^C / ^G", "abandon the line, close the box"},
 	{helpDrawerDrop, "(in a list) x", "drop the selected entry (queue)"},
 	{helpYank, "y", "copy selection (or aria id if none)"},
 	{helpVerbose, "^O", "toggle verbose tool output"},
@@ -497,12 +604,14 @@ type pagerActions struct {
 	byByte [int(numKeyModes) * 256]pagerFunc
 	byNav  [numKeyModes][navCount]pagerFunc
 	byCtrl [numKeyModes][26]pagerFunc
+	byMeta [numKeyModes][128]pagerFunc
 }
 
 type inputActions struct {
 	byByte [int(numKeyModes) * 256]inputFunc
 	byNav  [numKeyModes][navCount]inputFunc
 	byCtrl [numKeyModes][26]inputFunc
+	byMeta [numKeyModes][128]inputFunc
 }
 
 // keyIndex maps a chord to its row in keymap, per mode. int8 keeps the whole
@@ -512,6 +621,7 @@ type keyIndex struct {
 	byByte [numKeyModes][256]int8
 	byNav  [numKeyModes][navCount]int8
 	byCtrl [numKeyModes][26]int8
+	byMeta [numKeyModes][128]int8
 }
 
 var (
@@ -524,13 +634,17 @@ var (
 	openerByte [256]bool
 	openerNav  [navCount]bool
 	openerCtrl [26]bool
+	openerMeta [128]bool
 
 	// ctrlChordLetters marks the letters the table binds as CSI-u Ctrl chords.
 	ctrlChordLetters [26]bool
+
+	// metaModes marks the modes that bind Meta at all. See modeBindsMeta.
+	metaModes [numKeyModes]bool
 )
 
-// navCount bounds the nav index; navEnd is the last logical motion.
-const navCount = int(navEnd) + 1
+// navCount bounds the nav index; navRight is the last logical motion.
+const navCount = int(navRight) + 1
 
 func init() { buildKeyIndex() }
 
@@ -547,6 +661,9 @@ func buildKeyIndex() {
 		}
 		for c := range inputIndex.byCtrl[m] {
 			inputIndex.byCtrl[m][c], pagerIndex.byCtrl[m][c] = noBinding, noBinding
+		}
+		for c := range inputIndex.byMeta[m] {
+			inputIndex.byMeta[m][c], pagerIndex.byMeta[m][c] = noBinding, noBinding
 		}
 	}
 	for i := range keymap {
@@ -572,10 +689,21 @@ func buildKeyIndex() {
 				idx.byCtrl[m][bd.chord.b-'a'] = int8(i)
 				pagerAct.byCtrl[m][bd.chord.b-'a'] = bd.pager
 				inputAct.byCtrl[m][bd.chord.b-'a'] = bd.input
+			case chordMeta:
+				idx.byMeta[m][bd.chord.b] = int8(i)
+				pagerAct.byMeta[m][bd.chord.b] = bd.pager
+				inputAct.byMeta[m][bd.chord.b] = bd.input
 			}
 		}
 		if bd.chord.kind == chordCtrlLetter {
 			ctrlChordLetters[bd.chord.b-'a'] = true
+		}
+		if bd.chord.kind == chordMeta {
+			for m := keyMode(0); m < numKeyModes; m++ {
+				if bd.modes&(1<<m) != 0 {
+					metaModes[m] = true
+				}
+			}
 		}
 		if bd.open == opensPager {
 			switch bd.chord.kind {
@@ -585,6 +713,8 @@ func buildKeyIndex() {
 				openerNav[bd.chord.nav] = true
 			case chordCtrlLetter:
 				openerCtrl[bd.chord.b-'a'] = true
+			case chordMeta:
+				openerMeta[bd.chord.b] = true
 			}
 		}
 	}
@@ -605,6 +735,12 @@ func (a *pagerActions) pager(mode keyMode, ev keyEvent) pagerFunc {
 		}
 		return a.byCtrl[mode][ev.ctrl-'a']
 	}
+	if ev.meta != 0 {
+		if ev.meta >= 128 {
+			return nil
+		}
+		return a.byMeta[mode][ev.meta]
+	}
 	return a.byByte[byteSlot(mode, ev.b)]
 }
 
@@ -621,6 +757,12 @@ func (a *inputActions) input(mode keyMode, ev keyEvent) inputFunc {
 			return nil
 		}
 		return a.byCtrl[mode][ev.ctrl-'a']
+	}
+	if ev.meta != 0 {
+		if ev.meta >= 128 {
+			return nil
+		}
+		return a.byMeta[mode][ev.meta]
 	}
 	return a.byByte[byteSlot(mode, ev.b)]
 }
@@ -643,6 +785,11 @@ func (idx *keyIndex) lookup(mode keyMode, ev keyEvent) *keyBinding {
 			return nil
 		}
 		i = idx.byCtrl[mode][ev.ctrl-'a']
+	case ev.meta != 0:
+		if ev.meta >= 128 {
+			return nil
+		}
+		i = idx.byMeta[mode][ev.meta]
 	default:
 		i = idx.byByte[mode][ev.b]
 	}
@@ -668,6 +815,51 @@ func ctrlChordLetter(key modifiedKey) (byte, bool) {
 	return letter, ctrlChordLetters[letter-'a']
 }
 
+// ctrlChordBoundIn asks the same question OF ONE MODE, and it is the question
+// the input loop actually has to answer.
+//
+// A chord row in one mode used to poison the letter everywhere: the moment the
+// ':' box bound CSI-u Ctrl-N, every mode saw Ctrl-N as a chord, and a mode
+// with no chord row for it got a dead key instead of the control byte. That is
+// the same bug in the other direction as the one the comment above describes,
+// and it is why ^D can be delete-forward in the box while staying detach in
+// the pager: MODES DISAGREE ABOUT A KEY, so the reduction is per mode.
+func ctrlChordBoundIn(mode keyMode, letter byte) bool {
+	if letter < 'a' || letter > 'z' {
+		return false
+	}
+	return inputIndex.byCtrl[mode][letter-'a'] != noBinding ||
+		pagerIndex.byCtrl[mode][letter-'a'] != noBinding
+}
+
+// modeBindsMeta reports whether this mode binds Meta at all.
+//
+// THE ESC AMBIGUITY LIVES ON THIS FUNCTION. A terminal sends Alt-b as the two
+// bytes ESC 'b', which is also what "Esc, then b" looks like when a fast typist
+// produces both inside one read. Rather than a timeout, the decoder asks the
+// table -- but it asks about the MODE, not about the individual chord, and the
+// difference matters:
+//
+//   - In a mode with no Meta rows (the pager, the search box), an ESC pair is
+//     what it has always been: a bare Esc, then an ordinary key. Nothing about
+//     those modes changed.
+//   - In a mode that HAS Meta rows (the ':' box), ESC <byte> is a Meta chord
+//     whether or not that particular chord is bound, and an unbound one is
+//     swallowed. Otherwise M-x for an x nobody bound would close the box and
+//     type an x -- the two most destructive things it could have meant.
+func modeBindsMeta(mode keyMode) bool { return metaModes[mode] }
+
+// metaFold is the case rule for a Meta chord: Alt+Shift+B means Alt+b, because
+// no row wants to tell them apart and a user holding Shift by accident should
+// not lose the key. Bytes that are not letters pass through untouched, which
+// is what keeps M-< and M-> (Shift-heavy by construction) addressable.
+func metaFold(b byte) byte {
+	if b >= 'A' && b <= 'Z' {
+		return b | 0x20
+	}
+	return b
+}
+
 // opensTranscript reports whether a key pressed during inline (incipit)
 // streaming should yank the pager up first, so it acts on arrival instead of
 // looking like a dead keyboard. It is now a table lookup: a binding says so on
@@ -678,6 +870,8 @@ func opensTranscript(ev keyEvent) bool {
 		return int(ev.nav) < navCount && openerNav[ev.nav]
 	case ev.ctrl != 0:
 		return ev.ctrl >= 'a' && ev.ctrl <= 'z' && openerCtrl[ev.ctrl-'a']
+	case ev.meta != 0:
+		return ev.meta < 128 && openerMeta[ev.meta]
 	default:
 		return openerByte[ev.b]
 	}
