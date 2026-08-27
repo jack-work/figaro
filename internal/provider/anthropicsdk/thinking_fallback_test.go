@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/anthropics/anthropic-sdk-go"
+
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 )
@@ -36,5 +38,37 @@ func TestEncodeDropsUnsignedThinking(t *testing.T) {
 	}
 	if !bytes.Contains(out, []byte("the answer")) || !bytes.Contains(out, []byte("tool_use")) {
 		t.Fatalf("text and tool_use must survive: %s", out)
+	}
+}
+
+// The same rule on the SDK path: an unsigned thinking block never replays,
+// so it never reaches the cache. See TestAssistantCacheNativeDropsUnsignedThinking.
+func TestUnsignedThinkingIsNotCacheable(t *testing.T) {
+	var acc anthropic.Message
+	if err := json.Unmarshal([]byte(`{"role":"assistant","type":"message","content":[
+		{"type":"thinking","thinking":"cut before the signature arrived"},
+		{"type":"thinking","thinking":"","signature":"sig"},
+		{"type":"thinking","thinking":"whole","signature":"sig"}]}`), &acc); err != nil {
+		t.Fatal(err)
+	}
+	want := []bool{false, true, true}
+	for i, b := range acc.Content {
+		keep, fatal := cacheableAccumulatedBlock(b)
+		if fatal {
+			t.Fatalf("block %d: fatal", i)
+		}
+		if keep != want[i] {
+			t.Errorf("block %d: keep=%v, want %v", i, keep, want[i])
+		}
+	}
+
+	p := &Provider{CacheNamespace: "anthropic"}
+	acc.Content = acc.Content[:1]
+	cache, err := p.assistantCache(acc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cache.Payload) != 0 {
+		t.Fatalf("unsigned thinking reached the cache: %s", cache.Payload[0])
 	}
 }

@@ -407,7 +407,14 @@ func cacheableNativeBlock(b nativeBlock) (keep, fatal bool) {
 	case "text":
 		return strings.TrimSpace(b.Text) != "", false
 	case "thinking":
-		return b.Signature != "" || strings.TrimSpace(b.Thinking) != "", false
+		// THE SIGNATURE, NOT THE TEXT, IS WHAT MAKES A THINKING BLOCK
+		// REPLAYABLE. A turn interrupted mid-thought leaves behind thinking
+		// text whose signature_delta never arrived; caching that block
+		// BRICKS THE ARIA, because every later request replays it and the
+		// API answers 400 (thinking.signature: Field required) forever.
+		// Summary text without a signature is worth nothing on the wire, so
+		// it is dropped here and the IR keeps it for the transcript.
+		return b.Signature != "", false
 	case "redacted_thinking":
 		return b.Data != "", false
 	case "tool_use":

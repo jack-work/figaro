@@ -226,3 +226,32 @@ func TestCacheableNativeBlockShapesCarryRequiredFields(t *testing.T) {
 		}
 	}
 }
+
+// A turn cut mid-thought leaves thinking text whose signature_delta never
+// arrived. Caching that block bricks the aria: it replays on EVERY later
+// request and the API answers 400 (thinking.signature: Field required)
+// forever, with no prompt that can get past it. The summary text is worth
+// nothing on the wire without its signature, so the cache refuses it.
+func TestAssistantCacheNativeDropsUnsignedThinking(t *testing.T) {
+	a := &Anthropic{ReminderRenderer: "tag", CacheNamespace: "anthropic"}
+	cache, err := a.assistantCacheNative(nativeMessage{
+		Role: "assistant",
+		Content: []nativeBlock{
+			{Type: "thinking", Thinking: "cut before the signature arrived"},
+			{Type: "text", Text: "salve"},
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, cache.Payload, 1)
+	assert.NotContains(t, string(cache.Payload[0]), "thinking")
+	assert.Contains(t, string(cache.Payload[0]), "salve")
+
+	// Thinking alone leaves nothing cacheable at all: no row, and the
+	// fallback encoder re-derives the turn from the IR.
+	cache, err = a.assistantCacheNative(nativeMessage{
+		Role:    "assistant",
+		Content: []nativeBlock{{Type: "thinking", Thinking: "cut before the signature arrived"}},
+	})
+	require.NoError(t, err)
+	assert.Empty(t, cache.Payload)
+}
