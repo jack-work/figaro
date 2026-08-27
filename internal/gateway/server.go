@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -25,9 +26,11 @@ type Config struct {
 	Listen string
 	// AngelusSocket is the daemon this gateway fronts.
 	AngelusSocket string
-	// Authn selects the authenticator. See refusal.go for what each one is
-	// allowed to serve on.
-	Authn Authn
+	// Authn is the ordered list of authenticators. More than one is the
+	// normal case behind Caddy, which forward-auths only requests without a
+	// bearer -- see anyOf. A caller picks which credential to present, so
+	// the exposure check below demands that EVERY entry be legal.
+	Authn []Authn
 	// Doorkey is the shared secret when Authn is AuthnDoorkey.
 	Doorkey string
 	// Origins that may open a BROWSER connection. Empty refuses every
@@ -69,8 +72,8 @@ type Config struct {
 
 // Defaults fills the unset fields that have a safe answer.
 func (c Config) Defaults() Config {
-	if c.Authn == "" {
-		c.Authn = AuthnNone
+	if len(c.Authn) == 0 {
+		c.Authn = []Authn{AuthnNone}
 	}
 	if c.Keepalive == 0 {
 		c.Keepalive = 30 * time.Second
@@ -92,10 +95,12 @@ func (c Config) Check() error {
 	if c.AngelusSocket == "" {
 		return errors.New("no angelus socket to front")
 	}
-	if err := admitKnown(c.Authn); err != nil {
-		return err
+	for _, a := range c.Authn {
+		if err := admitKnown(a); err != nil {
+			return err
+		}
 	}
-	if c.Authn == AuthnDoorkey {
+	if slices.Contains(c.Authn, AuthnDoorkey) {
 		if c.Doorkey == "" {
 			return errors.New("authn=doorkey needs a secret: give --doorkey-file a path")
 		}
@@ -107,6 +112,14 @@ func (c Config) Check() error {
 		// is routable, and loopback plaintext is fine.
 	}
 	return nil
+}
+
+func authnNames(as []Authn) string {
+	out := make([]string, len(as))
+	for i, a := range as {
+		out[i] = string(a)
+	}
+	return strings.Join(out, ",")
 }
 
 func admitKnown(a Authn) error {
@@ -210,9 +223,14 @@ func (s *Server) Serve(ctx context.Context) error {
 	// decide. Judging the config string instead would miss ":9090",
 	// "0.0.0.0", "::ffff:127.0.0.1", and a hostname resolving off-box.
 	r := classify(ln)
-	if err := admit(s.cfg.Authn, r, s.cfg.TLSTerminated); err != nil {
-		ln.Close()
-		return fmt.Errorf("refusing to serve: %w", err)
+	// EVERY authenticator must be legal on this exposure, not merely one:
+	// a caller chooses which credential to present, so the door is as
+	// strong as its weakest option.
+	for _, a := range s.cfg.Authn {
+		if err := admit(a, r, s.cfg.TLSTerminated); err != nil {
+			ln.Close()
+			return fmt.Errorf("refusing to serve: %w", err)
+		}
 	}
 	if r != reachUnix && len(s.cfg.Hosts) == 0 {
 		s.log.Warn("no Host allowlist on a TCP listener: a browser can reach this by DNS rebinding",
@@ -222,7 +240,7 @@ func (s *Server) Serve(ctx context.Context) error {
 
 	s.log.Info("gateway listening",
 		"addr", ln.Addr().String(), "exposure", r.String(),
-		"authn", string(s.cfg.Authn), "daemon", s.cfg.AngelusSocket,
+		"authn", authnNames(s.cfg.Authn), "daemon", s.cfg.AngelusSocket,
 		"max_conn_age", s.cfg.MaxConnAge, "keepalive", s.cfg.Keepalive)
 
 	go func() {

@@ -271,3 +271,104 @@ func TestRequireGroupsAdmitsDoorkeyHolder(t *testing.T) {
 		t.Fatalf("a doorkey holder was refused by the group gate: %v", err)
 	}
 }
+
+// ── two credential shapes at one door ────────────────────────────────────
+//
+// Behind Caddy this is the normal case, not an exotic one: the Caddyfile
+// forward-auths only requests WITHOUT a bearer
+//
+//	@no_bearer not header Authorization Bearer*
+//	forward_auth @no_bearer …
+//
+// so a browser arrives with Remote-User and a machine arrives with a bearer
+// Caddy passed straight through. One listener, two populations.
+
+func TestAnyOfAcceptsEitherCredential(t *testing.T) {
+	const secret = "0123456789abcdef0123456789abcdef"
+	chain := anyOf{upstreamAuth{}, doorkeyAuth{secret: secret}}
+
+	t.Run("browser: Remote-User", func(t *testing.T) {
+		r := httptest.NewRequest("GET", "/v1/socket", nil)
+		r.Header.Set("Remote-User", "gluck")
+		r.Header.Set("Remote-Groups", "figaro-admin")
+		id, err := chain.authenticate(r)
+		if err != nil {
+			t.Fatalf("a browser request was refused: %v", err)
+		}
+		if id.Label != "gluck" || len(id.Groups) != 1 {
+			t.Fatalf("identity = %+v", id)
+		}
+	})
+
+	t.Run("machine: bearer", func(t *testing.T) {
+		r := httptest.NewRequest("GET", "/v1/socket", nil)
+		r.Header.Set("Authorization", "Bearer "+secret)
+		id, err := chain.authenticate(r)
+		if err != nil {
+			t.Fatalf("a machine request was refused: %v", err)
+		}
+		if !id.Authenticated {
+			t.Fatalf("identity = %+v", id)
+		}
+	})
+
+	t.Run("neither is still refused", func(t *testing.T) {
+		r := httptest.NewRequest("GET", "/v1/socket", nil)
+		if _, err := chain.authenticate(r); err == nil {
+			t.Fatal("a request with no credential at all was authenticated")
+		}
+	})
+
+	// A WRONG bearer must not fall through to upstream and get another
+	// chance. It does not here only because upstream also refuses it -- but
+	// if it ever presented Remote-User too, the wrong bearer would be
+	// IGNORED rather than fatal. That is the accepted semantic of a chain,
+	// and it is why the weakest-link rule below exists.
+	t.Run("wrong bearer alone is refused", func(t *testing.T) {
+		r := httptest.NewRequest("GET", "/v1/socket", nil)
+		r.Header.Set("Authorization", "Bearer wrong")
+		if _, err := chain.authenticate(r); err == nil {
+			t.Fatal("a wrong bearer authenticated")
+		}
+	})
+}
+
+// THE WEAKEST-LINK RULE. A caller CHOOSES which credential to present, so a
+// door is exactly as strong as its weakest authenticator. Serve must admit
+// an exposure only when EVERY configured authenticator is legal on it --
+// checking that any one is would let `--authn doorkey,none` serve the world
+// because doorkey is fine there.
+func TestExposureMustBeLegalForEveryAuthenticator(t *testing.T) {
+	cfg := Config{
+		Listen:        "tcp://0.0.0.0:0",
+		AngelusSocket: "/tmp/a.sock",
+		// doorkey alone would be admitted on a routable address once TLS is
+		// asserted. `none` never is -- and a caller would simply choose it.
+		Authn:         []Authn{AuthnDoorkey, AuthnNone},
+		Doorkey:       strings.Repeat("k", 32),
+		TLSTerminated: true,
+	}.Defaults()
+
+	srv, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New refused early: %v", err)
+	}
+	err = srv.Serve(t.Context())
+	if err == nil {
+		t.Fatal("a door offering `none` alongside `doorkey` served a routable " +
+			"address: the exposure check must consider EVERY authenticator, " +
+			"because the caller picks which one to use")
+	}
+	if !strings.Contains(err.Error(), "open door") {
+		t.Fatalf("refused for the wrong reason: %v", err)
+	}
+}
+
+// The combination spain actually runs must be admitted on loopback.
+func TestSpainsCombinationIsAdmitted(t *testing.T) {
+	for _, a := range []Authn{AuthnUpstream, AuthnDoorkey} {
+		if err := admit(a, reachLoopback, false); err != nil {
+			t.Fatalf("%s refused on loopback, which is how spain runs: %v", a, err)
+		}
+	}
+}

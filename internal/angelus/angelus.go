@@ -29,6 +29,10 @@ import (
 
 // Angelus is the figaro supervisor.
 type Angelus struct {
+	// Peers is the federated node set. Nil on a daemon that federates with
+	// nobody, which is the default and the common case.
+	Peers *peers
+
 	Registry   *Registry
 	Handlers   map[string]jkrpc.HandlerFunc // set before Run()
 	Backend    store.Backend                // aria persistence
@@ -97,6 +101,7 @@ type Angelus struct {
 // Config holds the settings for creating an Angelus.
 type Config struct {
 	RuntimeDir string         // e.g. $XDG_RUNTIME_DIR/figaro
+	StateDir   string         // e.g. ~/.local/state/figaro; where peers.json lives
 	Backend    store.Backend  // aria persistence
 	Settings   *config.Loaded // reclamation policy; nil = defaults
 }
@@ -114,6 +119,12 @@ func New(cfg Config) *Angelus {
 		Settings:   cfg.Settings,
 		uiProj:     uiir.New(nil),
 		Hubs:       newHubs(),
+	}
+	// The peer set is durable and lives beside the store rather than in a
+	// form: forms fork with arias, and which machines this daemon can reach
+	// is a property of the daemon, not of any conversation inside it.
+	if cfg.StateDir != "" {
+		a.Peers = newPeers(cfg.StateDir)
 	}
 	a.UICache = aria.NewComposedCache(uiBudget(cfg.Settings), a.composeTurns, a.uiLineage)
 	return a

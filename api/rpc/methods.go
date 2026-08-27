@@ -110,7 +110,11 @@ const (
 
 // SESSIONS: finding an aria, and the pid bindings a shell holds.
 const (
-	MethodList    = "figaro.list"
+	MethodList = "figaro.list"
+	// MethodPeers reads, adds and removes the FEDERATED NODES this daemon
+	// knows. It lives on the angelus door because peers are a property of
+	// the daemon, not of any aria: the CLI never dials one itself.
+	MethodPeers   = "angelus.peers"
 	MethodAttach  = "figaro.attach"
 	MethodBind    = "pid.bind"
 	MethodResolve = "pid.resolve"

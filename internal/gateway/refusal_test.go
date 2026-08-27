@@ -156,7 +156,7 @@ func TestServeRefusesAndClosesTheListener(t *testing.T) {
 	cfg := Config{
 		Listen:        "tcp://0.0.0.0:0",
 		AngelusSocket: sock,
-		Authn:         AuthnNone,
+		Authn:         []Authn{AuthnNone},
 	}.Defaults()
 
 	srv, err := New(cfg)
@@ -173,7 +173,7 @@ func TestServeRefusesAndClosesTheListener(t *testing.T) {
 }
 
 func TestDoorkeyValidation(t *testing.T) {
-	base := Config{AngelusSocket: "/tmp/x.sock", Authn: AuthnDoorkey}
+	base := Config{AngelusSocket: "/tmp/x.sock", Authn: []Authn{AuthnDoorkey}}
 
 	t.Run("empty secret refuses", func(t *testing.T) {
 		c := base
@@ -218,7 +218,7 @@ func TestDoorkeyValidation(t *testing.T) {
 }
 
 func TestUnknownAuthnRefuses(t *testing.T) {
-	c := Config{Listen: "unix:///tmp/gw.sock", AngelusSocket: "/tmp/a.sock", Authn: "sudo"}
+	c := Config{Listen: "unix:///tmp/gw.sock", AngelusSocket: "/tmp/a.sock", Authn: []Authn{"sudo"}}
 	err := c.Check()
 	if err == nil {
 		t.Fatal("an invented authenticator was accepted")
@@ -234,14 +234,14 @@ func TestUnknownAuthnRefuses(t *testing.T) {
 // silence kills a tunnel; authn gets the most restrictive one.
 func TestDefaultsAreConservative(t *testing.T) {
 	c := Config{}.Defaults()
-	if c.Authn != AuthnNone {
-		t.Fatalf("default authn is %q", c.Authn)
+	if len(c.Authn) != 1 || c.Authn[0] != AuthnNone {
+		t.Fatalf("default authn is %v", c.Authn)
 	}
 	if c.Keepalive != 30*time.Second {
 		t.Fatalf("default keepalive is %v; Cloudflare reaps at ~100s", c.Keepalive)
 	}
 	// And the default authn must then be unable to serve anything exposed.
-	if admit(c.Authn, reachOpen, false) == nil {
+	if admit(c.Authn[0], reachOpen, false) == nil {
 		t.Fatal("the DEFAULT configuration would serve an open port")
 	}
 }

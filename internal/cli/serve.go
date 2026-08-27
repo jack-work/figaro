@@ -54,6 +54,13 @@ func runServe(loaded *config.Loaded, o ServeOpts) error {
 		o.MaxConnAge = 8 * time.Hour
 	}
 
+	var authns []gateway.Authn
+	for _, a := range strings.Split(o.Authn, ",") {
+		if a = strings.TrimSpace(a); a != "" {
+			authns = append(authns, gateway.Authn(a))
+		}
+	}
+
 	// THE SECRET COMES FROM A FILE, never a flag. An argument is visible in
 	// /proc, in a shell history, and in the process table of every other
 	// user on the box; a file is a path plus a mode. It is also what
@@ -85,7 +92,7 @@ func runServe(loaded *config.Loaded, o ServeOpts) error {
 	srv, err := gateway.New(gateway.Config{
 		Listen:        listen,
 		AngelusSocket: sock,
-		Authn:         gateway.Authn(o.Authn),
+		Authn:         authns,
 		Doorkey:       doorkey,
 		Origins:       o.Origins,
 		RequireGroups: o.RequireGroups,
