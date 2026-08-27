@@ -80,11 +80,6 @@ func TestStreamedAssemblyDoesNotRetainTheConversation(t *testing.T) {
 	})
 	a := &Anthropic{Model: "claude-opus-5", ReminderRenderer: "tag"}
 
-	// The store's own cache holds what this daemon appended, which is neither
-	// path's doing and is bounded by the translation budget. It is measured
-	// once and subtracted, so what remains is what THE ASSEMBLY retains.
-	base := liveHeap()
-
 	sliceLive := func() uint64 {
 		perMessage, lts := provider.CollectRows(provider.TranslationRows(rows, 0))
 		req, err := a.projectMessagesWithLTs(oneRowEach(perMessage), lts, snap, nil, 4096, false, "claude-opus-5")
@@ -104,15 +99,22 @@ func TestStreamedAssemblyDoesNotRetainTheConversation(t *testing.T) {
 		return w.live
 	}()
 
+	// NO BASELINE, AND THAT IS THE POINT. Subtracting a floor measured before
+	// the runs made this test flaky: the floor includes the fixture's own
+	// garbage, the heap falls below it once that is collected, and an
+	// unsigned subtraction then reports zero held for BOTH paths -- which
+	// passes or fails depending on the collector's mood.
+	//
+	// The two runs are measured the same way in the same process, so their
+	// DIFFERENCE is the conversation and nothing else. The slice assembler is
+	// holding a body's worth that the streamed one is not.
 	body := bodyBytes(t, a, rows, snap)
-	sliceHeld := sliceLive - base
-	streamedHeld := streamedLive - base
-	t.Logf("held while writing: slice=%d KiB streamed=%d KiB (body=%d KiB, base=%d KiB)",
-		sliceHeld>>10, streamedHeld>>10, body>>10, base>>10)
-	require.Less(t, streamedHeld, sliceHeld/2,
-		"the streamed assembler must not hold the conversation the slice one held")
-	require.Less(t, streamedHeld, body/2,
-		"a streamed body must not retain a body's worth of anything")
+	t.Logf("live heap while writing: slice=%d KiB streamed=%d KiB (body=%d KiB)",
+		sliceLive>>10, streamedLive>>10, body>>10)
+	require.Greater(t, sliceLive, streamedLive,
+		"the slice assembler must hold more than the streamed one")
+	require.GreaterOrEqual(t, sliceLive-streamedLive, body/2,
+		"the gap between them should be most of a body: the conversation the slice path holds")
 }
 
 // liveHeap is the live heap after a collection: the floor a measurement is
@@ -181,11 +183,18 @@ func setPatch(kv map[string]string) message.Patch {
 // benchRowLog is a translator channel in a real store, holding a plausible
 // turn shape: a user message, an assistant message with a tool call, and its
 // result.
+//
+// IT REOPENS THE BACKEND BEFORE HANDING THE LOG BACK, and that is the whole
+// difference between measuring something and measuring nothing. An append
+// SEEDS the tree cache, so a log read in the process that wrote it is served
+// resident and never decodes a single record -- which is not the case that
+// costs anything. The rows a real send pays for are the ones written before
+// the daemon started: cold, and decoded from the frame every time.
 func benchRowLog(tb testing.TB, n int) store.Log[[]json.RawMessage] {
 	tb.Helper()
-	be, err := store.NewXwalBackend(tb.TempDir(), 0)
+	root := tb.TempDir()
+	be, err := store.NewXwalBackend(root, 0)
 	require.NoError(tb, err)
-	tb.Cleanup(func() { be.Close() })
 	outfit, err := be.CreateOutfit("l", setPatch(map[string]string{"system.model": "m"}))
 	require.NoError(tb, err)
 	aria, _, err := be.ForkWith(outfit, 0, setPatch(map[string]string{"system.cwd": "/tmp"}))
@@ -211,7 +220,14 @@ func benchRowLog(tb testing.TB, n int) store.Log[[]json.RawMessage] {
 		})
 		require.NoError(tb, err)
 	}
-	return rows
+	require.NoError(tb, be.Close())
+
+	cold, err := store.NewXwalBackend(root, 0)
+	require.NoError(tb, err)
+	tb.Cleanup(func() { cold.Close() })
+	coldRows, err := cold.OpenTranslator(aria, "anthropic")
+	require.NoError(tb, err)
+	return coldRows
 }
 
 func padding(i int) string {

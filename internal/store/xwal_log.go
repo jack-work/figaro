@@ -57,11 +57,26 @@ func decodeMeta(meta []byte) (fingerprint, recordHash string) {
 	return legacy, ""
 }
 
+// decodeRecord OWNS ITS BYTES. Everything that can outlive the read -- a
+// materialized page, anything the tree cache will hold -- goes through it. See
+// rowsplit.go for why that is not merely tidy.
 func decodeRecord[T any](r xwal.Record) (Entry[T], bool) {
+	return decodeRecordInto[T](r, false)
+}
+
+// decodeRecordAliased hands back rows that are WINDOWS onto r.Payload. Only
+// ScanRange may call it: the row it yields is written to the wire and dropped.
+func decodeRecordAliased[T any](r xwal.Record) (Entry[T], bool) {
+	return decodeRecordInto[T](r, true)
+}
+
+func decodeRecordInto[T any](r xwal.Record, alias bool) (Entry[T], bool) {
 	var v T
 	if len(r.Payload) > 0 {
-		if err := json.Unmarshal(r.Payload, &v); err != nil {
-			return Entry[T]{}, false
+		if !(alias && aliasRows(r.Payload, &v)) {
+			if err := json.Unmarshal(r.Payload, &v); err != nil {
+				return Entry[T]{}, false
+			}
 		}
 	}
 	return Entry[T]{
@@ -132,7 +147,7 @@ func (l *xwalLog[T]) ScanRange(from, to uint64, yield func(Entry[T]) bool) {
 			if err != nil {
 				continue
 			}
-			e, ok := decodeRecord[T](r)
+			e, ok := decodeRecordAliased[T](r)
 			if !ok {
 				continue
 			}
