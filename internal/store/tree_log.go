@@ -264,6 +264,14 @@ func (l *treeLog[T]) ScanRange(from, to uint64, yield func(Entry[T]) bool) {
 
 // substrateScan streams a bracket from the durable log of ONE node, never the
 // cache: substrate's walk, clipped the same way.
+//
+// THE CLIP IS A COORDINATE CONVERSION, NOT A BELT. Scan brackets in the
+// SUBSTRATE'S own space, which is its channel LT; this log brackets in
+// l.key(), which is FigaroLT on the fig IR. figwal guarantees the two are the
+// same number on the main channel, so today the clip removes nothing and a
+// mutation that deletes it passes every test in this package. It stays because
+// the guarantee is the main channel's alone: a log keyed by anything else
+// would be handed its neighbours' records without it.
 func (l *treeLog[T]) substrateScan(node string, from, to uint64, yield func(Entry[T]) bool) {
 	if to <= from {
 		return

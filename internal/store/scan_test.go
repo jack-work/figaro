@@ -108,3 +108,61 @@ func TestScanBoundHoldsAgainstAppends(t *testing.T) {
 	require.Equal(t, before, collect[string](mem, 0, 10), "a bounded walk does not see the append")
 	require.Len(t, collect[string](mem, 0, 0), 11, "an unbounded one does")
 }
+
+// A WALK MUST CROSS A FORK SEAM THE WAY A READ DOES.
+//
+// Every other scan test here builds a log with no lineage, so cuts() returns
+// one coordinate and the whole ancestor path -- substrateScan against another
+// node, interleaved with resident runs -- never runs. That is the riskiest
+// code in the change and it was the least covered: this test is the one that
+// executes it.
+func TestScanCrossesAForkSeam(t *testing.T) {
+	parentMem := NewMemLog[string]()
+	for i := 0; i < 40; i++ {
+		_, err := parentMem.Append(Entry[string]{Payload: fmt.Sprintf("p-%02d", i)})
+		require.NoError(t, err)
+	}
+	sizeOf := func(e Entry[string]) int { return len(e.Payload) + 48 }
+	subs := map[string]Log[string]{"parent": parentMem}
+	open := func(node string) Log[string] { return subs[node] }
+
+	for _, budget := range []int64{0, 1 << 20} {
+		t.Run(fmt.Sprint(budget), func(t *testing.T) {
+			cache := NewIRCache[string](fwtree.NewBudget(budget), open, sizeOf, irKey[string])
+			childMem := NewMemLog[string]()
+			for i := 0; i < 3; i++ {
+				_, err := childMem.Append(Entry[string]{Payload: fmt.Sprintf("c-%02d", i)})
+				require.NoError(t, err)
+			}
+			const base = 41
+			child := &treeLog[string]{
+				inner: childMem, node: "child", sizeOf: sizeOf, key: irKey[string],
+				lineage: func() []fwtree.Ref {
+					return []fwtree.Ref{{Node: "parent"}, {Node: "child", Base: base}}
+				},
+			}
+			child.cache = cache
+			child.openNode = open
+			subs["child"] = childMem
+
+			// Warm a run in the MIDDLE of the parent's half, so the walk has
+			// to interleave: substrate, resident, substrate, then the seam.
+			_ = child.span(10, 25)
+
+			want := child.peek(0, 40)
+			got := collect[string](child, 0, 40)
+			require.Equal(t, want, got, "the walk and the read disagree below the seam")
+			require.Len(t, got, 40)
+			require.Equal(t, "p-00", got[0].Payload)
+			require.Equal(t, "p-39", got[39].Payload)
+
+			// And an early exit inside the ancestor's half stops there.
+			seen := 0
+			Scan[string](child, 0, 40, func(Entry[string]) bool {
+				seen++
+				return seen < 7
+			})
+			require.Equal(t, 7, seen)
+		})
+	}
+}

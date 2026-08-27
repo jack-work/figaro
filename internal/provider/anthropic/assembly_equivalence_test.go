@@ -334,6 +334,21 @@ func TestStreamedAssemblyIsByteIdenticalToTheSliceAssembler(t *testing.T) {
 			board: map[string]json.RawMessage{"system.tags": raw(`{"2":{"cache_control":"ephemeral"}}`)},
 		},
 		{
+			// THE TWO MARKS COLLIDE HERE, and their order decides the bytes:
+			// the rolling tail breakpoint is spent first and a per-LT tag on
+			// the same row overwrites it. A fixture whose tag sits anywhere
+			// but the last row cannot see the difference -- one did not, and
+			// a swapped order survived it.
+			name: "a tag on the LAST row overwrites the tail marker",
+			perMessage: [][]json.RawMessage{
+				{msg("user", "one")},
+				{msg("assistant", "two")},
+				{msg("user", "three")},
+			},
+			lts:   []uint64{1, 2, 3},
+			board: map[string]json.RawMessage{"system.tags": raw(`{"3":{"cache_control":"long"}}`)},
+		},
+		{
 			name:       "empty rows are skipped",
 			perMessage: [][]json.RawMessage{{raw("")}, {msg("user", "only")}, {}},
 			lts:        []uint64{1, 2, 3},
