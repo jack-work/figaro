@@ -14,6 +14,13 @@ type forkCallResult struct {
 	err      error
 }
 
+// waitForFork is THE ONE DOOR every fork goes through, which is why the node
+// coordinate is resolved here rather than at each of the three call sites: a
+// translation armed on two doors out of three is armed on neither, and this
+// program has paid that bill before (see command.go's setCommandRunner).
+//
+// The resolution costs one read of the addressed turn, and only when a node
+// was named; `:19`, `.326` and the head go straight to the wire as typed.
 func waitForFork(
 	ctx context.Context,
 	client *sdk.Angelus,
@@ -21,9 +28,16 @@ func waitForFork(
 	at forkPoint,
 	d dressing,
 ) (*rpc.ForkResponse, error) {
+	wireAt, note, err := resolveForkPoint(ctx, client, ariaID, at)
+	if err != nil {
+		return nil, err
+	}
+	if note != "" {
+		fmt.Fprintf(stderrw, "%s\n", note)
+	}
 	done := make(chan forkCallResult, 1)
 	go func() {
-		response, err := client.Fork(ctx, ariaID, at.turn, at.lt, d.names, d.patch)
+		response, err := client.Fork(ctx, ariaID, wireAt.turn, wireAt.lt, d.names, d.patch)
 		done <- forkCallResult{response: response, err: err}
 	}()
 

@@ -788,6 +788,7 @@ func runFork(loaded *config.Loaded, spec string, opts sendOpts) {
 				Continuation string `json:"continuation"`
 				Alternative  string `json:"alternative"`
 				Turn         uint64 `json:"turn,omitempty"`
+				Node         *int   `json:"node,omitempty"`
 				Rescoped     bool   `json:"rescoped"`
 				OwnerNote    string `json:"owner_note,omitempty"`
 				Mode         string `json:"mode"`
@@ -797,6 +798,7 @@ func runFork(loaded *config.Loaded, spec string, opts sendOpts) {
 				Continuation: resp.Continuation,
 				Alternative:  resp.Alternative,
 				Turn:         at.turn,
+				Node:         at.nodeJSON(),
 				Rescoped:     rescoped,
 				OwnerNote:    resp.OwnerNote,
 				Mode:         "fork",
@@ -932,10 +934,18 @@ func runAttend(loaded *config.Loaded, spec string) {
 			trunk = r.FigaroID
 		}
 		// A binding anchor is an LT, so a named TURN is resolved here; a
-		// named LT is already the thing bindBinding wants.
-		atMainLT := at.lt
-		if at.turn > 0 {
-			lt, rerr := resolveTurn(ctx, acli, trunk, at.turn)
+		// named LT is already the thing bindBinding wants. A named NODE is
+		// resolved first, into whichever of the two it turns out to be.
+		anchor, note, aerr := resolveForkPoint(ctx, acli, trunk, at)
+		if aerr != nil {
+			die("attend: %s", aerr)
+		}
+		if note != "" {
+			fmt.Fprintf(stderrw, "%s\n", note)
+		}
+		atMainLT := anchor.lt
+		if anchor.turn > 0 {
+			lt, rerr := resolveTurn(ctx, acli, trunk, anchor.turn)
 			if rerr != nil {
 				die("attend: %s", rerr)
 			}

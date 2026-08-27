@@ -203,6 +203,7 @@ func runForkPrompt(loaded *config.Loaded, spec string, opts sendOpts, prompt str
 				Continuation string `json:"continuation"`
 				Alternative  string `json:"alternative"`
 				Turn         uint64 `json:"turn,omitempty"`
+				Node         *int   `json:"node,omitempty"`
 				Rescoped     bool   `json:"rescoped"`
 				OwnerNote    string `json:"owner_note,omitempty"`
 				Mode         string `json:"mode"`
@@ -212,6 +213,7 @@ func runForkPrompt(loaded *config.Loaded, spec string, opts sendOpts, prompt str
 				Continuation: resp.Continuation,
 				Alternative:  resp.Alternative,
 				Turn:         at.turn,
+				Node:         at.nodeJSON(),
 				Rescoped:     rescoped,
 				OwnerNote:    resp.OwnerNote,
 				Mode:         "fork-send",

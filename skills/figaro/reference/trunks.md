@@ -65,23 +65,59 @@ Every turn has a figwal **main-LT**, continuous along the trunk's node chain:
 `attend`'s `:<turn>` address that: the shown number **is** the fork
 coordinate.
 
-### Two coordinates: `:turn` and `.LT`
+### Three coordinates: `:turn`, `:turn.node` and `.LT`
 
 | form | coordinate | what it means |
 |---|---|---|
 | `<id>:<n>` | **turn** | The exchange: your prompt and everything the agent did about it. What `show` prints, and what you normally want. |
+| `<id>:<n>.<k>` | **node** | One thing inside that turn: a paragraph, a thought, a tool call. The address the pager draws under `Ctrl-O` (`12.3`), so **what you can point at you can branch at**. `-1` is the turn's opening question, which is the turn coordinate itself. |
 | `<id>.<n>` | **LT** | The model's logical time: one step of its experience. What `show -v/-l` prints. |
 
-The colon is the human coordinate; the dot is the model's. **Prefer the
-colon.** Most LTs sit mid-tool, and forking there strands a `tool_invoke`
-without its result, so `.LT` is the *precise* form rather than the safe one.
-Reach for it when you already hold an LT (from `show -v`, a log line, a
-tool), or to branch somewhere no turn boundary exists.
+The colon is the human coordinate; the dot after it is the reader's; the bare
+dot is the model's. **Prefer the colon.** Most LTs sit mid-tool, and forking
+there strands a `tool_invoke` without its result, so `.LT` is the *precise*
+form rather than the safe one. Reach for it when you already hold an LT (from
+`show -v`, a log line, a tool), or to branch somewhere no turn boundary exists.
 
-Both work everywhere a coordinate does: `send`, `fork`, `attend`: because
-one parser reads them, and the daemon accepts both on the wire (`at_turn`
-and `at_lt`) and does any translation itself. Naming both at once is an
-error rather than a precedence rule.
+All three work everywhere a coordinate does: `send`, `fork`, `attend`: because
+one parser reads them. The daemon accepts the turn and the LT on the wire
+(`at_turn` and `at_lt`) and does that translation itself; the NODE is resolved
+by the client, for the reason below. Naming more than one at once is an error
+rather than a precedence rule.
+
+#### A node is finer than a fork point
+
+A fork cuts the message log **between whole messages** — that is what the
+branch and its parent share. A node is a content *block*: one assistant message
+that says a paragraph and then calls a tool is **one message and two nodes**.
+
+So a node coordinate resolves to the message boundary at or before it, and when
+that is earlier than the node you named, the command **says so** and forks
+there anyway:
+
+```
+$ figaro fork abc12345:19.7
+node 7 cannot be cut at: forking before node 6 instead (a fork cuts whole
+messages, and node 7 is not where one begins)
+forked abc12345 at turn 19 node 7 (now a frozen fork point)
+```
+
+A node that *begins* its own message is exact and says nothing extra. Two more
+rules fall out of the same fact:
+
+- **`:19.0` keeps the turn's question and drops every answer to it** — a
+  different place from `:19`, which drops the question too.
+- **A fork never strands a tool call.** A tool node carries both its
+  coordinates (the invoke and its result), so a cut that would land between
+  them retreats past the whole call. Anthropic rejects a conversation whose
+  `tool_use` has no `tool_result`, so this is the difference between a branch
+  you can prompt and one you cannot.
+
+The resolution reads the daemon's **own composed nodes**, over the same read
+wire the pager and `show` use — not a second composer in the client. Two
+composers that disagreed by one node would fork one node away from where you
+pointed. `scripts/forknode-e2e.sh` proves the whole path against a real daemon
+with no credentials and no tokens.
 
 ## Commands
 
@@ -89,10 +125,12 @@ error rather than a precedence rule.
   **replaced**, then send to the new branch (and **rebind** this shell there;
   `--stay`/`--attend=false` to send but not move). Without a coordinate, plain
   append to the tail.
-- **`fork [<id>[:<turn>|.<lt>]] [--stay] [-- <prompt>]`**: imperative branch. A
-  `:<turn>` is an interior fork: everything through the end of turn
+- **`fork [<id>[:<turn>[.<node>]|.<lt>]] [--stay] [-- <prompt>]`**: imperative
+  branch. A `:<turn>` is an interior fork: everything through the end of turn
   `<turn>-1` is shared, the original suffix becomes the continuation, a fresh
-  empty alternative diverges. `.<lt>` forks at that logical time exactly. No
+  empty alternative diverges. `:<turn>.<node>` cuts INSIDE that turn, at the
+  message the node begins (see above). `.<lt>` forks at that logical time
+  exactly. No
   coordinate = tail fork. Forking your **own** bound aria rebinds you to the
   continuation (same trunk/mantra, the alternative is the new branch);
   forking any other aria, or `--stay`, leaves your session untouched.

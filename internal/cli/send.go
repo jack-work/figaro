@@ -316,16 +316,39 @@ func argsFromBoundary(args []string) []string {
 
 // forkPoint is WHERE in an aria a fork lands, in whichever coordinate the
 // user named. Zero value = the head.
+//
+// THREE COORDINATES, one type, because they are three names for one cut and
+// the parser must not let a caller carry two at once:
+//
+//	:19       turn 19 is replaced        (the human coordinate)
+//	:19.10    node 10 of turn 19 is      (the coordinate the PAGER shows)
+//	.326      LT 326 exactly             (the model's coordinate)
+//
+// The node form is the only one that cannot go on the wire as typed: a node
+// is a RENDERING coordinate, minted by the composer out of a message's content
+// blocks, and the fork wire speaks messages. resolveForkPoint (forknode.go)
+// does that translation against the daemon's own composed nodes -- the same
+// ones the pager numbered on screen -- rather than re-deriving them here.
 type forkPoint struct {
 	turn uint64
 	lt   uint64
+
+	// node is meaningful only with hasNode, because node 0 is a real address
+	// (the first thing the agent produced) and -1 is another (the turn's
+	// opening question, as the pager numbers it).
+	node    int
+	hasNode bool
 }
 
-func (f forkPoint) isHead() bool { return f.turn == 0 && f.lt == 0 }
+func (f forkPoint) isHead() bool { return f.turn == 0 && f.lt == 0 && !f.hasNode }
 
 // String names the coordinate the way the user typed it, for messages.
 func (f forkPoint) String() string {
 	switch {
+	case f.turn > 0 && f.hasNode && f.node == inquiryNode:
+		return fmt.Sprintf("turn %d's question", f.turn)
+	case f.turn > 0 && f.hasNode:
+		return fmt.Sprintf("turn %d node %d", f.turn, f.node)
 	case f.turn > 0:
 		return fmt.Sprintf("turn %d", f.turn)
 	case f.lt > 0:
@@ -336,18 +359,19 @@ func (f forkPoint) String() string {
 }
 
 // parseTarget splits a target spec into a trunk id and an optional fork
-// point: ":<n>" is a turn, ".<n>" is an LT.
+// point: ":<n>" is a turn, ":<n>.<k>" is a node within that turn, and ".<n>"
+// (with no colon) is an LT.
 func parseTarget(spec string) (trunk string, at forkPoint, err error) {
 	if spec == "" {
 		return "", forkPoint{}, nil
 	}
 	trunk = spec
 	if i := strings.LastIndex(spec, ":"); i >= 0 {
-		n, perr := strconv.ParseUint(spec[i+1:], 10, 64)
-		if perr != nil || n == 0 {
-			return "", forkPoint{}, fmt.Errorf("bad :<turn> in %q (want [<trunk>]:<n>, turns start at 1)", spec)
+		trunk = spec[:i]
+		at, err = parseTurnCoord(spec, spec[i+1:])
+		if err != nil {
+			return "", forkPoint{}, err
 		}
-		trunk, at.turn = spec[:i], n
 	} else if i := strings.LastIndex(spec, "."); i >= 0 {
 		n, perr := strconv.ParseUint(spec[i+1:], 10, 64)
 		if perr != nil || n == 0 {
@@ -361,6 +385,27 @@ func parseTarget(spec string) (trunk string, at forkPoint, err error) {
 		}
 	}
 	return trunk, at, nil
+}
+
+// parseTurnCoord reads what follows the colon: `<turn>` or `<turn>.<node>`.
+// spec is carried only so the error can quote what the user typed.
+func parseTurnCoord(spec, coord string) (forkPoint, error) {
+	turnText, nodeText, hasNode := strings.Cut(coord, ".")
+	turn, err := strconv.ParseUint(turnText, 10, 64)
+	if err != nil || turn == 0 {
+		return forkPoint{}, fmt.Errorf("bad :<turn> in %q (want [<trunk>]:<n>, turns start at 1)", spec)
+	}
+	if !hasNode {
+		return forkPoint{turn: turn}, nil
+	}
+	// The node is SIGNED: -1 is the turn's opening question, which the pager
+	// addresses as `:12.-1` and which is a real fork point (it is the whole
+	// turn, question included). Nothing below -1 addresses anything.
+	node, err := strconv.Atoi(nodeText)
+	if err != nil || node < inquiryNode {
+		return forkPoint{}, fmt.Errorf("bad :<turn>.<node> in %q (want [<trunk>]:<n>.<k>, nodes start at 0; -1 is the question)", spec)
+	}
+	return forkPoint{turn: turn, node: node, hasNode: true}, nil
 }
 
 // validateSendID wraps rpc.ValidateAriaID with a friendlier error

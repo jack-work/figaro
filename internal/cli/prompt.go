@@ -187,6 +187,7 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, as
 			Alternative  string `json:"alternative"`
 			Continuation string `json:"continuation"`
 			Turn         uint64 `json:"turn"`
+			Node         *int   `json:"node,omitempty"`
 			Mode         string `json:"mode"`
 		}{
 			AriaID:       target,
@@ -194,6 +195,7 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, as
 			Alternative:  fr.Alternative,
 			Continuation: fr.Continuation,
 			Turn:         at.turn,
+			Node:         at.nodeJSON(),
 			Mode:         "fork-send",
 		})
 		// --json submits and exits. This used to print the object and then

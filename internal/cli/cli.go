@@ -881,7 +881,7 @@ printed id yourself. See ` + "`figaro help form`" + ` for the form family.`,
 		Name:  "fork",
 		Group: "Session",
 		Short: "Branch a conversation: keep this id, mint an alternative",
-		Usage: "fork [--id <id> | <id>[:<turn>]] [--stay] [-r|-v|-o|-l|-x|-n|-y|-f|-j] [-- <prompt>]",
+		Usage: "fork [--id <id> | <id>[:<turn>[.<node>]]] [--stay] [-r|-v|-o|-l|-x|-n|-y|-f|-j] [-- <prompt>]",
 		Long: `Branch a conversation. A HEAD fork keeps the target's id on the
 continuation line and mints ONE new aria, the alternative. The target is
 NOT frozen and does NOT become read-only: it stays live at the same id,
@@ -892,15 +892,26 @@ so anything already addressing it keeps working. Only an INTERIOR fork
   figaro fork <id>            branch another aria at its head (maintenance)
   figaro fork <id>:12         interior fork: history before turn 12 is shared,
                               the original suffix becomes the continuation
+  figaro fork <id>:12.10      inside turn 12: node 10 and everything after it
+                              is replaced (the number the pager draws under ^O)
+  figaro fork <id>:12.-1      turn 12's question: the same as <id>:12
   figaro fork <id>.842        the same, at an LT instead of a turn
   figaro fork --stay          branch but do not rebind this shell
 
-TWO COORDINATES. :N is a TURN -- one exchange, the number show prints,
-and what you normally want. .N is an LT -- one step of the model's
-experience, the number show -v prints. Prefer the colon: most LTs sit
-mid-tool, where a fork strands a tool_invoke without its result. Reach for
-the dot when you already hold an LT, or need a point no turn boundary names.
-Both work for send, fork and attend; naming both at once is an error.
+THREE COORDINATES. :N is a TURN -- one exchange, the number show prints,
+and what you normally want. :N.K is a NODE inside that turn -- the address
+the pager shows under ^O, so what you can point at you can branch at. .N is
+an LT -- one step of the model's experience, the number show -v prints.
+Prefer the colon: most LTs sit mid-tool, where a fork strands a tool_invoke
+without its result. Reach for the dot when you already hold an LT, or need a
+point no turn boundary names. All three work for send, fork and attend;
+naming more than one at once is an error.
+
+A NODE IS FINER THAN A FORK POINT, and the difference is reported rather
+than hidden. An assistant message that says a paragraph and then calls a
+tool is ONE message and TWO nodes; a fork cuts whole messages, so forking
+at that tool retreats to before the paragraph and says so on stderr. A node
+that begins its own message is exact and says nothing.
 
 Forking your own bound aria at its head leaves this shell bound to the
 same id: the continuation keeps the target's id, trunk and mantra, and
