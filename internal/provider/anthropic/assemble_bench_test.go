@@ -105,8 +105,19 @@ func TestStreamedAssemblyDoesNotRetainTheConversation(t *testing.T) {
 	}()
 
 	body := bodyBytes(t, a, rows, snap)
-	sliceHeld := sliceLive - base
-	streamedHeld := streamedLive - base
+	// SIGNED, AND CLAMPED. The floor is measured before the first write and
+	// the heap can fall BELOW it once the fixture's own garbage is collected,
+	// which underflowed an unsigned subtraction into 18 exabytes and made the
+	// assertion pass for the wrong reason in one direction and fail in the
+	// other.
+	held := func(live uint64) uint64 {
+		if live < base {
+			return 0
+		}
+		return live - base
+	}
+	sliceHeld := held(sliceLive)
+	streamedHeld := held(streamedLive)
 	t.Logf("held while writing: slice=%d KiB streamed=%d KiB (body=%d KiB, base=%d KiB)",
 		sliceHeld>>10, streamedHeld>>10, body>>10, base>>10)
 	require.Less(t, streamedHeld, sliceHeld/2,
@@ -181,11 +192,18 @@ func setPatch(kv map[string]string) message.Patch {
 // benchRowLog is a translator channel in a real store, holding a plausible
 // turn shape: a user message, an assistant message with a tool call, and its
 // result.
+//
+// IT REOPENS THE BACKEND BEFORE HANDING THE LOG BACK, and that is the whole
+// difference between measuring something and measuring nothing. An append
+// SEEDS the tree cache, so a log read in the process that wrote it is served
+// resident and never decodes a single record -- which is not the case that
+// costs anything. The rows a real send pays for are the ones written before
+// the daemon started: cold, and decoded from the frame every time.
 func benchRowLog(tb testing.TB, n int) store.Log[[]json.RawMessage] {
 	tb.Helper()
-	be, err := store.NewXwalBackend(tb.TempDir(), 0)
+	root := tb.TempDir()
+	be, err := store.NewXwalBackend(root, 0)
 	require.NoError(tb, err)
-	tb.Cleanup(func() { be.Close() })
 	outfit, err := be.CreateOutfit("l", setPatch(map[string]string{"system.model": "m"}))
 	require.NoError(tb, err)
 	aria, _, err := be.ForkWith(outfit, 0, setPatch(map[string]string{"system.cwd": "/tmp"}))
@@ -211,7 +229,14 @@ func benchRowLog(tb testing.TB, n int) store.Log[[]json.RawMessage] {
 		})
 		require.NoError(tb, err)
 	}
-	return rows
+	require.NoError(tb, be.Close())
+
+	cold, err := store.NewXwalBackend(root, 0)
+	require.NoError(tb, err)
+	tb.Cleanup(func() { cold.Close() })
+	coldRows, err := cold.OpenTranslator(aria, "anthropic")
+	require.NoError(tb, err)
+	return coldRows
 }
 
 func padding(i int) string {
