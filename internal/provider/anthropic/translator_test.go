@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -22,16 +23,18 @@ func TestCatchUpPreservesPrefixBytes(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	first, _, _ := a.catchUp(log, cache, nil, nil)
-	prefix := append([]byte(nil), first[0][0]...)
+	firstSeq, _ := a.catchUp(log, cache, nil, nil)
+	first, _ := provider.CollectRows(firstSeq)
+	prefix := append([]byte(nil), first[0]...)
 	_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("next")},
 	}})
 	require.NoError(t, err)
-	second, _, _ := a.catchUp(log, cache, nil, nil)
+	secondSeq, _ := a.catchUp(log, cache, nil, nil)
+	second, _ := provider.CollectRows(secondSeq)
 
 	require.Len(t, second, 3)
-	assert.Equal(t, prefix, []byte(second[0][0]))
+	assert.Equal(t, prefix, []byte(second[0]))
 }
 
 func TestInvalidateIfStaleUsesTailFingerprint(t *testing.T) {

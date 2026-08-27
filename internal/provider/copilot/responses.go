@@ -448,10 +448,16 @@ func (p *responsesProvider) inputFor(in provider.SendInput) ([]json.RawMessage, 
 		return nil, fmt.Errorf("copilot responses catch up: %w", err)
 	}
 
-	perMessage, _ := provider.Translations(rows)
+	// The websocket frame is a typed array, so this tenant assembles one. What
+	// it no longer does is build a [][]json.RawMessage of the whole history
+	// first and flatten it: one array, walked once.
+	to, ok := provider.TranslationTail(rows)
+	if !ok {
+		return nil, nil
+	}
 	var input []json.RawMessage
-	for _, row := range perMessage {
-		input = append(input, row...)
+	for row := range provider.TranslationRows(rows, to) {
+		input = append(input, row)
 	}
 	return input, nil
 }

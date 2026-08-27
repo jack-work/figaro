@@ -133,3 +133,16 @@ func TestAHistoryWithoutDuplicatesIsUntouched(t *testing.T) {
 		require.Equal(t, string(rows[i]), string(got[i]))
 	}
 }
+
+// coalesceRows and dropDuplicateResults were the slice passes. THEY ARE GONE
+// FROM THE PRODUCTION TREE -- these adapters keep every case that was written
+// against them, pointed at the sequences that replaced them, so the table is
+// testing what ships rather than a shape nothing calls.
+func coalesceRows(rows []json.RawMessage, lts []uint64) ([]json.RawMessage, []uint64) {
+	return provider.CollectRows(coalesceRowsSeq(provider.SliceRows(rows, lts)))
+}
+
+func dropDuplicateResults(rows []json.RawMessage) []json.RawMessage {
+	out, _ := provider.CollectRows(dropDuplicateResultsSeq(provider.SliceRows(rows, nil)))
+	return out
+}

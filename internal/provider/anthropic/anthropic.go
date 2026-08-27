@@ -782,14 +782,36 @@ func readCredo(snapshot form.Snapshot) string {
 	return ""
 }
 
+// projectMessagesWithModel is the MATERIALIZING assembler, and nothing on the
+// send path calls it: see projectRequest.
+//
 // projectMessagesWithModel assembles a nativeRequest from cached
 // per-message bytes.
 func (a *Anthropic) projectMessagesWithModel(perMessage [][]json.RawMessage, snapshot form.Snapshot, tools []provider.Tool, maxTokens int, oauth bool, model string) (nativeRequest, error) {
 	return a.projectMessagesWithLTs(perMessage, nil, snapshot, tools, maxTokens, oauth, model)
 }
 
-// projectMessagesWithLTs is the assembler with per-message LTs.
+// projectMessagesWithLTs is the materializing assembler with per-message LTs.
 func (a *Anthropic) projectMessagesWithLTs(perMessage [][]json.RawMessage, lts []uint64, snapshot form.Snapshot, tools []provider.Tool, maxTokens int, oauth bool, model string) (nativeRequest, error) {
+	req, rows, err := a.projectRequest(provider.PerMessageRows(perMessage, lts), snapshot, tools, maxTokens, oauth, model)
+	if err != nil {
+		return req, err
+	}
+	// THE MATERIALIZING PATH, AND IT IS NOT THE SEND PATH. Tests assert on an
+	// assembled request and countCacheMarkers counts one; the wire gets the
+	// sequence. Both come out of projectRequest, so there is one set of
+	// semantics and only one of them holds the conversation.
+	req.Messages, _ = provider.CollectRows(rows)
+	return req, nil
+}
+
+// projectRequest builds the request FRAME -- everything but the messages --
+// and returns the row sequence that splices into it.
+//
+// The frame is marked here because system blocks and tools are the frame's own
+// fields; the two marks that land INSIDE a message ride the sequence, where
+// the row they belong to passes exactly once.
+func (a *Anthropic) projectRequest(src provider.RowSeq, snapshot form.Snapshot, tools []provider.Tool, maxTokens int, oauth bool, model string) (nativeRequest, provider.RowSeq, error) {
 	if maxTokens == 0 {
 		maxTokens = a.MaxTokens
 	}
@@ -802,26 +824,12 @@ func (a *Anthropic) projectMessagesWithLTs(perMessage [][]json.RawMessage, lts [
 		// TODO: put tools on the form as an ordered list.
 		Tools: projectTools(tools),
 	}
-	var msgLTs []uint64
-	for i, entry := range perMessage {
-		var lt uint64
-		if i < len(lts) {
-			lt = lts[i]
-		}
-		for _, raw := range entry {
-			if len(raw) == 0 {
-				continue
-			}
-			req.Messages = append(req.Messages, raw)
-			msgLTs = append(msgLTs, lt)
-		}
-	}
 
-	// BEFORE ANY MARKING: cache breakpoints and per-LT tags address messages by
-	// INDEX, so merging after them would move the marks onto other messages.
-	req.Messages = dropDuplicateResults(req.Messages)
-	req.Messages, msgLTs = coalesceRows(req.Messages, msgLTs)
+	// BEFORE ANY MARKING: cache breakpoints and per-LT tags address the row
+	// they land on, so a pass that drops or merges rows must run first.
+	rows := coalesceRowsSeq(dropDuplicateResultsSeq(src))
 
+	var tailMark *cacheControl
 	if policy := provider.ResolveCachePolicy(snapshot); !policy.Off() {
 		route := a.route()
 		// Deliberately NOT gated on the model's minimum cacheable size.
@@ -832,38 +840,31 @@ func (a *Anthropic) projectMessagesWithLTs(perMessage [][]json.RawMessage, lts [
 		// provider.CacheMinTokens for an endpoint that DOES have to ration
 		// slots and knows which model it resolved.
 		if plan := route.MarkPlan(provider.ResolveMarkMode(snapshot)); plan.Blocks {
-			markCacheBreakpoints(&req, policy, plan, route.Caps)
+			tailMark = markCacheBreakpoints(&req, policy, plan, route.Caps)
 		}
 	}
-	applyMessageTags(&req, msgLTs, snapshot, a.route().Caps)
+	rows = markRowsSeq(rows, tailMark, messageTags(snapshot, a.route().Caps))
 	applyThinking(&req, snapshot, model)
-	return req, nil
+	return req, rows, nil
 }
 
-// applyMessageTags reads system.tags and applies per-message
-// cache_control overrides keyed by logical time.
-func applyMessageTags(req *nativeRequest, msgLTs []uint64, snapshot form.Snapshot, caps provider.CacheCaps) {
+// messageTags reads system.tags into the per-LT cache_control overrides the
+// assembler applies to the LAST row carrying each logical time.
+func messageTags(snapshot form.Snapshot, caps provider.CacheCaps) map[uint64]*cacheControl {
 	raw, ok := snapshot.Get("system.tags")
 	if !ok || len(raw) == 0 {
-		return
+		return nil
 	}
 	var tags map[string]struct {
 		CacheControl string `json:"cache_control"`
 	}
 	if err := json.Unmarshal(raw, &tags); err != nil {
-		return
+		return nil
 	}
 	if len(tags) == 0 {
-		return
+		return nil
 	}
-
-	lastIdx := make(map[uint64]int, len(msgLTs))
-	for i, lt := range msgLTs {
-		if lt == 0 {
-			continue
-		}
-		lastIdx[lt] = i
-	}
+	out := make(map[uint64]*cacheControl, len(tags))
 	for key, tag := range tags {
 		if tag.CacheControl == "" {
 			continue
@@ -872,16 +873,16 @@ func applyMessageTags(req *nativeRequest, msgLTs []uint64, snapshot form.Snapsho
 		if err != nil {
 			continue
 		}
-		idx, ok := lastIdx[lt]
-		if !ok {
-			continue
-		}
 		policy := provider.ParseCachePolicy(tag.CacheControl)
 		if policy.Off() {
 			continue
 		}
-		markRowTail(&req.Messages[idx], controlFor(policy, caps))
+		out[lt] = controlFor(policy, caps)
 	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // controlFor renders a policy for the wire, dropping a ttl the route will
@@ -899,7 +900,7 @@ func controlFor(p provider.CachePolicy, caps provider.CacheCaps) *cacheControl {
 // message), caching the whole prompt-so-far so the next turn reads it back.
 // That is 3 of Anthropic's 4 breakpoints; the fourth is left for a
 // downstream gateway to top up, and for the per-fork long-retention marker.
-func markCacheBreakpoints(req *nativeRequest, policy provider.CachePolicy, plan provider.MarkPlan, caps provider.CacheCaps) {
+func markCacheBreakpoints(req *nativeRequest, policy provider.CachePolicy, plan provider.MarkPlan, caps provider.CacheCaps) *cacheControl {
 	cc := controlFor(policy, caps)
 	budget := caps.MaxMarkers
 	if budget > provider.AutoCacheBreakpoints {
@@ -919,11 +920,14 @@ func markCacheBreakpoints(req *nativeRequest, policy provider.CachePolicy, plan 
 		req.Tools[n-1].CacheControl = cc
 	}
 	if !plan.Tail {
-		return
+		return nil
 	}
-	if n := len(req.Messages); n >= 1 && spend() {
-		markRowTail(&req.Messages[n-1], cc)
+	// The rolling tail is the LAST message, which the assembler has not
+	// reached yet: the marker is handed back and spent there.
+	if !spend() {
+		return nil
 	}
+	return cc
 }
 
 // rowMessage decodes one spliced row. The assembler does not call it on the
@@ -992,11 +996,11 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	if err != nil {
 		return err
 	}
-	perMessage, lts, err := a.catchUp(in.FigLog, cache, in.Form, in.Studies)
+	src, err := a.catchUp(in.FigLog, cache, in.Form, in.Studies)
 	if err != nil {
 		return err
 	}
-	if len(perMessage) == 0 {
+	if src == nil {
 		return fmt.Errorf("empty context")
 	}
 
@@ -1006,11 +1010,11 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	}
 	model := a.resolveModel(in.Snapshot)
 
-	req, err := a.projectMessagesWithLTs(perMessage, lts, in.Snapshot, in.Tools, in.MaxTokens, isOAuthToken(apiKey), model)
+	req, rows, err := a.projectRequest(src, in.Snapshot, in.Tools, in.MaxTokens, isOAuthToken(apiKey), model)
 	if err != nil {
 		return err
 	}
-	body, err := provider.NewRequestBody(bodyFunc(req), provider.StreamsRequestBody(in.Snapshot))
+	body, err := provider.NewRequestBody(bodyFuncSeq(req, rows), provider.StreamsRequestBody(in.Snapshot))
 	if err != nil {
 		return fmt.Errorf("encode request: %w", err)
 	}
@@ -1108,20 +1112,20 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 	if err != nil {
 		return err
 	}
-	perMessage, lts, err := a.catchUp(in.FigLog, cache, in.Form, in.Studies)
+	src, err := a.catchUp(in.FigLog, cache, in.Form, in.Studies)
 	if err != nil {
 		return err
 	}
-	if len(perMessage) == 0 {
+	if src == nil {
 		return fmt.Errorf("empty context")
 	}
 	model := a.resolveModel(in.Snapshot)
 
-	req, err := a.projectMessagesWithLTs(perMessage, lts, in.Snapshot, in.Tools, in.MaxTokens, oauth, model)
+	req, rows, err := a.projectRequest(src, in.Snapshot, in.Tools, in.MaxTokens, oauth, model)
 	if err != nil {
 		return err
 	}
-	body, err := provider.NewRequestBody(bodyFunc(req), provider.StreamsRequestBody(in.Snapshot))
+	body, err := provider.NewRequestBody(bodyFuncSeq(req, rows), provider.StreamsRequestBody(in.Snapshot))
 	if err != nil {
 		return fmt.Errorf("encode request: %w", err)
 	}
@@ -1226,10 +1230,14 @@ func (a *Anthropic) resolveModel(snap form.Snapshot) string {
 }
 
 // catchUp translates whatever the log has not translated yet, writes those
-// rows, and hands back the rows THEMSELVES -- the messages array as it lies
-// on disk. It keeps nothing between calls: the watermark is the row log's
-// tail and the cursors are stamped on the record it names.
-func (a *Anthropic) catchUp(figLog store.Log[message.Message], rows store.Log[[]json.RawMessage], form provider.Form, studies map[string]provider.Form) ([][]json.RawMessage, []uint64, error) {
+// rows, and hands back A WALK OVER THE ROWS THEMSELVES -- the messages array
+// as it lies on disk. It keeps nothing between calls: the watermark is the row
+// log's tail and the cursors are stamped on the record it names.
+//
+// It hands back a sequence rather than a slice because the slice WAS the
+// conversation in the heap: see provider.TranslationRows. A nil sequence means
+// the log has no rows, which the caller reports as an empty context.
+func (a *Anthropic) catchUp(figLog store.Log[message.Message], rows store.Log[[]json.RawMessage], form provider.Form, studies map[string]provider.Form) (provider.RowSeq, error) {
 	if _, err := provider.CatchUp(provider.CatchUpConfig{
 		Log:         figLog,
 		Translator:  rows,
@@ -1246,10 +1254,13 @@ func (a *Anthropic) catchUp(figLog store.Log[message.Message], rows store.Log[[]
 	}); err != nil {
 		// A SEND THAT CANNOT WRITE ITS ROWS MUST NOT PROCEED. The history it
 		// would assemble is not the one on disk.
-		return nil, nil, fmt.Errorf("anthropic catch up: %w", err)
+		return nil, fmt.Errorf("anthropic catch up: %w", err)
 	}
-	perMessage, lts := provider.Translations(rows)
-	return perMessage, lts, nil
+	to, ok := provider.TranslationTail(rows)
+	if !ok {
+		return nil, nil
+	}
+	return provider.TranslationRows(rows, to), nil
 }
 
 const sseReadTimeout = 5 * time.Minute

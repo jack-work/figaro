@@ -36,7 +36,7 @@ func newTestProvider(t *testing.T, route provider.Route, mode provider.MarkMode)
 	return p
 }
 
-func encodeAll(t *testing.T, p *Provider, msgs []message.Message) [][]json.RawMessage {
+func encodeAll(t *testing.T, p *Provider, msgs []message.Message) provider.RowSeq {
 	t.Helper()
 	var out [][]json.RawMessage
 	for _, m := range msgs {
@@ -48,7 +48,7 @@ func encodeAll(t *testing.T, p *Provider, msgs []message.Message) [][]json.RawMe
 			out = append(out, raw)
 		}
 	}
-	return out
+	return provider.PerMessageRows(out, nil)
 }
 
 func conversation() []message.Message {
@@ -384,15 +384,15 @@ func TestToolResultsEncodeAsToolRole(t *testing.T) {
 		message.ToolResultContent("call_1", "read", "file contents", false),
 		message.TextContent("and now this"),
 	}}}
-	encoded := encodeAll(t, p, msgs)
-	if len(encoded) != 1 || len(encoded[0]) != 2 {
-		t.Fatalf("want a tool message and a user message, got %d entries", len(encoded[0]))
+	encoded, _ := provider.CollectRows(encodeAll(t, p, msgs))
+	if len(encoded) != 2 {
+		t.Fatalf("want a tool message and a user message, got %d rows", len(encoded))
 	}
 	var tool, user chatMessage
-	if err := json.Unmarshal(encoded[0][0], &tool); err != nil {
+	if err := json.Unmarshal(encoded[0], &tool); err != nil {
 		t.Fatal(err)
 	}
-	if err := json.Unmarshal(encoded[0][1], &user); err != nil {
+	if err := json.Unmarshal(encoded[1], &user); err != nil {
 		t.Fatal(err)
 	}
 	if tool.Role != "tool" || tool.ToolCallID != "call_1" {

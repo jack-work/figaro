@@ -184,9 +184,11 @@ func TestCatchUpFillsAHoleBelowTheWatermark(t *testing.T) {
 		t.Fatalf("fixture wrote %d rows", len(all))
 	}
 	missing := all[3].FigaroLT
-	if err := rows.Clear(); err != nil {
-		t.Fatal(err)
-	}
+	// A FRESH HANDLE IS A FRESH PROCESS. The once-per-log flag lives on the
+	// log, so the restart this test is about is spelled by opening the
+	// channel again rather than by reaching into a global.
+	rows = store.NewMemLog[[]json.RawMessage]()
+	cfg = catchUpTestConfig(log, rows)
 	for _, r := range all {
 		if r.FigaroLT == missing {
 			continue
@@ -198,8 +200,6 @@ func TestCatchUpFillsAHoleBelowTheWatermark(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	verifiedLogs.Delete(cfg.Translator) // a fresh process would not have looked yet
-
 	stats, err := CatchUp(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -220,33 +220,49 @@ func TestCatchUpFillsAHoleBelowTheWatermark(t *testing.T) {
 
 // And the repair is not a per-send tax: once a log has been checked, the
 // watermark fast path is what every later send takes.
+//
+// The flag lives ON THE HANDLE now, so the observation is store.VerifyOnce
+// itself: it answers true to the first caller and false after. Asking
+// CONSUMES it, which is why each half of this test gets its own log.
 func TestCatchUpChecksForHolesOncePerLog(t *testing.T) {
-	log := store.NewMemLog[message.Message]()
-	rows := store.NewMemLog[[]json.RawMessage]()
-	for i := range 4 {
-		appendProjectionMessage(t, log, "body "+strconv.Itoa(i))
-	}
-	cfg := catchUpTestConfig(log, rows)
-	verifiedLogs.Delete(cfg.Translator)
-	// Cold: there are no rows yet, so there is nothing to check.
-	if _, err := CatchUp(cfg); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := verifiedLogs.Load(cfg.Translator); ok {
-		t.Fatal("an empty translator was checked for holes")
-	}
-	if _, err := CatchUp(cfg); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := verifiedLogs.Load(cfg.Translator); !ok {
-		t.Fatal("the log was not marked checked")
-	}
-	appendProjectionMessage(t, log, "another")
-	stats, err := CatchUp(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stats.Visited != 1 {
-		t.Fatalf("visited=%d after the check, want 1: the watermark path is the hot one", stats.Visited)
-	}
+	t.Run("an empty translator is not checked", func(t *testing.T) {
+		log := store.NewMemLog[message.Message]()
+		rows := store.NewMemLog[[]json.RawMessage]()
+		for i := range 4 {
+			appendProjectionMessage(t, log, "body "+strconv.Itoa(i))
+		}
+		cfg := catchUpTestConfig(log, rows)
+		if _, err := CatchUp(cfg); err != nil {
+			t.Fatal(err)
+		}
+		if !store.VerifyOnce(cfg.Translator) {
+			t.Fatal("an empty translator was checked for holes")
+		}
+	})
+
+	t.Run("a translator with rows is checked once", func(t *testing.T) {
+		log := store.NewMemLog[message.Message]()
+		rows := store.NewMemLog[[]json.RawMessage]()
+		for i := range 4 {
+			appendProjectionMessage(t, log, "body "+strconv.Itoa(i))
+		}
+		cfg := catchUpTestConfig(log, rows)
+		if _, err := CatchUp(cfg); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := CatchUp(cfg); err != nil {
+			t.Fatal(err)
+		}
+		if store.VerifyOnce(cfg.Translator) {
+			t.Fatal("the log was not marked checked")
+		}
+		appendProjectionMessage(t, log, "another")
+		stats, err := CatchUp(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stats.Visited != 1 {
+			t.Fatalf("visited=%d after the check, want 1: the watermark path is the hot one", stats.Visited)
+		}
+	})
 }

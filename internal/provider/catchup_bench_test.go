@@ -52,7 +52,10 @@ func BenchmarkTranslations(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				perMessage, lts := Translations(rows)
+				// CollectRows is the old Translations, spelled where it
+				// happens: the benchmark is measuring what the send path
+				// stopped doing.
+				perMessage, lts := CollectRows(TranslationRows(rows, 0))
 				if len(perMessage) != n || len(lts) != n {
 					b.Fatalf("got %d rows, want %d", len(perMessage), n)
 				}

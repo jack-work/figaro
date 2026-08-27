@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
@@ -80,7 +79,7 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 		}
 	}
 	if watermark > 0 {
-		if _, done := verifiedLogs.Load(cfg.Translator); !done {
+		if store.VerifyOnce(cfg.Translator) {
 			if gap, found := firstGap(cfg, watermark); found {
 				slog.Warn("translator rows have a hole; re-deriving from the fig IR",
 					"figaro_lt", gap, "watermark", watermark)
@@ -90,7 +89,6 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 				stats.RepairedAt = gap
 				watermark = 0
 			}
-			verifiedLogs.Store(cfg.Translator, struct{}{})
 		}
 	}
 
@@ -145,61 +143,101 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 	return stats, nil
 }
 
-// verifiedLogs remembers which translator logs this process has checked for a
-// hole below the watermark. The handle is cached per aria, so the check runs
-// once per aria per daemon lifetime -- which is when a hole can appear, since
-// making one takes a crash between the canonical append and the derived one.
-var verifiedLogs sync.Map
+// The hole check runs ONCE PER LOG HANDLE, which is once per aria per daemon
+// lifetime -- and that is when a hole can appear, since making one takes a
+// crash between the canonical append and the derived one. The flag lives on
+// the handle (store.VerifyOnce): it used to live in a process-global sync.Map
+// keyed by the log itself, which never forgot, so it pinned every translator
+// handle the backend had already evicted and grew for the life of the daemon.
 
 // firstGap is the earliest fig IR record at or below the watermark that would
 // have written a row and has none. The watermark alone cannot see one: it is
 // the newest row's LT, so a record whose row was lost while later records got
 // theirs sits below it forever.
+// IT WALKS BOTH LOGS AND HOLDS NEITHER. The check is O(total history) by
+// nature -- a hole is defined against the whole prefix -- but it used to be
+// O(total history) IN THE HEAP as well: two Read() calls, the translations and
+// the fig IR, both materialized inside a send. What it needs from the
+// translator is a set of logical times, and what it needs from the fig IR is
+// one record at a time.
 func firstGap(cfg CatchUpConfig, watermark uint64) (uint64, bool) {
 	have := make(map[uint64]struct{})
-	for _, r := range cfg.Translator.Read() {
+	store.ScanAll(cfg.Translator, func(r store.Entry[[]json.RawMessage]) bool {
 		have[r.FigaroLT] = struct{}{}
-	}
+		return true
+	})
 	d := NewDeriver(cfg.Form, cfg.Studies)
-	for _, entry := range cfg.Log.Read() {
+	var (
+		gap   uint64
+		found bool
+	)
+	store.ScanAll(cfg.Log, func(entry store.Entry[message.Message]) bool {
 		if entry.LT > watermark {
-			break
+			return false
 		}
 		msg, snap, translatable := d.Next(entry)
 		if !translatable {
-			continue
+			return true
 		}
 		if _, ok := have[entry.LT]; ok {
 			d.Commit(entry, msg)
-			continue
+			return true
 		}
 		// No row is a hole only where a row was owed: an entry that encodes
 		// to nothing never had one, and its patches ride the next entry.
 		sendable, _ := SendableImages(msg)
 		if encoded, err := cfg.Encode(sendable, snap); err == nil && len(encoded) > 0 {
-			return entry.LT, true
+			gap, found = entry.LT, true
+			return false
 		}
-	}
-	return 0, false
+		return true
+	})
+	return gap, found
 }
 
-// Translations reads a translator log whole, in order: the messages array, as
-// it lies on disk.
-func Translations(rows store.Log[[]json.RawMessage]) (perMessage [][]json.RawMessage, lts []uint64) {
-	if rows == nil {
-		return nil, nil
-	}
-	entries := rows.Read()
-	perMessage = make([][]json.RawMessage, 0, len(entries))
-	lts = make([]uint64, 0, len(entries))
-	for _, e := range entries {
-		if len(e.Payload) == 0 {
-			continue
+// TranslationRows streams a translator log as wire rows, in order, as they lie
+// on disk: the messages array, one row resident at a time.
+//
+// It replaces Translations(), which returned the whole log as a slice. The
+// slice was the memory bug: 87% of a 461MB live heap, in one in-flight send,
+// was the conversation decoded and held for the length of a request. Nothing
+// about the WALK changed -- eeec2bc0 ruled that the walk is the design -- only
+// that the walk no longer builds an array on its way past.
+//
+// to bounds the read at a coordinate captured before the request, so a body
+// REPLAYED by net/http (a GOAWAY, a 307) sends the same conversation the first
+// attempt did rather than one that grew underneath it. Zero means the tail.
+func TranslationRows(rows store.Log[[]json.RawMessage], to uint64) RowSeq {
+	return func(yield func(json.RawMessage, uint64) bool) {
+		if rows == nil {
+			return
 		}
-		perMessage = append(perMessage, e.Payload)
-		lts = append(lts, e.FigaroLT)
+		store.Scan(rows, 0, to, func(e store.Entry[[]json.RawMessage]) bool {
+			for _, raw := range e.Payload {
+				if len(raw) == 0 {
+					continue
+				}
+				if !yield(raw, e.FigaroLT) {
+					return false
+				}
+			}
+			return true
+		})
 	}
-	return perMessage, lts
+}
+
+// TranslationTail is the coordinate TranslationRows should be bounded at, and
+// reports whether the log has anything in it at all. A send with no rows is an
+// empty context, which is an error its caller raises by name.
+func TranslationTail(rows store.Log[[]json.RawMessage]) (uint64, bool) {
+	if rows == nil {
+		return 0, false
+	}
+	tail, ok := rows.PeekTail()
+	if !ok {
+		return 0, false
+	}
+	return tail.LT, true
 }
 
 // carriesStudy reports whether a record can carry a studied-form block. Only

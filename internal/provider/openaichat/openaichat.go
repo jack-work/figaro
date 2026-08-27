@@ -187,15 +187,15 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if err != nil {
 		return err
 	}
-	perMessage, _, err := p.catchUp(in.FigLog, cache, in.Form, in.Studies)
+	src, err := p.catchUp(in.FigLog, cache, in.Form, in.Studies)
 	if err != nil {
 		return err
 	}
-	if len(perMessage) == 0 {
+	if src == nil {
 		return fmt.Errorf("empty context")
 	}
 
-	req, err := p.assemble(perMessage, in.Snapshot, in.Tools, in.MaxTokens, in.AriaID)
+	req, err := p.assemble(src, in.Snapshot, in.Tools, in.MaxTokens, in.AriaID)
 	if err != nil {
 		return err
 	}
@@ -280,7 +280,7 @@ func (p *Provider) handOver(msg message.Message, bus provider.Bus) error {
 
 // assemble builds one request from cached per-message bytes plus live
 // form state.
-func (p *Provider) assemble(perMessage [][]json.RawMessage, snapshot form.Snapshot,
+func (p *Provider) assemble(src provider.RowSeq, snapshot form.Snapshot,
 	tools []provider.Tool, maxTokens int, ariaID string) (chatRequest, error) {
 	if maxTokens == 0 {
 		maxTokens = p.MaxTokens
@@ -303,13 +303,14 @@ func (p *Provider) assemble(perMessage [][]json.RawMessage, snapshot form.Snapsh
 		}
 		req.Messages = append(req.Messages, raw)
 	}
-	for _, entry := range perMessage {
-		for _, raw := range entry {
-			if len(raw) == 0 {
-				continue
-			}
-			req.Messages = append(req.Messages, raw)
-		}
+	// STILL MATERIALIZED, AND NOT BY ACCIDENT: this frame is a typed array and
+	// countCacheMarkers below walks every message. The sequence removes the
+	// [][]json.RawMessage that used to be built first and thrown away; the
+	// splice that removes the array itself is anthropic's (rowseq.go), and
+	// this tenant wants the same treatment when its marker count stops being
+	// a whole-history walk.
+	for row := range src {
+		req.Messages = append(req.Messages, row)
 	}
 
 	if p.Route.Caps.SessionKey {
@@ -416,8 +417,10 @@ func (p *Provider) invalidateIfStale(s store.Log[[]json.RawMessage]) bool {
 // catchUp translates whatever the row log has not translated yet, writes
 // those rows, and hands back the rows THEMSELVES. It keeps nothing between
 // calls: the watermark is the row log's tail.
+//
+//nolint:lll // signature mirrors the other providers
 func (p *Provider) catchUp(figLog store.Log[message.Message], rows store.Log[[]json.RawMessage],
-	form provider.Form, studies map[string]provider.Form) ([][]json.RawMessage, []uint64, error) {
+	form provider.Form, studies map[string]provider.Form) (provider.RowSeq, error) {
 	if _, err := provider.CatchUp(provider.CatchUpConfig{
 		Log:         figLog,
 		Translator:  rows,
@@ -434,10 +437,13 @@ func (p *Provider) catchUp(figLog store.Log[message.Message], rows store.Log[[]j
 	}); err != nil {
 		// A SEND THAT CANNOT WRITE ITS ROWS MUST NOT PROCEED. The history it
 		// would assemble is not the one on disk.
-		return nil, nil, fmt.Errorf("openaichat catch up: %w", err)
+		return nil, fmt.Errorf("openaichat catch up: %w", err)
 	}
-	perMessage, lts := provider.Translations(rows)
-	return perMessage, lts, nil
+	to, ok := provider.TranslationTail(rows)
+	if !ok {
+		return nil, nil
+	}
+	return provider.TranslationRows(rows, to), nil
 }
 
 // EncodeMessage and TranslatorChannel put this provider's encoder behind
