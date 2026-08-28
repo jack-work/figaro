@@ -14,7 +14,7 @@ import (
 func TestIncipitFreezesAssistantAfterTerminalStatusArrives(t *testing.T) {
 	var out bytes.Buffer
 	status := newSessionStatus("aria1234", time.Now())
-	bookend := func() []string { return []string{status.ruleLine(80, ""), status.statusLine(80, false)} }
+	bookend := func() []string { return []string{status.ruleLine(80, ""), status.statusLineVerbose(80, false, true)} }
 	lt := newLivelogTurn(&out, 80, 20, &renderSettings{}, "aria1234", time.Now(), status, bookend, func() string { return "rule" })
 
 	lt.apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(2), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{
@@ -30,7 +30,7 @@ func TestIncipitFreezesAssistantAfterTerminalStatusArrives(t *testing.T) {
 	if lt.pending != nil {
 		t.Fatal("terminal status must freeze pending assistant output")
 	}
-	if !strings.Contains(out.String(), "completed ✓") {
+	if !strings.Contains(out.String(), "done ✓") {
 		t.Fatalf("incipit did not freeze completed status:\n%s", out.String())
 	}
 }
@@ -38,7 +38,7 @@ func TestIncipitFreezesAssistantAfterTerminalStatusArrives(t *testing.T) {
 func TestIncipitFreezesAssistantCloseAfterTurnDone(t *testing.T) {
 	var out bytes.Buffer
 	status := newSessionStatus("aria1234", time.Now())
-	bookend := func() []string { return []string{status.ruleLine(80, ""), status.statusLine(80, false)} }
+	bookend := func() []string { return []string{status.ruleLine(80, ""), status.statusLineVerbose(80, false, true)} }
 	lt := newLivelogTurn(&out, 80, 20, &renderSettings{}, "aria1234", time.Now(), status, bookend, func() string { return "rule" })
 
 	lt.apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(2), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{
@@ -51,7 +51,7 @@ func TestIncipitFreezesAssistantCloseAfterTurnDone(t *testing.T) {
 	if lt.pending != nil {
 		t.Fatal("late assistant close must freeze after turn completion")
 	}
-	if !strings.Contains(out.String(), "completed ✓") {
+	if !strings.Contains(out.String(), "done ✓") {
 		t.Fatalf("late close did not freeze completed status:\n%s", out.String())
 	}
 }
@@ -59,7 +59,7 @@ func TestIncipitFreezesAssistantCloseAfterTurnDone(t *testing.T) {
 func TestIncipitRepaintsDiscardedAssistantWithErrorStatus(t *testing.T) {
 	var out bytes.Buffer
 	status := newSessionStatus("aria1234", time.Now())
-	bookend := func() []string { return []string{status.ruleLine(80, ""), status.statusLine(80, false)} }
+	bookend := func() []string { return []string{status.ruleLine(80, ""), status.statusLineVerbose(80, false, true)} }
 	lt := newLivelogTurn(&out, 80, 20, &renderSettings{}, "aria1234", time.Now(), status, bookend, func() string { return "rule" })
 
 	lt.apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(2), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{

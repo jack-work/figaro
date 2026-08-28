@@ -12,20 +12,89 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
+// turnStatus is what the last turn DID, and it carries three things a status
+// row needs separately: a symbol, a name, and a colour.
+//
+// They used to be one fused string ("completed ✓", "interrupted !"), which is
+// why the bar could not be succinct: there was no way to ask for the symbol
+// without the word. The default bar shows symbols alone and verbose adds the
+// names, so the two are now different questions with different answers.
+// See plans/status-bar-and-modes.md §3.
 type turnStatus uint8
 
 const (
+	// turnStatusIdle is THE CATCH-ALL, and it is defined as such rather than
+	// as a condition: it is what the bar says when none of the others is
+	// known to hold. Everything with a claim of its own has a state below.
 	turnStatusIdle turnStatus = iota
 	turnStatusThinking
 	turnStatusCompleted
+	// turnStatusInterrupted is a HUP, and a hup is not an error: the user
+	// stopped the turn on purpose. Hence gray, not red -- the palette is the
+	// only thing on the row that says "this was meant".
 	turnStatusInterrupted
 	turnStatusError
 	// turnStatusDisconnected: this CLI stopped watching while the turn was
 	// still running. It is NOT a failure: the user chose to detach and the
 	// turn continues on the daemon, which is exactly when the
 	// "follow: figaro listen" hint applies.
+	//
+	// ITS ANIMATION WAS THE DEFECT, NOT THE FACT. This state used to draw a
+	// spinner frame, and nothing repaints after a detach -- a still picture of
+	// a turn that is still moving. A draft of the plan proposed deleting the
+	// state; the fact is worth keeping and the movement is not, so the glyph
+	// is static and the state survives.
 	turnStatusDisconnected
 )
+
+// symbol is the state in one glyph. tick animates the only state that moves.
+func (st turnStatus) symbol(tick uint64) string {
+	switch st {
+	case turnStatusThinking:
+		frames := livedoc.SpinnerFrames
+		return string(frames[int(tick)%len(frames)])
+	case turnStatusCompleted:
+		return "✓"
+	case turnStatusInterrupted:
+		return "!"
+	case turnStatusError:
+		return "✗"
+	case turnStatusDisconnected:
+		return "⠸"
+	}
+	return "𝄐"
+}
+
+// name is the word beside the symbol under verbose. THINKING HAS NONE, by
+// requirement: the animation says it, and a word beside a moving glyph reads
+// as a label on a machine that is already talking.
+func (st turnStatus) name() string {
+	switch st {
+	case turnStatusThinking:
+		return ""
+	case turnStatusCompleted:
+		return "done"
+	case turnStatusInterrupted:
+		return "hup"
+	case turnStatusError:
+		return "error"
+	case turnStatusDisconnected:
+		return "detached"
+	}
+	return "idle"
+}
+
+// paint colours a rendered state. Only two states have a colour: trouble is
+// red and a deliberate stop is gray, and everything else inherits the row.
+func (st turnStatus) paint(s string) string {
+	switch st {
+	case turnStatusError:
+		return term.NoticeInDim(s)
+	case turnStatusInterrupted:
+		return term.StateDim(s)
+	}
+	return s
+}
 
 type sessionStatus struct {
 	mu        sync.RWMutex
@@ -34,6 +103,9 @@ type sessionStatus struct {
 	metrics   aria.Metrics
 	turn      turnStatus
 	tick      uint64
+	// verbose is the BAR's verbosity (^V), not the tool-output toggle (^O).
+	// Seeded from config; see plans/status-bar-and-modes.md §5.
+	verbose bool
 	// notice is trouble the user must see, an error reason, an interrupt
 	// notice: carried IN the frame buffer instead of being written straight
 	// to the terminal. While the pager is up there is no scrollback to write
@@ -122,26 +194,23 @@ func (s *sessionStatus) advance() bool {
 	return true
 }
 
-// turnLabel is the current turn state as a short token ("thinking ⠧",
-// "completed ✓", …), "" when idle. Caller holds s.mu.
-func (s *sessionStatus) turnLabel() string {
-	switch s.turn {
-	case turnStatusThinking:
-		frames := livedoc.SpinnerFrames
-		return "thinking " + string(frames[int(s.tick)%len(frames)])
-	case turnStatusCompleted:
-		return "completed ✓"
-	case turnStatusInterrupted:
-		return "interrupted !"
-	case turnStatusError:
-		return "error ✗"
-	case turnStatusDisconnected:
-		// Static, not animated: nothing repaints after we detach, so a
-		// spinner frame here is a still picture of a turn that is still
-		// moving elsewhere.
-		return "disconnected ⠸"
+// turnLabel is the current turn state as it goes on the status row: the symbol
+// alone, or "name symbol" under verbose. "" when idle, because the catch-all
+// has nothing to announce on a row that is always visible.
+//
+// Caller holds s.mu.
+func (s *sessionStatus) turnLabel(verbose bool) string {
+	if s.turn == turnStatusIdle {
+		return ""
 	}
-	return ""
+	sym := s.turn.symbol(s.tick)
+	if !verbose {
+		return s.turn.paint(sym)
+	}
+	if name := s.turn.name(); name != "" {
+		return s.turn.paint(name + " " + sym)
+	}
+	return s.turn.paint(sym)
 }
 
 // ruleLine is the upper of the two footer rows: a full-width rule with the
@@ -166,6 +235,15 @@ func (s *sessionStatus) ruleLine(width int, pos string) string {
 // Narrow panes shed the mantra first, then cost, then ctx, then the time -
 // the turn state and the hints survive last.
 func (s *sessionStatus) statusLine(width int, hints bool) string {
+	return s.statusLineVerbose(width, hints, s.verbose)
+}
+
+// statusLineVerbose is statusLine with the verbosity named rather than read
+// off the session. FROZEN ROWS PASS true: the bookend that lands in scrollback
+// is a permanent artifact, and `^V` cannot be pressed on a screenful of text
+// that scrolled past an hour ago. A live row can be asked; a dead one cannot,
+// so it says the word.
+func (s *sessionStatus) statusLineVerbose(width int, hints, verbose bool) string {
 	if s == nil {
 		return ""
 	}
@@ -186,7 +264,7 @@ func (s *sessionStatus) statusLine(width int, hints bool) string {
 	if mantra := strings.Join(strings.Fields(s.metrics.Mantra), " "); mantra != "" {
 		tokens = append(tokens, tok{truncRunes(mantra, 32), 0})
 	}
-	if label := s.turnLabel(); label != "" {
+	if label := s.turnLabel(verbose); label != "" {
 		tokens = append(tokens, tok{label, 4})
 	}
 	if context := formatContextUsage(s.metrics.ContextTokens, s.metrics.ContextLimit, s.metrics.ContextExact); context != "-" {
@@ -231,9 +309,12 @@ func (s *sessionStatus) panelLines() []string {
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	state := s.turnLabel()
+	// THE PANEL IS ALWAYS VERBOSE: it is the place a reader goes to read words,
+	// and "✓" in a labelled column would be the bar's answer to a question the
+	// panel was opened to ask properly.
+	state := s.turnLabel(true)
 	if state == "" {
-		state = "idle"
+		state = "idle 𝄐"
 	}
 	rows := []string{
 		"",
@@ -298,7 +379,7 @@ func bookendLines(status *sessionStatus) []string {
 	// rule and the status text.
 	return []string{
 		term.Dim(status.ruleLine(w, "")),
-		term.Dim(status.statusLine(w, false)),
+		term.Dim(status.statusLineVerbose(w, false, true)),
 	}
 }
 

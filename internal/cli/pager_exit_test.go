@@ -51,8 +51,8 @@ func TestPagerExitFlushesLaterSlicesOfAnAlreadyFrozenTurn(t *testing.T) {
 	// The footer describes the TURN, and a finished turn is finished whether or
 	// not this CLI is still watching. Reporting "disconnected" over a sealed
 	// turn would hide the outcome the user just watched arrive.
-	if l := status.turnLabel(); l != "completed ✓" {
-		t.Fatalf("sealed turn left the pager as %q, want completed ✓", l)
+	if l := status.turnLabel(true); l != "done ✓" {
+		t.Fatalf("sealed turn left the pager as %q, want done ✓", l)
 	}
 }
 
@@ -73,8 +73,8 @@ func TestPagerExitStillWarnsWhileTheTurnRuns(t *testing.T) {
 	if got := out.String(); strings.Contains(got, "turn continues") || strings.Contains(got, "follow:") {
 		t.Fatalf("the exit wrote chrome past the status bookend:\n%s", got)
 	}
-	if l := status.turnLabel(); l != "disconnected ⠸" {
-		t.Fatalf("detaching from a live turn reported %q, want disconnected ⠸", l)
+	if l := status.turnLabel(true); l != "detached ⠸" {
+		t.Fatalf("detaching from a live turn reported %q, want detached ⠸", l)
 	}
 }
 
@@ -84,11 +84,11 @@ func TestPagerExitStillWarnsWhileTheTurnRuns(t *testing.T) {
 func TestDetachIsNotAnError(t *testing.T) {
 	s := newSessionStatus("aria1234", time.Now())
 	s.finishTurn("disconnected: turn continues")
-	if l := s.turnLabel(); l == "error ✗" {
+	if l := s.turnLabel(true); strings.Contains(l, "error") {
 		t.Fatal("a deliberate detach is not a failure")
 	}
 	s.finishTurn("error: provider exploded")
-	if l := s.turnLabel(); l != "error ✗" {
+	if l := s.turnLabel(true); !strings.Contains(l, "error ✗") {
 		t.Fatalf("a real error reported %q", l)
 	}
 }
