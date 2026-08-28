@@ -152,8 +152,8 @@ func TestTranscript_FooterWidthAndNoTrailingBlank(t *testing.T) {
 	if last := all[len(all)-1]; strings.TrimSpace(stripANSI(last)) == "" {
 		t.Fatalf("lines() must not end with a blank/separator (footer closes the last message); got %q", last)
 	}
-	rule, statusRow := tr.footerRows(len(all), tr.h-2)
-	rule, statusRow = stripANSI(rule), stripANSI(statusRow)
+	rule, bar := tr.footerRows(len(all), tr.h-2)
+	rule, statusRow := stripANSI(rule), stripANSI(strings.Join(bar, "\n"))
 	if w := runewidth.StringWidth(rule); w != 50 {
 		t.Fatalf("rule row display width = %d, want exactly 50: %q", w, rule)
 	}
@@ -163,8 +163,15 @@ func TestTranscript_FooterWidthAndNoTrailingBlank(t *testing.T) {
 	if !strings.Contains(rule, "live") {
 		t.Fatalf("rule row missing scroll position: %q", rule)
 	}
-	if !strings.Contains(statusRow, "? help") || !strings.Contains(statusRow, "! status") {
-		t.Fatalf("status row missing key hints: %q", statusRow)
+	// THE HINTS MOVED TO VERBOSE, by the requirement's own worked examples: the
+	// default row is `✓ · 123abc · test` and the shortcuts appear beside the
+	// state names under ^V. The box-specific hints are unaffected -- they live
+	// on the drawer's closing rule (drawerHint), not on this row.
+	if strings.Contains(statusRow, "? help") {
+		t.Fatalf("the default status row carries key hints: %q", statusRow)
+	}
+	if !strings.Contains(statusRow, "aria1234") {
+		t.Fatalf("status row missing the aria id: %q", statusRow)
 	}
 	if w := runewidth.StringWidth(statusRow); w > 50 {
 		t.Fatalf("status row overflows: %d > 50: %q", w, statusRow)

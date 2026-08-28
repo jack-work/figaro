@@ -103,6 +103,19 @@ for word in completed interrupted disconnected done hup error detached idle; do
 done
 [[ $fail == 0 ]] && echo "ok   the default row carries no state name at all"
 
+# 1b. THE BAR IS THE VALUE'S OUTPUT NOW: the aria id is on it, and the fields
+#     the requirement removed are gone.
+if [[ "$row" == *"123"* || "$row" =~ [0-9a-f]{8} ]]; then
+  echo "ok   the aria id is on the status row"
+else
+  echo "FAIL: no aria id on the status row: [$row]"; fail=1
+fi
+for gone in "cost" "? help" "! status"; do
+  if [[ "$row" == *"$gone"* ]]; then
+    echo "FAIL: '$gone' is still on the default row"; fail=1
+  fi
+done
+
 # 2. The panel is where words live: '!' opens it and it names the state.
 tmux -S "$SOCK" send-keys -t bar:0 '!'
 sleep 1
@@ -114,6 +127,20 @@ else
   echo "$panel" | tail -8
 fi
 
+# 2b. A DRAWER PUTS ITS GLYPH ON THE BAR. 'Q' opens the queue.
+tmux -S "$SOCK" send-keys -t bar:0 Escape
+sleep 0.5
+tmux -S "$SOCK" send-keys -t bar:0 Q
+sleep 1
+qrow=$(bar)
+if [[ "$qrow" == *"𝄚"* ]]; then
+  echo "ok   the queue drawer puts 𝄚 on the bar: [$qrow]"
+else
+  echo "FAIL: no queue glyph on the bar with the queue open: [$qrow]"; fail=1
+fi
+tmux -S "$SOCK" send-keys -t bar:0 Escape
+sleep 0.5
+
 # 3. It survives a resize, which is where a width-sensitive row goes wrong.
 tmux -S "$SOCK" send-keys -t bar:0 Escape
 tmux -S "$SOCK" resize-window -t bar -x 46 -y 25 2>/dev/null
@@ -124,6 +151,31 @@ if [[ "$narrow" == *"✓"* ]]; then
   echo "ok   the glyph survives a 46-column pane"
 else
   echo "FAIL: the state fell off a narrow row"; fail=1
+fi
+
+# 4. VERY narrow: the bar becomes three rows and the conversation must not lose
+#    a line to it -- the reservation and the painting have to agree.
+# 16, not 24: the fixture's context figure is three characters ("105"), so the
+# one-row form still fits at 24 once the mantra sheds. The three-row form is
+# golden-tested at realistic widths (statusview_test.go); what the pty is for
+# is proving the RESERVATION agrees with the painting, and that needs a width
+# where the bar genuinely grows.
+tmux -S "$SOCK" resize-window -t bar -x 16 -y 25 2>/dev/null
+sleep 1
+tail3=$(tmux -S "$SOCK" capture-pane -p -t bar:0 | tail -3)
+echo "narrow-3 tail:"; echo "$tail3" | sed 's/^/    |/'
+# The bar grew to three rows: left, blank, right. The blank between them is
+# the tell, and the rule must still sit directly above the whole stanza rather
+# than being overwritten by it.
+if [[ "$(echo "$tail3" | sed -n 2p)" =~ ^[[:space:]]*$ ]]; then
+  echo "ok   the bar split into rows with a blank between them"
+else
+  echo "FAIL: no blank row inside the split bar"; fail=1
+fi
+if [[ "$(echo "$tail3" | tail -1)" =~ [0-9] ]]; then
+  echo "ok   the right group has a row of its own"
+else
+  echo "FAIL: the right group is missing from the split bar"; fail=1
 fi
 
 tmux -S "$SOCK" send-keys -t bar:0 q

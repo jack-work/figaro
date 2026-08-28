@@ -1147,8 +1147,12 @@ func (t *transcript) setCmdOut(title string, rows []string) {
 // layout splits the viewport into the content body and the bottom chrome: the
 // rule and the status row always, the open panel when there is one, and: ONLY
 // while following: one blank padding row above the rule.
+// layout reserves the footer's rows. THE BAR IS NOT ALWAYS ONE ROW: on a
+// narrow pane it is three (left, blank, right), and reserving one while
+// painting three would push the conversation's last line off the top. The
+// rule is one row; barRows is the rest.
 func (t *transcript) layout(foot int) (body, maxOff int) {
-	body = t.h - 2 - foot
+	body = t.h - 1 - t.barRows() - foot
 	if t.follow {
 		body--
 	}
@@ -1330,14 +1334,22 @@ func (t *transcript) renderFrame() {
 	}
 	// The row above the rule (screen[t.h-3]) is left blank while following -
 	// layout reserved it, and is content otherwise. See layout.
-	rule, status := t.footerRows(total, body)
+	rule, bar := t.footerRows(total, body)
 	if t.drawer.open() || t.inSearch || t.inJump {
 		// The drawer owns the bottom edge; its opening rule was drawn by
 		// footLines, above its body.
 		rule = closingRule(t.w, t.drawerHint())
 	}
-	screen[t.h-2] = rule
-	screen[t.h-1] = status
+	// The bar occupies the bottom rows and the rule sits directly above it,
+	// however many rows that is.
+	if top := t.h - 1 - len(bar); top >= 0 {
+		screen[top] = rule
+		for i, row := range bar {
+			if r := top + 1 + i; r >= 0 && r < t.h {
+				screen[r] = row
+			}
+		}
+	}
 	t.paint(screen)
 }
 
@@ -1350,7 +1362,16 @@ func (t *transcript) renderFrame() {
 // error wrote its text there -- so the mantra, the context percentage and the
 // cost vanished exactly when something had gone wrong. All three now live in
 // the drawer (see drawer.go), and this row shows what is always true.
-func (t *transcript) footerRows(total, body int) (rule, status string) {
+// barRows is how many rows the status bar will take, asked before it is drawn
+// so the reservation and the painting cannot disagree.
+func (t *transcript) barRows() int {
+	if t.status == nil {
+		return 1
+	}
+	return max(t.status.viewOf(t.openDrawer(), t.status.barVerbose(), time.Now()).height(t.w), 1)
+}
+
+func (t *transcript) footerRows(total, body int) (rule string, bar []string) {
 	pos := ""
 	if total > body {
 		end := t.offset + body
@@ -1370,7 +1391,18 @@ func (t *transcript) footerRows(total, body int) (rule, status string) {
 		pos = strings.TrimSpace(pos + " live")
 	}
 	rule = "\x1b[2m" + t.status.ruleLine(t.w, pos) + "\x1b[0m"
-	return rule, "\x1b[2m" + t.status.statusLine(t.w, true) + "\x1b[0m"
+	// THE BAR RENDERS FROM A VALUE now (statusview.go): the session is
+	// snapshotted here, where the lock and the clock are, and the rows come
+	// back from a pure function of that snapshot.
+	view := t.status.viewOf(t.openDrawer(), t.status.barVerbose(), time.Now())
+	rows := view.render(t.w)
+	if len(rows) == 0 {
+		rows = []string{""}
+	}
+	for i, r := range rows {
+		rows[i] = "\x1b[2m" + r + "\x1b[0m"
+	}
+	return rule, rows
 }
 
 // statusPanelLines is the '!' panel: the figaro-status detail above the footer.
@@ -1621,18 +1653,29 @@ func appendUint(dst []byte, n int) []byte {
 // mode reports which input mode the pager is in: the keymap's view of it.
 // The order is the dispatch order: the search box owns the keyboard before a
 // panel does, and a panel before the plain pager.
+// mode is the KEYBOARD's view, and it is now DERIVED from the drawer identity
+// rather than computed in parallel with it (drawerid.go). The boxes keep their
+// own buffers; what they no longer keep is a second opinion about what is on
+// screen.
 func (t *transcript) mode() keyMode {
-	switch {
-	case !t.active:
+	if !t.active {
 		return modeIncipit
+	}
+	return t.openDrawer().keys()
+}
+
+// openDrawer is what is open, as an identity. THE ONE PLACE that reads the
+// booleans: everything else asks this.
+func (t *transcript) openDrawer() drawerID {
+	switch {
 	case t.inSearch:
-		return modeSearch
+		return drawerSearch
 	case t.inJump:
-		return modeJump
+		return drawerCommand
 	case t.drawer.open() && t.drawer.kind != drawerInput:
-		return modePanel
+		return drawerID(t.drawer.name)
 	default:
-		return modeTranscript
+		return drawerNothing
 	}
 }
 

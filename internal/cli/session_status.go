@@ -106,6 +106,13 @@ type sessionStatus struct {
 	// verbose is the BAR's verbosity (^V), not the tool-output toggle (^O).
 	// Seeded from config; see plans/status-bar-and-modes.md §5.
 	verbose bool
+	// lastAt is when this conversation last MOVED, in either direction --
+	// not when the session started, and not when the user last typed. An
+	// agent working alone for an hour is a conversation that is moving, and a
+	// bar that called that stale would be wrong in the case you are checking.
+	lastAt time.Time
+	// model is shown under verbose only.
+	model string
 	// notice is trouble the user must see, an error reason, an interrupt
 	// notice: carried IN the frame buffer instead of being written straight
 	// to the terminal. While the pager is up there is no scrollback to write
@@ -147,6 +154,32 @@ func (s *sessionStatus) beginTurn() {
 	}
 	s.mu.Lock()
 	s.turn = turnStatusThinking
+	s.lastAt = time.Now()
+	s.mu.Unlock()
+}
+
+// touch records that the conversation MOVED. Called on every frame that
+// carries content, in either direction: what the bar answers with it is "is
+// this stale", and a turn that is producing output is not stale even though
+// nobody has typed for an hour.
+func (s *sessionStatus) touch(at time.Time) {
+	if s == nil || at.IsZero() {
+		return
+	}
+	s.mu.Lock()
+	if at.After(s.lastAt) {
+		s.lastAt = at
+	}
+	s.mu.Unlock()
+}
+
+// setModel records the model for the verbose bar.
+func (s *sessionStatus) setModel(m string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.model = m
 	s.mu.Unlock()
 }
 
@@ -159,6 +192,7 @@ func (s *sessionStatus) finishTurn(reason string) {
 		return
 	}
 	s.mu.Lock()
+	s.lastAt = time.Now()
 	reason = strings.ToLower(reason)
 	switch {
 	case strings.Contains(reason, "interrupt"):
@@ -395,4 +429,16 @@ func formatCtxCell(tokens int) string {
 	default:
 		return fmt.Sprintf("%d", tokens)
 	}
+}
+
+// barVerbose reports the BAR's verbosity under the lock. It is a method rather
+// than a field read because the render path asks for it on every frame, and a
+// racy read of a bool is still a race.
+func (s *sessionStatus) barVerbose() bool {
+	if s == nil {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.verbose
 }
