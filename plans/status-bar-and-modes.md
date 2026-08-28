@@ -84,11 +84,28 @@ One table keyed by drawer id gives the glyph and the name.
 | drawer | mode glyph | name | selection glyph |
 |---|---|---|---|
 | queue | `𝄚` | queue | `♭` |
-| notifications | `𝄞` | notifications | `𝄞` |
+| notifications | `𝄞` | notifications | `♩` |
 | command | `∴` | command | — |
-| search | `∴` | search *(see open questions)* | — |
+| search | `⌕` | search | — |
+| help | `?` | help | — |
+| status | `!` | status | — |
 | *(reserved)* | | input | |
-| help / status / message | `?` `!` — | help / status | — |
+
+**`⌕` (U+2315), not `🔍`.** The bar is width-sensitive and every other glyph
+here is single-width; the emoji magnifier is double-width and font-dependent,
+which would make the left group's width a property of the reader's terminal.
+
+**Help is a mode, not a panel.** It sits at the same level as queue, command and
+notifications: its own row, its own glyph, and `?` SWITCHES TO IT from every
+mode except command, where `?` is text. That settles the "help always works"
+question — no `:help`, no Esc-then-`?`, just the key, everywhere it is not
+literal.
+
+**One consequence, stated because it is a real cost:** `?` is text in the SEARCH
+box too, and this rule takes it. Searching for a literal `?` then needs a route
+this plan does not give it. The alternative — exempting search as well as
+command — leaves help unreachable from the box where a reader is most likely to
+be lost, so the key wins and the literal loses.
 
 ## 3. `turnState`: symbol, name, colour
 
@@ -128,11 +145,25 @@ wire. Claiming "all warnings and errors" without a transport would be a lie.
 - **`N` toggles** the drawer; from another drawer it replaces it, by the
   one-transient-region rule. `^N`/`^P` move, `y` yanks, **no delete**: a log you
   can edit is not a log.
-- **`Alert` replaces the status bar's `notice`.** There is no second error
-  channel: `setNotice` is deleted, every caller posts a notification, and the
-  bar projects the newest unread one until the drawer is opened. That is the
-  only reading of "all warnings/errors should be notifications now" that keeps
-  trouble where the eye lands.
+- **`Alert` replaces the status bar's `notice`, and it is TRANSIENT.** There is
+  no second error channel: `setNotice` is deleted and every caller — including
+  the ordinary confirmations like `sent` — posts a notification instead. The
+  newest one occupies the **first left-hand slot** of the bar, ahead of the
+  drawer token, and it leaves on its own:
+
+  - it expires after `ui.notice_ttl` (default **10s**), or
+  - a newer notification displaces it, whichever comes first.
+
+  Nothing about it is tied to the drawer being read. A bar item that waits to be
+  dismissed is a bar item that is still there tomorrow.
+
+**This is the one piece with a liveness requirement.** Everything else in the
+pager repaints because something arrived — a key, a frame, a resize. An alert
+that expires on a clock has to repaint when *nothing happened*, so `statusView`
+gains an expiry and the render loop gains one scheduled wake at it. That is
+cheap (one timer, armed only while an alert is live, cancelled when it is
+displaced) but it must be deliberate: a TTL with no wake is an alert that
+disappears the next time you press a key, which reads as randomness.
 
 **Next steps, named:** a notify transport so daemon and agent records arrive
 (the aria socket already carries frames; this is one more method); level
@@ -186,16 +217,11 @@ Each step ships alone; none changes what the pager can do.
    aesthetic objection is not an ambiguity.
 3. **`cost` and the clock leave the bar** (§1), to the `!` panel.
 
-## Genuinely open
+4. **Search is `⌕` and help is a mode** (§2). The doubled `∴` in the sketch was
+   a typo; `?` switches to help mode from everywhere except the command box.
+5. **Notifications are transient in the bar** (§4): first left slot,
+   `ui.notice_ttl` default 10s, displaced by the next one.
 
-1. **`∴` for both command and search?** The sketch gives search the `∴` glyph
-   and then labels its status row "command". Either a typo, or search has no
-   identity of its own and borrows command's.
-2. **How does help "always work" when `?` is text?** In the command and search
-   boxes `?` is a printable character, so the requirement cannot mean that key
-   everywhere — and `:help` cannot be the universal answer either, since `:` is
-   literal inside the SEARCH box (special-casing it would make that character
-   unsearchable). Proposed: **Esc-then-`?`** is the universal gesture, spelled
-   out in each box's hint row — which therefore must not be gated on verbose —
-   with `:help` kept as the command box's shortcut. This is a keyboard decision
-   and yours to make.
+*(Nothing is open. The two questions this plan carried — search's identity and
+how help stays reachable — were answered by Gluck on 2026-08-28 and are folded
+in above.)*
