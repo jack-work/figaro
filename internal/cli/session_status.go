@@ -430,19 +430,15 @@ func formatTokenCount(tokens int) string {
 	}
 }
 
-// bookendLines is the incipit closer / live-region bookend: the same two-row
-// footer the transcript pins (rule + status text), minus the key hints -
-// they'd be dead text once frozen into scrollback. A blank row sits between
-// the rule and the status text so the status line breathes.
+// bookendLines is the incipit closer / live-region bookend. It is THE SAME
+// footer the pager draws -- footerStanza -- with no position label, because a
+// stream that is not paging has no window to report.
+//
+// FROZEN ROWS ARE VERBOSE, and that is the one thing this caller decides: the
+// bookend lands in scrollback, where ^V cannot be pressed on text that scrolled
+// past an hour ago. A live bar can be asked; a dead one has to say the word.
 func bookendLines(status *sessionStatus) []string {
-	w := termWidth()
-	// Two rows only: rule + status. The blank that gives the footer breathing
-	// room is painted ABOVE it by compose()'s pre-closer blank, not between the
-	// rule and the status text.
-	return []string{
-		term.Dim(status.ruleLine(w, "")),
-		term.Dim(status.statusLineVerbose(w, false, true)),
-	}
+	return footerStanza(status, termWidth(), "", drawerNothing, true)
 }
 
 // formatCtxCell renders a context size for the narrow CTX column in `list`:

@@ -217,7 +217,58 @@ else
   echo "FAIL: gg did not return to the top"; fail=1
 fi
 
-tmux -S "$SOCK" send-keys -t bar:0 Escape; sleep 0.3
+# 6. NO CLOSING RULE, NO HINT ROW. Gluck's design fences the drawer ABOVE only:
+#    rule, rows, blank, bar. The lower fence used to carry "^N/^P select · y
+#    yank · Esc close" -- a caption under every list.
+tmux -S "$SOCK" send-keys -t bar:0 Escape; sleep 0.4
+tmux -S "$SOCK" send-keys -t bar:0 Q; sleep 1
+qtail=$(tmux -S "$SOCK" capture-pane -p -t bar:0 | tail -4)
+echo "queue tail:"; echo "$qtail" | sed 's/^/    |/'
+if echo "$qtail" | grep -q "Esc close\|\^N/\^P select"; then
+  echo "FAIL: the drawer still prints a hint row"; fail=1
+else
+  echo "ok   no hint row under the drawer"
+fi
+if [[ "$(echo "$qtail" | sed -n 3p)" == *"───"* ]]; then
+  echo "FAIL: a closing rule still fences the drawer from the bar"; fail=1
+else
+  echo "ok   no closing rule between the drawer and the bar"
+fi
+tmux -S "$SOCK" send-keys -t bar:0 Escape; sleep 0.4
+
+# 7. 'm' IS MORE. ^V never worked and was never opened in a terminal.
+before=$(bar)
+tmux -S "$SOCK" send-keys -t bar:0 m; sleep 1
+more=$(bar)
+echo "more row: [$more]"
+if [[ "$more" == *"done"* ]]; then
+  echo "ok   m turned on the bar's detail (state names)"
+else
+  echo "FAIL: m did not turn on the bar's detail: [$more]"; fail=1
+fi
+tmux -S "$SOCK" send-keys -t bar:0 m; sleep 0.8
+if [[ "$(bar)" == "$before" ]]; then
+  echo "ok   m toggles back off"
+else
+  echo "FAIL: m did not toggle back off"; fail=1
+fi
+
+# 8. FORM SHOW: j must scroll it a ROW at a time, not skip whole properties.
+tmux -S "$SOCK" send-keys -t bar:0 ':'; sleep 0.5
+tmux -S "$SOCK" send-keys -t bar:0 -l "form listen"; sleep 0.5
+tmux -S "$SOCK" send-keys -t bar:0 Enter; sleep 2
+formrow=$(bar)
+echo "form row: [$formrow]"
+if [[ "$formrow" == *"𝄢"* ]]; then
+  echo "ok   the form view has its own glyph 𝄢 on the bar"
+else
+  echo "FAIL: no form glyph on the bar: [$formrow]"; fail=1
+fi
+if [[ "$formrow" == *"𝄞"* ]]; then
+  echo "FAIL: the form view borrowed the notification clef"; fail=1
+fi
+tmux -S "$SOCK" send-keys -t bar:0 Escape; sleep 0.4
+
 tmux -S "$SOCK" send-keys -t bar:0 q
 sleep 1
 exit $fail

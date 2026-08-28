@@ -1336,9 +1336,14 @@ func (t *transcript) renderFrame() {
 	// layout reserved it, and is content otherwise. See layout.
 	rule, bar := t.footerRows(total, body)
 	if t.drawer.open() || t.inSearch || t.inJump {
-		// The drawer owns the bottom edge; its opening rule was drawn by
-		// footLines, above its body.
-		rule = closingRule(t.w, t.drawerHint())
+		// NO CLOSING RULE, AND NO HINTS. An open drawer used to be fenced top
+		// and bottom, with the lower fence carrying "^N/^P select · y yank ·
+		// Esc close" -- a second rule and a row of key advice between the list
+		// and the status bar. Gluck's design has neither: one rule above the
+		// drawer, the rows, a blank, then the bar. The keys are in the help
+		// panel, which is now scrollable and one keystroke away; printing them
+		// under every list is a caption on a photograph of a caption.
+		rule = ""
 	}
 	// The bar occupies the bottom rows and the rule sits directly above it,
 	// however many rows that is.
@@ -1390,19 +1395,12 @@ func (t *transcript) footerRows(total, body int) (rule string, bar []string) {
 	if t.follow {
 		pos = strings.TrimSpace(pos + " live")
 	}
-	rule = "\x1b[2m" + t.status.ruleLine(t.w, pos) + "\x1b[0m"
-	// THE BAR RENDERS FROM A VALUE now (statusview.go): the session is
-	// snapshotted here, where the lock and the clock are, and the rows come
-	// back from a pure function of that snapshot.
-	view := t.status.viewOf(t.openDrawer(), t.status.barVerbose(), time.Now())
-	rows := view.render(t.w)
-	if len(rows) == 0 {
-		rows = []string{""}
+	// ONE FOOTER, shared with the incipit's bookend: see footerStanza.
+	stanza := footerStanza(t.status, t.w, pos, t.openDrawer(), t.status.barVerbose())
+	if len(stanza) == 0 {
+		return "", []string{""}
 	}
-	for i, r := range rows {
-		rows[i] = "\x1b[2m" + r + "\x1b[0m"
-	}
-	return rule, rows
+	return stanza[0], stanza[1:]
 }
 
 // statusPanelLines is the '!' panel: the figaro-status detail above the footer.
@@ -2539,20 +2537,6 @@ func drawerOwnsKey(ev keyEvent) bool {
 		return true
 	}
 	return false
-}
-
-// drawerHint is what the closing rule says about leaving.
-func (t *transcript) drawerHint() string {
-	if t.inSearch {
-		return "Enter run · Tab complete · Esc cancel"
-	}
-	if t.inJump {
-		if t.cmdline.searching() {
-			return "^R older · Esc keep · ^G cancel"
-		}
-		return "Enter run · Tab complete · ^R history · Esc cancel"
-	}
-	return t.drawer.hint()
 }
 
 // rowID pulls an aria/form id out of a line of command output, so `y` on a

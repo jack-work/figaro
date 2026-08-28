@@ -387,11 +387,11 @@ var inputOracle = []struct {
 	keys  map[string]string
 }{
 	{"incipit", "stop=false rest=\"\" act=false off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"", map[string]string{
-		// ^V IS NEW: the status bar's verbosity, not ^O's tool output. It
+		// `m` IS NEW: the status bar's verbosity, not ^O's tool output. It
 		// behaves at this level exactly as ^O does -- an opener, so it yanks
 		// the pager up from incipit, and an INPUT-level row, so it does not
 		// dismiss an open panel the way an unbound key would.
-		"0x16":            "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"0x6d":            "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x03":            "stop=true rest=\"\" act=false off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=true clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x04":            "stop=true rest=\"\" act=false off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x0a":            "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
@@ -578,11 +578,11 @@ var inputOracle = []struct {
 		"nav:PgDn": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"nav:PgUp": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"nav:Up":   "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
-		// ^V IS NEW: the status bar's verbosity, not ^O's tool output. It
+		// `m` IS NEW: the status bar's verbosity, not ^O's tool output. It
 		// behaves at this level exactly as ^O does -- an opener, so it yanks
 		// the pager up from incipit, and an INPUT-level row, so it does not
 		// dismiss an open panel the way an unbound key would.
-		"0x16":            "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"0x6d":            "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x03":            "stop=true rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=true clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x04":            "stop=true rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x0c":            "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",

@@ -33,7 +33,6 @@ import (
 
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/term"
-	"github.com/mattn/go-runewidth"
 )
 
 // drawerPageRows is THE page size, fixed rather than derived from the pane.
@@ -159,18 +158,26 @@ func (d *drawer) visible(h int) int {
 // already did, differing from it in the marker it drew and in nothing else.
 // These forward; picker.go decides.
 
+// moveSelection is ^N/^P: choose.
 func (d *drawer) moveSelection(dir int, h int) {
 	if d.pick == nil {
 		return
 	}
 	d.pick.height = clampInt(h, 1, pickerRows)
-	d.pick.move(dir)
+	d.pick.pick(dir)
 }
 
-// scrollBy is j/k and the arrow cluster: it moves the SELECTION in a drawer
-// that has one and the WINDOW in a drawer that does not, which is what makes
-// `j` mean one thing to a reader across every drawer.
-func (d *drawer) scrollBy(dir int, h int) { d.moveSelection(dir, h) }
+// scrollBy is j/k and the arrow cluster: READ. It moves the window by a row and
+// leaves the selection where the reader put it -- a form with a hundred
+// properties is read by scrolling, and dragging the cursor down every line of
+// it is how `j` came to skip whole properties.
+func (d *drawer) scrollBy(dir int, h int) {
+	if d.pick == nil {
+		return
+	}
+	d.pick.height = clampInt(h, 1, pickerRows)
+	d.pick.step(dir)
+}
 
 func (d *drawer) halfPage(dir int, h int) {
 	if d.pick == nil {
@@ -312,32 +319,3 @@ func stripSGR(s string) string {
 // hint is what the drawer says about its own dismissal, drawn at the right of
 // its closing rule. Every drawer says how to leave, because the one thing every
 // reader of a drawer eventually wants is out.
-func (d *drawer) hint() string {
-	switch {
-	case !d.open():
-		return ""
-	case d.flash != "":
-		return d.flash
-	case d.kind == drawerList && d.cursor >= 0:
-		return "^N/^P select · y yank · Esc close"
-	case d.kind == drawerLive:
-		return d.live.Hint() + " · Esc close"
-	case d.kind == drawerInput:
-		return ""
-	default:
-		return "Esc close"
-	}
-}
-
-// closingRule is the drawer's bottom edge: a plain rule carrying the hint.
-func closingRule(w int, hint string) string {
-	if hint == "" {
-		return drawerGray(strings.Repeat("─", max(w, 0)))
-	}
-	right := " " + hint + " ───"
-	fill := w - runewidth.StringWidth(right)
-	if fill < 3 {
-		fill = 3
-	}
-	return drawerGray(clipToWidth(strings.Repeat("─", fill)+right, w))
-}

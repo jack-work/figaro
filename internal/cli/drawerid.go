@@ -14,6 +14,8 @@ package cli
 // is DERIVED from it. That is what makes "one owner" true rather than
 // aspirational. See plans/status-bar-and-modes.md §2.
 
+import "strings"
+
 // drawerID names a drawer. It is the string the drawer already carried —
 // `showList("queue", …)` — promoted to a type so the table below can be
 // exhaustive and a typo is a compile error rather than a silently nameless
@@ -30,6 +32,13 @@ const (
 	drawerStatus        drawerID = "status"
 	drawerNote          drawerID = "message"
 	drawerOutput        drawerID = "output"
+	// A FORM IS ITS OWN THING, and it must not borrow the notification clef:
+	// they are different in kind (a form is state you are reading, a
+	// notification is an event that happened to you) and reading a bass clef
+	// where you expected a treble is worse than having no glyph at all. Live
+	// form views arrive named "form listen", "form show" and so on, so the
+	// family is matched by prefix -- see face().
+	drawerForm drawerID = "form"
 )
 
 // drawerFace is how a drawer presents itself: the glyph that leads the status
@@ -63,6 +72,12 @@ var drawerFaces = map[drawerID]drawerFace{
 	drawerStatus:        {"!", "status", "", modePanel},
 	drawerNote:          {"", "", "", modePanel},
 	drawerOutput:        {"", "", "♭", modePanel},
+	// 𝄢 is the bass clef: the ground a piece is written over, which is what a
+	// form is to an aria. ♮ (natural) marks its selected row -- a third
+	// selection glyph, distinct from the queue's ♭ and notifications' ♩,
+	// because a reader should be able to tell which list they are in from the
+	// row under the cursor alone.
+	drawerForm: {"𝄢", "form", "♮", modePanel},
 }
 
 // face is the drawer's presentation, or the empty face for one nobody has
@@ -72,6 +87,15 @@ var drawerFaces = map[drawerID]drawerFace{
 func (d drawerID) face() drawerFace {
 	if f, ok := drawerFaces[d]; ok {
 		return f
+	}
+	// THE LIVE VERBS ARE A FAMILY, not a fixed set: they are named for the
+	// command that opened them ("form listen", "form show", "state show"), so
+	// matching the family by prefix is what keeps a new sub-verb from arriving
+	// glyphless.
+	if i := strings.IndexByte(string(d), ' '); i > 0 {
+		if f, ok := drawerFaces[drawerID(string(d)[:i])]; ok {
+			return f
+		}
 	}
 	return drawerFace{keys: modePanel}
 }

@@ -179,5 +179,34 @@ func (s *sessionStatus) viewOf(drawer drawerID, verbose bool, now time.Time) sta
 // reserves rows and a caller that draws them cannot disagree.
 func (v statusView) height(w int) int { return len(v.render(w)) }
 
+// ---------------------------------------------------------------------------
+// THE FOOTER, AND THERE IS ONLY ONE.
+//
+// The pager and the incipit each used to build their own: footerRows() for the
+// transcript, bookendLines() for the inline stream, both stitching a rule and a
+// status row out of the same two helpers in slightly different ways. That is
+// how a change lands in one mode and not the other -- and it did: the state
+// glyphs, the aria id and the dropped clock reached the pager first and the
+// scrollback bookend only because someone remembered to look.
+//
+// One function now. Both callers pass what differs (the position label, the
+// verbosity) and neither owns a single line of layout.
+// ---------------------------------------------------------------------------
+
+// footerStanza is the bottom of the screen, in one place: the rule that closes
+// the conversation, then the bar. Dimming is applied here too, so "the footer
+// is dim" is a fact about the footer rather than a convention every caller
+// remembers.
+func footerStanza(s *sessionStatus, w int, pos string, drawer drawerID, verbose bool) []string {
+	if s == nil || w <= 0 {
+		return nil
+	}
+	rows := []string{term.Dim(s.ruleLine(w, pos))}
+	for _, r := range s.viewOf(drawer, verbose, time.Now()).render(w) {
+		rows = append(rows, term.Dim(r))
+	}
+	return rows
+}
+
 // truncRunes is shared with the old renderer.
 var _ = runewidth.StringWidth

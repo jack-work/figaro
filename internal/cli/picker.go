@@ -70,24 +70,67 @@ func (p *picker) nextSelectable(i, d int) int {
 	return -1
 }
 
-// move is the motion every drawer shares. It moves the CURSOR when there is
-// one and the WINDOW when there is not, which is what lets `j` mean the same
-// thing to a reader in the help panel and in the queue.
-func (p *picker) move(d int) {
+// TWO MOTIONS, NOT ONE, and conflating them is what made `form show` unusable:
+// j skipped whole properties, because it moved to the next SELECTABLE row and a
+// form's child rows are not selectable. They are different questions.
+//
+//	j / k / arrows  →  step(±1): move the WINDOW by a row. Reading.
+//	^N / ^P         →  pick(±1): move the CURSOR to the next item. Choosing.
+//
+// A list with no cursor answers both the same way, which is why the help panel
+// feels identical; a list with one lets you read past the selection without
+// dragging it along, which is what a long form needs.
+
+// step scrolls by rows, and carries the cursor along only when the cursor
+// would otherwise leave the window. Reading never changes what is selected.
+func (p *picker) step(d int) {
 	if len(p.rows) == 0 {
 		return
 	}
+	p.scroll(d)
 	if p.selectable() {
-		if n := p.nextSelectable(p.cursor, sign(d)); n >= 0 {
-			for i := 0; i < abs(d) && n >= 0; i++ {
-				p.cursor = n
-				n = p.nextSelectable(p.cursor, sign(d))
-			}
-		}
-		p.follow()
+		p.dragCursorIntoView()
+	}
+}
+
+// pick moves the SELECTION to the next selectable row, and slides the window to
+// keep it visible.
+func (p *picker) pick(d int) {
+	if len(p.rows) == 0 {
 		return
 	}
-	p.scroll(d)
+	if !p.selectable() {
+		p.scroll(d)
+		return
+	}
+	for i := 0; i < abs(d); i++ {
+		n := p.nextSelectable(p.cursor, sign(d))
+		if n < 0 || n == p.cursor {
+			break
+		}
+		p.cursor = n
+	}
+	p.follow()
+}
+
+// move is pick, kept for callers that mean "choose". Reading is step.
+func (p *picker) move(d int) { p.pick(d) }
+
+// dragCursorIntoView keeps the selection inside the window after a scroll, so
+// a `y` or an `x` after paging always acts on something the reader can see.
+func (p *picker) dragCursorIntoView() {
+	h := p.window()
+	if p.cursor < p.top {
+		if n := p.nextSelectable(p.top-1, 1); n >= 0 && n < p.top+h {
+			p.cursor = n
+		}
+		return
+	}
+	if p.cursor >= p.top+h {
+		if n := p.nextSelectable(p.top+h, -1); n >= p.top {
+			p.cursor = n
+		}
+	}
 }
 
 // scroll moves the window without touching a cursor.
@@ -95,8 +138,9 @@ func (p *picker) scroll(d int) {
 	p.top = clampInt(p.top+d, 0, p.maxTop())
 }
 
-// half is u/d: half a window.
-func (p *picker) half(d int) { p.move(d * max(p.window()/2, 1)) }
+// half is u/d: half a window, and it READS -- a half-page is a scroll, not a
+// selection.
+func (p *picker) half(d int) { p.step(d * max(p.window()/2, 1)) }
 
 // home / end are gg and G.
 func (p *picker) home() {

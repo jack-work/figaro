@@ -176,16 +176,18 @@ var keymap = []keyBinding{
 		open: opensPager, help: helpVerbose, input: inputToggleVerbose,
 	},
 	{
-		// ^V is the BAR's verbosity: state names, the model, the hints and the
-		// last-interaction time. A different axis from ^O above, which is
-		// verbose TOOL OUTPUT -- and the two are deliberately different keys
-		// because they answer different questions.
-		chord: byteChord(0x16), modes: inAnyBox &^ inJumpBox,
+		// 'm' is MORE: the bar's own detail -- state names, the model, the
+		// last-interaction time. A plain letter, on Gluck's instruction, and
+		// it earns the promotion: ^V could not have the job anyway, because
+		// in the ':' box that chord is PASTE, so the toggle would have been
+		// the one key that means two things in the two places you are most
+		// likely to press it.
+		//
+		// A DIFFERENT AXIS FROM ^O, which is verbose TOOL OUTPUT. "What is
+		// this session" and "what did that tool say" are different questions
+		// and they keep different keys.
+		chord: byteChord('m'), modes: inTranscript | inPanel,
 		open: opensPager, help: helpBarVerbose, input: inputToggleBarVerbose,
-	},
-	{
-		chord: ctrlChord('v'), modes: inAnyBox &^ inJumpBox,
-		open: opensPager, help: helpNone, input: inputToggleBarVerbose,
 	},
 	{
 		// In incipit 'y' copies the aria id, a feature of its own, not a
@@ -581,7 +583,7 @@ var helpRows = []helpRow{
 	{helpDrawerDrop, "(in a list) x", "drop the selected entry (queue)"},
 	{helpYank, "y", "copy selection (or aria id if none)"},
 	{helpVerbose, "^O", "toggle verbose tool output"},
-	{helpBarVerbose, "^V", "toggle the status bar's detail (names, model, time)"},
+	{helpBarVerbose, "m", "more: state names, model, last interaction"},
 	{helpCmdPaste, "(in :) ^V", "paste the clipboard"},
 	{helpSelect, "^N/^P", "select next/previous node"},
 	{helpSelectExtend, "^N/^P + Shift", "extend node selection (Alt+^N/^P fallback)"},
