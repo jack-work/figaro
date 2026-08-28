@@ -269,6 +269,32 @@ if [[ "$formrow" == *"𝄞"* ]]; then
 fi
 tmux -S "$SOCK" send-keys -t bar:0 Escape; sleep 0.4
 
+# 8b. FULLSCREEN. 'F' gives the pit the pane; the transcript stays BEHIND it,
+#     dimmed, so leaving puts the reader back where they were.
+tmux -S "$SOCK" send-keys -t bar:0 '?'; sleep 1
+small=$(tmux -S "$SOCK" capture-pane -p -t bar:0 | grep -c "^  ")
+tmux -S "$SOCK" send-keys -t bar:0 F; sleep 1
+big=$(tmux -S "$SOCK" capture-pane -p -t bar:0 | grep -c "^  ")
+echo "help rows: $small → $big"
+if (( big > small )); then
+  echo "ok   F grew the pit ($small → $big rows)"
+else
+  echo "FAIL: F did not grow the pit ($small → $big)"; fail=1
+fi
+if tmux -S "$SOCK" capture-pane -p -t bar:0 | grep -q "look around"; then
+  echo "ok   the transcript is still behind the fullscreen pit"
+else
+  echo "FAIL: fullscreen blanked the transcript instead of shadowing it"; fail=1
+fi
+tmux -S "$SOCK" send-keys -t bar:0 F; sleep 1
+back=$(tmux -S "$SOCK" capture-pane -p -t bar:0 | grep -c "^  ")
+if (( back == small )); then
+  echo "ok   F toggles back to the small pit"
+else
+  echo "FAIL: F did not restore the pit ($back vs $small)"; fail=1
+fi
+tmux -S "$SOCK" send-keys -t bar:0 Escape; sleep 0.4
+
 # 9. THE ALERT RETIRES. Posted by a real command, watched until it goes -- the
 #    step I skipped, which is exactly why it never went.
 tmux -S "$SOCK" send-keys -t bar:0 ':'; sleep 0.4

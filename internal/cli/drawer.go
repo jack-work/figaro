@@ -91,6 +91,10 @@ type drawer struct {
 	// for rows and forwards keys to it; it knows nothing about drawers and the
 	// drawer knows nothing about forms. See cmdkit.LiveView.
 	live cmdkit.LiveView
+	// full is fullscreen: the pit takes the pane and the transcript is shadowed
+	// behind it. Cleared when the pit closes, because a fullscreen pit that is
+	// not open is a screen with nothing on it.
+	full bool
 	// pick is the LIST, and every behaviour of one: the window, the cursor,
 	// the motions and the truncation marker. The drawer used to own a second
 	// implementation of all four (see picker.go for the three that existed).
@@ -160,13 +164,26 @@ func (d *drawer) showList(name, title string, rows []drawerRow, selectable bool)
 // visible is how many rows of the list fit: the fixed page, bounded by what the
 // pane can actually give. h is the whole pane.
 func (d *drawer) visible(h int) int {
-	// The stanza costs two rules and the status row; leave at least three rows
-	// of transcript so the drawer never becomes the whole screen.
+	// FULLSCREEN TAKES THE PANE, minus the rule above the pit and the status
+	// bar below it. The reservation is the same arithmetic either way -- what
+	// changes is only whether drawerPageRows caps it.
 	room := h - 3 - 3
+	if d.full {
+		// THE RULE AND THE BAR ARE NOT THE PIT'S TO TAKE. Fullscreen claims
+		// everything else: h, minus the rule above it, minus the bar below.
+		// Asking for one row more made the stanza taller than the pane, and
+		// the placement -- which refuses a negative origin rather than
+		// painting a stanza that would not fit -- skipped it entirely, so
+		// `F` blanked the screen.
+		room = h - 3
+	}
 	if d.title != "" {
 		room--
 	}
 	n := drawerPageRows
+	if d.full {
+		n = room
+	}
 	if room < n {
 		n = room
 	}
@@ -174,6 +191,17 @@ func (d *drawer) visible(h int) int {
 		n = 1
 	}
 	return n
+}
+
+// toggleFull is 'F': the pit takes the whole pane, with the transcript
+// shadowed behind it rather than scrolled away. It is a property of the PIT,
+// not of any one list, which is why it lives here and works for help, the
+// queue, notifications and a form alike -- the thing the picker consolidation
+// bought.
+func (d *drawer) toggleFull() {
+	if d.open() {
+		d.full = !d.full
+	}
 }
 
 // nextSelectable finds the next selectable row from i in direction dir (+1/-1),

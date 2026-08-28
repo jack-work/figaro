@@ -1325,16 +1325,31 @@ func (t *transcript) renderFrame() {
 	// between the drawer's last entry and its closing rule. The padding belongs
 	// above the transcript's rule, where the live region ends; anchoring the
 	// stanza to the bottom of the screen puts it there.
-	if start := t.h - 2 - len(foot); start >= 0 {
-		for k, l := range foot {
-			if r := start + k; r >= 0 && r < t.h-2 {
-				screen[r] = l
+	if t.drawer.full {
+		// SHADOWED, NOT BLANKED: every row of the conversation is dimmed and
+		// left in place, so the pit reads as something laid OVER the
+		// transcript rather than as a screen the transcript left.
+		for r := range screen {
+			if r < t.h-2 {
+				screen[r] = term.StateDim(stripSGR(screen[r]))
 			}
 		}
 	}
-	// The row above the rule (screen[t.h-3]) is left blank while following -
-	// layout reserved it, and is content otherwise. See layout.
+	// The row above the rule is left blank while following -- layout reserved
+	// it, and is content otherwise. See layout.
 	rule, bar := t.footerRows(total, body)
+	// A STANZA TALLER THAN THE PANE KEEPS ITS TAIL, rather than not being
+	// drawn: the rows nearest the bar are the ones being read.
+	start := t.h - 1 - len(bar) - len(foot)
+	if start < 0 {
+		foot = foot[-start:]
+		start = 0
+	}
+	for k, l := range foot {
+		if r := start + k; r >= 0 && r < t.h-len(bar) {
+			screen[r] = l
+		}
+	}
 	if t.drawer.open() || t.inSearch || t.inJump {
 		// NO CLOSING RULE, AND NO HINTS. An open drawer used to be fenced top
 		// and bottom, with the lower fence carrying "^N/^P select · y yank ·
@@ -2540,6 +2555,11 @@ func (t *transcript) drawerMotion(ev keyEvent) bool {
 	// e/y READ: one row of the window, selection untouched. vim's ^E/^Y
 	// without the modifier, because a pit is a small thing and the chord is
 	// spent on selection already.
+	case ev.b == 'F':
+		// FULLSCREEN. The pit takes the pane; the transcript stays behind it,
+		// shadowed rather than scrolled away, so leaving puts the reader back
+		// exactly where they were.
+		t.drawer.toggleFull()
 	case ev.b == 'e':
 		t.drawer.scrollBy(1, h)
 	case ev.b == 'y' && t.drawer.pick != nil && !t.drawer.pick.selectable():
@@ -2570,7 +2590,7 @@ func (t *transcript) drawerMotion(ev keyEvent) bool {
 // that makes a panel a glance rather than a mode.
 func drawerOwnsKey(ev keyEvent) bool {
 	switch {
-	case ev.b == 'j', ev.b == 'k', ev.b == 'u', ev.b == 'd', ev.b == 'g', ev.b == 'G', ev.b == 'e':
+	case ev.b == 'j', ev.b == 'k', ev.b == 'u', ev.b == 'd', ev.b == 'g', ev.b == 'G', ev.b == 'e', ev.b == 'F':
 		return true
 	case ev.nav == navPageUp, ev.nav == navPageDown, ev.nav == navHome, ev.nav == navEnd:
 		return true

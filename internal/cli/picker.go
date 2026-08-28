@@ -210,7 +210,7 @@ func (p *picker) remove() {
 // transcript above it jump by a row too. A window that changes size while you
 // read it is the thing this component exists to stop.
 func (p *picker) lines(id drawerID, w, h int) []string {
-	budget := clampInt(h, 1, pickerRows)
+	budget := clampInt(h, 1, max(h, pickerRows))
 	// Reserve the marker rows FIRST, out of the same budget.
 	markAbove, markBelow := 0, 0
 	if len(p.rows) > budget {
