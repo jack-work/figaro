@@ -125,7 +125,7 @@ type RunContext struct {
 	Extra interface{}
 
 	// In, Out and Err are this command's streams. They exist so a verb can be
-	// run somewhere that is not a process -- inside the pager's drawer, in a
+	// run somewhere that is not a process -- inside the pager's pit, in a
 	// test -- without the package reaching for os.Stdout behind everyone's
 	// back. Nil means the router's own, which means the process's.
 	In       io.Reader
@@ -187,7 +187,7 @@ func (c *RunContext) BoolFlag(name string) bool {
 // So a live verb is a MODEL instead. It renders rows for a viewport it is
 // given and it takes keys as method calls. The host owns the screen, decides
 // where the rows go, and decides which keys to forward -- which is what lets
-// the same `form listen` be a full-screen command at a shell and a drawer in
+// the same `form listen` be a full-screen command at a shell and a pit in
 // the pager, with one implementation and no pipe between them.
 type LiveView interface {
 	// Rows renders the view for a viewport of w columns and h rows. It must
@@ -196,7 +196,7 @@ type LiveView interface {
 	Rows(w, h int) []string
 
 	// Key offers one keystroke. Reporting false leaves it to the host, which
-	// is how Esc closes a drawer without the view having to know what a drawer
+	// is how Esc closes a pit without the view having to know what a pit
 	// is.
 	//
 	// A KEY HANDLER MUTATES AND RETURNS: it must not repaint. Every host
@@ -209,7 +209,7 @@ type LiveView interface {
 	Key(b byte) bool
 
 	// Hint is what the view can do, for the HOST to place -- on a status line,
-	// on a drawer's rule, wherever the host keeps affordances. It is not a row,
+	// on a pit's rule, wherever the host keeps affordances. It is not a row,
 	// because a view that draws its own footer inside a host that also draws
 	// one shows the same sentence twice.
 	Hint() string

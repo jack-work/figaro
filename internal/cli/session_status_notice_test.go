@@ -31,7 +31,7 @@ func statusFixture(mantra string) *sessionStatus {
 // cannot pass against a spelling production no longer uses. (statusLine, which
 // these tests used to call, was a second implementation of this and is gone.)
 func row(s *sessionStatus, w int) string {
-	return strings.Join(s.viewOf(drawerNothing, s.barVerbose(), time.Now()).render(w), "\n")
+	return strings.Join(s.viewOf(pitNothing, s.barVerbose(), time.Now()).render(w), "\n")
 }
 
 // rowWidth is the WIDEST row of the bar. The bar is one row or three, so a
@@ -39,7 +39,7 @@ func row(s *sessionStatus, w int) string {
 // what made these tests report 56 columns for a 40-column bar.
 func rowWidth(s *sessionStatus, w int) int {
 	widest := 0
-	for _, r := range s.viewOf(drawerNothing, s.barVerbose(), time.Now()).render(w) {
+	for _, r := range s.viewOf(pitNothing, s.barVerbose(), time.Now()).render(w) {
 		widest = max(widest, displayWidth(r))
 	}
 	return widest

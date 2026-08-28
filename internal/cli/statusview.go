@@ -22,7 +22,7 @@ import (
 
 // statusView is everything the bar says.
 type statusView struct {
-	Drawer drawerID // what is open (drawerid.go); drawerNothing in the plain pager
+	Pit    pitID // what is open (pitid.go); pitNothing in the plain pager
 	State  turnStatus
 	Tick   uint64 // spinner frame, for the one state that animates
 	Aria   string
@@ -104,7 +104,7 @@ func (v statusView) groups() (left, right []string) {
 			left = append(left, v.Alert)
 		}
 	}
-	if tok := v.Drawer.token(v.Verbose); tok != "" {
+	if tok := v.Pit.token(v.Verbose); tok != "" {
 		left = append(left, tok)
 	}
 	if st := v.stateToken(); st != "" {
@@ -159,7 +159,7 @@ func joinFields(fields []string) string { return strings.Join(fields, " · ") }
 
 // viewOf snapshots a session into a statusView. This is where the lock is
 // taken and where the wall clock is read; render() does neither.
-func (s *sessionStatus) viewOf(drawer drawerID, verbose bool, now time.Time) statusView {
+func (s *sessionStatus) viewOf(pit pitID, verbose bool, now time.Time) statusView {
 	if s == nil {
 		return statusView{}
 	}
@@ -173,7 +173,7 @@ func (s *sessionStatus) viewOf(drawer drawerID, verbose bool, now time.Time) sta
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	v := statusView{
-		Drawer:     drawer,
+		Pit:        pit,
 		State:      s.turn,
 		Tick:       s.tick,
 		Aria:       s.figaroID,
@@ -214,12 +214,12 @@ func (v statusView) height(w int) int { return len(v.render(w)) }
 // the conversation, then the bar. Dimming is applied here too, so "the footer
 // is dim" is a fact about the footer rather than a convention every caller
 // remembers.
-func footerStanza(s *sessionStatus, w int, pos string, drawer drawerID, verbose bool) []string {
+func footerStanza(s *sessionStatus, w int, pos string, pit pitID, verbose bool) []string {
 	if s == nil || w <= 0 {
 		return nil
 	}
 	rows := []string{term.Dim(s.ruleLine(w, pos))}
-	for _, r := range s.viewOf(drawer, verbose, time.Now()).render(w) {
+	for _, r := range s.viewOf(pit, verbose, time.Now()).render(w) {
 		rows = append(rows, term.Dim(r))
 	}
 	return rows

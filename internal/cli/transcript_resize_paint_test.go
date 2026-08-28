@@ -375,25 +375,25 @@ func TestTranscriptPaint_GesturesKeepBelief(t *testing.T) {
 			// Panels grow the footer, which shrinks the body: the same
 			// row-budget change a resize causes, but WITHOUT the terminal
 			// reflowing underneath. A good place for a second bug to live.
-			tr.openStatusDrawer()
+			tr.openStatusPit()
 			tr.render()
 			step("status panel open")
 			for i := range 4 {
 				tr.scrollBy(-3)
 				step(fmt.Sprintf("scroll with status panel %d", i))
 			}
-			tr.drawer.close()
+			tr.pit.close()
 			tr.render()
 			step("status panel closed")
 
-			tr.openHelpDrawer()
+			tr.openHelpPit()
 			tr.render()
 			step("help panel open")
 			for i := range 4 {
 				tr.scrollBy(3)
 				step(fmt.Sprintf("scroll with help panel %d", i))
 			}
-			tr.drawer.close()
+			tr.pit.close()
 			tr.render()
 			step("help panel closed")
 

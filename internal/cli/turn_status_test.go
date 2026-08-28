@@ -13,7 +13,7 @@ import (
 // bar renders the status row THE WAY THE PROGRAM DOES: through the one
 // renderer, so a test cannot pass against a spelling production no longer uses.
 func bar(s *sessionStatus, verbose bool) string {
-	return strings.Join(s.viewOf(drawerNothing, verbose, time.Now()).render(100), "\n")
+	return strings.Join(s.viewOf(pitNothing, verbose, time.Now()).render(100), "\n")
 }
 
 func TestSessionStatusShowsThinkingAndTerminalOutcomes(t *testing.T) {

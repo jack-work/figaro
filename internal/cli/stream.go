@@ -311,7 +311,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			// in step by hand.
 			in.lt.setCommandRunner(in.runCommand)
 			in.lt.setCommandCompleter(in.complete)
-			in.lt.tr.dropRow = in.dropDrawerRow
+			in.lt.tr.dropRow = in.dropPitRow
 			in.lt.setQueuedFetch(in.refreshQueued) // 'Q' works before the pager is ever opened
 			// Both are inert until the PAGER is up (a fetcher is only consulted by
 			// Store.Ensure, i.e. the prefetch worker), and both must be in place
@@ -1318,13 +1318,12 @@ func inputToggleVerbose(in *interactiveInput, _ keyEvent) keyVerdict {
 func inputYank(in *interactiveInput, ev keyEvent) keyVerdict {
 	if ev.mode != modeIncipit {
 		in.mu.Lock()
-		// A DRAWER WITH A SELECTION OWNS 'y'. The row knows what it is worth
+		// A PIT WITH A SELECTION OWNS 'y'. The row knows what it is worth
 		// copying -- a queued message's text, an aria id out of `:ls` -- and the
 		// transcript's node selection is a different question that is not being
 		// asked while a list is up.
-		if row, ok := in.lt.tr.drawer.selected(); ok && row.yank != "" {
-			in.lt.tr.drawer.flash = "yanked " + row.yank + " · Esc close"
-			in.lt.tr.render()
+		if row, ok := in.lt.tr.pit.selected(); ok && row.yank != "" {
+			in.lt.tr.noteYank(row.yank)
 			in.mu.Unlock()
 			in.tc.SetClipboard(row.yank)
 			return keyHandled

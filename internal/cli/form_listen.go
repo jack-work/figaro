@@ -20,7 +20,7 @@ import (
 // openFormView dials an aria, subscribes to its form deltas and returns a view
 // that follows them. onChange fires whenever the view has something new to
 // show, which is how a HOST repaints: the shell host paints a screen, the
-// drawer host asks the pager to render.
+// pit host asks the pager to render.
 //
 // Extracted from runFormListen so the two hosts share one setup. They used to
 // be one function that dialled, subscribed, painted and read keys, which is
@@ -82,7 +82,7 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 }
 
 func runFormListen(loaded *config.Loaded, ariaID string) {
-	// The pump repaints THIS host; a drawer host passes its own render instead.
+	// The pump repaints THIS host; a pit host passes its own render instead.
 	var view *formView
 	view, closeView, err := openFormView(ariaID, loaded, func() { view.paint() })
 	// The SHELL host paints a screen it owns.
@@ -137,7 +137,7 @@ type formView struct {
 	// repaint is THE HOST's, and every path that changes the view calls it
 	// rather than painting itself. Before this, move/page/toggle/yank/resync
 	// each called paint() -- which writes to os.Stdout with absolute cursor
-	// positioning -- so hosting the view in a drawer put its footer on the
+	// positioning -- so hosting the view in a pit put its footer on the
 	// pager's status row, twice, from inside a region it did not own.
 	repaint func()
 }
@@ -226,7 +226,7 @@ func (v *formView) yank() {
 }
 
 // Rows renders the view for a viewport, and positions nothing. It is the whole
-// of what the view LOOKS like, so a host -- a full screen at a shell, a drawer
+// of what the view LOOKS like, so a host -- a full screen at a shell, a pit
 // in the pager -- can put those rows wherever it owns.
 //
 // This used to be paint(): one function that decided the content AND wrote it
@@ -242,7 +242,7 @@ func (v *formView) yank() {
 // Now the view supplies content and the two VERBS that are its own (Enter
 // expands a branch, y yanks a value); everything a finger does to move is the
 // picker's, once, for every pit.
-func (v *formView) Items(width int) []drawerRow {
+func (v *formView) Items(width int) []pitRow {
 	snap, version, gaps := v.mirror.state()
 	if width <= 0 {
 		width = 80
@@ -255,14 +255,14 @@ func (v *formView) Items(width int) []drawerRow {
 	if gaps > 0 {
 		head += fmt.Sprintf(" · %d resync", gaps)
 	}
-	out := make([]drawerRow, 0, len(v.rows)+1)
+	out := make([]pitRow, 0, len(v.rows)+1)
 	out = append(out, staticRow(clipLine(head, width)))
 	for _, n := range v.rows {
 		// EVERY ROW IS SELECTABLE, which is the other half of the bug: a form's
 		// child rows were not, so a motion that stepped to the next selectable
 		// row jumped over whole properties. A form is a list of things you
 		// look at; all of them can hold the cursor.
-		out = append(out, drawerRow{
+		out = append(out, pitRow{
 			text: renderFormRow(n, width, false),
 			yank: yankFormNode(n),
 			id:   n.path,
@@ -330,9 +330,9 @@ func (v *formView) Rows(width, height int) []string {
 }
 
 // Hint is what the view can do, for the HOST to place. It is not a row: the
-// shell host puts it on the last line of a screen it owns, and the drawer puts
+// shell host puts it on the last line of a screen it owns, and the pit puts
 // it on its closing rule -- and when Rows carried it itself, both hosts drew
-// it AND the drawer drew its own, so the affordance appeared twice.
+// it AND the pit drew its own, so the affordance appeared twice.
 func (v *formView) Hint() string {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -345,7 +345,7 @@ func (v *formView) Hint() string {
 
 // Key offers one keystroke, and reports whether the view took it. 'q' and ^C
 // are NOT taken: leaving is the host's decision -- at a shell it ends the
-// command, in a drawer it closes the drawer -- and a view that swallowed them
+// command, in a pit it closes the pit -- and a view that swallowed them
 // would be a view you could not get out of in either place.
 func (v *formView) Key(b byte) bool {
 	switch b {
@@ -376,7 +376,7 @@ func (v *formView) Close() {
 }
 
 // paint is the SHELL host: the same rows, positioned on a screen this process
-// owns. The pager's host is drawer-shaped and lives in transcript.go.
+// owns. The pager's host is pit-shaped and lives in transcript.go.
 func (v *formView) paint() {
 	width, height := term.Width(), term.Height()
 	if width <= 0 {

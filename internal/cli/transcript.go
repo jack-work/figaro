@@ -36,13 +36,13 @@ type transcript struct {
 	status *sessionStatus
 
 	active bool
-	// drawer is THE transient region below the transcript: help, figaro status,
+	// pit is THE transient region below the transcript: help, figaro status,
 	// the queue, a command's output, an error, the completion list. One at a
 	// time, Esc closes it, and none of them may touch the status bar. See
-	// drawer.go for why that last clause is the point of the type.
-	drawer      drawer
+	// pit.go for why that last clause is the point of the type.
+	pit         pit
 	queuedByKey bool // ...because the user pressed 'Q', not because it filled
-	// queueDismissed latches a DELIBERATE close of the queue drawer, so the
+	// queueDismissed latches a DELIBERATE close of the queue pit, so the
 	// next poll does not put it straight back. This is Gluck's bug: `fig send`
 	// that queues a message and enters the pager showed the queue, Esc closed
 	// it, and the very next figaro.queued reopened it -- because the queue was
@@ -51,7 +51,7 @@ type transcript struct {
 	// dismissed at all.
 	queueDismissed bool
 	queuedRows     []string     // pre-rendered by livelogTurn, for the inline trailer
-	queued         []queuedItem // the queue itself, ids intact, for the drawer
+	queued         []queuedItem // the queue itself, ids intact, for the pit
 	queuedFetch    func()       // async refresh of the queued snapshot; set by the input loop
 	// command runs a ':' line that is not a coordinate. Set by the input loop,
 	// which owns the RPC clients; nil in a fixture, where the box still takes
@@ -66,9 +66,9 @@ type transcript struct {
 	// completer returns Tab candidates for a partially typed command line. Set
 	// by the input loop, which owns the router.
 	completer func(string) []string
-	// dropRow is 'x' on a selected drawer row: the owner decides what dropping
-	// means for that drawer's name.
-	dropRow func(drawer, id string)
+	// dropRow is 'x' on a selected pit row: the owner decides what dropping
+	// means for that pit's name.
+	dropRow func(pit, id string)
 	w, h    int
 	tick    int
 
@@ -117,7 +117,7 @@ type transcript struct {
 	cmdline lineEditor
 	// completions is the last Tab's candidate list and which of them is
 	// selected. THE MENU IS BOUNDED: it draws at most completionMenuRows rows
-	// inside the drawer, because a completion list that grows with the number
+	// inside the pit, because a completion list that grows with the number
 	// of arias is a completion list that eats the screen -- which is what the
 	// first cut did with forty verbs.
 	completions   []string
@@ -1060,9 +1060,9 @@ func (t *transcript) settle() {
 
 // footLines is the open bottom panel, if any: it grows upward from the footer
 // and shrinks the body by exactly its height.
-// footLines is the DRAWER's body: everything between the transcript's rule and
-// the drawer's closing rule. One renderer now, where there were five with three
-// different clipping rules between them. See drawer.go.
+// footLines is the PIT's body: everything between the transcript's rule and
+// the pit's closing rule. One renderer now, where there were five with three
+// different clipping rules between them. See pit.go.
 func (t *transcript) footLines() []string {
 	// THE TYPING BOXES ARE DRAWERS TOO. They used to write themselves into the
 	// status row, which is how typing `/` made the mantra, the context
@@ -1070,14 +1070,14 @@ func (t *transcript) footLines() []string {
 	// lives here.
 	rows := t.inputDrawerLines()
 	if rows == nil {
-		if !t.drawer.open() {
+		if !t.pit.open() {
 			return nil
 		}
-		rows = t.drawer.lines(t.w, t.h)
+		rows = t.pit.lines(t.w, t.h)
 	}
-	// THE TRANSCRIPT'S RULE OPENS THE REGION, above the drawer's body -- so the
+	// THE TRANSCRIPT'S RULE OPENS THE REGION, above the pit's body -- so the
 	// screen reads top to bottom as: conversation, the rule that ends it, the
-	// drawer, the rule that ends THAT, and the status bar. renderFrame puts the
+	// pit, the rule that ends THAT, and the status bar. renderFrame puts the
 	// closing rule on the second-to-last row; this is everything above it.
 	return append([]string{t.transcriptRule()}, rows...)
 }
@@ -1108,10 +1108,10 @@ func (t *transcript) layoutNow() (body, maxOff int) {
 	foot := 0
 	if rows := t.inputDrawerLines(); rows != nil {
 		foot = len(rows)
-	} else if t.drawer.open() {
-		foot = len(t.drawer.lines(t.w, t.h))
+	} else if t.pit.open() {
+		foot = len(t.pit.lines(t.w, t.h))
 	}
-	return t.layout(foot + 1) // +1 for the transcript rule above the drawer
+	return t.layout(foot + 1) // +1 for the transcript rule above the pit
 }
 
 // padTo right-pads to n display columns.
@@ -1125,7 +1125,7 @@ func padTo(s string, n int) string {
 // setCmdOut shows a command's output panel.
 func (t *transcript) setCmdOut(title string, rows []string) {
 	t.queuedByKey = false
-	drows := make([]drawerRow, 0, len(rows))
+	drows := make([]pitRow, 0, len(rows))
 	for _, r := range rows {
 		// A HEADER IS NOT A ROW YOU CAN ACT ON. Raw command output has no
 		// structure to read, so the rule is textual and deliberately crude: a
@@ -1138,9 +1138,9 @@ func (t *transcript) setCmdOut(title string, rows []string) {
 		// summary line or a column header has none, so it is chrome and ^N
 		// steps over it.
 		id := rowID(r)
-		drows = append(drows, drawerRow{text: r, yank: id, id: id})
+		drows = append(drows, pitRow{text: r, yank: id, id: id})
 	}
-	t.drawer.showList("output", ":"+title, drows)
+	t.pit.showList(pitOutput, ":"+title, drows)
 	t.render()
 }
 
@@ -1322,10 +1322,10 @@ func (t *transcript) renderFrame() {
 	// BOTTOM-ALIGNED, and that is the fix for a stray blank line. layout() takes
 	// one row off the body while following (the live padding), so writing the
 	// stanza from `body` upward left the slack at the BOTTOM -- an empty row
-	// between the drawer's last entry and its closing rule. The padding belongs
+	// between the pit's last entry and its closing rule. The padding belongs
 	// above the transcript's rule, where the live region ends; anchoring the
 	// stanza to the bottom of the screen puts it there.
-	if t.drawer.full {
+	if t.pit.full {
 		// SHADOWED, NOT BLANKED: every row of the conversation is dimmed and
 		// left in place, so the pit reads as something laid OVER the
 		// transcript rather than as a screen the transcript left.
@@ -1350,12 +1350,12 @@ func (t *transcript) renderFrame() {
 			screen[r] = l
 		}
 	}
-	if t.drawer.open() || t.inSearch || t.inJump {
-		// NO CLOSING RULE, AND NO HINTS. An open drawer used to be fenced top
+	if t.pit.open() || t.inSearch || t.inJump {
+		// NO CLOSING RULE, AND NO HINTS. An open pit used to be fenced top
 		// and bottom, with the lower fence carrying "^N/^P select · y yank ·
 		// Esc close" -- a second rule and a row of key advice between the list
 		// and the status bar. Gluck's design has neither: one rule above the
-		// drawer, the rows, a blank, then the bar. The keys are in the help
+		// pit, the rows, a blank, then the bar. The keys are in the help
 		// panel, which is now scrollable and one keystroke away; printing them
 		// under every list is a caption on a photograph of a caption.
 		rule = ""
@@ -1381,14 +1381,14 @@ func (t *transcript) renderFrame() {
 // box wrote its query there, the command line wrote itself there, and every
 // error wrote its text there -- so the mantra, the context percentage and the
 // cost vanished exactly when something had gone wrong. All three now live in
-// the drawer (see drawer.go), and this row shows what is always true.
+// the pit (see pit.go), and this row shows what is always true.
 // barRows is how many rows the status bar will take, asked before it is drawn
 // so the reservation and the painting cannot disagree.
 func (t *transcript) barRows() int {
 	if t.status == nil {
 		return 1
 	}
-	return max(t.status.viewOf(t.openDrawer(), t.status.barVerbose(), time.Now()).height(t.w), 1)
+	return max(t.status.viewOf(t.openPit(), t.status.barVerbose(), time.Now()).height(t.w), 1)
 }
 
 func (t *transcript) footerRows(total, body int) (rule string, bar []string) {
@@ -1411,7 +1411,7 @@ func (t *transcript) footerRows(total, body int) (rule string, bar []string) {
 		pos = strings.TrimSpace(pos + " live")
 	}
 	// ONE FOOTER, shared with the incipit's bookend: see footerStanza.
-	stanza := footerStanza(t.status, t.w, pos, t.openDrawer(), t.status.barVerbose())
+	stanza := footerStanza(t.status, t.w, pos, t.openPit(), t.status.barVerbose())
 	if len(stanza) == 0 {
 		return "", []string{""}
 	}
@@ -1439,31 +1439,31 @@ func (t *transcript) statusPanelLines() []string {
 // auto-closed: draining the queue must not yank away a view they asked for.
 func (t *transcript) showQueuedAuto(on bool) {
 	if on {
-		if t.showing("queue") {
-			t.refreshQueuedDrawer()
+		if t.showing(pitQueue) {
+			t.refreshQueuePit()
 			return
 		}
-		// Dismissed by hand, or a DELIBERATE drawer is up (help, status, a
+		// Dismissed by hand, or a DELIBERATE pit is up (help, status, a
 		// command's output): either way the reader has said what they want on
 		// screen and it is not this. A transient message is not deliberate and
-		// does not block the queue -- guarding on drawer.open() alone meant a
+		// does not block the queue -- guarding on pit.open() alone meant a
 		// "sent" confirmation suppressed the very queue it had just added to.
-		if t.queueDismissed || (t.drawer.open() && t.drawer.name != "message") {
+		if t.queueDismissed || (t.pit.open() && !t.pit.glance()) {
 			return
 		}
-		t.openQueuedDrawer()
+		t.openQueuePit()
 		return
 	}
 	// The queue is empty: the suppressor has nothing left to suppress, so a
-	// LATER queue can open the drawer again.
+	// LATER queue can open the pit again.
 	t.queueDismissed = false
-	// A DRAWER THE USER OPENED IS NEVER AUTO-CLOSED, and -- the bug Gluck
-	// reported -- a drawer the user CLOSED is never auto-reopened. `fig send`
-	// that queues a message and enters the pager used to have the queue drawer
+	// A PIT THE USER OPENED IS NEVER AUTO-CLOSED, and -- the bug Gluck
+	// reported -- a pit the user CLOSED is never auto-reopened. `fig send`
+	// that queues a message and enters the pager used to have the queue pit
 	// come straight back after Esc, because the queue was still non-empty and
 	// nothing recorded that the reader had dismissed it.
-	if !t.queuedByKey && t.showing("queue") {
-		t.drawer.close()
+	if !t.queuedByKey && t.showing(pitQueue) {
+		t.pit.close()
 	}
 }
 
@@ -1495,46 +1495,46 @@ func firstLineTrim(s string) string {
 	return ""
 }
 
-// openQueuedPanel marks the queued-prompts panel visible and (if wired) kicks
+// openQueueFromKey marks the queued-prompts panel visible and (if wired) kicks
 // an async refresh. The stale snapshot renders immediately so the user sees
 // something even if the RPC lags; the refresh replaces it in place.
-func (t *transcript) openQueuedPanel() {
+func (t *transcript) openQueueFromKey() {
 	t.queuedByKey, t.queueDismissed = true, false
-	t.openQueuedDrawer()
+	t.openQueuePit()
 	if t.queuedFetch != nil {
 		t.queuedFetch()
 	}
 }
 
-// openQueuedDrawer builds the queue as a SELECTABLE list: `y` yanks a message's
+// openQueuePit builds the queue as a SELECTABLE list: `y` yanks a message's
 // text and `x` drops it, which is what turns the queue from a thing you watch
 // into a thing you can act on.
-func (t *transcript) openQueuedDrawer() {
+func (t *transcript) openQueuePit() {
 	// NO TITLE. The pit says what it is on the status bar ("𝄚 queue"), and a
 	// title row repeated the same word one line above it while costing a row
 	// of the conversation.
-	t.drawer.showList("queue", "", t.queuedDrawerRows())
+	t.pit.showList(pitQueue, "", t.queuedPitRows())
 }
 
-// refreshQueuedDrawer replaces the rows in place, keeping the selection where
+// refreshQueuePit replaces the rows in place, keeping the selection where
 // the reader put it: a queue that re-sorts under the cursor on every poll is a
 // queue nobody can hit `x` on.
-func (t *transcript) refreshQueuedDrawer() {
-	sel, had := t.drawer.selected()
+func (t *transcript) refreshQueuePit() {
+	sel, had := t.pit.selected()
 	keep := ""
 	if had {
 		keep = sel.id
 	}
-	t.drawer.replaceRows(t.queuedDrawerRows(), keep)
+	t.pit.replaceRows(t.queuedPitRows(), keep)
 }
 
-func (t *transcript) queuedDrawerRows() []drawerRow {
+func (t *transcript) queuedPitRows() []pitRow {
 	if len(t.queued) == 0 {
-		return []drawerRow{staticRow("   (none)")}
+		return []pitRow{staticRow("   (none)")}
 	}
-	rows := make([]drawerRow, 0, len(t.queued))
+	rows := make([]pitRow, 0, len(t.queued))
 	for _, q := range t.queued {
-		rows = append(rows, drawerRow{
+		rows = append(rows, pitRow{
 			text: firstLineTrim(q.text), yank: q.text, id: strconv.FormatUint(q.id, 10),
 		})
 	}
@@ -1662,29 +1662,29 @@ func appendUint(dst []byte, n int) []byte {
 // mode reports which input mode the pager is in: the keymap's view of it.
 // The order is the dispatch order: the search box owns the keyboard before a
 // panel does, and a panel before the plain pager.
-// mode is the KEYBOARD's view, and it is now DERIVED from the drawer identity
-// rather than computed in parallel with it (drawerid.go). The boxes keep their
+// mode is the KEYBOARD's view, and it is now DERIVED from the pit identity
+// rather than computed in parallel with it (pitid.go). The boxes keep their
 // own buffers; what they no longer keep is a second opinion about what is on
 // screen.
 func (t *transcript) mode() keyMode {
 	if !t.active {
 		return modeIncipit
 	}
-	return t.openDrawer().keys()
+	return t.openPit().keys()
 }
 
-// openDrawer is what is open, as an identity. THE ONE PLACE that reads the
+// openPit is what is open, as an identity. THE ONE PLACE that reads the
 // booleans: everything else asks this.
-func (t *transcript) openDrawer() drawerID {
+func (t *transcript) openPit() pitID {
 	switch {
 	case t.inSearch:
-		return drawerSearch
+		return pitSearch
 	case t.inJump:
-		return drawerCommand
-	case t.drawer.open() && t.drawer.kind != drawerInput:
-		return drawerID(t.drawer.name)
+		return pitCommand
+	case t.pit.open():
+		return t.pit.id
 	default:
-		return drawerNothing
+		return pitNothing
 	}
 }
 
@@ -1739,9 +1739,9 @@ func (t *transcript) dispatch(ev keyEvent) {
 			t.render()
 			return
 		}
-		// A SELECTABLE DRAWER KEEPS ITS OWN KEYS. The any-key-dismisses rule is
+		// A SELECTABLE PIT KEEPS ITS OWN KEYS. The any-key-dismisses rule is
 		// right for help and status -- you glance and move on -- and wrong the
-		// moment a drawer is a thing you navigate: ^N used to move the
+		// moment a pit is a thing you navigate: ^N used to move the
 		// selection and dismiss the list it was selecting in, in that order.
 		// A HOSTED VERB GETS FIRST REFUSAL on every key -- UNLESS IT HAS A
 		// LIST, in which case the pit owns everything a finger does to move
@@ -1749,31 +1749,30 @@ func (t *transcript) dispatch(ev keyEvent) {
 		// is the fix for `form show`: the view was taking j/k and running its
 		// own cursor against its own window, which disagreed with the pit's,
 		// so the highlight appeared to skip rows.
-		if t.drawer.kind == drawerLive && t.drawer.pick != nil {
+		if t.pit.live != nil && t.pit.list() != nil {
 			if t.pitVerb(ev) {
 				t.render()
 				return
 			}
-		} else if t.drawer.kind == drawerLive && ev.nav == navNone && t.drawer.live.Key(ev.b) {
+		} else if t.pit.live != nil && ev.nav == navNone && t.pit.live.Key(ev.b) {
 			t.render()
 			return
 		}
-		// EVERY DRAWER IS NAVIGABLE, not just a selectable one. The help panel
+		// EVERY PIT IS NAVIGABLE, not just a selectable one. The help panel
 		// was the proof that this mattered: it is the list that tells you how
 		// to scroll, and it was the one list you could not scroll -- taller
 		// than the pane, it simply lost its bottom. Now j/k, the arrows, u/d
-		// and gg/G drive whichever drawer is open, moving a cursor where there
+		// and gg/G drive whichever pit is open, moving a cursor where there
 		// is one and the window where there is not.
 		// A MESSAGE IS A GLANCE, NOT A LIST. It has one row and nothing to
 		// scroll, so it keeps the old rule: any key wipes it. Measured -- with
 		// motions gated on `pick != nil`, a failed `:999` note survived every
-		// keystroke, because the note is a drawer too.
-		if t.drawer.pick != nil && t.drawer.kind != drawerMessage && drawerOwnsKey(ev) {
-			t.drawer.flash = "" // any key clears the last confirmation
-			if t.drawerMotion(ev) {
+		// keystroke, because the note is a pit too.
+		if t.pit.list() != nil && !t.pit.glance() && pitOwnsKey(ev) {
+			if t.pitMotion(ev) {
 				// gg IS TWO KEYS, and the arming lives in the dispatcher's
 				// epilogue -- which this branch returns before reaching, so
-				// `g` in a drawer never armed and `gg` never fired. Measured
+				// `g` in a pit never armed and `gg` never fired. Measured
 				// in a pty; the unit tests press keys through a path that
 				// happened to arm it anyway.
 				t.pendG = ev.b == 'g' && !t.pendG
@@ -1839,19 +1838,21 @@ func pagerPendingTop(t *transcript) {
 func pagerSearchPrompt(t *transcript) { t.inSearch, t.query = true, "" }
 func pagerFindNext(t *transcript)     { t.findRepeat(1) }
 func pagerFindPrev(t *transcript)     { t.findRepeat(-1) }
-func pagerHelpPanel(t *transcript)    { t.openHelpDrawer() }
-func pagerStatusPanel(t *transcript)  { t.openStatusDrawer() }
-func pagerQueuedPanel(t *transcript)  { t.openQueuedPanel() }
+func pagerHelpPanel(t *transcript)    { t.openHelpPit() }
+func pagerStatusPanel(t *transcript)  { t.openStatusPit() }
+func pagerQueuedPanel(t *transcript)  { t.openQueueFromKey() }
 
-// ^N/^P MOVE THE DRAWER'S SELECTION WHEN ONE IS UP, and the transcript's node
+// ^N/^P MOVE THE PIT'S SELECTION WHEN ONE IS UP, and the transcript's node
 // selection otherwise. The reader's eye is on the list; a key that scrolled the
 // conversation behind it would be answering a question nobody asked.
 func pagerSelectNext(t *transcript) { t.selectDown(1) }
 func pagerSelectPrev(t *transcript) { t.selectDown(-1) }
 
 func (t *transcript) selectDown(dir int) {
-	if t.drawer.kind == drawerList && t.drawer.cursor >= 0 {
-		t.drawer.moveSelection(dir, t.h)
+	// A PIT WITH A CURSOR OWNS ^N/^P; the transcript's node selection is a
+	// different question, and it is not the one being asked while a list is up.
+	if p := t.pit.list(); p != nil && p.hasCursor() {
+		t.pit.moveSelection(dir, t.h)
 		return
 	}
 	t.selectNode(dir, false)
@@ -1866,39 +1867,39 @@ func pagerClearSelection(t *transcript) {
 	}
 }
 
-// closePanels shuts the drawer.
+// closePanels shuts the pit.
 func (t *transcript) closePanels() {
-	if t.showing("queue") {
+	if t.showing(pitQueue) {
 		t.queueDismissed = true
 	}
-	t.drawer.close()
+	t.pit.close()
 	t.queuedByKey = false
 }
 
-// showing reports whether the named drawer is the one that is open.
-func (t *transcript) showing(name string) bool {
-	return t.drawer.open() && t.drawer.name == name
+// showing reports whether the named pit is the one that is open.
+func (t *transcript) showing(id pitID) bool {
+	return t.pit.open() && t.pit.id == id
 }
 
-// panelToggleHelp/Status/Queued: a drawer's own key closes it, another
-// drawer's key switches straight over.
-func panelToggleHelp(t *transcript) { t.toggleDrawer("help", t.openHelpDrawer) }
+// panelToggleHelp/Status/Queued: a pit's own key closes it, another
+// pit's key switches straight over.
+func panelToggleHelp(t *transcript) { t.togglePit(pitHelp, t.openHelpPit) }
 
-func panelToggleStatus(t *transcript) { t.toggleDrawer("status", t.openStatusDrawer) }
+func panelToggleStatus(t *transcript) { t.togglePit(pitStatus, t.openStatusPit) }
 
-func panelToggleQueued(t *transcript) { t.toggleDrawer("queue", t.openQueuedPanel) }
+func panelToggleQueued(t *transcript) { t.togglePit(pitQueue, t.openQueueFromKey) }
 
-func (t *transcript) toggleDrawer(name string, open func()) {
-	was := t.showing(name)
+func (t *transcript) togglePit(id pitID, open func()) {
+	was := t.showing(id)
 	t.closePanels()
 	if !was {
 		open()
 	}
 }
 
-// openHelpDrawer is '?': the key reference, unselectable.
-func (t *transcript) openHelpDrawer() {
-	rows := make([]drawerRow, 0, 24)
+// openHelpPit is '?': the key reference, unselectable.
+func (t *transcript) openHelpPit() {
+	rows := make([]pitRow, 0, 24)
 	for _, l := range helpBody() {
 		rows = append(rows, staticRow(l))
 	}
@@ -1909,16 +1910,16 @@ func (t *transcript) openHelpDrawer() {
 	if v := helpVersionLine(); v != "" {
 		rows = append(rows, staticRow(""), staticRow("  "+v))
 	}
-	t.drawer.showList("help", "", rows)
+	t.pit.showList(pitHelp, "", rows)
 }
 
-// openStatusDrawer is '!': this figaro's own numbers.
-func (t *transcript) openStatusDrawer() {
-	rows := make([]drawerRow, 0, 12)
+// openStatusPit is '!': this figaro's own numbers.
+func (t *transcript) openStatusPit() {
+	rows := make([]pitRow, 0, 12)
 	for _, l := range t.status.panelLines() {
 		rows = append(rows, staticRow(l))
 	}
-	t.drawer.showList("status", "", rows)
+	t.pit.showList(pitStatus, "", rows)
 }
 
 // panelDismiss is Esc with a panel up: close it, and leave the selection
@@ -2422,7 +2423,7 @@ func (t *transcript) inputDrawerLines() []string {
 	var rows []string
 	switch {
 	case t.inSearch:
-		rows = []string{drawerGray(clipToWidth("/"+t.query, t.w))}
+		rows = []string{pitGray(clipToWidth("/"+t.query, t.w))}
 	case t.inJump:
 		// The PROMPT is the editor's, not a constant: while ^R runs it reads
 		// `(reverse-i-search)`needle':` exactly as a shell's does, which is the
@@ -2435,13 +2436,13 @@ func (t *transcript) inputDrawerLines() []string {
 		rows = append(rows, l)
 	}
 	if line, own := t.jumpFooter(); own {
-		rows = append(rows, drawerGray(clipToWidth("  "+line, t.w)))
+		rows = append(rows, pitGray(clipToWidth("  "+line, t.w)))
 	}
 	return rows
 }
 
 // completionMenuRows is how tall the completion menu may get. Fixed, and
-// small: the menu lives inside the drawer, above an inviolable status bar, and
+// small: the menu lives inside the pit, above an inviolable status bar, and
 // a menu that grows with the candidate count is a menu that swallows the
 // conversation it is supposed to be helping you talk about.
 const completionMenuRows = 2
@@ -2475,12 +2476,12 @@ func (t *transcript) completionLines() []string {
 			}
 			cells = append(cells, cell)
 		}
-		out = append(out, drawerGray("  "+strings.Join(cells, " ")))
+		out = append(out, pitGray("  "+strings.Join(cells, " ")))
 	}
 	// One honest line about what is not shown, on either side.
 	if start > 0 || end < len(t.completions) {
 		note := fmt.Sprintf("  %d–%d of %d", start+1, end, len(t.completions))
-		out = append(out, drawerGray(clipToWidth(note, t.w)))
+		out = append(out, pitGray(clipToWidth(note, t.w)))
 	}
 	return out
 }
@@ -2518,11 +2519,11 @@ func (t *transcript) cycleCompletion(dir int) {
 // against the row the PIT has selected. The view no longer has a cursor to
 // disagree about.
 func (t *transcript) pitVerb(ev keyEvent) bool {
-	iv, ok := t.drawer.live.(itemView)
+	iv, ok := t.pit.live.(itemView)
 	if !ok {
 		return false
 	}
-	row, has := t.drawer.selected()
+	row, has := t.pit.selected()
 	switch {
 	case ev.b == '\r' || ev.b == '\n':
 		if has && row.id != "" {
@@ -2535,23 +2536,23 @@ func (t *transcript) pitVerb(ev keyEvent) bool {
 	}
 	_ = row
 	_ = has
-	return t.drawerMotion(ev)
+	return t.pitMotion(ev)
 }
 
-// drawerMotion runs the shared list motions against the open drawer, and
+// pitMotion runs the shared list motions against the open pit, and
 // reports whether it took the key. ONE VOCABULARY: these are the transcript's
-// own motions, pointed at the drawer, so a reader who can move around a
+// own motions, pointed at the pit, so a reader who can move around a
 // conversation can move around a list without learning a second set.
-func (t *transcript) drawerMotion(ev keyEvent) bool {
-	h := t.drawer.visible(t.h)
+func (t *transcript) pitMotion(ev keyEvent) bool {
+	h := t.pit.visible(t.h)
 	switch {
 	// j/k CHOOSE. In a pit with a cursor they move the selection and the
 	// window follows it; in one without (help, status) there is nothing to
 	// choose, so they move the window and mean the same thing to the hand.
 	case ev.b == 'j', ev.nav == navDown, ev.b == 0x0e:
-		t.drawer.moveSelection(1, h)
+		t.pit.moveSelection(1, h)
 	case ev.b == 'k', ev.nav == navUp, ev.b == 0x10:
-		t.drawer.moveSelection(-1, h)
+		t.pit.moveSelection(-1, h)
 	// e/y READ: one row of the window, selection untouched. vim's ^E/^Y
 	// without the modifier, because a pit is a small thing and the chord is
 	// spent on selection already.
@@ -2559,24 +2560,24 @@ func (t *transcript) drawerMotion(ev keyEvent) bool {
 		// FULLSCREEN. The pit takes the pane; the transcript stays behind it,
 		// shadowed rather than scrolled away, so leaving puts the reader back
 		// exactly where they were.
-		t.drawer.toggleFull()
+		t.pit.toggleFull()
 	case ev.b == 'e':
-		t.drawer.scrollBy(1, h)
-	case ev.b == 'y' && t.drawer.pick != nil && !t.drawer.pick.hasCursor():
-		t.drawer.scrollBy(-1, h)
+		t.pit.scrollBy(1, h)
+	case ev.b == 'y' && t.pit.list() != nil && !t.pit.list().hasCursor():
+		t.pit.scrollBy(-1, h)
 	case ev.b == 'd', ev.nav == navPageDown:
-		t.drawer.halfPage(1, h)
+		t.pit.halfPage(1, h)
 	case ev.b == 'u', ev.nav == navPageUp:
-		t.drawer.halfPage(-1, h)
+		t.pit.halfPage(-1, h)
 	case ev.b == 'G', ev.nav == navEnd:
-		t.drawer.toBottom()
+		t.pit.toBottom()
 	case ev.nav == navHome:
-		t.drawer.toTop()
+		t.pit.toTop()
 	case ev.b == 'g':
 		// gg, on the transcript's own two-key discipline: the first g arms,
 		// the second acts, and pendG is set by the dispatcher's epilogue.
 		if t.pendG {
-			t.drawer.toTop()
+			t.pit.toTop()
 		}
 	default:
 		return false
@@ -2584,11 +2585,11 @@ func (t *transcript) drawerMotion(ev keyEvent) bool {
 	return true
 }
 
-// drawerOwnsKey reports whether an open drawer answers this key itself rather
+// pitOwnsKey reports whether an open pit answers this key itself rather
 // than being dismissed by it: the motions, the selection keys and the row
-// verbs. Everything else still wipes the drawer and acts, which is the rule
+// verbs. Everything else still wipes the pit and acts, which is the rule
 // that makes a panel a glance rather than a mode.
-func drawerOwnsKey(ev keyEvent) bool {
+func pitOwnsKey(ev keyEvent) bool {
 	switch {
 	case ev.b == 'j', ev.b == 'k', ev.b == 'u', ev.b == 'd', ev.b == 'g', ev.b == 'G', ev.b == 'e', ev.b == 'F':
 		return true
@@ -2617,10 +2618,10 @@ func rowID(line string) string {
 	return ""
 }
 
-// showLiveDrawer hosts a live verb in the drawer.
-func (t *transcript) showLiveDrawer(name string, v cmdkit.LiveView) {
+// showLivePit hosts a live verb in the pit.
+func (t *transcript) showLivePit(name string, v cmdkit.LiveView) {
 	t.queuedByKey = false
-	t.drawer.showLive(name, v)
+	t.pit.showLive(pitID(name), v)
 	t.render()
 }
 
@@ -2634,7 +2635,7 @@ func (t *transcript) showLiveDrawer(name string, v cmdkit.LiveView) {
 // after cli.notice_ttl.
 //
 // That replaces two older behaviours, both of which were the same mistake in
-// different clothes: showing a message drawer (which REPLACED an open queue,
+// different clothes: showing a message pit (which REPLACED an open queue,
 // so the next poll rebuilt it and an `x` aimed at row two dropped row one),
 // and flashing on the closing rule (which no longer exists).
 //
@@ -2644,8 +2645,8 @@ func (t *transcript) setCommandNote(note string) { t.setCommandNoteAt(note, aler
 func (t *transcript) setCommandNoteAt(note string, level alertLevel) {
 	if note == "" {
 		t.status.setNotice("")
-		if t.showing("message") {
-			t.drawer.close()
+		if t.showing(pitNote) {
+			t.pit.close()
 		}
 		t.render()
 		return
@@ -2655,19 +2656,35 @@ func (t *transcript) setCommandNoteAt(note string, level alertLevel) {
 		t.render()
 		return
 	}
-	t.drawer.showMessage(note)
+	t.pit.showNote(note)
 	t.render()
 }
 
-// pagerDrawerDrop is 'x' on a selected row: ask the owner to drop it. The
+// noteYank confirms a yank IN THE BAR, and never in a pit. The confirmation
+// used to be a "flash" drawn on the pit's closing rule, which no longer
+// exists; before that it was a message pit, which REPLACED the list it was
+// yanking from. A yank is news about something that has already happened: it
+// belongs on the row that retires by itself.
+//
+// A long yank is reported by size. The bar keeps an alert only while it fits
+// in half the row, and a queued message pasted into it whole would not.
+func (t *transcript) noteYank(text string) {
+	one := firstLineTrim(text)
+	if displayWidth(one) > 24 {
+		one = fmt.Sprintf("%d bytes", len(text))
+	}
+	t.setCommandNote("yanked " + one)
+}
+
+// pagerPitDrop is 'x' on a selected row: ask the owner to drop it. The
 // transcript does not know what dropping means -- for the queue it is
 // `figaro queue rm <id>`, an RPC -- so it hands the id up, exactly as the ':'
 // box hands a command line up.
-func pagerDrawerDrop(t *transcript) {
-	row, ok := t.drawer.selected()
+func pagerPitDrop(t *transcript) {
+	row, ok := t.pit.selected()
 	if !ok || row.id == "" || t.dropRow == nil {
 		return
 	}
-	t.dropRow(t.drawer.name, row.id)
-	t.drawer.removeSelected() // optimistic: the refresh confirms it
+	t.dropRow(string(t.pit.id), row.id)
+	t.pit.removeSelected() // optimistic: the refresh confirms it
 }

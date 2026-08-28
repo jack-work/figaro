@@ -3,12 +3,12 @@ package cli
 // THE PICKER: one scrollable, selectable list, and the only one.
 //
 // The pager grew three of these independently. The completion menu had a
-// sliding window with a "N–M of T" marker and ^N/^P cycling. The drawer had a
+// sliding window with a "N–M of T" marker and ^N/^P cycling. The pit had a
 // second window with a "… N more" marker and its own cursor. The help and
 // status panels had neither, so a help panel taller than the pane simply lost
 // its bottom — you could not scroll the list that tells you how to scroll.
 //
-// One component now, and every drawer conforms to it: help, status, queue,
+// One component now, and every pit conforms to it: help, status, queue,
 // notifications, command output, form show/listen, and the completion menu.
 // What differs between them is the ROWS and the verb keys; what is shared is
 // everything a reader's fingers touch.
@@ -27,7 +27,7 @@ import "fmt"
 
 // picker is a window over rows, plus an optional cursor.
 type picker struct {
-	rows []drawerRow
+	rows []pitRow
 	// cursor is the selected row, or -1 when this picker only scrolls. Only
 	// selectable rows may hold it; the motions skip the chrome.
 	cursor int
@@ -54,7 +54,7 @@ const pickerRows = 12
 // cursorless through every later refresh, and ^N did nothing until you closed
 // and reopened the pit. Selectability is a property of the ROWS, asked afresh
 // every time they change.
-func newPicker(rows []drawerRow) *picker {
+func newPicker(rows []pitRow) *picker {
 	p := &picker{cursor: -1}
 	p.setRows(rows, "")
 	return p
@@ -67,7 +67,7 @@ func newPicker(rows []drawerRow) *picker {
 //
 // The cursor is re-derived from the new rows: it appears when the list gains
 // something selectable and leaves when the list loses it.
-func (p *picker) setRows(rows []drawerRow, keepID string) {
+func (p *picker) setRows(rows []pitRow, keepID string) {
 	prev, hadCursor := "", p.hasCursor()
 	if hadCursor && p.cursor < len(p.rows) {
 		prev = p.rows[p.cursor].id
@@ -220,9 +220,9 @@ func (p *picker) window() int {
 func (p *picker) maxTop() int { return max(len(p.rows)-p.window(), 0) }
 
 // selected is the row under the cursor, if any.
-func (p *picker) selected() (drawerRow, bool) {
+func (p *picker) selected() (pitRow, bool) {
 	if !p.hasCursor() || p.cursor >= len(p.rows) {
-		return drawerRow{}, false
+		return pitRow{}, false
 	}
 	return p.rows[p.cursor], true
 }
@@ -249,7 +249,7 @@ func (p *picker) remove() {
 // height moved by a row every time you crossed the top of the list made the
 // transcript above it jump by a row too. A window that changes size while you
 // read it is the thing this component exists to stop.
-func (p *picker) lines(id drawerID, w, h int) []string {
+func (p *picker) lines(id pitID, w, h int) []string {
 	budget := clampInt(h, 1, max(h, pickerRows))
 	// Reserve the marker rows FIRST, out of the same budget.
 	markAbove, markBelow := 0, 0
@@ -266,7 +266,7 @@ func (p *picker) lines(id drawerID, w, h int) []string {
 	out := make([]string, 0, budget)
 	if markAbove > 0 {
 		if p.top > 0 {
-			out = append(out, drawerGray(clipToWidth("  "+AndMore(p.top, "above"), w)))
+			out = append(out, pitGray(clipToWidth("  "+AndMore(p.top, "above"), w)))
 		} else {
 			out = append(out, "")
 		}
@@ -279,14 +279,14 @@ func (p *picker) lines(id drawerID, w, h int) []string {
 		}
 		row := clipToWidth(prefix+p.rows[i].text, w)
 		if i == p.cursor {
-			out = append(out, drawerSelected(row))
+			out = append(out, pitSelected(row))
 			continue
 		}
 		out = append(out, row)
 	}
 	if markBelow > 0 {
 		if rest := len(p.rows) - end; rest > 0 {
-			out = append(out, drawerGray(clipToWidth("  "+AndMore(rest, ""), w)))
+			out = append(out, pitGray(clipToWidth("  "+AndMore(rest, ""), w)))
 		} else {
 			out = append(out, "")
 		}
@@ -295,7 +295,7 @@ func (p *picker) lines(id drawerID, w, h int) []string {
 }
 
 // AndMore is THE spelling of a truncated list, and it lives here because the
-// picker is where truncation happens. `figaro ls`, `form show` and the drawer
+// picker is where truncation happens. `figaro ls`, `form show` and the pit
 // had three spellings of it; a list that lies about its own length is the one
 // failure mode all of them share.
 func AndMore(n int, where string) string {

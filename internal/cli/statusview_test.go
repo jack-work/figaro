@@ -47,12 +47,12 @@ func TestStatusViewGoldens(t *testing.T) {
 			// THE NAME IS A VERBOSE EXTRA. This bar is read by someone who
 			// knows the glyphs; the word is for the reader who does not.
 			name: "a pit leads with its glyph alone", width: 80,
-			view: func(v statusView) statusView { v.Drawer = drawerQueue; return v },
+			view: func(v statusView) statusView { v.Pit = pitQueue; return v },
 			want: []string{"𝄚 · ✓ · 123abc · test                                           9.8k/1.0m (1.0%)"},
 		},
 		{
 			name: "verbose names the drawer and the state", width: 96,
-			view: func(v statusView) statusView { v.Drawer = drawerQueue; v.Verbose = true; return v },
+			view: func(v statusView) statusView { v.Pit = pitQueue; v.Verbose = true; return v },
 			want: []string{"𝄚 queue · done ✓ · 123abc · test · claude-opus              9.8k/1.0m (1.0%) · 08/28/26 12:47:31"},
 		},
 		{
@@ -103,14 +103,14 @@ func TestStatusViewNeverExceedsItsWidth(t *testing.T) {
 	base := barFixture()
 	base.Alert = "provider said no"
 	for _, verbose := range []bool{false, true} {
-		for _, drawer := range []drawerID{drawerNothing, drawerQueue, drawerNotifications, drawerCommand, drawerSearch} {
+		for _, id := range []pitID{pitNothing, pitQueue, pitNotifications, pitCommand, pitSearch} {
 			for w := 8; w <= 200; w++ {
 				v := base
-				v.Verbose, v.Drawer = verbose, drawer
+				v.Verbose, v.Pit = verbose, id
 				for i, row := range v.render(w) {
 					if got := displayWidth(row); got > w {
-						t.Fatalf("w=%d verbose=%v drawer=%q row %d is %d columns: %q",
-							w, verbose, drawer, i, got, row)
+						t.Fatalf("w=%d verbose=%v pit=%q row %d is %d columns: %q",
+							w, verbose, id, i, got, row)
 					}
 				}
 			}
@@ -202,11 +202,11 @@ func TestOnlyTroubleIsRed(t *testing.T) {
 func TestAlertLevelResetsOnEveryPost(t *testing.T) {
 	s := newSessionStatus("aria1234", time.Now())
 	s.setNoticeAt("boom", alertError)
-	if v := s.viewOf(drawerNothing, false, time.Now()); v.AlertLevel != alertError {
+	if v := s.viewOf(pitNothing, false, time.Now()); v.AlertLevel != alertError {
 		t.Fatal("the error did not take")
 	}
 	s.setNotice("sent")
-	if v := s.viewOf(drawerNothing, false, time.Now()); v.AlertLevel != alertInfo {
+	if v := s.viewOf(pitNothing, false, time.Now()); v.AlertLevel != alertInfo {
 		t.Fatal("a confirmation inherited the previous error's colour")
 	}
 }
@@ -226,16 +226,16 @@ func TestAlertRetiresOnItsOwn(t *testing.T) {
 	s.setNotice("sent")
 
 	now := time.Now()
-	if v := s.viewOf(drawerNothing, false, now); v.Alert != "sent" {
+	if v := s.viewOf(pitNothing, false, now); v.Alert != "sent" {
 		t.Fatalf("the alert did not post: %q", v.Alert)
 	}
 	// Still there a moment later.
-	if v := s.viewOf(drawerNothing, false, now.Add(time.Second)); v.Alert != "sent" {
+	if v := s.viewOf(pitNothing, false, now.Add(time.Second)); v.Alert != "sent" {
 		t.Fatalf("the alert retired early: %q", v.Alert)
 	}
 	// And gone once its span is up, WITHOUT a keystroke or a tick: an idle
 	// pager animates nothing, so the view build is the backstop.
-	if v := s.viewOf(drawerNothing, false, now.Add(defaultNoticeTTL+time.Second)); v.Alert != "" {
+	if v := s.viewOf(pitNothing, false, now.Add(defaultNoticeTTL+time.Second)); v.Alert != "" {
 		t.Fatalf("the alert outlived its TTL: %q", v.Alert)
 	}
 }
@@ -248,7 +248,7 @@ func TestNewerAlertDisplacesOlder(t *testing.T) {
 		s.setNotice("sent")
 	}
 	s.setNotice("showing abc12345")
-	v := s.viewOf(drawerNothing, false, time.Now())
+	v := s.viewOf(pitNothing, false, time.Now())
 	if v.Alert != "showing abc12345" {
 		t.Fatalf("the newest alert did not win: %q", v.Alert)
 	}

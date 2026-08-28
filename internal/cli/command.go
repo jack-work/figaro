@@ -253,7 +253,7 @@ func (in *interactiveInput) retarget(ctx context.Context, id string, ep transpor
 	// doors is armed on neither.
 	in.lt.setCommandRunner(in.runCommand)
 	in.lt.setCommandCompleter(in.complete)
-	in.lt.tr.dropRow = in.dropDrawerRow
+	in.lt.tr.dropRow = in.dropPitRow
 	in.mu.Unlock()
 
 	if old != nil && ownedOld {
@@ -349,15 +349,15 @@ func (in *interactiveInput) seedSubject() {
 	in.lt.setHistoryFetcher(in.historyFetcher())
 	in.lt.setCommandRunner(in.runCommand)
 	in.lt.setCommandCompleter(in.complete)
-	in.lt.tr.dropRow = in.dropDrawerRow
+	in.lt.tr.dropRow = in.dropPitRow
 	in.lt.invalidateTranscriptWindow()
 	in.lt.render()
 }
 
-// dropDrawerRow is 'x' in a drawer: what dropping means depends on which
-// drawer. Today only the queue can be dropped from; the switch is here rather
+// dropPitRow is 'x' in a pit: what dropping means depends on which
+// pit. Today only the queue can be dropped from; the switch is here rather
 // than in the transcript because every arm of it is an RPC.
-func (in *interactiveInput) dropDrawerRow(name, id string) {
+func (in *interactiveInput) dropPitRow(name, id string) {
 	if name != "queue" {
 		return
 	}

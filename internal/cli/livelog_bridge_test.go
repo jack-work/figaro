@@ -14,7 +14,7 @@ import (
 func TestIncipitFreezesAssistantAfterTerminalStatusArrives(t *testing.T) {
 	var out bytes.Buffer
 	status := newSessionStatus("aria1234", time.Now())
-	bookend := func() []string { return footerStanza(status, 80, "", drawerNothing, status.barVerbose()) }
+	bookend := func() []string { return footerStanza(status, 80, "", pitNothing, status.barVerbose()) }
 	lt := newLivelogTurn(&out, 80, 20, &renderSettings{}, "aria1234", time.Now(), status, bookend, func() string { return "rule" })
 
 	lt.apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(2), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{
@@ -38,7 +38,7 @@ func TestIncipitFreezesAssistantAfterTerminalStatusArrives(t *testing.T) {
 func TestIncipitFreezesAssistantCloseAfterTurnDone(t *testing.T) {
 	var out bytes.Buffer
 	status := newSessionStatus("aria1234", time.Now())
-	bookend := func() []string { return footerStanza(status, 80, "", drawerNothing, status.barVerbose()) }
+	bookend := func() []string { return footerStanza(status, 80, "", pitNothing, status.barVerbose()) }
 	lt := newLivelogTurn(&out, 80, 20, &renderSettings{}, "aria1234", time.Now(), status, bookend, func() string { return "rule" })
 
 	lt.apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(2), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{
@@ -59,7 +59,7 @@ func TestIncipitFreezesAssistantCloseAfterTurnDone(t *testing.T) {
 func TestIncipitRepaintsDiscardedAssistantWithErrorStatus(t *testing.T) {
 	var out bytes.Buffer
 	status := newSessionStatus("aria1234", time.Now())
-	bookend := func() []string { return footerStanza(status, 80, "", drawerNothing, status.barVerbose()) }
+	bookend := func() []string { return footerStanza(status, 80, "", pitNothing, status.barVerbose()) }
 	lt := newLivelogTurn(&out, 80, 20, &renderSettings{}, "aria1234", time.Now(), status, bookend, func() string { return "rule" })
 
 	lt.apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(2), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{

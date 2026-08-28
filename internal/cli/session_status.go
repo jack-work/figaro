@@ -423,7 +423,7 @@ func formatTokenCount(tokens int) string {
 // result was an inline stream showing detail the pager had just been told to
 // stop showing. If `m` is off, it is off everywhere.
 func bookendLines(status *sessionStatus) []string {
-	return footerStanza(status, termWidth(), "", drawerNothing, status.barVerbose())
+	return footerStanza(status, termWidth(), "", pitNothing, status.barVerbose())
 }
 
 // formatCtxCell renders a context size for the narrow CTX column in `list`:

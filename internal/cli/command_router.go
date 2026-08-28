@@ -440,7 +440,7 @@ func commonPrefix(ss []string) string {
 	return p
 }
 
-// runLive hosts a live verb in the drawer. The view is built off the input
+// runLive hosts a live verb in the pit. The view is built off the input
 // goroutine (it dials) and installed under the render lock.
 func (in *interactiveInput) runLive(name, spec string) {
 	if spec == "" {
@@ -454,10 +454,10 @@ func (in *interactiveInput) runLive(name, spec string) {
 			return
 		}
 		view.closeConn = closeView
-		// THE DRAWER host repaints the pager; the view never writes anywhere.
+		// THE PIT host repaints the pager; the view never writes anywhere.
 		view.repaint = in.renderLocked
 		in.mu.Lock()
-		in.lt.tr.showLiveDrawer(name, view)
+		in.lt.tr.showLivePit(name, view)
 		in.mu.Unlock()
 	}()
 }

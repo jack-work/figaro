@@ -286,7 +286,7 @@ var keymap = []keyBinding{
 		help: helpHangUpDrop, input: inputHangUpDrop,
 	},
 
-	// 'x' DROPS THE SELECTED ROW in a drawer that has one -- today the queue,
+	// 'x' DROPS THE SELECTED ROW in a pit that has one -- today the queue,
 	// where it is `figaro queue rm <id>` under a keystroke. It is inert
 	// everywhere else, which is why it is a pager row rather than an input one:
 	// a key that means "delete" must not be live in a view with nothing to
@@ -294,8 +294,8 @@ var keymap = []keyBinding{
 	// being one letter apart is uncomfortable; see the plan.)
 	{
 		chord: byteChord('x'), modes: inPanel,
-		open: staysInline, why: "it acts on a row in a drawer that is already open",
-		help: helpDrawerDrop, pager: pagerDrawerDrop,
+		open: staysInline, why: "it acts on a row in a pit that is already open",
+		help: helpPitDrop, pager: pagerPitDrop,
 	},
 
 	// -- pager level: selection --------------------------------------------
@@ -546,7 +546,7 @@ const (
 	helpCmdPaste
 	helpBarVerbose
 	helpCmdAbort
-	helpDrawerDrop
+	helpPitDrop
 )
 
 // helpRow is one line of the panel: the key column and what it does. The key
@@ -580,7 +580,7 @@ var helpRows = []helpRow{
 	// shell user needs, which is that their fingers already know this box.
 	{helpCmdEdit, "(in :) ^A ^E ^W ^K ^Y", "emacs/readline editing, the whole set"},
 	{helpCmdAbort, "(in :) Esc / ^C / ^G", "abandon the line, close the box"},
-	{helpDrawerDrop, "(in a list) x", "drop the selected entry (queue)"},
+	{helpPitDrop, "(in a list) x", "drop the selected entry (queue)"},
 	{helpYank, "y", "copy selection (or aria id if none)"},
 	{helpVerbose, "^O", "toggle verbose tool output"},
 	{helpBarVerbose, "m", "more: state names, model, last interaction"},

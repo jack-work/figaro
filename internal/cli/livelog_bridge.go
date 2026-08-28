@@ -59,7 +59,7 @@ type livelogTurn struct {
 	//
 	// IT KEEPS THE IDS. This used to be []string, flattened at the fetch,
 	// because the panel could only ever draw a queue -- and `figaro queue rm`
-	// addresses a message BY ID. The moment the drawer could act on a row (`x`
+	// addresses a message BY ID. The moment the pit could act on a row (`x`
 	// to drop, `y` to yank) the flattening became the thing standing between a
 	// reader and the queue they are looking at.
 	queued    []queuedItem

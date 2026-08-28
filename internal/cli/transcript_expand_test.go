@@ -227,8 +227,8 @@ func TestEnsureSelectionVisibleUsesLayoutBody(t *testing.T) {
 		panel func(*transcript)
 	}{
 		{"no panel", func(*transcript) {}},
-		{"status panel open", func(tr *transcript) { tr.openStatusDrawer() }},
-		{"help panel open", func(tr *transcript) { tr.openHelpDrawer() }},
+		{"status panel open", func(tr *transcript) { tr.openStatusPit() }},
+		{"help panel open", func(tr *transcript) { tr.openHelpPit() }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tr, _ := expandFixture(t)

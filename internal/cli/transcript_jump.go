@@ -662,20 +662,20 @@ func (t *transcript) abandonJump(note string) {
 	t.pruneCaches()
 }
 
-// noteOrClear puts a note in the message drawer, or closes it when empty.
+// noteOrClear puts a note in the message pit, or closes it when empty.
 func (t *transcript) noteOrClear(note string) {
 	t.jumpNote = note
 	if note == "" {
 		if t.showing("message") {
-			t.drawer.close()
+			t.pit.close()
 		}
 		return
 	}
-	t.drawer.showMessage(note)
+	t.pit.showNote(note)
 }
 
 // jumpFooter is what a WALK IN PROGRESS says while it runs. The box itself and
-// its failures are drawn by the drawer now (see transcript.inputDrawerLines and
+// its failures are drawn by the pit now (see transcript.inputDrawerLines and
 // noteOrClear); this is only the transient "jumping to turn 12…".
 func (t *transcript) jumpFooter() (string, bool) {
 	if t.jump != nil {
