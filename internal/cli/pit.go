@@ -52,10 +52,10 @@ type act interface {
 	lines(id pitID, w, h int) []string
 }
 
-// screen adapts a self-rendering LiveView to the pit. A view that implements
-// itemView never reaches here: the pit takes its rows instead, so that every
-// motion, marker and page count is the picker's, once.
-type screen struct{ v cmdkit.LiveView }
+// screen adapts a self-rendering view (cmdkit.ScreenView) to the pit. A view
+// that implements itemView never reaches here: the pit takes its rows instead,
+// so that every motion, marker and page count is the picker's, once.
+type screen struct{ v cmdkit.ScreenView }
 
 func (s screen) lines(_ pitID, w, h int) []string {
 	rows := s.v.Rows(w, h)
@@ -143,11 +143,16 @@ func (d *pit) showLive(id pitID, v cmdkit.LiveView) {
 		d.live.Close() // one pit, one hosted view
 	}
 	d.id, d.title, d.live = id, "", v
-	if iv, ok := v.(itemView); ok {
-		d.body = newPicker(iv.Items(80))
-		return
+	switch view := v.(type) {
+	case itemView:
+		d.body = newPicker(view.Items(80))
+	case cmdkit.ScreenView:
+		d.body = screen{view}
+	default:
+		// A HOSTED VERB THAT IS NEITHER A LIST NOR A SCREEN has nothing to
+		// show, and saying so beats an empty region with a glyph over it.
+		d.body = newPicker([]pitRow{staticRow("  " + string(id) + ": nothing to render")})
 	}
-	d.body = screen{v}
 }
 
 // refreshLive re-reads an itemised view's rows. The cursor stays on the same

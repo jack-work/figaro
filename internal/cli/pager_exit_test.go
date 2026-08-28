@@ -132,13 +132,12 @@ func TestPainterSessionWritesOnlyCRLF(t *testing.T) {
 	}
 }
 
-func TestSessionLineAndEndSession(t *testing.T) {
+// THE SESSION ENDS WITHOUT A WORD. endSession hands the terminal back and says
+// nothing; sessionLine -- which put a bare line on the screen from wherever
+// trouble was found, after the painter had finished -- is gone, and with it the
+// duplicate "hung up" a hangup-then-disconnect used to print.
+func TestEndSessionSaysNothing(t *testing.T) {
 	var b bytes.Buffer
-	sessionLine(&b, "hello")
-	if got := b.String(); got != "hello\r\n" {
-		t.Errorf("sessionLine wrote %q, want %q", got, "hello\r\n")
-	}
-	b.Reset()
 	endSession(&b)
 	got := b.String()
 	if got[0] != '\r' {
@@ -149,5 +148,11 @@ func TestSessionLineAndEndSession(t *testing.T) {
 	}
 	if strings.Contains(got, "\n") {
 		t.Errorf("endSession must not add a blank row: %q", got)
+	}
+	for _, r := range got {
+		if r >= 0x20 && r != 0x7f && !strings.ContainsRune("[;?0123456789hlmn", r) {
+			t.Errorf("endSession wrote something printable (%q): leaving is silent", got)
+			break
+		}
 	}
 }

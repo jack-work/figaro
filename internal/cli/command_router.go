@@ -442,11 +442,22 @@ func commonPrefix(ss []string) string {
 
 // runLive hosts a live verb in the pit. The view is built off the input
 // goroutine (it dials) and installed under the render lock.
-func (in *interactiveInput) runLive(name, spec string) {
+func (in *interactiveInput) runLive(name, spec string) { in.openLive(name, spec, false) }
+
+// openLive dials the verb off the input goroutine and installs it under the
+// render lock. full opens the pit at the pane's height, which is what
+// `fig form listen` asks for.
+func (in *interactiveInput) openLive(name, spec string, full bool) {
 	if spec == "" {
 		spec = in.currentID() // the aria on screen, per THE SUBJECT rule
 	}
-	in.note("…" + name + " " + spec)
+	// A PIT THAT OPENS FULLSCREEN IS ITS OWN ANNOUNCEMENT. `:form show` says
+	// what it is doing because the reader typed it into a box and the answer
+	// takes a moment to dial; `fig form listen` opens straight into the thing,
+	// and a "…form show <id>" alert over it is the program narrating itself.
+	if !full {
+		in.note("…" + name + " " + spec)
+	}
 	go func() {
 		view, closeView, err := openFormView(spec, in.loaded, in.renderLocked)
 		if err != nil {
@@ -457,7 +468,7 @@ func (in *interactiveInput) runLive(name, spec string) {
 		// THE PIT host repaints the pager; the view never writes anywhere.
 		view.repaint = in.renderLocked
 		in.mu.Lock()
-		in.lt.tr.showLivePit(name, view)
+		in.lt.tr.showLivePit(name, view, full)
 		in.mu.Unlock()
 	}()
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
+	"log/slog"
 	"sort"
 	"strings"
 	"sync"
@@ -39,12 +39,6 @@ type livelogTurn struct {
 	finished     bool
 	thinkingOpen bool // an OpenThinking placeholder is live and not yet adopted
 	pace         framePacer
-
-	// pendingReport holds trouble shown red-and-ellipsised in the pager's
-	// status row, kept whole so leaveTranscript can reprint it to the shell.
-	// The status row can only ever show one line of it; the user gets all of
-	// it the moment there is scrollback to put it in. See report().
-	pendingReport []string
 
 	// lastFrozen is the highest SLICE incipit has committed to native scrollback
 	// inline (via Freeze). It marks the flush boundary: on leaving the pager,
@@ -612,19 +606,29 @@ func (t *livelogTurn) transcriptDispatch(ev keyEvent) { t.tr.dispatch(ev) }
 func (t *livelogTurn) invalidateTranscriptRows() { t.tr.invalidateRows() }
 
 // report is where trouble goes: an error reason, a provider hint, an interrupt
-// notice. ONE call site decides how it reaches the user, because the answer
-// depends on which renderer owns the terminal:
+// notice. TWO DESTINATIONS, AND THE TERMINAL IS NOT ONE OF THEM.
+//
+// It used to have three: the bar, a `pendingReport` list REPRINTED to the
+// shell on the way out, and a direct write to stderr when the pager was down.
+// That is how hanging up and then disconnecting printed the same sentence
+// twice -- "hanging up: staying attached", then "hung up: listening", then
+// both again as the pager left -- and why leaving a session was never quiet.
+// Gluck, 2026-08-28: "there should not be duplicates, there should also not be
+// ANYTHING".
+//
+// So: the bar says it while there is a bar to say it in, and it retires by
+// itself; the log keeps it for anyone who asks afterwards. A message printed
+// past the last frame is a message nobody asked for, over a shell prompt that
+// is already back.
 func (t *livelogTurn) report(text string) {
 	if strings.TrimSpace(text) == "" {
 		return
 	}
+	slog.Warn("figaro session", "report", text)
+	t.status.setNotice(text)
 	if t.tr.active {
-		t.pendingReport = append(t.pendingReport, text)
-		t.status.setNotice(text)
 		t.tr.render()
-		return
 	}
-	sessionLine(os.Stderr, "\r\n"+text)
 }
 
 func (t *livelogTurn) transcriptSelect(delta int, extend bool) {
@@ -677,13 +681,10 @@ func (t *livelogTurn) leaveTranscript() {
 	}
 	t.tr.leave()
 	t.flushTail()
-	// Whatever the status row could only show a slice of, said in full now
-	// that there is a shell to say it to. The pager showed it red and
-	// ellipsised; the scrollback gets every character.
-	for _, r := range t.pendingReport {
-		sessionLine(os.Stderr, r)
-	}
-	t.pendingReport = nil
+	// NOTHING IS SAID ON THE WAY OUT. Leaving the pager used to reprint every
+	// report to the shell, which is how one hangup became two lines and a
+	// disconnect became four. What the reader saw in the bar was the message;
+	// the log has the rest.
 	t.status.setNotice("")
 }
 
@@ -967,7 +968,6 @@ func (t *livelogTurn) retarget(figaroID string, status *sessionStatus) {
 	t.queued, t.queuedErr = nil, ""
 	t.hold, t.held = false, nil
 	t.seeded, t.seedExtents, t.seedMore = nil, nil, false
-	t.pendingReport = nil
 
 	t.tr.retarget(t.client, figaroID, status)
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/jack-work/figaro/sdk"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -233,8 +234,10 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			die("record: %s", terr)
 		}
 		defer func() {
+			// TO THE LOG, NOT THE TERMINAL: this runs as the session ends,
+			// where a line lands over the shell prompt that is already back.
 			if cerr := rec.Close(); cerr != nil {
-				fmt.Fprintf(os.Stderr, "figaro: tape: %v\n", cerr)
+				slog.Error("tape close", "err", cerr)
 			}
 		}()
 	}
@@ -1443,12 +1446,11 @@ func (in *interactiveInput) coalesceNewline(b byte) bool {
 // the closer after a non-assistant (user/steering) message.
 func dimRule() string { return term.Dim(strings.Repeat("─", termWidth())) }
 
-// sessionLine writes a line with an explicit CR: a painted session has
-// DISABLE_NEWLINE_AUTO_RETURN armed on Windows, where a bare LF staircases
-// (microsoft/WSL#1273).
-func sessionLine(w io.Writer, s string) {
-	fmt.Fprint(w, s+"\r\n")
-}
+// THE LAST WRITE IS THE LAST FRAME. sessionLine used to put a bare line on the
+// terminal from wherever trouble was found -- and every one of those lines
+// landed after the painter had finished, over a shell prompt that was already
+// back. It is gone; report() takes its callers, the bar shows them, and the
+// log keeps them.
 
 // endSession is the last write: the shell prompts where we leave the cursor,
 // so return the carriage. A lone CR adds no row.

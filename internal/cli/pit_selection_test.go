@@ -95,9 +95,6 @@ type fakeItemView struct {
 
 func (v *fakeItemView) Items(width int) []pitRow { return v.rows }
 func (v *fakeItemView) Activate(path string)     { v.activated = path }
-func (v *fakeItemView) Rows(w, h int) []string   { return nil }
-func (v *fakeItemView) Key(b byte) bool          { return false }
-func (v *fakeItemView) Hint() string             { return "" }
 func (v *fakeItemView) Close()                   {}
 
 // BUG 2's HALF THAT NO PTY WALK COULD SEE: the pit painted a highlight on a
@@ -205,8 +202,6 @@ func TestFormViewKeyVerbsDoNotRepaint(t *testing.T) {
 	if !v.open["skills"] {
 		t.Fatal("Activate did not open the branch")
 	}
-	v.toggle()
-	v.move(1)
 	if repaints != 0 {
 		t.Fatalf("a key verb repainted %d times; the host repaints after dispatch", repaints)
 	}

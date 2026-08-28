@@ -13,7 +13,6 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/term"
 )
 
 // runFormListen watches an aria's form and draws it as a live JSON tree.
@@ -81,41 +80,22 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 	return view, func() { fcli.Close(); acli.Close(); cancel() }, nil
 }
 
+// runFormListen is `fig listen` WITH THE FORM PIT OPEN, fullscreen, and it is
+// nothing else.
+//
+// It used to be a second program: its own alt screen, its own raw mode, its own
+// key loop, its own cursor and window over the same rows the pit already knows
+// how to draw. Every one of those was a chance to disagree with the pager --
+// and it took every one: a window computed as height-2 against a pit that
+// reserved its own, a cursor that skipped rows the pit could hold, keys that
+// meant one thing here and another there. Gluck, 2026-08-28: "all of the custom
+// fig form show UI should just be deleted outright. removed. killed."
+//
+// So there is one program. `fig form listen` opens the transcript with the form
+// in the pit at full height; Esc closes the pit and leaves the conversation
+// where it was; F brings the pit back to its ordinary twelve rows.
 func runFormListen(loaded *config.Loaded, ariaID string) {
-	// The pump repaints THIS host; a pit host passes its own render instead.
-	var view *formView
-	view, closeView, err := openFormView(ariaID, loaded, func() { view.paint() })
-	// The SHELL host paints a screen it owns.
-	if err != nil {
-		die("%s", err)
-	}
-	defer closeView()
-	view.repaint = view.paint
-
-	restore, err := term.MakeRaw(int(os.Stdin.Fd()))
-	if err != nil {
-		die("form listen needs a terminal: %s", err)
-	}
-	defer restore()
-	fmt.Fprint(stdout, altScreenOn+cursorHide)
-	defer fmt.Fprint(stdout, cursorShow+altScreenOff)
-	atExit(func() { fmt.Fprint(stdout, cursorShow+altScreenOff) })
-
-	view.paint()
-	keys := make([]byte, 8)
-	for {
-		n, rerr := os.Stdin.Read(keys)
-		if rerr != nil || n == 0 {
-			return
-		}
-		// 'q' and ^C are the HOST's: see formView.Key.
-		if keys[0] == 'q' || keys[0] == 3 {
-			return
-		}
-		if view.Key(keys[0]) {
-			view.paint()
-		}
-	}
+	runListen(loaded, ariaID, "", "", true)
 }
 
 // formView is the painter: the rows it last built, where the cursor sits, and
@@ -186,53 +166,8 @@ func (v *formView) setNotice(text string) {
 	v.mu.Unlock()
 }
 
-// THE VERBS MUTATE AND RETURN. Neither host wants a repaint from in here: the
-// shell host paints after every key it takes, and the pager dispatches keys
-// WITH ITS RENDER LOCK HELD, so a repaint from a key handler is a mutex taken
-// twice by one goroutine. changed() is for what arrives on its own -- a delta,
-// a resync, a failure -- which is the only thing no host is already watching
-// for.
-func (v *formView) move(delta int) {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	v.cursor = clampInt(v.cursor+delta, 0, len(v.rows)-1)
-}
-
-func (v *formView) page(delta int) {
-	height := term.Height()
-	v.move(delta * max(1, height-4))
-}
-
-func (v *formView) toggle() {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	if v.cursor < len(v.rows) {
-		openBranch(v.rows[v.cursor], v.open)
-	}
-}
-
-func (v *formView) yank() {
-	v.mu.Lock()
-	var text string
-	if v.cursor < len(v.rows) {
-		text = yankFormNode(v.rows[v.cursor])
-	}
-	v.mu.Unlock()
-	if text == "" {
-		return
-	}
-	copyToClipboard(v.out, text)
-	v.setNotice(fmt.Sprintf("yanked %d bytes", len(text)))
-}
-
-// Rows renders the view for a viewport, and positions nothing. It is the whole
-// of what the view LOOKS like, so a host -- a full screen at a shell, a pit
-// in the pager -- can put those rows wherever it owns.
+// Items is THE WHOLE OF WHAT A FORM LOOKS LIKE, and the pit does the rest.
 //
-// This used to be paint(): one function that decided the content AND wrote it
-// to a *os.File with \x1b[H\x1b[2J and an absolute jump to the last line. That
-// is why `form listen` could not be hosted: it did not render, it TOOK a
-// screen.
 // Items is how a form takes part in THE PIT: it hands over rows and stops
 // owning a list. It used to keep its own rows, cursor and top and its own j/k
 // handler -- a fourth implementation beside the picker -- and it computed its
@@ -254,6 +189,13 @@ func (v *formView) Items(width int) []pitRow {
 	head := fmt.Sprintf("form %s · v%d · %d keys · %d rows", v.aria, version, snap.Len(), len(v.rows))
 	if gaps > 0 {
 		head += fmt.Sprintf(" · %d resync", gaps)
+	}
+	// THE NOTICE RIDES ON THE HEAD ROW. It used to have a footer of its own,
+	// drawn by a view that owned a screen; there is no screen and no footer
+	// now, and a resync failure that is reported nowhere is a form quietly
+	// telling you nothing while showing you something stale.
+	if v.notice != "" {
+		head += " · " + v.notice
 	}
 	out := make([]pitRow, 0, len(v.rows)+1)
 	out = append(out, staticRow(clipLine(head, width)))
@@ -294,108 +236,12 @@ func (v *formView) Activate(path string) {
 	}
 }
 
-func (v *formView) Rows(width, height int) []string {
-	snap, version, gaps := v.mirror.state()
-	if width <= 0 {
-		width = 80
-	}
-	if height <= 0 {
-		height = 24
-	}
-
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	v.rows = flattenFormTree(buildFormTree(snap), v.open, nil)
-	v.cursor = clampInt(v.cursor, 0, len(v.rows)-1)
-	// Keep the cursor on screen without scrolling further than it moved.
-	body := max(1, height-2)
-	if v.cursor < v.top {
-		v.top = v.cursor
-	}
-	if v.cursor >= v.top+body {
-		v.top = v.cursor - body + 1
-	}
-	v.top = clampInt(v.top, 0, max(0, len(v.rows)-1))
-
-	head := fmt.Sprintf("form %s · v%d · %d keys · %d rows", v.aria, version, snap.Len(), len(v.rows))
-	if gaps > 0 {
-		head += fmt.Sprintf(" · %d resync", gaps)
-	}
-	out := make([]string, 0, body+1)
-	out = append(out, clipLine(head, width))
-	for i := v.top; i < len(v.rows) && i < v.top+body; i++ {
-		out = append(out, renderFormRow(v.rows[i], width, i == v.cursor))
-	}
-	return out
-}
-
-// Hint is what the view can do, for the HOST to place. It is not a row: the
-// shell host puts it on the last line of a screen it owns, and the pit puts
-// it on its closing rule -- and when Rows carried it itself, both hosts drew
-// it AND the pit drew its own, so the affordance appeared twice.
-func (v *formView) Hint() string {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	hint := "j/k move · Enter expand · y yank · e/d page"
-	if v.notice != "" {
-		return v.notice + " · " + hint
-	}
-	return hint
-}
-
-// Key offers one keystroke, and reports whether the view took it. 'q' and ^C
-// are NOT taken: leaving is the host's decision -- at a shell it ends the
-// command, in a pit it closes the pit -- and a view that swallowed them
-// would be a view you could not get out of in either place.
-func (v *formView) Key(b byte) bool {
-	switch b {
-	case 'j':
-		v.move(1)
-	case 'k':
-		v.move(-1)
-	case 'e':
-		v.page(1)
-	case 'd':
-		v.page(-1)
-	case '\r', '\n':
-		v.toggle()
-	case 'y':
-		v.yank()
-	default:
-		return false
-	}
-	return true
-}
-
 // Close is the LiveView half of teardown; the connection belongs to whoever
 // dialled it, so there is nothing here yet.
 func (v *formView) Close() {
 	if v.closeConn != nil {
 		v.closeConn()
 	}
-}
-
-// paint is the SHELL host: the same rows, positioned on a screen this process
-// owns. The pager's host is pit-shaped and lives in transcript.go.
-func (v *formView) paint() {
-	width, height := term.Width(), term.Height()
-	if width <= 0 {
-		width = 80
-	}
-	if height <= 0 {
-		height = 24
-	}
-	rows := v.Rows(width, height)
-	var b []byte
-	b = append(b, "\x1b[H\x1b[2J"...)
-	for _, r := range rows {
-		b = append(b, r...)
-		b = append(b, "\r\n"...)
-	}
-	// The shell host owns a whole screen, so it puts the hint on the last line.
-	b = append(b, "\x1b["+fmt.Sprint(height)+";1H"...)
-	b = append(b, clipLine(v.Hint()+" · q quit", width)...)
-	_, _ = v.out.Write(b)
 }
 
 func clipLine(s string, width int) string {

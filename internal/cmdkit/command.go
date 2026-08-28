@@ -175,47 +175,51 @@ func (c *RunContext) BoolFlag(name string) bool {
 // ---------------------------------------------------------------------------
 
 // LiveView is what a verb becomes when it does not finish: `form listen`
-// watches a form until you quit it, `doctor provider --follow` would do the
+// watches a form until you leave it, `doctor provider --follow` would do the
 // same. Such a verb cannot be "run and captured" -- it has no output, it has a
-// SCREEN, and it reads keys.
+// VIEW, and it lives until the host is done with it.
 //
 // The naive way to host one inside another program is to hand it a pipe and
 // let it keep reading os.Stdin. That is worse than it sounds: two readers on
 // one fd, each swallowing half the user's keystrokes, and a verb that paints
 // with absolute cursor positioning into a region it does not own.
 //
-// So a live verb is a MODEL instead. It renders rows for a viewport it is
-// given and it takes keys as method calls. The host owns the screen, decides
-// where the rows go, and decides which keys to forward -- which is what lets
-// the same `form listen` be a full-screen command at a shell and a pit in
-// the pager, with one implementation and no pipe between them.
+// So a live verb is a MODEL, and the interface is ONE METHOD: the host owns
+// the screen, the keys and the dismissal, and the view owns its subscription.
+// Everything else is an optional capability below, asked for by type assertion
+// -- because a view that has a LIST (the only kind there is today) needs none
+// of it: the pit drives the list.
 type LiveView interface {
+	// Close releases whatever the view is holding (a subscription, a socket).
+	Close()
+}
+
+// ScreenView is a live view with no list to hand over: it paints itself into
+// the viewport the host gives it. A view with rows should implement the host's
+// item interface instead, so that every motion, marker and page count is the
+// host's, once.
+type ScreenView interface {
+	LiveView
 	// Rows renders the view for a viewport of w columns and h rows. It must
 	// return at most h rows and must not position the cursor: the host places
 	// them.
 	Rows(w, h int) []string
+}
 
+// KeyView takes keystrokes the host does not own.
+//
+// A KEY HANDLER MUTATES AND RETURNS: it must not repaint. Every host repaints
+// after the key it dispatched, and the pager dispatches keys with its render
+// lock held -- so a view that repaints from in here takes a mutex its caller
+// is already holding, and Go's mutexes do not recurse. Measured: the pager
+// froze, dead, with the view still on screen. What a view may repaint for is
+// what arrives on its own -- a delta, a resync, a failure -- because that is
+// the only thing no host is watching for.
+type KeyView interface {
+	LiveView
 	// Key offers one keystroke. Reporting false leaves it to the host, which
-	// is how Esc closes a pit without the view having to know what a pit
-	// is.
-	//
-	// A KEY HANDLER MUTATES AND RETURNS: it must not repaint. Every host
-	// repaints after the key it dispatched, and the pager dispatches keys with
-	// its render lock held -- so a view that repaints from in here takes a
-	// mutex its caller is already holding, and Go's mutexes do not recurse.
-	// Measured: the pager froze, dead, with the view still on screen. What a
-	// view may repaint for is what arrives on its own -- a delta, a resync, a
-	// failure -- because that is the only thing no host is watching for.
+	// is how Esc closes a pit without the view having to know what a pit is.
 	Key(b byte) bool
-
-	// Hint is what the view can do, for the HOST to place -- on a status line,
-	// on a pit's rule, wherever the host keeps affordances. It is not a row,
-	// because a view that draws its own footer inside a host that also draws
-	// one shows the same sentence twice.
-	Hint() string
-
-	// Close releases whatever the view is holding (a subscription, a socket).
-	Close()
 }
 
 // Live, when set, makes this a live verb: it is HOSTED, not run. A command

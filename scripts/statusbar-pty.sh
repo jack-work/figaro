@@ -429,6 +429,63 @@ else
   echo "ok   the alert retired on its own"
 fi
 
-tmux -S "$SOCK" send-keys -t bar:0 q
-sleep 1
+# 10. LEAVING IS SILENT. Hang up, then disconnect: the pager used to keep a
+#     "pending report" of everything it had said and REPRINT it to the shell on
+#     the way out, so one hangup became two lines and a disconnect four. Gluck:
+#     "there should not be duplicates, there should also not be ANYTHING."
+tmux -S "$SOCK" send-keys -t bar:0 H; sleep 2
+if [[ "$(bar)" == *"hung up"* || "$(bar)" == *"hanging up"* ]]; then
+  echo "ok   the hangup is reported in the bar, where it retires"
+else
+  echo "FAIL: the hangup said nothing in the bar: [$(bar)]"; fail=1
+fi
+tmux -S "$SOCK" send-keys -t bar:0 C-d; sleep 2
+after=$(tmux -S "$SOCK" capture-pane -p -t bar:0)
+noisy=0
+for word in "hung up" "hanging up" "interrupting" "interrupted" "disconnected"; do
+  if [[ "$after" == *"$word"* ]]; then
+    echo "FAIL: '$word' was printed to the shell on the way out"; noisy=1
+  fi
+done
+(( noisy )) && { fail=1; echo "$after" | tail -8 | sed 's/^/    |/'; }
+(( noisy )) || echo "ok   leaving the session printed nothing at all"
+
+# 11. `form listen` IS `listen`, with the form pit open fullscreen. No second
+#     program, no alt screen of its own, no key loop of its own.
+# A FORM LONG ENOUGH TO NEED THE ROOM: fullscreen can only be seen on a list
+# that does not already fit, and the fixture's form has five rows.
+for i in $(seq 1 20); do "$BIN" set --id "$ARIA" "k$i" "v$i" >/dev/null 2>&1; done
+tmux -S "$SOCK" send-keys -t bar:0 "$BIN form listen $ARIA" Enter; sleep 4
+# The pit's height is the distance from the rule above it to the bar below it,
+# which is the only measure that does not depend on how much the form happens
+# to have in it. A blank row inside the pit is still the pit.
+pitheight() {
+  tmux -S "$SOCK" capture-pane -p -t bar:0 | awk '
+    /^─+/ { rule = NR }
+    END   { print NR - rule - 1 }'
+}
+pane=$(tmux -S "$SOCK" capture-pane -p -t bar:0)
+formrows=$(echo "$pane" | grep -c "♮\|𝄢")
+big=$(pitheight)
+if [[ "$pane" == *"𝄢"* ]]; then
+  echo "ok   form listen opens the form pit ($formrows marked rows)"
+else
+  echo "FAIL: form listen did not open the form pit"; fail=1
+  echo "$pane" | tail -8 | sed 's/^/    |/'
+fi
+tmux -S "$SOCK" send-keys -t bar:0 F; sleep 1     # F: back to the ordinary pit
+small=$(pitheight)
+if (( small < big )); then
+  echo "ok   F reduces the fullscreen pit to pit height ($big → $small rows)"
+else
+  echo "FAIL: F did not reduce the pit ($big → $small)"; fail=1
+fi
+tmux -S "$SOCK" send-keys -t bar:0 Escape; sleep 1
+if tmux -S "$SOCK" capture-pane -p -t bar:0 | grep -q "look around"; then
+  echo "ok   Esc closes the form pit and shows the transcript"
+else
+  echo "FAIL: Esc did not put the transcript back"; fail=1
+fi
+tmux -S "$SOCK" send-keys -t bar:0 C-d; sleep 1
+
 exit $fail

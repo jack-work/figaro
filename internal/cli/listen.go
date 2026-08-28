@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/jack-work/figaro/sdk"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
@@ -23,7 +24,10 @@ import (
 // live frames, supports Ctrl-T transcript mode, and stays open until
 // the user closes it. Ctrl-C still sends figaro.interrupt (just like
 // inside a send stream); Ctrl-D disconnects without touching the turn.
-func runListen(loaded *config.Loaded, ariaID, recordPath, note string) {
+// runListen is THE pager. formPit opens the aria's form in the pit, at full
+// height, the moment the transcript is up: that -- and nothing else -- is what
+// `fig form listen` is.
+func runListen(loaded *config.Loaded, ariaID, recordPath, note string, formPit bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -53,13 +57,15 @@ func runListen(loaded *config.Loaded, ariaID, recordPath, note string) {
 			die("record: %s", err)
 		}
 		defer func() {
+			// TO THE LOG, NOT THE TERMINAL: this runs as the session ends,
+			// where a line lands over the shell prompt that is already back.
 			if cerr := rec.Close(); cerr != nil {
-				fmt.Fprintf(os.Stderr, "figaro: tape: %v\n", cerr)
+				slog.Error("tape close", "err", cerr)
 			}
 		}()
 	}
 
-	tailFigaro(ctx, cancel, figaroEP, resolvedID, loaded, tailOpts{acli: acli, tape: rec})
+	tailFigaro(ctx, cancel, figaroEP, resolvedID, loaded, tailOpts{acli: acli, tape: rec, formPit: formPit})
 }
 
 // tailFigaro is the read-only twin of mustPromptFigaro. It opens the
@@ -87,6 +93,9 @@ type tailOpts struct {
 	// passes the recording's own start so the same tape paints the same pixels
 	// at any hour; live callers leave it zero and get time.Now.
 	startedAt time.Time
+	// formPit opens the subject's form in the pit, fullscreen, as the session
+	// starts. It is the whole of `fig form listen`.
+	formPit bool
 }
 
 func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.Endpoint, figaroID string, loaded *config.Loaded, opt tailOpts) {
@@ -184,6 +193,17 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 			fmt.Fprint(os.Stdout, enableModifiedKeyReporting)
 			defer fmt.Fprint(os.Stdout, disableModifiedKeyReporting)
 			defer os.Stdout.WriteString(ldmouse.Disable)
+			if opt.formPit {
+				// THE PIT LIVES IN THE PAGER, so `form listen` opens it: the
+				// transcript first, then the form over it at full height.
+				// enterTranscript takes the render lock itself, and it READS
+				// (the catch-up page), so it goes on a goroutine rather than
+				// holding up the key loop that is about to start.
+				go func() {
+					in.enterTranscript()
+					in.openLive("form show", figaroID, true)
+				}()
+			}
 			go in.run()
 		} else {
 			fmt.Fprintf(os.Stderr, "figaro: terminal input disabled: enter raw mode: %v\n", err)
@@ -210,7 +230,8 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 		locked(func() { lt.abandon(turnStatusError) })
 	case <-ctx.Done():
 		// Ctrl-C from signal.NotifyContext: interrupt the turn, then leave.
-		sessionLine(os.Stderr, "\r\ninterrupting...")
+		// IT SAYS SO IN THE BAR OR NOWHERE. A line written here lands under
+		// the last frame, on top of a shell prompt that is already back.
 		intCtx, intCancel := context.WithTimeout(context.Background(), 3*time.Second)
 		if cli := in.aria(); cli != nil {
 			_ = cli.Interrupt(intCtx)

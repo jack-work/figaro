@@ -1754,7 +1754,7 @@ func (t *transcript) dispatch(ev keyEvent) {
 				t.render()
 				return
 			}
-		} else if t.pit.live != nil && ev.nav == navNone && t.pit.live.Key(ev.b) {
+		} else if kv, ok := t.pit.live.(cmdkit.KeyView); ok && ev.nav == navNone && kv.Key(ev.b) {
 			t.render()
 			return
 		}
@@ -2619,9 +2619,10 @@ func rowID(line string) string {
 }
 
 // showLivePit hosts a live verb in the pit.
-func (t *transcript) showLivePit(name string, v cmdkit.LiveView) {
+func (t *transcript) showLivePit(name string, v cmdkit.LiveView, full bool) {
 	t.queuedByKey = false
 	t.pit.showLive(pitID(name), v)
+	t.pit.full = full
 	t.render()
 }
 
