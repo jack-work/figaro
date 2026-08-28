@@ -89,23 +89,40 @@ One table keyed by drawer id gives the glyph and the name.
 | search | `⌕` | search | — |
 | help | `?` | help | — |
 | status | `!` | status | — |
+| message | — | — | — |
+| output | — | — | `♭` |
+| live (hosted verb) | — | *(the verb's own)* | `♭` |
 | *(reserved)* | | input | |
+
+**Every drawer needs a row, including the ones with nothing to show.** If
+`drawerID` is the source of `keys()`, then message, command output and a hosted
+live view are identities too — they just contribute **no token** to the bar
+(glyph `—` means the left group starts at the state) and take `modePanel`.
+Completion candidates are not a drawer: they are rows inside the command box,
+which is why they do not appear here.
 
 **`⌕` (U+2315), not `🔍`.** The bar is width-sensitive and every other glyph
 here is single-width; the emoji magnifier is double-width and font-dependent,
 which would make the left group's width a property of the reader's terminal.
 
-**Help is a mode, not a panel.** It sits at the same level as queue, command and
-notifications: its own row, its own glyph, and `?` SWITCHES TO IT from every
-mode except command, where `?` is text. That settles the "help always works"
-question — no `:help`, no Esc-then-`?`, just the key, everywhere it is not
-literal.
+**Help is a first-class drawer identity**, at the same level as queue, command
+and notifications: its own row, its own glyph, and `?` SWITCHES TO IT from every
+mode except command, where `?` is text. Its keyboard behaviour is still
+`modePanel` — being first-class is about identity, not about inventing a
+keyMode nothing needs.
 
-**One consequence, stated because it is a real cost:** `?` is text in the SEARCH
-box too, and this rule takes it. Searching for a literal `?` then needs a route
-this plan does not give it. The alternative — exempting search as well as
-command — leaves help unreachable from the box where a reader is most likely to
-be lost, so the key wins and the literal loses.
+**Two consequences, stated because they are real costs.**
+
+`?` is text in the SEARCH box too, and this rule takes it: searching for a
+literal `?` has no route here. The alternative — exempting search as well —
+leaves help unreachable from the box where a reader is most likely to be lost,
+so the key wins and the literal loses.
+
+**In the command box, help is one `Esc` away**, and that is the answer to "help
+should always work" there. It is an exception with a route, not a hole: `?` must
+stay literal where a command is being typed (`:send -- what?`), and every other
+mode reaches help with one key. The hint row says so, which is why that row is
+not gated on verbose.
 
 ## 3. `turnState`: symbol, name, colour
 
@@ -157,13 +174,20 @@ wire. Claiming "all warnings and errors" without a transport would be a lie.
   Nothing about it is tied to the drawer being read. A bar item that waits to be
   dismissed is a bar item that is still there tomorrow.
 
-**This is the one piece with a liveness requirement.** Everything else in the
-pager repaints because something arrived — a key, a frame, a resize. An alert
-that expires on a clock has to repaint when *nothing happened*, so `statusView`
-gains an expiry and the render loop gains one scheduled wake at it. That is
-cheap (one timer, armed only while an alert is live, cancelled when it is
-displaced) but it must be deliberate: a TTL with no wake is an alert that
-disappears the next time you press a key, which reads as randomness.
+**This is the one piece with a liveness requirement**, and the mechanism is
+already in the building. Everything else in the pager repaints because something
+arrived — a key, a frame, a resize — so an alert that expires on a clock would
+otherwise vanish on the next keypress, which reads as randomness rather than as
+a timeout.
+
+**Use the 11 Hz ticker, not a new timer.** `mustPromptFigaro` and `tailFigaro`
+already keep it alive and call `lt.tick()` under the render mutex even when
+nothing is animating; having `tick()` retire an expired alert gives expiry
+within ~90 ms with no second scheduler and no teardown path to get wrong.
+
+**And keep the clock out of `render`.** Expiry is evaluated where the tick is,
+not inside `statusView.render(w)` — otherwise the pure renderer this section
+promised becomes a function of the wall clock and its goldens become flaky.
 
 **Next steps, named:** a notify transport so daemon and agent records arrive
 (the aria socket already carries frames; this is one more method); level
@@ -212,9 +236,9 @@ Each step ships alone; none changes what the pager can do.
    example shows a bare rule and `✓ · 123abc · test`; one sketch line says the
    rule right-justifies the id. The examples win. Say the word and it flips
    back.
-2. **`𝄞` is both the notifications glyph and its selection cue.** The spec asks
-   for a treble clef in both places and nothing says they must differ; an
-   aesthetic objection is not an ambiguity.
+2. **`𝄞` is the notifications glyph; `♩` is its selection cue.** One symbol
+   cannot do both jobs on one screen, and Gluck settled it on 2026-08-28.
+   Selection glyphs are per-drawer: queue keeps `♭`.
 3. **`cost` and the clock leave the bar** (§1), to the `!` panel.
 
 4. **Search is `⌕` and help is a mode** (§2). The doubled `∴` in the sketch was
