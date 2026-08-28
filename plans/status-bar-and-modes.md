@@ -32,6 +32,7 @@ type statusView struct {
     Mantra  string
     Ctx     ctxUsage   // used, limit, exact
     Alert   string     // the newest unread notification, projected (§4)
+    LastAt  time.Time  // when this conversation last moved; verbose only (§5)
     Verbose bool
 }
 
@@ -53,14 +54,23 @@ is not: 40/60/80/120 columns × {plain, drawer open, alert, verbose, no mantra}.
   transcript loses a line.
 - **Verbose** wraps both sides, truncates each FIELD rather than the line, and
   **a wrapped row carries no `·`**: the separator joins fields on a row, it does
-  not dangle at a break.
+  not dangle at a break. `LastAt` joins the RIGHT group, beside the context
+  figure — both are facts about the conversation rather than about the mode.
 - **Shedding is replaced by wrapping.** The rank ladder exists only because
   everything had to fit on one row. The mantra is the last thing to go.
 
-**Leaving the bar: `cost` and the clock.** The spec says "only input
+**Leaving the default bar: `cost` and the clock.** The spec says "only input
 window/output window by default (plus percentage)". Cost moves to the `!` panel
 with the cache buckets it is meaningless without. This is the one subtraction a
 reader notices on day one, so it is stated rather than discovered.
+
+**But a time comes back under verbose, and it is a different time.** An earlier
+draft of this plan said "the clock belongs nowhere — every terminal already has
+one", and that was right about the wrong clock. `startedAt` answers "when did I
+open this", which nothing depends on. **`LastAt` answers "is this conversation
+stale?"** — and nothing else on the screen answers it, because a pager sitting
+on a finished turn looks identical whether that turn ended nine seconds or nine
+hours ago. See §5.
 
 ## 2. One owner for "what is open"
 
@@ -198,7 +208,23 @@ alternative sink; nvim-style levels with timeouts.
 ## 5. Verbose (`^V`), and the paste it must not eat
 
 `^O` (verbose tool output) is a different axis and stays. `^V` toggles **the
-bar's verbosity**: state names, `system.model`, and the hint row.
+bar's verbosity**: state names, `system.model`, the hint row, and the time of
+the **last interaction**.
+
+**`LastAt` is a full datetime, `01/02/06 15:04:05`** — `08/28/26 12:47:31`, not
+a bare wall clock and not a relative "3m ago". A date because the question it
+answers is "is this stale", which a time alone cannot answer once a pager has
+been open across midnight; and absolute rather than relative because a relative
+string is only true at the instant it is painted, which would drag this field
+into the liveness problem below for no gain.
+
+**It is the newest message's timestamp in either direction** — the turn's `At`,
+or the newest node's — not the session's start and not the last thing the USER
+typed: what a reader wants to know is when the conversation last moved, and an
+agent working alone for an hour is a conversation that is moving.
+
+**No ticker.** Unlike the alert (§4), this changes only when something arrives,
+and everything that makes it change already repaints the bar.
 
 - **`ui.status_verbose` in `config.toml` seeds it**; `^V` overrides for the
   session. Both paths tested — the spec asks for a configurable default and it
@@ -245,6 +271,8 @@ Each step ships alone; none changes what the pager can do.
    a typo; `?` switches to help mode from everywhere except the command box.
 5. **Notifications are transient in the bar** (§4): first left slot,
    `ui.notice_ttl` default 10s, displaced by the next one.
+6. **Verbose shows the last interaction** (§5) as `01/02/06 15:04:05`. It
+   replaces the session-start clock, which the default bar drops.
 
 *(Nothing is open. The two questions this plan carried — search's identity and
 how help stays reachable — were answered by Gluck on 2026-08-28 and are folded
