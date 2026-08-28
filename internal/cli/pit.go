@@ -234,31 +234,34 @@ func (d *pit) toggleFull() {
 // These forward; picker.go decides.
 
 // moveSelection is ^N/^P: choose.
-func (d *pit) moveSelection(dir int, h int) { d.motion(h, func(p *picker) { p.pick(dir) }) }
+func (d *pit) moveSelection(dir int) { d.motion(func(p *picker) { p.pick(dir) }) }
 
 // scrollBy is j/k and the arrow cluster: READ. It moves the window by a row and
 // leaves the selection where the reader put it -- a form with a hundred
 // properties is read by scrolling, and dragging the cursor down every line of
 // it is how `j` came to skip whole properties.
-func (d *pit) scrollBy(dir int, h int) { d.motion(h, func(p *picker) { p.step(dir) }) }
+func (d *pit) scrollBy(dir int) { d.motion(func(p *picker) { p.step(dir) }) }
 
-func (d *pit) halfPage(dir int, h int) { d.motion(h, func(p *picker) { p.half(dir) }) }
+func (d *pit) halfPage(dir int) { d.motion(func(p *picker) { p.half(dir) }) }
 
-func (d *pit) toTop()    { d.motion(0, (*picker).home) }
-func (d *pit) toBottom() { d.motion(0, (*picker).end) }
+func (d *pit) toTop()    { d.motion((*picker).home) }
+func (d *pit) toBottom() { d.motion((*picker).end) }
 
-// motion runs one list motion against whatever is open, telling the picker how
-// tall it was last drawn so a key pressed between paints pages by the right
-// amount. A pit with no list takes no motions, and says so by doing nothing.
-func (d *pit) motion(h int, f func(*picker)) {
-	p := d.list()
-	if p == nil {
-		return
+// motion runs one list motion against whatever is open. A pit with no list
+// takes no motions, and says so by doing nothing.
+//
+// THE HEIGHT IS THE PICKER'S OWN, and passing one in here was a bug you could
+// feel: the pit handed over its GROSS height (twelve rows), while the picker
+// draws two of those rows as the "… N more" markers and keeps ten for the
+// list. follow() then kept the cursor inside a window two rows taller than the
+// one on screen, so pressing k on the last row moved the selection off the
+// bottom of what was painted: the highlight appeared stuck on the last visible
+// row and the row you had just left vanished behind the marker. The picker
+// measures itself every time it draws (picker.lines); nobody else may.
+func (d *pit) motion(f func(*picker)) {
+	if p := d.list(); p != nil {
+		f(p)
 	}
-	if h > 0 {
-		p.height = clampInt(h, 1, pickerRows)
-	}
-	f(p)
 }
 
 // selected is the row under the cursor, in WHATEVER pit is open. It used to
@@ -282,7 +285,7 @@ func (d *pit) replaceRows(rows []pitRow, keepID string) {
 	d.body = newPicker(rows)
 }
 
-func (d *pit) removeSelected() { d.motion(0, (*picker).remove) }
+func (d *pit) removeSelected() { d.motion((*picker).remove) }
 
 func (d *pit) lines(w, h int) []string {
 	if !d.open() {

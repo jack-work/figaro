@@ -261,6 +261,16 @@ func (p *picker) lines(id pitID, w, h int) []string {
 	}
 	p.height = max(budget-markAbove-markBelow, 1)
 	p.top = clampInt(p.top, 0, p.maxTop())
+	// THE WINDOW IS DECIDED HERE, SO THE FOLLOW IS TOO. Every motion before
+	// this ran against whatever height the picker was last DRAWN at -- and
+	// before the first paint, against a guess. A motion that moved the cursor
+	// out of the window it will actually get would otherwise paint a list with
+	// no highlight in it: which is exactly what G, or k on the last row, did.
+	// The highlight looked stuck to the bottom row and the row just left
+	// vanished behind the "… N more".
+	if p.hasCursor() {
+		p.follow()
+	}
 	end := min(p.top+p.window(), len(p.rows))
 
 	out := make([]string, 0, budget)

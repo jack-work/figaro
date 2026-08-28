@@ -157,9 +157,14 @@ var keymap = []keyBinding{
 		// Not live in incipit (nothing to detach from yet, and opening the
 		// pager only to tear it down is not a gesture), nor in the search box,
 		// where it is literal text.
+		// 'q' LEAVES WHAT IS OPEN, AND ONLY THEN THE SESSION. It is the
+		// third spelling of Esc and ^[ -- Gluck: "q should only quit when no
+		// pit is open" -- and the reason is that a pit is a thing you are IN.
+		// Quitting the process from inside a list you opened to read is the
+		// same surprise as `less` exiting your shell.
 		chord: byteChord('q'), modes: inTranscript | inPanel,
 		open: staysInline, why: "detach: it would open the pager and immediately tear it down",
-		help: helpDetach, input: inputDisconnect,
+		help: helpLeavePit, input: inputLeavePit,
 	},
 	{
 		chord: byteChord(0x0c), modes: inAnyBox &^ inJumpBox,
@@ -547,6 +552,7 @@ const (
 	helpBarVerbose
 	helpCmdAbort
 	helpPitDrop
+	helpLeavePit
 )
 
 // helpRow is one line of the panel: the key column and what it does. The key
@@ -561,7 +567,8 @@ type helpRow struct {
 }
 
 var helpRows = []helpRow{
-	{helpDetach, "q", "exit; keeps the turn running"},
+	{helpLeavePit, "q", "close the pit; with none open, exit (the turn keeps running)"},
+	{helpDetach, "^D", "exit; keeps the turn running"},
 	{helpInterrupt, "^C", "exit by interrupt; stops the turn"},
 	{helpHangUp, "H", "hang up: stop the turn, keep listening"},
 	{helpHangUpDrop, "X", "hang up and drop queued messages (printed on exit)"},

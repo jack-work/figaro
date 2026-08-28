@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
+	"github.com/mattn/go-runewidth"
 )
 
 // formMirror is a client's OWN copy of an aria's form, kept live by applying the
@@ -148,15 +150,17 @@ func flattenFormTree(n *formNode, open map[string]bool, out []*formNode) []*form
 	return out
 }
 
-// renderFormRow is one line: the indent, the marker a branch carries, the label,
-// and a value clipped to what is left of the width.
+// renderFormRow is one line: the indent, the label, and a value clipped to what
+// is left of the width.
+//
+// NO MARKER ON A BRANCH. Every branch carried a "▸" and every leaf carried two
+// spaces to line up with it -- a column spent saying what the indent of the
+// rows underneath already says, and what the "(8)" at the end of a branch says
+// again. Gluck: "the arrow that prefaces top level keys that have nested
+// children can be dropped. Indentation covers it enough."
 func renderFormRow(n *formNode, width int, selected bool) string {
-	marker := "  "
-	if !n.leaf() {
-		marker = "▸ "
-	}
 	indent := strings.Repeat("  ", n.depth-1)
-	line := indent + marker + n.label
+	line := indent + n.label
 	if n.leaf() {
 		line += ": " + formValuePreview(n.value)
 	} else {
@@ -181,11 +185,96 @@ func formValuePreview(raw json.RawMessage) string {
 	return s
 }
 
+// openBranch is Enter: it opens what is under a row. On a BRANCH that is its
+// children; on a LEAF it is the value itself, spelled out over as many rows as
+// it takes -- because a form holds skill frontmatter and file contents, and a
+// value clipped to one row with an ellipsis is a value you cannot read.
 func openBranch(n *formNode, open map[string]bool) {
-	if n.leaf() {
-		return
-	}
 	open[n.path] = !open[n.path]
+}
+
+// formValueLines is an opened leaf: the value, made readable.
+//
+// THREE SHAPES, and the first two are the ones a form actually holds. A JSON
+// object or array is INDENTED. A JSON string that itself parses as an object
+// or an array -- which is how a skill's frontmatter, a tool result or a
+// serialised file arrives -- is unwrapped and then indented, because the outer
+// quotes are the least interesting thing about it. Anything else is the plain
+// string, its own newlines honoured.
+func formValueLines(raw json.RawMessage, width int) []string {
+	var out []string
+	if lines, ok := prettyJSON(raw); ok {
+		out = lines
+	} else {
+		var s string
+		if err := json.Unmarshal(raw, &s); err != nil {
+			out = strings.Split(string(raw), "\n")
+		} else if lines, ok := prettyJSON(json.RawMessage(s)); ok {
+			out = lines
+		} else {
+			out = strings.Split(s, "\n")
+		}
+	}
+	// Wrap rather than clip: the point of opening a value is to read all of it.
+	wrapped := make([]string, 0, len(out))
+	for _, l := range out {
+		wrapped = append(wrapped, wrapPlain(strings.TrimRight(l, "\r"), max(width, 20))...)
+	}
+	return wrapped
+}
+
+// prettyJSON indents b when b is a JSON object or array, and refuses otherwise:
+// a bare number or a quoted string gains nothing from indentation and would
+// come back with its quotes still on.
+func prettyJSON(b []byte) ([]string, bool) {
+	t := bytes.TrimSpace(b)
+	if len(t) == 0 || (t[0] != '{' && t[0] != '[') {
+		return nil, false
+	}
+	var buf bytes.Buffer
+	if err := json.Indent(&buf, t, "", "  "); err != nil {
+		return nil, false
+	}
+	return strings.Split(buf.String(), "\n"), true
+}
+
+// wrapPlain breaks a line at the width, at a space where there is one within
+// reach and mid-word where there is not. Display width, not bytes: a form is
+// full of prose and emoji.
+func wrapPlain(s string, width int) []string {
+	if s == "" {
+		return []string{""}
+	}
+	var out []string
+	for runewidth.StringWidth(s) > width {
+		cut := 0
+		w := 0
+		lastSpace := -1
+		for i, r := range s {
+			rw := runewidth.RuneWidth(r)
+			if w+rw > width {
+				cut = i
+				break
+			}
+			if r == ' ' {
+				lastSpace = i
+			}
+			w += rw
+		}
+		if cut == 0 {
+			break
+		}
+		// Only break at a space that is not right at the start of the line:
+		// wrapping "a" onto its own row helps nobody.
+		if lastSpace > width/2 {
+			out = append(out, s[:lastSpace])
+			s = strings.TrimLeft(s[lastSpace+1:], " ")
+			continue
+		}
+		out = append(out, s[:cut])
+		s = s[cut:]
+	}
+	return append(out, s)
 }
 
 // yankFormNode is what `y` copies: a leaf's value, or a branch as the object it

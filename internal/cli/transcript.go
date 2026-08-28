@@ -1852,7 +1852,7 @@ func (t *transcript) selectDown(dir int) {
 	// A PIT WITH A CURSOR OWNS ^N/^P; the transcript's node selection is a
 	// different question, and it is not the one being asked while a list is up.
 	if p := t.pit.list(); p != nil && p.hasCursor() {
-		t.pit.moveSelection(dir, t.h)
+		t.pit.moveSelection(dir)
 		return
 	}
 	t.selectNode(dir, false)
@@ -2544,15 +2544,14 @@ func (t *transcript) pitVerb(ev keyEvent) bool {
 // own motions, pointed at the pit, so a reader who can move around a
 // conversation can move around a list without learning a second set.
 func (t *transcript) pitMotion(ev keyEvent) bool {
-	h := t.pit.visible(t.h)
 	switch {
 	// j/k CHOOSE. In a pit with a cursor they move the selection and the
 	// window follows it; in one without (help, status) there is nothing to
 	// choose, so they move the window and mean the same thing to the hand.
 	case ev.b == 'j', ev.nav == navDown, ev.b == 0x0e:
-		t.pit.moveSelection(1, h)
+		t.pit.moveSelection(1)
 	case ev.b == 'k', ev.nav == navUp, ev.b == 0x10:
-		t.pit.moveSelection(-1, h)
+		t.pit.moveSelection(-1)
 	// e/y READ: one row of the window, selection untouched. vim's ^E/^Y
 	// without the modifier, because a pit is a small thing and the chord is
 	// spent on selection already.
@@ -2562,13 +2561,13 @@ func (t *transcript) pitMotion(ev keyEvent) bool {
 		// exactly where they were.
 		t.pit.toggleFull()
 	case ev.b == 'e':
-		t.pit.scrollBy(1, h)
+		t.pit.scrollBy(1)
 	case ev.b == 'y' && t.pit.list() != nil && !t.pit.list().hasCursor():
-		t.pit.scrollBy(-1, h)
+		t.pit.scrollBy(-1)
 	case ev.b == 'd', ev.nav == navPageDown:
-		t.pit.halfPage(1, h)
+		t.pit.halfPage(1)
 	case ev.b == 'u', ev.nav == navPageUp:
-		t.pit.halfPage(-1, h)
+		t.pit.halfPage(-1)
 	case ev.b == 'G', ev.nav == navEnd:
 		t.pit.toBottom()
 	case ev.nav == navHome:

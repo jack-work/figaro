@@ -480,12 +480,67 @@ if (( small < big )); then
 else
   echo "FAIL: F did not reduce the pit ($big → $small)"; fail=1
 fi
+# 11b. ENTER ON A LEAF SPELLS THE VALUE OUT, and a value that parses as JSON is
+#      indented. The fixture carries one on purpose.
+"$BIN" set --id "$ARIA" blob '{"filePath":"/tmp/x","frontmatter":"name: t"}' >/dev/null 2>&1
+sleep 1
+for _ in $(seq 30); do
+  row=$(hl)
+  [[ "$row" == *"blob"* ]] && break
+  tmux -S "$SOCK" send-keys -t bar:0 C-n; sleep 0.25
+done
+if [[ "$(hl)" == *"blob"* ]]; then
+  tmux -S "$SOCK" send-keys -t bar:0 Enter; sleep 1.2
+  opened=$(tmux -S "$SOCK" capture-pane -p -t bar:0)
+  if echo "$opened" | grep -q '"filePath": "/tmp/x"'; then
+    echo "ok   Enter pretty-printed the value under the key"
+  else
+    echo "FAIL: Enter did not open the value"; fail=1
+    echo "$opened" | tail -8 | sed 's/^/    |/'
+  fi
+  tmux -S "$SOCK" send-keys -t bar:0 Enter; sleep 1
+  if tmux -S "$SOCK" capture-pane -p -t bar:0 | grep -q '"filePath": "/tmp/x"'; then
+    echo "FAIL: Enter did not close the value again"; fail=1
+  else
+    echo "ok   Enter closes the value again"
+  fi
+else
+  echo "FAIL: never reached the blob key with ^N"; fail=1
+fi
+
+# 11c. NO ARROW ON A BRANCH: the indent says it, and so does the count.
+if tmux -S "$SOCK" capture-pane -p -t bar:0 | grep -q "▸"; then
+  echo "FAIL: a branch row still carries the ▸ marker"; fail=1
+else
+  echo "ok   branches carry no arrow"
+fi
+
+# 11d. Esc CLOSES THE PIT AND SHOWS THE TRANSCRIPT, and so does 'q' -- they are
+#      one gesture, and q leaves the session only when there is no pit to close.
 tmux -S "$SOCK" send-keys -t bar:0 Escape; sleep 1
 if tmux -S "$SOCK" capture-pane -p -t bar:0 | grep -q "look around"; then
   echo "ok   Esc closes the form pit and shows the transcript"
 else
   echo "FAIL: Esc did not put the transcript back"; fail=1
 fi
-tmux -S "$SOCK" send-keys -t bar:0 C-d; sleep 1
+tmux -S "$SOCK" send-keys -t bar:0 ':'; sleep 0.4
+tmux -S "$SOCK" send-keys -t bar:0 -l "form show"; sleep 0.4
+tmux -S "$SOCK" send-keys -t bar:0 Enter; sleep 2
+tmux -S "$SOCK" send-keys -t bar:0 q; sleep 1
+after=$(tmux -S "$SOCK" capture-pane -p -t bar:0)
+if [[ "$after" == *"𝄢"* ]]; then
+  echo "FAIL: q did not close the form pit"; fail=1
+elif [[ "$after" == *"look around"* ]]; then
+  echo "ok   q closed the pit and left the transcript up"
+else
+  echo "FAIL: q left the session instead of closing the pit"; fail=1
+  echo "$after" | tail -6 | sed 's/^/    |/'
+fi
+tmux -S "$SOCK" send-keys -t bar:0 q; sleep 1.5
+if tmux -S "$SOCK" capture-pane -p -t bar:0 | tail -1 | grep -q '\$'; then
+  echo "ok   a second q, with no pit open, leaves the session"
+else
+  echo "FAIL: q with no pit open did not leave"; fail=1
+fi
 
 exit $fail

@@ -1285,7 +1285,24 @@ func (in *interactiveInput) hangUp(disposition rpc.QueueDisposition) keyVerdict 
 	return keyHandled
 }
 
-// inputDisconnect is Ctrl-D, and 'q' with the pager up: leave, and let the
+// inputLeavePit is 'q': close the pit, and leave the session only when there is
+// no pit to close. Esc, ^[ and q are one gesture -- "get me out of this" -- and
+// they differ only in how far out they take you.
+func inputLeavePit(in *interactiveInput, ev keyEvent) keyVerdict {
+	in.mu.Lock()
+	open := in.lt.tr.pit.open()
+	if open {
+		in.lt.tr.closePanels()
+		in.lt.render()
+	}
+	in.mu.Unlock()
+	if open {
+		return keyHandled
+	}
+	return inputDisconnect(in, ev)
+}
+
+// inputDisconnect is Ctrl-D, and 'q' with nothing open: leave, and let the
 // turn keep running.
 func inputDisconnect(in *interactiveInput, _ keyEvent) keyVerdict {
 	in.cancelTranscriptSearch()

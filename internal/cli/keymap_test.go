@@ -322,9 +322,14 @@ func TestKeymap_InlineKeysStayInline(t *testing.T) {
 // : type something into the footer, land somewhere, and because that keeps
 // "how do I get to a place I can see the address of" adjacent to "how do I
 // find one".
+// REGENERATED 2026-08-28 for 'q'. Two rows where there was one: 'q' now closes
+// the open pit and leaves the session only when there is none (Gluck: "q should
+// only quit when no pit is open"), so ^D -- which always leaves -- gets a row of
+// its own instead of sharing q's. Nothing else moved.
 func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 	want := []string{
-		"  q                   exit; keeps the turn running",
+		"  q                   close the pit; with none open, exit (the turn keeps running)",
+		"  ^D                  exit; keeps the turn running",
 		"  ^C                  exit by interrupt; stops the turn",
 		"  H                   hang up: stop the turn, keep listening",
 		"  X                   hang up and drop queued messages (printed on exit)",

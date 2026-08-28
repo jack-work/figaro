@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/jack-work/figaro/sdk"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -204,16 +205,43 @@ func (v *formView) Items(width int) []pitRow {
 		// child rows were not, so a motion that stepped to the next selectable
 		// row jumped over whole properties. A form is a list of things you
 		// look at; all of them can hold the cursor.
-		out = append(out, pitRow{
-			text: renderFormRow(n, width, false),
-			yank: yankFormNode(n),
-			id:   n.path,
-		})
+		yank := yankFormNode(n)
+		out = append(out, pitRow{text: renderFormRow(n, width, false), yank: yank, id: n.path})
+		if !n.leaf() || !v.open[n.path] {
+			continue
+		}
+		// AN OPENED LEAF IS ITS VALUE, spelled out. The rows are selectable
+		// too -- every one of them yanks the WHOLE value, and a cursor that
+		// can rest on them is what lets a reader scroll through a long one
+		// instead of watching it fly past. The id keeps the row addressable
+		// and unique, which is what a refresh restores the selection by.
+		indent := strings.Repeat("  ", n.depth)
+		for i, line := range formValueLines(n.value, width-len(indent)-2) {
+			out = append(out, pitRow{
+				text: indent + line,
+				yank: yank,
+				id:   fmt.Sprintf("%s\x00%d", n.path, i),
+			})
+		}
 	}
 	return out
 }
 
-// Activate is Enter on a row: expand or collapse that branch.
+// valuePath is the key a value row belongs to: an opened leaf's lines carry
+// "<path>\x00<n>" so that every row in the pit has an id of its own, and Enter
+// on any of them closes the value it came from.
+func valuePath(id string) string {
+	if i := strings.IndexByte(id, 0); i >= 0 {
+		return id[:i]
+	}
+	return id
+}
+
+// Activate is Enter on a row: open what is under it. On a branch that is its
+// children; on a leaf it is the VALUE, spelled out over as many rows as it
+// takes and pretty-printed when it parses as JSON -- which is how a form's
+// biggest values arrive, a skill's frontmatter or a serialised file. Enter on
+// one of those value rows closes it again.
 //
 // IT DOES NOT REPAINT, and that is not an oversight. Activate is called from
 // the pit's key dispatch, which runs WITH THE RENDER LOCK HELD -- the input
@@ -225,7 +253,8 @@ func (v *formView) Items(width int) []pitRow {
 //
 // The host repaints after every key it dispatches. A verb that mutates and
 // returns is all a hosted view owes it.
-func (v *formView) Activate(path string) {
+func (v *formView) Activate(id string) {
+	path := valuePath(id)
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	for _, n := range v.rows {

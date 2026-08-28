@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"encoding/json"
+	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -81,7 +84,7 @@ func TestQueuePitGainsCursorWhenTheFetchLands(t *testing.T) {
 	if !ok || row.id != "7" {
 		t.Fatalf("the queue filled and nothing was selected: %+v, %v", row, ok)
 	}
-	d.moveSelection(1, 12)
+	d.moveSelection(1)
 	if row, _ := d.selected(); row.id != "8" {
 		t.Fatalf("^N in a refreshed queue: %+v", row)
 	}
@@ -112,7 +115,7 @@ func TestLivePitHasASelectionTheVerbsCanSee(t *testing.T) {
 	if !ok || row.id != "mantra" {
 		t.Fatalf("a hosted list opened with no visible selection: %+v, %v", row, ok)
 	}
-	d.moveSelection(1, 12)
+	d.moveSelection(1)
 	if row, _ := d.selected(); row.id != "skills" {
 		t.Fatalf("^N in a hosted list: %+v", row)
 	}
@@ -231,5 +234,140 @@ func TestPitClosingReleasesTheHostedView(t *testing.T) {
 	d.showLive(pitID("form listen"), &closingView{})
 	if w.closed != 1 {
 		t.Fatalf("a second view took the pit and the first was closed %d times", w.closed)
+	}
+}
+
+// THE CURSOR IS ALWAYS ON THE SCREEN THAT WAS PAINTED. The pit used to hand
+// the picker its GROSS height -- twelve rows -- while the picker spends two of
+// those on the "… N more" markers and lists in the other ten. follow() then
+// held the cursor inside a window two rows taller than the one on screen, so k
+// on the last row moved the selection off the bottom of what was painted: the
+// highlight looked stuck on the last visible row and the row just left behind
+// disappeared under the marker. Gluck felt it before any test did.
+func TestPitCursorStaysInsideThePaintedWindow(t *testing.T) {
+	rows := make([]pitRow, 0, 30)
+	for i := range 30 {
+		rows = append(rows, idRow(fmt.Sprintf("row %02d", i), fmt.Sprintf("%d", i)))
+	}
+	var d pit
+	d.showList(pitQueue, "", rows)
+
+	// The selected row is the one carrying the pit's selection glyph: the wash
+	// behind it is an SGR, and SGR is off in a test.
+	mark := pitQueue.selectionGlyph()
+	painted := func() (string, []string) {
+		out := d.lines(80, 25) // a 25-row pane: visible() gives the fixed page
+		var sel string
+		for i, l := range out {
+			l = stripSGR(l)
+			if strings.HasPrefix(l, mark) {
+				sel = strings.TrimSpace(strings.TrimPrefix(l, mark))
+			}
+			out[i] = strings.TrimSpace(l)
+		}
+		return sel, out
+	}
+
+	d.toBottom()
+	sel, _ := painted()
+	if !strings.Contains(sel, "row 29") {
+		t.Fatalf("G did not select the last row: %q", sel)
+	}
+	// Walk back up: every step must move the highlight by exactly one row, and
+	// the row we just left must still be on screen.
+	for i := 28; i >= 0; i-- {
+		prev := sel
+		d.moveSelection(-1)
+		var body []string
+		sel, body = painted()
+		want := fmt.Sprintf("row %02d", i)
+		if !strings.Contains(sel, want) {
+			t.Fatalf("k from %q selected %q, want %q", prev, sel, want)
+		}
+		if !slices.Contains(body, strings.TrimSpace(prev)) {
+			t.Fatalf("k from %q hid the row it left: %v", prev, body)
+		}
+	}
+}
+
+// ENTER ON A LEAF OPENS THE VALUE, and a value that parses as JSON is
+// indented. A form holds skill frontmatter and serialised files; one row with
+// an ellipsis on the end of it is not something a reader can read.
+func TestFormValueLinesAreReadable(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  string
+		want []string
+	}{
+		{"an object is indented", `{"a":1,"b":[2,3]}`, []string{
+			"{", `  "a": 1,`, `  "b": [`, "    2,", "    3", "  ]", "}"}},
+		{"a string CARRYING json is unwrapped first", `"{\"filePath\":\"/x\"}"`, []string{
+			"{", `  "filePath": "/x"`, "}"}},
+		{"a plain string keeps its own newlines and loses its quotes", `"one\ntwo"`,
+			[]string{"one", "two"}},
+		{"a number is itself", `42`, []string{"42"}},
+	} {
+		got := formValueLines(json.RawMessage(tc.raw), 80)
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("%s:\n got %q\nwant %q", tc.name, got, tc.want)
+		}
+	}
+	// AND IT WRAPS RATHER THAN CLIPS: the point of opening a value is to read
+	// all of it.
+	long := `"` + strings.Repeat("word ", 40) + `"`
+	rows := formValueLines(json.RawMessage(long), 30)
+	if len(rows) < 5 {
+		t.Fatalf("a 200-column value became %d rows at width 30: %q", len(rows), rows)
+	}
+	for _, r := range rows {
+		if displayWidth(r) > 30 {
+			t.Fatalf("wrapped row is %d columns: %q", displayWidth(r), r)
+		}
+	}
+	if joined := strings.Join(rows, " "); !strings.Contains(joined, "word word") {
+		t.Fatalf("wrapping lost the text: %q", joined)
+	}
+}
+
+// A BRANCH CARRIES NO ARROW. It carried "▸" and every leaf carried two spaces
+// to line up with it -- a column that said what the indent and the "(2)"
+// already say twice over.
+func TestFormRowsHaveNoBranchArrow(t *testing.T) {
+	branch := &formNode{path: "skills", label: "skills", depth: 1,
+		children: []*formNode{{path: "skills.a", label: "a", depth: 2}}}
+	row := renderFormRow(branch, 80, false)
+	if strings.Contains(row, "▸") {
+		t.Fatalf("the branch still carries an arrow: %q", row)
+	}
+	if !strings.HasPrefix(row, "skills") {
+		t.Fatalf("a top-level row must start at the margin: %q", row)
+	}
+	if !strings.Contains(row, "(1)") {
+		t.Fatalf("a branch must still say how many keys are under it: %q", row)
+	}
+	leaf := &formNode{path: "mantra", label: "mantra", depth: 1, value: json.RawMessage(`"x"`)}
+	if got := renderFormRow(leaf, 80, false); !strings.HasPrefix(got, "mantra: ") {
+		t.Fatalf("a leaf must line up with a branch: %q", got)
+	}
+}
+
+// Enter opens a LEAF as well as a branch: openBranch used to refuse one.
+func TestEnterOpensALeaf(t *testing.T) {
+	open := map[string]bool{}
+	leaf := &formNode{path: "mantra", label: "mantra", depth: 1, value: json.RawMessage(`"x"`)}
+	openBranch(leaf, open)
+	if !open["mantra"] {
+		t.Fatal("Enter on a leaf did nothing")
+	}
+	openBranch(leaf, open)
+	if open["mantra"] {
+		t.Fatal("Enter did not close the value again")
+	}
+	// A value row addresses the key it came from, so Enter on one closes it.
+	if got := valuePath("skills.howto\x0012"); got != "skills.howto" {
+		t.Fatalf("valuePath = %q", got)
+	}
+	if got := valuePath("mantra"); got != "mantra" {
+		t.Fatalf("valuePath of a key row = %q", got)
 	}
 }
