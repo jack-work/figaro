@@ -278,12 +278,16 @@ func (s *sessionStatus) turnLabel(verbose bool) string {
 // ruleLine is the upper of the two footer rows: a full-width rule with the
 // identity right-aligned: "─────…── aria <id>[ · <pos>] ───". Undecorated
 // (the caller dims it).
+// ruleLine closes the conversation. IT NO LONGER CARRIES THE ARIA ID: the id
+// moved onto the status bar, and printing it twice, one row apart, spent the
+// rule's whole width saying what the row below already said. What is left is
+// the only thing the rule knows that the bar does not -- where in the
+// conversation this window sits, and whether it is following.
 func (s *sessionStatus) ruleLine(width int, pos string) string {
-	label := "aria " + s.figaroID
-	if pos != "" {
-		label += " · " + pos
+	if pos == "" {
+		return clipToWidth(strings.Repeat("─", max(width, 0)), width)
 	}
-	right := " " + label + " ───"
+	right := " " + pos + " ───"
 	fill := width - runewidth.StringWidth(right)
 	if fill < 3 {
 		fill = 3
@@ -291,77 +295,11 @@ func (s *sessionStatus) ruleLine(width int, pos string) string {
 	return clipToWidth(strings.Repeat("─", fill)+right, width)
 }
 
-// statusLine is the lower footer row: plain left-aligned text -
-// "<mantra> · <turn state> · ctx … · cost … · <time>[ · ? help · ! status]".
-// hints adds the key hooks (live pager only; frozen scrollback omits them).
-// Narrow panes shed the mantra first, then cost, then ctx, then the time -
-// the turn state and the hints survive last.
-func (s *sessionStatus) statusLine(width int, hints bool) string {
-	return s.statusLineVerbose(width, hints, s.verbose)
-}
-
-// statusLineVerbose is statusLine with the verbosity named rather than read
-// off the session. FROZEN ROWS PASS true: the bookend that lands in scrollback
-// is a permanent artifact, and `^V` cannot be pressed on a screenful of text
-// that scrolled past an hour ago. A live row can be asked; a dead one cannot,
-// so it says the word.
-func (s *sessionStatus) statusLineVerbose(width int, hints, verbose bool) string {
-	if s == nil {
-		return ""
-	}
-	s.mu.RLock()
-	type tok struct {
-		text string
-		rank int // shed order: lower sheds first (0 = mantra)
-	}
-	var tokens []tok
-	// THE NOTICE IS THE ONE TOKEN THAT MUST NOT BE SHED, and it goes first:
-	// trouble belongs where the eye lands, not after the token cost. Rank 6 is
-	// above every shed pass, so only the ellipsis can ever shorten it. Red is
-	// re-lit against the caller's dim wrapper (22 = not-dim) and handed back
-	// dim + default-foreground, so the rest of the row is unchanged.
-	if s.notice != "" {
-		tokens = append(tokens, tok{term.NoticeInDim(s.notice), 6})
-	}
-	if mantra := strings.Join(strings.Fields(s.metrics.Mantra), " "); mantra != "" {
-		tokens = append(tokens, tok{truncRunes(mantra, 32), 0})
-	}
-	if label := s.turnLabel(verbose); label != "" {
-		tokens = append(tokens, tok{label, 4})
-	}
-	if context := formatContextUsage(s.metrics.ContextTokens, s.metrics.ContextLimit, s.metrics.ContextExact); context != "-" {
-		tokens = append(tokens, tok{"ctx " + context, 2})
-	}
-	if cost := formatSessionTokenCost(s.metrics.TokensIn, s.metrics.TokensOut); cost != "-" {
-		tokens = append(tokens, tok{"cost " + cost, 1})
-	}
-	tokens = append(tokens, tok{s.startedAt.Format("15:04:05"), 3})
-	if hints {
-		tokens = append(tokens, tok{"? help", 5}, tok{"! status", 5})
-	}
-	s.mu.RUnlock()
-
-	join := func() string {
-		parts := make([]string, 0, len(tokens))
-		for _, t := range tokens {
-			parts = append(parts, t.text)
-		}
-		return strings.Join(parts, " · ")
-	}
-	for rank := 0; rank < 4 && displayWidth(join()) > width; rank++ {
-		kept := tokens[:0]
-		for _, t := range tokens {
-			if t.rank != rank {
-				kept = append(kept, t)
-			}
-		}
-		tokens = kept
-	}
-	// Ellipsis, not a hard clip: the status row is read as a sentence, and a
-	// bare cut ends mid-word with nothing to say it was cut. One column buys
-	// the difference between "cost 4.5k to" and "cost 4.5k…".
-	return clipToWidthEllipsis(join(), width)
-}
+// THE OLD ASSEMBLED ROW IS GONE. statusLine()/statusLineVerbose() built the
+// bar by hand -- token list, rank ladder, ellipsis -- and after statusview.go
+// landed they were dead in production and alive only in tests. Two renderers,
+// one of them asserted against: that is how the pager and the incipit came to
+// disagree in the first place. The bar is statusView.render and nothing else.
 
 // panelLines is the '!' status panel: the figaro-status detail rendered from
 // the live metrics snapshot, shown above the footer while output streams.
@@ -434,11 +372,14 @@ func formatTokenCount(tokens int) string {
 // footer the pager draws -- footerStanza -- with no position label, because a
 // stream that is not paging has no window to report.
 //
-// FROZEN ROWS ARE VERBOSE, and that is the one thing this caller decides: the
-// bookend lands in scrollback, where ^V cannot be pressed on text that scrolled
-// past an hour ago. A live bar can be asked; a dead one has to say the word.
+// THE INCIPIT'S BAR IS THE PAGER'S BAR. It reads the same verbosity from the
+// same session, because "one canonical implementation" is not satisfied by one
+// FUNCTION with two callers that pass different arguments -- this caller used
+// to force verbose on the theory that scrollback cannot be asked, and the
+// result was an inline stream showing detail the pager had just been told to
+// stop showing. If `m` is off, it is off everywhere.
 func bookendLines(status *sessionStatus) []string {
-	return footerStanza(status, termWidth(), "", drawerNothing, true)
+	return footerStanza(status, termWidth(), "", drawerNothing, status.barVerbose())
 }
 
 // formatCtxCell renders a context size for the narrow CTX column in `list`:

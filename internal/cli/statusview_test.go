@@ -42,9 +42,12 @@ func TestStatusViewGoldens(t *testing.T) {
 			want: []string{"✓ · 123abc · test                                               9.8k/1.0m (1.0%)"},
 		},
 		{
-			name: "a drawer leads with its glyph", width: 80,
+			// THE NAME IS NOT A VERBOSE EXTRA. The design draws "𝄚 queue",
+			// always: the glyph alone answers the question only for someone
+			// who has already memorised the glyphs.
+			name: "a pit leads with its glyph AND its name", width: 80,
 			view: func(v statusView) statusView { v.Drawer = drawerQueue; return v },
-			want: []string{"𝄚 · ✓ · 123abc · test                                           9.8k/1.0m (1.0%)"},
+			want: []string{"𝄚 queue · ✓ · 123abc · test                                     9.8k/1.0m (1.0%)"},
 		},
 		{
 			name: "verbose names the drawer and the state", width: 96,

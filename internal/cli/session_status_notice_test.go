@@ -27,6 +27,24 @@ func statusFixture(mantra string) *sessionStatus {
 	return s
 }
 
+// row renders the status bar the way the PROGRAM does: one renderer, so a test
+// cannot pass against a spelling production no longer uses. (statusLine, which
+// these tests used to call, was a second implementation of this and is gone.)
+func row(s *sessionStatus, w int) string {
+	return strings.Join(s.viewOf(drawerNothing, s.barVerbose(), time.Now()).render(w), "\n")
+}
+
+// rowWidth is the WIDEST row of the bar. The bar is one row or three, so a
+// width assertion must measure rows rather than the joined string -- which is
+// what made these tests report 56 columns for a 40-column bar.
+func rowWidth(s *sessionStatus, w int) int {
+	widest := 0
+	for _, r := range s.viewOf(drawerNothing, s.barVerbose(), time.Now()).render(w) {
+		widest = max(widest, displayWidth(r))
+	}
+	return widest
+}
+
 func TestStatusNoticeIsRedAndLeftmost(t *testing.T) {
 	// Arm colour: a test binary's stdout is not a TTY, and the notice now
 	// honours that like every other painted token. It did not before -- the
@@ -36,7 +54,7 @@ func TestStatusNoticeIsRedAndLeftmost(t *testing.T) {
 
 	s := statusFixture("a perfectly ordinary mantra")
 	s.setNotice("error: overloaded")
-	line := s.statusLine(200, true)
+	line := row(s, 200)
 
 	// Through the palette, not a literal: the assertion asks the theme what a
 	// notice looks like, so a palette change moves the test with the code
@@ -59,12 +77,12 @@ func TestStatusNoticeShedsLast(t *testing.T) {
 	s := statusFixture("a perfectly ordinary mantra that is quite long indeed")
 	s.setNotice("error: overloaded")
 	for _, w := range []int{120, 90, 70, 50, 40, 30} {
-		line := s.statusLine(w, true)
+		line := row(s, w)
 		if !strings.Contains(line, "error") {
 			t.Errorf("width %d shed the notice: %q", w, line)
 		}
-		if got := displayWidth(line); got > w {
-			t.Errorf("width %d: row is %d columns wide: %q", w, got, line)
+		if got := rowWidth(s, w); got > w {
+			t.Errorf("width %d: widest row is %d columns: %q", w, got, line)
 		}
 	}
 }
@@ -74,7 +92,7 @@ func TestStatusNoticeClears(t *testing.T) {
 	s := statusFixture("m")
 	s.setNotice("error: overloaded")
 	s.setNotice("")
-	if line := s.statusLine(200, true); strings.Contains(line, "overloaded") {
+	if line := row(s, 200); strings.Contains(line, "overloaded") {
 		t.Fatalf("notice survived being cleared: %q", line)
 	}
 }
@@ -84,7 +102,7 @@ func TestStatusNoticeClears(t *testing.T) {
 func TestStatusNoticeIsOneLine(t *testing.T) {
 	s := statusFixture("m")
 	s.setNotice("first line\nsecond line\n\tthird")
-	line := s.statusLine(200, true)
+	line := row(s, 200)
 	if strings.ContainsAny(line, "\n\t") {
 		t.Fatalf("notice carried a line break into the row: %q", line)
 	}
@@ -97,8 +115,8 @@ func TestStatusLineEllipsisOnOverflow(t *testing.T) {
 	s := statusFixture("a mantra long enough to force the issue at narrow widths")
 	s.setNotice("error: something went quite wrong in a long-winded way")
 	for _, w := range []int{60, 40, 24, 12, 5, 2, 1} {
-		line := s.statusLine(w, true)
-		if got := displayWidth(line); got > w {
+		line := row(s, w)
+		if got := rowWidth(s, w); got > w {
 			t.Fatalf("width %d: %d columns: %q", w, got, line)
 		}
 		if !strings.Contains(line, "…") {
@@ -110,7 +128,7 @@ func TestStatusLineEllipsisOnOverflow(t *testing.T) {
 // A row that fits must be left exactly alone: no ellipsis, no rewrite.
 func TestStatusLineNoEllipsisWhenItFits(t *testing.T) {
 	s := statusFixture("m")
-	line := s.statusLine(400, true)
+	line := row(s, 400)
 	if strings.Contains(line, "…") {
 		t.Fatalf("a row with room to spare was ellipsised: %q", line)
 	}

@@ -104,19 +104,25 @@ func (d drawerID) face() drawerFace {
 // a keyMode from what is on screen.
 func (d drawerID) keys() keyMode { return d.face().keys }
 
-// token is what the drawer contributes to the left of the status bar: its
-// glyph, plus its name under verbose. Empty for the drawers that have nothing
-// to announce, so the row then begins with the state.
-func (d drawerID) token(verbose bool) string {
+// token is what the pit contributes to the left of the status bar: GLYPH AND
+// NAME, always, because that is what the design draws --
+//
+//	𝄚 queue · ✓ · 123abc · test                      9.8k/1.0m (1.0%)
+//
+// It is not a verbose extra. The name is how you know which pit you are in,
+// and hiding it behind a toggle made the succinct bar say only "𝄚", which
+// answers the question for someone who has already memorised the glyphs and
+// for nobody else. Empty for the pits with nothing to announce, so the row
+// then begins with the state.
+func (d drawerID) token() string {
 	f := d.face()
-	switch {
-	case f.glyph == "":
+	if f.glyph == "" {
 		return ""
-	case verbose && f.name != "":
-		return f.glyph + " " + f.name
-	default:
+	}
+	if f.name == "" {
 		return f.glyph
 	}
+	return f.glyph + " " + f.name
 }
 
 // selectionGlyph marks the row under the cursor. It is PER DRAWER, not one

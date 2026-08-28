@@ -204,6 +204,11 @@ var pagerOracle = []struct {
 	keys  map[string]string
 }{
 	{"help", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"", map[string]string{
+		// `e` READS: it scrolls the pit by a row without moving the selection
+		// (vim's ^E, unmodified, because the chord is spent on selection).
+		// j/k now CHOOSE, u/d page, and y scrolls back only where there is
+		// nothing to select -- otherwise y is still yank.
+		"0x65": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
 		// REGENERATED for THE PICKER (picker.go): every drawer now owns the
 		// list motions -- j/k, u/d, gg/G and the arrow cluster move whichever
 		// drawer is open instead of wiping it and acting on the transcript
@@ -358,6 +363,11 @@ var pagerOracle = []struct {
 		"0x7f": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"1\"",
 	}},
 	{"panel+sel", "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\"", map[string]string{
+		// `e` READS: it scrolls the pit by a row without moving the selection
+		// (vim's ^E, unmodified, because the chord is spent on selection).
+		// j/k now CHOOSE, u/d page, and y scrolls back only where there is
+		// nothing to select -- otherwise y is still yank.
+		"0x65": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\"",
 		// REGENERATED for THE PICKER (picker.go): every drawer now owns the
 		// list motions -- j/k, u/d, gg/G and the arrow cluster move whichever
 		// drawer is open instead of wiping it and acting on the transcript
@@ -386,6 +396,11 @@ var pagerOracle = []struct {
 		"0x78": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\"",
 	}},
 	{"queued", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"", map[string]string{
+		// `e` READS: it scrolls the pit by a row without moving the selection
+		// (vim's ^E, unmodified, because the chord is spent on selection).
+		// j/k now CHOOSE, u/d page, and y scrolls back only where there is
+		// nothing to select -- otherwise y is still yank.
+		"0x65": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\"",
 		// REGENERATED for THE PICKER (picker.go): every drawer now owns the
 		// list motions -- j/k, u/d, gg/G and the arrow cluster move whichever
 		// drawer is open instead of wiping it and acting on the transcript
@@ -618,6 +633,11 @@ var pagerOracle = []struct {
 		"0x7f": "off:same fol=false srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\"",
 	}},
 	{"status", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"", map[string]string{
+		// `e` READS: it scrolls the pit by a row without moving the selection
+		// (vim's ^E, unmodified, because the chord is spent on selection).
+		// j/k now CHOOSE, u/d page, and y scrolls back only where there is
+		// nothing to select -- otherwise y is still yank.
+		"0x65": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
 		// REGENERATED for THE PICKER (picker.go): every drawer now owns the
 		// list motions -- j/k, u/d, gg/G and the arrow cluster move whichever
 		// drawer is open instead of wiping it and acting on the transcript

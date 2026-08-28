@@ -1495,7 +1495,10 @@ func (t *transcript) openQueuedPanel() {
 // text and `x` drops it, which is what turns the queue from a thing you watch
 // into a thing you can act on.
 func (t *transcript) openQueuedDrawer() {
-	t.drawer.showList("queue", "↳ queued messages", t.queuedDrawerRows(), true)
+	// NO TITLE. The pit says what it is on the status bar ("𝄚 queue"), and a
+	// title row repeated the same word one line above it while costing a row
+	// of the conversation.
+	t.drawer.showList("queue", "", t.queuedDrawerRows(), true)
 }
 
 // refreshQueuedDrawer replaces the rows in place, keeping the selection where
@@ -2495,9 +2498,19 @@ func (t *transcript) cycleCompletion(dir int) {
 func (t *transcript) drawerMotion(ev keyEvent) bool {
 	h := t.drawer.visible(t.h)
 	switch {
-	case ev.b == 'j', ev.nav == navDown:
+	// j/k CHOOSE. In a pit with a cursor they move the selection and the
+	// window follows it; in one without (help, status) there is nothing to
+	// choose, so they move the window and mean the same thing to the hand.
+	case ev.b == 'j', ev.nav == navDown, ev.b == 0x0e:
+		t.drawer.moveSelection(1, h)
+	case ev.b == 'k', ev.nav == navUp, ev.b == 0x10:
+		t.drawer.moveSelection(-1, h)
+	// e/y READ: one row of the window, selection untouched. vim's ^E/^Y
+	// without the modifier, because a pit is a small thing and the chord is
+	// spent on selection already.
+	case ev.b == 'e':
 		t.drawer.scrollBy(1, h)
-	case ev.b == 'k', ev.nav == navUp:
+	case ev.b == 'y' && t.drawer.pick != nil && !t.drawer.pick.selectable():
 		t.drawer.scrollBy(-1, h)
 	case ev.b == 'd', ev.nav == navPageDown:
 		t.drawer.halfPage(1, h)
@@ -2525,7 +2538,7 @@ func (t *transcript) drawerMotion(ev keyEvent) bool {
 // that makes a panel a glance rather than a mode.
 func drawerOwnsKey(ev keyEvent) bool {
 	switch {
-	case ev.b == 'j', ev.b == 'k', ev.b == 'u', ev.b == 'd', ev.b == 'g', ev.b == 'G':
+	case ev.b == 'j', ev.b == 'k', ev.b == 'u', ev.b == 'd', ev.b == 'g', ev.b == 'G', ev.b == 'e':
 		return true
 	case ev.nav == navPageUp, ev.nav == navPageDown, ev.nav == navHome, ev.nav == navEnd:
 		return true
@@ -2562,22 +2575,29 @@ func (t *transcript) showLiveDrawer(name string, v cmdkit.LiveView) {
 // setCommandNote is how a command reports back into the footer's status row -
 // the same row the jump box writes its failures to, because to a reader they
 // are the same thing: the last thing I typed, and what came of it.
+// setCommandNote is how a verb reports back. A ONE-LINE RESULT IS AN ALERT, NOT
+// A PIT: "sent" is news, it is true for a moment, and it should not cost the
+// reader the list they were working in. It lands in the bar's first slot --
+// left of the pit's glyph and left of the state -- and retires on its own
+// after cli.notice_ttl.
+//
+// That replaces two older behaviours, both of which were the same mistake in
+// different clothes: showing a message drawer (which REPLACED an open queue,
+// so the next poll rebuilt it and an `x` aimed at row two dropped row one),
+// and flashing on the closing rule (which no longer exists).
+//
+// Anything longer than a line is still a pit, because a bar row cannot hold it.
 func (t *transcript) setCommandNote(note string) {
 	if note == "" {
+		t.status.setNotice("")
 		if t.showing("message") {
 			t.drawer.close()
 		}
 		t.render()
 		return
 	}
-	// A CONFIRMATION MUST NOT DESTROY A DRAWER THE READER IS USING. Measured:
-	// `:send` while the queue was open replaced the queue with the word "sent",
-	// the next poll re-opened the queue from scratch, and the selection was
-	// back on row one -- so an `x` aimed at the second message dropped the
-	// first. One-line results flash on the closing rule of a list you are
-	// navigating; only a drawer nobody is steering gets replaced outright.
-	if t.drawer.kind == drawerList && t.drawer.cursor >= 0 {
-		t.drawer.flash = note
+	if !strings.Contains(note, "\n") && displayWidth(note) <= t.w/2 {
+		t.status.setNotice(note)
 		t.render()
 		return
 	}

@@ -95,7 +95,7 @@ func (v statusView) groups() (left, right []string) {
 	if v.Alert != "" {
 		left = append(left, term.NoticeInDim(v.Alert))
 	}
-	if tok := v.Drawer.token(v.Verbose); tok != "" {
+	if tok := v.Drawer.token(); tok != "" {
 		left = append(left, tok)
 	}
 	if st := v.stateToken(); st != "" {

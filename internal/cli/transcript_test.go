@@ -157,8 +157,8 @@ func TestTranscript_FooterWidthAndNoTrailingBlank(t *testing.T) {
 	if w := runewidth.StringWidth(rule); w != 50 {
 		t.Fatalf("rule row display width = %d, want exactly 50: %q", w, rule)
 	}
-	if !strings.Contains(rule, "aria aria1234") {
-		t.Fatalf("rule row missing id: %q", rule)
+	if strings.Contains(rule, "aria1234") {
+		t.Fatalf("the rule carries the aria id, which now lives on the bar: %q", rule)
 	}
 	if !strings.Contains(rule, "live") {
 		t.Fatalf("rule row missing scroll position: %q", rule)
