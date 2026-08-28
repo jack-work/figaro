@@ -205,6 +205,36 @@ filtering in the drawer; an unread count in the bar (cut here because its
 reset semantics are undefined, and "do something simple for now"); an
 alternative sink; nvim-style levels with timeouts.
 
+## 4a. One picker, three drawers
+
+The completion menu already is the thing the queue and notifications want to be:
+a fixed-height window over a longer list, one selected row, `^N`/`^P` to move,
+`Esc` to dismiss, and an honest marker for what is out of view. It is written
+once, inside the command box, and the queue drawer has a second, poorer copy of
+half of it.
+
+**Extract it.** A `picker` owns rows, a cursor, and a page:
+
+```go
+type picker struct {
+    rows   []drawerRow
+    cursor int            // -1: nothing selected
+    top    int            // first visible row; the window slides to keep cursor in view
+}
+
+func (p *picker) move(d int)            // ^N / ^P, and repeated Tab
+func (p *picker) window(h int) []string // the visible slice + the "… N more" marker
+```
+
+Three consumers, one behaviour: **completions** (columns, inserts on move),
+**queue** (rows, `x` drops), **notifications** (rows, `y` yanks). What differs
+is the row renderer and the verb keys, which stay with each drawer; what is
+shared is everything a reader's fingers touch.
+
+**The truncation marker is `cmdkit.AndMore`** (build step 4), so "… 749 more"
+reads identically in a picker, in `form show` and in `figaro ls`. A list that
+lies about its own length is the one failure mode all three share.
+
 ## 5. Verbose (`^V`), and the paste it must not eat
 
 `^O` (verbose tool output) is a different axis and stays. `^V` toggles **the
@@ -253,8 +283,11 @@ Each step ships alone; none changes what the pager can do.
 3. **`statusView` + goldens** (§1) — the bar renders from a value.
 4. **`cmdkit.AndMore(n, hint)`** — one spelling of "… 749 more" for the drawer,
    `form show` and the `ls` family, which have three today.
-5. **notifications** (§4) — the only new surface.
-6. **`^V`** (§5) — last: the only binding change.
+5. **the `picker`** (§4a) — extracted from the completion menu, adopted by the
+   queue. It lands before notifications so that notifications is only a row
+   renderer and a sink, not a fourth copy of a list.
+6. **notifications** (§4) — the only new surface.
+7. **`^V`** (§5) — last: the only binding change.
 
 ## Decided for you — each reversible with one line
 
