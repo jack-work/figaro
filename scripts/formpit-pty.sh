@@ -155,10 +155,10 @@ walk() {  # walk "<command line>"
   local before row2
   for i in $(seq 1 14); do
     row=$(hl)
-    [[ "$row" == *"▸"* ]] && break
+    [[ "$row" =~ \([0-9]+\)$ ]] && break
     key C-n; sleep 0.3
   done
-  if [[ "$row" == *"▸"* ]]; then
+  if [[ "$row" =~ \([0-9]+\)$ ]]; then
     before=$(pane)
     key Enter; sleep 1.5
     if [[ "$(pane)" == "$before" ]]; then

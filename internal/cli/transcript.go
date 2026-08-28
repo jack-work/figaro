@@ -1430,12 +1430,8 @@ func (t *transcript) statusPanelLines() []string {
 	return rows
 }
 
-// queuedPanelLines is the 'Q' panel: the currently-queued (accepted but not
-// yet started) user prompts, oldest first. The rows are a snapshot livelogTurn
-// hands down (queuedRows) as figaro.queued reports it. Purely observational -
-// there is no cancellation surface here.
-// showQueuedAuto opens or closes the panel because the QUEUE changed rather
-// than because a key was pressed. A panel the user opened by hand is never
+// showQueuedAuto opens or closes the queue pit because the QUEUE changed rather
+// than because a key was pressed. A pit the user opened by hand is never
 // auto-closed: draining the queue must not yank away a view they asked for.
 func (t *transcript) showQueuedAuto(on bool) {
 	if on {
@@ -1465,21 +1461,6 @@ func (t *transcript) showQueuedAuto(on bool) {
 	if !t.queuedByKey && t.showing(pitQueue) {
 		t.pit.close()
 	}
-}
-
-func (t *transcript) queuedPanelLines() []string {
-	// The SAME rows the inline trailer draws (livelogTurn.queuedRows), handed
-	// down at set time. One list, one rendering: the pager and incipit
-	// disagreeing about how a waiting prompt looks is exactly the live-vs-
-	// committed divergence this codebase keeps paying for.
-	rows := t.queuedRows
-	if len(rows) == 0 {
-		rows = []string{"", term.Dim("↳ queued messages"), term.Dim("   (none)")}
-	}
-	if max := t.h - 4; len(rows) > max && max > 0 {
-		rows = rows[:max]
-	}
-	return rows
 }
 
 // firstLineTrim returns the first non-empty line of s with surrounding
@@ -1529,8 +1510,13 @@ func (t *transcript) refreshQueuePit() {
 }
 
 func (t *transcript) queuedPitRows() []pitRow {
+	// NO PLACEHOLDER. An empty queue is an empty pit: the bar already says the
+	// queue is what is open, and a row that says "(none)" is a row spent
+	// telling a reader what the absence of rows told them. Gluck: "there
+	// should be no (none). the absence of ques are self explanatory. even in
+	// verbose mode."
 	if len(t.queued) == 0 {
-		return []pitRow{staticRow("   (none)")}
+		return nil
 	}
 	rows := make([]pitRow, 0, len(t.queued))
 	for _, q := range t.queued {

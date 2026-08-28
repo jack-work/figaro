@@ -223,6 +223,13 @@ fi
 tmux -S "$SOCK" send-keys -t bar:0 Escape; sleep 0.4
 tmux -S "$SOCK" send-keys -t bar:0 Q; sleep 1
 qtail=$(tmux -S "$SOCK" capture-pane -p -t bar:0 | tail -4)
+# AN EMPTY QUEUE IS AN EMPTY PIT. The bar says the queue is open; a "(none)"
+# row is a row spent saying what no rows already said.
+if echo "$qtail" | grep -q "(none)"; then
+  echo "FAIL: the empty queue still draws a (none) row"; fail=1
+else
+  echo "ok   an empty queue draws no placeholder"
+fi
 echo "queue tail:"; echo "$qtail" | sed 's/^/    |/'
 if echo "$qtail" | grep -q "Esc close\|\^N/\^P select"; then
   echo "FAIL: the drawer still prints a hint row"; fail=1
@@ -344,11 +351,12 @@ done
 tmux -S "$SOCK" send-keys -t bar:0 ':'; sleep 0.4
 tmux -S "$SOCK" send-keys -t bar:0 -l "form show"; sleep 0.4
 tmux -S "$SOCK" send-keys -t bar:0 Enter; sleep 2
-# Walk down to a BRANCH row -- one the renderer marks with ▸ -- and open it.
+# Walk down to a BRANCH row -- one that says how many keys are under it,
+# "system (8)"; branches carry no arrow any more -- and open it.
 found=0
 for _ in $(seq 12); do
   row=$(hl)
-  if [[ "$row" != *"▸"* ]]; then
+  if [[ ! "$row" =~ \([0-9]+\)$ ]]; then
     tmux -S "$SOCK" send-keys -t bar:0 C-n; sleep 0.4
     continue
   fi

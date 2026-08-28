@@ -14,7 +14,7 @@ import (
 //
 //  1. The queue's ^N did nothing until you closed and reopened it: the picker
 //     was told at birth whether it had a cursor, and `:send` opened it on the
-//     single row "(none)", which is chrome.
+//     single row "(none)", which was chrome (and is now no row at all).
 //  2. `form show` skipped properties: it reached the pit as CAPTURED TEXT
 //     rather than as the live view `form listen` uses, and a hosted pit's
 //     selection was invisible to every verb because selected() answered only
@@ -27,7 +27,7 @@ func idRow(text, id string) pitRow { return pitRow{text: text, yank: text, id: i
 // A PICKER BORN EMPTY MUST STILL LEARN TO CHOOSE. This is bug 1 at the level
 // it actually lives at.
 func TestPickerCursorIsDerivedFromRowsNotFromBirth(t *testing.T) {
-	p := newPicker([]pitRow{staticRow("   (none)")})
+	p := newPicker([]pitRow{staticRow("  a header, which is chrome")})
 	if p.hasCursor() {
 		t.Fatalf("a list of chrome has a cursor: %d", p.cursor)
 	}
@@ -44,7 +44,7 @@ func TestPickerCursorIsDerivedFromRowsNotFromBirth(t *testing.T) {
 		t.Fatalf("^N did not move: %+v", row)
 	}
 	// And it leaves again when the rows do.
-	p.setRows([]pitRow{staticRow("   (none)")}, "")
+	p.setRows([]pitRow{staticRow("  a header, which is chrome")}, "")
 	if p.hasCursor() {
 		t.Fatalf("the rows went back to chrome and the cursor stayed: %d", p.cursor)
 	}
@@ -75,7 +75,7 @@ func TestPickerSetRowsKeepsSelectionAcrossReorder(t *testing.T) {
 // lands, and ^N must work without closing the pit.
 func TestQueuePitGainsCursorWhenTheFetchLands(t *testing.T) {
 	var d pit
-	d.showList(pitQueue, "", []pitRow{staticRow("   (none)")})
+	d.showList(pitQueue, "", nil) // an empty queue draws nothing at all
 	if _, ok := d.selected(); ok {
 		t.Fatal("an empty queue has a selection")
 	}
