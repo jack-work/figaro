@@ -83,6 +83,18 @@ type CLIConfig struct {
 	// StatusLine controls the status banner. Default true.
 	StatusLine *bool `toml:"status_line"`
 
+	// StatusVerbose seeds the status bar's VERBOSITY: names beside the state
+	// glyphs, the model, the key hints, and the last-interaction time. ^V
+	// toggles it for the session; this decides what it starts as. Default
+	// false, because succinct is the default the requirements asked for.
+	// (Distinct from -o/^O, which is verbose TOOL OUTPUT: a different axis.)
+	StatusVerbose *bool `toml:"status_verbose"`
+
+	// NoticeTTL is how long a notification holds the status bar's first slot
+	// before it retires, in seconds. Default 10. Zero means it stays until
+	// something displaces it.
+	NoticeTTL *int `toml:"notice_ttl"`
+
 	// Interactive controls whether the first-run wizard uses a rich
 	// bubbletea/huh-driven TUI. Default true. When false, falls back
 	// to plain numbered prompts (the pre-TUI behavior). Useful for
@@ -593,6 +605,24 @@ func (l *Loaded) StatusLine() bool {
 		return true
 	}
 	return *l.Config.CLI.StatusLine
+}
+
+// StatusVerbose seeds the status bar's verbosity. Default false: succinct is
+// what the requirements make the default, and ^V is how a session changes it.
+func (l *Loaded) StatusVerbose() bool {
+	if l.Config.CLI.StatusVerbose == nil {
+		return false
+	}
+	return *l.Config.CLI.StatusVerbose
+}
+
+// NoticeTTL is how long a notification holds the bar's first slot. Default 10s;
+// zero means it stays until displaced.
+func (l *Loaded) NoticeTTL() time.Duration {
+	if l.Config.CLI.NoticeTTL == nil {
+		return 10 * time.Second
+	}
+	return time.Duration(*l.Config.CLI.NoticeTTL) * time.Second
 }
 
 // Interactive returns whether the first-run wizard should use a rich

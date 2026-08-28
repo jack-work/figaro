@@ -178,6 +178,46 @@ else
   echo "FAIL: the right group is missing from the split bar"; fail=1
 fi
 
+# 5. THE PICKER. The help panel is the list that tells you how to scroll, and
+#    until the picker landed it was the one list you could not scroll: taller
+#    than the drawer's window, its bottom was simply unreachable.
+tmux -S "$SOCK" resize-window -t bar -x 100 -y 25 2>/dev/null
+sleep 1
+tmux -S "$SOCK" send-keys -t bar:0 Escape; sleep 0.4
+tmux -S "$SOCK" send-keys -t bar:0 '?'; sleep 1
+first=$(tmux -S "$SOCK" capture-pane -p -t bar:0 | grep -c "more")
+top=$(tmux -S "$SOCK" capture-pane -p -t bar:0 | grep -m1 "exit; keeps the turn running")
+tmux -S "$SOCK" send-keys -t bar:0 j; sleep 0.4
+tmux -S "$SOCK" send-keys -t bar:0 j; sleep 0.4
+tmux -S "$SOCK" send-keys -t bar:0 j; sleep 0.6
+after=$(tmux -S "$SOCK" capture-pane -p -t bar:0)
+if [[ -z "$top" ]]; then
+  echo "FAIL: the help panel never showed its first row"; fail=1
+elif [[ "$after" == *"exit; keeps the turn running"* ]]; then
+  echo "FAIL: j did not scroll the help panel"; fail=1
+else
+  echo "ok   j scrolled the help panel past its first row"
+fi
+if [[ "$after" == *"more"* ]]; then
+  echo "ok   the picker says what is out of view: $(echo "$after" | grep -m1 -o '… [0-9]* more[a-z ]*')"
+else
+  echo "FAIL: no truncation marker on a scrolled picker"; fail=1
+fi
+# G to the end, gg back to the top.
+tmux -S "$SOCK" send-keys -t bar:0 G; sleep 0.6
+if tmux -S "$SOCK" capture-pane -p -t bar:0 | grep -q "close help"; then
+  echo "ok   G reached the end of the help list"
+else
+  echo "FAIL: G did not reach the end of the help list"; fail=1
+fi
+tmux -S "$SOCK" send-keys -t bar:0 g; sleep 0.2; tmux -S "$SOCK" send-keys -t bar:0 g; sleep 0.6
+if tmux -S "$SOCK" capture-pane -p -t bar:0 | grep -q "exit; keeps the turn running"; then
+  echo "ok   gg returned to the top"
+else
+  echo "FAIL: gg did not return to the top"; fail=1
+fi
+
+tmux -S "$SOCK" send-keys -t bar:0 Escape; sleep 0.3
 tmux -S "$SOCK" send-keys -t bar:0 q
 sleep 1
 exit $fail

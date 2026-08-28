@@ -113,6 +113,10 @@ type sessionStatus struct {
 	lastAt time.Time
 	// model is shown under verbose only.
 	model string
+	// noticeUntil is when the bar's alert retires; see retireAlert.
+	noticeUntil time.Time
+	// noticeTTL is how long a posted alert holds the slot. Zero: forever.
+	noticeTTL time.Duration
 	// notice is trouble the user must see, an error reason, an interrupt
 	// notice: carried IN the frame buffer instead of being written straight
 	// to the terminal. While the pager is up there is no scrollback to write
@@ -126,16 +130,40 @@ func newSessionStatus(figaroID string, startedAt time.Time) *sessionStatus {
 	return &sessionStatus{figaroID: figaroID, startedAt: startedAt}
 }
 
-// setNotice publishes (or clears, with "") the red left-hand notice. Newlines
-// are folded to spaces: the status row is one physical line, and the full text
-// is reprinted to the shell by leaveTranscript, so nothing is lost by
-// flattening it here.
+// setNotice publishes (or clears, with "") the bar's alert: the newest thing
+// that happened, in the first left-hand slot. Newlines are folded to spaces --
+// the slot is one field on one row, and the full text is reprinted to the
+// shell by leaveTranscript, so nothing is lost by flattening it here.
+//
+// IT RETIRES ON ITS OWN. An alert holds the slot for noticeTTL and then goes,
+// or a newer one displaces it, whichever is first. Nothing waits to be
+// dismissed: a bar item that must be acknowledged is a bar item that is still
+// there tomorrow. Retirement happens on the ticker (retireAlert), because a
+// clock cannot fire inside a pure renderer.
 func (s *sessionStatus) setNotice(text string) {
 	if s == nil {
 		return
 	}
 	s.mu.Lock()
 	s.notice = strings.Join(strings.Fields(text), " ")
+	switch {
+	case s.notice == "":
+		s.noticeUntil = time.Time{}
+	case s.noticeTTL > 0:
+		s.noticeUntil = time.Now().Add(s.noticeTTL)
+	default:
+		s.noticeUntil = time.Time{}
+	}
+	s.mu.Unlock()
+}
+
+// setNoticeTTL configures how long an alert holds the slot.
+func (s *sessionStatus) setNoticeTTL(d time.Duration) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.noticeTTL = d
 	s.mu.Unlock()
 }
 
@@ -429,6 +457,49 @@ func formatCtxCell(tokens int) string {
 	default:
 		return fmt.Sprintf("%d", tokens)
 	}
+}
+
+// setNotice is gone; post() is how trouble reaches the bar. See notify().
+//
+// noticeUntil is when the current alert retires. Zero means it stays until
+// something displaces it, which is what a TTL of 0 configures.
+//
+// retireAlert clears an expired alert and reports whether it did, so the
+// ticker knows whether this frame needs a repaint. It is the ONLY thing in the
+// bar that is a function of the wall clock, and it deliberately lives here
+// rather than in statusView.render, which must stay pure.
+func (s *sessionStatus) retireAlert(now time.Time) bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.notice == "" || s.noticeUntil.IsZero() || now.Before(s.noticeUntil) {
+		return false
+	}
+	s.notice, s.noticeUntil = "", time.Time{}
+	return true
+}
+
+// toggleVerbose flips the bar's verbosity and reports the new value.
+func (s *sessionStatus) toggleVerbose() bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.verbose = !s.verbose
+	return s.verbose
+}
+
+// setVerbose seeds it from config.
+func (s *sessionStatus) setVerbose(v bool) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.verbose = v
+	s.mu.Unlock()
 }
 
 // barVerbose reports the BAR's verbosity under the lock. It is a method rather

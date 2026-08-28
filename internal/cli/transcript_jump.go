@@ -683,3 +683,20 @@ func (t *transcript) jumpFooter() (string, bool) {
 	}
 	return "", false
 }
+
+// cmdPaste is ^V in the command box: the system clipboard, folded onto one
+// line. It reverses the "deliberately unbound" note in keymap.go, and the
+// reversal is Gluck's: that argument was that quoting had no use in a box
+// where every printable byte is already literal text, and paste is a different
+// verb with an obvious one.
+func cmdPaste(t *transcript) {
+	text, err := clipboardRead()
+	if err != nil {
+		t.noteOrClear("paste: " + err.Error())
+		return
+	}
+	if text = pasteIntoLine(text); text == "" {
+		return
+	}
+	t.edit(func(e *lineEditor) { e.insert(text) })
+}

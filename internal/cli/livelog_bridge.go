@@ -475,13 +475,21 @@ func (t *livelogTurn) abandon(st turnStatus) {
 }
 
 func (t *livelogTurn) tick() {
+	// THE TICKER RETIRES THE ALERT, and this is the whole of the status bar's
+	// liveness. An alert expires on a clock, so something has to repaint when
+	// NOTHING arrived -- otherwise it lingers until the next keystroke, which
+	// reads as randomness rather than as a timeout. This ticker is already
+	// alive and already holds the render lock, so it costs one comparison per
+	// frame and needs no second scheduler and no teardown path.
+	retired := t.status.retireAlert(time.Now())
+
 	// Only a running tool's spinner needs the periodic repaint. With nothing
 	// animating the tick would recompose + diff the whole open message every
 	// frame for a no-op paint: pure waste. Content changes still repaint via
 	// the OnLive/OnClosed hooks, so gating here is invisible. (The transcript
 	// branch already did this; the inline branch didn't.)
 	thinking := t.status.advance()
-	if !t.client.OpenAnimating() && !thinking {
+	if !t.client.OpenAnimating() && !thinking && !retired {
 		return
 	}
 	if t.tr.active {

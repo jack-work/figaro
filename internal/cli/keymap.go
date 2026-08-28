@@ -176,6 +176,18 @@ var keymap = []keyBinding{
 		open: opensPager, help: helpVerbose, input: inputToggleVerbose,
 	},
 	{
+		// ^V is the BAR's verbosity: state names, the model, the hints and the
+		// last-interaction time. A different axis from ^O above, which is
+		// verbose TOOL OUTPUT -- and the two are deliberately different keys
+		// because they answer different questions.
+		chord: byteChord(0x16), modes: inAnyBox &^ inJumpBox,
+		open: opensPager, help: helpBarVerbose, input: inputToggleBarVerbose,
+	},
+	{
+		chord: ctrlChord('v'), modes: inAnyBox &^ inJumpBox,
+		open: opensPager, help: helpNone, input: inputToggleBarVerbose,
+	},
+	{
 		// In incipit 'y' copies the aria id, a feature of its own, not a
 		// reason to open the pager. In the search box it is literal text.
 		chord: byteChord('y'), modes: inIncipit | inTranscript | inPanel,
@@ -422,6 +434,8 @@ var keymap = []keyBinding{
 
 	// Completion.
 	{chord: byteChord(0x09), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdComplete, pager: cmdComplete},
+	{chord: byteChord(0x16), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdPaste, pager: cmdPaste},
+	{chord: ctrlChord('v'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdPaste},
 	{chord: metaChord('?'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdListComplete},
 	{chord: metaChord('*'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdInsertComplete},
 
@@ -448,11 +462,14 @@ var keymap = []keyBinding{
 
 	// NOT BOUND, each for a reason:
 	//
-	//   ^V / ^Q (quoted-insert)  Every printable byte in this box is ALREADY
+	//   ^Q (quoted-insert)      Every printable byte in this box is ALREADY
 	//                            literal text -- there is no binding to escape
 	//                            past -- and the only thing quoting could add
 	//                            is a control character the line can neither
-	//                            render nor send.
+	//                            render nor send. (^V was on this list for the
+	//                            same reason and has been taken off it: it is
+	//                            PASTE here, which is a different verb with an
+	//                            obvious use.)
 	//   ^X <anything>            readline's second keymap: macros (^X( ^X) ^Xe),
 	//                            ^X^U (undo, which ^_ already is), ^X Del (^U),
 	//                            ^X^R (re-read inputrc, meaningless here). A
@@ -524,6 +541,8 @@ const (
 	helpCmdHistory
 	helpCmdComplete
 	helpCmdEdit
+	helpCmdPaste
+	helpBarVerbose
 	helpCmdAbort
 	helpDrawerDrop
 )
@@ -562,6 +581,8 @@ var helpRows = []helpRow{
 	{helpDrawerDrop, "(in a list) x", "drop the selected entry (queue)"},
 	{helpYank, "y", "copy selection (or aria id if none)"},
 	{helpVerbose, "^O", "toggle verbose tool output"},
+	{helpBarVerbose, "^V", "toggle the status bar's detail (names, model, time)"},
+	{helpCmdPaste, "(in :) ^V", "paste the clipboard"},
 	{helpSelect, "^N/^P", "select next/previous node"},
 	{helpSelectExtend, "^N/^P + Shift", "extend node selection (Alt+^N/^P fallback)"},
 	{helpExpand, "Enter", "expand tools within the selection"},

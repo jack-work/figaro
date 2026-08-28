@@ -1456,3 +1456,15 @@ func termWidth() int {
 // queuedPollHz is how often the accepted-but-unplaced queue is re-read. See
 // the ticker in the stream loop for why it is a poll and not a subscription.
 const queuedPollHz = 2
+
+// inputToggleBarVerbose is ^V outside the command box: the STATUS BAR's
+// verbosity. Distinct from ^O (verbose tool output) because they answer
+// different questions -- "what is this session" versus "what did that tool
+// say" -- and sharing a key would make one of them a surprise.
+func inputToggleBarVerbose(in *interactiveInput, _ keyEvent) keyVerdict {
+	in.mu.Lock()
+	in.lt.status.toggleVerbose()
+	in.lt.render()
+	in.mu.Unlock()
+	return keyHandled
+}

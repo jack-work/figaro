@@ -1505,18 +1505,11 @@ func (t *transcript) openQueuedDrawer() {
 // queue nobody can hit `x` on.
 func (t *transcript) refreshQueuedDrawer() {
 	sel, had := t.drawer.selected()
-	t.drawer.rows = t.queuedDrawerRows()
+	keep := ""
 	if had {
-		for i, r := range t.drawer.rows {
-			if r.id == sel.id && r.id != "" {
-				t.drawer.cursor = i
-				t.drawer.scrollToCursor()
-				return
-			}
-		}
+		keep = sel.id
 	}
-	t.drawer.cursor = t.drawer.nextSelectable(-1, 1)
-	t.drawer.scrollToCursor()
+	t.drawer.replaceRows(t.queuedDrawerRows(), keep)
 }
 
 func (t *transcript) queuedDrawerRows() []drawerRow {
@@ -1741,8 +1734,28 @@ func (t *transcript) dispatch(ev keyEvent) {
 			t.render()
 			return
 		}
-		if t.drawer.kind == drawerList && t.drawer.cursor >= 0 && drawerOwnsKey(ev) {
+		// EVERY DRAWER IS NAVIGABLE, not just a selectable one. The help panel
+		// was the proof that this mattered: it is the list that tells you how
+		// to scroll, and it was the one list you could not scroll -- taller
+		// than the pane, it simply lost its bottom. Now j/k, the arrows, u/d
+		// and gg/G drive whichever drawer is open, moving a cursor where there
+		// is one and the window where there is not.
+		// A MESSAGE IS A GLANCE, NOT A LIST. It has one row and nothing to
+		// scroll, so it keeps the old rule: any key wipes it. Measured -- with
+		// motions gated on `pick != nil`, a failed `:999` note survived every
+		// keystroke, because the note is a drawer too.
+		if t.drawer.pick != nil && t.drawer.kind != drawerMessage && drawerOwnsKey(ev) {
 			t.drawer.flash = "" // any key clears the last confirmation
+			if t.drawerMotion(ev) {
+				// gg IS TWO KEYS, and the arming lives in the dispatcher's
+				// epilogue -- which this branch returns before reaching, so
+				// `g` in a drawer never armed and `gg` never fired. Measured
+				// in a pty; the unit tests press keys through a path that
+				// happened to arm it anyway.
+				t.pendG = ev.b == 'g' && !t.pendG
+				t.render()
+				return
+			}
 			if act := pagerAct.pager(modeTranscript, ev); act != nil {
 				act(t)
 				t.render()
@@ -2477,10 +2490,47 @@ func (t *transcript) cycleCompletion(dir int) {
 	t.cmdline.insert(t.completions[t.completionIdx])
 }
 
-// drawerOwnsKey reports whether a selectable drawer answers this key itself
-// rather than being dismissed by it: the selection motions and the row verbs.
+// drawerMotion runs the shared list motions against the open drawer, and
+// reports whether it took the key. ONE VOCABULARY: these are the transcript's
+// own motions, pointed at the drawer, so a reader who can move around a
+// conversation can move around a list without learning a second set.
+func (t *transcript) drawerMotion(ev keyEvent) bool {
+	h := t.drawer.visible(t.h)
+	switch {
+	case ev.b == 'j', ev.nav == navDown:
+		t.drawer.scrollBy(1, h)
+	case ev.b == 'k', ev.nav == navUp:
+		t.drawer.scrollBy(-1, h)
+	case ev.b == 'd', ev.nav == navPageDown:
+		t.drawer.halfPage(1, h)
+	case ev.b == 'u', ev.nav == navPageUp:
+		t.drawer.halfPage(-1, h)
+	case ev.b == 'G', ev.nav == navEnd:
+		t.drawer.toBottom()
+	case ev.nav == navHome:
+		t.drawer.toTop()
+	case ev.b == 'g':
+		// gg, on the transcript's own two-key discipline: the first g arms,
+		// the second acts, and pendG is set by the dispatcher's epilogue.
+		if t.pendG {
+			t.drawer.toTop()
+		}
+	default:
+		return false
+	}
+	return true
+}
+
+// drawerOwnsKey reports whether an open drawer answers this key itself rather
+// than being dismissed by it: the motions, the selection keys and the row
+// verbs. Everything else still wipes the drawer and acts, which is the rule
+// that makes a panel a glance rather than a mode.
 func drawerOwnsKey(ev keyEvent) bool {
 	switch {
+	case ev.b == 'j', ev.b == 'k', ev.b == 'u', ev.b == 'd', ev.b == 'g', ev.b == 'G':
+		return true
+	case ev.nav == navPageUp, ev.nav == navPageDown, ev.nav == navHome, ev.nav == navEnd:
+		return true
 	case ev.nav == navUp || ev.nav == navDown:
 		return true
 	case ev.b == 0x0e || ev.b == 0x10: // ^N / ^P

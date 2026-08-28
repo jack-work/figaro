@@ -29,7 +29,6 @@ package cli
 // nothing else may write to the status row ever again.
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/jack-work/figaro/internal/cmdkit"
@@ -93,43 +92,44 @@ type drawer struct {
 	// for rows and forwards keys to it; it knows nothing about drawers and the
 	// drawer knows nothing about forms. See cmdkit.LiveView.
 	live cmdkit.LiveView
-	// top is the first visible row: pagination is a window over rows, not a
-	// truncation of them, so "… N more" can be honest in both directions.
-	top int
+	// pick is the LIST, and every behaviour of one: the window, the cursor,
+	// the motions and the truncation marker. The drawer used to own a second
+	// implementation of all four (see picker.go for the three that existed).
+	// It is nil only for a drawer with no rows -- a message, or a hosted live
+	// view that renders itself.
+	pick *picker
 }
 
 func (d *drawer) open() bool { return d.kind != drawerNone }
 
 // close empties the drawer. Esc reaches here from every kind.
 func (d *drawer) close() {
-	if d.live != nil {
-		d.live.Close()
-	}
 	*d = drawer{}
 }
 
 // showLive hosts a verb that renders itself. The drawer owns the region and
 // the dismissal; the view owns everything inside it.
 func (d *drawer) showLive(name string, v cmdkit.LiveView) {
-	*d = drawer{kind: drawerLive, name: name, live: v, cursor: -1}
+	d.kind, d.name, d.title = drawerLive, name, ""
+	d.flash, d.pick = "", nil
+	d.live = v
 }
 
 // showMessage is the one-line drawer: an error, a result, a note. It carries
 // its own dismissal hint because a message that cannot be dismissed is a
 // message that has taken the screen hostage.
 func (d *drawer) showMessage(text string) {
-	*d = drawer{kind: drawerMessage, name: "message", cursor: -1,
-		rows: []drawerRow{staticRow(text)}}
+	d.kind, d.name, d.title = drawerMessage, "message", ""
+	d.flash, d.live = "", nil
+	d.pick = newPicker([]drawerRow{staticRow("  " + text)}, false)
 }
 
 // showList opens a list drawer, selecting the first selectable row when the
 // caller asked for selection.
 func (d *drawer) showList(name, title string, rows []drawerRow, selectable bool) {
-	*d = drawer{kind: drawerList, name: name, title: title, rows: rows, cursor: -1}
-	if selectable {
-		d.cursor = d.nextSelectable(-1, 1)
-		d.scrollToCursor()
-	}
+	d.kind, d.name, d.title = drawerList, name, title
+	d.flash, d.live = "", nil
+	d.pick = newPicker(rows, selectable)
 }
 
 // visible is how many rows of the list fit: the fixed page, bounded by what the
@@ -153,76 +153,81 @@ func (d *drawer) visible(h int) int {
 
 // nextSelectable finds the next selectable row from i in direction dir (+1/-1),
 // or i itself when there is none.
-func (d *drawer) nextSelectable(i, dir int) int {
-	for j := i + dir; j >= 0 && j < len(d.rows); j += dir {
-		if d.rows[j].selectable() {
-			return j
-		}
-	}
-	if i >= 0 && i < len(d.rows) && d.rows[i].selectable() {
-		return i
-	}
-	// Nothing in that direction: find the first selectable row at all.
-	for j := 0; j < len(d.rows); j++ {
-		if d.rows[j].selectable() {
-			return j
-		}
-	}
-	return -1
-}
+// THE LIST BEHAVIOURS ARE THE PICKER'S. What used to be six methods here --
+// nextSelectable, moveSelection, scrollToCursor, scrollToCursorIn, selected,
+// removeSelected -- was a second implementation of what the completion menu
+// already did, differing from it in the marker it drew and in nothing else.
+// These forward; picker.go decides.
 
-// moveSelection is ^N/^P inside a list drawer.
 func (d *drawer) moveSelection(dir int, h int) {
-	if d.kind != drawerList || d.cursor < 0 {
+	if d.pick == nil {
 		return
 	}
-	if n := d.nextSelectable(d.cursor, dir); n != d.cursor {
-		d.cursor = n
-	}
-	d.scrollToCursorIn(d.visible(h))
+	d.pick.height = clampInt(h, 1, pickerRows)
+	d.pick.move(dir)
 }
 
-func (d *drawer) scrollToCursor() { d.scrollToCursorIn(drawerPageRows) }
+// scrollBy is j/k and the arrow cluster: it moves the SELECTION in a drawer
+// that has one and the WINDOW in a drawer that does not, which is what makes
+// `j` mean one thing to a reader across every drawer.
+func (d *drawer) scrollBy(dir int, h int) { d.moveSelection(dir, h) }
 
-// scrollToCursorIn keeps the selected row inside the visible window.
-func (d *drawer) scrollToCursorIn(n int) {
-	if d.cursor < 0 {
+func (d *drawer) halfPage(dir int, h int) {
+	if d.pick == nil {
 		return
 	}
-	if d.cursor < d.top {
-		d.top = d.cursor
+	d.pick.height = clampInt(h, 1, pickerRows)
+	d.pick.half(dir)
+}
+
+func (d *drawer) toTop() {
+	if d.pick != nil {
+		d.pick.home()
 	}
-	if d.cursor >= d.top+n {
-		d.top = d.cursor - n + 1
-	}
-	if d.top < 0 {
-		d.top = 0
+}
+func (d *drawer) toBottom() {
+	if d.pick != nil {
+		d.pick.end()
 	}
 }
 
-// selected is the row under the cursor, if any.
 func (d *drawer) selected() (drawerRow, bool) {
-	if d.kind != drawerList || d.cursor < 0 || d.cursor >= len(d.rows) {
+	if d.kind != drawerList || d.pick == nil {
 		return drawerRow{}, false
 	}
-	return d.rows[d.cursor], true
+	return d.pick.selected()
 }
 
-// removeSelected drops the selected row and keeps the selection sensible: what
-// `x` on a queued message does to the list it was addressing.
-func (d *drawer) removeSelected() {
-	if d.cursor < 0 || d.cursor >= len(d.rows) {
+// replaceRows swaps the list under a live cursor, keeping the selection ON THE
+// SAME ROW ID rather than at the same index: a queue that re-sorts under the
+// cursor on every poll is a queue nobody can hit `x` on, and an index-keyed
+// restore is how `x` came to drop the wrong message.
+func (d *drawer) replaceRows(rows []drawerRow, keepID string) {
+	if d.pick == nil {
+		d.pick = newPicker(rows, true)
 		return
 	}
-	d.rows = append(d.rows[:d.cursor], d.rows[d.cursor+1:]...)
-	d.cursor = d.nextSelectable(d.cursor-1, 1)
-	d.scrollToCursor()
+	sel := d.pick.selectable()
+	top := d.pick.top
+	d.pick = newPicker(rows, sel)
+	d.pick.top = top
+	if keepID != "" {
+		for i, r := range rows {
+			if r.id == keepID {
+				d.pick.cursor = i
+				break
+			}
+		}
+	}
+	d.pick.follow()
 }
 
-// lines renders the drawer's body: the title, the visible page, and a marker at
-// each end saying what is out of view. THE MARKERS ARE NOT DECORATION -- a list
-// that silently shows ten of seven hundred is a list that lies about the size of
-// the thing you are looking at.
+func (d *drawer) removeSelected() {
+	if d.pick != nil {
+		d.pick.remove()
+	}
+}
+
 func (d *drawer) lines(w, h int) []string {
 	if !d.open() {
 		return nil
@@ -234,25 +239,17 @@ func (d *drawer) lines(w, h int) []string {
 		}
 		return rows
 	}
-	n := d.visible(h)
-	if d.top > max(len(d.rows)-n, 0) {
-		d.top = max(len(d.rows)-n, 0)
-	}
-	out := make([]string, 0, n+3)
+	out := make([]string, 0, d.visible(h)+3)
 	if d.title != "" {
 		out = append(out, drawerGray(clipToWidth(d.title, w)))
 	}
-	if d.top > 0 {
-		out = append(out, drawerGray(clipToWidth(fmt.Sprintf("  … %d more", d.top), w)))
+	if d.pick == nil {
+		return out
 	}
-	end := min(d.top+n, len(d.rows))
-	for i := d.top; i < end; i++ {
-		out = append(out, d.rowLine(i, w))
-	}
-	if end < len(d.rows) {
-		out = append(out, drawerGray(clipToWidth(fmt.Sprintf("  … %d more", len(d.rows)-end), w)))
-	}
-	return out
+	// EVERY LIST IS A PICKER. The window, the cursor, the selection marker and
+	// the "… N more" on both edges come from one place; what a drawer still
+	// owns is its rows and its verb keys.
+	return append(out, d.pick.lines(drawerID(d.name), w, d.visible(h)-len(out))...)
 }
 
 // rowLine draws one row, with the selection cue in the gutter the transcript

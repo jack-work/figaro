@@ -245,6 +245,7 @@ func TestOpensTranscript_MatchesTheHandKeptList(t *testing.T) {
 		':',           // command line (see above)
 		'?', '!', 'Q', // help / figaro status / queued-prompt panels
 		0x0f,       // ^O verbosity
+		0x16,       // ^V the status bar's own verbosity: an opener exactly as ^O is
 		0x0e, 0x10, // ^N/^P node selection
 		0x0d, 0x0a, // Enter: expand tools
 	} {
@@ -340,6 +341,8 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  (in a list) x       drop the selected entry (queue)",
 		"  y                   copy selection (or aria id if none)",
 		"  ^O                  toggle verbose tool output",
+		"  ^V                  toggle the status bar's detail (names, model, time)",
+		"  (in :) ^V           paste the clipboard",
 		"  ^N/^P               select next/previous node",
 		"  ^N/^P + Shift       extend node selection (Alt+^N/^P fallback)",
 		"  Enter               expand tools within the selection",

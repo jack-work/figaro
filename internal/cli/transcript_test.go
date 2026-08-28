@@ -204,10 +204,20 @@ func TestTranscript_HelpPanel(t *testing.T) {
 	if tr.showing("help") {
 		t.Fatalf("? should close the help panel")
 	}
+	// THE HELP PANEL SCROLLS NOW, and that is the point: it is the list that
+	// tells you how to scroll, and it used to be the one list you could not --
+	// taller than the pane, it lost its bottom with no way to reach it. `j`
+	// therefore moves it and does NOT wipe it, which reverses the old
+	// any-key-dismisses rule for drawers that have something to move.
 	tr.key('?')
-	tr.key('j') // any key wipes the panel and still acts
+	tr.key('j')
+	if !tr.showing("help") {
+		t.Fatalf("j should scroll the help panel, not wipe it")
+	}
+	// Something with nothing to move still goes away on any key.
+	tr.key('n')
 	if tr.showing("help") {
-		t.Fatalf("a nav key should wipe the help panel")
+		t.Fatalf("a key the drawer does not own (n) should still wipe it")
 	}
 	if !tr.active {
 		t.Fatalf("help panel interactions must never exit the pager")
