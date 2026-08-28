@@ -108,10 +108,36 @@ func (d *drawer) close() {
 
 // showLive hosts a verb that renders itself. The drawer owns the region and
 // the dismissal; the view owns everything inside it.
+// itemView is a live view that has a LIST rather than a screen. The pit takes
+// its rows and drives them with the picker; the view keeps only the verbs that
+// are its own. A view that does not implement this still renders itself.
+type itemView interface {
+	Items(width int) []drawerRow
+	Activate(path string)
+}
+
 func (d *drawer) showLive(name string, v cmdkit.LiveView) {
 	d.kind, d.name, d.title = drawerLive, name, ""
 	d.flash, d.pick = "", nil
 	d.live = v
+	if iv, ok := v.(itemView); ok {
+		d.pick = newPicker(iv.Items(80), true)
+	}
+}
+
+// refreshLive re-reads an itemised view's rows, keeping the cursor on the same
+// PATH rather than the same index: a form that grows a key under the cursor
+// must not move the selection out from under it.
+func (d *drawer) refreshLive(w int) {
+	iv, ok := d.live.(itemView)
+	if !ok || d.pick == nil {
+		return
+	}
+	keep := ""
+	if row, had := d.pick.selected(); had {
+		keep = row.id
+	}
+	d.replaceRows(iv.Items(w), keep)
 }
 
 // showMessage is the one-line drawer: an error, a result, a note. It carries
@@ -239,12 +265,15 @@ func (d *drawer) lines(w, h int) []string {
 	if !d.open() {
 		return nil
 	}
-	if d.kind == drawerLive {
+	if d.kind == drawerLive && d.pick == nil {
 		rows := d.live.Rows(w, d.visible(h))
 		for i, r := range rows {
 			rows[i] = drawerGray(clipToWidth(r, w))
 		}
 		return rows
+	}
+	if d.kind == drawerLive {
+		d.refreshLive(w) // the view is live: its rows change under the pit
 	}
 	out := make([]string, 0, d.visible(h)+3)
 	if d.title != "" {

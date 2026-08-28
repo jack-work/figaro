@@ -1728,10 +1728,18 @@ func (t *transcript) dispatch(ev keyEvent) {
 		// right for help and status -- you glance and move on -- and wrong the
 		// moment a drawer is a thing you navigate: ^N used to move the
 		// selection and dismiss the list it was selecting in, in that order.
-		// A HOSTED VERB GETS FIRST REFUSAL on every key. It reports what it
-		// took; anything it declines falls through to the dismissal below, so
-		// Esc still closes the drawer without the view knowing what one is.
-		if t.drawer.kind == drawerLive && ev.nav == navNone && t.drawer.live.Key(ev.b) {
+		// A HOSTED VERB GETS FIRST REFUSAL on every key -- UNLESS IT HAS A
+		// LIST, in which case the pit owns everything a finger does to move
+		// and the view keeps only the verbs that are its own. That inversion
+		// is the fix for `form show`: the view was taking j/k and running its
+		// own cursor against its own window, which disagreed with the pit's,
+		// so the highlight appeared to skip rows.
+		if t.drawer.kind == drawerLive && t.drawer.pick != nil {
+			if t.pitVerb(ev) {
+				t.render()
+				return
+			}
+		} else if t.drawer.kind == drawerLive && ev.nav == navNone && t.drawer.live.Key(ev.b) {
 			t.render()
 			return
 		}
@@ -2489,6 +2497,30 @@ func (t *transcript) cycleCompletion(dir int) {
 		t.cmdline.backspace()
 	}
 	t.cmdline.insert(t.completions[t.completionIdx])
+}
+
+// pitVerb runs an itemised live view's OWN verbs -- Enter expands, y yanks --
+// against the row the PIT has selected. The view no longer has a cursor to
+// disagree about.
+func (t *transcript) pitVerb(ev keyEvent) bool {
+	iv, ok := t.drawer.live.(itemView)
+	if !ok {
+		return false
+	}
+	row, has := t.drawer.selected()
+	switch {
+	case ev.b == '\r' || ev.b == '\n':
+		if has && row.id != "" {
+			iv.Activate(row.id)
+		}
+		return true
+		// 'y' is NOT claimed here: the input loop already yanks a selected pit row
+		// (see inputYank), and two owners for one key is how a yank comes to copy
+		// one thing and report another.
+	}
+	_ = row
+	_ = has
+	return t.drawerMotion(ev)
 }
 
 // drawerMotion runs the shared list motions against the open drawer, and

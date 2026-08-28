@@ -230,6 +230,57 @@ func (v *formView) yank() {
 // to a *os.File with \x1b[H\x1b[2J and an absolute jump to the last line. That
 // is why `form listen` could not be hosted: it did not render, it TOOK a
 // screen.
+// Items is how a form takes part in THE PIT: it hands over rows and stops
+// owning a list. It used to keep its own rows, cursor and top and its own j/k
+// handler -- a fourth implementation beside the picker -- and it computed its
+// window as height-2 while the pit reserved its own, so the cursor and the
+// visible range disagreed and the highlight appeared to skip entries.
+//
+// Now the view supplies content and the two VERBS that are its own (Enter
+// expands a branch, y yanks a value); everything a finger does to move is the
+// picker's, once, for every pit.
+func (v *formView) Items(width int) []drawerRow {
+	snap, version, gaps := v.mirror.state()
+	if width <= 0 {
+		width = 80
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.rows = flattenFormTree(buildFormTree(snap), v.open, nil)
+
+	head := fmt.Sprintf("form %s · v%d · %d keys · %d rows", v.aria, version, snap.Len(), len(v.rows))
+	if gaps > 0 {
+		head += fmt.Sprintf(" · %d resync", gaps)
+	}
+	out := make([]drawerRow, 0, len(v.rows)+1)
+	out = append(out, staticRow(clipLine(head, width)))
+	for _, n := range v.rows {
+		// EVERY ROW IS SELECTABLE, which is the other half of the bug: a form's
+		// child rows were not, so a motion that stepped to the next selectable
+		// row jumped over whole properties. A form is a list of things you
+		// look at; all of them can hold the cursor.
+		out = append(out, drawerRow{
+			text: renderFormRow(n, width, false),
+			yank: yankFormNode(n),
+			id:   n.path,
+		})
+	}
+	return out
+}
+
+// Activate is Enter on a row: expand or collapse that branch.
+func (v *formView) Activate(path string) {
+	v.mu.Lock()
+	for _, n := range v.rows {
+		if n.path == path {
+			openBranch(n, v.open)
+			break
+		}
+	}
+	v.mu.Unlock()
+	v.changed()
+}
+
 func (v *formView) Rows(width, height int) []string {
 	snap, version, gaps := v.mirror.state()
 	if width <= 0 {
