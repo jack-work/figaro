@@ -105,8 +105,14 @@ type drawer struct {
 
 func (d *drawer) open() bool { return d.kind != drawerNone }
 
-// close empties the drawer. Esc reaches here from every kind.
+// close empties the pit, AND RELEASES WHAT IT WAS HOSTING. A live view holds a
+// subscription and a socket; four `:form show`s and four Escs used to leave
+// four of each behind, every one of them still asking the pager to repaint on
+// every delta of a form nobody is looking at.
 func (d *drawer) close() {
+	if d.live != nil {
+		d.live.Close()
+	}
 	*d = drawer{}
 }
 
@@ -121,27 +127,27 @@ type itemView interface {
 }
 
 func (d *drawer) showLive(name string, v cmdkit.LiveView) {
+	if d.live != nil && d.live != v {
+		d.live.Close() // one pit, one hosted view
+	}
 	d.kind, d.name, d.title = drawerLive, name, ""
 	d.flash, d.pick = "", nil
 	d.live = v
 	if iv, ok := v.(itemView); ok {
-		d.pick = newPicker(iv.Items(80), true)
+		d.pick = newPicker(iv.Items(80))
 	}
 }
 
-// refreshLive re-reads an itemised view's rows, keeping the cursor on the same
-// PATH rather than the same index: a form that grows a key under the cursor
-// must not move the selection out from under it.
+// refreshLive re-reads an itemised view's rows. The cursor stays on the same
+// PATH rather than the same index -- a form that grows a key under the cursor
+// must not move the selection out from under it -- and that is the picker's
+// job now, so this is a row swap and nothing else.
 func (d *drawer) refreshLive(w int) {
 	iv, ok := d.live.(itemView)
 	if !ok || d.pick == nil {
 		return
 	}
-	keep := ""
-	if row, had := d.pick.selected(); had {
-		keep = row.id
-	}
-	d.replaceRows(iv.Items(w), keep)
+	d.pick.setRows(iv.Items(w), "")
 }
 
 // showMessage is the one-line drawer: an error, a result, a note. It carries
@@ -150,15 +156,16 @@ func (d *drawer) refreshLive(w int) {
 func (d *drawer) showMessage(text string) {
 	d.kind, d.name, d.title = drawerMessage, "message", ""
 	d.flash, d.live = "", nil
-	d.pick = newPicker([]drawerRow{staticRow("  " + text)}, false)
+	d.pick = newPicker([]drawerRow{staticRow("  " + text)})
 }
 
-// showList opens a list drawer, selecting the first selectable row when the
-// caller asked for selection.
-func (d *drawer) showList(name, title string, rows []drawerRow, selectable bool) {
+// showList opens a list drawer. Whether it has a cursor is the ROWS' answer:
+// help and status are built of staticRow and get none; the queue and command
+// output carry ids and do.
+func (d *drawer) showList(name, title string, rows []drawerRow) {
 	d.kind, d.name, d.title = drawerList, name, title
 	d.flash, d.live = "", nil
-	d.pick = newPicker(rows, selectable)
+	d.pick = newPicker(rows)
 }
 
 // visible is how many rows of the list fit: the fixed page, bounded by what the
@@ -252,35 +259,25 @@ func (d *drawer) toBottom() {
 	}
 }
 
+// selected is the row under the cursor, in WHATEVER pit is open. It used to
+// answer only for a drawerList, which is how a hosted form came to have a
+// highlight that Enter and `y` could not see: the pit drew the picker's cursor
+// and then told every verb there was no selection.
 func (d *drawer) selected() (drawerRow, bool) {
-	if d.kind != drawerList || d.pick == nil {
+	if d.pick == nil {
 		return drawerRow{}, false
 	}
 	return d.pick.selected()
 }
 
-// replaceRows swaps the list under a live cursor, keeping the selection ON THE
-// SAME ROW ID rather than at the same index: a queue that re-sorts under the
-// cursor on every poll is a queue nobody can hit `x` on, and an index-keyed
-// restore is how `x` came to drop the wrong message.
+// replaceRows swaps the list under a live cursor. See picker.setRows: the
+// window, the height and the selection are the picker's to keep.
 func (d *drawer) replaceRows(rows []drawerRow, keepID string) {
 	if d.pick == nil {
-		d.pick = newPicker(rows, true)
+		d.pick = newPicker(rows)
 		return
 	}
-	sel := d.pick.selectable()
-	top := d.pick.top
-	d.pick = newPicker(rows, sel)
-	d.pick.top = top
-	if keepID != "" {
-		for i, r := range rows {
-			if r.id == keepID {
-				d.pick.cursor = i
-				break
-			}
-		}
-	}
-	d.pick.follow()
+	d.pick.setRows(rows, keepID)
 }
 
 func (d *drawer) removeSelected() {

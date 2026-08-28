@@ -234,6 +234,68 @@ if [[ "$(echo "$qtail" | sed -n 3p)" == *"───"* ]]; then
 else
   echo "ok   no closing rule between the drawer and the bar"
 fi
+
+# 6b. THE QUEUE'S CURSOR, and the bug it exists for: the pit is opened by hand
+#     while the queue is EMPTY -- one row reading "(none)", which is chrome --
+#     and the rows arrive afterwards. The picker used to be told at birth
+#     whether it had a cursor, so it stayed cursorless for the rest of its life
+#     and ^N did nothing until you closed the pit and opened it again.
+hl() { tmux -S "$SOCK" capture-pane -p -e -t bar:0 | grep -a "48;5;237m" | head -1 | sed 's/\x1b\[[0-9;]*m//g' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'; }
+
+tmux -S "$SOCK" send-keys -t bar:0 Escape; sleep 0.4   # section 6 left the pit open
+tmux -S "$SOCK" send-keys -t bar:0 Q; sleep 1          # open it EMPTY
+if [[ -n "$(hl)" ]]; then
+  echo "FAIL: an empty queue highlights a row: [$(hl)]"; fail=1
+else
+  echo "ok   the empty queue pit selects nothing"
+fi
+# A turn that takes its time, so the next two prompts are QUEUED rather than run.
+echo 8 > "$DIR/req.jsonl.delay"
+"$BIN" send -f --id "$ARIA" -- "slow turn" >/dev/null 2>&1
+sleep 1
+"$BIN" send -f --id "$ARIA" -- "queued alpha" >/dev/null 2>&1
+"$BIN" send -f --id "$ARIA" -- "queued beta" >/dev/null 2>&1
+sleep 3
+echo "daemon queue: [$("$BIN" queue ls --id "$ARIA" 2>&1 | tr '\n' '|')]"
+qrows=$(tmux -S "$SOCK" capture-pane -p -t bar:0 | grep -c "queued ")
+first=$(hl)
+echo "queue rows: $qrows, first highlight: [$first]"
+if (( qrows >= 2 )); then
+  echo "ok   the queued prompts reached the open pit"
+else
+  echo "FAIL: the queue pit never filled ($qrows rows)"; fail=1
+  tmux -S "$SOCK" capture-pane -p -t bar:0 | tail -6 | sed 's/^/    |/'
+fi
+if [[ -n "$first" ]]; then
+  echo "ok   the refreshed queue selects a row: [$first]"
+else
+  echo "FAIL: the queue filled and nothing is selected"; fail=1
+fi
+tmux -S "$SOCK" send-keys -t bar:0 C-n; sleep 0.8
+second=$(hl)
+if [[ -n "$second" && "$second" != "$first" ]]; then
+  echo "ok   ^N moves the selection in a queue that filled while open: [$second]"
+else
+  echo "FAIL: ^N did nothing in the refreshed queue ([$first] → [$second])"; fail=1
+fi
+echo 0 > "$DIR/req.jsonl.delay"
+tmux -S "$SOCK" send-keys -t bar:0 Escape; sleep 0.4
+for _ in $(seq 60); do
+  [[ "$("$BIN" status "$ARIA" -j 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("state",""))')" == idle ]] && break
+  sleep 1
+done
+
+# 6c. THE RULE ENDS WITH THE POSITION. It used to be capped with " ───", so the
+#     one figure on the rule stopped three cells short of the edge the context
+#     figure below it is flush to.
+rule=$(tmux -S "$SOCK" capture-pane -p -t bar:0 | grep -m1 "─.*/" | sed 's/[[:space:]]*$//')
+echo "rule: [${rule: -28}]"
+if [[ "$rule" == *"───" ]]; then
+  echo "FAIL: the rule still caps the position with dashes"; fail=1
+else
+  echo "ok   the page position is the last thing on the rule"
+fi
+
 tmux -S "$SOCK" send-keys -t bar:0 Escape; sleep 0.4
 
 # 7. 'm' IS MORE. ^V never worked and was never opened in a terminal.
@@ -253,19 +315,69 @@ else
   echo "FAIL: m did not toggle back off"; fail=1
 fi
 
-# 8. FORM SHOW: j must scroll it a ROW at a time, not skip whole properties.
-tmux -S "$SOCK" send-keys -t bar:0 ':'; sleep 0.5
-tmux -S "$SOCK" send-keys -t bar:0 -l "form listen"; sleep 0.5
+# 8. READING A FORM IS ONE THING. `form show` and `form listen` are the same
+#    live pit now -- `show` used to be captured as TEXT and pasted into an
+#    output pit whose rows are lines, which is why its selection skipped whole
+#    properties. Both spellings must land on the same view, with a selection.
+for verb in "form listen" "form show" "state show" "form"; do
+  tmux -S "$SOCK" send-keys -t bar:0 ':'; sleep 0.5
+  tmux -S "$SOCK" send-keys -t bar:0 -l "$verb"; sleep 0.5
+  tmux -S "$SOCK" send-keys -t bar:0 Enter; sleep 2
+  formrow=$(bar)
+  if [[ "$formrow" == *"𝄢"* ]]; then
+    echo "ok   :$verb opens the form pit (𝄢)"
+  else
+    echo "FAIL: :$verb did not open the form pit: [$formrow]"; fail=1
+  fi
+  if [[ "$formrow" == *"𝄞"* ]]; then
+    echo "FAIL: the form view borrowed the notification clef"; fail=1
+  fi
+  if [[ -z "$(hl)" ]]; then
+    echo "FAIL: :$verb opened a form pit with no selected row"; fail=1
+  fi
+  tmux -S "$SOCK" send-keys -t bar:0 Escape; sleep 0.5
+done
+
+# 8a. ENTER EXPANDS A BRANCH, which is only possible if the pit's selection is
+#     visible to the view's own verbs. It was not: selected() answered for a
+#     list pit only, so a hosted form drew a highlight nothing could act on.
+tmux -S "$SOCK" send-keys -t bar:0 ':'; sleep 0.4
+tmux -S "$SOCK" send-keys -t bar:0 -l "form show"; sleep 0.4
 tmux -S "$SOCK" send-keys -t bar:0 Enter; sleep 2
-formrow=$(bar)
-echo "form row: [$formrow]"
-if [[ "$formrow" == *"𝄢"* ]]; then
-  echo "ok   the form view has its own glyph 𝄢 on the bar"
+# Walk down to a BRANCH row -- one the renderer marks with ▸ -- and open it.
+found=0
+for _ in $(seq 12); do
+  row=$(hl)
+  if [[ "$row" != *"▸"* ]]; then
+    tmux -S "$SOCK" send-keys -t bar:0 C-n; sleep 0.4
+    continue
+  fi
+  found=1
+  kids=$(echo "$row" | grep -o "([0-9]*)" | tr -d "()")
+  before=$(tmux -S "$SOCK" capture-pane -p -t bar:0)
+  tmux -S "$SOCK" send-keys -t bar:0 Enter; sleep 1.2
+  if [[ "$(tmux -S "$SOCK" capture-pane -p -t bar:0)" == "$before" ]]; then
+    echo "FAIL: Enter on branch [$row] changed nothing in the pit"; fail=1
+  else
+    echo "ok   Enter expanded the branch [$row] ($kids keys)"
+  fi
+  if [[ "$(hl)" == "$row" ]]; then
+    echo "ok   the cursor stayed on the branch it opened"
+  else
+    echo "FAIL: Enter moved the selection off the branch ([$row] -> [$(hl)])"; fail=1
+  fi
+  break
+done
+(( found )) || { echo "FAIL: no branch row was reachable with ^N in the form pit"; fail=1; }
+# AND THE PAGER IS STILL ALIVE. A verb that repaints from inside a key handler
+# takes the render lock twice and the whole pager stops; every check after it
+# then reads a frozen screen and passes or fails for the wrong reason.
+tmux -S "$SOCK" send-keys -t bar:0 Escape; sleep 0.5
+tmux -S "$SOCK" send-keys -t bar:0 '?'; sleep 1
+if tmux -S "$SOCK" capture-pane -p -t bar:0 | grep -q "close help\|exit; keeps the turn running"; then
+  echo "ok   the pager still takes keys after Enter in the form pit"
 else
-  echo "FAIL: no form glyph on the bar: [$formrow]"; fail=1
-fi
-if [[ "$formrow" == *"𝄞"* ]]; then
-  echo "FAIL: the form view borrowed the notification clef"; fail=1
+  echo "FAIL: the pager is frozen after Enter in the form pit"; fail=1
 fi
 tmux -S "$SOCK" send-keys -t bar:0 Escape; sleep 0.4
 

@@ -883,6 +883,14 @@ func (t *livelogTurn) openRule() { t.in.OpenRule() }
 // The queue, shown rather than echoed.
 func (t *livelogTurn) setQueued(prompts []queuedItem, errMsg string) {
 	t.queued, t.queuedErr = prompts, errMsg
+	// THE SNAPSHOT LANDS FIRST. The pit builds its rows from the transcript's
+	// copy, so telling the pit to refresh before handing it the new queue made
+	// every refresh one poll stale: a queue that filled while the pit was open
+	// kept drawing "(none)" until the pit was closed and opened again, which
+	// is the same symptom as a cursor that never arrives and was hiding behind
+	// it.
+	t.tr.queued = t.queued
+	t.tr.queuedRows = t.queuedRows()
 	// The panel opens itself when there is something to show and closes when
 	// there is not. Auto-close is skipped once the user has opened it by hand,
 	// so a deliberate `Q` is not yanked away the moment the queue drains.
@@ -891,8 +899,6 @@ func (t *livelogTurn) setQueued(prompts []queuedItem, errMsg string) {
 	} else {
 		t.tr.showQueuedAuto(false)
 	}
-	t.tr.queuedRows = t.queuedRows()
-	t.tr.queued = t.queued
 }
 
 // queuedRows is the ONE rendering of the queue, so the inline trailer and the

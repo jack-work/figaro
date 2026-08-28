@@ -46,15 +46,55 @@ type picker struct {
 // different screen.
 const pickerRows = 12
 
-func newPicker(rows []drawerRow, selectable bool) *picker {
-	p := &picker{rows: rows, cursor: -1}
-	if selectable {
-		p.cursor = p.nextSelectable(-1, 1)
-	}
+// newPicker builds a list over rows. THERE IS NO "SELECTABLE" FLAG, and its
+// absence is a bug fix: a picker used to be told at birth whether it had a
+// cursor, and setRows inherited that answer from whatever the list looked like
+// the first time it was built. The queue opened by `:send` was born holding one
+// row -- "(none)", which is chrome -- so it was born cursorless and STAYED
+// cursorless through every later refresh, and ^N did nothing until you closed
+// and reopened the pit. Selectability is a property of the ROWS, asked afresh
+// every time they change.
+func newPicker(rows []drawerRow) *picker {
+	p := &picker{cursor: -1}
+	p.setRows(rows, "")
 	return p
 }
 
-func (p *picker) selectable() bool { return p.cursor >= 0 }
+// setRows swaps the list in place, keeping everything the reader put there:
+// the window, the height, and the SELECTION -- restored by row id rather than
+// by index, because a queue that re-sorts under the cursor on every poll is a
+// queue nobody can hit `x` on.
+//
+// The cursor is re-derived from the new rows: it appears when the list gains
+// something selectable and leaves when the list loses it.
+func (p *picker) setRows(rows []drawerRow, keepID string) {
+	prev, hadCursor := "", p.hasCursor()
+	if hadCursor && p.cursor < len(p.rows) {
+		prev = p.rows[p.cursor].id
+	}
+	if keepID == "" {
+		keepID = prev
+	}
+	p.rows = rows
+	p.cursor = -1
+	if keepID != "" {
+		for i, r := range rows {
+			if r.id == keepID && r.selectable() {
+				p.cursor = i
+				break
+			}
+		}
+	}
+	if p.cursor < 0 {
+		p.cursor = p.nextSelectable(-1, 1)
+	}
+	p.top = clampInt(p.top, 0, p.maxTop())
+	p.follow()
+}
+
+// hasCursor reports whether this list is one you CHOOSE in as well as read.
+// It is the rows' answer, not the picker's history.
+func (p *picker) hasCursor() bool { return p.cursor >= 0 }
 
 // nextSelectable walks from i in direction d to the next row that can hold the
 // cursor, or returns i unchanged when there is none.
@@ -88,7 +128,7 @@ func (p *picker) step(d int) {
 		return
 	}
 	p.scroll(d)
-	if p.selectable() {
+	if p.hasCursor() {
 		p.dragCursorIntoView()
 	}
 }
@@ -99,7 +139,7 @@ func (p *picker) pick(d int) {
 	if len(p.rows) == 0 {
 		return
 	}
-	if !p.selectable() {
+	if !p.hasCursor() {
 		p.scroll(d)
 		return
 	}
@@ -145,14 +185,14 @@ func (p *picker) half(d int) { p.step(d * max(p.window()/2, 1)) }
 // home / end are gg and G.
 func (p *picker) home() {
 	p.top = 0
-	if p.selectable() {
+	if p.hasCursor() {
 		p.cursor = p.nextSelectable(-1, 1)
 	}
 }
 
 func (p *picker) end() {
 	p.top = p.maxTop()
-	if p.selectable() {
+	if p.hasCursor() {
 		p.cursor = p.nextSelectable(len(p.rows), -1)
 	}
 }
@@ -181,7 +221,7 @@ func (p *picker) maxTop() int { return max(len(p.rows)-p.window(), 0) }
 
 // selected is the row under the cursor, if any.
 func (p *picker) selected() (drawerRow, bool) {
-	if !p.selectable() || p.cursor >= len(p.rows) {
+	if !p.hasCursor() || p.cursor >= len(p.rows) {
 		return drawerRow{}, false
 	}
 	return p.rows[p.cursor], true
@@ -190,7 +230,7 @@ func (p *picker) selected() (drawerRow, bool) {
 // remove drops the selected row optimistically, leaving the cursor on what
 // takes its place.
 func (p *picker) remove() {
-	if !p.selectable() || p.cursor >= len(p.rows) {
+	if !p.hasCursor() || p.cursor >= len(p.rows) {
 		return
 	}
 	p.rows = append(p.rows[:p.cursor], p.rows[p.cursor+1:]...)

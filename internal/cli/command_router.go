@@ -117,12 +117,61 @@ var terminalSubverbs = map[string]bool{
 	"vault unlock": true, // prompts for a passphrase
 }
 
-// liveSubverbs are verbs that do not finish and are HOSTED instead: the drawer
-// renders their rows and forwards their keys. `form listen` was in the refusal
-// set above until it became a cmdkit.LiveView -- which is the difference
-// between a verb that takes a terminal and a verb that takes a viewport.
-var liveSubverbs = map[string]bool{
-	"form listen": true,
+// READING A FORM IS ONE THING, and in the pager it is the live view.
+//
+// `form listen` was hosted and `form show` was not, so the same question --
+// "what is on this aria's board?" -- reached the pit down two different roads.
+// `show` went through the router, was captured as TEXT, and became an output
+// pit whose rows are lines: a motion moved among the lines that happened to
+// carry an aria-shaped id, which is why the selection appeared to skip whole
+// properties. There is no defensible difference between the two verbs inside a
+// pager -- a pager repaints; a snapshot in a repainting window is just a live
+// view that lies when the form changes -- so both are the live view now, and
+// `form`/`state` with no subverb is too.
+//
+// formSubverbs are the ones that DO something else with a form and still go to
+// the router. Everything not in this set is a read.
+var formSubverbs = map[string]bool{
+	"set": true, "delete": true, "unset": true,
+	"new": true, "fork": true, "ls": true, "rm": true,
+	"outfit": true, "help": true,
+}
+
+// liveForm decides whether argv is a form READ, and names the aria it reads.
+// The spec is the first positional that is not the subverb, or --id's value;
+// empty means "the aria on screen", per THE SUBJECT rule.
+func liveForm(argv []string) (name, spec string, ok bool) {
+	if len(argv) == 0 || (argv[0] != "form" && argv[0] != "state") {
+		return "", "", false
+	}
+	rest := argv[1:]
+	name = "form show"
+	if len(rest) > 0 {
+		if formSubverbs[rest[0]] {
+			return "", "", false
+		}
+		if rest[0] == "show" || rest[0] == "listen" {
+			name, rest = "form "+rest[0], rest[1:]
+		}
+	}
+	for i := 0; i < len(rest); i++ {
+		a := rest[i]
+		switch {
+		case a == "--id" || a == "-i":
+			if i+1 < len(rest) {
+				return name, rest[i+1], true
+			}
+		case strings.HasPrefix(a, "--id="):
+			return name, strings.TrimPrefix(a, "--id="), true
+		case strings.HasPrefix(a, "-"):
+			// A FLAG THE PIT CANNOT HONOUR is a command, not a view: `-j`
+			// wants JSON on a stdout the pit does not have.
+			return "", "", false
+		default:
+			return name, a, true
+		}
+	}
+	return name, "", true
 }
 
 // runCommand is the ':' box's hook, and it is CALLED WITH THE RENDER LOCK HELD
@@ -146,8 +195,8 @@ func (in *interactiveInput) execCommand(line string) {
 		in.runOverlay(verb, argv[1:])
 		return
 	}
-	if len(argv) > 1 && liveSubverbs[verb+" "+argv[1]] {
-		in.runLive(verb+" "+argv[1], argv[2:])
+	if name, spec, ok := liveForm(argv); ok {
+		in.runLive(name, spec)
 		return
 	}
 	if len(argv) > 1 && terminalSubverbs[verb+" "+argv[1]] {
@@ -393,11 +442,7 @@ func commonPrefix(ss []string) string {
 
 // runLive hosts a live verb in the drawer. The view is built off the input
 // goroutine (it dials) and installed under the render lock.
-func (in *interactiveInput) runLive(name string, args []string) {
-	spec := ""
-	if len(args) > 0 {
-		spec = args[0]
-	}
+func (in *interactiveInput) runLive(name, spec string) {
 	if spec == "" {
 		spec = in.currentID() // the aria on screen, per THE SUBJECT rule
 	}

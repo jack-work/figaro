@@ -162,23 +162,12 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 		die("%s", err)
 	}
 
-	// Local spinner animation.
-	stopTick := make(chan struct{})
-	go func() {
-		t := time.NewTicker(time.Second / spinnerFPS)
-		defer t.Stop()
-		for {
-			select {
-			case <-stopTick:
-				return
-			case <-t.C:
-				mu.Lock()
-				lt.tick()
-				mu.Unlock()
-			}
-		}
-	}()
-	defer close(stopTick)
+	// THE PAGER'S CLOCK, the same one `send` starts: the spinner frame, the
+	// alert's expiry, and the queue poll. This host used to run half of it --
+	// the spinner alone -- so a queue that filled under a `figaro listen` pager
+	// was never read, and the pit sat on "(none)" while the daemon held two
+	// messages. See startPagerClock.
+	defer startPagerClock(&mu, lt, func() *interactiveInput { return in })()
 
 	// Resize (SIGWINCH on unix / a console event on Windows, behind the client).
 	defer tc.OnResize(func(w, h int) {

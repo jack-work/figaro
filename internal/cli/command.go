@@ -104,6 +104,11 @@ func (in *interactiveInput) commandSend(ctx context.Context, fields []string) (s
 		if _, _, err := in.aria().Qua(ctx, prompt, buildPromptForm()); err != nil {
 			return "", fmt.Errorf("send: %w", err)
 		}
+		// A PROMPT SENT INTO A BUSY ARIA IS A QUEUE ENTRY, and the reader who
+		// typed it should see it land rather than wait out the poll. The clock
+		// would find it within half a second; asking now is what makes `:send`
+		// followed by `Q` show the message that was just sent.
+		in.refreshQueued()
 		return "sent", nil
 	}
 	id, ep, err := in.resolve(ctx, spec)

@@ -198,6 +198,14 @@ type LiveView interface {
 	// Key offers one keystroke. Reporting false leaves it to the host, which
 	// is how Esc closes a drawer without the view having to know what a drawer
 	// is.
+	//
+	// A KEY HANDLER MUTATES AND RETURNS: it must not repaint. Every host
+	// repaints after the key it dispatched, and the pager dispatches keys with
+	// its render lock held -- so a view that repaints from in here takes a
+	// mutex its caller is already holding, and Go's mutexes do not recurse.
+	// Measured: the pager froze, dead, with the view still on screen. What a
+	// view may repaint for is what arrives on its own -- a delta, a resync, a
+	// failure -- because that is the only thing no host is watching for.
 	Key(b byte) bool
 
 	// Hint is what the view can do, for the HOST to place -- on a status line,

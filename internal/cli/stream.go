@@ -267,37 +267,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	// are under mu, which every renderer path already holds.
 	var in *interactiveInput
 
-	stopTick := make(chan struct{})
-	go func() {
-		t := time.NewTicker(time.Second / spinnerFPS)
-		defer t.Stop()
-		// The queue is polled on a slow multiple of the spinner rather than
-		// pushed. figaro.queued is a per-aria RPC over a unix socket and the
-		// answer is a snapshot of the agent's inbox, so there is nothing to
-		// subscribe to; a prompt enters the queue without any frame being
-		// emitted, which is precisely why it used to be invisible. Twice a
-		// second is faster than a human notices and cheap enough not to matter.
-		queueEvery := spinnerFPS / queuedPollHz
-		if queueEvery < 1 {
-			queueEvery = 1
-		}
-		n := 0
-		for {
-			select {
-			case <-stopTick:
-				return
-			case <-t.C:
-				mu.Lock()
-				lt.tick()
-				poll := in
-				mu.Unlock()
-				if n++; n%queueEvery == 0 && poll != nil {
-					poll.refreshQueued()
-				}
-			}
-		}
-	}()
-	defer close(stopTick)
+	defer startPagerClock(&mu, lt, func() *interactiveInput { return in })()
 
 	// Repaint on resize (platform-abstracted: SIGWINCH on unix, a console event
 	// on Windows, all behind the term.Client boundary).
@@ -898,6 +868,48 @@ func (in *interactiveInput) cancelTranscriptSearch() {
 	in.mu.Lock()
 	in.cancelTranscriptSearchLocked()
 	in.mu.Unlock()
+}
+
+// startPagerClock is THE PAGER'S CLOCK, and there is one of it. Two things in
+// the bottom two rows are functions of time rather than of arrival -- the
+// spinner frame and the alert's TTL -- and one thing is a function of state
+// nobody announces: THE QUEUE. figaro.queued is a per-aria RPC over a unix
+// socket and a prompt enters the queue without any frame being emitted, so a
+// pager that does not ask never learns.
+//
+// Both hosts start one. `send` had this loop and `listen` had half of it --
+// the spinner without the poll -- so in a `figaro listen` pager the queue pit
+// showed "(none)" forever: `:send` put a message in the queue, nothing polled,
+// and the row that would have carried a cursor never arrived. That is the
+// third layer of "^N does nothing until you close and reopen it", and the one
+// no amount of picker surgery could fix.
+//
+// current() is read under the render lock because `send` wires its input loop
+// after starting the clock; it returns nil until then.
+func startPagerClock(mu *sync.Mutex, lt *livelogTurn, current func() *interactiveInput) func() {
+	stop := make(chan struct{})
+	// The queue is polled on a slow multiple of the spinner: twice a second is
+	// faster than a human notices and cheap enough not to matter.
+	every := max(spinnerFPS/queuedPollHz, 1)
+	go func() {
+		t := time.NewTicker(time.Second / spinnerFPS)
+		defer t.Stop()
+		for n := 1; ; n++ {
+			select {
+			case <-stop:
+				return
+			case <-t.C:
+				mu.Lock()
+				lt.tick()
+				in := current()
+				mu.Unlock()
+				if in != nil && n%every == 0 {
+					in.refreshQueued()
+				}
+			}
+		}
+	}()
+	return func() { close(stop) }
 }
 
 // refreshQueued kicks a background fetch of the aria's queued user prompts and

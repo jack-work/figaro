@@ -186,11 +186,16 @@ func (v *formView) setNotice(text string) {
 	v.mu.Unlock()
 }
 
+// THE VERBS MUTATE AND RETURN. Neither host wants a repaint from in here: the
+// shell host paints after every key it takes, and the pager dispatches keys
+// WITH ITS RENDER LOCK HELD, so a repaint from a key handler is a mutex taken
+// twice by one goroutine. changed() is for what arrives on its own -- a delta,
+// a resync, a failure -- which is the only thing no host is already watching
+// for.
 func (v *formView) move(delta int) {
 	v.mu.Lock()
+	defer v.mu.Unlock()
 	v.cursor = clampInt(v.cursor+delta, 0, len(v.rows)-1)
-	v.mu.Unlock()
-	v.changed()
 }
 
 func (v *formView) page(delta int) {
@@ -200,11 +205,10 @@ func (v *formView) page(delta int) {
 
 func (v *formView) toggle() {
 	v.mu.Lock()
+	defer v.mu.Unlock()
 	if v.cursor < len(v.rows) {
 		openBranch(v.rows[v.cursor], v.open)
 	}
-	v.mu.Unlock()
-	v.changed()
 }
 
 func (v *formView) yank() {
@@ -219,7 +223,6 @@ func (v *formView) yank() {
 	}
 	copyToClipboard(v.out, text)
 	v.setNotice(fmt.Sprintf("yanked %d bytes", len(text)))
-	v.changed()
 }
 
 // Rows renders the view for a viewport, and positions nothing. It is the whole
@@ -269,16 +272,26 @@ func (v *formView) Items(width int) []drawerRow {
 }
 
 // Activate is Enter on a row: expand or collapse that branch.
+//
+// IT DOES NOT REPAINT, and that is not an oversight. Activate is called from
+// the pit's key dispatch, which runs WITH THE RENDER LOCK HELD -- the input
+// loop takes that lock around every keystroke -- so a repaint from in here is
+// the pager taking a mutex it is already holding. Go's mutexes do not recurse:
+// the pager froze, dead, with the form still on screen. (Measured in a pty the
+// moment the pit's selection became visible to this verb at all; before that,
+// selected() answered false for a hosted view and Enter never arrived.)
+//
+// The host repaints after every key it dispatches. A verb that mutates and
+// returns is all a hosted view owes it.
 func (v *formView) Activate(path string) {
 	v.mu.Lock()
+	defer v.mu.Unlock()
 	for _, n := range v.rows {
 		if n.path == path {
 			openBranch(n, v.open)
-			break
+			return
 		}
 	}
-	v.mu.Unlock()
-	v.changed()
 }
 
 func (v *formView) Rows(width, height int) []string {

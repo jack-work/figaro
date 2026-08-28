@@ -320,11 +320,17 @@ func (s *sessionStatus) turnLabel(verbose bool) string {
 // rule's whole width saying what the row below already said. What is left is
 // the only thing the rule knows that the bar does not -- where in the
 // conversation this window sits, and whether it is following.
+//
+// THE POSITION ENDS THE ROW. It used to be followed by three more dashes, a
+// decorative cap that made the one number on the rule stop short of the edge
+// while the figure below it -- the context percentage -- was flush right. Two
+// right-hand columns one row apart, disagreeing by three cells, read as a
+// misalignment, because it was one.
 func (s *sessionStatus) ruleLine(width int, pos string) string {
 	if pos == "" {
 		return clipToWidth(strings.Repeat("─", max(width, 0)), width)
 	}
-	right := " " + pos + " ───"
+	right := " " + pos
 	fill := width - runewidth.StringWidth(right)
 	if fill < 3 {
 		fill = 3

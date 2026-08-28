@@ -1140,7 +1140,7 @@ func (t *transcript) setCmdOut(title string, rows []string) {
 		id := rowID(r)
 		drows = append(drows, drawerRow{text: r, yank: id, id: id})
 	}
-	t.drawer.showList("output", ":"+title, drows, true)
+	t.drawer.showList("output", ":"+title, drows)
 	t.render()
 }
 
@@ -1513,7 +1513,7 @@ func (t *transcript) openQueuedDrawer() {
 	// NO TITLE. The pit says what it is on the status bar ("𝄚 queue"), and a
 	// title row repeated the same word one line above it while costing a row
 	// of the conversation.
-	t.drawer.showList("queue", "", t.queuedDrawerRows(), true)
+	t.drawer.showList("queue", "", t.queuedDrawerRows())
 }
 
 // refreshQueuedDrawer replaces the rows in place, keeping the selection where
@@ -1909,7 +1909,7 @@ func (t *transcript) openHelpDrawer() {
 	if v := helpVersionLine(); v != "" {
 		rows = append(rows, staticRow(""), staticRow("  "+v))
 	}
-	t.drawer.showList("help", "", rows, false)
+	t.drawer.showList("help", "", rows)
 }
 
 // openStatusDrawer is '!': this figaro's own numbers.
@@ -1918,7 +1918,7 @@ func (t *transcript) openStatusDrawer() {
 	for _, l := range t.status.panelLines() {
 		rows = append(rows, staticRow(l))
 	}
-	t.drawer.showList("status", "", rows, false)
+	t.drawer.showList("status", "", rows)
 }
 
 // panelDismiss is Esc with a panel up: close it, and leave the selection
@@ -2562,7 +2562,7 @@ func (t *transcript) drawerMotion(ev keyEvent) bool {
 		t.drawer.toggleFull()
 	case ev.b == 'e':
 		t.drawer.scrollBy(1, h)
-	case ev.b == 'y' && t.drawer.pick != nil && !t.drawer.pick.selectable():
+	case ev.b == 'y' && t.drawer.pick != nil && !t.drawer.pick.hasCursor():
 		t.drawer.scrollBy(-1, h)
 	case ev.b == 'd', ev.nav == navPageDown:
 		t.drawer.halfPage(1, h)
