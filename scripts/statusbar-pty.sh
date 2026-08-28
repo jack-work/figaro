@@ -269,6 +269,28 @@ if [[ "$formrow" == *"𝄞"* ]]; then
 fi
 tmux -S "$SOCK" send-keys -t bar:0 Escape; sleep 0.4
 
+# 9. THE ALERT RETIRES. Posted by a real command, watched until it goes -- the
+#    step I skipped, which is exactly why it never went.
+tmux -S "$SOCK" send-keys -t bar:0 ':'; sleep 0.4
+tmux -S "$SOCK" send-keys -t bar:0 -l "open nosuchid"; sleep 0.3
+tmux -S "$SOCK" send-keys -t bar:0 Enter; sleep 1.5
+posted=$(bar)
+echo "alert row:   [$posted]"
+if [[ "$posted" == *"nosuchid"* || "$posted" == *"open"* ]]; then
+  echo "ok   the alert posted into the bar"
+else
+  echo "FAIL: no alert in the bar after a failing command"; fail=1
+fi
+echo "     waiting out the 10s TTL..."
+sleep 13
+gone=$(bar)
+echo "after TTL:   [$gone]"
+if [[ "$gone" == *"nosuchid"* ]]; then
+  echo "FAIL: the alert outlived its TTL with no keystroke"; fail=1
+else
+  echo "ok   the alert retired on its own"
+fi
+
 tmux -S "$SOCK" send-keys -t bar:0 q
 sleep 1
 exit $fail

@@ -51,11 +51,20 @@ func (in *interactiveInput) commandAsync(fn func(context.Context) (string, error
 		defer cancel()
 		msg, err := fn(ctx)
 		if err != nil {
-			in.note(err.Error())
+			in.noteErr(err.Error())
 			return
 		}
 		in.note(msg)
 	}()
+}
+
+// noteErr is note for TROUBLE: same slot, same retirement, red rather than
+// gray. The split is here because this is the one place that knows which it
+// was -- the verb returned an error or it did not.
+func (in *interactiveInput) noteErr(msg string) {
+	in.mu.Lock()
+	in.lt.tr.setCommandNoteAt(msg, alertError)
+	in.mu.Unlock()
 }
 
 // note writes one line into the pager's status row, under the render lock.

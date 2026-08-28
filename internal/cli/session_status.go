@@ -113,6 +113,12 @@ type sessionStatus struct {
 	lastAt time.Time
 	// model is shown under verbose only.
 	model string
+	// noticeLevel is what KIND of news the alert is. "sent" and "showing
+	// abc12345" are confirmations and wear the row's own gray; only trouble is
+	// red. Painting every alert red made the bar cry wolf on its own success
+	// messages -- and it is the same severity the notification ring will sort
+	// by, so it is one field rather than two ideas.
+	noticeLevel alertLevel
 	// noticeUntil is when the bar's alert retires; see retireAlert.
 	noticeUntil time.Time
 	// noticeTTL is how long a posted alert holds the slot. Zero: forever.
@@ -126,8 +132,18 @@ type sessionStatus struct {
 	notice string
 }
 
+// defaultNoticeTTL is how long an alert holds the bar's first slot. It is a
+// CONSTRUCTOR DEFAULT, not a config-only value, and that distinction is the
+// whole of a bug I shipped: setNoticeTTL existed, config.NoticeTTL existed,
+// and nothing called either -- so every alert was minted with a zero TTL,
+// which means "hold the slot until something displaces you", which means an
+// error sat in the bar until the next one arrived. Forever, in practice.
+//
+// A default that has to be installed by a caller is not a default.
+const defaultNoticeTTL = 10 * time.Second
+
 func newSessionStatus(figaroID string, startedAt time.Time) *sessionStatus {
-	return &sessionStatus{figaroID: figaroID, startedAt: startedAt}
+	return &sessionStatus{figaroID: figaroID, startedAt: startedAt, noticeTTL: defaultNoticeTTL}
 }
 
 // setNotice publishes (or clears, with "") the bar's alert: the newest thing
@@ -140,12 +156,33 @@ func newSessionStatus(figaroID string, startedAt time.Time) *sessionStatus {
 // dismissed: a bar item that must be acknowledged is a bar item that is still
 // there tomorrow. Retirement happens on the ticker (retireAlert), because a
 // clock cannot fire inside a pure renderer.
+// alertLevel sorts news by whether it is trouble.
+type alertLevel uint8
+
+const (
+	alertInfo  alertLevel = iota // a confirmation: gray, like the rest of the row
+	alertError                   // trouble: red, and eventually a notification
+)
+
+// setNoticeAt posts an alert with its level. setNotice is the confirmation
+// case, which is the common one.
+func (s *sessionStatus) setNoticeAt(text string, level alertLevel) {
+	s.setNotice(text)
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.noticeLevel = level
+	s.mu.Unlock()
+}
+
 func (s *sessionStatus) setNotice(text string) {
 	if s == nil {
 		return
 	}
 	s.mu.Lock()
 	s.notice = strings.Join(strings.Fields(text), " ")
+	s.noticeLevel = alertInfo
 	switch {
 	case s.notice == "":
 		s.noticeUntil = time.Time{}
@@ -316,8 +353,9 @@ func (s *sessionStatus) panelLines() []string {
 	if state == "" {
 		state = "idle 𝄐"
 	}
+	// NO LEADING BLANK. The panel used to open with an empty row, which read as
+	// an extra newline under the rule above it.
 	rows := []string{
-		"",
 		"  aria      " + s.figaroID,
 		"  status    " + state,
 	}

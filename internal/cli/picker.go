@@ -204,14 +204,32 @@ func (p *picker) remove() {
 
 // lines draws the window: the visible rows, the selection marker, and an
 // honest count of what is out of view on either side.
+// lines draws EXACTLY h rows, always. The markers are part of the budget, not
+// an addition to it: they appear and vanish as you scroll, and a pit whose
+// height moved by a row every time you crossed the top of the list made the
+// transcript above it jump by a row too. A window that changes size while you
+// read it is the thing this component exists to stop.
 func (p *picker) lines(id drawerID, w, h int) []string {
-	p.height = clampInt(h, 1, pickerRows)
+	budget := clampInt(h, 1, pickerRows)
+	// Reserve the marker rows FIRST, out of the same budget.
+	markAbove, markBelow := 0, 0
+	if len(p.rows) > budget {
+		// A list that does not fit shows at least one marker; which one
+		// depends on where the window sits, so both are reserved and the
+		// visible count is fixed either way.
+		markAbove, markBelow = 1, 1
+	}
+	p.height = max(budget-markAbove-markBelow, 1)
 	p.top = clampInt(p.top, 0, p.maxTop())
 	end := min(p.top+p.window(), len(p.rows))
 
-	out := make([]string, 0, p.window()+2)
-	if p.top > 0 {
-		out = append(out, drawerGray(clipToWidth("  "+AndMore(p.top, "above"), w)))
+	out := make([]string, 0, budget)
+	if markAbove > 0 {
+		if p.top > 0 {
+			out = append(out, drawerGray(clipToWidth("  "+AndMore(p.top, "above"), w)))
+		} else {
+			out = append(out, "")
+		}
 	}
 	mark := id.selectionGlyph()
 	for i := p.top; i < end; i++ {
@@ -226,8 +244,12 @@ func (p *picker) lines(id drawerID, w, h int) []string {
 		}
 		out = append(out, row)
 	}
-	if rest := len(p.rows) - end; rest > 0 {
-		out = append(out, drawerGray(clipToWidth("  "+AndMore(rest, ""), w)))
+	if markBelow > 0 {
+		if rest := len(p.rows) - end; rest > 0 {
+			out = append(out, drawerGray(clipToWidth("  "+AndMore(rest, ""), w)))
+		} else {
+			out = append(out, "")
+		}
 	}
 	return out
 }

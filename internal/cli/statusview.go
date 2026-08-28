@@ -32,7 +32,8 @@ type statusView struct {
 	// TRANSIENT and its expiry is evaluated by whoever builds this value --
 	// never here, or the pure renderer becomes a function of the wall clock
 	// and its goldens become flaky.
-	Alert string
+	Alert      string
+	AlertLevel alertLevel
 	// LastAt is when the conversation last moved. Verbose only, and absolute:
 	// a relative "3m ago" would be true only at the instant it was painted.
 	LastAt  time.Time
@@ -89,13 +90,21 @@ func (v statusView) render(w int) []string {
 // groups is the split: what is about the MODE and the conversation on the left,
 // what is a fact about the aria on the right.
 func (v statusView) groups() (left, right []string) {
-	// The alert leads, ahead of even the mode: trouble belongs where the eye
-	// lands first, and it is the only field that arrives without being asked
-	// for.
+	// The alert leads, ahead of even the pit: news belongs where the eye lands
+	// first, and it is the only field that arrives without being asked for.
+	//
+	// ONLY TROUBLE IS RED. "sent" is a confirmation and wears the row's own
+	// gray; painting every alert red made the bar shout its successes in the
+	// colour it reserves for failures, which is how a colour stops meaning
+	// anything.
 	if v.Alert != "" {
-		left = append(left, term.NoticeInDim(v.Alert))
+		if v.AlertLevel == alertError {
+			left = append(left, term.NoticeInDim(v.Alert))
+		} else {
+			left = append(left, v.Alert)
+		}
 	}
-	if tok := v.Drawer.token(); tok != "" {
+	if tok := v.Drawer.token(v.Verbose); tok != "" {
 		left = append(left, tok)
 	}
 	if st := v.stateToken(); st != "" {
@@ -154,17 +163,25 @@ func (s *sessionStatus) viewOf(drawer drawerID, verbose bool, now time.Time) sta
 	if s == nil {
 		return statusView{}
 	}
+	// THE TICKER IS NOT THE ONLY CLOCK. It runs while something animates; an
+	// idle pager animates nothing, so an alert posted after the turn ended
+	// would have waited for the next keystroke to notice it had expired. Every
+	// build of the view checks too -- it is one comparison, it happens exactly
+	// where the wall clock is already being read, and it makes "the alert
+	// retires" true rather than usually true.
+	s.retireAlert(now)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	v := statusView{
-		Drawer:  drawer,
-		State:   s.turn,
-		Tick:    s.tick,
-		Aria:    s.figaroID,
-		Mantra:  s.metrics.Mantra,
-		Alert:   s.notice,
-		LastAt:  s.lastAt,
-		Verbose: verbose,
+		Drawer:     drawer,
+		State:      s.turn,
+		Tick:       s.tick,
+		Aria:       s.figaroID,
+		Mantra:     s.metrics.Mantra,
+		Alert:      s.notice,
+		AlertLevel: s.noticeLevel,
+		LastAt:     s.lastAt,
+		Verbose:    verbose,
 	}
 	if ctx := formatContextUsage(s.metrics.ContextTokens, s.metrics.ContextLimit, s.metrics.ContextExact); ctx != "-" {
 		v.Ctx = ctx

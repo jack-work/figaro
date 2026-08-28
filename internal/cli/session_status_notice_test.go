@@ -52,8 +52,10 @@ func TestStatusNoticeIsRedAndLeftmost(t *testing.T) {
 	// routing it through the palette fixes.
 	defer term.SetColorMode(term.ColorAlways)()
 
+	// ONLY TROUBLE IS RED now, so this test posts trouble. A confirmation
+	// ("sent") wears the row's own gray -- see TestOnlyTroubleIsRed.
 	s := statusFixture("a perfectly ordinary mantra")
-	s.setNotice("error: overloaded")
+	s.setNoticeAt("error: overloaded", alertError)
 	line := row(s, 200)
 
 	// Through the palette, not a literal: the assertion asks the theme what a

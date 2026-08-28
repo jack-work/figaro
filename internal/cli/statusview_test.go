@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jack-work/figaro/internal/term"
 )
 
 // ---------------------------------------------------------------------------
@@ -42,12 +44,11 @@ func TestStatusViewGoldens(t *testing.T) {
 			want: []string{"✓ · 123abc · test                                               9.8k/1.0m (1.0%)"},
 		},
 		{
-			// THE NAME IS NOT A VERBOSE EXTRA. The design draws "𝄚 queue",
-			// always: the glyph alone answers the question only for someone
-			// who has already memorised the glyphs.
-			name: "a pit leads with its glyph AND its name", width: 80,
+			// THE NAME IS A VERBOSE EXTRA. This bar is read by someone who
+			// knows the glyphs; the word is for the reader who does not.
+			name: "a pit leads with its glyph alone", width: 80,
 			view: func(v statusView) statusView { v.Drawer = drawerQueue; return v },
-			want: []string{"𝄚 queue · ✓ · 123abc · test                                     9.8k/1.0m (1.0%)"},
+			want: []string{"𝄚 · ✓ · 123abc · test                                           9.8k/1.0m (1.0%)"},
 		},
 		{
 			name: "verbose names the drawer and the state", width: 96,
@@ -169,5 +170,89 @@ func TestVerboseCarriesTheLastInteraction(t *testing.T) {
 	v.Verbose = false
 	if row := strings.Join(v.render(120), ""); strings.Contains(row, "08/28/26") {
 		t.Fatalf("the default bar carries a datetime: %q", row)
+	}
+}
+
+// TestOnlyTroubleIsRed: a confirmation wears the row's own gray. Painting
+// every alert red made the bar shout "sent" in the colour it keeps for
+// failures, which is how a colour stops meaning anything.
+func TestOnlyTroubleIsRed(t *testing.T) {
+	restore := term.SetColorMode(term.ColorAlways)
+	defer restore()
+
+	v := barFixture()
+	v.Alert = "sent"
+	info := strings.Join(v.render(100), "")
+	if !strings.Contains(info, "sent") {
+		t.Fatalf("the confirmation is missing: %q", info)
+	}
+	if strings.Contains(info, term.NoticeInDim("sent")) {
+		t.Fatalf("a confirmation was painted as trouble: %q", info)
+	}
+
+	v.AlertLevel = alertError
+	bad := strings.Join(v.render(100), "")
+	if !strings.Contains(bad, term.NoticeInDim("sent")) {
+		t.Fatalf("trouble was not painted red: %q", bad)
+	}
+}
+
+// TestAlertLevelResetsOnEveryPost: a red error must not tint the confirmation
+// that follows it. setNotice is the confirmation door and clears the level.
+func TestAlertLevelResetsOnEveryPost(t *testing.T) {
+	s := newSessionStatus("aria1234", time.Now())
+	s.setNoticeAt("boom", alertError)
+	if v := s.viewOf(drawerNothing, false, time.Now()); v.AlertLevel != alertError {
+		t.Fatal("the error did not take")
+	}
+	s.setNotice("sent")
+	if v := s.viewOf(drawerNothing, false, time.Now()); v.AlertLevel != alertInfo {
+		t.Fatal("a confirmation inherited the previous error's colour")
+	}
+}
+
+// TestAlertRetiresOnItsOwn is the test that was missing, and its absence is
+// why an alert sat in the bar forever: setNoticeTTL existed, cli.notice_ttl
+// existed, and NOTHING CALLED EITHER -- so every alert was born with a zero
+// TTL, which means "hold the slot until displaced".
+//
+// It drives the clock rather than sleeping: the expiry is a comparison against
+// a time the caller passes, precisely so this can be tested in microseconds.
+func TestAlertRetiresOnItsOwn(t *testing.T) {
+	s := newSessionStatus("aria1234", time.Now())
+	if s.noticeTTL <= 0 {
+		t.Fatal("a fresh session has no notice TTL; a default a caller must install is not a default")
+	}
+	s.setNotice("sent")
+
+	now := time.Now()
+	if v := s.viewOf(drawerNothing, false, now); v.Alert != "sent" {
+		t.Fatalf("the alert did not post: %q", v.Alert)
+	}
+	// Still there a moment later.
+	if v := s.viewOf(drawerNothing, false, now.Add(time.Second)); v.Alert != "sent" {
+		t.Fatalf("the alert retired early: %q", v.Alert)
+	}
+	// And gone once its span is up, WITHOUT a keystroke or a tick: an idle
+	// pager animates nothing, so the view build is the backstop.
+	if v := s.viewOf(drawerNothing, false, now.Add(defaultNoticeTTL+time.Second)); v.Alert != "" {
+		t.Fatalf("the alert outlived its TTL: %q", v.Alert)
+	}
+}
+
+// TestNewerAlertDisplacesOlder: the other way an alert leaves. A burst of
+// them -- ten `:send`s in a row -- must show the newest, not a stack.
+func TestNewerAlertDisplacesOlder(t *testing.T) {
+	s := newSessionStatus("aria1234", time.Now())
+	for i := 0; i < 10; i++ {
+		s.setNotice("sent")
+	}
+	s.setNotice("showing abc12345")
+	v := s.viewOf(drawerNothing, false, time.Now())
+	if v.Alert != "showing abc12345" {
+		t.Fatalf("the newest alert did not win: %q", v.Alert)
+	}
+	if strings.Count(v.Alert, "sent") != 0 {
+		t.Fatalf("alerts stacked instead of displacing: %q", v.Alert)
 	}
 }

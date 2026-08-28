@@ -2587,7 +2587,9 @@ func (t *transcript) showLiveDrawer(name string, v cmdkit.LiveView) {
 // and flashing on the closing rule (which no longer exists).
 //
 // Anything longer than a line is still a pit, because a bar row cannot hold it.
-func (t *transcript) setCommandNote(note string) {
+func (t *transcript) setCommandNote(note string) { t.setCommandNoteAt(note, alertInfo) }
+
+func (t *transcript) setCommandNoteAt(note string, level alertLevel) {
 	if note == "" {
 		t.status.setNotice("")
 		if t.showing("message") {
@@ -2597,7 +2599,7 @@ func (t *transcript) setCommandNote(note string) {
 		return
 	}
 	if !strings.Contains(note, "\n") && displayWidth(note) <= t.w/2 {
-		t.status.setNotice(note)
+		t.status.setNoticeAt(note, level)
 		t.render()
 		return
 	}
