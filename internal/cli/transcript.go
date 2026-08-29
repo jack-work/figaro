@@ -1331,7 +1331,7 @@ func (t *transcript) renderFrame() {
 		// transcript rather than as a screen the transcript left.
 		for r := range screen {
 			if r < t.h-2 {
-				screen[r] = term.StateDim(stripSGR(screen[r]))
+				screen[r] = term.StateDim(pitText(screen[r]))
 			}
 		}
 	}

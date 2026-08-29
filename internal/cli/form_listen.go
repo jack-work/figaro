@@ -108,6 +108,7 @@ type formView struct {
 	out       *os.File
 	aria      string
 	open      map[string]bool
+	wrapped   map[string]wrappedLines // an opened value, wrapped once
 	rows      []*formNode
 	cursor    int
 	top       int
@@ -216,7 +217,7 @@ func (v *formView) Items(width int) []pitRow {
 		// instead of watching it fly past. The id keeps the row addressable
 		// and unique, which is what a refresh restores the selection by.
 		indent := strings.Repeat("  ", n.depth)
-		for i, line := range formValueLines(n.value, width-len(indent)-2) {
+		for i, line := range v.wrappedValue(n, width-len(indent)-2) {
 			out = append(out, pitRow{
 				text: indent + line,
 				yank: yank,
@@ -225,6 +226,41 @@ func (v *formView) Items(width int) []pitRow {
 		}
 	}
 	return out
+}
+
+// wrappedValue is formValueLines, ONCE. Items() runs on every paint, and a
+// value is wrapped at a width that changes only when the pane does, so wrapping
+// it again on every frame was pure cost -- 3.5 seconds a frame on a megabyte,
+// with the render lock held. Cached against the value itself, so a `set` that
+// changes it re-wraps and nothing else does.
+//
+// AND IT IS BOUNDED. A megabyte of value is not a list a reader scrolls; it is
+// a thing they yank (y takes the whole value, from any of its rows). Past the
+// cap the pit says how much it is not showing, in the same words every other
+// truncation in the program uses.
+const formValueRowsMax = 500
+
+type wrappedLines struct {
+	raw   string
+	width int
+	lines []string
+}
+
+func (v *formView) wrappedValue(n *formNode, width int) []string {
+	raw := string(n.value)
+	if c, ok := v.wrapped[n.path]; ok && c.width == width && c.raw == raw {
+		return c.lines
+	}
+	lines := formValueLines(n.value, width)
+	if len(lines) > formValueRowsMax {
+		lines = append(lines[:formValueRowsMax:formValueRowsMax],
+			AndMore(len(lines)-formValueRowsMax, "lines · y yanks all of it"))
+	}
+	if v.wrapped == nil {
+		v.wrapped = map[string]wrappedLines{}
+	}
+	v.wrapped[n.path] = wrappedLines{raw: raw, width: width, lines: lines}
+	return lines
 }
 
 // valuePath is the key a value row belongs to: an opened leaf's lines carry

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 // THREE BUGS, ONE SENTENCE EACH, and the tests that would have caught them.
@@ -259,7 +260,7 @@ func TestPitCursorStaysInsideThePaintedWindow(t *testing.T) {
 		out := d.lines(80, 25) // a 25-row pane: visible() gives the fixed page
 		var sel string
 		for i, l := range out {
-			l = stripSGR(l)
+			l = pitText(l)
 			if strings.HasPrefix(l, mark) {
 				sel = strings.TrimSpace(strings.TrimPrefix(l, mark))
 			}
@@ -369,5 +370,123 @@ func TestEnterOpensALeaf(t *testing.T) {
 	}
 	if got := valuePath("mantra"); got != "mantra" {
 		t.Fatalf("valuePath of a key row = %q", got)
+	}
+}
+
+// THE PIT PAINTS TEXT, NEVER CONTROL. A form holds tool output and tool output
+// holds whatever the tool printed: a reviewer opened a value carrying
+// "\x1b[2J\x1b[10A" and the pane went blank -- fifteen painted rows became one
+// and never came back. Every row of every pit goes through the gate now.
+func TestPitRowsCarryNoControlSequences(t *testing.T) {
+	nasty := "plain \x1b[31mRED\x1b[0m mid \x1b[2J\x1b[10Aoops\ttail\x07 and\x1b]0;title\x07 more"
+	var d pit
+	d.showList(pitQueue, "a \x1b[2Jtitle", []pitRow{idRow(nasty, "1"), staticRow(nasty)})
+	for _, row := range d.lines(200, 25) {
+		body := row
+		// The pit's OWN colour is applied outside the gate and is allowed.
+		for _, own := range []string{"\x1b[48;5;237m", "\x1b[49m"} {
+			body = strings.ReplaceAll(body, own, "")
+		}
+		if strings.ContainsRune(body, 0x1b) || strings.ContainsRune(body, 0x07) {
+			t.Fatalf("a pit row carries control bytes: %q", row)
+		}
+	}
+	// And the text survives, minus the escapes.
+	got := pitText(nasty)
+	for _, want := range []string{"plain", "RED", "mid", "oops tail", "and", "more"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("pitText ate the text: %q", got)
+		}
+	}
+	if strings.ContainsRune(got, 0x1b) || strings.Contains(got, "[2J") || strings.Contains(got, "title") {
+		t.Fatalf("pitText left a sequence behind: %q", got)
+	}
+}
+
+// A ROW IS CLIPPED IN COLUMNS. len() gave a row of Japanese 75 columns of a
+// 100-column pane, and cut the preview mid-rune.
+func TestFormRowClipsByColumnsNotBytes(t *testing.T) {
+	n := &formNode{path: "uni", label: "uni", depth: 1,
+		value: json.RawMessage(`"` + strings.Repeat("日本語テキスト ", 30) + `"`)}
+	got := renderFormRow(n, 100, false)
+	if !utf8.ValidString(got) {
+		t.Fatalf("clipped mid-rune: %q", got)
+	}
+	if w := displayWidth(got); w < 90 || w > 100 {
+		t.Fatalf("row used %d of 100 columns: %q", w, got)
+	}
+	if !utf8.ValidString(formValuePreview(n.value)) {
+		t.Fatalf("the preview cut a rune in half: %q", formValuePreview(n.value))
+	}
+}
+
+// WRAPPING IS LINEAR, AND IT HAPPENS ONCE. 3.53 seconds per render on a 1MB
+// value, under the render lock, is not a slow path: it is a hung pager.
+func TestValueWrappingIsCheapAndBounded(t *testing.T) {
+	big := strings.Repeat("word ", 40000) // ~200KB
+	n := &formNode{path: "big", label: "big", depth: 1,
+		value: json.RawMessage(`"` + big + `"`)}
+	v := &formView{mirror: &formMirror{}, open: map[string]bool{"big": true}}
+
+	start := time.Now()
+	first := v.wrappedValue(n, 80)
+	cold := time.Since(start)
+	if cold > 2*time.Second {
+		t.Fatalf("wrapping 200KB took %s", cold)
+	}
+	if len(first) != formValueRowsMax+1 {
+		t.Fatalf("an unbounded value became %d rows; the cap is %d", len(first), formValueRowsMax)
+	}
+	if !strings.Contains(first[len(first)-1], "more") {
+		t.Fatalf("the cap says nothing about what it dropped: %q", first[len(first)-1])
+	}
+	start = time.Now()
+	for range 50 {
+		v.wrappedValue(n, 80)
+	}
+	if warm := time.Since(start); warm > cold {
+		t.Fatalf("50 repaints cost %s against a cold wrap of %s: the cache is not holding", warm, cold)
+	}
+	// A width change re-wraps; the same width does not.
+	if narrow := v.wrappedValue(n, 40); len(narrow) == 0 {
+		t.Fatal("re-wrapping at a new width produced nothing")
+	}
+}
+
+// ENTER-TO-CLOSE MUST NOT SEND YOU HOME. Closing a value removes the rows it
+// was made of; the cursor used to fall to row zero and drag the window with it,
+// throwing a reader at the bottom of a long form back to the top.
+func TestClosingAValueKeepsTheReaderWhereTheyWere(t *testing.T) {
+	rows := func(open bool) []pitRow {
+		out := []pitRow{staticRow("form abc · v1")}
+		for i := range 20 {
+			id := fmt.Sprintf("key%02d", i)
+			out = append(out, idRow(id+": …", id))
+			if open && i == 15 {
+				for j := range 8 {
+					out = append(out, idRow("    value line", fmt.Sprintf("%s\x00%d", id, j)))
+				}
+			}
+		}
+		return out
+	}
+	p := newPicker(rows(true))
+	// stand on the third line of the opened value
+	for i, r := range p.rows {
+		if r.id == "key15\x003" {
+			p.cursor = i
+		}
+	}
+	p.lines(pitForm, 80, 12)
+	p.setRows(rows(false), "")
+	sel, ok := p.selected()
+	if !ok {
+		t.Fatal("closing the value lost the selection entirely")
+	}
+	if sel.id == "key00" {
+		t.Fatalf("closing the value threw the cursor to the top of the form")
+	}
+	if sel.id != "key15" && sel.id != "key16" {
+		t.Fatalf("cursor landed on %q; want the key it was standing in, or its neighbour", sel.id)
 	}
 }

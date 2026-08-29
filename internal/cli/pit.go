@@ -60,7 +60,7 @@ type screen struct{ v cmdkit.ScreenView }
 func (s screen) lines(_ pitID, w, h int) []string {
 	rows := s.v.Rows(w, h)
 	for i, r := range rows {
-		rows[i] = pitGray(clipToWidth(r, w))
+		rows[i] = pitGray(clipToWidth(pitText(r), w))
 	}
 	return rows
 }
@@ -299,7 +299,7 @@ func (d *pit) lines(w, h int) []string {
 		return d.body.lines(d.id, w, room)
 	}
 	out := make([]string, 0, room+1)
-	out = append(out, pitGray(clipToWidth(d.title, w)))
+	out = append(out, pitGray(clipToWidth(pitText(d.title), w)))
 	return append(out, d.body.lines(d.id, w, room-1)...)
 }
 
@@ -317,28 +317,74 @@ func pitSelected(s string) string {
 	return "\x1b[48;5;237m" + term.Label(s) + "\x1b[49m"
 }
 
-// stripSGR removes every escape sequence from s, so the pit can impose its own
-// voice on text that arrived with one. Command output carries its own SGR (`ls`
-// colours its tree), and an outer gray wrapped around an inner colour is simply
-// the inner colour -- which is why the pit "did not seem any different" from
-// the transcript.
-func stripSGR(s string) string {
-	if !strings.ContainsRune(s, 0x1b) {
+// pitText is THE GATE EVERY PIT ROW PASSES THROUGH, and it takes out more
+// than colour.
+//
+// A pit shows text that came from somewhere else: a form value, a command's
+// captured output, a queued message. All three can carry ESCAPE SEQUENCES --
+// a form holds tool output, and tool output holds whatever the tool printed.
+// Measured by a reviewer against this branch: a value containing
+// "\x1b[2J\x1b[10A" opened in the form pit CLEARED THE PANE -- fifteen painted
+// rows became one, the rule and the head row never came back, and the next
+// keystroke left a blank screen. The row was clipped and greyed on the way
+// out; neither of those looks at what is inside it.
+//
+// So the rule is: the pit paints TEXT, never control. Escape sequences go
+// (CSI, OSC and the two-byte forms alike), the other C0 controls go, DEL goes,
+// and a tab becomes a space -- because a tab in a windowed list is a jump to a
+// column the list does not own. Whatever colour the pit wants, it puts on
+// AFTERWARDS: an outer grey wrapped around an inner colour is just the inner
+// colour, which is why command output never looked like it was in a pit.
+func pitText(s string) string {
+	if !strings.ContainsFunc(s, isControl) {
 		return s
 	}
 	var b strings.Builder
+	b.Grow(len(s))
 	for i := 0; i < len(s); {
-		if s[i] == 0x1b {
-			j := i + 1
-			if j < len(s) && s[j] == '[' {
-				for j++; j < len(s) && (s[j] < 0x40 || s[j] > 0x7e); j++ {
-				}
+		c := s[i]
+		if c != 0x1b {
+			switch {
+			case c == '\t':
+				b.WriteByte(' ')
+			case c < 0x20 || c == 0x7f:
+				// dropped: a newline inside a ROW is not a row break, it is a
+				// row the reader cannot see the end of
+			default:
+				b.WriteByte(c)
 			}
-			i = min(j+1, len(s))
+			i++
 			continue
 		}
-		b.WriteByte(s[i])
-		i++
+		i = skipEscape(s, i)
 	}
 	return b.String()
+}
+
+func isControl(r rune) bool { return r == 0x1b || r == '\t' || r < 0x20 || r == 0x7f }
+
+// skipEscape returns the index just past the escape sequence beginning at i.
+// CSI (ESC [ … final) and OSC (ESC ] … BEL or ST) are consumed whole; anything
+// else costs the ESC and the byte after it.
+func skipEscape(s string, i int) int {
+	j := i + 1
+	if j >= len(s) {
+		return len(s)
+	}
+	switch s[j] {
+	case '[':
+		for j++; j < len(s) && (s[j] < 0x40 || s[j] > 0x7e); j++ {
+		}
+	case ']':
+		for j++; j < len(s); j++ {
+			if s[j] == 0x07 {
+				break
+			}
+			if s[j] == 0x1b && j+1 < len(s) && s[j+1] == '\\' {
+				j++
+				break
+			}
+		}
+	}
+	return min(j+1, len(s))
 }

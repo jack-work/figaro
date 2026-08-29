@@ -68,13 +68,14 @@ func newPicker(rows []pitRow) *picker {
 // The cursor is re-derived from the new rows: it appears when the list gains
 // something selectable and leaves when the list loses it.
 func (p *picker) setRows(rows []pitRow, keepID string) {
-	prev, hadCursor := "", p.hasCursor()
-	if hadCursor && p.cursor < len(p.rows) {
+	prev, was := "", p.cursor
+	if p.hasCursor() && p.cursor < len(p.rows) {
 		prev = p.rows[p.cursor].id
 	}
 	if keepID == "" {
 		keepID = prev
 	}
+	old := p.rows
 	p.rows = rows
 	p.cursor = -1
 	if keepID != "" {
@@ -82,6 +83,38 @@ func (p *picker) setRows(rows []pitRow, keepID string) {
 			if r.id == keepID && r.selectable() {
 				p.cursor = i
 				break
+			}
+		}
+	}
+	// THE ROW IS GONE: STAY WHERE YOU WERE STANDING. Falling back to the head
+	// of the list is how Enter -- which CLOSES a value by removing the rows it
+	// was made of -- threw a reader from the bottom of a 53-key form back to
+	// the top, and how a message deleted from another shell put the cursor on
+	// the one that runs next, with `x` under their finger.
+	//
+	// The fallback walks the OLD list outward from where the cursor was and
+	// takes the first row that is still here -- backwards first, because the
+	// row above is the one a collapsing value came out of and the one a reader
+	// has already read. An index is not enough: the lists are different
+	// lengths, and index 20 of the new list is a different key entirely.
+	if p.cursor < 0 && was >= 0 {
+		alive := make(map[string]int, len(rows))
+		for i, r := range rows {
+			if r.selectable() {
+				if _, seen := alive[r.id]; !seen {
+					alive[r.id] = i
+				}
+			}
+		}
+		for d := 1; p.cursor < 0 && d <= len(old); d++ {
+			for _, j := range [2]int{was - d, was + d} {
+				if j < 0 || j >= len(old) {
+					continue
+				}
+				if i, ok := alive[old[j].id]; ok {
+					p.cursor = i
+					break
+				}
 			}
 		}
 	}
@@ -287,7 +320,11 @@ func (p *picker) lines(id pitID, w, h int) []string {
 		if i == p.cursor {
 			prefix = mark + " "
 		}
-		row := clipToWidth(prefix+p.rows[i].text, w)
+		// EVERY ROW THROUGH THE GATE (pitText, pit.go): rows come from
+		// forms, command output and queued messages, and any of the three can
+		// carry escape sequences. One place, so a new kind of pit cannot
+		// forget.
+		row := clipToWidth(prefix+pitText(p.rows[i].text), w)
 		if i == p.cursor {
 			out = append(out, pitSelected(row))
 			continue

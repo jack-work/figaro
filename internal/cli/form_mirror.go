@@ -166,11 +166,13 @@ func renderFormRow(n *formNode, width int, selected bool) string {
 	} else {
 		line += fmt.Sprintf(" (%d)", len(n.children))
 	}
-	if len(line) > width {
-		line = line[:max(0, width-1)] + "…"
-	}
+	// COLUMNS, NOT BYTES. Both cuts in this file used len(): a row of Japanese
+	// painted 75 columns of a 100-column pane and then ellipsised, and the
+	// preview below cut mid-rune and left two U+FFFD in the middle of the
+	// line. An emoji spends four of a byte budget and two cells of a real one.
+	line = clipToWidthEllipsis(line, width)
 	if selected {
-		return "\x1b[7m" + line + strings.Repeat(" ", max(0, width-len(line))) + "\x1b[0m"
+		return "\x1b[7m" + line + strings.Repeat(" ", max(0, width-displayWidth(line))) + "\x1b[0m"
 	}
 	return line
 }
@@ -179,10 +181,10 @@ func renderFormRow(n *formNode, width int, selected bool) string {
 // in kilobytes; a tree that pastes one into a row is not a tree.
 func formValuePreview(raw json.RawMessage) string {
 	s := strings.Join(strings.Fields(string(raw)), " ")
-	if len(s) > 120 {
-		return s[:119] + "…"
-	}
-	return s
+	// 120 COLUMNS, not 120 bytes: a byte cap gave an ASCII value 120
+	// characters of preview and a CJK value 40, and cut the 121st rune in
+	// half on the way.
+	return clipToWidthEllipsis(s, 120)
 }
 
 // openBranch is Enter: it opens what is under a row. On a BRANCH that is its
@@ -241,40 +243,41 @@ func prettyJSON(b []byte) ([]string, bool) {
 // wrapPlain breaks a line at the width, at a space where there is one within
 // reach and mid-word where there is not. Display width, not bytes: a form is
 // full of prose and emoji.
+// ONE PASS, NOT ONE PER ROW. The first cut measured the whole remaining string
+// with runewidth.StringWidth on every iteration, which is O(n²) in the length
+// of the value -- and Items() re-wrapped every open value on every paint, under
+// the render lock. Measured by a reviewer: 120KB of value cost 117ms PER
+// KEYSTROKE, and a 1MB value 3.53 SECONDS per render. This walks the string
+// once; wrappedValue caches the result so a repaint costs nothing at all.
 func wrapPlain(s string, width int) []string {
 	if s == "" {
 		return []string{""}
 	}
 	var out []string
-	for runewidth.StringWidth(s) > width {
-		cut := 0
-		w := 0
-		lastSpace := -1
-		for i, r := range s {
-			rw := runewidth.RuneWidth(r)
-			if w+rw > width {
-				cut = i
-				break
+	start, w, lastSpace := 0, 0, -1
+	for i, r := range s {
+		rw := runewidth.RuneWidth(r)
+		if w+rw > width && i > start {
+			// Break at a space when there is one past the halfway mark;
+			// wrapping a word's first letter onto its own row helps nobody.
+			if lastSpace > start && lastSpace-start > width/2 {
+				out = append(out, s[start:lastSpace])
+				start = lastSpace + 1
+			} else {
+				out = append(out, s[start:i])
+				start = i
 			}
-			if r == ' ' {
-				lastSpace = i
+			lastSpace, w = -1, 0
+			for _, rr := range s[start:i] {
+				w += runewidth.RuneWidth(rr)
 			}
-			w += rw
 		}
-		if cut == 0 {
-			break
+		if r == ' ' {
+			lastSpace = i
 		}
-		// Only break at a space that is not right at the start of the line:
-		// wrapping "a" onto its own row helps nobody.
-		if lastSpace > width/2 {
-			out = append(out, s[:lastSpace])
-			s = strings.TrimLeft(s[lastSpace+1:], " ")
-			continue
-		}
-		out = append(out, s[:cut])
-		s = s[cut:]
+		w += rw
 	}
-	return append(out, s)
+	return append(out, s[start:])
 }
 
 // yankFormNode is what `y` copies: a leaf's value, or a branch as the object it

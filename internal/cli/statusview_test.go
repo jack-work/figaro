@@ -136,12 +136,12 @@ func TestAlertLeadsAndIsNeverShed(t *testing.T) {
 	v := barFixture()
 	v.Alert = "queue rm: refused"
 	rows := v.render(100)
-	if !strings.HasPrefix(stripSGR(rows[0]), "queue rm: refused") {
+	if !strings.HasPrefix(pitText(rows[0]), "queue rm: refused") {
 		t.Fatalf("the alert does not lead the row: %q", rows[0])
 	}
 	// Even at a width where the mantra has gone.
 	narrow := strings.Join(v.render(44), "\n")
-	if !strings.Contains(stripSGR(narrow), "queue rm: refused") {
+	if !strings.Contains(pitText(narrow), "queue rm: refused") {
 		t.Fatalf("the alert was shed on a narrow bar: %q", narrow)
 	}
 }
