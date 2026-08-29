@@ -123,6 +123,12 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	// the frame-rate ceiling, whose trailing repaint runs on a timer goroutine
 	// and so needs the same lock.
 	lt.setRenderLock(&mu)
+	// FREEZE FORENSICS: the watchdog dumps every goroutine when this lock has
+	// been unavailable for seconds, and SIGUSR1/SIGUSR2 do it on demand. See
+	// freeze.go -- a pager that has stopped answering cannot be asked what it
+	// is doing, so it has to have been told to say.
+	defer watchRenderLock(&mu)()
+	defer armFreezeSignals()()
 	running := true  // a turn is in flight until turn.done; gates Ctrl-C
 	sendCursor := -1 // cursor from Qua; stop only once committed past it and idle
 

@@ -148,6 +148,12 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 	// the frame-rate ceiling, whose trailing repaint runs on a timer goroutine
 	// and so needs the same lock.
 	lt.setRenderLock(&mu)
+	// FREEZE FORENSICS: the watchdog dumps every goroutine when this lock has
+	// been unavailable for seconds, and SIGUSR1/SIGUSR2 do it on demand. See
+	// freeze.go -- a pager that has stopped answering cannot be asked what it
+	// is doing, so it has to have been told to say.
+	defer watchRenderLock(&mu)()
+	defer armFreezeSignals()()
 
 	// THE SUBJECT COMES IN THROUGH THE SAME DOOR IT LATER SWITCHES THROUGH.
 	// in.retarget dials, wires the notify pump and the desync hook, points the

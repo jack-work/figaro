@@ -582,7 +582,24 @@ func (t *transcript) applyPage(req transcriptPageRequest, page historyPage) {
 	}
 	t.client.SetMoreBefore(page.more)
 	t.client.Merge(page.msgs, page.extents)
+	// A PAGE THAT DOES NOT LOWER THE FLOOR IS THE FLOOR. Every other exit from
+	// the paging loops is a fact about the ANSWER -- an empty page, an error --
+	// and none of them fires when a read keeps handing back what the pager
+	// already holds while still claiming there is more before it. The loop then
+	// reads forever, taking the render lock on every pass: a pinned core, a
+	// keyboard that does nothing, a pane that will not repaint on resize.
+	//
+	// Progress is the floor moving. If it does not move, the walk is over,
+	// whatever the wire says about `more`: a search reports no match, a jump
+	// resolves against the beginning that actually exists, and the reader gets
+	// their pager back.
+	before := t.from
 	t.lowerFloor(anchorOf(page.msgs[0]))
+	if t.from == before {
+		t.client.SetMoreBefore(false)
+		t.reachedFloor()
+		return
+	}
 	t.absorbOlder(page.msgs, anchor, within)
 	if t.search != nil {
 		return // still walking; the worker asks for the next page
