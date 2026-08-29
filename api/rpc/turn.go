@@ -91,7 +91,14 @@ type InterruptRequest struct {
 // removed or left to be answered. Epoch names the inbox generation the ids in
 // Queue belong to (see QueueDeleteRequest).
 type InterruptResponse struct {
-	OK      bool           `json:"ok"`
+	OK bool `json:"ok"`
+	// Stopped says whether there WAS a turn to stop. Without it the client
+	// cannot tell "I interrupted the model" from "there was nothing running",
+	// and both came back as OK: so the pager guessed from its own turn state,
+	// which is a frame or two behind the daemon and was wrong exactly when it
+	// mattered -- a turn in flight, and the pager saying "nothing to
+	// interrupt".
+	Stopped bool           `json:"stopped,omitempty"`
 	Cleared bool           `json:"cleared,omitempty"`
 	Epoch   string         `json:"epoch,omitempty"`
 	Queue   []QueuedPrompt `json:"queue,omitempty"`

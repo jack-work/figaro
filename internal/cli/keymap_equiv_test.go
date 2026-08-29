@@ -204,6 +204,15 @@ var pagerOracle = []struct {
 	keys  map[string]string
 }{
 	{"help", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"", map[string]string{
+		// REGENERATED 2026-08-29 for 'S' and 'T'. Two new panel keys: S opens
+		// the FORM in the pit (S for state, the CLI's other spelling of the
+		// same verb) and T hands the screen to the conversation without
+		// closing the pit. Both are openers, both are inert here in the sense
+		// that matters -- they change what is OPEN, not where the transcript
+		// sits -- and the cells below are what that looks like from the
+		// oracle's side.
+		"0x53": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
+		"0x54": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
 		// 'F' IS FULLSCREEN: the pit takes the pane and the transcript is
 		// shadowed behind it. A pit key, so it does not dismiss the pit.
 		"0x46": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
@@ -366,6 +375,15 @@ var pagerOracle = []struct {
 		"0x7f": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"1\"",
 	}},
 	{"panel+sel", "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\"", map[string]string{
+		// REGENERATED 2026-08-29 for 'S' and 'T'. Two new panel keys: S opens
+		// the FORM in the pit (S for state, the CLI's other spelling of the
+		// same verb) and T hands the screen to the conversation without
+		// closing the pit. Both are openers, both are inert here in the sense
+		// that matters -- they change what is OPEN, not where the transcript
+		// sits -- and the cells below are what that looks like from the
+		// oracle's side.
+		"0x53": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\"",
+		"0x54": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\"",
 		// 'F' IS FULLSCREEN: the pit takes the pane and the transcript is
 		// shadowed behind it. A pit key, so it does not dismiss the pit.
 		"0x46": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\"",
@@ -402,6 +420,15 @@ var pagerOracle = []struct {
 		"0x78": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\"",
 	}},
 	{"queued", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"", map[string]string{
+		// REGENERATED 2026-08-29 for 'S' and 'T'. Two new panel keys: S opens
+		// the FORM in the pit (S for state, the CLI's other spelling of the
+		// same verb) and T hands the screen to the conversation without
+		// closing the pit. Both are openers, both are inert here in the sense
+		// that matters -- they change what is OPEN, not where the transcript
+		// sits -- and the cells below are what that looks like from the
+		// oracle's side.
+		"0x53": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\"",
+		"0x54": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\"",
 		// 'F' IS FULLSCREEN: the pit takes the pane and the transcript is
 		// shadowed behind it. A pit key, so it does not dismiss the pit.
 		"0x46": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\"",
@@ -642,6 +669,15 @@ var pagerOracle = []struct {
 		"0x7f": "off:same fol=false srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\"",
 	}},
 	{"status", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"", map[string]string{
+		// REGENERATED 2026-08-29 for 'S' and 'T'. Two new panel keys: S opens
+		// the FORM in the pit (S for state, the CLI's other spelling of the
+		// same verb) and T hands the screen to the conversation without
+		// closing the pit. Both are openers, both are inert here in the sense
+		// that matters -- they change what is OPEN, not where the transcript
+		// sits -- and the cells below are what that looks like from the
+		// oracle's side.
+		"0x53": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
+		"0x54": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
 		// 'F' IS FULLSCREEN: the pit takes the pane and the transcript is
 		// shadowed behind it. A pit key, so it does not dismiss the pit.
 		"0x46": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\"",

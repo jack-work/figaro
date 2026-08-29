@@ -200,7 +200,9 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 				// (the catch-up page), so it goes on a goroutine rather than
 				// holding up the key loop that is about to start.
 				go func() {
-					in.enterTranscript()
+					// THE FORM, AND ONLY THE FORM: no history is fetched, and
+					// a fullscreen pit obscures what has not been fetched.
+					in.enterFormPager()
 					in.openLive("form show", figaroID, true)
 				}()
 			}

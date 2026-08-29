@@ -247,7 +247,7 @@ fi
 #     and the rows arrive afterwards. The picker used to be told at birth
 #     whether it had a cursor, so it stayed cursorless for the rest of its life
 #     and ^N did nothing until you closed the pit and opened it again.
-hl() { tmux -S "$SOCK" capture-pane -p -e -t bar:0 | grep -a "48;5;237m" | head -1 | sed 's/\x1b\[[0-9;]*m//g' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'; }
+hl() { tmux -S "$SOCK" capture-pane -p -e -t bar:0 | grep -a "48;5;240m" | head -1 | sed 's/\x1b\[[0-9;]*m//g' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'; }
 
 tmux -S "$SOCK" send-keys -t bar:0 Escape; sleep 0.4   # section 6 left the pit open
 tmux -S "$SOCK" send-keys -t bar:0 Q; sleep 1          # open it EMPTY
@@ -331,8 +331,8 @@ for verb in "form listen" "form show" "state show" "form"; do
   tmux -S "$SOCK" send-keys -t bar:0 -l "$verb"; sleep 0.5
   tmux -S "$SOCK" send-keys -t bar:0 Enter; sleep 2
   formrow=$(bar)
-  if [[ "$formrow" == *"𝄢"* ]]; then
-    echo "ok   :$verb opens the form pit (𝄢)"
+  if [[ "$formrow" == *"웃"* ]]; then
+    echo "ok   :$verb opens the form pit (웃)"
   else
     echo "FAIL: :$verb did not open the form pit: [$formrow]"; fail=1
   fi
@@ -401,10 +401,14 @@ if (( big > small )); then
 else
   echo "FAIL: F did not grow the pit ($small → $big)"; fail=1
 fi
-if tmux -S "$SOCK" capture-pane -p -t bar:0 | grep -q "look around"; then
-  echo "ok   the transcript is still behind the fullscreen pit"
+# FULLSCREEN OBSCURES. The conversation is not dimmed behind the pit any more:
+# it is gone until the pit closes. ("look around" is no good as the probe -- it
+# is the mantra, and the mantra is on the bar; the prompt echo is the row that
+# only exists in the transcript.)
+if tmux -S "$SOCK" capture-pane -p -t bar:0 | grep -q "^  aria "; then
+  echo "FAIL: fullscreen left the transcript on screen"; fail=1
 else
-  echo "FAIL: fullscreen blanked the transcript instead of shadowing it"; fail=1
+  echo "ok   fullscreen obscures the transcript"
 fi
 tmux -S "$SOCK" send-keys -t bar:0 F; sleep 1
 back=$(tmux -S "$SOCK" capture-pane -p -t bar:0 | grep -c "^  ")
@@ -441,11 +445,42 @@ fi
 #     "pending report" of everything it had said and REPRINT it to the shell on
 #     the way out, so one hangup became two lines and a disconnect four. Gluck:
 #     "there should not be duplicates, there should also not be ANYTHING."
+# THREE PHRASES, AND NO MORE. With no turn in flight there is nothing to stop,
+# and that is all it says.
 tmux -S "$SOCK" send-keys -t bar:0 H; sleep 2
-if [[ "$(bar)" == *"hung up"* || "$(bar)" == *"hanging up"* ]]; then
-  echo "ok   the hangup is reported in the bar, where it retires"
+if [[ "$(bar)" == *"nothing to interrupt"* ]]; then
+  echo "ok   H with no turn says nothing to interrupt"
 else
-  echo "FAIL: the hangup said nothing in the bar: [$(bar)]"; fail=1
+  echo "FAIL: H with no turn said: [$(bar)]"; fail=1
+fi
+for word in "hanging up" "staying attached" "Ctrl-C again" "printed on exit"; do
+  if [[ "$(bar)" == *"$word"* ]]; then
+    echo "FAIL: the bar still explains itself ('$word')"; fail=1
+  fi
+done
+# And with a turn RUNNING: interrupting, then interrupted.
+echo 6 > "$DIR/req.jsonl.delay"
+"$BIN" send -f --id "$ARIA" -- "a turn to interrupt" >/dev/null 2>&1
+sleep 2
+tmux -S "$SOCK" send-keys -t bar:0 H; sleep 1
+mid=$(bar)
+sleep 7
+after=$(bar)
+echo 0 > "$DIR/req.jsonl.delay"
+# The daemon answers in milliseconds, so the sample may already be the settled
+# word; what must never appear is the old paragraph.
+if [[ "$mid" == *"interrupting"* || "$mid" == *"interrupted"* ]]; then
+  echo "ok   H on a live turn says interrupting/interrupted"
+else
+  echo "FAIL: H on a live turn said: [$mid]"; fail=1
+fi
+if [[ "$mid" == *"nothing to interrupt"* ]]; then
+  echo "FAIL: H on a live turn claimed there was nothing to interrupt"; fail=1
+fi
+if [[ "$after" == *"interrupted"* || "$mid" == *"interrupted"* ]]; then
+  echo "ok   and interrupted once it settled"
+else
+  echo "FAIL: the interrupt never settled into 'interrupted': [$after]"; fail=1
 fi
 tmux -S "$SOCK" send-keys -t bar:0 C-d; sleep 2
 after=$(tmux -S "$SOCK" capture-pane -p -t bar:0)
@@ -473,9 +508,9 @@ pitheight() {
     END   { print NR - rule - 1 }'
 }
 pane=$(tmux -S "$SOCK" capture-pane -p -t bar:0)
-formrows=$(echo "$pane" | grep -c "♮\|𝄢")
+formrows=$(echo "$pane" | grep -c "♮\|웃")
 big=$(pitheight)
-if [[ "$pane" == *"𝄢"* ]]; then
+if [[ "$pane" == *"웃"* ]]; then
   echo "ok   form listen opens the form pit ($formrows marked rows)"
 else
   echo "FAIL: form listen did not open the form pit"; fail=1
@@ -523,6 +558,45 @@ else
   echo "ok   branches carry no arrow"
 fi
 
+# 11c2. S IS THE FORM, T IS THE FOCUS, AND FULLSCREEN IS THE PAGER'S.
+tmux -S "$SOCK" send-keys -t bar:0 Escape; sleep 0.6
+tmux -S "$SOCK" send-keys -t bar:0 S; sleep 2.5
+if tmux -S "$SOCK" capture-pane -p -t bar:0 | grep -q "웃"; then
+  echo "ok   S opens the form pit"
+else
+  echo "FAIL: S did not open the form pit"; fail=1
+fi
+tmux -S "$SOCK" send-keys -t bar:0 F; sleep 1
+fullrows=$(pitheight)
+tmux -S "$SOCK" send-keys -t bar:0 T; sleep 1     # the conversation takes the screen
+halfrows=$(pitheight)
+if (( halfrows < fullrows )); then
+  echo "ok   T made the fullscreen pit recede ($fullrows → $halfrows rows)"
+else
+  echo "FAIL: T did not shrink the fullscreen pit ($fullrows → $halfrows)"; fail=1
+fi
+if tmux -S "$SOCK" capture-pane -p -t bar:0 | grep -q "웃"; then
+  echo "ok   and the pit is still open behind the conversation"
+else
+  echo "FAIL: T closed the pit instead of receding it"; fail=1
+fi
+tmux -S "$SOCK" send-keys -t bar:0 T; sleep 1     # and back
+if (( $(pitheight) > halfrows )); then
+  echo "ok   T again gives the pit the screen back"
+else
+  echo "FAIL: T did not restore the fullscreen pit"; fail=1
+fi
+# The pager's disposition SURVIVES the pit: close it, open another, still full.
+tmux -S "$SOCK" send-keys -t bar:0 Escape; sleep 0.6
+tmux -S "$SOCK" send-keys -t bar:0 '?'; sleep 1
+if (( $(pitheight) > halfrows )); then
+  echo "ok   fullscreen is the pager's, not the pit's (help opened full)"
+else
+  echo "FAIL: the next pit forgot fullscreen"; fail=1
+fi
+tmux -S "$SOCK" send-keys -t bar:0 F; sleep 0.8   # back to the ordinary size
+tmux -S "$SOCK" send-keys -t bar:0 Escape; sleep 0.6
+
 # 11d. Esc CLOSES THE PIT AND SHOWS THE TRANSCRIPT, and so does 'q' -- they are
 #      one gesture, and q leaves the session only when there is no pit to close.
 tmux -S "$SOCK" send-keys -t bar:0 Escape; sleep 1
@@ -536,7 +610,7 @@ tmux -S "$SOCK" send-keys -t bar:0 -l "form show"; sleep 0.4
 tmux -S "$SOCK" send-keys -t bar:0 Enter; sleep 2
 tmux -S "$SOCK" send-keys -t bar:0 q; sleep 1
 after=$(tmux -S "$SOCK" capture-pane -p -t bar:0)
-if [[ "$after" == *"𝄢"* ]]; then
+if [[ "$after" == *"웃"* ]]; then
   echo "FAIL: q did not close the form pit"; fail=1
 elif [[ "$after" == *"look around"* ]]; then
   echo "ok   q closed the pit and left the transcript up"
@@ -545,10 +619,11 @@ else
   echo "$after" | tail -6 | sed 's/^/    |/'
 fi
 tmux -S "$SOCK" send-keys -t bar:0 q; sleep 1.5
-if tmux -S "$SOCK" capture-pane -p -t bar:0 | tail -1 | grep -q '\$'; then
+if tmux -S "$SOCK" capture-pane -p -t bar:0 | grep -q '^bash-.*\$'; then
   echo "ok   a second q, with no pit open, leaves the session"
 else
   echo "FAIL: q with no pit open did not leave"; fail=1
+  tmux -S "$SOCK" capture-pane -p -t bar:0 | tail -6 | sed 's/^/    |/'
 fi
 
 exit $fail

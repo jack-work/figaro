@@ -315,6 +315,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			in.lt.setCommandRunner(in.runCommand)
 			in.lt.setCommandCompleter(in.complete)
 			in.lt.tr.dropRow = in.dropPitRow
+			in.lt.tr.openForm = func() { go in.openLive("form show", "", false) }
 			in.lt.setQueuedFetch(in.refreshQueued) // 'Q' works before the pager is ever opened
 			// Both are inert until the PAGER is up (a fetcher is only consulted by
 			// Store.Ensure, i.e. the prefetch worker), and both must be in place
@@ -395,7 +396,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			// Same door as the error path: in the pager this is a red token in
 			// the status row, inline it is the line on stderr it always was.
 			mu.Lock()
-			lt.report("interrupting...")
+			lt.report("interrupting")
 			mu.Unlock()
 			intCtx, intCancel := context.WithTimeout(context.Background(), 3*time.Second)
 			_ = fcli.Interrupt(intCtx)
@@ -526,12 +527,37 @@ type transcriptReadClient interface {
 // enterTranscript opens the pager on the recent window (older history pages in
 // on scroll-up); shared by Ctrl-T, Ctrl-L, and listen's auto-enter. No-op when
 // already in the pager.
-func (in *interactiveInput) enterTranscript() {
+func (in *interactiveInput) enterTranscript() { in.enterPager(true) }
+
+// enterFormPager opens the pager WITHOUT reading the conversation: no catch-up
+// page, no history fetcher, nothing asked for and nothing kept. It is what
+// `fig form listen` opens into.
+//
+// THE FORM IS NOT THE CONVERSATION. A reader who came for the board may have no
+// interest in the agent's output -- and, Gluck notes, may one day not be
+// permitted to read it. Fetching a page of it to draw underneath an opaque
+// fullscreen pit is work done to produce something nobody sees. Ctrl-T still
+// opens the conversation the ordinary way: the pager arms its catch-up hook the
+// moment the pit is closed, so nothing is lost, it is merely not fetched first.
+func (in *interactiveInput) enterFormPager() { in.enterPager(false) }
+
+func (in *interactiveInput) enterPager(history bool) {
 	in.mu.Lock()
 	already := in.lt.transcriptActive()
 	seeded := in.lt.hasSeed()
+	if !history {
+		// Claimed, so the automatic catch-up does not fire behind the pit.
+		in.caughtUp = true
+	}
 	in.mu.Unlock()
 	if already {
+		return
+	}
+	if !history {
+		in.mu.Lock()
+		in.lt.enterTranscript()
+		in.lt.setQueuedFetch(in.refreshQueued)
+		in.mu.Unlock()
 		return
 	}
 	// Already holding the catch-up page (we joined a turn we did not open, and
@@ -1204,14 +1230,26 @@ func inputInterrupt(in *interactiveInput, ev keyEvent) keyVerdict {
 		return keyStop
 	}
 	in.mu.Lock()
-	in.lt.report("interrupting; leaving when the turn stops (Ctrl-C again to leave now)")
+	in.lt.report("interrupting")
 	in.mu.Unlock()
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if _, err := in.hangup.Hangup(ctx, rpc.QueueKeep); err != nil {
+		resp, err := in.hangup.Hangup(ctx, rpc.QueueKeep)
+		if err == nil && !resp.Stopped {
+			// THERE WAS NOTHING TO WAIT FOR. ^C on an idle aria means what it
+			// means in every other pager: leave, now, rather than sit on a
+			// doneCh that will never close.
+			in.cancel()
+			return
+		}
+		if err != nil {
 			// The turn will not be stopping, so nothing will close doneCh for
-			// us. Leave rather than hang, and say why.
+			// us. Leave rather than hang, and say why -- in three words, plus
+			// the reason. TWO WORDS ARE THE WHOLE VOCABULARY otherwise:
+			// "interrupting", then "interrupted" when it has settled, and
+			// "nothing to interrupt" when there was no turn. Gluck: "no long
+			// message. no ctrl-c to leave now, etc."
 			in.mu.Lock()
 			in.lt.report("interrupt failed: " + err.Error())
 			in.mu.Unlock()
@@ -1234,19 +1272,23 @@ func inputHangUpDrop(in *interactiveInput, _ keyEvent) keyVerdict {
 	return in.hangUp(rpc.QueueClear)
 }
 
+// hangUp is H and X: stop the turn and STAY. THE WHOLE VOCABULARY IS THREE
+// PHRASES -- "interrupting", then "interrupted" when the daemon has answered,
+// and "nothing to interrupt" when there was no turn to stop. Gluck: "no long
+// message. no ctrl-c to leave now, etc."
+//
+// What it used to say instead: "hanging up: staying attached", then "hung up:
+// listening (2 queued, answered next)" -- an explanation of the pager's own
+// mechanics on a row that is one line long and retires in ten seconds.
 func (in *interactiveInput) hangUp(disposition rpc.QueueDisposition) keyVerdict {
 	if in.hangup == nil {
 		in.mu.Lock()
-		in.lt.report("hang up: not connected")
+		in.lt.report("nothing to interrupt")
 		in.mu.Unlock()
 		return keyHandled
 	}
 	in.mu.Lock()
-	if disposition == rpc.QueueClear {
-		in.lt.report("hanging up: dropping the queue")
-	} else {
-		in.lt.report("hanging up: staying attached")
-	}
+	in.lt.report("interrupting")
 	in.mu.Unlock()
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -1256,30 +1298,19 @@ func (in *interactiveInput) hangUp(disposition rpc.QueueDisposition) keyVerdict 
 		defer in.mu.Unlock()
 		switch {
 		case err != nil:
-			in.lt.report("hang up failed: " + err.Error())
+			in.lt.report("interrupt failed: " + err.Error())
 		case resp.Cleared && len(resp.Queue) > 0:
-			// ONE report, with the list inside it. report() folds newlines for
-			// the status row (which is one physical line) and keeps the raw
-			// text for the pending report, which leaveTranscript reprints to
-			// the shell: so the summary is readable live and the full list
-			// lands in scrollback. N separate reports would instead leave the
-			// status row showing only the LAST message, which is how this read
-			// in the pty: a lone "doomed two" with no header.
-			var b strings.Builder
-			fmt.Fprintf(&b, "hung up: listening; dropped %s:", queueCount(resp.Queue))
-			for _, p := range resp.Queue {
-				b.WriteString("\n  " + queueRowText(p.Text))
-			}
-			in.lt.report(b.String())
-		case resp.Cleared:
-			in.lt.report("hung up: listening (nothing was queued)")
-		case len(resp.Queue) > 0:
-			// Say what survived, because the whole point of keeping it is that
-			// it is about to be asked.
-			in.lt.report(fmt.Sprintf("hung up: listening (%s queued, answered next)",
-				queueCount(resp.Queue)))
+			// WHAT WAS DROPPED IS SHOWN, NOT SUMMARISED. The queue's text is
+			// the only copy the reader has once it is dropped, and a bar row
+			// that clips it is a copy nobody can read -- so the list goes in a
+			// pit, which is the rule for anything longer than half a row.
+			in.lt.showDropped(resp.Queue)
+		case resp.Stopped:
+			in.lt.report("interrupted")
 		default:
-			in.lt.report("hung up: listening")
+			// THE DAEMON SAYS SO, NOT THE PAGER. The pager's own turn state is
+			// a frame or two behind and was wrong exactly when it mattered.
+			in.lt.report("nothing to interrupt")
 		}
 	}()
 	return keyHandled

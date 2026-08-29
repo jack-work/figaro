@@ -6,11 +6,13 @@ import (
 	"io"
 	"log/slog"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/jack-work/figaro/api/livedoc"
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/render"
@@ -604,6 +606,23 @@ func (t *livelogTurn) inTranscript() bool { return t.tr.active }
 func (t *livelogTurn) transcriptDispatch(ev keyEvent) { t.tr.dispatch(ev) }
 
 func (t *livelogTurn) invalidateTranscriptRows() { t.tr.invalidateRows() }
+
+// showDropped is what X leaves behind: the messages the daemon just discarded,
+// IN A PIT, because their text is now the only copy anywhere and a bar row
+// clips it. It replaces the old arrangement, which folded the whole list into
+// one status line and relied on leaveTranscript reprinting it to the shell --
+// and that reprint is gone (it is what printed every hangup twice), so without
+// this the text was simply destroyed. Two reviewers found it independently.
+func (t *livelogTurn) showDropped(queue []rpc.QueuedPrompt) {
+	rows := make([]pitRow, 0, len(queue)+1)
+	rows = append(rows, staticRow(fmt.Sprintf("  interrupted · dropped %s", queueCount(queue))))
+	for _, p := range queue {
+		rows = append(rows, pitRow{text: "  " + queueRowText(p.Text), yank: p.Text, id: strconv.FormatUint(p.ID, 10)})
+	}
+	t.tr.pit.showList(pitDropped, "", rows)
+	t.tr.render()
+	slog.Warn("figaro session", "dropped", len(queue))
+}
 
 // report is where trouble goes: an error reason, a provider hint, an interrupt
 // notice. TWO DESTINATIONS, AND THE TERMINAL IS NOT ONE OF THEM.

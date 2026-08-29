@@ -64,11 +64,20 @@ func TestPickerSetRowsKeepsSelectionAcrossReorder(t *testing.T) {
 	if row, _ := p.selected(); row.id != "3" {
 		t.Fatalf("the reorder dragged the cursor off row 3: %+v", row)
 	}
-	// A row that vanishes gives the cursor back to the head of the list rather
-	// than leaving it pointing at nothing.
-	p.setRows([]pitRow{idRow("a", "1")}, "")
-	if row, ok := p.selected(); !ok || row.id != "1" {
-		t.Fatalf("after the selected row vanished: %+v, %v", row, ok)
+	// A ROW THAT VANISHES LEAVES THE CURSOR WHERE IT WAS STANDING, not at the
+	// head -- and the case has to be built so those two are DIFFERENT rows.
+	// (pitrev2 on the first draft of this test: its shrink case left one row
+	// and "cannot tell 'top of list' from 'the neighbour' -- that test
+	// documents the fallback but does not defend it; give it a fourth row.")
+	p = newPicker([]pitRow{idRow("a", "1"), idRow("b", "2"), idRow("c", "3"), idRow("d", "4")})
+	p.pick(2) // standing on c
+	p.setRows([]pitRow{idRow("a", "1"), idRow("b", "2"), idRow("d", "4")}, "")
+	row, ok := p.selected()
+	if !ok || row.id == "1" {
+		t.Fatalf("the vanished row sent the cursor to the head: %+v, %v", row, ok)
+	}
+	if row.id != "2" {
+		t.Fatalf("cursor landed on %q; want b, the row it was standing next to", row.id)
 	}
 }
 
@@ -440,16 +449,30 @@ func TestValueWrappingIsCheapAndBounded(t *testing.T) {
 	if !strings.Contains(first[len(first)-1], "more") {
 		t.Fatalf("the cap says nothing about what it dropped: %q", first[len(first)-1])
 	}
-	start = time.Now()
+	// COUNTED, NOT TIMED. The first draft of this compared 50 warm lookups
+	// against one cold wrap in wall time and failed on noise at 1.5ms -- a
+	// flaky test asserting the right thing the wrong way.
+	if v.wraps != 1 {
+		t.Fatalf("the first wrap ran %d times", v.wraps)
+	}
 	for range 50 {
 		v.wrappedValue(n, 80)
 	}
-	if warm := time.Since(start); warm > cold {
-		t.Fatalf("50 repaints cost %s against a cold wrap of %s: the cache is not holding", warm, cold)
+	if v.wraps != 1 {
+		t.Fatalf("50 repaints wrapped %d times; the cache is not holding", v.wraps)
 	}
 	// A width change re-wraps; the same width does not.
 	if narrow := v.wrappedValue(n, 40); len(narrow) == 0 {
 		t.Fatal("re-wrapping at a new width produced nothing")
+	}
+	if v.wraps != 2 {
+		t.Fatalf("a resize wrapped %d times, want one more", v.wraps)
+	}
+	// And a CHANGED value re-wraps: the cache is keyed on the value itself.
+	n.value = json.RawMessage(`"` + big + `x"`)
+	v.wrappedValue(n, 40)
+	if v.wraps != 3 {
+		t.Fatalf("a changed value wrapped %d times, want one more", v.wraps)
 	}
 }
 
@@ -488,5 +511,70 @@ func TestClosingAValueKeepsTheReaderWhereTheyWere(t *testing.T) {
 	}
 	if sel.id != "key15" && sel.id != "key16" {
 		t.Fatalf("cursor landed on %q; want the key it was standing in, or its neighbour", sel.id)
+	}
+}
+
+// A MARKER NEVER SAYS "1 MORE". It costs exactly the row it is describing, so
+// spending it to hide a single line is a row wasted saying a row exists.
+// Gluck: "there is only ever a reason to put 2 more, you can always show the
+// last line."
+func TestMarkerNeverHidesASingleRow(t *testing.T) {
+	for n := 1; n <= 40; n++ {
+		rows := make([]pitRow, 0, n)
+		for i := range n {
+			rows = append(rows, idRow(fmt.Sprintf("row %02d", i), fmt.Sprintf("%d", i)))
+		}
+		p := newPicker(rows)
+		for _, at := range []string{"top", "middle", "bottom"} {
+			switch at {
+			case "middle":
+				p.cursor = n / 2
+			case "bottom":
+				p.end()
+			}
+			out := p.lines(pitQueue, 40, 12)
+			for _, l := range out {
+				if strings.Contains(l, "… 1 more") {
+					t.Fatalf("n=%d at %s: %q -- show the row instead", n, at, strings.TrimSpace(l))
+				}
+			}
+			// And nothing may be hidden without being counted: every row is
+			// either painted or inside a marker's number.
+			shown, counted := 0, 0
+			for _, l := range out {
+				plain := strings.TrimSpace(pitText(l))
+				switch {
+				case plain == "":
+				case strings.HasPrefix(plain, "…"):
+					var k int
+					fmt.Sscanf(plain, "… %d more", &k)
+					counted += k
+				default:
+					shown++
+				}
+			}
+			if shown+counted != n {
+				t.Fatalf("n=%d at %s: %d shown + %d counted != %d\n%s",
+					n, at, shown, counted, n, strings.Join(out, "\n"))
+			}
+		}
+	}
+}
+
+// AND THE HEIGHT DOES NOT MOVE while a reader scrolls a list that overflows:
+// the marker's row goes back to the list when the marker is not needed, so the
+// stanza is the same height either way and the transcript above it never jumps.
+func TestOverflowingListKeepsItsHeight(t *testing.T) {
+	rows := make([]pitRow, 0, 30)
+	for i := range 30 {
+		rows = append(rows, idRow(fmt.Sprintf("row %02d", i), fmt.Sprintf("%d", i)))
+	}
+	p := newPicker(rows)
+	want := len(p.lines(pitQueue, 40, 12))
+	for range 40 {
+		p.pick(1)
+		if got := len(p.lines(pitQueue, 40, 12)); got != want {
+			t.Fatalf("the pit changed height mid-scroll: %d then %d", want, got)
+		}
 	}
 }

@@ -625,6 +625,7 @@ func (a *Agent) Hangup(disposition rpc.QueueDisposition) rpc.InterruptResponse {
 		return resp
 	}
 	a.interrupted = true
+	resp.Stopped = true // there was a turn, and this is what stopped it
 	cancel := a.turnCancel
 	a.mu.Unlock()
 	if !resp.Cleared {

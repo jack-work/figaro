@@ -42,6 +42,17 @@ type transcript struct {
 	// pit.go for why that last clause is the point of the type.
 	pit         pit
 	queuedByKey bool // ...because the user pressed 'Q', not because it filled
+
+	// full is FULLSCREEN, and it is the pager's, not the pit's: `F` sets a
+	// disposition that whatever pit is open inherits, so closing a form and
+	// opening the queue does not quietly change how much of the screen a
+	// reader gets. It applies only while the PIT has the focus.
+	full bool
+	// focused says whether keys and the screen belong to the pit or to the
+	// conversation behind it. `T` moves it. A fullscreen pit RECEDES when the
+	// transcript takes focus rather than closing: the reader asked to look
+	// past it, not to lose it. Gluck: "the pit should remain open."
+	focused pitFocus
 	// queueDismissed latches a DELIBERATE close of the queue pit, so the
 	// next poll does not put it straight back. This is Gluck's bug: `fig send`
 	// that queues a message and enters the pager showed the queue, Esc closed
@@ -66,6 +77,16 @@ type transcript struct {
 	// completer returns Tab candidates for a partially typed command line. Set
 	// by the input loop, which owns the router.
 	completer func(string) []string
+	// openForm is 'S': the input loop's door to the live form view, because
+	// opening one DIALS and the transcript may not. Same shape as dropRow and
+	// queuedFetch: the pager knows what it wants, the loop knows how.
+	//
+	// IT MUST NOT TAKE THE RENDER LOCK. Every hook here is called from
+	// dispatch, which runs with that lock held, so the implementation hands
+	// off to a goroutine exactly as runCommand does. Measured, in a pty: `S`
+	// froze the pager dead -- and every key after it, which is why the freeze
+	// read as "S does nothing" rather than as a hang.
+	openForm func()
 	// dropRow is 'x' on a selected pit row: the owner decides what dropping
 	// means for that pit's name.
 	dropRow func(pit, id string)
@@ -1073,7 +1094,15 @@ func (t *transcript) footLines() []string {
 		if !t.pit.open() {
 			return nil
 		}
-		rows = t.pit.lines(t.w, t.h)
+		t.pit.full = t.fullPit()
+		rows = t.pit.lines(t.w, t.pitRoom())
+	}
+	// FULLSCREEN IS THE PIT AND NOTHING ELSE. No rule, no page position, no
+	// conversation behind it -- Gluck: "there shouldn't be any top bar at all.
+	// just form content." The rule says where you are in a conversation that
+	// is not on the screen, which is a fact about somewhere else.
+	if t.fullPit() {
+		return rows
 	}
 	// THE TRANSCRIPT'S RULE OPENS THE REGION, above the pit's body -- so the
 	// screen reads top to bottom as: conversation, the rule that ends it, the
@@ -1102,6 +1131,52 @@ func (t *transcript) transcriptRule() string {
 	return "\x1b[2m" + t.status.ruleLine(t.w, pos) + "\x1b[0m"
 }
 
+// pitFocus is who the keys and the screen belong to while a pit is open.
+type pitFocus uint8
+
+const (
+	focusPit        pitFocus = iota // the default: a pit you opened is a pit you are in
+	focusTranscript                 // `T`: read the conversation, keep the pit
+)
+
+// fullPit reports whether the pit is taking the pane RIGHT NOW: the pager's
+// disposition, and the focus. A fullscreen pit recedes to its ordinary height
+// when the transcript takes focus -- the reader asked to see past it, and a
+// pane-sized pit with the conversation behind it shows nothing to see past.
+func (t *transcript) fullPit() bool {
+	return t.full && t.pit.open() && t.focused == focusPit
+}
+
+// focusTranscriptKey is `T`: hand the screen to the conversation without
+// closing what is open, and hand it back on the next press. It is the answer
+// to "I want to read the thread behind this form" that does not cost the form.
+func focusTranscriptKey(t *transcript) {
+	if !t.pit.open() {
+		return
+	}
+	if t.focused == focusPit {
+		t.focused = focusTranscript
+		return
+	}
+	t.focused = focusPit
+}
+
+// pitRoom is how many rows the pit may have, and it is the ONLY place that
+// arithmetic is done. The pane, minus the status bar (one row, or three when it
+// wraps -- barRows knows, and the pit did not), minus the blank above it, minus
+// the transcript's own rule, minus at least one row of conversation. An
+// ordinary pit leaves the conversation three rows rather than one; fullscreen
+// takes the rest.
+func (t *transcript) pitRoom() int {
+	if t.fullPit() {
+		// FULLSCREEN TAKES THE PANE: everything but the status bar, which is
+		// inviolable, and the blank row above it. No rule is drawn, so no row
+		// is reserved for one.
+		return max(t.h-t.barRows()-1, 1)
+	}
+	return max(t.h-t.barRows()-5, 1)
+}
+
 // layoutNow is layout against the CURRENT stanza height, without re-entering
 // footLines (which calls transcriptRule, which would call this).
 func (t *transcript) layoutNow() (body, maxOff int) {
@@ -1109,7 +1184,8 @@ func (t *transcript) layoutNow() (body, maxOff int) {
 	if rows := t.inputDrawerLines(); rows != nil {
 		foot = len(rows)
 	} else if t.pit.open() {
-		foot = len(t.pit.lines(t.w, t.h))
+		t.pit.full = t.fullPit()
+		foot = len(t.pit.lines(t.w, t.pitRoom()))
 	}
 	return t.layout(foot + 1) // +1 for the transcript rule above the pit
 }
@@ -1141,6 +1217,7 @@ func (t *transcript) setCmdOut(title string, rows []string) {
 		drows = append(drows, pitRow{text: r, yank: id, id: id})
 	}
 	t.pit.showList(pitOutput, ":"+title, drows)
+	t.focused = focusPit
 	t.render()
 }
 
@@ -1325,13 +1402,16 @@ func (t *transcript) renderFrame() {
 	// between the pit's last entry and its closing rule. The padding belongs
 	// above the transcript's rule, where the live region ends; anchoring the
 	// stanza to the bottom of the screen puts it there.
-	if t.pit.full {
-		// SHADOWED, NOT BLANKED: every row of the conversation is dimmed and
-		// left in place, so the pit reads as something laid OVER the
-		// transcript rather than as a screen the transcript left.
+	if t.fullPit() {
+		// FULLSCREEN OBSCURES. The first cut dimmed the conversation and left
+		// it in place, so the pit read as something laid OVER it. Gluck wants
+		// the pane: a form at full height is a screen of its own, and the
+		// people it is being built for may not be reading the agent's output
+		// at all -- may not, one day, be allowed to. A dimmed transcript is
+		// still a transcript on the screen.
 		for r := range screen {
 			if r < t.h-2 {
-				screen[r] = term.StateDim(pitText(screen[r]))
+				screen[r] = ""
 			}
 		}
 	}
@@ -1495,6 +1575,7 @@ func (t *transcript) openQueuePit() {
 	// title row repeated the same word one line above it while costing a row
 	// of the conversation.
 	t.pit.showList(pitQueue, "", t.queuedPitRows())
+	t.focused = focusPit
 }
 
 // refreshQueuePit replaces the rows in place, keeping the selection where
@@ -1735,8 +1816,27 @@ func (t *transcript) dispatch(ev keyEvent) {
 		// is the fix for `form show`: the view was taking j/k and running its
 		// own cursor against its own window, which disagreed with the pit's,
 		// so the highlight appeared to skip rows.
-		if t.pit.live != nil && t.pit.list() != nil {
+		if t.focused == focusTranscript {
+			// THE CONVERSATION HAS THE KEYS. `T` handed them over and the pit
+			// is a snapshot until `T` hands them back -- so the motions scroll
+			// the transcript behind it, and Esc (below, via the keymap) closes
+			// the pit, which is the one thing a reader in this mode wants that
+			// the transcript cannot give them.
+			if act := pagerAct.pager(modeTranscript, ev); act != nil {
+				act(t)
+				t.pendG = ev.b == 'g' && !t.pendG
+				t.render()
+				return
+			}
+		}
+		if t.focused == focusPit && t.pit.live != nil && t.pit.list() != nil {
 			if t.pitVerb(ev) {
+				// gg IS TWO KEYS, and this branch returns before the
+				// dispatcher's epilogue that arms the first one -- so `g` in a
+				// HOSTED pit never armed and `gg` never fired, while the same
+				// two keys worked in help. The same bug as 91818dfd, one
+				// branch earlier; found by a reviewer, with a canary.
+				t.pendG = ev.b == 'g' && !t.pendG
 				t.render()
 				return
 			}
@@ -1754,7 +1854,7 @@ func (t *transcript) dispatch(ev keyEvent) {
 		// scroll, so it keeps the old rule: any key wipes it. Measured -- with
 		// motions gated on `pick != nil`, a failed `:999` note survived every
 		// keystroke, because the note is a pit too.
-		if t.pit.list() != nil && !t.pit.glance() && pitOwnsKey(ev) {
+		if t.focused == focusPit && t.pit.list() != nil && !t.pit.glance() && pitOwnsKey(ev) {
 			if t.pitMotion(ev) {
 				// gg IS TWO KEYS, and the arming lives in the dispatcher's
 				// epilogue -- which this branch returns before reaching, so
@@ -1828,6 +1928,22 @@ func pagerHelpPanel(t *transcript)    { t.openHelpPit() }
 func pagerStatusPanel(t *transcript)  { t.openStatusPit() }
 func pagerQueuedPanel(t *transcript)  { t.openQueueFromKey() }
 
+// pagerFormPit is 'S': the form, on the same terms as '?' and 'Q'. S for
+// STATE, which is what this form is called everywhere else in the CLI --
+// `figaro state` and `figaro form` are one command, and this is its key.
+func pagerFormPit(t *transcript) {
+	if strings.HasPrefix(string(t.pit.id), string(pitForm)) {
+		t.closePanels()
+		return
+	}
+	if t.openForm != nil {
+		t.openForm()
+	}
+}
+
+// pagerFocusTranscript is 'T'.
+func pagerFocusTranscript(t *transcript) { focusTranscriptKey(t) }
+
 // ^N/^P MOVE THE PIT'S SELECTION WHEN ONE IS UP, and the transcript's node
 // selection otherwise. The reader's eye is on the list; a key that scrolled the
 // conversation behind it would be answering a question nobody asked.
@@ -1860,6 +1976,7 @@ func (t *transcript) closePanels() {
 	}
 	t.pit.close()
 	t.queuedByKey = false
+	t.focused = focusPit // the next pit opens focused; there is nothing to focus now
 }
 
 // showing reports whether the named pit is the one that is open.
@@ -1897,6 +2014,7 @@ func (t *transcript) openHelpPit() {
 		rows = append(rows, staticRow(""), staticRow("  "+v))
 	}
 	t.pit.showList(pitHelp, "", rows)
+	t.focused = focusPit
 }
 
 // openStatusPit is '!': this figaro's own numbers.
@@ -1906,6 +2024,7 @@ func (t *transcript) openStatusPit() {
 		rows = append(rows, staticRow(l))
 	}
 	t.pit.showList(pitStatus, "", rows)
+	t.focused = focusPit
 }
 
 // panelDismiss is Esc with a panel up: close it, and leave the selection
@@ -2414,7 +2533,13 @@ func (t *transcript) inputDrawerLines() []string {
 		// The PROMPT is the editor's, not a constant: while ^R runs it reads
 		// `(reverse-i-search)`needle':` exactly as a shell's does, which is the
 		// only thing on screen that says the box is in a search at all.
-		rows = []string{t.cmdline.render(t.cmdline.prompt(":"), t.w)}
+		//
+		// THE BOX WRAPS, and it obeys the pit's page like every other list:
+		// a long command used to scroll sideways under the prompt, which is
+		// the one place a reader cannot check what they typed. Fullscreen is
+		// not offered here -- a box is a thing you are typing INTO, not a
+		// screen you are reading.
+		rows = t.cmdline.wrap(t.cmdline.prompt(":"), t.w, min(pickerRows, max(t.pitRoom(), 1)))
 	default:
 		return nil
 	}
@@ -2542,10 +2667,11 @@ func (t *transcript) pitMotion(ev keyEvent) bool {
 	// without the modifier, because a pit is a small thing and the chord is
 	// spent on selection already.
 	case ev.b == 'F':
-		// FULLSCREEN. The pit takes the pane; the transcript stays behind it,
-		// shadowed rather than scrolled away, so leaving puts the reader back
-		// exactly where they were.
-		t.pit.toggleFull()
+		// FULLSCREEN IS A DISPOSITION, not a property of this list: it is the
+		// pager's, every pit inherits it, and it survives one pit closing and
+		// the next opening.
+		t.full = !t.full
+		t.focused = focusPit
 	case ev.b == 'e':
 		t.pit.scrollBy(1)
 	case ev.b == 'y' && t.pit.list() != nil && !t.pit.list().hasCursor():
@@ -2607,7 +2733,10 @@ func rowID(line string) string {
 func (t *transcript) showLivePit(name string, v cmdkit.LiveView, full bool) {
 	t.queuedByKey = false
 	t.pit.showLive(pitID(name), v)
-	t.pit.full = full
+	if full {
+		t.full = true
+	}
+	t.focused = focusPit
 	t.render()
 }
 
@@ -2643,6 +2772,7 @@ func (t *transcript) setCommandNoteAt(note string, level alertLevel) {
 		return
 	}
 	t.pit.showNote(note)
+	t.focused = focusPit
 	t.render()
 }
 

@@ -218,9 +218,14 @@ func formValueLines(raw json.RawMessage, width int) []string {
 		}
 	}
 	// Wrap rather than clip: the point of opening a value is to read all of it.
+	// AND STRIP AT THE SOURCE as well as at the paint (pitText in picker.go):
+	// a value's own escape sequences must not become rows in the first place,
+	// so that a host which renders Items() without the picker -- a future one,
+	// or a test -- cannot be driven by the value it is displaying. The YANK is
+	// untouched: `y` still copies the value exactly as it is stored.
 	wrapped := make([]string, 0, len(out))
 	for _, l := range out {
-		wrapped = append(wrapped, wrapPlain(strings.TrimRight(l, "\r"), max(width, 20))...)
+		wrapped = append(wrapped, wrapPlain(pitText(strings.TrimRight(l, "\r")), max(width, 20))...)
 	}
 	return wrapped
 }

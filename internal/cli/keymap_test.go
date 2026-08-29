@@ -237,6 +237,12 @@ func TestKeymap_IndexAgreesWithTheTable(t *testing.T) {
 // viewport to land in and so stayed inline; it is now the COMMAND LINE, and
 // :open/:attend/:send are things a reader means from anywhere. So it yanks the
 // pager up exactly as '?' and '!' do.
+//
+// TWO MORE, 2026-08-29: 'S' opens the FORM in the pit (S for state, the verb's
+// other spelling) and it is an opener for the same reason '?' and 'Q' are --
+// the pit lives in the pager, so asking for a pit asks for the pager. 'T'
+// hands the screen to the conversation without closing the pit, which is a
+// gesture about a pager that must therefore have one.
 func TestOpensTranscript_MatchesTheHandKeptList(t *testing.T) {
 	old := map[byte]bool{}
 	for _, b := range []byte{
@@ -244,6 +250,8 @@ func TestOpensTranscript_MatchesTheHandKeptList(t *testing.T) {
 		'/',           // search prompt
 		':',           // command line (see above)
 		'?', '!', 'Q', // help / figaro status / queued-prompt panels
+		'S', // the form, in the pit
+		'T', // focus the conversation, keeping the pit
 		0x0f,       // ^O verbosity
 		'm',        // more: the status bar's own detail, an opener exactly as ^O is
 		0x0e, 0x10, // ^N/^P node selection
@@ -355,6 +363,8 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  ^L                  open the transcript (stays open until you close it)",
 		"  !                   figaro status panel",
 		"  Q                   queued prompts panel",
+		"  S                   the form (state) in the pit",
+		"  T                   read the conversation without closing the pit (again to go back)",
 		"  ?                   close help",
 	}
 	got := helpBody()

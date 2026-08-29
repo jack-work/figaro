@@ -387,6 +387,15 @@ var inputOracle = []struct {
 	keys  map[string]string
 }{
 	{"incipit", "stop=false rest=\"\" act=false off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"", map[string]string{
+		// REGENERATED 2026-08-29 for 'S' and 'T'. Two new panel keys: S opens
+		// the FORM in the pit (S for state, the CLI's other spelling of the
+		// same verb) and T hands the screen to the conversation without
+		// closing the pit. Both are openers, both are inert here in the sense
+		// that matters -- they change what is OPEN, not where the transcript
+		// sits -- and the cells below are what that looks like from the
+		// oracle's side.
+		"0x53": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"0x54": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		// `m` IS NEW: the status bar's verbosity, not ^O's tool output. It
 		// behaves at this level exactly as ^O does -- an opener, so it yanks
 		// the pager up from incipit, and an INPUT-level row, so it does not
@@ -558,6 +567,15 @@ var inputOracle = []struct {
 		"csiu ^p+alt":     "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"",
 	}},
 	{"panel", "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"", map[string]string{
+		// REGENERATED 2026-08-29 for 'S' and 'T'. Two new panel keys: S opens
+		// the FORM in the pit (S for state, the CLI's other spelling of the
+		// same verb) and T hands the screen to the conversation without
+		// closing the pit. Both are openers, both are inert here in the sense
+		// that matters -- they change what is OPEN, not where the transcript
+		// sits -- and the cells below are what that looks like from the
+		// oracle's side.
+		"0x53": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"0x54": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		// 'F' IS FULLSCREEN: the pit takes the pane and the transcript is
 		// shadowed behind it. A pit key, so it does not dismiss the pit.
 		"0x46": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",

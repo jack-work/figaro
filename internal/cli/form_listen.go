@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -109,6 +110,7 @@ type formView struct {
 	aria      string
 	open      map[string]bool
 	wrapped   map[string]wrappedLines // an opened value, wrapped once
+	wraps     int                     // cold wraps, for the test that proves it
 	rows      []*formNode
 	cursor    int
 	top       int
@@ -188,19 +190,21 @@ func (v *formView) Items(width int) []pitRow {
 	defer v.mu.Unlock()
 	v.rows = flattenFormTree(buildFormTree(snap), v.open, nil)
 
-	head := fmt.Sprintf("form %s · v%d · %d keys · %d rows", v.aria, version, snap.Len(), len(v.rows))
-	if gaps > 0 {
-		head += fmt.Sprintf(" · %d resync", gaps)
-	}
-	// THE NOTICE RIDES ON THE HEAD ROW. It used to have a footer of its own,
-	// drawn by a view that owned a screen; there is no screen and no footer
-	// now, and a resync failure that is reported nowhere is a form quietly
-	// telling you nothing while showing you something stale.
-	if v.notice != "" {
-		head += " · " + v.notice
-	}
+	// NO HEADER. "form b3e0beb1 · v11 · 51 keys · 53 rows" was a row of
+	// bookkeeping on top of the thing the reader opened -- and in fullscreen,
+	// where the pit IS the screen, it was the only thing on it that was not
+	// the form. Gluck: "just form content. Or whatever content happens to be
+	// in the pit." The aria is on the status bar; the key count is the list's
+	// own length; the version is nobody's business until it breaks.
+	//
+	// A NOTICE STILL SPEAKS, because a mirror that has stopped following is
+	// not showing you the form any more and must say so. It is the exception
+	// that earns a row: a resync failure, a schema it cannot read.
 	out := make([]pitRow, 0, len(v.rows)+1)
-	out = append(out, staticRow(clipLine(head, width)))
+	if v.notice != "" {
+		out = append(out, staticRow(clipLine(v.notice, width)))
+	}
+	_, _ = version, gaps
 	for _, n := range v.rows {
 		// EVERY ROW IS SELECTABLE, which is the other half of the bug: a form's
 		// child rows were not, so a motion that stepped to the next selectable
@@ -241,16 +245,19 @@ func (v *formView) Items(width int) []pitRow {
 const formValueRowsMax = 500
 
 type wrappedLines struct {
-	raw   string
+	// raw is COMPARED, not copied: string(n.value) on every paint is a
+	// 200KB allocation and copy per open value, which is most of what the
+	// cache was meant to save. bytes.Equal reads until it disagrees.
+	raw   []byte
 	width int
 	lines []string
 }
 
 func (v *formView) wrappedValue(n *formNode, width int) []string {
-	raw := string(n.value)
-	if c, ok := v.wrapped[n.path]; ok && c.width == width && c.raw == raw {
+	if c, ok := v.wrapped[n.path]; ok && c.width == width && bytes.Equal(c.raw, n.value) {
 		return c.lines
 	}
+	v.wraps++ // how many times a value was actually wrapped; the cache's proof
 	lines := formValueLines(n.value, width)
 	if len(lines) > formValueRowsMax {
 		lines = append(lines[:formValueRowsMax:formValueRowsMax],
@@ -259,7 +266,7 @@ func (v *formView) wrappedValue(n *formNode, width int) []string {
 	if v.wrapped == nil {
 		v.wrapped = map[string]wrappedLines{}
 	}
-	v.wrapped[n.path] = wrappedLines{raw: raw, width: width, lines: lines}
+	v.wrapped[n.path] = wrappedLines{raw: n.value, width: width, lines: lines}
 	return lines
 }
 

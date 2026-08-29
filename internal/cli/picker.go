@@ -38,6 +38,13 @@ type picker struct {
 	// that happens between paints (a key, then a render) still pages by the
 	// right amount.
 	height int
+	// dir is the direction of the last motion, and it exists because SOME TOPS
+	// ARE NOT REPRESENTABLE. A marker never says "1 more", so a window cannot
+	// sit one row from the top: showing that row means top = 0. Scrolling down
+	// by one therefore has to round AWAY from where the reader came from --
+	// without this, the first `j` in a long list snapped back to 0 and looked
+	// like a dead key.
+	dir int
 }
 
 // pickerRows is the tallest a picker may be, fixed rather than derived from the
@@ -176,6 +183,7 @@ func (p *picker) pick(d int) {
 		p.scroll(d)
 		return
 	}
+	p.dir = sign(d)
 	for i := 0; i < abs(d); i++ {
 		n := p.nextSelectable(p.cursor, sign(d))
 		if n < 0 || n == p.cursor {
@@ -192,7 +200,7 @@ func (p *picker) move(d int) { p.pick(d) }
 // dragCursorIntoView keeps the selection inside the window after a scroll, so
 // a `y` or an `x` after paging always acts on something the reader can see.
 func (p *picker) dragCursorIntoView() {
-	h := p.window()
+	h := p.visible()
 	if p.cursor < p.top {
 		if n := p.nextSelectable(p.top-1, 1); n >= 0 && n < p.top+h {
 			p.cursor = n
@@ -208,12 +216,15 @@ func (p *picker) dragCursorIntoView() {
 
 // scroll moves the window without touching a cursor.
 func (p *picker) scroll(d int) {
+	p.dir = sign(d)
 	p.top = clampInt(p.top+d, 0, p.maxTop())
 }
 
-// half is u/d: half a window, and it READS -- a half-page is a scroll, not a
-// selection.
-func (p *picker) half(d int) { p.step(d * max(p.window()/2, 1)) }
+// half is u/d: half a page, AND IT CHOOSES. Gluck: "u/d on the picker should
+// move the cursor, not just the page." A half-page that left the selection
+// behind meant the reader arrived somewhere with their cursor still upstairs,
+// and the next ^N yanked the window back to it.
+func (p *picker) half(d int) { p.pick(d * max(p.visible()/2, 1)) }
 
 // home / end are gg and G.
 func (p *picker) home() {
@@ -233,7 +244,7 @@ func (p *picker) end() {
 // follow slides the window to keep the cursor in view, which is what makes
 // ^N past the bottom edge scroll rather than lose the selection.
 func (p *picker) follow() {
-	h := p.window()
+	h := p.visible()
 	if p.cursor < p.top {
 		p.top = p.cursor
 	}
@@ -243,14 +254,16 @@ func (p *picker) follow() {
 	p.top = clampInt(p.top, 0, p.maxTop())
 }
 
-func (p *picker) window() int {
+// visible is the list height as last drawn -- what a motion between paints
+// must page by.
+func (p *picker) visible() int {
 	if p.height > 0 {
 		return p.height
 	}
 	return min(pickerRows, max(len(p.rows), 1))
 }
 
-func (p *picker) maxTop() int { return max(len(p.rows)-p.window(), 0) }
+func (p *picker) maxTop() int { return max(len(p.rows)-p.visible(), 0) }
 
 // selected is the row under the cursor, if any.
 func (p *picker) selected() (pitRow, bool) {
@@ -284,35 +297,23 @@ func (p *picker) remove() {
 // read it is the thing this component exists to stop.
 func (p *picker) lines(id pitID, w, h int) []string {
 	budget := clampInt(h, 1, max(h, pickerRows))
-	// Reserve the marker rows FIRST, out of the same budget.
-	markAbove, markBelow := 0, 0
-	if len(p.rows) > budget {
-		// A list that does not fit shows at least one marker; which one
-		// depends on where the window sits, so both are reserved and the
-		// visible count is fixed either way.
-		markAbove, markBelow = 1, 1
-	}
-	p.height = max(budget-markAbove-markBelow, 1)
-	p.top = clampInt(p.top, 0, p.maxTop())
-	// THE WINDOW IS DECIDED HERE, SO THE FOLLOW IS TOO. Every motion before
-	// this ran against whatever height the picker was last DRAWN at -- and
-	// before the first paint, against a guess. A motion that moved the cursor
-	// out of the window it will actually get would otherwise paint a list with
-	// no highlight in it: which is exactly what G, or k on the last row, did.
-	// The highlight looked stuck to the bottom row and the row just left
-	// vanished behind the "… N more".
-	if p.hasCursor() {
-		p.follow()
-	}
-	end := min(p.top+p.window(), len(p.rows))
+	// THE WINDOW IS DECIDED HERE, TOP AND ALL. Every motion before this ran
+	// against whatever height the picker was last DRAWN at -- and before the
+	// first paint, against a guess -- so a motion could leave the cursor
+	// outside the window it was about to get, and the list painted with no
+	// highlight in it. That is what G, and k on the last row, did.
+	markAbove, markBelow := p.window(budget)
+	end := min(p.top+p.height, len(p.rows))
 
+	// A LIST THAT OVERFLOWS KEEPS A CONSTANT HEIGHT, and it does so by
+	// construction rather than by padding: window() sets the list height to
+	// the budget MINUS the markers it chose, so rows plus markers is always
+	// the budget. Where a marker is not needed, its row goes back to the list.
+	// A list that FITS is drawn at its own size -- there is nothing to say
+	// about it, and a blank row saying nothing is still a row.
 	out := make([]string, 0, budget)
-	if markAbove > 0 {
-		if p.top > 0 {
-			out = append(out, pitGray(clipToWidth("  "+AndMore(p.top, "above"), w)))
-		} else {
-			out = append(out, "")
-		}
+	if markAbove {
+		out = append(out, pitGray(clipToWidth("  "+AndMore(p.top, "above"), w)))
 	}
 	mark := id.selectionGlyph()
 	for i := p.top; i < end; i++ {
@@ -320,10 +321,9 @@ func (p *picker) lines(id pitID, w, h int) []string {
 		if i == p.cursor {
 			prefix = mark + " "
 		}
-		// EVERY ROW THROUGH THE GATE (pitText, pit.go): rows come from
-		// forms, command output and queued messages, and any of the three can
-		// carry escape sequences. One place, so a new kind of pit cannot
-		// forget.
+		// EVERY ROW THROUGH THE GATE (pitText, pit.go): rows come from forms,
+		// command output and queued messages, and any of the three can carry
+		// escape sequences. One place, so a new kind of pit cannot forget.
 		row := clipToWidth(prefix+pitText(p.rows[i].text), w)
 		if i == p.cursor {
 			out = append(out, pitSelected(row))
@@ -331,14 +331,108 @@ func (p *picker) lines(id pitID, w, h int) []string {
 		}
 		out = append(out, row)
 	}
-	if markBelow > 0 {
-		if rest := len(p.rows) - end; rest > 0 {
-			out = append(out, pitGray(clipToWidth("  "+AndMore(rest, ""), w)))
+	if markBelow {
+		out = append(out, pitGray(clipToWidth("  "+AndMore(len(p.rows)-end, ""), w)))
+	}
+	return out[:min(len(out), budget)]
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// window decides the two marker rows, the list height and the top row inside a
+// budget, and it obeys ONE RULE: A MARKER NEVER SAYS "1 MORE".
+//
+// Gluck: "obviously you shouldn't show 1 more, you should just show the 1 more
+// there is. there is only ever a reason to put 2 more." A marker costs exactly
+// the row it is describing, so "… 1 more" spends a row to say a row exists --
+// the reader would rather have the row. At two or more it earns its place,
+// because it stands in for several.
+//
+// (Checked against the field rather than invented. The terminal lists that get
+// this right spend the row on content and put the position where it costs
+// nothing: fzf draws a one-column scrollbar in the margin and keeps its counter
+// in the info line; less puts a percentage in the status line. Nobody spends a
+// whole row to hide a single line. The pit has no margin to draw in, so it
+// keeps the marker for the many case and drops it for the one case.)
+//
+// THE ARITHMETIC, rather than a search over guesses. hiddenAbove is exactly
+// top, hiddenBelow is exactly len-top-height, and each side must hide either
+// NOTHING or TWO OR MORE. That pins a range of legal tops per configuration:
+//
+//	no marker above  → top = 0            marker above → top ≥ 2
+//	no marker below  → top = len-height   marker below → top ≤ len-height-2
+//
+// So the choice is: which configuration can hold a top nearest the one the
+// reader is already at, with the cursor still inside it. Fewer markers wins a
+// tie, because a marker is a row of list the reader does not get.
+func (p *picker) window(budget int) (above, below bool) {
+	want := clampInt(p.top, 0, max(len(p.rows)-1, 0))
+	best, bestCost := -1, 0
+	var bestTop, bestHeight int
+	for i, cfg := range [4][2]bool{{false, false}, {false, true}, {true, false}, {true, true}} {
+		a, b := cfg[0], cfg[1]
+		height := budget - boolToInt(a) - boolToInt(b)
+		if height < 1 {
+			continue
+		}
+		// bottom is the top that shows the last row: 0 when the whole list
+		// fits, which is the case the first cut of this arithmetic got wrong
+		// (len-height went negative and rejected every configuration, so a
+		// list of eleven in a budget of twelve fell through to two markers
+		// counting one row each -- the exact thing this function exists to
+		// prevent).
+		bottom := max(len(p.rows)-height, 0)
+		lo, hi := 0, bottom
+		if a {
+			lo = max(lo, 2)
 		} else {
-			out = append(out, "")
+			hi = min(hi, 0)
+		}
+		if b {
+			hi = min(hi, len(p.rows)-height-2)
+		} else {
+			lo = max(lo, bottom)
+		}
+		if lo > hi {
+			continue
+		}
+		top := clampInt(want, lo, hi)
+		if p.hasCursor() {
+			// The cursor must be inside the window this configuration paints.
+			if p.cursor < top {
+				top = clampInt(p.cursor, lo, hi)
+			}
+			if p.cursor >= top+height {
+				top = clampInt(p.cursor-height+1, lo, hi)
+			}
+			if p.cursor < top || p.cursor >= top+height {
+				continue
+			}
+		}
+		cost := abs(top-want)*4 + boolToInt(a) + boolToInt(b)
+		// Round AWAY from where the reader came from: a top that is not
+		// representable (one row from an edge) must resolve in the direction
+		// of travel, or the motion looks like a key that did nothing.
+		if (p.dir > 0 && top < want) || (p.dir < 0 && top > want) {
+			cost += 2
+		}
+		if best < 0 || cost < bestCost {
+			best, bestCost, bestTop, bestHeight = i, cost, top, height
 		}
 	}
-	return out
+	if best < 0 {
+		// Only reachable when the budget cannot hold the cursor at all; two
+		// markers is the honest answer and follow() will place the window.
+		p.height = max(budget-2, 1)
+		return true, true
+	}
+	p.top, p.height = bestTop, bestHeight
+	return best == 2 || best == 3, best == 1 || best == 3
 }
 
 // AndMore is THE spelling of a truncated list, and it lives here because the

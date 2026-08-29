@@ -96,9 +96,11 @@ type pit struct {
 	// that are its own and closes it on the way out; it knows nothing about
 	// pits and the pit knows nothing about forms. See cmdkit.LiveView.
 	live cmdkit.LiveView
-	// full is fullscreen: the pit takes the pane and the transcript is shadowed
-	// behind it. Cleared when the pit closes, because a fullscreen pit that is
-	// not open is a screen with nothing on it.
+	// full is fullscreen AS THE PIT SEES IT, and the pit is not who decides:
+	// the transcript owns the toggle (see transcript.full) and hands it down
+	// on every paint, so it survives one pit closing and another opening.
+	// Gluck: "whether the pit is fullscreened or not should be a global
+	// toggle, for whatever pit is currently present."
 	full bool
 }
 
@@ -184,48 +186,26 @@ func (d *pit) showList(id pitID, title string, rows []pitRow) {
 	d.body = newPicker(rows)
 }
 
-// visible is how many rows fit: the fixed page, bounded by what the pane can
-// actually give. h is the whole pane.
-func (d *pit) visible(h int) int {
-	// FULLSCREEN TAKES THE PANE, minus the rule above the pit and the status
-	// bar below it. The reservation is the same arithmetic either way -- what
-	// changes is only whether pickerRows caps it.
-	room := h - 3 - 3
-	if d.full {
-		// THE RULE AND THE BAR ARE NOT THE PIT'S TO TAKE. Fullscreen claims
-		// everything else: h, minus the rule above it, minus the bar below.
-		// Asking for one row more made the stanza taller than the pane, and
-		// the placement -- which refuses a negative origin rather than
-		// painting a stanza that would not fit -- skipped it entirely, so
-		// `F` blanked the screen.
-		room = h - 3
-	}
+// visible is how many rows the list may draw, given the ROOM THE PANE HAS
+// ALREADY BEEN ASKED FOR (see transcript.pitRoom). It does not compute that
+// room itself any more, and that was a bug you could feel: it subtracted a
+// literal 3 for "the rule and the bar" while the bar is THREE ROWS whenever it
+// wraps, so on a narrow pane fullscreen asked for two rows more than the pane
+// had. The stanza was then trimmed FROM THE TOP -- the "… N more above" marker
+// with it -- and the cursor could sit on a row that was never painted, with
+// `x` under the reader's finger. Twice reported, from two different beats.
+func (d *pit) visible(room int) int {
 	if d.title != "" {
 		room--
 	}
 	n := pickerRows
 	if d.full {
-		n = room
+		n = room // fullscreen takes everything it was given
 	}
-	if room < n {
-		n = room
-	}
-	if n < 1 {
-		n = 1
-	}
-	return n
+	return max(min(n, room), 1)
 }
 
-// toggleFull is 'F': the pit takes the whole pane, with the transcript
-// shadowed behind it rather than scrolled away. It is a property of the PIT,
-// not of any one list, which is why it lives here and works for help, the
-// queue, notifications and a form alike -- the thing the picker consolidation
-// bought.
-func (d *pit) toggleFull() {
-	if d.open() {
-		d.full = !d.full
-	}
-}
+
 
 // THE LIST BEHAVIOURS ARE THE PICKER'S. What used to be six methods here --
 // nextSelectable, moveSelection, scrollToCursor, scrollToCursorIn, selected,
@@ -287,20 +267,31 @@ func (d *pit) replaceRows(rows []pitRow, keepID string) {
 
 func (d *pit) removeSelected() { d.motion((*picker).remove) }
 
-func (d *pit) lines(w, h int) []string {
+func (d *pit) lines(w, room int) []string {
 	if !d.open() {
 		return nil
 	}
 	if d.live != nil {
 		d.refreshLive(w) // the view is live: its rows change under the pit
 	}
-	room := d.visible(h)
-	if d.title == "" {
-		return d.body.lines(d.id, w, room)
+	full := d.visible(room)
+	out := make([]string, 0, full+1)
+	body := full
+	if d.title != "" {
+		out = append(out, pitGray(clipToWidth(pitText(d.title), w)))
+		body--
 	}
-	out := make([]string, 0, room+1)
-	out = append(out, pitGray(clipToWidth(pitText(d.title), w)))
-	return append(out, d.body.lines(d.id, w, room-1)...)
+	out = append(out, d.body.lines(d.id, w, body)...)
+	if !d.full {
+		return out
+	}
+	// FULLSCREEN OCCUPIES THE WHOLE PANE whether or not it needs to. A pit
+	// that took only the rows it had left the conversation showing underneath
+	// a "fullscreen" list, which is the one thing fullscreen is for.
+	for len(out) < full {
+		out = append(out, "")
+	}
+	return out
 }
 
 // pitGray is the pit's one voice: fujiGray, quieter than the transcript. The
@@ -308,13 +299,20 @@ func (d *pit) lines(w, h int) []string {
 // not part of it.
 func pitGray(s string) string { return term.Label(s) }
 
-// pitSelected is the same gray on a wash: present without shouting. Full
-// reverse video was loud enough to look like an error.
+// pitSelected must be READ, first: it is the row every verb acts on. The first
+// cut was the pit's own dim grey on a barely-lighter wash (237), on the theory
+// that full reverse video looked like an error -- and Gluck, on a real
+// terminal: "the selection is really unreadable". It was dim text on a dark
+// background, which is two ways of saying "quiet" applied to the one row that
+// must not be.
+//
+// The wash is lighter now and THE TEXT IS NOT DIM: the selected row is the one
+// row in the pit drawn at full strength. Everything else stays furniture.
 func pitSelected(s string) string {
 	if !term.Enabled() {
 		return s
 	}
-	return "\x1b[48;5;237m" + term.Label(s) + "\x1b[49m"
+	return "\x1b[48;5;240m\x1b[38;5;255m" + s + "\x1b[39m\x1b[49m"
 }
 
 // pitText is THE GATE EVERY PIT ROW PASSES THROUGH, and it takes out more

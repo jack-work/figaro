@@ -269,6 +269,14 @@ var keymap = []keyBinding{
 	{chord: byteChord('?'), modes: inTranscript, open: opensPager, help: helpHelpPanel, pager: pagerHelpPanel},
 	{chord: byteChord('!'), modes: inTranscript, open: opensPager, help: helpStatusPanel, pager: pagerStatusPanel},
 	{chord: byteChord('Q'), modes: inTranscript, open: opensPager, help: helpQueuedPanel, pager: pagerQueuedPanel},
+	// 'S' IS THE FORM, and it is spelled S because the verb is spelled state:
+	// `figaro state` and `figaro form` are one command, and a reader who knows
+	// the CLI knows this letter. It joins ?/!/Q as a panel key.
+	{chord: byteChord('S'), modes: inTranscript, open: opensPager, help: helpFormPit, pager: pagerFormPit},
+	// 'T' HANDS THE SCREEN TO THE CONVERSATION without closing the pit: a
+	// fullscreen pit recedes to its ordinary height, the transcript takes the
+	// keys, and the next press gives them back.
+	{chord: byteChord('T'), modes: inTranscript, open: opensPager, help: helpFocus, pager: pagerFocusTranscript},
 
 	// -- input level: hang up, and stay ------------------------------------
 	{
@@ -320,6 +328,8 @@ var keymap = []keyBinding{
 	{chord: byteChord('?'), modes: inPanel, open: opensPager, help: helpHelpPanel, pager: panelToggleHelp},
 	{chord: byteChord('!'), modes: inPanel, open: opensPager, help: helpStatusPanel, pager: panelToggleStatus},
 	{chord: byteChord('Q'), modes: inPanel, open: opensPager, help: helpQueuedPanel, pager: panelToggleQueued},
+	{chord: byteChord('S'), modes: inPanel, open: opensPager, help: helpFormPit, pager: pagerFormPit},
+	{chord: byteChord('T'), modes: inPanel, open: opensPager, help: helpFocus, pager: pagerFocusTranscript},
 	{
 		chord: byteChord(0x1b), modes: inPanel,
 		open: staysInline, why: "closing a panel that is not showing is not an opening gesture",
@@ -553,6 +563,8 @@ const (
 	helpCmdAbort
 	helpPitDrop
 	helpLeavePit
+	helpFormPit
+	helpFocus
 )
 
 // helpRow is one line of the panel: the key column and what it does. The key
@@ -599,6 +611,8 @@ var helpRows = []helpRow{
 	{helpListen, "^L", "open the transcript (stays open until you close it)"},
 	{helpStatusPanel, "!", "figaro status panel"},
 	{helpQueuedPanel, "Q", "queued prompts panel"},
+	{helpFormPit, "S", "the form (state) in the pit"},
+	{helpFocus, "T", "read the conversation without closing the pit (again to go back)"},
 	{helpHelpPanel, "?", "close help"},
 }
 

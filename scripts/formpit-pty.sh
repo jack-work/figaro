@@ -52,7 +52,7 @@ echo "== pane height $H"
 pane() { tmux -S "$SOCK" capture-pane -p -t pit:0; }
 # The highlighted row: the picker paints it with a background SGR, so read the
 # ESCAPES, not the text -- capture-pane -e keeps them.
-hl() { tmux -S "$SOCK" capture-pane -p -e -t pit:0 | grep -a "48;5;237m" | head -1 | sed 's/\x1b\[[0-9;]*m//g' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'; }
+hl() { tmux -S "$SOCK" capture-pane -p -e -t pit:0 | grep -a "48;5;240m" | head -1 | sed 's/\x1b\[[0-9;]*m//g' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'; }
 key() { tmux -S "$SOCK" send-keys -t pit:0 "$@"; }
 
 open_pit() {   # open_pit "<command line>"
@@ -67,7 +67,7 @@ walk() {  # walk "<command line>"
   echo "===== :$verb"
   open_pit "$verb"
 
-  if pane | grep -q "𝄢"; then echo "ok   the form pit shows its glyph"; else echo "FAIL: no 𝄢 on the bar"; fail=1; fi
+  if pane | grep -q "웃"; then echo "ok   the form pit shows its glyph"; else echo "FAIL: no 웃 on the bar"; fail=1; fi
 
   local first
   first=$(hl)

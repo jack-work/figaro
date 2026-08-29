@@ -838,6 +838,80 @@ func (e *lineEditor) render(prefix string, w int) string {
 	}
 }
 
+// wrap draws the line ACROSS ROWS instead of scrolling it under the prompt: a
+// command long enough to leave the pane is a command you cannot read, and the
+// pit is a region with rows to spare. Gluck: "the command mode content should
+// be wrapped, not single line. it should abide by the same max limits of the
+// other pits."
+//
+// The prompt sits on the first row and the continuations are indented under
+// it, so the text stays in one column. Past `rows` the window slides to keep
+// the CURSOR visible -- the same promise the single-row form made, one
+// dimension up: what you are typing is always on the screen.
+func (e *lineEditor) wrap(prefix string, w, rows int) []string {
+	if w <= 0 || rows < 1 {
+		return nil
+	}
+	pw := runewidth.StringWidth(prefix)
+	avail := w - pw
+	if avail < 4 || rows == 1 {
+		return []string{e.render(prefix, w)}
+	}
+	// Lay the runes out in rows of `avail` columns, remembering which row the
+	// cursor lands in.
+	var lines [][]rune
+	var cur []rune
+	width, at := 0, 0
+	for i, r := range e.runes {
+		rw := runewidth.RuneWidth(r)
+		if width+rw > avail-1 {
+			lines = append(lines, cur)
+			cur, width = nil, 0
+		}
+		if i == e.cursor {
+			at = len(lines)
+		}
+		cur = append(cur, r)
+		width += rw
+	}
+	lines = append(lines, cur)
+	if e.cursor >= len(e.runes) {
+		at = len(lines) - 1
+	}
+	// The window of rows that fits, holding the cursor's row.
+	top := 0
+	if at >= rows {
+		top = at - rows + 1
+	}
+	end := min(top+rows, len(lines))
+	out := make([]string, 0, end-top)
+	pad := strings.Repeat(" ", pw)
+	seen := 0
+	for i := top; i < end; i++ {
+		head := pad
+		if i == 0 {
+			head = prefix
+		}
+		// The cursor's rune index within this row.
+		idx := -1
+		if i == at {
+			idx = e.cursor - runeCountBefore(lines, i)
+		}
+		out = append(out, head+renderWithCursor(lines[i], idx))
+		seen += len(lines[i])
+	}
+	return out
+}
+
+// runeCountBefore is how many runes precede row i.
+func runeCountBefore(lines [][]rune, i int) int {
+	n := 0
+	for k := 0; k < i && k < len(lines); k++ {
+		n += len(lines[k])
+	}
+	return n
+}
+
 // renderWithCursor paints the cursor cell in reverse video. The pager owns the
 // whole grid and hides the real cursor, so the caret has to be drawn.
 func renderWithCursor(runes []rune, at int) string {

@@ -101,14 +101,28 @@ func (in *interactiveInput) commandSend(ctx context.Context, fields []string) (s
 	}
 	if spec == "" {
 		// The aria on screen. One RPC on the connection we already hold.
-		if _, _, err := in.aria().Qua(ctx, prompt, buildPromptForm()); err != nil {
+		_, active, err := in.aria().Qua(ctx, prompt, buildPromptForm())
+		if err != nil {
 			return "", fmt.Errorf("send: %w", err)
 		}
 		// A PROMPT SENT INTO A BUSY ARIA IS A QUEUE ENTRY, and the reader who
-		// typed it should see it land rather than wait out the poll. The clock
-		// would find it within half a second; asking now is what makes `:send`
-		// followed by `Q` show the message that was just sent.
+		// typed it should see it land -- EVERY TIME. Leaving it to the queue's
+		// auto-open made `:send` inconsistent for reasons that had nothing to
+		// do with the send: the auto-open is suppressed while any deliberate
+		// pit is up, and it stays suppressed after any Esc until the queue
+		// drains, so the same command showed the queue or did not depending on
+		// what the reader had closed ten minutes earlier.
+		//
+		// A send the reader TYPED is a deliberate gesture, so its queue opens
+		// the deliberate way -- the same door `Q` uses, which clears the
+		// dismissal latch. `active` is the daemon's own answer to "did this
+		// join a running turn", which is exactly "was it queued".
 		in.refreshQueued()
+		if active {
+			in.mu.Lock()
+			in.lt.tr.openQueueFromKey()
+			in.mu.Unlock()
+		}
 		return "sent", nil
 	}
 	id, ep, err := in.resolve(ctx, spec)
@@ -254,6 +268,7 @@ func (in *interactiveInput) retarget(ctx context.Context, id string, ep transpor
 	in.lt.setCommandRunner(in.runCommand)
 	in.lt.setCommandCompleter(in.complete)
 	in.lt.tr.dropRow = in.dropPitRow
+	in.lt.tr.openForm = func() { go in.openLive("form show", "", false) }
 	in.mu.Unlock()
 
 	if old != nil && ownedOld {
@@ -350,6 +365,7 @@ func (in *interactiveInput) seedSubject() {
 	in.lt.setCommandRunner(in.runCommand)
 	in.lt.setCommandCompleter(in.complete)
 	in.lt.tr.dropRow = in.dropPitRow
+	in.lt.tr.openForm = func() { go in.openLive("form show", "", false) }
 	in.lt.invalidateTranscriptWindow()
 	in.lt.render()
 }

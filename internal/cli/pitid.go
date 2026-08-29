@@ -32,6 +32,11 @@ const (
 	pitStatus        pitID = "status"
 	pitNote          pitID = "message"
 	pitOutput        pitID = "output"
+	// A DROPPED QUEUE IS ITS OWN PIT, not the queue: the queue is what is
+	// waiting, and these are what will never be answered. It keeps the queue's
+	// flat, because the rows are the same kind of thing and `y` still yanks a
+	// message's text; 𝄽 -- a rest -- is what a dropped message now is.
+	pitDropped pitID = "dropped"
 	// A FORM IS ITS OWN THING, and it must not borrow the notification clef:
 	// they are different in kind (a form is state you are reading, a
 	// notification is an event that happened to you) and reading a bass clef
@@ -72,12 +77,29 @@ var pitFaces = map[pitID]pitFace{
 	pitStatus:        {"!", "status", "", modePanel},
 	pitNote:          {"", "", "", modePanel},
 	pitOutput:        {"", "", "♭", modePanel},
-	// 𝄢 is the bass clef: the ground a piece is written over, which is what a
-	// form is to an aria. ♮ (natural) marks its selected row -- a third
-	// selection glyph, distinct from the queue's ♭ and notifications' ♩,
-	// because a reader should be able to tell which list they are in from the
-	// row under the cursor alone.
-	pitForm: {"𝄢", "form", "♮", modePanel},
+	pitDropped:       {"𝄽", "dropped", "♭", modePanel},
+	// 웃 IS THE FORM ITSELF: a figure, seen from the front, arms out. Gluck --
+	// "a form is meant to be like a dummy, like a form onto which a costumer
+	// might layer outfits and such, or an artist might study" -- and that is
+	// exactly what an aria's form is: the body the outfits are folded onto.
+	// The bass clef 𝄢 was a pun on "the ground a piece is written over" and it
+	// asked the reader to make the same pun to read the bar.
+	//
+	// It is a WIDE glyph (East Asian W, two cells) where every other token
+	// here is one, and that is allowed for the reason the emoji magnifier was
+	// not: W is unambiguous. runewidth reports 2 on every terminal, so the
+	// bar's arithmetic is right everywhere; ambiguous-width glyphs are the
+	// ones whose layout is a property of the reader's settings.
+	//
+	// Its SELECTED ROW is not musical, and that is
+	// deliberate: ♮ read as a stray accidental sitting in the text rather than
+	// as a cursor, and a form is not a phrase -- Gluck: "a form is meant to be
+	// like a dummy, like a form onto which a costumer might layer outfits and
+	// such, or an artist might study". ⌖ (U+2316, POSITION INDICATOR) is where
+	// the pin goes in: the mark on the body, not a note in the score. It is
+	// single-width and sits in the same block as search's ⌕, which is the
+	// other glyph here chosen for the same reason.
+	pitForm: {"웃", "form", "⌖", modePanel},
 }
 
 // face is the pit's presentation, or the empty face for one nobody has
