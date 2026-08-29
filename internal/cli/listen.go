@@ -171,11 +171,8 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 		die("%s", err)
 	}
 
-	// THE PAGER'S CLOCK, the same one `send` starts: the spinner frame, the
-	// alert's expiry, and the queue poll. This host used to run half of it --
-	// the spinner alone -- so a queue that filled under a `figaro listen` pager
-	// was never read, and the pit sat on "(none)" while the daemon held two
-	// messages. See startPagerClock.
+	// The pager's clock, the same one `send` starts: spinner, alert expiry,
+	// and the queue poll. See startPagerClock.
 	defer startPagerClock(&mu, lt, func() *interactiveInput { return in })()
 
 	// Resize (SIGWINCH on unix / a console event on Windows, behind the client).
@@ -194,11 +191,8 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 			defer fmt.Fprint(os.Stdout, disableModifiedKeyReporting)
 			defer os.Stdout.WriteString(ldmouse.Disable)
 			if opt.formPit {
-				// THE PIT LIVES IN THE PAGER, so `form listen` opens it: the
-				// transcript first, then the form over it at full height.
-				// enterTranscript takes the render lock itself, and it READS
-				// (the catch-up page), so it goes on a goroutine rather than
-				// holding up the key loop that is about to start.
+				// The pit lives in the pager, so `form listen` opens both. Off
+				// the input goroutine: entering takes the render lock.
 				go func() {
 					// THE FORM, AND ONLY THE FORM: no history is fetched, and
 					// a fullscreen pit obscures what has not been fetched.

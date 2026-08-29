@@ -78,14 +78,9 @@ type transcript struct {
 	// by the input loop, which owns the router.
 	completer func(string) []string
 	// openForm is 'S': the input loop's door to the live form view, because
-	// opening one DIALS and the transcript may not. Same shape as dropRow and
-	// queuedFetch: the pager knows what it wants, the loop knows how.
-	//
-	// IT MUST NOT TAKE THE RENDER LOCK. Every hook here is called from
-	// dispatch, which runs with that lock held, so the implementation hands
-	// off to a goroutine exactly as runCommand does. Measured, in a pty: `S`
-	// froze the pager dead -- and every key after it, which is why the freeze
-	// read as "S does nothing" rather than as a hang.
+	// opening one dials. IT MUST NOT TAKE THE RENDER LOCK -- every hook here
+	// is called from dispatch, which already holds it, so implementations hand
+	// off to a goroutine. `S` froze the pager dead until they did.
 	openForm func()
 	// dropRow is 'x' on a selected pit row: the owner decides what dropping
 	// means for that pit's name.
@@ -1079,16 +1074,11 @@ func (t *transcript) settle() {
 	}
 }
 
-// footLines is the open bottom panel, if any: it grows upward from the footer
-// and shrinks the body by exactly its height.
 // footLines is the PIT's body: everything between the transcript's rule and
-// the pit's closing rule. One renderer now, where there were five with three
-// different clipping rules between them. See pit.go.
+// the status bar. See pit.go.
 func (t *transcript) footLines() []string {
-	// THE TYPING BOXES ARE DRAWERS TOO. They used to write themselves into the
-	// status row, which is how typing `/` made the mantra, the context
-	// percentage and the cost disappear. A box is transient UI; transient UI
-	// lives here.
+	// The typing boxes are pits too: they used to write themselves into the
+	// status row, and take the mantra and the context figure with them.
 	rows := t.inputDrawerLines()
 	if rows == nil {
 		if !t.pit.open() {
@@ -1097,17 +1087,12 @@ func (t *transcript) footLines() []string {
 		t.pit.full = t.fullPit()
 		rows = t.pit.lines(t.w, t.pitRoom())
 	}
-	// FULLSCREEN IS THE PIT AND NOTHING ELSE. No rule, no page position, no
-	// conversation behind it -- Gluck: "there shouldn't be any top bar at all.
-	// just form content." The rule says where you are in a conversation that
-	// is not on the screen, which is a fact about somewhere else.
+	// FULLSCREEN IS THE PIT AND NOTHING ELSE: no rule, no page position. They
+	// describe a conversation that is not on the screen.
 	if t.fullPit() {
 		return rows
 	}
-	// THE TRANSCRIPT'S RULE OPENS THE REGION, above the pit's body -- so the
-	// screen reads top to bottom as: conversation, the rule that ends it, the
-	// pit, the rule that ends THAT, and the status bar. renderFrame puts the
-	// closing rule on the second-to-last row; this is everything above it.
+	// The rule opens the region: conversation, rule, pit, blank, bar.
 	return append([]string{t.transcriptRule()}, rows...)
 }
 
@@ -1139,17 +1124,14 @@ const (
 	focusTranscript                 // `T`: read the conversation, keep the pit
 )
 
-// fullPit reports whether the pit is taking the pane RIGHT NOW: the pager's
-// disposition, and the focus. A fullscreen pit recedes to its ordinary height
-// when the transcript takes focus -- the reader asked to see past it, and a
-// pane-sized pit with the conversation behind it shows nothing to see past.
+// fullPit is whether the pit takes the pane right now: the disposition, and
+// the focus. A fullscreen pit recedes when the transcript takes the keys.
 func (t *transcript) fullPit() bool {
 	return t.full && t.pit.open() && t.focused == focusPit
 }
 
 // focusTranscriptKey is `T`: hand the screen to the conversation without
-// closing what is open, and hand it back on the next press. It is the answer
-// to "I want to read the thread behind this form" that does not cost the form.
+// closing what is open, and hand it back on the next press.
 func focusTranscriptKey(t *transcript) {
 	if !t.pit.open() {
 		return
@@ -1161,12 +1143,9 @@ func focusTranscriptKey(t *transcript) {
 	t.focused = focusPit
 }
 
-// pitRoom is how many rows the pit may have, and it is the ONLY place that
-// arithmetic is done. The pane, minus the status bar (one row, or three when it
-// wraps -- barRows knows, and the pit did not), minus the blank above it, minus
-// the transcript's own rule, minus at least one row of conversation. An
-// ordinary pit leaves the conversation three rows rather than one; fullscreen
-// takes the rest.
+// pitRoom is how many rows the pit may have, and the only place that
+// arithmetic is done: the pane, minus the bar (one row, or three when it
+// wraps), the blank above it, the rule, and a row of conversation.
 func (t *transcript) pitRoom() int {
 	if t.fullPit() {
 		// FULLSCREEN TAKES THE PANE: everything but the status bar, which is
@@ -1510,20 +1489,16 @@ func (t *transcript) statusPanelLines() []string {
 	return rows
 }
 
-// showQueuedAuto opens or closes the queue pit because the QUEUE changed rather
-// than because a key was pressed. A pit the user opened by hand is never
-// auto-closed: draining the queue must not yank away a view they asked for.
+// showQueuedAuto opens or closes the queue pit because the QUEUE changed, not
+// because a key was pressed. A pit opened by hand is never auto-closed.
 func (t *transcript) showQueuedAuto(on bool) {
 	if on {
 		if t.showing(pitQueue) {
 			t.refreshQueuePit()
 			return
 		}
-		// Dismissed by hand, or a DELIBERATE pit is up (help, status, a
-		// command's output): either way the reader has said what they want on
-		// screen and it is not this. A transient message is not deliberate and
-		// does not block the queue -- guarding on pit.open() alone meant a
-		// "sent" confirmation suppressed the very queue it had just added to.
+		// Dismissed by hand, or a deliberate pit is up: the reader has said
+		// what they want on screen. A note is not deliberate.
 		if t.queueDismissed || (t.pit.open() && !t.pit.glance()) {
 			return
 		}
@@ -1533,11 +1508,7 @@ func (t *transcript) showQueuedAuto(on bool) {
 	// The queue is empty: the suppressor has nothing left to suppress, so a
 	// LATER queue can open the pit again.
 	t.queueDismissed = false
-	// A PIT THE USER OPENED IS NEVER AUTO-CLOSED, and -- the bug Gluck
-	// reported -- a pit the user CLOSED is never auto-reopened. `fig send`
-	// that queues a message and enters the pager used to have the queue pit
-	// come straight back after Esc, because the queue was still non-empty and
-	// nothing recorded that the reader had dismissed it.
+	// A pit the user closed is never auto-reopened.
 	if !t.queuedByKey && t.showing(pitQueue) {
 		t.pit.close()
 	}
@@ -1591,11 +1562,8 @@ func (t *transcript) refreshQueuePit() {
 }
 
 func (t *transcript) queuedPitRows() []pitRow {
-	// NO PLACEHOLDER. An empty queue is an empty pit: the bar already says the
-	// queue is what is open, and a row that says "(none)" is a row spent
-	// telling a reader what the absence of rows told them. Gluck: "there
-	// should be no (none). the absence of ques are self explanatory. even in
-	// verbose mode."
+	// An empty queue is an empty pit: the bar says the queue is open, and a
+	// row saying "(none)" spends a row on what no rows already said.
 	if len(t.queued) == 0 {
 		return nil
 	}
@@ -1817,11 +1785,8 @@ func (t *transcript) dispatch(ev keyEvent) {
 		// own cursor against its own window, which disagreed with the pit's,
 		// so the highlight appeared to skip rows.
 		if t.focused == focusTranscript {
-			// THE CONVERSATION HAS THE KEYS. `T` handed them over and the pit
-			// is a snapshot until `T` hands them back -- so the motions scroll
-			// the transcript behind it, and Esc (below, via the keymap) closes
-			// the pit, which is the one thing a reader in this mode wants that
-			// the transcript cannot give them.
+			// THE CONVERSATION HAS THE KEYS until `T` hands them back; Esc
+			// still closes the pit.
 			if act := pagerAct.pager(modeTranscript, ev); act != nil {
 				act(t)
 				t.pendG = ev.b == 'g' && !t.pendG
@@ -1831,11 +1796,8 @@ func (t *transcript) dispatch(ev keyEvent) {
 		}
 		if t.focused == focusPit && t.pit.live != nil && t.pit.list() != nil {
 			if t.pitVerb(ev) {
-				// gg IS TWO KEYS, and this branch returns before the
-				// dispatcher's epilogue that arms the first one -- so `g` in a
-				// HOSTED pit never armed and `gg` never fired, while the same
-				// two keys worked in help. The same bug as 91818dfd, one
-				// branch earlier; found by a reviewer, with a canary.
+				// gg is two keys and this branch returns before the epilogue
+				// that arms the first one.
 				t.pendG = ev.b == 'g' && !t.pendG
 				t.render()
 				return
@@ -1928,9 +1890,8 @@ func pagerHelpPanel(t *transcript)    { t.openHelpPit() }
 func pagerStatusPanel(t *transcript)  { t.openStatusPit() }
 func pagerQueuedPanel(t *transcript)  { t.openQueueFromKey() }
 
-// pagerFormPit is 'S': the form, on the same terms as '?' and 'Q'. S for
-// STATE, which is what this form is called everywhere else in the CLI --
-// `figaro state` and `figaro form` are one command, and this is its key.
+// pagerFormPit is 'S': the form, on the same terms as '?' and 'Q'. S for the
+// verb's other spelling, `figaro state`.
 func pagerFormPit(t *transcript) {
 	if strings.HasPrefix(string(t.pit.id), string(pitForm)) {
 		t.closePanels()
@@ -2776,14 +2737,9 @@ func (t *transcript) setCommandNoteAt(note string, level alertLevel) {
 	t.render()
 }
 
-// noteYank confirms a yank IN THE BAR, and never in a pit. The confirmation
-// used to be a "flash" drawn on the pit's closing rule, which no longer
-// exists; before that it was a message pit, which REPLACED the list it was
-// yanking from. A yank is news about something that has already happened: it
-// belongs on the row that retires by itself.
-//
-// A long yank is reported by size. The bar keeps an alert only while it fits
-// in half the row, and a queued message pasted into it whole would not.
+// noteYank confirms a yank in the bar and never in a pit -- a confirmation
+// that replaced the list it was yanking from is how this went wrong twice.
+// A long yank is reported by size, because the bar keeps only what fits.
 func (t *transcript) noteYank(text string) {
 	one := firstLineTrim(text)
 	if displayWidth(one) > 24 {

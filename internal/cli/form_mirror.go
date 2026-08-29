@@ -150,14 +150,8 @@ func flattenFormTree(n *formNode, open map[string]bool, out []*formNode) []*form
 	return out
 }
 
-// renderFormRow is one line: the indent, the label, and a value clipped to what
-// is left of the width.
-//
-// NO MARKER ON A BRANCH. Every branch carried a "▸" and every leaf carried two
-// spaces to line up with it -- a column spent saying what the indent of the
-// rows underneath already says, and what the "(8)" at the end of a branch says
-// again. Gluck: "the arrow that prefaces top level keys that have nested
-// children can be dropped. Indentation covers it enough."
+// renderFormRow is one line: the indent, the label, and a value clipped to
+// what is left. No marker on a branch -- the indent and the "(8)" say it.
 func renderFormRow(n *formNode, width int, selected bool) string {
 	indent := strings.Repeat("  ", n.depth-1)
 	line := indent + n.label
@@ -166,10 +160,8 @@ func renderFormRow(n *formNode, width int, selected bool) string {
 	} else {
 		line += fmt.Sprintf(" (%d)", len(n.children))
 	}
-	// COLUMNS, NOT BYTES. Both cuts in this file used len(): a row of Japanese
-	// painted 75 columns of a 100-column pane and then ellipsised, and the
-	// preview below cut mid-rune and left two U+FFFD in the middle of the
-	// line. An emoji spends four of a byte budget and two cells of a real one.
+	// COLUMNS, NOT BYTES: len() gave a row of Japanese 75 columns of 100 and
+	// cut the preview mid-rune.
 	line = clipToWidthEllipsis(line, width)
 	if selected {
 		return "\x1b[7m" + line + strings.Repeat(" ", max(0, width-displayWidth(line))) + "\x1b[0m"
@@ -181,28 +173,19 @@ func renderFormRow(n *formNode, width int, selected bool) string {
 // in kilobytes; a tree that pastes one into a row is not a tree.
 func formValuePreview(raw json.RawMessage) string {
 	s := strings.Join(strings.Fields(string(raw)), " ")
-	// 120 COLUMNS, not 120 bytes: a byte cap gave an ASCII value 120
-	// characters of preview and a CJK value 40, and cut the 121st rune in
-	// half on the way.
+	// 120 columns, not bytes: a byte cap gave CJK a third of the preview.
 	return clipToWidthEllipsis(s, 120)
 }
 
-// openBranch is Enter: it opens what is under a row. On a BRANCH that is its
-// children; on a LEAF it is the value itself, spelled out over as many rows as
-// it takes -- because a form holds skill frontmatter and file contents, and a
-// value clipped to one row with an ellipsis is a value you cannot read.
+// openBranch is Enter: a branch's children, or a leaf's value spelled out.
 func openBranch(n *formNode, open map[string]bool) {
 	open[n.path] = !open[n.path]
 }
 
-// formValueLines is an opened leaf: the value, made readable.
-//
-// THREE SHAPES, and the first two are the ones a form actually holds. A JSON
-// object or array is INDENTED. A JSON string that itself parses as an object
-// or an array -- which is how a skill's frontmatter, a tool result or a
-// serialised file arrives -- is unwrapped and then indented, because the outer
-// quotes are the least interesting thing about it. Anything else is the plain
-// string, its own newlines honoured.
+// formValueLines is an opened leaf, made readable: a JSON object or array is
+// indented; a JSON STRING that itself parses as one is unwrapped and then
+// indented (a skill's frontmatter, a tool result); anything else is the plain
+// string with its own newlines.
 func formValueLines(raw json.RawMessage, width int) []string {
 	var out []string
 	if lines, ok := prettyJSON(raw); ok {
@@ -217,12 +200,9 @@ func formValueLines(raw json.RawMessage, width int) []string {
 			out = strings.Split(s, "\n")
 		}
 	}
-	// Wrap rather than clip: the point of opening a value is to read all of it.
-	// AND STRIP AT THE SOURCE as well as at the paint (pitText in picker.go):
-	// a value's own escape sequences must not become rows in the first place,
-	// so that a host which renders Items() without the picker -- a future one,
-	// or a test -- cannot be driven by the value it is displaying. The YANK is
-	// untouched: `y` still copies the value exactly as it is stored.
+	// Wrap rather than clip, and strip at the source as well as at the paint:
+	// a value's escapes must not become rows even for a host that is not the
+	// picker. The yank is untouched -- `y` copies the value as stored.
 	wrapped := make([]string, 0, len(out))
 	for _, l := range out {
 		wrapped = append(wrapped, wrapPlain(pitText(strings.TrimRight(l, "\r")), max(width, 20))...)
@@ -230,9 +210,7 @@ func formValueLines(raw json.RawMessage, width int) []string {
 	return wrapped
 }
 
-// prettyJSON indents b when b is a JSON object or array, and refuses otherwise:
-// a bare number or a quoted string gains nothing from indentation and would
-// come back with its quotes still on.
+// prettyJSON indents an object or array and refuses anything else.
 func prettyJSON(b []byte) ([]string, bool) {
 	t := bytes.TrimSpace(b)
 	if len(t) == 0 || (t[0] != '{' && t[0] != '[') {
@@ -245,15 +223,11 @@ func prettyJSON(b []byte) ([]string, bool) {
 	return strings.Split(buf.String(), "\n"), true
 }
 
-// wrapPlain breaks a line at the width, at a space where there is one within
-// reach and mid-word where there is not. Display width, not bytes: a form is
-// full of prose and emoji.
-// ONE PASS, NOT ONE PER ROW. The first cut measured the whole remaining string
-// with runewidth.StringWidth on every iteration, which is O(n²) in the length
-// of the value -- and Items() re-wrapped every open value on every paint, under
-// the render lock. Measured by a reviewer: 120KB of value cost 117ms PER
-// KEYSTROKE, and a 1MB value 3.53 SECONDS per render. This walks the string
-// once; wrappedValue caches the result so a repaint costs nothing at all.
+// wrapPlain breaks at the width, at a space where there is one within reach.
+// Display width, not bytes.
+// ONE PASS: measuring the remainder every iteration was O(n²), and Items()
+// re-wrapped on every paint -- 117ms per keystroke on 120KB. wrappedValue
+// caches, so a repaint costs nothing.
 func wrapPlain(s string, width int) []string {
 	if s == "" {
 		return []string{""}

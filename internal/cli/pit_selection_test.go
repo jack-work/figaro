@@ -11,22 +11,11 @@ import (
 	"unicode/utf8"
 )
 
-// THREE BUGS, ONE SENTENCE EACH, and the tests that would have caught them.
-//
-//  1. The queue's ^N did nothing until you closed and reopened it: the picker
-//     was told at birth whether it had a cursor, and `:send` opened it on the
-//     single row "(none)", which was chrome (and is now no row at all).
-//  2. `form show` skipped properties: it reached the pit as CAPTURED TEXT
-//     rather than as the live view `form listen` uses, and a hosted pit's
-//     selection was invisible to every verb because selected() answered only
-//     for a drawerList.
-//  3. The rule capped the page position with " ───", so the one figure on the
-//     rule stopped three cells short of the edge the bar below it is flush to.
+// The pit's list behaviour, and the bugs each test was written against.
 
 func idRow(text, id string) pitRow { return pitRow{text: text, yank: text, id: id} }
 
-// A PICKER BORN EMPTY MUST STILL LEARN TO CHOOSE. This is bug 1 at the level
-// it actually lives at.
+// A picker born empty must still learn to choose.
 func TestPickerCursorIsDerivedFromRowsNotFromBirth(t *testing.T) {
 	p := newPicker([]pitRow{staticRow("  a header, which is chrome")})
 	if p.hasCursor() {
@@ -51,8 +40,7 @@ func TestPickerCursorIsDerivedFromRowsNotFromBirth(t *testing.T) {
 	}
 }
 
-// A REFRESH KEEPS THE SELECTION AND THE WINDOW. Both are the reader's, not the
-// list's, and a queue that re-sorts on every poll is where this is felt.
+// A refresh keeps the selection and the window: both are the reader's.
 func TestPickerSetRowsKeepsSelectionAcrossReorder(t *testing.T) {
 	rows := []pitRow{idRow("a", "1"), idRow("b", "2"), idRow("c", "3")}
 	p := newPicker(rows)
@@ -110,9 +98,7 @@ func (v *fakeItemView) Items(width int) []pitRow { return v.rows }
 func (v *fakeItemView) Activate(path string)     { v.activated = path }
 func (v *fakeItemView) Close()                   {}
 
-// BUG 2's HALF THAT NO PTY WALK COULD SEE: the pit painted a highlight on a
-// hosted view and then told Enter and `y` there was no selection, because
-// selected() answered only for a drawerList.
+// A hosted pit's highlight must be visible to its verbs.
 func TestLivePitHasASelectionTheVerbsCanSee(t *testing.T) {
 	v := &fakeItemView{rows: []pitRow{
 		staticRow("form abc · v1"),
@@ -143,8 +129,7 @@ func TestLivePitHasASelectionTheVerbsCanSee(t *testing.T) {
 	}
 }
 
-// BUG 2's OTHER HALF: `form show` must reach the pit down the same road as
-// `form listen`, and the verbs that WRITE a form must still reach the router.
+// Every form READ takes the live road; the verbs that write still route.
 func TestLiveFormRouting(t *testing.T) {
 	for _, tc := range []struct {
 		line       string
@@ -176,7 +161,7 @@ func TestLiveFormRouting(t *testing.T) {
 	}
 }
 
-// BUG 3: the page position is the last thing on the rule.
+// The page position is the last thing on the rule.
 func TestRuleLineEndsWithThePosition(t *testing.T) {
 	s := newSessionStatus("dac6cb6d", time.Now())
 	const pos = "12-40/97 live"
@@ -201,10 +186,7 @@ func TestFormViewIsAnItemView(t *testing.T) {
 	}
 }
 
-// A HOSTED VIEW MAY NOT REPAINT FROM A KEY. The pager dispatches keys with its
-// render lock held, so a repaint from Activate is a mutex taken twice by one
-// goroutine -- which is not a slow path, it is a dead pager. This is the bug
-// that appeared the instant the pit's selection became visible to Enter.
+// A hosted view may not repaint from a key: the render lock is already held.
 func TestFormViewKeyVerbsDoNotRepaint(t *testing.T) {
 	repaints := 0
 	v := &formView{mirror: &formMirror{}, open: map[string]bool{}}
@@ -228,8 +210,7 @@ type closingView struct {
 
 func (v *closingView) Close() { v.closed++ }
 
-// A PIT THAT CLOSES RELEASES ITS VIEW. A live form holds a subscription and a
-// socket; four `:form show`s and four Escs used to leave four of each behind.
+// A pit that closes releases its view: a live form holds a socket.
 func TestPitClosingReleasesTheHostedView(t *testing.T) {
 	v := &closingView{fakeItemView: fakeItemView{rows: []pitRow{idRow("mantra: x", "mantra")}}}
 	var d pit
@@ -247,13 +228,8 @@ func TestPitClosingReleasesTheHostedView(t *testing.T) {
 	}
 }
 
-// THE CURSOR IS ALWAYS ON THE SCREEN THAT WAS PAINTED. The pit used to hand
-// the picker its GROSS height -- twelve rows -- while the picker spends two of
-// those on the "… N more" markers and lists in the other ten. follow() then
-// held the cursor inside a window two rows taller than the one on screen, so k
-// on the last row moved the selection off the bottom of what was painted: the
-// highlight looked stuck on the last visible row and the row just left behind
-// disappeared under the marker. Gluck felt it before any test did.
+// THE CURSOR IS ALWAYS ON THE SCREEN THAT WAS PAINTED -- k on the last row
+// used to move the selection outside the window the picker actually drew.
 func TestPitCursorStaysInsideThePaintedWindow(t *testing.T) {
 	rows := make([]pitRow, 0, 30)
 	for i := range 30 {
@@ -300,9 +276,7 @@ func TestPitCursorStaysInsideThePaintedWindow(t *testing.T) {
 	}
 }
 
-// ENTER ON A LEAF OPENS THE VALUE, and a value that parses as JSON is
-// indented. A form holds skill frontmatter and serialised files; one row with
-// an ellipsis on the end of it is not something a reader can read.
+// Enter on a leaf opens the value, indented when it parses as JSON.
 func TestFormValueLinesAreReadable(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -339,9 +313,7 @@ func TestFormValueLinesAreReadable(t *testing.T) {
 	}
 }
 
-// A BRANCH CARRIES NO ARROW. It carried "▸" and every leaf carried two spaces
-// to line up with it -- a column that said what the indent and the "(2)"
-// already say twice over.
+// A branch carries no arrow: the indent and the "(2)" already say it.
 func TestFormRowsHaveNoBranchArrow(t *testing.T) {
 	branch := &formNode{path: "skills", label: "skills", depth: 1,
 		children: []*formNode{{path: "skills.a", label: "a", depth: 2}}}
@@ -382,10 +354,8 @@ func TestEnterOpensALeaf(t *testing.T) {
 	}
 }
 
-// THE PIT PAINTS TEXT, NEVER CONTROL. A form holds tool output and tool output
-// holds whatever the tool printed: a reviewer opened a value carrying
-// "\x1b[2J\x1b[10A" and the pane went blank -- fifteen painted rows became one
-// and never came back. Every row of every pit goes through the gate now.
+// THE PIT PAINTS TEXT, NEVER CONTROL: a value carrying "\x1b[2J" blanked the
+// pane until every row went through the gate.
 func TestPitRowsCarryNoControlSequences(t *testing.T) {
 	nasty := "plain \x1b[31mRED\x1b[0m mid \x1b[2J\x1b[10Aoops\ttail\x07 and\x1b]0;title\x07 more"
 	var d pit
@@ -412,8 +382,7 @@ func TestPitRowsCarryNoControlSequences(t *testing.T) {
 	}
 }
 
-// A ROW IS CLIPPED IN COLUMNS. len() gave a row of Japanese 75 columns of a
-// 100-column pane, and cut the preview mid-rune.
+// A row is clipped in COLUMNS: len() gave Japanese 75 of 100 columns.
 func TestFormRowClipsByColumnsNotBytes(t *testing.T) {
 	n := &formNode{path: "uni", label: "uni", depth: 1,
 		value: json.RawMessage(`"` + strings.Repeat("日本語テキスト ", 30) + `"`)}
@@ -429,8 +398,7 @@ func TestFormRowClipsByColumnsNotBytes(t *testing.T) {
 	}
 }
 
-// WRAPPING IS LINEAR, AND IT HAPPENS ONCE. 3.53 seconds per render on a 1MB
-// value, under the render lock, is not a slow path: it is a hung pager.
+// Wrapping is linear and happens once: 3.5s per render is a hung pager.
 func TestValueWrappingIsCheapAndBounded(t *testing.T) {
 	big := strings.Repeat("word ", 40000) // ~200KB
 	n := &formNode{path: "big", label: "big", depth: 1,
@@ -449,9 +417,7 @@ func TestValueWrappingIsCheapAndBounded(t *testing.T) {
 	if !strings.Contains(first[len(first)-1], "more") {
 		t.Fatalf("the cap says nothing about what it dropped: %q", first[len(first)-1])
 	}
-	// COUNTED, NOT TIMED. The first draft of this compared 50 warm lookups
-	// against one cold wrap in wall time and failed on noise at 1.5ms -- a
-	// flaky test asserting the right thing the wrong way.
+	// Counted, not timed: the wall-clock version failed on noise.
 	if v.wraps != 1 {
 		t.Fatalf("the first wrap ran %d times", v.wraps)
 	}
@@ -476,9 +442,8 @@ func TestValueWrappingIsCheapAndBounded(t *testing.T) {
 	}
 }
 
-// ENTER-TO-CLOSE MUST NOT SEND YOU HOME. Closing a value removes the rows it
-// was made of; the cursor used to fall to row zero and drag the window with it,
-// throwing a reader at the bottom of a long form back to the top.
+// Enter-to-close must not send you home: closing a value removes the rows the
+// cursor was standing on.
 func TestClosingAValueKeepsTheReaderWhereTheyWere(t *testing.T) {
 	rows := func(open bool) []pitRow {
 		out := []pitRow{staticRow("form abc · v1")}
@@ -514,10 +479,7 @@ func TestClosingAValueKeepsTheReaderWhereTheyWere(t *testing.T) {
 	}
 }
 
-// A MARKER NEVER SAYS "1 MORE". It costs exactly the row it is describing, so
-// spending it to hide a single line is a row wasted saying a row exists.
-// Gluck: "there is only ever a reason to put 2 more, you can always show the
-// last line."
+// A marker never says "1 more": it costs exactly the row it describes.
 func TestMarkerNeverHidesASingleRow(t *testing.T) {
 	for n := 1; n <= 40; n++ {
 		rows := make([]pitRow, 0, n)
@@ -561,9 +523,7 @@ func TestMarkerNeverHidesASingleRow(t *testing.T) {
 	}
 }
 
-// AND THE HEIGHT DOES NOT MOVE while a reader scrolls a list that overflows:
-// the marker's row goes back to the list when the marker is not needed, so the
-// stanza is the same height either way and the transcript above it never jumps.
+// The height does not move while a reader scrolls an overflowing list.
 func TestOverflowingListKeepsItsHeight(t *testing.T) {
 	rows := make([]pitRow, 0, 30)
 	for i := range 30 {

@@ -105,18 +105,11 @@ func (in *interactiveInput) commandSend(ctx context.Context, fields []string) (s
 		if err != nil {
 			return "", fmt.Errorf("send: %w", err)
 		}
-		// A PROMPT SENT INTO A BUSY ARIA IS A QUEUE ENTRY, and the reader who
-		// typed it should see it land -- EVERY TIME. Leaving it to the queue's
-		// auto-open made `:send` inconsistent for reasons that had nothing to
-		// do with the send: the auto-open is suppressed while any deliberate
-		// pit is up, and it stays suppressed after any Esc until the queue
-		// drains, so the same command showed the queue or did not depending on
-		// what the reader had closed ten minutes earlier.
-		//
-		// A send the reader TYPED is a deliberate gesture, so its queue opens
-		// the deliberate way -- the same door `Q` uses, which clears the
-		// dismissal latch. `active` is the daemon's own answer to "did this
-		// join a running turn", which is exactly "was it queued".
+		// A prompt sent into a busy aria is a queue entry, and the reader who
+		// typed it should see it land EVERY TIME. The auto-open is suppressed
+		// by any deliberate pit and by any earlier Esc, so a typed send opens
+		// the queue the deliberate way instead. `active` is the daemon's
+		// answer to "did this join a running turn".
 		in.refreshQueued()
 		if active {
 			in.mu.Lock()

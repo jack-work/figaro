@@ -315,17 +315,9 @@ func (s *sessionStatus) turnLabel(verbose bool) string {
 // ruleLine is the upper of the two footer rows: a full-width rule with the
 // identity right-aligned: "─────…── aria <id>[ · <pos>] ───". Undecorated
 // (the caller dims it).
-// ruleLine closes the conversation. IT NO LONGER CARRIES THE ARIA ID: the id
-// moved onto the status bar, and printing it twice, one row apart, spent the
-// rule's whole width saying what the row below already said. What is left is
-// the only thing the rule knows that the bar does not -- where in the
-// conversation this window sits, and whether it is following.
-//
-// THE POSITION ENDS THE ROW. It used to be followed by three more dashes, a
-// decorative cap that made the one number on the rule stop short of the edge
-// while the figure below it -- the context percentage -- was flush right. Two
-// right-hand columns one row apart, disagreeing by three cells, read as a
-// misalignment, because it was one.
+// ruleLine closes the conversation, and carries the one thing the bar does
+// not: where in it this window sits. The position ENDS the row -- a decorative
+// cap left it three cells short of the figure below it.
 func (s *sessionStatus) ruleLine(width int, pos string) string {
 	if pos == "" {
 		return clipToWidth(strings.Repeat("─", max(width, 0)), width)

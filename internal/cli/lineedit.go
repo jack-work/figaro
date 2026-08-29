@@ -838,16 +838,10 @@ func (e *lineEditor) render(prefix string, w int) string {
 	}
 }
 
-// wrap draws the line ACROSS ROWS instead of scrolling it under the prompt: a
-// command long enough to leave the pane is a command you cannot read, and the
-// pit is a region with rows to spare. Gluck: "the command mode content should
-// be wrapped, not single line. it should abide by the same max limits of the
-// other pits."
-//
-// The prompt sits on the first row and the continuations are indented under
-// it, so the text stays in one column. Past `rows` the window slides to keep
-// the CURSOR visible -- the same promise the single-row form made, one
-// dimension up: what you are typing is always on the screen.
+// wrap draws the line across rows instead of scrolling it under the prompt: a
+// command long enough to leave the pane is one you cannot read. Continuations
+// are indented under the prompt, and past `rows` the window follows the
+// cursor -- what you are typing is always on the screen.
 func (e *lineEditor) wrap(prefix string, w, rows int) []string {
 	if w <= 0 || rows < 1 {
 		return nil

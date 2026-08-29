@@ -175,20 +175,13 @@ func (c *RunContext) BoolFlag(name string) bool {
 // ---------------------------------------------------------------------------
 
 // LiveView is what a verb becomes when it does not finish: `form listen`
-// watches a form until you leave it, `doctor provider --follow` would do the
-// same. Such a verb cannot be "run and captured" -- it has no output, it has a
-// VIEW, and it lives until the host is done with it.
-//
-// The naive way to host one inside another program is to hand it a pipe and
-// let it keep reading os.Stdin. That is worse than it sounds: two readers on
-// one fd, each swallowing half the user's keystrokes, and a verb that paints
-// with absolute cursor positioning into a region it does not own.
+// watches a form until you leave it. Such a verb has no output, it has a VIEW,
+// and hosting it by handing it a pipe means two readers on one fd and a verb
+// painting into a region it does not own.
 //
 // So a live verb is a MODEL, and the interface is ONE METHOD: the host owns
-// the screen, the keys and the dismissal, and the view owns its subscription.
-// Everything else is an optional capability below, asked for by type assertion
-// -- because a view that has a LIST (the only kind there is today) needs none
-// of it: the pit drives the list.
+// the screen, the keys and the dismissal; the view owns its subscription.
+// Everything else is an optional capability below, asked for by assertion.
 type LiveView interface {
 	// Close releases whatever the view is holding (a subscription, a socket).
 	Close()
@@ -208,13 +201,9 @@ type ScreenView interface {
 
 // KeyView takes keystrokes the host does not own.
 //
-// A KEY HANDLER MUTATES AND RETURNS: it must not repaint. Every host repaints
-// after the key it dispatched, and the pager dispatches keys with its render
-// lock held -- so a view that repaints from in here takes a mutex its caller
-// is already holding, and Go's mutexes do not recurse. Measured: the pager
-// froze, dead, with the view still on screen. What a view may repaint for is
-// what arrives on its own -- a delta, a resync, a failure -- because that is
-// the only thing no host is watching for.
+// A KEY HANDLER MUTATES AND RETURNS: it must not repaint. The pager dispatches
+// keys with its render lock held, so a repaint from in here takes that lock
+// twice and freezes it. A view repaints only for what arrives on its own.
 type KeyView interface {
 	LiveView
 	// Key offers one keystroke. Reporting false leaves it to the host, which

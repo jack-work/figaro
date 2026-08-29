@@ -157,11 +157,9 @@ var keymap = []keyBinding{
 		// Not live in incipit (nothing to detach from yet, and opening the
 		// pager only to tear it down is not a gesture), nor in the search box,
 		// where it is literal text.
-		// 'q' LEAVES WHAT IS OPEN, AND ONLY THEN THE SESSION. It is the
-		// third spelling of Esc and ^[ -- Gluck: "q should only quit when no
-		// pit is open" -- and the reason is that a pit is a thing you are IN.
-		// Quitting the process from inside a list you opened to read is the
-		// same surprise as `less` exiting your shell.
+		// 'q' leaves what is open, and only then the session: a pit is a thing
+		// you are IN, and quitting the process from inside one is the surprise
+		// `less` would give you by exiting your shell.
 		chord: byteChord('q'), modes: inTranscript | inPanel,
 		open: staysInline, why: "detach: it would open the pager and immediately tear it down",
 		help: helpLeavePit, input: inputLeavePit,
@@ -269,13 +267,10 @@ var keymap = []keyBinding{
 	{chord: byteChord('?'), modes: inTranscript, open: opensPager, help: helpHelpPanel, pager: pagerHelpPanel},
 	{chord: byteChord('!'), modes: inTranscript, open: opensPager, help: helpStatusPanel, pager: pagerStatusPanel},
 	{chord: byteChord('Q'), modes: inTranscript, open: opensPager, help: helpQueuedPanel, pager: pagerQueuedPanel},
-	// 'S' IS THE FORM, and it is spelled S because the verb is spelled state:
-	// `figaro state` and `figaro form` are one command, and a reader who knows
-	// the CLI knows this letter. It joins ?/!/Q as a panel key.
+	// 'S' is the form: `figaro state` and `figaro form` are one command, and S
+	// is the letter a reader of the CLI already has.
 	{chord: byteChord('S'), modes: inTranscript, open: opensPager, help: helpFormPit, pager: pagerFormPit},
-	// 'T' HANDS THE SCREEN TO THE CONVERSATION without closing the pit: a
-	// fullscreen pit recedes to its ordinary height, the transcript takes the
-	// keys, and the next press gives them back.
+	// 'T' hands the screen to the conversation without closing the pit.
 	{chord: byteChord('T'), modes: inTranscript, open: opensPager, help: helpFocus, pager: pagerFocusTranscript},
 
 	// -- input level: hang up, and stay ------------------------------------

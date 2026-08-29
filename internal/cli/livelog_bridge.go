@@ -607,12 +607,9 @@ func (t *livelogTurn) transcriptDispatch(ev keyEvent) { t.tr.dispatch(ev) }
 
 func (t *livelogTurn) invalidateTranscriptRows() { t.tr.invalidateRows() }
 
-// showDropped is what X leaves behind: the messages the daemon just discarded,
-// IN A PIT, because their text is now the only copy anywhere and a bar row
-// clips it. It replaces the old arrangement, which folded the whole list into
-// one status line and relied on leaveTranscript reprinting it to the shell --
-// and that reprint is gone (it is what printed every hangup twice), so without
-// this the text was simply destroyed. Two reviewers found it independently.
+// showDropped is what X leaves behind, in a pit: the discarded messages' text
+// is the only copy anywhere, and the old arrangement relied on a reprint that
+// no longer happens.
 func (t *livelogTurn) showDropped(queue []rpc.QueuedPrompt) {
 	rows := make([]pitRow, 0, len(queue)+1)
 	rows = append(rows, staticRow(fmt.Sprintf("  interrupted · dropped %s", queueCount(queue))))
@@ -624,21 +621,9 @@ func (t *livelogTurn) showDropped(queue []rpc.QueuedPrompt) {
 	slog.Warn("figaro session", "dropped", len(queue))
 }
 
-// report is where trouble goes: an error reason, a provider hint, an interrupt
-// notice. TWO DESTINATIONS, AND THE TERMINAL IS NOT ONE OF THEM.
-//
-// It used to have three: the bar, a `pendingReport` list REPRINTED to the
-// shell on the way out, and a direct write to stderr when the pager was down.
-// That is how hanging up and then disconnecting printed the same sentence
-// twice -- "hanging up: staying attached", then "hung up: listening", then
-// both again as the pager left -- and why leaving a session was never quiet.
-// Gluck, 2026-08-28: "there should not be duplicates, there should also not be
-// ANYTHING".
-//
-// So: the bar says it while there is a bar to say it in, and it retires by
-// itself; the log keeps it for anyone who asks afterwards. A message printed
-// past the last frame is a message nobody asked for, over a shell prompt that
-// is already back.
+// report is where trouble goes: THE BAR, which retires it, and the LOG, which
+// keeps it. The terminal is not a destination -- a reprint on the way out is
+// how one hangup came to print four lines over a returned shell prompt.
 func (t *livelogTurn) report(text string) {
 	if strings.TrimSpace(text) == "" {
 		return
@@ -700,11 +685,7 @@ func (t *livelogTurn) leaveTranscript() {
 	}
 	t.tr.leave()
 	t.flushTail()
-	// NOTHING IS SAID ON THE WAY OUT. Leaving the pager used to reprint every
-	// report to the shell, which is how one hangup became two lines and a
-	// disconnect became four. What the reader saw in the bar was the message;
-	// the log has the rest.
-	t.status.setNotice("")
+	t.status.setNotice("") // nothing is said on the way out
 }
 
 // scrollbackTailRows is how many physical rows of conversation leaving the
@@ -903,12 +884,8 @@ func (t *livelogTurn) openRule() { t.in.OpenRule() }
 // The queue, shown rather than echoed.
 func (t *livelogTurn) setQueued(prompts []queuedItem, errMsg string) {
 	t.queued, t.queuedErr = prompts, errMsg
-	// THE SNAPSHOT LANDS FIRST. The pit builds its rows from the transcript's
-	// copy, so telling the pit to refresh before handing it the new queue made
-	// every refresh one poll stale: a queue that filled while the pit was open
-	// kept drawing "(none)" until the pit was closed and opened again, which
-	// is the same symptom as a cursor that never arrives and was hiding behind
-	// it.
+	// THE SNAPSHOT LANDS FIRST: the pit builds its rows from this copy, so
+	// refreshing before it landed drew every queue one poll stale.
 	t.tr.queued = t.queued
 	t.tr.queuedRows = t.queuedRows()
 	// The panel opens itself when there is something to show and closes when

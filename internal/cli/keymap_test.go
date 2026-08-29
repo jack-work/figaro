@@ -250,8 +250,8 @@ func TestOpensTranscript_MatchesTheHandKeptList(t *testing.T) {
 		'/',           // search prompt
 		':',           // command line (see above)
 		'?', '!', 'Q', // help / figaro status / queued-prompt panels
-		'S', // the form, in the pit
-		'T', // focus the conversation, keeping the pit
+		'S',        // the form, in the pit
+		'T',        // focus the conversation, keeping the pit
 		0x0f,       // ^O verbosity
 		'm',        // more: the status bar's own detail, an opener exactly as ^O is
 		0x0e, 0x10, // ^N/^P node selection

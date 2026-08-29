@@ -1,38 +1,17 @@
 package cli
 
-// THE PIT: the pager's one transient region.
-//
-// The bottom of the pager used to be a scramble. Five panel renderers, each
-// with its own clipping rule (t.h-4, t.h/3, t.h/4), none paginated, none
-// selectable, and none carrying chrome that said what it was or how to leave
-// it. Worse, THE STATUS BAR WAS A CONTENDED RESOURCE: the search box, the
-// command line and every error message took that row for themselves, so the
-// mantra, the context percentage and the cost -- the only things on screen that
-// are always true -- disappeared exactly when something had gone wrong, which
-// is when a reader most needs to know which aria they are in and how much room
-// is left in it.
-//
-// One rule now governs the bottom of the screen:
+// THE PIT: the pager's one transient region -- help, status, the queue, a
+// command's output, a hosted verb, a note. One at a time, Esc closes it, and
+// none of them may touch the status bar.
 //
 //	┌ the transcript's rule ───────────────────────────────── 1–29/118 live
-//	│   item 1                        ← the PIT: what is open, and its rows
+//	│   item 1
 //	│ ♭ item 2                        ← at most one selected row
-//	│   item 3
-//	│ … 749 more                      ← a page marker, never a silent truncation
-//	└ 𝄚 · ✓ · 3b7aff0a · mantra              9.8k/1.0m   ← THE BAR, INVIOLABLE
+//	│ … 749 more                      ← never a silent truncation
+//	└ 𝄚 · ✓ · 3b7aff0a · mantra              9.8k/1.0m   ← the bar, inviolable
 //
-// Everything that is not the transcript and not the status bar is the pit:
-// help, figaro status, the queue, a command's output, a hosted verb, an error,
-// and the command line itself. One at a time, Esc closes it, and nothing else
-// may write to the status row ever again.
-//
-// WHAT THE PIT HOLDS IS AN ACT, and asking what KIND of thing is open is no
-// longer a question the pager can ask. There used to be a `drawerKind` tag --
-// none/message/list/input/live -- consulted in eight places, and every one of
-// those consultations was a fact the pit could have answered from what it was
-// holding. Two of them were the bugs of 2026-08-28: `selected()` answered only
-// for a "list", so a hosted form drew a highlight that Enter could not see, and
-// one branch checked a tag no code ever set.
+// The pit holds an ACT, and never asks what kind of thing is open: everything
+// that question used to decide is answered by what it is holding.
 
 import (
 	"strings"
@@ -41,20 +20,14 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// act is what occupies the pit: something that draws itself into w columns and
-// EXACTLY h rows, under a pit identity that decides its selection glyph.
-//
-// There are two, and there is no third: a picker (a list you read and choose
-// in) and a screen (a hosted verb that renders itself, for a live view with no
-// list to hand over). Anything else the pit ever shows arrives as rows, which
-// makes it a picker.
+// act is what occupies the pit: a picker (a list) or a screen (a hosted view
+// that renders itself). There is no third.
 type act interface {
 	lines(id pitID, w, h int) []string
 }
 
-// screen adapts a self-rendering view (cmdkit.ScreenView) to the pit. A view
-// that implements itemView never reaches here: the pit takes its rows instead,
-// so that every motion, marker and page count is the picker's, once.
+// screen adapts a self-rendering view to the pit. A view with Items() never
+// reaches here: the pit takes its rows and drives them with the picker.
 type screen struct{ v cmdkit.ScreenView }
 
 func (s screen) lines(_ pitID, w, h int) []string {
@@ -65,63 +38,48 @@ func (s screen) lines(_ pitID, w, h int) []string {
 	return rows
 }
 
-// pitRow is one line of a list, plus what a selection ACTION would operate on.
-// text is what is drawn; yank is what `y` copies; id is what a verb key (`x` on
-// a queued message) addresses. A row with an empty yank and id is chrome -- a
-// header, a blank, a page marker -- and cannot be selected.
+// pitRow is one line: text is drawn, yank is what `y` copies, id is what a
+// verb key addresses. A row with neither is chrome and cannot be selected.
 type pitRow struct {
 	text string
 	yank string
 	id   string
 }
 
-// staticRow is a row that is drawn but never selected: a header, a blank, a
-// page marker. (Not "chromeRow": transcript_mouse_test.go already owns that
-// name for a different idea -- a painted row belonging to no node.)
+// staticRow is drawn but never selected. (Not "chromeRow": that name is taken
+// in transcript_mouse_test.go for a different idea.)
 func staticRow(text string) pitRow { return pitRow{text: text} }
 
 func (r pitRow) selectable() bool { return r.yank != "" || r.id != "" }
 
 // pit is the region itself. The zero value is closed.
 type pit struct {
-	// id is WHICH pit this is -- "queue", "help", "form show" -- and through
-	// pitid.go it is also the glyph on the bar, the keymode, and the glyph on
-	// the selected row. It is the pit's whole identity; nothing else names it.
+	// id is which pit this is, and through pitid.go also its glyph, its
+	// keymode and its selection marker. Nothing else names a pit.
 	id    pitID
 	title string // drawn as the pit's first row when non-empty
 
-	// body is what is on screen: a picker, or a hosted view's own screen.
-	body act
-	// live is the hosted verb, when there is one. The pit forwards it the keys
-	// that are its own and closes it on the way out; it knows nothing about
-	// pits and the pit knows nothing about forms. See cmdkit.LiveView.
-	live cmdkit.LiveView
-	// full is fullscreen AS THE PIT SEES IT, and the pit is not who decides:
-	// the transcript owns the toggle (see transcript.full) and hands it down
-	// on every paint, so it survives one pit closing and another opening.
-	// Gluck: "whether the pit is fullscreened or not should be a global
-	// toggle, for whatever pit is currently present."
+	body act             // the picker or screen on show
+	live cmdkit.LiveView // the hosted verb, when there is one
+	// full is handed down by the transcript on every paint: fullscreen is the
+	// pager's disposition, not this pit's (see transcript.full).
 	full bool
 }
 
 func (d *pit) open() bool { return d.body != nil }
 
-// list is the pit's picker, or nil when what is open renders itself. Every
-// motion goes through here, so a hosted screen simply takes none of them.
+// list is the pit's picker, or nil when what is open renders itself: every
+// motion goes through here, so a screen takes none of them.
 func (d *pit) list() *picker {
 	p, _ := d.body.(*picker)
 	return p
 }
 
-// glance reports a pit that is READ AT A GLANCE rather than navigated: one
-// line, no list to move in, and therefore dismissed by any key. It is the note
-// pit and nothing else.
+// glance reports a pit that is read at a glance and dismissed by any key.
 func (d *pit) glance() bool { return d.id == pitNote }
 
-// close empties the pit, AND RELEASES WHAT IT WAS HOSTING. A live view holds a
-// subscription and a socket; four `:form show`s and four Escs used to leave
-// four of each behind, every one of them still asking the pager to repaint on
-// every delta of a form nobody is looking at.
+// close empties the pit and releases what it was hosting: a live view holds a
+// subscription and a socket.
 func (d *pit) close() {
 	if d.live != nil {
 		d.live.Close()
@@ -129,17 +87,14 @@ func (d *pit) close() {
 	*d = pit{}
 }
 
-// itemView is a live view that has a LIST rather than a screen. The pit takes
-// its rows and drives them with the picker; the view keeps only the verbs that
-// are its own. A view that does not implement this still renders itself.
+// itemView is a live view with a LIST rather than a screen: the pit drives the
+// rows, the view keeps only the verbs that are its own.
 type itemView interface {
 	Items(width int) []pitRow
 	Activate(path string)
 }
 
-// showLive hosts a verb. The pit owns the region and the dismissal; the view
-// owns what is inside it -- unless it has a list, in which case it hands the
-// rows over and keeps only its own verbs.
+// showLive hosts a verb: the pit owns the region and the dismissal.
 func (d *pit) showLive(id pitID, v cmdkit.LiveView) {
 	if d.live != nil && d.live != v {
 		d.live.Close() // one pit, one hosted view
@@ -157,10 +112,8 @@ func (d *pit) showLive(id pitID, v cmdkit.LiveView) {
 	}
 }
 
-// refreshLive re-reads an itemised view's rows. The cursor stays on the same
-// PATH rather than the same index -- a form that grows a key under the cursor
-// must not move the selection out from under it -- and that is the picker's
-// job now, so this is a row swap and nothing else.
+// refreshLive re-reads an itemised view's rows; the picker keeps the cursor on
+// the same row id across the swap.
 func (d *pit) refreshLive(w int) {
 	iv, ok := d.live.(itemView)
 	if !ok || d.list() == nil {
@@ -169,15 +122,13 @@ func (d *pit) refreshLive(w int) {
 	d.list().setRows(iv.Items(w), "")
 }
 
-// showNote is the one-line pit: an error, a result, a note too long for the
-// bar. Any key wipes it -- see glance().
+// showNote is the one-line pit: a result too long for the bar. Any key wipes
+// it (see glance).
 func (d *pit) showNote(text string) {
 	d.showList(pitNote, "", []pitRow{staticRow("  " + text)})
 }
 
-// showList opens a list. Whether it has a cursor is the ROWS' answer: help and
-// status are built of staticRow and get none; the queue and command output
-// carry ids and do.
+// showList opens a list. Whether it has a cursor is the rows' answer.
 func (d *pit) showList(id pitID, title string, rows []pitRow) {
 	if d.live != nil {
 		d.live.Close()
@@ -186,14 +137,10 @@ func (d *pit) showList(id pitID, title string, rows []pitRow) {
 	d.body = newPicker(rows)
 }
 
-// visible is how many rows the list may draw, given the ROOM THE PANE HAS
-// ALREADY BEEN ASKED FOR (see transcript.pitRoom). It does not compute that
-// room itself any more, and that was a bug you could feel: it subtracted a
-// literal 3 for "the rule and the bar" while the bar is THREE ROWS whenever it
-// wraps, so on a narrow pane fullscreen asked for two rows more than the pane
-// had. The stanza was then trimmed FROM THE TOP -- the "… N more above" marker
-// with it -- and the cursor could sit on a row that was never painted, with
-// `x` under the reader's finger. Twice reported, from two different beats.
+// visible is how many rows the list may draw inside the room the pane has
+// already been asked for (transcript.pitRoom). It must not compute that room
+// itself: the bar is three rows when it wraps, and a pit that assumed one
+// overran the pane and lost its top -- cursor and marker with it.
 func (d *pit) visible(room int) int {
 	if d.title != "" {
 		room--
@@ -205,21 +152,12 @@ func (d *pit) visible(room int) int {
 	return max(min(n, room), 1)
 }
 
-
-
-// THE LIST BEHAVIOURS ARE THE PICKER'S. What used to be six methods here --
-// nextSelectable, moveSelection, scrollToCursor, scrollToCursorIn, selected,
-// removeSelected -- was a second implementation of what the completion menu
-// already did, differing from it in the marker it drew and in nothing else.
-// These forward; picker.go decides.
+// The list behaviours are the picker's; these forward.
 
 // moveSelection is ^N/^P: choose.
 func (d *pit) moveSelection(dir int) { d.motion(func(p *picker) { p.pick(dir) }) }
 
-// scrollBy is j/k and the arrow cluster: READ. It moves the window by a row and
-// leaves the selection where the reader put it -- a form with a hundred
-// properties is read by scrolling, and dragging the cursor down every line of
-// it is how `j` came to skip whole properties.
+// scrollBy moves the window by a row and leaves the selection alone.
 func (d *pit) scrollBy(dir int) { d.motion(func(p *picker) { p.step(dir) }) }
 
 func (d *pit) halfPage(dir int) { d.motion(func(p *picker) { p.half(dir) }) }
@@ -227,27 +165,15 @@ func (d *pit) halfPage(dir int) { d.motion(func(p *picker) { p.half(dir) }) }
 func (d *pit) toTop()    { d.motion((*picker).home) }
 func (d *pit) toBottom() { d.motion((*picker).end) }
 
-// motion runs one list motion against whatever is open. A pit with no list
-// takes no motions, and says so by doing nothing.
-//
-// THE HEIGHT IS THE PICKER'S OWN, and passing one in here was a bug you could
-// feel: the pit handed over its GROSS height (twelve rows), while the picker
-// draws two of those rows as the "… N more" markers and keeps ten for the
-// list. follow() then kept the cursor inside a window two rows taller than the
-// one on screen, so pressing k on the last row moved the selection off the
-// bottom of what was painted: the highlight appeared stuck on the last visible
-// row and the row you had just left vanished behind the marker. The picker
-// measures itself every time it draws (picker.lines); nobody else may.
+// motion runs one list motion against whatever is open. The height is the
+// picker's own -- it measures itself when it draws, and nobody else may.
 func (d *pit) motion(f func(*picker)) {
 	if p := d.list(); p != nil {
 		f(p)
 	}
 }
 
-// selected is the row under the cursor, in WHATEVER pit is open. It used to
-// answer only for a "list" pit, which is how a hosted form came to have a
-// highlight that Enter and `y` could not see: the pit drew the picker's cursor
-// and then told every verb there was no selection.
+// selected is the row under the cursor, in whatever pit is open.
 func (d *pit) selected() (pitRow, bool) {
 	if p := d.list(); p != nil {
 		return p.selected()
@@ -255,8 +181,8 @@ func (d *pit) selected() (pitRow, bool) {
 	return pitRow{}, false
 }
 
-// replaceRows swaps the list under a live cursor. See picker.setRows: the
-// window, the height and the selection are the picker's to keep.
+// replaceRows swaps the list under a live cursor; picker.setRows keeps the
+// window and the selection.
 func (d *pit) replaceRows(rows []pitRow, keepID string) {
 	if p := d.list(); p != nil {
 		p.setRows(rows, keepID)
@@ -285,29 +211,18 @@ func (d *pit) lines(w, room int) []string {
 	if !d.full {
 		return out
 	}
-	// FULLSCREEN OCCUPIES THE WHOLE PANE whether or not it needs to. A pit
-	// that took only the rows it had left the conversation showing underneath
-	// a "fullscreen" list, which is the one thing fullscreen is for.
+	// Fullscreen occupies the whole pane whether or not it needs to.
 	for len(out) < full {
 		out = append(out, "")
 	}
 	return out
 }
 
-// pitGray is the pit's one voice: fujiGray, quieter than the transcript. The
-// WHOLE pit reads at one remove -- it is furniture beside the conversation,
-// not part of it.
+// pitGray is the pit's one voice: furniture beside the conversation.
 func pitGray(s string) string { return term.Label(s) }
 
-// pitSelected must be READ, first: it is the row every verb acts on. The first
-// cut was the pit's own dim grey on a barely-lighter wash (237), on the theory
-// that full reverse video looked like an error -- and Gluck, on a real
-// terminal: "the selection is really unreadable". It was dim text on a dark
-// background, which is two ways of saying "quiet" applied to the one row that
-// must not be.
-//
-// The wash is lighter now and THE TEXT IS NOT DIM: the selected row is the one
-// row in the pit drawn at full strength. Everything else stays furniture.
+// pitSelected is the one row in a pit drawn at full strength: it is what every
+// verb acts on, so it must be read first. Dim text on a dark wash was not.
 func pitSelected(s string) string {
 	if !term.Enabled() {
 		return s
@@ -315,24 +230,11 @@ func pitSelected(s string) string {
 	return "\x1b[48;5;240m\x1b[38;5;255m" + s + "\x1b[39m\x1b[49m"
 }
 
-// pitText is THE GATE EVERY PIT ROW PASSES THROUGH, and it takes out more
-// than colour.
-//
-// A pit shows text that came from somewhere else: a form value, a command's
-// captured output, a queued message. All three can carry ESCAPE SEQUENCES --
-// a form holds tool output, and tool output holds whatever the tool printed.
-// Measured by a reviewer against this branch: a value containing
-// "\x1b[2J\x1b[10A" opened in the form pit CLEARED THE PANE -- fifteen painted
-// rows became one, the rule and the head row never came back, and the next
-// keystroke left a blank screen. The row was clipped and greyed on the way
-// out; neither of those looks at what is inside it.
-//
-// So the rule is: the pit paints TEXT, never control. Escape sequences go
-// (CSI, OSC and the two-byte forms alike), the other C0 controls go, DEL goes,
-// and a tab becomes a space -- because a tab in a windowed list is a jump to a
-// column the list does not own. Whatever colour the pit wants, it puts on
-// AFTERWARDS: an outer grey wrapped around an inner colour is just the inner
-// colour, which is why command output never looked like it was in a pit.
+// pitText is the gate every pit row passes through: THE PIT PAINTS TEXT, NEVER
+// CONTROL. Rows come from forms, command output and queued messages, and any
+// of them can carry escape sequences -- a form holds tool output. A value
+// carrying "\x1b[2J" cleared the pane. Escapes, C0 controls and DEL go; a tab
+// becomes a space. The pit's own colour is applied afterwards.
 func pitText(s string) string {
 	if !strings.ContainsFunc(s, isControl) {
 		return s
@@ -361,9 +263,8 @@ func pitText(s string) string {
 
 func isControl(r rune) bool { return r == 0x1b || r == '\t' || r < 0x20 || r == 0x7f }
 
-// skipEscape returns the index just past the escape sequence beginning at i.
-// CSI (ESC [ … final) and OSC (ESC ] … BEL or ST) are consumed whole; anything
-// else costs the ESC and the byte after it.
+// skipEscape returns the index just past the escape at i: CSI and OSC whole,
+// anything else the ESC and one byte.
 func skipEscape(s string, i int) int {
 	j := i + 1
 	if j >= len(s) {

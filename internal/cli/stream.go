@@ -529,16 +529,11 @@ type transcriptReadClient interface {
 // already in the pager.
 func (in *interactiveInput) enterTranscript() { in.enterPager(true) }
 
-// enterFormPager opens the pager WITHOUT reading the conversation: no catch-up
-// page, no history fetcher, nothing asked for and nothing kept. It is what
-// `fig form listen` opens into.
-//
-// THE FORM IS NOT THE CONVERSATION. A reader who came for the board may have no
-// interest in the agent's output -- and, Gluck notes, may one day not be
-// permitted to read it. Fetching a page of it to draw underneath an opaque
-// fullscreen pit is work done to produce something nobody sees. Ctrl-T still
-// opens the conversation the ordinary way: the pager arms its catch-up hook the
-// moment the pit is closed, so nothing is lost, it is merely not fetched first.
+// enterFormPager opens the pager WITHOUT reading the conversation: no
+// catch-up page, nothing fetched, nothing kept. `fig form listen` opens into
+// it, because a reader who came for the board may have no interest in the
+// output -- and may one day not be permitted to read it. Ctrl-T still opens
+// the conversation the ordinary way.
 func (in *interactiveInput) enterFormPager() { in.enterPager(false) }
 
 func (in *interactiveInput) enterPager(history bool) {
@@ -899,22 +894,14 @@ func (in *interactiveInput) cancelTranscriptSearch() {
 	in.mu.Unlock()
 }
 
-// startPagerClock is THE PAGER'S CLOCK, and there is one of it. Two things in
-// the bottom two rows are functions of time rather than of arrival -- the
-// spinner frame and the alert's TTL -- and one thing is a function of state
-// nobody announces: THE QUEUE. figaro.queued is a per-aria RPC over a unix
-// socket and a prompt enters the queue without any frame being emitted, so a
-// pager that does not ask never learns.
+// startPagerClock is the pager's clock, and both hosts start one. The spinner
+// frame and the alert's TTL are functions of time; THE QUEUE is a function of
+// state nobody announces -- a prompt enters it with no frame emitted, so a
+// pager that does not ask never learns. (`listen` ran half this loop, and its
+// queue pit was therefore never read at all.)
 //
-// Both hosts start one. `send` had this loop and `listen` had half of it --
-// the spinner without the poll -- so in a `figaro listen` pager the queue pit
-// showed "(none)" forever: `:send` put a message in the queue, nothing polled,
-// and the row that would have carried a cursor never arrived. That is the
-// third layer of "^N does nothing until you close and reopen it", and the one
-// no amount of picker surgery could fix.
-//
-// current() is read under the render lock because `send` wires its input loop
-// after starting the clock; it returns nil until then.
+// current() is read under the render lock: `send` wires its input loop after
+// starting the clock, and it returns nil until then.
 func startPagerClock(mu *sync.Mutex, lt *livelogTurn, current func() *interactiveInput) func() {
 	stop := make(chan struct{})
 	// The queue is polled on a slow multiple of the spinner: twice a second is
@@ -1237,19 +1224,14 @@ func inputInterrupt(in *interactiveInput, ev keyEvent) keyVerdict {
 		defer cancel()
 		resp, err := in.hangup.Hangup(ctx, rpc.QueueKeep)
 		if err == nil && !resp.Stopped {
-			// THERE WAS NOTHING TO WAIT FOR. ^C on an idle aria means what it
-			// means in every other pager: leave, now, rather than sit on a
-			// doneCh that will never close.
+			// Nothing to wait for: leave rather than sit on a doneCh that will
+			// never close.
 			in.cancel()
 			return
 		}
 		if err != nil {
-			// The turn will not be stopping, so nothing will close doneCh for
-			// us. Leave rather than hang, and say why -- in three words, plus
-			// the reason. TWO WORDS ARE THE WHOLE VOCABULARY otherwise:
-			// "interrupting", then "interrupted" when it has settled, and
-			// "nothing to interrupt" when there was no turn. Gluck: "no long
-			// message. no ctrl-c to leave now, etc."
+			// The turn is not stopping, so nothing will close doneCh: leave
+			// rather than hang, and say why.
 			in.mu.Lock()
 			in.lt.report("interrupt failed: " + err.Error())
 			in.mu.Unlock()
@@ -1272,14 +1254,9 @@ func inputHangUpDrop(in *interactiveInput, _ keyEvent) keyVerdict {
 	return in.hangUp(rpc.QueueClear)
 }
 
-// hangUp is H and X: stop the turn and STAY. THE WHOLE VOCABULARY IS THREE
-// PHRASES -- "interrupting", then "interrupted" when the daemon has answered,
-// and "nothing to interrupt" when there was no turn to stop. Gluck: "no long
-// message. no ctrl-c to leave now, etc."
-//
-// What it used to say instead: "hanging up: staying attached", then "hung up:
-// listening (2 queued, answered next)" -- an explanation of the pager's own
-// mechanics on a row that is one line long and retires in ten seconds.
+// hangUp is H and X: stop the turn and STAY. Three phrases, and no more:
+// "interrupting", "interrupted" when the daemon has answered, and "nothing to
+// interrupt" when there was no turn.
 func (in *interactiveInput) hangUp(disposition rpc.QueueDisposition) keyVerdict {
 	if in.hangup == nil {
 		in.mu.Lock()
@@ -1300,25 +1277,21 @@ func (in *interactiveInput) hangUp(disposition rpc.QueueDisposition) keyVerdict 
 		case err != nil:
 			in.lt.report("interrupt failed: " + err.Error())
 		case resp.Cleared && len(resp.Queue) > 0:
-			// WHAT WAS DROPPED IS SHOWN, NOT SUMMARISED. The queue's text is
-			// the only copy the reader has once it is dropped, and a bar row
-			// that clips it is a copy nobody can read -- so the list goes in a
-			// pit, which is the rule for anything longer than half a row.
+			// What was dropped is shown, not summarised: its text is the only
+			// copy left, and a bar row would clip it.
 			in.lt.showDropped(resp.Queue)
 		case resp.Stopped:
 			in.lt.report("interrupted")
 		default:
-			// THE DAEMON SAYS SO, NOT THE PAGER. The pager's own turn state is
-			// a frame or two behind and was wrong exactly when it mattered.
+			// The daemon says so: the pager's turn state is a frame behind.
 			in.lt.report("nothing to interrupt")
 		}
 	}()
 	return keyHandled
 }
 
-// inputLeavePit is 'q': close the pit, and leave the session only when there is
-// no pit to close. Esc, ^[ and q are one gesture -- "get me out of this" -- and
-// they differ only in how far out they take you.
+// inputLeavePit is 'q': close the pit, and leave only when there is none. Esc,
+// ^[ and q are one gesture, differing in how far out they take you.
 func inputLeavePit(in *interactiveInput, ev keyEvent) keyVerdict {
 	in.mu.Lock()
 	open := in.lt.tr.pit.open()
@@ -1494,11 +1467,8 @@ func (in *interactiveInput) coalesceNewline(b byte) bool {
 // the closer after a non-assistant (user/steering) message.
 func dimRule() string { return term.Dim(strings.Repeat("─", termWidth())) }
 
-// THE LAST WRITE IS THE LAST FRAME. sessionLine used to put a bare line on the
-// terminal from wherever trouble was found -- and every one of those lines
-// landed after the painter had finished, over a shell prompt that was already
-// back. It is gone; report() takes its callers, the bar shows them, and the
-// log keeps them.
+// THE LAST WRITE IS THE LAST FRAME: sessionLine is gone, report() took its
+// callers, and nothing is printed after the painter has finished.
 
 // endSession is the last write: the shell prompts where we leave the cursor,
 // so return the carriage. A lone CR adds no row.
