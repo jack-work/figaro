@@ -281,8 +281,39 @@ func (in *interactiveInput) retarget(ctx context.Context, id string, ep transpor
 
 	// Seed the pager. enterTranscript is a no-op once the pager is up, so this
 	// is the read that fills a window we just emptied.
+	in.seedMetrics()
 	in.seedSubject()
 	return nil
+}
+
+// seedMetrics ASKS for what the bar says, because nothing volunteers it.
+// Metrics -- the capacity figure AND the mantra -- ride reads and frames, so a
+// session that has not read history and has not yet seen a turn (a cold
+// `fig listen`, and every `fig form listen`, which reads nothing on purpose)
+// had no figure on the bar at all and grew one the moment somebody spoke. The
+// same gap made `fig set mantra` from another shell invisible until the next
+// turn. It is asked for on connect, and again on the pager's clock.
+//
+// One backward read of one message, for the metrics attached to it: the page
+// is discarded, because seeding the WINDOW is seedSubject's job and this must
+// not smuggle a message into it.
+func (in *interactiveInput) seedMetrics() {
+	cli := in.aria()
+	if cli == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+		defer cancel()
+		page, err := cli.ReadBefore(ctx, aria.Anchor{}, 1)
+		if err != nil || page.Metrics == nil {
+			return
+		}
+		in.mu.Lock()
+		in.lt.status.update(*page.Metrics)
+		in.lt.render()
+		in.mu.Unlock()
+	}()
 }
 
 // notifyHandler folds one connection's frames, and only while that connection

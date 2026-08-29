@@ -905,8 +905,11 @@ func (in *interactiveInput) cancelTranscriptSearch() {
 func startPagerClock(mu *sync.Mutex, lt *livelogTurn, current func() *interactiveInput) func() {
 	stop := make(chan struct{})
 	// The queue is polled on a slow multiple of the spinner: twice a second is
-	// faster than a human notices and cheap enough not to matter.
+	// faster than a human notices and cheap enough not to matter. Metrics --
+	// the capacity figure and the mantra -- move slower still and are asked
+	// for a quarter as often.
 	every := max(spinnerFPS/queuedPollHz, 1)
+	metricsEvery := every * 4
 	go func() {
 		t := time.NewTicker(time.Second / spinnerFPS)
 		defer t.Stop()
@@ -919,8 +922,14 @@ func startPagerClock(mu *sync.Mutex, lt *livelogTurn, current func() *interactiv
 				lt.tick()
 				in := current()
 				mu.Unlock()
-				if in != nil && n%every == 0 {
+				if in == nil {
+					continue
+				}
+				if n%every == 0 {
 					in.refreshQueued()
+				}
+				if n%metricsEvery == 0 {
+					in.seedMetrics()
 				}
 			}
 		}

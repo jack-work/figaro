@@ -141,6 +141,24 @@ fi
 tmux -S "$SOCK" send-keys -t bar:0 Escape
 sleep 0.5
 
+# 2c. THE MANTRA TAKES THE ROOM IT HAS, and the capacity figure is on the bar
+#     from the first frame -- not only once somebody has spoken.
+"$BIN" set --id "$ARIA" mantra "ship the pit the picker and the bar and then go to bed" >/dev/null 2>&1
+sleep 1.5
+wide=$(bar)
+if [[ "$wide" == *"and then go to bed"* ]]; then
+  echo "ok   the mantra is whole on a 100-column bar"
+else
+  echo "FAIL: the mantra was clipped with room to spare: [$wide]"; fail=1
+fi
+if [[ "$wide" =~ [0-9]+(\.[0-9]+)?[km]?/ ]] || [[ "$wide" =~ [0-9]{2,} ]]; then
+  echo "ok   the capacity figure is on the bar"
+else
+  echo "FAIL: no capacity figure: [$wide]"; fail=1
+fi
+"$BIN" set --id "$ARIA" mantra "look around" >/dev/null 2>&1
+sleep 1.5
+
 # 3. It survives a resize, which is where a width-sensitive row goes wrong.
 tmux -S "$SOCK" send-keys -t bar:0 Escape
 tmux -S "$SOCK" resize-window -t bar -x 46 -y 25 2>/dev/null
