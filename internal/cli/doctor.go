@@ -167,7 +167,7 @@ func runDoctorSchema() error {
 // "the daemon is at 3 GB" is which of live agents, cached aria handles,
 // sessions or goroutines the number is attached to. It reports the
 // daemon's accounting, never this process's.
-func runDoctorMem(asJSON bool) error {
+func runDoctorMem(asJSON, collect bool) error {
 	cli, err := sdk.DialAngelus(transport.UnixEndpoint(angelusSocketPath()))
 	if err != nil {
 		return fmt.Errorf("no angelus running: %w", err)
@@ -177,6 +177,14 @@ func runDoctorMem(asJSON bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	st, err := cli.Status(ctx)
+	if collect {
+		st, err = cli.MemCollect(ctx)
+		if err != nil && strings.Contains(err.Error(), "method not found") {
+			// A daemon older than this flag answers -32601, which tells the
+			// operator nothing. Name the actual remedy.
+			return fmt.Errorf("the running angelus predates `doctor mem --gc`; `figaro stop` and retry")
+		}
+	}
 	if err != nil {
 		return err
 	}
@@ -214,9 +222,33 @@ func runDoctorMem(asJSON bool) error {
 	}
 	fmt.Fprintf(stdout, "runtime    goroutines=%d  sessions=%d  gc=%d\n",
 		m.Goroutines, m.Sessions, m.NumGC)
+	if c := m.Collected; c != nil {
+		fmt.Fprintf(stdout, "collected  live %s -> %s  (reclaimed %s in %s)\n",
+			humanBytes(int64(c.BeforeBytes)), humanBytes(int64(c.AfterBytes)),
+			humanBytes(int64(c.ReclaimedByes)), c.Took.Round(time.Millisecond))
+		fmt.Fprintf(stdout, "           the AFTER figure is the live set; the before was allocation not yet swept\n")
+	}
 	fmt.Fprintf(stdout, "heap       alloc=%s  inuse=%s  sys=%s  total-sys=%s\n",
 		humanBytes(int64(m.HeapAllocBytes)), humanBytes(int64(m.HeapInuseBytes)),
 		humanBytes(int64(m.HeapSysBytes)), humanBytes(int64(m.SysBytes)))
+	// WHAT THE OPERATING SYSTEM SEES, spelled out, because RSS next to the
+	// caches above reads as a leak when it is usually arithmetic: idle spans
+	// the scavenger has not yet handed back are resident and are not held by
+	// anything.
+	//
+	// A LIVE GO HEAP ALWAYS HAS SOME IDLE SPAN. Zero here means the daemon
+	// predates the field, and printing a measured-looking 0 would be worse
+	// than printing nothing.
+	if m.HeapIdleBytes == 0 && m.HeapSysBytes > 0 {
+		fmt.Fprintf(stdout, "           (this angelus predates idle/released accounting; `figaro stop` to refresh)\n")
+	} else {
+		fmt.Fprintf(stdout, "           idle=%s  released-to-os=%s  resident-heap~=%s\n",
+			humanBytes(int64(m.HeapIdleBytes)), humanBytes(int64(m.HeapReleasedBytes)),
+			humanBytes(int64(m.HeapSysBytes-m.HeapReleasedBytes)))
+	}
+	if m.Collected == nil {
+		fmt.Fprintf(stdout, "           alloc counts garbage not yet swept; `doctor mem --gc` for the live set\n")
+	}
 
 	limit := "unlimited"
 	if m.MemLimitBytes != angelus.UnlimitedMemLimit {

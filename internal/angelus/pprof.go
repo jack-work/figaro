@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"time"
 
 	"github.com/jack-work/figaro/api/rpc"
 )
@@ -88,15 +89,17 @@ func (a *Angelus) MemStatus() *rpc.MemStatus {
 	runtime.ReadMemStats(&ms)
 
 	st := &rpc.MemStatus{
-		LiveArias:      a.Registry.FigaroCount(),
-		Goroutines:     runtime.NumGoroutine(),
-		HeapAllocBytes: ms.HeapAlloc,
-		HeapInuseBytes: ms.HeapInuse,
-		HeapSysBytes:   ms.HeapSys,
-		SysBytes:       ms.Sys,
-		NumGC:          ms.NumGC,
-		MemLimitBytes:  debug.SetMemoryLimit(-1), // -1 reads without setting
-		PprofSocket:    a.pprofPath,
+		LiveArias:         a.Registry.FigaroCount(),
+		Goroutines:        runtime.NumGoroutine(),
+		HeapAllocBytes:    ms.HeapAlloc,
+		HeapInuseBytes:    ms.HeapInuse,
+		HeapIdleBytes:     ms.HeapIdle,
+		HeapReleasedBytes: ms.HeapReleased,
+		HeapSysBytes:      ms.HeapSys,
+		SysBytes:          ms.Sys,
+		NumGC:             ms.NumGC,
+		MemLimitBytes:     debug.SetMemoryLimit(-1), // -1 reads without setting
+		PprofSocket:       a.pprofPath,
 	}
 	if a.Sessions != nil {
 		st.Sessions = a.Sessions.Count()
@@ -148,6 +151,51 @@ func (a *Angelus) MemStatus() *rpc.MemStatus {
 			st.Endpoints++
 			st.AttachedClients += hb.Attached()
 		}
+	}
+	return st
+}
+
+// MemCollectStatus forces a collection and reports the footprint AFTER it,
+// with the live heap either side.
+//
+// IT STOPS THE WORLD TWICE (runtime.GC, then ReadMemStats), which is why it
+// is its own method and not a flag on the status call every client makes. It
+// exists because HeapAlloc without a preceding GC answers a different
+// question than the one an operator is asking: not "what is this daemon
+// holding" but "what has it allocated since the runtime last looked".
+func (a *Angelus) MemCollectStatus() *rpc.MemStatus {
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+
+	start := time.Now()
+	runtime.GC()
+	took := time.Since(start)
+
+	runtime.ReadMemStats(&after)
+
+	st := a.MemStatus()
+	st.HeapAllocBytes = after.HeapAlloc
+	st.HeapInuseBytes = after.HeapInuse
+	st.HeapIdleBytes = after.HeapIdle
+	st.HeapReleasedBytes = after.HeapReleased
+	st.HeapSysBytes = after.HeapSys
+	st.SysBytes = after.Sys
+	st.NumGC = after.NumGC
+
+	var reclaimed uint64
+	if before.HeapAlloc > after.HeapAlloc {
+		reclaimed = before.HeapAlloc - after.HeapAlloc
+	}
+	var released uint64
+	if after.HeapReleased > before.HeapReleased {
+		released = after.HeapReleased - before.HeapReleased
+	}
+	st.Collected = &rpc.Collection{
+		BeforeBytes:   before.HeapAlloc,
+		AfterBytes:    after.HeapAlloc,
+		ReclaimedByes: reclaimed,
+		ReleasedDelta: released,
+		Took:          took,
 	}
 	return st
 }
