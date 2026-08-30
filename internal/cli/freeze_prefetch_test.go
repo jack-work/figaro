@@ -129,3 +129,48 @@ func TestSearchWorkerStopsAgainstAStuckFloor(t *testing.T) {
 			n, reader.asked)
 	}
 }
+
+// THE SPIN GLUCK CAUGHT LIVE: one core pinned, no syscalls at all, every other
+// thread parked on the render lock, and a bar reading "∴ · ✓ · <aria>" with NO
+// page position on the rule -- which is the tell. No position means the
+// retained window is smaller than the viewport, so wantOlder() is true; the
+// window then grows and is reset to the tail on every pass:
+//
+//	growWindow      lowers the floor over history the store already holds
+//	absorbOlder     → buildIndex → resetToTail() puts the floor back
+//	wantOlder()     still true, because nothing moved
+//	                → forever, inside the render lock, with no I/O to slow it
+//
+// A test with a deadline, because the failure mode is "does not return".
+func TestPageCursorDoesNotSpinWhileFollowing(t *testing.T) {
+	in := newSearchInteractiveInput(&stuckReader{page: transcriptHistory(120)},
+		newRecordingTerminal().searchInputTerminal)
+
+	in.mu.Lock()
+	tr := in.lt.tr
+	tr.follow = true // the live tail: what a pager does by default
+	tr.tailWant = 0  // cold, so tailKeep() is the minimum page
+	tr.search, tr.jump = nil, nil
+	// A frame lands: buildIndex resets the window to the tail, which is SIX
+	// messages while the store holds thirty. The floor is now well above what
+	// is held -- which is what growWindow exists to fix, and what resetToTail
+	// exists to undo.
+	tr.buildIndex()
+	tr.offset = 0 // the viewport sits at the top of what is held
+	in.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		in.mu.Lock()
+		defer in.mu.Unlock()
+		in.lt.transcriptPageCursor()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("pageCursor has not returned in 2s: it is growing the window and " +
+			"having the floor reset under it, forever, with the render lock held")
+	}
+}

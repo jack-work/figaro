@@ -477,13 +477,31 @@ func (t *transcript) reachedFloor() {
 // where. It is called after every input chunk and again after every landing;
 // the answer is derived, not remembered.
 func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
+	// GROWING THE WINDOW MUST MAKE PROGRESS, or this loop is a spin with no
+	// I/O in it -- one core pinned inside the render lock, which is what a
+	// frozen pager with a loud fan actually is.
+	//
+	// growWindow lowers the floor over history the store already holds;
+	// absorbOlder ends in buildIndex, which -- while FOLLOWING -- resets the
+	// window to the tail and puts the floor straight back up. Measured on a
+	// live freeze: the floor went 115 -> 91 -> 115 -> 91, with the store
+	// holding thirty messages and the tail keeping six, and wantOlder() true
+	// throughout because the viewport was at the top of what was held.
+	//
+	// So the loop asks the only honest question: did the floor actually go
+	// down? If it did not, there is nothing more to take from the store and
+	// the walk continues on the wire (or stops).
 	for t.active && t.wantOlder() {
 		anchor, within := t.viewportAnchor()
-		if gained := t.growWindow(t.pageMessages()); len(gained) > 0 {
-			t.absorbOlder(gained, anchor, within)
-			continue
+		before := t.from
+		gained := t.growWindow(t.pageMessages())
+		if len(gained) == 0 {
+			break
 		}
-		break
+		t.absorbOlder(gained, anchor, within)
+		if !t.from.Less(before) {
+			break
+		}
 	}
 	// A HOLE INSIDE THE WINDOW comes first: the reader is looking at it, or is
 	// about to. Closing it is Ensure's job, not a floor read, so the request
