@@ -122,6 +122,10 @@ const (
 const (
 	MethodAngelusInfo = "angelus.info"
 	MethodStatus      = "angelus.status"
+	// MethodMemCollect forces a garbage collection and reports the live heap
+	// either side of it. It STOPS THE WORLD, so it is a deliberate call and
+	// never a ticker.
+	MethodMemCollect = "angelus.mem.collect"
 	// MethodOutfits answers what outfits exist and how one composes.
 	MethodOutfits = "angelus.outfits"
 	// MethodOutfitReload flags the default form for recomputation on the next

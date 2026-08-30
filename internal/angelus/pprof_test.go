@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/jack-work/figaro/internal/store"
 )
 
 func TestMemStatusReportsCounters(t *testing.T) {
@@ -60,4 +62,37 @@ func TestStartPprof(t *testing.T) {
 		defer resp.Body.Close()
 		require.Equal(t, 200, resp.StatusCode)
 	})
+}
+
+// The two fields that explain RSS must actually be reported, and a forced
+// collection must report a live set, not another unswept number.
+func TestMemCollectReportsTheLiveSetAndTheOSFacing(t *testing.T) {
+	a := &Angelus{Registry: NewRegistry(), Backend: store.NewTestBackend(t)}
+
+	plain := a.MemStatus()
+	require.Nil(t, plain.Collected, "an ordinary status must not stop the world")
+	require.NotZero(t, plain.HeapSysBytes)
+	// HeapIdle >= HeapReleased always: released is the part of idle handed
+	// back. A build reporting the reverse has them crossed.
+	require.GreaterOrEqual(t, plain.HeapIdleBytes, plain.HeapReleasedBytes)
+
+	// Make garbage that nothing holds, then prove a collection sees it.
+	before := a.MemStatus().HeapAllocBytes
+	junk := make([][]byte, 0, 256)
+	for i := 0; i < 256; i++ {
+		junk = append(junk, make([]byte, 64*1024)) // 16MB, all reachable
+	}
+	require.Greater(t, a.MemStatus().HeapAllocBytes, before)
+	junk = nil
+	_ = junk
+
+	got := a.MemCollectStatus()
+	require.NotNil(t, got.Collected, "--gc must report what it collected")
+	require.Equal(t, got.HeapAllocBytes, got.Collected.AfterBytes,
+		"the reported heap must be the post-collection one")
+	require.Greater(t, got.Collected.BeforeBytes, got.Collected.AfterBytes,
+		"16MB of unreachable garbage survived a forced collection")
+	require.GreaterOrEqual(t, got.Collected.ReclaimedByes, uint64(8<<20),
+		"reclaimed should account for most of the garbage")
+	require.NotZero(t, got.Collected.Took)
 }

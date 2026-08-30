@@ -59,6 +59,14 @@ func (c *Angelus) Status(ctx context.Context) (*rpc.StatusResponse, error) {
 	return &resp, err
 }
 
+// MemCollect forces a garbage collection in the daemon and reports the
+// footprint after it. Stops the world: a deliberate call, never a poll.
+func (c *Angelus) MemCollect(ctx context.Context) (*rpc.StatusResponse, error) {
+	var resp rpc.StatusResponse
+	err := c.call(ctx, rpc.MethodMemCollect, struct{}{}, &resp)
+	return &resp, err
+}
+
 // ProviderLedger reads the daemon's recent provider round-trips: what the
 // provider was asked, what it answered, and what is still in flight.
 func (c *Angelus) ProviderLedger(ctx context.Context, aria string, limit int) (*rpc.ProviderLedgerResponse, error) {

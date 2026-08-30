@@ -6,7 +6,9 @@ package rpc
 // family at once, and the May 2026 tightening drifted partly because 40
 // method names and 70 types shared one 1,012-line file.
 
-import ()
+import (
+	"time"
+)
 
 // OutfitLayer is one node of an outfit's layer closure. A node with no Name is
 // the synthetic root that holds several requested outfits side by side.
@@ -148,14 +150,56 @@ type MemStatus struct {
 	LibrettoSweepCorrected int `json:"libretto_sweep_corrected"`
 	LibrettoSweepMissing   int `json:"libretto_sweep_missing"`
 
-	HeapAllocBytes uint64 `json:"heap_alloc_bytes"` // live heap objects
+	// HeapAllocBytes IS NOT THE LIVE SET. It is bytes allocated and not yet
+	// SWEPT, so it counts every object that died since the last collection.
+	// An idle daemon allocates nothing, so nothing triggers a GC, so this
+	// number sits at whatever the last burst left behind: measured on a real
+	// daemon at 273MB, one collection later at 9MB, with the program doing
+	// nothing in between. Read it after a GC or do not read it as "live" --
+	// `doctor mem --gc` exists to make that easy.
+	HeapAllocBytes uint64 `json:"heap_alloc_bytes"`
 	HeapInuseBytes uint64 `json:"heap_inuse_bytes"` // spans in use, incl. fragmentation
-	HeapSysBytes   uint64 `json:"heap_sys_bytes"`   // heap reserved from the OS
-	SysBytes       uint64 `json:"sys_bytes"`        // total from the OS, all arenas
-	NumGC          uint32 `json:"num_gc"`
-	MemLimitBytes  int64  `json:"mem_limit_bytes"` // armed GOMEMLIMIT; MaxInt64 = unlimited
+	// HeapIdleBytes is whole spans holding nothing, and HeapReleasedBytes
+	// the part of those the scavenger has handed back to the OS.
+	//
+	// THEY ARE THE TWO NUMBERS THAT EXPLAIN RSS, which is otherwise a
+	// mystery next to the caches above:
+	//
+	//	RSS ~= HeapSys - HeapReleased + stacks + runtime metadata + binary
+	//
+	// A daemon can be resident at 560MB with a 9MB live heap and nothing
+	// wrong with it: the difference is garbage awaiting a sweep and arena
+	// awaiting the scavenger, and neither is a leak. Without these fields
+	// that state is indistinguishable from one.
+	HeapIdleBytes     uint64 `json:"heap_idle_bytes"`
+	HeapReleasedBytes uint64 `json:"heap_released_bytes"`
+	HeapSysBytes      uint64 `json:"heap_sys_bytes"` // heap reserved from the OS
+	SysBytes          uint64 `json:"sys_bytes"`      // total from the OS, all arenas
+	NumGC             uint32 `json:"num_gc"`
+	MemLimitBytes     int64  `json:"mem_limit_bytes"` // armed GOMEMLIMIT; MaxInt64 = unlimited
+
+	// Collected is set only by `doctor mem --gc`: the daemon ran a
+	// collection before reporting, and these are the live-heap readings
+	// either side of it. Reclaimed is what was garbage all along.
+	Collected *Collection `json:"collected,omitempty"`
 
 	PprofSocket string `json:"pprof_socket,omitempty"` // empty when not armed
+}
+
+// Collection is a forced GC's before and after. THE ONLY HONEST LIVE-SET
+// READING a daemon can give from the outside: the runtime does not know an
+// object is dead until it sweeps, so the question "what is actually live"
+// cannot be answered without collecting first.
+type Collection struct {
+	BeforeBytes   uint64 `json:"before_bytes"`
+	AfterBytes    uint64 `json:"after_bytes"`
+	ReclaimedByes uint64 `json:"reclaimed_bytes"`
+	// ReleasedDelta is what the scavenger handed back during the same call.
+	// Returning arena is NOT part of collecting it: a forced GC frees spans,
+	// and the OS sees them later, so a caller watching RSS after --gc may
+	// still see it high for minutes.
+	ReleasedDelta uint64        `json:"released_delta_bytes"`
+	Took          time.Duration `json:"took_ns"`
 }
 
 type SaveBindingsResponse struct {

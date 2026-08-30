@@ -30,6 +30,17 @@ func (h *handlers) status(ctx context.Context, params json.RawMessage) (interfac
 	}, nil
 }
 
+// memCollect forces a collection and answers with the footprint after it.
+func (h *handlers) memCollect(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	return rpc.StatusResponse{
+		Uptime:      h.angelus.StartedAt.UnixMilli(),
+		FigaroCount: h.angelus.Registry.FigaroCount(),
+		BoundPIDs:   h.angelus.Registry.BoundPIDCount(),
+		Build:       h.angelus.Build,
+		Mem:         h.angelus.MemCollectStatus(),
+	}, nil
+}
+
 // providerLedger answers "what did the provider last say to this aria, and is
 // anything still in flight".
 func (h *handlers) providerLedger(ctx context.Context, params json.RawMessage) (interface{}, error) {

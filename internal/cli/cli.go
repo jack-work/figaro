@@ -1422,17 +1422,18 @@ flow writes both through the daemon, so a client never has to know the path.`,
 		Name:  "doctor",
 		Group: "System",
 		Short: "Store and provider health: gc removes dead channels; schema reports channel versions; mem reports the daemon's footprint; provider shows recent provider round-trips (including in-flight); librettos recounts derived-form observers; skills lists what the binary ships; ttl lists the nodes carrying a lifetime and when it is spent",
-		Usage: "doctor <gc [--dry-run] | schema | term | mem [-j] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | skills [-j] | ttl [-j]>",
+		Usage: "doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | skills [-j] | ttl [-j]>",
 		Flags: []cmdkit.FlagDef{
 			{Long: "dry-run", Short: "n", IsBool: true, Description: "Report what would be removed without touching the store"},
 			{Long: "json", Short: "j", IsBool: true, Description: "Machine-readable output (mem, provider)"},
 			{Long: "id", Description: "Restrict to one aria (provider)"},
 			// -n is already dry-run on this command, so count takes -c.
 			{Long: "count", Short: "c", Description: "How many rows to show (provider); default 20"},
+			{Long: "gc", IsBool: true, Description: "mem: collect first, then report -- the only honest live-set reading (stops the world)"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			if len(ctx.Args) != 1 {
-				return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | toolcalls [--dry-run] | skills [-j] | ttl [-j]>")
+				return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | toolcalls [--dry-run] | skills [-j] | ttl [-j]>")
 			}
 			switch ctx.Args[0] {
 			case "gc":
@@ -1442,7 +1443,7 @@ flow writes both through the daemon, so a client never has to know the path.`,
 			case "term":
 				return runDoctorTerm()
 			case "mem":
-				return runDoctorMem(ctx.BoolFlag("json"))
+				return runDoctorMem(ctx.BoolFlag("json"), ctx.BoolFlag("gc"))
 			case "provider":
 				return runDoctorProvider(ctx.Flag("id"), ctx.Flag("count"), ctx.BoolFlag("json"))
 			case "librettos":
@@ -1454,7 +1455,7 @@ flow writes both through the daemon, so a client never has to know the path.`,
 			case "ttl":
 				return runDoctorTTL(ctx.BoolFlag("json"))
 			}
-			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | toolcalls [--dry-run] | skills [-j] | ttl [-j]>")
+			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | toolcalls [--dry-run] | skills [-j] | ttl [-j]>")
 		},
 	})
 
