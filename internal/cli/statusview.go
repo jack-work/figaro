@@ -58,38 +58,56 @@ func (v statusView) render(w int) []string {
 	if w <= 0 {
 		return nil
 	}
-	left, right := v.groups()
-	l, r := joinFields(left), joinFields(right)
+	bare, right, at := v.groups()
+	r := joinFields(right)
+	bareW := displayWidth(joinFields(bare))
+
+	// THE MANTRA TAKES WHATEVER IS LEFT. It used to be cut to 32 runes on a
+	// 200-column pane with sixty columns going spare: a fixed cap is a promise
+	// about a screen nobody is looking at. It still sheds first, because it is
+	// the only field recoverable by looking up.
+	l := joinFields(v.withMantra(bare, at, w-bareW-displayWidth(r)-mantraGap))
 
 	if r == "" {
 		return []string{clipToWidthEllipsis(l, w)}
 	}
 	if lw, rw := displayWidth(l), displayWidth(r); lw+rw+2 <= w {
-		gap := w - lw - rw
-		return []string{l + strings.Repeat(" ", gap) + r}
+		return []string{l + strings.Repeat(" ", w-lw-rw) + r}
 	}
-	// THE MANTRA SHEDS FIRST, and only then does the bar grow a second row.
-	// Wrapping is cheaper than losing information, but a three-row bar on a
-	// wide-enough pane is worse than a bar without the mantra: the mantra is
-	// the one field whose absence costs nothing that is not recoverable by
-	// looking at the top of the screen.
-	if v.Mantra != "" {
-		trimmed := v
-		trimmed.Mantra = ""
-		if rows := trimmed.render(w); len(rows) == 1 {
-			return rows
-		}
-	}
+	// Three rows: left, blank, right. The left row no longer shares its width
+	// with the right group, so the mantra is measured again against all of it.
 	return []string{
-		clipToWidthEllipsis(l, w),
+		clipToWidthEllipsis(joinFields(v.withMantra(bare, at, w-bareW-mantraGap)), w),
 		"",
 		clipToWidthEllipsis(r, w),
 	}
 }
 
-// groups is the split: what is about the MODE and the conversation on the left,
-// what is a fact about the aria on the right.
-func (v statusView) groups() (left, right []string) {
+// withMantra puts the mantra back into the left group, clipped to the room it
+// was given, and leaves it out when that room says nothing worth having.
+func (v statusView) withMantra(left []string, at, room int) []string {
+	m := strings.Join(strings.Fields(v.Mantra), " ")
+	if m == "" || room < mantraMin {
+		return left
+	}
+	if displayWidth(m) > room {
+		m = clipToWidthEllipsis(m, room)
+	}
+	return append(left[:at:at], append([]string{m}, left[at:]...)...)
+}
+
+// mantraGap is what the mantra must leave behind: the " · " that joins it and
+// the gutter between the groups. mantraMin is the width below which a mantra
+// says nothing worth the room.
+const (
+	mantraGap = 5
+	mantraMin = 8
+)
+
+// groups is the split: the mode and the conversation on the left, facts about
+// the aria on the right. The MANTRA IS NOT INCLUDED -- render fits it into
+// what is left over -- and `at` is where it belongs when it does.
+func (v statusView) groups() (left, right []string, at int) {
 	// The alert leads, ahead of even the pit: news belongs where the eye lands
 	// first, and it is the only field that arrives without being asked for.
 	//
@@ -113,9 +131,7 @@ func (v statusView) groups() (left, right []string) {
 	if v.Aria != "" {
 		left = append(left, v.Aria)
 	}
-	if m := strings.Join(strings.Fields(v.Mantra), " "); m != "" {
-		left = append(left, truncRunes(m, 32))
-	}
+	at = len(left)
 	if v.Verbose && v.Model != "" {
 		left = append(left, v.Model)
 	}
@@ -129,7 +145,7 @@ func (v statusView) groups() (left, right []string) {
 	if v.Verbose && !v.LastAt.IsZero() {
 		right = append(right, v.LastAt.Format(lastAtFormat))
 	}
-	return left, right
+	return left, right, at
 }
 
 // stateToken is the state as the bar draws it: the glyph, plus its name under

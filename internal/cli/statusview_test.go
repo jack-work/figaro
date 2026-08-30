@@ -256,3 +256,38 @@ func TestNewerAlertDisplacesOlder(t *testing.T) {
 		t.Fatalf("alerts stacked instead of displacing: %q", v.Alert)
 	}
 }
+
+// THE MANTRA TAKES WHATEVER IS LEFT. A fixed 32-rune cap cut it on a pane with
+// sixty columns going spare.
+func TestMantraFillsTheRoomItHas(t *testing.T) {
+	long := "ship the pit, the picker and the bar, and then go to bed"
+	v := statusView{State: turnStatusCompleted, Aria: "123abc", Mantra: long, Ctx: "9.8k/1.0m 1.0%"}
+
+	wide := v.render(200)
+	if len(wide) != 1 || !strings.Contains(wide[0], long) {
+		t.Fatalf("a 200-column bar clipped the mantra:\n%q", wide)
+	}
+	// Every width: the bar never overflows, and the mantra is as long as the
+	// room allows -- monotonically, so a wider pane never shows less.
+	prev := 0
+	for w := 20; w <= 200; w++ {
+		rows := v.render(w)
+		for i, row := range rows {
+			if got := displayWidth(row); got > w {
+				t.Fatalf("w=%d row %d is %d columns: %q", w, i, got, row)
+			}
+		}
+		shown := 0
+		for _, r := range rows {
+			if i := strings.Index(plainForTest(r), long[:12]); i >= 0 {
+				shown = len(plainForTest(r)) - i
+			}
+		}
+		if shown < prev-4 { // -4: the ellipsis and the three-row switch
+			t.Fatalf("w=%d shows %d columns of mantra, w=%d showed %d", w, shown, w-1, prev)
+		}
+		prev = shown
+	}
+}
+
+func plainForTest(s string) string { return pitText(s) }

@@ -94,7 +94,22 @@ func (x *lineIndex) entryAt(i int) int {
 // width invalidation of rowCache, and keeping lineTurn current: but stops short
 // of materializing any row text.
 func (t *transcript) buildIndex() {
-	if t.follow {
+	// A WALK INTO HISTORY IS NOT FOLLOWING, and this line is why the pager
+	// could lock up with a core pinned.
+	//
+	// Following means "the window IS the tail", and resetToTail enforces it by
+	// RAISING the floor. A search or a jump walks the other way: the worker
+	// asks for a page below the floor, applyPage lowers the floor to hold it,
+	// and the next buildIndex -- which pageCursor itself calls -- put the floor
+	// straight back. So the walk asked for the same page again, and again: an
+	// RPC and two acquisitions of the render lock per pass, forever. From the
+	// outside that is a dead keyboard, a pane that will not repaint on resize,
+	// and a hot CPU.
+	//
+	// The tail can wait. It is re-derived the moment the walk ends (every exit
+	// from a search or a jump renders, and the next buildIndex follows again),
+	// so nothing is lost by not fighting for it here.
+	if t.follow && t.search == nil && t.jump == nil {
 		t.resetToTail()
 	}
 	if t.cacheW != t.w { // width changed: cached rows are stale

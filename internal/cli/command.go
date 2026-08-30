@@ -258,10 +258,7 @@ func (in *interactiveInput) retarget(ctx context.Context, id string, ep transpor
 	// the ':' box had no runner and answered "commands need a live session" --
 	// the one path every session takes. A hook that is armed on one of two
 	// doors is armed on neither.
-	in.lt.setCommandRunner(in.runCommand)
-	in.lt.setCommandCompleter(in.complete)
-	in.lt.tr.dropRow = in.dropPitRow
-	in.lt.tr.openForm = func() { go in.openLive("form show", "", false) }
+	in.wireHooks()
 	in.mu.Unlock()
 
 	if old != nil && ownedOld {
@@ -281,8 +278,39 @@ func (in *interactiveInput) retarget(ctx context.Context, id string, ep transpor
 
 	// Seed the pager. enterTranscript is a no-op once the pager is up, so this
 	// is the read that fills a window we just emptied.
+	in.seedMetrics()
 	in.seedSubject()
 	return nil
+}
+
+// seedMetrics ASKS for what the bar says, because nothing volunteers it.
+// Metrics -- the capacity figure AND the mantra -- ride reads and frames, so a
+// session that has not read history and has not yet seen a turn (a cold
+// `fig listen`, and every `fig form listen`, which reads nothing on purpose)
+// had no figure on the bar at all and grew one the moment somebody spoke. The
+// same gap made `fig set mantra` from another shell invisible until the next
+// turn. It is asked for on connect, and again on the pager's clock.
+//
+// One backward read of one message, for the metrics attached to it: the page
+// is discarded, because seeding the WINDOW is seedSubject's job and this must
+// not smuggle a message into it.
+func (in *interactiveInput) seedMetrics() {
+	cli := in.aria()
+	if cli == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+		defer cancel()
+		page, err := cli.ReadBefore(ctx, aria.Anchor{}, 1)
+		if err != nil || page.Metrics == nil {
+			return
+		}
+		in.mu.Lock()
+		in.lt.status.update(*page.Metrics)
+		in.lt.render()
+		in.mu.Unlock()
+	}()
 }
 
 // notifyHandler folds one connection's frames, and only while that connection
@@ -296,14 +324,9 @@ func (in *interactiveInput) notifyHandler(gen uint64) sdk.NotifyHandler {
 		defer in.mu.Unlock()
 		switch method {
 		case rpc.MethodAriaFrame:
-			var r aria.Page
-			if json.Unmarshal(params, &r) == nil {
-				in.lt.apply(r)
-			}
+			in.turnFrame(params)
 		case rpc.MethodTurnDone:
-			var d rpc.DoneEntry
-			_ = json.Unmarshal(params, &d)
-			in.lt.finishTurn(d.Reason)
+			in.turnDone(params)
 		}
 	}
 }
@@ -334,10 +357,35 @@ func (in *interactiveInput) desyncHandler(gen uint64) func(int) {
 }
 
 // seedSubject fills the pager's window from the new subject's tail.
+// wireHooks arms everything the pager asks the input loop to do. ONE PLACE:
+// they used to be set at three call sites, and the file carried the scar --
+// "a hook that is armed on one of two doors is armed on neither" -- which is
+// exactly how `:send` came to answer "commands need a live session" inside a
+// `figaro send`, and how S was dead in one entrance while it worked in the
+// other. Caller holds the render lock.
+func (in *interactiveInput) wireHooks() {
+	in.lt.setQueuedFetch(in.refreshQueued) // 'Q' works before the pager is up
+	in.lt.setHistoryFetcher(in.historyFetcher())
+	in.lt.setCommandRunner(in.runCommand)
+	in.lt.setCommandCompleter(in.complete)
+	in.lt.setCatchUp(in.pagerCatchUp)
+	in.lt.tr.dropRow = in.dropPitRow
+	// The hooks the pager calls FROM DISPATCH hand off to a goroutine: that
+	// path already holds the render lock, and taking it twice freezes.
+	in.lt.tr.openForm = func() { go in.openLive("form show", "", false) }
+}
+
 func (in *interactiveInput) seedSubject() {
 	in.mu.Lock()
 	active := in.lt.transcriptActive()
+	inline := in.startInline
 	in.mu.Unlock()
+	if inline {
+		// AN ORDINARY SEND STAYS INLINE. Its window is opened by the preamble
+		// it is about to print, not by a read here, and promoting the pager at
+		// startup would put every `figaro send` on a screen it did not ask for.
+		return
+	}
 	if !active {
 		in.enterTranscript() // the cold door: it reads and opens
 		return
@@ -353,12 +401,7 @@ func (in *interactiveInput) seedSubject() {
 		in.lt.apply(r)
 		in.lt.setMoreBefore(r.More.Before)
 	}
-	in.lt.setQueuedFetch(in.refreshQueued)
-	in.lt.setHistoryFetcher(in.historyFetcher())
-	in.lt.setCommandRunner(in.runCommand)
-	in.lt.setCommandCompleter(in.complete)
-	in.lt.tr.dropRow = in.dropPitRow
-	in.lt.tr.openForm = func() { go in.openLive("form show", "", false) }
+	in.wireHooks()
 	in.lt.invalidateTranscriptWindow()
 	in.lt.render()
 }

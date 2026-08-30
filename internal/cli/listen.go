@@ -2,18 +2,14 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"github.com/jack-work/figaro/sdk"
 	"log/slog"
 	"os"
-	"os/signal"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/config"
-	ldmouse "github.com/jack-work/figaro/internal/livelog/render/mouse"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/tape"
 	"github.com/jack-work/figaro/internal/term"
@@ -98,141 +94,18 @@ type tailOpts struct {
 	formPit bool
 }
 
+// tailFigaro is the LISTEN entrance: one session, with no prompt in it. It
+// follows until the reader leaves. See runsession.go.
 func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.Endpoint, figaroID string, loaded *config.Loaded, opt tailOpts) {
 	ctx, span := figOtel.Start(ctx, "cli.listen")
 	defer span.End()
-
-	startedAt := opt.startedAt
-	if startedAt.IsZero() {
-		startedAt = time.Now()
-	}
-	status := newSessionStatus(figaroID, startedAt)
-
-	// We want Ctrl-C to mean "interrupt the in-flight turn" (parity
-	// with send). Wrap the parent ctx so SIGINT cancels just our scope.
-	ctx, sigCancel := signal.NotifyContext(ctx, os.Interrupt)
-	defer sigCancel()
-
-	width := term.Width()
-	if width <= 0 {
-		width = 80
-	}
-	height := term.Height()
-
-	// Bookend banner: id + start time. Same gating as send.
-	var bookendFn func() []string
-	if loaded.StatusLine() {
-		bookendFn = func() []string { return bookendLines(status) }
-	}
-
-	set := renderSettings{listen: true} // listen stays open past turn-done
-	lt := newLivelogTurn(os.Stdout, width, height, &set, figaroID, startedAt, status, bookendFn, dimRule)
-	tc := term.NewClient()
-
-	// The renderer owns the cursor + auto-margin off, same as send.
-	fmt.Fprint(os.Stdout, autowrapOff+cursorHide)
-	defer endSession(os.Stdout)
-	// See runStream: the deferred right-edge wrap belongs to the painter, not
-	// to every command that prints a line.
-	restoreWrap := sync.OnceFunc(term.ArmDeferredWrap())
-	defer restoreWrap()
-	atExit(restoreWrap)
-	defer lt.leaveTranscript()
-	lt.openRule() // the renderer owns the rule AND the margin under it
-
-	var mu sync.Mutex
-	doneCh := make(chan struct{}, 1)
-	disconnectCh := make(chan struct{}, 1)
-
-	// mu serializes every renderer entry point; handing it to the pager arms
-	// the frame-rate ceiling, whose trailing repaint runs on a timer goroutine
-	// and so needs the same lock.
-	lt.setRenderLock(&mu)
-
-	// THE SUBJECT COMES IN THROUGH THE SAME DOOR IT LATER SWITCHES THROUGH.
-	// in.retarget dials, wires the notify pump and the desync hook, points the
-	// renderer at the aria and seeds the pager -- and `:open` calls exactly the
-	// same function. A startup path that differs from the switch path is a
-	// switch path exercised once per bug report; see command.go.
-	in := &interactiveInput{
-		tc: tc, lt: lt, mu: &mu, set: &set,
-		cancel: cancel, disconnectCh: disconnectCh,
-		acli: opt.acli, loaded: loaded, tap: tapeTap(opt.tape),
-		ownsSubject: true, subjectDead: make(chan struct{}, 1),
-	}
-	defer func() {
-		if in.subject != nil {
-			in.subject.Close()
-		}
-	}()
-
-	in.lt.setCatchUp(in.pagerCatchUp)
-	if err := in.retarget(ctx, figaroID, ep); err != nil {
-		die("%s", err)
-	}
-
-	// The pager's clock, the same one `send` starts: spinner, alert expiry,
-	// and the queue poll. See startPagerClock.
-	defer startPagerClock(&mu, lt, func() *interactiveInput { return in })()
-
-	// Resize (SIGWINCH on unix / a console event on Windows, behind the client).
-	defer tc.OnResize(func(w, h int) {
-		mu.Lock()
-		lt.resize(w, h)
-		mu.Unlock()
-	})()
-
-	// Keybindings: the same control keys + pager as send, via the shared loop.
-	// MakeRaw so Ctrl-C/Ctrl-D arrive as bytes.
-	if tc.IsTTY() {
-		if restore, err := tc.MakeRaw(); err == nil {
-			defer restore()
-			fmt.Fprint(os.Stdout, enableModifiedKeyReporting)
-			defer fmt.Fprint(os.Stdout, disableModifiedKeyReporting)
-			defer os.Stdout.WriteString(ldmouse.Disable)
-			if opt.formPit {
-				// The pit lives in the pager, so `form listen` opens both. Off
-				// the input goroutine: entering takes the render lock.
-				go func() {
-					// THE FORM, AND ONLY THE FORM: no history is fetched, and
-					// a fullscreen pit obscures what has not been fetched.
-					in.enterFormPager()
-					in.openLive("form show", figaroID, true)
-				}()
-			}
-			go in.run()
-		} else {
-			fmt.Fprintf(os.Stderr, "figaro: terminal input disabled: enter raw mode: %v\n", err)
-		}
-	}
-
-	// EVERY RENDERER ENTRY POINT UNDER mu, INCLUDING THE LAST ONE. The spinner
-	// goroutine, the notification handler and the pacer's trailing render are
-	// all still live while this runs -- they are stopped by defers that have
-	// not fired yet -- so an unlocked teardown paints against them.
-	locked := func(fn func()) {
-		mu.Lock()
-		defer mu.Unlock()
-		fn()
-	}
-	select {
-	case <-doneCh:
-	case <-opt.end:
-		// The tape ran out. Leave the way a finished turn leaves.
-		locked(func() { lt.finishTurn("") })
-	case <-disconnectCh:
-		locked(func() { lt.abandon(turnStatusDisconnected) })
-	case <-in.subjectDead:
-		locked(func() { lt.abandon(turnStatusError) })
-	case <-ctx.Done():
-		// Ctrl-C from signal.NotifyContext: interrupt the turn, then leave.
-		// IT SAYS SO IN THE BAR OR NOWHERE. A line written here lands under
-		// the last frame, on top of a shell prompt that is already back.
-		intCtx, intCancel := context.WithTimeout(context.Background(), 3*time.Second)
-		if cli := in.aria(); cli != nil {
-			_ = cli.Interrupt(intCtx)
-		}
-		intCancel()
-		locked(func() { lt.abandon(turnStatusInterrupted) })
-	}
+	runSession(ctx, cancel, sessionOpts{
+		figaroID: figaroID, ep: ep, loaded: loaded,
+		set:  renderSettings{listen: true}, // listen stays open past turn-done
+		acli: opt.acli, tape: opt.tape, end: opt.end, startedAt: opt.startedAt,
+		formPit: opt.formPit, ownsSubject: true,
+		// Ctrl-C means "interrupt the turn" here as it does in send; a
+		// listener has no cancellable context of its own to arrange that.
+		signals: true,
+	})
 }

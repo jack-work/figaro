@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"github.com/jack-work/figaro/sdk"
 	"io"
@@ -44,181 +43,15 @@ const (
 	cursorShow  = "\x1b[?25h"
 )
 
-// mustPromptFigaro is the interactive (TTY) prompt path. It renders the
-// turn-shaped aria.Page wire through the incipit-freeze renderer: closed turn
-// slices freeze to native scrollback once and are never redrawn; only the open
-// suffix is a live region. The renderer folds each frame and animates spinners
-// locally (no extra wire traffic).
+// mustPromptFigaro is the SEND entrance: one session, with a prompt in it.
+// The tape is opened here because --record is a send flag; everything else is
+// runSession's (session.go).
 func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prompt string, loaded *config.Loaded, set renderSettings) {
 	ctx, span := figOtel.Start(ctx, "cli.prompt")
 	defer span.End()
-
-	startedAt := time.Now()
-	status := newSessionStatus(figaroID, startedAt)
-
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	width := term.Width()
-	if width <= 0 {
-		width = 80
-	}
-	height := term.Height()
-
-	// Bookend: a status rule (aria id + start time) pinned just below the
-	// agent's reply. Gated on the status-line config.
-	var bookendFn func() []string
-	if loaded.StatusLine() {
-		bookendFn = func() []string { return bookendLines(status) }
-	}
-
-	lt := newLivelogTurn(os.Stdout, width, height, &set, figaroID, startedAt, status, bookendFn, dimRule)
-	tc := term.NewClient() // platform terminal boundary: raw mode, resize, clipboard
-
-	// The renderer owns the cursor and assumes one row per line: disable the
-	// terminal's auto-margin so a full-width row never wraps, and hide the
-	// cursor. It draws in incipit (no alternate screen): frozen output lands in
-	// the normal scrollback.
-	fmt.Fprint(os.Stdout, autowrapOff+cursorHide)
-	defer endSession(os.Stdout)
-	// The painter's half of the console arming: hold the cursor on the last
-	// cell instead of wrapping the instant it is written. Scoped to the painted
-	// session, armed globally it staircases every fmt.Println. OnceFunc for the
-	// same reason as cli.go's: the defer and exitNow's hooks both fire.
-	restoreWrap := sync.OnceFunc(term.ArmDeferredWrap())
-	defer restoreWrap()
-	atExit(restoreWrap)
-	defer lt.leaveTranscript() // restore the screen if we exit while in the pager
-
-	// Static opening rule: a single dim horizontal line separating the user's
-	// shell prompt from the response stream. Printed once, lives in scrollback.
-	// The renderer owns it, because it also owns the decision about the blank
-	// row underneath it: the first message hugs this rule as its overline.
-	lt.openRule()
-
-	// The renderer is single-threaded; the notify pump, the spinner ticker, the
-	// SIGWINCH handler, and keybindings all serialize on mu.
-	var mu sync.Mutex
-	doneCh := make(chan struct{}, 1)
-	disconnectCh := make(chan struct{}, 1) // Ctrl-D: leave the turn running
-
-	// THE DEFERS ABOVE DO NOT RUN ON os.Exit, and two exits here are os.Exit:
-	// die() (a Qua failure lands AFTER --listen has already opened the pager)
-	// and the Ctrl-C 130 path. Both would leave the terminal on the alternate
-	// screen with the cursor hidden. Same work, registered where an abrupt
-	// exit can still reach it.
-	atExit(func() {
-		// TryLock, not Lock: the hook must never be the reason a dying
-		// process hangs. Every current caller is lock-free at the point it
-		// dies, so this takes the lock in practice, and if a future one is
-		// not, restoring the terminal unlocked still beats not restoring it.
-		if mu.TryLock() {
-			defer mu.Unlock()
-		}
-		lt.leaveTranscript()
-		endSession(os.Stdout)
-	})
-
-	// mu serializes every renderer entry point; handing it to the pager arms
-	// the frame-rate ceiling, whose trailing repaint runs on a timer goroutine
-	// and so needs the same lock.
-	lt.setRenderLock(&mu)
-	running := true  // a turn is in flight until turn.done; gates Ctrl-C
-	sendCursor := -1 // cursor from Qua; stop only once committed past it and idle
-
-	// THE DISCRIMINATOR. ownTurn is closed the instant a frame carries the
-	// inquiry we just sent: proof that OUR prompt opened the turn about to
-	// paint. noTurn is closed when the agent reports an error instead, because
-	// then no turn is coming at all. State can race (Qua's `active` flag is
-	// sampled before the prompt is even queued); the EVENT cannot, and it is
-	// the same split the daemon itself makes: appendUserPrompt RETURNS before
-	// OpenInquiry when it is steering, so a turn we merely joined never
-	// broadcasts a question of ours.
-	ownTurn := make(chan struct{})
-	noTurn := make(chan struct{})
-	var ownOnce, noOnce sync.Once
-	// watchInquiry keeps the check OFF the steady-state frame path. Every aria
-	// frame passes through onNotify: dozens a second while a tool streams, and
-	// the question is only ever asked once, at the opening of the session.
-	// Cleared by the answer, and again by the decision itself, so from then on a
-	// frame pays one bool test. (Touched only under mu, like everything else
-	// here.)
-	watchInquiry := true
-
-	onNotify := func(method string, params json.RawMessage) {
-		mu.Lock()
-		defer mu.Unlock()
-		switch method {
-		case rpc.MethodAriaFrame:
-			var r aria.Page
-			if json.Unmarshal(params, &r) == nil {
-				if watchInquiry && pageCarriesInquiry(r, prompt) {
-					watchInquiry = false
-					ownOnce.Do(func() { close(ownTurn) })
-				}
-				lt.apply(r)
-			}
-		case rpc.MethodTurnDone:
-			var d rpc.DoneEntry
-			_ = json.Unmarshal(params, &d)
-			isErr := strings.HasPrefix(d.Reason, "error:")
-			// Settle when the agent reports idle (inbox empty, no turn running):
-			// a turn that ended with our steer still queued reports idle=false,
-			// so we correctly wait for our own turn. A daemon predating the idle
-			// field sends nil: treat that as settled (the pre-steering behavior),
-			// so an old running daemon doesn't strand the command. We only act
-			// once our prompt has been submitted (sendCursor set after Qua
-			// returns), so a turn.done that predates our send can't end us early.
-			// Do NOT gate on lt.cursor() advancing: the final commit can arrive
-			// via async desync recovery AFTER this one-shot turn.done, which
-			// would strand us and hang the command.
-			idle := d.Idle == nil || *d.Idle
-			// Tear the live region (incl. an un-adopted thinking footer) down
-			// FIRST, so an error hint printed straight to the terminal lands on
-			// clean scrollback below it, not over the footer.
-			lt.finishTurn(d.Reason)
-			if isErr {
-				// No turn will open for this prompt, so stop waiting on an
-				// inquiry that is never coming.
-				noOnce.Do(func() { close(noTurn) })
-				// THE COMMENT ABOVE IS TRUE INLINE AND FALSE IN THE PAGER:
-				// finishTurn returns early while the pager is up, the alt
-				// screen has no scrollback, and the cursor is parked on the
-				// status row: so writing here landed the hint ON the footer
-				// and scrolled the grid out from under the painter's model.
-				// lt.report picks the right door for whichever renderer owns
-				// the terminal, and loses nothing either way.
-				if hint, ok := authFailureHint(d.Reason); ok {
-					lt.report(hint)
-				} else {
-					lt.report(d.Reason)
-				}
-			}
-			settled := sendCursor >= 0 && idle
-			if !settled {
-				break
-			}
-			running = false
-			// Close on turn-done only in incipit. Once the transcript pager is
-			// up: however it was entered: it has listen semantics: the session
-			// stays open until an explicit q / Ctrl-D / Ctrl-C.
-			if !lt.inTranscript() {
-				select {
-				case doneCh <- struct{}{}:
-				default:
-				}
-			}
-		}
-	}
-
-	// Hold frames from before the socket is dialed until the opening preamble
-	// (below) has been placed. A subscription starts pushing the moment it is
-	// made, so this is the only way to guarantee the question is painted UNDER
-	// the history it follows rather than over it. Nothing is dropped.
-	lt.holdFrames()
-
-	// The wire tape (testing): --record tees every JSON-RPC message this
-	// stream exchanges, so a turn that painted wrong can be replayed exactly.
 	var rec *tape.Writer
 	if set.record != "" {
 		var terr error
@@ -234,189 +67,17 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			die("record: %s", terr)
 		}
 		defer func() {
-			// TO THE LOG, NOT THE TERMINAL: this runs as the session ends,
-			// where a line lands over the shell prompt that is already back.
+			// To the log, not the terminal: this runs as the session ends.
 			if cerr := rec.Close(); cerr != nil {
 				slog.Error("tape close", "err", cerr)
 			}
 		}()
 	}
 
-	fcli, err := sdk.DialAriaWith(ep, onNotify, tapeTap(rec))
-	if err != nil {
-		die("connect figaro: %s", err)
-	}
-	defer fcli.Close()
-
-	// On a version desync, re-read from the highest fully sealed turn and re-apply
-	// the full snapshot (off the notify path so the pump isn't blocked).
-	lt.setDesync(func(sinceLT int) {
-		go func() {
-			rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer rcancel()
-			r, rerr := fcli.Read(rctx, sinceLT)
-			if rerr != nil {
-				return
-			}
-			mu.Lock()
-			lt.apply(r)
-			mu.Unlock()
-		}()
+	runSession(ctx, cancel, sessionOpts{
+		figaroID: figaroID, ep: ep, loaded: loaded, set: set,
+		prompt: prompt, tape: rec, ownsSubject: true,
 	})
-
-	// Local spinner animation: ticks the open message's running tool; zero extra
-	// wire traffic (output streams via aria frames).
-	// Declared before the ticker so the queue poll can reach it; both accesses
-	// are under mu, which every renderer path already holds.
-	var in *interactiveInput
-
-	defer startPagerClock(&mu, lt, func() *interactiveInput { return in })()
-
-	// Repaint on resize (platform-abstracted: SIGWINCH on unix, a console event
-	// on Windows, all behind the term.Client boundary).
-	defer tc.OnResize(func(w, h int) {
-		mu.Lock()
-		lt.resize(w, h)
-		mu.Unlock()
-	})()
-
-	// Live keybindings. MakeRaw disables signal generation, so Ctrl-C (0x03) and
-	// Ctrl-D (0x04) arrive as input BYTES (portable, and identical in incipit and
-	// transcript): the input loop owns them, not a SIGINT handler.
-	if tc.IsTTY() {
-		if restore, err := tc.MakeRaw(); err == nil {
-			// The restore must survive os.Exit, not only a normal return.
-			// MEASURED on Linux before this line existed: Ctrl-C during a
-			// running turn exits 130 through exitNow, which runs the hooks and
-			// then os.Exit: skipping every defer. `stty -g` before/after
-			// differed in c_lflag (8a3b -> a30: ECHO and ICANON cleared), so
-			// the user's shell was left in RAW MODE: no echo, no line editing
-			//: by the most ordinary gesture there is.
-			restoreOnce := sync.OnceFunc(restore)
-			defer restoreOnce()
-			atExit(restoreOnce)
-			fmt.Fprint(os.Stdout, enableModifiedKeyReporting)
-			defer fmt.Fprint(os.Stdout, disableModifiedKeyReporting)
-			// Belt-and-braces: always disable mouse reporting on exit so a crash
-			// mid-pager can't leave the shell spewing raw \x1b[<…M.
-			defer os.Stdout.WriteString(ldmouse.Disable)
-			in = &interactiveInput{
-				tc: tc, lt: lt, fcli: fcli, hangup: fcli, mu: &mu, set: &set,
-				figaroID: figaroID, cancel: cancel, disconnectCh: disconnectCh,
-				subject: fcli, loaded: loaded, subjectDead: make(chan struct{}, 1),
-			}
-			// THE PAGER HAS TWO FRONT DOORS -- here and listen.go -- and they do
-			// not share a constructor. Command mode has to be wired at both, and
-			// the first cut wired only listen: `:send` answered "commands need a
-			// live session" inside a `figaro send`, which is the surface most
-			// users are looking at. See plans/transcript-command-mode.md; the
-			// fix in the real work is ONE constructor, not two call sites kept
-			// in step by hand.
-			in.lt.setCommandRunner(in.runCommand)
-			in.lt.setCommandCompleter(in.complete)
-			in.lt.tr.dropRow = in.dropPitRow
-			in.lt.tr.openForm = func() { go in.openLive("form show", "", false) }
-			in.lt.setQueuedFetch(in.refreshQueued) // 'Q' works before the pager is ever opened
-			// Both are inert until the PAGER is up (a fetcher is only consulted by
-			// Store.Ensure, i.e. the prefetch worker), and both must be in place
-			// BEFORE the first frame, because the pager can open without being
-			// asked: an overflowing turn or a destructive resize promotes on the
-			// frame path, and a pager that opened that way used to have neither a
-			// way to ask for history nor any history to show.
-			in.lt.setHistoryFetcher(in.historyFetcher())
-			in.lt.setCatchUp(in.pagerCatchUp)
-			if set.listen {
-				in.enterTranscript() // --listen: open the pager immediately
-			}
-			go in.run()
-		} else {
-			fmt.Fprintf(os.Stderr, "figaro: terminal input disabled: enter raw mode: %v\n", err)
-		}
-	}
-
-	// The opening preamble is for the INLINE renderer only: --listen already
-	// opened the pager (which reads its own history), and a non-TTY caller gets
-	// a stream, not a screen, so neither may grow a spurious read or a row of
-	// output it did not have before.
-	catchUp := in != nil && !set.listen
-
-	cursor, active, qerr := fcli.Qua(ctx, prompt, buildPromptForm())
-	if qerr != nil {
-		dieWithClosure(qerr, "prompt: %s", qerr)
-	}
-	mu.Lock()
-	sendCursor = cursor
-	lt.status.beginTurn()
-	mu.Unlock()
-	// Joining an already-running turn: the inline renderer can't cleanly paint a
-	// turn already in progress (partial state, mid-stream). Drop into the
-	// transcript pager on the last page: consistent scrollback, no glitch. A
-	// fresh turn (idle aria) stays inline with the thinking footer.
-	joined := active && in != nil
-	if joined {
-		in.enterTranscript()
-	}
-
-	// WHERE YOU ARE: but only when you did not just say it yourself.
-	var fetched historyPage
-	if catchUp && !joined && !awaitOwnTurn(prompt, ownTurn, noTurn) {
-		fetched = recentContext(ctx, fcli, cursor)
-	}
-	mu.Lock()
-	watchInquiry = false // decided; no frame need ask again
-	lt.openInline(fetched)
-	mu.Unlock()
-
-	select {
-	case <-doneCh:
-		// The committed bookend is the final line; nothing more to print.
-	case <-disconnectCh:
-		// q / Ctrl-D. If the turn already finished while the pager was up this
-		// is a clean exit, not an abandonment: no rule, no follow hint, and the
-		// completed tail reaches scrollback intact.
-		//
-		// UNDER mu LIKE EVERY OTHER RENDERER CALL IN THIS FILE. The spinner,
-		// the notification handler and the pacer's trailing render are still
-		// running here: their defers have not fired.
-		mu.Lock()
-		lt.abandon(turnStatusDisconnected)
-		mu.Unlock()
-	case <-fcli.Done():
-		mu.Lock()
-		lt.abandon(turnStatusError)
-		mu.Unlock()
-		os.Exit(1)
-	case <-ctx.Done():
-		// Ctrl-C: interrupt the in-flight turn; if nothing's running (e.g.
-		// listening after turn-done), it's just a clean close.
-		mu.Lock()
-		wasRunning := running
-		mu.Unlock()
-		if wasRunning {
-			// Same door as the error path: in the pager this is a red token in
-			// the status row, inline it is the line on stderr it always was.
-			mu.Lock()
-			lt.report("interrupting")
-			mu.Unlock()
-			intCtx, intCancel := context.WithTimeout(context.Background(), 3*time.Second)
-			_ = fcli.Interrupt(intCtx)
-			intCancel()
-			select {
-			case <-doneCh:
-			case <-fcli.Done():
-			case <-time.After(3 * time.Second):
-				mu.Lock()
-				lt.abandon(turnStatusInterrupted)
-				mu.Unlock()
-			}
-			mu.Lock()
-			lt.report("interrupted")
-			mu.Unlock()
-		}
-		if code := interruptExit(wasRunning); code != 0 {
-			exitNow(code) // hooks first: the pager may still be up
-		}
-	}
 }
 
 // interruptExit is the Ctrl-C rule: an interrupted TURN is 130 (128+SIGINT),
@@ -470,7 +131,23 @@ type interactiveInput struct {
 	interrupting bool
 	// hangup is the H key's client. Nil leaves the key inert rather than
 	// crashing a session that was built without one.
-	hangup       hangupClient
+	hangup hangupClient
+	// THE SEND HALF. A session with a prompt waits for that prompt's turn to
+	// settle and then leaves; a listener has none of this. ownTurn closes when
+	// a frame carries OUR question, noTurn when the agent answers with an
+	// error instead -- state can race (Qua's `active` is sampled before the
+	// prompt is even queued), the EVENT cannot.
+	prompt       string
+	sendCursor   int // set by Qua; a turn.done before it is not ours
+	doneCh       chan struct{}
+	ownTurn      chan struct{}
+	noTurn       chan struct{}
+	ownOnce      sync.Once
+	noOnce       sync.Once
+	watchInquiry bool // kept OFF the steady-state frame path once answered
+	// startInline keeps an ordinary send in the incipit until something
+	// promotes it. Every other session opens the pager as it starts.
+	startInline  bool
 	mu           *sync.Mutex
 	set          *renderSettings
 	figaroID     string
@@ -905,8 +582,11 @@ func (in *interactiveInput) cancelTranscriptSearch() {
 func startPagerClock(mu *sync.Mutex, lt *livelogTurn, current func() *interactiveInput) func() {
 	stop := make(chan struct{})
 	// The queue is polled on a slow multiple of the spinner: twice a second is
-	// faster than a human notices and cheap enough not to matter.
+	// faster than a human notices and cheap enough not to matter. Metrics --
+	// the capacity figure and the mantra -- move slower still and are asked
+	// for a quarter as often.
 	every := max(spinnerFPS/queuedPollHz, 1)
+	metricsEvery := every * 4
 	go func() {
 		t := time.NewTicker(time.Second / spinnerFPS)
 		defer t.Stop()
@@ -919,8 +599,14 @@ func startPagerClock(mu *sync.Mutex, lt *livelogTurn, current func() *interactiv
 				lt.tick()
 				in := current()
 				mu.Unlock()
-				if in != nil && n%every == 0 {
+				if in == nil {
+					continue
+				}
+				if n%every == 0 {
 					in.refreshQueued()
+				}
+				if n%metricsEvery == 0 {
+					in.seedMetrics()
 				}
 			}
 		}
