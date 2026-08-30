@@ -293,6 +293,17 @@ func (s *sessionStatus) advance() bool {
 	return true
 }
 
+// turnRunning is whether a turn is in flight: what Ctrl-C needs to know, and
+// the difference between exit 130 and a clean close.
+func (s *sessionStatus) turnRunning() bool {
+	if s == nil {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.turn == turnStatusThinking
+}
+
 // turnLabel is the current turn state as it goes on the status row: the symbol
 // alone, or "name symbol" under verbose. "" when idle, because the catch-all
 // has nothing to announce on a row that is always visible.
