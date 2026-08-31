@@ -80,6 +80,17 @@ if pane | grep -q "look around"; then
 else
   echo "FAIL: nothing of the turn reached scrollback"; fail=1
 fi
+# THE QUESTION IS PAINTED ONCE. A send holds its frames until the opening
+# preamble is placed, and retarget used to clear that hold on its way past: the
+# question then arrived twice, once from the frame that beat the opening and
+# once from the opening that thought it was first.
+echoed=$(pane | grep -c "^  look around$")
+if [[ "$echoed" == "1" ]]; then
+  echo "ok   the question is painted exactly once"
+else
+  echo "FAIL: the question is painted $echoed times"; fail=1
+  pane | grep -n "look around" | head -6 | sed 's/^/    |/'
+fi
 for word in "hung up" "interrupting" "disconnected" "panic"; do
   if pane | grep -q "$word"; then echo "FAIL: '$word' was printed on the way out"; fail=1; fi
 done

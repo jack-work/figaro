@@ -962,7 +962,13 @@ func (t *livelogTurn) retarget(figaroID string, status *sessionStatus) {
 	t.lastFrozen = sliceCursor{}
 	t.pagerClosed = nil
 	t.queued, t.queuedErr = nil, ""
-	t.hold, t.held = false, nil
+	// THE HELD PAGES GO; THE HOLD ITSELF IS THE CALLER'S. Frames buffered for
+	// the old subject are meaningless here, but whether this session is still
+	// waiting to place its opening preamble is a fact about the SESSION, not
+	// about which aria it watches -- and clearing it here is what let a send's
+	// question be painted twice: once by the frame that arrived while the hold
+	// was (silently) off, and again by the opening that thought it was first.
+	t.held = nil
 	t.seeded, t.seedExtents, t.seedMore = nil, nil, false
 
 	t.tr.retarget(t.client, figaroID, status)

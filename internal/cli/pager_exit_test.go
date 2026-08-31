@@ -156,3 +156,32 @@ func TestEndSessionSaysNothing(t *testing.T) {
 		}
 	}
 }
+
+// A SESSION'S FRAME HOLD SURVIVES RETARGET. The hold says "this session has
+// not placed its opening yet", which is a fact about the session and not about
+// which aria it watches -- and clearing it in retarget is what painted a
+// send's question twice: once from the frame that arrived while the hold was
+// silently off, and once from the opening that thought it was first.
+func TestRetargetKeepsTheFrameHold(t *testing.T) {
+	var out bytes.Buffer
+	status := newSessionStatus("aria1234", time.Now())
+	lt := newLivelogTurn(&out, 80, 20, &renderSettings{}, "aria1234", time.Now(), status, nil, dimRule)
+	lt.holdFrames()
+	lt.apply(inquiryPage(1, "the question"))
+	if len(lt.held) != 1 {
+		t.Fatalf("the hold took %d pages, want 1", len(lt.held))
+	}
+	lt.retarget("aria5678", newSessionStatus("aria5678", time.Now()))
+	if !lt.hold {
+		t.Fatal("retarget disarmed the hold this session had armed")
+	}
+	if len(lt.held) != 0 {
+		t.Fatalf("retarget kept %d pages of the OLD subject", len(lt.held))
+	}
+	// And the opening still releases it.
+	lt.apply(inquiryPage(1, "the new question"))
+	lt.openInline(historyPage{})
+	if lt.hold || len(lt.held) != 0 {
+		t.Fatalf("openInline left hold=%v held=%d", lt.hold, len(lt.held))
+	}
+}
