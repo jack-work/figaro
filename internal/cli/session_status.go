@@ -382,12 +382,26 @@ func (s *sessionStatus) panelLines() []string {
 	return rows
 }
 
+// formatContextUsage is the capacity figure: what is in the window, out of
+// what the window holds, and the quotient.
+//
+// THE LIMIT DOES NOT WAIT FOR A TRANSCRIPT. It is a provider+model lookup --
+// the daemon reports it on an aria that has never taken a turn -- so a session
+// that has said nothing yet still knows it has a megabyte, and saying "0/1.0m
+// 0.0%" is both true and the thing a reader opened the bar to see. Hiding it
+// until the first turn made the figure look like it came and went.
+//
+// The tilde marks an ESTIMATE, so it is spent only on a number there is
+// something to estimate: at zero tokens there is not.
 func formatContextUsage(tokens, limit int, exact bool) string {
-	if tokens <= 0 {
+	if tokens < 0 {
+		tokens = 0
+	}
+	if tokens == 0 && limit <= 0 {
 		return "-"
 	}
 	used := formatTokenCount(tokens)
-	if !exact {
+	if !exact && tokens > 0 {
 		used = "~" + used
 	}
 	if limit <= 0 {
