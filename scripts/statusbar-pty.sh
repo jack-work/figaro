@@ -42,6 +42,10 @@ duke-title = "bar"
 provider = "gateway"
 model = "auto"
 max_tokens = 64
+# The fixture's gateway reports no context window of its own, so the fixture
+# states one: the point under test is that a KNOWN limit is shown before any
+# turn, not that this particular provider knows one.
+max_context_tokens = 200000
 credo = { fileName = "credo.md" }
 EOF
 printf 'default_outfit = "bar"\ninteractive = false\n' > "$FIGARO_CONFIG_DIR/config.toml"
@@ -140,6 +144,25 @@ else
 fi
 tmux -S "$SOCK" send-keys -t bar:0 Escape
 sleep 0.5
+
+# 2b2. THE CAPACITY IS THERE BEFORE ANYTHING IS SAID. A fresh aria has taken no
+#      turn, so its window is empty -- but the limit is a provider+model lookup
+#      and does not wait for a transcript, so the bar can say 0/1.0m 0.0%.
+FRESH=$("$BIN" new -j | python3 -c 'import json,sys;print(json.load(sys.stdin)["aria_id"])')
+tmux -S "$SOCK" new-window -t bar -n fresh bash --norc
+tmux -S "$SOCK" send-keys -t bar:fresh "export FIGARO_STATE_DIR=$FIGARO_STATE_DIR FIGARO_RUNTIME_DIR=$FIGARO_RUNTIME_DIR FIGARO_CONFIG_DIR=$FIGARO_CONFIG_DIR FIGARO_CACHE_DIR=$FIGARO_CACHE_DIR FORCE_COLOR=1" Enter
+tmux -S "$SOCK" send-keys -t bar:fresh "$BIN listen $FRESH" Enter
+sleep 4
+freshbar=$(tmux -S "$SOCK" capture-pane -p -t bar:fresh | grep -v '^$' | tail -1)
+echo "fresh bar: [$freshbar]"
+if [[ "$freshbar" == *"0/200.0k 0.0%"* ]]; then
+  echo "ok   a session with no turn still shows its capacity"
+else
+  echo "FAIL: no capacity figure before the first turn: [$freshbar]"; fail=1
+fi
+tmux -S "$SOCK" send-keys -t bar:fresh C-d; sleep 1
+tmux -S "$SOCK" kill-window -t bar:fresh 2>/dev/null
+"$BIN" kill "$FRESH" >/dev/null 2>&1
 
 # 2c. THE MANTRA TAKES THE ROOM IT HAS, and the capacity figure is on the bar
 #     from the first frame -- not only once somebody has spoken.
