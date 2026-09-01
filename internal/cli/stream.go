@@ -3,13 +3,14 @@ package cli
 import (
 	"context"
 	"fmt"
-	"github.com/jack-work/figaro/sdk"
 	"io"
 	"log/slog"
 	"os"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jack-work/figaro/sdk"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
@@ -626,12 +627,11 @@ func (in *interactiveInput) refreshQueued() {
 		resp, err := in.fcli.Queued(ctx)
 		in.mu.Lock()
 		defer in.mu.Unlock()
-		// No transcriptActive() gate: the queue is shown in BOTH views now, so
-		// bailing unless the pager was up is exactly the bug that made a
-		// waiting prompt invisible inline.
 		if err != nil {
-			in.lt.setTranscriptQueued(nil, err.Error())
-			in.lt.render()
+			// avoid unnecessary rerenders by calling only if the transcript changed
+			if in.lt.setTranscriptQueued(nil, err.Error()) {
+				in.lt.render()
+			}
 			return
 		}
 		in.queueEpoch = resp.Epoch
@@ -639,8 +639,9 @@ func (in *interactiveInput) refreshQueued() {
 		for _, p := range resp.Prompts {
 			items = append(items, queuedItem{id: p.ID, text: p.Text})
 		}
-		in.lt.setTranscriptQueued(items, "")
-		in.lt.render()
+		if in.lt.setTranscriptQueued(items, "") {
+			in.lt.render()
+		}
 	}()
 }
 

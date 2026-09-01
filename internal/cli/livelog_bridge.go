@@ -140,7 +140,7 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 func (t *livelogTurn) wireClient() {
 	t.client.SetClosedLimit(transcriptTailLimit)
 	if t.status != nil {
-		t.client.OnMetrics = t.status.update
+		t.client.OnMetrics = func(m aria.Metrics) { t.status.update(m) }
 	}
 	t.client.OnClosed = func(m aria.Message) {
 		if t.tr.active {
@@ -777,6 +777,7 @@ func (t *livelogTurn) transcriptMode() keyMode { return t.tr.mode() }
 func (t *livelogTurn) transcriptPageCursor() (transcriptPageRequest, bool) {
 	return t.tr.pageCursor()
 }
+
 func (t *livelogTurn) transcriptApplyPage(req transcriptPageRequest, page historyPage) {
 	t.tr.applyPage(req, page)
 }
@@ -808,6 +809,7 @@ func (t *livelogTurn) transcriptHistorySearch() (string, bool) {
 	}
 	return t.tr.search.query, true
 }
+
 func (t *livelogTurn) transcriptPageFailed() {
 	t.tr.finishSearch(false)
 	t.tr.abandonJump("")
@@ -820,9 +822,14 @@ func (t *livelogTurn) transcriptPageFailed() {
 // hand it in without a cyclic dependency at newLivelogTurn time.
 func (t *livelogTurn) setQueuedFetch(fn func()) { t.tr.queuedFetch = fn }
 
-// setTranscriptQueued updates the queued-prompts panel snapshot.
-func (t *livelogTurn) setTranscriptQueued(prompts []queuedItem, errMsg string) {
+// setTranscriptQueued updates the queued-prompts snapshot and reports whether
+// anything actually moved.
+func (t *livelogTurn) setTranscriptQueued(prompts []queuedItem, errMsg string) bool {
+	if errMsg == t.queuedErr && sameQueue(t.queued, prompts) {
+		return false
+	}
 	t.setQueued(prompts, errMsg)
+	return true
 }
 
 // ariaView renders a block by reusing figaro's existing node renderers, so
@@ -896,6 +903,20 @@ func (t *livelogTurn) setQueued(prompts []queuedItem, errMsg string) {
 	} else {
 		t.tr.showQueuedAuto(false)
 	}
+}
+
+// sameQueue compares two snapshots by what a reader can see: the ids and the
+// text, in order.
+func sameQueue(a, b []queuedItem) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].id != b[i].id || a[i].text != b[i].text {
+			return false
+		}
+	}
+	return true
 }
 
 // queuedRows is the ONE rendering of the queue, so the inline trailer and the
