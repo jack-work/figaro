@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 
 	"github.com/jack-work/figaro/api/form"
@@ -193,7 +194,6 @@ func childBirthPatch(dress form.Patch, cwd string) form.Patch {
 	}
 	if b, err := json.Marshal(cwd); err == nil && cwd != "" {
 		p.Set["system.cwd"] = b
-		p.Set["system.root"] = b
 	}
 	return p
 }
@@ -212,12 +212,30 @@ func birthPatch(outfitPatch form.Patch, outfitName, cwd string) form.Patch {
 		}
 	}
 	// cwd rides the birth patch so the very first turn resolves tools against
-	// the right root; aria_id cannot, because the id does not exist yet.
+	// the right directory; aria_id cannot, because the id does not exist yet.
 	if b, err := json.Marshal(cwd); err == nil && cwd != "" {
 		p.Set["system.cwd"] = b
-		p.Set["system.root"] = b
 	}
 	return p
+}
+
+func birthCwd(requested string) string {
+	if isDir(requested) {
+		return requested
+	}
+	if requested != "" {
+		slog.Error("birth cwd unusable, falling back to the daemon's", "cwd", requested)
+	}
+	dir, _ := os.Getwd()
+	return dir
+}
+
+func isDir(path string) bool {
+	if path == "" {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 func runtimeFillins(ariaID, cwd string) form.Patch {
@@ -225,9 +243,8 @@ func runtimeFillins(ariaID, cwd string) form.Patch {
 	if b, err := json.Marshal(ariaID); err == nil && ariaID != "" {
 		p.Set["aria_id"] = b
 	}
-	if b, err := json.Marshal(cwd); err == nil {
+	if b, err := json.Marshal(cwd); err == nil && cwd != "" {
 		p.Set["system.cwd"] = b
-		p.Set["system.root"] = b
 	}
 	if env := form.EnvironmentPatch(); !env.IsEmpty() {
 		for k, v := range env.Set {

@@ -116,20 +116,12 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro
 		ReminderRenderer: cbStr("system.reminder_renderer"),
 		UseOfficialSDK:   cbBool("system.use_official_sdk"),
 	}
-	cwd := cbStr("system.cwd")
-
 	prov, err := h.factory(provName, knobs)
 	if err != nil {
 		return nil, fmt.Errorf("restore %s: create provider: %w", ariaID, err)
 	}
 
 	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), ariaID+".sock")
-
-	// Fall back if restored cwd no longer exists.
-	toolRoot := cwd
-	if _, err := os.Stat(toolRoot); err != nil {
-		toolRoot, _ = os.Getwd()
-	}
 
 	var createdAt, lastActive time.Time
 	if meta, _ := h.angelus.Backend.Meta(ariaID); meta != nil {
@@ -141,7 +133,7 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro
 		lastActive = time.UnixMilli(ts)
 	}
 	loaded, _ := h.settings()
-	reg := tool.DefaultRegistryForAria(ariaID, cwdFromForm(cb, toolRoot),
+	reg := tool.DefaultRegistryForAria(ariaID, cwdFromForm(cb),
 		tool.WithImageBudget(loaded.InlineImageBudget()),
 		tool.WithSessions(h.angelus.Sessions))
 	agent := figaro.NewAgent(figaro.Config{
@@ -176,17 +168,19 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro
 	return agent, nil
 }
 
-// cwdFromForm returns a closure that reads system.cwd from
-// cbState at call time, falling back to fallback when the key is
-// unset, the form is nil, or the value isn't a JSON string.
-func cwdFromForm(cbState *form.State, fallback string) func() string {
+// cwdFromForm returns a closure that reads system.cwd from cbState at call
+// time. A missing or unusable directory falls back to the daemon's own.
+func cwdFromForm(cbState *form.State) func() string {
 	return func() string {
-		if cbState == nil {
-			return fallback
+		if cbState != nil {
+			if s := cbState.Snapshot().Lookup("system.cwd"); s != nil && *s != "" {
+				if isDir(*s) {
+					return *s
+				}
+				slog.Error("system.cwd is not a usable directory, falling back to the daemon's", "cwd", *s)
+			}
 		}
-		if s := cbState.Snapshot().Lookup("system.cwd"); s != nil && *s != "" {
-			return *s
-		}
-		return fallback
+		dir, _ := os.Getwd()
+		return dir
 	}
 }

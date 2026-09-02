@@ -86,7 +86,7 @@ Per-aria key→JSON state. Two namespaces:
   `Render` projects it as a `<system-reminder name="<key>">…</system-reminder>`
   text block (templated if a template exists, else the bare value). This is
   how the agent learns its `aria_id`, `mantra`, skills, etc. A boot patch
-  stamps runtime fill-ins each first turn (`system.cwd`, `system.root`, and a
+  stamps runtime fill-ins each first turn (`system.cwd`, and a
   non-system `aria_id` so the agent can address itself on the CLI).
 
 ### Representation: immutable tree, atomic publication

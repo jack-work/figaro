@@ -7,6 +7,7 @@ package sdk
 
 import (
 	"context"
+	"os"
 
 	"github.com/jack-work/figaro/api/aria"
 	"github.com/jack-work/figaro/api/rpc"
@@ -51,6 +52,15 @@ func DialAngelus(ep transport.Endpoint) (*Angelus, error) {
 	return &Angelus{cli: jkrpc.NewClient(conn, nil), caller: rpc.CallerFromEnv(), ref: rpc.CallerRefFromEnv()}, nil
 }
 
+// callerCwd is the client process's working directory.
+func callerCwd() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return dir
+}
+
 // Status reports the running daemon's uptime, population and BUILD. The build
 // is what lets a CLI refuse to speak to a daemon from another revision.
 func (c *Angelus) Status(ctx context.Context) (*rpc.StatusResponse, error) {
@@ -79,7 +89,7 @@ func (c *Angelus) ProviderLedger(ctx context.Context, aria string, limit int) (*
 // default_outfit; a patch is folded on top of it.
 func (c *Angelus) Create(ctx context.Context, outfits []string, patch *rpc.FormPatch) (*rpc.CreateResponse, error) {
 	var resp rpc.CreateResponse
-	err := c.call(ctx, rpc.MethodCreate, rpc.CreateRequest{Outfits: outfits, Patch: patch}, &resp)
+	err := c.call(ctx, rpc.MethodCreate, rpc.CreateRequest{Outfits: outfits, Patch: patch, Cwd: callerCwd()}, &resp)
 	return &resp, err
 }
 
@@ -96,7 +106,7 @@ func (c *Angelus) FormCreate(ctx context.Context, parent string, outfits []strin
 // patch is the -O dressing.
 func (c *Angelus) FormBind(ctx context.Context, parent string, outfits []string, patch *rpc.FormPatch) (*rpc.FormBindResponse, error) {
 	var resp rpc.FormBindResponse
-	err := c.call(ctx, rpc.MethodFormBind, rpc.FormBindRequest{Parent: parent, Outfits: outfits, Patch: patch}, &resp)
+	err := c.call(ctx, rpc.MethodFormBind, rpc.FormBindRequest{Parent: parent, Outfits: outfits, Patch: patch, Cwd: callerCwd()}, &resp)
 	return &resp, err
 }
 

@@ -23,6 +23,8 @@ type CreateRequest struct {
 	// turns the first into the second. Nothing below that boundary reads a
 	// file.
 	Outfits []string `json:"outfits,omitempty"`
+	// Cwd is the caller's working directory. Empty falls back to the daemon's.
+	Cwd string `json:"cwd,omitempty"`
 }
 
 type CreateResponse struct {
@@ -63,6 +65,8 @@ type FormBindRequest struct {
 	// turns the first into the second. Nothing below that boundary reads a
 	// file.
 	Outfits []string `json:"outfits,omitempty"`
+	// Cwd is the caller's working directory. Empty falls back to the daemon's.
+	Cwd string `json:"cwd,omitempty"`
 }
 
 type FormBindResponse struct {

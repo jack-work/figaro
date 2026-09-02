@@ -295,7 +295,7 @@ func TestReadToolFitsLargeImages(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, raw, 0o644))
 
 	const budget = 200 << 10
-	rt := &ReadTool{Cwd: dir, ImageLimits: ImageLimits{MaxBase64: budget}}
+	rt := &ReadTool{CwdFn: staticCwd(dir), ImageLimits: ImageLimits{MaxBase64: budget}}
 
 	var streamed string
 	content, err := rt.Execute(t.Context(), map[string]any{"path": "screenshot.png"},
@@ -322,7 +322,7 @@ func TestReadToolSmallImageIsUnchanged(t *testing.T) {
 	raw := encPNG(t, screenshotish(32, 32))
 	require.NoError(t, os.WriteFile(path, raw, 0o644))
 
-	rt := &ReadTool{Cwd: dir}
+	rt := &ReadTool{CwdFn: staticCwd(dir)}
 	content, err := rt.Execute(t.Context(), map[string]any{"path": "icon.png"}, nil)
 	require.NoError(t, err)
 	require.Len(t, content, 2)
@@ -341,7 +341,7 @@ func TestReadToolAnnouncesAnUnfittableImage(t *testing.T) {
 	path := filepath.Join(dir, "huge.png")
 	require.NoError(t, os.WriteFile(path, encPNG(t, noisyImage(800, 800, 9)), 0o644))
 
-	rt := &ReadTool{Cwd: dir, ImageLimits: ImageLimits{MaxBase64: 1024}}
+	rt := &ReadTool{CwdFn: staticCwd(dir), ImageLimits: ImageLimits{MaxBase64: 1024}}
 	content, err := rt.Execute(t.Context(), map[string]any{"path": "huge.png"}, nil)
 	require.NoError(t, err, "an unfittable image is not a failed read")
 	require.Len(t, content, 1, "text only: there is no picture to send")
@@ -357,7 +357,7 @@ func TestReadToolTextFilesAreUntouched(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hello\nworld\n"), 0o644))
 
-	rt := &ReadTool{Cwd: dir}
+	rt := &ReadTool{CwdFn: staticCwd(dir)}
 	content, err := rt.Execute(t.Context(), map[string]any{"path": "a.txt"}, nil)
 	require.NoError(t, err)
 	require.Len(t, content, 1)

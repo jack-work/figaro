@@ -28,11 +28,11 @@ type Writer interface {
 
 // WriteTool implements Writer and Tool. Serialized per path.
 type WriteTool struct {
-	Cwd string
+	CwdFn func() string
 }
 
 // NewWriteTool constructs a WriteTool bound to cwd.
-func NewWriteTool(cwd string) *WriteTool { return &WriteTool{Cwd: cwd} }
+func NewWriteTool(cwd string) *WriteTool { return &WriteTool{CwdFn: staticCwd(cwd)} }
 
 func (w *WriteTool) Name() string { return "write" }
 
@@ -73,7 +73,7 @@ func (w *WriteTool) Write(ctx context.Context, req WriteRequest) (WriteResult, e
 	}
 	path := req.Path
 	if !filepath.IsAbs(path) {
-		path = filepath.Join(w.Cwd, path)
+		path = filepath.Join(cwdOf(w.CwdFn), path)
 	}
 
 	var bytesWritten int

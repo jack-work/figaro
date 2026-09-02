@@ -1231,6 +1231,26 @@ See ` + "`figaro help outfits`" + ` for the outfit syntax.`,
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:    "cd",
+		Group:   "State",
+		Short:   "Change an aria's working directory",
+		Usage:   "cd [--id <id>] [<path>]",
+		ArgsMax: 1,
+		Flags: []cmdkit.FlagDef{
+			{Long: "id", Description: "Target aria id (overrides pid binding)"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			path := ""
+			if len(ctx.Args) > 0 {
+				path = ctx.Args[0]
+			}
+			return runCd(ld, ctx.Flag("id"), path)
+		},
+		CompleteArgs: completeCdDirs,
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:    "unset",
 		Group:   "State",
 		Short:   "Remove form key(s)",

@@ -38,6 +38,11 @@ func TestCheckWritable(t *testing.T) {
 		t.Fatalf("an ordinary key must pass: %v", err)
 	}
 
+	cwd := Patch{Set: map[string]json.RawMessage{"system.cwd": json.RawMessage(`"/tmp"`)}}
+	if err := CheckWritable(cwd, false); err != nil {
+		t.Fatalf("system.cwd is client state (figaro cd): %v", err)
+	}
+
 	// The rule applies to what a patch WRITES. A patch touching nothing
 	// protected is fine no matter what the board already holds.
 	if err := CheckWritable(Patch{}, false); err != nil {

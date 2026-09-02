@@ -33,7 +33,7 @@ type Reader interface {
 
 // ReadTool implements both Reader and the generic Tool interface.
 type ReadTool struct {
-	Cwd string
+	CwdFn func() string
 	// ImageLimits bounds an inlined image. The zero value takes
 	// DefaultImageLimits; the agent overrides MaxBase64 with the store's
 	// segment-derived budget, which is usually the stricter of the two.
@@ -41,7 +41,7 @@ type ReadTool struct {
 }
 
 // NewReadTool constructs a ReadTool bound to cwd.
-func NewReadTool(cwd string) *ReadTool { return &ReadTool{Cwd: cwd} }
+func NewReadTool(cwd string) *ReadTool { return &ReadTool{CwdFn: staticCwd(cwd)} }
 
 func (r *ReadTool) Name() string { return "read" }
 
@@ -79,7 +79,7 @@ func (r *ReadTool) Execute(ctx context.Context, args map[string]interface{}, onO
 
 	absPath := path
 	if !filepath.IsAbs(absPath) {
-		absPath = filepath.Join(r.Cwd, absPath)
+		absPath = filepath.Join(cwdOf(r.CwdFn), absPath)
 	}
 
 	if mimeType, ok := detectImageMIME(absPath); ok {
@@ -165,7 +165,7 @@ func (r *ReadTool) Read(ctx context.Context, req ReadRequest) (ReadResult, error
 	}
 	path := req.Path
 	if !filepath.IsAbs(path) {
-		path = filepath.Join(r.Cwd, path)
+		path = filepath.Join(cwdOf(r.CwdFn), path)
 	}
 
 	data, err := os.ReadFile(path)

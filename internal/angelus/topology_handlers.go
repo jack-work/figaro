@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -96,7 +95,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		return nil, fmt.Errorf("create provider %q: %w", provName, err)
 	}
 
-	cwd, _ := os.Getwd()
+	cwd := birthCwd(req.Cwd)
 
 	backend := h.angelus.Backend
 
@@ -134,7 +133,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 
 	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), id+".sock")
 
-	reg := tool.DefaultRegistryForAria(id, cwdFromForm(cbState, cwd),
+	reg := tool.DefaultRegistryForAria(id, cwdFromForm(cbState),
 		tool.WithImageBudget(loaded.InlineImageBudget()),
 		tool.WithSessions(h.angelus.Sessions))
 	agent := figaro.NewAgent(figaro.Config{

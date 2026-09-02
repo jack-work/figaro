@@ -145,10 +145,6 @@ func DefaultRegistryForAria(ariaID string, cwdFn func() string, opts ...Registry
 		NewDefaultEnvSanitizer(),
 		CwdResolver{Fn: cwdFn},
 	)
-	staticCwd := ""
-	if cwdFn != nil {
-		staticCwd = cwdFn()
-	}
 	// bash and process share one session registry so backgrounded
 	// commands are reachable across both tools. Shared when the caller
 	// supplied one (the daemon does), private otherwise.
@@ -167,9 +163,20 @@ func DefaultRegistryForAria(ariaID string, cwdFn func() string, opts ...Registry
 	r.MustRegister(
 		bash,
 		NewProcessTool(sessions, scopeFn),
-		&ReadTool{Cwd: staticCwd, ImageLimits: settings.imageLimits},
-		NewWriteTool(staticCwd),
-		NewEditTool(staticCwd),
+		&ReadTool{CwdFn: cwdFn, ImageLimits: settings.imageLimits},
+		&WriteTool{CwdFn: cwdFn},
+		&EditTool{CwdFn: cwdFn},
 	)
 	return r
+}
+
+func staticCwd(dir string) func() string {
+	return func() string { return dir }
+}
+
+func cwdOf(fn func() string) string {
+	if fn == nil {
+		return ""
+	}
+	return fn()
 }

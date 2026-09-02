@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"sync"
 	"text/template"
 
@@ -346,7 +345,7 @@ func (h *handlers) formBind(ctx context.Context, params json.RawMessage) (interf
 	if err != nil {
 		return nil, err
 	}
-	cwd, _ := os.Getwd()
+	cwd := birthCwd(req.Cwd)
 	id, _, err := h.angelus.Backend.ForkWith(parent, 0, childBirthPatch(dress, cwd))
 	if err != nil {
 		return nil, fmt.Errorf("form.bind: mint figaro: %w", err)

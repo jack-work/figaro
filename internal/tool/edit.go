@@ -31,11 +31,11 @@ type Editor interface {
 
 // EditTool implements Editor and Tool. Serialized per path.
 type EditTool struct {
-	Cwd string
+	CwdFn func() string
 }
 
 // NewEditTool constructs an EditTool bound to cwd.
-func NewEditTool(cwd string) *EditTool { return &EditTool{Cwd: cwd} }
+func NewEditTool(cwd string) *EditTool { return &EditTool{CwdFn: staticCwd(cwd)} }
 
 func (e *EditTool) Name() string { return "edit" }
 
@@ -104,7 +104,7 @@ func (e *EditTool) Edit(ctx context.Context, req EditRequest) (EditResult, error
 
 	path := req.Path
 	if !filepath.IsAbs(path) {
-		path = filepath.Join(e.Cwd, path)
+		path = filepath.Join(cwdOf(e.CwdFn), path)
 	}
 
 	var result EditResult
