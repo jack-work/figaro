@@ -106,9 +106,20 @@ func TestEndToEndResourceProfile(t *testing.T) {
 	// --- reclaim every agent; terminals stay attached -------------------
 	reclaimStart := time.Now()
 	for _, id := range ids {
-		if a.Registry.Get(id) != nil {
-			require.NoError(t, a.Registry.Hibernate(id))
-		}
+		// IDLE IS A READING, NOT A PROMISE. The wait above sampled the state
+		// and the aria was free to leave it: a turn that lands between the
+		// sample and the call makes Hibernate answer "figaro is active", and
+		// the test failed on CI for that and nothing else -- on one branch,
+		// while the same commit passed on another.
+		//
+		// What is under test is that everything CAN be reclaimed, so ask until
+		// it is rather than insisting the first ask lands.
+		require.Eventually(t, func() bool {
+			if a.Registry.Get(id) == nil {
+				return true
+			}
+			return a.Registry.Hibernate(id) == nil
+		}, 30*time.Second, 20*time.Millisecond, "aria %s never reclaimed", id)
 	}
 	reclaimWall := time.Since(reclaimStart)
 
