@@ -43,8 +43,8 @@ by deleting that spam (3f5a81c1) rather than by reading a number.
 ## The mechanism under all of it
 
 `openNode` → `s.trunks.Head(id)` returns the node's whole XWAL, which
-materialises every channel it owns — `ir`, `turn-wal`, `form`, `translations`
-(×2), `translations-v2/{anthropic,copilot-messages,copilot-responses}` —
+materialises every channel it owns, `ir`, `turn-wal`, `form`, `translations`
+(×2), `translations-v2/{anthropic,copilot-messages,copilot-responses}`,
 about **8 logs and 5 segment recoveries per node**, whichever single channel
 the caller wanted. Both boot payers want one:
 
@@ -88,8 +88,8 @@ have.
 ### 1. Sidecar version + migrate-on-read; then delete the boot pass
 
 `metaBackfill` has no completion marker: it re-reads every sidecar at every
-boot forever. Its candidacy test is a heuristic — "mantra, cwd and outfit are
-all empty" — which cannot distinguish "not yet migrated" from "genuinely
+boot forever. Its candidacy test is a heuristic, "mantra, cwd and outfit are
+all empty", which cannot distinguish "not yet migrated" from "genuinely
 empty", so a legitimately blank aria would be re-folded at every boot for the
 life of the store. Zero such arias exist today; that is luck, not design.
 
@@ -101,8 +101,8 @@ reuses the seam instead of adding another scan.
 
 ### 2. Lazy libretto reconcile + a doctor verb
 
-Reconcile a libretto when it is OPENED — the only moment its refcount matters
-— which is O(14) instead of O(1,159). The whole-store pass survives as
+Reconcile a libretto when it is OPENED, the only moment its refcount matters,
+which is O(14) instead of O(1,159). The whole-store pass survives as
 `figaro doctor librettos`, run on demand. The migration case (minting for
 pre-existing studies) is already complete on this store: `missing 0`.
 
@@ -141,7 +141,7 @@ so load on one arm alone would bias the comparison.
 ## Standing
 
 `scratch/sweepcost` is the instrument. Re-run it against a COPY of a real
-store (never the live one — the daemon holds the flock, and a second opener
+store (never the live one, the daemon holds the flock, and a second opener
 bypasses it) and the table above is reproducible in one command.
 
 ## The restart lag, closed as not-reproducible (2026-08-21)

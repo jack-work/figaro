@@ -78,7 +78,7 @@ Both are real violations of the rule, both are bigger than the state-layer
 work, and mixing either into it would make the whole changeset
 unbisectable.
 
-### 1. `figaro/agent.go:141` — `mu sync.RWMutex`
+### 1. `figaro/agent.go:141`: `mu sync.RWMutex`
 
 **What it guards:** `turnCtx`, `turnCancel`, the subscriber list for fanout,
 live-render state (`turnStartLT` and the open unit), and metrics.
@@ -109,7 +109,7 @@ before-and-after on the twelve-aria recipe.
 **Risk if left:** none new. It is the status quo, and the status quo is
 tested.
 
-### 2. `angelus/protocol.go:239` — `restoreLocks map[string]*sync.Mutex`
+### 2. `angelus/protocol.go:239`: `restoreLocks map[string]*sync.Mutex`
 
 **What it guards:** waking one aria. `restoreLock(ariaID)` hands out a
 per-aria mutex so two concurrent requests do not both construct an agent.

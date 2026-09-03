@@ -36,7 +36,7 @@ type FormDelta struct {
 }
 ```
 
-`Kind` is `bound`, `studied`, or `role` — a form carrying `target-aria` is a
+`Kind` is `bound`, `studied`, or `role`, a form carrying `target-aria` is a
 role, and that is decided server-side so three clients do not each invent the
 predicate. `Event` distinguishes a key REMOVED from the whole form DELETED
 (`system.libretto.alive: false` on the copy), because a reader needs to know
@@ -47,7 +47,7 @@ node would need it; the answer is to give it to all of them rather than
 maintain a list of which nodes may carry state. It is `omitempty`; a node
 without deltas costs one absent field.
 
-## 2. Where it is assembled — NOT from the provider cache
+## 2. Where it is assembled: NOT from the provider cache
 
 **The hub assembles this from the store, by the same cursor arithmetic the
 projection does, and never from the provider's translated bytes.** This is
@@ -60,7 +60,7 @@ the load-bearing constraint and the reason to write it down:
 
 The mechanism to copy (not to call) is `internal/provider/projection.go`:
 
-1. each IR record carries cursors — `libretto:<sourceid>` for observed forms,
+1. each IR record carries cursors, `libretto:<sourceid>` for observed forms,
    the node's own form channel for the bound board;
 1. consecutive records bracket a window;
 1. the patches in that window come from `Libretto(source).PatchesBetween` for
@@ -100,7 +100,7 @@ parent from the delta itself rather than reconstructing it.
 
 Dimmer than the selection UI, slightly opaque, Kanagawa. Concretely:
 
-- one line per form, grouped by form id, keys joined — not one line per key,
+- one line per form, grouped by form id, keys joined, not one line per key,
   or a board write of six keys becomes six lines of furniture.
 - rendered BELOW the node it belongs to, indented, in the theme's muted
   foreground; the selection UI keeps its brighter treatment, so the eye

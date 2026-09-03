@@ -1,4 +1,4 @@
-# API Coherence — the RPC surface, and the CLI's dependence on it
+# API Coherence: the RPC surface, and the CLI's dependence on it
 
 Opened 2026-08-21 by 44754e14 (forked from ede92072), at Gluck's request:
 "reorganize and consolidate and simplify the rpc api design and the cli's
@@ -7,7 +7,7 @@ form / aria is attended".
 
 ## 1. The prior art, found and dated
 
-**`plans/rpc-surface-tightening.md`, commit `fd83b09a`, 2026-05-05** — one of
+**`plans/rpc-surface-tightening.md`, commit `fd83b09a`, 2026-05-05**, one of
 four A/B/C/D refactor plans (inbox, rpc, dead-code, bootstrap). Its thesis:
 
 > Shrink the figaro JSON-RPC surface to its minimum viable shape: five
@@ -21,12 +21,12 @@ interface so dispatch left `protocol.go`.
 
 **It landed.** `figaro.qua` is the wire name today; `SetModel`/`SetLabel` are
 gone; `internal/figaro/server.go` owns the method table; the figaro-side
-`protocol.go` is **14 lines** — the plan hoped for ~60.
+`protocol.go` is **14 lines**, the plan hoped for ~60.
 
 **Then the plan was deleted** by `4b5f40b7` (2026-05-10, "migrate plans/ and
-docs/ to figaro-la/docs"). It is on no branch of this repo. Its sibling — the CLI architecture dossier added by `1cffcaaf`, deleted in
+docs/ to figaro-la/docs"). It is on no branch of this repo. Its sibling, the CLI architecture dossier added by `1cffcaaf`, deleted in
 the same migration, and named here by revision because the path no longer
-resolves (`git show 1cffcaaf --stat`) — is what produced `cmdkit` and
+resolves (`git show 1cffcaaf --stat`), is what produced `cmdkit` and
 router-based dispatch.
 
 **And the surface re-accreted.** Five methods on the figaro socket in May;
@@ -42,7 +42,7 @@ today:
 
 The tightening was done once and has not been done since. This plan is the
 second pass, and its job is to leave behind a *rule* that makes a third pass
-unnecessary — the May plan left a shape, not a law, so the shape drifted.
+unnecessary, the May plan left a shape, not a law, so the shape drifted.
 
 ## 2. Where the incoherence actually is
 
@@ -57,7 +57,7 @@ Three reads exist on both sockets:
 | the durable board | `aria.form` | `figaro.form` |
 
 The daemon already routes: `rpc.MethodNeedsAgent` plus `hub.go:260` serve a
-read from the store when no agent is live. **The CLI routes too** — it picks
+read from the store when no agent is live. **The CLI routes too**, it picks
 `acli.AriaPage` or `fcli.Read` at the call site. So a client must know whether
 an agent is live, which is the one fact the daemon exists to hide, and the
 routing rule lives in two places that can disagree.
@@ -74,12 +74,12 @@ Measured from the call sites today:
 
 | verb | does this shell end up attending? | where the rule lives |
 |---|---|---|
-| `fig new` / bare prompt, unbound shell | **yes** — unbind, then create-and-bind | `prompt.go:64-74` |
-| `fig form new` | **no** — "mints an unbound form" | `form_family.go:24` |
+| `fig new` / bare prompt, unbound shell | **yes**, unbind, then create-and-bind | `prompt.go:64-74` |
+| `fig form new` | **no**, "mints an unbound form" | `form_family.go:24` |
 | `fig fork` (own bound aria) | **yes**, unless `--stay` | `fork.go:185` |
-| `fig fork <someone else's>` | **no** — "a fan-out never steals this shell" | `fork.go:186` |
+| `fig fork <someone else's>` | **no**, "a fan-out never steals this shell" | `fork.go:186` |
 | `fig cast @role` that mints | **yes**, unless `--stay` | `cast_new.go:123` |
-| `fig cast` from an attended form | **yes** — mints an aria "to play it" | `cast_new.go:193` |
+| `fig cast` from an attended form | **yes**, mints an aria "to play it" | `cast_new.go:193` |
 | `fig attend <id>` | **yes**, and refuses when binding is off | `manage.go:895` |
 
 Five rules, five sites. The tell is `restoreAttendance`, whose own comment
@@ -110,22 +110,22 @@ it is Gluck's.
    *client-facing* names. The angelus keeps ONE entry point per read verb, and
    `MethodNeedsAgent` + the hub stay the only router. The CLI loses its
    `acli` vs `fcli` choice for reads.
-2. **One vocabulary.** Constants grouped by *kind* — verbs, pushes, admin —
+2. **One vocabulary.** Constants grouped by *kind*, verbs, pushes, admin,
    with the socket an implementation detail of the client, not a prefix.
 3. **Attendance as a verb outcome**, per §2.3.
 4. **A law that keeps it tight**: every new method must state which existing
    method it is NOT (the May plan's discipline, written into the plan file so
    the next accretion has to argue with it).
 
-## 4. Sequence — one idea per commit, green at every step
+## 4. Sequence: one idea per commit, green at every step
 
 | # | step | falsifier |
 |---|---|---|
-| 1 | this plan | — |
+| 1 | this plan | - |
 | 2 | attendance: strip the bind out of the mint helpers; each birth verb states its outcome | a live script that asserts the shell's binding after each of the 7 verbs |
 | 3 | collapse the read families to one client-facing surface | `fig show`/`listen`/`status` byte-identical before and after, live and dormant |
 | 4 | regroup `methods.go` by kind; delete what nothing calls | `deadcode -test` as the oracle, as W9 did (−492 lines then) |
-| 5 | slim `angelus/protocol.go` — the handler table is a table, the handlers move out | line count, and no behaviour change |
+| 5 | slim `angelus/protocol.go`, the handler table is a table, the handlers move out | line count, and no behaviour change |
 
 ## 5. Rulings (Gluck, 2026-08-21)
 
@@ -147,7 +147,7 @@ it is Gluck's.
 
 1. Does `fig form new` attend? (§2.3)
 2. Is a wire break acceptable again? The May plan said "old clients fail
-   loudly against new servers" and that is still the cheapest path — but the
+   loudly against new servers" and that is still the cheapest path, but the
    daemon and the CLI are now upgraded separately (`nix profile upgrade`
    leaves a running daemon), so a break is felt as a broken session rather
    than an error. `checkDaemonBuild` exists; does it refuse, or just warn?
@@ -157,11 +157,11 @@ it is Gluck's.
 
 | step | commit | result |
 |---|---|---|
-| 3 — one read surface | `a6388674` | the live-or-store predicate existed **three** times (per-method in `read_handlers.go`, again as `readForHub`, again in the CLI); now `routeRead` and `readFromStore`, once each. `aria.page`/`aria.context`/`aria.form` and `AriaPageRequest` deleted; `aria.read` → `figaro.ir` |
+| 3, one read surface | `a6388674` | the live-or-store predicate existed **three** times (per-method in `read_handlers.go`, again as `readForHub`, again in the CLI); now `routeRead` and `readFromStore`, once each. `aria.page`/`aria.context`/`aria.form` and `AriaPageRequest` deleted; `aria.read` → `figaro.ir` |
 | contract purity | `df03bfb0` | `api/…` depends on `api/…` and stdlib only, asserted by `api/rpc/contract_test.go`. `message`, `livedoc`, `form` moved whole; the read API's wire types split to `api/aria` |
 | sdk | `6a91fd32` | `sdk.Angelus` / `sdk.Aria`. CLI files importing a server package: **36 → 4** |
-| 2 — attendance | `d7542c16` | the mint binds nothing; `attendNew` is the one move; `restoreAttendance` deleted; `fig form new` attends |
-| 4+5 — tidiness | `3610cbd3` | `methods.go` 1,012 → 118 lines, grouped by kind, one family per file; `angelus/protocol.go` 2,011 → 371 |
+| 2, attendance | `d7542c16` | the mint binds nothing; `attendNew` is the one move; `restoreAttendance` deleted; `fig form new` attends |
+| 4+5, tidiness | `3610cbd3` | `methods.go` 1,012 → 118 lines, grouped by kind, one family per file; `angelus/protocol.go` 2,011 → 371 |
 
 ### What the instruments caught that reasoning did not
 
@@ -179,7 +179,7 @@ it is Gluck's.
 ### Open
 
 `internal/store/crashtest` failed once during the gate, under concurrent load,
-on a model divergence (`next chanLT 12, child reports 3`) — NOT the
+on a model divergence (`next chanLT 12, child reports 3`), NOT the
 `[append-lost]` lines beside it, which are documented known gaps. 20 unloaded
 runs across both branches: 0 failures. Attribution under load is in progress;
 the branch touches no store code, and the finding belongs to the store

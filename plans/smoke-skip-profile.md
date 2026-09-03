@@ -9,7 +9,7 @@ are not defects. What is missing is not strictness. It is DISCLOSURE.
 
 `go test` prints nothing for a skipped test unless you pass `-v`, so a
 green smoke run and a smoke run in which almost every case declined to
-execute produce THE SAME OUTPUT — and the suite drives a real provider,
+execute produce THE SAME OUTPUT, and the suite drives a real provider,
 which is exactly the condition that makes cases decline.
 
 This is the campaign's standing disease in a new place: "everything is
@@ -17,7 +17,7 @@ fine" and "I never ran" have identical bytes.
 
 ## THE PROFILE, COUNTED (not four of six; ten cases, nineteen sites)
 
-Three sites gate the whole suite and are correct as they are —
+Three sites gate the whole suite and are correct as they are,
 `testing.Short()`, `FIGARO_TMUX_SMOKE` unset, `tmux` absent
 (tmuxsmoke_test.go:60-66). Two more sit in the pane helper
 (tmuxsmoke_test.go:210, 218): a tmux command that fails SKIPS, so a
@@ -28,16 +28,16 @@ decline after the gate:
 
 | case | in-body skip sites | what makes it decline |
 |---|---|---|
-| ProcessExitsAfterTurn | 0 | — |
-| ErrorDoesNotBleedIntoStatusBar | 0 | — |
+| ProcessExitsAfterTurn | 0 | - |
+| ErrorDoesNotBleedIntoStatusBar | 0 | - |
 | ExitKeysWork | 1 | the turn ended before the key could be sent |
 | OneTurnOneFooter | 1 | the view auto-promoted to the pager |
 | LettersAreKeybindingsNotText | 1 | the turn ended before the key could be sent |
-| SteerOrderMatchesShow | 2 | turn ended early; **and a declared KNOWN HOLE** — auto-promotion means the steer path has no pty coverage at all |
+| SteerOrderMatchesShow | 2 | turn ended early; **and a declared KNOWN HOLE**, auto-promotion means the steer path has no pty coverage at all |
 | DetachedTailAdvancesAndScreenHoldsStill | 3 | no copilot outfit; the model did not run the command; Ctrl-T did not open the pager |
 | ReattachMidStreamMatchesShow | 5 | no ticks; the tool finished too fast; the aria cannot be resolved; no aria with messages; `show` has no ticks |
 | CtrlCStopsTheTurnOnTheDaemon | 4 | no conversation within 60s; never reported active within 60s; turn ended before the interrupt; turn ended on its own |
-| ToolImageReachesTheModel | 0 | — but see the inconsistency below |
+| ToolImageReachesTheModel | 0 |, but see the inconsistency below |
 
 FOURTEEN OF THE FOURTEEN in-body skips are conditions produced by the
 LIVE MODEL: it answered too fast, it did not call the tool, the reply was
@@ -56,7 +56,7 @@ The same condition is fatal in one case and declining in another:
 The image case has it right where its assertions are ABSENCE assertions:
 an unsound fixture must not report. Whether the footer case's assertions
 are equally absence-shaped decides which of the two is wrong, and that is
-a question for whoever next touches it — but they cannot both be right
+a question for whoever next touches it, but they cannot both be right
 about the same condition.
 
 ## WHAT TO BUILD, AND IT IS A REPORT
@@ -66,8 +66,8 @@ about the same condition.
    the run prints a summary at the end: `8 ran, 2 declined (turn ended
    early x1, pager promoted x1)`. Cheap, and it turns an invisible
    abstention into a line a human reads.
-2. A FLOOR ON PARTICIPATION, not on individual cases. One knob —
-   `FIGARO_TMUX_SMOKE_MIN_RAN` — and the suite fails if fewer than that
+2. A FLOOR ON PARTICIPATION, not on individual cases. One knob,
+   `FIGARO_TMUX_SMOKE_MIN_RAN`, and the suite fails if fewer than that
    many cases executed. Default it to 0 so nothing changes until someone
    chooses a number; set it in whatever runs the suite deliberately. This
    is the positive assertion the notes call for: COUNT what ran rather
@@ -79,7 +79,7 @@ about the same condition.
 
 WHAT NOT TO DO: convert the fourteen model-weather skips into failures.
 They would go red for reasons that are not defects, and a suite that
-cries wolf is muted, then skipped, then deleted — the exact path
+cries wolf is muted, then skipped, then deleted, the exact path
 maintaining.md documents.
 
 ## THE ONE PLACE THIS ALREADY COST US
@@ -89,7 +89,7 @@ per ~/notes/figaro/ctrl-c-open-question.md, still cannot tell the fix from
 the bug: it passed on the broken code, twice canaried. So the case with
 the most ways to abstain is also the one whose assertion does not
 discriminate. Fixing the report does not fix that; only asserting on the
-durable log — a `turn.done` reason of "interrupted" — does.
+durable log, a `turn.done` reason of "interrupted", does.
 
 ---
 
@@ -101,7 +101,7 @@ reading the two assertions rather than the two verbs shows why.
 
   ToolImageReachesTheModel asserts ABSENCES: no base64 on the terminal, and
   the model did not report a missing image. An absence inside a pager is not
-  an absence — earlier content sits above the tail window, which is trap 3 in
+  an absence, earlier content sits above the tail window, which is trap 3 in
   the tmux-testing skill. Promotion makes that fixture UNSOUND, so failing is
   correct: the test cannot report at all.
 

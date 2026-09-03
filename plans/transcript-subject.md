@@ -98,7 +98,7 @@ their history and the client has no way to be told so.
 
 > `Angelus.composeTurns(node, fromLT, toLT)`, keyed by node and backed by the
 > store, answers for a live aria, a dormant one, and an ANCESTOR NOBODY HAS
-> OPENED — which is exactly the read a fork's inherited prefix makes.
+> OPENED, which is exactly the read a fork's inherited prefix makes.
 > `TurnCache.put` now skips any turn below its node's fork base: **the prefix is
 > read through tree's lineage walk instead of copied.**
 
@@ -112,12 +112,12 @@ The same commit's canary:
 
 > THE FORK BASE IS SNAPPED DOWN TO A TURN BOUNDARY, and the canary says that
 > line is load-bearing: a fork cutting mid-turn leaves the child a turn made of
-> the ancestor's opener and its own continuation — same turn id, different
+> the ancestor's opener and its own continuation, same turn id, different
 > content.
 
 Because the base is snapped, **the shared prefix is coordinate-identical**: same
 turn ids, same node ids, same bytes. So the client's retention rule needs no LT
-translation and no new key — the row cache is already keyed by `(turn, node)`:
+translation and no new key, the row cache is already keyed by `(turn, node)`:
 
 > **Keep `turn < baseTurn`. Drop at-or-above.** The turn you forked at is the
 > turn that differs.
@@ -136,7 +136,7 @@ type Ancestry struct {
 }
 ```
 carried root-ward as a slice. The client computes the common prefix locally.
-**No extra round trip** — the switch already performs a read, so there is no
+**No extra round trip**, the switch already performs a read, so there is no
 window in which the client holds the page but not the lineage. Static per aria,
 so it can ride only the first page of a connection.
 
@@ -192,8 +192,8 @@ They differ **only in what the buffer means when it is accepted**. So: one
 editor, three acceptors, and the composer is the same widget with more rows.
 
 **The editor should be `bubbles/textarea`, driven headless.** Gluck asked for
-exactly this — *"Ideally we can use the same control for the insertion mode as
-we do for compose"* — and it is achievable: a `textarea.Model` is an ordinary
+exactly this, *"Ideally we can use the same control for the insertion mode as
+we do for compose"*, and it is achievable: a `textarea.Model` is an ordinary
 value with `Update(msg)` and `View()`. It does not need a bubbletea program; the
 transcript can feed it decoded keys and paint its `View()` into the footer
 stanza. Then `composePrompt` and insert mode are literally the same control.
@@ -205,14 +205,14 @@ Two things this buys immediately:
   `ctrl+w` delete-word-back, `ctrl+a`/`home` line-start, `ctrl+e`/`end`
   line-end. Verified in `bubbles@v0.21.1-…/textarea/textarea.go:80-88`.
 - **The non-ASCII bug dies.** Measured through the real dispatcher: typing
-  `café` into the `/` box yields `query == "caf"` — both hand-rolled boxes
+  `café` into the `/` box yields `query == "caf"`, both hand-rolled boxes
   reject `b >= 0x7f` and swallow the character silently. Every non-ASCII search
   in this program has always been wrong.
 
 The risk to prototype early: `View()` renders its own cursor and styling, and
 the transcript's painter owns the grid and diffs frames. If textarea's output
 cannot be embedded cleanly, the fallback is a small rune-buffer widget of our
-own with the same keymap — but *try the real thing first*, because "the same
+own with the same keymap, but *try the real thing first*, because "the same
 control as compose" is worth a genuine attempt.
 
 ### `:` becomes a command line, exactly as vim's does
@@ -232,7 +232,7 @@ This is the fundamental switch, and the care it deserves is one rule:
 > dialect.** One grammar, two front doors.
 
 What that costs, and it is the real work of this phase: the CLI's verbs are
-today fused to their process wrapper — `WithAngelus(...)` for the connection,
+today fused to their process wrapper, `WithAngelus(...)` for the connection,
 `die()` for errors, `os.Stdout` for output. In-process they must instead return
 errors and render into the pager. So the item is **separate every verb's body
 from its wrapper**, which is a refactor with no user-visible change and a large
@@ -251,13 +251,13 @@ A first cut needs only the verbs that make sense with a transcript on screen:
 
 ## 5. Ordering
 
-Gluck's instinct — subject first, then command mode, then insert mode — with one
+Gluck's instinct, subject first, then command mode, then insert mode, with one
 addition at the front, because it unblocks both of the others and fixes a live
 bug on its way past.
 
 | # | phase | why here | proves it |
 |---|---|---|---|
-| **0** | **converge the editor**: headless textarea, `/` and `:` become its one-line case | prerequisite for 4 and 5; deletes two hand-rolled paths | search for `café` — fails today |
+| **0** | **converge the editor**: headless textarea, `/` and `:` become its one-line case | prerequisite for 4 and 5; deletes two hand-rolled paths | search for `café`, fails today |
 | **1** | **the subject**: `switchSubject`, `aria <id>` only, as a true reload | the missing primitive; everything else consumes it | `:open <id>` moves the transcript |
 | **2** | **lineage on the wire**, then retention across a switch | §3's conversation, then the client rule | count reads across a fork-follow: the prefix is not re-read |
 | **3** | **role subjects**: resolve `target-aria`, follow on recast | falls out of 1 + the study feed already streaming | recast a role; the transcript moves |
@@ -275,19 +275,19 @@ From the round of questions on 2026-08-23:
 
 1. **Esc keeps the box VISIBLE**, exits insert mode, and restores the scroll
    keybinds. (`^[` works by construction: it *is* `0x1b`, the same byte Esc
-   sends — vim users say "ctrl-[" for exactly this reason.) The controls inside
+   sends, vim users say "ctrl-[" for exactly this reason.) The controls inside
    the box are **emacs/bash**, as `composePrompt` already is.
 2. The box shows **one line by default and at most four** (revised down from
    five).
 3. **`Alternative`** is the fork we attend and display.
-4. A fork intent is **pinned** — but pressing `f`/`^F` again on a newly selected
+4. A fork intent is **pinned**, but pressing `f`/`^F` again on a newly selected
    node **re-aims the intent and keeps the draft**. So the buffer survives
    re-aiming; only the target moves.
 5. Sending mid-turn gets **no warning and no confirmation**: `Qua` goes out and
    the drain decides whether it opens a turn or becomes a steer. Confirmed.
 
 And an answer owed to Gluck, who asked what I meant by "the inline view": **yes,
-incipit mode** — the streaming view you get before the pager is up, where a
+incipit mode**, the streaming view you get before the pager is up, where a
 completed turn freezes into ordinary scrollback. It is the surface the shipped
 smoke case `TestSmoke_LettersAreKeybindingsNotText` guards, which is why the box
 does not exist there.
@@ -308,5 +308,5 @@ Beyond §3's four, which are the ones that need the conversation:
 4. **Does `listen` still exit when its subject dies**, if the subject is a role
    that might be recast to a living aria a moment later?
 5. **One process, one subject?** Or can the pager hold several and switch
-   between them with the connection kept warm — which is `:back` made cheap, and
+   between them with the connection kept warm, which is `:back` made cheap, and
    an argument for not closing the old socket immediately.

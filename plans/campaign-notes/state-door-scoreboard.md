@@ -62,7 +62,7 @@ headline numbers live.
 | 2 | one door per fig IR append | a SMALL REGRESSION: CachedLogAppend +0..5%, allocs +0 or +1 | | |
 | 3 | door stamps TurnID, closes the open call | InterruptRepair10000 -5..15%; record +8..16 B; resident_ir_bytes +2..4%; **identity oracles must still read 296->0, 8->0, 76->0** | | |
 | 4 | delete the derivation (5 full-log reads) | AgentRestoreHistory10000 <=-30%; InterruptRepair10000 <=-50%; OpenLargeAria -10..25%; first net-negative Go LOC of the campaign. Under -10% means those reads were already warm -- a FINDING, not a failure | | |
-| 5 | one in-flight turn | streaming frame 22 allocs -> 18..22, NOT BELOW 18; wall flat | **SCORED on the round loop**: -8.6/-11.0/-4.1% ns on the delta axis, **-20.8% ns and -20.9% B on the tools axis**; ~1.0 allocation removed PER EVENT | **executor's "not per-byte" CONFIRMED; "allocations fall by a small fixed amount" REFUTED — they fall linearly with events**. On the COMPOSE path it remains unscoreable and non-regressing |
+| 5 | one in-flight turn | streaming frame 22 allocs -> 18..22, NOT BELOW 18; wall flat | **SCORED on the round loop**: -8.6/-11.0/-4.1% ns on the delta axis, **-20.8% ns and -20.9% B on the tools axis**; ~1.0 allocation removed PER EVENT | **executor's "not per-byte" CONFIRMED; "allocations fall by a small fixed amount" REFUTED, they fall linearly with events**. On the COMPOSE path it remains unscoreable and non-regressing |
 | 6 | one record shape | resident_ir_bytes -5..15%; decode -5..10%. FALSIFIER: a uniform record could be BIGGER. Identity oracles again | | |
 | 7 | coordinates become a _meta index | FormState10000 and Vectors10000Branches improve | | |
 | 8-9 | one value model, one patch vocabulary | form Diff -10..30%; Apply_SmallPatch flat to better | | |
@@ -70,7 +70,7 @@ headline numbers live.
 
 ATTRIBUTION CORRECTION 2, 2026-08-18: stage 5's linear per-event allocation
 was published as `mergeTurnTools`' map. **Escape analysis says that map does
-not escape** (`turn_repair.go:45:31`, verified independently) — it is
+not escape** (`turn_repair.go:45:31`, verified independently), it is
 stack-allocated and was never a heap allocation. The linear term is
 `partialAssistant`'s escaping `out.Content` append. Totals and the completeness
 of the three-mechanism account are unchanged; only the label was wrong. Standing
@@ -143,7 +143,7 @@ direction.
   ~12,000 ns streaming frame at ~10,400 ns, at byte-identical 9,545 B and 22
   allocs. B/op and allocs/op are the numbers that carry.
 
-## STAGE 2's INSTRUMENT PASS — 9ed3f561, 2026-08-18
+## STAGE 2's INSTRUMENT PASS: 9ed3f561, 2026-08-18
 
 | prediction | registered | verdict |
 |---|---|---|
@@ -152,7 +152,7 @@ direction.
 | the divergence reaches the WIRE for object/array keys only | from reading genericBody, before measuring | CONFIRMED at the wire, and INDEPENDENTLY by 041454f1 as its own test |
 | the divergence is header-vs-tail | 3a9225b1's framing, inherited | **WRONG, RETRACTED.** It is WARM vs COLD. Both halves of a stage 2 snapshot come off disk, where every value is already a fixed point of the JSON route. |
 | an exact fold count catches an ahead-by-one header | d921742d's sharpened ruling | **WRONG, and I built the model that shows it.** The count is computed from the header's own declared base, so it is satisfied; the surplus record re-applies idempotently. The HEADER IDENTITY at its own base is what sees it: 4 of 4 segments ahead, 3 of 4 behind. |
-| DanglingQuiet bytes/allocs are b.N-independent | 3a9225b1, cross-validated by 041454f1 | CONFIRMED at 1x (n=6, exact) — with the caveat that one 20x sample read 5,053 rather than 5,048, so it is exact-to-0.1%, not exact |
+| DanglingQuiet bytes/allocs are b.N-independent | 3a9225b1, cross-validated by 041454f1 | CONFIRMED at 1x (n=6, exact), with the caveat that one 20x sample read 5,053 rather than 5,048, so it is exact-to-0.1%, not exact |
 
 THE THREE INSTRUMENTS THE BOUNDARY NEEDS, none of which subsumes another:
 header identity (sees ahead-by-one), exact fold count (sees a memo that
@@ -169,11 +169,11 @@ not fail randomly, it fails toward whatever the reader already believes.
 
 ### RETRACTION, 9ed3f561, 2026-08-18 20:40
 
-**"publish-what-was-written is free on the round-loop path" — WITHDRAWN, VACUOUS.**
+**"publish-what-was-written is free on the round-loop path", WITHDRAWN, VACUOUS.**
 The round loop never reaches `store.Form.reduceOne`. Proven two-sided: a panic
 planted there makes `TestWarmAndColdWireBytes` panic (the control fires) and
 leaves the round loop running clean at 183,612 B/op in the same tree. Under
-`-tags figcount`, 20 iterations report **Apply=21, Unmarshal=0, Marshal=0** —
+`-tags figcount`, 20 iterations report **Apply=21, Unmarshal=0, Marshal=0**,
 the 21 are the fixture's own agent setup, under StopTimer.
 
 Instance four of the catalogue, in the measurement arm's hands: no fixture for
@@ -187,7 +187,7 @@ instrument that prices `driveOneRound` cannot price the thing stage 2 changes.
 A store-backed fixture is owed, and it must be sabotage-proven before any count
 is quoted from it.
 
-### WHAT STAGE 2 BUYS, RESTATED AFTER A CORRECTION — 9ed3f561 / d921742d, 2026-08-18
+### WHAT STAGE 2 BUYS, RESTATED AFTER A CORRECTION: 9ed3f561 / d921742d, 2026-08-18
 
 Measured on the owner's real store, read-only, sizes and counts only:
 **1,218 form channels, 1,218 segment files, ZERO with more than one segment.**
@@ -200,12 +200,12 @@ at base 1 *is* folding from zero. Zero benefit today; real benefit the day a
 channel rolls, where the memoised fold stops at ~900 records and the unmemoised
 one grows without limit.
 
-**THE UNMARSHAL SAVING: NOT A SAVING AGAINST TODAY'S CODE — my error, corrected
+**THE UNMARSHAL SAVING: NOT A SAVING AGAINST TODAY'S CODE, my error, corrected
 by d921742d.** I priced one whole-board decode per record (`formReduce`) as the
 status quo. It is not: `ProjectIncrementally` folds DECODED PATCHES through
 `PatchesBetween`, and the cold path (`form.go:290`) unmarshals ONE PATCH per
 record, not the board. The whole-board round trip belongs to `formReduce`, which
-runs on rotation and inside figwal's `StateAt` — **the route the plan already
+runs on rotation and inside figwal's `StateAt`, **the route the plan already
 rejected**. A saving against a rejected alternative is not a saving. The 97µs /
 76µs figures are figaro's own documented measurement, quoted, never mine, and
 they price a path nobody walks.
@@ -216,7 +216,7 @@ and the provider's need for an LT, a turn and a bookmark. Gluck's rule that
 NOTHING MAY PIN EVICTED BYTES is a retention property, and the projection is
 what violates it.
 
-**The size of what is retained**, since that is what the deletion returns —
+**The size of what is retained**, since that is what the deletion returns,
 encoded native messages per aria, on disk: median 0 B, p90 249,455 B, **p99
 2,463,337 B, max 9,841,806 B**, 200.2 MiB across 1,463 channels. STATED AS A
 LOWER BOUND: these are JSON bytes at rest, and the in-memory form is larger.
@@ -224,9 +224,9 @@ LOWER BOUND: these are JSON bytes at rest, and the in-memory form is larger.
 **The caveat that travels:** 1,218 channels at median 3 records means the store
 is dominated by short-lived arias. A libretto held for weeks, or a role patched
 every turn, moves the p99 and starts the bound working. The null says the bound
-HAS NOT WORKED YET — not that it will not.
+HAS NOT WORKED YET, not that it will not.
 
-### STAGE 2, SCORED — 9ed3f561, 2026-08-18 21:0x
+### STAGE 2, SCORED: 9ed3f561, 2026-08-18 21:0x
 
 `46f09f6c -> da6a47a7` (the memo), executor 3ba636c7. **All four expectations,
 registered before the code existed, MET.** Reproduced by the arm before being
@@ -245,19 +245,19 @@ cheaper skipped records and is wrong rather than fast.
 **The memoLanded question, ruled (3):** split, and the flag RETIRED rather than
 flipped. The memo is a path BESIDE `StateAt`, not a change to it, so flipping
 would have gone red for the right numbers on the wrong subject. `StateAt`'s
-25/25/25 is now a PERMANENT STATEMENT — movement there means figwal changed or
+25/25/25 is now a PERMANENT STATEMENT, movement there means figwal changed or
 the memo leaked into a path it may not touch.
 
 **The arm's fifth instrument fault of the day, and the sharpest.** The grading
 harness called `FormSnapshotSource` directly and never went through the
 `SnapshotCursor` that holds the memo. **The cold case passed exactly as
-registered — 1/0/3, perfect and meaningless.** Only the WARM case went red
+registered, 1/0/3, perfect and meaningless.** Only the WARM case went red
 (Apply=25, Unmarshal=1 where the memo gives 22 and 0). The assertion added to
 distinguish *a memo that is never reached* caught *an instrument that never
 reached the memo*. Same shape, other side. Without that case the duplicate
 would have graded the memo with three green cases and no contact.
 
 **Independence, stated honestly:** the arm's duplicate gives independence of
-AUTHORSHIP, not of MECHANISM — both instruments call the same source and take
+AUTHORSHIP, not of MECHANISM, both instruments call the same source and take
 the segment base from disk. The only check on a different road is HEADER
 IDENTITY, and it belongs to the implementer, which is the right way round.

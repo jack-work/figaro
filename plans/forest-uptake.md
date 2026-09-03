@@ -1,9 +1,9 @@
-# Forest uptake — phases 2-5
+# Forest uptake: phases 2-5
 
 Working branch `phase/forest-uptake`, worktree `/home/gluck/dev/figaro-qua/forest`.
 Successor to the storm-triage plan; S-numbers refer to that file's verdict table.
 
-## Phase 2 — figwal v0.18.0 (DONE, 5f359789)
+## Phase 2: figwal v0.18.0 (DONE, 5f359789)
 
 go.mod bumped, `vendorHash = sha256-4NyISpnIjRb33vIY3bEJut5CvILouY9BkQgfNcmWVRw=`,
 nix build green, unit + `-race -count=3` green on store/figaro/angelus/provider.
@@ -31,7 +31,7 @@ eviction order respects reads that never touched forest's mutex, and `Evicted`
 fires outside every lock so the layer below can clear its atomic pointer
 without inverting.
 
-## Phase 3 — VERDICT: the decoded layer does not need forest
+## Phase 3: VERDICT: the decoded layer does not need forest
 
 Measured by IDENTITY, not by heap (heap is the wrong ruler and has misled this
 project before):
@@ -189,7 +189,7 @@ hold. Editing in place is the study-patch mutation class of bug; a per-LT cache
 makes the damage permanent. Test: take a `Read()`, hollow underneath it, require
 the held slice to still read correctly.
 
-## Phase 4 — VERDICT: also a seed, not a re-seat
+## Phase 4: VERDICT: also a seed, not a re-seat
 
 Same question, same instrument, one layer up. Two branches composing one
 history, compared by identity:
@@ -225,7 +225,7 @@ silently skipped. Add S3's prescribed per-node constant (~400 B) to `turnBytes`,
 since `nodeSize` charges marshaled JSON and under-charges node-heavy turns.
 
 **Phases 3 and 4 measure SEPARATELY.** S3 is ACQUITTED as an aliasing
-amplifier — re-run on the phase-2 build:
+amplifier, re-run on the phase-2 build:
 
     go run ./scratch/s3probe -msgs 200 -lines 5000
     decoded fig IR          67.41 MiB
@@ -239,10 +239,10 @@ the per-node overhead is unfixed, not that the aliasing charge stands.)
 The `saved=0.0 MiB` observation that once suggested otherwise is explained and
 is not evidence: `TestUIWindowBoundsAResidentAgent`'s harness did a boot
 `log.Read()` that left the whole decoded IR resident, so a 2 MiB UI bound was
-noise against it, measured with `HeapInuse` — too coarse a ruler for a 2 MiB
+noise against it, measured with `HeapInuse`, too coarse a ruler for a 2 MiB
 delta. A fixture fault on the wrong axis, not a product one.
 
-## PHASE 3 (REPRIORITIZED) — the open turn (S6). Gluck: "incremental
+## PHASE 3 (REPRIORITIZED): the open turn (S6). Gluck: "incremental
 ## building should be priority 1, no putting that off."
 
 We were bounding and sharing a quantity we should refuse to create. Everything
@@ -309,11 +309,11 @@ below `Live.From` to the cache as an ordinary run.
 
 - **Bytes by aria need a METER, not a profiler.** Go's heap profiler ignores
   pprof labels; only CPU and goroutine profiles carry them. Measured:
-  a live labelled goroutine allocating 128 MB — `HEAP names the aria: false`,
+  a live labelled goroutine allocating 128 MB, `HEAP names the aria: false`,
   `GOROUTINE names the aria: true`. So `perf/pprof-aria-labels` (#19) answers
   "which aria is wedged", never "which aria is fat".
 - **RSS tracks sys, not inuse.** 1.86 GB RSS against 855 MB heap inuse and
   2.2 GiB sys under GOMEMLIMIT 2.0 GiB: much of the gap is arena the runtime
   had no reason to return. `soft_limit_mb` is a zero-code lever to MEASURE
-  before attributing anything else — and to measure on an isolated storm root,
+  before attributing anything else, and to measure on an isolated storm root,
   not on the live daemon.

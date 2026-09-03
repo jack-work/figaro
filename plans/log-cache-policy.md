@@ -6,7 +6,7 @@ conditions that are measurements rather than opinions.
 ## The decision
 
 Every log that is tree-shaped in xwal gets an in-memory cache, and the
-shape is **LRU over ranges** — not the tail-window cachedLog uses today.
+shape is **LRU over ranges**, not the tail-window cachedLog uses today.
 The reasoning is his and it is sound: where a log is never paged
 backward, LRU degenerates to "hold what is used" and costs nothing
 extra; where a log IS paged backward (the IR under a fast scroll, a
@@ -23,7 +23,7 @@ cache, shipped in v0.18.0.
 
 1. **LRU OWNS THE COLD RANGES, NOT THE HOT TAIL.** Measured: forest
    `Range` costs 1218 ns/op under 16 readers where cachedLog's
-   atomic-pointer view costs 516 — and the sign flips, forest slowing
+   atomic-pointer view costs 516, and the sign flips, forest slowing
    with contention while the lock-free view speeds up. So the hot tail
    keeps its immutable published view and its lock-free read; LRU takes
    the ranges below it. Anything that puts a mutex on the tail read is
@@ -32,8 +32,8 @@ cache, shipped in v0.18.0.
 2. **SCAN-SHAPED READS PASS THROUGH.** Measured: one whole-history read
    through the cache cost two primed neighbours their residency (1 and 1
    rematerializations each). figaro already wrote this policy down in
-   cachedLog.ReadPage — "a scroll must not permanently re-resident a
-   prefix nobody will read again" — and the translator's cold pass is
+   cachedLog.ReadPage, "a scroll must not permanently re-resident a
+   prefix nobody will read again", and the translator's cold pass is
    exactly such a read: it walks the whole log to rebuild a request
    body. Cache what a reader will come back to; pass through what it
    will not.

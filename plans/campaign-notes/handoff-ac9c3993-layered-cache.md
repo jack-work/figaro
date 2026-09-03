@@ -14,7 +14,7 @@ the EVIDENCE under it: what was measured, how, and what each number forbids.
 `Layered.live` is specified as "the in-flight region, lock-free". For fig IR
 that is NARROWER than what is lock-free today.
 
-`cachedLog` publishes its WHOLE resident window through an `atomic.Pointer` —
+`cachedLog` publishes its WHOLE resident window through an `atomic.Pointer`,
 measured at ~420 rows on a real 2556-message aria, not just the open turn.
 Every read of recent-but-sealed history is served from it without a lock.
 
@@ -39,7 +39,7 @@ Every layer in the design is justified by a measurement except one: `mem` for
 FIG IR, which the doc marks "always".
 
 Phase 3 measured what forest could buy that layer and found all three
-candidate jobs already taken — sharing by seeding at open, bounding by the
+candidate jobs already taken, sharing by seeding at open, bounding by the
 window, serving-neither by the pass-through. What was NOT measured is whether
 a mem LRU helps bounded, non-scan RE-reads of a cold range. That is the only
 case left, it is rare (`show -n` twice on the same old region), and
@@ -47,13 +47,13 @@ case left, it is rare (`show -n` twice on the same old region), and
 its own words: *"a scroll must not permanently re-resident a prefix nobody
 will read again."*
 
-Not retired — unmeasured. It deserves a number before it is built, and
+Not retired, unmeasured. It deserves a number before it is built, and
 "always" is a stronger claim than the evidence currently supports.
 
 ## 3. The three findings that are the design's spine
 
 **(a) The duplication is a second DECODE and a second COMPOSITION, and
-seeding at open kills both.** Proven by pointer identity, not by heap — heap
+seeding at open kills both.** Proven by pointer identity, not by heap, heap
 is the wrong ruler here and has misled this project at least three times.
 
     fig IR:  shared record LT 50: childA duplicated=true, childB duplicated=true
@@ -62,7 +62,7 @@ is the wrong ruler here and has misled this project at least three times.
              shallow copy of 40 turns: 120 node strings compared, every one shared
 
 The 40 shared upstairs are prose, which compose passes through; the 80 minted
-are tool nodes' Input/Output, which compose rebuilds — and by BYTES the minted
+are tool nodes' Input/Output, which compose rebuilds, and by BYTES the minted
 ones dominate. Seeding is cheaper than any cache and orthogonal to it.
 
 **(b) LRU may never own the hot tail.** See §1 for the numbers.
@@ -71,7 +71,7 @@ ones dominate. Seeding is cheaper than any cache and orthogonal to it.
 through.** One scan cost two primed neighbours a rematerialization each; five
 listing-shaped scans, the same. A translator cold pass IS such a read.
 
-## 4. What S6 costs today — the before-number for incremental composition
+## 4. What S6 costs today: the before-number for incremental composition
 
 `composeTurn` reads the whole open region; `compose.Nodes` rebuilds every node
 of it on every stream event; `Server.Update` then diffs and discards whatever
@@ -95,7 +95,7 @@ corroboration, not proof.
 
 **The hazard to pin before writing incremental composition:** it must produce
 exactly what wholesale composition produces, for the same inputs, AT EVERY
-FRAME — not only at seal. A composer converging only at seal shows correct
+FRAME, not only at seal. A composer converging only at seal shows correct
 transcripts and wrong live frames, and live/committed divergence is forbidden
 by invariant. Drive N frames incrementally, compose wholesale, assert
 node-for-node equality at every frame.
@@ -118,7 +118,7 @@ node-for-node equality at every frame.
 
 **Leave:** the trim-to-Put re-seat. A measurement retired it; do not rebuild it.
 
-## 6. On fixtures — read this before trusting any number here
+## 6. On fixtures: read this before trusting any number here
 
 Seven fixture faults were caught in this campaign, each of which would have
 become a confident wrong report:
@@ -131,7 +131,7 @@ become a confident wrong report:
 4. a text comparison fataling on the outfit birth record, which carries no text
 5. a sharing test that had compared nothing
 6. a compose test reading only `Node.Markdown`, so tool text was invisible
-7. a compose test building `tool_result` with no matching `tool_use` — a result
+7. a compose test building `tool_result` with no matching `tool_use`, a result
    alone composes to NOTHING, giving `map[prose:14]` and the answer
    "0 MINTED, composition already shares", which is the opposite of the truth
 
@@ -155,8 +155,8 @@ fix needed no new API because the policy already shipped in
 `cachedLog.ReadPage`'s comment.
 
 They corrected me at least as usefully: the deadlock inversion, the moved
-seam's leak hazard, that a fresh fork's reads all land on the shared path, and
-— the sharpest — that my scan test had the wrong SUBJECT. Neither of us would
+seam's leak hazard, that a fresh fork's reads all land on the shared path, and,
+the sharpest, that my scan test had the wrong SUBJECT. Neither of us would
 have derived the four maxims alone.
 
 Two of my own conclusions were overturned by my own later measurements: the

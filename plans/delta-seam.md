@@ -661,24 +661,24 @@ here as new paragraphs beside it rather than as edits to it.
 Part II says "every segment carries a HEADER SNAPSHOT". IT ALREADY DOES,
 and not in the place two readers of figwal first looked. The per-baseIndex
 WATERMARK FILES (`<chDir>/<base>.jsonl`) are written only at channel
-creation, recovery and fork backfill — that reading is correct and it is
+creation, recovery and fork backfill, that reading is correct and it is
 not the mechanism. The mechanism is figwal's OPAQUE BLOCK-0 SEGMENT
 HEADER: `Options.OnSegmentOpen` puts a log in header mode, `channelOpts`
 wires EVERY reducible channel to `reducibleFold`, and `openActiveLocked`
 folds `(prevHeader, sealedPayloads)` and calls `WriteHeader` on every
-segment creation — which is every rotation. `StateAt(idx)` then folds that
+segment creation, which is every rotation. `StateAt(idx)` then folds that
 header with `[segBase..idx]` and nothing earlier.
 
 MEASURED, not read (probe /var/tmp/fig-hdr-probe, counting reducer,
 figwal v0.18.0 from the module cache, 4 KiB segments, 400 patches, 8
 segments): 0 folds during the appends; 400 on the first StateAt (the
-deferred rotations settling — each record folded ONCE, ever); then exactly
+deferred rotations settling, each record folded ONCE, ever); then exactly
 44 = idx − segBase + 1 at idx 400, 300 and 200; 1 at idx 1; and 44 again
 on the first call after Close and REOPEN, so the bound holds cold from
 disk. Full account: ~/notes/figaro/segment-headers-already-there.md.
 
 CONSEQUENCE: the write side of this design is ALREADY PAID on every aria
-on disk, and figaro has never read it — `StateAt`/`HeaderAt` have zero
+on disk, and figaro has never read it, `StateAt`/`HeaderAt` have zero
 non-test callers in `internal/`.
 
 ## SO STAGE 2 IS A MEMO, NOT A PERSISTENCE LAYER
@@ -699,7 +699,7 @@ TWO COUNTS DECIDE WHETHER IT WAS BUILT RIGHT, and neither is a time:
 
   THE MEMO IS REACHED. A second request inside one iteration applies only
   the patches BETWEEN the two LTs. This count must read ZERO before stage
-  2 by construction — figwal has no memo — which makes the counter's
+  2 by construction, figwal has no memo, which makes the counter's
   current value a prediction that can be checked, and therefore a counter
   proven able to fail.
 
@@ -716,7 +716,7 @@ expose what exists, rather than write new watermarks.
 The header half of every snapshot is folded by figwal through
 `formReduce`, i.e. THROUGH JSON. The tail half is folded by figaro through
 `form.Fold`, i.e. DECODED. They agree only if `form.Snapshot`'s
-Marshal/Unmarshal round trip is EXACT — nil vs empty, key sets, unknown
+Marshal/Unmarshal round trip is EXACT, nil vs empty, key sets, unknown
 fields, ordering.
 
 So fold-from-header == fold-from-zero is necessary and NOT sufficient: it
@@ -736,7 +736,7 @@ atomic pointer precisely because it is safe to share. A memo may hand the
 same snapshot to any number of readers, and a later fold cannot disturb
 one already handed out.
 
-WHAT STILL MUST BE COUNTED is the other half of the rule — NOTHING PINS
+WHAT STILL MUST BE COUNTED is the other half of the rule, NOTHING PINS
 EVICTED BYTES. A snapshot retains the values folded into it; those values
 must be decoded copies, never slices of the log's resident payload. That
 is a residency count, not an argument.
@@ -753,7 +753,7 @@ nothing. Three rules on the accessor, each of which is a MISS rather than
 a LIE, in the layered-cache tradition:
 
   1. IT IS VALID FOR ITS OWN STEP. Called after the iteration has moved
-     on, it returns an ERROR — never a snapshot from another position.
+     on, it returns an ERROR, never a snapshot from another position.
   2. A BACKWARD REQUEST IS LEGAL AND BOUNDED. It re-folds from the header;
      it must never silently rewind the memo, and the count instrument must
      see it as what it is.
@@ -787,7 +787,7 @@ Three sites today, enumerated rather than assumed:
 Stage 2 assembles a snapshot from two implementations: the header half is
 folded by figwal through `formReduce`, i.e. THROUGH JSON, and the tail
 half by figaro through `form.Fold`, i.e. DECODED. `encoding/json` rewrites
-bytes on the JSON route — `marshalerEncoder` (encode.go:487) compacts
+bytes on the JSON route, `marshalerEncoder` (encode.go:487) compacts
 every Marshaler's output with `escapeHTML` true, and `json.RawMessage` IS
 a Marshaler, so every value passes through it. That is not our code and it
 is not avoidable while the header is produced by `json.Marshal`;
@@ -801,14 +801,14 @@ on disk is already a fixed point of the JSON route, so the header half and
 the decoded half hold THE SAME BYTES rather than merely equal ones.
 
 MEASURED, at the wire and not at the snapshot: 136 (segBase, lt) pairs
-across a 15-record fixture, RENDERED WIRE BYTES identical at every one —
+across a 15-record fixture, RENDERED WIRE BYTES identical at every one,
 both as a whole-board render and as the PREV of a further patch, so that
 `.OldString` and the board-carried delta limits participate. A divergence
 in the second would have moved TRUNCATION, which nothing was watching.
 
 ## WHAT HAPPENS IF IT IS BROKEN
 
-A payload built by hand — never through `json.Marshal` — makes the two
+A payload built by hand, never through `json.Marshal`, makes the two
 folds put DIFFERENT BYTES on the wire for the same LT. Since those bytes
 are what the per-LT translation cache stores and what prompt caching keys
 on, the model's prompt would depend on WHEN A SEGMENT ROTATED.
@@ -836,7 +836,7 @@ alone and says so.
 
 Part II said the one-segment bound is asserted as a COUNT rather than a
 time. THAT IS NO LONGER SUFFICIENT. An equivalence oracle is structurally
-blind to a header that reads one record TOO MANY — form patches are
+blind to a header that reads one record TOO MANY, form patches are
 idempotent, so re-applying a record the header already holds is a no-op;
 measured, that error is caught in 0 of the 120 pairs where lt > segBase.
 
@@ -858,8 +858,8 @@ that is the instrument the oracle cannot supply. IT IS NOT.
 
 THE COUNT IS COMPUTED FROM THE HEADER'S OWN DECLARED BASE. A header that
 holds one record too many while still declaring base b makes GetSnapshot
-fold records[b..lt] — exactly lt − segBase + 1 applications, so the
-equality PASSES — and the surplus record re-applies idempotently, so the
+fold records[b..lt], exactly lt − segBase + 1 applications, so the
+equality PASSES, and the surplus record re-applies idempotently, so the
 value matches too. Canaried on a reference model of stage 2's shape: the
 equality does not fire in the ahead direction.
 
@@ -892,17 +892,17 @@ Asserted directly, it stops being an accident.
   zero-valued memo claiming to stand at LT 0 makes every request inside
   the FIRST segment silently skip its first record. figaro's LTs start at
   1, so the defect would have been invisible in production until something
-  numbered from zero — a shape that survives only by an unrelated
+  numbered from zero, a shape that survives only by an unrelated
   convention is a shape waiting.
 
   PUBLISH WHAT WAS WRITTEN. internal/store/form.go:547 marshals the patch
   for disk and six lines later publishes the in-memory snapshot from the
   SAME patch VERBATIM, so the live board and the board read back from disk
-  can hold different bytes for one value — and for OBJECT- and
+  can hold different bytes for one value, and for OBJECT- and
   ARRAY-valued keys that divergence reaches the wire, where genericBody
   hands objects over raw. The fix is one round trip per form patch (per
   set, not per delta): publish the snapshot built from the bytes that were
-  WRITTEN. NULL TODAY, STRUCTURAL AFTERWARDS — verbatim bytes can enter at
+  WRITTEN. NULL TODAY, STRUCTURAL AFTERWARDS, verbatim bytes can enter at
   internal/cli/form.go:30, but rpc/caller.go:277 marshals params in
   transit, so no known path delivers them to Form.Apply. The writer
   invariant above is about DISK and would never have seen this: two halves
@@ -916,7 +916,7 @@ Ctrl-C case; recorded by d921742d, 2026-08-18.
 On an interrupt today the resultTic is NEVER APPENDED: turn.go:751 takes
 the repair branch and returns before the append at 763. So the string
 `interrupted: tool execution was cancelled`, built in collectToolResults,
-is discarded — and the string that actually reaches disk is
+is discarded, and the string that actually reaches disk is
 `interrupted: tool execution did not complete`, written by repairTurnTail.
 
 Two sentences one word apart, one durable and one not, and nothing says
@@ -927,7 +927,7 @@ one place for the sentence to live.
 
 AND THE DURABLE ONE IS NOW LOAD-BEARING FOR A TEST. `InterruptedToolNotice`
 is exported precisely so the pty case and production cannot drift, and it
-is the only mark reachable ONLY through the figaro.interrupt RPC —
+is the only mark reachable ONLY through the figaro.interrupt RPC,
 Agent.Interrupt sets isInterrupted, repairTurnTail runs only under it. A
 client that cancels its own context and exits cannot produce it. Whoever
 changes that string, or the branch that writes it, is changing the only
@@ -936,8 +936,8 @@ turn stopped somehow".
 
 SCOPE, STATED BECAUSE IT IS EASY TO OVERQUOTE: that mark requires A TOOL
 IN FLIGHT. It proves Ctrl-C reaches the daemon for a turn with an open
-tool call. A PROSE-ONLY interrupt — the model mid-paragraph, no tool
-running — is a different case and is not covered by it.
+tool call. A PROSE-ONLY interrupt, the model mid-paragraph, no tool
+running, is a different case and is not covered by it.
 
 ---
 
@@ -955,7 +955,7 @@ walk before any of it was reported upward.
 
     form channels on disk                 1,218   (1,217 on the second
                                                    walk: one aria was born
-                                                   between them — ours)
+                                                   between them, ours)
     segment files                         1,218
     channels with MORE THAN ONE segment       0   (0.0%)
     fattest channel                     117,013 B = 5.6% of ONE 2 MiB
@@ -989,9 +989,9 @@ was measured and then WITHDRAWN, because it prices a route this plan
 already rejected. Today figaro does NOT decode the board per record:
 `ProjectIncrementally` folds DECODED PATCHES from the resident window, and
 the cold path (`form.go:290`, `patchesFromLog`) unmarshals ONE
-`message.Patch` per record — not the board. The whole-board
+`message.Patch` per record, not the board. The whole-board
 Unmarshal/Apply/Marshal belongs to `formReduce`, which runs on ROTATION
-and inside figwal's `StateAt` — and StateAt is exactly the route ruled
+and inside figwal's `StateAt`, and StateAt is exactly the route ruled
 against earlier in this document.
 
     A SAVING MEASURED AGAINST AN ALTERNATIVE WE REJECTED IS NOT A SAVING.
@@ -1003,7 +1003,7 @@ Nobody quotes it when this lands.
 What stage 2 buys on today's data is what Part II said it buys in its
 first paragraph: `IncrementalProjection` and its five carried version
 fields, the four hand-written `acceptAssistantProjection` copies, the
-provider's need to hold an LT, a turn, a projection and a bookmark — and
+provider's need to hold an LT, a turn, a projection and a bookmark, and
 Gluck's ruling that NOTHING MAY PIN EVICTED BYTES, which the projection is
 what violates.
 
@@ -1017,7 +1017,7 @@ A FILE WALK, and it has not been taken.
 ## WHY THIS IS RECORDED RATHER THAN QUIETLY ABSORBED
 
 Gluck's standing instruction on this design is that a regression is
-REPORTED and TUNED, not treated as a veto. There is no regression here —
+REPORTED and TUNED, not treated as a veto. There is no regression here,
 only a benefit that is STRUCTURAL rather than TEMPORAL. What changes is
 what may be CLAIMED when it lands, and a stage whose justification is
 written down honestly before it ships cannot be re-justified afterwards by
@@ -1028,7 +1028,7 @@ whoever needs it to have been worth it.
 d921742d, 2026-08-18, on fd15d2a0's grep. The LEDGER above lists "the four
 hand-written acceptAssistantProjection copies" among what stage 2 deletes.
 THEY ARE ALREADY GONE: `git log -S` puts their death at 493a6bcb, nine
-sites — four calls and four definitions — removed together with the
+sites, four calls and four definitions, removed together with the
 five-line append ritual, in PIECE A.
 
 So they must NOT be re-quoted when the deletion lands, on exactly the
@@ -1043,7 +1043,7 @@ fb08a77c:
   - the `projection` field on all four providers, its mutex-guarded read
     and write-back in catchUp, and openaichat's `p.projection = nil`
     cache-clear path
-  - THE RETENTION: `State` carries the ENCODED natives — the 200.2 MiB
+  - THE RETENTION: `State` carries the ENCODED natives, the 200.2 MiB
     lower bound, and the thing that pins bytes the log's window believes
     it evicted
 
@@ -1059,7 +1059,7 @@ carried separately as a delta block.
 THEREFORE THE IR PATH PASSES THE **PREVIOUS** ENTRY'S FormChannelVersion
 to the snapshot accessor, not its own. Passing its own would hand the
 encoder a board with this record's transitions already folded in, and the
-encoder would render them TWICE — once as state and once as a delta.
+encoder would render them TWICE, once as state and once as a delta.
 
 AND NO VALUE ORACLE CAN SEE THAT, for the reason this stage has now met
 four times: form patches are IDEMPOTENT, so a board one record ahead,
@@ -1071,10 +1071,10 @@ consumer side.
 THE FIRST RECORD HAS NO PREVIOUS, and that is a legitimate case, not an
 error: its base is the EMPTY board, which is what a cold walk starts from
 (`snap = form.Snapshot{}`, `lastForm = 0`). An accessor asked for version
-0 must ANSWER with the empty board rather than refuse — which is precisely
+0 must ANSWER with the empty board rather than refuse, which is precisely
 why the memo carries an EXPLICIT VALID BIT and not a sentinel index.
 
-## BOTH OF THE ABOVE, RE-VERIFIED BY THE INCOMING BEARER — AND THE FIRST
+## BOTH OF THE ABOVE, RE-VERIFIED BY THE INCOMING BEARER: AND THE FIRST
 ## ONE ANSWERS ABOUT A BRANCH
 
 f3aa1d0b (role @980dc16c), 2026-08-18, on taking the role from d921742d,
@@ -1083,8 +1083,8 @@ rather than inherited, and one of them needs a qualifier that was not
 wrong so much as unstated.
 
 THE OFF-BY-ONE IS CONFIRMED, by reading the loop rather than the summary.
-In `ProjectIncrementally`'s miss branch, `snap` is caught up to `lastForm`
-— which at that instant still holds the PREVIOUS record's version — then
+In `ProjectIncrementally`'s miss branch, `snap` is caught up to `lastForm`,
+which at that instant still holds the PREVIOUS record's version, then
 `msg.Patches` is set to `PatchesBetween(lastForm, entry.FormChannelVersion)`,
 and only AFTER that does `lastForm` advance to this record's version. So
 Encode does receive the board as of the previous record, with this
@@ -1098,8 +1098,8 @@ ON feat/delta-seam. IT IS NOT ON feat/layered-cache. Counted today:
     feat/delta-seam      2 mentions, both in a test and a comment, no code
     feat/layered-cache   9 LIVE SITES across the four providers
 
-So a reader standing in the layered worktree — which is where this plan
-LIVES — greps the name, finds nine live sites, and concludes the debt is
+So a reader standing in the layered worktree, which is where this plan
+LIVES, greps the name, finds nine live sites, and concludes the debt is
 still owed. It is not: it is paid on the branch that merges back. The
 ledger line is retired either way and must not be re-quoted when the
 deletion lands.
@@ -1109,14 +1109,14 @@ hat: A GREP ANSWERS ABOUT THE WORKING TREE YOU ARE STANDING IN, NOT ABOUT
 THE CAMPAIGN. Where work is split across branches that have not merged,
 "the code still does X" and "the code on my branch still does X" are
 different claims, and only one of them was measured. Quote the branch with
-the count, always — the same discipline as quoting n with a floor.
+the count, always, the same discipline as quoting n with a floor.
 
 # THE DELETION'S THIRD STEP OWES TWO ENUMERATIONS, AND A DELETED TYPE
 # TAKES ITS TESTS WITH IT
 
 f3aa1d0b (role @980dc16c), 2026-08-18, ruled BEFORE step 3 is cut, on
 fd15d2a0's report that step 2 is the accessor swap and step 3 is the
-retention cut. Step 3 needs no fresh ruling on WHETHER — Gluck already
+retention cut. Step 3 needs no fresh ruling on WHETHER, Gluck already
 ruled that nothing may pin evicted bytes. This is about what it owes on
 the way out.
 
@@ -1134,7 +1134,7 @@ never.
 ## ENUMERATION ONE: WHERE EACH CARRIED FACT LIVES AFTERWARDS
 
 Every one of those five exists because something already went wrong
-without it, and the struct says so in its own comments — "MUST survive a
+without it, and the struct says so in its own comments, "MUST survive a
 warm start: without it the next pass asks for patches from 0 and
 re-renders the whole board onto the first new message, WHICH THE PER-LT
 CACHE THEN MAKES PERMANENT." That is a paid-for defect, written down at
@@ -1153,14 +1153,14 @@ property that is dropped without anyone noticing it was ever held.
 
 Six test files construct `IncrementalProjection` directly. When the type
 goes they will not compile, and the fastest way to make a package build
-again is to delete them — at which point the properties they guard go
+again is to delete them, at which point the properties they guard go
 unguarded SILENTLY, in a commit whose diff reads as tidying.
 
     form_projection_test.go      cold-equals-warm; every patch renders
                                  exactly once across resumes
     projection_test.go           suffix-only; fingerprint invalidation;
                                  no advance past an encode failure
-    projection_reads_test.go     the READ COUNTERS — cached records cost
+    projection_reads_test.go     the READ COUNTERS, cached records cost
                                  no reads; reads scale with misses
     study_projection_test.go     the studied-form half of every rule above
     watermark_stale_test.go      warm start stale by one message
@@ -1172,7 +1172,7 @@ EACH IS CLASSIFIED, IN THE COMMIT, AS EXACTLY ONE OF:
       commit says so by name.
   (b) A TEST OF A SYSTEM PROPERTY. The property outlives the machinery and
       must be RE-POINTED at the replacement, still red-able. If the subject
-      changed, THE NAME CHANGES — 9ed3f561 retired `memoLanded` rather than
+      changed, THE NAME CHANGES, 9ed3f561 retired `memoLanded` rather than
       flipping it for exactly this reason, and the rename rule was priced
       tonight at 2,488 B and a 33% phantom win. A test kept under its old
       name over new machinery is the quiet half of that failure.
@@ -1180,7 +1180,7 @@ EACH IS CLASSIFIED, IN THE COMMIT, AS EXACTLY ONE OF:
 MY EXPECTATION, offered so it can be falsified rather than agreed with:
 the read counters in projection_reads_test.go are (b) and are the single
 most valuable thing in the six, because they are the only instrument that
-can see the retention cut REGRESS — a cursor that pins a span reads like
+can see the retention cut REGRESS, a cursor that pins a span reads like
 a correct projection and costs like the old one. If step 3 lands with
 those counters deleted, the stage's central claim becomes unfalsifiable on
 the same day it is made.
@@ -1199,11 +1199,11 @@ already banked.
 ## TREE IS INADMISSIBLE
 
 f3aa1d0b (role @980dc16c), 2026-08-18, on 9ed3f561's audit of the
-executor's gate — an audit it asked for on itself, having caught one stale
+executor's gate, an audit it asked for on itself, having caught one stale
 gate claim earlier the same evening.
 
 THE AUDIT'S VERDICT WAS THAT THE GATE IS SOUND: at da6a47a7 the log
-carries section markers, so the claim is CHECKABLE rather than trustable —
+carries section markers, so the claim is CHECKABLE rather than trustable,
 43 ok lines and zero FAIL inside the full-gate section, the seven FAILs
 all above it in the canary sections exactly as their author described them
 BEFORE anyone looked, four RC fields at zero, and a GATE_DONE completion
@@ -1220,7 +1220,7 @@ carrying no commit.
     BELIEVES.
 
 RULED, retroactively and going forward: an unstamped gate log may not be
-cited. STATED PLAINLY SO IT IS NOT OVERQUOTED — this does not make
+cited. STATED PLAINLY SO IT IS NOT OVERQUOTED, this does not make
 tonight's claims false. Every claim in this document rests on
 reproductions, canaries and re-verifications, and not on those logs; what
 changes is that the logs stop counting as a SECOND witness they were never
@@ -1233,7 +1233,7 @@ because this campaign's best moves turn a rule into a shape: something
 reads the log and REFUSES it unstamped, refuses a token that is not an
 object in the database, and refuses a stamp naming a different tree than
 the claim. The eight existing logs are a red corpus that already exists in
-the wild — a canary that need only be RUN.
+the wild, a canary that need only be RUN.
 
 VALIDATE THE TOKEN, NEVER PATTERN-MATCH IT. The auditor's own first pass
 reported three commit stamps that were not commits: two non-objects and
@@ -1246,22 +1246,22 @@ in one evening, and the first one worn by the auditor.
 f3aa1d0b (role @980dc16c), 2026-08-18, on fd15d2a0's fork, brought BEFORE
 any line of projection.go moved.
 
-THE FORK AS POSED. (A) put the board on the accessor —
+THE FORK AS POSED. (A) put the board on the accessor,
 `provider.Form` gains `SnapshotAt(version)`, and `store.EntriesWithState`
 is then called by nobody and should be deleted as speculative. (B) put the
-board on the iterator — the projection walks with `EntriesWithState`,
+board on the iterator, the projection walks with `EntriesWithState`,
 which is the shape Part II ruled canonical. They conflict: under B the
 accessor method is redundant, under A the Seq2 is dead.
 
 RULED: B, WITH ITS SIGNATURE CORRECTED, AND `foldedIndex` DELETED.
 
 THE REASON, and it is the question this campaign's two falsified rulings
-both skipped — WHAT DOES EACH PART ANSWER ABOUT:
+both skipped, WHAT DOES EACH PART ANSWER ABOUT:
 
     foldedIndex func(Entry[T]) uint64
 
 says THE FOLDED INDEX IS A FUNCTION OF THE ENTRY. IT IS NOT. The index
-wanted is the PREVIOUS entry's FormChannelVersion — a function of the
+wanted is the PREVIOUS entry's FormChannelVersion, a function of the
 ITERATION'S POSITION. fd15d2a0 found the symptom exactly (the closure must
 become stateful, resting on a call-order invariant `EntriesWithState` does
 not state and holds only by accident of writing) and proposed to pin it
@@ -1273,25 +1273,25 @@ So the accessor takes the index:
 
     iter.Seq2[Entry[T], func(idx uint64) (S, error)]
 
-The mapping becomes visible at the call site — `get(prevFormVersion)` on
+The mapping becomes visible at the call site, `get(prevFormVersion)` on
 the IR path, `get(e.LT)` for a form log iterating itself. KEPT: the memo,
 its counts, the one-segment bound, and all three accessor rules including
 "valid for its own step", whose step check is untouched. DELETED: a
 stateful closure, an unstated invariant, and the test that would have
-guarded it. COST: one signature change on an API with ZERO CALLERS — one
+guarded it. COST: one signature change on an API with ZERO CALLERS, one
 commit now, nothing later.
 
 AND THE THIRD ARGUMENT AGAINST A, CHECKED RATHER THAN ARGUED: `provider.Form`
 has TWO implementations, `formView` and `librettoView` (agent.go:1198,
 1141), and the studied-form half uses `PatchesBetween` ONLY
 (projection.go:201). Under A, `librettoView` implements `SnapshotAt` to
-satisfy a type, for a caller that does not exist — fd15d2a0's own "two
+satisfy a type, for a caller that does not exist, fd15d2a0's own "two
 doors justified by a caller who does not exist", arriving once per
 implementation.
 
 RECORDED BECAUSE IT IS A PATTERN NOW: the executor recommended B and said
 it was not confident enough to act alone. It was right about the
-destination and right to doubt the vehicle — the discomfort it could not
+destination and right to doubt the vehicle, the discomfort it could not
 name WAS the signature. Second time tonight a worker's unease located a
 defect its argument had not yet reached.
 
@@ -1300,7 +1300,7 @@ defect its argument had not yet reached.
 9ed3f561, adopted by f3aa1d0b the same hour. My ruling above specified a
 stamp at gate start. INSUFFICIENT: a full gate runs for minutes, and an
 executor who edits during it produces a log that is STAMPED, GREEN AND
-LYING — the failure the stamp exists to prevent, wearing the stamp's own
+LYING, the failure the stamp exists to prevent, wearing the stamp's own
 clothes.
 
     THE STAMP IS WRITTEN TWICE, BEGIN AND END, AND THEY MUST AGREE ON HEAD
@@ -1309,7 +1309,7 @@ clothes.
 
 AND: INADMISSIBLE AS EVIDENCE IS NOT USELESS. The eight unstamped logs are
 KEPT. They are how the arm located which canary produced which red line,
-and they are the only red corpus we have — which paid for itself
+and they are the only red corpus we have, which paid for itself
 immediately by being refused eight times out of eight, each refusal clause
 carrying its own canary. What they may not do is support a claim about a
 tree.
@@ -1319,7 +1319,7 @@ RUN by the executor, who may not edit them. Not because scratch is untidy:
 BECAUSE AN INSTRUMENT IN THE TREE IT GATES STAMPS ITSELF. The log records
 HEAD and the dirty count of the tree under test, so a changed gate script
 changes them and the log says so. Invoked from /var/tmp, the log names the
-tree under test but NOT THE VERSION OF THE INSTRUMENT THAT PRODUCED IT —
+tree under test but NOT THE VERSION OF THE INSTRUMENT THAT PRODUCED IT,
 an unstamped gate one level up. And /var/tmp is what the cleanup contract
 deletes, which would leave the next bearer an instrument that was never
 committed and no record that it existed.
@@ -1335,7 +1335,7 @@ They cannot see it at all.
 
 MEASURED, not argued: the same projection run twice over identical inputs,
 once through an honest log and once through a log that RETAINS a reference
-to every entry it hands out — the regression made concrete.
+to every entry it hands out, the regression made concrete.
 
     HONEST  log   calls=11   spanned=200
     PINNING log   calls=11   spanned=200   AND 200 ENTRIES RETAINED
@@ -1348,8 +1348,8 @@ is an uninstrumented `MemLog`. Retention lives on the ENTRY side and AFTER
 the read. A read counter answers HOW OFTEN and HOW WIDE. Retention is HOW
 MUCH IS STILL HELD, and no number of reads expresses it.
 
-MY SENTENCE — "a cursor that pins a span reads like a correct projection
-and costs like the old one" — turned out to describe THE INSTRUMENT rather
+MY SENTENCE, "a cursor that pins a span reads like a correct projection
+and costs like the old one", turned out to describe THE INSTRUMENT rather
 than the danger. Same error as every other one in this campaign: I named a
 mechanism without asking what its parts answer ABOUT.
 
@@ -1371,8 +1371,8 @@ load-bearing on a different axis than I claimed for them.
 ## SO STEP 3 OWES A RESIDENCY COUNT, AND THE ARGUMENT IS THE GATE LOG'S
 
 RULED: the retention claim may not be MADE until something can falsify it.
-A RESIDENCY COUNT TAKEN AFTER THE PASS — entries still held, snapshots
-still resident — asserted as a NUMBER and canaried by a deliberately
+A RESIDENCY COUNT TAKEN AFTER THE PASS, entries still held, snapshots
+still resident, asserted as a NUMBER and canaried by a deliberately
 pinning cursor. That canary now EXISTS and is committed, which is the
 cheapest half already paid.
 
@@ -1390,22 +1390,22 @@ the property holds has swapped one unmeasured belief for another.
 
 NOTE THE SIZE QUESTION IS SEPARATE AND STAYS OPEN: OPEN-projection-heap.md
 asks HOW MUCH, in bytes, and is refused tonight at load. This is the SHAPE
-question — is anything still held — and it is countable, cheap, and lands
+question, is anything still held, and it is countable, cheap, and lands
 FIRST.
 
 ## THE TYPED FUNNEL, SHAPE REPORT: THE COUNT WAS THREE AND IS FIVE, AND THE
 ## DOOR THE FUNNEL WOULD CLOSE IS NOT THE DOOR THAT IS OPEN
 
 Reconnaissance by 6ec565b5 at my order, 2026-08-18; ruled and recorded by
-f3aa1d0b (role @980dc16c). READING ONLY — nothing built, and the
+f3aa1d0b (role @980dc16c). READING ONLY, nothing built, and the
 consolidation itself remains Gluck's to endorse.
 
 THE SECTION ABOVE ("THE OPEN QUESTION: CAN THIS BE A SHAPE INSTEAD OF A
 RULE") names THREE byte-level doors. There are FIVE appends behind THREE
 reachable entry points, and the undercount is in a named place: the plan
 says "writeBirth" and "the stump path" as though the stump path were one
-thing. It is TWO — a FormLog implementation AND a second birth writer,
-`writeStumpBirth` (xwal_store.go:838) — and only the first sits behind the
+thing. It is TWO, a FormLog implementation AND a second birth writer,
+`writeStumpBirth` (xwal_store.go:838), and only the first sits behind the
 proposed funnel.
 
     form.go:666          xwalFormLog.AppendPatch   the aria's board
@@ -1416,8 +1416,8 @@ proposed funnel.
     form.go:618          MemFormLog.AppendPatch    memory only, no channel
 
 THE INVARIANT HOLDS TODAY AT EVERY SITE, BY CONSTRUCTION. `FormLog` takes
-`[]byte` and has exactly ONE caller in the tree — form.go:551 in
-`Form.reduceOne` — which marshals a typed `message.Patch` itself, atomically
+`[]byte` and has exactly ONE caller in the tree, form.go:551 in
+`Form.reduceOne`, which marshals a typed `message.Patch` itself, atomically
 with the append. Both birth writers bypass `Form` entirely and also
 `json.Marshal` a typed patch on the line above. So no site puts hand-built
 bytes on the form channel today.
@@ -1427,14 +1427,14 @@ CLOSE THE DOOR THAT IS ACTUALLY OPEN. `XwalStore.OpenNode(id)` is EXPORTED
 and returns figwal's own exported `*xwal.XWAL`, whose `Append(channel
 string, key uint64, payload []byte)` takes the channel as A PLAIN STRING.
 Any package in this module can obtain a handle and append arbitrary bytes
-to the channel named "form" in one line — bypassing json.Marshal AND
+to the channel named "form" in one line, bypassing json.Marshal AND
 Trunks' poison and dirty bookkeeping. The funnel cannot type that away,
 because the byte door belongs to THE DEPENDENCY'S exported API.
 
 WHAT KEEPS IT SHUT IS A FACT ABOUT THE TREE, NOT ABOUT THE TYPES: only
 internal/store imports figwal's xwal, with one read-only exception
 (internal/cli/angelus_client.go, `xwal.NeedsFlatten`), and OpenNode's 7
-callers are ALL in package store — 4 production, 3 tests.
+callers are ALL in package store, 4 production, 3 tests.
 
     IMPORT DISCIPLINE IS A RULE. THE COMPILER IS A SHAPE. This campaign's
     two best moves both converted the first into the second.
@@ -1450,7 +1450,7 @@ key parameter leaves those two on a raw path.
 
 ## RULED: THE TWO HALVES ARE INDEPENDENT AND THEY WERE BUNDLED BY ACCIDENT
 
-The visibility half — unexporting OpenNode — is NOT part of the
+The visibility half, unexporting OpenNode, is NOT part of the
 consolidation and does not wait on it. It stands whatever Gluck decides
 about the funnel, it is 7 in-package call sites, and IT IS THE HALF THAT
 CLOSES THE DOOR THAT IS ACTUALLY OPEN. The typed funnel makes hand-built
@@ -1460,13 +1460,13 @@ this report found.
 
 AND THE CHANGE IS ITS OWN INSTRUMENT, which is why it needs no hazard test:
 this campaign's standard is that a hazard test must be proven to reach by
-FAILING TO COMPILE. Unexporting is that proof directly — any caller outside
+FAILING TO COMPILE. Unexporting is that proof directly, any caller outside
 package store stops compiling, today and forever, with no test to rot.
 
 THE FUNNEL ITSELF REMAINS WITH GLUCK, unchanged and unhurried, and it is now
 a better-posed question than when it was sent to him: it buys unstatability
 at 8 sites for 8 sites of churn, against an invariant that currently holds
-at every site anyway. That is insurance, priced — the same honest shape as
+at every site anyway. That is insurance, priced, the same honest shape as
 the fold bound, and it should be endorsed or declined on that basis rather
 than on the assumption that it is closing a hole. The hole is elsewhere and
 costs 7 sites.
@@ -1481,14 +1481,14 @@ sections up is now SATISFIED FOR SHAPE 1 and explicitly not for the rest.
     PINNING pass   200 of 200 still held
 
 Reachability proven 0 -> 200, and the instrument FAILS LOUDLY if both
-agree rather than reporting a comfortable zero — an instrument that says
+agree rather than reporting a comfortable zero, an instrument that says
 "nothing is held" must first be shown able to say "something is held".
 Mechanism: a finalizer per tracked object, the test's own reference
 dropped, THREE GC cycles rather than one (a finalizer becomes runnable in
 the cycle that finds the object unreachable and RUNS afterwards on another
 goroutine, so one GC under-reports), and the pass run in its own frame so
 the test does not measure its own stack. The GC is asked, rather than a
-proxy inferred from — the same correction as validating a commit against
+proxy inferred from, the same correction as validating a commit against
 the object database instead of pattern-matching hex.
 
 AND ITS FIRST VERSION REPORTED THE OPPOSITE, WHICH IS THE PART WORTH
@@ -1497,14 +1497,14 @@ the simulated leak became unreachable and both passes reported zero: A
 NULL ABOUT A RETENTION IT HAD JUST DESTROYED. Stable, reproducible, false,
 and pointed at withdrawing a requirement that is in fact satisfiable. The
 fix is the finding: A REAL LEAK IS HELD BY SOMETHING THAT OUTLIVES THE
-PASS — a cursor, a returned projection, a cache — and dropping the holder
+PASS, a cursor, a returned projection, a cache, and dropping the holder
 before measuring is not conservatism, it is measuring a different scenario
 and calling it this one.
 
 SHAPE 2 IS OPEN, WITH ITS OBSTACLE NAMED AND ITS CLAIM REFUSED. A finalizer
 attaches to the START of an allocation, and a retained PATCH SUBSLICE keeps
 the BACKING ARRAY alive while any sentinel pointer becomes unreachable
-independently — so the naive version reports "collected" for an array that
+independently, so the naive version reports "collected" for an array that
 is still pinned. THAT IS A FALSE NEGATIVE, THE WORST DIRECTION, and it was
 refused as coverage rather than shipped as it. Measurable via a finalizer
 on the array's first element, but that is a claim about Go's allocator that
@@ -1531,7 +1531,7 @@ sentence would have been.
 
 AND THE GATE RULE PASSED ITS FIRST REAL USE, on someone else's work, within
 the hour of being made: fd15d2a0's step-2 log at 70d6dbf7 is THE FIRST
-ADMISSIBLE GATE LOG IN THIS CAMPAIGN — stamped, terminated, tree named,
+ADMISSIBLE GATE LOG IN THIS CAMPAIGN, stamped, terminated, tree named,
 matching the claim it was offered for, 43 ok, 0 FAIL, checked by
 checkgate.sh --expect rather than by reading. A rule became a shape and the
 shape was then used to judge a third party.
@@ -1547,7 +1547,7 @@ which must agree on HEAD and on the DIRTY COUNT. 6ec565b5's log obeys it:
 
     BEGIN tree=f73743c0 dirty=8      END tree=f73743c0 dirty=8
 
-Both stamps agree, and the honest reading was given — the dirt IS the
+Both stamps agree, and the honest reading was given, the dirt IS the
 commit, because a gate run before the commit exists can be nothing else.
 NOTHING IS WRONG WITH THAT RUN. What is wrong is my rule.
 
@@ -1558,19 +1558,19 @@ NOTHING IS WRONG WITH THAT RUN. What is wrong is my rule.
 This is the same defect I ruled inadmissible for unstamped logs, one notch
 in: the log answers about the PARENT commit, and the tree under test is
 the parent plus something unrecorded. It answered correctly, and about
-something narrower than the question — this campaign's sentence, now
+something narrower than the question, this campaign's sentence, now
 attached to a rule I made two hours ago.
 
 THE FIX IS CHEAP AND IS THE SAME MOVE AS THE ORIGINAL: when the dirty
 count is non-zero the stamp carries a DIGEST OF THE DIFF (`git diff HEAD |
 sha256sum`, or the tree id from `git stash create`), so the tested tree is
 IDENTIFIED rather than merely flagged, and BEGIN and END compare digests
-instead of counts — which also catches an edit that changes a file without
+instead of counts, which also catches an edit that changes a file without
 changing the count, the exact hole a scalar leaves open.
 
 PREFERENCE, NOT REQUIREMENT: gate the COMMITTED tree where the work allows
-it, and the digest never has to be read. It was not available here — the
-gate necessarily ran before the commit existed — which is precisely why
+it, and the digest never has to be read. It was not available here, the
+gate necessarily ran before the commit existed, which is precisely why
 the digest is the rule rather than the preference.
 
 RETROSPECTIVE SCOPE, stated so it is not overquoted: this does NOT withdraw
@@ -1590,7 +1590,7 @@ whole point); and a dirty log with its digest stripped is refused.
 AND THE DIGEST COVERS UNTRACKED FILE CONTENTS, WHICH MY SPEC DID NOT SAY.
 I specified `git diff HEAD | sha256sum`. `git diff HEAD` CANNOT SEE
 UNTRACKED FILES AT ALL, while a dirty count from `status --porcelain`
-happily counts them — so my digest would have been blind to exactly the
+happily counts them, so my digest would have been blind to exactly the
 files most likely to be a scratch canary or a probe, and blind in the
 direction that keeps a log admissible. The builder added status, diff and
 untracked CONTENTS, and canaried that claim SEPARATELY rather than
@@ -1605,7 +1605,7 @@ when dirty is non-zero.
 ## AND A STANDING RULE FOR CROSS-ARIA HANDOFF: CHECK THE ARTIFACT AGAINST
 ## THE RECIPIENT'S HEAD
 
-`git format-patch` on that commit EMITTED THE SAME DIFF TWICE — 251 lines
+`git format-patch` on that commit EMITTED THE SAME DIFF TWICE, 251 lines
 where `git show` gives 130, one tree entry per path, no format.* config set,
 and earlier patches from the same worktree exported correctly. UNDIAGNOSED,
 and deliberately so: a patch carrying a hunk twice cannot apply, so it
@@ -1613,7 +1613,7 @@ would have failed in the executor's hands and read as a CONFLICT WITH ITS
 WORK rather than as a defect in the sender's export.
 
 The builder refused to ship it, switched to fetch-and-cherry-pick, and
-verified THAT mechanism end to end — applies at the recipient's head,
+verified THAT mechanism end to end, applies at the recipient's head,
 authorship preserved, scripts parse, checker still green.
 
     RULED: EVERY CROSS-ARIA CODE HANDOFF IS `git apply --check` (or a
@@ -1631,7 +1631,7 @@ THE FAMILY THIS BELONGS TO, and it is the third instance in one evening:
 A COMMAND THAT SUCCEEDED IS NOT AN ARTIFACT THAT IS CORRECT. Tonight: a
 cherry-pick that silently did nothing, a patch naming the wrong commits,
 and a patch file duplicating its own hunks. IN ALL THREE THE COMMAND
-EXITED ZERO. It is the status-versus-artifact rule one level out — there
+EXITED ZERO. It is the status-versus-artifact rule one level out, there
 the status field lied about the work, here the exit code told the truth
 about a process that produced a wrong thing.
 
@@ -1645,8 +1645,8 @@ WEAK, and the reason is the campaign's own red-first standard applied to a
 property rather than to a hazard.
 
 THE PROJECTION HOLDS SLICES RETURNED BY THE LOG. That is stated in Part II
-as the reason it must go — "because it holds slices returned by the log, it
-also PINS payloads the log's window believes it evicted" — and it is the
+as the reason it must go, "because it holds slices returned by the log, it
+also PINS payloads the log's window believes it evicted", and it is the
 whole ground of Gluck's ruling that nothing may pin evicted bytes. SO THE
 RESIDENCY COUNT, RUN AGAINST TODAY'S CODE, SHOULD READ NON-ZERO. It is not
 merely a guard for afterwards; it is the only chance this campaign has to
@@ -1656,8 +1656,8 @@ MEASURE THE DEFECT IT IS DELETING.
     and the number it reads there is RECORDED, before step 3 commits.
 
 AND THE OUTCOME THAT WOULD BE MOST VALUABLE IS THE INCONVENIENT ONE: IF IT
-READS ZERO TODAY, THE INSTRUMENT DOES NOT REACH THE DEFECT WE ARE DELETING
-— and we would learn that before the claim rather than after, which is
+READS ZERO TODAY, THE INSTRUMENT DOES NOT REACH THE DEFECT WE ARE DELETING,
+and we would learn that before the claim rather than after, which is
 exactly the failure mode this campaign has documented sixteen times. A
 before-number of zero is a finding about the instrument, not a
 disappointment about the code.
@@ -1684,7 +1684,7 @@ and budget.
     held after the pass, counted and canaried at 0 -> 200.
     IT MAY NOT SAY: the cursor cannot prevent eviction.
 
-The second needs eviction to actually HAPPEN in the fixture — the same
+The second needs eviction to actually HAPPEN in the fixture, the same
 fixture driven through a `cachedLog` with a small window, asserting the
 resident count falls. OPEN, with the obstacle named, beside shape 2. Not
 taken tonight.
@@ -1696,7 +1696,7 @@ lesson in ~/notes/figaro/instrument-not-reaching-the-code.md. Sixteen
 instances in that note were bought at the price of a wrong claim first.
 
 ## CORRECTION, WITHIN THE HOUR: THE BEFORE-NUMBER IS ZERO AND IT IS ABOUT
-## THE WRONG OBJECT — AND THE SHAPE QUESTION IS THE SIZE QUESTION
+## THE WRONG OBJECT: AND THE SHAPE QUESTION IS THE SIZE QUESTION
 
 9ed3f561, breaking a stand-by order to stop a run being spent on a number
 it already had; ruled and recorded by f3aa1d0b, 2026-08-18. This CORRECTS
@@ -1754,7 +1754,7 @@ written up and dated-refused.
 CONSEQUENCE, AND IT RAISES THE PRIORITY: the heap measurement was filed as
 the nice-to-have decoded figure behind the 200.2 MiB lower bound. IT IS
 NOT. It is THE ONLY INSTRUMENT for the property this whole stage is
-justified by — Gluck's ruling that nothing may pin evicted bytes. Until it
+justified by, Gluck's ruling that nothing may pin evicted bytes. Until it
 is taken, the deletion lands with its central property UNWITNESSED, which
 is honest and must be said in the landing note rather than papered over.
 
@@ -1795,13 +1795,13 @@ PRE-REGISTERED, BEFORE THE CUT:
      8Observed variant, ColdWalkColdCache and the
      BenchmarkObservationWarm{0,1,8,50} axis were built for this exact
      question. If they take a `Previous` and the field is gone, they
-     measure a shape that no longer exists — THEIR SUBJECT CHANGED, so
+     measure a shape that no longer exists, THEIR SUBJECT CHANGED, so
      their NAMES change. Same rule that retired `memoLanded` and
      `InterruptRepair10000`.
   b. THE PREDICTION IS WRITTEN FIRST, WITH FALSIFIERS. Mine, offered to be
      beaten: per-turn cost rises with conversation LENGTH rather than with
-     new records, and the rise is dominated by CACHE LOOKUPS — one read per
-     record — rather than by decode, since the cached path skips derivation.
+     new records, and the rise is dominated by CACHE LOOKUPS, one read per
+     record, rather than by decode, since the cached path skips derivation.
   c. THE MEASUREMENT IS THE ARM'S. The executor does not grade its own cut.
   d. IF IT REGRESSES IT GOES IN THE LANDING NOTE. The ledger's own sentence
      applies to costs as much as to benefits: a stage whose cost is written
@@ -1816,12 +1816,12 @@ unread, the executor takes it and says so in the first line.
 
 ## AND A REHEARSAL IS A LIVENESS CLAIM
 
-The cross-aria handoff rule — apply-check against the RECIPIENT'S head
-before sending — was obeyed exactly, and the residency fixtures still
+The cross-aria handoff rule, apply-check against the RECIPIENT'S head
+before sending, was obeyed exactly, and the residency fixtures still
 landed RED: the executor's next commit made `Form` set with `Boards` nil an
 ERROR rather than a default, and the fixtures used the only shape that was
 legal when they were written. Its own sentence: the check "verified
-everything it could — right up until my head moved underneath it."
+everything it could, right up until my head moved underneath it."
 
     A REHEARSAL IS A LIVENESS CLAIM AND LIVENESS CLAIMS EXPIRE. THE SENDER
     STAMPS THE HEAD IT REHEARSED AT; THE RECIPIENT COMPARES THAT STAMP TO
@@ -1834,7 +1834,7 @@ verification still applies instead of learning it from a red test.
 AND THE EXECUTOR DID NOT REPAIR THE INSTRUMENT THAT GRADES IT, which is the
 separation working: it sent the cause, the one-field fix and a fixture to
 copy the shape from, and told the arm to CHECK rather than accept that the
-change is mechanical — because if supplying a board source moves the
+change is mechanical, because if supplying a board source moves the
 honest/pinning numbers at all, that is a finding that outranks the repair.
 
 # STEP 3 SPLIT IN TWO, AND THE ORDER IS THE RULING
@@ -1843,7 +1843,7 @@ f3aa1d0b, 2026-08-18, on fd15d2a0's finding, made by auditing a claim it
 had already sent me rather than by building on it.
 
 THE DEFECT STEP 3 WOULD HAVE CREATED. `xwalLog.Lookup` falls back to A
-FULL LINEAR SCAN OF THE CHANNEL when the index returns not-found — and it
+FULL LINEAR SCAN OF THE CHANNEL when the index returns not-found, and it
 fires on ANY not-found, including a legitimate cache miss, scanning the
 whole channel to confirm the miss. It is guarded by a comment
 (xwal_log.go:303) reading "the channel is small in practice AND THIS IS
@@ -1857,7 +1857,7 @@ O(N^2) ReadAt calls on the path every turn takes.
     an unstamped gate log in prose: a claim about a context that has moved,
     which agrees with whoever reads it.
 
-RULED — THE MERGE-JOIN IS CARRIED, AND IT IS CUT FIRST:
+RULED, THE MERGE-JOIN IS CARRIED, AND IT IS CUT FIRST:
 
     COMMIT ONE  the merge-join. One forward walk over the IR log and one
                 over the translation channel, joined on LT, NO Lookup at
@@ -1865,18 +1865,18 @@ RULED — THE MERGE-JOIN IS CARRIED, AND IT IS CUT FIRST:
     COMMIT TWO  the deletion.
 
 THREE REASONS, and the third was a gift:
-  1. THE EXPOSURE NEVER EXISTS — not shipped-and-fixed, not landed-and-named.
+  1. THE EXPOSURE NEVER EXISTS, not shipped-and-fixed, not landed-and-named.
   2. EACH COMMIT IS ONE IDEA. Step 3 was already the ruling-sized half.
   3. IT MANUFACTURES A CLEAN MEASUREMENT BOUNDARY. The arm had refused to
      call its read-counter movement a before/after because THE FIXTURE HAD
      TO CHANGE across that boundary, confounding an API change with the
-     field it added to make the test run — and said it would want to look
+     field it added to make the test run, and said it would want to look
      for a boundary where the fixture does not change before promising one.
      Commit one changes no API and needs no fixture change. ORDERING
      COMMITS BY HAZARD PRODUCED A MEASURABLE SEAM FOR FREE.
 
 DECLINED, WITH THE REASON ON THE RECORD: the executor offered to land the
-deletion with the exposure NAMED in the commit and the landing note —
+deletion with the exposure NAMED in the commit and the landing note,
 "worse engineering, better bookkeeping". Honest bookkeeping about a defect
 we chose to ship is still shipping the defect. That call would have been
 right had the fix been expensive or unknown; it is neither.
@@ -1890,7 +1890,7 @@ right had the fix been expensive or unknown; it is neither.
                   a current entry at the same LT, in both orders.
     GAPS          a merge join assumes both sides ASCENDING AND GAPLESS in
                   the joined key. The translation channel is SPARSE BY
-                  DESIGN — only cached records are there — so it is gapped
+                  DESIGN, only cached records are there, so it is gapped
                   by construction, and "no entry at this LT" must be a MISS
                   TO BE ENCODED, never a reason to advance the IR cursor. A
                   join that advances the wrong cursor DROPS A RECORD
@@ -1909,7 +1909,7 @@ I pre-registered that per-turn cost rises with conversation LENGTH, to be
 measured on BenchmarkObservation{Cold,Warm}{0,1,8,50}. THE ARM FALSIFIED
 THE INSTRUMENT CHOICE BY READING: every one of those is FIXED AT FORTY
 RECORDS and varies only the OBSERVER count. The axis the prediction lives
-on is not in the fixture, so a null from it would have been vacuous —
+on is not in the fixture, so a null from it would have been vacuous,
 exactly the kind retracted earlier tonight.
 
 AND BOTH HALVES OF THE PREDICTION ARE COUNTABLE FACTS I DRESSED AS TIMES:
@@ -1922,7 +1922,7 @@ quiet box it never needed and exposed it to a floor it never had to clear.
 This campaign's own standing preference is that where the question is HOW
 MANY TIMES you COUNT it, and I failed to apply it to my own prediction.
 
-RULED: the COUNT instrument is built FIRST — before commit one — so one
+RULED: the COUNT instrument is built FIRST, before commit one, so one
 instrument yields THREE points on one axis (today, after the join, after
 the deletion) instead of two comparisons across boundaries where something
 else also moved. The TIMING stays refused and dated, and THE COUNTS DECIDE
@@ -1931,11 +1931,11 @@ WHETHER IT IS WORTH A QUIET BOX AT ALL.
 ## THE WARM BENCHMARKS ARE RETIRED, NOT REPAIRED
 
 `projectWith` sets `cfg.Previous` INSIDE the timed loop, so deleting the
-field BREAKS THE BUILD LOUDLY — the hazard-test standard arriving for free.
+field BREAKS THE BUILD LOUDLY, the hazard-test standard arriving for free.
 BUT THE OBVIOUS REPAIR IS THE TRAP: the only thing making the Warm variants
 warm IS `Previous`. Delete the assignment and
 BenchmarkObservationWarm{0,1,8,50} become byte-identical in behaviour to
-their Cold twins WHILE KEEPING NAMES THAT SAY WARM — four benchmarks
+their Cold twins WHILE KEEPING NAMES THAT SAY WARM, four benchmarks
 silently changing subject, the rename hazard in its purest form, priced
 tonight at 2,488 B and a 33% phantom win. The arm ruled it; I upheld it
 without amendment. A cold walk under a name saying Warm is worse than a
@@ -1954,7 +1954,7 @@ REHEARSAL are one defect.
 
 9ed3f561, recorded by f3aa1d0b, 2026-08-18. Both halves of the
 pre-registered prediction confirmed, on a box at load 20, with no floor to
-clear and no quiet box to wait for — because the question was countable
+clear and no quiet box to wait for, because the question was countable
 all along.
 
     length     WARM handed/lookups/decodes     COLD handed/lookups/decodes
@@ -1964,7 +1964,7 @@ all along.
       400              1 / 1 / 1                    401 / 401 / 1
 
 COLD GROWS LINEARLY IN LENGTH WHILE WARM IS FLAT AT ONE. And it is LOOKUPS
-that grow, N+1 of them, while DECODES STAY AT EXACTLY 1 — the lookup axis
+that grow, N+1 of them, while DECODES STAY AT EXACTLY 1, the lookup axis
 is precisely what the merge-join removes, and the decode axis was never the
 cost.
 
@@ -1986,63 +1986,63 @@ null.
 
 THE DELETION TRADES O(1) PER-TURN WORK FOR O(N), AND BUYS BACK THE
 RETENTION. That is not a regression discovered late; it is the trade Part
-II rules FOR, in Gluck's own words — nothing may pin evicted bytes, and if
+II rules FOR, in Gluck's own words, nothing may pin evicted bytes, and if
 a caller needs a record it reads it. The merge-join removes the multiplier
 on that walk; it does not remove the walk, and nothing can, because the
 walk IS the alternative to holding the bytes.
 
 WHAT MAY BE SAID WHEN IT LANDS: the per-turn cost goes from constant to
-linear in conversation length, measured in counts, and the lookup term —
+linear in conversation length, measured in counts, and the lookup term,
 which is the one that would have gone quadratic through the linear-scan
-fallback — is removed entirely. WHAT MAY NOT BE SAID: that the deletion is
+fallback, is removed entirely. WHAT MAY NOT BE SAID: that the deletion is
 free.
 
 ## TWO INSTRUMENT FAULTS DISCLOSED BEFORE THEY REACHED ME
 
-FIRST: the first version reported THE WARM START ALREADY BROKEN — warm
+FIRST: the first version reported THE WARM START ALREADY BROKEN, warm
 growing 51 -> 401, which reads as "it already walks the conversation before
 anything was deleted". Artifact: `store.TailAfter` has an OPTIONAL FAST
 PATH, `MemLog` does not implement it, and the fallback calls `Read()` and
 MATERIALISES THE WHOLE LOG before slicing. Real for MemLog, not necessarily
-real for a cachedLog. Now counted as two quantities — MATERIALISED (what
-the log produced) and HANDED (what the projection received) — and the cost
+real for a cachedLog. Now counted as two quantities, MATERIALISED (what
+the log produced) and HANDED (what the projection received), and the cost
 question is about the second.
 
 SECOND, AND IT IS A NEW MECHANISM FOR THE INSTRUMENT NOTE: A COUNTING
-WRAPPER THAT OVERRIDES `Read` BUT NOT `TailAfter` COUNTS THE WRONG THING —
+WRAPPER THAT OVERRIDES `Read` BUT NOT `TailAfter` COUNTS THE WRONG THING,
 and on a log that HAS the fast path, GO'S EMBEDDING PROMOTES THE INNER
 METHOD AND BYPASSES THE OVERRIDE ENTIRELY. The counter would report ZERO
 while the projection iterated thousands.
 
     EMBEDDING HANDS YOU A SILENT BYPASS FOR FREE. A wrapper is an
     instrument, and a promoted method is an instrument that does not reach
-    the code — with the reader's own type system doing the concealing.
+    the code, with the reader's own type system doing the concealing.
 
 ## AND THE TIMING QUESTION IS NOW DECIDABLE ON BETTER GROUNDS
 
 The counts establish that the walk grows with length. So a timing run would
 price it in nanoseconds and would NOT establish the shape, which is already
-established. It stays refused tonight — and now for a stronger reason than
+established. It stays refused tonight, and now for a stronger reason than
 load: NOT NEEDED, rather than NOT AFFORDABLE. That is the better kind of
 refusal and it is the one that should be inherited.
 
 ## THE LOOKUP FALLBACK: THE COMMENT NAMES A FUNCTION THAT NO LONGER EXISTS
 
 6ec565b5's reconnaissance, ruled by f3aa1d0b, 2026-08-18. MY PREDICTION WAS
-FALSIFIED IN ITS REASON AND CONFIRMED IN ITS SHAPE — the outcome is a
+FALSIFIED IN ITS REASON AND CONFIRMED IN ITS SHAPE, the outcome is a
 NARROWED fallback, reached by a different road than the one I predicted.
 
 THE COMMENT IS FALSE AT THE PIN. `xwal_log.go:303` justifies the linear
 scan by figwal's "mid-life-added channels have an empty FK on reopen".
 `buildFK` exists in figwal v0.5.0 through v0.7.7 and is ABSENT FROM v0.7.8
 ONWARD (checked across all 40 versions in the module cache). We pin
-v0.18.1 on the seam branch and v0.18.0 on layered — eleven-plus minor
+v0.18.1 on the seam branch and v0.18.0 on layered, eleven-plus minor
 versions past the last release where that function existed. The fk is now
 built LAZILY AND INCREMENTALLY, scanning backward from the tail and
 memoizing as it goes, with three O(1) short-circuits; EMPTY-ON-REOPEN IS
 NO LONGER A DEFECT, IT IS THE NORMAL INITIAL STATE OF A SELF-BUILDING
-INDEX. And the specific hazard it feared — an index blind to records
-inherited from a fork parent — is closed AND TESTED at the pin
+INDEX. And the specific hazard it feared, an index blind to records
+inherited from a fork parent, is closed AND TESTED at the pin
 (`ScanFromEnd` recurses into the parent chain; `TestScanFromEndAcrossFork`).
 
     A COMMENT CAN GO STALE BY A DEPENDENCY MOVING UNDER IT, WITH NOTHING
@@ -2051,7 +2051,7 @@ inherited from a fork parent — is closed AND TESTED at the pin
     keeps running.
 
 AND THE EXPOSED CLASS IS NARROWER THAN ANYONE ASSUMED: the 1,218 form
-channels NEVER REACH THIS PATH — they are unkeyed, they go through
+channels NEVER REACH THIS PATH, they are unkeyed, they go through
 Form/FormLog, and Lookup is not part of that interface. `xwalLog` is
 constructed exactly twice, for the IR channel and the per-provider
 translation channels, and ON THE MAIN CHANNEL FIGWAL NEVER CONSULTS THE FK
@@ -2070,23 +2070,23 @@ real and undocumented, and it is not what the comment claims.
 RULED, and it is exactly the shape I predicted by a road I did not:
 
     THE FALLBACK FIRES ON figwal's ERROR, NOT ON ITS DEFINITIVE MISS.
-    Today it fires on both — on `(false, nil)`, a definitive not-found
+    Today it fires on both, on `(false, nil)`, a definitive not-found
     after figwal's own memoized scan, and on `(_, err)`, the decode abort.
     ONLY THE SECOND IS A CASE FIGWAL CANNOT ANSWER. Narrowing drops the
     O(N) confirmation of a legitimate miss and keeps the only behaviour the
     fallback uniquely provides.
 
 THREE OBLIGATIONS ON THAT CHANGE:
-  1. THE COMMENT IS REPLACED BY WHAT IS TRUE — the corruption-tolerance
+  1. THE COMMENT IS REPLACED BY WHAT IS TRUE, the corruption-tolerance
      reason, not the buildFK reason. A stale justification is not repaired
      by a correct code change beside it.
   2. THE ASSUMPTION IS PINNED BY A TEST. Narrowing bakes in "a definitive
      not-found from figwal is trustworthy". THAT IS A CLAIM ABOUT A
-     DEPENDENCY WE BUMP, so it must fail loudly on a bump that breaks it —
+     DEPENDENCY WE BUMP, so it must fail loudly on a bump that breaks it,
      a fixture where a record exists and figwal reports it, canaried.
   3. THE PRICE OF BEING WRONG IS NAMED WHERE IT IS PAID: `lookupCached`
      treats not-found as "not cached" and re-encodes, so a wrong not-found
-     costs a re-translation and a cache append (last wins) — COST AND
+     costs a re-translation and a cache append (last wins), COST AND
      CHURN, not a wrong rendering. The corrupt-frame case is the one that
      bites: without the fallback, one bad frame turns a cache into a
      PERMANENT MISS. Silent unbounded re-encoding, not corruption.
@@ -2095,7 +2095,7 @@ THREE OBLIGATIONS ON THAT CHANGE:
 
 It was about to report that main-channel records carry `m=0`, making the
 fallback structurally unable to match on main. `encodeStampedFrame` says
-otherwise — main frames carry their own index as `m` — so the correct
+otherwise, main frames carry their own index as `m`, so the correct
 reason is the bounds argument, not a missing field. CHECKED BEFORE WRITING
 RATHER THAN AFTER. And the limits are stated in the same paragraph as the
 findings: source read, nothing run, no fixture built, and the hot-handle
@@ -2111,14 +2111,14 @@ source. Their composition is not.
     THE ADVANCE RULE   advance the cache cursor while FigaroLT < LT; if it
                        now SITS AT FigaroLT == LT, that is the candidate.
     THE CARDINALITY    take THE LAST entry at that LT, then apply the
-    RULE               fingerprint refusal. (cached_log.go:225-232 —
+    RULE               fingerprint refusal. (cached_log.go:225-232,
                        sort.Search for the first FigaroLT > lt, MINUS ONE.
                        Last-wins, and the comment says so.)
 
     "SITS AT == LT" IS THE FIRST ENTRY OF A RUN, NOT THE LAST.
 
 So the composition yields FIRST-MATCH at precisely the LT where the second
-rule proves first-match wrong — and wrong in the direction that HITS a
+rule proves first-match wrong, and wrong in the direction that HITS a
 stale-preceded current entry, which is the very case the executor's own
 canary was written to catch. Neither rule is at fault; the seam between
 them is.
@@ -2126,7 +2126,7 @@ them is.
 AND THE CURSOR POSITION AFTER A RUN IS A SECOND, DISTINCT FAILURE: a join
 that consumes duplicates but leaves the cursor off by one DROPS THE NEXT
 LT ENTIRELY. That is the arm's silent record-drop arriving through
-DUPLICATES rather than through GAPS — a different road to the same
+DUPLICATES rather than through GAPS, a different road to the same
 unobservable defect.
 
 BOTH CANARIES AS ORIGINALLY WRITTEN WERE BLIND TO IT, for a reason worth
@@ -2154,13 +2154,13 @@ THE OLD CODE. Its author did not treat that as a weakness and was right:
     RED FIRST, and this campaign's standard is that it be proven to reach
     by failing before the code exists.
     A PIN guards a property the change must PRESERVE. GREEN FROM BIRTH IS
-    THE CORRECT STATE, because the old code already has the property — and
+    THE CORRECT STATE, because the old code already has the property, and
     the only meaningful proof of its power is a CANARY.
 
 Saying which is which IN THE COMMIT is the load-bearing part, so that
 nobody later reads five green-from-birth tests as five vacuous ones. And
 the canary table is the model, because DIFFERENT SABOTAGES FAILED
-DIFFERENT SUBSETS — keep the FIRST of a run fails one; a miss advancing
+DIFFERENT SUBSETS, keep the FIRST of a run fails one; a miss advancing
 the passenger fails two; a cursor left INSIDE the run fails ALL FIVE. That
 distribution is itself evidence the five are not one test wearing five
 names.
@@ -2174,19 +2174,19 @@ lookups were removed by the join, on a shape that already existed, and
 measured there (cold 401 -> 0). The deletion does not remove lookups; it
 ADDS THE WALK the lookups would have multiplied.
 
-That is the phantom-improvement failure priced tonight at 2,488 B and 33%
-— a stage credited with a win belonging to a change beside it — ARRIVING
+That is the phantom-improvement failure priced tonight at 2,488 B and 33%,
+a stage credited with a win belonging to a change beside it, ARRIVING
 IN PROSE RATHER THAN IN A BENCHMARK NAME. Same defence:
 
     ATTRIBUTE PER COMMIT, NEVER PER STAGE.
 
     COMMIT ONE   lookups N+1 -> 0 cold, 1 -> 0 warm. Decodes and
-                 entries-handed UNCHANGED — registered as falsifiers before
+                 entries-handed UNCHANGED, registered as falsifiers before
                  the run, and unmoved.
     COMMIT TWO   per-turn work CONSTANT -> LINEAR in length. Entries handed
                  1 -> N+1. Decodes unchanged at 1.
     TOGETHER     the projection is gone and the walk replacing it carries no
-                 lookup per record — which is WHY the join was cut first:
+                 lookup per record, which is WHY the join was cut first:
                  not to make the deletion look better, but so the exposure
                  never existed.
 
@@ -2207,8 +2207,8 @@ CONSTANT BECOMES LINEAR IN CONVERSATION LENGTH, ON THE PATH EVERY LIVE
 TURN TAKES, TODAY, BEFORE THE DELETION EXISTS.
 
 THREE PREDICTIONS WERE REGISTERED AND ALL THREE HELD. The executor's
-falsifiers were entries-handed and decodes — both on the IR SIDE. The
-arm's was "each entry visited AT MOST ONCE" — which this SATISFIES.
+falsifiers were entries-handed and decodes, both on the IR SIDE. The
+arm's was "each entry visited AT MOST ONCE", which this SATISFIES.
 
     VISITING EACH ENTRY ONCE IS NOT THE SAME AS VISITING ANY AT ALL ON A
     WARM TURN.
@@ -2224,7 +2224,7 @@ on both sides stopped discriminating anything, so it extended the
 instrument to count WHAT REPLACED THE LOOKUPS. A retired axis reads
 exactly like a clean result.
 
-RULED — SEEK, DO NOT WALK. A warm pass reads the IR side from
+RULED, SEEK, DO NOT WALK. A warm pass reads the IR side from
 `TailAfter(watermark)`; the cache cursor must be POSITIONED at the first
 entry above that watermark by a search, not reached by walking from zero.
 `cached_log.go`'s own Lookup comment states the ground: entries are
@@ -2232,7 +2232,7 @@ ASCENDING BY FigaroLT and `ReadFrom` BINARY SEARCHES ON EXACTLY THAT. The
 join then keeps "each entry visited at most once" AND regains the warm
 path's constant cost.
 
-AND WHY THIS BLOCKS COMMIT TWO RATHER THAN DISSOLVING INTO IT — the warm
+AND WHY THIS BLOCKS COMMIT TWO RATHER THAN DISSOLVING INTO IT, the warm
 path dies at commit two, so the regression is arguably transient:
   1. COMMIT ONE MUST STAND ALONE. It is a separate commit precisely so its
      result is attributable. A commit excused by a LATER commit is a stage
@@ -2245,8 +2245,8 @@ path dies at commit two, so the regression is arguably transient:
 ## AND A RETRACTED REHEARSAL STAMP, DISCLOSED RATHER THAN REPAIRED
 
 The same message ended "REHEARSED AT 1a53d773". IT WAS FALSE WHEN WRITTEN:
-the checkout back to that commit had FAILED — an untracked file blocked
-it, git printed "error: ... Aborting" — and the next action assumed
+the checkout back to that commit had FAILED, an untracked file blocked
+it, git printed "error: ... Aborting", and the next action assumed
 success. The branch did not carry the counters at all. Now true and
 verified: 8638bdc2, parent 1a53d773, green there.
 
@@ -2255,7 +2255,7 @@ commits with the same instrument, and were re-run since.
 
 WHAT IT TEACHES, and it is a NEW DIRECTION rather than a repeat:
 
-    THE DEFENCE THIS CAMPAIGN BUILT IS FOR SILENT FAILURE — assert the
+    THE DEFENCE THIS CAMPAIGN BUILT IS FOR SILENT FAILURE, assert the
     artifact, never the status field, because a command that succeeded is
     not an artifact that is correct. HERE THE COMMAND FAILED LOUDLY AND
     THE OUTPUT WENT UNREAD. A defence against silence does not cover
@@ -2284,7 +2284,7 @@ seek SKIPS records the cold pass must consume. Lookups 0 in both columns,
 decodes 1, entries handed 1 warm / N+1 cold, memo pins unmoved.
 
 THE CAUSE WAS THE CURSOR STARTING FROM ZERO, and the executor found it BY
-READING ITS OWN COMMENT — which claimed the cursor was "built after the
+READING ITS OWN COMMENT, which claimed the cursor was "built after the
 span is chosen" and that skipping forward cost "nothing beyond the entries
 walked". BOTH HALVES FALSE, written before the code drifted under them, and
 asserting PRECISELY the property that had been violated.
@@ -2300,7 +2300,7 @@ minor versions after its premise died; and this.
 
 CANARY J: restoring the walk makes the new count pin fail AND LEAVES ALL
 FIVE JOIN TESTS GREEN. They assert what the join PRODUCES and where its
-cursor LANDS — never how far it TRAVELLED. A projection built by walking
+cursor LANDS, never how far it TRAVELLED. A projection built by walking
 from zero is BYTE-IDENTICAL to one built by seeking.
 
     WHEN THE OUTPUT IS INVARIANT UNDER THE DEFECT, ONLY A COUNT CAN SEE IT.
@@ -2309,18 +2309,18 @@ First sighting: a segment header one record ahead, invisible to a value
 oracle because form patches are IDEMPOTENT. Second: a cursor that walks
 where it could seek, invisible to five correct tests because the result is
 IDENTICAL. Different layers, one shape, and it is the standing argument for
-this campaign's preference — where the question is HOW MANY TIMES, COUNT
+this campaign's preference, where the question is HOW MANY TIMES, COUNT
 IT.
 
 ## PROVENANCE ORDERED FOR THE LANDING NOTE
 
-The confirming numbers came from a head with ONE DIRTY FILE — the arm's own
+The confirming numbers came from a head with ONE DIRTY FILE, the arm's own
 instrument, because the executor cherry-picked it at a commit predating the
 cache counters. Disclosed unprompted, with an offer to re-run clean.
 
 RULED: TAKE THE OFFER. Apply the updated instrument to the branch, re-run
-CLEAN, and quote THOSE numbers. Not from doubt — they are consistent across
-two heads and two hands — but because the landing note is the artifact that
+CLEAN, and quote THOSE numbers. Not from doubt, they are consistent across
+two heads and two hands, but because the landing note is the artifact that
 outlives everyone here, and by this document's own ruling a dirty tree is
 identified only by a digest nobody will read in a year. One apply and one
 re-run buys numbers whose provenance is a commit.
@@ -2337,7 +2337,7 @@ on feat/layered-cache ALONE. Not on main, not on the seam branch.
 
 I ATTEMPTED THE OBVIOUS FIX AND ABORTED IT, which is the finding. A
 cherry-pick to main CONFLICTS, because 160 lines of
-skills/figaro/contributing/maintaining.md exist ONLY on this branch — main
+skills/figaro/contributing/maintaining.md exist ONLY on this branch, main
 carries 9 section headings, this branch carries 16. The maxim's own text
 refers to the section around it. So cherry-picking one maxim would either
 smuggle 160 lines of campaign documentation into main under a one-maxim
@@ -2346,8 +2346,8 @@ there.
 
 RULED: THE DOCUMENTATION LANDS AS A UNIT WHEN THIS BRANCH MERGES, and that
 is now a NAMED DEPENDENCY rather than an assumption. Everything this
-campaign has learned — six maxims, the hazard-instrumentation section, this
-plan — reaches a reader only through that merge. IF THIS BRANCH DIES, THE
+campaign has learned, six maxims, the hazard-instrumentation section, this
+plan, reaches a reader only through that merge. IF THIS BRANCH DIES, THE
 DOCUMENTATION DIES WITH IT, and that is a larger loss than the code.
 
 ## AND A LARGER INSTANCE OF THE SAME QUESTION, FOUND WHILE CHECKING
@@ -2357,7 +2357,7 @@ campaign's standards are built on
 (instrument-not-reaching-the-code.md, ~16 instances) and every
 REFUSED-NOT-MISSING open item.
 
-    ~/notes IS A GIT REPOSITORY WITH NO COMMITS. Not behind, not stale —
+    ~/notes IS A GIT REPOSITORY WITH NO COMMITS. Not behind, not stale,
     NEVER COMMITTED, on a branch with no history at all.
 
 It is outside the repo, outside the flake, and outside every backup this
@@ -2378,23 +2378,23 @@ mixed content is not a decision an aria makes for its owner.
     BECOMES A PROPERTY OF ENCODER DETERMINISM.
 
 THIS IS NOT AN EPHEMERAL CONCERN. THE VENDORS CACHE ON PREFIX BYTES. If
-anything unordered reaches the encoder — a map iterated into JSON, a
-timestamp, a pointer-ordered set — the prefix changes shape between turns
+anything unordered reaches the encoder, a map iterated into JSON, a
+timestamp, a pointer-ordered set, the prefix changes shape between turns
 and PROMPT CACHING MISSES, on every provider, for every aria. The failure
 is not a wrong answer; it is a silent recurring cost in latency and money
 that no correctness test we own can see.
 
 AND THE TEST THAT LOOKS LIKE COVER CANNOT BE:
 `TestCatchUpPreservesPrefixBytes` pins that the prefix bytes do not change
-AND WOULD PASS EITHER WAY — it cannot see the mechanism change underneath
+AND WOULD PASS EITHER WAY, it cannot see the mechanism change underneath
 it. The sixth maxim, arriving where it costs money.
 
-RULED — COMMIT TWO OWES AN ENCODER DETERMINISM PIN: encode the same
+RULED, COMMIT TWO OWES AN ENCODER DETERMINISM PIN: encode the same
 records twice from scratch, assert the bytes IDENTICAL at every record and
 not only the tail; per provider, or with the uncovered providers NAMED in
 the landing note.
 
-AND THE CANARY MUST PERTURB A MAP-RENDERED RECORD, not a scalar —
+AND THE CANARY MUST PERTURB A MAP-RENDERED RECORD, not a scalar,
 6ec565b5's refinement, from reading the encoders rather than from the
 analogy: perturbing a scalar proves the pin reaches AN ENCODER without
 proving it reaches THE HAZARD.
@@ -2403,7 +2403,7 @@ proving it reaches THE HAZARD.
     MERELY A FAILURE.
 
 Same lesson as the interior-gap canary, reached independently in a second
-place — which is how a rule earns the word "standing".
+place, which is how a rule earns the word "standing".
 
 ## AND THE REPORTING RULE THAT CAME WITH IT
 
@@ -2412,7 +2412,7 @@ because its author had not tested encoder determinism. Its own restatement,
 adopted:
 
     A LIMIT OF METHOD THAT IS ALSO A HAZARD GETS PROMOTED TO THE FIRST LINE
-    AND NAMED AS A HAZARD, WITH THE LIMIT ATTACHED TO IT — never the other
+    AND NAMED AS A HAZARD, WITH THE LIMIT ATTACHED TO IT, never the other
     way round. "I could not verify X" and "X is a live risk this stage
     would ship" are different sentences, and the second outranks the first.
 
@@ -2425,7 +2425,7 @@ piece A banked it at 493a6bcb.
 
 THE MECHANISM IS SUBTLER THAN "WRONG BRANCH". Its worktree was detached at
 a layered-cache commit; it read `projection.go` CORRECTLY via `git show`
-against the seam ref, and read EVERYTHING ELSE out of the tree around it —
+against the seam ref, and read EVERYTHING ELSE out of the tree around it,
 under a single header claiming one ref for all of it.
 
     A REPORT OF MIXED PROVENANCE UNDER A UNIFORM LABEL IS WORSE THAN ONE
@@ -2435,17 +2435,17 @@ under a single header claiming one ref for all of it.
 THE FIX, applied by its author unprompted: `git grep` AGAINST THE REF,
 never out of the tree around you. A WORKING DIRECTORY IS A PLACE YOU ARE
 STANDING, NOT A CLAIM YOU CAN CITE. Every material claim was then re-run
-against the seam ref and all of them stand — including the Q3 inventory,
+against the seam ref and all of them stand, including the Q3 inventory,
 correctly identified as the part most likely to have moved under commit
 one: non-study `Patches` on records appear in exactly THREE places, ONE
-test covers the ephemeral fold sites, and THE COMBINATION THAT DIES — warm
+test covers the ephemeral fold sites, and THE COMBINATION THAT DIES, warm
 pass, `Form == nil`, records carrying patches, asserting the transition
-against the carried board — IS ASSERTED NOWHERE.
+against the carried board, IS ASSERTED NOWHERE.
 
-## THE DELETION, GRADED — AND A TEST NAME THAT WAS A CLAIM NOBODY TESTED
+## THE DELETION, GRADED: AND A TEST NAME THAT WAS A CLAIM NOBODY TESTED
 
 9ed3f561's grading of commit two, recorded by f3aa1d0b, 2026-08-18.
-MEASURED AND, AT THE TIME OF THIS ENTRY, UNCOMMITTED — see the caution at
+MEASURED AND, AT THE TIME OF THIS ENTRY, UNCOMMITTED, see the caution at
 the end, which is mine.
 
 DECODES FIRST, because it was the ordered falsifier: 1 IN EVERY CELL, at
@@ -2456,7 +2456,7 @@ DECODES FIRST, because it was the ordered falsifier: 1 IN EVERY CELL, at
     lookups       0 throughout
     cold column   unmoved from ef7cdcb2
 
-WARM BECAME COLD. That is the trade, not a regression — and it is
+WARM BECAME COLD. That is the trade, not a regression, and it is
 measurable against a warm column THAT NO LONGER EXISTS, only because its
 final numbers were written into the commit that retired it. The
 cross-commit assertion was built as pre-registered, with TWO REACHABLE
@@ -2466,7 +2466,7 @@ second column.
 
 ## THE BEST FINDING OF THE STAGE IS NOT A NUMBER
 
-`TestCatchUpPreservesPrefixBytes` went RED — and what it had been asserting
+`TestCatchUpPreservesPrefixBytes` went RED, and what it had been asserting
 was `assert.Same`, POINTER IDENTITY, on a decoded block, while the BYTE
 assertion beneath it passed in the same run.
 
@@ -2474,7 +2474,7 @@ assertion beneath it passed in the same run.
     ARTIFACT OF RETAINING THE VERY SLICE THIS DELETION REMOVES.
 
 So the test would have gone red for a change that preserved every byte it
-claimed to guard, and the cheap repair — delete the failing assertion —
+claimed to guard, and the cheap repair, delete the failing assertion,
 would have taken the REAL check out with the fake one. It is the exact
 justification for the determinism pin, arriving from the other side: the
 instrument that looked like cover for prefix-byte stability was never
@@ -2482,7 +2482,7 @@ checking bytes at all.
 
     A TEST NAME IS A CLAIM NOBODY TESTS.
 
-Companion to the two already recorded tonight — a COMMENT is a claim nobody
+Companion to the two already recorded tonight, a COMMENT is a claim nobody
 tests (the cursor "built after the span is chosen"; "off the hot path" for
 eleven minor versions), and a BENCHMARK NAME is a claim nobody tests
 (`ObservationWarm50` over a cold walk). Three faces of one defect: THE
@@ -2493,7 +2493,7 @@ Both were caught by READING THE FAILURE rather than the summary.
 ## AND A CAUTION AGAINST MYSELF, RECORDED BECAUSE I ALMOST SHIPPED IT UPWARD
 
 I nearly reported to Gluck that the deletion had LANDED, on the strength of
-a grading report that was scrupulously honest about its provenance — it
+a grading report that was scrupulously honest about its provenance, it
 said, in its own words, that it graded a SCRATCH WORKTREE carrying the
 executor's UNCOMMITTED work. I checked the branch instead: HEAD unchanged,
 17 files dirty, `IncrementalProjection` still present four times in the
@@ -2508,7 +2508,7 @@ the person whose job is to catch it. A measured-but-uncommitted tree is the
 most fragile state in this campaign: the numbers exist, the artifact does
 not, and no stamped gate can name a tree that has no commit.
 
-# THE HEAP NUMBER, TAKEN — AND IT CORRECTS THIS DOCUMENT'S OWN HEADLINE
+# THE HEAP NUMBER, TAKEN: AND IT CORRECTS THIS DOCUMENT'S OWN HEADLINE
 # DOWNWARD
 
 9ed3f561, measured at ef7cdcb2 (PRE-deletion, the only tree where the
@@ -2523,7 +2523,7 @@ by f3aa1d0b, 2026-08-18.
     MULTIPLIER OVER ENCODED-AT-REST: 1.19x
 
 REACHABILITY PROVEN, NOT ASSUMED: padding each retained payload by 4,096 B
-should move the figure by ~4,096,000 B and moved it by 3,840,000 B — 94%.
+should move the figure by ~4,096,000 B and moved it by 3,840,000 B, 94%.
 A heap reading without that canary is a number, not an attribution.
 
 ## THIS DOCUMENT GUESSED "COMMONLY SEVERAL TIMES LARGER". IT IS 1.19x
@@ -2531,7 +2531,7 @@ A heap reading without that canary is a number, not an attribution.
 The LEDGER section says: "The projection holds DECODED Go values, commonly
 several times larger. THE REAL FIGURE IS A HEAP MEASUREMENT, NOT A FILE
 WALK, and it has not been taken." IT HAS NOW BEEN TAKEN AND THE GUESS WAS
-WRONG IN THE CONSERVATIVE DIRECTION — the note warned a reader the true
+WRONG IN THE CONSERVATIVE DIRECTION, the note warned a reader the true
 figure might be MULTIPLES of 200 MiB, and on this shape it is 1.19x.
 
 ## AND A SECOND CORRECTION, WHICH IS MINE AND WHICH MATTERS MORE
@@ -2553,7 +2553,7 @@ promising 200.
 
 THE STRUCTURAL CASE IS UNCHANGED AND IS STILL THE REASON: Gluck's ruling
 that NOTHING MAY PIN EVICTED BYTES. The projection made the store's window
-a fiction — memory it believed released was not — and that is a
+a fiction, memory it believed released was not, and that is a
 correctness property about the memory system, not a quantity. It was
 always the headline; the ledger said so ("the benefit is STRUCTURAL rather
 than TEMPORAL"). What changes is that nobody may now dress it in a
@@ -2561,9 +2561,9 @@ than TEMPORAL"). What changes is that nobody may now dress it in a
 
 ## THE GAP, NAMED BY THE MEASURER RATHER THAN FOUND LATER
 
-The fixture's `State` is `[]json.RawMessage` — RAW BYTES, so retention is
-~1:1 plus slice headers. THE PROVIDERS THAT DECODE INTO TYPED SDK STRUCTS
-— `anthropicsdk`'s `projectedMessages` — WILL HAVE A HIGHER MULTIPLIER AND
+The fixture's `State` is `[]json.RawMessage`, RAW BYTES, so retention is
+~1:1 plus slice headers. THE PROVIDERS THAT DECODE INTO TYPED SDK STRUCTS,
+`anthropicsdk`'s `projectedMessages`, WILL HAVE A HIGHER MULTIPLIER AND
 IT IS UNMEASURED.
 
     1.19x IS A FLOOR ON THE MULTIPLIER, NOT THE MULTIPLIER.
@@ -2575,7 +2575,7 @@ yet for the DECODED-STRUCT shape.
 
 This measurement was REFUSED THREE TIMES, on the ground that we are the
 load and it is Gluck's desktop. IT COUNTS BYTES. Bytes and allocations are
-load- and machine-independent — this campaign's own note says so
+load- and machine-independent, this campaign's own note says so
 (ns-does-not-travel.md: allocation counts IDENTICAL across two machines,
 wall time moving 10-15%).
 
@@ -2586,7 +2586,7 @@ The arm inherited it. The role bearer inherited it and upheld it three
 times. NEITHER ASKED, AND THE OWNER PROMPTED IT BY ASKING AN ORDINARY
 QUESTION ABOUT HIS OWN MACHINE. It is the sixteenth instance in the
 instrument note, committed simultaneously by the party that measures and
-the party whose whole job is to catch it — which is the strongest evidence
+the party whose whole job is to catch it, which is the strongest evidence
 yet for that note's thesis: the error is not carelessness, it is a correct
 answer to a narrower question, and shared context makes two people narrow
 it the same way.
@@ -2597,20 +2597,20 @@ it the same way.
 Gluck's design, recorded by f3aa1d0b the hour it was given. HIS WORDS: the
 projection "was probably supposed to be EXACTLY the contents of the cache,
 so that marshalling the bytes is just calling the accumulator with the
-necessary range and getting the full bytes in memory" — and returning the
+necessary range and getting the full bytes in memory", and returning the
 LITERAL SLICE over that range is ideal, and a CAPITAL PRIORITY of this work.
 
 ## WHAT IT MEANS AND WHY IT DISSOLVES THE TRADE WE JUST PRICED
 
 The stage that just landed replaced a carried projection with a WALK: N
 entries handed per turn, zero lookups, one decode. That walk exists ONLY
-because the canonical bytes are stored PER ENTRY — one `[]json.RawMessage`
-per record — so assembling a request means visiting each record.
+because the canonical bytes are stored PER ENTRY, one `[]json.RawMessage`
+per record, so assembling a request means visiting each record.
 
 IF THE CANONICAL BYTES ARE ONE CONTIGUOUS ARRAY PER ARIA, INDEXED BY LT,
 THEN A RANGE IS A SUBSLICE AND THE WALK IS O(1). Marshalling stops being
 an accumulation and becomes an address. The constant-to-linear trade this
-document spent the evening pricing DOES NOT NEED TO BE PAID — it was the
+document spent the evening pricing DOES NOT NEED TO BE PAID, it was the
 price of a storage shape, not of the retention rule.
 
     THE RETENTION RULE IS UNTOUCHED. "Nothing may pin evicted bytes" is
@@ -2663,19 +2663,19 @@ the campaign's own rules pick between them:
   BORROW + RELEASE (the alternative, if request assembly cannot nest)
       blocks, release, err := c.Payloads(from, through); defer release()
 
-  AND `io.WriterTo` ON TOP OF EITHER, for the request body — the borrow
+  AND `io.WriterTo` ON TOP OF EITHER, for the request body, the borrow
   lasts exactly as long as the write, nothing is ever accumulated, and this
   is PART III of this document arriving from the other direction.
 
 WHAT ENFORCES IT IS NOT THE SIGNATURE, AND THAT MUST BE SAID: no Go
 signature prevents a caller storing the slice. The enforcement is the
-RESIDENCY COUNT — entries still reachable after the pass, canaried 0 -> 200
-— which now guards a design decision rather than a deletion.
+RESIDENCY COUNT, entries still reachable after the pass, canaried 0 -> 200,
+which now guards a design decision rather than a deletion.
 
 # THE DELETION LANDED: eeec2bc0, TREE CLEAN
 
 Verified by f3aa1d0b rather than accepted: `IncrementalProjection` appears
-THREE times in the committed tree and all three are TOMBSTONE COMMENTS —
+THREE times in the committed tree and all three are TOMBSTONE COMMENTS,
 projection.go's "IT WAS GONE" header, a test's note about a field that no
 longer exists, and this stage's own rationale in snapshot_cursor.go. The
 type is gone. The determinism pin is committed beside it.
@@ -2693,19 +2693,19 @@ executor's CANARY K found it by PASSING:
 
 Deleting `study_render.go`'s `sort.Strings` left the pin GREEN, because
 key order does not survive marshalling. THE HAZARD IS NOT ORDER IN THE
-OUTPUT — IT IS ORDER DECIDING *SELECTION*: `form.DeltaLimits` caps a
+OUTPUT, IT IS ORDER DECIDING *SELECTION*: `form.DeltaLimits` caps a
 studied block at 8192 bytes, and the renderer spends keys against that
 budget IN SORTED ORDER precisely so two renderings agree. Spend them in
 map order and A DIFFERENT SUBSET IS SHOWN, which no downstream key sorting
 can repair.
 
     A MAP-RENDERED RECORD IS NECESSARY AND NOT SUFFICIENT. IT MUST BE A MAP
-    WHOSE ITERATION ORDER CHANGES THE OUTPUT — and where a budget forces a
+    WHOSE ITERATION ORDER CHANGES THE OUTPUT, and where a budget forces a
     choice is where that happens.
 
 RE-CANARIED: eight values of ~1800 B overflow the 8192 budget so it must
-choose; spending in map order FAILS the pin. TWO VACUITY GUARDS beside it —
-the board keys must reach the wire, AND THE BLOCK MUST ELIDE — the second
+choose; spending in map order FAILS the pin. TWO VACUITY GUARDS beside it,
+the board keys must reach the wire, AND THE BLOCK MUST ELIDE, the second
 because without it the pin is blind, and it was, measurably, for one
 revision.
 
@@ -2716,7 +2716,7 @@ UNCOVERED.
 ## THE CANARY THAT PASSES IS THE ONE THAT TEACHES
 
 Three times tonight a passing canary was a finding rather than a
-reassurance — a test that could not see the header defect, an instrument
+reassurance, a test that could not see the header defect, an instrument
 that could not reach the memo, and now a premise about JSON that was simply
 false. A CANARY THAT FIRES CONFIRMS AN INSTRUMENT. A CANARY THAT PASSES
 CORRECTS A BELIEF, and the second is worth more.

@@ -1,4 +1,4 @@
-# soul-wal overnight run — 2026-07-23
+# soul-wal overnight run: 2026-07-23
 
 ## MORNING SUMMARY (read this first)
 
@@ -10,7 +10,7 @@ verified live. Adversarially reviewed (14-agent workflow): 8 findings, all
 fixed and re-verified. Daemon restarted; smoke green. NOT pushed to origin
 (main + v0.5.0 await your push).
 
-**Figwal memory-first: DONE — v0.8.1 cut at d62c789.** 26 commits,
+**Figwal memory-first: DONE, v0.8.1 cut at d62c789.** 26 commits,
 +5160/−727 over 53 files. 17 defects found and fixed across the
 campaign (4 pre-tag, 12 adversarial-review findings, 1 final-spot-check
 cut-bound bug). Full -race green; seed corpus 31/32/33/52/54-60 zero
@@ -26,7 +26,7 @@ flush cuts, .unclean-gated open repair, explicit-fork-only, auto-create
 channels, idle eviction, flush-failure poisoning, old-manifest compat.
 Crash campaign: coherent cuts held over 808 SIGKILL cycles (zero
 orphans; durability bound met exactly; Close lossless). Fork commit was
-the last non-atomic spot (inherited from e2f5c89) — two-phase-commit fix
+the last non-atomic spot (inherited from e2f5c89), two-phase-commit fix
 landed (9afd678); seed replays running now, tag v0.8.0 cuts when green.
 Sealed-segment BYTE corruption (external damage) is documented out of
 open-repair scope → future offline fsck.
@@ -39,7 +39,7 @@ review findings verified FIXED (the one PARTIAL closed by d673ed3).
 main, net −839 incl. the ship work): store layer collapsed onto
 OpenStore, SyncTranslation deleted (flusher owns durability; user tics
 Kick), full -race green, real-store-copy verified (open+fold+append),
-live e2e green (send/drain/resume). Pinned to figwal via local replace —
+live e2e green (send/drain/resume). Pinned to figwal via local replace,
 swap to the tag after figwal pushes.
 
 **Loss contract now in force** (the deliberate change): cooperative
@@ -61,7 +61,7 @@ semantics (0=default-5m, negative=never).
 ## Wave 0 (done)
 - T0 landed on figaro main 4ccbd0f, installed (nix profile): migration gate
   deleted (−745/+19), providers degrade to uncached, verified against a copy
-  of the real store — 942fb59e and e6e77a26 open cleanly.
+  of the real store, 942fb59e and e6e77a26 open cleanly.
 - W1 API freeze: figwal memory-first branch, the memory-first design doc in
   figwal-core (e37f70c) -- a file of THAT repo, never of this one.
 
@@ -83,9 +83,9 @@ semantics (0=default-5m, negative=never).
   probe green (dead turn-wal harmless).
 - E2E on isolated daemon (soul-wal binary): fresh turn E2E-OK; stop
   mid-tool → drain sealed partial assistant + honest interrupted tool
-  result; both arias resume post-restart (RESUMED-OK — no cache poison).
+  result; both arias resume post-restart (RESUMED-OK, no cache poison).
 - SHIPPED: main ff-merged to soul-wal + doctor-gc (b8c126f), installed
-  (profile pinned to explicit rev — the ?ref=main fetch had served a stale
+  (profile pinned to explicit rev, the ?ref=main fetch had served a stale
   tree), old daemon stopped at zero active turns, real store backed up to
   scratchpad (arias-backup-preship) then GC'd, new daemon spawned from the
   profile binary, live smoke SHIP-OK.
@@ -96,9 +96,9 @@ semantics (0=default-5m, negative=never).
   rebuild/exit the devshell to get the ship CLI locally.
 - Ship-gate review COMPLETE: 8 confirmed findings (2 HIGH), all fixed in
   hot-patch 5442017, installed + daemon restarted (live smoke PATCH-OK):
-  (1) SIGTERM drain wiring was dead — daemon main now waits for Shutdown,
+  (1) SIGTERM drain wiring was dead, daemon main now waits for Shutdown,
   socket removed post-drain; drain re-verified live (mid-tool stop seals
-  honestly). (2) cache predicate split render vs wire-replay — signed
+  honestly). (2) cache predicate split render vs wire-replay, signed
   empty-summary thinking blocks persist again (400-poison regression from
   the hygiene pass), unparsed tool_use input => whole message uncacheable.
   (3) interrupted completed tools seal full results w/ truncation marker
@@ -109,7 +109,7 @@ semantics (0=default-5m, negative=never).
   multi-segment tails are pre-existing gaps deferred to memory-first.
 
 ## Incidents
-- Hosts deaths 2-3: kernel OOM — figwal log.test at 42GB RSS in the session's
+- Hosts deaths 2-3: kernel OOM, figwal log.test at 42GB RSS in the session's
   oom.group scope. Diagnosed: TestCachedConcurrentReaders (contributor's test,
   stop-condition scales with log size) x A1's unthrottled memory-first Write
   (no backpressure; pending/snapshot grow at memory speed). Fix directed:
@@ -141,26 +141,26 @@ semantics (0=default-5m, negative=never).
 - A2 campaign vs memory-first: coherent cuts CONFIRMED (zero orphans in
   808 kill cycles, head-cut class gone, durability bound met, Close-drain
   lossless, flush-error recovery clean). STILL BROKEN: fork commit not
-  crash-atomic (M1 trunk-id loss, M2 .fork-pending bricks open — same as
+  crash-atomic (M1 trunk-id loss, M2 .fork-pending bricks open, same as
   e2f5c89); sealed-segment byte corruption (M3/M4) out of open-repair
   scope. A1 now on the fork two-phase-commit fix; M3/M4 rescoped to an
   offline fsck (documented, deferred).
 - figwal compat fix 2682f6b: reducer resolution falls back to channel
-  name — pre-OpenStore manifests (jsonmerge) open cleanly; proven against
+  name, pre-OpenStore manifests (jsonmerge) open cleanly; proven against
   a real-store copy including appends.
 - G2 live e2e on memory-first engine: G2-OK, drain seal honest, resume
-  G2-RESUMED — old-format store through the compat path.
+  G2-RESUMED, old-format store through the compat path.
 - FINAL REVIEW round: 12 confirmed findings fixed as 5 figwal roots
   (5e4607a lifecycle flusher + per-lineage poison, ecb42ac one-ahead
   drain, c19ae0f fork rollback, 4707ec4 Store.Clear, 9575fbc no-retire-
   on-failing-flush) + figaro seams (66c219d, be703db). Fix-verification:
   11/12 FIXED, 1 PARTIAL (stale in-memory readOnly on a raw handle after
-  fork abort — unreachable from figaro; final polish in flight). Gate
+  fork abort, unreachable from figaro; final polish in flight). Gate
   corpus: 10+ consecutive seeds green, zero violations.
 - Fork two-phase-commit fix (9afd678) verification found TWO more real
   bugs, both fixed: 3f33a2f stray-flush sweep could put a related record
   ahead of main at runtime; 1014cb6 rotation-crash left an empty active
-  segment whose watermark header wasn't reseeded at open — swallowed the
+  segment whose watermark header wasn't reseeded at open, swallowed the
   next reducible record (seed 55 durable-loss). Seed 55 replay now green;
   full re-batch + independent 31/32/33 replay running; tag gates on both.
 

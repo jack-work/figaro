@@ -164,14 +164,14 @@ tree yet says what.
 
 ## ANSWERED, 2026-08-18, BY A CANARY THAT REFUSED TO GO RED (aria 7e151902)
 
-The question this note ends on — WHAT ENDS THE TURN WHEN THE CLIENT DIES —
+The question this note ends on, WHAT ENDS THE TURN WHEN THE CLIENT DIES,
 is answered, and the answer falsifies the premise the whole note was
 built on.
 
 THE EXPERIMENT. A new pty case reads the DURABLE log after the pane is
 gone and asserts `figaro.InterruptedToolNotice` ("interrupted: tool
 execution did not complete"), which repairTurnTail writes only under
-`a.isInterrupted()` — a flag only `Agent.Interrupt` sets, and only the
+`a.isInterrupted()`, a flag only `Agent.Interrupt` sets, and only the
 `figaro.interrupt` RPC reaches. It passed in 30.12s.
 
 THEN THE CANARY: `inputInterrupt` reverted to its pre-2d5dd424 body
@@ -182,12 +182,12 @@ THEN THE CANARY: `inputInterrupt` reverted to its pre-2d5dd424 body
 
 IT STAYED GREEN, at the same time to the centisecond. So the mark is
 produced WITHOUT inputInterrupt sending anything, and this instrument
-cannot tell the fix from the bug either — the same verdict the state poll
+cannot tell the fix from the bug either, the same verdict the state poll
 earned, reached by a better route.
 
 THE MECHANISM, FOUND BY FOLLOWING THAT: `internal/cli/stream.go`, the
 `case <-ctx.Done():` arm of the streaming loop, ALREADY CALLS
-`fcli.Interrupt(intCtx)` when the CLIENT's own context is cancelled — and
+`fcli.Interrupt(intCtx)` when the CLIENT's own context is cancelled, and
 cancelling the client's context is exactly what the old `in.cancel()` did.
 
     THE DAEMON WAS ALWAYS TOLD. By a different line than anyone looked at.
@@ -195,7 +195,7 @@ cancelling the client's context is exactly what the old `in.cancel()` did.
 WHY THE ORIGINAL GREP MISSED IT: it searched for `MethodInterrupt` across
 internal/cli, and this call site goes through the CLIENT METHOD
 (`fcli.Interrupt`), which does not contain that identifier. The one hit it
-found — a method-name list in replay.go — was true and irrelevant. A grep
+found, a method-name list in replay.go, was true and irrelevant. A grep
 for the constant cannot see a call that names the wrapper.
 
 WHAT THIS DOES TO THE RECORD:
@@ -215,9 +215,9 @@ WHAT THIS DOES TO THE RECORD:
 
 WHAT IS STILL UNGUARDED, named rather than left to be found: the
 PROSE-ONLY interrupt. The mark asserted here is a TOOL notice. A turn
-interrupted mid-paragraph with no tool running leaves a different mark —
+interrupted mid-paragraph with no tool running leaves a different mark,
 repairTurnTail appends the partial assistant with StopReason StopAborted
-(turn_repair.go:130-141) — and nothing asserts it.
+(turn_repair.go:130-141), and nothing asserts it.
 
 THE SHAPE OF THE MISTAKE, one level up from the note's own version of it:
 a diagnosis was founded on a grep for an IDENTIFIER, and the code reached

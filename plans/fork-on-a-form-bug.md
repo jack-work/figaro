@@ -14,17 +14,17 @@ Cause, one line: `XwalStore.ForkWith` hard-codes
 says the caller chooses the child's species. The fork verb has no way to say.
 
 **The form→form operation already exists and is already documented**:
-`CreateForm(parent, patch)` — *"Parent "" forks the null root; a form id
+`CreateForm(parent, patch)`, *"Parent "" forks the null root; a form id
 duplicates that form's state into a fresh @id"* (`rpc.FormCreateRequest`).
 `createFormAndReport` even takes a `parent`. **Every CLI caller passes ""**,
 so nothing reaches it. `fig form new` while attended to a form mints a
-SIBLING off the null root and inherits nothing — verified.
+SIBLING off the null root and inherits nothing, verified.
 
 So the fix is wiring, not mechanism: `fig fork` on a node of kind `form`
 routes to `CreateForm(parent)`. Two real questions with it:
 
 1. a form's timeline is one ceremonial record, so `<id>:<turn>` addresses
-   nothing — a form fork is always at the head, and the verb should say so
+   nothing, a form fork is always at the head, and the verb should say so
    rather than silently ignoring a coordinate.
 1. `CreateForm` REQUIRES a patch (*"a fork that transforms nothing is a fork
    nobody can name"*) and `fig fork` takes none. Either fork-a-form demands

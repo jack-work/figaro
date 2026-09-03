@@ -17,7 +17,7 @@
    `t.drawer.kind` all describe what is on screen, and `mode()` derives a
    `keyMode` from them for the keymap. Nothing owns "what is open"; each
    consumer re-derives it, and for one frame they can disagree.
-3. **The state vocabulary is prose.** `turnLabel()` returns `"completed ✓"` —
+3. **The state vocabulary is prose.** `turnLabel()` returns `"completed ✓"`,
    symbol and name fused, no colour, no way to ask for one without the other.
    The requirement is symbols by default and names under a toggle; that shape
    cannot express it.
@@ -50,12 +50,12 @@ is not: 40/60/80/120 columns × {plain, drawer open, alert, verbose, no mantra}.
 
 - **Narrow** is **three rows**, not two: left group, blank, right group, all
   left-justified. The blank is in the worked example, and the row count goes
-  through the same height accounting as the drawer — off by one here and the
+  through the same height accounting as the drawer, off by one here and the
   transcript loses a line.
 - **Verbose** wraps both sides, truncates each FIELD rather than the line, and
   **a wrapped row carries no `·`**: the separator joins fields on a row, it does
   not dangle at a break. `LastAt` joins the RIGHT group, beside the context
-  figure — both are facts about the conversation rather than about the mode.
+  figure, both are facts about the conversation rather than about the mode.
 - **Shedding is replaced by wrapping.** The rank ladder exists only because
   everything had to fit on one row. The mantra is the last thing to go.
 
@@ -65,18 +65,18 @@ with the cache buckets it is meaningless without. This is the one subtraction a
 reader notices on day one, so it is stated rather than discovered.
 
 **But a time comes back under verbose, and it is a different time.** An earlier
-draft of this plan said "the clock belongs nowhere — every terminal already has
+draft of this plan said "the clock belongs nowhere, every terminal already has
 one", and that was right about the wrong clock. `startedAt` answers "when did I
 open this", which nothing depends on. **`LastAt` answers "is this conversation
-stale?"** — and nothing else on the screen answers it, because a pager sitting
+stale?"**, and nothing else on the screen answers it, because a pager sitting
 on a finished turn looks identical whether that turn ended nine seconds or nine
 hours ago. See §5.
 
 ## 2. One owner for "what is open"
 
-Keyboard behaviour and visible identity are **different axes** — `help`,
+Keyboard behaviour and visible identity are **different axes**, `help`,
 `status` and `queue` share `modePanel` while being three different things on
-screen — so they keep two types. But they are not independent: **the drawer
+screen, so they keep two types. But they are not independent: **the drawer
 identity is the source, and `keyMode` is derived from it.**
 
 ```go
@@ -95,19 +95,19 @@ One table keyed by drawer id gives the glyph and the name.
 |---|---|---|---|
 | queue | `𝄚` | queue | `♭` |
 | notifications | `𝄞` | notifications | `♩` |
-| command | `∴` | command | — |
-| search | `⌕` | search | — |
-| help | `?` | help | — |
-| status | `!` | status | — |
-| message | — | — | — |
-| output | — | — | `♭` |
-| live (hosted verb) | — | *(the verb's own)* | `♭` |
+| command | `∴` | command | - |
+| search | `⌕` | search | - |
+| help | `?` | help | - |
+| status | `!` | status | - |
+| message | - | - | - |
+| output | - | - | `♭` |
+| live (hosted verb) | - | *(the verb's own)* | `♭` |
 | *(reserved)* | | input | |
 
 **Every drawer needs a row, including the ones with nothing to show.** If
 `drawerID` is the source of `keys()`, then message, command output and a hosted
-live view are identities too — they just contribute **no token** to the bar
-(glyph `—` means the left group starts at the state) and take `modePanel`.
+live view are identities too, they just contribute **no token** to the bar
+(glyph `-` means the left group starts at the state) and take `modePanel`.
 Completion candidates are not a drawer: they are rows inside the command box,
 which is why they do not appear here.
 
@@ -118,13 +118,13 @@ which would make the left group's width a property of the reader's terminal.
 **Help is a first-class drawer identity**, at the same level as queue, command
 and notifications: its own row, its own glyph, and `?` SWITCHES TO IT from every
 mode except command, where `?` is text. Its keyboard behaviour is still
-`modePanel` — being first-class is about identity, not about inventing a
+`modePanel`, being first-class is about identity, not about inventing a
 keyMode nothing needs.
 
 **Two consequences, stated because they are real costs.**
 
 `?` is text in the SEARCH box too, and this rule takes it: searching for a
-literal `?` has no route here. The alternative — exempting search as well —
+literal `?` has no route here. The alternative, exempting search as well,
 leaves help unreachable from the box where a reader is most likely to be lost,
 so the key wins and the literal loses.
 
@@ -153,7 +153,7 @@ func (s turnState) style() term.Style       // hup gray, error red, rest default
 | idle | `𝄐` | `idle 𝄐` | **the catch-all**: none of the above |
 
 **`detached` keeps its meaning and loses its animation.** The first draft of
-this plan deleted it — a spinner that never turns again, since nothing repaints
+this plan deleted it, a spinner that never turns again, since nothing repaints
 after a detach. But the animation was the defect, not the fact: "I left and the
 turn is still running" is precisely when the follow hint applies, and `idle` is
 defined as the catch-all for conditions *not otherwise known*. A static glyph
@@ -164,7 +164,7 @@ keeps the truth and drops the lie.
 ## 4. Notifications: a sink, a drawer, and nothing clever
 
 **Phase 1 is CLI-local, and says so.** A ring in the pager process cannot see
-the daemon's or the agent's `slog` — they are different processes — so this
+the daemon's or the agent's `slog`, they are different processes, so this
 phase captures the CLI's own records plus anything already arriving over the
 wire. Claiming "all warnings and errors" without a transport would be a lie.
 
@@ -173,8 +173,8 @@ wire. Claiming "all warnings and errors" without a transport would be a lie.
   one-transient-region rule. `^N`/`^P` move, `y` yanks, **no delete**: a log you
   can edit is not a log.
 - **`Alert` replaces the status bar's `notice`, and it is TRANSIENT.** There is
-  no second error channel: `setNotice` is deleted and every caller — including
-  the ordinary confirmations like `sent` — posts a notification instead. The
+  no second error channel: `setNotice` is deleted and every caller, including
+  the ordinary confirmations like `sent`, posts a notification instead. The
   newest one occupies the **first left-hand slot** of the bar, ahead of the
   drawer token, and it leaves on its own:
 
@@ -186,7 +186,7 @@ wire. Claiming "all warnings and errors" without a transport would be a lie.
 
 **This is the one piece with a liveness requirement**, and the mechanism is
 already in the building. Everything else in the pager repaints because something
-arrived — a key, a frame, a resize — so an alert that expires on a clock would
+arrived, a key, a frame, a resize, so an alert that expires on a clock would
 otherwise vanish on the next keypress, which reads as randomness rather than as
 a timeout.
 
@@ -196,7 +196,7 @@ nothing is animating; having `tick()` retire an expired alert gives expiry
 within ~90 ms with no second scheduler and no teardown path to get wrong.
 
 **And keep the clock out of `render`.** Expiry is evaluated where the tick is,
-not inside `statusView.render(w)` — otherwise the pure renderer this section
+not inside `statusView.render(w)`, otherwise the pure renderer this section
 promised becomes a function of the wall clock and its goldens become flaky.
 
 **Next steps, named:** a notify transport so daemon and agent records arrive
@@ -241,15 +241,15 @@ lies about its own length is the one failure mode all three share.
 bar's verbosity**: state names, `system.model`, the hint row, and the time of
 the **last interaction**.
 
-**`LastAt` is a full datetime, `01/02/06 15:04:05`** — `08/28/26 12:47:31`, not
+**`LastAt` is a full datetime, `01/02/06 15:04:05`**, `08/28/26 12:47:31`, not
 a bare wall clock and not a relative "3m ago". A date because the question it
 answers is "is this stale", which a time alone cannot answer once a pager has
 been open across midnight; and absolute rather than relative because a relative
 string is only true at the instant it is painted, which would drag this field
 into the liveness problem below for no gain.
 
-**It is the newest message's timestamp in either direction** — the turn's `At`,
-or the newest node's — not the session's start and not the last thing the USER
+**It is the newest message's timestamp in either direction**, the turn's `At`,
+or the newest node's, not the session's start and not the last thing the USER
 typed: what a reader wants to know is when the conversation last moved, and an
 agent working alone for an hour is a conversation that is moving.
 
@@ -257,7 +257,7 @@ agent working alone for an hour is a conversation that is moving.
 and everything that makes it change already repaints the bar.
 
 - **`ui.status_verbose` in `config.toml` seeds it**; `^V` overrides for the
-  session. Both paths tested — the spec asks for a configurable default and it
+  session. Both paths tested, the spec asks for a configurable default and it
   is the kind of thing that ships unwired.
 - **`^V` is PASTE in the command box**, by requirement, reversing the
   "deliberately unbound" note in `keymap.go`: that argument was that quoting had
@@ -275,21 +275,21 @@ everything else, and it inherits cost and the cache buckets from §1.
 
 Each step ships alone; none changes what the pager can do.
 
-1. **`turnState`** (§3) — smallest, and `statusView` needs it.
-2. **The drawer table** (§2) — glyphs, names, and `keys()`. It comes BEFORE the
+1. **`turnState`** (§3), smallest, and `statusView` needs it.
+2. **The drawer table** (§2), glyphs, names, and `keys()`. It comes BEFORE the
    value that consumes it: `statusView` takes a `drawerID` and renders its
    glyph, so building the value first would mean re-deriving identity inside it,
    which is the exact defect §2 exists to remove.
-3. **`statusView` + goldens** (§1) — the bar renders from a value.
-4. **`cmdkit.AndMore(n, hint)`** — one spelling of "… 749 more" for the drawer,
+3. **`statusView` + goldens** (§1), the bar renders from a value.
+4. **`cmdkit.AndMore(n, hint)`**, one spelling of "… 749 more" for the drawer,
    `form show` and the `ls` family, which have three today.
-5. **the `picker`** (§4a) — extracted from the completion menu, adopted by the
+5. **the `picker`** (§4a), extracted from the completion menu, adopted by the
    queue. It lands before notifications so that notifications is only a row
    renderer and a sink, not a fourth copy of a list.
-6. **notifications** (§4) — the only new surface.
-7. **`^V`** (§5) — last: the only binding change.
+6. **notifications** (§4), the only new surface.
+7. **`^V`** (§5), last: the only binding change.
 
-## Decided for you — each reversible with one line
+## Decided for you: each reversible with one line
 
 1. **The aria id moves off the rule and into the status row.** Every worked
    example shows a bare rule and `✓ · 123abc · test`; one sketch line says the
@@ -307,6 +307,6 @@ Each step ships alone; none changes what the pager can do.
 6. **Verbose shows the last interaction** (§5) as `01/02/06 15:04:05`. It
    replaces the session-start clock, which the default bar drops.
 
-*(Nothing is open. The two questions this plan carried — search's identity and
-how help stays reachable — were answered by Gluck on 2026-08-28 and are folded
+*(Nothing is open. The two questions this plan carried, search's identity and
+how help stays reachable, were answered by Gluck on 2026-08-28 and are folded
 in above.)*

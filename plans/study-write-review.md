@@ -9,7 +9,7 @@ nobody ever put it in front of you. Here it is. Five minutes.
 
 Two nodes must end consistent: the **libretto** (a refcount) and the
 **observer's board** (`system.studies`, a set). Two actors, two logs, no
-shared transaction. Not two-phase commit — crash-safe by **ordering**, the
+shared transaction. Not two-phase commit, crash-safe by **ordering**, the
 same idiom the delete path already uses:
 
 ```
@@ -20,7 +20,7 @@ drop:  board FIRST (undeclare), libretto SECOND (release)
 Both orders leave, on a crash, a refcount that is **too high**. Too high
 delays reclamation; too low reclaims a copy a live observer still needs. One
 is a leak, the other is data loss, and `ReconcileLibrettos` **recomputes**
-each count from the boards, so it repairs the leak — and, being a recompute
+each count from the boards, so it repairs the leak, and, being a recompute
 rather than an adjustment, it repairs an under-count too.
 
 ## What it looks like (`internal/store/study.go`)
@@ -83,12 +83,12 @@ refused. Import lifts the key out of the imported patch and replays each id
 through the VERB rather than gaining privilege, so an importer still cannot
 write `system.cwd`.
 
-*The question*: none, unless you disagree — but it changed what `fig set` can
+*The question*: none, unless you disagree, but it changed what `fig set` can
 do to a board, so it is worth knowing.
 
 ## One defect found while writing this up (fixed, `internal/store/study.go`)
 
-`DropForm`'s retry loop `break`s on success and `continue`s on conflict — and
+`DropForm`'s retry loop `break`s on success and `continue`s on conflict, and
 **fell through on exhaustion**, releasing the libretto anyway. That takes a
 reference off a copy a board still names: the under-count that the whole
 ordering exists to prevent, and the one the sweep cannot distinguish from a
@@ -97,6 +97,6 @@ legitimate observer. It also returned `changed: true`, lying about it.
 It refuses now, with the reference intact, and says so. Verified red: without
 the guard, the test reports a successful drop and the count comes down.
 
-Rare — 32 consecutive conflicts — but the ordering discipline is *entirely*
+Rare, 32 consecutive conflicts, but the ordering discipline is *entirely*
 about what happens in the rare case, so a fall-through in the one branch
 where the participants can disagree is exactly the wrong place to have one.

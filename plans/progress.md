@@ -149,14 +149,14 @@ form-deltas demo store and worth keeping until Gluck has tested.
 
 Phase 9's second half: **the copy is now the thing that renders**. Before
 this, four sessions had built, refcounted, swept, migrated and instrumented a
-libretto that no render path read — every studied form paid a durable fold
+libretto that no render path read, every studied form paid a durable fold
 for state nothing consumed. It reads now.
 
 **Shipped** (`e0fd5c34`)
 
 | | |
 |---|---|
-| the cursor namespace | the IR stamps `libretto:<sourceid>` holding the LIBRETTO's version. Legacy `study:` stamps hold SOURCE versions, no longer match, and render nothing — the skip Gluck's ruling licensed, not a second rendering path |
+| the cursor namespace | the IR stamps `libretto:<sourceid>` holding the LIBRETTO's version. Legacy `study:` stamps hold SOURCE versions, no longer match, and render nothing, the skip Gluck's ruling licensed, not a second rendering path |
 | the accessor | `studyAccessors` reads each form's libretto. **No render path touches a source form.** Keys stay source ids, so the block still names what the user knows |
 | the machinery stays hidden | `librettoView` strips `system.libretto.*` except `alive` |
 | deletions | `StudyNotes`, its field, its render branch and its tombstone: **deleted**. A dead source is `system.libretto.alive` on a copy that outlives it, rendered as an ordinary key change |
@@ -164,7 +164,7 @@ for state nothing consumed. It reads now.
 
 **THE ONE THAT MATTERS MOST, found by restarting a daemon** (`5c407e53`): a
 study window could close on a record that cannot carry it. Study blocks ride
-a USER message — every encoder renders them under `RoleInput` — but the
+a USER message, every encoder renders them under `RoleInput`, but the
 projection advanced the cursor on every stamped record, so an ASSISTANT
 record computed a block, dropped it, and left the next user record asking for
 `(v, v]`:
@@ -187,7 +187,7 @@ that, because it is what is true.
 
 **Two more things found by building it, both in the direction that loses data**
 
-0. **THE ORPHANED READER — found live, after the unit suite was green.** The
+0. **THE ORPHANED READER, found live, after the unit suite was green.** The
    accessor read the copy as a NODE, which opens a second Form over the
    libretto's channel. It replays at open, so the first render is right; the
    fold appends through the other instance, so nothing after it ever arrives.
@@ -197,7 +197,7 @@ that, because it is what is true.
    `open=1 observers=1`, and the whole unit suite passed. See §12.5d. Refused
    by construction now: `b.form()` rejects a libretto id and names the call
    that is correct. **What caught it was `renderlive.sh` asserting on the
-   WIRE** — the bytes the model was actually sent.
+   WIRE**, the bytes the model was actually sent.
 
 1. **The libretto's bookkeeping would have reached the model.** `at` moves on
    every fold; `refs` moves whenever some OTHER aria studies the same form.
@@ -211,21 +211,21 @@ that, because it is what is true.
 
 **A timing change worth knowing**: a stamp names where the COPY stood, and
 the fold is asynchronous. A source write landing just before an IR append
-renders in the NEXT block. Nothing is lost — consecutive stamps still bracket
-every patch — but a test that patches and immediately appends must WAIT for
+renders in the NEXT block. Nothing is lost, consecutive stamps still bracket
+every patch, but a test that patches and immediately appends must WAIT for
 the fold. `TestObservedFormsStampIRAppends` does.
 
 ### The drift audit Gluck asked for (built vs. originally described)
 
 Fanned out to a read-only aria against `durable-forms.md` whole, `wym.md` and
 `answers-forms.md` (Gluck's own words), and session 1. Fourteen rows; the
-honest summary is that **the refcount design is honored in full** — including
-`wym.md`'s own reversal from a study-set MAP to a SET — and the gaps are
+honest summary is that **the refcount design is honored in full**, including
+`wym.md`'s own reversal from a study-set MAP to a SET, and the gaps are
 these four:
 
 | # | what he said | what exists |
 |---|---|---|
-| 8 | "record the deletion and **stop listening**" (`wym.md:21`) | records the death, never unsubscribes (`libretto.go:349-364`). A dead source's form stays subscribed, so it is permanently un-evictable — one pinned instance per deleted-but-studied form |
+| 8 | "record the deletion and **stop listening**" (`wym.md:21`) | records the death, never unsubscribes (`libretto.go:349-364`). A dead source's form stays subscribed, so it is permanently un-evictable, one pinned instance per deleted-but-studied form |
 | 9 | "if a form with the same id is created again, the system should handle it" (`wym.md:22`) | **never kept.** A reborn form's channel restarts at 1, and both the seed guard (`libretto.go:218`) and the event guard (`:309`) silently discard everything below the dead form's high-water mark. `alive` stays false. No test, no note |
 | 3 | the two-participant write, approved **conditionally on seeing the code** (`answers-forms.md:12`) | built since `ac3314bc`; the review was never asked for. The retry count went 5 → 32 under contention that exists because casts left the actor loop |
 | 10 | "scrap the form projection … whole-form only" (`answers-forms.md:1`) | code is whole-form; the DESIGN TEXT still carries `"paths"` in the libretto document and still lists the union projection as open `[q13]` in §17 |
@@ -234,15 +234,15 @@ That last one is **closed**: Gluck ruled ("studying is something for forms;
 outfits are just the names I give the named files that seed primary forms"),
 and both halves of `requireStudyTarget` refuse an outfit now, naming it.
 
-Row 6 of that audit was "figaro stamps the libretto's cursor — not built".
+Row 6 of that audit was "figaro stamps the libretto's cursor, not built".
 This session is that row.
 
 ### The pair is the unit (`4046d3d5`, Gluck's ruling)
 
 The version and the snapshot must be fetched atomically, and that should be
-ENCODED rather than remembered. They were already published together —
+ENCODED rather than remembered. They were already published together,
 `Form.state` is one atomic pointer to `{snap, version}` written by the actor
-loop — and the API handed out halves, which three sites duly took apart.
+loop, and the API handed out halves, which three sites duly took apart.
 
 ```go
 type FormAt struct { Snapshot form.Snapshot; Version uint64 }
@@ -256,7 +256,7 @@ the halves come from one load.
 
 The three that were splitting it: the libretto refcount; `studiesAndVersion`,
 where a lost update is **unrecoverable** because the board is what the sweep
-recomputes FROM; and `Agent.patchStudies`, which was worse than a race — it
+recomputes FROM; and `Agent.patchStudies`, which was worse than a race, it
 read the set from the agent's in-memory MIRROR and the version from the
 STORE, two objects that can disagree with no concurrency at all.
 
@@ -270,13 +270,13 @@ must survive for it; this would be a second one, used by everything internal.
 
 §12.7b says a deleted source is reported IN BAND, as a key: the copy carries
 `system.libretto.alive=false` and it renders like any other key change. Every
-layer did its job — the fold recorded it, the accessor passed it through, my
-filter deliberately spared `alive` — and **`studyFold` dropped it**, because
+layer did its job, the fold recorded it, the accessor passed it through, my
+filter deliberately spared `alive`, and **`studyFold` dropped it**, because
 it skips every `system.*` key, rightly, as machinery.
 
 So killing a studied form said **nothing at all** to the model. The ruling was
 built, durable, correct and undeliverable. It renders as `"exists": false`
-now — the word the old tombstone note used, without the error framing.
+now, the word the old tombstone note used, without the error framing.
 
 Only a wire assertion could have found it. Nothing was broken; the ruling
 simply was not delivered.
@@ -293,7 +293,7 @@ study:@id    {"changes":1,"set":{"phase":"ga"}}
 ```
 
 The mark carries the baseline (the seeded copy), the two patches that landed
-in one window are ONE block of two changes — the fold coalescing, visible —
+in one window are ONE block of two changes, the fold coalescing, visible,
 and the patch after the first turn is its own block. No `system.libretto.at`,
 no `refs`, no `@libretto::` stump name anywhere in the context. Seven checks,
 all asserting on the wire dump rather than on what a model said about it.
@@ -352,7 +352,7 @@ this is the map, and "WHAT IS ACTUALLY LEFT" at the very bottom is the queue.
 | the real store | phase 9 runs against a copy of it (715 rows): study, fork, drop, and a sweep over 711 boards in 0.89 s that MIGRATES the eleven studies made before librettos existed |
 
 **The headline number Gluck asked for**: merely LOOKING at every board on the
-real store — no decoding, no rendering — cost **297 MiB of heap and 419 MiB
+real store, no decoding, no rendering, cost **297 MiB of heap and 419 MiB
 reserved from the OS**, and now costs **68.5 and 127**.
 
 **Four of my own claims died on their own measurements** and are left in
@@ -371,11 +371,11 @@ EVICTED a source and orphaned the fold, leaving a silently stale copy;
 opening a libretto needed its source, so a study of a deleted form could not
 be dropped after a restart; the migration guard skipped exactly the stores
 needing migration; and `doctor librettos` declined to repair the only case it
-existed for. The last four were found by `studylive.sh` and `realstudy.sh` —
+existed for. The last four were found by `studylive.sh` and `realstudy.sh`,
 **ninety seconds of driving the real verbs, twice, against a green suite.**
 
 **Also closed**: the cold-open fold, dead for a structural reason (a real
-form is ONE segment, so there is no earlier watermark to fold from — it
+form is ONE segment, so there is no earlier watermark to fold from, it
 measured 20-25x SLOWER); and phase 7, deferred with the argument written
 down rather than left as a gap note.
 
@@ -396,7 +396,7 @@ file; this is the map.
 | cold reads | `PatchesBetween` below the window went O(offset) to O(range): 142 us to 3.05 us, flat with offset |
 | memory | translations measured then bounded; `figwal loaded-heads` reported; the OUTFIT column stopped re-opening a form per row (209 to 0) |
 
-**Found, not fixed** — `fig ls` retains ~95 MB on a 515-aria store, none of
+**Found, not fixed**, `fig ls` retains ~95 MB on a 515-aria store, none of
 it in any cache figaro owns: figwal copies every payload of a channel into
 memory when a log opens. See "WHERE THE MEMORY IS". The fix is
 segment-granular lazy loading in figwal, and two candidate figaro-side
@@ -1333,7 +1333,7 @@ observed rather than argued:
 - `fig kill <parent>` on a just-forked aria was refused by **figwal**
   (`trunk has 1 live branch(es)`) rather than by figaro, with a message no
   listing can explain.
-- `fig kill -r <parent>` unlinked the fork — correct, it is a child — but
+- `fig kill -r <parent>` unlinked the fork, correct, it is a child, but
   figaro's own delete set never contained it, so its presentation edge, meta
   and caches were all skipped, and its form kept answering from memory after
   its files were gone.
@@ -1379,7 +1379,7 @@ index became one immutable `logView` behind an `atomic.Pointer`, the pattern
 answered nothing the rows cannot: entries are ascending by FigaroLT (that is
 what `ReadFrom` binary searches on), so a resident hit is a search and every
 miss already went to the inner log whenever anything had been trimmed. What
-it did do was **grow forever** — nothing pruned it on trim — so a bounded
+it did do was **grow forever**, nothing pruned it on trim, so a bounded
 window carried an unbounded index of the entries it had dropped. `Lookup`
 now searches for the LAST match, which is what the map's last-write-wins
 semantics gave.
@@ -1420,10 +1420,10 @@ real. **Do not publish a five-sample benchmark**; the base worktree at
 `SetResponse` gains `Outcome` and `Version`. Three outcomes, because three
 things can happen and all three used to be `OK` with an empty list:
 
-- **`applied`** — reduced, appended, fsynced; `Version` is the record.
-- **`unchanged`** — legal and changed nothing; `Version` is where the board
+- **`applied`**, reduced, appended, fsynced; `Version` is the record.
+- **`unchanged`**, legal and changed nothing; `Version` is where the board
   still stands. This is the ambiguity durable-forms §4.1 exists to remove.
-- **`queued`** — accepted by a LIVE aria, which applies a set at the next
+- **`queued`**, accepted by a LIVE aria, which applies a set at the next
   round boundary by design. The verdict is not knowable yet and `Version` is
   zero. This is the honest name for the deferral that the synchronous-`set`
   attempt died on last session.
@@ -1439,7 +1439,7 @@ its dedup window and its conformance test in one change.
 **And the CLI stops lying.** `fig set`/`fig unset` print the outcome:
 `unchanged: mantra = "x"` when the board already held it, `queued:` when a
 live aria will apply it at the next round boundary, and `set … @V` with the
-durable version otherwise — which is the number a script quotes back as
+durable version otherwise, which is the number a script quotes back as
 `if_version`.
 
 #### Live validation of the outcome, on an isolated daemon
@@ -1466,7 +1466,7 @@ queued: nosuch (figaro 78c19579)
 
 The second one is the point. That refusal is deferred to the round boundary
 and reaches only the daemon log, and until now the CLI printed
-`unset nosuch (figaro …)` — a write it had not made and would not make. It
+`unset nosuch (figaro …)`, a write it had not made and would not make. It
 now says what it actually did: it queued something.
 
 ### The quadratic is gone, and figwal never had to change
@@ -1478,8 +1478,8 @@ index; the waste was entirely in figaro, whose `RangePatches` **started at
 record 1 and skipped its way up to the range it wanted**.
 
 `FormLog.RangePatches` now takes `(from, upTo)`. `xwalFormLog` starts the
-read AT the range and stops at its end, and `errStopRange` — a sentinel
-error whose only job was to abort the walk early — is deleted with it.
+read AT the range and stops at its end, and `errStopRange`, a sentinel
+error whose only job was to abort the walk early, is deleted with it.
 
 `BenchmarkFormColdDelta*`: one small range below the patch window, which is
 what a retranslate asks for once per IR record.
@@ -1522,7 +1522,7 @@ The profile says where they are:
  5  figaro.(*Agent).act           one per resident agent
 ```
 
-**Two per endpoint, two per resident agent, and listeners leak nothing** —
+**Two per endpoint, two per resident agent, and listeners leak nothing**,
 the count is identical before and after five of them come and go. So the
 355 goroutines on Gluck's daemon (29 endpoints, 4 live arias) are a working
 set, not a leak: 58 of them are endpoint accept/listen pairs, the rest ride
@@ -1561,7 +1561,7 @@ unaccounted for; it needs a heap profile on a daemon started with
 **But the comparison that matters is against the BOUND, not against the
 IR.** The IR is windowed to 4 MiB per aria; the translations beside it were
 windowed to nothing at all. On any aria long enough to matter, the bounded
-cache is capped at 4 MiB while its unbounded neighbour keeps growing — so
+cache is capped at 4 MiB while its unbounded neighbour keeps growing, so
 the unmeasured one becomes the larger half precisely where memory is worst.
 
 So: `[memory] translation_window_mb`, default 4, floored like the IR's, 0
@@ -1572,7 +1572,7 @@ cap, and it changes no measurement taken so far.
 Two tests, at the two ends: `TestTranslationWindowBytesDefaults` for the
 three answers a knob owes (unset is bounded, explicit 0 is unbounded, below
 the floor is raised), and `TestTranslationBudgetReachesTheCache` for the
-thing a config test cannot see — that the budget reaches the CACHE, bounds
+thing a config test cannot see, that the budget reaches the CACHE, bounds
 residency, and loses no records, because a read below the window still
 falls through to the log.
 
@@ -1611,8 +1611,8 @@ err := l.RangeOwn(0, func(idx uint64, payload []byte) error {
 })
 ```
 
-That is figwal's lock-free read cache — the same published-snapshot pattern
-this whole changeset has been applying — but **whole-log rather than
+That is figwal's lock-free read cache, the same published-snapshot pattern
+this whole changeset has been applying, but **whole-log rather than
 windowed**. Opening a node materializes the node's entire encoded history.
 
 **And a listing opens every node.** `handlers.list` asks
@@ -1635,7 +1635,7 @@ Every bound this project has added sits on top of an unbounded one. On this
 store the ceiling is the store: 281 MB on disk becomes ~281 MB resident
 once everything has been touched, before figaro decodes a byte of it.
 
-`handle_idle_minutes` (figwal's `IdleUnload`, 5 min) does reclaim it — which
+`handle_idle_minutes` (figwal's `IdleUnload`, 5 min) does reclaim it, which
 is why the daemon does not simply grow forever. But **a shell status line
 running `fig ls` on a timer re-touches every node faster than the idle clock
 can drop it**, and that is the steady state Gluck is looking at: 260 MB of
@@ -1677,8 +1677,8 @@ heap       alloc=86.0 MiB
 Note it is 54 and not 515: a listing does not hydrate every node, and
 whatever selects those 54 is the next thing to understand if fix 1 is taken.
 
-The live daemon cannot answer yet — it is running a binary that predates the
-field — but **any daemon started after this commit can be asked where its
+The live daemon cannot answer yet, it is running a binary that predates the
+field, but **any daemon started after this commit can be asked where its
 memory is without a profiler**, which is the whole point. `resident_ir_bytes`
 next to `loaded_heads` is the comparison that matters: the first is figaro's
 bounded cache of decoded entries, the second is figwal's unbounded cache of
@@ -1696,7 +1696,7 @@ figaro's own retention at 7.35 MB, **87% of it in `OpenForm`**:
 ```
 
 So the hydrator is the **OUTFIT column**. `labelOf` falls back to the board
-for any node with no stump — 209 of 515 in the real store — and
+for any node with no stump, 209 of 515 in the real store, and
 `FormState` opens the Form, whose replay opens the NODE, which is what makes
 figwal build that node's whole-log snapshot. `topologySnapshot` itself is
 0.39 MB: `vectorsLocked` and `presentLocked` are pure in-memory walks, and
@@ -1725,7 +1725,7 @@ hydration, per row, per listing.
    for message counts and tokens. No replay, no hydration, and the label is
    exactly as stable as the counts beside it. **Costs a second source of
    truth** for state that lives in the form, which this design generally
-   forbids — mitigated by the heal path that already exists
+   forbids, mitigated by the heal path that already exists
    (`meta_heal.go`) and by the fact that `b.labels` does precisely this for
    STUMP labels today, justified there because a stump id is the hash of its
    own content.
@@ -1758,13 +1758,13 @@ filters it out, or the hierarchy grows a row describing itself.
   whole document per edit and could half-land.
 - Durability, versioning and the single writer are the form's: reduce, append,
   fsync, publish. `Rev()` is the form version.
-- `trunk.mu` is gone — the lock audit's fifth entry.
+- `trunk.mu` is gone, the lock audit's fifth entry.
 - **Parity is the old package's own test suite, ported verbatim**: same
   diagram, same claims, same names. That is what makes "it behaves as the
   file did" checkable.
 
 **Migration**: a legacy `trunks.json` is folded in on first open and renamed
-`.migrated`. Ordering rather than a journal — the fold is idempotent, so a
+`.migrated`. Ordering rather than a journal, the fold is idempotent, so a
 crash before the rename replays harmlessly, and a form already holding edges
 is never migrated into.
 
@@ -1791,7 +1791,7 @@ here first.
 ### The OUTFIT column stops re-opening forms
 
 A memo for the label, invalidated by any write that names an outfit key,
-registered on the form's commit sink where it is OPENED — so every writer
+registered on the form's commit sink where it is OPENED, so every writer
 passes it: the hub, the agent's own loop, a birth dressing, an outfit fold.
 The board stays the only source of truth; this is a cache of it with a
 complete invalidation, not a second copy on disk.
@@ -1810,9 +1810,9 @@ evict every form, then list again:
 
 **What it does NOT fix, said plainly**: the FIRST listing still costs +114
 MiB, and that arrives on the topology build rather than on the labels. Two
-instruments disagree about which call triggers it — the daemon's own heap
+instruments disagree about which call triggers it, the daemon's own heap
 profile says `buildOwnSnapshot` under `handlers.list`, and the in-test
-`ReadMemStats` deltas put it on `Conversations()` — and I have already been
+`ReadMemStats` deltas put it on `Conversations()`, and I have already been
 wrong once by trusting the coarse one. Whoever takes it next should isolate
 the topology build under a profile rather than a delta.
 
@@ -1831,12 +1831,12 @@ three columns session 1 left:
 | turns answered | 12/12 | 12/12 | 12/12 | **12/12** |
 | history build (300 CLI patches) | 4.11 s | 4.98 s | 4.99 s | 5.14 s |
 | turn wall (12 concurrent) | 4.53 s | 5.49 s | 5.01 s | 5.85 s |
-| control (12 x `ls -j`) | 0.17 s | 0.16 s | — | **0.16 s** |
+| control (12 x `ls -j`) | 0.17 s | 0.16 s | - | **0.16 s** |
 | daemon PSS loaded | 56.8 M | 58.6 M | 46.5 M | 48.3 M |
 | `Pss_anon` | 30.6 M | 32.2 M | 30.1 M | 31.8 M |
 | goroutines | 93 | 80 | 80 | **80** |
 | heap_alloc | 14.9 M | 16.0 M | 9.2 M | 10.5 M |
-| resident translation bytes | — | — | — | **194,967** |
+| resident translation bytes | - | - | - | **194,967** |
 
 **The control is unchanged**, which is what licenses reading the rest.
 History build +3% and PSS +1.8 M are the new residents: the topology form
@@ -1886,8 +1886,8 @@ including the stump-hosted topology form.
 **What that means for the next person, and it is the useful part:** no
 figaro-side change to how forms open can pay for itself while figwal
 materializes whole channels. The cold-open cost IS the hydration. Fix it in
-figwal — 6c2d7b9f's segment-granular lazy loading, sketched in their message
-and worth building — and only then revisit the fold, which becomes a genuine
+figwal, 6c2d7b9f's segment-granular lazy loading, sketched in their message
+and worth building, and only then revisit the fold, which becomes a genuine
 saving the moment reading a record can miss.
 
 The equality test was the right instrument and it did its job: it proved the
@@ -1897,7 +1897,7 @@ needed, in that order.
 ### The steady-state listing is now free
 
 Recency was the second per-row hydrator. `LastTS` is answered from figwal's
-counter on the OPEN handle, so a cold node is hydrated to answer it — the
+counter on the OPEN handle, so a cold node is hydrated to answer it, the
 same disease as the OUTFIT column, and the same cure: memoize, and let the
 writes invalidate.
 
@@ -1972,8 +1972,8 @@ when it opens a handle, builds a form, or trims one.
 
 **Proved red before green**: unwire `SetPatchWindow` and it fails with
 `form patch window at the enforcement point = 2048, want 64`. That is the
-class of bug this project has shipped twice — the IR window defaulted to off,
-figwal's `IdleUnload` read nothing — and a parser test cannot catch either,
+class of bug this project has shipped twice, the IR window defaulted to off,
+figwal's `IdleUnload` read nothing, and a parser test cannot catch either,
 because the parse was never the broken half.
 
 `HandleIdleForTest`, `FormLingerForTest` and `PatchWindowForTest` exist only
@@ -1987,8 +1987,8 @@ the next round boundary, so they reached the daemon log and not the caller.
 
 `--wait` asks for that verdict. The event carries a buffered channel, the
 round boundary fills it, and the caller gets `applied`/`unchanged` plus the
-version. **Both** places a queued set can be applied report it — the drain
-loop and `serviceSets` at the boundary — or a waiter hangs on a turn that
+version. **Both** places a queued set can be applied report it, the drain
+loop and `serviceSets` at the boundary, or a waiter hangs on a turn that
 already applied its patch.
 
 **Opt-in, and the tests are what keep it so.** Live, on an isolated daemon:
@@ -2006,7 +2006,7 @@ Three tests: the DEFAULT set does not block during a tool round (the deadlock
 the first attempt shipped, asserted as an absence), `--wait` does block and
 answers correctly when the round ends, and a caller whose context expires
 stops waiting while the patch still lands. `TestFormSetDuringToolRoundApplies
-NextRound` — the test that hung the first attempt for its full timeout — is
+NextRound`, the test that hung the first attempt for its full timeout, is
 green.
 
 ---
@@ -2032,8 +2032,8 @@ err := l.RangeOwn(0, func(idx uint64, payload []byte) error {
 })
 ```
 
-That is figwal's lock-free read cache — the same published-snapshot pattern
-this changeset applies everywhere — but WHOLE-LOG rather than windowed. So:
+That is figwal's lock-free read cache, the same published-snapshot pattern
+this changeset applies everywhere, but WHOLE-LOG rather than windowed. So:
 
 - one `fig ls` on the 515-aria copy retains **95 MB**, with zero arias
   resident by figaro's own count (`213d290f`, and the profile is in "WHERE
@@ -2059,7 +2059,7 @@ lookup is `entries[lt-base]`, O(1).
 open (fold from the reducer instead of replaying) with a full equality
 suite, and it measured **+338%**, because the replay was never reading disk:
 figwal had already copied everything into RAM. Reverted. The lesson
-generalises — no figaro-side change to how anything OPENS can pay for itself
+generalises, no figaro-side change to how anything OPENS can pay for itself
 until reading a record can miss.
 
 ### The coordination this needs
@@ -2068,7 +2068,7 @@ until reading a record can miss.
    deliberately, not just the unit tests.
 2. Release and pin: figaro currently pins
    `v0.16.2-0.20260813012153-4f9ce6a665f6`.
-3. **Reset the flake's `vendorHash`** — edit `go.mod`, build, take the
+3. **Reset the flake's `vendorHash`**, edit `go.mod`, build, take the
    "got:" value. Documented in `flake.nix`; the last reset produced
    `sha256-y0FdOfhVnIIOXAXsI9S/wg+9aXQbRne/K4sLGZZdzD4=`.
 4. `nix build .#default` MUST pass before it is called done.
@@ -2082,12 +2082,12 @@ until reading a record can miss.
 
 ### After it, in order
 
-1. **Phase 7, retention** — and point it at the topology form first, which
+1. **Phase 7, retention**, and point it at the topology form first, which
    grows one record per promote forever today (my deviation, §8 of
    durable-forms wants a single segment).
 2. **Revisit the cold-open fold**, which becomes a real saving the moment a
    record read can miss.
-3. **Phase 9, the libretto** — read durable-forms §12.2.2 first: fork,
+3. **Phase 9, the libretto**, read durable-forms §12.2.2 first: fork,
    import and kill are refcount participants and the design did not say so.
 4. **Phase 10, the API refactor.**
 
@@ -2097,7 +2097,7 @@ until reading a record can miss.
   traps, the file boundary with 6c2d7b9f, and the figwal job. Its id is in
   `/var/tmp/figstate/.successor`.
 - **The role is `@980dc16c`.** Move it with
-  `figaro state set --id @980dc16c target-aria d604c755` — a form patch the
+  `figaro state set --id @980dc16c target-aria d604c755`, a form patch the
   hub serves with no agent involved. **Do not use `fig cast` from inside an
   aria**: it rides the inbox, the inbox is running the turn that issued it,
   and it hangs until the timeout.
@@ -2116,12 +2116,12 @@ Role `@980dc16c` moved on the handoff; the heartbeat followed it.
 
 **The finding that reshaped the job.** The disk layer was ALREADY lazy. A
 `segment.Segment` retains an offset per record and reads payloads by
-`codec.ReadFrame(io.ReaderAt, ...)` — a positional pread, one syscall, no
+`codec.ReadFrame(io.ReaderAt, ...)`, a positional pread, one syscall, no
 seek state. The only thing making a channel resident was `log.buildOwnSnapshot`
 copying every payload at `Open`. So the fix was to stop copying, not to build
 a loader: **762 lines added, 368 deleted, and the deletions include
 `cacheSnapshot` and its entire parallel implementation of read, range,
-scan-from-end, the fork truncation and the parent chain** — every one of
+scan-from-end, the fork truncation and the parent chain**, every one of
 which duplicated logic `disk.Log` already had.
 
 **The measurement that decided the shape**, taken BEFORE any code, because
@@ -2146,8 +2146,8 @@ direction. Segment granularity it is.
   payload from an evicted block keeps it alive by ordinary GC.
 - **The active segment's block is EXTENDED by `Append`**, not invalidated, so
   a writer's own tail stays resident without a reload per record.
-- `log.Log` keeps only the PENDING buffer — records appended and not yet
-  synced, which have no segment to be read from — and delegates everything
+- `log.Log` keeps only the PENDING buffer, records appended and not yet
+  synced, which have no segment to be read from, and delegates everything
   else. The pending window is captured before each disk walk and bounds it,
   so a concurrent sync can neither duplicate nor drop a record mid-iteration.
 
@@ -2168,14 +2168,14 @@ read that misses is a hundred times cheaper than it was.
 1. **A `Snapshot` no longer pins payloads.** Records SYNCED before the
    capture and then moved by a fork are served by their new owner, not by the
    stale handle. Unsynced records are still pinned, because the pending
-   buffer holds them — which is how the first draft of the test passed for
+   buffer holds them, which is how the first draft of the test passed for
    the wrong reason and taught me the distinction.
    `TestSnapshotAcrossAForkServesTheKeptPrefix` states it. The guard is the
    one that already existed: a topology mutation demands a private log
    (`ErrSharedMutation`).
 2. **`Store.Evict` now drops the evicted log's payload blocks.** Before, an
    idle unload released the log wrapper while the disk store kept the
-   segments open — and with them, every byte. The unload was not reclaiming
+   segments open, and with them, every byte. The unload was not reclaiming
    what everyone assumed it was.
 
 **A bug fixed in passing**: a forked child was built as
@@ -2189,7 +2189,7 @@ the other three sit on: `ir_window_mb`, `translation_window_mb` and
 `form_patch_window` all cap DECODED copies of these same bytes.
 
 `doctor mem` prints `segment-cache=X of Y` beside loaded-heads, and the wire
-response carries both. **Loaded heads stopped being a proxy for memory** —
+response carries both. **Loaded heads stopped being a proxy for memory**,
 the count is unchanged at 217 on the real store while the bytes fell by
 more than half, because a head now costs its index.
 
@@ -2257,7 +2257,7 @@ reading the rest.
 ### A bug in the evictor, found by reading my own code (`figwal 09682d7`, `34b493ec`)
 
 The evictor CASes the block pointer it read. A failed CAS means an append
-extended the block underneath it — and the first version deleted the segment
+extended the block underneath it, and the first version deleted the segment
 from the held set anyway, with its bytes still on the counter. Nothing could
 evict that segment again, so **the budget shrank permanently every time the
 race was lost**.
@@ -2267,7 +2267,7 @@ case is testable without a hook: install a block, extend it with an append,
 hand the evictor the stale pointer. Red before green.
 
 **The concurrent test beside it never hit the window in fifteen runs under
-`-race`**, which is why the deterministic one exists — and is the reason to
+`-race`**, which is why the deterministic one exists, and is the reason to
 distrust "I wrote a concurrent test" as evidence for anything narrow.
 
 A second lesson, from the same test: `Segment` is documented as unsafe for
@@ -2295,7 +2295,7 @@ lazy plan had been split; this is the other half, and the split is recorded
 above the numbers because the numbers justify only part of it.
 
 Opening a log opened every segment it had, and opening a segment scans the
-whole file — every frame, every CRC — to build its per-record offset index.
+whole file, every frame, every CRC, to build its per-record offset index.
 Only the newest is opened now (it takes the appends and is the only one that
 can carry a torn tail); the rest are identified by NAME and opened by the
 read that lands in them, because a segment file is named for its base index,
@@ -2310,7 +2310,7 @@ all.
 
 **Deferred with the scan: the CRC check it performs.** Corruption in a
 segment nobody reads is found when somebody reads it rather than when the log
-opens. A torn TAIL is unaffected — only the active segment can have one.
+opens. A torn TAIL is unaffected, only the active segment can have one.
 
 **Fork does not go near this.** `materializeLocked` opens everything before a
 fork plans anything, because fork is the most crash-fragile code in figwal
@@ -2345,7 +2345,7 @@ identical head counts at each phase:
 | visiting every aria (50,793 IR entries decoded) | 395.4 / 603.1 | 326.9 / 487.1 | |
 | after evicting figaro's own caches | 123.7 / 601.6 | 55.1 / 485.6 | |
 
-**Merely LOOKING at every board — no decoding, no rendering — cost 297 MiB of
+**Merely LOOKING at every board, no decoding, no rendering, cost 297 MiB of
 heap and 419 MiB reserved from the OS. It now costs 68.5 and 127.** The
 visiting row is dominated by figaro's own decoded IR, which is bounded
 already and unchanged by this work; the row above it is figwal's footprint
@@ -2354,7 +2354,7 @@ alone, and it is the row this changeset exists for.
 The last row is the honest cost of the new cache: **an idle daemon retains up
 to the segment budget** (32 MiB) where the old one retained whatever its
 heads still held. figwal's 5-minute head unload drops it (`Store.Evict` now
-releases the blocks), but the cache has no idle clock of its own — worth one,
+releases the blocks), but the cache has no idle clock of its own, worth one,
 and it should borrow the head-unload clock rather than invent a fourth
 number.
 
@@ -2385,10 +2385,10 @@ otherwise idle box. Everything flat except one row:
 
 | | base | after | |
 |---|---|---|---|
-| `FormOpenReplay` (6 shapes) | — | — | ~ all, geomean +0.4%/record |
+| `FormOpenReplay` (6 shapes) | - | - | ~ all, geomean +0.4%/record |
 | `FormDeltaPerSend1000` | 58.6 ns | 60.4 ns | ~ (p=0.24) |
 | `FormWholePerSend100` | 46.3 ns | 44.7 ns | ~ (p=0.42) |
-| `CachedLogReadLongAria` 1k/10k/50k | — | — | ~, +1.6% on 50k |
+| `CachedLogReadLongAria` 1k/10k/50k | - | - | ~, +1.6% on 50k |
 | **`FormColdDeltaAt500` / `At1500`** | 2.96 / 2.87 µs | **17.0 / 16.7 µs** | **+475% (p=0.002)** |
 
 The cold read below the patch window is the path a previous session took from
@@ -2396,7 +2396,7 @@ The cold read below the patch window is the path a previous session took from
 anything shipped.
 
 **It is a benchmark artifact, and the instrument that proved it is now
-permanent.** The suspect was cache thrash — a block dropped and reloaded per
+permanent.** The suspect was cache thrash, a block dropped and reloaded per
 read. `segment.CacheLoads()` (added for this, kept for good) answered it: 50
 cold reads caused **one** load. So the cost was one-time, and the reason it
 showed up is that it MOVED: the old code materialized the whole channel
@@ -2436,12 +2436,12 @@ Measured with a parallel benchmark written for the purpose:
 |---|---|---|
 | counter per read | 26 ns | **47 ns** |
 | epoch (now) | 26 ns | **38 ns** |
-| the old whole-channel snapshot | — | **24.8 ns** |
+| the old whole-channel snapshot | - | **24.8 ns** |
 
 **Reads got SLOWER the more readers there were**, which is the signature of a
 contended atomic and the thing a single-threaded benchmark can never show.
 Recency is now an EPOCH that advances when a block is loaded and when a sweep
-runs — both rare — and a reader stores it only when its segment's stamp is
+runs, both rare, and a reader stores it only when its segment's stamp is
 stale.
 
 **The honest ledger for a warm read**, against the version that held every
@@ -2476,7 +2476,7 @@ work and is worth fixing as one policy rather than four.
 ### The idle sweep, proved on a live daemon (and a first attempt that proved nothing)
 
 `/var/tmp/figstate/sweeplive.sh`. First run: a full listing filled the cache,
-and five seconds later it was empty — but `loaded-heads` had gone 316 → 0, so
+and five seconds later it was empty, but `loaded-heads` had gone 316 → 0, so
 **figwal's head unload had done it, not my sweep.** A green light for the
 wrong mechanism.
 
@@ -2490,14 +2490,14 @@ right after a full listing   loaded-heads=317  segment-cache=21.9 MiB  loads=801
 and a listing still works afterwards
 ```
 
-Heads pinned, blocks gone, reads fine, and `loads` unchanged at 801 — so
+Heads pinned, blocks gone, reads fine, and `loads` unchanged at 801, so
 nothing reloaded behind the sweep. That is the wiring proved end to end,
 which is the standard this project set after shipping two knobs that were
 configured and unwired.
 
 **A flaw in my own harness, found while doing it**: my live scripts ran
 `figaro serve`, which is not a command. The daemon is auto-started by the
-first CLI call, so every measurement stands — but the `grep` of `daemon.log`
+first CLI call, so every measurement stands, but the `grep` of `daemon.log`
 in those scripts was reading an empty file and could never have failed. Both
 scripts are corrected. **A check that cannot fail is worse than no check**,
 because it is counted as evidence.
@@ -2505,7 +2505,7 @@ because it is counted as evidence.
 ### The third claim dies: it does NOT pay in file descriptors
 
 I wrote "it pays in TIME and in file descriptors" into a commit message.
-Half of that is wrong, and `/var/tmp/figstate/fdcount.sh` says so — the same
+Half of that is wrong, and `/var/tmp/figstate/fdcount.sh` says so, the same
 listing, on both trees, with heads pinned open (`handle_idle_minutes = -1`)
 so nothing is released underneath the measurement:
 
@@ -2516,7 +2516,7 @@ so nothing is released underneath the measurement:
 | heap alloc | 200.0 MiB | **79.8 MiB** |
 
 **Identical**, and the reason is obvious in hindsight: 1210 fds over 318
-heads is 3.8 per head, which is one ACTIVE segment per channel — and the
+heads is 3.8 per head, which is one ACTIVE segment per channel, and the
 active segment is exactly the one lazy opening still opens eagerly. Most
 nodes in this store have one or two segments per channel, so there is almost
 no sealed segment to defer.
@@ -2527,7 +2527,7 @@ So the ledger for lazy segment opening, honestly:
   (unmoved), it cuts file descriptors (1227 → 1219).
 - **Alive**: opening a node is 28x cheaper in the microbenchmark (5.42 ms →
   0.19 ms on a 32-segment log), and that reaches the store where something
-  opens a node and reads little of it — `RangePatches` opens one per cold
+  opens a node and reads little of it, `RangePatches` opens one per cold
   read (11.4 → 10.5 µs). End to end on the real store it buys 8–23% of wall
   clock:
 
@@ -2548,7 +2548,7 @@ said it was.
 
 Not on any phase list; it comes from measuring Gluck's live box while the
 rest of this was running. **The "2 GB" is a FLEET**: 1731 MB of PSS across 33
-figaro processes — one daemon at 536 MB, a second at 129 MB, thirteen more
+figaro processes, one daemon at 536 MB, a second at 129 MB, thirteen more
 between 17 and 59 MB, and seven CLIs at ~25 MB each. `GOMEMLIMIT` is per
 process, so it never bit; the aggregate has no ceiling at all.
 
@@ -2564,14 +2564,14 @@ nothing live and nothing resident, twice running, the daemon now calls
 | base | PSS 251 MB | 251 MB | 259 MB | 272 MB |
 | after | PSS 141 MB | **51 MB** | 59 MB | 62 MB |
 
-**The base never gives anything back — it only grows.** Five times, on the
+**The base never gives anything back, it only grows.** Five times, on the
 state most of those thirty-three processes spend their lives in.
 
 The creep from 51 to 59 MB across the idle window is the measurement itself:
 each `doctor mem` poll allocates ~1.1 MiB and the latch has already fired.
 
 **Once per quiet period, not per sweep**: `FreeOSMemory` is a stop-the-world
-collection plus a scavenge — pointless to repeat and rude to run while
+collection plus a scavenge, pointless to repeat and rude to run while
 anyone is working. Any work resets the latch, and the latch is what the test
 holds, because the release itself is not observable but "fires once, resets
 on work" is.
@@ -2607,7 +2607,7 @@ Fleet, final build, against the four columns:
 | turns answered | 12/12 | 12/12 | 12/12 | 12/12 | **12/12** |
 | history build | 4.11 s | 4.98 s | 4.99 s | 5.14 s | **4.96 s** |
 | turn wall | 4.53 s | 5.49 s | 5.01 s | 5.85 s | **4.53 s** |
-| control | 0.17 s | 0.16 s | — | 0.16 s | **0.16 s** |
+| control | 0.17 s | 0.16 s | - | 0.16 s | **0.16 s** |
 | daemon PSS loaded | 56.8 M | 58.6 M | 46.5 M | 48.3 M | **47.4 M** |
 | goroutines | 93 | 80 | 80 | 80 | **80** |
 | heap_alloc | 14.9 M | 16.0 M | 9.2 M | 10.5 M | 13.8 M |
@@ -2634,7 +2634,7 @@ of us guessed:
 
 1. **A reducible segment's header holds the fold at the segment's START.** So
    `StateAt(last)` folds that header with every payload from the segment base
-   up to `last` — and figaro's segments are 2 MiB, which holds roughly twenty
+   up to `last`, and figaro's segments are 2 MiB, which holds roughly twenty
    thousand form patches. **A real form is ONE segment**, so there is no
    earlier watermark to start from and the fold does exactly the work the
    replay does.
@@ -2665,7 +2665,7 @@ judgement quietly Gluck had to ask.
 sealed segments a channel keeps" (§10). Every reducible channel already rolls
 segments and a reducible segment's header is the folded state at its start,
 so the fold a compacted channel needs is written by the ordinary roll. The
-bottom of it exists already — `disk.Log.TruncateFront` drops whole sealed
+bottom of it exists already, `disk.Log.TruncateFront` drops whole sealed
 segments, closes them (which now releases their payload blocks), and fsyncs
 the directory. Enforcement at ROTATION would be safe by construction: a log
 with child forks is read-only and never rotates, so retention can never eat a
@@ -2697,7 +2697,7 @@ solved anyway.
 **What I would build first when it is time**: `disk.Options.KeepSegments`
 enforced in `rotateLocked`, `ChannelSpec.KeepSegments` to carry it, and the
 type-level rule that a form with a retention policy refuses
-`PatchesBetween` — that last one is the only part that is design rather
+`PatchesBetween`, that last one is the only part that is design rather
 than plumbing, and it is the part that keeps a compacted channel from
 silently handing out a view of records it has deleted.
 
@@ -2738,14 +2738,14 @@ mirrors resync from the wrong one).
 
 **What is NOT built, and it is the wiring rather than the mechanism**: the
 study verb's two-participant write (§12.2.1), fork/import/kill as refcount
-participants (§12.2.2 — read it first, it is a design bug found before the
+participants (§12.2.2, read it first, it is a design bug found before the
 thing was built), the IR's per-libretto cursors (§12.5), the reconciliation
 sweep, and reclamation of a libretto whose refs hit zero. The first three
 live in `internal/figaro/study.go`, `internal/angelus/study_hub.go` and
 `internal/provider/projection.go`, which aria 6c2d7b9f owns.
 
 **Phase 9 should also be checked against two bugs it is expected to fix**:
-the self-cast deadlock, and the displaced-`tool_result` corruption — study
+the self-cast deadlock, and the displaced-`tool_result` corruption, study
 becoming an ordinary patch on a separate node is what removes the
 out-of-band IR record between a `tool_use` and its result.
 
@@ -2754,7 +2754,7 @@ out-of-band IR record between a `tool_use` and its result.
 `XwalBackend.ReconcileLibrettos` recomputes every libretto's refcount from
 the boards that name it, and reports what it found rather than only what it
 changed: boards read, librettos examined, **corrected**, **orphaned** (a
-libretto no board names — the state reclamation acts on) and **missing** (a
+libretto no board names, the state reclamation acts on) and **missing** (a
 studied form with no libretto, reported and never created, because minting
 one is the study verb's job and only it has the source to seed from).
 
@@ -2768,7 +2768,7 @@ read a board's study set, and it cannot import `internal/figaro` because
 figaro imports the store. So the name is declared twice, and
 `studies_key_test.go` (an EXTERNAL test package, which may import both)
 asserts they agree. Without it, a rename on one side leaves the sweep reading
-nothing and reporting every count as zero — a sweep that has gone blind while
+nothing and reporting every count as zero, a sweep that has gone blind while
 producing correct-looking output, which is the worst failure a repair tool
 has.
 
@@ -2781,12 +2781,12 @@ The refcount answers "is anyone STUDYING this now". Reclamation needs more
 than that, because **an IR record stamps the libretto version it was rendered
 against** (§12.5). An aria that studied a form in the past and dropped it
 still references that libretto for the whole of its history: unlink on
-refs==0 and those records become unrenderable — which is precisely the
+refs==0 and those records become unrenderable, which is precisely the
 coupling the COPY exists to remove (§12.3: "deriving a pointer is not
 derivation"), reintroduced from the other end.
 
-So reclaiming a libretto needs a second question — *does any surviving IR
-reference it* — and that question has no answer in the store today. Three
+So reclaiming a libretto needs a second question, *does any surviving IR
+reference it*, and that question has no answer in the store today. Three
 ways it could get one, none built:
 
 1. **Delete-path only**: a libretto is reclaimed when every aria that ever
@@ -2797,7 +2797,7 @@ ways it could get one, none built:
 3. **Let the render degrade**: absence is the truthful default (§1), so a
    missing libretto renders as "no study state for this record" rather than
    as an error. Cheapest, and it is a decision about what an old transcript
-   is allowed to lose — Gluck's, not mine.
+   is allowed to lose, Gluck's, not mine.
 
 `Reclaimable` says all of this at the method, because the name promises more
 than the number can deliver.
@@ -2806,19 +2806,19 @@ than the number can deliver.
 `TestFuzzFormUnkeyed/SetWhileTurnInFlight` with *timeout waiting for
 turn.done*. It passes at `-count=5` in this tree and `-count=8` in the merge
 base, and four other full-suite runs of this build were green, so it is
-load-sensitive rather than new — but I could not reproduce it on the base
+load-sensitive rather than new, but I could not reproduce it on the base
 either, so "not mine" is inference, not proof. If it recurs, the suspect is
 the gate/park timing in that fuzz case under a loaded box, not the form path.
 
 ---
 
-## THE NEXT WORKER'S FIRST JOB (superseded — see "WHAT IS ACTUALLY LEFT" at the end)
+## THE NEXT WORKER'S FIRST JOB (superseded: see "WHAT IS ACTUALLY LEFT" at the end)
 
 ## phase 9's second half, the wiring (mostly done since this was written)
 
 The libretto MECHANISM exists and is tested (`internal/store/libretto.go`,
 `libretto_reconcile.go`, `doctor librettos`). What is missing is every place
-it has to be driven from, and most of it lives in files aria 6c2d7b9f owns —
+it has to be driven from, and most of it lives in files aria 6c2d7b9f owns,
 **ask before touching, and check whether that fork is still alive; its last
 message said "this fork is done"**.
 
@@ -2831,7 +2831,7 @@ In the order I would take them:
    then over-counts, which the sweep repairs; the reverse cannot be repaired.
    **This is also the change that should fix the self-cast deadlock and the
    displaced-`tool_result` corruption**, because study stops being an
-   out-of-band IR record — check it against both.
+   out-of-band IR record, check it against both.
 2. **Fork, import and kill as refcount participants** (§12.2.2). Read that
    section first: it is a design bug found before the thing was built. Fork
    must `Retain` every libretto the parent's `study-set` names BEFORE the
@@ -2843,7 +2843,7 @@ In the order I would take them:
    form, which is the point of the copy.
 4. **Reclamation**, which needs a decision before it needs code: `refs == 0`
    is NOT sufficient, because an IR record references a libretto forever. See
-   "A constraint the libretto exposes" — three options, all cheap, and the
+   "A constraint the libretto exposes", three options, all cheap, and the
    choice is about what an old transcript may lose.
 
 ### Then, in order
@@ -2852,7 +2852,7 @@ In the order I would take them:
   fast-follow (`figaro/agent.go`'s `mu`, an aria's own state guarded by a
   lock beside an inbox that exists to own it) belongs with it, and the audit
   says it wants its own branch and its own pty runs.
-- **Phase 7, retention** — deferred with reasons; see its section. Its real
+- **Phase 7, retention**, deferred with reasons; see its section. Its real
   customer is librettos-holding-LT-ranges, not the topology form.
 - **The four idle clocks**, which are ordered oddly: figwal unloads a head at
   5 minutes while the agent above it lives to 15, so a quiet aria drops its
@@ -2896,7 +2896,7 @@ session, which is where they would have been lost.
    measurement stood, but the `grep` of `daemon.log` beside them was reading
    an empty file and counted as evidence.
 8. **Prove the mechanism you think you are proving.** The first idle-sweep
-   run showed the cache emptying — via figwal's head unload, not my sweep.
+   run showed the cache emptying, via figwal's head unload, not my sweep.
    Pinning heads open (`handle_idle_minutes = -1`) is what made it a test.
 
 ## The boundary opened, and the live defect behind it (`d6b97f6e`)
@@ -2924,7 +2924,7 @@ system-reminder, so it DISPLACES the result, and every provider refuses that:
 lineage were bricked by it.**
 
 **Fixed structurally, at the write site.** The mark is an inbox event now; the
-loop writes it — immediately when idle, at the ROUND BOUNDARY when a turn is
+loop writes it, immediately when idle, at the ROUND BOUNDARY when a turn is
 in flight, which is where a queued `set` and a steering prompt already land
 and where every tool_result of the finished round is already appended. The
 record cannot land inside a round because nothing but the loop writes it.
@@ -2939,7 +2939,7 @@ inherits it.
 
 `TestStudyMarkCannotLandInsideARound` parks a round, asserts the mark stays
 out of the IR for 300 ms (long enough that the old synchronous append would
-have landed), then asserts it arrives after the boundary — and that the
+have landed), then asserts it arrives after the boundary, and that the
 DECLARATION landed immediately, because the board is the mechanism and the
 mark is only narration. **Verified red against the old code.**
 
@@ -2950,7 +2950,7 @@ mark is only narration. **Verified red against the old code.**
    that struct BY HAND after a live append (`anthropic.go`, `anthropicsdk.go`,
    `copilot/responses.go`, `openaichat.go`). A field forgotten there is not
    lost state, it is lost POSITION: the next pass believes the cursor sits at
-   zero and refolds the whole history to catch up — correctly, every turn,
+   zero and refolds the whole history to catch up, correctly, every turn,
    forever. It ate `LastStudyVersions` once and `FormVersionOfSnapshot` again
    last night. `TestSplicePreservesTheBoardPosition` guards it both ways;
    EXTEND it rather than trusting yourself.
@@ -2965,7 +2965,7 @@ here instead, so it can be deleted.
 ## The verb mints its libretto now, on both halves (`2e4490b3`)
 
 Study and drop move the refcount in §12.2.1's order, on the agent's loop for a
-live aria and on the hub for a dormant one — the two halves that have had to
+live aria and on the hub for a dormant one, the two halves that have had to
 agree about the study set since `set` was served from the hub.
 
 ```
@@ -2976,7 +2976,7 @@ drop:  board stops claiming it FIRST, libretto released SECOND
 **A study that changes nothing hands its reference straight back**, so a
 repeated study is not a second reference: the board is a SET and the count is
 derived from it. Both tests end by running the reconciliation sweep and
-asserting it corrects **nothing** — that is the invariant the verb and the
+asserting it corrects **nothing**, that is the invariant the verb and the
 sweep exist to share, and it is a better assertion than either half alone.
 
 **Best-effort, through an optional interface.** An ephemeral backend has no
@@ -3004,7 +3004,7 @@ name is stripped and the LOOKUP is not; getting it backwards produces
 | **reclamation** | blocked on a ruling: refs==0 is not sufficient |
 
 The next two are the ones that change what a user sees, and both live in
-`internal/provider/projection.go` and the four provider encoders — read
+`internal/provider/projection.go` and the four provider encoders, read
 6c2d7b9f's two warnings above before touching either.
 
 ### §12.2.2 closed, and the flake explained
@@ -3018,7 +3018,7 @@ both end by running the sweep and asserting it corrects nothing.
 two different builds under a full `go test ./...` and passed at `-count=5`
 and `-count=8` in isolation. The cause is not timing luck: **the WAL change
 made every queued `set` a mandatory fsync**, and that test drains 160 of them
-inside one turn — half a second on an idle box, several times that when a
+inside one turn, half a second on an idle box, several times that when a
 dozen packages compete for one disk. `fuzzTurnTimeout` was 5 s, chosen before
 durability was mandatory, and its own comment calls it a liveness guard
 rather than synchronisation. Raised to 20 s, with the arithmetic in the
@@ -3037,7 +3037,7 @@ two things the whole unit suite had missed.
    the predicate the sweep already had.
 2. **The sweep disagreed with the verbs: `would correct 1`.** A live fork
    takes `ForkWith`; I had put the participant on `Fork` and `ForkAt`. Every
-   unit test passed because every unit test called `Fork` — **the CLI calls
+   unit test passed because every unit test called `Fork`, **the CLI calls
    the one I missed**. And under-counting is the unrecoverable direction, so
    this was §12.2.2's exact failure reintroduced by an incomplete fix to
    §12.2.2.
@@ -3055,8 +3055,8 @@ rendering path for legacy stamps. That is wrong. Gluck: figaro stamps the
 LIBRETTO's cursor and the translator reads the libretto; records already on
 disk carrying SOURCE cursors are simply IGNORED (their study block is absent,
 which the reclamation ruling already licensed). A namespace and a skip, not
-two rendering paths. And a libretto is fully persistent — no retention, no
-compaction, no dropped segments, ever — because the translator asks it for
+two rendering paths. And a libretto is fully persistent, no retention, no
+compaction, no dropped segments, ever, because the translator asks it for
 arbitrary historical ranges and a dropped segment answers the wrong one
 silently.
 
@@ -3089,14 +3089,14 @@ then makes whichever rendering ran first permanent.
 **So the switch needs a second cursor namespace, not a reinterpretation.**
 `studyCursorPrefix` already namespaces these in the record's cursor map; a
 `libretto:` prefix beside it lets old records keep their meaning and new ones
-carry the new one. The projection reads whichever it finds — legacy stamps
+carry the new one. The projection reads whichever it finds, legacy stamps
 through the source accessor (exactly today's behaviour, including the
 "removed while studied" note), new stamps through the libretto. That is more
 code than the one-liner, and it is the difference between a migration and a
 silent corruption of every existing transcript.
 
 **Whoever takes it should also ask whether it is worth doing at all yet.**
-What the switch buys is §12.3's three properties — the translator never
+What the switch buys is §12.3's three properties, the translator never
 touches a source form, source forms become freely deletable, and the render's
 special cases become ordinary state. What it costs is a permanent dual path
 in the projection. My instinct is that it is worth it and that the dual path
@@ -3134,13 +3134,13 @@ the accessor and the machinery filter. Phase 9 is complete. What remains:
 
    So it survives the fix that was supposed to end it, and I could not
    reproduce it in three attempts. I will not claim it is mine and I will
-   not claim it is not — three green runs are not evidence of absence for
+   not claim it is not, three green runs are not evidence of absence for
    something that appears once in a loaded run.
 
    **Done, in both halves.**
 
    *The instrument* (`5e343ec8`): the refusal carries the last 64 refcount
-   moves — retain or release, which libretto, from what to what, and the call
+   moves, retain or release, which libretto, from what to what, and the call
    site. Always on: a mutex and a struct copy beside an fsync is nothing, and
    the run that matters is on a real store at 3am, not under a harness. The
    next occurrence names the release that had no matching retain instead of
@@ -3149,7 +3149,7 @@ the accessor and the machinery filter. Phase 9 is complete. What remains:
    *A cause, found by reading rather than by luck* (`b9ca9424`): `addRefs`
    loaded the state and the version SEPARATELY. `Form.Snapshot()` publishes
    both from one atomic load, and taking them apart opens a lost-update
-   window — the count computed from the old state, the conditional apply
+   window, the count computed from the old state, the conditional apply
    quoting the new version, so the guard passes and the update is
    overwritten. A lost retain over-counts (repairable); a lost release
    under-counts, and the count drifts low until a later legitimate release
@@ -3171,7 +3171,7 @@ the accessor and the machinery filter. Phase 9 is complete. What remains:
    **I tried the obvious fix and it did not work, which is the useful part.**
    The obvious fix is "nothing re-attaches the fold at boot, so attach it in
    the boot sweep". I built that, and the live script still reported the
-   first turn stale — while `doctor mem` reported `librettos open=1
+   first turn stale, while `doctor mem` reported `librettos open=1
    observers=1`, i.e. **a fold goroutine already exists after boot**. So the
    premise is false: something IS following, and the copy still had not
    advanced when the record was stamped. I reverted the change rather than
@@ -3190,7 +3190,7 @@ the accessor and the machinery filter. Phase 9 is complete. What remains:
    finding.** I went to build it and stopped at the question a fix should
    always be asked: can the case be constructed? It cannot. Every node id is
    minted inside the store (`mintTrunkID`/`hexTrunkID`) and **no code path
-   anywhere creates a node under a caller-chosen id** — `CreateForm` mints,
+   anywhere creates a node under a caller-chosen id**, `CreateForm` mints,
    `fork` mints, and `import` mints a fresh conversation rather than
    restoring the exported one's id. A dead form id cannot come back, so the
    two watermark guards that would discard it are never consulted.
@@ -3198,14 +3198,14 @@ the accessor and the machinery filter. Phase 9 is complete. What remains:
    So the honest state is: the guards are correct for the world as built,
    the promise in `wym.md:22` is unkept because nothing can test it, and
    **it becomes reachable the moment Gluck builds the thing he already asked
-   for** — `answers-forms.md:2`, "allow forms to be created from a client
+   for**, `answers-forms.md:2`, "allow forms to be created from a client
    specified key". That is the change that makes rebirth constructible, and
    the watermark reset belongs WITH it, where it can have a test.
 
    **The design of the fix, for whoever does it then**: the signal is not a
    version comparison (a stale read looks the same). It is that the copy
    records `alive:false` and a later attach SUCCEEDS on a source that is not
-   tombstoned — a dead form cannot be reopened, so that combination means a
+   tombstoned, a dead form cannot be reopened, so that combination means a
    different form now wears the id. The reseed must REPLACE rather than
    merge (remove mirrored keys the new state lacks) and reset `at` and
    `alive` in the same patch.
@@ -3220,13 +3220,13 @@ the accessor and the machinery filter. Phase 9 is complete. What remains:
    for. Five minutes of his time, and the retry count has since gone 5 → 32.
 5. ~~Strike the stale design text~~ **done**: `"paths"` is out of §12.3's
    document (the built thing never had it), `[q13]` is struck as settled by
-   `answers-forms.md:1`, and `[q14]` is answered by the code — a libretto is
+   `answers-forms.md:1`, and `[q14]` is answered by the code, a libretto is
    a reserved stump read only through `Libretto(source)`.
-6. **Reclamation** — DEFERRED by ruling (§12.7b), not a gap. 3.0 KB.
+6. **Reclamation**, DEFERRED by ruling (§12.7b), not a gap. 3.0 KB.
 7. **Phase 10, the API refactor**, and with it the lock audit's first
    fast-follow (`figaro/agent.go`'s `mu`). The audit says it wants its own
    branch and its own pty runs; believe it.
-8. **Phase 7, retention** — deferred with its argument written down. When it
+8. **Phase 7, retention**, deferred with its argument written down. When it
    lands, **retention must refuse a libretto BY TYPE, not by convention**
    (§12.5b): the translator asks for arbitrary historical ranges, so a
    libretto that dropped segments answers a wrong range silently, and once a
@@ -3257,7 +3257,7 @@ A child process patches a form and prints every version the writer said
 landed; the parent SIGKILLs it at a random moment and checks every
 acknowledged version is on disk. **This is the gate that matters for this
 session specifically**, because the figwal work changed how records are READ
-BACK — payloads are no longer materialized at open, sealed segments are
+BACK, payloads are no longer materialized at open, sealed segments are
 opened on demand, and blocks are evicted underneath readers. If any of that
 had made a record unreadable after a crash, this is where it would show, and
 it does not.
@@ -3287,8 +3287,8 @@ a second fsync per patch.** Now measured and reduced where it can be:
 | 8 | **4.000** |
 
 The fold drains whatever is queued and applies it as one patch. That does
-nothing for a sequential writer — the source is itself fsync-bound, so events
-arrive milliseconds apart with nothing to coalesce — and takes a QUARTER of
+nothing for a sequential writer, the source is itself fsync-bound, so events
+arrive milliseconds apart with nothing to coalesce, and takes a QUARTER of
 the records under group commit, which is what a busy form actually produces.
 The mirror's contract is the STATE, not the number of records it took to
 reach it.
@@ -3303,8 +3303,8 @@ not the durability.
 ### The fleet exercises it now, and a number I nearly published wrong
 
 `ariastress.sh --arias 12 --study --study-patches 300 --keep`, on the final
-build: 12/12 answered, control 0.16 s, history build 5.03 s (baseline 5.14 s
-— no regression), and the store now contains `@libretto::e1d28cfb`. Audited
+build: 12/12 answered, control 0.16 s, history build 5.03 s (baseline 5.14 s,
+no regression), and the store now contains `@libretto::e1d28cfb`. Audited
 offline afterwards:
 
 ```
@@ -3340,20 +3340,20 @@ librettos  open=1  observers=2  (one fold goroutine each)
 ```
 
 Printed only when there are any. A fold is a goroutine and a subscription,
-and ONE libretto is shared by every observer of that form — which is the
+and ONE libretto is shared by every observer of that form, which is the
 whole argument for one-per-form over one-per-figaro, and nothing could check
 it until now. Live: two arias studying one form give `open=1 observers=2`,
 and `observers=1` after one drops.
 
 This project has twice shipped a resident structure nobody could see (the
-translation cache, figwal's snapshots). The rule that came out of it — a new
-resident structure arrives with its number in `doctor mem` — is now applied
+translation cache, figwal's snapshots). The rule that came out of it, a new
+resident structure arrives with its number in `doctor mem`, is now applied
 to phase 9 as well.
 
 ### One implementation of the two-participant write (`d8a97bbe`)
 
 I built `StudyForm`/`DropForm` in the store, then wired the hub with a
-parallel copy — its own read-modify-write of the board, its own retain and
+parallel copy, its own read-modify-write of the board, its own retain and
 release. That left the store's pair with **no production caller**: dead code
 with good tests, which is the "a knob nobody sends" antipattern I had
 criticised phase 7 for four hours earlier. Worth recording as a habit to
@@ -3365,7 +3365,7 @@ too many**, and they had already drifted: the hub retried on a version
 conflict and the store's version did not.
 
 So the store's gained the retry, and with it a guard the hub had and mine
-lacked — `system.studies` is a read-modify-write, and without a version check
+lacked, `system.studies` is a read-modify-write, and without a version check
 two arias studying different forms at once overwrite each other's
 declaration. `ApplyFormEffectPrivilegedIf` is that guard for a system-managed
 key. **The retry must also hand the reference back before it loops**, or a
@@ -3403,12 +3403,12 @@ walked every `Append` into an IR log:
 had recorded that import "does not exist as a verb" here. It does:
 `angelus.import` restores a board wholesale, and **`system.studies` is an
 ORDINARY key**, so an exported board carries it. The import then creates a
-board naming librettos nothing counted — the unrecoverable direction.
+board naming librettos nothing counted, the unrecoverable direction.
 `RetainDeclaredStudies` (the hook fork already used, renamed for what it does
 rather than who calls it) is now called there.
 
 **Left for the next hand, deliberately**: `system.studies` should be
-`KeySystemManaged`. A comment of mine already claimed it was, and was wrong —
+`KeySystemManaged`. A comment of mine already claimed it was, and was wrong,
 a hand-written `fig set system.studies '["@abc"]'` can still declare a study
 nothing counted. Protecting it has real blast radius (the ephemeral path
 writes it unprivileged, and import would then need the privileged entry
@@ -3435,7 +3435,7 @@ Fleet, final build, against every earlier column:
 | turns answered | 12/12 | 12/12 | 12/12 | 12/12 | **12/12** |
 | history build | 4.11 s | 4.98 s | 4.99 s | 5.14 s | **4.90 s** |
 | turn wall | 4.53 s | 5.49 s | 5.01 s | 5.85 s | 5.44 s |
-| control | 0.17 s | 0.16 s | — | 0.16 s | **0.16 s** |
+| control | 0.17 s | 0.16 s | - | 0.16 s | **0.16 s** |
 | daemon PSS loaded | 56.8 M | 58.6 M | 46.5 M | 48.3 M | **49.5 M** |
 | goroutines | 93 | 80 | 80 | 80 | 81 |
 | heap_alloc | 14.9 M | 16.0 M | 9.2 M | 10.5 M | **10.5 M** |
@@ -3443,7 +3443,7 @@ Fleet, final build, against every earlier column:
 The 81st goroutine is the libretto's fold: the harness studies a form, so
 exactly one exists, and it is visible as `librettos open=1` in `doctor mem`.
 History build is the fastest it has been since before the WAL, with a
-studied form now costing a second durable write per patch — which is worth
+studied form now costing a second durable write per patch, which is worth
 saying twice, because it means the fold is not on the critical path.
 
 ## Succession (session 3)
@@ -3453,11 +3453,11 @@ saying twice, because it means the fold is not on the critical path.
   job. Its id is in `/var/tmp/figstate/.successor`. It has read the plans and
   is waiting; it has NOT moved the role.
 - **The role is `@980dc16c`.** On handoff:
-  `figaro state set --id @980dc16c target-aria b2b0c543` — a form patch the
+  `figaro state set --id @980dc16c target-aria b2b0c543`, a form patch the
   hub serves with no agent involved. A form patch is still the right way to
   move a role; the reason it was the ONLY way is gone as of `30dcd6ba`, which
   took the cast off the inbox. **Against a daemon running an older binary it
-  still hangs** — which is most of the ones on this box until they restart.
+  still hangs**, which is most of the ones on this box until they restart.
 - It arrived at the same two hazards from the notes alone (§12.5 is a
   migration; `system.studies` is unprotected and reachable from the CLI), and
   named a third question I had left implicit: **is the projection switch
@@ -3467,8 +3467,8 @@ saying twice, because it means the fold is not on the critical path.
   with all three rulings recorded in durable-forms §12.5b/§12.7b.
 - **d604c755 stays alive as a reference**, as its own predecessor did.
 - **Gluck's standing instruction to the new holder**: study the EARLIEST
-  material first — `durable-forms.md` whole, `answers-forms.md` and `wym.md`
-  (his own words, verbatim), and session 1 of this file — and check that what
+  material first, `durable-forms.md` whole, `answers-forms.md` and `wym.md`
+  (his own words, verbatim), and session 1 of this file, and check that what
   has been BUILT matches what was originally described. Report divergences
   rather than assuming the newest note wins. Then hurry: little work remains,
   and he wants a testable branch, having been at this all night.
@@ -3477,7 +3477,7 @@ saying twice, because it means the fold is not on the critical path.
 
 §12.7 names it as the case where the derivation's cost stops being
 theoretical: *"50 × 12 MB per patch versus 50 × a few hundred bytes"*. The
-answer is not a cheaper fold — it is **one libretto per studied FORM**, which
+answer is not a cheaper fold, it is **one libretto per studied FORM**, which
 is the reversal Gluck made on 2026-08-12 from one-per-figaro. Measured per
 source patch:
 
@@ -3493,7 +3493,7 @@ argument for sharing, as a number rather than a paragraph.
 ### The bug I nearly shipped: eviction ORPHANS a subscriber (`11639443`)
 
 Found by asking what the idle sweep does to a form a libretto is following.
-It evicts it — and **eviction does not stop a subscriber, it orphans one**:
+It evicts it, and **eviction does not stop a subscriber, it orphans one**:
 the `Form` leaves the registry, the next write constructs a NEW instance, and
 the old one, which is the instance the subscriber holds, never hears again.
 
@@ -3504,15 +3504,15 @@ me four hours earlier.**
 
 The design already had the answer and I had not connected it: §7 says *the
 lease registry IS the subscriber set*. Eviction respects that lease now
-(`Form.Subscribed()`), and the other half is tested as well — a lease that
+(`Form.Subscribed()`), and the other half is tested as well, a lease that
 never expires is a leak with a justification, so dropping the study must make
 the form evictable again on the very next sweep, and it does.
 
 **The lesson for the successor**: every new long-lived reader of a Form is a
 lease-holder, and the caches underneath it were written before any such
 reader existed. When phase 9's projection reads librettos, or phase 10 hands
-out streams, ask this question again — *what does the sweep do to the thing
-I am holding* — because the answer defaults to "silently the wrong thing".
+out streams, ask this question again, *what does the sweep do to the thing
+I am holding*, because the answer defaults to "silently the wrong thing".
 
 ### I created the two-worktrees-one-branch hazard myself, in figwal
 
@@ -3523,8 +3523,8 @@ checked out in BOTH, so master advanced under the main worktree while its
 files stayed at `4f9ce6a`.
 
 **What that leaves is worse than a stale checkout.** `git status` there
-showed fourteen STAGED changes — my new files as deletions, my edits as
-reversions — because the index still described the old tree. Anyone
+showed fourteen STAGED changes, my new files as deletions, my edits as
+reversions, because the index still described the old tree. Anyone
 committing in that worktree would have reverted the entire figwal session in
 one commit, with a clean-looking diff.
 
@@ -3535,13 +3535,13 @@ code is present.
 **The rule, restated because I proved it applies to the person who wrote it
 down**: one branch, one worktree. `git worktree add -f /var/tmp/<name>
 <ref>` for anything you are cutting releases from, and check
-`git worktree list` before you use `-f` on a branch somebody else has out —
+`git worktree list` before you use `-f` on a branch somebody else has out,
 including yourself in another directory.
 
 ### A study of a deleted form could not be dropped after a restart (`176c7efb`)
 
-§12.2.2 says it plainly — *drop on a form that has since been deleted is
-legal* — and it was, but only while the libretto happened to be cached in the
+§12.2.2 says it plainly, *drop on a form that has since been deleted is
+legal*, and it was, but only while the libretto happened to be cached in the
 daemon. **Across a restart it failed**:
 
 ```
@@ -3554,7 +3554,7 @@ to drop it took the same path.
 The fault was one call that had no business needing the source: opening a
 libretto tried to SUBSCRIBE, and a subscription needs a live form. The copy
 outliving what it copied is the whole point of §12.3, so a missing source is
-no longer an error — the libretto opens, reads and drops without one, and
+no longer an error, the libretto opens, reads and drops without one, and
 only the FOLLOWING stops. Not latched either: the next caller retries the
 attachment, so a source unreadable for a moment is followed again when it is
 not.
@@ -3565,13 +3565,13 @@ and every place I touched quietly re-coupled them*. The mirror copied the
 source's tombstone and sealed itself; the sweep evicted the source and
 orphaned the fold; opening the copy required opening the source. Each was
 found by asking what happens to the libretto when the source is gone, idle,
-or dead — **which is the question to keep asking**, because the design says
+or dead, **which is the question to keep asking**, because the design says
 they are independent and the code keeps assuming they are not.
 
 ## Phase 9 meets the REAL store, and finds the migration (`943df8f5`)
 
 `/var/tmp/figstate/realstudy.sh` runs the verbs against a copy of the actual
-store — 715 rows, real boards, a topology form that has to migrate:
+store, 715 rows, real boards, a topology form that has to migrate:
 
 ```
 first listing            715 rows in 3.05 s
@@ -3582,7 +3582,7 @@ the sweep, 711 boards     0.89 s   corrected 0   orphaned 0   MISSING 11
 ```
 
 **`missing 11` is the finding.** Eleven arias in the real store already study
-forms — all studied before librettos existed — and none would ever acquire
+forms, all studied before librettos existed, and none would ever acquire
 one, because the verb mints at study time. Under the projection switch those
 studies would render nothing.
 
@@ -3591,14 +3591,14 @@ truth) and the source forms (to seed from), and minting is exactly the repair
 a recomputing pass should perform.
 
 **And the cheap guard I added this morning had to go.** `HasLibrettos()`
-skipped a store with none — which is *every store from before phase 9*, i.e.
+skipped a store with none, which is *every store from before phase 9*, i.e.
 precisely the ones needing migration. A guard that looks like thrift and
 excludes the only case that matters is a bug. The pass runs in the background
 at boot instead: 0.89 s on 711 boards, and no caller waits for it.
 
 **The metric lied.** `Missing` counted the pre-state, so a pass that had just
 minted four reported `missing 4`. It now counts what is still missing when
-the pass ENDS, with `Minted` reporting the work done — same class of fault as
+the pass ENDS, with `Minted` reporting the work done, same class of fault as
 a check that cannot fail, caught the same way.
 
 **And the idempotence earned its keep on the first real run**: the boot sweep
@@ -3608,7 +3608,7 @@ not restart.
 
 ### The repair command declined to repair (`7525ca87`)
 
-`doctor librettos` had `if !dryRun && audit.Corrected > 0` — a shortcut
+`doctor librettos` had `if !dryRun && audit.Corrected > 0`, a shortcut
 written before the pass could mint anything. So a store whose only problem
 was a MISSING libretto was audited and left exactly as it was, which is the
 entire migration case, declined by the command that exists to perform it.
@@ -3624,7 +3624,7 @@ second pass:  would correct 0   would mint 0   12 librettos
 
 **And a lesson I paid for twice today**: `./result/bin/figaro` is whatever
 the last `nix build` produced, not what you just wrote. My first attempt at
-this check used it and I read stale output as a real result — the giveaway
+this check used it and I read stale output as a real result, the giveaway
 was wording I had changed an hour earlier. **Build to `/tmp` and test that**,
 or you will debug the past.
 
@@ -3632,13 +3632,13 @@ or you will debug the past.
 
 It has been in these notes since session 1: *`fig cast` on your own aria from
 inside a turn hangs, because the cast rides the inbox and the inbox is
-running the turn that issued it* — and "create a role as step one" asks for
+running the turn that issued it*, and "create a role as step one" asks for
 exactly that. durable-forms says phase 9 should fix it **and should be
 checked against it**. Checked first (red), then fixed.
 
 It is the displaced `tool_result` seen from the other end: **one hangs
 because it NEEDS the loop, one corrupted because it went AROUND the loop.**
-Both are now closed, and by opposite moves — the study mark was pushed ONTO
+Both are now closed, and by opposite moves, the study mark was pushed ONTO
 the loop, the cast was taken OFF it.
 
 **What the loop bought the cast was mutual exclusion between two castings of
@@ -3668,7 +3668,7 @@ librettos  open=11  observers=13  (one fold goroutine each)
 Measured on a copy of the real store **four seconds after boot**: all eleven
 pre-existing studies migrated, nothing left missing, no caller waiting.
 
-`still-missing` is the number that matters on somebody else's machine — what
+`still-missing` is the number that matters on somebody else's machine, what
 the sweep could NOT repair, which today means a studied form whose node is
 gone from that store.
 
@@ -3688,15 +3688,15 @@ fleet: 12 arias, study, 300 patches                             12/12
 | turns answered | 12/12 | 12/12 | 12/12 | 12/12 | **12/12** |
 | history build | 4.11 s | 4.98 s | 4.99 s | 5.14 s | **4.89 s** |
 | turn wall | 4.53 s | 5.49 s | 5.01 s | 5.85 s | **4.90 s** |
-| control | 0.17 s | 0.16 s | — | 0.16 s | **0.16 s** |
+| control | 0.17 s | 0.16 s | - | 0.16 s | **0.16 s** |
 | daemon PSS loaded | 56.8 M | 58.6 M | 46.5 M | 48.3 M | 51.8 M |
 | goroutines | 93 | 80 | 80 | 80 | 81 |
 
 **History build and turn wall are the best they have been since before the
 WAL**, with mandatory durability everywhere, a second durable write per patch
 on a studied form, and a libretto folding underneath. PSS is up 3.5 M on the
-fleet against session 2 — the libretto, its fold and the boot sweep's
-bookkeeping — and down 5 M against the pre-WAL baseline.
+fleet against session 2, the libretto, its fold and the boot sweep's
+bookkeeping, and down 5 M against the pre-WAL baseline.
 
 ### What phase 9 costs on the real store, measured after the migration
 
@@ -3711,7 +3711,7 @@ The daemon-day probe again, this time on a copy that has been MIGRATED
 | visiting every aria | 320.9 MiB | **321.0** |
 | after evicting idle | 49.2 MiB | **47.7** |
 
-**Nothing measurable at rest** — within the noise of the probe. On disk the
+**Nothing measurable at rest**, within the noise of the probe. On disk the
 eleven librettos are **3.0 KB in total** across 33 directories (one per
 channel per stump), against a 262 MB store.
 
@@ -3735,8 +3735,8 @@ error: system.studies: written by the harness, not by hand
 **The blast radius was exactly where the note said**, and one test found it:
 `import` applies a caller-supplied board patch UNPRIVILEGED, so protecting
 the key breaks restoring a study set by copying it. The answer is NOT to make
-import privileged — that would let an importer write `system.cwd` and the
-model — it is to stop restoring studies by copying at all. **Import now lifts
+import privileged, that would let an importer write `system.cwd` and the
+model, it is to stop restoring studies by copying at all. **Import now lifts
 `system.studies` out of the patch and replays each id through the VERB**,
 which mints the libretto, seeds it and retains it. An import naming a form
 this store does not have is fine: the libretto holds an empty copy and starts
@@ -3745,7 +3745,7 @@ following if that form ever arrives.
 So import became a first-class participant rather than a board-copier, which
 is what §12.2.2 asks for and better than the hook it replaces.
 
-## FINAL GATE (superseded — see the one below, on `9d324c4f`)
+## FINAL GATE (superseded: see the one below, on `9d324c4f`)
 
 ## GATE on `27fe08bf`
 
@@ -3770,8 +3770,8 @@ build` proven after each.
 The one thing a reader should take away: **the memory this project has been
 chasing was never figaro's.** It was one unbounded cache in the layer below,
 and the layer below that never gave its arena back. Bounding the first and
-returning the second took a store's whole history out of RAM — 297 MiB to
-68.5 for a full pass over the real store — and every bound figaro had already
+returning the second took a store's whole history out of RAM, 297 MiB to
+68.5 for a full pass over the real store, and every bound figaro had already
 added kept working, on top of something that finally has one too.
 
 ### What a studied form costs while everyone sleeps (`b84b7c5c`)
@@ -3787,19 +3787,19 @@ librettos         = 1          the fold is still live
 
 So **a studied form is pinned for as long as any board names it**: one
 resident `Form`, one fold goroutine, and a second durable write per source
-patch — even when nobody is awake to read the copy. Bounded by the number of
+patch, even when nobody is awake to read the copy. Bounded by the number of
 studied forms (eleven on the author's store), reported by `doctor mem`, and
 correct: the copy must be current when an observer wakes.
 
 **The refinement nobody has needed yet**, written down so it is not
 rediscovered: the fold could STOP while no observer is resident and catch up
-with one seed patch on wake. That is legal — no IR record is stamped during
-dormancy, so no stamp falls in the gap the catch-up would create — and it
+with one seed patch on wake. That is legal, no IR record is stamped during
+dormancy, so no stamp falls in the gap the catch-up would create, and it
 would remove the double write for a form whose watchers are all asleep. It is
 not built because nothing has measured it as a problem, and a knob nobody
 sends is what this project keeps refusing.
 
-### One writer per form — including the sweep's (`9d324c4f`)
+### One writer per form: including the sweep's (`9d324c4f`)
 
 The base rule of the design (§1: *one writer per form, an inbox with exactly
 one drainer, not a mutex and not a convention*), broken by the reconciliation
@@ -3815,7 +3815,7 @@ the sweep wrote through a second writer
 
 `librettoInstance` is THE instance for a source now, and everything asks it:
 the verb, the participants, the sweep. The sweep also stopped `Close`ing what
-it examined — it was closing a `Form` another goroutine was folding into.
+it examined, it was closing a `Form` another goroutine was folding into.
 
 **And re-attaching no longer re-seeds.** `Follow` wrote the source's whole
 state every time it attached, so re-attaching a current copy (after a
@@ -3828,7 +3828,7 @@ what re-attaches a libretto after a restart, found nothing did until someone
 called `Libretto()`, and while checking who calls it noticed the sweep
 calling `OpenLibretto` instead. The bug was two lines away from the question
 that found it. **Ask what happens to the thing you built when the process
-restarts, when the sweep runs, and when two callers arrive at once** — this
+restarts, when the sweep runs, and when two callers arrive at once**, this
 session found four bugs with those three questions.
 
 ## FINAL GATE (session 3), on `9d324c4f`, everything green
@@ -3863,7 +3863,7 @@ Because the count is the useful part, not any one of them:
 6. the migration guard skipped exactly the stores needing migration;
 7. `doctor librettos` declined to repair the only case it existed for;
 8. the libretto stump was drawn by `fig ls -g`;
-9. `ForkWith` — the entry point the CLI uses — was not a refcount
+9. `ForkWith`, the entry point the CLI uses, was not a refcount
    participant, while `Fork`, which only tests call, was;
 10. the reconciliation sweep put a SECOND WRITER on a form.
 
@@ -3874,7 +3874,7 @@ restarts, when the sweep runs, and when two callers arrive at once.
 ### Optimism has to be sized for the contention it replaced (`609abccc`)
 
 Taking the cast off the actor loop removed serialization between two castings
-of one figaro and left optimistic retry in its place — sized, at five
+of one figaro and left optimistic retry in its place, sized, at five
 attempts, for the world where that could not happen. Eight concurrent casts
 exhausted it:
 
@@ -3882,7 +3882,7 @@ exhausted it:
 cast: study @c580c388: study: the board would not hold still
 ```
 
-and each failure loses a study for a role **already pointed at the caster** —
+and each failure loses a study for a role **already pointed at the caster**,
 a role pointing at a figaro that does not know it. 32 attempts with a small
 jittered backoff now, so N writers of one board converge instead of colliding
 in lockstep; each attempt costs one fsync and only under contention that used
@@ -3897,8 +3897,8 @@ FOR THE PROPERTY THE OLD MECHANISM GUARANTEED**, not for the new code path.
 ### Retain once, not once per attempt (`dbf8704e`)
 
 The retry loop took a reference and gave it back on every conflict, so eight
-concurrent casts paid a retain and a release — two durable writes on the
-libretto — per attempt each. **Contention should cost extra BOARD writes,
+concurrent casts paid a retain and a release, two durable writes on the
+libretto, per attempt each. **Contention should cost extra BOARD writes,
 which are the thing being contended, not extra writes on a form nobody is
 fighting over.**
 
@@ -3933,14 +3933,14 @@ Fleet, final build, against a base run made the same hour (`eaeda9f5`):
 | heap_sys | 31.2 M | **31.2 M** |
 
 Projection benchmarks, `-benchtime 3s -count=3`, HEAD vs base: every case
-within ±1.6%, which is noise. **They do not measure the accessor change** —
-they inject their own fake Form — and saying so is the point: the number that
+within ±1.6%, which is noise. **They do not measure the accessor change**,
+they inject their own fake Form, and saying so is the point: the number that
 covers the new read path is the fleet.
 
 ### The one open risk, stated plainly
 
 `TestStudyAndDropRaceOnOneForm` failed ONCE under a loaded gate with *release
-below zero* — an under-count, the direction the sweep cannot repair. Six green
+below zero*, an under-count, the direction the sweep cannot repair. Six green
 runs since (isolated, with neighbours, whole package, and three full gates).
 A probable cause was found by reading and fixed (`b9ca9424`, the split pair),
 and it is NOT proven: the property test stayed green against the old code.
@@ -3984,18 +3984,18 @@ never failed.
 
 ## REBOOT NOTE (2026-08-13 ~23:00, for Gluck's return)
 
-**Aria: 94f0752b · Role: @980dc16c** (state-layer worker, session 5 —
+**Aria: 94f0752b · Role: @980dc16c** (state-layer worker, session 5,
 still cast, still holding burn-down/triage-memory/verify-via-nix/
 current-work/post-merge keys).
 
-**State at reboot**: feat/form-deltas-ui @ a2e2b382 — form deltas +
+**State at reboot**: feat/form-deltas-ui @ a2e2b382, form deltas +
 turn cache + one read path + figwal v0.17.2, full suite + nix green,
 .#snapshot reseeded fresh, real config.toml carries the explicit
 [memory] section (ui_window_mb=16, knob proven 16→2→16). A/B same-load:
 loaded 168.9→159.9MB, floor 81.4→79.3MB.
 
 **OPEN**: Gluck reports SEVERAL BUGS in the implementation and >1GB
-allocation on his live session — far past anything measured here, so
+allocation on his live session, far past anything measured here, so
 something in the new work likely RETAINS. Unproven suspects: the
 reader registry materializing every touched aria's server before turns
 hollow; eviction-only-at-insert. Suspicion is not evidence.

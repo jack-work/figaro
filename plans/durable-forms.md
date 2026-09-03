@@ -683,7 +683,7 @@ design as written never named them, because its only fork sentence (§12.2,
 nothing about `refs` when an OBSERVER forks.
 
 - **Fork under-counts.** A child inherits the board, therefore the
-  `study-set`, therefore every study its parent held — and no libretto is
+  `study-set`, therefore every study its parent held, and no libretto is
   incremented. Fork, then let the parent drop: `refs` reaches zero, the
   libretto is reclaimed, and the child is still observing it. **The order
   must be: read the parent's `study-set`, increment each named libretto,
@@ -718,7 +718,7 @@ fully persisted and the subscription survives.
 The libretto is the observed form's state, **materialized**: the WHOLE form,
 held as ordinary keys, with its own patch history, plus the bookkeeping.
 
-A libretto has no `paths` and takes no projection — `answers-forms.md:1`,
+A libretto has no `paths` and takes no projection, `answers-forms.md:1`,
 "whole-form is the only option, for librettos". API-level derived forms keep
 projection; this one does not, and the built thing never had it. Bookkeeping
 lives under `system.libretto.*` (§12.8.1), because a whole-form mirror copies
@@ -828,7 +828,7 @@ source produced anyway, and Gluck's reclamation ruling already licensed an
 old transcript losing its study state.
 
 So the switch is: a new cursor namespace, a translator that reads librettos,
-and a skip for the old namespace. Not a permanent dual rendering path — which
+and a skip for the old namespace. Not a permanent dual rendering path, which
 is what I had talked myself into, and it was wrong.
 
 The degradation window is bounded exactly: the migration seeds each libretto
@@ -839,7 +839,7 @@ that lose their block.
 the switch). `system.libretto.refs`, `.at` and `.alive` live in the SAME
 document as the mirrored keys, so a translator reading the copy would render
 `.at` changing on every fold and `.refs` changing whenever a DIFFERENT aria
-studies or drops the same form — machinery churn in every studied block, which
+studies or drops the same form, machinery churn in every studied block, which
 the source form never produced.
 
 The rule: **the studied block renders the mirrored keys and `.alive`, and
@@ -852,8 +852,8 @@ all rather than something the translator has to be told about.
 segment files, ever** (Gluck, and it is the rule the rest depends on). The
 translator asks for arbitrary historical ranges between two stamps, so a
 libretto that dropped old segments would silently answer the wrong range
-rather than fail. This is §8/§10's type-level rule — a channel that hands out
-patch views may not have a retention policy — and it binds harder here,
+rather than fail. This is §8/§10's type-level rule, a channel that hands out
+patch views may not have a retention policy, and it binds harder here,
 because once a source is deleted the libretto is the ONLY copy. Anything
 that later adds retention (phase 7) must refuse a libretto by type, not by
 convention.
@@ -865,7 +865,7 @@ convention.
 transition renders like any other key change in the studied block. The
 projection therefore never has to know whether a source is alive, which is
 what keeps §12.5 a namespace change instead of a new field on
-`IncrementalProjection` — the seam that has silently eaten two fields. An
+`IncrementalProjection`, the seam that has silently eaten two fields. An
 encoder MAY special-case that one key into the sentence it prints today, and
 `system.study_incantation`'s `ondrop` already exists to say what the event
 means to a particular figaro; neither is required, and neither may put
@@ -893,7 +893,7 @@ on both halves, and fork/kill as participants. Not built: the projection
 switch (§12.5) and reclamation. Corrections, in the order they were found:
 
 1. **A verbatim mirror must not copy the source's TOMBSTONE.** §12.3 says the
-   libretto records the death and keeps the copy. It does — but a form SEALS
+   libretto records the death and keeps the copy. It does, but a form SEALS
    itself when it carries `system.tombstone`, so mirroring that key made the
    libretto commit suicide the moment its source died, which is the precise
    opposite of the copy outliving it. The death is recorded as
@@ -906,7 +906,7 @@ switch (§12.5) and reclamation. Corrections, in the order they were found:
    §12.2 implies and never says. An IR record stamps the libretto version it
    was rendered against (§12.5), so an aria that studied a form and dropped
    it still references that libretto for the whole of its history. Unlinking
-   on refs==0 makes those records unrenderable — the coupling the COPY exists
+   on refs==0 makes those records unrenderable, the coupling the COPY exists
    to remove (§12.3), reintroduced from the other end. Reclamation needs a
    second question ("does any surviving IR reference it") and a ruling about
    what an old transcript may lose.
@@ -914,8 +914,8 @@ switch (§12.5) and reclamation. Corrections, in the order they were found:
 3. **§12.2.2's list is written in terms of VERBS and must be read in terms of
    ENTRY POINTS.** "Fork" is three functions here (`Fork`, `ForkAt`,
    `ForkWith`), and a live `fig fork` takes the third. Putting the refcount
-   on the first two passed every unit test — because the tests called what
-   the tests chose — and under-counted on a real daemon, which is §12.2.2's
+   on the first two passed every unit test, because the tests called what
+   the tests chose, and under-counted on a real daemon, which is §12.2.2's
    own unrecoverable direction reintroduced by an incomplete fix to it. The
    rule is better stated as: every code path that gives a board a COPY, or
    takes one out of existence, is a participant.
@@ -923,7 +923,7 @@ switch (§12.5) and reclamation. Corrections, in the order they were found:
 4. **The stamps are durable history, so §12.5 is a MIGRATION, not a switch.**
    Every IR record ever written by a studying aria carries source-form
    versions under `study:`. Reinterpreting them as libretto versions reads
-   every one against the wrong log — silently wrong ranges rather than absent
+   every one against the wrong log, silently wrong ranges rather than absent
    ones, made permanent by the per-LT cache. A second cursor namespace is
    what keeps that from happening.
 
@@ -939,7 +939,7 @@ Three edits, and two consequences worth knowing.
 **The libretto's machinery would otherwise reach the model.** The bookkeeping
 lives in the same document as the mirror (it must: §12.8.1), so reading the
 libretto renders `system.libretto.at` on every fold and `refs` whenever some
-OTHER aria studies the same form — cross-aria noise inside one aria's
+OTHER aria studies the same form, cross-aria noise inside one aria's
 context. The accessor strips `system.libretto.*` except `alive`, which stays
 by §12.7b's ruling. It copies only when there is something to strip: the
 patch handed to a view is the store's own published value, and stripping in
@@ -947,8 +947,8 @@ place edits history for every other reader.
 
 **A stamp names where the COPY stood, and the fold is asynchronous.** A
 source write landing microseconds before an IR append renders in the NEXT
-block rather than that one. Nothing is lost — consecutive stamps still
-bracket every patch — but it is a real timing change from reading the source
+block rather than that one. Nothing is lost, consecutive stamps still
+bracket every patch, but it is a real timing change from reading the source
 directly, and any test that patches a form and immediately appends must wait
 for the fold rather than assume it.
 
@@ -962,7 +962,7 @@ refcounts agreed, the sweep was silent, and the studied block rendered
 correctly. On a real daemon it rendered correctly **once** and then froze
 forever, and no test could see it.
 
-The accessor read the copy as if it were a node — `FormVersion(librettoID)`,
+The accessor read the copy as if it were a node, `FormVersion(librettoID)`,
 `FormPatchesBetween(librettoID, …)`. Both go through the node registry, which
 opens a **second Form over the libretto's channel**. That instance replays at
 open, so its first read is right; the fold appends through the *other*
@@ -973,7 +973,7 @@ permanent.
 This is the same hazard the idle sweep already guards (`xwal_backend.go`:
 "Evicting it does not stop the subscriber, it orphans it"), arriving from the
 read side instead of the eviction side. **Every reader of a libretto must
-hold the SHARED instance** — `Libretto(source)` — exactly as the
+hold the SHARED instance**, `Libretto(source)`, exactly as the
 reconciliation sweep's own comment demands.
 
 It is refused by construction now: `b.form()` rejects a libretto id and names
@@ -1322,7 +1322,7 @@ Settled since the first draft, recorded so they are not reopened:
 - **`libretto::<formid>` resolves to a reserved STUMP**, not a node, and
   `[q14]` is answered by the built thing: `LibrettoID` is deterministic from
   the source id, the stump is named for the bare id, and a libretto is read
-  ONLY through `Libretto(source)` — never as a node, which `b.form()` now
+  ONLY through `Libretto(source)`, never as a node, which `b.form()` now
   refuses (§12.5d).
 - **The projection switch is BUILT** (§12.5b, §12.5c, §12.5d): the IR stamps
   the libretto, the translator reads the copy, legacy stamps render nothing.

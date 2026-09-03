@@ -1,4 +1,4 @@
-# Aria 94f0752b — "all messages hang" postmortem + diagnostic gap analysis
+# Aria 94f0752b: "all messages hang" postmortem + diagnostic gap analysis
 
 **Date:** 2026-08-14, ~19:00 EDT
 **Investigator:** aria ac9c3993
@@ -10,7 +10,7 @@
 ## 1. Verdict
 
 **94f0752b is not deadlocked, not corrupted, and not "cut off by a fork". It is
-rate-limited — the account is out of credit for `claude-fable-5`.**
+rate-limited, the account is out of credit for `claude-fable-5`.**
 
 > **CONFIRMED BY GLUCK, 19:30:** out of fable-5 credits. So the 429 is not a
 > transient throttle at all; it persists until the balance/window renews, which
@@ -20,12 +20,12 @@ rate-limited — the account is out of credit for `claude-fable-5`.**
 Every turn since 17:09:36 gets **HTTP 429** from `api.anthropic.com/v1/messages`
 within ~1 second. The `anthropic-sdk-go` retry loop then honors the response's
 `Retry-After` header **verbatim and uncapped**, and sleeps inside
-`RequestConfig.Execute` — emitting nothing to the stream, nothing to the log,
+`RequestConfig.Execute`, emitting nothing to the stream, nothing to the log,
 and nothing to the span (spans only export on *end*). The turn is alive and
 silent for as long as the provider's reset window. To the user this is
 indistinguishable from a hang.
 
-Observed sleeps: **21m41s** and **76m45s** — each terminated not by the retry
+Observed sleeps: **21m41s** and **76m45s**, each terminated not by the retry
 completing but by the *user* giving up (`^C` → `context canceled`) or by a
 daemon restart.
 
@@ -81,7 +81,7 @@ func retryDelay(res *http.Response, retryCount int) time.Duration {
 ```
 
 Anthropic's 429 for a long-window usage cap (5-hour / weekly plan window, not a
-per-minute throttle) returns `retry-after` = seconds until the window resets —
+per-minute throttle) returns `retry-after` = seconds until the window resets,
 thousands of seconds. The SDK sleeps that. `MaxRetries` defaults to 2, so worst
 case is **2 × window** with no output.
 
@@ -91,7 +91,7 @@ inherits the SDK's uncapped policy wholesale.
 
 ### The irony worth recording
 
-figaro already contains a *correct* hand-rolled retry policy — in the **other**
+figaro already contains a *correct* hand-rolled retry policy, in the **other**
 anthropic provider, `internal/provider/anthropic/anthropic.go:153-292`:
 
 ```go
@@ -104,7 +104,7 @@ slog.Warn("anthropic transient status, retrying", "status", ..., "attempt", ...)
 
 That path caps the delay at 30s *and* logs each retry. **It is not the path in
 use.** The live provider is `anthropicsdk`. Two providers, two retry policies,
-only one of them observable — and the unobservable one is the default.
+only one of them observable, and the unobservable one is the default.
 
 **CORRECTION (post-investigation).** I first wrote that the provider package's
 `slog` was not wired into the OTel pipeline, because `grep -c 'transient status,
@@ -139,7 +139,7 @@ the store:
 A quarter-billion cache-read tokens through one conversation in 29 hours. Every
 turn re-presents ~708k tokens of context. Long-window quotas count that. **This
 aria ate the account's window**, and being the single largest request in the
-fleet it is also the first refused and the last to fit once headroom returns —
+fleet it is also the first refused and the last to fit once headroom returns,
 classic head-of-line starvation of the fattest request.
 
 **This is a capacity story, not a corruption story.** The aria did it to itself
@@ -155,18 +155,18 @@ by growing to 71% of a 1M window and then running 83 turns at that size.
 
 Arc across its 57 user prompts:
 
-1. **Role handoff** (idx 4) — inherit state-layer role @980dc16c from session 4.
-2. **figwal generalization** (idx 1294-1296) — "one Go type with type-parameterized
+1. **Role handoff** (idx 4), inherit state-layer role @980dc16c from session 4.
+2. **figwal generalization** (idx 1294-1296), "one Go type with type-parameterized
    units", the decode-IR layer joined to the same tree; rip out the old code.
-3. **Fork discipline** (idx 1280) — forked a warm-up aria (`db548fc3`), mantra set,
+3. **Fork discipline** (idx 1280), forked a warm-up aria (`db548fc3`), mantra set,
    task registered as a KVP on the role so success is externally visible.
-4. **Storm benchmarking** (idx 1373) — "get benchmarks and run the 100-aria test".
-5. **Verdict + release** (turn 79, 17:09) — 100-aria forest storm: heap inuse
+4. **Storm benchmarking** (idx 1373), "get benchmarks and run the 100-aria test".
+5. **Verdict + release** (turn 79, 17:09), 100-aria forest storm: heap inuse
    **87.2 MiB @ 100 arias** vs release baseline **157.9 MiB @ 90** (−45% at higher
    load); segment cache 2.1/32 MiB; ui window 73.2 KiB (S1 fix confirmed); no
-   leak. Called GREEN, **tagged and pushed figwal v0.18.0** ("forest — one cache
+   leak. Called GREEN, **tagged and pushed figwal v0.18.0** ("forest, one cache
    to shape them all"). That push is the last successful API round-trip.
-6. **17:31 onward** — user notices silence, three prompts land unanswered.
+6. **17:31 onward**, user notices silence, three prompts land unanswered.
 
 The last thing it did was ship. It died on the victory lap, not mid-surgery.
 Its work product is committed and pushed; nothing is stranded in context.
@@ -184,7 +184,7 @@ The `figstorm-bin` process (pid 2398478) with ~100 aria sockets under
 - **Stale daemons.** Three figaro processes live: `1961781` (0.25.0, since 14:04,
   cwd formdeltas), `1541875` (0.25.0, since 12:07), `2655396` (0.26.0, the real
   angelus). `angelus.startup` shows repeated `another angelus already owns this
-  store; exiting` at 03:52, 14:38, 18:48 — losers exit, but two 0.25.0 processes
+  store; exiting` at 03:52, 14:38, 18:48, losers exit, but two 0.25.0 processes
   are still holding fds. Version skew across a shared store is a latent hazard.
 - **`angelus.log` is dead.** Last line 2026-05-13. Everything real goes to
   `logs.jsonl` / `metrics.jsonl` / `traces.jsonl`. The file that *looks* like the
@@ -192,7 +192,7 @@ The `figstorm-bin` process (pid 2398478) with ~100 aria sockets under
 - **Trace export is end-of-span only.** An in-flight turn contributes *nothing* to
   `traces.jsonl`. The exact situation you most need to debug is the one that
   produces no trace data.
-- **`http.req_bytes: 0`** on every request event — the field exists and is never
+- **`http.req_bytes: 0`** on every request event, the field exists and is never
   populated. Would have instantly shown "this is a 700 KB request".
 - **`retry-after` is never recorded** anywhere. The single number that explains
   the entire outage is not captured by any log, metric, or span attribute.
@@ -205,7 +205,7 @@ The `figstorm-bin` process (pid 2398478) with ~100 aria sockets under
 
 ---
 
-## 7. Diagnostic gap analysis — what I had to build by hand
+## 7. Diagnostic gap analysis: what I had to build by hand
 
 `figaro doctor` today offers: `gc`, `schema`, `term`, `mem`, `librettos`,
 `skills`. **All six are about the store and the process. Not one of them can
@@ -253,7 +253,7 @@ figaro doctor aria 94f0752b
    req-bytes, **including in-flight requests**.
 2. **Retries are invisible by construction.** No stream event, no log record, no
    metric. The SDK sleeps and figaro says nothing. Want: emit a first-class
-   `provider.retry` UI event (`⏳ rate limited (429), retrying in 58m — ^C to
+   `provider.retry` UI event (`⏳ rate limited (429), retrying in 58m, ^C to
    abandon`) so `figaro listen` shows it. **Silence is the actual defect.**
    Everything else here is instrumentation for a defect that should not exist.
 3. **`status` lies by omission.** `state: idle` is true and useless when the last
@@ -301,13 +301,13 @@ figaro doctor aria 94f0752b
 1. The quota window is the gate; nothing else. Wait for reset, or
 2. `figaro fork 94f0752b -- <prompt>` at a lower turn to shed context, or
 3. re-dress it onto a smaller-context model for the wind-down, then
-4. hand its role `@980dc16c` to a sixth holder — 708k of context is past the
+4. hand its role `@980dc16c` to a sixth holder, 708k of context is past the
    point where continuing is economical. Its work (figwal v0.18.0) is tagged
    and pushed; the handoff note is the only thing owed.
 
 **Code, in priority order:**
 1. `option.WithMaxRetries(2)` **and** a `retryDelay` ceiling in
-   `internal/provider/anthropicsdk/auth.go` — never sleep more than ~60s on a
+   `internal/provider/anthropicsdk/auth.go`, never sleep more than ~60s on a
    `Retry-After`. Past that, **fail loudly with the retry-after value in the
    error**. A one-hour silent sleep is never the right product behavior.
 2. Emit a `provider.retry` event onto the aria stream. This alone converts
@@ -323,11 +323,11 @@ figaro doctor aria 94f0752b
 
 ---
 
-## Appendix — repro commands used
+## Appendix: repro commands used
 
 ```sh
 figaro status 94f0752b -j
-figaro queue ls --id 94f0752b -j                 # empty — proves prompts were consumed
+figaro queue ls --id 94f0752b -j                 # empty, proves prompts were consumed
 tail -c 6000 ~/.local/state/figaro/arias/ir/n856/*.jsonl   # 4 consecutive role:input at tail
 curl -s --unix-socket /run/user/1000/figaro/pprof.sock 'http://x/debug/pprof/goroutine?debug=2'
 python3 - <<'EOF'   # the scanner that found it
@@ -356,7 +356,7 @@ Five PRs against `jack-work/figaro`. Two stacks and two independents.
 | [#17](https://diffshub.com/jack-work/figaro/pull/17) | `fix/wirelog-round-ledger` | `main` | telemetry: record `retry-after`, the ratelimit headers, real `req_bytes`, aria attribution; add the in-memory round-trip ledger with in-flight rows |
 | [#18](https://diffshub.com/jack-work/figaro/pull/18) | `fix/anthropicsdk-retry-cap` | #17 | a spent quota **fails the turn at once** (`x-should-retry: false`) instead of sleeping through it; explicit `MaxRetries`; loud log + loud error |
 | [#19](https://diffshub.com/jack-work/figaro/pull/19) | `perf/pprof-aria-labels` | `main` | `pprof.Do` labels the agent goroutine and its whole subtree with the aria id |
-| [#20](https://diffshub.com/jack-work/figaro/pull/20) | `feat/doctor-provider` | #17 | `figaro doctor provider [--id] [-c N] [-j]` — the round-trip table plus a verdict paragraph; new `angelus.provider_ledger` RPC |
+| [#20](https://diffshub.com/jack-work/figaro/pull/20) | `feat/doctor-provider` | #17 | `figaro doctor provider [--id] [-c N] [-j]`, the round-trip table plus a verdict paragraph; new `angelus.provider_ledger` RPC |
 | [#21](https://diffshub.com/jack-work/figaro/pull/21) | `feat/status-last-turn-result` | `main` | `status` gains `last-turn:` and `unanswered:`; `listen` routes error reasons to the status bar notice instead of stderr |
 
 Diffshub: `https://diffshub.com/<owner>/<repo>/pull/<N>`.
@@ -369,12 +369,12 @@ balance, capping was revealed as still wrong in kind: retrying a spent quota is
 pointless at any interval, and any wait at all holds the agent loop so the user
 cannot send the message that would fix it (fork, downshift, top up). The shipped
 behavior is **refuse the retry outright** past the cap and hand the aria back
-within the second. Short throttles are still ridden out — the cap is a ceiling,
+within the second. Short throttles are still ridden out, the cap is a ceiling,
 not a refusal.
 
 ### Still not built
 
-- `figaro doctor aria <id>` (§7.1) — the single-command health check. #20 and
+- `figaro doctor aria <id>` (§7.1), the single-command health check. #20 and
   #21 cover most of its lines between them; the aria→store-node mapping and the
   raw IR tail dump are still hand work.
 - A `provider.retry` / rate-limit event on the **aria stream** as its own message
@@ -386,7 +386,7 @@ not a refusal.
 
 ### Warning for whoever picks this up
 
-Another aria is committing in `figaro-qua` concurrently — a duplicate of the
+Another aria is committing in `figaro-qua` concurrently, a duplicate of the
 pprof commit landed on `feat/doctor-provider` mid-session and had to be rebased
 out, and there is an existing `fix/provider-error-visible` branch that may
 overlap #21. Check `git worktree list` and the branch set before assuming a

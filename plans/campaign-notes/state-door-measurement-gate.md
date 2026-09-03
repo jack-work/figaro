@@ -1,4 +1,4 @@
-# The state-door measurement gate — proposal, not yet built
+# The state-door measurement gate: proposal, not yet built
 
 Aria 3a9225b1 (measurement arm, self-fork of 091d162e at turn 1),
 2026-08-17. Branch under measure: `feat/layered-cache` @ 300bd36b,
@@ -13,7 +13,7 @@ proposed for approval by 091d162e before a line of harness exists.
 
 1. **The mutex census reproduces exactly.** My independent count over
    non-test Go: store 10 decls / 76 sites, provider 8/52, angelus 7/37,
-   livelog/aria 3/46, figaro 4/31 — sums to the briefed 32 decls / 242
+   livelog/aria 3/46, figaro 4/31, sums to the briefed 32 decls / 242
    sites, and xwal_backend.go really does hold 31 of store's 76. The
    whole tree is larger: **62 decls / 386 sites** (cli 9, tool 8,
    outfit 3, otel 3, render 2, actor 2, wirelog/tape/logring 1 each).
@@ -22,7 +22,7 @@ proposed for approval by 091d162e before a line of harness exists.
    committed script so before/after are the same question.
 
 2. **pprof is NOT armed.** `/run/user/1000/figaro/` holds angelus.pid,
-   angelus.sock, angelus.startup — no `pprof.sock`. `StartPprof` only
+   angelus.sock, angelus.startup, no `pprof.sock`. `StartPprof` only
    binds when `angelus.PprofEnv` is set. **The heap profile is blocked
    on a daemon restart with that env set.** That is a decision for the
    role bearer, not for me.
@@ -40,7 +40,7 @@ proposed for approval by 091d162e before a line of harness exists.
    need a bloated one.
 
 5. **Two hygiene items.** A `figaro-test` binary from `/tmp/fig-hushtest`
-   is resident at 619 MB — and /tmp is tmpfs, i.e. RAM, i.e. the scratch
+   is resident at 619 MB, and /tmp is tmpfs, i.e. RAM, i.e. the scratch
    rule broken by a previous session. Not mine, not killed, reported.
    And this worktree has uncommitted edits in `internal/figaro/agent.go`
    and `turn.go`: **no baseline will be taken from a dirty tree.**
@@ -52,7 +52,7 @@ proposed for approval by 091d162e before a line of harness exists.
 Four panels. Each stage of feat/state-door is measured before and after,
 separately, on its own commit, so a revert gives back a known amount.
 
-### Panel A — wall/alloc, the existing instruments, reused not reinvented
+### Panel A: wall/alloc, the existing instruments, reused not reinvented
 - `internal/figaro`: EmitFrame, EmitFrameStreamingPartial, ServerUpdateOnly,
   RegionMaterializationOnly, AgentRestoreHistory10000, InterruptRepair10000,
   AgentInfo10000, LiveFramePersistence
@@ -64,20 +64,20 @@ separately, on its own commit, so a revert gives back a known amount.
 Primary signal is **B/op and allocs/op** (deterministic); ns/op is
 secondary and only believed through benchstat against a measured floor.
 
-### Panel B — system resources
+### Panel B: system resources
 Per bench process: `VmHWM`/`VmRSS` from /proc/self/status at exit, peak
 goroutines, peak fds, `runtime.MemStats` HeapSys/HeapInuse/Sys. Plus the
 `doctor mem` counter set taken in-process on the same fixture, so the
 metered/unmetered ratio is itself a tracked number per stage.
 
-### Panel C — contention (gates the mutex workstream)
+### Panel C: contention (gates the mutex workstream)
 Parallel benches only, with `runtime.SetMutexProfileFraction(1)` and
 `SetBlockProfileRate` set explicitly (an unset rate silently yields an
-empty profile that reads as "no contention" — the single easiest way to
+empty profile that reads as "no contention", the single easiest way to
 fake this whole workstream). Report per-lock contention ns and delay
 count, before and after, at -cpu=1,4,16.
 
-### Panel D — correctness, not perf
+### Panel D: correctness, not perf
 `-race -count=3` on store/figaro/angelus/provider, plus identity oracles
 (sameBytes/sameRaw, the countingLog decorator, TestHopGate_DoHopsReDecode).
 Never mixed with Panel A numbers: a race build is slower by construction.
@@ -92,21 +92,21 @@ Stated before the harness so the harness can be built against them.
    deletes a derivation can turn a measured op into a no-op, and a no-op
    is very fast. GUARD: every panel-A bench gets a companion
    "actually-does-the-work" assertion in the shape of
-   TestEmitFrameBenchmarkActuallyComposes — bytes composed, rows decoded,
+   TestEmitFrameBenchmarkActuallyComposes, bytes composed, rows decoded,
    records appended, counted by the countingLog decorator. Four of that
    test's assertions were wrong before they were right; the new ones get
    the same suspicion.
 2. **A deleted benchmark reads as an improvement.** Stage 4 deletes the
    derivation and with it, plausibly, the benchmarks that measured it.
    GUARD: the panel is a FIXED NAMED LIST. A missing benchmark is RED,
-   printed as `ABSENT`, and requires a written reason — never a blank
+   printed as `ABSENT`, and requires a written reason, never a blank
    cell.
 3. **The fixture changes under the format-breaking stages (3, 6, 8, 9).**
    Before and after then measure different work and the comparison is
    void. GUARD: a fixture-parity assertion per stage (same turn count,
    node count, composed byte total at the seam), and where the record
    shape genuinely changes, the record byte delta is reported BESIDE the
-   time — so "faster" cannot hide "doing less".
+   time, so "faster" cannot hide "doing less".
 4. **Machine noise.** 16 cores shared with a browser, k3s and gopls.
    GUARD: an A/A run (the same commit twice) establishes the floor
    before any A/B is believed; benchstat with -count>=10; any delta
@@ -118,7 +118,7 @@ Stated before the harness so the harness can be built against them.
    every lock into 0 ns. GUARD, and this is the workstream's hard rule:
    **no before-contention number, no perf claim.** A removal whose
    before-contention is 0 is a LEGIBILITY change and must be labelled
-   one. It may still be right — it is just not mine to call fast.
+   one. It may still be right, it is just not mine to call fast.
 7. **RSS lags the heap.** Freed heap is not returned promptly; a real
    improvement can show 0 in VmRSS for minutes. GUARD: report
    heap_alloc / heap_sys / Sys / VmRSS / VmHWM together, and call
@@ -132,7 +132,7 @@ Stated before the harness so the harness can be built against them.
 ## 3. HOW EACH PANEL IS CANARIED
 
 A canary is a mutation that MUST move the number. It is applied, built,
-run, and reverted, and **the build success is recorded** — a canary that
+run, and reverted, and **the build success is recorded**, a canary that
 does not compile proves nothing, which cost this campaign a session once.
 
 - Panel A time: insert one extra full recompose into the measured path →
@@ -144,7 +144,7 @@ does not compile proves nothing, which cost this campaign a session once.
 - Panel C: wrap the measured op in a global mutex → that mutex must appear
   as the top contender. An empty profile here means the profile RATE is
   misconfigured, not that the code is contention-free.
-- Panel D: the census script — add one `sync.Mutex` to a file → count +1.
+- Panel D: the census script, add one `sync.Mutex` to a file → count +1.
 
 ---
 
@@ -159,7 +159,7 @@ allocs, the harness is wrong and nothing else in this list is readable.
 | 1 one fold | flat within noise everywhere; FormReduceFold 0 to −8%; allocs delta 0 |
 | 2 one door per append | a small **REGRESSION**: +0–5% on CachedLogAppend, allocs +0 or +1/op |
 | 3 door stamps TurnID / closes the call | InterruptRepair10000 −5–15%; record +8–16 B → resident_ir_bytes +2–4% |
-| 4 delete the derivation (5 full-log reads) | **the big one**: AgentRestoreHistory10000 ≤−30%, InterruptRepair10000 ≤−50%, OpenLargeAria −10–25%; first net-negative Go LOC of the campaign. **If it is under −10%, those 5 reads were already served warm — and that is a finding, not a failure.** |
+| 4 delete the derivation (5 full-log reads) | **the big one**: AgentRestoreHistory10000 ≤−30%, InterruptRepair10000 ≤−50%, OpenLargeAria −10–25%; first net-negative Go LOC of the campaign. **If it is under −10%, those 5 reads were already served warm, and that is a finding, not a failure.** |
 | 5 one in-flight turn | EmitFrameStreamingPartial 22 allocs → 18–22, **not below 18**; wall flat |
 | 6 one record shape | resident_ir_bytes −5–15%, decode −5–10%. FALSIFIER: a uniform record could be BIGGER; I predict it is not |
 | 7 coordinates → _meta index | FormState10000 / Vectors10000Branches improve; the LT lookup stops scanning |
@@ -172,7 +172,7 @@ allocs, the harness is wrong and nothing else in this list is readable.
 ## 5. WHAT I NEED BEFORE BUILDING
 
 1. Approval of the panels, the failure list, and the canaries.
-2. A ruling on the pprof restart (item 0.2) — I will not restart the
+2. A ruling on the pprof restart (item 0.2), I will not restart the
    live daemon on my own authority.
 3. A clean commit to baseline from: the worktree is dirty with someone
    else's edits, so I will cut my own worktree on /var/tmp at 300bd36b

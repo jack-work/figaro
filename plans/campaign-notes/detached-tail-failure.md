@@ -1,7 +1,7 @@
 # Pre-existing failure: DetachedTailAdvancesAndScreenHoldsStill
 
 Filed 2026-08-15 by aria 53289ae2, during the S6 campaign, so it stops
-living in a chat channel. NOT caused by that campaign — attributed by
+living in a chat channel. NOT caused by that campaign, attributed by
 canary, see below.
 
 ## What fails
@@ -30,7 +30,7 @@ Canaried across two demonstrably different binaries:
                                            campaign's first commit)
 
 Same failure, same guard, both arms. Two arms that AGREE are usually one
-binary — proving the md5s differed is what makes the agreement mean
+binary, proving the md5s differed is what makes the agreement mean
 something.
 
 What the run does prove about the new composer: the test only reaches

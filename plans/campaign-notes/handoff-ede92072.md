@@ -1,16 +1,16 @@
 # HANDOFF FROM ede92072, 2026-08-20 EVENING
 
-You hold @980dc16c. Read plans/tree-shaped-log.md TOP TO BOTTOM first — its
-opening sections are Gluck's standing orders — then this, then
+You hold @980dc16c. Read plans/tree-shaped-log.md TOP TO BOTTOM first, its
+opening sections are Gluck's standing orders, then this, then
 plans/delta-seam-rebased.md.
 
 ## FIRST FOUR ACTIONS
 
-1. `cd /home/gluck/dev/figaro-qua/layered` — the work is on `feat/layered-cache`.
+1. `cd /home/gluck/dev/figaro-qua/layered`, the work is on `feat/layered-cache`.
    ONE BRANCH, ONE WORKTREE. **NOTHING IS PUSHED. THE DAEMON IS NOT UPGRADED**
    and Gluck said explicitly not to until he says so.
-2. `figaro cast @980dc16c` — never bind.
-3. `figla arm --aria @980dc16c --in 20m --about '<DISTINCT TEXT>'` — distinct
+2. `figaro cast @980dc16c`, never bind.
+3. `figla arm --aria @980dc16c --in 20m --about '<DISTINCT TEXT>'`, distinct
    matters, figla derives its unit name from a truncated prefix.
 4. Set your mantra.
 
@@ -32,10 +32,10 @@ He does not want the daemon upgraded before that.
 
   SECTION 5   the request body is written as it is sent. DEFAULT ON;
               `system.stream_request_body` is an ordinary board key read per
-              send. Byte-identical to json.Marshal (test + fuzz, 850k execs) —
+              send. Byte-identical to json.Marshal (test + fuzz, 850k execs),
               it has to be, because Marshal HTML-escapes inside a RawMessage.
               1,448,136 B → 663 B per send at 10,000 messages.
-  A REGRESSION every send on a new aria failed "empty context" — section 4 cut
+  A REGRESSION every send on a new aria failed "empty context", section 4 cut
               the translator span by a MAIN-channel LT. Fixed with the
               channel's own fork base (b48fa289).
   THE STUDY   a cursor advances only when a ROW IS WRITTEN. Gluck's design;
@@ -49,15 +49,15 @@ He does not want the daemon upgraded before that.
 
 ## WHAT IS OPEN, AND WHOSE IT IS
 
-  GLUCK   the SDK pre-marshalled bytes — he approved the direction and said
+  GLUCK   the SDK pre-marshalled bytes, he approved the direction and said
           SAVE IT FOR LAST, maybe post-merge. option.WithRequestBody takes an
           io.Reader; a non-buffer reader costs the SDK its own retries.
   GLUCK   merge, install, and whether to sweep existing arias onto the raw
           provider (the coalescing gap that blocked it is closed now).
-  GLUCK   OnAppend.mu — ONE process-wide mutex held across the whole
+  GLUCK   OnAppend.mu, ONE process-wide mutex held across the whole
           derivation and across calls out of the package. Raised, untouched.
   GLUCK   the benchmark: plans/benchmark-plan.md, designed and UNRUN. Split by
-          arm duration — spain for scans, this box for 40-60ns point reads.
+          arm duration, spain for scans, this box for 40-60ns point reads.
   OPEN    THE RESTART LAG. Read the next section before touching it.
 
 ## THE RESTART LAG, AND WHAT I GOT WRONG ON IT
@@ -67,11 +67,11 @@ EXPECTED ("0 is the known lag"). It is pre-existing on main. I did not fix it.
 
 I PUBLISHED A MECHANISM THAT WAS WRONG: the stamp reads the libretto, the
 libretto folds asynchronously, so the stamp is stale. It reads convincingly.
-Two experiments refuted it — 0 of 40 stale stamps in the steady state, and
+Two experiments refuted it, 0 of 40 stale stamps in the steady state, and
 after a re-attach the libretto is AHEAD of the source (3 vs 4) before the
 stamp.
 
-I then found a REAL ordering defect — nothing opened the librettos at aria
+I then found a REAL ordering defect, nothing opened the librettos at aria
 load, so the first opener was studyAccessors() inside the send, after the
 prompt was already stamped. Two-arm test: range (3,4] when opened first,
 (3,3] when not. Fixed in resumeStudies. **AND THE LIVE SYMPTOM PERSISTS.**
@@ -114,7 +114,7 @@ the provider's catch-up does with the first entry after a restart.
 
 Every instrument I trusted today was one that could say WHY it was empty. The
 citation checker refuses a run with no citations. callpath refuses a vacuous
-one. The crash gate is meaningless on tmpfs and does not say so — which is why
+one. The crash gate is meaningless on tmpfs and does not say so, which is why
 the gate line now carries TMPDIR. And three live scripts printed PASS for a
 whole campaign while discarding the output of the sends they depended on.
 

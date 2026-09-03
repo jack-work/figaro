@@ -38,7 +38,7 @@ So:
 **1. The box is MODAL, and the mode is the whole difference.** `i` is the door.
 Outside insert mode every letter is still a motion, and the smoke case above
 must keep passing untouched. It probes the INLINE view, so insert mode does not
-exist there at all — the transcript is the only surface that grows a box.
+exist there at all, the transcript is the only surface that grows a box.
 
 **2. There is still nothing in the UI to steer.** The composer has one verb:
 *send*. Whether the result is a new turn or a steer is decided server-side at
@@ -58,17 +58,17 @@ implementation.
 | I expected to build | It is already there | Where |
 |---|---|---|
 | a submit path | `fcli.Qua(ctx, text, buildPromptForm())`; `interactiveInput` already holds `fcli` in both `send` and `listen` | `stream.go:357`, `listen.go` |
-| a "message pending" state | `Store.pending []Pending` + `Store.Pending()`, **with zero consumers** — range-store phase 4, built and unused | `livelog/aria/store.go:84,797` |
+| a "message pending" state | `Store.pending []Pending` + `Store.Pending()`, **with zero consumers**, range-store phase 4, built and unused | `livelog/aria/store.go:84,797` |
 | a modal keymap | `keyMode` + `keyModeSet`, a declarative table, one row per binding, with well-formedness tests | `keymap.go` |
 | a node coordinate for the fork | `nodeRef{turn,index}` selection via `^N`/`^P`, and `<id>:<turn>.<node>` parses end to end | `transcript_selection.go`, `send.go` |
 | CSI-u modifier decoding | `parseModifiedKey` reads `code;modifiers` generically | `key_input.go:50` |
-| **a client cache of a fork's shared prefix** | **the SERVER already shares it**: `A FORK'S COMPOSED PREFIX IS ITS ANCESTOR'S RUNS` (e54b6299) — the prefix is read through the tree's lineage walk, never copied | `angelus.composeTurns` |
+| **a client cache of a fork's shared prefix** | **the SERVER already shares it**: `A FORK'S COMPOSED PREFIX IS ITS ANCESTOR'S RUNS` (e54b6299), the prefix is read through the tree's lineage walk, never copied | `angelus.composeTurns` |
 
 That last row is the important one and it is answered in §7.
 
 ## 1. The composer is a value, not a program
 
-`composePrompt` (the `figaro send` box) is a **bubbletea program** — it takes
+`composePrompt` (the `figaro send` box) is a **bubbletea program**, it takes
 the terminal, runs its own event loop, and returns. It cannot be reused here:
 the transcript owns the alt screen, paints its own frames from `compose()`, and
 reads its own input. Two programs cannot hold one terminal.
@@ -91,9 +91,9 @@ func (c *composer) rows(w int) []string
 ```
 
 **It must be rune-aware and width-aware, and the existing boxes are neither.**
-`searchLiteral` and `jumpLiteral` are `if b >= 0x20 && b < 0x7f { q += string(b) }`
-— ASCII only. That is survivable for a coordinate; for a *prompt* it is not, and
-it is already a live bug in search. Measured, not inferred — typing `café` into
+`searchLiteral` and `jumpLiteral` are `if b >= 0x20 && b < 0x7f { q += string(b) }`,
+ASCII only. That is survivable for a coordinate; for a *prompt* it is not, and
+it is already a live bug in search. Measured, not inferred, typing `café` into
 the `/` box one byte at a time, through the real dispatcher:
 
 ```
@@ -124,10 +124,10 @@ box, not a follow-up.
 
 Today the bottom of the frame is assembled in four places:
 
-- `footLines()` — panel rows (`?`/`!`/`Q`)
-- `footerRows()` — the rule and the status line
-- `layout(foot int)` — `body = t.h - 2 - foot`, minus one more while following
-- `renderFrame()` — writes `screen[t.h-2]`, `screen[t.h-1]`, and the panel rows
+- `footLines()`, panel rows (`?`/`!`/`Q`)
+- `footerRows()`, the rule and the status line
+- `layout(foot int)`, `body = t.h - 2 - foot`, minus one more while following
+- `renderFrame()`, writes `screen[t.h-2]`, `screen[t.h-1]`, and the panel rows
 
 Four sites, magic `-2`/`-3`, and a height passed as an `int` argument. Adding a
 **variable-height** stanza to that is how you get an off-by-one that only
@@ -138,7 +138,7 @@ The repo already learned this lesson in the body:
 > ONE AUTHORITY ON HOW TALL AN ENTRY IS: `lineEntry.height`. Line space is
 > advanced by asking the entry, not by re-deriving it here: the two disagreeing
 > is how a gap could be one row in the index and several on screen.
-> — `transcript_index.go`
+>, `transcript_index.go`
 
 Do the same at the bottom:
 
@@ -176,7 +176,7 @@ From `/tmp/illus-fork`, read as a state machine:
 | **parked** (Esc) | none | the composer's controls, so they are discoverable | kept |
 | normal (Esc again) | none | back to mantra · ctx · cost | kept until disconnect |
 
-The draft is **cached in CLI memory and discarded on disconnect** — never
+The draft is **cached in CLI memory and discarded on disconnect**, never
 written to disk, never sent, and `i` resumes it where you left off.
 
 *Interpretation to confirm with Gluck: I read "retain the status bar so that
@@ -197,7 +197,7 @@ them.
 | `f` | transcript **with a selection** | open the box with a fork intent at the selected `turn.node` |
 | Esc / `^[` | insert | park (draft kept) |
 | Esc / `^[` | parked | back to the ordinary status row |
-| **Alt+Enter** | insert | **submit** — send, or fork-and-follow when an intent is set |
+| **Alt+Enter** | insert | **submit**, send, or fork-and-follow when an intent is set |
 | **Enter** | insert | newline |
 | **Ctrl+F** | insert | submit **without attaching**: fork in the background, stay where you are |
 | ^A/^E/^K/^U/^W, arrows, Backspace | insert | the readline motions people already have in their fingers |
@@ -212,7 +212,7 @@ written.
 |---|---|---|---|
 | **iamb** (Matrix, "for Vim addicts") | `Enter`, **from Normal *or* Insert** | `<C-V><C-J>` | vim-modal |
 | **weechat** | `Enter` | `Alt+Enter` (community-standard rebind; `/input insert \n`) | non-modal |
-| **aerc** (mail, vim-modal) | `:send` — an ex-command | ordinary editing | vim-modal |
+| **aerc** (mail, vim-modal) | `:send`, an ex-command | ordinary editing | vim-modal |
 | **figaro's own `composePrompt`** | `Ctrl-D` | `Enter` | its own screen |
 
 The dominant chat convention is **Enter sends**. We deliberately do not follow
@@ -221,7 +221,7 @@ it, for four reasons that are all specific to what this box is attached to.
 **1. A pasted newline is an Enter, and the failure is not hypothetical.** With
 no bracketed paste, a terminal delivers a pasted `\n` as `0x0d`. A shipped
 agent CLI has this bug filed against it right now, in a UI with our exact
-shape — a steering queue behind a prompt box:
+shape, a steering queue behind a prompt box:
 
 > *fix(cli): multiline paste splits into separate steering messages when agent
 > is running.* "When pasting multiline text into the prompt while the agent is
@@ -234,11 +234,11 @@ still buys us "paste does not fire the 5-row grow animation per line").
 
 **2. The two mistakes are not the same size.** A stray newline costs a
 Backspace. A stray send costs a provider round trip, a turn in the log, and a
-steer the agent will act on — and there is no unsend. When the failure modes
+steer the agent will act on, and there is no unsend. When the failure modes
 are this asymmetric the safe key gets the common press.
 
 **3. We are modal, so we do not need Enter to do double duty.** iamb makes
-`Enter` send *from Insert mode* — it spends the vim invariant to buy a chat
+`Enter` send *from Insert mode*, it spends the vim invariant to buy a chat
 convention. It can afford that because its box is one line. Ours grows to five,
 which is a declaration that multi-line is a first-class case; and once `i` and
 Esc exist, "the key that ends the message" does not have to be the key that is
@@ -247,7 +247,7 @@ already busy making lines.
 **4. `Alt+Enter` is legible in exactly the right way.** It reads as *"Enter, but
 final"*, it sits under the same finger, and weechat has already taught a
 generation of terminal chatters that Alt+Enter is "the other Enter" (there, the
-polarity is reversed — our newline is their send — which costs one line of help
+polarity is reversed, our newline is their send, which costs one line of help
 text and no ambiguity, because both are Enter-shaped).
 
 ### The whole insert-mode map, and what it disturbs: nothing
@@ -259,9 +259,9 @@ conventions can be taken whole without arguing with the normal-mode map.
 
 | chord | byte | action | precedent |
 |---|---|---|---|
-| `Alt+Enter` | `1b 0d` | **submit** — send, or fork-and-follow | weechat's "other Enter" |
+| `Alt+Enter` | `1b 0d` | **submit**, send, or fork-and-follow | weechat's "other Enter" |
 | `Enter` / `^J` | `0d` / `0a` | newline | vim insert mode |
-| `Ctrl+F` | `06` | **submit detached** — fork, do not follow, do not attend | free; pairs with `f` |
+| `Ctrl+F` | `06` | **submit detached**, fork, do not follow, do not attend | free; pairs with `f` |
 | `Esc` / `^[` | `1b` | park (draft kept) | vim |
 | `^W` | `17` | delete word back | readline **and** vim insert |
 | `^U` | `15` | delete to line start | readline **and** vim insert |
@@ -269,8 +269,8 @@ conventions can be taken whole without arguing with the normal-mode map.
 | `^A` / `^E` | `01` / `05` | start / end of line | readline |
 | `^V` | `16` | quote the next key literally (so `^V^J` is a raw LF) | vim, and iamb's newline |
 | Backspace / DEL | `08` / `7f` | delete back | already handled for the other boxes |
-| `^N` / `^P` | `0e` / `10` | **still node selection** — Gluck's preserved pair | unchanged |
-| `^C` / `^D` | `03` / `04` | **still interrupt / detach** — unchanged, deliberately | see below |
+| `^N` / `^P` | `0e` / `10` | **still node selection**, Gluck's preserved pair | unchanged |
+| `^C` / `^D` | `03` / `04` | **still interrupt / detach**, unchanged, deliberately | see below |
 
 **`^D` is NOT a second send chord, although figaro's own `composePrompt` says
 "ctrl-d send".** Internal consistency loses this one to safety: `^D` is the
@@ -280,15 +280,15 @@ never discover that it *sent* their half-written draft instead. One submit
 chord, and it is the one that means nothing else.
 
 **`^F` is live only when a fork intent is set.** Without one there is nothing to
-detach from — an ordinary send is already unattached — so it reports that in the
+detach from, an ordinary send is already unattached, so it reports that in the
 status row rather than quietly doing what Alt+Enter does.
 
 **THE HAZARD THIS CREATES, which must be a test before it is a row.**
-`Alt+Enter` is `\x1b` `\r` — an ESC byte followed by a CR. `parseModifiedKey`
+`Alt+Enter` is `\x1b` `\r`, an ESC byte followed by a CR. `parseModifiedKey`
 recognises `\x1b[`-prefixed CSI and two hand-listed `ESC`+ctrl cases, and
 nothing else; an unrecognised `\x1b` falls through to Esc's own binding. In
 insert mode that reads as **park, then a stray newline into a box that is no
-longer showing** — the submit silently becoming its opposite, which is the worst
+longer showing**, the submit silently becoming its opposite, which is the worst
 failure shape a send key can have. `\x1b\r` needs its own row in the same commit
 as the binding, and a pty case that sends the two bytes as ONE read, because
 that is how the real key arrives and a test that sends them separately would
@@ -317,17 +317,17 @@ been sitting unused since range-store phase 1:
 > a turn id, merges into the head range; **steer**, becomes a node inside
 > `open`. Both are "acquire a coordinate and move". **The client MUST NOT guess
 > which will happen.**
-> — `range-store.md`
+>, `range-store.md`
 
 So: push a `Pending` on submit, render it after the head range in its own dim
 style, and let it dissolve when the real record arrives with its coordinate.
-This is phase 4 of a design that is already written down — not new machinery,
+This is phase 4 of a design that is already written down, not new machinery,
 just its first consumer.
 
 ## 6. Fork, and the plumbing it needs
 
 `f` with a selection sets `composer.intent = forkAt{turn, node}`. The box then
-draws the prefix from the illustration, in `term.StateDim` — the "∆ Figaro saw"
+draws the prefix from the illustration, in `term.StateDim`, the "∆ Figaro saw"
 register, which is what Gluck's `*` marks:
 
 ```
@@ -337,20 +337,20 @@ register, which is what Gluck's `*` marks:
 Enter then does, in order: **fork → rebind the transcript → attend → send**.
 
 **The plumbing gap: the transcript has no angelus.** `interactiveInput` holds
-`fcli *sdk.Aria` — one socket, one aria. Fork (`acli.Fork`), attend
+`fcli *sdk.Aria`, one socket, one aria. Fork (`acli.Fork`), attend
 (`acli.Bind`) and the branch's endpoint all live on the **angelus** door, and
 `listen` never dials it. So the input loop grows an angelus client, dialled
 lazily on the first fork so the ordinary listen path pays nothing.
 
 The three verbs already exist and are exercised by the CLI:
 `waitForFork(ctx, acli, id, at, dressing)` → `bindBinding(ctx, acli, shellPID, id, 0)`.
-`at` is `forkPoint{turn, node, hasNode}` — **the coordinate the selection already
+`at` is `forkPoint{turn, node, hasNode}`, **the coordinate the selection already
 holds**, and the node fork lands at `min(node.LTs)-1` (`compose.ForkLT`), which
 the previous commit built and pinned.
 
 Which id do we follow? `ForkResponse` returns `{Parent, Continuation,
 Alternative}`. An interior fork freezes the parent, `Continuation` carries on
-the original conversation, and `Alternative` is the fresh branch — so the new
+the original conversation, and `Alternative` is the fresh branch, so the new
 prompt goes to **Alternative**, and that is what we attend and display.
 *Confirm with Gluck.*
 
@@ -382,14 +382,14 @@ the client."*
 
 > `Angelus.composeTurns(node, fromLT, toLT)`, keyed by node and backed by the
 > store, so it answers for a live aria, a dormant one, and an ANCESTOR NOBODY
-> HAS OPENED — which is exactly the read a fork's inherited prefix makes.
+> HAS OPENED, which is exactly the read a fork's inherited prefix makes.
 > `TurnCache.put` now skips any turn below its node's fork base: **the prefix is
 > read through tree's lineage walk instead of copied.**
 
 The consequence for the client is the whole design: **for every turn below the
 fork base, the branch's `figaro.read` returns the ancestor's own composed runs.
 Same turn ids, same node ids, same bytes.** The client's row cache is already
-keyed by `sliceKey` = `(turn, node)` — *the identical key*. The rows are already
+keyed by `sliceKey` = `(turn, node)`, *the identical key*. The rows are already
 correct for the branch. The only reason a fork costs a reload today is that
 `switchAria` throws the whole client away.
 
@@ -403,7 +403,7 @@ Two rules make it safe, and the server has already paid for learning both:
 
 - **Snap the base to a turn boundary.** e54b6299's canary: `ForkAt` takes an
   interior LT, so a fork cutting mid-turn leaves the child "a turn made of the
-  ancestor's opener and its own continuation — same turn id, different content".
+  ancestor's opener and its own continuation, same turn id, different content".
   Without the snap the child is served the parent's answer for its own turn.
   On the client this is free: we fork at a coordinate we chose, so the boundary
   is `forkTurn`, and "keep turn < forkTurn" is expressible in the client's own
@@ -421,7 +421,7 @@ Each shippable, each with the canary that proves it.
 | # | what | canary |
 |---|---|---|
 | 1 | `footer()`: one owner for the stanza, no behaviour change | revert it and watch a `h=5` frame overwrite the status row |
-| 2 | the `composer` widget + bracketed paste; **search and jump become its one-row case** | search for `café` — fails today, passes after |
+| 2 | the `composer` widget + bracketed paste; **search and jump become its one-row case** | search for `café`, fails today, passes after |
 | 3 | `modeInsert`, the keymap rows, the three-state Esc walk | type `j` without pressing `i`: it must still scroll (the reverted-composer case) |
 | 4 | Enter → `Qua`, and `Pending` gets its first consumer | submit against a slow daemon: the prompt is on screen before the RPC returns |
 | 5 | `f` → fork intent, angelus dial, `switchAria`, follow / background | fork at `12.4`; the branch's turn 12 must hold the parent's nodes 0..3 and none of node 4 |
@@ -440,7 +440,7 @@ visible: one is an off-by-one waiting to happen, the other is a live bug.
 - **Test without the affordance** (trap 6). Every insert-mode case gets a twin
   that never presses `i`.
 - **Gate every absence on pager chrome** (trap 3), and read back
-  `#{pane_height}` rather than trusting `-y` (trap 1) — a five-row box makes the
+  `#{pane_height}` rather than trusting `-y` (trap 1), a five-row box makes the
   geometry load-bearing, so measure it.
 - **Build a stamped binary** (the CLI/daemon handshake refuses a mismatch; a
   40-char stamp is not the 12 the flake writes).
@@ -454,7 +454,7 @@ long transcript without a provider.
 The chords are decided (§4) and need no ruling. These five do, and each one is
 a place where I would otherwise be guessing at intent rather than at mechanism.
 
-**1. The parked state — what does the status row show?** Esc hides the box and
+**1. The parked state, what does the status row show?** Esc hides the box and
 keeps the draft. My reading of *"retain the status bar so that shortcuts and
 controls can be restored"* is that the row then shows the composer's own key
 hints (`alt-enter send · ^F fork · i resume · esc dismiss`), so the controls
@@ -467,7 +467,7 @@ returns three ids: `Parent`, `Continuation` (the original conversation carrying
 on) and `Alternative` (the fresh branch). I intend to send the new prompt to
 **Alternative**, and attend and display that. Right?
 
-**3. Does `i` do anything in the inline view?** Proposal: **no** — the box
+**3. Does `i` do anything in the inline view?** Proposal: **no**, the box
 exists only in the transcript, so the inline view keeps every letter as a
 keybinding and the shipped smoke case that guards that rule stays untouched.
 Pressing `i` inline would then either do nothing, or open the pager and the box
@@ -476,12 +476,12 @@ together. Nothing, or open-and-insert?
 **4. A parked draft carries a fork intent, and then `^N`/`^P` moves the
 selection. Does the intent follow?** `^N`/`^P` stay live in insert mode (they
 are preserved), so the selection can move while you type. Following would make
-the box prefix change under you — `*forking at 12.4*` → `*forking at 12.5*` —
+the box prefix change under you, `*forking at 12.4*` → `*forking at 12.5*`,
 which is at least visible. Pinning means the intent stays where `f` aimed it and
 the selection is just a cursor. I lean **pinned**: you aimed it deliberately.
 
 **5. What happens to a draft when the aria is not idle?** Nothing special is
 planned: the prompt goes to `Qua`, and the server decides at the drain whether
-it opens a turn or becomes a steer — which is the existing rule and the reason
+it opens a turn or becomes a steer, which is the existing rule and the reason
 this box needs no steer affordance. Confirming that you want no warning, no
 confirmation, and no difference in the UI between the two.

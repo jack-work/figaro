@@ -72,7 +72,7 @@ They then checked the source and withdrew it; confirmed here independently in
         b.buf = buf
     }
 
-`String()` is **zero-copy** — it aliases the buffer. A later `Write` that grows
+`String()` is **zero-copy**, it aliases the buffer. A later `Write` that grows
 reallocates, leaving any previously returned string pointing at the old array
 with its own length and contents intact; one that does not grow appends beyond
 that string's length, which it cannot see. So materialize-on-read is cheap and
@@ -80,14 +80,14 @@ the per-frame cost is near zero.
 
 **THE REAL HAZARD IS ALIASING, NOT COST.** A Builder-backed `Content.Text`
 handed to the composer aliases a buffer the drain loop is still appending to,
-and this codebase already has a law about precisely that shape —
+and this codebase already has a law about precisely that shape,
 `cached_log.go`: *"logView is the published window: immutable once stored, so a
 reader takes it with one atomic load and holds no lock at all."* That is what
 whoever takes this must test. The per-frame arithmetic is not the question;
 whether a held view can be mutated underneath its holder is.
 
 Still: **whoever fixes it prices the destination path first.** The warning is
-sound as a discipline even though this particular instance of it dissolved —
+sound as a discipline even though this particular instance of it dissolved,
 this campaign has been burned by a fix that looked free because nobody measured
 where the cost went. (091d162e and 6defe6f9, 2026-08-18.)
 
@@ -115,8 +115,8 @@ event is `mergeTurnTools`' map, made once per event."* **That label is wrong.**
 all.** The linear per-event term is `partialAssistant`'s `out.Content` append,
 which does escape; the tool-axis term is `toolsFromAssistant`'s append.
 
-**The measured totals are unchanged** — ~1.0 allocation removed per event,
-~38 per tool, no per-byte component — and the three-mechanism account still
+**The measured totals are unchanged**, ~1.0 allocation removed per event,
+~38 per tool, no per-byte component, and the three-mechanism account still
 covers all three axes with no residue. Only the NAME on the linear term was
 wrong.
 
@@ -127,8 +127,8 @@ concluded the MODEL was wrong when only the LABEL was.
 **THE RULE THIS COST, now standing: when a prediction is about allocations,
 ASK THE COMPILER BEFORE PREDICTING.** `-gcflags=-m` costs seconds. Reading the
 source tells you what is *written*; escape analysis tells you what is
-*allocated*, and this campaign spent four predictions — three of the
-executor's magnitudes and one of my labels — learning that those are different
+*allocated*, and this campaign spent four predictions, three of the
+executor's magnitudes and one of my labels, learning that those are different
 questions.
 
 
@@ -137,7 +137,7 @@ questions.
 **`-gcflags=-m` answers WHICH LINES allocate. It says nothing about HOW MANY
 TIMES they run.** The unverified fixed ~35 term in the stage-5 decomposition is
 a CALL-COUNT question, not an escape question, and reaching for escape analysis
-to settle it would be the right tool on the wrong shape — the same class of
+to settle it would be the right tool on the wrong shape, the same class of
 error as reading `make(map...)` and calling it an allocation because it is
 spelled like one.
 
@@ -145,7 +145,7 @@ What would settle it: `-memprofile` with `alloc_objects` attributed by call
 site, or a differential count with one call site removed.
 
 6defe6f9's hypothesis, recorded as a hypothesis: before stage 5, `noteAssistant`
-had TWO call sites —
+had TWO call sites,
 
     turn.go:519  a.noteAssistant(asmMsg.message())   per BUS EVENT  -> the linear term
     turn.go:523  a.noteAssistant(&staged.Payload)    per ROUND      -> fixed-term shaped
