@@ -204,13 +204,19 @@ func (s *sessionStatus) setNoticeTTL(d time.Duration) {
 	s.mu.Unlock()
 }
 
-func (s *sessionStatus) update(metrics aria.Metrics) {
+// update takes a metrics snapshot and reports whether it CHANGED anything the
+// bar shows. The pager polls for these, so "no news" must cost no paint.
+func (s *sessionStatus) update(metrics aria.Metrics) bool {
 	if s == nil {
-		return
+		return false
 	}
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.metrics == metrics {
+		return false
+	}
 	s.metrics = metrics
-	s.mu.Unlock()
+	return true
 }
 
 func (s *sessionStatus) beginTurn() {

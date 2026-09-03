@@ -1050,6 +1050,22 @@ func (t *transcript) resyncDue() bool {
 	return t.now().Sub(t.lastFull) >= transcriptResyncInterval
 }
 
+// screensEqual is the question a due resync asks before spending a full frame:
+// is what we composed already what we believe is on the screen? Rows that have
+// not changed are usually the same string values (the row cache hands them
+// back), so most of these comparisons are a pointer and a length.
+func screensEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // lines renders the retained message window and live tail to physical rows.
 // Committed messages are immutable, so their rendered rows are cached by turn;
 // only the open message renders every frame.
@@ -1660,6 +1676,11 @@ func (t *transcript) paint(screen []string) {
 	}
 	t.prefix = ""
 	buf = append(buf, "\x1b[?2026h"...)
+	// A FRAME THAT SAYS NOTHING IS NOT SENT. Everything below appends only
+	// where the screen must change, so if nothing does, the only bytes here
+	// are the synchronized-update brackets -- and writing those, over and
+	// over, is how an idle pager kept a remote terminal busy.
+	quiet := len(buf)
 	base := t.prev
 	// A FULL FRAME IS THE ONLY THING THAT CANNOT BE WRONG. base == nil says the
 	// painter has no claim on the screen (enter/resize/screenMoved); resyncDue
@@ -1667,7 +1688,27 @@ func (t *transcript) paint(screen []string) {
 	// the diff below is skipped wholesale rather than trusted row by row: note
 	// that this also disables planScroll, whose prediction is a claim about the
 	// screen built from exactly the base we have just disowned.
-	full := base == nil || t.resyncDue()
+	// A PERIODIC RESYNC MUST NOT BE THE REASON TO PAINT. Re-earning the screen
+	// erases and rewrites every row -- invisible under a synchronized update,
+	// a visible flash on the terminals that implement none, which is WSL under
+	// a remote desktop. So a resync UPGRADES a frame that has something to
+	// say, and a frame that says nothing is dropped below, with lastFull left
+	// alone: the debt is paid by the next frame that differs.
+	//
+	// ASKED UP FRONT, and measured rather than reasoned. Folding the question
+	// into the row loop below looks cheaper -- the loop already compares every
+	// row -- but a resync writes each row WHOLE, so the quiet case then builds
+	// sixty rows of escape bytes and throws them away: 5.5us against 0.4us for
+	// a comparison pass that answers the same question. The extra pass costs
+	// nothing in the common case, because it only runs when a resync is due.
+	//
+	//	PaintUnchanged            415ns   (no resync due: the loop, no writes)
+	//	PaintUnchangedResyncDue  5499ns   (folded: build the frame, discard it)
+	//	PaintUnchangedResyncDue   561ns   (this: compare, skip)
+	full := base == nil
+	if !full && t.resyncDue() {
+		full = !screensEqual(screen, base)
+	}
 	if full {
 		base = nil
 		if t.now == nil {
@@ -1692,6 +1733,13 @@ func (t *transcript) paint(screen []string) {
 			old = base[r]
 		}
 		buf = appendRowUpdate(buf, r, old, screen[r])
+	}
+	if len(buf) == quiet {
+		// Nothing to say. The screen already holds this frame, so the belief
+		// stands and the resync debt stays owed until a frame differs.
+		t.paintBuf = buf[:0]
+		t.screenSpare, t.prev = t.prev, screen
+		return
 	}
 	buf = append(buf, "\x1b[?2026l"...)
 	_, _ = t.out.Write(buf)

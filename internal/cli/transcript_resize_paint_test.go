@@ -1,12 +1,15 @@
 package cli
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/jack-work/figaro/internal/livelog/aria"
+	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 )
 
 // ---------------------------------------------------------------------------
@@ -477,3 +480,55 @@ func TestTranscriptPaint_GesturesKeepBelief(t *testing.T) {
 		})
 	}
 }
+
+// A RESYNC IS NOT A REASON TO PAINT. Re-earning the screen erases and rewrites
+// every row, which is invisible under a synchronized update and a blink on the
+// terminals that have none. When the composed frame is what we already believe
+// is on screen, there is nothing to re-earn it with.
+func TestPeriodicResyncWritesNothingWhenNothingChanged(t *testing.T) {
+	ft := ldrender.NewFakeTerminal(40, 8)
+	tap := &paintTap{to: ft}
+	tr := newTranscript(tap, 40, 8, ldrender.NodeText{}, aria.NewClient(), "aria1234", time.Unix(0, 0))
+	clock := time.Unix(0, 0)
+	tr.now = func() time.Time { return clock }
+	tr.enter()
+
+	screen := make([]string, 8)
+	for i := range screen {
+		screen[i] = fmt.Sprintf("row %d", i)
+	}
+	tr.paint(screen) // the first frame earns the screen
+	tap.reset()
+	clock = clock.Add(5 * time.Second) // well past the resync interval
+
+	tr.paint(append([]string(nil), screen...))
+	if n := tap.buf.Len(); n != 0 {
+		t.Fatalf("an unchanged frame past the resync interval wrote %d bytes: %q", n, tap.buf.String())
+	}
+
+	// The debt is still owed: the next frame that DIFFERS pays it in full.
+	changed := append([]string(nil), screen...)
+	changed[3] = "row three, changed"
+	tr.paint(changed)
+	painted := tap.buf.String()
+	if !strings.Contains(painted, "row three, changed") {
+		t.Fatalf("the frame that differs did not paint: %q", painted)
+	}
+	if n := strings.Count(painted, "\x1b[2K"); n < len(screen)-1 {
+		t.Fatalf("the deferred resync painted %d rows in full, want the whole screen", n)
+	}
+}
+
+// paintTap records what the painter writes and forwards it to the screen model,
+// so a test can measure the bytes AND still assert on the terminal.
+type paintTap struct {
+	to  io.Writer
+	buf bytes.Buffer
+}
+
+func (p *paintTap) Write(b []byte) (int, error) {
+	p.buf.Write(b)
+	return p.to.Write(b)
+}
+
+func (p *paintTap) reset() { p.buf.Reset() }
