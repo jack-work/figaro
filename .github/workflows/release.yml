@@ -37,7 +37,15 @@ jobs:
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
-          args: release --clean
+          # THE CASK IS SKIPPED WHEN ITS TOKEN IS NOT THERE. Pushing to
+          # jack-work/homebrew-tap needs a PAT the automatic GITHUB_TOKEN
+          # cannot stand in for, and without it goreleaser fails the whole
+          # run AFTER uploading the archives -- so every release since the
+          # tap was added has been red while its assets were, in fact, fine.
+          # A missing optional publisher is a warning, not a failure.
+          args: >-
+            release --clean
+            ${{ secrets.HOMEBREW_TAP_TOKEN == '' && '--skip=homebrew' || '' }}
         env:
           # Uploads the assets to the release in THIS repo.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -45,6 +53,6 @@ jobs:
           # the automatic GITHUB_TOKEN cannot write to. This secret must be
           # created by hand: a fine-grained PAT (or classic PAT with `repo`)
           # scoped to jack-work/homebrew-tap with contents:write, stored as
-          # the HOMEBREW_TAP_TOKEN repository secret. Until it exists, the tap
-          # step is the only thing that fails; the release assets still land.
+          # the HOMEBREW_TAP_TOKEN repository secret. Until it exists the cask
+          # is skipped (see args above) and the release is green without it.
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

@@ -21,12 +21,10 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -94,27 +92,6 @@ func profileCPU(d time.Duration) string {
 	return path
 }
 
-// armFreezeSignals wires SIGUSR1/SIGUSR2. Returns a stop func.
-func armFreezeSignals() func() {
-	ch := make(chan os.Signal, 4)
-	signal.Notify(ch, syscall.SIGUSR1, syscall.SIGUSR2)
-	done := make(chan struct{})
-	go func() {
-		for {
-			select {
-			case <-done:
-				return
-			case sig := <-ch:
-				if sig == syscall.SIGUSR2 {
-					profileCPU(freezeProfileFor)
-					continue
-				}
-				dumpGoroutines("SIGUSR1")
-			}
-		}
-	}()
-	return func() { signal.Stop(ch); close(done) }
-}
 
 // watchRenderLock is the watchdog. Once a second it asks for the render lock
 // and gives it straight back; when it cannot have it for freezeStuckAfter, it
