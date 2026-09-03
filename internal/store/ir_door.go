@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/turns"
 )
 
 // figIRLog is the ONE write path into an aria's fig IR channel: every Append,
@@ -151,6 +152,7 @@ func (l *figIRLog) CloseOpenToolCalls() (int, error) {
 }
 
 func (l *figIRLog) write(e Entry[message.Message]) (Entry[message.Message], error) {
+	e.Payload.TurnID = l.turnIDFor(e.Payload)
 	stamped, err := l.Log.Append(e)
 	if err != nil || l.backend == nil {
 		return stamped, err
@@ -337,4 +339,27 @@ func (b *XwalBackend) RepairToolCalls(ariaID string) (int, error) {
 		return 0, err
 	}
 	return len(open), nil
+}
+
+// turnIDFor is the door's second invariant: no record reaches the log without
+// a turn id.
+//
+// The rule is turns.StampIDs' own, applied to one record -- it depends only on
+// the previous record's id and this message, and the tail IS the previous
+// record. A caller that supplies an id keeps it: a steering message or a tool
+// result belongs to the turn that provoked it, not to whatever the tail says.
+func (l *figIRLog) turnIDFor(m message.Message) uint64 {
+	if m.TurnID != 0 {
+		return m.TurnID
+	}
+	var prev uint64
+	if tail, ok := l.Log.PeekTail(); ok {
+		prev = tail.Payload.TurnID
+	}
+	if turns.Opens(m) {
+		return prev + 1
+	}
+	// Zero is not a failure to stamp: a record before the first prompt belongs
+	// to no turn, and says so in its bytes.
+	return prev
 }

@@ -648,14 +648,28 @@ func (a *Agent) appendMsg(m message.Message) (store.Entry[message.Message], erro
 	return a.figLog.Append(store.Entry[message.Message]{Payload: m})
 }
 
-// openTurn mints the next turn id. The seed is derived from the log on first
-// use, which is what makes a forked child continue its parent's numbering
-// without any explicit hand-off.
+// openTurn mints the next turn id. The seed comes from the log on first use,
+// which is what makes a forked child continue its parent's numbering without
+// any explicit hand-off.
 func (a *Agent) openTurn() {
 	if a.turnID == 0 {
-		a.turnID = turns.StampIDs(unwrapMessages(a.figLog.Read()))
+		a.turnID = a.seedTurnID()
 	}
 	a.turnID++
+}
+
+// seedTurnID is the last turn the log knows about: the tail's id, at the cost
+// of one record. Every record carries its own (enforced by the IR door), so
+// the fold this used to run had its accumulator already on disk.
+//
+// The walk remains the fallback and is cheap where it is taken: a tail with no
+// id means a log holding nothing but pre-prompt records, since any prompt
+// opens a turn and everything after it inherits.
+func (a *Agent) seedTurnID() uint64 {
+	if tail, ok := a.figLog.PeekTail(); ok && tail.Payload.TurnID != 0 {
+		return tail.Payload.TurnID
+	}
+	return turns.StampIDs(unwrapMessages(a.figLog.Read()))
 }
 
 // unwrapMessages projects entries to a flat []Message, stamping the two

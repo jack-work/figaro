@@ -235,9 +235,12 @@ type Message struct {
 	// turn, so it is the coordinate `send`/`fork <trunk>:<turn>` address.
 	// LT remains the storage substrate (positional, the cross-channel
 	// foreign key); TurnID is what a human names. Messages preceding the
-	// first prompt belong to no turn and carry 0. Absent on legacy entries,
-	// where compose.StampTurnIDs derives it on read.
-	TurnID uint64 `json:"turn_id,omitempty"`
+	// first prompt belong to no turn and carry 0.
+	//
+	// Always serialized: with omitempty a zero was indistinguishable from a
+	// field never written, so "belongs to no turn" and "predates turn ids"
+	// were the same bytes. Enforced at the one write path, store.figIRLog.
+	TurnID uint64 `json:"turn_id"`
 
 	Timestamp int64 `json:"timestamp"`
 }
