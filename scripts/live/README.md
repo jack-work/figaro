@@ -3,7 +3,7 @@
 Each of these starts a real daemon against a real store and drives real
 verbs. They exist because **a green unit suite is not evidence about the
 product**: between them they found nine bugs during the state-layer work
-(session 3), and four of those were in the direction that loses data — a
+(session 3), and four of those were in the direction that loses data, a
 libretto stump drawn in `fig ls`, a fork entry point the CLI uses and the
 tests did not, a repair command that declined to repair, a study of a deleted
 form that could not be dropped after a restart.

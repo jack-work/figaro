@@ -455,8 +455,8 @@ provider while the board said otherwise.
 A provider instance is per-aria, so anything cached on one is cached N
 times. That is fine for a wire projection and wrong for a credential.
 
-figaro holds no credential state at all. hush does — one agent per machine,
-one copy of each secret — and it does both jobs a credential needs:
+figaro holds no credential state at all. hush does, one agent per machine,
+one copy of each secret, and it does both jobs a credential needs:
 
 - **Refresh**, for an OAuth pair (anthropic): the agent renews before expiry
   and every reader sees the current access token.
@@ -464,7 +464,7 @@ one copy of each secret — and it does both jobs a credential needs:
   the GitHub token is traded for a ~30-minute session token, which arrives
   with the API host to spend it at. hush's `copilot` grant performs it.
 
-Both run on the same machinery — single-flight, persist-before-publish,
+Both run on the same machinery, single-flight, persist-before-publish,
 proactive renewal at 0.7 of the token's lifetime, backoff, encryption at
 rest, and a permanent-vs-transient error taxonomy. figaro asks over a unix
 socket on each resolve; **that round-trip is the sharing**. A cache in
@@ -481,13 +481,13 @@ rendered as "No provider connected".
   (`internal/cli/provider.go`). The env var and the stored `api_key` are the
   DURABLE secret, not a bearer; presenting either would present the wrong
   credential. They are handed to hush once by
-  `ensureExchangeCredential` — which is also the migration path off
-  `providers/copilot.toml` — and never read again.
+  `ensureExchangeCredential`, which is also the migration path off
+  `providers/copilot.toml`, and never read again.
 - Routing travels with the token: hush returns `api_base` metadata,
   `auth.OAuth` publishes it, and `auth.Endpoint` walks an `Aggregate` to
   find it.
 - **The agent outlives the binary that spawned it.** figaro's hush is
-  embedded — figaro re-execs itself as the agent — so a new figaro can be
+  embedded, figaro re-execs itself as the agent, so a new figaro can be
   talking to an agent from the previous release, which answers a grant
   registration with "client_id is required". `ensureAgentKnowsGrant` asks
   the agent what grants it supports (`Client.SupportsGrant`) and, when

@@ -204,7 +204,7 @@ them:
   goroutine it could land between an assistant `tool_use` and its
   `tool_result`, which every provider refuses ("tool_use ids were found
   without tool_result blocks") and which bricked two real arias. The loop
-  writes it — immediately when idle, at a round boundary when a turn is in
+  writes it, immediately when idle, at a round boundary when a turn is in
   flight. The rule it obeys, for anything that later wants to stamp the IR:
   **no out-of-band record between a `tool_use` and its results.**
 - A form removed while observed renders a tombstone.

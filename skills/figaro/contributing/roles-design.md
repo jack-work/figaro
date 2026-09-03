@@ -51,14 +51,14 @@ aria STUDIES the role, and the role POINTS at the aria.
 
 Serialization USED to be the figaro's own actor loop, and that cost more than
 it bought: a cast issued from inside the aria's own turn waited for a loop
-that was waiting for the turn that issued it — the SELF-CAST DEADLOCK, and
+that was waiting for the turn that issued it, the SELF-CAST DEADLOCK, and
 "create a role as step one" asks for exactly that shape.
 
 Since phase 9 a cast runs on the caller's goroutine, and what the loop bought
 is paid for where the writes are: the study is a version-guarded
 read-modify-write on the board (retried on conflict, in the store's own
 two-participant write), and `target-aria` is a patch on the ROLE form's
-single writer. Two concurrent casts cannot lose each other's work — and two
+single writer. Two concurrent casts cannot lose each other's work, and two
 casts producing two roles that both point here is what was asked for, not a
 race.
 

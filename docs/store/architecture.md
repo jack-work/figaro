@@ -24,7 +24,7 @@ below it, and the public surface a consumer addresses is the *top* layer
                               │ depends on
   ┌───────────────────────────▼─────────────────────────────────┐
   │  segment          append-only segment files + ValueHash;     │
-  │  (segment.go,     the leaf — no deps on the layers above     │
+  │  (segment.go,     the leaf - no deps on the layers above     │
   │   hash.go)                                                    │
   └─────────────────────────────────────────────────────────────┘
 ```
@@ -36,7 +36,7 @@ files are all internal mechanism the upper layers manage on its behalf.
 
 ---
 
-## `segment` — the leaf
+## `segment`: the leaf
 
 **File:** `segment/segment.go`, `segment/hash.go`
 
@@ -44,7 +44,7 @@ An append-only file framed by a `SegmentCodec`. A `Segment` owns one
 file, a `baseIndex`, a count, and an in-memory offset index rebuilt by
 `recover()` on open (the standard WAL recovery: scan forward, accept
 clean frames, truncate any torn tail). It has no knowledge of forks,
-channels, or trunks — it is the bottom of the stack and depends on
+channels, or trunks, it is the bottom of the stack and depends on
 nothing above it.
 
 Provides:
@@ -60,12 +60,12 @@ Provides:
   canonicalizes JSON (object keys sorted, whitespace stripped, numbers
   preserved via `json.Number`) and returns the truncated SHA-256
   (16 hex chars / 64 bits) of the canonical form. JSON-equal inputs hash
-  identically regardless of key order or formatting — the property the
+  identically regardless of key order or formatting, the property the
   upper layers rely on to compare entries by value.
 
 ---
 
-## `disk.Log` — the fork engine over segments
+## `disk.Log`: the fork engine over segments
 
 **File:** `disk/log.go`, `disk/fork.go`. **Depends on:** `segment`.
 
@@ -84,7 +84,7 @@ by delegating to the parent chain (`Read`, `Range`, `HeaderAt`,
 `StateAt` all walk up when `idx < forkBase`). This is the watermark
 boundary: own-range entries live in this log's own segments, the
 inherited prefix lives in ancestors. `LastIndex` of an empty-own fork
-reports `forkBase-1` — it sits immediately after the parent's tail.
+reports `forkBase-1`, it sits immediately after the parent's tail.
 Reducible (header-mode) logs additionally carry a per-segment watermark
 header computed by `OnSegmentOpen`; `StateAt(idx)` folds the segment's
 watermark with its entries up to `idx`.
@@ -108,13 +108,13 @@ only source for indices at and beyond that boundary.
   log keeps the prefix `[FirstIndex, atIdx-1]` and becomes read-only; the
   suffix moves into an "old-future" subdir; a fresh empty child subdir is
   created, writable from `atIdx`. Branch points are N-ary and
-  re-splittable. The *heuristic* re-home applies — on a re-split (own
+  re-splittable. The *heuristic* re-home applies, on a re-split (own
   segments split) all existing children move into the old-future.
 - `ForkRehome(atIdx, child, oldFuture, rehome)` forks with an *explicit*
   re-home list instead of the heuristic. The xwal joint fork uses this so
   every channel re-homes the **same** children (decided once from the
   main channel) and the triune's trees stay in lockstep.
-- `ChildForkBases()` returns each child subdir's `.fork` base — the input
+- `ChildForkBases()` returns each child subdir's `.fork` base, the input
   the joint fork uses to decide which children re-home.
 
 **Empty-log handling.** An empty root forks at index 1; an **empty-own**
@@ -131,7 +131,7 @@ still has the sentinel.
 
 ---
 
-## `xwal.XWAL` — the multi-channel "triune" join
+## `xwal.XWAL`: the multi-channel "triune" join
 
 **File:** `xwal/xwal.go`, `xwal/fork.go`. **Depends on:** `disk.Log`.
 
@@ -147,14 +147,14 @@ provider-owned payload bytes. Decoding accepts both frame shapes.
 
 A `Config` describes the join at creation:
 
-- `Main` — the main channel name.
-- `Channels` — the `ChannelSpec` list (name, kind, reducer key, runtime
+- `Main`, the main channel name.
+- `Channels`, the `ChannelSpec` list (name, kind, reducer key, runtime
   `SyncMode`, persisted `Opaque` payload encoding).
-- `Registry` — maps reducer names to `Reducer{Reduce, Initial}`;
+- `Registry`, maps reducer names to `Reducer{Reduce, Initial}`;
   resolved on every open (functions are never persisted).
-- `Codec` — `"jsonl"` (default) or `"binary"`; persisted in the manifest.
-- `Genesis` — custom main-channel genesis payload (creation only).
-- `MintTrunkID` — pluggable opaque trunk-id generator (consumed by the
+- `Codec`, `"jsonl"` (default) or `"binary"`; persisted in the manifest.
+- `Genesis`, custom main-channel genesis payload (creation only).
+- `MintTrunkID`, pluggable opaque trunk-id generator (consumed by the
   Trunks layer).
 
 After first open the on-disk `xwal.json` manifest is authoritative for channel
@@ -172,7 +172,7 @@ Repeated and last-wins lookups remain O(1) once their suffix is indexed.
 **Forks all channels as a unit** (`fork.go`). `XWAL.Fork(atMainLT,
 child, oldFuture)` builds a `forkPlan`: the main channel forks at
 `atMainLT`, each related channel forks at its own boundary
-(`boundaryFor` — the first own entry whose main LT ≥ `atMainLT`, or
+(`boundaryFor`, the first own entry whose main LT ≥ `atMainLT`, or
 own-tail+1 if it has not caught up; empty-own channels fork at their own
 first index). The re-home set is decided once from the main channel and
 applied to every channel by name via `ForkRehome`. A `.xwal-fork-pending`
@@ -198,17 +198,17 @@ invalidate the cache.
 
 ---
 
-## `xwal.Trunks` — the trunk-addressed view
+## `xwal.Trunks`: the trunk-addressed view
 
 **File:** `xwal/trunks.go`. **Depends on:** `xwal.XWAL`.
 
 `Trunks` is the surface a consumer addresses. A **trunk** is one
-continuation chain across all channels (the triune forked as a unit) —
-the stable handle — while the per-fork **node** is plumbing.
+continuation chain across all channels (the triune forked as a unit),
+the stable handle, while the per-fork **node** is plumbing.
 
 **DISK IS THE SOLE SOURCE OF TRUTH.** The node tree *is* the main
 channel's directory tree: `nN` subdirs plus `.fork` markers. Everything
-about a node is derivable from that tree by walking it — *except* a
+about a node is derivable from that tree by walking it, *except* a
 node's trunk id. That single non-derivable datum, and only that, is
 persisted: a `.trunk` file per node dir (in the main channel), sitting
 alongside `.fork`. The in-memory structure (`nodes`, `heads`, sequence
@@ -270,7 +270,7 @@ invariant.
 
 Every record xwal writes carries a server timestamp (`t`, unix millis) in
 its frame, stamped at append time from `Config.Now` (a test seam;
-defaults to the real clock). It is mandatory and supplied by xwal itself —
+defaults to the real clock). It is mandatory and supplied by xwal itself,
 callers cannot set or omit it. Records written before timestamps existed
 simply lack the field and decode with `TS == 0`; they are tolerated
 forever and never migrated (the JSONL `_hash` covers the payload, so old
@@ -284,7 +284,7 @@ that asks it N times per listing:
   per-node `atomic.Int64` counters (16 bytes per node ever addressed,
   retained for the life of the `Trunks`). An XWAL opened through Trunks
   wires its internal `lastTS` pointer to the registry's counter, so every
-  append through any handle — and every `sharedView` of it — advances the
+  append through any handle, and every `sharedView` of it, advances the
   one counter a listing reads. Open, close, and hot-store eviction do not
   touch it. This is not a cache of derived data: it is the same primitive
   the appender bumps, merely kept.
@@ -293,19 +293,19 @@ that asks it N times per listing:
 - **Cold reads are a file read.** First query for a node this process has
   never opened runs a bounded tail probe: the lexically newest segment
   file per channel directory the node owns, scan to the last complete
-  frame, decode its `t`, take the max — no full `Open`, no segment
+  frame, decode its `t`, take the max, no full `Open`, no segment
   indexing, no watermark folds. Measured: ~36µs, ~73KB transient, 126
   allocs, paid once per node per process (the probe hydrates the retained
   counter). A full `Open` later merges monotonically (CAS-max) into the
   same counter, so probe and hydration can never regress an append.
 - **Never a wake.** LastTS opens (at most) segment files. Whether the
   consumer's node has an agent, a daemon, or anything else attached is
-  invisible from here — a listing over dormant nodes stays dormant.
+  invisible from here, a listing over dormant nodes stays dormant.
 
 The frame's `t` sits in ALPHABETICAL key position (`m, p/p64, t, x`)
 because the JSONL codec canonicalizes key order on disk; encoder output
 and disk output are byte-identical, and the fast-path frame decoder
 speaks that one grammar. (The first draft ordered the encoder differently
 from the disk and every meta-carrying segment read silently fell to the
-reflection path — found by benchmark comparison, not by tests, and pinned
+reflection path, found by benchmark comparison, not by tests, and pinned
 by canaries that round-trip the codec since.)

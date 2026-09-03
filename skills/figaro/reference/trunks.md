@@ -87,7 +87,7 @@ rather than a precedence rule.
 
 #### A node is finer than a fork point
 
-A fork cuts the message log **between whole messages** — that is what the
+A fork cuts the message log **between whole messages**, that is what the
 branch and its parent share. A node is a content *block*: one assistant message
 that says a paragraph and then calls a tool is **one message and two nodes**.
 
@@ -105,7 +105,7 @@ forked abc12345 at turn 19 node 7 (now a frozen fork point)
 A node that *begins* its own message is exact and says nothing extra. Two more
 rules fall out of the same fact:
 
-- **`:19.0` keeps the turn's question and drops every answer to it** — a
+- **`:19.0` keeps the turn's question and drops every answer to it**, a
   different place from `:19`, which drops the question too.
 - **A fork never strands a tool call.** A tool node carries both its
   coordinates (the invoke and its result), so a cut that would land between
@@ -114,7 +114,7 @@ rules fall out of the same fact:
   you can prompt and one you cannot.
 
 The resolution reads the daemon's **own composed nodes**, over the same read
-wire the pager and `show` use — not a second composer in the client. Two
+wire the pager and `show` use, not a second composer in the client. Two
 composers that disagreed by one node would fork one node away from where you
 pointed. `scripts/forknode-e2e.sh` proves the whole path against a real daemon
 with no credentials and no tokens.

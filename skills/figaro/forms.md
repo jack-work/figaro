@@ -50,13 +50,13 @@ uninvited:
 **On change** you get one `study:@x` block per user message, folded: several
 patches inside one window arrive as a single block (`"changes":2`), and it
 carries the value the key ENDS at, not the intermediate ones. A deleted source
-arrives as `"exists":false` — its copy outlives it, so the history you were
+arrives as `"exists":false`, its copy outlives it, so the history you were
 shown still makes sense. Values are **not truncated**: a delta carries the
 whole changed value, so keep studied values small if context matters.
 
 **What configures it**
 
-- `fig study @x` / `fig drop @x` — the subscription itself. It lives on your
+- `fig study @x` / `fig drop @x`, the subscription itself. It lives on your
   board as `system.studies`, which is system-managed: only the verbs write it.
 - `system.study_incantation` on **your own board**: `{onstudy, onupdate,
   ondrop}`, a sentence added to each event so a figaro is told what the change
@@ -64,7 +64,7 @@ whole changed value, so keep studied values small if context matters.
 - Nothing else. There is no per-key filter today: a studied form is mirrored
   whole.
 
-**Recommended**: put a short primer in your **base outfit** — every key an
+**Recommended**: put a short primer in your **base outfit**, every key an
 outfit sets becomes a reminder of that name, so every figaro you ever mint
 inherits it. One key, a few lines, and no figaro has to be told twice.
 

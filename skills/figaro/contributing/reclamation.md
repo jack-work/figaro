@@ -213,8 +213,8 @@ compares what the store estimates against what dropping the window frees: 0.96.
 
 **AND THE DEFAULT IS THE STORE'S, NOT THE CONFIG'S** (2026-08-19). It used to
 live in `internal/config` and reach the store through three calls in the
-daemon's boot path, which meant a `store.NewXwalBackend` built anywhere else —
-`figaro doctor`, every test, any future embedding — was UNBOUNDED. The store
+daemon's boot path, which meant a `store.NewXwalBackend` built anywhere else,
+`figaro doctor`, every test, any future embedding, was UNBOUNDED. The store
 now bounds itself at construction (`store.DefaultIRBudgetBytes`,
 `store.DefaultTranslationBudgetBytes`) and these keys TUNE it: a key you do
 not set is a key that leaves the store's own bound alone, and an explicit `0`

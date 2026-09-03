@@ -17,7 +17,7 @@ findings are races against wall-clock delays, so a replay reproduces the
 same distribution (and usually the same findings) rather than the exact
 cycle indexes. Occurrence counts below are from the recorded campaign logs.
 
-## Kill mode (pure SIGKILL — completed writes survive in the page cache)
+## Kill mode (pure SIGKILL: completed writes survive in the page cache)
 
 ### K1. Fork commit is not crash-atomic: trunk id lost
 
@@ -36,12 +36,12 @@ next writer found zero trunks.
 forward"; in practice a mid-fork SIGKILL can leave a `.fork-pending`
 sentinel that every subsequent `OpenTrunks` refuses:
 
-- seed=11 store=6 cycle=3 childSeed=7342284354246113453 — sentinel left in
+- seed=11 store=6 cycle=3 childSeed=7342284354246113453, sentinel left in
   a related-channel branch dir (`notes/n0/n2/n3`); open fails "fork in
   progress" permanently.
-- seed=12 store=2 cycle=1 childSeed=6759699898442884760 — sentinel in
+- seed=12 store=2 cycle=1 childSeed=6759699898442884760, sentinel in
   `notes/n0`, same permanent failure.
-- seed=12 store=11 cycle=2 childSeed=4073270498405317002 — recovery is not
+- seed=12 store=11 cycle=2 childSeed=4073270498405317002, recovery is not
   idempotent: "recover interrupted fork: fork \"main\": open: fork in
   progress: dir contains .fork-pending sentinel: .../main". The roll-forward
   path itself trips over the sentinel it is supposed to consume.
@@ -49,7 +49,7 @@ sentinel that every subsequent `OpenTrunks` refuses:
 ### K3. Mid-fork kill can cut the HEAD of a related channel
 
 `head-cut`, seed=12 store=2 cycle=1: after reopen the notes channel starts
-at chanLT 2 — record 1 is gone. Loss from the front, so the surviving log
+at chanLT 2, record 1 is gone. Loss from the front, so the surviving log
 is not a prefix at all.
 
 ### K4. Positive results
@@ -62,8 +62,8 @@ crash windows look solid at e2f5c89; fork commit is the one broken window.
 ## Corrupt mode (torn-tail simulation)
 
 Repair at e2f5c89 assumes only the last segment of the writing node can be
-torn. A torn tail in any OTHER recently written segment — one sealed by
-rotation during the cycle, or a fork-parent segment — is not detected:
+torn. A torn tail in any OTHER recently written segment, one sealed by
+rotation during the cycle, or a fork-parent segment, is not detected:
 
 ### C1. Silent renumbering
 
@@ -128,7 +128,7 @@ never undetected payload corruption.
 
 # memory-first findings (branch memory-first merged at 8b888d7)
 
-Harness rebound to `xwal.OpenStore` (bind_trunks.go): no SyncChannel — the
+Harness rebound to `xwal.OpenStore` (bind_trunks.go): no SyncChannel, the
 durable lower bound is time-based (append stamp older than
 FlushInterval+slack before the kill must survive), plus Close-drain
 (everything durable once Close returns) and Kick as a scheduling hint.
@@ -151,7 +151,7 @@ cycles (seeds 41/42/43), plus the targeted flush-error test.
 
 seed=33 store=7 cycle=1 childSeed=602310214271270794: after a mid-fork
 kill, reopen fails "fork in progress: dir contains .fork-pending
-sentinel: .../state/n0" — permanently. 1 occurrence in 808 kill cycles.
+sentinel: .../state/n0", permanently. 1 occurrence in 808 kill cycles.
 
 ### M3 = C1-C5. Torn tails outside the active segment still misplace data
 
@@ -163,7 +163,7 @@ crash tails but does not detect a torn SEALED segment (rotated or
 fork-parent); subsequent records renumber or the store bricks, same
 failure shapes as e2f5c89.
 
-### M4. Repair is gated on `.unclean` — corruption after clean Close slips through
+### M4. Repair is gated on `.unclean`: corruption after clean Close slips through
 
 A1's declared risk, confirmed: 34 of the damaging corrupt cycles were
 `cleanclose` (child Closed cleanly, then bytes were torn, then reopen):
@@ -177,11 +177,11 @@ childSeed=2833144618262241349 (flip in `main/n0/...0039.jsonl`).
   `reducible-ahead` in 808 kill cycles (e2f5c89 produced both after any
   main-tail repair). The vectored coherent-cut flush works.
 - Kill-mode head-cut (K3): not observed in 808 cycles.
-- Durability contract: zero `durable-lost` — every append older than
+- Durability contract: zero `durable-lost`, every append older than
   FlushInterval(+500 ms slack) before the kill survived; Close-drain
   lost nothing (all cleanclose kill-mode cycles verified full survival);
   kill-mid-Close cycles repaired cleanly on reopen.
-- Flush-error path: TestFlushErrorReadOnlyRecovers — segment dirs made
+- Flush-error path: TestFlushErrorReadOnlyRecovers, segment dirs made
   read-only mid-run: appends keep succeeding in memory, flusher retries,
   full recovery after permissions restored, clean Close, zero loss.
 - Peer-goroutine append/fork interleaving: no divergence, no violations
@@ -193,7 +193,7 @@ childSeed=2833144618262241349 (flip in `main/n0/...0039.jsonl`).
 ## Expected-loss profile
 
 `append-lost` findings (contract-permitted flush lag): ~580 per 300-cycle
-kill run, nearly always 1-3 records per channel — the in-memory tail
+kill run, nearly always 1-3 records per channel, the in-memory tail
 since the last flusher pass. e2f5c89 showed zero here (its writes hit the
 page cache synchronously); this is the traded loss window of
 memory-first, bounded and honored.
@@ -202,6 +202,6 @@ memory-first, bounded and honored.
 
 Kill-mode known gaps: `append-lost`, `trunk-lost-mid-fork` (M1), plus
 fork-wreckage classes only when a fork was in flight (M2). Corrupt-mode
-known gaps: M3/M4 classes. Everything else — durable-lost, checksum,
-panic, mismatch/gap/head-cut outside fork or corruption windows — fails
+known gaps: M3/M4 classes. Everything else, durable-lost, checksum,
+panic, mismatch/gap/head-cut outside fork or corruption windows, fails
 the suite.

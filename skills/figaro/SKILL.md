@@ -19,11 +19,11 @@ the only way you see anything outside your own conversation.
 |---|---|
 | `name="<key>"` | one key of **your bound form** (your board): `cwd`, `mantra`, `aria_id`, whatever your outfit set. `figaro set <key> <value>` changes it. |
 | `name="study"` | you began or stopped observing a form: `{form, observing, state, version}`. `state` is the whole form as it stood when observation began. |
-| `name="study:@id"` | that form **changed**: `{form, changes, set, removed, version}` — and `"exists":false` when it was deleted (the copy survives, so history still renders). |
+| `name="study:@id"` | that form **changed**: `{form, changes, set, removed, version}`, and `"exists":false` when it was deleted (the copy survives, so history still renders). |
 | `name="fork"` | you are a branch, and where you came from. |
 
 A form you do not study is invisible to you. See [forms.md](forms.md) for the
-four species — bound form, unbound form, studied form, role — what arrives on
+four species, bound form, unbound form, studied form, role, what arrives on
 change, and what configures it.
 
 ## The gestures

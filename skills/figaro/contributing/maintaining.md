@@ -142,7 +142,7 @@ the wait with a probe that cannot block and record what it saw.
 Worked example, the forest re-seat (2026-08-15): `Evicted` fires outside
 forest's locks, but a consumer calling `Put` under its own write lock can have
 eviction land the hook with that lock held, so a hook that takes the lock
-hangs. The test does not take the lock — it `TryLock`s and reports whether the
+hangs. The test does not take the lock, it `TryLock`s and reports whether the
 lock was already held. Never blocks, and a true reading is evidence. The
 answer was 20 of 20 runs, which reclassified the bug: not an unlucky race, the
 common path under budget pressure, certain to ship on the first real workload.
@@ -170,7 +170,7 @@ Three shapes of the same failure, all met in one evening:
     nothing. A retired axis reads exactly like a clean result.
   - A COMPARISON WITH NOTHING LEFT TO COMPARE. "Cold grows with length while
     warm stays flat" is a fine canary until the warm path is deleted, at
-    which point the test passes by having no second column — and it AGREES
+    which point the test passes by having no second column, and it AGREES
     WITH THE PREDICTION, because the prediction was that warm becomes cold.
     A confirmation produced by an instrument that can no longer disagree.
   - A NAME THAT OUTLIVES ITS SUBJECT. `BenchmarkObservationWarm50` measuring
@@ -179,7 +179,7 @@ Three shapes of the same failure, all met in one evening:
 
 THE DEFENCE IS THE SAME EVERY TIME AND IT IS NOT VIGILANCE. Make the
 deletion BREAK THE BUILD (a field the instrument assigns), so the repair is
-a decision someone must make rather than a silence they inherit — and when
+a decision someone must make rather than a silence they inherit, and when
 you retire a column, state its final numbers IN THE COMMIT THAT RETIRES IT,
 so the comparison survives as a cross-commit assertion rather than
 evaporating with the code.
@@ -216,11 +216,11 @@ attention while nobody is looking; a red one only accumulates apologies.
 **Worked example, and the shape of the mistake is the useful part.**
 `TestHibernateRefusesActiveAria` waits for an aria to report `idle`, then
 asserts `require.NoError(Hibernate(id))` once. But `Registry.Hibernate`
-re-checks liveness AFTER taking the retiring flag, deliberately — *"a turn that
-opened while we were taking the flag wins"* — so between the poll and the call
+re-checks liveness AFTER taking the retiring flag, deliberately, *"a turn that
+opened while we were taking the flag wins"*, so between the poll and the call
 the aria may legitimately be active again, and **the refusal is correct
 behaviour reported as a test failure.** Under load it goes red; alone it passes
-12 of 12. The fix asserts the fact: `require.Eventually(Hibernate succeeds)` —
+12 of 12. The fix asserts the fact: `require.Eventually(Hibernate succeeds)`,
 it eventually hibernates, and the refusals along the way are the design
 working.
 
@@ -249,7 +249,7 @@ Prove the fixture can fail, then trust what it says.
 ### An equivalence oracle is not scaffolding
 
 When you replace an implementation with a faster one that must behave
-IDENTICALLY, keep the old one — in the test file, permanently, as the oracle
+IDENTICALLY, keep the old one, in the test file, permanently, as the oracle
 the new one is compared against.
 
 The instinct is to keep it "until the test passes, then delete it". That
@@ -261,7 +261,7 @@ implementation will also satisfy.
 
 So: `tailBound` scans backwards and returns a substring; `tailBoundSplit`
 still splits and joins, in the test file, and 21 inputs must agree byte for
-byte — no trailing newline, exactly 199/200/201 lines, CRLF, a cut landing on
+byte, no trailing newline, exactly 199/200/201 lines, CRLF, a cut landing on
 the first byte. A companion test runs a deliberately one-line-short clamp
 against that same corpus and asserts the corpus catches it, so the oracle is
 known to be able to fail.

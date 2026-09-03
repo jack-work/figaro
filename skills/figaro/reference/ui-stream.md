@@ -448,7 +448,7 @@ meaning detach/interrupt/listen/verbose the moment the box closes.
 | `^A` / `^E` | start / end of line |
 | `^B` / `^F` · `←` / `→` | character left / right |
 | `M-b` / `M-f` · `^←` / `^→` | word left / right |
-| `^D` | delete forward — **on an empty line, close the box** |
+| `^D` | delete forward, **on an empty line, close the box** |
 | `Backspace` / `^H` | delete backward |
 | `^T` / `M-t` | transpose characters / words |
 | `M-u` / `M-l` / `M-c` | upcase / downcase / capitalize the word |
@@ -474,7 +474,7 @@ menu, then closes the box. `^C` and `^G` skip the rungs and abandon the line.
 Two consequences worth naming:
 
 - **`^D` does not detach while the box is open.** It edits. On an empty line it
-  closes the box, and the `^D` after that detaches exactly as it always did —
+  closes the box, and the `^D` after that detaches exactly as it always did,
   the escape hatch is one press further away, not gone.
 - **`Esc` is also the Meta prefix.** A terminal sends `M-b` as the two bytes
   `ESC b`. Inside the box, `ESC <key>` is therefore a Meta chord (an unbound one

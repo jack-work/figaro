@@ -1,4 +1,4 @@
-# HANDOFF — the presentation hierarchy: promote, ls, and delete
+# HANDOFF: the presentation hierarchy: promote, ls, and delete
 
 Worktree   `~/dev/figaro-qua/trunkfix`
 Branch     `fix/trunk-presentation` @ `4bc5ad0c`
