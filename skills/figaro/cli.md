@@ -208,6 +208,21 @@ Setting a key is a real event in the conversation: on the tic where a
 non-`system` key changes, the agent sees a `<system-reminder>` naming it. Keys
 under `system.` are hidden from the agent and read directly by the harness.
 
+**Lifetimes.** `figaro set --id <id> system.ttl 30d` gives a node a lifetime:
+the daemon's reclamation sweep deletes that node and its subtree once the
+lifetime is spent. It is counted from when the node was CREATED, not from its
+last turn, and a fork inherits the key with its own creation time. Go duration
+syntax plus `d` and `w`; `0`, an empty value or `unset system.ttl` means no
+lifetime and nothing is ever deleted. The sweep runs on
+`[memory] sweep_interval_seconds` (two minutes by default) and passes over a
+node the daemon still holds an agent for or a shell is bound to, so an expired
+aria you are still typing into is taken once you leave it. The deletion
+therefore lands some way after the deadline; `ls` does not wait for it, and
+omits an expired row from the moment it expires unless a turn is in flight or
+a shell is attending it, reporting how many rows it withheld. `figaro doctor
+ttl` reports every lifetime, expired or not, and `ls -j` still carries all of
+them with `ttl_ms` and `expires_at`.
+
 Two `system.` keys are exceptions in one direction: they do not render
 themselves, they change what OTHER events say.
 `system.study_incantation` is `{onstudy, onupdate, ondrop}`, any subset, each a
@@ -226,6 +241,7 @@ observer's mouth.
 | `figaro doctor gc` | Remove dead store channels. `-n` to report without touching. Requires the daemon stopped. |
 | `figaro doctor schema` | Report per-channel format versions. |
 | `figaro doctor mem [-j]` | What the daemon is holding: live/resident arias, IR cache, endpoints, attached clients, heap. See [contributing/reclamation.md](contributing/reclamation.md). |
+| `figaro doctor ttl [-j]` | Every node that states a lifetime (`system.ttl`), when each one ends, and which are already due. Reads the sidecars, so it answers while the daemon runs. |
 | `figaro login <provider>` | OAuth login. |
 | `figaro models` | List available provider models. |
 | `figaro update [--check\|--apply]` | Check for a newer release. |

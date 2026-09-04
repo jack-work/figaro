@@ -158,9 +158,43 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		for i := range result {
 			h.fillFromNode(nodeByID, vers, &result[i])
 		}
+		h.fillTTL(result)
 	}
 
 	return rpc.ListResponse{Figaros: result}, nil
+}
+
+// ttlLister is the backend's half of the lifetime report: the deadline set the
+// sweep already maintains, keyed by node id.
+type ttlLister interface {
+	TTLEntries() []store.TTLEntry
+}
+
+// fillTTL stamps the stated lifetime and its deadline onto every row that has
+// one. The set is held in memory by the backend and covers arias and forms
+// alike, so this is one map build and a lookup per row rather than a sidecar
+// read per row.
+func (h *handlers) fillTTL(result []rpc.FigaroInfoResponse) {
+	lister, ok := h.angelus.Backend.(ttlLister)
+	if !ok {
+		return
+	}
+	entries := lister.TTLEntries()
+	if len(entries) == 0 {
+		return
+	}
+	byID := make(map[string]store.TTLEntry, len(entries))
+	for _, e := range entries {
+		byID[e.ID] = e
+	}
+	for i := range result {
+		e, ok := byID[result[i].ID]
+		if !ok {
+			continue
+		}
+		result[i].TTLMS = e.TTL.Milliseconds()
+		result[i].ExpiresAt = e.DeadlineMS
+	}
 }
 
 func (h *handlers) enrichList(result []rpc.FigaroInfoResponse, tasks []listEnrichment) {

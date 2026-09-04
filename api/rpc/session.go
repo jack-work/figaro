@@ -29,6 +29,14 @@ type FigaroInfoResponse struct {
 	OutfitVer        string `json:"outfit_ver,omitempty"`    // "live" if the stamped hash matches the current outfit, else its short hash
 	BoundPIDs        []int  `json:"bound_pids"`
 
+	// The node's stated lifetime (board key system.ttl), mirrored from the
+	// _meta sidecar the daemon's sweep reads. TTLMS is the duration in
+	// milliseconds; ExpiresAt is CreatedAt + TTLMS in unix millis, the
+	// instant from which the sweep considers the node due. Both are zero on
+	// a node that states no lifetime.
+	TTLMS     int64 `json:"ttl_ms,omitempty"`
+	ExpiresAt int64 `json:"expires_at,omitempty"`
+
 	// Fork-tree position (conversation nodes). Vector is the
 	// child-index path (0, 0.0, 0.1, …); Trunk is the thread id that
 	// flows down the continuation line; Parent is the aria branched from.

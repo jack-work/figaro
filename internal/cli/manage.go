@@ -115,7 +115,9 @@ func runList(loaded *config.Loaded, o lsOpts) {
 			if err != nil {
 				die("list: %s", err)
 			}
-			renderFormScope(resp.Figaros, boundID, o.limit)
+			figs, hidden := dropExpired(resp.Figaros, time.Now().UnixMilli())
+			renderFormScope(figs, boundID, o.limit)
+			printExpiredNote(hidden)
 			return nil
 		}
 
@@ -125,7 +127,9 @@ func runList(loaded *config.Loaded, o lsOpts) {
 			if err != nil {
 				die("list: %s", err)
 			}
-			renderGlobal(resp.Figaros, boundID, o.limit)
+			figs, hidden := dropExpired(resp.Figaros, time.Now().UnixMilli())
+			renderGlobal(figs, boundID, o.limit)
+			printExpiredNote(hidden)
 			return nil
 		}
 
@@ -134,7 +138,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		if err != nil {
 			die("list: %s", err)
 		}
-		figs := resp.Figaros
+		figs, hidden := dropExpired(resp.Figaros, time.Now().UnixMilli())
 
 		// Scope. `<id>` → that subtree. `-h`/--home → the whole tree (● stays
 		// on you). Default: attended scopes to your conversation's tree;
@@ -213,8 +217,18 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		if limit > 0 && total > limit {
 			fmt.Fprintf(stderrw, "\n… %d more (-a for all, -n N for N)\n", total-limit)
 		}
+		printExpiredNote(hidden)
 		return nil
 	})
+}
+
+// printExpiredNote accounts for the rows dropExpired withheld, so a listing that
+// is missing an aria says so and names the report that still shows it.
+func printExpiredNote(n int) {
+	if n <= 0 {
+		return
+	}
+	fmt.Fprintf(stderrw, "\n%d expired, hidden until the daemon's sweep takes them (figaro doctor ttl)\n", n)
 }
 
 // listTree builds the rendered rows for the scoped fork tree, and the
