@@ -179,6 +179,18 @@ func (t *livelogTurn) wireClient() {
 			}
 		}
 	}
+	t.client.OnTurnOpen = func(int) {
+		// THE WIRE, NOT THE SUBMIT. A session that sent the prompt already
+		// armed itself in armThinking; this is for every other way a turn
+		// starts under a live view: `:send` from inside the pager, a listener
+		// watching an aria someone else is driving, a queued prompt that only
+		// begins when the turn ahead of it ends. The daemon broadcasts the
+		// committed question before it calls a provider, so this is early.
+		t.status.beginTurn()
+		if t.tr.active {
+			t.tr.render()
+		}
+	}
 	t.client.OnLive = func(m aria.Message) {
 		newOpen := m.Turn != t.open.Turn
 		t.open = m
@@ -305,15 +317,25 @@ func (t *livelogTurn) openOverflows(nodes []livedoc.Node) bool {
 	return false
 }
 
-// armThinking pins the footer the instant a submit is accepted: before the
-// prompt has round-tripped, before the model's first token. The footer is a
-// permanent fixture of the view, so it must not wait on the stream.
+// armThinking shows the turn as running the instant a submit is accepted:
+// before the prompt has round-tripped, before the model's first token.
+//
+// The two halves have different owners, which is why the pager guard sits
+// where it does. status is shared: the pager paints it in its own footer
+// (transcript.go, footerStanza), so it must be set in BOTH views. The incipit
+// live region is the inline renderer's alone, and opening one while the pager
+// owns the screen would paint underneath it.
+//
+// This used to guard both halves on t.tr.active, which meant the pager was
+// never told a turn had started. It then had nothing to draw until the first
+// content frame, roughly two seconds of blank on a warm turn and much more on
+// a cold one.
 func (t *livelogTurn) armThinking() {
+	t.status.beginTurn()
 	if t.tr.active || t.thinkingOpen {
 		return
 	}
 	t.thinkingOpen = true
-	t.status.beginTurn()
 	t.in.OpenThinking(livedoc.RoleOutput)
 }
 

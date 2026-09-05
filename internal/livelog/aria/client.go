@@ -50,6 +50,23 @@ type Client struct {
 	OnLive    func(Message)
 	OnDesync  func(sinceLT int)
 	OnMetrics func(Metrics)
+	// OnTurnOpen fires once per turn, when a turn takes the open slot. It is
+	// the counterpart of the server's turn.done: the daemon commits the user's
+	// question and broadcasts it before it calls a provider, so this lands
+	// while the model is still thinking rather than with its first token. A
+	// status surface that waits for OnLive instead waits out the whole of the
+	// model's latency, which on a warm turn is two seconds and on a cold one
+	// is much worse.
+	//
+	// It belongs here and not in a caller because "which turn owns the open
+	// slot" is decided here, once (see claimsOpen). A second opinion computed
+	// upstream is the exact mistake this file already warns about.
+	OnTurnOpen func(turn int)
+
+	// openedTurn is the turn id OnTurnOpen last reported. The inquiry rides
+	// along on later frames of the same turn, so the callback is edge
+	// triggered on the id rather than fired per frame.
+	openedTurn int
 }
 
 // heldInquiry is a turn's question and its per-sender split, parked together
@@ -266,6 +283,8 @@ func (c *Client) Apply(p Page) {
 	c.mu.Lock()
 	var finalized []Message
 	desync := -1
+	// opened is the turn that took the open slot on this page, 0 for none.
+	opened := 0
 	metrics := p.Metrics
 
 	for _, part := range p.Parts {
@@ -293,6 +312,13 @@ func (c *Client) Apply(p Page) {
 			// slot for it would destroy the live turn on its way past.
 			if staged && !part.ClippedHead {
 				c.store.ClaimOpen(id)
+				// This is the earliest a client can know a turn is running:
+				// the question is committed and the provider has not been
+				// called yet. Reported outside the lock with everything else.
+				if id > c.openedTurn {
+					c.openedTurn = id
+					opened = id
+				}
 			}
 		}
 
@@ -429,6 +455,11 @@ func (c *Client) Apply(p Page) {
 
 	if metrics != nil && c.OnMetrics != nil {
 		c.OnMetrics(*metrics)
+	}
+	// Ahead of the content callbacks: a surface that reacts to both should
+	// hear "a turn started" before it hears what the turn said.
+	if opened != 0 && c.OnTurnOpen != nil {
+		c.OnTurnOpen(opened)
 	}
 	for _, m := range finalized {
 		if c.OnClosed != nil {

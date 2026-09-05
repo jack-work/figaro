@@ -246,6 +246,32 @@ ran: same failure, and it has cost this project several cycles.
 
 Prove the fixture can fail, then trust what it says.
 
+### A test file can silently not exist
+
+Go decides which files compile from the FILENAME, before it reads a line of
+them. A file whose name ends in `_<goos>.go` or `_<goarch>.go` is constrained
+to that platform, and `_test` in front of the suffix does not exempt it:
+`thinking_arm_test.go` compiles only on GOARCH=arm, so on this machine it is
+not a file with a failing test in it, it is a file that is not there.
+
+The failure mode is the quiet one. `go build` is clean, `go vet` is clean,
+`go test ./internal/cli/` is clean, and `-run TestTheThing` answers
+`ok ... [no tests to run]`, which reads as a typo in the pattern rather than
+as a missing file. Nothing anywhere says the word "arm".
+
+The suffixes that bite are ordinary English: `_arm`, `_386`, `_ios`, `_js`,
+`_plan9`, `_windows`, `_linux`, `_darwin`, `_android`, `_wasm`. So do not name
+a file after a verb ending in "arm", or after a subsystem called "linux", and
+when a new test does not run, check that the compiler agrees it exists before
+touching the test itself:
+
+```bash
+go list -f '{{range .TestGoFiles}}{{.}}{{"\n"}}{{end}}' ./internal/cli/ | grep <name>
+```
+
+Empty output means the filename is the bug. Rename it (`thinking_armed_test.go`)
+and the test appears.
+
 ### An equivalence oracle is not scaffolding
 
 When you replace an implementation with a faster one that must behave
