@@ -23,7 +23,7 @@ func trunksCfg() Config {
 
 // seedTrunk creates a fresh store and returns it plus a live top-level
 // trunk, rooted at a markerless (birthless) stump so the trunk's own range
-// starts at LT 2 — exactly where the old root-trunk's own content began
+// starts at LT 2, exactly where the old root-trunk's own content began
 // (genesis@1 inherited). Lets the trunk-mechanics tests read identically.
 func seedTrunk(t *testing.T, dir string) (*Trunks, TrunkID) {
 	t.Helper()
@@ -205,7 +205,7 @@ func chalkLast(t *testing.T, x *XWAL) uint64 {
 }
 
 // seedTrunkBirth seeds a store with a stump carrying a birth IR entry (@2),
-// then a trunk under it (owns from LT 3) — the figaro loadout→conversation
+// then a trunk under it (owns from LT 3): the figaro loadout→conversation
 // shape (genesis@1, loadout-birth@2 inherited).
 func seedTrunkBirth(t *testing.T, dir, stump string) (*Trunks, TrunkID) {
 	t.Helper()
@@ -355,7 +355,7 @@ func TestTrunks_ReSplitBelow(t *testing.T) {
 	}
 	// Fork at 5 -> alt2 shares [1..5], conv continues with its suffix.
 	alt2, _ := forkAppend(t, f, conv, 5, []byte(`"alt-from-5"`))
-	// Now RE-SPLIT-BELOW: fork alt2 at LT 3 — a turn alt2 inherited from conv
+	// Now RE-SPLIT-BELOW: fork alt2 at LT 3, a turn alt2 inherited from conv
 	// (below alt2's own range). Must fork the ancestor and mint a sibling.
 	sib, _ := forkAppend(t, f, alt2, 3, []byte(`"resplit-at-3"`))
 	if sib == alt2 || sib == conv || sib == "" {
@@ -464,7 +464,7 @@ func TestTrunks_Remove(t *testing.T) {
 // The topology-version cookie is the mechanism consumers use to detect
 // that markers on disk have moved. Modeled on SQLite's schema cookie: a
 // cheap monotonic uint incremented on every rebuild. In-process readers
-// don't strictly need it — every public mutation already rebuilds — but
+// don't strictly need it (every public mutation already rebuilds) but
 // exposing it makes downstream caches self-invalidating and gives a
 // future cross-process story an integration point via Refresh().
 
@@ -523,7 +523,7 @@ func TestVersion_BumpsOnMutations(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	// Append (extends head only — no rebuild path).
+	// Append (extends head only, no rebuild path).
 	// This is on the hot write path and MUST NOT bump the topology
 	// version: Version is for structural changes, not content.
 	before := f.Version()
@@ -536,7 +536,7 @@ func TestVersion_BumpsOnMutations(t *testing.T) {
 	// A few more appends to have interior LTs for a fork.
 	f.Append(conv, 0, []byte(`"m2"`), nil)
 	f.Append(conv, 0, []byte(`"m3"`), nil)
-	// Interior fork — must bump (relabels markers).
+	// Interior fork. Must bump (relabels markers).
 	var alt TrunkID
 	bump("ForkAt", func() {
 		var err error
@@ -582,7 +582,7 @@ func TestVersion_ExternalRewriteBumpsAfterRefresh(t *testing.T) {
 	// Simulate an out-of-band write: touch a marker file's mtime by
 	// rewriting the same id. rebuild() re-scans regardless.
 	// (We rewrite the same content so the tree is functionally
-	// unchanged — the test is about Refresh always bumping.)
+	// unchanged: the test is about Refresh always bumping.)
 	if err := f.Refresh(); err != nil {
 		t.Fatal(err)
 	}

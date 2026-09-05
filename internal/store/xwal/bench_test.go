@@ -222,7 +222,7 @@ func buildLongTrunk(b *testing.B, records int) (*Trunks, Config, TrunkID, uint64
 	}
 	// Built through the REAL append path. The hand-rolled disk writer this
 	// replaces encoded frames straight into channel dirs and drifted from
-	// the layout when fork-base continuity moved into the log layer — it
+	// the layout when fork-base continuity moved into the log layer. It
 	// failed with "write index out of order" and, worse, benchmarked a
 	// store shape no production code ever writes.
 	for i := 1; i <= records; i++ {
@@ -300,7 +300,7 @@ func BenchmarkTrunksLongAria(b *testing.B) {
 			// THE FIXTURE MUTATES UNDER THE APPEND SUBBENCHES: every append
 			// grows the tail the next append pays for, so under the
 			// framework's b.N escalation per-op cost becomes a function of
-			// b.N itself (the brief's mistake #4: history length IS b.N —
+			// b.N itself (the brief's mistake #4: history length IS b.N,
 			// observed at 584µs/op with b.N driven to 10^6, ten minutes per
 			// output line). The scratch trunk is re-forked every
 			// rebuildEvery appends with the timer stopped, pinning the tail
@@ -326,7 +326,7 @@ func BenchmarkTrunksLongAria(b *testing.B) {
 				}
 			})
 
-			// Interleaved appends across two lineages — the cross-trunk
+			// Interleaved appends across two lineages: the cross-trunk
 			// overhead relative to the single-trunk Append above. (This
 			// was RunParallel once, but parallel goroutines cannot pause
 			// the timer to re-pin their fixture, and unpinned fixtures are

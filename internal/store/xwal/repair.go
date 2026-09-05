@@ -160,7 +160,7 @@ func segFileName(base uint64, codec segment.SegmentCodec) string {
 }
 
 // trimChannelNode drops the suffix of a related channel node whose
-// records reference main-LTs beyond mainTail — beyond mainTail+1 for
+// records reference main-LTs beyond mainTail, or beyond mainTail+1 for
 // reducible channels, whose one-ahead patch convention keys a patch to
 // the upcoming turn; such a patch survives a crash by contract. Records
 // are main-LT non-decreasing, so the violating region is a contiguous

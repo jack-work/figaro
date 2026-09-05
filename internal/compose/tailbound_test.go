@@ -72,7 +72,7 @@ func TestTailBoundIsByteIdenticalToTheSplitImplementation(t *testing.T) {
 	}
 }
 
-// TestTailBoundOracleCanFail proves the equivalence test above is load-bearing:
+// TestTailBoundOracleCanFail proves the equivalence test above can fail:
 // a clamp that is off by one line must be caught by this corpus. If this stops
 // failing the oracle, the corpus has stopped covering the boundary.
 func TestTailBoundOracleCanFail(t *testing.T) {

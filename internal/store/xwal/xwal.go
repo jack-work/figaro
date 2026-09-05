@@ -50,7 +50,7 @@ func (k Kind) String() string {
 type ReduceFunc func(state, patch []byte) ([]byte, error)
 
 // Reducer is a reducible channel's fold plus its initial (empty) state.
-// Initial must be a valid value for the codec — a JSON object such as
+// Initial must be a valid value for the codec: a JSON object such as
 // `{}` under the JSONL codec, since it seeds the very first watermark.
 type Reducer struct {
 	Reduce  ReduceFunc
@@ -89,11 +89,11 @@ type Config struct {
 	Genesis []byte
 	// MintTrunkID, if set, generates trunk ids instead of the default
 	// sequential "t<N>" (the Trunks layer retries on collision). Lets a
-	// consumer use opaque ids; not persisted directly — the ids land in
-	// the .trunk markers. The node KIND being minted is passed in, so a
+	// consumer use opaque ids; not persisted directly (the ids land in
+	// the .trunk markers). The node KIND being minted is passed in, so a
 	// consumer can give different species different id shapes (figaro
-	// mints unbound forms as "@<hex>" — the sigil that makes a form id
-	// unmistakably not an aria id — and conversations as bare hex).
+	// mints unbound forms as "@<hex>", the sigil that makes a form id
+	// unmistakably not an aria id, and conversations as bare hex).
 	MintTrunkID func(kind string) string
 	// ParentOf resolves a flat node's logical parent. Empty means none.
 	ParentOf func(node string) string
@@ -104,7 +104,7 @@ type Config struct {
 	// counter across open/close/evict cycles. Package-private on purpose.
 	ltsReg *lastTSRegistry
 	// Now is the wall clock, a TEST SEAM ONLY. Every record xwal writes
-	// carries a server timestamp stamped at append time — mandatory,
+	// carries a server timestamp stamped at append time: mandatory,
 	// supplied by xwal itself, never by the caller. Defaults to time.Now.
 	Now func() time.Time
 }
@@ -137,7 +137,7 @@ type XWAL struct {
 	// nowMS is the record clock in unix milliseconds (Config.Now or
 	// time.Now). Every append stamps its record with it.
 	nowMS func() int64
-	// lastTS is the newest record timestamp this node has seen — hydrated
+	// lastTS is the newest record timestamp this node has seen, hydrated
 	// from channel tails at open, advanced (monotonically) on every append.
 	// A lock-free primitive on purpose: "when was this node last written"
 	// must be answerable without touching a segment or waiting on a writer.
@@ -223,7 +223,7 @@ func (ch *channel) opened() *log.Log {
 }
 
 // lookupAtOrBelow is the greatest channel LT whose record is keyed at or
-// below mainLT — the boundary a fork sharing main [1..mainLT] inherits.
+// below mainLT: the boundary a fork sharing main [1..mainLT] inherits.
 func (ch *channel) lookupAtOrBelow(mainLT uint64) (uint64, bool, error) {
 	l, oerr := ch.Log()
 	if oerr != nil {
@@ -470,7 +470,7 @@ func (x *XWAL) stampTS() int64 {
 }
 
 // LastTS returns the newest record timestamp this node has seen, in unix
-// milliseconds — hydrated from channel tails at open, advanced on every
+// milliseconds, hydrated from channel tails at open and advanced on every
 // append. Zero when the node has no timestamped records (empty, or written
 // entirely before timestamps existed). Lock-free.
 func (x *XWAL) LastTS() int64 {
@@ -493,7 +493,7 @@ func (x *XWAL) ensureHydrated() {
 
 // hydrateLastTS seeds lastTS from the tail record of every channel. One
 // frame read per non-empty channel, at open only. Legacy tails without a
-// timestamp contribute zero — "we can tolerate without them".
+// timestamp contribute zero: "we can tolerate without them".
 func (x *XWAL) hydrateLastTS() {
 	var max int64
 	for _, name := range x.order {
@@ -523,8 +523,8 @@ func (x *XWAL) hydrateLastTS() {
 
 // channelDir resolves a channel's directory for this branch, falling
 // back to the deepest existing ancestor. A branch component absent for a
-// given channel — e.g. an old-future that was a tail fork, so no subdir
-// was created — resolves to the parent that actually holds the content.
+// given channel (an old-future that was a tail fork, say, so no subdir
+// was created) resolves to the parent that actually holds the content.
 func (x *XWAL) channelDir(name string) string {
 	base := filepath.Join(x.root, name)
 	dir := base
@@ -874,7 +874,7 @@ func channelFromManifest(cfg Config, mc manifestChannel) (*channel, error) {
 // disk never got: a store written before the channel existed, or a crash
 // between the manifest write and the backfill with no sentinel left behind.
 // A partial backfill is the sentinel's job, so the root dir is the whole
-// test — no tree walk.
+// test. No tree walk.
 // reconcileChannelProps brings an existing manifest's per-channel
 // properties up to what the caller now declares. The manifest is
 // authoritative for a store that exists, and materializeManifestChannels
@@ -970,11 +970,11 @@ func (x *XWAL) channelOpts(ch *channel) disk.Options {
 }
 
 // Clear wipes a channel's own data and reopens it empty, resetting its
-// index — for caches that invalidate wholesale (translation fingerprint
+// index, for caches that invalidate wholesale (translation fingerprint
 // drift). NOTE: on a forked branch this also drops the branch's link to
 // its parent for that channel; intended for trunk-level cache resets.
 // FLUSHER-UNAWARE: on a raw handle nothing stops a concurrent store
-// flush from writing into the wiped dir — use Store.Clear instead when
+// flush from writing into the wiped dir. Use Store.Clear instead when
 // the store's flusher is running.
 func (x *XWAL) Clear(channelName string) error {
 	if err := x.ensurePrivate(); err != nil {
@@ -1621,7 +1621,7 @@ func (x *XWAL) AppendMain(payload, meta []byte) (uint64, error) {
 // AppendMainCursors is AppendMain with caller-supplied EXTRA cursor
 // entries merged into the record's cursor stamp. The stamp already says
 // where every unkeyed channel of THIS node stood; the extra entries let
-// a consumer record positions xwal cannot know — figaro stamps each
+// a consumer record positions xwal cannot know: figaro stamps each
 // observed (studied) form's version under a "study:"-prefixed key, so
 // one map carries the whole observed set. Extra keys must not collide
 // with channel names; the caller owns its namespace.
@@ -1771,7 +1771,7 @@ func (x *XWAL) syncCoherent() error {
 
 // coherentTarget is the highest pending index whose record may persist
 // under the lineage cut: main-LT at or below mainTail, plus exactly one
-// ahead for reducible channels (the one-ahead patch convention — a
+// ahead for reducible channels (the one-ahead patch convention: a
 // patch for the upcoming turn is durable within the flush bound and the
 // open-time trim preserves the same slack). Records are main-LT-non-
 // decreasing, so everything at or below the target is safe.
@@ -1803,7 +1803,7 @@ func coherentTarget(ch *channel, mainTail uint64) (uint64, error) {
 	return 0, nil
 }
 
-// Read returns the (mainLT, payload) at channelLT — the meta-free view.
+// Read returns the (mainLT, payload) at channelLT: the meta-free view.
 func (x *XWAL) Read(channelName string, channelLT uint64) (uint64, []byte, error) {
 	r, err := x.ReadAt(channelName, channelLT)
 	if err != nil {
@@ -2146,7 +2146,7 @@ func (x *XWAL) sharedView(release func() error, releaseRoot func(), retire func(
 		// append through any view must advance the counter every other
 		// view reads. (This comment exists because the field above's
 		// warning was proven right the very first time a field was added
-		// after it — LastTS read zero through Head until the view carried
+		// after it. LastTS read zero through Head until the view carried
 		// these two.)
 		nowMS:       x.nowMS,
 		lastTS:      x.lastTS,
@@ -2244,7 +2244,7 @@ type frameObj struct {
 	P   json.RawMessage `json:"p,omitempty"`
 	P64 *string         `json:"p64,omitempty"`
 	// T is the record's server timestamp in unix milliseconds, stamped by
-	// xwal at append time — mandatory on every new record, never supplied
+	// xwal at append time: mandatory on every new record, never supplied
 	// by the caller. Legacy records simply lack it and read back as zero
 	// ("we can tolerate without them").
 	T int64           `json:"t,omitempty"`
@@ -2436,7 +2436,7 @@ func fastDecodeFrame(f []byte) (uint64, []byte, []byte, int64, bool) {
 	if end+1 == len(f) && f[end] == '}' {
 		return mainLT, payload, nil, 0, true
 	}
-	// Optional timestamp FIRST — canonical (alphabetical) order is
+	// Optional timestamp FIRST. Canonical (alphabetical) order is
 	// m, p/p64, t, x: the JSONL codec re-sorts keys on disk, and the
 	// encoder declares them in the same order so both byte streams
 	// match this one grammar.

@@ -263,7 +263,7 @@ func TestSmoke_ErrorDoesNotBleedIntoStatusBar(t *testing.T) {
 	// if the painter repaints after the stray write scrolled the grid. Measured
 	// across runs it shows up most of the time but not every time, so it is
 	// asserted one-sided (> 1 is always wrong; a single row is fine) and it is
-	// NOT the load-bearing assertion. The escape-sequence check below is, because
+	// NOT the assertion that decides the test. The escape-sequence check below is, because
 	// it is a property of the bytes themselves and does not race.
 	if got := statusRows(vis); got > 1 {
 		t.Errorf("status row appears %d times on the grid, want at most 1: "+

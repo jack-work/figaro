@@ -68,7 +68,7 @@ func mergeMax(ts *atomic.Int64, v int64) {
 // LastTS is the newest record timestamp anywhere in a trunk, unix millis.
 // Warm: one map lookup and one atomic load, no allocation, no lock on the
 // value. Cold: a bounded tail probe of the node's own newest segment per
-// channel — a file read, never a full Open. Zero for pre-timestamp
+// channel: a file read, never a full Open. Zero for pre-timestamp
 // history. See docs/store/architecture.md, "Recency: LastTS".
 func (t *Trunks) LastTS(trunk TrunkID) int64 {
 	key, ok := t.anchorOf(trunk)

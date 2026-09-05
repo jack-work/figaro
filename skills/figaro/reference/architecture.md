@@ -363,7 +363,7 @@ Translates IR ↔ Anthropic wire and caches the per-aria wire bytes
 - **Extended thinking** (`assemble.go::applyThinking`). Two model families:
   adaptive (Opus 4.6/4.7/4.8, Sonnet 4.6) take `{type:"adaptive"}` +
   `output_config:{effort}` and ignore a token budget; older models take
-  `{type:"enabled", budget_tokens}`. Crucially, set `display:"summarized"` -
+  `{type:"enabled", budget_tokens}`. Set `display:"summarized"`, because
   the Claude-Code/OAuth default is `"omitted"` (signature only, empty thinking
   text). Knobs: `system.thinking_effort` (low|medium|high|xhigh|max; default
   high) and `system.thinking_budget`.
@@ -447,7 +447,7 @@ provider while the board said otherwise.
   bug produced.
 - Switching is safe because the IR is canonical and each provider owns its
   own translation channel: the new provider simply re-projects the history it
-  has not seen. That makes the cache-miss encoder load-bearing: it must drop
+  has not seen. Correctness therefore rests on the cache-miss encoder: it must drop
   unsigned thinking blocks (both the SDK and raw Anthropic encoders do).
 
 ### Credentials belong to hush, not to an aria: `internal/auth`

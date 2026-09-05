@@ -62,7 +62,7 @@ type model struct {
 	// lenient re-bases a channel instead of failing when the child numbers
 	// above the model. Only modeCorrupt sets it: corrupting a shared prefix
 	// retroactively invalidates every descendant's fork base, which is the
-	// point of the mode. modeKill stays strict — that strictness is what
+	// point of the mode. modeKill stays strict, and that strictness is what
 	// caught every real fork-base defect.
 	lenient         bool
 	trunks          map[string]map[string]*chanModel
@@ -261,7 +261,7 @@ func verifyTrunk(st Store, m *model, trunk, salt string, md verifyMode, cutoff i
 					detail: fmt.Sprintf("related tail references main %d, main tail %d", tail, mainLast)})
 			}
 			// Contract (memory-first v0.8.1): reducible channels get one
-			// turn of slack — a patch keyed mainTail+1 survives by design.
+			// turn of slack: a patch keyed mainTail+1 survives by design.
 			if ch == chanState && tail > mainLast+1 {
 				vs = append(vs, violation{class: vAhead, trunk: trunk, ch: ch,
 					detail: fmt.Sprintf("reducible tail references main %d, main tail %d", tail, mainLast)})

@@ -58,7 +58,7 @@ func (t *Trunks) Detach(node string) error {
 	x.Close()
 
 	// Publish: .fork per channel, then .from LAST. That order is
-	// load-bearing. A crash between two channels' .fork writes leaves each
+	// not decoration. A crash between two channels' .fork writes leaves each
 	// channel individually correct, because .from still names the parent: a
 	// flipped channel reads its own absorbed copy, an unflipped one still
 	// delegates, and the two are byte-identical. Clearing .from first would

@@ -440,7 +440,7 @@ func TestTranscriptVirtualSearch_RepeatMatchesLegacy(t *testing.T) {
 }
 
 // A selection clips rows to width-1, so a match hiding past the right edge is
-// invisible to search. That quirk is load-bearing for equivalence: lineAt must
+// invisible to search. Equivalence depends on that quirk: lineAt must
 // decorate exactly as the materialization pass did before matching.
 func TestTranscriptVirtualSearch_RespectsSelectionClipping(t *testing.T) {
 	tr, _ := mixedTranscript(t, io.Discard, 80, 24, 6)

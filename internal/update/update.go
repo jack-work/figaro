@@ -62,7 +62,7 @@ func DetectChannel() Channel {
 // without a binary in every install layout.
 func channelFor(exe string) Channel {
 	// Resolve one level of symlink (Nix wrappers, ~/.nix-profile, …)
-	// so /nix/store detection is robust.
+	// so /nix/store detection works in every install layout.
 	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = resolved
 	}

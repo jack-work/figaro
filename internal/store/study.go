@@ -24,7 +24,7 @@ type StudyDecl struct {
 
 // StudyForm makes observer study sourceForm: the libretto is minted if
 // absent, seeded from the source, retained, and following; then the board
-// declares it. Idempotent — studying twice is not two references, because the
+// declares it. Idempotent: studying twice is not two references, because the
 // board is a SET and the refcount is derived from the boards.
 func (b *XwalBackend) StudyForm(observerID, sourceFormID string) (StudyDecl, error) {
 	lib, err := b.libretto(sourceFormID)

@@ -41,7 +41,7 @@ func systemSnapshot(t *testing.T, text string) form.Snapshot {
 
 // TestProjectTools_Deterministic verifies that two consecutive
 // projections of the same tool list produce byte-identical output.
-// This is load-bearing for the tools-block cache breakpoint.
+// The tools-block cache breakpoint depends on it.
 func TestProjectTools_Deterministic(t *testing.T) {
 	tools := []provider.Tool{
 		{Name: "alpha", Description: "first", Parameters: fakeSchema()},

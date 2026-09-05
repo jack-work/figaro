@@ -53,7 +53,7 @@ type Options struct {
 	// previous segment's header (nil for the first) and the payloads of
 	// the segment just sealed (nil for the first). The returned bytes
 	// are stored verbatim; figwal never interprets them. Used by the
-	// reducible/watermark model — the fold lives in the caller.
+	// reducible/watermark model. The fold lives in the caller.
 	OnSegmentOpen func(prevHeader []byte, sealed [][]byte) ([]byte, error)
 }
 
@@ -530,8 +530,8 @@ func (l *Log) SegmentHeaderAt(idx uint64) (header []byte, base uint64, err error
 }
 
 // StateAt reconstructs the reducible state at idx for a header-mode log:
-// the watermark (block-0 header) of idx's segment folded — via the
-// OnSegmentOpen callback — with that segment's entries up to and
+// the watermark (block-0 header) of idx's segment folded (via the
+// OnSegmentOpen callback) with that segment's entries up to and
 // including idx. It walks the parent chain for indices below this fork's
 // range, mirroring Read. Returns an error if the log is not in header
 // mode, or ErrNotFound for a missing idx.

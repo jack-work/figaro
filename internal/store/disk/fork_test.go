@@ -360,8 +360,8 @@ func TestForkResplitBelowBranchPoint(t *testing.T) {
 	l.Close()
 
 	// Reopen from disk (source of truth) via a Store that resolves the
-	// nested parent chain, and verify the original continuation —
-	// dir/mid/<ofName> — still reads the full [1..5].
+	// nested parent chain, and verify the original continuation
+	// (dir/mid/<ofName>) still reads the full [1..5].
 	store := NewStore()
 	defer store.Close()
 	orig, err := store.Open(filepath.Join(dir, "mid", ofName), Options{Codec: segment.BinaryCodec{}})

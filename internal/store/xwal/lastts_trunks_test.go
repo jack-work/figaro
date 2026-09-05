@@ -44,7 +44,7 @@ func TestTrunksLastTS(t *testing.T) {
 	}
 }
 
-// The cold path is a bounded tail probe — no Head, no Open: a fresh
+// The cold path is a bounded tail probe, no Head and no Open: a fresh
 // Trunks (fresh registry) answers LastTS correctly from segment tails
 // alone, and a later append through a real handle advances the same
 // retained counter.

@@ -192,8 +192,8 @@ func (l *Log) Fork(atIdx uint64, childName string, oldFutureNameOpt ...string) (
 
 // ForkRehome forks with an EXPLICIT list of child subdir names to re-home
 // into the old-future, instead of the per-channel heuristic. The xwal joint
-// fork uses this so every channel re-homes the SAME children — decided once
-// from the main channel — keeping the triune's node trees in lockstep even
+// fork uses this so every channel re-homes the SAME children (decided once
+// from the main channel), keeping the triune's node trees in lockstep even
 // when a sparse related channel would otherwise tail-fork and skip the
 // re-home. An empty (non-nil) list re-homes nothing.
 func (l *Log) ForkRehome(atIdx uint64, childName, oldFutureName string, rehome []string) (*Log, error) {
@@ -246,7 +246,7 @@ func (l *Log) forkImpl(atIdx uint64, childName, oldFutureName string, oldFutureE
 			return nil, fmt.Errorf("fork index %d invalid for empty log (want %d)", atIdx, want)
 		}
 	} else {
-		// atIdx must leave a non-empty prefix — EXCEPT a forked node
+		// atIdx must leave a non-empty prefix, EXCEPT that a forked node
 		// (forkBase>0) may fork at its own first index: all of its own
 		// entries move to the old-future, the prefix keeps none of its own,
 		// reads below forkBase resolve through the parent, and the watermark
@@ -337,11 +337,11 @@ func (l *Log) forkImpl(atIdx uint64, childName, oldFutureName string, oldFutureE
 	}
 	// dataMoves: the node's own segments carry a suffix into the old-future
 	// (interior split / re-split). createOldFuture: materialize the
-	// old-future branch at all — always when explicitly named (so the
+	// old-future branch at all: always when explicitly named (so the
 	// continuation gets its own branch in every channel, even empty), else
 	// only when there's data to carry.
 	dataMoves := hasMoves || hasSplit
-	// Which children re-home into the old-future. autoRehome: the heuristic —
+	// Which children re-home into the old-future. autoRehome is the heuristic:
 	// all existing children when the node's own segments split. Otherwise the
 	// explicit list (the joint-fork case), filtered to ones that exist here.
 	var rehomeChildren []string

@@ -4,8 +4,8 @@ package cli
 //
 // It used to be assembled: statusLine took a lock on a *sessionStatus,
 // formatted, shed tokens by rank and returned a string, all in one function
-// against the one session a process has. Multiplexing needs N of them — one per
-// pane — and a pane's bar must render without owning the session behind it.
+// against the one session a process has. Multiplexing needs N of them (one per
+// pane) and a pane's bar must render without owning the session behind it.
 //
 // So the bar is now a VALUE and a PURE FUNCTION over it. Everything that reads
 // a clock, takes a lock or asks a daemon happens where the value is built;
@@ -51,7 +51,7 @@ const lastAtFormat = "01/02/06 15:04:05"
 //
 // Three, not two: the narrow form is left group, blank, right group, and the
 // blank is in the requirement. It is also the reason this returns rows rather
-// than a string — the caller reserves height from the same count, and a bar
+// than a string: the caller reserves height from the same count, and a bar
 // that silently became taller than its reservation would eat a line of the
 // conversation.
 func (v statusView) render(w int) []string {
@@ -149,7 +149,7 @@ func (v statusView) groups() (left, right []string, at int) {
 }
 
 // stateToken is the state as the bar draws it: the glyph, plus its name under
-// verbose. Idle contributes nothing — it is the catch-all, and a row that is
+// verbose. Idle contributes nothing, because it is the catch-all and a row that is
 // always visible has nothing to say by saying "nothing is happening".
 func (v statusView) stateToken() string {
 	if v.State == turnStatusIdle {

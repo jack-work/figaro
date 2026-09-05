@@ -14,7 +14,7 @@ import (
 // goes red the moment someone reintroduces a lock on the read path for a
 // reason that looks good locally.
 //
-// The property is load-bearing rather than decorative: it is the whole reason
+// The property is structural rather than decorative: it is the whole reason
 // one uniform window can own the hot tail as well as the cold ranges, and a
 // mutex here is what kept a second, flat cache shape alive beside this one
 // (plans/log-cache-policy.md).

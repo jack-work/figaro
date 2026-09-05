@@ -117,7 +117,7 @@ func TestHeldFramesLandAfterThePreamble(t *testing.T) {
 }
 
 // THE CANARY FOR THE SEED. Ctrl-T before the model has closed anything is the
-// case that makes the boundary load-bearing: the pager's own catch-up read
+// case where the boundary decides the outcome: the pager's own catch-up read
 // fills the client with HISTORY, and on exit a zero boundary reads as "we
 // entered cold": which bounds the flush to the last turn it can see, i.e. the
 // last turn of the history the preamble just printed. Seeding the boundary is

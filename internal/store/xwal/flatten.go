@@ -405,7 +405,7 @@ func checkForkMarker(chanDir, rel string, codec segment.SegmentCodec) error {
 // plannedMarker derives one main-channel node's .node from where it sits:
 // from is its parent's flat name (empty at depth 1, whose parent is the
 // root), trunk comes from the legacy .trunk, and kind follows from the
-// trunk — a v3 node with a trunk id is a conversation, and the nodes without
+// trunk: a v3 node with a trunk id is a conversation, and the nodes without
 // one are the loadout stumps. need is false when the node already has a
 // .node, so a resumed migration counts no work it is redoing.
 func plannedMarker(chanDir, rel string) (m nodeMarker, need bool, err error) {
@@ -496,7 +496,7 @@ func (p *FlattenPlan) apply() (FlattenReport, error) {
 				rep.Markers++
 				// Only once .node is durable: one identity file per node, so
 				// no later reader has two to disagree about. Best effort, as
-				// on the read path in index.go — a full or read-only volume
+				// on the read path in index.go. A full or read-only volume
 				// must not strand a half-migrated store.
 				for _, legacy := range []string{legacyTrunkName, legacyFromName} {
 					if err := os.Remove(filepath.Join(src, legacy)); err == nil {

@@ -6,7 +6,7 @@ import (
 )
 
 // Kinds land in the node marker at spawn, survive a reopen, and come back
-// through List/ListLight without opening a single log — that is what lets
+// through List/ListLight without opening a single log. That is what lets
 // a consumer split "form" listings from "conversation" listings on the
 // cheap path.
 func TestSpawnKindsRecordedAndListed(t *testing.T) {

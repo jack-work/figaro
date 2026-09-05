@@ -236,7 +236,7 @@ phrase rides that event's block as a `say` field.
 `system.fork_incantation` is the same for a branch's birth, spelled either as
 a bare string or as `{"onfork": …}`.
 
-Three properties, each load-bearing:
+Three properties, none of them optional:
 
 - **The bound form only.** A studied form does not get to put words in its
   observer's mouth. All system settings live on the observer's own board and

@@ -810,7 +810,7 @@ B/op, allocs/op, B/frame, B/step, frames/step   IDENTICAL to the last digit
 **Faster is a claim that needs a cause, not a victory lap.** It is
 `displayWidth` replacing `runewidth.StringWidth` in the footer's shed loop:
 StringWidth walks the BYTES of every SGR run, the footer is painted on every
-frame, and the paint benchmarks are footer-heavy. The load-bearing number is
+frame, and the paint benchmarks are footer-heavy. The number that matters is
 the second block: **bytes per frame are unchanged to the last digit**, which
 is what says the resync is not quietly repainting more than it claims. Its real
 cost is not in these benchmarks at all (they finish inside the interval): one

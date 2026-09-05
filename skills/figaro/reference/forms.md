@@ -108,7 +108,7 @@ fig send --id dcb89d6b -- hello         # first turn wakes it for real
 (the pointer in `default_form.json`), binds, and attends: the one
 attendance-moving birth. Reusing the same default-form node across
 creates is what shares the rendered prefix and the provider's warm
-cache; that reuse is deliberately load-bearing.
+cache; that reuse is deliberate, and things depend on it.
 
 **`fig outfit reload`** flags the default form dirty and reads nothing;
 the compute lands on the next `fig new`: unchanged files and an

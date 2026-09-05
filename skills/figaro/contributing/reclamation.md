@@ -175,7 +175,7 @@ The cache is otherwise invisible: `cachedLog` satisfies `Log[T]`, so consumers
 cannot tell whether a row is resident. `store.Snapshot` was deleted for exactly
 this reason: it returned the cache's own backing slice when the log happened to
 be materialized, which made "all of it is in RAM" free at the call site and
-therefore load-bearing everywhere. Consumers that want a suffix call
+therefore something the whole tree came to rely on. Consumers that want a suffix call
 `store.TailAfter`; one that genuinely needs every entry calls `Read` and pays
 for the copy.
 

@@ -730,7 +730,7 @@ func (t *Trunks) beginTrackedRead() (func(), error) {
 // only its own new sibling directory and one index entry: it never freezes,
 // re-homes or rewrites anything a live head is reading, so it takes no root
 // topology mutation and does NOT wait for other arias to close their heads.
-// That is the whole point of the flat layout — an aria forks itself without
+// That is the whole point of the flat layout: an aria forks itself without
 // blocking anyone.
 func (t *Trunks) beginFlatCreate() (func(), error) {
 	t.mu.Lock()
@@ -1075,7 +1075,7 @@ func (t *Trunks) Head(trunk string) (*XWAL, error) {
 }
 
 // Append adds a main-timeline entry at the trunk's tail. atMainLT is
-// ignored — appends never fork; ForkAt is the only forking path.
+// ignored, because appends never fork; ForkAt is the only forking path.
 // AppendCursors is Append for the MAIN channel with extra cursor
 // entries (see XWAL.AppendMainCursors), and it hands back THE STAMP IT
 // WROTE so a caller need not read the record to learn it.
@@ -1150,7 +1150,7 @@ func (t *Trunks) readForkBase(key string) (uint64, error) {
 // ForkTail bisects a trunk's present.
 //   - head has content: freeze it; the continuation keeps the trunk (new
 //     empty head) and a new alternative trunk is founded.
-//   - head is empty: it has no LT of its own, so redirect — N-ary fork the
+//   - head is empty: it has no LT of its own, so redirect. N-ary fork the
 //     PARENT, adding one new alternative sibling trunk; the trunk keeps its
 //     empty head untouched.
 func (t *Trunks) ForkTail(trunk string) (string, error) {
@@ -1370,7 +1370,7 @@ func (t *Trunks) forkFlatAt(parentKey string, atMainLT uint64) (string, error) {
 // Remove deletes a trunk: its founding node's entire subtree, in every
 // channel. Trunk-addressed (a node is plumbing). Refuses the root trunk, and
 // refuses a trunk that has live branches (descendant trunks branched off it)
-// unless recursive — in which case those branches go too.
+// unless recursive, in which case those branches go too.
 func (t *Trunks) Remove(trunk string, recursive bool) error {
 	_, err := t.remove(trunk, recursive)
 	return err
@@ -1463,7 +1463,7 @@ func (t *Trunks) SpawnChild(parent TrunkID) (TrunkID, error) {
 }
 
 // SpawnChildKind is SpawnChild with a caller-chosen node kind. This is how
-// a live, patchable trunk hosts children of a different species — figaro
+// a live, patchable trunk hosts children of a different species. figaro
 // binds a figaro out of an unbound form with kind "conversation", and
 // forks form from form with kind "form". The parent is not written, not
 // frozen, and stays appendable: a fork snapshots the parent's channels at
@@ -1481,7 +1481,7 @@ func (t *Trunks) SpawnChildKind(parent TrunkID, kind string) (TrunkID, error) {
 	return t.forkFlat(nodeKey, kind, true)
 }
 
-// CreateStump mints a markerless, named depth-1 child of the root — the
+// CreateStump mints a markerless, named depth-1 child of the root: the
 // cauterization boundary. A stump holds its own birth content (write it via
 // StumpHead) and hosts top-level trunks as children (SpawnUnderStump). It
 // carries NO .trunk marker: its name + depth-1 position IS its identity
@@ -1594,12 +1594,12 @@ func (t *Trunks) SpawnUnderStumpKind(name, kind string) (TrunkID, error) {
 }
 
 // SpawnUnderRoot mints a new trunk directly under the root (a top-level
-// trunk with no stump — e.g. a loadoutless conversation).
+// trunk with no stump, e.g. a loadoutless conversation).
 func (t *Trunks) SpawnUnderRoot() (TrunkID, error) {
 	return t.SpawnUnderRootKind("conversation")
 }
 
-// SpawnUnderRootKind is SpawnUnderRoot with a caller-chosen node kind —
+// SpawnUnderRootKind is SpawnUnderRoot with a caller-chosen node kind:
 // how a consumer mints something under the root that is NOT a
 // conversation (figaro's unbound forms fork the null root with kind
 // "form"). The kind lands in the node marker, is immutable from then on
@@ -1614,7 +1614,7 @@ func (t *Trunks) SpawnUnderRootKind(kind string) (TrunkID, error) {
 }
 
 // OwnerTrunk returns the trunk id of the node that OWNS atMainLT along the
-// given trunk's lineage — the deepest ancestor whose own segments contain it.
+// given trunk's lineage: the deepest ancestor whose own segments contain it.
 // Callers layer policy on this: e.g. an LT owned by a "ceremonial" trunk (a
 // null root or loadout) can be redirected to SpawnChild instead of a re-split.
 func (t *Trunks) OwnerTrunk(trunk string, atMainLT uint64) (string, error) {
@@ -1640,7 +1640,7 @@ func (t *Trunks) OwnerTrunk(trunk string, atMainLT uint64) (string, error) {
 
 // Owner describes which node owns a main-LT along a trunk's lineage: a
 // trunk (Trunk set), a stump (Stump set), or the root (IsRoot). Callers
-// layer policy on this — e.g. an LT owned by the root or a stump is
+// layer policy on this: an LT owned by the root or a stump is
 // ceremonial, so a "fork there" spawns a fresh child rather than re-splitting.
 type Owner struct {
 	Trunk  TrunkID // "" if the owner is the root or a stump
@@ -1824,7 +1824,7 @@ func (t *Trunks) lineage(trunk string) (parent, stump string, bl uint64) {
 }
 
 // forkBaseOf reads a node's main-channel .fork base (the LT it forked at)
-// directly from the marker file — cheap, no log open / segment scan.
+// directly from the marker file. Cheap: no log open, no segment scan.
 func (t *Trunks) forkBaseOf(key string) uint64 {
 	b, err := os.ReadFile(filepath.Join(t.irDir(key), ".fork"))
 	if err != nil {
@@ -1841,8 +1841,8 @@ func (t *Trunks) forkBaseOf(key string) uint64 {
 
 // ListLight is List without Tip (the head's tail index). Tip requires opening
 // the head's log (a segment scan); most callers (figaro's aria listing) never
-// use it. ListLight opens no logs — ids, parent/stump lineage, and BranchedLT
-// all come from the in-memory node tree + the cheap .fork marker read — so it
+// use it. ListLight opens no logs: ids, parent/stump lineage, and BranchedLT
+// all come from the in-memory node tree plus the cheap .fork marker read, so it
 // is O(trunks) with no per-trunk disk scan. Tip is left zero; use Head/List
 // when you actually need it.
 func (t *Trunks) ListLight() []TrunkInfo {
@@ -1959,7 +1959,7 @@ func ownFirstIdx(x *XWAL) uint64 {
 }
 
 // Kind reports a trunk's node kind ("conversation", "form", "loadout", …)
-// from the in-memory index — no log opened. The founding node carries it
+// from the in-memory index, with no log opened. The founding node carries it
 // (flat layout: one node per trunk), so this is the cheap discriminator
 // consumers split listings and birth verbs on.
 func (t *Trunks) Kind(trunk TrunkID) (string, bool) {

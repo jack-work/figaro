@@ -19,7 +19,7 @@ type metadataListBackend struct {
 
 // LastTS is recency's new source: figwal, not the sidecar. The dormant
 // list reads it per row: cheap by figwal's contract (retained atomic
-// counter), and crucially wake-free.
+// counter), and wake-free, which is the whole point.
 func (b *metadataListBackend) LastTS(string) int64 { return 20 }
 
 // A conversation carries the stump it was born under, and its label, resolved

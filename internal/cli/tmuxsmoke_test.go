@@ -142,7 +142,7 @@ func smokeCase(t *testing.T) {
 			if why == "" {
 				why = "(reason not recorded: a raw t.Skip; use decline)"
 			}
-			smokeDeclined = append(smokeDeclined, t.Name()+" — "+firstLine(why))
+			smokeDeclined = append(smokeDeclined, t.Name()+": "+firstLine(why))
 			return
 		}
 		smokeRan = append(smokeRan, t.Name())

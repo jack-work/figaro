@@ -28,7 +28,7 @@ func TestMap_LeafSetDoesNotClobberSiblings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// a preserved, b updated — the whole subtree is NOT rewritten.
+	// a preserved, b updated: the whole subtree is NOT rewritten.
 	if string(out) != `{"system":{"a":1,"b":9}}` {
 		t.Fatalf("leaf set clobbered siblings: %s", out)
 	}
@@ -108,7 +108,7 @@ func seedMapTrunk(t *testing.T, dir string) (*Trunks, TrunkID) {
 
 func TestMap_BuiltinReducerNoRegistration(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "f")
-	// Note: cfg.Registry is nil — "map" must resolve from the built-ins.
+	// Note: cfg.Registry is nil, so "map" must resolve from the built-ins.
 	f, root := seedMapTrunk(t, dir)
 	_, lt, _ := f.Append(root, 0, []byte(`"u1"`), nil)
 	sp, _ := MapSetPatch([]string{"system", "provider"}, []byte(`"anthropic"`))

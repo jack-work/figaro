@@ -58,7 +58,7 @@ func TestOpenRegionFixtureComposesToolNodes(t *testing.T) {
 	}
 }
 
-// TestOpenRegionFixtureCanFail proves the assertion above is load-bearing:
+// TestOpenRegionFixtureCanFail proves the assertion above can fail:
 // break the invoke/result pairing the way fault #7 did, and the tool output
 // the benchmark measures disappears. If this test ever fails, the check above
 // has stopped being able to catch the fault it was written for.

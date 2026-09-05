@@ -26,7 +26,7 @@ import (
 //	  of the window "first in window" and "topmost visible" are the same node,
 //	  so it is the one starting position where the defect is invisible.
 //
-// The no-scroll assertion is the load-bearing one; which block gets the cue
+// The no-scroll assertion is the one that decides the test; which block gets the cue
 // follows from it.
 // ---------------------------------------------------------------------------
 

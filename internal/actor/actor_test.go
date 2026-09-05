@@ -171,7 +171,7 @@ func TestContextCancelCloses(t *testing.T) {
 // Close draws the line at ACCEPTANCE, not at the queue: what Send already took
 // is still delivered, and only new sends are refused.
 //
-// The asymmetry is load-bearing. Form.Apply blocks on a reply its handler
+// The asymmetry is structural. Form.Apply blocks on a reply its handler
 // produces, so dropping accepted items would leave every caller past Send
 // waiting forever: the hang this is supposed to prevent. The doc used to claim
 // the opposite of what the code did, which is worse than either behaviour.

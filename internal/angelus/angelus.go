@@ -292,7 +292,7 @@ type librettoReconciler interface {
 }
 
 // releaseIdleMemory hands free heap back to the OS once a daemon has gone
-// quiet — nothing live, nothing resident, twice running.
+// quiet: nothing live, nothing resident, twice running.
 func (a *Angelus) releaseIdleMemory() {
 	if !a.idleReleaseDue() {
 		return
@@ -310,7 +310,7 @@ func (a *Angelus) releaseIdleMemory() {
 
 // idleReleaseDue advances the quiet latch and reports whether this sweep is
 // the one that hands the arena back. Separated from the release so the policy
-// — fire once per quiet period, reset on any work — is testable without a
+// (fire once per quiet period, reset on any work) is testable without a
 // stop-the-world collection in a unit test.
 func (a *Angelus) idleReleaseDue() bool {
 	resident := 0

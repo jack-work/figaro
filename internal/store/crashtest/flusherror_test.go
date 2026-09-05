@@ -53,7 +53,7 @@ func TestFlushErrorReadOnlyRecovers(t *testing.T) {
 			appended++
 		}
 	}
-	// While flushes are failing the lineage poisons after a few ticks —
+	// While flushes are failing the lineage poisons after a few ticks, and
 	// Append then rejects by contract. Count only acked appends.
 	appendLossy := func(n int) {
 		for i := 0; i < n; i++ {

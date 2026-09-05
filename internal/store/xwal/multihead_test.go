@@ -17,8 +17,8 @@ func liveLeaves(t *Trunks, trunk string) []string {
 	return out
 }
 
-// TestTree_RepeatedTailForkOneHead drives the user's flow — send a turn,
-// tail-fork, send, tail-fork … — and asserts the forked trunk keeps EXACTLY
+// TestTree_RepeatedTailForkOneHead drives the user's flow (send a turn,
+// tail-fork, send, tail-fork …) and asserts the forked trunk keeps EXACTLY
 // ONE live head/leaf throughout. The single-leaf invariant must hold for every
 // trunk after every op.
 func TestTree_RepeatedTailForkOneHead(t *testing.T) {

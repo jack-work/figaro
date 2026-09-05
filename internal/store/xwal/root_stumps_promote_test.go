@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// relDirs returns every directory under base, relative to base, sorted —
+// relDirs returns every directory under base, relative to base, sorted:
 // the node-tree shape of a channel (excluding the base itself).
 func relDirs(t *testing.T, base string) []string {
 	t.Helper()
@@ -69,7 +69,7 @@ func TestAddChannel_RootAndBackfill(t *testing.T) {
 	}
 	x.Close()
 
-	// The new channel's node tree mirrors ir's exactly — no stray
+	// The new channel's node tree mirrors ir's exactly: no stray
 	// "anthropic/anthropic" from the slash, no flattening.
 	chDirs := relDirs(t, filepath.Join(dir, ch))
 	if len(chDirs) != len(irDirs) {

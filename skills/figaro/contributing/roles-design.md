@@ -140,7 +140,7 @@ bought at the haiku tier in a storm of fifty observers:
 `system.*` is skipped, as the board's own renderer skips it. A window of
 nothing but system keys renders no block at all.
 
-Determinism is load-bearing: encoded bytes land in the per-LT cache, so
+Determinism is required: encoded bytes land in the per-LT cache, so
 members are sorted, keys are sorted by `encoding/json`, and the fold is a
 pure function of the patch list.
 

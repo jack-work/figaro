@@ -36,7 +36,7 @@ func renameStore(t *testing.T) string {
 func lastWins(_, patch []byte) ([]byte, error) { return patch, nil }
 
 // The point of the whole exercise: a store renamed on disk opens under the new
-// name, with the records it had, and the reducer resolves — the failure this
+// name, with the records it had, and the reducer resolves. The failure this
 // replaces was "no reducer registered", from a consumer that renamed a channel
 // and could no longer open its own store.
 func TestRenameChannelMovesDataAndManifest(t *testing.T) {

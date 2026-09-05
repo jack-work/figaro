@@ -81,7 +81,7 @@ func equalStrings(a, b []string) bool {
 	return true
 }
 
-// The half of the old guard that is load-bearing and stays.
+// The half of the old guard that still earns its place, and stays.
 func TestHistoryStillDoesNotClaimTheOpenSlot(t *testing.T) {
 	c := NewClient()
 	c.SetClosedLimit(50)

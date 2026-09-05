@@ -684,7 +684,7 @@ func (c *Cache[U]) upperBound(units []U, target uint64) int {
 // runChunk bounds one run's span in UNITS, and runTargetBytes bounds it in
 // BYTES: a run is cut at whichever comes first.
 //
-// THE BYTE TARGET IS THE LOAD-BEARING ONE. A count alone is a bound on the
+// THE BYTE TARGET IS THE ONE THAT DECIDES. A count alone is a bound on the
 // wrong axis for a tenant whose units are large -- 64 composed turns of 8 KiB
 // is half a megabyte, and a run larger than the whole budget can never stay
 // resident, so a small budget retains NOTHING. Measured while re-seating the

@@ -107,7 +107,7 @@ func TestBaseURLPrecedence(t *testing.T) {
 	})
 }
 
-// exchangeURL is what tells hush where to mint. Direct mode returns "" —
+// exchangeURL is what tells hush where to mint. Direct mode returns "":
 // that installation presents the GitHub token unchanged and there is
 // nothing to exchange.
 func TestExchangeURL(t *testing.T) {

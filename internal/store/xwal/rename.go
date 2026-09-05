@@ -10,8 +10,8 @@ import (
 )
 
 // RenameChannel renames a channel on disk: its directory under root, and its
-// entry in the manifest. It is for a CONSUMER's migration — figaro renaming its
-// form channel — and it is here rather than there because the manifest is
+// entry in the manifest. It is for a CONSUMER's migration (figaro renaming its
+// form channel) and it is here rather than there because the manifest is
 // figwal's private format, and old-format knowledge belongs in the code that
 // owns the format.
 func RenameChannel(root, from, to string) error {

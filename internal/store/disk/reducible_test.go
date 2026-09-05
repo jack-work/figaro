@@ -14,7 +14,7 @@ import (
 // block-0 header is a watermark (here, the running sum of all entry
 // values in prior segments); each entry is an opaque value (a "patch").
 // State at any index = header(segment-of-idx) folded with the entries in
-// [segment-base, idx]. These tests exercise the figwal primitive only —
+// [segment-base, idx]. These tests exercise the figwal primitive only:
 // the fold lives in the OnSegmentOpen callback, as it will in xwal.
 
 func u64(v uint64) []byte {

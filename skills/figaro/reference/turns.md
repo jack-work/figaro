@@ -25,7 +25,7 @@ fork can never strand a tool call.**
 
 ## Invariants
 
-These are load-bearing. Implementations may rely on them; changing one is a
+These are guarantees. Implementations may rely on them; changing one is a
 spec change.
 
 1. **LT joins; turn id addresses.** LT stays the xwal substrate: positional

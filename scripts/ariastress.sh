@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ariastress.sh: many arias, one daemon, one build — with the footprint
+# ariastress.sh: many arias, one daemon, one build, with the footprint
 # numbers a multi-process run can actually be believed about.
 #
 # WHY THIS EXISTS
@@ -9,7 +9,7 @@
 # It reports `VmRSS` for the daemon, which is right for one process and wrong
 # the moment you compare two builds across a fleet: RSS double-counts every
 # page of shared binary text, once per process. An earlier aria measuring this
-# box saw 26.57 GB RSS against 15.78 GB PSS — 10.8 GB of pure double-counting.
+# box saw 26.57 GB RSS against 15.78 GB PSS: 10.8 GB of pure double-counting.
 # Measure PSS, and read Pss_Anon specifically: anon is the only number that
 # means "we allocated this".
 #

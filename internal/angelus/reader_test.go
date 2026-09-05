@@ -14,7 +14,7 @@ import (
 // conversation is born with, ahead of anything a turn wrote.
 const genesisPrefix = 2
 
-// The load-bearing claim: a dormant aria is fully readable, and reading it
+// The claim under test: a dormant aria is fully readable, and reading it
 // constructs no agent and leaves nothing resident that was not already.
 func TestAriaReaderReadsDormantAria(t *testing.T) {
 	backend, id := benchStore(t, 8)

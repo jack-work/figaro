@@ -35,7 +35,7 @@ func TestCollapseSGRCases(t *testing.T) {
 		{"truecolour change kept", "\x1b[38;2;10;20;30mx\x1b[38;2;10;20;31my", "\x1b[38;2;10;20;30mx\x1b[38;2;10;20;31my"},
 		{"attribute cleared then reset", "\x1b[1mx\x1b[22m\x1b[0m", "\x1b[1mx\x1b[0m"},
 		{"trailing reset from default is dead", "\x1b[0mx\x1b[0m", "\x1b[0mx"},
-		{"trailing reset from a colour is load-bearing", "\x1b[31mx\x1b[0m", "\x1b[31mx\x1b[0m"},
+		{"trailing reset from a colour must survive", "\x1b[31mx\x1b[0m", "\x1b[31mx\x1b[0m"},
 		{"run collapses to its effective state", "\x1b[31m\x1b[1m\x1b[0m\x1b[32mx", "\x1b[0m\x1b[32mx"},
 		{"erase is a barrier, not reorderable", "\x1b[0ma\x1b[Kb", "\x1b[0ma\x1b[Kb"},
 		{"state before an erase is realized", "\x1b[41m\x1b[Kx", "\x1b[41m\x1b[Kx"},
@@ -95,7 +95,7 @@ func assertSGREquivalent(t *testing.T, in string) {
 	}
 }
 
-// TestCollapseSGROnRealGlamourRows is the load-bearing equivalence test: real
+// TestCollapseSGROnRealGlamourRows is the equivalence test that counts: real
 // rendered prose, thinking blockquotes and tool output, through the same
 // pipeline the row cache uses, replayed on the terminal model.
 func TestCollapseSGROnRealGlamourRows(t *testing.T) {

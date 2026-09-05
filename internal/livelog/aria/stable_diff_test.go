@@ -14,7 +14,7 @@ import (
 // THE CLIENT IS TOLD. Under-report one changed node and the client is never
 // informed of the change: a silently stale render, which is a LIE, not a miss.
 //
-// No test of the server's node list can see it — the list is still correct in
+// No test of the server's node list can see it, because the list is still correct in
 // the server. Only the EMITTED DELTAS can. So the full diff is kept as the
 // oracle, exactly as the replaced tailBound is: run both paths over the same
 // frame sequence and require the deltas to be equal.
@@ -102,7 +102,7 @@ func TestStableCountEmitsTheSameDeltasAsAFullDiff(t *testing.T) {
 }
 
 // TestTheOracleCatchesAnUnderReportedChange proves the test above is
-// load-bearing: a producer that claims one node too many is stable must be
+// able to fail: a producer that claims one node too many is stable must be
 // caught. If this ever stops failing the oracle, the sequence has stopped
 // covering the case the whole guard exists for.
 func TestTheOracleCatchesAnUnderReportedChange(t *testing.T) {

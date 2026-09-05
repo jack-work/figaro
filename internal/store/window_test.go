@@ -154,7 +154,7 @@ func TestWindow_ByteBudgetBoundsBytes(t *testing.T) {
 }
 
 // A single entry larger than the whole budget must still be resident: the tail
-// is load-bearing for PeekTail and Append.
+// is what PeekTail and Append depend on.
 func TestWindow_ByteBudgetKeepsOneOversizeEntry(t *testing.T) {
 	inner := NewMemLog[uint64]()
 	for _, v := range []uint64{10, 10, 999999} {

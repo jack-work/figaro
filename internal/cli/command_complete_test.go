@@ -2,7 +2,7 @@ package cli
 
 import "testing"
 
-// THE COMPLETION MENU, as a unit — because every bug in it so far was found by
+// THE COMPLETION MENU, as a unit, because every bug in it so far was found by
 // squinting at a terminal, and two of them were invisible there.
 //
 // The menu is bash's and fish's between them: the first Tab inserts the longest

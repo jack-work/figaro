@@ -1,7 +1,7 @@
 // Command stormprobe is a HARNESS, not product code: it drives
 // internal/livelog/aria.Server through the two shapes the process actually
-// uses — the AGENT shape (OpenTurn → Update → Close → Seal(nil)) and the
-// READER shape (Restore of turns composed with LT brackets) — and reports
+// uses, the AGENT shape (OpenTurn → Update → Close → Seal(nil)) and the
+// READER shape (Restore of turns composed with LT brackets), and reports
 // what the shared composed budget knows about each.
 //
 // It exists to settle S1 (the legacyWhole latch) deterministically, in
@@ -22,7 +22,7 @@ import (
 )
 
 // body returns a DISTINCT string per turn. Sharing one string across turns
-// makes every cache look free (they alias one allocation) — the first draft of
+// makes every cache look free (they alias one allocation). The first draft of
 // this probe measured 0.23 MiB retained for 12.5 MiB of "composed" text.
 func body(kb, turn int) string {
 	b := make([]byte, kb*1024)
@@ -50,7 +50,7 @@ func heapNow() uint64 {
 }
 
 // agentShape is exactly what internal/figaro/agent.go does per turn:
-// aria/server.go OpenTurn appends Turn{ID: id} — no LTs — and
+// aria/server.go OpenTurn appends Turn{ID: id}, no LTs, and
 // agent.go finishTurn calls Seal(nil).
 func agentShape(turns, kb int, budget *aria.ComposedCache) (*aria.Server, uint64) {
 	srv := aria.NewServer()
