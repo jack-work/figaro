@@ -277,14 +277,45 @@ func (c *Client) OpenAnimating() bool {
 	return c.store.OpenAnimating()
 }
 
-// Apply folds one page.
-// Apply folds a Page into the local view.
-func (c *Client) Apply(p Page) {
+// Apply folds one PUSHED frame: a figaro.aria notification, which describes
+// the aria as it is right now. Only a push may report lifecycle edges, which
+// is the whole difference between this and ApplyRead.
+func (c *Client) Apply(p Page) { c.apply(p, true) }
+
+// ApplyRead folds a READ RESPONSE: the answer to figaro.read or a backward
+// page. Same fold, same order, one thing withheld: a read describes the aria
+// AS IT WAS WHEN THE DAEMON SERVED IT, which may be several events ago, so it
+// may not report a turn as starting.
+//
+// The race that forces the distinction: enter the pager while a turn is
+// running and the catch-up ReadBefore snapshots the turn unsealed. The turn
+// then ends, turn.done lands and settles the status, and the read response
+// arrives after it, still describing the turn as live. Fired as a lifecycle
+// edge that says "a turn is now running", with no later event to say it
+// stopped, and the spinner runs until the session is closed. The sealed-part
+// guard in claimsOpen does not cover it, because the snapshot was taken
+// before the seal.
+func (c *Client) ApplyRead(p Page) { c.apply(p, false) }
+
+// pushed says the page came from a notification. See Apply and ApplyRead.
+func (c *Client) apply(p Page, pushed bool) {
 	c.mu.Lock()
 	var finalized []Message
 	desync := -1
 	// opened is the turn that took the open slot on this page, 0 for none.
 	opened := 0
+	// claim takes the open slot AND reports the lifecycle edge, so the two
+	// cannot drift apart. Every route into the slot goes through here: the
+	// question arriving first (the common case), and a client that joined a
+	// turn already in flight, whose first frame is a live delta carrying no
+	// question at all. Reads claim the slot but report nothing (ApplyRead).
+	claim := func(id int) {
+		c.store.ClaimOpen(id)
+		if pushed && id > c.openedTurn {
+			c.openedTurn = id
+			opened = id
+		}
+	}
 	metrics := p.Metrics
 
 	for _, part := range p.Parts {
@@ -311,21 +342,16 @@ func (c *Client) Apply(p Page) {
 			// describes a turn we hold only the tail of, and claiming the open
 			// slot for it would destroy the live turn on its way past.
 			if staged && !part.ClippedHead {
-				c.store.ClaimOpen(id)
-				// This is the earliest a client can know a turn is running:
-				// the question is committed and the provider has not been
-				// called yet. Reported outside the lock with everything else.
-				if id > c.openedTurn {
-					c.openedTurn = id
-					opened = id
-				}
+				// The earliest a client can know a turn is running: the
+				// question is committed and no provider has been called yet.
+				claim(id)
 			}
 		}
 
 		// Adopt any nodes the part carries. From is the positional id of
 		// Nodes[0], so a clipped part slots into place rather than replacing.
 		if len(part.Nodes) > 0 && staged {
-			c.store.ClaimOpen(id)
+			claim(id)
 			// A part CLIPPED off the head of a turn is ALL we hold of it: the
 			// nodes below From were never delivered, so they are not ours to
 			// release. Floor the emit cursor at From, or absorb's padding slots
@@ -340,7 +366,7 @@ func (c *Client) Apply(p Page) {
 		}
 
 		if part.Live != nil && staged {
-			c.store.ClaimOpen(id)
+			claim(id)
 			c.store.SetLiveFrom(part.Live.From)
 			for _, nd := range part.Live.Nodes {
 				c.store.FoldAt(nd)

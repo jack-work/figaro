@@ -68,7 +68,7 @@ type livelogTurn struct {
 	// Holding is a few milliseconds at the very start of a session and nothing
 	// is dropped: openInline applies every held page in arrival order.
 	hold bool
-	held []aria.Page
+	held []heldPage
 
 	// seeded is the catch-up page fetched when we joined a turn we did NOT open.
 	// The inline view prints a bounded slice of it (seedContext); the PAGER gets
@@ -199,7 +199,12 @@ func (t *livelogTurn) wireClient() {
 				t.finished = false
 			}
 			t.thinkingOpen = false // adopted by real content
-			t.status.beginTurn()
+			// The status is NOT armed here. OnTurnOpen owns that edge now,
+			// and it fires for pushes only. This line used to arm on any
+			// content frame, which meant a catch-up read that snapshotted a
+			// live turn could relight a turn that had already ended, with no
+			// later event to put it out. That predates OnTurnOpen; it is the
+			// same race, on the older half.
 		}
 		// A turn taller than the viewport can't render inline without scrolling
 		// its own live region off-screen; move it to the scrollable pager
@@ -346,12 +351,31 @@ func (t *livelogTurn) armThinking() {
 // conversation.
 func (t *livelogTurn) setMoreBefore(more bool) { t.client.SetMoreBefore(more) }
 
-func (t *livelogTurn) apply(r aria.Page) {
+// apply folds a PUSHED frame. applyRead folds a READ RESPONSE, which is the
+// same fold minus the turn-open edge: see aria.Client.ApplyRead for the race
+// that separates them. The two doors exist so a callsite has to say which it
+// is holding, because from the page alone nothing can tell.
+func (t *livelogTurn) apply(r aria.Page) { t.applyPage(r, true) }
+
+func (t *livelogTurn) applyRead(r aria.Page) { t.applyPage(r, false) }
+
+func (t *livelogTurn) applyPage(r aria.Page, live bool) {
 	if t.hold {
-		t.held = append(t.held, r)
+		t.held = append(t.held, heldPage{page: r, live: live})
 		return
 	}
-	t.client.Apply(r)
+	if live {
+		t.client.Apply(r)
+		return
+	}
+	t.client.ApplyRead(r)
+}
+
+// heldPage is a buffered page and where it came from. Provenance survives the
+// hold because it is not recoverable from the page: see applyPage.
+type heldPage struct {
+	page aria.Page
+	live bool
 }
 
 // holdFrames buffers applied pages until openInline. Armed before the
@@ -366,12 +390,12 @@ func (t *livelogTurn) openInline(fetched historyPage) {
 	// store when the pager opens: see enterPager).
 	t.seeded, t.seedExtents, t.seedMore = fetched.msgs, fetched.extents, fetched.more
 	t.seedContext(fetched.msgs) // no-op when there is nothing to orient with
-	t.armThinking()             // no-op in the pager, and no-op if already pinned
+	t.armThinking()             // the incipit half is a no-op in the pager
 	t.hold = false
 	held := t.held
 	t.held = nil
-	for _, r := range held {
-		t.client.Apply(r)
+	for _, h := range held {
+		t.applyPage(h.page, h.live)
 	}
 	// The pager draws from the shared model rather than from the event, so a
 	// page that finalized nothing would leave it showing the pre-release state.

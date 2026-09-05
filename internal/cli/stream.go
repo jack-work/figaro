@@ -257,7 +257,7 @@ func (in *interactiveInput) enterPager(history bool) {
 	in.lt.setQueuedFetch(in.refreshQueued)
 	in.lt.setHistoryFetcher(in.historyFetcher())
 	if rerr == nil {
-		in.lt.apply(r)
+		in.lt.applyRead(r)
 		// The wire's own answer to "is there anything before this page", which
 		// is the only honest source for it: the pager reads it back as "can I
 		// still page older history" instead of latching a bit of its own.
@@ -292,7 +292,7 @@ func (in *interactiveInput) readHistoryIntoPager() {
 	// inline branch of OnClosed (which freezes to native scrollback) is not
 	// reachable while tr.active, which is the trap this whole design is built
 	// around.
-	in.lt.apply(r)
+	in.lt.applyRead(r)
 	in.lt.setMoreBefore(r.More.Before)
 	// The window was derived from the tail before this page existed; re-derive it
 	// so the rows that just arrived are reachable by a scroll.

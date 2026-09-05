@@ -350,7 +350,7 @@ func (in *interactiveInput) desyncHandler(gen uint64) func(int) {
 				return
 			}
 			in.mu.Lock()
-			in.lt.apply(r)
+			in.lt.applyRead(r)
 			in.mu.Unlock()
 		}()
 	}
@@ -398,7 +398,7 @@ func (in *interactiveInput) seedSubject() {
 	defer in.mu.Unlock()
 	in.caughtUp = rerr == nil
 	if rerr == nil {
-		in.lt.apply(r)
+		in.lt.applyRead(r)
 		in.lt.setMoreBefore(r.More.Before)
 	}
 	in.wireHooks()
