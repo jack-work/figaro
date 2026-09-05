@@ -1,6 +1,10 @@
 /figaro
 /figaro-stripped
 /result
+
+# test binaries, built with `go test -c` or `go test -o`
+*.test
+
 .claude/
 teams.log
 
