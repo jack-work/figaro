@@ -4,6 +4,7 @@ package form
 
 import (
 	"encoding/json"
+	"fmt"
 	"iter"
 	"sort"
 	"strings"
@@ -23,24 +24,26 @@ type Snapshot struct {
 // resolved AGAINST a snapshot rather than parsed in isolation.
 type Path []string
 
-// FromMap builds a Snapshot from flat dotted keys, nesting them.
+// FromMap builds a Snapshot from flat dotted keys, nesting them. A value that
+// is not valid JSON is kept verbatim so MarshalJSON can refuse it, rather than
+// disappearing here.
 func FromMap(m map[string]json.RawMessage) Snapshot {
-	obj := map[string]json.RawMessage{}
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
+	b := newBuilder()
 	for _, k := range keys {
-		obj = insertPath(obj, strings.Split(k, "."), append(json.RawMessage(nil), m[k]...))
+		b.insert(strings.Split(k, "."), append(json.RawMessage(nil), m[k]...))
 	}
-	b, _ := json.Marshal(obj)
-	return Snapshot{root: NewValue(b)}
+	return Snapshot{root: NewValue(b.encode())}
 }
 
 // Root is the whole board as one value: what a structural patch applies to.
 func (s Snapshot) Root() Value {
-	if len(s.root.Raw()) == 0 {
+	raw := s.root.Raw()
+	if len(raw) == 0 || string(raw) == "null" {
 		return NewValue(json.RawMessage(`{}`))
 	}
 	return s.root
@@ -195,47 +198,77 @@ func Additive(s Snapshot, p Patch) Patch {
 
 // SetPath returns a snapshot with key set to v, creating intermediate objects.
 func (s Snapshot) SetPath(key string, v json.RawMessage) Snapshot {
-	obj, _ := decodeRawObject(s.Root())
-	obj = insertPath(obj, strings.Split(key, "."), v)
-	b, _ := json.Marshal(obj)
-	return Snapshot{root: NewValue(b)}
+	flat := map[string]json.RawMessage{}
+	for k, val := range s.All() {
+		flat[k] = val
+	}
+	flat[key] = v
+	return FromMap(flat)
 }
 
 // DeletePath returns a snapshot without key.
 func (s Snapshot) DeletePath(key string) Snapshot {
 	obj, _ := decodeRawObject(s.Root())
 	obj = removePath(obj, strings.Split(key, "."))
-	b, _ := json.Marshal(obj)
-	return Snapshot{root: NewValue(b)}
+	return Snapshot{root: NewValue(encodeRawObject(obj))}
 }
 
-func insertPath(obj map[string]json.RawMessage, segs []string, v json.RawMessage) map[string]json.RawMessage {
+// builder assembles a tree from dotted keys, tracking which nodes are
+// BRANCHES it created and which are leaves a caller wrote.
+//
+// The distinction cannot be recovered from the bytes: a leaf's value may
+// itself be an object, so "does this parse as an object" answers the wrong
+// question. Asked that way, a skill stored at skills.howto looks like a branch
+// and skills.howto.md is filed inside it, silently corrupting the skill.
+type builder struct {
+	leaf     *json.RawMessage
+	branch   bool
+	children map[string]*builder
+}
+
+func newBuilder() *builder { return &builder{children: map[string]*builder{}} }
+
+// insert files v at segs. Where a segment lands on a leaf, the rest of the
+// path stays whole: the key names one thing whose own name contains a dot.
+func (b *builder) insert(segs []string, v json.RawMessage) {
 	if len(segs) == 0 {
-		return obj
-	}
-	out := make(map[string]json.RawMessage, len(obj)+1)
-	for k, val := range obj {
-		out[k] = val
+		return
 	}
 	if len(segs) == 1 {
-		out[segs[0]] = v
-		return out
+		child := b.child(segs[0])
+		child.leaf = &v
+		return
 	}
-	var child map[string]json.RawMessage
-	if existing, ok := out[segs[0]]; ok {
-		if json.Unmarshal(existing, &child) != nil || child == nil {
-			// A leaf stands where a branch is wanted: the deeper key keeps
-			// its dotted name rather than making the leaf unreachable.
-			out[strings.Join(segs, ".")] = v
-			return out
+	child := b.child(segs[0])
+	if child.leaf != nil {
+		b.child(strings.Join(segs, ".")).leaf = &v
+		return
+	}
+	child.branch = true
+	child.insert(segs[1:], v)
+}
+
+func (b *builder) child(name string) *builder {
+	if c, ok := b.children[name]; ok {
+		return c
+	}
+	c := newBuilder()
+	b.children[name] = c
+	return c
+}
+
+func (b *builder) encode() json.RawMessage {
+	if b.leaf != nil && !b.branch {
+		if len(*b.leaf) == 0 {
+			return json.RawMessage("null")
 		}
-	} else {
-		child = map[string]json.RawMessage{}
+		return *b.leaf
 	}
-	child = insertPath(child, segs[1:], v)
-	b, _ := json.Marshal(child)
-	out[segs[0]] = b
-	return out
+	m := make(map[string]json.RawMessage, len(b.children))
+	for k, c := range b.children {
+		m[k] = c.encode()
+	}
+	return encodeRawObject(m)
 }
 
 func removePath(obj map[string]json.RawMessage, segs []string) map[string]json.RawMessage {
@@ -264,8 +297,7 @@ func removePath(obj map[string]json.RawMessage, segs []string) map[string]json.R
 		return out
 	}
 	child = removePath(child, segs[1:])
-	b, _ := json.Marshal(child)
-	out[segs[0]] = b
+	out[segs[0]] = encodeRawObject(child)
 	return out
 }
 
@@ -283,8 +315,18 @@ func decodeRawObject(v Value) (map[string]json.RawMessage, bool) {
 	return out, true
 }
 
-// MarshalJSON emits the nested object: what the form channel holds on disk.
-func (s Snapshot) MarshalJSON() ([]byte, error) { return s.Root().Raw(), nil }
+// MarshalJSON emits the nested object the form channel holds on disk.
+//
+// A value that is not valid JSON is an error, not an omission: it reaches
+// here only if a caller wrote raw bytes that never parsed, and silently
+// dropping it loses board state with nothing to read afterwards.
+func (s Snapshot) MarshalJSON() ([]byte, error) {
+	raw := s.Root().Raw()
+	if !json.Valid(raw) {
+		return nil, fmt.Errorf("form: board holds invalid JSON")
+	}
+	return raw, nil
+}
 
 // -- dotted keys at the top level -- is nested on read, so an old store opens
 // without a rewrite.
@@ -380,4 +422,37 @@ func decodeStringOrRaw(raw json.RawMessage) string {
 		return s
 	}
 	return string(raw)
+}
+
+// encodeRawObject writes {"k":<raw>,...} with the values verbatim.
+//
+// json.Marshal refuses a member that is not valid JSON and returns an error
+// most callers here cannot act on, which turned a bad value into an empty
+// board. Emitting the bytes lets MarshalJSON refuse it later, where the caller
+// is reading and can be told.
+func encodeRawObject(m map[string]json.RawMessage) []byte {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b []byte
+	b = append(b, '{')
+	for i, k := range keys {
+		if i > 0 {
+			b = append(b, ',')
+		}
+		name, err := json.Marshal(k)
+		if err != nil {
+			continue
+		}
+		b = append(b, name...)
+		b = append(b, ':')
+		v := m[k]
+		if len(v) == 0 {
+			v = json.RawMessage("null")
+		}
+		b = append(b, v...)
+	}
+	return append(b, '}')
 }
