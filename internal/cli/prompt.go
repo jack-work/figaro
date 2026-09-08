@@ -314,7 +314,7 @@ func runNewFromOutfit(loaded *config.Loaded, d dressing, set renderSettings) {
 		return
 	}
 	dressed := "the default outfit"
-	if !d.IsIdentity() {
+	if !d.IsEmpty() {
 		dressed = "outfit " + d.label()
 	}
 	fmt.Fprintf(stderrw, "created %s under %s (attended; no prompt sent)\n", figaroID, dressed)

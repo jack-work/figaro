@@ -153,7 +153,7 @@ func runCast(loaded *config.Loaded, args []string, outfits, set, del string, asJ
 		}
 		role = d
 	}
-	if formID == "" && role.IsIdentity() {
+	if formID == "" && role.IsEmpty() {
 		die("cast: name a role or mint one: fig cast [<aria>] <@form> | fig cast [<aria>] -O <names> [-S k=v]")
 	}
 

@@ -2,6 +2,7 @@ package rpc_test
 
 import (
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"os"
 	"testing"
 
@@ -80,12 +81,10 @@ func TestFigaroInfoResponse(t *testing.T) {
 
 func TestCreateRequest(t *testing.T) {
 	roundTrip(t, "create_request.json", rpc.CreateRequest{
-		Patch: &rpc.FormPatch{
-			Set: map[string]json.RawMessage{
-				"layers":       json.RawMessage(`["anthropic"]`),
-				"system.model": json.RawMessage(`"claude-sonnet-4-20250514"`),
-			},
-		},
+		Patch: ptrPatch(form.Build(form.Snapshot{}, map[string]json.RawMessage{
+			"layers":       json.RawMessage(`["anthropic"]`),
+			"system.model": json.RawMessage(`"claude-sonnet-4-20250514"`),
+		}, nil)),
 	})
 }
 

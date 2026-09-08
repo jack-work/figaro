@@ -114,9 +114,7 @@ func mirrorRaceRound(t *testing.T, round, casts int) mirrorRoundLoss {
 
 	roles := make([]string, casts)
 	for i := range roles {
-		id, _, err := backend.CreateForm("", form.Patch{
-			Set: map[string]json.RawMessage{"name": json.RawMessage(`"role"`)},
-		})
+		id, _, err := backend.CreateForm("", form.Build(form.Snapshot{}, map[string]json.RawMessage{"name": json.RawMessage(`"role"`)}, nil))
 		require.NoError(t, err)
 		roles[i] = id
 	}

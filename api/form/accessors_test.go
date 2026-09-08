@@ -127,7 +127,9 @@ func TestFromMap_Nil(t *testing.T) {
 	assert.False(t, s.Has("k"))
 	// A nil-sourced snapshot must still be usable as a Diff/Apply base.
 	p := form.FromMap(map[string]json.RawMessage{"k": raw(t, "v")}).Diff(s)
-	assert.Equal(t, raw(t, "v"), p.Set["k"])
+	e, ok := p.Entry("k")
+	assert.True(t, ok)
+	assert.Equal(t, raw(t, "v"), json.RawMessage(e.New))
 }
 
 // --- JSON wire shape. the form channel on disk, the RPC

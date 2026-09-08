@@ -79,7 +79,8 @@ func TestCoalesce_CarrierPatchesRideTheCombinedMessage(t *testing.T) {
 	assert.Equal(t, "one", snap[0].text, "an empty-text carrier contributes no line")
 	require.NotNil(t, snap[0].form)
 	require.NotNil(t, snap[0].form.Patch)
-	assert.Contains(t, snap[0].form.Patch.Set, "k")
+	_, hasK := snap[0].form.Patch.Entry("k")
+	assert.True(t, hasK)
 }
 
 // Nothing to fold is not an error, and a single prompt is left exactly as it

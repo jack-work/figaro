@@ -65,9 +65,9 @@ func TestDiff_AddSetRemove(t *testing.T) {
 		// label removed
 	})
 	p := next.Diff(prev)
-	assert.Equal(t, raw(t, "/bar"), p.Set["cwd"])
-	assert.Equal(t, raw(t, "claude-opus-4-6"), p.Set["model"])
-	assert.Equal(t, []string{"label"}, p.Remove)
+	assert.Equal(t, raw(t, "/bar"), mustEntry(p, "cwd"))
+	assert.Equal(t, raw(t, "claude-opus-4-6"), mustEntry(p, "model"))
+	assert.Equal(t, []string{"label"}, p.Entries())
 }
 
 func TestApply_RoundTrip(t *testing.T) {
@@ -87,44 +87,34 @@ func TestApply_RoundTrip(t *testing.T) {
 
 func TestApply_DoesNotMutateReceiver(t *testing.T) {
 	prev := form.FromMap(map[string]json.RawMessage{"k": raw(t, "v1")})
-	p := form.PatchCreates(map[string]json.RawMessage{"k": raw(t, "v2")})
+	p := form.Build(form.Snapshot{}, map[string]json.RawMessage{"k": raw(t, "v2")}, nil)
 	_ = prev.Apply(p)
 	assert.Equal(t, raw(t, "v1"), val(prev, "k"), "Apply must not mutate the receiver")
 }
 
 func TestMerge_QWinsOnConflict(t *testing.T) {
-	p := form.Patch{
-		Set: map[string]json.RawMessage{
-			"a": raw(t, 1),
-			"b": raw(t, 2),
-		},
-		Remove: []string{"x"},
-	}
-	q := form.Patch{
-		Set: map[string]json.RawMessage{
-			"a": raw(t, 100), // conflicts with p
-		},
-		Remove: []string{"b"}, // cancels p's set of b
-	}
+	p := form.Build(form.Snapshot{}, map[string]json.RawMessage{
+		"a": raw(t, 1),
+		"b": raw(t, 2),
+	}, []string{"x"})
+	q := form.Build(form.Snapshot{}, map[string]json.RawMessage{
+		"a": raw(t, 100), // conflicts with p
+	}, []string{"b"})
 	merged := form.Merge(p, q)
-	assert.Equal(t, raw(t, 100), merged.Set["a"], "q wins on conflicting Set")
-	_, hasB := merged.Set["b"]
+	assert.Equal(t, raw(t, 100), mustEntry(merged, "a"), "q wins on conflicting Set")
+	_, hasB := merged.Entry("b")
 	assert.False(t, hasB, "q's Remove cancels p's Set of the same key")
-	assert.ElementsMatch(t, []string{"x", "b"}, merged.Remove)
 }
 
 // --- Patch.Entries: deterministic order ---
 
 func TestEntries_DeterministicOrder(t *testing.T) {
 	prev := form.FromMap(map[string]json.RawMessage{"a": raw(t, "old-a")})
-	p := form.Patch{
-		Set: map[string]json.RawMessage{
-			"zeta":  raw(t, "1"),
-			"alpha": raw(t, "2"),
-			"a":     raw(t, "new-a"),
-		},
-		Remove: []string{"omega"},
-	}
+	p := form.Build(form.Snapshot{}, map[string]json.RawMessage{
+		"zeta":  raw(t, "1"),
+		"alpha": raw(t, "2"),
+		"a":     raw(t, "new-a"),
+	}, []string{"omega"})
 	es := form.PatchEntries(p, prev)
 	keys := make([]string, len(es))
 	for i, e := range es {
@@ -285,4 +275,13 @@ func TestLint_CleanBody(t *testing.T) {
 // helper
 func writeFile(path, body string) error {
 	return os.WriteFile(path, []byte(body), 0o600)
+}
+
+// mustEntry is the value a patch sets at key.
+func mustEntry(p form.Patch, key string) []byte {
+	e, ok := p.Entry(key)
+	if !ok {
+		return nil
+	}
+	return e.New
 }

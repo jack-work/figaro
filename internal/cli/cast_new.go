@@ -140,7 +140,7 @@ func attendAfterCast(loaded *config.Loaded, roleID string, minted, stay bool) {
 func runNewCast(loaded *config.Loaded, roleID string, d dressing, prompt string, set renderSettings, stay bool) {
 	ariaDress, roleDress := d, dressing{}
 	if roleID == "" {
-		if d.IsIdentity() {
+		if d.IsEmpty() {
 			die("new -C: name a role or mint one: fig new -C <@form> | fig new -CO <names> [-CS k=v]")
 		}
 		ariaDress, roleDress = dressing{}, d

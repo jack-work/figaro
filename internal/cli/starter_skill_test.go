@@ -50,7 +50,11 @@ func TestMissingUserSkillsDirIsNotAnError(t *testing.T) {
 	t.Setenv("FIGARO_BUNDLED_SKILLS", "0") // isolate: bundled skills off
 	patch, err := outfit.New(cfg).Load("starter")
 	require.NoError(t, err)
-	for k := range patch.Set {
+	for _, ent := range patch.Entries() {
+		if ent.IsRemoval() {
+			continue
+		}
+		k := ent.Key
 		require.NotContains(t, k, "skills.", "no user skills exist to load")
 	}
 }

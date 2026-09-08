@@ -29,7 +29,11 @@ func TestOnAppendRendersWhatACatchUpWould(t *testing.T) {
 	encode := func(msg message.Message, snap form.Snapshot) ([]json.RawMessage, error) {
 		keys := []string{}
 		for _, p := range msg.Patches {
-			for k := range p.Leaves() {
+			for _, ent := range p.Entries() {
+				if ent.IsRemoval() {
+					continue
+				}
+				k := ent.Key
 				keys = append(keys, k)
 			}
 		}
@@ -105,7 +109,11 @@ func TestOnAppendSeedsItsCursorFromTheTranslatorTail(t *testing.T) {
 	encode := func(msg message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 		keys := []string{}
 		for _, p := range msg.Patches {
-			for k := range p.Leaves() {
+			for _, ent := range p.Entries() {
+				if ent.IsRemoval() {
+					continue
+				}
+				k := ent.Key
 				keys = append(keys, k)
 			}
 		}

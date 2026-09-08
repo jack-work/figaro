@@ -85,7 +85,7 @@ func TestAgentClientPresentsCallerAcrossTheSecondHop(t *testing.T) {
 	if err := json.Unmarshal(got, &sr); err != nil {
 		t.Fatalf("payload: %v", err)
 	}
-	if v := string(sr.Patch.Leaves()["mantra"]); v != `"keep me exact"` {
+	if v := string(mustEntry(sr.Patch, "mantra")); v != `"keep me exact"` {
 		t.Fatalf("patch value re-encoded: %s", v)
 	}
 
@@ -96,4 +96,13 @@ func TestAgentClientPresentsCallerAcrossTheSecondHop(t *testing.T) {
 	if id := rpc.CallerOf(next()); id != "caller02" {
 		t.Fatalf("nil-params caller = %q, want caller02", id)
 	}
+}
+
+// mustEntry is the value a patch sets at key.
+func mustEntry(p form.Patch, key string) []byte {
+	e, ok := p.Entry(key)
+	if !ok {
+		return nil
+	}
+	return e.New
 }

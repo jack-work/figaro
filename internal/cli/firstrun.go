@@ -115,7 +115,7 @@ func createWithFirstRun(ctx context.Context, loaded *config.Loaded, d dressing, 
 	}
 	switch code {
 	case rpc.ErrNoDefaultOutfit, rpc.ErrNoProvider:
-		if !d.IsIdentity() {
+		if !d.IsEmpty() {
 			return nil, fmt.Errorf("-O %s sets no system.provider: add one to that outfit, or layer one that has it",
 				d.label())
 		}

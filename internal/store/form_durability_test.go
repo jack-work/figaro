@@ -205,8 +205,8 @@ func TestRemovalIntent(t *testing.T) {
 	real := form.Build(form.Snapshot{}, nil, []string{"here"})
 	if _, applied, err := f.ApplyEffectIntent(real, 0, Assert); err != nil {
 		t.Fatalf("assert must allow a removal that removes: %v", err)
-	} else if len(applied.Removes()) != 1 {
-		t.Fatalf("want one removal, got %v", applied.Remove)
+	} else if len(applied.Entries()) != 1 {
+		t.Fatalf("want one removal, got %v", applied.Entries())
 	}
 }
 

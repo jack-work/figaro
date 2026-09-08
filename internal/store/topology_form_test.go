@@ -200,7 +200,7 @@ func TestTopologyForm_PromoteIsOneRecord(t *testing.T) {
 	if len(ps) != 1 {
 		t.Fatalf("want one patch, got %d", len(ps))
 	}
-	touched := len(ps[0].Patch.Set) + len(ps[0].Patch.Remove)
+	touched := len(ps[0].Patch.Entries()) + len(ps[0].Patch.Entries())
 	if touched != 2 {
 		t.Fatalf("the one patch names %d edges, want 2", touched)
 	}

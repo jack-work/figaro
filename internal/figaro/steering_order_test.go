@@ -58,7 +58,7 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 		streamEnd: 10 * time.Millisecond,
 	}
 	cb, _ := form.Open("")
-	cb.Apply(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	cb.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"mock"`),
 		"system.provider": json.RawMessage(`"staggered"`),
 	}, nil))
@@ -161,7 +161,7 @@ func TestMidTurnPromptJoinsTheRunningTurn(t *testing.T) {
 		streamEnd: 10 * time.Millisecond,
 	}
 	cb, _ := form.Open("")
-	cb.Apply(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	cb.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"mock"`),
 		"system.provider": json.RawMessage(`"staggered"`),
 	}, nil))
@@ -226,7 +226,7 @@ func TestFormSetDuringToolRoundAppliesNextRound(t *testing.T) {
 		streamEnd: 10 * time.Millisecond,
 	}
 	cb, _ := form.Open("")
-	cb.Apply(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	cb.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"before"`),
 		"system.provider": json.RawMessage(`"staggered"`),
 	}, nil))
@@ -250,7 +250,7 @@ func TestFormSetDuringToolRoundAppliesNextRound(t *testing.T) {
 		t.Fatal("tool did not start")
 	}
 	// Switch the model while the tool round is in flight.
-	_, _, err := a.Set(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	_, _, err := a.Set(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model": json.RawMessage(`"after"`),
 	}, nil), 0)
 	require.NoError(t, err)

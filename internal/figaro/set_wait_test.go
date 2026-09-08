@@ -34,7 +34,7 @@ func TestSetDoesNotWaitByDefaultDuringAToolRound(t *testing.T) {
 		streamEnd: 10 * time.Millisecond,
 	}
 	cb, _ := form.Open("")
-	cb.Apply(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{"system.model": json.RawMessage(`"before"`)}, nil))
+	cb.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.model": json.RawMessage(`"before"`)}, nil))
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
 		ID:        testID,
@@ -54,7 +54,7 @@ func TestSetDoesNotWaitByDefaultDuringAToolRound(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		_, _, _ = a.SetIntent(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+		_, _, _ = a.SetIntent(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 			"brief": json.RawMessage(`"queued"`),
 		}, nil), 0, false)
 		close(done)
@@ -79,7 +79,7 @@ func TestSetAwaitingAnswersAtTheRoundBoundary(t *testing.T) {
 		streamEnd: 10 * time.Millisecond,
 	}
 	cb, _ := form.Open("")
-	cb.Apply(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{"system.model": json.RawMessage(`"before"`)}, nil))
+	cb.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.model": json.RawMessage(`"before"`)}, nil))
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
 		ID:        testID,
@@ -103,7 +103,7 @@ func TestSetAwaitingAnswersAtTheRoundBoundary(t *testing.T) {
 	}
 	got := make(chan result, 1)
 	go func() {
-		_, applied, err := a.SetAwaiting(context.Background(), form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+		_, applied, err := a.SetAwaiting(context.Background(), form.Build(form.Snapshot{}, map[string]json.RawMessage{
 			"brief": json.RawMessage(`"awaited"`),
 		}, nil), 0, false)
 		got <- result{applied, err}
@@ -117,7 +117,8 @@ func TestSetAwaitingAnswersAtTheRoundBoundary(t *testing.T) {
 	select {
 	case r := <-got:
 		require.NoError(t, r.err)
-		require.Contains(t, r.applied.Set, "brief", "the verdict must name what landed")
+		_, hasK := r.applied.Entry("brief")
+		require.True(t, hasK, "the verdict must name what landed")
 	case <-time.After(2 * time.Second):
 		t.Fatal("a set waited for the round to end: the figaro is still in the way")
 	}
@@ -147,9 +148,10 @@ func TestACancelledContextStillApplies(t *testing.T) {
 	defer a.Kill()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, applied, err := a.SetAwaiting(ctx, form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	_, applied, err := a.SetAwaiting(ctx, form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"brief": json.RawMessage(`"x"`),
 	}, nil), 0, false)
 	require.NoError(t, err)
-	require.Contains(t, applied.Set, "brief")
+	_, hasK := applied.Entry("brief")
+	require.True(t, hasK)
 }

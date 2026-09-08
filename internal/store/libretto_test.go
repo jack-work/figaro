@@ -403,7 +403,7 @@ func TestLibrettoReaderSeesFoldsAfterItWasOpened(t *testing.T) {
 
 	found := false
 	for _, p := range lib.PatchesBetween(at, lib.Version()) {
-		if _, ok := p.Patch.Leaves()["afterwards"]; ok {
+		if _, ok := p.Patch.Entry("afterwards"); ok {
 			found = true
 		}
 	}
@@ -456,7 +456,7 @@ func TestLibrettoStopsListeningWhenItsSourceDies(t *testing.T) {
 	// arrives as an ordinary key transition the render can show.
 	sawDeath := false
 	for _, p := range lib.PatchesBetween(before, lib.Version()) {
-		if _, ok := p.Patch.Leaves()[KeyLibrettoAlive]; ok {
+		if _, ok := p.Patch.Entry(KeyLibrettoAlive); ok {
 			sawDeath = true
 		}
 	}

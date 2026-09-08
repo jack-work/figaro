@@ -3,6 +3,7 @@ package store_test
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/api/form"
 	"sync"
 	"testing"
 
@@ -14,7 +15,7 @@ import (
 )
 
 func set(k, v string) message.Patch {
-	return message.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{k: json.RawMessage(v)}, nil)
+	return form.Build(form.Snapshot{}, map[string]json.RawMessage{k: json.RawMessage(v)}, nil)
 }
 
 // A form needs no aria, no daemon and no store: the algebra and the published
@@ -131,7 +132,8 @@ func TestNoOpPatchIsNotAnEvent(t *testing.T) {
 	v1, applied, err := f.ApplyEffect(set("k", `1`), 0)
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), v1)
-	require.Contains(t, applied.Set, "k")
+	_, hasK := applied.Entry("k")
+	require.True(t, hasK)
 
 	// The same value again: no version, no record, no delta, and the caller
 	// is told plainly that nothing landed.
@@ -141,21 +143,23 @@ func TestNoOpPatchIsNotAnEvent(t *testing.T) {
 	assert.True(t, applied.IsIdentity(), "and must report that nothing landed")
 
 	// A removal of a key that is not there is the same kind of nothing.
-	v3, applied, err := f.ApplyEffect(message.Patchform.Build(form.Snapshot{}, nil, []string{"absent"}), 0)
+	v3, applied, err := f.ApplyEffect(form.Build(form.Snapshot{}, nil, []string{"absent"}), 0)
 	require.NoError(t, err)
 	assert.Equal(t, v1, v3)
 	assert.True(t, applied.IsIdentity())
 
 	// A real change still is one, and only the changed half of a mixed patch
 	// survives the reduction.
-	v4, applied, err := f.ApplyEffect(message.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	v4, applied, err := f.ApplyEffect(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"k": json.RawMessage(`1`),   // unchanged
 		"j": json.RawMessage(`"n"`), // new
 	}, nil), 0)
 	require.NoError(t, err)
 	assert.Greater(t, v4, v1)
-	assert.NotContains(t, applied.Set, "k")
-	assert.Contains(t, applied.Set, "j")
+	_, hasKk := applied.Entry("k")
+	assert.False(t, hasKk)
+	_, hasJ := applied.Entry("j")
+	assert.True(t, hasJ)
 	assert.Equal(t, 2, committed, "two real events, and no others")
 }
 

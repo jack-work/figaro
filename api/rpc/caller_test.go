@@ -68,7 +68,8 @@ func TestWithCallerRoundTrip(t *testing.T) {
 		if err := json.Unmarshal(raw, &out); err != nil {
 			t.Fatalf("unmarshal: %v", err)
 		}
-		if got := string(out.Patch.Leaves()["k"]); got != `{"deep":[1,2,3]}` {
+		ent, _ := out.Patch.Entry("k")
+		if got := string(ent.New); got != `{"deep":[1,2,3]}` {
 			t.Fatalf("value re-encoded: %s", got)
 		}
 	})

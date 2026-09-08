@@ -63,7 +63,11 @@ func renderedKeys(log store.Log[message.Message], rows store.Log[[]json.RawMessa
 		Fingerprint: "v1",
 		Encode: func(msg message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 			for _, p := range msg.Patches {
-				for k := range p.Leaves() {
+				for _, ent := range p.Entries() {
+					if ent.IsRemoval() {
+						continue
+					}
+					k := ent.Key
 					seen = append(seen, k)
 				}
 			}

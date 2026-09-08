@@ -3,6 +3,7 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/sdk"
 	"os"
 	"sync"
@@ -13,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/api/message"
-	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
@@ -117,7 +117,7 @@ model = "mock-model"
 	waitDone()
 
 	// The switch: form state, no restart.
-	_, err = fcli.Set(ctx, rpc.FormPatchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	_, err = fcli.Set(ctx, form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"other"`),
 	}, nil), 0)
 	require.NoError(t, err)

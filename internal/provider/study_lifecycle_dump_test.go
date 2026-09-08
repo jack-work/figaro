@@ -25,11 +25,12 @@ func TestStudyLifecycleDump(t *testing.T) {
 	defer f.Close()
 
 	set := func(kv map[string]string) {
-		p := message.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{}, nil)
+		set := map[string]json.RawMessage{}
 		for k, v := range kv {
 			b, _ := json.Marshal(v)
-			p.Set[k] = b
+			set[k] = b
 		}
+		p := form.Build(form.Snapshot{}, set, nil)
 		if _, err := f.Apply(p, 0); err != nil {
 			t.Fatal(err)
 		}
@@ -66,7 +67,7 @@ func TestStudyLifecycleDump(t *testing.T) {
 	})
 
 	// 4. A KEY IS REMOVED.
-	if _, err := f.Apply(message.Patchform.Build(form.Snapshot{}, nil, []string{"owner"}), 0); err != nil {
+	if _, err := f.Apply(form.Build(form.Snapshot{}, nil, []string{"owner"}), 0); err != nil {
 		t.Fatal(err)
 	}
 	_, _ = log.Append(store.Entry[message.Message]{
@@ -126,4 +127,13 @@ func (a *memAccessor) PatchesBetween(after, upTo uint64) []message.Patch {
 		out[i] = ps[i].Patch
 	}
 	return out
+}
+
+// mustEntry is the value a patch sets at key, for tests that assert on one.
+func mustEntry(p form.Patch, key string) []byte {
+	e, ok := p.Entry(key)
+	if !ok {
+		return nil
+	}
+	return e.New
 }

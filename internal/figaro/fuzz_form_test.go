@@ -167,7 +167,7 @@ func setKV(a *figaro.Agent, key, val string) error {
 	if err != nil {
 		return err
 	}
-	_, _, err = a.Set(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{key: raw}, nil), 0)
+	_, _, err = a.Set(form.Build(form.Snapshot{}, map[string]json.RawMessage{key: raw}, nil), 0)
 	return err
 }
 
@@ -235,9 +235,7 @@ func TestFuzzFormUnkeyed(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < setsPerWriter; i++ {
 				raw, _ := json.Marshal(fmt.Sprintf("d%d", i))
-				if _, err := backend.ApplyForm(id, message.Patch{
-					Set: map[string]json.RawMessage{fmt.Sprintf("fuzz.direct.k%d", i): raw},
-				}); err != nil {
+				if _, err := backend.ApplyForm(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{fmt.Sprintf("fuzz.direct.k%d", i): raw}, nil)); err != nil {
 					errs <- err
 					return
 				}
@@ -422,9 +420,7 @@ func TestFuzzFormUnkeyed(t *testing.T) {
 				<-start // release all writers at once, no sleeps
 				for i := 0; i < patchesPerHand; i++ {
 					raw, _ := json.Marshal(fmt.Sprintf("w%d-i%d", w, i))
-					v, err := backend.ApplyForm(id, message.Patch{
-						Set: map[string]json.RawMessage{fmt.Sprintf("conc.w%d.k%d", w, i): raw},
-					})
+					v, err := backend.ApplyForm(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{fmt.Sprintf("conc.w%d.k%d", w, i): raw}, nil))
 					if err != nil {
 						results[w] = result{versions: got, err: err}
 						return

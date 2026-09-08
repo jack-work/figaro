@@ -2,6 +2,7 @@ package figaro_test
 
 import (
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"path/filepath"
 	"testing"
 	"time"
@@ -36,7 +37,7 @@ func TestInterruptLegality_SurvivesAReload(t *testing.T) {
 	backend1, err := store.NewXwalBackend(dir, 0)
 	require.NoError(t, err)
 
-	outfit, err := backend1.CreateOutfit("d", message.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	outfit, err := backend1.CreateOutfit("d", form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"m"`),
 		"system.provider": json.RawMessage(`"interrupt-test"`),
 	}, nil))

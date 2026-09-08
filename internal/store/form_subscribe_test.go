@@ -156,7 +156,7 @@ func TestSubscribeThroughBackend(t *testing.T) {
 		if ev.Version <= sub.At {
 			t.Fatalf("event at %d is not past the snapshot at %d", ev.Version, sub.At)
 		}
-		if _, ok := ev.Applied.Leaves()["brief"]; !ok {
+		if _, ok := ev.Applied.Entry("brief"); !ok {
 			t.Fatalf("the event does not carry the patch: %v", ev.Applied)
 		}
 	case <-time.After(5 * time.Second):

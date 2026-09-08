@@ -134,7 +134,7 @@ func runTurn(t *testing.T, a *figaro.Agent, ch <-chan rpc.Notification, text str
 func rebindAgent(t *testing.T, f *rebindFactory, boot map[string]json.RawMessage) (*figaro.Agent, <-chan rpc.Notification) {
 	t.Helper()
 	cb, _ := form.Open("")
-	cb.Apply(form.Patch{Set: boot})
+	cb.Apply(form.Build(form.Snapshot{}, boot, nil))
 	name := ""
 	if raw, ok := cb.Snapshot().Get("system.provider"); ok {
 		_ = json.Unmarshal(raw, &name)
@@ -172,7 +172,7 @@ func TestProviderRebindsMidConversation(t *testing.T) {
 	require.EqualValues(t, 1, f.inst("alpha", false).sends.Load())
 	assert.Equal(t, "alpha", a.Info().Provider)
 
-	_, _, err := a.Set(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	_, _, err := a.Set(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"beta"`),
 		"system.model":    json.RawMessage(`"m-2"`),
 	}, nil), 0)
@@ -197,7 +197,7 @@ func TestProviderModelChangeDoesNotRebuild(t *testing.T) {
 	})
 	runTurn(t, a, ch, "first")
 
-	_, _, err := a.Set(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	_, _, err := a.Set(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model": json.RawMessage(`"m-2"`),
 	}, nil), 0)
 	require.NoError(t, err)
@@ -221,7 +221,7 @@ func TestProviderKnobChangeRebuilds(t *testing.T) {
 	})
 	runTurn(t, a, ch, "first")
 
-	_, _, err := a.Set(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	_, _, err := a.Set(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.use_official_sdk": json.RawMessage(`true`),
 	}, nil), 0)
 	require.NoError(t, err)
@@ -245,7 +245,7 @@ func TestProviderRebindFailureEndsTurnAndRecovers(t *testing.T) {
 	runTurn(t, a, ch, "first")
 
 	f.setFail("gamma", true)
-	_, _, err := a.Set(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	_, _, err := a.Set(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"gamma"`),
 	}, nil), 0)
 	require.NoError(t, err)
@@ -256,7 +256,7 @@ func TestProviderRebindFailureEndsTurnAndRecovers(t *testing.T) {
 
 	// Correct the board: the aria is still usable.
 	f.setFail("gamma", false)
-	_, _, err = a.Set(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	_, _, err = a.Set(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"beta"`),
 	}, nil), 0)
 	require.NoError(t, err)

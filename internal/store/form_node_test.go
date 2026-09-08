@@ -272,7 +272,7 @@ func TestObservedFormsStampIRAppends(t *testing.T) {
 	ps := lib.PatchesBetween(e1.StudyVersions[role], e2.StudyVersions[role])
 	found := false
 	for _, p := range ps {
-		if _, ok := p.Patch.Leaves()["phase"]; ok {
+		if _, ok := p.Patch.Entry("phase"); ok {
 			found = true
 		}
 	}

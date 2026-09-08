@@ -2,6 +2,7 @@ package outfit_test
 
 import (
 	"fmt"
+	"github.com/jack-work/figaro/api/form"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,13 +30,13 @@ func TestCacheSeesAnEditedOutfit(t *testing.T) {
 
 	patch, err := o.Load("top")
 	require.NoError(t, err)
-	require.Equal(t, `"first"`, string(patch.Leaves()["system.model"]))
+	require.Equal(t, `"first"`, string(mustEntry(patch, "system.model")))
 
 	// Rewritten with a different size, so mtime granularity cannot mask it.
 	writeOutfit(t, dir, "base", "[system]\nmodel = \"second-and-longer\"\n")
 	patch, err = o.Load("top")
 	require.NoError(t, err)
-	assert.Equal(t, `"second-and-longer"`, string(patch.Leaves()["system.model"]),
+	assert.Equal(t, `"second-and-longer"`, string(mustEntry(patch, "system.model")),
 		"an edit to a LAYER must invalidate the outfit above it")
 }
 
@@ -48,12 +49,12 @@ func TestCacheSeesAnEditedContentFile(t *testing.T) {
 
 	patch, err := o.Load("top")
 	require.NoError(t, err)
-	require.Contains(t, string(patch.Leaves()["system.credo"]), "first")
+	require.Contains(t, string(mustEntry(patch, "system.credo")), "first")
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "credo.md"), []byte("second-and-longer"), 0o600))
 	patch, err = o.Load("top")
 	require.NoError(t, err)
-	assert.Contains(t, string(patch.Leaves()["system.credo"]), "second-and-longer",
+	assert.Contains(t, string(mustEntry(patch, "system.credo")), "second-and-longer",
 		"a fileName dependency must invalidate the outfit that names it")
 }
 
@@ -70,18 +71,22 @@ func TestCacheSeesSkillsAddedAndRemoved(t *testing.T) {
 
 	patch, err := o.Load("top")
 	require.NoError(t, err)
-	require.Contains(t, patch.Set, "skills.alpha")
-	require.NotContains(t, patch.Set, "skills.beta")
+	_, hasAlpha := patch.Entry("skills.alpha")
+	require.True(t, hasAlpha)
+	_, hasBeta := patch.Entry("skills.beta")
+	require.False(t, hasBeta)
 
 	require.NoError(t, os.WriteFile(filepath.Join(skills, "beta.md"), []byte("---\nname: beta\n---\nbody\n"), 0o600))
 	patch, err = o.Load("top")
 	require.NoError(t, err)
-	assert.Contains(t, patch.Set, "skills.beta", "an ADDED skill must invalidate the outfit")
+	_, hasNew := patch.Entry("skills.beta")
+	assert.True(t, hasNew, "an ADDED skill must invalidate the outfit")
 
 	require.NoError(t, os.Remove(filepath.Join(skills, "alpha.md")))
 	patch, err = o.Load("top")
 	require.NoError(t, err)
-	assert.NotContains(t, patch.Set, "skills.alpha", "a REMOVED skill must invalidate the outfit")
+	_, stillAlpha := patch.Entry("skills.alpha")
+	assert.False(t, stillAlpha, "a REMOVED skill must invalidate the outfit")
 }
 
 // A layer that did not exist and then does must be picked up: the failure is
@@ -98,7 +103,7 @@ func TestCacheSeesALayerAppear(t *testing.T) {
 	writeOutfit(t, dir, "later", "[system]\ncredo = \"arrived\"\n")
 	patch, err := o.Load("top")
 	require.NoError(t, err)
-	assert.Equal(t, `"arrived"`, string(patch.Leaves()["system.credo"]))
+	assert.Equal(t, `"arrived"`, string(mustEntry(patch, "system.credo")))
 }
 
 // bigConfig writes a realistic composition: a shared base, a diamond over it,
@@ -227,4 +232,13 @@ func TestCacheStaysUnderItsByteBudget(t *testing.T) {
 	}
 	assert.LessOrEqual(t, o.CachedBytes(), budget, "the fold cache must stay under its budget")
 	assert.Greater(t, o.CachedFolds(), 0, "and must not evict itself to nothing")
+}
+
+// mustEntry is the value a patch sets at key.
+func mustEntry(p form.Patch, key string) []byte {
+	e, ok := p.Entry(key)
+	if !ok {
+		return nil
+	}
+	return e.New
 }

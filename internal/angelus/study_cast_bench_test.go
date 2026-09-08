@@ -9,6 +9,7 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/sdk"
 	"io"
 	"log/slog"
@@ -24,7 +25,8 @@ func benchPatch(kv map[string]string) *rpc.FormPatch {
 	for k, v := range kv {
 		set[k] = json.RawMessage(v)
 	}
-	return &rpc.FormPatch{Set: set}
+	p := form.Build(form.Snapshot{}, set, nil)
+	return &p
 }
 
 // One casting call, end to end, against an already-studied role: the

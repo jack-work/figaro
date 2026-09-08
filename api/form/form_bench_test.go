@@ -43,13 +43,10 @@ func BenchmarkApply_SmallPatch(b *testing.B) {
 		b.Run(f.name, func(b *testing.B) {
 			s := f.board()
 			keys := f.sampleKeys(3)
-			patch := form.Patch{
-				Set: map[string]json.RawMessage{
-					keys[0]:       json.RawMessage(`"patched"`),
-					"bench.fresh": json.RawMessage(`"newly-set"`),
-				},
-				Remove: []string{keys[len(keys)-1]},
-			}
+			patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{
+				keys[0]:       json.RawMessage(`"patched"`),
+				"bench.fresh": json.RawMessage(`"newly-set"`),
+			}, []string{keys[len(keys)-1]})
 			b.ResetTimer()
 			for b.Loop() {
 				sink(boardLen(s.Apply(patch)))
@@ -80,7 +77,7 @@ func BenchmarkDiff(b *testing.B) {
 				b.ResetTimer()
 				for b.Loop() {
 					p := next.Diff(prev)
-					sink(len(p.Set) + len(p.Remove))
+					sink(len(p.Entries()) + len(p.Entries()))
 				}
 			})
 		}
@@ -103,15 +100,15 @@ func BenchmarkDiffDerived(b *testing.B) {
 		for _, n := range []int{1, 5} {
 			b.Run(fmt.Sprintf("%s/%d-key", f.name, n), func(b *testing.B) {
 				prev := f.board()
-				patch := form.PatchCreates(map[string]json.RawMessage{})
+				set := map[string]json.RawMessage{}
 				for _, k := range f.sampleKeys(n) {
-					patch.Set[k] = json.RawMessage(`"derived-change"`)
+					set[k] = json.RawMessage(`"derived-change"`)
 				}
-				next := prev.Apply(patch)
+				next := prev.Apply(form.Build(prev, set, nil))
 				b.ResetTimer()
 				for b.Loop() {
 					p := next.Diff(prev)
-					sink(len(p.Set) + len(p.Remove))
+					sink(len(p.Entries()) + len(p.Entries()))
 				}
 			})
 		}
@@ -172,7 +169,7 @@ func BenchmarkRender(b *testing.B) {
 				v, _ := boardGet(prev, k)
 				set[k] = mutateValue(v)
 			}
-			patch := form.Patch{Set: set}
+			patch := form.Build(prev, set, nil)
 			b.ResetTimer()
 			for b.Loop() {
 				out, err := form.Render(patch, prev, tmpls)
@@ -273,7 +270,7 @@ func BenchmarkSnapshot_Diff_Small(b *testing.B) {
 			b.ResetTimer()
 			for b.Loop() {
 				p := next.Diff(prev)
-				sink(len(p.Set))
+				sink(len(p.Entries()))
 			}
 		})
 	}
@@ -285,15 +282,13 @@ func BenchmarkRender_DefaultTemplates_5entries(b *testing.B) {
 		b.Fatal(err)
 	}
 	prev := buildBoard(map[string]json.RawMessage{})
-	patch := form.Patch{
-		Set: map[string]json.RawMessage{
-			"cwd":      json.RawMessage(`"/home/figaro"`),
-			"root":     json.RawMessage(`"/home/figaro"`),
-			"datetime": json.RawMessage(`"Wednesday, April 29, 2026, 10AM EDT"`),
-			"model":    json.RawMessage(`"claude-opus-4-6"`),
-			"label":    json.RawMessage(`"morning"`),
-		},
-	}
+	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{
+		"cwd":      json.RawMessage(`"/home/figaro"`),
+		"root":     json.RawMessage(`"/home/figaro"`),
+		"datetime": json.RawMessage(`"Wednesday, April 29, 2026, 10AM EDT"`),
+		"model":    json.RawMessage(`"claude-opus-4-6"`),
+		"label":    json.RawMessage(`"morning"`),
+	}, nil)
 	b.ResetTimer()
 	for b.Loop() {
 		out, err := form.Render(patch, prev, tmpls)

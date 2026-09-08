@@ -4,9 +4,9 @@ package store_test
 
 import (
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"testing"
 
-	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/figaro/wire"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -22,7 +22,7 @@ func ttlPresentBackend(t *testing.T) (*store.XwalBackend, string) {
 	if err := wire.Install(b.Store(), root, wire.Capabilities{Trunks: true}); err != nil {
 		t.Fatal(err)
 	}
-	outfit, err := b.CreateOutfit("ttl", message.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	outfit, err := b.CreateOutfit("ttl", form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"skills.x": json.RawMessage(`1`),
 	}, nil))
 	if err != nil {

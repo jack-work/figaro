@@ -19,10 +19,10 @@ package figaro_test
 
 import (
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"testing"
 	"time"
 
-	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/stretchr/testify/require"
 )
@@ -35,9 +35,7 @@ func TestStudyMarkCannotLandInsideARound(t *testing.T) {
 	defer unsub()
 
 	// A form to study, and a round parked in the provider.
-	formID, _, err := backend.CreateForm("", message.Patch{
-		Set: map[string]json.RawMessage{"brief": json.RawMessage(`"observed"`)},
-	})
+	formID, _, err := backend.CreateForm("", form.Build(form.Snapshot{}, map[string]json.RawMessage{"brief": json.RawMessage(`"observed"`)}, nil))
 	require.NoError(t, err)
 
 	submitPrompt(a, "the long turn")
@@ -92,9 +90,7 @@ func TestStudyMintsAndRetainsItsLibretto(t *testing.T) {
 	prov := &gateProvider{name: "gate", entered: entered, gate: gate}
 	a, backend, _ := fuzzAgent(t, prov, nil)
 
-	formID, _, err := backend.CreateForm("", message.Patch{
-		Set: map[string]json.RawMessage{"brief": json.RawMessage(`"observed"`)},
-	})
+	formID, _, err := backend.CreateForm("", form.Build(form.Snapshot{}, map[string]json.RawMessage{"brief": json.RawMessage(`"observed"`)}, nil))
 	require.NoError(t, err)
 
 	lb, ok := backend.(interface {

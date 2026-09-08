@@ -92,7 +92,11 @@ func TestEveryPatchIsShownToTheAria(t *testing.T) {
 	if cursor < len(patches) {
 		var missed []string
 		for _, p := range patches[cursor:] {
-			for k := range p.Patch.Leaves() {
+			for _, ent := range p.Patch.Entries() {
+				if ent.IsRemoval() {
+					continue
+				}
+				k := ent.Key
 				missed = append(missed, fmt.Sprintf("%s (v%d)", k, p.Version))
 			}
 		}
@@ -188,8 +192,8 @@ func TestAForkedAriaIsShownItsNewAriaID(t *testing.T) {
 		}
 		for cursor < len(patches) && patches[cursor].Version <= e.FormChannelVersion {
 			p := patches[cursor]
-			if v, ok := p.Patch.Leaves()["aria_id"]; ok {
-				seen = append(seen, string(v))
+			if ent, ok := p.Patch.Entry("aria_id"); ok {
+				seen = append(seen, string(ent.New))
 			}
 			shown = shown.Apply(p.Patch)
 			cursor++

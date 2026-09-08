@@ -27,7 +27,7 @@ func TestTombstoneIsARecordAndSeals(t *testing.T) {
 
 	select {
 	case ev := <-sub.C:
-		if _, ok := ev.Applied.Leaves()[TombstoneKey]; !ok {
+		if _, ok := ev.Applied.Entry(TombstoneKey); !ok {
 			t.Fatalf("the death did not reach the subscriber as a patch: %v", ev.Applied)
 		}
 		if ev.Version != v {

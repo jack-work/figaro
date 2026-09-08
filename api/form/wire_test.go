@@ -166,9 +166,9 @@ func TestDiff_KeyOrderOnlyChangeIsNotAChange(t *testing.T) {
 	prev := form.FromMap(map[string]json.RawMessage{
 		"cfg": json.RawMessage(`{"a":1,"b":2}`),
 	})
-	next := prev.Apply(form.Patch{Set: map[string]json.RawMessage{
+	next := prev.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"cfg": json.RawMessage(`{ "b":2, "a":1 }`),
-	}})
+	}, nil))
 	assert.True(t, next.Diff(prev).IsIdentity(),
 		"a key-order-only rewrite must not read as a change")
 
@@ -179,13 +179,13 @@ func TestDiff_KeyOrderOnlyChangeIsNotAChange(t *testing.T) {
 	assert.Equal(t, `{"a":1,"b":2}`, string(v))
 
 	// A real content change still fires, and number spelling still counts.
-	real := prev.Apply(form.Patch{Set: map[string]json.RawMessage{
+	real := prev.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"cfg": json.RawMessage(`{"a":1,"b":3}`),
-	}})
+	}, nil))
 	assert.False(t, real.Diff(prev).IsIdentity())
-	spelled := prev.Apply(form.Patch{Set: map[string]json.RawMessage{
+	spelled := prev.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"cfg": json.RawMessage(`{"a":1.0,"b":2}`),
-	}})
+	}, nil))
 	assert.False(t, spelled.Diff(prev).IsIdentity(), "1 and 1.0 are different edits")
 }
 
@@ -197,7 +197,7 @@ func TestClone_IsIdentityAndStillSafe(t *testing.T) {
 	assert.Equal(t, s, c, "Clone of an immutable value is the identity")
 
 	// Deriving from the clone must not disturb the original.
-	_ = c.Apply(form.PatchCreates(map[string]json.RawMessage{"k": json.RawMessage(`"v2"`)}))
+	_ = c.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{"k": json.RawMessage(`"v2"`)}, nil))
 	v, _ := s.Get("k")
 	assert.Equal(t, `"v1"`, string(v))
 }
@@ -208,11 +208,11 @@ func TestAsPatch(t *testing.T) {
 		"b": json.RawMessage(`"two"`),
 	})
 	p := s.AsPatch()
-	assert.Nil(t, p.Remove)
+	assert.Nil(t, p.Entries())
 	assert.Equal(t, map[string]json.RawMessage{
 		"a": json.RawMessage(`1`),
 		"b": json.RawMessage(`"two"`),
-	}, p.Set)
+	}, leafMap(p))
 	// Same shape as diffing against the empty board, which is what this
 	// replaced at the call sites.
 	assert.Equal(t, p, s.Diff(form.Snapshot{}))
@@ -268,6 +268,17 @@ func content2(t *testing.T, s form.Snapshot) map[string]string {
 	out := map[string]string{}
 	for k, v := range s.All() {
 		out[k] = string(v)
+	}
+	return out
+}
+
+// leafMap is a patch's set values by path, for assertions.
+func leafMap(p form.Patch) map[string]json.RawMessage {
+	out := map[string]json.RawMessage{}
+	for _, e := range p.Entries() {
+		if !e.IsRemoval() {
+			out[e.Key] = e.New
+		}
 	}
 	return out
 }

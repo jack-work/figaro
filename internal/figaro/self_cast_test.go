@@ -28,9 +28,7 @@ func TestCastDuringOwnTurnDoesNotDeadlock(t *testing.T) {
 	ch, unsub := subscribeChan(a)
 	defer unsub()
 
-	roleID, _, err := backend.CreateForm("", form.Patch{
-		Set: map[string]json.RawMessage{"name": json.RawMessage(`"the role"`)},
-	})
+	roleID, _, err := backend.CreateForm("", form.Build(form.Snapshot{}, map[string]json.RawMessage{"name": json.RawMessage(`"the role"`)}, nil))
 	require.NoError(t, err)
 
 	submitPrompt(a, "a long turn")
@@ -80,9 +78,7 @@ func TestConcurrentCastsOfOneFigaro(t *testing.T) {
 	const casts = 8
 	roles := make([]string, casts)
 	for i := range roles {
-		id, _, err := backend.CreateForm("", form.Patch{
-			Set: map[string]json.RawMessage{"name": json.RawMessage(`"role"`)},
-		})
+		id, _, err := backend.CreateForm("", form.Build(form.Snapshot{}, map[string]json.RawMessage{"name": json.RawMessage(`"role"`)}, nil))
 		require.NoError(t, err)
 		roles[i] = id
 	}
