@@ -36,10 +36,10 @@ func TestEveryPatchIsShownToTheAria(t *testing.T) {
 	}
 	defer be.Close()
 
-	outfit, err := be.CreateOutfit("opus5", form.Creates(map[string]json.RawMessage{
+	outfit, err := be.CreateOutfit("opus5", form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"skills.golang": json.RawMessage(`{"frontmatter":"name: golang"}`),
 		"duke-title":    json.RawMessage(`"Gluck"`),
-	}))
+	}, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestEveryPatchIsShownToTheAria(t *testing.T) {
 	// What the daemon does: identity keys, then a turn, then per-turn keys.
 	apply := func(kv map[string]json.RawMessage) {
 		t.Helper()
-		if _, err := be.ApplyForm(aria, form.Creates(kv)); err != nil {
+		if _, err := be.ApplyForm(aria, form.Build(form.Snapshot{}, kv, nil)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -129,9 +129,9 @@ func TestAForkedAriaIsShownItsNewAriaID(t *testing.T) {
 	}
 	defer be.Close()
 
-	outfit, err := be.CreateOutfit("opus5", form.Creates(map[string]json.RawMessage{
+	outfit, err := be.CreateOutfit("opus5", form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"skills.golang": json.RawMessage(`{"frontmatter":"name: golang"}`),
-	}))
+	}, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,9 +141,9 @@ func TestAForkedAriaIsShownItsNewAriaID(t *testing.T) {
 	}
 	setID := func(aria string) {
 		t.Helper()
-		if _, err := be.ApplyForm(aria, form.Creates(map[string]json.RawMessage{
+		if _, err := be.ApplyForm(aria, form.Build(form.Snapshot{}, map[string]json.RawMessage{
 			"aria_id": json.RawMessage(`"` + aria + `"`),
-		})); err != nil {
+		}, nil)); err != nil {
 			t.Fatal(err)
 		}
 	}

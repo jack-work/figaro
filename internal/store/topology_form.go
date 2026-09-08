@@ -140,7 +140,7 @@ func (t *TopologyTree) migrate(path string) error {
 			}
 			set[id] = raw
 		}
-		if _, _, err := t.form.ApplyEffectPrivileged(form.Creates(set), 0); err != nil {
+		if _, _, err := t.form.ApplyEffectPrivileged(form.Build(form.Snapshot{}, set, nil), 0); err != nil {
 			return fmt.Errorf("topology: migrate %s: %w", path, err)
 		}
 	}
@@ -288,7 +288,6 @@ func (t *TopologyTree) Reparent(id, parent string) error {
 // Forget drops every edge that names one of these arias, in either
 // direction: for use once they are deleted. An edge POINTING at a deleted
 // aria goes too, so the survivor falls back to its history rather than
-// hanging off a parent that is no longer there.
 func (t *TopologyTree) Forget(ids ...string) error {
 	gone := make(map[string]bool, len(ids))
 	for _, id := range ids {
@@ -311,7 +310,6 @@ func (t *TopologyTree) Forget(ids ...string) error {
 // state, and Ensure because a Forget may name an edge already gone.
 func (t *TopologyTree) apply(in *edgeIntent) error {
 	// The intent becomes a patch HERE, where the board it applies to is in
-	// hand: that is what gives it the prior values it needs to be inverted.
 	base, _ := t.form.Snapshot()
 	_, _, err := t.form.applyEffect(form.Build(base, in.set, in.remove), 0, Ensure, true)
 	return err

@@ -577,9 +577,9 @@ func TestResponsesProviderDrivesFigaroToolRoundTrip(t *testing.T) {
 	require.NoError(t, registry.Register(echo))
 	cb, err := form.Open("")
 	require.NoError(t, err)
-	cb.Apply(form.Creates(map[string]json.RawMessage{
+	cb.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model": json.RawMessage(`"gpt-5.6-terra"`),
-	}))
+	}, nil))
 	be, ariaID := store.NewTestAria(t, "d", message.Patch{})
 	// ONE LOG PER CHANNEL. The agent commits the assistant's native payload
 	// to the backend's translator log; a provider reading a different log

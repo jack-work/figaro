@@ -49,7 +49,7 @@ func mustFormDress(outfits, set, del string, kvs []string, usage string) dressin
 	if err != nil {
 		die("%s", err)
 	}
-	if d.IsEmpty() {
+	if d.IsIdentity() {
 		die("a form is born of its patch: give -O <names> and/or -S k=v terms\nusage: %s", usage)
 	}
 	return d

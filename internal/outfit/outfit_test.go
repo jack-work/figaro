@@ -107,7 +107,7 @@ func TestLoad_EmptyNameReturnsEmptyPatch(t *testing.T) {
 	// resolve the name (e.g. via config.DefaultOutfit) themselves.
 	patch, err := outfit.New(dir).Load("")
 	require.NoError(t, err)
-	assert.True(t, patch.IsEmpty(), "empty outfit name must yield empty patch")
+	assert.True(t, patch.IsIdentity(), "empty outfit name must yield empty patch")
 }
 
 // A subdirectory with a SKILL.md is one skill keyed by the dir name; the user's

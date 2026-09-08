@@ -35,9 +35,9 @@ func TestStatusNamesTheSpecies(t *testing.T) {
 // A role is a duck type, so the target may be read from the listing or from
 // the board. The board wins when the listing has not caught up with a cast.
 func TestRoleTargetFallsBackToTheBoard(t *testing.T) {
-	snap := form.Snapshot{}.Apply(form.Patchform.Creates(map[string]json.RawMessage{
+	snap := form.Snapshot{}.Apply(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"target-aria": json.RawMessage(`"fromboard"`),
-	}))
+	}, nil))
 	row := rpc.FigaroInfoResponse{ID: "@a1b2c3d4", Kind: "form"}
 	if got := roleTargetOf(&row, snap); got != "fromboard" {
 		t.Errorf("board fallback: %q", got)
@@ -56,10 +56,10 @@ func TestRoleTargetFallsBackToTheBoard(t *testing.T) {
 // The JSON shape carries the species too, so a script does not have to infer
 // it from a sigil.
 func TestFormStatusJSONCarriesSpecies(t *testing.T) {
-	snap := form.Snapshot{}.Apply(form.Patchform.Creates(map[string]json.RawMessage{
+	snap := form.Snapshot{}.Apply(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"name":        json.RawMessage(`"warden"`),
 		"target-aria": json.RawMessage(`"abc12345"`),
-	}))
+	}, nil))
 	row := rpc.FigaroInfoResponse{ID: "@a1b2c3d4", Kind: "form", Name: "warden", TargetAria: "abc12345"}
 	b, err := json.Marshal(formStatus(&row, snap, 7))
 	if err != nil {

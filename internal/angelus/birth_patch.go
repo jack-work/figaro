@@ -63,7 +63,6 @@ func outfitVerLabel(stamped, current, legacy string) string {
 // pointer that is clean and whose node still exists is reused with NO
 // comparison at all (the cheap path, and the prompt-cache-preserving one:
 // reuse of the same node is what shares the rendered prefix). A remint is
-// due when: no record, dirty + hash moved, or dirty + the form was patched
 // by hand since birth (propagating an ad-hoc patch to every future aria is
 // exactly what the dirty-compute refuses to do silently).
 // birthParent is the node a fresh aria forks from: the shared default form
@@ -160,12 +159,11 @@ func (h *handlers) outfitReload(ctx context.Context, params json.RawMessage) (in
 // inherits its parent's form, aria_id included, and an aria that answers to its
 // parent's id cannot fork itself. The re-stamp is the floor.
 func forkDress(dress form.Patch, parent string) form.Patch {
-	keys := dress.Leaves()
-	// A placeholder the writer replaces would be a lie; the id is not known
-	// until the child exists, so aria_id is re-stamped by the boot patch that
-	// follows. What this guarantees is that the birth patch is never empty.
-	keys[form.ForkedFromKey] = json.RawMessage(`"` + parent + `"`)
-	return form.Build(form.Snapshot{}, keys, dress.Removes())
+	// aria_id is re-stamped by the boot patch that follows, once the child
+	// exists. This only guarantees the birth patch is never empty.
+	return form.Merge(dress, form.Build(form.Snapshot{}, map[string]json.RawMessage{
+		form.ForkedFromKey: json.RawMessage(`"` + parent + `"`),
+	}, nil))
 }
 
 // mergePatches folds b over a: two patches in series are one patch.
@@ -178,30 +176,33 @@ func mergePatches(a, b form.Patch) form.Patch {
 // never empty: cwd is always known: which is what lets ForkWith demand a
 // patch.
 func childBirthPatch(dress form.Patch, cwd string) form.Patch {
-	keys := dress.Leaves()
+	add := map[string]json.RawMessage{}
 	if b, err := json.Marshal(cwd); err == nil && cwd != "" {
-		keys["system.cwd"] = b
+		add["system.cwd"] = b
 	}
-	return form.Build(form.Snapshot{}, keys, dress.Removes())
+	return form.Merge(dress, form.Build(form.Snapshot{}, add, nil))
 }
 
 func birthPatch(outfitPatch form.Patch, outfitName, cwd string) form.Patch {
-	keys := outfitPatch.Leaves()
+	named := map[string]json.RawMessage{}
 	if b, err := json.Marshal(outfitName); err == nil && outfitName != "" {
-		keys["system.outfit_name"] = b
+		named["system.outfit_name"] = b
 	}
-	p := form.Build(form.Snapshot{}, keys, outfitPatch.Removes())
+	p := form.Merge(outfitPatch, form.Build(form.Snapshot{}, named, nil))
+
+	// The version covers the named patch, so it is stamped after it.
+	add := map[string]json.RawMessage{}
 	if ver, err := store.ContentVersion(p); err == nil {
 		if b, mErr := json.Marshal(ver); mErr == nil {
-			p.Leaves()["system.outfit_version"] = b
+			add["system.outfit_version"] = b
 		}
 	}
 	// cwd rides the birth patch so the very first turn resolves tools against
 	// the right directory; aria_id cannot, because the id does not exist yet.
 	if b, err := json.Marshal(cwd); err == nil && cwd != "" {
-		p.Leaves()["system.cwd"] = b
+		add["system.cwd"] = b
 	}
-	return p
+	return form.Merge(p, form.Build(form.Snapshot{}, add, nil))
 }
 
 func birthCwd(requested string) string {
@@ -224,19 +225,14 @@ func isDir(path string) bool {
 }
 
 func runtimeFillins(ariaID, cwd string) form.Patch {
-	p := form.Creates(map[string]json.RawMessage{})
+	fill := map[string]json.RawMessage{}
 	if b, err := json.Marshal(ariaID); err == nil && ariaID != "" {
-		p.Leaves()["aria_id"] = b
+		fill["aria_id"] = b
 	}
 	if b, err := json.Marshal(cwd); err == nil && cwd != "" {
-		p.Leaves()["system.cwd"] = b
+		fill["system.cwd"] = b
 	}
-	if env := form.EnvironmentPatch(); !env.IsEmpty() {
-		for k, v := range env.Leaves() {
-			p.Leaves()[k] = v
-		}
-	}
-	return p
+	return form.Merge(form.Build(form.Snapshot{}, fill, nil), form.EnvironmentPatch())
 }
 
 // convBootPatch is the conversation's boot transition: the runtime fill-ins,
@@ -253,39 +249,40 @@ func withAriaID(p form.Patch, ariaID string) form.Patch {
 	if err != nil {
 		return p
 	}
-	keys := p.Leaves()
-	keys["aria_id"] = b
-	return form.Build(form.Snapshot{}, keys, p.Removes())
+	return form.Merge(p, form.Build(form.Snapshot{}, map[string]json.RawMessage{"aria_id": b}, nil))
 }
 
-// patchString reads a string value from a form.Patch's Set map.
+// patchString reads a value the patch sets.
 func patchString(p form.Patch, key string) string {
-	raw, ok := p.Leaves()[key]
-	if !ok {
+	e, ok := p.Entry(key)
+	if !ok || e.IsRemoval() {
 		return ""
 	}
+	raw := e.New
 	var s string
 	_ = json.Unmarshal(raw, &s)
 	return s
 }
 
-// patchInt reads an int value from a form.Patch's Set map.
+// patchInt reads a value the patch sets.
 func patchInt(p form.Patch, key string) int {
-	raw, ok := p.Leaves()[key]
-	if !ok {
+	e, ok := p.Entry(key)
+	if !ok || e.IsRemoval() {
 		return 0
 	}
+	raw := e.New
 	var n int
 	_ = json.Unmarshal(raw, &n)
 	return n
 }
 
-// patchBool reads a bool value from a form.Patch's Set map.
+// patchBool reads a value the patch sets.
 func patchBool(p form.Patch, key string) bool {
-	raw, ok := p.Leaves()[key]
-	if !ok {
+	e, ok := p.Entry(key)
+	if !ok || e.IsRemoval() {
 		return false
 	}
+	raw := e.New
 	var b bool
 	_ = json.Unmarshal(raw, &b)
 	return b

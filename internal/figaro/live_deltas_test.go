@@ -23,11 +23,11 @@ func TestLiveAgentPagesCarryFormDeltas(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { backend.Close() })
 
-	src, _, err := backend.CreateForm("", message.Patchform.Creates(map[string]json.RawMessage{
-		"brief": json.RawMessage(`"the studied thing"`)}))
+	src, _, err := backend.CreateForm("", message.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+		"brief": json.RawMessage(`"the studied thing"`)}, nil))
 	require.NoError(t, err)
-	id, _, err := backend.ForkWith("", 0, message.Patchform.Creates(map[string]json.RawMessage{
-		"aria_id": json.RawMessage(`"a1"`)}))
+	id, _, err := backend.ForkWith("", 0, message.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+		"aria_id": json.RawMessage(`"a1"`)}, nil))
 	require.NoError(t, err)
 
 	studiesDecl, err := backend.StudyForm(id, src)
@@ -44,8 +44,8 @@ func TestLiveAgentPagesCarryFormDeltas(t *testing.T) {
 		Role: message.RoleInput, TurnID: 1,
 		Content: []message.Content{message.TextContent("one")}}})
 	require.NoError(t, err)
-	v, err := backend.ApplyForm(src, message.Patchform.Creates(map[string]json.RawMessage{
-		"phase": json.RawMessage(`"ga"`)}))
+	v, err := backend.ApplyForm(src, message.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+		"phase": json.RawMessage(`"ga"`)}, nil))
 	require.NoError(t, err)
 	deadline := time.Now().Add(5 * time.Second)
 	for lib.At() < v {

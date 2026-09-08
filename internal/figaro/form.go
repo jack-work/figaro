@@ -38,7 +38,7 @@ func (a *Agent) SetIntent(patch form.Patch, ifVersion uint64, assert bool) (set,
 	if a.form == nil {
 		return nil, nil, fmt.Errorf("set requires a form")
 	}
-	if patch.IsEmpty() {
+	if patch.IsIdentity() {
 		return nil, nil, nil
 	}
 	// Protection is a pure function of the patch, so it is answered HERE and
@@ -65,10 +65,18 @@ func (a *Agent) SetIntent(patch form.Patch, ifVersion uint64, assert bool) (set,
 	if err != nil {
 		return nil, nil, err
 	}
-	for k := range applied.Leaves() {
+	for _, ent := range applied.Entries() {
+		k := ent.Key
+		if ent.IsRemoval() {
+			continue
+		}
 		set = append(set, k)
 	}
-	removed = append(removed, applied.Removes()...)
+	for _, e := range applied.Entries() {
+		if e.IsRemoval() {
+			removed = append(removed, e.Key)
+		}
+	}
 	return set, removed, nil
 }
 
@@ -80,7 +88,7 @@ func (a *Agent) SetAwaiting(_ context.Context, patch form.Patch, ifVersion uint6
 	if a.form == nil {
 		return 0, form.Patch{}, fmt.Errorf("set requires a form")
 	}
-	if patch.IsEmpty() {
+	if patch.IsIdentity() {
 		return 0, form.Patch{}, nil
 	}
 	if err := form.CheckWritable(patch, false); err != nil {

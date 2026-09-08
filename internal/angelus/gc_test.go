@@ -23,7 +23,7 @@ func gcHandlers(t *testing.T) (*handlers, *store.XwalBackend) {
 
 func gcPatch(v string) message.Patch {
 	b, _ := json.Marshal(v)
-	return form.Creates(map[string]json.RawMessage{"v": b})
+	return form.Build(form.Snapshot{}, map[string]json.RawMessage{"v": b}, nil)
 }
 
 func runGCHandler(t *testing.T, h *handlers, dryRun bool) rpc.GCResponse {

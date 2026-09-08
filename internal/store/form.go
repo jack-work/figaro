@@ -48,7 +48,6 @@ type formState struct {
 	version uint64
 	patches []VersionedPatch
 	// trimmed is the highest version dropped from patches, or 0 if nothing
-	// was. It is NOT inferrable from patches[0].Version: a no-op patch
 	// appends no record, so a form whose first records changed nothing
 	// legitimately starts at a version above 1, and reading the gap as a
 	// trim sent every cold read to the log.
@@ -70,7 +69,6 @@ type Intent uint8
 
 const (
 	// Ensure: the caller wants the key absent and does not care whether it
-	// was. Birth dressing means this, and `-D` may name a key the parent
 	// closure never held.
 	Ensure Intent = iota
 	// Assert: the caller believes the key is there. Removing one that is not
@@ -100,9 +98,7 @@ type FormLog interface {
 	SyncThrough(index uint64) error
 	// RangePatches visits records in index order, from `from` (1 or 0 is the
 	// beginning) through `upTo` (0 is the end). The BOUNDS are the point: a
-	// cold read of a range the resident window no longer holds used to start
 	// at record 1 and read its way up to the range, so a retranslate of an
-	// aria with a long board was O(records x history).
 	RangePatches(from, upTo uint64, fn func(index uint64, payload []byte) error) error
 }
 
@@ -118,7 +114,7 @@ func OpenForm(log FormLog) (*Form, error) {
 		}
 		st.snap = st.snap.Apply(p)
 		st.version = index
-		if !p.IsEmpty() {
+		if !p.IsIdentity() {
 			st.patches = append(st.patches, VersionedPatch{Version: index, Patch: p})
 		}
 		return nil
@@ -178,14 +174,12 @@ func (f *Form) Snapshot() (form.Snapshot, uint64) {
 	return st.snap, st.version
 }
 
-// Read is the published pair: the state and the version it was published AT,
 // from one atomic load, as one value.
 func (f *Form) Read() FormAt {
 	st := f.state.Load()
 	return FormAt{Snapshot: st.snap, Version: st.version}
 }
 
-// FormAt is a form's state together with the version it was published at.
 // The zero value is an empty form at version 0.
 type FormAt struct {
 	Snapshot form.Snapshot
@@ -198,7 +192,6 @@ func (f *Form) PatchesBetween(after, upTo uint64) []VersionedPatch {
 	st := f.state.Load()
 	ps := st.patches
 	// Only a TRIM sends a read to disk. A cold retranslate of history the
-	// window no longer holds walks the log; everything else is the view.
 	if upTo > after && st.trimmed > 0 && after < st.trimmed {
 		if fromLog, ok := f.patchesFromLog(after, upTo); ok {
 			figOtel.RecordFormPatchRead(context.Background(), len(fromLog), len(ps))
@@ -207,13 +200,11 @@ func (f *Form) PatchesBetween(after, upTo uint64) []VersionedPatch {
 	}
 	out := patchRange(ps, after, upTo)
 	// The pair the old API could not report: what this read answered with,
-	// and how long the history behind it was. Free here (both are in hand),
 	// and it is the only place that knows both.
 	figOtel.RecordFormPatchRead(context.Background(), len(out), len(ps))
 	return out
 }
 
-// patchesFromLog re-reads a range the resident window no longer covers.
 // Allocates, and is meant to: it is the cold path.
 func (f *Form) patchesFromLog(after, upTo uint64) ([]VersionedPatch, bool) {
 	var out []VersionedPatch
@@ -222,7 +213,7 @@ func (f *Form) patchesFromLog(after, upTo uint64) ([]VersionedPatch, bool) {
 		if err := json.Unmarshal(payload, &p); err != nil {
 			return err
 		}
-		if !p.IsEmpty() {
+		if !p.IsIdentity() {
 			out = append(out, VersionedPatch{Version: index, Patch: p})
 		}
 		return nil
@@ -385,7 +376,6 @@ func (f *Form) runBatch(batch []*formWrite) {
 		// what the sync actually covered.
 		figOtel.RecordSync(context.Background(), time.Since(started), len(events))
 		if err != nil {
-			// Nothing was published. The records are on the caller side of
 			// durability, so the honest answer is that they did not happen:
 			// every write in this batch is rejected and the state stands
 			// where it stood.
@@ -430,7 +420,11 @@ func (f *Form) reduceOne(st *formState, w *formWrite) (*formState, formResult) {
 		return nil, formResult{version: st.version, err: err}
 	}
 	if w.intent == Assert {
-		for _, k := range w.patch.Removes() {
+		for _, ent := range w.patch.Entries() {
+			if !ent.IsRemoval() {
+				continue
+			}
+			k := ent.Key
 			if !st.snap.Has(k) {
 				return nil, formResult{version: st.version,
 					err: fmt.Errorf("remove %q: no such key", k)}
@@ -439,10 +433,9 @@ func (f *Form) reduceOne(st *formState, w *formWrite) (*formState, formResult) {
 	}
 	// REDUCE FIRST, and purely. A patch is only an event if it changes
 	// something, and the reduce touches nothing, which is why a failure
-	// anywhere below leaves the published state exactly as it was and there
 	// is nothing to roll back.
 	applied := effectivePatch(st.snap, w.patch)
-	if applied.IsEmpty() {
+	if applied.IsIdentity() {
 		return nil, formResult{version: st.version, applied: applied}
 	}
 	payload, err := json.Marshal(applied)
@@ -515,7 +508,7 @@ func effectivePatch(snap form.Snapshot, p message.Patch) message.Patch {
 type MemFormLog struct {
 	records atomic.Pointer[[][]byte]
 
-	// writing detects a SECOND CONCURRENT WRITER. The lock removal rests on
+	// writing detects a Second concurrent writer. The lock removal rests on
 	// the single-writer contract, so the contract breaking must be REPORTED
 	// rather than silently tolerated -- otherwise the removal is an assumption
 	// instead of a design.

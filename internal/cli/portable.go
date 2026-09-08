@@ -148,14 +148,15 @@ func exportAria(ctx context.Context, acli *sdk.Angelus, loaded *config.Loaded, i
 	if boardErr != nil {
 		return portableAria{}, fmt.Errorf("form %s: %w", id, boardErr)
 	}
-	doc.Board = form.Creates(map[string]json.RawMessage{})
+	keys := map[string]json.RawMessage{}
 	for k, v := range board.All() {
 		// The destination stamps its own id; carrying this one would lie.
 		if k == "aria_id" {
 			continue
 		}
-		doc.Board.Leaves()[k] = v
+		keys[k] = v
 	}
+	doc.Board = form.Build(form.Snapshot{}, keys, nil)
 	if raw, ok := board.Get("system.outfit_name"); ok {
 		_ = json.Unmarshal(raw, &doc.Outfit)
 	}

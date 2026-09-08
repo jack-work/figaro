@@ -11,10 +11,10 @@ import (
 
 func boardWithLimits(keyBytes, total int) form.Snapshot {
 	s := form.Snapshot{}
-	return s.Apply(form.Creates(map[string]json.RawMessage{
+	return s.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		form.DeltaKeyBytesKey: json.RawMessage(itoa(keyBytes)),
 		form.DeltaBytesKey:    json.RawMessage(itoa(total)),
-	}))
+	}, nil))
 }
 
 func itoa(n int) string {
@@ -30,7 +30,7 @@ func TestStudyBlockCutsFatValuesOnRuneBoundaries(t *testing.T) {
 	msg := message.Message{
 		Role: message.RoleInput,
 		StudyPatches: map[string][]message.Patch{
-			"@f1": {form.Creates(map[string]json.RawMessage{"blob": mustJSON(fat)})},
+			"@f1": {form.Build(form.Snapshot{}, map[string]json.RawMessage{"blob": mustJSON(fat)}, nil)},
 		},
 		StudyAt: map[string]uint64{"@f1": 7},
 	}
@@ -91,7 +91,7 @@ func TestStudyBlockNegativeLimitIsUnbounded(t *testing.T) {
 	msg := message.Message{
 		Role: message.RoleInput,
 		StudyPatches: map[string][]message.Patch{
-			"@f1": {form.Creates(map[string]json.RawMessage{"blob": mustJSON(fat)})},
+			"@f1": {form.Build(form.Snapshot{}, map[string]json.RawMessage{"blob": mustJSON(fat)}, nil)},
 		},
 		StudyAt: map[string]uint64{"@f1": 1},
 	}

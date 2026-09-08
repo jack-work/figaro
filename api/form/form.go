@@ -12,7 +12,6 @@ import (
 // Snapshot is a structural view of an aria's board: a JSON object whose
 // members are the keys, nested where the keys nest.
 //
-// It was a FLAT map of dotted strings to opaque JSON, which made a dot a
 // convention nothing enforced and made every value below the first level
 // unreachable: changing one field of a 6.5KB credo rewrote the credo. The
 // dots address a tree now, and a patch reaches any node of it.
@@ -21,7 +20,6 @@ type Snapshot struct {
 }
 
 // Path is a key resolved to its segments. Dots address the tree; a segment
-// may itself contain a dot where the key was written that way, so a path is
 // resolved AGAINST a snapshot rather than parsed in isolation.
 type Path []string
 
@@ -51,11 +49,8 @@ func (s Snapshot) Root() Value {
 // FromValue wraps a root object as a snapshot.
 func FromValue(v Value) Snapshot { return Snapshot{root: v} }
 
-// Get returns the raw value at key and whether it was present.
-//
-// The key is resolved segment by segment, LONGEST MATCH FIRST at every level,
+// The key is resolved segment by segment, Longest match first at every level,
 // so a key whose own name contains a dot resolves to itself rather than to a
-// path that does not exist. That is what makes `skills.howto` and
 // `skills.howto.md` both addressable.
 func (s Snapshot) Get(key string) (json.RawMessage, bool) {
 	v, ok := s.resolve(key)
@@ -187,11 +182,15 @@ func (s Snapshot) Apply(p Patch) Snapshot {
 	return Snapshot{root: next}
 }
 
-// Additive keeps only what p would actually change on s. A patch that removes
-// is not additive, so removals are dropped and what remains is re-diffed
-// against s: whatever is left is genuinely new or genuinely different.
+// Additive keeps only what p would add to s. Removals are dropped.
 func Additive(s Snapshot, p Patch) Patch {
-	return s.Apply(p.creationsOnly()).Diff(s)
+	set := map[string]json.RawMessage{}
+	for _, e := range p.Entries() {
+		if !e.IsRemoval() {
+			set[e.Key] = e.New
+		}
+	}
+	return Build(s, set, nil)
 }
 
 // SetPath returns a snapshot with key set to v, creating intermediate objects.
@@ -287,7 +286,6 @@ func decodeRawObject(v Value) (map[string]json.RawMessage, bool) {
 // MarshalJSON emits the nested object: what the form channel holds on disk.
 func (s Snapshot) MarshalJSON() ([]byte, error) { return s.Root().Raw(), nil }
 
-// UnmarshalJSON reads the nested object. A FLAT board written before the tree
 // -- dotted keys at the top level -- is nested on read, so an old store opens
 // without a rewrite.
 func (s *Snapshot) UnmarshalJSON(data []byte) error {
@@ -330,8 +328,8 @@ func (e Entry) NewString() string { return decodeStringOrRaw(e.New) }
 // OldString is the entry's old value as a string, or "".
 func (e Entry) OldString() string { return decodeStringOrRaw(e.Old) }
 
-// PatchEntries flattens a patch to one entry per changed LEAF, against the
-// board as it stood before.
+// PatchEntries is the patch's entries resolved against the board it applies
+// to, so an entry that changes an existing key carries the value it replaces.
 func PatchEntries(p Patch, prev Snapshot) []Entry {
 	next := prev.Apply(p)
 	before := map[string]json.RawMessage{}

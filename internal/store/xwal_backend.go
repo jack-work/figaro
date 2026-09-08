@@ -393,10 +393,14 @@ func (b *XwalBackend) form(ariaID string) (*Form, error) {
 // shows. Four keys, checked on a patch that is usually one key wide.
 func namesOutfit(patch message.Patch) bool {
 	for _, k := range []string{keyOutfitName, keyOutfitVer, keyLegacyName, keyLegacyVer} {
-		if _, ok := patch.Leaves()[k]; ok {
+		if _, ok := patch.Entry(k); ok {
 			return true
 		}
-		for _, r := range patch.Removes() {
+		for _, ent := range patch.Entries() {
+			if !ent.IsRemoval() {
+				continue
+			}
+			r := ent.Key
 			if r == k {
 				return true
 			}

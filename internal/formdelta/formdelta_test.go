@@ -24,7 +24,7 @@ func backend(t *testing.T) *store.XwalBackend {
 }
 
 func patchOf(kv map[string]string) message.Patch {
-	p := form.Creates(map[string]json.RawMessage{})
+	p := form.Build(form.Snapshot{}, map[string]json.RawMessage{}, nil)
 	for k, v := range kv {
 		p.Leaves()[k] = json.RawMessage(v)
 	}

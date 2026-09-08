@@ -51,9 +51,9 @@ func formWithPatches(t testing.TB, n int) *Form {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := f.Apply(form.Creates(map[string]json.RawMessage{
+		if _, err := f.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 			fmt.Sprintf("key%d", i%7): raw,
-		}), 0); err != nil {
+		}, nil), 0); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -159,7 +159,7 @@ func TestFormPatchesBetweenUnderConcurrentWrites(t *testing.T) {
 			default:
 			}
 			raw, _ := json.Marshal(fmt.Sprintf("w%d", i))
-			_, _ = f.Apply(form.Creates(map[string]json.RawMessage{"hot": raw}), 0)
+			_, _ = f.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{"hot": raw}, nil), 0)
 		}
 	}()
 

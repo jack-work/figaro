@@ -12,7 +12,7 @@ func formDeltaAt(version uint64, key, value string) rpc.FormDelta {
 	return rpc.FormDelta{
 		Schema:  rpc.FormDeltaSchema,
 		Version: version,
-		Patch:   form.Creates(map[string]json.RawMessage{key: json.RawMessage(value)}),
+		Patch:   form.Build(form.Snapshot{}, map[string]json.RawMessage{key: json.RawMessage(value)}, nil),
 	}
 }
 

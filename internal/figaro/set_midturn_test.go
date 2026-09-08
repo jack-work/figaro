@@ -67,23 +67,23 @@ func (p *snapshotWatchProvider) Send(_ context.Context, in provider.SendInput, b
 func TestASetMidTurnDoesNotMoveTheBoardUnderTheTurnInFlight(t *testing.T) {
 	p := &snapshotWatchProvider{entered: make(chan struct{}), release: make(chan struct{})}
 	cb, _ := form.Open("")
-	cb.Apply(form.Patchform.Creates(map[string]json.RawMessage{
+	cb.Apply(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"mock-model-v1"`),
 		"system.provider": json.RawMessage(`"mock"`),
-	}))
-	be, id := store.NewTestAria(t, "d", message.Patchform.Creates(map[string]json.RawMessage{
+	}, nil))
+	be, id := store.NewTestAria(t, "d", message.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"mock-model-v1"`),
 		"system.provider": json.RawMessage(`"mock"`),
-	}))
+	}, nil))
 	a := figaro.NewAgent(figaro.Config{
 		Projector: uiir.New(nil), ID: id, SocketPath: "/tmp/test-set-midturn.sock",
 		Provider: p, Backend: be, Form: cb,
 	})
 	defer a.Kill()
 
-	_, _, err := a.Set(form.Patchform.Creates(map[string]json.RawMessage{
+	_, _, err := a.Set(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"probe": json.RawMessage(`"before"`),
-	}), 0)
+	}, nil), 0)
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
 		v := a.Snapshot().Lookup("probe")
@@ -98,9 +98,9 @@ func TestASetMidTurnDoesNotMoveTheBoardUnderTheTurnInFlight(t *testing.T) {
 	}
 
 	// THE TURN IS RUNNING. Move the board.
-	_, _, err = a.Set(form.Patchform.Creates(map[string]json.RawMessage{
+	_, _, err = a.Set(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"probe": json.RawMessage(`"during"`),
-	}), 0)
+	}, nil), 0)
 	require.NoError(t, err)
 	time.Sleep(100 * time.Millisecond) // let it land if it is going to
 	close(p.release)

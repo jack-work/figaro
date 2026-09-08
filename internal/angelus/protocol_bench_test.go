@@ -92,10 +92,10 @@ func BenchmarkDormantList(b *testing.B) {
 			}
 			b.Cleanup(func() { _ = backend.Close() })
 			if n > 0 {
-				outfit, err := backend.CreateOutfit("perf", form.Creates(map[string]json.RawMessage{
+				outfit, err := backend.CreateOutfit("perf", form.Build(form.Snapshot{}, map[string]json.RawMessage{
 					"system.provider": json.RawMessage(`"perf"`),
 					"system.model":    json.RawMessage(`"perf-model"`),
-				}))
+				}, nil))
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -104,10 +104,10 @@ func BenchmarkDormantList(b *testing.B) {
 					if err != nil {
 						b.Fatal(err)
 					}
-					if _, err := backend.ApplyForm(id, form.Creates(map[string]json.RawMessage{
+					if _, err := backend.ApplyForm(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{
 						"mantra":     json.RawMessage(fmt.Sprintf("%q", fmt.Sprintf("aria %d", i))),
 						"system.cwd": json.RawMessage(`"/work"`),
-					})); err != nil {
+					}, nil)); err != nil {
 						b.Fatal(err)
 					}
 					log, err := backend.OpenFigIR(id)

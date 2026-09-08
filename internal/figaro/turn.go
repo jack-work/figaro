@@ -83,14 +83,10 @@ func (b *turnBus) PushFigaro(m message.Message, caches ...provider.AssistantCach
 		cache = &copy
 	}
 	ack := make(chan error, 1)
-	// THE HAND-OVER IS NOT RACED AGAINST THE CANCELLATION IT REPORTS. This
-	// used to select on b.ctx.Done() and PANIC when it won -- so a provider
-	// closing prematurely, which happens precisely because the context was
-	// cancelled, could never deliver its partial message. The panic was
-	// recovered into a send error, so the symptom was a missing translation
+	// THE HAND-OVER IS Not raced against the cancellation IT REPORTS. This
 	// and nothing in the log to say why.
 	//
-	// A PLAIN SEND CANNOT HANG HERE: the drain loop reads until bus.events is
+	// A Plain send cannot hang here: the drain loop reads until bus.events is
 	// CLOSED, and it is closed after Send returns -- so the reader is alive
 	// for as long as a provider can still push.
 	b.events <- busEvent{kind: evFigaro, msg: m, cache: cache, ack: ack}
@@ -136,11 +132,8 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	a.lastActive = time.Now()
 	a.mu.Unlock()
 
-	// AN ORPHANED INVOKE IS CLOSED BEFORE THE HISTORY IS ASSEMBLED, not only
-	// when a turn ends. finishTurn was the sole closer, so a history that
+	// AN ORPHANED INVOKE IS Closed before the history IS ASSEMBLED, not only
 	// reached this point carrying one -- a fork taken over a dead tool call,
-	// a daemon killed mid-round -- was refused by every provider ("tool_use
-	// ids were found without tool_result blocks") on every send, forever.
 	// Turn start is the safe moment: no round is in flight by definition.
 	if a.backend != nil {
 		if n, err := a.backend.CloseOpenToolCalls(a.id); err != nil {
@@ -198,7 +191,6 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 // message and matching committed UI unit.
 //
 // steering distinguishes the two kinds of input, and the DRAIN is the only place
-// that can decide it: it alone knows whether a turn was already in flight when
 // this prompt came off the queue. An inquiry opens a turn; a steer joins the one
 // already running. The field is persisted so a replayed log classifies the same
 // way it did live: but nothing outside this package ever supplies it.
@@ -218,15 +210,15 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (store.Entry[messa
 		mv, _ := json.Marshal(firstChars(prompt.text, 60))
 		seed["mantra"] = mv
 	}
-	combined := form.Creates(seed)
-	if !combined.IsEmpty() {
+	combined := form.Build(form.Snapshot{}, seed, nil)
+	if !combined.IsIdentity() {
 		// Durability precedes visibility: on a failed append the in-memory
 		// form is not advanced, so board and log agree after a restart.
 		if _, err := a.backend.ApplyForm(a.id, combined); err != nil {
 			slog.Error("turn form append", "aria", a.id, "err", err)
 			combined = form.Patch{}
 		}
-		if !combined.IsEmpty() {
+		if !combined.IsIdentity() {
 			a.form.Apply(combined)
 		}
 	}
@@ -280,7 +272,6 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (store.Entry[messa
 				// built here: startAssistantUnit keeps the steer inside the
 				// recomposed window so the PROJECTION emits its steering node.
 				// One producer of UI IR, not two: hand-building it here is what
-				// silently lost the steer when the region was recomposed.
 				return entry, nil
 			}
 			// The inquiry is TEXT ON THE TURN, not a node: recording it is
@@ -310,7 +301,6 @@ func (a *Agent) startAssistantUnit() {
 			// single drain can yield several. Back up past the whole trailing run
 			// so every one of them sits INSIDE the recomposed window (which is
 			// turnStartLT+1..) and the PROJECTION emits their steering nodes. The
-			// drain used to hand-build one node instead, which both lost steers
 			// beyond the first and vanished entirely on the next recompose.
 			for a.turnStartLT > 0 {
 				prev := a.figLog.ReadFrom(a.turnStartLT, 1)
@@ -476,7 +466,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 				force = true
 			}
 			var ackErr error
-			// AN INTERRUPTED TURN STILL ACCEPTS THE PROVIDER'S MESSAGE. A
+			// AN Interrupted turn still accepts the provider'S MESSAGE. A
 			// provider that closes early hands over what its OWN accumulator
 			// holds, with its native payload; figaro's repair can only
 			// synthesise the text, so the translation of a partial message had
@@ -497,9 +487,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 					if a.turn != nil {
 						a.turn.committed = true
 					}
-					// THE LT IS WHAT THE APPEND RETURNED. It used to be
 					// PREDICTED before the provider ran -- the provider's
-					// append was staged against a guessed next index and this
 					// checked the guess -- and a prediction that can be wrong
 					// is a prediction somebody has to check. There is nothing
 					// left to disagree with.
@@ -764,7 +752,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 // prompt as its own user message, and opens a fresh assistant unit for the
 // next provider round.
 func (a *Agent) appendSteeringPrompts() error {
-	// AN INTERRUPTED TURN DOES NOT TAKE THE QUEUE WITH IT. Draining here after
+	// AN Interrupted turn does not take the queue with IT. Draining here after
 	// the cancel is how queued messages got "received", appended to the log,
 	// visible on screen, and then never answered: the round that absorbed
 	// them opened with an already-cancelled context, so it died immediately
@@ -875,7 +863,6 @@ func mergePromptEvents(prompts []event) (event, bool) {
 		}
 		out.form = mergeFormInput(out.form, p.form)
 		// Concatenated, never flattened: the fold is exactly where attribution
-		// used to be lost. Three nudges from three senders become one message
 		// of three attributed segments, not one anonymous paragraph.
 		out.segments = append(out.segments, p.segments...)
 		out.merged = append(out.merged, p.merged...)
@@ -886,10 +873,7 @@ func mergePromptEvents(prompts []event) (event, bool) {
 	// A BLANK line between them, not a single newline. Two reasons, and they
 	// point the same way. On screen, prose is rendered as markdown, where a
 	// lone newline is a SOFT break: glamour rejoins the lines and three
-	// messages arrive as "test2 test3 test4", which is what made this look
 	// like one garbled sentence. And for the model, a blank line is the
-	// unambiguous mark of "these were separate messages", which is exactly
-	// what they were. What the user sees and what the agent reads agree.
 	out.text = strings.Join(texts, "\n\n")
 	return out, true
 }
@@ -931,7 +915,6 @@ func mergeFormInput(a, b *rpc.FormInput) *rpc.FormInput {
 	}
 	if a.Patch != nil || b.Patch != nil {
 		// Two patches applied in series ARE one patch: that is Merge, and it
-		// is the operation the old field-by-field union was approximating.
 		var merged form.Patch
 		for _, src := range []*rpc.FormPatch{a.Patch, b.Patch} {
 			if src == nil {
@@ -964,7 +947,6 @@ func (a *Agent) collectToolResults(
 	}
 
 	outcomes := make(map[string]toolOutcome, len(calls))
-	// Phase-1 events were already checkpointed as they arrived; only their
 	// terminal outcomes are needed for canonical result assembly here.
 	for _, te := range toolBuf {
 		if te.kind == toolEnd {
@@ -1044,7 +1026,6 @@ func (a *Agent) assembleToolResults(
 	total := a.toolImageBudget()
 	budget := total
 	for i, tc := range calls {
-		// The arguments never arrived intact, so nothing was executed. Report
 		// it in the shape the API documents for exactly this case, an
 		// is_error result whose content is {"INVALID_JSON": "<what arrived>"}
 		//, and hand back the bytes rather than a description of them. That is
@@ -1105,7 +1086,6 @@ func (a *Agent) toolImageBudget() int { return a.settings.InlineImageBudget() }
 //
 // An image is refitted when it does not fit the budget left on this message OR
 // when it is over what a provider accepts in a request carrying many images:
-// byte size alone used to decide, and a small file with large dimensions became
 // a 400 that no later turn could get past.
 func harvestToolImages(tc message.Content, oc toolOutcome, remaining, total int) (kept []message.Content, notes []string, spent int) {
 	for _, c := range oc.content {
@@ -1124,7 +1104,6 @@ func harvestToolImages(tc message.Content, oc toolOutcome, remaining, total int)
 		fitted, note, ok := refitToolImage(c, left)
 		if !ok {
 			// Say WHY, precisely. "Exceeds the budget" would be a lie when the
-			// budget was spent by an earlier call in the same round, and a model
 			// reasons from what it is told.
 			notes = append(notes, fmt.Sprintf(
 				"\n[image omitted: %s of base64 does not fit the %s still free in this message's %s image budget]",
@@ -1252,7 +1231,7 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 	if tc.Type != message.ContentToolInvoke || tc.ToolCallID == "" {
 		return nil
 	}
-	// A QUARANTINED CALL NEVER RUNS. Its arguments did not arrive as valid
+	// A Quarantined call never runs. Its arguments did not arrive as valid
 	// JSON, so there is nothing to run it WITH: executing on a guess is how a
 	// half-parsed `edit` writes the wrong bytes into a source file. Refusing
 	// here: the one chokepoint every tool passes through: leaves the call
@@ -1383,7 +1362,6 @@ func (a *Agent) composeTurn(inflight *message.Message) (prefix, suffix []livedoc
 // openToolTiming stamps the start of GENERATION: the provider has opened a
 // tool block and the model is about to write its arguments. Nothing else knows
 // this moment: by the time the tool is dispatched the writing is over, which
-// is why a thirty-second write used to render [0ms].
 func (a *Agent) openToolTiming(id string, at int64) {
 	if a.proj == nil {
 		return
@@ -1492,7 +1470,6 @@ func (a *Agent) abandonLive() {
 }
 
 // firstChars returns the first n runes of s's opening line (newlines folded
-// to spaces), ellipsized when cut: used to seed a conversation's mantra.
 func firstChars(s string, n int) string {
 	s = strings.TrimSpace(strings.ReplaceAll(s, "\n", " "))
 	r := []rune(s)
@@ -1506,7 +1483,6 @@ func firstChars(s string, n int) string {
 // so the turn blob can be recomposed mid-stream (before the fig IR side
 // appends it into the log).
 //
-// TEXT ACCUMULATES IN A BUILDER, NOT BY CONCATENATION. It used to do
 // s.msg.Content[n-1].Text += text, and Go strings are immutable, so every
 // delta reallocated everything before it: measured at 36 MB of allocation to
 // accumulate 64 KB over 1,024 deltas, bytes quadratic while allocations
@@ -1562,7 +1538,6 @@ func (s *asm) toolReady(id, name string, args map[string]interface{}) {
 // message returns the in-flight message, or nil when nothing has streamed.
 // Builder.String() hands back the accumulated buffer WITHOUT copying it, and
 // a later Write that grows the buffer leaves the returned string valid -- so
-// a frame already composed keeps the text it was given.
 func (s *asm) message() *message.Message {
 	if len(s.msg.Content) == 0 {
 		return nil
@@ -1575,7 +1550,6 @@ func (s *asm) message() *message.Message {
 	return &s.msg
 }
 
-// isInterrupted reports whether the current turn was interrupted.
 func (a *Agent) isInterrupted() bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -1623,8 +1597,8 @@ func (a *Agent) combineFormInput(input *rpc.FormInput) form.Patch {
 	out := form.Patch{}
 	for _, p := range []form.Patch{ctxPatch, clientPatch} {
 		switch {
-		case p.IsEmpty():
-		case out.IsEmpty():
+		case p.IsIdentity():
+		case out.IsIdentity():
 			out = p
 		default:
 			out = form.Merge(out, p)

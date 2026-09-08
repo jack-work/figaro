@@ -94,12 +94,12 @@ func TestMessage_StateOnlyTic(t *testing.T) {
 // constructed as form.Patch is assignable to message.Patch and
 // vice versa.
 func TestPatch_AliasIdentity(t *testing.T) {
-	cb := form.Creates(map[string]json.RawMessage{"k": json.RawMessage(`"v"`)})
+	cb := form.Build(form.Snapshot{}, map[string]json.RawMessage{"k": json.RawMessage(`"v"`)}, nil)
 	var m message.Patch = cb
-	assert.False(t, m.IsEmpty())
+	assert.False(t, m.IsIdentity())
 
 	mp := form.Build(form.Snapshot{}, map[string]json.RawMessage{}, []string{"x"})
-	assert.False(t, form.Patch(mp).IsEmpty())
+	assert.False(t, form.Patch(mp).IsIdentity())
 }
 
 func TestNewInterruptSentinel_NamesAllToolCalls(t *testing.T) {

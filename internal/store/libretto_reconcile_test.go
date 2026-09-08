@@ -19,7 +19,7 @@ func studySet(t *testing.T, be *XwalBackend, ariaID string, forms ...string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := be.ApplyFormPrivileged(ariaID, form.Creates(map[string]json.RawMessage{StudiesKey: raw})); err != nil {
+	if _, err := be.ApplyFormPrivileged(ariaID, form.Build(form.Snapshot{}, map[string]json.RawMessage{StudiesKey: raw}, nil)); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -51,7 +51,7 @@ func TestDiff_NoChange(t *testing.T) {
 		"model": raw(t, "claude-opus-4-6"),
 	})
 	p := next.Diff(prev)
-	assert.True(t, p.IsEmpty(), "identical snapshots produce empty patch")
+	assert.True(t, p.IsIdentity(), "identical snapshots produce empty patch")
 }
 
 func TestDiff_AddSetRemove(t *testing.T) {

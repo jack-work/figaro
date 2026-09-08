@@ -3,6 +3,7 @@ package angelus
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"log/slog"
 	"path/filepath"
 	"sync"
@@ -145,7 +146,7 @@ func (h *handlers) writeForHub(id, method string, params json.RawMessage) (any, 
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, true, err
 	}
-	if req.Patch.IsEmpty() {
+	if req.Patch.IsIdentity() {
 		v, _ := h.angelus.Backend.FormVersion(id)
 		return rpc.SetResponse{OK: true, Outcome: rpc.OutcomeUnchanged, Version: v}, true, nil
 	}
@@ -161,11 +162,15 @@ func (h *handlers) writeForHub(id, method string, params json.RawMessage) (any, 
 	// the board already holds is not an event: the writer dropped it, so this
 	// says so, no delta goes out, and an aria observing this form derives no
 	// transition from it.
-	if applied.IsEmpty() {
+	if applied.IsIdentity() {
 		return rpc.SetResponse{OK: true, Outcome: rpc.OutcomeUnchanged, Version: version}, true, nil
 	}
 	var set []string
-	for k := range applied.Leaves() {
+	for _, ent := range applied.Entries() {
+		k := ent.Key
+		if ent.IsRemoval() {
+			continue
+		}
 		set = append(set, k)
 	}
 	if hb := h.angelus.Hubs.get(id); hb != nil {
@@ -175,7 +180,7 @@ func (h *handlers) writeForHub(id, method string, params json.RawMessage) (any, 
 		})
 	}
 	return rpc.SetResponse{
-		OK: true, Set: set, Remove: applied.Removes(),
+		OK: true, Set: set, Remove: removedKeys(applied),
 		Outcome: rpc.OutcomeApplied, Version: version,
 	}, true, nil
 }
@@ -193,3 +198,13 @@ func (h *handlers) wakeForHub(ctx context.Context, id string) (figaro.AgentServe
 // readForHub answers the read methods from the store. ok=false hands the
 // request back to the wake path, so an unclassified method can never be
 // silently answered from stale bytes.
+
+func removedKeys(p form.Patch) []string {
+	var out []string
+	for _, e := range p.Entries() {
+		if e.IsRemoval() {
+			out = append(out, e.Key)
+		}
+	}
+	return out
+}

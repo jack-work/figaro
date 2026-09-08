@@ -23,7 +23,7 @@ func (f *fakeForm) PatchesBetween(after, upTo uint64) []message.Patch {
 }
 
 func vp(v uint64, key, val string) store.VersionedPatch {
-	return store.VersionedPatch{Version: v, Patch: form.Creates(map[string]json.RawMessage{key: json.RawMessage(val)})}
+	return store.VersionedPatch{Version: v, Patch: form.Build(form.Snapshot{}, map[string]json.RawMessage{key: json.RawMessage(val)}, nil)}
 }
 
 // The observed set folds at the stamps: each entry's StudyVersions
@@ -107,8 +107,8 @@ func TestStudyReminderTextsDeterministic(t *testing.T) {
 	msg := message.Message{
 		Study: &message.StudyMark{FormID: "@r", Began: true},
 		StudyPatches: map[string][]message.Patch{
-			"@b": {form.Creates(map[string]json.RawMessage{"x": json.RawMessage(`1`)})},
-			"@a": {form.Creates(map[string]json.RawMessage{"y": json.RawMessage(`2`)})},
+			"@b": {form.Build(form.Snapshot{}, map[string]json.RawMessage{"x": json.RawMessage(`1`)}, nil)},
+			"@a": {form.Build(form.Snapshot{}, map[string]json.RawMessage{"y": json.RawMessage(`2`)}, nil)},
 		},
 	}
 	a := StudyReminderTexts(msg, form.Snapshot{})
@@ -136,8 +136,8 @@ func TestStudyReminderTextsDeterministic(t *testing.T) {
 func TestStudyWindowIsFoldedToItsResult(t *testing.T) {
 	msg := message.Message{StudyPatches: map[string][]message.Patch{
 		"@r": {
-			form.Creates(map[string]json.RawMessage{"brief": json.RawMessage(`"stand by"`), "doomed": json.RawMessage(`1`)}),
-			form.Creates(map[string]json.RawMessage{"brief": json.RawMessage(`"go"`)}),
+			form.Build(form.Snapshot{}, map[string]json.RawMessage{"brief": json.RawMessage(`"stand by"`), "doomed": json.RawMessage(`1`)}, nil),
+			form.Build(form.Snapshot{}, map[string]json.RawMessage{"brief": json.RawMessage(`"go"`)}, nil),
 			{Set: map[string]json.RawMessage{"brief": json.RawMessage(`"the watchword is COLUMBINE"`)}, Remove: []string{"doomed"}},
 		},
 	}}
@@ -177,10 +177,10 @@ func TestStudyWindowIsFoldedToItsResult(t *testing.T) {
 // renderer skips it, and an observed form is not different.
 func TestStudyRenderSkipsTheHarnessNamespace(t *testing.T) {
 	msg := message.Message{StudyPatches: map[string][]message.Patch{
-		"@r": {form.Creates(map[string]json.RawMessage{
+		"@r": {form.Build(form.Snapshot{}, map[string]json.RawMessage{
 			"system.studies": json.RawMessage(`["@x"]`),
 			"brief":          json.RawMessage(`"visible"`),
-		})},
+		}, nil)},
 	}}
 	joined := strings.Join(StudyReminderTexts(msg, form.Snapshot{}), "\n")
 	if strings.Contains(joined, "system.studies") {
@@ -191,7 +191,7 @@ func TestStudyRenderSkipsTheHarnessNamespace(t *testing.T) {
 	}
 	// A window of nothing BUT system keys renders no block at all.
 	only := message.Message{StudyPatches: map[string][]message.Patch{
-		"@r": {form.Creates(map[string]json.RawMessage{"system.x": json.RawMessage(`1`)})},
+		"@r": {form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.x": json.RawMessage(`1`)}, nil)},
 	}}
 	if texts := StudyReminderTexts(only, form.Snapshot{}); len(texts) != 0 {
 		t.Errorf("want no block, got %v", texts)
@@ -206,8 +206,8 @@ func TestStudyMarkCarriesTheBaselineState(t *testing.T) {
 	msg := message.Message{
 		Study: &message.StudyMark{FormID: "@r", Began: true},
 		StudyPatches: map[string][]message.Patch{"@r": {
-			form.Creates(map[string]json.RawMessage{"brief": json.RawMessage(`"stand by"`)}),
-			form.Creates(map[string]json.RawMessage{"name": json.RawMessage(`"warden"`)}),
+			form.Build(form.Snapshot{}, map[string]json.RawMessage{"brief": json.RawMessage(`"stand by"`)}, nil),
+			form.Build(form.Snapshot{}, map[string]json.RawMessage{"name": json.RawMessage(`"warden"`)}, nil),
 		}},
 		StudyAt: map[string]uint64{"@r": 2},
 	}
@@ -226,7 +226,7 @@ func TestStudyMarkCarriesTheBaselineState(t *testing.T) {
 	}
 
 	// A form that is NOT the one being marked still renders its own block.
-	msg.StudyPatches["@other"] = []message.Patch{form.Creates(map[string]json.RawMessage{"x": json.RawMessage(`1`)})}
+	msg.StudyPatches["@other"] = []message.Patch{form.Build(form.Snapshot{}, map[string]json.RawMessage{"x": json.RawMessage(`1`)}, nil)}
 	if got := len(StudyReminderTexts(msg, form.Snapshot{})); got != 2 {
 		t.Errorf("want the mark plus one fold, got %d", got)
 	}
@@ -292,10 +292,10 @@ func TestAssistantRecordDoesNotSwallowAStudyWindow(t *testing.T) {
 // the form killed and nothing said about it.
 func TestADeadSourceIsRenderedAsAFact(t *testing.T) {
 	msg := message.Message{StudyPatches: map[string][]message.Patch{
-		"@r": {form.Creates(map[string]json.RawMessage{
+		"@r": {form.Build(form.Snapshot{}, map[string]json.RawMessage{
 			store.KeyLibrettoAlive: json.RawMessage(`false`),
 			store.KeyLibrettoAt:    json.RawMessage(`9`),
-		})},
+		}, nil)},
 	}}
 	joined := strings.Join(StudyReminderTexts(msg, form.Snapshot{}), "\n")
 	if !strings.Contains(joined, `"exists":false`) {
@@ -308,7 +308,7 @@ func TestADeadSourceIsRenderedAsAFact(t *testing.T) {
 	// And a copy that is merely BOOKKEEPING renders nothing at all: `at`
 	// moves on every fold and is nobody's business.
 	quiet := message.Message{StudyPatches: map[string][]message.Patch{
-		"@r": {form.Creates(map[string]json.RawMessage{store.KeyLibrettoAt: json.RawMessage(`10`)})},
+		"@r": {form.Build(form.Snapshot{}, map[string]json.RawMessage{store.KeyLibrettoAt: json.RawMessage(`10`)}, nil)},
 	}}
 	if got := StudyReminderTexts(quiet, form.Snapshot{}); len(got) != 0 {
 		t.Errorf("bookkeeping rendered a block: %v", got)

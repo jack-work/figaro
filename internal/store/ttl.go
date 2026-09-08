@@ -73,7 +73,8 @@ func ParseTTL(s string) (time.Duration, error) {
 // ttlOf reads the ttl a patch states, and whether the patch speaks about it at
 // all. A removal clears the lifetime.
 func ttlOf(patch message.Patch) (raw string, spoke bool) {
-	if v, ok := patch.Leaves()[SystemTTLKey]; ok {
+	if e, ok := patch.Entry(SystemTTLKey); ok && !e.IsRemoval() {
+		v := e.New
 		var s string
 		if err := json.Unmarshal(v, &s); err != nil {
 			// A non-string value is a mistake, not a lifetime. Clearing is
@@ -82,7 +83,11 @@ func ttlOf(patch message.Patch) (raw string, spoke bool) {
 		}
 		return s, true
 	}
-	for _, k := range patch.Removes() {
+	for _, ent := range patch.Entries() {
+		if !ent.IsRemoval() {
+			continue
+		}
+		k := ent.Key
 		if k == SystemTTLKey {
 			return "", true
 		}

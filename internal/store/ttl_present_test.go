@@ -22,9 +22,9 @@ func ttlPresentBackend(t *testing.T) (*store.XwalBackend, string) {
 	if err := wire.Install(b.Store(), root, wire.Capabilities{Trunks: true}); err != nil {
 		t.Fatal(err)
 	}
-	outfit, err := b.CreateOutfit("ttl", message.Patchform.Creates(map[string]json.RawMessage{
+	outfit, err := b.CreateOutfit("ttl", message.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"skills.x": json.RawMessage(`1`),
-	}))
+	}, nil))
 	if err != nil {
 		t.Fatal(err)
 	}

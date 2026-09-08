@@ -19,9 +19,9 @@ import (
 func benchStudyMessage() message.Message {
 	return message.Message{
 		Study: &message.StudyMark{FormID: "@f", Began: true},
-		StudyPatches: map[string][]message.Patch{"@f": {form.Creates(map[string]json.RawMessage{
+		StudyPatches: map[string][]message.Patch{"@f": {form.Build(form.Snapshot{}, map[string]json.RawMessage{
 			"brief": json.RawMessage(`"ship it"`),
-		})}},
+		}, nil)}},
 		StudyAt: map[string]uint64{"@f": 3},
 	}
 }
@@ -76,9 +76,9 @@ func BenchmarkStudyReminderNoStudyEvent(b *testing.B) {
 }
 
 func BenchmarkForkReminderOrdinaryMessage(b *testing.B) {
-	msg := message.Message{Patches: []message.Patch{form.Creates(map[string]json.RawMessage{
+	msg := message.Message{Patches: []message.Patch{form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"mantra": json.RawMessage(`"hello"`),
-	})}}
+	}, nil)}}
 	board := benchBoard(40, nil)
 	b.ReportAllocs()
 	b.ResetTimer()

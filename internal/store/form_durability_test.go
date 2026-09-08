@@ -37,7 +37,7 @@ func (l *failingLog) SyncThrough(uint64) error {
 
 func kv(k, v string) message.Patch {
 	raw, _ := json.Marshal(v)
-	return form.Creates(map[string]json.RawMessage{k: raw})
+	return form.Build(form.Snapshot{}, map[string]json.RawMessage{k: raw}, nil)
 }
 
 // A failed sync rejects the patch and leaves the published state exactly
@@ -156,7 +156,7 @@ func TestNoopIsAnswered(t *testing.T) {
 	if version != v {
 		t.Fatalf("a no-op moved the version: %d -> %d", v, version)
 	}
-	if !applied.IsEmpty() {
+	if !applied.IsIdentity() {
 		t.Fatal("a no-op reported an applied patch")
 	}
 }

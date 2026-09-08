@@ -35,7 +35,6 @@ const (
 	// EVENT rather than a direct append because of what a direct append did:
 	// written from the RPC goroutine, it landed between an assistant
 	// tool_use and its tool_result, and every provider refuses that shape
-	// ("tool_use ids were found without tool_result blocks"). It bricked two
 	// real arias. Riding the inbox makes the record land where the loop is
 	// between rounds, which is the only place a user record is legal.
 	eventStudyMark
@@ -54,7 +53,6 @@ type event struct {
 
 	// Identity, eventUserPrompt only. id is minted by Inbox.Send and is unique
 	// within the inbox's epoch; merged names the ids folded INTO this event by
-	// an interrupt-time coalesce, so an id that no longer exists on its own can
 	// still be resolved to the message that absorbed it.
 	id     uint64
 	at     int64
@@ -68,13 +66,12 @@ type event struct {
 	form *rpc.FormInput
 	// segments is this event's attributed payloads, in submission order.
 	// A fresh submit has exactly one; mergePromptEvents concatenates them, so
-	// a folded message keeps WHO SAID WHAT instead of flattening it into one
+	// a folded message keeps Who said what instead of flattening it into one
 	// anonymous blob. text stays the joined display/mantra form.
 	segments []promptSegment
 }
 
 // setVerdict is what the writer decided: the version it landed at, what
-// actually landed after the reduce, and the refusal if there was one.
 type setVerdict struct {
 	version uint64
 	applied message.Patch
@@ -538,15 +535,13 @@ func (a *Agent) refreshMetricsFrom(msgs []message.Message) {
 func (a *Agent) SubmitPrompt(req rpc.QuaRequest) { _ = a.SubmitPromptFrom(req, "") }
 
 // SubmitPromptFrom is SubmitPrompt with the caller's rendered attribution.
-// sender is "" when nobody said who they were, which stays unattributed all
 // the way down rather than becoming "unknown".
-// FORM INPUT IS APPLIED HERE, SYNCHRONOUSLY, AND THE CALLER LEARNS IF IT IS
-// REFUSED. It used to ride the queued prompt and get applied inside the turn,
+// FORM INPUT IS Applied here, synchronously, and the caller learns IF IT IS
 // which is why a refusal -- a harness-owned key, say -- could only be logged:
 // the RPC had returned long before. A patch is data about the board, not about
 // the turn, so it lands when it is submitted.
 func (a *Agent) SubmitPromptFrom(req rpc.QuaRequest, sender string) error {
-	if patch := a.combineFormInput(req.Form); !patch.IsEmpty() {
+	if patch := a.combineFormInput(req.Form); !patch.IsIdentity() {
 		if _, err := a.backend.ApplyForm(a.id, patch); err != nil {
 			return err
 		}
@@ -659,7 +654,6 @@ func (a *Agent) openTurn() {
 
 // seedTurnID is the last turn the log knows about: the tail's id, at the cost
 // of one record. Every record carries its own (enforced by the IR door), so
-// the fold this used to run had its accumulator already on disk.
 //
 // The walk remains the fallback and is cheap where it is taken: a tail with no
 // id means a log holding nothing but pre-prompt records, since any prompt
@@ -905,11 +899,9 @@ func (a *Agent) act(ctx context.Context) {
 		}
 		switch evt.typ {
 		case eventUserPrompt:
-			// COALESCE THE WAITING RUN. Everything queued behind this prompt
+			// Coalesce the waiting run. Everything queued behind this prompt
 			// with no control event in between is part of the same ask: three
-			// notes typed while the previous turn was finishing are one
 			// question, not three turns to sit through, and that is true
-			// whether the turn ahead of them completed or was interrupted.
 			batch := append([]event{evt}, a.inbox.TakeReadyUserPrompts()...)
 			merged, ok := mergePromptEvents(batch)
 			if !ok {
@@ -934,7 +926,6 @@ func (a *Agent) serviceSets() bool {
 		// A ROUND BOUNDARY, which is the whole point: every tool_result of
 		// the round just finished is already appended, so a user record here
 		// is exactly a steering prompt's position and no provider can object
-		// to it. Sets no longer come through here at all -- they go straight
 		// to the form's own actor -- so a study mark is all this drains.
 		a.writeStudyMark(evt.studyMark)
 	}
@@ -949,9 +940,8 @@ func (a *Agent) serviceSets() bool {
 // done may be nil, which is every path but `--wait`.
 // applyFormPatch writes a bound-form patch through the FORM's actor and
 // answers with what actually landed. It is called from whatever goroutine
-// asked -- the figaro's own loop no longer stands between a set and the form.
 //
-// SAFE OFF THE LOOP because both structures it touches publish rather than
+// Safe off the loop because both structures it touches publish rather than
 // mutate: the durable write is serialized by store.Form's actor, and the
 // in-memory board is a form.State whose Apply is a CAS over an immutable
 // snapshot ("publish only against the board we computed from").
@@ -970,7 +960,7 @@ func (a *Agent) applyControlPatchVerdict(patch message.Patch, ifVersion uint64, 
 			}
 		}()
 	}
-	slog.Debug("event "+kind, "aria", a.id, "set", len(patch.Leaves()), "remove", len(patch.Removes()))
+	slog.Debug("event "+kind, "aria", a.id, "entries", len(patch.Entries()))
 	if a.backend != nil {
 		intent := store.Ensure
 		if assert {
@@ -982,7 +972,6 @@ func (a *Agent) applyControlPatchVerdict(patch message.Patch, ifVersion uint64, 
 			slog.Error(kind+" form append", "aria", a.id, "err", err)
 			return verdict
 		}
-		// PUBLISH WHAT WAS WRITTEN. The writer reduces the patch against the
 		// state it appends to (effectivePatch, atomic with the append) and
 		// hands back what it actually wrote; publishing the REQUESTED patch
 		// instead puts the caller's bytes on the board for a write the log
@@ -1059,7 +1048,6 @@ type librettoBackend interface {
 
 // librettoView is the libretto's patch view with its own bookkeeping
 // stripped: the document holds machinery beside the mirrored keys, and only
-// the mirror is anybody's business. A patch that was pure bookkeeping comes
 // back empty and the projection skips it, so a fold nobody can see costs no
 // block.
 type librettoView struct{ lib *store.Libretto }
@@ -1068,7 +1056,7 @@ func (v librettoView) PatchesBetween(after, upTo uint64) []message.Patch {
 	ps := v.lib.PatchesBetween(after, upTo)
 	out := make([]message.Patch, 0, len(ps))
 	for _, vp := range ps {
-		if p := withoutBookkeeping(vp.Patch); !p.IsEmpty() {
+		if p := withoutBookkeeping(vp.Patch); !p.IsIdentity() {
 			out = append(out, p)
 		}
 	}
@@ -1086,7 +1074,11 @@ func withoutBookkeeping(p message.Patch) message.Patch {
 	// log: editing it in place edits history.
 	keep := map[string]json.RawMessage{}
 	hidden := false
-	for k, raw := range p.Leaves() {
+	for _, ent := range p.Entries() {
+		k, raw := ent.Key, ent.New
+		if ent.IsRemoval() {
+			continue
+		}
 		if store.HiddenLibrettoKey(k) {
 			hidden = true
 			continue
@@ -1094,7 +1086,11 @@ func withoutBookkeeping(p message.Patch) message.Patch {
 		keep[k] = raw
 	}
 	var drops []string
-	for _, k := range p.Removes() {
+	for _, ent := range p.Entries() {
+		if !ent.IsRemoval() {
+			continue
+		}
+		k := ent.Key
 		if store.HiddenLibrettoKey(k) {
 			hidden = true
 			continue
@@ -1151,7 +1147,7 @@ func (a *Agent) endTurnDiscarding(reason string) {
 }
 
 func (a *Agent) finishTurn(reason string) {
-	// THE IN-FLIGHT ASSEMBLY DIES WITH ITS TURN. asm holds a strings.Builder
+	// THE IN-Flight assembly dies with its turn. asm holds a strings.Builder
 	// per content block, so a finished turn that keeps it keeps the whole
 	// streamed reply resident until the NEXT turn happens to overwrite it --
 	// on an idle aria, indefinitely. Only the round currently streaming needs
@@ -1161,7 +1157,7 @@ func (a *Agent) finishTurn(reason string) {
 		a.turn.asm = nil
 	}
 
-	// THE HISTORY IS WELL-FORMED BEFORE THE TURN IS ANNOUNCED OVER. An
+	// THE HISTORY IS WELL-Formed before the turn IS ANNOUNCED OVER. An
 	// interrupted turn can leave an invoke with no result, and a fork or a read
 	// taken between the announcement and the next message would see it. Doing
 	// this after the announcement instead makes the aria look active again to
@@ -1173,16 +1169,14 @@ func (a *Agent) finishTurn(reason string) {
 			slog.Info("closed open tool calls at turn end", "aria", a.id, "calls", n)
 		}
 	}
-	// A FAILED TURN BELONGS IN THE RECORD, not only on the terminal that
+	// A Failed turn belongs IN THE RECORD, not only on the terminal that
 	// happened to be watching. The reason already reaches the client (the
 	// status bar notice and the inline hint); logging it at ERROR puts it
 	// in the durable sink too, so a failure survives the scrollback that
-	// showed it. Found the hard way: a provider rejection was visible for
 	// one frame and absent from logs.jsonl, which held only INFO.
 	if strings.HasPrefix(reason, "error:") {
 		slog.Error("turn failed", "aria", a.id, "reason", strings.TrimSpace(strings.TrimPrefix(reason, "error:")))
 	}
-	// The turn stopped moving. This is the one place the word "seal" means
 	// anything now: every node in the turn is immutable from here, and it is
 	// the moment a persisted UI-IR channel would write it (Phase 4).
 	var lts []uint64
@@ -1230,8 +1224,6 @@ func (a *Agent) publishMetadata() {
 	a.mu.RUnlock()
 	// Read-modify-write: the agent owns the counts and the identity fields,
 	// and NOT the whole record. system.ttl is mirrored here by a board commit,
-	// and a whole-record write from this side used to erase it on the next
-	// turn -- a lifetime that lasted until the aria was next spoken to.
 	if err := a.backend.UpdateMeta(a.id, func(m *store.AriaMeta) {
 		ttl := m.TTLMS
 		*m = mine

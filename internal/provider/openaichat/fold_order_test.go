@@ -18,8 +18,8 @@ func TestRenderPatchesRendersAgainstThePriorBoard(t *testing.T) {
 	p := &Provider{Templates: tmpl}
 	snap := form.FromMap(map[string]json.RawMessage{"mantra": json.RawMessage(`"first"`)})
 	patches := []message.Patch{
-		form.Creates(map[string]json.RawMessage{"mantra": json.RawMessage(`"second"`)}),
-		form.Creates(map[string]json.RawMessage{"mantra": json.RawMessage(`"third"`)}),
+		form.Build(form.Snapshot{}, map[string]json.RawMessage{"mantra": json.RawMessage(`"second"`)}, nil),
+		form.Build(form.Snapshot{}, map[string]json.RawMessage{"mantra": json.RawMessage(`"third"`)}, nil),
 	}
 
 	got := p.renderPatches(patches, snap)

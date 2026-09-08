@@ -74,7 +74,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	// Nothing configured and nothing sent: there is no first move to make. A
 	// default that IS named but missing on disk falls through, so the failure
 	// is reported as the missing provider it actually is.
-	if base.IsEmpty() && outfitName == "" {
+	if base.IsIdentity() && outfitName == "" {
 		return nil, h.errNoDefaultOutfit()
 	}
 
@@ -516,7 +516,12 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	// not a history of how it got there. aria_id is re-stamped because the
 	// exported board carries the id it had in the store it came from: the
 	// same re-stamp a fork does, for the same reason.
-	keys := req.Form.Leaves()
+	keys := map[string]json.RawMessage{}
+	for _, e := range req.Form.Entries() {
+		if !e.IsRemoval() {
+			keys[e.Key] = e.New
+		}
+	}
 	// The study set is NOT restored by copying the key. `system.studies` is
 	// system-managed precisely because each entry is refcounted on a shared
 	// libretto: a board that names a study nothing counted is §12.2.2's
@@ -532,7 +537,7 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	if b, mErr := json.Marshal(id); mErr == nil {
 		keys["aria_id"] = b
 	}
-	if _, err := h.angelus.Backend.ApplyForm(id, form.Build(form.Snapshot{}, keys, req.Form.Removes())); err != nil {
+	if _, err := h.angelus.Backend.ApplyForm(id, form.Build(form.Snapshot{}, keys, nil)); err != nil {
 		return nil, fmt.Errorf("import: form: %w", err)
 	}
 	// IMPORT IS A REFCOUNT PARTICIPANT (durable-forms §12.2.2), and it pays

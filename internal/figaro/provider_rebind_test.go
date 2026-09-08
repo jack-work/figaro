@@ -172,10 +172,10 @@ func TestProviderRebindsMidConversation(t *testing.T) {
 	require.EqualValues(t, 1, f.inst("alpha", false).sends.Load())
 	assert.Equal(t, "alpha", a.Info().Provider)
 
-	_, _, err := a.Set(form.Patchform.Creates(map[string]json.RawMessage{
+	_, _, err := a.Set(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"beta"`),
 		"system.model":    json.RawMessage(`"m-2"`),
-	}), 0)
+	}, nil), 0)
 	require.NoError(t, err)
 
 	runTurn(t, a, ch, "second")
@@ -197,9 +197,9 @@ func TestProviderModelChangeDoesNotRebuild(t *testing.T) {
 	})
 	runTurn(t, a, ch, "first")
 
-	_, _, err := a.Set(form.Patchform.Creates(map[string]json.RawMessage{
+	_, _, err := a.Set(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model": json.RawMessage(`"m-2"`),
-	}), 0)
+	}, nil), 0)
 	require.NoError(t, err)
 	runTurn(t, a, ch, "second")
 
@@ -221,9 +221,9 @@ func TestProviderKnobChangeRebuilds(t *testing.T) {
 	})
 	runTurn(t, a, ch, "first")
 
-	_, _, err := a.Set(form.Patchform.Creates(map[string]json.RawMessage{
+	_, _, err := a.Set(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.use_official_sdk": json.RawMessage(`true`),
-	}), 0)
+	}, nil), 0)
 	require.NoError(t, err)
 	runTurn(t, a, ch, "second")
 
@@ -245,9 +245,9 @@ func TestProviderRebindFailureEndsTurnAndRecovers(t *testing.T) {
 	runTurn(t, a, ch, "first")
 
 	f.setFail("gamma", true)
-	_, _, err := a.Set(form.Patchform.Creates(map[string]json.RawMessage{
+	_, _, err := a.Set(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"gamma"`),
-	}), 0)
+	}, nil), 0)
 	require.NoError(t, err)
 	reason := runTurn(t, a, ch, "second")
 
@@ -256,9 +256,9 @@ func TestProviderRebindFailureEndsTurnAndRecovers(t *testing.T) {
 
 	// Correct the board: the aria is still usable.
 	f.setFail("gamma", false)
-	_, _, err = a.Set(form.Patchform.Creates(map[string]json.RawMessage{
+	_, _, err = a.Set(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"beta"`),
-	}), 0)
+	}, nil), 0)
 	require.NoError(t, err)
 	runTurn(t, a, ch, "third")
 	require.NotNil(t, f.inst("beta", false))

@@ -40,14 +40,14 @@ func TestStudyIncantationReadsEveryEvent(t *testing.T) {
 	if got.OnStudy != "watch it" || got.OnUpdate != "it moved" || got.OnDrop != "look away" {
 		t.Fatalf("all three events should carry their phrase, got %+v", got)
 	}
-	if got.IsEmpty() {
+	if got.IsIdentity() {
 		t.Fatal("a populated incantation reports itself empty")
 	}
 }
 
 func TestStudyIncantationAbsentIsSilentAndEmpty(t *testing.T) {
 	out := captureWarnings(t, func() {
-		if got := ReadStudyIncantation(Snapshot{}); !got.IsEmpty() {
+		if got := ReadStudyIncantation(Snapshot{}); !got.IsIdentity() {
 			t.Fatalf("no key should read as no incantation, got %+v", got)
 		}
 	})
@@ -85,7 +85,7 @@ func TestStudyIncantationWrongShapeIsRefusedWholesale(t *testing.T) {
 			out := captureWarnings(t, func() {
 				got = ReadStudyIncantation(boardWith(t, StudyIncantationKey, tc.raw))
 			})
-			if !got.IsEmpty() {
+			if !got.IsIdentity() {
 				t.Fatalf("a %s must not parse as an incantation: %+v", tc.name, got)
 			}
 			if !strings.Contains(out, tc.kind) {
@@ -104,7 +104,7 @@ func TestStudyIncantationNamesUnknownKeys(t *testing.T) {
 	board := boardWith(t, StudyIncantationKey, `{"onstudied":"watch it"}`)
 	var got StudyIncantation
 	out := captureWarnings(t, func() { got = ReadStudyIncantation(board) })
-	if !got.IsEmpty() {
+	if !got.IsIdentity() {
 		t.Fatalf("an unknown field must not become a phrase: %+v", got)
 	}
 	if !strings.Contains(out, "onstudied") || !strings.Contains(out, "onstudy") {
@@ -125,7 +125,7 @@ func TestForkIncantationWrongShapeIsRefused(t *testing.T) {
 	out := captureWarnings(t, func() {
 		got = ReadForkIncantation(boardWith(t, ForkIncantationKey, `["a","b"]`))
 	})
-	if !got.IsEmpty() {
+	if !got.IsIdentity() {
 		t.Fatalf("an array must not parse: %+v", got)
 	}
 	if !strings.Contains(out, "array") {
@@ -137,7 +137,7 @@ func TestForkIncantationWrongShapeIsRefused(t *testing.T) {
 // says less than nothing: it tells the model there was something to say.
 func TestIncantationTrimsAndDropsBlank(t *testing.T) {
 	s := ReadStudyIncantation(boardWith(t, StudyIncantationKey, `{"onstudy":"   "}`))
-	if !s.IsEmpty() {
+	if !s.IsIdentity() {
 		t.Fatalf("a blank phrase must be no phrase: %+v", s)
 	}
 	f := ReadForkIncantation(boardWith(t, ForkIncantationKey, `"  branched  "`))

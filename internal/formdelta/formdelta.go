@@ -145,12 +145,20 @@ func openStudied(b Backend, fid string) *studiedForm {
 
 // foldPatch renders one bound-board patch into deltas.
 func foldPatch(deltas map[string]livedoc.FormDelta, formID string, kind livedoc.FormKind, p message.Patch) {
-	for k, v := range p.Leaves() {
+	for _, ent := range p.Entries() {
+		k, v := ent.Key, ent.New
+		if ent.IsRemoval() {
+			continue
+		}
 		deltas[formID+"."+k] = livedoc.FormDelta{
 			Value: v, Kind: kind, Event: livedoc.FormSet, Form: formID,
 		}
 	}
-	for _, k := range p.Removes() {
+	for _, ent := range p.Entries() {
+		if !ent.IsRemoval() {
+			continue
+		}
+		k := ent.Key
 		deltas[formID+"."+k] = livedoc.FormDelta{
 			Kind: kind, Event: livedoc.FormRemoved, Form: formID,
 		}
@@ -166,7 +174,11 @@ func foldStudied(deltas map[string]livedoc.FormDelta, fid string, sf *studiedFor
 	if sf.role {
 		kind = livedoc.FormRole
 	}
-	for k, v := range p.Leaves() {
+	for _, ent := range p.Entries() {
+		k, v := ent.Key, ent.New
+		if ent.IsRemoval() {
+			continue
+		}
 		if k == store.KeyLibrettoAlive {
 			if strings.TrimSpace(string(v)) == "false" {
 				deltas[fid] = livedoc.FormDelta{Kind: kind, Event: livedoc.FormDeleted, Form: fid}
@@ -178,7 +190,11 @@ func foldStudied(deltas map[string]livedoc.FormDelta, fid string, sf *studiedFor
 		}
 		deltas[fid+"."+k] = livedoc.FormDelta{Value: v, Kind: kind, Event: livedoc.FormSet, Form: fid}
 	}
-	for _, k := range p.Removes() {
+	for _, ent := range p.Entries() {
+		if !ent.IsRemoval() {
+			continue
+		}
+		k := ent.Key
 		if store.HiddenLibrettoKey(k) || k == store.KeyLibrettoAlive {
 			continue
 		}

@@ -23,9 +23,9 @@ func newTTLBackend(t *testing.T) *XwalBackend {
 
 func mustNewAria(t *testing.T, b *XwalBackend) string {
 	t.Helper()
-	outfit, err := b.CreateOutfit("ttl", form.Creates(map[string]json.RawMessage{
+	outfit, err := b.CreateOutfit("ttl", form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"skills.x": json.RawMessage(`1`),
-	}))
+	}, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func mustNewAria(t *testing.T, b *XwalBackend) string {
 func setBoardKey(t *testing.T, b *XwalBackend, id, key, val string) {
 	t.Helper()
 	raw, _ := json.Marshal(val)
-	if _, err := b.ApplyForm(id, form.Creates(map[string]json.RawMessage{key: raw})); err != nil {
+	if _, err := b.ApplyForm(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{key: raw}, nil)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -77,7 +77,7 @@ func TestParseTTLUnits(t *testing.T) {
 // A malformed ttl clears the lifetime rather than inventing one: the failure
 // this prevents is a typo deleting an aria.
 func TestTTLOfNonStringClears(t *testing.T) {
-	p := form.Creates(map[string]json.RawMessage{SystemTTLKey: json.RawMessage(`{"h":3}`)})
+	p := form.Build(form.Snapshot{}, map[string]json.RawMessage{SystemTTLKey: json.RawMessage(`{"h":3}`)}, nil)
 	raw, spoke := ttlOf(p)
 	if !spoke || raw != "" {
 		t.Fatalf("ttlOf(non-string) = (%q,%v), want (\"\",true)", raw, spoke)
@@ -92,7 +92,7 @@ func TestTTLOfRemoveClears(t *testing.T) {
 }
 
 func TestTTLOfSilentPatch(t *testing.T) {
-	p := form.Creates(map[string]json.RawMessage{"mantra": json.RawMessage(`"x"`)})
+	p := form.Build(form.Snapshot{}, map[string]json.RawMessage{"mantra": json.RawMessage(`"x"`)}, nil)
 	if _, spoke := ttlOf(p); spoke {
 		t.Error("a patch that never names system.ttl must not touch the deadline")
 	}

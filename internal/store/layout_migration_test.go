@@ -49,9 +49,9 @@ func seedForkedArias(t *testing.T, root string) (ids []string, boards map[string
 				t.Fatal(err)
 			}
 		}
-		patch := form.Creates(map[string]json.RawMessage{
+		patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{
 			"gen": json.RawMessage(fmt.Sprintf("%d", gen)),
-		})
+		}, nil)
 		if _, err := be.ApplyForm(aria, patch); err != nil {
 			t.Fatal(err)
 		}

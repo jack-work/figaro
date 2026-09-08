@@ -43,7 +43,7 @@ func setPatch(kv map[string]string) message.Patch {
 		raw, _ := json.Marshal(v)
 		set[k] = raw
 	}
-	return form.Creates(set)
+	return form.Build(form.Snapshot{}, set, nil)
 }
 
 func waitFor(t *testing.T, what string, fn func() bool) {

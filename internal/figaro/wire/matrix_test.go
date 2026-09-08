@@ -17,7 +17,7 @@ import (
 
 func patch(k, v string) message.Patch {
 	raw, _ := json.Marshal(v)
-	return form.Creates(map[string]json.RawMessage{k: raw})
+	return form.Build(form.Snapshot{}, map[string]json.RawMessage{k: raw}, nil)
 }
 
 func backend(t *testing.T, trunks bool) (*store.XwalBackend, string) {

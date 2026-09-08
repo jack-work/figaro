@@ -16,7 +16,7 @@ func patchOf(t *testing.T, kv map[string]string) message.Patch {
 	for k, v := range kv {
 		set[k] = json.RawMessage(v)
 	}
-	return form.Creates(set)
+	return form.Build(form.Snapshot{}, set, nil)
 }
 
 func stateKey(t *testing.T, be *XwalBackend, id, key string) string {
