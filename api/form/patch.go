@@ -156,6 +156,12 @@ func (p Patch) applyObject(v Value) (Value, error) {
 		return Value{}, err
 	}
 	for k, nv := range p.Object.Set {
+		// A write of an equal value keeps the bytes already stored. Providers
+		// cache on exact bytes, so a rewrite that changes only key order or
+		// spacing must not perturb the board.
+		if cur, ok := obj[k]; ok && cur.Equal(nv) {
+			continue
+		}
 		obj[k] = nv
 	}
 	for k := range p.Object.Delete {
@@ -612,5 +618,67 @@ func Build(base Snapshot, set map[string]json.RawMessage, remove []string) Patch
 	for _, k := range remove {
 		next = next.DeletePath(k)
 	}
-	return next.Diff(base)
+	p := next.Diff(base)
+
+	// A removal the base cannot express is still a removal. Diffing alone
+	// drops it: nothing was there to delete, so nothing changed. The patch
+	// must still say so, carrying the prior value where the base knew one.
+	var missing []string
+	for _, k := range remove {
+		if _, ok := p.Entry(k); !ok {
+			missing = append(missing, k)
+		}
+	}
+	if len(missing) == 0 {
+		return p
+	}
+	sort.Strings(missing)
+	del := &ObjectPatch{Delete: map[string]Value{}}
+	cur := del
+	for _, k := range missing {
+		var old Value
+		if raw, ok := base.Get(k); ok {
+			old = NewValue(raw)
+		}
+		cur.Delete[k] = old
+	}
+	return Merge(p, Patch{Object: del})
+}
+
+// legacyPatch is the flat wire shape: dotted keys to set, a list to remove.
+type legacyPatch struct {
+	Set    map[string]json.RawMessage `json:"set"`
+	Remove []string                   `json:"remove"`
+}
+
+// UnmarshalJSON reads a patch, lifting one written in the flat shape.
+//
+// Every patch already on the form channel is flat. Decoding one structurally
+// yields Identity, so the history would still be on disk and would reduce to
+// an empty board.
+//
+// A converted patch carries no prior values: the flat shape never recorded
+// them. It applies exactly as it did; it cannot be inverted.
+func (p *Patch) UnmarshalJSON(data []byte) error {
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return err
+	}
+	_, hasSet := probe["set"]
+	_, hasRemove := probe["remove"]
+	if hasSet || hasRemove {
+		var old legacyPatch
+		if err := json.Unmarshal(data, &old); err != nil {
+			return err
+		}
+		*p = Build(Snapshot{}, old.Set, old.Remove)
+		return nil
+	}
+	type plain Patch // no recursion through this method
+	var out plain
+	if err := json.Unmarshal(data, &out); err != nil {
+		return err
+	}
+	*p = Patch(out)
+	return nil
 }

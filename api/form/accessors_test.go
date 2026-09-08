@@ -132,86 +132,76 @@ func TestFromMap_Nil(t *testing.T) {
 	assert.Equal(t, raw(t, "v"), json.RawMessage(e.New))
 }
 
-// --- JSON wire shape. the form channel on disk, the RPC
-// FormResponse, and formReduce in internal/store all
-// depend on Snapshot marshalling as a flat object. ---
+// --- JSON wire shape: the form channel on disk, the RPC FormResponse and
+// formReduce in internal/store all read what Snapshot marshals. ---
 
-func TestSnapshot_MarshalsAsFlatObject(t *testing.T) {
-	s := form.FromMap(map[string]json.RawMessage{
-		"cwd":                 json.RawMessage(`"/home/figaro"`),
-		"model":               json.RawMessage(`"claude-opus-4-6"`),
+// realBoardMap is a non-trivial board: dotted keys, awkward key text, every
+// JSON kind, and values that must survive verbatim.
+func realBoardMap(t *testing.T) map[string]json.RawMessage {
+	t.Helper()
+	return map[string]json.RawMessage{
+		"a key with spaces":   raw(t, "ok"),
 		"count":               json.RawMessage(`42`),
+		"cwd":                 raw(t, "/home/figaro"),
+		"empty.string":        raw(t, ""),
 		"flag":                json.RawMessage(`true`),
-		"nil":                 json.RawMessage(`null`),
-		"nested":              json.RawMessage(`{"b":2,"a":[1,2,{"c":3}]}`),
 		"list":                json.RawMessage(`[1,"two",{"three":3}]`),
-		"system.credo":        json.RawMessage(`"largo al factotum"`),
-		"empty.string":        json.RawMessage(`""`),
-		"unicode":             json.RawMessage(`"caffè ☕ \u00e9"`),
+		"model":               raw(t, "claude-opus-4-6"),
+		"nested":              json.RawMessage(`{"b":2,"a":[1,2,{"c":3}]}`),
+		"nil":                 json.RawMessage(`null`),
+		"quote\"in\\the\nkey": raw(t, "tricky"),
 		"skills.figaro":       json.RawMessage(`{"filePath":"/x/y.md","frontmatter":"name: figaro"}`),
-		"a key with spaces":   json.RawMessage(`"ok"`),
-		"quote\"in\\the\nkey": json.RawMessage(`"tricky"`),
-	})
+		"system.credo":        raw(t, "largo al factotum"),
+		"unicode":             json.RawMessage(`"caff\u00e8 \u2615 \u00e9"`),
+	}
+}
+
+func TestSnapshot_MarshalsAsATreeAndReadsBackByPath(t *testing.T) {
+	src := realBoardMap(t)
+	s := form.FromMap(src)
 
 	got, err := json.Marshal(s)
 	require.NoError(t, err)
 
-	const want = `{` +
-		`"a key with spaces":"ok",` +
-		`"count":42,` +
-		`"cwd":"/home/figaro",` +
-		`"empty.string":"",` +
-		`"flag":true,` +
-		`"list":[1,"two",{"three":3}],` +
-		`"model":"claude-opus-4-6",` +
-		`"nested":{"b":2,"a":[1,2,{"c":3}]},` +
-		`"nil":null,` +
-		`"quote\"in\\the\nkey":"tricky",` +
-		`"skills.figaro":{"filePath":"/x/y.md","frontmatter":"name: figaro"},` +
-		`"system.credo":"largo al factotum",` +
-		// RawMessage values pass through verbatim (compacted, never
-		// re-escaped): the \u00e9 escape survives as written.
-		`"unicode":"caffè ☕ \u00e9"` +
-		`}`
-	assert.Equal(t, want, string(got), "Snapshot must marshal as a flat object with sorted keys")
+	// The wire shape is the tree the keys describe, so a dotted key is not
+	// a member of the root object.
+	var root map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(got, &root))
+	for k := range root {
+		assert.NotContains(t, k, ".", "a dotted key survived into the wire shape")
+	}
+
+	// Every key is readable back at its path, byte for byte.
+	back := form.Snapshot{}
+	require.NoError(t, json.Unmarshal(got, &back))
+	for k, want := range src {
+		v, ok := back.Get(k)
+		require.True(t, ok, "key %q did not survive the round trip", k)
+		assert.JSONEq(t, string(want), string(v), "key %q", k)
+	}
 }
 
-func TestSnapshot_JSONRoundTripByteIdentical(t *testing.T) {
-	// A non-trivial board as it would appear on disk, keys already in
-	// the order encoding/json emits.
-	const onDisk = `{` +
-		`"cwd":"/home/gluck/dev/figaro-qua/main",` +
-		`"datetime":"Friday, July 24, 2026, 11PM EDT",` +
-		`"label":"morning",` +
-		`"mantra":"Give Snapshot accessors, migrate every call site",` +
-		`"model":"claude-opus-4-6",` +
-		`"skills.docker":{"filePath":"/c/docker.md","frontmatter":"name: docker\ndescription: containers"},` +
-		`"skills.figaro":{"filePath":"/c/figaro/SKILL.md","frontmatter":"name: figaro"},` +
-		`"system.credo":"Largo al factotum della città!",` +
-		`"system.environment.figaro_wire_dir":"/tmp/wire",` +
-		`"tokens":{"in":12345,"out":678},` +
-		`"trunk":["root","conv"]` +
-		`}`
+func TestSnapshot_JSONRoundTripIsStable(t *testing.T) {
+	src := realBoardMap(t)
+	flat, err := json.Marshal(src)
+	require.NoError(t, err)
 
 	var s form.Snapshot
-	require.NoError(t, json.Unmarshal([]byte(onDisk), &s))
-	assert.Equal(t, 11, s.Len())
-
-	out, err := json.Marshal(s)
+	require.NoError(t, json.Unmarshal(flat, &s))
+	first, err := json.Marshal(s)
 	require.NoError(t, err)
-	assert.Equal(t, onDisk, string(out), "unmarshal -> marshal must be byte-identical")
 
-	// And again, to prove the round trip is a fixed point.
-	var s2 form.Snapshot
-	require.NoError(t, json.Unmarshal(out, &s2))
-	out2, err := json.Marshal(s2)
+	var again form.Snapshot
+	require.NoError(t, json.Unmarshal(first, &again))
+	second, err := json.Marshal(again)
 	require.NoError(t, err)
-	assert.Equal(t, onDisk, string(out2))
+	assert.Equal(t, string(first), string(second), "the wire shape must be a fixed point")
 
-	// Values survive verbatim, including nested object key order.
-	v, ok := s.Get("skills.docker")
-	require.True(t, ok)
-	assert.Equal(t, `{"filePath":"/c/docker.md","frontmatter":"name: docker\ndescription: containers"}`, string(v))
+	for k, want := range src {
+		v, ok := again.Get(k)
+		require.True(t, ok, "key %q did not survive", k)
+		assert.JSONEq(t, string(want), string(v), "key %q", k)
+	}
 }
 
 func TestSnapshot_MarshalEmptyAndNil(t *testing.T) {

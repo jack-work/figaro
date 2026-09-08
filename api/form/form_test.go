@@ -65,9 +65,11 @@ func TestDiff_AddSetRemove(t *testing.T) {
 		// label removed
 	})
 	p := next.Diff(prev)
-	assert.Equal(t, raw(t, "/bar"), mustEntry(p, "cwd"))
-	assert.Equal(t, raw(t, "claude-opus-4-6"), mustEntry(p, "model"))
-	assert.Equal(t, []string{"label"}, p.Entries())
+	assert.Equal(t, raw(t, "/bar"), json.RawMessage(mustEntry(p, "cwd")))
+	assert.Equal(t, raw(t, "claude-opus-4-6"), json.RawMessage(mustEntry(p, "model")))
+	gone, ok := p.Entry("label")
+	assert.True(t, ok)
+	assert.True(t, gone.IsRemoval(), "a dropped key comes back as a removal")
 }
 
 func TestApply_RoundTrip(t *testing.T) {
@@ -101,7 +103,7 @@ func TestMerge_QWinsOnConflict(t *testing.T) {
 		"a": raw(t, 100), // conflicts with p
 	}, []string{"b"})
 	merged := form.Merge(p, q)
-	assert.Equal(t, raw(t, 100), mustEntry(merged, "a"), "q wins on conflicting Set")
+	assert.Equal(t, raw(t, 100), json.RawMessage(mustEntry(merged, "a")), "q wins on conflicting Set")
 	_, hasB := merged.Entry("b")
 	assert.False(t, hasB, "q's Remove cancels p's Set of the same key")
 }
@@ -109,8 +111,8 @@ func TestMerge_QWinsOnConflict(t *testing.T) {
 // --- Patch.Entries: deterministic order ---
 
 func TestEntries_DeterministicOrder(t *testing.T) {
-	prev := form.FromMap(map[string]json.RawMessage{"a": raw(t, "old-a")})
-	p := form.Build(form.Snapshot{}, map[string]json.RawMessage{
+	prev := form.FromMap(map[string]json.RawMessage{"a": raw(t, "old-a"), "omega": raw(t, "gone")})
+	p := form.Build(prev, map[string]json.RawMessage{
 		"zeta":  raw(t, "1"),
 		"alpha": raw(t, "2"),
 		"a":     raw(t, "new-a"),
