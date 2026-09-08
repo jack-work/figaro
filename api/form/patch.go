@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // A patch is a change between two values. It describes its own shape, so a
@@ -592,14 +593,90 @@ func expand(v Value, prefix string, out *[]Entry) {
 	}
 }
 
-// Entry is the patch's entry for one path, if it touches it.
+// Entry is what the patch does at one path.
+//
+// It walks the patch rather than scanning Entries, because a value the patch
+// SETS may itself be an object: Entries expands it so a nested field is
+// visible to protection, while a lookup of the key itself must still answer
+// with the whole value that was written.
 func (p Patch) Entry(key string) (Entry, bool) {
+	cur, rest := p, key
+	for {
+		if cur.Object == nil {
+			break
+		}
+		seg, remainder, ok := longestPatchMember(cur.Object, rest)
+		if !ok {
+			break
+		}
+		if v, isSet := cur.Object.Set[seg]; isSet && remainder == "" {
+			return Entry{Key: key, New: v.Raw()}, true
+		}
+		if v, isDel := cur.Object.Delete[seg]; isDel && remainder == "" {
+			return Entry{Key: key, Old: v.Raw()}, true
+		}
+		child, isUpd := cur.Object.Update[seg]
+		if !isUpd {
+			break
+		}
+		if remainder == "" {
+			if child.Scalar != nil {
+				return Entry{Key: key, Old: child.Scalar.Before.Raw(), New: child.Scalar.After.Raw()}, true
+			}
+			break
+		}
+		cur, rest = child, remainder
+	}
 	for _, e := range p.Entries() {
 		if e.Key == key {
 			return e, true
 		}
 	}
 	return Entry{}, false
+}
+
+// longestPatchMember picks the longest member name of the patch level that is
+// a dotted prefix of rest.
+func longestPatchMember(o *ObjectPatch, rest string) (seg, remainder string, ok bool) {
+	has := func(name string) bool {
+		if _, x := o.Set[name]; x {
+			return true
+		}
+		if _, x := o.Delete[name]; x {
+			return true
+		}
+		_, x := o.Update[name]
+		return x
+	}
+	if has(rest) {
+		return rest, "", true
+	}
+	best := ""
+	for _, m := range []map[string]bool{namesOf(o)} {
+		for name := range m {
+			if len(name) < len(rest) && strings.HasPrefix(rest, name+".") && len(name) > len(best) {
+				best = name
+			}
+		}
+	}
+	if best == "" {
+		return "", "", false
+	}
+	return best, rest[len(best)+1:], true
+}
+
+func namesOf(o *ObjectPatch) map[string]bool {
+	out := map[string]bool{}
+	for k := range o.Set {
+		out[k] = true
+	}
+	for k := range o.Delete {
+		out[k] = true
+	}
+	for k := range o.Update {
+		out[k] = true
+	}
+	return out
 }
 
 // Build is the only way to make a patch from intent rather than from a diff:
