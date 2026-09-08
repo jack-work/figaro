@@ -82,8 +82,14 @@ skills = { dirName = "skills" }
 
 	// dirName fans entries out as dotted keys (skills.<base>) so each
 	// envelope is independently visible to completion pickers.
-	_, packedExists := patch.Entry("skills")
-	assert.False(t, packedExists, "dirName must not produce a packed parent key")
+	// Each skill is addressable at its own path rather than arriving as one
+	// blob under the parent.
+	for _, want := range []string{"skills.go", "skills.bravo"} {
+		if _, ok := patch.Entry(want); ok {
+			return
+		}
+	}
+	t.Fatal("dirName must fan entries out as skills.<base>")
 
 	var goEnv outfit.ContentEnvelope
 	require.NoError(t, json.Unmarshal(mustEntry(patch, "skills.go"), &goEnv))

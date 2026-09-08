@@ -609,8 +609,15 @@ func (p Patch) Entry(key string) (Entry, bool) {
 		if !ok {
 			break
 		}
-		if v, isSet := cur.Object.Set[seg]; isSet && remainder == "" {
-			return Entry{Key: key, New: v.Raw()}, true
+		if v, isSet := cur.Object.Set[seg]; isSet {
+			if remainder == "" {
+				return Entry{Key: key, New: v.Raw()}, true
+			}
+			// The patch set a whole object and the path continues inside it.
+			if inner, ok := valueAt(v, remainder); ok {
+				return Entry{Key: key, New: inner.Raw()}, true
+			}
+			return Entry{}, false
 		}
 		if v, isDel := cur.Object.Delete[seg]; isDel && remainder == "" {
 			return Entry{Key: key, Old: v.Raw()}, true
@@ -758,4 +765,21 @@ func (p *Patch) UnmarshalJSON(data []byte) error {
 	}
 	*p = Patch(out)
 	return nil
+}
+
+// valueAt walks a value by dotted path, longest member first.
+func valueAt(v Value, path string) (Value, bool) {
+	cur, rest := v, path
+	for rest != "" {
+		obj, ok := asObject(cur)
+		if !ok {
+			return Value{}, false
+		}
+		seg, remainder, found := longestMember(obj, rest)
+		if !found {
+			return Value{}, false
+		}
+		cur, rest = obj[seg], remainder
+	}
+	return cur, true
 }
