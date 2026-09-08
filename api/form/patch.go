@@ -35,6 +35,12 @@ type ObjectPatch struct {
 	Set    map[string]Value `json:"Set,omitempty"`
 	Delete map[string]Value `json:"Delete,omitempty"`
 	Update map[string]Patch `json:"Update,omitempty"`
+
+	// New names the Update keys that did not exist. Their leaves are
+	// described rather than the subtree, so two patches adding different
+	// fields under one parent compose; the flag is what lets Inverse remove
+	// the parent instead of leaving it empty.
+	New map[string]bool `json:"New,omitempty"`
 }
 
 // ListPatch changes a keyed, ordered collection. Items are addressed by key;
@@ -120,7 +126,22 @@ func (p Patch) Inverse() Patch {
 		if len(p.Object.Update) > 0 {
 			out.Update = make(map[string]Patch, len(p.Object.Update))
 			for k, c := range p.Object.Update {
+				if p.Object.New[k] {
+					// The key was created here, so undoing it removes the
+					// key rather than emptying it. What it held is what the
+					// forward patch builds from nothing.
+					if v, err := c.Apply(NewValue(json.RawMessage(`{}`))); err == nil {
+						if out.Delete == nil {
+							out.Delete = map[string]Value{}
+						}
+						out.Delete[k] = v
+						continue
+					}
+				}
 				out.Update[k] = c.Inverse()
+			}
+			if len(out.Update) == 0 {
+				out.Update = nil
 			}
 		}
 		return Patch{Object: out}
@@ -171,7 +192,9 @@ func (p Patch) applyObject(v Value) (Value, error) {
 	for k, child := range p.Object.Update {
 		cur, ok := obj[k]
 		if !ok {
-			return Value{}, fmt.Errorf("update of absent key %q", k)
+			// Updating a key the board lacks creates it: that is how a patch
+			// describing new leaves under a new parent applies.
+			cur = NewValue(json.RawMessage(`{}`))
 		}
 		next, err := child.Apply(cur)
 		if err != nil {
@@ -630,6 +653,14 @@ func (p Patch) Entry(key string) (Entry, bool) {
 			if child.Scalar != nil {
 				return Entry{Key: key, Old: child.Scalar.Before.Raw(), New: child.Scalar.After.Raw()}, true
 			}
+			if cur.Object.New[seg] {
+				// The key is created here and its leaves are described, so
+				// the value it ends up holding is what the child builds from
+				// nothing.
+				if v, err := child.Apply(NewValue(json.RawMessage(`{}`))); err == nil {
+					return Entry{Key: key, New: v.Raw()}, true
+				}
+			}
 			break
 		}
 		cur, rest = child, remainder
@@ -717,16 +748,14 @@ func Build(base Snapshot, set map[string]json.RawMessage, remove []string) Patch
 		return p
 	}
 	sort.Strings(missing)
-	del := &ObjectPatch{Delete: map[string]Value{}}
-	cur := del
 	for _, k := range missing {
 		var old Value
 		if raw, ok := base.Get(k); ok {
 			old = NewValue(raw)
 		}
-		cur.Delete[k] = old
+		p = Merge(p, deleteAt(strings.Split(k, "."), old))
 	}
-	return Merge(p, Patch{Object: del})
+	return p
 }
 
 // legacyPatch is the flat wire shape: dotted keys to set, a list to remove.
@@ -782,4 +811,18 @@ func valueAt(v Value, path string) (Value, bool) {
 		cur, rest = obj[seg], remainder
 	}
 	return cur, true
+}
+
+// deleteAt is a patch that removes the leaf at segs, nesting the operation so
+// it reaches the node the path names rather than a member of the root.
+func deleteAt(segs []string, old Value) Patch {
+	if len(segs) == 0 {
+		return Patch{}
+	}
+	if len(segs) == 1 {
+		return Patch{Object: &ObjectPatch{Delete: map[string]Value{segs[0]: old}}}
+	}
+	return Patch{Object: &ObjectPatch{
+		Update: map[string]Patch{segs[0]: deleteAt(segs[1:], old)},
+	}}
 }

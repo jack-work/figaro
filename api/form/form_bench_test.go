@@ -77,7 +77,7 @@ func BenchmarkDiff(b *testing.B) {
 				b.ResetTimer()
 				for b.Loop() {
 					p := next.Diff(prev)
-					sink(len(p.Entries()) + len(p.Entries()))
+					sink(len(p.Entries()))
 				}
 			})
 		}
@@ -108,7 +108,7 @@ func BenchmarkDiffDerived(b *testing.B) {
 				b.ResetTimer()
 				for b.Loop() {
 					p := next.Diff(prev)
-					sink(len(p.Entries()) + len(p.Entries()))
+					sink(len(p.Entries()))
 				}
 			})
 		}
