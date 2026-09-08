@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"testing"
 
 	"github.com/jack-work/figaro/api/message"
@@ -14,9 +15,9 @@ func burialFixture(t *testing.T) (*XwalBackend, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { be.Close() })
-	outfit, err := be.CreateOutfit("l", message.Patch{Set: map[string]json.RawMessage{
+	outfit, err := be.CreateOutfit("l", form.Creates(map[string]json.RawMessage{
 		"skills.x": json.RawMessage(`1`),
-	}})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +53,7 @@ func TestDeleteBuriesTheFormBeforeUnlinking(t *testing.T) {
 				}
 				return
 			}
-			if _, ok := ev.Applied.Set[TombstoneKey]; ok {
+			if _, ok := ev.Applied.Leaves()[TombstoneKey]; ok {
 				buried = true
 			}
 		default:

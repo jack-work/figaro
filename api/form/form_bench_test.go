@@ -103,7 +103,7 @@ func BenchmarkDiffDerived(b *testing.B) {
 		for _, n := range []int{1, 5} {
 			b.Run(fmt.Sprintf("%s/%d-key", f.name, n), func(b *testing.B) {
 				prev := f.board()
-				patch := form.Patch{Set: map[string]json.RawMessage{}}
+				patch := form.PatchCreates(map[string]json.RawMessage{})
 				for _, k := range f.sampleKeys(n) {
 					patch.Set[k] = json.RawMessage(`"derived-change"`)
 				}

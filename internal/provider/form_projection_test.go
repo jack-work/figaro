@@ -26,9 +26,9 @@ func (b *fakeBoard) PatchesBetween(after, upTo uint64) []message.Patch {
 	}
 	var out []message.Patch
 	for b.i < len(b.versions) && b.versions[b.i] <= upTo {
-		out = append(out, message.Patch{Set: map[string]json.RawMessage{
+		out = append(out, form.Creates(map[string]json.RawMessage{
 			fmt.Sprintf("k%d", b.versions[b.i]): json.RawMessage(`1`),
-		}})
+		}))
 		b.i++
 	}
 	return out
@@ -63,7 +63,7 @@ func renderedKeys(log store.Log[message.Message], rows store.Log[[]json.RawMessa
 		Fingerprint: "v1",
 		Encode: func(msg message.Message, _ form.Snapshot) ([]json.RawMessage, error) {
 			for _, p := range msg.Patches {
-				for k := range p.Set {
+				for k := range p.Leaves() {
 					seen = append(seen, k)
 				}
 			}

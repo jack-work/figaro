@@ -1,21 +1,11 @@
 package message
 
-import "encoding/json"
+import "github.com/jack-work/figaro/api/form"
 
-// Patch is a form delta: keys to set plus keys to remove.
-type Patch struct {
-	Set    map[string]json.RawMessage `json:"set,omitempty"`
-	Remove []string                   `json:"remove,omitempty"`
-}
-
-// IsEmpty reports whether the patch makes no changes.
-func (p Patch) IsEmpty() bool {
-	return len(p.Set) == 0 && len(p.Remove) == 0
-}
-
-// Sets with json encoding
-func (p Patch) Set2(key string, val string) {
-	if b, err := json.Marshal(val); err == nil {
-		p.Set[key] = b
-	}
-}
+// Patch is a form delta. It is form.Patch: a STRUCTURAL patch that reaches
+// any node of the board and carries what it destroyed, so it can be inverted.
+//
+// It was {Set map[string]json.RawMessage, Remove []string} -- a flat list of
+// top-level keys with no record of prior values, which could neither address
+// a nested field nor be undone.
+type Patch = form.Patch

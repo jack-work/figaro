@@ -136,9 +136,9 @@ func TestFormStateRaceRepro(t *testing.T) {
 				return
 			default:
 			}
-			st.Apply(form.Patch{Set: map[string]json.RawMessage{
+			st.Apply(form.Patchform.Creates(map[string]json.RawMessage{
 				fmt.Sprintf("hot.%d", i%32): json.RawMessage(`"y"`),
-			}})
+			}))
 		}
 	}()
 

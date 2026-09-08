@@ -27,8 +27,8 @@ func TestRenderPatchBlocksRendersAgainstThePriorBoard(t *testing.T) {
 	a := &Anthropic{Templates: tmpls}
 	snap := form.FromMap(map[string]json.RawMessage{"mantra": json.RawMessage(`"first"`)})
 	patches := []message.Patch{
-		{Set: map[string]json.RawMessage{"mantra": json.RawMessage(`"second"`)}},
-		{Set: map[string]json.RawMessage{"mantra": json.RawMessage(`"third"`)}},
+		form.Creates(map[string]json.RawMessage{"mantra": json.RawMessage(`"second"`)}),
+		form.Creates(map[string]json.RawMessage{"mantra": json.RawMessage(`"third"`)}),
 	}
 
 	blocks, advanced := a.renderPatchBlocks(patches, snap)

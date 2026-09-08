@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"strings"
 	"testing"
 	"time"
@@ -15,7 +16,7 @@ func patchOf(t *testing.T, kv map[string]string) message.Patch {
 	for k, v := range kv {
 		set[k] = json.RawMessage(v)
 	}
-	return message.Patch{Set: set}
+	return form.Creates(set)
 }
 
 func stateKey(t *testing.T, be *XwalBackend, id, key string) string {
@@ -271,7 +272,7 @@ func TestObservedFormsStampIRAppends(t *testing.T) {
 	ps := lib.PatchesBetween(e1.StudyVersions[role], e2.StudyVersions[role])
 	found := false
 	for _, p := range ps {
-		if _, ok := p.Patch.Set["phase"]; ok {
+		if _, ok := p.Patch.Leaves()["phase"]; ok {
 			found = true
 		}
 	}

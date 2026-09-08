@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/api/form"
 	"os"
 	"path/filepath"
 	"sort"
@@ -48,9 +49,9 @@ func seedForkedArias(t *testing.T, root string) (ids []string, boards map[string
 				t.Fatal(err)
 			}
 		}
-		patch := message.Patch{Set: map[string]json.RawMessage{
+		patch := form.Creates(map[string]json.RawMessage{
 			"gen": json.RawMessage(fmt.Sprintf("%d", gen)),
-		}}
+		})
 		if _, err := be.ApplyForm(aria, patch); err != nil {
 			t.Fatal(err)
 		}

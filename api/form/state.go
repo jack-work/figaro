@@ -79,7 +79,7 @@ func (s *State) Apply(p Patch) Snapshot {
 			cur = *old
 		}
 		next := cur.snapshot.Apply(p)
-		if next.root == cur.snapshot.root {
+		if next.Root().Equal(cur.snapshot.Root()) {
 			return cur.snapshot
 		}
 		// Publish only against the board we computed from. A losing swap

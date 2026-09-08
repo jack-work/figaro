@@ -2,6 +2,7 @@ package rpc_test
 
 import (
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -57,9 +58,7 @@ func TestQueuedPrompt_DrainedPayloadKeepsForm(t *testing.T) {
 		Text:  "with state",
 		State: rpc.QueueStateQueued,
 		Form: &rpc.FormInput{
-			Patch: &rpc.FormPatch{
-				Set: map[string]json.RawMessage{"mantra": json.RawMessage(`"x"`)},
-			},
+			Patch: ptrPatch(form.Creates(map[string]json.RawMessage{"mantra": json.RawMessage(`"x"`)})),
 		},
 	})
 }
@@ -138,3 +137,5 @@ func TestQueueMethodNames(t *testing.T) {
 	assert.Equal(t, "figaro.queue.update", rpc.MethodQueueUpdate)
 	assert.Equal(t, "figaro.queue.delete", rpc.MethodQueueDelete)
 }
+
+func ptrPatch(p form.Patch) *form.Patch { return &p }

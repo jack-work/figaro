@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"strings"
 	"testing"
 
@@ -27,10 +28,10 @@ func TestStumpBirthRecordIsStampedAtItsOwnOutfitPatch(t *testing.T) {
 	}
 	defer be.Close()
 
-	outfit, err := be.CreateOutfit("opus5", message.Patch{Set: map[string]json.RawMessage{
+	outfit, err := be.CreateOutfit("opus5", form.Creates(map[string]json.RawMessage{
 		"skills.golang": json.RawMessage(`{"frontmatter":"name: golang"}`),
 		"duke-title":    json.RawMessage(`"Gluck"`),
-	}})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +46,7 @@ func TestStumpBirthRecordIsStampedAtItsOwnOutfitPatch(t *testing.T) {
 	}
 	var outfitVersion uint64
 	for _, p := range patches {
-		for k := range p.Patch.Set {
+		for k := range p.Patch.Leaves() {
 			if strings.HasPrefix(k, "skills.") {
 				outfitVersion = p.Version
 			}
@@ -84,16 +85,14 @@ func TestStumpBirthRecordIsStampedAtItsOwnOutfitPatch(t *testing.T) {
 // bodies and different names are two outfits, and a name is all that can
 // separate two identical folds.
 func TestOutfitVersionCoversTheName(t *testing.T) {
-	body := message.Patch{Set: map[string]json.RawMessage{"x": json.RawMessage(`1`)}}
+	body := form.Creates(map[string]json.RawMessage{"x": json.RawMessage(`1`)})
 
 	a, _ := OutfitVersion("alpha", body)
 	b, _ := OutfitVersion("beta", body)
 	if a == b {
 		t.Fatal("identical bodies under different names must not share a stump")
 	}
-	again, _ := OutfitVersion("alpha", message.Patch{
-		Set: map[string]json.RawMessage{"x": json.RawMessage(` 1 `)},
-	})
+	again, _ := OutfitVersion("alpha", form.Creates(map[string]json.RawMessage{"x": json.RawMessage(` 1 `)}))
 	if again != a {
 		t.Errorf("formatting reached the hash: %s != %s", again, a)
 	}
@@ -113,9 +112,7 @@ func TestStumpNamesItselfWhateverItsIdLooksLike(t *testing.T) {
 	}
 	defer b.Close()
 
-	id, err := b.CreateOutfit("sonn5", message.Patch{
-		Set: map[string]json.RawMessage{"system.model": json.RawMessage(`"m"`)},
-	})
+	id, err := b.CreateOutfit("sonn5", form.Creates(map[string]json.RawMessage{"system.model": json.RawMessage(`"m"`)}))
 	if err != nil {
 		t.Fatal(err)
 	}

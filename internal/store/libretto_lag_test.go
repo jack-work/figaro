@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -46,9 +47,9 @@ func TestWhetherTheLibrettoIsBehindWhenAnEntryIsStamped(t *testing.T) {
 	stale := 0
 	for i := 0; i < rounds; i++ {
 		// Patch the SOURCE, then stamp an entry as immediately as a send does.
-		_, err := be.ApplyForm(src, message.Patch{Set: map[string]json.RawMessage{
+		_, err := be.ApplyForm(src, form.Creates(map[string]json.RawMessage{
 			"k": json.RawMessage(`"` + string(rune('a'+i%26)) + `"`),
-		}})
+		}))
 		require.NoError(t, err)
 
 		srcAt, ok := be.store.formTail(src)
@@ -119,9 +120,9 @@ func TestTheLibrettoAfterAReattachIsCurrentBeforeTheNextStamp(t *testing.T) {
 	cold, err := NewXwalBackend(root, 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { cold.Close() })
-	_, err = cold.ApplyForm(src, message.Patch{Set: map[string]json.RawMessage{
+	_, err = cold.ApplyForm(src, form.Creates(map[string]json.RawMessage{
 		"afterrestart": json.RawMessage(`"yes"`),
-	}})
+	}))
 	require.NoError(t, err)
 	srcAt, _ := cold.store.formTail(src)
 

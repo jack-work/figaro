@@ -775,13 +775,13 @@ func withOutfitVersion(p message.Patch, ver string) message.Patch {
 }
 
 func withKey(p message.Patch, key, value string) message.Patch {
-	set := make(map[string]json.RawMessage, len(p.Set)+1)
-	for k, v := range p.Set {
+	set := make(map[string]json.RawMessage, len(p.Leaves())+1)
+	for k, v := range p.Leaves() {
 		set[k] = v
 	}
 	b, _ := json.Marshal(value)
 	set[key] = b
-	return message.Patch{Set: set, Remove: p.Remove}
+	return form.Build(form.Snapshot{}, set, p.Removes())
 }
 
 // NodeView is a read-only snapshot of an aria (trunk) for listing/lineage.

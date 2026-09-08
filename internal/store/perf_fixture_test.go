@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/api/form"
 	"os"
 	"strconv"
 	"testing"
@@ -23,12 +24,10 @@ func TestGeneratePerformanceFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer backend.Close()
-	outfit, err := backend.CreateOutfit("performance", message.Patch{
-		Set: map[string]json.RawMessage{
-			"system.provider": json.RawMessage(`"copilot"`),
-			"system.model":    json.RawMessage(`"gpt-5.6-sol"`),
-		},
-	})
+	outfit, err := backend.CreateOutfit("performance", form.Creates(map[string]json.RawMessage{
+		"system.provider": json.RawMessage(`"copilot"`),
+		"system.model":    json.RawMessage(`"gpt-5.6-sol"`),
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}

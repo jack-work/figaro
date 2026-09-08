@@ -65,10 +65,10 @@ func (a *Agent) SetIntent(patch form.Patch, ifVersion uint64, assert bool) (set,
 	if err != nil {
 		return nil, nil, err
 	}
-	for k := range applied.Set {
+	for k := range applied.Leaves() {
 		set = append(set, k)
 	}
-	removed = append(removed, applied.Remove...)
+	removed = append(removed, applied.Removes()...)
 	return set, removed, nil
 }
 
@@ -99,5 +99,5 @@ func withoutSystemNS(s form.Snapshot) form.Snapshot {
 	if len(drop) == 0 {
 		return s
 	}
-	return s.Apply(form.Patch{Remove: drop})
+	return s.Apply(form.Build(s, nil, drop))
 }

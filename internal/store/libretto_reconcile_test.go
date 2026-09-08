@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"testing"
 
 	"github.com/jack-work/figaro/api/message"
@@ -18,7 +19,7 @@ func studySet(t *testing.T, be *XwalBackend, ariaID string, forms ...string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := be.ApplyFormPrivileged(ariaID, message.Patch{Set: map[string]json.RawMessage{StudiesKey: raw}}); err != nil {
+	if _, err := be.ApplyFormPrivileged(ariaID, form.Creates(map[string]json.RawMessage{StudiesKey: raw})); err != nil {
 		t.Fatal(err)
 	}
 }

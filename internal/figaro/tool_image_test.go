@@ -103,10 +103,10 @@ func runImageTurn(t *testing.T, id string, reg *tool.Registry, calls []message.C
 
 	prov := &oneRoundProvider{calls: calls, captured: make(chan struct{})}
 	cb, _ := form.Open("")
-	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
+	cb.Apply(form.Patchform.Creates(map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"mock"`),
 		"system.provider": json.RawMessage(`"oneround"`),
-	}})
+	}))
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
 		Backend:    testBE,

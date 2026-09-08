@@ -94,11 +94,11 @@ func TestMessage_StateOnlyTic(t *testing.T) {
 // constructed as form.Patch is assignable to message.Patch and
 // vice versa.
 func TestPatch_AliasIdentity(t *testing.T) {
-	cb := form.Patch{Set: map[string]json.RawMessage{"k": json.RawMessage(`"v"`)}}
+	cb := form.Creates(map[string]json.RawMessage{"k": json.RawMessage(`"v"`)})
 	var m message.Patch = cb
 	assert.False(t, m.IsEmpty())
 
-	mp := message.Patch{Set: map[string]json.RawMessage{}, Remove: []string{"x"}}
+	mp := form.Build(form.Snapshot{}, map[string]json.RawMessage{}, []string{"x"})
 	assert.False(t, form.Patch(mp).IsEmpty())
 }
 

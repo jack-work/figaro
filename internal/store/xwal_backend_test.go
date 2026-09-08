@@ -125,7 +125,7 @@ func patchSet(kv map[string]string) message.Patch {
 		b, _ := json.Marshal(v)
 		set[k] = b
 	}
-	return message.Patch{Set: set}
+	return form.Creates(set)
 }
 
 func cbGet(s form.Snapshot, key string) json.RawMessage {

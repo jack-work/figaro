@@ -165,7 +165,7 @@ func (h *handlers) writeForHub(id, method string, params json.RawMessage) (any, 
 		return rpc.SetResponse{OK: true, Outcome: rpc.OutcomeUnchanged, Version: version}, true, nil
 	}
 	var set []string
-	for k := range applied.Set {
+	for k := range applied.Leaves() {
 		set = append(set, k)
 	}
 	if hb := h.angelus.Hubs.get(id); hb != nil {
@@ -175,7 +175,7 @@ func (h *handlers) writeForHub(id, method string, params json.RawMessage) (any, 
 		})
 	}
 	return rpc.SetResponse{
-		OK: true, Set: set, Remove: applied.Remove,
+		OK: true, Set: set, Remove: applied.Removes(),
 		Outcome: rpc.OutcomeApplied, Version: version,
 	}, true, nil
 }

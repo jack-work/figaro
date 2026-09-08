@@ -177,7 +177,7 @@ func setPatch(kv map[string]string) message.Patch {
 		raw, _ := json.Marshal(v)
 		set[k] = raw
 	}
-	return message.Patch{Set: set}
+	return form.Creates(set)
 }
 
 // benchRowLog is a translator channel in a real store, holding a plausible

@@ -77,7 +77,7 @@ func TestLawMerge(t *testing.T) {
 		serial, err := q.Apply(mustApply(t, p, a))
 		require.NoError(t, err)
 
-		merged, err := MergeStruct(p, q).Apply(a)
+		merged, err := Merge(p, q).Apply(a)
 		require.NoError(t, err, "trial %d\n a=%s\n b=%s\n c=%s", i, a.Raw(), b.Raw(), c.Raw())
 
 		requireSameJSON(t, serial, merged,
@@ -97,7 +97,7 @@ func TestPatchRoundTripsThroughJSON(t *testing.T) {
 
 		raw, err := json.Marshal(p)
 		require.NoError(t, err)
-		var back StructPatch
+		var back Patch
 		require.NoError(t, json.Unmarshal(raw, &back))
 
 		got, err := back.Apply(a)
@@ -108,7 +108,7 @@ func TestPatchRoundTripsThroughJSON(t *testing.T) {
 
 // ---- helpers -------------------------------------------------------------
 
-func mustApply(t *testing.T, p StructPatch, v Value) Value {
+func mustApply(t *testing.T, p Patch, v Value) Value {
 	t.Helper()
 	out, err := p.Apply(v)
 	require.NoError(t, err)

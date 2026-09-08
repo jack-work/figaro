@@ -2,6 +2,7 @@ package formdelta
 
 import (
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"reflect"
 	"testing"
 	"time"
@@ -23,9 +24,9 @@ func backend(t *testing.T) *store.XwalBackend {
 }
 
 func patchOf(kv map[string]string) message.Patch {
-	p := message.Patch{Set: map[string]json.RawMessage{}}
+	p := form.Creates(map[string]json.RawMessage{})
 	for k, v := range kv {
-		p.Set[k] = json.RawMessage(v)
+		p.Leaves()[k] = json.RawMessage(v)
 	}
 	return p
 }
@@ -125,10 +126,7 @@ func TestStudiedFormDeltas(t *testing.T) {
 	}
 	appendRecord(t, log, message.RoleInput)
 
-	v, err := be.ApplyForm(src, message.Patch{
-		Set:    map[string]json.RawMessage{"status": json.RawMessage(`"merged"`)},
-		Remove: []string{"brief"},
-	})
+	v, err := be.ApplyForm(src, form.Build(form.Snapshot{}, map[string]json.RawMessage{"status": json.RawMessage(`"merged"`)}, []string{"brief"}))
 	if err != nil {
 		t.Fatal(err)
 	}

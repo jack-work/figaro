@@ -2,6 +2,7 @@ package figaro
 
 import (
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"strings"
 	"testing"
 
@@ -20,34 +21,31 @@ import (
 func TestBookkeepingNeverReachesTheModel(t *testing.T) {
 	raw := func(s string) json.RawMessage { return json.RawMessage(s) }
 
-	got := withoutBookkeeping(message.Patch{Set: map[string]json.RawMessage{
+	got := withoutBookkeeping(form.Creates(map[string]json.RawMessage{
 		"status":              raw(`"merged"`),
 		store.KeyLibrettoAt:   raw(`41`),
 		store.KeyLibrettoRefs: raw(`3`),
-	}})
-	if _, ok := got.Set[store.KeyLibrettoAt]; ok {
+	}))
+	if _, ok := got.Leaves()[store.KeyLibrettoAt]; ok {
 		t.Errorf("at survived: %v", got.Set)
 	}
-	if _, ok := got.Set[store.KeyLibrettoRefs]; ok {
+	if _, ok := got.Leaves()[store.KeyLibrettoRefs]; ok {
 		t.Errorf("refs survived: %v", got.Set)
 	}
-	if string(got.Set["status"]) != `"merged"` {
+	if string(got.Leaves()["status"]) != `"merged"` {
 		t.Errorf("the mirror did not survive: %v", got.Set)
 	}
 
-	alive := withoutBookkeeping(message.Patch{Set: map[string]json.RawMessage{
+	alive := withoutBookkeeping(form.Creates(map[string]json.RawMessage{
 		store.KeyLibrettoAlive: raw(`false`),
 		store.KeyLibrettoAt:    raw(`41`),
-	}})
-	if string(alive.Set[store.KeyLibrettoAlive]) != `false` {
+	}))
+	if string(alive.Leaves()[store.KeyLibrettoAlive]) != `false` {
 		t.Errorf("the death was hidden: %v", alive.Set)
 	}
 
 	// A fold that moved nothing but bookkeeping renders no block at all.
-	if p := withoutBookkeeping(message.Patch{
-		Set:    map[string]json.RawMessage{store.KeyLibrettoAt: raw(`42`)},
-		Remove: []string{store.KeyLibrettoRefs},
-	}); !p.IsEmpty() {
+	if p := withoutBookkeeping(form.Build(form.Snapshot{}, map[string]json.RawMessage{store.KeyLibrettoAt: raw(`42`)}, []string{store.KeyLibrettoRefs})); !p.IsEmpty() {
 		t.Errorf("pure bookkeeping rendered %v", p)
 	}
 }
@@ -56,20 +54,17 @@ func TestBookkeepingNeverReachesTheModel(t *testing.T) {
 // every reader of that log. Stripping in place would edit history, and the
 // per-LT cache would make whichever render ran first permanent.
 func TestStrippingDoesNotEditHistory(t *testing.T) {
-	original := message.Patch{
-		Set: map[string]json.RawMessage{
-			"status":            json.RawMessage(`"merged"`),
-			store.KeyLibrettoAt: json.RawMessage(`41`),
-		},
-		Remove: []string{store.KeyLibrettoRefs, "old"},
-	}
+	original := form.Build(form.Snapshot{}, map[string]json.RawMessage{
+		"status":            json.RawMessage(`"merged"`),
+		store.KeyLibrettoAt: json.RawMessage(`41`),
+	}, []string{store.KeyLibrettoRefs, "old"})
 
 	withoutBookkeeping(original)
 
-	if _, ok := original.Set[store.KeyLibrettoAt]; !ok {
+	if _, ok := original.Leaves()[store.KeyLibrettoAt]; !ok {
 		t.Errorf("the store's own patch lost a key: %v", original.Set)
 	}
-	if len(original.Remove) != 2 {
+	if len(original.Removes()) != 2 {
 		t.Errorf("the store's own removes were rewritten: %v", original.Remove)
 	}
 }

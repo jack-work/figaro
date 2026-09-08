@@ -3,6 +3,7 @@ package figaro
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/sdk"
 	"os"
 	"path/filepath"
@@ -70,9 +71,9 @@ func TestAgentClientPresentsCallerAcrossTheSecondHop(t *testing.T) {
 	}
 
 	// A payload-bearing method, with a raw-JSON value that must survive intact.
-	patch := rpc.FormPatch{Set: map[string]json.RawMessage{
+	patch := form.Creates(map[string]json.RawMessage{
 		"mantra": json.RawMessage(`"keep me exact"`),
-	}}
+	})
 	if _, err := cli.Set(context.Background(), patch, 0); err != nil {
 		t.Fatalf("set: %v", err)
 	}
@@ -84,7 +85,7 @@ func TestAgentClientPresentsCallerAcrossTheSecondHop(t *testing.T) {
 	if err := json.Unmarshal(got, &sr); err != nil {
 		t.Fatalf("payload: %v", err)
 	}
-	if v := string(sr.Patch.Set["mantra"]); v != `"keep me exact"` {
+	if v := string(sr.Patch.Leaves()["mantra"]); v != `"keep me exact"` {
 		t.Fatalf("patch value re-encoded: %s", v)
 	}
 

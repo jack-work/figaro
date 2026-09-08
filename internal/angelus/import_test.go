@@ -3,6 +3,7 @@ package angelus
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -53,10 +54,10 @@ func TestImportLandsAsAWholeConversation(t *testing.T) {
 		WasID:    "23a5a06d",
 		Mantra:   "a portable aria",
 		Messages: msgs,
-		Form: message.Patch{Set: map[string]json.RawMessage{
+		Form: form.Creates(map[string]json.RawMessage{
 			"mantra":             json.RawMessage(`"a portable aria"`),
 			"system.outfit_name": json.RawMessage(`"opus5-ant"`),
-		}},
+		}),
 	})
 
 	require.NotEmpty(t, resp.FigaroID)

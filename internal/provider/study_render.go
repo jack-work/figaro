@@ -113,7 +113,7 @@ func studyFold(fid string, patches []message.Patch, limits form.DeltaLimits) map
 			continue
 		}
 		changes++
-		for k, v := range p.Set {
+		for k, v := range p.Leaves() {
 			// THE ONE SYSTEM KEY A READER IS OWED. A studied form's death is
 			// reported IN BAND, as a key on the copy that outlives it
 			// (durable-forms §12.7b), which is what keeps liveness out of the
@@ -136,7 +136,7 @@ func studyFold(fid string, patches []message.Patch, limits form.DeltaLimits) map
 			set[k] = v
 			delete(removed, k)
 		}
-		for _, k := range p.Remove {
+		for _, k := range p.Removes() {
 			if strings.HasPrefix(k, "system.") {
 				continue
 			}

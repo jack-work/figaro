@@ -29,9 +29,9 @@ func TestEncodeRendersFormReminders(t *testing.T) {
 	msg := message.Message{
 		Role:    message.RoleInput,
 		Content: []message.Content{{Type: message.ContentProse, Text: "second"}},
-		Patches: []message.Patch{{Set: map[string]json.RawMessage{
+		Patches: []message.Patch{form.Creates(map[string]json.RawMessage{
 			"focus_mode": json.RawMessage(`"deep"`),
-		}}},
+		})},
 	}
 	encoded, err := p.encode(msg, form.Snapshot{})
 	if err != nil {

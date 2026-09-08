@@ -33,7 +33,7 @@ func TestLoadResolvesLegacyLoadoutsDir(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", tc.name, err)
 		}
-		if got := string(patch.Set["system.model"]); got != tc.want {
+		if got := string(patch.Leaves()["system.model"]); got != tc.want {
 			t.Fatalf("%s: system.model = %s, want %s", tc.name, got, tc.want)
 		}
 	}

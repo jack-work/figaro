@@ -29,13 +29,13 @@ func TestCacheSeesAnEditedOutfit(t *testing.T) {
 
 	patch, err := o.Load("top")
 	require.NoError(t, err)
-	require.Equal(t, `"first"`, string(patch.Set["system.model"]))
+	require.Equal(t, `"first"`, string(patch.Leaves()["system.model"]))
 
 	// Rewritten with a different size, so mtime granularity cannot mask it.
 	writeOutfit(t, dir, "base", "[system]\nmodel = \"second-and-longer\"\n")
 	patch, err = o.Load("top")
 	require.NoError(t, err)
-	assert.Equal(t, `"second-and-longer"`, string(patch.Set["system.model"]),
+	assert.Equal(t, `"second-and-longer"`, string(patch.Leaves()["system.model"]),
 		"an edit to a LAYER must invalidate the outfit above it")
 }
 
@@ -48,12 +48,12 @@ func TestCacheSeesAnEditedContentFile(t *testing.T) {
 
 	patch, err := o.Load("top")
 	require.NoError(t, err)
-	require.Contains(t, string(patch.Set["system.credo"]), "first")
+	require.Contains(t, string(patch.Leaves()["system.credo"]), "first")
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "credo.md"), []byte("second-and-longer"), 0o600))
 	patch, err = o.Load("top")
 	require.NoError(t, err)
-	assert.Contains(t, string(patch.Set["system.credo"]), "second-and-longer",
+	assert.Contains(t, string(patch.Leaves()["system.credo"]), "second-and-longer",
 		"a fileName dependency must invalidate the outfit that names it")
 }
 
@@ -98,7 +98,7 @@ func TestCacheSeesALayerAppear(t *testing.T) {
 	writeOutfit(t, dir, "later", "[system]\ncredo = \"arrived\"\n")
 	patch, err := o.Load("top")
 	require.NoError(t, err)
-	assert.Equal(t, `"arrived"`, string(patch.Set["system.credo"]))
+	assert.Equal(t, `"arrived"`, string(patch.Leaves()["system.credo"]))
 }
 
 // bigConfig writes a realistic composition: a shared base, a diamond over it,

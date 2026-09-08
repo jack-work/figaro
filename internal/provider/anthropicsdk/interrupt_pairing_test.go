@@ -3,6 +3,7 @@ package anthropicsdk
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"path/filepath"
 	"testing"
 	"time"
@@ -79,10 +80,10 @@ func TestInterruptedTurn_BuiltRequestPairsEveryToolUse(t *testing.T) {
 	require.NoError(t, err)
 	defer backend.Close()
 
-	outfit, err := backend.CreateOutfit("d", message.Patch{Set: map[string]json.RawMessage{
+	outfit, err := backend.CreateOutfit("d", form.Creates(map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"m"`),
 		"system.provider": json.RawMessage(`"interrupted-tool"`),
-	}})
+	}))
 	require.NoError(t, err)
 	conv, err := backend.CreateConversation(outfit)
 	require.NoError(t, err)

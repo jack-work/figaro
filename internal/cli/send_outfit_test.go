@@ -84,10 +84,10 @@ func TestParsedOutfitRidesThePrompt(t *testing.T) {
 	if len(in.Outfits) != 1 || in.Outfits[0] != "a" {
 		t.Errorf("prompt outfits: %v", in.Outfits)
 	}
-	if _, leaked := in.Patch.Set["layers"]; leaked {
+	if _, leaked := in.Patch.Leaves()["layers"]; leaked {
 		t.Errorf("a layers directive reached the wire: %v", in.Patch.Set)
 	}
-	if got := string(in.Patch.Set["ttl"]); got != `"1h"` {
+	if got := string(in.Patch.Leaves()["ttl"]); got != `"1h"` {
 		t.Errorf("prompt ttl: %q", got)
 	}
 

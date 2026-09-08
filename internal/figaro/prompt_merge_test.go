@@ -2,6 +2,7 @@ package figaro
 
 import (
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"testing"
 
 	"github.com/jack-work/figaro/api/rpc"
@@ -69,17 +70,11 @@ func TestMergePromptEvents_MergesFormInQueueOrder(t *testing.T) {
 	got, _ := mergePromptEvents([]event{
 		{typ: eventUserPrompt, text: "a", form: &rpc.FormInput{
 			Context: map[string]json.RawMessage{"keep": json.RawMessage(`1`)},
-			Patch: &rpc.FormPatch{
-				Set:    map[string]json.RawMessage{"model": json.RawMessage(`"old"`)},
-				Remove: []string{"x"},
-			},
+			Patch:   &form.Build(form.Snapshot{}, map[string]json.RawMessage{"model": json.RawMessage(`"old"`)}, []string{"x"}),
 		}},
 		{typ: eventUserPrompt, text: "b", form: &rpc.FormInput{
 			Context: map[string]json.RawMessage{"also": json.RawMessage(`2`)},
-			Patch: &rpc.FormPatch{
-				Set:    map[string]json.RawMessage{"model": json.RawMessage(`"new"`)},
-				Remove: []string{"y"},
-			},
+			Patch:   &form.Build(form.Snapshot{}, map[string]json.RawMessage{"model": json.RawMessage(`"new"`)}, []string{"y"}),
 		}},
 	})
 	cb := got.form
@@ -89,10 +84,10 @@ func TestMergePromptEvents_MergesFormInQueueOrder(t *testing.T) {
 	if string(cb.Context["keep"]) != "1" || string(cb.Context["also"]) != "2" {
 		t.Errorf("context lost a contributor: %v", cb.Context)
 	}
-	if string(cb.Patch.Set["model"]) != `"new"` {
-		t.Errorf("later value must win: model = %s", cb.Patch.Set["model"])
+	if string(cb.Patch.Leaves()["model"]) != `"new"` {
+		t.Errorf("later value must win: model = %s", cb.Patch.Leaves()["model"])
 	}
-	if len(cb.Patch.Remove) != 2 {
+	if len(cb.Patch.Removes()) != 2 {
 		t.Errorf("removals must accumulate, got %v", cb.Patch.Remove)
 	}
 }
@@ -100,17 +95,15 @@ func TestMergePromptEvents_MergesFormInQueueOrder(t *testing.T) {
 // Merging must not mutate the inputs: the batch is prepended back to the inbox
 // on failure, and a mutated event would be restored in the wrong shape.
 func TestMergePromptEvents_DoesNotMutateInputs(t *testing.T) {
-	a := &rpc.FormInput{Patch: &rpc.FormPatch{
-		Set: map[string]json.RawMessage{"k": json.RawMessage(`"a"`)},
-	}}
-	b := &rpc.FormInput{Patch: &rpc.FormPatch{
-		Set: map[string]json.RawMessage{"k": json.RawMessage(`"b"`)},
-	}}
+	a := &rpc.FormInput{Patch: ptrPatch(form.Creates(map[string]json.RawMessage{"k": json.RawMessage(`"a"`)})}
+	b := &rpc.FormInput{Patch: ptrPatch(form.Creates(map[string]json.RawMessage{"k": json.RawMessage(`"b"`)})}
 	mergePromptEvents([]event{
 		{typ: eventUserPrompt, text: "x", form: a},
 		{typ: eventUserPrompt, text: "y", form: b},
 	})
-	if string(a.Patch.Set["k"]) != `"a"` || string(b.Patch.Set["k"]) != `"b"` {
+	if string(a.Patch.Leaves()["k"]) != `"a"` || string(b.Patch.Leaves()["k"]) != `"b"` {
 		t.Error("merge mutated a caller's form input")
 	}
 }
+
+func ptrPatch(p form.Patch) *form.Patch { return &p }

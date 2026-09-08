@@ -53,10 +53,10 @@ func realisticLog(tb testing.TB, n int, withUsage bool) store.Log[message.Messag
 func gapAgent(tb testing.TB, n int, withUsage bool) *Agent {
 	tb.Helper()
 	cb, _ := form.Open("")
-	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
+	cb.Apply(form.Creates(map[string]json.RawMessage{
 		"system.model": json.RawMessage(`"claude-sonnet-4-5"`),
 		"mantra":       json.RawMessage(`"benchmark"`),
-	}})
+	}))
 	tb.Cleanup(func() { _ = cb.Close() })
 	a := &Agent{
 		figLog:  realisticLog(tb, n, withUsage),

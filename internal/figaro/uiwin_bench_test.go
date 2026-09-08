@@ -29,7 +29,7 @@ func TestUIWindowBoundsAResidentAgent(t *testing.T) {
 	// then frees nothing. The first run of this test proved exactly
 	// that coupling, with saved=0.0 MiB.
 	be.SetIRWindow(32)
-	id, _, err := be.ForkWith("", 0, message.Patch{Set: map[string]json.RawMessage{"aria_id": json.RawMessage(`"a1"`)}})
+	id, _, err := be.ForkWith("", 0, message.Patchform.Creates(map[string]json.RawMessage{"aria_id": json.RawMessage(`"a1"`)}))
 	if err != nil {
 		t.Fatal(err)
 	}
