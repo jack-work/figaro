@@ -173,9 +173,15 @@ func (p Patch) Apply(v Value) (Value, error) {
 }
 
 func (p Patch) applyObject(v Value) (Value, error) {
-	obj, err := decodeObject(v)
-	if err != nil {
-		return Value{}, err
+	src, isObj := v.members()
+	if !isObj && len(v.Raw()) > 0 && string(v.Raw()) != "null" {
+		return Value{}, fmt.Errorf("object patch against a non-object")
+	}
+	// Copied because the memo behind members() is shared with every other
+	// reader of this value.
+	obj := make(map[string]Value, len(src)+len(p.Object.Set))
+	for k, val := range src {
+		obj[k] = val
 	}
 	for k, nv := range p.Object.Set {
 		// A write of an equal value keeps the bytes already stored. Providers
@@ -202,7 +208,7 @@ func (p Patch) applyObject(v Value) (Value, error) {
 		}
 		obj[k] = next
 	}
-	return encodeObject(obj)
+	return encodeObject(obj), nil
 }
 
 func (p Patch) applyList(v Value) (Value, error) {
@@ -530,16 +536,14 @@ func decodeObject(v Value) (map[string]Value, error) {
 	return out, nil
 }
 
-func encodeObject(m map[string]Value) (Value, error) {
+// encodeObject writes the members verbatim: their bytes are already JSON and
+// re-marshalling them was the cost of every apply.
+func encodeObject(m map[string]Value) Value {
 	raw := make(map[string]json.RawMessage, len(m))
 	for k, v := range m {
 		raw[k] = v.Raw()
 	}
-	b, err := json.Marshal(raw)
-	if err != nil {
-		return Value{}, err
-	}
-	return NewValue(b), nil
+	return NewValue(encodeRawObject(raw))
 }
 
 // decodeList reads a value as a keyed list: an array of {Key, Value}.

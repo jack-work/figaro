@@ -20,7 +20,19 @@ func roundTripValue[T any](t *testing.T, v T) {
 	require.NoError(t, err)
 	var back T
 	require.NoError(t, json.Unmarshal(b, &back))
-	assert.Equal(t, v, back)
+	assertSameJSON(t, v, back)
+}
+
+// assertSameJSON compares two values by what they serialise to. A struct may
+// carry a memo whose state differs between two equal values, and comparing
+// that is comparing a cache rather than a value.
+func assertSameJSON[T any](t *testing.T, want, got T) {
+	t.Helper()
+	a, err := json.Marshal(want)
+	require.NoError(t, err)
+	b, err := json.Marshal(got)
+	require.NoError(t, err)
+	assert.JSONEq(t, string(a), string(b))
 }
 
 // loadFixture reads a testdata file.
@@ -47,7 +59,7 @@ func roundTrip[T any](t *testing.T, fixture string, expected T) {
 	require.NoError(t, err)
 	var roundTripped T
 	require.NoError(t, json.Unmarshal(marshaled, &roundTripped))
-	assert.Equal(t, expected, roundTripped, "round-trip should preserve value")
+	assertSameJSON(t, expected, roundTripped)
 }
 
 // --- Figaro socket types ---

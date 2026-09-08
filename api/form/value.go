@@ -16,6 +16,7 @@ import (
 type Value struct {
 	raw json.RawMessage // exactly as supplied: the only bytes ever emitted
 	c   *canonBox       // memoised canonical form; nil only for the zero Value
+	o   *objBox         // memoised object members
 }
 
 // canonBox memoises one Value's canonical form. It is heap-allocated once per
@@ -28,6 +29,18 @@ type canonBox struct {
 	bytes []byte // nil if raw is not valid JSON
 }
 
+// objBox memoises the members of an object value.
+//
+// A board is read far more often than it is written, and every read walks it:
+// parsing the same subtree on each step made a key lookup cost the whole
+// board. The members are parsed once and the child Values are stable, so a
+// walk down two levels parses two nodes rather than two subtrees.
+type objBox struct {
+	once    sync.Once
+	members map[string]Value
+	isObj   bool
+}
+
 // NewValue wraps raw bytes. It never fails and never parses: bytes that are
 // not valid JSON are kept verbatim and, when a comparison eventually needs a
 // canonical form and cannot get one, Equal falls back to byte-exact equality.
@@ -35,7 +48,7 @@ func NewValue(raw json.RawMessage) Value {
 	if len(raw) == 0 {
 		raw = json.RawMessage("null")
 	}
-	return Value{raw: raw, c: &canonBox{}}
+	return Value{raw: raw, c: &canonBox{}, o: &objBox{}}
 }
 
 // EncodeValue marshals v and wraps the result.
@@ -139,4 +152,37 @@ func ensureEOF(dec *json.Decoder) error {
 		return errors.New("decode JSON value: multiple values")
 	}
 	return fmt.Errorf("decode JSON value: trailing data: %w", err)
+}
+
+// members reports the value's object members, parsed once.
+func (v Value) members() (map[string]Value, bool) {
+	if v.o == nil {
+		return parseMembers(v.raw)
+	}
+	v.o.once.Do(func() {
+		v.o.members, v.o.isObj = parseMembers(v.raw)
+	})
+	return v.o.members, v.o.isObj
+}
+
+func parseMembers(raw json.RawMessage) (map[string]Value, bool) {
+	if len(raw) == 0 {
+		return nil, false
+	}
+	i := 0
+	for i < len(raw) && (raw[i] == ' ' || raw[i] == '\t' || raw[i] == '\n' || raw[i] == '\r') {
+		i++
+	}
+	if i >= len(raw) || raw[i] != '{' {
+		return nil, false
+	}
+	var m map[string]json.RawMessage
+	if json.Unmarshal(raw, &m) != nil {
+		return nil, false
+	}
+	out := make(map[string]Value, len(m))
+	for k, r := range m {
+		out[k] = NewValue(r)
+	}
+	return out, true
 }
