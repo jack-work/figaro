@@ -11,9 +11,9 @@ import (
 // Order window over what moved; anything else is a scalar swap, which is also
 // the honest answer when the KIND changes (an object that became a string did
 // not have its keys edited).
-func Diff(a, b Value) StructPatch {
+func Diff(a, b Value) Patch {
 	if a.Equal(b) {
-		return StructPatch{}
+		return Patch{}
 	}
 	if ao, ok := asObject(a); ok {
 		if bo, ok2 := asObject(b); ok2 {
@@ -25,10 +25,10 @@ func Diff(a, b Value) StructPatch {
 			return diffList(al, bl)
 		}
 	}
-	return StructPatch{Scalar: &ScalarPatch{Before: a, After: b}}
+	return Patch{Scalar: &ScalarPatch{Before: a, After: b}}
 }
 
-func diffObject(a, b map[string]Value) StructPatch {
+func diffObject(a, b map[string]Value) Patch {
 	out := &ObjectPatch{}
 	for k, bv := range b {
 		av, had := a[k]
@@ -42,7 +42,7 @@ func diffObject(a, b map[string]Value) StructPatch {
 			child := Diff(av, bv)
 			if !child.IsIdentity() {
 				if out.Update == nil {
-					out.Update = map[string]StructPatch{}
+					out.Update = map[string]Patch{}
 				}
 				out.Update[k] = child
 			}
@@ -56,10 +56,10 @@ func diffObject(a, b map[string]Value) StructPatch {
 			out.Delete[k] = av
 		}
 	}
-	return StructPatch{Object: out}
+	return Patch{Object: out}
 }
 
-func diffList(a, b []KeyedValue) StructPatch {
+func diffList(a, b []KeyedValue) Patch {
 	out := &ListPatch{}
 	ai := make(map[string]Value, len(a))
 	for _, it := range a {
@@ -79,7 +79,7 @@ func diffList(a, b []KeyedValue) StructPatch {
 			child := Diff(av, it.Value)
 			if !child.IsIdentity() {
 				if out.Update == nil {
-					out.Update = map[string]StructPatch{}
+					out.Update = map[string]Patch{}
 				}
 				out.Update[it.Key] = child
 			}
@@ -110,7 +110,7 @@ func diffList(a, b []KeyedValue) StructPatch {
 		}
 		out.Order = o
 	}
-	return StructPatch{List: out}
+	return Patch{List: out}
 }
 
 // intermediate is the sequence apply produces before Order runs: the survivors

@@ -47,17 +47,17 @@ func oldRenderLoop(s Snapshot, patches []Patch, tmpls *template.Template) ([]str
 func foldCorpus(t *testing.T) [][]Patch {
 	t.Helper()
 	set := func(kv ...string) Patch {
-		p := Patch{Set: map[string]json.RawMessage{}}
+		p := Creates(map[string]json.RawMessage{})
 		for i := 0; i+1 < len(kv); i += 2 {
 			b, err := json.Marshal(kv[i+1])
 			if err != nil {
 				t.Fatal(err)
 			}
-			p.Set[kv[i]] = b
+			p.Leaves()[kv[i]] = b
 		}
 		return p
 	}
-	rm := func(keys ...string) Patch { return Patch{Remove: keys} }
+	rm := func(keys ...string) Patch { return Build(Snapshot{}, nil, keys) }
 	return [][]Patch{
 		nil,
 		{},
@@ -106,7 +106,7 @@ func TestFoldEqualsTheLoopItReplaced(t *testing.T) {
 			}
 			// Identity is part of the contract: a no-op fold must not mint a
 			// new root, which is what makes an empty patch free.
-			if len(patches) == 0 && got.root != board.root {
+			if len(patches) == 0 && !got.Root().Equal(board.Root()) {
 				t.Fatalf("board %d: an empty fold minted a new root", bi)
 			}
 		}
@@ -174,8 +174,8 @@ func TestFoldRenderSeesTheBoardBeforeEachPatch(t *testing.T) {
 	tmpls := orderSensitiveTemplates(t)
 	board := FromMap(map[string]json.RawMessage{"mantra": json.RawMessage(`"first"`)})
 	patches := []Patch{
-		{Set: map[string]json.RawMessage{"mantra": json.RawMessage(`"second"`)}},
-		{Set: map[string]json.RawMessage{"mantra": json.RawMessage(`"third"`)}},
+		Creates(map[string]json.RawMessage{"mantra": json.RawMessage(`"second"`)}),
+		Creates(map[string]json.RawMessage{"mantra": json.RawMessage(`"third"`)}),
 	}
 	var bodies []string
 	final := FoldRender(board, patches, tmpls,

@@ -25,7 +25,7 @@ func TestStudyLifecycleDump(t *testing.T) {
 	defer f.Close()
 
 	set := func(kv map[string]string) {
-		p := message.Patch{Set: map[string]json.RawMessage{}}
+		p := message.Patchform.Creates(map[string]json.RawMessage{})
 		for k, v := range kv {
 			b, _ := json.Marshal(v)
 			p.Set[k] = b
@@ -66,7 +66,7 @@ func TestStudyLifecycleDump(t *testing.T) {
 	})
 
 	// 4. A KEY IS REMOVED.
-	if _, err := f.Apply(message.Patch{Remove: []string{"owner"}}, 0); err != nil {
+	if _, err := f.Apply(message.Patchform.Build(form.Snapshot{}, nil, []string{"owner"}), 0); err != nil {
 		t.Fatal(err)
 	}
 	_, _ = log.Append(store.Entry[message.Message]{

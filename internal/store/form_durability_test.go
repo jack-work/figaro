@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/api/form"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -36,7 +37,7 @@ func (l *failingLog) SyncThrough(uint64) error {
 
 func kv(k, v string) message.Patch {
 	raw, _ := json.Marshal(v)
-	return message.Patch{Set: map[string]json.RawMessage{k: raw}}
+	return form.Creates(map[string]json.RawMessage{k: raw})
 }
 
 // A failed sync rejects the patch and leaves the published state exactly
@@ -190,7 +191,7 @@ func TestRemovalIntent(t *testing.T) {
 	}
 	v := f.Read().Version
 
-	rm := message.Patch{Remove: []string{"absent"}}
+	rm := form.Build(form.Snapshot{}, nil, []string{"absent"})
 	if _, _, err := f.ApplyEffectIntent(rm, 0, Ensure); err != nil {
 		t.Fatalf("ensure must reduce an absent removal away: %v", err)
 	}
@@ -201,10 +202,10 @@ func TestRemovalIntent(t *testing.T) {
 		t.Fatal("a refusal moved the version")
 	}
 
-	real := message.Patch{Remove: []string{"here"}}
+	real := form.Build(form.Snapshot{}, nil, []string{"here"})
 	if _, applied, err := f.ApplyEffectIntent(real, 0, Assert); err != nil {
 		t.Fatalf("assert must allow a removal that removes: %v", err)
-	} else if len(applied.Remove) != 1 {
+	} else if len(applied.Removes()) != 1 {
 		t.Fatalf("want one removal, got %v", applied.Remove)
 	}
 }

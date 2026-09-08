@@ -3,6 +3,7 @@ package angelus
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"testing"
 
 	"github.com/jack-work/figaro/api/message"
@@ -22,7 +23,7 @@ func gcHandlers(t *testing.T) (*handlers, *store.XwalBackend) {
 
 func gcPatch(v string) message.Patch {
 	b, _ := json.Marshal(v)
-	return message.Patch{Set: map[string]json.RawMessage{"v": b}}
+	return form.Creates(map[string]json.RawMessage{"v": b})
 }
 
 func runGCHandler(t *testing.T, h *handlers, dryRun bool) rpc.GCResponse {

@@ -14,7 +14,7 @@ import (
 )
 
 func set(k, v string) message.Patch {
-	return message.Patch{Set: map[string]json.RawMessage{k: json.RawMessage(v)}}
+	return message.Patchform.Creates(map[string]json.RawMessage{k: json.RawMessage(v)})
 }
 
 // A form needs no aria, no daemon and no store: the algebra and the published
@@ -141,17 +141,17 @@ func TestNoOpPatchIsNotAnEvent(t *testing.T) {
 	assert.True(t, applied.IsEmpty(), "and must report that nothing landed")
 
 	// A removal of a key that is not there is the same kind of nothing.
-	v3, applied, err := f.ApplyEffect(message.Patch{Remove: []string{"absent"}}, 0)
+	v3, applied, err := f.ApplyEffect(message.Patchform.Build(form.Snapshot{}, nil, []string{"absent"}), 0)
 	require.NoError(t, err)
 	assert.Equal(t, v1, v3)
 	assert.True(t, applied.IsEmpty())
 
 	// A real change still is one, and only the changed half of a mixed patch
 	// survives the reduction.
-	v4, applied, err := f.ApplyEffect(message.Patch{Set: map[string]json.RawMessage{
+	v4, applied, err := f.ApplyEffect(message.Patchform.Creates(map[string]json.RawMessage{
 		"k": json.RawMessage(`1`),   // unchanged
 		"j": json.RawMessage(`"n"`), // new
-	}}, 0)
+	}), 0)
 	require.NoError(t, err)
 	assert.Greater(t, v4, v1)
 	assert.NotContains(t, applied.Set, "k")

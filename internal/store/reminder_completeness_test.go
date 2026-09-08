@@ -36,10 +36,10 @@ func TestEveryPatchIsShownToTheAria(t *testing.T) {
 	}
 	defer be.Close()
 
-	outfit, err := be.CreateOutfit("opus5", message.Patch{Set: map[string]json.RawMessage{
+	outfit, err := be.CreateOutfit("opus5", form.Creates(map[string]json.RawMessage{
 		"skills.golang": json.RawMessage(`{"frontmatter":"name: golang"}`),
 		"duke-title":    json.RawMessage(`"Gluck"`),
-	}})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestEveryPatchIsShownToTheAria(t *testing.T) {
 	// What the daemon does: identity keys, then a turn, then per-turn keys.
 	apply := func(kv map[string]json.RawMessage) {
 		t.Helper()
-		if _, err := be.ApplyForm(aria, message.Patch{Set: kv}); err != nil {
+		if _, err := be.ApplyForm(aria, form.Creates(kv)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -92,7 +92,7 @@ func TestEveryPatchIsShownToTheAria(t *testing.T) {
 	if cursor < len(patches) {
 		var missed []string
 		for _, p := range patches[cursor:] {
-			for k := range p.Patch.Set {
+			for k := range p.Patch.Leaves() {
 				missed = append(missed, fmt.Sprintf("%s (v%d)", k, p.Version))
 			}
 		}
@@ -129,9 +129,9 @@ func TestAForkedAriaIsShownItsNewAriaID(t *testing.T) {
 	}
 	defer be.Close()
 
-	outfit, err := be.CreateOutfit("opus5", message.Patch{Set: map[string]json.RawMessage{
+	outfit, err := be.CreateOutfit("opus5", form.Creates(map[string]json.RawMessage{
 		"skills.golang": json.RawMessage(`{"frontmatter":"name: golang"}`),
-	}})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,9 +141,9 @@ func TestAForkedAriaIsShownItsNewAriaID(t *testing.T) {
 	}
 	setID := func(aria string) {
 		t.Helper()
-		if _, err := be.ApplyForm(aria, message.Patch{Set: map[string]json.RawMessage{
+		if _, err := be.ApplyForm(aria, form.Creates(map[string]json.RawMessage{
 			"aria_id": json.RawMessage(`"` + aria + `"`),
-		}}); err != nil {
+		})); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -188,7 +188,7 @@ func TestAForkedAriaIsShownItsNewAriaID(t *testing.T) {
 		}
 		for cursor < len(patches) && patches[cursor].Version <= e.FormChannelVersion {
 			p := patches[cursor]
-			if v, ok := p.Patch.Set["aria_id"]; ok {
+			if v, ok := p.Patch.Leaves()["aria_id"]; ok {
 				seen = append(seen, string(v))
 			}
 			shown = shown.Apply(p.Patch)

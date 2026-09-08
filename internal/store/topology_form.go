@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/internal/topo"
 )
 
@@ -140,7 +140,7 @@ func (t *TopologyTree) migrate(path string) error {
 			}
 			set[id] = raw
 		}
-		if _, _, err := t.form.ApplyEffectPrivileged(message.Patch{Set: set}, 0); err != nil {
+		if _, _, err := t.form.ApplyEffectPrivileged(form.Creates(set), 0); err != nil {
 			return fmt.Errorf("topology: migrate %s: %w", path, err)
 		}
 	}
@@ -247,9 +247,9 @@ func (t *TopologyTree) Promote(id string) error {
 	idUp, _ := t.topo.From(id)
 	parentUp, _ := t.topo.From(parent)
 
-	patch := message.Patch{Set: map[string]json.RawMessage{}}
-	edge(&patch, id, grand, idUp)
-	edge(&patch, parent, id, parentUp)
+	patch := newEdgeIntent()
+	edge(patch, id, grand, idUp)
+	edge(patch, parent, id, parentUp)
 	return t.apply(patch)
 }
 
@@ -257,19 +257,31 @@ func (t *TopologyTree) Promote(id string) error {
 // with the topology. One rule, so an aria promoted back to where its history
 // puts it leaves no trace; otherwise Normalized() stays false forever and
 // every later delete repairs an empty boundary.
-func edge(p *message.Patch, id, parent, topoParent string) {
+// edgeIntent is what a patch is being ASKED to do, before it becomes one.
+// A structural patch is a difference and cannot be assembled field by field;
+// the intent is collected and diffed once, against the board it applies to.
+type edgeIntent struct {
+	set    map[string]json.RawMessage
+	remove []string
+}
+
+func newEdgeIntent() *edgeIntent {
+	return &edgeIntent{set: map[string]json.RawMessage{}}
+}
+
+func edge(p *edgeIntent, id, parent, topoParent string) {
 	if parent == topoParent {
-		p.Remove = append(p.Remove, id)
+		p.remove = append(p.remove, id)
 		return
 	}
 	raw, _ := json.Marshal(parent)
-	p.Set[id] = raw
+	p.set[id] = raw
 }
 
 func (t *TopologyTree) Reparent(id, parent string) error {
 	up, _ := t.topo.From(id)
-	patch := message.Patch{Set: map[string]json.RawMessage{}}
-	edge(&patch, id, parent, up)
+	patch := newEdgeIntent()
+	edge(patch, id, parent, up)
 	return t.apply(patch)
 }
 
@@ -292,13 +304,16 @@ func (t *TopologyTree) Forget(ids ...string) error {
 		return nil
 	}
 	sort.Strings(remove)
-	return t.apply(message.Patch{Remove: remove})
+	return t.apply(&edgeIntent{remove: remove})
 }
 
 // apply writes through the form's privileged path: presentation is harness
 // state, and Ensure because a Forget may name an edge already gone.
-func (t *TopologyTree) apply(p message.Patch) error {
-	_, _, err := t.form.applyEffect(p, 0, Ensure, true)
+func (t *TopologyTree) apply(in *edgeIntent) error {
+	// The intent becomes a patch HERE, where the board it applies to is in
+	// hand: that is what gives it the prior values it needs to be inverted.
+	base, _ := t.form.Snapshot()
+	_, _, err := t.form.applyEffect(form.Build(base, in.set, in.remove), 0, Ensure, true)
 	return err
 }
 

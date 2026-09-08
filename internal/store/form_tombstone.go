@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/form"
 )
 
 // TombstoneKey marks a form as dead. Harness-owned: nothing off a wire may
@@ -38,7 +38,7 @@ func (f *Form) Tombstone(reason string) (uint64, error) {
 		return 0, err
 	}
 	v, _, err := f.ApplyEffectPrivileged(
-		message.Patch{Set: map[string]json.RawMessage{TombstoneKey: raw}}, 0)
+		form.Creates(map[string]json.RawMessage{TombstoneKey: raw}), 0)
 	if err != nil {
 		return 0, err
 	}

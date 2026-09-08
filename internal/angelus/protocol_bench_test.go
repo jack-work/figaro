@@ -3,6 +3,7 @@ package angelus
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/api/form"
 	"io"
 	"log/slog"
 	"testing"
@@ -91,10 +92,10 @@ func BenchmarkDormantList(b *testing.B) {
 			}
 			b.Cleanup(func() { _ = backend.Close() })
 			if n > 0 {
-				outfit, err := backend.CreateOutfit("perf", message.Patch{Set: map[string]json.RawMessage{
+				outfit, err := backend.CreateOutfit("perf", form.Creates(map[string]json.RawMessage{
 					"system.provider": json.RawMessage(`"perf"`),
 					"system.model":    json.RawMessage(`"perf-model"`),
-				}})
+				}))
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -103,10 +104,10 @@ func BenchmarkDormantList(b *testing.B) {
 					if err != nil {
 						b.Fatal(err)
 					}
-					if _, err := backend.ApplyForm(id, message.Patch{Set: map[string]json.RawMessage{
+					if _, err := backend.ApplyForm(id, form.Creates(map[string]json.RawMessage{
 						"mantra":     json.RawMessage(fmt.Sprintf("%q", fmt.Sprintf("aria %d", i))),
 						"system.cwd": json.RawMessage(`"/work"`),
-					}}); err != nil {
+					})); err != nil {
 						b.Fatal(err)
 					}
 					log, err := backend.OpenFigIR(id)

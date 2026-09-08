@@ -160,27 +160,17 @@ func (h *handlers) outfitReload(ctx context.Context, params json.RawMessage) (in
 // inherits its parent's form, aria_id included, and an aria that answers to its
 // parent's id cannot fork itself. The re-stamp is the floor.
 func forkDress(dress form.Patch, parent string) form.Patch {
-	p := form.Patch{Set: map[string]json.RawMessage{}, Remove: dress.Remove}
-	for k, v := range dress.Set {
-		p.Set[k] = v
-	}
+	keys := dress.Leaves()
 	// A placeholder the writer replaces would be a lie; the id is not known
 	// until the child exists, so aria_id is re-stamped by the boot patch that
 	// follows. What this guarantees is that the birth patch is never empty.
-	p.Set[form.ForkedFromKey] = json.RawMessage(`"` + parent + `"`)
-	return p
+	keys[form.ForkedFromKey] = json.RawMessage(`"` + parent + `"`)
+	return form.Build(form.Snapshot{}, keys, dress.Removes())
 }
 
-// mergePatches folds b over a.
+// mergePatches folds b over a: two patches in series are one patch.
 func mergePatches(a, b form.Patch) form.Patch {
-	out := form.Patch{Set: map[string]json.RawMessage{}, Remove: append(append([]string(nil), a.Remove...), b.Remove...)}
-	for k, v := range a.Set {
-		out.Set[k] = v
-	}
-	for k, v := range b.Set {
-		out.Set[k] = v
-	}
-	return out
+	return form.Merge(a, b)
 }
 
 // childBirthPatch is what an aria writes for ITSELF: the dressing it asked for
@@ -188,33 +178,28 @@ func mergePatches(a, b form.Patch) form.Patch {
 // never empty: cwd is always known: which is what lets ForkWith demand a
 // patch.
 func childBirthPatch(dress form.Patch, cwd string) form.Patch {
-	p := form.Patch{Set: map[string]json.RawMessage{}, Remove: dress.Remove}
-	for k, v := range dress.Set {
-		p.Set[k] = v
-	}
+	keys := dress.Leaves()
 	if b, err := json.Marshal(cwd); err == nil && cwd != "" {
-		p.Set["system.cwd"] = b
+		keys["system.cwd"] = b
 	}
-	return p
+	return form.Build(form.Snapshot{}, keys, dress.Removes())
 }
 
 func birthPatch(outfitPatch form.Patch, outfitName, cwd string) form.Patch {
-	p := form.Patch{Set: map[string]json.RawMessage{}, Remove: outfitPatch.Remove}
-	for k, v := range outfitPatch.Set {
-		p.Set[k] = v
-	}
+	keys := outfitPatch.Leaves()
 	if b, err := json.Marshal(outfitName); err == nil && outfitName != "" {
-		p.Set["system.outfit_name"] = b
+		keys["system.outfit_name"] = b
 	}
+	p := form.Build(form.Snapshot{}, keys, outfitPatch.Removes())
 	if ver, err := store.ContentVersion(p); err == nil {
 		if b, mErr := json.Marshal(ver); mErr == nil {
-			p.Set["system.outfit_version"] = b
+			p.Leaves()["system.outfit_version"] = b
 		}
 	}
 	// cwd rides the birth patch so the very first turn resolves tools against
 	// the right directory; aria_id cannot, because the id does not exist yet.
 	if b, err := json.Marshal(cwd); err == nil && cwd != "" {
-		p.Set["system.cwd"] = b
+		p.Leaves()["system.cwd"] = b
 	}
 	return p
 }
@@ -239,16 +224,16 @@ func isDir(path string) bool {
 }
 
 func runtimeFillins(ariaID, cwd string) form.Patch {
-	p := form.Patch{Set: map[string]json.RawMessage{}}
+	p := form.Creates(map[string]json.RawMessage{})
 	if b, err := json.Marshal(ariaID); err == nil && ariaID != "" {
-		p.Set["aria_id"] = b
+		p.Leaves()["aria_id"] = b
 	}
 	if b, err := json.Marshal(cwd); err == nil && cwd != "" {
-		p.Set["system.cwd"] = b
+		p.Leaves()["system.cwd"] = b
 	}
 	if env := form.EnvironmentPatch(); !env.IsEmpty() {
-		for k, v := range env.Set {
-			p.Set[k] = v
+		for k, v := range env.Leaves() {
+			p.Leaves()[k] = v
 		}
 	}
 	return p
@@ -264,18 +249,18 @@ func convBootPatch(ariaID, cwd string) form.Patch {
 // withAriaID returns p with aria_id set (used once the ephemeral id is
 // minted).
 func withAriaID(p form.Patch, ariaID string) form.Patch {
-	if b, err := json.Marshal(ariaID); err == nil {
-		if p.Set == nil {
-			p.Set = map[string]json.RawMessage{}
-		}
-		p.Set["aria_id"] = b
+	b, err := json.Marshal(ariaID)
+	if err != nil {
+		return p
 	}
-	return p
+	keys := p.Leaves()
+	keys["aria_id"] = b
+	return form.Build(form.Snapshot{}, keys, p.Removes())
 }
 
 // patchString reads a string value from a form.Patch's Set map.
 func patchString(p form.Patch, key string) string {
-	raw, ok := p.Set[key]
+	raw, ok := p.Leaves()[key]
 	if !ok {
 		return ""
 	}
@@ -286,7 +271,7 @@ func patchString(p form.Patch, key string) string {
 
 // patchInt reads an int value from a form.Patch's Set map.
 func patchInt(p form.Patch, key string) int {
-	raw, ok := p.Set[key]
+	raw, ok := p.Leaves()[key]
 	if !ok {
 		return 0
 	}
@@ -297,7 +282,7 @@ func patchInt(p form.Patch, key string) int {
 
 // patchBool reads a bool value from a form.Patch's Set map.
 func patchBool(p form.Patch, key string) bool {
-	raw, ok := p.Set[key]
+	raw, ok := p.Leaves()[key]
 	if !ok {
 		return false
 	}

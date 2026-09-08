@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"runtime"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -971,7 +970,7 @@ func (a *Agent) applyControlPatchVerdict(patch message.Patch, ifVersion uint64, 
 			}
 		}()
 	}
-	slog.Debug("event "+kind, "aria", a.id, "set", len(patch.Set), "remove", len(patch.Remove))
+	slog.Debug("event "+kind, "aria", a.id, "set", len(patch.Leaves()), "remove", len(patch.Removes()))
 	if a.backend != nil {
 		intent := store.Ensure
 		if assert {
@@ -1081,27 +1080,31 @@ func (v librettoView) PatchesBetween(after, upTo uint64) []message.Patch {
 // value, shared by every reader of that log: editing it in place edits
 // history.
 func withoutBookkeeping(p message.Patch) message.Patch {
-	hidden := slices.ContainsFunc(p.Remove, store.HiddenLibrettoKey)
-	for k := range p.Set {
-		if hidden {
-			break
+	// A patch is a difference, so bookkeeping is dropped by REBUILDING the
+	// difference without it rather than by editing fields. The patch handed
+	// in is the store's own published value, shared by every reader of that
+	// log: editing it in place edits history.
+	keep := map[string]json.RawMessage{}
+	hidden := false
+	for k, raw := range p.Leaves() {
+		if store.HiddenLibrettoKey(k) {
+			hidden = true
+			continue
 		}
-		hidden = store.HiddenLibrettoKey(k)
+		keep[k] = raw
+	}
+	var drops []string
+	for _, k := range p.Removes() {
+		if store.HiddenLibrettoKey(k) {
+			hidden = true
+			continue
+		}
+		drops = append(drops, k)
 	}
 	if !hidden {
 		return p
 	}
-	q := message.Patch{Remove: slices.DeleteFunc(slices.Clone(p.Remove), store.HiddenLibrettoKey)}
-	for k, raw := range p.Set {
-		if store.HiddenLibrettoKey(k) {
-			continue
-		}
-		if q.Set == nil {
-			q.Set = make(map[string]json.RawMessage, len(p.Set))
-		}
-		q.Set[k] = raw
-	}
-	return q
+	return form.Build(form.Snapshot{}, keep, drops)
 }
 
 // formView answers an absolute patch range from the store, per call, holding

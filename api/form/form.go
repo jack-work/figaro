@@ -5,221 +5,370 @@ package form
 import (
 	"encoding/json"
 	"iter"
-	"slices"
 	"sort"
-
-	"github.com/jack-work/figaro/api/message"
+	"strings"
 )
 
-// Snapshot is an untyped key-value view. Values are raw JSON;
-// callers json.Unmarshal what they need.
+// Snapshot is a structural view of an aria's board: a JSON object whose
+// members are the keys, nested where the keys nest.
+//
+// It was a FLAT map of dotted strings to opaque JSON, which made a dot a
+// convention nothing enforced and made every value below the first level
+// unreachable: changing one field of a 6.5KB credo rewrote the credo. The
+// dots address a tree now, and a patch reaches any node of it.
 type Snapshot struct {
-	root *node
+	root Value
 }
 
-// FromMap builds a Snapshot from a plain map. The map is copied (to the
-// same depth as Clone was before the tree swap), so later mutation of m
-// : or of the value bytes in it: does not affect the returned Snapshot
-// and vice versa.
+// Path is a key resolved to its segments. Dots address the tree; a segment
+// may itself contain a dot where the key was written that way, so a path is
+// resolved AGAINST a snapshot rather than parsed in isolation.
+type Path []string
+
+// FromMap builds a Snapshot from flat dotted keys, nesting them.
 func FromMap(m map[string]json.RawMessage) Snapshot {
-	entries := make([]treeEntry, 0, len(m))
-	for k, v := range m {
-		entries = append(entries, treeEntry{key: k, value: NewValue(append(json.RawMessage(nil), v...))})
+	obj := map[string]json.RawMessage{}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
 	}
-	return Snapshot{root: treeFromEntries(entries).root}
+	sort.Strings(keys)
+	for _, k := range keys {
+		obj = insertPath(obj, strings.Split(k, "."), append(json.RawMessage(nil), m[k]...))
+	}
+	b, _ := json.Marshal(obj)
+	return Snapshot{root: NewValue(b)}
 }
 
-// tree returns the snapshot's underlying persistent tree.
-func (s Snapshot) tree() ptree { return ptree{root: s.root} }
+// Root is the whole board as one value: what a structural patch applies to.
+func (s Snapshot) Root() Value {
+	if len(s.root.Raw()) == 0 {
+		return NewValue(json.RawMessage(`{}`))
+	}
+	return s.root
+}
 
-// Get returns the raw value for key and whether it was present.
+// FromValue wraps a root object as a snapshot.
+func FromValue(v Value) Snapshot { return Snapshot{root: v} }
+
+// Get returns the raw value at key and whether it was present.
+//
+// The key is resolved segment by segment, LONGEST MATCH FIRST at every level,
+// so a key whose own name contains a dot resolves to itself rather than to a
+// path that does not exist. That is what makes `skills.howto` and
+// `skills.howto.md` both addressable.
 func (s Snapshot) Get(key string) (json.RawMessage, bool) {
-	v, ok := s.tree().Get(key)
+	v, ok := s.resolve(key)
 	if !ok {
 		return nil, false
 	}
 	return v.Raw(), true
 }
 
+func (s Snapshot) resolve(key string) (Value, bool) {
+	cur := s.Root()
+	rest := key
+	for rest != "" {
+		obj, isObj := asObject(cur)
+		if !isObj {
+			return Value{}, false
+		}
+		seg, remainder, found := longestMember(obj, rest)
+		if !found {
+			return Value{}, false
+		}
+		cur = obj[seg]
+		rest = remainder
+	}
+	return cur, true
+}
+
+// longestMember finds the longest member name of obj that is a dotted prefix
+// of rest, and returns it with what is left.
+func longestMember(obj map[string]Value, rest string) (seg, remainder string, ok bool) {
+	if v, exact := obj[rest]; exact {
+		_ = v
+		return rest, "", true
+	}
+	best := ""
+	for name := range obj {
+		if len(name) < len(rest) && strings.HasPrefix(rest, name+".") && len(name) > len(best) {
+			best = name
+		}
+	}
+	if best == "" {
+		return "", "", false
+	}
+	return best, rest[len(best)+1:], true
+}
+
 // Has reports whether key is present.
-func (s Snapshot) Has(key string) bool { return s.tree().Has(key) }
+func (s Snapshot) Has(key string) bool { _, ok := s.Get(key); return ok }
 
-// Len returns the number of keys.
-func (s Snapshot) Len() int { return s.tree().Len() }
+// Len is the number of addressable leaves.
+func (s Snapshot) Len() int {
+	n := 0
+	for range s.All() {
+		n++
+	}
+	return n
+}
 
-// All iterates the snapshot's entries in lexical key order.
+// All iterates every LEAF as its dotted path, in lexical order. Interior
+// objects are walked into rather than yielded: a caller enumerating the board
+// wants the values, and every value is a leaf of some path.
+//
+// A leaf is a scalar, an array, or an EMPTY object. A non-empty object is a
+// branch and its members are yielded instead.
 func (s Snapshot) All() iter.Seq2[string, json.RawMessage] {
 	return func(yield func(string, json.RawMessage) bool) {
-		s.tree().Range(func(k string, v Value) bool {
-			return yield(k, v.Raw())
-		})
+		walkLeaves(s.Root(), "", yield)
 	}
 }
 
-// Clone returns a snapshot with the same contents. Snapshots are
-// immutable persistent values, so this is the identity function; it is
-// kept because call sites read better saying what they mean.
+func walkLeaves(v Value, prefix string, yield func(string, json.RawMessage) bool) bool {
+	obj, isObj := asObject(v)
+	if !isObj || len(obj) == 0 {
+		if prefix == "" {
+			return true
+		}
+		return yield(prefix, v.Raw())
+	}
+	names := make([]string, 0, len(obj))
+	for k := range obj {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		next := name
+		if prefix != "" {
+			next = prefix + "." + name
+		}
+		if !walkLeaves(obj[name], next, yield) {
+			return false
+		}
+	}
+	return true
+}
+
+// Clone returns a snapshot with the same contents. Snapshots are immutable,
+// so this is the identity; it is kept because call sites read better saying
+// what they mean.
 func (s Snapshot) Clone() Snapshot { return s }
 
+// Lookup is the string value at key, or nil.
 func (s Snapshot) Lookup(key string) *string {
 	if raw, ok := s.Get(key); ok {
-		var s string
-		if json.Unmarshal(raw, &s) == nil {
-			return &s
+		var out string
+		if json.Unmarshal(raw, &out) == nil {
+			return &out
 		}
 	}
 	return nil
 }
 
-// Patch re-exports message.Patch for local use.
-type Patch = message.Patch
-
-// Diff computes a patch that transforms prev into s.
+// Diff computes the patch that transforms prev into s.
 func (s Snapshot) Diff(prev Snapshot) Patch {
-	return diffTrees(prev.root, s.root)
+	return Diff(prev.Root(), s.Root())
 }
 
-// AsPatch returns a Set-only patch containing every entry, i.e. the
-// patch that builds this snapshot from an empty one.
+// AsPatch is the patch that builds this snapshot from an empty one.
 func (s Snapshot) AsPatch() Patch {
-	var p Patch
-	for k, v := range s.All() {
-		if p.Set == nil {
-			p.Set = make(map[string]json.RawMessage, s.Len())
-		}
-		p.Set[k] = v
-	}
-	return p
-}
-
-// Additive keeps only what p would actually change on s: keys s does not hold,
-// and keys holding a different value. Removals are dropped.
-func Additive(s Snapshot, p Patch) Patch {
-	return s.Apply(Patch{Set: p.Set}).Diff(s)
+	return Diff(NewValue(json.RawMessage(`{}`)), s.Root())
 }
 
 // Apply returns a new snapshot with the patch applied. The receiver is
-// unchanged; the result shares every subtree the patch did not touch.
+// unchanged and the result shares every subtree the patch did not touch.
 func (s Snapshot) Apply(p Patch) Snapshot {
-	t := s.tree()
-	for k, v := range p.Set {
-		t = t.Set(k, NewValue(v))
-	}
-	for _, k := range p.Remove {
-		t = t.Delete(k)
-	}
-	if t.root == s.root {
+	next, err := p.Apply(s.Root())
+	if err != nil {
 		return s
 	}
-	return Snapshot{root: t.root}
+	return Snapshot{root: next}
 }
 
-// MarshalJSON emits the flat object form: {"key": value, ...} with keys
-// in lexical order: which is what the form channel on disk, the RPC
-// FormResponse and store.formReduce all consume.
-func (s Snapshot) MarshalJSON() ([]byte, error) {
-	m := make(map[string]json.RawMessage, s.Len())
-	s.tree().Range(func(k string, v Value) bool {
-		m[k] = v.Raw()
-		return true
-	})
-	return json.Marshal(m)
+// Additive keeps only what p would actually change on s. A patch that removes
+// is not additive, so removals are dropped and what remains is re-diffed
+// against s: whatever is left is genuinely new or genuinely different.
+func Additive(s Snapshot, p Patch) Patch {
+	return s.Apply(p.creationsOnly()).Diff(s)
 }
 
-// UnmarshalJSON reads the flat object form. A JSON null decodes to the
-// empty snapshot.
+// SetPath returns a snapshot with key set to v, creating intermediate objects.
+func (s Snapshot) SetPath(key string, v json.RawMessage) Snapshot {
+	obj, _ := decodeRawObject(s.Root())
+	obj = insertPath(obj, strings.Split(key, "."), v)
+	b, _ := json.Marshal(obj)
+	return Snapshot{root: NewValue(b)}
+}
+
+// DeletePath returns a snapshot without key.
+func (s Snapshot) DeletePath(key string) Snapshot {
+	obj, _ := decodeRawObject(s.Root())
+	obj = removePath(obj, strings.Split(key, "."))
+	b, _ := json.Marshal(obj)
+	return Snapshot{root: NewValue(b)}
+}
+
+func insertPath(obj map[string]json.RawMessage, segs []string, v json.RawMessage) map[string]json.RawMessage {
+	if len(segs) == 0 {
+		return obj
+	}
+	out := make(map[string]json.RawMessage, len(obj)+1)
+	for k, val := range obj {
+		out[k] = val
+	}
+	if len(segs) == 1 {
+		out[segs[0]] = v
+		return out
+	}
+	var child map[string]json.RawMessage
+	if existing, ok := out[segs[0]]; ok {
+		if json.Unmarshal(existing, &child) != nil || child == nil {
+			// A leaf stands where a branch is wanted: the deeper key keeps
+			// its dotted name rather than making the leaf unreachable.
+			out[strings.Join(segs, ".")] = v
+			return out
+		}
+	} else {
+		child = map[string]json.RawMessage{}
+	}
+	child = insertPath(child, segs[1:], v)
+	b, _ := json.Marshal(child)
+	out[segs[0]] = b
+	return out
+}
+
+func removePath(obj map[string]json.RawMessage, segs []string) map[string]json.RawMessage {
+	if len(segs) == 0 {
+		return obj
+	}
+	out := make(map[string]json.RawMessage, len(obj))
+	for k, val := range obj {
+		out[k] = val
+	}
+	if len(segs) == 1 {
+		delete(out, segs[0])
+		return out
+	}
+	joined := strings.Join(segs, ".")
+	if _, ok := out[joined]; ok {
+		delete(out, joined)
+		return out
+	}
+	existing, ok := out[segs[0]]
+	if !ok {
+		return out
+	}
+	var child map[string]json.RawMessage
+	if json.Unmarshal(existing, &child) != nil {
+		return out
+	}
+	child = removePath(child, segs[1:])
+	b, _ := json.Marshal(child)
+	out[segs[0]] = b
+	return out
+}
+
+func decodeRawObject(v Value) (map[string]json.RawMessage, bool) {
+	out := map[string]json.RawMessage{}
+	if len(v.Raw()) == 0 {
+		return out, true
+	}
+	if json.Unmarshal(v.Raw(), &out) != nil {
+		return map[string]json.RawMessage{}, false
+	}
+	if out == nil {
+		out = map[string]json.RawMessage{}
+	}
+	return out, true
+}
+
+// MarshalJSON emits the nested object: what the form channel holds on disk.
+func (s Snapshot) MarshalJSON() ([]byte, error) { return s.Root().Raw(), nil }
+
+// UnmarshalJSON reads the nested object. A FLAT board written before the tree
+// -- dotted keys at the top level -- is nested on read, so an old store opens
+// without a rewrite.
 func (s *Snapshot) UnmarshalJSON(data []byte) error {
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(data, &m); err != nil {
 		return err
 	}
-	entries := make([]treeEntry, 0, len(m))
-	for k, v := range m {
-		// json.Unmarshal already handed us freshly allocated bytes.
-		entries = append(entries, treeEntry{key: k, value: NewValue(v)})
+	flat := false
+	for k := range m {
+		if strings.Contains(k, ".") {
+			flat = true
+			break
+		}
 	}
-	*s = Snapshot{root: treeFromEntries(entries).root}
+	if flat {
+		*s = FromMap(m)
+		return nil
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	*s = Snapshot{root: NewValue(b)}
 	return nil
 }
 
-// Merge combines two patches (p then q). q wins on conflicts.
-func Merge(p, q Patch) Patch {
-	var out Patch
-	for k, v := range p.Set {
-		if out.Set == nil {
-			out.Set = make(map[string]json.RawMessage)
-		}
-		out.Set[k] = v
-	}
-	for _, k := range p.Remove {
-		out.Remove = append(out.Remove, k)
-	}
-	for k, v := range q.Set {
-		if out.Set == nil {
-			out.Set = make(map[string]json.RawMessage)
-		}
-		out.Set[k] = v
-		// q sets it: cancel any prior remove.
-		out.Remove = removeString(out.Remove, k)
-	}
-	for _, k := range q.Remove {
-		// q removes it: drop any prior set.
-		delete(out.Set, k)
-		if !slices.Contains(out.Remove, k) {
-			out.Remove = append(out.Remove, k)
-		}
-	}
-	if len(out.Set) == 0 {
-		out.Set = nil
-	}
-	sort.Strings(out.Remove)
-	return out
-}
-
-// Entry is a single change in a patch, expanded with the prior value.
+// Entry is one key's change, as a renderer sees it.
 type Entry struct {
 	Key string
-	Old json.RawMessage // nil if newly set
-	New json.RawMessage // nil if removed
+	Old json.RawMessage
+	New json.RawMessage
 }
 
-// NewString decodes New as a JSON string, falling back to raw bytes.
-func (e Entry) NewString() string {
-	return decodeStringOrRaw(e.New)
-}
+// IsRemoval reports whether the entry describes a key that went away.
+func (e Entry) IsRemoval() bool { return e.New == nil }
 
-// OldString decodes Old as a JSON string.
-func (e Entry) OldString() string {
-	return decodeStringOrRaw(e.Old)
-}
+// NewString is the entry's new value as a string, or "".
+func (e Entry) NewString() string { return decodeStringOrRaw(e.New) }
 
-// IsRemoval reports whether the entry removes the key.
-func (e Entry) IsRemoval() bool {
-	return e.New == nil
-}
+// OldString is the entry's old value as a string, or "".
+func (e Entry) OldString() string { return decodeStringOrRaw(e.Old) }
 
-// PatchEntries returns the entries from a patch, sorted by key.
+// PatchEntries flattens a patch to one entry per changed LEAF, against the
+// board as it stood before.
 func PatchEntries(p Patch, prev Snapshot) []Entry {
-	keys := make([]string, 0, len(p.Set)+len(p.Remove))
-	for k := range p.Set {
-		keys = append(keys, k)
+	next := prev.Apply(p)
+	before := map[string]json.RawMessage{}
+	for k, v := range prev.All() {
+		before[k] = v
 	}
-	for _, k := range p.Remove {
-		if _, ok := p.Set[k]; ok {
-			continue // already in keys; remove is redundant
-		}
-		keys = append(keys, k)
+	after := map[string]json.RawMessage{}
+	for k, v := range next.All() {
+		after[k] = v
 	}
-	sort.Strings(keys)
+	keys := map[string]bool{}
+	for k := range before {
+		keys[k] = true
+	}
+	for k := range after {
+		keys[k] = true
+	}
+	names := make([]string, 0, len(keys))
+	for k := range keys {
+		names = append(names, k)
+	}
+	sort.Strings(names)
 
-	out := make([]Entry, 0, len(keys))
-	for _, k := range keys {
-		old, _ := prev.Get(k)
-		e := Entry{Key: k, Old: old}
-		if v, ok := p.Set[k]; ok {
-			e.New = v
+	out := make([]Entry, 0, len(names))
+	for _, k := range names {
+		o, hadOld := before[k]
+		n, hasNew := after[k]
+		switch {
+		case hadOld && hasNew:
+			if !NewValue(o).Equal(NewValue(n)) {
+				out = append(out, Entry{Key: k, Old: o, New: n})
+			}
+		case hasNew:
+			out = append(out, Entry{Key: k, New: n})
+		case hadOld:
+			out = append(out, Entry{Key: k, Old: o})
 		}
-		out = append(out, e)
 	}
 	return out
 }
@@ -229,15 +378,8 @@ func decodeStringOrRaw(raw json.RawMessage) string {
 		return ""
 	}
 	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
+	if json.Unmarshal(raw, &s) == nil {
 		return s
 	}
 	return string(raw)
-}
-
-func removeString(xs []string, s string) []string {
-	if i := slices.Index(xs, s); i >= 0 {
-		return slices.Delete(xs, i, i+1)
-	}
-	return xs
 }

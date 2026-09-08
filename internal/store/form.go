@@ -430,7 +430,7 @@ func (f *Form) reduceOne(st *formState, w *formWrite) (*formState, formResult) {
 		return nil, formResult{version: st.version, err: err}
 	}
 	if w.intent == Assert {
-		for _, k := range w.patch.Remove {
+		for _, k := range w.patch.Removes() {
 			if !st.snap.Has(k) {
 				return nil, formResult{version: st.version,
 					err: fmt.Errorf("remove %q: no such key", k)}
@@ -499,13 +499,10 @@ func (f *Form) emit(events []versionedApplied) {
 // agree about what "already wearing it" means, and the second half is the
 // same question asked of Remove.
 func effectivePatch(snap form.Snapshot, p message.Patch) message.Patch {
-	out := form.Additive(snap, message.Patch{Set: p.Set})
-	for _, k := range p.Remove {
-		if snap.Has(k) {
-			out.Remove = append(out.Remove, k)
-		}
-	}
-	return out
+	// Both halves at once: applying the patch and re-diffing keeps exactly
+	// what it changed, and a removal of something absent changes nothing so
+	// it falls out on its own.
+	return snap.Apply(p).Diff(snap)
 }
 
 // MemFormLog holds a form's records in memory. It is what "a form without an

@@ -29,7 +29,7 @@ func fakeSchema() interface{} {
 // withKey returns snap plus one key. Snapshots are immutable values,
 // so derived boards are built with Apply rather than assigned into.
 func withKey(s form.Snapshot, key string, v json.RawMessage) form.Snapshot {
-	return s.Apply(form.Patch{Set: map[string]json.RawMessage{key: v}})
+	return s.Apply(form.Creates(map[string]json.RawMessage{key: v}))
 }
 
 func systemSnapshot(t *testing.T, text string) form.Snapshot {

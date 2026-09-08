@@ -155,7 +155,7 @@ func (a *Agent) publishStudies(decl store.StudyDecl) {
 		return // superseded: a newer declaration is already mirrored
 	}
 	a.studiesVersion = decl.Version
-	a.form.Apply(form.Patch{Set: map[string]json.RawMessage{StudiesKey: raw}})
+	a.form.Apply(form.Creates(map[string]json.RawMessage{StudiesKey: raw}))
 	if a.backend != nil {
 		a.backend.SetObservedForms(a.id, decl.Studies)
 	}
@@ -221,13 +221,10 @@ func (a *Agent) serviceCast(op *castOp) castResult {
 		// Two steps, the second atomic: fork the NULL form with the
 		// outfit ⊕ {target-aria: me} so the role is born cast: there is
 		// no separate patch step to half-fail.
-		p := *op.rolePatch
-		if p.Set == nil {
-			p.Set = map[string]json.RawMessage{}
-		}
+		keys := op.rolePatch.Leaves()
 		b, _ := json.Marshal(a.id)
-		p.Set["target-aria"] = b
-		id, _, err := a.backend.CreateForm("", p)
+		keys["target-aria"] = b
+		id, _, err := a.backend.CreateForm("", form.Creates(keys))
 		if err != nil {
 			res.err = fmt.Errorf("cast: mint role: %w", err)
 			return res
@@ -261,7 +258,7 @@ func (a *Agent) serviceCast(op *castOp) castResult {
 		// The cross-call: the role form's single writer takes the patch;
 		// we never wait on anything that could wait on us.
 		b, _ := json.Marshal(a.id)
-		if _, err := a.backend.ApplyForm(res.roleID, form.Patch{Set: map[string]json.RawMessage{"target-aria": b}}); err != nil {
+		if _, err := a.backend.ApplyForm(res.roleID, form.Creates(map[string]json.RawMessage{"target-aria": b})); err != nil {
 			res.err = fmt.Errorf("cast: point %s here (study registered: partial): %w", res.roleID, err)
 			return res
 		}

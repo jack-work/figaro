@@ -210,17 +210,15 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (store.Entry[messa
 	}
 	// The client's form input landed at SUBMIT time; what remains here is the
 	// harness's own write.
-	var combined form.Patch
 	// Seed the mantra from the first user message's opening text, so every
 	// conversation has a stable title (the first n chars) without the agent
 	// having to set one. Only when unset, so it stays fixed to the opener.
+	seed := map[string]json.RawMessage{}
 	if prompt.text != "" && a.formString("mantra") == "" {
-		if combined.Set == nil {
-			combined.Set = map[string]json.RawMessage{}
-		}
 		mv, _ := json.Marshal(firstChars(prompt.text, 60))
-		combined.Set["mantra"] = mv
+		seed["mantra"] = mv
 	}
+	combined := form.Creates(seed)
 	if !combined.IsEmpty() {
 		// Durability precedes visibility: on a failed append the in-memory
 		// form is not advanced, so board and log agree after a restart.
@@ -932,19 +930,16 @@ func mergeFormInput(a, b *rpc.FormInput) *rpc.FormInput {
 		}
 	}
 	if a.Patch != nil || b.Patch != nil {
-		out.Patch = &rpc.FormPatch{}
+		// Two patches applied in series ARE one patch: that is Merge, and it
+		// is the operation the old field-by-field union was approximating.
+		var merged form.Patch
 		for _, src := range []*rpc.FormPatch{a.Patch, b.Patch} {
 			if src == nil {
 				continue
 			}
-			if len(src.Set) > 0 && out.Patch.Set == nil {
-				out.Patch.Set = map[string]json.RawMessage{}
-			}
-			for k, v := range src.Set {
-				out.Patch.Set[k] = v
-			}
-			out.Patch.Remove = append(out.Patch.Remove, src.Remove...)
+			merged = form.Merge(merged, *src)
 		}
+		out.Patch = &merged
 	}
 	return out
 }
@@ -1618,7 +1613,7 @@ func (a *Agent) combineFormInput(input *rpc.FormInput) form.Patch {
 	snap := a.form.Snapshot()
 	var clientPatch form.Patch
 	if input.Patch != nil {
-		clientPatch = form.Patch{Set: input.Patch.Set, Remove: input.Patch.Remove}
+		clientPatch = *input.Patch
 	}
 	var ctxPatch form.Patch
 	if input.Context != nil {

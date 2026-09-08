@@ -200,10 +200,10 @@ func TestForkDuringActiveStreamKeepsContinuationRunning(t *testing.T) {
 	backend, err := store.NewXwalBackend(t.TempDir(), 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, backend.Close()) })
-	outfit, err := backend.CreateOutfit("fork", message.Patch{Set: map[string]json.RawMessage{
+	outfit, err := backend.CreateOutfit("fork", form.Creates(map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"active-fork"`),
 		"system.model":    json.RawMessage(`"test"`),
-	}})
+	}))
 	require.NoError(t, err)
 	id, err := backend.CreateConversation(outfit)
 	require.NoError(t, err)
@@ -360,10 +360,10 @@ func TestForkDuringActiveToolKeepsToolAndContinuationRunning(t *testing.T) {
 	backend, err := store.NewXwalBackend(t.TempDir(), 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, backend.Close()) })
-	outfit, err := backend.CreateOutfit("fork-tool", message.Patch{Set: map[string]json.RawMessage{
+	outfit, err := backend.CreateOutfit("fork-tool", form.Creates(map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"active-tool"`),
 		"system.model":    json.RawMessage(`"test"`),
-	}})
+	}))
 	require.NoError(t, err)
 	id, err := backend.CreateConversation(outfit)
 	require.NoError(t, err)
@@ -518,10 +518,10 @@ func TestFigaroCanForkItselfFromInsideItsOwnTurn(t *testing.T) {
 	backend, err := store.NewXwalBackend(t.TempDir(), 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, backend.Close()) })
-	outfit, err := backend.CreateOutfit("selffork", message.Patch{Set: map[string]json.RawMessage{
+	outfit, err := backend.CreateOutfit("selffork", form.Creates(map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"active-tool"`),
 		"system.model":    json.RawMessage(`"test"`),
-	}})
+	}))
 	require.NoError(t, err)
 	id, err := backend.CreateConversation(outfit)
 	require.NoError(t, err)

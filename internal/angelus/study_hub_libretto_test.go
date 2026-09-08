@@ -8,6 +8,7 @@ package angelus
 
 import (
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"testing"
 
 	"github.com/jack-work/figaro/api/message"
@@ -21,15 +22,11 @@ func hubStudyFixture(t *testing.T) (*handlers, *store.XwalBackend, string, strin
 	require.NoError(t, err)
 	t.Cleanup(func() { be.Close() })
 
-	outfit, err := be.CreateOutfit("hub", message.Patch{
-		Set: map[string]json.RawMessage{"system.model": json.RawMessage(`"m"`)},
-	})
+	outfit, err := be.CreateOutfit("hub", form.Creates(map[string]json.RawMessage{"system.model": json.RawMessage(`"m"`)}))
 	require.NoError(t, err)
 	aria, err := be.CreateConversation(outfit)
 	require.NoError(t, err)
-	formID, _, err := be.CreateForm("", message.Patch{
-		Set: map[string]json.RawMessage{"brief": json.RawMessage(`"watched"`)},
-	})
+	formID, _, err := be.CreateForm("", form.Creates(map[string]json.RawMessage{"brief": json.RawMessage(`"watched"`)}))
 	require.NoError(t, err)
 
 	h := &handlers{angelus: &Angelus{Registry: NewRegistry(), Backend: be}}
@@ -89,9 +86,7 @@ func TestImportRestoresStudiesThroughTheVerb(t *testing.T) {
 
 	// Stand in for the import handler's own sequence: a fresh aria, then the
 	// exported board's studies replayed through the verb.
-	outfit, err := be.CreateOutfit("imp", message.Patch{
-		Set: map[string]json.RawMessage{"system.model": json.RawMessage(`"m"`)},
-	})
+	outfit, err := be.CreateOutfit("imp", form.Creates(map[string]json.RawMessage{"system.model": json.RawMessage(`"m"`)}))
 	require.NoError(t, err)
 	imported, err := be.CreateConversation(outfit)
 	require.NoError(t, err)

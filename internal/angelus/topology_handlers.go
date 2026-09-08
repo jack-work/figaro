@@ -516,26 +516,23 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	// not a history of how it got there. aria_id is re-stamped because the
 	// exported board carries the id it had in the store it came from: the
 	// same re-stamp a fork does, for the same reason.
-	patch := req.Form
-	if patch.Set == nil {
-		patch.Set = map[string]json.RawMessage{}
-	}
+	keys := req.Form.Leaves()
 	// The study set is NOT restored by copying the key. `system.studies` is
 	// system-managed precisely because each entry is refcounted on a shared
 	// libretto: a board that names a study nothing counted is §12.2.2's
 	// unrecoverable direction. So it is lifted out of the imported patch and
 	// replayed through the VERB below, which retains as it declares.
 	var studies []string
-	if raw, ok := patch.Set[figaro.StudiesKey]; ok {
+	if raw, ok := keys[figaro.StudiesKey]; ok {
 		if err := json.Unmarshal(raw, &studies); err != nil {
 			return nil, fmt.Errorf("import: %s: %w", figaro.StudiesKey, err)
 		}
-		delete(patch.Set, figaro.StudiesKey)
+		delete(keys, figaro.StudiesKey)
 	}
 	if b, mErr := json.Marshal(id); mErr == nil {
-		patch.Set["aria_id"] = b
+		keys["aria_id"] = b
 	}
-	if _, err := h.angelus.Backend.ApplyForm(id, patch); err != nil {
+	if _, err := h.angelus.Backend.ApplyForm(id, form.Build(form.Snapshot{}, keys, req.Form.Removes())); err != nil {
 		return nil, fmt.Errorf("import: form: %w", err)
 	}
 	// IMPORT IS A REFCOUNT PARTICIPANT (durable-forms §12.2.2), and it pays

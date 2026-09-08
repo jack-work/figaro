@@ -130,7 +130,7 @@ func TestFoldUsesTheEmbeddedBundle(t *testing.T) {
 	patch, err := New(dir).Load("config")
 	require.NoError(t, err)
 
-	raw, ok := patch.Set["skills.figaro"]
+	raw, ok := patch.Leaves()["skills.figaro"]
 	require.True(t, ok, "the bundled figaro skill must reach the form")
 	var env ContentEnvelope
 	require.NoError(t, json.Unmarshal(raw, &env))

@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -74,9 +75,9 @@ func restartRange(t *testing.T, openLibrettoFirst bool) uint64 {
 	cold, err := NewXwalBackend(root, 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { cold.Close() })
-	_, err = cold.ApplyForm(src, message.Patch{Set: map[string]json.RawMessage{
+	_, err = cold.ApplyForm(src, form.Creates(map[string]json.RawMessage{
 		"afterrestart": json.RawMessage(`"yes"`),
-	}})
+	}))
 	require.NoError(t, err)
 	cold.SetObservedForms(aria, []string{src})
 	if openLibrettoFirst {

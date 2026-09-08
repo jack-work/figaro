@@ -150,7 +150,7 @@ func (o *Outfitter) load(name string, strict bool) (form.Patch, error) {
 	// materialized in this view is returned without touching the disk or
 	// re-proving anything about the graph.
 	if keys, ok := o.getFold(ep.gen, name); ok {
-		return form.Patch{Set: keys}, nil
+		return form.Creates(keys), nil
 	}
 	root := o.resolveIn(ep, name)
 	if err := closureError(root); err != nil {
@@ -164,7 +164,7 @@ func (o *Outfitter) load(name string, strict bool) (form.Patch, error) {
 	if err != nil {
 		return form.Patch{}, err
 	}
-	return form.Patch{Set: keys}, nil
+	return form.Creates(keys), nil
 }
 
 // Resolve builds the closure for one named outfit. It reads each file's

@@ -3,6 +3,7 @@ package wire_test
 import (
 	"encoding/json"
 	"errors"
+	"github.com/jack-work/figaro/api/form"
 	"os"
 	"path/filepath"
 	"testing"
@@ -16,7 +17,7 @@ import (
 
 func patch(k, v string) message.Patch {
 	raw, _ := json.Marshal(v)
-	return message.Patch{Set: map[string]json.RawMessage{k: raw}}
+	return form.Creates(map[string]json.RawMessage{k: raw})
 }
 
 func backend(t *testing.T, trunks bool) (*store.XwalBackend, string) {

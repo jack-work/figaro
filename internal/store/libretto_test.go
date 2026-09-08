@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/api/form"
 	"sync"
 	"testing"
 	"time"
@@ -42,7 +43,7 @@ func setPatch(kv map[string]string) message.Patch {
 		raw, _ := json.Marshal(v)
 		set[k] = raw
 	}
-	return message.Patch{Set: set}
+	return form.Creates(set)
 }
 
 func waitFor(t *testing.T, what string, fn func() bool) {
@@ -141,7 +142,7 @@ func TestLibrettoFollowsThePatchesAfterIt(t *testing.T) {
 		t.Fatalf("libretto cursor %d is ahead of the source at %d", at, srcVersion)
 	}
 	// A removal is a fold too, not just a set.
-	if _, err := be.ApplyForm(id, message.Patch{Remove: []string{"brief"}}); err != nil {
+	if _, err := be.ApplyForm(id, form.Build(form.Snapshot{}, nil, []string{"brief"})); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "the removal to reach the libretto", func() bool {
@@ -333,7 +334,7 @@ func TestLibrettoBatchFoldEndsWhereTheSourceDoes(t *testing.T) {
 		})); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := be.ApplyForm(id, message.Patch{Remove: []string{"doomed"}}); err != nil {
+		if _, err := be.ApplyForm(id, form.Build(form.Snapshot{}, nil, []string{"doomed"})); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -402,7 +403,7 @@ func TestLibrettoReaderSeesFoldsAfterItWasOpened(t *testing.T) {
 
 	found := false
 	for _, p := range lib.PatchesBetween(at, lib.Version()) {
-		if _, ok := p.Patch.Set["afterwards"]; ok {
+		if _, ok := p.Patch.Leaves()["afterwards"]; ok {
 			found = true
 		}
 	}
@@ -455,7 +456,7 @@ func TestLibrettoStopsListeningWhenItsSourceDies(t *testing.T) {
 	// arrives as an ordinary key transition the render can show.
 	sawDeath := false
 	for _, p := range lib.PatchesBetween(before, lib.Version()) {
-		if _, ok := p.Patch.Set[KeyLibrettoAlive]; ok {
+		if _, ok := p.Patch.Leaves()[KeyLibrettoAlive]; ok {
 			sawDeath = true
 		}
 	}

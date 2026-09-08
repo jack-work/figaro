@@ -2,6 +2,7 @@ package angelus
 
 import (
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"testing"
 
 	"github.com/jack-work/figaro/api/message"
@@ -27,8 +28,8 @@ func TestAForkBelowATurnBoundaryServesItsOwnContent(t *testing.T) {
 	}
 	defer be.Close()
 
-	parent, _, err := be.ForkWith("", 0, message.Patch{Set: map[string]json.RawMessage{
-		"aria_id": json.RawMessage(`"p"`)}})
+	parent, _, err := be.ForkWith("", 0, form.Creates(map[string]json.RawMessage{
+		"aria_id": json.RawMessage(`"p"`)}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,8 +129,8 @@ func TestABracketThatCutsATurnComposesItWhole(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer be.Close()
-	id, _, err := be.ForkWith("", 0, message.Patch{Set: map[string]json.RawMessage{
-		"aria_id": json.RawMessage(`"a"`)}})
+	id, _, err := be.ForkWith("", 0, form.Creates(map[string]json.RawMessage{
+		"aria_id": json.RawMessage(`"a"`)}))
 	if err != nil {
 		t.Fatal(err)
 	}

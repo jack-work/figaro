@@ -92,11 +92,9 @@ func replayPatches(m, n int) []message.Patch {
 	rng := rand.New(rand.NewSource(11))
 	out := make([]message.Patch, 0, n)
 	for i := range n {
-		out = append(out, message.Patch{
-			Set: map[string]json.RawMessage{
-				replayKey(i % max(m, 1)): replayValue(rng, 64),
-			},
-		})
+		out = append(out, form.Creates(map[string]json.RawMessage{
+			replayKey(i % max(m, 1)): replayValue(rng, 64),
+		}))
 	}
 	return out
 }
@@ -171,7 +169,7 @@ func seedFormAria(tb testing.TB, m, n int) (string, string) {
 	if err != nil {
 		tb.Fatal(err)
 	}
-	outfit, err := be.CreateOutfit("bench", message.Patch{Set: replayBoardMap(m)})
+	outfit, err := be.CreateOutfit("bench", form.Creates(replayBoardMap(m)))
 	if err != nil {
 		tb.Fatal(err)
 	}

@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"testing"
 )
 
@@ -58,9 +59,7 @@ func TestWithCallerRoundTrip(t *testing.T) {
 	t.Run("nested values are not re-encoded", func(t *testing.T) {
 		// Values ride as RawMessage. A lossy re-encode here would corrupt
 		// form patches, which are raw JSON by design.
-		in := SetRequest{Patch: FormPatch{
-			Set: map[string]json.RawMessage{"k": json.RawMessage(`{"deep":[1,2,3]}`)},
-		}}
+		in := SetRequest{Patch: form.Creates(map[string]json.RawMessage{"k": json.RawMessage(`{"deep":[1,2,3]}`)})}
 		raw, err := WithCaller(in, "caller99", nil)
 		if err != nil {
 			t.Fatalf("WithCaller: %v", err)
@@ -69,7 +68,7 @@ func TestWithCallerRoundTrip(t *testing.T) {
 		if err := json.Unmarshal(raw, &out); err != nil {
 			t.Fatalf("unmarshal: %v", err)
 		}
-		if got := string(out.Patch.Set["k"]); got != `{"deep":[1,2,3]}` {
+		if got := string(out.Patch.Leaves()["k"]); got != `{"deep":[1,2,3]}` {
 			t.Fatalf("value re-encoded: %s", got)
 		}
 	})

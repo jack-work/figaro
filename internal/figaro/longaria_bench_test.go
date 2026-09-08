@@ -128,9 +128,9 @@ func BenchmarkRefreshMetricsLongAria(b *testing.B) {
 	for _, n := range []int{1_000, 10_000, 50_000} {
 		b.Run(fmt.Sprintf("messages=%d", n), func(b *testing.B) {
 			cb, _ := form.Open("")
-			cb.Apply(form.Patch{Set: map[string]json.RawMessage{
+			cb.Apply(form.Creates(map[string]json.RawMessage{
 				"system.model": json.RawMessage(`"synthetic"`),
-			}})
+			}))
 			a := &Agent{figLog: syntheticBenchmarkLog(n), form: cb}
 			b.Cleanup(func() { _ = cb.Close() })
 			b.ReportAllocs()

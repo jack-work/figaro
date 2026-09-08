@@ -58,10 +58,10 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 		streamEnd: 10 * time.Millisecond,
 	}
 	cb, _ := form.Open("")
-	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
+	cb.Apply(form.Patchform.Creates(map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"mock"`),
 		"system.provider": json.RawMessage(`"staggered"`),
-	}})
+	}))
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
 		Backend:    testBE,
@@ -161,10 +161,10 @@ func TestMidTurnPromptJoinsTheRunningTurn(t *testing.T) {
 		streamEnd: 10 * time.Millisecond,
 	}
 	cb, _ := form.Open("")
-	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
+	cb.Apply(form.Patchform.Creates(map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"mock"`),
 		"system.provider": json.RawMessage(`"staggered"`),
-	}})
+	}))
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
 		Backend:    testBE,
@@ -226,10 +226,10 @@ func TestFormSetDuringToolRoundAppliesNextRound(t *testing.T) {
 		streamEnd: 10 * time.Millisecond,
 	}
 	cb, _ := form.Open("")
-	cb.Apply(form.Patch{Set: map[string]json.RawMessage{
+	cb.Apply(form.Patchform.Creates(map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"before"`),
 		"system.provider": json.RawMessage(`"staggered"`),
-	}})
+	}))
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
 		Backend:    testBE,
@@ -250,9 +250,9 @@ func TestFormSetDuringToolRoundAppliesNextRound(t *testing.T) {
 		t.Fatal("tool did not start")
 	}
 	// Switch the model while the tool round is in flight.
-	_, _, err := a.Set(form.Patch{Set: map[string]json.RawMessage{
+	_, _, err := a.Set(form.Patchform.Creates(map[string]json.RawMessage{
 		"system.model": json.RawMessage(`"after"`),
-	}}, 0)
+	}), 0)
 	require.NoError(t, err)
 	close(bt.release)
 	waitTurnDone(t, frames)

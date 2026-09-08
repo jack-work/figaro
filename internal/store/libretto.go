@@ -225,9 +225,9 @@ func (l *Libretto) Follow(src *Form) error {
 
 // seed writes the source's whole state as one patch, plus the cursor.
 func (l *Libretto) seed(snap form.Snapshot, at uint64) error {
-	p := snap.AsPatch()
-	set := make(map[string]json.RawMessage, len(p.Set)+1)
-	for k, v := range p.Set {
+	leaves := snap.AsPatch().Leaves()
+	set := make(map[string]json.RawMessage, len(leaves)+1)
+	for k, v := range leaves {
 		if isLibrettoKey(k) {
 			continue // never mirror another libretto's bookkeeping
 		}
@@ -238,7 +238,7 @@ func (l *Libretto) seed(snap form.Snapshot, at uint64) error {
 		return err
 	}
 	set[KeyLibrettoAt] = raw
-	_, _, err = l.form.ApplyEffectPrivileged(message.Patch{Set: set}, 0)
+	_, _, err = l.form.ApplyEffectPrivileged(form.Creates(set), 0)
 	return err
 }
 
@@ -321,14 +321,14 @@ func (l *Libretto) applyBatch(sub *Subscription, batch []Event) bool {
 		if ev.Version <= l.At() {
 			continue // duplicate from the register-then-read window
 		}
-		for k, v := range ev.Applied.Set {
+		for k, v := range ev.Applied.Leaves() {
 			if isLibrettoKey(k) {
 				continue
 			}
 			set[k] = v
 			delete(removed, k)
 		}
-		for _, k := range ev.Applied.Remove {
+		for _, k := range ev.Applied.Removes() {
 			if isLibrettoKey(k) {
 				continue
 			}
@@ -337,7 +337,7 @@ func (l *Libretto) applyBatch(sub *Subscription, batch []Event) bool {
 		}
 		// A tombstone on the source is the death notice. The copy stays,
 		// which is what makes a studied form deletable at all.
-		if _, isDead := ev.Applied.Set[TombstoneKey]; isDead {
+		if _, isDead := ev.Applied.Leaves()[TombstoneKey]; isDead {
 			dead = true
 		}
 		last = maxVersion(last, ev.Version)
@@ -358,8 +358,11 @@ func (l *Libretto) applyBatch(sub *Subscription, batch []Event) bool {
 	for k := range removed {
 		remove = append(remove, k)
 	}
+	// Built against the copy's own board, so the patch carries the values it
+	// replaces and can be inverted like any other.
+	base, _ := l.form.Snapshot()
 	if _, _, err := l.form.ApplyEffectPrivileged(
-		message.Patch{Set: set, Remove: remove}, 0); err != nil {
+		form.Build(base, set, remove), 0); err != nil {
 		// The death is not recorded, so do not stop listening on it: a
 		// libretto that unsubscribed without writing alive=false would be
 		// silently stale rather than truthfully dead.
@@ -414,7 +417,7 @@ func librettoPatch(kv map[string]any) message.Patch {
 		}
 		set[k] = raw
 	}
-	return message.Patch{Set: set}
+	return form.Creates(set)
 }
 
 // refsOf reads the backref set. A libretto written before the set existed

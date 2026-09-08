@@ -375,15 +375,15 @@ func printTransitions(w io.Writer, entries []store.Entry[message.Message]) {
 			}
 			any = true
 			fmt.Fprintf(w, "#%d (%s):\n", e.LT, e.Payload.Role)
-			keys := make([]string, 0, len(p.Set))
-			for k := range p.Set {
+			keys := make([]string, 0, len(p.Leaves()))
+			for k := range p.Leaves() {
 				keys = append(keys, k)
 			}
 			sort.Strings(keys)
 			for _, k := range keys {
-				fmt.Fprintf(w, "  set %s = %s\n", k, truncate(string(p.Set[k]), 400))
+				fmt.Fprintf(w, "  set %s = %s\n", k, truncate(string(p.Leaves()[k]), 400))
 			}
-			for _, k := range p.Remove {
+			for _, k := range p.Removes() {
 				fmt.Fprintf(w, "  remove %s\n", k)
 			}
 		}
@@ -423,15 +423,15 @@ func renderMessage(w io.Writer, m message.Message, lt uint64, verbose bool) {
 		if verbose && len(m.Patches) > 0 {
 			fmt.Fprintf(w, "*state transition [#%d]:*\n\n", lt)
 			for _, p := range m.Patches {
-				keys := make([]string, 0, len(p.Set))
-				for k := range p.Set {
+				keys := make([]string, 0, len(p.Leaves()))
+				for k := range p.Leaves() {
 					keys = append(keys, k)
 				}
 				sort.Strings(keys)
 				for _, k := range keys {
-					fmt.Fprintf(w, "- set `%s` = `%s`\n", k, truncate(string(p.Set[k]), 400))
+					fmt.Fprintf(w, "- set `%s` = `%s`\n", k, truncate(string(p.Leaves()[k]), 400))
 				}
-				for _, k := range p.Remove {
+				for _, k := range p.Removes() {
 					fmt.Fprintf(w, "- remove `%s`\n", k)
 				}
 			}

@@ -197,7 +197,7 @@ func TestClone_IsIdentityAndStillSafe(t *testing.T) {
 	assert.Equal(t, s, c, "Clone of an immutable value is the identity")
 
 	// Deriving from the clone must not disturb the original.
-	_ = c.Apply(form.Patch{Set: map[string]json.RawMessage{"k": json.RawMessage(`"v2"`)}})
+	_ = c.Apply(form.PatchCreates(map[string]json.RawMessage{"k": json.RawMessage(`"v2"`)}))
 	v, _ := s.Get("k")
 	assert.Equal(t, `"v1"`, string(v))
 }

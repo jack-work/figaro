@@ -49,7 +49,7 @@ func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string) {
 		topValue, ifVersion = merged, version
 	}
 
-	patch := rpc.FormPatch{Set: map[string]json.RawMessage{top: topValue}}
+	patch := form.Creates(map[string]json.RawMessage{top: topValue})
 	resp := mustCallSet(loaded, ariaID, patch, ifVersion)
 	fmt.Fprintf(stderrw, "%s %s = %s (figaro %s)%s\n",
 		resp.verb("set"), keyArg, value, resp.figaroID, resp.at())
@@ -73,7 +73,7 @@ func runFormSet(loaded *config.Loaded, ariaID string, args []string) error {
 	if patch.IsEmpty() {
 		return fmt.Errorf("form set: %q sets nothing", strings.Join(args, " "))
 	}
-	resp := mustCallSet(loaded, ariaID, rpc.FormPatch{Set: patch.Set}, 0)
+	resp := mustCallSet(loaded, ariaID, patch, 0)
 	fmt.Fprintf(stderrw, "%s %s (figaro %s)%s\n",
 		resp.verb("set"), strings.Join(resp.resp.Set, ", "), resp.figaroID, resp.at())
 	return nil
@@ -115,7 +115,8 @@ func runFormHelp(ctx *cmdkit.RunContext, args []string) error {
 
 // runUnsetArgs removes form keys.
 func runUnsetArgs(loaded *config.Loaded, ariaID string, args []string) {
-	patch := rpc.FormPatch{}
+	keys := map[string]json.RawMessage{}
+	var drops []string
 	var ifVersion uint64
 	for _, keyArg := range args {
 		top, path, err := parseFormPath(keyArg)
@@ -123,7 +124,7 @@ func runUnsetArgs(loaded *config.Loaded, ariaID string, args []string) {
 			die("unset: %s", err)
 		}
 		if len(path) == 0 {
-			patch.Remove = append(patch.Remove, top)
+			drops = append(drops, top)
 			continue
 		}
 		current, version := mustFetchFormKey(loaded, ariaID, top)
@@ -136,21 +137,18 @@ func runUnsetArgs(loaded *config.Loaded, ariaID string, args []string) {
 			die("unset: %s", err)
 		}
 		if dropTop {
-			patch.Remove = append(patch.Remove, top)
+			drops = append(drops, top)
 			continue
 		}
-		if patch.Set == nil {
-			patch.Set = map[string]json.RawMessage{}
-		}
-		patch.Set[top] = pruned
+		keys[top] = pruned
 	}
-	if len(patch.Set) == 0 && len(patch.Remove) == 0 {
+	if len(keys) == 0 && len(drops) == 0 {
 		fmt.Fprintln(stderrw, "unset: nothing to do")
 		return
 	}
 	// A removal names something the caller believes is there, so an absent
 	// key is a refusal rather than a silent success.
-	resp := mustCallSetAsserting(loaded, ariaID, patch, ifVersion)
+	resp := mustCallSetAsserting(loaded, ariaID, form.Build(form.Snapshot{}, keys, drops), ifVersion)
 	fmt.Fprintf(stderrw, "%s %s (figaro %s)%s\n",
 		resp.verb("unset"), strings.Join(args, ", "), resp.figaroID, resp.at())
 }

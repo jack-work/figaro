@@ -27,10 +27,10 @@ func TestState_ApplyAndSave_RoundTrip(t *testing.T) {
 	s, err := form.Open(path)
 	require.NoError(t, err)
 
-	patch := form.Patch{Set: map[string]json.RawMessage{
+	patch := form.PatchCreates(map[string]json.RawMessage{
 		"system.credo": json.RawMessage(`"you are figaro"`),
 		"cwd":          json.RawMessage(`"/home/figaro"`),
-	}}
+	})
 	post := s.Apply(patch)
 	assert.Equal(t, json.RawMessage(`"/home/figaro"`), val(post, "cwd"))
 
@@ -50,10 +50,10 @@ func TestState_Snapshot_ReturnsClone(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	s.Apply(form.Patch{Set: map[string]json.RawMessage{"k": json.RawMessage(`"v"`)}})
+	s.Apply(form.PatchCreates(map[string]json.RawMessage{"k": json.RawMessage(`"v"`)}))
 	snap1 := s.Snapshot()
 	// Derive a mutated snapshot from the clone.
-	snap1 = snap1.Apply(form.Patch{Set: map[string]json.RawMessage{"k": json.RawMessage(`"mutated"`)}})
+	snap1 = snap1.Apply(form.PatchCreates(map[string]json.RawMessage{"k": json.RawMessage(`"mutated"`)}))
 	_ = snap1
 
 	snap2 := s.Snapshot()
@@ -91,14 +91,14 @@ func TestState_RemovePatch(t *testing.T) {
 	s, err := form.Open(path)
 	require.NoError(t, err)
 
-	s.Apply(form.Patch{Set: map[string]json.RawMessage{"k": json.RawMessage(`"v"`)}})
+	s.Apply(form.PatchCreates(map[string]json.RawMessage{"k": json.RawMessage(`"v"`)}))
 	require.NoError(t, s.Save())
 	require.NoError(t, s.Close())
 
 	s2, err := form.Open(path)
 	require.NoError(t, err)
 	defer s2.Close()
-	s2.Apply(form.Patch{Remove: []string{"k"}})
+	s2.Apply(form.PatchBuild(Snapshot{}, nil, []string{"k"}))
 	snap := s2.Snapshot()
 	assert.False(t, snap.Has("k"))
 	require.NoError(t, s2.Save())
@@ -110,7 +110,7 @@ func TestState_Close_FlushesPending(t *testing.T) {
 	s, err := form.Open(path)
 	require.NoError(t, err)
 
-	s.Apply(form.Patch{Set: map[string]json.RawMessage{"k": json.RawMessage(`"v"`)}})
+	s.Apply(form.PatchCreates(map[string]json.RawMessage{"k": json.RawMessage(`"v"`)}))
 	require.NoError(t, s.Close()) // should flush
 
 	data, err := os.ReadFile(path)

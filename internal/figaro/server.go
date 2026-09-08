@@ -148,11 +148,11 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 			return rpc.SetResponse{OK: true, Outcome: rpc.OutcomeUnchanged, Version: version}, nil
 		}
 		var keys []string
-		for k := range applied.Set {
+		for k := range applied.Leaves() {
 			keys = append(keys, k)
 		}
 		return rpc.SetResponse{
-			OK: true, Set: keys, Remove: applied.Remove,
+			OK: true, Set: keys, Remove: applied.Removes(),
 			Outcome: rpc.OutcomeApplied, Version: version,
 		}, nil
 

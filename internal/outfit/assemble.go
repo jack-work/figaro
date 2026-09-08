@@ -79,7 +79,7 @@ func ParseSet(text string) (form.Patch, error) {
 	if len(set) == 0 {
 		return form.Patch{}, nil
 	}
-	return form.Patch{Set: set}, nil
+	return form.Creates(set), nil
 }
 
 // ParseDelete reads the `-D` syntax: comma-separated key paths to remove.
@@ -124,15 +124,16 @@ func (o *Outfitter) Dress(names []string, patch form.Patch, defaultName string) 
 		if err != nil {
 			return form.Patch{}, err
 		}
-		for k, v := range folded.Set {
+		for k, v := range folded.Leaves() {
 			layered[k] = v
 		}
 	}
-	out := form.Patch{Set: layered, Remove: patch.Remove}
-	for k, v := range patch.Set {
-		out.Set[k] = v
+	// Layers compose as key sets -- that is what an outfit IS -- and become a
+	// patch once, at the boundary.
+	for k, v := range patch.Leaves() {
+		layered[k] = v
 	}
-	return out, nil
+	return form.Build(form.Snapshot{}, layered, patch.Removes()), nil
 }
 
 // defaults folds what config calls the default outfit, leniently.
@@ -144,17 +145,17 @@ func (o *Outfitter) defaults(defaultName string) (form.Patch, error) {
 	if err != nil {
 		return form.Patch{}, err
 	}
-	out := form.Patch{Set: map[string]json.RawMessage{}}
+	out := map[string]json.RawMessage{}
 	for _, n := range names {
 		folded, ferr := o.LoadOptional(n)
 		if ferr != nil {
 			return form.Patch{}, ferr
 		}
-		for k, v := range folded.Set {
-			out.Set[k] = v
+		for k, v := range folded.Leaves() {
+			out[k] = v
 		}
 	}
-	return out, nil
+	return form.Creates(out), nil
 }
 
 // Names folds a list of outfit names, in order.
@@ -172,7 +173,7 @@ func (o *Outfitter) Names(names ...string) (form.Patch, error) {
 	if len(set) == 0 {
 		return form.Patch{}, nil
 	}
-	return form.Patch{Set: set}, nil
+	return form.Creates(set), nil
 }
 
 func (o *Outfitter) nameKeys(name string) (map[string]json.RawMessage, error) {
@@ -183,7 +184,7 @@ func (o *Outfitter) nameKeys(name string) (map[string]json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	return patch.Set, nil
+	return patch.Leaves(), nil
 }
 
 // literalKeys reads a JSON object term. `layers` inside a literal pulls in

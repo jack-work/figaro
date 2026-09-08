@@ -15,6 +15,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/api/form"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -45,9 +46,9 @@ func crashChild(dir string) {
 	out := bufio.NewWriter(os.Stdout)
 	for i := 0; ; i++ {
 		raw, _ := json.Marshal(fmt.Sprintf("v%d", i))
-		v, err := be.ApplyForm(id, message.Patch{Set: map[string]json.RawMessage{
+		v, err := be.ApplyForm(id, form.Creates(map[string]json.RawMessage{
 			fmt.Sprintf("k%d", i): raw,
-		}})
+		}))
 		if err != nil {
 			continue
 		}

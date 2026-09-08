@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"testing"
 
 	"github.com/jack-work/figaro/api/message"
@@ -23,9 +24,9 @@ func TestTheAppendedEntryCarriesTheSameStampTheLogServes(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i, text := range []string{"one", "two", "three"} {
-		if _, err := be.ApplyForm(aria, message.Patch{Set: map[string]json.RawMessage{
+		if _, err := be.ApplyForm(aria, form.Creates(map[string]json.RawMessage{
 			"system.credo": json.RawMessage(`"v` + string(rune('0'+i)) + `"`),
-		}}); err != nil {
+		})); err != nil {
 			t.Fatal(err)
 		}
 		returned, err := ir.Append(Entry[message.Message]{Payload: message.Message{

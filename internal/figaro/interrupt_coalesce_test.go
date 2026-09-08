@@ -3,6 +3,7 @@ package figaro
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"testing"
 
@@ -68,7 +69,7 @@ func TestCoalesce_CarrierPatchesRideTheCombinedMessage(t *testing.T) {
 
 	b.Send(event{typ: eventUserPrompt, text: "one"})
 	b.Send(event{typ: eventUserPrompt, form: &rpc.FormInput{
-		Patch: &rpc.FormPatch{Set: map[string]json.RawMessage{"k": json.RawMessage(`"v"`)}},
+		Patch: ptrPatch(form.Creates(map[string]json.RawMessage{"k": json.RawMessage(`"v"`)})),
 	}})
 
 	b.CoalesceUserPromptRuns()
@@ -98,3 +99,5 @@ func TestCoalesce_IsANoOpOnAShortQueue(t *testing.T) {
 	assert.Equal(t, uint64(1), snap[0].id)
 	assert.Empty(t, snap[0].merged)
 }
+
+func ptrPatch(p form.Patch) *form.Patch { return &p }

@@ -167,7 +167,7 @@ func setKV(a *figaro.Agent, key, val string) error {
 	if err != nil {
 		return err
 	}
-	_, _, err = a.Set(form.Patch{Set: map[string]json.RawMessage{key: raw}}, 0)
+	_, _, err = a.Set(form.Patchform.Creates(map[string]json.RawMessage{key: raw}), 0)
 	return err
 }
 

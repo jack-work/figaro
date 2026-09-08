@@ -39,7 +39,7 @@ func TestCwdFromFormFallsBackWhenUnusable(t *testing.T) {
 	}
 	set := func(v string) {
 		raw, _ := json.Marshal(v)
-		st.Apply(form.Patch{Set: map[string]json.RawMessage{"system.cwd": raw}})
+		st.Apply(form.Creates(map[string]json.RawMessage{"system.cwd": raw}))
 	}
 
 	set(dir)

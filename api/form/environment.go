@@ -54,5 +54,5 @@ func EnvironmentPatch() Patch {
 	if set == nil {
 		return Patch{}
 	}
-	return Patch{Set: set}
+	return Creates(set)
 }

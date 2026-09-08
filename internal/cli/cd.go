@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
 )
@@ -24,9 +24,8 @@ func runCd(loaded *config.Loaded, ariaID, path string) error {
 	if err != nil {
 		return err
 	}
-	resp := mustCallSet(loaded, ariaID, rpc.FormPatch{
-		Set: map[string]json.RawMessage{"system.cwd": value},
-	}, 0)
+	resp := mustCallSet(loaded, ariaID,
+		form.Creates(map[string]json.RawMessage{"system.cwd": value}), 0)
 	fmt.Fprintf(stderrw, "%s %s (figaro %s)%s\n",
 		resp.verb("cd"), dir, resp.figaroID, resp.at())
 	return nil

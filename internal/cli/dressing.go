@@ -2,11 +2,13 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/jack-work/figaro/sdk"
 	"strings"
 	"time"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/transport"
 
 	"github.com/jack-work/figaro/api/rpc"
@@ -52,12 +54,14 @@ func parseDress(outfits, set, del string) (dressing, error) {
 		texts = append(texts, outfits)
 	}
 	patch := rpc.FormPatch{}
+	keys := map[string]json.RawMessage{}
+	var drops []string
 	if strings.TrimSpace(set) != "" {
 		p, err := outfit.ParseSet(set)
 		if err != nil {
 			return dressing{}, err
 		}
-		patch.Set = p.Set
+		keys = p.Leaves()
 		texts = append(texts, set)
 	}
 	if strings.TrimSpace(del) != "" {
@@ -65,9 +69,10 @@ func parseDress(outfits, set, del string) (dressing, error) {
 		if err != nil {
 			return dressing{}, err
 		}
-		patch.Remove = paths
+		drops = paths
 		texts = append(texts, "-"+del)
 	}
+	patch = form.Build(form.Snapshot{}, keys, drops)
 	if !patch.IsEmpty() {
 		d.patch = &patch
 	}

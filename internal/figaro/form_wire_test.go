@@ -279,7 +279,7 @@ func TestSetRefusesAStaleVersion(t *testing.T) {
 	})
 	defer a.Kill()
 
-	_, _, err := a.Set(form.Patch{Set: map[string]json.RawMessage{"a": json.RawMessage(`1`)}}, 0)
+	_, _, err := a.Set(form.Patchform.Creates(map[string]json.RawMessage{"a": json.RawMessage(`1`)}), 0)
 	require.NoError(t, err)
 	var read uint64
 	require.Eventually(t, func() bool {
@@ -289,7 +289,7 @@ func TestSetRefusesAStaleVersion(t *testing.T) {
 	}, time.Second, 5*time.Millisecond)
 
 	// Someone else writes in between: `read` is stale by the time this lands.
-	_, _, err = a.Set(form.Patch{Set: map[string]json.RawMessage{"b": json.RawMessage(`2`)}}, 0)
+	_, _, err = a.Set(form.Patchform.Creates(map[string]json.RawMessage{"b": json.RawMessage(`2`)}), 0)
 	require.NoError(t, err)
 	require.Eventually(t, func() bool { return a.Version() > read }, time.Second, 5*time.Millisecond)
 	moved := a.Version()
@@ -298,7 +298,7 @@ func TestSetRefusesAStaleVersion(t *testing.T) {
 	// round boundary later, and reach nobody but the daemon log -- a
 	// conditional write that vanished. The set is applied by the form's own
 	// actor before this returns, so the stale version is answered here.
-	_, _, err = a.Set(form.Patch{Set: map[string]json.RawMessage{"a": json.RawMessage(`3`)}}, read)
+	_, _, err = a.Set(form.Patchform.Creates(map[string]json.RawMessage{"a": json.RawMessage(`3`)}), read)
 	require.Error(t, err, "a stale conditional set must be refused to the caller")
 	v, _ := a.Snapshot().Get("a")
 	assert.Equal(t, `1`, string(v), "a stale conditional set must not land")
@@ -321,9 +321,9 @@ func TestRefusedFormInputIsReportedToTheCaller(t *testing.T) {
 
 	err := a.SubmitPromptFrom(rpc.QuaRequest{
 		Text: "set a key that is not mine to set",
-		Form: &rpc.FormInput{Patch: &rpc.FormPatch{Set: map[string]json.RawMessage{
+		Form: &rpc.FormInput{Patch: &rpc.FormPatchform.Creates(map[string]json.RawMessage{
 			"model": json.RawMessage(`"claude-opus"`),
-		}}},
+		})},
 	}, "")
 	require.Error(t, err, "a harness-owned key must be refused to the caller's face")
 	require.Contains(t, err.Error(), "model")

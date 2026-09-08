@@ -87,7 +87,7 @@ func TestApply_RoundTrip(t *testing.T) {
 
 func TestApply_DoesNotMutateReceiver(t *testing.T) {
 	prev := form.FromMap(map[string]json.RawMessage{"k": raw(t, "v1")})
-	p := form.Patch{Set: map[string]json.RawMessage{"k": raw(t, "v2")}}
+	p := form.PatchCreates(map[string]json.RawMessage{"k": raw(t, "v2")})
 	_ = prev.Apply(p)
 	assert.Equal(t, raw(t, "v1"), val(prev, "k"), "Apply must not mutate the receiver")
 }

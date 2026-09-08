@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/api/form"
 )
 
 // StudyDecl is one declaration's verdict: the set that LANDED, and the board
@@ -312,9 +312,8 @@ func (b *XwalBackend) setStudies(observerID string, ids []string, ifVersion uint
 	if err != nil {
 		return 0, err
 	}
-	version, _, err := b.ApplyFormEffectPrivilegedIf(observerID, message.Patch{
-		Set: map[string]json.RawMessage{StudiesKey: raw},
-	}, ifVersion)
+	version, _, err := b.ApplyFormEffectPrivilegedIf(observerID,
+		form.Creates(map[string]json.RawMessage{StudiesKey: raw}), ifVersion)
 	return version, err
 }
 
