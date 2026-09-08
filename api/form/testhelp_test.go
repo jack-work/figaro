@@ -1,7 +1,9 @@
 package form
 
-// mustEntry is the value a patch sets at key, for tests that assert on one.
-func mustEntry(p Patch, key string) []byte {
+import "encoding/json"
+
+// mustEntry is the value a patch sets at key.
+func mustEntry(p Patch, key string) json.RawMessage {
 	e, ok := p.Entry(key)
 	if !ok {
 		return nil

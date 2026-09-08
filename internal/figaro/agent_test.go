@@ -1510,7 +1510,7 @@ func (p *blockedProvider) Send(ctx context.Context, _ provider.SendInput, _ prov
 }
 
 // mustEntry is the value a patch sets at key, for tests that assert on one.
-func mustEntry(p form.Patch, key string) []byte {
+func mustEntry(p form.Patch, key string) json.RawMessage {
 	e, ok := p.Entry(key)
 	if !ok {
 		return nil

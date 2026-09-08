@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"github.com/jack-work/figaro/api/form"
 	"strings"
 	"testing"
@@ -128,7 +129,7 @@ func TestNewRejectsSendOnlyFlags(t *testing.T) {
 }
 
 // mustEntry is the value a patch sets at key, for tests that assert on one.
-func mustEntry(p form.Patch, key string) []byte {
+func mustEntry(p form.Patch, key string) json.RawMessage {
 	e, ok := p.Entry(key)
 	if !ok {
 		return nil
