@@ -46,7 +46,11 @@ func TestStumpBirthRecordIsStampedAtItsOwnOutfitPatch(t *testing.T) {
 	}
 	var outfitVersion uint64
 	for _, p := range patches {
-		for k := range p.Patch.Leaves() {
+		for _, ent := range p.Patch.Entries() {
+			if ent.IsRemoval() {
+				continue
+			}
+			k := ent.Key
 			if strings.HasPrefix(k, "skills.") {
 				outfitVersion = p.Version
 			}

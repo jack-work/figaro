@@ -3,6 +3,7 @@ package figaro
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/api/form"
 	"strconv"
 	"testing"
 
@@ -87,5 +88,5 @@ func turnSetPatch(kv map[string]string) message.Patch {
 		raw, _ := json.Marshal(v)
 		set[k] = raw
 	}
-	return message.Patch{Set: set}
+	return form.Build(form.Snapshot{}, set, nil)
 }

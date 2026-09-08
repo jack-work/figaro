@@ -24,11 +24,11 @@ func backend(t *testing.T) *store.XwalBackend {
 }
 
 func patchOf(kv map[string]string) message.Patch {
-	p := form.Build(form.Snapshot{}, map[string]json.RawMessage{}, nil)
+	set := map[string]json.RawMessage{}
 	for k, v := range kv {
-		p.Leaves()[k] = json.RawMessage(v)
+		set[k] = json.RawMessage(v)
 	}
-	return p
+	return form.Build(form.Snapshot{}, set, nil)
 }
 
 func appendRecord(t *testing.T, log store.Log[message.Message], role message.Role) store.Entry[message.Message] {

@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"github.com/jack-work/figaro/api/form"
 	"testing"
-
-	"github.com/jack-work/figaro/api/message"
 )
 
 func burialFixture(t *testing.T) (*XwalBackend, string) {
@@ -53,7 +51,7 @@ func TestDeleteBuriesTheFormBeforeUnlinking(t *testing.T) {
 				}
 				return
 			}
-			if _, ok := ev.Applied.Leaves()[TombstoneKey]; ok {
+			if _, ok := ev.Applied.Entry(TombstoneKey); ok {
 				buried = true
 			}
 		default:
@@ -150,4 +148,13 @@ func TestDeleteSetSeesAForkMadeSinceTheLastRefresh(t *testing.T) {
 	if !found {
 		t.Fatalf("delete set %v omits the fork %s that figwal would unlink with it", set, alt)
 	}
+}
+
+// mustEntry is the value a patch sets at key, for tests that assert on one.
+func mustEntry(p form.Patch, key string) []byte {
+	e, ok := p.Entry(key)
+	if !ok {
+		return nil
+	}
+	return e.New
 }

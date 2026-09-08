@@ -39,12 +39,10 @@ func TestMessage_Roundtrip_WithPatches(t *testing.T) {
 		LogicalTime: 3,
 		Timestamp:   1700000000000,
 		Patches: []message.Patch{
-			{
-				Set: map[string]json.RawMessage{
-					"cwd":      json.RawMessage(`"/home/figaro"`),
-					"datetime": json.RawMessage(`"Wednesday, April 30, 2026, 9AM EDT"`),
-				},
-			},
+			form.Build(form.Snapshot{}, map[string]json.RawMessage{
+				"cwd":      json.RawMessage(`"/home/figaro"`),
+				"datetime": json.RawMessage(`"Wednesday, April 30, 2026, 9AM EDT"`),
+			}, nil),
 		},
 	}
 
@@ -55,7 +53,7 @@ func TestMessage_Roundtrip_WithPatches(t *testing.T) {
 	require.NoError(t, json.Unmarshal(b, &decoded))
 
 	require.Len(t, decoded.Patches, 1)
-	assert.Equal(t, json.RawMessage(`"/home/figaro"`), decoded.Patches[0].Set["cwd"])
+	assert.Equal(t, json.RawMessage(`"/home/figaro"`), mustEntry(decoded.Patches[0], "cwd"))
 }
 
 // TestMessage_StateOnlyTic verifies that a user-role Message carrying
@@ -68,13 +66,11 @@ func TestMessage_StateOnlyTic(t *testing.T) {
 		Timestamp:   1700000000000,
 		// No Content.
 		Patches: []message.Patch{
-			{
-				Set: map[string]json.RawMessage{
-					"system.credo":             json.RawMessage(`"you are figaro"`),
-					"system.model":             json.RawMessage(`"claude-opus-4-6"`),
-					"system.reminder_renderer": json.RawMessage(`"tag"`),
-				},
-			},
+			form.Build(form.Snapshot{}, map[string]json.RawMessage{
+				"system.credo":             json.RawMessage(`"you are figaro"`),
+				"system.model":             json.RawMessage(`"claude-opus-4-6"`),
+				"system.reminder_renderer": json.RawMessage(`"tag"`),
+			}, nil),
 		},
 	}
 
@@ -87,7 +83,7 @@ func TestMessage_StateOnlyTic(t *testing.T) {
 	assert.Equal(t, message.RoleInput, decoded.Role)
 	assert.Empty(t, decoded.Content, "state-only tic has no Content")
 	require.Len(t, decoded.Patches, 1)
-	assert.Equal(t, json.RawMessage(`"you are figaro"`), decoded.Patches[0].Set["system.credo"])
+	assert.Equal(t, json.RawMessage(`"you are figaro"`), mustEntry(decoded.Patches[0], "system.credo"))
 }
 
 // TestPatch_AliasIdentity verifies the type-alias contract, a value
@@ -256,4 +252,13 @@ func TestToolImagesByCall(t *testing.T) {
 			}
 		})
 	}
+}
+
+// mustEntry is the value a patch sets at key, for tests that assert on one.
+func mustEntry(p form.Patch, key string) []byte {
+	e, ok := p.Entry(key)
+	if !ok {
+		return nil
+	}
+	return e.New
 }

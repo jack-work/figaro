@@ -3,6 +3,7 @@ package figaro_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"path/filepath"
 	"testing"
@@ -72,7 +73,7 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 	// -- Phase 1: create + prompt + interrupt mid-turn -------------------
 	backend1, err := store.NewXwalBackend(dir, 0)
 	require.NoError(t, err)
-	outfit, err := backend1.CreateOutfit("d", message.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	outfit, err := backend1.CreateOutfit("d", form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"m"`),
 		"system.provider": json.RawMessage(`"slow-stream"`),
 	}, nil))

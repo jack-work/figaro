@@ -54,7 +54,7 @@ func (streamingTool) Execute(_ context.Context, _ map[string]any, onOutput tool.
 // in that same delta or an earlier one.
 func TestToolTimingIsStampedNoLaterThanItsDurableResult(t *testing.T) {
 	cb, _ := form.Open("")
-	cb.Apply(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	cb.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"mock-model-v1"`),
 		"system.provider": json.RawMessage(`"mock"`),
 	}, nil))

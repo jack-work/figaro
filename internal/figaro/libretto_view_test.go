@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -26,22 +25,22 @@ func TestBookkeepingNeverReachesTheModel(t *testing.T) {
 		store.KeyLibrettoAt:   raw(`41`),
 		store.KeyLibrettoRefs: raw(`3`),
 	}, nil))
-	if _, ok := got.Leaves()[store.KeyLibrettoAt]; ok {
-		t.Errorf("at survived: %v", got.Set)
+	if _, ok := got.Entry(store.KeyLibrettoAt); ok {
+		t.Errorf("at survived: %v", got.Entries())
 	}
-	if _, ok := got.Leaves()[store.KeyLibrettoRefs]; ok {
-		t.Errorf("refs survived: %v", got.Set)
+	if _, ok := got.Entry(store.KeyLibrettoRefs); ok {
+		t.Errorf("refs survived: %v", got.Entries())
 	}
-	if string(got.Leaves()["status"]) != `"merged"` {
-		t.Errorf("the mirror did not survive: %v", got.Set)
+	if string(mustEntry(got, "status")) != `"merged"` {
+		t.Errorf("the mirror did not survive: %v", got.Entries())
 	}
 
 	alive := withoutBookkeeping(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		store.KeyLibrettoAlive: raw(`false`),
 		store.KeyLibrettoAt:    raw(`41`),
 	}, nil))
-	if string(alive.Leaves()[store.KeyLibrettoAlive]) != `false` {
-		t.Errorf("the death was hidden: %v", alive.Set)
+	if string(mustEntry(alive, store.KeyLibrettoAlive)) != `false` {
+		t.Errorf("the death was hidden: %v", alive.Entries())
 	}
 
 	// A fold that moved nothing but bookkeeping renders no block at all.
@@ -61,11 +60,11 @@ func TestStrippingDoesNotEditHistory(t *testing.T) {
 
 	withoutBookkeeping(original)
 
-	if _, ok := original.Leaves()[store.KeyLibrettoAt]; !ok {
-		t.Errorf("the store's own patch lost a key: %v", original.Set)
+	if _, ok := original.Entry(store.KeyLibrettoAt); !ok {
+		t.Errorf("the store's own patch lost a key: %v", original.Entries())
 	}
-	if len(original.Removes()) != 2 {
-		t.Errorf("the store's own removes were rewritten: %v", original.Remove)
+	if len(original.Entries()) != 2 {
+		t.Errorf("the store's own removes were rewritten: %v", original.Entries())
 	}
 }
 

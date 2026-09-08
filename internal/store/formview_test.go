@@ -21,8 +21,6 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"sync"
 	"testing"
-
-	"github.com/jack-work/figaro/api/message"
 )
 
 // oldPatchesThenWalk is the pre-view path, verbatim in behaviour: copy the

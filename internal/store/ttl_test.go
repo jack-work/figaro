@@ -5,8 +5,6 @@ import (
 	"github.com/jack-work/figaro/api/form"
 	"testing"
 	"time"
-
-	"github.com/jack-work/figaro/api/message"
 )
 
 // newTTLBackend is a store with one outfit, the shape every other test here

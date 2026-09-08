@@ -66,9 +66,7 @@ func TestFormRPCRaceRepro(t *testing.T) {
 			for i := 0; i < setsPerWriter; i++ {
 				key := fmt.Sprintf("w%d.k%d", w, i%64)
 				val, _ := json.Marshal(fmt.Sprintf("v%d", i))
-				_, _, err := a.Set(form.Patch{
-					Set: map[string]json.RawMessage{key: val},
-				}, 0)
+				_, _, err := a.Set(form.Build(form.Snapshot{}, map[string]json.RawMessage{key: val}, nil), 0)
 				if err != nil {
 					t.Errorf("Set: %v", err)
 					return
@@ -122,7 +120,7 @@ func TestFormStateRaceRepro(t *testing.T) {
 	for i := 0; i < 64; i++ {
 		seed[fmt.Sprintf("seed.%d", i)] = json.RawMessage(`"x"`)
 	}
-	st.Apply(form.Patch{Set: seed})
+	st.Apply(form.Build(form.Snapshot{}, seed, nil))
 
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
@@ -136,7 +134,7 @@ func TestFormStateRaceRepro(t *testing.T) {
 				return
 			default:
 			}
-			st.Apply(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+			st.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 				fmt.Sprintf("hot.%d", i%32): json.RawMessage(`"y"`),
 			}, nil))
 		}

@@ -61,7 +61,7 @@ func TestStudyBlockElidesPastTheTotalAndSaysWhere(t *testing.T) {
 	}
 	msg := message.Message{
 		Role:         message.RoleInput,
-		StudyPatches: map[string][]message.Patch{"@f1": {{Set: set}}},
+		StudyPatches: map[string][]message.Patch{"@f1": {form.Build(form.Snapshot{}, set, nil)}},
 		StudyAt:      map[string]uint64{"@f1": 3},
 	}
 	texts := StudyReminderTexts(msg, boardWithLimits(0, 450))

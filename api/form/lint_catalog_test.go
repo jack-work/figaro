@@ -30,16 +30,14 @@ func TestDefaultTemplates_LintClean(t *testing.T) {
 	prev := form.FromMap(map[string]json.RawMessage{
 		"model": rawString("claude-sonnet-4-6"),
 	})
-	patch := form.Patch{
-		Set: map[string]json.RawMessage{
-			"cwd":          rawString("/home/figaro/dev"),
-			"datetime":     rawString("Wednesday, April 29, 2026, 10AM EDT"),
-			"model":        rawString("claude-opus-4-6"),
-			"root":         rawString("/home/figaro/dev"),
-			"truncation":   rawString("File foo.go truncated to 2000 lines"),
-			"token_budget": rawString("80%"),
-		},
-	}
+	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{
+		"cwd":          rawString("/home/figaro/dev"),
+		"datetime":     rawString("Wednesday, April 29, 2026, 10AM EDT"),
+		"model":        rawString("claude-opus-4-6"),
+		"root":         rawString("/home/figaro/dev"),
+		"truncation":   rawString("File foo.go truncated to 2000 lines"),
+		"token_budget": rawString("80%"),
+	}, nil)
 
 	rendered, err := form.Render(patch, prev, tmpls)
 	require.NoError(t, err)
@@ -59,7 +57,11 @@ func TestDefaultTemplates_LintClean(t *testing.T) {
 	for _, r := range rendered {
 		rkeys[r.Key] = true
 	}
-	for k := range patch.Set {
+	for _, ent := range patch.Entries() {
+		if ent.IsRemoval() {
+			continue
+		}
+		k := ent.Key
 		assert.True(t, rkeys[k], "expected default template for %q to produce output", k)
 	}
 }
@@ -78,14 +80,12 @@ func TestDefaultTemplates_AllBodiesAreFactual(t *testing.T) {
 		return b
 	}
 
-	patch := form.Patch{
-		Set: map[string]json.RawMessage{
-			"cwd":      rawString("/home/figaro"),
-			"datetime": rawString("Wednesday, April 29, 2026, 10AM EDT"),
-			"model":    rawString("claude-opus-4-6"),
-			"root":     rawString("/home/figaro"),
-		},
-	}
+	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{
+		"cwd":      rawString("/home/figaro"),
+		"datetime": rawString("Wednesday, April 29, 2026, 10AM EDT"),
+		"model":    rawString("claude-opus-4-6"),
+		"root":     rawString("/home/figaro"),
+	}, nil)
 	rendered, err := form.Render(patch, form.Snapshot{}, tmpls)
 	require.NoError(t, err)
 

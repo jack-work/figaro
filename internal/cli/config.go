@@ -163,7 +163,7 @@ func buildPromptForm() *rpc.FormInput {
 	for k, v := range form.EnvironmentSnapshot() {
 		snap[k] = v
 	}
-	if len(snap) == 0 && promptDressing.IsIdentity() {
+	if len(snap) == 0 && promptDressing.IsEmpty() {
 		return nil
 	}
 	return &rpc.FormInput{Context: snap, Outfits: promptDressing.names, Patch: promptDressing.patch}

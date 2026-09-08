@@ -25,7 +25,7 @@ import (
 // and the boundary in projector_boundary_test.go has become decorative.
 func TestCoreOnlyAgentRunsTurnsAndPersistsFigIR(t *testing.T) {
 	cb, _ := form.Open("")
-	cb.Apply(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	cb.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model":      json.RawMessage(`"mock-model-v1"`),
 		"system.provider":   json.RawMessage(`"mock"`),
 		"system.max_tokens": json.RawMessage(`1024`),

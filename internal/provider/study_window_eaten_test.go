@@ -186,7 +186,7 @@ type patchesEvery struct{}
 func (patchesEvery) PatchesBetween(after, upTo uint64) []message.Patch {
 	var out []message.Patch
 	for v := after + 1; v <= upTo; v++ {
-		out = append(out, message.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+		out = append(out, form.Build(form.Snapshot{}, map[string]json.RawMessage{
 			"k": json.RawMessage(`"v"`),
 		}, nil))
 	}

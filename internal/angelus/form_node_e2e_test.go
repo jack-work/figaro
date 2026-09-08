@@ -3,6 +3,7 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"net"
 	"os"
 	"strings"
@@ -20,7 +21,8 @@ func rawPatch(kv map[string]string) *rpc.FormPatch {
 	for k, v := range kv {
 		set[k] = json.RawMessage(v)
 	}
-	return &rpc.FormPatch{Set: set}
+	p := form.Build(form.Snapshot{}, set, nil)
+	return &p
 }
 
 // An unbound form lives a full life: minted, read, patched, watched -
@@ -75,7 +77,8 @@ func TestFormNodeLifecycleWithoutAnAgent(t *testing.T) {
 		require.NoError(t, json.Unmarshal(n.params, &delta))
 		require.Equal(t, created.FormID, delta.AriaID)
 		require.Greater(t, delta.Version, created.Version)
-		require.Contains(t, delta.Patch.Set, "status.phase")
+		_, hasK := delta.Patch.Entry("status.phase")
+		require.True(t, hasK)
 	case <-time.After(5 * time.Second):
 		t.Fatal("no form.delta reached the attached client")
 	}

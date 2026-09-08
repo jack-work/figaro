@@ -61,7 +61,11 @@ func parseDress(outfits, set, del string) (dressing, error) {
 		if err != nil {
 			return dressing{}, err
 		}
-		keys = p.Leaves()
+		for _, e := range p.Entries() {
+			if !e.IsRemoval() {
+				keys[e.Key] = e.New
+			}
+		}
 		texts = append(texts, set)
 	}
 	if strings.TrimSpace(del) != "" {

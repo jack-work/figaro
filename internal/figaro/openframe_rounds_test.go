@@ -68,7 +68,7 @@ func (p *twoRoundProvider) Send(_ context.Context, in provider.SendInput, bus pr
 
 func TestOpenFrameIsNotResetPerRound(t *testing.T) {
 	cb, _ := form.Open("")
-	cb.Apply(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	cb.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"mock-model-v1"`),
 		"system.provider": json.RawMessage(`"mock"`),
 	}, nil))
@@ -146,7 +146,7 @@ loop:
 // are not.
 func TestOpenFrameIsReplacedByARenderableSteer(t *testing.T) {
 	cb, _ := form.Open("")
-	cb.Apply(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	cb.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"mock-model-v1"`),
 		"system.provider": json.RawMessage(`"mock"`),
 	}, nil))

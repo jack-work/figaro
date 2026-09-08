@@ -138,7 +138,7 @@ func TestStudyWindowIsFoldedToItsResult(t *testing.T) {
 		"@r": {
 			form.Build(form.Snapshot{}, map[string]json.RawMessage{"brief": json.RawMessage(`"stand by"`), "doomed": json.RawMessage(`1`)}, nil),
 			form.Build(form.Snapshot{}, map[string]json.RawMessage{"brief": json.RawMessage(`"go"`)}, nil),
-			{Set: map[string]json.RawMessage{"brief": json.RawMessage(`"the watchword is COLUMBINE"`)}, Remove: []string{"doomed"}},
+			form.Build(form.Snapshot{}, map[string]json.RawMessage{"brief": json.RawMessage(`"the watchword is COLUMBINE"`)}, []string{"doomed"}),
 		},
 	}}
 	joined := strings.Join(StudyReminderTexts(msg, form.Snapshot{}), "\n")

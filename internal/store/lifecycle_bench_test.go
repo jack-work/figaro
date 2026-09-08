@@ -3,6 +3,7 @@ package store_test
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/api/form"
 	"testing"
 
 	"github.com/jack-work/figaro/api/message"
@@ -15,7 +16,7 @@ import (
 // writer, a listing reads a published snapshot), so all four want numbers.
 
 func birthPatch(i int) message.Patch {
-	return message.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	return form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"mock"`),
 		"system.model":    json.RawMessage(`"m"`),
 		"mantra":          json.RawMessage(fmt.Sprintf(`"aria-%d"`, i)),
@@ -71,9 +72,7 @@ func BenchmarkFork(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		if _, err := back.ApplyForm(alt, message.Patch{
-			Set: map[string]json.RawMessage{"aria_id": json.RawMessage(`"` + alt + `"`)},
-		}); err != nil {
+		if _, err := back.ApplyForm(alt, form.Build(form.Snapshot{}, map[string]json.RawMessage{"aria_id": json.RawMessage(`"` + alt + `"`)}, nil)); err != nil {
 			b.Fatal(err)
 		}
 	}

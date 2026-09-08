@@ -28,7 +28,7 @@ func TestSnapshotPinsBytesForTheEpoch(t *testing.T) {
 
 	patch, err := o.Load("base")
 	require.NoError(t, err)
-	require.Equal(t, `"pinned"`, string(patch.Set["system.model"]))
+	require.Equal(t, `"pinned"`, string(mustEntry(patch, "system.model")))
 
 	// The user saves the file mid-resolution. Nothing in this epoch may see it.
 	writeOutfit(t, dir, "base", "[system]\nmodel = \"changed-underneath\"\n")
@@ -38,14 +38,14 @@ func TestSnapshotPinsBytesForTheEpoch(t *testing.T) {
 	o.Forget("base")
 	patch, err = o.Load("base")
 	require.NoError(t, err)
-	assert.Equal(t, `"pinned"`, string(patch.Set["system.model"]),
+	assert.Equal(t, `"pinned"`, string(mustEntry(patch, "system.model")),
 		"a rebuild inside an epoch must come from the snapshot, not the live file")
 
 	// A new epoch is where the edit belongs.
 	o.Reload()
 	patch, err = o.Load("base")
 	require.NoError(t, err)
-	assert.Equal(t, `"changed-underneath"`, string(patch.Set["system.model"]))
+	assert.Equal(t, `"changed-underneath"`, string(mustEntry(patch, "system.model")))
 
 	// And the bytes are still on disk, under their own hash: the receipt.
 	entries, err := os.ReadDir(snap)
@@ -79,7 +79,7 @@ func TestCycleIsTaintedAndNotRewalked(t *testing.T) {
 	o.Reload()
 	patch, err := o.Load("a")
 	require.NoError(t, err)
-	assert.Equal(t, "1", string(patch.Set["system.c"]))
+	assert.Equal(t, "1", string(mustEntry(patch, "system.c")))
 }
 
 // A fold that never had to be walked is the point of the epoch: the second ask
@@ -98,7 +98,7 @@ func TestEpochAnswersWithoutTouchingDisk(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(dir, "outfits", "base.toml")))
 	patch, err := o.Load("base")
 	require.NoError(t, err, "the epoch already answered this")
-	assert.Equal(t, `"m"`, string(patch.Set["system.model"]))
+	assert.Equal(t, `"m"`, string(mustEntry(patch, "system.model")))
 
 	o.Reload()
 	_, err = o.Load("base")
@@ -145,9 +145,13 @@ func TestConcurrentDressAgrees(t *testing.T) {
 			defer wg.Done()
 			got, err := o.Dress([]string{"full"}, form.Patch{}, "")
 			assert.NoError(t, err)
-			assert.Equal(t, len(want.Set), len(got.Set))
-			for k, v := range want.Set {
-				assert.Equal(t, string(v), string(got.Set[k]), k)
+			assert.Equal(t, len(want.Entries()), len(got.Entries()))
+			for _, ent := range want.Entries() {
+				if ent.IsRemoval() {
+					continue
+				}
+				k, v := ent.Key, ent.New
+				assert.Equal(t, string(v), string(mustEntry(got, k)), k)
 			}
 		}()
 	}

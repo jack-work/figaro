@@ -47,15 +47,15 @@ func oldRenderLoop(s Snapshot, patches []Patch, tmpls *template.Template) ([]str
 func foldCorpus(t *testing.T) [][]Patch {
 	t.Helper()
 	set := func(kv ...string) Patch {
-		p := Build(Snapshot{}, map[string]json.RawMessage{}, nil)
+		m := map[string]json.RawMessage{}
 		for i := 0; i+1 < len(kv); i += 2 {
 			b, err := json.Marshal(kv[i+1])
 			if err != nil {
 				t.Fatal(err)
 			}
-			p.Leaves()[kv[i]] = b
+			m[kv[i]] = b
 		}
-		return p
+		return Build(Snapshot{}, m, nil)
 	}
 	rm := func(keys ...string) Patch { return Build(Snapshot{}, nil, keys) }
 	return [][]Patch{

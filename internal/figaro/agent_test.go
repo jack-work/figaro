@@ -247,12 +247,12 @@ func submitSteer(a *figaro.Agent, text string) {
 func newTestAgent(t *testing.T, response string) *figaro.Agent {
 	t.Helper()
 	cb, _ := form.Open("")
-	cb.Apply(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	cb.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model":      json.RawMessage(`"mock-model-v1"`),
 		"system.provider":   json.RawMessage(`"mock"`),
 		"system.max_tokens": json.RawMessage(`1024`),
 	}, nil))
-	be, id := store.NewTestAria(t, "d", message.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	be, id := store.NewTestAria(t, "d", form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model":      json.RawMessage(`"mock-model-v1"`),
 		"system.provider":   json.RawMessage(`"mock"`),
 		"system.max_tokens": json.RawMessage(`1024`),
@@ -270,7 +270,7 @@ func newTestAgent(t *testing.T, response string) *figaro.Agent {
 func TestAgentPersistsCompleteListMetadata(t *testing.T) {
 	backend, id := backedConv(t, t.TempDir())
 	// system.cwd is harness-owned, so the harness path writes it.
-	_, applyErr := backend.ApplyFormPrivileged(id, message.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	_, applyErr := backend.ApplyFormPrivileged(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"mantra":     json.RawMessage(`"initial"`),
 		"system.cwd": json.RawMessage(`"work"`),
 	}, nil))
@@ -304,7 +304,7 @@ func TestAgentPersistsCompleteListMetadata(t *testing.T) {
 	require.NotEmpty(t, meta.OutfitVersion)
 	require.Equal(t, createdAt.UnixMilli(), meta.CreatedAtMS)
 
-	_, _, err = a.Set(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	_, _, err = a.Set(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"mantra": json.RawMessage(`"updated"`),
 	}, nil), 0)
 	require.NoError(t, err)
@@ -322,7 +322,7 @@ func backedConv(t *testing.T, dir string) (store.Backend, string) {
 	t.Helper()
 	b, err := store.NewXwalBackend(dir, 0)
 	require.NoError(t, err)
-	l, err := b.CreateOutfit("d", message.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	l, err := b.CreateOutfit("d", form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model":      json.RawMessage(`"mock-model-v1"`),
 		"system.provider":   json.RawMessage(`"mock"`),
 		"system.max_tokens": json.RawMessage(`1024`),
@@ -411,7 +411,7 @@ loop:
 
 func TestAgentContextMetricsTrackCurrentSession(t *testing.T) {
 	cb, _ := form.Open("")
-	cb.Apply(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	cb.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model": json.RawMessage(`"gpt-5.6-terra"`),
 		"mantra":       json.RawMessage(`"keep session accounting visible"`),
 	}, nil))
@@ -461,7 +461,7 @@ done:
 
 func TestAgentFirstLiveFrameUsesResolvedContextLimit(t *testing.T) {
 	cb, _ := form.Open("")
-	cb.Apply(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	cb.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model": json.RawMessage(`"gpt-5.6-terra"`),
 	}, nil))
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
@@ -1241,7 +1241,7 @@ var _ = json.RawMessage(nil)
 func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 	backend, id := backedConv(t, t.TempDir())
 	cb, _ := form.Open("")
-	cb.Apply(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	cb.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model":      json.RawMessage(`"mock-model-v1"`),
 		"system.provider":   json.RawMessage(`"mock"`),
 		"system.max_tokens": json.RawMessage(`1024`),
@@ -1427,7 +1427,7 @@ func TestAgent_QueuedPromptsRPC(t *testing.T) {
 	release := make(chan struct{})
 	prov := &blockedProvider{release: release}
 	cb, _ := form.Open("")
-	cb.Apply(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	cb.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model":      json.RawMessage(`"mock-model-v1"`),
 		"system.provider":   json.RawMessage(`"mock"`),
 		"system.max_tokens": json.RawMessage(`1024`),
@@ -1507,4 +1507,13 @@ func (p *blockedProvider) Send(ctx context.Context, _ provider.SendInput, _ prov
 	case <-ctx.Done():
 	}
 	return ctx.Err()
+}
+
+// mustEntry is the value a patch sets at key, for tests that assert on one.
+func mustEntry(p form.Patch, key string) []byte {
+	e, ok := p.Entry(key)
+	if !ok {
+		return nil
+	}
+	return e.New
 }

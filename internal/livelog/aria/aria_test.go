@@ -1,6 +1,7 @@
 package aria
 
 import (
+	"github.com/jack-work/figaro/api/form"
 	"testing"
 
 	"github.com/jack-work/figaro/api/livedoc"
@@ -326,4 +327,13 @@ func TestClient_ClosedLimitKeepsTail(t *testing.T) {
 	if c.Cursor() != 6 {
 		t.Errorf("cursor must track the newest turn, got %d", c.Cursor())
 	}
+}
+
+// mustEntry is the value a patch sets at key, for tests that assert on one.
+func mustEntry(p form.Patch, key string) []byte {
+	e, ok := p.Entry(key)
+	if !ok {
+		return nil
+	}
+	return e.New
 }

@@ -30,10 +30,10 @@ func TestLayersApplyInOrderNearestWins(t *testing.T) {
 	patch, err := outfit.New(dir).Load("top")
 	require.NoError(t, err)
 	// opus follows review, so its model wins; review's credo has no rival.
-	assert.Equal(t, `"opus-model"`, string(patch.Set["system.model"]))
-	assert.Equal(t, `"review"`, string(patch.Set["system.credo"]))
-	assert.Equal(t, `4096`, string(patch.Set["system.max_tokens"]))
-	assert.Equal(t, `"high"`, string(patch.Set["system.thinking_effort"]))
+	assert.Equal(t, `"opus-model"`, string(mustEntry(patch, "system.model")))
+	assert.Equal(t, `"review"`, string(mustEntry(patch, "system.credo")))
+	assert.Equal(t, `4096`, string(mustEntry(patch, "system.max_tokens")))
+	assert.Equal(t, `"high"`, string(mustEntry(patch, "system.thinking_effort")))
 }
 
 // A layer's own layers are folded before it contributes, so a nested outfit
@@ -46,8 +46,8 @@ func TestLayersComposeRecursively(t *testing.T) {
 
 	patch, err := outfit.New(dir).Load("top")
 	require.NoError(t, err)
-	assert.Equal(t, `"review"`, string(patch.Set["system.model"]))
-	assert.Equal(t, `"house-credo"`, string(patch.Set["system.credo"]))
+	assert.Equal(t, `"review"`, string(mustEntry(patch, "system.model")))
+	assert.Equal(t, `"house-credo"`, string(mustEntry(patch, "system.credo")))
 }
 
 // A shared ancestor must be applied at EVERY position it appears in, not
@@ -64,8 +64,8 @@ func TestSharedLayerAppliesAtEachPosition(t *testing.T) {
 
 	patch, err := outfit.New(dir).Load("top")
 	require.NoError(t, err)
-	assert.Equal(t, `"house"`, string(patch.Set["system.model"]))
-	assert.Equal(t, `"left"`, string(patch.Set["system.credo"]))
+	assert.Equal(t, `"house"`, string(mustEntry(patch, "system.model")))
+	assert.Equal(t, `"left"`, string(mustEntry(patch, "system.credo")))
 }
 
 // The bug this replaces: a missing layer silently discarded the whole patch,
@@ -117,13 +117,13 @@ func TestNamesOrderLikeLayers(t *testing.T) {
 
 	patch, err := outfit.New(dir).Names("a", "b")
 	require.NoError(t, err)
-	assert.Equal(t, `"b"`, string(patch.Set["system.model"]))
-	assert.Equal(t, `"a"`, string(patch.Set["system.credo"]))
+	assert.Equal(t, `"b"`, string(mustEntry(patch, "system.model")))
+	assert.Equal(t, `"a"`, string(mustEntry(patch, "system.credo")))
 
 	writeOutfit(t, dir, "equivalent", "layers = [\"a\", \"b\"]\n")
 	viaLayers, err := outfit.New(dir).Load("equivalent")
 	require.NoError(t, err)
-	assert.Equal(t, patch.Set, viaLayers.Set, "a,b must fold exactly as layers = [a, b]")
+	assert.Equal(t, patch.Entries(), viaLayers.Entries(), "a,b must fold exactly as layers = [a, b]")
 }
 
 func TestCycleInLayersIsReported(t *testing.T) {
@@ -179,10 +179,11 @@ func TestDressPutsOutfitsUnderThePatch(t *testing.T) {
 	require.NoError(t, err)
 	patch, err := o.Dress(names, asked, "")
 	require.NoError(t, err)
-	assert.Equal(t, `"inline-model"`, string(patch.Set["system.model"]))
-	assert.Equal(t, `"base"`, string(patch.Set["system.credo"]))
-	assert.Equal(t, `"1h"`, string(patch.Set["ttl"]))
-	assert.NotContains(t, patch.Set, "layers")
+	assert.Equal(t, `"inline-model"`, string(mustEntry(patch, "system.model")))
+	assert.Equal(t, `"base"`, string(mustEntry(patch, "system.credo")))
+	assert.Equal(t, `"1h"`, string(mustEntry(patch, "ttl")))
+	_, hasLayers := patch.Entry("layers")
+	assert.False(t, hasLayers)
 
 	// `layers` written into a PATCH is data now, not a directive: it is
 	// stored as typed and resolves nothing. The only place the key is
@@ -191,8 +192,9 @@ func TestDressPutsOutfitsUnderThePatch(t *testing.T) {
 	require.NoError(t, err)
 	patch, err = o.Dress(nil, literal, "")
 	require.NoError(t, err)
-	assert.NotContains(t, patch.Set, "system.model")
-	assert.Equal(t, `["base"]`, string(patch.Set["layers"]))
+	_, hz := patch.Entry("system.model")
+	assert.False(t, hz)
+	assert.Equal(t, `["base"]`, string(mustEntry(patch, "layers")))
 
 	// A missing outfit is a broken reference, always.
 	_, err = o.Dress([]string{"nope"}, form.Patch{}, "")
@@ -207,7 +209,7 @@ func TestDressPutsOutfitsUnderThePatch(t *testing.T) {
 
 	patch, err = o.Dress([]string{"default"}, form.Patch{}, "base")
 	require.NoError(t, err)
-	assert.Equal(t, `"base-model"`, string(patch.Set["system.model"]))
+	assert.Equal(t, `"base-model"`, string(mustEntry(patch, "system.model")))
 }
 
 // The grammar refuses the other axis's terms, naming the flag that takes them.
@@ -252,9 +254,13 @@ func TestConcurrentFoldsAgree(t *testing.T) {
 			defer wg.Done()
 			got, err := o.Dress(names, asked, "")
 			assert.NoError(t, err)
-			assert.Equal(t, len(want.Set), len(got.Set))
-			for k, v := range want.Set {
-				assert.Equal(t, string(v), string(got.Set[k]), k)
+			assert.Equal(t, len(want.Entries()), len(got.Entries()))
+			for _, ent := range want.Entries() {
+				if ent.IsRemoval() {
+					continue
+				}
+				k, v := ent.Key, ent.New
+				assert.Equal(t, string(v), string(mustEntry(got, k)), k)
 			}
 		}()
 	}
@@ -293,14 +299,18 @@ func TestLoaderRefusesPathsOutsideTheConfigDir(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			writeOutfit(t, cfg, "leaky", tc.body)
 			patch, err := outfit.New(cfg).Load("leaky")
-			for k, v := range patch.Set {
+			for _, ent := range patch.Entries() {
+				if ent.IsRemoval() {
+					continue
+				}
+				k, v := ent.Key, ent.New
 				assert.NotContains(t, string(v), "PRIVATE KEY MATERIAL", k)
 			}
 			if err == nil {
 				// An absolute path is re-rooted rather than refused, so it can
 				// only ever name something inside the config dir: which here
 				// does not exist, and the open error is the report.
-				assert.Empty(t, patch.Set)
+				assert.Empty(t, patch.Entries())
 			}
 		})
 	}
@@ -320,5 +330,5 @@ func TestLoaderRefusesASymlinkOutOfTheConfigDir(t *testing.T) {
 	patch, err := outfit.New(cfg).Load("leaky")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "resolves outside")
-	assert.Empty(t, patch.Set)
+	assert.Empty(t, patch.Entries())
 }

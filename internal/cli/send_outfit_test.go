@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"github.com/jack-work/figaro/api/form"
 	"strings"
 	"testing"
 )
@@ -84,10 +85,10 @@ func TestParsedOutfitRidesThePrompt(t *testing.T) {
 	if len(in.Outfits) != 1 || in.Outfits[0] != "a" {
 		t.Errorf("prompt outfits: %v", in.Outfits)
 	}
-	if _, leaked := in.Patch.Leaves()["layers"]; leaked {
-		t.Errorf("a layers directive reached the wire: %v", in.Patch.Set)
+	if _, leaked := in.Patch.Entry("layers"); leaked {
+		t.Errorf("a layers directive reached the wire: %v", in.Patch.Entries())
 	}
-	if got := string(in.Patch.Leaves()["ttl"]); got != `"1h"` {
+	if got := string(mustEntry(*in.Patch, "ttl")); got != `"1h"` {
 		t.Errorf("prompt ttl: %q", got)
 	}
 
@@ -124,4 +125,13 @@ func TestNewRejectsSendOnlyFlags(t *testing.T) {
 			t.Errorf("new %v: want %q, got %v", tc.args, tc.err, err)
 		}
 	}
+}
+
+// mustEntry is the value a patch sets at key, for tests that assert on one.
+func mustEntry(p form.Patch, key string) []byte {
+	e, ok := p.Entry(key)
+	if !ok {
+		return nil
+	}
+	return e.New
 }

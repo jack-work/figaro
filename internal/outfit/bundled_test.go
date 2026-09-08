@@ -2,6 +2,7 @@ package outfit
 
 import (
 	"encoding/json"
+	"github.com/jack-work/figaro/api/form"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -130,11 +131,21 @@ func TestFoldUsesTheEmbeddedBundle(t *testing.T) {
 	patch, err := New(dir).Load("config")
 	require.NoError(t, err)
 
-	raw, ok := patch.Leaves()["skills.figaro"]
+	ent, ok := patch.Entry("skills.figaro")
+	raw := ent.New
 	require.True(t, ok, "the bundled figaro skill must reach the form")
 	var env ContentEnvelope
 	require.NoError(t, json.Unmarshal(raw, &env))
 	require.Contains(t, env.Frontmatter, "name: figaro")
 	require.Equal(t, filepath.Join(BundledSkillsRoot(), "skills", "figaro", "SKILL.md"), env.FilePath)
 	require.Empty(t, env.Content, "frontmatter only: the body is read from filePath when the model wants it")
+}
+
+// mustEntry is the value a patch sets at key, for tests that assert on one.
+func mustEntry(p form.Patch, key string) []byte {
+	e, ok := p.Entry(key)
+	if !ok {
+		return nil
+	}
+	return e.New
 }

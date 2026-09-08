@@ -165,11 +165,9 @@ func TestWire_PatchOnly_AppliesDirectly(t *testing.T) {
 	require.Equal(t, 1, prov.sendCount())
 
 	cb := &rpc.FormInput{
-		Patch: &rpc.FormPatch{
-			Set: map[string]json.RawMessage{
-				"cwd": json.RawMessage(`"/home/beta"`),
-			},
-		},
+		Patch: ptrPatch(form.Build(form.Snapshot{}, map[string]json.RawMessage{
+			"cwd": json.RawMessage(`"/home/beta"`),
+		}, nil)),
 	}
 	runOneTurn(t, a, "second", cb)
 	require.Equal(t, 2, prov.sendCount())
@@ -185,15 +183,13 @@ func TestWire_ContextAndPatch_Combined(t *testing.T) {
 		Context: map[string]json.RawMessage{
 			"cwd": json.RawMessage(`"/home/alpha"`),
 		},
-		Patch: &rpc.FormPatch{
-			Set: map[string]json.RawMessage{
-				// NOT "model": that key is harness-owned, and an unprivileged
-				// write to it is refused -- which takes the whole patch down
-				// with it. The ephemeral path used to hide that by stapling the
-				// patch to the message instead of applying it.
-				"note": json.RawMessage(`"combined"`),
-			},
-		},
+		Patch: ptrPatch(form.Build(form.Snapshot{}, map[string]json.RawMessage{
+			// NOT "model": that key is harness-owned, and an unprivileged
+			// write to it is refused -- which takes the whole patch down
+			// with it. The ephemeral path used to hide that by stapling the
+			// patch to the message instead of applying it.
+			"note": json.RawMessage(`"combined"`),
+		}, nil)),
 	}
 	runOneTurn(t, a, "first", cb)
 	require.Equal(t, 2, prov.sendCount())
@@ -241,11 +237,9 @@ func TestWire_Context_DoesNotRemoveUnmentionedSnapshotKeys(t *testing.T) {
 	a, prov, cb := newAgentWithForm(t)
 
 	// Seed something the client does NOT carry in Context.
-	cb.Apply(form.Patch{
-		Set: map[string]json.RawMessage{
-			"skills.go": json.RawMessage(`{"description":"go body"}`),
-		},
-	})
+	cb.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
+		"skills.go": json.RawMessage(`{"description":"go body"}`),
+	}, nil))
 
 	runOneTurn(t, a, "first", &rpc.FormInput{
 		Context: map[string]json.RawMessage{
@@ -255,8 +249,10 @@ func TestWire_Context_DoesNotRemoveUnmentionedSnapshotKeys(t *testing.T) {
 	require.Equal(t, 1, prov.sendCount())
 	patches := prov.lastTurnPatches()
 	for _, p := range patches {
-		assert.Empty(t, p.Remove, "Context must never emit Remove")
-		_, hadSkills := p.Set["skills.go"]
+		for _, e := range p.Entries() {
+			assert.False(t, e.IsRemoval(), "Context must never emit Remove")
+		}
+		_, hadSkills := p.Entry("skills.go")
 		assert.False(t, hadSkills, "Context must not republish snapshot-only keys")
 	}
 	// Snapshot key survives.
@@ -279,7 +275,7 @@ func TestSetRefusesAStaleVersion(t *testing.T) {
 	})
 	defer a.Kill()
 
-	_, _, err := a.Set(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{"a": json.RawMessage(`1`)}, nil), 0)
+	_, _, err := a.Set(form.Build(form.Snapshot{}, map[string]json.RawMessage{"a": json.RawMessage(`1`)}, nil), 0)
 	require.NoError(t, err)
 	var read uint64
 	require.Eventually(t, func() bool {
@@ -289,7 +285,7 @@ func TestSetRefusesAStaleVersion(t *testing.T) {
 	}, time.Second, 5*time.Millisecond)
 
 	// Someone else writes in between: `read` is stale by the time this lands.
-	_, _, err = a.Set(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{"b": json.RawMessage(`2`)}, nil), 0)
+	_, _, err = a.Set(form.Build(form.Snapshot{}, map[string]json.RawMessage{"b": json.RawMessage(`2`)}, nil), 0)
 	require.NoError(t, err)
 	require.Eventually(t, func() bool { return a.Version() > read }, time.Second, 5*time.Millisecond)
 	moved := a.Version()
@@ -298,7 +294,7 @@ func TestSetRefusesAStaleVersion(t *testing.T) {
 	// round boundary later, and reach nobody but the daemon log -- a
 	// conditional write that vanished. The set is applied by the form's own
 	// actor before this returns, so the stale version is answered here.
-	_, _, err = a.Set(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{"a": json.RawMessage(`3`)}, nil), read)
+	_, _, err = a.Set(form.Build(form.Snapshot{}, map[string]json.RawMessage{"a": json.RawMessage(`3`)}, nil), read)
 	require.Error(t, err, "a stale conditional set must be refused to the caller")
 	v, _ := a.Snapshot().Get("a")
 	assert.Equal(t, `1`, string(v), "a stale conditional set must not land")
@@ -321,9 +317,9 @@ func TestRefusedFormInputIsReportedToTheCaller(t *testing.T) {
 
 	err := a.SubmitPromptFrom(rpc.QuaRequest{
 		Text: "set a key that is not mine to set",
-		Form: &rpc.FormInput{Patch: &rpc.FormPatchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+		Form: &rpc.FormInput{Patch: ptrPatch(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 			"model": json.RawMessage(`"claude-opus"`),
-		}, nil)},
+		}, nil))},
 	}, "")
 	require.Error(t, err, "a harness-owned key must be refused to the caller's face")
 	require.Contains(t, err.Error(), "model")
@@ -332,3 +328,5 @@ func TestRefusedFormInputIsReportedToTheCaller(t *testing.T) {
 	_, ok := a.Snapshot().Get("model")
 	require.False(t, ok)
 }
+
+func ptrPatch(p form.Patch) *form.Patch { return &p }

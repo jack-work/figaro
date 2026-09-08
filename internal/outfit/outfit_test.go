@@ -24,10 +24,10 @@ user_id = 7
 
 	patch, err := outfit.New(dir).Load("config")
 	require.NoError(t, err)
-	assert.Equal(t, `"claude-x"`, string(patch.Set["system.model"]))
-	assert.Equal(t, `1024`, string(patch.Set["system.max_tokens"]))
-	assert.Equal(t, `"Figaro"`, string(patch.Set["friendly_name"]))
-	assert.Equal(t, `7`, string(patch.Set["user_id"]))
+	assert.Equal(t, `"claude-x"`, string(mustEntry(patch, "system.model")))
+	assert.Equal(t, `1024`, string(mustEntry(patch, "system.max_tokens")))
+	assert.Equal(t, `"Figaro"`, string(mustEntry(patch, "friendly_name")))
+	assert.Equal(t, `7`, string(mustEntry(patch, "user_id")))
 }
 
 func TestLoad_FileName_NoFrontmatter_StoresContent(t *testing.T) {
@@ -41,7 +41,7 @@ system = { credo = { fileName = "credo.md" } }
 	patch, err := outfit.New(dir).Load("config")
 	require.NoError(t, err)
 	var env outfit.ContentEnvelope
-	require.NoError(t, json.Unmarshal(patch.Set["system.credo"], &env))
+	require.NoError(t, json.Unmarshal(mustEntry(patch, "system.credo"), &env))
 	assert.Equal(t, "# Credo\nbody", env.Content)
 	assert.Empty(t, env.Frontmatter)
 	assert.Equal(t, filepath.Join(dir, "credo.md"), env.FilePath)
@@ -59,7 +59,7 @@ foo = { fileName = "foo.md" }
 	patch, err := outfit.New(dir).Load("config")
 	require.NoError(t, err)
 	var env outfit.ContentEnvelope
-	require.NoError(t, json.Unmarshal(patch.Set["foo"], &env))
+	require.NoError(t, json.Unmarshal(mustEntry(patch, "foo"), &env))
 	assert.Equal(t, "name: foo\ndescription: a foo", env.Frontmatter)
 	assert.Empty(t, env.Content)
 	assert.Equal(t, filepath.Join(dir, "foo.md"), env.FilePath)
@@ -82,17 +82,17 @@ skills = { dirName = "skills" }
 
 	// dirName fans entries out as dotted keys (skills.<base>) so each
 	// envelope is independently visible to completion pickers.
-	_, packedExists := patch.Set["skills"]
+	_, packedExists := patch.Entry("skills")
 	assert.False(t, packedExists, "dirName must not produce a packed parent key")
 
 	var goEnv outfit.ContentEnvelope
-	require.NoError(t, json.Unmarshal(patch.Set["skills.go"], &goEnv))
+	require.NoError(t, json.Unmarshal(mustEntry(patch, "skills.go"), &goEnv))
 	assert.Equal(t, "go body", goEnv.Content)
 	assert.Empty(t, goEnv.Frontmatter)
 	assert.Equal(t, filepath.Join(dir, "skills", "go.md"), goEnv.FilePath)
 
 	var bravoEnv outfit.ContentEnvelope
-	require.NoError(t, json.Unmarshal(patch.Set["skills.bravo"], &bravoEnv))
+	require.NoError(t, json.Unmarshal(mustEntry(patch, "skills.bravo"), &bravoEnv))
 	assert.Equal(t, "name: bravo\ndescription: B", bravoEnv.Frontmatter)
 	assert.Empty(t, bravoEnv.Content)
 	assert.Equal(t, filepath.Join(dir, "skills", "bravo.md"), bravoEnv.FilePath)
@@ -138,18 +138,18 @@ func TestLoad_DirSkill_AndBundledMerge(t *testing.T) {
 
 	// Directory-as-skill: one key from SKILL.md; sections not surfaced.
 	var fig outfit.ContentEnvelope
-	require.NoError(t, json.Unmarshal(patch.Set["skills.figaro"], &fig))
+	require.NoError(t, json.Unmarshal(mustEntry(patch, "skills.figaro"), &fig))
 	assert.Equal(t, "name: figaro\ndescription: bundled", fig.Frontmatter)
 	assert.Equal(t, filepath.Join(bundled, "skills", "figaro", "SKILL.md"), fig.FilePath)
-	_, hasArch := patch.Set["skills.architecture"]
+	_, hasArch := patch.Entry("skills.architecture")
 	assert.False(t, hasArch, "section files must not surface as their own skills")
 
 	// Merge: a name the binary does not ship is the user's and is untouched; a
 	// name it does ship is the binary's.
 	var mine, shared outfit.ContentEnvelope
-	require.NoError(t, json.Unmarshal(patch.Set["skills.mine"], &mine))
+	require.NoError(t, json.Unmarshal(mustEntry(patch, "skills.mine"), &mine))
 	assert.Equal(t, "user mine", mine.Content)
-	require.NoError(t, json.Unmarshal(patch.Set["skills.shared"], &shared))
+	require.NoError(t, json.Unmarshal(mustEntry(patch, "skills.shared"), &shared))
 	assert.Equal(t, "bundled shared", shared.Content, "a bundled skill overrides a config copy by name")
 }
 
@@ -175,9 +175,9 @@ func TestLoad_DirSkill_UserSymlinkAndLowercaseManifest(t *testing.T) {
 	patch, err := outfit.New(dir).Load("config")
 	require.NoError(t, err)
 	var linked outfit.ContentEnvelope
-	require.NoError(t, json.Unmarshal(patch.Set["skills.linked"], &linked))
+	require.NoError(t, json.Unmarshal(mustEntry(patch, "skills.linked"), &linked))
 	assert.Equal(t, "name: linked\ndescription: linked folder skill", linked.Frontmatter)
 	assert.Equal(t, strings.ToLower(filepath.Join(link, "skill.md")), strings.ToLower(linked.FilePath))
-	_, supplementalSurfaced := patch.Set["skills.reference"]
+	_, supplementalSurfaced := patch.Entry("skills.reference")
 	assert.False(t, supplementalSurfaced)
 }

@@ -67,11 +67,11 @@ func (p *snapshotWatchProvider) Send(_ context.Context, in provider.SendInput, b
 func TestASetMidTurnDoesNotMoveTheBoardUnderTheTurnInFlight(t *testing.T) {
 	p := &snapshotWatchProvider{entered: make(chan struct{}), release: make(chan struct{})}
 	cb, _ := form.Open("")
-	cb.Apply(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	cb.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"mock-model-v1"`),
 		"system.provider": json.RawMessage(`"mock"`),
 	}, nil))
-	be, id := store.NewTestAria(t, "d", message.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	be, id := store.NewTestAria(t, "d", form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"mock-model-v1"`),
 		"system.provider": json.RawMessage(`"mock"`),
 	}, nil))
@@ -81,7 +81,7 @@ func TestASetMidTurnDoesNotMoveTheBoardUnderTheTurnInFlight(t *testing.T) {
 	})
 	defer a.Kill()
 
-	_, _, err := a.Set(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	_, _, err := a.Set(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"probe": json.RawMessage(`"before"`),
 	}, nil), 0)
 	require.NoError(t, err)
@@ -98,7 +98,7 @@ func TestASetMidTurnDoesNotMoveTheBoardUnderTheTurnInFlight(t *testing.T) {
 	}
 
 	// THE TURN IS RUNNING. Move the board.
-	_, _, err = a.Set(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
+	_, _, err = a.Set(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"probe": json.RawMessage(`"during"`),
 	}, nil), 0)
 	require.NoError(t, err)

@@ -41,9 +41,7 @@ func TestMirrorAndLogAgreeOnBytes(t *testing.T) {
 		t.Helper()
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
-		_, _, err := a.SetAwaiting(ctx, form.Patch{
-			Set: map[string]json.RawMessage{"k": json.RawMessage(raw)},
-		}, 0, false)
+		_, _, err := a.SetAwaiting(ctx, form.Build(form.Snapshot{}, map[string]json.RawMessage{"k": json.RawMessage(raw)}, nil), 0, false)
 		require.NoError(t, err)
 	}
 
