@@ -112,7 +112,11 @@ func (o *Outfitter) Dress(names []string, patch form.Patch, defaultName string) 
 	if len(names) == 0 {
 		return patch, nil
 	}
-	var layered form.Patch
+	// Layers compose as KEY SETS. Each layer's patch is built against an empty
+	// board, so its Set names whole subtrees; merging two of those makes the
+	// later one clobber the earlier at the first shared segment. Composing the
+	// keys and building once keeps every layer's leaves.
+	layered := map[string]json.RawMessage{}
 	for _, n := range names {
 		var folded form.Patch
 		var err error
@@ -124,9 +128,21 @@ func (o *Outfitter) Dress(names []string, patch form.Patch, defaultName string) 
 		if err != nil {
 			return form.Patch{}, err
 		}
-		layered = form.Merge(layered, folded)
+		for _, e := range folded.Entries() {
+			if !e.IsRemoval() {
+				layered[e.Key] = e.New
+			}
+		}
 	}
-	return form.Merge(layered, patch), nil
+	var drops []string
+	for _, e := range patch.Entries() {
+		if e.IsRemoval() {
+			drops = append(drops, e.Key)
+			continue
+		}
+		layered[e.Key] = e.New
+	}
+	return form.Build(form.Snapshot{}, layered, drops), nil
 }
 
 // defaults folds what config calls the default outfit, leniently.
@@ -138,15 +154,19 @@ func (o *Outfitter) defaults(defaultName string) (form.Patch, error) {
 	if err != nil {
 		return form.Patch{}, err
 	}
-	var out form.Patch
+	out := map[string]json.RawMessage{}
 	for _, n := range names {
 		folded, ferr := o.LoadOptional(n)
 		if ferr != nil {
 			return form.Patch{}, ferr
 		}
-		out = form.Merge(out, folded)
+		for _, e := range folded.Entries() {
+			if !e.IsRemoval() {
+				out[e.Key] = e.New
+			}
+		}
 	}
-	return out, nil
+	return form.Build(form.Snapshot{}, out, nil), nil
 }
 
 // Names folds a list of outfit names, in order.
