@@ -75,9 +75,9 @@ func restartRange(t *testing.T, openLibrettoFirst bool) uint64 {
 	cold, err := NewXwalBackend(root, 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { cold.Close() })
-	_, err = cold.ApplyForm(src, form.Creates(map[string]json.RawMessage{
+	_, err = cold.ApplyForm(src, form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"afterrestart": json.RawMessage(`"yes"`),
-	}))
+	}, nil))
 	require.NoError(t, err)
 	cold.SetObservedForms(aria, []string{src})
 	if openLibrettoFirst {

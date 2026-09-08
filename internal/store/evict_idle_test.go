@@ -22,9 +22,9 @@ func TestIdleAriasAreEvictedAndRebuildIdentically(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer be.Close()
-	outfit, err := be.CreateOutfit("l", form.Creates(map[string]json.RawMessage{
+	outfit, err := be.CreateOutfit("l", form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"skills.x": json.RawMessage(`1`),
-	}))
+	}, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,9 +35,9 @@ func TestIdleAriasAreEvictedAndRebuildIdentically(t *testing.T) {
 			t.Fatal(err)
 		}
 		arias = append(arias, id)
-		if _, err := be.ApplyForm(id, form.Creates(map[string]json.RawMessage{
+		if _, err := be.ApplyForm(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{
 			"aria_id": json.RawMessage(`"` + id + `"`),
-		})); err != nil {
+		}, nil)); err != nil {
 			t.Fatal(err)
 		}
 		lg, err := be.OpenFigIR(id)

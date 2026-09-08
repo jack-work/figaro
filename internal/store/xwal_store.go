@@ -30,7 +30,6 @@ import (
 // trunkScanCount counts calls into figwal's trunk-listing accessors
 // (Trunks.ListLight + Trunks.Stumps). It is the proxy the benchmark asserts
 // on to catch a fan-out regression (a listing that rescans the tree N times
-// instead of once). ListLight itself no longer opens trunk heads.
 var trunkScanCount atomic.Int64
 
 // listTrunks / listStumps wrap the figwal accessors so every tree scan is
@@ -88,7 +87,6 @@ const formSigil = "@"
 
 const (
 	chanIR = "ir"
-	// chanForm is the form channel: the aria's state. It was "form" on
 	// disk through store generation 1; generation 2 renamed the directory with
 	// the concept, and the version gate refuses a generation-1 store rather
 	// than reading it as a board with no keys.
@@ -207,7 +205,6 @@ func storeOptions(segmentSize int) xwal.StoreOptions {
 		},
 		// The form is UNKEYED: a patch is a declaration of intent, not
 		// a fact about a turn, so it should not have to read the timeline to
-		// be written. That is what lets a `set` land mid-turn.
 		Unkeyed: []string{chanForm},
 	}
 }
@@ -217,7 +214,6 @@ func storeOptions(segmentSize int) xwal.StoreOptions {
 // background flush is off).
 type XwalStore struct {
 	// keepStump is the stump collection spares (the live default). One
-	// string, published atomically: it used to carry a lock of its own
 	// precisely because collectStump runs under s.mu and KeepStump does not,
 	// so sharing s.mu would invert the order. A pointer swap has no order to
 	// invert.
@@ -258,8 +254,6 @@ func (t xwalTopology) From(id string) (string, bool) {
 func (t xwalTopology) Nodes() []string {
 	// THROUGH topologySnapshot, not the raw pointer. From() resolves via
 	// s.Node, which refreshes; reading s.topology directly here answered
-	// from whatever was last built, so a delete computed its set from a
-	// topology that predated the fork it was meant to include. The check is
 	// two loads and a compare when nothing has moved.
 	snap := t.s.topologySnapshot()
 	if snap == nil {
@@ -333,7 +327,6 @@ func OpenXwalStore(root string, segmentSize int) (*XwalStore, error) {
 		return nil, err
 	}
 	// Before the store opens, because an unmigrated store does not open at
-	// all -- and before THAT was true, it opened reporting its outfits and
 	// none of its arias. The single writer (the daemon) owns this; the
 	// migration takes the store lock itself, so a second process waits for
 	// a store rather than half-reading one.
@@ -482,7 +475,7 @@ func (s *XwalStore) CreateForm(parent string, patch message.Patch) (id string, v
 // the parent's species, then land the birth patch and its cursor-stamped
 // record in order. Caller chooses what species the CHILD is.
 func (s *XwalStore) forkWithKind(parent string, atMainLT uint64, patch message.Patch, kind string) (child string, version uint64, err error) {
-	if patch.IsEmpty() {
+	if patch.IsIdentity() {
 		return "", 0, fmt.Errorf("xwal store: fork-with: a fork must carry a patch")
 	}
 	s.mu.Lock()
@@ -495,7 +488,6 @@ func (s *XwalStore) forkWithKind(parent string, atMainLT uint64, patch message.P
 		// A stump is not a trunk and has no tail to fork: spawning beneath it
 		// is what "fork the outfit" means, and the child inherits the birth
 		// record every sibling reads. Legacy stumps remain bindable: they
-		// were always forms in spirit, and now in name.
 		child, err = s.trunks.SpawnUnderStumpKind(parent, kind)
 	case s.isFormLocked(parent):
 		// A live, patchable forking point: spawn a NEW trunk beneath it.
@@ -705,7 +697,7 @@ func (s *XwalStore) writeStumpBirth(stump string, cbPatch *message.Patch) error 
 	}
 	pb, _ := json.Marshal(patch)
 
-	// THE BOARD PATCH GOES FIRST, and the order is the whole point.
+	// The board patch goes first, and the order is the whole point.
 	next := mainTailOf(x) + 1
 	if _, err := x.Append(chanForm, next, pb, nil); err != nil {
 		return err
@@ -746,7 +738,6 @@ func OutfitVersion(name string, patch message.Patch) (string, error) {
 	return contentVersion(withOutfitName(patch, name))
 }
 
-// LegacyOutfitVersion is OutfitVersion as it was before the name joined the
 // hash. It exists so a listing does not call every aria minted by an older
 // build stale; delete it when no store in use still holds a stump from one.
 func LegacyOutfitVersion(patch message.Patch) (string, error) {
@@ -754,7 +745,6 @@ func LegacyOutfitVersion(patch message.Patch) (string, error) {
 }
 
 // ContentVersion is the value-stable content hash of a patch: an aria's identity
-// is the hash of the patch it was born carrying.
 func ContentVersion(patch message.Patch) (string, error) { return contentVersion(patch) }
 
 // contentVersion is the value-stable content hash of a patch.
@@ -775,13 +765,9 @@ func withOutfitVersion(p message.Patch, ver string) message.Patch {
 }
 
 func withKey(p message.Patch, key, value string) message.Patch {
-	set := make(map[string]json.RawMessage, len(p.Leaves())+1)
-	for k, v := range p.Leaves() {
-		set[k] = v
-	}
 	b, _ := json.Marshal(value)
-	set[key] = b
-	return form.Build(form.Snapshot{}, set, p.Removes())
+	return form.Merge(p, form.Build(form.Snapshot{},
+		map[string]json.RawMessage{key: b}, nil))
 }
 
 // NodeView is a read-only snapshot of an aria (trunk) for listing/lineage.
@@ -789,7 +775,6 @@ type NodeView struct {
 	ID     string
 	Parent string
 	Kind   string
-	// Stump is the outfit node this conversation was BORN under, carried down
 	// the lineage by the topology walk. Not the presentation parent: a promote
 	// moves where a row appears, never where its data came from.
 	Stump      string
@@ -835,7 +820,6 @@ func (s *XwalStore) view(t xwal.TrunkInfo, at map[string]place) NodeView {
 // is parentVec+[k]. Siblings are ordered by id (stable; display re-sorts by
 // recency). The trunk list is passed in so callers compute it once per
 // request (it costs a full disk scan). Caller holds mu.
-// place is where a trunk sits: its fork-tree vector, and the stump it was
 // born under. One map for both, because they are found by the same walk and
 // a second map of the same keys is a second allocation per node.
 type place struct {
@@ -875,7 +859,6 @@ func (s *XwalStore) vectorsLocked(infos []xwal.TrunkInfo) map[string]place {
 	}
 	// One walk, one map. The stump rides alongside the vector: figwal names it
 	// only for a trunk rooted directly at one, so a branch inherits it from the
-	// trunk it forked: down the LINEAGE edge these kids were built from, the
 	// only edge allowed to decide where an aria's data came from (internal/topo).
 	at := make(map[string]place, len(infos))
 	var assign func(id string, prefix []int, from string)
@@ -1098,7 +1081,6 @@ func (s *XwalStore) RemoveLeaf(id string, recursive bool, bury func([]string)) e
 		}
 	}
 	// Which stump hosts it must be read BEFORE the removal (afterwards the
-	// topology no longer knows the two were related) and before the lock:
 	// topologySnapshot takes s.mu itself.
 	stump := s.topologySnapshot().byID[id].Stump
 	if err := s.removeLocked(id, recursive); err != nil {
@@ -1122,7 +1104,6 @@ func (s *XwalStore) RemoveLeaf(id string, recursive bool, bury func([]string)) e
 		}
 	}
 	// The stump goes only if nothing is left wearing it. A detached
-	// survivor no longer counts as a child in the topology, so collecting
 	// on that count alone took the outfit out from under an aria that is
 	// still drawn beneath it.
 	if !keep {
@@ -1147,7 +1128,6 @@ func (s *XwalStore) collectStumpAfterDelete(stump string) {
 }
 
 // survivingHome is the nearest place above id that outlives this delete: the
-// first drawn ancestor still standing, or failing that the outfit it was
 // born under.
 func (s *XwalStore) survivingHome(id string, taken []string) string {
 	doomed := make(map[string]bool, len(taken))
@@ -1210,7 +1190,6 @@ func (s *XwalStore) collectStump(name string) {
 	}
 }
 
-// Normalize makes every aria independent of the arias it is no longer
 // presented under: each one absorbs the history prefix it reads through an
 // ancestor. After it, a delete's boundary is empty whatever the
 // presentation hierarchy says, so nothing is ever owed at delete time.

@@ -15,7 +15,7 @@ func TestLegacyFlatPatchStillApplies(t *testing.T) {
 	raw := []byte(`{"set":{"system.model":"claude-opus-5","mantra":"hello","skills.howto":{"a":1}},"remove":["stale"]}`)
 	var p form.Patch
 	require.NoError(t, json.Unmarshal(raw, &p))
-	require.False(t, p.IsEmpty(), "a flat patch decoded to Identity: history would vanish")
+	require.False(t, p.IsIdentity(), "a flat patch decoded to Identity: history would vanish")
 
 	base := form.FromMap(map[string]json.RawMessage{"stale": json.RawMessage(`"x"`)})
 	got := base.Apply(p)

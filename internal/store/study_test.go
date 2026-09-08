@@ -400,12 +400,12 @@ func TestRetainDeclaredStudiesCoversAnImportedBoard(t *testing.T) {
 	// because each entry is refcounted, and a board naming a study nothing
 	// counted is the unrecoverable direction of §12.2.2, reachable from the
 	// CLI until this key was protected.
-	if _, _, err := be.ApplyFormEffect(imported, form.Creates(map[string]json.RawMessage{StudiesKey: raw}), 0); err == nil {
+	if _, _, err := be.ApplyFormEffect(imported, form.Build(form.Snapshot{}, map[string]json.RawMessage{StudiesKey: raw}, nil), 0); err == nil {
 		t.Fatal("an unprivileged write of system.studies was allowed")
 	}
 	// The harness's own restore (a fork's board copy, an import replaying the
 	// set) is privileged, and THAT is what the participant hook covers.
-	if _, err := be.ApplyFormPrivileged(imported, form.Creates(map[string]json.RawMessage{StudiesKey: raw})); err != nil {
+	if _, err := be.ApplyFormPrivileged(imported, form.Build(form.Snapshot{}, map[string]json.RawMessage{StudiesKey: raw}, nil)); err != nil {
 		t.Fatal(err)
 	}
 	if got := lib.Refs(); got != 1 {

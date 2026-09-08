@@ -71,9 +71,9 @@ func TestAgentClientPresentsCallerAcrossTheSecondHop(t *testing.T) {
 	}
 
 	// A payload-bearing method, with a raw-JSON value that must survive intact.
-	patch := form.Creates(map[string]json.RawMessage{
+	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"mantra": json.RawMessage(`"keep me exact"`),
-	})
+	}, nil)
 	if _, err := cli.Set(context.Background(), patch, 0); err != nil {
 		t.Fatalf("set: %v", err)
 	}

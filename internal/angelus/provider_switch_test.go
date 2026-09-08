@@ -117,9 +117,9 @@ model = "mock-model"
 	waitDone()
 
 	// The switch: form state, no restart.
-	_, err = fcli.Set(ctx, rpc.FormPatchform.Creates(map[string]json.RawMessage{
+	_, err = fcli.Set(ctx, rpc.FormPatchform.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"other"`),
-	}), 0)
+	}, nil), 0)
 	require.NoError(t, err)
 
 	_, _, err = fcli.Qua(ctx, "second", nil)

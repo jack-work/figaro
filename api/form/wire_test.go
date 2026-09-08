@@ -169,7 +169,7 @@ func TestDiff_KeyOrderOnlyChangeIsNotAChange(t *testing.T) {
 	next := prev.Apply(form.Patch{Set: map[string]json.RawMessage{
 		"cfg": json.RawMessage(`{ "b":2, "a":1 }`),
 	}})
-	assert.True(t, next.Diff(prev).IsEmpty(),
+	assert.True(t, next.Diff(prev).IsIdentity(),
 		"a key-order-only rewrite must not read as a change")
 
 	// The original bytes are retained, a no-op write does not perturb
@@ -182,11 +182,11 @@ func TestDiff_KeyOrderOnlyChangeIsNotAChange(t *testing.T) {
 	real := prev.Apply(form.Patch{Set: map[string]json.RawMessage{
 		"cfg": json.RawMessage(`{"a":1,"b":3}`),
 	}})
-	assert.False(t, real.Diff(prev).IsEmpty())
+	assert.False(t, real.Diff(prev).IsIdentity())
 	spelled := prev.Apply(form.Patch{Set: map[string]json.RawMessage{
 		"cfg": json.RawMessage(`{"a":1.0,"b":2}`),
 	}})
-	assert.False(t, spelled.Diff(prev).IsEmpty(), "1 and 1.0 are different edits")
+	assert.False(t, spelled.Diff(prev).IsIdentity(), "1 and 1.0 are different edits")
 }
 
 // --- Clone is now free, and that must not leak mutability ---
@@ -216,7 +216,7 @@ func TestAsPatch(t *testing.T) {
 	// Same shape as diffing against the empty board, which is what this
 	// replaced at the call sites.
 	assert.Equal(t, p, s.Diff(form.Snapshot{}))
-	assert.True(t, form.Snapshot{}.AsPatch().IsEmpty())
+	assert.True(t, form.Snapshot{}.AsPatch().IsIdentity())
 }
 
 // TestSnapshotDirectCodecMatchesEncodingJSON pins the equivalence that

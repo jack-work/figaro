@@ -208,10 +208,10 @@ func TestSpeculativeDispatch_StartsBeforeStreamEnd(t *testing.T) {
 	rec.streamEnded = &prov.streamEnded
 
 	cb, _ := form.Open("")
-	cb.Apply(form.Patchform.Creates(map[string]json.RawMessage{
+	cb.Apply(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"mock"`),
 		"system.provider": json.RawMessage(`"staggered"`),
-	}))
+	}, nil))
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
 		Backend:    testBE,
@@ -296,10 +296,10 @@ func TestSpeculativeDispatch_ResultOrdering(t *testing.T) {
 	}
 
 	cb, _ := form.Open("")
-	cb.Apply(form.Patchform.Creates(map[string]json.RawMessage{
+	cb.Apply(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"mock"`),
 		"system.provider": json.RawMessage(`"staggered"`),
-	}))
+	}, nil))
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
 		Backend:    testBE,
@@ -384,10 +384,10 @@ func TestToolTurn_IRStructure(t *testing.T) {
 	}
 
 	cb, _ := form.Open("")
-	cb.Apply(form.Patchform.Creates(map[string]json.RawMessage{
+	cb.Apply(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"mock"`),
 		"system.provider": json.RawMessage(`"staggered"`),
-	}))
+	}, nil))
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
 		Backend:    testBE,

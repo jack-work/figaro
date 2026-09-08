@@ -41,9 +41,9 @@ func (f *benchForm) PatchesBetween(after, upTo uint64) []message.Patch {
 func benchPatches(n int) []message.Patch {
 	out := make([]message.Patch, n)
 	for i := range out {
-		out[i] = message.Patchform.Creates(map[string]json.RawMessage{
+		out[i] = message.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
 			"brief": json.RawMessage(fmt.Sprintf(`"version %d of the brief"`, i)),
-		})
+		}, nil)
 	}
 	return out
 }

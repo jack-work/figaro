@@ -53,8 +53,8 @@ func TestCatchUpReplaysCachedPrefixSnapshot(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
 	cache := store.NewMemLog[[]json.RawMessage]()
 	p := &Provider{reminder: "tag", Templates: tmpl}
-	oldPatch := form.Creates(map[string]json.RawMessage{"mode": json.RawMessage(`"old"`)})
-	newPatch := form.Creates(map[string]json.RawMessage{"mode": json.RawMessage(`"new"`)})
+	oldPatch := form.Build(form.Snapshot{}, map[string]json.RawMessage{"mode": json.RawMessage(`"old"`)}, nil)
+	newPatch := form.Build(form.Snapshot{}, map[string]json.RawMessage{"mode": json.RawMessage(`"new"`)}, nil)
 
 	first, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleInput, Content: []message.Content{message.TextContent("first")}, Patches: []message.Patch{oldPatch},

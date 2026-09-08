@@ -46,9 +46,9 @@ func crashChild(dir string) {
 	out := bufio.NewWriter(os.Stdout)
 	for i := 0; ; i++ {
 		raw, _ := json.Marshal(fmt.Sprintf("v%d", i))
-		v, err := be.ApplyForm(id, form.Creates(map[string]json.RawMessage{
+		v, err := be.ApplyForm(id, form.Build(form.Snapshot{}, map[string]json.RawMessage{
 			fmt.Sprintf("k%d", i): raw,
-		}))
+		}, nil))
 		if err != nil {
 			continue
 		}

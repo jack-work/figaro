@@ -32,12 +32,12 @@ func ForkReminderTexts(msg message.Message, board form.Snapshot) []string {
 // forkedFrom finds the birth mark in a message's board transitions.
 func forkedFrom(patches []message.Patch) (string, bool) {
 	for _, p := range patches {
-		raw, ok := p.Leaves()[form.ForkedFromKey]
-		if !ok {
+		e, ok := p.Entry(form.ForkedFromKey)
+		if !ok || e.IsRemoval() {
 			continue
 		}
 		var parent string
-		if err := json.Unmarshal(raw, &parent); err != nil {
+		if err := json.Unmarshal(e.New, &parent); err != nil {
 			continue
 		}
 		if parent = strings.TrimSpace(parent); parent != "" {

@@ -69,7 +69,7 @@ func (s *State) Snapshot() Snapshot {
 // Apply advances the state by the patch and returns the new board.
 // Writer-side only: see the concurrency contract on State.
 func (s *State) Apply(p Patch) Snapshot {
-	if p.IsEmpty() {
+	if p.IsIdentity() {
 		return s.load().snapshot
 	}
 	for {
@@ -112,7 +112,6 @@ func (s *State) Save() error {
 		os.Remove(tmp)
 		return fmt.Errorf("form.Save: rename: %w", err)
 	}
-	// Clear dirty only if nothing was published while we were writing. A
 	// failed swap means newer state exists and is legitimately still dirty.
 	s.published.CompareAndSwap(old, &board{snapshot: old.snapshot})
 	return nil

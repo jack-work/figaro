@@ -54,10 +54,10 @@ func TestImportLandsAsAWholeConversation(t *testing.T) {
 		WasID:    "23a5a06d",
 		Mantra:   "a portable aria",
 		Messages: msgs,
-		Form: form.Creates(map[string]json.RawMessage{
+		Form: form.Build(form.Snapshot{}, map[string]json.RawMessage{
 			"mantra":             json.RawMessage(`"a portable aria"`),
 			"system.outfit_name": json.RawMessage(`"opus5-ant"`),
-		}),
+		}, nil),
 	})
 
 	require.NotEmpty(t, resp.FigaroID)

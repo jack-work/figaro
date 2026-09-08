@@ -28,10 +28,10 @@ func TestStumpBirthRecordIsStampedAtItsOwnOutfitPatch(t *testing.T) {
 	}
 	defer be.Close()
 
-	outfit, err := be.CreateOutfit("opus5", form.Creates(map[string]json.RawMessage{
+	outfit, err := be.CreateOutfit("opus5", form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"skills.golang": json.RawMessage(`{"frontmatter":"name: golang"}`),
 		"duke-title":    json.RawMessage(`"Gluck"`),
-	}))
+	}, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,14 +85,14 @@ func TestStumpBirthRecordIsStampedAtItsOwnOutfitPatch(t *testing.T) {
 // bodies and different names are two outfits, and a name is all that can
 // separate two identical folds.
 func TestOutfitVersionCoversTheName(t *testing.T) {
-	body := form.Creates(map[string]json.RawMessage{"x": json.RawMessage(`1`)})
+	body := form.Build(form.Snapshot{}, map[string]json.RawMessage{"x": json.RawMessage(`1`)}, nil)
 
 	a, _ := OutfitVersion("alpha", body)
 	b, _ := OutfitVersion("beta", body)
 	if a == b {
 		t.Fatal("identical bodies under different names must not share a stump")
 	}
-	again, _ := OutfitVersion("alpha", form.Creates(map[string]json.RawMessage{"x": json.RawMessage(` 1 `)}))
+	again, _ := OutfitVersion("alpha", form.Build(form.Snapshot{}, map[string]json.RawMessage{"x": json.RawMessage(` 1 `)}, nil))
 	if again != a {
 		t.Errorf("formatting reached the hash: %s != %s", again, a)
 	}
@@ -112,7 +112,7 @@ func TestStumpNamesItselfWhateverItsIdLooksLike(t *testing.T) {
 	}
 	defer b.Close()
 
-	id, err := b.CreateOutfit("sonn5", form.Creates(map[string]json.RawMessage{"system.model": json.RawMessage(`"m"`)}))
+	id, err := b.CreateOutfit("sonn5", form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.model": json.RawMessage(`"m"`)}, nil))
 	if err != nil {
 		t.Fatal(err)
 	}

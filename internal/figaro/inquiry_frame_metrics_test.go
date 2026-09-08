@@ -36,10 +36,10 @@ import (
 // flat from 100 to 5,000 messages), so the trade is not worth taking.
 func TestInquiryFrameCarriesFreshMetrics(t *testing.T) {
 	cb, _ := form.Open("")
-	cb.Apply(form.Patchform.Creates(map[string]json.RawMessage{
+	cb.Apply(form.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"mock-model-v1"`),
 		"system.provider": json.RawMessage(`"idle-test"`),
-	}))
+	}, nil))
 	testBE, testID := store.NewTestAria(t, "d", message.Patch{})
 	a := figaro.NewAgent(figaro.Config{
 		Backend:    testBE,

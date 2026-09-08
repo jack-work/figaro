@@ -23,13 +23,10 @@ func CheckWritable(p Patch, privileged bool) error {
 	if privileged {
 		return nil
 	}
-	// EVERY LEAF THE PATCH TOUCHES, at whatever depth. A flat patch could
-	// only name top-level keys, so a nested write was invisible to this
-	// check; Keys walks the structure.
 	var bad []string
-	for _, k := range p.Keys() {
-		if systemManaged[k] {
-			bad = append(bad, k)
+	for _, e := range p.Entries() {
+		if systemManaged[e.Key] {
+			bad = append(bad, e.Key)
 		}
 	}
 	if len(bad) == 0 {

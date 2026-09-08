@@ -90,7 +90,7 @@ func diffList(a, b []KeyedValue) Patch {
 			out.Delete = append(out.Delete, it)
 		}
 	}
-	// The window is computed over the sequence AS APPLY WILL SEE IT: after
+	// The window is computed over the sequence AS Apply will see IT: after
 	// creates are appended and deletes removed. Both directions are computed
 	// here because only here are both orders in hand.
 	fwdFrom := intermediate(a, bi, out.Create)
@@ -136,13 +136,11 @@ func keysOf(items []KeyedValue) []string {
 	return out
 }
 
-// windowFor is the PARTIAL WINDOW transforming from into to: the positions
-// where they disagree, widened by one neighbour either side as an anchor.
+// windowFor is the window transforming from into to: the positions where they
+// disagree, widened by one neighbour either side as an anchor.
 //
-// The scan is linear, so moving one item a long way marks every key it passed
-// as moved -- those keys really are in different positions relative to the
-// survivors, and a scan cannot know which single move explains it. A known and
-// accepted approximation.
+// The scan is linear, so moving one item far marks every key it passed as
+// moved. A known approximation.
 func windowFor(from, to []string) *Order {
 	if len(from) != len(to) {
 		return nil

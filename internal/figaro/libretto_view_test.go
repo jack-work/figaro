@@ -21,11 +21,11 @@ import (
 func TestBookkeepingNeverReachesTheModel(t *testing.T) {
 	raw := func(s string) json.RawMessage { return json.RawMessage(s) }
 
-	got := withoutBookkeeping(form.Creates(map[string]json.RawMessage{
+	got := withoutBookkeeping(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"status":              raw(`"merged"`),
 		store.KeyLibrettoAt:   raw(`41`),
 		store.KeyLibrettoRefs: raw(`3`),
-	}))
+	}, nil))
 	if _, ok := got.Leaves()[store.KeyLibrettoAt]; ok {
 		t.Errorf("at survived: %v", got.Set)
 	}
@@ -36,16 +36,16 @@ func TestBookkeepingNeverReachesTheModel(t *testing.T) {
 		t.Errorf("the mirror did not survive: %v", got.Set)
 	}
 
-	alive := withoutBookkeeping(form.Creates(map[string]json.RawMessage{
+	alive := withoutBookkeeping(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		store.KeyLibrettoAlive: raw(`false`),
 		store.KeyLibrettoAt:    raw(`41`),
-	}))
+	}, nil))
 	if string(alive.Leaves()[store.KeyLibrettoAlive]) != `false` {
 		t.Errorf("the death was hidden: %v", alive.Set)
 	}
 
 	// A fold that moved nothing but bookkeeping renders no block at all.
-	if p := withoutBookkeeping(form.Build(form.Snapshot{}, map[string]json.RawMessage{store.KeyLibrettoAt: raw(`42`)}, []string{store.KeyLibrettoRefs})); !p.IsEmpty() {
+	if p := withoutBookkeeping(form.Build(form.Snapshot{}, map[string]json.RawMessage{store.KeyLibrettoAt: raw(`42`)}, []string{store.KeyLibrettoRefs})); !p.IsIdentity() {
 		t.Errorf("pure bookkeeping rendered %v", p)
 	}
 }

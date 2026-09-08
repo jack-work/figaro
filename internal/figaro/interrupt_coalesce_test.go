@@ -69,7 +69,7 @@ func TestCoalesce_CarrierPatchesRideTheCombinedMessage(t *testing.T) {
 
 	b.Send(event{typ: eventUserPrompt, text: "one"})
 	b.Send(event{typ: eventUserPrompt, form: &rpc.FormInput{
-		Patch: ptrPatch(form.Creates(map[string]json.RawMessage{"k": json.RawMessage(`"v"`)})),
+		Patch: ptrPatch(form.Build(form.Snapshot{}, map[string]json.RawMessage{"k": json.RawMessage(`"v"`)}, nil)),
 	}})
 
 	b.CoalesceUserPromptRuns()

@@ -35,10 +35,10 @@ func TestGenerateNumberedFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer backend.Close()
-	outfit, err := backend.CreateOutfit("numbered", form.Creates(map[string]json.RawMessage{
+	outfit, err := backend.CreateOutfit("numbered", form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"copilot"`),
 		"system.model":    json.RawMessage(`"gpt-5.6-sol"`),
-	}))
+	}, nil))
 	if err != nil {
 		t.Fatal(err)
 	}

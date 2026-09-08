@@ -288,7 +288,7 @@ func (h *handlers) formCreate(ctx context.Context, params json.RawMessage) (inte
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	if req.Patch == nil || req.Patch.IsEmpty() {
+	if req.Patch == nil || req.Patch.IsIdentity() {
 		return nil, fmt.Errorf("form.create: a form is born of its patch; an empty one names nothing")
 	}
 	// Dress at the boundary: the request's outfit NAMES fold into keys here,

@@ -38,7 +38,7 @@ func (f *Form) Tombstone(reason string) (uint64, error) {
 		return 0, err
 	}
 	v, _, err := f.ApplyEffectPrivileged(
-		form.Creates(map[string]json.RawMessage{TombstoneKey: raw}), 0)
+		form.Build(form.Snapshot{}, map[string]json.RawMessage{TombstoneKey: raw}, nil), 0)
 	if err != nil {
 		return 0, err
 	}

@@ -26,9 +26,9 @@ func (b *fakeBoard) PatchesBetween(after, upTo uint64) []message.Patch {
 	}
 	var out []message.Patch
 	for b.i < len(b.versions) && b.versions[b.i] <= upTo {
-		out = append(out, form.Creates(map[string]json.RawMessage{
+		out = append(out, form.Build(form.Snapshot{}, map[string]json.RawMessage{
 			fmt.Sprintf("k%d", b.versions[b.i]): json.RawMessage(`1`),
-		}))
+		}, nil))
 		b.i++
 	}
 	return out

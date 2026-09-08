@@ -25,7 +25,7 @@ func TestStudyLifecycleDump(t *testing.T) {
 	defer f.Close()
 
 	set := func(kv map[string]string) {
-		p := message.Patchform.Creates(map[string]json.RawMessage{})
+		p := message.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{}, nil)
 		for k, v := range kv {
 			b, _ := json.Marshal(v)
 			p.Set[k] = b

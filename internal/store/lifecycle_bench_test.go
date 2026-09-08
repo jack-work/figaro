@@ -15,11 +15,11 @@ import (
 // writer, a listing reads a published snapshot), so all four want numbers.
 
 func birthPatch(i int) message.Patch {
-	return message.Patchform.Creates(map[string]json.RawMessage{
+	return message.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"mock"`),
 		"system.model":    json.RawMessage(`"m"`),
 		"mantra":          json.RawMessage(fmt.Sprintf(`"aria-%d"`, i)),
-	})
+	}, nil)
 }
 
 // BenchmarkBirth is `fig new`: mint the outfit node, spawn under it, write the

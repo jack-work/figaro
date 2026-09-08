@@ -100,7 +100,7 @@ func TestMissingOutfitIsOptionalAbsenceButLoadReportsIt(t *testing.T) {
 
 	patch, err := o.LoadOptional("nope")
 	require.NoError(t, err)
-	assert.True(t, patch.IsEmpty())
+	assert.True(t, patch.IsIdentity())
 
 	_, err = o.Load("nope")
 	var missing *outfit.MissingError
@@ -203,7 +203,7 @@ func TestDressPutsOutfitsUnderThePatch(t *testing.T) {
 	// flow can notice a missing provider instead of a missing file.
 	patch, err = o.Dress([]string{"default"}, form.Patch{}, "")
 	require.NoError(t, err)
-	assert.True(t, patch.IsEmpty())
+	assert.True(t, patch.IsIdentity())
 
 	patch, err = o.Dress([]string{"default"}, form.Patch{}, "base")
 	require.NoError(t, err)

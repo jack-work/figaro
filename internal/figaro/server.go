@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jack-work/figaro/api/form"
 	"strings"
 
 	"github.com/jack-work/figaro/api/rpc"
@@ -144,15 +145,19 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 			// fails: with a closure the caller can draw.
 			return nil, outfitError(err)
 		}
-		if applied.IsEmpty() {
+		if applied.IsIdentity() {
 			return rpc.SetResponse{OK: true, Outcome: rpc.OutcomeUnchanged, Version: version}, nil
 		}
 		var keys []string
-		for k := range applied.Leaves() {
+		for _, ent := range applied.Entries() {
+			k := ent.Key
+			if ent.IsRemoval() {
+				continue
+			}
 			keys = append(keys, k)
 		}
 		return rpc.SetResponse{
-			OK: true, Set: keys, Remove: applied.Removes(),
+			OK: true, Set: keys, Remove: removedKeys(applied),
 			Outcome: rpc.OutcomeApplied, Version: version,
 		}, nil
 
@@ -247,6 +252,16 @@ func OutfitClosureWire(c *outfit.Closure) *rpc.OutfitLayer {
 	out := &rpc.OutfitLayer{Name: c.Name, Path: c.Path, Found: c.Found, Cycle: c.Cycle}
 	for _, l := range c.Layers {
 		out.Layers = append(out.Layers, OutfitClosureWire(l))
+	}
+	return out
+}
+
+func removedKeys(p form.Patch) []string {
+	var out []string
+	for _, e := range p.Entries() {
+		if e.IsRemoval() {
+			out = append(out, e.Key)
+		}
 	}
 	return out
 }

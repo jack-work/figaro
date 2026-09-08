@@ -197,7 +197,6 @@ func (l *Libretto) SetRefs(observers []string) error {
 func (l *Libretto) Reclaimable() bool { return l.Refs() == 0 }
 
 // Follow subscribes to the source and folds its patches in, forever, until
-// Close. Register-then-read: the subscription carries the snapshot it was
 // registered at, so nothing between the two is missed.
 func (l *Libretto) Follow(src *Form) error {
 	l.mu.Lock()
@@ -225,9 +224,10 @@ func (l *Libretto) Follow(src *Form) error {
 
 // seed writes the source's whole state as one patch, plus the cursor.
 func (l *Libretto) seed(snap form.Snapshot, at uint64) error {
-	leaves := snap.AsPatch().Leaves()
-	set := make(map[string]json.RawMessage, len(leaves)+1)
-	for k, v := range leaves {
+	entries := snap.AsPatch().Entries()
+	set := make(map[string]json.RawMessage, len(entries)+1)
+	for _, ent := range entries {
+		k, v := ent.Key, ent.New
 		if isLibrettoKey(k) {
 			continue // never mirror another libretto's bookkeeping
 		}
@@ -238,7 +238,7 @@ func (l *Libretto) seed(snap form.Snapshot, at uint64) error {
 		return err
 	}
 	set[KeyLibrettoAt] = raw
-	_, _, err = l.form.ApplyEffectPrivileged(form.Creates(set), 0)
+	_, _, err = l.form.ApplyEffectPrivileged(form.Build(form.Snapshot{}, set, nil), 0)
 	return err
 }
 
@@ -276,8 +276,7 @@ func (l *Libretto) fold(sub *Subscription, stop <-chan struct{}, done chan<- str
 				}
 			}
 			if dead := l.applyBatch(sub, batch); dead {
-				// THE SOURCE DIED, so stop listening -- wym.md:21, and the
-				// half of it that was never built. A subscription outliving
+				// The source died, so stop listening -- wym.md:21, and the
 				// its source pins that Form resident forever: the idle sweep
 				// refuses to evict anything subscribed, correctly, so the
 				// corpse of every studied-and-deleted form would be held for
@@ -321,14 +320,22 @@ func (l *Libretto) applyBatch(sub *Subscription, batch []Event) bool {
 		if ev.Version <= l.At() {
 			continue // duplicate from the register-then-read window
 		}
-		for k, v := range ev.Applied.Leaves() {
+		for _, ent := range ev.Applied.Entries() {
+			k, v := ent.Key, ent.New
+			if ent.IsRemoval() {
+				continue
+			}
 			if isLibrettoKey(k) {
 				continue
 			}
 			set[k] = v
 			delete(removed, k)
 		}
-		for _, k := range ev.Applied.Removes() {
+		for _, ent := range ev.Applied.Entries() {
+			if !ent.IsRemoval() {
+				continue
+			}
+			k := ent.Key
 			if isLibrettoKey(k) {
 				continue
 			}
@@ -337,7 +344,7 @@ func (l *Libretto) applyBatch(sub *Subscription, batch []Event) bool {
 		}
 		// A tombstone on the source is the death notice. The copy stays,
 		// which is what makes a studied form deletable at all.
-		if _, isDead := ev.Applied.Leaves()[TombstoneKey]; isDead {
+		if _, isDead := ev.Applied.Entry(TombstoneKey); isDead {
 			dead = true
 		}
 		last = maxVersion(last, ev.Version)
@@ -417,7 +424,7 @@ func librettoPatch(kv map[string]any) message.Patch {
 		}
 		set[k] = raw
 	}
-	return form.Creates(set)
+	return form.Build(form.Snapshot{}, set, nil)
 }
 
 // refsOf reads the backref set. A libretto written before the set existed

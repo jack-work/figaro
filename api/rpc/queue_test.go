@@ -58,7 +58,7 @@ func TestQueuedPrompt_DrainedPayloadKeepsForm(t *testing.T) {
 		Text:  "with state",
 		State: rpc.QueueStateQueued,
 		Form: &rpc.FormInput{
-			Patch: ptrPatch(form.Creates(map[string]json.RawMessage{"mantra": json.RawMessage(`"x"`)})),
+			Patch: ptrPatch(form.Build(form.Snapshot{}, map[string]json.RawMessage{"mantra": json.RawMessage(`"x"`)}, nil)),
 		},
 	})
 }

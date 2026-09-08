@@ -100,18 +100,15 @@ func (h *handlers) castForHub(ariaID string, req rpc.CastRequest) (rpc.CastRespo
 	}
 	res := rpc.CastResponse{RoleID: req.FormID}
 
-	if req.RolePatch != nil && !req.RolePatch.IsEmpty() {
+	if req.RolePatch != nil && !req.RolePatch.IsIdentity() {
 		patch := *req.RolePatch
-		set := make(map[string]json.RawMessage, len(patch.Leaves())+1)
-		for k, v := range patch.Leaves() {
-			set[k] = v
-		}
+		set := map[string]json.RawMessage{}
 		raw, err := json.Marshal(ariaID)
 		if err != nil {
 			return res, err
 		}
 		set["target-aria"] = raw
-		id, _, err := b.CreateForm("", form.Build(form.Snapshot{}, set, patch.Removes()))
+		id, _, err := b.CreateForm("", form.Merge(patch, form.Build(form.Snapshot{}, set, nil)))
 		if err != nil {
 			return res, fmt.Errorf("cast: mint role: %w", err)
 		}
@@ -138,7 +135,7 @@ func (h *handlers) castForHub(ariaID string, req rpc.CastRequest) (rpc.CastRespo
 		if err != nil {
 			return res, err
 		}
-		if _, err := b.ApplyForm(res.RoleID, form.Creates(map[string]json.RawMessage{"target-aria": raw})); err != nil {
+		if _, err := b.ApplyForm(res.RoleID, form.Build(form.Snapshot{}, map[string]json.RawMessage{"target-aria": raw}, nil)); err != nil {
 			return res, fmt.Errorf("cast: point %s here (study registered, partial): %w", res.RoleID, err)
 		}
 		res.Patched = true

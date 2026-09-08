@@ -79,7 +79,7 @@ func ParseSet(text string) (form.Patch, error) {
 	if len(set) == 0 {
 		return form.Patch{}, nil
 	}
-	return form.Creates(set), nil
+	return form.Build(form.Snapshot{}, set, nil), nil
 }
 
 // ParseDelete reads the `-D` syntax: comma-separated key paths to remove.
@@ -112,7 +112,7 @@ func (o *Outfitter) Dress(names []string, patch form.Patch, defaultName string) 
 	if len(names) == 0 {
 		return patch, nil
 	}
-	layered := map[string]json.RawMessage{}
+	var layered form.Patch
 	for _, n := range names {
 		var folded form.Patch
 		var err error
@@ -124,16 +124,9 @@ func (o *Outfitter) Dress(names []string, patch form.Patch, defaultName string) 
 		if err != nil {
 			return form.Patch{}, err
 		}
-		for k, v := range folded.Leaves() {
-			layered[k] = v
-		}
+		layered = form.Merge(layered, folded)
 	}
-	// Layers compose as key sets -- that is what an outfit IS -- and become a
-	// patch once, at the boundary.
-	for k, v := range patch.Leaves() {
-		layered[k] = v
-	}
-	return form.Build(form.Snapshot{}, layered, patch.Removes()), nil
+	return form.Merge(layered, patch), nil
 }
 
 // defaults folds what config calls the default outfit, leniently.
@@ -145,17 +138,15 @@ func (o *Outfitter) defaults(defaultName string) (form.Patch, error) {
 	if err != nil {
 		return form.Patch{}, err
 	}
-	out := map[string]json.RawMessage{}
+	var out form.Patch
 	for _, n := range names {
 		folded, ferr := o.LoadOptional(n)
 		if ferr != nil {
 			return form.Patch{}, ferr
 		}
-		for k, v := range folded.Leaves() {
-			out[k] = v
-		}
+		out = form.Merge(out, folded)
 	}
-	return form.Creates(out), nil
+	return out, nil
 }
 
 // Names folds a list of outfit names, in order.
@@ -173,7 +164,7 @@ func (o *Outfitter) Names(names ...string) (form.Patch, error) {
 	if len(set) == 0 {
 		return form.Patch{}, nil
 	}
-	return form.Creates(set), nil
+	return form.Build(form.Snapshot{}, set, nil), nil
 }
 
 func (o *Outfitter) nameKeys(name string) (map[string]json.RawMessage, error) {
@@ -184,7 +175,13 @@ func (o *Outfitter) nameKeys(name string) (map[string]json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	return patch.Leaves(), nil
+	keys := map[string]json.RawMessage{}
+	for _, e := range patch.Entries() {
+		if !e.IsRemoval() {
+			keys[e.Key] = e.New
+		}
+	}
+	return keys, nil
 }
 
 // literalKeys reads a JSON object term. `layers` inside a literal pulls in
@@ -271,9 +268,6 @@ func ValidName(name string) error {
 }
 
 // splitTerms splits on commas that are not inside quotes, braces or brackets.
-// Unbalanced structure is an error rather than a mode: a stray `}` used to
-// drive depth negative and a stray `"` used to flip quoting on, and from there
-// the commas stopped separating and the whole tail arrived as one "name".
 func splitTerms(text string) ([]string, error) {
 	var (
 		out   []string

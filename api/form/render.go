@@ -76,7 +76,7 @@ func LoadOverrideTemplates(base *template.Template, dir string) (*template.Templ
 // body so new form data is visible by default without needing
 // a hand-rolled template per key.
 func Render(p Patch, prev Snapshot, tmpls *template.Template) ([]RenderedEntry, error) {
-	if p.IsEmpty() {
+	if p.IsIdentity() {
 		return nil, nil
 	}
 	// The limits come off the SAME point-in-time board this render is

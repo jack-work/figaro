@@ -28,7 +28,7 @@ func TestStudyIncantationRidesEachEvent(t *testing.T) {
 	}
 
 	moved := message.Message{
-		StudyPatches: map[string][]message.Patch{"@f": {form.Creates(map[string]json.RawMessage{"k": json.RawMessage(`"v"`)})}},
+		StudyPatches: map[string][]message.Patch{"@f": {form.Build(form.Snapshot{}, map[string]json.RawMessage{"k": json.RawMessage(`"v"`)}, nil)}},
 		StudyAt:      map[string]uint64{"@f": 3},
 	}
 	if s := strings.Join(provider.StudyReminderTexts(moved, board), ""); !strings.Contains(s, `"say":"MOVED"`) {
@@ -47,7 +47,7 @@ func TestStudyIncantationRidesEachEvent(t *testing.T) {
 func TestStudyBlocksUnchangedWithoutIncantation(t *testing.T) {
 	msg := message.Message{
 		Study:        &message.StudyMark{FormID: "@f", Began: true},
-		StudyPatches: map[string][]message.Patch{"@f": {form.Creates(map[string]json.RawMessage{"k": json.RawMessage(`"v"`)})}},
+		StudyPatches: map[string][]message.Patch{"@f": {form.Build(form.Snapshot{}, map[string]json.RawMessage{"k": json.RawMessage(`"v"`)}, nil)}},
 		StudyAt:      map[string]uint64{"@f": 3},
 	}
 	bare := strings.Join(provider.StudyReminderTexts(msg, form.Snapshot{}), "\n")
@@ -77,17 +77,17 @@ func TestStudyBlockSurvivesMalformedIncantation(t *testing.T) {
 
 func TestForkIncantationRendersOnlyOnTheBirthPatch(t *testing.T) {
 	board := incantBoard(t, form.ForkIncantationKey, `"you are a branch"`)
-	born := message.Message{Patches: []message.Patch{form.Creates(map[string]json.RawMessage{
+	born := message.Message{Patches: []message.Patch{form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		form.ForkedFromKey: json.RawMessage(`"abc123"`),
-	})}}
+	}, nil)}}
 	s := strings.Join(provider.ForkReminderTexts(born, board), "")
 	if !strings.Contains(s, `"say":"you are a branch"`) || !strings.Contains(s, `"forked_from":"abc123"`) {
 		t.Fatalf("the fork block must carry the phrase and the parent: %s", s)
 	}
 
-	ordinary := message.Message{Patches: []message.Patch{form.Creates(map[string]json.RawMessage{
+	ordinary := message.Message{Patches: []message.Patch{form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		"mantra": json.RawMessage(`"hello"`),
-	})}}
+	}, nil)}}
 	if got := provider.ForkReminderTexts(ordinary, board); len(got) != 0 {
 		t.Fatalf("an ordinary patch is not a fork: %v", got)
 	}
@@ -97,9 +97,9 @@ func TestForkIncantationRendersOnlyOnTheBirthPatch(t *testing.T) {
 // told they were forked; turning that on for everyone who never asked would
 // put a new block in every branch in the store.
 func TestForkSilentWithoutIncantation(t *testing.T) {
-	born := message.Message{Patches: []message.Patch{form.Creates(map[string]json.RawMessage{
+	born := message.Message{Patches: []message.Patch{form.Build(form.Snapshot{}, map[string]json.RawMessage{
 		form.ForkedFromKey: json.RawMessage(`"abc123"`),
-	})}}
+	}, nil)}}
 	if got := provider.ForkReminderTexts(born, form.Snapshot{}); len(got) != 0 {
 		t.Fatalf("no incantation must render nothing, got %v", got)
 	}

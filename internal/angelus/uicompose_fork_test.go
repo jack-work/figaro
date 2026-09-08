@@ -28,8 +28,8 @@ func TestAForkBelowATurnBoundaryServesItsOwnContent(t *testing.T) {
 	}
 	defer be.Close()
 
-	parent, _, err := be.ForkWith("", 0, form.Creates(map[string]json.RawMessage{
-		"aria_id": json.RawMessage(`"p"`)}))
+	parent, _, err := be.ForkWith("", 0, form.Build(form.Snapshot{}, map[string]json.RawMessage{
+		"aria_id": json.RawMessage(`"p"`)}, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,8 +129,8 @@ func TestABracketThatCutsATurnComposesItWhole(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer be.Close()
-	id, _, err := be.ForkWith("", 0, form.Creates(map[string]json.RawMessage{
-		"aria_id": json.RawMessage(`"a"`)}))
+	id, _, err := be.ForkWith("", 0, form.Build(form.Snapshot{}, map[string]json.RawMessage{
+		"aria_id": json.RawMessage(`"a"`)}, nil))
 	if err != nil {
 		t.Fatal(err)
 	}

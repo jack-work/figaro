@@ -53,7 +53,7 @@ func benchAgent(b *testing.B, configDir string, initial form.Patch) *figaro.Agen
 	if err != nil {
 		b.Fatal(err)
 	}
-	if !initial.IsEmpty() {
+	if !initial.IsIdentity() {
 		cb.Apply(initial)
 	}
 	testBE, testID := store.NewTestAria(b, "d", message.Patch{})

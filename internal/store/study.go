@@ -313,7 +313,7 @@ func (b *XwalBackend) setStudies(observerID string, ids []string, ifVersion uint
 		return 0, err
 	}
 	version, _, err := b.ApplyFormEffectPrivilegedIf(observerID,
-		form.Creates(map[string]json.RawMessage{StudiesKey: raw}), ifVersion)
+		form.Build(form.Snapshot{}, map[string]json.RawMessage{StudiesKey: raw}, nil), ifVersion)
 	return version, err
 }
 

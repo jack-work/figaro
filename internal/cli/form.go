@@ -49,7 +49,7 @@ func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string) {
 		topValue, ifVersion = merged, version
 	}
 
-	patch := form.Creates(map[string]json.RawMessage{top: topValue})
+	patch := form.Build(form.Snapshot{}, map[string]json.RawMessage{top: topValue}, nil)
 	resp := mustCallSet(loaded, ariaID, patch, ifVersion)
 	fmt.Fprintf(stderrw, "%s %s = %s (figaro %s)%s\n",
 		resp.verb("set"), keyArg, value, resp.figaroID, resp.at())
@@ -70,7 +70,7 @@ func runFormSet(loaded *config.Loaded, ariaID string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if patch.IsEmpty() {
+	if patch.IsIdentity() {
 		return fmt.Errorf("form set: %q sets nothing", strings.Join(args, " "))
 	}
 	resp := mustCallSet(loaded, ariaID, patch, 0)

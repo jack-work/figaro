@@ -114,7 +114,7 @@ func (v patchAt) PatchesBetween(after, upTo uint64) []message.Patch {
 	if uint64(v) <= after || uint64(v) > upTo {
 		return nil
 	}
-	return []message.Patch{form.Creates(map[string]json.RawMessage{"role-purpose": json.RawMessage(`"carry the razor"`)})}
+	return []message.Patch{form.Build(form.Snapshot{}, map[string]json.RawMessage{"role-purpose": json.RawMessage(`"carry the razor"`)}, nil)}
 }
 
 // GLUCK'S OWN EXAMPLE, 2026-08-20, as the specification:
@@ -186,9 +186,9 @@ type patchesEvery struct{}
 func (patchesEvery) PatchesBetween(after, upTo uint64) []message.Patch {
 	var out []message.Patch
 	for v := after + 1; v <= upTo; v++ {
-		out = append(out, message.Patchform.Creates(map[string]json.RawMessage{
+		out = append(out, message.Patchform.Build(form.Snapshot{}, map[string]json.RawMessage{
 			"k": json.RawMessage(`"v"`),
-		}))
+		}, nil))
 	}
 	return out
 }

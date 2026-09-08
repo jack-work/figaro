@@ -27,7 +27,7 @@ type dressing struct {
 }
 
 func (d dressing) IsEmpty() bool {
-	return len(d.names) == 0 && (d.patch == nil || d.patch.IsEmpty())
+	return len(d.names) == 0 && (d.patch == nil || d.patch.IsIdentity())
 }
 
 // label is the text, shortened. A literal can be kilobytes; a notice that
@@ -73,7 +73,7 @@ func parseDress(outfits, set, del string) (dressing, error) {
 		texts = append(texts, "-"+del)
 	}
 	patch = form.Build(form.Snapshot{}, keys, drops)
-	if !patch.IsEmpty() {
+	if !patch.IsIdentity() {
 		d.patch = &patch
 	}
 	d.text = strings.Join(texts, " ")

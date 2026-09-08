@@ -47,7 +47,7 @@ func oldRenderLoop(s Snapshot, patches []Patch, tmpls *template.Template) ([]str
 func foldCorpus(t *testing.T) [][]Patch {
 	t.Helper()
 	set := func(kv ...string) Patch {
-		p := Creates(map[string]json.RawMessage{})
+		p := Build(Snapshot{}, map[string]json.RawMessage{}, nil)
 		for i := 0; i+1 < len(kv); i += 2 {
 			b, err := json.Marshal(kv[i+1])
 			if err != nil {
@@ -174,8 +174,8 @@ func TestFoldRenderSeesTheBoardBeforeEachPatch(t *testing.T) {
 	tmpls := orderSensitiveTemplates(t)
 	board := FromMap(map[string]json.RawMessage{"mantra": json.RawMessage(`"first"`)})
 	patches := []Patch{
-		Creates(map[string]json.RawMessage{"mantra": json.RawMessage(`"second"`)}),
-		Creates(map[string]json.RawMessage{"mantra": json.RawMessage(`"third"`)}),
+		Build(Snapshot{}, map[string]json.RawMessage{"mantra": json.RawMessage(`"second"`)}, nil),
+		Build(Snapshot{}, map[string]json.RawMessage{"mantra": json.RawMessage(`"third"`)}, nil),
 	}
 	var bodies []string
 	final := FoldRender(board, patches, tmpls,
