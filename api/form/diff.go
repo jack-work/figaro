@@ -195,21 +195,7 @@ func windowFor(from, to []string) *Order {
 }
 
 // asObject reports the value as a JSON object, and false for anything else.
-func asObject(v Value) (map[string]Value, bool) {
-	raw := v.Raw()
-	if len(raw) == 0 || firstToken(raw) != '{' {
-		return nil, false
-	}
-	var m map[string]json.RawMessage
-	if json.Unmarshal(raw, &m) != nil {
-		return nil, false
-	}
-	out := make(map[string]Value, len(m))
-	for k, r := range m {
-		out[k] = NewValue(r)
-	}
-	return out, true
-}
+func asObject(v Value) (map[string]Value, bool) { return v.members() }
 
 // asList reports the value as a KEYED list. A bare JSON array is NOT one: its
 // elements have no identity, so it is a scalar and changes wholesale. Keys are

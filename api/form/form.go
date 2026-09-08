@@ -198,12 +198,7 @@ func Additive(s Snapshot, p Patch) Patch {
 
 // SetPath returns a snapshot with key set to v, creating intermediate objects.
 func (s Snapshot) SetPath(key string, v json.RawMessage) Snapshot {
-	flat := map[string]json.RawMessage{}
-	for k, val := range s.All() {
-		flat[k] = val
-	}
-	flat[key] = v
-	return FromMap(flat)
+	return Snapshot{root: setIn(s.Root(), strings.Split(key, "."), NewValue(v))}
 }
 
 // DeletePath returns a snapshot without key.
@@ -455,4 +450,36 @@ func encodeRawObject(m map[string]json.RawMessage) []byte {
 		b = append(b, v...)
 	}
 	return append(b, '}')
+}
+
+// setIn rebuilds only the path to the leaf, sharing every subtree it does not
+// touch. Where a segment lands on a leaf, the rest of the path stays whole:
+// the key names one thing whose own name contains a dot.
+func setIn(node Value, segs []string, v Value) Value {
+	if len(segs) == 0 {
+		return v
+	}
+	members, isObj := node.members()
+	next := make(map[string]json.RawMessage, len(members)+1)
+	for k, m := range members {
+		next[k] = m.Raw()
+	}
+	if !isObj {
+		next = map[string]json.RawMessage{}
+	}
+	if len(segs) == 1 {
+		next[segs[0]] = v.Raw()
+		return NewValue(encodeRawObject(next))
+	}
+	child, exists := members[segs[0]]
+	if exists {
+		if _, childIsObj := child.members(); !childIsObj {
+			next[strings.Join(segs, ".")] = v.Raw()
+			return NewValue(encodeRawObject(next))
+		}
+	} else {
+		child = NewValue(json.RawMessage(`{}`))
+	}
+	next[segs[0]] = setIn(child, segs[1:], v).Raw()
+	return NewValue(encodeRawObject(next))
 }
