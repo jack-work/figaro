@@ -34,6 +34,25 @@ func diffObject(a, b map[string]Value) Patch {
 		av, had := a[k]
 		switch {
 		case !had:
+			// A new key whose value is an object is described by the leaves
+			// it introduces, not by the subtree as one blob. Set of a subtree
+			// replaces whatever the board already holds there, so two patches
+			// that add different fields under the same parent would clobber
+			// each other.
+			if inner, isObj := asObject(bv); isObj && len(inner) > 0 {
+				child := diffObject(map[string]Value{}, inner)
+				if !child.IsIdentity() {
+					if out.Update == nil {
+						out.Update = map[string]Patch{}
+					}
+					if out.New == nil {
+						out.New = map[string]bool{}
+					}
+					out.Update[k] = child
+					out.New[k] = true
+					continue
+				}
+			}
 			if out.Set == nil {
 				out.Set = map[string]Value{}
 			}
