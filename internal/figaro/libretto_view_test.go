@@ -3,6 +3,7 @@ package figaro
 import (
 	"encoding/json"
 	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/message"
 	"strings"
 	"testing"
 
@@ -63,8 +64,8 @@ func TestStrippingDoesNotEditHistory(t *testing.T) {
 	if _, ok := original.Entry(store.KeyLibrettoAt); !ok {
 		t.Errorf("the store's own patch lost a key: %v", original.Entries())
 	}
-	if len(original.Entries()) != 2 {
-		t.Errorf("the store's own removes were rewritten: %v", original.Entries())
+	if n := countRemovals(original); n != 2 {
+		t.Errorf("the store's own removes were rewritten: %d, %v", n, original.Entries())
 	}
 }
 
@@ -96,4 +97,14 @@ type kindBackend struct {
 
 func (b kindBackend) Node(id string) (store.NodeView, bool) {
 	return store.NodeView{ID: id, Kind: b.kind}, true
+}
+
+func countRemovals(p message.Patch) int {
+	n := 0
+	for _, e := range p.Entries() {
+		if e.IsRemoval() {
+			n++
+		}
+	}
+	return n
 }

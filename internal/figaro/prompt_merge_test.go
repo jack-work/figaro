@@ -87,8 +87,14 @@ func TestMergePromptEvents_MergesFormInQueueOrder(t *testing.T) {
 	if string(mustEntry(*cb.Patch, "model")) != `"new"` {
 		t.Errorf("later value must win: model = %s", mustEntry(*cb.Patch, "model"))
 	}
-	if len(cb.Patch.Entries()) != 2 {
-		t.Errorf("removals must accumulate, got %v", cb.Patch.Entries())
+	removed := 0
+	for _, e := range cb.Patch.Entries() {
+		if e.IsRemoval() {
+			removed++
+		}
+	}
+	if removed != 2 {
+		t.Errorf("removals must accumulate, got %d: %v", removed, cb.Patch.Entries())
 	}
 }
 
