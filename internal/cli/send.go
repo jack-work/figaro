@@ -476,7 +476,7 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 		opts.forget = true
 	}
 
-	set := renderSettings{verbose: opts.verbose, listen: opts.listen, record: opts.record}
+	set := renderSettings{verbose: opts.verbose, listen: opts.listen, record: opts.record, coordFormat: loaded.CoordFormat()}
 
 	// `send <trunk>:<turn>`: fork at that turn, then send. The message lands
 	// on whichever trunk we end up attended to: the new alternative by default

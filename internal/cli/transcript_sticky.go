@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/jack-work/figaro/internal/livelog/aria"
+	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/term"
 )
 
@@ -25,11 +26,15 @@ func (t *transcript) sticky() bool {
 	return ok && view.settings != nil && view.settings.sticky
 }
 
-// headRows is the chrome reserved above the body. It does not vary with scroll
-// position: a header that changed height as the reader moved would change the
-// body height, and with it the offset it is derived from.
+// headRows is the chrome above the body: the question's rows and the rule
+// under them, or nothing at all. Blank rows are not reserved for a header that
+// has nothing to pin, so the conversation keeps the whole pane whenever the
+// question it belongs to is already on screen.
 func (t *transcript) headRows() int {
 	if !t.sticky() {
+		return 0
+	}
+	if len(t.stickyRows()) == 0 {
 		return 0
 	}
 	return stickyText + 1
@@ -110,39 +115,58 @@ func (t *transcript) stickyTurn() (turn, above int) {
 	return turn, above
 }
 
-// stickyLines is the header as painted: the head of the question, and the rule
-// under it. The head and not the rows nearest the body, because a question cut
-// at an arbitrary row and continued below a rule reads as two broken
-// paragraphs rather than as one question the reader is inside.
-func (t *transcript) stickyLines(hl string, sel selectionSpan) []string {
-	if t.headRows() == 0 {
+// stickyRows is the question the header pins: its own rows, the ones the block
+// itself is composed from, and never a chunk out of the middle of it. Empty
+// when the block is on screen or when what would be pinned has not left the
+// body yet, and the header takes no room at all in that case.
+func (t *transcript) stickyRows() []transcriptRow {
+	if !t.sticky() {
 		return nil
 	}
-	out := make([]string, t.headRows())
 	turn, above := t.stickyTurn()
 	if above == 0 {
-		return out
+		return nil
 	}
 	q := t.stickyBlockOf(turn)
 	if q.empty() {
-		return out
+		return nil
 	}
 	high := min(q.textLo+stickyText, q.textHigh)
-	// The header may only show what the body no longer does, so it waits until
-	// the rows it would pin have left.
+	// The header may only show what the body no longer does, or the question
+	// would stand twice on one screen.
 	if above < high {
-		return out
+		return nil
 	}
-	rows := q.rows[q.textLo:high]
+	return q.rows[q.textLo:high]
+}
+
+// stickyLines is the header as painted: the head of the question, its address
+// against the right edge, and the rule under them. The head and not the rows
+// nearest the body, because a question cut at an arbitrary row and continued
+// below a rule reads as two broken paragraphs rather than as one question the
+// reader is inside.
+func (t *transcript) stickyLines(hl string, sel selectionSpan) []string {
+	rows := t.stickyRows()
+	if len(rows) == 0 {
+		return nil
+	}
+	turn, _ := t.stickyTurn()
+	q := t.stickyBlockOf(turn)
+	out := make([]string, 0, stickyText+1)
+	for range stickyText - len(rows) {
+		out = append(out, "")
+	}
 	for i, r := range rows {
 		line := t.rowLine(r, hl, sel)
-		if i == len(rows)-1 && high < q.textHigh {
+		if i == len(rows)-1 && q.textLo+len(rows) < q.textHigh {
 			line = stickyClip(line, t.w)
 		}
-		out[stickyText-len(rows)+i] = line
+		out = append(out, line)
 	}
-	out[len(out)-1] = t.transRule()
-	return out
+	// The pinned question stands out of its place in the conversation, so it
+	// carries its address the way ^O draws every other one.
+	out[0] = ldrender.OverlayRight(out[0], term.Dim(coordLabel(turn, inquiryNode, 0, t.coordFormat())), t.w)
+	return append(out, t.transRule())
 }
 
 // stickyClip marks a row as the last of the question the header could fit.

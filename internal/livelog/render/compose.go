@@ -18,10 +18,13 @@ const (
 	BlockInquiry = -1 // the turn's opening question (aria.Message.Inquiry)
 )
 
-// Row is one composed row and the block it belongs to.
+// Row is one composed row and the block it belongs to. Mark is the block's
+// address, carried by its first row for a surface that draws addresses: it
+// rides the right edge at paint time, so turning it on moves nothing.
 type Row struct {
 	Text  string
 	Block int
+	Mark  string
 }
 
 // Composer turns one message into rows.
@@ -31,7 +34,9 @@ type Composer struct {
 	Header func(role string) string // voice header, e.g. "< figaro"
 	Rule   func() string            // the separator between the two voices
 	Sender func(string) string      // styles a segment's attribution
-	Coord  func(block int, n livedoc.Node) string
+	// Mark is a block's address, drawn against the right edge of its first
+	// row. nil draws none.
+	Mark func(block int, n livedoc.Node) string
 
 	// Expanded reports whether a block draws in its expanded form. Only the
 	// pager has an expansion gesture; nil means "the view's default".
@@ -109,13 +114,12 @@ func (c Composer) Nodes(nodes []livedoc.Node, w int) []Row {
 		if len(rows) > 0 {
 			rows = append(rows, chrome(""))
 		}
-		if c.Coord != nil {
-			if l := c.Coord(k, n); l != "" {
-				rows = append(rows, Row{Text: clip(l, w), Block: k})
-			}
-		}
+		first := len(rows)
 		for _, l := range c.render(n, w, k) {
 			rows = append(rows, Row{Text: clip(l, w), Block: k})
+		}
+		if c.Mark != nil && len(rows) > first {
+			rows[first].Mark = c.Mark(k, n)
 		}
 		// The node's form deltas, below the block it explains and sharing
 		// its Block coordinate: selected and yanked alongside the node, not
@@ -152,23 +156,23 @@ func (c Composer) Inquiry(inquiry string, segments []aria.InquirySegment, w int)
 	if h := c.head(livedoc.RoleInput); h != "" {
 		rows = append(rows, chrome(h), chrome(""))
 	}
-	if c.Coord != nil {
-		if l := c.Coord(BlockInquiry, livedoc.Node{}); l != "" {
-			rows = append(rows, Row{Text: clip(l, w), Block: BlockInquiry})
-		}
-	}
+	first := len(rows)
 	if len(segments) == 0 {
-		return append(rows, prose(inquiry, w, BlockInquiry)...)
+		rows = append(rows, prose(inquiry, w, BlockInquiry)...)
+	} else {
+		for k, seg := range segments {
+			if k > 0 {
+				rows = append(rows, Row{Text: "", Block: BlockInquiry})
+			}
+			if seg.Sender != "" && c.Sender != nil {
+				// Indented to sit under the prose, which render.Prose insets.
+				rows = append(rows, Row{Text: clip(c.Sender("  "+seg.Sender), w), Block: BlockInquiry})
+			}
+			rows = append(rows, prose(seg.Text, w, BlockInquiry)...)
+		}
 	}
-	for k, seg := range segments {
-		if k > 0 {
-			rows = append(rows, Row{Text: "", Block: BlockInquiry})
-		}
-		if seg.Sender != "" && c.Sender != nil {
-			// Indented to sit under the prose, which render.Prose insets.
-			rows = append(rows, Row{Text: clip(c.Sender("  "+seg.Sender), w), Block: BlockInquiry})
-		}
-		rows = append(rows, prose(seg.Text, w, BlockInquiry)...)
+	if c.Mark != nil && len(rows) > first {
+		rows[first].Mark = c.Mark(BlockInquiry, livedoc.Node{})
 	}
 	return rows
 }

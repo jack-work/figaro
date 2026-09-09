@@ -84,6 +84,10 @@ type selectionCopyPlan struct {
 type transcriptRow struct {
 	text string
 	ref  nodeRef
+	// mark is the block's address, carried by its first row and drawn against
+	// the right edge only while ^O is on. It rides the row rather than taking
+	// one of its own, so toggling it moves nothing and invalidates no cache.
+	mark string
 }
 
 // searchText is the row's text as the reader sees it. Node rows carry no

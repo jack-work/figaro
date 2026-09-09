@@ -101,6 +101,11 @@ type CLIConfig struct {
 	// CI / scripted invocations that prefer not to deal with raw mode.
 	Interactive *bool `toml:"interactive"`
 
+	// CoordFormat is the time layout the pager's coordinates use (^O): a Go
+	// reference layout. Default "02/01/06 15:04:05", which reads dd/mm/yy
+	// hh:mm:ss.
+	CoordFormat *string `toml:"coord_format"`
+
 	// StreamCPS is the pacer's target chars/sec. 0 disables pacing.
 	// Pointer to distinguish unset (default) from explicit 0.
 	StreamCPS *int `toml:"stream_cps"`
@@ -667,6 +672,17 @@ func (l *Loaded) RefSigil() (string, error) {
 	return "", fmt.Errorf("config: ref_sigil must be \"@\" or \":\", got %q", s)
 }
 
+// CoordFormatDefault reads dd/mm/yy hh:mm:ss.
+const CoordFormatDefault = "02/01/06 15:04:05"
+
+// CoordFormat returns the time layout the pager's coordinates use.
+func (l *Loaded) CoordFormat() string {
+	if l.Config.CLI.CoordFormat == nil || *l.Config.CLI.CoordFormat == "" {
+		return CoordFormatDefault
+	}
+	return *l.Config.CLI.CoordFormat
+}
+
 // StreamCPS returns the pacer rate. Default 200.
 func (l *Loaded) StreamCPS() int {
 	if l.Config.CLI.StreamCPS == nil {
@@ -889,6 +905,9 @@ func Load(configDir string) (*Loaded, error) {
 		}
 		if c.Interactive == nil {
 			c.Interactive = preSection.Interactive
+		}
+		if c.CoordFormat == nil {
+			c.CoordFormat = preSection.CoordFormat
 		}
 		if c.StreamCPS == nil {
 			c.StreamCPS = preSection.StreamCPS

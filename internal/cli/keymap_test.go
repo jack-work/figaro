@@ -359,7 +359,7 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  m                   more: state names, model, last interaction",
 		"  (in :) ^V           paste the clipboard",
 		"  ^N/^P               select next/previous node",
-		"  ^N/^P + Shift       extend node selection (with s: travel between questions)",
+		"  ^N/^P + Shift       travel between questions (Alt+^N/^P extends a selection)",
 		"  Enter               expand tools within the selection",
 		"  Esc                 clear selection / close panel",
 		"  ^L                  open the transcript (stays open until you close it)",

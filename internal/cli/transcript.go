@@ -1161,29 +1161,19 @@ func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 		// 3/4 of the retained row text, and of the bytes each painted frame puts
 		// on the wire. It is applied here, on the way into the cache, so the
 		// saving is paid once and collected on every frame; see sgr.go.
-		rows = append(rows, transcriptRow{text: sgrCollapse(plainNodeRow(r.Text, t.w)), ref: ref})
+		rows = append(rows, transcriptRow{text: sgrCollapse(plainNodeRow(r.Text, t.w)), ref: ref, mark: r.Mark})
 	}
 	return cachedMessage{rows: rows}
 }
 
 // composer is the pager's composition: the shared shape, plus the two things
-// only the pager has: the Ctrl-O coordinate row above each block, and the
-// per-block expansion state a gesture toggles.
+// only the pager has: each block's address, and the per-block expansion state a
+// gesture toggles.
 func (t *transcript) composer(m aria.Message) ldrender.Composer {
-	sender := dimSender
-	if t.sticky() {
-		// The turn's own index, beside the name of whoever asked: with a
-		// question pinned out of its place in the conversation, the address is
-		// what says where it came from.
-		turn := m.Turn
-		sender = func(name string) string {
-			return dimSender(strconv.Itoa(turn) + " " + strings.TrimLeft(name, " "))
-		}
-	}
 	c := ldrender.Composer{
 		// The pager is the surface where Enter means something, so its view
 		// may open arguments as well as output (see ariaView.gesture).
-		View: pagerView(t.view), Header: messageHeader, Rule: t.transRule, Sender: sender, Tick: t.tick,
+		View: pagerView(t.view), Header: messageHeader, Rule: t.transRule, Sender: dimSender, Tick: t.tick,
 		Expanded: func(block int) bool { return t.expanded[nodeRefAt(m, block)] },
 		// Deltas share the node's expansion gesture: Enter on the node opens
 		// its collapsed state line along with its output and arguments.
@@ -1195,16 +1185,15 @@ func (t *transcript) composer(m aria.Message) ldrender.Composer {
 			return formDeltaLines(deltas, w, t.expanded[ref])
 		},
 	}
-	if t.verbose() {
-		// Ctrl-O draws each block's (turn, node, timestamp) above it; see
-		// transcript_coords.go. Asked once per message render, not once per row.
-		c.Coord = func(block int, n livedoc.Node) string {
-			ref := nodeRefAt(m, block)
-			if block == ldrender.BlockInquiry {
-				ref = nodeRef{turn: m.Turn, index: inquiryNode}
-			}
-			return term.Dim(coordLabel(ref.turn, ref.index, nodeCoordAt(n)))
+	// The address is composed always and drawn only under ^O, so the toggle is
+	// a paint-time decision and the row cache does not know about it.
+	layout := t.coordFormat()
+	c.Mark = func(block int, n livedoc.Node) string {
+		ref := nodeRefAt(m, block)
+		if block == ldrender.BlockInquiry {
+			ref = nodeRef{turn: m.Turn, index: inquiryNode}
 		}
+		return term.Dim(coordLabel(ref.turn, ref.index, nodeCoordAt(n), layout))
 	}
 	return c
 }
@@ -2216,16 +2205,16 @@ func (t *transcript) messageMayRenderQuery(m aria.Message, q string) bool {
 	}
 	verbose := t.verbose()
 	if verbose && m.Inquiry != "" &&
-		strings.Contains(coordLabel(m.Turn, inquiryNode, 0), q) {
-		return true // the question's coordinate row (see transcript_coords.go)
+		strings.Contains(coordLabel(m.Turn, inquiryNode, 0, t.coordFormat()), q) {
+		return true // the question's address
 	}
 	for i, n := range m.Nodes {
 		if markdownMayRenderQuery(n.Markdown, q) || strings.Contains(n.Name, q) ||
 			strings.Contains(n.Summary, q) || strings.Contains(n.Output, q) {
 			return true
 		}
-		if verbose && strings.Contains(coordLabel(m.Turn, int(m.From)+i, nodeCoordAt(n)), q) {
-			return true // the node's coordinate row
+		if verbose && strings.Contains(coordLabel(m.Turn, int(m.From)+i, nodeCoordAt(n), t.coordFormat()), q) {
+			return true // the node's address
 		}
 		if n.Type == livedoc.NodeSteering && strings.Contains("↳ input", q) {
 			return true

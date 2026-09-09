@@ -1,6 +1,9 @@
 package cli
 
-import "github.com/jack-work/figaro/internal/livelog/aria"
+import (
+	"github.com/jack-work/figaro/internal/livelog/aria"
+	ldrender "github.com/jack-work/figaro/internal/livelog/render"
+)
 
 // A line index over the retained message window.
 
@@ -308,11 +311,14 @@ func (t *transcript) entryLine(e *lineEntry, rel int, hl string, sel selectionSp
 	return t.rowLine(e.rows[rel], hl, sel)
 }
 
-// rowLine is one composed row as it is painted: the selection cue, then the
-// search highlight. The header paints through it too, so a row reads the same
-// in the body and above it.
+// rowLine is one composed row as it is painted: the address at the right edge
+// when ^O is on, the selection cue, then the search highlight. The header
+// paints through it too, so a row reads the same in the body and above it.
 func (t *transcript) rowLine(r transcriptRow, hl string, sel selectionSpan) string {
 	line := r.text
+	if r.mark != "" && t.verbose() {
+		line = ldrender.OverlayRight(line, r.mark, t.w)
+	}
 	if r.ref.valid() {
 		// r.text is already in its plainNodeRow resting form, so this is a
 		// no-op returning line untouched unless the row is actually selected.

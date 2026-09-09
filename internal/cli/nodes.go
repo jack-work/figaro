@@ -21,12 +21,14 @@ const (
 	toolSummaryCap      = 80 // default truncation for a tool's summary line
 )
 
-// renderSettings is the consumer-side verbosity toggle. The wire/IR always
-// carries the full data; this only affects display, so it can be flipped live
-// (Ctrl-O) and the unit re-rendered. Thinking blocks are always shown (muted);
-// verbose additionally expands tool inputs to the full wrapped command.
+// renderSettings is the consumer-side display state. The wire/IR always carries
+// the full data; nothing here changes what a row says, only what is drawn
+// beside it, so every field can be flipped live and the frame repainted.
 type renderSettings struct {
+	// verbose draws each block's address against the right edge (Ctrl-O).
 	verbose bool
+	// coordFormat is the time layout those addresses use.
+	coordFormat string
 	// sticky pins the question of the turn the reader is inside above the
 	// transcript body.
 	sticky   bool
@@ -44,14 +46,10 @@ type renderSettings struct {
 // user's own question under the "< figaro" header while `show` correctly
 // marked it "↳ input". Two renderers for one representation is the exact defect
 // class turn addressing exists to remove; there is now one.
-func renderNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, expanded bool) []string {
+func renderNode(n livedoc.Node, width, bashCap int, tick uint64, expanded bool) []string {
 	switch {
 	case n.Type == livedoc.NodeTool:
-		// Either gesture expands a tool: Ctrl-O (global) or Enter on the
-		// selection (per node). They were not the same flag, so selecting a
-		// tool and pressing Enter expanded its OUTPUT and left its arguments
-		// hidden behind a different key.
-		return renderToolNode(n, width, bashCap, tick, verbose, expanded)
+		return renderToolNode(n, width, bashCap, tick, expanded)
 	case n.Type == livedoc.NodeThinking:
 		return renderThinkingNode(n, width)
 	// Steering is the only input-voice NODE there is: the inquiry is text on
@@ -112,12 +110,12 @@ func turnComposer(turn, width int, tick uint64, set renderSettings) ldrender.Com
 		// Deltas collapse to one line per form by default; --details is the
 		// stdout way to open them, since a one-shot dump has no gesture.
 		State: func(_ int, deltas map[string]livedoc.FormDelta, w int) []string {
-			return formDeltaLines(deltas, w, set.verbose)
+			return formDeltaLines(deltas, w, false)
 		},
 	}
 	if set.verbose {
-		c.Coord = func(block int, n livedoc.Node) string {
-			return term.Dim(coordLabel(turn, block, nodeCoordAt(n)))
+		c.Mark = func(block int, n livedoc.Node) string {
+			return term.Dim(coordLabel(turn, block, nodeCoordAt(n), set.coordFormat))
 		}
 	}
 	return c

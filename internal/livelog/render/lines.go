@@ -6,6 +6,45 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
+// Width is the display width of a styled row: escape sequences count for
+// nothing, and a wide rune counts for the cells it occupies.
+func Width(s string) int {
+	col := 0
+	rs := []rune(s)
+	for i := 0; i < len(rs); {
+		if rs[i] == '\x1b' {
+			j := i + 1
+			for j < len(rs) && !isLetter(rs[j]) {
+				j++
+			}
+			if j < len(rs) {
+				j++
+			}
+			i = j
+			continue
+		}
+		col += runewidth.RuneWidth(rs[i])
+		i++
+	}
+	return col
+}
+
+// OverlayRight sets tag flush against the right edge of a row width columns
+// wide, keeping the row exactly that wide: the mark rides the line rather than
+// taking one of its own, so nothing below it moves.
+func OverlayRight(line, tag string, width int) string {
+	if tag == "" || width <= 0 {
+		return line
+	}
+	tw := Width(tag)
+	if tw >= width {
+		return clip(tag, width)
+	}
+	room := width - tw - 1
+	left := clip(line, room)
+	return left + strings.Repeat(" ", room-Width(left)) + " " + tag
+}
+
 // clip truncates s to at most width display columns and flattens embedded
 // control characters (newline/tab/CR/<0x20) to spaces, guaranteeing every
 // emitted row is exactly one physical line: the invariant the renderer's

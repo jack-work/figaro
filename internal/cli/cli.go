@@ -385,7 +385,7 @@ already exists (--id, -e, -x) are refused rather than ignored.
 				return fmt.Errorf("new: %s is a role; `new -C %s` casts into it", role, role)
 			}
 			prompt := extractPrompt(rest)
-			set := renderSettings{jsonMode: opts.json}
+			set := renderSettings{jsonMode: opts.json, coordFormat: ld.CoordFormat()}
 			if opts.cast {
 				runNewCast(ld, role, opts.outfit, prompt, set, opts.stay)
 				return nil

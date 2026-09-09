@@ -153,7 +153,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 			Turn: int(u.ID), Role: livedoc.RoleOutput,
 			Inquiry: u.Inquiry, InquirySegments: u.InquirySegments,
 			FormDeltas: u.FormDeltas, Nodes: u.Nodes,
-		}, width, 0, renderSettings{verbose: opts.details})
+		}, width, 0, renderSettings{verbose: opts.details, coordFormat: loaded.CoordFormat()})
 		auditRows(rows, width, "show")
 		fmt.Fprintln(stdout, strings.Join(rows, "\n"))
 		fmt.Fprintln(stdout)

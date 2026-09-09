@@ -870,16 +870,15 @@ func (v *ariaView) Render(n livedoc.Node, width, tick int) []string {
 // output and the arguments together, which is what "expand this" has always
 // looked like it meant.
 func (v *ariaView) RenderExpanded(n livedoc.Node, width, tick int, fullOutput bool) []string {
-	verbose := v.settings != nil && v.settings.verbose
-	// Expansion is a per-node GESTURE, and only the pager has one. A surface
+	// Expansion is a per-node gesture, and only the pager has one. A surface
 	// without one draws the minimized form: clamped body, `… last N of M
-	// lines` above it: rather than the fullest one.
-	expand := verbose || (v.gesture && fullOutput)
+	// lines` above it, rather than the fullest one.
+	expand := v.gesture && fullOutput
 	cap := nodeBashCapDefault
 	if expand {
 		cap = nodeOutputUnlimited
 	}
-	return renderNode(n, width, cap, uint64(tick), verbose, expand)
+	return renderNode(n, width, cap, uint64(tick), expand)
 }
 
 // openRule prints the session's opening rule through the inline renderer, which

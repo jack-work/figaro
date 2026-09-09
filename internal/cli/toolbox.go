@@ -149,8 +149,7 @@ func toolBody(n livedoc.Node, st toolStyle, fields []partialjson.Field, clamp in
 	return rows
 }
 
-func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, expand bool) []string {
-	expand = expand || verbose
+func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool) []string {
 	st := styleFor(n.Name)
 	fields := toolArgFields(n)
 	settled := strings.TrimSpace(n.Input) == ""

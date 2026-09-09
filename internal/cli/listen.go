@@ -101,7 +101,7 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 	defer span.End()
 	runSession(ctx, cancel, sessionOpts{
 		figaroID: figaroID, ep: ep, loaded: loaded,
-		set:  renderSettings{listen: true}, // listen stays open past turn-done
+		set:  renderSettings{listen: true, coordFormat: loaded.CoordFormat()}, // listen stays open past turn-done
 		acli: opt.acli, tape: opt.tape, end: opt.end, startedAt: opt.startedAt,
 		formPit: opt.formPit, ownsSubject: true,
 		// Ctrl-C means "interrupt the turn" here as it does in send; a

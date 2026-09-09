@@ -119,7 +119,7 @@ func TestToolBlockGolden(t *testing.T) {
 	var b strings.Builder
 	for _, c := range toolBlockCases() {
 		b.WriteString("## " + c.name + "\n")
-		for _, r := range renderToolNode(c.node, c.width, c.bashCap, 0, c.verbose, c.expanded) {
+		for _, r := range renderToolNode(c.node, c.width, c.bashCap, 0, c.expanded || c.verbose) {
 			b.WriteString(strconv.Quote(stripANSI(r)) + "\n")
 		}
 	}

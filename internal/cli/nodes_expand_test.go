@@ -50,7 +50,7 @@ func TestNodeExpandable(t *testing.T) {
 	for _, tc := range cases {
 		if got := nodeExpandable(tc.n); got != tc.want {
 			t.Errorf("%s: nodeExpandable = %v, want %v\nrender:\n%s",
-				tc.name, got, tc.want, dumpRows(renderNode(tc.n, w, nodeBashCapDefault, 0, false, false)))
+				tc.name, got, tc.want, dumpRows(renderNode(tc.n, w, nodeBashCapDefault, 0, false)))
 		}
 	}
 }
@@ -73,8 +73,8 @@ func TestNodeExpandable_AgreesWithTheRender(t *testing.T) {
 	}
 	for _, w := range []int{26, 40, 60, 80, 120} {
 		for _, n := range nodes {
-			collapsed := renderNode(n, w, nodeBashCapDefault, 0, false, false)
-			expanded := renderNode(n, w, nodeOutputUnlimited, 0, false, false)
+			collapsed := renderNode(n, w, nodeBashCapDefault, 0, false)
+			expanded := renderNode(n, w, nodeOutputUnlimited, 0, false)
 			differ := len(collapsed) != len(expanded)
 			got := nodeExpandable(n)
 			if !got && differ {
@@ -109,11 +109,10 @@ func TestSurfaceContract_NoSurfaceCollapsesProse(t *testing.T) {
 	if got := len(renderNodeList([]livedoc.Node{n}, w, 0, renderSettings{})); got != full {
 		t.Errorf("show: %d rows, want the full %d", got, full)
 	}
-	if got := len(renderNodeList([]livedoc.Node{n}, w, 0, renderSettings{verbose: true})); got != full+1 {
-		// +1: under -o `show` draws the block's coordinate row above it, the
-		// same row Ctrl-O draws in the pager. Metadata is added; nothing is
-		// taken away.
-		t.Errorf("show -o: %d rows, want the full %d plus its coordinate row", got, full)
+	if got := len(renderNodeList([]livedoc.Node{n}, w, 0, renderSettings{verbose: true})); got != full {
+		// The address rides the block's first row, so asking for it moves
+		// nothing: the same rows, one of them wearing its coordinate.
+		t.Errorf("show -o: %d rows, want the full %d, and the address adds none", got, full)
 	}
 }
 
@@ -127,7 +126,7 @@ func TestProseRows_HoldPainterInvariant(t *testing.T) {
 	}
 	for w := 26; w <= 120; w += 3 {
 		for _, n := range nodes {
-			for i, row := range renderNode(n, w, nodeBashCapDefault, 0, false, false) {
+			for i, row := range renderNode(n, w, nodeBashCapDefault, 0, false) {
 				if strings.ContainsAny(row, "\n\r\t") {
 					t.Fatalf("%s @ w=%d: row %d smuggles a control char: %q", n.Type, w, i, row)
 				}

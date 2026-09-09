@@ -41,7 +41,7 @@ func TestRenderToolNode_RunningOutputClampedToBashCap(t *testing.T) {
 		Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusRunning,
 		Summary: "long", Output: strings.Join(lines, "\n"),
 	}
-	rows := renderToolNode(n, 80, 5, 0, false, false) // bashCap=5
+	rows := renderToolNode(n, 80, 5, 0, false) // bashCap=5
 	joined := stripANSI(strings.Join(rows, "\n"))
 	if strings.Contains(joined, "EARLY_LEAK_SENTINEL") {
 		t.Errorf("early output must be clamped, but leaked:\n%s", joined)
@@ -69,7 +69,7 @@ func TestRenderToolNodeSanitizesBeforeTailClamp(t *testing.T) {
 		Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
 		Output: "\x1b]2;hidden\nOSC payload\nmore payload\x07\nvisible",
 	}
-	rendered := strings.Join(renderToolNode(n, 80, 2, 0, false, false), "\n")
+	rendered := strings.Join(renderToolNode(n, 80, 2, 0, false), "\n")
 	if strings.Contains(rendered, "OSC payload") || strings.ContainsRune(rendered, '\a') {
 		t.Fatalf("control-string payload leaked after tail clamp: %q", rendered)
 	}
@@ -169,7 +169,7 @@ func TestRenderToolNode_ColoursAreConsistent(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	n := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK,
 		Args: map[string]any{"path": "/x.md", "content": "a line"}}
-	joined := strings.Join(renderToolNode(n, 60, 10, 0, false, false), "\n")
+	joined := strings.Join(renderToolNode(n, 60, 10, 0, false), "\n")
 	// Three colours, one meaning each: the call (name and headline argument),
 	// the body text prose and thinking already use, and the dim rule. A golden
 	// records the LAYOUT; only a test can say what colour a run carries.
@@ -187,7 +187,7 @@ func TestRenderToolNode_DiffRowsArePainted(t *testing.T) {
 	out := "-1 was\n+1 is"
 	edit := livedoc.Node{Type: livedoc.NodeTool, Name: "edit", Status: livedoc.StatusOK,
 		Args: map[string]any{"path": "/x.py"}, Output: out}
-	joined := strings.Join(renderToolNode(edit, 60, 10, 0, false, false), "\n")
+	joined := strings.Join(renderToolNode(edit, 60, 10, 0, false), "\n")
 	for _, want := range []string{term.DiffDel("-1 was"), term.DiffAdd("+1 is")} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("missing %q in:\n%q", want, joined)
@@ -196,7 +196,7 @@ func TestRenderToolNode_DiffRowsArePainted(t *testing.T) {
 
 	sh := livedoc.Node{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
 		Args: map[string]any{"command": "git diff"}, Output: out}
-	if strings.Contains(strings.Join(renderToolNode(sh, 60, 10, 0, false, false), "\n"), term.DiffAdd("+1 is")) {
+	if strings.Contains(strings.Join(renderToolNode(sh, 60, 10, 0, false), "\n"), term.DiffAdd("+1 is")) {
 		t.Error("a shell's output was painted as a diff")
 	}
 }
@@ -215,7 +215,7 @@ func boxContentText(plain string) string {
 // layout rather than escape codes.
 func renderNodeRows(t *testing.T, n livedoc.Node, width, cap int, expand bool) []string {
 	t.Helper()
-	raw := renderToolNode(n, width, cap, 0, false, expand)
+	raw := renderToolNode(n, width, cap, 0, expand)
 	out := make([]string, len(raw))
 	for i, r := range raw {
 		out[i] = stripANSI(r)
