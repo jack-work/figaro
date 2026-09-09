@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/coder/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/net/websocket"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/internal/provider"

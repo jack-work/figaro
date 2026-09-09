@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -109,6 +110,8 @@ func TestResponsesCallCorrelationAndExactlyOnceReadiness(t *testing.T) {
 	for _, e := range []any{
 		map[string]any{"type": "response.function_call_arguments.delta", "item_id": "unknown", "delta": "WRONG"},
 		map[string]any{"type": "response.function_call_arguments.delta", "call_id": "unknown", "output_index": 0, "delta": "WRONG"},
+		map[string]any{"type": "response.function_call_arguments.delta", "item_id": "at-add-a", "output_index": 1, "delta": "WRONG"},
+		map[string]any{"type": "response.function_call_arguments.delta", "call_id": "a", "item_id": "at-add-b", "delta": "WRONG"},
 	} {
 		_, _, err := consumeResponse(t, state, bus, e)
 		require.NoError(t, err)
@@ -205,4 +208,52 @@ func TestResponsesInvalidArgumentsStayVerbatimAndNeverBecomeEmptyObject(t *testi
 		require.True(t, bad)
 		require.Equal(t, raw, got)
 	}
+}
+
+func TestResponsesMixedIndexPresenceKeepsOnePartialItem(t *testing.T) {
+	for _, kind := range []string{"message", "reasoning"} {
+		for _, indexedStart := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/indexed-start=%t", kind, indexedStart), func(t *testing.T) {
+				state := newResponseStreamState()
+				bus := &responseTestBus{}
+				if indexedStart {
+					_, _, err := consumeResponse(t, state, bus, map[string]any{"type": "response.output_item.added", "output_index": 0, "item": map[string]any{"type": kind, "id": "item"}})
+					require.NoError(t, err)
+				}
+				event := "response.output_text.delta"
+				item := map[string]any{"type": kind, "id": "item", "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": "Hello world"}}}
+				if kind == "reasoning" {
+					event = "response.reasoning_summary_text.delta"
+					item = map[string]any{"type": kind, "id": "item", "encrypted_content": "opaque", "summary": []any{map[string]any{"type": "summary_text", "text": "Hello world"}}}
+				}
+				for _, fragment := range []string{"Hello", " world"} {
+					_, _, err := consumeResponse(t, state, bus, map[string]any{"type": event, "delta": fragment})
+					require.NoError(t, err)
+				}
+				_, _, err := consumeResponse(t, state, bus, map[string]any{"type": "response.output_item.done", "output_index": 0, "item": item})
+				require.NoError(t, err)
+				out := state.partial.outputItems()
+				require.Len(t, out, 1)
+				decoded, err := decodeResponseAssistant(responseObject{Output: out})
+				require.NoError(t, err)
+				require.Len(t, decoded.Content, 1)
+				require.Equal(t, "Hello world", decoded.Content[0].Text)
+			})
+		}
+	}
+}
+
+func TestResponsesAbnormalTerminalPreservesAuthoritativeNativeOutput(t *testing.T) {
+	state := newResponseStreamState()
+	bus := &responseTestBus{}
+	_, _, err := consumeResponse(t, state, bus, map[string]any{"type": "response.reasoning_summary_text.delta", "delta": "draft"})
+	require.NoError(t, err)
+	native := json.RawMessage(`{"type":"reasoning","id":"signed","encrypted_content":"opaque-terminal","summary":[{"type":"summary_text","text":"final summary"}]}`)
+	out, done, err := consumeResponse(t, state, bus, map[string]any{"type": "response.incomplete", "response": map[string]any{
+		"status": "incomplete", "incomplete_details": map[string]any{"reason": "content_filter"}, "output": []any{native},
+	}})
+	require.Error(t, err)
+	require.True(t, done)
+	require.Len(t, out.Output, 1)
+	require.Equal(t, string(native), string(out.Output[0]))
 }

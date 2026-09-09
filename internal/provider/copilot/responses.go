@@ -6,21 +6,21 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"text/template"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/google/uuid"
-	"golang.org/x/net/websocket"
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tokens"
+	"github.com/jack-work/figaro/internal/wirelog"
 )
 
 const responsesFingerprintPrefix = "copilot-responses/v3"
@@ -143,7 +143,7 @@ func (p *responsesProvider) sendWithToken(
 	in provider.SendInput,
 	bus provider.Bus,
 	options responseRequestOptions,
-) error {
+) (sendErr error) {
 	input, err := p.inputFor(in)
 	if err != nil {
 		return err
@@ -165,11 +165,14 @@ func (p *responsesProvider) sendWithToken(
 	interactionID := uuid.NewString()
 	endpoint := responsesEndpoint(p.baseURL(token))
 	headers := responseHeaders(token, taskID, sessionID, interactionID, machineID)
+	trace := wirelog.BeginStream(ctx, in.AriaID, wirelog.StreamMethodWS, endpoint)
+	terminalStatus := ""
+	defer func() { trace.Finish(terminalStatus, sendErr) }()
 	conn, err := p.dial(ctx, endpoint, headers)
 	if err != nil {
 		return fmt.Errorf("copilot responses: dial: %w", err)
 	}
-	defer conn.Close()
+	defer conn.CloseNow()
 
 	request := responseCreateRequest{
 		Type:              "response.create",
@@ -191,11 +194,19 @@ func (p *responsesProvider) sendWithToken(
 	if maxTokens > 0 {
 		request.MaxOutputTokens = maxTokens
 	}
-	if err := websocket.JSON.Send(conn, request); err != nil {
+	// Serialize once: the same text frame supplies byte accounting and the
+	// actual request, without retaining or logging the payload.
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return fmt.Errorf("copilot responses: encode create: %w", err)
+	}
+	trace.RequestBytes(int64(len(payload)))
+	if err := conn.Write(ctx, websocket.MessageText, payload); err != nil {
 		return fmt.Errorf("copilot responses: send create: %w", err)
 	}
 
-	response, err := readResponseStream(ctx, conn, bus)
+	response, err := readResponseStream(ctx, conn, bus, trace)
+	terminalStatus = response.Status
 	if err != nil {
 		// Any interrupted stream hands over what it actually received. A
 		// timeout, failed response or broken socket must not erase completed
@@ -482,13 +493,36 @@ func responsesEndpoint(baseURL string) string {
 }
 
 func dialResponses(ctx context.Context, endpoint string, headers http.Header) (*websocket.Conn, error) {
-	config, err := websocket.NewConfig(endpoint, "https://github.com")
+	headers = headers.Clone()
+	headers.Set("Origin", "https://github.com")
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+		// A gateway redirect must not forward a credential to a different
+		// endpoint or disguise the original handshake rejection.
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	conn, response, err := websocket.Dial(ctx, endpoint, &websocket.DialOptions{
+		HTTPClient: client, HTTPHeader: headers,
+	})
 	if err != nil {
+		if response != nil {
+			code := "handshake_rejected"
+			switch response.StatusCode {
+			case http.StatusUnauthorized:
+				code = "unauthorized"
+			case http.StatusForbidden:
+				code = "permission_denied"
+			case http.StatusTooManyRequests:
+				code = "rate_limit_exceeded"
+			}
+			return nil, &responseAPIError{code: code, status: response.StatusCode, retryable: response.StatusCode == http.StatusUnauthorized}
+		}
 		return nil, err
 	}
-	config.Header = headers
-	config.Dialer = &net.Dialer{Timeout: 30 * time.Second}
-	return config.DialContext(ctx)
+	// Match the previous transport's frame budget. The library default is
+	// only 32 KiB, smaller than an ordinary coding tool's argument payload.
+	conn.SetReadLimit(32 << 20)
+	return conn, nil
 }
 
 func responseHeaders(token, taskID, sessionID, interactionID, machineID string) http.Header {

@@ -1012,6 +1012,8 @@ func TestResponseHeadersMatchResponsesHandshakeShape(t *testing.T) {
 }
 
 func TestResponseFunctionArgumentsAcceptJSONStringOrObject(t *testing.T) {
+	assert.Equal(t, "null", string(responseArgumentBytes(json.RawMessage(`null`))))
+	assert.Equal(t, "[]", string(responseArgumentBytes(json.RawMessage(`[]`))))
 	assert.JSONEq(t, `{"command":"echo ciao"}`,
 		string(responseArgumentBytes(json.RawMessage(`"{\"command\":\"echo ciao\"}"`))))
 	assert.JSONEq(t, `{"command":"echo ciao"}`,

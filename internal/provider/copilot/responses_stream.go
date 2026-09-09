@@ -1,6 +1,7 @@
 package copilot
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"golang.org/x/net/websocket"
+	"github.com/coder/websocket"
 
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/internal/provider"
@@ -93,11 +94,25 @@ func (p *responsePartial) part(event responseStreamEvent, kind string, call *res
 			return part
 		}
 	}
+	// A proxy can omit indices on deltas and include one only on the done
+	// envelope. Adopt that envelope into the open part rather than replaying
+	// both the fragment reconstruction and the native item after failure.
+	if event.OutputIndex != nil && event.Type == "response.output_item.done" && call == nil && len(p.parts) > 0 {
+		last := p.parts[len(p.parts)-1]
+		if last.index == nil && last.kind == kind && last.raw == nil {
+			last.index = event.OutputIndex
+			if p.indexed == nil {
+				p.indexed = map[int]*responsePart{}
+			}
+			p.indexed[*event.OutputIndex] = last
+			return last
+		}
+	}
 	// Some proxies omit indices on prose deltas. Keep consecutive fragments
 	// together, without conflating separate indexed messages/reasoning items.
 	if event.OutputIndex == nil && call == nil && len(p.parts) > 0 {
 		last := p.parts[len(p.parts)-1]
-		if last.index == nil && last.kind == kind && last.raw == nil {
+		if last.kind == kind && last.raw == nil {
 			return last
 		}
 	}
@@ -197,6 +212,7 @@ type responseStreamObserver interface {
 	Event(string, int)
 	ArgumentDelta(int, bool)
 	UnknownEvent()
+	ToolStart()
 }
 
 type responseStreamState struct {
@@ -212,19 +228,10 @@ func newResponseStreamState() *responseStreamState {
 }
 
 func readResponseStream(ctx context.Context, conn *websocket.Conn, bus provider.Bus, observers ...responseStreamObserver) (responseObject, error) {
-	done := make(chan struct{})
-	go func() {
-		select {
-		case <-ctx.Done():
-			_ = conn.Close()
-		case <-done:
-		}
-	}()
-	defer close(done)
 	state := newResponseStreamState()
 	for {
-		var raw json.RawMessage
-		if err := websocket.JSON.Receive(conn, &raw); err != nil {
+		_, raw, err := conn.Read(ctx)
+		if err != nil {
 			if ctx.Err() != nil {
 				err = ctx.Err()
 			} else {
@@ -246,7 +253,7 @@ func readResponseStream(ctx context.Context, conn *websocket.Conn, bus provider.
 				// escaped: a completed call may already have had side effects.
 				var rejected *responseAPIError
 				if errors.As(err, &rejected) {
-					rejected.retryable = !state.started
+					rejected.retryable = !state.started && len(response.Output) == 0
 				}
 				if response.Output == nil {
 					response.Output = state.partial.outputItems()
@@ -287,6 +294,9 @@ func (s *responseStreamState) consume(event responseStreamEvent, raw json.RawMes
 			newCall := call == nil
 			if newCall {
 				call = ensureResponseCall(s.calls, event.Item.CallID, event.Item.Name)
+				for _, o := range observers {
+					o.ToolStart()
+				}
 				bus.PushToolInvokeStart(call.ID, call.Name)
 			} else if call.Name != event.Item.Name {
 				return fail(fmt.Errorf("copilot responses: function name changed during stream"))
@@ -355,33 +365,35 @@ func (s *responseStreamState) consume(event responseStreamEvent, raw json.RawMes
 		if err := readyResponseCall(call, bus); err != nil {
 			return fail(err)
 		}
-	case "response.completed", "response.incomplete", "response.failed", "response.cancelled", "response.canceled":
+	case "response.completed", "response.incomplete", "response.failed", "response.cancelled", "response.canceled", "error":
 		response := event.Response
 		if response.Status == "" {
 			response.Status = strings.TrimPrefix(event.Type, "response.")
 		}
-		if response.Status == "failed" {
-			return responseObject{Status: "failed"}, true, responseFailure(event.Error, response.Error)
+		if event.Type == "error" {
+			response.Status = "failed"
 		}
-		if response.Status == "cancelled" || response.Status == "canceled" {
-			return responseObject{Status: "cancelled"}, true, fmt.Errorf("copilot responses: response cancelled by provider")
-		}
-		if response.Status != "completed" && response.Status != "incomplete" {
+		var terminalErr error
+		switch response.Status {
+		case "completed":
+		case "failed":
+			terminalErr = responseFailure(event.Error, response.Error)
+		case "cancelled", "canceled":
+			terminalErr = fmt.Errorf("copilot responses: response cancelled by provider")
+		case "incomplete":
+			if response.IncompleteDetails.Reason != "max_output_tokens" {
+				// There is no automatic-continuation/session layer here. Report
+				// unsolicited steering/filtering, but retain the richer terminal
+				// output (notably encrypted reasoning) whenever it is supplied.
+				terminalErr = &responseIncompleteError{reason: response.IncompleteDetails.Reason}
+			}
+		default:
 			return fail(fmt.Errorf("copilot responses: unexpected terminal response status"))
-		}
-		if response.Status == "incomplete" && response.IncompleteDetails.Reason != "max_output_tokens" {
-			// Steering requires following an automatic continuation on this
-			// socket. We do not implement it, so report it rather than hanging
-			// or mislabeling a steered/filtered response as a token limit.
-			response.Output = nil
-			return response, true, fmt.Errorf("copilot responses: incomplete response (%s)", safeResponseReason(response.IncompleteDetails.Reason))
 		}
 		if err := s.reconcile(&response); err != nil {
 			return fail(err)
 		}
-		return response, true, nil
-	case "error":
-		return responseObject{Status: "failed"}, true, responseFailure(event.Error, event.Response.Error)
+		return response, true, terminalErr
 	case "response.created", "response.in_progress", "response.queued",
 		"response.content_part.added", "response.content_part.done", "response.output_text.done",
 		"response.reasoning_summary_part.added", "response.reasoning_summary_part.done",
@@ -399,7 +411,7 @@ func (s *responseStreamState) consume(event responseStreamEvent, raw json.RawMes
 // call which was already dispatched. Incomplete call items never become ready
 // merely because a truncated JSON prefix happens to parse.
 func (s *responseStreamState) reconcile(response *responseObject) error {
-	if response.Output == nil {
+	if response.Output == nil || (response.Status != "completed" && len(response.Output) == 0) {
 		response.Output = s.partial.outputItems()
 	}
 	out := make([]json.RawMessage, 0, len(response.Output))
@@ -421,7 +433,7 @@ func (s *responseStreamState) reconcile(response *responseObject) error {
 		}
 		seen[item.CallID] = true
 		call := s.calls[item.CallID]
-		if item.Status == "in_progress" || item.Status == "incomplete" || (response.Status == "incomplete" && item.Status != "completed" && (call == nil || !call.ready)) {
+		if item.Status == "in_progress" || item.Status == "incomplete" || (response.Status != "completed" && item.Status != "completed" && (call == nil || !call.ready)) {
 			if call != nil && call.ready {
 				return fmt.Errorf("copilot responses: completed function became incomplete")
 			}
@@ -462,19 +474,30 @@ func ensureResponseCall(calls map[string]*responseCall, id, name string) *respon
 }
 
 func responseCallFor(calls map[string]*responseCall, items map[string]*responseCall, byIndex map[int]*responseCall, event responseStreamEvent) *responseCall {
+	var call *responseCall
 	if event.CallID != "" {
-		return calls[event.CallID]
+		call = calls[event.CallID]
+		if call == nil {
+			return nil
+		} // an explicit unknown call is not an alias
 	}
-	if event.ItemID != "" {
-		if call := items[event.ItemID]; call != nil {
-			return call
+	if item := items[event.ItemID]; item != nil {
+		if call != nil && call != item {
+			return nil
+		}
+		call = item
+	}
+	// Copilot re-encrypts item_id per event; output_index is its stable
+	// handle. Known handles must agree; never splice one call into another.
+	if event.OutputIndex != nil {
+		if indexed := byIndex[*event.OutputIndex]; indexed != nil {
+			if call != nil && call != indexed {
+				return nil
+			}
+			call = indexed
 		}
 	}
-	// Copilot re-encrypts item_id per event; output_index is its stable handle.
-	if event.OutputIndex != nil {
-		return byIndex[*event.OutputIndex]
-	}
-	return nil
+	return call
 }
 
 func (call *responseCall) setArguments(raw []byte) error {
@@ -515,10 +538,15 @@ func responseArgumentBytes(raw json.RawMessage) []byte {
 	if len(raw) == 0 {
 		return nil
 	}
-	var encoded string
-	if json.Unmarshal(raw, &encoded) == nil {
-		return []byte(encoded)
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) > 0 && trimmed[0] == '"' {
+		var encoded string
+		if json.Unmarshal(trimmed, &encoded) == nil {
+			return []byte(encoded)
+		}
 	}
+	// json.Unmarshal(null, *string) succeeds with an empty string. Null is
+	// malformed arguments, not an empty value; preserve those exact bytes.
 	return raw
 }
 
@@ -528,8 +556,13 @@ type responseAPIError struct {
 	retryable bool
 }
 
+func (e *responseAPIError) DiagnosticCode() string { return e.code }
+
 func (e *responseAPIError) Error() string {
-	return fmt.Sprintf("copilot responses: provider rejected request (%s, status %d)", e.code, e.status)
+	if e.status != 0 {
+		return fmt.Sprintf("copilot responses: provider rejected request (%s, status %d)", e.code, e.status)
+	}
+	return fmt.Sprintf("copilot responses: provider rejected request (%s)", e.code)
 }
 
 func responseFailure(payloads ...json.RawMessage) error {
@@ -591,4 +624,19 @@ func quarantineResponseItem(raw json.RawMessage) json.RawMessage {
 		return raw
 	}
 	return out
+}
+
+type responseIncompleteError struct{ reason string }
+
+func (e *responseIncompleteError) Error() string {
+	return fmt.Sprintf("copilot responses: incomplete response (%s)", safeResponseReason(e.reason))
+}
+
+func (e *responseIncompleteError) DiagnosticCode() string {
+	switch e.reason {
+	case "max_output_tokens", "content_filter", "steered":
+		return e.reason
+	default:
+		return "incomplete"
+	}
 }

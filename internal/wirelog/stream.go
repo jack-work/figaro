@@ -212,7 +212,12 @@ func (s *Stream) Event(eventType string, receivedBytes int) {
 	if s.firstEvent == 0 {
 		s.firstEvent = since
 	}
-	name := s.bucket(sanitizeToken(eventType, maxTokenLen))
+	name := otherEventType
+	if len(s.vocab) > 0 {
+		// With no declared vocabulary, no event spelling can be retained.
+		// Do not allocate a sanitized copy of every token merely to discard it.
+		name = s.bucket(sanitizeToken(eventType, maxTokenLen))
+	}
 	if _, ok := s.types[name]; !ok && len(s.types) >= maxEventTypes {
 		s.typesDropped++
 		return

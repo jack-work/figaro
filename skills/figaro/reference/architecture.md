@@ -421,6 +421,42 @@ Translates IR ↔ Anthropic wire and caches the per-aria wire bytes
   flags. `anthropic-beta` does not need `interleaved-thinking` for adaptive
   models.
 
+### Copilot Responses: per-request streams, local history
+
+`internal/provider/copilot` routes by the Copilot model catalog's advertised
+endpoints. The Responses route sends the locally reconstructed conversation on
+one WebSocket per request. There is no remote continuation dependency,
+`previous_response_id`, or durable server-side session.
+
+- `responses_stream.go` forwards argument deltas immediately and correlates
+  calls by call ID, announced item ID, then an **explicit** output index.
+  Copilot may re-encrypt item IDs between events; an absent index must not
+  accidentally match tool zero. Complete calls can execute while other output
+  is still streaming, but partial JSON never executes.
+- `response.incomplete` terminates the read without waiting for socket closure.
+  `max_output_tokens` means length-limited output; filtering, unsolicited
+  steering, failure and cancellation stop with an error instead of pretending
+  to be a normal completion. Received text and completed calls survive failed
+  reads. Completed native items retain opaque reasoning for local replay.
+- Malformed completed arguments use `message.MalformedArgs`, the same refusal
+  mechanism as other providers: no execution, an `INVALID_JSON` tool result,
+  and the original bytes retained. The native cache also carries the quarantine
+  envelope so the next request remains valid. A call already dispatched cannot
+  change arguments later, and an authentication rejection is retried only
+  before any assistant output has been observed. The WebSocket client exposes
+  handshake status: a 401 refreshes once; a 403, 429 or other rejection does
+  not invalidate credentials. Redirects are refused, and the per-message read
+  budget is 32 MiB rather than the client library's 32 KiB default.
+- `capabilities.go` validates published model-specific request constraints
+  before credential resolution. Astra rejects sampling controls and supports
+  `low`, `medium`, `high`, `xhigh`, `max` reasoning effort. Unknown model families
+  remain unconstrained; settings are never silently discarded.
+- `wirelog.BeginStream` makes WebSocket attempts visible in `doctor provider`,
+  including while in flight. It records timing, byte/event counts, argument
+  deltas, unmatched deltas and terminal status, not headers, argument text,
+  opaque identifiers or free-form provider errors. An unknown event increments
+  a counter rather than growing a log of provider-controlled strings.
+
 ### The provider binding is live, not a birthmark
 
 `system.provider` is form state like any other key, and the board is

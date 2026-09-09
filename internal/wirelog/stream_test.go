@@ -443,3 +443,15 @@ func findOutstanding(t *testing.T, aria string) (InFlight, bool) {
 		time.Sleep(time.Millisecond)
 	}
 }
+
+func TestStreamDefaultEventPathAllocatesNothing(t *testing.T) {
+	s := BeginStream(context.Background(), "allocation-probe", "WS", "wss://example.com/responses")
+	defer s.Finish("completed", nil)
+	allocations := testing.AllocsPerRun(100, func() {
+		s.Event("response.function_call_arguments.delta", 128)
+		s.ArgumentDelta(12, true)
+	})
+	if allocations != 0 {
+		t.Fatalf("default stream accounting allocated %.1f objects per event", allocations)
+	}
+}
