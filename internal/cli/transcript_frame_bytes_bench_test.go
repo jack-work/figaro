@@ -62,7 +62,7 @@ func BenchmarkTranscriptEnterBytes(b *testing.B) {
 	for i := range committed {
 		committed[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: heavyNodes(i+1, 20)}}
 	}
-	client.Apply(aria.Page{Parts: committed})
+	client.Apply(aria.Page{Parts: committed}, aria.Notify)
 	cw := &countingWriter{}
 	b.ResetTimer()
 	for range b.N {

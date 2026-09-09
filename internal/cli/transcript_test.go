@@ -21,7 +21,7 @@ func TestTranscript_ScrollAndSearch(t *testing.T) {
 		client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 			ID: uint64(i), Sealed: true,
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("msg%02d body", i)}},
-		}}}})
+		}}}}, aria.Notify)
 	}
 	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter() // follows → bottom
@@ -61,7 +61,7 @@ func TestTranscript_FollowVsHold(t *testing.T) {
 		client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 			ID: uint64(i), Sealed: true,
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("msg%02d", i)}},
-		}}}})
+		}}}}, aria.Notify)
 	}
 	for i := 1; i <= 6; i++ {
 		add(i)
@@ -93,7 +93,7 @@ func TestTranscript_LazyOlderPaging(t *testing.T) {
 		return aria.TurnPart{Turn: aria.Turn{ID: uint64(i), Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("msg%02d", i)}}}}
 	}
 	for i := 5; i <= 8; i++ { // recent window only (as the lazy initial load gives)
-		client.Apply(aria.Page{Parts: []aria.TurnPart{msg(i)}})
+		client.Apply(aria.Page{Parts: []aria.TurnPart{msg(i)}}, aria.Notify)
 	}
 	client.SetMoreBefore(true) // the wire's answer: history exists below LT 5
 	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234", time.Now())
@@ -119,7 +119,7 @@ func TestTranscript_LazyOlderPaging(t *testing.T) {
 	// yank the rows you are reading, and that is asserted separately. It was
 	// asserted HERE too, which made the anchor look like the rule rather than
 	// the default, and hid the reason Home never converged.
-	tr.applyPage(req, committedPage(aria.Page{Parts: []aria.TurnPart{msg(1), msg(2), msg(3), msg(4)}}))
+	tr.applyPage(req, aria.Page{Parts: []aria.TurnPart{msg(1), msg(2), msg(3), msg(4)}})
 	if tr.offset != 0 {
 		t.Fatalf("a standing Home should hold the top after a prepend (was %d, now %d)", off0, tr.offset)
 	}
@@ -143,7 +143,7 @@ func TestTranscript_FooterWidthAndNoTrailingBlank(t *testing.T) {
 		client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 			ID: uint64(i), Sealed: true,
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("msg%02d", i)}},
-		}}}})
+		}}}}, aria.Notify)
 	}
 	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
@@ -185,7 +185,7 @@ func TestTranscript_HelpPanel(t *testing.T) {
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 		ID: uint64(1), Sealed: true,
 		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "hello"}},
-	}}}})
+	}}}}, aria.Notify)
 	tr := newTranscript(ft, 60, 14, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
 	tr.key('?')

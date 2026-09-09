@@ -14,7 +14,7 @@ import (
 func drive(frames [][]message.Message) []string {
 	srv := aria.NewServer()
 	cli := aria.NewClient()
-	srv.Subscribe(func(r aria.Page) { cli.Apply(r) })
+	srv.Subscribe(func(r aria.Page) { cli.Apply(r, aria.Notify) })
 	srv.OpenTurn(uint64(1))
 	for _, msgs := range frames {
 		srv.Update(nil, Nodes(msgs, nil, nil, nil), 0)

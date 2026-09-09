@@ -97,7 +97,7 @@ func TestLiveAgentPagesCarryFormDeltas(t *testing.T) {
 	cl := aria.NewClient()
 	var folded []aria.Message
 	cl.OnClosed = func(m aria.Message) { folded = append(folded, m) }
-	cl.Apply(page)
+	cl.Apply(page, aria.Notify)
 	foldedHasDelta := false
 	for _, m := range folded {
 		if _, ok := m.FormDeltas[src+".phase"]; ok {

@@ -30,7 +30,7 @@ func TestTranscriptInquiryIsSelectableAndCopyable(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(80, 20)
 	client := aria.NewClient()
 	history := inquiryHistory()
-	client.Apply(aria.Page{Parts: history})
+	client.Apply(aria.Page{Parts: history}, aria.Notify)
 	tr := newTranscript(ft, 80, 20, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
 
@@ -77,7 +77,7 @@ func TestTranscriptOlderFetchAnchorsOnTheNode(t *testing.T) {
 		}},
 		From:        2,
 		ClippedHead: true,
-	}}})
+	}}}, aria.Notify)
 	client.SetMoreBefore(true) // the wire: the clipped head is still out there
 	tr := newTranscript(ft, 80, 20, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
@@ -106,7 +106,7 @@ func TestTranscriptFirstTurnClippedStillPagesOlder(t *testing.T) {
 		}},
 		From:        3,
 		ClippedHead: true,
-	}}})
+	}}}, aria.Notify)
 	client.SetMoreBefore(true) // the wire: turn 1's own head is still out there
 	tr := newTranscript(ft, 80, 20, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
@@ -148,21 +148,21 @@ func TestTranscriptViewportAnchorSurvivesAHeadSliceLanding(t *testing.T) {
 		Turn:        aria.Turn{ID: 5, Inquiry: "the question", Sealed: true, Nodes: tail},
 		From:        2,
 		ClippedHead: true,
-	}}})
+	}}}, aria.Notify)
 	tr := newTranscript(ft, 80, 10, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
 	tr.follow = false
 	tr.buildIndex()
 	tr.offset = 2
 
-	head := committedMessages(aria.Page{Parts: []aria.TurnPart{{
+	head := aria.Page{Parts: []aria.TurnPart{{
 		Turn:        aria.Turn{ID: 5, Inquiry: "the question", Sealed: true, Nodes: headNodes},
 		ClippedTail: true,
-	}}})
-	if len(head) != 1 || head[0].From != 0 || head[0].Inquiry == "" {
-		t.Fatalf("fixture: head slice = %+v", head)
+	}}}
+	if got := pageMessages(head); len(got) != 1 || got[0].From != 0 || got[0].Inquiry == "" {
+		t.Fatalf("fixture: head slice = %+v", got)
 	}
-	tr.applyPage(transcriptPageRequest{before: 5, beforeNode: 2}, historyPage{msgs: head})
+	tr.applyPage(transcriptPageRequest{before: 5, beforeNode: 2}, head)
 
 	// The landing shifts the tail slice down by the separator it now needs;
 	// what must NOT happen is the viewport ending up ABOVE the newly prepended

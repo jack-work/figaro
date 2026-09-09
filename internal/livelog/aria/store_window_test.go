@@ -12,6 +12,18 @@ import (
 // to stop keeping a second copy of the conversation. Every test here is a
 // canary for a specific claim in skills/figaro/contributing/range-store.md's migration step 2.
 
+// histPage is a sealed backward read of whole two-node turns.
+func histPage(turns ...int) Page {
+	var p Page
+	for _, turn := range turns {
+		p.Parts = append(p.Parts, TurnPart{Turn: Turn{
+			ID: uint64(turn), Sealed: true,
+			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "h"}, {Type: livedoc.NodeProse, Markdown: "h"}},
+		}})
+	}
+	return p
+}
+
 func histMsg(turn int, from uint64, n int) Message {
 	m := Message{Turn: turn, From: from, Role: livedoc.RoleOutput}
 	for i := 0; i < n; i++ {
@@ -80,51 +92,50 @@ func TestSkipIsTheForwardMirror(t *testing.T) {
 	}
 }
 
-// TestMergeIsSilentAndDeduped is why transcript.seed could be deleted: a
-// fetched page goes into the ONE owner without coming back out through
-// OnClosed (which, inline, freezes to the user's scrollback), and folding the
-// same history twice does not double it.
-func TestMergeIsSilentAndDeduped(t *testing.T) {
+// TestQuietFoldIsSilentAndDeduped: history a caller fetched itself goes into
+// the one owner without coming back out through OnClosed, which inline freezes
+// to the user's scrollback, and folding the same history twice does not double
+// it.
+func TestQuietFoldIsSilentAndDeduped(t *testing.T) {
 	c := NewClient()
 	fired := 0
 	c.OnClosed = func(Message) { fired++ }
 	c.OnLive = func(Message) { fired++ }
 
-	page := []Message{histMsg(1, 0, 2), histMsg(2, 0, 2)}
-	c.Merge(page, map[int]uint64{1: 2, 2: 2})
-	c.Merge(page, map[int]uint64{1: 2, 2: 2})
+	c.Apply(histPage(1, 2), Quiet)
+	c.Apply(histPage(1, 2), Quiet)
 
 	if fired != 0 {
-		t.Fatalf("Merge must fire no callbacks; got %d", fired)
+		t.Fatalf("a quiet fold must fire no callbacks; got %d", fired)
 	}
 	if got := c.Store().Count(); got != 2 {
-		t.Fatalf("merging the same page twice retains %d messages; want 2", got)
+		t.Fatalf("folding the same page twice retains %d messages; want 2", got)
 	}
 	if got := len(c.Store().Ranges()); got != 1 {
-		t.Fatalf("the extents make turns 1 and 2 neighbours: want one range, got %d", got)
+		t.Fatalf("the stated extents make turns 1 and 2 neighbours: want one range, got %d", got)
 	}
 }
 
-// TestMergeWithoutExtentsRefusesToGuess is the corrected spec's clause held at
-// the seam the pager actually uses: a page clipped at its tail states no
-// extent, so the store keeps the boundary honest rather than fabricating
-// adjacency.
-func TestMergeWithoutExtentsRefusesToGuess(t *testing.T) {
+// TestClippedTailStatesNoExtent: a part clipped at its tail states no extent,
+// so the store keeps the boundary honest rather than fabricating adjacency.
+func TestClippedTailStatesNoExtent(t *testing.T) {
 	c := NewClient()
-	c.Merge([]Message{histMsg(1, 0, 2), histMsg(2, 0, 2)}, nil)
+	p := histPage(1, 2)
+	p.Parts[0].ClippedTail = true
+	c.Apply(p, Quiet)
 	if got := len(c.Store().Ranges()); got != 2 {
 		t.Fatalf("no extent for turn 1 => no adjacency across it; got %d ranges", got)
 	}
 }
 
-// TestMergeBumpsTheRevision: the pager's tail window is derived from the store
-// per frame, but every OTHER consumer of ClosedRevision has to see a merge.
-func TestMergeBumpsTheRevision(t *testing.T) {
+// TestQuietFoldBumpsTheRevision: every consumer of ClosedRevision has to see
+// history arrive, even folded quietly.
+func TestQuietFoldBumpsTheRevision(t *testing.T) {
 	c := NewClient()
 	rev := c.ClosedRevision()
-	c.Merge([]Message{histMsg(3, 0, 1)}, nil)
+	c.Apply(histPage(3), Quiet)
 	if c.ClosedRevision() == rev {
-		t.Fatal("a merged page changes the retained set; the revision must move")
+		t.Fatal("a folded page changes the retained set; the revision must move")
 	}
 }
 
@@ -132,13 +143,7 @@ func TestMergeBumpsTheRevision(t *testing.T) {
 // and never-fetched are the same state.
 func TestEvictBeforeMakesAHole(t *testing.T) {
 	c := NewClient()
-	var msgs []Message
-	ext := map[int]uint64{}
-	for turn := 1; turn <= 6; turn++ {
-		msgs = append(msgs, histMsg(turn, 0, 2))
-		ext[turn] = 2
-	}
-	c.Merge(msgs, ext)
+	c.Apply(histPage(1, 2, 3, 4, 5, 6), Quiet)
 	c.EvictBefore(Anchor{Turn: 4})
 	s := c.Store()
 	if got := s.Count(); got != 3 {
@@ -219,38 +224,40 @@ func TestEnsureFillsAHoleThroughItsFetcher(t *testing.T) {
 	if got := len(s.Ranges()); got != 2 {
 		t.Fatalf("fixture: %d ranges, want a hole between two", got)
 	}
-	if err := s.Ensure(context.Background(), Anchor{Turn: 1}, Anchor{Turn: 20, Node: 1}); !errors.Is(err, ErrNoFetcher) {
+	c := NewClient()
+	c.Apply(histPage(1, 2, 3, 18, 19, 20), Quiet)
+	if err := c.Ensure(context.Background(), Anchor{Turn: 1}, Anchor{Turn: 20, Node: 1}); !errors.Is(err, ErrNoFetcher) {
 		t.Fatalf("with no fetcher installed, Ensure = %v; want ErrNoFetcher", err)
 	}
 	reads := []Anchor{}
-	s.SetFetcher(func(_ context.Context, before Anchor, limit int) (Fetched, error) {
+	c.SetFetcher(func(_ context.Context, before Anchor, limit int) (Page, error) {
 		reads = append(reads, before)
-		got := Fetched{Extents: map[int]uint64{}, More: true}
-		// The wire's answer: the `limit` messages immediately before `before`.
-		for turn := int(before.Turn) - 1; turn >= 1 && len(got.Msgs) < limit; turn-- {
-			got.Msgs = append([]Message{histMsg(turn, 0, 2)}, got.Msgs...)
-			got.Extents[turn] = 2
+		var turns []int
+		for turn := int(before.Turn) - 1; turn >= 1 && len(turns) < limit; turn-- {
+			turns = append([]int{turn}, turns...)
 		}
-		return got, nil
+		p := histPage(turns...)
+		p.More.Before = true
+		return p, nil
 	})
-	if err := s.Ensure(context.Background(), Anchor{Turn: 1}, Anchor{Turn: 20, Node: 1}); err != nil {
+	if err := c.Ensure(context.Background(), Anchor{Turn: 1}, Anchor{Turn: 20, Node: 1}); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
 	if len(reads) == 0 {
 		t.Fatal("Ensure closed the hole without reading")
 	}
-	// It reads at the anchor AFTER the hole: the first thing we DO hold above
-	// it: so the fill lands against the reader's own position first.
+	// It reads at the anchor after the hole, so the fill lands against the
+	// reader's own position first.
 	if reads[0] != (Anchor{Turn: 18}) {
 		t.Fatalf("first fill read at %v; want the anchor just past the hole", reads[0])
 	}
-	if got := len(s.Ranges()); got != 1 {
+	if got := len(c.Store().Ranges()); got != 1 {
 		t.Fatalf("a closed hole must coalesce: %d ranges", got)
 	}
-	if got, want := s.Count(), whole.Count(); got != want {
+	if got, want := c.Count(), whole.Count(); got != want {
 		t.Fatalf("filled store holds %d messages, the whole aria has %d", got, want)
 	}
-	for _, seg := range s.Query(Anchor{Turn: 1}, Anchor{Turn: 20, Node: 1}) {
+	for _, seg := range c.Query(Anchor{Turn: 1}, Anchor{Turn: 20, Node: 1}) {
 		if seg.Gap != nil {
 			t.Fatalf("Query still reports a hole after Ensure: %+v", seg.Gap)
 		}
@@ -258,19 +265,16 @@ func TestEnsureFillsAHoleThroughItsFetcher(t *testing.T) {
 }
 
 // TestEnsureRefusesToSpin: a fetcher that answers but never closes the hole
-// must be reported, not looped on. A server that disagrees with us about what
-// exists is a real possibility; a pager that hangs on it is not acceptable.
+// must be reported, not looped on.
 func TestEnsureRefusesToSpin(t *testing.T) {
-	s := NewStore()
-	s.SetTurnLen(1, 2)
-	s.SetTurnLen(9, 2)
-	s.Insert(histMsg(1, 0, 2), histMsg(9, 0, 2))
+	c := NewClient()
+	c.Apply(histPage(1, 9), Quiet)
 	calls := 0
-	s.SetFetcher(func(_ context.Context, _ Anchor, _ int) (Fetched, error) {
+	c.SetFetcher(func(_ context.Context, _ Anchor, _ int) (Page, error) {
 		calls++
-		return Fetched{More: true}, nil // "nothing here", forever
+		return Page{More: More{Before: true}}, nil // "nothing here", forever
 	})
-	if err := s.Ensure(context.Background(), Anchor{}, Anchor{Turn: 9, Node: 1}); !errors.Is(err, ErrStalled) {
+	if err := c.Ensure(context.Background(), Anchor{}, Anchor{Turn: 9, Node: 1}); !errors.Is(err, ErrStalled) {
 		t.Fatalf("Ensure = %v; want ErrStalled", err)
 	}
 	if calls != 1 {

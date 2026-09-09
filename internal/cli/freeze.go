@@ -92,7 +92,6 @@ func profileCPU(d time.Duration) string {
 	return path
 }
 
-
 // watchRenderLock is the watchdog. Once a second it asks for the render lock
 // and gives it straight back; when it cannot have it for freezeStuckAfter, it
 // dumps -- ONCE per episode, because a pager that is stuck stays stuck and a

@@ -99,12 +99,11 @@ func TestSeededPromotionDoesNotReRead(t *testing.T) {
 	lt := promotionFixture(t, 60, 12)
 	asked := 0
 	lt.setCatchUp(func() { asked++ })
-	lt.openInline(historyPage{
-		msgs: []aria.Message{{Turn: 5, Inquiry: "EARLIER", Nodes: []livedoc.Node{
-			{Type: livedoc.NodeProse, Markdown: "EARLIER REPLY"},
-		}}},
-		more: true,
-	})
+	seed := sealedPage(aria.Message{Turn: 5, Inquiry: "EARLIER", Nodes: []livedoc.Node{
+		{Type: livedoc.NodeProse, Markdown: "EARLIER REPLY"},
+	}})
+	seed.More.Before = true
+	lt.openInline(seed)
 
 	lt.apply(tallTurn(7, 40))
 

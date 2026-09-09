@@ -73,19 +73,19 @@ func TestSpeakerHeader_ContinuationCarriesNone(t *testing.T) {
 
 // The two producers of continuation slices, proven to produce From > 0.
 
-//  1. A page window that opens mid-turn: assemble() sets From=first,
-//     ClippedHead=true, and committedMessages drops the inquiry for it.
+//  1. A page window that opens mid-turn: assemble sets From=first and
+//     ClippedHead, and only the head slice carries the question.
 func TestSpeakerHeader_ClippedPagePartProducesHeaderlessSlice(t *testing.T) {
 	nodes := make([]livedoc.Node, 31)
 	for i := range nodes {
 		nodes[i] = toolNode("n", "bash", "x")
 	}
 	page := aria.Page{Parts: []aria.TurnPart{{
-		Turn:        aria.Turn{ID: 8, Inquiry: "mint a bunch of new arias", Nodes: nodes[21:]},
+		Turn:        aria.Turn{ID: 8, Inquiry: "mint a bunch of new arias", Sealed: true, Nodes: nodes[21:]},
 		From:        21,
 		ClippedHead: true,
 	}}}
-	msgs := committedMessages(page)
+	msgs := pageMessages(page)
 	if len(msgs) != 1 {
 		t.Fatalf("want 1 message, got %d", len(msgs))
 	}
@@ -97,16 +97,18 @@ func TestSpeakerHeader_ClippedPagePartProducesHeaderlessSlice(t *testing.T) {
 	}
 }
 
-//  2. A turn over transcriptUnitChars, cut by appendTurnSlices. Every unit
-//     after the first has From > 0 and no inquiry.
+//  2. A turn too big for one unit, cut by the fold. Every unit after the first
+//     has From > 0 and no inquiry.
 func TestSpeakerHeader_OversizeTurnSliceProducesHeaderlessSlice(t *testing.T) {
-	big := strings.Repeat("x", transcriptUnitChars/2+1)
+	big := strings.Repeat("x", 30000)
 	nodes := []livedoc.Node{
 		toolNode("a", "bash", big),
 		toolNode("b", "bash", big),
 		toolNode("c", "bash", "tail"),
 	}
-	msgs := sliceTurn(8, 0, nodes)
+	msgs := pageMessages(aria.Page{Parts: []aria.TurnPart{{
+		Turn: aria.Turn{ID: 8, Sealed: true, Nodes: nodes},
+	}}})
 	if len(msgs) < 2 {
 		t.Fatalf("expected the turn to be cut, got %d unit(s)", len(msgs))
 	}

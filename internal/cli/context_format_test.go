@@ -16,8 +16,8 @@ func TestFormatContextUsage(t *testing.T) {
 		// estimate about zero.
 		{0, 1_000_000, true, "0/1.0m 0.0%"},
 		{0, 1_000_000, false, "0/1.0m 0.0%"},
-		{0, 0, true, "-"},   // nothing known at all
-		{-1, 0, true, "-"},  // nor a nonsense count with no limit
+		{0, 0, true, "-"},  // nothing known at all
+		{-1, 0, true, "-"}, // nor a nonsense count with no limit
 		{-1, 1_000_000, true, "0/1.0m 0.0%"},
 		{135_000, 0, true, "135.0k"},   // limit unknown: bare count
 		{135_000, 0, false, "~135.0k"}, // estimated tail

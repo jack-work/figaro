@@ -443,7 +443,7 @@ func TestTranscriptPaint_MatchesNaiveRepaint(t *testing.T) {
 	for i := range committed {
 		committed[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: heavyNodes(i+1, 12)}}
 	}
-	client.Apply(aria.Page{Parts: committed})
+	client.Apply(aria.Page{Parts: committed}, aria.Notify)
 
 	got := newVT(w, h)
 	tr := newTranscript(got, w, h, &ariaView{settings: &renderSettings{}}, client, "aria0001", time.Unix(0, 0))
@@ -530,7 +530,7 @@ func scrollTranscript(tb testing.TB, out io.Writer, w, h, messages int) *transcr
 	for i := range committed {
 		committed[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: heavyNodes(i+1, 30)}}
 	}
-	client.Apply(aria.Page{Parts: committed})
+	client.Apply(aria.Page{Parts: committed}, aria.Notify)
 	tr := newTranscript(out, w, h, &ariaView{settings: &renderSettings{}}, client, "aria0001", time.Unix(0, 0))
 	tr.enter()
 	return tr
@@ -602,7 +602,7 @@ func TestTranscriptPaint_ScrollWithLiveContent(t *testing.T) {
 	for i := range committed {
 		committed[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: heavyNodes(i+1, 10)}}
 	}
-	client.Apply(aria.Page{Parts: committed})
+	client.Apply(aria.Page{Parts: committed}, aria.Notify)
 
 	got := newVT(100, 30)
 	tr := newTranscript(got, 100, 30, &ariaView{settings: &renderSettings{}}, client, "aria0001", time.Unix(0, 0))
@@ -621,7 +621,7 @@ func TestTranscriptPaint_ScrollWithLiveContent(t *testing.T) {
 		client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(100), Live: &aria.Live{From: 0, V: i + 1, Nodes: []aria.NodeDelta{{ID: 1, Set: map[string]any{
 			"type":     string(livedoc.NodeProse),
 			"markdown": strings.Repeat(fmt.Sprintf("streaming chunk %d. ", i), i+1),
-		}}}}}}}})
+		}}}}}}}}, aria.Notify)
 	}
 	for i := range 30 {
 		grow(i)

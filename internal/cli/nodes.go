@@ -26,7 +26,10 @@ const (
 // (Ctrl-O) and the unit re-rendered. Thinking blocks are always shown (muted);
 // verbose additionally expands tool inputs to the full wrapped command.
 type renderSettings struct {
-	verbose  bool
+	verbose bool
+	// sticky pins the question of the turn the reader is inside above the
+	// transcript body.
+	sticky   bool
 	jsonMode bool // -j / --json: emit a single {aria_id, ...} JSON line on stdout instead of a live render
 	listen   bool // -l / --listen: auto-enter the transcript at startup
 	// record is a path for the wire tape (testing). Empty is the ordinary

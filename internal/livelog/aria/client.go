@@ -16,14 +16,7 @@ import (
 type Client struct {
 	mu sync.Mutex
 
-	store      *Store
-	closedSeen map[int]bool
-	// closedFrom is the LOWEST offset finalized for a closed turn: the floor a
-	// later, earlier page can still fill in beneath. Without it a turn first met
-	// by its tail could never be completed: it was marked seen and every later
-	// part for it was skipped whole, dropping the head nodes AND the question.
-	closedFrom  map[int]int
-	closedFloor int
+	store       *Store
 	closedLimit int
 	closedRev   uint64
 	// Highest fully sealed turn; the field name predates turn addressing.
@@ -35,16 +28,12 @@ type Client struct {
 	// the record version, and the node buffer.
 
 	// emitted[turn] is how many of a turn's nodes have already gone out as
-	// closed messages, and inquiry[turn] is that turn's opening question until
-	// its first slice carries it away. The inquiry commits before the agent has
-	// said anything, so it must be held here to be attached to whichever slice
-	// turns out to start the turn.
+	// closed messages.
 	emitted map[int]int
-	// inquiry holds a turn's opening question until a slice carries it away.
-	// Text and segments travel in ONE map: a second map keyed the same way
-	// cost a whole allocation and its growth per client, and measured as a
-	// ~19% B/op regression on the fold path for a field most turns leave nil.
-	inquiry map[int]heldInquiry
+	// inquiry[turn] is that turn's opening question, held for as long as any
+	// part of the turn is retained.
+	inquiry map[int]Inquiry
+	fetch   Fetcher
 
 	OnClosed  func(Message)
 	OnLive    func(Message)
@@ -52,49 +41,26 @@ type Client struct {
 	OnMetrics func(Metrics)
 }
 
-// heldInquiry is a turn's question and its per-sender split, parked together
-// until a slice starts the turn. One value in one map rather than two maps
-// keyed alike: the second map's allocation and growth showed up as a B/op
-// regression on the fold path, for a field most turns leave nil.
-type heldInquiry struct {
-	text     string
-	segments []InquirySegment
-	// formDeltas is the TURN-level form state, parked here for the same
-	// reason the segments are: it belongs to the head slice, which may
-	// arrive frames later. Dropping it made a LIVE aria's pager blind to
-	// every delta whose window closed on an inquiry record -- which is
-	// most of them, since study stamps ride user records.
-	formDeltas map[string]livedoc.FormDelta
+// Inquiry is a turn's opening question: the text, its per-sender split, and the
+// turn-level form state that arrived with it.
+type Inquiry struct {
+	Text       string
+	Segments   []InquirySegment
+	FormDeltas map[string]livedoc.FormDelta
 }
 
 // NewClient returns a fresh client.
 func NewClient() *Client {
-	return &Client{store: NewStore(), closedSeen: map[int]bool{}, closedFrom: map[int]int{}, emitted: map[int]int{}, inquiry: map[int]heldInquiry{}}
+	return &Client{store: NewStore(), emitted: map[int]int{}, inquiry: map[int]Inquiry{}}
 }
 
-// Store exposes the range store beneath the client. Phase 1 has no consumer:
-// it is here so tests can assert the invariants the shim is built on. It is
-// NOT safe to use concurrently with Apply: the client's mutex guards the
-// store, and this hands out the guarded object.
+// Store exposes the range store beneath the client. It is not safe to use
+// concurrently with Apply: the client's mutex guards the store, and this hands
+// out the guarded object.
 func (c *Client) Store() *Store {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.store
-}
-
-// Merge folds messages a caller fetched ITSELF: the pager's backward read,
-// incipit's catch-up page: into the store, WITHOUT firing OnClosed or OnLive.
-func (c *Client) Merge(msgs []Message, extents map[int]uint64) {
-	if len(msgs) == 0 {
-		return
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for turn, n := range extents {
-		c.store.SetTurnLen(uint64(turn), n)
-	}
-	c.store.Insert(msgs...)
-	c.closedRev++
 }
 
 // Query reports what the store HOLDS over [from, to]; it never fetches. The
@@ -116,12 +82,11 @@ func (c *Client) ForEachIn(from, to Anchor, fn func(Message) bool) {
 	c.store.ForEachIn(from, to, fn)
 }
 
-// SetFetcher installs the reader Ensure fills holes with (see Store.Ensure).
-// Wired by whoever owns the RPC client, once, before the pager can ask.
+// SetFetcher installs the reader Ensure fills holes with.
 func (c *Client) SetFetcher(f Fetcher) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.store.SetFetcher(f)
+	c.fetch = f
 }
 
 // Ensure fills every hole in [from, to] so that Query over the same interval
@@ -133,7 +98,7 @@ func (c *Client) Ensure(ctx context.Context, from, to Anchor) error {
 		}
 		c.mu.Lock()
 		gap, ok := c.store.firstGap(from, to)
-		fetch, before := c.store.Fetcher(), c.store.Count()
+		fetch, before := c.fetch, c.store.Count()
 		c.mu.Unlock()
 		if !ok {
 			return nil
@@ -146,11 +111,11 @@ func (c *Client) Ensure(ctx context.Context, from, to Anchor) error {
 			return err
 		}
 		c.mu.Lock()
-		c.store.Absorbed(got)
+		c.fold(got)
+		m := c.store.More()
+		m.Before = got.More.Before
+		c.store.SetMore(m)
 		grew := c.store.Count() != before
-		if grew {
-			c.closedRev++
-		}
 		c.mu.Unlock()
 		if !grew {
 			return ErrStalled
@@ -199,9 +164,7 @@ func (c *Client) Before(a Anchor, n int) (Anchor, int) {
 	return c.store.Before(a, n)
 }
 
-// EvictBefore forgets everything below a. Eviction and never-fetched are the
-// same state, so what this costs is a possible re-read if the reader turns
-// around: exactly what it costs to have never held it.
+// EvictBefore forgets everything below a.
 func (c *Client) EvictBefore(a Anchor) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -213,6 +176,20 @@ func (c *Client) EvictBefore(a Anchor) {
 	if c.store.Count() != before {
 		c.closedRev++
 	}
+	for id := range c.inquiry {
+		if id < int(a.Turn) {
+			delete(c.inquiry, id)
+		}
+	}
+}
+
+// InquiryOf reports a turn's opening question, which is held while any part of
+// the turn is retained.
+func (c *Client) InquiryOf(turn int) (Inquiry, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	q, ok := c.inquiry[turn]
+	return q, ok
 }
 
 // SetMoreBefore records whether anything precedes the oldest retained message.
@@ -260,175 +237,29 @@ func (c *Client) OpenAnimating() bool {
 	return c.store.OpenAnimating()
 }
 
-// Apply folds one page.
-// Apply folds a Page into the local view.
-func (c *Client) Apply(p Page) {
+// Fold says whether a folded page notifies the client's observers. History a
+// caller fetched itself folds Quiet: nothing about it is news.
+type Fold bool
+
+const (
+	Notify Fold = true
+	Quiet  Fold = false
+)
+
+// Apply folds a Page into the local view and reports the messages it closed,
+// oldest first.
+func (c *Client) Apply(p Page, f Fold) []Message {
 	c.mu.Lock()
-	var finalized []Message
-	desync := -1
-	metrics := p.Metrics
-
-	for _, part := range p.Parts {
-		id := int(part.ID)
-		// THE OPEN-TURN SLOTS ARE ONE BUFFER, AND ONLY ONE TURN MAY HOLD THEM.
-		// Decided once, here, rather than re-derived by each branch: three branches
-		// disagreeing about who owns the buffer is what let a page of history claim
-		// the slots and then destroy the live turn on its way out. See claimsOpen.
-		staged := c.claimsOpen(part)
-
-		// The inquiry is TEXT ON THE TURN, not a node, and it commits before the
-		// agent has said anything: so it arrives on a part of its own, with no
-		// nodes and no Live. Hold it until the head slice carries it away, and open
-		// the turn now so the question paints the instant it is asked. The turn's
-		// form deltas are held the same way, for the same reason.
-		if part.Inquiry != "" || len(part.FormDeltas) > 0 {
-			// RECORDING is bookkeeping and always safe: including on a
-			// clipped-head part, which is what a backward page into history is
-			// made of. It used to sit inside the ClippedHead guard, against its
-			// own comment, so paging up through an old aria never learned any of
-			// its questions and the head slice, when it arrived, drew none.
-			c.inquiry[id] = heldInquiry{text: part.Inquiry, segments: part.InquirySegments, formDeltas: part.FormDeltas}
-			// OPENING is what history is refused: a part whose head was clipped
-			// describes a turn we hold only the tail of, and claiming the open
-			// slot for it would destroy the live turn on its way past.
-			if staged && !part.ClippedHead {
-				c.store.ClaimOpen(id)
-			}
-		}
-
-		// Adopt any nodes the part carries. From is the positional id of
-		// Nodes[0], so a clipped part slots into place rather than replacing.
-		if len(part.Nodes) > 0 && staged {
-			c.store.ClaimOpen(id)
-			// A part CLIPPED off the head of a turn is ALL we hold of it: the
-			// nodes below From were never delivered, so they are not ours to
-			// release. Floor the emit cursor at From, or absorb's padding slots
-			// go out as a slice starting at node 0, a HEAD slice, which the
-			// renderers draw the question above, except that a clipped part
-			// carries no question. That is how a turn too big for one page lost
-			// its inquiry in every surface at once.
-			if n := int(part.From); n > c.emitted[id] && n > c.store.OpenLen() {
-				c.emitted[id] = n
-			}
-			c.store.Absorb(part.From, part.Nodes)
-		}
-
-		if part.Live != nil && staged {
-			c.store.ClaimOpen(id)
-			c.store.SetLiveFrom(part.Live.From)
-			for _, nd := range part.Live.Nodes {
-				c.store.FoldAt(nd)
-			}
-			// Everything below Live.From is closed for good. Release it now so
-			// the head of a long turn reaches scrollback instead of riding the
-			// live region until the turn seals.
-			if n := int(c.store.LiveFrom()); n > c.emitted[id] && n <= c.store.OpenLen() {
-				finalized = append(finalized, c.message(id, c.emitted[id], c.store.OpenSlice(c.emitted[id], n)))
-				c.emitted[id] = n
-			}
-			if len(part.Live.Nodes) > 0 {
-				c.store.SetOpenV(part.Live.V)
-			} else if c.store.OpenV() != part.Live.V && len(part.Nodes) == 0 {
-				// A close marker whose version we never reached: we missed
-				// frames, so ask for a catch-up rather than show a gap.
-				desync = c.lastCommittedLT
-			}
-		}
-
-		if !part.Sealed {
-			continue
-		}
-		if c.seenClosed(id) {
-			// A turn already seen closed can still be COMPLETED DOWNWARD. A
-			// backward page delivers the tail of the oldest turn it reaches, so
-			// the page after it carries that turn's head, and skipping it
-			// wholesale dropped the opening nodes, and the question with them.
-			// Only what lies below the floor is adopted; the rest we already hold.
-			if floor, ok := c.closedFrom[id]; ok && len(part.Nodes) > 0 && int(part.From) < floor {
-				n := min(floor-int(part.From), len(part.Nodes))
-				finalized = append(finalized, c.message(id, int(part.From),
-					append([]livedoc.Node(nil), part.Nodes[:n]...)))
-				c.closedFrom[id] = int(part.From)
-			}
-			c.advanceCommitted(id)
-			continue
-		}
-		c.closedSeen[id] = true
-		if staged {
-			// The turn we were holding open has sealed. Release what we STREAMED,
-			// not what the part restates: a seal often arrives as a bare marker,
-			// and the buffer is then the fuller record.
-			nodes := part.Nodes
-			if c.store.OpenLen() >= len(nodes) {
-				nodes = c.store.OpenNodes()
-			}
-			// Everything not already released closes as one message. A turn that
-			// produced nothing at all (interrupted before its first block) still
-			// closes one, carrying the inquiry: otherwise the question the user
-			// asked would never reach scrollback.
-			if s := c.emitted[id]; s < len(nodes) {
-				finalized = append(finalized, c.message(id, s, nodes[s:]))
-				c.store.SetTurnLen(uint64(id), uint64(len(nodes)))
-			} else if s == 0 && c.inquiry[id].text != "" {
-				finalized = append(finalized, c.message(id, 0, nil))
-				c.store.SetTurnLen(uint64(id), 1)
-			} else if len(nodes) > 0 {
-				c.store.SetTurnLen(uint64(id), uint64(len(nodes)))
-			}
-		} else {
-			// HISTORY. THE PART IS THE RECORD, and part.From is where it belongs.
-			// This is the answer for a clipped sealed slice too: the buffer only
-			// ever existed to give absorb() somewhere to pad to, and padding is
-			// how a clipped slice used to be reconstructed. Reading the offset off
-			// the part instead makes the padding unnecessary: message() attaches
-			// the inquiry only at offset 0, which is exactly the slice entitled to
-			// draw the question.
-			if len(part.Nodes) > 0 {
-				finalized = append(finalized, c.message(id, int(part.From),
-					append([]livedoc.Node(nil), part.Nodes...)))
-				// A part that is not clipped at the tail states the turn's
-				// extent, and the extent is what lets the store decide that
-				// (t, last) and (t+1, 0) are neighbours rather than a hole.
-				if !part.ClippedTail {
-					c.store.SetTurnLen(uint64(id), part.From+uint64(len(part.Nodes)))
-				}
-			} else if c.inquiry[id].text != "" {
-				finalized = append(finalized, c.message(id, 0, nil))
-				if !part.ClippedTail {
-					c.store.SetTurnLen(uint64(id), 1)
-				}
-			}
-		}
-		delete(c.emitted, id)
-		c.noteClosedFrom(id, finalized)
-		// The held question is spent only once the HEAD slice has carried it away.
-		// A part clipped at the head is not that slice: the page holding the head
-		// arrives later, and discarding here is how a turn met by scrolling up
-		// lost its question for good.
-		if !part.ClippedHead {
-			delete(c.inquiry, id)
-		}
-		c.advanceCommitted(id)
-		if c.store.OpenTurn() == id {
-			c.store.ResetOpen()
-		}
-	}
-
-	if len(finalized) > 0 {
-		c.store.Insert(finalized...)
-		c.closedRev++
-	}
-	c.trimClosed()
-
+	finalized, desync := c.fold(p)
 	haveLive := c.store.OpenTurn() != 0
-	// The live region is the OPEN SUFFIX only. Nodes below openFrom were
-	// already released as closed messages above; redrawing them here would
-	// print them twice.
 	live := c.openMessage()
 	c.mu.Unlock()
 
-	if metrics != nil && c.OnMetrics != nil {
-		c.OnMetrics(*metrics)
+	if f == Quiet {
+		return finalized
+	}
+	if p.Metrics != nil && c.OnMetrics != nil {
+		c.OnMetrics(*p.Metrics)
 	}
 	for _, m := range finalized {
 		if c.OnClosed != nil {
@@ -441,10 +272,141 @@ func (c *Client) Apply(p Page) {
 	if desync >= 0 && c.OnDesync != nil {
 		c.OnDesync(desync)
 	}
+	return finalized
 }
 
-// claimsOpen reports whether a part is entitled to the OPEN-TURN SLOTS -
-// openTurn, openFrom, openV and openNodesSlice.
+// fold folds a page into the store and reports the messages it closed and the
+// turn to re-read from on a version mismatch (-1 for none). Caller holds c.mu.
+func (c *Client) fold(p Page) (finalized []Message, desync int) {
+	desync = -1
+
+	for _, part := range p.Parts {
+		id := int(part.ID)
+		// One turn at a time may hold the open slots; see claimsOpen.
+		staged := c.claimsOpen(part)
+
+		// The question commits before the agent has said anything, so it
+		// arrives on a part of its own and is held against the turn.
+		if part.Inquiry != "" || len(part.FormDeltas) > 0 {
+			c.inquiry[id] = Inquiry{Text: part.Inquiry, Segments: part.InquirySegments, FormDeltas: part.FormDeltas}
+			// A part clipped at the head describes a turn we hold only the tail
+			// of, and may not claim the open slots.
+			if staged && !part.ClippedHead {
+				c.store.ClaimOpen(id)
+			}
+		}
+
+		// From is the positional id of Nodes[0], so a clipped part slots into
+		// place rather than replacing.
+		if len(part.Nodes) > 0 && staged {
+			c.store.ClaimOpen(id)
+			// Nodes below From were never delivered and are not ours to release.
+			if n := int(part.From); n > c.emitted[id] && n > c.store.OpenLen() {
+				c.emitted[id] = n
+			}
+			c.store.Absorb(part.From, part.Nodes)
+		}
+
+		if part.Live != nil && staged {
+			c.store.ClaimOpen(id)
+			c.store.SetLiveFrom(part.Live.From)
+			for _, nd := range part.Live.Nodes {
+				c.store.FoldAt(nd)
+			}
+			// Everything below Live.From is closed for good; release it now so
+			// the head of a long turn need not wait for the seal.
+			if n := int(c.store.LiveFrom()); n > c.emitted[id] && n <= c.store.OpenLen() {
+				finalized = c.appendUnits(finalized, id, c.emitted[id], c.store.OpenSlice(c.emitted[id], n))
+				c.emitted[id] = n
+			}
+			if len(part.Live.Nodes) > 0 {
+				c.store.SetOpenV(part.Live.V)
+			} else if c.store.OpenV() != part.Live.V && len(part.Nodes) == 0 {
+				// A close marker for a version we never reached: frames were
+				// missed, so ask for a catch-up rather than show a gap.
+				desync = c.lastCommittedLT
+			}
+		}
+
+		if !part.Sealed {
+			continue
+		}
+		if staged {
+			// Release what was streamed, not what the part restates: a seal
+			// often arrives as a bare marker, and the buffer is the fuller
+			// record.
+			nodes := part.Nodes
+			if c.store.OpenLen() >= len(nodes) {
+				nodes = c.store.OpenNodes()
+			}
+			if s := c.emitted[id]; s < len(nodes) {
+				finalized = c.appendUnits(finalized, id, s, nodes[s:])
+				c.store.SetTurnLen(uint64(id), uint64(len(nodes)))
+			} else if s == 0 && c.inquiry[id].Text != "" {
+				finalized = append(finalized, c.message(id, 0, nil))
+				c.store.SetTurnLen(uint64(id), 1)
+			} else if len(nodes) > 0 {
+				c.store.SetTurnLen(uint64(id), uint64(len(nodes)))
+			}
+		} else if len(part.Nodes) > 0 {
+			finalized = c.appendUnits(finalized, id, int(part.From),
+				append([]livedoc.Node(nil), part.Nodes...))
+			// A part not clipped at the tail states the turn's extent, which is
+			// what lets the store call (t, last) and (t+1, 0) neighbours.
+			if !part.ClippedTail {
+				c.store.SetTurnLen(uint64(id), part.From+uint64(len(part.Nodes)))
+			}
+		} else if c.inquiry[id].Text != "" {
+			finalized = append(finalized, c.message(id, 0, nil))
+			if !part.ClippedTail {
+				c.store.SetTurnLen(uint64(id), 1)
+			}
+		}
+		delete(c.emitted, id)
+		c.advanceCommitted(id)
+		if c.store.OpenTurn() == id {
+			c.store.ResetOpen()
+		}
+	}
+
+	if len(finalized) > 0 {
+		// The store is the one authority on what is already held: what it takes
+		// is what is news.
+		finalized = c.store.Insert(finalized...)
+		c.closedRev++
+	}
+	c.trimClosed()
+	return finalized, desync
+}
+
+// unitChars bounds one materialized message's payload, so a renderer caching
+// rows per message caches them at a useful granularity. A node is never split.
+const unitChars = 40000
+
+// appendUnits appends nodes as one message, or as several when they exceed
+// unitChars. Caller holds c.mu.
+func (c *Client) appendUnits(dst []Message, turn, from int, nodes []livedoc.Node) []Message {
+	size := func(n livedoc.Node) int { return len(n.Markdown) + len(n.Output) + len(n.Summary) }
+	total := 0
+	for _, n := range nodes {
+		total += size(n)
+	}
+	if total < unitChars || len(nodes) < 2 {
+		return append(dst, c.message(turn, from, nodes))
+	}
+	start, budget := 0, 0
+	for i, n := range nodes {
+		budget += size(n)
+		if budget < unitChars && i < len(nodes)-1 {
+			continue
+		}
+		dst = append(dst, c.message(turn, from+start, nodes[start:i+1]))
+		start, budget = i+1, 0
+	}
+	return dst
+}
+
+// claimsOpen reports whether a part is entitled to the open-turn slots.
 func (c *Client) claimsOpen(part TurnPart) bool {
 	id := int(part.ID)
 	switch {
@@ -456,7 +418,7 @@ func (c *Client) claimsOpen(part TurnPart) bool {
 		return true
 	case part.Sealed:
 		return false
-	case c.seenClosed(id):
+	case c.store.Complete(id):
 		return false
 	}
 	return true
@@ -481,9 +443,9 @@ func turnRole(nodes []livedoc.Node) string {
 func (c *Client) message(turn, from int, nodes []livedoc.Node) Message {
 	m := Message{Turn: turn, From: uint64(from), Role: turnRole(nodes), Nodes: nodes}
 	if from == 0 {
-		held := c.inquiry[turn]
-		m.Inquiry, m.InquirySegments = held.text, held.segments
-		m.FormDeltas = held.formDeltas
+		q := c.inquiry[turn]
+		m.Inquiry, m.InquirySegments = q.Text, q.Segments
+		m.FormDeltas = q.FormDeltas
 	}
 	return m
 }
@@ -495,57 +457,23 @@ func (c *Client) openMessage() Message {
 	return c.message(turn, c.store.OpenBase(e), c.store.OpenSuffix(e))
 }
 
-// trimClosed enforces the retention limit. The store keeps its messages in
-// (Turn, From) order by construction, so the sort this used to do: over a
-// list in ARRIVAL order, which interleaves when a live-sealed message precedes
-// a catch-up read of older history: is now the substrate's job.
+// trimClosed enforces the retention limit, and with it the lifetime of a held
+// question: a turn no longer retained keeps none.
 func (c *Client) trimClosed() {
 	if c.closedLimit <= 0 || c.store.Count() <= c.closedLimit {
 		return
 	}
 	c.closedRev++
 	c.store.TrimOldestTo(c.closedLimit)
-	// Rebuild by WALKING the retained set, not by materializing a copy of it:
-	// this runs on every Apply once an aria is longer than the limit, and the
-	// copy doubled the retention path's allocation.
-	first, n := 0, 0
-	c.closedSeen = make(map[int]bool, c.closedLimit)
-	c.closedFrom = make(map[int]int, c.closedLimit)
-	c.store.ForEach(func(m Message) bool {
-		if n == 0 {
-			first = m.Turn
-		}
-		n++
-		c.closedSeen[m.Turn] = true
-		return true
-	})
-	if n > 0 && first > c.closedFloor {
-		c.closedFloor = first
+	first := c.store.First()
+	if first == nil {
+		return
 	}
-	// A question held for a turn whose head never arrived would otherwise
-	// outlive every slice of it. Retention is the one place that knows.
 	for id := range c.inquiry {
-		if id < c.closedFloor {
+		if id < first.Turn {
 			delete(c.inquiry, id)
 		}
 	}
-}
-
-// noteClosedFrom records the lowest offset finalized for a turn, so a later
-// page carrying earlier nodes knows how much of itself is new.
-func (c *Client) noteClosedFrom(id int, finalized []Message) {
-	for _, m := range finalized {
-		if m.Turn != id {
-			continue
-		}
-		if cur, ok := c.closedFrom[id]; !ok || int(m.From) < cur {
-			c.closedFrom[id] = int(m.From)
-		}
-	}
-}
-
-func (c *Client) seenClosed(lt int) bool {
-	return lt < c.closedFloor || c.closedSeen[lt]
 }
 
 // View is the client's local reconstruction.

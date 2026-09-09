@@ -149,7 +149,7 @@ func TestMergedFollowFrameLeavesTheWindowAlone(t *testing.T) {
 	rev := tr.windowRev
 	for i := range 20 {
 		client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(41), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{
-			"type": "prose", "markdown": "streaming token " + itoa(i)}}}}}}}})
+			"type": "prose", "markdown": "streaming token " + itoa(i)}}}}}}}}, aria.Notify)
 		tr.tick++
 		tr.render()
 	}
@@ -162,7 +162,7 @@ func TestMergedFollowFrameLeavesTheWindowAlone(t *testing.T) {
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 		ID: 41, Sealed: true,
 		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "committed"}},
-	}}}})
+	}}}}, aria.Notify)
 	tr.render()
 	if tr.windowRev == rev {
 		t.Fatal("a committed message did not announce a window change")
@@ -262,7 +262,7 @@ func TestMergedOpenMessageIsExcludedFromTheBudget(t *testing.T) {
 	for l := range 500 {
 		huge += "a very long line of streaming output number " + itoa(l) + "\n\n"
 	}
-	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(121), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{"type": "prose", "markdown": huge}}}}}}}})
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(121), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{"type": "prose", "markdown": huge}}}}}}}}, aria.Notify)
 
 	tr := newTranscript(ldrender.NewFakeTerminal(60, 16), 60, 16, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
@@ -288,7 +288,7 @@ func TestMergedOpenMessageIsExcludedFromTheBudget(t *testing.T) {
 
 	// And growing the live message further must not move the budget's inputs.
 	before, beforeMsgs := held, msgs
-	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(121), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{"type": "prose", "markdown": huge + huge}}}}}}}})
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(121), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{"type": "prose", "markdown": huge + huge}}}}}}}}, aria.Notify)
 	tr.render()
 	if gotRows, gotMsgs := tr.heldWindow(); gotRows != before || gotMsgs != beforeMsgs {
 		t.Fatalf("a growing open message moved the budget: %d rows/%d msgs -> %d/%d",

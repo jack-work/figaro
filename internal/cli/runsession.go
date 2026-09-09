@@ -277,7 +277,7 @@ func (in *interactiveInput) sendPrompt(ctx context.Context) {
 		in.enterTranscript()
 	}
 
-	var fetched historyPage
+	var fetched aria.Page
 	if catchUp && !joined && !awaitOwnTurn(in.prompt, in.ownTurn, in.noTurn) {
 		fetched = recentContext(ctx, in.subject, cursor)
 	}

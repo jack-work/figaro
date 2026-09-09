@@ -14,10 +14,8 @@ import (
 // jumpFixture is an aria whose turn ids START AT firstTurn: the fork case,
 // where StampIDs adopts the parent's numbering and the first turn is emphatically
 // not 1. Pass firstTurn=1 for the ordinary case.
-func jumpFixture(tb testing.TB, firstTurn, turns int) *transcript {
-	tb.Helper()
-	client := aria.NewClient()
-	client.SetClosedLimit(transcriptTailLimit)
+// jumpPage is a run of sealed three-node turns, each with its question.
+func jumpPage(firstTurn, turns int) aria.Page {
 	parts := make([]aria.TurnPart, 0, turns)
 	for i := range turns {
 		id := uint64(firstTurn + i)
@@ -30,7 +28,14 @@ func jumpFixture(tb testing.TB, firstTurn, turns int) *transcript {
 			},
 		}})
 	}
-	client.Apply(aria.Page{Parts: parts})
+	return aria.Page{Parts: parts}
+}
+
+func jumpFixture(tb testing.TB, firstTurn, turns int) *transcript {
+	tb.Helper()
+	client := aria.NewClient()
+	client.SetClosedLimit(transcriptTailLimit)
+	client.Apply(jumpPage(firstTurn, turns), aria.Notify)
 	// The wire has not said the aria begins here, so the pager may still walk
 	// backward: which is the interesting case for a FORK, whose first turn id
 	// is not 1 and whose floor can only be found by an empty read.
@@ -151,7 +156,7 @@ func drainJump(t *testing.T, tr *transcript) {
 		if !need {
 			return
 		}
-		tr.applyPage(req, historyPage{})
+		tr.applyPage(req, aria.Page{})
 	}
 	t.Fatal("the page cursor never stopped asking")
 }
@@ -210,8 +215,9 @@ func TestJumpBudgetTerminates(t *testing.T) {
 		fetches++
 		// A store that answers with the same content forever: no progress, no
 		// floor. The budget is the only thing that can end this.
-		tr.applyPage(req, historyPage{more: true, msgs: []aria.Message{{Turn: 100, Role: livedoc.RoleOutput,
-			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "again"}}}}})
+		tr.applyPage(req, aria.Page{More: aria.More{Before: true}, Parts: []aria.TurnPart{{
+			Turn: aria.Turn{ID: 100, Sealed: true,
+				Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "again"}}}}}})
 	}
 	if tr.jump != nil {
 		t.Fatalf("the walk never gave up after %d fetches", fetches)

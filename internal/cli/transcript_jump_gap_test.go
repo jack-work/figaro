@@ -69,8 +69,7 @@ func TestJumpIntoAHoleSnapsWhenItCloses(t *testing.T) {
 	if tr.jump == nil {
 		t.Fatal("fixture: the walk did not start")
 	}
-	filled := jumpFixture(t, 1, 8)
-	tr.client.Merge(filled.messages(), nil)
+	tr.client.Apply(jumpPage(1, 8), aria.Quiet)
 	tr.invalidateWindow()
 	tr.settle()
 	tr.jumpAdvance()

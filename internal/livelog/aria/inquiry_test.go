@@ -47,7 +47,7 @@ func TestClientAlwaysHasTheQuestion(t *testing.T) {
 	for n := 1; n <= len(frames); n++ {
 		c := NewClient()
 		for _, f := range frames[:n] {
-			c.Apply(f)
+			c.Apply(f, Notify)
 		}
 		got, sender := questionOf(c, 1)
 		if got != q {
@@ -82,12 +82,12 @@ func TestLateJoinerRecoversTheQuestionFromARead(t *testing.T) {
 
 	c := NewClient()
 	for _, f := range late {
-		c.Apply(f)
+		c.Apply(f, Notify)
 	}
 	if got, _ := questionOf(c, 1); got == q {
 		t.Fatal("fixture broken: the late joiner was supposed to miss the question")
 	}
-	c.Apply(s.Read(Anchor{}, 1<<20))
+	c.Apply(s.Read(Anchor{}, 1<<20), Notify)
 	if got, _ := questionOf(c, 1); got != q {
 		t.Errorf("a read must re-supply the question, got %q", got)
 	}

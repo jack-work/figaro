@@ -496,22 +496,21 @@ func TestEvictionOpensAGap(t *testing.T) {
 	}
 }
 
-// TestEnsureIsAStub records phase 1's honest limitation.
-func TestEnsureIsAStub(t *testing.T) {
-	s := NewStore()
-	s.SetTurnLen(1, 3)
-	s.Insert(pmsg(1, 0, 3))
-	if err := s.Ensure(context.Background(), Anchor{Turn: 1}, Anchor{Turn: 1, Node: 2}); err != nil {
+// TestEnsureNeedsAFetcher: a whole interval needs no fetch, a hole with no
+// fetcher installed is an error, and a cancelled context is reported.
+func TestEnsureNeedsAFetcher(t *testing.T) {
+	c := NewClient()
+	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: 1, Sealed: true, Nodes: []livedoc.Node{pnode("a"), pnode("b"), pnode("c")}}}}}, Quiet)
+	if err := c.Ensure(context.Background(), Anchor{Turn: 1}, Anchor{Turn: 1, Node: 2}); err != nil {
 		t.Fatalf("a whole interval needs no fetch: %v", err)
 	}
-	s.Evict(Anchor{Turn: 1, Node: 1}, Anchor{Turn: 1, Node: 1})
-	err := s.Ensure(context.Background(), Anchor{Turn: 1}, Anchor{Turn: 1, Node: 2})
-	if !errors.Is(err, ErrNoFetcher) {
-		t.Fatalf("phase 1 cannot fill a hole; got %v", err)
+	c.Store().Evict(Anchor{Turn: 1, Node: 1}, Anchor{Turn: 1, Node: 1})
+	if err := c.Ensure(context.Background(), Anchor{Turn: 1}, Anchor{Turn: 1, Node: 2}); !errors.Is(err, ErrNoFetcher) {
+		t.Fatalf("a hole with no fetcher; got %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := s.Ensure(ctx, Anchor{Turn: 1}, Anchor{Turn: 1, Node: 2}); !errors.Is(err, context.Canceled) {
+	if err := c.Ensure(ctx, Anchor{Turn: 1}, Anchor{Turn: 1, Node: 2}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("Ensure must be cancellable; got %v", err)
 	}
 }

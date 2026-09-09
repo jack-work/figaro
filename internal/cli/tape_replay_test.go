@@ -82,7 +82,7 @@ func replayTape(t *testing.T, path string, frame func(tr *transcript, i int)) {
 		ldrender.NodeText{}, client, h.Aria, time.Time{})
 	tr.enter()
 	for i, p := range pages {
-		client.Apply(p)
+		client.Apply(p, aria.Notify)
 		tr.renderFrame()
 		frame(tr, i)
 	}

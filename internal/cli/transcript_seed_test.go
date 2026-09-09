@@ -44,7 +44,7 @@ func seedFixture(t *testing.T) *transcript {
 			},
 		}})
 	}
-	client.Apply(aria.Page{Parts: parts})
+	client.Apply(aria.Page{Parts: parts}, aria.Notify)
 	tr := newTranscript(ldrender.NewFakeTerminal(60, 20), 60, 20,
 		&ariaView{settings: &renderSettings{}}, client, "aria1234", time.Unix(0, 0))
 	tr.enter()

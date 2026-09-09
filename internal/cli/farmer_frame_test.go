@@ -29,7 +29,7 @@ func farmerTranscript(t *testing.T, w, h int) *transcript {
 	client.SetClosedLimit(transcriptTailLimit)
 	client.Apply(aria.Page{Parts: []aria.TurnPart{
 		{Turn: aria.Turn{ID: 1, Inquiry: "please look", Sealed: true, Nodes: nodes}},
-	}})
+	}}, aria.Notify)
 	ft := ldrender.NewFakeTerminal(w, h)
 	tr := newTranscript(ft, w, h, &ariaView{settings: &renderSettings{}}, client, "aria1234", time.Unix(0, 0))
 	tr.enter()

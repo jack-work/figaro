@@ -23,7 +23,7 @@ func heavyFollowTranscript(b *testing.B, messages, outputLines int) (*transcript
 	for i := range committed {
 		committed[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: heavyNodes(i+1, outputLines)}}
 	}
-	client.Apply(aria.Page{Parts: committed})
+	client.Apply(aria.Page{Parts: committed}, aria.Notify)
 	tr := newTranscript(io.Discard, 100, 40, &ariaView{settings: &renderSettings{}}, client, "benchmark", time.Unix(0, 0))
 	tr.enter()
 	return tr, client
@@ -54,7 +54,7 @@ func BenchmarkTranscriptLiveHeavy(b *testing.B) {
 		client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(201), Live: &aria.Live{From: 0, V: i, Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{
 			"type":     string(livedoc.NodeProse),
 			"markdown": fmt.Sprintf("live token stream, chunk %d, still going", i),
-		}}}}}}}})
+		}}}}}}}}, aria.Notify)
 		tr.render()
 	}
 }

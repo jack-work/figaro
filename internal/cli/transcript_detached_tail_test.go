@@ -38,7 +38,7 @@ func TestDetachedTailAdvancesAndScreenHoldsStill(t *testing.T) {
 			}}},
 		}}}}}
 	}
-	client.Apply(live(0, 1, 0, "TICKONE"))
+	client.Apply(live(0, 1, 0, "TICKONE"), aria.Notify)
 
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 12), 50, 12, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
@@ -55,8 +55,8 @@ func TestDetachedTailAdvancesAndScreenHoldsStill(t *testing.T) {
 	// The turn goes on: one more streamed node, and then the head is RELEASED
 	// (Live.From advances past node 0), which is the move that used to make
 	// content vanish if the open message were drawn live.
-	client.Apply(live(0, 2, 1, "TICKTWO"))
-	client.Apply(live(1, 3, 1, "TICKTWO"))
+	client.Apply(live(0, 2, 1, "TICKTWO"), aria.Notify)
+	client.Apply(live(1, 3, 1, "TICKTWO"), aria.Notify)
 	tr.render()
 	after := tr.lines()
 

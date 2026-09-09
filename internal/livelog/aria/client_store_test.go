@@ -34,11 +34,11 @@ func sealed(turn uint64, inquiry string, n int) Page {
 func TestOrdinaryAriaIsOneRange(t *testing.T) {
 	c := NewClient()
 	for turn := uint64(1); turn <= 20; turn++ {
-		c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: turn, Inquiry: "q"}}}})
+		c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: turn, Inquiry: "q"}}}}, Notify)
 		for k := uint64(0); k < 3; k++ {
-			c.Apply(liveDelta(turn, 0, int(k)+1, k, "streamed"))
+			c.Apply(liveDelta(turn, 0, int(k)+1, k, "streamed"), Notify)
 		}
-		c.Apply(sealed(turn, "q", 3))
+		c.Apply(sealed(turn, "q", 3), Notify)
 	}
 	s := c.Store()
 	if len(s.ranges) != 1 {
@@ -57,10 +57,10 @@ func TestOrdinaryAriaIsOneRange(t *testing.T) {
 // are RELEASED INTO the ranges, not held in both places.
 func TestReleasedHeadLandsInTheHeadRange(t *testing.T) {
 	c := NewClient()
-	c.Apply(liveDelta(1, 0, 1, 0, "first"))
-	c.Apply(liveDelta(1, 0, 2, 1, "second"))
+	c.Apply(liveDelta(1, 0, 1, 0, "first"), Notify)
+	c.Apply(liveDelta(1, 0, 2, 1, "second"), Notify)
 	// The suffix boundary advances: node 0 is closed for good.
-	c.Apply(liveDelta(1, 1, 3, 1, "second again"))
+	c.Apply(liveDelta(1, 1, 3, 1, "second again"), Notify)
 
 	s := c.Store()
 	if s.Count() != 1 {
@@ -82,12 +82,12 @@ func TestReleasedHeadLandsInTheHeadRange(t *testing.T) {
 // live and once as history, must not be held twice.
 func TestCatchUpOverlapDoesNotDoubleApply(t *testing.T) {
 	c := NewClient()
-	c.Apply(liveDelta(1, 0, 1, 0, "hello"))
-	c.Apply(sealed(1, "q", 1))
+	c.Apply(liveDelta(1, 0, 1, 0, "hello"), Notify)
+	c.Apply(sealed(1, "q", 1), Notify)
 	before := len(c.View().Closed)
 
 	// A catch-up read restating the same turn.
-	c.Apply(sealed(1, "q", 1))
+	c.Apply(sealed(1, "q", 1), Notify)
 	if got := len(c.View().Closed); got != before {
 		t.Fatalf("re-applying a sealed turn changed the view: %d -> %d", before, got)
 	}
@@ -107,12 +107,12 @@ func TestCatchUpOverlapDoesNotDoubleApply(t *testing.T) {
 }
 
 // TestRetentionTrimsFromTheBottomOnly pins today's semantics: trimming is a
-// prefix drop, so it cannot open a hole, and closedFloor moves with it.
+// prefix drop, so it cannot open a hole, and the held questions go with it.
 func TestRetentionTrimsFromTheBottomOnly(t *testing.T) {
 	c := NewClient()
 	c.SetClosedLimit(5)
 	for turn := uint64(1); turn <= 12; turn++ {
-		c.Apply(sealed(turn, "q", 1))
+		c.Apply(sealed(turn, "q", 1), Notify)
 	}
 	v := c.View()
 	if len(v.Closed) != 5 {
@@ -125,7 +125,10 @@ func TestRetentionTrimsFromTheBottomOnly(t *testing.T) {
 	if len(s.ranges) != 1 {
 		t.Fatalf("a prefix drop cannot open a hole; got %d ranges", len(s.ranges))
 	}
-	if !c.seenClosed(3) {
-		t.Fatal("a trimmed-away turn is still below the floor and must read as seen")
+	if _, ok := c.InquiryOf(3); ok {
+		t.Fatal("a trimmed-away turn must not keep its question")
+	}
+	if _, ok := c.InquiryOf(12); !ok {
+		t.Fatal("a retained turn keeps its question")
 	}
 }

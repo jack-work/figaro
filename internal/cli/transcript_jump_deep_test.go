@@ -26,7 +26,7 @@ type jumpWire struct {
 	reads int
 }
 
-func (w *jumpWire) before(turn, node int) historyPage {
+func (w *jumpWire) before(turn, node int) aria.Page {
 	w.reads++
 	end := -1
 	for i, t := range w.turns {
@@ -35,7 +35,7 @@ func (w *jumpWire) before(turn, node int) historyPage {
 		}
 	}
 	if end < 0 {
-		return historyPage{} // nothing older: the empty read that proves the floor
+		return aria.Page{} // nothing older: the empty read that proves the floor
 	}
 	start := end - w.page + 1
 	if start < 0 {
@@ -54,7 +54,7 @@ func (w *jumpWire) before(turn, node int) historyPage {
 		}
 		parts = append(parts, aria.TurnPart{Turn: t})
 	}
-	return committedPage(aria.Page{Parts: parts, More: aria.More{Before: start > 0}})
+	return aria.Page{Parts: parts, More: aria.More{Before: start > 0}}
 }
 
 func jumpTurns(first, n int) []aria.Turn {
@@ -82,7 +82,7 @@ func deepJumpFixture(tb testing.TB, all []aria.Turn, held int) (*transcript, *ju
 	for _, t := range all[len(all)-held:] {
 		parts = append(parts, aria.TurnPart{Turn: t})
 	}
-	client.Apply(aria.Page{Parts: parts})
+	client.Apply(aria.Page{Parts: parts}, aria.Notify)
 	client.SetMoreBefore(true)
 	ft := ldrender.NewFakeTerminal(60, 20)
 	tr := newTranscript(ft, 60, 20, &ariaView{settings: &renderSettings{}},

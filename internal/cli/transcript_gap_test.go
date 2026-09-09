@@ -228,10 +228,9 @@ func TestEnsureOnBindClosesTheHole(t *testing.T) {
 	client := aria.NewClient()
 	applyTail(client, readBefore(history, recentCursor, transcriptPageSize))
 	reads := 0
-	client.SetFetcher(func(ctx context.Context, before aria.Anchor, limit int) (aria.Fetched, error) {
+	client.SetFetcher(func(ctx context.Context, before aria.Anchor, limit int) (aria.Page, error) {
 		reads++
-		p := committedPage(readBeforeAt(history, before, limit))
-		return aria.Fetched{Msgs: p.msgs, Extents: p.extents, More: p.more}, nil
+		return readBeforeAt(history, before, limit), nil
 	})
 	tr := newTranscript(ldrender.NewFakeTerminal(60, 12), 60, 12, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
@@ -357,7 +356,7 @@ func TestLiveTailStillArrivesBesideAGap(t *testing.T) {
 	applyTail(client, readBefore(history, recentCursor, transcriptPageSize))
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: 61, Live: &aria.Live{Nodes: []aria.NodeDelta{{
 		ID: 0, Set: map[string]any{"type": string(livedoc.NodeProse), "markdown": "still streaming"},
-	}}}}}}})
+	}}}}}}}, aria.Notify)
 	tr := newTranscript(ldrender.NewFakeTerminal(60, 12), 60, 12, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
 	tr.follow = false

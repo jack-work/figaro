@@ -337,7 +337,7 @@ func selectionText(plan selectionCopyPlan, pageSize int, read func(aria.Anchor, 
 		if err != nil {
 			return "", err
 		}
-		messages := committedMessages(r)
+		messages := pageMessages(r)
 		if len(messages) == 0 {
 			return "", fmt.Errorf("selection history unavailable before turn %d", at.Turn)
 		}

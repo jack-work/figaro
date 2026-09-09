@@ -180,7 +180,7 @@ func TestRetargetKeepsTheFrameHold(t *testing.T) {
 	}
 	// And the opening still releases it.
 	lt.apply(inquiryPage(1, "the new question"))
-	lt.openInline(historyPage{})
+	lt.openInline(aria.Page{})
 	if lt.hold || len(lt.held) != 0 {
 		t.Fatalf("openInline left hold=%v held=%d", lt.hold, len(lt.held))
 	}

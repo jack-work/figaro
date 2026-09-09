@@ -189,7 +189,7 @@ func (s *plainSink) handle(method string, params json.RawMessage) {
 	case rpc.MethodAriaFrame:
 		var r aria.Page
 		if json.Unmarshal(params, &r) == nil {
-			s.client.Apply(r)
+			s.client.Apply(r, aria.Notify)
 		}
 	case rpc.MethodTurnDone:
 		var d rpc.DoneEntry

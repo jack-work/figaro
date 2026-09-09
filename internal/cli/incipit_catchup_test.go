@@ -14,6 +14,17 @@ import (
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 )
 
+// sealedPage is a backward read of whole sealed turns, each with its question.
+func sealedPage(msgs ...aria.Message) aria.Page {
+	var p aria.Page
+	for _, m := range msgs {
+		p.Parts = append(p.Parts, aria.TurnPart{Turn: aria.Turn{
+			ID: uint64(m.Turn), Inquiry: m.Inquiry, Sealed: true, Nodes: m.Nodes,
+		}})
+	}
+	return p
+}
+
 // THE PREAMBLE IS PRINTED ONCE, BY HAND, AND NEVER BY THE CLIENT.
 //
 // `q -- "..."` against an aria with history used to open on a dim rule and
@@ -103,8 +114,8 @@ func TestHeldFramesLandAfterThePreamble(t *testing.T) {
 	if strings.Contains(out.String(), "NEWQUESTION") {
 		t.Fatalf("a held frame painted anyway:\n%s", out.String())
 	}
-	lt.openInline(historyPage{msgs: []aria.Message{{Turn: 5, Inquiry: "PRIORQUESTION", Role: livedoc.RoleOutput,
-		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "PRIORANSWER"}}}}})
+	lt.openInline(sealedPage(aria.Message{Turn: 5, Inquiry: "PRIORQUESTION",
+		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "PRIORANSWER"}}}))
 
 	got := out.String()
 	prior, question := strings.Index(got, "PRIORANSWER"), strings.Index(got, "NEWQUESTION")
@@ -268,7 +279,7 @@ func TestRecentContextShowsOnlySealedTurnsAtOrBelowTheCursor(t *testing.T) {
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "OWNTURN"}}}},
 	}}}
 
-	got := recentContext(context.Background(), rc, 5).msgs
+	got := pageMessages(recentContext(context.Background(), rc, 5))
 
 	if len(got) != 1 || got[0].Turn != 4 {
 		t.Fatalf("want only the sealed turn 4, got %+v", got)
@@ -285,10 +296,10 @@ func TestRecentContextShowsOnlySealedTurnsAtOrBelowTheCursor(t *testing.T) {
 // nothing but the timeout: no error, no output, and a session that opens the
 // way it always did.
 func TestRecentContextFailsQuietly(t *testing.T) {
-	if got := recentContext(context.Background(), &fakeRecentReader{err: errors.New("nope")}, 9); got.msgs != nil {
+	if got := recentContext(context.Background(), &fakeRecentReader{err: errors.New("nope")}, 9); len(got.Parts) != 0 {
 		t.Fatalf("a failed catch-up returned %+v", got)
 	}
-	if got := recentContext(context.Background(), &fakeRecentReader{}, 9); len(got.msgs) != 0 {
+	if got := recentContext(context.Background(), &fakeRecentReader{}, 9); len(got.Parts) != 0 {
 		t.Fatalf("an empty aria returned %+v", got)
 	}
 }
@@ -340,8 +351,8 @@ func TestReleasedFramesAdoptTheArmedFooter(t *testing.T) {
 	lt.holdFrames()
 	lt.armThinking() // pinned at submit, before anything about the turn is known
 	lt.apply(inquiryPage(6, "NEWQUESTION"))
-	lt.openInline(historyPage{msgs: []aria.Message{{Turn: 5, Inquiry: "PRIORQUESTION", Role: livedoc.RoleOutput,
-		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "PRIORANSWER"}}}}})
+	lt.openInline(sealedPage(aria.Message{Turn: 5, Inquiry: "PRIORQUESTION",
+		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "PRIORANSWER"}}}))
 
 	screen := strings.Join(ft.Screen(), "\n")
 	if n := bodyCount(screen, "BOOKENDROW"); n != 1 {
@@ -445,7 +456,7 @@ func TestJoinedFetchSeedsThePager(t *testing.T) {
 		{Turn: 6, Inquiry: "SOMEONE ELSES QUESTION", Role: livedoc.RoleOutput,
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "JOINEDANSWER"}}},
 	}
-	lt.openInline(historyPage{msgs: fetched})
+	lt.openInline(sealedPage(fetched...))
 
 	if !lt.hasSeed() {
 		t.Fatal("the fetch must be kept for the pager, not just printed")
@@ -474,13 +485,13 @@ func TestOwnTurnLeavesNothingToSeed(t *testing.T) {
 	lt.openRule()
 	lt.holdFrames()
 	lt.apply(inquiryPage(6, "OUR OWN QUESTION"))
-	lt.openInline(historyPage{})
+	lt.openInline(aria.Page{})
 
 	if lt.hasSeed() {
 		t.Fatal("call-response fetched nothing; there is nothing to seed")
 	}
 	lt.enterTranscript()
-	if lt.seeded != nil {
+	if lt.hasSeed() {
 		t.Fatalf("the pager was handed a seed it should not have: %+v", lt.seeded)
 	}
 }

@@ -29,7 +29,7 @@ func coordFixture(tb testing.TB, verbose bool) *transcript {
 			{Type: livedoc.NodeTool, ID: "t1", Name: "bash", Status: livedoc.StatusOK,
 				Summary: "ls", Output: "out", StartedAt: at + 122_000},
 		}}},
-	}})
+	}}, aria.Notify)
 	ft := ldrender.NewFakeTerminal(60, 40)
 	tr := newTranscript(ft, 60, 40, &ariaView{settings: &renderSettings{verbose: verbose}},
 		client, "aria1234", time.Unix(0, 0))

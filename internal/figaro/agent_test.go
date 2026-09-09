@@ -1304,7 +1304,7 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 		b, _ := json.Marshal(fr.Params)
 		var r aria.Page
 		require.NoError(t, json.Unmarshal(b, &r))
-		cl.Apply(r)
+		cl.Apply(r, aria.Notify)
 	}
 	// Each turn carries its question as TEXT and exactly one assistant reply -
 	// a second turn must not re-compose the first turn's nodes into itself. A

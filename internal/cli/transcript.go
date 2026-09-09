@@ -168,10 +168,14 @@ type transcript struct {
 	// function of (message, width), so selection and search state can change
 	// without invalidating a single cached row; the cue and the highlight are
 	// applied per painted row by window()/entryLine().
-	rowCache  map[sliceKey]cachedMessage
-	cacheW    int
-	selection nodeSelection
-	expanded  map[nodeRef]bool
+	rowCache map[sliceKey]cachedMessage
+	// stickyCache holds the inquiry block of a turn the reader is inside, for
+	// the header (see transcript_sticky.go). Keyed and invalidated like
+	// rowCache, whose rows these are.
+	stickyCache map[sliceKey]cachedMessage
+	cacheW      int
+	selection   nodeSelection
+	expanded    map[nodeRef]bool
 
 	// index is the viewport virtualization: a per-frame map from line space to
 	// message rows, rebuilt in O(#messages) so scrolling never re-materializes
@@ -227,7 +231,8 @@ func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria
 	return &transcript{
 		out: out, view: view, client: client,
 		status: newSessionStatus(figaroID, startedAt), w: w, h: h,
-		rowCache: map[sliceKey]cachedMessage{}, expanded: map[nodeRef]bool{},
+		rowCache: map[sliceKey]cachedMessage{}, stickyCache: map[sliceKey]cachedMessage{},
+		expanded: map[nodeRef]bool{},
 	}
 }
 
@@ -566,47 +571,35 @@ func (t *transcript) absorbOlder(gained []aria.Message, anchor sliceKey, within 
 	t.jumpAdvance()
 }
 
-// applyPage folds a fetched page of older history into the ONE owner and drops
+// applyPage folds a fetched page of older history into the one owner and drops
 // the window's floor onto it.
-func (t *transcript) applyPage(req transcriptPageRequest, page historyPage) {
+func (t *transcript) applyPage(req transcriptPageRequest, page aria.Page) {
 	if !t.active {
-		return
-	}
-	if len(page.msgs) == 0 {
-		// An empty ReadBefore IS the floor, and it is the only way to find it:
-		// nothing on the wire reports where an aria BEGINS. Page.More is two
-		// booleans: there is more before, there is more after: so the floor
-		// can be proven only by asking for what is below it and being handed
-		// nothing.
-		t.client.SetMoreBefore(false)
-		t.reachedFloor()
 		return
 	}
 	anchor, within := sliceKey(0), 0
 	if t.search == nil {
 		anchor, within = t.viewportAnchor()
 	}
-	t.client.SetMoreBefore(page.more)
-	t.client.Merge(page.msgs, page.extents)
-	// A PAGE THAT DOES NOT LOWER THE FLOOR IS THE FLOOR. Every other exit from
-	// the paging loops is a fact about the ANSWER -- an empty page, an error --
-	// and none of them fires when a read keeps handing back what the pager
-	// already holds while still claiming there is more before it. The loop then
-	// reads forever, taking the render lock on every pass: a pinned core, a
-	// keyboard that does nothing, a pane that will not repaint on resize.
-	//
-	// Progress is the floor moving. If it does not move, the walk is over,
-	// whatever the wire says about `more`: a search reports no match, a jump
-	// resolves against the beginning that actually exists, and the reader gets
-	// their pager back.
+	t.client.SetMoreBefore(page.More.Before)
+	msgs := t.client.Apply(page, aria.Quiet)
+	if len(msgs) == 0 {
+		// Nothing on the wire reports where an aria begins: a read that hands
+		// back nothing new is the floor.
+		t.client.SetMoreBefore(false)
+		t.reachedFloor()
+		return
+	}
+	// Progress is the floor moving. A page that does not lower it ends the
+	// walk, whatever the wire says about more.
 	before := t.from
-	t.lowerFloor(anchorOf(page.msgs[0]))
+	t.lowerFloor(anchorOf(msgs[0]))
 	if t.from == before {
 		t.client.SetMoreBefore(false)
 		t.reachedFloor()
 		return
 	}
-	t.absorbOlder(page.msgs, anchor, within)
+	t.absorbOlder(msgs, anchor, within)
 	if t.search != nil {
 		return // still walking; the worker asks for the next page
 	}
@@ -619,128 +612,11 @@ func anchorOf(m aria.Message) aria.Anchor {
 	return aria.Anchor{Turn: uint64(m.Turn), Node: m.From}
 }
 
-// historyPage is a fetched page folded into the pager's units, WITH the turn
-// extents the wire stated. The extents are what let the store decide that the
-// last node of turn t and the first of turn t+1 are neighbours rather than a
-// hole: an anchor cannot answer that on its own (skills/figaro/contributing/range-store.md,
-// "Adjacency is NOT decidable from an anchor"), and a page clipped at its tail
-// states nothing, so the map is deliberately partial.
-type historyPage struct {
-	msgs    []aria.Message
-	extents map[int]uint64
-	// more is the wire's own answer to "is there anything before this page"
-	// (Page.More.Before). It is the only honest source for it, an anchor cannot
-	// know, and the pager's old noMoreOlder mirrored it into a latch that every
-	// window move had to remember to reset.
-	more bool
-}
-
-// committedPage is committedMessages plus those extents: the fold used
-// wherever the result is going into the store rather than straight to a
-// renderer.
-func committedPage(p aria.Page) historyPage {
-	out := historyPage{msgs: committedMessages(p), more: p.More.Before}
-	for _, part := range p.Parts {
-		if part.ClippedTail || !part.Sealed {
-			continue
-		}
-		n := part.From + uint64(len(part.Nodes))
-		if n == 0 {
-			if part.Inquiry == "" {
-				continue
-			}
-			n = 1 // a turn that produced nothing still occupies its phantom node 0
-		}
-		if out.extents == nil {
-			out.extents = map[int]uint64{}
-		}
-		out.extents[int(part.ID)] = n
-	}
-	return out
-}
-
-// committedMessages flattens a page's parts into the pager's materialized
-// units. A part carrying nodes is content; a bare marker carries none and is
-// skipped. Message.Turn holds the turn id; Message.From holds the node offset
-// within it, so the slices of one tall turn stay distinct units.
-func committedMessages(p aria.Page) []aria.Message {
-	messages := make([]aria.Message, 0, len(p.Parts))
-	for _, part := range p.Parts {
-		// The inquiry belongs to the slice that STARTS the turn; a part clipped
-		// off the head of one must not repeat it. A part with no nodes still
-		// carries its question: that is a turn that produced nothing.
-		inquiry := ""
-		if !part.ClippedHead && part.From == 0 {
-			inquiry = part.Inquiry
-		}
-		// Turn-level deltas travel with the inquiry: the slice that starts
-		// the turn, and no other.
-		var turnDeltas map[string]livedoc.FormDelta
-		if part.From == 0 {
-			turnDeltas = part.FormDeltas
-		}
-		if len(part.Nodes) == 0 {
-			if inquiry != "" || len(turnDeltas) > 0 {
-				messages = append(messages, aria.Message{
-					Turn: int(part.ID), Inquiry: inquiry, FormDeltas: turnDeltas, Role: livedoc.RoleInput,
-				})
-			}
-			continue
-		}
-		messages = appendTurnSlices(messages, part.ID, part.From, inquiry, turnDeltas, part.Nodes)
-	}
-	return messages
-}
-
-// transcriptUnitChars bounds one pager unit's payload. Characters, not rows,
-// so the split is a pure function of the page: no width, no renderer, no
-// per-frame cost. It only has to bound the unit, not measure it exactly.
-const transcriptUnitChars = 40000
-
-func nodeChars(n livedoc.Node) int {
-	return len(n.Markdown) + len(n.Output) + len(n.Summary)
-}
-
-// appendTurnSlices cuts a turn into bounded units at node boundaries,
-// appending into dst. A node is never split: the smallest unit is one node,
-// however large, because tool output is already clamped by composeBashCap.
-func appendTurnSlices(dst []aria.Message, id uint64, from uint64, inquiry string, turnDeltas map[string]livedoc.FormDelta, nodes []livedoc.Node) []aria.Message {
-	unit := func(off int, seg []livedoc.Node) aria.Message {
-		m := aria.Message{
-			Turn: int(id), From: from + uint64(off), Role: livedoc.RoleOutput, Nodes: seg,
-		}
-		if m.From == 0 {
-			m.Inquiry = inquiry
-			m.FormDeltas = turnDeltas
-		}
-		return m
-	}
-	total := 0
-	for _, n := range nodes {
-		total += nodeChars(n)
-	}
-	if total < transcriptUnitChars {
-		return append(dst, unit(0, nodes))
-	}
-	start, budget := 0, 0
-	for i, n := range nodes {
-		budget += nodeChars(n)
-		if budget < transcriptUnitChars && i < len(nodes)-1 {
-			continue
-		}
-		// From is absolute within the turn: the segment's offset inside it plus
-		// the part's own. Node ids are positional (Nodes[i].ID == From+i) and
-		// sliceKey packs From, so an off-by-one here corrupts the row cache
-		// silently.
-		dst = append(dst, unit(start, nodes[start:i+1]))
-		start, budget = i+1, 0
-	}
-	return dst
-}
-
-// sliceTurn is the standalone form, for tests and callers without a dst.
-func sliceTurn(id uint64, from uint64, nodes []livedoc.Node) []aria.Message {
-	return appendTurnSlices(nil, id, from, "", nil, nodes)
+// pageMessages materializes a page on its own, for callers that want its
+// content without folding it into a view: the fold is the one that runs
+// everywhere else, so a page reads the same wherever it is read.
+func pageMessages(p aria.Page) []aria.Message {
+	return aria.NewClient().Apply(p, aria.Quiet)
 }
 
 // sliceKey identifies one pager unit: the turn id in the high bits, the node
@@ -758,6 +634,9 @@ func keyOf(m aria.Message) sliceKey {
 
 // turn is the turn id a unit belongs to.
 func (k sliceKey) turn() int { return int(k >> sliceKeyFromBits) }
+
+// from is the node offset within that turn.
+func (k sliceKey) from() uint64 { return uint64(k) & (1<<sliceKeyFromBits - 1) }
 
 // resetToTail re-points the window at the STORE's tail. It does not copy: the
 // window is the interval [from, ∞) and the store is its only holder, so
@@ -1247,7 +1126,7 @@ func (t *transcript) setCmdOut(title string, rows []string) {
 // painting three would push the conversation's last line off the top. The
 // rule is one row; barRows is the rest.
 func (t *transcript) layout(foot int) (body, maxOff int) {
-	body = t.h - 1 - t.barRows() - foot
+	body = t.h - 1 - t.barRows() - foot - t.headRows()
 	if t.follow {
 		body--
 	}
@@ -1378,10 +1257,11 @@ func (t *transcript) flush() {
 // render() is only the gate in front of it.
 func (t *transcript) renderFrame() {
 	// The frame ends in a two-row footer (rule, status), plus one padding row
-	// while following, so a viewport shorter than that has nowhere to draw and
-	// would index screen[-2]. A pane this small cannot show a paged transcript
-	// usefully; skip the frame rather than crash, and pick up on the next resize.
-	if t.h < 4 {
+	// while following and the sticky header above, so a viewport shorter than
+	// that has nowhere to draw. A pane this small cannot show a paged
+	// transcript usefully; skip the frame rather than crash, and pick up on the
+	// next resize.
+	if t.h < 4+t.headRows() {
 		return
 	}
 	// Converge the tail window on the row budget. D drove this off
@@ -1412,8 +1292,16 @@ func (t *transcript) renderFrame() {
 	// Re-deriving it at click time would consult an offset that a live token or a
 	// tail re-tune may already have moved: the same staleness selectNode's cold
 	// path documents for its viewport seed. See transcript_mouse.go.
+	// The map is by screen row, so the header's rows lead it, addressing
+	// nothing: a click on the pinned question selects no node.
+	head := t.headRows()
+	t.frameRefs = t.frameRefs[:0]
+	for range head {
+		t.frameRefs = append(t.frameRefs, nodeRef{})
+	}
 	t.frameRefs = t.rowRefs(t.offset, t.offset+body, t.frameRefs)
-	copy(screen[:body], t.rowBuf)
+	copy(screen[head:head+body], t.rowBuf)
+	copy(screen[:head], t.stickyLines(t.activeHighlight(), t.selectionSpan()))
 	// BOTTOM-ALIGNED, and that is the fix for a stray blank line. layout() takes
 	// one row off the body while following (the live padding), so writing the
 	// stanza from `body` upward left the slack at the BOTTOM -- an empty row

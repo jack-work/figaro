@@ -48,7 +48,7 @@ func BenchmarkStreamedInputServerToClient(b *testing.B) {
 	for b.Loop() {
 		srv := NewServer()
 		cli := NewClient()
-		srv.Subscribe(func(p Page) { cli.Apply(p) })
+		srv.Subscribe(func(p Page) { cli.Apply(p, Notify) })
 		srv.OpenTurn(1)
 		for _, f := range frames {
 			srv.Update(nil, []livedoc.Node{{

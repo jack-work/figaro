@@ -15,7 +15,7 @@ func newTestTranscript(out *strings.Builder) *transcript {
 	client := aria.NewClient()
 	client.Apply(aria.Page{Parts: []aria.TurnPart{
 		{Turn: aria.Turn{ID: 1, Inquiry: "q", Sealed: true}},
-	}})
+	}}, aria.Notify)
 	return newTranscript(out, 100, 40, &ariaView{settings: &renderSettings{}}, client, "aria1234", time.Unix(0, 0))
 }
 

@@ -29,7 +29,7 @@ func TestTranscript_OpenSelectionExtendsIntoHistoryWithoutAGap(t *testing.T) {
 	applyTail(client, readBefore(history, recentCursor, transcriptPageSize))
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(201), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{
 		ID: 0, Set: map[string]any{"type": string(livedoc.NodeProse), "markdown": "open-201"},
-	}}}}}}})
+	}}}}}}}, aria.Notify)
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
 	tr.key('k') // detach: the window keeps its floor, and keeps the live turn
@@ -47,7 +47,7 @@ func TestTranscript_OpenSelectionExtendsIntoHistoryWithoutAGap(t *testing.T) {
 	// lands in the same interval, so nothing the selection can see moves.
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(201), Live: &aria.Live{From: 0, V: 1, Nodes: []aria.NodeDelta{{
 		ID: 1, Set: map[string]any{"type": string(livedoc.NodeProse), "markdown": "open-201-more"},
-	}}}}}}})
+	}}}}}}}, aria.Notify)
 	tr.render()
 
 	tr.selectNode(-1, true)

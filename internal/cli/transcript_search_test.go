@@ -26,7 +26,7 @@ func TestTranscript_SearchHighlightsAllMatchesPersist(t *testing.T) {
 		client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 			ID: uint64(i), Sealed: true,
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("apple %02d apple", i)}},
-		}}}})
+		}}}}, aria.Notify)
 	}
 	tr := newTranscript(ft, 50, 12, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
@@ -75,7 +75,7 @@ func TestTranscript_FindRepeatNextAndPrev(t *testing.T) {
 		client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 			ID: uint64(i), Sealed: true,
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: body}},
-		}}}})
+		}}}}, aria.Notify)
 	}
 	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()

@@ -54,7 +54,7 @@ func TestIntegration_ClickOpensAClampedTool(t *testing.T) {
 	client := aria.NewClient()
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 		ID: 1, Sealed: true, Nodes: []livedoc.Node{node},
-	}}}})
+	}}}}, aria.Notify)
 	tr := newTranscript(ft, width, height, &ariaView{settings: &renderSettings{}}, client, "aria1234", time.Now())
 	tr.enter()
 	tr.render()
@@ -112,7 +112,7 @@ func TestIntegration_ClickOnATableIsInert(t *testing.T) {
 	client := aria.NewClient()
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 		ID: 1, Sealed: true, Nodes: []livedoc.Node{node},
-	}}}})
+	}}}}, aria.Notify)
 	tr := newTranscript(ft, width, height, &ariaView{settings: &renderSettings{}}, client, "aria1234", time.Now())
 	tr.enter()
 	tr.render()

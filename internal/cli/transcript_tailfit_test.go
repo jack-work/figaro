@@ -26,7 +26,7 @@ func streamOnto(t *testing.T, history []aria.TurnPart, n int) (drops int, tr *tr
 		client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: 121, Live: &aria.Live{
 			From: 0, V: f,
 			Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{"type": "prose", "markdown": stream}}},
-		}}}}})
+		}}}}}, aria.Notify)
 		tr.renderFrame()
 		if tr.index.total < prev {
 			drops++

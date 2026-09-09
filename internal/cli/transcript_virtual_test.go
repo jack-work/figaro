@@ -129,7 +129,7 @@ func mixedTranscript(tb testing.TB, out io.Writer, w, h, n int) (*transcript, *a
 	for i := range committed {
 		committed[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: mixedNodes(i + 1)}}
 	}
-	client.Apply(aria.Page{Parts: committed})
+	client.Apply(aria.Page{Parts: committed}, aria.Notify)
 	tr := newTranscript(out, w, h, &ariaView{settings: &renderSettings{}}, client, "virt1234", time.Unix(0, 0))
 	tr.enter()
 	return tr, client
@@ -276,7 +276,7 @@ func TestTranscriptVirtualWindow_LiveTailFollow(t *testing.T) {
 	tr, client := mixedTranscript(t, io.Discard, 80, 24, 4)
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(5), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{
 		"type": string(livedoc.NodeProse), "markdown": "streaming needle prose",
-	}}}}}}}})
+	}}}}}}}}, aria.Notify)
 	tr.render()
 	if !tr.follow {
 		t.Fatal("expected the pager to be following the live tail")
@@ -289,7 +289,7 @@ func TestTranscriptVirtualWindow_LiveTailFollow(t *testing.T) {
 		{ID: 1, Set: map[string]any{
 			"type": string(livedoc.NodeThinking), "markdown": "a second live node\nwith two lines",
 		}},
-	}}}}}})
+	}}}}}}, aria.Notify)
 	tr.render()
 	assertWindowMatchesLegacy(t, tr, 21)
 }
@@ -490,7 +490,7 @@ func TestTranscriptVirtualIndex_Degenerate(t *testing.T) {
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 		ID: uint64(1), Sealed: true, Inquiry: "q",
 		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "solo"}},
-	}}}})
+	}}}}, aria.Notify)
 	tr.render()
 	if len(tr.index.entries) != 1 || tr.index.entries[0].sep {
 		t.Fatalf("single message must not carry a separator: %+v", tr.index.entries)

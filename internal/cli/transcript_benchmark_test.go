@@ -28,7 +28,7 @@ func benchmarkTranscript(b *testing.B, messages int, nodes []livedoc.Node) (*tra
 		}
 		committed[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: messageNodes}}
 	}
-	client.Apply(aria.Page{Parts: committed})
+	client.Apply(aria.Page{Parts: committed}, aria.Notify)
 	return newTranscript(io.Discard, 100, 40, &ariaView{settings: &renderSettings{}}, client, "benchmark", time.Unix(0, 0)), client
 }
 
@@ -134,7 +134,7 @@ func BenchmarkTranscriptLiveUpdate(b *testing.B) {
 						"type":     string(livedoc.NodeProse),
 						"markdown": fmt.Sprintf("live update %d", i),
 					},
-				}}}}}}})
+				}}}}}}}, aria.Notify)
 				tr.render()
 			}
 		})

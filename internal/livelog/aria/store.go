@@ -85,41 +85,29 @@ type Store struct {
 	open    openTail          // the ONE streaming suffix: unchanged from today
 	pending []Pending         // submitted, not yet classified by the drain
 	ends    map[uint64]uint64 // turn -> anchors it occupies, once known
-	fetch   Fetcher           // fills holes; see Ensure
 }
+
+// Complete reports whether a turn's extent is known, which it is once the turn
+// has sealed.
+func (s *Store) Complete(turn int) bool { return s.ends[uint64(turn)] != 0 }
 
 // NewStore returns an empty store.
 func NewStore() *Store { return &Store{ends: map[uint64]uint64{}} }
 
-// Fetched is one backward read, folded into the units the store holds. It is
-// what a Fetcher hands back: the messages, the turn extents the wire stated
-// (see Store.SetTurnLen: without them two turns can never be called
-// neighbours), and whether anything precedes the page.
-type Fetched struct {
-	Msgs    []Message
-	Extents map[int]uint64
-	More    bool
-}
-
-// Fetcher reads the history immediately BEFORE an anchor: the same keyset
-// read the wire offers (figaro.read backward). The store never speaks the wire
-// itself: whoever owns the RPC client installs one of these, and Ensure calls
-// it.
-type Fetcher func(ctx context.Context, before Anchor, limit int) (Fetched, error)
+// Fetcher reads the history immediately before an anchor: the keyset read the
+// wire offers. Whoever owns the RPC client installs one, and Ensure calls it.
+type Fetcher func(ctx context.Context, before Anchor, limit int) (Page, error)
 
 // ErrNoFetcher is returned by Ensure when a hole would have to be filled and
 // nobody has installed a Fetcher.
 var ErrNoFetcher = errors.New("aria: range store has no fetcher")
 
 // ErrStalled is returned when the fetcher keeps answering but the hole stops
-// shrinking. A store that cannot close a hole must SAY SO: the alternative is
-// a loop that spins forever against a server which disagrees with us about
-// what exists.
+// shrinking.
 var ErrStalled = errors.New("aria: the hole stopped shrinking")
 
-// ensureRounds bounds one Ensure. Each round closes at least one message's
-// worth of hole or the call gives up, so this is a safety net rather than a
-// budget: a hole wider than this is a jump's problem, not a fill's.
+// ensureRounds bounds one Ensure: each round closes at least one message's
+// worth of hole or the call gives up.
 const ensureRounds = 64
 
 // ---------------------------------------------------------------- coverage --
@@ -283,13 +271,25 @@ func (s *Store) coalesceAround(turn uint64) {
 // not double-apply, and the coverage invariant leaves no room for two copies
 // of one node anyway. A message that only PARTLY overlaps is clipped to its
 // novel part, so no information is lost either way.
-func (s *Store) Insert(msgs ...Message) {
-	for _, m := range msgs {
-		// THE APPEND CASE, a turn sealing, or the open turn releasing its
-		// head: is what every ordinary fold does, and it must cost what
-		// appending to a slice costs. Going through subtractHeld and building
-		// a one-message Range for it added two allocations PER MESSAGE, which
-		// is 30% on folding a conversation.
+func (s *Store) Insert(msgs ...Message) []Message {
+	// A fold whose messages all go in whole, which is every ordinary one,
+	// answers with the caller's own slice: out stays nil and same counts the
+	// prefix taken unchanged.
+	var out []Message
+	same := 0
+	keep := func(i int, m Message, whole bool) {
+		if out == nil {
+			if whole && same == i {
+				same++
+				return
+			}
+			out = append(make([]Message, 0, len(msgs)), msgs[:same]...)
+		}
+		out = append(out, m)
+	}
+	for i, m := range msgs {
+		// The append case, a turn sealing or the open turn releasing its head,
+		// must cost what appending to a slice costs.
 		if n := len(s.ranges); n > 0 {
 			last := &s.ranges[n-1]
 			if f, t := msgSpan(m); last.To.Less(f) && s.adjacent(last.To, f) {
@@ -297,14 +297,20 @@ func (s *Store) Insert(msgs ...Message) {
 				last.Msgs = append(last.Msgs, m)
 				last.To = t
 				s.consume(boundary, t)
+				keep(i, m, true)
 				continue
 			}
 		}
 		for _, piece := range s.subtractHeld(m) {
 			from, to := msgSpan(piece)
 			s.insertRange(Range{From: from, To: to, Msgs: []Message{piece}})
+			keep(i, piece, piece.From == m.From && len(piece.Nodes) == len(m.Nodes))
 		}
 	}
+	if out == nil {
+		return msgs[:same]
+	}
+	return out
 }
 
 // subtractHeld returns the parts of m the store does not already cover.
@@ -590,46 +596,10 @@ func fuseGaps(in []Segment) []Segment {
 	return out
 }
 
-// Ensure fills every hole in [from, to], fetching as needed, so that Query
-// over the same interval then returns exactly one Segment with a nil Gap.
-func (s *Store) Ensure(ctx context.Context, from, to Anchor) error {
-	for range ensureRounds {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		gap, ok := s.firstGap(from, to)
-		if !ok {
-			return nil
-		}
-		if s.fetch == nil {
-			return ErrNoFetcher
-		}
-		got, err := s.fetch(ctx, fillAt(gap), fillLimit)
-		if err != nil {
-			return err
-		}
-		before := s.Count()
-		s.Absorbed(got)
-		if s.Count() == before {
-			return ErrStalled
-		}
-	}
-	return ErrStalled
-}
-
-// SetFetcher installs the reader Ensure fills holes with.
-func (s *Store) SetFetcher(f Fetcher) { s.fetch = f }
-
-// Fetcher reports the installed reader (nil when there is none).
-func (s *Store) Fetcher() Fetcher { return s.fetch }
-
-// fillLimit is how many messages one hole-filling read asks for. The same
-// page size the pager's scroll-up uses: a hole is filled by the same read that
-// would have loaded the region had the reader scrolled into it.
+// fillLimit is how many messages one hole-filling read asks for.
 const fillLimit = 30
 
-// firstGap is the lowest hole inside [from, to], if any. It is the ONE
-// definition of "what is missing", shared by both Ensure loops.
+// firstGap is the lowest hole inside [from, to], if any.
 func (s *Store) firstGap(from, to Anchor) (Gap, bool) {
 	for _, seg := range s.Query(from, to) {
 		if seg.Gap != nil {
@@ -640,24 +610,8 @@ func (s *Store) firstGap(from, to Anchor) (Gap, bool) {
 }
 
 // fillAt is the anchor a backward read must be taken at to close a hole from
-// its TOP: the first thing after the hole. A read before the hole's own end
-// would return the hole's end and everything below it: correct, but it walks
-// the hole from the bottom, and a caller filling a hole it is about to render
-// wants the part nearest what it already holds first.
+// its top: the first thing after the hole.
 func fillAt(g Gap) Anchor { return g.To.Next() }
-
-// Absorbed folds a fetched page: the extents first (so the run coalesces on
-// the way in rather than leaving a phantom hole between two turns), then the
-// messages, then what the wire said about the beginning.
-func (s *Store) Absorbed(got Fetched) {
-	for turn, n := range got.Extents {
-		s.SetTurnLen(uint64(turn), n)
-	}
-	s.Insert(got.Msgs...)
-	m := s.More()
-	m.Before = got.More
-	s.SetMore(m)
-}
 
 // ForEachIn walks the retained messages whose span touches [from, to], in
 // order, stopping early if fn returns false. It is GAP-BLIND by design (the

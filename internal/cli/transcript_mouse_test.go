@@ -61,7 +61,7 @@ func mouseFixture(t *testing.T, h int) (*transcript, *ldrender.FakeTerminal, []a
 			{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK, Output: strings.Join(lines, "\n")},
 		},
 	}}}
-	client.Apply(aria.Page{Parts: history})
+	client.Apply(aria.Page{Parts: history}, aria.Notify)
 	tr := newTranscript(ft, 80, h, &ariaView{settings: &renderSettings{}}, client, "aria1234", time.Now())
 	tr.enter()
 	tr.render()

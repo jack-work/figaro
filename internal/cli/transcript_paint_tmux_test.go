@@ -76,7 +76,7 @@ func recordScrollSession(t *testing.T, path string) ([]string, int) {
 	for i := range committed {
 		committed[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: heavyNodes(i+1, 15)}}
 	}
-	client.Apply(aria.Page{Parts: committed})
+	client.Apply(aria.Page{Parts: committed}, aria.Notify)
 	tr := newTranscript(f, 100, 40, &ariaView{settings: &renderSettings{}}, client, "aria0001", time.Unix(0, 0))
 	tr.enter()
 	for range 37 { // long climb: every step is a one-row shift

@@ -401,6 +401,7 @@ var inputOracle = []struct {
 		// the pager up from incipit, and an INPUT-level row, so it does not
 		// dismiss an open panel the way an unbound key would.
 		"0x6d":            "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"0x73":            "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x03":            "stop=true rest=\"\" act=false off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=true clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x04":            "stop=true rest=\"\" act=false off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x0a":            "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
@@ -609,6 +610,7 @@ var inputOracle = []struct {
 		// the pager up from incipit, and an INPUT-level row, so it does not
 		// dismiss an open panel the way an unbound key would.
 		"0x6d": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"0x73": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x03": "stop=true rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=true clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x04": "stop=true rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x0c": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
@@ -754,6 +756,7 @@ var inputOracle = []struct {
 		"csiu ^p+alt":     "stop=false rest=\"\" act=true off:sel fol=false srch=true q=\"ms\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 	}},
 	{"transcript", "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"", map[string]string{
+		"0x73":            "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x03":            "stop=true rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=true clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x04":            "stop=true rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x0e":            "stop=false rest=\"\" act=true off:sel fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",

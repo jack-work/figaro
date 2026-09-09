@@ -21,7 +21,7 @@ import (
 //
 //	aria.PaginateBefore: the real byte-budget walk, at the real 64 KiB
 //	  -> assemble         sets ClippedHead when the window opens mid-turn
-//	  -> committedMessages drops the inquiry for that part
+//	  -> the fold gives that part no question
 //	  -> Composer.Message  must therefore draw no speaker header
 //
 // The turn sizes are not invented either. Measured over four of this store's
@@ -86,7 +86,7 @@ func TestSpeakerHeader_RealPageWalkProducesTheSeam(t *testing.T) {
 		clipped.Turn.ID, clipped.From, clipped.ClippedHead)
 
 	// ...and the renderer must not announce the speaker over it.
-	msgs := committedMessages(page)
+	msgs := pageMessages(page)
 	var seen int
 	for _, m := range msgs {
 		if m.From == 0 {

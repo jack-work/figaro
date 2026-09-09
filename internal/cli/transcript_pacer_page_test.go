@@ -117,7 +117,7 @@ func TestPacedPageLanding_IsNeverSwallowed(t *testing.T) {
 	w.reset()
 	mu.Lock()
 	before := lt.tr.from.Turn
-	lt.transcriptApplyPage(req, committedPage(readBeforeAt(transcriptHistory(120),
+	lt.transcriptApplyPage(req, (readBeforeAt(transcriptHistory(120),
 		aria.Anchor{Turn: uint64(req.before), Node: uint64(req.beforeNode)}, req.limit)))
 	after := lt.tr.from.Turn
 	dirty := lt.tr.dirty

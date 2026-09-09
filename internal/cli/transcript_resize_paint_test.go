@@ -179,7 +179,7 @@ func TestTranscriptPaint_ResizeLeavesNoStaleRows(t *testing.T) {
 					ID: uint64(i + 1), Sealed: true, Nodes: heavyNodes(i+1, 14),
 				}}
 			}
-			client.Apply(aria.Page{Parts: committed})
+			client.Apply(aria.Page{Parts: committed}, aria.Notify)
 
 			vt := newVT(w0, h0)
 			tr := newTranscript(vt, w0, h0, &ariaView{settings: &renderSettings{}}, client, "aria0001", time.Unix(0, 0))
@@ -311,7 +311,7 @@ func TestTranscriptPaint_GesturesKeepBelief(t *testing.T) {
 					ID: uint64(i + 1), Sealed: true, Nodes: heavyNodes(i+1, 16),
 				}}
 			}
-			client.Apply(aria.Page{Parts: committed})
+			client.Apply(aria.Page{Parts: committed}, aria.Notify)
 
 			vt := newVT(w, h)
 			tr := newTranscript(vt, w, h, &ariaView{settings: &renderSettings{}}, client, "aria0001", time.Unix(0, 0))
@@ -454,7 +454,7 @@ func TestTranscriptPaint_GesturesKeepBelief(t *testing.T) {
 			for n := 1; n <= 10; n++ {
 				client.Apply(aria.Page{Parts: []aria.TurnPart{{
 					Turn: aria.Turn{ID: 17, Sealed: false, Inquiry: "stream me", Nodes: heavyNodes(17, n)},
-				}}})
+				}}}, aria.Notify)
 				tr.render()
 				step(fmt.Sprintf("live: streaming while following, %d output lines", n))
 			}
@@ -465,14 +465,14 @@ func TestTranscriptPaint_GesturesKeepBelief(t *testing.T) {
 			for n := 11; n <= 20; n++ {
 				client.Apply(aria.Page{Parts: []aria.TurnPart{{
 					Turn: aria.Turn{ID: 17, Sealed: false, Inquiry: "stream me", Nodes: heavyNodes(17, n)},
-				}}})
+				}}}, aria.Notify)
 				tr.render()
 				step(fmt.Sprintf("live: streaming while detached, %d output lines", n))
 			}
 			// And the seal, which turns the live region into history.
 			client.Apply(aria.Page{Parts: []aria.TurnPart{{
 				Turn: aria.Turn{ID: 17, Sealed: true, Inquiry: "stream me", Nodes: heavyNodes(17, 20)},
-			}}})
+			}}}, aria.Notify)
 			tr.render()
 			step("live: turn sealed")
 			tr.key('G')

@@ -254,6 +254,7 @@ func TestOpensTranscript_MatchesTheHandKeptList(t *testing.T) {
 		'T',        // focus the conversation, keeping the pit
 		0x0f,       // ^O verbosity
 		'm',        // more: the status bar's own detail, an opener exactly as ^O is
+		's',        // the pinned question, a pager toggle and so an opener too
 		0x0e, 0x10, // ^N/^P node selection
 		0x0d, 0x0a, // Enter: expand tools
 	} {
@@ -354,6 +355,7 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  (in a list) x       drop the selected entry (queue)",
 		"  y                   copy selection (or aria id if none)",
 		"  ^O                  toggle verbose tool output",
+		"  s                   pin the question of the turn you are inside",
 		"  m                   more: state names, model, last interaction",
 		"  (in :) ^V           paste the clipboard",
 		"  ^N/^P               select next/previous node",

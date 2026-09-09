@@ -73,7 +73,7 @@ func heavyTranscript(b *testing.B, messages, outputLines int) (*transcript, *ari
 	for i := range committed {
 		committed[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Inquiry: heavyInquiry(i + 1), Nodes: heavyNodes(i+1, outputLines)}}
 	}
-	client.Apply(aria.Page{Parts: committed})
+	client.Apply(aria.Page{Parts: committed}, aria.Notify)
 	tr := newTranscript(io.Discard, 100, 40, &ariaView{settings: &renderSettings{}}, client, "benchmark", time.Unix(0, 0))
 	tr.enter()
 	return tr, client
@@ -170,7 +170,7 @@ func BenchmarkTranscriptHeavyEnter(b *testing.B) {
 	for i := range committed {
 		committed[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Inquiry: heavyInquiry(i + 1), Nodes: heavyNodes(i+1, 200)}}
 	}
-	client.Apply(aria.Page{Parts: committed})
+	client.Apply(aria.Page{Parts: committed}, aria.Notify)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for range b.N {

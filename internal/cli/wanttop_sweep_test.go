@@ -74,7 +74,7 @@ func TestWantTop_LandingRepinsAndTheFloorClearsIt(t *testing.T) {
 		t.Fatal("fixture: a standing Home should arm a backward fetch")
 	}
 	// A page lands that does NOT reach the floor: hold the top, keep the request.
-	tr.applyPage(req, committedPage(aria.Page{
+	tr.applyPage(req, (aria.Page{
 		Parts: []aria.TurnPart{{Turn: aria.Turn{
 			ID: 3, Sealed: true, Inquiry: "older",
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "msg03"}},
@@ -86,7 +86,7 @@ func TestWantTop_LandingRepinsAndTheFloorClearsIt(t *testing.T) {
 	}
 	// The floor: an empty read proves it, and the request must clear or the
 	// pager keeps asking for history that is not there.
-	tr.applyPage(req, historyPage{})
+	tr.applyPage(req, aria.Page{})
 	if tr.wantTop {
 		t.Error("reaching the floor must clear the standing Home")
 	}

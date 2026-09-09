@@ -46,7 +46,7 @@ func oracleTranscript() *transcript {
 				{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("msg%02d body", i)},
 				{Type: livedoc.NodeTool, Name: "bash", Output: fmt.Sprintf("out%02d", i)},
 			},
-		}}}})
+		}}}}, aria.Notify)
 	}
 	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234", time.Unix(0, 0))
 	tr.enter()

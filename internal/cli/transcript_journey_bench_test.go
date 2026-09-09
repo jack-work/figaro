@@ -108,7 +108,7 @@ func (h *pagingHarness) sync() {
 	}
 }
 
-func (h *pagingHarness) read(req transcriptPageRequest) historyPage {
+func (h *pagingHarness) read(req transcriptPageRequest) aria.Page {
 	start := time.Now()
 	if h.latency > 0 {
 		time.Sleep(h.latency)
@@ -120,9 +120,10 @@ func (h *pagingHarness) read(req transcriptPageRequest) historyPage {
 		limit = transcriptPageSize
 	}
 	at := aria.Anchor{Turn: uint64(req.before), Node: uint64(req.beforeNode)}
-	page := committedPage(readBeforeAt(h.history, at, limit))
-	h.fetchedMsgs += len(page.msgs)
-	for _, m := range page.msgs {
+	page := readBeforeAt(h.history, at, limit)
+	msgs := pageMessages(page)
+	h.fetchedMsgs += len(msgs)
+	for _, m := range msgs {
 		if h.seen[m.Turn] {
 			h.refetches++
 		}
@@ -237,14 +238,14 @@ func BenchmarkTranscriptFollowFrame(b *testing.B) {
 func BenchmarkTranscriptLiveStream(b *testing.B) {
 	tr, client := heavyTranscript(b, 200, 200)
 	tr.follow = true
-	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(201), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{"type": "prose", "markdown": "streaming"}}}}}}}})
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(201), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{"type": "prose", "markdown": "streaming"}}}}}}}}, aria.Notify)
 	tr.render()
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := range b.N {
 		if i%4 == 0 {
 			client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(201), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{
-				"type": "prose", "markdown": fmt.Sprintf("streaming token %d", i)}}}}}}}})
+				"type": "prose", "markdown": fmt.Sprintf("streaming token %d", i)}}}}}}}}, aria.Notify)
 		}
 		tr.tick++
 		tr.render()

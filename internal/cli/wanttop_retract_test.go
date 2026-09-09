@@ -26,7 +26,7 @@ func wantTopFixture(t *testing.T) (*transcript, *ldrender.FakeTerminal) {
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("msg%02d", i)}}}}
 	}
 	for i := 5; i <= 8; i++ {
-		client.Apply(aria.Page{Parts: []aria.TurnPart{msg(i)}})
+		client.Apply(aria.Page{Parts: []aria.TurnPart{msg(i)}}, aria.Notify)
 	}
 	client.SetMoreBefore(true)
 	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234", time.Now())
@@ -39,13 +39,13 @@ func wantTopFixture(t *testing.T) (*transcript, *ldrender.FakeTerminal) {
 	return tr, ft
 }
 
-func olderPage() historyPage {
+func olderPage() aria.Page {
 	parts := make([]aria.TurnPart, 0, 4)
 	for i := 1; i <= 4; i++ {
 		parts = append(parts, aria.TurnPart{Turn: aria.Turn{ID: uint64(i), Sealed: true,
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("msg%02d", i)}}}})
 	}
-	return committedPage(aria.Page{Parts: parts})
+	return aria.Page{Parts: parts}
 }
 
 // A search that lands in-window is a deliberate move: the fetch gg armed must

@@ -179,6 +179,13 @@ var keymap = []keyBinding{
 		open: opensPager, help: helpVerbose, input: inputToggleVerbose,
 	},
 	{
+		// 's' is the sticky question: the header that keeps the turn's inquiry
+		// on screen while the reader is inside its answer. A plain letter, in
+		// the transcript and its panels only, where scrolling happens.
+		chord: byteChord('s'), modes: inTranscript | inPanel,
+		open: opensPager, help: helpSticky, input: inputToggleSticky,
+	},
+	{
 		// 'm' is MORE: the bar's own detail -- state names, the model, the
 		// last-interaction time. A plain letter, on Gluck's instruction, and
 		// it earns the promotion: ^V could not have the job anyway, because
@@ -538,6 +545,7 @@ const (
 	helpJump
 	helpYank
 	helpVerbose
+	helpSticky
 	helpSelect
 	helpSelectExtend
 	helpExpand
@@ -597,6 +605,7 @@ var helpRows = []helpRow{
 	{helpPitDrop, "(in a list) x", "drop the selected entry (queue)"},
 	{helpYank, "y", "copy selection (or aria id if none)"},
 	{helpVerbose, "^O", "toggle verbose tool output"},
+	{helpSticky, "s", "pin the question of the turn you are inside"},
 	{helpBarVerbose, "m", "more: state names, model, last interaction"},
 	{helpCmdPaste, "(in :) ^V", "paste the clipboard"},
 	{helpSelect, "^N/^P", "select next/previous node"},

@@ -57,23 +57,23 @@ func TestNodeRefIsUniquePerNodeAcrossTurnSlices(t *testing.T) {
 	}
 }
 
-// The inquiry rides on the slice that STARTS a turn and nowhere else: node ids
-// are positional, so a page that begins mid-turn (ClippedHead) would otherwise
-// reprint the question above the middle of a reply.
+// The inquiry rides on the slice that starts a turn and nowhere else: node ids
+// are positional, so a page that begins mid-turn would otherwise reprint the
+// question above the middle of a reply.
 func TestInquiryRidesOnlyOnTheFirstSliceOfATurn(t *testing.T) {
 	nodes := []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "reply"}}
 
-	head := committedMessages(aria.Page{Parts: []aria.TurnPart{
-		{Turn: aria.Turn{ID: 2, Inquiry: "the question", Nodes: nodes}, From: 0},
+	head := pageMessages(aria.Page{Parts: []aria.TurnPart{
+		{Turn: aria.Turn{ID: 2, Inquiry: "the question", Sealed: true, Nodes: nodes}, From: 0},
 	}})
 	if len(head) != 1 || head[0].Inquiry != "the question" {
 		t.Fatalf("first slice must carry the question, got %+v", head)
 	}
 
-	tail := committedMessages(aria.Page{Parts: []aria.TurnPart{
-		{Turn: aria.Turn{ID: 2, Inquiry: "the question", Nodes: nodes}, From: 7, ClippedHead: true},
+	tail := pageMessages(aria.Page{Parts: []aria.TurnPart{
+		{Turn: aria.Turn{ID: 2, Inquiry: "the question", Sealed: true, Nodes: nodes}, From: 7, ClippedHead: true},
 	}})
 	if len(tail) != 1 || tail[0].Inquiry != "" {
-		t.Fatalf("a clipped-head slice must NOT repeat the question, got %+v", tail)
+		t.Fatalf("a clipped-head slice must not repeat the question, got %+v", tail)
 	}
 }

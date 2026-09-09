@@ -60,7 +60,7 @@ func (c Composer) Message(m aria.Message, w int) []Row {
 	if w <= 0 {
 		w = 80
 	}
-	rows := c.inquiry(m.Inquiry, m.InquirySegments, w)
+	rows := c.Inquiry(m.Inquiry, m.InquirySegments, w)
 	// The turn's own form deltas sit under the question they arrived with,
 	// in the inquiry's Block coordinate, after one blank row.
 	if c.State != nil && len(m.FormDeltas) > 0 {
@@ -142,7 +142,9 @@ func (c Composer) render(n livedoc.Node, w, block int) []string {
 }
 
 // inquiry draws the question that opened the turn, attributed when it can be.
-func (c Composer) inquiry(inquiry string, segments []aria.InquirySegment, w int) []Row {
+// Inquiry composes a turn's opening question: the input header, the
+// attribution of each segment, and the text.
+func (c Composer) Inquiry(inquiry string, segments []aria.InquirySegment, w int) []Row {
 	if strings.TrimSpace(inquiry) == "" {
 		return nil
 	}
@@ -151,15 +153,10 @@ func (c Composer) inquiry(inquiry string, segments []aria.InquirySegment, w int)
 		rows = append(rows, chrome(h), chrome(""))
 	}
 	if c.Coord != nil {
-		// The question's arrival time lives on aria.Turn.At, which the pager's
-		// unit does not carry. The ADDRESS is what a jump needs.
 		if l := c.Coord(BlockInquiry, livedoc.Node{}); l != "" {
 			rows = append(rows, Row{Text: clip(l, w), Block: BlockInquiry})
 		}
 	}
-	// Deliberately NOT table-clamped: a node is the agent's output and may be
-	// summarised, but the question is the user's own text and figaro does not
-	// truncate what the user wrote.
 	if len(segments) == 0 {
 		return append(rows, prose(inquiry, w, BlockInquiry)...)
 	}
@@ -168,9 +165,7 @@ func (c Composer) inquiry(inquiry string, segments []aria.InquirySegment, w int)
 			rows = append(rows, Row{Text: "", Block: BlockInquiry})
 		}
 		if seg.Sender != "" && c.Sender != nil {
-			// Indented to sit under the prose, which render.Prose insets. A
-			// flush-left attribution over an inset paragraph reads as a heading
-			// rather than as a label on the text below it.
+			// Indented to sit under the prose, which render.Prose insets.
 			rows = append(rows, Row{Text: clip(c.Sender("  "+seg.Sender), w), Block: BlockInquiry})
 		}
 		rows = append(rows, prose(seg.Text, w, BlockInquiry)...)

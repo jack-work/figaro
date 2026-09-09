@@ -34,7 +34,7 @@ func TestClient_SteerDoesNotSplitTheTurnsRun(t *testing.T) {
 	c.OnClosed = func(m Message) { got = append(got, m) }
 	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{
 		ID: 1, Inquiry: "do one, then sleep", Sealed: true, Nodes: nodes,
-	}}}})
+	}}}}, Notify)
 
 	if len(got) != 1 {
 		t.Fatalf("turn folded into %d messages, want 1: the steer split the agent's run, "+
@@ -58,8 +58,8 @@ func TestClient_InquiryOnlyTurnStillCloses(t *testing.T) {
 	c := NewClient()
 	var got []Message
 	c.OnClosed = func(m Message) { got = append(got, m) }
-	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: 4, Inquiry: "hello?"}}}})
-	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: 4, Inquiry: "hello?", Sealed: true}}}})
+	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: 4, Inquiry: "hello?"}}}}, Notify)
+	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: 4, Inquiry: "hello?", Sealed: true}}}}, Notify)
 
 	if len(got) != 1 {
 		t.Fatalf("got %d closed messages, want 1", len(got))

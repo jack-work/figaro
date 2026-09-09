@@ -16,63 +16,22 @@ func bigNode(n int) livedoc.Node {
 	return livedoc.Node{Type: livedoc.NodeProse, Markdown: strings.Repeat("x", n)}
 }
 
-// A turn is unbounded, so the pager's unit cannot be the turn. Slicing at node
-// boundaries keeps every unit under the budget while losing nothing.
-func TestSliceTurn_BoundsUnitsWithoutLosingNodes(t *testing.T) {
-	nodes := make([]livedoc.Node, 12)
-	for i := range nodes {
-		nodes[i] = bigNode(transcriptUnitChars / 2)
-	}
-	got := sliceTurn(7, 0, nodes)
-	if len(got) < 2 {
-		t.Fatalf("a %d-char turn must split; got %d unit(s)", 12*(transcriptUnitChars/2), len(got))
-	}
-
-	var seen int
-	for i, m := range got {
-		if m.Turn != 7 {
-			t.Errorf("unit %d: turn id = %d, want 7: slices keep their turn", i, m.Turn)
-		}
-		if m.From != uint64(seen) {
-			t.Errorf("unit %d: From = %d, want %d: offsets must be contiguous", i, m.From, seen)
-		}
-		if len(m.Nodes) == 0 {
-			t.Errorf("unit %d is empty", i)
-		}
-		seen += len(m.Nodes)
-	}
-	if seen != len(nodes) {
-		t.Fatalf("slices cover %d nodes, want %d: nothing may be dropped or duplicated", seen, len(nodes))
-	}
-}
-
-// The smallest unit is one node. Tool output is already clamped by
-// composeBashCap, so a node is never split and never needs to be.
-func TestSliceTurn_NeverSplitsANode(t *testing.T) {
-	huge := bigNode(transcriptUnitChars * 3)
-	got := sliceTurn(1, 0, []livedoc.Node{huge})
-	if len(got) != 1 || len(got[0].Nodes) != 1 {
-		t.Fatalf("a single oversized node must stay one unit; got %d units", len(got))
-	}
-	if len(got[0].Nodes[0].Markdown) != transcriptUnitChars*3 {
-		t.Fatal("the node was truncated; slicing must not alter payload")
-	}
+func sealedTurnPage(id uint64, from uint64, nodes []livedoc.Node) aria.Page {
+	return aria.Page{Parts: []aria.TurnPart{{
+		Turn: aria.Turn{ID: id, Sealed: true, Nodes: nodes},
+		From: from,
+	}}}
 }
 
 // The immutable-backpage property: a page below the live suffix can never
-// receive a delta, so re-fetching it must reproduce it exactly. Slicing is a
-// pure function of the page, which is what makes that hold through the pager.
-func TestCommittedMessages_RefetchIsIdentical(t *testing.T) {
-	page := aria.Page{Parts: []aria.TurnPart{{
-		Turn: aria.Turn{ID: 3, Nodes: []livedoc.Node{
-			bigNode(transcriptUnitChars), bigNode(transcriptUnitChars), bigNode(10),
-		}},
-	}}}
-	a, err := json.Marshal(committedMessages(page))
+// receive a delta, so re-fetching it must reproduce it exactly.
+func TestPageMessages_RefetchIsIdentical(t *testing.T) {
+	page := sealedTurnPage(3, 0, []livedoc.Node{bigNode(40000), bigNode(40000), bigNode(10)})
+	a, err := json.Marshal(pageMessages(page))
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := json.Marshal(committedMessages(page))
+	b, err := json.Marshal(pageMessages(page))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,12 +42,8 @@ func TestCommittedMessages_RefetchIsIdentical(t *testing.T) {
 
 // A part that is itself a slice of a turn keeps its wire offset, so a unit's
 // From is its true coordinate in the turn and not merely its index in the page.
-func TestCommittedMessages_HonoursPartOffset(t *testing.T) {
-	page := aria.Page{Parts: []aria.TurnPart{{
-		Turn: aria.Turn{ID: 9, Nodes: []livedoc.Node{bigNode(4), bigNode(4)}},
-		From: 5,
-	}}}
-	got := committedMessages(page)
+func TestPageMessages_HonoursPartOffset(t *testing.T) {
+	got := pageMessages(sealedTurnPage(9, 5, []livedoc.Node{bigNode(4), bigNode(4)}))
 	if len(got) != 1 || got[0].From != 5 {
 		t.Fatalf("unit From = %v, want 5, a clipped part starts where the wire says", got)
 	}
@@ -96,7 +51,7 @@ func TestCommittedMessages_HonoursPartOffset(t *testing.T) {
 
 // Real data, not a fixture: every unit the pager builds from the largest aria
 // on this machine must fit the budget, whatever the turns do.
-func TestSliceTurn_RealAriaUnitsAreBounded(t *testing.T) {
+func TestUnits_RealAriaAreBounded(t *testing.T) {
 	path := os.Getenv("BIG_IR")
 	if path == "" {
 		t.Skip("set BIG_IR to a real .jsonl to run")
@@ -129,7 +84,7 @@ func TestSliceTurn_RealAriaUnitsAreBounded(t *testing.T) {
 		if n := len(renderNodeList(tn.Nodes, 100, 0, renderSettings{})); n > worstTurn {
 			worstTurn = n
 		}
-		for _, m := range sliceTurn(tn.ID, 0, tn.Nodes) {
+		for _, m := range pageMessages(sealedTurnPage(tn.ID, 0, tn.Nodes)) {
 			units++
 			if n := len(renderNodeList(m.Nodes, 100, 0, renderSettings{})); n > worstUnit {
 				worstUnit = n

@@ -40,7 +40,7 @@ func frameFixture(t *testing.T) *transcript {
 	client.Apply(aria.Page{Parts: []aria.TurnPart{
 		{Turn: aria.Turn{ID: 1, Inquiry: "please look", Sealed: true}},
 		{Turn: aria.Turn{ID: uint64(2), Inquiry: "and again", Sealed: true, Nodes: nodes}},
-	}})
+	}}, aria.Notify)
 	ft := ldrender.NewFakeTerminal(48, 14)
 	tr := newTranscript(ft, 48, 14, &ariaView{settings: &renderSettings{}}, client, "aria1234", time.Unix(0, 0))
 	tr.enter()

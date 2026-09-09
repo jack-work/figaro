@@ -27,7 +27,7 @@ func TestClient_ClippedPartDoesNotFabricateAHeadSlice(t *testing.T) {
 		Turn:        Turn{ID: 3, Inquiry: "the question", Sealed: true, Nodes: nodes},
 		From:        7,
 		ClippedHead: true,
-	}}})
+	}}}, Notify)
 
 	v := c.View()
 	if len(v.Closed) != 1 {
@@ -51,7 +51,7 @@ func TestClient_HeadPartCarriesTheInquiry(t *testing.T) {
 		Turn: Turn{ID: 4, Inquiry: "the question", Sealed: true,
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "an answer"}}},
 		From: 0,
-	}}})
+	}}}, Notify)
 	v := c.View()
 	if len(v.Closed) != 1 || v.Closed[0].Inquiry != "the question" {
 		t.Fatalf("closed = %+v, want one message carrying the question", v.Closed)
@@ -69,7 +69,7 @@ func TestClient_ClippedCatchUpKeepsTheOpenRegionHonest(t *testing.T) {
 			Live:  &Live{From: 9, V: 3}},
 		From:        9,
 		ClippedHead: true,
-	}}})
+	}}}, Notify)
 
 	open := c.View().Open
 	if open == nil {
@@ -101,7 +101,7 @@ func TestClient_LiveSuffixDoesNotRepeatTheQuestion(t *testing.T) {
 		Turn: Turn{ID: 7, Inquiry: "the question", Live: &Live{From: 0, V: 1},
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "first"}}},
 		From: 0,
-	}}})
+	}}}, Notify)
 	// The head closes and reaches scrollback; the turn keeps streaming.
 	c.Apply(Page{Parts: []TurnPart{{
 		Turn: Turn{ID: 7, Live: &Live{From: 1, V: 2},
@@ -110,7 +110,7 @@ func TestClient_LiveSuffixDoesNotRepeatTheQuestion(t *testing.T) {
 				{Type: livedoc.NodeProse, Markdown: "second"},
 			}},
 		From: 0,
-	}}})
+	}}}, Notify)
 
 	v := c.View()
 	if len(v.Closed) != 1 || v.Closed[0].Inquiry != "the question" {

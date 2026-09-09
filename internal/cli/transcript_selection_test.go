@@ -21,7 +21,7 @@ func TestTranscriptNodeSelectionRangeAndCopy(t *testing.T) {
 			{Type: livedoc.NodeTool, Name: "bash", Output: "tool output"},
 		},
 	}}}
-	client.Apply(aria.Page{Parts: history})
+	client.Apply(aria.Page{Parts: history}, aria.Notify)
 	tr := newTranscript(ft, 80, 20, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
 
@@ -59,7 +59,7 @@ func TestTranscriptEnterExpandsSelectedToolOutput(t *testing.T) {
 			Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK, Output: strings.Join(lines, "\n"),
 		}},
 	}}}
-	client.Apply(aria.Page{Parts: history})
+	client.Apply(aria.Page{Parts: history}, aria.Notify)
 	tr := newTranscript(ft, 80, 30, &ariaView{settings: &renderSettings{}}, client, "aria1234", time.Now())
 	tr.enter()
 	tr.key(0x0e) // Ctrl-N
@@ -84,7 +84,7 @@ func TestTranscriptEscClearsSelection(t *testing.T) {
 		ID: uint64(1), Sealed: true, Nodes: []livedoc.Node{
 			{Type: livedoc.NodeProse, Markdown: "only node"},
 		},
-	}}}})
+	}}}}, aria.Notify)
 	tr := newTranscript(ft, 80, 20, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
 	tr.key(0x0e) // Ctrl-N

@@ -39,7 +39,7 @@ func sealedPage(turn int, nodes int) Page {
 func foldHistory(n, nodes int) *Client {
 	c := NewClient()
 	for i := 1; i <= n; i++ {
-		c.Apply(sealedPage(i, nodes))
+		c.Apply(sealedPage(i, nodes), Notify)
 	}
 	return c
 }
@@ -84,7 +84,7 @@ func BenchmarkClientApplyLiveDelta(b *testing.B) {
 					Nodes: []NodeDelta{{ID: 0, Set: map[string]any{
 						"type": "prose", "role": "output", "markdown": "streaming",
 					}}},
-				}}}}})
+				}}}}}, Notify)
 			}
 		})
 	}
@@ -96,7 +96,7 @@ func BenchmarkClientOpen(b *testing.B) {
 	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: 1001, Live: &Live{
 		From: 0, V: 1,
 		Nodes: []NodeDelta{{ID: 0, Set: map[string]any{"type": "prose", "markdown": "x"}}},
-	}}}}})
+	}}}}}, Notify)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -116,7 +116,7 @@ func BenchmarkClientTrim(b *testing.B) {
 				c := NewClient()
 				c.SetClosedLimit(200)
 				for t := 1; t <= n; t++ {
-					c.Apply(sealedPage(t, 1))
+					c.Apply(sealedPage(t, 1), Notify)
 				}
 				runtime.KeepAlive(c)
 			}
@@ -140,7 +140,7 @@ func BenchmarkClientTallTurn(b *testing.B) {
 						Nodes: []NodeDelta{{ID: uint64(k), Set: map[string]any{
 							"type": "prose", "role": "output", "markdown": "node",
 						}}},
-					}}}}})
+					}}}}}, Notify)
 				}
 				runtime.KeepAlive(c)
 			}

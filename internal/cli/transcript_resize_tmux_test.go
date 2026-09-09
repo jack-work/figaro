@@ -77,7 +77,7 @@ func TestTranscriptPaint_RealTerminalResize(t *testing.T) {
 					ID: uint64(i + 1), Sealed: true, Nodes: heavyNodes(i+1, 14),
 				}}
 			}
-			client.Apply(aria.Page{Parts: committed})
+			client.Apply(aria.Page{Parts: committed}, aria.Notify)
 
 			// --- first half: come up at w0xh0 and scroll into history, so the
 			// viewport is full of message separators (a blank row, then a rule).

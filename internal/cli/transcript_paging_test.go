@@ -31,7 +31,7 @@ import (
 // older history". Applying the page without it leaves the store believing it
 // holds the whole aria, and no test would ever page.
 func applyTail(client *aria.Client, p aria.Page) {
-	client.Apply(p)
+	client.Apply(p, aria.Notify)
 	client.SetMoreBefore(p.More.Before)
 }
 
@@ -45,7 +45,7 @@ func pageOnce(tr *transcript, history []aria.TurnPart) bool {
 		return false
 	}
 	at := aria.Anchor{Turn: uint64(req.before), Node: uint64(req.beforeNode)}
-	tr.applyPage(req, committedPage(readBeforeAt(history, at, req.limit)))
+	tr.applyPage(req, readBeforeAt(history, at, req.limit))
 	return true
 }
 
@@ -169,7 +169,7 @@ func TestTranscript_PagingOlderKeepsTheLiveTail(t *testing.T) {
 	applyTail(client, readBefore(history, recentCursor, transcriptPageSize))
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: 201, Live: &aria.Live{Nodes: []aria.NodeDelta{{
 		ID: 0, Set: map[string]any{"type": "prose", "markdown": "still streaming"},
-	}}}}}}})
+	}}}}}}}, aria.Notify)
 	ft := ldrender.NewFakeTerminal(50, 8)
 	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
@@ -313,10 +313,10 @@ func TestTranscript_SearchFindsAMatchInTheGrownWindow(t *testing.T) {
 
 func TestTranscript_SelectsOpenNodeAfterLeavingFollow(t *testing.T) {
 	client := aria.NewClient()
-	client.Apply(aria.Page{Parts: []aria.TurnPart{transcriptHistory(1)[0]}})
+	client.Apply(aria.Page{Parts: []aria.TurnPart{transcriptHistory(1)[0]}}, aria.Notify)
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(2), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{
 		ID: 0, Set: map[string]any{"type": "prose", "markdown": "streaming prose"},
-	}}}}}}})
+	}}}}}}}, aria.Notify)
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
 	tr.selectNode(-1, false)

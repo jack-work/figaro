@@ -50,7 +50,7 @@ func expandFixture(t *testing.T) (*transcript, nodeRef) {
 		{Turn: aria.Turn{ID: 1, Inquiry: "filler", Sealed: true,
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: strings.Repeat("padding line\n\n", 20)}}}},
 		{Turn: aria.Turn{ID: 2, Inquiry: "please look", Sealed: true, Nodes: nodes}},
-	}})
+	}}, aria.Notify)
 	tr := newTranscript(ldrender.NewFakeTerminal(60, 24), 60, 24, &ariaView{settings: &renderSettings{}},
 		client, "aria1234", time.Unix(0, 0))
 	tr.enter()
@@ -271,7 +271,7 @@ func streamingFixture(t *testing.T, body string) (*transcript, nodeRef, livedoc.
 	client.Apply(aria.Page{Parts: []aria.TurnPart{
 		{Turn: aria.Turn{ID: 1, Inquiry: "write it", Sealed: false,
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "on it"}, tool}}},
-	}})
+	}}, aria.Notify)
 	tr := newTranscript(ldrender.NewFakeTerminal(80, 24), 80, 24, &ariaView{settings: &renderSettings{}},
 		client, "aria1234", time.Unix(0, 0))
 	tr.enter()
@@ -344,7 +344,7 @@ func TestPagerStreamingWindowFollowsTheStream(t *testing.T) {
 	tr.client.Apply(aria.Page{Parts: []aria.TurnPart{
 		{Turn: aria.Turn{ID: 1, Inquiry: "write it", Sealed: false,
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "on it"}, tool}}},
-	}})
+	}}, aria.Notify)
 	tr.rowCache = map[sliceKey]cachedMessage{}
 
 	after := strings.Join(argRowsOf(tr), "\n")
@@ -442,14 +442,14 @@ func TestSeparatorOnlyAtATurnBoundary(t *testing.T) {
 	client.Apply(aria.Page{Parts: []aria.TurnPart{
 		{Turn: aria.Turn{ID: 9, Inquiry: "the long question", Sealed: true, Nodes: long[6:]},
 			From: 6, ClippedHead: true},
-	}})
+	}}, aria.Notify)
 	client.Apply(aria.Page{Parts: []aria.TurnPart{
 		{Turn: aria.Turn{ID: 9, Inquiry: "the long question", Sealed: true, Nodes: long[:6]}, From: 0},
-	}})
+	}}, aria.Notify)
 	client.Apply(aria.Page{Parts: []aria.TurnPart{
 		{Turn: aria.Turn{ID: 10, Inquiry: "the next question", Sealed: true,
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "answer"}}}, From: 0},
-	}})
+	}}, aria.Notify)
 
 	tr := newTranscript(ldrender.NewFakeTerminal(60, 24), 60, 24,
 		&ariaView{settings: &renderSettings{}}, client, "aria1234", time.Unix(0, 0))

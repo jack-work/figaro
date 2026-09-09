@@ -38,16 +38,18 @@ func benchSeedTranscript(b *testing.B, held, seed int) *transcript {
 	for _, m := range benchSeedMessages(held) {
 		client.Apply(aria.Page{Parts: []aria.TurnPart{{
 			Turn: aria.Turn{ID: uint64(m.Turn), Inquiry: m.Inquiry, Sealed: true, Nodes: m.Nodes},
-		}}})
+		}}}, aria.Notify)
 	}
 	tr := newTranscript(&nullWriter{}, 100, 40, &ariaView{settings: &renderSettings{}}, client, "aria1234", time.Unix(0, 0))
 	if seed > 0 {
 		// The seed is older history: turns below everything the client holds.
-		msgs := benchSeedMessages(seed)
-		for k := range msgs {
-			msgs[k].Turn = -seed + k
+		var p aria.Page
+		for k, m := range benchSeedMessages(seed) {
+			p.Parts = append(p.Parts, aria.TurnPart{Turn: aria.Turn{
+				ID: uint64(-seed + k), Inquiry: m.Inquiry, Sealed: true, Nodes: m.Nodes,
+			}})
 		}
-		client.Merge(msgs, nil)
+		client.Apply(p, aria.Quiet)
 	}
 	tr.enter()
 	return tr

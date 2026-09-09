@@ -45,7 +45,7 @@ func TestTranscriptFollowFrameDoesNotRebuildWindow(t *testing.T) {
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 		ID: uint64(41), Sealed: true,
 		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "message-041"}},
-	}}}})
+	}}}}, aria.Notify)
 	tr.render()
 	if got := transcriptTailRev(tr); got == rev {
 		t.Fatal("a committed message did not refresh the tail window")
@@ -65,7 +65,7 @@ func TestTranscriptFollowFrameMatchesRebuild(t *testing.T) {
 		client.SetClosedLimit(transcriptTailLimit)
 		applyTail(client, readBefore(transcriptHistory(40), recentCursor, transcriptPageSize))
 		client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(41), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{
-			"type": "prose", "markdown": "streaming prose"}}}}}}}})
+			"type": "prose", "markdown": "streaming prose"}}}}}}}}, aria.Notify)
 		tr := newTranscript(ldrender.NewFakeTerminal(50, 10), 50, 10, ldrender.NodeText{}, client, "aria", time.Time{})
 		tr.enter()
 		return tr

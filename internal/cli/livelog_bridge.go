@@ -70,17 +70,12 @@ type livelogTurn struct {
 	hold bool
 	held []aria.Page
 
-	// seeded is the catch-up page fetched when we joined a turn we did NOT open.
-	// The inline view prints a bounded slice of it (seedContext); the PAGER gets
-	// the whole set, merged into the client's store when it opens, so entering it
-	//: by Ctrl-T or by an overflow auto-enter: renders that history with no
-	// round trip of its own. One fetch, two surfaces. It is deliberately NOT
-	// APPLIED to aria.Client: a page folded through Apply comes back through
-	// OnClosed and re-freezes history into scrollback, which is the whole trap
-	// this design is built around. Merge is the silent door.
-	seeded      []aria.Message
-	seedExtents map[int]uint64
-	seedMore    bool
+	// seeded is the catch-up page fetched when we joined a turn we did not open.
+	// The inline view prints a bounded slice of it (seedContext); the pager
+	// folds the whole of it when it opens, so entering renders that history
+	// without a round trip. It folds Quiet: notifying would re-freeze history
+	// into scrollback.
+	seeded aria.Page
 
 	// catchUp is the history read owed by a pager that opens WITHOUT a seed -
 	// i.e. by one of the two automatic promotions. Armed by the session
@@ -329,7 +324,7 @@ func (t *livelogTurn) apply(r aria.Page) {
 		t.held = append(t.held, r)
 		return
 	}
-	t.client.Apply(r)
+	t.client.Apply(r, aria.Notify)
 }
 
 // holdFrames buffers applied pages until openInline. Armed before the
@@ -339,17 +334,17 @@ func (t *livelogTurn) holdFrames() { t.hold = true }
 // openInline places the opening of an inline session in the ONE order that
 // works, and is the only way to release the held frames: the order is not a
 // convention to remember at the call site, it is the method.
-func (t *livelogTurn) openInline(fetched historyPage) {
-	// The pager's copy: printed or not, the fetch is kept (and merged into the
-	// store when the pager opens: see enterPager).
-	t.seeded, t.seedExtents, t.seedMore = fetched.msgs, fetched.extents, fetched.more
-	t.seedContext(fetched.msgs) // no-op when there is nothing to orient with
-	t.armThinking()             // no-op in the pager, and no-op if already pinned
+func (t *livelogTurn) openInline(fetched aria.Page) {
+	// The pager's copy: printed or not, the fetch is kept and folded when the
+	// pager opens (see enterPager).
+	t.seeded = fetched
+	t.seedContext(pageMessages(fetched)) // no-op when there is nothing to orient with
+	t.armThinking()                      // no-op in the pager, and no-op if already pinned
 	t.hold = false
 	held := t.held
 	t.held = nil
 	for _, r := range held {
-		t.client.Apply(r)
+		t.client.Apply(r, aria.Notify)
 	}
 	// The pager draws from the shared model rather than from the event, so a
 	// page that finalized nothing would leave it showing the pre-release state.
@@ -572,15 +567,12 @@ func (t *livelogTurn) enterTranscript() { t.enterPager() }
 // prints a bounded slice of it, and the pager opens on the whole of it: no
 // read, and that much less to page in.
 func (t *livelogTurn) enterPager() {
-	t.client.Merge(t.seeded, t.seedExtents)
-	if len(t.seeded) > 0 {
-		// What the wire said about the beginning, kept where the wire's answer
-		// is. The pager reads it back as "can I still page older history" rather
-		// than latching a bit of its own.
-		t.client.SetMoreBefore(t.seedMore)
+	if t.hasSeed() {
+		t.client.SetMoreBefore(t.seeded.More.Before)
+		t.client.Apply(t.seeded, aria.Quiet)
 	}
 	t.tr.enter()
-	if len(t.seeded) == 0 && t.catchUp != nil {
+	if !t.hasSeed() && t.catchUp != nil {
 		// Fires after the frame, and never blocks: the callers of this method
 		// hold the render lock (the frame path and the resize handler), so the
 		// hook may only arm a read, not perform one.
@@ -596,7 +588,7 @@ func (t *livelogTurn) setCatchUp(fn func()) { t.catchUp = fn }
 
 // hasSeed reports whether the pager can open on history already in hand: the
 // input loop asks so it can skip its blocking catch-up read.
-func (t *livelogTurn) hasSeed() bool { return len(t.seeded) > 0 }
+func (t *livelogTurn) hasSeed() bool { return len(t.seeded.Parts) > 0 }
 
 // inTranscript reports whether the pager is up. Read under the render lock.
 func (t *livelogTurn) inTranscript() bool { return t.tr.active }
@@ -778,7 +770,7 @@ func (t *livelogTurn) transcriptPageCursor() (transcriptPageRequest, bool) {
 	return t.tr.pageCursor()
 }
 
-func (t *livelogTurn) transcriptApplyPage(req transcriptPageRequest, page historyPage) {
+func (t *livelogTurn) transcriptApplyPage(req transcriptPageRequest, page aria.Page) {
 	t.tr.applyPage(req, page)
 }
 
@@ -983,14 +975,10 @@ func (t *livelogTurn) retarget(figaroID string, status *sessionStatus) {
 	t.lastFrozen = sliceCursor{}
 	t.pagerClosed = nil
 	t.queued, t.queuedErr = nil, ""
-	// THE HELD PAGES GO; THE HOLD ITSELF IS THE CALLER'S. Frames buffered for
-	// the old subject are meaningless here, but whether this session is still
-	// waiting to place its opening preamble is a fact about the SESSION, not
-	// about which aria it watches -- and clearing it here is what let a send's
-	// question be painted twice: once by the frame that arrived while the hold
-	// was (silently) off, and again by the opening that thought it was first.
+	// The held pages go; the hold itself belongs to the caller, which owns
+	// whether this session has yet placed its opening preamble.
 	t.held = nil
-	t.seeded, t.seedExtents, t.seedMore = nil, nil, false
+	t.seeded = aria.Page{}
 
 	t.tr.retarget(t.client, figaroID, status)
 }

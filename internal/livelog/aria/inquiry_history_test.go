@@ -25,7 +25,7 @@ func TestScrollingBackCompletesATurnsHead(t *testing.T) {
 			InquirySegments: []InquirySegment{{Sender: "aria 123456", Text: "WHATDIDIASK"}},
 			Nodes:           []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "THIRD"}}},
 		From: 2, ClippedHead: true,
-	}}})
+	}}}, Notify)
 
 	// Scrolling further up delivers the head of that same turn.
 	c.Apply(Page{Parts: []TurnPart{{
@@ -36,7 +36,7 @@ func TestScrollingBackCompletesATurnsHead(t *testing.T) {
 				{Type: livedoc.NodeProse, Markdown: "SECOND"},
 			}},
 		From: 0,
-	}}})
+	}}}, Notify)
 
 	var text []string
 	var questions int
@@ -90,7 +90,7 @@ func TestHistoryStillDoesNotClaimTheOpenSlot(t *testing.T) {
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "still answering"}},
 			Live:  &Live{From: 0, V: 0}},
 		From: 0,
-	}}})
+	}}}, Notify)
 	if c.View().Open == nil {
 		t.Fatal("fixture: turn 9 should be open")
 	}
@@ -98,7 +98,7 @@ func TestHistoryStillDoesNotClaimTheOpenSlot(t *testing.T) {
 		Turn: Turn{ID: 4, Inquiry: "an older question", Sealed: true,
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "old tail"}}},
 		From: 2, ClippedHead: true,
-	}}})
+	}}}, Notify)
 	open := c.View().Open
 	if open == nil {
 		t.Fatal("history destroyed the live turn")

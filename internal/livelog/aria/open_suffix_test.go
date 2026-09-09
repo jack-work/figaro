@@ -22,10 +22,10 @@ func TestOpenAndViewCarryOnlyTheSuffix(t *testing.T) {
 	// The prompt arrives and closes; the reply opens above it.
 	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: 1, Live: &Live{From: 0, Nodes: []NodeDelta{
 		{ID: 0, Set: map[string]any{"type": "prose", "role": livedoc.RoleInput, "markdown": "the question"}},
-	}}}}}})
+	}}}}}}, Notify)
 	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: 1, Live: &Live{From: 1, Nodes: []NodeDelta{
 		{ID: 1, Set: map[string]any{"type": "prose", "role": livedoc.RoleOutput, "markdown": "the answer"}},
-	}}}}}})
+	}}}}}}, Notify)
 
 	for name, got := range map[string]*Message{"Open": c.Open(), "View": c.View().Open} {
 		if got == nil {

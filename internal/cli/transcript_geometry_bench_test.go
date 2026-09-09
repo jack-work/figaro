@@ -135,14 +135,14 @@ func BenchmarkTranscriptGeometryFollow(b *testing.B) {
 			withWindowRows(rows, func() {
 				tr, client := heavyTranscript(b, 200, 60)
 				client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(201), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{
-					"type": "prose", "markdown": "streaming"}}}}}}}})
+					"type": "prose", "markdown": "streaming"}}}}}}}}, aria.Notify)
 				tr.render()
 				b.ReportMetric(float64(tr.index.total), "windowrows")
 				b.ReportAllocs()
 				b.ResetTimer()
 				for i := range b.N {
 					client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(201), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{
-						"type": "prose", "markdown": fmt.Sprintf("streaming token %d", i)}}}}}}}})
+						"type": "prose", "markdown": fmt.Sprintf("streaming token %d", i)}}}}}}}}, aria.Notify)
 					tr.render()
 				}
 			})

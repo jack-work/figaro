@@ -351,7 +351,7 @@ func (in *interactiveInput) prefetchTranscriptPages(req transcriptPageRequest, d
 			// the hole is closed, and merges into the store itself.
 			err = in.lt.fillGap(rctx, *req.fill)
 		}
-		var messages historyPage
+		var messages aria.Page
 		if req.fill == nil {
 			messages, err = in.readTranscriptPage(rctx, req)
 		}
@@ -402,7 +402,7 @@ func (in *interactiveInput) pageTranscriptSearch(ctx context.Context, cancel con
 		// is going to be shown whatever it lands on.
 		rctx, rcancel := context.WithTimeout(ctx, 5*time.Second)
 		var (
-			messages historyPage
+			messages aria.Page
 			err      error
 		)
 		if req.fill != nil {
@@ -478,28 +478,25 @@ func pageCarriesInquiry(p aria.Page, prompt string) bool {
 }
 
 // recentContext reads the tail of the conversation for the opening preamble.
-func recentContext(ctx context.Context, fcli transcriptReadClient, cursor int) historyPage {
+func recentContext(ctx context.Context, fcli transcriptReadClient, cursor int) aria.Page {
 	rctx, rcancel := context.WithTimeout(ctx, recentContextTimeout)
 	defer rcancel()
 	r, err := fcli.ReadBefore(rctx, aria.Anchor{Turn: recentCursor}, wireBudget(recentContextMessages))
 	if err != nil {
-		return historyPage{}
+		return aria.Page{}
 	}
-	var history aria.Page
+	history := aria.Page{More: r.More}
 	for _, part := range r.Parts {
 		if part.Sealed && int(part.ID) <= cursor {
 			history.Parts = append(history.Parts, part)
 		}
 	}
-	return committedPage(history)
+	return history
 }
 
 // wireBudget converts the pager's message-count geometry into the wire's byte
-// budget. They are different units and conflating them is a bug: the client
-// counts messages to size its retained window, while the wire spends bytes so
-// that one enormous tool dump cannot blow a page. Passing a raw count (30)
-// asked the server for 30 BYTES, and the paginator's "always emit at least one
-// node" floor turned every page into a single node.
+// budget: the client counts messages to size its retained window, the wire
+// spends bytes so one enormous tool dump cannot blow a page.
 const wireBytesPerMessage = 4096
 
 func wireBudget(messages int) int {
@@ -509,32 +506,21 @@ func wireBudget(messages int) int {
 	return messages * wireBytesPerMessage
 }
 
-// historyFetcher is the reader Store.Ensure closes holes with: the client's
-// own ReadBefore, folded through the same committedPage the scroll-up path
-// uses. One wire call, one fold, both directions of the design agreeing about
-// what a page IS.
+// historyFetcher is the reader Ensure closes holes with: the client's own
+// ReadBefore.
 func (in *interactiveInput) historyFetcher() aria.Fetcher {
-	return func(ctx context.Context, before aria.Anchor, limit int) (aria.Fetched, error) {
-		r, err := in.fcli.ReadBefore(ctx, before, wireBudget(limit))
-		if err != nil {
-			return aria.Fetched{}, err
-		}
-		p := committedPage(r)
-		return aria.Fetched{Msgs: p.msgs, Extents: p.extents, More: p.more}, nil
+	return func(ctx context.Context, before aria.Anchor, limit int) (aria.Page, error) {
+		return in.fcli.ReadBefore(ctx, before, wireBudget(limit))
 	}
 }
 
-func (in *interactiveInput) readTranscriptPage(ctx context.Context, req transcriptPageRequest) (historyPage, error) {
+func (in *interactiveInput) readTranscriptPage(ctx context.Context, req transcriptPageRequest) (aria.Page, error) {
 	limit := req.limit
 	if limit <= 0 {
 		limit = transcriptPageSize
 	}
 	at := aria.Anchor{Turn: uint64(req.before), Node: uint64(req.beforeNode)}
-	r, err := in.fcli.ReadBefore(ctx, at, wireBudget(limit))
-	if err != nil {
-		return historyPage{}, err
-	}
-	return committedPage(r), nil
+	return in.fcli.ReadBefore(ctx, at, wireBudget(limit))
 }
 
 func (in *interactiveInput) searchMatchesLocked(gen uint64, query string) bool {
@@ -1020,6 +1006,15 @@ func inputToggleVerbose(in *interactiveInput, _ keyEvent) keyVerdict {
 	in.cancelTranscriptSearchLocked()
 	in.set.verbose = !in.set.verbose
 	in.lt.invalidateTranscriptRows()
+	in.lt.render()
+	in.mu.Unlock()
+	return keyHandled
+}
+
+// inputToggleSticky is 's'.
+func inputToggleSticky(in *interactiveInput, _ keyEvent) keyVerdict {
+	in.mu.Lock()
+	in.set.sticky = !in.set.sticky
 	in.lt.render()
 	in.mu.Unlock()
 	return keyHandled

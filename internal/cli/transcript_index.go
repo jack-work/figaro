@@ -114,6 +114,7 @@ func (t *transcript) buildIndex() {
 	}
 	if t.cacheW != t.w { // width changed: cached rows are stale
 		t.rowCache = map[sliceKey]cachedMessage{}
+		t.stickyCache = map[sliceKey]cachedMessage{}
 		t.cacheW = t.w
 	}
 	entries, total := t.index.scratch[:0], 0
@@ -255,11 +256,10 @@ func (t *transcript) window(a, b int, dst []string) []string {
 	return dst
 }
 
-// rowRefs collects the node each of absolute lines [a, b) belongs to, in the
-// same order window materializes them: so index i of the two results describes
-// one row: its text and the node it addresses.
+// rowRefs appends the node each of absolute lines [a, b) belongs to, in the
+// same order window materializes them, so a row's text and the node it
+// addresses share an index once the caller's chrome is accounted for.
 func (t *transcript) rowRefs(a, b int, dst []nodeRef) []nodeRef {
-	dst = dst[:0]
 	t.forEachWindowRow(a, b, func(e *lineEntry, rel int) {
 		dst = append(dst, e.refAt(rel))
 	})
@@ -305,7 +305,13 @@ func (t *transcript) entryLine(e *lineEntry, rel int, hl string, sel selectionSp
 		// messages would be.
 		return t.gapRow(e.gap)
 	}
-	r := e.rows[rel]
+	return t.rowLine(e.rows[rel], hl, sel)
+}
+
+// rowLine is one composed row as it is painted: the selection cue, then the
+// search highlight. The header paints through it too, so a row reads the same
+// in the body and above it.
+func (t *transcript) rowLine(r transcriptRow, hl string, sel selectionSpan) string {
 	line := r.text
 	if r.ref.valid() {
 		// r.text is already in its plainNodeRow resting form, so this is a

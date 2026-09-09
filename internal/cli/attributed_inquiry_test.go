@@ -55,7 +55,7 @@ func TestAttributedInquiryShapeAgreesAcrossViews(t *testing.T) {
 				ID: 1, Inquiry: joined, InquirySegments: segs,
 				Sealed: true, Nodes: nodes,
 			},
-		}}})
+		}}}, aria.Notify)
 		ft := ldrender.NewFakeTerminal(48, 24)
 		tr := newTranscript(ft, 48, 24, &ariaView{settings: &renderSettings{}}, client, "aria1234", time.Unix(0, 0))
 		tr.enter()

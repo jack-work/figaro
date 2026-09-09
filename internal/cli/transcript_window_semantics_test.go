@@ -19,10 +19,10 @@ import (
 func TestTranscript_ScrollingPinsOpenMessage(t *testing.T) {
 	client := aria.NewClient()
 	history := transcriptHistory(2)
-	client.Apply(aria.Page{Parts: history})
+	client.Apply(aria.Page{Parts: history}, aria.Notify)
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(3), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{
 		ID: 0, Set: map[string]any{"type": string(livedoc.NodeProse), "markdown": "still streaming"},
-	}}}}}}})
+	}}}}}}}, aria.Notify)
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
 	tr.key('k')

@@ -36,7 +36,7 @@ func TestInquiryChromeAgreesAcrossViews(t *testing.T) {
 		client := aria.NewClient()
 		client.Apply(aria.Page{Parts: []aria.TurnPart{
 			{Turn: aria.Turn{ID: 1, Inquiry: question, Sealed: true, Nodes: nodes}},
-		}})
+		}}, aria.Notify)
 		ft := ldrender.NewFakeTerminal(48, 20)
 		tr := newTranscript(ft, 48, 20, &ariaView{settings: &renderSettings{}}, client, "aria1234", time.Unix(0, 0))
 		tr.enter()
@@ -134,7 +134,7 @@ func TestVoiceHeaderHugsItsRule(t *testing.T) {
 		client.Apply(aria.Page{Parts: []aria.TurnPart{
 			{Turn: aria.Turn{ID: 1, Inquiry: "QUESTIONONE", Sealed: true, Nodes: nodes1}},
 			{Turn: aria.Turn{ID: 2, Inquiry: "QUESTIONTWO", Sealed: true, Nodes: nodes2}},
-		}})
+		}}, aria.Notify)
 		ft := ldrender.NewFakeTerminal(48, 40)
 		tr := newTranscript(ft, 48, 40, &ariaView{settings: &renderSettings{}}, client, "aria1234", time.Unix(0, 0))
 		tr.enter()
