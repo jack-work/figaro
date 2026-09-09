@@ -36,6 +36,11 @@ type ObjectPatch struct {
 	Delete map[string]Value `json:"Delete,omitempty"`
 	Update map[string]Patch `json:"Update,omitempty"`
 
+	// Term names the Update keys where a caller's key ENDED. Splitting a
+	// dotted key into segments loses that, and without it a later key
+	// reaches through the node instead of landing beside it.
+	Term map[string]bool `json:"Term,omitempty"`
+
 	// New names the Update keys that did not exist. Their leaves are
 	// described rather than the subtree, so two patches adding different
 	// fields under one parent compose; the flag is what lets Inverse remove
