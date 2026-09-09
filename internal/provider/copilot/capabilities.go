@@ -49,7 +49,7 @@ func capabilitiesFor(model string) (modelCapabilities, bool) {
 	for _, caps := range knownCapabilities {
 		// Prefix, so dated snapshots such as gpt-6-astra-2026-08-01 carry
 		// the family's rules.
-		if strings.HasPrefix(name, caps.family) {
+		if name == caps.family || strings.HasPrefix(name, caps.family+"-") {
 			return caps, true
 		}
 	}

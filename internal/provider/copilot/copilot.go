@@ -1,6 +1,5 @@
-// Package copilot implements a Provider for GitHub Copilot's API,
-// which exposes Claude models via the Anthropic Messages wire format
-// behind a Copilot-specific auth layer and endpoint.
+// Package copilot implements GitHub Copilot's catalog-routed Messages and
+// Responses transports behind its credential and endpoint layer.
 package copilot
 
 import (
@@ -155,6 +154,18 @@ func (c *Copilot) Send(ctx context.Context, in provider.SendInput, bus provider.
 		c.mu.RLock()
 		model = c.model
 		c.mu.RUnlock()
+	}
+	// Known Responses families can be checked before even fetching the
+	// catalog. Otherwise an invalid local setting still spends a credential
+	// and network request just to discover what we already know.
+	if _, known := capabilitiesFor(model); known {
+		options, err := responseOptionsFor(in.Snapshot)
+		if err != nil {
+			return err
+		}
+		if err := validateCapabilities(model, options); err != nil {
+			return err
+		}
 	}
 	route, err := c.routeForModel(ctx, model)
 	if err != nil {
