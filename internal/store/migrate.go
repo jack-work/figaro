@@ -303,10 +303,18 @@ func loadMigrateNodes(dir string) (map[string]*migrateNode, []string, error) {
 		}
 		nd := filepath.Join(dir, e.Name())
 		n := &migrateNode{dir: nd, name: e.Name()}
-		for k, v := range readMigrateKV(filepath.Join(nd, ".node")) {
-			if k == "from" {
-				n.parent = v
-			}
+		// The main channel owns lineage for every channel. Related channel
+		// directories have a .fork but no .node, so reading identity there
+		// would convert every child against an empty board.
+		marker := filepath.Join(filepath.Dir(dir), chanIR, e.Name(), ".node")
+		n.parent = readMigrateKV(marker)["from"]
+		if n.parent == "" {
+			n.parent = "<root>"
+		}
+		// A detached channel already contains its prefix, even if detach
+		// stopped before publishing the main channel's new identity.
+		if readMigrateKV(filepath.Join(nd, ".fork"))["base"] == "1" {
+			n.parent = ""
 		}
 		out[e.Name()] = n
 	}
