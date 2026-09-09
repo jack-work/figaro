@@ -102,7 +102,7 @@ func TestJumpToStartDoesNotLandOnAHole(t *testing.T) {
 	tr.client.Store().Evict(aria.Anchor{Turn: 1}, aria.Anchor{Turn: 2})
 	tr.invalidateWindow()
 	tr.settle()
-	if !tr.leadingGap() {
+	if len(tr.index.entries) == 0 || !tr.index.entries[0].isGap() {
 		t.Fatal("fixture: the hole is not at the top of the window, so it proves nothing")
 	}
 	if _, _, reach := tr.jumpReachOf(jumpTarget{start: true}); reach == jumpHere {
@@ -139,6 +139,7 @@ func TestJumpStillDeniesWhatCannotExist(t *testing.T) {
 		t.Fatal("fixture: this case must have no hole at all")
 	}
 	typeJump(tr, "99")
+	drainJump(t, tr)
 	if tr.jumpNote == "" {
 		t.Fatal("a coordinate past the live tail was accepted as a walk")
 	}
@@ -158,7 +159,7 @@ func TestJumpReadsWhereItIsGoing(t *testing.T) {
 	}
 	typeJump(tr, "3")
 	req, want := tr.pageCursor()
-	if !want || !req.seek {
+	if !want || req.seek == 0 {
 		t.Fatalf("the jump asked for %+v (want=%v); it must read at the coordinate", req, want)
 	}
 	// At the target itself, not at the near edge of the hole between here and
@@ -166,4 +167,13 @@ func TestJumpReadsWhereItIsGoing(t *testing.T) {
 	if want := (aria.Anchor{Turn: 3}); req.at != want {
 		t.Fatalf("the jump read at %v, want the coordinate it was given, %v", req.at, want)
 	}
+}
+
+func (t *transcript) hasGap() bool {
+	for _, e := range t.index.entries {
+		if e.isGap() {
+			return true
+		}
+	}
+	return false
 }

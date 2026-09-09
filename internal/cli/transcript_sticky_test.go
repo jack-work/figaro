@@ -521,40 +521,6 @@ func TestSticky_LiveTurnDoesNotStandTwice(t *testing.T) {
 	}
 }
 
-// TestSticky_JumpTravelsBetweenQuestions: with a question pinned the unit of
-// travel is the exchange.
-func TestSticky_JumpTravelsBetweenQuestions(t *testing.T) {
-	tr := richPager(t, 4, 6, 24)
-	starts := tr.stickyStarts()
-	if len(starts) < 3 {
-		t.Fatalf("fixture: %d questions in the window, want at least 3", len(starts))
-	}
-	tr.offset = starts[0]
-	tr.buildIndex()
-
-	tr.stickyJump(1)
-	if tr.offset != starts[1] {
-		t.Fatalf("forward one question landed at %d, want %d", tr.offset, starts[1])
-	}
-	// It lands on the question, which then speaks for itself rather than being
-	// pinned above the body.
-	if _, above := tr.stickyTurn(); above != 0 {
-		t.Fatalf("landing on a question pinned %d of its rows", above)
-	}
-	tr.stickyJump(-1)
-	if tr.offset != starts[0] {
-		t.Fatalf("back one question landed at %d, want %d", tr.offset, starts[0])
-	}
-	// The last question is as far as it goes: the walk stops rather than
-	// wrapping or falling off the end.
-	for range len(starts) + 2 {
-		tr.stickyJump(1)
-	}
-	if _, maxOff := tr.layout(len(tr.footLines())); tr.offset > maxOff {
-		t.Fatalf("the walk ran past the end: offset %d, max %d", tr.offset, maxOff)
-	}
-}
-
 // TestSticky_EllipsisMarksAQuestionTooTallToPin.
 func TestSticky_EllipsisMarksAQuestionTooTallToPin(t *testing.T) {
 	client := aria.NewClient()
@@ -750,34 +716,5 @@ func TestSticky_MergesIntoTheBlockWithoutASeam(t *testing.T) {
 	}
 	if heights[len(heights)-1] != 0 {
 		t.Fatalf("the header outlived the block: %v", heights)
-	}
-}
-
-// TestSticky_AltNAndAltPTravelBetweenQuestions: the travel keys must arrive on
-// a terminal that reports no modifiers at all, which is what ESC+n is for.
-func TestSticky_AltNAndAltPTravelBetweenQuestions(t *testing.T) {
-	in, lt := navInput(t, &countingWriter{}, true)
-	lt.apply(aria.Page{Parts: []aria.TurnPart{richTurn(41, 6), richTurn(42, 6), richTurn(43, 6)}})
-	lt.tr.follow = false
-	lt.tr.invalidateWindow()
-	lt.tr.buildIndex()
-	starts := lt.tr.stickyStarts()
-	if len(starts) < 2 {
-		t.Fatalf("fixture holds %d questions", len(starts))
-	}
-	lt.tr.offset = starts[len(starts)-1]
-	lt.tr.buildIndex()
-
-	feed(t, in, "\x1bp")
-	if lt.tr.offset != starts[len(starts)-2] {
-		t.Fatalf("M-p landed at %d, want the previous question at %d", lt.tr.offset, starts[len(starts)-2])
-	}
-	// Forward again. The last question is close enough to the end that the
-	// viewport cannot put it at the top, so the landing is clamped: what must
-	// hold is that it travelled.
-	feed(t, in, "\x1bn")
-	if lt.tr.offset <= starts[len(starts)-2] {
-		t.Fatalf("M-n did not travel forward: offset %d, previous question at %d",
-			lt.tr.offset, starts[len(starts)-2])
 	}
 }

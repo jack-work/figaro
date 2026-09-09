@@ -632,10 +632,9 @@ func (t *livelogTurn) transcriptSelect(delta int, extend bool) {
 	t.tr.render()
 }
 
-// transcriptJumpQuestion travels to the question before or after the one the
-// reader is inside: what ^N/^P mean while the header is up.
+// transcriptJumpQuestion handles Alt+n/p and Ctrl+Shift+n/p.
 func (t *livelogTurn) transcriptJumpQuestion(delta int) {
-	t.tr.stickyJump(delta)
+	t.tr.jumpTurn(delta)
 	t.tr.render()
 }
 
@@ -796,9 +795,11 @@ func (t *livelogTurn) fillGap(ctx context.Context, g aria.Gap) error {
 
 // transcriptFilled re-derives the window after a fill and repaints. The hole
 // is gone from the store, so the line index simply stops emitting a sentinel
-// for it.
+// for it, and anything that was waiting on what the hole held can resolve.
 func (t *livelogTurn) transcriptFilled() {
 	t.tr.invalidateWindow()
+	t.tr.settle()
+	t.tr.jumpAdvance()
 	t.tr.render()
 }
 func (t *livelogTurn) transcriptSearchingHistory() bool { return t.tr.searchingHistory() }

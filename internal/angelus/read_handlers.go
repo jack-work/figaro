@@ -72,7 +72,7 @@ func (h *handlers) readFromStore(id, method string, params json.RawMessage) (any
 				return nil, true, err
 			}
 		}
-		page, err := r.Page(id, req.At, req.Limit, req.Backward)
+		page, err := r.Page(id, req.At, h.angelus.Settings.ClampPageBudget(req.Limit), req.Backward)
 		if err != nil {
 			return nil, true, err
 		}

@@ -19,9 +19,17 @@ type jumpTarget struct {
 	turn    int
 	node    int
 	hasNode bool
+	// travel is -1 for the previous turn, +1 for the next.
+	travel int
 }
 
 func (tg jumpTarget) String() string {
+	if tg.travel > 0 {
+		return "the next question"
+	}
+	if tg.travel < 0 {
+		return "the previous question"
+	}
 	if tg.start {
 		return "the beginning"
 	}
@@ -36,6 +44,13 @@ func (tg jumpTarget) String() string {
 func (tg jumpTarget) anchor() aria.Anchor {
 	if tg.start {
 		return aria.Anchor{}
+	}
+	if tg.travel > 0 {
+		return aria.Anchor{Turn: uint64(tg.turn + 1)}
+	}
+	if tg.travel < 0 {
+		// Backward, before this turn: the read excludes its anchor.
+		return aria.Anchor{Turn: uint64(tg.turn)}
 	}
 	a := aria.Anchor{Turn: uint64(tg.turn)}
 	if tg.hasNode && tg.node > 0 {
@@ -88,20 +103,14 @@ type jumpReach uint8
 
 const (
 	jumpHere   jumpReach = iota // it is loaded: land on it
-	jumpOlder                   // page backwards toward it
+	jumpRead                    // fetch the target page
 	jumpAbsent                  // it cannot exist; say so
 )
 
-// transcriptJump is a jump waiting on the page it asked for: the target, and
-// enough of the origin to put the reader back where they were if it turns out
-// not to exist. Only the viewport is restored: what the read brought is in the
-// store, and throwing the floor back up would only fetch it again.
+// transcriptJump retains the target and origin while a page is in flight.
 type transcriptJump struct {
 	target jumpTarget
-	// asked is the coordinate already read for; a second identical read would
-	// make no progress and is how a walk used to spin.
-	asked *aria.Anchor
-
+	asked  *aria.Anchor
 	offset int
 	follow bool
 }
@@ -430,26 +439,17 @@ func jumpAccept(t *transcript) {
 	t.command(text)
 }
 
-// ---------------------------------------------------------------------------
-// The walk.
-// ---------------------------------------------------------------------------
-
-// startJump resolves a target against the loaded window and, if it is not
-// there, arms the existing paging path to walk toward it.
+// startJump selects a resident target or requests its page.
 func (t *transcript) startJump(tg jumpTarget) {
-	// A jump supersedes a running history search: they are the same traversal
-	// and cannot both own the page cursor. Restoring the search's origin first
-	// would fight the jump for the viewport, so the search is simply dropped.
 	t.search = nil
-	t.abandonJump("") // a second ':' replaces the first walk, it does not queue
-	t.settle()        // resolve against the CONVERGED window, as find() does
-
+	t.abandonJump("")
+	t.settle()
 	line, ref, reach := t.jumpReachOf(tg)
-	switch reach {
-	case jumpHere:
+	if reach == jumpHere {
 		t.landJump(line, ref)
 		return
-	case jumpAbsent:
+	}
+	if reach == jumpAbsent {
 		t.noteOrClear(tg.missing())
 		return
 	}
@@ -457,171 +457,78 @@ func (t *transcript) startJump(tg jumpTarget) {
 	t.stopFollowing()
 }
 
-// jumpAdvance is the whole state machine, called after anything that can
-// change what the window holds: a page landing, the window growing over
-// history the store already had, the floor being proven. It resolves the
-// target, or leaves the walk standing so pageCursor spends one more of the
-// budget on it.
+// jumpAdvance resolves a pending target against the resident window.
 func (t *transcript) jumpAdvance() {
 	if t.jump == nil {
 		return
 	}
 	line, ref, reach := t.jumpReachOf(t.jump.target)
-	switch reach {
-	case jumpHere:
+	if reach == jumpHere {
 		t.jump = nil
 		t.landJump(line, ref)
-	case jumpAbsent:
+	} else if reach == jumpAbsent {
 		t.abandonJump(t.jump.target.missing())
 	}
 }
 
-// jumpSeek is the coordinate a standing jump wants read, and whether it wants
-// one at all. It is the target itself, always: a page at the coordinate asked
-// for, whatever lies between it and the window. Reading anywhere else, at the
-// near edge of a hole for instance, is a walk, and a walk is what a jump exists
-// not to be. Asking twice for one coordinate is no progress, so the second ask
-// is refused and the jump ends honestly.
-func (t *transcript) jumpSeek() (aria.Anchor, bool) {
-	if t.jump == nil {
-		return aria.Anchor{}, false
+func (t *transcript) jumpSeek() (aria.Anchor, int, bool) {
+	if t.jump == nil || t.jump.asked != nil {
+		return aria.Anchor{}, 0, false
 	}
-	at := t.jump.target.anchor()
-	if t.jump.asked != nil && *t.jump.asked == at {
-		return aria.Anchor{}, false
+	at, dir := t.jump.target.anchor(), seekForward
+	if t.jump.target.travel < 0 {
+		dir = seekBackward
 	}
 	t.jump.asked = &at
-	return at, true
+	return at, dir, true
 }
 
-// jumpReachOf resolves a target against the loaded window: the absolute line
-// to land on, the node to put the selection on, and what to do if neither.
-// It reads the line index, so the caller must have built it (settle does).
+// jumpReachOf returns a target's row and selection when its head is resident.
 func (t *transcript) jumpReachOf(tg jumpTarget) (int, nodeRef, jumpReach) {
-	entries := t.index.entries
-	if len(entries) == 0 {
-		if t.atAriaFloor() {
+	if tg.travel != 0 {
+		tg.turn += tg.travel
+		tg.travel = 0
+		if tg.turn < 1 {
 			return 0, nodeRef{}, jumpAbsent
 		}
-		return 0, nodeRef{}, jumpOlder
-	}
-	oldest, newest, haveTurns := t.windowTurnBounds()
-	if !haveTurns {
-		// Nothing but holes in the window: there is no address to compare
-		// against yet, and the fill is already owed.
-		return 0, nodeRef{}, jumpOlder
 	}
 	if tg.start {
-		// The floor is only known once the store has said so, because nothing
-		// on the wire says where an aria begins, an empty ReadBefore is the
-		// only proof there is. So this lands on the lowest turn that EXISTS,
-		// whatever it is called, rather than on a number chosen here.
-		if !t.atAriaFloor() {
-			return 0, nodeRef{}, jumpOlder
+		if !t.atAriaFloor() || len(t.index.entries) == 0 || t.index.entries[0].isGap() {
+			return 0, nodeRef{}, jumpRead
 		}
-		// Standing on the floor with a hole above the oldest message means the
-		// beginning is INSIDE the hole. Wait for it rather than landing on the
-		// sentinel that stands where it will be.
-		if entries[0].isGap() {
-			return 0, nodeRef{}, jumpOlder
-		}
-		e := &entries[0]
-		return e.start, t.firstRefOfTurn(e.turn), jumpHere
-	}
-	switch {
-	case tg.turn < oldest:
-		// A hole below the oldest loaded turn may BE the target's home.
-		if t.leadingGap() {
-			return 0, nodeRef{}, jumpOlder
-		}
-		if t.atAriaFloor() {
-			return 0, nodeRef{}, jumpAbsent
-		}
-		return 0, nodeRef{}, jumpOlder
-	case tg.turn > newest:
-		// The window reaches the live tail, so there is nothing newer to load.
-		return 0, nodeRef{}, jumpAbsent
+		tg.turn = t.index.entries[0].turn
 	}
 	if tg.hasNode {
 		ref := nodeRef{turn: tg.turn, index: tg.node}
 		if span, ok := t.nodeSpanOf(ref); ok {
 			return span.first, ref, jumpHere
 		}
-		// The turn is here but that node is not. It can only be below the
-		// oldest retained SLICE of it, a turn too tall for one page arrives in
-		// slices, and the head slice is the one that got trimmed.
-		if tg.turn == oldest && tg.node < int(t.oldestFrom()) && !t.atAriaFloor() {
-			return 0, nodeRef{}, jumpOlder
-		}
-		if t.hasGap() {
-			return 0, nodeRef{}, jumpOlder
-		}
-		return 0, nodeRef{}, jumpAbsent
-	}
-	for k := range entries {
-		if !entries[k].isGap() && entries[k].turn == tg.turn {
-			return entries[k].start, t.firstRefOfTurn(tg.turn), jumpHere
+	} else {
+		for k := range t.index.entries {
+			e := &t.index.entries[k]
+			if !e.isGap() && e.turn == tg.turn && e.key.from() == 0 {
+				return entryRowsStart(e), t.firstRefOfTurn(tg.turn), jumpHere
+			}
 		}
 	}
-	// Between the bounds and not in the index: the turn is inside a hole, and
-	// the only honest answer is "not yet".
-	if t.hasGap() {
-		return 0, nodeRef{}, jumpOlder
-	}
-	return 0, nodeRef{}, jumpAbsent
+	return 0, nodeRef{}, jumpRead
 }
 
-// windowTurnBounds is the oldest and newest TURN in the window, ignoring gap
-// entries: whose turn field is 0, an id no aria ever issues.
-func (t *transcript) windowTurnBounds() (oldest, newest int, ok bool) {
-	for k := range t.index.entries {
-		e := &t.index.entries[k]
-		if e.isGap() {
-			continue
-		}
-		if !ok {
-			oldest, newest, ok = e.turn, e.turn, true
-			continue
-		}
-		if e.turn < oldest {
-			oldest = e.turn
-		}
-		if e.turn > newest {
-			newest = e.turn
-		}
-	}
-	return oldest, newest, ok
-}
-
-// leadingGap reports whether a hole stands above the oldest message in the
-// window: i.e. whether history that is "below the floor" as far as the reader
-// is concerned is actually a hole INSIDE it.
-func (t *transcript) leadingGap() bool {
-	return len(t.index.entries) > 0 && t.index.entries[0].isGap()
-}
-
-// hasGap reports whether the window is missing anything inside itself. (whole()
-// asks a bigger question: no holes AND standing on the floor, and a jump only
-// cares about the holes.)
-func (t *transcript) hasGap() bool {
-	for k := range t.index.entries {
-		if t.index.entries[k].isGap() {
-			return true
-		}
-	}
-	return false
-}
-
-// firstRefOfTurn is the turn's first selectable point in reading order: its
-// question when it has one, otherwise its first node. That is what the jump
-// puts the selection on, so a turn-granular landing still names something.
 func (t *transcript) firstRefOfTurn(turn int) nodeRef {
-	for _, p := range t.nodeRefs() {
-		if p.turn == turn {
-			return p.nodeRef
+	ref := nodeRef{}
+	take := func(m aria.Message) bool {
+		if m.Inquiry != "" {
+			ref = nodeRef{turn: turn, index: inquiryNode}
+		} else if len(m.Nodes) > 0 {
+			ref = nodeRefAt(m, 0)
 		}
+		return !ref.valid()
 	}
-	return nodeRef{}
+	t.client.ForEachIn(aria.Anchor{Turn: uint64(turn)}, aria.Anchor{Turn: uint64(turn), Node: ^uint64(0)}, take)
+	if m := t.openMessage(); !ref.valid() && m != nil && m.Turn == turn {
+		take(*m)
+	}
+	return ref
 }
 
 // landJump snaps the viewport so the target's first row sits at the top, and
@@ -639,23 +546,32 @@ func (t *transcript) landJump(line int, ref nodeRef) {
 	t.offset = line
 }
 
-// selectRef puts the selection on one node, carrying the hash the copy path
-// verifies endpoints with: which is why it goes through nodeRefs() rather
-// than minting a bare point.
 func (t *transcript) selectRef(ref nodeRef, extend bool) bool {
-	t.wantTop = false // selecting is a deliberate move; see transcript.wantTop
-	for _, p := range t.nodeRefs() {
-		if p.nodeRef != ref {
-			continue
+	t.wantTop = false
+	var point selectionPoint
+	found := false
+	take := func(m aria.Message) bool {
+		if ref.index == inquiryNode {
+			point, found = inquiryPoint(m)
+		} else if i := ref.index - int(m.From); i >= 0 && i < len(m.Nodes) {
+			point, found = selectionPoint{nodeRef: ref, hash: nodeHash(m.Nodes[i])}, true
 		}
-		if !extend || !t.selection.active {
-			t.selection.anchor = p
-		}
-		t.selection.focus = p
-		t.selection.active = true
-		return true
+		return !found
 	}
-	return false
+	at := aria.Anchor{Turn: uint64(ref.turn), Node: uint64(max(ref.index, 0))}
+	t.client.ForEachIn(at, at, take)
+	if m := t.openMessage(); !found && m != nil && m.Turn == ref.turn {
+		take(*m)
+	}
+	if !found {
+		return false
+	}
+	if !extend || !t.selection.active {
+		t.selection.anchor = point
+	}
+	t.selection.focus = point
+	t.selection.active = true
+	return true
 }
 
 // abandonJump gives up and puts the reader back where they were, exactly as
@@ -711,4 +627,24 @@ func cmdPaste(t *transcript) {
 		return
 	}
 	t.edit(func(e *lineEditor) { e.insert(text) })
+}
+
+// jumpTurn uses the selected inquiry, or the turn at the viewport's top.
+func (t *transcript) jumpTurn(dir int) {
+	t.settle()
+	turn := 0
+	if k := t.index.entryAt(t.offset); k >= 0 && !t.index.entries[k].isGap() {
+		turn = t.index.entries[k].turn
+	}
+	if t.selection.active && t.selection.focus.index == inquiryNode {
+		if span, ok := t.nodeSpanOf(t.selection.focus.nodeRef); ok {
+			top, bottom := t.viewportLines()
+			if span.last >= top && span.first < bottom {
+				turn = t.selection.focus.turn
+			}
+		}
+	}
+	if turn > 0 {
+		t.startJump(jumpTarget{turn: turn, travel: dir})
+	}
 }

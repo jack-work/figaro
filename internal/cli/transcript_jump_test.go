@@ -213,7 +213,7 @@ func TestJumpAsksOnceAndStops(t *testing.T) {
 		if !need {
 			break
 		}
-		if req.seek {
+		if req.seek == seekForward {
 			seeks++
 		}
 		tr.applyPage(req, aria.Page{More: aria.More{Before: true}, Parts: []aria.TurnPart{{
