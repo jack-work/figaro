@@ -246,4 +246,39 @@ type ProviderRound struct {
 	RetryAfterS int64             `json:"retry_after_s,omitempty"`
 	RateLimit   map[string]string `json:"rate_limit,omitempty"`
 	Err         string            `json:"err,omitempty"`
+
+	// Stream is set when the round was a streaming attempt (a websocket, not
+	// a request/response). Method reads WS and Status stays 0: a stream's
+	// outcome is Stream.Status, and its shape - how many events, how long to
+	// the first one, whether tool arguments landed - is the diagnosis.
+	Stream *StreamStats `json:"stream,omitempty"`
+}
+
+// StreamStats is the accounting for one streaming attempt. It carries counts,
+// sizes, timings and bounded tokens only: no error text, headers, payloads, or
+// item identifiers ever reach this struct.
+type StreamStats struct {
+	// Status is the terminal status the provider named ("ok", "interrupted",
+	// ...), or "" while the stream is still running.
+	Status string `json:"status,omitempty"`
+	// ErrClass names the failure ("canceled", "unexpected_eof", ...) without
+	// quoting it.
+	ErrClass string `json:"err_class,omitempty"`
+
+	Events        int64 `json:"events"`
+	UnknownEvents int64 `json:"unknown_events,omitempty"`
+	RespBytes     int64 `json:"resp_bytes,omitempty"`
+
+	FirstEventMS    int64 `json:"first_event_ms,omitempty"`
+	FirstToolMS     int64 `json:"first_tool_ms,omitempty"`
+	FirstArgumentMS int64 `json:"first_argument_ms,omitempty"`
+
+	ArgumentDeltas int64 `json:"argument_deltas,omitempty"`
+	ArgumentBytes  int64 `json:"argument_bytes,omitempty"`
+	// ArgumentUnmatched counts argument fragments that named a tool call the
+	// accumulator had no record of: the shape of a silently corrupted call.
+	ArgumentUnmatched int64 `json:"argument_unmatched,omitempty"`
+
+	EventTypes   map[string]int64 `json:"event_types,omitempty"`
+	TypesDropped int64            `json:"types_dropped,omitempty"`
 }

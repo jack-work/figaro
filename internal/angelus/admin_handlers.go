@@ -75,6 +75,7 @@ func (h *handlers) providerLedger(ctx context.Context, params json.RawMessage) (
 			DurationMS:  f.Age().Milliseconds(),
 			ReqBytes:    f.ReqBytes,
 			InFlight:    true,
+			Stream:      streamFromWirelog(f.Stream),
 		})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].StartedAtMS < out[j].StartedAtMS })
@@ -116,7 +117,72 @@ func roundFromLog(e logring.Entry) rpc.ProviderRound {
 		}
 		r.RateLimit[strings.ReplaceAll(name, "_", "-")], _ = v.(string)
 	}
+	r.Stream = streamFromLog(e)
 	return r
+}
+
+// streamFromLog rebuilds a streaming attempt from the flat attrs wirelog
+// writes. A record without a stream status is a plain HTTP round-trip and
+// gets no stream block, so the JSON stays exactly as it was for HTTP.
+func streamFromLog(e logring.Entry) *rpc.StreamStats {
+	status := logAttrString(e, "stream_status")
+	if status == "" {
+		return nil
+	}
+	s := &rpc.StreamStats{
+		Status:            status,
+		ErrClass:          logAttrString(e, "stream_err_class"),
+		Events:            logAttrInt(e, "stream_events"),
+		UnknownEvents:     logAttrInt(e, "stream_unknown_events"),
+		RespBytes:         logAttrInt(e, "resp_bytes"),
+		FirstEventMS:      logAttrInt(e, "stream_first_event_ms"),
+		FirstToolMS:       logAttrInt(e, "stream_first_tool_ms"),
+		FirstArgumentMS:   logAttrInt(e, "stream_first_argument_ms"),
+		ArgumentDeltas:    logAttrInt(e, "stream_argument_deltas"),
+		ArgumentBytes:     logAttrInt(e, "stream_argument_bytes"),
+		ArgumentUnmatched: logAttrInt(e, "stream_argument_unmatched"),
+		TypesDropped:      logAttrInt(e, "stream_types_dropped"),
+	}
+	for k := range e.Attrs {
+		name, ok := strings.CutPrefix(k, wirelog.StreamEventTypeAttrPrefix)
+		if !ok {
+			continue
+		}
+		if s.EventTypes == nil {
+			s.EventTypes = map[string]int64{}
+		}
+		s.EventTypes[name] = logAttrInt(e, k)
+	}
+	return s
+}
+
+// streamFromWirelog carries a RUNNING stream's counters onto the wire. The
+// same fields, sourced from live state rather than a finished record.
+func streamFromWirelog(s *wirelog.StreamStats) *rpc.StreamStats {
+	if s == nil {
+		return nil
+	}
+	out := &rpc.StreamStats{
+		Status:            s.Status,
+		ErrClass:          s.ErrClass,
+		Events:            s.Events,
+		UnknownEvents:     s.UnknownEvents,
+		RespBytes:         s.RespBytes,
+		FirstEventMS:      s.FirstEventMS,
+		FirstToolMS:       s.FirstToolMS,
+		FirstArgumentMS:   s.FirstArgumentMS,
+		ArgumentDeltas:    s.ArgumentDeltas,
+		ArgumentBytes:     s.ArgumentBytes,
+		ArgumentUnmatched: s.ArgumentUnmatched,
+		TypesDropped:      s.TypesDropped,
+	}
+	if len(s.EventTypes) > 0 {
+		out.EventTypes = make(map[string]int64, len(s.EventTypes))
+		for k, v := range s.EventTypes {
+			out.EventTypes[k] = v
+		}
+	}
+	return out
 }
 
 func logAttrString(e logring.Entry, key string) string {

@@ -26,6 +26,11 @@ type InFlight struct {
 	URL       string    `json:"url"`
 	StartedAt time.Time `json:"started_at"`
 	ReqBytes  int64     `json:"req_bytes,omitempty"`
+	// Stream is set for a streaming attempt and carries live counters: a
+	// stream that has been open two minutes with zero events is a different
+	// incident from one still receiving deltas, and only the running row can
+	// say which.
+	Stream *StreamStats `json:"stream,omitempty"`
 }
 
 // Age is how long the request has been outstanding, which is the number that
@@ -33,10 +38,11 @@ type InFlight struct {
 func (f InFlight) Age() time.Duration { return time.Since(f.StartedAt) }
 
 var inflight = struct {
-	mu  sync.Mutex
-	m   map[uint64]InFlight
-	seq uint64
-}{m: map[uint64]InFlight{}}
+	mu      sync.Mutex
+	m       map[uint64]InFlight
+	streams map[uint64]*Stream
+	seq     uint64
+}{m: map[uint64]InFlight{}, streams: map[uint64]*Stream{}}
 
 func depart(aria, method, url string, reqBytes int64) uint64 {
 	inflight.mu.Lock()
@@ -57,14 +63,40 @@ func arrive(seq uint64) (InFlight, bool) {
 	return f, ok
 }
 
+// departStream stamps the seq and publishes under the same lock: a reader
+// that reached the map first would otherwise see a zero seq.
+func departStream(s *Stream) {
+	inflight.mu.Lock()
+	defer inflight.mu.Unlock()
+	inflight.seq++
+	s.seq = inflight.seq
+	inflight.streams[s.seq] = s
+}
+
+func arriveStream(seq uint64) {
+	inflight.mu.Lock()
+	defer inflight.mu.Unlock()
+	delete(inflight.streams, seq)
+}
+
 // Outstanding lists requests that have not returned, oldest first.
 func Outstanding() []InFlight {
 	inflight.mu.Lock()
-	out := make([]InFlight, 0, len(inflight.m))
+	out := make([]InFlight, 0, len(inflight.m)+len(inflight.streams))
 	for _, f := range inflight.m {
 		out = append(out, f)
 	}
+	live := make([]*Stream, 0, len(inflight.streams))
+	for _, s := range inflight.streams {
+		live = append(live, s)
+	}
 	inflight.mu.Unlock()
+
+	// Snapshot streams outside the registry lock: a Stream takes its own
+	// mutex, and taking them in the other order in Finish would deadlock.
+	for _, s := range live {
+		out = append(out, s.row())
+	}
 	for i := 1; i < len(out); i++ {
 		for j := i; j > 0 && out[j].StartedAt.Before(out[j-1].StartedAt); j-- {
 			out[j], out[j-1] = out[j-1], out[j]

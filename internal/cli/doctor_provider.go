@@ -69,6 +69,13 @@ func runDoctorProvider(ariaID, count string, asJSON bool) error {
 			if r.Status == 0 {
 				status = "err"
 			}
+			if r.Stream != nil {
+				// A stream has no HTTP status; its verdict is its own.
+				status = r.Stream.Status
+				if status == "" {
+					status = "err"
+				}
+			}
 			dur = humanMillis(r.DurationMS)
 		} else {
 			// An in-flight row's age is the number that matters: a request
@@ -83,10 +90,51 @@ func runDoctorProvider(ariaID, count string, asJSON bool) error {
 
 		fmt.Fprintf(stdout, "%-12s %-9s %-6s %-9s %-9s %-8s %s\n",
 			when, aria, status, dur, humanBytes(r.ReqBytes), retry, shortEndpoint(r.URL))
+		if line := streamLine(r.Stream); line != "" {
+			fmt.Fprintf(stdout, "%-12s %-9s %s\n", "", "", line)
+		}
 	}
 
 	summarizeProviderTrouble(resp.Rounds)
 	return nil
+}
+
+// streamLine is the second row a streaming attempt earns: an HTTP status says
+// nothing about a socket that opened, delivered nine events and stopped.
+// Counts, sizes and timings only - never a payload, an id, or an error text.
+func streamLine(s *rpc.StreamStats) string {
+	if s == nil {
+		return ""
+	}
+	parts := []string{fmt.Sprintf("events=%d", s.Events)}
+	if s.UnknownEvents > 0 {
+		parts = append(parts, fmt.Sprintf("unknown=%d", s.UnknownEvents))
+	}
+	if s.RespBytes > 0 {
+		parts = append(parts, "resp="+compactBytes(s.RespBytes))
+	}
+	if s.FirstEventMS > 0 {
+		parts = append(parts, "first="+humanMillis(s.FirstEventMS))
+	}
+	if s.FirstToolMS > 0 {
+		parts = append(parts, "tool="+humanMillis(s.FirstToolMS))
+	}
+	if s.FirstArgumentMS > 0 {
+		parts = append(parts, "arg="+humanMillis(s.FirstArgumentMS))
+	}
+	if s.ArgumentDeltas > 0 {
+		parts = append(parts, fmt.Sprintf("argdeltas=%d/%s", s.ArgumentDeltas, compactBytes(s.ArgumentBytes)))
+	}
+	if s.ArgumentUnmatched > 0 {
+		parts = append(parts, fmt.Sprintf("unmatched=%d", s.ArgumentUnmatched))
+	}
+	if s.TypesDropped > 0 {
+		parts = append(parts, fmt.Sprintf("types-dropped=%d", s.TypesDropped))
+	}
+	if s.ErrClass != "" {
+		parts = append(parts, "err="+s.ErrClass)
+	}
+	return "stream " + strings.Join(parts, " ")
 }
 
 // summarizeProviderTrouble names the diagnosis rather than leaving it in the
@@ -111,7 +159,8 @@ func summarizeProviderTrouble(rounds []rpc.ProviderRound) {
 			}
 		}
 	}
-	if refused == 0 && inFlight == 0 {
+	streams := summarizeStreamTrouble(rounds)
+	if refused == 0 && inFlight == 0 && len(streams) == 0 {
 		return
 	}
 	fmt.Fprintln(stdout)
@@ -129,7 +178,74 @@ func summarizeProviderTrouble(rounds []rpc.ProviderRound) {
 	if inFlight > 0 {
 		fmt.Fprintf(stdout, "%d request(s) still in flight.\n", inFlight)
 	}
+	for _, line := range streams {
+		fmt.Fprintln(stdout, line)
+	}
 }
+
+// summarizeStreamTrouble reads the failure modes a status code cannot express:
+// a socket that ended badly, tool arguments that matched no call, events the
+// parser did not recognize, and a stream that has been silent since it opened.
+func summarizeStreamTrouble(rounds []rpc.ProviderRound) []string {
+	var (
+		lines     []string
+		broken    int
+		classes   []string
+		seen      = map[string]bool{}
+		unmatched int64
+		unknown   int64
+		silent    int
+	)
+	for _, r := range rounds {
+		s := r.Stream
+		if s == nil {
+			continue
+		}
+		unmatched += s.ArgumentUnmatched
+		unknown += s.UnknownEvents
+		if r.InFlight {
+			if s.Events == 0 {
+				silent++
+			}
+			continue
+		}
+		if s.ErrClass != "" || (s.Status != "ok" && s.Status != "completed") {
+			broken++
+			class := s.ErrClass
+			if class == "" {
+				class = s.Status
+			}
+			if class != "" && !seen[class] {
+				seen[class] = true
+				classes = append(classes, class)
+			}
+		}
+	}
+	if broken > 0 {
+		line := fmt.Sprintf("%d stream(s) ended without completing", broken)
+		if len(classes) > 0 {
+			sort.Strings(classes)
+			line += " (" + strings.Join(classes, ", ") + ")"
+		}
+		lines = append(lines, line+".")
+	}
+	if unmatched > 0 {
+		lines = append(lines, fmt.Sprintf(
+			"%d tool-argument delta(s) arrived for no open call; the arguments may have been\ncorrelated late or by a later done event, or they may be missing.", unmatched))
+	}
+	if unknown > 0 {
+		lines = append(lines, fmt.Sprintf(
+			"%d event(s) the parser did not recognize; the provider's schema may have moved.", unknown))
+	}
+	if silent > 0 {
+		lines = append(lines, fmt.Sprintf(
+			"%d open stream(s) have delivered no events yet.", silent))
+	}
+	return lines
+}
+
+// compactBytes is humanBytes without the space, for a dense metric line.
+func compactBytes(n int64) string { return strings.ReplaceAll(humanBytes(n), " ", "") }
 
 func sortedRateLimitKeys(m map[string]string) []string {
 	out := make([]string, 0, len(m))
