@@ -112,6 +112,9 @@ func (p *responsesProvider) Send(ctx context.Context, in provider.SendInput, bus
 		return err
 	}
 	model, _, _ := p.settings()
+	if err := validateCapabilities(model, options); err != nil {
+		return err
+	}
 	if err := p.validateContext(in, model, options); err != nil {
 		return err
 	}
