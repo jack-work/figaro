@@ -564,14 +564,18 @@ func loadDir(dir string, r *reader) (map[string]ContentEnvelope, error) {
 			out[e.Name()] = contentEnvelope(string(body), skillPath)
 			continue
 		}
+		// A skill is a .md file. Anything else in the directory is not one,
+		// and naming it by chopping its last suffix invents a skill: a
+		// backup called howto.md.pre-bundle-20260629 loaded as "howto.md",
+		// beside the real howto.
+		name, ok := skillName(e.Name())
+		if !ok {
+			continue
+		}
 		path := filepath.Join(dir, e.Name())
 		body, err := r.read(path)
 		if err != nil {
 			return nil, err
-		}
-		name := e.Name()
-		if ext := filepath.Ext(name); ext != "" {
-			name = strings.TrimSuffix(name, ext)
 		}
 		out[name] = contentEnvelope(string(body), path)
 	}
@@ -590,3 +594,17 @@ func directorySkillPath(dir string) string {
 
 // The bundled-skills root lives in bundled.go: the skills ride inside the
 // binary and are unpacked to a content-hashed directory on first use.
+
+// skillName is the skill a file declares, and whether it declares one. Only a
+// .md file does; the name is what precedes that suffix, dots and all.
+func skillName(file string) (string, bool) {
+	const ext = ".md"
+	if !strings.HasSuffix(file, ext) {
+		return "", false
+	}
+	name := strings.TrimSuffix(file, ext)
+	if name == "" || strings.HasPrefix(name, ".") {
+		return "", false
+	}
+	return name, true
+}

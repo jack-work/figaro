@@ -25,11 +25,6 @@ type node struct {
 	kids   ptree
 	branch bool
 
-	// terminal marks a node that is the END of a key someone wrote, rather
-	// than a segment invented by splitting one. A later key may not descend
-	// through it: skills.howto names a skill, so skills.howto.md names a
-	// second skill beside it and not a field inside the first.
-	terminal    bool
 	left, right *node
 	height      int
 	size        int
@@ -125,7 +120,7 @@ func (t ptree) All() iter.Seq2[string, Value] {
 // setEntry replaces the whole entry at key, preserving nothing of the old.
 func setEntry(n *node, e *node) *node {
 	if n == nil {
-		return &node{key: e.key, value: e.value, kids: e.kids, branch: e.branch, terminal: e.terminal, height: 1, size: 1}
+		return &node{key: e.key, value: e.value, kids: e.kids, branch: e.branch, height: 1, size: 1}
 	}
 	switch {
 	case e.key < n.key:
@@ -135,7 +130,6 @@ func setEntry(n *node, e *node) *node {
 	}
 	out := *n
 	out.value, out.kids, out.branch = e.value, e.kids, e.branch
-	out.terminal = out.terminal || e.terminal
 	return &out
 }
 
@@ -329,14 +323,13 @@ func (t ptree) setPath(segs []string, v Value) ptree {
 	}
 	head := segs[0]
 	if len(segs) == 1 {
-		e := leafOrBranch(head, v)
-		e.terminal = true
-		return ptree{root: setEntry(t.root, e)}
+		return ptree{root: setEntry(t.root, leafOrBranch(head, v))}
 	}
 	cur := lookupExact(t.root, head)
-	if cur != nil && cur.terminal {
-		// The segment names something a caller already wrote, so the rest of
-		// this key stays whole beside it.
+	if cur != nil && !cur.branch {
+		// A leaf stands where a branch is wanted, so the rest of this key
+		// stays whole beside it rather than making the leaf unreachable.
+		// succession is prose and a namespace at once.
 		return ptree{root: setEntry(t.root, leafOrBranch(joinSegs(segs), v))}
 	}
 	var kids ptree
