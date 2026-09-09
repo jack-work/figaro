@@ -23,9 +23,41 @@
 #     milliseconds are only there.
 #   * kill the DAEMON, not just the session. kill-server leaves it running;
 #     seventeen agents once left 230 orphans and 1.2GB of tmpfs.
+#   * the completion sentinel must not appear in the command you type.
+#     send-keys echoes the line before the shell runs it, so `grep -q VDONE`
+#     matched at once, the capture read an empty pane, two checks passed on
+#     nothing and a third failed work that had not started. Wait on a FILE.
+#   * grep the capture for something only OUTPUT can contain. The typed line
+#     already holds the binary's path, so finding it there proves nothing;
+#     the stamped revision proves it.
 set -uo pipefail
 
-ROOT=$(cd "$(dirname "$0")" && pwd)
+# The repo root, not scripts/: `go build ./cmd/figaro` resolves from the root.
+ROOT=${ROOT:-$(cd "$(dirname "$0")/.." && pwd)}
+[ -d "$ROOT/cmd/figaro" ] || { echo "not a figaro checkout: $ROOT" >&2; exit 2; }
+
+# The migration proof needs a store that has not migrated yet, and an aria in
+# it whose board we can read back. Neither has a sane default: unset used to
+# mean the step silently proved nothing.
+SEED_STORE=${SEED_STORE:-}
+SEED_ARIA=${SEED_ARIA:-}
+if [ -z "$SEED_STORE" ] || [ -z "$SEED_ARIA" ]; then
+  cat >&2 <<'USAGE'
+usage: SEED_STORE=<dir> SEED_ARIA=<id> scripts/validate-structural.sh
+
+  SEED_STORE  a copy of a PRE-migration store directory, e.g.
+                mkdir -p /tmp/seed && cp -a ~/.local/state/figaro/arias /tmp/seed/arias
+                SEED_STORE=/tmp/seed/arias
+  SEED_ARIA   an aria id inside it, carrying a mantra, a model and skills
+USAGE
+  exit 2
+fi
+[ -f "$SEED_STORE/schema.json" ] || { echo "no schema.json under $SEED_STORE" >&2; exit 2; }
+if ! grep -q '"form": *1' "$SEED_STORE/schema.json"; then
+  echo "seed store is already migrated (form != 1); the migration step would prove nothing" >&2
+  exit 2
+fi
+
 RUN=${RUN:-/tmp/figaro-validate-$$}
 SOCK="$RUN/tmux.sock"
 STATE="$RUN/state"
@@ -51,10 +83,18 @@ cleanup() {
     [ -n "$p" ] && kill -0 "$p" 2>/dev/null && { kill "$p" 2>/dev/null; sleep 1; kill -9 "$p" 2>/dev/null; }
   fi
   tmux -S "$SOCK" kill-server 2>/dev/null || true
-  local leaked
-  leaked=$(pgrep -af "$RUN" 2>/dev/null | grep -v "$$" | wc -l)
+  # Only processes whose EXECUTABLE lives under $RUN are ours. Matching the
+  # command line caught the shell that invoked this script, which carries
+  # RUN=... in its argv, and reported a leak on every clean run.
+  local leaked=0 p exe
+  for d in /proc/[0-9]*; do
+    exe=$(readlink "$d/exe" 2>/dev/null) || continue
+    case "$exe" in
+      "$RUN"*) p=${d#/proc/}; leaked=$((leaked+1)); echo "    leaked: $p $exe";;
+    esac
+  done
   if [ "$leaked" -eq 0 ]; then ok "no process left behind"; else
-    bad "$leaked process(es) still alive under $RUN"; pgrep -af "$RUN" | head -3
+    bad "$leaked process(es) still alive under $RUN"
   fi
   rm -rf "$RUN"
   printf '\n%d passed, %d failed\n' "$pass" "$fail"
@@ -85,7 +125,7 @@ grep -q "(cached)" "$LOG/test.out" && bad "a cached result appeared despite -cou
   || ok "no cached results"
 
 step "migration: an old store converts itself on open"
-cp -a "$SEED_STORE" "$STATE" 2>/dev/null || cp -a "$SEED_STORE/." "$STATE/"
+cp -a "$SEED_STORE" "$STATE/arias" || { bad "could not seed the store"; exit 1; }
 before=$(python3 -c "import json;print(json.load(open('$STATE/arias/schema.json')).get('channels'))" 2>/dev/null)
 fig list -n 1 >/dev/null 2>&1
 after=$(python3 -c "import json;print(json.load(open('$STATE/arias/schema.json')).get('channels'))" 2>/dev/null)
@@ -108,23 +148,41 @@ done
 
 step "the binary in a real pty, on a private socket"
 # h+1: the status bar takes a row and a detached session never gives it back.
-tmux -S "$SOCK" new-session -d -s v -x 200 -y 51 2>/dev/null
+# bash, explicitly: a pane inherits the LOGIN shell, which here is fish, where
+# `$?` is a syntax error rather than the exit status. The command then never
+# runs and the step waits out its timeout on a pane that only holds an error.
+tmux -S "$SOCK" new-session -d -s v -x 200 -y 51 "bash --noprofile --norc" 2>/dev/null
 h=$(tmux -S "$SOCK" display -p -t v '#{pane_height}' 2>/dev/null)
 [ -n "$h" ] && ok "pane is $h rows (asked for 51)" || { bad "tmux would not start"; exit 1; }
 
 # Absolute path: -e PATH= is silently ignored, so PATH would run the INSTALLED
 # figaro and the whole run would be about the wrong binary.
+# The completion signal is a FILE. A word inside the command line is echoed by
+# send-keys before the shell runs anything, so it matches on the first poll and
+# the capture below reads a pane that has not painted yet.
+DONE="$RUN/pty.done"
+rm -f "$DONE"
+env_prefix="FIGARO_RUNTIME_DIR=$RT FIGARO_STATE_DIR=$STATE"
 tmux -S "$SOCK" send-keys -t v \
-  "FIGARO_RUNTIME_DIR=$RT FIGARO_STATE_DIR=$STATE $BIN -A list -n 5; echo VDONE" Enter
-for _ in $(seq 1 60); do
-  tmux -S "$SOCK" capture-pane -p -S - -t v 2>/dev/null | grep -q VDONE && break
+  "$env_prefix $BIN -A version; $env_prefix $BIN -A list -n 5; echo \$? > $DONE" Enter
+for _ in $(seq 1 120); do
+  [ -f "$DONE" ] && break
   sleep 0.5
 done
 cap="$LOG/pane.txt"
 tmux -S "$SOCK" capture-pane -p -S - -t v >"$cap" 2>/dev/null
 
-grep -q "$BIN" "$cap" && ok "the pane ran the binary under test" \
-  || bad "the pane may have run a different figaro"
+if [ -f "$DONE" ]; then
+  st=$(cat "$DONE")
+  [ "$st" = "0" ] && ok "the pane ran to completion (list exited 0)" \
+                  || bad "list exited $st in the pty"
+else
+  bad "the pane never finished within 60s"; tail -5 "$cap"
+fi
+# The typed line already names $BIN, so finding that path proves nothing about
+# what ran. The stamped revision can only come from the binary's own output.
+grep -q "${SHA:0:8}" "$cap" && ok "the pane ran the binary under test (${SHA:0:8})" \
+  || { bad "the pane may have run a different figaro"; head -5 "$cap"; }
 grep -qE "showing|ARIA" "$cap" && ok "list rendered in a real terminal" \
   || { bad "no list output"; tail -5 "$cap"; }
 # An absence inside a pager is not an absence: gate on chrome.
