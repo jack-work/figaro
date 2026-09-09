@@ -477,20 +477,16 @@ func (t *transcript) jumpAdvance() {
 }
 
 // jumpSeek is the coordinate a standing jump wants read, and whether it wants
-// one at all. A target below the window is read at directly; a target inside a
-// hole is read at the hole's own head. Asking twice for the same coordinate is
-// no progress, so the second ask is refused and the walk ends honestly.
+// one at all. It is the target itself, always: a page at the coordinate asked
+// for, whatever lies between it and the window. Reading anywhere else, at the
+// near edge of a hole for instance, is a walk, and a walk is what a jump exists
+// not to be. Asking twice for one coordinate is no progress, so the second ask
+// is refused and the jump ends honestly.
 func (t *transcript) jumpSeek() (aria.Anchor, bool) {
 	if t.jump == nil {
 		return aria.Anchor{}, false
 	}
 	at := t.jump.target.anchor()
-	if gap := t.oldestGap(); gap != nil && !at.Less(gap.From) {
-		// The target is at or past a hole the window already knows about:
-		// close that first, so the region arrives contiguous with what holds
-		// it rather than as a second island.
-		at = gap.From
-	}
 	if t.jump.asked != nil && *t.jump.asked == at {
 		return aria.Anchor{}, false
 	}
@@ -614,18 +610,6 @@ func (t *transcript) hasGap() bool {
 		}
 	}
 	return false
-}
-
-// oldestGap is the first hole in line space. A jump asks for THIS one rather
-// than gapNear's: a walk is heading for a coordinate it cannot see yet, so the
-// hole to close is the one nearest the beginning, not the one nearest the eye.
-func (t *transcript) oldestGap() *aria.Gap {
-	for k := range t.index.entries {
-		if e := &t.index.entries[k]; e.isGap() {
-			return e.gap
-		}
-	}
-	return nil
 }
 
 // firstRefOfTurn is the turn's first selectable point in reading order: its

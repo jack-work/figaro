@@ -161,9 +161,9 @@ func TestJumpReadsWhereItIsGoing(t *testing.T) {
 	if !want || !req.seek {
 		t.Fatalf("the jump asked for %+v (want=%v); it must read at the coordinate", req, want)
 	}
-	// It reads at the hole rather than at the target itself, so what arrives
-	// is contiguous with what the window already holds.
-	if gap := tr.oldestGap(); gap != nil && req.at != gap.From {
-		t.Fatalf("the jump read at %v, want the hole's own head %v", req.at, gap.From)
+	// At the target itself, not at the near edge of the hole between here and
+	// there: reading anywhere else is a walk.
+	if want := (aria.Anchor{Turn: 3}); req.at != want {
+		t.Fatalf("the jump read at %v, want the coordinate it was given, %v", req.at, want)
 	}
 }

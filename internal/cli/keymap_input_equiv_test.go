@@ -785,7 +785,7 @@ var inputOracle = []struct {
 		"nav:Up":          "stop=false rest=\"\" act=true off:-1 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 	}},
 	{"transcript+sel", "stop=false rest=\"\" act=true off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"", map[string]string{
-		"0x03":            "stop=false rest=\"\" act=true off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=true cping=false jmp=false jq=\"\"",
+		"0x03":            "stop=false rest=\"\" act=true off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"78 bytes\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x04":            "stop=true rest=\"\" act=true off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x0f":            "stop=false rest=\"\" act=true off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x10":            "stop=false rest=\"\" act=true off:sel fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
@@ -802,7 +802,7 @@ var inputOracle = []struct {
 		"0x6b":            "stop=false rest=\"\" act=true off:sel fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x71":            "stop=true rest=\"\" act=true off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x75":            "stop=false rest=\"\" act=true off:sel fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
-		"0x79":            "stop=false rest=\"\" act=true off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=true cping=false jmp=false jq=\"\"",
+		"0x79":            "stop=false rest=\"\" act=true off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"78 bytes\" cpfail=false cping=false jmp=false jq=\"\"",
 		"alt ^p fallback": "stop=false rest=\"\" act=true off:sel fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"csiu ^d":         "stop=true rest=\"\" act=true off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"csiu ^o":         "stop=false rest=\"\" act=true off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",

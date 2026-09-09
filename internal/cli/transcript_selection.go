@@ -73,6 +73,10 @@ type selectionCopyPlan struct {
 	lo   selectionPoint
 	hi   selectionPoint
 	open *aria.Message
+	// held is the retained window's copy of everything the selection covers.
+	// A yank of what is on screen is answered from it, so the common case
+	// touches no wire and cannot fail on a page that comes back clipped.
+	held []aria.Message
 	// expanded is the fold state at the moment the yank was asked for. The
 	// copy follows the EYE: a folded tool yanks its output, an expanded one
 	// yanks the call and the result in full. Snapshotted into the plan so the
@@ -264,13 +268,24 @@ func (t *transcript) selectionPlan() (selectionCopyPlan, bool) {
 		copy.Nodes = append([]livedoc.Node(nil), m.Nodes...)
 		open = &copy
 	}
+	// What the reader selected is what the reader can see, so the window holds
+	// it: take a copy now and the copy needs no wire at all. Only a selection
+	// dragged past what is retained falls back to reading pages.
+	var held []aria.Message
+	t.forEachMessage(func(m aria.Message) {
+		if m.Turn < lo.turn || m.Turn > hi.turn {
+			return
+		}
+		m.Nodes = append([]livedoc.Node(nil), m.Nodes...)
+		held = append(held, m)
+	})
 	expanded := make(map[nodeRef]bool, len(t.expanded))
 	for ref, on := range t.expanded {
 		if on {
 			expanded[ref] = true
 		}
 	}
-	return selectionCopyPlan{lo: lo, hi: hi, open: open, expanded: expanded}, true
+	return selectionCopyPlan{lo: lo, hi: hi, open: open, held: held, expanded: expanded}, true
 }
 
 // nodeClipboardText is what `y` puts on the clipboard for one node. For a
@@ -323,6 +338,22 @@ func selectionText(plan selectionCopyPlan, pageSize int, read func(aria.Anchor, 
 	if foundLo && foundHi {
 		return strings.Join(newest, "\n\n"), nil
 	}
+	// The window first: a selection the reader is looking at is already here,
+	// and a question is the case that proves it, being text on the turn that
+	// only the slice starting it carries.
+	var fromWindow []string
+	for _, m := range plan.held {
+		text, lo, hi, err := selectedMessageText(m, plan, plan.expanded)
+		if err != nil {
+			return "", err
+		}
+		fromWindow = append(fromWindow, text...)
+		foundLo, foundHi = foundLo || lo, foundHi || hi
+	}
+	if foundLo && foundHi {
+		return strings.Join(append(fromWindow, newest...), "\n\n"), nil
+	}
+	newest = append(fromWindow, newest...)
 	// The walk is anchored on (turn, NODE), not on the turn alone. A turn too
 	// big for one page comes back in slices, and a turn-granular step lands on
 	// the turn BEFORE it: skipping every slice below the first, the head slice
