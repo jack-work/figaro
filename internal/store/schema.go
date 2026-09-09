@@ -58,8 +58,15 @@ var channelSchemas = map[string]channelSchema{
 	// real one. Reading an old store is transparent: a record with no stamp
 	// falls back to deriving the boundary from the form's old main-LT
 	// key, so nothing is rewritten and no converter is needed.
-	chanIR:   {version: 4, class: classCanonical},
-	chanForm: {version: 1, class: classReducible},
+	// v5: every record carries turn_id explicitly. It was omitempty, so a zero
+	// was indistinguishable from a field never written and every reader
+	// re-derived the whole log to tell them apart.
+	chanIR: {version: 5, class: classCanonical},
+	// v2: patches are STRUCTURAL. A flat one names dotted keys and records
+	// nothing of what it replaced, so it can neither reach a nested field nor
+	// be inverted. MigrateFormToStructural replays each node in order, which
+	// is what lets it convert against the board a record lands on.
+	chanForm: {version: 2, class: classReducible},
 	// v2: not a shape change -- a POISON sweep. A projection bug rendered the
 	// whole form onto one message per provider round-trip instead of the
 	// delta, and the encoder wrote that into these per-LT caches, so the
@@ -172,6 +179,12 @@ func checkGeneration(f schemaFile, root string, trunks *xwal.Store) error {
 			bust = append(bust, key)
 		case want.class == classCanonical:
 			// Derived on read; the record is never rewritten here.
+		case len(channelMigrations[key]) > 0:
+			// migrateChannels ran before the open and stamps the sidecar
+			// below; reaching here means it did not raise the version, which
+			// is a bug in the migration rather than a bad store.
+			return fmt.Errorf("store channel %q is still v%d after migrating to v%d",
+				strings.TrimSuffix(key, "/"), have, want.version)
 		default:
 			return fmt.Errorf("store channel %q needs a v%d->v%d converter; none registered",
 				strings.TrimSuffix(key, "/"), have, want.version)
@@ -243,7 +256,10 @@ func CheckStoreGeneration(root string) error {
 	if err := checkGeneration(f, root, nil); err != nil {
 		return err
 	}
-	return migrateGenerations(root, f.StoreVersion)
+	if err := migrateGenerations(root, f.StoreVersion); err != nil {
+		return err
+	}
+	return migrateChannels(root, f.Channels)
 }
 
 // isNoSuchChannel is the one refusal a re-run may ignore: the channel is gone
@@ -265,6 +281,88 @@ type generationMigration struct {
 // changed no bytes, so nothing runs for it.
 var generationMigrations = []generationMigration{
 	{to: 2, run: migrateFormChannel},
+}
+
+// channelMigration turns a channel of version N-1 into one of version N. Same
+// contract as generationMigration: the store is closed, and it must be
+// idempotent, because the sidecar is stamped only once the whole chain has
+// succeeded and a crash re-runs it from the version on disk.
+type channelMigration struct {
+	to  int
+	run func(root string) error
+}
+
+// channelMigrations is what turns a channel this binary can no longer read
+// into one it can. Keyed by the same registry key as channelSchemas, and
+// ordered: a store several versions behind runs each step in turn.
+//
+// A classReducible channel used to refuse the open with "no converter
+// registered". This is the converter.
+var channelMigrations = map[string][]channelMigration{
+	chanForm: {
+		{to: 2, run: MigrateFormToStructural},
+	},
+	chanIR: {
+		{to: 5, run: MigrateStampTurnIDs},
+	},
+}
+
+// migrateChannels runs every channel behind its known version up to it, in
+// order, before anything opens the store.
+func migrateChannels(root string, stored map[string]int) error {
+	if _, err := os.Stat(filepath.Join(root, "xwal.json")); err != nil {
+		if os.IsNotExist(err) {
+			return nil // a directory becomes a store on first write
+		}
+		return err
+	}
+	keys := make([]string, 0, len(channelMigrations))
+	for k := range channelMigrations {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	for _, key := range keys {
+		from, seen := stored[key]
+		if !seen {
+			// No sidecar entry: either a fresh store, in which case every
+			// migration is a no-op, or one predating the sidecar, which is
+			// the oldest version by construction.
+			from = 0
+		}
+		for _, m := range channelMigrations[key] {
+			if from >= m.to {
+				continue
+			}
+			start := time.Now()
+			if err := m.run(root); err != nil {
+				return fmt.Errorf("store %s: channel %q migration to v%d failed: %w",
+					root, strings.TrimSuffix(key, "/"), m.to, err)
+			}
+			// Stamped per step, not per chain: a crash then resumes at the
+			// step it died on rather than redoing the ones that landed.
+			if err := stampChannel(root, key, m.to); err != nil {
+				return err
+			}
+			from = m.to
+			slog.Info("channel migrated", "root", root,
+				"channel", strings.TrimSuffix(key, "/"), "to", m.to,
+				"ms", time.Since(start).Milliseconds())
+		}
+	}
+	return nil
+}
+
+// stampChannel records that a channel has reached a version.
+func stampChannel(root, key string, to int) error {
+	f, err := readSchema(root)
+	if err != nil {
+		return err
+	}
+	if f.Channels == nil {
+		f.Channels = map[string]int{}
+	}
+	f.Channels[key] = to
+	return writeSchema(root, f)
 }
 
 func migrateGenerations(root string, from int) error {
