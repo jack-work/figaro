@@ -31,7 +31,7 @@ import (
 const (
 	providerName      = "anthropic"
 	apiVersion        = "2023-06-01"
-	claudeCodeVersion = "2.1.62"
+	claudeCodeVersion = anthropicmodels.ClaudeCodeVersion
 )
 
 type Anthropic struct {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/jack-work/figaro/internal/provider/anthropicmodels"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -13,7 +14,7 @@ import (
 // OAuth tokens are issued via the Claude Pro/Max OAuth flow. They
 // require a different header shape than API keys (Authorization
 // instead of x-api-key, plus Claude Code identity headers).
-const claudeCodeVersion = "2.1.62"
+const claudeCodeVersion = anthropicmodels.ClaudeCodeVersion
 
 // Anthropic-beta values declared by the existing implementation.
 // Kept in sync so OAuth-bound tokens see the same flags.
