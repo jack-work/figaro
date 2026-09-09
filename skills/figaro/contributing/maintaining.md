@@ -300,6 +300,26 @@ Corollary, and the reason this pays: write the instrument BEFORE the code that
 could violate the property. A hazard test written afterwards is a description
 of what you already believe.
 
+## The two remotes
+
+`keel` is the source of truth; `github` is a copy of it.
+
+| remote | url | role |
+|---|---|---|
+| `keel` | `git@spain:jack/figaro.git` | push here, always |
+| `github` | `github.com/jack-work/figaro` | mirror, written by keel; fetch only |
+
+`github`'s push url is set to `no-push://` on purpose. The mirror is
+force-overwritten from keel, so a hand push there is either erased on the next
+sync or turns into a conflict nobody is watching for. Failing loudly beats
+either.
+
+Two exceptions, both legitimate: `pr7` and `pr11` track GitHub branches from
+outside contributors, which cannot come from keel.
+
+`origin` is deliberately not a name here. It means keel in this repo and GitHub
+in `cheroot-config`, one keystroke apart, so it means nothing.
+
 ## Releasing: `scripts/release.sh`, always
 
 **Do not cut a release by hand.** A tag is not a release here: nothing on any

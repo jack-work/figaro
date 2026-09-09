@@ -47,7 +47,7 @@ DO_GH=1
 SUBJECT=""
 NOTES_FILE=""
 TAG_MESSAGE_FILE=""
-REMOTE="origin"
+REMOTE="keel"
 # How long to wait for a mirroring remote to carry the tag to GitHub, and the
 # command that forces the mirror by hand if it does not. Both are environment
 # knobs because they describe YOUR remote, not figaro: the script derives what
@@ -164,7 +164,7 @@ already declares is what gets cut.
   -n, --dry-run            Print every mutation without performing it.
       --no-check           Skip go build/vet/test.
       --no-github          Tag and push, but create no GitHub release.
-      --remote <name>      Git remote (default: origin).
+      --remote <name>      Git remote (default: keel).
       --branch <name>      Branch being released (default: main).
 EOF
 	exit 2

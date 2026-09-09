@@ -6,7 +6,7 @@
 # picture. So the script builds two binaries, gives them the same oversized
 # screenshot, and asks each the same question:
 #
-#   BEFORE (origin/main):  the image is discarded in the turn loop.  -> BLIND
+#   BEFORE (keel/main):  the image is discarded in the turn loop.  -> BLIND
 #   AFTER  (this branch):  it is fitted and carried to the model.    -> the code
 #
 # The fixture carries a RANDOM five-character code rendered in letters large
@@ -36,7 +36,7 @@ set -euo pipefail
 
 OUTFIT=""
 MODEL=""
-BEFORE_REF="origin/main"
+BEFORE_REF="keel/main"
 KEEP=0
 
 while getopts "L:m:b:kh" opt; do
