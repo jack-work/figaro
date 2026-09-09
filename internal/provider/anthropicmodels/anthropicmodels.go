@@ -106,3 +106,12 @@ func (c *Catalog) ContextLimit(model string, snapshot form.Snapshot) int {
 	}
 	return c.Window(model)
 }
+
+// ClaudeCodeVersion is the client version figaro presents to the Anthropic
+// API. It lives HERE, once, because it used to be two constants in two
+// providers -- and the API gates newer models on it: Fable 5.1 refuses any
+// client below 2.1.251 with a 400 telling you to run `claude update`. A
+// stale copy in one provider is an error that only appears for whichever
+// models shipped after it, which reads as "figaro cannot do fable" when the
+// truth is "one string is old".
+const ClaudeCodeVersion = "2.1.267"
