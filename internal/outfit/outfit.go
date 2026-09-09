@@ -396,12 +396,7 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 				if err != nil {
 					return fmt.Errorf("outfit: %s fileName=%q: %w", key, fn, err)
 				}
-				env := contentEnvelope(string(body), path)
-				b, err := json.Marshal(env)
-				if err != nil {
-					return err
-				}
-				out[key] = b
+				emitEnvelope(out, key, contentEnvelope(string(body), path))
 				continue
 			}
 			if dn, ok := val["dirName"].(string); ok && len(val) == 1 {
@@ -433,11 +428,7 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 					}
 				}
 				for name, env := range m {
-					b, err := json.Marshal(env)
-					if err != nil {
-						return err
-					}
-					out[key+"."+name] = b
+					emitEnvelope(out, key+"."+name, env)
 				}
 				continue
 			}
@@ -607,4 +598,26 @@ func skillName(file string) (string, bool) {
 		return "", false
 	}
 	return name, true
+}
+
+// emitEnvelope writes an envelope as one key per field rather than one key
+// holding an object.
+//
+// A value the board cannot reach into is a value that must be rewritten whole
+// to change one field, and it makes the keys a caller wrote differ from the
+// paths the board holds. The fields are keys.
+func emitEnvelope(out map[string]json.RawMessage, prefix string, env ContentEnvelope) {
+	put := func(field, v string) {
+		if v == "" {
+			return
+		}
+		b, err := json.Marshal(v)
+		if err != nil {
+			return
+		}
+		out[prefix+"."+field] = b
+	}
+	put("frontmatter", env.Frontmatter)
+	put("content", env.Content)
+	put("filePath", env.FilePath)
 }
