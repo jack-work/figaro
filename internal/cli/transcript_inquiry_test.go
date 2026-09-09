@@ -88,9 +88,9 @@ func TestTranscriptOlderFetchAnchorsOnTheNode(t *testing.T) {
 	if !ok {
 		t.Fatal("no older-page request from a window that starts mid-turn")
 	}
-	if req.before != 4 || req.beforeNode != 2 {
+	if req.at.Turn != 4 || req.at.Node != 2 {
 		t.Fatalf("request = (%d, %d), want turn 4 node 2: the oldest slice we hold",
-			req.before, req.beforeNode)
+			req.at.Turn, req.at.Node)
 	}
 }
 
@@ -114,7 +114,7 @@ func TestTranscriptFirstTurnClippedStillPagesOlder(t *testing.T) {
 	tr.offset = 0
 
 	req, ok := tr.pageCursor()
-	if !ok || req.beforeNode != 3 {
+	if !ok || req.at.Node != 3 {
 		t.Fatalf("request = %+v, ok = %v; turn 1's own head is still unread", req, ok)
 	}
 	if tr.atAriaFloor() {
@@ -162,7 +162,7 @@ func TestTranscriptViewportAnchorSurvivesAHeadSliceLanding(t *testing.T) {
 	if got := pageMessages(head); len(got) != 1 || got[0].From != 0 || got[0].Inquiry == "" {
 		t.Fatalf("fixture: head slice = %+v", got)
 	}
-	tr.applyPage(transcriptPageRequest{before: 5, beforeNode: 2}, head)
+	tr.applyPage(transcriptPageRequest{at: aria.Anchor{Turn: 5, Node: 2}}, head)
 
 	// The landing shifts the tail slice down by the separator it now needs;
 	// what must NOT happen is the viewport ending up ABOVE the newly prepended

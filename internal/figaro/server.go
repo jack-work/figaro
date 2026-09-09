@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/jkrpc"
 )
@@ -212,13 +211,10 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 				return nil, err
 			}
 		}
-		// Before names a turn cursor; Limit is a byte budget hint. A zero
-		// Before with a backward read means the tail.
-		if req.Before > 0 || req.Backward {
-			at := aria.Anchor{Turn: uint64(req.Before), Node: uint64(req.BeforeNode)}
-			return a.ReadBefore(at, req.Limit), nil
+		if req.Backward {
+			return a.ReadBefore(req.At, req.Limit), nil
 		}
-		return a.Read(aria.Anchor{Turn: uint64(req.SinceLT)}, req.Limit), nil
+		return a.Read(req.At, req.Limit), nil
 	}
 	return nil, fmt.Errorf("unknown method: %s", method)
 }

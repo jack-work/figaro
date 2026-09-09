@@ -119,7 +119,7 @@ func (h *pagingHarness) read(req transcriptPageRequest) aria.Page {
 	if limit <= 0 {
 		limit = transcriptPageSize
 	}
-	at := aria.Anchor{Turn: uint64(req.before), Node: uint64(req.beforeNode)}
+	at := req.at
 	page := readBeforeAt(h.history, at, limit)
 	msgs := pageMessages(page)
 	h.fetchedMsgs += len(msgs)

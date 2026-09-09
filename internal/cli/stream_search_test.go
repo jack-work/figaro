@@ -139,7 +139,7 @@ func newBlockingTranscriptReader() *blockingTranscriptReader {
 	}
 }
 
-func (r *blockingTranscriptReader) Read(context.Context, int) (aria.Page, error) {
+func (r *blockingTranscriptReader) Read(context.Context, aria.Anchor, int) (aria.Page, error) {
 	return aria.Page{}, nil
 }
 
@@ -161,7 +161,7 @@ type gatedHistoryReader struct {
 	once    sync.Once
 }
 
-func (r *gatedHistoryReader) Read(context.Context, int) (aria.Page, error) {
+func (r *gatedHistoryReader) Read(context.Context, aria.Anchor, int) (aria.Page, error) {
 	return aria.Page{}, nil
 }
 
@@ -201,7 +201,7 @@ func newDelayedTranscriptReader() *delayedTranscriptReader {
 	return &delayedTranscriptReader{calls: make(chan delayedReadCall, 2)}
 }
 
-func (r *delayedTranscriptReader) Read(context.Context, int) (aria.Page, error) {
+func (r *delayedTranscriptReader) Read(context.Context, aria.Anchor, int) (aria.Page, error) {
 	return aria.Page{}, nil
 }
 

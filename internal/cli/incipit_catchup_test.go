@@ -311,7 +311,9 @@ type fakeRecentReader struct {
 	budget int
 }
 
-func (f *fakeRecentReader) Read(context.Context, int) (aria.Page, error) { return aria.Page{}, nil }
+func (f *fakeRecentReader) Read(context.Context, aria.Anchor, int) (aria.Page, error) {
+	return aria.Page{}, nil
+}
 
 func (f *fakeRecentReader) ReadBefore(_ context.Context, at aria.Anchor, budget int) (aria.Page, error) {
 	f.anchor, f.budget = at, budget

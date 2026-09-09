@@ -86,7 +86,7 @@ func Nodes(msgs []message.Message, partials, argPartials map[string]string, timi
 			case message.ContentThinking:
 				nodes = append(nodes, textNode(livedoc.NodeThinking, roleOutput, m.LogicalTime, ci, m.Timestamp, c.Text))
 			case message.ContentToolInvoke:
-				nodes = append(nodes, toolNode(c, m.LogicalTime, ci, results, partials, argPartials, toolTimings))
+				nodes = append(nodes, toolNode(c, m.LogicalTime, ci, m.Timestamp, results, partials, argPartials, toolTimings))
 			}
 		}
 	}
@@ -113,7 +113,7 @@ func textNode(t livedoc.NodeType, role string, lt uint64, block int, at int64, t
 	}
 }
 
-func toolNode(inv message.Content, lt uint64, block int, results map[string]resultAt, partials, argPartials map[string]string, timings map[string]ToolTiming) livedoc.Node {
+func toolNode(inv message.Content, lt uint64, block int, at int64, results map[string]resultAt, partials, argPartials map[string]string, timings map[string]ToolTiming) livedoc.Node {
 	name := inv.ToolName
 	if name == "" {
 		name = "tool"
@@ -135,6 +135,7 @@ func toolNode(inv message.Content, lt uint64, block int, results map[string]resu
 		Role:       roleOutput,
 		LTs:        []uint64{lt},
 		Src:        []livedoc.Src{{LT: lt, Block: block}},
+		At:         at,
 		Name:       name,
 		Args:       args,
 		Summary:    summaryFor(args),
@@ -146,6 +147,11 @@ func toolNode(inv message.Content, lt uint64, block int, results map[string]resu
 		n.OpenedAt = timing.OpenedAt
 		n.StartedAt = timing.StartedAt
 		n.FinishedAt = timing.FinishedAt
+	} else {
+		// The clocks a live turn kept are gone once it is read back from the
+		// log, so the messages answer instead: the call was written when its
+		// invocation was, and it was done when its result arrived.
+		n.StartedAt = at
 	}
 	if got, done := results[inv.ToolCallID]; done {
 		res := got.Content
@@ -154,6 +160,9 @@ func toolNode(inv message.Content, lt uint64, block int, results map[string]resu
 		n.Src = append(n.Src, got.Src)
 		if got.Src.LT != lt {
 			n.LTs = append(n.LTs, got.Src.LT)
+		}
+		if n.FinishedAt == 0 {
+			n.FinishedAt = got.At
 		}
 		n.Status = livedoc.StatusOK
 		if res.IsError {
@@ -222,6 +231,7 @@ func tailBound(text string) string {
 type resultAt struct {
 	Content message.Content
 	Src     livedoc.Src
+	At      int64 // the result message's wall clock
 }
 
 func indexResults(msgs []message.Message) map[string]resultAt {
@@ -229,7 +239,9 @@ func indexResults(msgs []message.Message) map[string]resultAt {
 	for _, m := range msgs {
 		for ci, c := range m.Content {
 			if c.Type == message.ContentToolResult && c.ToolCallID != "" {
-				out[c.ToolCallID] = resultAt{Content: c, Src: livedoc.Src{LT: m.LogicalTime, Block: ci}}
+				out[c.ToolCallID] = resultAt{
+					Content: c, Src: livedoc.Src{LT: m.LogicalTime, Block: ci}, At: m.Timestamp,
+				}
 			}
 		}
 	}

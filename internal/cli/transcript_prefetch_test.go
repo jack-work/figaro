@@ -21,7 +21,7 @@ type slowHistoryReader struct {
 	calls int
 }
 
-func (r *slowHistoryReader) Read(context.Context, int) (aria.Page, error) {
+func (r *slowHistoryReader) Read(context.Context, aria.Anchor, int) (aria.Page, error) {
 	return aria.Page{}, nil
 }
 

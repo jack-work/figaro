@@ -161,10 +161,28 @@ func Paginate(turns []Turn, at Anchor, dir Direction, budget int) Page {
 
 	p := Page{Parts: assemble(turns, lo, hi)}
 	// More is about the whole conversation, not this window: is there any
-	// node before lo, or after hi.
-	_, p.More.Before = step(turns, lo, Backward)
-	_, p.More.After = step(turns, hi, Forward)
+	// node before lo, or after hi. The cursors are the coordinates a caller
+	// reads at to get what More says is there.
+	_, hasPrev := step(turns, lo, Backward)
+	next, hasNext := step(turns, hi, Forward)
+	p.More.Before, p.More.After = hasPrev, hasNext
+	if hasPrev {
+		// Read BEFORE this page to continue backward, so the cursor is the
+		// page's own first coordinate: a backward read excludes its anchor.
+		a := anchorAt(turns, lo)
+		p.Prev = &a
+	}
+	if hasNext {
+		// Read AT this to continue forward: one past what the page holds.
+		a := anchorAt(turns, next)
+		p.Next = &a
+	}
 	return p
+}
+
+// anchorAt is the UI coordinate a cursor stands on.
+func anchorAt(turns []Turn, c cursor) Anchor {
+	return Anchor{Turn: turns[c.turn].ID, Node: uint64(c.node)}
 }
 
 // PaginateBefore pages backward from an anchor, EXCLUDING the anchor node when

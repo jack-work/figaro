@@ -29,7 +29,7 @@ import (
 // and stops prefetching.
 type stubHistoryClient struct{ committed []aria.TurnPart }
 
-func (c stubHistoryClient) Read(context.Context, int) (aria.Page, error) {
+func (c stubHistoryClient) Read(context.Context, aria.Anchor, int) (aria.Page, error) {
 	return aria.Page{}, nil
 }
 

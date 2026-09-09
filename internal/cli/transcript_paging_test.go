@@ -44,7 +44,7 @@ func pageOnce(tr *transcript, history []aria.TurnPart) bool {
 	if !ok {
 		return false
 	}
-	at := aria.Anchor{Turn: uint64(req.before), Node: uint64(req.beforeNode)}
+	at := req.at
 	tr.applyPage(req, readBeforeAt(history, at, req.limit))
 	return true
 }

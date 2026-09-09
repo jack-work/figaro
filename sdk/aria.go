@@ -62,22 +62,21 @@ func (c *Aria) Qua(ctx context.Context, text string, cb *rpc.FormInput) (int, bo
 	return resp.Cursor, resp.Active, err
 }
 
-// Read pulls one aria.Page forward from a turn cursor (the catch-up half of the
-// figaro.aria stream): used after version desync or to seed a listener. The
-// request's JSON field remains named sinceLT for wire compatibility.
-func (c *Aria) Read(ctx context.Context, sinceTurn int) (aria.Page, error) {
+// Read pulls one aria.Page forward from a coordinate: the catch-up half of the
+// figaro.aria stream, and the way to page an aria of any length. A zero anchor
+// is the head; the answer's Next is where to read for the page after it.
+func (c *Aria) Read(ctx context.Context, at aria.Anchor, budget int) (aria.Page, error) {
 	var r aria.Page
-	err := c.call(ctx, rpc.MethodRead, rpc.ReadRequest{SinceLT: sinceTurn}, &r)
+	err := c.call(ctx, rpc.MethodRead, rpc.ReadRequest{At: at, Limit: budget}, &r)
 	return r, err
 }
 
-// ReadBefore pages backward from an anchor: the other direction of the
-// same cut, for a pager to walk history. A zero anchor means the tail, and the
-// anchor's Node matters: a window whose oldest slice starts mid-turn must ask
-// for what precedes THAT NODE, not that turn.
+// ReadBefore pages backward from a coordinate, excluding it. A zero anchor
+// means the live tail, and the anchor's Node matters: a window whose oldest
+// slice starts mid-turn must ask for what precedes that node, not that turn.
 func (c *Aria) ReadBefore(ctx context.Context, at aria.Anchor, budget int) (aria.Page, error) {
 	var r aria.Page
-	req := rpc.ReadRequest{Before: int(at.Turn), BeforeNode: int(at.Node), Limit: budget}
+	req := rpc.ReadRequest{At: at, Backward: true, Limit: budget}
 	err := c.call(ctx, rpc.MethodRead, req, &r)
 	return r, err
 }

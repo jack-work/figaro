@@ -32,14 +32,13 @@ func gatherShowTurns(ctx context.Context, acli *sdk.Angelus, figaroID string, op
 	if opts.from >= 0 {
 		return gatherForward(ctx, acli, figaroID, opts)
 	}
-	before, beforeNode := 0, 0
+	var at aria.Anchor
 	if opts.before >= 0 {
-		before = opts.before
+		at = aria.Anchor{Turn: uint64(opts.before)}
 	}
 	for {
 		page, err := acli.Read(ctx, rpc.ReadRequest{
-			FigaroID: figaroID, Before: before, BeforeNode: beforeNode,
-			Backward: true, Limit: showPageBytes,
+			FigaroID: figaroID, At: at, Backward: true, Limit: showPageBytes,
 		})
 		if err != nil {
 			return w, err
@@ -53,18 +52,16 @@ func gatherShowTurns(ctx context.Context, acli *sdk.Angelus, figaroID string, op
 		if w.pages == 1 {
 			w.atTail = !page.More.After && opts.before < 0
 		}
-		// THE ANCHOR IS (TURN, NODE). A page is cut by a byte budget, so the
-		// oldest thing it holds is usually the MIDDLE of a turn -- and a
-		// backward read anchored on the turn alone asks for everything before
-		// its node 0, silently dropping the rest of that turn. Measured on a
-		// real aria: a 143-node turn came back with 9.
-		oldest := page.Parts[0]
-		before, beforeNode = int(oldest.ID), int(oldest.From)
 		w.turns = prepend(got, w.turns)
-		if !page.More.Before {
+		if !page.More.Before || page.Prev == nil {
 			w.atHead = true
 			return w, nil
 		}
+		// The server states where the page before this one begins. A page is
+		// cut by a byte budget, so its oldest element is usually the middle of
+		// a turn, and an anchor derived from the turn alone would ask for
+		// everything before that turn's node 0, dropping the rest of it.
+		at = *page.Prev
 		if turnsSatisfy(w, opts) {
 			return w, nil
 		}
@@ -90,10 +87,10 @@ func prepend(older, newer []aria.Turn) []aria.Turn {
 // turn and a backward walk would have to reach the head to find it.
 func gatherForward(ctx context.Context, acli *sdk.Angelus, figaroID string, opts showOpts) (showTurns, error) {
 	var w showTurns
-	since := opts.from
+	at := aria.Anchor{Turn: uint64(max(opts.from, 0))}
 	for {
 		page, err := acli.Read(ctx, rpc.ReadRequest{
-			FigaroID: figaroID, SinceLT: since, Limit: showPageBytes,
+			FigaroID: figaroID, At: at, Limit: showPageBytes,
 		})
 		if err != nil {
 			return w, err
@@ -109,17 +106,17 @@ func gatherForward(ctx context.Context, acli *sdk.Angelus, figaroID string, opts
 		}
 		w.turns = prepend(w.turns, got)
 		last := w.turns[len(w.turns)-1]
-		if !page.More.After {
+		if !page.More.After || page.Next == nil {
 			w.atTail = true
 			return w, nil
 		}
 		if opts.to >= 0 && last.ID >= uint64(opts.to) {
 			return w, nil
 		}
-		if int(last.ID) <= since {
+		if *page.Next == at {
 			return w, nil // no progress; the daemon has nothing further
 		}
-		since = int(last.ID) + 1
+		at = *page.Next
 	}
 }
 

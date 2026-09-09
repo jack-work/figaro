@@ -107,8 +107,8 @@ func TestTranscript_LazyOlderPaging(t *testing.T) {
 	tr.key('g')
 	off0 := tr.offset
 	req, ok := tr.pageCursor()
-	if !ok || req.before != 5 {
-		t.Fatalf("pageCursor = (%d,%v), want (5,true)", req.before, ok)
+	if !ok || req.at.Turn != 5 {
+		t.Fatalf("pageCursor = (%d,%v), want (5,true)", req.at.Turn, ok)
 	}
 	// Page in the older window. The reader asked for the TOP and has asked for
 	// nothing since, so the standing request wins over the viewport anchor: they
@@ -129,7 +129,7 @@ func TestTranscript_LazyOlderPaging(t *testing.T) {
 	// Oldest is now LT 1: nothing older; paging stops.
 	req, ok = tr.pageCursor()
 	if ok {
-		t.Fatalf("no history should remain below LT 1 (got cursor %d)", req.before)
+		t.Fatalf("no history should remain below LT 1 (got cursor %d)", req.at.Turn)
 	}
 }
 

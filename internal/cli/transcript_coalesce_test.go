@@ -194,7 +194,7 @@ func TestFramePacer_ZeroIntervalIsTransparent(t *testing.T) {
 
 type stubReadClient struct{}
 
-func (stubReadClient) Read(context.Context, int) (aria.Page, error) {
+func (stubReadClient) Read(context.Context, aria.Anchor, int) (aria.Page, error) {
 	return aria.Page{}, nil
 }
 func (stubReadClient) ReadBefore(context.Context, aria.Anchor, int) (aria.Page, error) {

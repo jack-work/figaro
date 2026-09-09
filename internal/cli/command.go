@@ -345,7 +345,7 @@ func (in *interactiveInput) desyncHandler(gen uint64) func(int) {
 			if cli == nil {
 				return
 			}
-			r, rerr := cli.Read(rctx, sinceLT)
+			r, rerr := cli.Read(rctx, aria.Anchor{Turn: uint64(sinceLT)}, 0)
 			if rerr != nil || atomic.LoadUint64(&in.subjectGen) != gen {
 				return
 			}

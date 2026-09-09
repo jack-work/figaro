@@ -65,7 +65,9 @@ func (r *stuckReader) calls() int {
 	return r.n
 }
 
-func (r *stuckReader) Read(context.Context, int) (aria.Page, error) { return aria.Page{}, nil }
+func (r *stuckReader) Read(context.Context, aria.Anchor, int) (aria.Page, error) {
+	return aria.Page{}, nil
+}
 
 func (r *stuckReader) ReadBefore(_ context.Context, at aria.Anchor, limit int) (aria.Page, error) {
 	r.mu.Lock()

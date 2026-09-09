@@ -29,7 +29,7 @@ func (t *recordingTerminal) SetClipboard(s string) { t.clipboard.Store(s) }
 // history so copySelection has something to walk.
 type stubHistoryReader struct{ history []aria.TurnPart }
 
-func (r *stubHistoryReader) Read(context.Context, int) (aria.Page, error) {
+func (r *stubHistoryReader) Read(context.Context, aria.Anchor, int) (aria.Page, error) {
 	return aria.Page{}, nil
 }
 

@@ -197,7 +197,7 @@ type hangupClient interface {
 }
 
 type transcriptReadClient interface {
-	Read(context.Context, int) (aria.Page, error)
+	Read(context.Context, aria.Anchor, int) (aria.Page, error)
 	ReadBefore(context.Context, aria.Anchor, int) (aria.Page, error)
 	Queued(context.Context) (*rpc.QueuedResponse, error)
 }
@@ -519,8 +519,11 @@ func (in *interactiveInput) readTranscriptPage(ctx context.Context, req transcri
 	if limit <= 0 {
 		limit = transcriptPageSize
 	}
-	at := aria.Anchor{Turn: uint64(req.before), Node: uint64(req.beforeNode)}
-	return in.fcli.ReadBefore(ctx, at, wireBudget(limit))
+	if req.seek {
+		// Forward, so the coordinate asked for is the first thing on the page.
+		return in.fcli.Read(ctx, req.at, wireBudget(limit))
+	}
+	return in.fcli.ReadBefore(ctx, req.at, wireBudget(limit))
 }
 
 func (in *interactiveInput) searchMatchesLocked(gen uint64, query string) bool {

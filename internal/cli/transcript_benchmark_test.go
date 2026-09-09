@@ -223,7 +223,7 @@ type benchmarkSearchReader struct {
 	canceled chan struct{}
 }
 
-func (r *benchmarkSearchReader) Read(context.Context, int) (aria.Page, error) {
+func (r *benchmarkSearchReader) Read(context.Context, aria.Anchor, int) (aria.Page, error) {
 	return aria.Page{}, nil
 }
 

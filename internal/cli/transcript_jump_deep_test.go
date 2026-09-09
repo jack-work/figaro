@@ -57,6 +57,33 @@ func (w *jumpWire) before(turn, node int) aria.Page {
 	return aria.Page{Parts: parts, More: aria.More{Before: start > 0}}
 }
 
+// from is a forward read at a coordinate: the page a seek asks for.
+func (w *jumpWire) from(turn, node int) aria.Page {
+	w.reads++
+	start := -1
+	for i, t := range w.turns {
+		if int(t.ID) >= turn {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return aria.Page{}
+	}
+	end := min(start+w.page, len(w.turns))
+	parts := make([]aria.TurnPart, 0, end-start)
+	for i, t := range w.turns[start:end] {
+		if i == 0 && node > 0 && node < len(t.Nodes) {
+			cut := aria.TurnPart{Turn: t, From: uint64(node), ClippedHead: true}
+			cut.Turn.Nodes = t.Nodes[node:]
+			parts = append(parts, cut)
+			continue
+		}
+		parts = append(parts, aria.TurnPart{Turn: t})
+	}
+	return aria.Page{Parts: parts, More: aria.More{Before: start > 0, After: end < len(w.turns)}}
+}
+
 func jumpTurns(first, n int) []aria.Turn {
 	out := make([]aria.Turn, 0, n)
 	for i := range n {
@@ -95,17 +122,26 @@ func deepJumpFixture(tb testing.TB, all []aria.Turn, held int) (*transcript, *ju
 // asking, bounded so a spin fails instead of hanging.
 func serve(t *testing.T, tr *transcript, w *jumpWire) {
 	t.Helper()
-	for range jumpBudget * 4 {
+	for range 96 {
 		req, need := tr.pageCursor()
 		if !need {
 			return
 		}
 		if req.fill != nil {
-			// A hole inside the window; Ensure closes it. Nothing in this
-			// fixture makes one, so treat it as a bug in the test.
-			t.Fatalf("unexpected fill request for %v", *req.fill)
+			// A hole inside the window: what a seek leaves behind it. Ensure
+			// closes it in production; here the wire answers directly.
+			tr.client.Apply(w.from(int(req.fill.From.Turn), int(req.fill.From.Node)), aria.Quiet)
+			tr.invalidateWindow()
+			tr.settle()
+			tr.jumpAdvance()
+			continue
 		}
-		tr.applyPage(req, w.before(req.before, req.beforeNode))
+		if req.seek {
+			// A jump reads where it is going: forward, at the coordinate.
+			tr.applyPage(req, w.from(int(req.at.Turn), int(req.at.Node)))
+			continue
+		}
+		tr.applyPage(req, w.before(int(req.at.Turn), int(req.at.Node)))
 	}
 	t.Fatal("the page cursor never stopped asking")
 }

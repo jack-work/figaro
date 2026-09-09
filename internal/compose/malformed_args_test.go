@@ -20,7 +20,7 @@ func TestQuarantinedCallRendersItsBytes(t *testing.T) {
 		Type: message.ContentToolInvoke, ToolCallID: "tc_1", ToolName: "edit",
 		Arguments: message.MalformedArgs(raw),
 	}
-	n := toolNode(inv, 7, 0, nil, nil, nil, nil)
+	n := toolNode(inv, 7, 0, 0, nil, nil, nil, nil)
 
 	if n.Args != nil {
 		t.Errorf("the envelope must not reach the reader as arguments: %v", n.Args)
@@ -44,7 +44,7 @@ func TestQuarantinedBytesDoNotDependOnTheLiveMap(t *testing.T) {
 		Arguments: message.MalformedArgs("{\"path\": \"x.go\", \"new_text\": \"\tbroken"),
 	}
 	// argPartials empty: exactly the state after a restart.
-	if n := toolNode(inv, 7, 0, nil, map[string]string{}, map[string]string{}, nil); n.Input == "" {
+	if n := toolNode(inv, 7, 0, 0, nil, map[string]string{}, map[string]string{}, nil); n.Input == "" {
 		t.Error("a reloaded failed call lost the only copy of its arguments")
 	}
 }
@@ -53,7 +53,7 @@ func TestQuarantinedBytesDoNotDependOnTheLiveMap(t *testing.T) {
 // there are no decoded Args, and the live prefix is what there is to show.
 func TestStreamingPrefixStillShows(t *testing.T) {
 	inv := message.Content{Type: message.ContentToolInvoke, ToolCallID: "tc_2", ToolName: "write"}
-	n := toolNode(inv, 7, 0, nil, map[string]string{}, map[string]string{"tc_2": `{"path": "x.g`}, nil)
+	n := toolNode(inv, 7, 0, 0, nil, map[string]string{}, map[string]string{"tc_2": `{"path": "x.g`}, nil)
 	if n.Input != `{"path": "x.g` {
 		t.Errorf("Input = %q, want the live prefix", n.Input)
 	}

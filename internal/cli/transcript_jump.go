@@ -10,9 +10,6 @@ import (
 
 // THE `:` JUMP: go to a coordinate.
 
-// jumpBudget is how many page fetches one jump may spend before giving up.
-const jumpBudget = 24
-
 // jumpTarget is a parsed coordinate. It is deliberately NOT an aria.Anchor:
 // Anchor{Turn: 0} means UNSET on the wire, and `:0` means the opposite of
 // unset. Keeping the sentinel in the parser's own type is what stops a
@@ -32,6 +29,19 @@ func (tg jumpTarget) String() string {
 		return "turn " + strconv.Itoa(tg.turn) + ", node " + strconv.Itoa(tg.node)
 	}
 	return "turn " + strconv.Itoa(tg.turn)
+}
+
+// anchor is the coordinate to read at to bring the target in. The beginning is
+// the zero anchor, which a forward read answers with the head of the aria.
+func (tg jumpTarget) anchor() aria.Anchor {
+	if tg.start {
+		return aria.Anchor{}
+	}
+	a := aria.Anchor{Turn: uint64(tg.turn)}
+	if tg.hasNode && tg.node > 0 {
+		a.Node = uint64(tg.node)
+	}
+	return a
 }
 
 // missing is what the footer says when the target cannot exist.
@@ -82,16 +92,15 @@ const (
 	jumpAbsent                  // it cannot exist; say so
 )
 
-// transcriptJump is a walk in progress: the target, what is left of the
-// budget, and enough of the origin to put the reader back where they were if
-// the walk fails. It mirrors transcriptSearch, which is the same shape for the
-// same reason, a paged search and a paged jump are one traversal with two
-// stopping conditions. As there, only the VIEWPORT is restored: history the
-// walk paged in is in the store, and throwing the floor back up would only
-// re-fetch it.
+// transcriptJump is a jump waiting on the page it asked for: the target, and
+// enough of the origin to put the reader back where they were if it turns out
+// not to exist. Only the viewport is restored: what the read brought is in the
+// store, and throwing the floor back up would only fetch it again.
 type transcriptJump struct {
-	target  jumpTarget
-	fetches int
+	target jumpTarget
+	// asked is the coordinate already read for; a second identical read would
+	// make no progress and is how a walk used to spin.
+	asked *aria.Anchor
 
 	offset int
 	follow bool
@@ -444,10 +453,7 @@ func (t *transcript) startJump(tg jumpTarget) {
 		t.noteOrClear(tg.missing())
 		return
 	}
-	t.jump = &transcriptJump{
-		target: tg, fetches: jumpBudget,
-		offset: t.offset, follow: t.follow,
-	}
+	t.jump = &transcriptJump{target: tg, offset: t.offset, follow: t.follow}
 	t.stopFollowing()
 }
 
@@ -468,6 +474,28 @@ func (t *transcript) jumpAdvance() {
 	case jumpAbsent:
 		t.abandonJump(t.jump.target.missing())
 	}
+}
+
+// jumpSeek is the coordinate a standing jump wants read, and whether it wants
+// one at all. A target below the window is read at directly; a target inside a
+// hole is read at the hole's own head. Asking twice for the same coordinate is
+// no progress, so the second ask is refused and the walk ends honestly.
+func (t *transcript) jumpSeek() (aria.Anchor, bool) {
+	if t.jump == nil {
+		return aria.Anchor{}, false
+	}
+	at := t.jump.target.anchor()
+	if gap := t.oldestGap(); gap != nil && !at.Less(gap.From) {
+		// The target is at or past a hole the window already knows about:
+		// close that first, so the region arrives contiguous with what holds
+		// it rather than as a second island.
+		at = gap.From
+	}
+	if t.jump.asked != nil && *t.jump.asked == at {
+		return aria.Anchor{}, false
+	}
+	t.jump.asked = &at
+	return at, true
 }
 
 // jumpReachOf resolves a target against the loaded window: the absolute line

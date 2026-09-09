@@ -151,7 +151,7 @@ func TestJumpZeroReachesTheFirstExistingTurn(t *testing.T) {
 // is exactly the wire behaviour that latches the floor on a fork.
 func drainJump(t *testing.T, tr *transcript) {
 	t.Helper()
-	for range jumpBudget + 4 {
+	for range 32 {
 		req, need := tr.pageCursor()
 		if !need {
 			return
@@ -201,29 +201,30 @@ func TestJumpToAnUnreachableTargetReports(t *testing.T) {
 	}
 }
 
-// TestJumpBudgetTerminates: a store that keeps handing back pages which never
-// reach the target must stop the walk, not spin.
-func TestJumpBudgetTerminates(t *testing.T) {
+// TestJumpAsksOnceAndStops: a daemon that answers a seek with a page that does
+// not hold the target has said all it can. Asking the same coordinate again
+// would be no progress, so the jump ends and says so rather than spinning.
+func TestJumpAsksOnceAndStops(t *testing.T) {
 	tr := jumpFixture(t, 100, 8)
-	typeJump(tr, "3") // older than anything, and the floor never latches
-	fetches := 0
-	for range jumpBudget * 4 {
+	typeJump(tr, "3") // older than anything the daemon will admit to
+	seeks := 0
+	for range 32 {
 		req, need := tr.pageCursor()
 		if !need {
 			break
 		}
-		fetches++
-		// A store that answers with the same content forever: no progress, no
-		// floor. The budget is the only thing that can end this.
+		if req.seek {
+			seeks++
+		}
 		tr.applyPage(req, aria.Page{More: aria.More{Before: true}, Parts: []aria.TurnPart{{
 			Turn: aria.Turn{ID: 100, Sealed: true,
 				Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "again"}}}}}})
 	}
 	if tr.jump != nil {
-		t.Fatalf("the walk never gave up after %d fetches", fetches)
+		t.Fatalf("the jump is still standing after %d seeks", seeks)
 	}
-	if fetches > jumpBudget+1 {
-		t.Fatalf("the walk spent %d fetches, budget is %d", fetches, jumpBudget)
+	if seeks > 1 {
+		t.Fatalf("the jump read %d times for one coordinate", seeks)
 	}
 	if tr.jumpNote == "" {
 		t.Fatal("giving up reported nothing")

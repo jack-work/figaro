@@ -26,26 +26,26 @@ type FormResponse struct {
 	Version  uint64        `json:"version,omitempty"`
 }
 
-// ReadRequest is the turn-shaped aria.Page request. SinceLT is a legacy JSON
-// name: its value is the forward TURN cursor (0 = beginning). Before>0 switches
-// to a backward keyset read from the (Before, BeforeNode) UI coordinate. That
-// exact node is excluded because the caller already holds it; preserving the
-// node offset keeps a clipped turn's head reachable. Limit is a byte budget.
+// ReadRequest asks for one page of an aria at a coordinate. It is a keyset
+// read: At names where to start, Backward says which way to walk, and the
+// answer carries the coordinate to continue from (aria.Page.Next / .Prev), so
+// a client pages an aria of any length without counting anything.
+//
+// At is a UI coordinate, not a logical time. The zero anchor means the end the
+// direction starts from: the head of the aria going forward, its live tail
+// going backward. A backward read excludes At itself, because the caller
+// already holds it.
 type ReadRequest struct {
-	// FigaroID names the aria when the request arrives on the ANGELUS door.
+	// FigaroID names the aria when the request arrives on the angelus door.
 	// On an aria's own socket the connection already says which aria, and
-	// this is empty. One request type, two doors: the field is how a client
-	// addresses a read it did not open a per-aria connection for.
-	FigaroID   string `json:"figaro_id,omitempty"`
-	SinceLT    int    `json:"sinceLT,omitempty"`
-	Before     int    `json:"before,omitempty"`
-	BeforeNode int    `json:"before_node,omitempty"`
-	Limit      int    `json:"limit,omitempty"`
-	// Backward pages toward the head. With no anchor that is THE TAIL
-	// PAGE -- the newest turns -- which a zero SinceLT cannot ask for: a
-	// forward read from a zero anchor starts at the HEAD, and a reader
-	// that meant "the last N" gets the first N and no error.
-	Backward bool `json:"backward,omitempty"`
+	// this is empty.
+	FigaroID string      `json:"figaro_id,omitempty"`
+	At       aria.Anchor `json:"at,omitempty"`
+	Backward bool        `json:"backward,omitempty"`
+	// Limit is a byte budget. Zero asks for the server's configured page
+	// size, which is what makes "start here, then follow Next" the whole of
+	// the client's paging logic.
+	Limit int `json:"limit,omitempty"`
 }
 
 // AriaIDRequest names an aria and nothing else: the whole request for the

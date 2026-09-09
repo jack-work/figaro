@@ -118,7 +118,7 @@ func TestPacedPageLanding_IsNeverSwallowed(t *testing.T) {
 	mu.Lock()
 	before := lt.tr.from.Turn
 	lt.transcriptApplyPage(req, (readBeforeAt(transcriptHistory(120),
-		aria.Anchor{Turn: uint64(req.before), Node: uint64(req.beforeNode)}, req.limit)))
+		req.at, req.limit)))
 	after := lt.tr.from.Turn
 	dirty := lt.tr.dirty
 	mu.Unlock()
@@ -204,7 +204,7 @@ type blockingHistoryReader struct {
 	calls   int
 }
 
-func (r *blockingHistoryReader) Read(context.Context, int) (aria.Page, error) {
+func (r *blockingHistoryReader) Read(context.Context, aria.Anchor, int) (aria.Page, error) {
 	return aria.Page{}, nil
 }
 

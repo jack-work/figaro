@@ -253,12 +253,11 @@ func forkNodesOf(ctx context.Context, acli *sdk.Angelus, ariaID string, turn uin
 // forkNodesBack is the backward walk: pages toward the head of the turn until
 // node 0 is in hand, because indices are only meaningful counted from there.
 func forkNodesBack(ctx context.Context, acli *sdk.Angelus, ariaID string, turn uint64, idx int) ([]livedoc.Node, error) {
-	before, beforeNode := int(turn), idx+1
+	at := aria.Anchor{Turn: turn, Node: uint64(idx + 1)}
 	var held []livedoc.Node
 	for page := 0; page < forkNodePages; page++ {
 		resp, err := acli.Read(ctx, rpc.ReadRequest{
-			FigaroID: ariaID, Before: before, BeforeNode: beforeNode,
-			Backward: true, Limit: forkNodePage,
+			FigaroID: ariaID, At: at, Backward: true, Limit: forkNodePage,
 		})
 		if err != nil {
 			return nil, err
@@ -274,10 +273,10 @@ func forkNodesBack(ctx context.Context, acli *sdk.Angelus, ariaID string, turn u
 		if part.From == 0 {
 			return held, nil
 		}
-		if !resp.More.Before {
+		if !resp.More.Before || resp.Prev == nil {
 			break
 		}
-		before, beforeNode = int(part.ID), int(part.From)
+		at = *resp.Prev
 	}
 	// Node 0 never came back, so the indices in hand are not the indices the
 	// user is naming. Refusing is the only honest answer: an off-by-N fork
@@ -289,7 +288,7 @@ func forkNodesBack(ctx context.Context, acli *sdk.Angelus, ariaID string, turn u
 // stopped short. One page: this is a tie-breaker, not a walk.
 func forkNodesForward(ctx context.Context, acli *sdk.Angelus, ariaID string, turn uint64) ([]livedoc.Node, bool, error) {
 	resp, err := acli.Read(ctx, rpc.ReadRequest{
-		FigaroID: ariaID, SinceLT: int(turn), Limit: forkNodeSettle,
+		FigaroID: ariaID, At: aria.Anchor{Turn: turn}, Limit: forkNodeSettle,
 	})
 	if err != nil {
 		return nil, false, err

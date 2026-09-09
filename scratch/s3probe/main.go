@@ -16,8 +16,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/jack-work/figaro/internal/compose"
 	"github.com/jack-work/figaro/api/message"
+	"github.com/jack-work/figaro/internal/compose"
 )
 
 func mib(b uint64) float64 { return float64(b) / (1 << 20) }

@@ -147,12 +147,10 @@ func TestJumpStillDeniesWhatCannotExist(t *testing.T) {
 	}
 }
 
-// TestWalkAsksToFillAHoleItCannotSee: the delay needs something to wait FOR.
-// gapNear reports only the hole the viewport is about to paint, so without the
-// jump's own branch in pageCursor a walk toward a distant hole stalls: the
-// pager standing at "jumping to turn 3…" forever, which is worse than the
-// denial it replaced.
-func TestWalkAsksToFillAHoleItCannotSee(t *testing.T) {
+// TestJumpReadsWhereItIsGoing: gapNear reports only the hole the viewport is
+// about to paint, so a jump toward a coordinate it cannot see has to ask for
+// that coordinate itself, or it stands at "jumping to turn 3…" forever.
+func TestJumpReadsWhereItIsGoing(t *testing.T) {
 	tr := holed(t, 3, 4)
 	tr.offset = tr.index.total + 10*tr.h // park the eye far below the hole
 	if tr.gapNear() != nil {
@@ -160,7 +158,12 @@ func TestWalkAsksToFillAHoleItCannotSee(t *testing.T) {
 	}
 	typeJump(tr, "3")
 	req, want := tr.pageCursor()
-	if !want || req.fill == nil {
-		t.Fatalf("the walk asked for %+v (want=%v); a jump must drive its own fill", req, want)
+	if !want || !req.seek {
+		t.Fatalf("the jump asked for %+v (want=%v); it must read at the coordinate", req, want)
+	}
+	// It reads at the hole rather than at the target itself, so what arrives
+	// is contiguous with what the window already holds.
+	if gap := tr.oldestGap(); gap != nil && req.at != gap.From {
+		t.Fatalf("the jump read at %v, want the hole's own head %v", req.at, gap.From)
 	}
 }

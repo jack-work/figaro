@@ -160,10 +160,33 @@ type TurnPart struct {
 
 // Page is the one wire shape: pulled by read, pushed by the live stream. A
 // pure delta push is a Page whose single part carries Live and no Nodes.
+//
+// Next and Prev are the keyset cursors, each in the shape its direction is
+// read in: read forward AT Next for the page after this one, backward BEFORE
+// Prev for the page before it. They are set only when More says there is
+// something that way, so a client pages an aria of any length by following
+// them rather than by arithmetic on turn numbers.
 type Page struct {
 	Parts   []TurnPart `json:"parts"`
 	More    More       `json:"more"`
+	Next    *Anchor    `json:"next,omitempty"`
+	Prev    *Anchor    `json:"prev,omitempty"`
 	Metrics *Metrics   `json:"metrics,omitempty"`
+}
+
+// Span is the coordinate range a page covers, or the zero anchors when it
+// carries nothing.
+func (p Page) Span() (from, to Anchor) {
+	if len(p.Parts) == 0 {
+		return Anchor{}, Anchor{}
+	}
+	first, last := p.Parts[0], p.Parts[len(p.Parts)-1]
+	from = Anchor{Turn: first.ID, Node: first.From}
+	to = Anchor{Turn: last.ID, Node: last.From}
+	if n := len(last.Nodes); n > 0 {
+		to.Node += uint64(n) - 1
+	}
+	return from, to
 }
 
 // MarshalJSON keeps `parts` present and an ARRAY, always. An empty branch

@@ -12,7 +12,6 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
@@ -73,12 +72,7 @@ func (h *handlers) readFromStore(id, method string, params json.RawMessage) (any
 				return nil, true, err
 			}
 		}
-		at := aria.Anchor{Turn: uint64(req.SinceLT)}
-		before := req.Before > 0 || req.Backward
-		if req.Before > 0 {
-			at = aria.Anchor{Turn: uint64(req.Before), Node: uint64(req.BeforeNode)}
-		}
-		page, err := r.Page(id, at, req.Limit, before)
+		page, err := r.Page(id, req.At, req.Limit, req.Backward)
 		if err != nil {
 			return nil, true, err
 		}
