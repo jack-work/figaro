@@ -1126,7 +1126,7 @@ func (t *transcript) setCmdOut(title string, rows []string) {
 // painting three would push the conversation's last line off the top. The
 // rule is one row; barRows is the rest.
 func (t *transcript) layout(foot int) (body, maxOff int) {
-	body = t.h - 1 - t.barRows() - foot - t.headRows()
+	body = t.h - 1 - t.barRows() - foot
 	if t.follow {
 		body--
 	}
@@ -1256,11 +1256,11 @@ func (t *transcript) flush() {
 // render() is only the gate in front of it.
 func (t *transcript) renderFrame() {
 	// The frame ends in a two-row footer (rule, status), plus one padding row
-	// while following and the sticky header above, so a viewport shorter than
-	// that has nowhere to draw. A pane this small cannot show a paged
-	// transcript usefully; skip the frame rather than crash, and pick up on the
-	// next resize.
-	if t.h < 4+t.headRows() {
+	// while following, so a viewport shorter than that has nowhere to draw and
+	// would index screen[-2]. A pane this small cannot show a paged transcript
+	// usefully; skip the frame rather than crash, and pick up on the next
+	// resize.
+	if t.h < 4 {
 		return
 	}
 	// Converge the tail window on the row budget. D drove this off
@@ -1291,16 +1291,16 @@ func (t *transcript) renderFrame() {
 	// Re-deriving it at click time would consult an offset that a live token or a
 	// tail re-tune may already have moved: the same staleness selectNode's cold
 	// path documents for its viewport seed. See transcript_mouse.go.
-	// The map is by screen row, so the header's rows lead it, addressing
-	// nothing: a click on the pinned question selects no node.
-	head := t.headRows()
-	t.frameRefs = t.frameRefs[:0]
-	for range head {
-		t.frameRefs = append(t.frameRefs, nodeRef{})
+	t.frameRefs = t.rowRefs(t.offset, t.offset+body, t.frameRefs[:0])
+	copy(screen[:body], t.rowBuf)
+	// The header stands ON the conversation rather than pushing it down, so the
+	// rows beneath it are covered: they address nothing while they cannot be
+	// seen, and they emerge as the reader scrolls.
+	head := t.stickyLines(t.activeHighlight(), t.selectionSpan())
+	copy(screen[:len(head)], head)
+	for i := range min(len(head), len(t.frameRefs)) {
+		t.frameRefs[i] = nodeRef{}
 	}
-	t.frameRefs = t.rowRefs(t.offset, t.offset+body, t.frameRefs)
-	copy(screen[head:head+body], t.rowBuf)
-	copy(screen[:head], t.stickyLines(t.activeHighlight(), t.selectionSpan()))
 	// BOTTOM-ALIGNED, and that is the fix for a stray blank line. layout() takes
 	// one row off the body while following (the live padding), so writing the
 	// stanza from `body` upward left the slack at the BOTTOM -- an empty row

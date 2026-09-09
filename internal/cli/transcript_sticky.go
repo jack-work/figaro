@@ -8,12 +8,16 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// The sticky question: the head of a turn's question, held above the body while
-// the reader is inside the answer to it. The rows are the block's own, composed
-// by the path that draws it inline, and no rule stands between them and the
-// conversation: as the reader scrolls back up, each real line of the question
-// arriving at the top of the body takes the place of the header line below it,
-// until the block is whole again and the header is gone.
+// The sticky question: the head of a turn's question, held over the top of the
+// conversation while the reader is inside the answer to it. The rows are the
+// block's own, composed by the path that draws it inline, and no rule stands
+// between them and what follows.
+//
+// It FLOATS: the conversation scrolls underneath at its own pace, one row per
+// keystroke, and the header covers the rows it stands on rather than pushing
+// them down. So the geometry never changes when it appears or goes, and the
+// moment it goes is the moment the question's own head has reached the top,
+// where it draws the same rows in the same place.
 
 // stickyText is the most rows of a question the header holds.
 const stickyText = 2
@@ -27,8 +31,8 @@ func (t *transcript) sticky() bool {
 	return ok && view.settings != nil && view.settings.sticky
 }
 
-// headRows is how much of the pane the header holds: exactly the rows it has
-// to show, so a question already on screen costs the conversation nothing.
+// headRows is how many rows of the conversation the header stands on. The body
+// is not shortened by it: see renderFrame.
 func (t *transcript) headRows() int { return len(t.stickyRows()) }
 
 // stickyQuestion is a turn's question as the transcript composes it inline:
@@ -106,27 +110,20 @@ func (t *transcript) stickyTurn() (turn, above int) {
 	return turn, above
 }
 
-// stickyRows is the head of the question the reader is inside: its first rows,
-// as many as have left the body, and never more than stickyText of them. As the
-// body takes each row back the header gives it up, so the two together are
-// always the one block.
+// stickyRows is the head of the question the reader is inside, held while any
+// of that question's own text is above the top of the pane. It does not shrink
+// as the block comes back: the conversation moves underneath it and the header
+// simply lets go once the question can speak for itself.
 func (t *transcript) stickyRows() []transcriptRow {
 	if !t.sticky() {
 		return nil
 	}
 	turn, above := t.stickyTurn()
-	if above == 0 {
-		return nil
-	}
 	q := t.stickyBlockOf(turn)
-	if q.empty() {
+	if q.empty() || above <= q.textLo {
 		return nil
 	}
-	n := min(above-q.textLo, stickyText, q.textHigh-q.textLo)
-	if n <= 0 {
-		return nil
-	}
-	return q.rows[q.textLo : q.textLo+n]
+	return q.rows[q.textLo:min(q.textLo+stickyText, q.textHigh)]
 }
 
 // stickyLines is the header as painted: the head of the question, its address
@@ -137,12 +134,12 @@ func (t *transcript) stickyLines(hl string, sel selectionSpan) []string {
 	if len(rows) == 0 {
 		return nil
 	}
-	turn, above := t.stickyTurn()
+	turn, _ := t.stickyTurn()
 	q := t.stickyBlockOf(turn)
 	out := make([]string, 0, len(rows))
 	for i, r := range rows {
 		line := t.rowLine(r, hl, sel)
-		if i == len(rows)-1 && q.textLo+len(rows) < min(above, q.textHigh) {
+		if i == len(rows)-1 && q.textLo+len(rows) < q.textHigh {
 			line = stickyClip(line, t.w)
 		}
 		out = append(out, line)

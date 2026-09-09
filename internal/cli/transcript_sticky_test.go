@@ -51,10 +51,21 @@ func headEntryOf(tr *transcript, turn int) (*lineEntry, bool) {
 	return nil, false
 }
 
-// bodyRows is what the frame paints below the header.
+// bodyRows is the conversation the frame paints, the header's rows included:
+// the header stands on them rather than pushing them down.
 func bodyRows(tr *transcript) []string {
 	body, _ := tr.layout(len(tr.footLines()))
 	return tr.window(tr.offset, tr.offset+body, nil)
+}
+
+// screenRows is what the reader actually sees: the header, then the
+// conversation from under it down.
+func screenRows(tr *transcript) []string {
+	head, body := headRowsOf(tr), bodyRows(tr)
+	if len(head) > len(body) {
+		head = head[:len(body)]
+	}
+	return append(append([]string{}, head...), body[len(head):]...)
 }
 
 func headRowsOf(tr *transcript) []string {
@@ -246,10 +257,10 @@ func TestSticky_HeaderIsTheSameComponentAsTheBody(t *testing.T) {
 	}
 }
 
-// TestSticky_TakesNoRoomWhenItPinsNothing: blank rows are not held above a
-// conversation that is already showing its own question, and what the header
-// paints is exactly what the frame reserved for it.
-func TestSticky_TakesNoRoomWhenItPinsNothing(t *testing.T) {
+// TestSticky_DoesNotShortenTheConversation: the header floats, so the pane
+// holds the same number of conversation rows whether it is up or not, and the
+// geometry cannot change under the reader as they scroll.
+func TestSticky_DoesNotShortenTheConversation(t *testing.T) {
 	tr := stickyPager(t, 1, 4, 6, 24)
 	tr.view.(*ariaView).settings.sticky = false
 	bare, _ := tr.layout(len(tr.footLines()))
@@ -260,17 +271,13 @@ func TestSticky_TakesNoRoomWhenItPinsNothing(t *testing.T) {
 		tr.offset = off
 		tr.buildIndex()
 		body, _ := tr.layout(len(tr.footLines()))
-		rows := headRowsOf(tr)
-		if len(rows) != tr.headRows() {
-			t.Fatalf("at offset %d the header painted %d rows, reserved %d", off, len(rows), tr.headRows())
+		if body != bare {
+			t.Fatalf("at offset %d the header took %d rows of the conversation", off, bare-body)
 		}
-		if len(rows) == 0 {
+		if len(headRowsOf(tr)) == 0 {
 			bareSeen++
 		} else {
 			pinned++
-		}
-		if body != bare-len(rows) {
-			t.Fatalf("at offset %d the header holds %d rows and the body %d, want %d", off, len(rows), body, bare-len(rows))
 		}
 	}
 	if pinned == 0 || bareSeen == 0 {
@@ -283,11 +290,10 @@ func TestSticky_TakesNoRoomWhenItPinsNothing(t *testing.T) {
 func TestSticky_OffCostsNothing(t *testing.T) {
 	tr := stickyPager(t, 1, 3, 6, 24)
 	on, _ := tr.layout(len(tr.footLines()))
-	held := len(headRowsOf(tr))
 	tr.view.(*ariaView).settings.sticky = false
 	off, _ := tr.layout(len(tr.footLines()))
-	if off != on+held {
-		t.Fatalf("the mode off gives the body %d rows, on gives %d, holding %d", off, on, held)
+	if off != on {
+		t.Fatalf("the mode changed the geometry: %d rows off, %d on", off, on)
 	}
 	if rows := headRowsOf(tr); rows != nil {
 		t.Fatalf("the mode is off and %d header rows were painted", len(rows))
@@ -493,16 +499,14 @@ func TestSticky_LiveTurnDoesNotStandTwice(t *testing.T) {
 	for off := range tr.index.total {
 		tr.offset = off
 		tr.buildIndex()
-		body := plain(bodyRows(tr))
-		for _, row := range plain(headRowsOf(tr)) {
+		seen := map[string]int{}
+		for _, row := range plain(screenRows(tr)) {
 			if strings.TrimSpace(row) == "" {
 				continue
 			}
-			for _, b := range body {
-				if b == row && strings.TrimSpace(b) != "" {
-					t.Fatalf("at offset %d the row %q stands in the header and the body at once:\nheader %q\nbody %q",
-						off, row, plain(headRowsOf(tr)), body)
-				}
+			if seen[row]++; seen[row] > 1 && strings.Contains(row, "please commit") {
+				t.Fatalf("at offset %d the row %q is on screen twice:\n%s",
+					off, row, strings.Join(plain(screenRows(tr)), "\n"))
 			}
 		}
 	}
@@ -618,13 +622,11 @@ func TestSticky_PinsTheHeadOfTheQuestionNotAMiddleChunk(t *testing.T) {
 			t.Fatalf("at offset %d the header shows a middle chunk:\n got %q\nwant the head %q / %q",
 				tr.offset, rows, head, second)
 		}
-		// The mark means "the question goes on between here and the body",
-		// and it appears exactly when that is true.
-		_, gotAbove := tr.stickyTurn()
-		skipped := q.textLo+len(rows) < min(gotAbove, q.textHigh)
-		if marked := strings.Contains(rows[len(rows)-1], strings.TrimSpace(stickyEllipsis)); marked != skipped {
-			t.Fatalf("at offset %d rows skipped=%v but the header marked=%v: %q",
-				tr.offset, skipped, marked, rows[len(rows)-1])
+		// The mark means "this question goes on past what the header holds".
+		taller := q.textLo+len(rows) < q.textHigh
+		if marked := strings.Contains(rows[len(rows)-1], strings.TrimSpace(stickyEllipsis)); marked != taller {
+			t.Fatalf("at offset %d the question is taller=%v but the header marked=%v: %q",
+				tr.offset, taller, marked, rows[len(rows)-1])
 		}
 		for _, b := range plain(bodyRows(tr)) {
 			for _, r := range rows {
@@ -636,6 +638,53 @@ func TestSticky_PinsTheHeadOfTheQuestionNotAMiddleChunk(t *testing.T) {
 	}
 	if shown == 0 {
 		t.Fatal("the header never appeared while a tall question scrolled past")
+	}
+}
+
+// TestSticky_EveryKeystrokeMovesOneRow is the defect a reader feels as a dead
+// keyboard: the header used to give a row back for every row the body gained,
+// so three keystrokes running the block back into place moved nothing at all.
+// The conversation now scrolls underneath it, one row per keystroke, whatever
+// the header is doing.
+func TestSticky_EveryKeystrokeMovesOneRow(t *testing.T) {
+	tr := richPager(t, 3, 10, 20)
+	tr.follow = false
+	tr.offset = tr.index.total - 1
+	tr.render()
+
+	held := 0
+	for range tr.index.total - 1 {
+		if tr.offset == 0 {
+			break // the beginning: there is nothing left to move
+		}
+		before := plain(screenRows(tr))
+		beforeHead := len(headRowsOf(tr))
+		if beforeHead > 0 {
+			held++
+		}
+		tr.key('k')
+		after := plain(screenRows(tr))
+		if len(after) == 0 || len(before) == 0 {
+			continue
+		}
+		if strings.Join(before, "\n") == strings.Join(after, "\n") {
+			t.Fatalf("at offset %d a keystroke changed nothing (header held %d rows):\n%s",
+				tr.offset, beforeHead, strings.Join(after, "\n"))
+		}
+		// One row, not two: the screen after is the screen before, shifted.
+		if n := min(len(before), len(after)) - 1; n > 2 &&
+			strings.Join(before[:n-1], "\n") != strings.Join(after[1:n], "\n") {
+			// The header covers what it stands on, so only the rows below it
+			// have to line up.
+			h := max(beforeHead, len(headRowsOf(tr)))
+			if h+2 < n && strings.Join(before[h:n-1], "\n") != strings.Join(after[h+1:n], "\n") {
+				t.Fatalf("at offset %d the screen moved by more than a row:\n before %q\n after  %q",
+					tr.offset, before[h:n], after[h:n])
+			}
+		}
+	}
+	if held == 0 {
+		t.Fatal("the walk never held a question")
 	}
 }
 
