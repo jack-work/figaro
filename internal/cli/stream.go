@@ -369,6 +369,11 @@ func (in *interactiveInput) prefetchTranscriptPages(req transcriptPageRequest, d
 		} else {
 			in.lt.transcriptApplyPage(req, messages)
 		}
+		if req.seek != 0 && in.lt.tr.jump == nil {
+			in.pageInFlight, in.pageDone = false, nil
+			in.mu.Unlock()
+			return
+		}
 		next, need := in.lt.transcriptPageCursor()
 		if !need || in.lt.transcriptSearchingHistory() {
 			in.pageInFlight, in.pageDone = false, nil
@@ -515,15 +520,13 @@ func (in *interactiveInput) historyFetcher() aria.Fetcher {
 }
 
 func (in *interactiveInput) readTranscriptPage(ctx context.Context, req transcriptPageRequest) (aria.Page, error) {
-	limit := req.limit
-	if limit <= 0 {
-		limit = transcriptPageSize
+	if req.seek == seekForward {
+		return in.fcli.Read(ctx, req.at, 0)
 	}
-	if req.seek {
-		// Forward, so the coordinate asked for is the first thing on the page.
-		return in.fcli.Read(ctx, req.at, wireBudget(limit))
+	if req.seek == seekBackward {
+		return in.fcli.ReadBefore(ctx, req.at, 0)
 	}
-	return in.fcli.ReadBefore(ctx, req.at, wireBudget(limit))
+	return in.fcli.ReadBefore(ctx, req.at, wireBudget(req.limit))
 }
 
 func (in *interactiveInput) searchMatchesLocked(gen uint64, query string) bool {
@@ -1036,6 +1039,7 @@ func (in *interactiveInput) questionKey(delta int) keyVerdict {
 	in.mu.Lock()
 	in.cancelTranscriptSearchLocked()
 	in.lt.transcriptJumpQuestion(delta)
+	in.pageWanted = in.lt.tr.jump != nil
 	in.mu.Unlock()
 	return keyHandled
 }

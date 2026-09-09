@@ -136,7 +136,7 @@ func serve(t *testing.T, tr *transcript, w *jumpWire) {
 			tr.jumpAdvance()
 			continue
 		}
-		if req.seek {
+		if req.seek == seekForward {
 			// A jump reads where it is going: forward, at the coordinate.
 			tr.applyPage(req, w.from(int(req.at.Turn), int(req.at.Node)))
 			continue

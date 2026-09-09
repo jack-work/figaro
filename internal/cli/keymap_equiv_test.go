@@ -250,8 +250,8 @@ var pagerOracle = []struct {
 	}},
 	{"jump", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"12\"", map[string]string{
 		"0x08": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"1\"",
-		"0x0a": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
-		"0x0d": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
+		"0x0a": "off:-3 fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
+		"0x0d": "off:-3 fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\"",
 		// THE COMMAND LINE HAS THE EMACS BINDINGS NOW, and these are the ones
 		// this oracle can see: the signature records the LINE, so ^A/^E/^B/^F
 		// (cursor), ^L (repaint), ^R/^S (a search whose needle is empty) and

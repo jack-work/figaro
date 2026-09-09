@@ -208,27 +208,17 @@ type transcriptSearch struct {
 	follow bool
 }
 
-// transcriptPageRequest is one backward read: the keyset cursor to read before,
-// and how many messages to ask for. There is no direction any more: the window
-// runs to the live tail by construction, so the only history that can be
-// missing is OLDER.
+const (
+	seekForward  = 1
+	seekBackward = -1
+)
+
 type transcriptPageRequest struct {
-	// at is the coordinate to read from. Backward, it is the floor of the
-	// retained window and the read asks for what precedes it: the node offset
-	// matters, because the oldest retained slice can start mid-turn and asking
-	// for what precedes the turn would skip the rest of it forever.
 	at    aria.Anchor
-	limit int // messages to fetch; 0 means transcriptPageSize
-	// seek reads FORWARD at a coordinate the window does not hold, which is
-	// how a jump reaches a turn a thousand pages away: one read, not a walk.
-	// The window may then be disjoint from the tail, which is what the gap
-	// sentinel and Ensure are for.
-	seek bool
-	// fill is a hole inside the window rather than history below its floor.
-	// They are different verbs: a floor read extends the window, a fill closes
-	// a hole and is served by Client.Ensure, which keeps reading until the hole
-	// is gone or the store says it cannot shrink it.
-	fill *aria.Gap
+	limit int
+	seek  int
+	jump  *transcriptJump
+	fill  *aria.Gap
 }
 
 func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria.Client, figaroID string, startedAt time.Time) *transcript {
@@ -414,11 +404,9 @@ func (t *transcript) tailKeep() int {
 // milliseconds: enough to cover a local daemon round trip.
 const transcriptPrefetchScreens = 2
 
-// wantOlder reports whether anything is asking for history below the window
-// floor. Three askers, and no flags: a search or a jump walking backward, or a
-// viewport that has come within the prefetch distance of the floor.
+// wantOlder reports a history search or proximity to the window's floor.
 func (t *transcript) wantOlder() bool {
-	if t.search != nil || t.jump != nil {
+	if t.search != nil {
 		return true
 	}
 	return t.offset < transcriptPrefetchScreens*t.h
@@ -482,13 +470,18 @@ func (t *transcript) reachedFloor() {
 	t.render()
 }
 
-// pageCursor asks whether the pager wants a page of older history, and from
-// where. It is called after every input chunk and again after every landing;
-// the answer is derived, not remembered.
+// pageCursor prioritizes an explicit target over viewport prefetch.
 func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
-	// known to ossilate, so we ensure movement is monotonic by absorbing the older from the anchor.
-	// this feels dodgy or im too dumb to understand.
-	for t.active && t.wantOlder() {
+	if !t.active {
+		return transcriptPageRequest{}, false
+	}
+	if t.jump != nil {
+		if at, dir, ok := t.jumpSeek(); ok {
+			return transcriptPageRequest{at: at, seek: dir, jump: t.jump}, true
+		}
+		return transcriptPageRequest{}, false
+	}
+	for t.wantOlder() {
 		anchor, within := t.viewportAnchor()
 		before := t.from
 		gained := t.growWindow(t.pageMessages())
@@ -500,29 +493,9 @@ func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 			break
 		}
 	}
-	// A HOLE INSIDE THE WINDOW comes first: the reader is looking at it, or is
-	// about to. Closing it is Ensure's job, not a floor read, so the request
-	// carries the hole itself.
 	if gap := t.gapNear(); gap != nil {
 		hole := *gap
 		return transcriptPageRequest{fill: &hole}, true
-	}
-	// A WALK DRIVES ITS OWN FILL. gapNear reports only the hole the VIEWPORT is
-	// about to paint; a jump is heading for a coordinate it cannot see yet, and
-	// its target may be inside a hole two screens away: jumpReachOf answers
-	// "not yet" for exactly that case. Without this branch that answer has
-	// nothing to wait for: atAriaFloor below is true (the hole is INSIDE the
-	// window, not under it), so no page is requested and the walk stands there
-	// saying "jumping to the beginning…" forever. It spends budget like any other
-	// fetch, so a hole that refuses to close ends in the honest failure rather
-	// than a spin.
-	// A JUMP READS WHERE IT IS GOING. The target is a coordinate, the wire
-	// serves any coordinate, and walking backward a page at a time to reach one
-	// is how a jump to the beginning of a long aria used to be refused.
-	if t.jump != nil {
-		if at, ok := t.jumpSeek(); ok {
-			return transcriptPageRequest{at: at, seek: true, limit: t.pageMessages()}, true
-		}
 	}
 	if !t.wantOlder() {
 		return transcriptPageRequest{}, false
@@ -569,8 +542,8 @@ func (t *transcript) applyPage(req transcriptPageRequest, page aria.Page) {
 	if t.search == nil {
 		anchor, within = t.viewportAnchor()
 	}
-	if req.seek {
-		t.applySeek(page)
+	if req.seek != 0 {
+		t.applySeek(req, page)
 		return
 	}
 	t.client.SetMoreBefore(page.More.Before)
@@ -598,40 +571,52 @@ func (t *transcript) applyPage(req transcriptPageRequest, page aria.Page) {
 	t.render()
 }
 
-// applySeek folds a page read AT a coordinate rather than before the window's
-// floor: a jump's own read. What it brings may sit far below what is held, so
-// the window's floor drops onto it and the region between the two stays a hole
-// until someone scrolls into it.
-func (t *transcript) applySeek(page aria.Page) {
-	msgs := t.client.Apply(page, aria.Quiet)
-	if len(msgs) == 0 {
-		// Nothing came back. For a target below the window that is proof of
-		// where the aria begins, and the beginning may be what is already
-		// held; for anything else the target does not exist, which the walk
-		// finds out by trying to resolve it one more time.
-		t.client.SetMoreBefore(false)
-		t.reachedFloor()
-		t.settle()
-		t.jumpAdvance()
-		if t.jump != nil {
-			t.abandonJump(t.jump.target.missing())
+// applySeek resolves the request from its response, including already-held parts.
+func (t *transcript) applySeek(req transcriptPageRequest, page aria.Page) {
+	t.client.Apply(page, aria.Quiet)
+	t.invalidateWindow()
+	if t.jump == nil || req.jump != t.jump {
+		return
+	}
+	if len(page.Parts) == 0 {
+		if t.jump.target.start {
+			t.client.SetMoreBefore(false)
+			t.settle()
+			t.jumpAdvance()
+			if t.jump == nil {
+				t.render()
+				return
+			}
 		}
+		t.abandonJump(t.jump.target.missing())
 		t.render()
 		return
 	}
-	if page.More.Before {
-		t.client.SetMoreBefore(true)
-	} else if from, _ := page.Span(); !from.Less(t.from) {
-		// The read reached the beginning of the aria, and it is what the
-		// window now stands on.
+	from, _ := page.Span()
+	if !page.More.Before && !t.from.Less(from) {
 		t.client.SetMoreBefore(false)
 	}
-	if at := anchorOf(msgs[0]); at.Less(t.from) {
-		t.lowerFloor(at)
+	t.lowerFloor(from)
+	j := t.jump
+	if j.target.travel != 0 || j.target.start {
+		part := page.Parts[0]
+		if j.target.travel < 0 {
+			part = page.Parts[len(page.Parts)-1]
+		}
+		if j.target.travel > 0 && int(part.ID) <= j.target.turn ||
+			j.target.travel < 0 && int(part.ID) >= j.target.turn {
+			t.abandonJump(j.target.missing())
+			t.render()
+			return
+		}
+		j.target = jumpTarget{turn: int(part.ID)}
+		j.asked = nil
 	}
-	t.invalidateWindow()
 	t.settle()
 	t.jumpAdvance()
+	if t.jump != nil && t.jump.asked != nil {
+		t.abandonJump(t.jump.target.missing())
+	}
 	t.render()
 }
 
