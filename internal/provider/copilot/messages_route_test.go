@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"golang.org/x/net/websocket"
 
@@ -134,9 +133,15 @@ type captureBus struct {
 	lastStop  string
 	caches    []provider.AssistantCache
 	text      strings.Builder
+	onDelta   func()
 }
 
-func (b *captureBus) PushDelta(c message.Content)        { b.text.WriteString(c.Text) }
+func (b *captureBus) PushDelta(c message.Content) {
+	b.text.WriteString(c.Text)
+	if b.onDelta != nil {
+		b.onDelta()
+	}
+}
 func (b *captureBus) PushToolInvokeStart(string, string) {}
 func (b *captureBus) PushToolInvokeDelta(string, string) {}
 func (b *captureBus) PushToolReady(message.Content)      {}
@@ -154,7 +159,6 @@ func (b *captureBus) PushFigaro(_ message.Message, caches ...provider.AssistantC
 // translation had to be re-encoded from text. The accumulator is in the
 // provider now, and its output items are the server's own wire shape.
 func TestACancelledResponsesStreamHandsOverItsPartial(t *testing.T) {
-	streaming := make(chan struct{})
 	srv := newResponseServer(t, func(conn *websocket.Conn) {
 		defer conn.Close()
 		var req responseCreateRequest
@@ -164,19 +168,15 @@ func TestACancelledResponsesStreamHandsOverItsPartial(t *testing.T) {
 		_ = websocket.JSON.Send(conn, map[string]any{
 			"type": "response.output_text.delta", "delta": "half a thou",
 		})
-		close(streaming)
-		select {} // never completes: the turn is cancelled under it
+		var next any
+		_ = websocket.JSON.Receive(conn, &next) // cancellation closes the socket
 	})
 	defer srv.Close()
 
 	p := newResponsesTestProvider(srv, store.NewMemLog[[]json.RawMessage]())
-	bus := &captureBus{}
 	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		<-streaming
-		time.Sleep(50 * time.Millisecond)
-		cancel()
-	}()
+	defer cancel()
+	bus := &captureBus{onDelta: cancel} // cancel only once the consumer has the delta
 
 	err := p.Send(ctx, provider.SendInput{
 		AriaID: "aria-cancel",

@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"sort"
 	"strings"
 	"sync"
 	"text/template"
@@ -195,10 +194,10 @@ func (p *responsesProvider) sendWithToken(
 
 	response, err := readResponseStream(ctx, conn, bus)
 	if err != nil {
-		// A CANCELLED TURN HANDS OVER WHAT IT HAS, marked aborted, through the
-		// same decoder and the same push a whole response takes. Any other
-		// stream failure still drops.
-		if !errors.Is(err, context.Canceled) || len(response.Output) == 0 {
+		// Any interrupted stream hands over what it actually received. A
+		// timeout, failed response or broken socket must not erase completed
+		// calls (which may already have executed) or their native payload.
+		if len(response.Output) == 0 {
 			return err
 		}
 		partial, derr := decodeResponseAssistant(response)
@@ -590,9 +589,6 @@ func responseTools(tools []provider.Tool) []responseTool {
 }
 
 func decodeResponseArguments(raw string) (map[string]interface{}, error) {
-	if strings.TrimSpace(raw) == "" {
-		raw = "{}"
-	}
 	var arguments map[string]interface{}
 	if err := json.Unmarshal([]byte(raw), &arguments); err != nil {
 		return nil, err
@@ -955,278 +951,6 @@ func responseOptionalInt(snap form.Snapshot, key string) (int, bool, error) {
 	return value, true, nil
 }
 
-type responseObject struct {
-	ID     string            `json:"id"`
-	Output []json.RawMessage `json:"output"`
-	Status string            `json:"status"`
-	Usage  responseUsage     `json:"usage"`
-	Error  json.RawMessage   `json:"error"`
-}
-
-type responseUsage struct {
-	InputTokens        int `json:"input_tokens"`
-	OutputTokens       int `json:"output_tokens"`
-	TotalTokens        int `json:"total_tokens"`
-	InputTokensDetails struct {
-		CachedTokens     int `json:"cached_tokens"`
-		CacheWriteTokens int `json:"cache_write_tokens"`
-	} `json:"input_tokens_details"`
-	OutputTokensDetails struct {
-		ReasoningTokens int `json:"reasoning_tokens"`
-	} `json:"output_tokens_details"`
-}
-
-type responseStreamEvent struct {
-	Type         string             `json:"type"`
-	Delta        string             `json:"delta"`
-	Text         string             `json:"text"`
-	Item         responseOutputItem `json:"item"`
-	ItemID       string             `json:"item_id"`
-	CallID       string             `json:"call_id"`
-	Name         string             `json:"name"`
-	Arguments    json.RawMessage    `json:"arguments"`
-	Response     responseObject     `json:"response"`
-	Error        json.RawMessage    `json:"error"`
-	OutputIndex  int                `json:"output_index"`
-	ContentIndex int                `json:"content_index"`
-}
-
-type responseOutputItem struct {
-	Type      string            `json:"type"`
-	ID        string            `json:"id"`
-	Role      string            `json:"role"`
-	Content   []responseContent `json:"content"`
-	Summary   []responseContent `json:"summary"`
-	CallID    string            `json:"call_id"`
-	Name      string            `json:"name"`
-	Arguments json.RawMessage   `json:"arguments"`
-}
-
-// responsePartial accumulates what a cancelled stream has produced so far, in
-// the SERVER'S OWN output-item shape -- so a partial reaches the fig IR side
-// through exactly the decoder a whole response goes through.
-type responsePartial struct {
-	text      strings.Builder
-	reasoning strings.Builder
-}
-
-func (p *responsePartial) outputItems(byIndex map[int]*responseCall) []json.RawMessage {
-	var out []json.RawMessage
-	if r := p.reasoning.String(); r != "" {
-		if b, err := json.Marshal(map[string]any{
-			"type":    "reasoning",
-			"summary": []map[string]any{{"type": "summary_text", "text": r}},
-		}); err == nil {
-			out = append(out, b)
-		}
-	}
-	if t := p.text.String(); t != "" {
-		if b, err := json.Marshal(map[string]any{
-			"type":    "message",
-			"role":    "assistant",
-			"content": []map[string]any{{"type": "output_text", "text": t}},
-		}); err == nil {
-			out = append(out, b)
-		}
-	}
-	// Tool calls in the order the server opened them; an argument stream cut
-	// mid-JSON is dropped rather than sent, because a tool_use whose input
-	// never parsed cannot be replayed.
-	idxs := make([]int, 0, len(byIndex))
-	for i := range byIndex {
-		idxs = append(idxs, i)
-	}
-	sort.Ints(idxs)
-	for _, i := range idxs {
-		call := byIndex[i]
-		if call == nil || !call.ready {
-			continue
-		}
-		if b, err := json.Marshal(map[string]any{
-			"type":      "function_call",
-			"call_id":   call.ID,
-			"name":      call.Name,
-			"arguments": call.arguments.String(),
-		}); err == nil {
-			out = append(out, b)
-		}
-	}
-	return out
-}
-
-type responseCall struct {
-	ID        string
-	Name      string
-	arguments strings.Builder
-	ready     bool
-}
-
-func readResponseStream(ctx context.Context, conn *websocket.Conn, bus provider.Bus) (responseObject, error) {
-	done := make(chan struct{})
-	go func() {
-		select {
-		case <-ctx.Done():
-			_ = conn.Close()
-		case <-done:
-		}
-	}()
-	defer close(done)
-
-	calls := map[string]*responseCall{}
-	items := map[string]*responseCall{}
-	byIndex := map[int]*responseCall{}
-	// THE PARTIAL, so a cancelled stream has something to hand over. This
-	// provider's message otherwise exists only at "response.completed", built
-	// from the server's own object -- so an interrupt had nothing but the
-	// deltas, and figaro synthesised a message with no native payload behind
-	// it. The deltas are accumulated here, in the provider that knows their
-	// wire shape.
-	var partial responsePartial
-	for {
-		var raw json.RawMessage
-		if err := websocket.JSON.Receive(conn, &raw); err != nil {
-			if ctx.Err() != nil {
-				// A PREMATURE CLOSE, NOT AN EMPTY ONE. What comes back is the
-				// wire shape this provider would have received, built from
-				// what it did receive, so the message and the native payload
-				// are one accumulator's answer.
-				return responseObject{Output: partial.outputItems(byIndex)}, ctx.Err()
-			}
-			return responseObject{}, fmt.Errorf("copilot responses: receive: %w", err)
-		}
-		var event responseStreamEvent
-		if err := json.Unmarshal(raw, &event); err != nil {
-			return responseObject{}, fmt.Errorf("copilot responses: decode event: %w", err)
-		}
-		switch event.Type {
-		case "response.output_text.delta":
-			if event.Delta != "" {
-				partial.text.WriteString(event.Delta)
-				bus.PushDelta(message.Content{Type: message.ContentProse, Text: event.Delta})
-			}
-		case "response.reasoning.delta", "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
-			if event.Delta != "" {
-				partial.reasoning.WriteString(event.Delta)
-				bus.PushDelta(message.Content{Type: message.ContentThinking, Text: event.Delta})
-			}
-		case "response.output_item.added":
-			if event.Item.Type == "function_call" {
-				call := ensureResponseCall(calls, event.Item.CallID, event.Item.Name)
-				if event.Item.ID != "" {
-					items[event.Item.ID] = call
-				}
-				byIndex[event.OutputIndex] = call
-				if event.Item.Arguments != nil {
-					call.arguments.Write(responseArgumentBytes(event.Item.Arguments))
-				}
-				bus.PushToolInvokeStart(call.ID, call.Name)
-			}
-		case "response.function_call_arguments.delta":
-			call := responseCallFor(calls, items, byIndex, event)
-			if call != nil && event.Delta != "" {
-				call.arguments.WriteString(event.Delta)
-				bus.PushToolInvokeDelta(call.ID, event.Delta)
-			}
-		case "response.function_call_arguments.done":
-			call := responseCallFor(calls, items, byIndex, event)
-			if call != nil {
-				if len(event.Arguments) > 0 {
-					call.arguments.Reset()
-					call.arguments.Write(responseArgumentBytes(event.Arguments))
-				}
-				if err := readyResponseCall(call, bus); err != nil {
-					return responseObject{}, err
-				}
-			}
-		case "response.output_item.done":
-			if event.Item.Type == "function_call" {
-				call := ensureResponseCall(calls, event.Item.CallID, event.Item.Name)
-				if event.Item.ID != "" {
-					items[event.Item.ID] = call
-				}
-				if event.Item.Arguments != nil {
-					call.arguments.Reset()
-					call.arguments.Write(responseArgumentBytes(event.Item.Arguments))
-				}
-				if err := readyResponseCall(call, bus); err != nil {
-					return responseObject{}, err
-				}
-			}
-		case "response.completed":
-			return event.Response, nil
-		case "response.failed", "error":
-			if len(event.Error) > 0 && string(event.Error) != "null" {
-				return responseObject{}, fmt.Errorf("copilot responses: %s", string(event.Error))
-			}
-			if len(event.Response.Error) > 0 && string(event.Response.Error) != "null" {
-				return responseObject{}, fmt.Errorf("copilot responses: %s", string(event.Response.Error))
-			}
-			return responseObject{}, fmt.Errorf("copilot responses: %s", event.Type)
-		}
-	}
-}
-
-func ensureResponseCall(calls map[string]*responseCall, id, name string) *responseCall {
-	if id == "" {
-		id = uuid.NewString()
-	}
-	if call := calls[id]; call != nil {
-		if call.Name == "" {
-			call.Name = name
-		}
-		return call
-	}
-	call := &responseCall{ID: id, Name: name}
-	calls[id] = call
-	return call
-}
-
-func responseCallFor(calls map[string]*responseCall, items map[string]*responseCall, byIndex map[int]*responseCall, event responseStreamEvent) *responseCall {
-	if event.CallID != "" {
-		return ensureResponseCall(calls, event.CallID, event.Name)
-	}
-	if event.ItemID != "" {
-		if call := items[event.ItemID]; call != nil {
-			return call
-		}
-	}
-	// output_index is the last resort and, on the GitHub Copilot proxy, the
-	// ONLY stable handle: it re-encrypts item_id per event, so the id on a
-	// delta never equals the one announced at output_item.added and every
-	// streamed argument fragment was silently dropped.
-	return byIndex[event.OutputIndex]
-}
-
-func readyResponseCall(call *responseCall, bus provider.Bus) error {
-	if call.ready {
-		return nil
-	}
-	raw := strings.TrimSpace(call.arguments.String())
-	arguments, err := decodeResponseArguments(raw)
-	if err != nil {
-		return fmt.Errorf("copilot responses: function %q arguments: %w", call.Name, err)
-	}
-	call.ready = true
-	bus.PushToolReady(message.Content{
-		Type:       message.ContentToolInvoke,
-		ToolCallID: call.ID,
-		ToolName:   call.Name,
-		Arguments:  arguments,
-	})
-	return nil
-}
-
-func responseArgumentBytes(raw json.RawMessage) []byte {
-	if len(raw) == 0 {
-		return nil
-	}
-	var encoded string
-	if json.Unmarshal(raw, &encoded) == nil {
-		return []byte(encoded)
-	}
-	return raw
-}
-
 func decodeResponseAssistant(response responseObject) (message.Message, error) {
 	out := message.Message{
 		Role: message.RoleOutput,
@@ -1261,10 +985,10 @@ func decodeResponseAssistant(response responseObject) (message.Message, error) {
 				}
 			}
 		case "function_call":
-			arguments, err := decodeResponseArguments(string(responseArgumentBytes(item.Arguments)))
-			if err != nil {
-				return message.Message{}, fmt.Errorf("copilot responses: function %q arguments: %w", item.Name, err)
+			if item.CallID == "" || item.Name == "" {
+				return message.Message{}, fmt.Errorf("copilot responses: function call missing call_id or name")
 			}
+			arguments := responseArguments(string(responseArgumentBytes(item.Arguments)))
 			out.Content = append(out.Content, message.Content{
 				Type:       message.ContentToolInvoke,
 				ToolCallID: item.CallID,
@@ -1279,10 +1003,10 @@ func decodeResponseAssistant(response responseObject) (message.Message, error) {
 			}
 		}
 	}
-	if hasResponseToolInvoke(out.Content) {
-		out.StopReason = message.StopToolInvoke
-	} else if response.Status == "incomplete" {
+	if response.Status == "incomplete" {
 		out.StopReason = message.StopLength
+	} else if hasResponseToolInvoke(out.Content) {
+		out.StopReason = message.StopToolInvoke
 	} else {
 		out.StopReason = message.StopEnd
 	}
@@ -1299,8 +1023,11 @@ func hasResponseToolInvoke(content []message.Content) bool {
 }
 
 func isResponseUnauthorized(err error) bool {
-	text := strings.ToLower(err.Error())
-	return strings.Contains(text, "401") || strings.Contains(text, "unauthorized")
+	var rejected *responseAPIError
+	if !errors.As(err, &rejected) || !rejected.retryable {
+		return false
+	}
+	return rejected.status == http.StatusUnauthorized || rejected.code == "unauthorized" || rejected.code == "invalid_api_key"
 }
 
 // toolImageCaption names the call an image came from. The Responses shape

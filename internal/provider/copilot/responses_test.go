@@ -491,6 +491,20 @@ func TestResponsesProviderInvalidatesCacheOnModelSwitch(t *testing.T) {
 }
 
 func TestResponsesProviderDrivesFigaroToolRoundTrip(t *testing.T) {
+	for _, malformed := range []bool{false, true} {
+		name := "valid"
+		if malformed {
+			name = "quarantined"
+		}
+		t.Run(name, func(t *testing.T) { runResponsesToolRoundTrip(t, malformed) })
+	}
+}
+
+func runResponsesToolRoundTrip(t *testing.T, malformed bool) {
+	arguments := `{"value":"ciao"}`
+	if malformed {
+		arguments = `{"value":"unfinished`
+	}
 	var requestCount atomic.Int32
 	firstRequest := make(chan responseCreateRequest, 1)
 	secondRequest := make(chan responseCreateRequest, 1)
@@ -523,7 +537,7 @@ func TestResponsesProviderDrivesFigaroToolRoundTrip(t *testing.T) {
 			require.NoError(t, websocket.JSON.Send(conn, map[string]any{
 				"type":      "response.function_call_arguments.done",
 				"item_id":   "item-1",
-				"arguments": `{"value":"ciao"}`,
+				"arguments": arguments,
 			}))
 			require.NoError(t, websocket.JSON.Send(conn, map[string]any{
 				"type": "response.completed",
@@ -541,7 +555,7 @@ func TestResponsesProviderDrivesFigaroToolRoundTrip(t *testing.T) {
 							"type":      "function_call",
 							"call_id":   "call-1",
 							"name":      "echo",
-							"arguments": `{"value":"ciao"}`,
+							"arguments": arguments,
 						},
 					},
 				},
@@ -610,7 +624,11 @@ func TestResponsesProviderDrivesFigaroToolRoundTrip(t *testing.T) {
 	}
 
 	require.Equal(t, int32(2), requestCount.Load())
-	require.Equal(t, int32(1), echo.calls.Load())
+	if malformed {
+		require.Zero(t, echo.calls.Load(), "quarantined input must never execute")
+	} else {
+		require.Equal(t, int32(1), echo.calls.Load())
+	}
 	first := <-firstRequest
 	second := <-secondRequest
 	assert.Equal(t, first.Headers["X-Client-Session-Id"], second.Headers["X-Client-Session-Id"])
@@ -621,7 +639,11 @@ func TestResponsesProviderDrivesFigaroToolRoundTrip(t *testing.T) {
 	joined := strings.Join(replayed, "\n")
 	assert.Contains(t, joined, `"encrypted_content":"opaque-reasoning"`)
 	assert.Contains(t, joined, `"type":"function_call_output"`)
-	assert.Contains(t, joined, `"output":"tool:ciao"`)
+	if malformed {
+		assert.Contains(t, joined, "INVALID_JSON")
+	} else {
+		assert.Contains(t, joined, `"output":"tool:ciao"`)
+	}
 
 	var context []message.Message
 	for _, m := range agent.Context() {
@@ -638,7 +660,12 @@ func TestResponsesProviderDrivesFigaroToolRoundTrip(t *testing.T) {
 	assert.Equal(t, "call-1", context[1].Content[1].ToolCallID)
 	assert.Equal(t, message.RoleInput, context[2].Role)
 	assert.Equal(t, message.ContentToolResult, context[2].Content[0].Type)
-	assert.Equal(t, "tool:ciao", context[2].Content[0].Text)
+	if malformed {
+		assert.True(t, context[2].Content[0].IsError)
+		assert.Equal(t, message.InvalidJSONResult(arguments), context[2].Content[0].Text)
+	} else {
+		assert.Equal(t, "tool:ciao", context[2].Content[0].Text)
+	}
 	assert.Equal(t, message.StopEnd, context[3].StopReason)
 	assert.Equal(t, "finished", context[3].Content[0].Text)
 }
@@ -711,7 +738,7 @@ func TestResponsesProviderSuppliesCacheWithoutAppendingIt(t *testing.T) {
 	assert.Len(t, log.Read(), 1)
 }
 
-func TestResponsesProviderRejectsMalformedFunctionArguments(t *testing.T) {
+func TestResponsesProviderQuarantinesMalformedFunctionArguments(t *testing.T) {
 	server := newResponseServer(t, func(conn *websocket.Conn) {
 		defer conn.Close()
 		var request responseCreateRequest
@@ -730,16 +757,32 @@ func TestResponsesProviderRejectsMalformedFunctionArguments(t *testing.T) {
 			"item_id":   "item-1",
 			"arguments": `{"command":`,
 		}))
+		require.NoError(t, websocket.JSON.Send(conn, map[string]any{
+			"type": "response.completed", "response": map[string]any{
+				"status": "completed", "output": []any{map[string]any{
+					"type": "function_call", "call_id": "call-1", "name": "bash", "arguments": `{"command":`,
+				}},
+			},
+		}))
 	})
 
 	p := newResponsesTestProvider(server, store.NewMemLog[[]json.RawMessage]())
 	log := newResponsesInputLog(t)
 	bus := &responseTestBus{}
 	err := p.Send(context.Background(), provider.SendInput{AriaID: "aria-1", FigLog: log}, bus)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), `function "bash" arguments`)
+	require.NoError(t, err)
 	assert.Len(t, log.Read(), 1)
-	assert.Empty(t, bus.messages)
+	require.Len(t, bus.messages, 1)
+	require.Len(t, bus.toolReady, 1)
+	raw, bad := message.MalformedArgsOf(bus.messages[0].Content[0])
+	require.True(t, bad)
+	assert.Equal(t, `{"command":`, raw)
+	assert.Equal(t, bus.messages[0].Content[0].Arguments, bus.toolReady[0].Arguments)
+	require.Len(t, bus.cache, 1)
+	var native responseOutputItem
+	require.NoError(t, json.Unmarshal(bus.cache[0].Payload[0], &native))
+	_, err = decodeResponseArguments(string(responseArgumentBytes(native.Arguments)))
+	require.NoError(t, err, "quarantine must also make the cached native input replayable")
 }
 
 func TestResponsesInputPreservesCachedAssistantOutput(t *testing.T) {
@@ -870,8 +913,8 @@ func TestDecodeResponseAssistantPreservesReasoningSummary(t *testing.T) {
 	assert.Equal(t, "considered the constraints", out.Content[0].Text)
 }
 
-func TestDecodeResponseAssistantRejectsNonObjectFunctionArguments(t *testing.T) {
-	_, err := decodeResponseAssistant(responseObject{
+func TestDecodeResponseAssistantQuarantinesNonObjectFunctionArguments(t *testing.T) {
+	out, err := decodeResponseAssistant(responseObject{
 		Status: "completed",
 		Output: []json.RawMessage{json.RawMessage(`{
 			"type":"function_call",
@@ -880,8 +923,11 @@ func TestDecodeResponseAssistantRejectsNonObjectFunctionArguments(t *testing.T) 
 			"arguments":"[]"
 		}`)},
 	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), `function "bash" arguments`)
+	require.NoError(t, err)
+	require.Len(t, out.Content, 1)
+	raw, bad := message.MalformedArgsOf(out.Content[0])
+	require.True(t, bad)
+	assert.Equal(t, "[]", raw)
 }
 
 func TestCopilotSeparatesMessagesAndResponsesCaches(t *testing.T) {
@@ -1270,7 +1316,7 @@ func TestResponseCallForReencryptedItemID(t *testing.T) {
 
 	added := responseStreamEvent{
 		Type:        "response.output_item.added",
-		OutputIndex: 1,
+		OutputIndex: responseIndex(1),
 		Item: responseOutputItem{
 			Type:   "function_call",
 			ID:     "ENCRYPTED-BLOB-AT-ADD",
@@ -1280,13 +1326,13 @@ func TestResponseCallForReencryptedItemID(t *testing.T) {
 	}
 	call := ensureResponseCall(calls, added.Item.CallID, added.Item.Name)
 	items[added.Item.ID] = call
-	byIndex[added.OutputIndex] = call
+	byIndex[*added.OutputIndex] = call
 
 	// A delta as the proxy actually sends it: no call_id, an item_id that is a
 	// fresh encryption of the same item, and the item's output_index.
 	delta := responseStreamEvent{
 		Type:        "response.function_call_arguments.delta",
-		OutputIndex: 1,
+		OutputIndex: responseIndex(1),
 		ItemID:      "A-DIFFERENT-ENCRYPTION-OF-THE-SAME-ITEM",
 		Delta:       `{"pa`,
 	}
@@ -1295,7 +1341,7 @@ func TestResponseCallForReencryptedItemID(t *testing.T) {
 	}
 
 	// The direct handles still win, and still work.
-	byItem := responseStreamEvent{ItemID: "ENCRYPTED-BLOB-AT-ADD", OutputIndex: 99}
+	byItem := responseStreamEvent{ItemID: "ENCRYPTED-BLOB-AT-ADD", OutputIndex: responseIndex(99)}
 	if got := responseCallFor(calls, items, byIndex, byItem); got != call {
 		t.Fatalf("item_id lookup regressed: got %v, want %p", got, call)
 	}
@@ -1306,7 +1352,7 @@ func TestResponseCallForReencryptedItemID(t *testing.T) {
 
 	// An index nobody announced is still nothing: the fallback must not
 	// invent a call for an unrelated output item.
-	stray := responseStreamEvent{ItemID: "UNKNOWN", OutputIndex: 7}
+	stray := responseStreamEvent{ItemID: "UNKNOWN", OutputIndex: responseIndex(7)}
 	if got := responseCallFor(calls, items, byIndex, stray); got != nil {
 		t.Fatalf("unknown output_index resolved to %v, want nil", got)
 	}
