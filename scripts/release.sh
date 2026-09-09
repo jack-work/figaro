@@ -72,17 +72,24 @@ run() {
 
 # github_slug prints owner/name for whichever remote points at GitHub, so the
 # wait can ask GitHub about the tag no matter which remote we pushed to.
+#
+# Both urls, fetch and push: a mirror we deliberately cannot write to still
+# names the repository. Reading only the push url made a remote with a
+# disabled push url invisible, the wait was skipped, and `gh release create
+# --verify-tag` outran the mirror it should have waited for.
 github_slug() {
 	local r url
 	for r in $(git remote); do
-		url=$(git remote get-url --push "$r" 2>/dev/null) || continue
-		case "$url" in
-			*github.com[:/]*)
-				printf '%s\n' "$url" |
-					sed -E 's#^.*github\.com[:/]+##; s#\.git$##'
-				return 0
-				;;
-		esac
+		for url in $(git remote get-url --all "$r" 2>/dev/null) \
+		           $(git remote get-url --push --all "$r" 2>/dev/null); do
+			case "$url" in
+				*github.com[:/]*)
+					printf '%s\n' "$url" |
+						sed -E 's#^.*github\.com[:/]+##; s#\.git$##'
+					return 0
+					;;
+			esac
+		done
 	done
 	return 1
 }
