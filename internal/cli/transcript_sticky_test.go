@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -39,6 +40,17 @@ func stickyPager(t testing.TB, firstTurn, turns, nodes, h int) *transcript {
 	return tr
 }
 
+// headEntryOf is the entry that starts a turn: the one that draws its question.
+func headEntryOf(tr *transcript, turn int) (*lineEntry, bool) {
+	for k := range tr.index.entries {
+		e := &tr.index.entries[k]
+		if e.turn == turn && !e.isGap() && e.key.from() == 0 {
+			return e, true
+		}
+	}
+	return nil, false
+}
+
 // bodyRows is what the frame paints below the header.
 func bodyRows(tr *transcript) []string {
 	body, _ := tr.layout(len(tr.footLines()))
@@ -74,11 +86,11 @@ func TestSticky_NothingPinnedAtTheHeadOfATurn(t *testing.T) {
 // exists for: inside a turn's answer, its question is still on screen.
 func TestSticky_PinsTheQuestionOnceItLeavesTheBody(t *testing.T) {
 	tr := stickyPager(t, 1, 3, 12, 24)
-	head, ok := tr.headEntry(2)
+	head, ok := headEntryOf(tr, 2)
 	if !ok {
 		t.Fatal("fixture: turn 2 is not held")
 	}
-	block := len(tr.stickyBlock(2))
+	block := len(tr.stickyBlockOf(2).rows)
 	tr.offset = entryRowsStart(head) + block + 2 // inside turn 2's answer
 	tr.buildIndex()
 
@@ -96,40 +108,49 @@ func TestSticky_PinsTheQuestionOnceItLeavesTheBody(t *testing.T) {
 }
 
 // TestSticky_HandsRowsBackAcrossATurnBoundary walks one line at a time through
-// a boundary and asserts the seam: every row of the question is either in the
-// body or in the header, never both, and the header holds the rows nearest the
-// body in order.
+// a boundary and pins the seam: what the header shows has left the body, the
+// body picks up exactly where the block left off, and nothing stands twice.
 func TestSticky_HandsRowsBackAcrossATurnBoundary(t *testing.T) {
 	tr := stickyPager(t, 1, 3, 8, 24)
-	head, ok := tr.headEntry(2)
+	head, ok := headEntryOf(tr, 2)
 	if !ok {
 		t.Fatal("fixture: turn 2 is not held")
 	}
 	base := entryRowsStart(head)
-	block := tr.stickyBlock(2)
+	q := tr.stickyBlockOf(2)
 
-	for above := 0; above <= len(block); above++ {
+	for above := 0; above <= len(q.rows); above++ {
 		tr.offset = base + above
 		tr.buildIndex()
 		gotTurn, gotAbove := tr.stickyTurn()
 		if gotTurn != 2 || gotAbove != above {
 			t.Fatalf("at offset %d: stickyTurn = (%d, %d), want (2, %d)", tr.offset, gotTurn, gotAbove, above)
 		}
-		pinned := plain(headRowsOf(tr))
-		// The rule closes the header; above it sit the rows just departed.
-		want := block[max(0, above-stickyText):above]
-		got := pinned[stickyText-len(want) : stickyText]
-		for i := range want {
-			if got[i] != strings.TrimRight(stripANSI(want[i].text), " ") {
-				t.Fatalf("at offset %d, header row %d = %q, want the body row it replaced %q",
-					tr.offset, i, got[i], want[i].text)
+		body := plain(bodyRows(tr))
+		if above < len(q.rows) && len(body) > 0 {
+			if body[0] != strings.TrimRight(stripANSI(q.rows[above].text), " ") {
+				t.Fatalf("at offset %d the body starts at %q, want %q: the header and the body must meet",
+					tr.offset, body[0], q.rows[above].text)
 			}
 		}
-		body := plain(bodyRows(tr))
-		if len(body) > 0 && above < len(block) {
-			if body[0] != strings.TrimRight(stripANSI(block[above].text), " ") {
-				t.Fatalf("at offset %d the body starts at %q, want %q: the header and the body must meet",
-					tr.offset, body[0], block[above].text)
+		for _, row := range plain(headRowsOf(tr)) {
+			if strings.TrimSpace(row) == "" || strings.HasPrefix(strings.TrimSpace(row), "\u2500") {
+				continue
+			}
+			// Every pinned row is one of the question's own, from above the body.
+			found := false
+			for i := q.textLo; i < min(q.textHigh, above); i++ {
+				if strings.TrimRight(stripANSI(q.rows[i].text), " ") == row {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("at offset %d the header shows %q, which is not question text above the body", tr.offset, row)
+			}
+			for _, b := range body {
+				if b == row {
+					t.Fatalf("at offset %d the row %q stands in the header and the body at once", tr.offset, row)
+				}
 			}
 		}
 	}
@@ -140,7 +161,7 @@ func TestSticky_HandsRowsBackAcrossATurnBoundary(t *testing.T) {
 // the release happens there, one pair of rows before its question.
 func TestSticky_ReleasesAtTheNextQuestion(t *testing.T) {
 	tr := stickyPager(t, 1, 3, 8, 24)
-	next, ok := tr.headEntry(3)
+	next, ok := headEntryOf(tr, 3)
 	if !ok {
 		t.Fatal("fixture: turn 3 is not held")
 	}
@@ -183,7 +204,7 @@ func TestSticky_PinsAQuestionWhoseHeadIsNotHeld(t *testing.T) {
 	tr.follow = false
 	tr.buildIndex()
 
-	if _, ok := tr.headEntry(4); ok {
+	if _, ok := headEntryOf(tr, 4); ok {
 		t.Fatal("fixture: the head slice must not be held")
 	}
 	if turn, above := tr.stickyTurn(); turn != 4 || above == 0 {
@@ -204,19 +225,22 @@ func TestSticky_PinsAQuestionWhoseHeadIsNotHeld(t *testing.T) {
 // by the path that draws the block inline, so the two cannot drift.
 func TestSticky_HeaderIsTheSameComponentAsTheBody(t *testing.T) {
 	tr := stickyPager(t, 1, 2, 4, 24)
-	head, ok := tr.headEntry(2)
+	head, ok := headEntryOf(tr, 2)
 	if !ok {
 		t.Fatal("fixture: turn 2 is not held")
 	}
-	block := tr.stickyBlock(2)
-	if len(block) == 0 {
+	q := tr.stickyBlockOf(2)
+	if len(q.rows) == 0 {
 		t.Fatal("turn 2 composed no question")
 	}
-	for i, r := range block {
+	for i, r := range q.rows {
 		if got := head.rows[i]; got.text != r.text || got.ref != r.ref {
 			t.Fatalf("row %d differs between the header and the body:\n header %q %+v\n body   %q %+v",
 				i, r.text, r.ref, got.text, got.ref)
 		}
+	}
+	if q.empty() {
+		t.Fatal("the question has no text rows of its own")
 	}
 }
 
@@ -338,5 +362,180 @@ func TestSticky_FollowsAWalkIntoHistory(t *testing.T) {
 			t.Fatalf("at offset %d (turn %d, %d rows above) the question is in head=%v body=%v",
 				off, turn, above, inHead, inBody)
 		}
+	}
+}
+
+// richTurn is the shape a real exchange has: an attributed question, the form
+// state that arrived with it, and a tall answer.
+func richTurn(id uint64, nodes int) aria.TurnPart {
+	var ns []livedoc.Node
+	for n := range nodes {
+		ns = append(ns, livedoc.Node{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("NODE%d-%d", id, n)})
+	}
+	return aria.TurnPart{Turn: aria.Turn{
+		ID: id, Inquiry: fmt.Sprintf("please commit %d", id), Sealed: true,
+		InquirySegments: []aria.InquirySegment{{Sender: "Gluck", Text: fmt.Sprintf("please commit %d", id)}},
+		FormDeltas: map[string]livedoc.FormDelta{
+			"@f.datetime": {
+				Value: json.RawMessage(`"Tuesday, September 8, 2026"`),
+				Kind:  livedoc.FormBound, Event: livedoc.FormSet, Form: "@f",
+			},
+		},
+		Nodes: ns,
+	}}
+}
+
+func richPager(t testing.TB, turns, nodes, h int) *transcript {
+	t.Helper()
+	client := aria.NewClient()
+	var parts []aria.TurnPart
+	for i := range turns {
+		parts = append(parts, richTurn(uint64(i+1), nodes))
+	}
+	client.Apply(aria.Page{Parts: parts}, aria.Notify)
+	view := &ariaView{settings: &renderSettings{sticky: true}}
+	tr := newTranscript(ldrender.NewFakeTerminal(64, h), 64, h, view, client, "aria1234", time.Time{})
+	tr.enter()
+	tr.follow = false
+	tr.buildIndex()
+	return tr
+}
+
+// TestSticky_PinsTheQuestionNotTheFormDeltas: the state that arrived with a
+// question is not the question. Scrolled past the block, the header names the
+// exchange.
+func TestSticky_PinsTheQuestionNotTheFormDeltas(t *testing.T) {
+	tr := richPager(t, 3, 8, 24)
+	head, ok := headEntryOf(tr, 2)
+	if !ok {
+		t.Fatal("fixture: turn 2 is not held")
+	}
+	q := tr.stickyBlockOf(2)
+	if q.textHigh >= len(q.rows) {
+		t.Fatal("fixture: the block carries no form deltas below its text")
+	}
+	tr.offset = entryRowsStart(head) + len(q.rows) + 1
+	tr.buildIndex()
+
+	pinned := strings.Join(plain(headRowsOf(tr)), "\n")
+	if !strings.Contains(pinned, "please commit 2") {
+		t.Fatalf("the header does not name the exchange:\n%s", pinned)
+	}
+	if strings.Contains(pinned, "Figaro saw") {
+		t.Fatalf("the header pinned a form delta instead of the question:\n%s", pinned)
+	}
+}
+
+// TestSticky_NamesTheTurnBesideTheSender: a question pinned out of its place in
+// the conversation carries its address.
+func TestSticky_NamesTheTurnBesideTheSender(t *testing.T) {
+	tr := richPager(t, 3, 8, 24)
+	head, _ := headEntryOf(tr, 2)
+	q := tr.stickyBlockOf(2)
+	tr.offset = entryRowsStart(head) + len(q.rows) + 1
+	tr.buildIndex()
+
+	pinned := strings.Join(plain(headRowsOf(tr)), "\n")
+	if !strings.Contains(pinned, "2 Gluck") {
+		t.Fatalf("the pinned question does not carry its turn beside the sender:\n%s", pinned)
+	}
+}
+
+// TestSticky_LiveTurnDoesNotStandTwice is the defect a shadowing open turn
+// produced: the header counted rows against the turn's first entry while the
+// body was painting its open copy, so the question was drawn in both.
+func TestSticky_LiveTurnDoesNotStandTwice(t *testing.T) {
+	client := aria.NewClient()
+	client.Apply(aria.Page{Parts: []aria.TurnPart{richTurn(1, 6)}}, aria.Notify)
+	// Turn 2 opens: its question commits, then its answer streams.
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
+		ID: 2, Inquiry: "please commit", InquirySegments: []aria.InquirySegment{{Sender: "Gluck", Text: "please commit"}},
+	}}}}, aria.Notify)
+	for i := range 8 {
+		client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: 2, Live: &aria.Live{
+			From: 0, V: i, Nodes: []aria.NodeDelta{{ID: uint64(i), Set: map[string]any{
+				"type": "prose", "markdown": fmt.Sprintf("NODE2-%d", i),
+			}}},
+		}}}}}, aria.Notify)
+	}
+
+	view := &ariaView{settings: &renderSettings{sticky: true}}
+	tr := newTranscript(ldrender.NewFakeTerminal(64, 16), 64, 16, view, client, "aria1234", time.Time{})
+	tr.enter()
+	tr.follow = false
+	tr.buildIndex()
+
+	for off := range tr.index.total {
+		tr.offset = off
+		tr.buildIndex()
+		body := plain(bodyRows(tr))
+		head := plain(headRowsOf(tr))
+		for _, row := range head[:len(head)-1] { // the last row is the rule
+			if strings.TrimSpace(row) == "" {
+				continue
+			}
+			for _, b := range body {
+				if b == row && strings.TrimSpace(b) != "" {
+					t.Fatalf("at offset %d the row %q stands in the header and the body at once:\nheader %q\nbody %q",
+						off, row, plain(headRowsOf(tr)), body)
+				}
+			}
+		}
+	}
+}
+
+// TestSticky_JumpTravelsBetweenQuestions: with a question pinned the unit of
+// travel is the exchange.
+func TestSticky_JumpTravelsBetweenQuestions(t *testing.T) {
+	tr := richPager(t, 4, 6, 24)
+	starts := tr.stickyStarts()
+	if len(starts) < 3 {
+		t.Fatalf("fixture: %d questions in the window, want at least 3", len(starts))
+	}
+	tr.offset = starts[len(starts)-1]
+	tr.buildIndex()
+
+	tr.stickyJump(-1)
+	if tr.offset != starts[len(starts)-2] {
+		t.Fatalf("back one question landed at %d, want %d", tr.offset, starts[len(starts)-2])
+	}
+	tr.stickyJump(1)
+	if tr.offset != starts[len(starts)-1] {
+		t.Fatalf("forward one question landed at %d, want %d", tr.offset, starts[len(starts)-1])
+	}
+	// A question lands with its own text in the body, not pinned above it.
+	if _, above := tr.stickyTurn(); above != 0 {
+		t.Fatalf("landing on a question pinned %d of its rows; it speaks for itself", above)
+	}
+}
+
+// TestSticky_EllipsisMarksAQuestionTooTallToPin.
+func TestSticky_EllipsisMarksAQuestionTooTallToPin(t *testing.T) {
+	client := aria.NewClient()
+	long := strings.TrimSpace(strings.Repeat("a very long question that will wrap across several rows ", 6))
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
+		ID: 1, Inquiry: long, Sealed: true,
+		InquirySegments: []aria.InquirySegment{{Sender: "Gluck", Text: long}},
+		Nodes: []livedoc.Node{
+			{Type: livedoc.NodeProse, Markdown: "NODE1-0"},
+			{Type: livedoc.NodeProse, Markdown: "NODE1-1"},
+			{Type: livedoc.NodeProse, Markdown: "NODE1-2"},
+		},
+	}}}}, aria.Notify)
+	view := &ariaView{settings: &renderSettings{sticky: true}}
+	tr := newTranscript(ldrender.NewFakeTerminal(64, 16), 64, 16, view, client, "aria1234", time.Time{})
+	tr.enter()
+	tr.follow = false
+	tr.buildIndex()
+	q := tr.stickyBlockOf(1)
+	if q.textHigh-q.textLo <= stickyText {
+		t.Fatalf("fixture: the question is %d rows, want more than %d", q.textHigh-q.textLo, stickyText)
+	}
+	tr.offset = len(q.rows) + 1
+	tr.buildIndex()
+
+	pinned := plain(headRowsOf(tr))
+	if !strings.Contains(strings.Join(pinned, "\n"), strings.TrimSpace(stickyEllipsis)) {
+		t.Fatalf("a question too tall to pin was not marked:\n%s", strings.Join(pinned, "\n"))
 	}
 }

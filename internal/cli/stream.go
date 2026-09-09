@@ -1066,7 +1066,11 @@ func inputSelectPrev(in *interactiveInput, ev keyEvent) keyVerdict {
 func (in *interactiveInput) selectNodeKey(delta int, ev keyEvent) keyVerdict {
 	in.mu.Lock()
 	in.cancelTranscriptSearchLocked()
-	in.lt.transcriptSelect(delta, ev.shift || ev.alt)
+	if in.set.sticky && !ev.shift && !ev.alt {
+		in.lt.transcriptJumpQuestion(delta)
+	} else {
+		in.lt.transcriptSelect(delta, ev.shift || ev.alt)
+	}
 	in.mu.Unlock()
 	in.pageWanted = true
 	return keyHandled

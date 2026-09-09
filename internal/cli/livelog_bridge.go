@@ -632,6 +632,13 @@ func (t *livelogTurn) transcriptSelect(delta int, extend bool) {
 	t.tr.render()
 }
 
+// transcriptJumpQuestion travels to the question before or after the one the
+// reader is inside: what ^N/^P mean while the header is up.
+func (t *livelogTurn) transcriptJumpQuestion(delta int) {
+	t.tr.stickyJump(delta)
+	t.tr.render()
+}
+
 // transcriptClickable reports whether a left click on this screen row would hit
 // a node. The input loop asks BEFORE it acts so that a click on chrome does not
 // cancel a search prompt the reader is still typing into: the mouse is the one

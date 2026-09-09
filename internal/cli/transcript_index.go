@@ -114,7 +114,7 @@ func (t *transcript) buildIndex() {
 	}
 	if t.cacheW != t.w { // width changed: cached rows are stale
 		t.rowCache = map[sliceKey]cachedMessage{}
-		t.stickyCache = map[sliceKey]cachedMessage{}
+		t.stickyCache = map[sliceKey]stickyQuestion{}
 		t.cacheW = t.w
 	}
 	entries, total := t.index.scratch[:0], 0

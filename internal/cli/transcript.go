@@ -169,10 +169,10 @@ type transcript struct {
 	// without invalidating a single cached row; the cue and the highlight are
 	// applied per painted row by window()/entryLine().
 	rowCache map[sliceKey]cachedMessage
-	// stickyCache holds the inquiry block of a turn the reader is inside, for
+	// stickyCache holds the question block of a turn the reader is inside, for
 	// the header (see transcript_sticky.go). Keyed and invalidated like
 	// rowCache, whose rows these are.
-	stickyCache map[sliceKey]cachedMessage
+	stickyCache map[sliceKey]stickyQuestion
 	cacheW      int
 	selection   nodeSelection
 	expanded    map[nodeRef]bool
@@ -231,7 +231,7 @@ func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria
 	return &transcript{
 		out: out, view: view, client: client,
 		status: newSessionStatus(figaroID, startedAt), w: w, h: h,
-		rowCache: map[sliceKey]cachedMessage{}, stickyCache: map[sliceKey]cachedMessage{},
+		rowCache: map[sliceKey]cachedMessage{}, stickyCache: map[sliceKey]stickyQuestion{},
 		expanded: map[nodeRef]bool{},
 	}
 }
@@ -1170,10 +1170,20 @@ func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 // only the pager has: the Ctrl-O coordinate row above each block, and the
 // per-block expansion state a gesture toggles.
 func (t *transcript) composer(m aria.Message) ldrender.Composer {
+	sender := dimSender
+	if t.sticky() {
+		// The turn's own index, beside the name of whoever asked: with a
+		// question pinned out of its place in the conversation, the address is
+		// what says where it came from.
+		turn := m.Turn
+		sender = func(name string) string {
+			return dimSender(strconv.Itoa(turn) + " " + strings.TrimLeft(name, " "))
+		}
+	}
 	c := ldrender.Composer{
 		// The pager is the surface where Enter means something, so its view
 		// may open arguments as well as output (see ariaView.gesture).
-		View: pagerView(t.view), Header: messageHeader, Rule: t.transRule, Sender: dimSender, Tick: t.tick,
+		View: pagerView(t.view), Header: messageHeader, Rule: t.transRule, Sender: sender, Tick: t.tick,
 		Expanded: func(block int) bool { return t.expanded[nodeRefAt(m, block)] },
 		// Deltas share the node's expansion gesture: Enter on the node opens
 		// its collapsed state line along with its output and arguments.
