@@ -134,7 +134,7 @@ func TestSticky_HandsRowsBackAcrossATurnBoundary(t *testing.T) {
 			}
 		}
 		for _, row := range plain(headRowsOf(tr)) {
-			if strings.TrimSpace(row) == "" || strings.HasPrefix(strings.TrimSpace(row), "\u2500") {
+			if strings.TrimSpace(row) == "" {
 				continue
 			}
 			// Every pinned row is one of the question's own, from above the
@@ -264,17 +264,13 @@ func TestSticky_TakesNoRoomWhenItPinsNothing(t *testing.T) {
 		if len(rows) != tr.headRows() {
 			t.Fatalf("at offset %d the header painted %d rows, reserved %d", off, len(rows), tr.headRows())
 		}
-		switch len(rows) {
-		case 0:
+		if len(rows) == 0 {
 			bareSeen++
-			if body != bare {
-				t.Fatalf("at offset %d nothing is pinned but the body is %d rows, want %d", off, body, bare)
-			}
-		default:
+		} else {
 			pinned++
-			if body != bare-(stickyText+1) {
-				t.Fatalf("at offset %d a pinned question left the body %d rows, want %d", off, body, bare-(stickyText+1))
-			}
+		}
+		if body != bare-len(rows) {
+			t.Fatalf("at offset %d the header holds %d rows and the body %d, want %d", off, len(rows), body, bare-len(rows))
 		}
 	}
 	if pinned == 0 || bareSeen == 0 {
@@ -287,12 +283,12 @@ func TestSticky_TakesNoRoomWhenItPinsNothing(t *testing.T) {
 func TestSticky_OffCostsNothing(t *testing.T) {
 	tr := stickyPager(t, 1, 3, 6, 24)
 	on, _ := tr.layout(len(tr.footLines()))
+	held := len(headRowsOf(tr))
 	tr.view.(*ariaView).settings.sticky = false
 	off, _ := tr.layout(len(tr.footLines()))
-	if off != on+stickyText+1 {
-		t.Fatalf("the mode off gives the body %d rows, on gives %d: the difference must be the reservation", off, on)
+	if off != on+held {
+		t.Fatalf("the mode off gives the body %d rows, on gives %d, holding %d", off, on, held)
 	}
-	_ = off
 	if rows := headRowsOf(tr); rows != nil {
 		t.Fatalf("the mode is off and %d header rows were painted", len(rows))
 	}
@@ -461,6 +457,7 @@ func TestSticky_NamesTheTurn(t *testing.T) {
 	if len(rows) == 0 {
 		t.Fatal("nothing pinned")
 	}
+	_ = rows
 	if !strings.HasSuffix(rows[0], "2") {
 		t.Fatalf("the pinned question does not carry its turn at the right edge:\n%s", strings.Join(rows, "\n"))
 	}
@@ -497,11 +494,7 @@ func TestSticky_LiveTurnDoesNotStandTwice(t *testing.T) {
 		tr.offset = off
 		tr.buildIndex()
 		body := plain(bodyRows(tr))
-		head := plain(headRowsOf(tr))
-		if len(head) == 0 {
-			continue
-		}
-		for _, row := range head[:len(head)-1] { // the last row is the rule
+		for _, row := range plain(headRowsOf(tr)) {
 			if strings.TrimSpace(row) == "" {
 				continue
 			}
@@ -616,12 +609,8 @@ func TestSticky_PinsTheHeadOfTheQuestionNotAMiddleChunk(t *testing.T) {
 	for above := 1; above <= len(q.rows); above++ {
 		tr.offset = above
 		tr.buildIndex()
-		pinned := plain(headRowsOf(tr))
-		if len(pinned) == 0 {
-			continue
-		}
-		rows := pinned[:len(pinned)-1]
-		if strings.TrimSpace(strings.Join(rows, "")) == "" {
+		rows := plain(headRowsOf(tr))
+		if len(rows) < 2 {
 			continue
 		}
 		shown++
@@ -629,8 +618,13 @@ func TestSticky_PinsTheHeadOfTheQuestionNotAMiddleChunk(t *testing.T) {
 			t.Fatalf("at offset %d the header shows a middle chunk:\n got %q\nwant the head %q / %q",
 				tr.offset, rows, head, second)
 		}
-		if !strings.Contains(rows[1], strings.TrimSpace(stickyEllipsis)) {
-			t.Fatalf("at offset %d a question the header could not fit was not marked: %q", tr.offset, rows[1])
+		// The mark means "the question goes on between here and the body",
+		// and it appears exactly when that is true.
+		_, gotAbove := tr.stickyTurn()
+		skipped := q.textLo+len(rows) < min(gotAbove, q.textHigh)
+		if marked := strings.Contains(rows[len(rows)-1], strings.TrimSpace(stickyEllipsis)); marked != skipped {
+			t.Fatalf("at offset %d rows skipped=%v but the header marked=%v: %q",
+				tr.offset, skipped, marked, rows[len(rows)-1])
 		}
 		for _, b := range plain(bodyRows(tr)) {
 			for _, r := range rows {
@@ -642,5 +636,57 @@ func TestSticky_PinsTheHeadOfTheQuestionNotAMiddleChunk(t *testing.T) {
 	}
 	if shown == 0 {
 		t.Fatal("the header never appeared while a tall question scrolled past")
+	}
+}
+
+// TestSticky_MergesIntoTheBlockWithoutASeam is the shape the header is for:
+// no rule between it and the conversation, and as the reader scrolls back up
+// each real line of the question takes the place of the header line above it,
+// until the block stands whole and the header is gone.
+func TestSticky_MergesIntoTheBlockWithoutASeam(t *testing.T) {
+	tr := richPager(t, 3, 8, 24)
+	head, ok := headEntryOf(tr, 2)
+	if !ok {
+		t.Fatal("fixture: turn 2 is not held")
+	}
+	base := entryRowsStart(head)
+	q := tr.stickyBlockOf(2)
+
+	var heights []int
+	for above := len(q.rows); above >= 0; above-- {
+		tr.offset = base + above
+		tr.buildIndex()
+		rows := plain(headRowsOf(tr))
+		heights = append(heights, len(rows))
+
+		for _, r := range rows {
+			if strings.Contains(r, "─") {
+				t.Fatalf("at %d rows above, the header drew a rule: %q", above, r)
+			}
+		}
+		// Header then body is the block, in order, with nothing repeated and
+		// nothing but the question's own rows above.
+		want := q.rows[q.textLo : q.textLo+len(rows)]
+		for i, r := range want {
+			got := rows[i]
+			text := strings.TrimRight(stripANSI(r.text), " ")
+			if !strings.HasPrefix(got, text) && !strings.HasPrefix(text, strings.TrimSuffix(got, stickyEllipsis)) {
+				t.Fatalf("at %d rows above, header row %d = %q, want the question's %q", above, i, got, text)
+			}
+		}
+		if body := plain(bodyRows(tr)); above < len(q.rows) && len(body) > 0 {
+			if got, want := body[0], strings.TrimRight(stripANSI(q.rows[above].text), " "); got != want {
+				t.Fatalf("at %d rows above the body starts at %q, want %q", above, got, want)
+			}
+		}
+	}
+	// Walking back up, the header only ever gives rows back.
+	for i := 1; i < len(heights); i++ {
+		if heights[i] > heights[i-1] {
+			t.Fatalf("scrolling up grew the header: %v", heights)
+		}
+	}
+	if heights[len(heights)-1] != 0 {
+		t.Fatalf("the header outlived the block: %v", heights)
 	}
 }
