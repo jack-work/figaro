@@ -762,44 +762,6 @@ func Build(base Snapshot, set map[string]json.RawMessage, remove []string) Patch
 	return p
 }
 
-// legacyPatch is the flat wire shape: dotted keys to set, a list to remove.
-type legacyPatch struct {
-	Set    map[string]json.RawMessage `json:"set"`
-	Remove []string                   `json:"remove"`
-}
-
-// UnmarshalJSON reads a patch, lifting one written in the flat shape.
-//
-// Every patch already on the form channel is flat. Decoding one structurally
-// yields Identity, so the history would still be on disk and would reduce to
-// an empty board.
-//
-// A converted patch carries no prior values: the flat shape never recorded
-// them. It applies exactly as it did; it cannot be inverted.
-func (p *Patch) UnmarshalJSON(data []byte) error {
-	var probe map[string]json.RawMessage
-	if err := json.Unmarshal(data, &probe); err != nil {
-		return err
-	}
-	_, hasSet := probe["set"]
-	_, hasRemove := probe["remove"]
-	if hasSet || hasRemove {
-		var old legacyPatch
-		if err := json.Unmarshal(data, &old); err != nil {
-			return err
-		}
-		*p = Build(Snapshot{}, old.Set, old.Remove)
-		return nil
-	}
-	type plain Patch // no recursion through this method
-	var out plain
-	if err := json.Unmarshal(data, &out); err != nil {
-		return err
-	}
-	*p = Patch(out)
-	return nil
-}
-
 // valueAt walks a value by dotted path, longest member first.
 func valueAt(v Value, path string) (Value, bool) {
 	cur, rest := v, path

@@ -65,8 +65,13 @@ func largestObjectKey(tb testing.TB, m map[string]json.RawMessage) (key, field s
 		}
 		if len(v) > size {
 			key, size = k, len(v)
-			for f := range obj {
-				field = f
+			// The SMALLEST field: changing a large one must carry the large
+			// one, because an invertible patch holds what it displaced.
+			best := -1
+			for f, fv := range obj {
+				if best < 0 || len(fv) < best {
+					field, best = f, len(fv)
+				}
 			}
 		}
 	}
