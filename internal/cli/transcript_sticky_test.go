@@ -539,3 +539,65 @@ func TestSticky_EllipsisMarksAQuestionTooTallToPin(t *testing.T) {
 		t.Fatalf("a question too tall to pin was not marked:\n%s", strings.Join(pinned, "\n"))
 	}
 }
+
+// TestSticky_PinsTheHeadOfTheQuestionNotAMiddleChunk is the defect a reader
+// sees as two broken paragraphs: the header showed the rows nearest the body,
+// so a tall question was cut at an arbitrary row and continued under the rule.
+func TestSticky_PinsTheHeadOfTheQuestionNotAMiddleChunk(t *testing.T) {
+	client := aria.NewClient()
+	var text []string
+	for i := range 12 {
+		text = append(text, fmt.Sprintf("QLINE%02d some words of the question that go on and on", i))
+	}
+	long := strings.Join(text, " ")
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
+		ID: 6, Inquiry: long, Sealed: true,
+		InquirySegments: []aria.InquirySegment{{Sender: "Gluck", Text: long}},
+		Nodes: []livedoc.Node{
+			{Type: livedoc.NodeProse, Markdown: "ANSWER-0"},
+			{Type: livedoc.NodeProse, Markdown: "ANSWER-1"},
+		},
+	}}}}, aria.Notify)
+	view := &ariaView{settings: &renderSettings{sticky: true}}
+	tr := newTranscript(ldrender.NewFakeTerminal(56, 20), 56, 20, view, client, "aria1234", time.Time{})
+	tr.enter()
+	tr.follow = false
+	tr.buildIndex()
+
+	q := tr.stickyBlockOf(6)
+	if q.textHigh-q.textLo < 6 {
+		t.Fatalf("fixture: the question is %d rows, want a tall one", q.textHigh-q.textLo)
+	}
+	head := strings.TrimRight(stripANSI(q.rows[q.textLo].text), " ")
+	second := strings.TrimRight(stripANSI(q.rows[q.textLo+1].text), " ")
+
+	// Walk the whole question through the top of the body.
+	shown := 0
+	for above := 1; above <= len(q.rows); above++ {
+		tr.offset = above
+		tr.buildIndex()
+		pinned := plain(headRowsOf(tr))
+		rows := pinned[:len(pinned)-1]
+		if strings.TrimSpace(strings.Join(rows, "")) == "" {
+			continue
+		}
+		shown++
+		if rows[0] != head || !strings.HasPrefix(rows[1], second[:20]) {
+			t.Fatalf("at offset %d the header shows a middle chunk:\n got %q\nwant the head %q / %q",
+				tr.offset, rows, head, second)
+		}
+		if !strings.Contains(rows[1], strings.TrimSpace(stickyEllipsis)) {
+			t.Fatalf("at offset %d a question the header could not fit was not marked: %q", tr.offset, rows[1])
+		}
+		for _, b := range plain(bodyRows(tr)) {
+			for _, r := range rows {
+				if strings.TrimSpace(b) != "" && b == r {
+					t.Fatalf("at offset %d the row %q stands in the header and the body at once", tr.offset, r)
+				}
+			}
+		}
+	}
+	if shown == 0 {
+		t.Fatal("the header never appeared while a tall question scrolled past")
+	}
+}

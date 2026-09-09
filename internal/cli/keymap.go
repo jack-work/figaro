@@ -609,7 +609,7 @@ var helpRows = []helpRow{
 	{helpBarVerbose, "m", "more: state names, model, last interaction"},
 	{helpCmdPaste, "(in :) ^V", "paste the clipboard"},
 	{helpSelect, "^N/^P", "select next/previous node"},
-	{helpSelectExtend, "^N/^P + Shift", "extend node selection (Alt+^N/^P fallback)"},
+	{helpSelectExtend, "^N/^P + Shift", "extend node selection (with s: travel between questions)"},
 	{helpExpand, "Enter", "expand tools within the selection"},
 	{helpEscape, "Esc", "clear selection / close panel"},
 	{helpListen, "^L", "open the transcript (stays open until you close it)"},

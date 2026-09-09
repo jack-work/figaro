@@ -110,8 +110,10 @@ func (t *transcript) stickyTurn() (turn, above int) {
 	return turn, above
 }
 
-// stickyLines is the header as painted: the question's own rows that the body
-// is not showing, and the rule under them.
+// stickyLines is the header as painted: the head of the question, and the rule
+// under it. The head and not the rows nearest the body, because a question cut
+// at an arbitrary row and continued below a rule reads as two broken
+// paragraphs rather than as one question the reader is inside.
 func (t *transcript) stickyLines(hl string, sel selectionSpan) []string {
 	if t.headRows() == 0 {
 		return nil
@@ -125,26 +127,16 @@ func (t *transcript) stickyLines(hl string, sel selectionSpan) []string {
 	if q.empty() {
 		return out
 	}
-	// Only what has left the body may be pinned, or the question would stand
-	// twice on one screen. Once the block is wholly above, the header is free
-	// to show the question from its beginning, which is what names the turn.
-	lo, high := q.textLo, min(q.textHigh, above)
-	if above >= len(q.rows) {
-		high = q.textHigh
-	} else if n := high - lo; n > stickyText {
-		lo = high - stickyText
-	}
-	if high <= lo {
+	high := min(q.textLo+stickyText, q.textHigh)
+	// The header may only show what the body no longer does, so it waits until
+	// the rows it would pin have left.
+	if above < high {
 		return out
 	}
-	rows := q.rows[lo:high]
-	clipped := len(rows) > stickyText
-	if clipped {
-		rows = rows[:stickyText]
-	}
+	rows := q.rows[q.textLo:high]
 	for i, r := range rows {
 		line := t.rowLine(r, hl, sel)
-		if clipped && i == len(rows)-1 {
+		if i == len(rows)-1 && high < q.textHigh {
 			line = stickyClip(line, t.w)
 		}
 		out[stickyText-len(rows)+i] = line
@@ -153,7 +145,7 @@ func (t *transcript) stickyLines(hl string, sel selectionSpan) []string {
 	return out
 }
 
-// stickyClip marks a row as the last the header could fit.
+// stickyClip marks a row as the last of the question the header could fit.
 func stickyClip(line string, w int) string {
 	return clipToWidth(strings.TrimRight(line, " "), w-len(stickyEllipsis)) + term.Dim(stickyEllipsis)
 }
