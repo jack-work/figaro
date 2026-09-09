@@ -229,12 +229,6 @@ func diffTrees(prev, next ptree) Patch {
 						out.New = map[string]bool{}
 					}
 					out.Update[n.key], out.New[n.key] = child, true
-					if n.terminal {
-						if out.Term == nil {
-							out.Term = map[string]bool{}
-						}
-						out.Term[n.key] = true
-					}
 				}
 				return true
 			}
@@ -249,12 +243,6 @@ func diffTrees(prev, next ptree) Patch {
 					out.Update = map[string]Patch{}
 				}
 				out.Update[n.key] = child
-				if n.terminal {
-					if out.Term == nil {
-						out.Term = map[string]bool{}
-					}
-					out.Term[n.key] = true
-				}
 			}
 		case !old.branch && !n.branch:
 			if !old.value.Equal(n.value) {
@@ -337,9 +325,7 @@ func applyToTree(t ptree, p Patch) (ptree, bool) {
 		if cur := lookupExact(t.root, k); cur != nil && !cur.branch && cur.value.Equal(v) {
 			continue
 		}
-		e := leafOrBranch(k, v)
-		e.terminal = true
-		t = ptree{root: setEntry(t.root, e)}
+		t = ptree{root: setEntry(t.root, leafOrBranch(k, v))}
 		changed = true
 	}
 	for k := range p.Object.Delete {
@@ -349,22 +335,6 @@ func applyToTree(t ptree, p Patch) (ptree, bool) {
 	}
 	for k, child := range p.Object.Update {
 		cur := lookupExact(t.root, k)
-		if cur != nil && cur.terminal {
-			// The key ends here for whoever wrote it, so a patch that would
-			// reach through it is naming siblings rather than fields. A flat
-			// patch has no base and cannot know that when it splits its keys.
-			// Only a suffix the node does not already hold is a sibling.
-			// A field it does hold is an edit of that field.
-			if flat, ok := flattenUnder(child); ok && allForeign(cur, flat) {
-				for suffix, v := range flat {
-					e := leafOrBranch(k+"."+suffix, v)
-					e.terminal = true
-					t = ptree{root: setEntry(t.root, e)}
-					changed = true
-				}
-				continue
-			}
-		}
 		var kids ptree
 		leafHere := cur != nil && !cur.branch
 		if cur != nil && cur.branch {
@@ -383,8 +353,7 @@ func applyToTree(t ptree, p Patch) (ptree, bool) {
 		if !subChanged && cur != nil {
 			continue
 		}
-		term := p.Object.Term[k] || (cur != nil && cur.terminal)
-		t = ptree{root: setEntry(t.root, &node{key: k, kids: sub, branch: true, terminal: term})}
+		t = ptree{root: setEntry(t.root, &node{key: k, kids: sub, branch: true})}
 		changed = true
 	}
 	return t, changed
@@ -652,67 +621,3 @@ func setIn(node Value, segs []string, v Value) Value {
 
 // flattenUnder reads a patch that only creates leaves as the suffixes it
 // names, so they can be written beside a terminal node rather than inside it.
-// It refuses anything that changes or removes: only a pure creation can be
-// re-anchored without knowing what it was diffed against.
-func flattenUnder(p Patch) (map[string]Value, bool) {
-	out := map[string]Value{}
-	var walk func(Patch, string) bool
-	walk = func(q Patch, prefix string) bool {
-		if q.Object == nil {
-			return false
-		}
-		if len(q.Object.Delete) > 0 {
-			return false
-		}
-		for k, v := range q.Object.Set {
-			out[join(prefix, k)] = v
-		}
-		for k, c := range q.Object.Update {
-			if !q.Object.New[k] {
-				return false
-			}
-			if !walk(c, join(prefix, k)) {
-				return false
-			}
-		}
-		return true
-	}
-	if !walk(p, "") || len(out) == 0 {
-		return nil, false
-	}
-	return out, true
-}
-
-func join(prefix, k string) string {
-	if prefix == "" {
-		return k
-	}
-	return prefix + "." + k
-}
-
-// allForeign reports whether every suffix names something the node does not
-// hold. One that it holds is a field, and the patch is editing it.
-func allForeign(n *node, flat map[string]Value) bool {
-	if n == nil || !n.branch {
-		return false
-	}
-	for suffix := range flat {
-		head := suffix
-		if i := indexDot(suffix); i >= 0 {
-			head = suffix[:i]
-		}
-		if lookupExact(n.kids.root, head) != nil {
-			return false
-		}
-	}
-	return true
-}
-
-func indexDot(s string) int {
-	for i := 0; i < len(s); i++ {
-		if s[i] == '.' {
-			return i
-		}
-	}
-	return -1
-}

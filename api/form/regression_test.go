@@ -17,17 +17,17 @@ import (
 // its prefix. Gluck's store holds both: skills.howto is a skill, and
 // skills.howto.md is a different skill.
 func TestCollidingKeysAreBothAddressable(t *testing.T) {
+	// succession is prose AND a namespace of sub-notes: a key that is a
+	// proper prefix of another, written deliberately.
 	s := form.FromMap(map[string]json.RawMessage{
-		"skills.howto":    json.RawMessage(`{"filePath":"/a.md"}`),
-		"skills.howto.md": json.RawMessage(`{"filePath":"/b.md"}`),
-		"succession":      json.RawMessage(`["one"]`),
-		"succession.plan": json.RawMessage(`"handover"`),
+		"succession":           json.RawMessage(`"the protocol"`),
+		"succession.rule":      json.RawMessage(`"you are a seat"`),
+		"succession.authority": json.RawMessage(`"only the target may write"`),
 	})
 	for k, want := range map[string]string{
-		"skills.howto":    `{"filePath":"/a.md"}`,
-		"skills.howto.md": `{"filePath":"/b.md"}`,
-		"succession":      `["one"]`,
-		"succession.plan": `"handover"`,
+		"succession":           `"the protocol"`,
+		"succession.rule":      `"you are a seat"`,
+		"succession.authority": `"only the target may write"`,
 	} {
 		got, ok := s.Get(k)
 		require.True(t, ok, "%s is unreachable", k)
