@@ -31,9 +31,9 @@ func (t *transcript) sticky() bool {
 	return ok && view.settings != nil && view.settings.sticky
 }
 
-// headRows is how many rows of the conversation the header stands on. The body
-// is not shortened by it: see renderFrame.
-func (t *transcript) headRows() int { return len(t.stickyRows()) }
+// headRows is how many rows of the conversation the header stands on, its rule
+// included. The body is not shortened by it: see renderFrame.
+func (t *transcript) headRows() int { return len(t.stickyLines("", selectionSpan{})) }
 
 // stickyQuestion is a turn's question as the transcript composes it inline:
 // every row of the block, and the half of them that is the question itself
@@ -127,16 +127,18 @@ func (t *transcript) stickyRows() []transcriptRow {
 }
 
 // stickyLines is the header as painted: the head of the question, its address
-// against the right edge, and a mark on the last row when the question goes on
-// between there and where the body picks it up.
+// against the right edge, a mark on the last row when the question goes on past
+// what the header holds, and a rule closing it off from the conversation. The
+// rule is dropped while the block itself is still on screen, where a line
+// between the header and the rest of the same question would cut it in two.
 func (t *transcript) stickyLines(hl string, sel selectionSpan) []string {
 	rows := t.stickyRows()
 	if len(rows) == 0 {
 		return nil
 	}
-	turn, _ := t.stickyTurn()
+	turn, above := t.stickyTurn()
 	q := t.stickyBlockOf(turn)
-	out := make([]string, 0, len(rows))
+	out := make([]string, 0, len(rows)+1)
 	for i, r := range rows {
 		line := t.rowLine(r, hl, sel)
 		if i == len(rows)-1 && q.textLo+len(rows) < q.textHigh {
@@ -147,6 +149,9 @@ func (t *transcript) stickyLines(hl string, sel selectionSpan) []string {
 	// The pinned question stands out of its place in the conversation, so it
 	// carries its address the way ^O draws every other one.
 	out[0] = ldrender.OverlayRight(out[0], term.Dim(coordLabel(turn, inquiryNode, 0, t.coordFormat())), t.w)
+	if above >= len(q.rows) {
+		out = append(out, t.transRule())
+	}
 	return out
 }
 

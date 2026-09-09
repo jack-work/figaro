@@ -72,6 +72,15 @@ func headRowsOf(tr *transcript) []string {
 	return tr.stickyLines(tr.activeHighlight(), tr.selectionSpan())
 }
 
+// headTextOf is the header without the rule that closes it, when it has one.
+func headTextOf(tr *transcript) []string {
+	rows := plain(headRowsOf(tr))
+	if n := len(rows); n > 0 && strings.Contains(rows[n-1], "─") {
+		return rows[:n-1]
+	}
+	return rows
+}
+
 func plain(rows []string) []string {
 	out := make([]string, 0, len(rows))
 	for _, r := range rows {
@@ -144,7 +153,7 @@ func TestSticky_HandsRowsBackAcrossATurnBoundary(t *testing.T) {
 					tr.offset, body[0], q.rows[above].text)
 			}
 		}
-		for _, row := range plain(headRowsOf(tr)) {
+		for _, row := range headTextOf(tr) {
 			if strings.TrimSpace(row) == "" {
 				continue
 			}
@@ -613,7 +622,7 @@ func TestSticky_PinsTheHeadOfTheQuestionNotAMiddleChunk(t *testing.T) {
 	for above := 1; above <= len(q.rows); above++ {
 		tr.offset = above
 		tr.buildIndex()
-		rows := plain(headRowsOf(tr))
+		rows := headTextOf(tr)
 		if len(rows) < 2 {
 			continue
 		}
@@ -705,13 +714,17 @@ func TestSticky_MergesIntoTheBlockWithoutASeam(t *testing.T) {
 	for above := len(q.rows); above >= 0; above-- {
 		tr.offset = base + above
 		tr.buildIndex()
-		rows := plain(headRowsOf(tr))
+		rows := headTextOf(tr)
 		heights = append(heights, len(rows))
 
-		for _, r := range rows {
-			if strings.Contains(r, "─") {
-				t.Fatalf("at %d rows above, the header drew a rule: %q", above, r)
-			}
+		// The rule closes the header off from the conversation, except while
+		// the block itself is still on screen, where it would cut one question
+		// in two.
+		full := plain(headRowsOf(tr))
+		ruled := len(full) > 0 && strings.Contains(full[len(full)-1], "─")
+		if want := above >= len(q.rows); ruled != want && len(rows) > 0 {
+			t.Fatalf("at %d rows above (block is %d rows) the header ruled=%v, want %v",
+				above, len(q.rows), ruled, want)
 		}
 		// Header then body is the block, in order, with nothing repeated and
 		// nothing but the question's own rows above.
