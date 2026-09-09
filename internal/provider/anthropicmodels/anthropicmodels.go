@@ -110,8 +110,18 @@ func (c *Catalog) ContextLimit(model string, snapshot form.Snapshot) int {
 // ClaudeCodeVersion is the client version figaro presents to the Anthropic
 // API. It lives HERE, once, because it used to be two constants in two
 // providers -- and the API gates newer models on it: Fable 5.1 refuses any
-// client below 2.1.251 with a 400 telling you to run `claude update`. A
-// stale copy in one provider is an error that only appears for whichever
-// models shipped after it, which reads as "figaro cannot do fable" when the
-// truth is "one string is old".
+// client below 2.1.251 with a 400 (claude_code_version_too_old) telling you
+// to run `claude update`. A stale copy in one provider is an error that
+// only appears for whichever models shipped after it, which reads as
+// "figaro cannot do fable" when the truth is "one string is old".
+//
+// TRACK `latest`, NOT `stable`. The floor for Fable 5.1 (2.1.251) is ABOVE
+// the stable channel (2.1.236 at the time): real Claude Code on stable
+// fails identically (anthropics/claude-code#91345). The check is a numeric
+// threshold, not a whitelist of released versions, so the rule when a new
+// model 400s is: `npm view @anthropic-ai/claude-code dist-tags.latest`,
+// paste it here.
+//
+// See docs/anthropic-oauth-posture.md for how long this arrangement can be
+// expected to hold at all.
 const ClaudeCodeVersion = "2.1.267"
