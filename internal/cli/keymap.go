@@ -179,6 +179,18 @@ var keymap = []keyBinding{
 		open: opensPager, help: helpVerbose, input: inputToggleVerbose,
 	},
 	{
+		// Alt+n / Alt+p travel between questions: the same n and p, one
+		// granularity up from the node ^N/^P steps through. Alt because it
+		// arrives as an escape prefix on every terminal, where Ctrl+Shift
+		// needs a keyboard protocol the terminal (and tmux) must opt into.
+		chord: metaChord('n'), modes: inTranscript | inPanel,
+		open: opensPager, help: helpQuestionTravel, input: inputQuestionNext,
+	},
+	{
+		chord: metaChord('p'), modes: inTranscript | inPanel,
+		open: opensPager, help: helpNone, input: inputQuestionPrev,
+	},
+	{
 		// 's' is the sticky question: the header that keeps the turn's inquiry
 		// on screen while the reader is inside its answer. A plain letter, in
 		// the transcript and its panels only, where scrolling happens.
@@ -546,6 +558,7 @@ const (
 	helpYank
 	helpVerbose
 	helpSticky
+	helpQuestionTravel
 	helpSelect
 	helpSelectExtend
 	helpExpand
@@ -609,6 +622,7 @@ var helpRows = []helpRow{
 	{helpBarVerbose, "m", "more: state names, model, last interaction"},
 	{helpCmdPaste, "(in :) ^V", "paste the clipboard"},
 	{helpSelect, "^N/^P", "select next/previous node"},
+	{helpQuestionTravel, "M-n / M-p", "travel to the next / previous question"},
 	{helpSelectExtend, "^N/^P + Shift", "travel between questions (Alt+^N/^P extends a selection)"},
 	{helpExpand, "Enter", "expand tools within the selection"},
 	{helpEscape, "Esc", "clear selection / close panel"},
@@ -687,8 +701,8 @@ var (
 	// ctrlChordLetters marks the letters the table binds as CSI-u Ctrl chords.
 	ctrlChordLetters [26]bool
 
-	// metaModes marks the modes that bind Meta at all. See modeBindsMeta.
-	metaModes [numKeyModes]bool
+	// metaBound marks the Meta chords each mode binds. See metaBoundIn.
+	metaBound [numKeyModes][128]bool
 )
 
 // navCount bounds the nav index; navRight is the last logical motion.
@@ -746,10 +760,10 @@ func buildKeyIndex() {
 		if bd.chord.kind == chordCtrlLetter {
 			ctrlChordLetters[bd.chord.b-'a'] = true
 		}
-		if bd.chord.kind == chordMeta {
+		if bd.chord.kind == chordMeta && bd.chord.b < 128 {
 			for m := keyMode(0); m < numKeyModes; m++ {
 				if bd.modes&(1<<m) != 0 {
-					metaModes[m] = true
+					metaBound[m][bd.chord.b] = true
 				}
 			}
 		}
@@ -895,7 +909,14 @@ func ctrlChordBoundIn(mode keyMode, letter byte) bool {
 //     whether or not that particular chord is bound, and an unbound one is
 //     swallowed. Otherwise M-x for an x nobody bound would close the box and
 //     type an x -- the two most destructive things it could have meant.
-func modeBindsMeta(mode keyMode) bool { return metaModes[mode] }
+//
+// metaBoundIn reports whether Alt+<byte> is readable in this mode. A text box
+// reads ESC as a prefix wholesale, so a stray one cannot leak into the line;
+// everywhere else the prefix is claimed per chord, and Esc then '/' outside a
+// box is still two keys.
+func metaBoundIn(mode keyMode, b byte) bool {
+	return mode == modeJump || (b < 128 && metaBound[mode][b])
+}
 
 // metaFold is the case rule for a Meta chord: Alt+Shift+B means Alt+b, because
 // no row wants to tell them apart and a user holding Shift by accident should
@@ -924,6 +945,9 @@ func opensTranscript(ev keyEvent) bool {
 		return openerByte[ev.b]
 	}
 }
+
+// metaOpens reports whether Alt+<byte> is a binding that opens the pager.
+func metaOpens(b byte) bool { return b < 128 && openerMeta[b] }
 
 // opensTranscriptFor is the byte-shaped form of the same question.
 func opensTranscriptFor(b byte) bool { return openerByte[b] }

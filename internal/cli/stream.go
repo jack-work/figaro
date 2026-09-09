@@ -727,7 +727,7 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 				// which is what keeps ^D detaching in the pager while the ':'
 				// box has it as delete-forward.
 				ev = keyEvent{ctrl: letter, shift: key.shift, alt: key.alt, mode: mode}
-			} else if m, isMeta := metaKey(key); isMeta && modeBindsMeta(mode) {
+			} else if m, isMeta := metaKey(key); isMeta && (metaBoundIn(mode, m) || metaOpens(m)) {
 				// Alt+<key>, reported with the Alt bit set. The same chord a
 				// legacy terminal spells ESC <byte>, arriving pre-delimited.
 				ev = keyEvent{meta: m, shift: key.shift, alt: true, mode: mode}
@@ -759,7 +759,7 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 				if !ok {
 					continue
 				}
-				if m, isMeta := metaForCtrlArrow(key); isMeta && modeBindsMeta(mode) {
+				if m, isMeta := metaForCtrlArrow(key); isMeta && metaBoundIn(mode, m) {
 					// Ctrl+Left / Ctrl+Right, which every distro's inputrc
 					// binds to the word motions. It is one key on the keyboard
 					// and M-b's meaning; naming it here is where terminal
@@ -1016,6 +1016,23 @@ func inputToggleSticky(in *interactiveInput, _ keyEvent) keyVerdict {
 	in.mu.Lock()
 	in.set.sticky = !in.set.sticky
 	in.lt.render()
+	in.mu.Unlock()
+	return keyHandled
+}
+
+// inputQuestionNext and inputQuestionPrev are Alt+n and Alt+p.
+func inputQuestionNext(in *interactiveInput, _ keyEvent) keyVerdict {
+	return in.questionKey(1)
+}
+
+func inputQuestionPrev(in *interactiveInput, _ keyEvent) keyVerdict {
+	return in.questionKey(-1)
+}
+
+func (in *interactiveInput) questionKey(delta int) keyVerdict {
+	in.mu.Lock()
+	in.cancelTranscriptSearchLocked()
+	in.lt.transcriptJumpQuestion(delta)
 	in.mu.Unlock()
 	return keyHandled
 }

@@ -752,3 +752,32 @@ func TestSticky_MergesIntoTheBlockWithoutASeam(t *testing.T) {
 		t.Fatalf("the header outlived the block: %v", heights)
 	}
 }
+
+// TestSticky_AltNAndAltPTravelBetweenQuestions: the travel keys must arrive on
+// a terminal that reports no modifiers at all, which is what ESC+n is for.
+func TestSticky_AltNAndAltPTravelBetweenQuestions(t *testing.T) {
+	in, lt := navInput(t, &countingWriter{}, true)
+	lt.apply(aria.Page{Parts: []aria.TurnPart{richTurn(41, 6), richTurn(42, 6), richTurn(43, 6)}})
+	lt.tr.follow = false
+	lt.tr.invalidateWindow()
+	lt.tr.buildIndex()
+	starts := lt.tr.stickyStarts()
+	if len(starts) < 2 {
+		t.Fatalf("fixture holds %d questions", len(starts))
+	}
+	lt.tr.offset = starts[len(starts)-1]
+	lt.tr.buildIndex()
+
+	feed(t, in, "\x1bp")
+	if lt.tr.offset != starts[len(starts)-2] {
+		t.Fatalf("M-p landed at %d, want the previous question at %d", lt.tr.offset, starts[len(starts)-2])
+	}
+	// Forward again. The last question is close enough to the end that the
+	// viewport cannot put it at the top, so the landing is clamped: what must
+	// hold is that it travelled.
+	feed(t, in, "\x1bn")
+	if lt.tr.offset <= starts[len(starts)-2] {
+		t.Fatalf("M-n did not travel forward: offset %d, previous question at %d",
+			lt.tr.offset, starts[len(starts)-2])
+	}
+}

@@ -190,10 +190,14 @@ func metaEscapePrefix(data []byte, mode keyMode) (byte, bool) {
 	if b != 0x7f && b < 0x20 {
 		return 0, false
 	}
-	if !modeBindsMeta(mode) {
+	folded := metaFold(b)
+	// Claimed only where a row binds it, plus the chords that open the pager:
+	// those mean something in every mode, and refusing to read one is how a
+	// binding looks like a dead keyboard.
+	if !metaBoundIn(mode, folded) && !metaOpens(folded) {
 		return 0, false
 	}
-	return metaFold(b), true
+	return folded, true
 }
 
 // metaForCtrlArrow turns Ctrl+Left / Ctrl+Right into M-b / M-f. That mapping
