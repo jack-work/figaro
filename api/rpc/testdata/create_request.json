@@ -1,8 +1,23 @@
 {
   "patch": {
-    "set": {
-      "layers": ["anthropic"],
-      "system.model": "claude-sonnet-4-20250514"
+    "object": {
+      "Set": {
+        "layers": [
+          "anthropic"
+        ]
+      },
+      "Update": {
+        "system": {
+          "object": {
+            "Set": {
+              "model": "claude-sonnet-4-20250514"
+            }
+          }
+        }
+      },
+      "New": {
+        "system": true
+      }
     }
   }
 }

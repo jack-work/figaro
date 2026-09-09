@@ -52,7 +52,7 @@ func roundTrip[T any](t *testing.T, fixture string, expected T) {
 	fixtureData := loadFixture(t, fixture)
 	var fromFixture T
 	require.NoError(t, json.Unmarshal(fixtureData, &fromFixture))
-	assert.Equal(t, expected, fromFixture, "fixture should unmarshal to expected value")
+	assertSameJSON(t, expected, fromFixture)
 
 	// 2. Marshal expected, unmarshal back, verify round-trip.
 	marshaled, err := json.Marshal(expected)
