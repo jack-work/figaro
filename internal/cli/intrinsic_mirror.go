@@ -298,11 +298,11 @@ func (in *interactiveInput) onIntrinsicChanged(name string) {
 		// compare-and-set against the generation its ids came from, and the
 		// generation that produced THESE rows is the one in THIS snapshot.
 		//
-		// This assignment was lost when the queue stopped being polled: the
-		// old fetch set it as a side effect of reading, the push path did not,
-		// and nothing failed to compile because the field is only ever read
-		// elsewhere. Measured in a pager: `x` on a queued row answered
-		// "stale (no epoch supplied)" -- the CAS was being made against "".
+		// KEEP THIS ASSIGNMENT UNDER GUARD BY HAND: queueEpoch is written here
+		// and read elsewhere, so dropping it compiles, and the projection test
+		// (TestQueueProjectionCarriesTheEpoch) covers readQueue, not this line.
+		// Losing it once made `x` on a queued row answer "stale (no epoch
+		// supplied)".
 		epoch, _ := lookupString(snap, "epoch")
 		items := make([]queuedItem, 0, len(rows))
 		for _, r := range rows {

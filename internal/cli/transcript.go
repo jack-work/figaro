@@ -1451,15 +1451,12 @@ func (t *transcript) showQueuedAuto(on bool) {
 	if !t.showing(pitQueue) {
 		return
 	}
-	// REFRESHING IS NOT CLOSING, and conflating them left fossils on screen.
-	// A pit the reader opened is never auto-closed -- that rule is right --
-	// but this branch applied it to the ROWS as well, so a queue that drained
-	// while the pit was up kept showing the messages it used to hold. Measured:
-	// two messages answered by the running turn sat in the drawer at "→"
-	// forever, while the queue form correctly reported both committed.
-	//
-	// `:send` sets queuedByKey (it opens the drawer for you), so this was the
-	// ordinary path, not a corner.
+	// REFRESHING IS NOT CLOSING. A pit the reader opened is never auto-closed
+	// -- that rule is right -- but applying it to the ROWS as well left
+	// fossils: a queue that drained while the pit was up kept showing the
+	// messages it used to hold, at "→", forever. NO TEST COVERS THIS; the
+	// resize-paint suite only opens and closes the pit. `:send` sets
+	// queuedByKey, so this is the ordinary path, not a corner.
 	if t.queuedByKey {
 		t.refreshQueuePit()
 		return
