@@ -332,6 +332,16 @@ func (in *interactiveInput) notifyHandler(gen uint64) sdk.NotifyHandler {
 		if atomic.LoadUint64(&in.subjectGen) != gen {
 			return
 		}
+		// A CONTINUO PATCH IS HANDLED BEFORE THE RENDER LOCK IS TAKEN, not by
+		// releasing it in the middle of a dispatch. It takes the lock itself,
+		// and may go to the wire to resync; an earlier version unlocked and
+		// relocked around it, which worked but left a window inside a handler
+		// that reads as if it holds the lock throughout. One entrance, one
+		// lock discipline.
+		if method == rpc.MethodFormDelta {
+			in.applyContinuoDelta(params)
+			return
+		}
 		in.mu.Lock()
 		defer in.mu.Unlock()
 		switch method {
@@ -339,13 +349,6 @@ func (in *interactiveInput) notifyHandler(gen uint64) sdk.NotifyHandler {
 			in.turnFrame(params)
 		case rpc.MethodTurnDone:
 			in.turnDone(params)
-		case rpc.MethodFormDelta:
-			// A CONTINUO PATCH. It takes the render lock itself (and may go to
-			// the wire to resync), so it must not run under the one this
-			// handler holds.
-			in.mu.Unlock()
-			in.applyContinuoDelta(params)
-			in.mu.Lock()
 		}
 	}
 }

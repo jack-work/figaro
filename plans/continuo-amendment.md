@@ -274,3 +274,25 @@ terminal, and neither was visible to a green unit suite:
 The second is worth dwelling on: the case that surfaced it was testing
 something else entirely and had **skipped**, not failed. The evidence was in
 the capture it printed on its way out.
+
+### One failure that was not mine, and how that was established
+
+`TestSmoke_SteerOrderMatchesShow` failed in the final full run
+("steer marker appears 0 times, want exactly 1") having passed in the one
+before it. Re-running reproduced it, which ruled out a one-off.
+
+**A/B against a genuinely different binary.** The current test code was run with
+`FIGARO_SMOKE_BIN` pointed at a build of `52cfa1bf` — the store-only commit,
+before any continuo, any client mirror, any status change. Distinct md5, and
+`--version` confirmed `figaro 52cfa1bf` in the log rather than being assumed.
+It failed with the identical message.
+
+Two different binaries, one failure ⇒ the failure is not in the difference.
+This is the skill's trap 11 run in the honest direction: *"two arms that produce
+identical output are more often one binary than one bug"* — so the arms were
+proven different first, and only then was the shared failure believed.
+
+The case is flaky in this environment (it passed once, failed twice, with
+identical code) and is left as found. Its neighbour
+`TestSmoke_DetachedTailAdvancesAndScreenHoldsStill` declines for a
+already-documented reason (`Ctrl-T did not open the pager`).
