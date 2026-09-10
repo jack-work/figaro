@@ -158,3 +158,39 @@ one publisher, the widened `QueueState`, retention of `committed` items,
 `turnStatusSending`/`turnStatusAccepted` with a distinct glyph family, the
 death of the poll, and the deletion of
 `proposals/status-queue-proposal.md` §2.3.
+
+---
+
+## 5. Implementation notes, written as it landed
+
+### What the canary proved
+
+`TestAMessageIsNeverNowhere` was reverted against the original code (drop the
+text/state from `liftLocked`'s `promptRef`) and failed with exactly the
+reported symptom:
+
+```
+message 1 was in a state and is now in NONE: it exists nowhere a client
+could see it. States so far: [queued]
+the journey was [queued committed], wanted [queued committing committed]
+```
+
+That is the bug, reproduced from its own description. An assertion that has
+never failed is not evidence; this one has.
+
+### The identity segment held its promise
+
+`<host>` is parsed by `splitContinuo` into `(host, "")`, and `""` means the
+host's own form everywhere: in `openFormView`'s filter, in `FormRequest`, in
+`FormDelta`. So the wire field is backward compatible **by the same rule that
+makes the shorthand work** rather than by a coincidence of encoding, exactly as
+§2 predicted. No schema bump, no tape re-record.
+
+### tmux was not in the dev shell
+
+Found while wiring the smoke case: `mkFigaroShell` carried `go`, `gopls`,
+`gotools` and `benchstat`, and no tmux. The smoke suite *skips silently*
+without it (`tmuxsmoke_test.go:208`), so the suite was green, unrun, and
+indistinguishable from green and run — the same failure mode the `-count=1`
+warning in the tmux-testing skill exists to prevent, reached by a different
+road. Added to `buildInputs`.

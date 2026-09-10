@@ -147,6 +147,11 @@ type Agent struct {
 
 	inbox *Inbox
 
+	// The CONTINUOS: non-persistent builtin forms bound to this aria's board,
+	// addressed as `<id>/runtime` and `<id>/queue`. See continuo.go.
+	runtime *continuo
+	queue   *continuo
+
 	// Turn state. Guarded by mu for Interrupt().
 	turnCtx     context.Context
 	turnCancel  context.CancelFunc
@@ -287,6 +292,7 @@ func NewAgent(cfg Config) *Agent {
 		}
 	}
 
+	a.openContinuos()
 	a.resumeStudies()
 	a.publishMetadata()
 	go a.runWithRecovery(ctx)
@@ -555,25 +561,59 @@ func (a *Agent) SubmitPromptFrom(req rpc.QuaRequest, sender string) error {
 		evt.segments = []promptSegment{{sender: sender, text: req.Text}}
 	}
 	a.inbox.Send(evt)
+	// ACCEPTED: the daemon has the message. Between here and the turn lifting
+	// it, a client that showed nothing was the original complaint. The queue
+	// continuo carries the message itself; this carries the disposition, so a
+	// status indicator can be honest without reading the queue.
+	if !a.turnActive() {
+		a.publishRuntime(rpc.RuntimeAccepted, "")
+	}
 	return nil
+}
+
+// promptIDs is a prompt's own id plus every id folded into it, which is the
+// set a turn stamp must cover: a client holding a merged id must still learn
+// which turn its message became.
+func promptIDs(e event) []uint64 {
+	if e.id == 0 {
+		return nil
+	}
+	return append([]uint64{e.id}, e.merged...)
 }
 
 // QueuedPrompts returns a read-only snapshot of the messages this aria has
 // accepted but not yet answered, in FIFO order, plus the epoch those ids
 // belong to. The inbox is untouched.
+//
+// It reports STATE HONESTLY now. It used to stamp "queued" on every row
+// unconditionally -- QueueStateCommitting existed in the vocabulary and was
+// never written by anything -- so a message the drain loop had lifted simply
+// vanished from the listing while remaining un-deletable, and the CRUD
+// surface's own refusal messages knew a truth the read surface denied.
 func (a *Agent) QueuedPrompts(carriers bool) (string, []rpc.QueuedPrompt) {
-	events := a.inbox.SnapshotPrompts(carriers)
-	out := make([]rpc.QueuedPrompt, 0, len(events))
-	for _, e := range events {
+	snap := a.inbox.Project()
+	out := make([]rpc.QueuedPrompt, 0, len(snap.Items))
+	for _, it := range snap.Items {
+		// Only what is still IN FLIGHT belongs on this surface: the queue is
+		// what can still be acted on, plus what is on its way out of reach.
+		// The departed live in the continuo, where a client watching a message
+		// travel needs them, and not here, where they would read as a queue
+		// that never drains.
+		if it.State != rpc.QueueStateQueued && it.State != rpc.QueueStateCommitting {
+			continue
+		}
+		if !carriers && it.Text == "" {
+			continue
+		}
 		out = append(out, rpc.QueuedPrompt{
-			ID:     e.id,
-			Text:   e.text,
-			State:  rpc.QueueStateQueued,
-			At:     e.at,
-			Merged: e.merged,
+			ID:     it.ID,
+			Text:   it.Text,
+			State:  it.State,
+			At:     it.At,
+			Merged: it.Merged,
 		})
 	}
-	return a.inbox.Epoch(), out
+	return snap.Epoch, out
 }
 
 // turnActive reports whether a turn is in flight (a prompt submitted now would
@@ -1195,6 +1235,10 @@ func (a *Agent) finishTurn(reason string) {
 		Method:  rpc.MethodTurnDone,
 		Params:  rpc.DoneEntry{Reason: reason, Idle: &idle},
 	})
+	// IDLE, and the verdict with it. turn.done keeps its exact shape and its
+	// exact meaning; the continuo carries the same fact in a form a client can
+	// resync to rather than having to have been listening at the moment.
+	a.publishRuntime(rpc.RuntimeIdle, reason)
 
 	a.publishMetadata()
 }

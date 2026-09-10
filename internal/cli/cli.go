@@ -574,9 +574,19 @@ alone. With no id, the pid-bound aria is used.`,
   figaro queue rm 3 5             drop those messages
   figaro queue rm --all           drop all of them
   figaro queue edit 3 -- new text rewrite one
+  figaro queue --watch            follow it live, as a form
 
 To ADD to the queue, send: a queued message is just a prompt that
 arrived while the aria was busy.
+
+The queue is also a CONTINUO -- a non-persistent builtin form bound to
+the aria, addressed as <aria>/queue -- so it can be watched with the
+ordinary form verbs and pushes its changes rather than being polled:
+
+  figaro form show <aria>/queue     the same thing, as a live tree
+  figaro form show <aria>/runtime   what the aria is DOING right now
+
+<aria> alone means <aria>/state, the aria's own board.
 
 Ids come from the listing and are only meaningful in the generation they
 were read from: they restart whenever the agent is rebuilt: so every
@@ -595,6 +605,7 @@ positional slot belongs to the sub-verb.`,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Address a specific aria (default: the attended one)"},
 			{Long: "all", IsBool: true, Description: "queue rm: drop every queued message"},
+			{Long: "watch", Short: "w", IsBool: true, Description: "Follow the queue live (the <aria>/queue continuo)"},
 			{Long: "json", Short: "j", IsBool: true, Description: "Print one JSON object and exit"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
@@ -606,6 +617,17 @@ positional slot belongs to the sub-verb.`,
 			verb := "ls"
 			if len(ctx.Args) > 0 {
 				verb = ctx.Args[0]
+			}
+			if ctx.BoolFlag("watch") {
+				if verb != "ls" && verb != "list" {
+					dieUsage("queue --watch follows the queue; it does not %s", verb)
+				}
+				// The queue IS a form, so watching it is `form show` and needs
+				// no renderer of its own. That is the whole argument for
+				// making it a continuo instead of inventing a queue-shaped
+				// notification: every form verb works on it for free.
+				runListenContinuo(ld, ariaID, "", "", true, continuoQueue)
+				return nil
 			}
 			switch verb {
 			case "ls", "list":

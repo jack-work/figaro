@@ -40,12 +40,88 @@ func TestSessionStatusShowsThinkingAndTerminalOutcomes(t *testing.T) {
 		}
 	}
 
-	// Thinking animates and is never named, in either mode.
+	// A SUBMIT IS "SENDING", NOT "THINKING", and this assertion changed on
+	// purpose. beginTurn used to claim the model was working the instant a
+	// prompt was accepted -- before it had round-tripped, before the first
+	// token, and possibly while it sat in a queue behind another turn. The
+	// client may only assert facts about ITSELF; everything past the socket
+	// arrives from the runtime continuo.
 	status.beginTurn()
+	if line := bar(status, false); !strings.ContainsAny(line, string(sendingFrames)) {
+		t.Fatalf("no departure frame on the row while sending: %q", line)
+	}
+	if line := bar(status, false); strings.ContainsAny(line, "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏") {
+		t.Fatalf("the bar claimed the model was THINKING about a message that has "+
+			"not been acknowledged by anything: %q", line)
+	}
+
+	// Thinking animates and is never named, in either mode -- and it is now
+	// reached only by the daemon SAYING so.
+	if !status.setRuntime(runtimeView{State: "thinking", Known: true}) {
+		t.Fatal("a runtime patch moving the bar to thinking reported no change")
+	}
 	if line := bar(status, true); strings.Contains(line, "thinking") {
 		t.Fatalf("thinking is named on the row: %q", line)
 	}
 	if line := bar(status, false); !strings.ContainsAny(line, "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏") {
 		t.Fatalf("no spinner frame on the row while thinking: %q", line)
+	}
+}
+
+// THE THREE MOVING STATES MUST BE TELLABLE APART. A reader distinguishes
+// FAMILIES of motion at a glance and speeds never, so this asserts the glyph
+// sets are disjoint -- which is the property, rather than asserting the
+// particular glyphs, which are a taste.
+func TestMovingStatesUseDistinctGlyphFamilies(t *testing.T) {
+	families := map[turnStatus]map[string]bool{}
+	for _, st := range []turnStatus{turnStatusSending, turnStatusAccepted, turnStatusThinking} {
+		set := map[string]bool{}
+		for tick := uint64(0); tick < 32; tick++ {
+			set[st.symbol(tick)] = true
+		}
+		if len(set) < 2 {
+			t.Fatalf("state %d does not animate: it drew %d distinct glyphs over 32 ticks, "+
+				"which is a still picture of a thing that is moving", st, len(set))
+		}
+		families[st] = set
+	}
+	for a, sa := range families {
+		for b, sb := range families {
+			if a >= b {
+				continue
+			}
+			for g := range sa {
+				if sb[g] {
+					t.Fatalf("states %d and %d share the glyph %q. Two moving indicators that "+
+						"overlap are one indicator as far as a reader is concerned", a, b, g)
+				}
+			}
+		}
+	}
+}
+
+// Ctrl-C must interrupt for the WHOLE time a message is in flight, including
+// before any provider round has started. Otherwise the window between submit
+// and the first token is a window where the user's stop key silently means
+// something else.
+func TestSendingAndAcceptedCountAsTurnRunning(t *testing.T) {
+	for _, st := range []turnStatus{turnStatusSending, turnStatusAccepted, turnStatusThinking, turnStatusTooling} {
+		status := newSessionStatus("aria1234", time.Now())
+		status.setTurn(st)
+		if !status.turnRunning() {
+			t.Fatalf("state %d does not count as a turn in flight, so Ctrl-C there would "+
+				"exit cleanly instead of interrupting", st)
+		}
+		if !status.advance() {
+			t.Fatalf("state %d does not animate, so its indicator is a still picture", st)
+		}
+	}
+	status := newSessionStatus("aria1234", time.Now())
+	status.finishTurn("end_turn")
+	if status.turnRunning() {
+		t.Fatal("a completed turn reports itself as still running")
+	}
+	if status.advance() {
+		t.Fatal("a completed turn is animating")
 	}
 }

@@ -29,6 +29,14 @@ type Inbox struct {
 	// vs "never heard of it": instead of collapsing all three into unknown.
 	lifted    []promptRef
 	committed []promptRef
+	// departed holds the recently dropped and drained. A message deleted by a
+	// user and a message cleared by a hangup are DIFFERENT FACTS, and a queue
+	// that simply stopped listing both said neither -- the row blinked away
+	// and the reader was left to infer which had happened.
+	departed []promptRef
+
+	// onChange is the queue continuo's publisher. See OnChange.
+	onChange func(InboxSnapshot)
 }
 
 // promptRef remembers an id after its event has left the queue. Merged travels
@@ -37,6 +45,46 @@ type Inbox struct {
 type promptRef struct {
 	id     uint64
 	merged []uint64
+	// text and at are kept so a lifted or committed message can still be
+	// SHOWN. The queue used to forget a message the instant the drain loop
+	// took it, which is exactly the window a reader perceives as latency:
+	// their message was in neither the queue nor the transcript.
+	text   string
+	sender string
+	at     int64
+	// turn is the turn a committed message became, once known. Zero until the
+	// turn opens. It is what lets a client drop the row when its OWN
+	// transcript has adopted the turn, rather than on a timer.
+	turn uint64
+	// state distinguishes lifted from committed from folded-away without a
+	// second set of slices per outcome.
+	state rpc.QueueState
+}
+
+// QueueItem is one message as the queue continuo publishes it: everything a
+// reader needs to show the message and to know where it is on its way from a
+// client to an inquiry.
+type QueueItem struct {
+	ID     uint64
+	Text   string
+	Sender string
+	State  rpc.QueueState
+	At     int64
+	Merged []uint64
+	// Into is the surviving id for a merged message, and Turn the turn a
+	// committed one became.
+	Into uint64
+	Turn uint64
+}
+
+// InboxSnapshot is the WHOLE truth about the queue at one instant: the live
+// FIFO and the recent departures, in one value. The projection is total by
+// design -- a partial one would leave the continuo holding rows nothing would
+// ever clear.
+type InboxSnapshot struct {
+	Epoch string
+	Order []uint64
+	Items []QueueItem
 }
 
 // committedRing bounds the memory of answered ids. It only has to outlive a
@@ -50,6 +98,121 @@ func NewInbox(ctx context.Context) *Inbox {
 	// the close semantics: the parts that were worth having once.
 	b.q = actor.Start[event](ctx, nil, nil)
 	return b
+}
+
+// OnChange installs the sink the queue continuo is published through. THE
+// INBOX IS THE ONE PUBLISHER: every enqueue, mutation, lift, commit, coalesce
+// and drain already passes through here, and a publisher anywhere else can
+// disagree with the queue's own state -- at which point there are two answers
+// to "what is queued" and no way to tell which one is the queue.
+//
+// The sink runs on whatever goroutine moved the queue, and must not block.
+func (b *Inbox) OnChange(fn func(InboxSnapshot)) {
+	b.mu.Lock()
+	b.onChange = fn
+	b.mu.Unlock()
+	fn(b.Project())
+}
+
+// notify projects and publishes. Called at the tail of every mutator, AFTER
+// the queue's own lock has been released: the sink writes a form, the form has
+// an actor of its own, and holding the inbox's lock across that would put two
+// unrelated serialization points in one order forever.
+func (b *Inbox) notify() {
+	b.mu.Lock()
+	fn := b.onChange
+	b.mu.Unlock()
+	if fn == nil {
+		return
+	}
+	fn(b.Project())
+}
+
+// Project is the whole truth about the queue at one instant.
+func (b *Inbox) Project() InboxSnapshot {
+	var pending []event
+	b.q.Read(func(p []event) { pending = append([]event(nil), p...) })
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	snap := InboxSnapshot{Epoch: b.epoch}
+	for _, e := range pending {
+		if e.typ != eventUserPrompt || e.id == 0 {
+			continue
+		}
+		snap.Order = append(snap.Order, e.id)
+		snap.Items = append(snap.Items, QueueItem{
+			ID: e.id, Text: e.text, Sender: senderOf(e), State: rpc.QueueStateQueued,
+			At: e.at, Merged: e.merged,
+		})
+		// A message folded INTO this one is not gone, it is absorbed. Say so
+		// with the survivor's id, so a client holding the old id can follow it
+		// instead of watching its row vanish.
+		for _, m := range e.merged {
+			snap.Items = append(snap.Items, QueueItem{
+				ID: m, State: rpc.QueueStateMerged, Into: e.id, At: e.at,
+			})
+		}
+	}
+	for _, refs := range [][]promptRef{b.lifted, b.committed, b.departed} {
+		for _, r := range refs {
+			snap.Items = append(snap.Items, QueueItem{
+				ID: r.id, Text: r.text, Sender: r.sender, State: r.state,
+				At: r.at, Merged: r.merged, Turn: r.turn,
+			})
+			for _, m := range r.merged {
+				snap.Items = append(snap.Items, QueueItem{
+					ID: m, State: rpc.QueueStateMerged, Into: r.id, At: r.at,
+				})
+			}
+		}
+	}
+	return snap
+}
+
+// InflightCount is how many messages have been accepted and not yet answered:
+// the queue plus whatever the drain loop is holding.
+func (b *Inbox) InflightCount() int {
+	n := 0
+	b.q.Read(func(pending []event) {
+		for _, e := range pending {
+			if e.typ == eventUserPrompt && e.id != 0 {
+				n++
+			}
+		}
+	})
+	b.mu.Lock()
+	n += len(b.lifted)
+	b.mu.Unlock()
+	return n
+}
+
+// MarkTurn stamps the turn a committed message became. Until it is known a
+// client cannot tell when its own transcript has adopted the message, and
+// would have to drop the row on a timer instead of on the fact.
+func (b *Inbox) MarkTurn(ids []uint64, turn uint64) {
+	if len(ids) == 0 || turn == 0 {
+		return
+	}
+	b.mu.Lock()
+	for _, id := range ids {
+		for i := range b.committed {
+			if b.committed[i].id == id {
+				b.committed[i].turn = turn
+			}
+		}
+	}
+	b.mu.Unlock()
+	b.notify()
+}
+
+// senderOf is the attribution of a prompt's first segment, which is who asked.
+func senderOf(e event) string {
+	if len(e.segments) == 0 {
+		return ""
+	}
+	return e.segments[0].sender
 }
 
 // mintEpoch returns a fresh inbox generation token. crypto/rand cannot
@@ -98,6 +261,7 @@ func (b *Inbox) Send(evt event) bool {
 		return false
 	}
 	b.signalWake()
+	b.notify()
 	return true
 }
 
@@ -111,6 +275,7 @@ func (b *Inbox) Recv() (event, bool) {
 	b.mu.Lock()
 	b.liftLocked(evt)
 	b.mu.Unlock()
+	b.notify()
 	return evt, true
 }
 
@@ -123,6 +288,9 @@ func (b *Inbox) TakeReadyUserPrompts() []event {
 		b.liftLocked(evt)
 	}
 	b.mu.Unlock()
+	if len(taken) > 0 {
+		b.notify()
+	}
 	return taken
 }
 
@@ -134,7 +302,10 @@ func (b *Inbox) liftLocked(evt event) {
 	if evt.typ != eventUserPrompt || evt.id == 0 {
 		return
 	}
-	b.lifted = append(b.lifted, promptRef{id: evt.id, merged: evt.merged})
+	b.lifted = append(b.lifted, promptRef{
+		id: evt.id, merged: evt.merged, text: evt.text, sender: senderOf(evt),
+		at: evt.at, state: rpc.QueueStateCommitting,
+	})
 }
 
 // MarkCommitted moves ids from in-flight to answered: the drain loop has
@@ -144,6 +315,11 @@ func (b *Inbox) MarkCommitted(events []event) {
 	if len(events) == 0 {
 		return
 	}
+	b.markCommitted(events)
+	b.notify()
+}
+
+func (b *Inbox) markCommitted(events []event) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for _, evt := range events {
@@ -151,7 +327,10 @@ func (b *Inbox) MarkCommitted(events []event) {
 			continue
 		}
 		b.dropLiftedLocked(evt.id)
-		b.committed = append(b.committed, promptRef{id: evt.id, merged: evt.merged})
+		b.committed = append(b.committed, promptRef{
+			id: evt.id, merged: evt.merged, text: evt.text, sender: senderOf(evt),
+			at: evt.at, state: rpc.QueueStateCommitted,
+		})
 	}
 	if excess := len(b.committed) - committedRing; excess > 0 {
 		b.committed = append([]promptRef(nil), b.committed[excess:]...)
@@ -189,6 +368,7 @@ func (b *Inbox) Prepend(events []event) bool {
 		return append(append(make([]event, 0, len(events)+len(pending)), events...), pending...)
 	})
 	b.signalWake()
+	b.notify()
 	return true
 }
 
@@ -227,6 +407,7 @@ func (b *Inbox) CoalesceUserPromptRuns() {
 		}
 		return out
 	})
+	b.notify()
 }
 
 // DrainUserPrompts removes every queued user prompt and returns them
@@ -250,27 +431,58 @@ func (b *Inbox) DrainUserPrompts() []event {
 		}
 		return kept
 	})
+	// A hangup that clears the queue is not the same event as a user deleting
+	// six messages, and a queue that simply stopped listing both said neither.
+	b.remember(drained, rpc.QueueStateDrained)
+	b.notify()
 	return drained
+}
+
+// remember parks departed messages so their fate is PUBLISHED rather than
+// inferred from an absence. Bounded by the same ring as committed: it only has
+// to outlive a client's round trip, past which "unknown" is honest again.
+func (b *Inbox) remember(events []event, state rpc.QueueState) {
+	if len(events) == 0 {
+		return
+	}
+	b.mu.Lock()
+	for _, e := range events {
+		if e.typ != eventUserPrompt || e.id == 0 {
+			continue
+		}
+		b.departed = append(b.departed, promptRef{
+			id: e.id, merged: e.merged, text: e.text, sender: senderOf(e),
+			at: e.at, state: state,
+		})
+	}
+	if excess := len(b.departed) - committedRing; excess > 0 {
+		b.departed = append([]promptRef(nil), b.departed[excess:]...)
+	}
+	b.mu.Unlock()
 }
 
 // DeletePrompts drops queued messages and reports, PER ID, what happened.
 func (b *Inbox) DeletePrompts(epoch string, ids []uint64, all bool) (string, []rpc.QueueResult) {
 	var epochOut string
 	var results []rpc.QueueResult
+	var dropped []event
 	b.q.Do(func(pending []event) []event {
 		var kept []event
-		kept, epochOut, results = b.deleteLocked(pending, epoch, ids, all)
+		kept, epochOut, results, dropped = b.deleteLocked(pending, epoch, ids, all)
 		return kept
 	})
+	b.remember(dropped, rpc.QueueStateDropped)
+	b.notify()
 	return epochOut, results
 }
 
 // deleteLocked runs inside the queue's lock; it takes the bookkeeping lock
 // second, and nothing takes them the other way round.
-func (b *Inbox) deleteLocked(queue []event, epoch string, ids []uint64, all bool) ([]event, string, []rpc.QueueResult) {
+func (b *Inbox) deleteLocked(queue []event, epoch string, ids []uint64, all bool) ([]event, string, []rpc.QueueResult, []event) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	var dropped []event
 	if all {
 		var results []rpc.QueueResult
 		kept := make([]event, 0, len(queue))
@@ -279,9 +491,10 @@ func (b *Inbox) deleteLocked(queue []event, epoch string, ids []uint64, all bool
 				kept = append(kept, e)
 				continue
 			}
+			dropped = append(dropped, e)
 			results = append(results, rpc.QueueResult{ID: e.id, Outcome: rpc.QueueDeleted})
 		}
-		return kept, b.epoch, results
+		return kept, b.epoch, results, dropped
 	}
 
 	results := make([]rpc.QueueResult, 0, len(ids))
@@ -291,17 +504,18 @@ func (b *Inbox) deleteLocked(queue []event, epoch string, ids []uint64, all bool
 				ID: id, Outcome: rpc.QueueRejected, Reason: reason, Detail: detail,
 			})
 		}
-		return queue, b.epoch, results
+		return queue, b.epoch, results, nil
 	}
 	for _, id := range ids {
 		if i := indexOf(queue, id); i >= 0 {
+			dropped = append(dropped, queue[i])
 			queue = append(queue[:i], queue[i+1:]...)
 			results = append(results, rpc.QueueResult{ID: id, Outcome: rpc.QueueDeleted})
 			continue
 		}
 		results = append(results, b.refuseLocked(queue, id))
 	}
-	return queue, b.epoch, results
+	return queue, b.epoch, results, dropped
 }
 
 // UpdatePrompt replaces the text of one queued message, with the same
@@ -325,6 +539,7 @@ func (b *Inbox) UpdatePrompt(epoch string, id uint64, text string) (string, rpc.
 		result = b.refuseLocked(pending, id)
 		return pending
 	})
+	b.notify()
 	return epochOut, result
 }
 
@@ -379,6 +594,15 @@ func (b *Inbox) refuseLocked(queue []event, id uint64) rpc.QueueResult {
 		if ref.id == id || containsID(ref.merged, id) {
 			return reject(rpc.RejectCommitted,
 				"already part of the conversation; it cannot be unasked", ref.id)
+		}
+	}
+	for _, ref := range b.departed {
+		if ref.id == id || containsID(ref.merged, id) {
+			if ref.state == rpc.QueueStateDrained {
+				return reject(rpc.RejectUnknown,
+					"an interrupt cleared the queue and this went with it", 0)
+			}
+			return reject(rpc.RejectUnknown, "already deleted from this generation", 0)
 		}
 	}
 	return reject(rpc.RejectUnknown, "no such queued message in this generation", 0)

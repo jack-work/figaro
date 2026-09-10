@@ -110,7 +110,12 @@ func (in *interactiveInput) commandSend(ctx context.Context, fields []string) (s
 		// by any deliberate pit and by any earlier Esc, so a typed send opens
 		// the queue the deliberate way instead. `active` is the daemon's
 		// answer to "did this join a running turn".
-		in.refreshQueued()
+		//
+		// THERE IS NO REFRESH HERE ANY MORE. This used to kick refreshQueued()
+		// because the queue was polled and the drawer would otherwise show a
+		// stale list for up to half a second after the send that filled it.
+		// The queue is a continuo now: the patch is already on its way over
+		// this same connection, and asking would only race it.
 		if active {
 			in.mu.Lock()
 			in.lt.tr.openQueueFromKey()
@@ -261,6 +266,13 @@ func (in *interactiveInput) retarget(ctx context.Context, id string, ep transpor
 	in.wireHooks()
 	in.mu.Unlock()
 
+	// A NEW SUBJECT HAS DIFFERENT CONTINUOS. Dropping the mirrors is the same
+	// argument as the generation itself: folding the old aria's queue into the
+	// new one's drawer is the fabricated-adjacency bug wearing different
+	// clothes. Then seed, because a mirror that has never been seeded shows
+	// nothing and the bar would sit on whatever it last guessed.
+	in.continuos.reset(gen)
+	in.seedContinuos()
 	if old != nil && ownedOld {
 		old.Close()
 	}
@@ -327,6 +339,13 @@ func (in *interactiveInput) notifyHandler(gen uint64) sdk.NotifyHandler {
 			in.turnFrame(params)
 		case rpc.MethodTurnDone:
 			in.turnDone(params)
+		case rpc.MethodFormDelta:
+			// A CONTINUO PATCH. It takes the render lock itself (and may go to
+			// the wire to resync), so it must not run under the one this
+			// handler holds.
+			in.mu.Unlock()
+			in.applyContinuoDelta(params)
+			in.mu.Lock()
 		}
 	}
 }

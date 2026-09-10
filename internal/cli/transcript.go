@@ -1510,7 +1510,8 @@ func (t *transcript) queuedPitRows() []pitRow {
 	rows := make([]pitRow, 0, len(t.queued))
 	for _, q := range t.queued {
 		rows = append(rows, pitRow{
-			text: firstLineTrim(q.text), yank: q.text, id: strconv.FormatUint(q.id, 10),
+			text: q.mark() + " " + firstLineTrim(q.text),
+			yank: q.text, id: strconv.FormatUint(q.id, 10),
 		})
 	}
 	return rows

@@ -303,6 +303,13 @@ func (t *livelogTurn) openOverflows(nodes []livedoc.Node) bool {
 // armThinking pins the footer the instant a submit is accepted: before the
 // prompt has round-tripped, before the model's first token. The footer is a
 // permanent fixture of the view, so it must not wait on the stream.
+//
+// WHAT IT PINS IS NOW HONEST. It used to pin "thinking", which asserted that a
+// model was working on a message that might still be in the socket. It pins
+// SENDING -- a fact about this process, the only kind of fact a client is
+// entitled to assert about a turn -- and the handover to accepted/thinking
+// happens when the runtime continuo says so. If the daemon never answers, the
+// bar sits on "sending", which is TRUE.
 func (t *livelogTurn) armThinking() {
 	if t.tr.active || t.thinkingOpen {
 		return
@@ -911,7 +918,11 @@ func sameQueue(a, b []queuedItem) bool {
 		return false
 	}
 	for i := range a {
-		if a[i].id != b[i].id || a[i].text != b[i].text {
+		// STATE IS PART OF THE ROW. Comparing only id and text made a message
+		// moving from queued to committing look like no change at all, so the
+		// gutter mark never repainted and the travel the whole feature exists
+		// to show was invisible.
+		if a[i].id != b[i].id || a[i].text != b[i].text || a[i].state != b[i].state {
 			return false
 		}
 	}
@@ -942,7 +953,7 @@ func (t *livelogTurn) queuedRows() []string {
 			break
 		}
 		rows = append(rows, term.Dim(clipToWidth(
-			fmt.Sprintf("   %d. %s", i+1, firstLineTrim(p)), w)))
+			fmt.Sprintf("   %s %d. %s", q.mark(), i+1, firstLineTrim(p)), w)))
 	}
 	return rows
 }
@@ -1008,4 +1019,21 @@ func (t *livelogTurn) setCommandCompleter(fn func(string) []string) { t.tr.compl
 type queuedItem struct {
 	id   uint64
 	text string
+	// state is where the message is on its way from a client to an inquiry.
+	// It is the difference between a row that is waiting and one that is
+	// BECOMING A MESSAGE RIGHT NOW, which is the distinction the drawer used
+	// to be unable to draw because the daemon never published it.
+	state rpc.QueueState
+}
+
+// mark is the one-glyph gutter a row wears, so a reader can see a message
+// travel rather than watching it blink out of the list.
+func (q queuedItem) mark() string {
+	switch q.state {
+	case rpc.QueueStateCommitting:
+		return "→"
+	case rpc.QueueStateCommitted:
+		return "✓"
+	}
+	return "·"
 }
