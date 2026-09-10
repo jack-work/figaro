@@ -85,7 +85,7 @@ func IntrinsicKeys(intrinsic string) []KeyDoc {
 	switch intrinsic {
 	case "runtime":
 		return []KeyDoc{
-			{Key: "turn", Short: `What the aria is DOING: "idle", "accepted", "committing", "thinking", "tooling"`, Mode: KeySystemManaged},
+			{Key: "turn.state", Short: `What the aria is DOING: "idle", "accepted", "committing", "thinking", "tooling"`, Mode: KeySystemManaged},
 			{Key: "turn.id", Short: "The in-flight turn id", Mode: KeySystemManaged},
 			{Key: "turn.since", Short: "Unix millis of the last transition", Mode: KeySystemManaged},
 			{Key: "turn.reason", Short: "The verdict of the turn that just ended; carried only into idle", Mode: KeySystemManaged},

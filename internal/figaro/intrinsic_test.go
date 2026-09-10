@@ -14,7 +14,9 @@ package figaro
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jack-work/figaro/api/form"
@@ -273,14 +275,14 @@ func TestRuntimeIntrinsicPublishesEveryKeyIncludingProtectedOnes(t *testing.T) {
 		t.Fatal("publishing the runtime state landed NOTHING. The intrinsic is empty, " +
 			"which is indistinguishable from a intrinsic with nothing to say")
 	}
-	for _, key := range []string{"turn", "turn.since", "inflight", "epoch"} {
+	for _, key := range []string{"turn.state", "turn.since", "inflight", "epoch"} {
 		if _, ok := snap.Get(key); !ok {
 			t.Fatalf("key %q is missing: the patch was refused whole, so the keys that "+
 				"WERE writable went down with the one that was not", key)
 		}
 	}
-	if got, ok := stringOf(snap, "turn"); !ok || got != string(rpc.RuntimeThinking) {
-		t.Fatalf("turn is %q, wanted %q", got, rpc.RuntimeThinking)
+	if got, ok := stringOf(snap, "turn.state"); !ok || got != string(rpc.RuntimeThinking) {
+		t.Fatalf("turn.state is %q, wanted %q", got, rpc.RuntimeThinking)
 	}
 	if got, ok := stringOf(snap, "model"); !ok || got != "claude-test-5" {
 		t.Fatalf("model is %q: a system-managed key the intrinsic owns was not written. "+
@@ -337,3 +339,19 @@ func stringOf(snap form.Snapshot, key string) (string, bool) {
 	}
 	return s, true
 }
+
+// readSources concatenates package sources for the call-site assertions.
+func readSources(t *testing.T, names ...string) string {
+	t.Helper()
+	var b strings.Builder
+	for _, n := range names {
+		data, err := os.ReadFile(n)
+		if err != nil {
+			t.Fatalf("read %s: %v", n, err)
+		}
+		b.Write(data)
+	}
+	return b.String()
+}
+
+func containsOutsideOfDecl(src, needle string) bool { return strings.Contains(src, needle) }

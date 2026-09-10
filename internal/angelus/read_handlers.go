@@ -48,6 +48,20 @@ func (h *handlers) readFromStore(id, method string, params json.RawMessage) (any
 	r := h.reader()
 	switch method {
 	case rpc.MethodForm:
+		// AN INTRINSIC FORM IS NOT ON DISK, so a dormant aria cannot answer for
+		// one. Returning the board here would be worse than an error: the
+		// caller asked for `<id>/runtime` and would be handed a snapshot that
+		// looks like a form, reads like a form, and is a DIFFERENT form.
+		var req rpc.FormRequest
+		if len(params) > 0 {
+			_ = json.Unmarshal(params, &req)
+		}
+		if name := req.Intrinsic; name != "" && name != figaro.IntrinsicState {
+			return nil, true, fmt.Errorf(
+				"%s is dormant, so it has no %q: an intrinsic form is live-only state and is "+
+					"never written to disk. Wake it (send it something) or read its board instead",
+				id, name)
+		}
 		snap, version, err := r.Form(id)
 		if err != nil {
 			return nil, true, err
@@ -128,7 +142,11 @@ func (h *handlers) form(ctx context.Context, params json.RawMessage) (interface{
 	if err != nil {
 		return nil, err
 	}
-	return h.routeRead(ctx, id, rpc.MethodForm, nil)
+	// PARAMS TRAVEL. They used to be dropped here, which silently disabled the
+	// intrinsic-form selector on this door: `figaro.form` with
+	// {"intrinsic":"runtime"} was answered with the BOARD, because the field
+	// naming which form was wanted never reached the agent.
+	return h.routeRead(ctx, id, rpc.MethodForm, params)
 }
 
 func ariaIDParam(params json.RawMessage, method string) (string, error) {

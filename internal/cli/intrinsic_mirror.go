@@ -77,7 +77,7 @@ type runtimeView struct {
 
 func readRuntime(snap form.Snapshot) runtimeView {
 	v := runtimeView{}
-	if s, ok := lookupString(snap, "turn"); ok {
+	if s, ok := lookupString(snap, "turn.state"); ok {
 		v.State, v.Known = rpc.RuntimeState(s), true
 	}
 	v.Reason, _ = lookupString(snap, "turn.reason")

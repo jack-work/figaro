@@ -295,7 +295,7 @@ older peer that ignores the field reads exactly what it read before.
 
 | key | meaning |
 |---|---|
-| `turn` | `idle`, `accepted`, `committing`, `thinking`, `tooling` |
+| `turn.state` | `idle`, `accepted`, `committing`, `thinking`, `tooling` |
 | `turn.id` | the in-flight turn |
 | `turn.since` | unix ms of the last transition |
 | `turn.reason` | the verdict, carried only into `idle` |
