@@ -103,3 +103,8 @@ require (
 	golang.org/x/sync v0.18.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+// Local until hush cuts a release carrying unlock.method = "file"
+// (branch feat/file-unlock). `figaro vault init --file` needs it; drop
+// this line and bump the require above the moment the tag exists.
+replace github.com/jack-work/hush => /home/gluck/dev/hush/file-unlock

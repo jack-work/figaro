@@ -148,11 +148,49 @@ func promptVaultPassphrase(h *managed.Hush, appName string) ([]byte, error) {
 		})
 	}
 	svc, acct := h.KeyringTarget()
-	return tui.PromptPassphrase(tui.PassphraseRequest{
-		App:            appName,
-		Mode:           tui.PassphraseCreate,
-		SavesToKeyring: keyringReachable(svc, acct),
-	})
+	if keyringReachable(svc, acct) {
+		return tui.PromptPassphrase(tui.PassphraseRequest{
+			App:            appName,
+			Mode:           tui.PassphraseCreate,
+			SavesToKeyring: true,
+		})
+	}
+	return promptFirstRunWithoutKeyring(h, appName)
+}
+
+// promptFirstRunWithoutKeyring offers the key file first, because on a
+// host with no keyring a passphrase is a question asked forever. The
+// returned bytes are the ones hush will encrypt the new identity with,
+// so writing the file here and handing back its contents is the whole
+// of the file arrangement: hush writes the identity, and the next
+// process reads the file and never asks.
+func promptFirstRunWithoutKeyring(h *managed.Hush, appName string) ([]byte, error) {
+	choice := string(unlockKindFile)
+	if tui.Available() || isStdinTTY() {
+		var err error
+		choice, err = tui.PickProvider(
+			"No OS keyring is reachable here. How should "+appName+" unlock its vault?",
+			[]tui.ProviderOption{
+				{Key: string(unlockKindFile), Label: "Key file", Hint: "a random passphrase in a 0600 file, never asks"},
+				{Key: string(unlockKindPassphrase), Label: "Passphrase", Hint: "you type it on every start"},
+			})
+		if err != nil {
+			return nil, err
+		}
+	}
+	if choice == string(unlockKindPassphrase) {
+		return tui.PromptPassphrase(tui.PassphraseRequest{
+			App:  appName,
+			Mode: tui.PassphraseCreate,
+		})
+	}
+	pp, path, err := setupFileUnlock(h)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Fprintf(stderrw, "figaro: vault passphrase written to %s (mode 0600)\n", path)
+	fmt.Fprintln(stderrw, "figaro: anyone who can read your home directory can read it, and your provider tokens with it")
+	return pp, nil
 }
 
 // ensureHush initializes hush. Must be called from the CLI process.

@@ -260,10 +260,16 @@ addresses a different instance and cannot repair figaro's. Alias: `figaro hush`.
 
 | Command | Effect |
 |---|---|
-| `figaro vault status` | Mode, identity path, public key, agent liveness, unlock method, and whether the saved passphrase actually decrypts the identity. |
+| `figaro vault status` | Mode, identity path, public key, agent liveness, unlock method, and whether the saved passphrase actually decrypts the identity. Every keyring call it makes is bounded at 5s, because a locked Secret Service collection with no prompter makes `keyring.Get` block forever rather than fail. |
+| `figaro vault init [--file \| --passphrase]` | Create the identity. `--file` writes 32 random bytes, base64, to `<hushconfig>/passphrase` mode 0600, points `hush.toml` at it, and asks you nothing, ever. `--passphrase` asks. |
 | `figaro vault forget` | Delete the keyring entry. The next figaro command prompts. |
 | `figaro vault unlock` | Prompt, verify against the identity, save to the keyring, start the agent. |
 | `figaro vault lock` | Stop the agent, dropping the decrypted identity from memory. |
+
+With neither flag, `init` chooses the file when no OS keyring answers, since a
+passphrase with nowhere to be remembered is a question asked on every command:
+this is the WSL case, where gnome-keyring runs but no collection can be created
+headlessly.
 
 The failure this exists for: a saved passphrase that stops decrypting makes
 every command die with `incorrect passphrase`, and the unlock backend's

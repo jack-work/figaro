@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/jack-work/hush/managed"
 	"github.com/zalando/go-keyring"
 
 	"github.com/jack-work/figaro/internal/tui"
@@ -36,7 +37,19 @@ func runVaultStatus() error {
 	if method == "" {
 		method = "auto"
 	}
-	fmt.Fprintf(stdout, "unlock     %s\n", method)
+	if method == "file" {
+		fmt.Fprintf(stdout, "unlock     file %s\n", h.Config().Unlock.File)
+	} else {
+		fmt.Fprintf(stdout, "unlock     %s\n", method)
+	}
+
+	// A file- or exec-unlocked vault never reads the keyring, so
+	// reporting on the entry there invites the reader to fix something
+	// that is not in the path.
+	if method == "file" || method == "exec" {
+		fmt.Fprintln(stdout, "keyring    not used by this unlock method")
+		return nil
+	}
 
 	svc, acct := h.KeyringTarget()
 	if svc == "" || acct == "" {
@@ -50,7 +63,7 @@ func runVaultStatus() error {
 		fmt.Fprintln(stdout, "           no saved passphrase: you'll be prompted")
 	case errors.Is(err, errKeyringTimeout):
 		fmt.Fprintf(stdout, "           no answer in %s (locked collection with no prompter?)\n", keyringTimeout)
-		fmt.Fprintln(stdout, "           this host cannot use the keyring: figaro vault status is the one command that must never hang")
+		fmt.Fprintln(stdout, "           this host cannot use the keyring: figaro vault init --file")
 	case err != nil:
 		fmt.Fprintf(stdout, "           unreadable (%v)\n", err)
 	default:
@@ -101,12 +114,17 @@ func runVaultUnlock() error {
 			pp[i] = 0
 		}
 	}()
-	svc, acct := h.KeyringTarget()
-	if svc != "" && acct != "" {
-		if err := keyringSet(svc, acct, string(pp)); err != nil {
-			fmt.Fprintf(stderrw, "warning: couldn't save to keyring (%v)\n", err)
-		} else {
-			fmt.Fprintf(stdout, "saved to %s:%s\n", svc, acct)
+	// A vault that unlocks from a file or a helper has no use for a
+	// keyring entry, and writing one would leave a second copy of the
+	// passphrase in a place the user did not choose.
+	if method := h.Config().Unlock.Method; method == "" || method == "auto" || method == "keyring" {
+		svc, acct := h.KeyringTarget()
+		if svc != "" && acct != "" {
+			if err := keyringSet(svc, acct, string(pp)); err != nil {
+				fmt.Fprintf(stderrw, "warning: couldn't save to keyring (%v)\n", err)
+			} else {
+				fmt.Fprintf(stdout, "saved to %s:%s\n", svc, acct)
+			}
 		}
 	}
 	if err := h.EnsureReady(); err != nil {
@@ -137,4 +155,109 @@ func vaultAppName() string {
 		return n
 	}
 	return "figaro"
+}
+
+// vaultUnlockKind is what the caller asked for on the command line, or
+// what we work out for him when he asked for nothing.
+type vaultUnlockKind string
+
+const (
+	unlockKindFile       vaultUnlockKind = "file"
+	unlockKindPassphrase vaultUnlockKind = "passphrase"
+	unlockKindAuto       vaultUnlockKind = ""
+)
+
+// resolveUnlockKind turns "no flag" into a choice. The rule is the one
+// the host imposes: with no keyring to remember a passphrase, asking
+// for one means asking for it forever, so the file is the default.
+func resolveUnlockKind(kind vaultUnlockKind, h *managed.Hush) vaultUnlockKind {
+	if kind != unlockKindAuto {
+		return kind
+	}
+	svc, acct := h.KeyringTarget()
+	if keyringReachable(svc, acct) {
+		return unlockKindPassphrase
+	}
+	return unlockKindFile
+}
+
+func runVaultInit(kind vaultUnlockKind) error {
+	h := mustHush()
+	if h.HasIdentity() {
+		return fmt.Errorf("this vault already has an identity at %s\n"+
+			"  figaro vault status   inspect it\n"+
+			"  figaro vault reset    replace it (provider logins are redone)", h.IdentityFile())
+	}
+	return initVault(h, resolveUnlockKind(kind, h))
+}
+
+// initVault creates the identity and leaves the agent running.
+func initVault(h *managed.Hush, kind vaultUnlockKind) error {
+	var pp []byte
+	var err error
+	switch kind {
+	case unlockKindFile:
+		var path string
+		pp, path, err = setupFileUnlock(h)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "passphrase file %s (mode 0600)\n", path)
+		fmt.Fprintln(stdout, "anyone who can read your home directory can read it, and therefore your provider tokens")
+	default:
+		svc, acct := h.KeyringTarget()
+		pp, err = tui.PromptPassphrase(tui.PassphraseRequest{
+			App:            vaultAppName(),
+			Mode:           tui.PassphraseCreate,
+			SavesToKeyring: keyringReachable(svc, acct),
+		})
+		if err != nil {
+			return err
+		}
+	}
+	defer wipeBytes(pp)
+
+	pub, err := h.Init(pp)
+	if err != nil {
+		return fmt.Errorf("create identity: %w", err)
+	}
+	fmt.Fprintf(stdout, "identity        %s\n", h.IdentityFile())
+	fmt.Fprintf(stdout, "public key      %s\n", pub)
+
+	if kind != unlockKindFile {
+		svc, acct := h.KeyringTarget()
+		if svc != "" && acct != "" && keyringReachable(svc, acct) {
+			if err := keyringSet(svc, acct, string(pp)); err != nil {
+				fmt.Fprintf(stderrw, "warning: couldn't save to keyring (%v): you'll be asked again\n", err)
+			} else {
+				fmt.Fprintf(stdout, "keyring         %s:%s\n", svc, acct)
+			}
+		}
+	}
+	if err := h.EnsureReady(); err != nil {
+		return fmt.Errorf("start the vault agent: %w", err)
+	}
+	fmt.Fprintln(stdout, "agent           running")
+	return nil
+}
+
+func wipeBytes(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
+}
+
+// vaultUnlockKindFromFlags reads --file / --passphrase. Neither means
+// "decide for me"; both together is a contradiction and says so rather
+// than silently preferring one.
+func vaultUnlockKindFromFlags(file, passphrase bool) (vaultUnlockKind, error) {
+	switch {
+	case file && passphrase:
+		return unlockKindAuto, fmt.Errorf("--file and --passphrase ask for different things: pick one")
+	case file:
+		return unlockKindFile, nil
+	case passphrase:
+		return unlockKindPassphrase, nil
+	}
+	return unlockKindAuto, nil
 }

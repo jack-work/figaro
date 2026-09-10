@@ -1507,21 +1507,37 @@ flow writes both through the daemon, so a client never has to know the path.`,
 		Aliases: []string{"hush"},
 		Group:   "System",
 		Short:   "Inspect and repair figaro's embedded secrets vault",
-		Usage:   "vault <status | forget | unlock | lock>",
+		Usage:   "vault <status | init | forget | unlock | lock> [--file | --passphrase]",
 		Long: `figaro runs its own hush: its own identity, agent, and keyring entry
 (service "figaro"). The hush binary on PATH addresses a different
 instance, so these are the levers for this one.
 
   status   mode, identity, agent, and whether the saved passphrase works
+  init     create the identity: --file writes a random passphrase to a
+           0600 file and never asks you anything, --passphrase asks
   forget   clear the saved passphrase; the next command prompts
   unlock   prompt, verify, save, and start the agent
-  lock     stop the agent, dropping the decrypted identity`,
+  lock     stop the agent, dropping the decrypted identity
+
+With neither --file nor --passphrase, init picks the file when no OS
+keyring answers, since a passphrase with nowhere to be remembered is a
+question asked on every command.`,
+		Flags: []cmdkit.FlagDef{
+			{Long: "file", IsBool: true, Description: "Unlock from a 0600 passphrase file: no prompt, ever"},
+			{Long: "passphrase", IsBool: true, Description: "Unlock from a passphrase you type"},
+		},
 		ArgsMin: 1,
 		ArgsMax: 1,
 		Run: func(ctx *cmdkit.RunContext) error {
+			kind, err := vaultUnlockKindFromFlags(ctx.BoolFlag("file"), ctx.BoolFlag("passphrase"))
+			if err != nil {
+				return err
+			}
 			switch ctx.Args[0] {
 			case "status":
 				return runVaultStatus()
+			case "init":
+				return runVaultInit(kind)
 			case "forget":
 				return runVaultForget()
 			case "unlock":
@@ -1529,10 +1545,10 @@ instance, so these are the levers for this one.
 			case "lock":
 				return runVaultLock()
 			}
-			return fmt.Errorf("usage: vault <status | forget | unlock | lock>")
+			return fmt.Errorf("usage: vault <status | init | forget | unlock | lock>")
 		},
 		CompleteArgs: func(ctx *cmdkit.CompleteContext) []string {
-			return []string{"status", "forget", "unlock", "lock"}
+			return []string{"status", "init", "forget", "unlock", "lock"}
 		},
 	})
 

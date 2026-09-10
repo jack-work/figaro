@@ -115,6 +115,7 @@ var overlayVerbs = map[string]bool{
 // readers racing for one fd, each swallowing half the user's keystrokes.
 var terminalSubverbs = map[string]bool{
 	"vault unlock": true, // prompts for a passphrase
+	"vault init":   true, // may prompt for a passphrase
 }
 
 // READING A FORM IS ONE THING, and in the pager it is the live view: `show`,
