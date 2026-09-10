@@ -56,11 +56,17 @@ const FormDeltaSchema = 1
 // in both directions: what a client sends as {patch, if_version} comes back as
 // {patch, version}. A recording of a stream can be replayed at another aria.
 type FormDelta struct {
-	Schema  int       `json:"schema"`
-	AriaID  string    `json:"aria_id,omitempty"`
-	Version uint64    `json:"version"`
-	Patch   FormPatch `json:"patch"`
-	At      int64     `json:"at,omitempty"`
+	Schema int    `json:"schema"`
+	AriaID string `json:"aria_id,omitempty"`
+	// Continuo names WHICH form of the host this delta belongs to: the
+	// segment after the slash in `<host>/<name>`. Empty is the identity
+	// segment `state` -- the host's own form -- which is what every delta on
+	// this wire has always meant, so an older peer that ignores the field
+	// reads exactly what it read before.
+	Continuo string    `json:"continuo,omitempty"`
+	Version  uint64    `json:"version"`
+	Patch    FormPatch `json:"patch"`
+	At       int64     `json:"at,omitempty"`
 }
 
 // FormPatch is the wire shape for a form delta. It is the internal

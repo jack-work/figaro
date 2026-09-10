@@ -102,11 +102,33 @@ type FormLog interface {
 	RangePatches(from, upTo uint64, fn func(index uint64, payload []byte) error) error
 }
 
+// FormBaseLog is a FormLog whose history has a FLOOR and a base to start from
+// below it. A paged log (MemFormLog) implements it; a durable one does not
+// need to, because its beginning of time is still on disk.
+//
+// The pair is the point: Floor says where answering stops, Base says what to
+// start from instead. A log that could only say "no" would force every reader
+// below the floor back over the wire for a snapshot this one already holds.
+type FormBaseLog interface {
+	FormLog
+	Base() (form.Snapshot, uint64)
+	Floor() uint64
+}
+
 // OpenForm replays the log and starts the writer. The replay is the cold cost;
 // afterwards every read is an atomic load.
 func OpenForm(log FormLog) (*Form, error) {
 	f := &Form{log: log}
 	st := &formState{}
+	// A PAGED LOG IS OPENED FROM ITS BASE, not from record 1: record 1 may no
+	// longer exist. The base carries the state those dropped records built,
+	// so the replay below picks up exactly where they left off, and `trimmed`
+	// records that a read under the base has to be told no rather than
+	// answered short.
+	if bl, ok := log.(FormBaseLog); ok {
+		st.snap, st.version = bl.Base()
+		st.trimmed = st.version
+	}
 	if err := log.RangePatches(0, 0, func(index uint64, payload []byte) error {
 		var p message.Patch
 		if err := json.Unmarshal(payload, &p); err != nil {
@@ -197,12 +219,41 @@ func (f *Form) PatchesBetween(after, upTo uint64) []VersionedPatch {
 			figOtel.RecordFormPatchRead(context.Background(), len(fromLog), len(ps))
 			return fromLog
 		}
+		// THE LOG COULD NOT ANSWER, so neither can this. Falling through to
+		// the resident array would hand back a SHORT PREFIX, and a short
+		// prefix is indistinguishable from a complete answer at the call
+		// site -- it reads as "these are the patches since your version",
+		// which is a lie that surfaces later as a phantom gap. Nil is the
+		// only honest shape the signature can carry; PatchFloor is how a
+		// caller finds out why and what to do instead.
+		return nil
 	}
 	out := patchRange(ps, after, upTo)
 	// The pair the old API could not report: what this read answered with,
 	// and it is the only place that knows both.
 	figOtel.RecordFormPatchRead(context.Background(), len(out), len(ps))
 	return out
+}
+
+// PatchFloor is the version below which this form cannot supply patches: a
+// read at or under it is answered with nil by PatchesBetween, and the caller
+// must reseed from Snapshot() instead of replaying. Zero means the whole
+// history is available, which is every durable form.
+func (f *Form) PatchFloor() uint64 {
+	if bl, ok := f.log.(FormBaseLog); ok {
+		return bl.Floor()
+	}
+	return 0
+}
+
+// Base is the oldest state this form can be reseeded from without going to
+// the wire, and the version it stands at. For a durable form it is the zero
+// snapshot at version 0 -- the beginning, which is still on disk.
+func (f *Form) Base() (form.Snapshot, uint64) {
+	if bl, ok := f.log.(FormBaseLog); ok {
+		return bl.Base()
+	}
+	return form.Snapshot{}, 0
 }
 
 // Allocates, and is meant to: it is the cold path.
@@ -498,15 +549,72 @@ func effectivePatch(snap form.Snapshot, p message.Patch) message.Patch {
 	return snap.Apply(p).Diff(snap)
 }
 
+// memFormPage is the FLOOR, in records: how much patch history a mem log
+// guarantees a reader can still be answered from. It is the same idea as
+// memory.form_patch_window (config.go) one tier down -- that bounds the
+// DECODED window a Form keeps resident, this bounds the RAW records under it
+// -- and the two should be read together.
+var memFormPage atomic.Int64
+
+func init() { memFormPage.Store(512) }
+
+// SetMemFormPage sets the mem log's floor. Zero or negative retains
+// everything, which is what a mem log did before it was paged.
+func SetMemFormPage(n int) { memFormPage.Store(int64(n)) }
+
+// memPage is a base and the patches applied since it. A page can answer for
+// any version above its base without consulting anything else, which is the
+// whole reason the base is carried rather than the records alone.
+type memPage struct {
+	base        form.Snapshot // the state as of baseVersion
+	baseVersion uint64
+	patches     [][]byte // absolute versions baseVersion+1 .. baseVersion+len
+}
+
+func (p *memPage) top() uint64 { return p.baseVersion + uint64(len(p.patches)) }
+
+// memLogState is the pair of pages, published as one immutable value so a
+// reader takes no lock and never sees a half-rotated log.
+type memLogState struct {
+	// sealed is the PREDECESSOR, kept only until live alone satisfies the
+	// floor. Nil once subsumed.
+	sealed *memPage
+	live   *memPage
+}
+
+// floorVersion is the oldest version this log can still hand back a patch
+// for. A read at or below it is answered from a base snapshot instead.
+func (s *memLogState) floorVersion() uint64 {
+	if s.sealed != nil {
+		return s.sealed.baseVersion
+	}
+	return s.live.baseVersion
+}
+
 // MemFormLog holds a form's records in memory. It is what "a form without an
 // aria" means in practice: the algebra and the MVCC state with no store under
-// them, for a test, a tool, or a form that never needed to be durable.
+// them, for a test, a tool, or a form that never needed to be durable -- a
+// CONTINUO above all, which is a form that is never durable by design.
+//
+// IT IS PAGED, and that is the difference between a mem log and a leak. An
+// append-only slice under a form that is patched per turn grows without bound
+// for as long as the daemon lives. So: appends land on the live page; when it
+// fills, the state is SNAPSHOT and a fresh page opens on that snapshot; the
+// predecessor is held until the live page alone satisfies the floor, and is
+// then dropped. Resident history is therefore always in [page, 2*page)
+// records plus two snapshots.
+//
+// A ring buffer would also have been bounded and would have been worse: it
+// throws away the ability to ANSWER. A page keeps a base to answer from, so a
+// reader that falls off the end is reseeded from memory rather than sent back
+// over the wire for a snapshot it could have been handed.
+//
 // MemFormLog's writer is SINGLE BY CONSTRUCTION and its readers are not.
 // AppendPatch is reached only from reduceOne, which is reached only from
 // runBatch, which is the actor's ONE DRAINER. RangePatches is reached from
 // patchesFromLog on whatever goroutine asks for a range.
 type MemFormLog struct {
-	records atomic.Pointer[[][]byte]
+	state atomic.Pointer[memLogState]
 
 	// writing detects a Second concurrent writer. The lock removal rests on
 	// the single-writer contract, so the contract breaking must be REPORTED
@@ -519,6 +627,33 @@ type MemFormLog struct {
 	testHold func()
 }
 
+// ErrBelowFloor is what a mem log says instead of answering short. A range
+// that starts under the floor cannot be served from patches, and a SHORT
+// ANSWER would read as a legitimate gap to every caller -- so it is an error,
+// and Base() is the cure the caller is expected to reach for.
+var ErrBelowFloor = fmt.Errorf("form log: the requested range starts below the retained floor")
+
+func (m *MemFormLog) load() *memLogState {
+	if st := m.state.Load(); st != nil {
+		return st
+	}
+	return &memLogState{live: &memPage{}}
+}
+
+// Base is the oldest state this log can reseed from: the retained base
+// snapshot and the version it stands at. A reader whose position is below
+// Floor() starts here and replays forward.
+func (m *MemFormLog) Base() (form.Snapshot, uint64) {
+	st := m.load()
+	if st.sealed != nil {
+		return st.sealed.base, st.sealed.baseVersion
+	}
+	return st.live.base, st.live.baseVersion
+}
+
+// Floor is the oldest version a patch is still held for.
+func (m *MemFormLog) Floor() uint64 { return m.load().floorVersion() }
+
 func (m *MemFormLog) AppendPatch(payload []byte) (uint64, error) {
 	if !m.writing.CompareAndSwap(false, true) {
 		return 0, fmt.Errorf("mem form log: a second concurrent AppendPatch. This log " +
@@ -530,37 +665,80 @@ func (m *MemFormLog) AppendPatch(payload []byte) (uint64, error) {
 	if m.testHold != nil {
 		m.testHold()
 	}
-	old := m.records.Load()
-	var cur [][]byte
-	if old != nil {
-		cur = *old
+	old := m.load()
+
+	live := &memPage{
+		base:        old.live.base,
+		baseVersion: old.live.baseVersion,
+		patches:     append(append(make([][]byte, 0, len(old.live.patches)+1), old.live.patches...), append([]byte(nil), payload...)),
 	}
-	next := append(cur, append([]byte(nil), payload...))
-	m.records.Store(&next)
-	return uint64(len(next)), nil
+	next := &memLogState{sealed: old.sealed, live: live}
+
+	// ROTATE. The order matters and is the whole of the retention rule: the
+	// predecessor is dropped only when the page that replaced it can carry
+	// the floor on its own.
+	if page := int(memFormPage.Load()); page > 0 && len(live.patches) >= page {
+		snap, err := replayPage(live)
+		if err != nil {
+			return 0, err
+		}
+		next = &memLogState{
+			sealed: live,
+			live:   &memPage{base: snap, baseVersion: live.top()},
+		}
+	}
+	m.state.Store(next)
+	return live.top(), nil
+}
+
+// replayPage folds a page onto its base. Called once per rotation, which is
+// once per page of appends: the amortized cost of the bound.
+func replayPage(p *memPage) (form.Snapshot, error) {
+	snap := p.base
+	for _, payload := range p.patches {
+		var patch message.Patch
+		if err := json.Unmarshal(payload, &patch); err != nil {
+			return form.Snapshot{}, fmt.Errorf("mem form log: replay page: %w", err)
+		}
+		snap = snap.Apply(patch)
+	}
+	return snap, nil
 }
 
 // SyncThrough is a no-op: memory is as durable as this log gets.
 func (m *MemFormLog) SyncThrough(uint64) error { return nil }
 
-// RangePatches TAKES NO LOCK. It loads one published slice header and walks
-// it; a writer appending concurrently publishes a successor that this call
-// simply does not see, which is a consistent older history rather than a torn
-// newer one.
+// RangePatches TAKES NO LOCK. It loads one published state and walks it; a
+// writer appending concurrently publishes a successor that this call simply
+// does not see, which is a consistent older history rather than a torn newer
+// one.
+//
+// A range starting below the floor returns ErrBelowFloor rather than
+// answering with what it happens to still hold. See ErrBelowFloor.
 func (m *MemFormLog) RangePatches(from, upTo uint64, fn func(uint64, []byte) error) error {
+	st := m.load()
+	floor := st.floorVersion()
 	if from < 1 {
-		from = 1
+		from = floor + 1
 	}
-	var records [][]byte
-	if p := m.records.Load(); p != nil {
-		records = *p
+	if from <= floor {
+		return ErrBelowFloor
 	}
-	for i := from; i <= uint64(len(records)); i++ {
-		if upTo > 0 && i > upTo {
-			return nil
+	for _, p := range []*memPage{st.sealed, st.live} {
+		if p == nil {
+			continue
 		}
-		if err := fn(i, records[i-1]); err != nil {
-			return err
+		for i, payload := range p.patches {
+			v := p.baseVersion + uint64(i) + 1
+			if v < from {
+				continue
+			}
+			if upTo > 0 && v > upTo {
+				return nil
+			}
+			if err := fn(v, payload); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
