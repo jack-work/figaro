@@ -40,7 +40,11 @@ type livelogTurn struct {
 	pending      *aria.Message
 	finished     bool
 	thinkingOpen bool // an OpenThinking placeholder is live and not yet adopted
-	pace         framePacer
+	// failSealed: the failed turn's bar has been committed to scrollback. Two
+	// doors lead there (finishTurn inline, leaveTranscript from the pager) and
+	// a reader can toggle the pager after a failure, so it is said once.
+	failSealed bool
+	pace       framePacer
 
 	// lastFrozen is the highest SLICE incipit has committed to native scrollback
 	// inline (via Freeze). It marks the flush boundary: on leaving the pager,
@@ -180,6 +184,7 @@ func (t *livelogTurn) wireClient() {
 		if m.Role == livedoc.RoleOutput {
 			if newOpen {
 				t.finished = false
+				t.failSealed = false
 			}
 			t.thinkingOpen = false // adopted by real content
 			t.status.beginTurn()
@@ -522,14 +527,36 @@ func (t *livelogTurn) resize(w, h int) {
 }
 
 // render repaints the active view (e.g. after a verbosity toggle).
+//
+// INLINE, ONLY WHILE SOMETHING IS LIVE. t.open is the last message a frame
+// called open; it is not cleared when that message freezes, so after a turn
+// has closed it names a message already committed to scrollback. Repainting
+// it re-OPENED it: a `<aria>/runtime` patch landing after the seal reprinted
+// the question and the bar as a fresh live region and parked the cursor at
+// its top, and when that patch landed after the session's select had returned
+// the shell prompt came out in the middle of it. The incipit knows whether a
+// region is up; ask it.
 func (t *livelogTurn) render() {
 	if t.tr.active {
 		t.tr.render()
-	} else if t.open.Turn != 0 {
+	} else if t.open.Turn != 0 && t.in.LiveHeight() > 0 {
 		t.in.Open(t.open)
 	}
 }
 
+// finishTurn closes out the inline view for a turn the daemon says is over.
+//
+// A FAILED TURN COMMITS ITS BAR. The status bar is where the verdict and the
+// red alert live, in both modes, and the pager keeps painting it after the
+// turn ends. The incipit used to erase instead: AbandonOpen walked past the
+// region and forgot it, so what stayed in scrollback was whatever the last
+// repaint had left there, a spinner or nothing, and the error the user needed
+// went into a bar nobody would paint again. Seal repaints the region once more
+// with the bar as it stands and parks below it: the same stanza the pager
+// would show, left behind as the closer.
+//
+// The caller posts the alert BEFORE calling this, for that reason: the bar is
+// what gets committed, so the news must be on it first.
 func (t *livelogTurn) finishTurn(reason string) {
 	t.status.finishTurn(reason)
 	t.finished = true
@@ -539,17 +566,30 @@ func (t *livelogTurn) finishTurn(reason string) {
 	}
 	hadPending := t.pending != nil
 	t.freezePending()
+	failed := strings.HasPrefix(strings.ToLower(reason), "error:")
 	if t.thinkingOpen {
 		// The turn ended before any assistant content adopted the thinking
-		// placeholder (e.g. an immediate error). Drop it so nothing prints
-		// over the live footer region.
+		// placeholder. On success nothing was said, so drop it and print
+		// nothing over the live footer region. On failure the footer is the
+		// only place the failure is written: commit it.
 		t.thinkingOpen = false
-		t.in.AbandonOpen("")
-	} else if !hadPending && t.open.Turn != 0 && t.open.Role == livedoc.RoleOutput {
-		t.in.Open(t.open)
-		if strings.HasPrefix(strings.ToLower(reason), "error:") {
+		if failed {
+			t.in.Seal()
+		} else {
 			t.in.AbandonOpen("")
 		}
+	} else if !hadPending && t.open.Turn != 0 && t.open.Role == livedoc.RoleOutput {
+		t.in.Open(t.open)
+		if failed {
+			t.in.Seal()
+		}
+	} else if failed {
+		// Nothing of ours is live: the last message froze under its own rule
+		// before the verdict arrived. The bar still owes the reader the error.
+		t.in.Seal()
+	}
+	if failed {
+		t.failSealed = true
 	}
 }
 
@@ -620,15 +660,25 @@ func (t *livelogTurn) showDropped(queue []rpc.QueuedPrompt) {
 	slog.Warn("figaro session", "dropped", len(queue))
 }
 
-// report is where trouble goes: THE BAR, which retires it, and the LOG, which
+// report is where news goes: THE BAR, which retires it, and the LOG, which
 // keeps it. The terminal is not a destination -- a reprint on the way out is
 // how one hangup came to print four lines over a returned shell prompt.
-func (t *livelogTurn) report(text string) {
+//
+// This is the CONFIRMATION level: "interrupting", "interrupted", gray like the
+// rest of the row. Trouble goes through reportError, because the bar paints
+// only trouble red and a turn's failure was arriving here as a confirmation:
+// the ✗ beside it was red and the reason it pointed at was not.
+func (t *livelogTurn) report(text string) { t.reportAt(text, alertInfo) }
+
+// reportError is report for something that went wrong.
+func (t *livelogTurn) reportError(text string) { t.reportAt(text, alertError) }
+
+func (t *livelogTurn) reportAt(text string, level alertLevel) {
 	if strings.TrimSpace(text) == "" {
 		return
 	}
 	slog.Warn("figaro session", "report", text)
-	t.status.setNotice(text)
+	t.status.setNoticeAt(text, level)
 	if t.tr.active {
 		t.tr.render()
 	}
@@ -690,7 +740,20 @@ func (t *livelogTurn) leaveTranscript() {
 	}
 	t.tr.leave()
 	t.flushTail()
-	t.status.setNotice("") // nothing is said on the way out
+	// A FAILED TURN LEAVES ITS BAR BEHIND, here as in the incipit. The tail
+	// just flushed closes under a plain rule (history closes with the rule;
+	// the bookend follows the assistant), so the verdict and the reason were
+	// on the pager's bar until the instant the reader left and then nowhere.
+	// Re-post the reason, because the alert may have retired while the pager
+	// was up, and commit the stanza as the closer.
+	if t.finished && !t.failSealed && t.status.lastTurnFailed() {
+		if reason := t.status.failure(); reason != "" {
+			t.status.setNoticeAt(reason, alertError)
+		}
+		t.in.Seal()
+		t.failSealed = true
+	}
+	t.status.setNotice("") // nothing else is said on the way out
 }
 
 // scrollbackTailRows is how many physical rows of conversation leaving the

@@ -291,3 +291,39 @@ func TestMantraFillsTheRoomItHas(t *testing.T) {
 }
 
 func plainForTest(s string) string { return pitText(s) }
+
+// TestLongAlertClipsItselfNotItsNeighbours: a provider's error sentence used
+// to take the whole row, and the finished row was clipped from the right, so
+// the state glyph and the aria id, the two facts that place the alert, went
+// off the end. Measured in a pty at 100 columns: "error: anthropic 401:
+// invalidate failed: oauth refresh for "anthropic" rejected (run: figaro login
+// …" and nothing else on the row. The alert yields; the fixed fields do not.
+func TestLongAlertClipsItselfNotItsNeighbours(t *testing.T) {
+	v := barFixture()
+	v.State = turnStatusError
+	v.Alert = `error: anthropic 401: invalidate failed: oauth refresh for "anthropic" rejected (run: figaro login anthropic)`
+	v.AlertLevel = alertError
+	rows := v.render(100)
+	if len(rows) != 1 {
+		t.Fatalf("a 100-column bar split into %d rows for a long alert:\n%s", len(rows), strings.Join(rows, "\n"))
+	}
+	row := pitText(rows[0])
+	if !strings.Contains(row, "✗") {
+		t.Errorf("the state glyph was pushed off the row: %q", row)
+	}
+	if !strings.Contains(row, "123abc") {
+		t.Errorf("the aria id was pushed off the row: %q", row)
+	}
+	if !strings.Contains(row, "9.8k/1.0m") {
+		t.Errorf("the right group was pushed off the row: %q", row)
+	}
+	if !strings.HasPrefix(row, "error: anthropic 401") || !strings.Contains(row, "…") {
+		t.Errorf("the alert should lead, cut with an ellipsis: %q", row)
+	}
+	// The floor: a narrow bar keeps at least alertMin of the alert and lets
+	// the row split in three instead, as it always has.
+	narrow := v.render(40)
+	if !strings.HasPrefix(pitText(narrow[0]), "error: anthropic 401") {
+		t.Errorf("the alert was cut below its floor on a narrow bar: %q", narrow[0])
+	}
+}

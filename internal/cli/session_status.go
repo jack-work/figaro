@@ -168,6 +168,10 @@ type sessionStatus struct {
 	noticeUntil time.Time
 	// noticeTTL is how long a posted alert holds the slot. Zero: forever.
 	noticeTTL time.Duration
+	// lastError is the text of the newest error-level alert. The alert itself
+	// retires on its TTL; this does not, so a failed turn's closer can carry
+	// the reason however long the pager stayed up after it.
+	lastError string
 	// notice is trouble the user must see, an error reason, an interrupt
 	// notice: carried IN the frame buffer instead of being written straight
 	// to the terminal. While the pager is up there is no scrollback to write
@@ -218,7 +222,31 @@ func (s *sessionStatus) setNoticeAt(text string, level alertLevel) {
 	}
 	s.mu.Lock()
 	s.noticeLevel = level
+	if level == alertError && s.notice != "" {
+		s.lastError = s.notice
+	}
 	s.mu.Unlock()
+}
+
+// lastTurnFailed reports whether the bar's verdict on the last turn is an
+// error.
+func (s *sessionStatus) lastTurnFailed() bool {
+	if s == nil {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.turn == turnStatusError
+}
+
+// failure is the newest error-level alert text, retired or not.
+func (s *sessionStatus) failure() string {
+	if s == nil {
+		return ""
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.lastError
 }
 
 func (s *sessionStatus) setNotice(text string) {

@@ -60,6 +60,15 @@ func (v statusView) render(w int) []string {
 	}
 	bare, right, at := v.groups()
 	r := joinFields(right)
+
+	// A LONG ALERT CLIPS ITSELF, NOT ITS NEIGHBOURS. The alert leads the row
+	// and is never shed, and clipping the finished row from the right honoured
+	// that too well: a provider's error sentence took the whole width and the
+	// state glyph and the aria id, the two facts a reader needs to place the
+	// alert, went off the end. So the alert is cut to the room left once the
+	// fixed fields have theirs, exactly as the mantra is, but with a floor,
+	// because an alert that has been cut to nothing has been shed.
+	v.clipAlert(bare, w, displayWidth(r))
 	bareW := displayWidth(joinFields(bare))
 
 	// THE MANTRA TAKES WHATEVER IS LEFT. It used to be cut to 32 runes on a
@@ -81,6 +90,40 @@ func (v statusView) render(w int) []string {
 		"",
 		clipToWidthEllipsis(r, w),
 	}
+}
+
+// alertMin is the width below which the alert is not cut further: past that
+// the other fields yield instead, by the row splitting in three as it always
+// has. Enough for "error: " and a few words of the reason.
+const alertMin = 24
+
+// clipAlert cuts bare[0], the alert, to what remains of w after every other
+// left field, the right group and the gutter between the groups. bare is
+// edited in place; the alert keeps its colour, because the cut is made on the
+// text and the paint reapplied.
+func (v statusView) clipAlert(bare []string, w, rightW int) {
+	if v.Alert == "" || len(bare) == 0 {
+		return
+	}
+	others := 0
+	for _, f := range bare[1:] {
+		others += displayWidth(f) + displayWidth(" · ")
+	}
+	room := w - others - rightW
+	if rightW > 0 {
+		room -= 2 // the gutter a one-row bar keeps between its groups
+	}
+	if room < alertMin {
+		room = alertMin
+	}
+	if displayWidth(v.Alert) <= room {
+		return
+	}
+	cut := clipToWidthEllipsis(v.Alert, room)
+	if v.AlertLevel == alertError {
+		cut = term.NoticeInDim(cut)
+	}
+	bare[0] = cut
 }
 
 // withMantra puts the mantra back into the left group, clipped to the room it

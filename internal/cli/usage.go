@@ -27,6 +27,13 @@ func extractPrompt(args []string) string {
 // abandoned turn had succeeded.
 const exitInterrupted = 130
 
+// exitTurnFailed is what `figaro send` returns when the turn it waited on
+// ended in an error. It used to return 0: the bookend was the final line and
+// the process fell out of its select, so `send … && next` ran next on top of
+// an auth failure, and a fan-out script had no way to tell a refused turn
+// from an answered one without parsing the screen.
+const exitTurnFailed = 1
+
 // exitProcess is os.Exit, indirected so the die helpers are testable.
 // Tests swap it for a recorder; nothing else may touch it.
 // stdout is where a command's ORDINARY OUTPUT goes -- the thing it was asked

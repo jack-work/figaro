@@ -239,17 +239,29 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 	select {
 	case <-doneCh:
 		// The committed bookend is the final line; nothing more to print.
+		var failed bool
+		locked(func() { failed = in.turnFailed })
+		if failed {
+			exitNow(exitTurnFailed) // through the hooks: the terminal is still raw
+		}
 	case <-opt.end:
 		locked(func() { lt.finishTurn("") }) // the tape ran out
 	case <-disconnectCh:
 		// q / Ctrl-D. A turn that already finished while the pager was up is a
 		// clean exit, not an abandonment: the completed tail reaches
-		// scrollback intact.
-		locked(func() { lt.abandon(turnStatusDisconnected) })
+		// scrollback intact. If that turn was ours and it failed, leaving the
+		// pager does not make it a success.
+		var failed bool
+		locked(func() { lt.abandon(turnStatusDisconnected); failed = in.turnFailed })
+		if failed {
+			exitNow(exitTurnFailed)
+		}
 	case <-in.subjectDead:
 		locked(func() { lt.abandon(turnStatusError) })
 		if opt.prompt != "" {
-			os.Exit(1)
+			// exitNow, not os.Exit: the defers above are what put the terminal
+			// back (cooked mode, cursor, autowrap), and os.Exit runs none of them.
+			exitNow(exitTurnFailed)
 		}
 	case <-ctx.Done():
 		in.interruptAndLeave(&mu, doneCh)
@@ -348,17 +360,26 @@ func (in *interactiveInput) turnDone(params json.RawMessage) {
 	var d rpc.DoneEntry
 	_ = json.Unmarshal(params, &d)
 
-	// Tear the live region down FIRST, so a hint lands on clean scrollback
-	// below it rather than over the footer.
-	in.lt.finishTurn(d.Reason)
-	if strings.HasPrefix(d.Reason, "error:") {
+	// THE ALERT GOES UP BEFORE THE REGION COMES DOWN. finishTurn commits the
+	// status bar to scrollback as the closer of a failed turn, so the reason
+	// has to be on the bar by then. The old order (tear down, then report) was
+	// written when report printed to the terminal and needed clean rows below
+	// the footer; report goes to the bar now, and the bar is what gets kept.
+	failed := strings.HasPrefix(d.Reason, "error:")
+	if failed {
 		in.noOnce.Do(func() { close(in.noTurn) })
 		if hint, ok := authFailureHint(d.Reason); ok {
-			in.lt.report(hint)
+			in.lt.reportError(hint)
 		} else {
-			in.lt.report(d.Reason)
+			in.lt.reportError(d.Reason)
+		}
+		// Ours to answer for only if we sent it: a listener watching someone
+		// else's turn fail has nothing to say in its exit status.
+		if in.prompt != "" && in.sendCursor >= 0 {
+			in.turnFailed = true
 		}
 	}
+	in.lt.finishTurn(d.Reason)
 	if in.prompt == "" {
 		return
 	}

@@ -142,9 +142,13 @@ type interactiveInput struct {
 	// a frame carries OUR question, noTurn when the agent answers with an
 	// error instead -- state can race (Qua's `active` is sampled before the
 	// prompt is even queued), the EVENT cannot.
-	prompt       string
-	sendCursor   int // set by Qua; a turn.done before it is not ours
-	doneCh       chan struct{}
+	prompt     string
+	sendCursor int // set by Qua; a turn.done before it is not ours
+	doneCh     chan struct{}
+	// turnFailed records that the turn this send was waiting on ended with an
+	// error, so the process can say so in its exit status. Written on the
+	// notify pump under mu, read once after the session's select returns.
+	turnFailed   bool
 	ownTurn      chan struct{}
 	noTurn       chan struct{}
 	ownOnce      sync.Once
@@ -899,7 +903,7 @@ func inputInterrupt(in *interactiveInput, ev keyEvent) keyVerdict {
 			// The turn is not stopping, so nothing will close doneCh: leave
 			// rather than hang, and say why.
 			in.mu.Lock()
-			in.lt.report("interrupt failed: " + err.Error())
+			in.lt.reportError("interrupt failed: " + err.Error())
 			in.mu.Unlock()
 			in.cancel()
 		}
@@ -941,7 +945,7 @@ func (in *interactiveInput) hangUp(disposition rpc.QueueDisposition) keyVerdict 
 		defer in.mu.Unlock()
 		switch {
 		case err != nil:
-			in.lt.report("interrupt failed: " + err.Error())
+			in.lt.reportError("interrupt failed: " + err.Error())
 		case resp.Cleared && len(resp.Queue) > 0:
 			// What was dropped is shown, not summarised: its text is the only
 			// copy left, and a bar row would clip it.

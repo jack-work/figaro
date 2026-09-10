@@ -74,6 +74,7 @@ type Incipit struct {
 	liveCount   int                   // node count of the open suffix; (turn,from,count) is the region's identity
 	liveInquiry string                // the turn's opening question, drawn above the nodes
 	liveSegs    []aria.InquirySegment // that question split by sender; nil when unattributed
+	liveNodes   []livedoc.Node        // what the region last composed, so Seal can repaint it unasked
 	role        string                // open message's role; selects Bookend (assistant) vs Rule
 	live        []string              // rows on screen for the open message
 	vt          int                   // rows of the live region scrolled above the viewport
@@ -380,6 +381,7 @@ func clipRows(rows []string, h int) []string {
 }
 
 func (i *Incipit) compose(nodes []livedoc.Node) []string {
+	i.liveNodes = nodes
 	return i.composeWith(i.liveInquiry, i.liveSegs, nodes, i.footer())
 }
 
@@ -522,11 +524,60 @@ func (i *Incipit) vmove(b *strings.Builder, target int) {
 	i.cur = target
 }
 
+// Seal ends the live region WITH ITS FOOTER COMMITTED, and is what a turn that
+// ends without a normal close frame should call when the footer is the news.
+//
+// AbandonOpen is the other way out, and it is an erasure: it walks the cursor
+// past whatever was on screen and forgets the region, so the pinned footer is
+// left in scrollback exactly as its last repaint happened to leave it. For a
+// turn that failed that was a spinner, a stale glyph, or nothing at all: the
+// status bar had the verdict and the red alert, and the one surface the user
+// was looking at never showed them. Measured in a pty: an auth failure before
+// the first token left the question, a rule, and a returned shell prompt.
+//
+// So: repaint the region once more with the footer as it stands NOW, then park
+// below it. With no region up (the last message already froze under its own
+// rule) the footer is printed fresh, after the blank row every message gets,
+// because it is a closer without a body. Either way what is left in scrollback
+// is the same stanza the pager would be showing at this moment, which is the
+// point: one bar, wherever the reader is.
+func (i *Incipit) Seal() {
+	if i.liveTurn != 0 {
+		i.paint(i.compose(i.liveNodes))
+		i.dropBelow()
+		i.reset()
+		i.atRule = false
+		return
+	}
+	foot := i.footer()
+	if len(foot) == 0 {
+		return
+	}
+	// A message that froze under its own rule left the stanza's opening rule
+	// already on screen; printing the footer's copy under it stacks two.
+	if i.atRule && i.Rule != nil && foot[0] == i.Rule() {
+		foot = foot[1:]
+	}
+	w, _ := i.term.Size()
+	var b strings.Builder
+	for _, r := range i.topMargin() {
+		b.WriteString(r)
+		b.WriteString("\r\n")
+	}
+	for _, s := range foot {
+		b.WriteString(clip(s, w))
+		b.WriteString("\r\n")
+	}
+	io.WriteString(i.term, b.String())
+	i.atRule = false
+}
+
 // AbandonOpen ends the live region without a normal Freeze (no figaro.aria
 // close frame arrived). It moves the cursor past the live content and prints
 // line on a fresh row as a visual boundary, so the next stream lands on clean
 // ground. Use this when the agent dies mid-turn, the user disconnects with
-// Ctrl-D, or an interrupt times out.
+// Ctrl-D, or an interrupt times out. When the footer itself carries what the
+// reader needs to see, Seal is the right exit.
 func (i *Incipit) AbandonOpen(line string) {
 	var b strings.Builder
 	if i.liveTurn != 0 {
@@ -560,6 +611,7 @@ func (i *Incipit) dropBelow() {
 
 func (i *Incipit) reset() {
 	i.liveTurn, i.liveFrom, i.liveCount, i.liveInquiry, i.liveSegs = 0, 0, 0, "", nil
+	i.liveNodes = nil
 	i.role, i.live, i.vt, i.cur = "", nil, 0, 0
 	i.thinking = false
 }

@@ -288,6 +288,89 @@ func TestSmoke_ErrorDoesNotBleedIntoStatusBar(t *testing.T) {
 	}
 }
 
+// THE FAILED TURN'S CLOSER IS ITS BAR, in the incipit exactly as in the pager.
+//
+// What a 401 before the first token left in scrollback, byte-traced 2026-09-10:
+// the question under a plain rule, no verdict, no reason, and then a
+// `<aria>/runtime` patch re-opened the frozen question as a live region and
+// parked the cursor at its top, so the shell prompt printed into the middle of
+// it. Exit status 0. Four defects, one screen.
+//
+// This test asserts the shape a reader should be left with, in the terminal
+// itself: one status row carrying the reason IN RED, the ✗, the aria id; the
+// shell prompt BELOW that row, not inside the stanza; no second copy of the
+// question; and an exit status that says the turn failed. The pager sibling
+// above asserts the bytes never bypass the frame buffer; this one asserts what
+// the frame buffer commits when the session ends inline.
+//
+// COSTS NO TOKENS, for the same reason as its sibling.
+func TestSmoke_FailedTurnLeavesItsBarInScrollback(t *testing.T) {
+	smokeEnabled(t)
+	smokeCase(t)
+	env := append(smokeStore(t), "ANTHROPIC_API_KEY=sk-ant-api03-deliberately-invalid-cherubino")
+	bin := smokeBinary(t)
+	p := newPane(t, env, bin, 100, 30)
+
+	p.send(bin + " send -- 'say OK'; echo EXIT=$?")
+	p.key("Enter")
+	p.waitIdle(90 * time.Second)
+
+	sb, raw := p.scrollback(), p.tmuxOut("capture-pane", "-p", "-e", "-S", "-")
+	if pagerChrome(sb) != 0 {
+		decline(t, "the turn promoted to the pager; this case is about the incipit")
+	}
+	lines := strings.Split(strings.TrimRight(sb, "\n"), "\n")
+
+	// The bar row: the reason leads, the verdict and the aria follow, on ONE row.
+	bar := -1
+	for i, ln := range lines {
+		if strings.Contains(ln, "error:") && strings.Contains(ln, "✗") {
+			bar = i
+		}
+	}
+	if bar < 0 {
+		t.Fatalf("no status row carries both the reason and the ✗:\n%s", sb)
+	}
+	if n := strings.Count(sb, "error:"); n != 1 {
+		t.Errorf("the reason appears %d times, want exactly once (the bar):\n%s", n, sb)
+	}
+	// Red, and painted: the reason must arrive through the bar's alert path,
+	// which is the only path that colours it. A gray reason beside a red ✗ is
+	// the bug where report() posted trouble as a confirmation.
+	for _, ln := range strings.Split(raw, "\n") {
+		if strings.Contains(ln, "error:") && !strings.Contains(ln, "38;5;167") {
+			t.Errorf("the reason is on the bar but not painted red: %q", ln)
+		}
+	}
+	// The shell came back BELOW the stanza. EXIT= is printed by the shell after
+	// figaro exits; anything of ours after it was painted over a returned prompt.
+	exitAt := -1
+	for i, ln := range lines {
+		if strings.HasPrefix(ln, "EXIT=") {
+			exitAt = i
+		}
+	}
+	if exitAt < 0 {
+		t.Fatalf("the shell never came back:\n%s", sb)
+	}
+	if exitAt < bar {
+		t.Errorf("the shell prompt (line %d) is ABOVE the bar (line %d): figaro painted after it exited:\n%s", exitAt, bar, sb)
+	}
+	for _, ln := range lines[exitAt+1:] {
+		if strings.Contains(ln, "say OK") || strings.Contains(ln, "─────") {
+			t.Errorf("conversation rows below the returned shell prompt:\n%s", sb)
+			break
+		}
+	}
+	if !strings.Contains(sb, "EXIT=1") {
+		t.Errorf("a failed turn must exit 1; got %q", lines[exitAt])
+	}
+	// The question was frozen once. Two copies is the re-opened region.
+	if n := bodyLines(sb, "say OK"); n != 1 {
+		t.Errorf("the question appears %d times as a body line, want 1:\n%s", n, sb)
+	}
+}
+
 // THE MESSAGE MUST BE HELD IN THE DRAWER UNTIL IT ROUND-TRIPS, and the status
 // bar must say something DIFFERENT from "thinking" while it is in transit.
 //
