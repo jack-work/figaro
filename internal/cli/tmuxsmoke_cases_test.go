@@ -379,14 +379,21 @@ func TestSmoke_OpenQueueDrawerStaysCurrent(t *testing.T) {
 		decline(t, "the turn ended before the drawer could be opened")
 	}
 
+	// NO 'Q' HERE, and that is a trap this test walked into once: a `:send`
+	// into a busy aria OPENS THE DRAWER BY ITSELF (commandSend calls
+	// openQueueFromKey when the daemon reports the turn active), so pressing Q
+	// afterwards TOGGLES IT SHUT. The first version of this case did exactly
+	// that and then declined because "the drawer did not open" -- it had
+	// opened, and the test closed it.
 	p.typeSlowly(":send -- DRAWERONE")
 	p.key("Enter")
-	time.Sleep(2 * time.Second)
 
-	p.typeSlowly("Q") // open the drawer deliberately, and leave it open
-	time.Sleep(time.Second)
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) && !strings.Contains(p.visible(), "DRAWERONE") {
+		time.Sleep(200 * time.Millisecond)
+	}
 	if vis := p.visible(); !strings.Contains(vis, "DRAWERONE") {
-		decline(t, "the drawer did not open on the first message\n%s", vis)
+		decline(t, "the drawer never opened on the first message\n%s", vis)
 	}
 
 	// A SECOND MESSAGE, WITH THE DRAWER ALREADY OPEN. This is the case that
@@ -395,9 +402,16 @@ func TestSmoke_OpenQueueDrawerStaysCurrent(t *testing.T) {
 	p.typeSlowly(":send -- DRAWERTWO")
 	p.key("Enter")
 
-	deadline := time.Now().Add(10 * time.Second)
+	deadline = time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		if strings.Contains(p.visible(), "DRAWERTWO") {
+		vis := p.visible()
+		if strings.Contains(vis, "DRAWERTWO") {
+			// Both must be up AT ONCE: the drawer stayed open and grew, rather
+			// than being rebuilt around only the newest message.
+			if !strings.Contains(vis, "DRAWERONE") {
+				t.Errorf("the second message replaced the first instead of joining it "+
+					"in the open drawer\n%s", vis)
+			}
 			return
 		}
 		time.Sleep(200 * time.Millisecond)

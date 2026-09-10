@@ -94,8 +94,24 @@ func (c *continuo) publish(set map[string]any, remove []string) {
 	if patch.IsIdentity() {
 		return
 	}
-	if _, err := c.form.Apply(patch, version); err != nil {
-		slog.Warn("continuo: apply", "continuo", c.name, "err", err)
+	// PRIVILEGED, BECAUSE A CONTINUO HAS NO OTHER WRITER. The protection
+	// catalog (api/form.CheckWritable) exists to stop a HUMAN typing `figaro
+	// set model=...` into a board the harness owns. A continuo has no
+	// user-writable path at all -- it is not bound, not settable, and every
+	// key in it is harness-written by construction -- so the check has nothing
+	// to protect here and refusing is the only thing it can do.
+	//
+	// MEASURED, and it is why this comment is long: publishing `model`
+	// through the unprivileged path made the WHOLE runtime continuo empty.
+	// Every publish was refused, every refusal was a slog.Warn nobody reads,
+	// and `fig form show <id>/runtime` answered `{}` -- a dead feature that
+	// looked exactly like a feature with nothing to say yet.
+	if _, _, err := c.form.ApplyEffectPrivileged(patch, version); err != nil {
+		// LOUD. A continuo that cannot write is not degraded, it is ABSENT,
+		// and the status bar it feeds silently reverts to guessing.
+		slog.Error("continuo: publish refused; this continuo is now stale and the "+
+			"client reading it will see stale or missing state",
+			"continuo", c.name, "err", err)
 	}
 }
 

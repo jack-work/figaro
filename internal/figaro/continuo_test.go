@@ -13,8 +13,11 @@ package figaro
 
 import (
 	"context"
+	"encoding/json"
+	"path/filepath"
 	"testing"
 
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
 )
 
@@ -237,4 +240,100 @@ func TestQueuedPromptsReportsCommitting(t *testing.T) {
 		t.Fatalf("a lifted message reports %q, wanted %q",
 			prompts[0].State, rpc.QueueStateCommitting)
 	}
+}
+
+// A CONTINUO MUST BE ABLE TO WRITE EVERY KEY IT PUBLISHES.
+//
+// THIS TEST EXISTS BECAUSE ITS ABSENCE SHIPPED A DEAD FEATURE. `model` is in
+// the system-managed catalog (api/form.CheckWritable), which refuses an
+// UNPRIVILEGED write so a human cannot type `figaro set model=...` into a
+// board the harness owns. A continuo has no user-writable path at all, so the
+// check had nothing to protect and could only refuse -- and it refused the
+// WHOLE patch, not just that key. Every publish failed, every failure was a
+// Warn nobody reads, and `fig form show <id>/runtime` answered `{}`.
+//
+// It was invisible to the unit tests because the test agent has NO MODEL:
+// currentModel() returned "", the key was skipped, and the one key that could
+// fail was never written. A fixture that is tidier than production is a
+// fixture that certifies production untested -- so this one names the model
+// explicitly, which is the only reason it can fail.
+func TestRuntimeContinuoPublishesEveryKeyIncludingProtectedOnes(t *testing.T) {
+	a := newTestAgentForQueue(t)
+	a.form = testFormWithModel(t, "claude-test-5")
+	if a.currentModel() != "claude-test-5" {
+		t.Fatalf("the fixture does not carry a model (%q), so the one key that can be "+
+			"REFUSED is never written and this test cannot fail for its stated reason",
+			a.currentModel())
+	}
+
+	a.publishRuntime(rpc.RuntimeThinking, "")
+
+	snap, version := a.runtime.Snapshot()
+	if version == 0 {
+		t.Fatal("publishing the runtime state landed NOTHING. The continuo is empty, " +
+			"which is indistinguishable from a continuo with nothing to say")
+	}
+	for _, key := range []string{"turn", "turn.since", "inflight", "epoch"} {
+		if _, ok := snap.Get(key); !ok {
+			t.Fatalf("key %q is missing: the patch was refused whole, so the keys that "+
+				"WERE writable went down with the one that was not", key)
+		}
+	}
+	if got, ok := stringOf(snap, "turn"); !ok || got != string(rpc.RuntimeThinking) {
+		t.Fatalf("turn is %q, wanted %q", got, rpc.RuntimeThinking)
+	}
+	if got, ok := stringOf(snap, "model"); !ok || got != "claude-test-5" {
+		t.Fatalf("model is %q: a system-managed key the continuo owns was not written. "+
+			"The protection catalog guards BOARDS from hand-editing; a continuo has "+
+			"no hand to guard against", got)
+	}
+}
+
+// Idle carries the verdict; every other state must CLEAR it, or a reason
+// attached to a running turn describes the previous one and reads as if it
+// described this one.
+func TestRuntimeReasonIsClearedWhenTheTurnMovesOn(t *testing.T) {
+	a := newTestAgentForQueue(t)
+
+	a.publishRuntime(rpc.RuntimeIdle, "error: provider failed")
+	snap, _ := a.runtime.Snapshot()
+	if got, _ := stringOf(snap, "turn.reason"); got != "error: provider failed" {
+		t.Fatalf("idle did not carry its verdict: %q", got)
+	}
+
+	a.publishRuntime(rpc.RuntimeThinking, "")
+	snap, _ = a.runtime.Snapshot()
+	if _, ok := snap.Get("turn.reason"); ok {
+		t.Fatal("a running turn is still wearing the PREVIOUS turn's verdict, which " +
+			"reads as if it were its own")
+	}
+}
+
+// testFormWithModel is a board carrying system.model. THE MODEL IS THE POINT:
+// it is a system-managed key, so it is the one thing in the runtime patch that
+// an unprivileged write is refused for.
+func testFormWithModel(t *testing.T, model string) *form.State {
+	t.Helper()
+	st, err := form.Open(filepath.Join(t.TempDir(), "form.json"))
+	if err != nil {
+		t.Fatalf("open form: %v", err)
+	}
+	raw, err := json.Marshal(model)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	st.Apply(form.Build(form.Snapshot{}, map[string]json.RawMessage{"system.model": raw}, nil))
+	return st
+}
+
+func stringOf(snap form.Snapshot, key string) (string, bool) {
+	raw, ok := snap.Get(key)
+	if !ok {
+		return "", false
+	}
+	var s string
+	if json.Unmarshal(raw, &s) != nil {
+		return "", false
+	}
+	return s, true
 }
