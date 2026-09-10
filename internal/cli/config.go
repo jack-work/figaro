@@ -84,10 +84,10 @@ func mustHush() *managed.Hush {
 			// the child, so this is what actually gives the agent a long life
 			// (without it, the credential dies every 30m mid-session).
 			AgentEnv: []string{"HUSH_TTL=" + ttl.String()},
-			// Drive the first-run passphrase UX from figaro's TUI
-			// so hush doesn't try to read /dev/tty in parallel with
-			// a bubbletea form holding the terminal. Falls back to a
-			// plain numbered prompt when the env can't host the TUI.
+			// Drive the passphrase UX from figaro's TUI so hush doesn't
+			// try to read /dev/tty in parallel with a bubbletea form
+			// holding the terminal. Falls back to a plain numbered
+			// prompt when the env can't host the TUI.
 			PromptPassphrase: func() ([]byte, error) {
 				// Test/dev bypass: a preset passphrase unlocks the hush without
 				// a TTY prompt, so a detached daemon doesn't hang on first run
@@ -97,7 +97,14 @@ func mustHush() *managed.Hush {
 				if pass := os.Getenv("FIGARO_HUSH_PASSPHRASE"); pass != "" && os.Getenv("FIGARO_HUSH_DIR") != "" {
 					return []byte(pass), nil
 				}
-				return tui.PromptPassphrase(appName)
+				// hush calls this for two different questions and used
+				// to get one answer: the create screen, shown to a
+				// returning user who was then told his correct
+				// passphrase was wrong. hushInstance is assigned before
+				// anything can call this (the callback fires from
+				// EnsureReady, never from managed.New), so it is safe
+				// to ask it which question this is.
+				return promptVaultPassphrase(hushInstance, appName)
 			},
 		}
 		// FIGARO_HUSH_DIR pins a fully isolated, EMBEDDED hush rooted at one
@@ -120,6 +127,32 @@ func mustHush() *managed.Hush {
 		die("hush: %s", hushErr)
 	}
 	return hushInstance
+}
+
+// promptVaultPassphrase asks the question the vault's state actually
+// poses. With no identity on disk, that is "choose one", twice, and the
+// keyring promise is made only if there is a keyring to keep it: where
+// there is none, the user is offered a key file instead, which is the
+// only arrangement on such a host that does not ask him something on
+// every command. With an identity, it is "what is yours", once, checked
+// against the identity, with a bounded retry.
+func promptVaultPassphrase(h *managed.Hush, appName string) ([]byte, error) {
+	if h == nil {
+		return tui.PromptPassphrase(tui.PassphraseRequest{App: appName, Mode: tui.PassphraseCreate})
+	}
+	if h.HasIdentity() {
+		return tui.PromptPassphrase(tui.PassphraseRequest{
+			App:    appName,
+			Mode:   tui.PassphraseUnlock,
+			Verify: h.VerifyPassphrase,
+		})
+	}
+	svc, acct := h.KeyringTarget()
+	return tui.PromptPassphrase(tui.PassphraseRequest{
+		App:            appName,
+		Mode:           tui.PassphraseCreate,
+		SavesToKeyring: keyringReachable(svc, acct),
+	})
 }
 
 // ensureHush initializes hush. Must be called from the CLI process.

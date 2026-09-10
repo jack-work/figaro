@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/zalando/go-keyring"
 
@@ -87,7 +88,11 @@ func runVaultUnlock() error {
 	if !h.HasIdentity() {
 		return fmt.Errorf("no identity yet at %s: run any figaro command to set one up", h.IdentityFile())
 	}
-	pp, err := tui.PromptPassphrase("figaro")
+	pp, err := tui.PromptPassphrase(tui.PassphraseRequest{
+		App:    vaultAppName(),
+		Mode:   tui.PassphraseUnlock,
+		Verify: h.VerifyPassphrase,
+	})
 	if err != nil {
 		return err
 	}
@@ -96,9 +101,6 @@ func runVaultUnlock() error {
 			pp[i] = 0
 		}
 	}()
-	if err := h.VerifyPassphrase(pp); err != nil {
-		return fmt.Errorf("that passphrase does not decrypt the identity: nothing saved: %w", err)
-	}
 	svc, acct := h.KeyringTarget()
 	if svc != "" && acct != "" {
 		if err := keyringSet(svc, acct, string(pp)); err != nil {
@@ -125,4 +127,14 @@ func runVaultLock() error {
 	}
 	fmt.Fprintln(stdout, "agent stopped; the decrypted identity is gone from memory")
 	return nil
+}
+
+// vaultAppName is the name the vault answers to, and the keyring
+// service it scopes itself under. Dev shells pivot it with
+// FIGARO_HUSH_APP; mustHush reads the same variable.
+func vaultAppName() string {
+	if n := os.Getenv("FIGARO_HUSH_APP"); n != "" {
+		return n
+	}
+	return "figaro"
 }

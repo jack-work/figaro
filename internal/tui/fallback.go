@@ -7,6 +7,7 @@ package tui
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -14,31 +15,66 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-func promptPassphraseFallback(appname string) ([]byte, error) {
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
+// promptOut and readPassword are variables so a test can drive the
+// fallback prompts without a terminal. Production keeps stderr and the
+// real no-echo read; nothing else may reassign them.
+var (
+	promptOut    io.Writer = os.Stderr
+	readPassword           = func() ([]byte, error) {
+		return term.ReadPassword(int(os.Stdin.Fd()))
+	}
+	stdinIsTTY = func() bool {
+		return term.IsTerminal(int(os.Stdin.Fd()))
+	}
+)
+
+// promptPassphraseFallback is the same two questions without the huh
+// form: a plain numbered prompt for a terminal that cannot host a TUI.
+// It splits create from unlock exactly as the TUI does, because a user
+// on a dumb terminal is no more able to guess which one he is looking
+// at than anyone else.
+func promptPassphraseFallback(req PassphraseRequest) ([]byte, error) {
+	if !stdinIsTTY() {
+		if req.Mode == PassphraseUnlock {
+			return nil, fmt.Errorf(
+				"unlock %s vault: needs a controlling terminal, but stdin is not a TTY",
+				req.app())
+		}
 		return nil, fmt.Errorf(
 			"set up %s secrets vault: needs a controlling terminal, but stdin is not a TTY",
-			appname)
+			req.app())
 	}
-	fmt.Fprintf(os.Stderr, "\n[%s] First-time setup.\n", appname)
-	fmt.Fprintln(os.Stderr, "Choose a passphrase to encrypt your credentials at rest.")
-	fmt.Fprintln(os.Stderr, "We'll save it to your OS keyring: you won't be asked again.")
-	fmt.Fprintln(os.Stderr)
+	if req.Mode == PassphraseUnlock {
+		return unlockFallback(req)
+	}
+	return createFallback(req)
+}
+
+func createFallback(req PassphraseRequest) ([]byte, error) {
+	fmt.Fprintf(promptOut, "\n[%s] First-time setup.\n", req.app())
+	fmt.Fprintln(promptOut, "Choose a passphrase to encrypt your credentials at rest.")
+	if req.SavesToKeyring {
+		fmt.Fprintln(promptOut, "We'll save it to your OS keyring: you won't be asked again.")
+	} else {
+		fmt.Fprintln(promptOut, "This host has no reachable OS keyring, so you'll be asked on every start.")
+		fmt.Fprintln(promptOut, "Run figaro vault init --file to use a key file instead, which never asks.")
+	}
+	fmt.Fprintln(promptOut)
 
 	for {
-		fmt.Fprint(os.Stderr, "Passphrase: ")
-		pp1, err := term.ReadPassword(int(os.Stdin.Fd()))
-		fmt.Fprintln(os.Stderr)
+		fmt.Fprint(promptOut, "Passphrase: ")
+		pp1, err := readPassword()
+		fmt.Fprintln(promptOut)
 		if err != nil {
 			return nil, fmt.Errorf("read passphrase: %w", err)
 		}
 		if len(pp1) == 0 {
-			fmt.Fprintln(os.Stderr, "  passphrase cannot be empty")
+			fmt.Fprintln(promptOut, "  passphrase cannot be empty")
 			continue
 		}
-		fmt.Fprint(os.Stderr, "Confirm:    ")
-		pp2, err := term.ReadPassword(int(os.Stdin.Fd()))
-		fmt.Fprintln(os.Stderr)
+		fmt.Fprint(promptOut, "Confirm:    ")
+		pp2, err := readPassword()
+		fmt.Fprintln(promptOut)
 		if err != nil {
 			wipe(pp1)
 			return nil, fmt.Errorf("read passphrase: %w", err)
@@ -46,11 +82,46 @@ func promptPassphraseFallback(appname string) ([]byte, error) {
 		if !bytesEqual(pp1, pp2) {
 			wipe(pp1)
 			wipe(pp2)
-			fmt.Fprintln(os.Stderr, "  passphrases do not match: try again")
+			fmt.Fprintln(promptOut, "  passphrases do not match: try again")
 			continue
 		}
 		wipe(pp2)
 		return pp1, nil
+	}
+}
+
+func unlockFallback(req PassphraseRequest) ([]byte, error) {
+	fmt.Fprintf(promptOut, "\n[%s] Unlock the vault.\n", req.app())
+	fmt.Fprintln(promptOut, "Enter your passphrase to unlock your stored credentials.")
+	fmt.Fprintln(promptOut)
+
+	tries := req.tries()
+	for attempt := 1; ; attempt++ {
+		fmt.Fprint(promptOut, "Passphrase: ")
+		pp, err := readPassword()
+		fmt.Fprintln(promptOut)
+		if err != nil {
+			return nil, fmt.Errorf("read passphrase: %w", err)
+		}
+		if len(pp) == 0 {
+			wipe(pp)
+			if attempt >= tries {
+				return nil, ErrTooManyAttempts
+			}
+			fmt.Fprintln(promptOut, "  passphrase cannot be empty")
+			continue
+		}
+		if req.Verify == nil {
+			return pp, nil
+		}
+		if err := req.Verify(append([]byte(nil), pp...)); err == nil {
+			return pp, nil
+		}
+		wipe(pp)
+		if attempt >= tries {
+			return nil, ErrTooManyAttempts
+		}
+		fmt.Fprintln(promptOut, "  incorrect passphrase: try again")
 	}
 }
 
