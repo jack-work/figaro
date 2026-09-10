@@ -244,50 +244,79 @@ const (
 )
 
 // DormantAfter is how long an aria may sit idle before the daemon reclaims
-// it. Nil-safe. A non-positive configured value disables reclamation and is
+// it. A non-positive configured value disables reclamation and is
 // returned as 0, which every caller reads as "never".
+// NIL-SAFETY IS STRUCTURAL HERE, not remembered, and it holds for EVERY
+// accessor below: none of them repeats the claim, because a property stated on
+// eight methods out of forty-two reads as a property the other thirty-four
+// lack. TestEveryLoadedAccessorIsNilSafe walks the method set and enforces it.
+//
+// A *Loaded is nil in tests, in tools, and anywhere the daemon has not read a
+// config yet -- and EVERY accessor on it is documented as "nil-safe" in the
+// abstract while being so only where somebody happened to write the check.
+// Measured: of 42 accessors, 20 dereferenced l directly, and the one that
+// caught it (CoordFormat) sat between two that did not.
+//
+// So the guard lives in ONE place and every accessor inherits it: read the
+// config through cfg() and the directory through dir(), and a new accessor is
+// nil-safe by construction rather than by review. The zero Config is exactly
+// "nothing configured", which is what every default branch already tests for.
+func (l *Loaded) cfg() Config {
+	if l == nil {
+		return Config{}
+	}
+	return l.Config
+}
+
+func (l *Loaded) dir() string {
+	if l == nil {
+		return ""
+	}
+	return l.ConfigDir
+}
+
 func (l *Loaded) DormantAfter() time.Duration {
-	if l == nil || l.Config.Memory.DormantAfterMinutes == nil {
+	if l.cfg().Memory.DormantAfterMinutes == nil {
 		return defaultDormantAfter
 	}
-	if *l.Config.Memory.DormantAfterMinutes <= 0 {
+	if *l.cfg().Memory.DormantAfterMinutes <= 0 {
 		return 0
 	}
-	return time.Duration(*l.Config.Memory.DormantAfterMinutes) * time.Minute
+	return time.Duration(*l.cfg().Memory.DormantAfterMinutes) * time.Minute
 }
 
-// SweepInterval is how often the reclamation sweep runs. Nil-safe, and
+// SweepInterval is how often the reclamation sweep runs, and
 // floored at one second so a misconfiguration cannot spin the ticker.
 func (l *Loaded) SweepInterval() time.Duration {
-	if l == nil || l.Config.Memory.SweepIntervalSeconds == nil {
+	if l.cfg().Memory.SweepIntervalSeconds == nil {
 		return defaultSweepInterval
 	}
-	if *l.Config.Memory.SweepIntervalSeconds < 1 {
+	if *l.cfg().Memory.SweepIntervalSeconds < 1 {
 		return time.Second
 	}
-	return time.Duration(*l.Config.Memory.SweepIntervalSeconds) * time.Second
+	return time.Duration(*l.cfg().Memory.SweepIntervalSeconds) * time.Second
 }
 
-// MaxLiveArias is the resident-agent cap, or 0 for unbounded. Nil-safe.
+// MaxLiveArias is the resident-agent cap, or 0 for unbounded.
 func (l *Loaded) MaxLiveArias() int {
-	if l == nil || l.Config.Memory.MaxLiveArias == nil || *l.Config.Memory.MaxLiveArias < 0 {
+	if l.cfg().Memory.MaxLiveArias == nil || *l.cfg().Memory.MaxLiveArias < 0 {
 		return 0
 	}
-	return *l.Config.Memory.MaxLiveArias
+	return *l.cfg().Memory.MaxLiveArias
 }
 
 // IRWindow is the resident decoded-IR cap per aria, or 0 for unbounded.
-// Nil-safe, and floored at minIRWindow so a value too small to hold a turn
+// Floored at minIRWindow so a value too small to hold a turn
 // cannot be configured: below that the window thrashes against its own
 // appends.
 func (l *Loaded) IRWindow() int {
-	if l == nil || l.Config.Memory.IRWindow == nil || *l.Config.Memory.IRWindow <= 0 {
+	if l.cfg().Memory.IRWindow == nil || *l.cfg().Memory.IRWindow <= 0 {
 		return 0
 	}
-	if w := *l.Config.Memory.IRWindow; w < minIRWindow {
+	if w := *l.cfg().Memory.IRWindow; w < minIRWindow {
 		return minIRWindow
 	}
-	return *l.Config.Memory.IRWindow
+	return *l.cfg().Memory.IRWindow
 }
 
 // IRWindowBytes is the CONFIGURED resident decoded-IR byte budget per aria.
@@ -297,16 +326,16 @@ func (l *Loaded) IRWindow() int {
 // substitute a number of its own. An explicit 0 is a real answer -- unbounded
 // -- and comes back with ok true.
 func (l *Loaded) IRWindowBytes() (int, bool) {
-	if l == nil || l.Config.Memory.IRWindowMB == nil {
+	if l.cfg().Memory.IRWindowMB == nil {
 		return 0, false
 	}
-	if *l.Config.Memory.IRWindowMB <= 0 {
+	if *l.cfg().Memory.IRWindowMB <= 0 {
 		return 0, true // explicitly unbounded
 	}
-	if mb := *l.Config.Memory.IRWindowMB; mb < minIRWindowMB {
+	if mb := *l.cfg().Memory.IRWindowMB; mb < minIRWindowMB {
 		return minIRWindowMB << 20, true
 	}
-	return *l.Config.Memory.IRWindowMB << 20, true
+	return *l.cfg().Memory.IRWindowMB << 20, true
 }
 
 // TranslationWindowBytes is the CONFIGURED resident decoded-translation byte
@@ -315,28 +344,28 @@ func (l *Loaded) IRWindowBytes() (int, bool) {
 // to hold the tail a translator is about to send makes it re-read that tail on
 // every Send.
 func (l *Loaded) TranslationWindowBytes() (int, bool) {
-	if l == nil || l.Config.Memory.TranslationWindowMB == nil {
+	if l.cfg().Memory.TranslationWindowMB == nil {
 		return 0, false
 	}
-	if *l.Config.Memory.TranslationWindowMB <= 0 {
+	if *l.cfg().Memory.TranslationWindowMB <= 0 {
 		return 0, true
 	}
-	if mb := *l.Config.Memory.TranslationWindowMB; mb < minIRWindowMB {
+	if mb := *l.cfg().Memory.TranslationWindowMB; mb < minIRWindowMB {
 		return minIRWindowMB << 20, true
 	}
-	return *l.Config.Memory.TranslationWindowMB << 20, true
+	return *l.cfg().Memory.TranslationWindowMB << 20, true
 }
 
 // TelemetryDir resolves the sink directory against the state dir.
-// Empty config means the state dir itself. Nil-safe.
+// Empty config means the state dir itself.
 func (l *Loaded) TelemetryDir(stateDir string) string {
-	if l == nil || l.Config.Telemetry.Dir == "" {
+	if l.cfg().Telemetry.Dir == "" {
 		return stateDir
 	}
-	if filepath.IsAbs(l.Config.Telemetry.Dir) {
-		return l.Config.Telemetry.Dir
+	if filepath.IsAbs(l.cfg().Telemetry.Dir) {
+		return l.cfg().Telemetry.Dir
 	}
-	return filepath.Join(stateDir, l.Config.Telemetry.Dir)
+	return filepath.Join(stateDir, l.cfg().Telemetry.Dir)
 }
 
 // TelemetryLevel is the configured sink floor ("" means info).
@@ -345,7 +374,7 @@ func (l *Loaded) TelemetryLevel() string {
 	if l == nil {
 		return ""
 	}
-	return l.Config.Telemetry.Level
+	return l.cfg().Telemetry.Level
 }
 
 // TelemetryOTLPEndpoint is the collector to ALSO export to, or "".
@@ -353,7 +382,7 @@ func (l *Loaded) TelemetryOTLPEndpoint() string {
 	if l == nil {
 		return ""
 	}
-	return l.Config.Telemetry.OTLPEndpoint
+	return l.cfg().Telemetry.OTLPEndpoint
 }
 
 // SegmentCacheBytes is the CONFIGURED process-wide budget for raw segment
@@ -362,10 +391,10 @@ func (l *Loaded) TelemetryOTLPEndpoint() string {
 // (internal/store/segment bounds itself at 32 MiB). An explicit 0 is a real
 // answer -- hold none -- and comes back ok.
 func (l *Loaded) SegmentCacheBytes() (int64, bool) {
-	if l == nil || l.Config.Memory.SegmentCacheMB == nil {
+	if l.cfg().Memory.SegmentCacheMB == nil {
 		return 0, false
 	}
-	if mb := *l.Config.Memory.SegmentCacheMB; mb > 0 {
+	if mb := *l.cfg().Memory.SegmentCacheMB; mb > 0 {
 		return int64(mb) << 20, true
 	}
 	return 0, true
@@ -375,10 +404,10 @@ func (l *Loaded) SegmentCacheBytes() (int64, bool) {
 // the same contract; the default belongs to internal/livelog/aria, which owns
 // the composed turns.
 func (l *Loaded) UIWindowMB() (int, bool) {
-	if l == nil || l.Config.Memory.UIWindowMB == nil {
+	if l.cfg().Memory.UIWindowMB == nil {
 		return 0, false
 	}
-	if mb := *l.Config.Memory.UIWindowMB; mb > 0 {
+	if mb := *l.cfg().Memory.UIWindowMB; mb > 0 {
 		return mb, true
 	}
 	return 0, true
@@ -406,58 +435,57 @@ const (
 )
 
 // SoftLimitBytes is the daemon's heap ceiling in bytes, or 0 for none.
-// Nil-safe.
 func (l *Loaded) SoftLimitBytes() int64 {
-	if l == nil || l.Config.Memory.SoftLimitMB == nil {
+	if l.cfg().Memory.SoftLimitMB == nil {
 		return int64(defaultSoftLimitMB) << 20
 	}
-	if mb := *l.Config.Memory.SoftLimitMB; mb > 0 {
+	if mb := *l.cfg().Memory.SoftLimitMB; mb > 0 {
 		return int64(mb) << 20
 	}
 	return 0
 }
 
-// ActorLinger is how long a form's writer lingers after draining. Nil-safe.
+// ActorLinger is how long a form's writer lingers after draining.
 // Zero or negative means leave immediately, which is legal and costs a
 // goroutine spawn per burst.
 func (l *Loaded) ActorLinger() time.Duration {
-	if l == nil || l.Config.Memory.ActorLingerMS == nil {
+	if l.cfg().Memory.ActorLingerMS == nil {
 		return time.Duration(defaultActorLingerMS) * time.Millisecond
 	}
-	ms := *l.Config.Memory.ActorLingerMS
+	ms := *l.cfg().Memory.ActorLingerMS
 	if ms < 0 {
 		ms = 0
 	}
 	return time.Duration(ms) * time.Millisecond
 }
 
-// HandleIdle is figwal's head-unload window. Nil-safe; zero defers to
+// HandleIdle is figwal's head-unload window; zero defers to
 // figwal's own default.
 func (l *Loaded) HandleIdle() time.Duration {
-	if l == nil || l.Config.Memory.HandleIdleMinutes == nil {
+	if l.cfg().Memory.HandleIdleMinutes == nil {
 		return 0
 	}
-	return time.Duration(*l.Config.Memory.HandleIdleMinutes) * time.Minute
+	return time.Duration(*l.cfg().Memory.HandleIdleMinutes) * time.Minute
 }
 
-// FormPatchWindow bounds resident decoded patches per form. Nil-safe.
+// FormPatchWindow bounds resident decoded patches per form.
 func (l *Loaded) FormPatchWindow() int {
-	if l == nil || l.Config.Memory.FormPatchWindow == nil {
+	if l.cfg().Memory.FormPatchWindow == nil {
 		return defaultFormPatchWindow
 	}
-	if n := *l.Config.Memory.FormPatchWindow; n > 0 {
+	if n := *l.cfg().Memory.FormPatchWindow; n > 0 {
 		return n
 	}
 	return 0
 }
 
-// SegmentSize returns the WAL segment size in bytes. Nil-safe, so a store
-// opened without config still gets the same geometry as one opened with it.
+// SegmentSize returns the WAL segment size in bytes, so a store opened
+// without config gets the same geometry as one opened with it.
 func (l *Loaded) SegmentSize() int {
-	if l == nil || l.Config.Store.SegmentSize == nil {
+	if l.cfg().Store.SegmentSize == nil {
 		return defaultSegmentSize
 	}
-	return *l.Config.Store.SegmentSize
+	return *l.cfg().Store.SegmentSize
 }
 
 // imageShareNum/imageShareDen is the fraction of a WAL segment that inlined
@@ -528,25 +556,25 @@ const (
 	defaultPageBudgetMax = 524288
 )
 
-// PageBudget returns the server-side default page budget in bytes. Nil-safe:
+// PageBudget returns the server-side default page budget in bytes:
 // an agent constructed without config still gets policy from here, so no
 // second default can grow somewhere else.
 func (l *Loaded) PageBudget() int {
-	if l == nil || l.Config.Wire.PageBudget == nil {
+	if l.cfg().Wire.PageBudget == nil {
 		return defaultPageBudget
 	}
-	return *l.Config.Wire.PageBudget
+	return *l.cfg().Wire.PageBudget
 }
 
-// PageBudgetMax returns the ceiling on a client-requested budget. Nil-safe for
+// PageBudgetMax returns the ceiling on a client-requested budget, for
 // the same reason, and it matters more here: the ceiling must hold even when
 // no config reached us, or a client could make the server materialize an
 // unbounded page.
 func (l *Loaded) PageBudgetMax() int {
-	if l == nil || l.Config.Wire.PageBudgetMax == nil {
+	if l.cfg().Wire.PageBudgetMax == nil {
 		return defaultPageBudgetMax
 	}
-	return *l.Config.Wire.PageBudgetMax
+	return *l.cfg().Wire.PageBudgetMax
 }
 
 // ClampPageBudget resolves a client's requested budget against policy:
@@ -580,78 +608,78 @@ func (c Config) validateWire() error {
 
 // Trunks reports whether the trunk capability is enabled. Default true.
 func (l *Loaded) Trunks() bool {
-	if l.Config.Trunks == nil {
+	if l.cfg().Trunks == nil {
 		return true
 	}
-	return *l.Config.Trunks
+	return *l.cfg().Trunks
 }
 
 // BundledSkills reports whether the binary's own skills take part in
 // composing a form. Default true. See Config.BundledSkills, and
 // outfit.SetBundledSkills, which this feeds.
 func (l *Loaded) BundledSkills() bool {
-	if l.Config.BundledSkills == nil {
+	if l.cfg().BundledSkills == nil {
 		return true
 	}
-	return *l.Config.BundledSkills
+	return *l.cfg().BundledSkills
 }
 
 // EchoPrompt returns whether to echo the prompt. Default true.
 func (l *Loaded) EchoPrompt() bool {
-	if l.Config.CLI.EchoPrompt == nil {
+	if l.cfg().CLI.EchoPrompt == nil {
 		return true
 	}
-	return *l.Config.CLI.EchoPrompt
+	return *l.cfg().CLI.EchoPrompt
 }
 
 // StatusLine returns whether to show status banners. Default true.
 func (l *Loaded) StatusLine() bool {
-	if l.Config.CLI.StatusLine == nil {
+	if l.cfg().CLI.StatusLine == nil {
 		return true
 	}
-	return *l.Config.CLI.StatusLine
+	return *l.cfg().CLI.StatusLine
 }
 
 // StatusVerbose seeds the status bar's verbosity. Default false: succinct is
 // what the requirements make the default, and ^V is how a session changes it.
 func (l *Loaded) StatusVerbose() bool {
-	if l.Config.CLI.StatusVerbose == nil {
+	if l.cfg().CLI.StatusVerbose == nil {
 		return false
 	}
-	return *l.Config.CLI.StatusVerbose
+	return *l.cfg().CLI.StatusVerbose
 }
 
 // NoticeTTL is how long a notification holds the bar's first slot. Default 10s;
 // zero means it stays until displaced.
 func (l *Loaded) NoticeTTL() time.Duration {
-	if l.Config.CLI.NoticeTTL == nil {
+	if l.cfg().CLI.NoticeTTL == nil {
 		return 10 * time.Second
 	}
-	return time.Duration(*l.Config.CLI.NoticeTTL) * time.Second
+	return time.Duration(*l.cfg().CLI.NoticeTTL) * time.Second
 }
 
 // Interactive returns whether the first-run wizard should use a rich
 // TUI. Default true.
 func (l *Loaded) Interactive() bool {
-	if l.Config.CLI.Interactive == nil {
+	if l.cfg().CLI.Interactive == nil {
 		return true
 	}
-	return *l.Config.CLI.Interactive
+	return *l.cfg().CLI.Interactive
 }
 
 // CallerIdentityEnabled reports whether the caller-identity authn provider
 // is on. Default false: today's behavior.
 func (l *Loaded) CallerIdentityEnabled() bool {
-	if l.Config.Authz.CallerIdentity == nil {
+	if l.cfg().Authz.CallerIdentity == nil {
 		return false
 	}
-	return *l.Config.Authz.CallerIdentity
+	return *l.cfg().Authz.CallerIdentity
 }
 
 // AuthzPolicy returns the configured policy name, normalized. Empty means
 // allow-all.
 func (l *Loaded) AuthzPolicy() string {
-	switch p := strings.ToLower(strings.TrimSpace(l.Config.Authz.Policy)); p {
+	switch p := strings.ToLower(strings.TrimSpace(l.cfg().Authz.Policy)); p {
 	case "", "allow-all", "none", "off":
 		return "allow-all"
 	default:
@@ -662,7 +690,7 @@ func (l *Loaded) AuthzPolicy() string {
 // RefSigil returns the form reference sigil. Default "@".
 // Returns an error if the configured value is not "@" or ":".
 func (l *Loaded) RefSigil() (string, error) {
-	s := l.Config.CLI.RefSigil
+	s := l.cfg().CLI.RefSigil
 	if s == "" {
 		return "@", nil
 	}
@@ -677,53 +705,53 @@ const CoordFormatDefault = "02/01/06 15:04:05"
 
 // CoordFormat returns the time layout the pager's coordinates use.
 func (l *Loaded) CoordFormat() string {
-	if l.Config.CLI.CoordFormat == nil || *l.Config.CLI.CoordFormat == "" {
+	if l.cfg().CLI.CoordFormat == nil || *l.cfg().CLI.CoordFormat == "" {
 		return CoordFormatDefault
 	}
-	return *l.Config.CLI.CoordFormat
+	return *l.cfg().CLI.CoordFormat
 }
 
 // StreamCPS returns the pacer rate. Default 200.
 func (l *Loaded) StreamCPS() int {
-	if l.Config.CLI.StreamCPS == nil {
+	if l.cfg().CLI.StreamCPS == nil {
 		return 200
 	}
-	return *l.Config.CLI.StreamCPS
+	return *l.cfg().CLI.StreamCPS
 }
 
 // StreamFirstByteBypassMs returns the TTFT bypass window. Default 80ms.
 func (l *Loaded) StreamFirstByteBypassMs() int {
-	if l.Config.CLI.StreamFirstByteBypassMs == nil {
+	if l.cfg().CLI.StreamFirstByteBypassMs == nil {
 		return 80
 	}
-	return *l.Config.CLI.StreamFirstByteBypassMs
+	return *l.cfg().CLI.StreamFirstByteBypassMs
 }
 
 // StreamEmitIntervalMs returns the live-emit coalescing window in ms.
-// Default 90. Nil-safe: an agent built without config paces the same.
+// Default 90; an agent built without config paces the same.
 func (l *Loaded) StreamEmitIntervalMs() int {
-	if l == nil || l.Config.CLI.StreamEmitIntervalMs == nil {
+	if l.cfg().CLI.StreamEmitIntervalMs == nil {
 		return 90
 	}
-	return *l.Config.CLI.StreamEmitIntervalMs
+	return *l.cfg().CLI.StreamEmitIntervalMs
 }
 
 // CheckUpdates returns whether to run the passive startup update check.
 // Default true. Users who prefer silence can set `check_updates = false`
 // in ~/.config/figaro/config.toml.
 func (l *Loaded) CheckUpdates() bool {
-	if l.Config.CLI.CheckUpdates == nil {
+	if l.cfg().CLI.CheckUpdates == nil {
 		return true
 	}
-	return *l.Config.CLI.CheckUpdates
+	return *l.cfg().CLI.CheckUpdates
 }
 
 // UpdateCheckTTLHours returns the update-check cache TTL. Default 24h.
 func (l *Loaded) UpdateCheckTTLHours() int {
-	if l.Config.CLI.UpdateCheckTTLHours == nil {
+	if l.cfg().CLI.UpdateCheckTTLHours == nil {
 		return 24
 	}
-	return *l.Config.CLI.UpdateCheckTTLHours
+	return *l.cfg().CLI.UpdateCheckTTLHours
 }
 
 // ProviderAuth holds credentials for one provider. The on-disk file
@@ -751,20 +779,20 @@ type Loaded struct {
 // ProviderAuthPath returns the path to a provider's auth file
 // (providers/<name>.toml: flat, no subdirectory).
 func (l *Loaded) ProviderAuthPath(name string) string {
-	return filepath.Join(l.ConfigDir, "providers", name+".toml")
+	return filepath.Join(l.dir(), "providers", name+".toml")
 }
 
 // OutfitsDir returns the directory housing outfit TOML files.
 func (l *Loaded) OutfitsDir() string {
-	return filepath.Join(l.ConfigDir, "outfits")
+	return filepath.Join(l.dir(), "outfits")
 }
 
 // outfitDirs lists where an outfit may live, canonical first (loadouts/ is the
 // pre-rename name).
 func (l *Loaded) outfitDirs() []string {
 	return []string{
-		filepath.Join(l.ConfigDir, "outfits"),
-		filepath.Join(l.ConfigDir, "loadouts"),
+		filepath.Join(l.dir(), "outfits"),
+		filepath.Join(l.dir(), "loadouts"),
 	}
 }
 
@@ -781,7 +809,7 @@ func (l *Loaded) OutfitPath(name string) string {
 
 // ListProviders returns provider names with auth files on disk.
 func (l *Loaded) ListProviders() []string {
-	dir := filepath.Join(l.ConfigDir, "providers")
+	dir := filepath.Join(l.dir(), "providers")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil

@@ -156,3 +156,21 @@ func TestABeginTurnDoesNotClobberAnAuthoritativeState(t *testing.T) {
 			"say nothing between the keystroke and the daemon's first word")
 	}
 }
+
+// THE INQUIRY HEADER IS ON BY DEFAULT, in every entrance that has a pager.
+//
+// It is asserted over the CONSTRUCTOR rather than at each call site, because
+// the bug this guards against is a call site that forgets: five literals each
+// hand-listing the fields they cared about is how coordFormat came to be wired
+// at all five and sticky at none.
+func TestThePagerStartsWithTheInquiryHeaderOn(t *testing.T) {
+	set := pagerSettings(nil)
+	if !set.sticky {
+		t.Fatal("a pager session starts with the inquiry header OFF, so a reader inside " +
+			"a long answer must press `s` every session to learn which question they " +
+			"are inside")
+	}
+	if listen := listenSettings(nil); !listen.sticky || !listen.listen {
+		t.Fatalf("listen settings lost a field: sticky=%v listen=%v", listen.sticky, listen.listen)
+	}
+}

@@ -110,11 +110,19 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 	defer span.End()
 	runSession(ctx, cancel, sessionOpts{
 		figaroID: figaroID, ep: ep, loaded: loaded,
-		set:  renderSettings{listen: true, coordFormat: loaded.CoordFormat()}, // listen stays open past turn-done
+		set:  listenSettings(loaded), // listen stays open past turn-done
 		acli: opt.acli, tape: opt.tape, end: opt.end, startedAt: opt.startedAt,
 		formPit: opt.formPit, formIntrinsic: opt.formIntrinsic, ownsSubject: true,
 		// Ctrl-C means "interrupt the turn" here as it does in send; a
 		// listener has no cancellable context of its own to arrange that.
 		signals: true,
 	})
+}
+
+// listenSettings is pagerSettings with listen pinned: a listener stays open
+// past turn-done.
+func listenSettings(loaded *config.Loaded) renderSettings {
+	set := pagerSettings(loaded)
+	set.listen = true
+	return set
 }
