@@ -75,3 +75,40 @@ func WellKnownKeys() []KeyDoc {
 		{Key: "datetime", Short: "Per-turn wall-clock time", Mode: KeyEphemeralPerTurn},
 	}
 }
+
+// ContinuoKeys is the catalog of a CONTINUO's keys: a non-persistent builtin
+// form bound to a host, addressed as `<host>/<name>`. They are listed
+// separately from WellKnownKeys because they are not keys of any board -- no
+// `figaro set` reaches them, and completion over a board's keys must not offer
+// them. See skills/figaro/reference/forms.md.
+func ContinuoKeys(continuo string) []KeyDoc {
+	switch continuo {
+	case "runtime":
+		return []KeyDoc{
+			{Key: "turn", Short: `What the aria is DOING: "idle", "accepted", "committing", "thinking", "tooling"`, Mode: KeySystemManaged},
+			{Key: "turn.id", Short: "The in-flight turn id", Mode: KeySystemManaged},
+			{Key: "turn.since", Short: "Unix millis of the last transition", Mode: KeySystemManaged},
+			{Key: "turn.reason", Short: "The verdict of the turn that just ended; carried only into idle", Mode: KeySystemManaged},
+			{Key: "inflight", Short: "Messages accepted and not yet answered", Mode: KeySystemManaged},
+			{Key: "epoch", Short: "The inbox generation queue ids belong to", Mode: KeySystemManaged},
+			{Key: "model", Short: "Active model id", Mode: KeySystemManaged},
+		}
+	case "queue":
+		return []KeyDoc{
+			{Key: "epoch", Short: "The generation these ids belong to; they restart with it", Mode: KeySystemManaged},
+			{Key: "len", Short: "How many messages are in flight", Mode: KeySystemManaged},
+			{Key: "order", Short: "FIFO order, as ids. A form is a map and a map has none", Mode: KeySystemManaged},
+			{Key: "items.<id>.text", Short: "The message, verbatim", Mode: KeySystemManaged},
+			{Key: "items.<id>.sender", Short: "Who asked", Mode: KeySystemManaged},
+			{Key: "items.<id>.state", Short: `Where it is: "queued", "committing", "committed", "merged", "dropped", "drained"`, Mode: KeySystemManaged},
+			{Key: "items.<id>.at", Short: "Accepted-at, unix millis", Mode: KeySystemManaged},
+			{Key: "items.<id>.merged", Short: "Ids an interrupt folded INTO this message", Mode: KeySystemManaged},
+			{Key: "items.<id>.into", Short: "For a merged message, the surviving id", Mode: KeySystemManaged},
+			{Key: "items.<id>.turn", Short: "For a committed message, the turn it became", Mode: KeySystemManaged},
+		}
+	}
+	return nil
+}
+
+// ContinuoNames is every continuo this build publishes.
+func ContinuoNames() []string { return []string{"runtime", "queue"} }
