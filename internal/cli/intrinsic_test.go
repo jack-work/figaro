@@ -135,3 +135,31 @@ func buildSnapshot(t *testing.T, kv map[string]any) form.Snapshot {
 	}
 	return snap
 }
+
+// THE EPOCH MUST TRAVEL WITH THE ROWS.
+//
+// Every queue mutation is a compare-and-set against the generation its ids came
+// from -- the daemon refuses one with no epoch, by design. The epoch used to be
+// set as a SIDE EFFECT of polling the queue; when the queue became pushed, the
+// assignment was lost and nothing failed to compile, because the field is only
+// read elsewhere. `x` on a queued row then answered
+// "stale (no epoch supplied)".
+//
+// So: whatever produced the rows on screen must also have produced the epoch
+// they will be mutated against.
+func TestQueueProjectionCarriesTheEpoch(t *testing.T) {
+	snap := buildSnapshot(t, map[string]any{
+		"epoch":         "gen-7",
+		"order":         []uint64{1},
+		"items.1.text":  "x",
+		"items.1.state": string(rpc.QueueStateQueued),
+	})
+	if got, ok := lookupString(snap, "epoch"); !ok || got != "gen-7" {
+		t.Fatalf("the queue projection does not expose the epoch (%q, ok=%v). A client "+
+			"that can render a row it cannot delete is worse than one that renders "+
+			"nothing", got, ok)
+	}
+	if rows := readQueue(snap); len(rows) != 1 {
+		t.Fatalf("projected %d rows beside the epoch, wanted 1", len(rows))
+	}
+}

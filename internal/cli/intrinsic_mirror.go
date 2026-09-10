@@ -282,6 +282,16 @@ func (in *interactiveInput) onIntrinsicChanged(name string) {
 	case intrinsicQueue:
 		snap, _, _ := in.intrinsics.queue.state()
 		rows := readQueue(snap)
+		// THE EPOCH TRAVELS WITH THE ROWS. Every queue mutation is a
+		// compare-and-set against the generation its ids came from, and the
+		// generation that produced THESE rows is the one in THIS snapshot.
+		//
+		// This assignment was lost when the queue stopped being polled: the
+		// old fetch set it as a side effect of reading, the push path did not,
+		// and nothing failed to compile because the field is only ever read
+		// elsewhere. Measured in a pager: `x` on a queued row answered
+		// "stale (no epoch supplied)" -- the CAS was being made against "".
+		epoch, _ := lookupString(snap, "epoch")
 		items := make([]queuedItem, 0, len(rows))
 		for _, r := range rows {
 			if !r.live() {
@@ -298,6 +308,7 @@ func (in *interactiveInput) onIntrinsicChanged(name string) {
 			items = append(items, queuedItem{id: r.ID, text: r.Text, state: r.State})
 		}
 		in.mu.Lock()
+		in.queueEpoch = epoch
 		if in.lt.setTranscriptQueued(items, "") {
 			in.lt.render()
 		}
