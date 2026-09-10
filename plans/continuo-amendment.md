@@ -194,3 +194,40 @@ without it (`tmuxsmoke_test.go:208`), so the suite was green, unrun, and
 indistinguishable from green and run — the same failure mode the `-count=1`
 warning in the tmux-testing skill exists to prevent, reached by a different
 road. Added to `buildInputs`.
+
+### The bug the unit tests could not see
+
+`fig form show <id>/runtime` answered `{}` on a live aria, while every unit
+test passed.
+
+`model` is in the system-managed catalog, and `CheckWritable` refuses an
+*unprivileged* write to one. The runtime continuo publishes `model`. So the
+patch was refused **whole** — not just that key — every publish failed, and
+each failure was a `slog.Warn` nobody reads.
+
+The catalog exists to stop a *human* typing `figaro set model=…` into a board
+the harness owns. A continuo has no user-writable path at all, so the check had
+nothing to protect and could only refuse. It writes privileged now, as
+`Libretto` already did, and a refusal is an **error**: a continuo that cannot
+write is not degraded, it is absent, and the status bar it feeds silently
+reverts to guessing — the exact behaviour this change removes.
+
+**Why the tests missed it is the more useful half.** The test agent has no
+model: `currentModel()` returned `""`, the key was skipped, and the one key
+that could fail was never written. *A fixture tidier than production certifies
+production untested* — the tmux-testing skill's first line, reached from a
+direction it does not list. The regression test now names a model explicitly
+**and asserts the fixture carries it before proceeding**, so it cannot pass
+vacuously the way its predecessor did.
+
+Found by probing a real daemon in the dev shell, not by reading. Nothing about
+the code looked wrong.
+
+### The `Q` trap in the drawer smoke case
+
+The first draft of `TestSmoke_OpenQueueDrawerStaysCurrent` pressed `Q` to open
+the drawer and then declined with "the drawer did not open". It *had* opened:
+`commandSend` calls `openQueueFromKey` by itself when the daemon reports the
+turn active, so the `Q` **toggled it shut**. The test was testing its own
+keystroke. Recorded in the case, because the next person will reach for `Q`
+too.

@@ -586,7 +586,7 @@ func startPagerClock(mu *sync.Mutex, lt *livelogTurn, current func() *interactiv
 	stop := make(chan struct{})
 	// Metrics -- the capacity figure and the mantra -- are still pulled: they
 	// are not yet continuos. See plans/reactive-queue-and-state-forms.md §5.4.
-	metricsEvery := max(spinnerFPS/queuedPollHz, 1) * 4
+	metricsEvery := max(spinnerFPS/metricsPollHz, 1) * 4
 	go func() {
 		t := time.NewTicker(time.Second / spinnerFPS)
 		defer t.Stop()
@@ -1181,9 +1181,16 @@ func termWidth() int {
 	return 80
 }
 
-// queuedPollHz is how often the accepted-but-unplaced queue is re-read. See
-// the ticker in the stream loop for why it is a poll and not a subscription.
-const queuedPollHz = 2
+// metricsPollHz is how often the capacity figure and the mantra are re-read.
+//
+// IT USED TO BE queuedPollHz, and the queue used to be polled at it -- the
+// constant's comment said "see the ticker for why it is a poll and not a
+// subscription", which was an honest description of a defect. The queue IS a
+// subscription now (a continuo, pushed as form patches), so nothing polls it
+// and the name would have been a lie left in the tree. Metrics are still
+// pulled; see plans/reactive-queue-and-state-forms.md for why they are the
+// obvious next patient.
+const metricsPollHz = 2
 
 // inputToggleBarVerbose is ^V outside the command box: the STATUS BAR's
 // verbosity. Distinct from ^O (verbose tool output) because they answer
