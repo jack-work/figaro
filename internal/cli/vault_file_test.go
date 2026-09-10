@@ -145,6 +145,66 @@ func TestWriteHushUnlockFileCreatesOneWhenThereIsNone(t *testing.T) {
 	}
 }
 
+// vault reset must know which providers to send the user back through
+// BEFORE it moves their token files, since afterwards there is nothing
+// left to read.
+func TestVaultOAuthProvidersListsTokenFiles(t *testing.T) {
+	h := newTestVault(t)
+	oauthDir := filepath.Join(h.Config().StateDir, "oauth")
+	if err := os.MkdirAll(oauthDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"anthropic.toml", "copilot.toml", "notes.txt"} {
+		if err := os.WriteFile(filepath.Join(oauthDir, name), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := vaultOAuthProviders(h)
+	if len(got) != 2 || got[0] != "anthropic" || got[1] != "copilot" {
+		t.Fatalf("providers = %v, want [anthropic copilot]", got)
+	}
+}
+
+func TestArchiveVaultFilesRenamesRatherThanDeletes(t *testing.T) {
+	h := newTestVault(t)
+	pp, _, err := setupFileUnlock(h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Init(pp); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	oauthDir := filepath.Join(h.Config().StateDir, "oauth")
+	if err := os.MkdirAll(oauthDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(oauthDir, "anthropic.toml"), []byte("token"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	moved, err := archiveVaultFiles(h, []string{"anthropic"}, "20260910-180000")
+	if err != nil {
+		t.Fatalf("archiveVaultFiles: %v", err)
+	}
+	if len(moved) < 2 {
+		t.Fatalf("moved %v, want the identity and the token file", moved)
+	}
+	for _, m := range moved {
+		if !strings.HasSuffix(m, ".reset-20260910-180000") {
+			t.Errorf("%s does not carry the stamp", m)
+		}
+		if _, err := os.Stat(m); err != nil {
+			t.Errorf("%s should still exist: %v", m, err)
+		}
+	}
+	if h.HasIdentity() {
+		t.Error("the identity should be out of the way after archiving")
+	}
+	if _, err := os.Stat(filepath.Join(oauthDir, "anthropic.toml")); !os.IsNotExist(err) {
+		t.Error("the token file should be out of the way after archiving")
+	}
+}
+
 func TestVaultUnlockKindFromFlags(t *testing.T) {
 	if k, err := vaultUnlockKindFromFlags(false, false); err != nil || k != unlockKindAuto {
 		t.Errorf("neither flag: (%q, %v)", k, err)

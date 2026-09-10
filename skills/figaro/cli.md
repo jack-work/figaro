@@ -262,14 +262,18 @@ addresses a different instance and cannot repair figaro's. Alias: `figaro hush`.
 |---|---|
 | `figaro vault status` | Mode, identity path, public key, agent liveness, unlock method, and whether the saved passphrase actually decrypts the identity. Every keyring call it makes is bounded at 5s, because a locked Secret Service collection with no prompter makes `keyring.Get` block forever rather than fail. |
 | `figaro vault init [--file \| --passphrase]` | Create the identity. `--file` writes 32 random bytes, base64, to `<hushconfig>/passphrase` mode 0600, points `hush.toml` at it, and asks you nothing, ever. `--passphrase` asks. |
+| `figaro vault reset [--file \| --passphrase] [--yes]` | Throw the identity away and make a new one, then walk back through `figaro login` for every provider the old one held. |
 | `figaro vault forget` | Delete the keyring entry. The next figaro command prompts. |
 | `figaro vault unlock` | Prompt, verify against the identity, save to the keyring, start the agent. |
 | `figaro vault lock` | Stop the agent, dropping the decrypted identity from memory. |
 
-With neither flag, `init` chooses the file when no OS keyring answers, since a
-passphrase with nowhere to be remembered is a question asked on every command:
-this is the WSL case, where gnome-keyring runs but no collection can be created
-headlessly.
+With neither flag, `init` and `reset` choose the file when no OS keyring
+answers, since a passphrase with nowhere to be remembered is a question asked on
+every command: this is the WSL case, where gnome-keyring runs but no collection
+can be created headlessly. What `reset` costs you is the provider tokens that
+identity encrypted and nothing else, since arias, forms and outfits are not
+encrypted with it; the old identity and token files are renamed `*.reset-<stamp>`,
+not deleted.
 
 The failure this exists for: a saved passphrase that stops decrypting makes
 every command die with `incorrect passphrase`, and the unlock backend's

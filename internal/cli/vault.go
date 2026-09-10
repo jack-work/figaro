@@ -4,10 +4,17 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
 
 	"github.com/jack-work/hush/managed"
 	"github.com/zalando/go-keyring"
 
+	"github.com/jack-work/figaro/internal/config"
+	providerPkg "github.com/jack-work/figaro/internal/provider"
+	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/internal/tui"
 )
 
@@ -238,6 +245,155 @@ func initVault(h *managed.Hush, kind vaultUnlockKind) error {
 		return fmt.Errorf("start the vault agent: %w", err)
 	}
 	fmt.Fprintln(stdout, "agent           running")
+	return nil
+}
+
+// runVaultReset throws away the identity and everything it encrypted,
+// makes a new one, and walks back through the provider logins that the
+// old identity was holding. The old files are renamed, never deleted:
+// if the tokens turn out to be recoverable after all, they are still
+// there, and if they are not, a stale file costs a kilobyte.
+func runVaultReset(loaded *config.Loaded, kind vaultUnlockKind, yes bool) error {
+	h := mustHush()
+	providers := vaultOAuthProviders(h)
+
+	if !yes {
+		fmt.Fprintf(stderrw, "\nReset the %s vault at %s.\n\n", vaultAppName(), h.Config().ConfigDir)
+		fmt.Fprintln(stderrw, "What is lost: the provider credentials this identity encrypted.")
+		if len(providers) > 0 {
+			fmt.Fprintf(stderrw, "  %s: you will be sent through `figaro login` for each, right after.\n", strings.Join(providers, ", "))
+		} else {
+			fmt.Fprintln(stderrw, "  (none stored yet)")
+		}
+		fmt.Fprintln(stderrw, "What is not: your arias, forms and outfits. They are not encrypted with it.")
+		fmt.Fprintln(stderrw, "The old identity and token files are renamed, not deleted.")
+		fmt.Fprintln(stderrw)
+		line, err := term.ReadLine("Type yes to continue: ")
+		if err != nil {
+			return fmt.Errorf("read answer: %w", err)
+		}
+		if strings.TrimSpace(strings.ToLower(line)) != "yes" {
+			fmt.Fprintln(stdout, "nothing changed")
+			return nil
+		}
+	}
+
+	// Stop the agent first: it holds the decrypted identity, and it
+	// would go on serving the old one from memory while we write a new
+	// one to disk.
+	if err := h.Client().Ping(); err == nil {
+		if err := h.Client().Shutdown(); err != nil {
+			fmt.Fprintf(stderrw, "warning: couldn't stop the vault agent (%v)\n", err)
+		}
+	}
+
+	svc, acct := h.KeyringTarget()
+	if svc != "" && acct != "" {
+		err := keyringDelete(svc, acct)
+		switch {
+		case err == nil:
+			fmt.Fprintf(stdout, "forgot          %s:%s\n", svc, acct)
+		case errors.Is(err, keyring.ErrNotFound):
+			// Nothing was saved. Not worth a line.
+		default:
+			fmt.Fprintf(stderrw, "warning: couldn't clear the keyring entry (%v)\n", err)
+		}
+	}
+
+	stamp := time.Now().Format("20060102-150405")
+	moved, err := archiveVaultFiles(h, providers, stamp)
+	if err != nil {
+		return err
+	}
+	for _, m := range moved {
+		fmt.Fprintf(stdout, "renamed         %s\n", m)
+	}
+
+	if err := initVault(h, resolveUnlockKind(kind, h)); err != nil {
+		return err
+	}
+
+	if len(providers) == 0 {
+		fmt.Fprintln(stdout, "\nno provider logins to redo")
+		return nil
+	}
+	return reloginProviders(loaded, providers)
+}
+
+// vaultOAuthProviders names the providers whose tokens this identity is
+// holding, read before anything is moved: after the files are renamed
+// there is nothing left to ask.
+func vaultOAuthProviders(h *managed.Hush) []string {
+	cfg := h.Config()
+	if cfg == nil {
+		return nil
+	}
+	entries, err := os.ReadDir(filepath.Join(cfg.StateDir, "oauth"))
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".toml" {
+			continue
+		}
+		out = append(out, strings.TrimSuffix(e.Name(), ".toml"))
+	}
+	sort.Strings(out)
+	return out
+}
+
+// archiveVaultFiles renames the identity and every oauth token file out
+// of the way, returning what it moved.
+func archiveVaultFiles(h *managed.Hush, providers []string, stamp string) ([]string, error) {
+	cfg := h.Config()
+	paths := []string{h.IdentityFile(), h.IdentityFile() + ".pub"}
+	for _, p := range providers {
+		paths = append(paths, filepath.Join(cfg.StateDir, "oauth", p+".toml"))
+	}
+	var moved []string
+	for _, path := range paths {
+		if _, err := os.Stat(path); err != nil {
+			continue
+		}
+		dst := path + ".reset-" + stamp
+		if err := os.Rename(path, dst); err != nil {
+			return moved, fmt.Errorf("move %s aside: %w", path, err)
+		}
+		moved = append(moved, dst)
+	}
+	return moved, nil
+}
+
+// reloginProviders drives `figaro login <provider>` for each provider
+// the old identity held, in turn and interactively, and says which ones
+// took. One failure does not stop the rest: a browser flow that the
+// user abandons should not cost him the others.
+func reloginProviders(loaded *config.Loaded, providers []string) error {
+	var ok, failed []string
+	for _, name := range providers {
+		fmt.Fprintf(stderrw, "\n--- figaro login %s ---\n", name)
+		reg := providerPkg.Lookup(name)
+		if reg == nil || reg.Login == nil {
+			fmt.Fprintf(stderrw, "no login flow for provider %q: skipped\n", name)
+			failed = append(failed, name)
+			continue
+		}
+		if err := reg.Login(loaded); err != nil {
+			fmt.Fprintf(stderrw, "login %s failed: %v\n", name, err)
+			failed = append(failed, name)
+			continue
+		}
+		ok = append(ok, name)
+	}
+	fmt.Fprintln(stdout)
+	if len(ok) > 0 {
+		fmt.Fprintf(stdout, "logged in       %s\n", strings.Join(ok, ", "))
+	}
+	if len(failed) > 0 {
+		fmt.Fprintf(stdout, "still missing   %s\n", strings.Join(failed, ", "))
+		fmt.Fprintf(stdout, "                retry with: figaro login %s\n", failed[0])
+	}
 	return nil
 }
 

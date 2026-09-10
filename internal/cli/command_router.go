@@ -116,6 +116,7 @@ var overlayVerbs = map[string]bool{
 var terminalSubverbs = map[string]bool{
 	"vault unlock": true, // prompts for a passphrase
 	"vault init":   true, // may prompt for a passphrase
+	"vault reset":  true, // confirms, then walks the provider logins
 }
 
 // READING A FORM IS ONE THING, and in the pager it is the live view: `show`,

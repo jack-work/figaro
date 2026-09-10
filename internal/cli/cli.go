@@ -1507,7 +1507,7 @@ flow writes both through the daemon, so a client never has to know the path.`,
 		Aliases: []string{"hush"},
 		Group:   "System",
 		Short:   "Inspect and repair figaro's embedded secrets vault",
-		Usage:   "vault <status | init | forget | unlock | lock> [--file | --passphrase]",
+		Usage:   "vault <status | init | reset | forget | unlock | lock> [--file | --passphrase] [--yes]",
 		Long: `figaro runs its own hush: its own identity, agent, and keyring entry
 (service "figaro"). The hush binary on PATH addresses a different
 instance, so these are the levers for this one.
@@ -1515,16 +1515,23 @@ instance, so these are the levers for this one.
   status   mode, identity, agent, and whether the saved passphrase works
   init     create the identity: --file writes a random passphrase to a
            0600 file and never asks you anything, --passphrase asks
+  reset    throw the identity away, make a new one, and walk back
+           through the provider logins it was holding
   forget   clear the saved passphrase; the next command prompts
   unlock   prompt, verify, save, and start the agent
   lock     stop the agent, dropping the decrypted identity
 
-With neither --file nor --passphrase, init picks the file when no OS
-keyring answers, since a passphrase with nowhere to be remembered is a
-question asked on every command.`,
+With neither --file nor --passphrase, init and reset pick the file when
+no OS keyring answers, since a passphrase with nowhere to be remembered
+is a question asked on every command.
+
+What reset costs you: the provider tokens this identity encrypted, and
+nothing else. Arias, forms and outfits are not encrypted with it. The
+old identity and token files are renamed, not deleted.`,
 		Flags: []cmdkit.FlagDef{
 			{Long: "file", IsBool: true, Description: "Unlock from a 0600 passphrase file: no prompt, ever"},
 			{Long: "passphrase", IsBool: true, Description: "Unlock from a passphrase you type"},
+			{Long: "yes", Short: "y", IsBool: true, Description: "Skip the reset confirmation"},
 		},
 		ArgsMin: 1,
 		ArgsMax: 1,
@@ -1538,6 +1545,8 @@ question asked on every command.`,
 				return runVaultStatus()
 			case "init":
 				return runVaultInit(kind)
+			case "reset":
+				return runVaultReset(ctx.Extra.(*config.Loaded), kind, ctx.BoolFlag("yes"))
 			case "forget":
 				return runVaultForget()
 			case "unlock":
@@ -1545,10 +1554,10 @@ question asked on every command.`,
 			case "lock":
 				return runVaultLock()
 			}
-			return fmt.Errorf("usage: vault <status | init | forget | unlock | lock>")
+			return fmt.Errorf("usage: vault <status | init | reset | forget | unlock | lock>")
 		},
 		CompleteArgs: func(ctx *cmdkit.CompleteContext) []string {
-			return []string{"status", "init", "forget", "unlock", "lock"}
+			return []string{"status", "init", "reset", "forget", "unlock", "lock"}
 		},
 	})
 
