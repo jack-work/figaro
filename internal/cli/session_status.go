@@ -270,9 +270,19 @@ func (s *sessionStatus) beginTurn() {
 	}
 	s.mu.Lock()
 	// SENDING, not thinking: see setRuntime. This is the client asserting a
-	// fact about itself -- "I have spoken and nothing has confirmed it" -- and
-	// it is the last such assertion the bar makes about a turn.
-	s.turn = turnStatusSending
+	// fact about itself -- "I have spoken and nothing has confirmed it".
+	//
+	// AND IT IS A HYPOTHESIS, NOT AN ASSERTION, so information beats it. This
+	// is called from openInline, which runs AFTER the submit -- so on a fast
+	// aria the daemon's "thinking" can land first, and setting sending here
+	// unconditionally would overwrite a fact with a guess. Measured in a pty:
+	// the bar sat on the departure arrows with a tool visibly running above it.
+	//
+	// Anything the daemon has told us about this turn outranks this, so a
+	// state we did not invent is left alone.
+	if !s.turn.authoritative() {
+		s.turn = turnStatusSending
+	}
 	s.lastAt = time.Now()
 	s.mu.Unlock()
 }
@@ -414,6 +424,17 @@ func (s *sessionStatus) advance() bool {
 func (st turnStatus) moving() bool {
 	switch st {
 	case turnStatusSending, turnStatusAccepted, turnStatusThinking, turnStatusTooling:
+		return true
+	}
+	return false
+}
+
+// authoritative is whether the DAEMON put us here. Only `sending` is the
+// client's own hypothesis about a turn in flight; every other moving state
+// arrives from the runtime continuo, and a guess may not overwrite a fact.
+func (st turnStatus) authoritative() bool {
+	switch st {
+	case turnStatusAccepted, turnStatusThinking, turnStatusTooling:
 		return true
 	}
 	return false
@@ -642,4 +663,12 @@ func (s *sessionStatus) barVerbose() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.verbose
+}
+
+// turnLabelForTest exposes the bar's state for assertions. Production reads it
+// only through the renderer.
+func (s *sessionStatus) turnLabelForTest() turnStatus {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.turn
 }

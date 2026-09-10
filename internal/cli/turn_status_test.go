@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jack-work/figaro/api/rpc"
 )
 
 // THE SPELLING CHANGED ON PURPOSE, and this test now pins both halves of the
@@ -123,5 +125,34 @@ func TestSendingAndAcceptedCountAsTurnRunning(t *testing.T) {
 	}
 	if status.advance() {
 		t.Fatal("a completed turn is animating")
+	}
+}
+
+// A GUESS MAY NOT OVERWRITE A FACT.
+//
+// beginTurn runs from openInline, which happens AFTER the submit -- so on a
+// fast aria the daemon's "thinking" lands first. Setting sending there
+// unconditionally put the bar back on the departure arrows with a tool
+// visibly running above it, measured in a pty.
+func TestABeginTurnDoesNotClobberAnAuthoritativeState(t *testing.T) {
+	for _, st := range []rpc.RuntimeState{rpc.RuntimeAccepted, rpc.RuntimeThinking, rpc.RuntimeTooling} {
+		status := newSessionStatus("aria1234", time.Now())
+		status.setRuntime(runtimeView{State: st, Known: true})
+		before := status.turnLabelForTest()
+		status.beginTurn()
+		if after := status.turnLabelForTest(); after != before {
+			t.Fatalf("the daemon said %q and a late beginTurn moved the bar from %v to %v. "+
+				"Only `sending` is the client's own hypothesis; everything else is a "+
+				"fact and outranks it", st, before, after)
+		}
+	}
+
+	// But from a state the client owns, it still arms.
+	status := newSessionStatus("aria1234", time.Now())
+	status.finishTurn("end_turn")
+	status.beginTurn()
+	if status.turnLabelForTest() != turnStatusSending {
+		t.Fatal("a fresh submit did not arm the sending indicator, so the footer would " +
+			"say nothing between the keystroke and the daemon's first word")
 	}
 }

@@ -11,6 +11,7 @@ package cli
 // ---------------------------------------------------------------------------
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -367,6 +368,23 @@ func TestSmoke_QueuedMessageIsHeldUntilItRoundTrips(t *testing.T) {
 // second stale and `:send` had to kick a manual refresh to paper over it. The
 // queue is a continuo now -- pushed as form patches over the connection the
 // session already holds -- so the drawer follows without asking.
+//
+// THE SECOND MESSAGE COMES FROM OUTSIDE THE PANE, and that is the whole design
+// of this case. Two earlier drafts sent it with `:send` from inside and both
+// tested their own keystrokes instead of the product:
+//
+//   - the first pressed `Q` to open the drawer, not knowing that `:send` into
+//     a busy aria opens it already (commandSend calls openQueueFromKey when
+//     the daemon reports the turn active) -- so the `Q` TOGGLED IT SHUT and
+//     the case declined saying the drawer never opened.
+//   - the second typed `:send -- …` with the drawer open, and Enter was
+//     consumed by the pit rather than submitting the command box. Measured:
+//     the composer still held the text at the moment of failure.
+//
+// Neither had anything to do with whether the drawer follows the queue. An
+// external sender removes the client's own input from the question entirely
+// and asserts the only thing that matters: a message this client did not type
+// appears in a drawer this client already has open.
 func TestSmoke_OpenQueueDrawerStaysCurrent(t *testing.T) {
 	smokeEnabled(t)
 	smokeCase(t)
@@ -379,16 +397,17 @@ func TestSmoke_OpenQueueDrawerStaysCurrent(t *testing.T) {
 		decline(t, "the turn ended before the drawer could be opened")
 	}
 
-	// NO 'Q' HERE, and that is a trap this test walked into once: a `:send`
-	// into a busy aria OPENS THE DRAWER BY ITSELF (commandSend calls
-	// openQueueFromKey when the daemon reports the turn active), so pressing Q
-	// afterwards TOGGLES IT SHUT. The first version of this case did exactly
-	// that and then declined because "the drawer did not open" -- it had
-	// opened, and the test closed it.
+	// The aria on screen, read off the status row: the pane owns the session,
+	// so this is the only place its id is written down.
+	aria := ariaIDOnScreen(p.visible())
+	if aria == "" {
+		decline(t, "could not read the aria id off the status row\n%s", p.visible())
+	}
+
+	// One message from inside, purely to OPEN the drawer the way a user does.
 	p.typeSlowly(":send -- DRAWERONE")
 	p.key("Enter")
-
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) && !strings.Contains(p.visible(), "DRAWERONE") {
 		time.Sleep(200 * time.Millisecond)
 	}
@@ -396,18 +415,16 @@ func TestSmoke_OpenQueueDrawerStaysCurrent(t *testing.T) {
 		decline(t, "the drawer never opened on the first message\n%s", vis)
 	}
 
-	// A SECOND MESSAGE, WITH THE DRAWER ALREADY OPEN. This is the case that
-	// was stale: nothing announced the queue, so an open drawer learned only
-	// when the clock next asked.
-	p.typeSlowly(":send -- DRAWERTWO")
-	p.key("Enter")
+	// AND ONE FROM OUTSIDE, with the drawer already open. Nothing in this pane
+	// knows it happened; the only way it can appear is if the daemon pushed it.
+	figCmd(t, env, bin, "send", "-f", "--id", aria, "--", "DRAWERTWO")
 
-	deadline = time.Now().Add(10 * time.Second)
+	deadline = time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		vis := p.visible()
 		if strings.Contains(vis, "DRAWERTWO") {
-			// Both must be up AT ONCE: the drawer stayed open and grew, rather
-			// than being rebuilt around only the newest message.
+			// Both at once: the drawer STAYED open and grew, rather than being
+			// rebuilt around only the newest message.
 			if !strings.Contains(vis, "DRAWERONE") {
 				t.Errorf("the second message replaced the first instead of joining it "+
 					"in the open drawer\n%s", vis)
@@ -416,6 +433,24 @@ func TestSmoke_OpenQueueDrawerStaysCurrent(t *testing.T) {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	t.Errorf("a message queued while the drawer was OPEN never appeared in it. The "+
-		"drawer is not following the queue; it is waiting to be asked\n%s", p.visible())
+	t.Errorf("a message queued by ANOTHER client never appeared in this one's open "+
+		"drawer. The drawer is not following the queue; it is waiting to be asked\n%s",
+		p.visible())
+}
+
+// ariaIDOnScreen picks the 8-hex aria id out of a status row. The row is
+// `notice · state · <id> · mantra`, and the id is the only bare 8-hex token on
+// it -- a mantra could contain one, so this takes the FIRST, which is the
+// field's position.
+func ariaIDOnScreen(capture string) string {
+	re := regexp.MustCompile(`\b[0-9a-f]{8}\b`)
+	for _, line := range strings.Split(capture, "\n") {
+		if !strings.Contains(line, "·") {
+			continue
+		}
+		if m := re.FindString(line); m != "" {
+			return m
+		}
+	}
+	return ""
 }
