@@ -786,6 +786,22 @@ func (a *Agent) appendSteeringPrompts() error {
 	}
 	if split {
 		a.startAssistantUnit()
+		// SAY IT NOW. A steer is a STRUCTURAL change -- a durable record
+		// appeared -- and the rule for those is that they emit immediately.
+		// This one did not: appendUserPrompt deliberately builds no node for a
+		// steer (the projection owns that), so the steering node reached the
+		// client only when something ELSE triggered a recompose, which is the
+		// next provider round's first streamed chunk.
+		//
+		// So the message was durably in the conversation and invisible for the
+		// length of a provider's time-to-first-token. Measured by a reader: the
+		// queue row clears and the text lands seconds later.
+		//
+		// It costs nothing that is not already computed. The steer is in the
+		// window the instant it is appended; composing is a pure function of
+		// that window, and streaming recomposes far more often on chunks.
+		// inflight is nil here, which is the branch that cannot double-render.
+		a.emitDelta(a.composeTurn(nil))
 	}
 	return nil
 }
@@ -820,6 +836,7 @@ func (a *Agent) prepareProviderRound() error {
 		}
 		if split {
 			a.startAssistantUnit()
+			a.emitDelta(a.composeTurn(nil)) // structural: see appendSteeringPrompts
 		}
 	}
 }

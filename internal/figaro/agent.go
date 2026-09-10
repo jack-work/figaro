@@ -128,8 +128,13 @@ type Agent struct {
 	provFactory ProviderFactory
 	tools       *tool.Registry
 	// proj converts fig IR to UI IR. nil in a core-only build.
-	proj   Projector
-	figLog store.Log[message.Message]
+	proj Projector
+	// figLog is the conversation's IR. IT IS READ THROUGH DIRECTLY AND WRITTEN
+	// THROUGH journal ONLY -- see journal.go. Appending here instead is the
+	// mistake the journal exists to make impossible; if you find yourself
+	// reaching for figLog.Append, that is the bug, not the inconvenience.
+	figLog  store.Log[message.Message]
+	journal *journal
 	// turnFirstLT is the IR coordinate of the record that opened the
 	// current turn, for the seal-time bracket. Zero between turns.
 	turnFirstLT uint64
@@ -243,6 +248,7 @@ func NewAgent(cfg Config) *Agent {
 	}
 
 	a.figLog = a.newLog()
+	a.journal = a.newJournal(a.figLog)
 	repairInterruptedTail(a.figLog, a.id)
 	if a.form == nil {
 		a.form, _ = form.Open("")
@@ -679,7 +685,10 @@ func (a *Agent) Context() []message.Message {
 // drift from the log.
 func (a *Agent) appendMsg(m message.Message) (store.Entry[message.Message], error) {
 	m.TurnID = a.turnID
-	return a.figLog.Append(store.Entry[message.Message]{Payload: m})
+	// THROUGH THE JOURNAL, which announces what it writes. See journal.go: the
+	// point is that there is no other way to append, so a record cannot become
+	// durable and stay invisible.
+	return a.writer().Append(store.Entry[message.Message]{Payload: m})
 }
 
 // openTurn mints the next turn id. The seed comes from the log on first use,
@@ -848,6 +857,7 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 
 		a.mu.Lock()
 		a.figLog = a.newLog()
+		a.journal = a.newJournal(a.figLog)
 		if a.turnCancel != nil {
 			a.turnCancel()
 			a.turnCancel = nil
