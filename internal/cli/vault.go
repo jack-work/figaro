@@ -43,10 +43,13 @@ func runVaultStatus() error {
 		return nil
 	}
 	fmt.Fprintf(stdout, "keyring    %s:%s\n", svc, acct)
-	v, err := keyring.Get(svc, acct)
+	v, err := keyringGet(svc, acct)
 	switch {
 	case errors.Is(err, keyring.ErrNotFound):
 		fmt.Fprintln(stdout, "           no saved passphrase: you'll be prompted")
+	case errors.Is(err, errKeyringTimeout):
+		fmt.Fprintf(stdout, "           no answer in %s (locked collection with no prompter?)\n", keyringTimeout)
+		fmt.Fprintln(stdout, "           this host cannot use the keyring: figaro vault status is the one command that must never hang")
 	case err != nil:
 		fmt.Fprintf(stdout, "           unreadable (%v)\n", err)
 	default:
@@ -67,7 +70,7 @@ func runVaultForget() error {
 	if svc == "" || acct == "" {
 		return fmt.Errorf("no keyring entry is configured for this vault")
 	}
-	err := keyring.Delete(svc, acct)
+	err := keyringDelete(svc, acct)
 	if errors.Is(err, keyring.ErrNotFound) {
 		fmt.Fprintf(stdout, "nothing saved for %s:%s\n", svc, acct)
 		return nil
@@ -98,7 +101,7 @@ func runVaultUnlock() error {
 	}
 	svc, acct := h.KeyringTarget()
 	if svc != "" && acct != "" {
-		if err := keyring.Set(svc, acct, string(pp)); err != nil {
+		if err := keyringSet(svc, acct, string(pp)); err != nil {
 			fmt.Fprintf(stderrw, "warning: couldn't save to keyring (%v)\n", err)
 		} else {
 			fmt.Fprintf(stdout, "saved to %s:%s\n", svc, acct)
