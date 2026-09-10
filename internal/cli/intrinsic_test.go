@@ -95,14 +95,16 @@ func TestReadQueueProjectsTheDaemonsShape(t *testing.T) {
 	if rows[2].Turn != 42 {
 		t.Fatalf("a committed row lost the turn it became: %+v", rows[2])
 	}
-	if !rows[0].live() || !rows[1].live() || !rows[2].live() {
-		t.Fatal("a queued, committing or committed row is still happening and belongs " +
+	// The projection carries the committed row -- a client holding that id must
+	// still be able to learn where its message went -- but the DRAWER does not
+	// draw it. Projection and presentation are different questions.
+	if !rows[0].live() || !rows[1].live() {
+		t.Fatal("a queued or committing row is not yet in the conversation and belongs " +
 			"in the drawer")
 	}
-	for _, st := range []rpc.QueueState{rpc.QueueStateDropped, rpc.QueueStateDrained, rpc.QueueStateMerged} {
-		if (queueRow{State: st}).live() {
-			t.Fatalf("state %q is history and must not hold a row in the drawer", st)
-		}
+	if rows[2].live() {
+		t.Fatal("a committed row is drawn in the drawer. It is already in the " +
+			"transcript above it, so this is a duplicate, not reassurance")
 	}
 }
 
@@ -161,5 +163,37 @@ func TestQueueProjectionCarriesTheEpoch(t *testing.T) {
 	}
 	if rows := readQueue(snap); len(rows) != 1 {
 		t.Fatalf("projected %d rows beside the epoch, wanted 1", len(rows))
+	}
+}
+
+// THE DRAWER IS WHAT HAS NOT BEEN ASKED YET.
+//
+// A message that has become part of the conversation is in the transcript,
+// above the drawer; a second copy below it is a duplicate the reader must
+// reconcile, not reassurance. There is no checkmark state because there is no
+// state to draw: the row is gone.
+func TestCommittedRowsLeaveTheDrawer(t *testing.T) {
+	for _, st := range []rpc.QueueState{
+		rpc.QueueStateCommitted, rpc.QueueStateMerged,
+		rpc.QueueStateDropped, rpc.QueueStateDrained,
+	} {
+		if (queueRow{State: st}).live() {
+			t.Errorf("a %q row is still drawn in the drawer. It is already in the "+
+				"conversation (or gone from it), and the drawer is for what has not "+
+				"been asked yet", st)
+		}
+	}
+	for _, st := range []rpc.QueueState{rpc.QueueStateQueued, rpc.QueueStateCommitting} {
+		if !(queueRow{State: st}).live() {
+			t.Errorf("a %q row is NOT drawn, so a message the daemon is holding is "+
+				"visible nowhere at all", st)
+		}
+	}
+	// And no row can wear a checkmark, because no row that would is drawn.
+	for _, st := range []rpc.QueueState{rpc.QueueStateQueued, rpc.QueueStateCommitting} {
+		if m := (queuedItem{state: st}).mark(); m == "✓" {
+			t.Errorf("state %q wears a checkmark; the drawer no longer has a completed "+
+				"state to mark", st)
+		}
 	}
 }

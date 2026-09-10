@@ -355,3 +355,44 @@ func readSources(t *testing.T, names ...string) string {
 }
 
 func containsOutsideOfDecl(src, needle string) bool { return strings.Contains(src, needle) }
+
+// A COALESCED RUN LEAVES THE QUEUE WHOLE, or it leaves half of it behind.
+//
+// MEASURED: two messages queued, both acknowledged, ONE removed. A contiguous
+// run is LIFTED as N events and COMMITTED as one, so dropping only the
+// survivor's id from `lifted` stranded every folded id there forever -- still
+// reported as "committing", still drawn as in-flight, while the SAME id was
+// also reported as "merged" by the survivor. Two rows, two states, one
+// message, and nothing able to clear either.
+func TestACoalescedRunLeavesTheQueueEntirely(t *testing.T) {
+	inbox := newTestInbox(t)
+	inbox.Send(event{typ: eventUserPrompt, text: "a"})
+	inbox.Send(event{typ: eventUserPrompt, text: "b"})
+	inbox.Send(event{typ: eventUserPrompt, text: "c"})
+
+	taken := inbox.TakeReadyUserPrompts()
+	if len(taken) != 3 {
+		t.Fatalf("lifted %d events, wanted 3", len(taken))
+	}
+	merged, ok := mergePromptEvents(taken)
+	if !ok {
+		t.Fatal("the run did not merge")
+	}
+	inbox.MarkCommitted([]event{merged})
+
+	states := map[uint64][]rpc.QueueState{}
+	for _, it := range inbox.Project().Items {
+		states[it.ID] = append(states[it.ID], it.State)
+	}
+	for id := uint64(1); id <= 3; id++ {
+		got := states[id]
+		if len(got) != 1 {
+			t.Fatalf("message %d is reported in %d states at once (%v). One message is "+
+				"one row; a client cannot reconcile two", id, len(got), got)
+		}
+		if got[0] == rpc.QueueStateQueued || got[0] == rpc.QueueStateCommitting {
+			t.Fatalf("message %d is still IN FLIGHT (%q) after its turn committed, so its "+
+				"row never leaves the drawer", id, got[0])
+		}
+	}
+}

@@ -326,7 +326,18 @@ func (b *Inbox) markCommitted(events []event) {
 		if evt.typ != eventUserPrompt || evt.id == 0 {
 			continue
 		}
+		// EVERY ID THIS EVENT SPEAKS FOR LEAVES THE LIFTED SET, not just the
+		// survivor's. A coalesced run is lifted as N events and committed as
+		// ONE, so dropping only evt.id stranded every folded id in `lifted`
+		// forever -- still reported as "committing", still drawn as in-flight,
+		// while the same id was ALSO reported as "merged" by the survivor.
+		// Two rows, two states, one message, and nothing to clear either.
+		//
+		// Measured: two messages queued, both acknowledged, ONE removed.
 		b.dropLiftedLocked(evt.id)
+		for _, m := range evt.merged {
+			b.dropLiftedLocked(m)
+		}
 		b.committed = append(b.committed, promptRef{
 			id: evt.id, merged: evt.merged, text: evt.text, sender: senderOf(evt),
 			at: evt.at, state: rpc.QueueStateCommitted,

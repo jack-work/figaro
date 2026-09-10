@@ -1448,10 +1448,23 @@ func (t *transcript) showQueuedAuto(on bool) {
 	// The queue is empty: the suppressor has nothing left to suppress, so a
 	// LATER queue can open the pit again.
 	t.queueDismissed = false
-	// A pit the user closed is never auto-reopened.
-	if !t.queuedByKey && t.showing(pitQueue) {
-		t.pit.close()
+	if !t.showing(pitQueue) {
+		return
 	}
+	// REFRESHING IS NOT CLOSING, and conflating them left fossils on screen.
+	// A pit the reader opened is never auto-closed -- that rule is right --
+	// but this branch applied it to the ROWS as well, so a queue that drained
+	// while the pit was up kept showing the messages it used to hold. Measured:
+	// two messages answered by the running turn sat in the drawer at "→"
+	// forever, while the queue form correctly reported both committed.
+	//
+	// `:send` sets queuedByKey (it opens the drawer for you), so this was the
+	// ordinary path, not a corner.
+	if t.queuedByKey {
+		t.refreshQueuePit()
+		return
+	}
+	t.pit.close()
 }
 
 // firstLineTrim returns the first non-empty line of s with surrounding

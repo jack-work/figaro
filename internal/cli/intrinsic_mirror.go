@@ -26,7 +26,6 @@ import (
 
 	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/api/rpc"
-	"github.com/jack-work/figaro/sdk"
 )
 
 // intrinsicMirrors holds one mirror per intrinsic, and the resync each needs
@@ -96,12 +95,25 @@ type queueRow struct {
 	Turn   uint64
 }
 
-// live reports whether the row belongs in the drawer at all. A message that
-// has been answered, dropped or drained is history, and the drawer is a list
-// of things that are still happening.
+// live reports whether the row belongs in the drawer at all.
+//
+// THE DRAWER IS WHAT HAS NOT BEEN ASKED YET. A message that has become part of
+// the conversation is IN the conversation -- it is on screen, in the
+// transcript, above the drawer -- and a second copy of it below is not
+// reassurance, it is a duplicate the reader has to reconcile.
+//
+// An earlier version kept `committed` rows with a checkmark until the client's
+// own window had adopted the turn. That was solving a problem that ordering
+// already solves: runTurn appends the prompt (which emits the frame) BEFORE it
+// marks the message committed, so by the time this state is published the
+// transcript has already been told. There is no gap to cover, so there is no
+// reason to hold the row -- and holding it meant a checkmark state, a
+// per-client adoption check, and a reaper to clean up after both.
+//
+// Deleting a state is the cheapest way to be sure it cannot be wrong.
 func (r queueRow) live() bool {
 	switch r.State {
-	case rpc.QueueStateQueued, rpc.QueueStateCommitting, rpc.QueueStateCommitted:
+	case rpc.QueueStateQueued, rpc.QueueStateCommitting:
 		return true
 	}
 	return false
@@ -297,14 +309,6 @@ func (in *interactiveInput) onIntrinsicChanged(name string) {
 			if !r.live() {
 				continue
 			}
-			// A COMMITTED MESSAGE IS HELD IN THE DRAWER UNTIL THE TRANSCRIPT
-			// HAS IT. That is the whole of "held until it is roundtripped":
-			// the daemon says which turn the message became, and the client
-			// drops the row when its OWN window has adopted that turn -- a
-			// fact it knows, rather than a timer it would have to guess.
-			if r.State == rpc.QueueStateCommitted && in.hasTurn(r.Turn) {
-				continue
-			}
 			items = append(items, queuedItem{id: r.ID, text: r.Text, state: r.State})
 		}
 		in.mu.Lock()
@@ -323,20 +327,3 @@ func (in *interactiveInput) onIntrinsicChanged(name string) {
 		in.mu.Unlock()
 	}
 }
-
-// hasTurn reports whether this client's window already carries a turn, which
-// is how a committed queue row knows it has been superseded by the real thing.
-func (in *interactiveInput) hasTurn(turn uint64) bool {
-	if turn == 0 {
-		return false
-	}
-	in.mu.Lock()
-	defer in.mu.Unlock()
-	if in.lt == nil || in.lt.client == nil {
-		return false
-	}
-	_, ok := in.lt.client.InquiryOf(int(turn))
-	return ok
-}
-
-var _ = sdk.DialAria // the mirrors live beside the client that feeds them

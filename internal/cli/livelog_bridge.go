@@ -1027,13 +1027,16 @@ type queuedItem struct {
 }
 
 // mark is the one-glyph gutter a row wears, so a reader can see a message
-// travel rather than watching it blink out of the list.
+// leave rather than watching it blink out of the list.
+//
+// THERE IS NO CHECKMARK. A message that has become part of the conversation
+// leaves the drawer entirely -- see queueRow.live() -- so the only states a
+// row can wear are the two that mean "not asked yet": waiting, and on its way
+// out. A glyph for a state the drawer never shows is a glyph that can only
+// ever mislead.
 func (q queuedItem) mark() string {
-	switch q.state {
-	case rpc.QueueStateCommitting:
+	if q.state == rpc.QueueStateCommitting {
 		return "→"
-	case rpc.QueueStateCommitted:
-		return "✓"
 	}
 	return "·"
 }
