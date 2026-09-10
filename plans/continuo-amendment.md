@@ -231,3 +231,46 @@ the drawer and then declined with "the drawer did not open". It *had* opened:
 turn active, so the `Q` **toggled it shut**. The test was testing its own
 keystroke. Recorded in the case, because the next person will reach for `Q`
 too.
+
+---
+
+## 6. The open questions, answered
+
+The parent plan's §5 asked four. Three are settled by the implementation.
+
+**1. What the distinct indicator means.** Settled as: it runs from submit until
+*authoritative* state arrives, then the bar follows the form. Implemented as a
+rank rather than a sequence — `sending` is the client's own **hypothesis**, and
+`turnStatus.authoritative()` says which states outrank it. That framing turned
+out to matter: `beginTurn` fires from `openInline`, *after* the submit, so on a
+fast aria the daemon's "thinking" lands first and an unconditional assignment
+put the bar back on the arrows with a tool running above it. A sequence would
+have hidden that; a rank makes it impossible.
+
+**2. Committed-item retention.** Settled as the split §2.4 proposed: retained by
+count in the form (`committedRing`), and the client drops the row when its own
+transcript has adopted the turn — `in.hasTurn(r.Turn)`, a fact it knows,
+against a turn id the daemon publishes. No timer anywhere.
+
+**3. Facet spelling.** Settled: **continuo**, `<host>/<name>`, `state`
+reserved and implied. Not in `form ls`.
+
+**4. Should `/runtime` absorb the metrics?** Still open, and now the only thing
+left polling: `startPagerClock` pulls the capacity figure and the mantra every
+fourth tick with a backward read of one message. It is the same disease and the
+same cure, and the key set has room. Deliberately not done here — the change is
+already wide, and metrics move on a different clock from disposition.
+
+### What the pty found that nothing else could
+
+Both bugs in this change were found by driving a real daemon and a real
+terminal, and neither was visible to a green unit suite:
+
+| bug | how it looked | how it was found |
+|---|---|---|
+| the runtime continuo was **empty** | `fig form show <id>/runtime` → `{}` | probing a live daemon in the dev shell |
+| the bar showed **sending** with a tool running | `⇉ · <id> · …` above `⠹ $ for i in …` | reading a *declined* smoke case's capture |
+
+The second is worth dwelling on: the case that surfaced it was testing
+something else entirely and had **skipped**, not failed. The evidence was in
+the capture it printed on its way out.
