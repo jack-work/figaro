@@ -34,7 +34,7 @@
           pname = "figaro";
           version = "0.35.3";
           src = self;
-          vendorHash = "sha256-AbcLLfGMFw6Gg0Gf+yLSGlh6s0AvaHWnPGuCSJcOfFY=";
+          vendorHash = "sha256-sTOoAKFZmXAoZlTIOyUpoyZIRjxS697JhlbjU+ctflo=";
 
           subPackages = [ "cmd/figaro" ];
           env.CGO_ENABLED = 0;
@@ -131,7 +131,7 @@
             rev = "fd4a688df89207abdabe0a0cf5b2cd9ccfd376d2";
             hash = "sha256-YgMIIF9DAjyAPpZJtVoOKSatNhRPg/nPOYr0P06Fi5s=";
           };
-          vendorHash = "sha256-AZx9tPzsPvjc5kpmiBa6eYKtrw0hczYi0sbcd/lkiiA=";
+          vendorHash = "sha256-sTOoAKFZmXAoZlTIOyUpoyZIRjxS697JhlbjU+ctflo=";
           subPackages = [ "cmd/benchstat" ];
         };
 
