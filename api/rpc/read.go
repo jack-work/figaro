@@ -21,9 +21,20 @@ type ContextResponse struct {
 
 // FormResponse returns the agent's current snapshot and the durable
 // version it stands at, which is what a conditional Set quotes back.
+// FormRequest asks for one form of a host. Intrinsic names WHICH: empty (or
+// "state") is the identity segment, the host's own form; "queue" and "runtime"
+// are the intrinsic forms. The address grammar is `<host>/<intrinsic>`, and `<host>`
+// alone is shorthand for `<host>/state`.
+type FormRequest struct {
+	Intrinsic string `json:"intrinsic,omitempty"`
+}
+
 type FormResponse struct {
 	Snapshot form.Snapshot `json:"snapshot"`
 	Version  uint64        `json:"version,omitempty"`
+	// Intrinsic echoes which form answered, so a client that asked for one it
+	// does not get cannot mistake the board for it.
+	Intrinsic string `json:"intrinsic,omitempty"`
 }
 
 // ReadRequest asks for one page of an aria at a coordinate. It is a keyset

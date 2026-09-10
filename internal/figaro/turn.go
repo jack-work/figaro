@@ -158,6 +158,11 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	a.interrupted = false
 	a.mu.Unlock()
 	a.turnRunning.Store(true)
+	// COMMITTING: the drain loop has this prompt and is appending it to the
+	// IR. It is the interstitial a one-shot turn.done cannot express, and the
+	// window a reader used to experience as latency -- their message was in
+	// neither the queue nor the transcript.
+	a.publishRuntime(rpc.RuntimeCommitting, "")
 	defer func() {
 		a.mu.Lock()
 		a.turnCtx = nil
@@ -174,6 +179,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	// It is a message now, not a queued one. A delete aimed at it from here on
 	// is refused as committed rather than silently missing its target.
 	a.inbox.MarkCommitted([]event{prompt})
+	a.inbox.MarkTurn(promptIDs(prompt), a.turnID)
 	a.startAssistantUnit()
 
 	// Drive: provider -> tools -> repeat.
@@ -366,6 +372,10 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		return true
 	}
 	bus := newTurnBus(turnCtx)
+	// THINKING: a provider round is in flight. This is the only state the
+	// client's thinking spinner is allowed to animate on, and it is now a fact
+	// the daemon reports rather than one the client assumed at submit time.
+	a.publishRuntime(rpc.RuntimeThinking, "")
 	in := provider.SendInput{
 		AriaID:    a.id,
 		FigLog:    a.figLog,
@@ -689,6 +699,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	// and recompose so completed tools show their clamped output. The
 	// spinner animates locally between here and the append: no wire
 	// traffic until the result lands.
+	a.publishRuntime(rpc.RuntimeTooling, "")
 	resultTic, collectErr := a.collectToolResults(turnCtx, calls, spec, toolEvents, toolBuf)
 	if collectErr != nil {
 		repairedMessages, repairErr := a.repairTurnTail()

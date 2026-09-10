@@ -251,6 +251,13 @@
           inherit name;
           buildInputs = with pkgs; [
             go gopls gotools
+            # tmux, because the ONLY honest test of anything that paints is a
+            # real binary in a real pty. The smoke suite skips silently when
+            # tmux is absent (a test that quietly does not run is worse than
+            # one that fails), and a dev shell that does not carry it makes
+            # that skip the default -- so the suite would be green, unrun, and
+            # indistinguishable from green and run.
+            tmux
             # benchstat parses the DOCUMENTED Go benchmark format (named
             # units), which a positional parser does not. b.ReportMetric
             # shifts every column after it, so awk reading "field 5" silently

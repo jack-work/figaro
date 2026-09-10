@@ -110,7 +110,12 @@ func (in *interactiveInput) commandSend(ctx context.Context, fields []string) (s
 		// by any deliberate pit and by any earlier Esc, so a typed send opens
 		// the queue the deliberate way instead. `active` is the daemon's
 		// answer to "did this join a running turn".
-		in.refreshQueued()
+		//
+		// THERE IS NO REFRESH HERE ANY MORE. This used to kick refreshQueued()
+		// because the queue was polled and the drawer would otherwise show a
+		// stale list for up to half a second after the send that filled it.
+		// The queue is a intrinsic now: the patch is already on its way over
+		// this same connection, and asking would only race it.
 		if active {
 			in.mu.Lock()
 			in.lt.tr.openQueueFromKey()
@@ -261,6 +266,13 @@ func (in *interactiveInput) retarget(ctx context.Context, id string, ep transpor
 	in.wireHooks()
 	in.mu.Unlock()
 
+	// A NEW SUBJECT HAS DIFFERENT INTRINSIC FORMS. Dropping the mirrors is the same
+	// argument as the generation itself: folding the old aria's queue into the
+	// new one's drawer is the fabricated-adjacency bug wearing different
+	// clothes. Then seed, because a mirror that has never been seeded shows
+	// nothing and the bar would sit on whatever it last guessed.
+	in.intrinsics.reset(gen)
+	in.seedIntrinsics()
 	if old != nil && ownedOld {
 		old.Close()
 	}
@@ -318,6 +330,16 @@ func (in *interactiveInput) seedMetrics() {
 func (in *interactiveInput) notifyHandler(gen uint64) sdk.NotifyHandler {
 	return func(method string, params json.RawMessage) {
 		if atomic.LoadUint64(&in.subjectGen) != gen {
+			return
+		}
+		// A INTRINSIC FORM PATCH IS HANDLED BEFORE THE RENDER LOCK IS TAKEN, not by
+		// releasing it in the middle of a dispatch. It takes the lock itself,
+		// and may go to the wire to resync; an earlier version unlocked and
+		// relocked around it, which worked but left a window inside a handler
+		// that reads as if it holds the lock throughout. One entrance, one
+		// lock discipline.
+		if method == rpc.MethodFormDelta {
+			in.applyIntrinsicDelta(params)
 			return
 		}
 		in.mu.Lock()

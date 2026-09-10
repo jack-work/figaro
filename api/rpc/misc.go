@@ -49,12 +49,60 @@ const (
 	// response is written, so there is no third outcome to report.
 )
 
+// THE STATES A MESSAGE TRAVELS THROUGH, from a client to an inquiry.
+//
+// Every one of these facts was already tracked -- QueueRejection has
+// distinguished all six for its refusal messages since the CRUD surface
+// landed -- and none of them was ever published. That gap is what a reader
+// experiences as latency: between the drain loop lifting a message and the
+// turn frame carrying it, the message was in NEITHER the queue nor the
+// transcript. It had ceased to exist anywhere a client could see.
+//
+// So the vocabulary is now the whole journey, and a message never blinks out
+// of existence on its way through.
 const (
 	// QueueStateQueued: in the inbox, deletable.
 	QueueStateQueued QueueState = "queued"
 	// QueueStateCommitting: lifted by the drain loop and on its way into the
 	// IR. Visible, but no longer deletable: see QueueRejection.
 	QueueStateCommitting QueueState = "committing"
+	// QueueStateCommitted: it is a message now. Into names the turn it became,
+	// which is how a client knows when its own transcript has adopted it and
+	// the queue row may finally be dropped.
+	QueueStateCommitted QueueState = "committed"
+	// QueueStateMerged: an interrupt folded it into another queued message.
+	// Into names the survivor. Distinct from dropped because "absorbed" and
+	// "deleted" look identical in a list and mean opposite things to a reader
+	// watching their own work get picked up.
+	QueueStateMerged QueueState = "merged"
+	// QueueStateDropped: deleted by the user.
+	QueueStateDropped QueueState = "dropped"
+	// QueueStateDrained: cleared by a hangup that took the queue with it.
+	QueueStateDrained QueueState = "drained"
+)
+
+// RuntimeState is what an aria is DOING, as opposed to what it has said. It is
+// carried by the `runtime` intrinsic form and is the client's only authoritative
+// source for the status indicator: before this existed the CLI armed its
+// thinking spinner at submit time, which claimed the model was working on a
+// message that might still be in the socket.
+type RuntimeState string
+
+const (
+	// RuntimeIdle: no turn in flight. The catch-all, as turnStatusIdle is on
+	// the client.
+	RuntimeIdle RuntimeState = "idle"
+	// RuntimeAccepted: a prompt is in the inbox and no turn has lifted it yet
+	// -- either the aria is between turns or one is already running and this
+	// is queued behind it.
+	RuntimeAccepted RuntimeState = "accepted"
+	// RuntimeCommitting: the drain loop has lifted a prompt and is appending
+	// it to the IR. The interstitial a one-shot notification cannot express.
+	RuntimeCommitting RuntimeState = "committing"
+	// RuntimeThinking: a provider round is in flight.
+	RuntimeThinking RuntimeState = "thinking"
+	// RuntimeTooling: tools are running between provider rounds.
+	RuntimeTooling RuntimeState = "tooling"
 )
 
 const (

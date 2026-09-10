@@ -11,6 +11,7 @@ package cli
 // ---------------------------------------------------------------------------
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -285,4 +286,171 @@ func TestSmoke_ErrorDoesNotBleedIntoStatusBar(t *testing.T) {
 				"so it bypassed the frame buffer entirely: %q\nfull grid:\n%s", ln, vis)
 		}
 	}
+}
+
+// THE MESSAGE MUST BE HELD IN THE DRAWER UNTIL IT ROUND-TRIPS, and the status
+// bar must say something DIFFERENT from "thinking" while it is in transit.
+//
+// The reported bug, in the author's words: "when sending a message in the
+// transcript tui from `:send --`, upon sending it, the message takes some time
+// before it roundtrips the transcript."
+//
+// It was not slowness. Between the drain loop lifting a message and the turn
+// frame carrying it, the message was in NEITHER the queue nor the transcript --
+// it existed nowhere a client could see, because the queue was PULLED twice a
+// second and the lifted state was never published at all. So the fix is not a
+// faster wire, it is a queue that says where a message is at every instant.
+//
+// A pane test is the only honest instrument here. The property is "what a
+// reader sees between two events", and a unit test over compose() can only say
+// what the client DECIDED to paint, not what stood on the screen.
+func TestSmoke_QueuedMessageIsHeldUntilItRoundTrips(t *testing.T) {
+	smokeEnabled(t)
+	smokeCase(t)
+	env, bin := smokeStore(t), smokeBinary(t)
+	p := newPane(t, env, bin, 100, 40)
+
+	// A turn long enough that a second message lands BEHIND it: a send into an
+	// idle aria never queues, and there would be nothing to hold.
+	p.startTurn("use bash to sleep 40, then say FIRSTOK")
+	time.Sleep(12 * time.Second)
+	if !p.alive() {
+		decline(t, "the first turn ended before a message could be queued behind it")
+	}
+
+	// `:send --` is the reported path, exactly.
+	p.typeSlowly(":send -- QUEUETOK")
+	p.key("Enter")
+
+	// THE ASSERTION IS PROMPT. The whole complaint is about the interval right
+	// after the send, so waiting for the turn would test the wrong moment.
+	deadline := time.Now().Add(20 * time.Second)
+	var sawRow, sawTransit string
+	for time.Now().Before(deadline) {
+		vis := p.visible()
+		if sawRow == "" && strings.Contains(vis, "QUEUETOK") {
+			sawRow = vis
+		}
+		// The bar must animate in a family DISTINCT from the thinking
+		// spinner while the message is in transit.
+		if sawTransit == "" && strings.ContainsAny(vis, string(sendingFrames)+string(acceptedFrames)) {
+			sawTransit = vis
+		}
+		if sawRow != "" && sawTransit != "" {
+			break
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+
+	if sawRow == "" {
+		t.Errorf("the queued message never appeared on screen. It was accepted by the "+
+			"daemon and shown nowhere: which is the reported bug exactly\n%s", p.visible())
+	}
+	if sawTransit == "" {
+		t.Errorf("no in-transit indicator appeared. The bar must be animated and "+
+			"DISTINCT from the thinking spinner between submit and the daemon's "+
+			"acknowledgement\n%s", p.visible())
+	}
+
+	// And it must still be there a beat later: "held until roundtripped" means
+	// the row does not blink away the instant the drain loop lifts it.
+	time.Sleep(2 * time.Second)
+	if vis := p.visible(); sawRow != "" && !strings.Contains(vis, "QUEUETOK") {
+		t.Errorf("the queued message VANISHED before its turn reached the transcript. "+
+			"That gap is the bug: the message is in neither the queue nor the "+
+			"conversation, and the reader is left with nothing\n%s", vis)
+	}
+}
+
+// The queue drawer must stay CURRENT WHILE IT IS OPEN.
+//
+// It used to be polled off the pager clock, so an open drawer was up to half a
+// second stale and `:send` had to kick a manual refresh to paper over it. The
+// queue is a intrinsic form now -- pushed as form patches over the connection the
+// session already holds -- so the drawer follows without asking.
+//
+// THE SECOND MESSAGE COMES FROM OUTSIDE THE PANE, and that is the whole design
+// of this case. Two earlier drafts sent it with `:send` from inside and both
+// tested their own keystrokes instead of the product:
+//
+//   - the first pressed `Q` to open the drawer, not knowing that `:send` into
+//     a busy aria opens it already (commandSend calls openQueueFromKey when
+//     the daemon reports the turn active) -- so the `Q` TOGGLED IT SHUT and
+//     the case declined saying the drawer never opened.
+//   - the second typed `:send -- …` with the drawer open, and Enter was
+//     consumed by the pit rather than submitting the command box. Measured:
+//     the composer still held the text at the moment of failure.
+//
+// Neither had anything to do with whether the drawer follows the queue. An
+// external sender removes the client's own input from the question entirely
+// and asserts the only thing that matters: a message this client did not type
+// appears in a drawer this client already has open.
+func TestSmoke_OpenQueueDrawerStaysCurrent(t *testing.T) {
+	smokeEnabled(t)
+	smokeCase(t)
+	env, bin := smokeStore(t), smokeBinary(t)
+	p := newPane(t, env, bin, 100, 40)
+
+	p.startTurn("use bash to sleep 45, then say DRAWEROK")
+	time.Sleep(12 * time.Second)
+	if !p.alive() {
+		decline(t, "the turn ended before the drawer could be opened")
+	}
+
+	// The aria on screen, read off the status row: the pane owns the session,
+	// so this is the only place its id is written down.
+	aria := ariaIDOnScreen(p.visible())
+	if aria == "" {
+		decline(t, "could not read the aria id off the status row\n%s", p.visible())
+	}
+
+	// One message from inside, purely to OPEN the drawer the way a user does.
+	p.typeSlowly(":send -- DRAWERONE")
+	p.key("Enter")
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) && !strings.Contains(p.visible(), "DRAWERONE") {
+		time.Sleep(200 * time.Millisecond)
+	}
+	if vis := p.visible(); !strings.Contains(vis, "DRAWERONE") {
+		decline(t, "the drawer never opened on the first message\n%s", vis)
+	}
+
+	// AND ONE FROM OUTSIDE, with the drawer already open. Nothing in this pane
+	// knows it happened; the only way it can appear is if the daemon pushed it.
+	figCmd(t, env, bin, "send", "-f", "--id", aria, "--", "DRAWERTWO")
+
+	deadline = time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		vis := p.visible()
+		if strings.Contains(vis, "DRAWERTWO") {
+			// Both at once: the drawer STAYED open and grew, rather than being
+			// rebuilt around only the newest message.
+			if !strings.Contains(vis, "DRAWERONE") {
+				t.Errorf("the second message replaced the first instead of joining it "+
+					"in the open drawer\n%s", vis)
+			}
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Errorf("a message queued by ANOTHER client never appeared in this one's open "+
+		"drawer. The drawer is not following the queue; it is waiting to be asked\n%s",
+		p.visible())
+}
+
+// ariaIDOnScreen picks the 8-hex aria id out of a status row. The row is
+// `notice · state · <id> · mantra`, and the id is the only bare 8-hex token on
+// it -- a mantra could contain one, so this takes the FIRST, which is the
+// field's position.
+func ariaIDOnScreen(capture string) string {
+	re := regexp.MustCompile(`\b[0-9a-f]{8}\b`)
+	for _, line := range strings.Split(capture, "\n") {
+		if !strings.Contains(line, "·") {
+			continue
+		}
+		if m := re.FindString(line); m != "" {
+			return m
+		}
+	}
+	return ""
 }

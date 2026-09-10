@@ -234,3 +234,94 @@ fig set --id <aria> 'system.fork_incantation=you are a branch; the trunk went on
 and [../contributing/roles-design.md](../contributing/roles-design.md)
 (storage, hub routing, lifecycle internals). Spec of record:
 `plans/forms-and-roles-v2.md`, in the repository, not in the binary.*
+
+## Intrinsic forms
+
+An **intrinsic form** is a form the harness publishes as *part of* a host
+rather than alongside it. It is derived, never persisted, and dies with its
+host.
+
+"Intrinsic" is the load-bearing word: these are not attached to an aria, they
+are properties *of* one. Nothing mints them, nothing forks them, and no
+`figaro set` reaches them.
+
+The nearest neighbour is the **libretto** — also a derived form with exactly
+one source, and refcounted, stumped and durable. The difference is the whole
+distinction:
+
+> A libretto is written down. An intrinsic form is only ever live.
+
+### The address grammar
+
+```
+<host>/<intrinsic>
+```
+
+| address | is |
+|---|---|
+| `<id>` | **shorthand for `<id>/state`** |
+| `<id>/state` | the host's own form |
+| `<id>/runtime` | what the aria is DOING right now |
+| `<id>/queue` | the messages accepted but not yet answered |
+
+`state` is the reserved **identity segment**: it names the host's own form and
+is implied, so `fig form show <id>` and `fig form show <id>/state` are the same
+address in every respect. What "the host's own form" means per host kind:
+
+- a **bound figaro** → its bound form (its board)
+- an **unbound form** → that form's own state
+- a **role** → the role form's own state, **not** its target's
+
+A intrinsic is not mintable, forkable, bindable, or listed by `form ls`. It is a
+projection its host publishes, and it dies with its host.
+
+### Using them
+
+Every form verb works on a intrinsic, because a intrinsic *is* a form. That is
+the whole argument for making the queue one rather than inventing a
+queue-shaped notification:
+
+```sh
+fig form show <id>/queue      # the queue as a live tree
+fig form show <id>/runtime    # the turn disposition
+fig queue --watch             # the same, spelled for the queue
+```
+
+They push. `form.delta` carries a `intrinsic` field; empty means the identity
+segment, which is what every form delta on that wire has always meant, so an
+older peer that ignores the field reads exactly what it read before.
+
+### `<id>/runtime`
+
+| key | meaning |
+|---|---|
+| `turn.state` | `idle`, `accepted`, `committing`, `thinking`, `tooling` |
+| `turn.id` | the in-flight turn |
+| `turn.since` | unix ms of the last transition |
+| `turn.reason` | the verdict, carried only into `idle` |
+| `inflight` | accepted and not yet answered |
+| `epoch` | the inbox generation queue ids belong to |
+
+`turn.done` is unchanged and still fires. What the intrinsic adds is the
+**interstitial** states, which a one-shot notification structurally cannot
+carry: a client that was not listening at the moment can still resync to them.
+
+### `<id>/queue`
+
+`order` carries FIFO (a form is a map, and a map has none); each message is
+`items.<id>.{text,sender,state,at,merged,into,turn}`.
+
+A message never blinks out of existence on its way through:
+
+| state | means |
+|---|---|
+| `queued` | in the inbox, deletable |
+| `committing` | lifted by the drain loop, not yet in the IR |
+| `committed` | it is a message now; `turn` names which |
+| `merged` | folded into another by an interrupt; `into` names the survivor |
+| `dropped` | deleted by the user |
+| `drained` | cleared by a hangup |
+
+`committed` rows are retained briefly so a client can hold the message on
+screen until its own transcript has adopted the turn — which it knows, and
+which the daemon must not have to know per-client.

@@ -9,6 +9,7 @@ import (
 	"github.com/mattn/go-runewidth"
 
 	"github.com/jack-work/figaro/api/livedoc"
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/render"
@@ -518,4 +519,23 @@ func truncCols(s string, w int) string {
 		return ""
 	}
 	return runewidth.Truncate(s, w, "")
+}
+
+// pagerSettings is the ONE place a live session's render settings are born.
+//
+// Every field that comes from CONFIG rather than from a flag belongs here, and
+// per-invocation flags are laid on top by the caller. The five call sites used
+// to each hand-list the fields they happened to care about, which is exactly
+// how coordFormat came to be wired at all five and sticky at none: a setting
+// that must be remembered at five sites is a setting that will be forgotten at
+// one.
+func pagerSettings(loaded *config.Loaded) renderSettings {
+	return renderSettings{
+		coordFormat: loaded.CoordFormat(),
+		// THE INQUIRY HEADER IS ON BY DEFAULT. A reader inside a long answer
+		// wants to know which question they are inside; that is the common
+		// case, and it was costing an `s` every session to get it. `s` still
+		// toggles for the session -- it just starts from the useful end now.
+		sticky: true,
+	}
 }

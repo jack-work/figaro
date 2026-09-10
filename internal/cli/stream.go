@@ -125,6 +125,10 @@ type interactiveInput struct {
 	// is exactly right: the ids in a queue you have not re-read may have been
 	// drained, merged or renumbered under you.
 	queueEpoch string
+	// intrinsic forms are the client's LIVE COPIES of `<aria>/runtime` and
+	// `<aria>/queue`, kept current by the patch protocol. See
+	// intrinsic_mirror.go for what they replaced.
+	intrinsics *intrinsicMirrors
 	// interrupting is set by the first Ctrl-C: the turn has been asked to
 	// stop and we are waiting for turn.done to close us. A second Ctrl-C
 	// leaves immediately, because a user must never be trapped by a daemon
@@ -565,21 +569,24 @@ func (in *interactiveInput) cancelTranscriptSearch() {
 }
 
 // startPagerClock is the pager's clock, and both hosts start one. The spinner
-// frame and the alert's TTL are functions of time; THE QUEUE is a function of
-// state nobody announces -- a prompt enters it with no frame emitted, so a
-// pager that does not ask never learns. (`listen` ran half this loop, and its
-// queue pit was therefore never read at all.)
+// frame and the alert's TTL are functions of time, and that is now ALL it is
+// for.
+//
+// IT USED TO POLL THE QUEUE, twice a second, because -- in this comment's own
+// former words -- "THE QUEUE is a function of state nobody announces: a prompt
+// enters it with no frame emitted, so a pager that does not ask never learns."
+// That is no longer true. The queue and the runtime disposition are intrinsic forms
+// now, pushed as form patches over the connection this session already holds,
+// so the client is told rather than asking. A clock that polls a pushed value
+// is a clock that can only be stale between ticks.
 //
 // current() is read under the render lock: `send` wires its input loop after
 // starting the clock, and it returns nil until then.
 func startPagerClock(mu *sync.Mutex, lt *livelogTurn, current func() *interactiveInput) func() {
 	stop := make(chan struct{})
-	// The queue is polled on a slow multiple of the spinner: twice a second is
-	// faster than a human notices and cheap enough not to matter. Metrics --
-	// the capacity figure and the mantra -- move slower still and are asked
-	// for a quarter as often.
-	every := max(spinnerFPS/queuedPollHz, 1)
-	metricsEvery := every * 4
+	// Metrics -- the capacity figure and the mantra -- are still pulled: they
+	// are not yet intrinsic forms. See plans/reactive-queue-and-state-forms.md §5.4.
+	metricsEvery := max(spinnerFPS/metricsPollHz, 1) * 4
 	go func() {
 		t := time.NewTicker(time.Second / spinnerFPS)
 		defer t.Stop()
@@ -595,9 +602,6 @@ func startPagerClock(mu *sync.Mutex, lt *livelogTurn, current func() *interactiv
 				if in == nil {
 					continue
 				}
-				if n%every == 0 {
-					in.refreshQueued()
-				}
 				if n%metricsEvery == 0 {
 					in.seedMetrics()
 				}
@@ -607,34 +611,17 @@ func startPagerClock(mu *sync.Mutex, lt *livelogTurn, current func() *interactiv
 	return func() { close(stop) }
 }
 
-// refreshQueued kicks a background fetch of the aria's queued user prompts and
-// writes the result into the transcript panel. Called from the transcript when
-// the queued panel opens; safe to invoke concurrently with any prior fetch -
-// the last completion wins (there is no ordering constraint on a purely
-// observational panel).
+// refreshQueued re-reads the queue whole. IT IS NO LONGER A POLL: the queue is
+// a intrinsic form, pushed as form patches, and this is the RESYNC path -- what a
+// client does when it learns it missed a delta, or before its first one has
+// arrived. Called from the transcript when the queued panel opens (so `Q`
+// works on a connection whose seed is still in flight) and from a mirror gap.
+//
+// Safe to invoke concurrently with any prior fetch: the last completion wins,
+// which is correct for an observational panel and doubly so now that a push
+// will overwrite whatever this leaves behind.
 func (in *interactiveInput) refreshQueued() {
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		resp, err := in.fcli.Queued(ctx)
-		in.mu.Lock()
-		defer in.mu.Unlock()
-		if err != nil {
-			// avoid unnecessary rerenders by calling only if the transcript changed
-			if in.lt.setTranscriptQueued(nil, err.Error()) {
-				in.lt.render()
-			}
-			return
-		}
-		in.queueEpoch = resp.Epoch
-		items := make([]queuedItem, 0, len(resp.Prompts))
-		for _, p := range resp.Prompts {
-			items = append(items, queuedItem{id: p.ID, text: p.Text})
-		}
-		if in.lt.setTranscriptQueued(items, "") {
-			in.lt.render()
-		}
-	}()
+	go in.resyncIntrinsic(intrinsicQueue)
 }
 
 // run reads input until stdin errors, Ctrl-C (cancel), or Ctrl-D (disconnect).
@@ -1194,9 +1181,16 @@ func termWidth() int {
 	return 80
 }
 
-// queuedPollHz is how often the accepted-but-unplaced queue is re-read. See
-// the ticker in the stream loop for why it is a poll and not a subscription.
-const queuedPollHz = 2
+// metricsPollHz is how often the capacity figure and the mantra are re-read.
+//
+// IT USED TO BE queuedPollHz, and the queue used to be polled at it -- the
+// constant's comment said "see the ticker for why it is a poll and not a
+// subscription", which was an honest description of a defect. The queue IS a
+// subscription now (a intrinsic form, pushed as form patches), so nothing polls it
+// and the name would have been a lie left in the tree. Metrics are still
+// pulled; see plans/reactive-queue-and-state-forms.md for why they are the
+// obvious next patient.
+const metricsPollHz = 2
 
 // inputToggleBarVerbose is ^V outside the command box: the STATUS BAR's
 // verbosity. Distinct from ^O (verbose tool output) because they answer

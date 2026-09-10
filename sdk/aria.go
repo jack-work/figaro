@@ -145,10 +145,21 @@ func (c *Aria) setWith(ctx context.Context, req rpc.SetRequest) (*rpc.SetRespons
 	return &resp, nil
 }
 
-// Form returns the agent's current form snapshot.
+// Form returns the agent's current form snapshot: the host's own form, which
+// is the identity segment `state`.
 func (c *Aria) Form(ctx context.Context) (*rpc.FormResponse, error) {
+	return c.FormOf(ctx, "")
+}
+
+// FormOf returns one named form of the host. "" and "state" are the host's own
+// form; "queue" and "runtime" are its intrinsic forms. See `<host>/<intrinsic>`.
+func (c *Aria) FormOf(ctx context.Context, intrinsic string) (*rpc.FormResponse, error) {
 	var resp rpc.FormResponse
-	if err := c.call(ctx, rpc.MethodForm, nil, &resp); err != nil {
+	var params any
+	if intrinsic != "" {
+		params = rpc.FormRequest{Intrinsic: intrinsic}
+	}
+	if err := c.call(ctx, rpc.MethodForm, params, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil

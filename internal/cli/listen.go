@@ -24,6 +24,10 @@ import (
 // height, the moment the transcript is up: that -- and nothing else -- is what
 // `fig form listen` is.
 func runListen(loaded *config.Loaded, ariaID, recordPath, note string, formPit bool) {
+	runListenIntrinsic(loaded, ariaID, recordPath, note, formPit, "")
+}
+
+func runListenIntrinsic(loaded *config.Loaded, ariaID, recordPath, note string, formPit bool, intrinsic string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -61,7 +65,8 @@ func runListen(loaded *config.Loaded, ariaID, recordPath, note string, formPit b
 		}()
 	}
 
-	tailFigaro(ctx, cancel, figaroEP, resolvedID, loaded, tailOpts{acli: acli, tape: rec, formPit: formPit})
+	tailFigaro(ctx, cancel, figaroEP, resolvedID, loaded,
+		tailOpts{acli: acli, tape: rec, formPit: formPit, formIntrinsic: intrinsic})
 }
 
 // tailFigaro is the read-only twin of mustPromptFigaro. It opens the
@@ -92,6 +97,10 @@ type tailOpts struct {
 	// formPit opens the subject's form in the pit, fullscreen, as the session
 	// starts. It is the whole of `fig form listen`.
 	formPit bool
+	// formIntrinsic names WHICH of the subject's forms the pit opens on. Empty
+	// is the identity segment -- the board -- which is what `form listen` has
+	// always shown. "queue" is `fig queue --watch`.
+	formIntrinsic string
 }
 
 // tailFigaro is the LISTEN entrance: one session, with no prompt in it. It
@@ -101,11 +110,19 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 	defer span.End()
 	runSession(ctx, cancel, sessionOpts{
 		figaroID: figaroID, ep: ep, loaded: loaded,
-		set:  renderSettings{listen: true, coordFormat: loaded.CoordFormat()}, // listen stays open past turn-done
+		set:  listenSettings(loaded), // listen stays open past turn-done
 		acli: opt.acli, tape: opt.tape, end: opt.end, startedAt: opt.startedAt,
-		formPit: opt.formPit, ownsSubject: true,
+		formPit: opt.formPit, formIntrinsic: opt.formIntrinsic, ownsSubject: true,
 		// Ctrl-C means "interrupt the turn" here as it does in send; a
 		// listener has no cancellable context of its own to arrange that.
 		signals: true,
 	})
+}
+
+// listenSettings is pagerSettings with listen pinned: a listener stays open
+// past turn-done.
+func listenSettings(loaded *config.Loaded) renderSettings {
+	set := pagerSettings(loaded)
+	set.listen = true
+	return set
 }

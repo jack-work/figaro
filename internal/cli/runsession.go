@@ -71,6 +71,8 @@ type sessionOpts struct {
 	// formPit opens the subject's form in the pit, fullscreen, and reads no
 	// history at all. It is the whole of `fig form listen`.
 	formPit bool
+	// formIntrinsic names which of the subject's forms the pit opens on.
+	formIntrinsic string
 	// ownsSubject says whether this loop may close the connection it holds.
 	ownsSubject bool
 	// signals wraps the context so SIGINT interrupts the turn. Only a session
@@ -166,6 +168,7 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 		// An inline send stays inline until something promotes it; every other
 		// session opens the pager as it starts.
 		startInline: opt.prompt != "" && !set.listen,
+		intrinsics:  newIntrinsicMirrors(),
 	}
 	defer func() {
 		if in.ownsSubject && in.subject != nil {
@@ -210,7 +213,7 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 				// goroutine, because entering takes the render lock.
 				go func() {
 					in.enterFormPager()
-					in.openLive("form show", opt.figaroID, true)
+					in.openLive("form show", formAddress(opt.figaroID, opt.formIntrinsic), true)
 				}()
 			} else if set.listen && opt.prompt != "" {
 				in.enterTranscript() // --listen: open the pager immediately

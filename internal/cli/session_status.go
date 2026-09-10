@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/api/livedoc"
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/mattn/go-runewidth"
@@ -27,7 +28,20 @@ const (
 	// as a condition: it is what the bar says when none of the others is
 	// known to hold. Everything with a claim of its own has a state below.
 	turnStatusIdle turnStatus = iota
+	// turnStatusSending is a DEPARTURE: the client has spoken and nothing has
+	// confirmed it. Set locally at submit, before the RPC returns, and it is
+	// the only state a client is still allowed to assert about itself -- it is
+	// a fact about this process, not about the daemon.
+	turnStatusSending
+	// turnStatusAccepted: the daemon HAS the message and is not yet answering
+	// it. Either it is queued behind a running turn, or the drain loop is
+	// committing it. This is the interval the author reported as latency: the
+	// message had left the client, was not yet in the transcript, and nothing
+	// on screen said where it was.
+	turnStatusAccepted
 	turnStatusThinking
+	// turnStatusTooling: a provider round has finished and tools are running.
+	turnStatusTooling
 	turnStatusCompleted
 	// turnStatusInterrupted is a HUP, and a hup is not an error: the user
 	// stopped the turn on purpose. Hence gray, not red -- the palette is the
@@ -47,10 +61,31 @@ const (
 	turnStatusDisconnected
 )
 
-// symbol is the state in one glyph. tick animates the only state that moves.
+// THREE MOVING STATES, THREE FAMILIES. A reader tells FAMILIES apart at a
+// glance and speeds apart never, so "sending" is not a faster spinner: it is a
+// different shape of motion.
+//
+//   - sending  -> a DEPARTURE, arrows leaving
+//   - accepted -> a HOLDING ORBIT, a dot going round
+//   - thinking -> the braille spinner, which is what it has always been
+//
+// tooling shares thinking's frames deliberately: from a reader's point of view
+// the machine is working either way, and the difference is already visible in
+// the transcript's tool rows.
+var (
+	sendingFrames  = []rune{'→', '⇢', '⇉', '⇶'}
+	acceptedFrames = []rune{'⠁', '⠂', '⠄', '⡀', '⢀', '⠠', '⠐', '⠈'}
+)
+
+// symbol is the state in one glyph. tick animates the states that move.
 func (st turnStatus) symbol(tick uint64) string {
+	frame := func(fs []rune) string { return string(fs[int(tick)%len(fs)]) }
 	switch st {
-	case turnStatusThinking:
+	case turnStatusSending:
+		return frame(sendingFrames)
+	case turnStatusAccepted:
+		return frame(acceptedFrames)
+	case turnStatusThinking, turnStatusTooling:
 		frames := livedoc.SpinnerFrames
 		return string(frames[int(tick)%len(frames)])
 	case turnStatusCompleted:
@@ -68,10 +103,20 @@ func (st turnStatus) symbol(tick uint64) string {
 // name is the word beside the symbol under verbose. THINKING HAS NONE, by
 // requirement: the animation says it, and a word beside a moving glyph reads
 // as a label on a machine that is already talking.
+//
+// The two new states DO have names, and for the opposite reason: their whole
+// job is to distinguish "I have not been heard yet" from "you are being
+// answered", and a novel glyph alone does not teach that.
 func (st turnStatus) name() string {
 	switch st {
 	case turnStatusThinking:
 		return ""
+	case turnStatusSending:
+		return "sending"
+	case turnStatusAccepted:
+		return "queued"
+	case turnStatusTooling:
+		return "tools"
 	case turnStatusCompleted:
 		return "done"
 	case turnStatusInterrupted:
@@ -224,7 +269,20 @@ func (s *sessionStatus) beginTurn() {
 		return
 	}
 	s.mu.Lock()
-	s.turn = turnStatusThinking
+	// SENDING, not thinking: see setRuntime. This is the client asserting a
+	// fact about itself -- "I have spoken and nothing has confirmed it".
+	//
+	// AND IT IS A HYPOTHESIS, NOT AN ASSERTION, so information beats it. This
+	// is called from openInline, which runs AFTER the submit -- so on a fast
+	// aria the daemon's "thinking" can land first, and setting sending here
+	// unconditionally would overwrite a fact with a guess. Measured in a pty:
+	// the bar sat on the departure arrows with a tool visibly running above it.
+	//
+	// Anything the daemon has told us about this turn outranks this, so a
+	// state we did not invent is left alone.
+	if !s.turn.authoritative() {
+		s.turn = turnStatusSending
+	}
 	s.lastAt = time.Now()
 	s.mu.Unlock()
 }
@@ -276,6 +334,65 @@ func (s *sessionStatus) finishTurn(reason string) {
 	s.mu.Unlock()
 }
 
+// setRuntime folds an authoritative `<aria>/runtime` patch onto the bar.
+//
+// THIS IS WHERE THE BAR STOPPED GUESSING. armThinking used to set "thinking"
+// the instant a submit was accepted -- its own comment said so: "before the
+// prompt has round-tripped, before the model's first token" -- which claimed
+// the model was working on a message that might still be in the socket, might
+// be queued behind another turn, and might be refused. The client now asserts
+// only turnStatusSending, which is a fact about itself, and everything past
+// that arrives from the daemon.
+//
+// Reports whether anything changed, so a caller need not repaint on a patch
+// that moved a field the bar does not show.
+func (s *sessionStatus) setRuntime(rt runtimeView) bool {
+	if s == nil || !rt.Known {
+		return false
+	}
+	var st turnStatus
+	switch rt.State {
+	case rpc.RuntimeAccepted, rpc.RuntimeCommitting:
+		st = turnStatusAccepted
+	case rpc.RuntimeThinking:
+		st = turnStatusThinking
+	case rpc.RuntimeTooling:
+		st = turnStatusTooling
+	case rpc.RuntimeIdle:
+		// Idle carries the VERDICT of the turn that just ended, and the bar
+		// shows the verdict rather than the idleness: "done ✓" is what a
+		// reader wants after a turn, not a blank. finishTurn already knows how
+		// to classify the daemon's reason vocabulary; reuse it rather than
+		// growing a second parser that can disagree with the first.
+		if rt.Reason != "" {
+			s.finishTurn(rt.Reason)
+			s.setModelIfKnown(rt.Model)
+			return true
+		}
+		st = turnStatusIdle
+	default:
+		return false
+	}
+
+	s.mu.Lock()
+	changed := s.turn != st
+	s.turn = st
+	if changed {
+		s.lastAt = time.Now()
+	}
+	if rt.Model != "" && s.model != rt.Model {
+		s.model, changed = rt.Model, true
+	}
+	s.mu.Unlock()
+	return changed
+}
+
+func (s *sessionStatus) setModelIfKnown(m string) {
+	if m != "" {
+		s.setModel(m)
+	}
+}
+
 // setTurn records an outcome the caller already knows.
 func (s *sessionStatus) setTurn(st turnStatus) {
 	if s == nil {
@@ -286,28 +403,58 @@ func (s *sessionStatus) setTurn(st turnStatus) {
 	s.mu.Unlock()
 }
 
+// advance ticks whatever is MOVING. Three states animate now, in three
+// different glyph families; a version of this that only advanced thinking left
+// the two new indicators as still pictures, which is precisely the defect
+// turnStatusDisconnected's comment warns about.
 func (s *sessionStatus) advance() bool {
 	if s == nil {
 		return false
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.turn != turnStatusThinking {
+	if !s.turn.moving() {
 		return false
 	}
 	s.tick++
 	return true
 }
 
+// moving is whether the state animates.
+func (st turnStatus) moving() bool {
+	switch st {
+	case turnStatusSending, turnStatusAccepted, turnStatusThinking, turnStatusTooling:
+		return true
+	}
+	return false
+}
+
+// authoritative is whether the DAEMON put us here. Only `sending` is the
+// client's own hypothesis about a turn in flight; every other moving state
+// arrives from the runtime intrinsic, and a guess may not overwrite a fact.
+func (st turnStatus) authoritative() bool {
+	switch st {
+	case turnStatusAccepted, turnStatusThinking, turnStatusTooling:
+		return true
+	}
+	return false
+}
+
 // turnRunning is whether a turn is in flight: what Ctrl-C needs to know, and
 // the difference between exit 130 and a clean close.
+//
+// SENDING AND ACCEPTED COUNT. A message that has been submitted and not yet
+// answered is work in flight even though no provider round has started, and a
+// Ctrl-C there must be an interrupt rather than a clean exit -- otherwise the
+// window between submit and the first token is a window where the user's stop
+// key silently means something else.
 func (s *sessionStatus) turnRunning() bool {
 	if s == nil {
 		return false
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.turn == turnStatusThinking
+	return s.turn.moving()
 }
 
 // turnLabel is the current turn state as it goes on the status row: the symbol
@@ -516,4 +663,12 @@ func (s *sessionStatus) barVerbose() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.verbose
+}
+
+// turnLabelForTest exposes the bar's state for assertions. Production reads it
+// only through the renderer.
+func (s *sessionStatus) turnLabelForTest() turnStatus {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.turn
 }
