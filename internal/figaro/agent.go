@@ -147,10 +147,10 @@ type Agent struct {
 
 	inbox *Inbox
 
-	// The CONTINUOS: non-persistent builtin forms bound to this aria's board,
-	// addressed as `<id>/runtime` and `<id>/queue`. See continuo.go.
-	runtime *continuo
-	queue   *continuo
+	// The INTRINSIC FORMS: non-persistent builtin forms bound to this aria's board,
+	// addressed as `<id>/runtime` and `<id>/queue`. See intrinsic.go.
+	runtime *intrinsic
+	queue   *intrinsic
 
 	// Turn state. Guarded by mu for Interrupt().
 	turnCtx     context.Context
@@ -292,7 +292,7 @@ func NewAgent(cfg Config) *Agent {
 		}
 	}
 
-	a.openContinuos()
+	a.openIntrinsics()
 	a.resumeStudies()
 	a.publishMetadata()
 	go a.runWithRecovery(ctx)
@@ -563,7 +563,7 @@ func (a *Agent) SubmitPromptFrom(req rpc.QuaRequest, sender string) error {
 	a.inbox.Send(evt)
 	// ACCEPTED: the daemon has the message. Between here and the turn lifting
 	// it, a client that showed nothing was the original complaint. The queue
-	// continuo carries the message itself; this carries the disposition, so a
+	// intrinsic carries the message itself; this carries the disposition, so a
 	// status indicator can be honest without reading the queue.
 	if !a.turnActive() {
 		a.publishRuntime(rpc.RuntimeAccepted, "")
@@ -596,7 +596,7 @@ func (a *Agent) QueuedPrompts(carriers bool) (string, []rpc.QueuedPrompt) {
 	for _, it := range snap.Items {
 		// Only what is still IN FLIGHT belongs on this surface: the queue is
 		// what can still be acted on, plus what is on its way out of reach.
-		// The departed live in the continuo, where a client watching a message
+		// The departed live in the intrinsic, where a client watching a message
 		// travel needs them, and not here, where they would read as a queue
 		// that never drains.
 		if it.State != rpc.QueueStateQueued && it.State != rpc.QueueStateCommitting {
@@ -1236,7 +1236,7 @@ func (a *Agent) finishTurn(reason string) {
 		Params:  rpc.DoneEntry{Reason: reason, Idle: &idle},
 	})
 	// IDLE, and the verdict with it. turn.done keeps its exact shape and its
-	// exact meaning; the continuo carries the same fact in a form a client can
+	// exact meaning; the intrinsic carries the same fact in a form a client can
 	// resync to rather than having to have been listening at the moment.
 	a.publishRuntime(rpc.RuntimeIdle, reason)
 

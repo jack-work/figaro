@@ -47,7 +47,7 @@ func TestSessionStatusShowsThinkingAndTerminalOutcomes(t *testing.T) {
 	// prompt was accepted -- before it had round-tripped, before the first
 	// token, and possibly while it sat in a queue behind another turn. The
 	// client may only assert facts about ITSELF; everything past the socket
-	// arrives from the runtime continuo.
+	// arrives from the runtime intrinsic form.
 	status.beginTurn()
 	if line := bar(status, false); !strings.ContainsAny(line, string(sendingFrames)) {
 		t.Fatalf("no departure frame on the row while sending: %q", line)

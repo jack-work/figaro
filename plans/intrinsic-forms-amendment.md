@@ -1,43 +1,41 @@
-# Amendment — the continuo, the identity segment, and the paged mem log
+# Amendment — the intrinsic, the identity segment, and the paged mem log
 
 Ratified 2026-09-09 by Gluck, amending
 `plans/reactive-queue-and-state-forms.md`. Where the two disagree, this wins.
 
 ---
 
-## 1. The primitive: **continuo**
+## 1. The primitive: **intrinsic form**
 
 > we should come up with a primitive name for builtin forms like these, that
 > are effectively bound to another form.
 
-**A continuo is a non-persistent builtin form bound to a host form, published
-by the harness and addressed as a named segment of its host.**
+**An intrinsic form is a form the harness publishes as PART OF a host rather
+than alongside it.** Derived, never persisted, dead when its host is.
 
-The word is *basso continuo*: the part that sounds continuously beneath the
-work, **realized live from figures and never written out in full**, and
-meaningless apart from the piece it accompanies. Every clause of that is the
-primitive: continuous, derived, ephemeral, bound.
+"Intrinsic" carries the property that matters: these are not attached to an
+aria, they are properties *of* one — the way a turn's disposition is a property
+of the turn rather than a document about it. Nothing mints them, forks them, or
+sets into them.
 
-It earns its place by the contrast it draws with the primitive already in the
-tree. `store.Libretto` (`internal/store/libretto.go:50`) is *"a derived form
-with exactly one source"* — refcounted, stumped, and **durable**. That is
-nearly this shape, and the difference that matters is persistence:
+It earns its place by the contrast with the primitive already in the tree.
+`store.Libretto` (`internal/store/libretto.go:50`) is *"a derived form with
+exactly one source"* — refcounted, stumped, and **durable**. That is nearly
+this shape, and the difference that matters is persistence:
 
-> **The libretto is written down. The continuo is realized in performance.**
+> **A libretto is written down. An intrinsic form is only ever live.**
 
 A reader who knows one now knows what the other is *for*, which is the whole
 job of a vocabulary word.
 
-- Plural: **continuos**. (Italian would be *continui*; the codebase is
-  English-plural elsewhere — `librettos`, `arias` — so it matches.)
-- A continuo has a **name** (`queue`, `runtime`) and a **host** (a form).
-- A continuo is not mintable, forkable, bindable, or listed by `form ls`. It
-  is a projection its host publishes, and it dies with its host.
+- Plural: **intrinsic forms**, or **intrinsics** where the noun is unambiguous.
+- An intrinsic form has a **name** (`queue`, `runtime`) and a **host** (a form).
+- It is not mintable, forkable, bindable, or listed by `form ls`.
 
-Runners-up, recorded so the choice is arguable: **obbligato** (literally
-*bound*, and an obbligato part may not be omitted — the most precise word,
-but nine letters and easily misspelled) and **gloss** (an annotation bound to
-a text; correct and clean, but literary where the neighbours are musical).
+*(An earlier draft of this plan called them "intrinsic forms", after basso intrinsic form.
+Gluck rejected the operatic naming: the metaphor taught the wrong first guess —
+"continuous" is a quarter of the meaning and not the load-bearing quarter,
+while "bound and ephemeral" is the whole of it. The word is gone from the tree.)*
 
 ## 2. The segment grammar, and `/state` as its identity
 
@@ -49,10 +47,10 @@ a text; correct and clean, but literary where the neighbours are musical).
 |---|---|
 | `<id>` | **shorthand for `<id>/state`** |
 | `<id>/state` | the host's own form |
-| `<id>/runtime` | the runtime continuo |
-| `<id>/queue` | the queue continuo |
+| `<id>/runtime` | the runtime intrinsic |
+| `<id>/queue` | the queue intrinsic |
 
-`state` is **reserved and implied**. It is not a continuo; it is the segment
+`state` is **reserved and implied**. It is not a intrinsic; it is the segment
 that names the host itself, and it is elided by convention so that
 
 ```sh
@@ -78,16 +76,16 @@ Two things fall out, and both are why this spelling is right:
 
 1. **The grammar loses its special case.** `<id>` is no longer a different
    kind of address from `<id>/queue`; it is an abbreviation of a sibling. The
-   host is simply the segment that is not a continuo.
-2. **The wire loses its special case too.** `rpc.FormDelta.Continuo string`,
+   host is simply the segment that is not a intrinsic.
+2. **The wire loses its special case too.** `rpc.FormDelta.Intrinsic string`,
    `omitempty`; `""` means `state` means the host's own form — which is
    exactly what every delta on the wire means *today*. So the field is
    backward-compatible **by the same rule that makes the shorthand work**,
    rather than by a coincidence of encoding. (This replaces the plan's
-   `Facet` field; `continuo` is the word, and the empty value now has a
+   `Facet` field; `intrinsic` is the word, and the empty value now has a
    meaning rather than being merely a default.)
 
-The turn-disposition continuo is therefore **`/runtime`**, not `/state`. Its
+The turn-disposition intrinsic is therefore **`/runtime`**, not `/state`. Its
 key set is unchanged from the plan's §2.3, minus the name.
 
 ## 3. The mem log is paged, not a ring
@@ -153,7 +151,7 @@ up and should be documented as such.
 
 ## 4. Everything else in the plan stands
 
-Approved as written: the two continuos and their key sets, the inbox as the
+Approved as written: the two intrinsic forms and their key sets, the inbox as the
 one publisher, the widened `QueueState`, retention of `committed` items,
 `turnStatusSending`/`turnStatusAccepted` with a distinct glyph family, the
 death of the poll, and the deletion of
@@ -180,7 +178,7 @@ never failed is not evidence; this one has.
 
 ### The identity segment held its promise
 
-`<host>` is parsed by `splitContinuo` into `(host, "")`, and `""` means the
+`<host>` is parsed by `splitIntrinsic` into `(host, "")`, and `""` means the
 host's own form everywhere: in `openFormView`'s filter, in `FormRequest`, in
 `FormDelta`. So the wire field is backward compatible **by the same rule that
 makes the shorthand work** rather than by a coincidence of encoding, exactly as
@@ -201,14 +199,14 @@ road. Added to `buildInputs`.
 test passed.
 
 `model` is in the system-managed catalog, and `CheckWritable` refuses an
-*unprivileged* write to one. The runtime continuo publishes `model`. So the
+*unprivileged* write to one. The runtime intrinsic publishes `model`. So the
 patch was refused **whole** — not just that key — every publish failed, and
 each failure was a `slog.Warn` nobody reads.
 
 The catalog exists to stop a *human* typing `figaro set model=…` into a board
-the harness owns. A continuo has no user-writable path at all, so the check had
+the harness owns. A intrinsic has no user-writable path at all, so the check had
 nothing to protect and could only refuse. It writes privileged now, as
-`Libretto` already did, and a refusal is an **error**: a continuo that cannot
+`Libretto` already did, and a refusal is an **error**: a intrinsic that cannot
 write is not degraded, it is absent, and the status bar it feeds silently
 reverts to guessing — the exact behaviour this change removes.
 
@@ -252,7 +250,7 @@ count in the form (`committedRing`), and the client drops the row when its own
 transcript has adopted the turn — `in.hasTurn(r.Turn)`, a fact it knows,
 against a turn id the daemon publishes. No timer anywhere.
 
-**3. Facet spelling.** Settled: **continuo**, `<host>/<name>`, `state`
+**3. Facet spelling.** Settled: **intrinsic**, `<host>/<name>`, `state`
 reserved and implied. Not in `form ls`.
 
 **4. Should `/runtime` absorb the metrics?** Still open, and now the only thing
@@ -268,7 +266,7 @@ terminal, and neither was visible to a green unit suite:
 
 | bug | how it looked | how it was found |
 |---|---|---|
-| the runtime continuo was **empty** | `fig form show <id>/runtime` → `{}` | probing a live daemon in the dev shell |
+| the runtime intrinsic was **empty** | `fig form show <id>/runtime` → `{}` | probing a live daemon in the dev shell |
 | the bar showed **sending** with a tool running | `⇉ · <id> · …` above `⠹ $ for i in …` | reading a *declined* smoke case's capture |
 
 The second is worth dwelling on: the case that surfaced it was testing
@@ -283,7 +281,7 @@ before it. Re-running reproduced it, which ruled out a one-off.
 
 **A/B against a genuinely different binary.** The current test code was run with
 `FIGARO_SMOKE_BIN` pointed at a build of `52cfa1bf` — the store-only commit,
-before any continuo, any client mirror, any status change. Distinct md5, and
+before any intrinsic, any client mirror, any status change. Distinct md5, and
 `--version` confirmed `figaro 52cfa1bf` in the log rather than being assumed.
 It failed with the identical message.
 

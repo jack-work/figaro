@@ -594,7 +594,7 @@ func (s *memLogState) floorVersion() uint64 {
 // MemFormLog holds a form's records in memory. It is what "a form without an
 // aria" means in practice: the algebra and the MVCC state with no store under
 // them, for a test, a tool, or a form that never needed to be durable -- a
-// CONTINUO above all, which is a form that is never durable by design.
+// INTRINSIC FORM above all, which is a form that is never durable by design.
 //
 // IT IS PAGED, and that is the difference between a mem log and a leak. An
 // append-only slice under a form that is patched per turn grows without bound

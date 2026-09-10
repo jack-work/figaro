@@ -2,7 +2,7 @@ package store
 
 // THE FLOOR, ASSERTED WHERE IT CAN FAIL.
 //
-// A mem log under a continuo is appended to for as long as the daemon lives.
+// A mem log under a intrinsic form is appended to for as long as the daemon lives.
 // Unbounded growth there is not a slow leak, it is the whole memory of the
 // process. These tests hold the three promises the paging makes: it is
 // bounded, it never drops below the floor, and when it cannot answer it SAYS

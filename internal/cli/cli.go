@@ -579,7 +579,7 @@ alone. With no id, the pid-bound aria is used.`,
 To ADD to the queue, send: a queued message is just a prompt that
 arrived while the aria was busy.
 
-The queue is also a CONTINUO -- a non-persistent builtin form bound to
+The queue is also a INTRINSIC FORM -- a non-persistent builtin form bound to
 the aria, addressed as <aria>/queue -- so it can be watched with the
 ordinary form verbs and pushes its changes rather than being polled:
 
@@ -605,7 +605,7 @@ positional slot belongs to the sub-verb.`,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Address a specific aria (default: the attended one)"},
 			{Long: "all", IsBool: true, Description: "queue rm: drop every queued message"},
-			{Long: "watch", Short: "w", IsBool: true, Description: "Follow the queue live (the <aria>/queue continuo)"},
+			{Long: "watch", Short: "w", IsBool: true, Description: "Follow the queue live (the <aria>/queue intrinsic)"},
 			{Long: "json", Short: "j", IsBool: true, Description: "Print one JSON object and exit"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
@@ -624,9 +624,9 @@ positional slot belongs to the sub-verb.`,
 				}
 				// The queue IS a form, so watching it is `form show` and needs
 				// no renderer of its own. That is the whole argument for
-				// making it a continuo instead of inventing a queue-shaped
+				// making it a intrinsic instead of inventing a queue-shaped
 				// notification: every form verb works on it for free.
-				runListenContinuo(ld, ariaID, "", "", true, continuoQueue)
+				runListenIntrinsic(ld, ariaID, "", "", true, intrinsicQueue)
 				return nil
 			}
 			switch verb {

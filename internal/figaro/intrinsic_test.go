@@ -1,6 +1,6 @@
 package figaro
 
-// THE CONTINUOS, ASSERTED WHERE THEY CAN FAIL.
+// THE INTRINSIC FORMS, ASSERTED WHERE THEY CAN FAIL.
 //
 // The defect these exist to prevent is a HOLE: between the drain loop lifting
 // a message and the turn frame carrying it, the message used to be in neither
@@ -30,21 +30,21 @@ func newTestInbox(t *testing.T) *Inbox {
 }
 
 // newTestAgentForQueue is an agent with only the parts these tests touch: an
-// inbox and its continuos. A full NewAgent would need a provider and a store,
+// inbox and its intrinsic forms. A full NewAgent would need a provider and a store,
 // neither of which a projection has any opinion about.
 func newTestAgentForQueue(t *testing.T) *Agent {
 	a := &Agent{id: "test", inbox: newTestInbox(t)}
-	a.runtime = newContinuo(ContinuoRuntime)
-	a.queue = newContinuo(ContinuoQueue)
+	a.runtime = newIntrinsic(IntrinsicRuntime)
+	a.queue = newIntrinsic(IntrinsicQueue)
 	t.Cleanup(func() { a.runtime.close(); a.queue.close() })
 	return a
 }
 
-// A continuo republishing UNCHANGED state must emit nothing. Every publisher
+// A intrinsic republishing UNCHANGED state must emit nothing. Every publisher
 // states the whole truth every time it runs, so without this the queue would
 // emit a patch on every tick of everything.
-func TestContinuoRepublishIsSilent(t *testing.T) {
-	c := newContinuo("test")
+func TestIntrinsicRepublishIsSilent(t *testing.T) {
+	c := newIntrinsic("test")
 	defer c.close()
 
 	c.publish(map[string]any{"turn": "idle"}, nil)
@@ -53,7 +53,7 @@ func TestContinuoRepublishIsSilent(t *testing.T) {
 	_, second := c.Snapshot()
 	if first != second {
 		t.Fatalf("republishing identical state moved the version %d -> %d. Every "+
-			"publisher states the WHOLE truth every time it runs, so a continuo that "+
+			"publisher states the WHOLE truth every time it runs, so a intrinsic that "+
 			"treats an unchanged republish as news emits a patch per tick forever",
 			first, second)
 	}
@@ -66,7 +66,7 @@ func TestContinuoRepublishIsSilent(t *testing.T) {
 
 // The projection is TOTAL: whatever it no longer names must leave the form. A
 // partial projection would leave rows nothing ever clears.
-func TestQueueContinuoDropsWhatTheProjectionNoLongerNames(t *testing.T) {
+func TestQueueIntrinsicDropsWhatTheProjectionNoLongerNames(t *testing.T) {
 	a := newTestAgentForQueue(t)
 
 	a.publishQueue(InboxSnapshot{
@@ -242,12 +242,12 @@ func TestQueuedPromptsReportsCommitting(t *testing.T) {
 	}
 }
 
-// A CONTINUO MUST BE ABLE TO WRITE EVERY KEY IT PUBLISHES.
+// A INTRINSIC FORM MUST BE ABLE TO WRITE EVERY KEY IT PUBLISHES.
 //
 // THIS TEST EXISTS BECAUSE ITS ABSENCE SHIPPED A DEAD FEATURE. `model` is in
 // the system-managed catalog (api/form.CheckWritable), which refuses an
 // UNPRIVILEGED write so a human cannot type `figaro set model=...` into a
-// board the harness owns. A continuo has no user-writable path at all, so the
+// board the harness owns. A intrinsic has no user-writable path at all, so the
 // check had nothing to protect and could only refuse -- and it refused the
 // WHOLE patch, not just that key. Every publish failed, every failure was a
 // Warn nobody reads, and `fig form show <id>/runtime` answered `{}`.
@@ -257,7 +257,7 @@ func TestQueuedPromptsReportsCommitting(t *testing.T) {
 // fail was never written. A fixture that is tidier than production is a
 // fixture that certifies production untested -- so this one names the model
 // explicitly, which is the only reason it can fail.
-func TestRuntimeContinuoPublishesEveryKeyIncludingProtectedOnes(t *testing.T) {
+func TestRuntimeIntrinsicPublishesEveryKeyIncludingProtectedOnes(t *testing.T) {
 	a := newTestAgentForQueue(t)
 	a.form = testFormWithModel(t, "claude-test-5")
 	if a.currentModel() != "claude-test-5" {
@@ -270,8 +270,8 @@ func TestRuntimeContinuoPublishesEveryKeyIncludingProtectedOnes(t *testing.T) {
 
 	snap, version := a.runtime.Snapshot()
 	if version == 0 {
-		t.Fatal("publishing the runtime state landed NOTHING. The continuo is empty, " +
-			"which is indistinguishable from a continuo with nothing to say")
+		t.Fatal("publishing the runtime state landed NOTHING. The intrinsic is empty, " +
+			"which is indistinguishable from a intrinsic with nothing to say")
 	}
 	for _, key := range []string{"turn", "turn.since", "inflight", "epoch"} {
 		if _, ok := snap.Get(key); !ok {
@@ -283,8 +283,8 @@ func TestRuntimeContinuoPublishesEveryKeyIncludingProtectedOnes(t *testing.T) {
 		t.Fatalf("turn is %q, wanted %q", got, rpc.RuntimeThinking)
 	}
 	if got, ok := stringOf(snap, "model"); !ok || got != "claude-test-5" {
-		t.Fatalf("model is %q: a system-managed key the continuo owns was not written. "+
-			"The protection catalog guards BOARDS from hand-editing; a continuo has "+
+		t.Fatalf("model is %q: a system-managed key the intrinsic owns was not written. "+
+			"The protection catalog guards BOARDS from hand-editing; a intrinsic has "+
 			"no hand to guard against", got)
 	}
 }

@@ -1,6 +1,6 @@
 package cli
 
-// THE SESSION'S CONTINUO MIRRORS: the client's live copy of `<aria>/runtime`
+// THE SESSION'S INTRINSIC FORM MIRRORS: the client's live copy of `<aria>/runtime`
 // and `<aria>/queue`, kept current by the patch protocol rather than by
 // asking.
 //
@@ -29,9 +29,9 @@ import (
 	"github.com/jack-work/figaro/sdk"
 )
 
-// continuoMirrors holds one mirror per continuo, and the resync each needs
+// intrinsicMirrors holds one mirror per intrinsic, and the resync each needs
 // when a delta does not follow the one before.
-type continuoMirrors struct {
+type intrinsicMirrors struct {
 	mu      sync.Mutex
 	runtime *formMirror
 	queue   *formMirror
@@ -40,27 +40,27 @@ type continuoMirrors struct {
 	gen uint64
 }
 
-func newContinuoMirrors() *continuoMirrors {
-	return &continuoMirrors{runtime: &formMirror{}, queue: &formMirror{}}
+func newIntrinsicMirrors() *intrinsicMirrors {
+	return &intrinsicMirrors{runtime: &formMirror{}, queue: &formMirror{}}
 }
 
 // reset drops both mirrors: a new subject has different forms, and folding the
 // old aria's queue into the new one's view is the exact class of bug the
 // subject generation exists to prevent.
-func (m *continuoMirrors) reset(gen uint64) {
+func (m *intrinsicMirrors) reset(gen uint64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.runtime, m.queue = &formMirror{}, &formMirror{}
 	m.gen = gen
 }
 
-func (m *continuoMirrors) of(name string) *formMirror {
+func (m *intrinsicMirrors) of(name string) *formMirror {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	switch name {
-	case continuoRuntime:
+	case intrinsicRuntime:
 		return m.runtime
-	case continuoQueue:
+	case intrinsicQueue:
 		return m.queue
 	}
 	return nil
@@ -215,19 +215,19 @@ func lookupInt(snap form.Snapshot, key string) (int, bool) {
 	return n, true
 }
 
-// applyContinuoDelta folds one delta into its mirror and reports whether the
-// caller should repaint. A delta for a continuo this client does not follow is
+// applyIntrinsicDelta folds one delta into its mirror and reports whether the
+// caller should repaint. A delta for a intrinsic this client does not follow is
 // not an error: it is a newer daemon publishing something this build has no
 // opinion about, and ignoring it is the whole of forwards compatibility.
-func (in *interactiveInput) applyContinuoDelta(params json.RawMessage) {
+func (in *interactiveInput) applyIntrinsicDelta(params json.RawMessage) {
 	var d rpc.FormDelta
 	if json.Unmarshal(params, &d) != nil {
 		return
 	}
-	if d.Continuo == "" {
+	if d.Intrinsic == "" {
 		return // the board; the transcript has its own path for that
 	}
-	mirror := in.continuos.of(d.Continuo)
+	mirror := in.intrinsics.of(d.Intrinsic)
 	if mirror == nil {
 		return
 	}
@@ -236,17 +236,17 @@ func (in *interactiveInput) applyContinuoDelta(params json.RawMessage) {
 		// A GAP IS NOT A GUESS. The mirror says it missed one; re-read the
 		// whole form rather than carrying on with a state that is silently
 		// wrong. This is the same discipline `form show` has always used.
-		go in.resyncContinuo(d.Continuo)
+		go in.resyncIntrinsic(d.Intrinsic)
 		return
 	case formIncompatible:
 		return
 	}
-	in.onContinuoChanged(d.Continuo)
+	in.onIntrinsicChanged(d.Intrinsic)
 }
 
-// resyncContinuo re-reads one continuo whole. Off the notify goroutine: it is
+// resyncIntrinsic re-reads one intrinsic whole. Off the notify goroutine: it is
 // an RPC, and the notify pump must never block on the wire it is reading.
-func (in *interactiveInput) resyncContinuo(name string) {
+func (in *interactiveInput) resyncIntrinsic(name string) {
 	cli := in.aria()
 	if cli == nil {
 		return
@@ -257,30 +257,30 @@ func (in *interactiveInput) resyncContinuo(name string) {
 	if err != nil {
 		return
 	}
-	mirror := in.continuos.of(name)
+	mirror := in.intrinsics.of(name)
 	if mirror == nil {
 		return
 	}
 	mirror.reset(resp.Snapshot, resp.Version)
-	in.onContinuoChanged(name)
+	in.onIntrinsicChanged(name)
 }
 
-// seedContinuos reads both continuos once, at connect. A mirror that has never
+// seedIntrinsics reads both intrinsic forms once, at connect. A mirror that has never
 // been seeded shows nothing, which for the status bar means it would sit on
 // whatever the client last guessed.
-func (in *interactiveInput) seedContinuos() {
-	for _, name := range continuoNames() {
-		go in.resyncContinuo(name)
+func (in *interactiveInput) seedIntrinsics() {
+	for _, name := range intrinsicNames() {
+		go in.resyncIntrinsic(name)
 	}
 }
 
-// onContinuoChanged is what a landed patch DOES: project the mirror onto the
+// onIntrinsicChanged is what a landed patch DOES: project the mirror onto the
 // pager's model and repaint. Under the render lock, because a delta arrives on
 // the notifier's goroutine while a keystroke is being handled.
-func (in *interactiveInput) onContinuoChanged(name string) {
+func (in *interactiveInput) onIntrinsicChanged(name string) {
 	switch name {
-	case continuoQueue:
-		snap, _, _ := in.continuos.queue.state()
+	case intrinsicQueue:
+		snap, _, _ := in.intrinsics.queue.state()
 		rows := readQueue(snap)
 		items := make([]queuedItem, 0, len(rows))
 		for _, r := range rows {
@@ -302,8 +302,8 @@ func (in *interactiveInput) onContinuoChanged(name string) {
 			in.lt.render()
 		}
 		in.mu.Unlock()
-	case continuoRuntime:
-		snap, _, _ := in.continuos.runtime.state()
+	case intrinsicRuntime:
+		snap, _, _ := in.intrinsics.runtime.state()
 		rt := readRuntime(snap)
 		in.mu.Lock()
 		if in.lt.status.setRuntime(rt) {

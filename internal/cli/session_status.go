@@ -431,7 +431,7 @@ func (st turnStatus) moving() bool {
 
 // authoritative is whether the DAEMON put us here. Only `sending` is the
 // client's own hypothesis about a turn in flight; every other moving state
-// arrives from the runtime continuo, and a guess may not overwrite a fact.
+// arrives from the runtime intrinsic, and a guess may not overwrite a fact.
 func (st turnStatus) authoritative() bool {
 	switch st {
 	case turnStatusAccepted, turnStatusThinking, turnStatusTooling:

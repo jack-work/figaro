@@ -82,7 +82,7 @@ const (
 )
 
 // RuntimeState is what an aria is DOING, as opposed to what it has said. It is
-// carried by the `runtime` continuo and is the client's only authoritative
+// carried by the `runtime` intrinsic form and is the client's only authoritative
 // source for the status indicator: before this existed the CLI armed its
 // thinking spinner at submit time, which claimed the model was working on a
 // message that might still be in the socket.

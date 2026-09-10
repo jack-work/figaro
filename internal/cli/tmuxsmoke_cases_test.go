@@ -366,7 +366,7 @@ func TestSmoke_QueuedMessageIsHeldUntilItRoundTrips(t *testing.T) {
 //
 // It used to be polled off the pager clock, so an open drawer was up to half a
 // second stale and `:send` had to kick a manual refresh to paper over it. The
-// queue is a continuo now -- pushed as form patches over the connection the
+// queue is a intrinsic form now -- pushed as form patches over the connection the
 // session already holds -- so the drawer follows without asking.
 //
 // THE SECOND MESSAGE COMES FROM OUTSIDE THE PANE, and that is the whole design

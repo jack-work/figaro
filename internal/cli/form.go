@@ -155,17 +155,17 @@ func runUnsetArgs(loaded *config.Loaded, ariaID string, args []string) {
 
 // runForm prints the current form snapshot.
 func runForm(loaded *config.Loaded, ariaID string) {
-	// `<host>/<continuo>`: the host is attached to, the continuo selects which
+	// `<host>/<intrinsic>`: the host is attached to, the intrinsic selects which
 	// of its forms is printed. "" is the identity segment, the board.
-	spec, continuo := splitContinuo(ariaID)
-	if !knownContinuo(continuo) {
-		die("no continuo %q (have: %s; %s is the host's own form, and is implied)",
-			continuo, strings.Join(continuoNames(), ", "), continuoState)
+	spec, intrinsic := splitIntrinsic(ariaID)
+	if !knownIntrinsic(intrinsic) {
+		die("no intrinsic %q (have: %s; %s is the host's own form, and is implied)",
+			intrinsic, strings.Join(intrinsicNames(), ", "), intrinsicState)
 	}
 	WithSessionFor(loaded, spec, func(s *Session) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		resp, err := s.Figaro.FormOf(ctx, continuo)
+		resp, err := s.Figaro.FormOf(ctx, intrinsic)
 		if err != nil {
 			die("form: %s", err)
 		}

@@ -308,7 +308,7 @@ func (t *livelogTurn) openOverflows(nodes []livedoc.Node) bool {
 // model was working on a message that might still be in the socket. It pins
 // SENDING -- a fact about this process, the only kind of fact a client is
 // entitled to assert about a turn -- and the handover to accepted/thinking
-// happens when the runtime continuo says so. If the daemon never answers, the
+// happens when the runtime intrinsic form says so. If the daemon never answers, the
 // bar sits on "sending", which is TRUE.
 func (t *livelogTurn) armThinking() {
 	if t.tr.active || t.thinkingOpen {

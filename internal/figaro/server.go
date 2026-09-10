@@ -168,14 +168,14 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 			// callers send `null`. Neither is an error: both mean the board.
 			_ = json.Unmarshal(params, &req)
 		}
-		if name := req.Continuo; name != "" && name != ContinuoState {
-			c := a.Continuo(name)
+		if name := req.Intrinsic; name != "" && name != IntrinsicState {
+			c := a.Intrinsic(name)
 			if c == nil {
-				return nil, fmt.Errorf("no continuo %q on %s (have: %s, %s; %q is the host's own form)",
-					name, a.id, ContinuoRuntime, ContinuoQueue, ContinuoState)
+				return nil, fmt.Errorf("no intrinsic %q on %s (have: %s, %s; %q is the host's own form)",
+					name, a.id, IntrinsicRuntime, IntrinsicQueue, IntrinsicState)
 			}
 			snap, version := c.Snapshot()
-			return rpc.FormResponse{Snapshot: snap, Version: version, Continuo: name}, nil
+			return rpc.FormResponse{Snapshot: snap, Version: version, Intrinsic: name}, nil
 		}
 		return rpc.FormResponse{Snapshot: a.Snapshot(), Version: a.Version()}, nil
 

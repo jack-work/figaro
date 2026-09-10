@@ -35,7 +35,7 @@ type Inbox struct {
 	// and the reader was left to infer which had happened.
 	departed []promptRef
 
-	// onChange is the queue continuo's publisher. See OnChange.
+	// onChange is the queue intrinsic form's publisher. See OnChange.
 	onChange func(InboxSnapshot)
 }
 
@@ -61,7 +61,7 @@ type promptRef struct {
 	state rpc.QueueState
 }
 
-// QueueItem is one message as the queue continuo publishes it: everything a
+// QueueItem is one message as the queue intrinsic form publishes it: everything a
 // reader needs to show the message and to know where it is on its way from a
 // client to an inquiry.
 type QueueItem struct {
@@ -79,7 +79,7 @@ type QueueItem struct {
 
 // InboxSnapshot is the WHOLE truth about the queue at one instant: the live
 // FIFO and the recent departures, in one value. The projection is total by
-// design -- a partial one would leave the continuo holding rows nothing would
+// design -- a partial one would leave the intrinsic form holding rows nothing would
 // ever clear.
 type InboxSnapshot struct {
 	Epoch string
@@ -100,7 +100,7 @@ func NewInbox(ctx context.Context) *Inbox {
 	return b
 }
 
-// OnChange installs the sink the queue continuo is published through. THE
+// OnChange installs the sink the queue intrinsic form is published through. THE
 // INBOX IS THE ONE PUBLISHER: every enqueue, mutation, lift, commit, coalesce
 // and drain already passes through here, and a publisher anywhere else can
 // disagree with the queue's own state -- at which point there are two answers

@@ -76,13 +76,13 @@ func WellKnownKeys() []KeyDoc {
 	}
 }
 
-// ContinuoKeys is the catalog of a CONTINUO's keys: a non-persistent builtin
+// IntrinsicKeys is the catalog of a INTRINSIC FORM's keys: a non-persistent builtin
 // form bound to a host, addressed as `<host>/<name>`. They are listed
 // separately from WellKnownKeys because they are not keys of any board -- no
 // `figaro set` reaches them, and completion over a board's keys must not offer
 // them. See skills/figaro/reference/forms.md.
-func ContinuoKeys(continuo string) []KeyDoc {
-	switch continuo {
+func IntrinsicKeys(intrinsic string) []KeyDoc {
+	switch intrinsic {
 	case "runtime":
 		return []KeyDoc{
 			{Key: "turn", Short: `What the aria is DOING: "idle", "accepted", "committing", "thinking", "tooling"`, Mode: KeySystemManaged},
@@ -110,5 +110,5 @@ func ContinuoKeys(continuo string) []KeyDoc {
 	return nil
 }
 
-// ContinuoNames is every continuo this build publishes.
-func ContinuoNames() []string { return []string{"runtime", "queue"} }
+// IntrinsicNames is every intrinsic this build publishes.
+func IntrinsicNames() []string { return []string{"runtime", "queue"} }

@@ -22,13 +22,13 @@ import (
 func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formView, func(), error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// `<host>/<continuo>`: the host is resolved, the continuo selects which of
+	// `<host>/<intrinsic>`: the host is resolved, the intrinsic selects which of
 	// its forms to follow. "" is the identity segment, which is the board.
-	spec, continuo := splitContinuo(ariaID)
-	if !knownContinuo(continuo) {
+	spec, intrinsic := splitIntrinsic(ariaID)
+	if !knownIntrinsic(intrinsic) {
 		cancel()
-		return nil, nil, fmt.Errorf("no continuo %q (have: %s; %s is the host's own form, and is implied)",
-			continuo, strings.Join(continuoNames(), ", "), continuoState)
+		return nil, nil, fmt.Errorf("no intrinsic %q (have: %s; %s is the host's own form, and is implied)",
+			intrinsic, strings.Join(intrinsicNames(), ", "), intrinsicState)
 	}
 
 	acli := mustConnectAngelus(loaded)
@@ -41,7 +41,7 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 
 	mirror := &formMirror{}
 	view := &formView{mirror: mirror, out: os.Stdout, open: map[string]bool{},
-		aria: resolvedID, continuo: continuo}
+		aria: resolvedID, intrinsic: intrinsic}
 
 	// Seed from the snapshot, then follow. Reading first and subscribing second
 	// would drop whatever landed in between; subscribing first means the seed
@@ -56,11 +56,11 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 			if json.Unmarshal(params, &d) != nil {
 				return
 			}
-			// ONE SOCKET, MANY FORMS. The board's deltas and every continuo's
+			// ONE SOCKET, MANY FORMS. The board's deltas and every intrinsic's
 			// ride the same notification, distinguished only by this field, so
 			// a view that did not filter would fold a queue's patches into a
 			// board's mirror and resync forever.
-			if d.Continuo != continuo {
+			if d.Intrinsic != intrinsic {
 				return
 			}
 			switch mirror.apply(d) {
@@ -82,7 +82,7 @@ func openFormView(ariaID string, loaded *config.Loaded, onChange func()) (*formV
 	view.refetch = func() (form.Snapshot, uint64, error) {
 		rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer rcancel()
-		resp, rerr := fcli.FormOf(rctx, continuo)
+		resp, rerr := fcli.FormOf(rctx, intrinsic)
 		if rerr != nil {
 			return form.Snapshot{}, 0, rerr
 		}
@@ -108,9 +108,9 @@ type formView struct {
 	mirror *formMirror
 	out    *os.File
 	aria   string
-	// continuo is which of the host's forms this view follows: "" is the
+	// intrinsic is which of the host's forms this view follows: "" is the
 	// identity segment, the board.
-	continuo  string
+	intrinsic string
 	open      map[string]bool
 	wrapped   map[string]wrappedLines // an opened value, wrapped once
 	wraps     int                     // cold wraps, for the test that proves it

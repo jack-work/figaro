@@ -152,12 +152,12 @@ func (c *Aria) Form(ctx context.Context) (*rpc.FormResponse, error) {
 }
 
 // FormOf returns one named form of the host. "" and "state" are the host's own
-// form; "queue" and "runtime" are its continuos. See `<host>/<continuo>`.
-func (c *Aria) FormOf(ctx context.Context, continuo string) (*rpc.FormResponse, error) {
+// form; "queue" and "runtime" are its intrinsic forms. See `<host>/<intrinsic>`.
+func (c *Aria) FormOf(ctx context.Context, intrinsic string) (*rpc.FormResponse, error) {
 	var resp rpc.FormResponse
 	var params any
-	if continuo != "" {
-		params = rpc.FormRequest{Continuo: continuo}
+	if intrinsic != "" {
+		params = rpc.FormRequest{Intrinsic: intrinsic}
 	}
 	if err := c.call(ctx, rpc.MethodForm, params, &resp); err != nil {
 		return nil, err

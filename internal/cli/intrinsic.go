@@ -2,9 +2,9 @@ package cli
 
 import "strings"
 
-// THE ADDRESS GRAMMAR: `<host>/<continuo>`.
+// THE ADDRESS GRAMMAR: `<host>/<intrinsic>`.
 //
-// A CONTINUO is a non-persistent builtin form bound to a host form, published
+// A INTRINSIC FORM is a non-persistent builtin form bound to a host form, published
 // by the harness and addressed as a named segment of its host. `state` is the
 // reserved IDENTITY segment: it names the host's OWN form and is implied, so
 //
@@ -25,48 +25,48 @@ import "strings"
 // `/` was unclaimed: `:` is a turn coordinate, `.` an LT, `@` a form sigil.
 // So the grammar loses a special case rather than gaining one: `<id>` is no
 // longer a DIFFERENT KIND of address from `<id>/queue`, it is an abbreviation
-// of a sibling, and the host is simply the segment that is not a continuo.
+// of a sibling, and the host is simply the segment that is not a intrinsic.
 const (
-	continuoState   = "state"
-	continuoRuntime = "runtime"
-	continuoQueue   = "queue"
+	intrinsicState   = "state"
+	intrinsicRuntime = "runtime"
+	intrinsicQueue   = "queue"
 )
 
-// splitContinuo pulls the continuo off an address. The returned name is "" for
-// the identity segment, so a caller that does not care about continuos can
+// splitIntrinsic pulls the intrinsic off an address. The returned name is "" for
+// the identity segment, so a caller that does not care about intrinsic forms can
 // ignore it entirely and still be correct.
-func splitContinuo(spec string) (host, continuo string) {
+func splitIntrinsic(spec string) (host, intrinsic string) {
 	i := strings.LastIndexByte(spec, '/')
 	if i < 0 {
 		return spec, ""
 	}
 	host, name := spec[:i], spec[i+1:]
-	if name == continuoState {
+	if name == intrinsicState {
 		return host, "" // the identity segment IS the host's own form
 	}
 	return host, name
 }
 
-// knownContinuo reports whether a name is one this build publishes. An unknown
+// knownIntrinsic reports whether a name is one this build publishes. An unknown
 // segment is not silently treated as the board: a reader who asks for
 // `<id>/qeueu` must be told, or they will watch a board and believe it is a
 // queue.
-func knownContinuo(name string) bool {
+func knownIntrinsic(name string) bool {
 	switch name {
-	case "", continuoState, continuoRuntime, continuoQueue:
+	case "", intrinsicState, intrinsicRuntime, intrinsicQueue:
 		return true
 	}
 	return false
 }
 
-// continuoNames is what a listing or a completion offers.
-func continuoNames() []string { return []string{continuoRuntime, continuoQueue} }
+// intrinsicNames is what a listing or a completion offers.
+func intrinsicNames() []string { return []string{intrinsicRuntime, intrinsicQueue} }
 
-// formAddress spells `<host>/<continuo>`, eliding the identity segment because
-// it is implied. Round-trips with splitContinuo.
-func formAddress(host, continuo string) string {
-	if continuo == "" || continuo == continuoState {
+// formAddress spells `<host>/<intrinsic>`, eliding the identity segment because
+// it is implied. Round-trips with splitIntrinsic.
+func formAddress(host, intrinsic string) string {
+	if intrinsic == "" || intrinsic == intrinsicState {
 		return host
 	}
-	return host + "/" + continuo
+	return host + "/" + intrinsic
 }

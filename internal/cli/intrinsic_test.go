@@ -17,30 +17,30 @@ import (
 
 func TestTheIdentitySegmentIsImplied(t *testing.T) {
 	for _, spec := range []string{"abc123", "@form9", "abc123:12"} {
-		bareHost, bareContinuo := splitContinuo(spec)
-		explicitHost, explicitContinuo := splitContinuo(spec + "/state")
-		if bareHost != explicitHost || bareContinuo != explicitContinuo {
+		bareHost, bareIntrinsic := splitIntrinsic(spec)
+		explicitHost, explicitIntrinsic := splitIntrinsic(spec + "/state")
+		if bareHost != explicitHost || bareIntrinsic != explicitIntrinsic {
 			t.Fatalf("%q parsed as (%q,%q) but %q/state parsed as (%q,%q). The identity "+
 				"segment is documented as implied: if the two spellings differ, the "+
-				"shorthand is a lie", spec, bareHost, bareContinuo,
-				spec, explicitHost, explicitContinuo)
+				"shorthand is a lie", spec, bareHost, bareIntrinsic,
+				spec, explicitHost, explicitIntrinsic)
 		}
-		if bareContinuo != "" {
-			t.Fatalf("%q named a continuo %q; the host's own form is spelled \"\" on the "+
-				"wire, which is what makes FormDelta backward compatible", spec, bareContinuo)
+		if bareIntrinsic != "" {
+			t.Fatalf("%q named a intrinsic %q; the host's own form is spelled \"\" on the "+
+				"wire, which is what makes FormDelta backward compatible", spec, bareIntrinsic)
 		}
 	}
 }
 
-func TestContinuoAddressRoundTrips(t *testing.T) {
-	for _, name := range append(continuoNames(), "", continuoState) {
+func TestIntrinsicAddressRoundTrips(t *testing.T) {
+	for _, name := range append(intrinsicNames(), "", intrinsicState) {
 		addr := formAddress("abc123", name)
-		host, got := splitContinuo(addr)
+		host, got := splitIntrinsic(addr)
 		if host != "abc123" {
 			t.Fatalf("%q lost its host: %q", addr, host)
 		}
 		want := name
-		if want == continuoState {
+		if want == intrinsicState {
 			want = ""
 		}
 		if got != want {
@@ -52,13 +52,13 @@ func TestContinuoAddressRoundTrips(t *testing.T) {
 // An unknown segment must be REFUSED, not silently treated as the board. A
 // reader who types `<id>/qeueu` and is shown a board will believe it is a
 // queue, and nothing on screen will contradict them.
-func TestUnknownContinuoIsNotSilentlyTheBoard(t *testing.T) {
-	if knownContinuo("qeueu") {
-		t.Fatal("a misspelled continuo was accepted; the reader would be shown the " +
+func TestUnknownIntrinsicIsNotSilentlyTheBoard(t *testing.T) {
+	if knownIntrinsic("qeueu") {
+		t.Fatal("a misspelled intrinsic was accepted; the reader would be shown the " +
 			"board and told nothing")
 	}
-	for _, name := range append(continuoNames(), "", continuoState) {
-		if !knownContinuo(name) {
+	for _, name := range append(intrinsicNames(), "", intrinsicState) {
+		if !knownIntrinsic(name) {
 			t.Fatalf("%q is published but not recognised by the address parser", name)
 		}
 	}

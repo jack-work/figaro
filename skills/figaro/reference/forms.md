@@ -235,26 +235,26 @@ and [../contributing/roles-design.md](../contributing/roles-design.md)
 (storage, hub routing, lifecycle internals). Spec of record:
 `plans/forms-and-roles-v2.md`, in the repository, not in the binary.*
 
-## Continuos
+## Intrinsic forms
 
-A **continuo** is a non-persistent builtin form bound to a host form,
-published by the harness and addressed as a named segment of its host.
+An **intrinsic form** is a form the harness publishes as *part of* a host
+rather than alongside it. It is derived, never persisted, and dies with its
+host.
 
-The word is *basso continuo*: the part that sounds continuously beneath the
-work, realized live from figures and never written out in full, and
-meaningless apart from the piece it accompanies. Continuous, derived,
-ephemeral, bound.
+"Intrinsic" is the load-bearing word: these are not attached to an aria, they
+are properties *of* one. Nothing mints them, nothing forks them, and no
+`figaro set` reaches them.
 
-It is the ephemeral cousin of the **libretto** (a derived form with exactly
-one source — refcounted, stumped, and durable). The difference that matters
-is persistence:
+The nearest neighbour is the **libretto** — also a derived form with exactly
+one source, and refcounted, stumped and durable. The difference is the whole
+distinction:
 
-> The libretto is written down. The continuo is realized in performance.
+> A libretto is written down. An intrinsic form is only ever live.
 
 ### The address grammar
 
 ```
-<host>/<continuo>
+<host>/<intrinsic>
 ```
 
 | address | is |
@@ -272,12 +272,12 @@ address in every respect. What "the host's own form" means per host kind:
 - an **unbound form** → that form's own state
 - a **role** → the role form's own state, **not** its target's
 
-A continuo is not mintable, forkable, bindable, or listed by `form ls`. It is a
+A intrinsic is not mintable, forkable, bindable, or listed by `form ls`. It is a
 projection its host publishes, and it dies with its host.
 
 ### Using them
 
-Every form verb works on a continuo, because a continuo *is* a form. That is
+Every form verb works on a intrinsic, because a intrinsic *is* a form. That is
 the whole argument for making the queue one rather than inventing a
 queue-shaped notification:
 
@@ -287,7 +287,7 @@ fig form show <id>/runtime    # the turn disposition
 fig queue --watch             # the same, spelled for the queue
 ```
 
-They push. `form.delta` carries a `continuo` field; empty means the identity
+They push. `form.delta` carries a `intrinsic` field; empty means the identity
 segment, which is what every form delta on that wire has always meant, so an
 older peer that ignores the field reads exactly what it read before.
 
@@ -302,7 +302,7 @@ older peer that ignores the field reads exactly what it read before.
 | `inflight` | accepted and not yet answered |
 | `epoch` | the inbox generation queue ids belong to |
 
-`turn.done` is unchanged and still fires. What the continuo adds is the
+`turn.done` is unchanged and still fires. What the intrinsic adds is the
 **interstitial** states, which a one-shot notification structurally cannot
 carry: a client that was not listening at the moment can still resync to them.
 
