@@ -89,8 +89,10 @@ lives.** Key facts:
   becomes **read-only** (a "branch point"), the original continuation moves to an
   "old-future" child subdir, and a fresh child subdir is created. `.fork` markers carry
   `base=N`; the parent resolves by walking `..`.
-- **Freeze-on-fork is an invariant.** Any node with child subdirs is read-only; there is
-  **no fork-in-place**. `disk/fork.go:487` sets `readOnly`; only leaves are writable.
+- **Freeze-on-fork is an invariant — of log nodes, not of arias.** Any node with child
+  subdirs is read-only; there is **no fork-in-place**. `disk/fork.go:487` sets `readOnly`;
+  only leaves are writable. This is a storage fact: the *aria* on either side stays live
+  and promptable at its own id. See `internal/cli/fork.go` for the wording users see.
 - **Copy-on-write reads.** A fork's `Read`/`Range` delegate to the parent chain for
   `idx < forkBase`; the shared prefix is never duplicated. The global index is continuous
   across the parent→child seam: so within any one branch, indices are unique and gapless.
@@ -262,12 +264,12 @@ from the form, auto-seeded from the first user message), and a parent trunk +
 **branched-at LT**.
 
 ```
-T0 "fork tree"  A[1-31 frozen] ─┬─ B[31-52 frozen] ─┬─ C[52-98 live]   ← T0 head
+T0 "fork tree"  A[1-31 sealed] ─┬─ B[31-52 sealed] ─┬─ C[52-98 live]   ← T0 head
                                  │                    └─ a1b2[52-]        ← T3 "rewrite cli"
                                  └─ 3456[31-39] ─┬─ 7890[39-61]          ← T1 head
                                                  └─ 4d0c[39-]            ← T2 "repro wal"
 ```
-T0 = `A→B→C`; the closed nodes (A, B) are T0's frozen segments, C is its live head. The node
+T0 = `A→B→C`; the closed nodes (A, B) are T0's sealed segments, C is its live head. The node
 ids are plumbing; you address `T0`.
 
 **Invariants:**

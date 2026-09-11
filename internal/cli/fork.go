@@ -228,9 +228,19 @@ func runForkPrompt(loaded *config.Loaded, spec string, opts sendOpts, prompt str
 		if rescoped {
 			altNote = "(prompting; this shell)"
 		}
+		// What freezes is a log node, never an aria. A HEAD fork seals
+		// nothing at all -- it adds a sibling branch and no data moves. Only
+		// an interior fork seals the node it cuts at. The old wording ("now a
+		// frozen fork point") was printed for both cases and read as though
+		// the target had gone read-only, which is the opposite of the truth:
+		// both branches stay live at their own ids.
+		atNote := "(fork point sealed; both branches live)"
+		if at.isHead() {
+			atNote = "(new branch; both live)"
+		}
 		fmt.Fprintf(stderrw,
-			"forked %s at %s (now a frozen fork point)\n  continuation %s  (attend to continue)\n  alternative  %s  %s\n",
-			resp.Parent, at, resp.Continuation, resp.Alternative, altNote)
+			"forked %s at %s %s\n  continuation %s  (attend to continue)\n  alternative  %s  %s\n",
+			resp.Parent, at, atNote, resp.Continuation, resp.Alternative, altNote)
 		return nil
 	})
 

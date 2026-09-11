@@ -99,7 +99,7 @@ there anyway:
 $ figaro fork abc12345:19.7
 node 7 cannot be cut at: forking before node 6 instead (a fork cuts whole
 messages, and node 7 is not where one begins)
-forked abc12345 at turn 19 node 7 (now a frozen fork point)
+forked abc12345 at turn 19 node 7 (fork point sealed; both branches live)
 ```
 
 A node that *begins* its own message is exact and says nothing extra. Two more
