@@ -189,17 +189,9 @@ func (a *Agent) publishRuntime(state rpc.RuntimeState, reason string) {
 	}
 	// `turn.state`, NOT `turn`. A KEY MAY NOT BE BOTH A LEAF AND A BRANCH
 	// PREFIX: once `turn.id` exists, `turn` names a branch, and a scalar
-	// written to it is SILENTLY DROPPED by the form algebra.
-	//
-	// That was a shipped bug and it is worth the paragraph. The keys were
-	// `turn` + `turn.id`/`turn.since`/`turn.reason`; the very first publish
-	// (idle, from openIntrinsics) landed while the form was empty and
-	// established `turn` as a branch, and every publish after it lost its
-	// state while its siblings updated normally. So `<id>/runtime` read
-	// "idle" forever, with a live turn.since and a live turn.id beside it --
-	// which is exactly what a reader described: idle while the model streams,
-	// idle while a tool runs. No error was raised anywhere: form.Build simply
-	// produced an identity patch, and an identity patch is not news.
+	// written to it is SILENTLY DROPPED by the form algebra -- form.Build
+	// produces an identity patch, and an identity patch raises nothing.
+	// Guarded by TestRuntimeIntrinsicPublishesEveryKeyIncludingProtectedOnes.
 	set := map[string]any{
 		"turn.state": string(state),
 		"turn.id":    a.turnID,

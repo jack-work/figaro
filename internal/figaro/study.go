@@ -186,7 +186,9 @@ func (a *Agent) writeStudyMark(mark *message.StudyMark) {
 	if a.figLog == nil || mark == nil {
 		return
 	}
-	_, _ = a.figLog.Append(store.Entry[message.Message]{Payload: message.Message{
+	// Through the journal, like every other append: a study mark is a durable
+	// record of the conversation and a reader is owed it at once.
+	_, _ = a.writer().Append(store.Entry[message.Message]{Payload: message.Message{
 		Role:      message.RoleInput,
 		Study:     mark,
 		Timestamp: time.Now().UnixMilli(),

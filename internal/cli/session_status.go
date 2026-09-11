@@ -298,16 +298,10 @@ func (s *sessionStatus) beginTurn() {
 	}
 	s.mu.Lock()
 	// SENDING, not thinking: see setRuntime. This is the client asserting a
-	// fact about itself -- "I have spoken and nothing has confirmed it".
-	//
-	// AND IT IS A HYPOTHESIS, NOT AN ASSERTION, so information beats it. This
-	// is called from openInline, which runs AFTER the submit -- so on a fast
-	// aria the daemon's "thinking" can land first, and setting sending here
-	// unconditionally would overwrite a fact with a guess. Measured in a pty:
-	// the bar sat on the departure arrows with a tool visibly running above it.
-	//
-	// Anything the daemon has told us about this turn outranks this, so a
-	// state we did not invent is left alone.
+	// fact about itself -- "I have spoken and nothing has confirmed it" -- and
+	// a guess may not overwrite a fact: beginTurn runs from openInline, AFTER
+	// the submit, so on a fast aria the daemon's "thinking" lands first. See
+	// TestABeginTurnDoesNotClobberAnAuthoritativeState.
 	if !s.turn.authoritative() {
 		s.turn = turnStatusSending
 	}
