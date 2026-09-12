@@ -553,6 +553,15 @@ func (a *Agent) SubmitPrompt(req rpc.QuaRequest) { _ = a.SubmitPromptFrom(req, "
 // the RPC had returned long before. A patch is data about the board, not about
 // the turn, so it lands when it is submitted.
 func (a *Agent) SubmitPromptFrom(req rpc.QuaRequest, sender string) error {
+	// REWRITE BEFORE ANYTHING LANDS. A refused token (an @key! not on the
+	// board, a quote naming no passage) leaves the form unpatched and the
+	// inbox untouched, and the caller learns why on this reply. See
+	// input_rewrite.go.
+	text, err := a.rewriteInput(context.Background(), req.Text)
+	if err != nil {
+		return err
+	}
+	req.Text = text
 	if patch := a.combineFormInput(req.Form); !patch.IsIdentity() {
 		if _, err := a.backend.ApplyForm(a.id, patch); err != nil {
 			return err
@@ -1235,6 +1244,7 @@ func (a *Agent) finishTurn(reason string) {
 			lts = []uint64{a.turnFirstLT, last[0].LT}
 		}
 	}
+	a.stampSealDeltas()
 	a.ariaSrv.Seal(lts)
 	idle := a.inbox.IsIdle()
 	a.mu.Lock()

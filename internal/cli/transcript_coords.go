@@ -46,7 +46,7 @@ func coordLabel(turn, node int, at int64, layout string) string {
 	return s
 }
 
-// verbose is the pager's view of the Ctrl-O toggle: whether a block draws its
+// verbose is the pager's view of the M-m toggle: whether a block draws its
 // address. The transcript does not own the flag, it lives on the shared
 // renderSettings the input loop mutates, so this is the one place that reaches
 // for it.

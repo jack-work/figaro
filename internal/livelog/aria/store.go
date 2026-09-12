@@ -146,6 +146,7 @@ func sliceNodes(m Message, lo, hi uint64) Message {
 	if out.From == 0 {
 		out.Inquiry = m.Inquiry
 		out.InquirySegments = m.InquirySegments
+		out.InquiryLT = m.InquiryLT
 	}
 	return out
 }

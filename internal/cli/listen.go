@@ -79,7 +79,7 @@ func runListenIntrinsic(loaded *config.Loaded, ariaID, recordPath, note string, 
 // value is `figaro listen` exactly, which is why they are a struct and not
 // three more positional parameters: the ordinary path names none of them.
 type tailOpts struct {
-	// acli is the angelus door, which the SUBJECT needs: resolving `:open <id>`
+	// acli is the angelus door, which the SUBJECT needs: resolving `:listen <id>`
 	// to an endpoint is an angelus read, and `:attend` binds through it. The
 	// zero value leaves command mode's aria-changing verbs inert, which is what
 	// a replay wants -- a tape has no daemon behind it.

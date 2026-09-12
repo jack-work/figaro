@@ -27,10 +27,16 @@ func waitForFork(
 	ariaID string,
 	at forkPoint,
 	d dressing,
+	prompt string, // the prompt that follows the fork, or "" for the imperative fork
 ) (*rpc.ForkResponse, error) {
 	wireAt, note, err := resolveForkPoint(ctx, client, ariaID, at)
 	if err != nil {
 		return nil, err
+	}
+	if prompt != "" {
+		if err := forkQuotePreflight(ctx, client, ariaID, wireAt, prompt); err != nil {
+			return nil, err
+		}
 	}
 	if note != "" {
 		fmt.Fprintf(stderrw, "%s\n", note)

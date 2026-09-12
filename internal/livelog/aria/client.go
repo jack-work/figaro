@@ -47,6 +47,7 @@ type Inquiry struct {
 	Text       string
 	Segments   []InquirySegment
 	FormDeltas map[string]livedoc.FormDelta
+	LT         uint64 // see Message.InquiryLT
 }
 
 // NewClient returns a fresh client.
@@ -288,7 +289,15 @@ func (c *Client) fold(p Page) (finalized []Message, desync int) {
 		// The question commits before the agent has said anything, so it
 		// arrives on a part of its own and is held against the turn.
 		if part.Inquiry != "" || len(part.FormDeltas) > 0 {
-			c.inquiry[id] = Inquiry{Text: part.Inquiry, Segments: part.InquirySegments, FormDeltas: part.FormDeltas}
+			q := Inquiry{Text: part.Inquiry, Segments: part.InquirySegments, FormDeltas: part.FormDeltas}
+			// The LT arrives with the seal, on a later part than the text; a
+			// part without one must not forget one already held.
+			if len(part.LTs) > 0 {
+				q.LT = part.LTs[0]
+			} else {
+				q.LT = c.inquiry[id].LT
+			}
+			c.inquiry[id] = q
 			// A part clipped at the head describes a turn we hold only the tail
 			// of, and may not claim the open slots.
 			if staged && !part.ClippedHead {
@@ -445,6 +454,7 @@ func (c *Client) message(turn, from int, nodes []livedoc.Node) Message {
 	if from == 0 {
 		q := c.inquiry[turn]
 		m.Inquiry, m.InquirySegments = q.Text, q.Segments
+		m.InquiryLT = q.LT
 		m.FormDeltas = q.FormDeltas
 	}
 	return m

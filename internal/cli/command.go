@@ -9,15 +9,18 @@ package cli
 // THE SUBJECT. The transcript shows one aria at a time, and these verbs are how
 // it changes. Their semantics are the shell's, with one difference that comes
 // from the pager being ambiently open: a command that RESOLVES an aria replaces
-// what is on screen. So `:open` is `figaro listen` -- look at it, do not bind to
-// it -- and `:attend` is `figaro attend` AND a listen, because attending an aria
-// you cannot see is not a thing a reader of this pager ever means.
+// what is on screen. So `:listen` is `figaro listen` -- look at it, do not bind
+// to it; YOU HAVE TO LISTEN TO A FIGARO, there is no `:open` -- and `:attend`
+// is `figaro attend` AND a listen, because attending an aria you cannot see is
+// not a thing a reader of this pager ever means.
 //
-//	:open <spec>     look at another aria; attendance is untouched
-//	:listen <spec>   the same verb under the shell's name for it
+//	:listen <spec>   look at another aria; attendance is untouched
 //	:attend <spec>   bind this shell to it, AND look at it
 //	:at <spec>       the same, abbreviated
-//	:send [<spec>] -- <text>   send; no spec means the aria on screen
+//	:send [<spec>] [-f] -- <text>   send; no spec means the aria on screen.
+//	                 Sent elsewhere, the transcript FOLLOWS the aria it sent
+//	                 to, unless -f (forget) says stay: one rule, shared with
+//	                 :fork, mirroring the shell verbs' stream-unless-forget.
 //
 // A <spec> is anything the CLI takes: an aria id, an `@form` role (resolved
 // through target-aria by the same resolver `figaro listen` uses), or an id with
@@ -26,8 +29,10 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -35,6 +40,7 @@ import (
 	"github.com/jack-work/figaro/api/transport"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/sdk"
+	"github.com/jack-work/jkrpc"
 )
 
 // commandTimeout bounds one command's RPCs. A command runs off the render lock,
@@ -51,11 +57,23 @@ func (in *interactiveInput) commandAsync(fn func(context.Context) (string, error
 		defer cancel()
 		msg, err := fn(ctx)
 		if err != nil {
-			in.noteErr(err.Error())
+			in.noteErr(wireErrorText(err))
 			return
 		}
 		in.note(msg)
 	}()
+}
+
+// wireErrorText is an error as a reader should see it. A refusal from the
+// daemon arrives wrapped as "jsonrpc error -32000: <sentence>", and the code
+// is nothing to a person looking at a status row: the sentence is the whole
+// of it.
+func wireErrorText(err error) string {
+	var jerr *jkrpc.Error
+	if errors.As(err, &jerr) {
+		return strings.Replace(err.Error(), jerr.Error(), jerr.Message, 1)
+	}
+	return err.Error()
 }
 
 // noteErr is note for TROUBLE: same slot, same retirement, red rather than
@@ -81,30 +99,27 @@ func (in *interactiveInput) noteLocked(msg string) { in.lt.tr.setCommandNote(msg
 // The verbs.
 // ---------------------------------------------------------------------------
 
-// commandSend is `:send [<spec>] -- <text>`. With no spec the text goes to the
-// aria on screen, which is the common case and the reason the spec is optional.
+// commandSend is `:send [<spec>] -- <text>`. With no spec the text goes to
+// the aria on screen, which is the common case and the reason the spec is
+// optional. Sent to another aria the transcript does NOT switch: sending is
+// not looking, and `:listen <id>` is one more line.
 //
-// THE PARSER IS THE CLI'S. extractPrompt owns what `--` means, so a prompt
-// typed here and the same prompt typed at a shell are cut the same way.
-func (in *interactiveInput) commandSend(ctx context.Context, fields []string) (string, error) {
-	prompt := extractPrompt(fields)
-	if prompt == "" {
-		return "", fmt.Errorf("send: the prompt must follow `--`")
+// THE PARSER IS THE CLI'S: planSend, which is extractSendFlags and
+// extractPrompt, the same functions the shell runs.
+func (in *interactiveInput) commandSend(ctx context.Context, args []string) (string, error) {
+	plan, err := planSend(args)
+	if err != nil {
+		return "", fmt.Errorf("send: %w", err)
 	}
-	// Anything before the boundary is a target spec.
-	spec := ""
-	for _, f := range fields {
-		if f == "--" {
-			break
-		}
-		spec = f
+	env, err := in.verbEnv()
+	if err != nil {
+		return "", fmt.Errorf("send: %w", err)
 	}
-	if spec == "" {
-		// The aria on screen. One RPC on the connection we already hold.
-		_, active, err := in.aria().Qua(ctx, prompt, buildPromptForm())
-		if err != nil {
-			return "", fmt.Errorf("send: %w", err)
-		}
+	id, resp, err := sendVerb(ctx, env, plan, in.aria(), in.currentID())
+	if err != nil {
+		return "", fmt.Errorf("send: %w", err)
+	}
+	if plan.spec == "" {
 		// A prompt sent into a busy aria is a queue entry, and the reader who
 		// typed it should see it land EVERY TIME. The auto-open is suppressed
 		// by any deliberate pit and by any earlier Esc, so a typed send opens
@@ -116,35 +131,108 @@ func (in *interactiveInput) commandSend(ctx context.Context, fields []string) (s
 		// stale list for up to half a second after the send that filled it.
 		// The queue is a intrinsic now: the patch is already on its way over
 		// this same connection, and asking would only race it.
-		if active {
+		if resp != nil && resp.Active {
 			in.mu.Lock()
 			in.lt.tr.openQueueFromKey()
 			in.mu.Unlock()
 		}
 		return "sent", nil
 	}
-	id, ep, err := in.resolve(ctx, spec)
+	return "sent to " + id, nil
+}
+
+// commandFork is `:fork [<spec>] [-S k=v] [-O outfit] [--stay] -- <prompt>`.
+//
+// IT MEANS WHAT `figaro fork` MEANS, with the transcript standing in for the
+// stream: mint the branch, move the shell's binding to it (when the plan
+// forked this shell's own aria), submit the prompt, and SHOW the branch as
+// its reply streams. `--stay` mints and prompts and stays on the parent,
+// attendance untouched, with `:listen <id>` in the status row. There is
+// deliberately no verb that shows the branch and leaves attendance alone:
+// that is `:fork --stay` then `:listen <id>`, two commands. `-f` is refused:
+// the transcript IS the stream, and `--stay` is the thing you mean.
+//
+// The plan is planFork, the shell's own parser; the fork and the rebind are
+// forkVerb, shared with the shell. Showing the branch is still a FULL
+// RELOAD of the transcript (plans/transcript-subject.md section 3).
+func (in *interactiveInput) commandFork(ctx context.Context, args []string) (string, error) {
+	plan, err := planFork(args)
 	if err != nil {
-		return "", fmt.Errorf("send: %w", err)
+		return "", fmt.Errorf("fork: %w", err)
+	}
+	if plan.opts.forget {
+		return "", errors.New("fork: -f is a shell notion (the transcript is the stream); --stay mints and prompts without following")
+	}
+	if plan.compose {
+		return "", errors.New("fork: the prompt must follow `--` (the pager has no composer)")
+	}
+	if plan.prompt == "" {
+		return "", errors.New("fork: the prompt must follow `--` (a bare fork has no reply to show here; use the shell)")
+	}
+	if plan.spec == "" {
+		// The box's implied aria is the one on screen, which the shell's
+		// binding may or may not be; naming it keeps forkVerb's "did I fork
+		// my own aria" test honest either way.
+		plan.spec = in.currentID()
+	}
+	env, err := in.verbEnv()
+	if err != nil {
+		return "", fmt.Errorf("fork: %w", err)
+	}
+	out, err := forkVerb(ctx, env, plan)
+	if err != nil {
+		return "", fmt.Errorf("fork: %w", err)
+	}
+	branch := out.Alternative
+	_, ep, err := in.resolve(ctx, branch)
+	if err != nil {
+		return "", fmt.Errorf("fork: forked %s but could not reach it: %w", branch, err)
 	}
 	fcli, err := sdk.DialAria(ep, nil)
 	if err != nil {
-		return "", fmt.Errorf("send: connect %s: %w", id, err)
+		return "", fmt.Errorf("fork: forked %s but could not connect: %w", branch, err)
 	}
-	defer fcli.Close()
-	if _, _, err := fcli.Qua(ctx, prompt, buildPromptForm()); err != nil {
-		return "", fmt.Errorf("send: %w", err)
+	if _, _, err := fcli.Qua(ctx, plan.prompt, buildPromptForm()); err != nil {
+		fcli.Close()
+		return "", fmt.Errorf("fork: forked %s but the prompt was refused: %w", branch, err)
 	}
-	return "sent to " + id, nil
+	fcli.Close()
+	done := fmt.Sprintf("forked %s at %s, prompting %s", out.Parent, out.At, branch)
+	if plan.opts.stay {
+		return done + " (:listen " + branch + " to follow)", nil
+	}
+	if out.Rebound {
+		done += ", attending"
+	} else if out.BindNote != "" {
+		done += " (" + out.BindNote + ")"
+	}
+	in.mu.Lock()
+	owns := in.ownsSubject
+	in.mu.Unlock()
+	if !owns {
+		return done + "; this is a send session and cannot change aria (:listen " + branch + " from a listen)", nil
+	}
+	if err := in.retarget(ctx, branch, ep); err != nil {
+		return "", fmt.Errorf("%s, but could not show it: %w", done, err)
+	}
+	return done, nil
+}
+
+// verbEnv is the box's door for the shared verbs: the angelus it holds and
+// the shell that started this pager, whose binding attend and fork move.
+func (in *interactiveInput) verbEnv() (verbEnv, error) {
+	acli, err := in.angelus()
+	if err != nil {
+		return verbEnv{}, err
+	}
+	return verbEnv{loaded: in.loaded, acli: acli, shellPID: shellPID}, nil
 }
 
 // switchSubject is THE PRIMITIVE the whole command mode exists for: point the
 // transcript at a different aria. attend also binds this shell to it, which is
-// the only difference between `:open` and `:attend`.
+// the only difference between `:listen` and `:attend`; both run the shell's
+// verb (listenVerb, attendVerb) and then show what it resolved.
 func (in *interactiveInput) switchSubject(ctx context.Context, spec string, attend bool) (string, error) {
-	if spec == "" {
-		return "", fmt.Errorf("which aria? (:open <id|@role>)")
-	}
 	// A SESSION THAT DOES NOT OWN ITS CONNECTION CANNOT CHANGE SUBJECT, yet.
 	// `figaro send` dials the aria itself and blocks on that connection's
 	// Done(); its notify pump is not fenced by the subject generation either,
@@ -158,29 +246,106 @@ func (in *interactiveInput) switchSubject(ctx context.Context, spec string, atte
 	if !owns {
 		return "", fmt.Errorf("changing aria needs a `figaro listen` session (this one is a send)")
 	}
-	id, ep, err := in.resolve(ctx, spec)
+	env, err := in.verbEnv()
 	if err != nil {
 		return "", err
 	}
-	if id == in.currentID() {
-		return "already showing " + id, nil
-	}
+	var id string
+	var ep transport.Endpoint
 	if attend {
-		acli, aerr := in.angelus()
-		if aerr != nil {
-			return "", aerr
+		out, err := attendVerb(ctx, env, spec)
+		if err != nil {
+			return "", fmt.Errorf("attend: %w", err)
 		}
-		if err := bindBinding(ctx, acli, shellPID, id, 0); err != nil {
-			return "", fmt.Errorf("attend %s: %w", id, err)
+		id, ep = out.ID, out.EP
+	} else {
+		id, ep, err = listenVerb(ctx, env, spec)
+		if err != nil {
+			return "", err
 		}
+	}
+	if id == in.currentID() {
+		if attend {
+			return "attending " + id + " (already showing)", nil
+		}
+		return "already showing " + id, nil
 	}
 	if err := in.retarget(ctx, id, ep); err != nil {
 		return "", err
 	}
 	if attend {
-		return "attending " + id, nil
+		// THE JUMPLIST RECORDS ARRIVALS, wherever the attend came from: the
+		// ':' box, 'a' on a fork point, 'a' on a row of `:ls`. A hop has
+		// already moved its cursor onto this id, so recording it again is a
+		// no-op and ^O keeps meaning "the one before".
+		in.mu.Lock()
+		in.jumps.visit(id)
+		pos, total := in.jumps.where()
+		in.mu.Unlock()
+		return fmt.Sprintf("attending %s (%d/%d)", id, pos, total), nil
 	}
 	return "showing " + id, nil
+}
+
+// attendFromPager is the 'a' key: the same body `:attend` runs, on the aria
+// a fork point or a list row names.
+//
+// THE HOOK RUNS ON THE DISPATCH PATH, WHICH HOLDS THE RENDER LOCK. Taking
+// it here froze the pager dead -- every key after `a` was swallowed, the
+// screen kept its last frame, and the session looked like a binding that
+// did nothing. The same trap the 'S' hook fell into (see transcript.hooks).
+// So everything below happens on the command goroutine.
+func (in *interactiveInput) attendFromPager(id string) {
+	if id == "" {
+		return
+	}
+	in.commandAsync(func(ctx context.Context) (string, error) {
+		// RECORD THE DEPARTURE, or the first ^O has nowhere to go back to:
+		// the list would hold only the aria just arrived at. A hop does not
+		// come through here; its cursor already names where it is going.
+		in.mu.Lock()
+		in.jumps.visit(in.figaroID)
+		in.mu.Unlock()
+		return in.attendNote(ctx, id)
+	})
+}
+
+// attendSwitch is the attend without the departure: the jumplist's own hop
+// uses it, having moved its cursor already.
+func (in *interactiveInput) attendSwitch(id string) {
+	in.commandAsync(func(ctx context.Context) (string, error) { return in.attendNote(ctx, id) })
+}
+
+func (in *interactiveInput) attendNote(ctx context.Context, id string) (string, error) {
+	note, err := in.switchSubject(ctx, id, true)
+	if err != nil {
+		return "", fmt.Errorf("attend: %w", err)
+	}
+	return note, nil
+}
+
+// hopAria is ^O/^I: back and forward through the arias attended in this
+// session. Off the dispatch path, for the reason above.
+func (in *interactiveInput) hopAria(dir int) { go in.hop(dir) }
+
+// hop moves the cursor first, so the attend that follows is recorded as
+// arriving where the cursor already stands.
+
+func (in *interactiveInput) hop(dir int) {
+	in.mu.Lock()
+	in.jumps.visit(in.figaroID)
+	id, ok := in.jumps.hop(dir)
+	pos, total := in.jumps.where()
+	in.mu.Unlock()
+	if !ok {
+		if dir < 0 {
+			in.note(fmt.Sprintf("jumplist: nothing older (%d/%d)", pos, total))
+		} else {
+			in.note(fmt.Sprintf("jumplist: nothing newer (%d/%d)", pos, total))
+		}
+		return
+	}
+	in.attendSwitch(id)
 }
 
 // resolve turns a spec into (id, endpoint) through THE SAME resolver `figaro
@@ -236,7 +401,7 @@ func (in *interactiveInput) aria() *sdk.Aria {
 // retarget dials an aria and makes it the subject: the ONE path by which this
 // process comes to be showing a conversation. `figaro listen` opens through it
 // too, so the switch is exercised on every startup rather than only when
-// somebody types `:open` -- a door used once a session is a door that rots.
+// somebody types `:listen` -- a door used once a session is a door that rots.
 func (in *interactiveInput) retarget(ctx context.Context, id string, ep transport.Endpoint) error {
 	// THE GENERATION IS THE WHOLE SAFETY ARGUMENT. The old connection's notify
 	// pump is still live while we dial, and its frames carry the OLD aria's
@@ -392,6 +557,8 @@ func (in *interactiveInput) wireHooks() {
 	in.lt.setCommandCompleter(in.complete)
 	in.lt.setCatchUp(in.pagerCatchUp)
 	in.lt.tr.dropRow = in.dropPitRow
+	in.lt.tr.attendAria = in.attendFromPager
+	in.lt.tr.ariaHop = in.hopAria
 	// The hooks the pager calls FROM DISPATCH hand off to a goroutine: that
 	// path already holds the render lock, and taking it twice freezes.
 	in.lt.tr.openForm = func() { go in.openLive("form show", "", false) }

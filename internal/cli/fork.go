@@ -111,7 +111,7 @@ func runForkCmd(loaded *config.Loaded, rawArgs []string) {
 		runFork(loaded, plan.spec, plan.opts)
 		return
 	}
-	runForkPrompt(loaded, plan.spec, plan.opts, plan.prompt)
+	runForkPrompt(loaded, plan)
 }
 
 // forkPromptOnlyFlags names the first flag that only means something once a
@@ -147,53 +147,24 @@ func forkTargetHint(spec string) string {
 	return spec + " "
 }
 
-// runForkPrompt is `fork … -- <prompt>`: branch, announce, then send the
-// prompt to the alternative through the same dispatch `send` uses, so -r,
-// -v, -o, -l, -x/-n/-y and -f behave identically on either verb.
-func runForkPrompt(loaded *config.Loaded, spec string, opts sendOpts, prompt string) {
-	target, at, perr := parseTarget(spec)
-	if perr != nil {
-		die("fork: %s", perr)
-	}
-
-	branch := ""
+// runForkPrompt is `fork … -- <prompt>`: branch, announce, then present the
+// reply through the same dispatch `send` uses, so -r, -v, -o, -l, -x/-n/-y
+// and -f behave identically on either verb. The fork itself, the rebinding
+// and the submission are forkVerb's, shared with the pager's `:fork`.
+func runForkPrompt(loaded *config.Loaded, plan forkPlan) {
+	opts, prompt := plan.opts, plan.prompt
+	var out forkOutcome
 	WithAngelus(loaded, func(acli *sdk.Angelus) error {
 		ctx := context.Background()
-		ppid := shellPID
-
-		bound := ""
-		if r, err := resolveBinding(ctx, acli, ppid); err == nil && r.Found {
-			bound = r.FigaroID
-		}
-		if target == "" {
-			if bound == "" {
-				die("fork: no aria bound to this shell (try: <id> or <id>:<turn>)")
-			}
-			target = bound
-		}
-
-		// The coordinate goes on the wire in the form the user named it;
-		// the server owns any translation.
-
-		resp, err := waitForFork(ctx, acli, target, at, opts.outfit)
+		env := verbEnv{loaded: loaded, acli: acli, shellPID: shellPID}
+		var err error
+		out, err = forkVerb(ctx, env, plan)
 		if err != nil {
 			die("fork: %s", err)
 		}
-		branch = resp.Alternative
-
-		// Move to the branch we just prompted: but only when we forked our
-		// OWN bound aria, and only without --stay. Forking someone else's
-		// aria is a fan-out; it never steals this shell. Registry.Bind
-		// rebinds in place, so no Unbind is needed first.
-		rescoped := false
-		if target == bound && !opts.stay {
-			if berr := bindBinding(ctx, acli, ppid, resp.Alternative, 0); berr != nil {
-				fmt.Fprintf(stderrw, "warning: could not attend %s: %s\n", resp.Alternative, berr)
-			} else {
-				rescoped = true
-			}
+		if out.BindNote != "" && !opts.stay {
+			fmt.Fprintf(stderrw, "warning: %s\n", out.BindNote)
 		}
-
 		if opts.json {
 			// aria_id is the aria the prompt goes to, always the branch.
 			enc := json.NewEncoder(stdout)
@@ -208,24 +179,23 @@ func runForkPrompt(loaded *config.Loaded, spec string, opts sendOpts, prompt str
 				OwnerNote    string `json:"owner_note,omitempty"`
 				Mode         string `json:"mode"`
 			}{
-				AriaID:       resp.Alternative,
-				Parent:       resp.Parent,
-				Continuation: resp.Continuation,
-				Alternative:  resp.Alternative,
-				Turn:         at.turn,
-				Node:         at.nodeJSON(),
-				Rescoped:     rescoped,
-				OwnerNote:    resp.OwnerNote,
+				AriaID:       out.Alternative,
+				Parent:       out.Parent,
+				Continuation: out.Continuation,
+				Alternative:  out.Alternative,
+				Turn:         out.At.turn,
+				Node:         out.At.nodeJSON(),
+				Rescoped:     out.Rebound,
+				OwnerNote:    out.OwnerNote,
 				Mode:         "fork-send",
 			})
 			return nil
 		}
-
-		if resp.OwnerNote != "" {
-			fmt.Fprintf(stderrw, "%s\n", resp.OwnerNote)
+		if out.OwnerNote != "" {
+			fmt.Fprintf(stderrw, "%s\n", out.OwnerNote)
 		}
 		altNote := "(prompting)"
-		if rescoped {
+		if out.Rebound {
 			altNote = "(prompting; this shell)"
 		}
 		// What freezes is a log node, never an aria. A HEAD fork seals
@@ -235,15 +205,16 @@ func runForkPrompt(loaded *config.Loaded, spec string, opts sendOpts, prompt str
 		// the target had gone read-only, which is the opposite of the truth:
 		// both branches stay live at their own ids.
 		atNote := "(fork point sealed; both branches live)"
-		if at.isHead() {
+		if out.At.isHead() {
 			atNote = "(new branch; both live)"
 		}
 		fmt.Fprintf(stderrw,
 			"forked %s at %s %s\n  continuation %s  (attend to continue)\n  alternative  %s  %s\n",
-			resp.Parent, at, atNote, resp.Continuation, resp.Alternative, altNote)
+			out.Parent, out.At, atNote, out.Continuation, out.Alternative, altNote)
 		return nil
 	})
 
+	branch := out.Alternative
 	if branch == "" {
 		die("fork: no alternative branch to prompt")
 	}

@@ -95,7 +95,7 @@ func tokenize(line string) []string {
 // Everything else -- ls, status, doctor, state, set, unset, queue, kill,
 // promote, gc, models, show... -- falls through to the real router untouched.
 var overlayVerbs = map[string]bool{
-	"open": true, "o": true, "listen": true,
+	"listen": true,
 	"attend": true, "at": true,
 	"send": true, "s": true,
 	"new": true, "replay": true, "fork": true,
@@ -174,7 +174,7 @@ func liveForm(argv []string) (name, spec string, ok bool) {
 // So this function does exactly one thing: hand off. It may not take the lock
 // (Go mutexes do not recurse) and it may not block (the input goroutine is the
 // only thing reading the keyboard). MEASURED, in a pty, before this hand-off
-// existed: `:open <id>` froze the whole pager, dead, with the box still on
+// existed: `:listen <id>` froze the whole pager, dead, with the box still on
 // screen -- the input goroutine parked on a mutex it was already holding.
 func (in *interactiveInput) runCommand(line string) { go in.execCommand(line) }
 
@@ -202,7 +202,7 @@ func (in *interactiveInput) execCommand(line string) {
 // runOverlay answers the verbs the pager owns.
 func (in *interactiveInput) runOverlay(verb string, args []string) {
 	switch verb {
-	case "open", "o", "listen":
+	case "listen":
 		in.commandAsync(func(ctx context.Context) (string, error) {
 			return in.switchSubject(ctx, strings.Join(args, " "), false)
 		})
@@ -213,6 +213,10 @@ func (in *interactiveInput) runOverlay(verb string, args []string) {
 	case "send", "s":
 		in.commandAsync(func(ctx context.Context) (string, error) {
 			return in.commandSend(ctx, args)
+		})
+	case "fork":
+		in.commandAsync(func(ctx context.Context) (string, error) {
+			return in.commandFork(ctx, args)
 		})
 	default:
 		in.note(fmt.Sprintf("%s: not available inside the pager (it opens a view of its own)", verb))
@@ -386,7 +390,7 @@ func (in *interactiveInput) complete(line string) []string {
 	if len(argv) == 0 {
 		// Completing the VERB itself: the router's own names, plus the overlay
 		// aliases that exist only here.
-		return matchPrefix(append(commandVerbs(in.loaded), "open", "at"), current)
+		return matchPrefix(append(commandVerbs(in.loaded), "at"), current)
 	}
 	req := append([]string{"__complete", argv[0], "--current", current, "--"}, argv[1:]...)
 	out, _ := in.routeCaptured(req)

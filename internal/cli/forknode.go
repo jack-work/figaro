@@ -2,7 +2,7 @@ package cli
 
 // FORKING AT A NODE: `<id>:<turn>.<node>`.
 //
-// The pager numbers every node of a turn and draws that number under ^O
+// The pager numbers every node of a turn and draws that number under M-m
 // (`19.10 · 01:23:45`). This file is what makes that number a fork coordinate,
 // so the address you READ is the address you can BRANCH AT.
 //

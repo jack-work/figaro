@@ -225,6 +225,24 @@ func (s *Server) Close() {
 	deliver(subs, frame)
 }
 
+// StampTail hands the caller the newest turn under the lock, to write the
+// fields only a durable walk can know -- the form deltas, which the live
+// composer never sees. Called just before Seal, so what goes out on the
+// wire is the sealed turn complete rather than a correction after it.
+func (s *Server) StampTail(fill func(tail *Turn, prev []Turn)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tl := s.cache.Tail()
+	if tl == nil || fill == nil {
+		return
+	}
+	var prev []Turn
+	if n := s.cache.Len(); n >= 2 {
+		prev = s.cache.Slice(n-2, n-2)
+	}
+	fill(tl, prev)
+}
+
 // Seal marks the newest turn finished: it stops moving, and every node in it
 // is immutable from here. This is the one moment the word means, and, later,
 // the moment the turn is written to its xwal channel.

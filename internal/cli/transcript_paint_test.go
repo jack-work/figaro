@@ -404,6 +404,12 @@ func TestCompactRow_PreservesAppearance(t *testing.T) {
 		"\x1b[1;38;5;99mmulti param\x1b[0m  ",
 		"\x1b[38;5;252m \x1b[0m\x1b[7m \x1b[27m\x1b[38;5;252m \x1b[0m",
 		"reset-prefixed \x1b[0;31mred\x1b[0m ",
+		// A background on ONE cell followed by a blank under the default
+		// style: the reset between them may not be deferred, or the
+		// background leaks onto the blank. The visual cursor on a leading
+		// space is exactly this row.
+		"\x1b[48;2;220;215;186m \x1b[0m \x1b[38;5;252mVISOK\x1b[39m",
+		"\x1b[48;5;187m \x1b[0m   text",
 	}
 	for i, row := range rows {
 		want, got := newVT(80, 1), newVT(80, 1)

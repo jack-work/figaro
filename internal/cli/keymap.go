@@ -18,6 +18,8 @@ const (
 	modeSearch                    // typing into the '/' box: almost all keys are text
 	modeJump                      // typing into the ':' box: the same, for a coordinate
 	modePanel                     // a '?'/'!'/'Q' panel is showing
+	modeVisual                    // v/V: a visual selection is up and owns the motions
+	modeFork                      // 'f' is down, waiting for the direction of the fork jump
 	numKeyModes
 )
 
@@ -30,11 +32,13 @@ const (
 	inSearchBox  keyModeSet = 1 << modeSearch
 	inJumpBox    keyModeSet = 1 << modeJump
 	inPanel      keyModeSet = 1 << modePanel
+	inVisual     keyModeSet = 1 << modeVisual
+	inFork       keyModeSet = 1 << modeFork
 
 	// inPager is every mode with the pager up. Note that a transcript-mode
 	// row is ALSO reachable while a panel is showing: the panel swallows only
 	// its own keys and every other key wipes it and acts (see dispatch).
-	inPager  = inTranscript | inSearchBox | inJumpBox | inPanel
+	inPager  = inTranscript | inSearchBox | inJumpBox | inPanel | inVisual | inFork
 	inAnyBox = inIncipit | inPager
 )
 
@@ -132,6 +136,21 @@ func (b *keyBinding) hidden() bool { return b.help == helpNone }
 // The table.
 // ---------------------------------------------------------------------------
 
+// WHAT IS TAKEN, AND WHAT IS LEFT, as of 2026-09-12. A starting point for the
+// reorganisation this table is owed, not a specification: the rows below are
+// the truth, and TestKeymap_EveryRowIsWellFormed is what enforces it.
+//
+//	plain letters, pager:  a d e f g j k m n o q s u v x y
+//	                       F G H N Q S T V X Y  (and ? ! / : Esc Enter)
+//	free plain letters:    b c h i l p r t w z
+//	                       A B C D E I J K L M O P R U W Z
+//	control bytes:         ^C ^D ^L ^T ^N ^P ^O ^I(Tab) Enter Esc
+//	meta:                  M-n M-p (question travel), M-m (verbose output)
+//
+// Three chords are spoken for in ways a new row must respect: Ctrl+M IS
+// ENTER (0x0d) and cannot be bound apart from it; Tab IS ^I, so a row for one
+// is a row for the other; and every chord the ':' box uses is readline's in
+// that mode, whatever it means outside.
 var keymap = []keyBinding{
 	// -- input level: the keys that own the process ------------------------
 	//
@@ -160,7 +179,7 @@ var keymap = []keyBinding{
 		// 'q' leaves what is open, and only then the session: a pit is a thing
 		// you are IN, and quitting the process from inside one is the surprise
 		// `less` would give you by exiting your shell.
-		chord: byteChord('q'), modes: inTranscript | inPanel,
+		chord: byteChord('q'), modes: inTranscript | inPanel | inVisual,
 		open: staysInline, why: "detach: it would open the pager and immediately tear it down",
 		help: helpLeavePit, input: inputLeavePit,
 	},
@@ -175,7 +194,14 @@ var keymap = []keyBinding{
 		help: helpNone, input: inputEnterTranscript,
 	},
 	{
-		chord: byteChord(0x0f), modes: inAnyBox &^ inJumpBox,
+		// M-m is verbose TOOL OUTPUT and the coordinate marks, which is what
+		// ^O used to be: ^O is the jumplist now, on neovim's chord. Alt+m
+		// rather than a plain letter because a plain letter cannot be live in
+		// incipit, where a printable byte composes a steer; Alt+m rather than
+		// Ctrl+M because Ctrl+M IS ENTER'S BYTE (0x0d) and cannot be bound
+		// apart from it. It shares its letter with 'm', the status bar's own
+		// verbosity: one letter, two depths, and the modifier says which.
+		chord: metaChord('m'), modes: inAnyBox &^ inJumpBox,
 		open: opensPager, help: helpVerbose, input: inputToggleVerbose,
 	},
 	{
@@ -205,16 +231,16 @@ var keymap = []keyBinding{
 		// the one key that means two things in the two places you are most
 		// likely to press it.
 		//
-		// A DIFFERENT AXIS FROM ^O, which is verbose TOOL OUTPUT. "What is
-		// this session" and "what did that tool say" are different questions
-		// and they keep different keys.
-		chord: byteChord('m'), modes: inTranscript | inPanel,
+		// A DIFFERENT AXIS FROM M-m, which is verbose TOOL OUTPUT. "What is
+		// this session" and "what did that tool say" are different questions,
+		// so they keep the same letter and different modifiers.
+		chord: byteChord('m'), modes: inTranscript | inPanel | inVisual,
 		open: opensPager, help: helpBarVerbose, input: inputToggleBarVerbose,
 	},
 	{
 		// In incipit 'y' copies the aria id, a feature of its own, not a
 		// reason to open the pager. In the search box it is literal text.
-		chord: byteChord('y'), modes: inIncipit | inTranscript | inPanel,
+		chord: byteChord('y'), modes: inIncipit | inTranscript | inPanel | inVisual,
 		open: staysInline, why: "in incipit it already copies the aria id",
 		help: helpYank, input: inputYank,
 	},
@@ -243,6 +269,48 @@ var keymap = []keyBinding{
 	{chord: byteChord('u'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerHalfUp},
 	{chord: byteChord('G'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerTail},
 	{chord: byteChord('g'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerPendingTop},
+
+	// -- pager level: fork points ------------------------------------------
+	//
+	// 'f' is a two-key gesture like gg, but a MODE rather than a flag: with
+	// 'f' down the next key is read from the inFork rows, and anything with
+	// no row there falls through to the ordinary transcript keys. j/k and
+	// Down/Up travel between the fork banners the delta tables draw.
+	{chord: byteChord('f'), modes: inTranscript, open: opensPager, help: helpForkJump, pager: pagerForkPending},
+	{chord: byteChord('j'), modes: inFork, open: opensPager, help: helpNone, pager: pagerForkNext},
+	{chord: byteChord('k'), modes: inFork, open: opensPager, help: helpNone, pager: pagerForkPrev},
+	{chord: navChord(navDown), modes: inFork, open: opensPager, help: helpNone, pager: pagerForkNext},
+	{chord: navChord(navUp), modes: inFork, open: opensPager, help: helpNone, pager: pagerForkPrev},
+	{
+		chord: byteChord(0x1b), modes: inFork,
+		open: staysInline, why: "it abandons a gesture that is only half typed",
+		help: helpNone, pager: pagerForkCancel,
+	},
+
+	// -- pager level: attending what is on screen --------------------------
+	//
+	// 'a' is ATTEND, one verb with two subjects: in the transcript it is the
+	// aria the selected fork point came from, in a pit it is the aria the
+	// selected row names. Both bind the shell and show it, which is what
+	// `:attend` does, through the same body.
+	{chord: byteChord('a'), modes: inTranscript, open: opensPager, help: helpAttend, pager: pagerAttendFork},
+	{chord: byteChord('a'), modes: inPanel, open: opensPager, help: helpAttend, pager: pagerAttendRow},
+
+	// -- pager level: the jumplist -----------------------------------------
+	//
+	// ^O back, ^I forward, through the arias this session has attended: the
+	// chords neovim spends on the same idea. ^O USED TO BE VERBOSE TOOL
+	// OUTPUT, which has moved to 'o' (a free plain letter, and the same
+	// letter as the thing it shows). ^I is Tab, which is COMPLETION IN THE
+	// ':' BOX and nothing at all out here: the box is a different mode, and
+	// these rows do not name it, so Tab still completes and the box's own ^O
+	// is still the box's. Nor is a PIT one of their modes: a pit is a thing
+	// you are in, every key that is not its own dismisses it, and hopping
+	// arias from inside a list is not a gesture anyone needs.
+	{chord: byteChord(0x0f), modes: inTranscript, open: opensPager, help: helpAriaJump, pager: pagerAriaBack},
+	{chord: ctrlChord('o'), modes: inTranscript, open: opensPager, help: helpNone, pager: pagerAriaBack},
+	{chord: byteChord(0x09), modes: inTranscript, open: opensPager, help: helpNone, pager: pagerAriaForward},
+	{chord: ctrlChord('i'), modes: inTranscript, open: opensPager, help: helpNone, pager: pagerAriaForward},
 
 	// The arrow cluster shares the motions, as peers of the letters rather
 	// than by impersonating them.
@@ -274,7 +342,7 @@ var keymap = []keyBinding{
 		// ':' IS THE COMMAND LINE, and it opens the pager to get one. It used to
 		// stay inline, on the grounds that "a coordinate needs a viewport to
 		// land in" -- true of `:12`, and false of every verb that came after:
-		// `:open`, `:attend`, `:send` are things a reader means from anywhere,
+		// `:listen`, `:attend`, `:send` are things a reader means from anywhere,
 		// and the pager is where their result is shown. So the key yanks the
 		// pager up first, exactly as '?' and '!' do.
 		chord: byteChord(':'), modes: inTranscript,
@@ -308,7 +376,7 @@ var keymap = []keyBinding{
 		// destructive one, and the two must not be neighbours. What it drops is
 		// printed into the pager's notice and reprinted to the shell on the way
 		// out, so a slip costs you the queue's PLACE, not its text.
-		chord: byteChord('X'), modes: inTranscript | inPanel,
+		chord: byteChord('X'), modes: inTranscript | inPanel | inVisual,
 		open: staysInline, why: "it addresses a turn that is streaming in the view you are already in",
 		help: helpHangUpDrop, input: inputHangUpDrop,
 	},
@@ -334,6 +402,62 @@ var keymap = []keyBinding{
 		chord: byteChord(0x1b), modes: inTranscript,
 		open: staysInline, why: "clears a selection there is none of, and is a sequence prefix besides",
 		help: helpEscape, pager: pagerClearSelection,
+	},
+
+	// -- visual mode: v / V ------------------------------------------------
+	// A cursor owns the motions: the same keys move IT rather than the
+	// viewport (the viewport follows). v/V anchor and drop a highlight at
+	// it; every other key is inert, so a mark cannot be lost to a stray
+	// letter; Esc leaves the mode.
+	{chord: byteChord('v'), modes: inTranscript | inVisual, open: opensPager, help: helpVisual, pager: pagerVisualChar},
+	{chord: byteChord('V'), modes: inTranscript | inVisual, open: opensPager, help: helpVisual, pager: pagerVisualLine},
+	{
+		chord: byteChord(0x1b), modes: inVisual,
+		open: staysInline, why: "only reachable with a visual selection up",
+		help: helpEscape, pager: pagerVisualLeave,
+	},
+	{chord: byteChord('j'), modes: inVisual, open: opensPager, help: helpScroll, pager: pagerVisualDown},
+	{chord: byteChord('k'), modes: inVisual, open: opensPager, help: helpScroll, pager: pagerVisualUp},
+	{chord: byteChord('h'), modes: inVisual, open: staysInline, why: "a column motion with no selection to move", help: helpVisualCols, pager: pagerVisualLeft},
+	{chord: byteChord('l'), modes: inVisual, open: staysInline, why: "a column motion with no selection to move", help: helpVisualCols, pager: pagerVisualRight},
+	{chord: byteChord('d'), modes: inVisual, open: opensPager, help: helpScroll, pager: pagerVisualHalfDown},
+	{chord: byteChord('u'), modes: inVisual, open: opensPager, help: helpScroll, pager: pagerVisualHalfUp},
+	{chord: byteChord('G'), modes: inVisual, open: opensPager, help: helpScroll, pager: pagerVisualEnd},
+	{chord: byteChord('g'), modes: inVisual, open: opensPager, help: helpScroll, pager: pagerVisualPendingTop},
+	{chord: navChord(navUp), modes: inVisual, open: opensPager, help: helpArrows, pager: pagerVisualUp},
+	{chord: navChord(navDown), modes: inVisual, open: opensPager, help: helpArrows, pager: pagerVisualDown},
+	{chord: navChord(navLeft), modes: inVisual, open: staysInline, why: "a column motion with no selection to move", help: helpVisualCols, pager: pagerVisualLeft},
+	{chord: navChord(navRight), modes: inVisual, open: staysInline, why: "a column motion with no selection to move", help: helpVisualCols, pager: pagerVisualRight},
+	{chord: navChord(navPageUp), modes: inVisual, open: opensPager, help: helpArrows, pager: pagerVisualHalfUp},
+	{chord: navChord(navPageDown), modes: inVisual, open: opensPager, help: helpArrows, pager: pagerVisualHalfDown},
+	{chord: navChord(navHome), modes: inVisual, open: opensPager, help: helpHomeEnd, pager: pagerVisualTop},
+	{chord: navChord(navEnd), modes: inVisual, open: opensPager, help: helpHomeEnd, pager: pagerVisualEnd},
+	// The vim motions, over the cursor. staysInline: with no cursor there is
+	// nothing for a word motion to move.
+	{chord: byteChord('w'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualWordNext},
+	{chord: byteChord('b'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualWordPrev},
+	{chord: byteChord('e'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualWordEnd},
+	{chord: byteChord('0'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualRowStart},
+	{chord: byteChord('^'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualFirstText},
+	{chord: byteChord('$'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualRowEnd},
+	{chord: byteChord('H'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualScreenTop},
+	{chord: byteChord('M'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualScreenMid},
+	{chord: byteChord('L'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualScreenBot},
+	{chord: byteChord('{'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualParaPrev},
+	{chord: byteChord('}'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualParaNext},
+	// Search from the cursor: the box, and n/N, land the cursor on the hit.
+	{chord: byteChord('/'), modes: inVisual, open: opensPager, help: helpSearch, pager: pagerSearchPrompt},
+	{chord: byteChord('n'), modes: inVisual, open: staysInline, why: "repeat search with no query yet: opens onto a no-op", help: helpSearchRepeat, pager: pagerFindNext},
+	{chord: byteChord('N'), modes: inVisual, open: staysInline, why: "repeat search with no query yet: opens onto a no-op", help: helpSearchRepeat, pager: pagerFindPrev},
+	// ':' with a selection up opens the command line holding `<,>`: the
+	// range is the argument, as it is in vim.
+	{chord: byteChord(':'), modes: inVisual, open: opensPager, help: helpJump, pager: pagerVisualCommand},
+	// 'Y' is the coordinate itself, for a shell command about to be typed
+	// elsewhere: `fig fork <id>:12 -- '<412.0:23-1180>! why?'`.
+	{
+		chord: byteChord('Y'), modes: inVisual,
+		open: staysInline, why: "there is no selection to name until one is made",
+		help: helpVisualYankCoord, input: inputYankCoordinate,
 	},
 
 	// -- panel mode: the panel keys swallow their own keys -----------------
@@ -397,6 +521,14 @@ var keymap = []keyBinding{
 		chord: byteChord(0x1b), modes: inJumpBox,
 		open: staysInline, why: "only reachable with the jump prompt already up",
 		help: helpJump, pager: jumpCancel,
+	},
+	{
+		// Alt+Enter, and Ctrl+Enter on a CSI-u terminal (the input loop folds
+		// the second onto the first: a legacy terminal cannot tell Ctrl+Enter
+		// from Enter). Submit, then snap to the live tail.
+		chord: metaChord(0x0d), modes: inJumpBox,
+		open: staysInline, why: "only reachable with the jump prompt already up",
+		help: helpCmdSubmitSnap, pager: jumpAcceptSnap,
 	},
 	// -- the command line's EMACS BINDINGS --------------------------------
 	//
@@ -581,6 +713,14 @@ const (
 	helpLeavePit
 	helpFormPit
 	helpFocus
+	helpVisual
+	helpVisualCols
+	helpVisualYankCoord
+	helpVisualMotions
+	helpCmdSubmitSnap
+	helpForkJump
+	helpAttend
+	helpAriaJump
 )
 
 // helpRow is one line of the panel: the key column and what it does. The key
@@ -617,15 +757,23 @@ var helpRows = []helpRow{
 	{helpCmdAbort, "(in :) Esc / ^C / ^G", "abandon the line, close the box"},
 	{helpPitDrop, "(in a list) x", "drop the selected entry (queue)"},
 	{helpYank, "y", "copy selection (or aria id if none)"},
-	{helpVerbose, "^O", "toggle verbose tool output"},
+	{helpVerbose, "M-m", "toggle verbose tool output and the node addresses"},
 	{helpSticky, "s", "pin the question of the turn you are inside"},
 	{helpBarVerbose, "m", "more: state names, model, last interaction"},
 	{helpCmdPaste, "(in :) ^V", "paste the clipboard"},
-	{helpSelect, "^N/^P", "select next/previous node"},
+	{helpSelect, "^N/^P", "select next/previous node (a delta table is one)"},
+	{helpForkJump, "f j / f k", "next / previous fork point"},
+	{helpAttend, "a", "attend the fork point's aria (in a list, the selected row's)"},
+	{helpAriaJump, "^O / ^I", "jumplist: back / forward through attended arias"},
 	{helpQuestionTravel, "M-n / M-p", "travel to the next / previous question"},
 	{helpSelectExtend, "^N/^P + Shift", "travel between questions (Alt+^N/^P extends a selection)"},
 	{helpExpand, "Enter", "expand tools within the selection"},
 	{helpEscape, "Esc", "clear selection / close panel"},
+	{helpVisual, "v / V", "visual mode: a cursor; again to mark by character / by line (y yanks, : commands it)"},
+	{helpVisualCols, "(in v) h/l · ←/→", "move the cursor's column"},
+	{helpVisualYankCoord, "(in v) Y", "copy the selection's coordinate (<lt.block:a-b>!)"},
+	{helpVisualMotions, "(in v) w b e · 0 ^ $ · H M L · { }", "vim motions over the cursor; / n N land it on a match"},
+	{helpCmdSubmitSnap, "(in :) M-Enter", "submit, leave visual mode, and snap to the live tail"},
 	{helpListen, "^L", "open the transcript (stays open until you close it)"},
 	{helpStatusPanel, "!", "figaro status panel"},
 	{helpQueuedPanel, "Q", "queued prompts panel"},
@@ -656,7 +804,7 @@ func helpBody() []string {
 // ---------------------------------------------------------------------------
 // The compiled dispatch tables. Built once, at init, from the rows above.
 
-const noBinding = int8(-1)
+const noBinding = int16(-1)
 
 // pagerFunc/inputFunc name the two action shapes; see keyBinding.
 type pagerFunc = func(*transcript)
@@ -676,14 +824,14 @@ type inputActions struct {
 	byMeta [numKeyModes][128]inputFunc
 }
 
-// keyIndex maps a chord to its row in keymap, per mode. int8 keeps the whole
-// index in a few cache lines; the table would have to grow past 127 rows
-// before that mattered, and buildKeyIndex panics if it ever does.
+// keyIndex maps a chord to its row in keymap, per mode. It was int8 until
+// visual mode took the table past 127 rows; int16 keeps it small and
+// buildKeyIndex still panics rather than truncate.
 type keyIndex struct {
-	byByte [numKeyModes][256]int8
-	byNav  [numKeyModes][navCount]int8
-	byCtrl [numKeyModes][26]int8
-	byMeta [numKeyModes][128]int8
+	byByte [numKeyModes][256]int16
+	byNav  [numKeyModes][navCount]int16
+	byCtrl [numKeyModes][26]int16
+	byMeta [numKeyModes][128]int16
 }
 
 var (
@@ -711,8 +859,8 @@ const navCount = int(navRight) + 1
 func init() { buildKeyIndex() }
 
 func buildKeyIndex() {
-	if len(keymap) > 127 {
-		panic("keymap: more rows than an int8 index can name")
+	if len(keymap) > 32767 {
+		panic("keymap: more rows than an int16 index can name")
 	}
 	for m := range numKeyModes {
 		for b := range inputIndex.byByte[m] {
@@ -740,19 +888,19 @@ func buildKeyIndex() {
 			}
 			switch bd.chord.kind {
 			case chordByte:
-				idx.byByte[m][bd.chord.b] = int8(i)
+				idx.byByte[m][bd.chord.b] = int16(i)
 				pagerAct.byByte[byteSlot(m, bd.chord.b)] = bd.pager
 				inputAct.byByte[byteSlot(m, bd.chord.b)] = bd.input
 			case chordNav:
-				idx.byNav[m][bd.chord.nav] = int8(i)
+				idx.byNav[m][bd.chord.nav] = int16(i)
 				pagerAct.byNav[m][bd.chord.nav] = bd.pager
 				inputAct.byNav[m][bd.chord.nav] = bd.input
 			case chordCtrlLetter:
-				idx.byCtrl[m][bd.chord.b-'a'] = int8(i)
+				idx.byCtrl[m][bd.chord.b-'a'] = int16(i)
 				pagerAct.byCtrl[m][bd.chord.b-'a'] = bd.pager
 				inputAct.byCtrl[m][bd.chord.b-'a'] = bd.input
 			case chordMeta:
-				idx.byMeta[m][bd.chord.b] = int8(i)
+				idx.byMeta[m][bd.chord.b] = int16(i)
 				pagerAct.byMeta[m][bd.chord.b] = bd.pager
 				inputAct.byMeta[m][bd.chord.b] = bd.input
 			}
@@ -835,7 +983,7 @@ func byteSlot(mode keyMode, b byte) int { return int(mode)<<8 | int(b) }
 
 // lookup resolves the ROW behind a chord: metadata, not dispatch.
 func (idx *keyIndex) lookup(mode keyMode, ev keyEvent) *keyBinding {
-	var i int8
+	var i int16
 	switch {
 	case ev.nav != navNone:
 		if int(ev.nav) >= navCount {

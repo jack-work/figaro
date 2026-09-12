@@ -537,3 +537,367 @@ func ariaIDOnScreen(capture string) string {
 	}
 	return ""
 }
+
+// VISUAL MODE, END TO END: v puts a cursor up with no wash; v again anchors a
+// highlight; hjkl extend it across a node boundary; `:` opens the box holding
+// the range placeholder; y yanks the visible text; Y yanks a qualified
+// coordinate that names a real LT of this aria.
+//
+// A pane test because the property is what the reader SEES: the cursor cell,
+// the wash, the box's contents, the status row's yank note. The raw capture
+// (-e) is read for the palette's own SGR bodies, so a wash that painted in
+// the wrong colour, or a cursor that did not paint, fails here and nowhere
+// else. The turn is kept short and the session is opened with -l so the
+// pager is still up after the reply lands.
+func TestSmoke_VisualCursorHighlightsAndYanks(t *testing.T) {
+	smokeEnabled(t)
+	smokeCase(t)
+	env, bin := smokeStore(t), smokeBinary(t)
+	p := newPane(t, env, bin, 100, 40)
+
+	p.send(bin + " send -l -- 'say the single word VISOK and nothing else'")
+	p.key("Enter")
+	p.waitIdle(120 * time.Second)
+	if !p.alive() {
+		decline(t, "the session did not stay open under -l")
+	}
+	if !strings.Contains(p.visible(), "VISOK") {
+		decline(t, "the reply never landed on screen")
+	}
+	// tmux re-encodes SGR per cell and splits a combined sequence, so the
+	// palette's bodies are matched by their BACKGROUND parameter alone, in
+	// either spelling: the pane decides truecolour for itself.
+	has := func(raw string, params ...string) bool {
+		for _, p := range params {
+			if strings.Contains(raw, "\x1b["+p+"m") {
+				return true
+			}
+		}
+		return false
+	}
+	washed := func(raw string) bool { return has(raw, "48;2;45;79;103", "48;5;23") }
+	cursored := func(raw string) bool { return has(raw, "48;2;220;215;186", "48;5;187") }
+
+	// v: a cursor, and no wash.
+	p.typeSlowly("v")
+	time.Sleep(400 * time.Millisecond)
+	raw := p.rawVisible()
+	if !cursored(raw) {
+		t.Fatalf("v did not paint a cursor cell:\n%s", raw)
+	}
+	if washed(raw) {
+		t.Fatalf("v painted a wash before any highlight was anchored:\n%s", raw)
+	}
+	t.Logf("after v:\n%s", raw)
+
+	// v again: the highlight anchors; k extends it up across the node
+	// boundary (the cursor seeds on the reply, k reaches the question).
+	p.typeSlowly("vkk")
+	time.Sleep(400 * time.Millisecond)
+	raw = p.rawVisible()
+	if !washed(raw) || !cursored(raw) {
+		t.Fatalf("v v k k did not wash rows under a cursor:\n%s", raw)
+	}
+	t.Logf("after v v k k:\n%s", raw)
+
+	// w walks a word; / lands the cursor on a match and the wash follows it.
+	// The question is above the cursor, so /say reaches it and the wash must
+	// then cover the question's row.
+	p.typeSlowly("w")
+	time.Sleep(300 * time.Millisecond)
+	p.typeSlowly("/single")
+	p.key("Enter")
+	time.Sleep(500 * time.Millisecond)
+	raw = p.rawVisible()
+	if !washed(raw) || !cursored(raw) {
+		t.Fatalf("/single dropped the highlight or the cursor:\n%s", raw)
+	}
+	t.Logf("after w /single Enter:\n%s", raw)
+
+	// `:` preloads the range.
+	p.typeSlowly(":")
+	time.Sleep(400 * time.Millisecond)
+	if vis := p.visible(); !strings.Contains(vis, ":<,>") {
+		t.Fatalf("':' with a highlight up did not preload the range:\n%s", vis)
+	}
+	p.key("Escape")
+	time.Sleep(300 * time.Millisecond)
+
+	p.typeSlowly("y")
+	time.Sleep(400 * time.Millisecond)
+	if vis := p.visible(); !strings.Contains(vis, "yanked") {
+		t.Errorf("y in visual mode showed no yank note:\n%s", vis)
+	}
+	p.typeSlowly("Y")
+	time.Sleep(400 * time.Millisecond)
+	vis := p.visible()
+	coord := regexp.MustCompile(`yanked <\d+\.\d+:\d+-\d+(\.\d+:\d+)?>!`).FindString(vis)
+	if coord == "" {
+		t.Errorf("Y did not yank a qualified coordinate:\n%s", vis)
+	}
+	t.Logf("pane after Y (%s):\n%s", coord, vis)
+
+	// Esc leaves the mode: no cursor, no wash.
+	p.key("Escape")
+	time.Sleep(300 * time.Millisecond)
+	if raw := p.rawVisible(); washed(raw) || cursored(raw) {
+		t.Errorf("paint survived Esc:\n%s", raw)
+	}
+
+	// SUBMIT SEMANTICS. A command sent from the box with a highlight up
+	// leaves visual mode; M-Enter also snaps to the live tail. `:0` is a
+	// coordinate jump and not a command, so a verb that reaches the runner
+	// is used: `:send` into the idle aria, which queues nothing and starts
+	// a turn the assertions do not wait for.
+	p.typeSlowly("vV") // a line-wise highlight of the cursor's row
+	p.typeSlowly(":send -- say the single word SNAPOK")
+	p.tmux("send-keys", "M-Enter") // tmux's own spelling of Alt+Enter (measured: one write, ESC LF)
+	time.Sleep(600 * time.Millisecond)
+	raw = p.rawVisible()
+	if washed(raw) || cursored(raw) {
+		t.Errorf("M-Enter left visual mode's paint behind:\n%s", raw)
+	}
+	if !strings.Contains(p.visible(), "live") {
+		t.Errorf("M-Enter did not snap to the live tail:\n%s", p.visible())
+	}
+	t.Logf("after M-Enter:\n%s", raw)
+}
+
+// :fork MEANS WHAT `figaro fork` MEANS, with the transcript standing in for
+// the stream: mint, prompt, rebind the shell to the branch, and show it as
+// its reply lands. `:fork --stay` mints and prompts, stays on the parent, and
+// leaves attendance alone. Both are read off the footer, which carries the
+// subject's id, and then off `figaro status` in the same pane after the
+// session ends, which is the shell's binding as the shell sees it.
+func TestSmoke_ForkFromTheBoxAttendsAndShowsUnlessStay(t *testing.T) {
+	smokeEnabled(t)
+	smokeCase(t)
+	env, bin := smokeStore(t), smokeBinary(t)
+	p := newPane(t, env, bin, 100, 40)
+
+	p.send(bin + " send -l -- 'say the single word VISOK and nothing else'")
+	p.key("Enter")
+	p.waitIdle(120 * time.Second)
+	if !p.alive() || !strings.Contains(p.visible(), "VISOK") {
+		decline(t, "the first turn did not land with the session still open")
+	}
+	footerID := regexp.MustCompile(`· ([0-9a-f]{8}) ·`)
+	m := footerID.FindStringSubmatch(p.visible())
+	if m == nil {
+		t.Fatalf("no aria id in the footer:\n%s", p.visible())
+	}
+	parent := m[1]
+
+	// :fork -- prompt: the footer must show a DIFFERENT id, and the branch's
+	// reply must land on it.
+	p.typeSlowly(":fork -- say the single word FORKOK and nothing else")
+	p.key("Enter")
+	deadline := time.Now().Add(90 * time.Second)
+	branch := ""
+	for time.Now().Before(deadline) {
+		vis := p.visible()
+		if m := footerID.FindStringSubmatch(vis); m != nil && m[1] != parent {
+			branch = m[1]
+			if strings.Contains(vis, "FORKOK") {
+				break
+			}
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	if branch == "" {
+		t.Fatalf(":fork did not show the branch (footer still %s):\n%s", parent, p.visible())
+	}
+	if !strings.Contains(p.visible(), "FORKOK") {
+		t.Errorf("the branch's reply did not land on the shown transcript:\n%s", p.visible())
+	}
+	t.Logf("showed %s -> %s:\n%s", parent, branch, p.visible())
+
+	// :fork --stay: the footer keeps the branch, and the note names the
+	// new one to listen to.
+	p.typeSlowly(":fork --stay -- say the single word STAYOK and nothing else")
+	p.key("Enter")
+	time.Sleep(4 * time.Second)
+	vis := p.visible()
+	if m := footerID.FindStringSubmatch(vis); m == nil || m[1] != branch {
+		t.Errorf(":fork --stay changed the subject:\n%s", vis)
+	}
+	if !strings.Contains(vis, ":listen") {
+		t.Errorf(":fork --stay did not name the branch to listen to:\n%s", vis)
+	}
+	t.Logf("after :fork --stay:\n%s", vis)
+
+	// THE SHELL'S BINDING, as the shell sees it: leave the session and ask
+	// figaro status in the same pane. It must resolve to the branch the
+	// first :fork attended, not to the parent and not to --stay's branch.
+	// q closes a pit first (the --stay note is one), then the session.
+	for i := 0; i < 3 && p.alive(); i++ {
+		p.typeSlowly("q")
+		time.Sleep(800 * time.Millisecond)
+	}
+	if p.alive() {
+		t.Fatalf("q did not end the session:\n%s", p.visible())
+	}
+	p.send("clear; " + bin + " status -j")
+	p.key("Enter")
+	p.waitIdle(30 * time.Second)
+	status := p.visible()
+	if !strings.Contains(status, `"id": "`+branch+`"`) && !strings.Contains(status, `"id":"`+branch+`"`) {
+		t.Errorf("after :fork the shell does not attend the branch %s:\n%s", branch, status)
+	}
+	t.Logf("figaro status after the session:\n%s", status)
+}
+
+// The fork point in the pager: the banner a delta table draws, the f j / f k
+// travel to it, `a` attending the aria it names, ^O/^I walking the jumplist,
+// and `:ls` + `a` attending a listed aria.
+//
+// EVERY ASSERTION HERE IS ABOUT A SCREEN OR A BINDING, which is exactly what
+// the unit tests cannot see: the banner's placement is decided on the daemon,
+// its glyph has to survive the font, and the attend is a real rebinding of a
+// real shell. Reproduces the bug it was written for: the fork delta drew on
+// the turn BEFORE the fork (aria 5d366cc5).
+func TestSmoke_ForkPointJumpAttendAndJumplist(t *testing.T) {
+	smokeEnabled(t)
+	smokeCase(t)
+	env, bin := smokeStore(t), smokeBinary(t)
+	p := newPane(t, env, bin, 100, 40)
+
+	// A SEND DOES NOT OWN ITS CONNECTION, and a session that does not own it
+	// may not change subject (command.go). `a` and the jumplist are attends,
+	// so the fixture is a send that ENDS and a `listen` that follows it,
+	// which is the shape a reader is in when they fork.
+	p.send(bin + " send -- 'say the single word ROOTOK and nothing else'")
+	p.key("Enter")
+	p.waitIdle(120 * time.Second)
+	if bodyLines(p.scrollback(), "ROOTOK") == 0 {
+		decline(t, "the first turn did not land")
+	}
+	for i := 0; i < 20 && p.alive(); i++ {
+		time.Sleep(500 * time.Millisecond)
+	}
+	p.send("clear; " + bin + " listen")
+	p.key("Enter")
+	p.waitIdle(30 * time.Second)
+	footerID := regexp.MustCompile(`· ([0-9a-f]{8}) ·`)
+	m := footerID.FindStringSubmatch(p.visible())
+	if m == nil {
+		t.Fatalf("no aria id in the footer:\n%s", p.visible())
+	}
+	parent := m[1]
+
+	// THE PROMPT CONTAINS THE TOKEN, so "is it on screen" is not "has it
+	// answered": bodyLines counts only a row that IS the token, which the
+	// echoed question never is (trap 2 of the tmux-testing skill).
+	p.typeSlowly(":fork -- say the single word BRANCHOK and nothing else")
+	p.key("Enter")
+	branch := ""
+	deadline := time.Now().Add(120 * time.Second)
+	for time.Now().Before(deadline) {
+		vis := p.visible()
+		if m := footerID.FindStringSubmatch(vis); m != nil && m[1] != parent {
+			branch = m[1]
+			if bodyLines(vis, "BRANCHOK") > 0 {
+				break
+			}
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	if branch == "" || bodyLines(p.visible(), "BRANCHOK") == 0 {
+		decline(t, ":fork did not land the branch's answer")
+	}
+	// The banner is stamped when the turn SEALS, so give the seal its frame.
+	p.waitIdle(30 * time.Second)
+
+	// THE BANNER, AND WHERE IT SITS. It names the parent, and it is drawn
+	// with the turn the fork OPENED (the one that answered BRANCHOK), never
+	// with the parent's last turn above it.
+	vis := p.visible()
+	banner := "⑂ " + parent
+	if !strings.Contains(vis, banner) {
+		t.Fatalf("the fork banner %q is not on screen:\n%s", banner, vis)
+	}
+	lines := strings.Split(vis, "\n")
+	bannerRow, answerRow := -1, -1
+	for i, l := range lines {
+		if strings.Contains(l, banner) {
+			bannerRow = i
+		}
+		if strings.TrimSpace(l) == "BRANCHOK" && answerRow < 0 {
+			answerRow = i
+		}
+	}
+	if bannerRow < 0 || answerRow < 0 || bannerRow > answerRow {
+		t.Errorf("the banner must open the forked turn, not close the one before it (banner=%d answer=%d):\n%s",
+			bannerRow, answerRow, vis)
+	}
+
+	// f j travels to it FROM THE TOP and selects it: the gutter on the
+	// banner's own row is the proof, not a gutter anywhere on the screen.
+	p.key("g")
+	p.key("g")
+	time.Sleep(500 * time.Millisecond)
+	p.key("f")
+	time.Sleep(300 * time.Millisecond)
+	p.key("j")
+	time.Sleep(time.Second)
+	marked := false
+	for _, l := range strings.Split(p.rawVisible(), "\n") {
+		if strings.Contains(l, parent) && strings.Contains(l, "⑂") && strings.Contains(l, "▎") {
+			marked = true
+		}
+	}
+	if !marked {
+		t.Errorf("f j did not select the fork point:\n%s", p.visible())
+	}
+
+	// `a` attends the aria the fork came from.
+	p.key("a")
+	time.Sleep(400 * time.Millisecond)
+	t.Logf("just after `a`:\n%s", p.visible())
+	if !waitFooterID(p, footerID, parent, 30*time.Second) {
+		t.Fatalf("`a` on the fork point did not attend %s:\n%s", parent, p.visible())
+	}
+
+	// ^O back to the branch, ^I forward to the parent again.
+	p.key("C-o")
+	if !waitFooterID(p, footerID, branch, 30*time.Second) {
+		t.Fatalf("^O did not go back to %s:\n%s", branch, p.visible())
+	}
+	p.key("Tab")
+	if !waitFooterID(p, footerID, parent, 30*time.Second) {
+		t.Fatalf("^I did not go forward to %s:\n%s", parent, p.visible())
+	}
+
+	// :ls opens the forest as a pit whose rows are arias; ^N selects one and
+	// `a` attends it.
+	p.typeSlowly(":ls")
+	p.key("Enter")
+	time.Sleep(3 * time.Second)
+	pit := p.visible()
+	if !strings.Contains(pit, parent) && !strings.Contains(pit, branch) {
+		t.Fatalf(":ls did not list this aria's family:\n%s", pit)
+	}
+	p.key("C-n")
+	time.Sleep(time.Second)
+	p.key("a")
+	time.Sleep(3 * time.Second)
+	if got := footerID.FindStringSubmatch(p.visible()); got == nil {
+		t.Fatalf("after :ls + a there is no aria in the footer:\n%s", p.visible())
+	} else if got[1] != parent && got[1] != branch {
+		t.Errorf("`a` on a :ls row attended %s, which is neither %s nor %s:\n%s",
+			got[1], parent, branch, p.visible())
+	}
+	t.Logf("fork point, jumplist and :ls all landed:\n%s", p.visible())
+}
+
+// waitFooterID polls until the footer names the aria, or gives up.
+func waitFooterID(p *pane, re *regexp.Regexp, want string, d time.Duration) bool {
+	deadline := time.Now().Add(d)
+	for time.Now().Before(deadline) {
+		if m := re.FindStringSubmatch(p.visible()); m != nil && m[1] == want {
+			return true
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return false
+}

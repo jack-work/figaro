@@ -24,7 +24,7 @@ package cli
 //	listen  no prompt; it follows until the reader leaves
 //
 // Everything else -- the tape, the form pit, a replay's end channel, the
-// angelus door that `:open` needs -- is a field.
+// angelus door that `:listen` needs -- is a field.
 
 import (
 	"context"
@@ -57,7 +57,7 @@ type sessionOpts struct {
 	// the session ends when the turn settles.
 	prompt string
 
-	// acli is the angelus door `:open` and `:attend` need; nil leaves the
+	// acli is the angelus door `:listen` and `:attend` need; nil leaves the
 	// subject-switching verbs inert, which is what a replay wants.
 	acli *sdk.Angelus
 	// tape records the wire (nil records nothing).
@@ -100,7 +100,7 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 	}
 	// The bookend is this session's status line, gated on the config. IT READS
 	// THE LIVE STATUS, not the one this function happened to build: retarget
-	// swaps in a fresh sessionStatus (every `:open` does), and a closure over
+	// swaps in a fresh sessionStatus (every `:listen` does), and a closure over
 	// the original painted a bookend nobody was updating -- no state glyph, no
 	// mantra, no capacity figure, in the one entrance that shows a bookend.
 	var lt *livelogTurn
@@ -179,7 +179,7 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 	in.lt.setCatchUp(in.pagerCatchUp)
 	// THE SUBJECT COMES IN THROUGH THE SAME DOOR IT LATER SWITCHES THROUGH:
 	// retarget dials, wires the pump, the hooks and the desync handler, and
-	// seeds. `:open` calls exactly the same function, so the startup path is
+	// seeds. `:listen` calls exactly the same function, so the startup path is
 	// the switch path.
 	if err := in.retarget(ctx, opt.figaroID, opt.ep); err != nil {
 		die("%s", err)

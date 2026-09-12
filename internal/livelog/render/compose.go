@@ -25,6 +25,10 @@ type Row struct {
 	Text  string
 	Block int
 	Mark  string
+	// State marks a row of the block's FORM DELTA TABLE rather than of the
+	// block itself. The table is drawn under its block and shares its
+	// coordinate, but a surface with a selection addresses it separately.
+	State bool
 }
 
 // Composer turns one message into rows.
@@ -70,9 +74,9 @@ func (c Composer) Message(m aria.Message, w int) []Row {
 	// in the inquiry's Block coordinate, after one blank row.
 	if c.State != nil && len(m.FormDeltas) > 0 {
 		if state := c.State(BlockInquiry, m.FormDeltas, w); len(state) > 0 {
-			rows = append(rows, Row{Text: "", Block: BlockInquiry})
+			rows = append(rows, Row{Text: "", Block: BlockInquiry, State: true})
 			for _, l := range state {
-				rows = append(rows, Row{Text: clip(l, w), Block: BlockInquiry})
+				rows = append(rows, Row{Text: clip(l, w), Block: BlockInquiry, State: true})
 			}
 		}
 	}
@@ -121,15 +125,15 @@ func (c Composer) Nodes(nodes []livedoc.Node, w int) []Row {
 		if c.Mark != nil && len(rows) > first {
 			rows[first].Mark = c.Mark(k, n)
 		}
-		// The node's form deltas, below the block it explains and sharing
-		// its Block coordinate: selected and yanked alongside the node, not
-		// individually addressable. One blank row separates them from the
-		// block's own body.
+		// The node's form deltas, below the block they explain and sharing
+		// its Block coordinate, marked State so a surface with a selection
+		// can address the table on its own. One blank row separates them
+		// from the block's body.
 		if c.State != nil && len(n.FormDeltas) > 0 {
 			if state := c.State(k, n.FormDeltas, w); len(state) > 0 {
-				rows = append(rows, Row{Text: "", Block: k})
+				rows = append(rows, Row{Text: "", Block: k, State: true})
 				for _, l := range state {
-					rows = append(rows, Row{Text: clip(l, w), Block: k})
+					rows = append(rows, Row{Text: clip(l, w), Block: k, State: true})
 				}
 			}
 		}

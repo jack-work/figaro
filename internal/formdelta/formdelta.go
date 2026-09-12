@@ -151,7 +151,7 @@ func foldPatch(deltas map[string]livedoc.FormDelta, formID string, kind livedoc.
 			continue
 		}
 		deltas[formID+"."+k] = livedoc.FormDelta{
-			Value: v, Kind: kind, Event: livedoc.FormSet, Form: formID,
+			Value: v, Prev: ent.Old, Kind: kind, Event: livedoc.FormSet, Form: formID,
 		}
 	}
 	for _, ent := range p.Entries() {
@@ -160,7 +160,7 @@ func foldPatch(deltas map[string]livedoc.FormDelta, formID string, kind livedoc.
 		}
 		k := ent.Key
 		deltas[formID+"."+k] = livedoc.FormDelta{
-			Kind: kind, Event: livedoc.FormRemoved, Form: formID,
+			Prev: ent.Old, Kind: kind, Event: livedoc.FormRemoved, Form: formID,
 		}
 	}
 }
@@ -188,7 +188,7 @@ func foldStudied(deltas map[string]livedoc.FormDelta, fid string, sf *studiedFor
 		if store.HiddenLibrettoKey(k) {
 			continue
 		}
-		deltas[fid+"."+k] = livedoc.FormDelta{Value: v, Kind: kind, Event: livedoc.FormSet, Form: fid}
+		deltas[fid+"."+k] = livedoc.FormDelta{Value: v, Prev: ent.Old, Kind: kind, Event: livedoc.FormSet, Form: fid}
 	}
 	for _, ent := range p.Entries() {
 		if !ent.IsRemoval() {
@@ -198,7 +198,7 @@ func foldStudied(deltas map[string]livedoc.FormDelta, fid string, sf *studiedFor
 		if store.HiddenLibrettoKey(k) || k == store.KeyLibrettoAlive {
 			continue
 		}
-		deltas[fid+"."+k] = livedoc.FormDelta{Kind: kind, Event: livedoc.FormRemoved, Form: fid}
+		deltas[fid+"."+k] = livedoc.FormDelta{Prev: ent.Old, Kind: kind, Event: livedoc.FormRemoved, Form: fid}
 	}
 }
 
@@ -236,6 +236,10 @@ func Attach(turns []aria.Turn, deltas map[uint64]map[string]livedoc.FormDelta) {
 				}
 			}
 		}
+		var lastClaimed uint64
+		for lt := range claimed {
+			lastClaimed = maxU64(lastClaimed, lt)
+		}
 		for lt := t.LTs[0]; lt <= t.LTs[1]; lt++ {
 			d := deltas[lt]
 			if len(d) == 0 {
@@ -243,10 +247,58 @@ func Attach(turns []aria.Turn, deltas map[uint64]map[string]livedoc.FormDelta) {
 			}
 			if ni, ok := claimed[lt]; ok {
 				t.Nodes[ni].FormDeltas = merge(t.Nodes[ni].FormDeltas, d)
-			} else {
-				t.FormDeltas = merge(t.FormDeltas, d)
+				continue
+			}
+			// THE SEAM. A record that projects no node and trails every
+			// node of this turn was written after the turn had been
+			// composed, so the turn never saw its state: the first context
+			// it entered is the turn after it. A fork's birth record is
+			// exactly this, and the LT range of the PARENT's last turn
+			// swallows it -- which is how the fork banner came to draw
+			// under the wrong message (aria 5d366cc5). The turn's own
+			// opening record is never a seam, so a turn with no nodes
+			// keeps its inquiry window.
+			if lt > t.LTs[0] && lt > lastClaimed {
+				if ti+1 < len(turns) {
+					turns[ti+1].FormDeltas = merge(turns[ti+1].FormDeltas, d)
+				}
+				// WITH NO TURN AFTER IT, A SEAM WAITS. Attributing it
+				// backwards is the bug above; attributing it to a turn
+				// that does not exist yet is not possible; and the state
+				// has not been shown to anything, so there is no honest
+				// row for it. The next composition that HAS the turn
+				// places it (the live path widens the sealing turn's
+				// window for exactly this: Agent.stampSealDeltas).
+				continue
+			}
+			t.FormDeltas = merge(t.FormDeltas, d)
+		}
+	}
+}
+
+// AttachOne folds a window of per-record deltas onto ONE turn: each node
+// takes the records it projected, the turn takes the rest. No seam rule --
+// the caller chose the window, and there is no turn after this one to defer
+// to. The live seal path uses it (Agent.stampSealDeltas); Attach is for a
+// slice of turns whose boundaries are the question.
+func AttachOne(t *aria.Turn, deltas map[uint64]map[string]livedoc.FormDelta) {
+	if t == nil || len(deltas) == 0 {
+		return
+	}
+	claimed := map[uint64]int{}
+	for ni := range t.Nodes {
+		for _, src := range t.Nodes[ni].Src {
+			if _, ok := claimed[src.LT]; !ok {
+				claimed[src.LT] = ni
 			}
 		}
+	}
+	for lt, d := range deltas {
+		if ni, ok := claimed[lt]; ok {
+			t.Nodes[ni].FormDeltas = merge(t.Nodes[ni].FormDeltas, d)
+			continue
+		}
+		t.FormDeltas = merge(t.FormDeltas, d)
 	}
 }
 

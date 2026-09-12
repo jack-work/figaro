@@ -301,7 +301,21 @@ func smokeStore(t *testing.T) []string {
 			})
 		}
 	}
-	return append(os.Environ(),
+	// THE PANE IS A FRESH SHELL, NOT AN ARIA'S TOOL. When this suite runs
+	// inside a figaro (an agent driving it), the process carries FIGARO_ARIA,
+	// which statically attends every shell under it and DISABLES BINDING: a
+	// pane inheriting it can never attend anything, and a case that asserts
+	// what `figaro status` resolves to after a fork reads "no figaro bound"
+	// for a reason that has nothing to do with the code under test.
+	var env []string
+	for _, kv := range os.Environ() {
+		switch {
+		case strings.HasPrefix(kv, "FIGARO_ARIA="), strings.HasPrefix(kv, "FIGARO_NO_BIND="), strings.HasPrefix(kv, "FIGARO_CALLER="):
+			continue
+		}
+		env = append(env, kv)
+	}
+	return append(env,
 		"FIGARO_STATE_DIR="+filepath.Join(dir, "state"),
 		"FIGARO_RUNTIME_DIR="+filepath.Join(dir, "run"),
 		"FIGARO_CONFIG_DIR="+filepath.Join(dir, "config"),

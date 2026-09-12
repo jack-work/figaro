@@ -86,3 +86,49 @@ func (a *Agent) materializeTurns() []aria.Turn {
 	entries := a.figLog.Read()
 	return a.attachFormDeltas(a.projTurns(unwrapMessages(entries)), entries)
 }
+
+// stampSealDeltas writes the form state onto the turn about to be sealed.
+//
+// THE LIVE PATH COMPOSES FROM THE PROVIDER STREAM, which carries no form
+// state at all, so a turn sealed in this process used to reach the pager
+// with none: deltas appeared only for turns materialized at startup, and
+// the same transcript told two stories depending on when you opened it.
+//
+// The window starts at the last record of the PREVIOUS turn that projected
+// a node, not at this turn's first record. The records between the two
+// turns -- a fork's birth record among them -- belong to the turn they
+// opened, and beginning at the inquiry would step over them. See
+// formdelta.Attach, which makes the same cut for a dormant aria.
+func (a *Agent) stampSealDeltas() {
+	fb, ok := a.backend.(formdelta.Backend)
+	if !ok || a.figLog == nil || a.ariaSrv == nil {
+		return
+	}
+	a.ariaSrv.StampTail(func(tail *aria.Turn, prev []aria.Turn) {
+		from := uint64(0)
+		if len(prev) > 0 {
+			for _, n := range prev[0].Nodes {
+				for _, src := range n.Src {
+					from = max(from, src.LT)
+				}
+			}
+		}
+		entries, _ := a.figLog.ReadPage(from, 0, 0)
+		if len(entries) == 0 {
+			return
+		}
+		seed := formdelta.Seed{}
+		if entries[0].LT == from {
+			seed = formdelta.SeedFrom(entries[0])
+			entries = entries[1:]
+		}
+		if len(entries) == 0 {
+			return
+		}
+		// Every record in the window belongs to this turn: it is the last
+		// one, so there is nothing after it to defer a seam to. AttachOne
+		// says exactly that, and does not depend on the turn's LT range,
+		// which the live composer has not stamped yet.
+		formdelta.AttachOne(tail, formdelta.PerRecordFrom(fb, a.id, seed, entries))
+	})
+}

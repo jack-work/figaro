@@ -64,7 +64,7 @@ func (t *transcript) stickyBlockOf(turn int) stickyQuestion {
 	q.rows = t.renderMsgBase(m).rows
 	// The deltas sit below the question, under a blank row of their own.
 	q.textHigh = len(q.rows)
-	if n := len(formDeltaLines(inq.FormDeltas, t.w, t.expanded[nodeRef{turn: turn, index: inquiryNode}])); n > 0 {
+	if n := len(formDeltaLines(inq.FormDeltas, t.w, t.expanded[deltaRefOf(nodeRef{turn: turn, index: inquiryNode})])); n > 0 {
 		q.textHigh -= n + 1
 	}
 	for i, r := range q.rows {

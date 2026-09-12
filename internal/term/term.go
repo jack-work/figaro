@@ -132,6 +132,23 @@ type palette struct {
 	// own re-light (22 = not-dim) because a dim red reads as decoration; the
 	// whole point of a notice is that it does not.
 	notice string
+
+	// The two roles below are SGR BODIES WITHOUT A RESET, spliced into rows
+	// by the transcript's painter, which manages its own resets: a wash
+	// spans cells that carry their own styling and must survive it.
+	//
+	// selectWash is the visual selection's background, and only the
+	// background, so the text keeps its own foreground: waveBlue2 #2D4F67.
+	// cursor is the block cursor: sumiInk0 #16161D on fujiWhite #DCD7BA, a
+	// light block that reads on any cell, washed or not, rather than reverse
+	// video, which inverts whatever the cell already was and disappears on
+	// a dim label.
+	//
+	// Each has a 256-colour spelling for a terminal without truecolour: 23
+	// (#005f5f) is the cube's nearest to waveBlue2; 234 on 187 stand in for
+	// the inks.
+	selectWash, selectWash256 string
+	cursor, cursor256         string
 }
 
 var kanagawa = palette{
@@ -148,6 +165,45 @@ var kanagawa = palette{
 	absent:   "\033[38;5;167m",
 	stateDim: "\033[38;5;60m",     // ≈ sumiInk4 #54546D: dimmer than label, still legible
 	notice:   "\033[22;38;5;167m", // autumnRed #C34043, the palette's own red
+
+	selectWash:    "\033[48;2;45;79;103m",
+	selectWash256: "\033[48;5;23m",
+	cursor:        "\033[38;2;22;22;29;48;2;220;215;186m",
+	cursor256:     "\033[38;5;234;48;5;187m",
+}
+
+// TrueColor reports whether the terminal advertises 24-bit colour: COLORTERM
+// is the convention (truecolor or 24bit), and tmux forwards it when its own
+// terminal has it.
+func TrueColor() bool {
+	switch os.Getenv("COLORTERM") {
+	case "truecolor", "24bit":
+		return true
+	}
+	return false
+}
+
+// SelectWash is the visual selection's background as a bare SGR body, or ""
+// when colour is off. The caller owns the reset.
+func SelectWash() string {
+	if !Enabled() {
+		return ""
+	}
+	if TrueColor() {
+		return active.selectWash
+	}
+	return active.selectWash256
+}
+
+// Cursor is the block cursor's SGR body, or "" when colour is off.
+func Cursor() string {
+	if !Enabled() {
+		return ""
+	}
+	if TrueColor() {
+		return active.cursor
+	}
+	return active.cursor256
 }
 
 // active is the palette in force. One var is the whole theme mechanism until

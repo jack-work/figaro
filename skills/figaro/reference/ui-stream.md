@@ -127,7 +127,7 @@ An unknown tool keeps its name and takes its first argument as the headline -
 the same shape as the known ones, not a special case.
 
 ```
-minimized                                    expanded (Enter, or Ctrl-O)
+minimized                                    expanded (Enter, or M-m)
 ✓ $ grep -n baritone opera.md [1.4s]         ✓ bash [1.4s]
   │ … last 10 of 32 lines                      │ grep -n baritone opera.md
   │ 15:13. Figaro is a baritone.                │ timeout 240
@@ -162,8 +162,11 @@ suffix and is not in the store's window, so a walk of the window alone prunes
 it as though it had scrolled out of history. That dropped a live expansion on
 `Esc` and on every frame while following the tail.)
 
-`Ctrl-O` shows the metadata and the coordinate row and **nothing else**: it no
-longer opens content. Verbosity and "open this one thing" are different
+`M-m` shows the metadata and the coordinate row and **nothing else**: it no
+longer opens content. (It was `Ctrl-O` until 2026-09-12, when that chord went
+to the jumplist below. `Ctrl-M` could not take the job: that byte is Enter.
+`m` is the status bar's own verbosity, so the letter names the axis and the
+modifier names the depth.) Verbosity and "open this one thing" are different
 questions, and one key answering both meant neither could be asked alone.
 
 A folded multi-line value names its fold on its **label**: `content (…last 5
@@ -347,7 +350,7 @@ Inline keybindings while a turn streams:
 
 | Key | Action |
 | --- | --- |
-| `Ctrl-O` | toggle verbosity (expand tool arguments and full output) |
+| `M-m` | toggle verbosity (expand tool arguments and full output) |
 | `Ctrl-T` | open the transcript pager (below) |
 | `Ctrl-D` | end the turn |
 
@@ -385,11 +388,14 @@ run `figaro show` (full content above, cursor below).
 | `Home` / `End` | top / bottom |
 | `/` | literal string search |
 | `:` | jump to a coordinate: `:12`, `:12.3`, `:0` |
+| `f j` / `f k` | next / previous fork point (the `⑂` row a delta table draws) |
+| `a` | attend the aria that fork point came from; in a list, the selected row's |
+| `Ctrl-O` / `Ctrl-I` | the jumplist: back / forward through the arias attended here |
 | `q` / `Esc` / `Ctrl-T` | exit the pager |
 
 ### Coordinates and the `:` jump
 
-**`Ctrl-O` in the pager also draws every node's address**, one dim row above
+**`M-m` in the pager also draws every node's address**, one dim row above
 it: `12.3 · 01:23:45`: turn id, node id, and when the node was written. The
 turn's opening question gets the same row at its virtual node id, `-1`, because
 the question selects, copies and highlights exactly as a node does and is
@@ -441,7 +447,7 @@ arrival instead of looking like a dead keyboard.
 While the box is up it holds **readline's emacs keymap**, not the pager's. That
 includes the keys the pager reserves for itself everywhere else: `^C`, `^D`,
 `^L`, `^O` and `^T` mean what bash means by them in here, and go back to
-meaning detach/interrupt/listen/verbose the moment the box closes.
+meaning detach/interrupt/listen/jumplist the moment the box closes.
 
 | Key | Does |
 | --- | --- |

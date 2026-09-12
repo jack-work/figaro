@@ -259,7 +259,13 @@ func compactRowFrom(dst []byte, row string, pending sgrStyle) []byte {
 		text := row[i:j]
 		i = j
 		trailing := len(text) - len(trimTrailingSpaces(text))
-		if trailing == len(text) && pending.spaceInvisible() {
+		// A blank run may skip the transition only if the style it would be
+		// drawn under AND the style the terminal is still holding are both
+		// invisible on a blank. The second half was missing: a background
+		// painted on one cell (the visual cursor) leaked onto the blank that
+		// followed it, because the reset between them was deferred until the
+		// next visible text and the terminal kept the background meanwhile.
+		if trailing == len(text) && pending.spaceInvisible() && emitted.spaceInvisible() {
 			dst = append(dst, text...) // pure blank run under an invisible style
 			continue
 		}

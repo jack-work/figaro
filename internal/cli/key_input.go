@@ -186,8 +186,14 @@ func metaEscapePrefix(data []byte, mode keyMode) (byte, bool) {
 	}
 	// Printable keys and DEL (M-DEL is backward-kill-word). Control bytes are
 	// left alone: ESC ^C is not a chord anything wants, and swallowing it
-	// would eat an interrupt.
-	if b != 0x7f && b < 0x20 {
+	// would eat an interrupt. The one exception is Enter: Alt+Enter is ESC
+	// CR on a terminal that sends Meta as an escape prefix, and ESC LF from
+	// tmux (measured: M-Enter arrives as "\x1b\n"); both are the one chord,
+	// and it is claimed only where a row binds it, like every other Meta.
+	if b == 0x0a {
+		b = 0x0d
+	}
+	if b != 0x7f && b != 0x0d && b < 0x20 {
 		return 0, false
 	}
 	folded := metaFold(b)

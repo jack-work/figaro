@@ -74,6 +74,7 @@ const (
 // needed it: what changed, on which form, and what kind of form it was.
 type FormDelta struct {
 	Value json.RawMessage `json:"value,omitempty"` // as seen HERE; absent on removal
+	Prev  json.RawMessage `json:"prev,omitempty"`  // what it displaced; absent when the key is new
 	Kind  FormKind        `json:"kind"`
 	Event FormEvent       `json:"event,omitempty"`
 	Form  string          `json:"form"` // the id, unsplit, for grouping

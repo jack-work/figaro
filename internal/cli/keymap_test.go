@@ -64,6 +64,8 @@ func modeName(m keyMode) string {
 		return "jump"
 	case modePanel:
 		return "panel"
+	case modeVisual:
+		return "visual"
 	}
 	return "?"
 }
@@ -179,8 +181,10 @@ func TestKeymap_EveryRowIsWellFormed(t *testing.T) {
 			t.Errorf("%s: not a navigation key", bd.chord)
 		}
 		// A Meta chord names a byte a terminal can put Alt on: the low 128,
-		// and not a control byte (ESC ^X is not a chord anything sends).
-		if bd.chord.kind == chordMeta && (bd.chord.b >= 128 || (bd.chord.b < 0x20 && bd.chord.b != 0x7f)) {
+		// and not a control byte (ESC ^X is not a chord anything sends), with
+		// one exception: Alt+Enter is ESC CR on every terminal that sends
+		// Meta as an escape prefix, and CSI-u spells it 13;3u.
+		if bd.chord.kind == chordMeta && (bd.chord.b >= 128 || (bd.chord.b < 0x20 && bd.chord.b != 0x7f && bd.chord.b != 0x0d)) {
 			t.Errorf("%s: not a key Meta can be held for", bd.chord)
 		}
 		// A pager row can never be live in incipit: the pager is not up.
@@ -235,7 +239,7 @@ func TestKeymap_IndexAgreesWithTheTable(t *testing.T) {
 //
 // ONE DELIBERATE ADDITION SINCE: ':'. It was a coordinate box, which needs a
 // viewport to land in and so stayed inline; it is now the COMMAND LINE, and
-// :open/:attend/:send are things a reader means from anywhere. So it yanks the
+// :listen/:attend/:send are things a reader means from anywhere. So it yanks the
 // pager up exactly as '?' and '!' do.
 //
 // TWO MORE, 2026-08-29: 'S' opens the FORM in the pit (S for state, the verb's
@@ -243,6 +247,12 @@ func TestKeymap_IndexAgreesWithTheTable(t *testing.T) {
 // the pit lives in the pager, so asking for a pit asks for the pager. 'T'
 // hands the screen to the conversation without closing the pit, which is a
 // gesture about a pager that must therefore have one.
+//
+// THREE MORE, 2026-09-12, all of them gestures about a transcript: 'f' arms
+// the fork jump (f j / f k), 'a' attends the aria a fork point or a list row
+// names, and ^O/^I walk the jumplist. Verbose tool output, which ^O used to
+// be, moved to M-m: a meta chord, so it is not in this byte-shaped list at
+// all, and Ctrl+M could not have it because that byte is Enter.
 func TestOpensTranscript_MatchesTheHandKeptList(t *testing.T) {
 	old := map[byte]bool{}
 	for _, b := range []byte{
@@ -252,11 +262,14 @@ func TestOpensTranscript_MatchesTheHandKeptList(t *testing.T) {
 		'?', '!', 'Q', // help / figaro status / queued-prompt panels
 		'S',        // the form, in the pit
 		'T',        // focus the conversation, keeping the pit
-		0x0f,       // ^O verbosity
-		'm',        // more: the status bar's own detail, an opener exactly as ^O is
+		0x0f, 0x09, // ^O / Tab: the jumplist, back and forward
+		'a',        // attend the fork point (or the selected list row)
+		'f',        // arm the fork jump: f j / f k
+		'm',        // more: the status bar's own detail, an opener exactly as 'o' is
 		's',        // the pinned question, a pager toggle and so an opener too
 		0x0e, 0x10, // ^N/^P node selection
 		0x0d, 0x0a, // Enter: expand tools
+		'v', 'V', // visual selection: a gesture about rows, which only the pager has
 	} {
 		old[b] = true
 	}
@@ -354,15 +367,23 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  (in :) Esc / ^C / ^G abandon the line, close the box",
 		"  (in a list) x       drop the selected entry (queue)",
 		"  y                   copy selection (or aria id if none)",
-		"  ^O                  toggle verbose tool output",
+		"  M-m                 toggle verbose tool output and the node addresses",
 		"  s                   pin the question of the turn you are inside",
 		"  m                   more: state names, model, last interaction",
 		"  (in :) ^V           paste the clipboard",
-		"  ^N/^P               select next/previous node",
+		"  ^N/^P               select next/previous node (a delta table is one)",
+		"  f j / f k           next / previous fork point",
+		"  a                   attend the fork point's aria (in a list, the selected row's)",
+		"  ^O / ^I             jumplist: back / forward through attended arias",
 		"  M-n / M-p           travel to the next / previous question",
 		"  ^N/^P + Shift       travel between questions (Alt+^N/^P extends a selection)",
 		"  Enter               expand tools within the selection",
 		"  Esc                 clear selection / close panel",
+		"  v / V               visual mode: a cursor; again to mark by character / by line (y yanks, : commands it)",
+		"  (in v) h/l · ←/→    move the cursor's column",
+		"  (in v) Y            copy the selection's coordinate (<lt.block:a-b>!)",
+		"  (in v) w b e · 0 ^ $ · H M L · { } vim motions over the cursor; / n N land it on a match",
+		"  (in :) M-Enter      submit, leave visual mode, and snap to the live tail",
 		"  ^L                  open the transcript (stays open until you close it)",
 		"  !                   figaro status panel",
 		"  Q                   queued prompts panel",

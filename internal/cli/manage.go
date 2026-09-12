@@ -765,7 +765,7 @@ func runFork(loaded *config.Loaded, spec string, opts sendOpts) {
 			target = bound
 		}
 
-		resp, err := waitForFork(ctx, acli, target, at, opts.outfit)
+		resp, err := waitForFork(ctx, acli, target, at, opts.outfit, "")
 		if err != nil {
 			die("fork: %s", err)
 		}
@@ -932,57 +932,21 @@ func runAttend(loaded *config.Loaded, spec string) {
 		runUnattend(loaded)
 		return
 	}
-	trunk, at, err := parseTarget(spec)
-	if err != nil {
-		die("attend: %s", err)
-	}
 	WithAngelus(loaded, func(acli *sdk.Angelus) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		ppid := shellPID
-		if trunk == "" {
-			r, rerr := resolveBinding(ctx, acli, ppid)
-			if rerr != nil || !r.Found {
-				die("attend: :<turn> needs an already-bound aria (use attend <id>:<turn>)")
-			}
-			trunk = r.FigaroID
-		}
-		// A binding anchor is an LT, so a named TURN is resolved here; a
-		// named LT is already the thing bindBinding wants. A named NODE is
-		// resolved first, into whichever of the two it turns out to be.
-		anchor, note, aerr := resolveForkPoint(ctx, acli, trunk, at)
-		if aerr != nil {
-			die("attend: %s", aerr)
-		}
-		if note != "" {
-			fmt.Fprintf(stderrw, "%s\n", note)
-		}
-		atMainLT := anchor.lt
-		if anchor.turn > 0 {
-			lt, rerr := resolveTurn(ctx, acli, trunk, anchor.turn)
-			if rerr != nil {
-				die("attend: %s", rerr)
-			}
-			atMainLT = lt
-		}
-		if err := bindBinding(ctx, acli, ppid, trunk, atMainLT); err != nil {
-			// A cauterized anchor (null/outfit) can't be attended: nudge.
-			if r, e := acli.ListGlobal(ctx); e == nil {
-				for _, f := range r.Figaros {
-					if f.ID == trunk && (f.Kind == "null" || f.Kind == "outfit") {
-						die("%s is a %s: a closed anchor, not a conversation; it can't be attended.\n"+
-							"  figaro attend null  go home (unbind; new conversations use the live outfit)\n"+
-							"  figaro ls -h        lists top-level conversations (use -a or -n N to show all or N most recent in scope)\n"+
-							"  figaro ls -g        show the full hierarchy (null + outfits + conversations)", trunk, f.Kind)
-					}
-				}
-			}
+		// The verb is shared with the pager's `:attend`; the prose is ours.
+		out, err := attendVerb(ctx, verbEnv{loaded: loaded, acli: acli, shellPID: shellPID}, spec)
+		if err != nil {
 			die("attend: %s", err)
 		}
-		if !at.isHead() {
-			fmt.Fprintf(stderrw, "attending %s at %s (next prompt forks there)\n", trunk, at)
+		if out.Note != "" {
+			fmt.Fprintf(stderrw, "%s\n", out.Note)
+		}
+		if !out.At.isHead() {
+			fmt.Fprintf(stderrw, "attending %s at %s (next prompt forks there)\n", out.ID, out.At)
 		} else {
-			fmt.Fprintf(stderrw, "attending %s\n", trunk)
+			fmt.Fprintf(stderrw, "attending %s\n", out.ID)
 		}
 		return nil
 	})

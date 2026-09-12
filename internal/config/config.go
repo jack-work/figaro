@@ -72,6 +72,38 @@ type Config struct {
 
 	// Authz gates the RPC surface. See AuthzConfig.
 	Authz AuthzConfig `toml:"authz"`
+
+	// Quote shapes what the agent receives for a quoted coordinate. See
+	// QuoteConfig.
+	Quote QuoteConfig `toml:"quote"`
+}
+
+// QuoteConfig is the daemon's rendering of a quoted passage: a prompt that
+// begins `<lt.block:start-end>!` has the passage resolved against the log
+// and rewritten into a short quote plus the reader's text. The agent already
+// holds the full text in its context, so what travels is enough to recognise
+// the passage, not the passage. Top level, beside [memory] and [wire],
+// because the daemon owns the log and does the extraction.
+type QuoteConfig struct {
+	// HeadChars is how many runes are kept from the START of the passage.
+	// Default 480.
+	HeadChars *int `toml:"head_chars"`
+
+	// TailChars is how many runes are kept from the END. Default 160: the
+	// head says which passage this is, the tail says where it ended, and
+	// the middle is what the agent can reconstruct.
+	TailChars *int `toml:"tail_chars"`
+
+	// Ellipsis stands between head and tail. Default "…". A passage no
+	// longer than head+tail is sent whole and never carries one.
+	Ellipsis *string `toml:"ellipsis"`
+
+	// Gutter prefixes every quoted line. Default "> "; "" for none.
+	Gutter *string `toml:"gutter"`
+
+	// Header controls the "quoting aria … lt 412.0 · chars 23-1180" line
+	// above the passage. Default true.
+	Header *bool `toml:"header"`
 }
 
 // CLIConfig is the client's own settings. Nothing here reaches the daemon.
@@ -283,6 +315,48 @@ func (l *Loaded) DormantAfter() time.Duration {
 		return 0
 	}
 	return time.Duration(*l.cfg().Memory.DormantAfterMinutes) * time.Minute
+}
+
+// QuoteHeadChars, QuoteTailChars, QuoteEllipsis, QuoteGutter and QuoteHeader
+// read [quote] with its defaults. A negative count reads as zero.
+func (l *Loaded) QuoteHeadChars() int { return quoteInt(l.cfg().Quote.HeadChars, QuoteHeadDefault) }
+func (l *Loaded) QuoteTailChars() int { return quoteInt(l.cfg().Quote.TailChars, QuoteTailDefault) }
+func (l *Loaded) QuoteEllipsis() string {
+	if l.cfg().Quote.Ellipsis == nil {
+		return QuoteEllipsisDefault
+	}
+	return *l.cfg().Quote.Ellipsis
+}
+func (l *Loaded) QuoteGutter() string {
+	if l.cfg().Quote.Gutter == nil {
+		return QuoteGutterDefault
+	}
+	return *l.cfg().Quote.Gutter
+}
+func (l *Loaded) QuoteHeader() bool {
+	if l.cfg().Quote.Header == nil {
+		return true
+	}
+	return *l.cfg().Quote.Header
+}
+
+// The [quote] defaults, exported so the documented block a user's
+// config.toml carries can be checked against the binary.
+const (
+	QuoteHeadDefault     = 480
+	QuoteTailDefault     = 160
+	QuoteEllipsisDefault = "…"
+	QuoteGutterDefault   = "> "
+)
+
+func quoteInt(p *int, def int) int {
+	if p == nil {
+		return def
+	}
+	if *p < 0 {
+		return 0
+	}
+	return *p
 }
 
 // SweepInterval is how often the reclamation sweep runs, and

@@ -26,7 +26,7 @@ const (
 // the full data; nothing here changes what a row says, only what is drawn
 // beside it, so every field can be flipped live and the frame repainted.
 type renderSettings struct {
-	// verbose draws each block's address against the right edge (Ctrl-O).
+	// verbose draws each block's address against the right edge (M-m).
 	verbose bool
 	// coordFormat is the time layout those addresses use.
 	coordFormat string
@@ -67,12 +67,8 @@ func renderNode(n livedoc.Node, width, bashCap int, tick uint64, expanded bool) 
 // gesture with nothing to show is inert rather than a silent flag flip. Only a
 // tool has a second form; prose renders whole at every width.
 func nodeExpandable(n livedoc.Node) bool {
-	// A node whose form deltas were capped or folded has a second form to
-	// show, whatever its type. The width is nominal: expandability is a
-	// property of the content, not of today's terminal.
-	if deltasExpandable(n.FormDeltas, 80) {
-		return true
-	}
+	// The form delta table folds on its own (it is a pseudonode with its
+	// own ref), so a node's expandability is about the node.
 	if n.Type != livedoc.NodeTool {
 		return false
 	}
@@ -99,7 +95,7 @@ func renderNodeList(nodes []livedoc.Node, width int, tick uint64, set renderSett
 }
 
 // turnComposer is `show`'s composition: the shared shape, the shared chrome,
-// and: under --details: the same per-block coordinate row Ctrl-O draws in the
+// and: under --details: the same per-block coordinate row M-m draws in the
 // pager, instead of the timestamp line `show` used to invent for itself.
 func turnComposer(turn, width int, tick uint64, set renderSettings) ldrender.Composer {
 	c := ldrender.Composer{
@@ -108,10 +104,10 @@ func turnComposer(turn, width int, tick uint64, set renderSettings) ldrender.Com
 		Rule:   func() string { return dimTransRule(width) },
 		Sender: dimSender,
 		Tick:   int(tick),
-		// Deltas collapse to one line per form by default; --details is the
-		// stdout way to open them, since a one-shot dump has no gesture.
+		// The delta table draws collapsed by default; -v opens it, since a
+		// one-shot dump has no Enter to press.
 		State: func(_ int, deltas map[string]livedoc.FormDelta, w int) []string {
-			return formDeltaLines(deltas, w, false)
+			return formDeltaLines(deltas, w, set.verbose)
 		},
 	}
 	if set.verbose {

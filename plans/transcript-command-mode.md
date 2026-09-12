@@ -19,8 +19,7 @@ grammar, two front doors, and a bare coordinate is still a goto, exactly as
 | typed | means |
 |---|---|
 | `:12`, `:12.3`, `:0` | go to that coordinate (unchanged) |
-| `:open <spec>` | look at another aria. **Attendance is untouched**, this is `figaro listen` |
-| `:listen <spec>` | the same verb under the shell's name for it |
+| `:listen <spec>` | look at another aria. **Attendance is untouched**, this is `figaro listen`. There is no `:open`: you have to listen to a figaro. |
 | `:attend <spec>`, `:at <spec>` | bind this shell to it **and** look at it |
 | `:send [<spec>] -- <text>` | send; with no spec, to the aria on screen |
 
@@ -42,7 +41,7 @@ does not touch attendance, which is precisely what `listen` means at a shell.
 
 Driven in a real pty against a real daemon, no fixtures in the loop:
 
-- **The subject switches in-process.** `:open <beta>` replaced the content and
+- **The subject switches in-process.** `:listen <beta>` replaced the content and
   the footer of a pager opened on alpha. No re-exec, no flash.
 - **`:at` really attends.** After `:at <alpha>`, leaving the pager and running
   `figaro status` **in that same pane** resolved to alpha with no argument. The
@@ -83,7 +82,7 @@ from `newLivelogTurn` so the fold is installed in one place rather than copied
 into the switch path.
 
 **The initial connection comes in through the switch path.** `figaro listen`
-now calls the same `in.retarget` that `:open` calls. *A door used once a session
+now calls the same `in.retarget` that `:listen` calls. *A door used once a session
 is a door that rots*; making startup use it means the switch is exercised on
 every run.
 
@@ -186,19 +185,19 @@ on a connection it captured.
 
 | # | phase | done when |
 |---|---|---|
-| 1 | **one constructor** for `interactiveInput`, owning the connection and arming every hook; both doors use it; the send path's wait moves to `subjectDead` | `:open` works in a send, and 5.3/5.4 cannot recur |
-| 2 | **verbs return lines**: the `verbEnv`/`verb` split, `:send` and `:open` converted first | `:send` and `figaro send` share a parser, proven by a test that runs both |
+| 1 | **one constructor** for `interactiveInput`, owning the connection and arming every hook; both doors use it; the send path's wait moves to `subjectDead` | `:listen` works in a send, and 5.3/5.4 cannot recur |
+| 2 | **verbs return lines**: the `verbEnv`/`verb` split, `:send` and `:listen` converted first | `:send` and `figaro send` share a parser, proven by a test that runs both |
 | 3 | **the rest of the verbs**: `:fork`, `:queue`, `:set`, `:list`, `:kill` | each deletes a hand-written twin |
 | 4 | **retention across a switch**, [transcript-subject.md §3](transcript-subject.md): lineage on the wire, keep the common prefix | a fork-follow does not re-read the shared prefix |
-| 5 | **role subjects**: `:open @role` follows the bearer when it is recast | recast a role; the transcript moves by itself |
+| 5 | **role subjects**: `:listen @role` follows the bearer when it is recast | recast a role; the transcript moves by itself |
 
-Note `:open @role` **already resolves** today, because `resolveFigaroTargetEndpoint`
+Note `:listen @role` **already resolves** today, because `resolveFigaroTargetEndpoint`
 follows `target-aria` for the CLI and the dry run reuses it. What phase 5 adds is
 *following*, noticing the recast and switching again.
 
 ## 7. Questions
 
-**1. Does `:open` push a stack, is there `:back`?** Browsing a fork tree wants
+**1. Does `:listen` push a stack, is there `:back`?** Browsing a fork tree wants
 one, and it is cheap now (the old connection could stay warm). It also implies
 `:tree`, which is `figaro ls` rendered in the pager.
 
@@ -207,7 +206,7 @@ one, and it is cheap now (the old connection could stay warm). It also implies
 lean unbound: two ways to leave is one too many, and `:q` ending a `listen` while
 `q` merely closes the pager is the kind of near-miss that costs a session.
 
-**3. When `:open` lands on an aria mid-turn, do we follow the tail?** The dry run
+**3. When `:listen` lands on an aria mid-turn, do we follow the tail?** The dry run
 does, it opens at the live edge like `listen`. The alternative is to land where
 you last were in that aria, which needs a per-aria memory of position and is a
 different feature.
@@ -374,7 +373,7 @@ wrap, and the UTF-8 accumulator with a rune split across two reads.
 1. **Verbs return errors and take writers**, kills dodges 1, 2 and most of 6.
    Do it verb by verb behind what already works.
 2. **One constructor for `interactiveInput`** (the round-1 finding), kills the
-   two-front-doors and two-owners pitfalls, and lets `:open` work in a send.
+   two-front-doors and two-owners pitfalls, and lets `:listen` work in a send.
 3. **Cache the router**; add a `Command` field naming an aria positional (dodge 4).
 4. **Unit tests** for the editor, tokenizer and `withSubject` (dodge 9).
 5. **Rename the jump box to the command line** (dodge 7), once the oracles are

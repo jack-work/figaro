@@ -54,7 +54,6 @@ func runPrompt(loaded *config.Loaded, d dressing, prompt string, set renderSetti
 		figaroID, figaroEP = mustCreate(ctx, acli, loaded, d)
 		attendNew(ctx, acli, figaroID)
 	}
-	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set)
 }
 
@@ -73,7 +72,6 @@ func runNewPrompt(loaded *config.Loaded, prompt string, d dressing, set renderSe
 
 	figaroID, figaroEP := mustCreate(ctx, acli, loaded, d)
 	attendNew(ctx, acli, figaroID)
-	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 
 	if set.jsonMode {
 		fcli, derr := sdk.DialAria(figaroEP, func(string, json.RawMessage) {})
@@ -114,7 +112,6 @@ func submitAndExit(ctx context.Context, loaded *config.Loaded, ariaID, prompt st
 	if err != nil {
 		die("%s", err)
 	}
-	prompt = expandAtRefsForEndpoint(ctx, ep, prompt)
 
 	fcli, derr := sdk.DialAria(ep, func(string, json.RawMessage) {})
 	if derr != nil {
@@ -155,7 +152,7 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, as
 	// server read a logical time as a turn number -- and since an LT is far
 	// larger than the turn count, `send <id>:<turn>` failed every time with
 	// "aria has no turn N". The server owns the translation.
-	fr, err := waitForFork(ctx, acli, trunkID, at, dressing{})
+	fr, err := waitForFork(ctx, acli, trunkID, at, dressing{}, prompt)
 	if err != nil {
 		die("send: fork %s at %s: %s", trunkID, at, err)
 	}
@@ -209,7 +206,6 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, as
 	if err != nil {
 		die("%s", err)
 	}
-	prompt = expandAtRefsForEndpoint(ctx, ep, prompt)
 	mustPromptFigaro(ctx, ep, target, prompt, loaded, set)
 }
 
@@ -225,7 +221,6 @@ func promptAria(loaded *config.Loaded, ariaID, prompt string, set renderSettings
 	if err != nil {
 		die("%s", err)
 	}
-	prompt = expandAtRefsForEndpoint(ctx, ep, prompt)
 	mustPromptFigaro(ctx, ep, ariaID, prompt, loaded, set)
 }
 

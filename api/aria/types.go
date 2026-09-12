@@ -110,6 +110,11 @@ type Message struct {
 	Inquiry string
 	// InquirySegments splits Inquiry by sender; see Turn.InquirySegments.
 	InquirySegments []InquirySegment
+	// InquiryLT is the log coordinate of the record that opened the turn:
+	// Turn.LTs[0], known once the turn is sealed. Zero means not yet known.
+	// The inquiry is text on the turn and occupies no node, so this is the
+	// only way a reader can address it the way nodes are addressed by Src.
+	InquiryLT uint64
 	// FormDeltas is the TURN-level form state (see Turn.FormDeltas), carried
 	// like Inquiry: only by the slice that starts the turn.
 	FormDeltas map[string]livedoc.FormDelta

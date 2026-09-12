@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"errors"
+
 	"fmt"
+	"github.com/jack-work/figaro/api/quote"
 	"strconv"
 	"strings"
 
@@ -414,7 +417,19 @@ func searchRune(b byte) (rune, bool) {
 //
 // The transcript therefore knows nothing about the command language. It knows
 // "this is not a coordinate" and who to give it to.
-func jumpAccept(t *transcript) {
+func jumpAccept(t *transcript) { t.jumpSubmit(false) }
+
+// jumpAcceptSnap is Alt+Enter (or Ctrl+Enter): the same submit, then SNAP TO
+// CURRENT: leave visual mode and re-follow the live tail, which is where a
+// reader who has just dispatched a question wants to be when the answer
+// lands.
+func jumpAcceptSnap(t *transcript) { t.jumpSubmit(true) }
+
+// jumpSubmit runs the box's line. SUBMITTING LEAVES VISUAL MODE AND KEEPS THE
+// PLACE: the viewport stays, the last search survives (so n keeps working),
+// and only the cursor and highlight go, spent or not. A coordinate jump is
+// not a submission in that sense and leaves the mode alone.
+func (t *transcript) jumpSubmit(snap bool) {
 	// Enter DURING a search accepts what the search found, and runs it: the
 	// line on screen is the line, and a reader who has found it and pressed
 	// Enter has said so.
@@ -435,8 +450,69 @@ func jumpAccept(t *transcript) {
 		t.noteOrClear("commands need a live session")
 		return
 	}
-	t.jumpNote = "" // the runner owns the row from here; see setCommandNote
-	t.command(text)
+	// A RANGE BEFORE THE VERB is the selection as an argument. It is expanded
+	// HERE, under the render lock, because the coordinate is read off the
+	// index and the selection, both of which the next keystroke may move.
+	expanded, note, err := t.expandRange(text)
+	if err != "" {
+		t.noteOrClear(err)
+		return
+	}
+	if note != "" {
+		t.setCommandNoteAt(note, alertInfo)
+	} else {
+		t.jumpNote = "" // the runner owns the row from here; see setCommandNote
+	}
+	t.leaveVisual()
+	if snap {
+		pagerTail(t)
+	}
+	t.command(expanded)
+}
+
+// expandRange rewrites `<,>verb … -- text` into `verb … -- <lt.block:a-b>! text`.
+// The placeholder stands where vim's '<,'> does; the qualified token goes
+// where the daemon reads it, at the head of the prompt. A qualified token
+// typed by hand in the placeholder's position is moved the same way.
+func (t *transcript) expandRange(text string) (string, string, string) {
+	var token, note string
+	rest := text
+	switch {
+	case strings.HasPrefix(text, visualRangePlaceholder):
+		if !t.visual.highlighted() {
+			return "", "", "no highlight: the range was dropped, or never made (v / V at the cursor)"
+		}
+		tok, n, err := t.visualCoordinate()
+		if err != "" {
+			return "", "", "range: " + err
+		}
+		token, note = tok, n
+		rest = strings.TrimSpace(text[len(visualRangePlaceholder):])
+	case strings.HasPrefix(text, "<"):
+		r, after, err := quote.Parse(text)
+		if err != nil {
+			if errors.Is(err, quote.ErrNone) {
+				return text, "", ""
+			}
+			return "", "", "range: " + err.Error()
+		}
+		token, rest = quote.Format(r), strings.TrimSpace(after)
+	default:
+		return text, "", ""
+	}
+	if rest == "" {
+		return "", "", "range: a verb must follow it (send, fork)"
+	}
+	// The prompt is everything after the first `--`; the token leads it.
+	fields := strings.Fields(rest)
+	for i, f := range fields {
+		if f == "--" {
+			head := strings.Join(fields[:i+1], " ")
+			tail := strings.Join(fields[i+1:], " ")
+			return strings.TrimSpace(head + " " + token + " " + tail), note, ""
+		}
+	}
+	return "", "", "range: the prompt must follow `--` (" + fields[0] + " -- <text>)"
 }
 
 // startJump selects a resident target or requests its page.
@@ -551,10 +627,19 @@ func (t *transcript) selectRef(ref nodeRef, extend bool) bool {
 	var point selectionPoint
 	found := false
 	take := func(m aria.Message) bool {
-		if ref.index == inquiryNode {
+		switch {
+		case ref.delta && ref.index == inquiryNode:
+			point, found = deltaPoint(nodeRef{turn: m.Turn, index: inquiryNode}, m.FormDeltas)
+		case ref.index == inquiryNode:
 			point, found = inquiryPoint(m)
-		} else if i := ref.index - int(m.From); i >= 0 && i < len(m.Nodes) {
-			point, found = selectionPoint{nodeRef: ref, hash: nodeHash(m.Nodes[i])}, true
+		default:
+			if i := ref.index - int(m.From); i >= 0 && i < len(m.Nodes) {
+				if ref.delta {
+					point, found = deltaPoint(nodeRefAt(m, i), m.Nodes[i].FormDeltas)
+				} else {
+					point, found = selectionPoint{nodeRef: ref, hash: nodeHash(m.Nodes[i])}, true
+				}
+			}
 		}
 		return !found
 	}

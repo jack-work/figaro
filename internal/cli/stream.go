@@ -119,6 +119,9 @@ type interactiveInput struct {
 	ownsSubject bool
 	subjectGen  uint64
 	subjectDead chan struct{}
+	// jumps is the jumplist: every aria this session has attended, and
+	// where the reader stands in it. ^O/^I walk it. Guarded by in.mu.
+	jumps ariaJumplist
 	// queueEpoch is the version of the queue as last READ. Every queue mutation
 	// is a compare-and-set against it -- the daemon refuses a delete with no
 	// epoch ("read the queue first, then mutate against what you read"), which
@@ -724,6 +727,11 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 				// which is what keeps ^D detaching in the pager while the ':'
 				// box has it as delete-forward.
 				ev = keyEvent{ctrl: letter, shift: key.shift, alt: key.alt, mode: mode}
+			} else if key.ctrl && key.code == 0x0d && metaBoundIn(mode, 0x0d) {
+				// Ctrl+Enter, which only a CSI-u terminal can report, is
+				// folded onto Alt+Enter: one row, two chords, and the
+				// portable spelling is the one the table names.
+				ev = keyEvent{meta: 0x0d, alt: true, mode: mode}
 			} else if m, isMeta := metaKey(key); isMeta && (metaBoundIn(mode, m) || metaOpens(m)) {
 				// Alt+<key>, reported with the Alt bit set. The same chord a
 				// legacy terminal spells ESC <byte>, arriving pre-delimited.
@@ -806,7 +814,19 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 		}
 		// Input-level rows first: the keys that own the process (interrupt,
 		// detach, listen, clipboard) rather than the viewport.
-		if act := inputAct.input(ev.mode, ev); act != nil {
+		act := inputAct.input(ev.mode, ev)
+		if act == nil && ev.mode == modeFork {
+			// A HALF-TYPED GESTURE MUST NOT EAT A KEY THAT MEANS SOMETHING.
+			// 'f' arms the fork jump and the next key is read from the inFork
+			// rows; a key with no row there is the ordinary key, at this level
+			// as well as in the pager, and pressing it abandons the gesture.
+			if act = inputAct.input(modeTranscript, ev); act != nil {
+				in.mu.Lock()
+				in.lt.tr.pendF = false
+				in.mu.Unlock()
+			}
+		}
+		if act != nil {
 			if act(in, ev) == keyStop {
 				return pending, true
 			}
@@ -997,7 +1017,7 @@ func inputEnterTranscript(in *interactiveInput, _ keyEvent) keyVerdict {
 	return keyHandled
 }
 
-// inputToggleVerbose is Ctrl-O.
+// inputToggleVerbose is M-m (it was Ctrl-O, which is the jumplist now).
 func inputToggleVerbose(in *interactiveInput, _ keyEvent) keyVerdict {
 	in.mu.Lock()
 	in.cancelTranscriptSearchLocked()
@@ -1049,6 +1069,23 @@ func inputYank(in *interactiveInput, ev keyEvent) keyVerdict {
 			in.tc.SetClipboard(row.yank)
 			return keyHandled
 		}
+		// A VISUAL SELECTION IS WHAT IS ON SCREEN, so the yank is answered from
+		// the rows already painted: no wire, no plan, no background copy. The
+		// selection stays up, as it does in a pit; Esc drops it.
+		if in.lt.tr.visual.active() {
+			text := in.lt.tr.visualText()
+			if !in.lt.tr.visual.highlighted() || text == "" {
+				in.lt.tr.setCommandNoteAt("no highlight (v or V at the cursor to start one)", alertError)
+				in.lt.tr.render()
+				in.mu.Unlock()
+				return keyHandled
+			}
+			in.lt.tr.noteYank(text)
+			in.lt.tr.render()
+			in.mu.Unlock()
+			in.tc.SetClipboard(text)
+			return keyHandled
+		}
 		plan, selected := in.lt.transcriptSelectionPlan()
 		if selected && in.copyCancel == nil && !in.copyFailed {
 			copyCtx, copyCancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -1063,6 +1100,27 @@ func inputYank(in *interactiveInput, ev keyEvent) keyVerdict {
 		in.mu.Unlock()
 	}
 	in.tc.SetClipboard(in.figaroID)
+	return keyHandled
+}
+
+// inputYankCoordinate is 'Y' in visual mode: the qualified token on the
+// clipboard, for a shell command typed somewhere else.
+func inputYankCoordinate(in *interactiveInput, _ keyEvent) keyVerdict {
+	in.mu.Lock()
+	token, note, err := in.lt.tr.visualCoordinate()
+	switch {
+	case err != "":
+		in.lt.tr.setCommandNoteAt("range: "+err, alertError)
+	case note != "":
+		in.lt.tr.setCommandNote("yanked " + token + " (" + note + ")")
+	default:
+		in.lt.tr.setCommandNote("yanked " + token)
+	}
+	in.lt.tr.render()
+	in.mu.Unlock()
+	if err == "" {
+		in.tc.SetClipboard(token)
+	}
 	return keyHandled
 }
 

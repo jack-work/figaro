@@ -3,6 +3,7 @@ package cli
 import (
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
+	"github.com/jack-work/figaro/internal/term"
 )
 
 // A line index over the retained message window.
@@ -253,10 +254,38 @@ func (t *transcript) window(a, b int, dst []string) []string {
 	dst = dst[:0]
 	hl := t.activeHighlight()
 	sel := t.selectionSpan()
+	vis := t.visualSpan()
+	cur, curCol, hasCur := -1, 0, false
+	if t.visual.active() {
+		if line, ok := t.visualCursorLine(); ok {
+			cur, curCol, hasCur = line, t.visual.cursor.col, true
+		}
+	}
 	t.forEachWindowRow(a, b, func(e *lineEntry, rel int) {
-		dst = append(dst, t.entryLine(e, rel, hl, sel))
+		line := e.start + rel
+		row := t.washVisual(line, t.entryLine(e, rel, hl, sel), vis)
+		if hasCur && line == cur {
+			restore, washTo := "", 0
+			if from, to, ok := vis.cols(line, t.w); ok && curCol >= from && curCol < to {
+				restore, washTo = term.SelectWash(), to // the cursor sits inside the wash
+			}
+			row = cursorCell(row, curCol, restore, washTo)
+		}
+		dst = append(dst, row)
 	})
 	return dst
+}
+
+// washVisual paints the visual highlight over a finished row. It is applied
+// after every other decoration, at paint time, for the reason node selection
+// is: the region moves on every keystroke and the rows do not. The cursor
+// cell is painted after it, on top.
+func (t *transcript) washVisual(line int, row string, vis visualSpan) string {
+	from, to, ok := vis.cols(line, t.w)
+	if !ok {
+		return row
+	}
+	return washColumns(row, from, to)
 }
 
 // rowRefs appends the node each of absolute lines [a, b) belongs to, in the

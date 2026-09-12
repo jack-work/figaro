@@ -1,0 +1,6 @@
+go test fuzz v1
+string("\u0605")
+int(141)
+int(3)
+int(17)
+int(9)

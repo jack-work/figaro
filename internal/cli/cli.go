@@ -187,7 +187,7 @@ fig IR, but it is not an address: turns are.`,
 		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria id (alias for the positional)"},
-			{Long: "details", Short: "o", IsBool: true, Description: "Block addresses and timestamps, as Ctrl-O shows in the pager"},
+			{Long: "details", Short: "o", IsBool: true, Description: "Block addresses and timestamps, as M-m shows in the pager"},
 			{Long: "verbose", Short: "v", IsBool: true, Description: "Raw IR with patches, thinking, usage, transitions"},
 			{Long: "literal", Short: "l", IsBool: true, Description: "No ANSI / markdown rendering"},
 			{Long: "all", Short: "a", IsBool: true, Description: "Show every turn, not just last N"},
@@ -276,7 +276,7 @@ Flags:
                  per line): the literal protocol stream, no formatting,
                  no delta application.
   -o, --verbose  Verbose: expand full tool inputs (else truncated). Thinking
-                 blocks are always shown (muted). Ctrl-O toggles live.
+                 blocks are always shown (muted). M-m toggles live.
   -l, --listen   Open the transcript pager at startup. The transcript always
                  stays open until Ctrl-D/Ctrl-C/q; Ctrl-L or Ctrl-T open it
                  mid-stream.
@@ -301,7 +301,7 @@ Keys while streaming:
   Ctrl-C         Interrupt the turn (sends figaro.interrupt).
   Ctrl-D         Disconnect this CLI; leave the turn running.
   Ctrl-T         Open the full-screen transcript pager.
-  Ctrl-O         Toggle verbose tool-input expansion.
+  M-m            Toggle verbose tool-input expansion.
 
   figaro send -- <prompt>              prompt the pid-bound aria, rich
   figaro send --id myid -- <prompt>    prompt a named aria (rich)
@@ -419,7 +419,7 @@ Keys:
   Ctrl-C   Interrupt the in-flight turn (like in send).
   Ctrl-D   Disconnect this CLI; the turn keeps running.
   Ctrl-T   Open the full-screen transcript pager.
-  Ctrl-O   Toggle verbose tool-input expansion.
+  M-m      Toggle verbose tool-input expansion.
   q / Esc  (in pager) leave pager and return to the inline tail.
 
 TESTING: --record <file> writes a wire tape: every JSON-RPC message
@@ -916,14 +916,14 @@ so anything already addressing it keeps working. Only an INTERIOR fork
   figaro fork <id>:12         interior fork: history before turn 12 is shared,
                               the original suffix becomes the continuation
   figaro fork <id>:12.10      inside turn 12: node 10 and everything after it
-                              is replaced (the number the pager draws under ^O)
+                              is replaced (the number the pager draws under M-m)
   figaro fork <id>:12.-1      turn 12's question: the same as <id>:12
   figaro fork <id>.842        the same, at an LT instead of a turn
   figaro fork --stay          branch but do not rebind this shell
 
 THREE COORDINATES. :N is a TURN -- one exchange, the number show prints,
 and what you normally want. :N.K is a NODE inside that turn -- the address
-the pager shows under ^O, so what you can point at you can branch at. .N is
+the pager shows under M-m, so what you can point at you can branch at. .N is
 an LT -- one step of the model's experience, the number show -v prints.
 Prefer the colon: most LTs sit mid-tool, where a fork strands a tool_invoke
 without its result. Reach for the dot when you already hold an LT, or need a

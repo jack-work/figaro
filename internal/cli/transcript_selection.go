@@ -10,12 +10,27 @@ import (
 
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
+	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/term"
 )
 
 type nodeRef struct {
 	turn  int
 	index int
+	// delta names the FORM DELTA TABLE drawn under the block at (turn,
+	// index) rather than the block itself. It is a separate axis instead
+	// of another sentinel index because the table must sort immediately
+	// AFTER the block it explains, which a negative sentinel (see
+	// inquiryNode) cannot do, and because a bool cannot collide with a
+	// node index or with the inquiry's by construction.
+	delta bool
+}
+
+// deltaRefOf is the table under a block. Every surface that addresses a
+// delta table goes through this, so the axis has one name.
+func deltaRefOf(ref nodeRef) nodeRef {
+	ref.delta = true
+	return ref
 }
 
 // nodeRefAt identifies the i'th node OF THE SLICE m by its position within the
@@ -26,9 +41,21 @@ func nodeRefAt(m aria.Message, i int) nodeRef {
 	return nodeRef{turn: m.Turn, index: int(m.From) + i}
 }
 
+// blockRef is the ref of a composed row's block coordinate: a node's, or
+// the sentinel the turn's opening question takes. The question is TEXT ON
+// THE TURN and occupies no node index, so it needs a ref of its own: that
+// is what makes it select, copy and highlight exactly as a node does,
+// which is how it behaved when it WAS one.
+func blockRef(m aria.Message, block int) nodeRef {
+	if block == ldrender.BlockInquiry {
+		return nodeRef{turn: m.Turn, index: inquiryNode}
+	}
+	return nodeRefAt(m, block)
+}
+
 // inquiryNode is the index a turn's opening question takes. The question is
 // TEXT ON THE TURN and occupies no node slot, but selection, copy and the
-// Ctrl-O expansion state all key on nodeRef: so it needs one, and it must not
+// M-m expansion state all key on nodeRef: so it needs one, and it must not
 // collide with any node's. Node indices are positional and therefore never
 // negative (Nodes[i].ID == From+i), which makes a negative sentinel free of
 // collisions by construction rather than by convention; and pointLess then
@@ -48,6 +75,28 @@ func inquiryPoint(m aria.Message) (selectionPoint, bool) {
 		nodeRef: nodeRef{turn: m.Turn, index: inquiryNode},
 		hash:    nodeHash(inquiryNodeOf(m.Inquiry)),
 	}, true
+}
+
+// deltaPoint is the selection point of the form delta table under a
+// block, or false when that block carries no state. The table is a
+// PSEUDONODE: it occupies no node slot, selects and folds like one, and
+// hashes over its own rows so an endpoint notices when the state under it
+// changed.
+func deltaPoint(ref nodeRef, deltas map[string]livedoc.FormDelta) (selectionPoint, bool) {
+	if len(deltas) == 0 {
+		return selectionPoint{}, false
+	}
+	return selectionPoint{nodeRef: deltaRefOf(ref), hash: nodeHash(deltaNodeOf(deltas))}, true
+}
+
+// deltaNodeOf is the table as the one livedoc.Node shape everything else
+// speaks. The width is nominal: the identity of a table is its rows, not
+// today's terminal.
+func deltaNodeOf(deltas map[string]livedoc.FormDelta) livedoc.Node {
+	return livedoc.Node{
+		Type:     livedoc.NodeProse,
+		Markdown: strings.Join(formDeltaPlain(deltas, 200, true), "\n"),
+	}
 }
 
 // inquiryNodeOf is the question as the one livedoc.Node shape everything else
@@ -121,11 +170,17 @@ func (t *transcript) nodeRefs() []selectionPoint {
 		if p, ok := inquiryPoint(m); ok {
 			refs = append(refs, p)
 		}
+		if p, ok := deltaPoint(nodeRef{turn: m.Turn, index: inquiryNode}, m.FormDeltas); ok {
+			refs = append(refs, p)
+		}
 		for i, n := range m.Nodes {
 			refs = append(refs, selectionPoint{
 				nodeRef: nodeRefAt(m, i),
 				hash:    nodeHash(n),
 			})
+			if p, ok := deltaPoint(nodeRefAt(m, i), n.FormDeltas); ok {
+				refs = append(refs, p)
+			}
 		}
 	}
 	for _, m := range t.messages() {
@@ -159,8 +214,14 @@ func (t *transcript) selectionMarks() map[nodeRef]selectionMark {
 		if p, ok := inquiryPoint(m); ok {
 			mark(p.nodeRef)
 		}
+		if len(m.FormDeltas) > 0 {
+			mark(deltaRefOf(nodeRef{turn: m.Turn, index: inquiryNode}))
+		}
 		for i := range m.Nodes {
 			mark(nodeRefAt(m, i))
+			if len(m.Nodes[i].FormDeltas) > 0 {
+				mark(deltaRefOf(nodeRefAt(m, i)))
+			}
 		}
 	}
 	for _, m := range t.messages() {
@@ -437,9 +498,23 @@ func selectedMessageText(m aria.Message, plan selectionCopyPlan, expanded map[no
 			return nil, false, false, err
 		}
 	}
+	takeDeltas := func(ref nodeRef, deltas map[string]livedoc.FormDelta) error {
+		if len(deltas) == 0 {
+			return nil
+		}
+		ref = deltaRefOf(ref)
+		text := strings.Join(formDeltaPlain(deltas, 200, expanded[ref]), "\n")
+		return take(ref, deltaNodeOf(deltas), text)
+	}
+	if err := takeDeltas(nodeRef{turn: m.Turn, index: inquiryNode}, m.FormDeltas); err != nil {
+		return nil, false, false, err
+	}
 	for i, n := range m.Nodes {
 		ref := nodeRefAt(m, i)
 		if err := take(ref, n, nodeClipboardText(n, expanded[ref])); err != nil {
+			return nil, false, false, err
+		}
+		if err := takeDeltas(ref, n.FormDeltas); err != nil {
 			return nil, false, false, err
 		}
 	}
@@ -464,7 +539,14 @@ func toolClipboardFull(n livedoc.Node) string {
 }
 
 func pointLess(a, b selectionPoint) bool {
-	return a.turn < b.turn || a.turn == b.turn && a.index < b.index
+	if a.turn != b.turn {
+		return a.turn < b.turn
+	}
+	if a.index != b.index {
+		return a.index < b.index
+	}
+	// A block's delta table comes after the block it explains.
+	return !a.delta && b.delta
 }
 
 func nodeHash(n livedoc.Node) uint64 {
@@ -505,10 +587,16 @@ func (t *transcript) toggleSelectedNodes() bool {
 	}
 	var refs []nodeRef
 	appendMessage := func(m aria.Message) {
+		if d := deltaRefOf(nodeRef{turn: m.Turn, index: inquiryNode}); marks[d].selected && deltasExpandable(m.FormDeltas, 80) {
+			refs = append(refs, d)
+		}
 		for i, n := range m.Nodes {
 			ref := nodeRefAt(m, i)
 			if marks[ref].selected && nodeExpandable(n) {
 				refs = append(refs, ref)
+			}
+			if d := deltaRefOf(ref); marks[d].selected && deltasExpandable(n.FormDeltas, 80) {
+				refs = append(refs, d)
 			}
 		}
 	}

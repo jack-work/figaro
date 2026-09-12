@@ -303,7 +303,7 @@ func TestAttachPlacesDeltasDeliberately(t *testing.T) {
 		10: d("a1.inquiry-window"), // the record that opened the turn: no node
 		11: d("a1.on-prose"),       // the prose record
 		13: d("a1.on-tool-result"), // the tool RESULT record: the tool node claims it
-		14: d("a1.unclaimed"),      // a record no node claims
+		14: d("a1.unclaimed"),      // a record no node claims: the seam
 	})
 	if _, ok := turns[0].FormDeltas["a1.inquiry-window"]; !ok {
 		t.Fatalf("the inquiry window should land on the TURN: %+v", turns[0].FormDeltas)
@@ -314,10 +314,70 @@ func TestAttachPlacesDeltasDeliberately(t *testing.T) {
 	if _, ok := turns[0].Nodes[1].FormDeltas["a1.on-tool-result"]; !ok {
 		t.Fatalf("the tool result's delta should land on the tool node: %+v", turns[0].Nodes[1].FormDeltas)
 	}
-	if _, ok := turns[0].FormDeltas["a1.unclaimed"]; !ok {
-		t.Fatal("an unclaimed record's delta must surface on the turn, not vanish")
+	// THE SEAM WAITS. LT 14 trails every node of the only turn there is:
+	// state written after the turn was composed, which that turn never saw.
+	// It draws on the turn it opens, and until that turn exists it draws
+	// nowhere. (This assertion used to read the other way, when a trailing
+	// record attached backwards; see TestSeamDeltasAttachToTheTurnTheyOpen.)
+	if _, ok := turns[0].FormDeltas["a1.unclaimed"]; ok {
+		t.Fatalf("a trailing seam must not attach to the turn before it: %+v", turns[0].FormDeltas)
 	}
 	if len(turns[0].Nodes[0].FormDeltas) != 1 || len(turns[0].Nodes[1].FormDeltas) != 1 {
 		t.Fatal("a delta rendered on more than one unit")
+	}
+}
+
+// The seam. A fork's birth record is ceremonial: it projects no node and
+// trails every node of the turn whose LT range swallows it, which is the
+// LAST turn of the PARENT. The state it carries was never shown to that
+// turn; the first context it entered is the turn after it. Reproduced from
+// aria 5d366cc5, where the fork banner drew under the first message
+// instead of the second.
+func TestSeamDeltasAttachToTheTurnTheyOpen(t *testing.T) {
+	turns := []aria.Turn{
+		{
+			ID:    1,
+			LTs:   []uint64{4, 6},
+			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Src: []livedoc.Src{{LT: 5, Block: 0}}}},
+		},
+		{
+			ID:    2,
+			LTs:   []uint64{7, 8},
+			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Src: []livedoc.Src{{LT: 8, Block: 0}}}},
+		},
+	}
+	d := func(k string) map[string]livedoc.FormDelta {
+		return map[string]livedoc.FormDelta{k: {Kind: livedoc.FormBound, Event: livedoc.FormSet, Form: "a1"}}
+	}
+	Attach(turns, map[uint64]map[string]livedoc.FormDelta{
+		4: d("a1.mantra"),             // the record that opened turn 1
+		6: d("a1.system.forked_from"), // the fork's birth record: the seam
+	})
+	if _, ok := turns[0].FormDeltas["a1.mantra"]; !ok {
+		t.Fatalf("the inquiry window should stay on its own turn: %+v", turns[0].FormDeltas)
+	}
+	if _, ok := turns[0].FormDeltas["a1.system.forked_from"]; ok {
+		t.Fatalf("the fork seam drew on the turn before it: %+v", turns[0].FormDeltas)
+	}
+	if _, ok := turns[1].FormDeltas["a1.system.forked_from"]; !ok {
+		t.Fatalf("the fork seam should open turn 2: %+v", turns[1].FormDeltas)
+	}
+}
+
+// With no turn after it, a seam waits: it is not attributed backwards to
+// a turn that never saw it. The live path picks it up when the next turn
+// seals (Agent.stampSealDeltas), and a whole-log read when the turn is
+// there.
+func TestSeamWithNoFollowingTurnWaits(t *testing.T) {
+	turns := []aria.Turn{{
+		ID:    1,
+		LTs:   []uint64{4, 6},
+		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Src: []livedoc.Src{{LT: 5, Block: 0}}}},
+	}}
+	Attach(turns, map[uint64]map[string]livedoc.FormDelta{
+		6: {"a1.system.forked_from": {Kind: livedoc.FormBound, Event: livedoc.FormSet, Form: "a1"}},
+	})
+	if _, ok := turns[0].FormDeltas["a1.system.forked_from"]; ok {
+		t.Fatalf("a trailing seam must wait for the turn it opens: %+v", turns[0].FormDeltas)
 	}
 }

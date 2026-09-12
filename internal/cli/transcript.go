@@ -85,8 +85,13 @@ type transcript struct {
 	// dropRow is 'x' on a selected pit row: the owner decides what dropping
 	// means for that pit's name.
 	dropRow func(pit, id string)
-	w, h    int
-	tick    int
+	// attendAria is 'a': bind the shell to that aria and show it. ariaHop is
+	// ^O/^I over the jumplist. Both dial, so they hand off to a goroutine on
+	// the same law as openForm above.
+	attendAria func(id string)
+	ariaHop    func(dir int)
+	w, h       int
+	tick       int
 
 	prev   []string // last painted screen (the frame the terminal is holding)
 	prefix string   // one-shot escapes emitted with the next frame (see enter)
@@ -109,6 +114,7 @@ type transcript struct {
 	wantTop bool
 	follow  bool // stick to the bottom on new content
 	pendG   bool // saw one 'g' (for gg)
+	pendF   bool // saw 'f' (for the fork jump's f j / f k): the inFork mode
 
 	// Frame scheduling. render() marks the screen stale and defers when a
 	// batch is open (an input burst being drained) or when the frame-rate gate
@@ -175,6 +181,7 @@ type transcript struct {
 	stickyCache map[sliceKey]stickyQuestion
 	cacheW      int
 	selection   nodeSelection
+	visual      visualSelection
 	expanded    map[nodeRef]bool
 
 	// index is the viewport virtualization: a per-frame map from line space to
@@ -237,7 +244,7 @@ func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria
 // row: which reads as the status line "eating" the line above it.
 func (t *transcript) enter() {
 	t.active, t.follow, t.prev = true, true, nil
-	t.pendG, t.inSearch, t.query, t.matchQuery = false, false, "", ""
+	t.pendG, t.pendF, t.inSearch, t.query, t.matchQuery = false, false, false, "", ""
 	t.inJump, t.jumpNote, t.jump = false, "", nil
 	t.cmdline.reset()
 	t.completions = nil
@@ -875,6 +882,17 @@ func (t *transcript) resize(w, h int) {
 	// Record the top message's turn + how many lines into it we are, then restore
 	// after re-rendering at the new width. (Skipped when following the tail.)
 	anchor, within := t.viewportAnchor()
+	// The visual points are pinned to source runes across the reflow; see
+	// visualPin. Done before the width changes, against the rows the points
+	// were made on.
+	var pinCur, pinAnchor visualPin
+	if t.visual.active() {
+		t.buildIndex()
+		pinCur = t.visualPin(t.visual.cursor)
+		if t.visual.highlighted() {
+			pinAnchor = t.visualPin(t.visual.anchor)
+		}
+	}
 	t.w, t.h = w, h
 	// THE ROW CACHE IS NOT KEYED BY WIDTH. rowCache holds each committed
 	// message's rendered rows under (turn, from) alone, and buildIndex below
@@ -890,6 +908,13 @@ func (t *transcript) resize(w, h int) {
 	// between nodes. See the comment in paint.
 	t.prev = nil
 	t.buildIndex() // re-render at the new width, repopulating lineKey
+	if t.visual.active() {
+		t.visual.cursor = t.visualUnpin(pinCur)
+		if t.visual.highlighted() {
+			t.visual.anchor = t.visualUnpin(pinAnchor)
+		}
+		t.visualClampCol()
+	}
 	t.restoreViewportAnchor(anchor, within)
 	t.render()
 }
@@ -1161,13 +1186,11 @@ func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 			rows = append(rows, transcriptRow{text: r.Text})
 			continue
 		}
-		ref := nodeRefAt(m, r.Block)
-		if r.Block == ldrender.BlockInquiry {
-			// The turn's opening question is TEXT ON THE TURN. It occupies no
-			// node index, so its rows carry the sentinel ref: that is what
-			// makes it select, copy and highlight exactly as a node does, which
-			// is how it behaved when it WAS one.
-			ref = nodeRef{turn: m.Turn, index: inquiryNode}
+		ref := blockRef(m, r.Block)
+		if r.State {
+			// The form delta table is its own selectable unit, drawn under
+			// the block it explains and addressed on the delta axis.
+			ref = deltaRefOf(ref)
 		}
 		// Rows are stored already clipped (their unselected resting form) so a
 		// frame that touches nothing allocates nothing; see plainNodeRow.
@@ -1189,24 +1212,17 @@ func (t *transcript) composer(m aria.Message) ldrender.Composer {
 		// may open arguments as well as output (see ariaView.gesture).
 		View: pagerView(t.view), Header: messageHeader, Rule: t.transRule, Sender: dimSender, Tick: t.tick,
 		Expanded: func(block int) bool { return t.expanded[nodeRefAt(m, block)] },
-		// Deltas share the node's expansion gesture: Enter on the node opens
-		// its collapsed state line along with its output and arguments.
+		// The delta table folds on its OWN gesture: Enter on the table, not
+		// on the block above it.
 		State: func(block int, deltas map[string]livedoc.FormDelta, w int) []string {
-			ref := nodeRefAt(m, block)
-			if block == ldrender.BlockInquiry {
-				ref = nodeRef{turn: m.Turn, index: inquiryNode}
-			}
-			return formDeltaLines(deltas, w, t.expanded[ref])
+			return formDeltaLines(deltas, w, t.expanded[deltaRefOf(blockRef(m, block))])
 		},
 	}
-	// The address is composed always and drawn only under ^O, so the toggle is
+	// The address is composed always and drawn only under M-m, so the toggle is
 	// a paint-time decision and the row cache does not know about it.
 	layout := t.coordFormat()
 	c.Mark = func(block int, n livedoc.Node) string {
-		ref := nodeRefAt(m, block)
-		if block == ldrender.BlockInquiry {
-			ref = nodeRef{turn: m.Turn, index: inquiryNode}
-		}
+		ref := blockRef(m, block)
 		return term.Dim(coordLabel(ref.turn, ref.index, nodeCoordAt(n), layout))
 	}
 	return c
@@ -1688,6 +1704,17 @@ func (t *transcript) mode() keyMode {
 	if !t.active {
 		return modeIncipit
 	}
+	// A BOX OUTRANKS THE SELECTION: `:` with a selection up opens the command
+	// line, and the line must own the keyboard while the highlight stays.
+	if t.visual.active() && !t.inSearch && !t.inJump {
+		return modeVisual
+	}
+	// A HALF-TYPED GESTURE OWNS THE NEXT KEY. 'f' is armed, so j/k mean fork
+	// points; every other key falls through to the transcript's own rows (see
+	// dispatch), which is what the second key of gg does too.
+	if t.pendF && !t.inSearch && !t.inJump {
+		return modeFork
+	}
 	return t.openPit().keys()
 }
 
@@ -1750,6 +1777,25 @@ func (t *transcript) dispatch(ev keyEvent) {
 			t.jumpLiteral(ev.b)
 		}
 		t.render()
+		return
+	case modeFork:
+		// The direction key, or nothing: an 'f' followed by anything else is
+		// the ordinary key, not a swallowed one, so the gesture costs a
+		// keystroke and never a meaning.
+		t.pendF = false
+		if act := pagerAct.pager(modeFork, ev); act != nil {
+			act(t)
+			t.render()
+			return
+		}
+	case modeVisual:
+		// The selection owns the keyboard: a key with no row is inert, so a
+		// stray letter cannot scroll the reader away from what they marked.
+		if act := pagerAct.pager(modeVisual, ev); act != nil {
+			act(t)
+			t.pendG = ev.b == 'g' && !t.pendG
+			t.render()
+		}
 		return
 	case modePanel:
 		if act := pagerAct.pager(modePanel, ev); act != nil {
@@ -1822,6 +1868,7 @@ func (t *transcript) dispatch(ev keyEvent) {
 		act(t)
 	}
 	t.pendG = ev.b == 'g' && !t.pendG
+	t.pendF = ev.b == 'f' && !t.pendF
 	// A jump's report is TRANSIENT, on the same discipline as pendG: it owns the
 	// status row until the next key, then the ordinary status line takes the row
 	// back. Without this a failed `:999` would eat the mantra/ctx/cost line for
@@ -1850,6 +1897,13 @@ func pagerTail(t *transcript) {
 	t.follow = true
 	t.resetToTail()
 }
+
+// note is how a pager row reports. NOT jumpNote: the dispatcher's epilogue
+// wipes that on every key, which is right for the note the PREVIOUS key
+// left and erases the one the current key just wrote. This is the bar's
+// notice, the same slot the ':' box's verbs answer in, and it retires on
+// its own clock.
+func (t *transcript) note(s string) { t.setCommandNote(s) }
 
 // pagerTop goes to the beginning (Home, and the second g).
 func pagerTop(t *transcript) {
@@ -1912,6 +1966,55 @@ func pagerClearSelection(t *transcript) {
 		t.clearSelection()
 	}
 }
+
+// Visual mode's rows. The viewport follows the focus (visualMove), which is
+// the one way these differ from the transcript's own motions.
+func pagerVisualChar(t *transcript)     { t.pressVisual(visualChar) }
+func pagerVisualLine(t *transcript)     { t.pressVisual(visualLine) }
+func pagerVisualLeave(t *transcript)    { t.leaveVisual() }
+func pagerVisualDown(t *transcript)     { t.visualMove(1) }
+func pagerVisualUp(t *transcript)       { t.visualMove(-1) }
+func pagerVisualLeft(t *transcript)     { t.visualMoveCol(-1) }
+func pagerVisualRight(t *transcript)    { t.visualMoveCol(1) }
+func pagerVisualHalfDown(t *transcript) { t.visualMove(t.h / 2) }
+func pagerVisualHalfUp(t *transcript)   { t.visualMove(-(t.h / 2)) }
+func pagerVisualEnd(t *transcript)      { t.visualJump(true) }
+func pagerVisualTop(t *transcript)      { t.visualJump(false) }
+
+func pagerVisualWordNext(t *transcript)  { t.visualWord(1, false) }
+func pagerVisualWordPrev(t *transcript)  { t.visualWord(-1, false) }
+func pagerVisualWordEnd(t *transcript)   { t.visualWord(1, true) }
+func pagerVisualRowStart(t *transcript)  { t.visualRowStart() }
+func pagerVisualFirstText(t *transcript) { t.visualFirstNonBlank() }
+func pagerVisualRowEnd(t *transcript)    { t.visualRowEnd() }
+func pagerVisualScreenTop(t *transcript) { t.visualScreen(-1) }
+func pagerVisualScreenMid(t *transcript) { t.visualScreen(0) }
+func pagerVisualScreenBot(t *transcript) { t.visualScreen(1) }
+func pagerVisualParaNext(t *transcript)  { t.visualParagraph(1) }
+func pagerVisualParaPrev(t *transcript)  { t.visualParagraph(-1) }
+
+// pagerVisualPendingTop is the first g of gg, exactly as pagerPendingTop.
+func pagerVisualPendingTop(t *transcript) {
+	if t.pendG {
+		t.visualJump(false)
+	}
+}
+
+// pagerVisualCommand is ':' in visual mode: with a highlight up the box opens
+// holding the range placeholder, and the highlight stays so the reader sees
+// what the command will be handed. With only the cursor up it is the plain
+// command line.
+func pagerVisualCommand(t *transcript) {
+	pagerJumpPrompt(t)
+	if t.visual.highlighted() {
+		t.cmdline.insert(visualRangePlaceholder)
+	}
+}
+
+// visualRangePlaceholder is what `:` inserts, and what the client expands into
+// the fully qualified coordinate at submit. It is vim's '<,'> without the
+// marks, because there are no marks here to name.
+const visualRangePlaceholder = "<,>"
 
 // closePanels shuts the pit.
 func (t *transcript) closePanels() {
@@ -2012,16 +2115,35 @@ func (t *transcript) find(q string) {
 	if total == 0 {
 		return
 	}
+	from := t.offset
+	if line, ok := t.visualCursorLine(); ok {
+		from = line // in visual mode the search walks from the cursor
+	}
 	for i := 0; i < total; i++ {
-		idx := (t.offset + 1 + i) % total
+		idx := (from + 1 + i) % total
 		if searchContains(t.lineAt(idx), q) {
-			t.stopFollowing() // pins the offset, so the jump comes after it
-			t.offset = idx
+			t.landSearch(idx, q)
 			return
 		}
 	}
 	t.search = &transcriptSearch{query: q, offset: t.offset, follow: t.follow}
 	t.stopFollowing()
+}
+
+// landSearch is where every in-window hit lands: the viewport on the line,
+// and, in visual mode, the cursor on the match. The viewport is pinned by
+// stopFollowing FIRST so the jump comes after it.
+func (t *transcript) landSearch(idx int, q string) {
+	t.stopFollowing()
+	if t.visual.active() {
+		t.visualLandSearch(idx, q)
+		// The cursor is on the hit; keep the viewport where the reader can
+		// see it without snapping the hit to the top row, which would drag a
+		// highlight's other end off screen more often than not.
+		t.visualEnsureVisible(idx)
+		return
+	}
+	t.offset = idx
 }
 
 // findRepeat jumps to the next (delta > 0) or previous (delta < 0) match of
@@ -2040,12 +2162,15 @@ func (t *transcript) findRepeat(delta int) {
 	if total == 0 {
 		return
 	}
-	start := t.offset + delta
+	from := t.offset
+	if line, ok := t.visualCursorLine(); ok {
+		from = line
+	}
+	start := from + delta
 	for i := 0; i < total; i++ {
 		idx := ((start+delta*i)%total + total) % total
 		if searchContains(t.lineAt(idx), q) {
-			t.stopFollowing() // pins the offset, so the jump comes after it
-			t.offset = idx
+			t.landSearch(idx, q)
 			return
 		}
 	}
@@ -2173,6 +2298,7 @@ func (t *transcript) findPage(q string, messages []aria.Message) bool {
 					}
 					if searchContains(t.lineAt(i), q) {
 						t.offset, t.follow = i, false
+						t.visualLandSearch(i, q)
 						return true
 					}
 				}
@@ -2445,6 +2571,7 @@ func (t *transcript) retarget(client *aria.Client, figaroID string, status *sess
 	t.rowCache = map[sliceKey]cachedMessage{}
 	t.expanded = map[nodeRef]bool{}
 	t.selection = nodeSelection{}
+	t.visual = visualSelection{}
 	t.index = lineIndex{}
 	t.lineKey = t.lineKey[:0]
 	t.frameRefs = t.frameRefs[:0]
@@ -2456,7 +2583,7 @@ func (t *transcript) retarget(client *aria.Client, figaroID string, status *sess
 	t.jump, t.jumpNote = nil, ""
 	t.search = nil
 	t.inSearch, t.query, t.matchQuery = false, "", ""
-	t.pendG = false
+	t.pendG, t.pendF = false, false
 
 	// The pager is repainted whole rather than diffed: prev describes rows that
 	// belong to a conversation that is no longer on screen.

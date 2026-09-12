@@ -78,11 +78,45 @@ func (t *transcript) nodeAt(ref nodeRef) (node livedoc.Node, ok bool) {
 // flipping a flag that changes no row would make the second click look broken
 // in exactly the way a no-op looks correct.
 func (t *transcript) toggleExpansionOf(ref nodeRef) bool {
+	if ref.delta {
+		d, ok := t.deltasAt(ref)
+		if !ok || !deltasExpandable(d, t.w) {
+			return false
+		}
+		return t.toggleExpansion([]nodeRef{ref})
+	}
 	n, ok := t.nodeAt(ref)
 	if !ok || !nodeExpandable(n) {
 		return false
 	}
 	return t.toggleExpansion([]nodeRef{ref})
+}
+
+// deltasAt is the form delta set behind a delta pseudonode's ref: a
+// node's, or the turn's when the ref sits on the inquiry.
+func (t *transcript) deltasAt(ref nodeRef) (deltas map[string]livedoc.FormDelta, ok bool) {
+	find := func(m aria.Message) {
+		if ok || m.Turn != ref.turn {
+			return
+		}
+		if ref.index == inquiryNode {
+			deltas, ok = m.FormDeltas, len(m.FormDeltas) > 0
+			return
+		}
+		for i := range m.Nodes {
+			if deltaRefOf(nodeRefAt(m, i)) == ref {
+				deltas, ok = m.Nodes[i].FormDeltas, len(m.Nodes[i].FormDeltas) > 0
+				return
+			}
+		}
+	}
+	for _, m := range t.messages() {
+		find(m)
+	}
+	if open := t.openMessage(); open != nil {
+		find(*open)
+	}
+	return deltas, ok
 }
 
 // mouseHelpRows is the pointer's line of the '?' panel: ONE row, in the same

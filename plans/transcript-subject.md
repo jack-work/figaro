@@ -21,7 +21,7 @@ Every feature under discussion is blocked on one missing primitive.
 | fork at a node and follow the branch | change the transcript's aria |
 | attend a **role**, and follow the bearer when it is recast | change the transcript's aria |
 | `:send <aria-id> -- "text"` from the pager | address another aria |
-| `:open <id>` | change the transcript's aria |
+| `:listen <id>` | change the transcript's aria |
 
 **The transcript cannot change its aria.** The id is baked in at construction,
 at three layers: the connection (`sdk.DialAria` on one per-aria socket), the
@@ -60,7 +60,7 @@ former role bearer."*
 
 ```go
 // switchSubject repoints the transcript at whatever ref resolves to now.
-// EVERY path that changes what is on screen goes through here: :open, a fork
+// EVERY path that changes what is on screen goes through here: :listen, a fork
 // we follow, a role recast, an attend elsewhere.
 func (in *interactiveInput) switchSubject(ref subject) error
 ```
@@ -243,7 +243,7 @@ A first cut needs only the verbs that make sense with a transcript on screen:
 
 | kind | verbs |
 |---|---|
-| move the subject | `:open`, `:attend`, `:fork`, `:cast` |
+| move the subject | `:listen`, `:attend`, `:fork`, `:cast` |
 | speak | `:send`, `:queue` |
 | navigate | `:12`, `:12.3`, `:0` |
 | state | `:set`, `:unset`, `:state` |
@@ -258,10 +258,10 @@ bug on its way past.
 | # | phase | why here | proves it |
 |---|---|---|---|
 | **0** | **converge the editor**: headless textarea, `/` and `:` become its one-line case | prerequisite for 4 and 5; deletes two hand-rolled paths | search for `café`, fails today |
-| **1** | **the subject**: `switchSubject`, `aria <id>` only, as a true reload | the missing primitive; everything else consumes it | `:open <id>` moves the transcript |
+| **1** | **the subject**: `switchSubject`, `aria <id>` only, as a true reload | the missing primitive; everything else consumes it | `:listen <id>` moves the transcript |
 | **2** | **lineage on the wire**, then retention across a switch | §3's conversation, then the client rule | count reads across a fork-follow: the prefix is not re-read |
 | **3** | **role subjects**: resolve `target-aria`, follow on recast | falls out of 1 + the study feed already streaming | recast a role; the transcript moves |
-| **4** | **command mode**: the CLI grammar in-process, `:send` first | needs 0 for the editor and 1 for `:open` | `:send <id> -- "x"` ≡ the shell's |
+| **4** | **command mode**: the CLI grammar in-process, `:send` first | needs 0 for the editor and 1 for `:listen` | `:send <id> -- "x"` ≡ the shell's |
 | **5** | **insert mode**: `i`, the box, `f`/`^F` fork intents | now a thin consumer of 0 and 4 | the composer plan's phases |
 
 **Phase 5 is small if 0–4 land**, which is the argument for this order: insert
@@ -303,7 +303,7 @@ Beyond §3's four, which are the ones that need the conversation:
 2. **What happens to a role subject when the role form is deleted?** A tombstone
    arrives and the subject no longer resolves. Freeze on the last bearer and say
    so in the status row, or fall back to `attend`?
-3. **Does `:open` push a stack, so `:back` exists?** Browsing a fork tree wants
+3. **Does `:listen` push a stack, so `:back` exists?** Browsing a fork tree wants
    it. It also wants a `:tree` that is `figaro ls` rendered in the pager.
 4. **Does `listen` still exit when its subject dies**, if the subject is a role
    that might be recast to a living aria a moment later?

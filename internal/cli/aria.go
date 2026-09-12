@@ -34,7 +34,7 @@ type showOpts struct {
 	jsonOut  bool
 	verbose  bool
 	literal  bool
-	details  bool // -o: the metadata Ctrl-O shows in the pager
+	details  bool // -o: the metadata M-m shows in the pager
 	maxBytes int  // --max-bytes: paint budget; the OLDEST turns are dropped first. 0 = none
 }
 
@@ -145,7 +145,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		fmt.Fprintln(stdout, term.Dim(fmt.Sprintf("[%d]", u.ID)))
 		fmt.Fprintln(stdout)
 		// The DEFAULT is what `figaro listen` draws: the same composer, the
-		// same rows, no metadata. `-o` adds the addresses and timestamps Ctrl-O
+		// same rows, no metadata. `-o` adds the addresses and timestamps M-m
 		// shows in the pager: it used to be on unconditionally, which meant
 		// every `show` printed detail nobody had asked for.
 		rows := renderTurnRows(aria.Message{

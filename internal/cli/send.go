@@ -27,7 +27,7 @@ type sendOpts struct {
 	stay     bool   // --attend=false / --stay: don't rebind to the new branch
 	raw      bool   // --raw / -r: raw stream, no ANSI/markdown
 	verbatim bool   // --verbatim / -v: dump raw wire frames as JSON
-	verbose  bool   // --verbose / -o (or -t alias): expand tool inputs (Ctrl-O toggles live)
+	verbose  bool   // --verbose / -o (or -t alias): expand tool inputs (M-m toggles live)
 	exec     bool
 	dryRun   bool     // --exec only
 	skipYes  bool     // --exec only
@@ -581,7 +581,6 @@ func runSendRaw(loaded *config.Loaded, ariaID string, d dressing, prompt string)
 		die("%s", err)
 	}
 
-	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 	exitCode := plainPrompt(ctx, figaroEP, prompt, os.Stdout)
 	if exitCode != 0 {
 		os.Exit(exitCode)
@@ -603,7 +602,6 @@ func runSendVerbatim(loaded *config.Loaded, opts sendOpts, prompt string) {
 		die("%s", err)
 	}
 
-	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 	if exitCode := verbatimPrompt(ctx, figaroEP, prompt, os.Stdout); exitCode != 0 {
 		os.Exit(exitCode)
 	}
@@ -643,7 +641,6 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 		figaroEP = ep
 	}
 
-	instruction = expandAtRefsForEndpoint(ctx, figaroEP, instruction)
 	prompt := "You will write a bash script. Output ONLY raw bash, " +
 		"no markdown fences, no prose, no commentary, no explanations. " +
 		"The script will be executed verbatim via `bash -c`. " +
@@ -704,8 +701,6 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 	if err != nil {
 		die("%s", err)
 	}
-
-	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 
 	fcli, derr := sdk.DialAria(figaroEP, func(string, json.RawMessage) {})
 	if derr != nil {
