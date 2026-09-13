@@ -123,6 +123,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 			rpc.MethodRead:           h.read,
 			rpc.MethodContext:        h.context,
 			rpc.MethodForm:           h.form,
+			rpc.MethodLineage:        h.lineage,
 		}, h.authenticator(), h.policy()),
 		h: h,
 	}

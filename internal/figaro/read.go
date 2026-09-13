@@ -30,9 +30,11 @@ func (a *Agent) Read(at aria.Anchor, budget int) aria.Page {
 // ReadBefore pages backward from at: the other direction of the same cut, so
 // a pager can walk into history without loading all of it. A backward read
 // with a zero anchor is the tail, which is what `fig show -n N` asks for.
-func (a *Agent) ReadBefore(at aria.Anchor, budget int) aria.Page {
+// floor stops the walk from below, inclusive of its own anchor; a zero floor
+// is no floor, and the page is then what it has always been.
+func (a *Agent) ReadBefore(at, floor aria.Anchor, budget int) aria.Page {
 	a.hydrate()
-	out := a.ariaSrv.ReadBefore(at, a.settings.ClampPageBudget(budget))
+	out := a.ariaSrv.ReadBefore(at, floor, a.settings.ClampPageBudget(budget))
 	out.Metrics = a.sessionMetrics()
 	return out
 }

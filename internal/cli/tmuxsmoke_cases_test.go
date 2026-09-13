@@ -698,7 +698,10 @@ func TestSmoke_ForkFromTheBoxAttendsAndShowsUnlessStay(t *testing.T) {
 		vis := p.visible()
 		if m := footerID.FindStringSubmatch(vis); m != nil && m[1] != parent {
 			branch = m[1]
-			if strings.Contains(vis, "FORKOK") {
+			// THE DISPLAYED QUESTION CONTAINS THE TOKEN, so Contains is true
+			// before any answer arrives. Only a row that IS the token is an
+			// answer (trap 2 of the tmux-testing skill).
+			if bodyLines(vis, "FORKOK") > 0 {
 				break
 			}
 		}
@@ -707,7 +710,7 @@ func TestSmoke_ForkFromTheBoxAttendsAndShowsUnlessStay(t *testing.T) {
 	if branch == "" {
 		t.Fatalf(":fork did not show the branch (footer still %s):\n%s", parent, p.visible())
 	}
-	if !strings.Contains(p.visible(), "FORKOK") {
+	if bodyLines(p.visible(), "FORKOK") == 0 {
 		t.Errorf("the branch's reply did not land on the shown transcript:\n%s", p.visible())
 	}
 	t.Logf("showed %s -> %s:\n%s", parent, branch, p.visible())
@@ -826,9 +829,18 @@ func TestSmoke_ForkPointJumpAttendAndJumplist(t *testing.T) {
 			answerRow = i
 		}
 	}
-	if bannerRow < 0 || answerRow < 0 || bannerRow > answerRow {
-		t.Errorf("the banner must open the forked turn, not close the one before it (banner=%d answer=%d):\n%s",
-			bannerRow, answerRow, vis)
+	// THE BANNER OPENS THE CHILD'S TURN: after the child's inquiry and before
+	// its answer. "before the answer" alone is also true of a banner drawn on
+	// the parent's last turn, which is the bug this case exists for.
+	inquiryRow := -1
+	for i, l := range lines {
+		if strings.Contains(l, "BRANCHOK") && strings.Contains(l, "say the single word") {
+			inquiryRow = i
+		}
+	}
+	if bannerRow < 0 || answerRow < 0 || inquiryRow < 0 || bannerRow < inquiryRow || bannerRow > answerRow {
+		t.Errorf("the banner must sit between the child's question and its answer (inquiry=%d banner=%d answer=%d):\n%s",
+			inquiryRow, bannerRow, answerRow, vis)
 	}
 
 	// f j travels to it FROM THE TOP and selects it: the gutter on the

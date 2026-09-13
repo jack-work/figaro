@@ -19,6 +19,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/internal/mark"
 	"sort"
 	"strconv"
 	"sync"
@@ -292,38 +293,133 @@ func (in *interactiveInput) seedIntrinsics() {
 func (in *interactiveInput) onIntrinsicChanged(name string) {
 	switch name {
 	case intrinsicQueue:
-		snap, _, _ := in.intrinsics.queue.state()
-		rows := readQueue(snap)
-		// THE EPOCH TRAVELS WITH THE ROWS. Every queue mutation is a
-		// compare-and-set against the generation its ids came from, and the
-		// generation that produced THESE rows is the one in THIS snapshot.
-		//
-		// KEEP THIS ASSIGNMENT UNDER GUARD BY HAND: queueEpoch is written here
-		// and read elsewhere, so dropping it compiles, and the projection test
-		// (TestQueueProjectionCarriesTheEpoch) covers readQueue, not this line.
-		// Losing it once made `x` on a queued row answer "stale (no epoch
-		// supplied)".
-		epoch, _ := lookupString(snap, "epoch")
-		items := make([]queuedItem, 0, len(rows))
-		for _, r := range rows {
-			if !r.live() {
-				continue
-			}
-			items = append(items, queuedItem{id: r.ID, text: r.Text, state: r.State})
-		}
-		in.mu.Lock()
-		in.queueEpoch = epoch
-		if in.lt.setTranscriptQueued(items, "") {
-			in.lt.render()
-		}
-		in.mu.Unlock()
+		in.projectQueue()
 	case intrinsicRuntime:
 		snap, _, _ := in.intrinsics.runtime.state()
 		rt := readRuntime(snap)
+		mark.Mark("runtime", "state", string(rt.State))
 		in.mu.Lock()
 		if in.lt.status.setRuntime(rt) {
 			in.lt.render()
 		}
 		in.mu.Unlock()
+	}
+}
+
+// queueDebutGrace is how long a row that arrived while the aria was IDLE must
+// survive before it may be drawn.
+//
+// A prompt sent into an idle figaro is queued and lifted again in the same
+// breath: measured on this bench, the row was live for 8 to 66 ms, which is
+// one to four frames of a row appearing, the drawer opening under it, and both
+// going away before the turn starts. Nothing about that is information. A row
+// that is still there after the grace is a row that will really sit there, and
+// it is drawn then.
+//
+// The grace is spent only against an idle aria. Send into one that is already
+// working and the row is drawn at once, because that queue is the answer to
+// "where did my message go" and it will be on screen for seconds.
+const queueDebutGrace = 150 * time.Millisecond
+
+// queueDebut decides which live rows may be drawn NOW.
+//
+// debut is the map of id to the earliest time each row may appear, carried
+// across calls: a row keeps the deadline it was given when it first arrived,
+// so a queue that mutates twice inside the grace does not restart it. Rows
+// that are no longer live are forgotten. next is the earliest deadline still
+// in the future, zero if none, and the caller owes it a wake-up.
+func queueDebut(rows []queueRow, busy bool, now time.Time, debut map[uint64]time.Time) (items []queuedItem, next time.Time) {
+	live := make(map[uint64]bool, len(rows))
+	items = make([]queuedItem, 0, len(rows))
+	for _, r := range rows {
+		if !r.live() {
+			continue
+		}
+		live[r.ID] = true
+		at, seen := debut[r.ID]
+		if !seen {
+			at = now
+			if !busy {
+				at = now.Add(queueDebutGrace)
+			}
+			debut[r.ID] = at
+		}
+		if at.After(now) {
+			if next.IsZero() || at.Before(next) {
+				next = at
+			}
+			continue
+		}
+		items = append(items, queuedItem{id: r.ID, text: r.Text, state: r.State})
+	}
+	for id := range debut {
+		if !live[id] {
+			delete(debut, id)
+		}
+	}
+	return items, next
+}
+
+// projectQueue folds the queue mirror onto the pager's model: the rows the
+// reader may see, and the epoch their ids came from.
+func (in *interactiveInput) projectQueue() {
+	snap, _, _ := in.intrinsics.queue.state()
+	rows := readQueue(snap)
+	if mark.Enabled() {
+		for _, r := range rows {
+			mark.Mark("queue.row", "id", r.ID, "state", string(r.State))
+		}
+	}
+	// THE EPOCH TRAVELS WITH THE ROWS. Every queue mutation is a
+	// compare-and-set against the generation its ids came from, and the
+	// generation that produced THESE rows is the one in THIS snapshot.
+	//
+	// KEEP THIS ASSIGNMENT UNDER GUARD BY HAND: queueEpoch is written here
+	// and read elsewhere, so dropping it compiles, and the projection test
+	// (TestQueueProjectionCarriesTheEpoch) covers readQueue, not this line.
+	// Losing it once made `x` on a queued row answer "stale (no epoch
+	// supplied)".
+	epoch, _ := lookupString(snap, "epoch")
+	// THE ARIA'S DISPOSITION WHEN THE ROW ARRIVED is what decides the grace,
+	// and it is read from the runtime mirror rather than from the reply to our
+	// own send: a row put there by somebody else's prompt gets the same answer.
+	// An unseeded mirror counts as idle, so a client that does not yet know
+	// waits the split second rather than flashing.
+	rtSnap, _, _ := in.intrinsics.runtime.state()
+	busy := readRuntime(rtSnap).State.Busy()
+
+	now := time.Now()
+	in.mu.Lock()
+	if in.queueDebut == nil {
+		in.queueDebut = map[uint64]time.Time{}
+	}
+	items, next := queueDebut(rows, busy, now, in.queueDebut)
+	in.queueEpoch = epoch
+	if in.lt.setTranscriptQueued(items, "") {
+		mark.Mark("queue.draw", "rows", len(items))
+		in.lt.render()
+	}
+	if in.debutTimer != nil {
+		in.debutTimer.Stop()
+		in.debutTimer = nil
+	}
+	if !next.IsZero() {
+		// The wake-up is the whole of the delay: if the row is gone by then
+		// the projection finds nothing to show and no frame is spent.
+		in.debutTimer = time.AfterFunc(next.Sub(now), in.projectQueue)
+	}
+	in.mu.Unlock()
+}
+
+// forgetQueueDebuts drops the deadlines a subject change invalidates: the new
+// aria's ids are its own, and an id that means one message here meant another
+// there.
+func (in *interactiveInput) forgetQueueDebuts() {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	in.queueDebut = nil
+	if in.debutTimer != nil {
+		in.debutTimer.Stop()
+		in.debutTimer = nil
 	}
 }

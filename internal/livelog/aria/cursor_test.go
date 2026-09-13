@@ -69,7 +69,7 @@ func TestCursorsWalkTheWholeAria(t *testing.T) {
 	back := map[Anchor]int{}
 	at, pages = Anchor{}, 0
 	for {
-		p := PaginateBefore(turns, at, budget)
+		p := PaginateBefore(turns, at, Anchor{}, budget)
 		if len(p.Parts) == 0 {
 			break
 		}

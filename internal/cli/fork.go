@@ -88,7 +88,7 @@ func planFork(args []string) (forkPlan, error) {
 // runForkCmd is the `fork` verb's entry point: plan, then dispatch to the
 // prompt-less imperative fork or the fork-and-send form.
 func runForkCmd(loaded *config.Loaded, rawArgs []string) {
-	plan, err := planFork(rawArgs)
+	plan, err := prepareFork(rawArgs, shellSurface)
 	if err != nil {
 		die("fork: %s", err)
 	}
@@ -158,7 +158,7 @@ func runForkPrompt(loaded *config.Loaded, plan forkPlan) {
 		ctx := context.Background()
 		env := verbEnv{loaded: loaded, acli: acli, shellPID: shellPID}
 		var err error
-		out, err = forkVerb(ctx, env, plan)
+		out, err = forkVerb(ctx, env, plan, bindFanOut)
 		if err != nil {
 			die("fork: %s", err)
 		}
@@ -224,7 +224,7 @@ func runForkPrompt(loaded *config.Loaded, plan forkPlan) {
 		// the same stdout: the second copy of the defect `send` shed.
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer cancel()
-		submitAndExit(ctx, loaded, branch, prompt)
+		submitAndExit(ctx, loaded, branch, prompt, opts.outfit)
 		return
 	}
 	promptForkedAria(loaded, branch, opts, prompt)
@@ -263,8 +263,8 @@ func promptForkedAria(loaded *config.Loaded, ariaID string, opts sendOpts, promp
 	case "exec":
 		runSendExec(loaded, opts, prompt)
 	case "raw":
-		runSendRaw(loaded, ariaID, dressing{}, prompt)
+		runSendRaw(loaded, ariaID, opts.outfit, prompt)
 	default:
-		promptAria(loaded, ariaID, prompt, set)
+		promptAria(loaded, ariaID, prompt, set, opts.outfit)
 	}
 }

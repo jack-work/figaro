@@ -31,7 +31,7 @@ func (r *travelReader) Read(_ context.Context, at aria.Anchor, budget int) (aria
 
 func (r *travelReader) ReadBefore(_ context.Context, at aria.Anchor, budget int) (aria.Page, error) {
 	r.calls = append(r.calls, travelRead{at: at, backward: true, budget: budget})
-	return aria.PaginateBefore(r.turns, at, 8192), nil
+	return aria.PaginateBefore(r.turns, at, aria.Anchor{}, 8192), nil
 }
 
 func (*travelReader) Queued(context.Context) (*rpc.QueuedResponse, error) {
@@ -52,7 +52,7 @@ func travelFixture(tb testing.TB, count, nodes int) (*interactiveInput, *travelR
 	set := &renderSettings{}
 	lt := newLivelogTurn(&countingWriter{}, 72, 18, set, "travel", time.Time{}, newSessionStatus("travel", time.Time{}), nil, nil)
 	lt.enterTranscript()
-	lt.apply(aria.PaginateBefore(r.turns, aria.Anchor{}, 8192))
+	lt.apply(aria.PaginateBefore(r.turns, aria.Anchor{}, aria.Anchor{}, 8192))
 	lt.client.SetMoreBefore(true)
 	in := &interactiveInput{lt: lt, fcli: r, mu: &sync.Mutex{}, set: set, figaroID: "travel", cancel: func() {}, disconnectCh: make(chan struct{}, 1)}
 	lt.setHistoryFetcher(in.historyFetcher())

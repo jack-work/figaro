@@ -327,6 +327,43 @@ func TestAttachPlacesDeltasDeliberately(t *testing.T) {
 	}
 }
 
+// One key touched twice in a window is one transition, and the same
+// records always fold the same way: the first Prev to the last Value.
+// The live path used to walk a map, so the older value won at random.
+func TestCollapsedTransitionIsChronological(t *testing.T) {
+	rec := func(prev, val string) map[string]livedoc.FormDelta {
+		return map[string]livedoc.FormDelta{"a1.mantra": {
+			Kind: livedoc.FormBound, Event: livedoc.FormSet, Form: "a1",
+			Prev: json.RawMessage(prev), Value: json.RawMessage(val),
+		}}
+	}
+	window := func() map[uint64]map[string]livedoc.FormDelta {
+		return map[uint64]map[string]livedoc.FormDelta{
+			11: rec(`"seed"`, `"old"`),
+			12: rec(`"old"`, `"new"`),
+		}
+	}
+	check := func(where string, got livedoc.FormDelta) {
+		t.Helper()
+		if string(got.Value) != `"new"` || string(got.Prev) != `"seed"` {
+			t.Fatalf("%s folded %s -> %s; want \"seed\" -> \"new\"", where, got.Prev, got.Value)
+		}
+	}
+	for i := 0; i < 200; i++ {
+		live := aria.Turn{ID: 1, LTs: []uint64{10, 12}}
+		AttachOne(&live, window())
+		check("AttachOne", live.FormDeltas["a1.mantra"])
+
+		durable := []aria.Turn{{
+			ID:    1,
+			LTs:   []uint64{10, 12},
+			Nodes: []livedoc.Node{{Type: livedoc.NodeTool, Src: []livedoc.Src{{LT: 11}, {LT: 12}}}},
+		}}
+		Attach(durable, window())
+		check("Attach", durable[0].Nodes[0].FormDeltas["a1.mantra"])
+	}
+}
+
 // The seam. A fork's birth record is ceremonial: it projects no node and
 // trails every node of the turn whose LT range swallows it, which is the
 // LAST turn of the PARENT. The state it carries was never shown to that

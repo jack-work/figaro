@@ -126,3 +126,36 @@ func watchRenderLock(mu *sync.Mutex) func() {
 	}()
 	return func() { close(done) }
 }
+
+// ProfileEnv names a directory; when set, the CLI writes a CPU profile of the
+// whole session and a heap profile at exit there, so a benchmark run can be
+// read with `go tool pprof` instead of guessed at.
+const ProfileEnv = "FIGARO_CLI_PPROF"
+
+func profileSession() func() {
+	dir := os.Getenv(ProfileEnv)
+	if dir == "" {
+		return func() {}
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return func() {}
+	}
+	stamp := fmt.Sprintf("%d-%s", os.Getpid(), time.Now().Format("150405"))
+	cpu, err := os.Create(filepath.Join(dir, "cli-cpu-"+stamp+".pprof"))
+	if err != nil {
+		return func() {}
+	}
+	if err := pprof.StartCPUProfile(cpu); err != nil {
+		cpu.Close()
+		return func() {}
+	}
+	return func() {
+		pprof.StopCPUProfile()
+		cpu.Close()
+		if heap, err := os.Create(filepath.Join(dir, "cli-heap-"+stamp+".pprof")); err == nil {
+			runtime.GC()
+			_ = pprof.WriteHeapProfile(heap)
+			heap.Close()
+		}
+	}
+}

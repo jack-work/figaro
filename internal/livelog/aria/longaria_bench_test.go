@@ -45,7 +45,7 @@ func BenchmarkReadBeforeLongAria(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				page := s.ReadBefore(Anchor{Turn: uint64(n + 1)}, 1<<16)
+				page := s.ReadBefore(Anchor{Turn: uint64(n + 1)}, Anchor{}, 1<<16)
 				runtime.KeepAlive(page)
 			}
 		})

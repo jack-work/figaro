@@ -25,7 +25,7 @@ func TestDormantReadAppliesPageBudget(t *testing.T) {
 				require.True(t, handled)
 				page := got.(aria.Page)
 				require.NotEmpty(t, page.Parts)
-				want, err := h.reader().Page(id, req.At, settings.ClampPageBudget(budget), backward)
+				want, err := h.reader().Page(id, req.At, aria.Anchor{}, settings.ClampPageBudget(budget), backward)
 				require.NoError(t, err)
 				require.Equal(t, want, page)
 			}

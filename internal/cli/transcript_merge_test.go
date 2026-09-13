@@ -1,12 +1,15 @@
 package cli
 
 import (
+	"fmt"
 	"io"
 	"strings"
 	"testing"
+	"time"
 	"unsafe"
 
 	"github.com/jack-work/figaro/api/livedoc"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 )
 
@@ -187,5 +190,49 @@ func TestMergedLinesBufferIsReused(t *testing.T) {
 		if rows[i] != current[i] {
 			t.Fatalf("render() disturbed the lines() buffer at row %d", i)
 		}
+	}
+}
+
+// A LIVE FRAME COSTS WHAT THE STREAM CHANGED. The open message is recomposed
+// on every frame, so a turn with a hundred blocks used to lay out all hundred
+// ten times a second: the render lock was never free, the pane was dead, and
+// the watchdog dumped (freeze/stacks-20260912-125749).
+func TestLiveFrameComposesOnlyTheBlockThatMoved(t *testing.T) {
+	const blocks = 20
+	client := aria.NewClient()
+	client.SetClosedLimit(transcriptTailLimit)
+	view := &countingView{inner: &ariaView{settings: &renderSettings{}}}
+	tr := newTranscript(ldrender.NewFakeTerminal(60, 20), 60, 20, view, client, "", time.Time{})
+	tr.enter()
+
+	live := &aria.Live{From: 0, V: 1}
+	for i := range blocks {
+		live.Nodes = append(live.Nodes, aria.NodeDelta{ID: uint64(i), Set: map[string]any{
+			"type":     string(livedoc.NodeProse),
+			"markdown": fmt.Sprintf("block %d of a turn that is still being written", i),
+		}})
+	}
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: 1, Live: live}}}}, aria.Notify)
+	tr.lines()
+	if view.renders < blocks {
+		t.Fatalf("the first frame drew %d of %d blocks", view.renders, blocks)
+	}
+
+	// One more token on the last block: every other block is the one it was.
+	view.renders = 0
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: 1, Live: &aria.Live{From: 0, V: 2, Nodes: []aria.NodeDelta{{
+		ID: blocks - 1, Set: map[string]any{"markdown": "block 19, and one more token"},
+	}}}}}}}, aria.Notify)
+	tr.lines()
+	if view.renders != 1 {
+		t.Fatalf("a frame that moved one block drew %d", view.renders)
+	}
+
+	// And a frame that moved nothing draws nothing.
+	view.renders = 0
+	tr.tick++
+	tr.lines()
+	if view.renders != 0 {
+		t.Fatalf("a frame that moved nothing drew %d blocks", view.renders)
 	}
 }

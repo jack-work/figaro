@@ -25,10 +25,74 @@ type Row struct {
 	Text  string
 	Block int
 	Mark  string
-	// State marks a row of the block's FORM DELTA TABLE rather than of the
-	// block itself. The table is drawn under its block and shares its
-	// coordinate, but a surface with a selection addresses it separately.
-	State bool
+	// Delta addresses one row of the block's form-delta ADORNMENT rather
+	// than the block itself: 0 is the block's own row, n the n'th delta.
+	// Each delta is a pseudonode of its own, so a surface with a selection
+	// walks them one at a time.
+	Delta int
+	// Gutter is the glyph the row wears in the right gutter: the marker a
+	// block with a collapsed adornment shows.
+	Gutter string
+	// Chrome marks a row that carries its block's coordinate but is none of
+	// its content: an adornment's anchor and link rows. A surface with a
+	// selection draws no cue on it, which is why the wash stops at the
+	// blank row above a delta list instead of swallowing it.
+	Chrome bool
+	// Spine is the row's place in the adornment's snake. The glyph is drawn
+	// into Text in its resting form; a surface with a cursor resolves it
+	// again at paint time, because the marker follows the selection.
+	Spine SpineSlot
+}
+
+// SpineKind is what a row contributes to an adornment's snake.
+type SpineKind uint8
+
+const (
+	SpineNone   SpineKind = iota // the row is not part of a snake
+	SpineAnchor                  // where the snake hangs from the block
+	SpineLink                    // between the anchor and the first delta
+	SpineRow                     // a delta row: which one is Row.Delta
+)
+
+// SpineSlot is one column of one row held for the snake: which column, and
+// what the row contributes. Tail marks an adornment that closes BELOW its
+// last row (the inquiry's, enclosed between the question and the rule), so
+// the spine runs from the cursor down to the closing corner instead of up
+// to the block.
+type SpineSlot struct {
+	Kind SpineKind
+	Col  int
+	Tail bool
+}
+
+// Adornment is what a block's form deltas add to it. One shape, three
+// layouts (see the adorners in internal/cli): the glyph a collapsed block
+// wears in the right gutter, the suffix a fork lifts into its chrome, the
+// rows the open list draws, and the corner that closes an enclosed one.
+type Adornment struct {
+	// Suffix is lifted into the block's opening chrome row: the fork glyph
+	// and the aria a turn was forked from.
+	Suffix string
+	// Gutter is the collapsed marker, worn by the block's first row, or by
+	// its last when GutterLast (prose tacks it onto the end of its text).
+	Gutter     string
+	GutterLast bool
+	// Head is the slot the BLOCK's own first row wears: prose hangs its
+	// snake from the line it adorns rather than from a row of its own.
+	// HeadGlyph is what that slot carries at rest.
+	Head      SpineSlot
+	HeadGlyph string
+	// Rows are the adornment's own rows, Text/Delta/Spine set; the composer
+	// fills in the block.
+	Rows []Row
+	// Tail is what the rule below the adornment wears, for a type whose
+	// adornment is enclosed by the chrome under it.
+	Tail string
+}
+
+// empty reports an adornment that draws nothing at all.
+func (a Adornment) empty() bool {
+	return a.Suffix == "" && a.Gutter == "" && len(a.Rows) == 0 && a.Head.Kind == SpineNone
 }
 
 // Composer turns one message into rows.
@@ -46,14 +110,27 @@ type Composer struct {
 	// pager has an expansion gesture; nil means "the view's default".
 	Expanded func(block int) bool
 
-	// State draws a node's (or the turn's) form deltas beneath it, already
-	// styled and wrapped by the surface. The block is the same coordinate
-	// Expanded answers for, so the pager's gesture can open a collapsed
-	// delta; BlockInquiry addresses the turn-level set. nil draws nothing,
-	// which is every surface that has not opted in.
-	State func(block int, deltas map[string]livedoc.FormDelta, w int) []string
+	// Adorn draws a block's form-delta adornment, already styled by the
+	// surface. The block is the same coordinate Expanded answers for, and
+	// BlockInquiry addresses the turn-level set. nil adorns nothing, which
+	// is every surface that has not opted in.
+	Adorn func(block int, n livedoc.Node, deltas map[string]livedoc.FormDelta, w int) Adornment
 
 	Tick int // animation frame for spinners
+
+	// Memo lets a surface reuse the rows a block composed last time instead of
+	// composing it again. It is called in place of the composition and must
+	// call draw() whenever it has nothing to reuse. nil composes every block
+	// every time.
+	Memo func(block int, n livedoc.Node, state BlockState, draw func() []Row) []Row
+}
+
+// BlockState is the fold state a block composed under: its own body, and its
+// adornment. Both are the surface's, and both change what draw() produces,
+// so a memo keys on the pair.
+type BlockState struct {
+	Expanded bool
+	Adorned  bool
 }
 
 // expandable is the view side of the pager's expansion gesture. A view that
@@ -69,15 +146,18 @@ func (c Composer) Message(m aria.Message, w int) []Row {
 	if w <= 0 {
 		w = 80
 	}
-	rows := c.Inquiry(m.Inquiry, m.InquirySegments, w)
-	// The turn's own form deltas sit under the question they arrived with,
-	// in the inquiry's Block coordinate, after one blank row.
-	if c.State != nil && len(m.FormDeltas) > 0 {
-		if state := c.State(BlockInquiry, m.FormDeltas, w); len(state) > 0 {
-			rows = append(rows, Row{Text: "", Block: BlockInquiry, State: true})
-			for _, l := range state {
-				rows = append(rows, Row{Text: clip(l, w), Block: BlockInquiry, State: true})
-			}
+	var adorn Adornment
+	if c.Adorn != nil && len(m.FormDeltas) > 0 {
+		adorn = c.Adorn(BlockInquiry, livedoc.Node{}, m.FormDeltas, w)
+	}
+	rows := c.Inquiry(m.Inquiry, m.InquirySegments, w, adorn)
+	// The turn's own form deltas hang under the question they arrived with,
+	// in the inquiry's Block coordinate. A slice that carries no question
+	// carries no adornment either: there is nothing for it to hang from.
+	if len(rows) > 0 {
+		for _, r := range adorn.Rows {
+			r.Block, r.Text = BlockInquiry, clip(r.Text, w)
+			rows = append(rows, r)
 		}
 	}
 	body := c.Nodes(m.Nodes, w)
@@ -91,12 +171,20 @@ func (c Composer) Message(m aria.Message, w int) []Row {
 	// have.
 	seam := len(rows) > 0
 	if seam {
-		rows = append(rows, chrome(""))
 		if c.Rule != nil {
-			rows = append(rows, chrome(clip(c.Rule(), w)))
+			rule := clip(c.Rule(), w)
+			if len(adorn.Rows) > 0 && adorn.Tail != "" {
+				// The rule is the adornment's closing corner: the question's
+				// deltas are ENCLOSED by the chrome beneath them.
+				rule = OverlayColumn(rule, 0, adorn.Tail)
+			}
+			rows = append(rows, chrome(rule))
 		}
 		if h := c.head(m.Role); h != "" {
-			rows = append(rows, chrome(h), chrome(""))
+			// CLIPPED LIKE EVERY OTHER ROW. A header wider than the pane
+			// wraps, and a wrapped row desyncs the painter's one row per
+			// line arithmetic for everything below it.
+			rows = append(rows, chrome(clip(h, w)), chrome(""))
 		}
 	}
 	return append(rows, body...)
@@ -118,27 +206,60 @@ func (c Composer) Nodes(nodes []livedoc.Node, w int) []Row {
 		if len(rows) > 0 {
 			rows = append(rows, chrome(""))
 		}
-		first := len(rows)
+		rows = append(rows, c.block(n, w, k)...)
+	}
+	return rows
+}
+
+// block composes one node's rows: its body, its address, and the form deltas
+// that adorn it. A surface with a Memo may answer from what it kept.
+func (c Composer) block(n livedoc.Node, w, k int) []Row {
+	state := BlockState{}
+	if _, ok := c.View.(expandable); ok {
+		state.Expanded = c.Expanded == nil || c.Expanded(k)
+	}
+	var adorn Adornment
+	if c.Adorn != nil && len(n.FormDeltas) > 0 {
+		adorn = c.Adorn(k, n, n.FormDeltas, w)
+		state.Adorned = len(adorn.Rows) > 0
+	}
+	draw := func() []Row {
+		var rows []Row
 		for _, l := range c.render(n, w, k) {
 			rows = append(rows, Row{Text: clip(l, w), Block: k})
 		}
-		if c.Mark != nil && len(rows) > first {
-			rows[first].Mark = c.Mark(k, n)
-		}
-		// The node's form deltas, below the block they explain and sharing
-		// its Block coordinate, marked State so a surface with a selection
-		// can address the table on its own. One blank row separates them
-		// from the block's body.
-		if c.State != nil && len(n.FormDeltas) > 0 {
-			if state := c.State(k, n.FormDeltas, w); len(state) > 0 {
-				rows = append(rows, Row{Text: "", Block: k, State: true})
-				for _, l := range state {
-					rows = append(rows, Row{Text: clip(l, w), Block: k, State: true})
+		if len(rows) > 0 {
+			if c.Mark != nil {
+				rows[0].Mark = c.Mark(k, n)
+			}
+			if !adorn.empty() {
+				at := 0
+				if adorn.GutterLast {
+					at = len(rows) - 1
+				}
+				rows[at].Gutter = adorn.Gutter
+				rows[at].Text = OverlayGutter(rows[at].Text, adorn.Gutter, w)
+				if adorn.Head.Kind != SpineNone {
+					// Prose hangs its snake from the line it adorns: the
+					// glyph stands in the margin render.Prose leaves.
+					rows[0].Spine = adorn.Head
+					rows[0].Text = OverlayColumn(rows[0].Text, adorn.Head.Col, adorn.HeadGlyph)
 				}
 			}
 		}
+		// The adornment's own rows, below the block they explain and sharing
+		// its Block coordinate, each addressed by its delta index so a
+		// surface with a selection can walk them one at a time.
+		for _, r := range adorn.Rows {
+			r.Block, r.Text = k, clip(r.Text, w)
+			rows = append(rows, r)
+		}
+		return rows
 	}
-	return rows
+	if c.Memo != nil {
+		return c.Memo(k, n, state, draw)
+	}
+	return draw()
 }
 
 // render draws one block, in its expanded form when the surface says so.
@@ -151,14 +272,21 @@ func (c Composer) render(n livedoc.Node, w, block int) []string {
 
 // inquiry draws the question that opened the turn, attributed when it can be.
 // Inquiry composes a turn's opening question: the input header, the
-// attribution of each segment, and the text.
-func (c Composer) Inquiry(inquiry string, segments []aria.InquirySegment, w int) []Row {
+// attribution of each segment, and the text. The adornment's fork suffix and
+// collapsed marker ride the header row, which is where a fork belongs: it is
+// a property of the turn, not of a line of its text.
+func (c Composer) Inquiry(inquiry string, segments []aria.InquirySegment, w int, adorn Adornment) []Row {
 	if strings.TrimSpace(inquiry) == "" {
 		return nil
 	}
 	var rows []Row
 	if h := c.head(livedoc.RoleInput); h != "" {
-		rows = append(rows, chrome(h), chrome(""))
+		if adorn.Suffix != "" {
+			h += " " + adorn.Suffix
+		}
+		head := chrome(OverlayGutter(clip(h, w), adorn.Gutter, w))
+		head.Gutter = adorn.Gutter
+		rows = append(rows, head, chrome(""))
 	}
 	first := len(rows)
 	if len(segments) == 0 {

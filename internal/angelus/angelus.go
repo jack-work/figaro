@@ -66,6 +66,10 @@ type Angelus struct {
 	// path. One per daemon.
 	uiProj Projector
 
+	// baseTurns memoizes fork bases in turn space for the lineage read. A
+	// fork base never moves, so an entry is true for the life of the process.
+	baseTurns baseTurns
+
 	// Hubs is the set of aria endpoints. Each outlives the agent behind it,
 	// so reclaiming an agent does not disconnect anybody. See ariaHub.
 	Hubs *hubs

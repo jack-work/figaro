@@ -53,3 +53,32 @@ func TestRenderListRowsUsesReducedColumnsOnMediumTerminals(t *testing.T) {
 		}
 	}
 }
+
+// A mantra that names another aria used to take the row: the pager read the
+// first aria-shaped word out of the RENDERED line, and `figaro ls` prints the
+// mantra before the id. Gluck attended and yanked the wrong aria that way.
+func TestListRowIDComesFromTheVerbNotTheRenderedText(t *testing.T) {
+	rows := []figtree.Row{{
+		Marker: "▸",
+		Label:  "orchestrating fix aria 90ec6584",
+		Fields: map[string]string{fieldID: "23e03e27", fieldAge: "4m", fieldMsgs: "12"},
+	}}
+
+	var buf lockedBuffer
+	printListRows(&buf, rows, 120, false)
+	cap := buf.captured()
+	lines := splitOutputLines(cap.text)
+	got := cap.rows(lines)
+	if len(got) != 2 {
+		t.Fatalf("want a header and one row, got %d: %q", len(got), cap.text)
+	}
+	if got[0].id != "" {
+		t.Fatalf("the header is chrome, not a row about %q", got[0].id)
+	}
+	if got[1].id != "23e03e27" || got[1].yank != "23e03e27" {
+		t.Fatalf("row acts on %q (yanks %q); the mantra named 90ec6584 and the row is 23e03e27", got[1].id, got[1].yank)
+	}
+	if !strings.Contains(got[1].text, "90ec6584") {
+		t.Fatalf("the case needs both ids in one line: %q", got[1].text)
+	}
+}

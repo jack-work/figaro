@@ -2,6 +2,7 @@ package render
 
 import (
 	"fmt"
+	"github.com/jack-work/figaro/internal/mark"
 	"io"
 	"strings"
 
@@ -474,6 +475,7 @@ func (i *Incipit) closer(role string) (rows []string, endsInRule bool) {
 func (i *Incipit) paint(newRows []string) {
 	first, last := diffRange(i.live, newRows)
 	if first < 0 {
+		mark.Mark("frame.quiet", "view", "incipit")
 		return
 	}
 	_, h := i.term.Size()
@@ -513,6 +515,10 @@ func (i *Incipit) paint(newRows []string) {
 	b.WriteString("\x1b[?2026l")
 	io.WriteString(i.term, b.String())
 	i.live = newRows
+	if mark.Enabled() {
+		mark.Mark("frame", "view", "incipit", "bytes", b.Len(), "rows", len(newRows),
+			"content", len(newRows) > 0, "tail", true, "changed", last-first+1)
+	}
 }
 
 func (i *Incipit) vmove(b *strings.Builder, target int) {

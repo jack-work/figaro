@@ -1,10 +1,19 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
-	"github.com/jack-work/figaro/api/form"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jack-work/jkrpc"
+
+	"github.com/jack-work/figaro/api/form"
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/api/transport"
+	"github.com/jack-work/figaro/sdk"
 )
 
 // Three flags, one parser, three verbs. -O takes outfit NAMES, -S takes keys,
@@ -68,16 +77,20 @@ func TestSendOutfitParses(t *testing.T) {
 }
 
 // The wiring that matters: whatever the parser read must reach the prompt, in
-// the SAME call as the text. Every prompt verb goes through this parser, so
-// none of them can carry the flag and forget the fold.
+// the SAME call as the text, and it must travel ON THE PLAN. Parsing used to
+// write a package global, so a second command parsed while the first was in
+// flight sent the first one's question wearing the second one's dressing.
 func TestParsedOutfitRidesThePrompt(t *testing.T) {
-	defer func() { promptDressing = dressing{} }()
-
-	promptDressing = dressing{}
-	if _, _, err := extractSendFlags([]string{"-O", "a", "-S", "ttl=1h", "--", "p"}); err != nil {
+	opts, _, err := extractSendFlags([]string{"-O", "a", "-S", "ttl=1h", "--", "p"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	in := buildPromptForm()
+	// A SECOND PARSE IS NOT THE FIRST ONE'S BUSINESS.
+	other, _, err := extractSendFlags([]string{"-S", "ttl=9h", "--", "q"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := buildPromptForm(opts.outfit)
 	if in == nil || in.Patch == nil {
 		t.Fatal("no form input")
 	}
@@ -93,11 +106,19 @@ func TestParsedOutfitRidesThePrompt(t *testing.T) {
 		t.Errorf("prompt ttl: %q", got)
 	}
 
-	promptDressing = dressing{}
-	if _, _, err := extractSendFlags([]string{"--", "p"}); err != nil {
+	if got := string(mustEntry(*buildPromptForm(other.outfit).Patch, "ttl")); got != `"9h"` {
+		t.Errorf("the second plan's ttl: %q", got)
+	}
+	// And the first plan still carries its own, parsed before the second.
+	if got := string(mustEntry(*buildPromptForm(opts.outfit).Patch, "ttl")); got != `"1h"` {
+		t.Errorf("the first plan wore the second's dressing: %q", got)
+	}
+
+	bare, _, err := extractSendFlags([]string{"--", "p"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if in := buildPromptForm(); in != nil && in.Patch != nil {
+	if in := buildPromptForm(bare.outfit); in != nil && in.Patch != nil {
 		t.Errorf("patch invented from nothing: %v", in.Patch)
 	}
 }
@@ -135,4 +156,54 @@ func mustEntry(p form.Patch, key string) json.RawMessage {
 		return nil
 	}
 	return e.New
+}
+
+// THE REQUEST IS WHERE IT COUNTS. The reviewer's probe: parse one send, parse
+// another, submit the FIRST, and read what the aria received. With the dressing
+// in a package global the first question arrived wearing the second's -S.
+func TestSubmittedQuestionWearsItsOwnPlansDressing(t *testing.T) {
+	sock := filepath.Join(t.TempDir(), "aria.sock")
+	got := make(chan rpc.QuaRequest, 4)
+	fakeRPCServer(t, sock, map[string]jkrpc.HandlerFunc{
+		rpc.MethodQua: func(_ context.Context, params json.RawMessage) (interface{}, error) {
+			var req rpc.QuaRequest
+			if err := json.Unmarshal(params, &req); err != nil {
+				return nil, err
+			}
+			got <- req
+			return rpc.QuaResponse{OK: true}, nil
+		},
+	})
+
+	first, err := planSend([]string{"-S", "mantra=first", "--", "one"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := planSend([]string{"-S", "mantra=second", "--", "two"}); err != nil {
+		t.Fatal(err)
+	}
+
+	fcli, err := sdk.DialAria(transport.UnixEndpoint(sock), nil)
+	if err != nil {
+		t.Fatalf("dial the fake aria: %v", err)
+	}
+	defer fcli.Close()
+	if _, _, err := sendVerb(context.Background(), verbEnv{}, first, fcli, "aria1234"); err != nil {
+		t.Fatalf("sendVerb: %v", err)
+	}
+
+	select {
+	case req := <-got:
+		if req.Text != "one" {
+			t.Fatalf("the aria received %q", req.Text)
+		}
+		if req.Form == nil || req.Form.Patch == nil {
+			t.Fatal("the question carried no dressing at all")
+		}
+		if v := string(mustEntry(*req.Form.Patch, "mantra")); v != `"first"` {
+			t.Fatalf("the first plan's question wore %s", v)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the fake aria was never asked")
+	}
 }

@@ -318,7 +318,8 @@ func (l *Loaded) DormantAfter() time.Duration {
 }
 
 // QuoteHeadChars, QuoteTailChars, QuoteEllipsis, QuoteGutter and QuoteHeader
-// read [quote] with its defaults. A negative count reads as zero.
+// read [quote] with its defaults. A negative count is returned as it was
+// written: the quote refuses it by name rather than quietly meaning zero.
 func (l *Loaded) QuoteHeadChars() int { return quoteInt(l.cfg().Quote.HeadChars, QuoteHeadDefault) }
 func (l *Loaded) QuoteTailChars() int { return quoteInt(l.cfg().Quote.TailChars, QuoteTailDefault) }
 func (l *Loaded) QuoteEllipsis() string {
@@ -352,9 +353,6 @@ const (
 func quoteInt(p *int, def int) int {
 	if p == nil {
 		return def
-	}
-	if *p < 0 {
-		return 0
 	}
 	return *p
 }

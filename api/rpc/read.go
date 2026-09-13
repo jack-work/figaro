@@ -57,6 +57,12 @@ type ReadRequest struct {
 	// size, which is what makes "start here, then follow Next" the whole of
 	// the client's paging logic.
 	Limit int `json:"limit,omitempty"`
+	// Floor stops a BACKWARD read: no part below this anchor, and More.Before
+	// says there is more that way. It is how a client that already holds the
+	// prefix two arias share asks for only what it does not have. Inclusive of
+	// the anchor itself; zero means no floor, which is every caller that has
+	// nothing to keep.
+	Floor aria.Anchor `json:"floor,omitempty"`
 }
 
 // AriaIDRequest names an aria and nothing else: the whole request for the

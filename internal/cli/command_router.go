@@ -204,11 +204,19 @@ func (in *interactiveInput) runOverlay(verb string, args []string) {
 	switch verb {
 	case "listen":
 		in.commandAsync(func(ctx context.Context) (string, error) {
-			return in.switchSubject(ctx, strings.Join(args, " "), false)
+			spec, err := oneSpec(verb, args)
+			if err != nil {
+				return "", err
+			}
+			return in.switchSubject(ctx, spec, false)
 		})
 	case "attend", "at":
 		in.commandAsync(func(ctx context.Context) (string, error) {
-			return in.switchSubject(ctx, strings.Join(args, " "), true)
+			spec, err := oneSpec("attend", args)
+			if err != nil {
+				return "", err
+			}
+			return in.switchSubject(ctx, spec, true)
 		})
 	case "send", "s":
 		in.commandAsync(func(ctx context.Context) (string, error) {
@@ -286,7 +294,7 @@ func (in *interactiveInput) runThroughRouter(argv []string) {
 	in.note("…" + strings.Join(argv, " "))
 	go func() {
 		out, code := in.routeCaptured(argv)
-		lines := splitOutputLines(out)
+		lines := splitOutputLines(out.text)
 		switch {
 		case len(lines) == 0 && code == 0:
 			in.note(argv[0] + ": ok")
@@ -296,7 +304,7 @@ func (in *interactiveInput) runThroughRouter(argv []string) {
 			in.note(lines[0])
 		default:
 			in.mu.Lock()
-			in.lt.setTranscriptCmdOut(strings.Join(argv, " "), lines)
+			in.lt.setTranscriptCmdOut(strings.Join(argv, " "), out.rows(lines))
 			in.mu.Unlock()
 		}
 	}()
@@ -304,7 +312,7 @@ func (in *interactiveInput) runThroughRouter(argv []string) {
 
 // routeCaptured runs one command with the router's writers pointed at a buffer
 // and process exit turned into a panic we catch.
-func (in *interactiveInput) routeCaptured(argv []string) (string, int) {
+func (in *interactiveInput) routeCaptured(argv []string) (captured, int) {
 	routerMu.Lock()
 	defer routerMu.Unlock()
 
@@ -339,27 +347,65 @@ func (in *interactiveInput) routeCaptured(argv []string) (string, int) {
 		}()
 		code = r.Run(argv)
 	}()
-	return buf.String(), code
+	return buf.captured(), code
+}
+
+// captured is what a command printed, plus the id each line is ABOUT. A verb
+// declares that id when it writes the line (see emitRow); nothing reads it back
+// out of the rendered text, because rendered text is a place a mantra can name
+// someone else's aria and steal the row.
+type captured struct {
+	text string
+	ids  map[int]string // line index within text
+}
+
+// rows pairs the split lines with the ids their verb declared. A line with no
+// id is chrome: not selectable, and nothing to yank or attend.
+func (c captured) rows(lines []string) []pitRow {
+	out := make([]pitRow, 0, len(lines))
+	for i, line := range lines {
+		id := c.ids[i]
+		out = append(out, pitRow{text: line, yank: id, id: id})
+	}
+	return out
 }
 
 // lockedBuffer is a writer a command can hand to a goroutine of its own without
 // racing the read that follows. Verbs do that (the queue fetch, the tree walk),
 // and a data race in a dry run is still a data race.
 type lockedBuffer struct {
-	mu sync.Mutex
-	b  strings.Builder
+	mu    sync.Mutex
+	b     strings.Builder
+	lines int
+	ids   map[int]string
 }
 
 func (w *lockedBuffer) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	w.lines += strings.Count(string(p), "\n")
 	return w.b.Write(p)
 }
 
-func (w *lockedBuffer) String() string {
+// WriteRow writes one line and remembers what it is about.
+func (w *lockedBuffer) WriteRow(line, id string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return w.b.String()
+	if id != "" {
+		if w.ids == nil {
+			w.ids = map[int]string{}
+		}
+		w.ids[w.lines] = id
+	}
+	w.b.WriteString(line)
+	w.b.WriteByte('\n')
+	w.lines++
+}
+
+func (w *lockedBuffer) captured() captured {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return captured{text: w.b.String(), ids: w.ids}
 }
 
 func splitOutputLines(s string) []string {
@@ -394,7 +440,7 @@ func (in *interactiveInput) complete(line string) []string {
 	}
 	req := append([]string{"__complete", argv[0], "--current", current, "--"}, argv[1:]...)
 	out, _ := in.routeCaptured(req)
-	return matchPrefix(splitOutputLines(out), current)
+	return matchPrefix(splitOutputLines(out.text), current)
 }
 
 // commandVerbs is every verb the router knows.
@@ -435,6 +481,20 @@ func commonPrefix(ss []string) string {
 		}
 	}
 	return p
+}
+
+// oneSpec is the single positional listen and attend take, from the argv the
+// box already lexed. Joining the words with spaces made `:attend a b` mean an
+// aria called "a b" and pushed the refusal down into a resolver that could
+// only say it did not exist.
+func oneSpec(verb string, args []string) (string, error) {
+	switch len(args) {
+	case 0:
+		return "", nil
+	case 1:
+		return args[0], nil
+	}
+	return "", fmt.Errorf("%s takes one aria: %s <id|@role>[:<turn>]", verb, verb)
 }
 
 // runLive hosts a live verb in the pit. The view is built off the input

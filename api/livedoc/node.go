@@ -134,9 +134,13 @@ type Node struct {
 	// JSON prefix the provider is streaming. Args is the same thing decoded,
 	// and only exists once the whole object parses, so Input is what there is
 	// to show while the model is still writing it.
-	Input   string `json:"input,omitempty"`
-	Output  string `json:"output,omitempty"`  // streamed result text
-	Summary string `json:"summary,omitempty"` // producer-computed one-line tool description (client renders verbatim)
+	Input  string `json:"input,omitempty"`
+	Output string `json:"output,omitempty"` // streamed result text
+	// OutputBase is the rune offset of Output within the source block: the
+	// producer carries only the last composeBashCap lines, and a quote of
+	// what a reader saw has to resolve against the whole block.
+	OutputBase int    `json:"output_base,omitempty"`
+	Summary    string `json:"summary,omitempty"` // producer-computed one-line tool description (client renders verbatim)
 	// OpenedAt is when the model began WRITING this call: the moment the tool
 	// block opened on the provider stream, before a single argument byte had
 	// arrived. StartedAt is when the call began RUNNING. The gap between them
@@ -193,6 +197,7 @@ type Op struct {
 	OpenedAt   int64 `json:"opened_at,omitempty"`
 	StartedAt  int64 `json:"started_at,omitempty"`
 	FinishedAt int64 `json:"finished_at,omitempty"`
+	OutputBase int   `json:"output_base,omitempty"`
 }
 
 // DiffNodes derives the minimal op sequence turning old into next. The
@@ -221,7 +226,8 @@ func DiffNodes(old, next []Node) []Op {
 			// Tool args/name stream in after the block opens, so a Set
 			// carries them (and status) whenever any scalar field changes.
 			if o.Status != n.Status || o.Name != n.Name || !sameArgs(o.Args, n.Args) ||
-				o.StartedAt != n.StartedAt || o.FinishedAt != n.FinishedAt {
+				o.StartedAt != n.StartedAt || o.FinishedAt != n.FinishedAt ||
+				o.OutputBase != n.OutputBase {
 				ops = append(ops, Op{
 					Kind:       OpSet,
 					Index:      i,
@@ -230,6 +236,7 @@ func DiffNodes(old, next []Node) []Op {
 					Args:       n.Args,
 					StartedAt:  n.StartedAt,
 					FinishedAt: n.FinishedAt,
+					OutputBase: n.OutputBase,
 				})
 			}
 		}
@@ -275,6 +282,7 @@ func ApplyOp(nodes []Node, op Op) []Node {
 		if op.FinishedAt != 0 {
 			nodes[op.Index].FinishedAt = op.FinishedAt
 		}
+		nodes[op.Index].OutputBase = op.OutputBase
 	}
 	return nodes
 }

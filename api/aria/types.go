@@ -172,6 +172,12 @@ type TurnPart struct {
 // something that way, so a client pages an aria of any length by following
 // them rather than by arithmetic on turn numbers.
 type Page struct {
+	// Parts are the page's turns IN READING ORDER, ascending by (turn, from),
+	// and non-overlapping. Every producer here emits them so, a client folds
+	// them so, and a page that arrives otherwise describes a conversation
+	// nobody can place. It is a wire invariant, written here rather than left
+	// to be discovered: the first thing that depended on it silently was
+	// Span, and it no longer does.
 	Parts   []TurnPart `json:"parts"`
 	More    More       `json:"more"`
 	Next    *Anchor    `json:"next,omitempty"`
@@ -181,15 +187,34 @@ type Page struct {
 
 // Span is the coordinate range a page covers, or the zero anchors when it
 // carries nothing.
+//
+// IT IS THE EXTREMA, NOT THE FIRST AND LAST ELEMENTS. Parts arrive in reading
+// order (see Parts) and every producer in this tree emits them that way, but
+// "the range this page covers" is a statement about the coordinates and not
+// about the slice: a reader that decides what a page may say about the tail
+// from its last ELEMENT is one reversed page away from deciding it wrong, and
+// silently. Pages are small; this walk is not worth an invariant to skip.
 func (p Page) Span() (from, to Anchor) {
 	if len(p.Parts) == 0 {
 		return Anchor{}, Anchor{}
 	}
-	first, last := p.Parts[0], p.Parts[len(p.Parts)-1]
-	from = Anchor{Turn: first.ID, Node: first.From}
-	to = Anchor{Turn: last.ID, Node: last.From}
-	if n := len(last.Nodes); n > 0 {
-		to.Node += uint64(n) - 1
+	first := true
+	for _, part := range p.Parts {
+		lo := Anchor{Turn: part.ID, Node: part.From}
+		hi := lo
+		if n := len(part.Nodes); n > 0 {
+			hi.Node += uint64(n) - 1
+		}
+		if first {
+			from, to, first = lo, hi, false
+			continue
+		}
+		if lo.Less(from) {
+			from = lo
+		}
+		if to.Less(hi) {
+			to = hi
+		}
 	}
 	return from, to
 }
@@ -227,6 +252,14 @@ func (a Anchor) Less(b Anchor) bool {
 // (t, 0) would silently invert the ordering.
 func (a Anchor) Next() Anchor {
 	if a.Node == maxNode {
+		if a.Turn == ^uint64(0) {
+			// THE CEILING IS ITS OWN SUCCESSOR. Adding one here wrapped to the
+			// ZERO anchor, which every reader of this wire takes to mean "the
+			// tail": a gap that ran to the top of the coordinate space asked
+			// to be filled from the beginning, got the tail back, changed
+			// nothing, and was asked for again on the next frame.
+			return a
+		}
 		return Anchor{Turn: a.Turn + 1}
 	}
 	return Anchor{Turn: a.Turn, Node: a.Node + 1}

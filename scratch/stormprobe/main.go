@@ -58,7 +58,7 @@ func agentShape(turns, kb int, budget *aria.ComposedCache) (*aria.Server, uint64
 	for i := 1; i <= turns; i++ {
 		p, t := body(kb, i), body(kb, i+1<<20)
 		srv.OpenTurn(uint64(i))
-		srv.OpenInquiry(uint64(i), fmt.Sprintf("question %d", i))
+		srv.OpenInquiry(uint64(i), fmt.Sprintf("question %d", i), nil)
 		srv.Update(nil, nodes(p, t), 0)
 		srv.Close()
 		srv.Seal(nil) // <- agent.go:1217

@@ -32,7 +32,7 @@ func stripBashFences(s string) string {
 }
 
 // plainPrompt streams the response and returns an exit code.
-func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out io.Writer) int {
+func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out io.Writer, d dressing) int {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -46,7 +46,7 @@ func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out 
 	}
 	defer fcli.Close()
 
-	if _, _, err := fcli.Qua(ctx, prompt, buildPromptForm()); err != nil {
+	if _, _, err := fcli.Qua(ctx, prompt, buildPromptForm(d)); err != nil {
 		if !reportClosure(err, "prompt: %s", err) {
 			fmt.Fprintln(stderrw, "error: prompt:", err)
 		}
@@ -78,7 +78,7 @@ func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out 
 // verbatimPrompt dumps the raw wire frames as JSON (one object per line)
 // and returns an exit code. No formatting, no delta application: the
 // literal protocol stream.
-func verbatimPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out io.Writer) int {
+func verbatimPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out io.Writer, d dressing) int {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -92,7 +92,7 @@ func verbatimPrompt(ctx context.Context, ep transport.Endpoint, prompt string, o
 	}
 	defer fcli.Close()
 
-	if _, _, err := fcli.Qua(ctx, prompt, buildPromptForm()); err != nil {
+	if _, _, err := fcli.Qua(ctx, prompt, buildPromptForm(d)); err != nil {
 		if !reportClosure(err, "prompt: %s", err) {
 			fmt.Fprintln(stderrw, "error: prompt:", err)
 		}

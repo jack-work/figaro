@@ -150,7 +150,7 @@ func runeCells(r rune) int {
 // the block (a clamped tool tail starts partway in). ok is false for a node
 // that cannot be quoted, with why saying so in one sentence.
 func (t *transcript) nodeQuoteSource(ref nodeRef) (text string, at quote.Coord, base int, why string) {
-	if ref.delta {
+	if ref.delta > 0 {
 		return "", quote.Coord{}, 0, "form state is not quotable: it is state, not something anyone said"
 	}
 	if ref.index == inquiryNode {
@@ -178,12 +178,13 @@ func (t *transcript) nodeQuoteSource(ref nodeRef) (text string, at quote.Coord, 
 		if styleFor(n.Name).Body != "" {
 			return "", quote.Coord{}, 0, "this tool shows an argument, not its result, and arguments are not quotable yet"
 		}
-		// The rows are the output's TAIL when the node is folded: the walk runs
-		// over that tail, and base carries the offset back to the block.
+		// The rows are the output's TAIL when the node is folded, and the
+		// producer already cut its own head off: base is both distances,
+		// back to the block the coordinate names.
 		src := n.Src[len(n.Src)-1]
 		raw := strings.TrimRight(n.Output, "\n")
 		shown, _ := tailOutput(raw, t.toolCap(ref))
-		base = len([]rune(raw)) - len([]rune(shown))
+		base = n.OutputBase + len([]rune(raw)) - len([]rune(shown))
 		return shown, quote.Coord{LT: src.LT, Block: src.Block}, base, ""
 	default:
 		if len(n.Src) == 0 {
@@ -437,24 +438,6 @@ func (t *transcript) visualCoordinate() (token, note, err string) {
 		return "", "", err
 	}
 	return quote.Format(r), note, ""
-}
-
-// quotePreview is a short spelling of what a range covers, for the status
-// row: the first few words of the source at the start offset.
-func quotePreview(text string, r quote.Range) string {
-	runes := []rune(text)
-	if r.Start.Offset >= len(runes) {
-		return ""
-	}
-	end := r.End.Offset
-	if r.Span() || end > len(runes) {
-		end = len(runes)
-	}
-	s := strings.TrimSpace(string(runes[r.Start.Offset:end]))
-	if len([]rune(s)) > 40 {
-		s = string([]rune(s)[:40]) + "…"
-	}
-	return s
 }
 
 // ---------------------------------------------------------------------------

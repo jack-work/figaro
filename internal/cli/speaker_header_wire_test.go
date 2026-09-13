@@ -65,7 +65,7 @@ func TestSpeakerHeader_RealPageWalkProducesTheSeam(t *testing.T) {
 	last := turns[len(turns)-1]
 	// Page backward from the tail, exactly as the pager's prefetch does.
 	page := aria.PaginateBefore(turns,
-		aria.Anchor{Turn: last.ID, Node: uint64(len(last.Nodes) - 1)}, productionPageBudget)
+		aria.Anchor{Turn: last.ID, Node: uint64(len(last.Nodes) - 1)}, aria.Anchor{}, productionPageBudget)
 
 	var clipped *aria.TurnPart
 	for i := range page.Parts {

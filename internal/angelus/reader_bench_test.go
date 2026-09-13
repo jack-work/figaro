@@ -76,13 +76,13 @@ func BenchmarkAriaReaderPage(b *testing.B) {
 
 			// Warm the memoized log so the measurement is projection, not
 			// first-open disk I/O, a second reader hits the same instance.
-			if _, err := r.Page(id, aria.Anchor{}, 65536, false); err != nil {
+			if _, err := r.Page(id, aria.Anchor{}, aria.Anchor{}, 65536, false); err != nil {
 				b.Fatal(err)
 			}
 			b.ResetTimer()
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				if _, err := r.Page(id, aria.Anchor{}, 65536, false); err != nil {
+				if _, err := r.Page(id, aria.Anchor{}, aria.Anchor{}, 65536, false); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -98,13 +98,13 @@ func BenchmarkAriaReaderTail(b *testing.B) {
 		b.Run(fmt.Sprintf("msgs=%d", n), func(b *testing.B) {
 			backend, id := benchStore(b, n)
 			r := NewAriaReader(backend, uiir.New(nil))
-			if _, err := r.Page(id, aria.Anchor{}, 65536, true); err != nil {
+			if _, err := r.Page(id, aria.Anchor{}, aria.Anchor{}, 65536, true); err != nil {
 				b.Fatal(err)
 			}
 			b.ResetTimer()
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				if _, err := r.Page(id, aria.Anchor{}, 65536, true); err != nil {
+				if _, err := r.Page(id, aria.Anchor{}, aria.Anchor{}, 65536, true); err != nil {
 					b.Fatal(err)
 				}
 			}

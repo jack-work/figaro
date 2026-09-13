@@ -30,6 +30,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/internal/mark"
 	"os"
 	"os/signal"
 	"strings"
@@ -56,6 +57,9 @@ type sessionOpts struct {
 	// prompt makes this a SEND: it is submitted once the session is up, and
 	// the session ends when the turn settles.
 	prompt string
+	// dress is the dressing THIS prompt asked for (-O, -S, -D). It rides the
+	// submission, so two sends in flight cannot wear each other's.
+	dress dressing
 
 	// acli is the angelus door `:listen` and `:attend` need; nil leaves the
 	// subject-switching verbs inert, which is what a replay wants.
@@ -147,6 +151,7 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 	// that has stopped answering cannot be asked what it is doing.
 	defer watchRenderLock(&mu)()
 	defer armFreezeSignals()()
+	defer markMemory(&mu, lt, time.Second)()
 
 	// Hold frames until the opening preamble is placed: a subscription pushes
 	// the moment it is made, and the question must be painted UNDER the
@@ -162,7 +167,7 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 		ownsSubject: opt.ownsSubject, subjectDead: make(chan struct{}, 1),
 		// The send half: the prompt this session is waiting on, and the
 		// channels that say whether a turn of ours ever opened.
-		prompt: opt.prompt, sendCursor: -1, doneCh: doneCh,
+		prompt: opt.prompt, dress: opt.dress, sendCursor: -1, doneCh: doneCh,
 		watchInquiry: opt.prompt != "",
 		ownTurn:      make(chan struct{}), noTurn: make(chan struct{}),
 		// An inline send stays inline until something promotes it; every other
@@ -170,6 +175,9 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 		startInline: opt.prompt != "" && !set.listen,
 		intrinsics:  newIntrinsicMirrors(),
 	}
+	// THE LIST STARTS WHERE THE SESSION DOES. Without this the first `:attend B`
+	// left only B in it, and ^O had nowhere to go back to.
+	in.jumps.visit(opt.figaroID)
 	defer func() {
 		if in.ownsSubject && in.subject != nil {
 			in.subject.Close()
@@ -276,7 +284,9 @@ func (in *interactiveInput) sendPrompt(ctx context.Context) {
 	// gets a stream, not a screen.
 	catchUp := in.tc.IsTTY() && !in.set.listen
 
-	cursor, active, qerr := in.subject.Qua(ctx, in.prompt, buildPromptForm())
+	qua := mark.Span("submit.qua", "to", in.figaroID, "len", len(in.prompt))
+	cursor, active, qerr := in.subject.Qua(ctx, in.prompt, buildPromptForm(in.dress))
+	qua("active", active, "err", qerr != nil)
 	if qerr != nil {
 		dieWithClosure(qerr, "prompt: %s", qerr)
 	}
@@ -348,6 +358,16 @@ func (in *interactiveInput) turnFrame(params json.RawMessage) {
 	if in.watchInquiry && pageCarriesInquiry(r, in.prompt) {
 		in.watchInquiry = false
 		in.ownOnce.Do(func() { close(in.ownTurn) })
+	}
+	if mark.Enabled() {
+		live, nodes := 0, 0
+		for _, p := range r.Parts {
+			if p.Live != nil {
+				live++
+				nodes += len(p.Live.Nodes)
+			}
+		}
+		mark.Mark("aria.frame", "bytes", len(params), "parts", len(r.Parts), "live", live, "deltas", nodes)
 	}
 	in.lt.apply(r)
 }

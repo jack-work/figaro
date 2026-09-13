@@ -17,10 +17,9 @@ package cli
 //	:listen <spec>   look at another aria; attendance is untouched
 //	:attend <spec>   bind this shell to it, AND look at it
 //	:at <spec>       the same, abbreviated
-//	:send [<spec>] [-f] -- <text>   send; no spec means the aria on screen.
-//	                 Sent elsewhere, the transcript FOLLOWS the aria it sent
-//	                 to, unless -f (forget) says stay: one rule, shared with
-//	                 :fork, mirroring the shell verbs' stream-unless-forget.
+//	:send [<spec>] -- <text>   send; no spec means the aria on screen.
+//	                 Sending to another aria does NOT move the transcript:
+//	                 sending is not looking (commandSend).
 //
 // A <spec> is anything the CLI takes: an aria id, an `@form` role (resolved
 // through target-aria by the same resolver `figaro listen` uses), or an id with
@@ -31,6 +30,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jack-work/figaro/internal/mark"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -55,7 +55,9 @@ func (in *interactiveInput) commandAsync(fn func(context.Context) (string, error
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 		defer cancel()
-		msg, err := fn(ctx)
+		// A verb's progress lands in the bar, never on the pane: the pager
+		// owns it while the verb runs. See progress.go.
+		msg, err := fn(withProgress(ctx, in.note))
 		if err != nil {
 			in.noteErr(wireErrorText(err))
 			return
@@ -107,7 +109,7 @@ func (in *interactiveInput) noteLocked(msg string) { in.lt.tr.setCommandNote(msg
 // THE PARSER IS THE CLI'S: planSend, which is extractSendFlags and
 // extractPrompt, the same functions the shell runs.
 func (in *interactiveInput) commandSend(ctx context.Context, args []string) (string, error) {
-	plan, err := planSend(args)
+	plan, err := prepareSend(args, pagerSurface)
 	if err != nil {
 		return "", fmt.Errorf("send: %w", err)
 	}
@@ -156,12 +158,9 @@ func (in *interactiveInput) commandSend(ctx context.Context, args []string) (str
 // forkVerb, shared with the shell. Showing the branch is still a FULL
 // RELOAD of the transcript (plans/transcript-subject.md section 3).
 func (in *interactiveInput) commandFork(ctx context.Context, args []string) (string, error) {
-	plan, err := planFork(args)
+	plan, err := prepareFork(args, pagerSurface)
 	if err != nil {
 		return "", fmt.Errorf("fork: %w", err)
-	}
-	if plan.opts.forget {
-		return "", errors.New("fork: -f is a shell notion (the transcript is the stream); --stay mints and prompts without following")
 	}
 	if plan.compose {
 		return "", errors.New("fork: the prompt must follow `--` (the pager has no composer)")
@@ -179,7 +178,16 @@ func (in *interactiveInput) commandFork(ctx context.Context, args []string) (str
 	if err != nil {
 		return "", fmt.Errorf("fork: %w", err)
 	}
-	out, err := forkVerb(ctx, env, plan)
+	// THE PAGER'S FORK ATTENDS. Gluck's rule (23e03e27 turn 36): without
+	// --stay a fork both shows the branch and moves attendance to it, and no
+	// single command may show one aria while the shell attends another. Under
+	// :listen B the plan forks B, which is not the shell's aria: a fan-out
+	// would have shown B's branch and left the shell on A.
+	intent := bindBranch
+	if plan.opts.stay {
+		intent = bindStay
+	}
+	out, err := forkVerb(ctx, env, plan, intent)
 	if err != nil {
 		return "", fmt.Errorf("fork: %w", err)
 	}
@@ -192,7 +200,7 @@ func (in *interactiveInput) commandFork(ctx context.Context, args []string) (str
 	if err != nil {
 		return "", fmt.Errorf("fork: forked %s but could not connect: %w", branch, err)
 	}
-	if _, _, err := fcli.Qua(ctx, plan.prompt, buildPromptForm()); err != nil {
+	if _, _, err := fcli.Qua(ctx, plan.prompt, buildPromptForm(plan.opts.outfit)); err != nil {
 		fcli.Close()
 		return "", fmt.Errorf("fork: forked %s but the prompt was refused: %w", branch, err)
 	}
@@ -212,9 +220,14 @@ func (in *interactiveInput) commandFork(ctx context.Context, args []string) (str
 	if !owns {
 		return done + "; this is a send session and cannot change aria (:listen " + branch + " from a listen)", nil
 	}
+	from := in.currentID()
 	if err := in.retarget(ctx, branch, ep); err != nil {
 		return "", fmt.Errorf("%s, but could not show it: %w", done, err)
 	}
+	// A FORK IS A MOVE LIKE ANY OTHER: ^O comes back to the aria it was cut
+	// from. The jumplist used to hear about attends and never about forks, so
+	// the branch was a place with no way back.
+	in.recordAttend(from, branch, arrivalNew)
 	return done, nil
 }
 
@@ -233,6 +246,12 @@ func (in *interactiveInput) verbEnv() (verbEnv, error) {
 // the only difference between `:listen` and `:attend`; both run the shell's
 // verb (listenVerb, attendVerb) and then show what it resolved.
 func (in *interactiveInput) switchSubject(ctx context.Context, spec string, attend bool) (string, error) {
+	return in.switchSubjectAs(ctx, spec, attend, arrivalNew)
+}
+
+// switchSubjectAs is switchSubject with the jumplist's reading of the move.
+// Only ^O and ^I pass anything but arrivalNew.
+func (in *interactiveInput) switchSubjectAs(ctx context.Context, spec string, attend bool, how arrival) (string, error) {
 	// A SESSION THAT DOES NOT OWN ITS CONNECTION CANNOT CHANGE SUBJECT, yet.
 	// `figaro send` dials the aria itself and blocks on that connection's
 	// Done(); its notify pump is not fenced by the subject generation either,
@@ -257,6 +276,11 @@ func (in *interactiveInput) switchSubject(ctx context.Context, spec string, atte
 		if err != nil {
 			return "", fmt.Errorf("attend: %w", err)
 		}
+		if out.Home {
+			// `:attend null` unbinds the shell. There is no conversation to
+			// show, so the pager keeps the one it has.
+			return out.Note, nil
+		}
 		id, ep = out.ID, out.EP
 	} else {
 		id, ep, err = listenVerb(ctx, env, spec)
@@ -270,21 +294,47 @@ func (in *interactiveInput) switchSubject(ctx context.Context, spec string, atte
 		}
 		return "already showing " + id, nil
 	}
+	from := in.currentID()
 	if err := in.retarget(ctx, id, ep); err != nil {
 		return "", err
 	}
 	if attend {
-		// THE JUMPLIST RECORDS ARRIVALS, wherever the attend came from: the
-		// ':' box, 'a' on a fork point, 'a' on a row of `:ls`. A hop has
-		// already moved its cursor onto this id, so recording it again is a
-		// no-op and ^O keeps meaning "the one before".
-		in.mu.Lock()
-		in.jumps.visit(id)
-		pos, total := in.jumps.where()
-		in.mu.Unlock()
+		pos, total := in.recordAttend(from, id, how)
 		return fmt.Sprintf("attending %s (%d/%d)", id, pos, total), nil
 	}
 	return "showing " + id, nil
+}
+
+// arrival says how a completed switch enters the jumplist. A deliberate attend
+// is a new destination; ^O and ^I move the cursor along the path that is
+// already there. The two used to be one thing, and the cost was that attending
+// the aria behind you was indistinguishable from stepping back to it, so ^O
+// could not reverse it.
+type arrival int
+
+const (
+	arrivalNew  arrival = 0
+	arrivalStep arrival = 1
+)
+
+// recordAttend is the ONE place an attendance transition enters the jumplist:
+// where the session was, then where it went. Every door reaches it through
+// switchSubject -- the ':' box, `a` on a row or a fork point, ^O/^I, and the
+// pager's fork -- because a list that only some of them wrote to is a list
+// whose ^O goes somewhere the reader never was.
+func (in *interactiveInput) recordAttend(from, to string, how arrival) (int, int) {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	switch how {
+	case arrivalStep:
+		in.jumps.visit(from)
+		if to != "" {
+			in.jumps.stepTo(to)
+		}
+	default:
+		in.jumps.arrive(from, to)
+	}
+	return in.jumps.where()
 }
 
 // attendFromPager is the 'a' key: the same body `:attend` runs, on the aria
@@ -299,25 +349,15 @@ func (in *interactiveInput) attendFromPager(id string) {
 	if id == "" {
 		return
 	}
-	in.commandAsync(func(ctx context.Context) (string, error) {
-		// RECORD THE DEPARTURE, or the first ^O has nowhere to go back to:
-		// the list would hold only the aria just arrived at. A hop does not
-		// come through here; its cursor already names where it is going.
-		in.mu.Lock()
-		in.jumps.visit(in.figaroID)
-		in.mu.Unlock()
-		return in.attendNote(ctx, id)
-	})
-}
-
-// attendSwitch is the attend without the departure: the jumplist's own hop
-// uses it, having moved its cursor already.
-func (in *interactiveInput) attendSwitch(id string) {
 	in.commandAsync(func(ctx context.Context) (string, error) { return in.attendNote(ctx, id) })
 }
 
 func (in *interactiveInput) attendNote(ctx context.Context, id string) (string, error) {
-	note, err := in.switchSubject(ctx, id, true)
+	return in.attendNoteAs(ctx, id, arrivalNew)
+}
+
+func (in *interactiveInput) attendNoteAs(ctx context.Context, id string, how arrival) (string, error) {
+	note, err := in.switchSubjectAs(ctx, id, true, how)
 	if err != nil {
 		return "", fmt.Errorf("attend: %w", err)
 	}
@@ -334,7 +374,7 @@ func (in *interactiveInput) hopAria(dir int) { go in.hop(dir) }
 func (in *interactiveInput) hop(dir int) {
 	in.mu.Lock()
 	in.jumps.visit(in.figaroID)
-	id, ok := in.jumps.hop(dir)
+	id, ok := in.jumps.peek(dir)
 	pos, total := in.jumps.where()
 	in.mu.Unlock()
 	if !ok {
@@ -345,7 +385,9 @@ func (in *interactiveInput) hop(dir int) {
 		}
 		return
 	}
-	in.attendSwitch(id)
+	in.commandAsync(func(ctx context.Context) (string, error) {
+		return in.attendNoteAs(ctx, id, arrivalStep)
+	})
 }
 
 // resolve turns a spec into (id, endpoint) through THE SAME resolver `figaro
@@ -410,33 +452,50 @@ func (in *interactiveInput) retarget(ctx context.Context, id string, ep transpor
 	// range store exists to prevent, at aria scale. Every handler checks the
 	// generation it was born with before it touches the renderer.
 	gen := atomic.AddUint64(&in.subjectGen, 1)
+	from := in.currentID()
+	hop := mark.Span("hop", "from", from, "to", id, "gen", gen)
 
-	fcli, err := sdk.DialAriaWith(ep, in.notifyHandler(gen), in.tap)
+	// THE LINEAGE READ RIDES ALONGSIDE THE DIAL. It goes to the angelus, the
+	// dial goes to the aria, and neither needs the other's answer, so the
+	// switch pays for the slower of the two rather than for both.
+	base := make(chan int, 1)
+	go func() { base <- in.divergence(ctx, id, from) }()
+
+	dial := mark.Span("hop.dial", "to", id, "gen", gen)
+	fcli, err := sdk.DialAriaWith(ep, in.notifyHandler(gen), markTap(in.tap))
+	dial()
+	// THE ANSWER IS TAKEN BEFORE THE LOCK. Asking the angelus takes in.mu, so
+	// waiting for it under that lock would park the switch on a goroutine that
+	// cannot proceed.
+	shared := <-base
 	if err != nil {
 		return fmt.Errorf("connect %s: %w", id, err)
 	}
 
-	in.mu.Lock()
-	old, ownedOld := in.subject, in.ownsSubject
-	in.subject, in.fcli, in.hangup, in.ownsSubject = fcli, fcli, fcli, true
-	in.figaroID = id
-	in.caughtUp = false
-	in.lt.retarget(id, newSessionStatus(id, time.Now()))
-	in.lt.setDesync(in.desyncHandler(gen))
-	// PITFALL, found in a pty: this was wired inside seedSubject's
-	// already-open branch, so on a COLD start (which takes the other branch)
-	// the ':' box had no runner and answered "commands need a live session" --
-	// the one path every session takes. A hook that is armed on one of two
-	// doors is armed on neither.
-	in.wireHooks()
-	in.mu.Unlock()
+	old, ownedOld, claimed := in.claimSubject(gen, id, from, fcli, shared)
+	if !claimed {
+		// Superseded while we dialled: this switch owns nothing. Closing what
+		// it dialled is the whole of its cleanup.
+		fcli.Close()
+		mark.Mark("hop.superseded", "to", id, "gen", gen)
+		return nil
+	}
 
 	// A NEW SUBJECT HAS DIFFERENT INTRINSIC FORMS. Dropping the mirrors is the same
 	// argument as the generation itself: folding the old aria's queue into the
 	// new one's drawer is the fabricated-adjacency bug wearing different
 	// clothes. Then seed, because a mirror that has never been seeded shows
 	// nothing and the bar would sit on whatever it last guessed.
+	// PAINT WHAT WE ALREADY HOLD, BEFORE ASKING FOR WHAT WE DO NOT. A hop onto
+	// a relative or back onto a parked aria arrives with a window full of
+	// content, and waiting for the seed read to land before the first frame
+	// spends a round trip to show rows that are already in memory. The bench
+	// measured it: hops BACK, which are the shelf path and hold the most, took
+	// twice as long to first paint as the cold reload they replaced.
+	in.paintHeld(gen)
+
 	in.intrinsics.reset(gen)
+	in.forgetQueueDebuts()
 	in.seedIntrinsics()
 	if old != nil && ownedOld {
 		old.Close()
@@ -454,11 +513,160 @@ func (in *interactiveInput) retarget(ctx context.Context, id string, ep transpor
 	}()
 
 	// Seed the pager. enterTranscript is a no-op once the pager is up, so this
-	// is the read that fills a window we just emptied.
-	in.seedMetrics()
-	in.seedSubject()
+	// is the read that fills a window we just emptied. BOTH CARRY THE
+	// GENERATION: each reads whatever connection is current when it runs and
+	// applies what comes back to whatever is current when it lands, so a seed
+	// owed to a switch that has been superseded must not be applied at all.
+	in.seedMetrics(gen)
+	in.seedSubject(gen)
+	hop()
 	return nil
 }
+
+// claimSubject is the SWAP, and the fence that decides whether this switch may
+// perform it. Everything before it (the dial, the lineage read) happens off
+// the lock and may be overtaken; everything after it is this generation's.
+//
+// THE FENCE IS CHECKED HERE, UNDER THE LOCK, WHERE THE SWAP HAPPENS. Taking
+// the generation at the top of the switch and never looking at it again let
+// two hops install in DIAL order rather than in the order the reader asked
+// for: the slower of two, started first, overwrote the one asked for last and
+// left the session showing an aria nobody had named, with the other's seed
+// reads landing in its store.
+//
+// It returns the connection it displaced, whether that connection was ours to
+// close, and whether the claim was granted at all.
+func (in *interactiveInput) claimSubject(gen uint64, id, from string, fcli *sdk.Aria, shared int) (*sdk.Aria, bool, bool) {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	if !in.current(gen) {
+		return nil, false, false
+	}
+	old, ownedOld := in.subject, in.ownsSubject
+	in.subject, in.fcli, in.hangup, in.ownsSubject = fcli, fcli, fcli, true
+	in.figaroID = id
+	in.caughtUp = false
+	status := newSessionStatus(id, time.Now())
+	// THE OUTGOING SUBJECT GOES ON THE SHELF BEFORE THE NEW ONE TAKES ITS
+	// PLACE, because retarget is what drops it.
+	in.parkSubject(from)
+	if p := in.takeParked(id); p != nil {
+		in.seed = in.lt.adopt(id, status, p, shared)
+	} else {
+		in.seed = in.lt.retarget(id, status, shared)
+	}
+	in.lt.setDesync(in.desyncHandler(gen))
+	// PITFALL, found in a pty: this was wired inside seedSubject's
+	// already-open branch, so on a COLD start (which takes the other branch)
+	// the ':' box had no runner and answered "commands need a live session" --
+	// the one path every session takes. A hook that is armed on one of two
+	// doors is armed on neither.
+	in.wireHooks()
+	return old, ownedOld, true
+}
+
+// paintHeld draws the new subject from what the switch kept, if it kept
+// anything. It is the first frame of a hop, and it owes the wire nothing.
+func (in *interactiveInput) paintHeld(gen uint64) {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	if !in.current(gen) || !in.lt.transcriptActive() || in.lt.client.Count() == 0 {
+		return
+	}
+	in.lt.invalidateTranscriptWindow()
+	in.lt.renderNow()
+	mark.Mark("hop.paint", "gen", gen, "msgs", in.lt.client.Count())
+}
+
+// current reports whether gen is still the subject's generation. Every
+// asynchronous piece of a switch asks before it touches the renderer.
+func (in *interactiveInput) current(gen uint64) bool {
+	return atomic.LoadUint64(&in.subjectGen) == gen
+}
+
+// subjectGeneration is the fence's value for a caller outside the switch, like
+// the pager's clock: whatever it starts now belongs to the subject on screen
+// now, and is dropped if that changes underneath it.
+func (in *interactiveInput) subjectGeneration() uint64 {
+	return atomic.LoadUint64(&in.subjectGen)
+}
+
+// seedRead performs the plan the switch drew up. Every kind is the same
+// sentence with a different floor: ask for what is not held.
+func (in *interactiveInput) seedRead(ctx context.Context, p seedPlan) (aria.Page, error) {
+	tail := aria.Anchor{Turn: recentCursor}
+	floor := aria.Anchor{Turn: uint64(p.from)}
+	switch p.kind {
+	case seedNothing:
+		mark.Mark("hop.read", "kind", "seed.none", "from", p.from)
+		return aria.Page{}, nil
+	case seedSuffix:
+		// The screen did not move, so the read is the CONTINUATION of what is
+		// on it: forward from the first row that differs.
+		read := mark.Span("hop.read", "kind", "seed.suffix", "from", p.from)
+		r, err := in.fcli.Read(ctx, floor, wireBudget(transcriptPageSize))
+		read("parts", len(r.Parts), "err", err != nil)
+		return r, err
+	}
+	if tr, ok := in.fcli.(tailReader); ok && p.from > 0 {
+		read := mark.Span("hop.read", "kind", "seed.tail", "from", p.from)
+		r, err := tr.ReadBeforeFloor(ctx, tail, floor, wireBudget(transcriptPageSize))
+		read("parts", len(r.Parts), "err", err != nil)
+		return r, err
+	}
+	read := mark.Span("hop.read", "kind", "seed")
+	r, err := in.fcli.ReadBefore(ctx, tail, wireBudget(transcriptPageSize))
+	read("parts", len(r.Parts), "err", err != nil)
+	return r, err
+}
+
+// divergence is the first turn the aria we are going to does NOT share with
+// the one we are leaving. Zero is "share nothing", and it is what every
+// failure answers: a switch that cannot learn the lineage reloads, which is
+// slower and never wrong.
+//
+// The epoch rides along for the same reason the call is made at all: the chain
+// is a fact about the shape of the tree, and a shape that has changed under a
+// client holding a retained prefix is the one case where the prefix is not
+// simply true.
+func (in *interactiveInput) divergence(ctx context.Context, to, from string) int {
+	if to == "" || from == "" || to == from {
+		return 0
+	}
+	acli, err := in.angelus()
+	if err != nil {
+		return 0
+	}
+	done := mark.Span("hop.lineage", "to", to, "from", from)
+	lctx, cancel := context.WithTimeout(ctx, commandTimeout)
+	defer cancel()
+	out, err := acli.Lineage(lctx, to, from)
+	if err != nil || out == nil {
+		done("shared", 0, "err", true)
+		return 0
+	}
+	shared := int(min(out.Divergence, uint64(maxRetainedTurn)))
+	in.mu.Lock()
+	// THE EPOCH IS THE ONE HANDLE FOR "THE PAST CHANGED SHAPE". The bytes
+	// below a fork point cannot change, but which arias exist and what they
+	// inherit can, and a shelf full of arias is the thing that would still be
+	// holding the old answer. The divergence in hand is from the new epoch, so
+	// the switch itself is safe; the shelf is what goes.
+	if in.lineageEpoch != out.Epoch {
+		if len(in.parked) > 0 {
+			mark.Mark("hop.unpark", "reason", "epoch", "held", len(in.parked))
+		}
+		in.dropParked()
+		in.lineageEpoch = out.Epoch
+	}
+	in.mu.Unlock()
+	done("shared", shared, "ancestor", out.Ancestor, "epoch", out.Epoch)
+	return shared
+}
+
+// maxRetainedTurn clamps the divergence of an aria with itself, which the wire
+// spells as the largest turn there can be.
+const maxRetainedTurn = 1 << 40
 
 // seedMetrics ASKS for what the bar says, because nothing volunteers it.
 // Metrics -- the capacity figure AND the mantra -- ride reads and frames, so a
@@ -468,10 +676,10 @@ func (in *interactiveInput) retarget(ctx context.Context, id string, ep transpor
 // same gap made `fig set mantra` from another shell invisible until the next
 // turn. It is asked for on connect, and again on the pager's clock.
 //
-// One backward read of one message, for the metrics attached to it: the page
-// is discarded, because seeding the WINDOW is seedSubject's job and this must
-// not smuggle a message into it.
-func (in *interactiveInput) seedMetrics() {
+// One read that can return no conversation at all, for the metrics attached to
+// it: seeding the WINDOW is seedSubject's job and this must not smuggle a
+// message into it, and must not pay for one either.
+func (in *interactiveInput) seedMetrics(gen uint64) {
 	cli := in.aria()
 	if cli == nil {
 		return
@@ -479,14 +687,17 @@ func (in *interactiveInput) seedMetrics() {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 		defer cancel()
-		page, err := cli.ReadBefore(ctx, aria.Anchor{}, 1)
-		if err != nil || page.Metrics == nil {
+		m, err := cli.Metrics(ctx)
+		if err != nil || m == nil {
 			return
 		}
 		in.mu.Lock()
-		in.lt.status.update(*page.Metrics)
+		defer in.mu.Unlock()
+		if !in.current(gen) {
+			return // these are another aria's figures now
+		}
+		in.lt.status.update(*m)
 		in.lt.render()
-		in.mu.Unlock()
 	}()
 }
 
@@ -508,12 +719,23 @@ func (in *interactiveInput) notifyHandler(gen uint64) sdk.NotifyHandler {
 			return
 		}
 		in.mu.Lock()
-		defer in.mu.Unlock()
 		switch method {
 		case rpc.MethodAriaFrame:
 			in.turnFrame(params)
 		case rpc.MethodTurnDone:
 			in.turnDone(params)
+		}
+		// A HOLE THE STREAM OPENED IS STILL A HOLE. The page pump ran only
+		// after a keystroke, so a gap that a live frame put on screen was
+		// never chased: it sat there, visibly, until the reader happened to
+		// press something. Seen in a pane by 27068b2c, two seconds of a
+		// sentinel that G cleared in one read. Asking is gated on the index
+		// the frame just painted, so a stream with nothing missing costs a
+		// boolean, and pageTranscript itself refuses to pile up.
+		chase := in.lt.transcriptShowsGap()
+		in.mu.Unlock()
+		if chase {
+			go in.pageTranscript()
 		}
 	}
 }
@@ -564,7 +786,7 @@ func (in *interactiveInput) wireHooks() {
 	in.lt.tr.openForm = func() { go in.openLive("form show", "", false) }
 }
 
-func (in *interactiveInput) seedSubject() {
+func (in *interactiveInput) seedSubject(gen uint64) {
 	in.mu.Lock()
 	active := in.lt.transcriptActive()
 	inline := in.startInline
@@ -579,20 +801,51 @@ func (in *interactiveInput) seedSubject() {
 		in.enterTranscript() // the cold door: it reads and opens
 		return
 	}
-	// Already up and now empty: the same read the deliberate door performs.
+	// Already up, and holding whatever the two arias share. What is read
+	// depends on what is held and on where the reader is standing, and every
+	// shape asks ONLY for what the client does not already have.
+	in.mu.Lock()
+	plan := in.seed
+	in.mu.Unlock()
 	rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
-	r, rerr := in.fcli.ReadBefore(rctx, aria.Anchor{Turn: recentCursor}, wireBudget(transcriptPageSize))
+	r, rerr := in.seedRead(rctx, plan)
 	rcancel()
+	if plan.kind == seedNothing {
+		in.mu.Lock()
+		defer in.mu.Unlock()
+		if !in.current(gen) {
+			return
+		}
+		in.caughtUp = true
+		in.wireHooks()
+		in.lt.invalidateTranscriptWindow()
+		in.lt.renderNow()
+		return
+	}
 	in.mu.Lock()
 	defer in.mu.Unlock()
+	// A PAGE OWED TO A SWITCH THAT HAS BEEN SUPERSEDED IS ANOTHER ARIA'S PAGE.
+	// It was read on the connection that was current when the read began, and
+	// the store it would land in is not that aria's any more.
+	if !in.current(gen) {
+		return
+	}
 	in.caughtUp = rerr == nil
 	if rerr == nil {
 		in.lt.apply(r)
-		in.lt.setMoreBefore(r.More.Before)
+		// A FLOORED PAGE SAYS NOTHING ABOUT THE BEGINNING OF THE ARIA. Its
+		// More.Before is about the FLOOR, which is where the client's own
+		// history starts, so believing it told the pager there was nothing
+		// below the window and stopped a scroll from ever reaching history the
+		// aria has. The retained store already carries the flag it inherited,
+		// and that flag is true of both arias: they share that prefix.
+		if plan.kind == seedWindow {
+			in.lt.setMoreBefore(r.More.Before)
+		}
 	}
 	in.wireHooks()
 	in.lt.invalidateTranscriptWindow()
-	in.lt.render()
+	in.lt.renderNow()
 }
 
 // dropPitRow is 'x' in a pit: what dropping means depends on which

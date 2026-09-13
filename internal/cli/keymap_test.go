@@ -15,43 +15,6 @@ import (
 // of them without anyone remembering to extend a list.
 // ---------------------------------------------------------------------------
 
-func (c chord) String() string {
-	switch c.kind {
-	case chordNav:
-		return "nav:" + navName(c.nav)
-	case chordCtrlLetter:
-		return fmt.Sprintf("csi-u ctrl-%c", c.b)
-	case chordMeta:
-		if c.b == 0x7f {
-			return "M-DEL"
-		}
-		return fmt.Sprintf("M-%c", c.b)
-	default:
-		if c.b < 0x20 || c.b == 0x7f {
-			return fmt.Sprintf("0x%02x", c.b)
-		}
-		return fmt.Sprintf("%q", string(c.b))
-	}
-}
-
-func navName(n navKey) string {
-	switch n {
-	case navUp:
-		return "Up"
-	case navDown:
-		return "Down"
-	case navPageUp:
-		return "PgUp"
-	case navPageDown:
-		return "PgDn"
-	case navHome:
-		return "Home"
-	case navEnd:
-		return "End"
-	}
-	return "none"
-}
-
 func modeName(m keyMode) string {
 	switch m {
 	case modeIncipit:
@@ -268,7 +231,8 @@ func TestOpensTranscript_MatchesTheHandKeptList(t *testing.T) {
 		'm',        // more: the status bar's own detail, an opener exactly as 'o' is
 		's',        // the pinned question, a pager toggle and so an opener too
 		0x0e, 0x10, // ^N/^P node selection
-		0x0d, 0x0a, // Enter: expand tools
+		0x0d, 0x0a, // Enter: open tool bodies and form deltas
+		't',      // the tool body alone ('d' is a motion too, and was already an opener)
 		'v', 'V', // visual selection: a gesture about rows, which only the pager has
 	} {
 		old[b] = true
@@ -371,13 +335,15 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  s                   pin the question of the turn you are inside",
 		"  m                   more: state names, model, last interaction",
 		"  (in :) ^V           paste the clipboard",
-		"  ^N/^P               select next/previous node (a delta table is one)",
+		"  ^N/^P               select next/previous node (each form delta is one)",
 		"  f j / f k           next / previous fork point",
 		"  a                   attend the fork point's aria (in a list, the selected row's)",
 		"  ^O / ^I             jumplist: back / forward through attended arias",
 		"  M-n / M-p           travel to the next / previous question",
 		"  ^N/^P + Shift       travel between questions (Alt+^N/^P extends a selection)",
-		"  Enter               expand tools within the selection",
+		"  Enter               open tool bodies and form deltas within the selection",
+		"  d                   open the form deltas beside the selection (else scroll half a page)",
+		"  t                   open the tool bodies within the selection",
 		"  Esc                 clear selection / close panel",
 		"  v / V               visual mode: a cursor; again to mark by character / by line (y yanks, : commands it)",
 		"  (in v) h/l · ←/→    move the cursor's column",

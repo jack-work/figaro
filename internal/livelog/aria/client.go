@@ -184,6 +184,58 @@ func (c *Client) EvictBefore(a Anchor) {
 	}
 }
 
+// CloneBelow is a NEW client holding the turns below base, so that it can be
+// pointed at a DIFFERENT aria that shares that prefix. This client is left
+// exactly as it was.
+//
+// THE COPY IS THE POINT. The pager parks the aria it is leaving, and parking
+// hands over the client; a switch that truncated in place would rewrite what
+// the shelf is holding, and the parked aria would come back half itself and
+// half the branch that replaced it.
+//
+// THE WARRANT FOR KEEPING ANYTHING AT ALL IS THAT A FORK POINT IS SEALED.
+// Below it nothing is writable, and because the base is snapped down to a turn
+// boundary the two arias' turns below it are the same turns: same ids, same
+// node ordinals, same bytes. So what is kept is not an optimistic guess about
+// the new subject, it IS the new subject's history, already held.
+//
+// base 0 gives an empty client, which is exactly what a switch between
+// unrelated arias wants, so the unrelated case is not a special case anywhere
+// above here.
+func (c *Client) CloneBelow(base int) *Client {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := NewClient()
+	out.closedLimit = c.closedLimit
+	if base <= 0 {
+		return out
+	}
+	out.store = c.store.CloneBelow(uint64(base))
+	for id, inq := range c.inquiry {
+		if id < base {
+			out.inquiry[id] = inq
+		}
+	}
+	for id, n := range c.emitted {
+		if id < base {
+			out.emitted[id] = n
+		}
+	}
+	out.lastCommittedLT = min(c.lastCommittedLT, base-1)
+	return out
+}
+
+// Detach silences a client: no callbacks, no fetcher. It is what a holder does
+// when its client stops being the live view and becomes a copy on a shelf, so
+// that a fold which finds its way in cannot reach a renderer that is showing
+// something else by now.
+func (c *Client) Detach() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.OnClosed, c.OnLive, c.OnDesync, c.OnMetrics = nil, nil, nil, nil
+	c.fetch = nil
+}
+
 // InquiryOf reports a turn's opening question, which is held while any part of
 // the turn is retained.
 func (c *Client) InquiryOf(turn int) (Inquiry, bool) {
@@ -211,6 +263,41 @@ func (c *Client) MoreBefore() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.store.More().Before
+}
+
+// FirstMissing is the lowest turn this client does NOT hold in full: the
+// coordinate a read must begin at if the client is to end up whole.
+//
+// IT IS A FACT ABOUT WHAT IS HELD, and that is the point. A switch is TOLD
+// where two arias diverge, which is an upper bound on what it may keep; what
+// it actually kept can be less, because a clone drops the open turn, and a
+// read floored at the bound then steps straight over the turn that was
+// dropped. ok is false when the client holds nothing, which is a cold read.
+func (c *Client) FirstMissing() (int, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	top, ok := c.store.Top()
+	if !ok {
+		return 0, false
+	}
+	turn := int(top.Turn)
+	if c.store.Complete(turn) {
+		// The turn is whole, so the first thing missing is the one after it.
+		return turn + 1, true
+	}
+	// We hold part of that turn and cannot say how much of it there is: begin
+	// at the turn itself and take it again whole.
+	return turn, true
+}
+
+// MoreAfter reports whether the store believes there is conversation ABOVE
+// what it holds. It is the question a switch must ask before deciding it owes
+// the wire nothing: a client that is sure of its tail owes nothing, and one
+// that is not owes exactly one read.
+func (c *Client) MoreAfter() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.store.More().After
 }
 
 // SetClosedLimit bounds retained closed messages. Zero keeps the default,
@@ -289,13 +376,19 @@ func (c *Client) fold(p Page) (finalized []Message, desync int) {
 		// The question commits before the agent has said anything, so it
 		// arrives on a part of its own and is held against the turn.
 		if part.Inquiry != "" || len(part.FormDeltas) > 0 {
-			q := Inquiry{Text: part.Inquiry, Segments: part.InquirySegments, FormDeltas: part.FormDeltas}
-			// The LT arrives with the seal, on a later part than the text; a
-			// part without one must not forget one already held.
+			// EVERY FIELD IS STICKY. The text, the deltas and the LT arrive
+			// on different parts (the question opens the turn, the seal
+			// closes it), and a part that carries one must not forget the
+			// others.
+			q := c.inquiry[id]
+			if part.Inquiry != "" {
+				q.Text, q.Segments = part.Inquiry, part.InquirySegments
+			}
+			if len(part.FormDeltas) > 0 {
+				q.FormDeltas = part.FormDeltas
+			}
 			if len(part.LTs) > 0 {
 				q.LT = part.LTs[0]
-			} else {
-				q.LT = c.inquiry[id].LT
 			}
 			c.inquiry[id] = q
 			// A part clipped at the head describes a turn we hold only the tail
@@ -384,8 +477,37 @@ func (c *Client) fold(p Page) (finalized []Message, desync int) {
 		finalized = c.store.Insert(finalized...)
 		c.closedRev++
 	}
+	c.adoptMoreAfter(p)
 	c.trimClosed()
 	return finalized, desync
+}
+
+// adoptMoreAfter takes the page's word about the TOP of the conversation, and
+// only when the page is in a position to give it.
+//
+// A PAGE SPEAKS ABOUT ITS OWN EDGES. More.After is a claim about what lies
+// above the page's last NODE, so it is the store's claim too exactly when that
+// node is at or above the highest anchor the store COVERS; a history page from
+// the middle says nothing about the tail and must not be allowed to clear it,
+// and a page clipped inside a turn the store holds whole says nothing either.
+//
+// Nothing consumed it at all before, and that is the 494-read loop: a clone
+// that dropped turns set "there is more above", the child's complete tail page
+// said there is not, the store went on believing the clone, and Query answered
+// with a trailing hole forever. Its fill anchor ran off the top of the
+// coordinate space and came back as the zero anchor, which this wire reads as
+// "the tail", so every frame re-read the tail and changed nothing.
+func (c *Client) adoptMoreAfter(p Page) {
+	if len(p.Parts) == 0 {
+		return
+	}
+	_, top := p.Span()
+	covered, ok := c.store.Top()
+	if !ok || !top.Less(covered) {
+		m := c.store.More()
+		m.After = p.More.After
+		c.store.SetMore(m)
+	}
 }
 
 // unitChars bounds one materialized message's payload, so a renderer caching
@@ -591,6 +713,8 @@ func setField(n *livedoc.Node, field string, v any) {
 		n.Src = asSrcs(v)
 	case "output":
 		n.Output = asStr(v)
+	case "output_base":
+		n.OutputBase = int(asInt64(v))
 	case "input":
 		n.Input = asStr(v)
 	case "id":
@@ -685,4 +809,22 @@ func asFormDeltas(v any) map[string]livedoc.FormDelta {
 		}
 		return out
 	}
+}
+
+// Contiguous reports whether the store holds an unbroken run from a up to the
+// newest thing it has. It is the question a pager asks before deciding it owes
+// the wire nothing: a window whose rows are all held paints without a read,
+// and one with a hole in it would paint a gap sentinel instead.
+func (c *Client) Contiguous(a Anchor) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.store.Count() == 0 {
+		return false
+	}
+	top, ok := c.store.TailFrom(1)
+	if !ok {
+		return false
+	}
+	_, gap := c.store.firstGap(a, top)
+	return !gap
 }

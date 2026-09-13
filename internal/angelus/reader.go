@@ -97,15 +97,16 @@ func (r *AriaReader) Context(id string) ([]message.Message, *aria.Metrics, error
 // Page serves one window of sealed history from the shared windowed
 // component. at.Turn == 0 with before means the tail. There is no open
 // streaming region: a dormant aria has no turn in flight, which is what
-// makes it dormant.
-func (r *AriaReader) Page(id string, at aria.Anchor, budget int, before bool) (aria.Page, error) {
+// makes it dormant. floor applies to a backward read only, and it is the
+// same floor the live agent honours: one walk, two sources.
+func (r *AriaReader) Page(id string, at, floor aria.Anchor, budget int, before bool) (aria.Page, error) {
 	ra, err := r.serverFor(id)
 	if err != nil {
 		return aria.Page{}, err
 	}
 	var page aria.Page
 	if before {
-		page = ra.srv.ReadBefore(at, budget)
+		page = ra.srv.ReadBefore(at, floor, budget)
 	} else {
 		page = ra.srv.Read(at, budget)
 	}

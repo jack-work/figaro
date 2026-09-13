@@ -146,6 +146,39 @@ func TestAssistantCacheNativeDropsEmptyStreamedBlocks(t *testing.T) {
 	assert.NotContains(t, string(cache.Payload[0]), `{"type":"text"}`)
 }
 
+// THE CUT THAT KILLED ARIA 90ec6584, from the wire in. The stream ends in the
+// middle of a call's arguments: no content_block_stop, so the input is a
+// fragment of JSON. The IR and the cache must come out of that agreeing, or
+// the seal closes a call the wire has never heard of.
+func TestAStreamCutMidArgumentsLeavesNoHalfCall(t *testing.T) {
+	sse := "event: message_start\n" +
+		`data: {"type":"message_start","message":{"usage":{"input_tokens":5}}}` + "\n\n" +
+		"event: content_block_start\n" +
+		`data: {"type":"content_block_start","index":0,"content_block":{"type":"text"}}` + "\n\n" +
+		"event: content_block_delta\n" +
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"running it"}}` + "\n\n" +
+		"event: content_block_stop\n" +
+		`data: {"type":"content_block_stop","index":0}` + "\n\n" +
+		"event: content_block_start\n" +
+		`data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_cut","name":"bash"}}` + "\n\n" +
+		"event: content_block_delta\n" +
+		`data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"command\":\"ech"}` + "\n\n"
+
+	a := &Anthropic{ReminderRenderer: "tag", CacheNamespace: "anthropic"}
+	nm, _ := a.drainSSE(context.Background(), io.NopCloser(strings.NewReader(sse)), "claude-test", noOpBus{})
+
+	msg := decodeNativeMessage(nm)
+	for _, c := range msg.Content {
+		require.NotEqual(t, message.ContentToolInvoke, c.Type,
+			"the IR kept a call whose arguments never arrived")
+	}
+	cache, err := a.assistantCacheNative(nm)
+	require.NoError(t, err)
+	require.Len(t, cache.Payload, 1, "the rest of the message still caches")
+	assert.NotContains(t, string(cache.Payload[0]), "toolu_cut")
+	assert.Contains(t, string(cache.Payload[0]), "running it")
+}
+
 func TestAssistantCacheNativeEmptiesToNoPayload(t *testing.T) {
 	a := &Anthropic{ReminderRenderer: "tag", CacheNamespace: "anthropic"}
 	cache, err := a.assistantCacheNative(nativeMessage{
@@ -171,17 +204,30 @@ func TestAssistantCacheNativeKeepsSignedEmptyThinking(t *testing.T) {
 	assert.Contains(t, string(cache.Payload[0]), `"signature":"sig"`)
 }
 
-func TestAssistantCacheNativeUnparsedToolInputUncacheable(t *testing.T) {
+// A turn cut during the arguments leaves partial JSON where the input should
+// be. That block is not a call: it cannot replay, so neither the cache nor the
+// IR may keep it, and the rest of the message is unharmed. While the two
+// predicates disagreed the IR kept the call, the seal wrote its closing
+// result, and every later request carried a result whose tool_use was gone:
+// aria 90ec6584, 400 forever.
+func TestAnUnparsedToolCallLeavesTheCacheAndTheIRTogether(t *testing.T) {
 	a := &Anthropic{ReminderRenderer: "tag", CacheNamespace: "anthropic"}
-	cache, err := a.assistantCacheNative(nativeMessage{
+	partial := nativeMessage{
 		Role: "assistant",
 		Content: []nativeBlock{
 			{Type: "text", Text: "salve"},
 			{Type: "tool_use", ID: "t1", Name: "bash", Input: `{"command":"trunc`},
 		},
-	})
+	}
+	cache, err := a.assistantCacheNative(partial)
 	require.NoError(t, err)
-	assert.Empty(t, cache.Payload)
+	require.Len(t, cache.Payload, 1)
+	assert.Contains(t, string(cache.Payload[0]), "salve")
+	assert.NotContains(t, string(cache.Payload[0]), "tool_use")
+
+	decoded := decodeNativeMessage(partial)
+	require.Len(t, decoded.Content, 1, "the IR must not keep a call the cache dropped")
+	assert.Equal(t, message.ContentProse, decoded.Content[0].Type)
 }
 
 func TestValidNativeBlockMatchesDecoderSkip(t *testing.T) {

@@ -275,3 +275,15 @@ func (c *Angelus) IRBefore(ctx context.Context, figaroID string, from, before ui
 func (c *Angelus) Close() error {
 	return c.cli.Close()
 }
+
+// Lineage asks where two arias part company: the chain of conversations each
+// one inherits from, the deepest they share, and the first turn they do not.
+// Against may be empty, which asks only for the chain.
+func (c *Angelus) Lineage(ctx context.Context, id, against string) (*rpc.LineageResponse, error) {
+	var out rpc.LineageResponse
+	req := rpc.LineageRequest{FigaroID: id, Against: against}
+	if err := c.cli.Call(ctx, rpc.MethodLineage, req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}

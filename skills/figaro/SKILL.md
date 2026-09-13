@@ -93,6 +93,7 @@ about changing figaro rather than using it live under
 | [reference/arias.md](reference/arias.md) | Reading an aria off disk, and the store layout. |
 | [reference/architecture.md](reference/architecture.md) | The three roles, the IR, the form, the RPC wire, the provider layer. |
 | [reference/ui-stream.md](reference/ui-stream.md) | How a conversation reaches a terminal: the read wire, inline freeze, the pager. |
+| [reference/quoting.md](reference/quoting.md) | Quoting a passage into a prompt (`<412.0:23-1180>!`), visual selection, and the pager's `:send` / `:fork` / `:listen` / `:attend`. |
 | [reference/cache-control.md](reference/cache-control.md) | Prompt caching, and overriding it. |
 | [reference/outfits.md](reference/outfits.md) | Composing outfits, the `-O`/`-S`/`-D` grammar, or dressing did not do what you expected. |
 | [reference/forms.md](reference/forms.md) | Using unbound forms and roles: the verbs, the listings, the matrix. |

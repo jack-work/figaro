@@ -120,7 +120,7 @@ func BenchmarkPromptBroadcastControl(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				a.ariaSrv.OpenInquiry(a.turnID, "what is the gap?")
+				a.ariaSrv.OpenInquiry(a.turnID, "what is the gap?", nil)
 			}
 		})
 		b.Run(fmt.Sprintf("messages=%d/lock-control", n), func(b *testing.B) {

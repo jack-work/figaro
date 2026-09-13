@@ -2,8 +2,11 @@ package render
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/mattn/go-runewidth"
+
+	fig "github.com/jack-work/figaro/internal/render"
 )
 
 // Width is the display width of a styled row: escape sequences count for
@@ -43,6 +46,72 @@ func OverlayRight(line, tag string, width int) string {
 	room := width - tw - 1
 	left := clip(line, room)
 	return left + strings.Repeat(" ", room-Width(left)) + " " + tag
+}
+
+// GutterCols is the width of the RIGHT gutter: one column, held for the
+// adornment glyph a block wears, mirroring the left margin the pager's
+// selection bar stands in. Everything else drawn against the right edge
+// (the M-m coordinate mark) stops short of it.
+const GutterCols = 1
+
+// OverlayGutter puts glyph in the right gutter of a row width columns wide.
+// The row keeps its width: the glyph stands in the last column rather than
+// being appended to it, and a row shorter than the gutter is padded out.
+func OverlayGutter(line, glyph string, width int) string {
+	if glyph == "" || width <= GutterCols {
+		return line
+	}
+	room := width - GutterCols
+	left := clip(line, room)
+	return left + strings.Repeat(" ", room-Width(left)) + glyph
+}
+
+// OverlayColumn replaces the single display column col of a styled row with
+// glyph, which must itself be one column wide. The row's own escape
+// sequences pass through untouched and uncounted, so a glamour-styled row
+// can wear a glyph in its margin without its styling moving.
+//
+// A glyph already standing in that column is left alone, and the row is
+// returned as it came. That is the common case on the frame path: the snake's
+// resting glyph is what most of its rows want, and a repaint that changes
+// nothing must not cost a copy of the row.
+func OverlayColumn(line string, col int, glyph string) string {
+	if glyph == "" || col < 0 {
+		return line
+	}
+	at, i := 0, 0
+	for i < len(line) {
+		if line[i] == '\x1b' {
+			i = fig.SkipEscape(line, i)
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(line[i:])
+		w := runewidth.RuneWidth(r)
+		if at == col {
+			if line[i:i+size] == glyph {
+				return line
+			}
+			var b strings.Builder
+			b.Grow(len(line) + len(glyph))
+			b.WriteString(line[:i])
+			b.WriteString(glyph)
+			// A wide rune cannot be half replaced: it gives up both its
+			// cells, and the second is filled so nothing after it moves.
+			if w > 1 {
+				b.WriteString(strings.Repeat(" ", w-1))
+			}
+			b.WriteString(line[i+size:])
+			return b.String()
+		}
+		at += w
+		i += size
+	}
+	// The row ends before the column: pad out to it, which is how a glyph
+	// lands in the margin of a row that has none (a blank connector row).
+	if at <= col {
+		return line + strings.Repeat(" ", col-at) + glyph
+	}
+	return line
 }
 
 // clip truncates s to at most width display columns and flattens embedded

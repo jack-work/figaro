@@ -4,6 +4,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"github.com/jack-work/figaro/internal/mark"
 	"os"
 	"strconv"
 	"strings"
@@ -32,9 +33,12 @@ func Run(progName string, args []string) {
 
 	// Internal: angelus mode.
 	if os.Getenv("_FIGARO_DAEMON") == "1" || (len(args) > 0 && args[0] == "--angelus") {
+		mark.Init("angelus")
 		runAngelus()
 		return
 	}
+	mark.Init("cli")
+	atExit(profileSession())
 
 	// AMBIGUOUS-WIDTH GLYPHS: believe the terminal, not the default table.
 	applyAmbiguousWidth()
@@ -84,7 +88,7 @@ func Run(progName string, args []string) {
 		// a static key list with its aria's skills.* silently missing,
 		// while FIGARO_ARIA shell-outs (which skip the pid) worked.
 		initBindingPolicy()
-		os.Exit(buildRouter(progName, loaded).Run(args))
+		exitAt(buildRouter(progName, loaded).Run(args))
 	}
 
 	ctx := context.Background()
@@ -135,7 +139,7 @@ func Run(progName string, args []string) {
 	}
 
 	code := router.Run(args)
-	os.Exit(code)
+	exitAt(code)
 }
 
 // buildRouter is the whole command surface, declared once. Every command is a

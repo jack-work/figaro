@@ -411,6 +411,65 @@ func (s *Store) Evict(from, to Anchor) {
 	s.ranges = out
 }
 
+// CloneBelow is a NEW store holding the turns below turn, leaving this one
+// untouched.
+//
+// IT IS A COPY BECAUSE THE OLD STORE MAY HAVE ANOTHER OWNER. A subject switch
+// between two arias that share a prefix used to truncate the live store and
+// fold the new aria into it, and the pager's shelf was holding that same
+// object: the parked aria came back half itself and half its branch. What is
+// copied is the bookkeeping, the ranges and the message headers; the nodes and
+// their prose are immutable once closed and are shared, which is why this is
+// cheap enough to do on every hop.
+func (s *Store) CloneBelow(turn uint64) *Store {
+	out := NewStore()
+	// MORE.AFTER IS A CLAIM ABOUT WHAT WAS DROPPED, not a reflex. A cut that
+	// takes nothing (a fork at the head, where the child owns no turn the
+	// parent has) leaves a whole window, and a store that says there is
+	// content above it makes the pager draw a hole under a conversation that
+	// is complete.
+	out.more = More{Before: s.more.Before, After: s.more.After}
+	if turn == 0 {
+		return out
+	}
+	cut := Anchor{Turn: turn}
+	for _, r := range s.ranges {
+		if !r.From.Less(cut) {
+			out.more.After = true // a whole range was dropped
+			continue
+		}
+		hi := r.To
+		cutHere := false
+		if !hi.Less(cut) {
+			hi, cutHere = cut.Prev(), true
+		}
+		head := s.keep(r, r.From, hi)
+		if head == nil {
+			continue
+		}
+		out.ranges = append(out.ranges, Range{
+			From: head.From, To: head.To,
+			Msgs: append(make([]Message, 0, len(head.Msgs)), head.Msgs...),
+		})
+		if cutHere {
+			out.more.After = true
+			// A CUT PROVES THE TURN BELOW IT IS WHOLE, and saying so is what
+			// lets the suffix that arrives next be declared the prefix's
+			// neighbour. Without it the store cannot tell (20, 0) and (21, 0)
+			// apart from a hole, and the pager fills the seam from the wire:
+			// the whole saving, spent twice, under a row that says history is
+			// missing when it is not.
+			out.ends[head.To.Turn] = head.To.Node + 1
+		}
+	}
+	for t, n := range s.ends {
+		if t < turn {
+			out.ends[t] = n
+		}
+	}
+	return out
+}
+
 // keep cuts the part of r inside [lo, hi], clipping the boundary messages.
 // It returns nil when nothing survives.
 func (s *Store) keep(r Range, lo, hi Anchor) *Range {
@@ -491,6 +550,16 @@ func (s *Store) ForEach(fn func(Message) bool) {
 // Query reports what the store HOLDS over [from, to]. It never fetches and
 // never blocks. A caller that does not care about gaps writes
 func (s *Store) Query(from, to Anchor) []Segment {
+	// THERE IS NO COORDINATE BELOW (1, 0). Turn ids are numbered from one, so
+	// the space under the first turn is not a hole, it is the beginning: no
+	// read can fill it, and a client that believes in it asks the wire for it
+	// on every frame forever. Measured at 494 reads in 45 idle seconds.
+	if from.Turn == 0 {
+		from = Anchor{Turn: 1}
+	}
+	if to.Turn == 0 {
+		return nil
+	}
 	if to.Less(from) {
 		return nil
 	}
@@ -600,6 +669,42 @@ func fuseGaps(in []Segment) []Segment {
 // fillLimit is how many messages one hole-filling read asks for.
 const fillLimit = 30
 
+// bound is the ONE place the two walkers agree what interval they have been
+// asked about. They answered differently for the same question and the
+// difference WAS a gap: Query clamped the floor of the coordinate space and
+// ForEachSegment, which is the iterator the renderer actually uses, did not.
+// So the screen saw a hole below the first turn that Query said was not there.
+// Found by 27068b2c with a store holding one turn and More.Before set.
+//
+// THERE IS NO COORDINATE BELOW (1, 0). Turn ids are numbered from one, so the
+// space under the first turn is not a hole, it is the beginning: no read can
+// fill it, and a client that believes in it asks the wire for it on every
+// frame forever, which was measured at 494 reads in 45 idle seconds.
+//
+// Beyond the outermost edges nothing can be missing unless More says so, which
+// is what lets a caller ask over [0, +inf] and be told a whole conversation
+// has no holes in it.
+func (s *Store) bound(from, to Anchor) (Anchor, Anchor, bool) {
+	if from.Turn == 0 {
+		from = Anchor{Turn: 1}
+	}
+	if to.Turn == 0 || to.Less(from) {
+		return from, to, false
+	}
+	if len(s.ranges) > 0 {
+		if lo := s.ranges[0].From; from.Less(lo) && !s.more.Before {
+			from = lo
+		}
+		if hi := s.ranges[len(s.ranges)-1].To; hi.Less(to) && !s.more.After {
+			to = hi
+		}
+	}
+	if to.Less(from) {
+		return from, to, false
+	}
+	return from, to, true
+}
+
 // firstGap is the lowest hole inside [from, to], if any.
 func (s *Store) firstGap(from, to Anchor) (Gap, bool) {
 	for _, seg := range s.Query(from, to) {
@@ -643,16 +748,11 @@ func (s *Store) ForEachIn(from, to Anchor, fn func(Message) bool) {
 // (the gap-blind default), and it allocates nothing, a pager rebuilding its
 // line index every frame cannot pay for a Segment slice per frame.
 func (s *Store) ForEachSegment(from, to Anchor, msg func(Message) bool, gap func(Gap) bool) {
-	if to.Less(from) || len(s.ranges) == 0 {
+	if len(s.ranges) == 0 {
 		return
 	}
-	if lo := s.ranges[0].From; from.Less(lo) && !s.more.Before {
-		from = lo
-	}
-	if hi := s.ranges[len(s.ranges)-1].To; hi.Less(to) && !s.more.After {
-		to = hi
-	}
-	if to.Less(from) {
+	from, to, ok := s.bound(from, to)
+	if !ok {
 		return
 	}
 	cur := from
@@ -690,6 +790,23 @@ func (s *Store) Ranges() []Range { return append([]Range(nil), s.ranges...) }
 // is why the pager can re-derive its tail window on every frame instead of
 // caching one and needing a revision counter to know when the cache went
 // stale.
+// Top is the HIGHEST ANCHOR THE STORE COVERS: the end of the last range, not
+// the start of the last message.
+//
+// The difference is a whole message wide and it matters at exactly one place:
+// deciding whether a page reaches the tail and may therefore speak for it. A
+// page clipped mid-turn ends at the first node of a message the store holds
+// two of, and comparing it against the message's START called it the tail,
+// adopted its "there is more above me", and put a phantom hole over the node
+// the store was holding all along. Found by the reviewer's flag-aware model,
+// seed [1,0,0, 0,1,0, 0,0,1].
+func (s *Store) Top() (Anchor, bool) {
+	if len(s.ranges) == 0 {
+		return Anchor{}, false
+	}
+	return s.ranges[len(s.ranges)-1].To, true
+}
+
 func (s *Store) TailFrom(n int) (Anchor, bool) {
 	if n <= 0 {
 		return Anchor{}, false

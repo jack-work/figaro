@@ -303,7 +303,7 @@ func TestPaginateBefore_PagesDoNotOverlap(t *testing.T) {
 	seen := map[uint64]int{}
 	at := Anchor{Turn: 1 << 60} // recentCursor: the tail
 	for range 12 {
-		p := PaginateBefore(turns, at, budget)
+		p := PaginateBefore(turns, at, Anchor{}, budget)
 		if len(p.Parts) == 0 {
 			break
 		}
@@ -328,7 +328,7 @@ func TestPaginateBefore_TailIsInclusive(t *testing.T) {
 		{ID: 1, Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "a"}}},
 		{ID: 2, Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "b"}}},
 	}
-	p := PaginateBefore(turns, Anchor{Turn: 1 << 60}, 1<<20)
+	p := PaginateBefore(turns, Anchor{Turn: 1 << 60}, Anchor{}, 1<<20)
 	if len(p.Parts) != 2 || p.Parts[len(p.Parts)-1].ID != 2 {
 		t.Fatalf("tail read must include the last turn: %+v", p.Parts)
 	}

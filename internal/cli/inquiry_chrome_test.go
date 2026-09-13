@@ -19,13 +19,15 @@ import (
 // and nothing else: the reply ran straight into the question with no rule
 // between the voices.
 //
-// The block is: "> input" / blank / indented text / blank / RULE / "< figaro".
+// The block is: "> input" / blank / indented text / RULE / "< figaro". The
+// rule closes the question directly: a blank row above it was a second seam
+// for one boundary, and it is where a question's form deltas hang now.
 // All three surfaces must agree on it, because a live-vs-committed difference
 // here is not cosmetics: it is the same exchange telling two stories.
 func TestInquiryChromeAgreesAcrossViews(t *testing.T) {
 	const question = "THEQUESTION"
 	nodes := []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "THEANSWER"}}
-	want := []string{"> input", "", question, "", "─", "< figaro", "", "THEANSWER"}
+	want := []string{"> input", "", question, "─", "< figaro", "", "THEANSWER"}
 
 	t.Run("show", func(t *testing.T) {
 		got := renderTurnRows(aria.Message{Role: livedoc.RoleOutput, Inquiry: question, InquirySegments: nil, Nodes: nodes}, 48, 0, renderSettings{})

@@ -3,43 +3,33 @@ package cli
 import (
 	"encoding/json"
 	"sort"
-	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/mattn/go-runewidth"
 
 	"github.com/jack-work/figaro/api/livedoc"
-	"github.com/jack-work/figaro/internal/term"
 )
 
-// Form deltas, drawn as a TABLE: one row per key, Δ, the key, then the
-// transition it made. No sentences. A reader of a transcript scans this
-// for "what was the model shown that I cannot see", and a paragraph is
-// the wrong shape for an answer with columns in it. The one exception is
-// a fork, which is not a key transition at all: it gets the fork glyph
-// and the parent id, alone on its row, because that row is also the
-// thing `f j` jumps to.
-
-// formDeltaValueCap bounds one value's contribution to a collapsed row.
-// The wire carries studied values WHOLE (nothing in the pipeline
-// truncates them); this is display only, and expansion shows everything.
-const formDeltaValueCap = 24
+// Form deltas as ROWS: one row per key, each a pseudonode of its own. What
+// draws them beside a block is the adornment (adornment.go); this file is
+// the rows themselves, ordered and worded.
 
 // formDeltaKeyCap bounds the key column so one long key does not push
 // every transition off the right edge.
 const formDeltaKeyCap = 28
 
-// formDeltaRowCap is how many rows the collapsed table shows. A board
-// write of a dozen keys is furniture until a reader asks for it; Enter on
-// the table opens the rest.
-const formDeltaRowCap = 3
+// formDeltaValueFloor is the narrowest a value is squeezed to before the row
+// gives up on showing both sides of the transition. Below it the row says
+// nothing a reader can use.
+const formDeltaValueFloor = 6
 
-// forkGlyph marks the row naming the aria this one was forked from. U+2442
-// is carried by FreeMono, which is the same fallback path that already
-// paints the pit's 𝄚 and ♭.
+// forkGlyph names the aria this one was forked from, beside the parent id in
+// the question's header row. U+2442 is carried by FreeMono, which is the same
+// fallback path that already paints the pit's 𝄚 and ♭.
 const forkGlyph = "⑂"
 
-// deltaGlyph heads every ordinary row.
+// deltaGlyph is the adornment's marker, and the head of its snake.
 const deltaGlyph = "Δ"
 
 // deadGlyph marks the row saying a studied form's source died. A dead
@@ -51,99 +41,35 @@ const deadGlyph = "⊘"
 // a key being born has no old, a key removed has no new.
 const absentValue = "∅"
 
-// deltaIndent insets a delta row beneath the prose it follows, which
-// render.Prose insets by the same two columns.
-const deltaIndent = "  "
+// emptyValue is a key that exists and holds the empty string.
+const emptyValue = `""`
 
-// deltaRow is one line of the table before it is padded and clipped.
+// deltaRow is one delta: one key's transition, or a banner (a fork, a
+// death) that carries a glyph and an id and nothing else.
 type deltaRow struct {
-	glyph  string
+	glyph  string // banner rows only
 	key    string
-	from   string
-	to     string
-	banner bool // a banner row carries only its glyph and an id: a fork, a death
+	from   deltaCell
+	to     deltaCell
+	banner bool
 }
 
-// formDeltaLines renders one delta set as the table. Collapsed shows at
-// most formDeltaRowCap rows with capped values and an overflow count;
-// expanded (Enter on the table, or `show --details`) shows every row
-// whole. Every row is clipped to the screen.
-func formDeltaLines(deltas map[string]livedoc.FormDelta, width int, expanded bool) []string {
-	plain := formDeltaPlain(deltas, width, expanded)
-	out := make([]string, len(plain))
-	for i, l := range plain {
-		out[i] = term.StateDim(l)
-	}
-	return out
+// deltaCell is one side of a transition. Absence and the empty string are
+// different rows: ∅ means the key did not exist.
+type deltaCell struct {
+	text    string
+	present bool
 }
 
-// formDeltaPlain is the table unstyled: what it hashes as, and what it
-// yanks as. formDeltaLines is this plus the theme's state-dim role.
-func formDeltaPlain(deltas map[string]livedoc.FormDelta, width int, expanded bool) []string {
-	rows := deltaRows(deltas)
-	if len(rows) == 0 {
-		return nil
-	}
-	overflow := 0
-	if !expanded && len(rows) > formDeltaRowCap {
-		overflow = len(rows) - formDeltaRowCap
-		rows = rows[:formDeltaRowCap]
-	}
-	keyw := 0
-	for _, r := range rows {
-		if r.banner {
-			continue
-		}
-		if n := runewidth.StringWidth(r.key); n > keyw && n <= formDeltaKeyCap {
-			keyw = n
-		}
-	}
-	out := make([]string, 0, len(rows)+1)
-	for _, r := range rows {
-		var b strings.Builder
-		b.WriteString(deltaIndent)
-		b.WriteString(r.glyph)
-		b.WriteString(" ")
-		if r.banner {
-			b.WriteString(r.key)
-			out = append(out, truncCols(b.String(), width))
-			continue
-		}
-		b.WriteString(padTo(truncCols(r.key, formDeltaKeyCap), keyw))
-		b.WriteString("  ")
-		b.WriteString(cell(r.from, expanded))
-		b.WriteString(" -> ")
-		b.WriteString(cell(r.to, expanded))
-		out = append(out, truncCols(b.String(), width))
-	}
-	if overflow > 0 {
-		out = append(out, truncCols(deltaIndent+"⋯ +"+strconv.Itoa(overflow), width))
-	}
-	return out
-}
-
-// cell renders one side of a transition: single-lined always, capped when
-// the table is collapsed.
-func cell(v string, expanded bool) string {
-	if v == "" {
-		return absentValue
-	}
-	v = flatten(v)
-	if !expanded {
-		v = truncCols(v, formDeltaValueCap)
-	}
-	return v
-}
-
-// flatten puts a multi-line value on one row. A form value may be a whole
-// credo; the table is a table.
-func flatten(s string) string {
-	return strings.Join(strings.Fields(s), " ")
-}
-
-// deltaRows orders the table: the fork row first (it is the banner), then
-// this figaro's own board, then every other form by id, keys sorted.
-func deltaRows(deltas map[string]livedoc.FormDelta) []deltaRow {
+// deltaRows orders the rows: the fork banner first when it is lifted out of
+// the list, then this figaro's own board, then every other form by id, keys
+// sorted.
+//
+// liftFork is the INQUIRY's: a fork happens on the turn's question and
+// nowhere else (see forkParent), so there the glyph and the parent id rise
+// into the header row and leave the list. On any other block a forked_from
+// delta is a delta like any other.
+func deltaRows(deltas map[string]livedoc.FormDelta, liftFork bool) []deltaRow {
 	if len(deltas) == 0 {
 		return nil
 	}
@@ -151,22 +77,21 @@ func deltaRows(deltas map[string]livedoc.FormDelta) []deltaRow {
 	var out []deltaRow
 	for _, formID := range order {
 		g := groups[formID]
-		if parent := forkParent(g); parent != "" {
-			out = append(out, deltaRow{glyph: forkGlyph, key: parent, banner: true})
-		}
-	}
-	for _, formID := range order {
-		g := groups[formID]
 		prefix := deltaFormName(formID, g)
 		if g.deleted {
-			out = append(out, deltaRow{glyph: deadGlyph, key: formID, banner: true})
+			out = append(out, deltaRow{glyph: deadGlyph, key: sanitize(formID), banner: true})
 		}
 		for _, k := range g.keys {
-			if forkKey(g.kind, k) && forkParent(g) != "" {
+			// A LIFTED FORK LEAVES NO ROWS BEHIND. The glyph and the parent
+			// id ride the question's header instead, and the keys the fork
+			// patch wrote are what the header is made of; drawing them again
+			// would say the same thing twice. Anywhere else a forked_from is
+			// a key like any other.
+			if liftFork && forkKey(g.kind, k) && forkParent(g) != "" {
 				continue
 			}
 			d := g.byKey[k]
-			row := deltaRow{glyph: deltaGlyph, key: prefix + k, from: unquote(d.Prev)}
+			row := deltaRow{key: sanitize(prefix + k), from: unquote(d.Prev)}
 			if d.Event != livedoc.FormRemoved {
 				row.to = unquote(d.Value)
 			}
@@ -174,6 +99,116 @@ func deltaRows(deltas map[string]livedoc.FormDelta) []deltaRow {
 		}
 	}
 	return out
+}
+
+// deltaKeyWidth is the key column shared by a set of rows.
+func deltaKeyWidth(rows []deltaRow) int {
+	w := 0
+	for _, r := range rows {
+		if r.banner {
+			continue
+		}
+		if n := runewidth.StringWidth(r.key); n > w && n <= formDeltaKeyCap {
+			w = n
+		}
+	}
+	return w
+}
+
+// deltaRowText is one row as the reader sees it: the key, then the
+// transition, fitted to width columns. ONE ROW PER KEY IS THE WHOLE POINT,
+// so a value too long for the space it has is elided rather than wrapped;
+// yanking the row gives it back whole (see deltaRowFull).
+func deltaRowText(r deltaRow, keyw, width int) string {
+	if r.banner {
+		return truncCols(r.glyph+" "+r.key, width)
+	}
+	var b strings.Builder
+	b.WriteString(padTo(truncCols(r.key, formDeltaKeyCap), keyw))
+	b.WriteString("  ")
+	from, to := cell(r.from), cell(r.to)
+	if room := width - runewidth.StringWidth(b.String()) - len(deltaArrow); room > 0 {
+		from, to = fitTransition(from, to, room)
+	}
+	b.WriteString(from)
+	b.WriteString(deltaArrow)
+	b.WriteString(to)
+	return truncCols(b.String(), width)
+}
+
+// deltaArrow separates the two sides of a transition.
+const deltaArrow = " -> "
+
+// fitTransition shares room between the two sides of a transition. The NEW
+// value gets the odd column and whatever the old one does not want: a
+// reader is reading forward.
+func fitTransition(from, to string, room int) (string, string) {
+	fw, tw := runewidth.StringWidth(from), runewidth.StringWidth(to)
+	if fw+tw <= room {
+		return from, to
+	}
+	half := room / 2
+	if fw > half && tw > room-half {
+		return elide(from, half), elide(to, room-half)
+	}
+	if fw <= half {
+		return from, elide(to, room-fw)
+	}
+	return elide(from, room-tw), to
+}
+
+// elide truncates to w columns, spending the last one on an ellipsis so the
+// row says that it dropped something.
+func elide(s string, w int) string {
+	if w < formDeltaValueFloor {
+		w = formDeltaValueFloor
+	}
+	if runewidth.StringWidth(s) <= w {
+		return s
+	}
+	return truncCols(s, w-1) + "…"
+}
+
+// deltaRowFull is one row whole: nothing capped, nothing elided. It is what
+// the row HASHES as and what it YANKS as, so a value that differs past the
+// column the screen ran out of is a different row.
+func deltaRowFull(r deltaRow) string {
+	if r.banner {
+		return r.glyph + " " + r.key
+	}
+	return r.key + "  " + cell(r.from) + deltaArrow + cell(r.to)
+}
+
+// cell renders one side of a transition, single-lined.
+func cell(v deltaCell) string {
+	if !v.present {
+		return absentValue
+	}
+	s := flatten(v.text)
+	if s == "" {
+		return emptyValue
+	}
+	return s
+}
+
+// flatten puts a multi-line value on one row.
+func flatten(s string) string {
+	return strings.Join(strings.Fields(sanitize(s)), " ")
+}
+
+// sanitize drops control characters from untrusted form text. The row
+// clipper passes ANSI escapes through uncounted, so a stored \x1b[2J would
+// otherwise erase the display.
+func sanitize(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			if unicode.IsSpace(r) {
+				return ' '
+			}
+			return -1
+		}
+		return r
+	}, s)
 }
 
 // deltaGroup is one form's slice of a delta set, keys bare (form prefix
@@ -227,13 +262,13 @@ func forkParent(g *deltaGroup) string {
 		return ""
 	}
 	if d, ok := g.byKey["system.forked_from"]; ok && d.Event == livedoc.FormSet {
-		return unquote(d.Value)
+		return unquote(d.Value).text
 	}
 	return ""
 }
 
-// forkKeys are consumed by the fork row and suppressed from the table, or
-// the banner and its raw material both draw.
+// forkKeys are consumed by the lifted fork and suppressed from the list, or
+// the header and its raw material both draw.
 func forkKey(kind livedoc.FormKind, key string) bool {
 	return kind == livedoc.FormBound && (key == "system.forked_from" || key == "aria_id")
 }
@@ -248,36 +283,21 @@ func deltaFormName(formID string, g *deltaGroup) string {
 	return formID + "."
 }
 
-// unquote renders a raw JSON value for a table cell: a JSON string comes
-// back as its text (escapes decoded, so a credo's newlines are newlines
-// and flatten can fold them), anything else as the raw JSON it is.
-func unquote(raw []byte) string {
+// unquote renders a raw JSON value for a row: a JSON string comes back as
+// its text (escapes decoded, so a credo's newlines are newlines and flatten
+// can fold them), anything else as the raw JSON it is. An absent raw value
+// is an absent cell, distinct from an empty string.
+func unquote(raw []byte) deltaCell {
 	s := strings.TrimSpace(string(raw))
+	if s == "" {
+		return deltaCell{}
+	}
 	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
 		var decoded string
 		if json.Unmarshal([]byte(s), &decoded) == nil {
-			return decoded
+			return deltaCell{text: decoded, present: true}
 		}
-		return s[1 : len(s)-1]
+		return deltaCell{text: s[1 : len(s)-1], present: true}
 	}
-	return s
-}
-
-// deltasExpandable reports whether the expanded table would show more
-// than the collapsed one did: rows held back, or a capped value.
-func deltasExpandable(deltas map[string]livedoc.FormDelta, width int) bool {
-	if len(deltas) == 0 {
-		return false
-	}
-	collapsed := formDeltaLines(deltas, width, false)
-	expanded := formDeltaLines(deltas, width, true)
-	if len(expanded) != len(collapsed) {
-		return true
-	}
-	for i := range expanded {
-		if expanded[i] != collapsed[i] {
-			return true
-		}
-	}
-	return false
+	return deltaCell{text: s, present: true}
 }

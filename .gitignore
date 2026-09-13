@@ -12,3 +12,9 @@ teams.log
 .env.*
 /dist
 /figaro-turnid-backfill
+
+# Go test executables
+/*.test
+
+# Python bytecode from the measurement fixtures
+__pycache__/

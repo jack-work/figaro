@@ -389,19 +389,31 @@ func validNativeBlock(b nativeBlock) bool {
 	case "redacted_thinking":
 		return b.Data != ""
 	case "tool_use":
-		return b.ID != "" && b.Input != nil
+		return cacheableToolUse(b)
 	case "":
 		return false
 	}
 	return true
 }
 
+// cacheableToolUse is the ONE predicate for a streamed call. A turn cut
+// during the arguments leaves Input holding partial JSON, which cannot
+// replay: that block is not a call, and it must vanish from the IR and the
+// cache together. While the two predicates disagreed, the IR kept a call the
+// cache had dropped, the seal wrote its closing result, and every later
+// request carried a result whose tool_use was gone (400, forever).
+func cacheableToolUse(b nativeBlock) bool {
+	if b.ID == "" {
+		return false
+	}
+	_, ok := b.Input.(map[string]interface{})
+	return ok
+}
+
 // cacheableNativeBlock is the wire-replay predicate: deliberately wider
-// than validNativeBlock for thinking: a signed empty-summary block must
-// replay (the API requires the thinking block leading a tool-use
-// assistant), even though the renderer skips it. fatal marks the whole
-// message uncacheable: a tool_use whose input never parsed cannot replay,
-// but dropping just that block would orphan its tool_result on the wire.
+// than validNativeBlock for thinking, because a signed empty-summary block
+// must replay (the API requires the thinking block leading a tool-use
+// assistant) even though the renderer skips it.
 func cacheableNativeBlock(b nativeBlock) (keep, fatal bool) {
 	switch b.Type {
 	case "text":
@@ -418,13 +430,7 @@ func cacheableNativeBlock(b nativeBlock) (keep, fatal bool) {
 	case "redacted_thinking":
 		return b.Data != "", false
 	case "tool_use":
-		if b.ID == "" {
-			return false, false
-		}
-		if _, ok := b.Input.(map[string]interface{}); !ok {
-			return false, true
-		}
-		return true, false
+		return cacheableToolUse(b), false
 	case "":
 		return false, false
 	}
@@ -830,7 +836,7 @@ func (a *Anthropic) projectRequest(src provider.RowSeq, snapshot form.Snapshot, 
 
 	// BEFORE ANY MARKING: cache breakpoints and per-LT tags address the row
 	// they land on, so a pass that drops or merges rows must run first.
-	rows := coalesceRowsSeq(dropDuplicateResultsSeq(src))
+	rows := coalesceRowsSeq(pairToolCallsSeq(dropDuplicateResultsSeq(src)))
 
 	var tailMark *cacheControl
 	if policy := provider.ResolveCachePolicy(snapshot); !policy.Off() {

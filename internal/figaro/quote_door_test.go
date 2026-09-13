@@ -112,7 +112,7 @@ func TestQuotedPromptReachesTheProvider(t *testing.T) {
 
 	// The passage, a board reference, and the reader's question in one send.
 	tok := "<" + itoa(lt) + ".0:4-14>!"
-	if err := a.SubmitPromptFrom(rpc.QuaRequest{Text: tok + " is @mantra! racy here?"}, "Gluck"); err != nil {
+	if err := a.SubmitPromptFrom(context.Background(), rpc.QuaRequest{Text: tok + " is @mantra! racy here?"}, "Gluck"); err != nil {
 		t.Fatalf("a good coordinate was refused: %v", err)
 	}
 	waitTurnDone(t, ch)
@@ -155,7 +155,7 @@ func TestBadQuoteIsRefusedBeforeAnythingLands(t *testing.T) {
 		{"@nothing! what", "ref: @nothing! is not on the board"},
 	}
 	for _, c := range cases {
-		err := a.SubmitPromptFrom(rpc.QuaRequest{Text: c.text}, "Gluck")
+		err := a.SubmitPromptFrom(context.Background(), rpc.QuaRequest{Text: c.text}, "Gluck")
 		if err == nil {
 			t.Fatalf("%q was accepted", c.text)
 		}

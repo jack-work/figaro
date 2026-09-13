@@ -1,31 +1,17 @@
 package cli
 
-// VERBS THAT RETURN, INSTEAD OF EXITING.
+// The verb bodies the shell and the pager share: listen, attend, fork, send.
 //
-// A CLI verb used to be fused to its process wrapper: it got its connection
-// from WithAngelus, reported failure with die() (os.Exit), and wrote to
-// stdout. The transcript's ':' box cannot live with any of those, so it grew
-// hand-written twins, and a twin drifts. plans/transcript-command-mode.md
-// section 4 names the cure: SEPARATE THE VERB'S BODY FROM ITS WRAPPER. The
-// body takes (ctx, env, args), speaks to the daemon, and returns a result;
-// the shell wrapper keeps die() and stdout and streams; the box renders the
-// result into the status row and retargets. One implementation, two doors.
-//
-// What a body does NOT do is present the reply: at the shell that is a
-// stream on the terminal, in the box it is the transcript itself. For fork
-// the body stops one step earlier, at "the branch exists and the shell is
-// bound to it": the shell submits the prompt through send's own dispatch,
-// whose -r/-v/-x modes are a submit and a stream in one, and the box
-// submits it and retargets. Parsing, resolution, the fork and the rebind are
-// the parts that drifted between twins, and they are shared.
-//
-// The four verbs the box has are here: listen, attend, fork, send. Each
-// deletes the twin it replaced.
+// A body takes (ctx, env, plan), speaks to the daemon and RETURNS. It never
+// exits, never writes to stdout, and never presents the reply: the shell
+// wrapper keeps die() and the stream, the pager renders the result into its
+// status row. Progress goes to the caller through the request (progress.go).
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/jack-work/figaro/internal/mark"
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/api/transport"
@@ -73,6 +59,9 @@ type attendOutcome struct {
 	EP   transport.Endpoint
 	At   forkPoint // the pending fork point, when the spec named one
 	Note string    // a node coordinate that landed earlier than named
+	// Home says the shell was UNBOUND rather than moved: `attend null`. There
+	// is no aria to show, so a door that shows one shows what it showed.
+	Home bool
 }
 
 // attendVerb binds env.shellPID to the aria spec names, at the turn it names
@@ -80,6 +69,12 @@ type attendOutcome struct {
 func attendVerb(ctx context.Context, env verbEnv, spec string) (attendOutcome, error) {
 	if spec == "" {
 		return attendOutcome{}, errors.New("which aria? (attend <id|@role>[:<turn>])")
+	}
+	// HOME IS PART OF THE VERB, not of the shell's wrapper around it. `null`
+	// (and the legacy `~`) drops this shell's binding, which the pager could
+	// not do at all while the case lived one layer up.
+	if spec == "null" || spec == "~" {
+		return unattendVerb(ctx, env)
 	}
 	trunk, at, err := parseTarget(spec)
 	if err != nil {
@@ -120,6 +115,25 @@ func attendVerb(ctx context.Context, env verbEnv, spec string) (attendOutcome, e
 	return attendOutcome{ID: id, EP: ep, At: at, Note: note}, nil
 }
 
+// unattendVerb is `attend null`: the shell goes home, and new conversations
+// default to the live outfit again.
+func unattendVerb(ctx context.Context, env verbEnv) (attendOutcome, error) {
+	if env.shellPID <= 0 {
+		return attendOutcome{}, errors.New("this pager has no shell to unbind")
+	}
+	bound := ""
+	if r, err := resolveBinding(ctx, env.acli, env.shellPID); err == nil && r.Found {
+		bound = r.FigaroID
+	}
+	if err := unbindBinding(ctx, env.acli, env.shellPID); err != nil {
+		return attendOutcome{}, err
+	}
+	if bound == "" {
+		return attendOutcome{Home: true, Note: "no aria bound to this shell"}, nil
+	}
+	return attendOutcome{Home: true, Note: "home: unattended " + bound + "; new conversations use the default outfit"}, nil
+}
+
 // attendRefusal explains a binding the daemon would not make: a cauterized
 // anchor (null, an outfit) is not a conversation.
 func attendRefusal(ctx context.Context, acli *sdk.Angelus, trunk string, err error) error {
@@ -151,12 +165,25 @@ type forkOutcome struct {
 	OwnerNote string
 }
 
+// bindIntent is what the CALLER wants done with the shell's binding when the
+// branch is born. It is explicit because the two doors want different things
+// and neither can be inferred from argv: a shell fans out (it moves only when
+// it forked its OWN aria), while the pager's fork means attend-and-show, from
+// whatever the shell happens to be bound to. --stay means neither, on both.
+type bindIntent int
+
+const (
+	bindFanOut bindIntent = iota // move only when the target IS the shell's aria
+	bindBranch                   // attend the branch, whatever was bound
+	bindStay                     // touch nothing
+)
+
 // forkVerb runs a planned fork: resolve the target (the bound aria when the
 // plan names none), fork at the coordinate (with the quote pre-flight
 // against the prompt), and move the shell's binding to the branch when the
 // plan forked the shell's own aria and did not ask to stay, exactly as
 // `figaro fork` does. Submitting the prompt is the door's.
-func forkVerb(ctx context.Context, env verbEnv, plan forkPlan) (forkOutcome, error) {
+func forkVerb(ctx context.Context, env verbEnv, plan forkPlan, intent bindIntent) (forkOutcome, error) {
 	target, at, err := parseTarget(plan.spec)
 	if err != nil {
 		return forkOutcome{}, err
@@ -176,16 +203,10 @@ func forkVerb(ctx context.Context, env verbEnv, plan forkPlan) (forkOutcome, err
 		Parent: resp.Parent, Continuation: resp.Continuation, Alternative: resp.Alternative,
 		At: at, Prompt: plan.prompt, OwnerNote: resp.OwnerNote,
 	}
-	// Move to the branch we just made: but only when we forked our OWN bound
-	// aria, and only without --stay. Forking someone else's aria is a
-	// fan-out; it never steals this shell. Registry.Bind rebinds in place.
-	switch {
-	case plan.opts.stay:
-	case bound == "":
-		out.BindNote = "not attended: " + why
-	case target != bound:
-		out.BindNote = "not attended: " + target + " is not this shell's aria"
-	default:
+	move, note := bindDecision(intent, plan.opts.stay, bound, why, target)
+	out.BindNote = note
+	if move {
+		// Registry.Bind rebinds in place.
 		if berr := bindBinding(ctx, env.acli, env.shellPID, resp.Alternative, 0); berr != nil {
 			out.BindNote = "could not attend " + resp.Alternative + ": " + berr.Error()
 		} else {
@@ -193,6 +214,92 @@ func forkVerb(ctx context.Context, env verbEnv, plan forkPlan) (forkOutcome, err
 		}
 	}
 	return out, nil
+}
+
+// bindDecision is whether the shell moves to the branch, and the one sentence
+// that says why not. A fan-out never steals the shell: it moves only when the
+// aria forked was the shell's own. bindBranch always moves, which is what the
+// pager's fork means; bindStay and --stay never do.
+func bindDecision(intent bindIntent, stay bool, bound, why, target string) (bool, string) {
+	switch {
+	case stay || intent == bindStay:
+		return false, ""
+	case intent == bindFanOut && bound == "":
+		return false, "not attended: " + why
+	case intent == bindFanOut && target != bound:
+		return false, "not attended: " + target + " is not this shell's aria"
+	}
+	return true, ""
+}
+
+// ---------------------------------------------------------------------------
+// The surface a prompt verb was typed at, and what it can therefore honour.
+
+// surface is the CALLER's capability, carried into the plan so that send and
+// fork validate the same flags the same way. A shell can spend stdout, run a
+// script and open a tape; the pager owns the pane and can do none of those. A
+// flag the surface cannot honour is refused BY NAME: parsed and silently
+// dropped is a lie, and it is what `:fork -x` used to be.
+type surface struct {
+	name    string
+	streams bool // -r, -v, -j: stdout is the caller's to spend
+	spawns  bool // -x and its -n / -y: there is a shell to run a script in
+	records bool // --record: a tape of this session's wire
+	opens   bool // -l: "open the transcript" means something
+	forgets bool // -f: there is a stream to decline
+}
+
+var (
+	shellSurface = surface{name: "the shell", streams: true, spawns: true, records: true, opens: true, forgets: true}
+	pagerSurface = surface{name: "the pager"}
+)
+
+// refuse names the first flag this surface cannot honour.
+func (s surface) refuse(o sendOpts) error {
+	for _, c := range []struct {
+		on   bool
+		flag string
+		why  string
+	}{
+		{!s.spawns && o.exec, "-x", "runs a script in a shell; " + s.name + " has none"},
+		{!s.spawns && o.dryRun, "-n", "belongs to -x"},
+		{!s.spawns && o.skipYes, "-y", "belongs to -x"},
+		{!s.streams && o.raw, "-r", "is a stream for a pipe; the transcript is the stream here"},
+		{!s.streams && o.verbatim, "-v", "dumps wire frames to stdout, which " + s.name + " owns"},
+		{!s.streams && o.json, "-j", "prints an object on stdout, which " + s.name + " owns"},
+		{!s.opens && o.listen, "-l", "opens the transcript, which is already open"},
+		{!s.records && o.record != "", "--record", "records a session's wire, not a message"},
+	} {
+		if c.on {
+			return fmt.Errorf("%s %s", c.flag, c.why)
+		}
+	}
+	return nil
+}
+
+// prepareSend and prepareFork are the two prompt verbs' preparation: ONE
+// parser, then the capability check the surface declares. Every door runs
+// these; nothing else may parse a prompt verb's argv.
+func prepareSend(args []string, s surface) (sendPlan, error) {
+	plan, err := planSend(args)
+	if err != nil {
+		return sendPlan{}, err
+	}
+	return plan, s.refuse(plan.opts)
+}
+
+func prepareFork(args []string, s surface) (forkPlan, error) {
+	plan, err := planFork(args)
+	if err != nil {
+		return forkPlan{}, err
+	}
+	if err := s.refuse(plan.opts); err != nil {
+		return forkPlan{}, err
+	}
+	if !s.forgets && plan.opts.forget {
+		return forkPlan{}, errors.New("-f is a shell notion (the transcript is the stream); --stay mints and prompts without following")
+	}
+	return plan, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -228,7 +335,9 @@ func sendVerb(ctx context.Context, env verbEnv, plan sendPlan, implied *sdk.Aria
 		return "", nil, errors.New("the prompt must follow `--`")
 	}
 	if plan.spec == "" && implied != nil {
-		_, active, err := implied.Qua(ctx, plan.prompt, buildPromptForm())
+		qua := mark.Span("submit.qua", "to", impliedID, "len", len(plan.prompt))
+		_, active, err := implied.Qua(ctx, plan.prompt, buildPromptForm(plan.opts.outfit))
+		qua("active", active, "err", err != nil)
 		if err != nil {
 			return impliedID, nil, err
 		}
@@ -243,7 +352,9 @@ func sendVerb(ctx context.Context, env verbEnv, plan sendPlan, implied *sdk.Aria
 		return id, nil, fmt.Errorf("connect %s: %w", id, err)
 	}
 	defer fcli.Close()
-	_, active, err := fcli.Qua(ctx, plan.prompt, buildPromptForm())
+	qua := mark.Span("submit.qua", "to", id, "len", len(plan.prompt))
+	_, active, err := fcli.Qua(ctx, plan.prompt, buildPromptForm(plan.opts.outfit))
+	qua("active", active, "err", err != nil)
 	if err != nil {
 		return id, nil, err
 	}

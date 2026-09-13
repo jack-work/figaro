@@ -73,6 +73,12 @@ const (
 	// the one read with no per-aria twin: MethodContext is the composed view,
 	// this is the log itself.
 	MethodIR = "figaro.ir"
+	// MethodLineage answers where two arias part company. It is not
+	// MethodRead: it returns no conversation, only the shape of the tree and
+	// the turn at which two of its paths differ. It is not MethodList either:
+	// list is every aria with its metrics, this is one walk up two chains and
+	// it is asked on every subject switch. See api/rpc/lineage.go.
+	MethodLineage = "figaro.lineage"
 )
 
 // MethodNeedsAgent reports whether a method requires a running turn loop.

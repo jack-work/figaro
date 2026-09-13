@@ -55,8 +55,8 @@ func TestServer_DeltasVersionAndFold(t *testing.T) {
 	rc := &rec{}
 	defer s.Subscribe(rc.push)()
 
-	s.OpenInquiry(1, "q") // the question: text on the turn, not a node
-	s.OpenTurn(1)         // suffix opens at node 0
+	s.OpenInquiry(1, "q", nil) // the question: text on the turn, not a node
+	s.OpenTurn(1)              // suffix opens at node 0
 	s.Update(nil, []livedoc.Node{tool("running", "")}, 0)
 	s.Update(nil, []livedoc.Node{tool("running", "a\n")}, 0)
 	s.Update(nil, []livedoc.Node{tool("ok", "a\n")}, 0)
@@ -144,7 +144,7 @@ func TestServer_PatchOnGrowth(t *testing.T) {
 // many messages, and only finishTurn ends it.
 func TestServer_CloseFoldsSealDoesNot(t *testing.T) {
 	s := NewServer()
-	s.OpenInquiry(1, "q")
+	s.OpenInquiry(1, "q", nil)
 	s.OpenTurn(1)
 	s.Update(nil, []livedoc.Node{tool("ok", "out")}, 0)
 	s.Close()
@@ -282,7 +282,7 @@ func TestServer_ReadBothDirections(t *testing.T) {
 	eqIDs(t, "forward from 8", turnIDs(s.Read(Anchor{Turn: 8}, big)),
 		[]uint64{8, 9, 10})
 
-	tail := s.ReadBefore(Anchor{}, nodeSize(prose("m"))*3)
+	tail := s.ReadBefore(Anchor{}, Anchor{}, nodeSize(prose("m"))*3)
 	eqIDs(t, "backward tail", turnIDs(tail), []uint64{8, 9, 10})
 	if !tail.More.Before || tail.More.After {
 		t.Errorf("tail page: want more before, none after; got %+v", tail.More)
@@ -294,7 +294,7 @@ func TestServer_ReadBothDirections(t *testing.T) {
 func TestServer_ReadSnapshotCarriesLiveOnlyAtTheTail(t *testing.T) {
 	s := NewServer()
 	s.Commit(sealedTurn(1, prose("old")))
-	s.OpenInquiry(2, "q")
+	s.OpenInquiry(2, "q", nil)
 	s.OpenTurn(2)
 	s.Update(nil, []livedoc.Node{tool("running", "a\n")}, 0)
 

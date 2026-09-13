@@ -70,7 +70,7 @@ coordinate.
 | form | coordinate | what it means |
 |---|---|---|
 | `<id>:<n>` | **turn** | The exchange: your prompt and everything the agent did about it. What `show` prints, and what you normally want. |
-| `<id>:<n>.<k>` | **node** | One thing inside that turn: a paragraph, a thought, a tool call. The address the pager draws under `Ctrl-O` (`12.3`), so **what you can point at you can branch at**. `-1` is the turn's opening question, which is the turn coordinate itself. |
+| `<id>:<n>.<k>` | **node** | One thing inside that turn: a paragraph, a thought, a tool call. The address the pager draws under `M-m` (`12.3`), so **what you can point at you can branch at**. `-1` is the turn's opening question, which is the turn coordinate itself. |
 | `<id>.<n>` | **LT** | The model's logical time: one step of its experience. What `show -v/-l` prints. |
 
 The colon is the human coordinate; the dot after it is the reader's; the bare

@@ -442,6 +442,12 @@ func TestSticky_PinsTheQuestionNotTheFormDeltas(t *testing.T) {
 	if !ok {
 		t.Fatal("fixture: turn 2 is not held")
 	}
+	// Open the question's delta list: collapsed it draws no rows at all, so
+	// the header's discipline is only testable with rows there to leave out.
+	inq := nodeRef{turn: 2, index: inquiryNode}
+	tr.adorned[inq] = true
+	tr.dropTurnsRows(map[int]struct{}{2: {}})
+	tr.buildIndex()
 	q := tr.stickyBlockOf(2)
 	if q.textHigh >= len(q.rows) {
 		t.Fatal("fixture: the block carries no form deltas below its text")
@@ -453,7 +459,7 @@ func TestSticky_PinsTheQuestionNotTheFormDeltas(t *testing.T) {
 	if !strings.Contains(pinned, "please commit 2") {
 		t.Fatalf("the header does not name the exchange:\n%s", pinned)
 	}
-	if strings.Contains(pinned, "Figaro saw") {
+	if strings.Contains(pinned, "datetime") {
 		t.Fatalf("the header pinned a form delta instead of the question:\n%s", pinned)
 	}
 }

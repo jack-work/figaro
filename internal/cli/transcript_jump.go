@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 )
 
@@ -503,16 +504,33 @@ func (t *transcript) expandRange(text string) (string, string, string) {
 	if rest == "" {
 		return "", "", "range: a verb must follow it (send, fork)"
 	}
-	// The prompt is everything after the first `--`; the token leads it.
-	fields := strings.Fields(rest)
-	for i, f := range fields {
-		if f == "--" {
-			head := strings.Join(fields[:i+1], " ")
-			tail := strings.Join(fields[i+1:], " ")
-			return strings.TrimSpace(head + " " + token + " " + tail), note, ""
+	// The prompt is everything after the first `--`, AND IT IS THE READER'S
+	// BYTES: the token is spliced in front of it, never re-joined around it.
+	// Splitting on fields and joining collapsed the spaces inside a quoted
+	// argument, so `<...>!send -- "a  b"` sent `a b`.
+	head, tail, ok := cutVerbBoundary(rest)
+	if !ok {
+		return "", "", "range: the prompt must follow `--` (" + strings.Fields(rest)[0] + " -- <text>)"
+	}
+	return head + " " + token + tail, note, ""
+}
+
+// cutVerbBoundary splits a command line at its first bare `--`: the head is
+// the verb and its flags, the tail is the prompt exactly as it was typed,
+// leading space and all.
+func cutVerbBoundary(line string) (head, tail string, ok bool) {
+	for i := 0; i+1 < len(line); i++ {
+		if line[i] != '-' || line[i+1] != '-' {
+			continue
+		}
+		if i > 0 && line[i-1] != ' ' && line[i-1] != '\t' {
+			continue
+		}
+		if end := i + 2; end == len(line) || line[end] == ' ' || line[end] == '\t' {
+			return strings.TrimSpace(line[:end]), line[end:], true
 		}
 	}
-	return "", "", "range: the prompt must follow `--` (" + fields[0] + " -- <text>)"
+	return "", "", false
 }
 
 // startJump selects a resident target or requests its page.
@@ -626,16 +644,29 @@ func (t *transcript) selectRef(ref nodeRef, extend bool) bool {
 	t.wantTop = false
 	var point selectionPoint
 	found := false
+	// A delta row's point is taken from the list it belongs to, so its hash
+	// is the row's own and the copier's guard still catches state that moved
+	// under the reader.
+	takeDelta := func(block nodeRef, deltas map[string]livedoc.FormDelta) {
+		for _, p := range deltaPoints(block, deltas, true) {
+			if p.nodeRef == ref {
+				point, found = p, true
+				return
+			}
+		}
+	}
 	take := func(m aria.Message) bool {
 		switch {
-		case ref.delta && ref.index == inquiryNode:
-			point, found = deltaPoint(nodeRef{turn: m.Turn, index: inquiryNode}, m.FormDeltas)
 		case ref.index == inquiryNode:
-			point, found = inquiryPoint(m)
+			if ref.delta > 0 {
+				takeDelta(nodeRef{turn: m.Turn, index: inquiryNode}, m.FormDeltas)
+			} else {
+				point, found = inquiryPoint(m)
+			}
 		default:
 			if i := ref.index - int(m.From); i >= 0 && i < len(m.Nodes) {
-				if ref.delta {
-					point, found = deltaPoint(nodeRefAt(m, i), m.Nodes[i].FormDeltas)
+				if ref.delta > 0 {
+					takeDelta(nodeRefAt(m, i), m.Nodes[i].FormDeltas)
 				} else {
 					point, found = selectionPoint{nodeRef: ref, hash: nodeHash(m.Nodes[i])}, true
 				}

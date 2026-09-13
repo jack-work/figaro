@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/jack-work/figaro/sdk"
+	"io"
 	"os"
 	"slices"
 	"sort"
@@ -213,7 +214,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		}
 		fmt.Fprintln(stderrw, truncateVisible(summary, width))
 		fmt.Fprintln(stderrw)
-		fmt.Fprint(stdout, renderListRows(rows, width, false))
+		printListRows(stdout, rows, width, false)
 		if limit > 0 && total > limit {
 			fmt.Fprintf(stderrw, "\n… %d more (-a for all, -n N for N)\n", total-limit)
 		}
@@ -504,7 +505,7 @@ func renderFormScope(figs []rpc.FigaroInfoResponse, formID string, limit int) {
 	}
 	fmt.Fprintln(stderrw, truncateVisible(summary, width))
 	fmt.Fprintln(stderrw)
-	fmt.Fprint(stdout, renderListRows(rows, width, true))
+	printListRows(stdout, rows, width, true)
 	if limit > 0 && total > limit {
 		fmt.Fprintf(stderrw, "\n… %d more (-a for all, -n N for N)\n", total-limit)
 	}
@@ -531,7 +532,7 @@ func renderGlobal(figs []rpc.FigaroInfoResponse, boundID string, limit int) {
 	}
 	fmt.Fprintln(stderrw, truncateVisible(summary, width))
 	fmt.Fprintln(stderrw)
-	fmt.Fprint(stdout, renderListRows(rows, width, true))
+	printListRows(stdout, rows, width, true)
 	if limit > 0 && total > limit {
 		fmt.Fprintf(stderrw, "\n… %d more (-a for all, -n N for N)\n", total-limit)
 	}
@@ -547,6 +548,35 @@ func listOutputWidth() int {
 		return 10000
 	}
 	return term.Width()
+}
+
+// rowSink takes a line together with the id of the thing that line is about.
+// The pager implements it: an id on a row is data the verb hands over, never a
+// word read back out of the rendering, where a mantra naming another aria would
+// hijack the row a key acts on.
+type rowSink interface {
+	WriteRow(line, id string)
+}
+
+// printListRows writes the table, naming the aria behind each row for a writer
+// that can hold it. The table's header is not a row and has no id.
+func printListRows(w io.Writer, rows []figtree.Row, width int, global bool) {
+	text := renderListRows(rows, width, global)
+	sink, ok := w.(rowSink)
+	if !ok {
+		fmt.Fprint(w, text)
+		return
+	}
+	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
+	// A table prints a header before its rows; a compact listing does not.
+	off := len(lines) - len(rows)
+	for i, line := range lines {
+		id := ""
+		if i >= off && off >= 0 {
+			id = rows[i-off].Field(fieldID)
+		}
+		sink.WriteRow(line, id)
+	}
 }
 
 // renderListRows chooses a table only when it can fit without terminal
@@ -923,25 +953,20 @@ func runAttend(loaded *config.Loaded, spec string) {
 	if bindingDisabled() {
 		die("attend: binding disabled (--no-bind, FIGARO_NO_BIND, or non-interactive shell); this command has no effect here")
 	}
-	// "null" is home: drop this shell's binding (the angelus pid→aria map),
-	// echoing the kindNull genesis root that sits above every outfit. New
-	// conversations then default to the live outfit. `null` is a required
-	// literal; there is no `detach`. `~` is kept as a legacy alias so old
-	// muscle memory still works (it must be quoted in the shell).
-	if spec == "null" || spec == "~" {
-		runUnattend(loaded)
-		return
-	}
 	WithAngelus(loaded, func(acli *sdk.Angelus) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		// The verb is shared with the pager's `:attend`; the prose is ours.
+		// The verb is shared with the pager's `:attend`, `null` (home)
+		// included; the prose is ours.
 		out, err := attendVerb(ctx, verbEnv{loaded: loaded, acli: acli, shellPID: shellPID}, spec)
 		if err != nil {
 			die("attend: %s", err)
 		}
 		if out.Note != "" {
 			fmt.Fprintf(stderrw, "%s\n", out.Note)
+		}
+		if out.Home {
+			return nil
 		}
 		if !out.At.isHead() {
 			fmt.Fprintf(stderrw, "attending %s at %s (next prompt forks there)\n", out.ID, out.At)

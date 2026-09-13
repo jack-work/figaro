@@ -75,10 +75,38 @@ func (c *Aria) Read(ctx context.Context, at aria.Anchor, budget int) (aria.Page,
 // means the live tail, and the anchor's Node matters: a window whose oldest
 // slice starts mid-turn must ask for what precedes that node, not that turn.
 func (c *Aria) ReadBefore(ctx context.Context, at aria.Anchor, budget int) (aria.Page, error) {
+	return c.ReadBeforeFloor(ctx, at, aria.Anchor{}, budget)
+}
+
+// ReadBeforeFloor is ReadBefore stopped from below: no part below floor, which
+// is inclusive of its own anchor, and More.Before instead. A client holding a
+// fork's sealed prefix asks this way for the suffix alone.
+func (c *Aria) ReadBeforeFloor(ctx context.Context, at, floor aria.Anchor, budget int) (aria.Page, error) {
 	var r aria.Page
-	req := rpc.ReadRequest{At: at, Backward: true, Limit: budget}
+	req := rpc.ReadRequest{At: at, Backward: true, Limit: budget, Floor: floor}
 	err := c.call(ctx, rpc.MethodRead, req, &r)
 	return r, err
+}
+
+// metricsProbe is an anchor past the last turn any aria can hold, so a FORWARD
+// read from it has nothing to give. Metrics ride every read, which makes this
+// the cheapest honest way to ask for them alone.
+var metricsProbe = aria.Anchor{Turn: ^uint64(0)}
+
+// Metrics asks for what the status bar says (the capacity figure and the
+// mantra) and for nothing else.
+//
+// A BUDGET IS BYTES, NOT MESSAGES. The status clock used to ask for "one
+// message" backward and got the whole of the last one, which it then threw
+// away: 3.7 KB on the wire every 1.8 seconds for the life of a session, on a
+// pane that was doing nothing.
+func (c *Aria) Metrics(ctx context.Context) (*aria.Metrics, error) {
+	var r aria.Page
+	req := rpc.ReadRequest{At: metricsProbe, Limit: 1}
+	if err := c.call(ctx, rpc.MethodRead, req, &r); err != nil {
+		return nil, err
+	}
+	return r.Metrics, nil
 }
 
 // Context returns all messages in the figaro's chat history.

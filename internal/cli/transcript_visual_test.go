@@ -320,3 +320,42 @@ func TestVisual_CursorInsideWashRestoresIt(t *testing.T) {
 		t.Fatalf("cursorCell inside a wash\n got %q\nwant %q", got, want)
 	}
 }
+
+// THE PAINT RESTORES WHAT IT COVERED. Closing a wash or a cursor emitted a
+// bare reset, so a row that was red before the selection began came out of it
+// default-coloured: the reader saw the highlight repaint the line under it.
+func TestVisual_PaintRestoresTheRowsOwnRendition(t *testing.T) {
+	defer term.SetColorMode(term.ColorAlways)()
+	t.Setenv("COLORTERM", "truecolor")
+	const red = "\x1b[38;2;200;0;0m"
+	row := red + "abcdef\x1b[0m"
+
+	cells := func(painted string) []vtCell {
+		v := newVT(10, 1)
+		v.Write([]byte("\x1b[1;1H"))
+		v.Write([]byte(painted))
+		return v.cells[0]
+	}
+	base := cells(row)
+	got := cells(washColumns(row, 1, 3))
+	for c := range 6 {
+		if c >= 1 && c < 3 {
+			continue // washed: the background is the point of it
+		}
+		if got[c].s.fg != base[c].s.fg {
+			t.Fatalf("col %d outside the wash lost its colour: %q, want %q\n%q",
+				c, got[c].s.fg, base[c].s.fg, washColumns(row, 1, 3))
+		}
+	}
+	// The same for the cursor, which closes with a reset of its own.
+	got = cells(cursorCell(row, 2, "", 0))
+	for c := range 6 {
+		if c == 2 {
+			continue
+		}
+		if got[c].s.fg != base[c].s.fg {
+			t.Fatalf("col %d beside the cursor lost its colour: %q, want %q",
+				c, got[c].s.fg, base[c].s.fg)
+		}
+	}
+}

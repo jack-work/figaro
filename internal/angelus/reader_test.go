@@ -37,12 +37,12 @@ func TestAriaReaderReadsDormantAria(t *testing.T) {
 	require.Equal(t, 80, metrics.TokensOut)
 	require.Positive(t, metrics.ContextTokens)
 
-	page, err := r.Page(id, aria.Anchor{}, 65536, false)
+	page, err := r.Page(id, aria.Anchor{}, aria.Anchor{}, 65536, false)
 	require.NoError(t, err)
 	require.NotEmpty(t, page.Parts, "sealed history projected to no parts")
 	require.NotNil(t, page.Metrics)
 
-	tail, err := r.Page(id, aria.Anchor{}, 65536, true)
+	tail, err := r.Page(id, aria.Anchor{}, aria.Anchor{}, 65536, true)
 	require.NoError(t, err)
 	require.NotEmpty(t, tail.Parts)
 
@@ -59,7 +59,7 @@ func TestAriaReaderRejectsUnknown(t *testing.T) {
 	_, _, err := r.Context("deadbeef")
 	require.Error(t, err)
 
-	_, err = r.Page("deadbeef", aria.Anchor{}, 4096, false)
+	_, err = r.Page("deadbeef", aria.Anchor{}, aria.Anchor{}, 4096, false)
 	require.Error(t, err)
 }
 
@@ -79,7 +79,7 @@ func TestAriaReaderWithoutProjector(t *testing.T) {
 	backend, id := benchStore(t, 4)
 	r := NewAriaReader(backend, nil)
 
-	page, err := r.Page(id, aria.Anchor{}, 4096, false)
+	page, err := r.Page(id, aria.Anchor{}, aria.Anchor{}, 4096, false)
 	require.NoError(t, err)
 	require.Empty(t, page.Parts)
 

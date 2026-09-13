@@ -2,8 +2,13 @@ package figaro
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/jack-work/figaro/api/form"
 
 	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/quote"
@@ -40,6 +45,16 @@ func quoteLog(t *testing.T) *store.MemLog[message.Message] {
 	return log
 }
 
+// quoteText resolves with a budget big enough to keep everything, which is
+// what the resolution cases are about: the clipping has its own tests.
+func quoteText(log LogReader, r quote.Range) (string, error) {
+	p, err := resolveQuote(context.Background(), log, r, budget{head: 1 << 20})
+	if err != nil {
+		return "", err
+	}
+	return p.head + p.tail, nil
+}
+
 func mustRange(t *testing.T, s string) quote.Range {
 	t.Helper()
 	r, _, err := quote.Parse(s)
@@ -63,7 +78,7 @@ func TestResolveQuote(t *testing.T) {
 		{"<2.0:26-4.1:7>!", "echo.\n\nran fine\n\nhmm\n\nFoxtrot"},
 	}
 	for _, c := range cases {
-		got, err := resolveQuote(log, mustRange(t, c.tok))
+		got, err := quoteText(log, mustRange(t, c.tok))
 		if err != nil {
 			t.Fatalf("%s: %v", c.tok, err)
 		}
@@ -87,7 +102,7 @@ func TestResolveQuoteRefuses(t *testing.T) {
 		{"<2.1:0-4.0:1>!", "block 1 of lt 2 is a tool call"},
 	}
 	for _, c := range cases {
-		_, err := resolveQuote(log, mustRange(t, c.tok))
+		_, err := quoteText(log, mustRange(t, c.tok))
 		if err == nil {
 			t.Fatalf("%s: resolved, want a refusal mentioning %q", c.tok, c.want)
 		}
@@ -102,16 +117,31 @@ func TestResolveQuoteCountsRunes(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
 	_, _ = log.Append(store.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleOutput, Content: []message.Content{message.TextContent("héllo wörld 日本")}}})
-	got, err := resolveQuote(log, mustRange(t, "<1.0:6-14>!"))
+	got, err := quoteText(log, mustRange(t, "<1.0:6-14>!"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got != "wörld 日本" {
 		t.Fatalf("got %q", got)
 	}
-	if _, err := resolveQuote(log, mustRange(t, "<1.0:0-15>!")); err == nil || !strings.Contains(err.Error(), "has 14 chars") {
+	if _, err := quoteText(log, mustRange(t, "<1.0:0-15>!")); err == nil || !strings.Contains(err.Error(), "has 14 chars") {
 		t.Fatalf("byte length leaked into the count: %v", err)
 	}
+}
+
+// mustPassage resolves through the same door Rewrite uses, so a render test
+// cannot be handed a passage the resolver would never produce.
+func mustPassage(t *testing.T, view InputView, r quote.Range) passage {
+	t.Helper()
+	b, err := quoteBudget(view.Settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := resolveQuote(context.Background(), view.Log, r, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
 }
 
 func quoteSettings(head, tail int) *config.Loaded {
@@ -125,7 +155,7 @@ func TestRenderQuoteTruncates(t *testing.T) {
 	log := quoteLog(t)
 	view := InputView{AriaID: "abcd1234", Log: log, Settings: quoteSettings(5, 3)}
 	r := mustRange(t, "<2.0>!")
-	got := renderQuote(view, r, "Alpha bravo charlie delta echo.")
+	got := renderQuote(view, r, mustPassage(t, view, r))
 	want := "> quoting aria abcd1234 · turn 1 · lt 2.0 (31 chars)\n> Alpha…ho.\n\n"
 	if got != want {
 		t.Fatalf("got %q\nwant %q", got, want)
@@ -137,7 +167,8 @@ func TestRenderQuoteTruncates(t *testing.T) {
 func TestRenderQuoteShortIsWhole(t *testing.T) {
 	log := quoteLog(t)
 	view := InputView{Log: log, Settings: quoteSettings(5, 3)}
-	got := renderQuote(view, mustRange(t, "<3.0>!"), "ran fine")
+	r := mustRange(t, "<3.0>!")
+	got := renderQuote(view, r, mustPassage(t, view, r))
 	if strings.Contains(got, "…") {
 		t.Fatalf("an 8-char passage under head+tail=8 was ellipsized: %q", got)
 	}
@@ -151,7 +182,8 @@ func TestRenderQuoteHonoursGutterAndHeader(t *testing.T) {
 	g, h := "| ", false
 	l.Config.Quote.Gutter, l.Config.Quote.Header = &g, &h
 	view := InputView{Log: quoteLog(t), Settings: l}
-	got := renderQuote(view, mustRange(t, "<4>!"), "hmm\n\nFoxtrot golf hotel.")
+	r := mustRange(t, "<4>!")
+	got := renderQuote(view, r, mustPassage(t, view, r))
 	if got != "| hmm\n| \n| Foxtrot golf hotel.\n\n" {
 		t.Fatalf("got %q", got)
 	}
@@ -198,4 +230,123 @@ func TestRewriteInputOrderAndNaming(t *testing.T) {
 			t.Fatalf("%q: %q %v", in, out, err)
 		}
 	}
+}
+
+// THE QUOTE'S COST IS ITS OUTPUT. A selection is walked once, block by block,
+// and only the two ends are copied: the passage is never materialized, never
+// converted to runes whole, and a span never joins the blocks it crosses.
+func BenchmarkQuoteBoundedByOutput(b *testing.B) {
+	for _, size := range []int{1 << 10, 1 << 20, 4 << 20} {
+		b.Run(fmt.Sprintf("%dKiB", size>>10), func(b *testing.B) {
+			log := store.NewMemLog[message.Message]()
+			block := strings.Repeat("figaro qua, figaro la, figaro su, figaro giu. ", size/45)
+			for range 3 {
+				if _, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+					Role: message.RoleOutput, Content: []message.Content{message.TextContent(block)},
+				}}); err != nil {
+					b.Fatal(err)
+				}
+			}
+			r := mustParseRange(b, "<1.0:0-3.0:10>!")
+			bud := budget{head: 480, tail: 160}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				p, err := resolveQuote(context.Background(), log, r, bud)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if len(p.head)+len(p.tail) > 4*(bud.head+bud.tail) {
+					b.Fatalf("kept %d bytes for a %d rune budget", len(p.head)+len(p.tail), bud.head+bud.tail)
+				}
+			}
+		})
+	}
+}
+
+func mustParseRange(tb testing.TB, s string) quote.Range {
+	tb.Helper()
+	r, _, err := quote.Parse(s)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return r
+}
+
+// A quote is clipped to its budget whatever shape the passage arrives in: one
+// block, or a span across several. The head and the tail are exact.
+func TestQuoteClipsToItsBudget(t *testing.T) {
+	log := store.NewMemLog[message.Message]()
+	for _, text := range []string{strings.Repeat("a", 1000), strings.Repeat("b", 1000), strings.Repeat("c", 1000)} {
+		if _, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+			Role: message.RoleOutput, Content: []message.Content{message.TextContent(text)},
+		}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p, err := resolveQuote(context.Background(), log, mustParseRange(t, "<1.0:0-3.0:1000>!"), budget{head: 5, tail: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.head != "aaaaa" || p.tail != "cccc" {
+		t.Fatalf("head %q tail %q", p.head, p.tail)
+	}
+	if !p.truncated {
+		t.Fatal("a 3004 rune span under a 9 rune budget says it kept everything")
+	}
+	// 1000 + 2 + 1000 + 2 + 1000: the separators count, because the reader sees
+	// them.
+	if p.total != 3004 {
+		t.Fatalf("total %d", p.total)
+	}
+}
+
+// A budget with nothing in it is a refusal, not "send everything".
+func TestQuoteBudgetRefusals(t *testing.T) {
+	if _, err := quoteBudget(quoteSettings(0, 0)); err == nil || !strings.Contains(err.Error(), "both 0") {
+		t.Fatalf("a zero budget was accepted: %v", err)
+	}
+	if _, err := quoteBudget(quoteSettings(-1, 10)); err == nil || !strings.Contains(err.Error(), "negative") {
+		t.Fatalf("a negative budget was accepted: %v", err)
+	}
+	// Zero on ONE end is a real setting: the last 4 chars and nothing before.
+	b, err := quoteBudget(quoteSettings(0, 4))
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := quoteLog(t)
+	p, err := resolveQuote(context.Background(), log, mustParseRange(t, "<2.0>!"), b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.head != "" || p.tail != "cho." {
+		t.Fatalf("head %q tail %q", p.head, p.tail)
+	}
+}
+
+// A walk across a long span honours the caller's context.
+func TestQuoteWalkStopsWithTheRequest(t *testing.T) {
+	log := store.NewMemLog[message.Message]()
+	for range 50 {
+		if _, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+			Role: message.RoleOutput, Content: []message.Content{message.TextContent(strings.Repeat("x", 100))},
+		}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := resolveQuote(ctx, log, mustParseRange(t, "<1.0:0-50.0:100>!"), budget{head: 10, tail: 10}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("the walk ignored a cancelled request: %v", err)
+	}
+}
+
+// snapshotOf is a snapshot from a flat map.
+func snapshotOf(kv map[string]any) form.Snapshot {
+	raw := map[string]json.RawMessage{}
+	for k, v := range kv {
+		b, _ := json.Marshal(v)
+		raw[k] = b
+	}
+	return form.FromMap(raw)
 }

@@ -142,7 +142,7 @@ func readBeforeAt(history []aria.TurnPart, at aria.Anchor, parts int) aria.Page 
 		return aria.Page{}
 	}
 	turns, widest := fixtureView(history)
-	return aria.PaginateBefore(turns, at, parts*widest)
+	return aria.PaginateBefore(turns, at, aria.Anchor{}, parts*widest)
 }
 
 // nodeBytes mirrors aria's unexported nodeSize: the paginator spends its budget

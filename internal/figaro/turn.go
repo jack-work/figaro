@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/internal/mark"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -287,7 +288,7 @@ func (a *Agent) appendUserPrompt(prompt event, steering bool) (store.Entry[messa
 			// the projection will re-derive them from on a re-read, so live and
 			// re-read cannot tell two different stories about who asked.
 			a.turnFirstLT = entry.LT
-			a.ariaSrv.OpenInquiry(a.turnID, prompt.text, a.projInquirySegments(msg)...)
+			a.ariaSrv.OpenInquiry(a.turnID, prompt.text, a.openingFormDeltas(), a.projInquirySegments(msg)...)
 		}
 	}
 	return entry, nil
@@ -435,6 +436,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	}
 	appendedInline := false
 	metricsReady := false
+	tokenSeen := false
 	var roundErr error
 	var toolBuf []toolEvent
 	events := bus.events
@@ -459,6 +461,10 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 			force := false
 			switch ev.kind {
 			case evDelta:
+				if !tokenSeen {
+					tokenSeen = true
+					mark.Mark("token.first", "aria", a.id, "turn", a.turnID)
+				}
 				asmMsg.addText(ev.content.Type, ev.content.Text)
 			case evToolStart:
 				asmMsg.toolOpen(ev.id, ev.name)

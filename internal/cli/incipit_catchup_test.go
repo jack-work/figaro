@@ -370,7 +370,7 @@ func TestReleasedFramesAdoptTheArmedFooter(t *testing.T) {
 //
 // Whether to orient the user is the question "am I watching a turn I did not
 // open?", and the honest answer is on the wire: the daemon records the inquiry
-// verbatim (OpenInquiry(a.turnID, prompt.text)) and RETURNS BEFORE IT when the
+// verbatim (OpenInquiry(a.turnID, prompt.text, nil)) and RETURNS BEFORE IT when the
 // prompt is a steer, so a turn we merely joined never broadcasts a question of
 // ours. Qua's `active` flag is sampled before the prompt is even queued, so it
 // can be stale in both directions.

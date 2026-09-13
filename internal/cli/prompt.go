@@ -38,7 +38,7 @@ func runPrompt(loaded *config.Loaded, d dressing, prompt string, set renderSetti
 		// Bound at a pending fork-point (attend <id>:<LT>): this prompt forks
 		// there and moves to the new branch (one-shot: the rebind clears it).
 		if resp.AtMainLT > 0 {
-			runSendForkAt(loaded, resp.FigaroID, forkPoint{lt: resp.AtMainLT}, false, false, prompt, set)
+			runSendForkAt(loaded, resp.FigaroID, forkPoint{lt: resp.AtMainLT}, false, false, prompt, set, d)
 			return
 		}
 		figaroID = resp.FigaroID
@@ -54,7 +54,7 @@ func runPrompt(loaded *config.Loaded, d dressing, prompt string, set renderSetti
 		figaroID, figaroEP = mustCreate(ctx, acli, loaded, d)
 		attendNew(ctx, acli, figaroID)
 	}
-	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set)
+	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set, d)
 }
 
 // runNewPrompt creates a fresh figaro and prompts it. Under jsonMode
@@ -80,7 +80,7 @@ func runNewPrompt(loaded *config.Loaded, prompt string, d dressing, set renderSe
 		}
 		defer fcli.Close()
 		qctx, qcancel := context.WithTimeout(ctx, 10*time.Second)
-		if _, _, qerr := fcli.Qua(qctx, prompt, buildPromptForm()); qerr != nil {
+		if _, _, qerr := fcli.Qua(qctx, prompt, buildPromptForm(d)); qerr != nil {
 			qcancel()
 			dieWithClosure(qerr, "prompt: %s", qerr)
 		}
@@ -98,13 +98,13 @@ func runNewPrompt(loaded *config.Loaded, prompt string, d dressing, set renderSe
 	if bindingDisabled() {
 		fmt.Fprintf(stderrw, "created %s\n", figaroID)
 	}
-	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set)
+	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set, d)
 }
 
 // submitAndExit queues a prompt on an existing aria and returns without
 // attaching to the stream: the tail of every --json path. Kept in one
 // place so "what --json does" cannot drift between send, new and fork.
-func submitAndExit(ctx context.Context, loaded *config.Loaded, ariaID, prompt string) {
+func submitAndExit(ctx context.Context, loaded *config.Loaded, ariaID, prompt string, d dressing) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
@@ -121,7 +121,7 @@ func submitAndExit(ctx context.Context, loaded *config.Loaded, ariaID, prompt st
 
 	qctx, qcancel := context.WithTimeout(ctx, 10*time.Second)
 	defer qcancel()
-	if _, _, qerr := fcli.Qua(qctx, prompt, buildPromptForm()); qerr != nil {
+	if _, _, qerr := fcli.Qua(qctx, prompt, buildPromptForm(d)); qerr != nil {
 		dieWithClosure(qerr, "prompt: %s", qerr)
 	}
 }
@@ -131,7 +131,7 @@ func submitAndExit(ctx context.Context, loaded *config.Loaded, ariaID, prompt st
 // to the trunk we end up attended to. By default we rebind this shell to the
 // new alternative and send there; with stay (--attend=false) we leave the shell
 // on the original trunk and send there (the alternative is parked at the turn).
-func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, asJSON bool, prompt string, set renderSettings) {
+func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, asJSON bool, prompt string, set renderSettings, d dressing) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
@@ -198,7 +198,7 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, as
 		// --json submits and exits. This used to print the object and then
 		// stream the rendered turn to the SAME stdout, so `| jq` got one
 		// object followed by rendered prose. The object is the whole output.
-		submitAndExit(ctx, loaded, target, prompt)
+		submitAndExit(ctx, loaded, target, prompt, d)
 		return
 	}
 
@@ -206,11 +206,11 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, as
 	if err != nil {
 		die("%s", err)
 	}
-	mustPromptFigaro(ctx, ep, target, prompt, loaded, set)
+	mustPromptFigaro(ctx, ep, target, prompt, loaded, set, d)
 }
 
 // promptAria sends a prompt to a named aria.
-func promptAria(loaded *config.Loaded, ariaID, prompt string, set renderSettings) {
+func promptAria(loaded *config.Loaded, ariaID, prompt string, set renderSettings, d dressing) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
@@ -221,7 +221,7 @@ func promptAria(loaded *config.Loaded, ariaID, prompt string, set renderSettings
 	if err != nil {
 		die("%s", err)
 	}
-	mustPromptFigaro(ctx, ep, ariaID, prompt, loaded, set)
+	mustPromptFigaro(ctx, ep, ariaID, prompt, loaded, set, d)
 }
 
 // resolveAria attaches to an existing named aria. Aria ids are
@@ -266,26 +266,6 @@ func waitForSocket(path string, timeout time.Duration) error {
 		lastErr = fmt.Errorf("socket was never dialed")
 	}
 	return fmt.Errorf("figaro socket %s did not accept connections within %s: %w", path, timeout, lastErr)
-}
-
-// runUnattend drops this shell's aria binding (`figaro attend null`). New
-// conversations then use the default outfit. Idempotent when unbound.
-func runUnattend(loaded *config.Loaded) {
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer cancel()
-	acli := mustConnectAngelus(loaded)
-	defer acli.Close()
-	ppid := shellPID
-	bound := ""
-	if r, err := resolveBinding(ctx, acli, ppid); err == nil && r.Found {
-		bound = r.FigaroID
-	}
-	_ = unbindBinding(ctx, acli, ppid)
-	if bound != "" {
-		fmt.Fprintf(stderrw, "home: unattended %s; new conversations use the default outfit\n", bound)
-	} else {
-		fmt.Fprintln(stderrw, "no aria bound to this shell")
-	}
 }
 
 // runNewFromOutfit mints a fresh aria under d, binds it, and returns

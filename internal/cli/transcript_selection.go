@@ -7,6 +7,9 @@ import (
 	"hash/fnv"
 	"io"
 	"strings"
+	"time"
+
+	"github.com/jack-work/figaro/internal/mark"
 
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
@@ -17,19 +20,27 @@ import (
 type nodeRef struct {
 	turn  int
 	index int
-	// delta names the FORM DELTA TABLE drawn under the block at (turn,
-	// index) rather than the block itself. It is a separate axis instead
-	// of another sentinel index because the table must sort immediately
-	// AFTER the block it explains, which a negative sentinel (see
-	// inquiryNode) cannot do, and because a bool cannot collide with a
-	// node index or with the inquiry's by construction.
-	delta bool
+	// delta addresses ONE ROW of the form-delta adornment drawn beside the
+	// block at (turn, index) rather than the block itself: 0 is the block,
+	// n the n'th delta. It is a separate axis instead of another sentinel
+	// index because a delta row must sort immediately AFTER the block it
+	// explains, which a negative sentinel (see inquiryNode) cannot do, and
+	// because the axis cannot collide with a node index by construction.
+	delta int
 }
 
-// deltaRefOf is the table under a block. Every surface that addresses a
-// delta table goes through this, so the axis has one name.
-func deltaRefOf(ref nodeRef) nodeRef {
-	ref.delta = true
+// deltaRefOf is the i'th delta row of a block, 1-based. Every surface that
+// addresses a pseudonode goes through this, so the axis has one name.
+func deltaRefOf(ref nodeRef, i int) nodeRef {
+	ref.delta = i
+	return ref
+}
+
+// blockOf is the block a ref belongs to: itself, or the block a delta row
+// adorns. d, t and Enter all act on the block, wherever the cursor stands
+// inside its list.
+func blockOf(ref nodeRef) nodeRef {
+	ref.delta = 0
 	return ref
 }
 
@@ -77,26 +88,33 @@ func inquiryPoint(m aria.Message) (selectionPoint, bool) {
 	}, true
 }
 
-// deltaPoint is the selection point of the form delta table under a
-// block, or false when that block carries no state. The table is a
-// PSEUDONODE: it occupies no node slot, selects and folds like one, and
-// hashes over its own rows so an endpoint notices when the state under it
-// changed.
-func deltaPoint(ref nodeRef, deltas map[string]livedoc.FormDelta) (selectionPoint, bool) {
-	if len(deltas) == 0 {
-		return selectionPoint{}, false
+// deltaPoints are the selection points of a block's form-delta adornment:
+// one per row, in the order the rows draw. Each is a PSEUDONODE: it occupies
+// no node slot, selects and yanks like one, and hashes over its own row so
+// an endpoint notices when the state under it changed. A closed adornment
+// draws no rows and so offers no points: there is nothing on screen to
+// select.
+func deltaPoints(ref nodeRef, deltas map[string]livedoc.FormDelta, open bool) []selectionPoint {
+	if len(deltas) == 0 || !open {
+		return nil
 	}
-	return selectionPoint{nodeRef: deltaRefOf(ref), hash: nodeHash(deltaNodeOf(deltas))}, true
+	rows := deltaRows(deltas, adornLift(ref.index))
+	out := make([]selectionPoint, 0, len(rows))
+	for i, r := range rows {
+		out = append(out, selectionPoint{
+			nodeRef: deltaRefOf(ref, i+1),
+			hash:    nodeHash(deltaNodeOf(deltaRowFull(r))),
+		})
+	}
+	return out
 }
 
-// deltaNodeOf is the table as the one livedoc.Node shape everything else
-// speaks. The width is nominal: the identity of a table is its rows, not
-// today's terminal.
-func deltaNodeOf(deltas map[string]livedoc.FormDelta) livedoc.Node {
-	return livedoc.Node{
-		Type:     livedoc.NodeProse,
-		Markdown: strings.Join(formDeltaPlain(deltas, 200, true), "\n"),
-	}
+// deltaNodeOf is one delta row as the one livedoc.Node shape everything else
+// speaks. WHOLE: the identity of a row is what it says, not how much of it
+// today's terminal had room for, and a row clipped to some nominal width
+// hashed and copied the same as one that differed past that column.
+func deltaNodeOf(row string) livedoc.Node {
+	return livedoc.Node{Type: livedoc.NodeProse, Markdown: row}
 }
 
 // inquiryNodeOf is the question as the one livedoc.Node shape everything else
@@ -132,6 +150,10 @@ type selectionCopyPlan struct {
 	// copier: which may page history in the background: never reads the
 	// live map from another goroutine.
 	expanded map[nodeRef]bool
+	// adorned is the same snapshot for the delta lists: a closed list is not
+	// on screen, so a selection that spans it copies the blocks and not the
+	// state behind them.
+	adorned map[nodeRef]bool
 }
 
 type transcriptRow struct {
@@ -141,6 +163,31 @@ type transcriptRow struct {
 	// the right edge only while ^O is on. It rides the row rather than taking
 	// one of its own, so toggling it moves nothing and invalidates no cache.
 	mark string
+	// gutter is the glyph the row wears in the right gutter: a block's
+	// collapsed adornment marker. It rides the row for the same reason the
+	// mark does.
+	gutter string
+	// spine is the row's place in its block's adornment snake, re-resolved at
+	// paint time because the snake's head follows the selection.
+	spine ldrender.SpineSlot
+	// chrome marks a row that carries its block's ref but none of its
+	// content, so the selection cue skips it. See ldrender.Row.Chrome.
+	chrome bool
+}
+
+// barColumnFree reports whether the selection bar may take this row's first
+// column. A delta row says no: the snake is its cue, and its head says what
+// the bar could not, which of the rows in range is the focused one. So does
+// any row whose snake already stands in that column.
+func (r transcriptRow) barColumnFree() bool {
+	switch r.spine.Kind {
+	case ldrender.SpineNone:
+		return true
+	case ldrender.SpineRow:
+		return false
+	default:
+		return r.spine.Col > 0
+	}
 }
 
 // searchText is the row's text as the reader sees it. Node rows carry no
@@ -164,23 +211,23 @@ type selectionMark struct {
 	active   bool
 }
 
+// nodeRefs is every selection stop in the retained window, in reading
+// order: each block, and immediately after it the rows of its adornment
+// while the adornment is open. Walking with ^N/^P therefore enters an open
+// list from above at its first row and from below at its last, and steps out
+// of it onto the block, where d, t and Enter act.
 func (t *transcript) nodeRefs() []selectionPoint {
 	refs := make([]selectionPoint, 0)
 	appendMessage := func(m aria.Message) {
 		if p, ok := inquiryPoint(m); ok {
 			refs = append(refs, p)
 		}
-		if p, ok := deltaPoint(nodeRef{turn: m.Turn, index: inquiryNode}, m.FormDeltas); ok {
-			refs = append(refs, p)
-		}
+		inq := nodeRef{turn: m.Turn, index: inquiryNode}
+		refs = append(refs, deltaPoints(inq, m.FormDeltas, t.adorned[inq])...)
 		for i, n := range m.Nodes {
-			refs = append(refs, selectionPoint{
-				nodeRef: nodeRefAt(m, i),
-				hash:    nodeHash(n),
-			})
-			if p, ok := deltaPoint(nodeRefAt(m, i), n.FormDeltas); ok {
-				refs = append(refs, p)
-			}
+			ref := nodeRefAt(m, i)
+			refs = append(refs, selectionPoint{nodeRef: ref, hash: nodeHash(n)})
+			refs = append(refs, deltaPoints(ref, n.FormDeltas, t.adorned[ref])...)
 		}
 	}
 	for _, m := range t.messages() {
@@ -214,13 +261,15 @@ func (t *transcript) selectionMarks() map[nodeRef]selectionMark {
 		if p, ok := inquiryPoint(m); ok {
 			mark(p.nodeRef)
 		}
-		if len(m.FormDeltas) > 0 {
-			mark(deltaRefOf(nodeRef{turn: m.Turn, index: inquiryNode}))
+		inq := nodeRef{turn: m.Turn, index: inquiryNode}
+		for _, p := range deltaPoints(inq, m.FormDeltas, t.adorned[inq]) {
+			mark(p.nodeRef)
 		}
 		for i := range m.Nodes {
-			mark(nodeRefAt(m, i))
-			if len(m.Nodes[i].FormDeltas) > 0 {
-				mark(deltaRefOf(nodeRefAt(m, i)))
+			ref := nodeRefAt(m, i)
+			mark(ref)
+			for _, p := range deltaPoints(ref, m.Nodes[i].FormDeltas, t.adorned[ref]) {
+				mark(p.nodeRef)
 			}
 		}
 	}
@@ -340,13 +389,19 @@ func (t *transcript) selectionPlan() (selectionCopyPlan, bool) {
 		m.Nodes = append([]livedoc.Node(nil), m.Nodes...)
 		held = append(held, m)
 	})
-	expanded := make(map[nodeRef]bool, len(t.expanded))
-	for ref, on := range t.expanded {
-		if on {
-			expanded[ref] = true
+	snapshot := func(src map[nodeRef]bool) map[nodeRef]bool {
+		out := make(map[nodeRef]bool, len(src))
+		for ref, on := range src {
+			if on {
+				out[ref] = true
+			}
 		}
+		return out
 	}
-	return selectionCopyPlan{lo: lo, hi: hi, open: open, held: held, expanded: expanded}, true
+	return selectionCopyPlan{
+		lo: lo, hi: hi, open: open, held: held,
+		expanded: snapshot(t.expanded), adorned: snapshot(t.adorned),
+	}, true
 }
 
 // nodeClipboardText is what `y` puts on the clipboard for one node. For a
@@ -499,12 +554,16 @@ func selectedMessageText(m aria.Message, plan selectionCopyPlan, expanded map[no
 		}
 	}
 	takeDeltas := func(ref nodeRef, deltas map[string]livedoc.FormDelta) error {
-		if len(deltas) == 0 {
+		if len(deltas) == 0 || !plan.adorned[ref] {
 			return nil
 		}
-		ref = deltaRefOf(ref)
-		text := strings.Join(formDeltaPlain(deltas, 200, expanded[ref]), "\n")
-		return take(ref, deltaNodeOf(deltas), text)
+		for i, r := range deltaRows(deltas, adornLift(ref.index)) {
+			full := deltaRowFull(r)
+			if err := take(deltaRefOf(ref, i+1), deltaNodeOf(full), full); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	if err := takeDeltas(nodeRef{turn: m.Turn, index: inquiryNode}, m.FormDeltas); err != nil {
 		return nil, false, false, err
@@ -545,8 +604,8 @@ func pointLess(a, b selectionPoint) bool {
 	if a.index != b.index {
 		return a.index < b.index
 	}
-	// A block's delta table comes after the block it explains.
-	return !a.delta && b.delta
+	// A block's delta rows come after the block they explain, in order.
+	return a.delta < b.delta
 }
 
 func nodeHash(n livedoc.Node) uint64 {
@@ -575,28 +634,54 @@ func nodeHash(n livedoc.Node) uint64 {
 	return h.Sum64()
 }
 
-// toggleSelectedNodes is Enter in the pager: expand (or re-collapse) every
-// expandable node inside the selection. It was toggleSelectedTools, and the
-// rename is the point: expandability is a property a node reports through
-// nodeExpandable, not a synonym for "is a tool", so the gesture widens for free
-// as more node kinds grow a collapsed form.
-func (t *transcript) toggleSelectedNodes() bool {
+// FOLD GESTURES. Three keys, one subject: the BLOCK. `t` opens a tool's
+// body, `d` opens the form-delta list beside a block, Enter opens both, and
+// each is inert where it has nothing to show. A cursor standing on a delta
+// row is a cursor on that block's state, so the gestures reach the block
+// from inside its own list, which is what makes the list escapable with the
+// keys that opened it.
+
+// foldTarget is one thing a gesture flips: a ref, the map that holds its fold
+// state, and which of the two it is, so a gesture can say what it did.
+type foldTarget struct {
+	state  map[nodeRef]bool
+	ref    nodeRef
+	deltas bool
+}
+
+// foldSubjects are the blocks under the selection: every block inside the
+// range, plus the parent of any selected delta row. tools are the ones with
+// a body to open, adorned the ones with state to show.
+func (t *transcript) foldSubjects() (tools, adorned []nodeRef) {
 	marks := t.selectionMarks()
 	if len(marks) == 0 {
-		return false
+		return nil, nil
 	}
-	var refs []nodeRef
+	// A block counts as selected when it is selected itself or when a delta
+	// row of its own is: blockOf answers both in one pass, where a scan per
+	// candidate was the selection size times the window.
+	blocks := make(map[nodeRef]bool, len(marks))
+	for ref, m := range marks {
+		if m.selected {
+			blocks[blockOf(ref)] = true
+		}
+	}
+	touched := func(ref nodeRef) bool { return blocks[ref] }
 	appendMessage := func(m aria.Message) {
-		if d := deltaRefOf(nodeRef{turn: m.Turn, index: inquiryNode}); marks[d].selected && deltasExpandable(m.FormDeltas, 80) {
-			refs = append(refs, d)
+		inq := nodeRef{turn: m.Turn, index: inquiryNode}
+		if len(m.FormDeltas) > 0 && touched(inq) && adornRowCount(m.FormDeltas, adornLift(inq.index)) > 0 {
+			adorned = append(adorned, inq)
 		}
 		for i, n := range m.Nodes {
 			ref := nodeRefAt(m, i)
-			if marks[ref].selected && nodeExpandable(n) {
-				refs = append(refs, ref)
+			if !touched(ref) {
+				continue
 			}
-			if d := deltaRefOf(ref); marks[d].selected && deltasExpandable(n.FormDeltas, 80) {
-				refs = append(refs, d)
+			if nodeExpandable(n) {
+				tools = append(tools, ref)
+			}
+			if len(n.FormDeltas) > 0 && adornRowCount(n.FormDeltas, adornLift(ref.index)) > 0 {
+				adorned = append(adorned, ref)
 			}
 		}
 	}
@@ -606,34 +691,76 @@ func (t *transcript) toggleSelectedNodes() bool {
 	if open := t.openMessage(); open != nil {
 		appendMessage(*open)
 	}
-	return t.toggleExpansion(refs)
+	return tools, adorned
 }
 
-// toggleExpansion flips a set of nodes between their collapsed and expanded
-// renders. Shared by Enter (a whole selection) and by a second click (one
-// node), so the viewport discipline below is written once.
+// toggleSelectedNodes is Enter: open (or re-close) everything the selection
+// covers, body and state together. It was toggleSelectedTools, and the
+// rename is the point: what a block can reveal is a property it reports, not
+// a synonym for "is a tool".
+func (t *transcript) toggleSelectedNodes() bool {
+	tools, adorned := t.foldSubjects()
+	return t.toggleFolds(targets(tools, t.expanded, false), targets(adorned, t.adorned, true))
+}
+
+// toggleSelectedTools is `t`: bodies only, and only where there is a body.
+func (t *transcript) toggleSelectedTools() bool {
+	tools, _ := t.foldSubjects()
+	return t.toggleFolds(targets(tools, t.expanded, false))
+}
+
+// toggleSelectedAdornments is `d`: the form-delta lists only, and only where
+// there is state to list.
+func (t *transcript) toggleSelectedAdornments() bool {
+	_, adorned := t.foldSubjects()
+	return t.toggleFolds(targets(adorned, t.adorned, true))
+}
+
+func targets(refs []nodeRef, state map[nodeRef]bool, deltas bool) []foldTarget {
+	out := make([]foldTarget, 0, len(refs))
+	for _, ref := range refs {
+		out = append(out, foldTarget{state: state, ref: ref, deltas: deltas})
+	}
+	return out
+}
+
+// toggleExpansion is one node's body, for the mouse: a second click on a
+// block opens it.
 func (t *transcript) toggleExpansion(refs []nodeRef) bool {
-	if len(refs) == 0 {
+	return t.toggleFolds(targets(refs, t.expanded, false))
+}
+
+// toggleFolds flips sets of blocks between their collapsed and open renders.
+// Shared by Enter, d, t and a second click, so the viewport discipline below
+// is written once.
+func (t *transcript) toggleFolds(sets ...[]foldTarget) bool {
+	var targets []foldTarget
+	for _, set := range sets {
+		targets = append(targets, set...)
+	}
+	if len(targets) == 0 {
 		return false
 	}
-	expand := false
-	for _, ref := range refs {
-		if !t.expanded[ref] {
-			expand = true
+	started := mark.Now()
+	open := false
+	for _, g := range targets {
+		if !g.state[g.ref] {
+			open = true
 			break
 		}
 	}
-	dirty := make(map[int]struct{}, len(refs))
+	dirty := make(map[int]struct{}, len(targets))
 	toggle := func() {
-		for _, ref := range refs {
-			if expand {
-				t.expanded[ref] = true
+		for _, g := range targets {
+			if open {
+				g.state[g.ref] = true
 			} else {
-				delete(t.expanded, ref)
+				delete(g.state, g.ref)
 			}
-			dirty[ref.turn] = struct{}{}
+			dirty[g.ref.turn] = struct{}{}
 		}
 		t.dropTurnsRows(dirty)
+		t.repairSelection()
 	}
 	// EXPANDING GROWS UPWARD. Leaving t.offset alone pins the viewport TOP, and
 	// because the offset is an ABSOLUTE line index the new rows shove everything
@@ -645,18 +772,58 @@ func (t *transcript) toggleExpansion(refs []nodeRef) bool {
 	if t.follow {
 		toggle()
 		t.ensureSelectionVisible()
+		markFold(targets, open, started)
 		return true
 	}
-	if !t.anchorBelow(refs[len(refs)-1], toggle) {
+	if !t.anchorBelow(targets[len(targets)-1].ref, toggle) {
 		// No span on one side of the change, so there is no honest delta to
 		// apply. Keep the old behaviour rather than guess.
 		t.ensureSelectionVisible()
 	}
+	markFold(targets, open, started)
 	// Deliberately NOT ensureSelectionVisible on the anchored path. The focus is
 	// the block that just grew; scrolling to reveal its far end is exactly the
 	// downward growth this replaced, and on a 200-line expansion it throws the
 	// reader into the middle of the output with the anchor pushed off-screen.
 	return true
+}
+
+// markFold records what a fold gesture did and what it cost: the rows it
+// invalidated are recomposed on the next frame, so this is the keystroke half
+// of the span the frame mark closes.
+func markFold(targets []foldTarget, open bool, started time.Time) {
+	if !mark.Enabled() {
+		return
+	}
+	deltas, bodies := 0, 0
+	for _, g := range targets {
+		if g.deltas {
+			deltas++
+		} else {
+			bodies++
+		}
+	}
+	mark.Mark("fold", "deltas", deltas, "bodies", bodies, "open", open,
+		"ms", float64(time.Since(started).Microseconds())/1000)
+}
+
+// repairSelection brings a selection back onto a row that still exists. A
+// list closed under the cursor leaves the cursor addressing a pseudonode
+// that draws nothing: the block it adorned is where the reader is, and is
+// where d pressed again re-opens the list. The selection collapses onto that
+// block rather than keeping an endpoint nobody can see, and it re-derives the
+// point through selectRef so the copier's hash guard stays honest.
+func (t *transcript) repairSelection() {
+	if !t.selection.active {
+		return
+	}
+	lost := func(p selectionPoint) bool {
+		return p.delta > 0 && !t.adorned[blockOf(p.nodeRef)]
+	}
+	if !lost(t.selection.anchor) && !lost(t.selection.focus) {
+		return
+	}
+	t.selectRef(blockOf(t.selection.focus.nodeRef), false)
 }
 
 // ensureSelectionVisible scrolls the focused node into the body, if it is not
@@ -702,22 +869,32 @@ func barOverMargin(row, bar string, width int) string {
 	return clipToWidth(row[:i]+bar+row[i:], width)
 }
 
+// selBg is the selection wash: ONE STEP off the background, not a hue.
+// Kanagawa sumiInk2 #2A2A37 (xterm 236) is dark enough to disappear into a
+// dark theme and light enough to read as a lift, with the foreground
+// untouched.
+const selBg = "\x1b[48;5;236m"
+
 // decorateNodeRow paints a single transcript row with its selection cue. The
 // left indicator is one column (down from two): a slim vertical bar for
 // selected rows (bright cyan on the focused row, plain cyan on the rest of
 // the range) and a single space otherwise. Selected rows also get a subtle
 // background wash so the extent of a multi-block selection is visible without
 // relying on a wide gutter.
-func decorateNodeRow(plain string, mark selectionMark, width int) string {
+//
+// bar is false for a row whose left margin is already spoken for: a delta
+// row's snake stands in that column, and the snake IS the cue there, its head
+// marking the focus the bar could only say was somewhere in range. The wash
+// still runs, so the extent of a selection reads the same.
+func decorateNodeRow(plain string, mark selectionMark, width int, bar bool) string {
 	if !mark.selected && !mark.active {
 		return plain
 	}
+	if !bar {
+		return washRow(plain, width)
+	}
 	const (
-		reset = "\x1b[0m"
-		// ONE STEP off the background, not a hue. Kanagawa sumiInk2 #2A2A37
-		// (xterm 236): dark enough to disappear into a dark theme and light
-		// enough to read as a lift, with the foreground untouched.
-		bgSelect   = "\x1b[48;5;236m"
+		reset      = "\x1b[0m"
 		gutterSel  = "\x1b[36m▎"   // cyan slim bar for range members
 		gutterFocs = "\x1b[1;96m▎" // bright bold cyan bar for focused node
 	)
@@ -728,13 +905,55 @@ func decorateNodeRow(plain string, mark selectionMark, width int) string {
 	if mark.active {
 		gutter = gutterFocs
 	}
-	body := plain
-	// Re-emit the background after every reset in the body so highlighting
-	// survives inline styling (dim, cyan, etc. inside a rendered node).
-	for _, r := range []string{reset, "\x1b[m"} {
-		body = strings.ReplaceAll(body, r, r+bgSelect)
+	// The bar goes in AFTER the wash substitution, so its own reset (which
+	// ends the bar's colour before the text resumes) is not itself re-washed.
+	body := washBody(plain)
+	return selBg + barOverMargin(body, gutter+reset+selBg, width) + washFill(plain, width) + reset
+}
+
+// washRow is the wash with no left cue: the lift alone, carried to the right
+// edge like a decorated row.
+func washRow(plain string, width int) string {
+	if !term.Enabled() {
+		return plain
 	}
-	// The bar goes in AFTER that substitution, so its own reset (which ends the
-	// bar's colour before the text resumes) is not itself re-washed.
-	return bgSelect + barOverMargin(body, gutter+reset+bgSelect, width) + "\x1b[K" + reset
+	return selBg + washBody(plain) + washFill(plain, width) + "\x1b[0m"
+}
+
+// washFill carries the wash from the end of the row to the right edge, and
+// draws NOTHING when the row already reaches it.
+//
+// THE ERASE WOULD WIPE THE LAST COLUMN. The pager runs with autowrap off, so
+// writing the pane's last column leaves the cursor standing ON it, and an
+// erase-to-end-of-line then clears the cell just written: the adornment's
+// gutter glyph, or the last character of a row that happens to fill the pane.
+// appendRowUpdate learned this from a tmux replay and erases before it writes;
+// a wash cannot do that, so it asks first.
+func washFill(plain string, width int) string {
+	if displayWidth(plain) >= width {
+		return ""
+	}
+	return "\x1b[K"
+}
+
+// washBody re-emits the wash after every reset the row carries, so
+// highlighting survives inline styling (dim, cyan, a glyph in the margin)
+// instead of ending at the first reset inside the row.
+func washBody(plain string) string {
+	body := plain
+	for _, r := range []string{"\x1b[0m", "\x1b[m"} {
+		body = strings.ReplaceAll(body, r, r+selBg)
+	}
+	return body
+}
+
+// below reports whether every end of the selection sits in the turns below
+// base: the prefix a fork shares with its ancestor, where a node reference
+// means the same node in both arias. An inactive selection is below
+// everything, because there is nothing to point anywhere.
+func (s nodeSelection) below(base int) bool {
+	if !s.active {
+		return true
+	}
+	return base > 0 && s.anchor.turn < base && s.focus.turn < base
 }

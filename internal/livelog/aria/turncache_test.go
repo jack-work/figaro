@@ -217,8 +217,8 @@ func TestWindowedPageEqualsFullWalk(t *testing.T) {
 	budget.Settle(2e9)
 	for _, at := range []Anchor{{}, {Turn: 3, Node: 0}, {Turn: 20, Node: 0}, {Turn: 39, Node: 0}} {
 		for _, budgetBytes := range []int{10 * 1024, 200 * 1024} {
-			a := bounded.ReadBefore(at, budgetBytes)
-			b := full.ReadBefore(at, budgetBytes)
+			a := bounded.ReadBefore(at, Anchor{}, budgetBytes)
+			b := full.ReadBefore(at, Anchor{}, budgetBytes)
 			if len(a.Parts) != len(b.Parts) {
 				t.Fatalf("at=%+v budget=%d: %d vs %d parts", at, budgetBytes, len(a.Parts), len(b.Parts))
 			}

@@ -15,6 +15,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
+	"github.com/jack-work/figaro/internal/mark"
 	"github.com/jack-work/figaro/internal/render"
 	"github.com/jack-work/figaro/internal/term"
 )
@@ -1032,20 +1033,57 @@ const queuedRowsMax = 5
 // scroll.
 func (t *livelogTurn) invalidateTranscriptWindow() { t.tr.invalidateWindow() }
 
+// transcriptShowsGap reports whether the frame just painted has a hole in it.
+// It reads the index the render built and does not rebuild one: the question
+// is about what is ON SCREEN, and the answer has to be cheap enough to ask on
+// every frame of a live stream.
+func (t *livelogTurn) transcriptShowsGap() bool {
+	if !t.tr.active {
+		return false
+	}
+	for k := range t.tr.index.entries {
+		if t.tr.index.entries[k].isGap() {
+			return true
+		}
+	}
+	return false
+}
+
+// keptScroll reports whether the last switch left the reader where they were.
+// It decides which read seeds the new subject: the continuation of what is on
+// screen, or its tail.
+func (t *livelogTurn) keptScroll() bool { return t.tr.kept }
+
+// renderNow paints the pager immediately: what a switch owes the reader.
+func (t *livelogTurn) renderNow() {
+	if t.tr.active {
+		t.tr.renderNow()
+		return
+	}
+	t.render()
+}
+
 // retarget points this renderer at a DIFFERENT aria: the transcript's subject
 // changes, and everything aria-scoped is rebuilt around the new one.
 //
-// It is a true reload, deliberately: a fresh client, an empty store, a cold
-// window. The cheaper thing -- keeping the turns the two arias SHARE, which for
-// a fork is nearly all of them -- needs the wire to say where two arias diverge,
-// and it does not yet. See plans/transcript-subject.md §3; this function is the
-// seam that work optimises, and it is the only one.
+// base is the first turn the two arias do NOT share (rpc.LineageResponse's
+// Divergence). Turns below it are the same turns in both, sealed and
+// coordinate-identical, so they are kept: the client is truncated rather than
+// replaced, and the pager keeps the rows and the question blocks it drew for
+// them. A base of 0 keeps nothing, which is the whole of the unrelated case.
 //
 // Called with the render lock held.
-func (t *livelogTurn) retarget(figaroID string, status *sessionStatus) {
-	t.client = aria.NewClient()
+func (t *livelogTurn) retarget(figaroID string, status *sessionStatus, base int) seedPlan {
+	// A NEW CLIENT, ALWAYS: the one we are holding may be on the shelf, and a
+	// switch that truncated it in place would rewrite a parked aria into a
+	// conversation that never happened. CloneBelow(0) is an empty client, so
+	// the unrelated case needs no arm of its own.
+	kept := 0
+	t.client = t.client.CloneBelow(base)
+	kept = t.client.Count()
 	t.status = status
 	t.wireClient()
+	mark.Mark("hop.retain", "to", figaroID, "base", base, "kept", kept)
 
 	// Everything below is state ABOUT the old aria, and every field of it that
 	// survives is a way for the new transcript to render the old conversation.
@@ -1061,7 +1099,26 @@ func (t *livelogTurn) retarget(figaroID string, status *sessionStatus) {
 	t.held = nil
 	t.seeded = aria.Page{}
 
-	t.tr.retarget(t.client, figaroID, status)
+	t.tr.retarget(t.client, figaroID, status, base)
+	// THE FLOOR IS WHAT WE HOLD, NOT WHAT WE WERE TOLD WE COULD KEEP. The
+	// divergence is an upper bound; the clone's coverage is the fact, and it
+	// is lower whenever the aria we left had a turn OPEN, because a clone
+	// drops the open turn on purpose. A read floored at the bound steps over
+	// that turn, and the pager draws "1 turn not loaded" between the prefix
+	// and the branch's first turn, which no scrolling clears because nothing
+	// ever asks for it. Found in a pane by 27068b2c: a head fork taken while
+	// the parent was mid-tool.
+	floor := base
+	if first, ok := t.client.FirstMissing(); ok && first < floor {
+		floor = first
+	}
+	switch {
+	case t.tr.kept:
+		return seedPlan{kind: seedSuffix, from: floor}
+	case base > 0:
+		return seedPlan{kind: seedTail, from: floor}
+	}
+	return seedPlan{kind: seedWindow}
 }
 
 // setCommandRunner wires the ':' box's non-coordinate half to whoever owns the
@@ -1070,7 +1127,7 @@ func (t *livelogTurn) retarget(figaroID string, status *sessionStatus) {
 func (t *livelogTurn) setCommandRunner(fn func(string)) { t.tr.command = fn }
 
 // setTranscriptCmdOut shows a command's captured output in the footer panel.
-func (t *livelogTurn) setTranscriptCmdOut(title string, rows []string) {
+func (t *livelogTurn) setTranscriptCmdOut(title string, rows []pitRow) {
 	t.tr.setCmdOut(title, rows)
 }
 
@@ -1102,4 +1159,61 @@ func (q queuedItem) mark() string {
 		return "→"
 	}
 	return "·"
+}
+
+// adopt puts a parked aria back on screen and reports the turn from which the
+// wire still owes us history: the highest turn the parked store holds, which
+// may have grown while we were away. Everything below it is held and will not
+// be asked for again.
+//
+// Called with the render lock held.
+func (t *livelogTurn) adopt(figaroID string, status *sessionStatus, p *parkedSubject, base int) seedPlan {
+	// THE SCREEN THE READER IS LOOKING AT OUTRANKS THE ONE THEY LEFT BEHIND.
+	// If the window sits in the prefix this aria shares with the one on
+	// screen, those rows are the same rows and nothing moves; the position
+	// remembered from the last visit is only used when there is no such
+	// overlap to honour.
+	here := t.tr.keepsScroll(base)
+	t.client = p.client
+	t.status = status
+	t.wireClient()
+	t.open = aria.Message{}
+	t.pending = nil
+	t.finished = false
+	t.thinkingOpen = false
+	t.lastFrozen = sliceCursor{}
+	t.pagerClosed = nil
+	t.queued, t.queuedErr = nil, ""
+	t.held = nil
+	t.seeded = aria.Page{}
+	t.tr.adopt(p, status, here, base)
+	from := 0
+	if tail, ok := t.client.TailFrom(1); ok {
+		// The last turn we hold may have been open when we left it, so it is
+		// re-read rather than trusted: everything BELOW it is sealed.
+		from = int(tail.Turn)
+	}
+	plan := seedPlan{kind: seedTail, from: from}
+	if t.tr.kept {
+		// Parked in history: the wire owes this screen nothing unless the
+		// store has a hole in it above where the reader stands.
+		//
+		// OWING NOTHING REQUIRES BEING SURE OF THE TAIL. A store that says
+		// there is more above what it holds is either right, in which case the
+		// turns that arrived while we were away are missing, or wrong, in
+		// which case it is drawing a sentinel over a conversation it holds
+		// whole and will keep drawing it: a switch that reads nothing never
+		// folds a page, and folding a page is what corrects that belief. Both
+		// are answered by the one read this asks for.
+		plan = seedPlan{kind: seedNothing, from: from}
+		switch {
+		case t.client.MoreAfter():
+			plan = seedPlan{kind: seedTail, from: from}
+		case !t.client.Contiguous(t.tr.from):
+			plan = seedPlan{kind: seedSuffix, from: max(base, 1)}
+		}
+	}
+	mark.Mark("hop.adopt", "to", figaroID, "msgs", t.client.Count(),
+		"from", from, "kind", plan.kind, "here", here)
+	return plan
 }

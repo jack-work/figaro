@@ -3,6 +3,7 @@ package figaro
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/internal/mark"
 	"log/slog"
 	"runtime"
 	"strings"
@@ -544,7 +545,9 @@ func (a *Agent) refreshMetricsFrom(msgs []message.Message) {
 }
 
 // SubmitPrompt enqueues a prompt; the reply streams as log.* frames.
-func (a *Agent) SubmitPrompt(req rpc.QuaRequest) { _ = a.SubmitPromptFrom(req, "") }
+func (a *Agent) SubmitPrompt(req rpc.QuaRequest) {
+	_ = a.SubmitPromptFrom(context.Background(), req, "")
+}
 
 // SubmitPromptFrom is SubmitPrompt with the caller's rendered attribution.
 // the way down rather than becoming "unknown".
@@ -552,12 +555,12 @@ func (a *Agent) SubmitPrompt(req rpc.QuaRequest) { _ = a.SubmitPromptFrom(req, "
 // which is why a refusal -- a harness-owned key, say -- could only be logged:
 // the RPC had returned long before. A patch is data about the board, not about
 // the turn, so it lands when it is submitted.
-func (a *Agent) SubmitPromptFrom(req rpc.QuaRequest, sender string) error {
+func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender string) error {
 	// REWRITE BEFORE ANYTHING LANDS. A refused token (an @key! not on the
 	// board, a quote naming no passage) leaves the form unpatched and the
 	// inbox untouched, and the caller learns why on this reply. See
 	// input_rewrite.go.
-	text, err := a.rewriteInput(context.Background(), req.Text)
+	text, err := a.rewriteInput(ctx, req.Text)
 	if err != nil {
 		return err
 	}
@@ -1318,6 +1321,7 @@ func (a *Agent) fanOut(n rpc.Notification) {
 		ctx = context.Background()
 	}
 	slog.DebugContext(ctx, "rpc notify", "aria", a.id, "method", n.Method, "params", n.Params)
+	mark.Mark("fanout", "aria", a.id, "method", n.Method)
 
 	figOtel.Event(ctx, "agent.fanout.pre",
 		attribute.String("method", n.Method),

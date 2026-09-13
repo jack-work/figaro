@@ -64,7 +64,7 @@ func legacyLines(t *transcript) ([]string, []sliceKey, map[nodeRef]nodeSpan) {
 		for _, r := range rows {
 			line := r.text
 			if r.ref.valid() {
-				line = decorateNodeRow(line, marks[r.ref], t.w)
+				line = decorateNodeRow(line, marks[r.ref], t.w, true)
 				span, ok := nodeRows[r.ref]
 				if !ok {
 					span.first = len(out)

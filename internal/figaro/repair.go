@@ -10,9 +10,16 @@ import (
 
 const tailRepairNotice = "process died mid-turn; output not captured"
 
+// repairTailLookback bounds the read that finds an unanswered call. A call is
+// left open only by a process that died with it in flight, so nothing was
+// appended after it: it is at the tail, within one round of it. Reading the
+// history to find it is the whole-log walk this must never be, and it ran at
+// every open of every aria.
+const repairTailLookback = 64
+
 // repairInterruptedTail closes any tool call this aria's history left open.
 func repairInterruptedTail(stream store.Log[message.Message], ariaID string) (store.Entry[message.Message], bool) {
-	rows := stream.Read()
+	rows := store.TailSnapshot(stream, repairTailLookback)
 	at := -1
 	for i := len(rows) - 1; i >= 0; i-- {
 		if len(assistantToolInvokes(rows[i].Payload)) > 0 {

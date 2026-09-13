@@ -9,7 +9,9 @@ import (
 	"github.com/jack-work/figaro/internal/livelog/aria"
 )
 
-// `show` draws the same table the pager does, collapsed, and -v opens it.
+// `show` draws the same table the pager does, collapsed, and `-o` opens it.
+// THE FLAG IS `-o`: `-v` takes show's raw-IR path and never reaches this
+// composer, which the older version of this test claimed it did.
 func TestShowDrawsTheDeltaTable(t *testing.T) {
 	deltas := map[string]livedoc.FormDelta{
 		"a1.system.forked_from": {Value: json.RawMessage(`"aaaa1111"`), Kind: livedoc.FormBound, Event: livedoc.FormSet, Form: "a1"},
@@ -26,8 +28,16 @@ func TestShowDrawsTheDeltaTable(t *testing.T) {
 	if strings.Contains(stripANSI(collapsed), strings.Repeat("m", 60)) {
 		t.Fatalf("show collapses the values:\n%s", collapsed)
 	}
-	open := strings.Join(renderTurnRows(m, 100, 0, renderSettings{verbose: true}), "\n")
+	// The door: `show -o` is what sets the field this composer reads.
+	opts := parseShowArgs([]string{"-o"})
+	if !opts.details {
+		t.Fatal("show -o does not set details, which is the field the composer reads")
+	}
+	if raw := parseShowArgs([]string{"-v"}); !raw.verbose || raw.details {
+		t.Fatalf("show -v is the raw IR path, not the table: %+v", raw)
+	}
+	open := strings.Join(renderTurnRows(m, 100, 0, renderSettings{verbose: opts.details}), "\n")
 	if !strings.Contains(stripANSI(open), strings.Repeat("m", 60)) {
-		t.Fatalf("show -v opens the table:\n%s", open)
+		t.Fatalf("show -o opens the table:\n%s", open)
 	}
 }

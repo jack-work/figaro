@@ -105,6 +105,14 @@ const (
 	RuntimeTooling RuntimeState = "tooling"
 )
 
+// Busy reports whether a turn is actually RUNNING, as against the interstitials
+// either side of one. `accepted` and `committing` are the states a prompt
+// passes through on its way into an idle aria, in a few milliseconds; a client
+// that reads them as work will show the reader a turn that is not there yet.
+func (s RuntimeState) Busy() bool {
+	return s == RuntimeThinking || s == RuntimeTooling
+}
+
 const (
 	// RejectCommitting: the drain loop lifted it out of the queue as the
 	// request arrived. It is becoming a message right now.

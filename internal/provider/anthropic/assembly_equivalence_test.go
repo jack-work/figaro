@@ -353,14 +353,6 @@ func TestStreamedAssemblyIsByteIdenticalToTheSliceAssembler(t *testing.T) {
 			perMessage: [][]json.RawMessage{{raw("")}, {msg("user", "only")}, {}},
 			lts:        []uint64{1, 2, 3},
 		},
-		{
-			name: "a tool result whose call is unmatched is left alone",
-			perMessage: [][]json.RawMessage{
-				{toolResult("call_x", "orphan")},
-				{msg("assistant", "ok")},
-			},
-			lts: []uint64{1, 2},
-		},
 	}
 
 	for _, tc := range cases {

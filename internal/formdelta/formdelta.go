@@ -4,6 +4,7 @@
 package formdelta
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/jack-work/figaro/api/livedoc"
@@ -150,18 +151,18 @@ func foldPatch(deltas map[string]livedoc.FormDelta, formID string, kind livedoc.
 		if ent.IsRemoval() {
 			continue
 		}
-		deltas[formID+"."+k] = livedoc.FormDelta{
+		put(deltas, formID+"."+k, livedoc.FormDelta{
 			Value: v, Prev: ent.Old, Kind: kind, Event: livedoc.FormSet, Form: formID,
-		}
+		})
 	}
 	for _, ent := range p.Entries() {
 		if !ent.IsRemoval() {
 			continue
 		}
 		k := ent.Key
-		deltas[formID+"."+k] = livedoc.FormDelta{
+		put(deltas, formID+"."+k, livedoc.FormDelta{
 			Prev: ent.Old, Kind: kind, Event: livedoc.FormRemoved, Form: formID,
-		}
+		})
 	}
 }
 
@@ -188,7 +189,7 @@ func foldStudied(deltas map[string]livedoc.FormDelta, fid string, sf *studiedFor
 		if store.HiddenLibrettoKey(k) {
 			continue
 		}
-		deltas[fid+"."+k] = livedoc.FormDelta{Value: v, Prev: ent.Old, Kind: kind, Event: livedoc.FormSet, Form: fid}
+		put(deltas, fid+"."+k, livedoc.FormDelta{Value: v, Prev: ent.Old, Kind: kind, Event: livedoc.FormSet, Form: fid})
 	}
 	for _, ent := range p.Entries() {
 		if !ent.IsRemoval() {
@@ -198,7 +199,7 @@ func foldStudied(deltas map[string]livedoc.FormDelta, fid string, sf *studiedFor
 		if store.HiddenLibrettoKey(k) || k == store.KeyLibrettoAlive {
 			continue
 		}
-		deltas[fid+"."+k] = livedoc.FormDelta{Prev: ent.Old, Kind: kind, Event: livedoc.FormRemoved, Form: fid}
+		put(deltas, fid+"."+k, livedoc.FormDelta{Prev: ent.Old, Kind: kind, Event: livedoc.FormRemoved, Form: fid})
 	}
 }
 
@@ -293,7 +294,8 @@ func AttachOne(t *aria.Turn, deltas map[uint64]map[string]livedoc.FormDelta) {
 			}
 		}
 	}
-	for lt, d := range deltas {
+	for _, lt := range orderedLTs(deltas) {
+		d := deltas[lt]
 		if ni, ok := claimed[lt]; ok {
 			t.Nodes[ni].FormDeltas = merge(t.Nodes[ni].FormDeltas, d)
 			continue
@@ -302,12 +304,36 @@ func AttachOne(t *aria.Turn, deltas map[uint64]map[string]livedoc.FormDelta) {
 	}
 }
 
+// orderedLTs is chronological order for a fold that reads a map. The fold
+// is a collapse: the same records must produce the same deltas, so the
+// walk is never map order.
+func orderedLTs(deltas map[uint64]map[string]livedoc.FormDelta) []uint64 {
+	lts := make([]uint64, 0, len(deltas))
+	for lt := range deltas {
+		lts = append(lts, lt)
+	}
+	slices.Sort(lts)
+	return lts
+}
+
+// merge collapses a later record's deltas onto an earlier fold. A key
+// touched twice in one window renders as one transition: the FIRST Prev
+// (where the key stood when the window opened) to the LAST Value.
 func merge(into, from map[string]livedoc.FormDelta) map[string]livedoc.FormDelta {
 	if into == nil {
 		into = make(map[string]livedoc.FormDelta, len(from))
 	}
 	for k, v := range from {
-		into[k] = v
+		put(into, k, v)
 	}
 	return into
+}
+
+// put records one key's transition, keeping the Prev already standing:
+// the window's old side is where the key stood when it opened.
+func put(deltas map[string]livedoc.FormDelta, key string, d livedoc.FormDelta) {
+	if prior, ok := deltas[key]; ok {
+		d.Prev = prior.Prev
+	}
+	deltas[key] = d
 }

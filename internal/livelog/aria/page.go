@@ -124,11 +124,50 @@ func step(turns []Turn, c cursor, dir Direction) (cursor, bool) {
 	return c, false
 }
 
+// below reports whether c stands strictly earlier than f in reading order.
+func below(c, f cursor) bool {
+	return c.turn < f.turn || (c.turn == f.turn && c.node < f.node)
+}
+
+// floorAt resolves a floor anchor to the FIRST position at or above it. The
+// floor is inclusive of its own anchor, so an anchor naming a live position
+// resolves to that position; one naming a node past its turn's end, or a turn
+// that is not here, resolves up to the next position that exists. ok is false
+// when nothing in turns lies at or above the floor.
+func floorAt(turns []Turn, f Anchor) (cursor, bool) {
+	for ti := sort.Search(len(turns), func(i int) bool { return turns[i].ID >= f.Turn }); ti < len(turns); ti++ {
+		n := uint64(units(turns[ti]))
+		if n == 0 {
+			continue
+		}
+		if turns[ti].ID != f.Turn {
+			return cursor{ti, 0}, true
+		}
+		if f.Node < n {
+			return cursor{ti, int(f.Node)}, true
+		}
+	}
+	return cursor{}, false
+}
+
 // Paginate cuts one Page out of turns, walking from at in dir until budget
 // bytes are spent. It is pure: same inputs, same page, no clock, no state.
 func Paginate(turns []Turn, at Anchor, dir Direction, budget int) Page {
+	return paginate(turns, at, dir, budget, Anchor{})
+}
+
+// paginate is the one walk. floor applies to a BACKWARD walk and stops it at
+// the anchor, inclusive of the anchor itself; the zero anchor is no floor.
+func paginate(turns []Turn, at Anchor, dir Direction, budget int, floor Anchor) Page {
 	if len(turns) == 0 || budget <= 0 {
 		return Page{}
+	}
+	stop, floored := cursor{}, dir == Backward && !floor.Zero()
+	if floored {
+		var ok bool
+		if stop, ok = floorAt(turns, floor); !ok {
+			return Page{} // every position here is below the floor
+		}
 	}
 	start, ok := locate(turns, at, dir)
 	if !ok {
@@ -141,11 +180,17 @@ func Paginate(turns []Turn, at Anchor, dir Direction, budget int) Page {
 			return Page{}
 		}
 	}
+	if floored && below(start, stop) {
+		return Page{}
+	}
 
 	// Walk, collecting positions until the budget is spent. Always take the
 	// first node so a page can never be empty.
 	spent, end := 0, start
 	for c, ok := start, true; ok; c, ok = step(turns, c, dir) {
+		if floored && below(c, stop) {
+			break
+		}
 		sz := unitSize(turns[c.turn], c.node)
 		if c != start && spent+sz > budget {
 			break
@@ -189,7 +234,13 @@ func anchorAt(turns []Turn, c cursor) Anchor {
 // that node actually exists. "Before" means before: the caller already holds
 // the anchor: it is the oldest thing in its window and it asked for what
 // precedes it. Returning it again duplicates a message at every page boundary.
-func PaginateBefore(turns []Turn, at Anchor, budget int) Page {
+//
+// floor stops the walk from below and is INCLUSIVE of its own anchor: a floor
+// of (t, 3) keeps nodes 3 and up of turn t and nothing of turn t-1. The zero
+// anchor is no floor. When the floor cuts the page, More.Before says so
+// exactly as a budget cut would: there is history below, the caller declined
+// to be sent it.
+func PaginateBefore(turns []Turn, at, floor Anchor, budget int) Page {
 	if len(turns) == 0 {
 		return Page{}
 	}
@@ -204,7 +255,7 @@ func PaginateBefore(turns []Turn, at Anchor, budget int) Page {
 		}
 		at = Anchor{Turn: turns[prev.turn].ID, Node: uint64(prev.node)}
 	}
-	return Paginate(turns, at, Backward, budget)
+	return paginate(turns, at, Backward, budget, floor)
 }
 
 // assemble builds the parts spanning lo..hi inclusive, in reading order.

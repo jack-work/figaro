@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/message"
@@ -168,10 +169,10 @@ func toolNode(inv message.Content, lt uint64, block int, at int64, results map[s
 		if res.IsError {
 			n.Status = livedoc.StatusError
 		}
-		n.Output = tailBound(res.Text)
+		n.Output, n.OutputBase = tailBoundAt(res.Text)
 	} else {
 		n.Status = livedoc.StatusRunning
-		n.Output = tailBound(partials[inv.ToolCallID])
+		n.Output, n.OutputBase = tailBoundAt(partials[inv.ToolCallID])
 		// Generation phase: the arguments are still arriving. Show the raw
 		// prefix for EVERY tool: no name is consulted and none is special -
 		// and drop it the moment the decoded Arguments land, since Args says
@@ -207,19 +208,28 @@ func summaryFor(args map[string]any) string {
 // tailBound clamps streamed tool output to the last composeBashCap source
 // lines; the full result stays in the canonical Content IR.
 func tailBound(text string) string {
+	out, _ := tailBoundAt(text)
+	return out
+}
+
+// tailBoundAt is tailBound and the rune offset of what it kept within the
+// source text. A reader quotes what the preview showed, and that quote
+// resolves against the whole block: without the offset the coordinate is
+// valid, accepted, and names a different passage.
+func tailBoundAt(text string) (string, int) {
 	if text == "" {
-		return ""
+		return "", 0
 	}
 	s := strings.TrimRight(text, "\n")
 	cut := len(s)
 	for i := 0; i < composeBashCap; i++ {
 		j := strings.LastIndexByte(s[:cut], '\n')
 		if j < 0 {
-			return s
+			return s, 0
 		}
 		cut = j
 	}
-	return s[cut+1:]
+	return s[cut+1:], utf8.RuneCountInString(s[:cut+1])
 }
 
 // Units is gone. compose.Turns is the single projection now, a turn is one

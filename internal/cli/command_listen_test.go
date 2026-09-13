@@ -2,9 +2,20 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/jack-work/jkrpc"
+
+	"github.com/jack-work/figaro/api/rpc"
+	"github.com/jack-work/figaro/api/transport"
+	"github.com/jack-work/figaro/sdk"
 )
 
 // YOU HAVE TO LISTEN TO A FIGARO. `:listen` is the pager's spelling of
@@ -33,47 +44,113 @@ func TestOverlay_ListenAttendAndNoOpen(t *testing.T) {
 	}
 }
 
-// ONE PARSER, TWO DOORS. The shell's fork runs planFork; the box's :fork
-// runs planFork. The same argv must produce the same plan, and the box's
-// refusals are the shell's grammar refusals with the box's own two on top.
-func TestTwoDoors_ForkArgvParsesTheSame(t *testing.T) {
-	cases := [][]string{
-		{"--", "what about this?"},
-		{"abcd1234", "--", "hello"},
-		{"abcd1234:12", "-S", "mantra=q", "--", "hello"},
-		{"--stay", "abcd1234.42", "-O", "sonn5", "--", "hi"},
-		{"--", "<412.0:23-1180>! why?"},
-	}
-	for _, argv := range cases {
-		shell, serr := planFork(argv)
-		box, berr := planFork(argv) // the box calls the same function; the assertion is that it does
-		if (serr == nil) != (berr == nil) || !reflect.DeepEqual(shell, box) {
-			t.Fatalf("%v: shell=%+v/%v box=%+v/%v", argv, shell, serr, box, berr)
+// ONE PREPARATION, TWO SURFACES.
+//
+// There is no second fork parser to compare against: both doors call
+// prepareFork, and the only thing that differs is what the surface they were
+// typed at can honour. (This test used to call planFork twice and compare the
+// results, which is true of any function, while its name claimed to open two
+// doors it never touched. The send half of the pair is gone for the same
+// reason; the property it claimed is proved against a real request in
+// send_outfit_test.go.)
+func TestForkPreparationDiffersOnlyByTheSurface(t *testing.T) {
+	for _, line := range []string{
+		"fork -- what about this?",
+		"fork abcd1234 -- hello",
+		"fork abcd1234:12 -S mantra=q -- hello",
+		"fork --stay abcd1234.42 -O sonn5 -- hi",
+		"fork -- <412.0:23-1180>! why?",
+	} {
+		argv := tokenize(line)[1:]
+		shell, serr := prepareFork(argv, shellSurface)
+		pager, perr := prepareFork(argv, pagerSurface)
+		if serr != nil || perr != nil {
+			t.Fatalf("%q: shell=%v pager=%v", line, serr, perr)
 		}
-		if serr == nil && shell.prompt != extractPrompt(argv) {
-			t.Fatalf("%v: prompt %q, extractPrompt %q", argv, shell.prompt, extractPrompt(argv))
+		if !reflect.DeepEqual(shell, pager) {
+			t.Fatalf("%q: the two surfaces prepared different plans:\n%+v\n%+v", line, shell, pager)
+		}
+		if shell.prompt != extractPrompt(argv) {
+			t.Fatalf("%q: prompt %q, extractPrompt %q", line, shell.prompt, extractPrompt(argv))
 		}
 	}
-	// The grammar's own refusals reach the box unchanged.
-	if _, err := planFork([]string{"--bogus", "--", "x"}); err == nil {
-		t.Fatal("planFork accepted --bogus")
+	if _, err := prepareFork([]string{"--bogus", "--", "x"}, pagerSurface); err == nil {
+		t.Fatal("prepareFork accepted --bogus")
 	}
 }
 
-func TestTwoDoors_SendArgvParsesTheSame(t *testing.T) {
+// A FLAG THE SURFACE CANNOT HONOUR IS REFUSED BY NAME, and by BOTH prompt
+// verbs: `:fork -x` used to be parsed and dropped while `:send -x` was
+// refused, so one of the two lied about what it was going to do.
+func TestPagerRefusesWhatItCannotHonour(t *testing.T) {
+	for _, argv := range [][]string{
+		{"-x", "--", "list the files"},
+		{"-n", "-x", "--", "hi"},
+		{"-r", "--", "hi"},
+		{"-v", "--", "hi"},
+		{"-j", "--", "hi"},
+		{"-l", "--", "hi"},
+		{"--record", "/tmp/t.tape", "--", "hi"},
+	} {
+		if _, err := prepareSend(argv, pagerSurface); err == nil {
+			t.Errorf("send %v was accepted by the pager", argv)
+		}
+		if _, err := prepareFork(argv, pagerSurface); err == nil {
+			t.Errorf("fork %v was accepted by the pager", argv)
+		}
+		// The shell honours every one of them: the refusal is the surface's,
+		// not the grammar's.
+		if _, err := prepareFork(argv, shellSurface); err != nil {
+			t.Errorf("fork %v refused at a shell: %v", argv, err)
+		}
+	}
+	// -f is a stream's notion: a shell can decline a stream, the pager IS one.
+	if _, err := prepareFork([]string{"-f", "--", "hi"}, pagerSurface); err == nil {
+		t.Error("the pager accepted fork -f")
+	}
+	if _, err := prepareFork([]string{"-f", "--", "hi"}, shellSurface); err != nil {
+		t.Errorf("the shell refused fork -f: %v", err)
+	}
 	for _, argv := range [][]string{
 		{"--", "hi"},
 		{"abcd1234", "--", "hi"},
-		{"--id", "abcd1234", "-S", "k=v", "--", "hi there"},
-		{"-f", "abcd1234", "--", "hi"},
+		{"-S", "mantra=x", "-O", "sonn5", "--", "hi"},
+		{"--stay", "--", "hi"},
 	} {
-		plan, err := planSend(argv)
-		if err != nil {
-			t.Fatalf("%v: %v", argv, err)
+		if _, err := prepareFork(argv, pagerSurface); err != nil {
+			t.Errorf("fork %v: %v", argv, err)
 		}
-		opts, rest, err := extractSendFlags(argv)
-		if err != nil || !reflect.DeepEqual(plan.opts, opts) || plan.prompt != extractPrompt(rest) {
-			t.Fatalf("%v: planSend and extractSendFlags disagree: %+v vs %+v", argv, plan, opts)
+	}
+}
+
+// A FORK FROM THE PAGER ATTENDS THE BRANCH. Gluck excluded the one command
+// that shows an aria the shell does not attend: under `:listen B` while bound
+// to A, the pager's fork used to retarget to B's branch and leave the shell on
+// A, because the shared verb applied the SHELL's fan-out rule to it.
+func TestForkBindingIntent(t *testing.T) {
+	cases := []struct {
+		name   string
+		intent bindIntent
+		stay   bool
+		bound  string
+		target string
+		move   bool
+	}{
+		{"pager forks the aria it shows, bound elsewhere", bindBranch, false, "A", "B", true},
+		{"pager forks with --stay", bindBranch, true, "A", "B", false},
+		{"pager with nothing bound", bindBranch, false, "", "B", true},
+		{"shell forks its own", bindFanOut, false, "A", "A", true},
+		{"shell fans out", bindFanOut, false, "A", "B", false},
+		{"shell unbound", bindFanOut, false, "", "B", false},
+		{"stay never moves", bindStay, false, "A", "A", false},
+	}
+	for _, c := range cases {
+		move, note := bindDecision(c.intent, c.stay, c.bound, "no binding", c.target)
+		if move != c.move {
+			t.Errorf("%s: move=%v, want %v (note %q)", c.name, move, c.move, note)
+		}
+		if !move && c.intent != bindStay && !c.stay && note == "" {
+			t.Errorf("%s: refused to attend and said nothing", c.name)
 		}
 	}
 }
@@ -103,5 +180,68 @@ func TestVerbEnv_BoundAriaWithoutAShell(t *testing.T) {
 	id, why := env.boundAria(context.Background())
 	if id != "" || !strings.Contains(why, "no shell") {
 		t.Fatalf("boundAria with no shell: %q %q", id, why)
+	}
+}
+
+// THE BOX'S VERBS TAKE THE BOX'S ARGV. `:attend` used to join its words with
+// spaces, so `:attend a b` asked the daemon for an aria called "a b".
+func TestOverlaySpecIsOnePositional(t *testing.T) {
+	if spec, err := oneSpec("attend", []string{"abcd1234"}); err != nil || spec != "abcd1234" {
+		t.Fatalf("one spec: %q %v", spec, err)
+	}
+	if spec, err := oneSpec("attend", nil); err != nil || spec != "" {
+		t.Fatalf("no spec: %q %v", spec, err)
+	}
+	if _, err := oneSpec("attend", []string{"a", "b"}); err == nil || !strings.Contains(err.Error(), "one aria") {
+		t.Fatalf("two words were accepted as one aria: %v", err)
+	}
+}
+
+
+// AND THE BOX'S DOOR IS OPENED. commandFork is driven with one ':' line, and
+// what is asserted is the REQUEST a daemon receives: the trunk, the turn and
+// the dressing the plan carried. Nothing here compares a parser with itself.
+func TestCommandForkSendsThePlansRequest(t *testing.T) {
+	sock := filepath.Join(t.TempDir(), "angelus.sock")
+	got := make(chan rpc.ForkRequest, 2)
+	fakeRPCServer(t, sock, map[string]jkrpc.HandlerFunc{
+		rpc.MethodResolve: func(context.Context, json.RawMessage) (interface{}, error) {
+			return rpc.ResolveResponse{Found: true, FigaroID: "abcd1234"}, nil
+		},
+		rpc.MethodFork: func(_ context.Context, params json.RawMessage) (interface{}, error) {
+			var req rpc.ForkRequest
+			if err := json.Unmarshal(params, &req); err != nil {
+				return nil, err
+			}
+			got <- req
+			// Recorded: stop the flow here rather than mint a branch the
+			// test would then have to prompt and show.
+			return nil, errors.New("fork stops here")
+		},
+	})
+	acli, err := sdk.DialAngelus(transport.UnixEndpoint(sock))
+	if err != nil {
+		t.Fatalf("dial the fake angelus: %v", err)
+	}
+	defer acli.Close()
+
+	in := &interactiveInput{mu: &sync.Mutex{}, acli: acli, figaroID: "abcd1234"}
+	if _, err := in.commandFork(context.Background(), tokenize("fork abcd1234:12 -S mantra=q -- hello")[1:]); err == nil {
+		t.Fatal("the fake angelus refused the fork and commandFork reported success")
+	}
+
+	select {
+	case req := <-got:
+		if req.FigaroID != "abcd1234" || req.AtTurn != 12 {
+			t.Fatalf("the box forked %s at turn %d", req.FigaroID, req.AtTurn)
+		}
+		if req.Patch == nil {
+			t.Fatal("the box's fork carried no dressing")
+		}
+		if v := string(mustEntry(*req.Patch, "mantra")); v != `"q"` {
+			t.Fatalf("the box's fork wore %s", v)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the fake angelus was never asked to fork")
 	}
 }

@@ -25,7 +25,7 @@ func TestClientAlwaysHasTheQuestion(t *testing.T) {
 	const who = "aria 123456"
 	segs := []InquirySegment{{Sender: who, Text: q}}
 	drive := func(s *Server) {
-		s.OpenInquiry(1, q, segs...)
+		s.OpenInquiry(1, q, nil, segs...)
 		s.OpenTurn(1)
 		s.Update(nil, []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "answering"}}, 0)
 		s.Update(nil, []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "answering more"}}, 0)
@@ -66,12 +66,55 @@ func TestClientAlwaysHasTheQuestion(t *testing.T) {
 	}
 }
 
+// The form state a turn ENTERS with rides the frame that opens it. A fork's
+// birth patch is in that window and its banner is how a reader walks back to
+// the parent, so it must be readable while the child is still answering: it
+// used to appear only when the turn sealed, an answer later.
+func TestTheOpeningFrameCarriesTheFormState(t *testing.T) {
+	deltas := map[string]livedoc.FormDelta{
+		"a1.system.forked_from": {
+			Value: json.RawMessage(`"90ec6584"`), Kind: livedoc.FormBound,
+			Event: livedoc.FormSet, Form: "a1",
+		},
+	}
+	s := NewServer()
+	var frames []Page
+	s.Subscribe(func(p Page) { frames = append(frames, p) })
+	s.OpenInquiry(1, "the question", deltas)
+	s.OpenTurn(1)
+	s.Update(nil, []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "still answering"}}, 0)
+
+	c := NewClient()
+	fold := func() map[string]livedoc.FormDelta {
+		for _, f := range frames {
+			c.Apply(f, Notify)
+		}
+		v := c.View()
+		for _, m := range append(append([]Message(nil), v.Closed...), open(v)...) {
+			if m.Turn == 1 {
+				return m.FormDeltas
+			}
+		}
+		return nil
+	}
+	if _, ok := fold()["a1.system.forked_from"]; !ok {
+		t.Fatalf("the fork banner is not on the open turn: %+v", fold())
+	}
+
+	// And the seal, which restates the turn, must not take it away again.
+	s.Close()
+	s.Seal(nil)
+	if _, ok := fold()["a1.system.forked_from"]; !ok {
+		t.Fatalf("the seal dropped the state the turn opened with: %+v", fold())
+	}
+}
+
 // A client that MISSED the opening frames: the case the whole design turns on
 // : recovers through the read it is required to issue on connect.
 func TestLateJoinerRecoversTheQuestionFromARead(t *testing.T) {
 	const q = "WHATDIDIASK"
 	s := NewServer()
-	s.OpenInquiry(1, q)
+	s.OpenInquiry(1, q, nil)
 	s.OpenTurn(1)
 	s.Update(nil, []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "answering"}}, 0)
 
@@ -131,7 +174,7 @@ func TestQuestionIsNotRestatedOnEveryFrame(t *testing.T) {
 				}
 			}
 		})
-		s.OpenInquiry(1, q)
+		s.OpenInquiry(1, q, nil)
 		s.OpenTurn(1)
 		for i := 0; i < 40; i++ {
 			s.Update(nil, []livedoc.Node{{Type: livedoc.NodeProse, Markdown: strings.Repeat("x", i+1)}}, 0)
@@ -174,7 +217,7 @@ func BenchmarkTurnPushBytes(b *testing.B) {
 			enc, _ := json.Marshal(p)
 			pushed += len(enc)
 		})
-		s.OpenInquiry(1, q, InquirySegment{Sender: "aria e83ae209", Text: q})
+		s.OpenInquiry(1, q, nil, InquirySegment{Sender: "aria e83ae209", Text: q})
 		s.OpenTurn(1)
 		for i := 0; i < 40; i++ {
 			s.Update(nil, []livedoc.Node{{

@@ -104,10 +104,10 @@ func turnComposer(turn, width int, tick uint64, set renderSettings) ldrender.Com
 		Rule:   func() string { return dimTransRule(width) },
 		Sender: dimSender,
 		Tick:   int(tick),
-		// The delta table draws collapsed by default; -v opens it, since a
-		// one-shot dump has no Enter to press.
-		State: func(_ int, deltas map[string]livedoc.FormDelta, w int) []string {
-			return formDeltaLines(deltas, w, set.verbose)
+		// The delta list draws collapsed by default: one glyph in the right
+		// gutter. -v opens it, since a one-shot dump has no d to press.
+		Adorn: func(block int, n livedoc.Node, deltas map[string]livedoc.FormDelta, w int) ldrender.Adornment {
+			return buildAdornment(adornerFor(block, n), deltas, w, set.verbose)
 		},
 	}
 	if set.verbose {

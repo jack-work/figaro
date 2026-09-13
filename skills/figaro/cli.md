@@ -46,7 +46,7 @@ These hold across the whole CLI:
 | `-S`, `--set <k=v>` | Form keys, the other axis: `k=v` or a JSON literal, comma-separated. Folded AFTER `-O`, so your key beats the outfit's. |
 | `-D`, `--delete <paths>` | Form key paths to remove, comma-separated. Folded last. |
 | `-r`, `--raw` | Plain text on stdout: no ANSI, no markdown. Streamed, not buffered. |
-| `-o`, `--verbose` | Expand full tool inputs. Ctrl-O toggles it live. |
+| `-o`, `--verbose` | Expand full tool inputs. `M-m` toggles it live in the pager. |
 | `-l`, `--listen` | Open the transcript pager at startup. |
 | `-v`, `--verbatim` | Dump raw wire frames as JSON, one object per line. |
 | `-x`, `--exec` | Treat the reply as a bash script and run it. `-n` prints without running, `-y` skips the confirmation. |
@@ -291,4 +291,5 @@ bytes. Fixed in v0.6.3: verification runs against a copy.
 | Ctrl-C | Interrupt the turn. |
 | Ctrl-D | Disconnect this CLI, leave the turn running. |
 | Ctrl-T | Open the transcript pager. |
-| Ctrl-O | Toggle verbose tool expansion. |
+| Alt-m | Toggle verbose tool output and the node addresses. |
+| Ctrl-O / Ctrl-I | Jumplist: back / forward through the arias attended here. |

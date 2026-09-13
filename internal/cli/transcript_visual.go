@@ -273,28 +273,24 @@ func (t *transcript) visualSeed() (visualPoint, bool) {
 	}
 	top, bottom := t.viewportLines()
 	// The bottommost node that starts on screen, then its first row.
-	var seed visualPoint
-	found := false
 	for i := bottom - 1; i >= top; i-- {
 		p, ok := t.visualPointAt(i, 0)
 		if !ok {
 			continue
 		}
-		if !found || p.ref != seed.ref {
-			// Walk up to this node's first row inside the viewport.
-			first := i
-			for j := i - 1; j >= top; j-- {
-				q, ok := t.visualPointAt(j, 0)
-				if !ok || q.ref != p.ref {
-					break
-				}
-				first = j
+		// Walk up to this node's first row inside the viewport.
+		first := i
+		for j := i - 1; j >= top; j-- {
+			q, ok := t.visualPointAt(j, 0)
+			if !ok || q.ref != p.ref {
+				break
 			}
-			p, _ = t.visualPointAt(first, 0)
-			return p, true
+			first = j
 		}
+		p, _ = t.visualPointAt(first, 0)
+		return p, true
 	}
-	return seed, found
+	return visualPoint{}, false
 }
 
 func (t *transcript) leaveVisual() { t.visual = visualSelection{} }
@@ -491,11 +487,19 @@ func paintColumns(row string, from, to int, body, restore string, restoreUntil i
 	if from >= to || body == "" {
 		return row
 	}
+	// under is the row's OWN rendition where the paint started: the sequences
+	// still in force, in order, since its last full reset. Closing the paint
+	// with a bare reset dropped them, so washing three columns of a red line
+	// left the rest of the line default-coloured.
+	var under []string
 	closeAt := func(col int) string {
-		if restore != "" && col < restoreUntil {
-			return reset + restore
+		out := strings.Join(under, "")
+		// The wash IS one of the row's own sequences once washColumns has
+		// run, so re-arming it after replaying them would emit it twice.
+		if restore != "" && col < restoreUntil && !strings.HasSuffix(out, restore) {
+			out += restore
 		}
-		return reset
+		return reset + out
 	}
 	var b strings.Builder
 	b.Grow(len(row) + 32)
@@ -503,6 +507,7 @@ func paintColumns(row string, from, to int, body, restore string, restoreUntil i
 	for i := 0; i < len(row); {
 		if row[i] == '\x1b' {
 			j := skipANSI(row, i)
+			under = foldSGR(under, row[i:j])
 			b.WriteString(row[i:j])
 			if inside {
 				isReset := row[i:j] == reset || row[i:j] == "\x1b[m"
@@ -556,9 +561,27 @@ func paintColumns(row string, from, to int, body, restore string, restoreUntil i
 		b.WriteString(strings.Repeat(" ", to-col))
 	}
 	if inside {
-		b.WriteString(closeAt(col))
+		// At the END of the row there is nothing left to wear the rendition,
+		// and every painted row must finish in the default one (compactRow).
+		b.WriteString(reset)
+		if restore != "" && col < restoreUntil {
+			b.WriteString(restore)
+		}
 	}
 	return b.String()
+}
+
+// foldSGR keeps the row's own rendition: the SGR sequences in force since its
+// last full reset, in order. A non-SGR escape is not a rendition and a full
+// reset clears what came before it.
+func foldSGR(under []string, esc string) []string {
+	if len(esc) < 3 || esc[1] != '[' || esc[len(esc)-1] != 'm' {
+		return under
+	}
+	if body := esc[2 : len(esc)-1]; body == "" || body == "0" {
+		return under[:0]
+	}
+	return append(under, esc)
 }
 
 // ---------------------------------------------------------------------------
@@ -850,4 +873,12 @@ func (t *transcript) visualLandSearch(line int, q string) {
 	p.col = col
 	t.visual.cursor = p
 	t.visualEnsureVisible(line)
+}
+
+// below is nodeSelection.below for the visual cursor and its highlight.
+func (s visualSelection) below(base int) bool {
+	if !s.on {
+		return true
+	}
+	return base > 0 && s.cursor.ref.turn < base && (s.kind == visualNone || s.anchor.ref.turn < base)
 }

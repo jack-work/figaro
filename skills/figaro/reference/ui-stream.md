@@ -197,6 +197,50 @@ Two rules that are easy to get wrong:
 The argument fold note lives on the label rather than in a row of its own,
 because rows are what is being rationed.
 
+### Form state: the adornment
+
+A block that arrived with form state wears it. Collapsed, that is **one glyph
+in the right gutter** and nothing else: a tool on its header row, prose on the
+end of its text, a turn's question on the `> input` row. The gutter is one
+column held for exactly this, mirroring the two on the left the selection bar
+stands in, and the `M-m` addresses stop one column short of it.
+
+```
+> input ⑂ e5abf08d                                                          Δ
+```
+
+`d` opens the list: **one row per key, and every row is a pseudonode**,
+selected and yanked and walked by `^N`/`^P` like a node. A snake joins the rows
+to the block: its head (`Δ`) marks the selected row and parks at the anchor
+when the selection is elsewhere, and its body reaches from the head back to the
+block it explains.
+
+```
+✓ bash [37ms]                    (open, cursor on the second row)
+  │ set mantra = "harness beh…
+ ╭╯
+ │ datetime  ∅ -> Saturday, September 12, 2026
+ Δ mantra    going to test some ha… -> harness behavior test
+```
+
+Three layouts, one primitive (`internal/cli/adornment.go`): a tool hangs the
+snake off a connector row under its output, prose off the first line of its own
+text, and a question **encloses** its deltas between its text and the rule that
+closes the seam, so its snake runs down to a `╰` corner instead of up to a
+block. A fork is lifted out of the question's list and into its header row,
+where the glyph and the parent id read as what they are: a property of the turn,
+not a row of its state. Anywhere else a `system.forked_from` is a key like any
+other, because a fork only ever happens on the question.
+
+Entering an open list from above lands on its first row, from below on its
+last, and stepping up past the first row selects the block, which is where the
+keys that opened it act. A row's yank is the transition **whole**: what the
+screen elided to keep one key on one row is not what the row says.
+
+`d` and `t` are the halves `Enter` presses together: `d` the state beside a
+block, `t` a tool's body. Each is inert where it has nothing to open, and `d`
+with nothing to open keeps its older job of scrolling half a page.
+
 A `Live` frame with deltas updates the suffix. A `Live` frame with no deltas is
 a close marker for that streaming suffix; it does **not** necessarily finish
 the whole turn, because another model/tool round may follow. A client promotes
@@ -381,15 +425,19 @@ run `figaro show` (full content above, cursor below).
 | Key | Action |
 | --- | --- |
 | `j` / `k` | line down / up |
-| `u` / `d` | half-page up / down |
+| `u` / `d` | half-page up / down (`d` opens the form deltas beside a selection first) |
 | `gg` / `G` | top of the retained buffer / bottom |
 | `↓` / `↑` | line down / up |
 | `PgDn` / `PgUp` | half-page down / up |
 | `Home` / `End` | top / bottom |
 | `/` | literal string search |
-| `:` | jump to a coordinate: `:12`, `:12.3`, `:0` |
-| `f j` / `f k` | next / previous fork point (the `⑂` row a delta table draws) |
+| `:` | the command line: any figaro verb, or a coordinate (`:12`, `:12.3`, `:0`). With a highlight up it opens holding `<,>`. See [quoting.md](quoting.md). |
+| `t` / `Enter` | open a tool's body / both the body and the form deltas |
+| `f j` / `f k` | next / previous fork point (the block whose `⑂` the question's header carries) |
 | `a` | attend the aria that fork point came from; in a list, the selected row's |
+| `v` / `V` | visual mode: a cursor, then a highlight by character / by line |
+| `y` / `Y` | copy the selection / copy its coordinate `<lt.block:a-b>!` |
+| `M-m` | verbose tool output, and every node's address |
 | `Ctrl-O` / `Ctrl-I` | the jumplist: back / forward through the arias attended here |
 | `q` / `Esc` / `Ctrl-T` | exit the pager |
 

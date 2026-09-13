@@ -171,7 +171,7 @@ func TestRetargetKeepsTheFrameHold(t *testing.T) {
 	if len(lt.held) != 1 {
 		t.Fatalf("the hold took %d pages, want 1", len(lt.held))
 	}
-	lt.retarget("aria5678", newSessionStatus("aria5678", time.Now()))
+	lt.retarget("aria5678", newSessionStatus("aria5678", time.Now()), 0)
 	if !lt.hold {
 		t.Fatal("retarget disarmed the hold this session had armed")
 	}

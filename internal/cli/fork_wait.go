@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"github.com/jack-work/figaro/sdk"
 	"time"
 
@@ -39,7 +38,7 @@ func waitForFork(
 		}
 	}
 	if note != "" {
-		fmt.Fprintf(stderrw, "%s\n", note)
+		report(ctx, "%s", note)
 	}
 	done := make(chan forkCallResult, 1)
 	go func() {
@@ -53,7 +52,7 @@ func waitForFork(
 	case result := <-done:
 		return result.response, result.err
 	case <-timer.C:
-		fmt.Fprintf(stderrw, "forking %s; waiting for a safe actor/storage boundary...\n", ariaID)
+		report(ctx, "forking %s; waiting for a safe actor/storage boundary...", ariaID)
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}

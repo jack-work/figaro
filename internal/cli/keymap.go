@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/mattn/go-runewidth"
@@ -140,9 +141,9 @@ func (b *keyBinding) hidden() bool { return b.help == helpNone }
 // reorganisation this table is owed, not a specification: the rows below are
 // the truth, and TestKeymap_EveryRowIsWellFormed is what enforces it.
 //
-//	plain letters, pager:  a d e f g j k m n o q s u v x y
+//	plain letters, pager:  a d e f g j k m n o q s t u v x y
 //	                       F G H N Q S T V X Y  (and ? ! / : Esc Enter)
-//	free plain letters:    b c h i l p r t w z
+//	free plain letters:    b c h i l p r w z
 //	                       A B C D E I J K L M O P R U W Z
 //	control bytes:         ^C ^D ^L ^T ^N ^P ^O ^I(Tab) Enter Esc
 //	meta:                  M-n M-p (question travel), M-m (verbose output)
@@ -265,7 +266,7 @@ var keymap = []keyBinding{
 	// -- pager level: motions ----------------------------------------------
 	{chord: byteChord('j'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerLineDown},
 	{chord: byteChord('k'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerLineUp},
-	{chord: byteChord('d'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerHalfDown},
+	{chord: byteChord('d'), modes: inTranscript, open: opensPager, help: helpDeltas, pager: pagerToggleDeltas},
 	{chord: byteChord('u'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerHalfUp},
 	{chord: byteChord('G'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerTail},
 	{chord: byteChord('g'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerPendingTop},
@@ -298,15 +299,9 @@ var keymap = []keyBinding{
 
 	// -- pager level: the jumplist -----------------------------------------
 	//
-	// ^O back, ^I forward, through the arias this session has attended: the
-	// chords neovim spends on the same idea. ^O USED TO BE VERBOSE TOOL
-	// OUTPUT, which has moved to 'o' (a free plain letter, and the same
-	// letter as the thing it shows). ^I is Tab, which is COMPLETION IN THE
-	// ':' BOX and nothing at all out here: the box is a different mode, and
-	// these rows do not name it, so Tab still completes and the box's own ^O
-	// is still the box's. Nor is a PIT one of their modes: a pit is a thing
-	// you are in, every key that is not its own dismisses it, and hopping
-	// arias from inside a list is not a gesture anyone needs.
+	// ^O back, ^I forward, through the arias this session has attended.
+	// Verbose tool output moved to M-m. ^I is Tab, which is completion inside
+	// the ':' box: the box is a different mode and these rows do not name it.
 	{chord: byteChord(0x0f), modes: inTranscript, open: opensPager, help: helpAriaJump, pager: pagerAriaBack},
 	{chord: ctrlChord('o'), modes: inTranscript, open: opensPager, help: helpNone, pager: pagerAriaBack},
 	{chord: byteChord(0x09), modes: inTranscript, open: opensPager, help: helpNone, pager: pagerAriaForward},
@@ -396,8 +391,13 @@ var keymap = []keyBinding{
 	// -- pager level: selection --------------------------------------------
 	{chord: byteChord(0x0e), modes: inTranscript, open: opensPager, help: helpSelect, pager: pagerSelectNext},
 	{chord: byteChord(0x10), modes: inTranscript, open: opensPager, help: helpSelect, pager: pagerSelectPrev},
-	{chord: byteChord(0x0d), modes: inTranscript, open: opensPager, help: helpExpand, pager: pagerToggleTools},
-	{chord: byteChord(0x0a), modes: inTranscript, open: opensPager, help: helpExpand, pager: pagerToggleTools},
+	{chord: byteChord(0x0d), modes: inTranscript, open: opensPager, help: helpExpand, pager: pagerToggleBlocks},
+	{chord: byteChord(0x0a), modes: inTranscript, open: opensPager, help: helpExpand, pager: pagerToggleBlocks},
+	// `d` and `t` are the halves Enter presses together: the form-delta list
+	// beside a block, and a tool's own body. Each is inert where it has
+	// nothing to show, and `d` with nothing to open keeps its older job of
+	// scrolling half a page (see pagerToggleDeltas).
+	{chord: byteChord('t'), modes: inTranscript, open: opensPager, help: helpToolBody, pager: pagerToggleBodies},
 	{
 		chord: byteChord(0x1b), modes: inTranscript,
 		open: staysInline, why: "clears a selection there is none of, and is a sequence prefix besides",
@@ -694,6 +694,8 @@ const (
 	helpSelect
 	helpSelectExtend
 	helpExpand
+	helpDeltas
+	helpToolBody
 	helpInterrupt
 	helpHangUp
 	helpHangUpDrop
@@ -761,13 +763,15 @@ var helpRows = []helpRow{
 	{helpSticky, "s", "pin the question of the turn you are inside"},
 	{helpBarVerbose, "m", "more: state names, model, last interaction"},
 	{helpCmdPaste, "(in :) ^V", "paste the clipboard"},
-	{helpSelect, "^N/^P", "select next/previous node (a delta table is one)"},
+	{helpSelect, "^N/^P", "select next/previous node (each form delta is one)"},
 	{helpForkJump, "f j / f k", "next / previous fork point"},
 	{helpAttend, "a", "attend the fork point's aria (in a list, the selected row's)"},
 	{helpAriaJump, "^O / ^I", "jumplist: back / forward through attended arias"},
 	{helpQuestionTravel, "M-n / M-p", "travel to the next / previous question"},
 	{helpSelectExtend, "^N/^P + Shift", "travel between questions (Alt+^N/^P extends a selection)"},
-	{helpExpand, "Enter", "expand tools within the selection"},
+	{helpExpand, "Enter", "open tool bodies and form deltas within the selection"},
+	{helpDeltas, "d", "open the form deltas beside the selection (else scroll half a page)"},
+	{helpToolBody, "t", "open the tool bodies within the selection"},
 	{helpEscape, "Esc", "clear selection / close panel"},
 	{helpVisual, "v / V", "visual mode: a cursor; again to mark by character / by line (y yanks, : commands it)"},
 	{helpVisualCols, "(in v) h/l · ←/→", "move the cursor's column"},
@@ -1099,3 +1103,40 @@ func metaOpens(b byte) bool { return b < 128 && openerMeta[b] }
 
 // opensTranscriptFor is the byte-shaped form of the same question.
 func opensTranscriptFor(b byte) bool { return openerByte[b] }
+
+func (c chord) String() string {
+	switch c.kind {
+	case chordNav:
+		return "nav:" + navName(c.nav)
+	case chordCtrlLetter:
+		return fmt.Sprintf("csi-u ctrl-%c", c.b)
+	case chordMeta:
+		if c.b == 0x7f {
+			return "M-DEL"
+		}
+		return fmt.Sprintf("M-%c", c.b)
+	default:
+		if c.b < 0x20 || c.b == 0x7f {
+			return fmt.Sprintf("0x%02x", c.b)
+		}
+		return fmt.Sprintf("%q", string(c.b))
+	}
+}
+
+func navName(n navKey) string {
+	switch n {
+	case navUp:
+		return "Up"
+	case navDown:
+		return "Down"
+	case navPageUp:
+		return "PgUp"
+	case navPageDown:
+		return "PgDn"
+	case navHome:
+		return "Home"
+	case navEnd:
+		return "End"
+	}
+	return "none"
+}

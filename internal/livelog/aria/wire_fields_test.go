@@ -36,6 +36,7 @@ func TestLiveDeltaCarriesEveryNodeField(t *testing.T) {
 		Args:       map[string]any{"command": "ls"},
 		Status:     livedoc.StatusOK,
 		Output:     "out",
+		OutputBase: 4200,
 		Input:      `{"command":"ls`,
 		Summary:    "ls",
 		Sender:     "aria 76062b18",

@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-
-	"github.com/jack-work/figaro/api/form"
 )
 
 // formRefs expands `@key!` from the aria's own board. The sigil is
@@ -118,14 +116,4 @@ func refValueString(raw json.RawMessage) string {
 		return ""
 	}
 	return string(b)
-}
-
-// snapshotOf is a test seam: a snapshot from a flat map.
-func snapshotOf(kv map[string]any) form.Snapshot {
-	raw := map[string]json.RawMessage{}
-	for k, v := range kv {
-		b, _ := json.Marshal(v)
-		raw[k] = b
-	}
-	return form.FromMap(raw)
 }

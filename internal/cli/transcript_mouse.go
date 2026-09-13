@@ -73,27 +73,30 @@ func (t *transcript) nodeAt(ref nodeRef) (node livedoc.Node, ok bool) {
 	return node, ok
 }
 
-// toggleExpansionOf toggles one node, when that node has something to reveal.
-// A node with no collapsed form is left alone rather than flipped invisibly:
-// flipping a flag that changes no row would make the second click look broken
-// in exactly the way a no-op looks correct.
+// toggleExpansionOf toggles one block, when that block has something to
+// reveal. A block with nothing to open is left alone rather than flipped
+// invisibly: flipping a flag that changes no row would make the second click
+// look broken in exactly the way a no-op looks correct.
+//
+// A DELTA ROW HAS NO SECOND FORM. It is one line and it says one thing, so a
+// second click on it selects and stops; the keys are what close the list it
+// belongs to (see foldSubjects).
 func (t *transcript) toggleExpansionOf(ref nodeRef) bool {
-	if ref.delta {
-		d, ok := t.deltasAt(ref)
-		if !ok || !deltasExpandable(d, t.w) {
-			return false
-		}
-		return t.toggleExpansion([]nodeRef{ref})
-	}
-	n, ok := t.nodeAt(ref)
-	if !ok || !nodeExpandable(n) {
+	if ref.delta > 0 {
 		return false
 	}
-	return t.toggleExpansion([]nodeRef{ref})
+	var targets []foldTarget
+	if d, ok := t.deltasAt(ref); ok && adornRowCount(d, adornLift(ref.index)) > 0 {
+		targets = append(targets, foldTarget{state: t.adorned, ref: ref})
+	}
+	if n, ok := t.nodeAt(ref); ok && nodeExpandable(n) {
+		targets = append(targets, foldTarget{state: t.expanded, ref: ref})
+	}
+	return t.toggleFolds(targets)
 }
 
-// deltasAt is the form delta set behind a delta pseudonode's ref: a
-// node's, or the turn's when the ref sits on the inquiry.
+// deltasAt is the form delta set a BLOCK carries: a node's, or the turn's
+// when the ref sits on the inquiry.
 func (t *transcript) deltasAt(ref nodeRef) (deltas map[string]livedoc.FormDelta, ok bool) {
 	find := func(m aria.Message) {
 		if ok || m.Turn != ref.turn {
@@ -104,7 +107,7 @@ func (t *transcript) deltasAt(ref nodeRef) (deltas map[string]livedoc.FormDelta,
 			return
 		}
 		for i := range m.Nodes {
-			if deltaRefOf(nodeRefAt(m, i)) == ref {
+			if nodeRefAt(m, i) == ref {
 				deltas, ok = m.Nodes[i].FormDeltas, len(m.Nodes[i].FormDeltas) > 0
 				return
 			}

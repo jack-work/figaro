@@ -423,6 +423,11 @@ var inputOracle = []struct {
 		// dismiss an open panel the way an unbound key would.
 		"0x6d": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x73": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		// `t` IS THE TOOL BODY, 2026-09-12: the half of Enter that opens a
+		// tool, where `d` opens the form deltas beside it. An opener, so from
+		// incipit it yanks the pager up; with nothing selected there it opens
+		// nothing, which is what this cell records.
+		"0x74": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		// VISUAL MODE, 2026-09-11: v and V open the pager with a selection
 		// seeded on the viewport, detached from the tail. Node selection is
 		// dropped (sel=false); the visual one is what off:vis records.

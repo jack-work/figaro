@@ -41,7 +41,9 @@ func TestAttributedInquiryShapeAgreesAcrossViews(t *testing.T) {
 		"> input", "",
 		"aria 123456", "Hello", "",
 		"Jack", "Hello again",
-		"", "─", "< figaro", "", "Hello to both of you",
+		// The rule follows the question with no blank row between them: the
+		// seam is the rule, and a blank above it was a second one.
+		"─", "< figaro", "", "Hello to both of you",
 	}
 
 	t.Run("show", func(t *testing.T) {
@@ -85,7 +87,7 @@ func TestAttributedInquiryShapeAgreesAcrossViews(t *testing.T) {
 // where there used to be none.
 func TestUnattributedInquiryIsUnchanged(t *testing.T) {
 	nodes := []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "THEANSWER"}}
-	want := []string{"> input", "", "THEQUESTION", "", "─", "< figaro", "", "THEANSWER"}
+	want := []string{"> input", "", "THEQUESTION", "─", "< figaro", "", "THEANSWER"}
 
 	withSegs := renderTurnRows(aria.Message{Role: livedoc.RoleOutput, Inquiry: "THEQUESTION", InquirySegments: nil, Nodes: nodes}, 48, 0, renderSettings{})
 	assertChrome(t, withSegs, want)

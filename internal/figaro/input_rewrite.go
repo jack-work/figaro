@@ -1,24 +1,12 @@
 package figaro
 
-// INPUT REWRITES: what a prompt's text passes through on its way in.
-//
-// Two tokens rewrite a prompt today, and before this file they lived on
-// opposite sides of the wire with opposite failure policies: `@key!` was
-// expanded on the client, permissively, and an unresolved reference was left
-// in the text with nobody told. The quote `<lt.block:a-b>!` has to be resolved
-// against the log, which only the daemon holds, and a coordinate that names
-// nothing must be refused before it is queued. One place, one policy:
+// Input rewrites: what a prompt's text passes through on its way in.
 //
 //	A TERMINATED TOKEN THAT DOES NOT RESOLVE REFUSES THE MESSAGE.
 //
-// The terminator is what makes that safe. `@` and `<` are everywhere in real
-// text; `@key!` and `<412.0>!` are deliberate, and a reader who typed the
-// terminator meant it.
-//
-// Rewrites run in SubmitPromptFrom, the one door every message uses, before
-// the form patch is applied and before anything is queued, so a refusal
-// leaves the aria exactly as it was and reaches the caller on the reply it is
-// already waiting for.
+// They run in SubmitPromptFrom, before the form patch is applied and before
+// anything is queued, so a refusal leaves the aria as it was and reaches the
+// caller on the reply it is already waiting for.
 
 import (
 	"context"

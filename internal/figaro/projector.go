@@ -105,30 +105,60 @@ func (a *Agent) stampSealDeltas() {
 		return
 	}
 	a.ariaSrv.StampTail(func(tail *aria.Turn, prev []aria.Turn) {
-		from := uint64(0)
-		if len(prev) > 0 {
-			for _, n := range prev[0].Nodes {
-				for _, src := range n.Src {
-					from = max(from, src.LT)
-				}
-			}
-		}
-		entries, _ := a.figLog.ReadPage(from, 0, 0)
-		if len(entries) == 0 {
-			return
-		}
-		seed := formdelta.Seed{}
-		if entries[0].LT == from {
-			seed = formdelta.SeedFrom(entries[0])
-			entries = entries[1:]
-		}
-		if len(entries) == 0 {
+		deltas, ok := a.windowDeltas(fb, priorBoundary(prev))
+		if !ok {
 			return
 		}
 		// Every record in the window belongs to this turn: it is the last
 		// one, so there is nothing after it to defer a seam to. AttachOne
 		// says exactly that, and does not depend on the turn's LT range,
 		// which the live composer has not stamped yet.
-		formdelta.AttachOne(tail, formdelta.PerRecordFrom(fb, a.id, seed, entries))
+		formdelta.AttachOne(tail, deltas)
 	})
+}
+
+// openingFormDeltas is the state a turn ENTERS with: the window from the
+// previous turn's last node up to and including the record that opens this
+// one. A fork's birth patch is in that window, and the banner it draws is
+// how a reader walks back to the parent, so it has to be on the turn from
+// the moment the question commits rather than at the seal an answer later.
+func (a *Agent) openingFormDeltas() map[string]livedoc.FormDelta {
+	fb, ok := a.backend.(formdelta.Backend)
+	if !ok || a.figLog == nil || a.ariaSrv == nil {
+		return nil
+	}
+	deltas, ok := a.windowDeltas(fb, a.ariaSrv.TailNodeLT())
+	if !ok {
+		return nil
+	}
+	var opening aria.Turn
+	formdelta.AttachOne(&opening, deltas)
+	return opening.FormDeltas
+}
+
+// windowDeltas derives the per-record deltas after the boundary record,
+// seeded from that record's own cursors.
+func (a *Agent) windowDeltas(fb formdelta.Backend, from uint64) (map[uint64]map[string]livedoc.FormDelta, bool) {
+	entries, _ := a.figLog.ReadPage(from, 0, 0)
+	if len(entries) == 0 {
+		return nil, false
+	}
+	seed := formdelta.Seed{}
+	if entries[0].LT == from {
+		seed = formdelta.SeedFrom(entries[0])
+		entries = entries[1:]
+	}
+	if len(entries) == 0 {
+		return nil, false
+	}
+	return formdelta.PerRecordFrom(fb, a.id, seed, entries), true
+}
+
+// priorBoundary is the last record the previous turn drew, which is where
+// this turn's window opens.
+func priorBoundary(prev []aria.Turn) uint64 {
+	if len(prev) == 0 {
+		return 0
+	}
+	return aria.PriorBoundaryOf(prev[0])
 }

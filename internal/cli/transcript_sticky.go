@@ -62,10 +62,14 @@ func (t *transcript) stickyBlockOf(turn int) stickyQuestion {
 		Turn: turn, Inquiry: inq.Text, InquirySegments: inq.Segments, FormDeltas: inq.FormDeltas,
 	}
 	q.rows = t.renderMsgBase(m).rows
-	// The deltas sit below the question, under a blank row of their own.
+	// The question's own text stops where its adornment starts: the first row
+	// the snake touches (see adornment.go).
 	q.textHigh = len(q.rows)
-	if n := len(formDeltaLines(inq.FormDeltas, t.w, t.expanded[deltaRefOf(nodeRef{turn: turn, index: inquiryNode})])); n > 0 {
-		q.textHigh -= n + 1
+	for i, r := range q.rows {
+		if r.spine.Kind != ldrender.SpineNone {
+			q.textHigh = i
+			break
+		}
 	}
 	for i, r := range q.rows {
 		if r.ref.valid() {
@@ -148,7 +152,7 @@ func (t *transcript) stickyLines(hl string, sel selectionSpan) []string {
 	}
 	// The pinned question stands out of its place in the conversation, so it
 	// carries its address the way ^O draws every other one.
-	out[0] = ldrender.OverlayRight(out[0], term.Dim(coordLabel(turn, inquiryNode, 0, t.coordFormat())), t.w)
+	out[0] = ldrender.OverlayRight(out[0], term.Dim(coordLabel(turn, inquiryNode, 0, t.coordFormat())), t.w-ldrender.GutterCols)
 	if above >= len(q.rows) {
 		out = append(out, t.transRule())
 	}

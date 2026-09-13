@@ -164,7 +164,7 @@ func (t *transcript) buildIndex() {
 		return true
 	})
 	if open := t.openMessage(); open != nil {
-		add(open.Turn, keyOf(*open), t.renderMsgBase(*open).rows, true, nil)
+		add(open.Turn, keyOf(*open), t.renderOpenMsg(*open).rows, true, nil)
 	}
 	// The page set moved => the index describes a different window, full stop.
 	// That is the one authority (windowRev); the shape diff below only has to
@@ -341,22 +341,51 @@ func (t *transcript) entryLine(e *lineEntry, rel int, hl string, sel selectionSp
 }
 
 // rowLine is one composed row as it is painted: the address at the right edge
-// when ^O is on, the selection cue, then the search highlight. The header
-// paints through it too, so a row reads the same in the body and above it.
+// when ^O is on, the adornment's glyphs, the selection cue, then the search
+// highlight. The header paints through it too, so a row reads the same in the
+// body and above it.
+//
+// THE RIGHT GUTTER IS NEVER PAINTED OVER. The address stops one column short
+// of it and the adornment marker is put back after it, so a block that
+// carries state says so whether or not ^O is on.
 func (t *transcript) rowLine(r transcriptRow, hl string, sel selectionSpan) string {
 	line := r.text
 	if r.mark != "" && t.verbose() {
-		line = ldrender.OverlayRight(line, r.mark, t.w)
+		line = ldrender.OverlayRight(line, r.mark, t.w-ldrender.GutterCols)
+		if r.gutter != "" {
+			line = ldrender.OverlayGutter(line, r.gutter, t.w)
+		}
 	}
-	if r.ref.valid() {
+	// The snake's head follows the cursor, so its column is resolved here and
+	// not baked into the cache: the row holds the resting glyph, and only a
+	// cursor standing inside this block's list moves it.
+	if r.spine.Kind != ldrender.SpineNone {
+		if c := spineCursor(r.ref, sel); c != 0 {
+			line = ldrender.OverlayColumn(line, r.spine.Col, spineGlyph(r.spine, r.ref.delta, c))
+		}
+	}
+	if r.ref.valid() && !r.chrome {
 		// r.text is already in its plainNodeRow resting form, so this is a
 		// no-op returning line untouched unless the row is actually selected.
-		line = decorateNodeRow(line, sel.mark(r.ref), t.w)
+		line = decorateNodeRow(line, sel.mark(r.ref), t.w, r.barColumnFree())
 	}
 	if hl != "" {
 		line = highlightMatches(line, hl)
 	}
 	return line
+}
+
+// spineCursor is the delta row the selection's focus stands on inside ref's
+// adornment, or 0 when the focus is anywhere else. A block's snake knows one
+// cursor: its own.
+func spineCursor(ref nodeRef, sel selectionSpan) int {
+	if !sel.active {
+		return 0
+	}
+	if sel.focus.turn != ref.turn || sel.focus.index != ref.index {
+		return 0
+	}
+	return sel.focus.delta
 }
 
 // selectionSpan is the O(1) form of selectionMarks: the ordered endpoints of

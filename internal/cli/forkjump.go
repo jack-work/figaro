@@ -10,8 +10,11 @@ import (
 // attending the aria on the other side of one (a), and the jumplist that
 // makes attending reversible (^O / ^I).
 
-// forkAt is one fork point in the retained window: the delta table that
-// carries the fork banner, and the aria it names.
+// forkAt is one fork point in the retained window: the block whose form
+// deltas carry the fork, and the aria they name. A fork happens on the
+// turn's question, where the glyph and the parent id ride the header row
+// (see the inquiry adorner); the ref is the block either way, so a jump
+// lands on the thing that was forked and not on a row of its state.
 type forkAt struct {
 	ref    nodeRef
 	parent string
@@ -24,11 +27,11 @@ func (t *transcript) forkPoints() []forkAt {
 	var out []forkAt
 	collect := func(m aria.Message) {
 		if p := forkParentOf(m.FormDeltas); p != "" {
-			out = append(out, forkAt{ref: deltaRefOf(nodeRef{turn: m.Turn, index: inquiryNode}), parent: p})
+			out = append(out, forkAt{ref: nodeRef{turn: m.Turn, index: inquiryNode}, parent: p})
 		}
 		for i := range m.Nodes {
 			if p := forkParentOf(m.Nodes[i].FormDeltas); p != "" {
-				out = append(out, forkAt{ref: deltaRefOf(nodeRefAt(m, i)), parent: p})
+				out = append(out, forkAt{ref: nodeRefAt(m, i), parent: p})
 			}
 		}
 	}
@@ -128,9 +131,9 @@ func pagerAttendFork(t *transcript) {
 	if t.selection.active {
 		focus := t.selection.focus.nodeRef
 		for _, p := range points {
-			// The table and the block it hangs under are one gesture here:
-			// `a` on a node that carries a fork means the fork.
-			if p.ref == focus || p.ref == deltaRefOf(focus) {
+			// A block and its delta rows are one gesture here: `a` anywhere
+			// inside a forked block's state means the fork.
+			if p.ref == blockOf(focus) {
 				t.attendAria(p.parent)
 				return
 			}
@@ -228,14 +231,48 @@ func (j *ariaJumplist) visit(id string) {
 	j.pos = len(j.ids) - 1
 }
 
-// hop moves the cursor and answers where to go, or false at either end.
-func (j *ariaJumplist) hop(dir int) (string, bool) {
+// peek answers where a hop would go, without moving. THE CURSOR MOVES WHEN THE
+// SWITCH SUCCEEDS, not when it is asked for: a failed hop that had already
+// moved it left ^O naming an aria the session was not showing.
+func (j *ariaJumplist) peek(dir int) (string, bool) {
 	next := j.pos + dir
 	if next < 0 || next >= len(j.ids) {
 		return "", false
 	}
-	j.pos = next
 	return j.ids[next], true
+}
+
+// arrive records one DELIBERATE move: the reader named an aria and went to it.
+//
+// IT IS ALWAYS A NEW ARRIVAL, even when the aria named happens to sit next to
+// the cursor. It used to move the cursor in that case, on the reasoning that a
+// ping-pong between two arias should not grow the list, and the cost was that
+// the move could not be reversed: attending the aria behind you recorded
+// itself as the back step you did not take, and ^O then had nothing older to
+// go to. A browser does not fold a typed address into its history because the
+// page happens to be the previous one, and neither does this.
+func (j *ariaJumplist) arrive(from, to string) {
+	j.visit(from)
+	if to == "" {
+		return
+	}
+	j.visit(to)
+}
+
+// stepTo is what ^O and ^I do once the switch they asked for has landed: move
+// the cursor onto the neighbour that was peeked, without adding to the path.
+// A hop that arrives somewhere the path does not have next to the cursor is
+// not a hop at all, and is recorded as an arrival.
+func (j *ariaJumplist) stepTo(to string) {
+	if j.pos > 0 && j.ids[j.pos-1] == to {
+		j.pos--
+		return
+	}
+	if j.pos+1 < len(j.ids) && j.ids[j.pos+1] == to {
+		j.pos++
+		return
+	}
+	j.visit(to)
 }
 
 // where is the list as the footer says it: "2/5".

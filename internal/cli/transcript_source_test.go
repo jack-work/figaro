@@ -1,13 +1,16 @@
 package cli
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 	"unicode"
 
 	"github.com/jack-work/figaro/api/livedoc"
+	"github.com/jack-work/figaro/api/message"
 	"github.com/jack-work/figaro/api/quote"
+	"github.com/jack-work/figaro/internal/compose"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/render"
@@ -204,6 +207,53 @@ func TestVisualRange_ToolTailIsOffsetIntoTheBlock(t *testing.T) {
 	}
 }
 
+// A tool result longer than the producer's cap is shown as its tail, and
+// the coordinate has to carry BOTH cuts: the producer's and the pager's.
+// The visible L291 of a 300-line result used to resolve to L191, silently,
+// because the coordinate was still valid.
+func TestVisualRange_ToolTailCrossesTheProducerCap(t *testing.T) {
+	var lines []string
+	for i := 1; i <= 300; i++ {
+		lines = append(lines, fmt.Sprintf("L%d", i))
+	}
+	full := strings.Join(lines, "\n")
+	msgs := []message.Message{
+		{Role: message.RoleOutput, TurnID: 3, Content: []message.Content{
+			{Type: message.ContentToolInvoke, ToolCallID: "c1", ToolName: "bash",
+				Arguments: map[string]any{"command": "seq"}},
+		}},
+		{Role: message.RoleInput, TurnID: 3, Content: []message.Content{
+			message.ToolResultContent("c1", "bash", full, false),
+		}},
+	}
+	nodes := compose.Nodes(msgs, nil, nil)
+	if len(nodes) != 1 || nodes[0].OutputBase == 0 {
+		t.Fatalf("the fixture must cross the producer cap: %+v", nodes)
+	}
+	nodes[0].Src = []livedoc.Src{{LT: 413, Block: 0}, {LT: 414, Block: 0}}
+
+	ft := ldrender.NewFakeTerminal(60, 30)
+	client := aria.NewClient()
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
+		ID: 3, Sealed: true, Inquiry: "seq?", LTs: []uint64{400, 414}, Nodes: nodes,
+	}}}}, aria.Notify)
+	tr := newTranscript(ft, 60, 30, &ariaView{settings: &renderSettings{}}, client, "aria1234", time.Now())
+	tr.enter()
+	tr.render()
+
+	tr.key('V')
+	stepTo(t, tr, "L291") // the first line the pager kept, 190 past the producer's cut
+	tr.key('V')
+	r, _, err := tr.visualRange()
+	if err != "" {
+		t.Fatalf("visualRange over a clamped tool: %s", err)
+	}
+	src := []rune(full)
+	if got := string(src[r.Start.Offset:r.End.Offset]); got != "L291" {
+		t.Fatalf("the visible L291 resolved to %q in the durable block", got)
+	}
+}
+
 // `:<,>send -- text` reaches the runner as `send -- <lt.block:a-b>! text`: the
 // range moves from before the verb to the head of the prompt.
 func TestVisual_ColonRangeExpandsIntoThePrompt(t *testing.T) {
@@ -280,5 +330,26 @@ func TestExpandRange_HandTypedToken(t *testing.T) {
 	}
 	if got, _, err := tr.expandRange("send -- <412.0:3-9>! hello"); err != "" || got != "send -- <412.0:3-9>! hello" {
 		t.Fatalf("a token already in place moved: %q %q", got, err)
+	}
+}
+
+// THE PROMPT AFTER `--` IS THE READER'S BYTES. Expansion used to split the
+// line into fields and join them again, so every run of spaces inside a
+// quoted argument was collapsed on the way to the verb.
+func TestExpandRange_PromptIsVerbatim(t *testing.T) {
+	tr, _ := sourceFixture(t)
+	for _, c := range []struct{ in, want string }{
+		{`<412.0:3-9>!send -- "a  b"`, `send -- <412.0:3-9>! "a  b"`},
+		{`<412.0:3-9>!send -f --id abcd1234 --  two  spaces`, `send -f --id abcd1234 -- <412.0:3-9>!  two  spaces`},
+		{`<412.0:3-9>!fork --stay -- line one` + "\n" + `line two`, `fork --stay -- <412.0:3-9>! line one` + "\n" + `line two`},
+	} {
+		got, _, err := tr.expandRange(c.in)
+		if err != "" || got != c.want {
+			t.Fatalf("%q: got %q, want %q (err %q)", c.in, got, c.want, err)
+		}
+	}
+	// A verb with no boundary still refuses, and names it.
+	if _, _, err := tr.expandRange("<412.0:3-9>!send hello"); err == "" || !strings.Contains(err, "--") {
+		t.Fatalf("a missing boundary was accepted: %q", err)
 	}
 }

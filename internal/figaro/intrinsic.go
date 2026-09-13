@@ -2,6 +2,7 @@ package figaro
 
 import (
 	"encoding/json"
+	"github.com/jack-work/figaro/internal/mark"
 	"log/slog"
 	"sync"
 	"time"
@@ -192,6 +193,7 @@ func (a *Agent) publishRuntime(state rpc.RuntimeState, reason string) {
 	// written to it is SILENTLY DROPPED by the form algebra -- form.Build
 	// produces an identity patch, and an identity patch raises nothing.
 	// Guarded by TestRuntimeIntrinsicPublishesEveryKeyIncludingProtectedOnes.
+	mark.Mark("runtime", "aria", a.id, "state", string(state))
 	set := map[string]any{
 		"turn.state": string(state),
 		"turn.id":    a.turnID,

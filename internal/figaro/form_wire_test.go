@@ -315,7 +315,7 @@ func mustForm(t *testing.T) *form.State {
 func TestRefusedFormInputIsReportedToTheCaller(t *testing.T) {
 	a, _, _ := newAgentWithForm(t)
 
-	err := a.SubmitPromptFrom(rpc.QuaRequest{
+	err := a.SubmitPromptFrom(context.Background(), rpc.QuaRequest{
 		Text: "set a key that is not mine to set",
 		Form: &rpc.FormInput{Patch: ptrPatch(form.Build(form.Snapshot{}, map[string]json.RawMessage{
 			"model": json.RawMessage(`"claude-opus"`),

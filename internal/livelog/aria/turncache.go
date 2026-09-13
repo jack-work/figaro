@@ -475,6 +475,13 @@ func (c *TurnCache) IndexOf(id uint64) (int, bool) {
 	return 0, false
 }
 
+// FloorIndex is the index of the first turn at or above a floor anchor: the
+// lowest index a floored backward walk can reach, so the lowest one a window
+// has to materialize. len(keys) when the floor is above every turn held.
+func (c *TurnCache) FloorIndex(floor Anchor) int {
+	return sort.Search(len(c.keys), func(i int) bool { return c.keys[i].id >= floor.Turn })
+}
+
 // ChunkFor picks the index range a byte-budgeted page walk needs around
 // an anchor, from the SIZES in the index -- exact, not guessed -- with
 // one extra turn of margin on each side so the page's More flags stay

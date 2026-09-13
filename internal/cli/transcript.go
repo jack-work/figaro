@@ -2,8 +2,10 @@ package cli
 
 import (
 	"fmt"
+	"github.com/jack-work/figaro/internal/mark"
 	"html"
 	"io"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -11,7 +13,6 @@ import (
 	"github.com/mattn/go-runewidth"
 
 	"github.com/jack-work/figaro/api/livedoc"
-	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
@@ -112,9 +113,11 @@ type transcript struct {
 	offset   int        // top line of the viewport into lines()
 	// wantTop is a STANDING request for the beginning, armed by Home/gg.
 	wantTop bool
-	follow  bool // stick to the bottom on new content
-	pendG   bool // saw one 'g' (for gg)
-	pendF   bool // saw 'f' (for the fork jump's f j / f k): the inFork mode
+	// kept says the last subject switch left the window where it was.
+	kept   bool
+	follow bool // stick to the bottom on new content
+	pendG  bool // saw one 'g' (for gg)
+	pendF  bool // saw 'f' (for the fork jump's f j / f k): the inFork mode
 
 	// Frame scheduling. render() marks the screen stale and defers when a
 	// batch is open (an input burst being drained) or when the frame-rate gate
@@ -179,10 +182,19 @@ type transcript struct {
 	// the header (see transcript_sticky.go). Keyed and invalidated like
 	// rowCache, whose rows these are.
 	stickyCache map[sliceKey]stickyQuestion
-	cacheW      int
-	selection   nodeSelection
-	visual      visualSelection
-	expanded    map[nodeRef]bool
+	// openMemo is the same economy for the message that is still being
+	// written, where a slice key cannot serve: its rows change every frame.
+	// It memoizes the drawn lines of each BLOCK, so a tick redraws only what
+	// the stream touched.
+	openMemo  openMemo
+	cacheW    int
+	selection nodeSelection
+	visual    visualSelection
+	expanded  map[nodeRef]bool
+	// adorned is the second fold state: whether a block's form-delta list is
+	// open. Separate from expanded because a tool has both, and Enter opens
+	// the pair while d and t open one each.
+	adorned map[nodeRef]bool
 
 	// index is the viewport virtualization: a per-frame map from line space to
 	// message rows, rebuilt in O(#messages) so scrolling never re-materializes
@@ -233,7 +245,7 @@ func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria
 		out: out, view: view, client: client,
 		status: newSessionStatus(figaroID, startedAt), w: w, h: h,
 		rowCache: map[sliceKey]cachedMessage{}, stickyCache: map[sliceKey]stickyQuestion{},
-		expanded: map[nodeRef]bool{},
+		expanded: map[nodeRef]bool{}, adorned: map[nodeRef]bool{},
 	}
 }
 
@@ -834,9 +846,11 @@ func (t *transcript) pruneCaches() {
 			delete(t.rowCache, k)
 		}
 	}
-	for ref := range t.expanded {
-		if !keep[ref.turn] {
-			delete(t.expanded, ref)
+	for _, state := range []map[nodeRef]bool{t.expanded, t.adorned} {
+		for ref := range state {
+			if !keep[ref.turn] {
+				delete(state, ref)
+			}
 		}
 	}
 }
@@ -854,6 +868,24 @@ func (t *transcript) forEachMessage(fn func(aria.Message)) {
 // windowEnd is past every real anchor: the high edge of a window that runs to
 // the live tail.
 var windowEnd = aria.Anchor{Turn: ^uint64(0), Node: ^uint64(0)}
+
+func (t *transcript) subjectID() string {
+	if t.status == nil {
+		return ""
+	}
+	return t.status.figaroID
+}
+
+// retained is what the pager holds: messages in the window and cached rows.
+func (t *transcript) retained() (msgs, rows int) {
+	if t.client != nil {
+		msgs = t.client.Count()
+	}
+	for _, c := range t.rowCache {
+		rows += len(c.rows)
+	}
+	return msgs, rows
+}
 
 func (t *transcript) messages() []aria.Message {
 	out := make([]aria.Message, 0, t.client.Count())
@@ -950,6 +982,9 @@ func (t *transcript) restoreViewportAnchor(key sliceKey, within int) {
 
 func (t *transcript) invalidateRows() {
 	t.rowCache = map[sliceKey]cachedMessage{}
+	// The open message's blocks were drawn under the same settings and at the
+	// same width, so whatever voided the committed rows voided them too.
+	t.openMemo = openMemo{}
 }
 
 // screenMoved voids the painter's model of the terminal: something wrote to
@@ -1134,25 +1169,12 @@ func padTo(s string, n int) string {
 	return s
 }
 
-// setCmdOut shows a command's output panel.
-func (t *transcript) setCmdOut(title string, rows []string) {
+// setCmdOut shows a command's output panel. The rows arrive with their ids
+// already on them: a row is selectable because its verb said what it names, not
+// because its text happens to contain something aria-shaped.
+func (t *transcript) setCmdOut(title string, rows []pitRow) {
 	t.queuedByKey = false
-	drows := make([]pitRow, 0, len(rows))
-	for _, r := range rows {
-		// A HEADER IS NOT A ROW YOU CAN ACT ON. Raw command output has no
-		// structure to read, so the rule is textual and deliberately crude: a
-		// blank line, or a line with no aria-shaped id in it, is chrome. It is
-		// better than making the summary line selectable, which is what the
-		// first cut did, and worse than a verb that returns rows -- which is
-		// the fix, and is the same fix as everything else in the dodge list.
-		// SELECTABLE MEANS "HAS AN ID", and yanking gives you the id -- Gluck:
-		// "y should work on that row to yank the id of that aria or form". A
-		// summary line or a column header has none, so it is chrome and ^N
-		// steps over it.
-		id := rowID(r)
-		drows = append(drows, pitRow{text: r, yank: id, id: id})
-	}
-	t.pit.showList(pitOutput, ":"+title, drows)
+	t.pit.showList(pitOutput, ":"+title, rows)
 	t.focused = focusPit
 	t.render()
 }
@@ -1176,31 +1198,84 @@ func (t *transcript) layout(foot int) (body, maxOff int) {
 }
 
 // renderMsgBase renders one message without selection decoration. Committed
-// instances are cached; open messages are rebuilt on every live frame.
+// instances are cached by the caller, under their slice key.
 func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
-	composed := t.composer(m).Message(m, t.w)
+	return t.renderMsg(m, nil)
+}
+
+// renderOpenMsg renders the message still being written. Every frame of a live
+// turn redraws it, and markdown layout is the most expensive thing the pager
+// does: a hundred-block turn cost 60ms a frame to lay out blocks that had not
+// changed since the last one, which held the render lock through the whole
+// stream and read as a frozen pane (freeze/stacks-20260912-125749). The memo
+// makes a frame cost what the stream changed.
+func (t *transcript) renderOpenMsg(m aria.Message) cachedMessage {
+	if t.openMemo.key != keyOf(m) || t.openMemo.w != t.w || t.openMemo.blocks == nil {
+		t.openMemo = openMemo{key: keyOf(m), w: t.w, blocks: map[int]*memoBlock{}}
+	}
+	for _, b := range t.openMemo.blocks {
+		b.reused = false
+	}
+	return t.renderMsg(m, &t.openMemo)
+}
+
+func (t *transcript) renderMsg(m aria.Message, memo *openMemo) cachedMessage {
+	c := t.composer(m)
+	if memo != nil {
+		c.Memo = memo.compose
+	}
+	composed := c.Message(m, t.w)
 	rows := make([]transcriptRow, 0, len(composed))
-	for _, r := range composed {
-		switch r.Block {
-		case ldrender.BlockChrome:
+	for i := 0; i < len(composed); {
+		r := composed[i]
+		if r.Block == ldrender.BlockChrome {
 			rows = append(rows, transcriptRow{text: r.Text})
+			i++
 			continue
 		}
-		ref := blockRef(m, r.Block)
-		if r.State {
-			// The form delta table is its own selectable unit, drawn under
-			// the block it explains and addressed on the delta axis.
-			ref = deltaRefOf(ref)
+		if memo != nil {
+			if kept, ok := memo.kept(r.Block); ok {
+				rows = append(rows, kept...)
+				for i < len(composed) && composed[i].Block == r.Block {
+					i++
+				}
+				continue
+			}
 		}
-		// Rows are stored already clipped (their unselected resting form) so a
-		// frame that touches nothing allocates nothing; see plainNodeRow.
-		// collapseSGR then strips the rendition churn glamour emits per cell -
-		// 3/4 of the retained row text, and of the bytes each painted frame puts
-		// on the wire. It is applied here, on the way into the cache, so the
-		// saving is paid once and collected on every frame; see sgr.go.
-		rows = append(rows, transcriptRow{text: sgrCollapse(plainNodeRow(r.Text, t.w)), ref: ref, mark: r.Mark})
+		block := r.Block
+		start := len(rows)
+		for ; i < len(composed) && composed[i].Block == block; i++ {
+			rows = append(rows, t.pagerRow(m, composed[i]))
+		}
+		if memo != nil {
+			memo.keep(block, rows[start:len(rows):len(rows)])
+		}
 	}
 	return cachedMessage{rows: rows}
+}
+
+// pagerRow is one composed row as the pager keeps it: addressed, clipped and
+// with its rendition churn collapsed.
+func (t *transcript) pagerRow(m aria.Message, r ldrender.Row) transcriptRow {
+	ref := blockRef(m, r.Block)
+	if r.Delta > 0 {
+		// Every delta is its own selectable unit, drawn beside the block it
+		// explains and addressed on the delta axis.
+		ref = deltaRefOf(ref, r.Delta)
+	}
+	// Rows are stored already clipped (their unselected resting form) so a
+	// frame that touches nothing allocates nothing; see plainNodeRow.
+	// collapseSGR then strips the rendition churn glamour emits per cell -
+	// 3/4 of the retained row text, and of the bytes each painted frame puts
+	// on the wire; see sgr.go.
+	return transcriptRow{
+		text:   sgrCollapse(plainNodeRow(r.Text, t.w)),
+		ref:    ref,
+		mark:   r.Mark,
+		gutter: r.Gutter,
+		spine:  r.Spine,
+		chrome: r.Chrome,
+	}
 }
 
 // composer is the pager's composition: the shared shape, plus the two things
@@ -1212,10 +1287,11 @@ func (t *transcript) composer(m aria.Message) ldrender.Composer {
 		// may open arguments as well as output (see ariaView.gesture).
 		View: pagerView(t.view), Header: messageHeader, Rule: t.transRule, Sender: dimSender, Tick: t.tick,
 		Expanded: func(block int) bool { return t.expanded[nodeRefAt(m, block)] },
-		// The delta table folds on its OWN gesture: Enter on the table, not
-		// on the block above it.
-		State: func(block int, deltas map[string]livedoc.FormDelta, w int) []string {
-			return formDeltaLines(deltas, w, t.expanded[deltaRefOf(blockRef(m, block))])
+		// The delta list folds on its own gesture (d), and with the body on
+		// Enter; the layout is the block type's (see adornment.go).
+		Adorn: func(block int, n livedoc.Node, deltas map[string]livedoc.FormDelta, w int) ldrender.Adornment {
+			ref := blockRef(m, block)
+			return buildAdornment(adornerFor(block, n), deltas, w, t.adorned[ref])
 		},
 	}
 	// The address is composed always and drawn only under M-m, so the toggle is
@@ -1274,6 +1350,30 @@ func (t *transcript) endBatch() {
 func (t *transcript) flush() {
 	if !t.active || !t.dirty || t.batch > 0 {
 		return
+	}
+	t.dirty = false
+	t.renderFrame()
+	if t.painted != nil {
+		t.painted()
+	}
+}
+
+// renderNow paints without asking the frame-rate ceiling.
+//
+// THE CEILING IS FOR A STREAM, NOT FOR AN ANSWER. It exists so a fast provider
+// cannot make the pager repaint faster than a reader can see; a subject switch
+// is one discrete thing the reader asked for, and it should appear at once.
+// Measured: once retention made a hop back cost 0.3 ms of work instead of 7,
+// its first frame started landing INSIDE the previous frame's window and waited
+// out the ceiling, so the screen took twice as long to change as it had before
+// the work got faster. A batch still holds it: mid-keystroke is not a frame.
+func (t *transcript) renderNow() {
+	if !t.active || t.batch > 0 {
+		t.render()
+		return
+	}
+	if t.offset < 0 {
+		t.offset = 0
 	}
 	t.dirty = false
 	t.renderFrame()
@@ -1667,12 +1767,17 @@ func (t *transcript) paint(screen []string) {
 		// stands and the resync debt stays owed until a frame differs.
 		t.paintBuf = buf[:0]
 		t.screenSpare, t.prev = t.prev, screen
+		mark.Mark("frame.quiet", "aria", t.subjectID())
 		return
 	}
 	buf = append(buf, "\x1b[?2026l"...)
 	_, _ = t.out.Write(buf)
 	t.paintBuf = buf
 	t.screenSpare, t.prev = t.prev, screen
+	if mark.Enabled() {
+		mark.Mark("frame", "aria", t.subjectID(), "bytes", len(buf), "full", full,
+			"content", t.index.total > 0, "tail", t.follow, "rows", len(screen))
+	}
 }
 
 // appendCUP appends "\x1b[<row>;1H" without going through fmt: the profile put
@@ -1957,7 +2062,23 @@ func (t *transcript) selectDown(dir int) {
 	}
 	t.selectNode(dir, false)
 }
-func pagerToggleTools(t *transcript) { t.toggleSelectedNodes() }
+
+// pagerToggleBlocks is Enter: body and form deltas together.
+func pagerToggleBlocks(t *transcript) { t.toggleSelectedNodes() }
+
+// pagerToggleBodies is `t`: tool bodies only.
+func pagerToggleBodies(t *transcript) { t.toggleSelectedTools() }
+
+// pagerToggleDeltas is `d`: the form-delta lists beside the selection. With
+// nothing selected that carries state the key keeps its other job, scrolling
+// half a page down: a gesture that cannot act is not a gesture, and taking
+// the motion away would cost a key to gain nothing.
+func pagerToggleDeltas(t *transcript) {
+	if t.toggleSelectedAdornments() {
+		return
+	}
+	pagerHalfDown(t)
+}
 
 // pagerClearSelection is Esc in the pager: drop the active selection, and do
 // nothing at all when there is none.
@@ -2549,29 +2670,63 @@ func (t *transcript) dropTurnsRows(lts map[int]struct{}) {
 			delete(t.rowCache, k)
 		}
 	}
+	// The sticky question is composed from the same rows, adornment and all,
+	// so a fold that changes the block changes the header standing on it.
+	for k := range t.stickyCache {
+		if _, ok := lts[k.turn()]; ok {
+			delete(t.stickyCache, k)
+		}
+	}
 }
 
-// retarget points the pager at a different aria's client. The WINDOW, the row
-// cache, the selection and every derived index describe the conversation that
-// was on screen a moment ago, so all of them go: what is kept is the reader's
-// posture -- the pane, the panels they had open, the verbose toggle -- because
-// those are about the READER, not about the aria.
+// retarget points the pager at a different aria's client.
+//
+// base is the first turn the two arias do NOT share. Below it the two are the
+// same conversation, so the rows, the question blocks and the window itself
+// are kept; at or above it everything describes a conversation that is no
+// longer on screen and goes. base 0 keeps nothing, which is the old behaviour
+// and the right one for a switch to a stranger.
+//
+// What is kept either way is the reader's posture: the pane, the panels they
+// had open, the verbose toggle, because those are about the READER.
 //
 // Called with the render lock held, from livelogTurn.retarget.
-func (t *transcript) retarget(client *aria.Client, figaroID string, status *sessionStatus) {
+func (t *transcript) retarget(client *aria.Client, figaroID string, status *sessionStatus, base int) {
 	t.client = client
 	if status != nil {
 		t.status = status
 	}
-	// The window and everything derived from it.
-	t.from = aria.Anchor{}
-	t.offset = 0
-	t.follow = true
+	keepScroll := t.keepsScroll(base)
+	t.kept = keepScroll
+	// FRESH MAPS, ALWAYS, carrying over what the two arias share. The old maps
+	// may be on the shelf: deleting from them in place, which is what this did,
+	// edited a parked aria's rows out from under it.
+	t.rowCache = keepRowsBelow(t.rowCache, base)
+	t.stickyCache = keepStickyBelow(t.stickyCache, base)
+	t.expanded = keepRefsBelow(t.expanded, base)
+	t.adorned = keepRefsBelow(t.adorned, base)
+	if !keepScroll {
+		// The window and everything derived from it.
+		t.from = aria.Anchor{}
+		t.offset = 0
+		t.follow = true
+	}
 	t.tailTuned, t.tailWant = false, 0
-	t.rowCache = map[sliceKey]cachedMessage{}
-	t.expanded = map[nodeRef]bool{}
-	t.selection = nodeSelection{}
-	t.visual = visualSelection{}
+	// A slice key is (turn, node): turn 1 of the new aria has the key turn 1 of
+	// the old one had, so every cache under that key goes by hand, the sticky
+	// header included. It was left behind here, and a hop from one branch to
+	// its cousin painted the header of the aria it had just left over the body
+	// of the one it had arrived at.
+	t.openMemo = openMemo{}
+	// A CUE THAT SITS IN THE SHARED PREFIX POINTS AT THE SAME NODE IN BOTH
+	// ARIAS, so dropping it moved a row that was otherwise byte-identical: the
+	// selection gutter blinked off under a reader who had not moved.
+	if !t.selection.below(base) {
+		t.selection = nodeSelection{}
+	}
+	if !t.visual.below(base) {
+		t.visual = visualSelection{}
+	}
 	t.index = lineIndex{}
 	t.lineKey = t.lineKey[:0]
 	t.frameRefs = t.frameRefs[:0]
@@ -2591,6 +2746,67 @@ func (t *transcript) retarget(client *aria.Client, figaroID string, status *sess
 	if t.active {
 		t.client.SetClosedLimit(0) // the pager owns retention while it is up
 	}
+}
+
+// keepsScroll decides between the two screen states of a subject switch.
+//
+// THE READER'S POSITION IS THE READER'S. If the top of the window is inside
+// the prefix the two arias share, every row from there to the divergence is
+// the same bytes in both, so moving the screen would be moving it for nothing.
+// Otherwise the window shows only what the two do not share, and there is
+// nowhere to stand: go to the live tail and follow it.
+//
+// Following the tail is itself a position: a reader who is at the live edge
+// asked to be at the live edge, and the new subject's edge is elsewhere.
+func (t *transcript) keepsScroll(base int) bool {
+	if base <= 0 || t.follow {
+		return false
+	}
+	i := t.index.entryAt(t.offset)
+	if i < 0 {
+		return false
+	}
+	e := &t.index.entries[i]
+	return !e.isGap() && e.turn > 0 && e.turn < base
+}
+
+// keepRowsBelow, keepStickyBelow and keepRefsBelow are the retention rule for
+// everything the pager keys by a coordinate: keep below base, drop at or
+// above, INTO A NEW MAP. The row cache is the expensive half of a switch once
+// the read is small, so carrying it over is what makes a hop inside a fork
+// tree cost the suffix and nothing else.
+//
+// Every fold state obeys the same rule, because a fold left over from the aria
+// we left would open a block of this one, at the same turn, that nobody
+// touched.
+func keepRowsBelow(src map[sliceKey]cachedMessage, base int) map[sliceKey]cachedMessage {
+	out := make(map[sliceKey]cachedMessage, len(src))
+	for k, v := range src {
+		if k.turn() < base {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+func keepStickyBelow(src map[sliceKey]stickyQuestion, base int) map[sliceKey]stickyQuestion {
+	out := make(map[sliceKey]stickyQuestion, len(src))
+	for k, v := range src {
+		if k.turn() < base {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+func keepRefsBelow(src map[nodeRef]bool, base int) map[nodeRef]bool {
+	out := make(map[nodeRef]bool, len(src))
+	for r, v := range src {
+		if r.turn < base {
+			out[r] = v
+		}
+	}
+	return out
 }
 
 // inputDrawerLines renders the search box or the command line, with Tab's
@@ -2787,19 +3003,6 @@ func pitOwnsKey(ev keyEvent) bool {
 	return false
 }
 
-// rowID pulls an aria/form id out of a line of command output, so `y` on a
-// `:ls` row yanks the ID rather than the whole rendered line.
-func rowID(line string) string {
-	for _, f := range strings.Fields(line) {
-		f = strings.Trim(f, "@·│ \t")
-		if len(f) != 8 || rpc.ValidateAriaID(f) != nil {
-			continue
-		}
-		return f
-	}
-	return ""
-}
-
 // showLivePit hosts a live verb in the pit.
 func (t *transcript) showLivePit(name string, v cmdkit.LiveView, full bool) {
 	t.queuedByKey = false
@@ -2869,4 +3072,56 @@ func pagerPitDrop(t *transcript) {
 	}
 	t.dropRow(string(t.pit.id), row.id)
 	t.pit.removeSelected() // optimistic: the refresh confirms it
+}
+
+// openMemo holds what each block of the open message composed, so a live frame
+// pays for the blocks the stream moved and nothing else. It is dropped
+// whenever the message it describes or the width it was drawn at changes.
+type openMemo struct {
+	key    sliceKey
+	w      int
+	blocks map[int]*memoBlock
+}
+
+type memoBlock struct {
+	node   livedoc.Node
+	state  ldrender.BlockState
+	rows   []ldrender.Row  // as composed
+	out    []transcriptRow // as the pager keeps them: clipped, collapsed, addressed
+	reused bool            // this frame answered from rows
+}
+
+// compose is the Composer's Memo: it answers with the rows this block composed
+// last frame when nothing about the block moved.
+func (mo *openMemo) compose(block int, n livedoc.Node, state ldrender.BlockState, draw func() []ldrender.Row) []ldrender.Row {
+	// A RUNNING TOOL IS DRAWN AGAINST THE CLOCK: its spinner is a function of
+	// the frame counter, not of the node, so it is the one block that must be
+	// composed again even when nothing about it changed.
+	animating := n.Type == livedoc.NodeTool && n.Status != livedoc.StatusOK && n.Status != livedoc.StatusError
+	if b, ok := mo.blocks[block]; ok {
+		if !animating && b.state == state && reflect.DeepEqual(b.node, n) {
+			b.reused = true
+			return b.rows
+		}
+	}
+	rows := draw()
+	mo.blocks[block] = &memoBlock{node: n, state: state, rows: rows}
+	return rows
+}
+
+// kept returns the pager rows this block held from the last frame, when this
+// frame reused its composition. The processing they went through (clip,
+// collapse, address) costs as much as the composition did.
+func (mo *openMemo) kept(block int) ([]transcriptRow, bool) {
+	b, ok := mo.blocks[block]
+	if !ok || !b.reused || b.out == nil {
+		return nil, false
+	}
+	return b.out, true
+}
+
+func (mo *openMemo) keep(block int, out []transcriptRow) {
+	if b, ok := mo.blocks[block]; ok {
+		b.out = out
+	}
 }

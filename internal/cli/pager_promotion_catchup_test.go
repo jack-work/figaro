@@ -2,12 +2,16 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/jack-work/figaro/api/livedoc"
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
+	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 )
 
 // ---------------------------------------------------------------------------
@@ -158,4 +162,68 @@ func TestPromotedPagerBelievesNothingAboutTheBeginning(t *testing.T) {
 	if !found {
 		t.Fatal("the history the catch-up read is not in the promoted pager's window")
 	}
+}
+
+// failingOnceReader fails the first catch-up read and serves history after.
+type failingOnceReader struct {
+	mu      sync.Mutex
+	calls   int
+	failFor int
+	history []aria.TurnPart
+}
+
+func (r *failingOnceReader) Read(context.Context, aria.Anchor, int) (aria.Page, error) {
+	return aria.Page{}, nil
+}
+
+func (r *failingOnceReader) ReadBefore(_ context.Context, at aria.Anchor, limit int) (aria.Page, error) {
+	r.mu.Lock()
+	r.calls++
+	fail := r.calls <= r.failFor
+	r.mu.Unlock()
+	if fail {
+		return aria.Page{}, context.DeadlineExceeded
+	}
+	return readBefore(r.history, int(at.Turn), limit), nil
+}
+
+func (r *failingOnceReader) Queued(context.Context) (*rpc.QueuedResponse, error) {
+	return &rpc.QueuedResponse{}, nil
+}
+
+// A TIMEOUT IS NOT A FLOOR. The catch-up read that a subject switch owes can
+// fail, and when it did the pager kept an empty window with nothing to ask
+// again: the reader saw a conversation with no content in it and could only
+// leave the session. The clock asks again.
+func TestFailedCatchUpIsRetried(t *testing.T) {
+	reader := &failingOnceReader{failFor: 1, history: transcriptHistory(40)}
+	out := ldrender.NewFakeTerminal(80, 12)
+	settings := &renderSettings{}
+	lt := newLivelogTurn(out, 80, 12, settings, "", time.Time{}, nil, nil, nil)
+	lt.enterTranscript()
+	in := &interactiveInput{
+		tc: newSearchInputTerminal(), lt: lt, fcli: reader, mu: &sync.Mutex{}, set: settings,
+		cancel: func() {}, disconnectCh: make(chan struct{}, 1),
+	}
+
+	in.readHistoryIntoPager() // the seed a switch performs: it fails
+	if in.caughtUp {
+		t.Fatal("a failed read claimed the window")
+	}
+	if len(lt.tr.messages()) != 0 {
+		t.Fatal("fixture: the failed read left content behind")
+	}
+
+	in.reseedIfEmpty() // what the pager's clock does
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		in.mu.Lock()
+		got := len(lt.tr.messages())
+		in.mu.Unlock()
+		if got > 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("the window is still empty after the retry (reads=%d)", reader.calls)
 }

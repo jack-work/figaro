@@ -49,11 +49,11 @@ func TestDecorateNodeRowContract(t *testing.T) {
 		}
 		for _, w := range []int{-3, 0, 1, 2, 3, 10, 40, 100} {
 			plain := plainNodeRow(row, w)
-			if got := decorateNodeRow(plain, selectionMark{}, w); got != plain {
+			if got := decorateNodeRow(plain, selectionMark{}, w, true); got != plain {
 				t.Errorf("unselected decorate(%q, %d) = %q, want it untouched", row, w, got)
 			}
 			for _, mark := range marks {
-				got := decorateNodeRow(plain, mark, w)
+				got := decorateNodeRow(plain, mark, w, true)
 				// The bar stands in the margin where there is one (same width) and
 				// displaces the row by one where there is not: never more, and
 				// never past the pane.
@@ -109,7 +109,7 @@ func TestDecorateNodeRowBarIsVisibleWithoutColour(t *testing.T) {
 		t.Skip("colour is on in this environment; the plain branch is what this pins")
 	}
 	for _, row := range []string{"  margin row", "✓ bash [1ms]", ""} {
-		got := decorateNodeRow(plainNodeRow(row, 40), selectionMark{selected: true}, 40)
+		got := decorateNodeRow(plainNodeRow(row, 40), selectionMark{selected: true}, 40, true)
 		if !strings.HasPrefix(render.StripEscapes(got), "▎") {
 			t.Errorf("decorate(%q) without colour = %q, want a leading bar", row, got)
 		}
@@ -121,7 +121,7 @@ func TestDecorateNodeRowBarIsVisibleWithoutColour(t *testing.T) {
 func TestDecorateNodeRowNoAllocUnmarked(t *testing.T) {
 	plain := plainNodeRow("\x1b[2m  │ \x1b[0m a perfectly ordinary tool output row", 100)
 	if got := testing.AllocsPerRun(100, func() {
-		_ = decorateNodeRow(plain, selectionMark{}, 100)
+		_ = decorateNodeRow(plain, selectionMark{}, 100, true)
 	}); got != 0 {
 		t.Errorf("decorateNodeRow on an unmarked row allocated %v times, want 0", got)
 	}

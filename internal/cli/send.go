@@ -268,7 +268,6 @@ func (o *sendOpts) armOutfit() error {
 		return err
 	}
 	o.outfit = d
-	promptDressing = d
 	return nil
 }
 
@@ -483,7 +482,7 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	// on whichever trunk we end up attended to: the new alternative by default
 	// (rebind), or the original with --attend=false/--stay.
 	if !at.isHead() {
-		runSendForkAt(loaded, trunkID, at, opts.stay, opts.json, prompt, set)
+		runSendForkAt(loaded, trunkID, at, opts.stay, opts.json, prompt, set, opts.outfit)
 		return
 	}
 	// No coordinate: a positional target is just the aria to send to.
@@ -508,7 +507,7 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 			runPrompt(loaded, opts.outfit, prompt, set)
 			return
 		}
-		promptAria(loaded, opts.id, prompt, set)
+		promptAria(loaded, opts.id, prompt, set, opts.outfit)
 	}
 }
 
@@ -581,7 +580,7 @@ func runSendRaw(loaded *config.Loaded, ariaID string, d dressing, prompt string)
 		die("%s", err)
 	}
 
-	exitCode := plainPrompt(ctx, figaroEP, prompt, os.Stdout)
+	exitCode := plainPrompt(ctx, figaroEP, prompt, os.Stdout, d)
 	if exitCode != 0 {
 		os.Exit(exitCode)
 	}
@@ -602,7 +601,7 @@ func runSendVerbatim(loaded *config.Loaded, opts sendOpts, prompt string) {
 		die("%s", err)
 	}
 
-	if exitCode := verbatimPrompt(ctx, figaroEP, prompt, os.Stdout); exitCode != 0 {
+	if exitCode := verbatimPrompt(ctx, figaroEP, prompt, os.Stdout, opts.outfit); exitCode != 0 {
 		os.Exit(exitCode)
 	}
 }
@@ -647,7 +646,7 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 		"Instruction: " + instruction
 
 	var buf bytes.Buffer
-	exitCode := plainPrompt(ctx, figaroEP, prompt, &buf)
+	exitCode := plainPrompt(ctx, figaroEP, prompt, &buf, opts.outfit)
 	if exitCode != 0 {
 		os.Exit(exitCode)
 	}
@@ -708,7 +707,7 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 	}
 	defer fcli.Close()
 
-	if _, _, qerr := fcli.Qua(ctx, prompt, buildPromptForm()); qerr != nil {
+	if _, _, qerr := fcli.Qua(ctx, prompt, buildPromptForm(opts.outfit)); qerr != nil {
 		dieWithClosure(qerr, "prompt: %s", qerr)
 	}
 	if opts.json {

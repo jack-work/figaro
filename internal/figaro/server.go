@@ -98,7 +98,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		// Attribution comes off the request itself, not from the authn
 		// provider: the agent socket has none, and a human: never
 		// authenticated: is exactly the caller a confused aria needs named.
-		if err := a.SubmitPromptFrom(req, rpc.SenderFrom(params, a.dukeTitle)); err != nil {
+		if err := a.SubmitPromptFrom(ctx, req, rpc.SenderFrom(params, a.dukeTitle)); err != nil {
 			// A refused form write is the caller's to see: it is synchronous
 			// now, so it reaches the reply the caller is already waiting on.
 			return nil, err
@@ -232,7 +232,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 			}
 		}
 		if req.Backward {
-			return a.ReadBefore(req.At, req.Limit), nil
+			return a.ReadBefore(req.At, req.Floor, req.Limit), nil
 		}
 		return a.Read(req.At, req.Limit), nil
 	}

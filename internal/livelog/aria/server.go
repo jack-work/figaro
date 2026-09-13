@@ -304,16 +304,17 @@ func (s *Server) Subscribe(push func(Page)) (cancel func()) {
 // Read pages forward from at; ReadBefore pages backward. Both are the same
 // cut, differing only in which side of the anchor the budget is spent on -
 // that is what lets a scrolling client pull an earlier or a later page from
-// wherever it happens to be.
+// wherever it happens to be. floor stops the backward walk from below,
+// inclusive of its own anchor; the zero anchor is no floor.
 func (s *Server) Read(at Anchor, budget int) Page {
-	return s.page(at, Forward, budget)
+	return s.page(at, Anchor{}, Forward, budget)
 }
 
-func (s *Server) ReadBefore(at Anchor, budget int) Page {
-	return s.page(at, Backward, budget)
+func (s *Server) ReadBefore(at, floor Anchor, budget int) Page {
+	return s.page(at, floor, Backward, budget)
 }
 
-func (s *Server) page(at Anchor, dir Direction, budget int) Page {
+func (s *Server) page(at, floor Anchor, dir Direction, budget int) Page {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	n := s.cache.Len()
@@ -321,11 +322,25 @@ func (s *Server) page(at Anchor, dir Direction, budget int) Page {
 		return Page{}
 	}
 	lo, hi := s.cache.ChunkFor(at, dir, budget)
+	// A floored backward read wants nothing below the floor, so the window
+	// never has to reach below it: the turns under the floor are neither
+	// composed nor walked. The floor is also where the widening below stops,
+	// since a page the floor ended was not ended by the window and re-cutting
+	// a wider one would return it unchanged, forever.
+	bottom := 0
+	if dir == Backward && !floor.Zero() {
+		if fi := s.cache.FloorIndex(floor); fi <= hi {
+			bottom = fi
+			if lo < bottom {
+				lo = bottom
+			}
+		}
+	}
 	for {
 		turns := s.overlayOpen(s.cache.Slice(lo, hi), hi >= n-1)
 		var p Page
 		if dir == Backward {
-			p = PaginateBefore(turns, at, budget)
+			p = PaginateBefore(turns, at, floor, budget)
 		} else {
 			p = Paginate(turns, at, dir, budget)
 		}
@@ -337,7 +352,7 @@ func (s *Server) page(at Anchor, dir Direction, budget int) Page {
 		// window rather than by its budget; widen and re-cut. A page
 		// strictly inside the window was cut by budget alone and is
 		// exactly what the full walk would have produced.
-		touchLo := lo > 0 && len(p.Parts) > 0 && p.Parts[0].ID == turns[0].ID
+		touchLo := lo > bottom && len(p.Parts) > 0 && p.Parts[0].ID == turns[0].ID
 		touchHi := hi < n-1 && len(p.Parts) > 0 && p.Parts[len(p.Parts)-1].ID == turns[len(turns)-1].ID
 		if !touchLo && !touchHi {
 			if lo > 0 {
@@ -351,8 +366,8 @@ func (s *Server) page(at Anchor, dir Direction, budget int) Page {
 		span := hi - lo + 1
 		if touchLo {
 			lo -= span
-			if lo < 0 {
-				lo = 0
+			if lo < bottom {
+				lo = bottom
 			}
 		}
 		if touchHi {
@@ -460,6 +475,7 @@ func delta(id uint64, old, n livedoc.Node) NodeDelta {
 	scalarInt("started_at", old.StartedAt, n.StartedAt)
 	scalarInt("finished_at", old.FinishedAt, n.FinishedAt)
 	scalarInt("at", old.At, n.At)
+	scalarInt("output_base", int64(old.OutputBase), int64(n.OutputBase))
 	streamed("markdown", old.Markdown, n.Markdown)
 	streamed("output", old.Output, n.Output)
 	streamed("input", old.Input, n.Input)
@@ -506,6 +522,9 @@ func fullSet(id uint64, n livedoc.Node) NodeDelta {
 	if n.Args != nil {
 		set["args"] = n.Args
 	}
+	if n.OutputBase != 0 {
+		set["output_base"] = n.OutputBase
+	}
 	if n.OpenedAt != 0 {
 		set["opened_at"] = n.OpenedAt
 	}
@@ -530,10 +549,13 @@ func fullSet(id uint64, n livedoc.Node) NodeDelta {
 	return NodeDelta{ID: id, Set: set}
 }
 
-// OpenInquiry records the question that opened a turn and broadcasts it. The
-// inquiry is turn metadata, not a node: an exchange begins with exactly one of
-// them, so it is a property of the turn rather than an element of its list.
-func (s *Server) OpenInquiry(id uint64, inquiry string, segments ...InquirySegment) {
+// OpenInquiry records the question that opened a turn and broadcasts it,
+// together with the form state the turn enters with. The inquiry is turn
+// metadata, not a node: an exchange begins with exactly one of them, so it is
+// a property of the turn rather than an element of its list. The deltas ride
+// the same frame because a fork's banner is navigation: a reader needs it
+// while the child is still answering, not when the turn seals.
+func (s *Server) OpenInquiry(id uint64, inquiry string, deltas map[string]livedoc.FormDelta, segments ...InquirySegment) {
 	s.mu.Lock()
 	if s.cache.Len() == 0 || s.cache.LastID() != id {
 		s.cache.Append(Turn{ID: id})
@@ -541,15 +563,47 @@ func (s *Server) OpenInquiry(id uint64, inquiry string, segments ...InquirySegme
 	tl := s.cache.Tail()
 	tl.Inquiry = inquiry
 	tl.InquirySegments = segments
+	if len(deltas) > 0 {
+		tl.FormDeltas = deltas
+	}
 	s.cache.TailMutated()
 	from := uint64(len(tl.Nodes))
 	subs := s.subsLocked()
 	s.mu.Unlock()
 	deliver(subs, Page{Parts: []TurnPart{{
-		Turn:        Turn{ID: id, Inquiry: inquiry, InquirySegments: segments},
+		Turn:        Turn{ID: id, Inquiry: inquiry, InquirySegments: segments, FormDeltas: deltas},
 		From:        from,
 		ClippedHead: from > 0,
 	}}})
+}
+
+// TailNodeLT is the last record the newest turn drew a node from, which is
+// where the next turn's form-state window opens. Zero when the turn drew
+// nothing and carries no bracket.
+func (s *Server) TailNodeLT() uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tl := s.cache.Tail()
+	if tl == nil {
+		return 0
+	}
+	return PriorBoundaryOf(*tl)
+}
+
+// PriorBoundaryOf is the boundary a turn leaves behind: its last node's
+// record, or its LT bracket when it drew nothing. Without the fallback, a
+// turn that drew nothing made the next window the whole history.
+func PriorBoundaryOf(t Turn) uint64 {
+	var from uint64
+	for _, n := range t.Nodes {
+		for _, src := range n.Src {
+			from = max(from, src.LT)
+		}
+	}
+	if from == 0 && len(t.LTs) > 0 {
+		from = t.LTs[len(t.LTs)-1]
+	}
+	return from
 }
 
 // inquiryOfLocked is the recorded question for a turn: its text AND the

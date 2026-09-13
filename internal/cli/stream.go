@@ -2,13 +2,17 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"github.com/jack-work/figaro/internal/mark"
 
 	"github.com/jack-work/figaro/sdk"
 
@@ -47,7 +51,7 @@ const (
 // mustPromptFigaro is the SEND entrance: one session, with a prompt in it.
 // The tape is opened here because --record is a send flag; everything else is
 // runSession's (session.go).
-func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prompt string, loaded *config.Loaded, set renderSettings) {
+func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prompt string, loaded *config.Loaded, set renderSettings, d dressing) {
 	ctx, span := figOtel.Start(ctx, "cli.prompt")
 	defer span.End()
 	ctx, cancel := context.WithCancel(ctx)
@@ -77,7 +81,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 
 	runSession(ctx, cancel, sessionOpts{
 		figaroID: figaroID, ep: ep, loaded: loaded, set: set,
-		prompt: prompt, tape: rec, ownsSubject: true,
+		prompt: prompt, dress: d, tape: rec, ownsSubject: true,
 	})
 }
 
@@ -111,6 +115,16 @@ type interactiveInput struct {
 	acli    *sdk.Angelus
 	loaded  *config.Loaded
 	tap     transport.Tap
+	// seed is what the last switch decided it still owes the wire.
+	seed seedPlan
+	// parked holds the arias this session has already shown, keyed by id, with
+	// parkOrder oldest first. See subject_park.go.
+	parked    map[string]*parkedSubject
+	parkOrder []string
+	// lineageEpoch is the topology revision the last lineage answer carried.
+	// It is the handle for "the shape of the tree changed under a retained
+	// prefix"; see plans/prefix-retention.md.
+	lineageEpoch uint64
 	// ownsSubject says whether THIS loop dialled the connection and may close
 	// it. In `figaro send` the connection belongs to the caller, which is
 	// blocked on its Done() channel: closing it there ended the session
@@ -128,6 +142,13 @@ type interactiveInput struct {
 	// is exactly right: the ids in a queue you have not re-read may have been
 	// drained, merged or renumbered under you.
 	queueEpoch string
+	// queueDebut is when each live queue row may first be DRAWN, and
+	// debutTimer is the wake-up that draws it. See queueDebutGrace: a row
+	// that arrives while the aria is idle is usually lifted again within a
+	// frame or two, and drawing it is a flicker rather than news. Guarded by
+	// in.mu.
+	queueDebut map[uint64]time.Time
+	debutTimer *time.Timer
 	// intrinsic forms are the client's LIVE COPIES of `<aria>/runtime` and
 	// `<aria>/queue`, kept current by the patch protocol. See
 	// intrinsic_mirror.go for what they replaced.
@@ -145,7 +166,10 @@ type interactiveInput struct {
 	// a frame carries OUR question, noTurn when the agent answers with an
 	// error instead -- state can race (Qua's `active` is sampled before the
 	// prompt is even queued), the EVENT cannot.
-	prompt     string
+	prompt string
+	// dress is the dressing that prompt asked for, held by the session that
+	// submits it rather than by the package.
+	dress      dressing
 	sendCursor int // set by Qua; a turn.done before it is not ours
 	doneCh     chan struct{}
 	// turnFailed records that the turn this send was waiting on ended with an
@@ -213,6 +237,15 @@ type transcriptReadClient interface {
 	Queued(context.Context) (*rpc.QueuedResponse, error)
 }
 
+// tailReader is a read client that can stop a backward read at a floor: what a
+// client asks for when it already holds everything below it. OPTIONAL, and
+// asserted at the one call site that can use it, so the ten stubs that serve
+// history in tests do not grow a method they would never call. Without it the
+// switch reads the prefix again, which is slower and never wrong.
+type tailReader interface {
+	ReadBeforeFloor(ctx context.Context, at, floor aria.Anchor, budget int) (aria.Page, error)
+}
+
 // enterTranscript opens the pager on the recent window (older history pages in
 // on scroll-up); shared by Ctrl-T, Ctrl-L, and listen's auto-enter. No-op when
 // already in the pager.
@@ -258,7 +291,9 @@ func (in *interactiveInput) enterPager(history bool) {
 		return
 	}
 	rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
+	read := mark.Span("hop.read", "kind", "enter")
 	r, rerr := in.fcli.ReadBefore(rctx, aria.Anchor{Turn: recentCursor}, wireBudget(transcriptPageSize))
+	read("parts", len(r.Parts), "err", rerr != nil)
 	rcancel()
 	in.mu.Lock()
 	// Claimed BEFORE the pager opens: enterPager fires the catch-up hook for a
@@ -287,9 +322,28 @@ func (in *interactiveInput) pagerCatchUp() {
 	go in.readHistoryIntoPager()
 }
 
+// reseedIfEmpty is the retry a failed catch-up owes. A read that timed out
+// leaves the pager on an empty window, and nothing asked again: the reader saw
+// a conversation with no content and no way to bring it back short of leaving
+// the session. The pager's clock asks, and the caughtUp flag makes the ask free
+// once the window is there.
+func (in *interactiveInput) reseedIfEmpty() {
+	in.mu.Lock()
+	owed := in.lt.transcriptActive() && !in.caughtUp && in.fcli != nil
+	if owed {
+		in.caughtUp = true // claimed here; the read clears it again if it fails
+	}
+	in.mu.Unlock()
+	if owed {
+		go in.readHistoryIntoPager()
+	}
+}
+
 func (in *interactiveInput) readHistoryIntoPager() {
 	rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
+	read := mark.Span("hop.read", "kind", "catchup")
 	r, rerr := in.fcli.ReadBefore(rctx, aria.Anchor{Turn: recentCursor}, wireBudget(transcriptPageSize))
+	read("parts", len(r.Parts), "err", rerr != nil)
 	rcancel()
 	in.mu.Lock()
 	defer in.mu.Unlock()
@@ -524,13 +578,37 @@ func wireBudget(messages int) int {
 
 // historyFetcher is the reader Ensure closes holes with: the client's own
 // ReadBefore.
+//
+// IT IS FENCED BY THE SUBJECT GENERATION, at both ends. A hole is filled by a
+// worker that started before the switch and answers after it, on a connection
+// that is being closed underneath it, and the page it brings back carries the
+// OLD aria's coordinates: folding that into the new subject's store is the
+// fabricated-adjacency bug the range store exists to prevent, at aria scale.
+// The check before the call saves a read nobody wants; the check after is the
+// one that matters, because the switch can land while the read is in flight.
 func (in *interactiveInput) historyFetcher() aria.Fetcher {
+	gen := atomic.LoadUint64(&in.subjectGen)
 	return func(ctx context.Context, before aria.Anchor, limit int) (aria.Page, error) {
-		return in.fcli.ReadBefore(ctx, before, wireBudget(limit))
+		if atomic.LoadUint64(&in.subjectGen) != gen {
+			return aria.Page{}, errSubjectChanged
+		}
+		read := mark.Span("hop.read", "kind", "history", "at", before.Turn)
+		r, err := in.fcli.ReadBefore(ctx, before, wireBudget(limit))
+		if atomic.LoadUint64(&in.subjectGen) != gen {
+			read("parts", 0, "err", true, "stale", true)
+			return aria.Page{}, errSubjectChanged
+		}
+		read("parts", len(r.Parts), "err", err != nil)
+		return r, err
 	}
 }
 
+// errSubjectChanged is what a read owed to an aria we have left answers with.
+// It is not a failure: the pager asks again against the subject it now has.
+var errSubjectChanged = errors.New("the transcript changed subject while this read was in flight")
+
 func (in *interactiveInput) readTranscriptPage(ctx context.Context, req transcriptPageRequest) (aria.Page, error) {
+	defer mark.Span("hop.read", "kind", "page", "seek", int(req.seek))()
 	if req.seek == seekForward {
 		return in.fcli.Read(ctx, req.at, 0)
 	}
@@ -610,7 +688,8 @@ func startPagerClock(mu *sync.Mutex, lt *livelogTurn, current func() *interactiv
 					continue
 				}
 				if n%metricsEvery == 0 {
-					in.seedMetrics()
+					in.seedMetrics(in.subjectGeneration())
+					in.reseedIfEmpty()
 				}
 			}
 		}
@@ -636,6 +715,10 @@ func (in *interactiveInput) refreshQueued() {
 func (in *interactiveInput) run() {
 	defer in.cancelSelectionCopy()
 	defer in.cancelTranscriptSearch()
+	// The queue's debut timer draws into the pager when it fires. Input is
+	// over, so nothing may be drawn again: a wake-up outliving the session
+	// would paint onto a transcript that has already been taken down.
+	defer in.forgetQueueDebuts()
 	buf := make([]byte, 4096)
 	var pending []byte // a mouse/escape sequence split across reads
 	for {
@@ -806,6 +889,9 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 		// A key whose pager meaning is a sensible OPENING gesture yanks the
 		// pager up first, so it acts on arrival instead of looking like a dead
 		// keyboard. Which keys those are is one field on one table row.
+		if mark.Enabled() {
+			mark.Mark("key", "chord", ev.chord().String(), "mode", int(ev.mode))
+		}
 		if ev.mode == modeIncipit && opensTranscript(ev) {
 			in.enterTranscript()
 			in.mu.Lock()
