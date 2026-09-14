@@ -153,23 +153,31 @@ func TestSticky_HandsRowsBackAcrossATurnBoundary(t *testing.T) {
 					tr.offset, body[0], q.rows[above].text)
 			}
 		}
-		for _, row := range headTextOf(tr) {
+		pinned := headTextOf(tr)
+		// Every pinned row is one of the block's own HEAD rows, in order,
+		// which is why the release changes nothing on screen. The first
+		// wears the heading's glyph and the turn's address.
+		for i, row := range pinned {
+			want := strings.TrimRight(stripANSI(q.rows[i].text), " ")
+			if i == 0 {
+				if !strings.HasPrefix(row, "∨") {
+					t.Fatalf("at offset %d the heading row is %q", tr.offset, row)
+				}
+				continue
+			}
+			clipped := strings.TrimRight(strings.TrimSuffix(row, ".."), " ")
+			if row != want && !strings.HasPrefix(want, clipped) {
+				t.Fatalf("at offset %d the header shows %q, which is not row %d of the block (%q)",
+					tr.offset, row, i, want)
+			}
+		}
+		// Nothing stands twice: the header covers the rows it stands on, so
+		// a pinned row may not ALSO be visible below the header.
+		for _, row := range pinned[min(1, len(pinned)):] {
 			if strings.TrimSpace(row) == "" {
 				continue
 			}
-			// Every pinned row is one of the question's own, from above the
-			// body. The first wears the turn's address at the right edge.
-			found := false
-			for i := q.textLo; i < min(q.textHigh, above); i++ {
-				want := strings.TrimRight(stripANSI(q.rows[i].text), " ")
-				if row == want || strings.HasPrefix(row, want) || strings.HasPrefix(want, strings.TrimRight(row, "0123456789 ")) {
-					found = true
-				}
-			}
-			if !found {
-				t.Fatalf("at offset %d the header shows %q, which is not question text above the body", tr.offset, row)
-			}
-			for _, b := range body {
+			for _, b := range body[min(len(headRowsOf(tr)), len(body)):] {
 				if b == row {
 					t.Fatalf("at offset %d the row %q stands in the header and the body at once", tr.offset, row)
 				}
@@ -386,13 +394,23 @@ func TestSticky_FollowsAWalkIntoHistory(t *testing.T) {
 			t.Fatalf("at offset %d the header names turn %d, the top row belongs to %d", off, turn, got)
 		}
 		// The promise: while the reader is inside a turn, its question is on
-		// screen exactly once, in the header or in the body.
+		// SCREEN exactly once. The header covers the body rows it stands on,
+		// so the body may still hold a copy underneath it -- the reader must
+		// not see two.
 		want := fmt.Sprintf("QUESTION%d", turn)
-		inHead := strings.Contains(strings.Join(plain(headRowsOf(tr)), "\n"), want)
-		inBody := strings.Contains(strings.Join(plain(bodyRows(tr)), "\n"), want)
-		if inHead == inBody {
-			t.Fatalf("at offset %d (turn %d, %d rows above) the question is in head=%v body=%v",
-				off, turn, above, inHead, inBody)
+		screen := plain(screenRows(tr))
+		if len(screen) < stickyText {
+			continue // the last rows of the document: no room for a head
+		}
+		seen := 0
+		for _, row := range screen {
+			if strings.Contains(row, want) {
+				seen++
+			}
+		}
+		if seen != 1 {
+			t.Fatalf("at offset %d (turn %d, %d rows above) the question stands %d times on screen:\n%s",
+				off, turn, above, seen, strings.Join(screen, "\n"))
 		}
 	}
 }
@@ -479,7 +497,7 @@ func TestSticky_NamesTheTurn(t *testing.T) {
 		t.Fatal("nothing pinned")
 	}
 	_ = rows
-	if !strings.HasSuffix(rows[0], "2") {
+	if !strings.HasSuffix(rows[0], "2 Δ") {
 		t.Fatalf("the pinned question does not carry its turn at the right edge:\n%s", strings.Join(rows, "\n"))
 	}
 	if strings.Contains(rows[0], "2 Gluck") {
@@ -587,7 +605,6 @@ func TestSticky_PinsTheHeadOfTheQuestionNotAMiddleChunk(t *testing.T) {
 		t.Fatalf("fixture: the question is %d rows, want a tall one", q.textHigh-q.textLo)
 	}
 	head := strings.TrimRight(stripANSI(q.rows[q.textLo].text), " ")
-	second := strings.TrimRight(stripANSI(q.rows[q.textLo+1].text), " ")
 
 	// Walk the whole question through the top of the body.
 	shown := 0
@@ -599,12 +616,11 @@ func TestSticky_PinsTheHeadOfTheQuestionNotAMiddleChunk(t *testing.T) {
 			continue
 		}
 		shown++
-		if !strings.HasPrefix(rows[0], head) || !strings.HasPrefix(rows[1], second[:20]) {
-			t.Fatalf("at offset %d the header shows a middle chunk:\n got %q\nwant the head %q / %q",
-				tr.offset, rows, head, second)
+		if !strings.HasPrefix(rows[0], "∨ Gluck") || !strings.HasPrefix(rows[1], head[:20]) {
+			t.Fatalf("at offset %d the header shows a middle chunk: got %q, want metadata then %q", tr.offset, rows, head)
 		}
 		// The mark means "this question goes on past what the header holds".
-		taller := q.textLo+len(rows) < q.textHigh
+		taller := q.textLo+len(rows)-1 < q.textHigh
 		if marked := strings.Contains(rows[len(rows)-1], strings.TrimSpace(stickyEllipsis)); marked != taller {
 			t.Fatalf("at offset %d the question is taller=%v but the header marked=%v: %q",
 				tr.offset, taller, marked, rows[len(rows)-1])
@@ -700,9 +716,15 @@ func TestSticky_MergesIntoTheBlockWithoutASeam(t *testing.T) {
 		}
 		// Header then body is the block, in order, with nothing repeated and
 		// nothing but the question's own rows above.
-		want := q.rows[q.textLo : q.textLo+len(rows)]
+		var want []transcriptRow
+		if len(rows) > 0 {
+			if !strings.HasPrefix(rows[0], "∨ Gluck") {
+				t.Fatalf("missing sticky metadata: %q", rows[0])
+			}
+			want = q.rows[q.textLo : q.textLo+len(rows)-1]
+		}
 		for i, r := range want {
-			got := rows[i]
+			got := rows[i+1]
 			text := strings.TrimRight(stripANSI(r.text), " ")
 			if !strings.HasPrefix(got, text) && !strings.HasPrefix(text, strings.TrimSuffix(got, stickyEllipsis)) {
 				t.Fatalf("at %d rows above, header row %d = %q, want the question's %q", above, i, got, text)
@@ -722,5 +744,49 @@ func TestSticky_MergesIntoTheBlockWithoutASeam(t *testing.T) {
 	}
 	if heights[len(heights)-1] != 0 {
 		t.Fatalf("the header outlived the block: %v", heights)
+	}
+}
+
+// TestSticky_HeadingIsPinnedFromTheFirstRowScrolled is the bug this shape was
+// cut for. The header used to hold the question's TEXT alone and let go while
+// any of that text was still on screen, so a multi-line question spent its
+// first rows of scroll with its heading -- who asked, the fork it came from,
+// the state that arrived with it -- gone from the pane, and the heading popped
+// back in several keystrokes later. Now the header holds the block's own first
+// two rows, so it can let go the moment nothing of the block is above.
+func TestSticky_HeadingIsPinnedFromTheFirstRowScrolled(t *testing.T) {
+	question := "REMINDER (figla): the baseline rebuild is due now, and this " +
+		"first line is long enough to wrap more than once at sixty columns.\n\n" +
+		"--watch git status\n\nNothing to cancel."
+	client := aria.NewClient()
+	var nodes []livedoc.Node
+	for n := range 12 {
+		nodes = append(nodes, livedoc.Node{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("NODE%d", n)})
+	}
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
+		ID: 1, Sealed: true, Inquiry: question, Nodes: nodes,
+		InquirySegments: []aria.InquirySegment{{Sender: "Gluck", Text: question}},
+	}}}}, aria.Notify)
+	view := &ariaView{settings: &renderSettings{sticky: true}}
+	tr := newTranscript(ldrender.NewFakeTerminal(60, 16), 60, 16, view, client, "aria1234", time.Time{})
+	tr.enter()
+	tr.follow = false
+	tr.buildIndex()
+
+	q := tr.stickyBlockOf(1)
+	if q.textHigh-q.textLo < 4 {
+		t.Fatalf("fixture: the question must run to several rows, got %d", q.textHigh-q.textLo)
+	}
+	first := strings.TrimRight(stripANSI(q.rows[1].text), " ")
+	for above := 1; above < len(q.rows); above++ {
+		tr.offset = above
+		tr.buildIndex()
+		screen := plain(screenRows(tr))
+		if !strings.Contains(screen[0], "Gluck") {
+			t.Fatalf("%d rows scrolled: the heading is gone:\n%s", above, strings.Join(screen[:3], "\n"))
+		}
+		if got := strings.TrimRight(strings.TrimSuffix(screen[1], ".."), " "); !strings.HasPrefix(first, got) {
+			t.Fatalf("%d rows scrolled: the pinned line is %q, want the head of %q", above, got, first)
+		}
 	}
 }

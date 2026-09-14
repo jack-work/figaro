@@ -19,15 +19,17 @@ import (
 // and nothing else: the reply ran straight into the question with no rule
 // between the voices.
 //
-// The block is: "> input" / blank / indented text / RULE / "< figaro". The
-// rule closes the question directly: a blank row above it was a second seam
-// for one boundary, and it is where a question's form deltas hang now.
+// The block is: "> input" / indented text / blank / RULE / "< figaro". The
+// heading sits ON the first line it introduces, because those two rows are
+// what the pager's sticky header pins, and a gap between them would mean the
+// header pinned a blank. The question's breathing room went to the bottom,
+// where a form-delta list takes its place when one is open.
 // All three surfaces must agree on it, because a live-vs-committed difference
 // here is not cosmetics: it is the same exchange telling two stories.
 func TestInquiryChromeAgreesAcrossViews(t *testing.T) {
 	const question = "THEQUESTION"
 	nodes := []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "THEANSWER"}}
-	want := []string{"> input", "", question, "─", "< figaro", "", "THEANSWER"}
+	want := []string{"> input", question, "", "─", "< figaro", "", "THEANSWER"}
 
 	t.Run("show", func(t *testing.T) {
 		got := renderTurnRows(aria.Message{Role: livedoc.RoleOutput, Inquiry: question, InquirySegments: nil, Nodes: nodes}, 48, 0, renderSettings{})
@@ -69,7 +71,7 @@ func assertChrome(t *testing.T, rows []string, want []string) {
 	}
 	start := -1
 	for i := range shape {
-		if shape[i] == "> input" {
+		if strings.HasPrefix(shape[i], "> ") {
 			start = i
 			break
 		}
@@ -97,7 +99,7 @@ func classifyChromeRow(row string) string {
 	case strings.Trim(s, "─") == "":
 		return "─"
 	case strings.HasPrefix(s, ">"):
-		return "> input"
+		return s
 	case strings.HasPrefix(s, "<"):
 		return "< figaro"
 	}

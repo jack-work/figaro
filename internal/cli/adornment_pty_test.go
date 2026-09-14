@@ -138,11 +138,12 @@ func adornCollapsedGutter(t *testing.T, p *adornPane) {
 	}
 }
 
-// d on a selected block opens one row per delta key, and the snake appears:
-// the head parks at the anchor while the selection is on the block itself.
+// Enter on a selected block opens one row per delta key, and the snake
+// appears: the head parks at the anchor while the selection is on the block
+// itself.
 func adornInquiryOpens(t *testing.T, p *adornPane) {
 	p.key("C-n") // the question is the first block
-	p.key("d")
+	p.key("Enter")
 
 	rows := p.rows()
 	for _, key := range adornAskKeys {
@@ -219,16 +220,16 @@ func adornRowsWalk(t *testing.T, p *adornPane) {
 	}
 }
 
-// d again closes the list, and the selection lands back on the block: the
+// Enter again closes the list, and the selection lands back on the block: the
 // gesture acts on the block wherever the cursor stands inside its list.
 func adornCloseLands(t *testing.T, p *adornPane) {
 	p.key("C-n") // into the list, so the close has somewhere to land FROM
 	adornFocus(t, p, adornAskKeys[0], "before closing")
-	p.key("d")
+	p.key("Enter")
 	rows := p.rows()
 	for _, key := range adornAskKeys {
 		if hasRow(rows, key) {
-			t.Errorf("d left the row for %q on screen\n%s", key, p.dump())
+			t.Errorf("Enter left the row for %q on screen\n%s", key, p.dump())
 		}
 	}
 	styled := p.styled()
@@ -243,7 +244,7 @@ func adornCloseLands(t *testing.T, p *adornPane) {
 func adornToolSnake(t *testing.T, p *adornPane) {
 	p.key("C-n") // prose
 	p.key("C-n") // tool
-	p.key("d")
+	p.key("Enter")
 
 	rows := p.rows()
 	for _, key := range adornToolKeys {
@@ -272,8 +273,8 @@ func adornToolSnake(t *testing.T, p *adornPane) {
 		t.Errorf("the focused row lost its head or its wash: %q", clean(row))
 	}
 
-	p.key("C-p") // back to the block
-	p.key("d")   // and closed
+	p.key("C-p")   // back to the block
+	p.key("Enter") // and closed
 }
 
 // t is the tool's body and NOTHING else; Enter is both halves at once.
@@ -337,12 +338,17 @@ type adornPane struct {
 
 func newAdornPane(t *testing.T) *adornPane {
 	t.Helper()
+	return newAdornPaneFor(t, adornPage(), adornProseHead)
+}
+
+func newAdornPaneFor(t *testing.T, page aria.Page, ready string) *adornPane {
+	t.Helper()
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not on PATH")
 	}
 	dir := t.TempDir()
 	tapePath := filepath.Join(dir, "adorn.tape")
-	writeAdornTape(t, tapePath)
+	writeAdornPageTape(t, tapePath, page)
 
 	// A plain `go build` in a worktree records no revision (a worktree's
 	// .git is a file, and Go's VCS autodetection wants a directory), so the
@@ -363,7 +369,7 @@ func newAdornPane(t *testing.T) *adornPane {
 	}
 
 	conf := filepath.Join(dir, "tmux.conf")
-	if err := os.WriteFile(conf, []byte("set -g default-terminal \"screen-256color\"\nset -g status off\n"), 0o600); err != nil {
+	if err := os.WriteFile(conf, []byte("set -g default-terminal \"screen-256color\"\nset -g status off\nset -g remain-on-exit on\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	for _, s := range []string{"state", "run", "config"} {
@@ -377,7 +383,7 @@ func newAdornPane(t *testing.T) *adornPane {
 
 	// -y h+1: tmux gives back h, because the status bar takes a row whether
 	// or not it is drawn. The height is read back below rather than assumed.
-	cmd := fmt.Sprintf("env FIGARO_STATE_DIR=%s/state FIGARO_RUNTIME_DIR=%s/run FIGARO_CONFIG_DIR=%s/config %s replay %s; sleep 300",
+	cmd := fmt.Sprintf("env FIGARO_STATE_DIR=%s/state FIGARO_RUNTIME_DIR=%s/run FIGARO_CONFIG_DIR=%s/config %s replay %s",
 		dir, dir, dir, bin, tapePath)
 	out, err := exec.Command("tmux", "-S", p.sock, "-f", conf, "new-session", "-d",
 		"-x", fmt.Sprint(p.w), "-y", fmt.Sprint(p.h+1), "sh", "-c", cmd).CombinedOutput()
@@ -388,7 +394,7 @@ func newAdornPane(t *testing.T) *adornPane {
 		p.h = got
 	}
 	p.settle()
-	if !hasRow(p.rows(), adornProseHead) {
+	if !hasRow(p.rows(), ready) {
 		t.Fatalf("the fixture aria never painted\n%s", p.dump())
 	}
 	return p
@@ -589,6 +595,11 @@ func adornPage() aria.Page {
 // it.
 func writeAdornTape(t *testing.T, path string) {
 	t.Helper()
+	writeAdornPageTape(t, path, adornPage())
+}
+
+func writeAdornPageTape(t *testing.T, path string, page aria.Page) {
+	t.Helper()
 	line := func(v any) string {
 		b, err := json.Marshal(v)
 		if err != nil {
@@ -605,7 +616,6 @@ func writeAdornTape(t *testing.T, path string) {
 		}
 		return b
 	}
-	page := adornPage()
 	var b strings.Builder
 	b.WriteString(line(tape.Header{
 		Tape: tape.FormatVersion, Aria: adornAria,

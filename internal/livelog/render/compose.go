@@ -99,9 +99,9 @@ func (a Adornment) empty() bool {
 type Composer struct {
 	View NodeView // draws one block; required
 
-	Header func(role string) string // voice header, e.g. "< figaro"
-	Rule   func() string            // the separator between the two voices
-	Sender func(string) string      // styles a segment's attribution
+	Header      func(role string) string   // voice header, e.g. "< figaro"
+	Rule        func() string              // the separator between the two voices
+	InputHeader func(sender string) string // inquiry heading; empty sender means unattributed
 	// Mark is a block's address, drawn against the right edge of its first
 	// row. nil draws none.
 	Mark func(block int, n livedoc.Node) string
@@ -177,6 +177,12 @@ func (c Composer) Message(m aria.Message, w int) []Row {
 				// The rule is the adornment's closing corner: the question's
 				// deltas are ENCLOSED by the chrome beneath them.
 				rule = OverlayColumn(rule, 0, adorn.Tail)
+			} else {
+				// A blank above the rule, exactly as between two messages
+				// (the pager's sepRows): the question ends, then the seam.
+				// An open delta list needs no blank -- it opens with an
+				// anchor row of its own and closes into the corner.
+				rows = append(rows, chrome(""))
 			}
 			rows = append(rows, chrome(rule))
 		}
@@ -279,33 +285,39 @@ func (c Composer) Inquiry(inquiry string, segments []aria.InquirySegment, w int,
 	if strings.TrimSpace(inquiry) == "" {
 		return nil
 	}
-	var rows []Row
-	if h := c.head(livedoc.RoleInput); h != "" {
-		if adorn.Suffix != "" {
-			h += " " + adorn.Suffix
-		}
-		head := chrome(OverlayGutter(clip(h, w), adorn.Gutter, w))
-		head.Gutter = adorn.Gutter
-		rows = append(rows, head, chrome(""))
-	}
-	first := len(rows)
 	if len(segments) == 0 {
-		rows = append(rows, prose(inquiry, w, BlockInquiry)...)
-	} else {
-		for k, seg := range segments {
-			if k > 0 {
-				rows = append(rows, Row{Text: "", Block: BlockInquiry})
+		segments = []aria.InquirySegment{{Text: inquiry}}
+	}
+	var rows []Row
+	for k, seg := range segments {
+		if k > 0 {
+			rows = append(rows, chrome(""))
+		}
+		h := c.head(livedoc.RoleInput)
+		if c.InputHeader != nil {
+			h = c.InputHeader(seg.Sender)
+		}
+		if h != "" {
+			if k == 0 && adorn.Suffix != "" {
+				h += " " + adorn.Suffix
 			}
-			if seg.Sender != "" && c.Sender != nil {
-				// Indented to sit under the prose, which render.Prose insets.
-				rows = append(rows, Row{Text: clip(c.Sender("  "+seg.Sender), w), Block: BlockInquiry})
+			head := chrome(clip(h, w))
+			if k == 0 {
+				head.Text = OverlayGutter(head.Text, adorn.Gutter, w)
+				head.Gutter = adorn.Gutter
 			}
-			rows = append(rows, prose(seg.Text, w, BlockInquiry)...)
+			rows = append(rows, head)
+		}
+		first := len(rows)
+		rows = append(rows, prose(seg.Text, w, BlockInquiry)...)
+		if k == 0 && c.Mark != nil && len(rows) > first {
+			rows[first].Mark = c.Mark(BlockInquiry, livedoc.Node{})
 		}
 	}
-	if c.Mark != nil && len(rows) > first {
-		rows[first].Mark = c.Mark(BlockInquiry, livedoc.Node{})
-	}
+	// The heading sits ON the first line it introduces: those two rows are
+	// the block's head, and the pager's sticky header pins exactly them (see
+	// transcript_sticky.go). The question's breathing room is BELOW, in the
+	// seam Message draws under it.
 	return rows
 }
 

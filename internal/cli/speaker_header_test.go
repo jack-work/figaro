@@ -13,10 +13,10 @@ import (
 // the header decision does not depend on.
 func headerComposer() ldrender.Composer {
 	return ldrender.Composer{
-		View:   pagerView(&ariaView{}),
-		Header: messageHeader,
-		Rule:   func() string { return strings.Repeat("-", 10) },
-		Sender: dimSender,
+		View:        pagerView(&ariaView{}),
+		Header:      messageHeader,
+		Rule:        func() string { return strings.Repeat("-", 10) },
+		InputHeader: inputHeader,
 	}
 }
 

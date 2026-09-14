@@ -266,7 +266,7 @@ var keymap = []keyBinding{
 	// -- pager level: motions ----------------------------------------------
 	{chord: byteChord('j'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerLineDown},
 	{chord: byteChord('k'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerLineUp},
-	{chord: byteChord('d'), modes: inTranscript, open: opensPager, help: helpDeltas, pager: pagerToggleDeltas},
+	{chord: byteChord('d'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerHalfDown},
 	{chord: byteChord('u'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerHalfUp},
 	{chord: byteChord('G'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerTail},
 	{chord: byteChord('g'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerPendingTop},
@@ -393,10 +393,11 @@ var keymap = []keyBinding{
 	{chord: byteChord(0x10), modes: inTranscript, open: opensPager, help: helpSelect, pager: pagerSelectPrev},
 	{chord: byteChord(0x0d), modes: inTranscript, open: opensPager, help: helpExpand, pager: pagerToggleBlocks},
 	{chord: byteChord(0x0a), modes: inTranscript, open: opensPager, help: helpExpand, pager: pagerToggleBlocks},
-	// `d` and `t` are the halves Enter presses together: the form-delta list
-	// beside a block, and a tool's own body. Each is inert where it has
-	// nothing to show, and `d` with nothing to open keeps its older job of
-	// scrolling half a page (see pagerToggleDeltas).
+	// ENTER IS THE ONLY KEY THAT OPENS FORM DELTAS. It had a letter of its
+	// own for a while ('d'), which collided with the half-page motion every
+	// pager has had since vi, and a motion key that sometimes folds a block
+	// instead is a key the hand cannot trust. `t` remains the narrow half:
+	// tool bodies without the state beside them.
 	{chord: byteChord('t'), modes: inTranscript, open: opensPager, help: helpToolBody, pager: pagerToggleBodies},
 	{
 		chord: byteChord(0x1b), modes: inTranscript,
@@ -694,7 +695,6 @@ const (
 	helpSelect
 	helpSelectExtend
 	helpExpand
-	helpDeltas
 	helpToolBody
 	helpInterrupt
 	helpHangUp
@@ -770,7 +770,6 @@ var helpRows = []helpRow{
 	{helpQuestionTravel, "M-n / M-p", "travel to the next / previous question"},
 	{helpSelectExtend, "^N/^P + Shift", "travel between questions (Alt+^N/^P extends a selection)"},
 	{helpExpand, "Enter", "open tool bodies and form deltas within the selection"},
-	{helpDeltas, "d", "open the form deltas beside the selection (else scroll half a page)"},
 	{helpToolBody, "t", "open the tool bodies within the selection"},
 	{helpEscape, "Esc", "clear selection / close panel"},
 	{helpVisual, "v / V", "visual mode: a cursor; again to mark by character / by line (y yanks, : commands it)"},

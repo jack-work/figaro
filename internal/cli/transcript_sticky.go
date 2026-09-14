@@ -19,7 +19,10 @@ import (
 // moment it goes is the moment the question's own head has reached the top,
 // where it draws the same rows in the same place.
 
-// stickyText is the most rows of a question the header holds.
+// stickyText is how many of the block's own head rows the header holds: the
+// heading that names the sender, and the first line of the question under it.
+// They are rows 0 and 1 of the block, which is what makes the float seamless:
+// see stickyRows.
 const stickyText = 2
 
 // stickyEllipsis marks a question the header could not show whole.
@@ -39,9 +42,10 @@ func (t *transcript) headRows() int { return len(t.stickyLines("", selectionSpan
 // every row of the block, and the half of them that is the question itself
 // rather than the voice header above it or the form deltas below.
 type stickyQuestion struct {
+	gutter   string
 	rows     []transcriptRow
 	textLo   int // first row of the question's own text
-	textHigh int // one past its last row
+	textHigh int // one past its last row of text
 }
 
 func (q stickyQuestion) empty() bool { return q.textHigh <= q.textLo }
@@ -62,14 +66,20 @@ func (t *transcript) stickyBlockOf(turn int) stickyQuestion {
 		Turn: turn, Inquiry: inq.Text, InquirySegments: inq.Segments, FormDeltas: inq.FormDeltas,
 	}
 	q.rows = t.renderMsgBase(m).rows
+	q.gutter = buildAdornment(inquiryAdorner{}, inq.FormDeltas, t.w, false).Gutter
 	// The question's own text stops where its adornment starts: the first row
-	// the snake touches (see adornment.go).
+	// the snake touches (see adornment.go). The blank row the question closes
+	// with is not text either, so a one-line question is not reported as
+	// having more to show.
 	q.textHigh = len(q.rows)
 	for i, r := range q.rows {
 		if r.spine.Kind != ldrender.SpineNone {
 			q.textHigh = i
 			break
 		}
+	}
+	for q.textHigh > 0 && !q.rows[q.textHigh-1].ref.valid() {
+		q.textHigh--
 	}
 	for i, r := range q.rows {
 		if r.ref.valid() {
@@ -114,20 +124,28 @@ func (t *transcript) stickyTurn() (turn, above int) {
 	return turn, above
 }
 
-// stickyRows is the head of the question the reader is inside, held while any
-// of that question's own text is above the top of the pane. It does not shrink
-// as the block comes back: the conversation moves underneath it and the header
-// simply lets go once the question can speak for itself.
+// stickyRows is the head of the question the reader is inside: the heading
+// that names who asked, and the first line they wrote. They are the block's
+// OWN rows 0 and 1, so the moment the header lets go -- the moment nothing of
+// the block is above the body -- the block draws the same two rows in the same
+// place, and the reader sees no change at all.
 func (t *transcript) stickyRows() []transcriptRow {
 	if !t.sticky() {
 		return nil
 	}
 	turn, above := t.stickyTurn()
 	q := t.stickyBlockOf(turn)
-	if q.empty() || above <= q.textLo {
+	if q.empty() || above <= 0 {
 		return nil
 	}
-	return q.rows[q.textLo:min(q.textLo+stickyText, q.textHigh)]
+	rows := make([]transcriptRow, 0, stickyText)
+	for _, r := range q.rows[:min(stickyText, q.textHigh)] {
+		if len(rows) > 0 {
+			r.mark = "" // the turn number lives on the heading row
+		}
+		rows = append(rows, r)
+	}
+	return rows
 }
 
 // stickyLines is the header as painted: the head of the question, its address
@@ -145,18 +163,45 @@ func (t *transcript) stickyLines(hl string, sel selectionSpan) []string {
 	out := make([]string, 0, len(rows)+1)
 	for i, r := range rows {
 		line := t.rowLine(r, hl, sel)
-		if i == len(rows)-1 && q.textLo+len(rows) < q.textHigh {
+		if i == len(rows)-1 && len(rows) < q.textHigh {
 			line = stickyClip(line, t.w)
 		}
 		out = append(out, line)
 	}
 	// The pinned question stands out of its place in the conversation, so it
 	// carries its address the way ^O draws every other one.
-	out[0] = ldrender.OverlayRight(out[0], term.Dim(coordLabel(turn, inquiryNode, 0, t.coordFormat())), t.w-ldrender.GutterCols)
+	out[0] = ldrender.OverlayColumn(out[0], 0, "∨")
+	out[0] = ldrender.OverlayRight(out[0], term.Dim(coordLabel(turn, inquiryNode, 0, t.coordFormat())+" "), t.w-ldrender.GutterCols)
+	out[0] = ldrender.OverlayGutter(out[0], q.gutter, t.w)
 	if above >= len(q.rows) {
-		out = append(out, t.transRule())
+		// The header covers rows rather than pushing them down. Join only
+		// to the first row still visible below its rule, never a covered row.
+		below := t.lineAt(t.offset + len(out) + 1)
+		out = append(out, joinRuleGutter(t.transRule(), below))
 	}
 	return out
+}
+
+// joinRuleGutter joins a leading vertical gutter to the rule immediately
+// above it. Only indentation may precede the gutter; embedded vertical lines
+// are content, not a connection to the header.
+func joinRuleGutter(rule, below string) string {
+	col := 0
+	for i := 0; i < len(below); {
+		switch below[i] {
+		case '\x1b':
+			i, _ = escapeEnd(below, i)
+		case ' ':
+			col++
+			i++
+		default:
+			if strings.HasPrefix(below[i:], "│") && col < displayWidth(rule) {
+				return ldrender.OverlayColumn(rule, col, "┬")
+			}
+			return rule
+		}
+	}
+	return rule
 }
 
 // stickyClip marks a row as the last of the question the header could fit.

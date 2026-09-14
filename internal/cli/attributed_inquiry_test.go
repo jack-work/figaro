@@ -10,26 +10,8 @@ import (
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 )
 
-// THE SHAPE, PINNED ACROSS ALL THREE SURFACES.
-//
-//	> input
-//	  aria 123456
-//	  Hello
-//
-//	  Jack
-//	  Hello again
-//	  ─────
-//	< figaro
-//	  Hello to both of you
-//
-// ONE "> input" for the whole question however many people wrote it: the
-// submissions folded into one message and a header apiece would say otherwise.
-// Each segment is prefaced by its sender, with a blank line between segments so
-// the parts read as separate messages.
-//
-// All three surfaces must agree, for the reason inquiry_chrome_test.go already
-// gives: a live-vs-committed difference here is not cosmetics, it is the same
-// exchange telling two stories about who spoke.
+// Each submission names its sender in the heading, not on a second body
+// row. Mixed senders retain their own headings within the same inquiry.
 func TestAttributedInquiryShapeAgreesAcrossViews(t *testing.T) {
 	segs := []aria.InquirySegment{
 		{Sender: "aria 123456", Text: "Hello"},
@@ -38,12 +20,12 @@ func TestAttributedInquiryShapeAgreesAcrossViews(t *testing.T) {
 	const joined = "Hello\n\nHello again"
 	nodes := []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "Hello to both of you"}}
 	want := []string{
-		"> input", "",
-		"aria 123456", "Hello", "",
-		"Jack", "Hello again",
-		// The rule follows the question with no blank row between them: the
-		// seam is the rule, and a blank above it was a second one.
-		"─", "< figaro", "", "Hello to both of you",
+		// A heading sits ON its text: the pair is the block's head, and the
+		// pager pins exactly those two rows.
+		"> figaro 123456", "Hello", "",
+		"> Jack", "Hello again",
+		// The question closes with one blank row, then the rule.
+		"", "─", "< figaro", "", "Hello to both of you",
 	}
 
 	t.Run("show", func(t *testing.T) {
@@ -69,7 +51,7 @@ func TestAttributedInquiryShapeAgreesAcrossViews(t *testing.T) {
 		ft := ldrender.NewFakeTerminal(48, 24)
 		in := ldrender.NewIncipit(ft, &ariaView{settings: &renderSettings{}})
 		in.Header = messageHeader
-		in.Sender = dimSender
+		in.InputHeader = inputHeader
 		in.Rule = func() string { return strings.Repeat("─", 48) }
 		m := aria.Message{
 			Turn: 1, Inquiry: joined, InquirySegments: segs,
@@ -87,7 +69,7 @@ func TestAttributedInquiryShapeAgreesAcrossViews(t *testing.T) {
 // where there used to be none.
 func TestUnattributedInquiryIsUnchanged(t *testing.T) {
 	nodes := []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "THEANSWER"}}
-	want := []string{"> input", "", "THEQUESTION", "─", "< figaro", "", "THEANSWER"}
+	want := []string{"> input", "THEQUESTION", "", "─", "< figaro", "", "THEANSWER"}
 
 	withSegs := renderTurnRows(aria.Message{Role: livedoc.RoleOutput, Inquiry: "THEQUESTION", InquirySegments: nil, Nodes: nodes}, 48, 0, renderSettings{})
 	assertChrome(t, withSegs, want)

@@ -149,11 +149,11 @@ func TestAddressesLeaveTheChromeAlone(t *testing.T) {
 			break
 		}
 	}
-	if i < 2 {
+	if i < 1 {
 		t.Fatalf("no question in:\n%s", strings.Join(rows, "\n"))
 	}
-	if got := []string{rows[i-2], rows[i-1]}; got[0] != "> input" || got[1] != "" {
-		t.Fatalf("question chrome under ^O: %q, want the header and a blank", got)
+	if got := rows[i-1]; got != "> input" {
+		t.Fatalf("question chrome under ^O: %q, want the heading on the line above", got)
 	}
 	if !strings.HasSuffix(rows[i], "8") {
 		t.Fatalf("the question does not carry its turn: %q", rows[i])

@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"strings"
+
 	"github.com/jack-work/figaro/api/livedoc"
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/term"
 )
 
@@ -20,7 +23,12 @@ func messageHeader(role string) string {
 	}
 }
 
-// dimSender styles a per-segment attribution for the inline view. It is the
-// same dim register block timestamps and tool durations use, so a sender reads
-// as metadata about the message rather than as part of it.
-func dimSender(name string) string { return term.Dim(name) }
+func inputHeader(sender string) string {
+	if sender == "" {
+		return messageHeader(livedoc.RoleInput)
+	}
+	if id, ok := strings.CutPrefix(sender, rpc.AriaLabelPrefix); ok {
+		sender = "figaro " + id
+	}
+	return term.Dim("> " + sender)
+}

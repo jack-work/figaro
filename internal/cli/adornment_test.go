@@ -327,8 +327,9 @@ func TestClosedListIsNotWalked(t *testing.T) {
 	}
 }
 
-// d, t and Enter: one half each, and both together. Each is inert where it
-// has nothing to open.
+// t and Enter: the narrow half, and both halves together. ENTER IS THE ONLY
+// KEY THAT OPENS A FORM-DELTA LIST -- 'd' had it for a while and took the
+// half-page motion hostage, which is the kind of trade a pager cannot make.
 func TestFoldKeysActOnTheirOwnHalf(t *testing.T) {
 	tr := adornFixture(t)
 	tool := nodeRef{turn: 1, index: 0}
@@ -343,47 +344,54 @@ func TestFoldKeysActOnTheirOwnHalf(t *testing.T) {
 		t.Fatal("t must open the tool's body")
 	}
 	tr.key('t')
-	tr.key('d')
-	if !tr.adorned[tool] || tr.expanded[tool] {
-		t.Fatalf("d opens the list alone: adorned=%v expanded=%v", tr.adorned[tool], tr.expanded[tool])
-	}
-	tr.key('d')
 	tr.key(0x0d)
 	if !tr.adorned[tool] || !tr.expanded[tool] {
 		t.Fatalf("Enter opens both: adorned=%v expanded=%v", tr.adorned[tool], tr.expanded[tool])
 	}
 
-	// On prose there is no body to open, so t is inert and d still works.
+	// On prose there is no body to open, so t is inert and Enter opens the
+	// list alone.
 	tr.selectRef(prose, false)
 	tr.key('t')
 	if tr.expanded[prose] {
 		t.Fatal("prose has no body: t must be inert on it")
 	}
-	tr.key('d')
+	tr.key(0x0d)
 	if !tr.adorned[prose] {
-		t.Fatal("d must open prose's list")
+		t.Fatal("Enter must open prose's list")
 	}
 
-	// d from inside the list closes it and leaves the selection on the block.
+	// Enter from inside the list closes it and leaves the selection on the
+	// block.
 	tr.selectRef(deltaRefOf(prose, 2), false)
-	tr.key('d')
+	tr.key(0x0d)
 	if tr.adorned[prose] {
-		t.Fatal("d inside the list must close it")
+		t.Fatal("Enter inside the list must close it")
 	}
 	if ref := tr.selection.focus.nodeRef; ref != prose {
 		t.Fatalf("closing the list leaves the selection on the block, got %+v", ref)
 	}
 }
 
-// WITH NOTHING TO OPEN, d KEEPS ITS OTHER JOB. It was the half-page scroll
-// before it was a fold, and a key that answers nothing would have cost the
-// motion for free.
-func TestDeltaKeyFallsBackToTheHalfPageScroll(t *testing.T) {
+// 'd' IS A MOTION AGAIN, unconditionally: half a page down whether or not the
+// selection carries state. A motion that sometimes folds a block instead is a
+// key the hand cannot trust.
+func TestDeltaKeyIsTheHalfPageScroll(t *testing.T) {
 	tr := adornFixtureH(t, 10, 4)
 	tr.offset = 0
 	tr.key('d')
 	if tr.offset == 0 {
 		t.Fatal("d with no selection must still scroll")
+	}
+	tr.offset = 0
+	ref := nodeRef{turn: 1, index: 1}
+	tr.selectRef(ref, false)
+	tr.key('d')
+	if tr.adorned[ref] {
+		t.Fatal("d must not open a form-delta list")
+	}
+	if tr.offset == 0 {
+		t.Fatal("d over a block with state must still scroll")
 	}
 }
 
@@ -515,11 +523,12 @@ func TestAdornmentRowsFitEveryWidth(t *testing.T) {
 			Nodes: []livedoc.Node{
 				{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK, Output: "out", FormDeltas: deltas},
 				{Type: livedoc.NodeProse, Markdown: "prose", FormDeltas: deltas},
+				{Type: livedoc.NodeThinking, Markdown: "thinking", FormDeltas: deltas},
 			},
 		}}}}, aria.Notify)
 		tr := newTranscript(ldrender.NewFakeTerminal(w, 40), w, 40, &ariaView{settings: &renderSettings{}}, client, "aria1234", time.Unix(0, 0))
 		tr.enter()
-		for _, ref := range []nodeRef{{turn: 1, index: inquiryNode}, {turn: 1, index: 0}, {turn: 1, index: 1}} {
+		for _, ref := range []nodeRef{{turn: 1, index: inquiryNode}, {turn: 1, index: 0}, {turn: 1, index: 1}, {turn: 1, index: 2}} {
 			tr.adorned[ref] = true
 		}
 		tr.dropTurnsRows(map[int]struct{}{1: {}})

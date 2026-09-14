@@ -342,7 +342,6 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  M-n / M-p           travel to the next / previous question",
 		"  ^N/^P + Shift       travel between questions (Alt+^N/^P extends a selection)",
 		"  Enter               open tool bodies and form deltas within the selection",
-		"  d                   open the form deltas beside the selection (else scroll half a page)",
 		"  t                   open the tool bodies within the selection",
 		"  Esc                 clear selection / close panel",
 		"  v / V               visual mode: a cursor; again to mark by character / by line (y yanks, : commands it)",

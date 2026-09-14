@@ -709,13 +709,6 @@ func (t *transcript) toggleSelectedTools() bool {
 	return t.toggleFolds(targets(tools, t.expanded, false))
 }
 
-// toggleSelectedAdornments is `d`: the form-delta lists only, and only where
-// there is state to list.
-func (t *transcript) toggleSelectedAdornments() bool {
-	_, adorned := t.foldSubjects()
-	return t.toggleFolds(targets(adorned, t.adorned, true))
-}
-
 func targets(refs []nodeRef, state map[nodeRef]bool, deltas bool) []foldTarget {
 	out := make([]foldTarget, 0, len(refs))
 	for _, ref := range refs {
@@ -731,7 +724,7 @@ func (t *transcript) toggleExpansion(refs []nodeRef) bool {
 }
 
 // toggleFolds flips sets of blocks between their collapsed and open renders.
-// Shared by Enter, d, t and a second click, so the viewport discipline below
+// Shared by Enter, t and a second click, so the viewport discipline below
 // is written once.
 func (t *transcript) toggleFolds(sets ...[]foldTarget) bool {
 	var targets []foldTarget

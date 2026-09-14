@@ -1285,7 +1285,7 @@ func (t *transcript) composer(m aria.Message) ldrender.Composer {
 	c := ldrender.Composer{
 		// The pager is the surface where Enter means something, so its view
 		// may open arguments as well as output (see ariaView.gesture).
-		View: pagerView(t.view), Header: messageHeader, Rule: t.transRule, Sender: dimSender, Tick: t.tick,
+		View: pagerView(t.view), Header: messageHeader, Rule: t.transRule, InputHeader: inputHeader, Tick: t.tick,
 		Expanded: func(block int) bool { return t.expanded[nodeRefAt(m, block)] },
 		// The delta list folds on its own gesture (d), and with the body on
 		// Enter; the layout is the block type's (see adornment.go).
@@ -2068,17 +2068,6 @@ func pagerToggleBlocks(t *transcript) { t.toggleSelectedNodes() }
 
 // pagerToggleBodies is `t`: tool bodies only.
 func pagerToggleBodies(t *transcript) { t.toggleSelectedTools() }
-
-// pagerToggleDeltas is `d`: the form-delta lists beside the selection. With
-// nothing selected that carries state the key keeps its other job, scrolling
-// half a page down: a gesture that cannot act is not a gesture, and taking
-// the motion away would cost a key to gain nothing.
-func pagerToggleDeltas(t *transcript) {
-	if t.toggleSelectedAdornments() {
-		return
-	}
-	pagerHalfDown(t)
-}
 
 // pagerClearSelection is Esc in the pager: drop the active selection, and do
 // nothing at all when there is none.

@@ -99,11 +99,11 @@ func renderNodeList(nodes []livedoc.Node, width int, tick uint64, set renderSett
 // pager, instead of the timestamp line `show` used to invent for itself.
 func turnComposer(turn, width int, tick uint64, set renderSettings) ldrender.Composer {
 	c := ldrender.Composer{
-		View:   &ariaView{settings: &set},
-		Header: messageHeader,
-		Rule:   func() string { return dimTransRule(width) },
-		Sender: dimSender,
-		Tick:   int(tick),
+		View:        &ariaView{settings: &set},
+		Header:      messageHeader,
+		Rule:        func() string { return dimTransRule(width) },
+		InputHeader: inputHeader,
+		Tick:        int(tick),
 		// The delta list draws collapsed by default: one glyph in the right
 		// gutter. -v opens it, since a one-shot dump has no d to press.
 		Adorn: func(block int, n livedoc.Node, deltas map[string]livedoc.FormDelta, w int) ldrender.Adornment {

@@ -425,14 +425,14 @@ run `figaro show` (full content above, cursor below).
 | Key | Action |
 | --- | --- |
 | `j` / `k` | line down / up |
-| `u` / `d` | half-page up / down (`d` opens the form deltas beside a selection first) |
+| `u` / `d` | half-page up / down |
 | `gg` / `G` | top of the retained buffer / bottom |
 | `↓` / `↑` | line down / up |
 | `PgDn` / `PgUp` | half-page down / up |
 | `Home` / `End` | top / bottom |
 | `/` | literal string search |
 | `:` | the command line: any figaro verb, or a coordinate (`:12`, `:12.3`, `:0`). With a highlight up it opens holding `<,>`. See [quoting.md](quoting.md). |
-| `t` / `Enter` | open a tool's body / both the body and the form deltas |
+| `t` / `Enter` | open a tool's body / both the body and the form deltas. Enter is the ONLY key that opens a delta list |
 | `f j` / `f k` | next / previous fork point (the block whose `⑂` the question's header carries) |
 | `a` | attend the aria that fork point came from; in a list, the selected row's |
 | `v` / `V` | visual mode: a cursor, then a highlight by character / by line |

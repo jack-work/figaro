@@ -17,12 +17,12 @@ import (
 // when the selection is elsewhere. The MORE a reader asks for, the more
 // rows: a block that has state says so in one column until it is asked.
 //
-// Three layouts, one law. A tool hangs the snake off a connector row under
-// its output; prose off the first line of its own text; a turn's question
+// A tool or thinking block hangs the snake off a connector row under
+// its text; prose off its first line; a turn's question
 // ENCLOSES its deltas between the text and the rule that closes the seam,
 // so its snake runs down to a corner instead of up to a block. Everything
 // else -- the glyph law, the row bodies, the refs the rows take -- is
-// shared, which is what makes the three one primitive rather than three.
+// shared across the layouts.
 
 // The snake's glyphs. One column each, and painted plain: the row they
 // stand in carries the rendition, so a glyph is never a second colour.
@@ -67,6 +67,12 @@ func (proseAdorner) tail() string              { return "" }
 func (proseAdorner) liftFork() bool            { return false }
 func (proseAdorner) gutterLast() bool          { return true }
 
+// Thinking already has a gutter at column 2. Connect it to the delta spine
+// below the text rather than placing a second spine alongside the text.
+type thinkingAdorner struct{ proseAdorner }
+
+func (thinkingAdorner) anchorRow() (string, bool) { return " ─" + snakeElbow, true }
+
 // toolAdorner hangs the snake off a connector row below the tool's output,
 // whose elbow turns out of the output gutter the widget already draws.
 type toolAdorner struct{}
@@ -97,12 +103,14 @@ func adornerFor(block int, n livedoc.Node) adorner {
 		return inquiryAdorner{}
 	case n.Type == livedoc.NodeTool:
 		return toolAdorner{}
+	case n.Type == livedoc.NodeThinking:
+		return thinkingAdorner{}
 	default:
 		return proseAdorner{}
 	}
 }
 
-// buildAdornment is the one composition, shared by the three layouts.
+// buildAdornment composes the rows shared by every layout.
 func buildAdornment(a adorner, deltas map[string]livedoc.FormDelta, w int, open bool) ldrender.Adornment {
 	out := ldrender.Adornment{GutterLast: a.gutterLast(), Tail: a.tail()}
 	if a.liftFork() {
