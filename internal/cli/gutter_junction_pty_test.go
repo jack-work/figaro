@@ -104,3 +104,64 @@ func TestGutterJunctionPTY(t *testing.T) {
 		}
 	})
 }
+
+// THE TERMINAL IS THE WITNESS for two claims a screen model cannot make: that
+// a fenced region of a tool's output arrives painted as a diff, and that the
+// rule above the status bar is cut by the gutter that runs past it.
+func TestFencedDiffAndFloorJunctionPTY(t *testing.T) {
+	if testing.Short() {
+		t.Skip("drives replay through tmux")
+	}
+	diff := "$ git diff retry.py\n```diff\n--- a/retry.py\n+++ b/retry.py\n@@ -1,2 +1,2 @@\n-    for i in range(retries):\n+    for i in range(retries + 1):\n```\n1 file changed"
+	p := newAdornPaneFor(t, aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
+		ID: 1, Sealed: true, Inquiry: "what changed?",
+		InquirySegments: []aria.InquirySegment{{Sender: "Gluck", Text: "what changed?"}},
+		Nodes: []livedoc.Node{
+			{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
+				Args: map[string]any{"command": "git diff retry.py"}, Output: diff},
+			{Type: livedoc.NodeThinking,
+				Markdown: strings.Repeat("The retry loop was off by one and now it is not.\n\n", 30)},
+		},
+	}}}}, "The retry loop was off by one")
+
+	// The head of the conversation, where the tool block is.
+	p.key("g")
+	p.key("g")
+	for _, r := range p.rows() {
+		if strings.Contains(r, "```") {
+			t.Fatalf("a fence reached the screen: %q\n%s", r, p.dump())
+		}
+	}
+	styled := p.styled()
+	del := p.only(t, p.rows(), "-    for i in range(retries):")
+	add := p.only(t, p.rows(), "+    for i in range(retries + 1):")
+	if !strings.Contains(styled[del], "\x1b[") || !strings.Contains(styled[add], "\x1b[") {
+		t.Fatalf("the diff arrived unpainted:\n%q\n%q", styled[del], styled[add])
+	}
+	if styled[del] == styled[add] {
+		t.Fatalf("both sides of the diff painted the same: %q", styled[del])
+	}
+	// From the top the thinking block runs past the floor, which is cut by it.
+	if rule := floorRuleRow(t, p); !strings.Contains(rule, "┴") {
+		t.Fatalf("a block that outruns the pane must be cut by the floor: %q\n%s", rule, p.dump())
+	}
+	// At the tail the conversation ends against the rule, which joins nothing.
+	p.key("G")
+	if rule := floorRuleRow(t, p); strings.Contains(rule, "┴") {
+		t.Fatalf("the last row of a block joined the floor: %q\n%s", rule, p.dump())
+	}
+}
+
+// floorRuleRow is the rule that closes the conversation: the lowest row on the
+// pane that is one, since the status bar sits under it.
+func floorRuleRow(t *testing.T, p *adornPane) string {
+	t.Helper()
+	rows := p.rows()
+	for i := len(rows) - 1; i >= 0; i-- {
+		if strings.HasPrefix(rows[i], "─") {
+			return rows[i]
+		}
+	}
+	t.Fatalf("no closing rule on the pane\n%s", p.dump())
+	return ""
+}

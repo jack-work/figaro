@@ -1456,9 +1456,22 @@ func (t *transcript) renderFrame() {
 	// A STANZA TALLER THAN THE PANE KEEPS ITS TAIL, rather than not being
 	// drawn: the rows nearest the bar are the ones being read.
 	start := t.h - 1 - len(bar) - len(foot)
+	clipped := false
 	if start < 0 {
 		foot = foot[-start:]
 		start = 0
+		clipped = true
+	}
+	// THE RULE THAT CLOSES THE CONVERSATION CARRIES THE JUNCTION, the way the
+	// sticky header's does, and for the same reason: a gutter that runs past
+	// the rule is cut by it and says so. Which rule that is depends on what is
+	// open -- the pit's own rule when a panel is up, the footer's otherwise --
+	// so the tie is made on whichever one sits against the body. A clipped
+	// stanza has lost its rule along with its head, and a fullscreen pit has
+	// no conversation under it to join.
+	floor := t.lineAt(t.offset + body)
+	if len(foot) > 0 && !clipped && !t.fullPit() && start > 0 {
+		foot[0] = joinRule(foot[0], screen[start-1], floor, "┴")
 	}
 	for k, l := range foot {
 		if r := start + k; r >= 0 && r < t.h-len(bar) {
@@ -1478,6 +1491,9 @@ func (t *transcript) renderFrame() {
 	// The bar occupies the bottom rows and the rule sits directly above it,
 	// however many rows that is.
 	if top := t.h - 1 - len(bar); top >= 0 {
+		if rule != "" && len(foot) == 0 && top > 0 {
+			rule = joinRule(rule, screen[top-1], floor, "┴")
+		}
 		screen[top] = rule
 		for i, row := range bar {
 			if r := top + 1 + i; r >= 0 && r < t.h {

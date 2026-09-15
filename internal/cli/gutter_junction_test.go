@@ -21,6 +21,14 @@ func gutterThinking() livedoc.Node {
 
 func gutterPager(t testing.TB, n livedoc.Node) *transcript {
 	t.Helper()
+	tr, _ := gutterPagerOn(t, n)
+	return tr
+}
+
+// gutterPagerOn is gutterPager with the terminal it paints to, for the tests
+// that read the FRAME (chrome included) rather than the body rows.
+func gutterPagerOn(t testing.TB, n livedoc.Node) (*transcript, *ldrender.FakeTerminal) {
+	t.Helper()
 	client := aria.NewClient()
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
 		ID: 1, Sealed: true, Inquiry: "what should happen here?",
@@ -28,11 +36,12 @@ func gutterPager(t testing.TB, n livedoc.Node) *transcript {
 		Nodes:           []livedoc.Node{n},
 	}}}}, aria.Notify)
 	view := &ariaView{settings: &renderSettings{sticky: true}}
-	tr := newTranscript(ldrender.NewFakeTerminal(80, 18), 80, 18, view, client, "gutter01", time.Time{})
+	ft := ldrender.NewFakeTerminal(80, 18)
+	tr := newTranscript(ft, 80, 18, view, client, "gutter01", time.Time{})
 	tr.enter()
 	tr.follow = false
 	tr.buildIndex()
-	return tr
+	return tr, ft
 }
 
 func TestThinkingAdornmentJoinsBelowTheText(t *testing.T) {
@@ -121,28 +130,44 @@ func TestStickyRuleJoinsOnlyTheNextRowsGutter(t *testing.T) {
 		if !strings.HasPrefix(rule, "──┬─") || displayWidth(rule) != width {
 			t.Fatalf("width %d: rule above %q is %q", width, below, rule)
 		}
+		// AND ONLY WHEN THE RULE CUTS IT. One row higher and the block's first
+		// row sits directly under the rule: the gutter starts there, so there
+		// is nothing above for it to join.
+		tr.offset = span.first - len(head)
+		tr.render()
+		head = headRowsOf(tr)
+		rule = stripANSI(head[len(head)-1])
+		if strings.Contains(rule, "┬") {
+			t.Fatalf("width %d: a block's first row joins nothing, got %q", width, rule)
+		}
 	}
 }
 
-func TestJoinRuleGutter(t *testing.T) {
+func TestJoinRule(t *testing.T) {
+	// far is the row on the other side of the rule: the one the chrome covers.
+	// A gutter on both sides is CUT by the rule and gets a junction; a gutter
+	// that begins or ends against it is a whole line and gets none.
 	for _, tc := range []struct {
-		name, below, want string
+		name, near, far, want string
 	}{
-		{"tool gutter", "  │ result", "──┬─────"},
-		{"left spine", "│ mantra", "┬───────"},
-		{"styled gutter", "\x1b[2m  │\x1b[0m result", "──┬─────"},
-		{"split style", " \x1b[2m │\x1b[m", "──┬─────"},
-		{"prose", "  ordinary text", "────────"},
-		{"embedded vertical", "  text │ table", "────────"},
-		{"ascii pipe", "  | plain", "────────"},
-		{"corner", "  ╯", "────────"},
-		{"blank", "\x1b[2m   \x1b[m", "────────"},
-		{"past width", "        │", "────────"},
-		{"last column", "       │", "───────┬"},
+		{"tool gutter", "  │ result", "  │ result", "──┬─────"},
+		{"left spine", "│ mantra", "│ mantra", "┬───────"},
+		{"styled gutter", "\x1b[2m  │\x1b[0m result", "  │ x", "──┬─────"},
+		{"split style", " \x1b[2m │\x1b[m", "  │", "──┬─────"},
+		{"prose", "  ordinary text", "  │ x", "────────"},
+		{"embedded vertical", "  text │ table", "  │ x", "────────"},
+		{"ascii pipe", "  | plain", "  │ x", "────────"},
+		{"corner", "  ╯", "  │ x", "────────"},
+		{"blank", "\x1b[2m   \x1b[m", "  │ x", "────────"},
+		{"past width", "        │", "        │", "────────"},
+		{"last column", "       │", "       │", "───────┬"},
+		{"block boundary", "  │ first row", "∨ The Boss", "────────"},
+		{"nothing beyond", "  │ last row", "", "────────"},
+		{"gutter moved", "  │ here", "    │ there", "────────"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rule := "\x1b[2m────────\x1b[m"
-			got := joinRuleGutter(rule, tc.below)
+			got := joinRule(rule, tc.near, tc.far, "┬")
 			if want := "\x1b[2m" + tc.want + "\x1b[m"; got != want {
 				t.Fatalf("got %q, want %q", got, want)
 			}
@@ -190,4 +215,40 @@ func TestShowThinkingUsesTheSameConnector(t *testing.T) {
 		}
 	}
 	t.Fatalf("show lost the thinking text: %q", rows)
+}
+
+// THE FLOOR JOINS TOO. The rule above the status bar had no junctions at all,
+// while the sticky header's rule drew one unconditionally; both now say the
+// same thing, and say it only when the gutter is CUT by the rule rather than
+// ending against it.
+func TestFooterRuleJoinsOnlyAGutterItCuts(t *testing.T) {
+	tr, ft := gutterPagerOn(t, livedoc.Node{Type: livedoc.NodeThinking,
+		Markdown: strings.Repeat("The answer needs a careful check before we change it.\n\n", 16)})
+	body, maxOff := tr.layoutNow()
+	span, ok := tr.nodeSpanOf(nodeRef{turn: 1, index: 0})
+	if !ok || span.last-span.first < body {
+		t.Fatalf("fixture must outrun the viewport: span %+v, body %d", span, body)
+	}
+	floorRule := func() string {
+		tr.renderFrame()
+		rows := stripANSIAll(ft.Screen())
+		for i := len(rows) - 1; i >= 0; i-- {
+			if strings.HasPrefix(rows[i], "──") || strings.HasPrefix(rows[i], "─┴") {
+				return rows[i]
+			}
+		}
+		t.Fatalf("no closing rule on screen:\n%s", strings.Join(rows, "\n"))
+		return ""
+	}
+
+	tr.offset = span.first
+	if rule := floorRule(); !strings.HasPrefix(rule, "──┴─") {
+		t.Fatalf("a block that runs past the rule must be cut by it, got %q", rule)
+	}
+	// The tail: the block's last row sits against the rule, and a junction
+	// there would branch to a conversation that is not there.
+	tr.offset = maxOff
+	if rule := floorRule(); strings.Contains(rule, "┴") {
+		t.Fatalf("the last row of a block joins nothing, got %q", rule)
+	}
 }

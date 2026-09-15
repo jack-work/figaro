@@ -236,3 +236,61 @@ func TestClipToWidthEllipsis_NoPhantomOnRewrittenRow(t *testing.T) {
 		t.Errorf("clipToWidthEllipsis = %q; want an ellipsis, text was dropped", stripANSI(got))
 	}
 }
+
+// ANY TOOL CAN DECLARE A DIFF, by fencing the region of its output that is
+// one. The picture is the `edit` tool's, drawn by the same painter: a reader
+// who knows one knows the other.
+func TestToolOutputFencedDiffDrawsAsADiff(t *testing.T) {
+	defer term.SetColorMode(term.ColorAlways)()
+	out := "$ git diff --stat\n```diff\n--- a/aria.go\n+++ b/aria.go\n@@ -1,2 +1,2 @@\n-was\n+is\n```\n1 file changed"
+	n := livedoc.Node{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
+		Args: map[string]any{"command": "git diff"}, Output: out}
+	rows := renderToolNode(n, 80, nodeOutputUnlimited, 0, true)
+
+	add, del := sgrOf(term.DiffAdd), sgrOf(term.DiffDel)
+	var painted, cut, bare bool
+	for _, r := range rows {
+		switch strings.TrimSpace(stripANSI(strings.TrimPrefix(stripANSI(r), toolGutter))) {
+		case "+is":
+			painted = strings.Contains(r, add)
+		case "-was":
+			cut = strings.Contains(r, del)
+		case "1 file changed":
+			bare = !strings.Contains(r, add) && !strings.Contains(r, del)
+		}
+	}
+	if !painted || !cut || !bare {
+		t.Fatalf("fenced diff not painted (add=%v del=%v plain=%v):\n%s", painted, cut, bare,
+			strings.Join(plain2(rows), "\n"))
+	}
+	if joined := strings.Join(plain2(rows), "\n"); strings.Contains(joined, "```") {
+		t.Fatalf("the fence reached the screen:\n%s", joined)
+	}
+}
+
+// A `write` body is a FILE, not a tool's report about one: fences in it are
+// the file's own text and stay on the screen.
+func TestWriteBodyKeepsItsFences(t *testing.T) {
+	n := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK,
+		Args:   map[string]any{"path": "/tmp/notes.md", "content": "# notes\n```diff\n-a\n+b\n```"},
+		Output: "/tmp/notes.md"}
+	rows := plain2(renderToolNode(n, 80, nodeOutputUnlimited, 0, false))
+	if !strings.Contains(strings.Join(rows, "\n"), "```diff") {
+		t.Fatalf("a written file lost its fence:\n%s", strings.Join(rows, "\n"))
+	}
+}
+
+// sgrOf is the escape one of term's roles opens with, so a test can ask which
+// voice painted a row without stripping the answer away.
+func sgrOf(paint func(string) string) string {
+	s := paint("\x00")
+	return s[:strings.IndexByte(s, 0)]
+}
+
+func plain2(rows []string) []string {
+	out := make([]string, len(rows))
+	for i, r := range rows {
+		out[i] = stripANSI(r)
+	}
+	return out
+}

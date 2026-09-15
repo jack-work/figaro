@@ -72,6 +72,12 @@ func toolBlockCases() []struct {
 		Args:     map[string]any{"path": "/var/tmp/x/retry.py", "old_text": oldText, "new_text": newText},
 		Output:   diff.Diff,
 		OpenedAt: o, StartedAt: o + 7300, FinishedAt: o + 7312}
+	// A shell that fences a region of its output as a diff gets the edit
+	// tool's picture for that region, and its own voice for the rest.
+	fenced := livedoc.Node{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
+		Args:     map[string]any{"command": "git diff --unified=1 retry.py"},
+		Output:   "```diff\n--- a/retry.py\n+++ b/retry.py\n@@ -1,3 +1,3 @@\n def retry(fn, retries=3):\n-    for i in range(retries):\n+    for i in range(retries + 1):\n```\n1 file changed, 1 insertion(+), 1 deletion(-)",
+		OpenedAt: o, StartedAt: o + 120, FinishedAt: o + 131}
 	editing := livedoc.Node{Type: livedoc.NodeTool, Name: "edit", Status: livedoc.StatusRunning,
 		Input:    `{"path":"/var/tmp/x/retry.py","old_text":"` + strings.ReplaceAll(oldText, "\n", `\n`) + `","new_text":"def retry(fn, retries=DEFAULT_RETRIES):\n    last = None\n    for i in ra`,
 		OpenedAt: o}
@@ -96,6 +102,7 @@ func toolBlockCases() []struct {
 		{"edit · minimized (the diff is the body)", edit, 78, nodeBashCapDefault, false, false},
 		{"edit · expanded (the result stands in; arguments only allude)", edit, 78, 6, false, true},
 		{"edit · streaming (no result yet, so arguments are blocks)", editing, 78, 6, false, true},
+		{"bash · a fenced region of the output IS a diff", fenced, 78, nodeBashCapDefault, false, false},
 	}
 }
 

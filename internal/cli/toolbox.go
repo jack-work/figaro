@@ -128,25 +128,52 @@ const (
 
 // toolBody is the block's content: the argument a tool declares as its body,
 // or its own output. clamp is the row budget; -1 for all of them.
-func toolBody(n livedoc.Node, st toolStyle, fields []partialjson.Field, clamp int) []string {
-	text := n.Output
+//
+// The rows come out TYPED, because a tool's output can declare that a region
+// of itself is a diff: `edit` declares it for the whole body in its style row,
+// and anything else declares it by fencing the region (see render.FencedLines). The
+// renderer still guesses nothing from the shape of a line.
+//
+// Fences are read in a tool's OUTPUT and not in the argument that stands in
+// for one. A `write` body is a FILE, and a file that happens to contain ```diff
+// is a file about diffs, not a diff.
+func toolBody(n livedoc.Node, st toolStyle, fields []partialjson.Field, clamp int) []bodyLine {
+	text, fenced := n.Output, true
 	if st.Body != "" {
 		f, ok := pick(fields, st.Body, false)
 		if !ok {
 			return nil
 		}
-		text = f.Value
+		text, fenced = f.Value, false
 	}
 	text = strings.TrimRight(render.SanitizeForTerminal(text), "\n")
 	if text == "" {
 		return nil
 	}
-	shown, total := tailOutput(text, clamp)
-	rows := strings.Split(shown, "\n")
+	var rows []bodyLine
+	if fenced && render.HasDiff(text) {
+		for _, l := range render.FencedLines(text) {
+			rows = append(rows, bodyLine{text: l.Text, diff: l.Diff})
+		}
+	} else {
+		for _, l := range strings.Split(text, "\n") {
+			rows = append(rows, bodyLine{text: l, diff: st.Diff})
+		}
+	}
+	total := len(rows)
 	if clamp >= 0 && total > clamp {
-		rows = append([]string{term.Dim(fmt.Sprintf("… last %d of %d lines", clamp, total))}, rows...)
+		rows = append([]bodyLine{{text: term.Dim(fmt.Sprintf("… last %d of %d lines", clamp, total))}},
+			rows[total-clamp:]...)
 	}
 	return rows
+}
+
+// bodyLine is one line of a tool block's body and what it is. diff says the
+// line belongs to a diff region: how it is PAINTED is render's to answer, not
+// this package's, so the picture matches everywhere figaro draws a diff.
+type bodyLine struct {
+	text string
+	diff bool
 }
 
 func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool) []string {
@@ -241,17 +268,24 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 		row("") // one blank row, where the junction used to be
 	}
 	for _, l := range body {
-		paint := diffPaint(st, l)
+		paint := plainPaint
+		if l.diff {
+			paint = render.DiffPaint(l.text)
+		}
 		if expand {
-			for _, w := range hardWrap(l, content) {
+			for _, w := range hardWrap(l.text, content) {
 				row(paint(w))
 			}
 			continue
 		}
-		row(paint(clipToWidthEllipsis(l, content)))
+		row(paint(clipToWidthEllipsis(l.text, content)))
 	}
 	return rows
 }
+
+// plainPaint leaves a row as it found it: the body's voice for everything the
+// tool did not declare.
+func plainPaint(s string) string { return s }
 
 // argRow draws one argument as exactly one row: newlines flattened to a ⏎
 // scar, the rest clipped to an ellipsis.
@@ -300,19 +334,9 @@ func headOutput(text string, limit int) (string, int) {
 	return text[:at], total
 }
 
-// diffPaint answers how one body line is coloured. A row is painted by its
-// SOURCE line's marker, so a wrapped continuation keeps its side of the diff.
-func diffPaint(st toolStyle, line string) func(string) string {
-	if st.Diff {
-		switch {
-		case strings.HasPrefix(line, "+"):
-			return term.DiffAdd
-		case strings.HasPrefix(line, "-"):
-			return term.DiffDel
-		}
-	}
-	return func(s string) string { return s }
-}
+// diffPaint moved to render.DiffPaint: the `edit` tool, a fenced region in
+// any other tool's output and a fenced region in prose are one picture, and
+// the package that draws rows owns it.
 
 // oneLine flattens a value for a row that must be exactly one: a multi-line
 // command in a header would desync the painter's one-row-per-line arithmetic.

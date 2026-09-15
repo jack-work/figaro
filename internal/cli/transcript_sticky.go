@@ -176,32 +176,58 @@ func (t *transcript) stickyLines(hl string, sel selectionSpan) []string {
 	if above >= len(q.rows) {
 		// The header covers rows rather than pushing them down. Join only
 		// to the first row still visible below its rule, never a covered row.
+		// The covered row directly above it says whether the gutter is CUT by
+		// the rule or merely begins under it: see joinRule.
+		rule := t.transRule()
 		below := t.lineAt(t.offset + len(out) + 1)
-		out = append(out, joinRuleGutter(t.transRule(), below))
+		hidden := t.lineAt(t.offset + len(out))
+		out = append(out, joinRule(rule, below, hidden, "┬"))
 	}
 	return out
 }
 
-// joinRuleGutter joins a leading vertical gutter to the rule immediately
-// above it. Only indentation may precede the gutter; embedded vertical lines
-// are content, not a connection to the header.
-func joinRuleGutter(rule, below string) string {
+// joinRule ties a horizontal rule to the vertical gutter that crosses it.
+//
+// A JUNCTION MEANS THE LINE GOES ON PAST THE RULE, and nothing else. near is
+// the row on the reader's side of the rule; far is the row on the other side,
+// the one the chrome covers. A gutter that runs through both is cut by the
+// rule and says so with a junction; a gutter that only starts (or only ends)
+// against the rule is a whole line already, and a junction there would draw a
+// branch to a block that is not there. That is the shape Gluck asked for: the
+// first row of a thinking block under the header joins nothing, and the same
+// block's last row above the status bar joins nothing either.
+//
+// Only indentation may precede the gutter: an embedded vertical line is
+// content, not a connection to the chrome.
+func joinRule(rule, near, far, glyph string) string {
+	col, ok := gutterColumn(near)
+	if !ok || col >= displayWidth(rule) {
+		return rule
+	}
+	if other, ok := gutterColumn(far); !ok || other != col {
+		return rule
+	}
+	return ldrender.OverlayColumn(rule, col, glyph)
+}
+
+// gutterColumn is the column of a row's leading vertical rule, if it has one.
+func gutterColumn(row string) (int, bool) {
 	col := 0
-	for i := 0; i < len(below); {
-		switch below[i] {
+	for i := 0; i < len(row); {
+		switch row[i] {
 		case '\x1b':
-			i, _ = escapeEnd(below, i)
+			i, _ = escapeEnd(row, i)
 		case ' ':
 			col++
 			i++
 		default:
-			if strings.HasPrefix(below[i:], "│") && col < displayWidth(rule) {
-				return ldrender.OverlayColumn(rule, col, "┬")
+			if strings.HasPrefix(row[i:], "│") {
+				return col, true
 			}
-			return rule
+			return 0, false
 		}
 	}
-	return rule
+	return 0, false
 }
 
 // stickyClip marks a row as the last of the question the header could fit.

@@ -35,9 +35,52 @@ func Prose(md string, width int) []string {
 	if rows, ok := lookupProse(md, width); ok {
 		return rows
 	}
-	rows := hardWrapOverlong(SanitizeRows(renderMarkdown(md, width)), width)
+	rows := hardWrapOverlong(SanitizeRows(proseRows(md, width)), width)
 	storeProse(md, width, rows)
 	return append([]string(nil), rows...)
+}
+
+// diffIndent insets a diff block from the prose around it, by as much as
+// glamour insets a fenced code block: the diff STANDS IN a code block's place,
+// so it stands where one would.
+const diffIndent = "    "
+
+// proseRows renders the markdown, drawing every fenced DIFF region itself and
+// leaving the rest to glamour. A diff is figaro's own picture (see diff.go),
+// not a highlighter's: the one a reader already knows from the `edit` tool.
+//
+// Rows for a diff region carry term's colours, so a caller that has turned
+// colour off gets the text and no SGR, exactly as it does from a tool block.
+func proseRows(md string, width int) []string {
+	if !HasDiff(md) {
+		return renderMarkdown(md, width)
+	}
+	var out, run []string
+	inDiff := false
+	flush := func() {
+		if len(run) == 0 {
+			return
+		}
+		if inDiff {
+			out = append(out, "")
+			for _, r := range DiffRows(strings.Join(run, "\n"), width-len(diffIndent)) {
+				out = append(out, diffIndent+r)
+			}
+			out = append(out, "")
+		} else {
+			out = append(out, renderMarkdown(strings.Join(run, "\n"), width)...)
+		}
+		run = run[:0]
+	}
+	for _, l := range FencedLines(md) {
+		if l.Diff != inDiff {
+			flush()
+			inDiff = l.Diff
+		}
+		run = append(run, l.Text)
+	}
+	flush()
+	return trimBlankEdges(out)
 }
 
 // renderMarkdown renders markdown via glamour. Output rows are glamour's

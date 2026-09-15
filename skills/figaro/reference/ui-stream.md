@@ -116,6 +116,7 @@ lifts the table rather than the renderer.
 | `Label` | replaces the tool's name on the minimized header (`$` for shells) |
 | `Headline` | the argument that speaks for the call: the command, the path |
 | `Body` | an argument to draw in place of the tool's own output |
+| `Diff` | the tool's whole output is a diff (`edit`) and is painted as one |
 
 ```go
 "bash":  {Label: "$", Headline: "command"},
@@ -178,6 +179,35 @@ shown.
 Colour carries what the layout does not: Kanagawa springBlue for the tool name
 and every argument value, fujiGray for labels, and the same dim for every rule
 in the box.
+
+### A fenced region declares its own rendering
+
+The renderer never guesses that a line is part of a diff from the shape of the
+line. Something has to SAY so, and there are two ways to say it: `edit` sets
+`Diff` in the style table, which covers its whole output, and **any other tool
+fences the region of its output that is one**:
+
+````
+✓ $ git diff --unified=1 retry.py [131ms]     the output as the tool wrote it:
+  │ --- a/retry.py                            ```diff
+  │ +++ b/retry.py                            --- a/retry.py
+  │ @@ -1,3 +1,3 @@                           …
+  │  def retry(fn, retries=3):                ```
+  │ -    for i in range(retries):             1 file changed
+  │ +    for i in range(retries + 1):
+  │ 1 file changed
+````
+
+The info string is `diff`, `figdiff` or `patch`; the fence lines are
+punctuation and are not drawn. Deletions and additions take the diff colours,
+`@@` hunks and `---`/`+++` file headers their own, and everything outside the
+region keeps the body's voice. A region left open by a stream that was cut off
+still draws as a diff. The same fence in the agent's PROSE gets the same
+picture: `internal/render/diff.go` holds the one painter, so a reader who knows
+the `edit` block knows every diff figaro draws.
+
+An ARGUMENT drawn in place of an output (`write`'s `content`) is not scanned: a
+file that contains ```` ```diff ```` is a file about diffs, not a diff.
 
 `y` follows the eye: a folded tool yanks its **output**, an expanded one yanks
 the **call and the result**, both in full.
@@ -570,6 +600,24 @@ the beginning of the aria: scrolling up found nothing, forever. The read is now
 owed by the promotion itself (`livelogTurn.enterPager` → `catchUp`) and runs
 **off the render lock**, since one of its callers is the frame path. A failed
 read is not a floor: the claim is released so a later gesture retries.
+
+### Where a rule meets a gutter
+
+The pager pins the question you are inside to the top and closes the
+conversation with a rule at the bottom. Both rules are crossed by the gutters
+that run down the left of thinking, steering and tool blocks, and a **junction**
+(`┬` above, `┴` below) is drawn where one is.
+
+A junction says ONE thing: *this line goes on past the rule*. So it is drawn
+only when the gutter is on both sides of it: the row the reader can see, and
+the row the chrome covers. The first row of a block sitting under the sticky
+header joins nothing (the line begins there); the last row of a block sitting
+against the floor joins nothing either (the line ends there); scroll one row
+and the same rule grows its junction, because now the block really is cut.
+
+`joinRule` in `transcript_sticky.go` is the whole of it, and both the header
+and the floor call it, which is why they cannot disagree again: the floor used
+to draw no junctions at all while the header drew one unconditionally.
 
 ## Steering: messages mid-turn
 

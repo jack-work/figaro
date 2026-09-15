@@ -59,11 +59,14 @@ func (m composeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc", "ctrl+c":
 			m.cancelled = true
 			return m, tea.Quit
-		case "ctrl+d", "alt+enter":
-			// Ctrl-D submits: the same key that ends stdin everywhere else in
-			// this CLI, and the same key gum write submits on, so the muscle
-			// memory transfers in both directions. Alt-Enter is the fallback
-			// for terminals that eat Ctrl-D.
+		case "alt+enter", "ctrl+enter", "ctrl+s":
+			// SUBMIT IS NOT CTRL-D. It was, on the theory that ^D ends stdin
+			// everywhere else -- but nothing here is a pipe: there is one
+			// binary, one editor, and one draft, and ^D in an editor is delete
+			// forward (which the textarea binds it to, and which this switch
+			// was swallowing). Alt-Enter is what the pager's ':' box submits
+			// on, Ctrl-Enter is the same chord on a terminal that can send it,
+			// and Ctrl-S is for the ones that eat both.
 			return m, tea.Quit
 		}
 	}
@@ -90,7 +93,7 @@ func composePrompt(placeholder string) (string, error) {
 
 	// Draw on stderr so a composed prompt can still be piped: `q -- | tee`
 	// keeps stdout clean for the reply.
-	m := composeModel{ta: ta, hint: "  ctrl-d send · esc cancel"}
+	m := composeModel{ta: ta, hint: "  M-enter / ^S send · esc cancel"}
 	out, err := tea.NewProgram(m, tea.WithOutput(os.Stderr)).Run()
 	if err != nil {
 		return "", fmt.Errorf("compose: %w", err)

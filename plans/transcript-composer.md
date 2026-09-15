@@ -272,12 +272,13 @@ conventions can be taken whole without arguing with the normal-mode map.
 | `^N` / `^P` | `0e` / `10` | **still node selection**, Gluck's preserved pair | unchanged |
 | `^C` / `^D` | `03` / `04` | **still interrupt / detach**, unchanged, deliberately | see below |
 
-**`^D` is NOT a second send chord, although figaro's own `composePrompt` says
-"ctrl-d send".** Internal consistency loses this one to safety: `^D` is the
-universal "get me out of this terminal program", it is bound to detach three
-keystrokes away in every other mode, and a user hammering it to escape must
-never discover that it *sent* their half-written draft instead. One submit
-chord, and it is the one that means nothing else.
+**`^D` is NOT a second send chord.** Internal consistency loses this one to
+safety: `^D` is the universal "get me out of this terminal program", it is
+bound to detach three keystrokes away in every other mode, and a user hammering
+it to escape must never discover that it *sent* their half-written draft
+instead. One submit chord, and it is the one that means nothing else.
+(`composePrompt` used to submit on `^D` and no longer does: there it is delete
+forward, which is what a `^D` inside an editor means.)
 
 **`^F` is live only when a fork intent is set.** Without one there is nothing to
 detach from, an ordinary send is already unattached, so it reports that in the
