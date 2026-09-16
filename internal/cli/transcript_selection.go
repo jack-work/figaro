@@ -804,6 +804,12 @@ func (t *transcript) repairSelection() {
 
 // ensureSelectionVisible scrolls the focused node into the body, if it is not
 // already there.
+//
+// THE HEADER COVERS ROWS, so "in the body" is not "past the offset". The
+// sticky question stands ON the first rows of the viewport rather than pushing
+// them down, and a selection scrolled to the offset landed UNDER it: walking
+// a delta list upward with ^P looked like a cursor that stopped moving. The
+// floor is the offset plus whatever the header hides.
 func (t *transcript) ensureSelectionVisible() {
 	if !t.selection.active {
 		return
@@ -814,8 +820,11 @@ func (t *transcript) ensureSelectionVisible() {
 		return
 	}
 	body, _ := t.layout(len(t.footLines()))
-	if span.first < t.offset {
-		t.offset = span.first
+	if head := t.headRows(); span.first < t.offset+head {
+		// One pass, not a fixed point: scrolling up may retire the header
+		// (the question's own rows reach the top), and the row is only ever
+		// further from the chrome for it.
+		t.offset = max(span.first-head, 0)
 	} else if span.last >= t.offset+body {
 		t.offset = span.last - body + 1
 	}

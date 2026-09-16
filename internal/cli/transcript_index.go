@@ -2,6 +2,7 @@ package cli
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
@@ -342,11 +343,17 @@ func (t *transcript) bandEdge(from, step int) int {
 	return edge
 }
 
-// isRuleRow reports whether a row is one of the box's horizontal rules: the
-// only rows whose first painted cell is the rule glyph.
+// isRuleRow reports whether a row is one of the box's horizontal rules, which
+// is where a band stops. A rule may open on a corner (the adornment's snake
+// closes into one) so the glyph at column zero is not the test: the row is a
+// rule when the line runs from its first cell or its second.
 func isRuleRow(row string) bool {
 	rest, _ := firstVisible(row)
-	return strings.HasPrefix(rest, "─")
+	if strings.HasPrefix(rest, "─") {
+		return true
+	}
+	_, n := utf8.DecodeRuneInString(rest)
+	return n > 0 && strings.HasPrefix(rest[n:], "─")
 }
 
 // washVisual paints the visual highlight over a finished row. It is applied

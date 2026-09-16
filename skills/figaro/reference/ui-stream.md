@@ -612,7 +612,15 @@ owns, its chrome rows included, so the band a reader sees IS the block.
 The wash also closes over the chrome BETWEEN washed rows and over the rule that
 fences the box beneath them: select a question and the heading, the text and
 the seam under it lift together. It stops at the first row of a block that is
-not selected, so the answer's voice header stays the answer's.
+not selected, and at the rule that closes the box, corner glyph and all (the
+adornment's snake closes into a `╰`, and a band that only knew `─` washed the
+answer's voice header on the way past).
+
+**A selected row is never under the header.** The pinned question COVERS the
+first rows of the viewport rather than pushing them down, so the floor a
+selection scrolls against is the offset plus the header's height. Walking a
+delta list upward with `^P` pushes the conversation down a row at a time
+instead of parking the cursor somewhere the reader cannot see it.
 
 Colour is the only channel here. A terminal with colour off shows no selection
 cue at all, which is the deliberate end of a cue that used to be drawn twice.

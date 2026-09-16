@@ -606,3 +606,84 @@ func TestSelectedBlockKeepsItsGutterMarker(t *testing.T) {
 	}
 	t.Fatal("fixture: no short row to wash")
 }
+
+// stickyAdorned is the fixture for what the header hides: three turns, the
+// last one's question adorned and open, and the sticky header on.
+func stickyAdorned(t testing.TB) (*transcript, nodeRef) {
+	t.Helper()
+	tr := adornFixtureH(t, 8, 3)
+	tr.view.(*ariaView).settings.sticky = true
+	inq := nodeRef{turn: 3, index: inquiryNode}
+	tr.adorned[inq] = true
+	tr.dropTurnsRows(map[int]struct{}{3: {}})
+	tr.buildIndex()
+	return tr, inq
+}
+
+// THE HEADER COVERS ROWS, SO THE CURSOR MUST CLEAR IT. Walking a delta list
+// upward with ^P used to park the focused row underneath the pinned question,
+// where it cannot be seen: the scroll floor was the offset, and the offset is
+// not where the conversation starts on screen.
+func TestSelectedRowClearsTheStickyHeader(t *testing.T) {
+	tr, inq := stickyAdorned(t)
+	tr.selectRef(deltaRefOf(inq, 2), false)
+
+	// Park the selection under the header on purpose, then ask for it back.
+	span, ok := tr.nodeSpanOf(tr.selection.focus.nodeRef)
+	if !ok {
+		t.Fatal("fixture: the delta row has no span")
+	}
+	tr.offset = span.first
+	tr.render()
+	if tr.headRows() == 0 {
+		t.Fatal("fixture: the header is not pinned, so nothing is covered")
+	}
+	tr.ensureSelectionVisible()
+	if head := tr.headRows(); span.first < tr.offset+head {
+		t.Fatalf("the focused row is under the header: row %d, offset %d, header %d",
+			span.first, tr.offset, head)
+	}
+
+	// And every step up the list stays clear of it.
+	for range 2 {
+		tr.key(0x10) // ^P
+		span, ok := tr.nodeSpanOf(tr.selection.focus.nodeRef)
+		if !ok {
+			t.Fatal("the focus lost its span")
+		}
+		if head := tr.headRows(); span.first < tr.offset+head {
+			t.Fatalf("^P parked %+v under the header: row %d, offset %d, header %d",
+				tr.selection.focus.nodeRef, span.first, tr.offset, head)
+		}
+	}
+}
+
+// THE BAND STOPS AT THE CORNER THE SNAKE CLOSES INTO. That row is a rule
+// wearing a corner glyph, so a band that only knew `─` ran straight past it
+// and washed the voice header of the answer below.
+func TestWashStopsAtTheAdornmentsCorner(t *testing.T) {
+	defer term.SetColorMode(term.ColorAlways)()
+	tr, inq := stickyAdorned(t)
+	tr.selectRef(deltaRefOf(inq, 2), false)
+	tr.ensureSelectionVisible()
+
+	rows := tr.window(tr.offset, tr.offset+8, nil)
+	corner, voice := -1, -1
+	for i, r := range rows {
+		switch plain := strings.TrimSpace(stripANSI(r)); {
+		case strings.HasPrefix(plain, "╰─"):
+			corner = i
+		case plain == "< figaro":
+			voice = i
+		}
+	}
+	if corner < 0 || voice < 0 {
+		t.Fatalf("fixture: want a corner and a voice header:\n%s", strings.Join(stripANSIAll(rows), "\n"))
+	}
+	if !washed(rows[corner]) {
+		t.Errorf("the corner closes the box and belongs to the band: %q", stripANSI(rows[corner]))
+	}
+	if washed(rows[voice]) {
+		t.Errorf("the wash ran past the corner onto %q", stripANSI(rows[voice]))
+	}
+}
