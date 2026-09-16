@@ -153,3 +153,19 @@ func sortedKeys(m map[int]bool) []int {
 	}
 	return out
 }
+
+// The box says which way it walks: '/' forward, '?' backward. A reader who
+// cannot see the direction cannot know what Enter will do.
+func TestSearchBoxShowsItsDirection(t *testing.T) {
+	tr, _ := visualFixture(t)
+	tr.key('/')
+	if got := strings.Join(tr.inputDrawerLines(), ""); !strings.Contains(stripANSI(got), "/") {
+		t.Fatalf("forward search box = %q", got)
+	}
+	tr.key(0x1b)
+	tr.key('?')
+	line := stripANSI(strings.Join(tr.inputDrawerLines(), ""))
+	if !strings.Contains(line, "?") {
+		t.Fatalf("backward search box = %q, want a '?' prompt", line)
+	}
+}

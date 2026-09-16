@@ -2869,7 +2869,13 @@ func (t *transcript) inputDrawerLines() []string {
 	var rows []string
 	switch {
 	case t.inSearch:
-		rows = []string{pitGray(clipToWidth("/"+t.query, t.w))}
+		// THE SIGIL IS THE DIRECTION. A box that always says '/' cannot tell
+		// a reader which way the next Enter walks.
+		sigil := "/"
+		if t.searchStep() < 0 {
+			sigil = "?"
+		}
+		rows = []string{pitGray(clipToWidth(sigil+t.query, t.w))}
 	case t.inJump:
 		// The PROMPT is the editor's, not a constant: while ^R runs it reads
 		// `(reverse-i-search)`needle':` exactly as a shell's does, which is the
