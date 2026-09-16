@@ -260,6 +260,20 @@ func (p *picker) selected() (pitRow, bool) {
 	return p.rows[p.cursor], true
 }
 
+// neighbour is the selectable row a cursor would fall onto if the one it is
+// standing on disappeared: the next one, else the previous.
+func (p *picker) neighbour() (pitRow, bool) {
+	if !p.hasCursor() {
+		return pitRow{}, false
+	}
+	for _, d := range [2]int{1, -1} {
+		if n := p.nextSelectable(p.cursor, d); n >= 0 && n != p.cursor {
+			return p.rows[n], true
+		}
+	}
+	return pitRow{}, false
+}
+
 // remove drops the selected row, leaving the cursor on what takes its place.
 func (p *picker) remove() {
 	if !p.hasCursor() || p.cursor >= len(p.rows) {

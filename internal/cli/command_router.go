@@ -220,9 +220,9 @@ func (in *interactiveInput) runOverlay(verb string, args []string) {
 			return in.switchSubject(ctx, spec, true)
 		})
 	case "kill":
-		in.commandAsync(func(ctx context.Context) (string, error) {
-			return in.commandKill(ctx, args)
-		})
+		// ASK FIRST, from the ':' box as from the 'x' key: one question, one
+		// wording, one place that spends it.
+		in.askKill(args)
 	case "send", "s":
 		in.commandAsync(func(ctx context.Context) (string, error) {
 			return in.commandSend(ctx, args)

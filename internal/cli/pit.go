@@ -199,6 +199,14 @@ func (d *pit) selected() (pitRow, bool) {
 	return pitRow{}, false
 }
 
+// neighbour is where the cursor would land if the selected row went away.
+func (d *pit) neighbour() (pitRow, bool) {
+	if p := d.list(); p != nil {
+		return p.neighbour()
+	}
+	return pitRow{}, false
+}
+
 // replaceRows swaps the list under a live cursor; picker.setRows keeps the
 // window and the selection.
 func (d *pit) replaceRows(rows []pitRow, keepID string) {

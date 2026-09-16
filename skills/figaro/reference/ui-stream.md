@@ -467,7 +467,8 @@ run `figaro show` (full content above, cursor below).
 | `a` | attend the aria that fork point came from; in a list, the selected row's |
 | `^` | attend this aria's parent, or say it is top-level |
 | `l` / `L` | list this aria's tree / the home tree in the pit, uncapped |
-| `x` | in a list, kill the aria the selected row names; in the queue, drop the message |
+| `x` / `X` | in a list, kill the aria the selected row names, asking first / at once; in the queue, drop the message |
+| `y` / `n` | answer that question (Esc is no). Nothing else is read while it is up |
 | `h` | the help panel |
 | `v` / `V` | visual mode: a cursor, then a highlight by character / by line |
 | `y` / `Y` | copy the selection / copy its coordinate `<lt.block:a-b>!` |
@@ -476,9 +477,11 @@ run `figaro show` (full content above, cursor below).
 | `q` / `Esc` / `Ctrl-T` | exit the pager |
 
 A listing opens with the cursor on the aria you are attending, not on the top
-row. `kill` from the `:` box (or `x` on a row) that kills the aria on screen
-moves the pager to the jumplist's previous aria, else the parent, and ends the
-session when there is neither.
+row. `x` and `:kill` ask before they kill, and the question holds the keyboard
+and the status bar until it is answered; `X` on a row does the same work with
+no question. Killing the aria on screen moves the pager to the row the cursor
+falls onto, else the jumplist's previous aria, else the parent, and ends the
+session only when there is none of the three.
 
 ### Coordinates and the `:` jump
 

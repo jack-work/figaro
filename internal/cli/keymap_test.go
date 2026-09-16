@@ -29,6 +29,10 @@ func modeName(m keyMode) string {
 		return "panel"
 	case modeVisual:
 		return "visual"
+	case modeFork:
+		return "fork"
+	case modeConfirm:
+		return "confirm"
 	}
 	return "?"
 }
@@ -332,7 +336,7 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  (in :) Tab          complete the verb, an id, or a flag",
 		"  (in :) ^A ^E ^W ^K ^Y emacs/readline editing, the whole set",
 		"  (in :) Esc / ^C / ^G abandon the line, close the box",
-		"  (in a list) x       drop the selected entry (queue)",
+		"  (in a list) x / X   drop or kill the selected row, asking first / at once",
 		"  y                   copy selection (or aria id if none)",
 		"  M-m                 toggle verbose tool output and the node addresses",
 		"  s                   pin the question of the turn you are inside",
@@ -358,6 +362,7 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  S                   the form (state) in the pit",
 		"  T                   read the conversation without closing the pit (again to go back)",
 		"  l / L               list this aria's tree / the home tree, in the pit (Enter attends, x kills)",
+		"  y / n               answer a confirmation (Esc is no); X on a row kills with no question",
 		"  h                   close help",
 	}
 	got := helpBody()

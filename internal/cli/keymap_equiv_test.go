@@ -168,6 +168,9 @@ var oracleStates = map[string]func(*transcript){
 	// only state here with no pre-refactor twin -- the mode did not exist --
 	// so its row was recorded from the behaviour it was built to have.
 	"fork": func(tr *transcript) { tr.key('f') },
+	// A y/n question up: the mode a destructive verb opens, where every key
+	// that is not an answer is swallowed.
+	"confirm": func(tr *transcript) { tr.askConfirm("kill aria1234?", func() {}) },
 }
 
 // REBASED A SECOND TIME, for the cold-selection seed (Ctrl-N/Ctrl-P). Two
@@ -255,6 +258,7 @@ var pagerOracle = []struct {
 		// session's business, off this oracle's stage.
 		"0x3f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x4c": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x58": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x5e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x61": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		// VISUAL MODE, 2026-09-11: v/V close whatever pit is up, drop the node
@@ -440,6 +444,7 @@ var pagerOracle = []struct {
 		// session's business, off this oracle's stage.
 		"0x0a": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x0d": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
+		"0x58": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x61": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		// VISUAL MODE, 2026-09-11: v/V close whatever pit is up, drop the node
 		// selection, detach from the tail and seed a visual selection on the
@@ -505,6 +510,7 @@ var pagerOracle = []struct {
 		// dismiss the pit. Nothing else here moves: the attend itself is the
 		// session's business, off this oracle's stage.
 		"0x4c": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x58": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x5e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x61": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		// VISUAL MODE, 2026-09-11: v/V close whatever pit is up, drop the node
@@ -776,6 +782,7 @@ var pagerOracle = []struct {
 		// dismiss the pit. Nothing else here moves: the attend itself is the
 		// session's business, off this oracle's stage.
 		"0x4c": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x58": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x5e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x61": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		// VISUAL MODE, 2026-09-11: v/V close whatever pit is up, drop the node
@@ -1012,6 +1019,15 @@ var pagerOracle = []struct {
 	// transcript's own rows, which is why the rest of this row reads like
 	// the transcript's. Recorded from the behaviour the mode was built to
 	// have: it has no pre-refactor twin.
+	// The y/n question. Every key that is not an answer is swallowed, which
+	// is the whole point: consent is typed, never stumbled into.
+	{"confirm", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		"0x1b": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x4e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x59": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x6e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x79": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+	}},
 	{"fork", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
 		"0x4c": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x5e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",

@@ -21,6 +21,7 @@ const (
 	modePanel                     // a '?'/'!'/'Q' panel is showing
 	modeVisual                    // v/V: a visual selection is up and owns the motions
 	modeFork                      // 'f' is down, waiting for the direction of the fork jump
+	modeConfirm                   // a y/n question owns the keyboard until it is answered
 	numKeyModes
 )
 
@@ -35,11 +36,12 @@ const (
 	inPanel      keyModeSet = 1 << modePanel
 	inVisual     keyModeSet = 1 << modeVisual
 	inFork       keyModeSet = 1 << modeFork
+	inConfirm    keyModeSet = 1 << modeConfirm
 
 	// inPager is every mode with the pager up. Note that a transcript-mode
 	// row is ALSO reachable while a panel is showing: the panel swallows only
 	// its own keys and every other key wipes it and acts (see dispatch).
-	inPager  = inTranscript | inSearchBox | inJumpBox | inPanel | inVisual | inFork
+	inPager  = inTranscript | inSearchBox | inJumpBox | inPanel | inVisual | inFork | inConfirm
 	inAnyBox = inIncipit | inPager
 )
 
@@ -288,6 +290,18 @@ var keymap = []keyBinding{
 		help: helpNone, pager: pagerForkCancel,
 	},
 
+	// -- confirm mode: a destructive verb asks first ------------------------
+	//
+	// THE QUESTION OWNS THE KEYBOARD. Every key that is not an answer is
+	// swallowed (see dispatch), because a stray letter must not be read as
+	// consent, and the notice stays on the bar for exactly as long as the
+	// question is up.
+	{chord: byteChord('y'), modes: inConfirm, open: staysInline, why: "only reachable with a question up", help: helpConfirm, pager: confirmYes},
+	{chord: byteChord('Y'), modes: inConfirm, open: staysInline, why: "only reachable with a question up", help: helpNone, pager: confirmYes},
+	{chord: byteChord('n'), modes: inConfirm, open: staysInline, why: "only reachable with a question up", help: helpNone, pager: confirmNo},
+	{chord: byteChord('N'), modes: inConfirm, open: staysInline, why: "only reachable with a question up", help: helpNone, pager: confirmNo},
+	{chord: byteChord(0x1b), modes: inConfirm, open: staysInline, why: "only reachable with a question up", help: helpNone, pager: confirmNo},
+
 	// -- pager level: attending what is on screen --------------------------
 	//
 	// 'a' is ATTEND, one verb with two subjects: in the transcript it is the
@@ -389,7 +403,9 @@ var keymap = []keyBinding{
 		// destructive one, and the two must not be neighbours. What it drops is
 		// printed into the pager's notice and reprinted to the shell on the way
 		// out, so a slip costs you the queue's PLACE, not its text.
-		chord: byteChord('X'), modes: inTranscript | inPanel | inVisual,
+		// NOT IN A PIT: there 'X' is the unasked drop of the selected row
+		// (below), because a reader inside a list means the list.
+		chord: byteChord('X'), modes: inTranscript | inVisual,
 		open: staysInline, why: "it addresses a turn that is streaming in the view you are already in",
 		help: helpHangUpDrop, input: inputHangUpDrop,
 	},
@@ -404,6 +420,11 @@ var keymap = []keyBinding{
 		chord: byteChord('x'), modes: inPanel,
 		open: staysInline, why: "it acts on a row in a pit that is already open",
 		help: helpPitDrop, pager: pagerPitDrop,
+	},
+	{
+		chord: byteChord('X'), modes: inPanel,
+		open: staysInline, why: "it acts on a row in a pit that is already open",
+		help: helpPitDrop, pager: pagerPitDropNow,
 	},
 
 	// -- pager level: selection --------------------------------------------
@@ -725,6 +746,7 @@ const (
 	helpQueuedPanel
 	helpHelpPanel
 	helpListPit
+	helpConfirm
 	helpCmdHistory
 	helpCmdComplete
 	helpCmdEdit
@@ -777,7 +799,7 @@ var helpRows = []helpRow{
 	// shell user needs, which is that their fingers already know this box.
 	{helpCmdEdit, "(in :) ^A ^E ^W ^K ^Y", "emacs/readline editing, the whole set"},
 	{helpCmdAbort, "(in :) Esc / ^C / ^G", "abandon the line, close the box"},
-	{helpPitDrop, "(in a list) x", "drop the selected entry (queue)"},
+	{helpPitDrop, "(in a list) x / X", "drop or kill the selected row, asking first / at once"},
 	{helpYank, "y", "copy selection (or aria id if none)"},
 	{helpVerbose, "M-m", "toggle verbose tool output and the node addresses"},
 	{helpSticky, "s", "pin the question of the turn you are inside"},
@@ -803,6 +825,7 @@ var helpRows = []helpRow{
 	{helpFormPit, "S", "the form (state) in the pit"},
 	{helpFocus, "T", "read the conversation without closing the pit (again to go back)"},
 	{helpListPit, "l / L", "list this aria's tree / the home tree, in the pit (Enter attends, x kills)"},
+	{helpConfirm, "y / n", "answer a confirmation (Esc is no); X on a row kills with no question"},
 	{helpHelpPanel, "h", "close help"},
 }
 

@@ -26,6 +26,8 @@ const (
 	// Live form views arrive named "form listen", "form show" and so on: the
 	// family is matched by prefix, see face().
 	pitForm pitID = "form"
+	// A question, not a view: it holds the keyboard until it is answered.
+	pitConfirm pitID = "confirm"
 )
 
 // pitFace is how a pit presents itself: the glyph on the bar, the word beside
@@ -57,7 +59,8 @@ var pitFaces = map[pitID]pitFace{
 	// folded onto. Wide (East Asian W, two cells) rather than ambiguous, so
 	// runewidth reports 2 everywhere and the bar's arithmetic holds. Its
 	// selected row is ⌖, the pin in the body rather than a note in a score.
-	pitForm: {"웃", "form", "⌖", modePanel},
+	pitForm:    {"웃", "form", "⌖", modePanel},
+	pitConfirm: {"‽", "confirm", "", modeConfirm},
 }
 
 // face is the pit's presentation, or the empty face for one nobody has named:

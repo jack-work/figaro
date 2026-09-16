@@ -267,6 +267,30 @@ func (s *sessionStatus) setNotice(text string) {
 	s.mu.Unlock()
 }
 
+// pinNotice posts an alert that does NOT retire: it holds the slot until
+// something replaces or clears it. A question on screen must not lose its
+// sentence while it is still being asked.
+func (s *sessionStatus) pinNotice(text string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.notice = strings.Join(strings.Fields(text), " ")
+	s.noticeLevel = alertInfo
+	s.noticeUntil = time.Time{}
+	s.mu.Unlock()
+}
+
+// noticeText is the alert the bar is holding, retired or not.
+func (s *sessionStatus) noticeText() string {
+	if s == nil {
+		return ""
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.notice
+}
+
 // setNoticeTTL configures how long an alert holds the slot.
 func (s *sessionStatus) setNoticeTTL(d time.Duration) {
 	if s == nil {

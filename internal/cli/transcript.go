@@ -13,6 +13,7 @@ import (
 	"github.com/mattn/go-runewidth"
 
 	"github.com/jack-work/figaro/api/livedoc"
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
@@ -84,8 +85,9 @@ type transcript struct {
 	// off to a goroutine. `S` froze the pager dead until they did.
 	openForm func()
 	// dropRow is 'x' on a selected pit row: the owner decides what dropping
-	// means for that pit's name.
-	dropRow func(pit, id string)
+	// means for that pit's name. next names the row the cursor falls onto,
+	// which is where a kill of the aria on screen should leave the pager.
+	dropRow func(pit, id, next string)
 	// attendAria is 'a': bind the shell to that aria and show it. ariaHop is
 	// ^O/^I over the jumplist. Both dial, so they hand off to a goroutine on
 	// the same law as openForm above.
@@ -93,8 +95,10 @@ type transcript struct {
 	ariaHop    func(dir int)
 	// attendParent is '^': attend whoever this aria was forked from.
 	attendParent func()
-	w, h         int
-	tick         int
+	// confirm is the y/n question on screen, if any. See confirm.go.
+	confirm *confirmAsk
+	w, h    int
+	tick    int
 
 	prev   []string // last painted screen (the frame the terminal is holding)
 	prefix string   // one-shot escapes emitted with the next frame (see enter)
@@ -1852,6 +1856,8 @@ func (t *transcript) mode() keyMode {
 // booleans: everything else asks this.
 func (t *transcript) openPit() pitID {
 	switch {
+	case t.confirm != nil:
+		return pitConfirm
 	case t.inSearch:
 		return pitSearch
 	case t.inJump:
@@ -1878,6 +1884,14 @@ func (t *transcript) navMotion(n navKey) { t.dispatch(keyEvent{nav: n}) }
 // rather than of any one binding:
 func (t *transcript) dispatch(ev keyEvent) {
 	switch t.mode() {
+	case modeConfirm:
+		// THE QUESTION OWNS THE KEYBOARD: an answer, or nothing at all. A key
+		// with no row here must not reach the pager underneath, or the reader
+		// scrolls a transcript they cannot see while consent is pending.
+		if act := pagerAct.pager(modeConfirm, ev); act != nil {
+			act(t)
+		}
+		return
 	case modeSearch:
 		if ev.nav != navNone {
 			return
@@ -2868,6 +2882,8 @@ func keepRefsBelow(src map[nodeRef]bool, base int) map[nodeRef]bool {
 func (t *transcript) inputDrawerLines() []string {
 	var rows []string
 	switch {
+	case t.confirm != nil:
+		return t.confirmLines()
 	case t.inSearch:
 		// THE SIGIL IS THE DIRECTION. A box that always says '/' cannot tell
 		// a reader which way the next Enter walks.
@@ -3125,13 +3141,42 @@ func (t *transcript) noteYank(text string) {
 // transcript does not know what dropping means -- for the queue it is
 // `figaro queue rm <id>`, an RPC -- so it hands the id up, exactly as the ':'
 // box hands a command line up.
-func pagerPitDrop(t *transcript) {
+func pagerPitDrop(t *transcript) { t.dropSelected(true) }
+
+// pagerPitDropNow is 'X' on a row: the same drop with no question. The two
+// keys differ in exactly one thing, so neither can drift from the other.
+func pagerPitDropNow(t *transcript) { t.dropSelected(false) }
+
+// dropRowAt is the hook call, with the neighbour the list already knows.
+func (t *transcript) dropRowAt(pit, id, next string) {
+	if t.dropRow != nil {
+		t.dropRow(pit, id, next)
+	}
+}
+
+func (t *transcript) dropSelected(ask bool) {
 	row, ok := t.pit.selected()
 	if !ok || row.id == "" || t.dropRow == nil {
 		return
 	}
-	t.dropRow(string(t.pit.id), row.id)
-	t.pit.removeSelected() // optimistic: the refresh confirms it
+	pit, id := string(t.pit.id), row.id
+	// WHERE THE READER STANDS AFTERWARDS is a fact about this list, not about
+	// the daemon: the row under the cursor once this one is gone.
+	next := ""
+	if n, ok := t.pit.neighbour(); ok {
+		next = n.id
+	}
+	drop := func() {
+		t.dropRowAt(pit, id, next)
+		t.pit.removeSelected() // optimistic: the refresh confirms it
+	}
+	// ONLY AN ARIA IS WORTH A QUESTION. A queued message is recoverable
+	// (its text is reprinted on the way out); an aria is not.
+	if ask && rpc.ValidateAriaID(id) == nil {
+		t.askConfirm(killPrompt(id), drop)
+		return
+	}
+	drop()
 }
 
 // openMemo holds what each block of the open message composed, so a live frame

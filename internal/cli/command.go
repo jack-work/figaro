@@ -376,6 +376,13 @@ func (in *interactiveInput) commandKill(ctx context.Context, args []string) (str
 	if id == "" {
 		return "", errors.New("kill: no aria named and none on screen")
 	}
+	return in.killAria(ctx, id, recursive, "")
+}
+
+// killAria is the body both doors share. prefer is where the caller would
+// like the pager to stand afterwards (the row under the cursor in a listing);
+// it is honoured only if it is alive and is not the aria being killed.
+func (in *interactiveInput) killAria(ctx context.Context, id string, recursive bool, prefer string) (string, error) {
 	acli, err := in.angelus()
 	if err != nil {
 		return "", err
@@ -383,7 +390,7 @@ func (in *interactiveInput) commandKill(ctx context.Context, args []string) (str
 	onScreen := id == in.currentID()
 	successor := ""
 	if onScreen {
-		successor = in.successorFor(ctx, acli, id)
+		successor = in.successorFor(ctx, acli, id, prefer)
 	}
 	if err := acli.Kill(ctx, id, recursive); err != nil {
 		return "", fmt.Errorf("kill %s: %w", id, err)
@@ -403,6 +410,32 @@ func (in *interactiveInput) commandKill(ctx context.Context, args []string) (str
 		return "", aerr
 	}
 	return "killed " + id + "; " + note, nil
+}
+
+// askKill puts the question up and runs the kill only on a yes. The question
+// is drawn by the pager, so this hops onto the render lock the way every
+// other pager mutation does.
+func (in *interactiveInput) askKill(args []string) {
+	spec, _, err := parseKillArgs(args)
+	if err != nil {
+		in.noteErr(err.Error())
+		return
+	}
+	target := spec
+	if target == "" {
+		target = in.currentID()
+	}
+	if target == "" {
+		in.noteErr("kill: no aria named and none on screen")
+		return
+	}
+	in.mu.Lock()
+	in.lt.tr.askConfirm(killPrompt(target), func() {
+		in.commandAsync(func(ctx context.Context) (string, error) {
+			return in.commandKill(ctx, args)
+		})
+	})
+	in.mu.Unlock()
 }
 
 // parseKillArgs reads kill's own flags off the ':' box's argv.
@@ -428,11 +461,11 @@ func parseKillArgs(args []string) (spec string, recursive bool, err error) {
 	return spec, recursive, nil
 }
 
-// successorFor answers where the transcript stands once id is gone: the most
-// recent aria in this session's jumplist that is still alive, else the parent
-// id lists for it. An aria forked from nothing, in a session with no history,
-// has no answer and the caller ends the session.
-func (in *interactiveInput) successorFor(ctx context.Context, acli *sdk.Angelus, id string) string {
+// successorFor answers where the transcript stands once id is gone: the
+// caller's preferred neighbour, else the most recent living aria in this
+// session's jumplist, else the parent. An aria with none of the three, in a
+// session with no history, has no answer and the caller ends the session.
+func (in *interactiveInput) successorFor(ctx context.Context, acli *sdk.Angelus, id, prefer string) string {
 	resp, err := acli.List(ctx)
 	if err != nil {
 		return ""
@@ -448,6 +481,12 @@ func (in *interactiveInput) successorFor(ctx context.Context, acli *sdk.Angelus,
 		if parent == "" {
 			parent = f.Parent
 		}
+	}
+	// THE LIST THE READER IS IN WINS. Killing a row of `:ls` should leave the
+	// cursor's neighbour on screen, not send the session somewhere else and
+	// not end it while a living aria is one row away.
+	if prefer != "" && prefer != id && alive[prefer] {
+		return prefer
 	}
 	in.mu.Lock()
 	trail := in.jumps.trail()
@@ -1008,13 +1047,13 @@ func (in *interactiveInput) seedSubject(gen uint64) {
 // dropPitRow is 'x' in a pit: what dropping means depends on which
 // pit. Today only the queue can be dropped from; the switch is here rather
 // than in the transcript because every arm of it is an RPC.
-func (in *interactiveInput) dropPitRow(name, id string) {
+func (in *interactiveInput) dropPitRow(name, id, next string) {
 	// A ROW THAT NAMES AN ARIA IS KILLED, wherever it was listed. Only the
 	// queue counts by something else, and its ids are numbers.
 	if name != "queue" {
 		if rpc.ValidateAriaID(id) == nil {
 			in.commandAsync(func(ctx context.Context) (string, error) {
-				return in.commandKill(ctx, []string{id})
+				return in.killAria(ctx, id, false, next)
 			})
 		}
 		return
