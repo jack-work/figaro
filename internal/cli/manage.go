@@ -15,6 +15,7 @@ import (
 
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/cli/figtree"
+	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/term"
 )
@@ -27,6 +28,38 @@ type lsOpts struct {
 	global  bool
 	limit   int
 	rootID  string
+}
+
+// listOptsFrom reads the `ls` flag surface. forceHome is what `lsh` adds and
+// nothing else: the typed flags still adjudicate each other.
+func listOptsFrom(ctx *cmdkit.RunContext, forceHome bool) lsOpts {
+	o := lsOpts{
+		jsonOut: ctx.BoolFlag("json"),
+		home:    forceHome || ctx.BoolFlag("home"),
+		global:  ctx.BoolFlag("global"),
+		limit:   10,
+	}
+	if len(ctx.Args) > 0 {
+		o.rootID = ctx.Args[0]
+	}
+	hasN := ctx.Flag("limit") != ""
+	if o.jsonOut && (ctx.BoolFlag("home") || o.global || ctx.BoolFlag("all") || hasN || o.rootID != "") {
+		die("ls --json is the global escape hatch and takes no other flags")
+	}
+	if ctx.BoolFlag("all") && hasN {
+		die("ls: -a/--all and -n are mutually exclusive")
+	}
+	if ctx.BoolFlag("home") && o.global {
+		die("ls: -H/--home and -g/--global are mutually exclusive")
+	}
+	if ctx.BoolFlag("all") {
+		o.limit = 0
+	} else if hasN {
+		if n, err := strconv.Atoi(ctx.Flag("limit")); err == nil && n > 0 {
+			o.limit = n
+		}
+	}
+	return o
 }
 
 // The figtree field names `list` populates and its columns read.
@@ -141,41 +174,16 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		}
 		figs, hidden := dropExpired(resp.Figaros, time.Now().UnixMilli())
 
-		// Scope. `<id>` → that subtree. `-h`/--home → the whole tree (● stays
-		// on you). Default: attended scopes to your conversation's tree;
-		// detached shows the whole tree. "/" forces the whole tree.
-		rootID := o.rootID
-		switch {
-		case rootID == "/":
-			rootID = ""
-		case rootID != "":
-			// explicit subtree: keep
-		case o.home:
-			rootID = ""
-		case boundID != "":
-			rootID = topLevelAncestor(figs, boundID)
+		rootID, note, serr := lsScope(figs, boundID, o.rootID, o.home)
+		if serr != nil {
+			die("%s", serr)
 		}
-
-		// Subtree scope: keep only the named trunk and everything forked
-		// below it (vectors with its vector as a prefix).
 		if rootID != "" {
-			var rootVec []int
-			for i := range figs {
-				if figs[i].ID == rootID {
-					rootVec = figs[i].Vector
-					break
-				}
-			}
-			if rootVec == nil {
+			scoped, ok := scopeSubtree(figs, rootID)
+			if !ok {
 				die("no aria %q (try: figaro list)", rootID)
 			}
-			kept := figs[:0:0]
-			for _, f := range figs {
-				if hasVecPrefix(f.Vector, rootVec) {
-					kept = append(kept, f)
-				}
-			}
-			figs = kept
+			figs = scoped
 		}
 
 		ppid := shellPID
@@ -217,6 +225,9 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		printListRows(stdout, rows, width, false)
 		if limit > 0 && total > limit {
 			fmt.Fprintf(stderrw, "\n… %d more (-a for all, -n N for N)\n", total-limit)
+		}
+		if note != "" {
+			fmt.Fprintf(stderrw, "\n%s\n", note)
 		}
 		printExpiredNote(hidden)
 		return nil
@@ -632,26 +643,103 @@ func vecKey(v []int) string {
 	return strings.Join(parts, ".")
 }
 
-// topLevelAncestor returns the id of the top-level conversation trunk that
-// contains id (the trunk whose vector is the first component of id's vector) -
-// i.e. the root of id's whole fork tree. Falls back to id if not found.
-func topLevelAncestor(figs []rpc.FigaroInfoResponse, id string) string {
+// lsScope decides which trunk the listing roots at, plus any note the listing
+// owes the reader. An empty root means the home view (every top-level aria).
+// arg is the positional: an aria id, "/" for home, or a "^"-climb.
+func lsScope(figs []rpc.FigaroInfoResponse, boundID, arg string, home bool) (rootID, note string, err error) {
+	if strings.HasPrefix(arg, "^") {
+		n, ok := parseClimb(arg)
+		if !ok {
+			return "", "", fmt.Errorf("ls %s: ^ climbs layers up (^, ^^, ^2)", arg)
+		}
+		if boundID == "" || strings.HasPrefix(boundID, "@") {
+			return "", "", fmt.Errorf("ls %s: climbs from the attended aria; this shell is attended to none", arg)
+		}
+		return climbFrom(figs, boundID, n)
+	}
+	switch {
+	case arg == "/":
+		return "", "", nil
+	case arg != "":
+		return arg, "", nil
+	case home, boundID == "", strings.HasPrefix(boundID, "@"):
+		return "", "", nil
+	}
+	return boundID, "", nil
+}
+
+// parseClimb reads the "^" positional: "^" and "^^^" count carets, "^3" reads
+// the count. Anything else is not a climb.
+func parseClimb(arg string) (int, bool) {
+	rest := strings.TrimLeft(arg, "^")
+	carets := len(arg) - len(rest)
+	if carets == 0 {
+		return 0, false
+	}
+	if rest == "" {
+		return carets, true
+	}
+	if carets > 1 {
+		return 0, false
+	}
+	n, err := strconv.Atoi(rest)
+	if err != nil || n < 1 {
+		return 0, false
+	}
+	return n, true
+}
+
+// climbFrom walks n layers up from the attended aria, clamping at the
+// top-level trunk and saying so.
+func climbFrom(figs []rpc.FigaroInfoResponse, boundID string, n int) (string, string, error) {
 	var vec []int
 	for _, f := range figs {
-		if f.ID == id {
+		if f.ID == boundID {
 			vec = f.Vector
 			break
 		}
 	}
 	if len(vec) == 0 {
-		return id
+		return "", "", fmt.Errorf("ls: the attended aria %s is not in this listing", boundID)
 	}
-	for _, f := range figs {
-		if len(f.Vector) == 1 && f.Vector[0] == vec[0] {
-			return f.ID
+	depth := len(vec) - n
+	clamped := depth < 1
+	if clamped {
+		depth = 1
+	}
+	for d := depth; d >= 1; d-- {
+		for _, f := range figs {
+			if len(f.Vector) == d && hasVecPrefix(vec[:d], f.Vector) {
+				if clamped {
+					return f.ID, fmt.Sprintf("^%d passes the root: scoped to the top-level aria %s", n, f.ID), nil
+				}
+				return f.ID, "", nil
+			}
 		}
 	}
-	return id
+	return "", "", fmt.Errorf("ls: no ancestor of %s is in this listing", boundID)
+}
+
+// scopeSubtree keeps rootID and everything forked below it (vectors carrying
+// its vector as a prefix). false means rootID is not in figs.
+func scopeSubtree(figs []rpc.FigaroInfoResponse, rootID string) ([]rpc.FigaroInfoResponse, bool) {
+	var rootVec []int
+	for i := range figs {
+		if figs[i].ID == rootID {
+			rootVec = figs[i].Vector
+			break
+		}
+	}
+	if rootVec == nil {
+		return nil, false
+	}
+	kept := figs[:0:0]
+	for _, f := range figs {
+		if hasVecPrefix(f.Vector, rootVec) {
+			kept = append(kept, f)
+		}
+	}
+	return kept, true
 }
 
 // hasVecPrefix reports whether v lies at or below prefix in the fork tree

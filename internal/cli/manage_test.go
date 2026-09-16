@@ -82,3 +82,70 @@ func TestListRowIDComesFromTheVerbNotTheRenderedText(t *testing.T) {
 		t.Fatalf("the case needs both ids in one line: %q", got[1].text)
 	}
 }
+
+func TestListScopeDefaultsToTheAttendedSubtree(t *testing.T) {
+	figs := treeFixture()
+	root, note, err := lsScope(figs, "cccc3333", "", false)
+	if err != nil || note != "" {
+		t.Fatalf("lsScope = %q, %q, %v", root, note, err)
+	}
+	if root != "cccc3333" {
+		t.Fatalf("root = %q, want the attended aria cccc3333", root)
+	}
+	kept, ok := scopeSubtree(figs, root)
+	if !ok {
+		t.Fatal("scopeSubtree lost the attended aria")
+	}
+	requireIDs(t, kept, "cccc3333", "dddd4444")
+}
+
+func TestListScopeDetachedStaysHome(t *testing.T) {
+	root, _, err := lsScope(treeFixture(), "", "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root != "" {
+		t.Fatalf("root = %q, want home", root)
+	}
+}
+
+func TestListScopeCaretClimbsOneLayerPerLevel(t *testing.T) {
+	figs := treeFixture()
+	for _, tc := range []struct{ arg, want string }{
+		{"^", "cccc3333"},
+		{"^2", "aaaa1111"},
+		{"^^", "aaaa1111"},
+	} {
+		root, note, err := lsScope(figs, "dddd4444", tc.arg, false)
+		if err != nil {
+			t.Fatalf("ls %s: %v", tc.arg, err)
+		}
+		if root != tc.want || note != "" {
+			t.Errorf("ls %s = %q (note %q), want %q with no note", tc.arg, root, note, tc.want)
+		}
+	}
+	kept, ok := scopeSubtree(figs, "cccc3333")
+	if !ok {
+		t.Fatal("scopeSubtree lost the parent")
+	}
+	requireIDs(t, kept, "cccc3333", "dddd4444")
+}
+
+func TestListScopeCaretPastTheRootClampsAndSaysSo(t *testing.T) {
+	root, note, err := lsScope(treeFixture(), "dddd4444", "^9", false)
+	if err != nil {
+		t.Fatalf("^9 must clamp, not fail: %v", err)
+	}
+	if root != "aaaa1111" {
+		t.Fatalf("root = %q, want the top-level aria aaaa1111", root)
+	}
+	if !strings.Contains(note, "aaaa1111") {
+		t.Fatalf("clamping is silent: note = %q", note)
+	}
+}
+
+func TestListScopeCaretNeedsAnAttendedAria(t *testing.T) {
+	if _, _, err := lsScope(treeFixture(), "", "^", false); err == nil {
+		t.Fatal("^ while detached must refuse")
+	}
+}
