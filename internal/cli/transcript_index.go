@@ -488,15 +488,22 @@ func (t *transcript) selectionSpan() selectionSpan {
 	return selectionSpan{active: true, lo: lo, hi: hi, focus: t.selection.focus.nodeRef}
 }
 
+// THE WASH IS THE BLOCK'S, NEVER A DELTA ROW'S OWN. An adornment row is part
+// of the block it explains, so selecting one lifts that whole block and the
+// snake's head (the Δ) says which row the cursor stands on. A band that broke
+// to highlight one adornment row told the reader they had left the message,
+// which they had not.
 func (s selectionSpan) mark(ref nodeRef) selectionMark {
 	if !s.active {
 		return selectionMark{}
 	}
-	p := selectionPoint{nodeRef: ref}
-	if pointLess(p, s.lo) || pointLess(s.hi, p) {
+	block := blockOf(ref)
+	p := selectionPoint{nodeRef: block}
+	if pointLess(p, selectionPoint{nodeRef: blockOf(s.lo.nodeRef)}) ||
+		pointLess(selectionPoint{nodeRef: blockOf(s.hi.nodeRef)}, p) {
 		return selectionMark{}
 	}
-	return selectionMark{selected: true, active: ref == s.focus}
+	return selectionMark{selected: true, active: block == blockOf(s.focus)}
 }
 
 // nodeSpanOf reports the line range a node occupies, derived from the index

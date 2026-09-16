@@ -214,9 +214,16 @@ func adornRowsWalk(t *testing.T, p *adornPane) {
 	if !wash[p.only(t, rows, adornAsk)] {
 		t.Errorf("^P past the first row did not select the parent block\n%s", p.dump())
 	}
+	// THE ADORNMENT IS PART OF THE BLOCK, so the block's wash covers its rows
+	// whether the cursor is on the block or inside its list. What changes is
+	// where the head sits, and nothing else.
 	for _, key := range adornAskKeys {
-		if i := p.only(t, rows, key); wash[i] {
-			t.Errorf("the parent's wash reached delta row %q: %q", key, clean(rows[i]))
+		i := p.only(t, rows, key)
+		if !wash[i] {
+			t.Errorf("the block's wash stopped short of its delta row %q: %q", key, clean(rows[i]))
+		}
+		if strings.Contains(rows[i], deltaGlyph) {
+			t.Errorf("the head stayed on delta row %q with the block selected: %q", key, clean(rows[i]))
 		}
 	}
 }
@@ -305,20 +312,24 @@ func adornBodyAndList(t *testing.T, p *adornPane) {
 
 // adornFocus asserts the cursor stands on the row holding key: washed, with
 // the snake's head in its spine column, and alone in both.
+// adornFocus: the cursor stands on key's row. THE HEAD SAYS WHICH ROW, THE
+// WASH SAYS WHICH BLOCK: a delta row is part of the block it explains, so the
+// block stays lifted whole and only the Δ moves (Gluck, 2026-09-16: "the
+// background highlight of the parent should be retained").
 func adornFocus(t *testing.T, p *adornPane, key, what string) {
 	t.Helper()
 	wash, plain := p.paneWashed(), p.rows()
 	i := p.only(t, plain, key)
 	if !wash[i] {
-		t.Errorf("%s: the row for %q is not the focus\n%s", what, key, p.dump())
+		t.Errorf("%s: the row for %q is not washed with its block\n%s", what, key, p.dump())
 		return
 	}
 	if !strings.Contains(plain[i], deltaGlyph) {
 		t.Errorf("%s: the row for %q carries no head: %q", what, key, plain[i])
 	}
 	for j, row := range plain {
-		if j != i && wash[j] && strings.Contains(row, "->") {
-			t.Errorf("%s: row %d is a washed delta row too: %q", what, j, row)
+		if j != i && strings.Contains(row, "->") && strings.Contains(row, deltaGlyph) {
+			t.Errorf("%s: row %d carries a second head: %q", what, j, row)
 		}
 	}
 }
