@@ -1462,13 +1462,11 @@ func (t *transcript) renderFrame() {
 		start = 0
 		clipped = true
 	}
-	// THE RULE THAT CLOSES THE CONVERSATION CARRIES THE JUNCTION, the way the
-	// sticky header's does, and for the same reason: a gutter that runs past
-	// the rule is cut by it and says so. Which rule that is depends on what is
-	// open -- the pit's own rule when a panel is up, the footer's otherwise --
-	// so the tie is made on whichever one sits against the body. A clipped
-	// stanza has lost its rule along with its head, and a fullscreen pit has
-	// no conversation under it to join.
+	// THE RULE THAT CLOSES THE CONVERSATION CARRIES THE JUNCTION, as the
+	// sticky header's does and for the same reason (see joinRule). Which rule
+	// that is depends on what is open: the pit's own when a panel is up, the
+	// footer's otherwise. A clipped stanza has lost its rule along with its
+	// head, and a fullscreen pit has no conversation under it to join.
 	floor := t.lineAt(t.offset + body)
 	if len(foot) > 0 && !clipped && !t.fullPit() && start > 0 {
 		foot[0] = joinRule(foot[0], screen[start-1], floor, "┴")

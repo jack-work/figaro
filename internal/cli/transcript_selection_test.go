@@ -9,9 +9,11 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
+	"github.com/jack-work/figaro/internal/term"
 )
 
 func TestTranscriptNodeSelectionRangeAndCopy(t *testing.T) {
+	defer term.SetColorMode(term.ColorAlways)() // the selection cue is a wash
 	ft := ldrender.NewFakeTerminal(80, 20)
 	client := aria.NewClient()
 	history := []aria.TurnPart{{Turn: aria.Turn{
@@ -38,8 +40,8 @@ func TestTranscriptNodeSelectionRangeAndCopy(t *testing.T) {
 	if err != nil || text != "first node\n\nsecond node" {
 		t.Fatalf("selected text = %q, %v", text, err)
 	}
-	if screen := strings.Join(ft.Screen(), "\n"); !strings.Contains(screen, "▎") {
-		t.Fatalf("selection gutter missing:\n%s", screen)
+	if !washed(strings.Join(tr.lines(), "\n")) {
+		t.Fatalf("selection cue missing:\n%s", strings.Join(ft.Screen(), "\n"))
 	}
 	tr.clearSelection()
 	if tr.selection.active {

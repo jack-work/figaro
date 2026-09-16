@@ -9,6 +9,7 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
+	"github.com/jack-work/figaro/internal/term"
 )
 
 // THE POINTER'S TESTS.
@@ -70,6 +71,7 @@ func mouseFixture(t *testing.T, h int) (*transcript, *ldrender.FakeTerminal, []a
 
 // TestClickSelectsNodeUnderPointer is the first rule of the gesture.
 func TestClickSelectsNodeUnderPointer(t *testing.T) {
+	defer term.SetColorMode(term.ColorAlways)() // the selection cue is a wash
 	tr, ft, _ := mouseFixture(t, 30)
 	want := nodeRef{turn: 1, index: 1} // the SECOND node: an off-by-one lands on the first
 	row := clickRowOf(t, tr, want)
@@ -90,8 +92,10 @@ func TestClickSelectsNodeUnderPointer(t *testing.T) {
 		t.Fatal("clicked endpoint carries no node hash: copy would reject it")
 	}
 	tr.render()
-	if screen := strings.Join(ft.Screen(), "\n"); !strings.Contains(screen, "▎") {
-		t.Fatalf("no selection cue painted after a click:\n%s", screen)
+	// The fake terminal holds cells, not renditions, so the wash is read off
+	// the painted rows rather than off the screen.
+	if !washed(strings.Join(tr.lines(), "\n")) {
+		t.Fatalf("no selection cue painted after a click:\n%s", strings.Join(ft.Screen(), "\n"))
 	}
 }
 

@@ -187,18 +187,11 @@ func (t *transcript) stickyLines(hl string, sel selectionSpan) []string {
 }
 
 // joinRule ties a horizontal rule to the vertical gutter that crosses it.
-//
-// A JUNCTION MEANS THE LINE GOES ON PAST THE RULE, and nothing else. near is
-// the row on the reader's side of the rule; far is the row on the other side,
-// the one the chrome covers. A gutter that runs through both is cut by the
-// rule and says so with a junction; a gutter that only starts (or only ends)
-// against the rule is a whole line already, and a junction there would draw a
-// branch to a block that is not there. That is the shape Gluck asked for: the
-// first row of a thinking block under the header joins nothing, and the same
-// block's last row above the status bar joins nothing either.
-//
-// Only indentation may precede the gutter: an embedded vertical line is
-// content, not a connection to the chrome.
+// A JUNCTION MEANS THE LINE GOES ON PAST THE RULE, and nothing else, so it is
+// drawn only where the gutter stands on BOTH sides: near, the row the reader
+// can see, and far, the row the chrome covers. A gutter that begins or ends
+// against the rule is a whole line already, and a junction there branches to
+// a block that is not there.
 func joinRule(rule, near, far, glyph string) string {
 	col, ok := gutterColumn(near)
 	if !ok || col >= displayWidth(rule) {
@@ -211,7 +204,20 @@ func joinRule(rule, near, far, glyph string) string {
 }
 
 // gutterColumn is the column of a row's leading vertical rule, if it has one.
+// Only indentation may precede it: a vertical line inside the text is content,
+// not a connection to the chrome.
 func gutterColumn(row string) (int, bool) {
+	rest, col := firstVisible(row)
+	if strings.HasPrefix(rest, "│") {
+		return col, true
+	}
+	return 0, false
+}
+
+// firstVisible is a row from its first painted cell, and that cell's column:
+// leading escapes cost nothing and leading blanks cost one each. It is how the
+// chrome reads a row it did not compose.
+func firstVisible(row string) (string, int) {
 	col := 0
 	for i := 0; i < len(row); {
 		switch row[i] {
@@ -221,13 +227,10 @@ func gutterColumn(row string) (int, bool) {
 			col++
 			i++
 		default:
-			if strings.HasPrefix(row[i:], "│") {
-				return col, true
-			}
-			return 0, false
+			return row[i:], col
 		}
 	}
-	return 0, false
+	return "", col
 }
 
 // stickyClip marks a row as the last of the question the header could fit.

@@ -11,6 +11,7 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
+	"github.com/jack-work/figaro/internal/term"
 )
 
 // ---------------------------------------------------------------------------
@@ -99,6 +100,7 @@ func TestMergedFrameCostIsViewportBounded(t *testing.T) {
 // extending and clearing a selection re-renders no nodes and leaves the cached
 // row slices byte-identical (same backing array, same contents).
 func TestMergedSelectionDoesNotInvalidateRowCache(t *testing.T) {
+	defer term.SetColorMode(term.ColorAlways)() // the selection cue is a wash
 	view := &countingView{inner: &ariaView{settings: &renderSettings{}}}
 	ft := ldrender.NewFakeTerminal(80, 24)
 	tr, _ := mixedTranscript(t, ft, 80, 24, 6)
@@ -161,7 +163,7 @@ func TestMergedSelectionDoesNotInvalidateRowCache(t *testing.T) {
 		}
 	}
 	// ... and the cue really was painted, so the above is not vacuous.
-	if !strings.Contains(painted, "▎") {
+	if !washed(painted) {
 		t.Error("no selection cue in the painted rows")
 	}
 }

@@ -1,8 +1,9 @@
 package cli
 
 import (
-	"strings"
 	"testing"
+
+	"github.com/jack-work/figaro/internal/term"
 )
 
 // ---------------------------------------------------------------------------
@@ -26,13 +27,13 @@ import (
 // the user complained about (no cue in the painted frame).
 // ---------------------------------------------------------------------------
 
-// cueRows counts painted rows carrying the selection gutter bar. It reads the
-// frame the terminal is actually holding (t.prev), not the model, because the
-// bug was invisible in the model: t.selection was already empty.
+// cueRows counts painted rows carrying the selection wash. It reads the frame
+// the terminal is actually holding (t.prev), not the model, because the bug
+// was invisible in the model: t.selection was already empty.
 func cueRows(rows []string) int {
 	n := 0
 	for _, r := range rows {
-		if strings.Contains(r, "▎") {
+		if washed(r) {
 			n++
 		}
 	}
@@ -40,7 +41,8 @@ func cueRows(rows []string) int {
 }
 
 func TestEscapeClearsSelectionCueOnNextFrame(t *testing.T) {
-	p := newInputProbe(t, true) // pager up: mouse reporting on, Esc bound
+	defer term.SetColorMode(term.ColorAlways)() // the cue IS the wash
+	p := newInputProbe(t, true)                 // pager up: mouse reporting on, Esc bound
 
 	// Ctrl-N selects the first node.
 	feed(t, p.in, "\x0e")

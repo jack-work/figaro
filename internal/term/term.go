@@ -137,6 +137,12 @@ type palette struct {
 	// by the transcript's painter, which manages its own resets: a wash
 	// spans cells that carry their own styling and must survive it.
 	//
+	// nodeWash is the NODE selection's background: one step off the pane, not
+	// a hue, so a selected block reads as lifted rather than coloured.
+	// sumiInk2 #2A2A37 for a block in range, sumiInk3 #363646 for the focused
+	// one, which is the only thing that says where a gesture will land now
+	// that the selection wears no bar.
+	//
 	// selectWash is the visual selection's background, and only the
 	// background, so the text keeps its own foreground: waveBlue2 #2D4F67.
 	// cursor is the block cursor: sumiInk0 #16161D on fujiWhite #DCD7BA, a
@@ -149,6 +155,7 @@ type palette struct {
 	// the inks.
 	selectWash, selectWash256 string
 	cursor, cursor256         string
+	nodeWash, nodeWashFocus   string
 }
 
 var kanagawa = palette{
@@ -168,6 +175,8 @@ var kanagawa = palette{
 
 	selectWash:    "\033[48;2;45;79;103m",
 	selectWash256: "\033[48;5;23m",
+	nodeWash:      "\033[48;5;236m",
+	nodeWashFocus: "\033[48;5;237m",
 	cursor:        "\033[38;2;22;22;29;48;2;220;215;186m",
 	cursor256:     "\033[38;5;234;48;5;187m",
 }
@@ -193,6 +202,19 @@ func SelectWash() string {
 		return active.selectWash
 	}
 	return active.selectWash256
+}
+
+// NodeWash is the node selection's background as a bare SGR body, or "" when
+// colour is off: the wash for a block in range, and the lighter one for the
+// block a gesture would act on. The caller owns the reset.
+func NodeWash(focused bool) string {
+	if !Enabled() {
+		return ""
+	}
+	if focused {
+		return active.nodeWashFocus
+	}
+	return active.nodeWash
 }
 
 // Cursor is the block cursor's SGR body, or "" when colour is off.

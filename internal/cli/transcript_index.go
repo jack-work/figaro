@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"strings"
+
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/term"
@@ -261,9 +263,16 @@ func (t *transcript) window(a, b int, dst []string) []string {
 			cur, curCol, hasCur = line, t.visual.cursor.col, true
 		}
 	}
+	band := t.selectionBand(sel, a, b)
 	t.forEachWindowRow(a, b, func(e *lineEntry, rel int) {
 		line := e.start + rel
-		row := t.washVisual(line, t.entryLine(e, rel, hl, sel), vis)
+		row := t.entryLine(e, rel, hl, sel)
+		if !e.refAt(rel).valid() && band.covers(line) {
+			// Chrome inside the band: rows that carry a ref were washed by
+			// their own block, and a band with holes in it is not a band.
+			row = washRow(row, t.w, term.NodeWash(false))
+		}
+		row = t.washVisual(line, row, vis)
 		if hasCur && line == cur {
 			restore, washTo := "", 0
 			if from, to, ok := vis.cols(line, t.w); ok && curCol >= from && curCol < to {
@@ -274,6 +283,70 @@ func (t *transcript) window(a, b int, dst []string) []string {
 		dst = append(dst, row)
 	})
 	return dst
+}
+
+// selectionBand is the run of absolute lines the wash covers: the selected
+// blocks, the chrome between them, and the chrome that closes the band at
+// either end, up to and including the rule that fences the box. A question
+// selected on its own therefore lifts its heading, its text and the seam
+// beneath it, rather than the text alone.
+//
+// The walk stops at the first row of a block that is NOT selected: the
+// answer's voice header is the answer's, not the question's.
+type lineBand struct{ lo, hi int }
+
+func (b lineBand) covers(line int) bool { return line >= b.lo && line <= b.hi }
+
+// It is asked of the lines about to be painted, [a, b): a selection reaching
+// past them is clamped to what is on screen, which is all the wash can cover.
+func (t *transcript) selectionBand(sel selectionSpan, a, b int) lineBand {
+	band := lineBand{lo: 1, hi: 0} // empty until a selected row is found
+	if !sel.active {
+		return band
+	}
+	t.forEachWindowRow(a, b, func(e *lineEntry, rel int) {
+		if ref := e.refAt(rel); ref.valid() && sel.mark(ref).selected {
+			if band.hi < band.lo {
+				band.lo = e.start + rel
+			}
+			band.hi = e.start + rel
+		}
+	})
+	if band.hi < band.lo {
+		return band
+	}
+	band.lo = t.bandEdge(band.lo, -1)
+	band.hi = t.bandEdge(band.hi, +1)
+	return band
+}
+
+// bandEdge walks from a selected line in one direction through rows that
+// belong to no block, and answers the last line the band may claim: the
+// fencing rule when it reaches one, the row before the next block otherwise.
+func (t *transcript) bandEdge(from, step int) int {
+	edge := from
+	for line := from + step; line >= 0 && line < t.index.total; line += step {
+		k := t.index.entryAt(line)
+		if k < 0 {
+			break
+		}
+		e := &t.index.entries[k]
+		if e.refAt(line - e.start).valid() {
+			break
+		}
+		edge = line
+		if isRuleRow(t.entryLine(e, line-e.start, "", selectionSpan{})) {
+			break
+		}
+	}
+	return edge
+}
+
+// isRuleRow reports whether a row is one of the box's horizontal rules: the
+// only rows whose first painted cell is the rule glyph.
+func isRuleRow(row string) bool {
+	rest, _ := firstVisible(row)
+	return strings.HasPrefix(rest, "─")
 }
 
 // washVisual paints the visual highlight over a finished row. It is applied
@@ -364,10 +437,10 @@ func (t *transcript) rowLine(r transcriptRow, hl string, sel selectionSpan) stri
 			line = ldrender.OverlayColumn(line, r.spine.Col, spineGlyph(r.spine, r.ref.delta, c))
 		}
 	}
-	if r.ref.valid() && !r.chrome {
+	if r.ref.valid() {
 		// r.text is already in its plainNodeRow resting form, so this is a
 		// no-op returning line untouched unless the row is actually selected.
-		line = decorateNodeRow(line, sel.mark(r.ref), t.w, r.barColumnFree())
+		line = decorateNodeRow(line, sel.mark(r.ref), t.w)
 	}
 	if hl != "" {
 		line = highlightMatches(line, hl)

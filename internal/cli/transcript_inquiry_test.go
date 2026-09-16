@@ -9,6 +9,7 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
+	"github.com/jack-work/figaro/internal/term"
 )
 
 // inquiryHistory is one turn whose question opens it and whose nodes follow.
@@ -27,6 +28,7 @@ func inquiryHistory() []aria.TurnPart {
 // things a ref buys: the walk stops on it, the rows carry the selection cue,
 // and the copy path yields the question itself.
 func TestTranscriptInquiryIsSelectableAndCopyable(t *testing.T) {
+	defer term.SetColorMode(term.ColorAlways)() // the selection cue is a wash
 	ft := ldrender.NewFakeTerminal(80, 20)
 	client := aria.NewClient()
 	history := inquiryHistory()
@@ -42,7 +44,7 @@ func TestTranscriptInquiryIsSelectableAndCopyable(t *testing.T) {
 	tr.render()
 	rows := strings.Join(tr.lines(), "\n")
 	for _, line := range strings.Split(rows, "\n") {
-		if strings.Contains(stripANSI(line), "what did you find?") && !strings.Contains(line, "▎") {
+		if strings.Contains(stripANSI(line), "what did you find?") && !washed(line) {
 			t.Fatalf("the selected question shows no selection cue:\n%s", rows)
 		}
 	}

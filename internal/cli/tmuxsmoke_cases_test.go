@@ -853,8 +853,10 @@ func TestSmoke_ForkPointJumpAttendAndJumplist(t *testing.T) {
 	p.key("j")
 	time.Sleep(time.Second)
 	marked := false
-	for _, l := range strings.Split(p.rawVisible(), "\n") {
-		if strings.Contains(l, parent) && strings.Contains(l, "⑂") && strings.Contains(l, "▎") {
+	raw := p.rawVisible()
+	lines, wash := strings.Split(raw, "\n"), capturedWashes(raw)
+	for i, l := range lines {
+		if strings.Contains(l, parent) && strings.Contains(l, "⑂") && i < len(wash) && wash[i] {
 			marked = true
 		}
 	}

@@ -171,28 +171,11 @@ type transcriptRow struct {
 	// paint time because the snake's head follows the selection.
 	spine ldrender.SpineSlot
 	// chrome marks a row that carries its block's ref but none of its
-	// content, so the selection cue skips it. See ldrender.Row.Chrome.
+	// content. See ldrender.Row.Chrome.
 	chrome bool
 }
 
-// barColumnFree reports whether the selection bar may take this row's first
-// column. A delta row says no: the snake is its cue, and its head says what
-// the bar could not, which of the rows in range is the focused one. So does
-// any row whose snake already stands in that column.
-func (r transcriptRow) barColumnFree() bool {
-	switch r.spine.Kind {
-	case ldrender.SpineNone:
-		return true
-	case ldrender.SpineRow:
-		return false
-	default:
-		return r.spine.Col > 0
-	}
-}
-
-// searchText is the row's text as the reader sees it. Node rows carry no
-// prefix of their own: the selection bar is painted over glamour's margin at
-// decoration time, not baked into the stored row: so this is the row.
+// searchText is the row's text as the reader sees it.
 func (r transcriptRow) searchText() string {
 	return r.text
 }
@@ -847,70 +830,28 @@ func plainNodeRow(row string, width int) string {
 	return clipToWidth(row, width)
 }
 
-// barOverMargin puts the one-column selection bar at the head of a row.
-func barOverMargin(row, bar string, width int) string {
-	if width < 1 {
-		width = 1
-	}
-	i := 0
-	for i < len(row) && row[i] == 0x1b {
-		i, _ = escapeEnd(row, i)
-	}
-	if i < len(row) && row[i] == ' ' {
-		return row[:i] + bar + row[i+1:] // stand in the margin: same width
-	}
-	return clipToWidth(row[:i]+bar+row[i:], width)
-}
-
-// selBg is the selection wash: ONE STEP off the background, not a hue.
-// Kanagawa sumiInk2 #2A2A37 (xterm 236) is dark enough to disappear into a
-// dark theme and light enough to read as a lift, with the foreground
-// untouched.
-const selBg = "\x1b[48;5;236m"
-
-// decorateNodeRow paints a single transcript row with its selection cue. The
-// left indicator is one column (down from two): a slim vertical bar for
-// selected rows (bright cyan on the focused row, plain cyan on the rest of
-// the range) and a single space otherwise. Selected rows also get a subtle
-// background wash so the extent of a multi-block selection is visible without
-// relying on a wide gutter.
+// decorateNodeRow paints one row's selection cue, which is a WASH AND NOTHING
+// ELSE: the row is lifted one step off the pane, the focused block one step
+// further. There used to be a slim bar in the left margin as well; it said
+// what the wash already says, in a column the delta snake also wanted.
 //
-// bar is false for a row whose left margin is already spoken for: a delta
-// row's snake stands in that column, and the snake IS the cue there, its head
-// marking the focus the bar could only say was somewhere in range. The wash
-// still runs, so the extent of a selection reads the same.
-func decorateNodeRow(plain string, mark selectionMark, width int, bar bool) string {
+// A chrome row of a selected block (a snake's anchor, a tool's header) is
+// washed like any other: the band a reader sees must be the block, not the
+// half of it that happens to be text.
+func decorateNodeRow(plain string, mark selectionMark, width int) string {
 	if !mark.selected && !mark.active {
 		return plain
 	}
-	if !bar {
-		return washRow(plain, width)
-	}
-	const (
-		reset      = "\x1b[0m"
-		gutterSel  = "\x1b[36m▎"   // cyan slim bar for range members
-		gutterFocs = "\x1b[1;96m▎" // bright bold cyan bar for focused node
-	)
-	if !term.Enabled() {
-		return barOverMargin(plain, "▎", width)
-	}
-	gutter := gutterSel
-	if mark.active {
-		gutter = gutterFocs
-	}
-	// The bar goes in AFTER the wash substitution, so its own reset (which
-	// ends the bar's colour before the text resumes) is not itself re-washed.
-	body := washBody(plain)
-	return selBg + barOverMargin(body, gutter+reset+selBg, width) + washFill(plain, width) + reset
+	return washRow(plain, width, term.NodeWash(mark.active))
 }
 
-// washRow is the wash with no left cue: the lift alone, carried to the right
-// edge like a decorated row.
-func washRow(plain string, width int) string {
-	if !term.Enabled() {
+// washRow lifts a whole row, carried to the right edge so the band has no
+// ragged end.
+func washRow(plain string, width int, wash string) string {
+	if wash == "" {
 		return plain
 	}
-	return selBg + washBody(plain) + washFill(plain, width) + "\x1b[0m"
+	return wash + washBody(plain, wash) + washFill(plain, width) + "\x1b[0m"
 }
 
 // washFill carries the wash from the end of the row to the right edge, and
@@ -932,10 +873,10 @@ func washFill(plain string, width int) string {
 // washBody re-emits the wash after every reset the row carries, so
 // highlighting survives inline styling (dim, cyan, a glyph in the margin)
 // instead of ending at the first reset inside the row.
-func washBody(plain string) string {
+func washBody(plain, wash string) string {
 	body := plain
 	for _, r := range []string{"\x1b[0m", "\x1b[m"} {
-		body = strings.ReplaceAll(body, r, r+selBg)
+		body = strings.ReplaceAll(body, r, r+wash)
 	}
 	return body
 }

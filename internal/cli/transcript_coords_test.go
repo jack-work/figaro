@@ -11,6 +11,7 @@ import (
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
+	"github.com/jack-work/figaro/internal/term"
 )
 
 // coordFixture is a two-turn aria with stamped nodes, rendered through the
@@ -112,6 +113,7 @@ func TestAddressedRowIsOnePhysicalRow(t *testing.T) {
 // so a node's span is what it was without ^O and scroll-into-view cannot land
 // one row off.
 func TestAddressRidesTheNodesOwnRow(t *testing.T) {
+	defer term.SetColorMode(term.ColorAlways)() // the selection cue is a wash
 	on, off := coordFixture(t, true), coordFixture(t, false)
 	on.buildIndex()
 	off.buildIndex()
@@ -131,7 +133,7 @@ func TestAddressRidesTheNodesOwnRow(t *testing.T) {
 	// And it is genuinely part of the node: the row takes the selection cue.
 	on.selection = nodeSelection{active: true,
 		anchor: selectionPoint{nodeRef: ref}, focus: selectionPoint{nodeRef: ref}}
-	if !strings.Contains(stripANSI(on.lines()[span.first]), "▎") {
+	if !washed(on.lines()[span.first]) {
 		t.Fatalf("the addressed row took no selection cue: %q", on.lines()[span.first])
 	}
 }

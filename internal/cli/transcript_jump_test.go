@@ -304,10 +304,9 @@ func viewportRows(tr *transcript, n int) []string {
 	return out
 }
 
-// plainBody is a rendered row reduced to its text: escapes gone, and the
-// one-column selection gutter (a bar or a blank) off the front.
+// plainBody is a rendered row reduced to its text.
 func plainBody(row string) string {
-	return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(stripANSI(row)), "▎"))
+	return strings.TrimSpace(stripANSI(row))
 }
 
 func containsRow(rows []string, want string) bool {

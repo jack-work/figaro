@@ -395,11 +395,13 @@ func TestDeltaKeyIsTheHalfPageScroll(t *testing.T) {
 	}
 }
 
-// THE WASH STOPS AT THE ADORNMENT'S CHROME. The blank row between a question
-// and its rows belongs to the block's coordinate (the snake stands in it) but
-// is none of its content, and washing it read as a selection one row taller
-// than it was.
-func TestWashSkipsTheAdornmentChrome(t *testing.T) {
+// THE WASH COVERS THE WHOLE BLOCK, chrome included. The blank row between a
+// question and its delta rows carries the block's coordinate but none of its
+// content; it used to be left unwashed, which cut a hole in the band. Gluck
+// asked for a selection that is defined at every space it covers, so the hole
+// is gone: the cue is one continuous lift, and the snake's head remains the
+// thing that says which row inside it the cursor is on.
+func TestWashCoversTheBlocksChrome(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	tr := adornFixture(t)
 	inq := nodeRef{turn: 1, index: inquiryNode}
@@ -422,17 +424,15 @@ func TestWashSkipsTheAdornmentChrome(t *testing.T) {
 	if text == "" || chrome == "" {
 		t.Fatal("fixture: the question must have a text row and an adornment chrome row")
 	}
-	if !strings.Contains(text, selBg) {
-		t.Fatalf("the question's own row is washed: %q", text)
-	}
-	if strings.Contains(chrome, selBg) {
-		t.Fatalf("the adornment's chrome row must not be washed: %q", chrome)
+	for _, row := range []string{text, chrome} {
+		if !washed(row) {
+			t.Fatalf("every row of the selected block is washed: %q", row)
+		}
 	}
 }
 
 // A DELTA ROW KEEPS ITS SNAKE UNDER THE WASH, and keeps its own colour: the
-// head is how a reader tells which row of a washed list is the focused one,
-// and the bar cannot stand in that column as well.
+// head is how a reader tells which row of a washed list the cursor is on.
 func TestWashedDeltaRowKeepsItsSnake(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
 	tr := adornFixture(t)
@@ -448,15 +448,12 @@ func TestWashedDeltaRowKeepsItsSnake(t *testing.T) {
 				continue
 			}
 			line := tr.rowLine(r, "", tr.selectionSpan())
-			if !strings.Contains(line, selBg) {
+			if !washed(line) {
 				t.Fatalf("a selected delta row is washed: %q", line)
 			}
 			plain := stripANSI(line)
 			if !strings.Contains(plain, deltaGlyph) {
 				t.Fatalf("the snake's head survives the wash: %q", plain)
-			}
-			if strings.Contains(plain, "▎") {
-				t.Fatalf("the bar must not stand where the snake does: %q", plain)
 			}
 			return
 		}

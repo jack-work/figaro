@@ -129,14 +129,13 @@ const (
 // toolBody is the block's content: the argument a tool declares as its body,
 // or its own output. clamp is the row budget; -1 for all of them.
 //
-// The rows come out TYPED, because a tool's output can declare that a region
-// of itself is a diff: `edit` declares it for the whole body in its style row,
-// and anything else declares it by fencing the region (see render.FencedLines). The
-// renderer still guesses nothing from the shape of a line.
+// The rows come out TYPED because a tool may declare that some of them are a
+// diff: `edit` declares it for its whole output in the style table, anything
+// else declares a region by fencing it (render.FencedLines). Nothing is
+// guessed from the shape of a line.
 //
-// Fences are read in a tool's OUTPUT and not in the argument that stands in
-// for one. A `write` body is a FILE, and a file that happens to contain ```diff
-// is a file about diffs, not a diff.
+// Only the OUTPUT is scanned. A `write` body is a file, and a file holding
+// ```diff is a file about diffs.
 func toolBody(n livedoc.Node, st toolStyle, fields []partialjson.Field, clamp int) []bodyLine {
 	text, fenced := n.Output, true
 	if st.Body != "" {
@@ -168,9 +167,9 @@ func toolBody(n livedoc.Node, st toolStyle, fields []partialjson.Field, clamp in
 	return rows
 }
 
-// bodyLine is one line of a tool block's body and what it is. diff says the
-// line belongs to a diff region: how it is PAINTED is render's to answer, not
-// this package's, so the picture matches everywhere figaro draws a diff.
+// bodyLine is one line of a tool block's body and what it is. How a diff line
+// is PAINTED is render's answer, not this package's, so one picture serves
+// every diff figaro draws.
 type bodyLine struct {
 	text string
 	diff bool
@@ -283,8 +282,8 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 	return rows
 }
 
-// plainPaint leaves a row as it found it: the body's voice for everything the
-// tool did not declare.
+// plainPaint is the body's own voice: what a row wears when the tool declared
+// nothing about it.
 func plainPaint(s string) string { return s }
 
 // argRow draws one argument as exactly one row: newlines flattened to a ⏎
@@ -333,10 +332,6 @@ func headOutput(text string, limit int) (string, int) {
 	}
 	return text[:at], total
 }
-
-// diffPaint moved to render.DiffPaint: the `edit` tool, a fenced region in
-// any other tool's output and a fenced region in prose are one picture, and
-// the package that draws rows owns it.
 
 // oneLine flattens a value for a row that must be exactly one: a multi-line
 // command in a header would desync the painter's one-row-per-line arithmetic.

@@ -6,26 +6,22 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// A DIFF IS DRAWN ONE WAY, EVERYWHERE FIGARO DRAWS ONE.
+// A DIFF IS DRAWN ONE WAY, EVERYWHERE FIGARO DRAWS ONE: the `edit` tool's
+// result, a fenced region of any other tool's output, a fenced region of the
+// agent's prose. All three paint through DiffPaint, so no caller decides for
+// itself what a `+` looks like.
 //
-// Three call sites want the same picture: the `edit` tool, whose whole result
-// is a diff and which says so in its style row; a fenced block inside any
-// other tool's output, where the output itself declares the region; and a
-// fenced block in the agent's prose. They share DiffPaint, so the three
-// cannot drift apart, and no caller decides for itself what a `+` looks like.
-//
-// The renderer still never GUESSES. A line is only read as diff text when
-// something upstream said the region is a diff: the tool's style, or a fence.
+// Nothing here GUESSES. A line is diff text only because something upstream
+// said so: the tool's style row, or a fence.
 
-// diffFences are the code-fence info strings that open a diff region.
-// `diff` and `patch` are what the rest of the world writes; `figdiff` is for
-// output that wants figaro's diff and not a highlighter's, whatever a future
-// markdown pipeline decides `diff` should mean.
+// diffFences are the info strings that open a diff region. `diff` and `patch`
+// are what the rest of the world writes; `figdiff` asks for figaro's picture
+// by name, whatever a future markdown pipeline decides `diff` should mean.
 var diffFences = map[string]bool{"diff": true, "figdiff": true, "patch": true}
 
-// fenceTag reports the info string of a ``` fence line, and whether the line
-// is a fence at all. Indented fences count: tool output is often indented by
-// whatever printed it.
+// fenceTag reports a fence line's info string, and whether the line is a fence
+// at all. Indented fences count: output is often indented by whatever printed
+// it.
 func fenceTag(line string) (string, bool) {
 	t := strings.TrimLeft(line, " \t")
 	if !strings.HasPrefix(t, "```") && !strings.HasPrefix(t, "~~~") {
@@ -84,12 +80,10 @@ func HasDiff(text string) bool {
 	return false
 }
 
-// DiffPaint answers how one SOURCE line of a diff is coloured, and hands back
-// a painter rather than a painted string: a wrapped continuation row keeps the
-// side of the diff its source line was on.
-//
-// The file headers are read before the +/- lines they start with, or `---`
-// would come out as a deletion of `--`.
+// DiffPaint answers how one SOURCE line of a diff is coloured, as a painter
+// rather than a painted string: a wrapped continuation keeps the side its
+// source line was on. File headers are read before the +/- lines they begin
+// with, or `---` comes out as a deletion of `--`.
 func DiffPaint(src string) func(string) string {
 	switch {
 	case strings.HasPrefix(src, "+++"), strings.HasPrefix(src, "---"):

@@ -15,6 +15,7 @@ import (
 	"github.com/jack-work/figaro/api/rpc"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/tape"
+	"github.com/jack-work/figaro/internal/term"
 )
 
 // THE ADORNMENT, IN A REAL TERMINAL.
@@ -97,9 +98,9 @@ func adornSelectedMarker(t *testing.T, p *adornPane) {
 	// the last block, so prose is one step BACK from it.
 	p.key("Enter") // close what the previous case opened
 	p.key("C-p")
-	rows, styled := p.rows(), p.styled()
+	rows, wash := p.rows(), p.paneWashed()
 	i := p.only(t, rows, adornProseTail)
-	if !washed(styled[i]) {
+	if !wash[i] {
 		t.Fatalf("the prose block is not the selection:\n%s", p.dump())
 	}
 	if w := ldrender.Width(rows[i]); w != p.w || !strings.HasSuffix(rows[i], deltaGlyph) {
@@ -173,17 +174,17 @@ func adornInquiryOpens(t *testing.T, p *adornPane) {
 		t.Errorf("the rule under the list does not close on %q: %q", snakeClose, clean(rows[last+1]))
 	}
 
-	// The wash. The question's own text is selected and washed; the
-	// adornment's chrome row is not, and the head stays visible on it.
-	styled := p.styled()
-	if !washed(styled[p.only(t, styled, adornAsk)]) {
+	// The wash covers the whole selected block, chrome included, and the
+	// parked head stays visible on it.
+	wash := p.paneWashed()
+	if !wash[p.only(t, rows, adornAsk)] {
 		t.Errorf("the selected question is not washed\n%s", p.dump())
 	}
-	if washed(styled[anchor]) {
-		t.Errorf("the selection wash swallowed the adornment's chrome row: %q", clean(styled[anchor]))
+	if !wash[anchor] {
+		t.Errorf("the block's chrome row is not washed with the rest of it\n%s", p.dump())
 	}
-	if !strings.Contains(clean(styled[anchor]), deltaGlyph) {
-		t.Errorf("the parked head is gone from the chrome row: %q", clean(styled[anchor]))
+	if !strings.Contains(rows[anchor], deltaGlyph) {
+		t.Errorf("the parked head is gone from the chrome row: %q", rows[anchor])
 	}
 }
 
@@ -198,8 +199,8 @@ func adornRowsWalk(t *testing.T, p *adornPane) {
 
 	// Out of the list, onto the block below it, then back in from below.
 	p.key("C-n")
-	styled := p.styled()
-	if !washed(styled[p.only(t, styled, adornProseHead)]) {
+	wash := p.paneWashed()
+	if !wash[p.only(t, p.rows(), adornProseHead)] {
 		t.Fatalf("^N past the last row did not select the block below\n%s", p.dump())
 	}
 	p.key("C-p")
@@ -209,13 +210,13 @@ func adornRowsWalk(t *testing.T, p *adornPane) {
 	p.key("C-p")
 	adornFocus(t, p, adornAskKeys[0], "stepping up inside the list")
 	p.key("C-p")
-	styled = p.styled()
-	if !washed(styled[p.only(t, styled, adornAsk)]) {
+	wash, rows := p.paneWashed(), p.rows()
+	if !wash[p.only(t, rows, adornAsk)] {
 		t.Errorf("^P past the first row did not select the parent block\n%s", p.dump())
 	}
 	for _, key := range adornAskKeys {
-		if row := styled[p.only(t, styled, key)]; washed(row) {
-			t.Errorf("the parent's wash reached delta row %q: %q", key, clean(row))
+		if i := p.only(t, rows, key); wash[i] {
+			t.Errorf("the parent's wash reached delta row %q: %q", key, clean(rows[i]))
 		}
 	}
 }
@@ -232,8 +233,7 @@ func adornCloseLands(t *testing.T, p *adornPane) {
 			t.Errorf("Enter left the row for %q on screen\n%s", key, p.dump())
 		}
 	}
-	styled := p.styled()
-	if !washed(styled[p.only(t, styled, adornAsk)]) {
+	if !p.paneWashed()[p.only(t, rows, adornAsk)] {
 		t.Errorf("after closing, the question is not the selection\n%s", p.dump())
 	}
 }
@@ -267,10 +267,10 @@ func adornToolSnake(t *testing.T, p *adornPane) {
 	adornFocus(t, p, adornToolKeys[0], "the tool's first row")
 
 	// The head is drawn INTO the washed row, and the wash does not eat it.
-	styled := p.styled()
-	row := styled[p.only(t, styled, adornToolKeys[0])]
-	if !washed(row) || !strings.Contains(row, deltaGlyph) {
-		t.Errorf("the focused row lost its head or its wash: %q", clean(row))
+	rows = p.rows()
+	i := p.only(t, rows, adornToolKeys[0])
+	if !p.paneWashed()[i] || !strings.Contains(rows[i], deltaGlyph) {
+		t.Errorf("the focused row lost its head or its wash: %q", rows[i])
 	}
 
 	p.key("C-p")   // back to the block
@@ -307,18 +307,18 @@ func adornBodyAndList(t *testing.T, p *adornPane) {
 // the snake's head in its spine column, and alone in both.
 func adornFocus(t *testing.T, p *adornPane, key, what string) {
 	t.Helper()
-	styled, plain := p.styled(), p.rows()
-	i := p.only(t, styled, key)
-	if !washed(styled[i]) {
+	wash, plain := p.paneWashed(), p.rows()
+	i := p.only(t, plain, key)
+	if !wash[i] {
 		t.Errorf("%s: the row for %q is not the focus\n%s", what, key, p.dump())
 		return
 	}
 	if !strings.Contains(plain[i], deltaGlyph) {
 		t.Errorf("%s: the row for %q carries no head: %q", what, key, plain[i])
 	}
-	for j, row := range styled {
-		if j != i && washed(row) && strings.Contains(clean(row), "->") {
-			t.Errorf("%s: row %d is a washed delta row too: %q", what, j, clean(row))
+	for j, row := range plain {
+		if j != i && wash[j] && strings.Contains(row, "->") {
+			t.Errorf("%s: row %d is a washed delta row too: %q", what, j, row)
 		}
 	}
 }
@@ -532,8 +532,83 @@ func countGlyph(rows []string, glyph string) int {
 	return n
 }
 
-// washed reports the selection lift, by the very constant the pager paints.
-func washed(row string) bool { return strings.Contains(row, selBg) }
+// nodeWashes are the two selection washes as the palette spells them, read
+// once with colour forced: a test process is not a terminal, so asking term
+// in the moment would answer "" and match every row ever painted.
+var nodeWashes = func() []string {
+	defer term.SetColorMode(term.ColorAlways)()
+	return []string{term.NodeWash(false), term.NodeWash(true)}
+}()
+
+// washed reports the selection lift on a row the PAINTER produced, which
+// carries its own renditions from column zero.
+func washed(row string) bool {
+	return strings.Contains(row, nodeWashes[0]) || strings.Contains(row, nodeWashes[1])
+}
+
+// A TMUX CAPTURE IS A RUNNING STATE, NOT A ROW AT A TIME RENDERING.
+// `capture-pane -e` emits an escape only where the attributes CHANGE, and it
+// carries them ACROSS line boundaries: two washed rows in a row share one
+// sequence, and the second, read on its own, looks unwashed. That is how a
+// correct frame was read as a bug for half an hour. Every per-row colour claim
+// against a capture goes through paneWashed, which tracks the background in
+// force at each row's first cell from the top of the capture.
+func (p *adornPane) paneWashed() []bool { return capturedWashes(p.last) }
+
+func capturedWashes(capture string) []bool {
+	var out []bool
+	bg := ""
+	for _, line := range splitPane(capture) {
+		at, seen := bg, false
+		for i := 0; i < len(line); {
+			if line[i] != 0x1b {
+				if !seen {
+					at, seen = bg, true
+				}
+				i++
+				continue
+			}
+			j := i + 1
+			for j < len(line) && !(line[j] >= 'A' && line[j] <= 'Z' || line[j] >= 'a' && line[j] <= 'z') {
+				j++
+			}
+			if j < len(line) {
+				j++
+			}
+			bg = applyBackground(bg, line[i:j])
+			i = j
+		}
+		if !seen {
+			at = bg
+		}
+		out = append(out, at == nodeWashes[0] || at == nodeWashes[1])
+	}
+	return out
+}
+
+// applyBackground folds one escape into the background in force, spelling it
+// the way the palette does so the two can be compared.
+func applyBackground(bg, esc string) string {
+	if !strings.HasSuffix(esc, "m") {
+		return bg
+	}
+	params := strings.Split(strings.TrimSuffix(strings.TrimPrefix(esc, "\x1b["), "m"), ";")
+	for i := 0; i < len(params); i++ {
+		switch params[i] {
+		case "", "0", "49":
+			bg = ""
+		case "48":
+			if i+2 < len(params) && params[i+1] == "5" {
+				bg = "\x1b[48;5;" + params[i+2] + "m"
+				i += 2
+			} else if i+4 < len(params) && params[i+1] == "2" {
+				bg = "\x1b[48;2;" + strings.Join(params[i+2:i+5], ";") + "m"
+				i += 4
+			}
+		}
+	}
+	return bg
+}
 
 // clean is a captured row with its renditions dropped.
 func clean(row string) string { return visibleText(row) }

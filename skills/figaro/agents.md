@@ -143,3 +143,23 @@ exiting. Two consequences:
 
 Use `background: true` with the `process` tool, or `cmd & wait`, or serial
 commands. Do not background with a bare `&` and assume completion.
+
+## A fenced diff in your output is drawn as a diff
+
+Your tool output lands in someone's transcript. A region you FENCE as a diff is
+painted like the `edit` tool's result rather than as plain text: deletions and
+additions in the diff colours, `@@` hunks and `---`/`+++` headers in their own,
+and the fence lines themselves never shown.
+
+````sh
+{ echo '```diff'; git diff -U2; echo '```'; }
+````
+
+The info string may be `diff`, `figdiff` or `patch`, and `~~~` fences work too,
+which is what to reach for when the command already has to survive two layers
+of shell quoting. The same fence in your PROSE gets the same picture.
+
+Nothing else is interpreted. The renderer never guesses a diff from the shape
+of a line, so ordinary output that happens to start with `-` is safe, and a
+fence you did not write (a file's own contents, echoed back by `write`) is left
+alone.

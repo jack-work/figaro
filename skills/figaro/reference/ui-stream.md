@@ -232,8 +232,8 @@ because rows are what is being rationed.
 A block that arrived with form state wears it. Collapsed, that is **one glyph
 in the right gutter** and nothing else: a tool on its header row, prose on the
 end of its text, a turn's question on the `> input` row. The gutter is one
-column held for exactly this, mirroring the two on the left the selection bar
-stands in, and the `M-m` addresses stop one column short of it.
+column held for exactly this, and the `M-m` addresses stop one column short of
+it.
 
 ```
 > input ⑂ e5abf08d                                                          Δ
@@ -600,6 +600,22 @@ the beginning of the aria: scrolling up found nothing, forever. The read is now
 owed by the promotion itself (`livelogTurn.enterPager` → `catchUp`) and runs
 **off the render lock**, since one of its callers is the frame path. A failed
 read is not a floor: the claim is released so a later gesture retries.
+
+### The selection is a wash, and it covers the block
+
+A selected block is **lifted one step off the pane**, the focused one a step
+further, and that is the whole cue: no bar, no glyph, nothing in the margin
+(the left column belongs to the adornment's snake, and a bar there said what
+the wash already says). The lift runs the full width of every row the block
+owns, its chrome rows included, so the band a reader sees IS the block.
+
+The wash also closes over the chrome BETWEEN washed rows and over the rule that
+fences the box beneath them: select a question and the heading, the text and
+the seam under it lift together. It stops at the first row of a block that is
+not selected, so the answer's voice header stays the answer's.
+
+Colour is the only channel here. A terminal with colour off shows no selection
+cue at all, which is the deliberate end of a cue that used to be drawn twice.
 
 ### Where a rule meets a gutter
 
