@@ -136,8 +136,10 @@ The wire behind all of this: the interrupt's queue disposition, the
 
 | Command | Effect |
 |---|---|
-| `figaro ls [<id>]` | List arias, scoped to where you are attended. Alias `list`. |
+| `figaro ls [<id>]` | List arias. Attended, the default scope is you and everything forked below you; detached it is home. `<id>` names another subtree, `/` is home. Alias `list`. |
+| `figaro ls ^` / `^2` / `^^` | Climb N layers: your parent's subtree, you still in it. Past the root it clamps to the top-level aria and prints a note. |
 | `figaro ls -H` | Home view: every top-level aria, without unbinding you. (`-h` is help, on every verb.) |
+| `figaro lsh` | `ls -H`, spelled shorter. Same flags. |
 | `figaro ls -g` | Home plus the null root and outfit anchors. |
 | `figaro ls -a` / `-n N` | Remove the 10-row cap, or set it. Mutually exclusive. |
 | `figaro attend <id>` | Bind this shell to an aria. Alias `at`. |

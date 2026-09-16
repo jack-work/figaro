@@ -293,7 +293,12 @@ func (in *interactiveInput) withSubject(argv []string) []string {
 // shell prompt is not buried; the pager scrolls, and a reader who typed `:ls`
 // there means all of them. An explicit -a, -n or -j is left alone.
 func pagerUncapped(argv []string) []string {
-	if len(argv) == 0 || (argv[0] != "ls" && argv[0] != "list") {
+	if len(argv) == 0 {
+		return argv
+	}
+	switch argv[0] {
+	case "ls", "list", "lsh":
+	default:
 		return argv
 	}
 	for _, a := range argv[1:] {

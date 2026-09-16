@@ -167,6 +167,7 @@ func TestPagerLsIsUncapped(t *testing.T) {
 	for _, tc := range []struct{ line, want string }{
 		{"ls", "ls --all"},
 		{"list", "list --all"},
+		{"lsh", "lsh --all"},
 		{"ls -g", "ls -g --all"},
 		{"ls abc12345", "ls abc12345 --all"},
 		{"ls -n 3", "ls -n 3"},

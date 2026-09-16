@@ -1,6 +1,10 @@
 package cli
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/jack-work/figaro/internal/cmdkit"
+)
 
 // TestFigaroClaimsNoReservedShorts asserts the rule over the REAL command
 func TestFigaroClaimsNoReservedShorts(t *testing.T) {
@@ -32,5 +36,30 @@ func TestListHomeIsReachable(t *testing.T) {
 	}
 	if home.short != "H" {
 		t.Errorf("--home short: got %q, want \"H\"", home.short)
+	}
+}
+
+// TestLshIsListHome: `lsh` is `ls -H` and nothing else, so it parses the same
+// flags and lands on the same options.
+func TestLshIsListHome(t *testing.T) {
+	r := buildRouter("figaro", nil)
+	lsh, ok := r.Command("lsh")
+	if !ok {
+		t.Fatal("no lsh command")
+	}
+	list, _ := r.Command("list")
+	if lsh.Hidden || lsh.Group != list.Group {
+		t.Errorf("lsh must show in help where ls does: hidden=%v group=%q", lsh.Hidden, lsh.Group)
+	}
+	if len(lsh.Flags) != len(list.Flags) {
+		t.Fatalf("lsh flags = %d, list flags = %d", len(lsh.Flags), len(list.Flags))
+	}
+	typedH := listOptsFrom(&cmdkit.RunContext{Flags: map[string]string{"home": "true"}}, false)
+	bareLsh := listOptsFrom(&cmdkit.RunContext{Flags: map[string]string{}}, true)
+	if typedH != bareLsh {
+		t.Fatalf("lsh = %+v, ls -H = %+v", bareLsh, typedH)
+	}
+	if !bareLsh.home {
+		t.Fatal("lsh did not reach home")
 	}
 }

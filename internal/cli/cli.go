@@ -669,19 +669,22 @@ positional slot belongs to the sub-verb.`,
 		},
 	})
 
-	r.Register(&cmdkit.Command{
+	listCmd := &cmdkit.Command{
 		Name:    "list",
 		Aliases: []string{"ls"},
 		Group:   "Session",
 		Short:   "List arias: scoped to where you're attended (attend is `cd`)",
-		Usage:   "list [<id>] [-H|--home | -g|--global] [-a|--all | -n <count>] [-j|--json]",
+		Usage:   "list [<id>|^N|/] [-H|--home | -g|--global] [-a|--all | -n <count>] [-j|--json]",
 		Long: "Lists arias `ls`-style relative to where you're attended (attend is\nthe `cd`).\n\n" +
 			"Scope:\n" +
-			"  (default)     attended → your conversation's tree (● = you);\n" +
+			"  (default)     attended → you and everything forked below you (● = you);\n" +
 			"                detached → home (all top-level arias)\n" +
 			"  <id>          that aria's subtree\n" +
+			"  ^, ^2, ^^     climb N layers: the ancestor's subtree, you still in it;\n" +
+			"                past the root it clamps to the top-level aria and says so\n" +
+			"  /             the home view, as a positional\n" +
 			"  -H, --home    the home view (all top-level arias) without unbinding\n" +
-			"                (-h is reserved for help, on every verb)\n" +
+			"                (-h is reserved for help, on every verb); `lsh` is this\n" +
 			"  -g, --global  home plus the null + outfit anchors (the full tree)\n\n" +
 			"Cap (mutually exclusive):\n" +
 			"  (default)     10 rows, trees ordered by their most recent member\n" +
@@ -698,38 +701,24 @@ positional slot belongs to the sub-verb.`,
 			{Long: "json", Short: "j", IsBool: true, Description: "Pro/dev: all arias (incl. anchors) as JSON; no other flags"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
-			ld := ctx.Extra.(*config.Loaded)
-			o := lsOpts{
-				jsonOut: ctx.BoolFlag("json"),
-				home:    ctx.BoolFlag("home"),
-				global:  ctx.BoolFlag("global"),
-				limit:   10,
-			}
-			if len(ctx.Args) > 0 {
-				o.rootID = ctx.Args[0]
-			}
-			hasN := ctx.Flag("limit") != ""
-			if o.jsonOut && (o.home || o.global || ctx.BoolFlag("all") || hasN || o.rootID != "") {
-				die("ls --json is the global escape hatch and takes no other flags")
-			}
-			if ctx.BoolFlag("all") && hasN {
-				die("ls: -a/--all and -n are mutually exclusive")
-			}
-			if o.home && o.global {
-				die("ls: -h/--home and -g/--global are mutually exclusive")
-			}
-			if ctx.BoolFlag("all") {
-				o.limit = 0
-			} else if hasN {
-				if n, err := strconv.Atoi(ctx.Flag("limit")); err == nil && n > 0 {
-					o.limit = n
-				}
-			}
-			runList(ld, o)
+			runList(ctx.Extra.(*config.Loaded), listOptsFrom(ctx, false))
 			return nil
 		},
 		CompleteArgs: completeAriaIDsPositionalOrFlag,
-	})
+	}
+	r.Register(listCmd)
+
+	lshCmd := *listCmd
+	lshCmd.Name = "lsh"
+	lshCmd.Aliases = nil
+	lshCmd.Short = "List arias from home: `ls -H`, spelled shorter"
+	lshCmd.Usage = "lsh [<id>] [-g|--global] [-a|--all | -n <count>] [-j|--json]"
+	lshCmd.Long = "`ls -H`: the home view, every top-level aria, without unbinding this\nshell. Every other `ls` flag applies; see `figaro help list`."
+	lshCmd.Run = func(ctx *cmdkit.RunContext) error {
+		runList(ctx.Extra.(*config.Loaded), listOptsFrom(ctx, true))
+		return nil
+	}
+	r.Register(&lshCmd)
 
 	r.Register(&cmdkit.Command{
 		Name:    "attend",
