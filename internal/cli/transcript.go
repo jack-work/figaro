@@ -2882,8 +2882,6 @@ func keepRefsBelow(src map[nodeRef]bool, base int) map[nodeRef]bool {
 func (t *transcript) inputDrawerLines() []string {
 	var rows []string
 	switch {
-	case t.confirm != nil:
-		return t.confirmLines()
 	case t.inSearch:
 		// THE SIGIL IS THE DIRECTION. A box that always says '/' cannot tell
 		// a reader which way the next Enter walks.

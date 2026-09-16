@@ -468,7 +468,7 @@ run `figaro show` (full content above, cursor below).
 | `^` | attend this aria's parent, or say it is top-level |
 | `l` / `L` | list this aria's tree / the home tree in the pit, uncapped |
 | `x` / `X` | in a list, kill the aria the selected row names, asking first / at once; in the queue, drop the message |
-| `y` / `n` | answer that question (Esc is no). Nothing else is read while it is up |
+| `y` / `n` | answer that question (Esc is no). Nothing else is read while it is up; the sentence rides the bar's alert and `[y/N]` its command slot, so the question costs no height |
 | `h` | the help panel |
 | `v` / `V` | visual mode: a cursor, then a highlight by character / by line |
 | `y` / `Y` | copy the selection / copy its coordinate `<lt.block:a-b>!` |
@@ -477,9 +477,10 @@ run `figaro show` (full content above, cursor below).
 | `q` / `Esc` / `Ctrl-T` | exit the pager |
 
 A listing opens with the cursor on the aria you are attending, not on the top
-row. `x` and `:kill` ask before they kill, and the question holds the keyboard
-and the status bar until it is answered; `X` on a row does the same work with
-no question. Killing the aria on screen moves the pager to the row the cursor
+row. `x` and `:kill` ask before they kill. The question holds the keyboard and the
+bar, and nothing else: the sentence is the bar's alert, `[y/N]` is its command
+token, and the view underneath is untouched. `X` on a row does the same work
+with no question. Killing the aria on screen moves the pager to the row the cursor
 falls onto, else the jumplist's previous aria, else the parent, and ends the
 session only when there is none of the three.
 

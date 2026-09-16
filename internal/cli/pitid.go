@@ -26,7 +26,8 @@ const (
 	// Live form views arrive named "form listen", "form show" and so on: the
 	// family is matched by prefix, see face().
 	pitForm pitID = "form"
-	// A question, not a view: it holds the keyboard until it is answered.
+	// A question, not a view: it holds the keyboard until it is answered and
+	// draws nothing but its own token on the bar.
 	pitConfirm pitID = "confirm"
 )
 
@@ -59,8 +60,10 @@ var pitFaces = map[pitID]pitFace{
 	// folded onto. Wide (East Asian W, two cells) rather than ambiguous, so
 	// runewidth reports 2 everywhere and the bar's arithmetic holds. Its
 	// selected row is ⌖, the pin in the body rather than a note in a score.
-	pitForm:    {"웃", "form", "⌖", modePanel},
-	pitConfirm: {"‽", "confirm", "", modeConfirm},
+	pitForm: {"웃", "form", "⌖", modePanel},
+	// The answers ARE the token: a question that costs no height still has to
+	// say what will answer it.
+	pitConfirm: {"[y/N]", "confirm", "", modeConfirm},
 }
 
 // face is the pit's presentation, or the empty face for one nobody has named:

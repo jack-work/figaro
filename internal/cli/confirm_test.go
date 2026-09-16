@@ -33,8 +33,8 @@ func TestConfirm_XAsksAndCapitalXDoesNot(t *testing.T) {
 		if tr.mode() != modeConfirm {
 			t.Fatalf("mode = %v, want the question to own the keyboard", tr.mode())
 		}
-		if got := strings.Join(tr.confirmLines(), ""); !strings.Contains(stripANSI(got), "kill aria1234?") {
-			t.Fatalf("question = %q", got)
+		if got := tr.status.noticeText(); !strings.Contains(got, "kill aria1234?") {
+			t.Fatalf("the bar does not carry the question: %q", got)
 		}
 		// A key that is not an answer changes nothing.
 		tr.key('j')
@@ -70,8 +70,8 @@ func TestConfirm_TheNoticeStandsWhileTheQuestionDoes(t *testing.T) {
 	}
 }
 
-// The question is a moment, not a place: the list it was asked from is still
-// there afterwards, with its cursor where the reader left it.
+// THE QUESTION COSTS NO HEIGHT and takes nothing away: the list it was asked
+// from is untouched, cursor and all, and the bar carries both halves of it.
 func TestConfirm_TheListSurvivesTheQuestion(t *testing.T) {
 	tr, _ := visualFixture(t)
 	tr.dropRow = func(pit, id, next string) {}
@@ -81,7 +81,14 @@ func TestConfirm_TheListSurvivesTheQuestion(t *testing.T) {
 	})
 	tr.focused = focusPit
 	tr.pit.moveSelection(1) // stand on the second row
+	before := len(tr.pit.lines(tr.w, 12))
 	tr.key('x')
+	if got := len(tr.pit.lines(tr.w, 12)); got != before {
+		t.Fatalf("the question took %d rows from the screen", got-before)
+	}
+	if tok := pitConfirm.token(false); tok != "[y/N]" {
+		t.Fatalf("the bar's command slot says %q, want the answers", tok)
+	}
 	tr.key('n')
 	if tr.pit.id != pitOutput {
 		t.Fatalf("the listing did not come back: pit = %q", tr.pit.id)

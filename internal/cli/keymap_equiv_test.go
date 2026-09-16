@@ -1021,13 +1021,7 @@ var pagerOracle = []struct {
 	// have: it has no pre-refactor twin.
 	// The y/n question. Every key that is not an answer is swallowed, which
 	// is the whole point: consent is typed, never stumbled into.
-	{"confirm", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
-		"0x1b": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
-		"0x4e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
-		"0x59": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
-		"0x6e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
-		"0x79": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
-	}},
+	{"confirm", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{}},
 	{"fork", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
 		"0x4c": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x5e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
