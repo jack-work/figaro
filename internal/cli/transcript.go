@@ -1465,11 +1465,12 @@ func (t *transcript) renderFrame() {
 	// THE RULE THAT CLOSES THE CONVERSATION CARRIES THE JUNCTION, as the
 	// sticky header's does and for the same reason (see joinRule). Which rule
 	// that is depends on what is open: the pit's own when a panel is up, the
-	// footer's otherwise. A clipped stanza has lost its rule along with its
-	// head, and a fullscreen pit has no conversation under it to join.
-	floor := t.lineAt(t.offset + body)
+	// footer's otherwise. Nothing is below it but the status bar, so the floor
+	// only ever wears the up stroke. A clipped stanza has lost its rule along
+	// with its head, and a fullscreen pit has no conversation under it.
+	floor := t.lineCut(t.offset+body-1, t.offset+body)
 	if len(foot) > 0 && !clipped && !t.fullPit() && start > 0 {
-		foot[0] = joinRule(foot[0], screen[start-1], floor, "┴")
+		foot[0] = joinRule(foot[0], floor, gutterCut{})
 	}
 	for k, l := range foot {
 		if r := start + k; r >= 0 && r < t.h-len(bar) {
@@ -1490,7 +1491,7 @@ func (t *transcript) renderFrame() {
 	// however many rows that is.
 	if top := t.h - 1 - len(bar); top >= 0 {
 		if rule != "" && len(foot) == 0 && top > 0 {
-			rule = joinRule(rule, screen[top-1], floor, "┴")
+			rule = joinRule(rule, floor, gutterCut{})
 		}
 		screen[top] = rule
 		for i, row := range bar {

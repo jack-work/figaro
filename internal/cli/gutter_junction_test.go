@@ -144,30 +144,39 @@ func TestStickyRuleJoinsOnlyTheNextRowsGutter(t *testing.T) {
 }
 
 func TestJoinRule(t *testing.T) {
-	// far is the row on the other side of the rule: the one the chrome covers.
-	// A gutter on both sides is CUT by the rule and gets a junction; a gutter
-	// that begins or ends against it is a whole line and gets none.
+	// A stroke says the line GOES ON past the rule on that side. The row a
+	// reader sees carries the gutter; what the chrome hides beyond it says
+	// whether the line is cut there or simply begins (or ends) against it.
+	gutter := "  │ x"
 	for _, tc := range []struct {
-		name, near, far, want string
+		name         string
+		above, below gutterCut
+		want         string
 	}{
-		{"tool gutter", "  │ result", "  │ result", "──┬─────"},
-		{"left spine", "│ mantra", "│ mantra", "┬───────"},
-		{"styled gutter", "\x1b[2m  │\x1b[0m result", "  │ x", "──┬─────"},
-		{"split style", " \x1b[2m │\x1b[m", "  │", "──┬─────"},
-		{"prose", "  ordinary text", "  │ x", "────────"},
-		{"embedded vertical", "  text │ table", "  │ x", "────────"},
-		{"ascii pipe", "  | plain", "  │ x", "────────"},
-		{"corner", "  ╯", "  │ x", "────────"},
-		{"blank", "\x1b[2m   \x1b[m", "  │ x", "────────"},
-		{"past width", "        │", "        │", "────────"},
-		{"last column", "       │", "       │", "───────┬"},
-		{"block boundary", "  │ first row", "∨ The Boss", "────────"},
-		{"nothing beyond", "  │ last row", "", "────────"},
-		{"gutter moved", "  │ here", "    │ there", "────────"},
+		{"nothing at all", gutterCut{}, gutterCut{}, "────────"},
+		{"a block that ends against the rule", gutterCut{row: gutter}, gutterCut{}, "────────"},
+		{"a block that begins under it", gutterCut{}, gutterCut{row: gutter}, "────────"},
+		{"cut from above", gutterCut{row: gutter, hidden: gutter}, gutterCut{}, "──┴─────"},
+		{"cut from below", gutterCut{}, gutterCut{row: gutter, hidden: gutter}, "──┬─────"},
+		{"one line straight through", gutterCut{row: gutter, hidden: gutter},
+			gutterCut{row: gutter, hidden: gutter}, "──┼─────"},
+		{"two lines, two columns", gutterCut{row: gutter, hidden: gutter},
+			gutterCut{row: "   │ x", hidden: "   │ y"}, "──┴┬────"},
+		// A tool's header carries no gutter and its body is the same block, so
+		// a rule between them cuts ONE line.
+		{"a tool cut under its header", gutterCut{},
+			gutterCut{row: gutter, hidden: "✓ $ ls", sameBlock: true}, "──┬─────"},
+		{"left spine", gutterCut{}, gutterCut{row: "│ mantra", hidden: "│ mode"}, "┬───────"},
+		{"styled gutter", gutterCut{}, gutterCut{row: "\x1b[2m  │\x1b[0m x", hidden: gutter}, "──┬─────"},
+		{"embedded vertical", gutterCut{}, gutterCut{row: "  text │ table", hidden: gutter}, "────────"},
+		{"ascii pipe", gutterCut{}, gutterCut{row: "  | plain", hidden: gutter}, "────────"},
+		{"past the rule's width", gutterCut{}, gutterCut{row: "        │", hidden: "        │"}, "────────"},
+		{"last column", gutterCut{}, gutterCut{row: "       │", hidden: "       │"}, "───────┬"},
+		{"columns disagree", gutterCut{}, gutterCut{row: "  │ here", hidden: "    │ there"}, "────────"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rule := "\x1b[2m────────\x1b[m"
-			got := joinRule(rule, tc.near, tc.far, "┬")
+			got := joinRule(rule, tc.above, tc.below)
 			if want := "\x1b[2m" + tc.want + "\x1b[m"; got != want {
 				t.Fatalf("got %q, want %q", got, want)
 			}
@@ -250,5 +259,78 @@ func TestFooterRuleJoinsOnlyAGutterItCuts(t *testing.T) {
 	tr.offset = maxOff
 	if rule := floorRule(); strings.Contains(rule, "┴") {
 		t.Fatalf("the last row of a block joins nothing, got %q", rule)
+	}
+}
+
+// quotedPager is a turn whose question is a QUOTE (a markdown blockquote, as
+// the quoting gesture writes one), so the question itself has a gutter that
+// can meet the header's rule from above. n says how many lines of it.
+func quotedPager(t testing.TB, lines int) *transcript {
+	t.Helper()
+	quote := "> quoting aria bd0cf2bd · turn 3 · lt 63.1 · chars 3033-3067 (34 chars)"
+	for range lines - 1 {
+		quote += "\n> and another line of the passage, long enough to stand on its own row"
+	}
+	client := aria.NewClient()
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
+		ID: 1, Sealed: true, Inquiry: quote,
+		InquirySegments: []aria.InquirySegment{{Sender: "Gluck", Text: quote}},
+		Nodes: []livedoc.Node{
+			{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
+				Args:   map[string]any{"command": "grep -rn federate ."},
+				Output: "(no output)\nsecond line\nthird line\nfourth line"},
+			{Type: livedoc.NodeThinking, Markdown: "Thinking about the loop."},
+		},
+	}}}}, aria.Notify)
+	view := &ariaView{settings: &renderSettings{sticky: true}}
+	tr := newTranscript(ldrender.NewFakeTerminal(120, 12), 120, 12, view, client, "quoted01", time.Time{})
+	tr.enter()
+	tr.follow = false
+	tr.buildIndex()
+	return tr
+}
+
+// stickyRuleOver scrolls until the row under the header's rule holds want, and
+// answers the rule as painted.
+func stickyRuleOver(t *testing.T, tr *transcript, want string) string {
+	t.Helper()
+	_, maxOff := tr.layoutNow()
+	for off := 1; off <= maxOff; off++ {
+		tr.offset = off
+		lines := tr.stickyLines("", selectionSpan{})
+		if len(lines) == 0 {
+			continue
+		}
+		below := stripANSI(tr.lineAt(tr.offset + len(lines)))
+		if strings.Contains(below, want) {
+			return stripANSI(lines[len(lines)-1])
+		}
+	}
+	t.Fatalf("no offset puts %q under the header's rule", want)
+	return ""
+}
+
+// A NODE IS THE BOUNDARY, NOT ITS GUTTER. A tool's body carries the gutter and
+// its header row does not, so a rule between the two cuts ONE block and says
+// so, where a rule above a block that starts there says nothing.
+func TestStickyRuleReadsBothSidesOfTheCut(t *testing.T) {
+	// One line of question: nothing of it is left under the rule, so the only
+	// stroke is the tool's body, cut from its header above.
+	one := quotedPager(t, 1)
+	if rule := stickyRuleOver(t, one, "(no output)"); !strings.HasPrefix(rule, "──┬─") {
+		t.Errorf("a tool cut under its own header: %q", rule)
+	}
+	if rule := stickyRuleOver(t, one, "$ grep"); strings.ContainsAny(rule, "┬┴┼") {
+		t.Errorf("a tool that begins under the rule joins nothing: %q", rule)
+	}
+
+	// Several lines of question: its own gutter runs under the header too, so
+	// the rule carries the stroke for it as well.
+	many := quotedPager(t, 3)
+	if rule := stickyRuleOver(t, many, "(no output)"); !strings.HasPrefix(rule, "──┼─") {
+		t.Errorf("two cut lines make a crossing: %q", rule)
+	}
+	if rule := stickyRuleOver(t, many, "$ grep"); !strings.HasPrefix(rule, "──┴─") {
+		t.Errorf("the question alone is cut: %q", rule)
 	}
 }

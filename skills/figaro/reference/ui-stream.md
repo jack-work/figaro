@@ -624,16 +624,28 @@ conversation with a rule at the bottom. Both rules are crossed by the gutters
 that run down the left of thinking, steering and tool blocks, and a **junction**
 (`┬` above, `┴` below) is drawn where one is.
 
-A junction says ONE thing: *this line goes on past the rule*. So it is drawn
-only when the gutter is on both sides of it: the row the reader can see, and
-the row the chrome covers. The first row of a block sitting under the sticky
-header joins nothing (the line begins there); the last row of a block sitting
-against the floor joins nothing either (the line ends there); scroll one row
-and the same rule grows its junction, because now the block really is cut.
+A stroke says ONE thing: *this line goes on past the rule*. Each side is asked
+separately, so all four glyphs happen:
+
+| | the gutter above is cut | it is not |
+|---|---|---|
+| **the gutter below is cut** | `┼` | `┬` |
+| **it is not** | `┴` | `─` |
+
+"Cut" is a question about the BLOCK, not about the glyph on the next row: the
+row the reader sees carries a gutter, and the row the chrome hides just beyond
+it either draws the same gutter or belongs to the same block. That second half
+is what a tool needs. Its header row (`✓ $ grep …`) carries no gutter while its
+body does, so a rule between them cuts one line and wears `┬`; a rule above a
+tool that BEGINS under it wears nothing. A quoted question works the same way
+from the other side: one line of it ends against the rule and draws nothing,
+several lines run under the header and draw `┴`, and if the row below is cut
+too the two strokes meet as `┼`.
 
 `joinRule` in `transcript_sticky.go` is the whole of it, and both the header
 and the floor call it, which is why they cannot disagree again: the floor used
-to draw no junctions at all while the header drew one unconditionally.
+to draw no junctions at all while the header drew one unconditionally. The
+floor never wears a down stroke; there is nothing under it but the status bar.
 
 ## Steering: messages mid-turn
 

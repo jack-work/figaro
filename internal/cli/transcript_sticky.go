@@ -174,33 +174,98 @@ func (t *transcript) stickyLines(hl string, sel selectionSpan) []string {
 	out[0] = ldrender.OverlayRight(out[0], term.Dim(coordLabel(turn, inquiryNode, 0, t.coordFormat())+" "), t.w-ldrender.GutterCols)
 	out[0] = ldrender.OverlayGutter(out[0], q.gutter, t.w)
 	if above >= len(q.rows) {
-		// The header covers rows rather than pushing them down. Join only
-		// to the first row still visible below its rule, never a covered row.
-		// The covered row directly above it says whether the gutter is CUT by
-		// the rule or merely begins under it: see joinRule.
-		rule := t.transRule()
-		below := t.lineAt(t.offset + len(out) + 1)
-		hidden := t.lineAt(t.offset + len(out))
-		out = append(out, joinRule(rule, below, hidden, "┬"))
+		// The header COVERS rows rather than pushing them down, so a gutter
+		// may run under it on either side. The rule says which: see joinRule.
+		seen := len(out)
+		out = append(out, joinRule(t.transRule(),
+			t.stickyCut(q, rows, seen),
+			t.lineCut(t.offset+seen+1, t.offset+seen)))
 	}
 	return out
 }
 
-// joinRule ties a horizontal rule to the vertical gutter that crosses it.
-// A JUNCTION MEANS THE LINE GOES ON PAST THE RULE, and nothing else, so it is
-// drawn only where the gutter stands on BOTH sides: near, the row the reader
-// can see, and far, the row the chrome covers. A gutter that begins or ends
-// against the rule is a whole line already, and a junction there branches to
-// a block that is not there.
-func joinRule(rule, near, far, glyph string) string {
-	col, ok := gutterColumn(near)
-	if !ok || col >= displayWidth(rule) {
-		return rule
+// stickyCut is the gutter meeting the header's rule FROM ABOVE: the last
+// pinned row carries one, and the question goes on under the rule.
+func (t *transcript) stickyCut(q stickyQuestion, rows []transcriptRow, seen int) gutterCut {
+	cut := gutterCut{row: t.rowLine(rows[len(rows)-1], "", selectionSpan{})}
+	if seen < len(q.rows) {
+		cut.hidden = q.rows[seen].text
+		cut.sameBlock = q.rows[seen].ref == rows[len(rows)-1].ref
 	}
-	if other, ok := gutterColumn(far); !ok || other != col {
-		return rule
+	return cut
+}
+
+// lineCut is the gutter meeting a rule from the side the reader can see, where
+// `seen` is that row's absolute line and `hidden` the line the chrome covers
+// on the far side of the rule.
+func (t *transcript) lineCut(seen, hidden int) gutterCut {
+	ref := t.refAtLine(seen)
+	return gutterCut{
+		row:       t.lineAt(seen),
+		hidden:    t.lineAt(hidden),
+		sameBlock: ref.valid() && ref == t.refAtLine(hidden),
 	}
-	return ldrender.OverlayColumn(rule, col, glyph)
+}
+
+// refAtLine is the block an absolute line belongs to, or the zero ref for
+// chrome, a separator or a gap.
+func (t *transcript) refAtLine(i int) nodeRef {
+	k := t.index.entryAt(i)
+	if k < 0 {
+		return nodeRef{}
+	}
+	e := &t.index.entries[k]
+	return e.refAt(i - e.start)
+}
+
+// gutterCut is one side of a rule: the row the reader SEES there, plus what
+// the chrome hides immediately beyond it.
+type gutterCut struct {
+	row       string
+	hidden    string
+	sameBlock bool
+}
+
+// column answers where this side's gutter meets the rule, and whether the line
+// GOES ON past it: the hidden row draws the same gutter, or belongs to the
+// same block. The second half is what a tool block needs -- its header row
+// carries no gutter, but the body under it is the same block, so a rule
+// between them cuts one line, not two.
+func (c gutterCut) column() (int, bool) {
+	col, ok := gutterColumn(c.row)
+	if !ok {
+		return 0, false
+	}
+	if c.sameBlock {
+		return col, true
+	}
+	other, ok := gutterColumn(c.hidden)
+	return col, ok && other == col
+}
+
+// joinRule marks a rule where a block's vertical gutter is CUT by it. A stroke
+// says the line goes on past the rule on that side and nothing else: up when
+// the gutter above continues under it, down when the gutter below comes from
+// above it, ┼ where one line does both. A gutter that merely begins or ends
+// against the rule is a whole line already, and a junction there would branch
+// to a block that is not there.
+func joinRule(rule string, above, below gutterCut) string {
+	up, upOK := above.column()
+	down, downOK := below.column()
+	w := displayWidth(rule)
+	upOK = upOK && up < w
+	downOK = downOK && down < w
+	switch {
+	case upOK && downOK && up == down:
+		return ldrender.OverlayColumn(rule, up, "┼")
+	case upOK && downOK:
+		return ldrender.OverlayColumn(ldrender.OverlayColumn(rule, up, "┴"), down, "┬")
+	case upOK:
+		return ldrender.OverlayColumn(rule, up, "┴")
+	case downOK:
+		return ldrender.OverlayColumn(rule, down, "┬")
+	}
+	return rule
 }
 
 // gutterColumn is the column of a row's leading vertical rule, if it has one.
