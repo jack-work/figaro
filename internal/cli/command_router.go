@@ -289,8 +289,26 @@ func (in *interactiveInput) withSubject(argv []string) []string {
 	return append(append([]string{}, argv...), "--id", id)
 }
 
+// pagerUncapped drops `list`'s row cap inside the pager. The cap exists so a
+// shell prompt is not buried; the pager scrolls, and a reader who typed `:ls`
+// there means all of them. An explicit -a, -n or -j is left alone.
+func pagerUncapped(argv []string) []string {
+	if len(argv) == 0 || (argv[0] != "ls" && argv[0] != "list") {
+		return argv
+	}
+	for _, a := range argv[1:] {
+		switch {
+		case a == "--", a == "-a", a == "--all", a == "-j", a == "--json":
+			return argv
+		case a == "-n", a == "--limit", strings.HasPrefix(a, "-n"), strings.HasPrefix(a, "--limit="):
+			return argv
+		}
+	}
+	return append(append([]string{}, argv...), "--all")
+}
+
 func (in *interactiveInput) runThroughRouter(argv []string) {
-	argv = in.withSubject(argv)
+	argv = in.withSubject(pagerUncapped(argv))
 	in.note("…" + strings.Join(argv, " "))
 	go func() {
 		out, code := in.routeCaptured(argv)

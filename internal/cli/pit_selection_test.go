@@ -161,6 +161,26 @@ func TestLiveFormRouting(t *testing.T) {
 	}
 }
 
+// In the pager `:ls` is uncapped: the panel scrolls, so the shell's ten-row
+// cap answers a question nobody asked there. A cap the reader typed stands.
+func TestPagerLsIsUncapped(t *testing.T) {
+	for _, tc := range []struct{ line, want string }{
+		{"ls", "ls --all"},
+		{"list", "list --all"},
+		{"ls -g", "ls -g --all"},
+		{"ls abc12345", "ls abc12345 --all"},
+		{"ls -n 3", "ls -n 3"},
+		{"ls --limit=3", "ls --limit=3"},
+		{"ls -a", "ls -a"},
+		{"ls -j", "ls -j"},
+		{"state", "state"},
+	} {
+		if got := strings.Join(pagerUncapped(tokenize(tc.line)), " "); got != tc.want {
+			t.Errorf("pagerUncapped(%q) = %q, want %q", tc.line, got, tc.want)
+		}
+	}
+}
+
 // The page position is the last thing on the rule.
 func TestRuleLineEndsWithThePosition(t *testing.T) {
 	s := newSessionStatus("dac6cb6d", time.Now())
