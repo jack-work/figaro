@@ -10,17 +10,25 @@ import "strings"
 // answer is swallowed) plus a pinned notice, which is the one alert that does
 // not retire on its own: it stands for exactly as long as the question does.
 
-// confirmAsk is the pending question: the sentence, and what a yes runs.
+// confirmAsk is the pending question: the sentence, what a yes runs, and the
+// pit the question was asked from, which comes back either way. A reader who
+// says no must find their list exactly where they left it.
 type confirmAsk struct {
 	prompt string
 	yes    func()
+	behind pit
 }
 
 // askConfirm puts the question up. The caller's action runs on the input
 // goroutine, so it must hand off anything that dials, exactly as every other
 // hook here does.
 func (t *transcript) askConfirm(prompt string, yes func()) {
-	t.confirm = &confirmAsk{prompt: prompt, yes: yes}
+	// THE PIT UNDERNEATH IS NOT CLOSED, it is set aside: showList would close
+	// a hosted view and drop a list's cursor, and the question is a moment,
+	// not a new place to be.
+	behind := t.pit
+	t.confirm = &confirmAsk{prompt: prompt, yes: yes, behind: behind}
+	t.pit = pit{}
 	t.pit.showList(pitConfirm, "", []pitRow{staticRow("  " + prompt + "  [y/N]")})
 	t.status.pinNotice(prompt)
 	t.focused = focusPit
@@ -30,9 +38,13 @@ func (t *transcript) askConfirm(prompt string, yes func()) {
 // clearConfirm takes the question down and the notice with it, in that order:
 // the bar must not be left holding a sentence about a question nobody can see.
 func (t *transcript) clearConfirm() {
+	ask := t.confirm
 	t.confirm = nil
 	if t.showing(pitConfirm) {
-		t.pit.close()
+		t.pit = pit{}
+		if ask != nil {
+			t.pit = ask.behind
+		}
 	}
 	t.status.setNotice("")
 }

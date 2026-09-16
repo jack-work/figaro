@@ -387,21 +387,24 @@ func (in *interactiveInput) killAria(ctx context.Context, id string, recursive b
 	if err != nil {
 		return "", err
 	}
+	// MOVE BEFORE YOU KILL. The pager holds the subject's socket; killing the
+	// aria it is watching closes that connection under the session, which
+	// ends it whatever the successor was going to be. So the successor is
+	// decided, attended, and only then does the old aria die.
 	onScreen := id == in.currentID()
-	successor := ""
-	if onScreen {
-		successor = in.successorFor(ctx, acli, id, prefer)
-	}
-	if err := acli.Kill(ctx, id, recursive); err != nil {
-		return "", fmt.Errorf("kill %s: %w", id, err)
-	}
-	in.mu.Lock()
-	in.jumps.forget(id)
-	in.mu.Unlock()
 	if !onScreen {
+		if err := acli.Kill(ctx, id, recursive); err != nil {
+			return "", fmt.Errorf("kill %s: %w", id, err)
+		}
+		in.forgetAria(id)
 		return "killed " + id, nil
 	}
+	successor := in.successorFor(ctx, acli, id, prefer)
 	if successor == "" {
+		if err := acli.Kill(ctx, id, recursive); err != nil {
+			return "", fmt.Errorf("kill %s: %w", id, err)
+		}
+		in.forgetAria(id)
 		in.leaveSession()
 		return "killed " + id + ": nothing left to attend", nil
 	}
@@ -409,7 +412,18 @@ func (in *interactiveInput) killAria(ctx context.Context, id string, recursive b
 	if aerr != nil {
 		return "", aerr
 	}
+	if err := acli.Kill(ctx, id, recursive); err != nil {
+		return "", fmt.Errorf("kill %s: %w", id, err)
+	}
+	in.forgetAria(id)
 	return "killed " + id + "; " + note, nil
+}
+
+// forgetAria drops a dead aria from the path, so no hop can land on it.
+func (in *interactiveInput) forgetAria(id string) {
+	in.mu.Lock()
+	in.jumps.forget(id)
+	in.mu.Unlock()
 }
 
 // askKill puts the question up and runs the kill only on a yes. The question

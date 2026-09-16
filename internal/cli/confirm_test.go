@@ -69,3 +69,25 @@ func TestConfirm_TheNoticeStandsWhileTheQuestionDoes(t *testing.T) {
 		t.Fatalf("the notice must clear with the question: %q", note)
 	}
 }
+
+// The question is a moment, not a place: the list it was asked from is still
+// there afterwards, with its cursor where the reader left it.
+func TestConfirm_TheListSurvivesTheQuestion(t *testing.T) {
+	tr, _ := visualFixture(t)
+	tr.dropRow = func(pit, id, next string) {}
+	tr.pit.showList(pitOutput, ":ls", []pitRow{
+		{text: "  aria1234", id: "aria1234", yank: "aria1234"},
+		{text: "  aria5678", id: "aria5678", yank: "aria5678"},
+	})
+	tr.focused = focusPit
+	tr.pit.moveSelection(1) // stand on the second row
+	tr.key('x')
+	tr.key('n')
+	if tr.pit.id != pitOutput {
+		t.Fatalf("the listing did not come back: pit = %q", tr.pit.id)
+	}
+	row, ok := tr.pit.selected()
+	if !ok || row.id != "aria5678" {
+		t.Fatalf("the cursor moved across the question: %+v", row)
+	}
+}
