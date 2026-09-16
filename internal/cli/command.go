@@ -352,6 +352,162 @@ func (in *interactiveInput) attendFromPager(id string) {
 	in.commandAsync(func(ctx context.Context) (string, error) { return in.attendNote(ctx, id) })
 }
 
+// ---------------------------------------------------------------------------
+// kill, and where the transcript goes afterwards.
+
+// commandKill is `:kill` and the 'x' key on a row of a listing. Killing the
+// aria ON SCREEN leaves the pager pointed at a node that no longer exists, so
+// this decides the successor BEFORE the kill (a dead aria cannot be asked who
+// its parent was) and attends it: the jumplist's previous aria, else the
+// parent, and with neither the session ends.
+func (in *interactiveInput) commandKill(ctx context.Context, args []string) (string, error) {
+	spec, recursive, err := parseKillArgs(args)
+	if err != nil {
+		return "", err
+	}
+	id := in.currentID()
+	if spec != "" {
+		resolved, _, rerr := in.resolve(ctx, spec)
+		if rerr != nil {
+			return "", fmt.Errorf("kill: %w", rerr)
+		}
+		id = resolved
+	}
+	if id == "" {
+		return "", errors.New("kill: no aria named and none on screen")
+	}
+	acli, err := in.angelus()
+	if err != nil {
+		return "", err
+	}
+	onScreen := id == in.currentID()
+	successor := ""
+	if onScreen {
+		successor = in.successorFor(ctx, acli, id)
+	}
+	if err := acli.Kill(ctx, id, recursive); err != nil {
+		return "", fmt.Errorf("kill %s: %w", id, err)
+	}
+	in.mu.Lock()
+	in.jumps.forget(id)
+	in.mu.Unlock()
+	if !onScreen {
+		return "killed " + id, nil
+	}
+	if successor == "" {
+		in.leaveSession()
+		return "killed " + id + ": nothing left to attend", nil
+	}
+	note, aerr := in.attendNote(ctx, successor)
+	if aerr != nil {
+		return "", aerr
+	}
+	return "killed " + id + "; " + note, nil
+}
+
+// parseKillArgs reads kill's own flags off the ':' box's argv.
+func parseKillArgs(args []string) (spec string, recursive bool, err error) {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "-r" || a == "--recursive":
+			recursive = true
+		case a == "--id" || a == "-i":
+			if i+1 < len(args) {
+				i++
+				spec = args[i]
+			}
+		case strings.HasPrefix(a, "--id="):
+			spec = strings.TrimPrefix(a, "--id=")
+		case strings.HasPrefix(a, "-"):
+			return "", false, fmt.Errorf("kill: unknown flag %s", a)
+		default:
+			spec = a
+		}
+	}
+	return spec, recursive, nil
+}
+
+// successorFor answers where the transcript stands once id is gone: the most
+// recent aria in this session's jumplist that is still alive, else the parent
+// id lists for it. An aria forked from nothing, in a session with no history,
+// has no answer and the caller ends the session.
+func (in *interactiveInput) successorFor(ctx context.Context, acli *sdk.Angelus, id string) string {
+	resp, err := acli.List(ctx)
+	if err != nil {
+		return ""
+	}
+	alive := make(map[string]bool, len(resp.Figaros))
+	parent := ""
+	for _, f := range resp.Figaros {
+		alive[f.ID] = true
+		if f.ID != id {
+			continue
+		}
+		parent = f.Present
+		if parent == "" {
+			parent = f.Parent
+		}
+	}
+	in.mu.Lock()
+	trail := in.jumps.trail()
+	in.mu.Unlock()
+	for i := len(trail) - 1; i >= 0; i-- {
+		if trail[i] != id && alive[trail[i]] {
+			return trail[i]
+		}
+	}
+	if parent != "" && alive[parent] {
+		return parent
+	}
+	return ""
+}
+
+// attendParentFromPager is '^': attend whoever this aria was forked from.
+func (in *interactiveInput) attendParentFromPager() {
+	in.commandAsync(func(ctx context.Context) (string, error) {
+		id := in.currentID()
+		if id == "" {
+			return "", errors.New("no aria on screen")
+		}
+		acli, err := in.angelus()
+		if err != nil {
+			return "", err
+		}
+		resp, lerr := acli.List(ctx)
+		if lerr != nil {
+			return "", fmt.Errorf("parent: %w", lerr)
+		}
+		parent := ""
+		for _, f := range resp.Figaros {
+			if f.ID != id {
+				continue
+			}
+			parent = f.Present
+			if parent == "" {
+				parent = f.Parent
+			}
+			break
+		}
+		// A FORM IS NOT A PARENT TO ATTEND. A top-level aria hangs under its
+		// outfit stump, and attend refuses a form with a sentence about
+		// binding. Answer here instead of sending the reader to that wall.
+		if parent == "" || strings.HasPrefix(parent, "@") {
+			return id + " has no parent aria: it is top-level", nil
+		}
+		return in.attendNote(ctx, parent)
+	})
+}
+
+// leaveSession ends the session the way Ctrl-D does, from a goroutine that is
+// not the input loop.
+func (in *interactiveInput) leaveSession() {
+	select {
+	case in.disconnectCh <- struct{}{}:
+	default:
+	}
+}
+
 func (in *interactiveInput) attendNote(ctx context.Context, id string) (string, error) {
 	return in.attendNoteAs(ctx, id, arrivalNew)
 }
@@ -781,6 +937,7 @@ func (in *interactiveInput) wireHooks() {
 	in.lt.tr.dropRow = in.dropPitRow
 	in.lt.tr.attendAria = in.attendFromPager
 	in.lt.tr.ariaHop = in.hopAria
+	in.lt.tr.attendParent = in.attendParentFromPager
 	// The hooks the pager calls FROM DISPATCH hand off to a goroutine: that
 	// path already holds the render lock, and taking it twice freezes.
 	in.lt.tr.openForm = func() { go in.openLive("form show", "", false) }
@@ -852,7 +1009,14 @@ func (in *interactiveInput) seedSubject(gen uint64) {
 // pit. Today only the queue can be dropped from; the switch is here rather
 // than in the transcript because every arm of it is an RPC.
 func (in *interactiveInput) dropPitRow(name, id string) {
+	// A ROW THAT NAMES AN ARIA IS KILLED, wherever it was listed. Only the
+	// queue counts by something else, and its ids are numbers.
 	if name != "queue" {
+		if rpc.ValidateAriaID(id) == nil {
+			in.commandAsync(func(ctx context.Context) (string, error) {
+				return in.commandKill(ctx, []string{id})
+			})
+		}
 		return
 	}
 	n, err := strconv.ParseUint(id, 10, 64)

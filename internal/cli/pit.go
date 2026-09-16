@@ -137,6 +137,14 @@ func (d *pit) showList(id pitID, title string, rows []pitRow) {
 	d.body = newPicker(rows)
 }
 
+// focus selects the row carrying id, when the open list has one.
+func (d *pit) focus(id string) bool {
+	if p := d.list(); p != nil {
+		return p.focus(id)
+	}
+	return false
+}
+
 // visible is how many rows the list may draw inside the room the pane has
 // already been asked for (transcript.pitRoom). It must not compute that room
 // itself: the bar is three rows when it wraps, and a pit that assumed one

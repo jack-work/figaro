@@ -94,6 +94,22 @@ func (p *picker) setRows(rows []pitRow, keepID string) {
 	p.follow()
 }
 
+// focus puts the cursor on the row carrying id and scrolls it into view.
+// Reports false when no selectable row carries it, leaving the cursor alone.
+func (p *picker) focus(id string) bool {
+	if id == "" {
+		return false
+	}
+	for i, r := range p.rows {
+		if r.id == id && r.selectable() {
+			p.cursor = i
+			p.follow()
+			return true
+		}
+	}
+	return false
+}
+
 // hasCursor reports whether this list is one you choose in as well as read.
 func (p *picker) hasCursor() bool { return p.cursor >= 0 }
 

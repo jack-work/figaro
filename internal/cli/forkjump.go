@@ -172,8 +172,8 @@ func pagerAttendFork(t *transcript) {
 	t.attendAria(best)
 }
 
-// pagerAttendRow is 'a' in a pit: attend the aria the selected row names.
-// SELECTABLE MEANS HAS AN ID, and in a list of arias that id is one.
+// pagerAttendRow is 'a' (and Enter) in a pit: attend the aria the selected
+// row names. SELECTABLE MEANS HAS AN ID, and in a list of arias that id is one.
 func pagerAttendRow(t *transcript) {
 	row, ok := t.pit.selected()
 	if !ok || row.id == "" {
@@ -195,6 +195,16 @@ func pagerAttendRow(t *transcript) {
 
 func pagerAriaBack(t *transcript)    { t.hopAria(-1) }
 func pagerAriaForward(t *transcript) { t.hopAria(1) }
+
+// pagerAttendParent is '^': attend the aria this one was forked from. An
+// aria whose parent is null says so rather than moving.
+func pagerAttendParent(t *transcript) {
+	if t.attendParent == nil {
+		t.note("this session cannot attend (no shell to bind)")
+		return
+	}
+	t.attendParent()
+}
 
 func (t *transcript) hopAria(dir int) {
 	if t.ariaHop == nil {
@@ -273,6 +283,36 @@ func (j *ariaJumplist) stepTo(to string) {
 		return
 	}
 	j.visit(to)
+}
+
+// trail is the path so far, oldest first, up to and including where the
+// reader stands. What is ahead of the cursor is a future, not a history.
+func (j *ariaJumplist) trail() []string {
+	if j.pos < 0 || len(j.ids) == 0 {
+		return nil
+	}
+	return append([]string(nil), j.ids[:min(j.pos+1, len(j.ids))]...)
+}
+
+// forget drops every mention of an aria: a killed one must not be somewhere
+// ^O can land.
+func (j *ariaJumplist) forget(id string) {
+	kept := j.ids[:0]
+	moved := 0
+	for i, v := range j.ids {
+		if v == id {
+			if i <= j.pos {
+				moved++
+			}
+			continue
+		}
+		kept = append(kept, v)
+	}
+	j.ids = kept
+	j.pos = clampInt(j.pos-moved, -1, len(j.ids)-1)
+	if len(j.ids) == 0 {
+		j.pos = 0
+	}
 }
 
 // where is the list as the footer says it: "2/5".

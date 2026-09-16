@@ -92,13 +92,14 @@ func tokenize(line string) []string {
 //     aria shows it. So `attend` binds AND displays, where at a shell it only
 //     binds.
 //
-// Everything else -- ls, status, doctor, state, set, unset, queue, kill,
+// Everything else -- ls, status, doctor, state, set, unset, queue,
 // promote, gc, models, show... -- falls through to the real router untouched.
 var overlayVerbs = map[string]bool{
 	"listen": true,
 	"attend": true, "at": true,
 	"send": true, "s": true,
 	"new": true, "replay": true, "fork": true,
+	"kill":   true, // it can kill the aria on screen, and must then move
 	"import": true, // reads os.Stdin for `-` (portable.go)
 	"login":  true, // an interactive OAuth flow with its own prompts
 }
@@ -217,6 +218,10 @@ func (in *interactiveInput) runOverlay(verb string, args []string) {
 				return "", err
 			}
 			return in.switchSubject(ctx, spec, true)
+		})
+	case "kill":
+		in.commandAsync(func(ctx context.Context) (string, error) {
+			return in.commandKill(ctx, args)
 		})
 	case "send", "s":
 		in.commandAsync(func(ctx context.Context) (string, error) {

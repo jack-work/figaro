@@ -91,8 +91,10 @@ type transcript struct {
 	// the same law as openForm above.
 	attendAria func(id string)
 	ariaHop    func(dir int)
-	w, h       int
-	tick       int
+	// attendParent is '^': attend whoever this aria was forked from.
+	attendParent func()
+	w, h         int
+	tick         int
 
 	prev   []string // last painted screen (the frame the terminal is holding)
 	prefix string   // one-shot escapes emitted with the next frame (see enter)
@@ -1175,6 +1177,10 @@ func padTo(s string, n int) string {
 func (t *transcript) setCmdOut(title string, rows []pitRow) {
 	t.queuedByKey = false
 	t.pit.showList(pitOutput, ":"+title, rows)
+	// A LISTING OPENS ON WHERE YOU ARE. The top row is a stranger; the aria
+	// on screen is the one a reader navigates from, so the cursor starts
+	// there and the window scrolls to hold it.
+	t.pit.focus(t.status.figaroID)
 	t.focused = focusPit
 	t.render()
 }

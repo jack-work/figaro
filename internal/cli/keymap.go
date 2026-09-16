@@ -296,6 +296,14 @@ var keymap = []keyBinding{
 	// `:attend` does, through the same body.
 	{chord: byteChord('a'), modes: inTranscript, open: opensPager, help: helpAttend, pager: pagerAttendFork},
 	{chord: byteChord('a'), modes: inPanel, open: opensPager, help: helpAttend, pager: pagerAttendRow},
+	// Enter on a row that names an aria is the same attend: the gesture a
+	// list invites. A row that names anything else says so and stays put.
+	{chord: byteChord(0x0d), modes: inPanel, open: opensPager, help: helpAttend, pager: pagerAttendRow},
+	{chord: byteChord(0x0a), modes: inPanel, open: opensPager, help: helpAttend, pager: pagerAttendRow},
+	// '^' is one step up the fork tree: attend whoever this aria came from.
+	// The letter is vim's "first text on the line", which the transcript has
+	// no use for outside visual mode, where it keeps that meaning.
+	{chord: byteChord('^'), modes: inTranscript, open: opensPager, help: helpAttend, pager: pagerAttendParent},
 
 	// -- pager level: the jumplist -----------------------------------------
 	//
