@@ -129,7 +129,10 @@ type transcript struct {
 	gate    func() bool // "may I paint now?", a false answer owes a later flush()
 	painted func()      // notified after each painted frame
 
-	inSearch   bool
+	inSearch bool
+	// searchDir is which way the query walks: 1 for '/', -1 for '?'. n
+	// repeats it, N reverses, as in vim.
+	searchDir  int
 	query      string
 	matchQuery string // persistent query: highlights + n/N target
 
@@ -259,6 +262,7 @@ func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria
 func (t *transcript) enter() {
 	t.active, t.follow, t.prev = true, true, nil
 	t.pendG, t.pendF, t.inSearch, t.query, t.matchQuery = false, false, false, "", ""
+	t.searchDir = 1
 	t.inJump, t.jumpNote, t.jump = false, "", nil
 	t.cmdline.reset()
 	t.completions = nil
@@ -2046,12 +2050,32 @@ func pagerPendingTop(t *transcript) {
 	}
 }
 
-func pagerSearchPrompt(t *transcript) { t.inSearch, t.query = true, "" }
-func pagerFindNext(t *transcript)     { t.findRepeat(1) }
-func pagerFindPrev(t *transcript)     { t.findRepeat(-1) }
-func pagerHelpPanel(t *transcript)    { t.openHelpPit() }
-func pagerStatusPanel(t *transcript)  { t.openStatusPit() }
-func pagerQueuedPanel(t *transcript)  { t.openQueueFromKey() }
+func pagerSearchPrompt(t *transcript) { t.inSearch, t.query, t.searchDir = true, "", 1 }
+
+// pagerSearchPromptBack is '?': the same box, walking backwards.
+func pagerSearchPromptBack(t *transcript) { t.inSearch, t.query, t.searchDir = true, "", -1 }
+
+// pagerHelpPit is 'h'. '?' used to open it and is the backward search now.
+func pagerHelpPit(t *transcript) { t.openHelpPit() }
+
+// pagerListPit is 'l': the listing, in the pager, through the same door the
+// ':' box uses. 'L' is the home view.
+func pagerListPit(t *transcript) { t.runListCommand("ls") }
+
+func pagerListHome(t *transcript) { t.runListCommand("ls -H") }
+
+func (t *transcript) runListCommand(line string) {
+	if t.command == nil {
+		t.note("this session cannot run commands")
+		return
+	}
+	t.command(line)
+}
+func pagerFindNext(t *transcript)    { t.findRepeat(1) }
+func pagerFindPrev(t *transcript)    { t.findRepeat(-1) }
+func pagerHelpPanel(t *transcript)   { t.openHelpPit() }
+func pagerStatusPanel(t *transcript) { t.openStatusPit() }
+func pagerQueuedPanel(t *transcript) { t.openQueueFromKey() }
 
 // pagerFormPit is 'S': the form, on the same terms as '?' and 'Q'. S for the
 // verb's other spelling, `figaro state`.
@@ -2214,6 +2238,14 @@ func panelDismiss(t *transcript) { t.closePanels() }
 func searchAccept(t *transcript) {
 	t.inSearch = false
 	t.matchQuery = t.query
+	// A PIT SEARCHES ITS OWN ROWS. The reader is inside a list, and the
+	// transcript scrolling underneath it is not what they asked for.
+	if t.pit.open() && t.pit.list() != nil {
+		if !t.pit.findRow(t.query, t.searchStep()) {
+			t.note("no row matching " + t.query)
+		}
+		return
+	}
 	t.find(t.query)
 }
 
@@ -2250,8 +2282,9 @@ func (t *transcript) find(q string) {
 	if line, ok := t.visualCursorLine(); ok {
 		from = line // in visual mode the search walks from the cursor
 	}
+	dir := t.searchStep()
 	for i := 0; i < total; i++ {
-		idx := (from + 1 + i) % total
+		idx := ((from+dir*(i+1))%total + total) % total
 		if searchContains(t.lineAt(idx), q) {
 			t.landSearch(idx, q)
 			return
@@ -2297,6 +2330,7 @@ func (t *transcript) findRepeat(delta int) {
 	if line, ok := t.visualCursorLine(); ok {
 		from = line
 	}
+	delta *= t.searchStep()
 	start := from + delta
 	for i := 0; i < total; i++ {
 		idx := ((start+delta*i)%total + total) % total
@@ -2308,6 +2342,15 @@ func (t *transcript) findRepeat(delta int) {
 	// Nothing in the loaded window; page older history in and keep looking.
 	t.search = &transcriptSearch{query: q, offset: t.offset, follow: t.follow}
 	t.stopFollowing()
+}
+
+// searchStep is the direction the query walks, defaulting forward for a
+// transcript built before a search was ever opened.
+func (t *transcript) searchStep() int {
+	if t.searchDir < 0 {
+		return -1
+	}
+	return 1
 }
 
 // activeHighlight is what lines() paints as reverse-video match spans:
@@ -2748,6 +2791,7 @@ func (t *transcript) retarget(client *aria.Client, figaroID string, status *sess
 	t.jump, t.jumpNote = nil, ""
 	t.search = nil
 	t.inSearch, t.query, t.matchQuery = false, "", ""
+	t.searchDir = 1
 	t.pendG, t.pendF = false, false
 
 	// The pager is repainted whole rather than diffed: prev describes rows that

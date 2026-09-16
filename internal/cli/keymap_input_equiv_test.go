@@ -121,7 +121,7 @@ var inputStates = map[string]func(testing.TB) *inputProbe{
 	},
 	"panel": func(tb testing.TB) *inputProbe {
 		p := newInputProbe(tb, true)
-		p.in.consume([]byte("?"))
+		p.in.consume([]byte("h"))
 		return p
 	},
 	"jump": func(tb testing.TB) *inputProbe {
@@ -398,6 +398,8 @@ var inputOracle = []struct {
 		"alt m": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		// 'f' ARMS THE FORK JUMP, 2026-09-12 (f j / f k): an opener, so from
 		// incipit it yanks the pager up and waits there for its direction.
+		"0x4c": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"0x5e": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x66": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		// 'a' IS ATTEND, 2026-09-12: the fork point's aria in the transcript,
 		// the selected row's in a pit. An opener; the attend itself needs a
@@ -421,6 +423,8 @@ var inputOracle = []struct {
 		// behaves at this level exactly as ^O does -- an opener, so it yanks
 		// the pager up from incipit, and an INPUT-level row, so it does not
 		// dismiss an open panel the way an unbound key would.
+		"0x68": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"0x6c": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x6d": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x73": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		// `t` IS THE TOOL BODY, 2026-09-12: the half of Enter that opens a
@@ -445,7 +449,7 @@ var inputOracle = []struct {
 		"0x21":            "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=true Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x2f":            "stop=false rest=\"\" act=true off:bottom fol=true srch=true q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x3a":            "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"\"",
-		"0x3f":            "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"0x3f":            "stop=false rest=\"\" act=true off:bottom fol=true srch=true q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x47":            "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x51":            "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=true g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x64":            "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
@@ -607,8 +611,13 @@ var inputOracle = []struct {
 		// 'a' IS ATTEND, 2026-09-12: the fork point's aria in the transcript,
 		// the selected row's in a pit. An opener; the attend itself needs a
 		// session this probe does not build.
+		"0x0a": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"0x0d": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"0x3f": "stop=false rest=\"\" act=true off:bottom fol=true srch=true q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"0x4c": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x61": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		// VISUAL MODE, 2026-09-11: see the incipit row.
+		"0x6c": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x76": "stop=false rest=\"\" act=true off:vis fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x56": "stop=false rest=\"\" act=true off:vis fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		// REGENERATED 2026-08-29 for 'S' and 'T'. Two new panel keys: S opens
@@ -659,7 +668,7 @@ var inputOracle = []struct {
 		"0x0c": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x14": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x21": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=true Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
-		"0x2f": "stop=false rest=\"\" act=true off:bottom fol=true srch=true q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"0x2f": "stop=false rest=\"\" act=true off:bottom fol=true srch=true q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x3a": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"\"",
 		"0x48": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x51": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=true g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
@@ -806,6 +815,7 @@ var inputOracle = []struct {
 		// box it is inert, like every other pager chord in there.
 		"alt m": "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		// VISUAL MODE, 2026-09-11: see the incipit row.
+		"0x68":            "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x76":            "stop=false rest=\"\" act=true off:vis fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x56":            "stop=false rest=\"\" act=true off:vis fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x73":            "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
@@ -816,7 +826,7 @@ var inputOracle = []struct {
 		"0x21":            "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=true Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x2f":            "stop=false rest=\"\" act=true off:bottom fol=true srch=true q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x3a":            "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"\"",
-		"0x3f":            "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"0x3f":            "stop=false rest=\"\" act=true off:bottom fol=true srch=true q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x51":            "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=true g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x67":            "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=true sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x6b":            "stop=false rest=\"\" act=true off:-1 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
@@ -841,6 +851,7 @@ var inputOracle = []struct {
 		// box it is inert, like every other pager chord in there.
 		"alt m": "stop=false rest=\"\" act=true off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		// VISUAL MODE, 2026-09-11: see the incipit row.
+		"0x68":            "stop=false rest=\"\" act=true off:same fol=false srch=false q=\"\" h=true s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x76":            "stop=false rest=\"\" act=true off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x56":            "stop=false rest=\"\" act=true off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x03":            "stop=false rest=\"\" act=true off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"78 bytes\" cpfail=false cping=false jmp=false jq=\"\"",
@@ -850,7 +861,7 @@ var inputOracle = []struct {
 		"0x21":            "stop=false rest=\"\" act=true off:same fol=false srch=false q=\"\" h=false s=true Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x2f":            "stop=false rest=\"\" act=true off:same fol=false srch=true q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x3a":            "stop=false rest=\"\" act=true off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"\"",
-		"0x3f":            "stop=false rest=\"\" act=true off:same fol=false srch=false q=\"\" h=true s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"0x3f":            "stop=false rest=\"\" act=true off:same fol=false srch=true q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x47":            "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x51":            "stop=false rest=\"\" act=true off:same fol=false srch=false q=\"\" h=false s=false Q=true g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x64":            "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",

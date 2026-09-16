@@ -326,7 +326,13 @@ var keymap = []keyBinding{
 	{chord: navChord(navEnd), modes: inTranscript, open: opensPager, help: helpHomeEnd, pager: pagerTail},
 
 	// -- pager level: search -----------------------------------------------
-	{chord: byteChord('/'), modes: inTranscript, open: opensPager, help: helpSearch, pager: pagerSearchPrompt},
+	//
+	// '/' forward, '?' backward, as in vim and less. '?' used to open the
+	// help panel, which is 'h' now: a reader who wants the keys presses the
+	// letter, and the punctuation belongs to the motion it means everywhere
+	// else. In a pit the same box walks the ROWS (searchAccept).
+	{chord: byteChord('/'), modes: inTranscript | inPanel, open: opensPager, help: helpSearch, pager: pagerSearchPrompt},
+	{chord: byteChord('?'), modes: inTranscript | inPanel, open: opensPager, help: helpSearch, pager: pagerSearchPromptBack},
 	{
 		chord: byteChord('n'), modes: inTranscript,
 		open: staysInline, why: "repeat search with no query yet: opens onto a no-op",
@@ -354,9 +360,13 @@ var keymap = []keyBinding{
 	},
 
 	// -- pager level: panels -----------------------------------------------
-	{chord: byteChord('?'), modes: inTranscript, open: opensPager, help: helpHelpPanel, pager: pagerHelpPanel},
+	{chord: byteChord('h'), modes: inTranscript, open: opensPager, help: helpHelpPanel, pager: pagerHelpPanel},
 	{chord: byteChord('!'), modes: inTranscript, open: opensPager, help: helpStatusPanel, pager: pagerStatusPanel},
 	{chord: byteChord('Q'), modes: inTranscript, open: opensPager, help: helpQueuedPanel, pager: pagerQueuedPanel},
+	// 'l' is the listing and 'L' is the home listing: `:ls` and `:ls -H` under
+	// a keystroke, uncapped because the pager scrolls (pagerUncapped).
+	{chord: byteChord('l'), modes: inTranscript | inPanel, open: opensPager, help: helpListPit, pager: pagerListPit},
+	{chord: byteChord('L'), modes: inTranscript | inPanel, open: opensPager, help: helpListPit, pager: pagerListHome},
 	// 'S' is the form: `figaro state` and `figaro form` are one command, and S
 	// is the letter a reader of the CLI already has.
 	{chord: byteChord('S'), modes: inTranscript, open: opensPager, help: helpFormPit, pager: pagerFormPit},
@@ -456,6 +466,7 @@ var keymap = []keyBinding{
 	{chord: byteChord('}'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualParaNext},
 	// Search from the cursor: the box, and n/N, land the cursor on the hit.
 	{chord: byteChord('/'), modes: inVisual, open: opensPager, help: helpSearch, pager: pagerSearchPrompt},
+	{chord: byteChord('?'), modes: inVisual, open: opensPager, help: helpSearch, pager: pagerSearchPromptBack},
 	{chord: byteChord('n'), modes: inVisual, open: staysInline, why: "repeat search with no query yet: opens onto a no-op", help: helpSearchRepeat, pager: pagerFindNext},
 	{chord: byteChord('N'), modes: inVisual, open: staysInline, why: "repeat search with no query yet: opens onto a no-op", help: helpSearchRepeat, pager: pagerFindPrev},
 	// ':' with a selection up opens the command line holding `<,>`: the
@@ -472,7 +483,7 @@ var keymap = []keyBinding{
 	// -- panel mode: the panel keys swallow their own keys -----------------
 	// Every OTHER key wipes the panel and then acts normally; that fallthrough
 	// lives in dispatch, not here, because it is a property of the mode.
-	{chord: byteChord('?'), modes: inPanel, open: opensPager, help: helpHelpPanel, pager: panelToggleHelp},
+	{chord: byteChord('h'), modes: inPanel, open: opensPager, help: helpHelpPanel, pager: panelToggleHelp},
 	{chord: byteChord('!'), modes: inPanel, open: opensPager, help: helpStatusPanel, pager: panelToggleStatus},
 	{chord: byteChord('Q'), modes: inPanel, open: opensPager, help: helpQueuedPanel, pager: panelToggleQueued},
 	{chord: byteChord('S'), modes: inPanel, open: opensPager, help: helpFormPit, pager: pagerFormPit},
@@ -713,6 +724,7 @@ const (
 	helpStatusPanel
 	helpQueuedPanel
 	helpHelpPanel
+	helpListPit
 	helpCmdHistory
 	helpCmdComplete
 	helpCmdEdit
@@ -753,7 +765,7 @@ var helpRows = []helpRow{
 	{helpScroll, "j/k · u/d · gg/G", "scroll · half-page · top/bottom"},
 	{helpArrows, "↑/↓ · PgUp/PgDn", "the same, on the arrow cluster"},
 	{helpHomeEnd, "Home / End", "top / bottom"},
-	{helpSearch, "/", "search (Enter jump · Esc cancel typing)"},
+	{helpSearch, "/ · ?", "search forward / backward (in a pit, its rows)"},
 	{helpSearchRepeat, "n / N", "next / previous match"},
 	{helpJump, ":", "command line: any figaro verb, or a coordinate (:12, :12.3, :0)"},
 	{helpCmdHistory, "(in :) ^P/^N · ^R", "command history · search it"},
@@ -790,7 +802,8 @@ var helpRows = []helpRow{
 	{helpQueuedPanel, "Q", "queued prompts panel"},
 	{helpFormPit, "S", "the form (state) in the pit"},
 	{helpFocus, "T", "read the conversation without closing the pit (again to go back)"},
-	{helpHelpPanel, "?", "close help"},
+	{helpListPit, "l / L", "list this aria's tree / the home tree, in the pit (Enter attends, x kills)"},
+	{helpHelpPanel, "h", "close help"},
 }
 
 // helpKeyColumn is the display width the key column is padded to; the help

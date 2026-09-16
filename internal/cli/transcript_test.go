@@ -188,9 +188,9 @@ func TestTranscript_HelpPanel(t *testing.T) {
 	}}}}, aria.Notify)
 	tr := newTranscript(ft, 60, 14, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
-	tr.key('?')
+	tr.key('h')
 	if !tr.showing("help") {
-		t.Fatalf("? should open the help panel")
+		t.Fatalf("h should open the help panel")
 	}
 	// A row from the TOP of the panel: helpLines clamps to the pane height and
 	// keeps the head (t.h-4 rows), so in a deliberately tiny 14-row fixture the
@@ -200,16 +200,16 @@ func TestTranscript_HelpPanel(t *testing.T) {
 	if scr := strings.Join(ft.Screen(), "\n"); !strings.Contains(scr, "scroll · half-page") {
 		t.Fatalf("help panel content missing:\n%s", scr)
 	}
-	tr.key('?')
+	tr.key('h')
 	if tr.showing("help") {
-		t.Fatalf("? should close the help panel")
+		t.Fatalf("h should close the help panel")
 	}
 	// THE HELP PANEL SCROLLS NOW, and that is the point: it is the list that
 	// tells you how to scroll, and it used to be the one list you could not --
 	// taller than the pane, it lost its bottom with no way to reach it. `j`
 	// therefore moves it and does NOT wipe it, which reverses the old
 	// any-key-dismisses rule for drawers that have something to move.
-	tr.key('?')
+	tr.key('h')
 	tr.key('j')
 	if !tr.showing("help") {
 		t.Fatalf("j should scroll the help panel, not wipe it")

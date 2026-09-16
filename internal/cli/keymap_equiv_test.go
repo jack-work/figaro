@@ -153,7 +153,7 @@ var oracleStates = map[string]func(*transcript){
 	"transcript":       func(tr *transcript) {},
 	"transcript+sel":   func(tr *transcript) { tr.selectNode(1, false); tr.render() },
 	"transcript+pendG": func(tr *transcript) { tr.key('g') },
-	"help":             func(tr *transcript) { tr.key('?') },
+	"help":             func(tr *transcript) { tr.key('h') },
 	"status":           func(tr *transcript) { tr.key('!') },
 	"queued":           func(tr *transcript) { tr.key('Q') },
 	"panel+sel":        func(tr *transcript) { tr.selectNode(1, false); tr.key('!') },
@@ -246,15 +246,21 @@ var pagerOracle = []struct {
 		// report when there is no session behind them to attend WITH, which
 		// is this fixture: a bare transcript with no hooks wired. The report
 		// is a bar notice, and the bar is what moves the offset here.
+		"0x0a": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x0d": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x0f": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		// 'a' IS ATTEND, 2026-09-12: in a pit it acts on the selected row
 		// (the aria a `:ls` line names), so it is a pit key and does not
 		// dismiss the pit. Nothing else here moves: the attend itself is the
 		// session's business, off this oracle's stage.
+		"0x3f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x4c": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x5e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x61": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		// VISUAL MODE, 2026-09-11: v/V close whatever pit is up, drop the node
 		// selection, detach from the tail and seed a visual selection on the
 		// viewport. off:vis is that seed; see offToken.
+		"0x6c": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x76": "off:vis fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+4:0",
 		"0x56": "off:vis fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+4:0",
 		// REGENERATED 2026-08-29 for 'S' and 'T'. Two new panel keys: S opens
@@ -296,7 +302,7 @@ var pagerOracle = []struct {
 		"PgUp": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"Up":   "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x21": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
-		"0x2f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x2f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x3a": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=none",
 		"0x51": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x78": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
@@ -432,10 +438,13 @@ var pagerOracle = []struct {
 		// (the aria a `:ls` line names), so it is a pit key and does not
 		// dismiss the pit. Nothing else here moves: the attend itself is the
 		// session's business, off this oracle's stage.
+		"0x0a": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
+		"0x0d": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x61": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		// VISUAL MODE, 2026-09-11: v/V close whatever pit is up, drop the node
 		// selection, detach from the tail and seed a visual selection on the
 		// viewport. off:vis is that seed; see offToken.
+		"0x68": "off:same fol=false srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x76": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+1:0",
 		"0x56": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+1:0",
 		// REGENERATED 2026-08-29 for 'S' and 'T'. Two new panel keys: S opens
@@ -476,9 +485,9 @@ var pagerOracle = []struct {
 		"PgDn": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"PgUp": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"Up":   "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
-		"0x2f": "off:same fol=false srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
+		"0x2f": "off:same fol=false srch=true q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x3a": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=true jq=\"\" vis=none",
-		"0x3f": "off:same fol=false srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
+		"0x3f": "off:same fol=false srch=true q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x51": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x78": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 	}},
@@ -488,15 +497,21 @@ var pagerOracle = []struct {
 		// report when there is no session behind them to attend WITH, which
 		// is this fixture: a bare transcript with no hooks wired. The report
 		// is a bar notice, and the bar is what moves the offset here.
+		"0x0a": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x0d": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x0f": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		// 'a' IS ATTEND, 2026-09-12: in a pit it acts on the selected row
 		// (the aria a `:ls` line names), so it is a pit key and does not
 		// dismiss the pit. Nothing else here moves: the attend itself is the
 		// session's business, off this oracle's stage.
+		"0x4c": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x5e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x61": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		// VISUAL MODE, 2026-09-11: v/V close whatever pit is up, drop the node
 		// selection, detach from the tail and seed a visual selection on the
 		// viewport. off:vis is that seed; see offToken.
+		"0x68": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x6c": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x76": "off:vis fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+4:0",
 		"0x56": "off:vis fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+4:0",
 		// REGENERATED 2026-08-29 for 'S' and 'T'. Two new panel keys: S opens
@@ -538,9 +553,9 @@ var pagerOracle = []struct {
 		"PgUp": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"Up":   "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x21": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
-		"0x2f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x2f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x3a": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=none",
-		"0x3f": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x3f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x78": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 	}},
 	{"search", "off:same fol=true srch=true q=\"ms\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
@@ -753,15 +768,21 @@ var pagerOracle = []struct {
 		// report when there is no session behind them to attend WITH, which
 		// is this fixture: a bare transcript with no hooks wired. The report
 		// is a bar notice, and the bar is what moves the offset here.
+		"0x0a": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x0d": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x0f": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		// 'a' IS ATTEND, 2026-09-12: in a pit it acts on the selected row
 		// (the aria a `:ls` line names), so it is a pit key and does not
 		// dismiss the pit. Nothing else here moves: the attend itself is the
 		// session's business, off this oracle's stage.
+		"0x4c": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x5e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x61": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		// VISUAL MODE, 2026-09-11: v/V close whatever pit is up, drop the node
 		// selection, detach from the tail and seed a visual selection on the
 		// viewport. off:vis is that seed; see offToken.
+		"0x68": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x6c": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x76": "off:vis fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+4:0",
 		"0x56": "off:vis fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+4:0",
 		// REGENERATED 2026-08-29 for 'S' and 'T'. Two new panel keys: S opens
@@ -802,13 +823,15 @@ var pagerOracle = []struct {
 		"PgDn": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"PgUp": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"Up":   "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
-		"0x2f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x2f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x3a": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=none",
-		"0x3f": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x3f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x51": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x78": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 	}},
 	{"transcript", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		"0x4c": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x5e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x61": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x09": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		// ^O AND TAB ARE THE JUMPLIST, 2026-09-12, and 'a' is attend. Both
@@ -819,6 +842,8 @@ var pagerOracle = []struct {
 		// VISUAL MODE, 2026-09-11: v/V close whatever pit is up, drop the node
 		// selection, detach from the tail and seed a visual selection on the
 		// viewport. off:vis is that seed; see offToken.
+		"0x68": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x6c": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x76": "off:vis fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+4:0",
 		"0x56": "off:vis fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+4:0",
 		"0x0e": "off:sel fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
@@ -826,7 +851,7 @@ var pagerOracle = []struct {
 		"0x21": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x2f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x3a": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=none",
-		"0x3f": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x3f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x51": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x67": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=true sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x6b": "off:-1 fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
@@ -836,6 +861,8 @@ var pagerOracle = []struct {
 		"Up":   "off:-1 fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 	}},
 	{"transcript+pendG", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		"0x4c": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x5e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x61": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x09": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		// ^O AND TAB ARE THE JUMPLIST, 2026-09-12, and 'a' is attend. Both
@@ -846,6 +873,8 @@ var pagerOracle = []struct {
 		// VISUAL MODE, 2026-09-11: v/V close whatever pit is up, drop the node
 		// selection, detach from the tail and seed a visual selection on the
 		// viewport. off:vis is that seed; see offToken.
+		"0x68": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x6c": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x76": "off:vis fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+4:0",
 		"0x56": "off:vis fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+4:0",
 		"0x0e": "off:sel fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
@@ -853,7 +882,7 @@ var pagerOracle = []struct {
 		"0x21": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x2f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x3a": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=none",
-		"0x3f": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x3f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x51": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x67": "off:top fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x6b": "off:-1 fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
@@ -865,6 +894,7 @@ var pagerOracle = []struct {
 	{"transcript+sel", "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none", map[string]string{
 		// VISUAL MODE, 2026-09-11: v/V drop the node selection (the two cannot
 		// both be active) and seed a visual one on the viewport.
+		"0x68": "off:same fol=false srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x76": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+1:0",
 		"0x56": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+1:0",
 		"0x10": "off:sel fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
@@ -872,7 +902,7 @@ var pagerOracle = []struct {
 		"0x21": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x2f": "off:same fol=false srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x3a": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=true jq=\"\" vis=none",
-		"0x3f": "off:same fol=false srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
+		"0x3f": "off:same fol=false srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x47": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x51": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x64": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
@@ -902,6 +932,7 @@ var pagerOracle = []struct {
 		"0x24": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=line+1:6",
 		"0x2f": "off:same fol=false srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=line+1:0",
 		"0x3a": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"<,>\" vis=line+1:0",
+		"0x3f": "off:same fol=false srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=line+1:0",
 		"0x48": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=line-3:0",
 		"0x4d": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=line+0:0",
 		"0x56": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+5:0",
@@ -925,6 +956,7 @@ var pagerOracle = []struct {
 		"0x2f": "off:same fol=false srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=char+0:2",
 		"0x30": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=char+0:0",
 		"0x3a": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"<,>\" vis=char+0:2",
+		"0x3f": "off:same fol=false srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=char+0:2",
 		"0x47": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=char+1:2",
 		"0x48": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=char-3:2",
 		"0x4c": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=char+1:2",
@@ -955,6 +987,7 @@ var pagerOracle = []struct {
 		"0x24": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+5:6",
 		"0x2f": "off:same fol=false srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+5:0",
 		"0x3a": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=cur+5:0",
+		"0x3f": "off:same fol=false srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+5:0",
 		"0x48": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+1:0",
 		"0x4d": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+4:0",
 		"0x56": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=line+0:0",
@@ -980,6 +1013,8 @@ var pagerOracle = []struct {
 	// the transcript's. Recorded from the behaviour the mode was built to
 	// have: it has no pre-refactor twin.
 	{"fork", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		"0x4c": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x5e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x61": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x09": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		// ^O AND TAB ARE THE JUMPLIST, 2026-09-12, and 'a' is attend. Both
@@ -992,10 +1027,12 @@ var pagerOracle = []struct {
 		"0x21": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x2f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x3a": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=none",
-		"0x3f": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x3f": "off:bottom fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x51": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x56": "off:vis fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+4:0",
 		"0x67": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=true sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x68": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x6c": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x75": "off:-5 fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x76": "off:vis fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+4:0",
 		"Home": "off:top fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",

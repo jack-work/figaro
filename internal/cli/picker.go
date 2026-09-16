@@ -110,6 +110,33 @@ func (p *picker) focus(id string) bool {
 	return false
 }
 
+// find moves the cursor onto the next row whose text holds q, walking in dir
+// and wrapping once around the list.
+func (p *picker) find(q string, dir int) bool {
+	if len(p.rows) == 0 {
+		return false
+	}
+	if dir == 0 {
+		dir = 1
+	}
+	from := p.cursor
+	if from < 0 {
+		from = p.top
+	}
+	for i := 1; i <= len(p.rows); i++ {
+		n := ((from+dir*i)%len(p.rows) + len(p.rows)) % len(p.rows)
+		if !p.rows[n].selectable() {
+			continue
+		}
+		if searchContains(p.rows[n].text, q) {
+			p.cursor = n
+			p.follow()
+			return true
+		}
+	}
+	return false
+}
+
 // hasCursor reports whether this list is one you choose in as well as read.
 func (p *picker) hasCursor() bool { return p.cursor >= 0 }
 

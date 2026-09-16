@@ -222,7 +222,10 @@ func TestOpensTranscript_MatchesTheHandKeptList(t *testing.T) {
 		'j', 'k', 'u', 'd', 'g', 'G', // scroll
 		'/',           // search prompt
 		':',           // command line (see above)
-		'?', '!', 'Q', // help / figaro status / queued-prompt panels
+		'?', '!', 'Q', // backward search / figaro status / queued-prompt panels
+		'h',      // the help panel, which '?' used to open
+		'l', 'L', // the listing, and the home listing
+		'^',      // attend the parent
 		'S',        // the form, in the pit
 		'T',        // focus the conversation, keeping the pit
 		0x0f, 0x09, // ^O / Tab: the jumplist, back and forward
@@ -322,7 +325,7 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  j/k · u/d · gg/G    scroll · half-page · top/bottom",
 		"  ↑/↓ · PgUp/PgDn     the same, on the arrow cluster",
 		"  Home / End          top / bottom",
-		"  /                   search (Enter jump · Esc cancel typing)",
+		"  / · ?               search forward / backward (in a pit, its rows)",
 		"  n / N               next / previous match",
 		"  :                   command line: any figaro verb, or a coordinate (:12, :12.3, :0)",
 		"  (in :) ^P/^N · ^R   command history · search it",
@@ -354,7 +357,8 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  Q                   queued prompts panel",
 		"  S                   the form (state) in the pit",
 		"  T                   read the conversation without closing the pit (again to go back)",
-		"  ?                   close help",
+		"  l / L               list this aria's tree / the home tree, in the pit (Enter attends, x kills)",
+		"  h                   close help",
 	}
 	got := helpBody()
 	if len(got) != len(want) {

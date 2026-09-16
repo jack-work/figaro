@@ -145,6 +145,16 @@ func (d *pit) focus(id string) bool {
 	return false
 }
 
+// findRow moves the cursor to the next row whose text holds q, walking in
+// dir from where the cursor stands and wrapping once.
+func (d *pit) findRow(q string, dir int) bool {
+	p := d.list()
+	if p == nil || q == "" {
+		return false
+	}
+	return p.find(q, dir)
+}
+
 // visible is how many rows the list may draw inside the room the pane has
 // already been asked for (transcript.pitRoom). It must not compute that room
 // itself: the bar is three rows when it wraps, and a pit that assumed one

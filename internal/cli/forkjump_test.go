@@ -77,12 +77,12 @@ func TestForkJumpTravelsBetweenForkPoints(t *testing.T) {
 func TestForkModeReleasesAnUnclaimedKey(t *testing.T) {
 	tr := forkedTranscript(t, 8, map[int]string{2: "aaaa1111"})
 	tr.key('f')
-	tr.key('?')
+	tr.key('h')
 	if tr.mode() == modeFork {
 		t.Fatal("the gesture must end with the second key")
 	}
 	if !tr.pit.open() {
-		t.Fatal("f then ? must open the help panel")
+		t.Fatal("f then h must open the help panel")
 	}
 }
 

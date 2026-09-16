@@ -460,16 +460,25 @@ run `figaro show` (full content above, cursor below).
 | `↓` / `↑` | line down / up |
 | `PgDn` / `PgUp` | half-page down / up |
 | `Home` / `End` | top / bottom |
-| `/` | literal string search |
+| `/` / `?` | literal string search, forward / backward. Inside a pit it searches that pit's rows |
 | `:` | the command line: any figaro verb, or a coordinate (`:12`, `:12.3`, `:0`). With a highlight up it opens holding `<,>`. See [quoting.md](quoting.md). |
-| `t` / `Enter` | open a tool's body / both the body and the form deltas. Enter is the ONLY key that opens a delta list |
+| `t` / `Enter` | open a tool's body / both the body and the form deltas. Enter is the ONLY key that opens a delta list. In a pit, Enter attends the aria the selected row names |
 | `f j` / `f k` | next / previous fork point (the block whose `⑂` the question's header carries) |
 | `a` | attend the aria that fork point came from; in a list, the selected row's |
+| `^` | attend this aria's parent, or say it is top-level |
+| `l` / `L` | list this aria's tree / the home tree in the pit, uncapped |
+| `x` | in a list, kill the aria the selected row names; in the queue, drop the message |
+| `h` | the help panel |
 | `v` / `V` | visual mode: a cursor, then a highlight by character / by line |
 | `y` / `Y` | copy the selection / copy its coordinate `<lt.block:a-b>!` |
 | `M-m` | verbose tool output, and every node's address |
 | `Ctrl-O` / `Ctrl-I` | the jumplist: back / forward through the arias attended here |
 | `q` / `Esc` / `Ctrl-T` | exit the pager |
+
+A listing opens with the cursor on the aria you are attending, not on the top
+row. `kill` from the `:` box (or `x` on a row) that kills the aria on screen
+moves the pager to the jumplist's previous aria, else the parent, and ends the
+session when there is neither.
 
 ### Coordinates and the `:` jump
 
