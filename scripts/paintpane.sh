@@ -24,11 +24,14 @@ set -o pipefail
 
 # --------------------------------------------------------------------------
 # Naming contract, agreed with BERTA the watchdog. Do not invent your own.
-#   tmux socket : /tmp/paint-<hunter>/tmux.sock   (PRIVATE server, never the
+#   tmux socket : /var/tmp/paint-<hunter>/tmux.sock  (PRIVATE server, never the
 #                 default socket: so kill-server can never touch the user's
 #                 sessions 0/dev/figaro-qua/fx/gw4/iq/iq2)
 #   session     : paint-<hunter>-<tag>
+#   binary      : /var/tmp/paint-<hunter>/figaro
 #   scratch store: /var/tmp/paint-<hunter>/{state,run,config}
+# ONE DIRECTORY, ON DISK. The socket and the binary used to sit under /tmp,
+# which is tmpfs: RAM. See pp_init.
 # A sweeper attributes daemons by env:
 #   FIGARO_RUNTIME_DIR=/var/tmp/paint-*
 # --------------------------------------------------------------------------
@@ -55,7 +58,7 @@ pp_die() { echo "paintpane: $*" >&2; return 1; }
 pp_init() {
   PP_HUNTER="${1:?pp_init <hunter>}"
   PP_REPO="$(git rev-parse --show-toplevel)" || return 1
-  PP_DIR="/tmp/paint-$PP_HUNTER"
+  PP_DIR="/var/tmp/paint-$PP_HUNTER"
   PP_SOCK="$PP_DIR/tmux.sock"
   PP_STORE="/var/tmp/paint-$PP_HUNTER"
   PP_BIN="$PP_DIR/figaro"
@@ -67,14 +70,34 @@ pp_init() {
   mkdir -p -m 700 "$PP_STORE"/state "$PP_STORE"/run "$PP_STORE"/config || return 1
   chmod 700 "$PP_STORE"/state "$PP_STORE"/run "$PP_STORE"/config || return 1
 
-  ( cd "$PP_REPO" && go build \
+  # BUILT THROUGH THE FLAKE, NOT WITH A BARE `go build`. maintaining.md names
+  # this trap by name -- "a worktree go build differs from the flake build in
+  # the Go toolchain, the dependency closure and the environment, and any of
+  # those can decide whether a bug reproduces" -- and the harness was the one
+  # place it was guaranteed to be stepped in, on every hunt, by everyone.
+  # Measured on this box: a bare `go build` gives go1.26.5, the flake gives
+  # go1.26.1. A whole night of a previous hunt ran on the wrong one.
+  #
+  # `.#tools` rather than the default shell because it carries the toolchain and
+  # nothing else: every other shell builds the figaro package first, which is
+  # minutes we do not need to spend to get a compiler.
+  #
+  # This does NOT reintroduce a shared dev root. `--command go build` sets no
+  # FIGARO_* variable and creates no FIGARO_DEV_ROOT, so a daemon is still
+  # attributable by FIGARO_RUNTIME_DIR=/var/tmp/paint-* exactly as before
+  # (pp_figaro_daemons). The old "no nix dev shells" note was about RUNNING
+  # figaro under a shared dev root; it never applied to the compiler.
+  ( cd "$PP_REPO" && nix develop .#tools --command go build \
       -ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-parse --short=12 HEAD)" \
       -o "$PP_BIN" ./cmd/figaro ) || return 1
 
   # Prove which binary we will drive. Trap #11: two arms that produce identical
-  # output are more often ONE BINARY than one bug. Print identity, always.
+  # output are more often ONE BINARY than one bug. Print identity, always: and
+  # the TOOLCHAIN with it, because two arms built by different compilers is the
+  # same confound wearing a hat, and it is invisible in --version.
   echo "paintpane: $("$PP_BIN" --version | head -1)"
   echo "paintpane: md5 $(md5sum "$PP_BIN" | cut -c1-12)  path $PP_BIN"
+  echo "paintpane: toolchain $( ( cd "$PP_REPO" && nix develop .#tools --command go version 2>/dev/null ) | tail -1 )"
 
   trap pp_down EXIT
 }
@@ -565,7 +588,9 @@ pp_verify_clean() {
   while IFS= read -r line; do [ -n "$line" ] && { echo "LEAK tmux server: $line"; bad=1; }; done < <(pp_tmux_servers)
   while IFS= read -r line; do [ -n "$line" ] && { echo "LEAK figaro daemon: $line"; bad=1; }; done < <(pp_figaro_daemons)
   while IFS= read -r line; do [ -n "$line" ] && echo "note: stale pidfile $line"; done < <(pp_stale_pidfiles)
-  for line in /tmp/paint-*/tmux.sock; do
+  # Both roots: /var/tmp is where they live now, /tmp is where older hunts put
+  # them and where a stale socket can still be sitting.
+  for line in /var/tmp/paint-*/tmux.sock /tmp/paint-*/tmux.sock; do
     [ -e "$line" ] || continue
     tmux -S "$line" list-sessions >/dev/null 2>&1 \
       && { echo "LEAK live server on $line"; bad=1; } \
@@ -608,7 +633,27 @@ pp_down() {
     /var/tmp/paint-?*)
       rm -rf "$PP_STORE/config"
       [ -n "$PP_KEEP_STORE" ] || rm -rf "$PP_STORE/state"
+      # The runtime dir too, once the daemon on it is dead: it holds the socket
+      # and angelus.pid, and a pidfile left behind is what pp_stale_pidfiles
+      # reports forever afterwards. Kept under PP_KEEP_STORE with the store,
+      # since a kept store you cannot start a daemon against is not much use.
+      [ -n "$PP_KEEP_STORE" ] || rm -rf "$PP_STORE/run"
       ;;
+  esac
+  # AND THE BINARY. Teardown used to leave it, on the argument that pp_init
+  # always builds to the same path so rebuilds overwrite rather than
+  # accumulate. True per hunter NAME and false in practice: two clean teardowns
+  # under two names left two 47 MB binaries behind, and nothing ever collected
+  # them. The hunter who tore down correctly should not have to sweep by hand.
+  case "$PP_BIN" in
+    /var/tmp/paint-?*/figaro) rm -f "$PP_BIN" ;;
+  esac
+  # An empty hunter directory is noise in every later glob. rmdir, never rm -rf:
+  # it removes the directory only if teardown really emptied it, so anything
+  # still in there (a kept store, a variant binary, a capture someone parked)
+  # survives and is visible rather than silently swept.
+  case "$PP_DIR" in
+    /var/tmp/paint-?*) rmdir "$PP_DIR" 2>/dev/null ;;
   esac
   echo "paintpane: torn down ($PP_SESS)"
 }
