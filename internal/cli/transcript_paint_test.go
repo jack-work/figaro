@@ -41,7 +41,11 @@ type vtStyle struct {
 
 type vtCell struct {
 	r rune
-	s vtStyle
+	// comb holds the zero-width runes composed onto this cell. A combining
+	// mark does not occupy a column of its own, so it cannot have a cell of
+	// its own either: see put.
+	comb string
+	s    vtStyle
 }
 
 // appearance normalizes a cell to what a viewer can actually distinguish.
@@ -49,7 +53,7 @@ func (c vtCell) appearance() vtCell {
 	if c.r == 0 {
 		c.r = ' '
 	}
-	if c.r == ' ' && !c.s.reverse && !c.s.underline && !c.s.strike {
+	if c.r == ' ' && c.comb == "" && !c.s.reverse && !c.s.underline && !c.s.strike {
 		return vtCell{r: ' ', s: vtStyle{bg: c.s.bg}}
 	}
 	return c
@@ -69,6 +73,12 @@ type vtScreen struct {
 	// cannot tell an erase-then-rewrite from a rewrite. See
 	// transcript_flicker_test.go.
 	watch func(row, col int, before, after vtCell)
+
+	// scrolling is true while a scroll-region shift is moving cells. A row
+	// that rolls in under SU/SD is blank because the CONTENT MOVED, which no
+	// painter can avoid and which the flicker oracle must not blame on the
+	// row update that fills it afterwards.
+	scrolling bool
 }
 
 // set is the one door every cell change goes through, so the watch hook cannot
@@ -232,6 +242,8 @@ func (v *vtScreen) scroll(n int) {
 	if n == 0 || v.top < 0 || v.bot >= v.h || v.top > v.bot {
 		return
 	}
+	v.scrolling = true
+	defer func() { v.scrolling = false }()
 	blank := func(r int) {
 		for c := range v.cells[r] {
 			v.set(r, c, vtCell{r: ' ', s: vtStyle{bg: v.cur.bg}})
@@ -351,7 +363,7 @@ func (v *vtScreen) grid() []string {
 		var b strings.Builder
 		for c := 0; c < v.w; c++ {
 			a := v.cells[r][c].appearance()
-			fmt.Fprintf(&b, "%c|%s|%s|%v%v%v%v%v%v%v;", a.r, a.s.fg, a.s.bg,
+			fmt.Fprintf(&b, "%c%s|%s|%s|%v%v%v%v%v%v%v;", a.r, a.comb, a.s.fg, a.s.bg,
 				a.s.bold, a.s.dim, a.s.italic, a.s.underline, a.s.reverse, a.s.strike, a.s.blink)
 		}
 		out[r] = b.String()
@@ -365,11 +377,13 @@ func (v *vtScreen) text() []string {
 	for r := 0; r < v.h; r++ {
 		var b strings.Builder
 		for c := 0; c < v.w; c++ {
-			ch := v.cells[r][c].r
+			cell := v.cells[r][c]
+			ch := cell.r
 			if ch == 0 {
 				ch = ' '
 			}
 			b.WriteRune(ch)
+			b.WriteString(cell.comb)
 		}
 		out[r] = strings.TrimRight(b.String(), " ")
 	}
@@ -886,7 +900,9 @@ func TestPaintMatchesReferenceAtTheCellLevel(t *testing.T) {
 	}
 	const w, h = 200, 3
 	got, want := newVT(w, h), newVT(w, h)
-	tr := &transcript{out: got, active: true, h: h}
+	// w matters now: the painter erases from the new row's last column to the
+	// screen's right margin, so it has to be told where that margin is.
+	tr := &transcript{out: got, active: true, w: w, h: h}
 	var prev []string
 	for i, f := range frames {
 		screen := append([]string(nil), f...)

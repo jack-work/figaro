@@ -514,8 +514,19 @@ func TestPeriodicResyncWritesNothingWhenNothingChanged(t *testing.T) {
 	if !strings.Contains(painted, "row three, changed") {
 		t.Fatalf("the frame that differs did not paint: %q", painted)
 	}
-	if n := strings.Count(painted, "\x1b[2K"); n < len(screen)-1 {
-		t.Fatalf("the deferred resync painted %d rows in full, want the whole screen", n)
+	// Counted by CURSOR ADDRESSES, one per row, not by erase-from-column-one.
+	// The painter no longer opens a row with ESC[2K: it writes the text over
+	// what is there and clears only past the end, so an erase at column one is
+	// no longer the signature of a full row repaint. The property is unchanged
+	// and so is the threshold; only the way it is read off the stream moved.
+	rows := 0
+	for r := 1; r <= len(screen); r++ {
+		if strings.Contains(painted, fmt.Sprintf("\x1b[%d;1H", r)) {
+			rows++
+		}
+	}
+	if rows < len(screen)-1 {
+		t.Fatalf("the deferred resync painted %d rows in full, want the whole screen: %q", rows, painted)
 	}
 }
 

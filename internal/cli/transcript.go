@@ -1793,7 +1793,7 @@ func (t *transcript) paint(screen []string) {
 		if r < len(base) {
 			old = base[r]
 		}
-		buf = appendRowUpdate(buf, r, old, screen[r])
+		buf = appendRowUpdate(buf, r, t.w, old, screen[r])
 	}
 	if len(buf) == quiet {
 		// Nothing to say. The screen already holds this frame, so the belief
