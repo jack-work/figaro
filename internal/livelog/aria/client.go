@@ -27,13 +27,27 @@ type Client struct {
 	// Live.From: nodes below it are closed and will never be touched again -
 	// the record version, and the node buffer.
 
-	// emitted[turn] is how many of a turn's nodes have already gone out as
-	// closed messages.
+	// emitted[turn] is how many of a turn's nodes have already been RELEASED
+	// as closed messages. It only rises. What we merely HOLD is a different
+	// number and belongs to the open tail (Store.OpenHead), because that one
+	// falls when a backward read hands back the turn's earlier nodes. They
+	// were one field until 2026-09-17, and that overload was the bug: a
+	// clipped catch-up read parked its clip point in the release cursor, so
+	// the backfill had nothing it could lower.
 	emitted map[int]int
 	// inquiry[turn] is that turn's opening question, held for as long as any
 	// part of the turn is retained.
 	inquiry map[int]Inquiry
 	fetch   Fetcher
+
+	// offered counts the nodes the fold has handed to appendUnits. Insert
+	// subtracts anything already held, so a fold that releases the same node
+	// twice is INVISIBLE from the outside: the second copy is clipped away and
+	// the view is correct. This counter is the only thing that can see it, and
+	// TestFoldOffersEachNodeOnceAcrossTheLiveBoundary is why it exists, and
+	// it has caught this three ways. Remove the field and that test stops
+	// compiling, which is the point.
+	offered int
 
 	OnClosed  func(Message)
 	OnLive    func(Message)
@@ -400,13 +414,17 @@ func (c *Client) fold(p Page) (finalized []Message, desync int) {
 
 		// From is the positional id of Nodes[0], so a clipped part slots into
 		// place rather than replacing.
+		//
+		// reclaimed is the old head when this part lowered it: the turn's
+		// earlier nodes, arriving by a backward read.
+		reclaimed := -1
 		if len(part.Nodes) > 0 && staged {
 			c.store.ClaimOpen(id)
-			// Nodes below From were never delivered and are not ours to release.
-			if n := int(part.From); n > c.emitted[id] && n > c.store.OpenLen() {
-				c.emitted[id] = n
-			}
+			head := c.store.OpenHead()
 			c.store.Absorb(part.From, part.Nodes)
+			if c.store.OpenHead() < head {
+				reclaimed = head
+			}
 		}
 
 		if part.Live != nil && staged {
@@ -417,8 +435,8 @@ func (c *Client) fold(p Page) (finalized []Message, desync int) {
 			}
 			// Everything below Live.From is closed for good; release it now so
 			// the head of a long turn need not wait for the seal.
-			if n := int(c.store.LiveFrom()); n > c.emitted[id] && n <= c.store.OpenLen() {
-				finalized = c.appendUnits(finalized, id, c.emitted[id], c.store.OpenSlice(c.emitted[id], n))
+			if lo, n := c.openStart(id), int(c.store.LiveFrom()); n > lo && n <= c.store.OpenLen() {
+				finalized = c.appendUnits(finalized, id, lo, c.store.OpenSlice(lo, n))
 				c.emitted[id] = n
 			}
 			if len(part.Live.Nodes) > 0 {
@@ -427,6 +445,27 @@ func (c *Client) fold(p Page) (finalized []Message, desync int) {
 				// A close marker for a version we never reached: frames were
 				// missed, so ask for a catch-up rather than show a gap.
 				desync = c.lastCommittedLT
+			}
+		}
+
+		// A backward read can hand back nodes the server has ALREADY closed,
+		// below the release cursor rather than above it. Releasing only
+		// upward would leave them in the open buffer under Live.From, where
+		// the open region does not reach and the ranges do not hold them:
+		// held, and invisible, which is the whole bug in its other half.
+		// Insert subtracts whatever is already covered, so a run that
+		// overlaps costs a clip, not a duplicate.
+		if reclaimed >= 0 && staged {
+			lo := c.store.OpenHead()
+			if hi := min(reclaimed, int(c.store.LiveFrom())); hi > lo {
+				finalized = c.appendUnits(finalized, id, lo, c.store.OpenSlice(lo, hi))
+				// The cursor only ever rises: hi is below it whenever the
+				// backfill stopped short of the boundary, and lowering it
+				// there would re-offer everything in between on the next
+				// live frame.
+				if hi > c.emitted[id] {
+					c.emitted[id] = hi
+				}
 			}
 		}
 
@@ -441,7 +480,7 @@ func (c *Client) fold(p Page) (finalized []Message, desync int) {
 			if c.store.OpenLen() >= len(nodes) {
 				nodes = c.store.OpenNodes()
 			}
-			if s := c.emitted[id]; s < len(nodes) {
+			if s := c.openStart(id); s < len(nodes) {
 				finalized = c.appendUnits(finalized, id, s, nodes[s:])
 				c.store.SetTurnLen(uint64(id), uint64(len(nodes)))
 			} else if s == 0 && c.inquiry[id].Text != "" {
@@ -517,6 +556,7 @@ const unitChars = 40000
 // appendUnits appends nodes as one message, or as several when they exceed
 // unitChars. Caller holds c.mu.
 func (c *Client) appendUnits(dst []Message, turn, from int, nodes []livedoc.Node) []Message {
+	c.offered += len(nodes)
 	size := func(n livedoc.Node) int { return len(n.Markdown) + len(n.Output) + len(n.Summary) }
 	total := 0
 	for _, n := range nodes {
@@ -582,10 +622,25 @@ func (c *Client) message(turn, from int, nodes []livedoc.Node) Message {
 	return m
 }
 
+// openStart is the first node of the open turn the client may act on: the
+// release cursor, floored by what the store actually HOLDS. The two differ
+// only for a turn met partway up, and then only until a backward read has
+// walked the head back down.
+func (c *Client) openStart(turn int) int {
+	e := c.emitted[turn]
+	if c.store.OpenTurn() != turn {
+		return e
+	}
+	if h := c.store.OpenHead(); h > e {
+		return h
+	}
+	return e
+}
+
 // openMessage is the open turn's suffix as a message. Caller holds the lock.
 func (c *Client) openMessage() Message {
 	turn := c.store.OpenTurn()
-	e := c.emitted[turn]
+	e := c.openStart(turn)
 	return c.message(turn, c.store.OpenBase(e), c.store.OpenSuffix(e))
 }
 

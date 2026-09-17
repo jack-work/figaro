@@ -71,8 +71,15 @@ type Pending struct {
 // package by the SERVER's open-turn record, so the type is named openTail and
 // held by value, with turn == 0 meaning "nothing open", which is the sentinel
 // every existing caller already tests.)
+// TWO CURSORS, AND THEY ARE NOT THE SAME NUMBER. `base` is the lowest node
+// ordinal DELIVERED to us; `from` (Live.From) is the lowest one still MUTABLE.
+// Below base we hold nothing, because the read that met this turn met it
+// partway up; below from the server has finished with the node for good. The
+// client's `emitted` cursor is a third thing again, RELEASED, and lives there.
 type openTail struct {
 	turn  int
+	base  uint64 // lowest ordinal held; meaningless until held
+	held  bool
 	from  uint64
 	v     int
 	nodes []livedoc.Node
@@ -944,6 +951,7 @@ func (s *Store) Absorb(from uint64, nodes []livedoc.Node) {
 		s.open.nodes = append(s.open.nodes, livedoc.Node{})
 	}
 	copy(s.open.nodes[from:], nodes)
+	s.noteHeld(from, uint64(need))
 }
 
 // FoldAt applies a delta at its positional id, growing the buffer as the open
@@ -953,16 +961,57 @@ func (s *Store) FoldAt(nd NodeDelta) {
 		s.open.nodes = append(s.open.nodes, livedoc.Node{})
 	}
 	s.open.nodes[nd.ID] = foldDelta(s.open.nodes[nd.ID], nd)
+	s.noteHeld(nd.ID, nd.ID+1)
+}
+
+// OpenHead is the lowest node ordinal of the open turn we actually HOLD.
+//
+// It is zero for a turn watched from its first node, and it is the clip point
+// for one met partway up: the slots below it exist in the buffer only so the
+// ids stay positional, and they are padding, not content.
+//
+// IT ONLY EVER FALLS, and that is what a backward read is for: the page that
+// hands back the turn's earlier nodes lowers it, and the region between the
+// old head and the new one becomes showable in the same motion. Before this
+// number existed the client kept the clip point in its RELEASE cursor, which
+// only ever rises; a backward read then delivered nodes that nothing could
+// lower the floor to, so they were held and invisible.
+func (s *Store) OpenHead() int {
+	if !s.open.held {
+		return 0
+	}
+	return int(s.open.base)
+}
+
+// noteHeld records that [from, end) has been delivered, lowering the open
+// tail's head to cover it.
+//
+// A run that does not REACH the head is refused: it would leave a hole between
+// itself and what we hold, and a head below a hole would show the padding in
+// the hole as content. Reads walk down contiguously, so the refused case is a
+// page arriving out of order, and the next contiguous one lowers the head over
+// both.
+func (s *Store) noteHeld(from, end uint64) {
+	if !s.open.held {
+		s.open.base, s.open.held = from, true
+		return
+	}
+	if from < s.open.base && end >= s.open.base {
+		s.open.base = from
+	}
 }
 
 // OpenBase is the first node of the open turn still ours to show: Live.From,
-// floored by the caller's emit cursor. They differ only when a clipped
-// catch-up read raised the cursor above the boundary: the turn's head was
-// never delivered, so the region starts where our knowledge does, not at zero.
+// floored by the caller's emit cursor and by what we hold. The three differ
+// when a clipped catch-up read met the turn partway up (OpenHead), or when the
+// head has already been released to the ranges (emitted).
 func (s *Store) OpenBase(emitted int) int {
 	n := int(s.open.from)
 	if emitted > n {
 		n = emitted
+	}
+	if h := s.OpenHead(); h > n {
+		n = h
 	}
 	if n < 0 || n > len(s.open.nodes) {
 		n = 0
