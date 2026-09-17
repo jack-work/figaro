@@ -72,9 +72,25 @@ func keepHushAlive(ctx context.Context) {
 		interval = 30 * time.Second
 	}
 	h := mustHush()
-	if err := h.EnsureReady(); err != nil {
-		slog.Warn("hush keep-alive: initial ensure failed", "err", err)
+	claimed := false
+	// Claim only an agent we have watched come up: the claim is what
+	// `figaro stop` acts on, and a claim written before there is anything
+	// to claim would name a socket that never existed.
+	ensure := func(stage string) {
+		if err := h.EnsureReady(); err != nil {
+			slog.Warn("hush keep-alive: "+stage+" ensure failed", "err", err)
+			return
+		}
+		if claimed {
+			return
+		}
+		if err := claimHushAgent(h.Mode(), h.Config().RuntimeDir); err != nil {
+			slog.Warn("hush keep-alive: could not advertise the agent", "err", err)
+			return
+		}
+		claimed = true
 	}
+	ensure("initial")
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
@@ -82,9 +98,7 @@ func keepHushAlive(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if err := h.EnsureReady(); err != nil {
-				slog.Warn("hush keep-alive: ensure failed", "err", err)
-			}
+			ensure("periodic")
 		}
 	}
 }

@@ -1430,11 +1430,12 @@ flow writes both through the daemon, so a client never has to know the path.`,
 		Name:    "stop",
 		Aliases: []string{"rest"},
 		Group:   "System",
-		Short:   "Shut down the angelus daemon",
-		Usage:   "stop [--force]",
+		Short:   "Shut down the angelus daemon and its hush agent",
+		Usage:   "stop [-f] [-k]",
+		Long:    "Stops the angelus, then retires the embedded hush agent that daemon\nspawned: it is figaro's own binary re-exec'd, and nothing else would ever\nretire it. An EXTERNAL hush agent is never touched.\n\nOne agent can have several daemons (the share-hush, snapshot and sandbox\ndev shells share a hush surface across isolated runtime dirs). It is\nretired only when no other live daemon is still using it; otherwise stop\nnames the one that is holding it.\n\nWith no daemon answering, the agent is still retired: one outlives a\ndaemon that was killed rather than stopped, which is where orphans come\nfrom.\n\nThe angelus respawns on the next command, so this is how you pick up a\nrebuilt binary.",
 		Flags: []cmdkit.FlagDef{
 			{Long: "force", Short: "f", IsBool: true, Description: "SIGKILL instead of graceful shutdown"},
-			{Long: "keep-pids", Short: "k", IsBool: true, Description: "Persist PID bindings before stopping"},
+			{Long: "keep-pids", Short: "k", IsBool: true, Description: "A restart is coming: persist PID bindings and keep the unlocked hush agent"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			runRestWithFlags(ctx.BoolFlag("force"), ctx.BoolFlag("keep-pids"))
