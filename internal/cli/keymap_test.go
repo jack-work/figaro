@@ -7,30 +7,6 @@ import (
 	"testing"
 )
 
-func modeName(m keyMode) string {
-	switch m {
-	case modeIncipit:
-		return "incipit"
-	case modeTranscript:
-		return "transcript"
-	case modeSearch:
-		return "search"
-	case modeBox:
-		return "jump"
-	case modePanel:
-		return "panel"
-	case modeVisual:
-		return "visual"
-	case modeFork:
-		return "fork"
-	case modeComment:
-		return "comment"
-	case modeConfirm:
-		return "confirm"
-	}
-	return "?"
-}
-
 // The canonical encoding; key_nav_test.go covers the others.
 func navSequence(n navKey) string {
 	switch n {

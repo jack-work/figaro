@@ -718,13 +718,66 @@ const helpKeyColumn = 20
 func helpBody() []string {
 	rows := make([]string, 0, len(helpRows))
 	for _, r := range helpRows {
-		pad := helpKeyColumn - runewidth.StringWidth(r.keys)
+		keys := helpKeysFor(r.id)
+		if keys == "" {
+			continue // every binding under this row has been unbound
+		}
+		if r.keys != "" && !userTouchedHelp[r.id] {
+			keys = r.keys
+		}
+		pad := helpKeyColumn - runewidth.StringWidth(keys)
 		if pad < 1 {
 			pad = 1
 		}
-		rows = append(rows, "  "+r.keys+strings.Repeat(" ", pad)+r.text)
+		rows = append(rows, "  "+keys+strings.Repeat(" ", pad)+r.text)
+	}
+	if line := helpDiagLine(); line != "" {
+		rows = append(rows, "  "+line)
 	}
 	return rows
+}
+
+func helpKeysFor(id helpID) string {
+	var spelled []string
+	seen := map[string]bool{}
+	confined := keyModeSet(0)
+	for i := range liveRows {
+		bd := &liveRows[i]
+		if bd.help != id || bd.modes == 0 {
+			continue
+		}
+		confined |= bd.modes
+		s := bd.chord.spell()
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+		spelled = append(spelled, s)
+	}
+	if len(spelled) == 0 {
+		return ""
+	}
+	return helpModeQualifier(confined) + strings.Join(spelled, " ")
+}
+
+func helpModeQualifier(modes keyModeSet) string {
+	switch modes {
+	case inBox:
+		return "(in :) "
+	case inVisual:
+		return "(in v) "
+	case inPanel:
+		return "(in a list) "
+	case inSearchBox:
+		return "(in /) "
+	case inConfirm:
+		return "(asked) "
+	case inComposer:
+		return "(in ✎) "
+	case inComment:
+		return "(in comment) "
+	}
+	return ""
 }
 
 const noBinding = int16(-1)
@@ -772,12 +825,25 @@ var (
 
 const navCount = int(navRight) + 1
 
-func init() { buildKeyIndex() }
+// liveRows is the table dispatch actually reads: the declared keymap until a
+// keys.toml is applied over it (see keymap_user.go). It is assigned from a
+// func init rather than a var initializer so that the help panel may read it
+// without the initializer graph closing into a cycle.
+var liveRows []keyBinding
+
+func init() {
+	liveRows = keymap
+	buildKeyIndex()
+}
 
 func buildKeyIndex() {
-	if len(keymap) > 32767 {
+	if len(liveRows) > 32767 {
 		panic("keymap: more rows than an int16 index can name")
 	}
+	pagerAct, inputAct = pagerActions{}, inputActions{}
+	openerByte, openerNav, openerCtrl, openerMeta = [256]bool{}, [navCount]bool{}, [26]bool{}, [128]bool{}
+	ctrlChordLetters = [26]bool{}
+	metaBound = [numKeyModes][128]bool{}
 	for m := range numKeyModes {
 		for b := range inputIndex.byByte[m] {
 			inputIndex.byByte[m][b], pagerIndex.byByte[m][b] = noBinding, noBinding
@@ -792,8 +858,8 @@ func buildKeyIndex() {
 			inputIndex.byMeta[m][c], pagerIndex.byMeta[m][c] = noBinding, noBinding
 		}
 	}
-	for i := range keymap {
-		bd := &keymap[i]
+	for i := range liveRows {
+		bd := &liveRows[i]
 		idx := &pagerIndex
 		if bd.input != nil {
 			idx = &inputIndex
@@ -916,7 +982,7 @@ func (idx *keyIndex) lookup(mode keyMode, ev keyEvent) *keyBinding {
 	if i == noBinding {
 		return nil
 	}
-	return &keymap[i]
+	return &liveRows[i]
 }
 
 // ctrlChordLetter reports whether a CSI-u Ctrl report is a chord some row binds,
@@ -1009,6 +1075,10 @@ func navName(n navKey) string {
 		return "Home"
 	case navEnd:
 		return "End"
+	case navLeft:
+		return "Left"
+	case navRight:
+		return "Right"
 	}
 	return "none"
 }
