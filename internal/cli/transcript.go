@@ -697,7 +697,16 @@ func (t *transcript) resetToTail() {
 	if keep > n {
 		keep = n
 	}
-	from, _ := t.client.TailFrom(keep)
+	from, held := t.client.TailFrom(keep)
+	if !held {
+		// Nothing CLOSED is retained, which a cold join to a long running
+		// turn produces: every node still belongs to the open turn. The zero
+		// anchor would be read as the tail, so the fetch for the turn's
+		// missing head would return the tail we are already showing.
+		if open := t.openMessage(); open != nil {
+			from = anchorOf(*open)
+		}
+	}
 	if t.from == from {
 		return // the window already IS the tail at this floor
 	}
