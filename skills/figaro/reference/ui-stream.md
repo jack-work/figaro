@@ -86,8 +86,17 @@ type NodeDelta struct {
 ```
 
 `Live.From` is the immutability boundary: node ordinals below it are closed and
-will never change; ordinals at or above it may still receive deltas. `V` is the
-0-indexed frame version. `set` merges fields (and creates a node when `type`
+will never change; ordinals at or above it may still receive deltas.
+
+It is not the same number as the client's floor. A reader that met the turn
+partway up HOLDS only its tail, and pages backward to get the rest, so the open
+region's base is what has been delivered, which falls, floored by what has been
+released to the ranges, which rises. Backfilled nodes that land below
+`Live.From` are closed and go straight into the ranges; those at or above it
+stay in the mutable region, because a node the server may still edit must have
+exactly one home.
+
+`V` is the 0-indexed frame version. `set` merges fields (and creates a node when `type`
 first appears), `unset` removes fields, and `patch` splices a previous
 **streamed string** using byte offsets. Three fields are streamed:
 `markdown`, `output`, and `input`.
@@ -446,6 +455,10 @@ entry it pulls a recent backward page, fetches older ranges on demand, and
 continues folding live pushes, so both views render the same content; only the
 active view paints.
 
+Backward paging anchors on a real node coordinate, never the zero anchor: the
+wire reads that as the tail, so a pager holding nothing but a live suffix would
+fetch the page it is already showing and stop at a floor that is not one.
+
 Alternate screen is the right tool *here specifically* because it's a deliberate,
 toggled view: it gives a guaranteed-stable, scrollable surface without occluding
 your shell history permanently: on exit, the terminal restores your normal
@@ -470,7 +483,7 @@ run `figaro show` (full content above, cursor below).
 | `x` / `X` | in a list, kill the aria the selected row names, asking first / at once; in the queue, drop the message |
 | `y` / `n` | answer that question (Esc is no). Nothing else is read while it is up; the sentence rides the bar's alert and `[y/N]` its command slot, so the question costs no height |
 | `h` | the help panel |
-| `v` / `V` | visual mode: a cursor, then a highlight by character / by line. In it, `e` or Enter selects the node under the cursor (so `e e` expands it); `a` attends the highlighted id or the word under the cursor, and hands anything else to your editor (`editor` under `[cli]`) when it is a file |
+| `v` / `V` | visual mode: a cursor, then a highlight by character / by line. In it, Enter selects the node under the cursor (then `e` expands it); `e` itself stays the word-end motion; `a` attends the highlighted id or the word under the cursor, and hands anything else to your editor (`editor` under `[cli]`) when it is a file |
 | `y` / `Y` | copy the selection / copy its coordinate `<lt.block:a-b>!` |
 | `M-m` | verbose tool output, and every node's address |
 | `Ctrl-O` / `Ctrl-I` | the jumplist: back / forward through the arias attended here |

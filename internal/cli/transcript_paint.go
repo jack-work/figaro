@@ -527,25 +527,75 @@ func commonRowPrefix(old, new string) (idx, col int, st sgrStyle, ok bool) {
 	return i, col, st, true
 }
 
-// appendRowUpdate emits the update for one row: a cursor address plus the tail
-// when the row shares a long prefix with what is on screen, else the whole row
-// after an erase.
-func appendRowUpdate(dst []byte, screenRow int, old, row string) []byte {
+// appendRowUpdate emits the update for one row: a cursor address, the row (or
+// just its tail when it shares a long prefix with what is on screen), and then
+// an erase of whatever the old row still occupies beyond it.
+//
+// NOTHING IS ERASED BEFORE IT IS REWRITTEN, and that ordering is the flicker
+// fix. The frame is wrapped in a synchronized update (?2026), and for a while
+// that was treated as licence to erase first, because an erase inside the
+// bracket is invisible. It is not licence. A trace through tmux found a
+// synchronization END at byte 4,686 of a 7,418-byte write with fourteen row
+// erases after it: tmux parses ?2026 itself and re-emits its own brackets
+// around its own redraw, on its own schedule, so ours is a request an
+// intermediary is free to reshape. Balanced start/end COUNTS in a capture prove
+// nothing about the order the outer terminal saw. An erase we never emit needs
+// no protection, and that is the only version of this that does not depend on
+// somebody else's cooperation.
+//
+// The cost of erasing first was never only the rows that changed. resyncDue
+// periodically repaints EVERY row to re-earn the painter's model of the screen,
+// and each of those rows was blanked and rewritten with the same text: which is
+// how a footer spinner came to flash the whole screen every two seconds.
+func appendRowUpdate(dst []byte, screenRow, screenW int, old, row string) []byte {
 	if idx, col, st, ok := commonRowPrefix(old, row); ok {
 		dst = appendCUPCol(dst, screenRow+1, col+1)
-		// Erase BEFORE writing the tail, not after. The pager runs with autowrap
-		// off, so writing the last column leaves the cursor ON it, a trailing
-		// erase-to-end-of-line would wipe the character just written. (Found by
-		// replaying a frame into tmux, which a screen model that let the cursor
-		// run past the margin had happily accepted.) Safe unstyled: every row
-		// leaves the default background, and the whole frame is inside a
-		// synchronized update, so erase-then-write cannot flicker.
-		dst = append(dst, "\x1b[K"...)
-		return compactRowFrom(dst, row[idx:], st)
+		text := len(dst)
+		dst = compactRowFrom(dst, row[idx:], st)
+		return appendRowTailErase(dst, screenRow, screenW, col, text)
 	}
 	dst = appendCUP(dst, screenRow+1)
-	dst = append(dst, "\x1b[2K"...)
-	return compactRow(dst, row)
+	text := len(dst)
+	dst = compactRow(dst, row)
+	return appendRowTailErase(dst, screenRow, screenW, 0, text)
+}
+
+// appendRowTailErase clears from the end of the text just written to the right
+// margin. startCol is the column the text began at and textStart the offset in
+// dst where its bytes begin.
+//
+// THE RIGHT MARGIN IS THE TRAP, and it is the reason a bare trailing erase was
+// rejected once before. The pager runs with autowrap off, so a row whose text
+// reaches the last column leaves the cursor sitting ON that column rather than
+// past it, and an erase-to-end-of-line from there deletes the character just
+// written. (Found by replaying a frame into tmux, which a screen model that let
+// the cursor run past the margin had happily accepted.)
+//
+// So the only question is whether the text reached the margin, and the cheap
+// answer is usually enough: EVERY COLUMN COSTS AT LEAST ONE BYTE, and escapes
+// cost bytes without columns, so the bytes emitted are an upper bound on the
+// columns occupied. Under that bound the cursor is known to be short of the
+// margin and the erase needs no cursor address at all -- the terminal already
+// left the cursor exactly where the erase should start.
+//
+// Only a row whose emitted bytes reach the screen width pays for an exact
+// count, and that is measured over the EMITTED bytes rather than the source
+// row: compactRow throws away trailing blanks, so a row rendered as "hi" plus
+// ninety columns of styled padding occupies two columns, and measuring the
+// source would put the cursor ninety columns past the text and erase nothing
+// that was actually stale.
+func appendRowTailErase(dst []byte, screenRow, screenW, startCol, textStart int) []byte {
+	if startCol+(len(dst)-textStart) < screenW {
+		return append(dst, "\x1b[K"...) // cursor is at the end of the text
+	}
+	// Counting stops at the margin: a row that reached it needs no erase, and
+	// the exact number would be thrown away.
+	cols := startCol + displayWidthBytesUpTo(dst[textStart:], screenW-startCol)
+	if cols >= screenW {
+		return dst // the text reached the margin; there is nothing beyond it
+	}
+	dst = appendCUPCol(dst, screenRow+1, cols+1)
+	return append(dst, "\x1b[K"...)
 }
 
 // appendCUPCol appends "\x1b[<row>;<col>H".

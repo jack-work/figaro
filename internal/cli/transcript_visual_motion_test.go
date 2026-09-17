@@ -75,7 +75,7 @@ func TestVisualMotion_WordsWalkTheRowAndCrossRows(t *testing.T) {
 		t.Fatalf("w from bravo landed on %q, want the hyphen", got)
 	}
 	tr.key('g')
-	tr.key('e') // ge: word-end, since a bare e points at the node
+	tr.key('e')                               // ge: word-end, since a bare e points at the node
 	if got := cursorWord(t, tr); got != "e" { // lands on the last rune of charlie
 		t.Fatalf("e landed on %q", got)
 	}

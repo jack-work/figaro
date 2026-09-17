@@ -234,6 +234,55 @@ func displayWidth(s string) int {
 	return col
 }
 
+// displayWidthBytes is displayWidth over a buffer rather than a string. The
+// painter measures a row it has just built in its output buffer, and
+// converting that to a string to measure it would allocate once per row per
+// frame, which is exactly what the paint path may not do (see
+// TestPaintReusesBuffers).
+//
+// It is a second implementation of one rule, so it is pinned to the first by
+// TestDisplayWidthBytesAgreesWithDisplayWidth over a corpus rather than by
+// hoping. Keep both: the corpus is only a check while both sides exist.
+func displayWidthBytes(b []byte) int { return displayWidthBytesUpTo(b, -1) }
+
+// displayWidthBytesUpTo stops counting once it reaches stop columns, returning
+// stop. The painter only ever asks "did this row reach the right margin, and if
+// not, where did it stop", so a row that HAS reached it needs no further
+// counting -- and those are exactly the long rows. Pass a negative stop to
+// count the whole buffer.
+func displayWidthBytesUpTo(b []byte, stop int) int {
+	col := 0
+	for i := 0; i < len(b); {
+		if stop >= 0 && col >= stop {
+			return stop
+		}
+		if b[i] == 0x1b {
+			i = render.SkipEscapeBytes(b, i)
+			continue
+		}
+		if c := b[i]; c >= 0x20 && c < 0x7f {
+			col++
+			i++
+			continue
+		}
+		r, size := utf8.DecodeRune(b[i:])
+		if size == 0 {
+			break
+		}
+		if r >= 0x20 {
+			col += runewidth.RuneWidth(r)
+		}
+		i += size
+	}
+	// A double-width glyph can STRADDLE the stop, so clamp: the contract is
+	// "at most stop", and a caller comparing the result against the stop must
+	// not have to think about a glyph that stepped over it.
+	if stop >= 0 && col > stop {
+		return stop
+	}
+	return col
+}
+
 // clipToWidthEllipsis is clipToWidth for a row the reader parses as a SENTENCE
 // rather than as a picture: the footer's status line. A hard clip there ends
 // mid-token with nothing to say anything was dropped ("cost 4.5k to"); one

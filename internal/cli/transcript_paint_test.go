@@ -41,7 +41,11 @@ type vtStyle struct {
 
 type vtCell struct {
 	r rune
-	s vtStyle
+	// comb holds the zero-width runes composed onto this cell. A combining
+	// mark does not occupy a column of its own, so it cannot have a cell of
+	// its own either: see put.
+	comb string
+	s    vtStyle
 }
 
 // appearance normalizes a cell to what a viewer can actually distinguish.
@@ -49,7 +53,7 @@ func (c vtCell) appearance() vtCell {
 	if c.r == 0 {
 		c.r = ' '
 	}
-	if c.r == ' ' && !c.s.reverse && !c.s.underline && !c.s.strike {
+	if c.r == ' ' && c.comb == "" && !c.s.reverse && !c.s.underline && !c.s.strike {
 		return vtCell{r: ' ', s: vtStyle{bg: c.s.bg}}
 	}
 	return c
@@ -62,6 +66,31 @@ type vtScreen struct {
 	cur      vtStyle
 	top, bot int // scroll region, 0-based inclusive
 	pend     []byte
+
+	// watch, when set, is called for every cell this screen is about to
+	// change, with the content it holds and the content replacing it. It is
+	// how the flicker oracle sees INTERMEDIATE states: the grid after a frame
+	// cannot tell an erase-then-rewrite from a rewrite. See
+	// transcript_flicker_test.go.
+	watch func(row, col int, before, after vtCell)
+
+	// scrolling is true while a scroll-region shift is moving cells. A row
+	// that rolls in under SU/SD is blank because the CONTENT MOVED, which no
+	// painter can avoid and which the flicker oracle must not blame on the
+	// row update that fills it afterwards.
+	scrolling bool
+}
+
+// set is the one door every cell change goes through, so the watch hook cannot
+// be bypassed by a new escape handler.
+func (v *vtScreen) set(r, c int, cell vtCell) {
+	if r < 0 || r >= v.h || c < 0 || c >= v.w {
+		return
+	}
+	if v.watch != nil {
+		v.watch(r, c, v.cells[r][c], cell)
+	}
+	v.cells[r][c] = cell
 }
 
 func newVT(w, h int) *vtScreen {
@@ -106,10 +135,10 @@ func (v *vtScreen) put(r rune) {
 	if v.row < 0 || v.row >= v.h || v.col < 0 || v.col >= v.w {
 		return
 	}
-	v.cells[v.row][v.col] = vtCell{r: r, s: v.cur}
+	v.set(v.row, v.col, vtCell{r: r, s: v.cur})
 	v.col++
 	for w := runewidth.RuneWidth(r); w > 1 && v.col < v.w; w-- {
-		v.cells[v.row][v.col] = vtCell{r: vtWideTail, s: v.cur} // wide-glyph tail cell
+		v.set(v.row, v.col, vtCell{r: vtWideTail, s: v.cur}) // wide-glyph tail cell
 		v.col++
 	}
 	if v.col >= v.w {
@@ -169,12 +198,12 @@ func (v *vtScreen) csi(seq string) {
 		}
 		for c := from; c < to && c < v.w; c++ {
 			// EL paints with the current background, not the full style.
-			v.cells[v.row][c] = vtCell{r: ' ', s: vtStyle{bg: v.cur.bg}}
+			v.set(v.row, c, vtCell{r: ' ', s: vtStyle{bg: v.cur.bg}})
 		}
 	case 'J':
 		for r := range v.cells {
 			for c := range v.cells[r] {
-				v.cells[r][c] = vtCell{r: ' ', s: vtStyle{bg: v.cur.bg}}
+				v.set(r, c, vtCell{r: ' ', s: vtStyle{bg: v.cur.bg}})
 			}
 		}
 		v.row, v.col = 0, 0
@@ -213,15 +242,22 @@ func (v *vtScreen) scroll(n int) {
 	if n == 0 || v.top < 0 || v.bot >= v.h || v.top > v.bot {
 		return
 	}
+	v.scrolling = true
+	defer func() { v.scrolling = false }()
 	blank := func(r int) {
 		for c := range v.cells[r] {
-			v.cells[r][c] = vtCell{r: ' ', s: vtStyle{bg: v.cur.bg}}
+			v.set(r, c, vtCell{r: ' ', s: vtStyle{bg: v.cur.bg}})
+		}
+	}
+	move := func(dst, src int) {
+		for c := range v.cells[dst] {
+			v.set(dst, c, v.cells[src][c])
 		}
 	}
 	if n > 0 {
 		for r := v.top; r <= v.bot; r++ {
 			if r+n <= v.bot {
-				copy(v.cells[r], v.cells[r+n])
+				move(r, r+n)
 			} else {
 				blank(r)
 			}
@@ -230,7 +266,7 @@ func (v *vtScreen) scroll(n int) {
 	}
 	for r := v.bot; r >= v.top; r-- {
 		if r+n >= v.top {
-			copy(v.cells[r], v.cells[r+n])
+			move(r, r+n)
 		} else {
 			blank(r)
 		}
@@ -327,7 +363,7 @@ func (v *vtScreen) grid() []string {
 		var b strings.Builder
 		for c := 0; c < v.w; c++ {
 			a := v.cells[r][c].appearance()
-			fmt.Fprintf(&b, "%c|%s|%s|%v%v%v%v%v%v%v;", a.r, a.s.fg, a.s.bg,
+			fmt.Fprintf(&b, "%c%s|%s|%s|%v%v%v%v%v%v%v;", a.r, a.comb, a.s.fg, a.s.bg,
 				a.s.bold, a.s.dim, a.s.italic, a.s.underline, a.s.reverse, a.s.strike, a.s.blink)
 		}
 		out[r] = b.String()
@@ -341,11 +377,13 @@ func (v *vtScreen) text() []string {
 	for r := 0; r < v.h; r++ {
 		var b strings.Builder
 		for c := 0; c < v.w; c++ {
-			ch := v.cells[r][c].r
+			cell := v.cells[r][c]
+			ch := cell.r
 			if ch == 0 {
 				ch = ' '
 			}
 			b.WriteRune(ch)
+			b.WriteString(cell.comb)
 		}
 		out[r] = strings.TrimRight(b.String(), " ")
 	}
@@ -862,7 +900,9 @@ func TestPaintMatchesReferenceAtTheCellLevel(t *testing.T) {
 	}
 	const w, h = 200, 3
 	got, want := newVT(w, h), newVT(w, h)
-	tr := &transcript{out: got, active: true, h: h}
+	// w matters now: the painter erases from the new row's last column to the
+	// screen's right margin, so it has to be told where that margin is.
+	tr := &transcript{out: got, active: true, w: w, h: h}
 	var prev []string
 	for i, f := range frames {
 		screen := append([]string(nil), f...)

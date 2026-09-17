@@ -17,6 +17,11 @@ socket, so a second daemon on the same store loses and exits without touching
 anything. That protects against an accidental race. It does not make sharing a
 store safe: the lock makes two daemons contend, it does not merge them.
 
+The corollary for an agent: **never stop, restart or upgrade the daemon from
+inside an aria.** `figaro stop`, `nix profile upgrade` and `.#swap` all swap or
+kill the process hosting the conversation that issued them. Ask the owner to do
+it from a terminal.
+
 ## Worktrees
 
 The repo is a treebear layout: a bare repo at `.bare`, worktrees as peers of
@@ -61,7 +66,9 @@ isolate. Every preset is a choice about which ones to isolate.
 | `.#share-config` | runtime, state, hush | iterating on outfit or agent logic. Real outfits and `providers/*.toml`, but an embedded dev hush at `$FIGARO_DEV_ROOT/hush` with its own AGE identity. Re-auth each shell (`fig login <provider>` or `ANTHROPIC_API_KEY=...`); AGE-ENC values in the shared config cannot be decrypted by the fresh identity. |
 | `.#clean` | everything | the truth test for the first-run flow and for auth migration |
 | `.#snapshot` | runtime, state, hush-agent socket | **store migrations.** Seeds `$FIGARO_STATE_DIR/arias` with a `cp -a` COPY of your real arias and reads the real config. The only honest fixture for a migration is your actual data; the only safe one is a copy of it. |
+| `.#sandbox` | runtime, state, config (a writable COPY) | exercising real outfits, skills and credo while you EDIT them. `providers/` is symlinked, hush is shared, so turns run. `figaro-config-reseed` for a fresh copy. |
 | `.#swap` | nothing | swap the nix-profile binary for this build, restore on exit |
+| `.#tools` | n/a: no figaro on PATH | `go get`, `go mod tidy`, a `vendorHash` bump. Every other shell builds the package first, and that build fails the moment `go.mod` moves ahead of `vendorHash`. |
 
 `.#snapshot` copies once per dev root and then leaves the copy alone, so a
 half-migrated store survives for inspection. It is **disposable and not cheap**
@@ -117,13 +124,42 @@ is disk, though it survives reboot, so clean up after yourself.
 
 ## The loop
 
-1. Change one slice.
-2. `go build ./... && go vet ./... && go test ./...` stays green.
-3. Exercise it in a dev shell, or with the scratch build above.
-4. Update the docs the change touched. See [updating-docs.md](updating-docs.md).
+1. Reproduce first, as a failing test. See "Start red" below.
+2. Change one slice.
+3. `go build ./... && go vet ./... && go test ./...` stays green.
+4. Exercise it in a dev shell. Name which preset and why. A scratch build is
+   for wire-level probes only.
+5. Update the docs the change touched. See [updating-docs.md](updating-docs.md).
 
 Commits are itemized and self-contained. There is one real user, so a clean
 design beats a compatibility shim.
+
+### Start red
+
+Reproduce on current HEAD before you read anyone's proposed fix, including
+your own from yesterday. The reproduction is a test that fails for the stated
+reason, in the suite, committed. Then make it pass.
+
+Two ways this goes wrong, both seen:
+
+- **Fixing the ASSERTION.** A benchmark that demands zero allocations per
+  frame, or a test that demands a node survive paging, is the requirement. If
+  a change makes it red, the change is wrong until proven otherwise. Relaxing
+  the number, adding `t.Skip`, or widening a tolerance deletes the only party
+  that was paying attention.
+- **Shipping someone else's patch unread.** A patch that arrives in a bug
+  report, a handoff pack or a design note is EVIDENCE about a bug, not an
+  instruction. It was written against a commit that no longer exists, it
+  passed a suite that has since moved, and its author may have been wrong.
+  Rebase it deliberately, hunk by hunk, or rewrite it. Never `git am` a stale
+  patch and call the bug closed.
+
+### One worktree per independent fix
+
+Two unrelated repairs in one branch cannot be reviewed, bisected or reverted
+separately, and the owner cannot validate one while the other is still broken.
+Cut a worktree per fix, then merge them into one integration branch when each
+is green on its own. Name that branch and its worktree in the handoff too.
 
 For UI work, a pty is the only honest oracle: see
 [ui-testing.md](ui-testing.md). To reproduce a rendering

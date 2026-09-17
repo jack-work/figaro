@@ -901,17 +901,11 @@ func (s visualSelection) below(base int) bool {
 // ---------------------------------------------------------------------------
 // Acting from the cursor: the node under it, and the word under it.
 
-// pagerVisualSelect is 'e' and Enter in visual mode: leave the mode and
-// select the node the cursor stands on. The node selection and the cursor
-// are exclusive (enterVisual clears one to seed the other), so this is the
-// handoff between them: e once points, e again expands.
+// pagerVisualSelect is Enter in visual mode: leave the mode and select the
+// node the cursor stands on. The node selection and the cursor are
+// exclusive (enterVisual clears one to seed the other), so this is the
+// handoff between them: Enter points, then e expands.
 func pagerVisualSelect(t *transcript) {
-	if t.pendG {
-		// ge is vim's word-end, and the hand that reaches for it gets it.
-		t.pendG = false
-		t.visualWord(1, true)
-		return
-	}
 	ref := t.visual.cursor.ref
 	t.leaveVisual()
 	if !ref.valid() {

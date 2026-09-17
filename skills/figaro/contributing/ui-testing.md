@@ -78,6 +78,14 @@ Non-negotiables, each of which has cost somebody a wrong answer:
   then compares a binary with itself.
 - **Private tmux socket** (`tmux -S <scratch>/tmux.sock`). `kill-server` on the
   default socket kills the user's sessions.
+- **One tmux SERVER per unit of contiguous work, torn down at its end.** A unit
+  is one question pursued without a rebuild: an A/B pair, a fuzz sweep, one
+  bug's repro. Do not carry a server across units. State leaks forward (window
+  geometry, scrollback, a pane still attached to a dead daemon, a figaro that
+  thinks it is bound), and a capture taken under yesterday's geometry answers a
+  question nobody asked. `pp_init <unit-name>` per unit, `pp_down` +
+  `pp_verify_clean` at P7 before the next one. Leaving servers up is not free:
+  see the 230-process incident in P7.
 - **Scratch store on `/var/tmp`**, never `/tmp` (tmpfs), never the real store.
 - **Never the live daemon.** It is a strict singleton on a store flock; pointing
   a test build at the real store makes them contend, not cooperate.
