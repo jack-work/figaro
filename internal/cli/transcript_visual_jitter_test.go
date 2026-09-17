@@ -212,3 +212,23 @@ func TestVisualJitter_StartPhasedOutRefusesToSpend(t *testing.T) {
 		t.Fatalf("Y: %q", err)
 	}
 }
+
+// THE HEADER COVERS ROWS, for the block cursor as for the selection: k up a
+// long answer under a pinned question must not park the cursor beneath it.
+func TestVisual_CursorClearsTheStickyHeader(t *testing.T) {
+	tr, _ := stickyAdorned(t)
+	tr.key('v')
+	if tr.headRows() == 0 {
+		t.Skip("fixture: the header is not pinned, so nothing is covered")
+	}
+	for i := 0; i < 40; i++ {
+		tr.key('k')
+		line, ok := tr.visualCursorLine()
+		if !ok {
+			t.Fatal("cursor off screen")
+		}
+		if head := tr.headRows(); head > 0 && line < tr.offset+head {
+			t.Fatalf("k parked the cursor under the header: line %d, offset %d, header %d", line, tr.offset, head)
+		}
+	}
+}

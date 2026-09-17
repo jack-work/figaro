@@ -310,10 +310,10 @@ var keymap = []keyBinding{
 	// `:attend` does, through the same body.
 	{chord: byteChord('a'), modes: inTranscript, open: opensPager, help: helpAttend, pager: pagerAttendFork},
 	{chord: byteChord('a'), modes: inPanel, open: opensPager, help: helpAttend, pager: pagerAttendRow},
-	// Enter on a row that names an aria is the same attend: the gesture a
-	// list invites. A row that names anything else says so and stays put.
-	{chord: byteChord(0x0d), modes: inPanel, open: opensPager, help: helpAttend, pager: pagerAttendRow},
-	{chord: byteChord(0x0a), modes: inPanel, open: opensPager, help: helpAttend, pager: pagerAttendRow},
+	// Enter in a pit is THE PIT'S OWN ACTION: a form value opens, a listing
+	// row attends. 'a' is attend everywhere; 'e' is expand everywhere.
+	{chord: byteChord(0x0d), modes: inPanel, open: opensPager, help: helpPitEnter, pager: pagerPitActivate},
+	{chord: byteChord(0x0a), modes: inPanel, open: opensPager, help: helpPitEnter, pager: pagerPitActivate},
 	// '^' is one step up the fork tree: attend whoever this aria came from.
 	// The letter is vim's "first text on the line", which the transcript has
 	// no use for outside visual mode, where it keeps that meaning.
@@ -347,15 +347,18 @@ var keymap = []keyBinding{
 	// else. In a pit the same box walks the ROWS (searchAccept).
 	{chord: byteChord('/'), modes: inTranscript | inPanel, open: opensPager, help: helpSearch, pager: pagerSearchPrompt},
 	{chord: byteChord('?'), modes: inTranscript | inPanel, open: opensPager, help: helpSearch, pager: pagerSearchPromptBack},
+	// n/N LAND THE CURSOR. A repeated search is a reader looking for a
+	// place to act, and the block cursor is what acts, so the hit is entered
+	// in visual mode rather than merely scrolled to.
 	{
 		chord: byteChord('n'), modes: inTranscript,
 		open: staysInline, why: "repeat search with no query yet: opens onto a no-op",
-		help: helpSearchRepeat, pager: pagerFindNext,
+		help: helpSearchRepeat, pager: pagerFindNextVisual,
 	},
 	{
 		chord: byteChord('N'), modes: inTranscript,
 		open: staysInline, why: "repeat search with no query yet: opens onto a no-op",
-		help: helpSearchRepeat, pager: pagerFindPrev,
+		help: helpSearchRepeat, pager: pagerFindPrevVisual,
 	},
 
 	// -- pager level: the coordinate jump ----------------------------------
@@ -435,9 +438,9 @@ var keymap = []keyBinding{
 	// ENTER IS THE ONLY KEY THAT OPENS FORM DELTAS. It had a letter of its
 	// own for a while ('d'), which collided with the half-page motion every
 	// pager has had since vi, and a motion key that sometimes folds a block
-	// instead is a key the hand cannot trust. `t` remains the narrow half:
-	// tool bodies without the state beside them.
-	{chord: byteChord('t'), modes: inTranscript, open: opensPager, help: helpToolBody, pager: pagerToggleBodies},
+	// instead is a key the hand cannot trust. 'e' is the narrow half: tool
+	// bodies without the state beside them. It was 't' until 2026-09-17.
+	{chord: byteChord('e'), modes: inTranscript, open: opensPager, help: helpToolBody, pager: pagerToggleBodies},
 	{
 		chord: byteChord(0x1b), modes: inTranscript,
 		open: staysInline, why: "clears a selection there is none of, and is a sequence prefix besides",
@@ -476,7 +479,13 @@ var keymap = []keyBinding{
 	// nothing for a word motion to move.
 	{chord: byteChord('w'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualWordNext},
 	{chord: byteChord('b'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualWordPrev},
-	{chord: byteChord('e'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualWordEnd},
+	// 'e' IS NOT A MOTION HERE: it points, and leaves the mode with the node
+	// under the cursor selected, so e e is point-then-expand. ge keeps vim's
+	// word-end for the hand that wants it.
+	{chord: byteChord('e'), modes: inVisual, open: staysInline, why: "there is no cursor to point with", help: helpVisualSelect, pager: pagerVisualSelect},
+	{chord: byteChord(0x0d), modes: inVisual, open: staysInline, why: "there is no cursor to point with", help: helpVisualSelect, pager: pagerVisualSelect},
+	{chord: byteChord(0x0a), modes: inVisual, open: staysInline, why: "there is no cursor to point with", help: helpVisualSelect, pager: pagerVisualSelect},
+	{chord: byteChord('a'), modes: inVisual, open: staysInline, why: "there is no cursor to read under", help: helpVisualAttend, pager: pagerVisualAttend},
 	{chord: byteChord('0'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualRowStart},
 	{chord: byteChord('^'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualFirstText},
 	{chord: byteChord('$'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualRowEnd},
@@ -747,6 +756,9 @@ const (
 	helpHelpPanel
 	helpListPit
 	helpConfirm
+	helpPitEnter
+	helpVisualSelect
+	helpVisualAttend
 	helpCmdHistory
 	helpCmdComplete
 	helpCmdEdit
@@ -788,7 +800,7 @@ var helpRows = []helpRow{
 	{helpArrows, "↑/↓ · PgUp/PgDn", "the same, on the arrow cluster"},
 	{helpHomeEnd, "Home / End", "top / bottom"},
 	{helpSearch, "/ · ?", "search forward / backward (in a pit, its rows)"},
-	{helpSearchRepeat, "n / N", "next / previous match"},
+	{helpSearchRepeat, "n / N", "next / previous match, with the cursor on it"},
 	{helpJump, ":", "command line: any figaro verb, or a coordinate (:12, :12.3, :0)"},
 	{helpCmdHistory, "(in :) ^P/^N · ^R", "command history · search it"},
 	{helpCmdComplete, "(in :) Tab", "complete the verb, an id, or a flag"},
@@ -812,7 +824,10 @@ var helpRows = []helpRow{
 	{helpQuestionTravel, "M-n / M-p", "travel to the next / previous question"},
 	{helpSelectExtend, "^N/^P + Shift", "travel between questions (Alt+^N/^P extends a selection)"},
 	{helpExpand, "Enter", "open tool bodies and form deltas within the selection"},
-	{helpToolBody, "t", "open the tool bodies within the selection"},
+	{helpToolBody, "e", "open the tool bodies within the selection"},
+	{helpPitEnter, "(in a list) Enter", "the row's own action: open a form value, attend an aria"},
+	{helpVisualSelect, "(in v) e / Enter", "select the node under the cursor (e again expands it)"},
+	{helpVisualAttend, "(in v) a", "attend the highlighted id, or the word under the cursor; a path opens in your editor"},
 	{helpEscape, "Esc", "clear selection / close panel"},
 	{helpVisual, "v / V", "visual mode: a cursor; again to mark by character / by line (y yanks, : commands it)"},
 	{helpVisualCols, "(in v) h/l · ←/→", "move the cursor's column"},

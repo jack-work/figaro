@@ -359,3 +359,62 @@ func TestVisual_PaintRestoresTheRowsOwnRendition(t *testing.T) {
 		}
 	}
 }
+
+// e in visual mode points: the mode ends with the node under the cursor
+// selected, so a second e expands it. Enter points the same way.
+func TestVisual_EPointsThenExpands(t *testing.T) {
+	for _, key := range []byte{'e', 0x0d} {
+		tr, _ := visualFixture(t)
+		tr.key('v')
+		stepTo(t, tr, "one") // the tool's first output row
+		want := tr.visual.cursor.ref
+		tr.key(key)
+		if tr.visual.active() {
+			t.Fatalf("%q left the cursor up", key)
+		}
+		if !tr.selection.active || tr.selection.focus.nodeRef != blockOf(want) {
+			t.Fatalf("%q selected %+v, want the node under the cursor %+v", key, tr.selection.focus.nodeRef, want)
+		}
+		if key == 'e' {
+			tr.key('e')
+			if !tr.expanded[blockOf(want)] {
+				t.Fatal("the second e did not expand the tool")
+			}
+		}
+	}
+}
+
+// a in visual mode reads what the cursor is on: a highlight's text, else
+// the word under the cursor. An aria id attends; anything else goes to the
+// path hook, and with none armed the reader is told it is not an id.
+func TestVisual_AttendsTheWordUnderTheCursor(t *testing.T) {
+	tr, _ := visualFixture(t)
+	var attended, opened []string
+	tr.attendAria = func(id string) { attended = append(attended, id) }
+	tr.openPath = func(p string) { opened = append(opened, p) }
+	tr.key('v')
+	stepTo(t, tr, "alpha")
+	tr.key('^') // onto the first word; the row's indent is not a word
+	tr.key('a')
+	if len(attended) != 0 || len(opened) != 1 || opened[0] != "alpha" {
+		t.Fatalf("a on a plain word: attended %v, opened %v", attended, opened)
+	}
+	tr.openPath = nil
+	tr.key('a')
+	if note := tr.status.noticeText(); !strings.Contains(note, "not an aria id") {
+		t.Fatalf("with no path hook the reader is not told: %q", note)
+	}
+}
+
+// n from the transcript lands the block cursor on the hit.
+func TestVisual_RepeatSearchLandsTheCursor(t *testing.T) {
+	tr, _ := visualFixture(t)
+	tr.matchQuery = "hotel"
+	tr.key('n')
+	if !tr.visual.on {
+		t.Fatal("n did not put the cursor up")
+	}
+	if got := cursorWord(t, tr); got != "hotel" {
+		t.Fatalf("the cursor landed on %q, want hotel", got)
+	}
+}

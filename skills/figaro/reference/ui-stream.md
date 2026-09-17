@@ -460,9 +460,9 @@ run `figaro show` (full content above, cursor below).
 | `↓` / `↑` | line down / up |
 | `PgDn` / `PgUp` | half-page down / up |
 | `Home` / `End` | top / bottom |
-| `/` / `?` | literal string search, forward / backward. Inside a pit it searches that pit's rows |
+| `/` / `?` | literal string search, forward / backward. Inside a pit it searches that pit's rows. `n` / `N` repeat it and land the block cursor on the hit |
 | `:` | the command line: any figaro verb, or a coordinate (`:12`, `:12.3`, `:0`). With a highlight up it opens holding `<,>`. See [quoting.md](quoting.md). |
-| `t` / `Enter` | open a tool's body / both the body and the form deltas. Enter is the ONLY key that opens a delta list. In a pit, Enter attends the aria the selected row names |
+| `e` / `Enter` | open a tool's body / both the body and the form deltas. Enter is the ONLY key that opens a delta list. In a pit, Enter is the row's own action: a form value opens, a listing row attends |
 | `f j` / `f k` | next / previous fork point (the block whose `⑂` the question's header carries) |
 | `a` | attend the aria that fork point came from; in a list, the selected row's |
 | `^` | attend this aria's parent, or say it is top-level |
@@ -470,7 +470,7 @@ run `figaro show` (full content above, cursor below).
 | `x` / `X` | in a list, kill the aria the selected row names, asking first / at once; in the queue, drop the message |
 | `y` / `n` | answer that question (Esc is no). Nothing else is read while it is up; the sentence rides the bar's alert and `[y/N]` its command slot, so the question costs no height |
 | `h` | the help panel |
-| `v` / `V` | visual mode: a cursor, then a highlight by character / by line |
+| `v` / `V` | visual mode: a cursor, then a highlight by character / by line. In it, `e` or Enter selects the node under the cursor (so `e e` expands it); `a` attends the highlighted id or the word under the cursor, and hands anything else to your editor (`editor` under `[cli]`) when it is a file |
 | `y` / `Y` | copy the selection / copy its coordinate `<lt.block:a-b>!` |
 | `M-m` | verbose tool output, and every node's address |
 | `Ctrl-O` / `Ctrl-I` | the jumplist: back / forward through the arias attended here |

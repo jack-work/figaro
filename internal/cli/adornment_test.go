@@ -336,14 +336,14 @@ func TestFoldKeysActOnTheirOwnHalf(t *testing.T) {
 	prose := nodeRef{turn: 1, index: 1}
 
 	tr.selectRef(tool, false)
-	tr.key('t')
+	tr.key('e')
 	if tr.adorned[tool] {
-		t.Fatal("t must not open the delta list")
+		t.Fatal("e must not open the delta list")
 	}
 	if !tr.expanded[tool] {
-		t.Fatal("t must open the tool's body")
+		t.Fatal("e must open the tool's body")
 	}
-	tr.key('t')
+	tr.key('e')
 	tr.key(0x0d)
 	if !tr.adorned[tool] || !tr.expanded[tool] {
 		t.Fatalf("Enter opens both: adorned=%v expanded=%v", tr.adorned[tool], tr.expanded[tool])
@@ -352,7 +352,7 @@ func TestFoldKeysActOnTheirOwnHalf(t *testing.T) {
 	// On prose there is no body to open, so t is inert and Enter opens the
 	// list alone.
 	tr.selectRef(prose, false)
-	tr.key('t')
+	tr.key('e')
 	if tr.expanded[prose] {
 		t.Fatal("prose has no body: t must be inert on it")
 	}

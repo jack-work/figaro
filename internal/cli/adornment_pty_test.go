@@ -284,20 +284,20 @@ func adornToolSnake(t *testing.T, p *adornPane) {
 	p.key("Enter") // and closed
 }
 
-// t is the tool's body and NOTHING else; Enter is both halves at once.
+// e is the tool's body and NOTHING else; Enter is both halves at once.
 func adornBodyAndList(t *testing.T, p *adornPane) {
-	p.key("t")
+	p.key("e")
 	rows := p.rows()
 	if !hasRow(rows, "bash") {
-		t.Fatalf("t did not open the tool's body\n%s", p.dump())
+		t.Fatalf("e did not open the tool's body\n%s", p.dump())
 	}
 	for _, key := range adornToolKeys {
 		if hasRow(rows, key) {
-			t.Errorf("t opened the delta list too (row for %q)\n%s", key, p.dump())
+			t.Errorf("e opened the delta list too (row for %q)\n%s", key, p.dump())
 		}
 	}
 
-	p.key("t") // closed again, so Enter opens both from the same place
+	p.key("e") // closed again, so Enter opens both from the same place
 	p.key("Enter")
 	rows = p.rows()
 	if !hasRow(rows, "bash") {

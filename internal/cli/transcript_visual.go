@@ -31,6 +31,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/render"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/mattn/go-runewidth"
@@ -390,10 +391,24 @@ func (t *transcript) visualJump(toEnd bool) {
 // is on screen.
 func (t *transcript) visualEnsureVisible(i int) {
 	body, _ := t.layout(len(t.footLines()))
-	if i < t.offset {
-		t.offset = i
-	} else if i >= t.offset+body {
+	// THE HEADER COVERS ROWS, for the block cursor exactly as for the
+	// selection (ensureSelectionVisible): the floor is the offset plus what
+	// the sticky question hides, or k up a wrapped answer parks the cursor
+	// under the chrome and looks stuck.
+	if i >= t.offset+body {
 		t.offset = i - body + 1
+	}
+	// THE HEADER IS A FUNCTION OF THE OFFSET: a scroll up can bring a
+	// question's pin INTO view as well as retire it (measured: offset 24
+	// with no header, the cursor to line 21, offset 21 now under a
+	// three-row header). So the floor is re-read after every move, until
+	// the cursor clears whatever stands at the offset it landed on.
+	for pass := 0; pass < 3; pass++ {
+		head := t.headRows()
+		if i >= t.offset+head {
+			break
+		}
+		t.offset = max(i-head, 0)
 	}
 }
 
@@ -881,4 +896,120 @@ func (s visualSelection) below(base int) bool {
 		return true
 	}
 	return base > 0 && s.cursor.ref.turn < base && (s.kind == visualNone || s.anchor.ref.turn < base)
+}
+
+// ---------------------------------------------------------------------------
+// Acting from the cursor: the node under it, and the word under it.
+
+// pagerVisualSelect is 'e' and Enter in visual mode: leave the mode and
+// select the node the cursor stands on. The node selection and the cursor
+// are exclusive (enterVisual clears one to seed the other), so this is the
+// handoff between them: e once points, e again expands.
+func pagerVisualSelect(t *transcript) {
+	if t.pendG {
+		// ge is vim's word-end, and the hand that reaches for it gets it.
+		t.pendG = false
+		t.visualWord(1, true)
+		return
+	}
+	ref := t.visual.cursor.ref
+	t.leaveVisual()
+	if !ref.valid() {
+		return
+	}
+	t.selectRef(blockOf(ref), false)
+	t.ensureSelectionVisible()
+}
+
+// pagerVisualAttend is 'a' in visual mode: attend what the cursor is on. A
+// highlight names its text; a bare cursor names the word under it. An aria
+// id attends; anything else is offered to the path hook, which decides
+// whether it is a file.
+func pagerVisualAttend(t *transcript) {
+	text := t.visualTextUnderCursor()
+	if text == "" {
+		t.note("nothing under the cursor")
+		return
+	}
+	if looksLikeAriaID(text) {
+		if t.attendAria == nil {
+			t.note("this session cannot attend (no shell to bind)")
+			return
+		}
+		t.leaveVisual()
+		t.attendAria(text)
+		return
+	}
+	if t.openPath == nil {
+		t.note(text + " is not an aria id")
+		return
+	}
+	t.openPath(text)
+}
+
+// pagerFindNextVisual and pagerFindPrevVisual are n/N from the transcript:
+// the hit is where the reader means to act, so the cursor lands on it. In
+// visual mode the plain rows do that already (landSearch).
+func pagerFindNextVisual(t *transcript) { t.findRepeatVisual(1) }
+func pagerFindPrevVisual(t *transcript) { t.findRepeatVisual(-1) }
+
+func (t *transcript) findRepeatVisual(delta int) {
+	if t.matchQuery == "" {
+		return
+	}
+	if !t.visual.on {
+		t.enterVisual()
+		// The cursor was seeded from the viewport; the search walks from
+		// where the reader was reading, which is the offset.
+		if p, ok := t.visualPointAt(t.offset, 0); ok {
+			t.visual.cursor = p
+		}
+	}
+	t.findRepeat(delta)
+}
+
+// looksLikeAriaID is the SHAPE of a minted id (eight hex digits) or a form
+// reference (@...): what the daemon mints, not what ValidateAriaID would
+// merely accept. Every other word is offered to the path hook, which is
+// where a plain English word is refused with a reason.
+func looksLikeAriaID(s string) bool {
+	if strings.HasPrefix(s, "@") {
+		return rpc.ValidateAriaID(s) == nil
+	}
+	if len(s) != 8 {
+		return false
+	}
+	for _, r := range s {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f')) {
+			return false
+		}
+	}
+	return true
+}
+
+// visualTextUnderCursor is the highlighted text when there is one, else the
+// word the cursor stands in: a run of non-space runes on the cursor's row.
+func (t *transcript) visualTextUnderCursor() string {
+	if t.visual.highlighted() {
+		if text := strings.TrimSpace(t.visualText()); text != "" {
+			return text
+		}
+	}
+	line, ok := t.visualCursorLine()
+	if !ok {
+		return ""
+	}
+	row := t.visualRowPlain(line)
+	i := runeOfCol(row, t.visual.cursor.col)
+	if i < 0 || i >= len(row) || unicode.IsSpace(row[i]) {
+		return ""
+	}
+	lo, hi := i, i
+	for lo > 0 && !unicode.IsSpace(row[lo-1]) {
+		lo--
+	}
+	for hi+1 < len(row) && !unicode.IsSpace(row[hi+1]) {
+		hi++
+	}
+	return strings.Trim(string(row[lo:hi+1]), "`'\"()[]{}<>,;:")
 }

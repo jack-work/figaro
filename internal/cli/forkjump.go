@@ -172,8 +172,25 @@ func pagerAttendFork(t *transcript) {
 	t.attendAria(best)
 }
 
-// pagerAttendRow is 'a' (and Enter) in a pit: attend the aria the selected
-// row names. SELECTABLE MEANS HAS AN ID, and in a list of arias that id is one.
+// pagerPitActivate is Enter in a pit: the row's OWN action. A hosted view
+// (the form) opens the value; a listing row attends the aria it names; a
+// row that is neither does nothing, loudly.
+func pagerPitActivate(t *transcript) {
+	if iv, ok := t.pit.live.(itemView); ok {
+		if row, has := t.pit.selected(); has && row.id != "" {
+			iv.Activate(row.id)
+		}
+		return
+	}
+	if row, ok := t.pit.selected(); ok && rpc.ValidateAriaID(row.id) == nil {
+		pagerAttendRow(t)
+		return
+	}
+	t.note("nothing to open on this row")
+}
+
+// pagerAttendRow is 'a' in a pit: attend the aria the selected row names.
+// SELECTABLE MEANS HAS AN ID, and in a list of arias that id is one.
 func pagerAttendRow(t *transcript) {
 	row, ok := t.pit.selected()
 	if !ok || row.id == "" {

@@ -97,8 +97,12 @@ type transcript struct {
 	attendParent func()
 	// confirm is the y/n question on screen, if any. See confirm.go.
 	confirm *confirmAsk
-	w, h    int
-	tick    int
+	// openPath is 'a' over text that is not an aria id: the session decides
+	// whether it is a file and what to open it with. Dials nothing itself,
+	// but takes the terminal, so it hands off like every other hook.
+	openPath func(path string)
+	w, h     int
+	tick     int
 
 	prev   []string // last painted screen (the frame the terminal is holding)
 	prefix string   // one-shot escapes emitted with the next frame (see enter)

@@ -239,7 +239,7 @@ func TestOpensTranscript_MatchesTheHandKeptList(t *testing.T) {
 		's',        // the pinned question, a pager toggle and so an opener too
 		0x0e, 0x10, // ^N/^P node selection
 		0x0d, 0x0a, // Enter: open tool bodies and form deltas
-		't',      // the tool body alone ('d' is a motion too, and was already an opener)
+		'e',      // the tool body alone; it was 't' until 2026-09-17
 		'v', 'V', // visual selection: a gesture about rows, which only the pager has
 	} {
 		old[b] = true
@@ -330,7 +330,7 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  ↑/↓ · PgUp/PgDn     the same, on the arrow cluster",
 		"  Home / End          top / bottom",
 		"  / · ?               search forward / backward (in a pit, its rows)",
-		"  n / N               next / previous match",
+		"  n / N               next / previous match, with the cursor on it",
 		"  :                   command line: any figaro verb, or a coordinate (:12, :12.3, :0)",
 		"  (in :) ^P/^N · ^R   command history · search it",
 		"  (in :) Tab          complete the verb, an id, or a flag",
@@ -349,7 +349,10 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  M-n / M-p           travel to the next / previous question",
 		"  ^N/^P + Shift       travel between questions (Alt+^N/^P extends a selection)",
 		"  Enter               open tool bodies and form deltas within the selection",
-		"  t                   open the tool bodies within the selection",
+		"  e                   open the tool bodies within the selection",
+		"  (in a list) Enter   the row's own action: open a form value, attend an aria",
+		"  (in v) e / Enter    select the node under the cursor (e again expands it)",
+		"  (in v) a            attend the highlighted id, or the word under the cursor; a path opens in your editor",
 		"  Esc                 clear selection / close panel",
 		"  v / V               visual mode: a cursor; again to mark by character / by line (y yanks, : commands it)",
 		"  (in v) h/l · ←/→    move the cursor's column",
