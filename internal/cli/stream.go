@@ -216,6 +216,13 @@ type interactiveInput struct {
 	// once. Guarded by mu (pagerCatchUp is called with it already held). See
 	// pagerCatchUp: a failed read clears it, because a timeout is not a floor.
 	caughtUp bool
+	// gate parks the read loop while an external program owns the terminal,
+	// and suspendTerm/resumeTerm are how the terminal is handed over. Nil
+	// outside a raw TTY session, which is the same thing as "there is nothing
+	// to hand over". See openpath.go.
+	gate        inputGate
+	suspendTerm func()
+	resumeTerm  func()
 	// lastNL is the last CR/LF byte we delivered (0 otherwise). Windows
 	// conhost and some other terminals emit CR+LF for a single Enter press;
 	// without dedup, a toggle-style binding (Enter -> expand tools) fires
@@ -710,6 +717,43 @@ func (in *interactiveInput) refreshQueued() {
 	go in.resyncIntrinsic(intrinsicQueue)
 }
 
+// inputGate parks the read loop between reads, which is the only place it can
+// be parked without either losing bytes or waiting on a keystroke that will
+// never come. A pause is REQUESTED from the dispatch path -- the read loop's
+// own goroutine, one stack frame below the loop -- so by the time it is asked
+// for, the loop is already on its way back to the check.
+type inputGate struct {
+	mu     sync.Mutex
+	want   bool
+	paused chan struct{} // closed by the reader once it has stopped reading
+	resume chan struct{} // closed by the suspender to let it read again
+}
+
+// request asks the read loop to park. The returned channels are the handshake:
+// wait for paused, and close resume when the terminal is figaro's again.
+func (g *inputGate) request() (paused <-chan struct{}, resume chan<- struct{}) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.want = true
+	g.paused = make(chan struct{})
+	g.resume = make(chan struct{})
+	return g.paused, g.resume
+}
+
+// park is the read loop's half, called before every Read.
+func (g *inputGate) park() {
+	g.mu.Lock()
+	if !g.want {
+		g.mu.Unlock()
+		return
+	}
+	g.want = false
+	paused, resume := g.paused, g.resume
+	g.mu.Unlock()
+	close(paused)
+	<-resume
+}
+
 // run reads input until stdin errors, Ctrl-C (cancel), or Ctrl-D (disconnect).
 // Call under a MakeRaw session so Ctrl-C/Ctrl-D arrive as bytes.
 func (in *interactiveInput) run() {
@@ -722,6 +766,7 @@ func (in *interactiveInput) run() {
 	buf := make([]byte, 4096)
 	var pending []byte // a mouse/escape sequence split across reads
 	for {
+		in.gate.park()
 		n, err := in.tc.Read(buf)
 		if err != nil {
 			in.cancel()

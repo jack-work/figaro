@@ -215,6 +215,21 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 			// Belt and braces: a crash mid-pager must not leave the shell
 			// spewing raw \x1b[<…M.
 			defer os.Stdout.WriteString(ldmouse.Disable)
+			// Handing the terminal to an external program and taking it back.
+			// restore (not restoreOnce) on purpose: the once is the teardown's,
+			// and spending it here would leave the shell raw at exit. The
+			// restore func puts back the mode the shell handed us, which is
+			// still the right mode to put back after any number of round trips.
+			in.suspendTerm = func() {
+				fmt.Fprint(os.Stdout, ldmouse.Disable+disableModifiedKeyReporting+altScreenOff+cursorShow+autowrapOn)
+				restore()
+			}
+			in.resumeTerm = func() {
+				if _, err := tc.MakeRaw(); err != nil {
+					fmt.Fprintf(os.Stderr, "figaro: raw mode: %v\n", err)
+				}
+				fmt.Fprint(os.Stdout, autowrapOff+cursorHide+altScreenOn+ldmouse.Enable+enableModifiedKeyReporting)
+			}
 			if opt.formPit {
 				// The form, and only the form: no history is fetched, and a
 				// fullscreen pit obscures what has not been fetched. Off this
