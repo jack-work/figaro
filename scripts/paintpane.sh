@@ -356,15 +356,98 @@ pp_stable() {
 # capture. An absence inside a pager is not an absence. Assert chrome>0 before
 # believing you are in the pager, and chrome==0 before believing any absence
 # measured outside it.
+#
+# WHAT IT MATCHES, AND WHY THAT AND NOTHING ELSE. It used to grep for
+# '? help' and '! status', two hints that no longer appear anywhere: at HEAD it
+# returned 0 for every pane including a pager, so every absence claim it gated
+# was unlicensed and pp_pager could never believe the pager had come up. An
+# oracle that cannot see its subject reads exactly like a clean result.
+#
+# The footer's RULE LINE is not usable: `figaro show` and `figaro ls` print
+# rules too (measured: rules=1 for both), and neither is a pager.
+#
+# The STATUS BAR is. It is the row the live TUI pins to the bottom, carrying
+# the state glyph, the aria id between middle dots, and the context figures,
+# and nothing that merely prints to stdout emits it. Measured in a 100x20 pane
+# on a synthetic fixture:
+#
+#   bare shell        rules=0 bars=0
+#   figaro show       rules=1 bars=0
+#   figaro ls         rules=1 bars=0
+#   listen (pager)    rules=2 bars=1
+#   pager scrolled up rules=2 bars=1
+#
+# Re-prove it with pp_chrome_selftest after any change to the footer.
 pp_chrome() {
   local cap="${1:-$(pp_cap)}"
-  awk 'BEGIN{n=0} /\? help|! status/{n++} END{print n}' <<<"$cap"
+  awk 'BEGIN{n=0} /· [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f] ·/{n++} END{print n}' <<<"$cap"
+}
+
+# pp_chrome_selftest <aria-id>: prove pp_chrome can say BOTH things.
+#
+# THE HALF THAT MATTERS IS THE ZERO. pp_chrome>0 licenses "I am in the pager";
+# pp_chrome==0 licenses every absence claim made outside one. A matcher that is
+# merely broken returns 0 for everything and quietly licenses all of them, which
+# is how the previous one survived. So the negative cases are checked first and
+# a positive-only pass is not accepted.
+#
+# Needs a live pane (pp_up) and an aria with content (pp_fixture).
+pp_chrome_selftest() {
+  local id="${1:?pp_chrome_selftest <aria-id>}" bad=0 n
+  # EVERY ZERO IS GATED ON THE PANE BEING ALIVE, because a dead pane captures
+  # as the empty string and the empty string counts zero chrome. The first
+  # version of this selftest ended with `q`, which closed the session, and its
+  # "after leaving the pager = 0" then PASSED against nothing at all: the same
+  # shape of lie as the matcher it was written to replace.
+  _pp_expect() { # <label> <want> <got>
+    if ! pp_alive; then
+      echo "paintpane: pp_chrome selftest FAILED: pane is gone, '$1' proves nothing" >&2
+      bad=1
+      return
+    fi
+    if [ "$3" != "$2" ]; then
+      echo "paintpane: pp_chrome selftest FAILED: $1 gave $3, want $2" >&2
+      bad=1
+    else
+      echo "paintpane: pp_chrome selftest ok: $1 = $3"
+    fi
+  }
+  pp_send "clear"; pp_key Enter; pp_stable 8 2 >/dev/null
+  _pp_expect "bare shell" 0 "$(pp_chrome)"
+  pp_send "$PP_BIN show $id"; pp_key Enter; pp_stable 15 2 >/dev/null
+  _pp_expect "figaro show (prints a rule, is not a pager)" 0 "$(pp_chrome)"
+  pp_send "$PP_BIN ls"; pp_key Enter; pp_stable 12 2 >/dev/null
+  _pp_expect "figaro ls (prints a rule, is not a pager)" 0 "$(pp_chrome)"
+  pp_send "clear"; pp_key Enter; pp_stable 8 2 >/dev/null
+  pp_send "$PP_BIN listen $id"; pp_key Enter; pp_stable 20 3 >/dev/null
+  n="$(pp_chrome)"
+  if [ "$n" -gt 0 ]; then
+    echo "paintpane: pp_chrome selftest ok: pager = $n"
+  else
+    echo "paintpane: pp_chrome selftest FAILED: pager gave 0" >&2; bad=1
+  fi
+  # THE PAGER IS LEFT RUNNING, DELIBERATELY. A fourth case ("chrome returns to
+  # zero once the pager closes") would be the strongest form of the claim, and
+  # there is no reliable way to close it from here: q, Ctrl-C and pp_leave each
+  # took the tmux session with them (measured, all three). An assertion that
+  # cannot be made to hold is not evidence, so it is not written down; the
+  # three negative cases above already carry the zero direction, each with a
+  # live pane behind it. pp_down ends the unit.
+  return "$bad"
 }
 
 # pp_pager <aria-id> [budget]: open the pager on an existing aria.
 #
 # `figaro listen` attaches WITHOUT calling figaro.qua: no prompt, no provider,
-# no tokens. ^T promotes to the transcript pager. Waits until chrome appears.
+# no tokens. Waits until chrome appears.
+#
+# ^T IS A NO-OP HERE AND THAT IS NOT A BUG. `listen` opens the pager itself
+# (only an ordinary send stays inline: interactiveInput.startInline), and
+# enterPager returns early when the transcript is already active. It is still
+# sent, because it costs nothing and promotes the one case that does start
+# inline. Do not read "^T changed nothing" as "^T was not delivered": measured
+# on a 100x14 pane, the captures before and after are byte-identical because
+# the pager was already up.
 pp_pager() {
   local id="${1:?pp_pager <aria-id>}" budget="${2:-40}" deadline
   pp_send "$PP_BIN listen $id"; pp_key Enter
