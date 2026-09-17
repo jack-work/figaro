@@ -229,7 +229,7 @@ func TestOpensTranscript_MatchesTheHandKeptList(t *testing.T) {
 		'?', '!', 'Q', // backward search / figaro status / queued-prompt panels
 		'h',      // the help panel, which '?' used to open
 		'l', 'L', // the listing, and the home listing
-		'^',      // attend the parent
+		'^',        // attend the parent
 		'S',        // the form, in the pit
 		'T',        // focus the conversation, keeping the pit
 		0x0f, 0x09, // ^O / Tab: the jumplist, back and forward
