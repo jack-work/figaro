@@ -62,6 +62,25 @@ type vtScreen struct {
 	cur      vtStyle
 	top, bot int // scroll region, 0-based inclusive
 	pend     []byte
+
+	// watch, when set, is called for every cell this screen is about to
+	// change, with the content it holds and the content replacing it. It is
+	// how the flicker oracle sees INTERMEDIATE states: the grid after a frame
+	// cannot tell an erase-then-rewrite from a rewrite. See
+	// transcript_flicker_test.go.
+	watch func(row, col int, before, after vtCell)
+}
+
+// set is the one door every cell change goes through, so the watch hook cannot
+// be bypassed by a new escape handler.
+func (v *vtScreen) set(r, c int, cell vtCell) {
+	if r < 0 || r >= v.h || c < 0 || c >= v.w {
+		return
+	}
+	if v.watch != nil {
+		v.watch(r, c, v.cells[r][c], cell)
+	}
+	v.cells[r][c] = cell
 }
 
 func newVT(w, h int) *vtScreen {
@@ -106,10 +125,10 @@ func (v *vtScreen) put(r rune) {
 	if v.row < 0 || v.row >= v.h || v.col < 0 || v.col >= v.w {
 		return
 	}
-	v.cells[v.row][v.col] = vtCell{r: r, s: v.cur}
+	v.set(v.row, v.col, vtCell{r: r, s: v.cur})
 	v.col++
 	for w := runewidth.RuneWidth(r); w > 1 && v.col < v.w; w-- {
-		v.cells[v.row][v.col] = vtCell{r: vtWideTail, s: v.cur} // wide-glyph tail cell
+		v.set(v.row, v.col, vtCell{r: vtWideTail, s: v.cur}) // wide-glyph tail cell
 		v.col++
 	}
 	if v.col >= v.w {
@@ -169,12 +188,12 @@ func (v *vtScreen) csi(seq string) {
 		}
 		for c := from; c < to && c < v.w; c++ {
 			// EL paints with the current background, not the full style.
-			v.cells[v.row][c] = vtCell{r: ' ', s: vtStyle{bg: v.cur.bg}}
+			v.set(v.row, c, vtCell{r: ' ', s: vtStyle{bg: v.cur.bg}})
 		}
 	case 'J':
 		for r := range v.cells {
 			for c := range v.cells[r] {
-				v.cells[r][c] = vtCell{r: ' ', s: vtStyle{bg: v.cur.bg}}
+				v.set(r, c, vtCell{r: ' ', s: vtStyle{bg: v.cur.bg}})
 			}
 		}
 		v.row, v.col = 0, 0
@@ -215,13 +234,18 @@ func (v *vtScreen) scroll(n int) {
 	}
 	blank := func(r int) {
 		for c := range v.cells[r] {
-			v.cells[r][c] = vtCell{r: ' ', s: vtStyle{bg: v.cur.bg}}
+			v.set(r, c, vtCell{r: ' ', s: vtStyle{bg: v.cur.bg}})
+		}
+	}
+	move := func(dst, src int) {
+		for c := range v.cells[dst] {
+			v.set(dst, c, v.cells[src][c])
 		}
 	}
 	if n > 0 {
 		for r := v.top; r <= v.bot; r++ {
 			if r+n <= v.bot {
-				copy(v.cells[r], v.cells[r+n])
+				move(r, r+n)
 			} else {
 				blank(r)
 			}
@@ -230,7 +254,7 @@ func (v *vtScreen) scroll(n int) {
 	}
 	for r := v.bot; r >= v.top; r-- {
 		if r+n >= v.top {
-			copy(v.cells[r], v.cells[r+n])
+			move(r, r+n)
 		} else {
 			blank(r)
 		}
