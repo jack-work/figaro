@@ -50,6 +50,9 @@ type hushRig struct {
 	bin  string
 	root string
 	env  []string
+	// hushDir is the hush surface: identity, secrets and agent socket.
+	// Two rigs can share one, which is what the dev presets do.
+	hushDir string
 	// hushRuntime is where hush/managed puts the agent socket, and the
 	// value the agent child carries in HUSH_MANAGED_RUNTIME_DIR. It is
 	// how we tell OUR agent from every other one on the machine.
@@ -57,6 +60,15 @@ type hushRig struct {
 }
 
 func newHushRig(t *testing.T, name string) *hushRig {
+	t.Helper()
+	return newHushRigSharing(t, name, "")
+}
+
+// newHushRigSharing builds a rig whose hush surface is shareHush rather than
+// its own. That is not a contrivance: `.#share-hush`, `.#snapshot` and
+// `.#sandbox` all isolate the runtime dir and share the hush surface, so a
+// dev daemon and the user's real one routinely hold the same agent.
+func newHushRigSharing(t *testing.T, name, shareHush string) *hushRig {
 	t.Helper()
 	// /var/tmp, not /tmp: /tmp is tmpfs here, and an agent identity plus
 	// a store is not something to spend RAM on. Also not t.TempDir(),
@@ -73,19 +85,24 @@ func newHushRig(t *testing.T, name string) *hushRig {
 		}
 	}
 
+	hushDir := filepath.Join(root, "hush")
+	if shareHush != "" {
+		hushDir = shareHush
+	}
 	rig := &hushRig{
 		bin:  smokeBinary(t),
 		root: root,
 		// FIGARO_HUSH_DIR pins an embedded hush rooted here: its own
 		// identity, its own socket. Without it the test would reach the
 		// user's real /tmp/figaro-hush agent and stop THAT.
-		hushRuntime: filepath.Join(root, "hush", "run"),
+		hushDir:     hushDir,
+		hushRuntime: filepath.Join(hushDir, "run"),
 	}
 	rig.env = append(os.Environ(),
 		"FIGARO_RUNTIME_DIR="+filepath.Join(root, "run"),
 		"FIGARO_STATE_DIR="+filepath.Join(root, "state"),
 		"FIGARO_CONFIG_DIR="+filepath.Join(root, "config"),
-		"FIGARO_HUSH_DIR="+filepath.Join(root, "hush"),
+		"FIGARO_HUSH_DIR="+hushDir,
 		"FIGARO_HUSH_PASSPHRASE=figaro-hushstop-e2e",
 		// A short TTL so a test that somehow orphans an agent orphans it
 		// for two minutes rather than a day.
@@ -312,5 +329,47 @@ func TestStopWithoutADaemonRetiresTheOrphan(t *testing.T) {
 	t.Logf("figaro stop said: %s", strings.TrimSpace(out))
 	if left := rig.waitForNoAgent(t, 15*time.Second); len(left) > 0 {
 		t.Fatalf("`figaro stop` with no daemon left the orphaned agent(s) %v running", left)
+	}
+}
+
+// TestStopLeavesASharedHushAgentToTheOtherDaemon is the arrangement three dev
+// shells create on purpose: two daemons, isolated runtime dirs, ONE hush
+// surface. Stopping one must not take the agent out from under the other,
+// which would be mid-turn and would not get it back for up to five minutes.
+func TestStopLeavesASharedHushAgentToTheOtherDaemon(t *testing.T) {
+	hushE2EEnabled(t)
+	live := newHushRig(t, "live")
+	livePIDs := live.start(t)
+	// The second rig has its own runtime, state and config, and the FIRST
+	// rig's hush: exactly what `nix develop .#sandbox` gives you.
+	sandbox := newHushRigSharing(t, "sandbox", live.hushDir)
+	if err := sandbox.run("list"); err != nil {
+		t.Fatalf("bring the second daemon up: %v", err)
+	}
+	// They really are on one agent: the rigs report the same pids.
+	shared := sandbox.waitForAgent(t, 30*time.Second)
+	if len(shared) == 0 {
+		t.Fatal("the second daemon never reached the shared agent")
+	}
+	if fmt.Sprint(shared) != fmt.Sprint(livePIDs) {
+		t.Fatalf("the two daemons are not sharing an agent (%v vs %v); this test measures nothing", livePIDs, shared)
+	}
+
+	out := sandbox.output(t, "stop")
+	t.Logf("sandbox stop said: %q", strings.TrimSpace(out))
+	if !strings.Contains(out, "still in use") {
+		t.Errorf("stop did not say it was leaving a shared agent alone: %q", out)
+	}
+	time.Sleep(2 * time.Second)
+	if after := live.agentPIDs(t); len(after) == 0 {
+		t.Fatalf("stopping the sandbox shut down the agent %v that the live daemon is using", livePIDs)
+	}
+
+	// And when the last daemon goes, the agent goes with it.
+	if err := live.run("stop"); err != nil {
+		t.Fatalf("figaro stop: %v", err)
+	}
+	if left := live.waitForNoAgent(t, 15*time.Second); len(left) > 0 {
+		t.Fatalf("the last daemon left the shared agent(s) %v running", left)
 	}
 }

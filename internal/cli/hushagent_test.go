@@ -2,8 +2,10 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -115,9 +117,10 @@ func TestRetireHushAgentShutsDownTheClaimedAgent(t *testing.T) {
 	agent := newFakeHushAgent(t, filepath.Join(t.TempDir(), "run"))
 	require.NoError(t, claimHushAgent(managed.ModeEmbedded, filepath.Dir(agent.sock)))
 
-	sock, stopped, err := retireHushAgent()
+	sock, stopped, heldBy, err := retireHushAgent()
 	require.NoError(t, err)
 	require.True(t, stopped)
+	require.Empty(t, heldBy)
 	require.Equal(t, agent.sock, sock)
 
 	select {
@@ -143,7 +146,7 @@ func TestRetireHushAgentTouchesOnlyTheClaimedSocket(t *testing.T) {
 	theirs := newFakeHushAgent(t, filepath.Join(t.TempDir(), "theirs"))
 	require.NoError(t, claimHushAgent(managed.ModeEmbedded, filepath.Dir(mine.sock)))
 
-	_, stopped, err := retireHushAgent()
+	_, stopped, _, err := retireHushAgent()
 	require.NoError(t, err)
 	require.True(t, stopped)
 
@@ -157,7 +160,7 @@ func TestRetireHushAgentWithoutAClaimDoesNothing(t *testing.T) {
 	// An agent IS running. Nobody claimed it, so it is not ours.
 	agent := newFakeHushAgent(t, filepath.Join(t.TempDir(), "run"))
 
-	sock, stopped, err := retireHushAgent()
+	sock, stopped, _, err := retireHushAgent()
 	require.NoError(t, err)
 	require.False(t, stopped)
 	require.Empty(t, sock)
@@ -172,11 +175,185 @@ func TestRetireHushAgentClearsAClaimOnADeadSocket(t *testing.T) {
 	dead := filepath.Join(t.TempDir(), "run")
 	require.NoError(t, claimHushAgent(managed.ModeEmbedded, dead))
 
-	sock, stopped, err := retireHushAgent()
+	sock, stopped, _, err := retireHushAgent()
 	require.NoError(t, err, "a socket nobody answers is the outcome we wanted")
 	require.False(t, stopped)
 	require.Equal(t, hushAgentSocket(dead), sock)
 
 	_, err = os.Stat(filepath.Join(dir, "hush-agent"))
 	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+// writeDaemonPID plants an angelus.pid in a runtime dir, which is how one
+// figaro decides whether another is still alive.
+func writeDaemonPID(t *testing.T, runtimeDir string, pid int) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(runtimeDir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(runtimeDir, "angelus.pid"),
+		[]byte(fmt.Sprintf("%d\n", pid)), 0o600))
+}
+
+// deadPID returns a pid that has certainly exited.
+func deadPID(t *testing.T) int {
+	t.Helper()
+	cmd := exec.Command("true")
+	require.NoError(t, cmd.Run())
+	return cmd.Process.Pid
+}
+
+// claimAs registers another daemon, at its own runtime dir, against sock.
+func claimAs(t *testing.T, runtimeDir, hushRuntimeDir string) {
+	t.Helper()
+	t.Setenv("FIGARO_RUNTIME_DIR", runtimeDir)
+	require.NoError(t, claimHushAgent(managed.ModeEmbedded, hushRuntimeDir))
+}
+
+// One agent, two daemons. `.#share-hush`, `.#snapshot` and `.#sandbox` all
+// isolate the runtime dir while SHARING the hush surface, so this is the
+// ordinary arrangement on a dev machine, not a corner. Stopping the sandbox
+// must not take the agent out from under the live daemon: it would be
+// mid-turn, and keepHushAlive would not rebuild it for up to five minutes.
+func TestRetireHushAgentLeavesAnAgentAnotherLiveDaemonIsUsing(t *testing.T) {
+	hushRun := filepath.Join(t.TempDir(), "run")
+	agent := newFakeHushAgent(t, hushRun)
+
+	theirRuntime := filepath.Join(t.TempDir(), "their-run")
+	writeDaemonPID(t, theirRuntime, os.Getpid()) // alive: this test process
+	claimAs(t, theirRuntime, hushRun)
+
+	myRuntime := isolateRuntime(t)
+	require.NoError(t, claimHushAgent(managed.ModeEmbedded, hushRun))
+
+	sock, stopped, heldBy, err := retireHushAgent()
+	require.NoError(t, err)
+	require.False(t, stopped)
+	require.Equal(t, agent.sock, sock)
+	require.Equal(t, []string{theirRuntime}, heldBy)
+	require.Empty(t, agent.received(),
+		"the other daemon's agent was shut down from under it")
+
+	// My claim and my registration are gone; theirs is untouched.
+	_, err = os.Stat(hushClaimPath())
+	require.ErrorIs(t, err, os.ErrNotExist)
+	_, err = os.Stat(filepath.Join(hushUsersDir(sock), hushUserKey(myRuntime)))
+	require.ErrorIs(t, err, os.ErrNotExist)
+	_, err = os.Stat(filepath.Join(hushUsersDir(sock), hushUserKey(theirRuntime)))
+	require.NoError(t, err)
+}
+
+// The same registry, the other way: a daemon that registered and then died
+// must not keep an agent alive forever. Its entry is pruned and the agent
+// goes.
+func TestRetireHushAgentPrunesADeadDaemonAndRetires(t *testing.T) {
+	hushRun := filepath.Join(t.TempDir(), "run")
+	agent := newFakeHushAgent(t, hushRun)
+
+	goneRuntime := filepath.Join(t.TempDir(), "gone-run")
+	writeDaemonPID(t, goneRuntime, deadPID(t))
+	claimAs(t, goneRuntime, hushRun)
+
+	isolateRuntime(t)
+	require.NoError(t, claimHushAgent(managed.ModeEmbedded, hushRun))
+
+	sock, stopped, heldBy, err := retireHushAgent()
+	require.NoError(t, err)
+	require.True(t, stopped, "a registration whose daemon is dead must not hold the agent")
+	require.Empty(t, heldBy)
+	<-agent.done
+
+	_, err = os.Stat(filepath.Join(hushUsersDir(sock), hushUserKey(goneRuntime)))
+	require.ErrorIs(t, err, os.ErrNotExist, "the dead daemon's registration should have been pruned")
+}
+
+// The stale-claim question, stated as a test. A runtime dir on disk outlives
+// a reboot; the agent socket under /tmp does not. So a claim can survive into
+// a world where a DIFFERENT daemon has since started an agent at that same
+// path, and the claim alone cannot tell the difference. The registry can:
+// this stop never registered against the socket that is there now.
+func TestAStaleClaimCannotAdoptTheAgentOfALiveDaemon(t *testing.T) {
+	hushRun := filepath.Join(t.TempDir(), "run")
+	agent := newFakeHushAgent(t, hushRun)
+
+	// The daemon that owns the agent as things stand.
+	liveRuntime := filepath.Join(t.TempDir(), "live-run")
+	writeDaemonPID(t, liveRuntime, os.Getpid())
+	claimAs(t, liveRuntime, hushRun)
+
+	// A claim left behind by a daemon from a previous boot: the file is
+	// there, the registration is not, because the registry lived beside
+	// the socket and went with it.
+	staleRuntime := isolateRuntime(t)
+	require.NoError(t, os.WriteFile(filepath.Join(staleRuntime, "hush-agent"),
+		[]byte(agent.sock+"\n"), 0o600))
+
+	_, stopped, heldBy, err := retireHushAgent()
+	require.NoError(t, err)
+	require.False(t, stopped)
+	require.Equal(t, []string{liveRuntime}, heldBy)
+	require.Empty(t, agent.received(),
+		"a claim from a previous boot adopted an agent that is not its own")
+}
+
+// asDaemon makes the rest of the test speak as the daemon living at
+// runtimeDir: the same switch `figaro stop` gets from its environment.
+func asDaemon(t *testing.T, runtimeDir string) {
+	t.Helper()
+	t.Setenv("FIGARO_RUNTIME_DIR", runtimeDir)
+	require.Equal(t, runtimeDir, angelusRuntimeDir())
+}
+
+// The rule, in one sequence: a shared agent lives until its LAST daemon
+// stops, and a daemon that died without stopping does not pin it there.
+//
+// The two tests above take one half each, and the gated e2e drives the whole
+// thing through real processes. This states it as a single in-suite fact, so
+// a change that gets one step right and another wrong cannot pass by halves.
+func TestASharedHushAgentLivesUntilItsLastDaemonStops(t *testing.T) {
+	hushRun := filepath.Join(t.TempDir(), "run")
+	agent := newFakeHushAgent(t, hushRun)
+
+	// Three daemons on one hush surface. Two are running; the third died
+	// without ever stopping, which is what a SIGKILL or a reboot leaves.
+	first := filepath.Join(t.TempDir(), "first-run")
+	second := filepath.Join(t.TempDir(), "second-run")
+	crashed := filepath.Join(t.TempDir(), "crashed-run")
+	writeDaemonPID(t, first, os.Getpid())
+	writeDaemonPID(t, second, os.Getpid())
+	writeDaemonPID(t, crashed, deadPID(t))
+	claimAs(t, first, hushRun)
+	claimAs(t, second, hushRun)
+	claimAs(t, crashed, hushRun)
+
+	// FIRST STOP: the second daemon is still using the agent, so it stays,
+	// and stop says whose it is.
+	asDaemon(t, first)
+	sock, stopped, heldBy, err := retireHushAgent()
+	require.NoError(t, err)
+	require.False(t, stopped)
+	require.Equal(t, []string{second}, heldBy,
+		"only the live daemon should hold the agent; the crashed one must have been pruned")
+	require.Empty(t, agent.received(), "the agent was shut down while a daemon was still using it")
+
+	// The crashed daemon's registration is gone on the way past, so it can
+	// never pin the agent: that is what makes the last stop able to act.
+	_, err = os.Stat(filepath.Join(hushUsersDir(sock), hushUserKey(crashed)))
+	require.ErrorIs(t, err, os.ErrNotExist)
+
+	// SECOND STOP: nobody is left, so the agent goes.
+	asDaemon(t, second)
+	sock, stopped, heldBy, err = retireHushAgent()
+	require.NoError(t, err)
+	require.True(t, stopped, "the last daemon out must retire the agent")
+	require.Empty(t, heldBy)
+	select {
+	case <-agent.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the agent was never asked to shut down")
+	}
+	require.Equal(t, []string{"shutdown"}, agent.received())
+
+	// Nothing of any of the three is left behind.
+	entries, err := os.ReadDir(hushUsersDir(sock))
+	require.NoError(t, err)
+	require.Empty(t, entries, "the registry should be empty once every daemon has stopped")
 }

@@ -270,8 +270,15 @@ otherwise rebuild.
 
 Which agent gets stopped is not derived from the environment: a daemon
 advertises the one it owns in `<runtime-dir>/hush-agent`, and stop acts on that
-claim. An external agent is never claimed and so never stopped, and one
-figaro cannot reach another's.
+claim. An external agent is never claimed and so never stopped.
+
+**One agent can have several daemons.** `.#share-hush`, `.#snapshot` and
+`.#sandbox` isolate the runtime dir and share the hush surface, so a dev daemon
+and the real one hold the same agent. Each registers beside the socket
+(`<hush-runtime-dir>/figaro-users/`), and stop retires the agent only when no
+other registered daemon is still alive; otherwise it says who is holding it.
+Registrations whose daemon has died are pruned on the way past, so the last one
+out still turns the light off.
 
 | Command | Effect |
 |---|---|
