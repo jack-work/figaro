@@ -360,27 +360,27 @@ func TestVisual_PaintRestoresTheRowsOwnRendition(t *testing.T) {
 	}
 }
 
-// e in visual mode points: the mode ends with the node under the cursor
-// selected, so a second e expands it. Enter points the same way.
-func TestVisual_EPointsThenExpands(t *testing.T) {
-	for _, key := range []byte{'e', 0x0d} {
-		tr, _ := visualFixture(t)
-		tr.key('v')
-		stepTo(t, tr, "one") // the tool's first output row
-		want := tr.visual.cursor.ref
-		tr.key(key)
-		if tr.visual.active() {
-			t.Fatalf("%q left the cursor up", key)
-		}
-		if !tr.selection.active || tr.selection.focus.nodeRef != blockOf(want) {
-			t.Fatalf("%q selected %+v, want the node under the cursor %+v", key, tr.selection.focus.nodeRef, want)
-		}
-		if key == 'e' {
-			tr.key('e')
-			if !tr.expanded[blockOf(want)] {
-				t.Fatal("the second e did not expand the tool")
-			}
-		}
+// Enter in visual mode points: the mode ends with the node under the cursor
+// selected, and e then expands it. e itself stays the word-end motion.
+func TestVisual_EnterPointsThenEExpands(t *testing.T) {
+	tr, _ := visualFixture(t)
+	tr.key('v')
+	stepTo(t, tr, "one") // the tool's first output row
+	want := tr.visual.cursor.ref
+	tr.key('e')
+	if !tr.visual.active() {
+		t.Fatal("e in visual mode must stay a motion")
+	}
+	tr.key(0x0d)
+	if tr.visual.active() {
+		t.Fatal("Enter left the cursor up")
+	}
+	if !tr.selection.active || tr.selection.focus.nodeRef != blockOf(want) {
+		t.Fatalf("Enter selected %+v, want the node under the cursor %+v", tr.selection.focus.nodeRef, want)
+	}
+	tr.key('e')
+	if !tr.expanded[blockOf(want)] {
+		t.Fatal("e after Enter did not expand the tool")
 	}
 }
 

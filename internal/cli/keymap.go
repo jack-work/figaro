@@ -479,10 +479,10 @@ var keymap = []keyBinding{
 	// nothing for a word motion to move.
 	{chord: byteChord('w'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualWordNext},
 	{chord: byteChord('b'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualWordPrev},
-	// 'e' IS NOT A MOTION HERE: it points, and leaves the mode with the node
-	// under the cursor selected, so e e is point-then-expand. ge keeps vim's
-	// word-end for the hand that wants it.
-	{chord: byteChord('e'), modes: inVisual, open: staysInline, why: "there is no cursor to point with", help: helpVisualSelect, pager: pagerVisualSelect},
+	// 'e' stays vim's word-end in here: a hand that is moving a cursor
+	// means the motion. Enter points, and leaves the mode with the node
+	// under the cursor selected, so Enter e is point-then-expand.
+	{chord: byteChord('e'), modes: inVisual, open: staysInline, why: "a cursor motion", help: helpVisualMotions, pager: pagerVisualWordEnd},
 	{chord: byteChord(0x0d), modes: inVisual, open: staysInline, why: "there is no cursor to point with", help: helpVisualSelect, pager: pagerVisualSelect},
 	{chord: byteChord(0x0a), modes: inVisual, open: staysInline, why: "there is no cursor to point with", help: helpVisualSelect, pager: pagerVisualSelect},
 	{chord: byteChord('a'), modes: inVisual, open: staysInline, why: "there is no cursor to read under", help: helpVisualAttend, pager: pagerVisualAttend},
@@ -826,7 +826,7 @@ var helpRows = []helpRow{
 	{helpExpand, "Enter", "open tool bodies and form deltas within the selection"},
 	{helpToolBody, "e", "open the tool bodies within the selection"},
 	{helpPitEnter, "(in a list) Enter", "the row's own action: open a form value, attend an aria"},
-	{helpVisualSelect, "(in v) e / Enter", "select the node under the cursor (e again expands it)"},
+	{helpVisualSelect, "(in v) Enter", "select the node under the cursor (then e expands it)"},
 	{helpVisualAttend, "(in v) a", "attend the highlighted id, or the word under the cursor; a path opens in your editor"},
 	{helpEscape, "Esc", "clear selection / close panel"},
 	{helpVisual, "v / V", "visual mode: a cursor; again to mark by character / by line (y yanks, : commands it)"},

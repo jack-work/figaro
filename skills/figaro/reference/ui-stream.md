@@ -483,7 +483,7 @@ run `figaro show` (full content above, cursor below).
 | `x` / `X` | in a list, kill the aria the selected row names, asking first / at once; in the queue, drop the message |
 | `y` / `n` | answer that question (Esc is no). Nothing else is read while it is up; the sentence rides the bar's alert and `[y/N]` its command slot, so the question costs no height |
 | `h` | the help panel |
-| `v` / `V` | visual mode: a cursor, then a highlight by character / by line. In it, `e` or Enter selects the node under the cursor (so `e e` expands it); `a` attends the highlighted id or the word under the cursor, and hands anything else to your editor (`editor` under `[cli]`) when it is a file |
+| `v` / `V` | visual mode: a cursor, then a highlight by character / by line. In it, Enter selects the node under the cursor (then `e` expands it); `e` itself stays the word-end motion; `a` attends the highlighted id or the word under the cursor, and hands anything else to your editor (`editor` under `[cli]`) when it is a file |
 | `y` / `Y` | copy the selection / copy its coordinate `<lt.block:a-b>!` |
 | `M-m` | verbose tool output, and every node's address |
 | `Ctrl-O` / `Ctrl-I` | the jumplist: back / forward through the arias attended here |
