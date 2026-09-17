@@ -168,6 +168,12 @@ type CLIConfig struct {
 	// RefSigil is the prefix character for form references in
 	// prompts and tab completion. Must be "@" or ":". Default "@".
 	RefSigil string `toml:"ref_sigil"`
+
+	// Editor is the command the pager hands the terminal to when a reader
+	// opens a path. A literal command line, split the way the ':' box splits
+	// one: no $EDITOR expansion, no globbing, no substitution. Empty (the
+	// default) means the key that would open a file says so instead.
+	Editor *string `toml:"editor"`
 }
 
 // AuthzConfig selects the authentication provider and the authorization
@@ -770,6 +776,15 @@ func (l *Loaded) RefSigil() (string, error) {
 		return s, nil
 	}
 	return "", fmt.Errorf("config: ref_sigil must be \"@\" or \":\", got %q", s)
+}
+
+// Editor returns the command the pager opens a file with. Empty means none is
+// configured.
+func (l *Loaded) Editor() string {
+	if l.cfg().CLI.Editor == nil {
+		return ""
+	}
+	return strings.TrimSpace(*l.cfg().CLI.Editor)
 }
 
 // CoordFormatDefault reads dd/mm/yy hh:mm:ss.
