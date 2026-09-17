@@ -542,6 +542,15 @@ func (c *Client) adoptMoreAfter(p Page) {
 	}
 	_, top := p.Span()
 	covered, ok := c.store.Top()
+	// THE OPEN TAIL IS COVERAGE TOO. It is not a range, so Top() cannot see
+	// it, and a backward read that ends below the streaming suffix would
+	// otherwise be believed about a region we are already holding.
+	if id := c.store.OpenTurn(); id != 0 && c.store.OpenLen() > c.store.OpenHead() {
+		liveTop := Anchor{Turn: uint64(id), Node: uint64(c.store.OpenLen() - 1)}
+		if !ok || covered.Less(liveTop) {
+			covered, ok = liveTop, true
+		}
+	}
 	if !ok || !top.Less(covered) {
 		m := c.store.More()
 		m.After = p.More.After
