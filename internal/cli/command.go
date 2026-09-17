@@ -994,6 +994,7 @@ func (in *interactiveInput) wireHooks() {
 	// The hooks the pager calls FROM DISPATCH hand off to a goroutine: that
 	// path already holds the render lock, and taking it twice freezes.
 	in.lt.tr.openForm = func() { go in.openLive("form show", "", false) }
+	in.lt.tr.openPath = in.openPath
 }
 
 func (in *interactiveInput) seedSubject(gen uint64) {
