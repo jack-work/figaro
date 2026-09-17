@@ -170,7 +170,7 @@ Violate this and a sweeper cannot tell your processes from the user's.
 > | isolated config | `pp_config_copy`, if you truly need one. **Excludes `providers/` and `hush/`**, then *refuses to continue* if any group/world-readable file survived. Auth comes from the environment instead. |
 > | content | `pp_fixture N`: **synthetic, not the master's history** (below). |
 > | dirs | `mkdir -p -m 700` **before anything lands**. Do not trust umask; this box yields 755. |
-> | `/tmp/paint-<hunter>/` | **also 700.** BASILIO caught this after I had declared victory: I fixed `/var/tmp` and left `/tmp/paint-*` at **755 with 99 world-readable capture files**, and a jogdiff capture is *a photograph of the master's conversation*. BERTA's glob covered the path, not the **mode**. Closed, captures deleted; `pp_fixture` supersedes them. |
+> | the hunter directory | **also 700.** BASILIO caught this after I had declared victory: I fixed `/var/tmp` and left `/tmp/paint-*` at **755 with 99 world-readable capture files**, and a jogdiff capture is *a photograph of the master's conversation*. BERTA's glob covered the path, not the **mode**. Closed, captures deleted; `pp_fixture` supersedes them. |
 > | teardown | `pp_down` `rm -rf`s the config copy **first**, then the store. |
 > | `pp_seed` | **disarmed**: prints why and exits 1 rather than silently no-op'ing, because three hunters had already been told to call it. |
 >
@@ -217,10 +217,10 @@ a turn and an A/B costs two: with a *different* fixture aria per arm, which is i
 own confound.
 
 ```
-tmux socket   /tmp/paint-<hunter>/tmux.sock     PRIVATE server, never the default socket
+tmux socket   /var/tmp/paint-<hunter>/tmux.sock  PRIVATE server, never the default socket
 tmux session  paint-<hunter>-<tag>
 scratch store /var/tmp/paint-<hunter>/{state,run,config}
-binary        /tmp/paint-<hunter>/figaro        stamped, invoked by ABSOLUTE PATH
+binary        /var/tmp/paint-<hunter>/figaro     stamped, invoked by ABSOLUTE PATH
 hunters       alma | basilio | bartolo | cherubino
 ```
 
@@ -228,17 +228,38 @@ A **private socket** is the whole defence: `kill-server` on your own socket
 provably cannot touch the user's sessions (`0 dev figaro-qua fx gw4 iq iq2` live
 on the default socket). Never run bare `tmux kill-server`.
 
-**`/tmp` is RAM.** It is a 28 G tmpfs shared with everything on the box, and a
-stamped figaro is ~38 MB. `pp_init` always builds to the same path (`-o
-"$PP_BIN"`) so *rebuilds overwrite and do not accumulate*: but **A/B variants
-do**: keep `figaro`, the arm you drive interactively, in `/tmp/paint-<hunter>/`,
-and put probe/fixed/variant binaries in `/var/tmp/paint-<hunter>/` (disk, 703 G
-free). Four hunters × one binary is ~154 MB of RAM; four hunters × three arms
-each is not. Record each arm's `md5sum` in your write-up either way: that is the
-evidence, not the file's location.
+**Everything is on `/var/tmp`, because `/tmp` is RAM.** It is a 28 G tmpfs
+shared with everything on the box and a stamped figaro is ~47 MB.
 
-**No nix dev shells.** A dev root is shared; a scratch store is not. So there is
-no `FIGARO_DEV_ROOT` to hand a sweeper: instead a daemon is attributable by env:
+This paragraph used to say the opposite, and the reasoning is worth keeping as a
+specimen: `pp_init` always builds to the same path, so *rebuilds overwrite and
+do not accumulate*, so one binary per hunter in tmpfs was called affordable.
+Both halves are true and the conclusion was still wrong. Rebuilds overwrite per
+hunter **name**; teardown deleted the store and left the binary; so every name
+ever used kept 47 MB of RAM indefinitely. Two clean teardowns during the flicker
+hunt left two orphans, and nothing in the harness ever collected them. `pp_down`
+deletes the binary now, and `maintaining.md` said plainly all along that scratch
+builds belong on `/var/tmp`.
+
+Record each arm's `md5sum` in your write-up regardless: that is the evidence,
+not the file's location.
+
+**Build through the flake; `pp_init` does.** It runs
+`nix develop .#tools --command go build`, and prints the toolchain version
+beside the binary's `--version` and md5, because two arms built by different
+compilers is the same confound as two arms that are one binary, and it does not
+show up in `--version`. A bare `go build` on this box gives go1.26.5 where the
+flake gives go1.26.1; `maintaining.md` names that trap, and the harness was the
+one place it was stepped in on every hunt.
+
+`.#tools` and not the default shell: it carries the toolchain and nothing else,
+where every other shell builds the figaro package first.
+
+**This is not a shared dev root.** `--command go build` sets no `FIGARO_*`
+variable and creates no `FIGARO_DEV_ROOT`, so a daemon stays attributable by
+env, which is the property a sweeper needs and the reason this file used to say
+"no nix dev shells". That rule was about RUNNING figaro under a shared dev root.
+It never applied to the compiler.
 
 ```sh
 for p in $(pgrep -x figaro); do
@@ -251,12 +272,12 @@ Teardown is **two halves** (trap #10: `kill-server` leaves the daemon running;
 seventeen agents once left 230 orphaned processes):
 
 ```sh
-FIGARO_STATE_DIR=… FIGARO_RUNTIME_DIR=… FIGARO_CONFIG_DIR=… /tmp/paint-<h>/figaro stop --force
-tmux -S /tmp/paint-<h>/tmux.sock kill-server
+FIGARO_STATE_DIR=… FIGARO_RUNTIME_DIR=… FIGARO_CONFIG_DIR=… /var/tmp/paint-<h>/figaro stop --force
+tmux -S /var/tmp/paint-<h>/tmux.sock kill-server
 ```
 
-`pp_down` does both and is installed as an **EXIT trap** by `pp_init`, so an
-aborted script still cleans up. Not-ours, do **not** reap: daemons with
+`pp_down` does both, deletes the store and the binary, and is installed as an
+**EXIT trap** by `pp_init`, so an aborted script still cleans up. Not-ours, do **not** reap: daemons with
 `FIGARO_RUNTIME_DIR` unset (the live one), and anything under
 `/run/user/1000/figaro-dev-share-hush/run`.
 
@@ -293,9 +314,13 @@ missing-credential** path. Two consequences:
 ## 2. Stamp the binary. Always.
 
 ```sh
-go build -ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-parse --short=12 HEAD)" \
-  -o /tmp/paint-<hunter>/figaro ./cmd/figaro
+nix develop .#tools --command go build \
+  -ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-parse --short=12 HEAD)" \
+  -o /var/tmp/paint-<hunter>/figaro ./cmd/figaro
 ```
+
+Two separate reasons, and neither substitutes for the other: the shell decides
+WHICH COMPILER, the ldflag decides whether the binary can say what it is.
 
 A plain `go build` **in a worktree records no revision at all**: Go's VCS
 autodetection only fires when `.git` is a directory, and a worktree's is a file.
@@ -457,8 +482,8 @@ The second row of that table is the operational one, because figaro's painter
 finishes every frame by writing the status row at `screen[t.h-1]` and so leaves
 the cursor at the bottom. **Therefore: every shrink of the pager shifts the
 terminal's grid upward by `min(rows_lost, cursor_y)`, and the painter's memory of
-the screen does not move with it.** Reproduce with the probe in
-`/tmp/paint-alma/` style: 15 lines of `printf`, no figaro involved. Do that
+the screen does not move with it.** Reproduce with a standalone
+probe: 15 lines of `printf`, no figaro involved. Do that
 before blaming figaro for anything resize-shaped.
 
 ---

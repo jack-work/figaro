@@ -5,7 +5,6 @@ package render
 
 import (
 	"strings"
-	"unicode/utf8"
 )
 
 // SanitizeForTerminal returns s with terminal-state-mutating ANSI
@@ -159,10 +158,36 @@ func StripEscapes(s string) string {
 // title ended it early instead, which clips a row short and loses text.
 func SkipEscape(s string, i int) int { return skipEscape(s, i) }
 
+// runeLen is the byte length of the rune at s[i], over either representation.
+// utf8 has one decoder per representation and a generic body can call neither
+// for both; this reads the length out of the lead byte, which is the only part
+// of the decode that matters here.
+func runeLen[T ~string | ~[]byte](s T, i int) int {
+	c := s[i]
+	switch {
+	case c < 0x80:
+		return 1
+	case c < 0xC0: // continuation byte: not a lead, treat as one
+		return 1
+	case c < 0xE0:
+		return min(2, len(s)-i)
+	case c < 0xF0:
+		return min(3, len(s)-i)
+	default:
+		return min(4, len(s)-i)
+	}
+}
+
+// SkipEscapeBytes is SkipEscape over a buffer. The painter measures rows it has
+// just built in a byte buffer and must not allocate a string to do it, and the
+// grammar below is the one an escape has: sharing it is the point. Both call
+// the same body.
+func SkipEscapeBytes(b []byte, i int) int { return skipEscape(b, i) }
+
 // skipEscape returns the index just past the escape sequence beginning at i
 // (s[i] == ESC), consuming the WHOLE sequence for every form the terminal
 // grammar defines. Each arm below is a leak that was measured, not imagined:
-func skipEscape(s string, i int) int {
+func skipEscape[T ~string | ~[]byte](s T, i int) int {
 	i++ // ESC
 	if i >= len(s) {
 		return i
@@ -210,10 +235,7 @@ func skipEscape(s string, i int) int {
 		// half: "\x1b\u0631" came back as invalid UTF-8. Only reachable from
 		// splitToWidth, and only because that used to carry its own second copy
 		// of this scanner; there is one now.
-		_, sz := utf8.DecodeRuneInString(s[i:])
-		if sz == 0 {
-			sz = 1
-		}
+		sz := runeLen(s, i)
 		i += sz
 	}
 	if i > len(s) {
