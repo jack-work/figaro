@@ -102,23 +102,18 @@ func runExport(loaded *config.Loaded, args []string) {
 	fmt.Fprintf(stderrw, "exported %s (%d messages) to %s\n", id, len(doc.Messages), out)
 }
 
-// exportAria gathers everything portable about one aria, through the angelus -
-// so it works while the aria is live, and never touches the store's flock.
-func exportAria(ctx context.Context, acli *sdk.Angelus, loaded *config.Loaded, id string) (portableAria, error) {
+// exportMessages reads an aria's whole conversation, in LT order, minus the
+// scaffolding that does not travel.
+func exportMessages(ctx context.Context, acli *sdk.Angelus, id string) ([]message.Message, error) {
 	resp, err := acli.IR(ctx, id, 0, 0)
 	if err != nil {
-		return portableAria{}, fmt.Errorf("read %s: %w", id, err)
+		return nil, fmt.Errorf("read %s: %w", id, err)
 	}
-	doc := portableAria{
-		Figaro:   portableFormat,
-		AriaID:   id,
-		Exported: time.Now().Format(time.RFC3339),
-		Messages: make([]message.Message, 0, len(resp.Entries)),
-	}
+	msgs := make([]message.Message, 0, len(resp.Entries))
 	for _, e := range resp.Entries {
 		var m message.Message
 		if err := json.Unmarshal(e.Payload, &m); err != nil {
-			return portableAria{}, fmt.Errorf("parse LT=%d: %w", e.LT, err)
+			return nil, fmt.Errorf("parse LT=%d: %w", e.LT, err)
 		}
 		// Scaffolding does not travel. The genesis tic and the outfit-birth
 		// stamp belong to the store's topology: the destination mints its own
@@ -128,7 +123,23 @@ func exportAria(ctx context.Context, acli *sdk.Angelus, loaded *config.Loaded, i
 		if m.Role == message.RoleGenesis || (m.Role == message.RoleInput && len(m.Content) == 0) {
 			continue
 		}
-		doc.Messages = append(doc.Messages, m)
+		msgs = append(msgs, m)
+	}
+	return msgs, nil
+}
+
+// exportAria gathers everything portable about one aria, through the angelus -
+// so it works while the aria is live, and never touches the store's flock.
+func exportAria(ctx context.Context, acli *sdk.Angelus, loaded *config.Loaded, id string) (portableAria, error) {
+	msgs, err := exportMessages(ctx, acli, id)
+	if err != nil {
+		return portableAria{}, err
+	}
+	doc := portableAria{
+		Figaro:   portableFormat,
+		AriaID:   id,
+		Exported: time.Now().Format(time.RFC3339),
+		Messages: msgs,
 	}
 
 	// The form lives on the ARIA socket, not the angelus, so this
