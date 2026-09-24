@@ -476,14 +476,7 @@ func decodeNativeMessage(nm nativeMessage) message.Message {
 			})
 		}
 	}
-	switch nm.StopReason {
-	case "end_turn", "stop":
-		m.StopReason = message.StopEnd
-	case "max_tokens", "length":
-		m.StopReason = message.StopLength
-	case "tool_use":
-		m.StopReason = message.StopToolInvoke
-	}
+	m.StopReason = provider.AnthropicStopReason(nm.StopReason)
 	if nm.Usage != nil {
 		m.Usage = &message.Usage{
 			InputTokens:      nm.Usage.InputTokens,
@@ -1047,50 +1040,60 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 		return fmt.Errorf("anthropic: %s", apiErrorMessage(resp.StatusCode, errBody))
 	}
 
-	nm, err := a.drainSSE(ctx, resp.Body, model, bus)
-	if err != nil {
-		// A CANCELLED TURN IS A PREMATURE CLOSE, NOT A BROKEN STREAM. What the
-		// accumulator holds is real: it was produced by this provider from
-		// this wire, so the message and its native payload agree by
-		// construction. Dropping it made figaro synthesise a partial from its
-		// OWN text accumulator -- a message with no native payload, whose
-		// translation had to be re-encoded and lost every signed thinking
-		// block. Anything else that ends a stream (a scanner fault, a
-		// truncated body) is still a broken stream and still drops.
-		if !errors.Is(err, context.Canceled) || len(nm.Content) == 0 {
+	return a.land(a.drainSSE(ctx, resp.Body, model, bus))(providerName, bus)
+}
+
+// land is what happens to a drained stream, and there is ONE of it: Send and
+// SendWithTransport used to carry two copies of this tail, and a rule
+// learned on one path was a rule the other could forget. It returns a
+// function so the drain call reads as one expression at both sites.
+//
+// Three outcomes:
+//
+//   - A cancelled turn is a premature close, not a broken stream. What the
+//     accumulator holds is real: it was produced by this provider from this
+//     wire, so the message and its native payload agree by construction.
+//     Dropping it made figaro synthesise a partial from its OWN text, a
+//     message with no native payload whose re-encoded translation lost every
+//     signed thinking block. Anything else that ends a stream (a scanner
+//     fault, a truncated body) is still a broken stream and still drops.
+//   - A stream that closed cleanly but is not a reply (nothing in it, or a
+//     stop reason that is not a way of finishing: refusal, content_filter,
+//     a word from the future) keeps whatever the model produced, marked
+//     StopError, and FAILS THE SEND with the wire's word. This used to land
+//     as a normal stop, or as nothing at all, and the aria went quiet
+//     (jack-work/figaro#24).
+//   - A reply lands as one.
+func (a *Anthropic) land(nm nativeMessage, err error) func(label string, bus provider.Bus) error {
+	return func(label string, bus provider.Bus) error {
+		if err != nil {
+			if !errors.Is(err, context.Canceled) || len(nm.Content) == 0 {
+				return err
+			}
+			nm.StopReason = string(message.StopAborted)
+			if perr := a.handOver(nm, bus); perr != nil {
+				return perr
+			}
 			return err
 		}
-		nm.StopReason = string(message.StopAborted)
-		if perr := a.handOver(nm, bus); perr != nil {
-			return perr
+		if fault := provider.CheckCompletion(label, decodeNativeMessage(nm), nm.StopReason); fault != nil {
+			if len(nm.Content) == 0 {
+				return fault
+			}
+			if perr := a.handOver(nm, bus); perr != nil {
+				return perr
+			}
+			return fault
 		}
-		return err
+		return a.handOver(nm, bus)
 	}
-	if len(nm.Content) == 0 {
-		return nil
-	}
-
-	// Land the assistant message: figLog → push figaro → cache.
-	msg := decodeNativeMessage(nm)
-	if msg.Timestamp == 0 {
-		msg.Timestamp = time.Now().UnixMilli()
-	}
-	// THE PROVIDER DOES NOT OWN THE LOG. It hands the message to the bus and
-	// the fig IR side appends it: only that side has the LT, so "the fig IR
-	// entry exists before anything that names it" is a SHAPE rather than a
-	// rule five call sites had to remember.
-	bus.PushMessageEnd(string(msg.StopReason))
-	native, err := a.assistantCacheNative(nm)
-	if err != nil {
-		return fmt.Errorf("anthropic cache assistant: %w", err)
-	}
-	bus.PushFigaro(msg, native)
-	return nil
 }
 
 // handOver gives the fig IR side the message and the native payload from ONE
-// accumulator. The normal close and the premature close both go through it,
-// so a partial message cannot be shaped differently from a whole one.
+// accumulator. The normal close, the premature close and the faulted close
+// all go through it, so a partial message cannot be shaped differently from
+// a whole one. THE PROVIDER DOES NOT OWN THE LOG: it hands the message to
+// the bus and the fig IR side appends it, since only that side has the LT.
 func (a *Anthropic) handOver(nm nativeMessage, bus provider.Bus) error {
 	msg := decodeNativeMessage(nm)
 	if msg.Timestamp == 0 {
@@ -1149,44 +1152,7 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 		return fmt.Errorf("copilot: %s", apiErrorMessage(resp.StatusCode, errBody))
 	}
 
-	nm, err := a.drainSSE(ctx, resp.Body, model, bus)
-	if err != nil {
-		// A CANCELLED TURN IS A PREMATURE CLOSE, NOT A BROKEN STREAM. What the
-		// accumulator holds is real: it was produced by this provider from
-		// this wire, so the message and its native payload agree by
-		// construction. Dropping it made figaro synthesise a partial from its
-		// OWN text accumulator -- a message with no native payload, whose
-		// translation had to be re-encoded and lost every signed thinking
-		// block. Anything else that ends a stream (a scanner fault, a
-		// truncated body) is still a broken stream and still drops.
-		if !errors.Is(err, context.Canceled) || len(nm.Content) == 0 {
-			return err
-		}
-		nm.StopReason = string(message.StopAborted)
-		if perr := a.handOver(nm, bus); perr != nil {
-			return perr
-		}
-		return err
-	}
-	if len(nm.Content) == 0 {
-		return nil
-	}
-
-	msg := decodeNativeMessage(nm)
-	if msg.Timestamp == 0 {
-		msg.Timestamp = time.Now().UnixMilli()
-	}
-	// THE PROVIDER DOES NOT OWN THE LOG. It hands the message to the bus and
-	// the fig IR side appends it: only that side has the LT, so "the fig IR
-	// entry exists before anything that names it" is a SHAPE rather than a
-	// rule five call sites had to remember.
-	bus.PushMessageEnd(string(msg.StopReason))
-	native, err := a.assistantCacheNative(nm)
-	if err != nil {
-		return fmt.Errorf("anthropic cache assistant: %w", err)
-	}
-	bus.PushFigaro(msg, native)
-	return nil
+	return a.land(a.drainSSE(ctx, resp.Body, model, bus))("copilot", bus)
 }
 
 func (a *Anthropic) assistantCacheNative(msg nativeMessage) (provider.AssistantCache, error) {
@@ -1317,10 +1283,12 @@ func (a *Anthropic) drainSSE(ctx context.Context, body io.ReadCloser, model stri
 		}()
 	}
 
+	// message_stop without a message_delta naming a stop reason is NOT a
+	// clean finish, and it is not this function's place to say it was: an
+	// empty stop reason used to become "end_turn" here, so a cut or filtered
+	// stream was byte-identical to a completion downstream. The empty string
+	// travels, and the decoder reads it as the fault it is.
 	finalizeClean := func() (nativeMessage, error) {
-		if stopReason == "" {
-			stopReason = "end_turn"
-		}
 		nm.StopReason = stopReason
 		nm.Usage = &usage
 		return nm, nil

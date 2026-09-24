@@ -367,6 +367,22 @@ Translates IR ↔ Anthropic wire and caches the per-aria wire bytes
   from the IR would drop the signature (the IR has no home for it) and a
   replayed unsigned thinking block is a 400. The cache-miss fallback drops
   thinking blocks rather than emit unsigned ones.
+- **A stream that closed cleanly is not yet a reply.** Both Anthropic-shaped
+  providers (this one and the hand-rolled `internal/provider/anthropic`, which
+  the copilot Messages route rides) run the drained message through
+  `provider.CheckCompletion` before it lands. Two faults: no content blocks at
+  all, whatever the stop reason; or a stop reason that is not a way of
+  finishing. `provider.AnthropicStopReason` is the one table for the wire's
+  words, and a word it does not know (`refusal`, `content_filter`, anything
+  newer) is `StopError`, never `""`. On a fault the content the model did
+  produce lands marked `error` and the send returns the fault, so the turn
+  ends `error: <provider>: the provider refused the completion
+  (stop_reason=refusal): ...` with the wire's word in it. Before this an
+  upstream filter answering 200 with an empty body recorded a normal `stop`
+  with no content, the aria went quiet, and since the trigger stayed in
+  history every later turn did the same (jack-work/figaro#24). The SSE
+  drain no longer synthesises `end_turn` for a `message_stop` that arrived
+  without one either; the empty string travels and decodes as the fault it is.
 - **Extended thinking** (`assemble.go::applyThinking`). Two model families:
   adaptive (Opus 4.6/4.7/4.8, Sonnet 4.6) take `{type:"adaptive"}` +
   `output_config:{effort}` and ignore a token budget; older models take

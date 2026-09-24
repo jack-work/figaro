@@ -10,6 +10,7 @@ import (
 
 	"github.com/jack-work/figaro/api/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
+	"github.com/jack-work/figaro/internal/provider"
 )
 
 // validAccumulatedBlock reports whether an accumulated block is
@@ -123,16 +124,11 @@ func asArgsMap(input json.RawMessage) map[string]interface{} {
 	return m
 }
 
+// mapStopReason defers to the table both Anthropic providers share: a word
+// it does not know is StopError, not "", so a refusal cannot decode as a
+// reply (jack-work/figaro#24).
 func mapStopReason(s anthropic.StopReason) message.StopReason {
-	switch s {
-	case anthropic.StopReasonEndTurn, anthropic.StopReasonStopSequence:
-		return message.StopEnd
-	case anthropic.StopReasonMaxTokens:
-		return message.StopLength
-	case anthropic.StopReasonToolUse:
-		return message.StopToolInvoke
-	}
-	return ""
+	return provider.AnthropicStopReason(string(s))
 }
 
 // quarantineMalformedToolInput rescues a turn whose tool_use block carries
