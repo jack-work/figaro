@@ -82,6 +82,13 @@ type Angelus struct {
 	// resident. Touched only by the sweep goroutine.
 	quietSweeps int
 
+	// turnlessReclaims counts, per aria, consecutive reclaims of an agent
+	// that was woken and never took a turn. One is a look at a dormant aria
+	// (`figaro queue`); two in a row is something waking it on a clock, and
+	// the sweep names the method (issue #22). Touched only by the sweep
+	// goroutine; an entry goes when a turn breaks the run.
+	turnlessReclaims map[string]int
+
 	// residentFor overrides where the latch reads the resident count, for a
 	// test that must not implement the whole backend to answer one question.
 	residentFor idleEvictor
@@ -493,6 +500,19 @@ type segmentSweeper interface {
 	SweepSegmentCache(keep int64) (dropped int, freed int64)
 }
 
+// idleSince is the clock every reclamation reads: the later of the last turn
+// and the agent's construction. A wake by a non-turn method (figaro.queued,
+// figaro.study) moves only the second, and before this the sweep read only
+// the first, so a woken aria was reclaimed on the very next tick and its
+// waker woke it again: one restore per sweep interval per attached client,
+// with a cold provider cache on every turn (issue #22).
+func idleSince(info figaro.FigaroInfo) time.Time {
+	if info.AgentSince.After(info.LastActive) {
+		return info.AgentSince
+	}
+	return info.LastActive
+}
+
 // hibernateIdleArias reclaims the agent of every aria that has been idle
 // longer than the configured window.
 func (a *Angelus) hibernateIdleArias() {
@@ -503,7 +523,8 @@ func (a *Angelus) hibernateIdleArias() {
 	cutoff := time.Now().Add(-idle)
 
 	for _, info := range a.Registry.List() {
-		if info.State != "idle" || info.LastActive.After(cutoff) {
+		since := idleSince(info)
+		if info.State != "idle" || since.After(cutoff) {
 			continue
 		}
 		if err := a.Registry.Hibernate(info.ID); err != nil {
@@ -513,9 +534,34 @@ func (a *Angelus) hibernateIdleArias() {
 			continue
 		}
 		slog.Info("hibernated aria", "aria", info.ID,
-			"idle_for", time.Since(info.LastActive).Round(time.Second),
+			"idle_for", time.Since(since).Round(time.Second),
 			"live", a.Registry.FigaroCount())
+		a.noteTurnlessReclaim(info)
 	}
+}
+
+// noteTurnlessReclaim is the instrument for the wake-reclaim flap. An agent
+// that was woken and reclaimed without a turn in between was woken by
+// something other than a prompt; the second consecutive time, that
+// something is on a clock, and the log says what it is. The flap used to be
+// visible only as CPU: 6,598 restores in one log window, none of them
+// attributed, until someone counted.
+func (a *Angelus) noteTurnlessReclaim(info figaro.FigaroInfo) {
+	if info.WokeBy == "" || !info.LastActive.Before(info.AgentSince) {
+		delete(a.turnlessReclaims, info.ID)
+		return
+	}
+	if a.turnlessReclaims == nil {
+		a.turnlessReclaims = map[string]int{}
+	}
+	a.turnlessReclaims[info.ID]++
+	n := a.turnlessReclaims[info.ID]
+	if n < 2 {
+		return
+	}
+	slog.Warn("reclaimed an aria that keeps being woken without a turn; something is polling it",
+		"aria", info.ID, "woke_by", info.WokeBy, "consecutive", n,
+		"held_for", time.Since(info.AgentSince).Round(time.Second))
 }
 
 // capLiveArias enforces max_live_arias by reclaiming the least recently active
@@ -534,12 +580,12 @@ func (a *Angelus) capLiveArias() {
 	fresh := time.Now().Add(-capFlapGuard)
 	victims := make([]figaro.FigaroInfo, 0, len(all))
 	for _, info := range all {
-		if info.State == "idle" && info.LastActive.Before(fresh) {
+		if info.State == "idle" && idleSince(info).Before(fresh) {
 			victims = append(victims, info)
 		}
 	}
 	sort.Slice(victims, func(i, j int) bool {
-		return victims[i].LastActive.Before(victims[j].LastActive)
+		return idleSince(victims[i]).Before(idleSince(victims[j]))
 	})
 
 	reclaimed := 0
@@ -568,7 +614,9 @@ func (a *Angelus) capLiveArias() {
 
 // capFlapGuard exempts a recently woken aria from the cap. Restore costs
 // O(history); reclaiming what just paid that cost is the flap the plan warned
-// about.
+// about. It reads idleSince, because a wake that was not a prompt leaves
+// LastActive where it was; read on that alone, the guard exempted nothing
+// a poller had woken.
 const capFlapGuard = time.Minute
 
 func (a *Angelus) maxLiveArias() int {
