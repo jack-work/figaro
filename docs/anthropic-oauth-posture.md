@@ -60,7 +60,7 @@ The exit is already built and deliberately boring:
 
 | sign | meaning | response |
 |---|---|---|
-| 400 `claude_code_version_too_old` | routine version-floor bump | bump `ClaudeCodeVersion` to npm `latest` |
+| 400 `claude_code_version_too_old` | routine version-floor bump | add the floor the error names to `anthropicmodels.versionFloors`, then bump `ClaudeCodeVersion` to npm `latest`. The floor table is the instrument: `TestClaudeCodeVersionClearsFloors` stays red until the bump lands. Opus 5.5 raised it to 2.1.280 (September 2026). |
 | refreshes failing / 429 from `/v1/oauth/token` | the UA net caught the refresh path | check hush's UA on that endpoint; if intentional targeting, take the exit |
 | 401s with a valid, fresh token | credential class revoked | take the exit |
 | policy notice on the account | the question has been asked directly | take the exit |

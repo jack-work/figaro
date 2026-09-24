@@ -120,12 +120,12 @@ func (c *Catalog) ContextLimit(model string, snapshot form.Snapshot) int {
 // the stable channel (2.1.236 at the time): real Claude Code on stable
 // fails identically (anthropics/claude-code#91345). The check is a numeric
 // threshold, not a whitelist of released versions, so the rule when a new
-// model 400s is: `npm view @anthropic-ai/claude-code dist-tags.latest`,
-// paste it here.
+// model 400s is: record the floor the error names in versionFloors, then
+// `npm view @anthropic-ai/claude-code dist-tags.latest` and paste it here.
 //
 // See docs/anthropic-oauth-posture.md for how long this arrangement can be
 // expected to hold at all.
-const ClaudeCodeVersion = "2.1.267"
+const ClaudeCodeVersion = "2.1.281"
 
 // versionFloors records, per model prefix, the client version the API
 // demanded in a claude_code_version_too_old 400. Each entry is a fact copied
