@@ -280,11 +280,23 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		}
 		return annotateRateLimit(cleanAPIError(err), note)
 	}
-	if len(msg.Content) == 0 {
-		return nil
-	}
 	if msg.Timestamp == 0 {
 		msg.Timestamp = time.Now().UnixMilli()
+	}
+	// A STREAM THAT CLOSED CLEANLY IS NOT YET A REPLY. Nothing in it, or a
+	// stop reason that is not a way of finishing (refusal, content_filter, a
+	// word from the future), keeps what the model produced marked StopError
+	// and fails the send with the wire's word. An empty completion used to
+	// return nil here and the turn recorded a normal stop with no content
+	// (jack-work/figaro#24).
+	if fault := provider.CheckCompletion(providerName, msg, string(acc.StopReason)); fault != nil {
+		if len(msg.Content) == 0 {
+			return fault
+		}
+		if perr := p.handOver(msg, acc, bus); perr != nil {
+			return perr
+		}
+		return fault
 	}
 
 	return p.handOver(msg, acc, bus)
