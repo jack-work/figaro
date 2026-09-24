@@ -141,7 +141,7 @@ func TestHubServesReadsWithoutWaking(t *testing.T) {
 	hb := testHub(t)
 
 	var woke int
-	hb.wake = func(context.Context, string) (figaro.AgentServer, error) {
+	hb.wake = func(context.Context, string, string) (figaro.AgentServer, error) {
 		woke++
 		return nil, nil
 	}
@@ -169,7 +169,7 @@ func TestHubWakesForMutatingMethods(t *testing.T) {
 
 	agent := newFakeAgent()
 	var woke int
-	hb.wake = func(context.Context, string) (figaro.AgentServer, error) {
+	hb.wake = func(context.Context, string, string) (figaro.AgentServer, error) {
 		woke++
 		return agent, nil
 	}

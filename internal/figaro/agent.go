@@ -96,6 +96,9 @@ type Config struct {
 	Backend    store.Backend // nil = ephemeral
 	CreatedAt  time.Time
 	LastActive time.Time
+	// WokeBy names the RPC method that is restoring this aria from dormancy.
+	// Empty for a birth. Reported on FigaroInfo; see there.
+	WokeBy string
 
 	// Form carries the aria's state, pre-seeded from the
 	// reducible form channel (backed) or empty (ephemeral). The
@@ -197,6 +200,8 @@ type Agent struct {
 
 	createdAt     time.Time
 	lastActive    time.Time
+	agentSince    time.Time
+	wokeBy        string
 	tokensIn      int
 	tokensOut     int
 	cacheRead     int
@@ -244,6 +249,8 @@ func NewAgent(cfg Config) *Agent {
 		settings:    cfg.Settings,
 		createdAt:   createdAt,
 		lastActive:  lastActive,
+		agentSince:  now,
+		wokeBy:      cfg.WokeBy,
 		cancel:      cancel,
 		done:        make(chan struct{}),
 	}
@@ -784,6 +791,8 @@ func (a *Agent) Info() FigaroInfo {
 		ContextExact:     a.contextExact,
 		CreatedAt:        a.createdAt,
 		LastActive:       a.lastActive,
+		AgentSince:       a.agentSince,
+		WokeBy:           a.wokeBy,
 		Mantra:           a.mantra,
 		Cwd:              a.cwd,
 		OutfitName:       a.outfitName,

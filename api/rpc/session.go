@@ -23,6 +23,8 @@ type FigaroInfoResponse struct {
 	ContextExact     bool   `json:"context_exact"`           // true if from Usage watermark
 	CreatedAt        int64  `json:"created_at"`              // unix millis
 	LastActive       int64  `json:"last_active"`             // unix millis
+	AgentSince       int64  `json:"agent_since,omitempty"`   // unix millis; when the live agent was built. Live rows only.
+	WokeBy           string `json:"woke_by,omitempty"`       // the RPC method that restored a dormant aria; empty at birth
 	Mantra           string `json:"mantra"`                  // agent-maintained essence phrase (form "mantra")
 	Cwd              string `json:"cwd"`                     // working directory (form "system.cwd")
 	OutfitName       string `json:"outfit_name,omitempty"`   // form system.outfit_name

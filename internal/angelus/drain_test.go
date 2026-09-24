@@ -132,7 +132,7 @@ model = "mock-model"
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			agents[i], errs[i] = handlers.Restore(ctx, conv)
+			agents[i], errs[i] = handlers.Restore(ctx, conv, "test")
 		}(i)
 	}
 	wg.Wait()

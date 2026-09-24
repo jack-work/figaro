@@ -186,8 +186,8 @@ func (h *handlers) writeForHub(id, method string, params json.RawMessage) (any, 
 }
 
 // wakeForHub restores an aria on demand for a method that needs a turn loop.
-func (h *handlers) wakeForHub(ctx context.Context, id string) (figaro.AgentServer, error) {
-	f, err := h.restoreByID(ctx, id)
+func (h *handlers) wakeForHub(ctx context.Context, id, method string) (figaro.AgentServer, error) {
+	f, err := h.restoreByID(ctx, id, method)
 	if err != nil {
 		return nil, err
 	}

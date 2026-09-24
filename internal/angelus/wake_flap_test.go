@@ -82,9 +82,11 @@ func TestSweepSparesAFreshlyWokenAria(t *testing.T) {
 func TestSweepNamesTheMethodThatKeepsWakingAnAria(t *testing.T) {
 	logs := captureLogs(t)
 	a := &Angelus{Registry: NewRegistry()}
+	// The last turn is old; the wake came after it, and is itself older
+	// than the dormant window, so the sweep takes the agent both times.
 	stale := time.Now().Add(-2 * defaultDormantAfter)
 	wake := func() *wokenFigaro {
-		f := &wokenFigaro{id: "flapper", lastActive: stale, since: stale, wokeBy: "figaro.queued"}
+		f := &wokenFigaro{id: "flapper", lastActive: stale, since: stale.Add(time.Second), wokeBy: "figaro.queued"}
 		if err := a.Registry.Register(f); err != nil {
 			t.Fatal(err)
 		}

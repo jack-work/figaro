@@ -23,8 +23,9 @@ type ariaHub struct {
 	sockPath string
 
 	// wake restores the aria and returns its agent. Called only for methods
-	// that cannot be served from the store.
-	wake func(ctx context.Context, id string) (figaro.AgentServer, error)
+	// that cannot be served from the store, and told which one, so the
+	// restore is attributed (FigaroInfo.WokeBy).
+	wake func(ctx context.Context, id, method string) (figaro.AgentServer, error)
 	// read answers a method from the store. ok=false means "not my method",
 	// which sends the request down the wake path instead.
 	read func(id, method string, params json.RawMessage) (v any, ok bool, err error)
@@ -276,7 +277,7 @@ func (hb *ariaHub) route(ctx context.Context, method string, params json.RawMess
 	if hb.wake == nil {
 		return nil, errDormantMethod
 	}
-	agent, err := hb.wake(ctx, hb.id)
+	agent, err := hb.wake(ctx, hb.id, method)
 	if err != nil {
 		return nil, fmt.Errorf("hub %s: wake: %w", hb.id, err)
 	}

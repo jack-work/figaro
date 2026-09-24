@@ -49,6 +49,8 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 			ContextExact:     info.ContextExact,
 			CreatedAt:        info.CreatedAt.UnixMilli(),
 			LastActive:       info.LastActive.UnixMilli(),
+			AgentSince:       info.AgentSince.UnixMilli(),
+			WokeBy:           info.WokeBy,
 			Mantra:           info.Mantra,
 			Cwd:              info.Cwd,
 			BoundPIDs:        boundPIDs[info.ID],

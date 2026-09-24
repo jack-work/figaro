@@ -38,9 +38,20 @@ type FigaroInfo struct {
 	ContextExact     bool      `json:"context_exact"`      // true if from Usage watermark
 	CreatedAt        time.Time `json:"created_at"`
 	LastActive       time.Time `json:"last_active"`
-	Mantra           string    `json:"mantra"`
-	Cwd              string    `json:"cwd"`
-	OutfitName       string    `json:"outfit_name"`
-	OutfitVersion    string    `json:"outfit_version"`
-	LastFigaroLT     uint64    `json:"last_figaro_lt"`
+	// AgentSince is when THIS agent was constructed: birth for a created
+	// aria, the wake for a restored one. LastActive is the last turn, which a
+	// wake by a non-turn method (figaro.queued, figaro.study) does not move.
+	// Reclamation clocks read the later of the two, so a wake buys a full
+	// dormant window instead of being undone on the next sweep.
+	AgentSince time.Time `json:"agent_since"`
+	// WokeBy is the RPC method that restored a dormant aria, empty when the
+	// agent was born with the aria. A sweep that reclaims a woken aria which
+	// never took a turn reports it, so a poller that keeps waking arias is
+	// named in the log instead of showing up as CPU (issue #22).
+	WokeBy        string `json:"woke_by,omitempty"`
+	Mantra        string `json:"mantra"`
+	Cwd           string `json:"cwd"`
+	OutfitName    string `json:"outfit_name"`
+	OutfitVersion string `json:"outfit_version"`
+	LastFigaroLT  uint64 `json:"last_figaro_lt"`
 }

@@ -31,8 +31,11 @@ type restoreCall struct {
 }
 
 // restoreByID re-creates a figaro from the backend tree. Serialized per
-// aria so concurrent restores cannot double-replay tail repair.
-func (h *handlers) restoreByID(ctx context.Context, ariaID string) (figaro.Figaro, error) {
+// aria so concurrent restores cannot double-replay tail repair. wokeBy is
+// the RPC method that needed the agent; it is stamped on the agent and
+// logged, so a restore is never anonymous (issue #22 went unnamed for want
+// of exactly this).
+func (h *handlers) restoreByID(ctx context.Context, ariaID, wokeBy string) (figaro.Figaro, error) {
 	if f := h.angelus.Registry.Get(ariaID); f != nil {
 		return f, nil
 	}
@@ -63,7 +66,7 @@ func (h *handlers) restoreByID(ctx context.Context, ariaID string) (figaro.Figar
 	if f := h.angelus.Registry.Get(ariaID); f != nil {
 		call.f = f
 	} else {
-		call.f, call.err = h.restoreOne(ctx, ariaID)
+		call.f, call.err = h.restoreOne(ctx, ariaID, wokeBy)
 	}
 	// The entry goes as the wake ends, which is what makes this bounded by
 	// concurrent wakes rather than by arias ever woken.
@@ -76,7 +79,7 @@ func (h *handlers) restoreByID(ctx context.Context, ariaID string) (figaro.Figar
 
 // restoreOne builds and registers a figaro for an existing conversation
 // node, seeding its form from the channel.
-func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro, error) {
+func (h *handlers) restoreOne(ctx context.Context, ariaID, wokeBy string) (figaro.Figaro, error) {
 	cb := h.openAriaForm(ariaID)
 	if cb == nil {
 		return nil, fmt.Errorf("restore %s: form unavailable", ariaID)
@@ -147,6 +150,7 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro
 		Form:            cb,
 		CreatedAt:       createdAt,
 		LastActive:      lastActive,
+		WokeBy:          wokeBy,
 		Settings:        loaded,
 		UICache:         h.angelus.UICache,
 	})
@@ -164,7 +168,7 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro
 	agent.OnTeardown(unbind)
 
 	slog.Info("restored figaro",
-		"id", ariaID, "provider", provName, "model", knobs.Model)
+		"id", ariaID, "provider", provName, "model", knobs.Model, "woke_by", wokeBy)
 	return agent, nil
 }
 

@@ -27,7 +27,7 @@ func TestRestoreSingleFlightLeavesNothingBehind(t *testing.T) {
 			wg.Add(1)
 			go func(id string) {
 				defer wg.Done()
-				_, _ = h.restoreByID(context.Background(), id)
+				_, _ = h.restoreByID(context.Background(), id, "test")
 			}(id)
 		}
 	}
@@ -54,7 +54,7 @@ func TestRestoreSingleFlightHonoursACancelledCaller(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, err := h.restoreByID(ctx, "stuck")
+		_, err := h.restoreByID(ctx, "stuck", "test")
 		done <- err
 	}()
 	cancel()
