@@ -232,3 +232,43 @@ func TestHibernateWakeCycle(t *testing.T) {
 	require.NoError(t, client.Call(cxCtx, rpc.MethodContext, struct{}{}, &cx))
 	require.GreaterOrEqual(t, len(cx.Messages), 3, "prompts did not accumulate on one trunk")
 }
+
+// Issue #22. A wake is attributed: the agent records which method built it
+// and when, so a sweep (and an operator reading `figaro list -j`) can tell a
+// wake that was a prompt from one that was a poll. The reporter's 6,598
+// restores had no such field to read, which is why the driver went unnamed.
+func TestWakeIsAttributedToItsMethod(t *testing.T) {
+	a, acli, ctx := daemonFixture(t)
+
+	created, err := acli.Create(ctx, dress(t, "mock"), nil)
+	require.NoError(t, err)
+	id := created.FigaroID
+	born := a.Registry.Get(id).Info()
+	require.Empty(t, born.WokeBy, "a created aria was not woken by anything")
+	require.False(t, born.AgentSince.IsZero(), "a created aria has an agent since its birth")
+
+	require.NoError(t, a.Registry.Hibernate(id))
+	require.Nil(t, a.Registry.Get(id))
+
+	conn, err := net.Dial("unix", created.Endpoint.Address)
+	require.NoError(t, err)
+	defer conn.Close()
+	client := jkrpc.NewClient(jkrpc.NewConn(conn), func(string, json.RawMessage) {})
+	defer client.Close()
+
+	// figaro.queued needs an agent, so it wakes the aria. That is the one
+	// call the 0.29.0 pager made twice a second.
+	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	before := time.Now()
+	var q rpc.QueuedResponse
+	require.NoError(t, client.Call(callCtx, rpc.MethodQueued, struct{}{}, &q))
+
+	f := a.Registry.Get(id)
+	require.NotNil(t, f, "figaro.queued did not wake the aria")
+	info := f.Info()
+	require.Equal(t, rpc.MethodQueued, info.WokeBy)
+	require.False(t, info.AgentSince.Before(before), "AgentSince predates the wake")
+	require.True(t, info.LastActive.Before(info.AgentSince),
+		"a wake by a non-turn method must not count as a turn")
+}
