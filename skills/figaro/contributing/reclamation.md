@@ -90,15 +90,44 @@ milliseconds and a stale mutation costs correctness.
 The sweep's predicate is only what it needs to be:
 
 ```
-state == "idle" && now - LastActive > dormant_after
+state == "idle" && now - max(LastActive, AgentSince) > dormant_after
 ```
 
 Notably absent: bound pids, attached clients, running sessions. Each would have
 made hibernation impossible for exactly the arias that cost most, a terminal
 left open all afternoon is the common case, and each is gone because what it
-protected moved elsewhere. Keyed on `LastActive`, so an aria woken a moment ago
-is not reclaimed on the next tick; restore is O(history) and that would be a
-flap costing more than the memory it saves.
+protected moved elsewhere.
+
+The clock is `idleSince`: the later of the last **turn** (`LastActive`) and
+the moment **this agent was built** (`AgentSince`). Both matter, and reading
+only the first was issue #22. A wake by a method that is not a prompt
+(`figaro.queued`, `figaro.study`) leaves `LastActive` where the last message
+put it, so a sweep keyed on it alone reclaimed the woken agent on the very
+next tick, and whatever woke it woke it again: with the 0.29.0 pager polling
+`figaro.queued` twice a second, that was one restore per sweep interval per
+attached terminal, 6,598 restores in one log window, and a cold provider
+cache on effectively every turn. The poll is gone (the queue is pushed as a
+form since v0.35.3), and the clock now says what the comment here always
+claimed: a wake buys a full dormant window, because restore is O(history)
+and undoing it on the next tick costs more than the memory it saves.
+
+### A restore is never anonymous
+
+Every wake carries the RPC method that needed the agent: `FigaroInfo.WokeBy`
+(empty for an aria born rather than restored), on the `restored figaro` log
+line as `woke_by`, and in `figaro list -j` beside `agent_since`. The sweep
+reads it too: reclaiming an agent that was woken and never took a turn is
+ordinary once (`figaro queue` on a sleeper), but the second consecutive time
+it warns and names the method:
+
+```
+reclaimed an aria that keeps being woken without a turn; something is polling it
+    aria=17ad1ed0 woke_by=figaro.queued consecutive=2 held_for=15m0s
+```
+
+That line is the instrument #22 lacked. If it appears, find the client
+issuing that method on a clock; do not add an attachment guard to the sweep
+(`ariaHub.Attached` says why).
 
 **There is no fourth state.** A reclaimed aria *is* `dormant`; the vocabulary
 stays `dormant | idle | active`. "Was it reclaimed or never loaded" is a

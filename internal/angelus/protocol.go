@@ -159,9 +159,10 @@ func (h *handlers) turnActive(ariaID string) bool {
 	return live != nil && live.TurnActive()
 }
 
-// Restore lazily re-creates the agent for ariaID.
-func (hs *Handlers) Restore(ctx context.Context, ariaID string) (figaro.Figaro, error) {
-	return hs.h.restoreByID(ctx, ariaID)
+// Restore lazily re-creates the agent for ariaID. wokeBy names the caller's
+// reason, the way a hub names the method; it lands on FigaroInfo.WokeBy.
+func (hs *Handlers) Restore(ctx context.Context, ariaID, wokeBy string) (figaro.Figaro, error) {
+	return hs.h.restoreByID(ctx, ariaID, wokeBy)
 }
 
 // OpenEndpoint makes an aria dialable without waking it. It is what binding

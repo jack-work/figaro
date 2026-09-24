@@ -115,7 +115,12 @@ Caveats worth knowing before you build on this:
   provider still reads `active`; the flip happens when the drain loop finishes
   the event.
 - `last_active` (ms epoch, in `list -j` and `status -j`) is the recency signal
-  for dormant and idle arias.
+  for dormant and idle arias. It is the last TURN. A live row also carries
+  `agent_since` (when its agent was built) and, if it was restored rather than
+  born, `woke_by`, the RPC method that woke it.
+- Do not poll a method that needs an agent (`figaro.queued`, `figaro.study`)
+  against arias you are merely watching: each call wakes a sleeper, and the
+  sweep will name you for it (see contributing/reclamation.md).
 - There is no push notification of state transitions on the CLI surface.
 
 ## Do not poll in a loop
