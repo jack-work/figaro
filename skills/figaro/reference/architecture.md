@@ -173,6 +173,13 @@ Per-aria request methods: `figaro.qua` (prompt), `figaro.context`,
 `pid.bind`/`resolve`/`unbind`, `aria.read`, `aria.page`/`context`/`form`
 (the same reads addressed by aria id), and status/binding persistence.
 
+`aria.read` answers one page, capped at 1000 entries whatever the limit asks,
+and names the next LT in `next_from`. Anything that wants the whole aria
+(`export`, the CLI-side turn resolution behind `attend <id>:N` and `status`)
+goes through
+`sdk.Angelus.IRAll`, which walks `next_from` to the end; a single call there
+is issue #23 again.
+
 The transport is NDJSON-framed JSON-RPC 2.0. Every accepted per-aria connection
 is automatically subscribed; call `figaro.read` on that connection for initial
 state, then keep reading notifications. There is no explicit subscribe method -

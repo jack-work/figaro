@@ -73,7 +73,10 @@ type AriaIDRequest struct {
 
 // IRRequest names the aria and the window of entries to return.
 // From is inclusive; Limit==0 means "no upper bound". The angelus
-// caps responses to a sensible upper bound regardless.
+// caps responses to a sensible upper bound regardless (1000 entries), and
+// says where the rest starts in IRResponse.NextFrom: one call is ONE PAGE,
+// never the aria. A caller that wants the whole thing walks NextFrom
+// (sdk.Angelus.IRAll), or it will read exactly one page and believe it.
 type IRRequest struct {
 	FigaroID string `json:"figaro_id"`
 	From     uint64 `json:"from,omitempty"`

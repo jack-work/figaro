@@ -7,6 +7,7 @@ package sdk
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/jack-work/figaro/api/aria"
@@ -255,10 +256,34 @@ func (c *Angelus) Read(ctx context.Context, req rpc.ReadRequest) (aria.Page, err
 	return page, nil
 }
 
-// IR fetches IR entries for an aria through the angelus's
-// shared LogCache.
+// IR fetches one page of IR entries for an aria through the angelus's
+// shared LogCache. The angelus caps a page regardless of limit and reports
+// where the rest starts in NextFrom; a caller that wants the whole aria
+// uses IRAll.
 func (c *Angelus) IR(ctx context.Context, figaroID string, from uint64, limit int) (*rpc.IRResponse, error) {
 	return c.IRBefore(ctx, figaroID, from, 0, limit)
+}
+
+// IRAll reads every IR entry of an aria from LT `from` to the end, in LT
+// order, paging past the angelus's per-call cap until it reports no more.
+// Total is the angelus's count at the last page; Entries is what was read.
+func (c *Angelus) IRAll(ctx context.Context, figaroID string, from uint64) (*rpc.IRResponse, error) {
+	out := &rpc.IRResponse{}
+	for {
+		page, err := c.IR(ctx, figaroID, from, 0)
+		if err != nil {
+			return nil, err
+		}
+		out.Entries = append(out.Entries, page.Entries...)
+		out.Total = page.Total
+		if page.NextFrom == 0 || len(page.Entries) == 0 {
+			return out, nil
+		}
+		if page.NextFrom <= from {
+			return nil, fmt.Errorf("aria.read: next_from %d did not advance past %d", page.NextFrom, from)
+		}
+		from = page.NextFrom
+	}
 }
 
 func (c *Angelus) IRBefore(ctx context.Context, figaroID string, from, before uint64, limit int) (*rpc.IRResponse, error) {
