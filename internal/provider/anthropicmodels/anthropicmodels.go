@@ -3,6 +3,7 @@
 package anthropicmodels
 
 import (
+	"strconv"
 	"strings"
 	"sync"
 
@@ -125,3 +126,54 @@ func (c *Catalog) ContextLimit(model string, snapshot form.Snapshot) int {
 // See docs/anthropic-oauth-posture.md for how long this arrangement can be
 // expected to hold at all.
 const ClaudeCodeVersion = "2.1.267"
+
+// versionFloors records, per model prefix, the client version the API
+// demanded in a claude_code_version_too_old 400. Each entry is a fact copied
+// out of an error message, not a guess. TestClaudeCodeVersionClearsFloors
+// holds ClaudeCodeVersion at or above every one of them, so the next model
+// that raises the floor is a red test and a table entry, not a live 400
+// found by whoever tries the model first.
+var versionFloors = map[string]string{
+	"claude-fable-5-1": "2.1.251",
+	"claude-opus-5-5":  "2.1.280",
+}
+
+// VersionFloor returns the client version the API is known to require for
+// model, or "" if no floor has been recorded. Longest matching prefix wins,
+// on an id boundary, the same rule ContextWindow uses.
+func VersionFloor(model string) string {
+	m := normalize(model)
+	best, floor := 0, ""
+	for prefix, v := range versionFloors {
+		if len(prefix) <= best || !strings.HasPrefix(m, prefix) {
+			continue
+		}
+		if len(m) > len(prefix) && m[len(prefix)] != '-' {
+			continue
+		}
+		best, floor = len(prefix), v
+	}
+	return floor
+}
+
+// CompareVersions orders two dotted numeric versions ("2.1.280"). Missing
+// components read as zero, so "2.1" == "2.1.0". Returns -1, 0 or 1.
+func CompareVersions(a, b string) int {
+	as, bs := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(as) || i < len(bs); i++ {
+		var x, y int
+		if i < len(as) {
+			x, _ = strconv.Atoi(as[i])
+		}
+		if i < len(bs) {
+			y, _ = strconv.Atoi(bs[i])
+		}
+		if x != y {
+			if x < y {
+				return -1
+			}
+			return 1
+		}
+	}
+	return 0
+}

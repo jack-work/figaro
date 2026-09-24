@@ -16,6 +16,8 @@ func TestContextWindow(t *testing.T) {
 		// 1M generation.
 		{"claude-opus-5", 1_000_000},
 		{"claude-opus-5-20260115", 1_000_000},
+		{"claude-opus-5-5", 1_000_000},
+		{"claude-opus-5.5", 1_000_000},
 		{"claude-opus-4-8", 1_000_000},
 		{"claude-opus-4-7", 1_000_000},
 		{"claude-opus-4-6", 1_000_000},
@@ -112,4 +114,33 @@ func TestCatalogConcurrentAccess(t *testing.T) {
 		_ = c.Window("claude-opus-5")
 	}
 	<-done
+}
+
+func TestCompareVersions(t *testing.T) {
+	assert.Equal(t, 0, CompareVersions("2.1.280", "2.1.280"))
+	assert.Equal(t, 0, CompareVersions("2.1", "2.1.0"))
+	assert.Equal(t, -1, CompareVersions("2.1.267", "2.1.280"))
+	assert.Equal(t, 1, CompareVersions("2.1.281", "2.1.280"))
+	assert.Equal(t, 1, CompareVersions("2.2.0", "2.1.999"))
+	assert.Equal(t, 1, CompareVersions("10.0.0", "9.9.9")) // numeric, not lexical
+}
+
+func TestVersionFloor(t *testing.T) {
+	assert.Equal(t, "2.1.280", VersionFloor("claude-opus-5-5"))
+	assert.Equal(t, "2.1.280", VersionFloor("claude-opus-5-5-20260901"))
+	assert.Equal(t, "2.1.280", VersionFloor("anthropic/claude-opus-5.5"))
+	assert.Equal(t, "2.1.251", VersionFloor("claude-fable-5-1"))
+	assert.Equal(t, "", VersionFloor("claude-opus-5"))    // "5-5" is not "5"
+	assert.Equal(t, "", VersionFloor("claude-opus-5-50")) // id boundary
+	assert.Equal(t, "", VersionFloor("claude-sonnet-4-5"))
+}
+
+// The version figaro claims must clear every floor the API has ever told us
+// about. When this goes red, the fix is `npm view @anthropic-ai/claude-code
+// dist-tags.latest` pasted into ClaudeCodeVersion, per its comment.
+func TestClaudeCodeVersionClearsFloors(t *testing.T) {
+	for model, floor := range versionFloors {
+		assert.GreaterOrEqual(t, CompareVersions(ClaudeCodeVersion, floor), 0,
+			"%s requires client %s; ClaudeCodeVersion is %s", model, floor, ClaudeCodeVersion)
+	}
 }
