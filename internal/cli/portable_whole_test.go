@@ -16,6 +16,7 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/turns"
 	"github.com/jack-work/figaro/sdk"
 )
 
@@ -106,20 +107,37 @@ func TestExportMessagesReadsPastTheReadCap(t *testing.T) {
 	ordinals(t, msgs, n)
 }
 
-// The twin: turn resolution for `figaro fork <id>:N` and `send <id>:N` reads
-// the whole log through ariaMessages, and a truncated read resolves turn N
-// against a prefix, or reports "no turn N" for a turn that exists.
+// The twin: the CLI resolves a turn itself for `attend <id>:N` and for the
+// lineage line in `status`, through ariaMessages (fork and send resolve on
+// the daemon, off the full log). A truncated read resolves turn N against a
+// prefix, or reports "no turn N" for a turn that exists.
 func TestAriaMessagesReadsPastTheReadCap(t *testing.T) {
 	const n = 2_507
 	acli, id := longAria(t, n)
 
 	msgs, err := ariaMessages(context.Background(), acli, id)
 	require.NoError(t, err)
-	ordinals(t, msgs, n)
+	// ariaMessages keeps the scaffolding (genesis, outfit birth); the
+	// conversation behind it is the whole fixture.
+	var conv []message.Message
+	for _, m := range msgs {
+		if m.Role == message.RoleGenesis || (m.Role == message.RoleInput && len(m.Content) == 0) {
+			continue
+		}
+		conv = append(conv, m)
+	}
+	ordinals(t, conv, n)
 	// LTs are stitched on, monotonic, and none is the zero a forgotten stitch
 	// leaves behind.
 	for i := 1; i < len(msgs); i++ {
 		require.Greater(t, msgs[i].LogicalTime, msgs[i-1].LogicalTime, "message %d", i)
 	}
 	require.NotZero(t, msgs[0].LogicalTime)
+
+	// What the user sees: the last turn resolves. Every input opens a turn,
+	// so the last one is well past the first page.
+	last := turns.StampIDs(msgs)
+	require.Greater(t, last, uint64(1000))
+	_, err = resolveTurn(context.Background(), acli, id, last)
+	require.NoError(t, err)
 }

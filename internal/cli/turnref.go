@@ -15,7 +15,7 @@ import (
 // (it is the frame index, populated on read), so it has to be stitched back on
 // here: every caller that forgets produces messages that silently claim LT 0.
 func ariaMessages(ctx context.Context, acli *sdk.Angelus, ariaID string) ([]message.Message, error) {
-	resp, err := acli.IR(ctx, ariaID, 0, 0)
+	resp, err := acli.IRAll(ctx, ariaID, 0)
 	if err != nil {
 		return nil, err
 	}

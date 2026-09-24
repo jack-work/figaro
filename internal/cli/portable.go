@@ -105,9 +105,16 @@ func runExport(loaded *config.Loaded, args []string) {
 // exportMessages reads an aria's whole conversation, in LT order, minus the
 // scaffolding that does not travel.
 func exportMessages(ctx context.Context, acli *sdk.Angelus, id string) ([]message.Message, error) {
-	resp, err := acli.IR(ctx, id, 0, 0)
+	resp, err := acli.IRAll(ctx, id, 0)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", id, err)
+	}
+	// An export is the only copy once the aria is deleted, so a short read
+	// is an error and never a smaller file. Issue #23 was one page of a
+	// capped read written out with its count reported as the whole aria.
+	// Short only: a live aria can grow between the count and the read.
+	if len(resp.Entries) < resp.Total {
+		return nil, fmt.Errorf("read %s: got %d of %d entries; refusing to write a partial export", id, len(resp.Entries), resp.Total)
 	}
 	msgs := make([]message.Message, 0, len(resp.Entries))
 	for _, e := range resp.Entries {
