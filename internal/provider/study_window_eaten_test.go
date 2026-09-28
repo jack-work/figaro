@@ -84,15 +84,17 @@ func TestAContentlessEntryDoesNotEatTheStudyWindow(t *testing.T) {
 	)
 
 	for _, e := range log.Read() {
-		encoded, fp, err := adapter.EncodeEntry("aria", log, e)
+		row, err := adapter.EncodeEntry("aria", log, e)
 		if err != nil {
 			t.Fatal(err)
 		}
+		encoded := row.Payload
 		if len(encoded) == 0 {
 			continue // the store writes nothing, and neither do we
 		}
 		if _, err := trans.Append(store.Entry[[]json.RawMessage]{
-			FigaroLT: e.LT, Payload: encoded, Fingerprint: fp,
+			FigaroLT: e.LT, Payload: encoded, Fingerprint: row.Fingerprint,
+			BoardVersion: row.BoardVersion,
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -232,7 +234,7 @@ func TestACatchUpRecoversAWindowAWriteFailureSkipped(t *testing.T) {
 		func(string) (store.Log[[]json.RawMessage], error) { return store.NewMemLog[[]json.RawMessage](), nil },
 	)
 	for _, e := range log.Read() {
-		if _, _, err := adapter.EncodeEntry("aria", log, e); err != nil {
+		if _, err := adapter.EncodeEntry("aria", log, e); err != nil {
 			t.Fatal(err)
 		}
 	}

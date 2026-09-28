@@ -61,48 +61,52 @@ func (o *OnAppend) Provider() string { return o.name }
 // tail -- the same watermark a catch-up would use -- so a restart, a fork or
 // a catch-up that ran in between cannot leave this path rendering patches
 // twice or not at all.
-func (o *OnAppend) EncodeEntry(ariaID string, source store.Log[message.Message], e store.Entry[message.Message]) ([]json.RawMessage, string, error) {
+func (o *OnAppend) EncodeEntry(ariaID string, source store.Log[message.Message], e store.Entry[message.Message]) (store.TranslatedRow, error) {
 	o.mu.Lock()
 	d, ok := o.at[ariaID]
 	if !ok {
 		d = NewDeriver(o.board(ariaID), o.studies(ariaID))
-		var watermark uint64
+		var watermark, consumedBoard uint64
 		if o.translator != nil {
 			trans, err := o.translator(ariaID)
 			if err != nil {
 				o.mu.Unlock()
-				return nil, "", fmt.Errorf("seed %s cursor: %w", o.name, err)
+				return store.TranslatedRow{}, fmt.Errorf("seed %s cursor: %w", o.name, err)
 			}
 			if tail, ok := trans.PeekTail(); ok {
-				watermark = tail.FigaroLT
+				// The ROW says how much of the board it consumed; the record
+				// it translates cannot, now that a patch may be deferred past
+				// one. See Deriver.SeedAt.
+				watermark, consumedBoard = tail.FigaroLT, tail.BoardVersion
 			}
 		}
 		// SEEDING NEEDS THE FIG IR, and the entry that just landed is not it:
 		// the watermark names an EARLIER entry. The caller holds the log, so
 		// it is passed as the source of that one Lookup.
-		d.SeedAt(source, watermark)
+		d.SeedAt(source, watermark, consumedBoard)
 		o.at[ariaID] = d
 	}
 	msg, snap, translatable := d.Next(e)
 	if !translatable {
 		o.mu.Unlock()
-		return nil, "", nil
+		return store.TranslatedRow{}, nil
 	}
 	encoded, err := o.encode(msg, snap)
 	if err != nil {
 		o.mu.Unlock()
-		return nil, "", err
+		return store.TranslatedRow{}, err
 	}
 	if len(encoded) == 0 {
 		// NO ROW, NO COMMIT. The store drops an empty encode, so committing
 		// here would consume a window that nothing renders -- the defect
 		// TestAContentlessEntryDoesNotEatTheStudyWindow reproduces.
 		o.mu.Unlock()
-		return nil, "", nil
+		return store.TranslatedRow{}, nil
 	}
+	consumed := d.Consumes(e, msg)
 	d.Commit(e, msg)
 	o.mu.Unlock()
-	return encoded, o.fingerprint(), nil
+	return store.TranslatedRow{Payload: encoded, Fingerprint: o.fingerprint(), BoardVersion: consumed}, nil
 }
 
 // Forget drops an aria's cursor, so the next entry reseeds from the logs.

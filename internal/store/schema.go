@@ -79,7 +79,15 @@ var channelSchemas = map[string]channelSchema{
 	// translates, beside the fingerprint. v2 rows have no hash and cannot
 	// grow one, so they are dropped and re-derived -- which is what the
 	// derived class is for.
-	"translations-v2/": {version: 3, class: classDerived},
+	// v4: a row records the board version it CONSUMED (Entry.BoardVersion),
+	// because a form patch may now be deferred past a record that cannot
+	// carry it honestly (provider.carriesForm), and the record's own stamp
+	// therefore answers a different question than "how much of the board has
+	// been rendered". A v3 row has no such field and cannot grow one; seeding
+	// a cursor from its absence reads zero and re-renders every transition
+	// the conversation ever had onto the next message. Dropped and
+	// re-derived, which is what the derived class is for.
+	"translations-v2/": {version: 4, class: classDerived},
 	chanUI:             {version: 1, class: classDerived},
 }
 

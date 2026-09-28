@@ -34,27 +34,30 @@ func newXwalLog[T any](store *XwalStore, ariaID, channel string, isMain bool) *x
 type entryMeta struct {
 	Fingerprint string `json:"fp,omitempty"`
 	FigaroHash  string `json:"rec,omitempty"`
+	// Board is Entry.BoardVersion: what this row consumed, which a record's
+	// own stamp cannot answer once a patch may be deferred past it.
+	Board uint64 `json:"board,omitempty"`
 }
 
-func encodeMeta(fp, recordHash string) []byte {
-	if fp == "" && recordHash == "" {
+func encodeMeta(fp, recordHash string, board uint64) []byte {
+	if fp == "" && recordHash == "" && board == 0 {
 		return nil
 	}
-	b, _ := json.Marshal(entryMeta{Fingerprint: fp, FigaroHash: recordHash})
+	b, _ := json.Marshal(entryMeta{Fingerprint: fp, FigaroHash: recordHash, Board: board})
 	return b
 }
 
-func decodeMeta(meta []byte) (fingerprint, recordHash string) {
+func decodeMeta(meta []byte) (fingerprint, recordHash string, board uint64) {
 	if len(meta) == 0 {
-		return "", ""
+		return "", "", 0
 	}
 	var obj entryMeta
 	if err := json.Unmarshal(meta, &obj); err == nil {
-		return obj.Fingerprint, obj.FigaroHash
+		return obj.Fingerprint, obj.FigaroHash, obj.Board
 	}
 	var legacy string
 	_ = json.Unmarshal(meta, &legacy)
-	return legacy, ""
+	return legacy, "", 0
 }
 
 // decodeRecord OWNS ITS BYTES. Everything that can outlive the read -- a
@@ -85,6 +88,7 @@ func decodeRecordInto[T any](r xwal.Record, alias bool) (Entry[T], bool) {
 		Payload:            v,
 		Fingerprint:        fingerprintOf(r.Meta),
 		FigaroHash:         recordHashOf(r.Meta),
+		BoardVersion:       boardVersionOf(r.Meta),
 		FormChannelVersion: r.Cursors[chanForm],
 		StudyVersions:      studyCursors(r.Cursors),
 		EncodedBytes:       len(r.Payload),
@@ -404,7 +408,7 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	if err != nil {
 		return Entry[T]{}, fmt.Errorf("xwalLog append marshal: %w", err)
 	}
-	meta := encodeMeta(e.Fingerprint, e.FigaroHash)
+	meta := encodeMeta(e.Fingerprint, e.FigaroHash, e.BoardVersion)
 	if l.isMain {
 		// The stamp moment: alongside the automatic own-channel cursors,
 		// record where every OBSERVED form stands right now. This is the
@@ -443,6 +447,8 @@ func (l *xwalLog[T]) Clear() error {
 	return l.store.trunks.Clear(l.ariaID, l.channel)
 }
 
-func fingerprintOf(meta []byte) string { fp, _ := decodeMeta(meta); return fp }
+func fingerprintOf(meta []byte) string { fp, _, _ := decodeMeta(meta); return fp }
 
-func recordHashOf(meta []byte) string { _, h := decodeMeta(meta); return h }
+func recordHashOf(meta []byte) string { _, h, _ := decodeMeta(meta); return h }
+
+func boardVersionOf(meta []byte) uint64 { _, _, b := decodeMeta(meta); return b }

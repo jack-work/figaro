@@ -18,17 +18,23 @@ type countingEncoder struct {
 
 func (e *countingEncoder) Provider() string { return e.provider }
 
-func (e *countingEncoder) EncodeEntry(_ string, _ Log[message.Message], en Entry[message.Message]) ([]json.RawMessage, string, error) {
+func (e *countingEncoder) EncodeEntry(_ string, _ Log[message.Message], en Entry[message.Message]) (TranslatedRow, error) {
 	e.calls++
 	e.seen = append(e.seen, en.LT)
 	if e.fail {
-		return nil, "", fmt.Errorf("encoder refuses")
+		return TranslatedRow{}, fmt.Errorf("encoder refuses")
 	}
 	body, err := json.Marshal(map[string]any{"lt": en.LT, "role": string(en.Payload.Role)})
 	if err != nil {
-		return nil, "", err
+		return TranslatedRow{}, err
 	}
-	return []json.RawMessage{body}, e.provider + "/v1", nil
+	return TranslatedRow{
+		Payload:     []json.RawMessage{body},
+		Fingerprint: e.provider + "/v1",
+		// A real encoder reports the board version it consumed; this one has
+		// no board, and the entry's own stamp is the honest stand-in.
+		BoardVersion: en.FormChannelVersion,
+	}, nil
 }
 
 func writeFigIR(t *testing.T, log Log[message.Message], text string) Entry[message.Message] {
@@ -314,6 +320,6 @@ func TestReadingTheEncoderSetTakesNoLock(t *testing.T) {
 type fakeEncoder struct{ name string }
 
 func (f fakeEncoder) Provider() string { return f.name }
-func (f fakeEncoder) EncodeEntry(string, Log[message.Message], Entry[message.Message]) ([]json.RawMessage, string, error) {
-	return nil, "", nil
+func (f fakeEncoder) EncodeEntry(string, Log[message.Message], Entry[message.Message]) (TranslatedRow, error) {
+	return TranslatedRow{}, nil
 }

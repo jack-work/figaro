@@ -419,6 +419,12 @@ func resolveContextLimit(prov provider.Provider, model string, snapshot form.Sna
 // deltas. That keeps the status path current without making live rendering
 // repeatedly rescan the full conversation.
 func (a *Agent) refreshMetrics() {
+	// NIL-SAFE BECAUSE THE CALLERS ARE NO LONGER ONLY THE TURN PATH. A
+	// silent submission refreshes the bar without running a turn, and an
+	// agent assembled for a unit test has no log at all.
+	if a.figLog == nil {
+		return
+	}
 	a.mu.RLock()
 	metricsLT := a.metricsLT
 	in, out := a.tokensIn, a.tokensOut
@@ -585,6 +591,20 @@ func (a *Agent) SubmitPromptFrom(ctx context.Context, req rpc.QuaRequest, sender
 	if req.Text != "" {
 		evt.segments = []promptSegment{{sender: sender, text: req.Text}}
 	}
+	// NOTHING TO SAY IS NOT A TURN. The patch above has landed, and that was
+	// the whole of this submission: `fork -S ttl=1h` says "branch and patch
+	// it; say nothing yet", and an Enter on an empty composer says nothing at
+	// all. Queueing here anyway put a contentless record in the log (no
+	// content, so no turn id) and then spent a provider round asking the
+	// model to answer a user message that said nothing.
+	//
+	// It is not a refusal: the caller asked for a write and got one. There is
+	// simply no turn to run, and Qua's reply already says whether one is
+	// active.
+	if req.Text == "" {
+		a.refreshMetrics()
+		return nil
+	}
 	a.inbox.Send(evt)
 	// ACCEPTED: the daemon has the message. Between here and the turn lifting
 	// it, a client that showed nothing was the original complaint. The queue
@@ -615,6 +635,11 @@ func promptIDs(e event) []uint64 {
 // never written by anything -- so a message the drain loop had lifted simply
 // vanished from the listing while remaining un-deletable, and the CRUD
 // surface's own refusal messages knew a truth the read surface denied.
+// carriers asked for empty-text rows ("form carriers") as well as real
+// messages. NOTHING CREATES ONE ANY MORE: a submission with no text applies
+// its patch and queues nothing, so the flag selects a row that cannot exist.
+// It is kept until the surfaces that pass it (queue.go's "(form only)" row,
+// portable.go) are retired together.
 func (a *Agent) QueuedPrompts(carriers bool) (string, []rpc.QueuedPrompt) {
 	snap := a.inbox.Project()
 	out := make([]rpc.QueuedPrompt, 0, len(snap.Items))

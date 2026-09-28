@@ -58,9 +58,9 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 		return stats, ErrNoTranslator
 	}
 
-	var watermark uint64
+	var watermark, consumedBoard uint64
 	if tail, ok := cfg.Translator.PeekTail(); ok {
-		watermark = tail.FigaroLT
+		watermark, consumedBoard = tail.FigaroLT, tail.BoardVersion
 		// THE NEWEST ROW IS THE ONLY ONE THAT CAN BE LYING: a position can be
 		// reissued, so a row written for a record that never landed is adopted
 		// by whatever lands there next. Everything below the tail is followed
@@ -73,7 +73,7 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 					if cerr := cfg.Translator.Clear(); cerr != nil {
 						return stats, fmt.Errorf("clear misaligned rows at %d: %w", watermark, cerr)
 					}
-					watermark = 0
+					watermark, consumedBoard = 0, 0
 				}
 			}
 		}
@@ -87,7 +87,7 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 					return stats, fmt.Errorf("clear rows with a hole at %d: %w", gap, cerr)
 				}
 				stats.RepairedAt = gap
-				watermark = 0
+				watermark, consumedBoard = 0, 0
 			}
 		}
 	}
@@ -100,7 +100,7 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 	}
 
 	d := NewDeriver(cfg.Form, cfg.Studies)
-	d.SeedAt(cfg.Log, watermark)
+	d.SeedAt(cfg.Log, watermark, consumedBoard)
 
 	for _, entry := range entries {
 		msg, snap, translatable := d.Next(entry)
@@ -131,6 +131,10 @@ func CatchUp(cfg CatchUpConfig) (CatchUpStats, error) {
 			Payload:     encoded,
 			Fingerprint: cfg.Fingerprint,
 			FigaroHash:  hash,
+			// What this row consumed, which is what a cold start resumes
+			// from. Taken before Commit because Commit is what the write
+			// means, and the row has to describe the write.
+			BoardVersion: d.Consumes(entry, msg),
 		}); werr != nil {
 			if cfg.ReportWriteError != nil {
 				cfg.ReportWriteError(entry.LT, werr)
@@ -244,6 +248,49 @@ func TranslationTail(rows store.Log[[]json.RawMessage]) (uint64, bool) {
 // a user message can: every encoder renders StudyReminderTexts under
 // RoleInput. A record that cannot carry one must not consume a window.
 func carriesStudy(msg message.Message) bool { return msg.Role == message.RoleInput }
+
+// carriesForm says whether a record can carry a form transition HONESTLY.
+//
+// A transition renders as a <system-reminder> text block, and a text block in
+// a user-role message is the one thing a model reads as its master's own
+// voice. So the carrier must be a record that already speaks with that voice:
+// input, with something in it a person put there.
+//
+// The three records this excludes are excluded for three different reasons,
+// and all three were observed in the author's store:
+//
+//   - RoleOutput: no encoder renders patches on an assistant message, so the
+//     reminder would be dropped and the cursor advanced past it. The change
+//     reaches nobody.
+//   - no content at all: the message becomes a reminder and nothing else, so
+//     the model is told a person took a turn and said nothing.
+//   - tool results only: a tool_result block reads as the tool's voice, so
+//     the reminder is again the only thing spoken in a user turn. This is the
+//     one the report was about, and the model said so itself: "This message
+//     is just an empty system reminder with no actual user content to respond
+//     to."
+//
+// A record that cannot carry one leaves the window open, and the patch rides
+// the next record that can: "patch silently and get picked up on the next
+// message".
+func carriesForm(msg message.Message) bool {
+	if msg.Role != message.RoleInput {
+		return false
+	}
+	for _, c := range msg.Content {
+		switch c.Type {
+		case message.ContentProse:
+			if c.Text != "" {
+				return true
+			}
+		case message.ContentImage:
+			// An attachment is a person speaking as surely as prose is, and
+			// it renders as a top-level block on the same user message.
+			return true
+		}
+	}
+	return false
+}
 
 // ClearStaleTranslationCache empties a translator log whose stored rows were
 // written under a different encoder fingerprint. A provider checks it when it

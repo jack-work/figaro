@@ -21,11 +21,27 @@ type TranslatorEncoder interface {
 	// Provider names the translator channel: "anthropic" writes to
 	// translations-v2/anthropic.
 	Provider() string
-	// EncodeEntry returns the wire messages for this entry and the
-	// fingerprint of the encoder that produced them; an entry that
-	// translates to nothing returns none. source is the fig IR the entry
+	// EncodeEntry returns the row for this entry; an entry that translates
+	// to nothing returns one with no payload. source is the fig IR the entry
 	// came from, for an encoder that must seed a cursor from an earlier one.
-	EncodeEntry(ariaID string, source Log[message.Message], e Entry[message.Message]) ([]json.RawMessage, string, error)
+	EncodeEntry(ariaID string, source Log[message.Message], e Entry[message.Message]) (TranslatedRow, error)
+}
+
+// TranslatedRow is one entry's translation plus what the encoder consumed
+// producing it. It is a struct rather than three returns because the row is
+// written by two sites (the append path here and the catch-up) and they must
+// write the SAME fields: a caller that forgets one silently writes a row that
+// cannot be resumed from.
+type TranslatedRow struct {
+	// Payload is the wire messages. Empty means the entry translates to
+	// nothing and no row is written.
+	Payload []json.RawMessage
+	// Fingerprint identifies the encoder configuration that produced it.
+	Fingerprint string
+	// BoardVersion is how far the form had been RENDERED once this row
+	// existed: Entry.BoardVersion. See there for why the record's own stamp
+	// cannot answer it.
+	BoardVersion uint64
 }
 
 // translatorEncoders is the injected set, keyed by provider name.
@@ -119,12 +135,12 @@ func (b *XwalBackend) translateOnAppend(ariaID string, source Log[message.Messag
 		if tail, ok := trans.PeekTail(); ok && tail.FigaroLT >= e.LT {
 			continue // a catch-up got here first
 		}
-		encoded, fingerprint, err := enc.EncodeEntry(ariaID, source, e)
+		row, err := enc.EncodeEntry(ariaID, source, e)
 		if err != nil {
 			slog.Warn("translate on append: encode", "aria", ariaID, "provider", provider, "flt", e.LT, "err", err)
 			continue
 		}
-		if len(encoded) == 0 {
+		if len(row.Payload) == 0 {
 			continue
 		}
 		hash, err := FigaroHash(e.Payload)
@@ -133,10 +149,11 @@ func (b *XwalBackend) translateOnAppend(ariaID string, source Log[message.Messag
 			continue
 		}
 		if _, err := trans.Append(Entry[[]json.RawMessage]{
-			FigaroLT:    e.LT,
-			Payload:     encoded,
-			Fingerprint: fingerprint,
-			FigaroHash:  hash,
+			FigaroLT:     e.LT,
+			Payload:      row.Payload,
+			Fingerprint:  row.Fingerprint,
+			FigaroHash:   hash,
+			BoardVersion: row.BoardVersion,
 		}); err != nil {
 			slog.Warn("translate on append: write", "aria", ariaID, "provider", provider, "flt", e.LT, "err", err)
 		}

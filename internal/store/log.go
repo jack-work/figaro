@@ -35,6 +35,17 @@ type Entry[T any] struct {
 	// detectable: the row either describes the record at that position or it
 	// does not.
 	FigaroHash string
+	// BoardVersion, on TRANSLATOR rows only: the form version this row had
+	// CONSUMED when it was written.
+	//
+	// It is not the version stamped on the record the row translates, and the
+	// difference is the point. A form patch renders as a <system-reminder>,
+	// and only a record a person spoke in may carry one (provider.carriesForm),
+	// so a row written for a tool result consumes nothing and a row written
+	// for the next question consumes everything that was pending. A cold
+	// start that reads the RECORD's stamp instead concludes a deferred patch
+	// was already rendered and drops it.
+	BoardVersion uint64
 }
 
 // Log is one column of an aria's write-ahead log. Logs are

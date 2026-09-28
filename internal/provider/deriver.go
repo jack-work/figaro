@@ -30,17 +30,24 @@ func NewDeriver(board Form, studies map[string]Form) *Deriver {
 }
 
 // SeedAt positions the cursor at a watermark: the newest fig IR entry already
-// translated. The entry at the watermark carries the cursors, so the position
-// is read from the log rather than carried between calls.
-func (d *Deriver) SeedAt(log store.Log[message.Message], watermark uint64) {
+// translated. The entry at the watermark carries the study cursors, so that
+// half of the position is read from the log rather than carried between calls.
+//
+// consumedBoard is the OTHER half, and it comes from the translator ROW
+// (Entry.BoardVersion), not from the record. A form patch may be deferred
+// past a record that cannot carry it, so the record's own stamp answers "how
+// far had the board moved by then" and not "how much of it has been
+// rendered". Those were the same number until the window could stay open, and
+// seeding from the record is how a deferred patch was lost across a restart.
+func (d *Deriver) SeedAt(log store.Log[message.Message], watermark, consumedBoard uint64) {
 	d.lastForm = 0
 	d.lastStudy = map[string]uint64{}
 	d.snap = form.Snapshot{}
 	if watermark == 0 {
 		return
 	}
+	d.lastForm = consumedBoard
 	if at, ok := log.Lookup(watermark); ok {
-		d.lastForm = at.FormChannelVersion
 		for fid, v := range at.StudyVersions {
 			d.lastStudy[fid] = v
 		}
@@ -67,6 +74,17 @@ func (d *Deriver) SeedAt(log store.Log[message.Message], watermark uint64) {
 // At reports the board version the cursor has consumed to.
 func (d *Deriver) At() uint64 { return d.lastForm }
 
+// Consumes is what At WOULD report if this entry's row were written now. It
+// is what the row records, so a cold start can resume the cursor: the caller
+// needs the number before Commit, because the row is written first and the
+// commit is what the write means.
+func (d *Deriver) Consumes(entry store.Entry[message.Message], msg message.Message) uint64 {
+	if !carriesForm(msg) {
+		return d.lastForm
+	}
+	return maxVersion(d.lastForm, entry.FormChannelVersion)
+}
+
 // Next reads one entry and returns what to encode: the message with its
 // patches and study blocks attached, and the board as it stood BEFORE it.
 // translatable is false for an entry that renders to nothing.
@@ -87,7 +105,7 @@ func (d *Deriver) Next(entry store.Entry[message.Message]) (msg message.Message,
 		return msg, d.snap, false
 	}
 
-	if d.form != nil {
+	if d.form != nil && carriesForm(msg) {
 		// (after, upTo]: the last COMMITTED mark and this entry's.
 		msg.Patches = d.form.PatchesBetween(d.lastForm, entry.FormChannelVersion)
 	}
@@ -126,7 +144,14 @@ func (d *Deriver) Next(entry store.Entry[message.Message]) (msg message.Message,
 // caller that commits unconditionally loses the ones that were never written.
 // Both callers of Next commit exactly when the store accepted a row.
 func (d *Deriver) Commit(entry store.Entry[message.Message], msg message.Message) {
-	d.lastForm = maxVersion(d.lastForm, entry.FormChannelVersion)
+	// THE CURSOR ONLY MOVES FOR A RECORD THAT COULD CARRY THE BLOCK, which is
+	// the same rule Next applies when it decides whether to attach one. An
+	// entry that was never offered the window must not consume it: advancing
+	// here is how a patch attached to an assistant record came to be folded
+	// into the board and rendered to nobody.
+	if carriesForm(msg) {
+		d.lastForm = maxVersion(d.lastForm, entry.FormChannelVersion)
+	}
 	if carriesStudy(msg) {
 		for fid, upTo := range entry.StudyVersions {
 			d.lastStudy[fid] = maxVersion(d.lastStudy[fid], upTo)

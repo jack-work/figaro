@@ -67,15 +67,16 @@ func TestOnAppendRendersWhatACatchUpWould(t *testing.T) {
 		func(string) (store.Log[[]json.RawMessage], error) { return appendTrans, nil },
 	)
 	for _, e := range appendLog.Read() {
-		encoded, fp, err := adapter.EncodeEntry("aria", appendLog, e)
+		row, err := adapter.EncodeEntry("aria", appendLog, e)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(encoded) == 0 {
+		if len(row.Payload) == 0 {
 			continue
 		}
 		if _, err := appendTrans.Append(store.Entry[[]json.RawMessage]{
-			FigaroLT: e.LT, Payload: encoded, Fingerprint: fp,
+			FigaroLT: e.LT, Payload: row.Payload, Fingerprint: row.Fingerprint,
+			BoardVersion: row.BoardVersion,
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -130,19 +131,20 @@ func TestOnAppendSeedsItsCursorFromTheTranslatorTail(t *testing.T) {
 	entries := log.Read()
 	// One adapter renders the first entry and is then thrown away, as a
 	// restart throws away everything held in memory.
-	first, fp, err := newAdapter().EncodeEntry("aria", log, entries[0])
+	first, err := newAdapter().EncodeEntry("aria", log, entries[0])
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := trans.Append(store.Entry[[]json.RawMessage]{
-		FigaroLT: entries[0].LT, Payload: first, Fingerprint: fp,
+		FigaroLT: entries[0].LT, Payload: first.Payload, Fingerprint: first.Fingerprint,
+		BoardVersion: first.BoardVersion,
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	// A FRESH adapter renders the second. If it seeded from zero it would
 	// re-render the patches the first entry already carried.
-	if _, _, err := newAdapter().EncodeEntry("aria", log, entries[1]); err != nil {
+	if _, err := newAdapter().EncodeEntry("aria", log, entries[1]); err != nil {
 		t.Fatal(err)
 	}
 

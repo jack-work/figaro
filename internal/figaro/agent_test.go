@@ -1449,7 +1449,11 @@ func TestAgent_QueuedPromptsRPC(t *testing.T) {
 
 	a.SubmitPrompt(rpc.QuaRequest{Text: "one"})
 	a.SubmitPrompt(rpc.QuaRequest{Text: "two"})
-	a.SubmitPrompt(rpc.QuaRequest{Text: ""}) // carrier: must be omitted
+	// A submission with no text is a form write and nothing else: it does not
+	// join the queue, because there is no turn for it to wait for. It used to
+	// queue as a "carrier", and draining one wrote a contentless record and
+	// spent a provider round on a message that said nothing.
+	a.SubmitPrompt(rpc.QuaRequest{Text: ""})
 
 	epoch, snap := a.QueuedPrompts(false)
 	require.NotEmpty(t, epoch, "the queue view names the generation its ids belong to")
@@ -1464,9 +1468,10 @@ func TestAgent_QueuedPromptsRPC(t *testing.T) {
 	require.Equal(t, epoch, epoch2)
 	require.Equal(t, snap, snap2)
 
-	// The carrier is hidden from the display view and present in the CRUD one.
+	// And it is absent from the CRUD view too, which is the whole difference:
+	// there is nothing to list, edit or delete, because nothing was queued.
 	_, all := a.QueuedPrompts(true)
-	require.Equal(t, []string{"one", "two", ""}, queuedTexts(all))
+	require.Equal(t, []string{"one", "two"}, queuedTexts(all))
 }
 
 func queuedTexts(prompts []rpc.QueuedPrompt) []string {
