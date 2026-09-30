@@ -185,29 +185,32 @@ worth doing):
   build mismatch between CLI and daemon.
 - an **update** available (`figaro update --check` knows; nothing asks it).
 
-**Phase 2 transport, the daemon's**, one that already exists: an
-**intrinsic form** per aria, `<aria>/messages`, beside `<aria>/queue` and
-`<aria>/runtime`. Intrinsic forms are derived, live-only and pushed to every
-attached client, which is exactly the lifetime this needs. It is fed by:
+**Phase 2 transport, the daemon's**: one daemon-level stream, not a form per
+aria (see Where they live). The nearest existing machinery is the intrinsic
+form (`<aria>/queue`, `<aria>/runtime`): derived, live-only, pushed to every
+subscriber, exactly this lifetime. Today every intrinsic is hosted by an
+aria; this one is hosted by the angelus, `angelus/notifications`. Whether an
+intrinsic can take the angelus as its host, or needs a sibling mechanism with
+the same shape, is the first thing phase 2 finds out. It is fed by:
 
+- turn verdicts for every aria (the `turn.done` reason that is currently a
+  bar string and nothing else); the pager keeps the ones for arias it has
+  shown;
+- queue drops;
+- provider round failures, including filtered and empty completions (#24);
 - the daemon's `logring`, which already retains WARN and above for
   `figaro doctor provider`; the 20 of its 44 warn/error sites that carry an
-  `aria` attribute route to that aria's form, the rest to a daemon-wide one;
-- turn verdicts (the `turn.done` reason that is currently a bar string and
-  nothing else), for every aria the pager has attended this session, not
-  only the one on screen;
-- queue drops, from the queue intrinsic the pager already follows;
-- provider round failures, including filtered and empty completions (#24).
+  `aria` attribute are tagged with it, the rest are the daemon's own.
 
-The pager folds the subject's `<aria>/messages` into its history as it does
-the queue, tagging each with the aria as source. For free: `figaro form listen
-<aria>/messages` shows the same thing from a shell, and a script can read it
-with `figaro form show <aria>/messages -j`, which is the "common
-implementation" rule the tab pit followed: one source, the pit is only a
-face.
+The pager folds these into its history as it does the queue, tagging each
+with its aria as the source and filtering to the arias it has shown. For
+free: `figaro form listen angelus/notifications` shows the same stream from a
+shell, and `figaro form show angelus/notifications -j` reads it from a
+script, which is the rule the tab pit followed: one source, and the pit is
+only a face.
 
-**Not in either phase:** durability. The daemon's intrinsic form dies with
-the daemon, as the queue's does. What must survive a restart already does
+**Not in either phase:** durability. The daemon's stream dies with the
+daemon, as the queue does. What must survive a restart already does
 (turn failures are in the IR; everything is in `logs.jsonl`). If a history
 that outlives the daemon turns out to be wanted, the form becomes a libretto
 (durable, derived) and nothing above it changes.
@@ -226,21 +229,47 @@ in the style of `tabpit-pty.sh`).
 3. **The mark**: `𝄞 N` in the bar after the alert retires, worst level's
    colour, cleared by opening.
 4. **CLI `slog`** into the store.
-5. **Phase 2**: `<aria>/messages` intrinsic in the daemon, fed by `logring`
-   and turn verdicts; the pager folds it in.
+5. **Phase 2**: `angelus/notifications` in the daemon, fed by turn verdicts,
+   queue drops, provider failures and `logring`; the pager folds in the
+   arias it has shown.
 
-Steps 1 to 4 are one PR (the pager's own messages). Step 5 is its own.
+Steps 1 to 4 are one PR (the pager's own notifications). Step 5 is its own.
 
-## Settled
+## Where they live
 
-- **Name**: notifications (Gluck, 2026-09-30).
-- **Info enters the history**: yes, "the list should include other
-  notifications"; it never counts toward the unread mark.
+Split by where a notification is born. Nothing new is written to disk.
 
-## Questions for Gluck
+- **The pager's own** (confirmations, refusals, failed verbs, the CLI's
+  `slog`): **in the pager process**, a 500-entry ring. It dies with the pager,
+  which is right: "yanked" means nothing to the next session, and a store
+  shared through the daemon would put one pane's confirmations in another
+  pane's list.
+- **The daemon's** (turn verdicts, queue drops, daemon trouble): **in the
+  daemon**, a bounded ring behind one daemon-level intrinsic form, pushed to
+  the pager over one subscription as the queue is. It survives the pager
+  closing and dies with the daemon. One subscription rather than one per
+  aria: turn verdicts are rare, and the pager filters them itself.
+- **Scope is the pager's**: it keeps the set of arias this session has shown
+  (the subject and every aria hopped to, attended or spawned), and shows the
+  daemon's notifications for those. A new session starts with its first
+  aria.
+- **Disk**: none. The durable facts are already written down, a turn's
+  failure in its aria's IR and everything in `logs.jsonl`, so the list is an
+  index of recent trouble and not a second record. Should it need to outlive
+  a daemon restart, the daemon's ring becomes a libretto (durable, derived)
+  and nothing above it moves.
 
-1. **`space n`** in place of `n`, which is search-repeat? (Or another key.)
-2. **Phase 2's "a turn finished elsewhere"**: which arias count? Proposed:
-   every aria this pager session has shown or attended, plus any aria it
-   spawned. The alternative, every aria the daemon runs, is a firehose.
-3. Phase 2 now, or after phase 1 has been lived with?
+## Settled (Gluck, 2026-09-30)
+
+- **Name**: notifications.
+- **Key**: `space n`, a two-key prefix like `gg`; `n` stays search-repeat.
+  `:notifications` from the command box.
+- **Info enters the history** and never counts toward the unread mark.
+- **"A turn finished elsewhere"** covers the arias this pager session has
+  shown, not every aria the daemon runs.
+- **Storage** as above: pager memory for its own, daemon memory for the
+  daemon's, nothing new on disk.
+
+## Open
+
+1. Phase 2 now, or after phase 1 has been lived with?
