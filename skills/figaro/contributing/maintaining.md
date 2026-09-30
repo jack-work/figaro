@@ -31,6 +31,11 @@ The repo is a treebear layout: a bare repo at `.bare`, worktrees as peers of
 git -C ~/dev/figaro-qua/.bare worktree add ~/dev/figaro-qua/<name> -b <branch> main
 ```
 
+**`~/dev/figaro-qua/<name>` and nowhere else.** Never `/var/tmp`, `/tmp`, or
+anywhere under `/var`: the owner looks for branches beside `main/`, and a
+worktree on `/var` cannot even be `git worktree move`d home (a different
+filesystem: "Invalid cross-device link"), only removed and re-added.
+
 Never work in `main/` itself. It is the owner's checkout.
 
 ## Dev shells
@@ -120,7 +125,9 @@ the next command respawns it.
 
 **Scratch builds belong on `/var/tmp`, not `/tmp`.** On this machine `/tmp` is
 tmpfs, which is RAM: five 39 MB binaries there is 200 MB of memory. `/var/tmp`
-is disk, though it survives reboot, so clean up after yourself.
+is disk, though it survives reboot, so clean up after yourself. That is for
+BINARIES and throwaway test state only: a worktree of the source never goes
+there (see Worktrees above).
 
 ## The loop
 
