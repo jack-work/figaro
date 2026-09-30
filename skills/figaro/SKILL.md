@@ -55,6 +55,25 @@ Three rules that are not guessable:
 Every command takes `--id <id>` to address a specific aria, `-j` for one line
 of JSON on stdout, and `-h` for its own help.
 
+## Where figaro work lives: `~/dev/figaro-qua/<name>`, nowhere else
+
+**Every worktree of the figaro repo goes in `~/dev/figaro-qua/<name>`,** beside
+`main/` and the bare repo at `.bare`. Never in `/var/tmp`, never in `/tmp`,
+never anywhere under `/var`. This is an order from the owner, not a
+preference:
+
+```sh
+git -C ~/dev/figaro-qua/.bare worktree add ~/dev/figaro-qua/<name> -b <branch> main
+```
+
+A worktree anywhere else is one the owner cannot find when you hand him a
+branch to test, and one `git worktree move` cannot bring home: `/var` is a
+different filesystem, so the move fails with "Invalid cross-device link" and
+the worktree has to be removed and re-added. Scratch BINARIES and throwaway
+test state may live under `/var/tmp` (see
+[contributing/maintaining.md](contributing/maintaining.md)); a checkout of
+the source may not. Never work in `main/` itself: it is the owner's checkout.
+
 ## Vocabulary
 
 One definition each. The file named owns the model behind it.
