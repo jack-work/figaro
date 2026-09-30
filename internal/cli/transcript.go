@@ -155,9 +155,18 @@ type transcript struct {
 	cmdline lineEditor
 	// menu is Tab's completion pit, open while it is non-nil. See
 	// transcript_complete.go.
-	menu     *completionMenu
-	jumpNote string
-	jump     *transcriptJump
+	menu *completionMenu
+	// notes is the notification history (notifications.go). It lives here,
+	// not on the status, because a status is replaced on every hop.
+	notes *notificationStore
+	// noticeTTL is the configured alert lifetime, when there is one: it has
+	// to outlive the status the same way notes does.
+	noticeTTL *time.Duration
+	// pendLeader: saw space, the leader, so the next key is a leader chord
+	// (`space n`). Like pendG and pendF, one key and then it is spent.
+	pendLeader bool
+	jumpNote   string
+	jump       *transcriptJump
 
 	// Lazy history paging: the pager opens on the store's tail and pulls older
 	// history via keyset ReadBefore only when the viewport comes near the window
@@ -249,11 +258,39 @@ type transcriptPageRequest struct {
 }
 
 func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria.Client, figaroID string, startedAt time.Time) *transcript {
-	return &transcript{
-		out: out, view: view, client: client,
-		status: newSessionStatus(figaroID, startedAt), w: w, h: h,
+	t := &transcript{
+		out: out, view: view, client: client, w: w, h: h,
 		rowCache: map[sliceKey]cachedMessage{}, stickyCache: map[sliceKey]stickyQuestion{},
 		expanded: map[nodeRef]bool{}, adorned: map[nodeRef]bool{},
+		notes: newNotificationStore(),
+	}
+	t.setStatus(newSessionStatus(figaroID, startedAt))
+	return t
+}
+
+// setStatus is the ONE way the transcript takes a session status, because the
+// status is replaced on every subject switch and the notification history is
+// not: each new status is bound to the same store, or the bar's unread mark
+// would reset on every hop.
+func (t *transcript) setStatus(s *sessionStatus) {
+	if s == nil {
+		return
+	}
+	s.notes = t.notes
+	if t.noticeTTL != nil {
+		s.setNoticeTTL(*t.noticeTTL)
+	}
+	t.status = s
+}
+
+// setNoticeTTL is `[cli] notice_ttl`, applied to the status on show and to
+// every status a hop mints after it. It was documented and never applied:
+// nothing called sessionStatus.setNoticeTTL, so every alert held the bar for
+// the built-in ten seconds whatever the config said.
+func (t *transcript) setNoticeTTL(d time.Duration) {
+	t.noticeTTL = &d
+	if t.status != nil {
+		t.status.setNoticeTTL(d)
 	}
 }
 
@@ -1891,6 +1928,10 @@ func (t *transcript) navMotion(n navKey) { t.dispatch(keyEvent{nav: n}) }
 // live here rather than in the table, because each is a property of a MODE
 // rather than of any one binding:
 func (t *transcript) dispatch(ev keyEvent) {
+	if t.pendLeader && t.leaderChord(ev) {
+		t.render()
+		return
+	}
 	switch t.mode() {
 	case modeConfirm:
 		// THE QUESTION OWNS THE KEYBOARD: an answer, or nothing at all. A key
@@ -2768,9 +2809,7 @@ func (t *transcript) dropTurnsRows(lts map[int]struct{}) {
 // Called with the render lock held, from livelogTurn.retarget.
 func (t *transcript) retarget(client *aria.Client, figaroID string, status *sessionStatus, base int) {
 	t.client = client
-	if status != nil {
-		t.status = status
-	}
+	t.setStatus(status)
 	keepScroll := t.keepsScroll(base)
 	t.kept = keepScroll
 	// FRESH MAPS, ALWAYS, carrying over what the two arias share. The old maps
@@ -2947,9 +2986,47 @@ func (t *transcript) pitVerb(ev keyEvent) bool {
 		// (see inputYank), and two owners for one key is how a yank comes to copy
 		// one thing and report another.
 	}
+	// A LIST VIEW'S OWN LETTERS, before the shared motions: the
+	// notifications pit's `f` filter. A view that claims nothing costs one
+	// type assertion.
+	if kv, ok := t.pit.live.(cmdkit.KeyView); ok && ev.nav == navNone && ev.b != 0 && kv.Key(ev.b) {
+		return true
+	}
 	_ = row
 	_ = has
 	return t.pitMotion(ev)
+}
+
+// openNotificationsPit is `space n` and `:notifications`: the history, as a
+// live list. Opening it is reading it, so the unread mark goes.
+func (t *transcript) openNotificationsPit() {
+	t.pit.showLive(pitNotifications, &notificationsView{store: t.notes})
+	t.focused = focusPit
+	t.notes.markRead()
+}
+
+// pagerNotifications toggles it, as Q toggles the queue.
+func pagerNotifications(t *transcript) { t.togglePit(pitNotifications, t.openNotificationsPit) }
+
+// pagerLeader is space: arm the leader, so the next key is a leader chord.
+// Space is the leader because Gluck's Neovim's is, and `<leader>n` is where
+// that opens its notification history.
+func pagerLeader(t *transcript) { t.pendLeader = true }
+
+// leaderChord takes the key after space, and reports whether it was one. Any
+// other key is not swallowed: it is itself, and the leader is spent, as the
+// second key of gg is.
+func (t *transcript) leaderChord(ev keyEvent) bool {
+	t.pendLeader = false
+	if t.inSearch || t.inJump || ev.nav != navNone {
+		return false
+	}
+	switch ev.b {
+	case 'n':
+		pagerNotifications(t)
+		return true
+	}
+	return false
 }
 
 // pitMotion runs the shared list motions against the open pit, and
@@ -3047,6 +3124,10 @@ func (t *transcript) showLivePit(name string, v cmdkit.LiveView, full bool) {
 func (t *transcript) setCommandNote(note string) { t.setCommandNoteAt(note, alertInfo) }
 
 func (t *transcript) setCommandNoteAt(note string, level alertLevel) {
+	// EVERY NOTE IS POSTED, whatever the bar does with it: a one-liner goes
+	// to the alert slot and retires, a long one to the message pit and is
+	// dismissed, and until now either was then gone.
+	t.notes.post(level, "cli", note)
 	if note == "" {
 		t.status.setNotice("")
 		if t.showing(pitNote) {

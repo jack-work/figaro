@@ -391,6 +391,12 @@ var inputOracle = []struct {
 	keys  map[string]string
 }{
 	{"incipit", "stop=false rest=\"\" act=false off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"", map[string]string{
+		// SPACE IS THE LEADER, 2026-09-30: `space n` is notifications (as
+		// `<leader>n` is in Gluck's Neovim). A leader arms and waits, so it no
+		// longer falls through to the any-key dismissal: the panel stays open,
+		// which is what lets `space n` switch pits, and the offset moves only
+		// because an open pit keeps its rows.
+		"0x20": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		// M-m IS VERBOSE TOOL OUTPUT, 2026-09-12, which ^O used to be: the
 		// chord went to the jumplist, Ctrl+M could not take the job (that byte
 		// is Enter), and a plain letter cannot be live in incipit. In the ':'
@@ -594,6 +600,12 @@ var inputOracle = []struct {
 		"csiu ^p+alt": "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"",
 	}},
 	{"panel", "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"", map[string]string{
+		// SPACE IS THE LEADER, 2026-09-30: `space n` is notifications (as
+		// `<leader>n` is in Gluck's Neovim). A leader arms and waits, so it no
+		// longer falls through to the any-key dismissal: the panel stays open,
+		// which is what lets `space n` switch pits, and the offset moves only
+		// because an open pit keeps its rows.
+		"0x20": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		// M-m IS VERBOSE TOOL OUTPUT, 2026-09-12, which ^O used to be: the
 		// chord went to the jumplist, Ctrl+M could not take the job (that byte
 		// is Enter), and a plain letter cannot be live in incipit. In the ':'

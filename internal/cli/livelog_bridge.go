@@ -125,9 +125,7 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 	t := &livelogTurn{in: in, term: term, client: aria.NewClient(), view: view, status: status}
 	in.Queued = t.queuedRows // the queue is live chrome in the inline view too
 	t.tr = newTranscript(audited, w, h, view, t.client, figaroID, startedAt)
-	if status != nil {
-		t.tr.status = status
-	}
+	t.tr.setStatus(status)
 	t.wireClient()
 	return t
 }
@@ -679,6 +677,9 @@ func (t *livelogTurn) reportAt(text string, level alertLevel) {
 		return
 	}
 	slog.Warn("figaro session", "report", text)
+	// The news concerns the aria on screen, which is what the pit shows as
+	// its source and what `a` attends from it.
+	t.tr.notes.post(level, t.status.figaroID, text)
 	t.status.setNoticeAt(text, level)
 	if t.tr.active {
 		t.tr.render()

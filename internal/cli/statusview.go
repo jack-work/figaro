@@ -13,6 +13,7 @@ package cli
 // be golden-tested at every width. See plans/status-bar-and-modes.md §1.
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,6 +35,11 @@ type statusView struct {
 	// and its goldens become flaky.
 	Alert      string
 	AlertLevel alertLevel
+	// Unread is how many warnings and errors the notification history holds
+	// that nobody has opened it to see, and UnreadLevel the worst of them.
+	// It is what stays after the alert retires: `𝄞 2`, until the pit opens.
+	Unread      int
+	UnreadLevel alertLevel
 	// LastAt is when the conversation last moved. Verbose only, and absolute:
 	// a relative "3m ago" would be true only at the instant it was painted.
 	LastAt  time.Time
@@ -120,8 +126,11 @@ func (v statusView) clipAlert(bare []string, w, rightW int) {
 		return
 	}
 	cut := clipToWidthEllipsis(v.Alert, room)
-	if v.AlertLevel == alertError {
+	switch v.AlertLevel {
+	case alertError:
 		cut = term.NoticeInDim(cut)
+	case alertWarn:
+		cut = term.CautionInDim(cut)
 	}
 	bare[0] = cut
 }
@@ -159,11 +168,28 @@ func (v statusView) groups() (left, right []string, at int) {
 	// colour it reserves for failures, which is how a colour stops meaning
 	// anything.
 	if v.Alert != "" {
-		if v.AlertLevel == alertError {
+		switch v.AlertLevel {
+		case alertError:
 			left = append(left, term.NoticeInDim(v.Alert))
-		} else {
+		case alertWarn:
+			left = append(left, term.CautionInDim(v.Alert))
+		default:
 			left = append(left, v.Alert)
 		}
+	}
+	// THE MARK: what an alert leaves behind once it has retired unread. It
+	// sits beside the alert and is coloured by the worst thing it counts, so
+	// a warning never looks like a failure and a failure never looks like
+	// news.
+	if v.Unread > 0 {
+		mark := pitNotifications.face().glyph + " " + strconv.Itoa(v.Unread)
+		switch v.UnreadLevel {
+		case alertError:
+			mark = term.NoticeInDim(mark)
+		case alertWarn:
+			mark = term.CautionInDim(mark)
+		}
+		left = append(left, mark)
 	}
 	if tok := v.Pit.token(v.Verbose); tok != "" {
 		left = append(left, tok)
@@ -245,6 +271,10 @@ func (s *sessionStatus) viewOf(pit pitID, verbose bool, now time.Time) statusVie
 	if ctx := formatContextUsage(s.metrics.ContextTokens, s.metrics.ContextLimit, s.metrics.ContextExact); ctx != "-" {
 		v.Ctx = ctx
 	}
+	// The store has its own lock; reading it under the status's read lock
+	// is ordered the same way everywhere (status, then store) and the store
+	// never takes the status's.
+	v.Unread, v.UnreadLevel = s.notes.unread()
 	if verbose {
 		v.Model = s.model
 	}
