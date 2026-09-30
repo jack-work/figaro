@@ -48,7 +48,22 @@ type pitRow struct {
 	// It goes through the same gate as text, and is drawn at full strength
 	// on the selected row, where dim on a wash would not read.
 	note string
+	// tone is the row's level, painted by the picker. It cannot ride in the
+	// text: every row goes through pitText, which strips escapes, and it must
+	// not, or a form value holding an SGR would repaint the pane. The zero
+	// value is no colour, so a pit that never heard of tones is untouched.
+	tone pitTone
 }
+
+// pitTone is what a row's level looks like. Three, because a message has three
+// (see alertLevel): trouble, a warning, and everything else.
+type pitTone uint8
+
+const (
+	toneNone pitTone = iota
+	toneError
+	toneWarn
+)
 
 // staticRow is drawn but never selected. (Not "chromeRow": that name is taken
 // in transcript_mouse_test.go for a different idea.)
@@ -253,11 +268,47 @@ func pitGray(s string) string { return term.Label(s) }
 
 // pitSelected is the one row in a pit drawn at full strength: it is what every
 // verb acts on, so it must be read first. Dim text on a dark wash was not.
-func pitSelected(s string) string {
+// A toned row keeps its colour over the wash: the selection says where you
+// are standing, and the tone says what you are standing on.
+func pitSelected(s string, tone pitTone) string {
 	if !term.Enabled() {
 		return s
 	}
-	return "\x1b[48;5;240m\x1b[38;5;255m" + s + "\x1b[39m\x1b[49m"
+	fg := "\x1b[38;5;255m"
+	if body := tone.washBody(); body != "" {
+		fg = body
+	}
+	return "\x1b[48;5;240m" + fg + s + "\x1b[39m\x1b[49m"
+}
+
+// paint colours a whole row and hands the pane back as it found it. An untoned
+// row is returned untouched, so a pit that sets no tone renders byte for byte
+// as it did before there were any.
+func (t pitTone) paint(s string) string {
+	body := ""
+	switch t {
+	case toneError:
+		body = term.NoticeBody()
+	case toneWarn:
+		body = term.CautionBody()
+	}
+	if body == "" {
+		return s
+	}
+	return body + s + "\x1b[0m"
+}
+
+// washBody is the tone over the selection wash: the same colour, lifted,
+// because the palette's own red on a mid-grey wash is 1.9:1 and reads as mud.
+// The wash is the caller's.
+func (t pitTone) washBody() string {
+	switch t {
+	case toneError:
+		return term.NoticeOnWash()
+	case toneWarn:
+		return term.CautionOnWash()
+	}
+	return ""
 }
 
 // pitText is the gate every pit row passes through: THE PIT PAINTS TEXT, NEVER

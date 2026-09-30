@@ -20,7 +20,9 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/api/form"
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"strings"
 	"sync"
@@ -96,6 +98,7 @@ func tokenize(line string) []string {
 // Everything else -- ls, status, doctor, state, set, unset, queue,
 // promote, gc, models, show... -- falls through to the real router untouched.
 var overlayVerbs = map[string]bool{
+	"notifications": true, "no": true, // the pager's own history (notifications.go)
 	"listen": true,
 	"attend": true, "at": true,
 	"send": true, "s": true,
@@ -103,6 +106,9 @@ var overlayVerbs = map[string]bool{
 	"kill":   true, // it can kill the aria on screen, and must then move
 	"import": true, // reads os.Stdin for `-` (portable.go)
 	"login":  true, // an interactive OAuth flow with its own prompts
+	// models is a PIT, not a table: a list you choose the subject's model
+	// in (models_view.go). As a routed verb it printed to os.Stdout.
+	"models": true,
 }
 
 // terminalSubverbs are verb+subverb pairs that take the terminal, which a bare
@@ -232,9 +238,93 @@ func (in *interactiveInput) runOverlay(verb string, args []string) {
 		in.commandAsync(func(ctx context.Context) (string, error) {
 			return in.commandFork(ctx, args)
 		})
+	case "notifications", "no":
+		in.mu.Lock()
+		if len(args) > 0 && args[0] == "clear" {
+			// Vim's `:messages clear`: the pager's copy, and only it.
+			in.lt.tr.notes.clear()
+			in.lt.tr.setCommandNote("notifications cleared")
+		} else {
+			in.lt.tr.closePanels()
+			in.lt.tr.openNotificationsPit()
+			in.lt.tr.render()
+		}
+		in.mu.Unlock()
+	case "models":
+		in.openModels()
 	default:
 		in.note(fmt.Sprintf("%s: not available inside the pager (it opens a view of its own)", verb))
 	}
+}
+
+// openModels hosts the models pit. Asking every provider dials, so the list is
+// fetched off the input goroutine and installed under the render lock, as a
+// live form view is (openLive).
+func (in *interactiveInput) openModels() {
+	in.progress("…models")
+	go func() {
+		models, warnings := fetchModels(in.loaded)
+		current := in.subjectModel()
+		view := newModelsView(models, current, in.chooseModel)
+		in.mu.Lock()
+		in.lt.tr.showLivePit("models", view, false)
+		in.mu.Unlock()
+		if len(models) == 0 && len(warnings) > 0 {
+			in.note("models: " + strings.Join(warnings, "; "))
+		}
+	}()
+}
+
+// subjectModel is the aria on screen's system.model, or "" when it cannot be
+// read: the ● in the list is a courtesy, not a precondition.
+func (in *interactiveInput) subjectModel() string {
+	cli := in.aria()
+	if cli == nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+	resp, err := cli.Form(ctx)
+	if err != nil {
+		return ""
+	}
+	raw, ok := resp.Snapshot.Get("system.model")
+	if !ok {
+		return ""
+	}
+	return valueSummary(raw)
+}
+
+// chooseModel is Enter in the models pit: the subject's system.model becomes
+// the chosen id, and system.provider the provider that listed it, in ONE
+// patch. A model is only meaningful to its own provider; choosing copilot's
+// gpt-5 while the board still said anthropic would send a name Anthropic has
+// never heard of on the next turn. When the provider already matches, the
+// write lands only the model (the store drops an unchanged key), which is
+// exactly `figaro set system.model <id>`. It runs on its own goroutine.
+func (in *interactiveInput) chooseModel(c modelChoice) {
+	cli := in.aria()
+	id := in.currentID()
+	if cli == nil {
+		in.noteErr("models: no aria on screen to set")
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+	set := map[string]json.RawMessage{"system.model": mustJSON(c.model)}
+	if c.provider != "" {
+		set["system.provider"] = mustJSON(c.provider)
+	}
+	if _, err := cli.Set(ctx, form.Build(form.Snapshot{}, set, nil), 0); err != nil {
+		in.noteErr("models: " + wireErrorText(err))
+		return
+	}
+	in.note(fmt.Sprintf("model: %s (%s) on %s", c.model, c.provider, id))
+}
+
+func mustJSON(s string) json.RawMessage {
+	b, _ := json.Marshal(s)
+	return b
 }
 
 // ---------------------------------------------------------------------------
@@ -320,7 +410,7 @@ func pagerUncapped(argv []string) []string {
 
 func (in *interactiveInput) runThroughRouter(argv []string) {
 	argv = in.withSubject(pagerUncapped(argv))
-	in.note("…" + strings.Join(argv, " "))
+	in.progress("…" + strings.Join(argv, " "))
 	go func() {
 		out, code := in.routeCaptured(argv)
 		lines := splitOutputLines(out.text)
@@ -472,7 +562,8 @@ func (in *interactiveInput) complete(line string) []string {
 		// Completing the VERB itself: the router's own names, plus the overlay
 		// aliases that exist only here.
 		verbs := append(buildRouter("figaro", in.loaded).CommandCandidates(),
-			cmdkit.Candidate("at", "jump to a turn or node: at <turn>[.<node>]"))
+			cmdkit.Candidate("at", "jump to a turn or node: at <turn>[.<node>]"),
+			cmdkit.Candidate("notifications", "what figaro said, and what went wrong (space n)"))
 		return matchPrefix(verbs, current)
 	}
 	req := append([]string{"__complete", argv[0], "--describe", "--current", current, "--"}, argv[1:]...)
@@ -553,7 +644,7 @@ func (in *interactiveInput) openLive(name, spec string, full bool) {
 	}
 	// A pit that opens fullscreen is its own announcement.
 	if !full {
-		in.note("…" + name + " " + spec)
+		in.progress("…" + name + " " + spec)
 	}
 	go func() {
 		view, closeView, err := openFormView(spec, in.loaded, in.renderLocked)

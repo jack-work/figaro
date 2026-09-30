@@ -380,6 +380,10 @@ var keymap = []keyBinding{
 	{chord: byteChord('h'), modes: inTranscript, open: opensPager, help: helpHelpPanel, pager: pagerHelpPanel},
 	{chord: byteChord('!'), modes: inTranscript, open: opensPager, help: helpStatusPanel, pager: pagerStatusPanel},
 	{chord: byteChord('Q'), modes: inTranscript, open: opensPager, help: helpQueuedPanel, pager: pagerQueuedPanel},
+	// SPACE IS THE LEADER: `space n` is notifications, as `<leader>n` is in
+	// Gluck's Neovim. n alone stays search-repeat. The second key is taken in
+	// dispatch (transcript.leaderChord), before the mode's own rows.
+	{chord: byteChord(' '), modes: inTranscript | inPanel, open: opensPager, help: helpNotifications, pager: pagerLeader},
 	// 'l' is the listing and 'L' is the home listing: `:ls` and `:ls -H` under
 	// a keystroke, uncapped because the pager scrolls (pagerUncapped).
 	{chord: byteChord('l'), modes: inTranscript | inPanel, open: opensPager, help: helpListPit, pager: pagerListPit},
@@ -753,6 +757,7 @@ const (
 	helpDetach
 	helpStatusPanel
 	helpQueuedPanel
+	helpNotifications
 	helpHelpPanel
 	helpListPit
 	helpConfirm
@@ -825,7 +830,7 @@ var helpRows = []helpRow{
 	{helpSelectExtend, "^N/^P + Shift", "travel between questions (Alt+^N/^P extends a selection)"},
 	{helpExpand, "Enter", "open tool bodies and form deltas within the selection"},
 	{helpToolBody, "e", "open the tool bodies within the selection"},
-	{helpPitEnter, "(in a list) Enter", "the row's own action: open a form value, attend an aria"},
+	{helpPitEnter, "(in a list) Enter", "the row's own action: open a form value or a notification, attend an aria"},
 	{helpVisualSelect, "(in v) Enter", "select the node under the cursor (then e expands it)"},
 	{helpVisualAttend, "(in v) a", "attend the highlighted id, or the word under the cursor; a path opens in your editor"},
 	{helpEscape, "Esc", "clear selection / close panel"},
@@ -837,6 +842,7 @@ var helpRows = []helpRow{
 	{helpListen, "^L", "open the transcript (stays open until you close it)"},
 	{helpStatusPanel, "!", "figaro status panel"},
 	{helpQueuedPanel, "Q", "queued prompts panel"},
+	{helpNotifications, "space n", "notifications: what figaro said, and what went wrong"},
 	{helpFormPit, "S", "the form (state) in the pit"},
 	{helpFocus, "T", "read the conversation without closing the pit (again to go back)"},
 	{helpListPit, "l / L", "list this aria's tree / the home tree, in the pit (Enter attends, x kills)"},

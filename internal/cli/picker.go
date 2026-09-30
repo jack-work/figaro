@@ -128,7 +128,8 @@ func (p *picker) find(q string, dir int) bool {
 		if !p.rows[n].selectable() {
 			continue
 		}
-		if searchContains(p.rows[n].text, q) {
+		// The note is drawn, so it is searched: a row is what a reader SEES.
+		if searchContains(p.rows[n].text, q) || searchContains(p.rows[n].note, q) {
 			p.cursor = n
 			p.follow()
 			return true
@@ -356,10 +357,10 @@ func (p *picker) lines(id pitID, w, h int) []string {
 		}
 		row := clipToWidth(text, w)
 		if i == p.cursor {
-			out = append(out, pitSelected(row))
+			out = append(out, pitSelected(row, p.rows[i].tone))
 			continue
 		}
-		out = append(out, row)
+		out = append(out, p.rows[i].tone.paint(row))
 	}
 	if markBelow {
 		out = append(out, pitGray(clipToWidth("  "+AndMore(len(p.rows)-end, ""), w)))
