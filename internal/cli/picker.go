@@ -128,7 +128,8 @@ func (p *picker) find(q string, dir int) bool {
 		if !p.rows[n].selectable() {
 			continue
 		}
-		if searchContains(p.rows[n].text, q) {
+		// The note is drawn, so it is searched: a row is what a reader SEES.
+		if searchContains(p.rows[n].text, q) || searchContains(p.rows[n].note, q) {
 			p.cursor = n
 			p.follow()
 			return true

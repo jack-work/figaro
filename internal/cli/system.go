@@ -121,33 +121,17 @@ func dashCount(n int) string {
 
 // runModels lists provider models.
 func runModels(loaded *config.Loaded) {
-	ensureHush()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	providerNames := loaded.ListProviders()
-	if len(providerNames) == 0 {
-		// Fall back to the providers the factory knows how to build.
-		providerNames = KnownProviders()
+	models, warnings := fetchModels(loaded)
+	for _, w := range warnings {
+		fmt.Fprintf(stderrw, "warning: %s\n", w)
 	}
-
-	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	// The package's writer, never os.Stdout: the pager captures this one, and
+	// a table printed round it lands on the terminal over the status bar.
+	w := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintf(w, "PROVIDER\tMODEL ID\tNAME\tCONTEXT\tMAX OUT\n")
-
-	for _, name := range providerNames {
-		prov, _ := buildProvider(loaded, name)
-		if prov == nil {
-			continue
-		}
-		models, err := prov.Models(ctx)
-		if err != nil {
-			fmt.Fprintf(stderrw, "warning: %s: %s\n", name, err)
-			continue
-		}
-		for _, m := range models {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-				m.Provider, m.ID, m.Name, dashCount(m.ContextWindow), dashCount(m.MaxTokens))
-		}
+	for _, m := range models {
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+			m.Provider, m.ID, m.Name, dashCount(m.ContextWindow), dashCount(m.MaxTokens))
 	}
 	w.Flush()
 }
