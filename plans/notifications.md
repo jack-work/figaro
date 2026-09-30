@@ -217,7 +217,7 @@ that outlives the daemon turns out to be wanted, the form becomes a libretto
 
 ## Build order
 
-Each step lands green on its own, with a pty check (`scripts/messages-pty.sh`,
+Each step lands green on its own, with a pty check (`scripts/notifications-pty.sh`,
 in the style of `tabpit-pty.sh`).
 
 1. **The store and the post**: `message`, the ring (500, `messagesopt`'s
