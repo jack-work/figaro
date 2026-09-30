@@ -171,10 +171,15 @@ func encodeMessage(msg message.Message, blocks bool, reminders []string) ([]chat
 	case message.RoleInput:
 		var text string
 		var results []chatMessage
+		// spoke: a person put something in this message. When nobody did, a
+		// reminder must not become a `user` message of its own: see below.
+		spoke := false
+		lastResult, lastBody := -1, ""
 		for _, c := range msg.Content {
 			switch c.Type {
 			case message.ContentProse:
 				text = joinText(text, c.Text)
+				spoke = spoke || c.Text != ""
 			case message.ContentToolResult:
 				body := c.Text
 				if c.IsError && body == "" {
@@ -191,7 +196,9 @@ func encodeMessage(msg message.Message, blocks bool, reminders []string) ([]chat
 					ToolCallID: c.ToolCallID,
 					Content:    content,
 				})
+				lastResult, lastBody = len(results)-1, body
 			case message.ContentImage:
+				spoke = true
 				// Images ride as a part on a user message; a bare-string
 				// route cannot carry one, so it is described instead.
 				if !blocks {
@@ -208,6 +215,23 @@ func encodeMessage(msg message.Message, blocks bool, reminders []string) ([]chat
 				}
 				results = append(results, chatMessage{Role: "user", Content: raw})
 			}
+		}
+		// A TOOL ROUND WITH NOBODY SPEAKING carries its reminders INSIDE the
+		// last tool message. As a `user` message of their own they are, on the
+		// wire, the user sending an empty prompt, and models answer them that
+		// way ("nothing came through but the mantra echo"). Same rule, same
+		// reason, as the anthropic encoders' placeReminders.
+		if !spoke && lastResult >= 0 && len(reminders) > 0 {
+			body := lastBody
+			for _, r := range reminders {
+				body = joinText(body, r)
+			}
+			content, err := textContent(body, blocks)
+			if err != nil {
+				return nil, err
+			}
+			results[lastResult].Content = content
+			reminders = nil
 		}
 		for _, r := range reminders {
 			text = joinText(text, r)

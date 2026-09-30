@@ -23,7 +23,9 @@ import (
 	"github.com/jack-work/figaro/internal/wirelog"
 )
 
-const responsesFingerprintPrefix = "copilot-responses/v3"
+// v4: a tool round with nobody speaking carries its reminders inside the last
+// function_call_output instead of a user message of their own.
+const responsesFingerprintPrefix = "copilot-responses/v4"
 
 type responseTokenSource interface {
 	Resolve() (string, error)
@@ -646,6 +648,11 @@ func encodeResponseMessage(
 	var afterMessage []json.RawMessage
 	var userContent []responseContent
 	var assistantContent []responseContent
+	// spoke: a person put something in this message. lastOutput is the last
+	// function_call_output, so a tool round nobody spoke in can carry its
+	// reminders inside it rather than in a user message of their own.
+	spoke := false
+	lastOutput, lastCall, lastText := -1, "", ""
 
 	for _, content := range msg.Content {
 		switch msg.Role {
@@ -653,10 +660,12 @@ func encodeResponseMessage(
 			switch content.Type {
 			case message.ContentProse:
 				if content.Text != "" {
+					spoke = true
 					userContent = append(userContent, responseContent{Type: "input_text", Text: content.Text})
 				}
 			case message.ContentImage:
 				if content.Data != "" {
+					spoke = true
 					// A tool's image trails its function_call_output in the user
 					// message this loop emits after it, captioned with the call.
 					// OpenAI has since allowed an array-shaped output that could
@@ -681,6 +690,7 @@ func encodeResponseMessage(
 					return nil, err
 				}
 				beforeMessage = append(beforeMessage, raw)
+				lastOutput, lastCall, lastText = len(beforeMessage)-1, content.ToolCallID, content.Text
 			}
 		case message.RoleOutput:
 			switch content.Type {
@@ -710,15 +720,32 @@ func encodeResponseMessage(
 		}
 	}
 
+	var reminders []string
 	for _, patch := range patches {
 		rendered, err := renderResponsePatch(patch, snap, templates)
 		if err != nil {
 			return nil, err
 		}
-		for _, text := range rendered {
-			userContent = append(userContent, responseContent{Type: "input_text", Text: text})
-		}
+		reminders = append(reminders, rendered...)
 		snap = snap.Apply(patch)
+	}
+	// A TOOL ROUND WITH NOBODY SPEAKING carries its reminders INSIDE the last
+	// function_call_output. As a user message of their own they read as the
+	// user sending an empty prompt. Same rule as the other dialects.
+	if !spoke && lastOutput >= 0 && len(userContent) == 0 && len(reminders) > 0 {
+		out := lastText
+		for _, r := range reminders {
+			out += "\n\n" + r
+		}
+		raw, err := marshalResponseItem(responseFunctionOutput(lastCall, out))
+		if err != nil {
+			return nil, err
+		}
+		beforeMessage[lastOutput] = raw
+		reminders = nil
+	}
+	for _, text := range reminders {
+		userContent = append(userContent, responseContent{Type: "input_text", Text: text})
 	}
 
 	if len(userContent) > 0 {

@@ -84,7 +84,9 @@ func (p *Provider) Fingerprint() string {
 	if p.Route.MarkPlan(mode).Blocks {
 		shape = "blocks"
 	}
-	return "openai-chat/" + p.Route.Name + "/" + shape + "/v2"
+	// v3: a tool round with nobody speaking carries its reminders inside the
+	// last tool message instead of a user message of their own.
+	return "openai-chat/" + p.Route.Name + "/" + shape + "/v3"
 }
 
 func (p *Provider) SetModel(model string) {

@@ -139,7 +139,10 @@ func (p *Provider) Fingerprint() string {
 	if rr == "" {
 		rr = "tag"
 	}
-	return "anthropic-sdk/" + rr + "/v2/" + sdkVersion()
+	// v3: a reminder in a message that holds only tool results rides INSIDE
+	// the last tool_result rather than as top-level text (placeReminders).
+	// v2 rows put it at the top level, where it read as speech.
+	return "anthropic-sdk/" + rr + "/v3/" + sdkVersion()
 }
 
 // sdkVersion is read once from the binary's own module graph. It is the

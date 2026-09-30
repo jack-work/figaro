@@ -47,11 +47,19 @@ import (
 //
 // REGENERATING: bump Fingerprint(), then run with FIGARO_GOLDEN=1.
 func TestEncodingChangeRequiresAFingerprintBump(t *testing.T) {
-	a := &Anthropic{Model: "claude-test", MaxTokens: 64}
+	tpl, err := form.LoadDefaultTemplates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Templates on: without them no reminder renders, and the corpus cannot
+	// see where one is placed. It could not, until v7: v6 and v7 produced the
+	// same golden bytes for a change that moved every tool-round reminder.
+	a := &Anthropic{Model: "claude-test", MaxTokens: 64, Templates: tpl}
 	fp := a.Fingerprint()
 
 	// A fixture that exercises the shapes the encoder actually branches on:
-	// a prose input, an assistant reply, a tool invoke and its result.
+	// a prose input, an assistant reply, a tool invoke and its result, and a
+	// board patch riding that result (the aria set its own mantra).
 	msgs := []message.Message{
 		{Role: message.RoleInput, LogicalTime: 1,
 			Content: []message.Content{message.TextContent("what is the time")}},
@@ -64,7 +72,10 @@ func TestEncodingChangeRequiresAFingerprintBump(t *testing.T) {
 		{Role: message.RoleInput, LogicalTime: 3,
 			Content: []message.Content{
 				{Type: message.ContentToolResult, ToolCallID: "call_1", Text: "Tue Aug 18"},
-			}},
+			},
+			Patches: []message.Patch{form.Build(form.Snapshot{}, map[string]json.RawMessage{
+				"mantra": json.RawMessage(`"telling the time"`),
+			}, nil)}},
 		{Role: message.RoleOutput, LogicalTime: 4, StopReason: message.StopEnd,
 			Content: []message.Content{message.TextContent("it is Tuesday")}},
 	}

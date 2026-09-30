@@ -365,7 +365,10 @@ func (a *Anthropic) Fingerprint() string {
 	if rr == "" {
 		rr = "tag"
 	}
-	return "anthropic/" + rr + "/v6"
+	// v7: a reminder in a message that holds only tool results rides INSIDE
+	// the last tool_result rather than as top-level text (placeReminders).
+	// v6 rows put it at the top level, where it read as speech.
+	return "anthropic/" + rr + "/v7"
 }
 
 func (a *Anthropic) SetModel(model string) {
@@ -638,15 +641,16 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *form.Snapshot) 
 		board := *prevSnap
 		patchBlocks, advanced := a.renderPatchBlocks(msg.Patches, board)
 		*prevSnap = advanced
-		blocks = append(blocks, patchBlocks...)
+		reminders := patchBlocks
 		// The observed set folds in beside the board: same reminder
 		// idiom, one derivation upstream (provider.StudyReminderTexts).
 		for _, text := range provider.StudyReminderTexts(msg, board) {
-			blocks = append(blocks, nativeBlock{Type: "text", Text: text})
+			reminders = append(reminders, nativeBlock{Type: "text", Text: text})
 		}
 		for _, text := range provider.ForkReminderTexts(msg, board) {
-			blocks = append(blocks, nativeBlock{Type: "text", Text: text})
+			reminders = append(reminders, nativeBlock{Type: "text", Text: text})
 		}
+		blocks = placeReminders(blocks, reminders)
 		if len(blocks) == 0 {
 			return nativeMessage{}, false
 		}
@@ -1556,3 +1560,56 @@ func (a *Anthropic) EncodeMessage(msg message.Message, prev form.Snapshot) ([]js
 }
 
 func (a *Anthropic) TranslatorChannel() string { return a.CacheNamespace }
+
+// placeReminders decides where a message's <system-reminder> blocks go.
+//
+// A tool round travels back in a user-role message, because that is the only
+// role a tool_result may ride. When a person also said something in that
+// message, reminders sit beside their words as top-level text, as they always
+// have. When NOBODY did (the message is tool results and nothing else), a
+// top-level reminder is the only text in a user-role message, and a model
+// reads that as its master speaking and saying nothing.
+//
+// Reproduced live on claude-opus-5, replaying turn 24 of a real aria from its
+// real context: in 9 of the 9 replays where the model set its own mantra as
+// the last act of an answer, the next round's thinking called the message
+// empty ("There's nothing actually in this message besides the system
+// reminder"), and it told the user so. 63 such replies sit in the author's
+// store across 43 arias.
+//
+// So in that case the reminders ride INSIDE the last tool_result instead:
+// delivered in the same round, attached to the output that just arrived, and
+// never mistaken for speech.
+func placeReminders(blocks, reminders []nativeBlock) []nativeBlock {
+	if len(reminders) == 0 {
+		return blocks
+	}
+	last := -1
+	for i, b := range blocks {
+		switch b.Type {
+		case "tool_result":
+			last = i
+		case "text", "image":
+			// A person spoke in this message: reminders go beside them.
+			return append(blocks, reminders...)
+		}
+	}
+	if last < 0 {
+		return append(blocks, reminders...)
+	}
+	out := append([]nativeBlock(nil), blocks...)
+	tr := out[last]
+	// A result's content is a block list when this encoder built it and a
+	// bare string when something else did; the API takes both, so both are
+	// widened to a list rather than one being refused.
+	var inner []nativeBlock
+	switch c := tr.Content.(type) {
+	case []nativeBlock:
+		inner = append(inner, c...)
+	case string:
+		inner = append(inner, nativeBlock{Type: "text", Text: c})
+	}
+	tr.Content = append(inner, reminders...)
+	out[last] = tr
+	return out
+}

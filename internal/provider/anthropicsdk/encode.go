@@ -72,13 +72,14 @@ func (p *Provider) renderMessage(msg message.Message, prevSnap *form.Snapshot) (
 		board := *prevSnap
 		patchBlocks, advanced := p.renderPatchBlocks(msg.Patches, board)
 		*prevSnap = advanced
-		blocks = append(blocks, patchBlocks...)
+		reminders := patchBlocks
 		for _, text := range provider.StudyReminderTexts(msg, board) {
-			blocks = append(blocks, anthropic.NewTextBlock(text))
+			reminders = append(reminders, anthropic.NewTextBlock(text))
 		}
 		for _, text := range provider.ForkReminderTexts(msg, board) {
-			blocks = append(blocks, anthropic.NewTextBlock(text))
+			reminders = append(reminders, anthropic.NewTextBlock(text))
 		}
+		blocks = placeReminders(blocks, reminders)
 		if len(blocks) == 0 {
 			return anthropic.MessageParam{}, false
 		}
@@ -201,4 +202,51 @@ func toolResultBlock(toolUseID, text string, isErr bool, images []message.Conten
 // "harness metadata inside a message" rather than two.
 func senderReminder(sender string) string {
 	return "<system-reminder name=\"sender\">" + sender + "</system-reminder>"
+}
+
+// placeReminders decides where a message's <system-reminder> blocks go.
+//
+// A tool round travels back in a user-role message, because that is the only
+// role a tool_result may ride. When a person also said something in that
+// message, reminders sit beside their words as top-level text, as they always
+// have. When NOBODY did (the message is tool results and nothing else), a
+// top-level reminder is the only text in a user-role message, and a model
+// reads that as its master speaking and saying nothing. Measured in the
+// author's store: 63 replies across 43 arias say so in the model's own
+// thinking, e.g. "The user's message seems empty aside from the injected
+// mantra reminder, which is just state, not something they actually said".
+//
+// So in that case the reminders ride INSIDE the last tool_result instead:
+// delivered in the same round, attached to the output that just arrived, and
+// never mistaken for speech.
+func placeReminders(blocks, reminders []anthropic.ContentBlockParamUnion) []anthropic.ContentBlockParamUnion {
+	if len(reminders) == 0 {
+		return blocks
+	}
+	last := -1
+	for i, b := range blocks {
+		switch {
+		case b.OfToolResult != nil:
+			last = i
+		case b.OfText != nil, b.OfImage != nil:
+			// A person spoke in this message: reminders go beside them.
+			return append(blocks, reminders...)
+		}
+	}
+	if last < 0 {
+		return append(blocks, reminders...)
+	}
+	tr := *blocks[last].OfToolResult
+	tr.Content = append([]anthropic.ToolResultBlockParamContentUnion(nil), tr.Content...)
+	for _, r := range reminders {
+		if r.OfText == nil {
+			continue
+		}
+		tr.Content = append(tr.Content, anthropic.ToolResultBlockParamContentUnion{
+			OfText: &anthropic.TextBlockParam{Text: r.OfText.Text},
+		})
+	}
+	out := append([]anthropic.ContentBlockParamUnion(nil), blocks...)
+	out[last] = anthropic.ContentBlockParamUnion{OfToolResult: &tr}
+	return out
 }
