@@ -172,6 +172,11 @@ type sessionStatus struct {
 	// retires on its TTL; this does not, so a failed turn's closer can carry
 	// the reason however long the pager stayed up after it.
 	lastError string
+	// notes is the pager's notification history (notifications.go), which
+	// the bar reads for its unread mark. It belongs to the transcript and
+	// outlives this status: a subject switch mints a new status and binds the
+	// same store to it.
+	notes *notificationStore
 	// notice is trouble the user must see, an error reason, an interrupt
 	// notice: carried IN the frame buffer instead of being written straight
 	// to the terminal. While the pager is up there is no scrollback to write
@@ -210,7 +215,8 @@ type alertLevel uint8
 
 const (
 	alertInfo  alertLevel = iota // a confirmation: gray, like the rest of the row
-	alertError                   // trouble: red, and eventually a notification
+	alertWarn                    // a warning: yellow; it counts as unread, as trouble does
+	alertError                   // trouble: red
 )
 
 // setNoticeAt posts an alert with its level. setNotice is the confirmation

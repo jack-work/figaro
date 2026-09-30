@@ -202,12 +202,17 @@ func pagerAttendRow(t *transcript) {
 	}
 	// A pit row's id is whatever that pit counts by: a queue row's is a
 	// queue number, and attending it would be an error message where a
-	// no-op belongs.
-	if rpc.ValidateAriaID(row.id) != nil {
+	// no-op belongs. A view whose rows are ABOUT arias without being them
+	// (a notification) says which one.
+	id := row.id
+	if av, ok := t.pit.live.(interface{ AriaOf(string) string }); ok {
+		id = av.AriaOf(row.id)
+	}
+	if rpc.ValidateAriaID(id) != nil {
 		t.note("that row is not an aria")
 		return
 	}
-	t.attendAria(row.id)
+	t.attendAria(id)
 }
 
 func pagerAriaBack(t *transcript)    { t.hopAria(-1) }

@@ -244,6 +244,12 @@ var pagerOracle = []struct {
 	keys  map[string]string
 }{
 	{"help", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		// SPACE IS THE LEADER, 2026-09-30: `space n` is notifications (as
+		// `<leader>n` is in Gluck's Neovim). A leader arms and waits, so it no
+		// longer falls through to the any-key dismissal: the panel stays open,
+		// which is what lets `space n` switch pits, and the offset moves only
+		// because an open pit keeps its rows.
+		"0x20": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x09": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		// ^O AND TAB ARE THE JUMPLIST, 2026-09-12, and 'a' is attend. Both
 		// report when there is no session behind them to attend WITH, which
@@ -438,6 +444,12 @@ var pagerOracle = []struct {
 		"0x7f": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"1\" vis=none",
 	}},
 	{"panel+sel", "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		// SPACE IS THE LEADER, 2026-09-30: `space n` is notifications (as
+		// `<leader>n` is in Gluck's Neovim). A leader arms and waits, so it no
+		// longer falls through to the any-key dismissal: the panel stays open,
+		// which is what lets `space n` switch pits, and the offset moves only
+		// because an open pit keeps its rows.
+		"0x20": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		// 'a' IS ATTEND, 2026-09-12: in a pit it acts on the selected row
 		// (the aria a `:ls` line names), so it is a pit key and does not
 		// dismiss the pit. Nothing else here moves: the attend itself is the
@@ -495,6 +507,12 @@ var pagerOracle = []struct {
 		"0x78": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 	}},
 	{"queued", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		// SPACE IS THE LEADER, 2026-09-30: `space n` is notifications (as
+		// `<leader>n` is in Gluck's Neovim). A leader arms and waits, so it no
+		// longer falls through to the any-key dismissal: the panel stays open,
+		// which is what lets `space n` switch pits, and the offset moves only
+		// because an open pit keeps its rows.
+		"0x20": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x09": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		// ^O AND TAB ARE THE JUMPLIST, 2026-09-12, and 'a' is attend. Both
 		// report when there is no session behind them to attend WITH, which
@@ -767,6 +785,12 @@ var pagerOracle = []struct {
 		"0x7f": "off:same fol=false srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 	}},
 	{"status", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		// SPACE IS THE LEADER, 2026-09-30: `space n` is notifications (as
+		// `<leader>n` is in Gluck's Neovim). A leader arms and waits, so it no
+		// longer falls through to the any-key dismissal: the panel stays open,
+		// which is what lets `space n` switch pits, and the offset moves only
+		// because an open pit keeps its rows.
+		"0x20": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x09": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		// ^O AND TAB ARE THE JUMPLIST, 2026-09-12, and 'a' is attend. Both
 		// report when there is no session behind them to attend WITH, which

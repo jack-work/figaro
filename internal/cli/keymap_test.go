@@ -241,6 +241,7 @@ func TestOpensTranscript_MatchesTheHandKeptList(t *testing.T) {
 		0x0d, 0x0a, // Enter: open tool bodies and form deltas
 		'e',      // the tool body alone; it was 't' until 2026-09-17
 		'v', 'V', // visual selection: a gesture about rows, which only the pager has
+		' ', // the leader, 2026-09-30: `space n` opens notifications, a pit
 	} {
 		old[b] = true
 	}
@@ -362,6 +363,7 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  ^L                  open the transcript (stays open until you close it)",
 		"  !                   figaro status panel",
 		"  Q                   queued prompts panel",
+		"  space n             notifications: what figaro said, and what went wrong",
 		"  S                   the form (state) in the pit",
 		"  T                   read the conversation without closing the pit (again to go back)",
 		"  l / L               list this aria's tree / the home tree, in the pit (Enter attends, x kills)",

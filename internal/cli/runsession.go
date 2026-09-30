@@ -114,6 +114,12 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 	}
 	set := opt.set
 	lt = newLivelogTurn(os.Stdout, width, height, &set, opt.figaroID, startedAt, status, bookendFn, dimRule)
+	// The process's own warnings and errors go to the notification history
+	// for as long as there is a pager to show them in.
+	defer teeSlogInto(lt.tr.notes)()
+	if in := opt.loaded; in != nil {
+		lt.tr.setNoticeTTL(in.NoticeTTL())
+	}
 	tc := term.NewClient()
 
 	// The renderer owns the cursor and assumes one row per line: no auto-margin

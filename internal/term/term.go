@@ -132,6 +132,9 @@ type palette struct {
 	// own re-light (22 = not-dim) because a dim red reads as decoration; the
 	// whole point of a notice is that it does not.
 	notice string
+	// caution is notice's quieter sibling: a WARNING inside a dimmed row, in
+	// the palette's yellow, with the same re-light.
+	caution string
 
 	// The two roles below are SGR BODIES WITHOUT A RESET, spliced into rows
 	// by the transcript's painter, which manages its own resets: a wash
@@ -172,6 +175,7 @@ var kanagawa = palette{
 	absent:   "\033[38;5;167m",
 	stateDim: "\033[38;5;60m",     // ≈ sumiInk4 #54546D: dimmer than label, still legible
 	notice:   "\033[22;38;5;167m", // autumnRed #C34043, the palette's own red
+	caution:  "\033[22;38;5;179m", // carpYellow #C0A36E
 
 	selectWash:    "\033[48;2;45;79;103m",
 	selectWash256: "\033[48;5;23m",
@@ -269,6 +273,15 @@ func NoticeInDim(s string) string {
 		return s
 	}
 	return active.notice + s + dimHandBack
+}
+
+// CautionInDim is NoticeInDim for a warning: yellow where a notice is red,
+// and the same hand-back to the dimmed row.
+func CautionInDim(s string) string {
+	if !Enabled() {
+		return s
+	}
+	return active.caution + s + dimHandBack
 }
 
 // dimHandBack restores default foreground and re-dims: the state a dimmed row

@@ -96,6 +96,7 @@ func tokenize(line string) []string {
 // Everything else -- ls, status, doctor, state, set, unset, queue,
 // promote, gc, models, show... -- falls through to the real router untouched.
 var overlayVerbs = map[string]bool{
+	"notifications": true, "no": true, // the pager's own history (notifications.go)
 	"listen": true,
 	"attend": true, "at": true,
 	"send": true, "s": true,
@@ -232,6 +233,18 @@ func (in *interactiveInput) runOverlay(verb string, args []string) {
 		in.commandAsync(func(ctx context.Context) (string, error) {
 			return in.commandFork(ctx, args)
 		})
+	case "notifications", "no":
+		in.mu.Lock()
+		if len(args) > 0 && args[0] == "clear" {
+			// Vim's `:messages clear`: the pager's copy, and only it.
+			in.lt.tr.notes.clear()
+			in.lt.tr.setCommandNote("notifications cleared")
+		} else {
+			in.lt.tr.closePanels()
+			in.lt.tr.openNotificationsPit()
+			in.lt.tr.render()
+		}
+		in.mu.Unlock()
 	default:
 		in.note(fmt.Sprintf("%s: not available inside the pager (it opens a view of its own)", verb))
 	}
@@ -472,7 +485,8 @@ func (in *interactiveInput) complete(line string) []string {
 		// Completing the VERB itself: the router's own names, plus the overlay
 		// aliases that exist only here.
 		verbs := append(buildRouter("figaro", in.loaded).CommandCandidates(),
-			cmdkit.Candidate("at", "jump to a turn or node: at <turn>[.<node>]"))
+			cmdkit.Candidate("at", "jump to a turn or node: at <turn>[.<node>]"),
+			cmdkit.Candidate("notifications", "what figaro said, and what went wrong (space n)"))
 		return matchPrefix(verbs, current)
 	}
 	req := append([]string{"__complete", argv[0], "--describe", "--current", current, "--"}, argv[1:]...)

@@ -78,9 +78,7 @@ func (t *transcript) park(id string) *parkedSubject {
 // is discarded.
 func (t *transcript) adopt(p *parkedSubject, status *sessionStatus, here bool, base int) {
 	t.client = p.client
-	if status != nil {
-		t.status = status
-	}
+	t.setStatus(status)
 	t.rowCache, t.stickyCache = p.rows, p.sticky
 	t.expanded, t.adorned = p.expand, p.adorn
 	if t.adorned == nil {
