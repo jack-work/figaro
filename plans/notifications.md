@@ -1,6 +1,6 @@
-# Messages: what figaro told you, still there after it stops saying it
+# Notifications: what figaro told you, still there after it stops saying it
 
-Status: design, not built. Branch `plans/messages`.
+Status: design, not built. Branch `plans/messages`. Named NOTIFICATIONS (Gluck, 2026-09-30), which is also the name the pit already carries (`pitNotifications`).
 
 ## The problem
 
@@ -113,12 +113,12 @@ the newest error in the history.
    reads them all. Info never counts, so confirmations like `sent` never
    leave a mark. This is the answer to "it vanishes": it vanishes from the
    bar's first slot, and stays counted until you look.
-3. **The pit** (new): `𝄞 messages`, a picker like every other pit.
+3. **The pit** (new): `𝄞 notifications`, a picker like every other pit.
 
 ### The pit
 
 ```
-𝄞 messages · 2 unread                                   all ▾
+𝄞 notifications · 2 unread                                   all ▾
   14:02:11  ✗  e8694d25  turn failed: provider refused: overloaded      ×2
 ♩ 14:01:40  ⚠  daemon    hibernation: restore of 3b7aff0a took 4.1s
   13:58:02  ·  cli       sent to 1d7afbc5
@@ -140,26 +140,52 @@ is expand everywhere", and Enter is the pit's own action.
 - **`f`** cycles the filter: all → warn and up → errors.
 - **`/`** searches, as in every picker.
 - Opening marks everything read. There is no delete, per the earlier
-  decision; `:messages clear` empties the pager's own copy (Vim's meaning),
+  decision; `:notifications clear` empties the pager's own copy (Vim's `:messages clear`),
   and says so.
 
-**The key.** `M` for messages, free in transcript mode (in visual mode `M` is
-a screen motion and stays one). `:messages` and `:mes` open it from the
-command box, as Vim's do. Alternative: `E`, also free, if `M` is wanted for
-something else.
+**The key.** Gluck asked for `n`, which is taken: `n`/`N` repeat the last
+search and land the cursor, as in Vim, and `N` has no other meaning to fall
+back on. Proposed instead: **`space n`**, a two-key prefix like the existing
+`gg` and `f j`. Space is unbound in the transcript, and `<leader>n` is exactly
+the chord Gluck's Neovim opens its notification history with (snacks,
+`show_history`). `:notifications` (and `:no`) open it from the command box.
+If a space leader is wanted for more later, it starts here.
 
-### Where messages come from
+### What there is to notify about
 
-**Phase 1, the pager's own** (small, and most of the value):
+Asked honestly, "is there anything besides errors?": not much today, and
+more that should be.
 
-- every `setNoticeAt` / `setCommandNoteAt` / `noteErr` call site, about 60,
-  already choose a level;
-- the turn verdicts `livelog_bridge.go` re-posts on the way out;
-- the CLI process's own `slog.Warn`/`slog.Error` (17 sites), through a
-  `logring` handler on the pager's logger, so a warning the CLI logs is no
-  longer invisible to the person at the CLI.
+**Said today, and lost after ten seconds** (phase 1):
 
-**Phase 2, the daemon's**, over a transport that already exists: an
+- *errors*: a verb that failed (`:attend` a bad id, `queue rm` refused), a
+  turn that failed and why.
+- *refusals*, which read as warnings: "no fork point above", "nothing to
+  undo", "this session cannot attend".
+- *confirmations*, info: "yanked", "edited", "sent", "attending 3b7aff0a",
+  "forked … prompting …".
+- the CLI process's own `slog.Warn`/`slog.Error` (17 sites), which today reach
+  a log file and not the person at the CLI.
+
+All of it goes through about 60 `setNoticeAt` / `setCommandNoteAt` /
+`noteErr` call sites that already pick a level, so phase 1 is a change of
+destination, not of callers.
+
+**Happening today, and never said at all** (phase 2, and the reason it is
+worth doing):
+
+- a turn finishing on an aria you are **not** looking at: a child you
+  spawned, an aria you attended earlier this session. Done, interrupted,
+  failed. This is the notification a person running several arias actually
+  wants, and nothing surfaces it.
+- a queued message **dropped** (the `dropped` pit exists; nothing says a
+  message went there).
+- another aria **writing to** yours (visible only by scrolling to it).
+- the daemon: an aria hibernated or restored slowly, a provider refusing, a
+  build mismatch between CLI and daemon.
+- an **update** available (`figaro update --check` knows; nothing asks it).
+
+**Phase 2 transport, the daemon's**, one that already exists: an
 **intrinsic form** per aria, `<aria>/messages`, beside `<aria>/queue` and
 `<aria>/runtime`. Intrinsic forms are derived, live-only and pushed to every
 attached client, which is exactly the lifetime this needs. It is fed by:
@@ -168,7 +194,9 @@ attached client, which is exactly the lifetime this needs. It is fed by:
   `figaro doctor provider`; the 20 of its 44 warn/error sites that carry an
   `aria` attribute route to that aria's form, the rest to a daemon-wide one;
 - turn verdicts (the `turn.done` reason that is currently a bar string and
-  nothing else);
+  nothing else), for every aria the pager has attended this session, not
+  only the one on screen;
+- queue drops, from the queue intrinsic the pager already follows;
 - provider round failures, including filtered and empty completions (#24).
 
 The pager folds the subject's `<aria>/messages` into its history as it does
@@ -193,7 +221,7 @@ in the style of `tabpit-pty.sh`).
    default), coalescing, `warn` level. `setNoticeAt` posts into it; the bar
    reads its newest. `lastError` goes. No visible change yet except that
    nothing is lost.
-2. **The pit**: `M` and `:messages`, the picker, Enter/`y`/`f`/`a`, mark-read
+2. **The pit**: `space n` and `:notifications`, the picker, Enter/`e`/`a`/`y`/`f`, mark-read
    on open. `pitNotifications` finally opens.
 3. **The mark**: `𝄞 N` in the bar after the alert retires, worst level's
    colour, cleared by opening.
@@ -203,12 +231,16 @@ in the style of `tabpit-pty.sh`).
 
 Steps 1 to 4 are one PR (the pager's own messages). Step 5 is its own.
 
+## Settled
+
+- **Name**: notifications (Gluck, 2026-09-30).
+- **Info enters the history**: yes, "the list should include other
+  notifications"; it never counts toward the unread mark.
+
 ## Questions for Gluck
 
-1. **`M` or `E`** for the key (`:messages` either way)?
-2. **Should info enter the history?** Vim and snacks both keep it, and it is
-   what makes the list answer "did that `:send` go through". The mark ignores
-   it either way.
-3. **Phase 2 now or later?** Phase 1 alone fixes "it vanishes" for
-   everything the pager is told. Phase 2 is what adds trouble the pager was
-   never told about (a background aria's failed turn, a daemon warning).
+1. **`space n`** in place of `n`, which is search-repeat? (Or another key.)
+2. **Phase 2's "a turn finished elsewhere"**: which arias count? Proposed:
+   every aria this pager session has shown or attended, plus any aria it
+   spawned. The alternative, every aria the daemon runs, is a firehose.
+3. Phase 2 now, or after phase 1 has been lived with?
