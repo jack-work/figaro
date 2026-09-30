@@ -153,16 +153,11 @@ type transcript struct {
 	// lineedit.go -- the short one being that the old box could not represent
 	// "café", let alone a cursor.
 	cmdline lineEditor
-	// completions is the last Tab's candidate list and which of them is
-	// selected. THE MENU IS BOUNDED: it draws at most completionMenuRows rows
-	// inside the pit, because a completion list that grows with the number
-	// of arias is a completion list that eats the screen -- which is what the
-	// first cut did with forty verbs.
-	completions   []string
-	completionIdx int // -1 = nothing selected; the common prefix was inserted
-	completionAt  int // rune index where the completed word starts
-	jumpNote      string
-	jump          *transcriptJump
+	// menu is Tab's completion pit, open while it is non-nil. See
+	// transcript_complete.go.
+	menu     *completionMenu
+	jumpNote string
+	jump     *transcriptJump
 
 	// Lazy history paging: the pager opens on the store's tail and pulls older
 	// history via keyset ReadBefore only when the viewport comes near the window
@@ -273,7 +268,7 @@ func (t *transcript) enter() {
 	t.searchDir = 1
 	t.inJump, t.jumpNote, t.jump = false, "", nil
 	t.cmdline.reset()
-	t.completions = nil
+	t.menu = nil
 	// THE PAGER OWNS RETENTION while it is up. The client's count-based trim
 	// drops the OLDEST messages, which is precisely wrong once the window is the
 	// store itself: a reader scrolled up, or a catch-up page merged in to open on
@@ -2917,87 +2912,20 @@ func (t *transcript) inputDrawerLines() []string {
 	default:
 		return nil
 	}
-	for _, l := range t.completionLines() {
-		rows = append(rows, l)
+	footer, own := t.jumpFooter()
+	if t.inJump && t.menu != nil {
+		// THE MENU TAKES WHAT THE PIT HAS LEFT: the pane's allowance for a
+		// pit, less the line being typed and the footer under it.
+		room := t.pitRoom() - len(rows)
+		if own {
+			room--
+		}
+		rows = append(rows, t.menu.lines(t.w, room)...)
 	}
-	if line, own := t.jumpFooter(); own {
-		rows = append(rows, pitGray(clipToWidth("  "+line, t.w)))
+	if own {
+		rows = append(rows, pitGray(clipToWidth("  "+footer, t.w)))
 	}
 	return rows
-}
-
-// completionMenuRows is how tall the completion menu may get. Fixed, and
-// small: the menu lives inside the pit, above an inviolable status bar, and
-// a menu that grows with the candidate count is a menu that swallows the
-// conversation it is supposed to be helping you talk about.
-const completionMenuRows = 2
-
-// completionLines draws the menu: the candidates around the selected one, in
-// columns, with a marker for what is out of view on either side. bash shows a
-// list and fish highlights a selection; this does both, because the selection
-// is what ^N/^P and repeated Tab move.
-func (t *transcript) completionLines() []string {
-	if len(t.completions) == 0 {
-		return nil
-	}
-	const perRow = 4
-	// The window slides to keep the SELECTED candidate visible, so cycling with
-	// ^N past the edge scrolls the menu instead of losing the cursor.
-	per := perRow * completionMenuRows
-	start := 0
-	if t.completionIdx >= 0 {
-		start = (t.completionIdx / per) * per
-	}
-	end := min(start+per, len(t.completions))
-
-	var out []string
-	for i := start; i < end; i += perRow {
-		stop := min(i+perRow, end)
-		cells := make([]string, 0, perRow)
-		for k := i; k < stop; k++ {
-			cell := padTo(t.completions[k], 18)
-			if k == t.completionIdx {
-				cell = "\x1b[48;5;237m" + cell + "\x1b[49m"
-			}
-			cells = append(cells, cell)
-		}
-		out = append(out, pitGray("  "+strings.Join(cells, " ")))
-	}
-	// One honest line about what is not shown, on either side.
-	if start > 0 || end < len(t.completions) {
-		note := fmt.Sprintf("  %d–%d of %d", start+1, end, len(t.completions))
-		out = append(out, pitGray(clipToWidth(note, t.w)))
-	}
-	return out
-}
-
-// clearCompletions drops the menu: any edit to the line makes it a lie.
-func (t *transcript) clearCompletions() {
-	t.completions, t.completionIdx, t.completionAt = nil, -1, 0
-}
-
-// cycleCompletion is ^N/^P and repeated Tab: move through the candidates and
-// put the selected one IN THE LINE, the way bash's menu-complete and fish both
-// do. The word being completed is replaced each time, so cycling never
-// concatenates candidates onto each other.
-func (t *transcript) cycleCompletion(dir int) {
-	if len(t.completions) == 0 {
-		return
-	}
-	n := len(t.completions)
-	switch {
-	case t.completionIdx < 0 && dir > 0:
-		t.completionIdx = 0
-	case t.completionIdx < 0:
-		t.completionIdx = n - 1
-	default:
-		t.completionIdx = (t.completionIdx + dir + n) % n
-	}
-	// Replace from where the word started to the cursor.
-	for t.cmdline.cursor > t.completionAt {
-		t.cmdline.backspace()
-	}
-	t.cmdline.insert(t.completions[t.completionIdx])
 }
 
 // pitVerb runs an itemised live view's OWN verbs -- Enter expands, y yanks --

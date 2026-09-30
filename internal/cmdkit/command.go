@@ -50,6 +50,12 @@ type Command struct {
 	// Used for commands like prompt that use `-- <text>` conventions.
 	PassRaw bool
 
+	// CompleteFlags are flags a PassRaw command parses for itself: offered by
+	// completion beside Flags, never printed by help, whose own text is the
+	// documentation. A PassRaw command that declared nothing here completed
+	// no flags at all.
+	CompleteFlags []FlagDef
+
 	// CompleteArgs is an optional callback that returns dynamic
 	// completion candidates for this command's positional arguments.
 	// The shell filters by the current partial token; return all
@@ -75,6 +81,12 @@ type CompleteContext struct {
 	// word: ${COMP_WORDS[COMP_CWORD]} in bash, $words[CURRENT] in
 	// zsh, (commandline -ct) in fish.
 	Current string
+
+	// Describe is true when the caller asked for "value<TAB>description"
+	// lines. Completers may ignore it and always describe (the dispatcher
+	// strips descriptions for a caller that did not ask); it exists for the
+	// one whose description costs a round trip.
+	Describe bool
 
 	// PastSeparator is true iff the user has already typed a bare "--"
 	// token before the cursor (i.e. the cursor lives in the prompt

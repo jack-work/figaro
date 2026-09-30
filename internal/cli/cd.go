@@ -46,29 +46,25 @@ func resolveCdPath(path string) (string, error) {
 }
 
 // completeCdDirs offers directories under the partial token, the way a shell
-// completes a path.
+// completes a path, and aria ids after --id. It could not expand ~ (it read a
+// directory literally named "~") and went silent after `--id <aria>`.
 func completeCdDirs(ctx *cmdkit.CompleteContext) []string {
-	if len(ctx.Args) > 0 && ctx.Args[len(ctx.Args)-1] != ctx.Current {
+	if ctx == nil {
 		return nil
 	}
-	dir, prefix := filepath.Split(ctx.Current)
-	search := dir
-	if search == "" {
-		search = "."
+	if n := len(ctx.Args); n > 0 && ctx.Args[n-1] == "--id" {
+		return ariaCandidates(ctx)
 	}
-	entries, err := os.ReadDir(search)
-	if err != nil {
-		return nil
-	}
-	var out []string
-	for _, e := range entries {
-		if !e.IsDir() || !strings.HasPrefix(e.Name(), prefix) {
+	for i, a := range ctx.Args {
+		if a == "--id" {
 			continue
 		}
-		if prefix == "" && strings.HasPrefix(e.Name(), ".") {
+		if i > 0 && ctx.Args[i-1] == "--id" {
 			continue
 		}
-		out = append(out, dir+e.Name()+string(filepath.Separator))
+		if !strings.HasPrefix(a, "-") {
+			return nil // the directory is already named
+		}
 	}
-	return out
+	return pathCandidatesFor(ctx, ctx.Current, true)
 }

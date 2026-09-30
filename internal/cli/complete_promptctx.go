@@ -21,7 +21,13 @@ func completePromptContext(c *cmdkit.CompleteContext) []string {
 		return out
 	}
 	out := completeFormKeys(c)
-	out = append(out, listCWD()...)
+	if c != nil && (strings.Contains(c.Current, "/") || strings.HasPrefix(c.Current, "~")) {
+		// A word that names a directory completes inside it; listCWD alone
+		// only ever reached one level.
+		out = append(out, pathCandidatesFor(c, c.Current, false)...)
+	} else {
+		out = append(out, listCWD()...)
+	}
 	sort.Strings(out)
 	return out
 }
@@ -68,10 +74,16 @@ func completePromptOrIDFlag(c *cmdkit.CompleteContext) []string {
 	if c == nil {
 		return nil
 	}
+	// PAST THE BOUNDARY FIRST: after a user-typed "--", "--id" and "-O" are
+	// words in a prompt, not flags. Checking them first completed a prompt
+	// body as a flag value.
+	if c.PastSeparator {
+		return completePromptContext(c)
+	}
 	// --id <here>: aria ids win over everything else; the cursor is
 	// unambiguously typing a flag value.
 	if len(c.Args) > 0 && c.Args[len(c.Args)-1] == "--id" {
-		return softFetchAriaIDs()
+		return ariaCandidates(c)
 	}
 	if c.PastSeparator {
 		return completePromptContext(c)
@@ -82,7 +94,7 @@ func completePromptOrIDFlag(c *cmdkit.CompleteContext) []string {
 // completeOutfitFlag offers outfit names when the cursor sits after -O. Every
 // prompt verb takes the flag, so every prompt verb consults this first.
 func completeOutfitFlag(c *cmdkit.CompleteContext) []string {
-	if len(c.Args) == 0 {
+	if len(c.Args) == 0 || c.PastSeparator {
 		return nil
 	}
 	switch c.Args[len(c.Args)-1] {
@@ -116,5 +128,12 @@ func completeForkPrompt(c *cmdkit.CompleteContext) []string {
 	if c.PastSeparator {
 		return completePromptContext(c)
 	}
-	return completeAriaIDsPositionalOrFlag(c)
+	if n := len(c.Args); n > 0 && c.Args[n-1] == "--id" {
+		return ariaCandidates(c)
+	}
+	// The fork point is a target: an aria, and past its colon a turn.
+	if positionals(c.Args, "--id", "-O", "--outfit") == 0 {
+		return completeTarget(c)
+	}
+	return nil
 }

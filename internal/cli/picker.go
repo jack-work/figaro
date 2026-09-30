@@ -9,8 +9,8 @@ package cli
 //	gg / G  Home/End        the ends
 //
 // A list with no selectable rows still scrolls; a cursor is a property of the
-// ROWS, not a mode. (The completion menu is still its own: see
-// transcript.completionLines.)
+// ROWS, not a mode. The completion menu is one too (transcript_complete.go):
+// what it adds is a ring (cycle) and a description column (pitRow.note).
 
 import "fmt"
 
@@ -189,6 +189,40 @@ func (p *picker) pick(d int) {
 	p.follow()
 }
 
+// cycle is pick on a RING: past the last row it comes back to the first.
+// Tab and ^N walk a completion menu that way in bash's menu-complete and in
+// fish, where a list the user is reading (a queue) must stop at its ends.
+// From no selection at all, forward lands on the first row and backward on
+// the last.
+func (p *picker) cycle(d int) {
+	n := len(p.rows)
+	if n == 0 || d == 0 {
+		return
+	}
+	p.dir = sign(d)
+	first, last := p.nextSelectable(-1, 1), p.nextSelectable(n, -1)
+	switch {
+	case p.cursor < 0 && d > 0:
+		p.cursor = first
+	case p.cursor < 0:
+		p.cursor = last
+	default:
+		next := p.nextSelectable(p.cursor, sign(d))
+		if next < 0 || next == p.cursor {
+			next = first
+			if d < 0 {
+				next = last
+			}
+		}
+		p.cursor = next
+	}
+	p.follow()
+}
+
+// unselect takes the cursor off the list without touching the window: a
+// completion menu opens showing its candidates with none of them chosen.
+func (p *picker) unselect() { p.cursor = -1 }
+
 // dragCursorIntoView keeps the selection inside the window after a scroll.
 func (p *picker) dragCursorIntoView() {
 	h := p.visible()
@@ -312,7 +346,15 @@ func (p *picker) lines(id pitID, w, h int) []string {
 		}
 		// Every row through the gate (pitText, pit.go), once, so that no pit
 		// can forget.
-		row := clipToWidth(prefix+pitText(p.rows[i].text), w)
+		text := prefix + pitText(p.rows[i].text)
+		if note := p.rows[i].note; note != "" {
+			if i == p.cursor {
+				text += "  " + pitText(note)
+			} else {
+				text += "  " + pitGray(pitText(note))
+			}
+		}
+		row := clipToWidth(text, w)
 		if i == p.cursor {
 			out = append(out, pitSelected(row))
 			continue

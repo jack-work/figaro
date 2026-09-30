@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/sdk"
+	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -118,12 +121,36 @@ func softFetchOutfitNames() []string {
 	defer cancel()
 	acli, err := sdk.DialAngelus(transport.UnixEndpoint(angelusSocketPath()))
 	if err != nil {
-		return nil
+		// NO DAEMON IS NOT NO OUTFITS. They are files in the config dir,
+		// which is readable without one, and the first run -- before any
+		// daemon exists -- is when a person most needs to see the names.
+		return outfitNamesOnDisk()
 	}
 	defer acli.Close()
 	resp, err := acli.Outfits(ctx, "")
 	if err != nil {
-		return nil
+		return outfitNamesOnDisk()
 	}
 	return resp.Names
+}
+
+// outfitNamesOnDisk is the config directory's own answer: every *.toml under
+// outfits/, by name.
+func outfitNamesOnDisk() []string {
+	loaded, _ := config.Load(config.DefaultConfigDir())
+	if loaded == nil {
+		return nil
+	}
+	entries, err := os.ReadDir(loaded.OutfitsDir())
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		if name, ok := strings.CutSuffix(e.Name(), ".toml"); ok && !e.IsDir() {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
 }

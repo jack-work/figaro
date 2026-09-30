@@ -127,7 +127,7 @@ type transcriptJump struct {
 func pagerJumpPrompt(t *transcript) {
 	t.inJump, t.jumpNote = true, ""
 	t.cmdline.reset()
-	t.completions = nil
+	t.menu = nil
 }
 
 func jumpCancel(t *transcript) {
@@ -140,8 +140,10 @@ func jumpCancel(t *transcript) {
 		t.cmdline.endSearch()
 		return
 	}
-	if len(t.completions) > 0 {
-		t.clearCompletions()
+	if t.menu != nil {
+		// Esc from the menu is "never mind": the word goes back to what was
+		// typed before the menu started choosing for you.
+		t.dismissCompletion()
 		return
 	}
 	jumpClose(t)
@@ -161,6 +163,13 @@ func jumpBackspace(t *transcript) {
 	// search without abandoning it.
 	if t.cmdline.searching() {
 		t.cmdline.searchBackspace()
+		return
+	}
+	if t.menu != nil {
+		// Backspace inside the word keeps the menu and widens it again.
+		t.cmdline.endSearch()
+		t.cmdline.backspace()
+		t.refilterCompletion()
 		return
 	}
 	t.edit(func(e *lineEditor) { e.backspace() })
@@ -283,7 +292,7 @@ func cmdSearchNext(t *transcript) {
 // takes the keys while it is up and the history has them back the moment it is
 // not.
 func cmdHistPrev(t *transcript) {
-	if len(t.completions) > 0 {
+	if t.menu != nil {
 		t.cycleCompletion(-1)
 		return
 	}
@@ -291,93 +300,11 @@ func cmdHistPrev(t *transcript) {
 }
 
 func cmdHistNext(t *transcript) {
-	if len(t.completions) > 0 {
+	if t.menu != nil {
 		t.cycleCompletion(1)
 		return
 	}
 	t.edit(func(e *lineEditor) { e.historyNext() })
-}
-
-// cmdListComplete is M-?: show the candidates and insert nothing. Tab is the
-// key that commits; this is the one you press when you only want to look.
-func cmdListComplete(t *transcript) {
-	if t.completer == nil {
-		return
-	}
-	t.cmdline.endSearch()
-	cands := t.completer(t.cmdline.String())
-	t.clearCompletions()
-	if len(cands) == 0 {
-		t.noteOrClear("no completions")
-		return
-	}
-	t.completionAt = t.cmdline.cursor - len([]rune(lastWord(t.cmdline.String())))
-	t.completions, t.completionIdx = cands, -1
-}
-
-// cmdInsertComplete is M-*: put every candidate in the line, space-separated.
-// Rare, and cheap to have: it is how you turn "which arias are there" into a
-// line you then edit down.
-func cmdInsertComplete(t *transcript) {
-	if t.completer == nil {
-		return
-	}
-	t.cmdline.endSearch()
-	cands := t.completer(t.cmdline.String())
-	if len(cands) == 0 {
-		return
-	}
-	word := lastWord(t.cmdline.String())
-	t.clearCompletions()
-	for range []rune(word) {
-		t.cmdline.backspace()
-	}
-	t.cmdline.insert(strings.Join(cands, " ") + " ")
-}
-
-// cmdComplete is Tab. The candidates come from the ROUTER's own completion --
-// the same __complete verb the shell scripts call -- so aria ids, form ids and
-// flags are completed here by the code that already knew how.
-func cmdComplete(t *transcript) {
-	// A SECOND TAB CYCLES, it does not recompute: that is what makes Tab Tab
-	// Tab walk the list, as it does in bash's menu-complete and in fish.
-	if len(t.completions) > 0 {
-		t.cycleCompletion(1)
-		return
-	}
-	if t.completer == nil {
-		return
-	}
-	line := t.cmdline.String()
-	cands := t.completer(line)
-	t.clearCompletions()
-	if len(cands) == 0 {
-		return
-	}
-	word := lastWord(line)
-	t.completionAt = t.cmdline.cursor - len([]rune(word))
-	// FIRST TAB INSERTS THE LONGEST THING THAT CANNOT BE WRONG, which is what
-	// both shells do before they offer to show you anything.
-	if pre := commonPrefix(cands); len(pre) > len(word) {
-		t.cmdline.insert(pre[len(word):])
-	}
-	if len(cands) == 1 {
-		t.cmdline.insert(" ") // an unambiguous completion moves you along
-		return
-	}
-	t.completions, t.completionIdx = cands, -1
-}
-
-// lastWord is the partial token under the cursor, for measuring what a
-// completion still has to add.
-func lastWord(line string) string {
-	if line == "" || strings.HasSuffix(line, " ") {
-		return ""
-	}
-	if i := strings.LastIndexAny(line, " \t"); i >= 0 {
-		return line[i+1:]
-	}
-	return line
 }
 
 // jumpLiteral is the box's fallback: a printable key is text, not a binding -
@@ -395,9 +322,16 @@ func (t *transcript) jumpLiteral(b byte) {
 		}
 		return
 	}
-	if t.cmdline.insertByte(b) {
-		t.clearCompletions()
+	if !t.cmdline.insertByte(b) {
+		return
 	}
+	// TYPING WHILE THE MENU IS UP NARROWS IT, the way fish's pager does. A
+	// space finishes the word, and with it the menu: Tab asks again.
+	if t.menu != nil && b != ' ' {
+		t.refilterCompletion()
+		return
+	}
+	t.clearCompletions()
 }
 
 // searchRune keeps the needle ASCII-simple: the editor's UTF-8 reassembly
@@ -435,11 +369,17 @@ func (t *transcript) jumpSubmit(snap bool) {
 	// line on screen is the line, and a reader who has found it and pressed
 	// Enter has said so.
 	t.cmdline.endSearch()
+	// ENTER ON A CHOSEN CANDIDATE TAKES IT and leaves the line to be finished,
+	// as fish's pager does: the menu was a question, and Enter answers it. With
+	// nothing chosen, Enter runs the line as typed.
+	if t.acceptCompletion() {
+		return
+	}
 	text := strings.TrimSpace(t.cmdline.String())
 	t.cmdline.remember(text)
 	t.cmdline.reset()
 	t.inJump, t.jumpNote = false, ""
-	t.completions = nil
+	t.menu = nil
 	if text == "" {
 		return
 	}

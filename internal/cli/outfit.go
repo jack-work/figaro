@@ -62,8 +62,11 @@ func completeStateArgs(c *cmdkit.CompleteContext) []string {
 			return completeOutfits(c)
 		case "help":
 			return []string{"outfits", "form", "state"}
-		case "set", "delete", "show":
+		case "set", "delete":
 			return completeAriaIDsAfterFlag(completeFormKeys)(c)
+		case "show":
+			// `state show [<id>]` takes an aria, not a key.
+			return ariaCandidates(c)
 		}
 	}
 	return append(append([]string{}, stateSubwords...), completeAriaIDsPositionalOrFlag(c)...)
@@ -78,7 +81,7 @@ func completeOutfits(c *cmdkit.CompleteContext) []string {
 		return nil
 	}
 	if len(c.Args) > 0 && c.Args[len(c.Args)-1] == "--id" {
-		return softFetchAriaIDs()
+		return ariaCandidates(c)
 	}
 	names := softFetchOutfitNames()
 	if len(names) == 0 {

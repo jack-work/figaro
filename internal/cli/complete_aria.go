@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/jack-work/figaro/sdk"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/jack-work/figaro/api/transport"
@@ -44,7 +45,7 @@ func softFetchAriaIDs() []string {
 func completeAriaIDsAfterFlag(inner func(*cmdkit.CompleteContext) []string) func(*cmdkit.CompleteContext) []string {
 	return func(c *cmdkit.CompleteContext) []string {
 		if c != nil && len(c.Args) > 0 && c.Args[len(c.Args)-1] == "--id" {
-			return softFetchAriaIDs()
+			return ariaCandidates(c)
 		}
 		if inner != nil {
 			return inner(c)
@@ -61,13 +62,17 @@ func completeAriaIDsPositionalOrFlag(c *cmdkit.CompleteContext) []string {
 		return nil
 	}
 	if len(c.Args) > 0 && c.Args[len(c.Args)-1] == "--id" {
-		return softFetchAriaIDs()
+		return ariaCandidates(c)
 	}
-	// First positional slot: no args, or only flags before this point.
-	// Conservative: only fire when Args is empty, to avoid suggesting
-	// ids in the middle of a flag value the router doesn't model.
-	if len(c.Args) == 0 {
-		return softFetchAriaIDs()
+	// First positional slot: nothing before the cursor but flags. It used to
+	// demand no args at all, so `status --json <Tab>` offered nothing while
+	// this comment promised ids. A value-taking flag's value does not start
+	// with a dash and reads as a positional, which errs toward offering
+	// nothing rather than ids in the middle of a flag's value.
+	for _, a := range c.Args {
+		if !strings.HasPrefix(a, "-") {
+			return nil
+		}
 	}
-	return nil
+	return ariaCandidates(c)
 }

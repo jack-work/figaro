@@ -24,6 +24,11 @@ type Router struct {
 	// Extra is passed to every RunContext.Extra.
 	Extra interface{}
 
+	// AlsoCalled are other names the same binary is installed under (figaro
+	// ships a `fig`). Every generated completion script registers them
+	// beside Name; only powershell used to, by hardcoding one.
+	AlsoCalled []string
+
 	// Fallback is called when no subcommand matches and the args
 	// are non-empty. If nil, the router prints usage and exits 2.
 	Fallback func(args []string, extra interface{}) error
@@ -115,6 +120,18 @@ func (r *Router) CommandNames() []string {
 		}
 	}
 	return names
+}
+
+// CommandCandidates is CommandNames with each command's one-line summary, in
+// the completion protocol's "value<TAB>description" shape.
+func (r *Router) CommandCandidates() []string {
+	out := make([]string, 0, len(r.commands))
+	for _, cmd := range r.commands {
+		if !cmd.Hidden {
+			out = append(out, Candidate(cmd.Name, cmd.Short))
+		}
+	}
+	return out
 }
 
 // HasCommand reports whether name matches a registered command or alias.
