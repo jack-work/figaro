@@ -148,6 +148,7 @@ func Run(progName string, args []string) {
 func buildRouter(progName string, loaded *config.Loaded) *cmdkit.Router {
 	r := cmdkit.NewRouter(progName)
 	r.Extra = loaded
+	r.AlsoCalled = []string{"fig"}
 
 	r.Register(&cmdkit.Command{
 		Name:    "show",
@@ -326,7 +327,8 @@ positional target needs the explicit verb or --id.`,
 			runSend(ld, ctx.RawArgs)
 			return nil
 		},
-		CompleteArgs: completeNewPrompt,
+		CompleteArgs:  completeSend,
+		CompleteFlags: promptFlagDefs,
 	})
 
 	r.Register(&cmdkit.Command{
@@ -404,7 +406,8 @@ already exists (--id, -e, -x) are refused rather than ignored.
 			runNewPrompt(ld, prompt, opts.outfit, set)
 			return nil
 		},
-		CompleteArgs: completeNewPrompt,
+		CompleteArgs:  completeNewPrompt,
+		CompleteFlags: promptFlagDefs,
 	})
 
 	r.Register(&cmdkit.Command{
@@ -483,6 +486,7 @@ same pacer, same catch-up: draws them. What you see is what was seen.
 			runReplay(ld, ctx.Args[0], speed, ctx.BoolFlag("summary"))
 			return nil
 		},
+		CompleteArgs: completeFileArg,
 	})
 
 	r.Register(&cmdkit.Command{
@@ -667,6 +671,7 @@ positional slot belongs to the sub-verb.`,
 			}
 			return nil
 		},
+		CompleteArgs: completeWords([][2]string{{"ls", "list what is waiting"}, {"rm", "drop messages by id"}, {"edit", "rewrite one message"}}, nil),
 	})
 
 	listCmd := &cmdkit.Command{
@@ -734,7 +739,7 @@ positional slot belongs to the sub-verb.`,
 			runAttend(ld, ctx.Args[0])
 			return nil
 		},
-		CompleteArgs: completeAriaIDsPositionalOrFlag,
+		CompleteArgs: completeAttend,
 	})
 
 	r.Register(&cmdkit.Command{
@@ -777,6 +782,7 @@ Folding an outfit onto a LIVE aria is a different act: see
 			}
 			return nil
 		},
+		CompleteArgs: completeWords([][2]string{{"reload", "flag the default form for recomputation"}}, nil),
 	})
 
 	r.Register(&cmdkit.Command{
@@ -797,7 +803,7 @@ attended figaro's studies. The form is always the LAST positional.`,
 			runStudy(ctx.Extra.(*config.Loaded), ctx.Args, false, ctx.BoolFlag("json"))
 			return nil
 		},
-		CompleteArgs: completeAriaIDsPositionalOrFlag,
+		CompleteArgs: completeFormVerb,
 	})
 
 	r.Register(&cmdkit.Command{
@@ -814,7 +820,7 @@ attended figaro's studies. The form is always the LAST positional.`,
 			runStudy(ctx.Extra.(*config.Loaded), ctx.Args, true, ctx.BoolFlag("json"))
 			return nil
 		},
-		CompleteArgs: completeAriaIDsPositionalOrFlag,
+		CompleteArgs: completeFormVerb,
 	})
 
 	r.Register(&cmdkit.Command{
@@ -853,7 +859,7 @@ are unbound forms only.`,
 			runCast(ctx.Extra.(*config.Loaded), ctx.Args, ctx.Flag("outfit"), ctx.Flag("set"), ctx.Flag("delete"), ctx.BoolFlag("json"), ctx.BoolFlag("stay"))
 			return nil
 		},
-		CompleteArgs: completeAriaIDsPositionalOrFlag,
+		CompleteArgs: completeFormVerb,
 	})
 
 	r.Register(&cmdkit.Command{
@@ -890,7 +896,7 @@ printed id yourself. See ` + "`figaro help form`" + ` for the form family.`,
 			runBind(ld, target, ctx.Flag("outfit"), ctx.Flag("set"), ctx.Flag("delete"), ctx.BoolFlag("json"))
 			return nil
 		},
-		CompleteArgs: completeAriaIDsPositionalOrFlag,
+		CompleteArgs: completeFormVerb,
 	})
 
 	r.Register(&cmdkit.Command{
@@ -975,7 +981,8 @@ With a prompt: ` + "`figaro fork [flags] -- <prompt>`" + `: it also sends, the w
 			runForkCmd(ld, ctx.RawArgs)
 			return nil
 		},
-		CompleteArgs: completeForkPrompt,
+		CompleteArgs:  completeForkPrompt,
+		CompleteFlags: promptFlagDefs,
 	})
 
 	r.Register(&cmdkit.Command{
@@ -1029,7 +1036,7 @@ wire cache; the price is one cache-miss on the first turn after an import.`,
 			runExport(ctx.Extra.(*config.Loaded), ctx.RawArgs)
 			return nil
 		},
-		CompleteArgs: completeAriaIDsPositionalOrFlag,
+		CompleteArgs: completeExport,
 	})
 
 	r.Register(&cmdkit.Command{
@@ -1055,6 +1062,7 @@ when not, and the tool says which happened.`,
 			runImport(ctx.Extra.(*config.Loaded), ctx.Args)
 			return nil
 		},
+		CompleteArgs: completeFileArg,
 	})
 
 	r.Register(&cmdkit.Command{
@@ -1243,7 +1251,7 @@ See ` + "`figaro help outfits`" + ` for the outfit syntax.`,
 			runSetArgs(ld, ctx.Flag("id"), ctx.Args[0], ctx.Args[1])
 			return nil
 		},
-		CompleteArgs: completeAriaIDsAfterFlag(completeFormKeys),
+		CompleteArgs: completeSetArgs,
 	})
 
 	r.Register(&cmdkit.Command{
@@ -1412,6 +1420,7 @@ flow writes both through the daemon, so a client never has to know the path.`,
 			runLoginByName(ld, ctx.Args[0])
 			return nil
 		},
+		CompleteArgs: completeProviders,
 	})
 
 	r.Register(&cmdkit.Command{
@@ -1494,6 +1503,11 @@ flow writes both through the daemon, so a client never has to know the path.`,
 			}
 			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j] [--gc] | provider [--id <aria>] [-c N] [-j] | librettos [--dry-run] | toolcalls [--dry-run] | skills [-j] | ttl [-j]>")
 		},
+		CompleteArgs: completeWords([][2]string{
+			{"gc", "remove dead channels"}, {"schema", "channel versions"}, {"term", "terminal capabilities"},
+			{"mem", "the daemon's footprint"}, {"provider", "recent provider round-trips"},
+			{"librettos", "recount derived-form observers"}, {"skills", "what the binary ships"}, {"ttl", "nodes carrying a lifetime"},
+		}, nil),
 	})
 
 	r.Register(&cmdkit.Command{
@@ -1611,6 +1625,10 @@ auto-load it on the next tab.
 			}
 			return r.WriteCompletion(os.Stdout, cmdkit.CompletionShell(first))
 		},
+		CompleteArgs: completeWords([][2]string{
+			{"bash", "print the bash script"}, {"zsh", "print the zsh script"}, {"fish", "print the fish script"},
+			{"powershell", "print the powershell script"}, {"install", "write it where the shell autoloads it"},
+		}, nil),
 	})
 
 	// Bare-prompt completion: when the user invokes `figaro -- <body>`

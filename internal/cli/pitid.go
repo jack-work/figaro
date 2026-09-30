@@ -29,6 +29,10 @@ const (
 	// A question, not a view: it holds the keyboard until it is answered and
 	// draws nothing but its own token on the bar.
 	pitConfirm pitID = "confirm"
+	// Tab's menu under the ':' line. It is drawn inside the command pit and
+	// never opened as a pit of its own, so it has no glyph on the bar: the
+	// row names it only for its selection marker.
+	pitCompletion pitID = "completion"
 )
 
 // pitFace is how a pit presents itself: the glyph on the bar, the word beside
@@ -64,6 +68,8 @@ var pitFaces = map[pitID]pitFace{
 	// The answers ARE the token: a question that costs no height still has to
 	// say what will answer it.
 	pitConfirm: {"[y/N]", "confirm", "", modeConfirm},
+	// ♪ is a single note: the one candidate you are about to take.
+	pitCompletion: {"", "completion", "♪", modeJump},
 }
 
 // face is the pit's presentation, or the empty face for one nobody has named:

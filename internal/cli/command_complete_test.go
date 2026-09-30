@@ -1,85 +1,249 @@
 package cli
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
 
-// THE COMPLETION MENU, as a unit — because every bug in it so far was found by
-// squinting at a terminal, and two of them were invisible there.
+	"github.com/jack-work/figaro/internal/cmdkit"
+)
+
+// TAB'S PIT, as a unit -- because every bug in the menu it replaced was found
+// by squinting at a terminal, and the worst of them (candidates printed over
+// the status bar, the menu empty) was invisible to every test that existed.
 //
-// The menu is bash's and fish's between them: the first Tab inserts the longest
-// unambiguous prefix, an ambiguous one opens a bounded menu, and Tab/^N/^P walk
-// it putting the selection IN THE LINE.
-func TestCompletionMenu(t *testing.T) {
-	fixture := func() *transcript {
-		tr := jumpFixture(t, 1, 4)
-		tr.completer = func(string) []string { return []string{"alpha", "alfred", "beta"} }
-		tr.key(':')
-		return tr
-	}
+// The rules are bash's and fish's between them; see transcript_complete.go.
 
-	t.Run("first Tab inserts the common prefix and opens the menu", func(t *testing.T) {
-		tr := fixture()
+// completerFor is a completer over a fixed candidate table, keyed by the text
+// before the cursor exactly as the router's completer would see it, counting
+// its calls so a test can see a pool being reused.
+type completerFor struct {
+	pools map[string][]string
+	calls int
+	asked []string
+}
+
+func (c *completerFor) complete(line string) []string {
+	c.calls++
+	c.asked = append(c.asked, line)
+	word := lastWord(line)
+	var out []string
+	for _, cand := range c.pools[strings.TrimSuffix(line, word)] {
+		if v, _ := cmdkit.SplitCandidate(cand); strings.HasPrefix(v, word) {
+			out = append(out, cand)
+		}
+	}
+	return out
+}
+
+func menuFixture(t *testing.T, pools map[string][]string) (*transcript, *completerFor) {
+	t.Helper()
+	tr := jumpFixture(t, 1, 4)
+	c := &completerFor{pools: pools}
+	tr.completer = c.complete
+	tr.key(':')
+	return tr, c
+}
+
+func typeInto(tr *transcript, s string) {
+	for i := 0; i < len(s); i++ {
+		tr.jumpLiteral(s[i])
+	}
+}
+
+var ariaPool = map[string][]string{
+	"attend ": {
+		cmdkit.Candidate("3b7aff0a", "insert mode in the transcript: plan it"),
+		cmdkit.Candidate("3b9c14e2", "idle · deploy herald"),
+		cmdkit.Candidate("5ff47135", "pit review 3: queue pit"),
+	},
+}
+
+func chosen(tr *transcript) string {
+	if tr.menu == nil {
+		return ""
+	}
+	row, ok := tr.menu.list.selected()
+	if !ok {
+		return ""
+	}
+	return row.id
+}
+
+func TestTabPit(t *testing.T) {
+	t.Run("first Tab inserts the common prefix and opens the pit with nothing chosen", func(t *testing.T) {
+		tr, _ := menuFixture(t, ariaPool)
+		typeInto(tr, "attend 3")
 		cmdComplete(tr)
-		if len(tr.completions) != 3 || tr.completionIdx != -1 {
-			t.Fatalf("menu = %d candidates, idx %d; want 3 and nothing selected", len(tr.completions), tr.completionIdx)
+		if tr.cmdline.String() != "attend 3b" {
+			t.Fatalf("line %q; want the shared prefix 3b inserted", tr.cmdline.String())
+		}
+		if tr.menu == nil || len(tr.menu.shown) != 2 || chosen(tr) != "" {
+			t.Fatalf("menu %+v; want two candidates and nothing chosen", tr.menu)
 		}
 	})
 
-	// BOTH ENCODINGS. figaro turns on modified-key reporting, so ^N arrives as a
-	// CSI-u chord (keyEvent{ctrl:'n'}) on a real terminal and as the byte 0x0e
-	// elsewhere. A table binding only one of them does nothing where the other
-	// is sent -- which is exactly what shipped: Tab built the menu and ^N walked
-	// past it into the void.
+	// BOTH ENCODINGS. figaro turns on modified-key reporting, so ^N arrives as
+	// a CSI-u chord (keyEvent{ctrl:'n'}) on a real terminal and as the byte
+	// 0x0e elsewhere. A table binding only one of them does nothing where the
+	// other is sent.
 	for _, enc := range []struct {
 		name string
-		ev   keyEvent
+		next keyEvent
+		prev keyEvent
 	}{
-		{"byte 0x0e", keyEvent{b: 0x0e, mode: modeJump}},
-		{"CSI-u ctrl-n", keyEvent{ctrl: 'n', mode: modeJump}},
+		{"bytes", keyEvent{b: 0x0e, mode: modeJump}, keyEvent{b: 0x10, mode: modeJump}},
+		{"CSI-u", keyEvent{ctrl: 'n', mode: modeJump}, keyEvent{ctrl: 'p', mode: modeJump}},
+		{"arrows", keyEvent{nav: navDown, mode: modeJump}, keyEvent{nav: navUp, mode: modeJump}},
 	} {
-		t.Run("^N cycles: "+enc.name, func(t *testing.T) {
-			tr := fixture()
+		t.Run("^N/^P walk the ring and the choice is in the line: "+enc.name, func(t *testing.T) {
+			tr, _ := menuFixture(t, ariaPool)
+			typeInto(tr, "attend ")
 			cmdComplete(tr)
-			tr.dispatch(enc.ev)
-			if tr.completionIdx != 0 || tr.cmdline.String() != "alpha" {
-				t.Fatalf("after ^N: line %q idx %d; want \"alpha\" and 0", tr.cmdline.String(), tr.completionIdx)
+			tr.dispatch(enc.next)
+			if tr.cmdline.String() != "attend 3b7aff0a" || chosen(tr) != "3b7aff0a" {
+				t.Fatalf("after next: %q chosen %q", tr.cmdline.String(), chosen(tr))
 			}
-			tr.dispatch(enc.ev)
-			if tr.completionIdx != 1 || tr.cmdline.String() != "alfred" {
-				t.Fatalf("after a second ^N: line %q idx %d; want \"alfred\" and 1", tr.cmdline.String(), tr.completionIdx)
+			tr.dispatch(enc.next)
+			// CYCLING REPLACES, it does not append.
+			if tr.cmdline.String() != "attend 3b9c14e2" {
+				t.Fatalf("after next twice: %q", tr.cmdline.String())
 			}
-			// CYCLING REPLACES, it does not append: the word being completed is
-			// cut back to where it started each time.
-			if tr.completions[tr.completionIdx] != tr.cmdline.String() {
-				t.Fatalf("the line is not the selection: %q vs %q", tr.cmdline.String(), tr.completions[tr.completionIdx])
+			tr.dispatch(enc.prev)
+			tr.dispatch(enc.prev)
+			if tr.cmdline.String() != "attend 5ff47135" {
+				t.Fatalf("prev past the first must wrap to the last: %q", tr.cmdline.String())
 			}
 		})
 	}
 
-	t.Run("^P walks backwards and wraps", func(t *testing.T) {
-		tr := fixture()
+	t.Run("Tab walks the open pit and wraps", func(t *testing.T) {
+		tr, _ := menuFixture(t, ariaPool)
+		typeInto(tr, "attend ")
+		for range 4 {
+			cmdComplete(tr)
+		}
+		if tr.cmdline.String() != "attend 5ff47135" {
+			t.Fatalf("three Tabs after the opening one: %q", tr.cmdline.String())
+		}
 		cmdComplete(tr)
-		tr.dispatch(keyEvent{ctrl: 'p', mode: modeJump})
-		if tr.cmdline.String() != "beta" {
-			t.Fatalf("^P from nothing selected = %q, want the last candidate", tr.cmdline.String())
+		if tr.cmdline.String() != "attend 3b7aff0a" {
+			t.Fatalf("Tab past the end must wrap: %q", tr.cmdline.String())
 		}
 	})
 
-	t.Run("an unambiguous completion finishes the word", func(t *testing.T) {
-		tr := jumpFixture(t, 1, 4)
-		tr.completer = func(string) []string { return []string{"onlyone"} }
-		tr.key(':')
+	t.Run("an unambiguous completion finishes the word, a directory does not", func(t *testing.T) {
+		tr, _ := menuFixture(t, map[string][]string{
+			"attend ": {cmdkit.Candidate("5ff47135", "x")},
+			"cd ":     {cmdkit.Candidate("src/", "dir")},
+		})
+		typeInto(tr, "attend 5")
 		cmdComplete(tr)
-		if tr.cmdline.String() != "onlyone " || len(tr.completions) != 0 {
-			t.Fatalf("line %q, %d candidates; want \"onlyone \" and no menu", tr.cmdline.String(), len(tr.completions))
+		if tr.cmdline.String() != "attend 5ff47135 " || tr.menu != nil {
+			t.Fatalf("line %q menu %v", tr.cmdline.String(), tr.menu != nil)
+		}
+		tr2, _ := menuFixture(t, map[string][]string{"cd ": {cmdkit.Candidate("src/", "dir")}})
+		typeInto(tr2, "cd s")
+		cmdComplete(tr2)
+		if tr2.cmdline.String() != "cd src/" {
+			t.Fatalf("a directory must leave the cursor in it for the next Tab: %q", tr2.cmdline.String())
 		}
 	})
 
-	t.Run("Esc dismisses the menu before the box", func(t *testing.T) {
-		tr := fixture()
+	t.Run("typing narrows the pit from one fetch, a space closes it, Backspace widens it", func(t *testing.T) {
+		tr, c := menuFixture(t, ariaPool)
+		typeInto(tr, "attend ")
 		cmdComplete(tr)
+		calls := c.calls
+		typeInto(tr, "3b9")
+		if tr.menu == nil || len(tr.menu.shown) != 1 || tr.menu.shown[0].value != "3b9c14e2" {
+			t.Fatalf("typing 3b9 should leave one candidate: %+v", tr.menu)
+		}
+		if c.calls != calls {
+			t.Fatalf("typing inside the word asked the completer %d more times; the pool must be reused (it runs under the render lock)", c.calls-calls)
+		}
+		jumpBackspace(tr)
+		jumpBackspace(tr)
+		if tr.menu == nil || len(tr.menu.shown) != 2 {
+			t.Fatalf("Backspace should widen the pit again: %+v", tr.menu)
+		}
+		typeInto(tr, "b ")
+		if tr.menu != nil {
+			t.Fatal("a space ends the word, and the pit with it")
+		}
+	})
+
+	t.Run("typing something nothing matches closes the pit", func(t *testing.T) {
+		tr, _ := menuFixture(t, ariaPool)
+		typeInto(tr, "attend ")
+		cmdComplete(tr)
+		typeInto(tr, "zz")
+		if tr.menu != nil {
+			t.Fatalf("no candidate can become %q, so there is no pit: %+v", "zz", tr.menu.shown)
+		}
+	})
+
+	t.Run("nothing starts with it? offer what contains it, description included", func(t *testing.T) {
+		tr, _ := menuFixture(t, ariaPool)
+		typeInto(tr, "attend herald")
+		cmdComplete(tr)
+		// One candidate found by its description is still one candidate.
+		if tr.cmdline.String() != "attend 3b9c14e2 " {
+			t.Fatalf("herald should find the aria whose mantra says it: %q", tr.cmdline.String())
+		}
+		tr2, _ := menuFixture(t, ariaPool)
+		typeInto(tr2, "attend de")
+		cmdComplete(tr2)
+		// "insert mode ..." and "deploy herald" both contain it; neither id
+		// starts with it, so nothing is inserted and the pit says why.
+		if tr2.menu == nil || !tr2.menu.loose || len(tr2.menu.shown) != 2 || tr2.cmdline.String() != "attend de" {
+			t.Fatalf("de should match two descriptions loosely, line untouched: %+v %q", tr2.menu, tr2.cmdline.String())
+		}
+		if got := strings.Join(tr2.menu.lines(80, 12), "\n"); !strings.Contains(got, "containing de") {
+			t.Fatalf("a loose pit must say why its rows are there:\n%s", got)
+		}
+	})
+
+	t.Run("Enter takes a chosen candidate without running the line", func(t *testing.T) {
+		tr, _ := menuFixture(t, ariaPool)
+		ran := ""
+		tr.command = func(s string) { ran = s }
+		typeInto(tr, "attend ")
+		cmdComplete(tr)
+		cmdHistNext(tr)
+		jumpAccept(tr)
+		if ran != "" || !tr.inJump || tr.menu != nil {
+			t.Fatalf("Enter on a choice ran %q, inJump=%v, menu=%v", ran, tr.inJump, tr.menu != nil)
+		}
+		if tr.cmdline.String() != "attend 3b7aff0a " {
+			t.Fatalf("line %q", tr.cmdline.String())
+		}
+		jumpAccept(tr)
+		if ran != "attend 3b7aff0a" {
+			t.Fatalf("the second Enter should run the line, ran %q", ran)
+		}
+	})
+
+	t.Run("Enter with nothing chosen runs the line", func(t *testing.T) {
+		tr, _ := menuFixture(t, ariaPool)
+		ran := ""
+		tr.command = func(s string) { ran = s }
+		typeInto(tr, "attend ")
+		cmdComplete(tr)
+		jumpAccept(tr)
+		if ran != "attend" {
+			t.Fatalf("ran %q", ran)
+		}
+	})
+
+	t.Run("Esc puts the typed word back, then closes the box", func(t *testing.T) {
+		tr, _ := menuFixture(t, ariaPool)
+		typeInto(tr, "attend 3b")
+		cmdComplete(tr)
+		cmdHistNext(tr)
 		jumpCancel(tr)
-		if len(tr.completions) != 0 || !tr.inJump {
-			t.Fatalf("first Esc: %d candidates, inJump=%v; want the menu gone and the box open", len(tr.completions), tr.inJump)
+		if tr.menu != nil || !tr.inJump || tr.cmdline.String() != "attend 3b" {
+			t.Fatalf("first Esc: menu=%v inJump=%v line %q", tr.menu != nil, tr.inJump, tr.cmdline.String())
 		}
 		jumpCancel(tr)
 		if tr.inJump {
@@ -87,20 +251,70 @@ func TestCompletionMenu(t *testing.T) {
 		}
 	})
 
-	// THE MENU IS BOUNDED. It lives in the drawer above an inviolable status
-	// bar; a menu that grows with the candidate count eats the conversation.
-	t.Run("the menu is bounded however many candidates there are", func(t *testing.T) {
+	t.Run("the pit is a picker: bounded, counted, described, aligned, marked", func(t *testing.T) {
 		many := make([]string, 200)
 		for i := range many {
-			many[i] = "cand" + string(rune('a'+i%26)) + string(rune('a'+i/26))
+			many[i] = cmdkit.Candidate(fmt.Sprintf("cand%03d", i), "the "+fmt.Sprint(i)+"th")
 		}
-		tr := jumpFixture(t, 1, 4)
-		tr.completer = func(string) []string { return many }
-		tr.key(':')
+		tr, _ := menuFixture(t, map[string][]string{"attend ": many})
+		typeInto(tr, "attend ")
 		cmdComplete(tr)
-		if rows := tr.completionLines(); len(rows) > completionMenuRows+1 {
-			t.Fatalf("200 candidates drew %d rows; the cap is %d plus one count line",
-				len(rows), completionMenuRows)
+		rows := tr.menu.lines(80, 40)
+		if len(rows) > completionMenuRows {
+			t.Fatalf("200 candidates drew %d rows; the cap is %d", len(rows), completionMenuRows)
+		}
+		if !strings.Contains(rows[len(rows)-1], "more") {
+			t.Fatalf("an overflowing pit must count what it is not showing: %q", rows[len(rows)-1])
+		}
+		if !strings.Contains(rows[0], "cand000") || !strings.Contains(rows[0], "the 0th") {
+			t.Fatalf("a row is the value and its description: %q", rows[0])
+		}
+		cmdHistNext(tr)
+		rows = tr.menu.lines(80, 40)
+		if !strings.Contains(rows[0], "♪") {
+			t.Fatalf("the chosen row carries the pit's marker: %q", rows[0])
+		}
+		// Never more than the pit has room for.
+		if got := tr.menu.lines(80, 3); len(got) > 3 {
+			t.Fatalf("room 3 drew %d rows", len(got))
 		}
 	})
+
+	t.Run("the pool follows a path into its directory", func(t *testing.T) {
+		tr, c := menuFixture(t, map[string][]string{
+			"cd ": {cmdkit.Candidate("src/", "dir"), cmdkit.Candidate("scripts/", "dir")},
+		})
+		c.pools["cd src/"] = nil
+		typeInto(tr, "cd s")
+		cmdComplete(tr)
+		if tr.menu == nil {
+			t.Fatal("two directories should open the pit")
+		}
+		typeInto(tr, "rc/")
+		// The word left the directory the pool was fetched for.
+		if last := c.asked[len(c.asked)-1]; last != "cd src/" {
+			t.Fatalf("the completer was last asked %q; a new directory must be fetched", last)
+		}
+	})
+}
+
+func TestCompletionStem(t *testing.T) {
+	for word, want := range map[string]string{
+		"":          "",
+		"ab":        "",
+		"~":         "~",
+		"~/de":      "~/",
+		"/usr/lo":   "/usr/",
+		"a,b":       "a,",
+		"skills.br": "",
+		"--js":      "-",
+		"-":         "-",
+		"3b7aff0a:": "3b7aff0a:",
+		"3b7a:12":   "3b7a:",
+		"--id=ab":   "--id=",
+	} {
+		if got := completionStem(word); got != want {
+			t.Errorf("completionStem(%q) = %q, want %q", word, got, want)
+		}
+	}
 }

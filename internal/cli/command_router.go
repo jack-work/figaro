@@ -21,6 +21,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"github.com/jack-work/figaro/internal/cmdkit"
 	"strings"
 	"sync"
 
@@ -448,10 +449,16 @@ func splitOutputLines(s string) []string {
 // Completion: the router's own, again rather than a second copy.
 // ---------------------------------------------------------------------------
 
-// complete returns the candidates for a partially typed command line. It calls
-// the SAME hidden `__complete` verb the shell completion scripts call, so aria
-// ids, form ids, flags and prompt-context refs are all completed here by the
-// code that already knew how.
+// complete returns the candidates for a partially typed command line, in the
+// protocol's "value<TAB>description" shape. It calls the SAME hidden
+// `__complete` verb the shell completion scripts call, so aria ids, form ids,
+// flags, paths, outfits and prompt-context refs are all completed here by the
+// code that already knew how -- asking, as a shell cannot, for descriptions.
+//
+// Two things only the pager knows are supplied around that call: the aria on
+// screen, which is whose board keys and skills a completion should offer
+// (completionSubject), and a path fallback for a word that names a
+// directory, which fish gives its users for free and this box did not.
 func (in *interactiveInput) complete(line string) []string {
 	argv := tokenize(line)
 	// A trailing space means "the cursor is on a fresh word".
@@ -464,11 +471,22 @@ func (in *interactiveInput) complete(line string) []string {
 	if len(argv) == 0 {
 		// Completing the VERB itself: the router's own names, plus the overlay
 		// aliases that exist only here.
-		return matchPrefix(append(commandVerbs(in.loaded), "at"), current)
+		verbs := append(buildRouter("figaro", in.loaded).CommandCandidates(),
+			cmdkit.Candidate("at", "jump to a turn or node: at <turn>[.<node>]"))
+		return matchPrefix(verbs, current)
 	}
-	req := append([]string{"__complete", argv[0], "--current", current, "--"}, argv[1:]...)
+	req := append([]string{"__complete", argv[0], "--describe", "--current", current, "--"}, argv[1:]...)
+	// in.figaroID, NOT in.currentID(): the completer runs from dispatch, and
+	// dispatch holds in.mu (stream.go). currentID takes it again, and a Go
+	// mutex is not reentrant: the first Tab froze the pager dead.
+	completionSubject = in.figaroID
 	out, _ := in.routeCaptured(req)
-	return matchPrefix(splitOutputLines(out.text), current)
+	completionSubject = ""
+	cands := matchPrefix(splitOutputLines(out.text), current)
+	if len(cands) == 0 && looksLikePath(current) {
+		cands = pathCandidatesFor(&cmdkit.CompleteContext{Describe: true}, current, false)
+	}
+	return cands
 }
 
 // commandVerbs is every verb the router knows.
@@ -476,17 +494,16 @@ func commandVerbs(loaded *config.Loaded) []string {
 	return buildRouter("figaro", loaded).CommandNames()
 }
 
+// matchPrefix keeps the candidates whose VALUE starts with prefix, with their
+// descriptions. It used to strip the descriptions, which is how the protocol
+// came to carry a column nobody ever saw.
 func matchPrefix(cands []string, prefix string) []string {
 	out := cands[:0:0]
 	for _, c := range cands {
 		if c == "" {
 			continue
 		}
-		// The completion protocol allows "value\tdescription"; take the value.
-		if i := strings.IndexByte(c, '\t'); i >= 0 {
-			c = c[:i]
-		}
-		if strings.HasPrefix(c, prefix) {
+		if v, _ := cmdkit.SplitCandidate(c); strings.HasPrefix(v, prefix) {
 			out = append(out, c)
 		}
 	}

@@ -44,6 +44,10 @@ type pitRow struct {
 	text string
 	yank string
 	id   string
+	// note is a dim second column after text: a completion's description.
+	// It goes through the same gate as text, and is drawn at full strength
+	// on the selected row, where dim on a wash would not read.
+	note string
 }
 
 // staticRow is drawn but never selected. (Not "chromeRow": that name is taken

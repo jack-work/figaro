@@ -720,3 +720,27 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 	}
 	fmt.Fprintf(stderrw, "forgot %s: use `figaro listen %s` to follow\n", ariaID, ariaID)
 }
+
+// promptFlagDefs is the prompt verbs' flags, declared for COMPLETION ONLY
+// (cmdkit.Command.CompleteFlags). send, new and fork are PassRaw: they parse
+// their own argv (above) and document their flags in their own help text,
+// which is richer than anything generated. Without this, `send --<TAB>`
+// offered nothing in every shell and in the pager. The descriptions are the
+// first line of that help; keep them beside the parser they describe.
+var promptFlagDefs = []cmdkit.FlagDef{
+	{Long: "id", Description: "Target a specific existing aria"},
+	{Long: "outfit", Short: "O", Description: "Dress the aria in an outfit"},
+	{Long: "set", Short: "S", Description: "Patch the board in the same call: k=v"},
+	{Long: "delete", Short: "D", Description: "Remove board keys in the same call"},
+	{Long: "raw", Short: "r", IsBool: true, Description: "Stream verbatim to stdout: no ANSI, no markdown"},
+	{Long: "verbatim", Short: "v", IsBool: true, Description: "Dump the raw wire frames as JSON"},
+	{Long: "verbose", Short: "o", IsBool: true, Description: "Expand full tool inputs"},
+	{Long: "listen", Short: "l", IsBool: true, Description: "Open the transcript pager at startup"},
+	{Long: "exec", Short: "x", IsBool: true, Description: "Treat the prompt as a bash instruction"},
+	{Long: "dry-run", Short: "n", IsBool: true, Description: "--exec only: print the script without running it"},
+	{Long: "yes", Short: "y", IsBool: true, Description: "--exec only: skip the confirmation prompt"},
+	{Long: "forget", Short: "f", IsBool: true, Description: "Submit the prompt and exit immediately"},
+	{Long: "json", Short: "j", IsBool: true, Description: "Emit a single JSON line on stdout"},
+	{Long: "stay", IsBool: true, Description: "Do not move this shell"},
+	{Long: "record", Description: "Record the wire to a tape file"},
+}
