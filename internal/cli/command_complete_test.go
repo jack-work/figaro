@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/internal/cmdkit"
+	"github.com/mattn/go-runewidth"
 )
 
 // TAB'S PIT, as a unit -- because every bug in the menu it replaced was found
@@ -315,6 +316,66 @@ func TestCompletionStem(t *testing.T) {
 	} {
 		if got := completionStem(word); got != want {
 			t.Errorf("completionStem(%q) = %q, want %q", word, got, want)
+		}
+	}
+}
+
+// A value wider than its column keeps its tail, as a file pane does: the end
+// of a path is what tells two candidates apart.
+func TestClipHead(t *testing.T) {
+	for _, c := range []struct {
+		in    string
+		width int
+		want  string
+	}{
+		{"short", 10, "short"},
+		{"exactly10!", 10, "exactly10!"},
+		{"~/figaro-rescue-20260629-021512/", 16, "…0260629-021512/"},
+		{"skills.using-tuis-n-fancy-clis", 12, "…-fancy-clis"},
+		{"abc", 1, "…"},
+		{"abc", 0, ""},
+		{"日本語のパス", 7, "…のパス"}, // wide runes are measured, never split
+	} {
+		got := clipHead(c.in, c.width)
+		if got != c.want {
+			t.Errorf("clipHead(%q, %d) = %q, want %q", c.in, c.width, got, c.want)
+		}
+		if w := runewidth.StringWidth(got); w > c.width {
+			t.Errorf("clipHead(%q, %d) is %d columns wide", c.in, c.width, w)
+		}
+	}
+}
+
+// In the pit, a long value shows its end and the descriptions still line up.
+func TestTabPitKeepsTheTailOfALongValue(t *testing.T) {
+	long := "~/dev/figaro-qua/some-very-long-worktree-name/internal/"
+	tr, _ := menuFixture(t, map[string][]string{
+		"cd ": {cmdkit.Candidate(long, "dir"), cmdkit.Candidate("~/dev/x/", "dir")},
+	})
+	typeInto(tr, "cd ~")
+	cmdComplete(tr)
+	rows := tr.menu.lines(40, 12)
+	var hit string
+	for _, r := range rows {
+		if strings.Contains(r, "internal/") {
+			hit = r
+		}
+	}
+	if hit == "" || !strings.Contains(hit, "…") {
+		t.Fatalf("the long value should end in view, prefaced by an ellipsis:\n%s", strings.Join(rows, "\n"))
+	}
+	if strings.Contains(hit, "~/dev/figaro-qua") {
+		t.Fatalf("the head should be what goes: %q", hit)
+	}
+}
+
+func TestClipTail(t *testing.T) {
+	for in, want := range map[string]string{
+		"Search the web using the Brave Search API": "Search the web…",
+		"short": "short",
+	} {
+		if got := clipTail(in, 15); got != want {
+			t.Errorf("clipTail(%q, 15) = %q, want %q", in, got, want)
 		}
 	}
 }

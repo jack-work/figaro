@@ -354,15 +354,22 @@ func (m *completionMenu) show(shown []completionCand, loose bool) {
 
 // lines draws the menu inside the pit: at most completionMenuRows, and never
 // more than room. Values are padded to one column so the descriptions line up,
-// and the column is capped so a long path cannot push them off the screen.
+// and the column is capped so a long path cannot push them off the screen. A
+// value wider than the column keeps its TAIL (clipHead), as a file pane does:
+// the end of a path is what tells two candidates apart.
 func (m *completionMenu) lines(w, room int) []string {
 	if m == nil || m.list == nil || room < 1 {
 		return nil
 	}
 	col := min(m.valueWidth, max(w/2, 12))
+	// What a description has left: the marker gutter, the value column and
+	// the two-space gap. Prose keeps its HEAD, so a description that does not
+	// fit ends in an ellipsis rather than stopping mid-word at the edge.
+	room4note := w - 2 - col - 2
 	for i := range m.list.rows {
 		r := &m.list.rows[i]
-		r.text = padTo(clipToWidth(r.id, col), col)
+		r.text = padTo(clipHead(r.id, col), col)
+		r.note = clipTail(m.shown[i].desc, room4note)
 	}
 	h := min(completionMenuRows, room, len(m.list.rows)+2)
 	out := m.list.lines(pitCompletion, w, h)
@@ -386,4 +393,48 @@ func lastWord(line string) string {
 		return line[i+1:]
 	}
 	return line
+}
+
+// clipHead fits s into width display columns by dropping its HEAD: the tail
+// stays, prefaced by a single "…". Candidates share their beginnings (a
+// directory, "skills.", an aria before its colon) and differ at the end, so
+// cutting the end, as clipToWidth does, cut exactly what the reader needed.
+// Wide runes are measured, never split.
+func clipHead(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if runewidth.StringWidth(s) <= width {
+		return s
+	}
+	if width == 1 {
+		return "…"
+	}
+	runes := []rune(s)
+	room := width - 1 // the ellipsis is one column
+	i, used := len(runes), 0
+	for i > 0 {
+		w := runewidth.RuneWidth(runes[i-1])
+		if used+w > room {
+			break
+		}
+		used += w
+		i--
+	}
+	return "…" + string(runes[i:])
+}
+
+// clipTail is clipHead's mirror, for prose: the head stays and a single "…"
+// ends it.
+func clipTail(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if runewidth.StringWidth(s) <= width {
+		return s
+	}
+	if width == 1 {
+		return "…"
+	}
+	return runewidth.Truncate(s, width-1, "") + "…"
 }
