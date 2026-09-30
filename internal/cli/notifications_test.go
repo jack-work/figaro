@@ -270,3 +270,16 @@ func TestNoticeTTLIsAppliedAndSurvivesAHop(t *testing.T) {
 		t.Fatalf("after a hop the ttl is %v, the constructor's default came back", tr.status.noticeTTL)
 	}
 }
+
+// A progress line ("…state" while a verb runs) is the bar's, never the
+// history's: the result that follows is the news.
+func TestProgressIsNotANotification(t *testing.T) {
+	tr := jumpFixture(t, 1, 4)
+	tr.setProgressNote("…state")
+	if got := tr.notes.newestFirst(); len(got) != 0 {
+		t.Fatalf("progress was recorded: %+v", got)
+	}
+	if tr.status.noticeText() != "…state" {
+		t.Fatalf("the bar should still show it, shows %q", tr.status.noticeText())
+	}
+}

@@ -261,7 +261,7 @@ func (in *interactiveInput) runOverlay(verb string, args []string) {
 // fetched off the input goroutine and installed under the render lock, as a
 // live form view is (openLive).
 func (in *interactiveInput) openModels() {
-	in.note("…models")
+	in.progress("…models")
 	go func() {
 		models, warnings := fetchModels(in.loaded)
 		current := in.subjectModel()
@@ -410,7 +410,7 @@ func pagerUncapped(argv []string) []string {
 
 func (in *interactiveInput) runThroughRouter(argv []string) {
 	argv = in.withSubject(pagerUncapped(argv))
-	in.note("…" + strings.Join(argv, " "))
+	in.progress("…" + strings.Join(argv, " "))
 	go func() {
 		out, code := in.routeCaptured(argv)
 		lines := splitOutputLines(out.text)
@@ -644,7 +644,7 @@ func (in *interactiveInput) openLive(name, spec string, full bool) {
 	}
 	// A pit that opens fullscreen is its own announcement.
 	if !full {
-		in.note("…" + name + " " + spec)
+		in.progress("…" + name + " " + spec)
 	}
 	go func() {
 		view, closeView, err := openFormView(spec, in.loaded, in.renderLocked)

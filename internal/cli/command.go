@@ -94,6 +94,13 @@ func (in *interactiveInput) note(msg string) {
 	in.mu.Unlock()
 }
 
+// progress is note for "under way": the bar, never the notification history.
+func (in *interactiveInput) progress(msg string) {
+	in.mu.Lock()
+	in.lt.tr.setProgressNote(msg)
+	in.mu.Unlock()
+}
+
 // noteLocked is note for a caller that already holds the render lock.
 func (in *interactiveInput) noteLocked(msg string) { in.lt.tr.setCommandNote(msg) }
 

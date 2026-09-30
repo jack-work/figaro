@@ -3123,6 +3123,19 @@ func (t *transcript) showLivePit(name string, v cmdkit.LiveView, full bool) {
 // Anything longer than a line is still a pit, because a bar row cannot hold it.
 func (t *transcript) setCommandNote(note string) { t.setCommandNoteAt(note, alertInfo) }
 
+// setProgressNote is the bar alone, for a line that says something is UNDER
+// WAY ("…state" while a verb runs). It is not news and it is not kept: the
+// verb's result follows and replaces it, and that is what the notification
+// history records. Posting these made every `:ls` two rows, one of them a
+// progress indicator nobody needs to find later.
+func (t *transcript) setProgressNote(note string) {
+	if note == "" || strings.Contains(note, "\n") || displayWidth(note) > t.w/2 {
+		return
+	}
+	t.status.setNoticeAt(note, alertInfo)
+	t.render()
+}
+
 func (t *transcript) setCommandNoteAt(note string, level alertLevel) {
 	// EVERY NOTE IS POSTED, whatever the bar does with it: a one-liner goes
 	// to the alert slot and retires, a long one to the message pit and is
