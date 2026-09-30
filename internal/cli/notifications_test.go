@@ -130,16 +130,78 @@ func TestNotificationsView(t *testing.T) {
 		}
 	})
 
-	t.Run("Enter expands a row to its whole text and folds it back", func(t *testing.T) {
+	t.Run("Enter spells out the whole text and folds it back", func(t *testing.T) {
 		id := v.Items(80)[0].id
 		v.Activate(id)
 		rows := v.Items(80)
-		if len(rows) < 4 || !strings.Contains(rows[1].text+rows[2].text, "provider said: overloaded") || rows[1].selectable() {
-			t.Fatalf("the detail follows its row, unselectable: %+v", rows)
+		if len(rows) < 4 || !strings.Contains(rows[1].text+rows[2].text, "provider said: overloaded") {
+			t.Fatalf("the whole text follows its row: %+v", rows)
+		}
+		// The state pit's Enter opens a value and nothing else; this one is the
+		// same gesture. The date and the source were what it used to show, and
+		// the row already carries the time and the aria.
+		for _, r := range rows[1:3] {
+			if strings.Contains(r.text, "from this pager") || strings.Contains(r.text, "3b7aff0a,") {
+				t.Fatalf("Enter is showing furniture instead of the text: %q", r.text)
+			}
+		}
+		// A value row is selectable, as an opened value's rows are in the form
+		// pit: a reader walks a long one, and every row yanks the whole thing.
+		if !rows[1].selectable() || rows[1].yank != rows[0].yank {
+			t.Fatalf("an opened line must be walkable and yank the whole: %+v", rows[1])
+		}
+		// Enter on one of those rows folds the notification it belongs to.
+		v.Activate(rows[1].id)
+		if len(v.Items(80)) != 3 {
+			t.Fatal("Enter on an opened line did not fold it")
+		}
+		v.Activate(id)
+		if len(v.Items(80)) <= 3 {
+			t.Fatal("Enter did not open it again")
 		}
 		v.Activate(id)
 		if len(v.Items(80)) != 3 {
 			t.Fatal("a second Enter folds it")
+		}
+	})
+
+	// A LONG SINGLE LINE IS WHY THIS EXISTS: the row clips at the pane edge,
+	// and the only way to read the rest was to yank it into a pager.
+	t.Run("Enter wraps a long single line instead of clipping it", func(t *testing.T) {
+		s := newNotificationStore()
+		long := "turn failed: " + strings.Repeat("provider said no ", 20)
+		s.post(alertError, "cli", long)
+		v := &notificationsView{store: s}
+		id := v.Items(60)[0].id
+		v.Activate(id)
+		rows := v.Items(60)
+		if len(rows) < 5 {
+			t.Fatalf("a 350-column line opened into %d rows at width 60: %+v", len(rows), rows)
+		}
+		var body string
+		for _, r := range rows[1:] {
+			if w := displayWidth(r.text); w > 60 {
+				t.Fatalf("an opened row is %d columns wide: %q", w, r.text)
+			}
+			body += strings.TrimSpace(r.text) + " "
+		}
+		if want := strings.Join(strings.Fields(long), " "); !strings.Contains(strings.Join(strings.Fields(body), " "), want) {
+			t.Fatalf("the opened rows do not hold the whole line:\n got %q\nwant %q", body, want)
+		}
+	})
+
+	// THE LEVEL IS A COLOUR, not only a glyph: the picker paints the row, so
+	// the view says which tone it wears and smuggles no escape into the text.
+	t.Run("errors are red and warnings yellow, info plain", func(t *testing.T) {
+		rows := v.Items(80)
+		want := []pitTone{toneError, toneWarn, toneNone}
+		for i, w := range want {
+			if rows[i].tone != w {
+				t.Fatalf("row %d (%q) wears tone %v, want %v", i, rows[i].text, rows[i].tone, w)
+			}
+			if strings.ContainsRune(rows[i].text, 0x1b) {
+				t.Fatalf("row %d smuggles an escape into its text: %q", i, rows[i].text)
+			}
 		}
 	})
 

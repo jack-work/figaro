@@ -135,6 +135,11 @@ type palette struct {
 	// caution is notice's quieter sibling: a WARNING inside a dimmed row, in
 	// the palette's yellow, with the same re-light.
 	caution string
+	// noticeOnWash and cautionOnWash are the same two roles ON A SELECTION
+	// WASH, which is a mid-grey: autumnRed over it is 1.9:1 and reads as mud,
+	// so each is the palette's colour one step lighter. sakuraPink #D27E99
+	// stands in for the red, and boatYellow #C0A36E lifted for the yellow.
+	noticeOnWash, cautionOnWash string
 
 	// The two roles below are SGR BODIES WITHOUT A RESET, spliced into rows
 	// by the transcript's painter, which manages its own resets: a wash
@@ -176,6 +181,9 @@ var kanagawa = palette{
 	stateDim: "\033[38;5;60m",     // ≈ sumiInk4 #54546D: dimmer than label, still legible
 	notice:   "\033[22;38;5;167m", // autumnRed #C34043, the palette's own red
 	caution:  "\033[22;38;5;179m", // carpYellow #C0A36E
+
+	noticeOnWash:  "\033[22;38;5;210m", // the red, lifted, for a washed row
+	cautionOnWash: "\033[22;38;5;222m", // the yellow, lifted, likewise
 
 	selectWash:    "\033[48;2;45;79;103m",
 	selectWash256: "\033[48;5;23m",
@@ -282,6 +290,41 @@ func CautionInDim(s string) string {
 		return s
 	}
 	return active.caution + s + dimHandBack
+}
+
+// NoticeBody and CautionBody are the notice and caution colours as bare SGR
+// bodies, for a caller that owns both the reset and what the row was in
+// before: a pit row is not dim, so NoticeInDim's hand-back (39;2) would dim
+// the rest of the pane's row on the way out.
+func NoticeBody() string {
+	if !Enabled() {
+		return ""
+	}
+	return active.notice
+}
+
+func CautionBody() string {
+	if !Enabled() {
+		return ""
+	}
+	return active.caution
+}
+
+// NoticeOnWash and CautionOnWash are the two of them for text drawn over a
+// selection wash, where the palette's own red and yellow are too dark to
+// read. Bodies again: the wash and the reset belong to whoever painted it.
+func NoticeOnWash() string {
+	if !Enabled() {
+		return ""
+	}
+	return active.noticeOnWash
+}
+
+func CautionOnWash() string {
+	if !Enabled() {
+		return ""
+	}
+	return active.cautionOnWash
 }
 
 // dimHandBack restores default foreground and re-dims: the state a dimmed row

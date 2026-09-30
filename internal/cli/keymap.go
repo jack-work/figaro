@@ -830,7 +830,7 @@ var helpRows = []helpRow{
 	{helpSelectExtend, "^N/^P + Shift", "travel between questions (Alt+^N/^P extends a selection)"},
 	{helpExpand, "Enter", "open tool bodies and form deltas within the selection"},
 	{helpToolBody, "e", "open the tool bodies within the selection"},
-	{helpPitEnter, "(in a list) Enter", "the row's own action: open a form value, attend an aria"},
+	{helpPitEnter, "(in a list) Enter", "the row's own action: open a form value or a notification, attend an aria"},
 	{helpVisualSelect, "(in v) Enter", "select the node under the cursor (then e expands it)"},
 	{helpVisualAttend, "(in v) a", "attend the highlighted id, or the word under the cursor; a path opens in your editor"},
 	{helpEscape, "Esc", "clear selection / close panel"},

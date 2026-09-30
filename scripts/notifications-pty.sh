@@ -82,9 +82,33 @@ check "space n opens the pit with the failure in it" $(shot | grep -qE "✗ +cli
 check "the newest row is chosen" $(shot | grep -qE "^♩ "; echo $?)
 check "opening it read it: no mark" $(bar | grep -q "𝄞 [0-9]"; [[ $? -ne 0 ]]; echo $?) "bar: $(bar)"
 
-# 4. Enter expands a row with what it could not hold.
+# 4. Enter spells the row out: the whole text, wrapped, and nothing else.
+# The id is long on purpose, with a marker at its end: the row CANNOT hold it
+# (checked below), so the marker on screen can only have come from Enter.
+LONG=$(python3 -c "print('z' * 140 + 'QQEND')")
+cmd "attend $LONG"
+key Escape; sleep 0.3      # a note too long for the bar opens the note pit
+key Space n; sleep 0.8
+check "the long failure is the newest row" $(shot | grep -qE "^♩ .*✗ +cli +attend"; echo $?)
+# THE CLIP IS THE PREMISE: if the marker were on the row already, the check
+# below would pass without Enter doing anything.
+check "the row cannot hold the whole text" $(shot | grep -q "QQEND"; [[ $? -ne 0 ]]; echo $?)
 key Enter; sleep 0.5
-check "Enter expands: the date and the source" $(shot | grep -qE "from this pager"; echo $?)
+check "Enter wraps the text the row clipped" $(shot | grep -qE "^ +z+QQEND"; echo $?)
+check "Enter does not report the date and the source" $(shot | grep -q "from this pager"; [[ $? -ne 0 ]]; echo $?) "$(shot | tail -6)"
+
+# 4b. The level is a colour. The newest row is selected, so its red rides the
+# selection wash (the lifted spelling); the older failure below it wears the
+# palette's own red.
+check "the selected error row is red over the wash" \
+  $(raw | grep "♩" | grep -q $'38;5;210'; echo $?)
+check "an unselected error row is red" \
+  $(raw | grep "✗" | grep -v "♩" | grep -q $'38;5;167'; echo $?)
+# A guard, not a canary: this one holds on both builds, and is here so that
+# painting every row would be a failure rather than a preference.
+check "an info row is not painted" \
+  $(raw | grep -E "·  cli" | grep -v "♩" | grep -q $'\033\[38;5;1'; [[ $? -ne 0 ]]; echo $?)
+key Enter; sleep 0.3       # fold it back
 
 # 5. f filters. Yanking a pit row is news ("yanked N bytes"), an info row.
 key y; sleep 0.4

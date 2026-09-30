@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"github.com/jack-work/figaro/internal/term"
 )
 
 // The pit's list behaviour, and the bugs each test was written against.
@@ -400,6 +402,56 @@ func TestPitRowsCarryNoControlSequences(t *testing.T) {
 	}
 	if strings.ContainsRune(got, 0x1b) || strings.Contains(got, "[2J") || strings.Contains(got, "title") {
 		t.Fatalf("pitText left a sequence behind: %q", got)
+	}
+}
+
+// A ROW MAY WEAR A LEVEL. The picker paints it, because pitText strips every
+// escape out of a row's text, so colour cannot ride in the text -- and a pit
+// that sets no tone must come out byte for byte as it did before.
+func TestPitRowToneIsPaintedByThePicker(t *testing.T) {
+	defer term.SetColorMode(term.ColorAlways)()
+
+	plain := []pitRow{idRow("first", "1"), idRow("second", "2"), idRow("third", "3")}
+	toned := []pitRow{
+		{text: "first", yank: "first", id: "1", tone: toneError},
+		{text: "second", yank: "second", id: "2", tone: toneWarn},
+		{text: "third", yank: "third", id: "3"},
+	}
+	before := newPicker(plain).lines(pitQueue, 40, 12)
+	after := newPicker(toned).lines(pitQueue, 40, 12)
+	if len(after) != 3 {
+		t.Fatalf("%d rows drawn: %q", len(after), after)
+	}
+	// The cursor is on the first row, so the error is painted UNDER the
+	// selection wash: the lifted red and the wash must both be there.
+	if !strings.Contains(after[0], term.NoticeOnWash()) || !strings.Contains(after[0], "48;5;240") {
+		t.Fatalf("the selected error row lost its red or its wash: %q", after[0])
+	}
+	// An unselected row wears the palette's own red and yellow.
+	if !strings.Contains(after[1], "38;5;179") {
+		t.Fatalf("a warning row is not yellow: %q", after[1])
+	}
+	if strings.ContainsRune(after[2], 0x1b) {
+		t.Fatalf("a row with no tone was painted: %q", after[2])
+	}
+	if after[2] != before[2] {
+		t.Fatalf("an untoned row changed:\n got %q\nwant %q", after[2], before[2])
+	}
+	// Every painted row still ends in its own state, or the colour bleeds
+	// down the pane.
+	for i, l := range after[:2] {
+		if strings.ContainsRune(l, 0x1b) && !strings.HasSuffix(l, "\x1b[49m") && !strings.HasSuffix(l, "\x1b[0m") {
+			t.Fatalf("row %d does not close what it opened: %q", i, l)
+		}
+	}
+	// With colour off, a tone is nothing at all.
+	restore := term.SetColorMode(term.ColorNever)
+	off := newPicker(toned).lines(pitQueue, 40, 12)
+	restore()
+	for i, l := range off {
+		if strings.ContainsRune(l, 0x1b) {
+			t.Fatalf("NO_COLOR row %d carries an escape: %q", i, l)
+		}
 	}
 }
 

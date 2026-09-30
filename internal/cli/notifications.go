@@ -210,26 +210,41 @@ type notificationsView struct {
 
 func (v *notificationsView) Close() { v.closed = true }
 
-// Items is one row per notification, newest first, with an expanded row's
-// detail beneath it as unselectable lines.
+// Items is one row per notification, newest first, with an opened row's whole
+// text beneath it.
 func (v *notificationsView) Items(width int) []pitRow {
 	v.store.markRead()
 	items := v.store.newestFirst()
+	if width <= 0 {
+		width = 80
+	}
 	var rows []pitRow
 	for _, n := range items {
 		if !v.filter.keeps(n.level) {
 			continue
 		}
 		id := strconv.FormatUint(n.seq, 10)
+		yank := n.yank()
 		rows = append(rows, pitRow{
 			id:   id,
-			yank: n.yank(),
+			yank: yank,
 			text: n.row(),
+			tone: n.level.tone(),
 		})
-		if v.expanded[id] {
-			for _, l := range n.expansion() {
-				rows = append(rows, staticRow("      "+l))
-			}
+		if !v.expanded[id] {
+			continue
+		}
+		// AS THE STATE PIT OPENS A VALUE: the whole thing, wrapped to the
+		// pane, each line selectable so a reader can walk a long one, and
+		// every one of them yanks the whole. The indent is the row's
+		// continuation, and the 2 is the picker's own selection column.
+		for i, l := range n.fullLines(width - len(notificationIndent) - 2) {
+			rows = append(rows, pitRow{
+				text: notificationIndent + l,
+				yank: yank,
+				id:   fmt.Sprintf("%s\x00%d", id, i),
+				tone: n.level.tone(),
+			})
 		}
 	}
 	if len(rows) == 0 {
@@ -242,11 +257,18 @@ func (v *notificationsView) Items(width int) []pitRow {
 	return rows
 }
 
-// Activate is Enter, the pit's own action: expand the row or fold it back.
+// notificationIndent is what an opened line is set in by, so it reads as the
+// row's continuation and not as another notification.
+const notificationIndent = "      "
+
+// Activate is Enter, the pit's own action: spell the notification out, or fold
+// it back. A line of an opened one addresses the notification it belongs to,
+// so Enter there folds it, as it does over a form value.
 func (v *notificationsView) Activate(id string) {
 	if v.expanded == nil {
 		v.expanded = map[string]bool{}
 	}
+	id = valuePath(id)
 	v.expanded[id] = !v.expanded[id]
 }
 
@@ -263,8 +285,9 @@ func (v *notificationsView) Key(b byte) bool {
 }
 
 // AriaOf is what `a` attends from a row: the aria it concerns, when it
-// concerns one.
+// concerns one. A line of an opened notification answers for the whole.
 func (v *notificationsView) AriaOf(id string) string {
+	id = valuePath(id)
 	for _, n := range v.store.newestFirst() {
 		if strconv.FormatUint(n.seq, 10) == id {
 			// A source is "cli" or an aria id, by construction; the id check
@@ -290,6 +313,19 @@ func (l alertLevel) glyph() string {
 	return "·"
 }
 
+// tone is the level as a COLOUR: the pit paints a row red for trouble and
+// yellow for a warning, the same two the bar's unread mark wears. A glyph
+// alone did not find an error in a list of forty.
+func (l alertLevel) tone() pitTone {
+	switch l {
+	case alertError:
+		return toneError
+	case alertWarn:
+		return toneWarn
+	}
+	return toneNone
+}
+
 // row is the line the pit draws: when, how bad, about what, what, how often.
 func (n notification) row() string {
 	src := n.source
@@ -306,28 +342,35 @@ func (n notification) row() string {
 	return s
 }
 
-// expansion is what Enter shows under a row: what the row could not hold.
-// The whole text when there was more than a line (a one-liner is already all
-// on the row, and repeating it said nothing), then the full date and where it
-// came from, and how often when it has repeated.
-func (n notification) expansion() []string {
+// fullLines is what Enter shows: the whole of it, wrapped to the pane, as the
+// state pit's Enter spells out a value. The detail when the message had more
+// than a line, else the row's own single line, which the pane clipped.
+//
+// It used to show the full date and the source instead, which is furniture:
+// the row already carries the time and the aria, and what a reader wants from
+// a clipped error is the rest of the error.
+func (n notification) fullLines(width int) []string {
+	body := n.detail
+	if body == "" {
+		body = n.text
+	}
 	var out []string
-	if n.detail != "" {
-		out = append(out, strings.Split(n.detail, "\n")...)
+	for _, l := range strings.Split(body, "\n") {
+		// Wrapped, never clipped, and stripped at the source as well as at the
+		// paint: a provider's refusal can carry anything. The yank is
+		// untouched.
+		out = append(out, wrapPlain(pitText(strings.TrimRight(l, "\r")), max(width, 20))...)
 	}
-	src := n.source
-	if src == "" || src == "cli" {
-		src = "this pager"
-	}
-	when := n.last.Format("Mon 2006-01-02 15:04:05")
-	switch {
-	case n.count > 1:
-		out = append(out, fmt.Sprintf("%s, from %s: %d times since %s", when, src, n.count, n.at.Format("15:04:05")))
-	default:
-		out = append(out, fmt.Sprintf("%s, from %s", when, src))
+	if len(out) > notificationLinesMax {
+		out = append(out[:notificationLinesMax:notificationLinesMax],
+			AndMore(len(out)-notificationLinesMax, "lines · y yanks all of it"))
 	}
 	return out
 }
+
+// notificationLinesMax bounds an opened one. A message is a line or a
+// paragraph; anything past this is a log, and the yank is the way to read it.
+const notificationLinesMax = 200
 
 // yank is what y copies: the whole of it, with where it came from.
 func (n notification) yank() string {

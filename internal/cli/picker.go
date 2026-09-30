@@ -357,10 +357,10 @@ func (p *picker) lines(id pitID, w, h int) []string {
 		}
 		row := clipToWidth(text, w)
 		if i == p.cursor {
-			out = append(out, pitSelected(row))
+			out = append(out, pitSelected(row, p.rows[i].tone))
 			continue
 		}
-		out = append(out, row)
+		out = append(out, p.rows[i].tone.paint(row))
 	}
 	if markBelow {
 		out = append(out, pitGray(clipToWidth("  "+AndMore(len(p.rows)-end, ""), w)))

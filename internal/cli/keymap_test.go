@@ -351,7 +351,7 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  ^N/^P + Shift       travel between questions (Alt+^N/^P extends a selection)",
 		"  Enter               open tool bodies and form deltas within the selection",
 		"  e                   open the tool bodies within the selection",
-		"  (in a list) Enter   the row's own action: open a form value, attend an aria",
+		"  (in a list) Enter   the row's own action: open a form value or a notification, attend an aria",
 		"  (in v) Enter        select the node under the cursor (then e expands it)",
 		"  (in v) a            attend the highlighted id, or the word under the cursor; a path opens in your editor",
 		"  Esc                 clear selection / close panel",

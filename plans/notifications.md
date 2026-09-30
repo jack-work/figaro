@@ -129,12 +129,20 @@ the newest error in the history.
 - A row is time, level glyph, source (short aria id, `cli`, `daemon`), text,
   and a count when coalesced. Descriptions clip with the tab pit's rules
   (`clipTail`), since the text is prose.
+- The LEVEL IS A COLOUR as well as a glyph: an error's row is the palette's
+  red and a warning's its yellow, the two the bar's unread mark already wears
+  (info is the row's own voice). Colour cannot ride in a row's text, which
+  goes through `pitText` and loses every escape, so the row carries a tone
+  (`pitRow.tone`) and the picker paints it. Over the selection wash each is
+  the same colour lifted, because autumnRed on mid-grey is 1.9:1.
 Keys:
 
-- **Enter**, the pit's own action, expands the row in place with what the
-  row could not hold (the whole text of a multi-line one, the full date,
-  where it came from, how often); again to fold it. Not `e`: in a pit `e`
-  and `y` are one-row window motions (Vim's ^E/^Y), and `e` stays one.
+- **Enter**, the pit's own action, spells the notification OUT beneath its
+  row: the whole text, wrapped to the pane, as the state pit's Enter spells
+  out a value (`formView.Activate` → `openBranch`); again to fold it. Every
+  opened line is selectable and yanks the whole, so a long one can be walked.
+  Not `e`: in a pit `e` and `y` are one-row window motions (Vim's ^E/^Y), and
+  `e` stays one.
 - **`a`** attends the row's source when it is an aria, as `a` does in every
   pit.
 - **`y`** yanks the full text and attributes.
