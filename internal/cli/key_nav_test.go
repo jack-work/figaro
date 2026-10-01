@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -97,7 +96,7 @@ func navInput(tb testing.TB, out *countingWriter, open bool) (*interactiveInput,
 		lt.apply(aria.Page{Parts: committed})
 	}
 	return &interactiveInput{
-		tc: nil, lt: lt, fcli: stubHistoryClient{committed}, mu: &sync.Mutex{}, set: settings,
+		tc: nil, lt: lt, fcli: stubHistoryClient{committed}, mu: new(renderLock), set: settings,
 		figaroID: "aria0001", cancel: func() {},
 		disconnectCh: make(chan struct{}, 1),
 	}, lt

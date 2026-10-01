@@ -2,9 +2,12 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"testing"
+	"time"
 
+	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 )
 
@@ -174,5 +177,59 @@ func TestTranscriptGeometryDepthReport(t *testing.T) {
 					h.view.render, h.peakBytes/1024)
 			})
 		}
+	}
+}
+
+// BenchmarkTranscriptIdleIndex is the clock's own cost: what asking for a
+// current line index costs on a frame where NOTHING about the conversation
+// moved. The pager asks eleven times a second for the spinner alone, and
+// before the index carried a stamp every one of those asks re-walked the
+// retained window and recomposed the live message.
+func BenchmarkTranscriptIdleIndex(b *testing.B) {
+	tr, _ := heavyTranscript(b, 200, 60)
+	tr.settle()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		tr.settle()
+	}
+}
+
+// BenchmarkTranscriptLiveTickFrame is the frame the goroutine dumps caught: a
+// long question carrying a board's worth of form deltas, a tool spinning under
+// it, and the clock asking for a frame eleven times a second. Only the live
+// entry may be recomposed, and its adornment must not be rebuilt from scratch
+// to decide whether to draw one glyph.
+func BenchmarkTranscriptLiveTickFrame(b *testing.B) {
+	client := aria.NewClient()
+	client.SetClosedLimit(transcriptTailLimit)
+	parts := make([]aria.TurnPart, 40)
+	for i := range parts {
+		parts[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true,
+			Inquiry: heavyInquiry(i + 1), Nodes: heavyNodes(i+1, 20)}}
+	}
+	client.Apply(aria.Page{Parts: parts}, aria.Notify)
+
+	deltas := map[string]livedoc.FormDelta{}
+	for i := range 30 {
+		key := fmt.Sprintf("board.skills.key%02d", i)
+		deltas[key] = livedoc.FormDelta{
+			Form: "board", Kind: livedoc.FormBound, Event: livedoc.FormSet,
+			Value: []byte(fmt.Sprintf("%q", "a value of the sort a chalkboard carries")),
+		}
+	}
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
+		ID: 99, Inquiry: heavyInquiry(99), FormDeltas: deltas,
+		Nodes: []livedoc.Node{{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusRunning}},
+	}}}}, aria.Notify)
+
+	tr := newTranscript(io.Discard, 100, 40, &ariaView{settings: &renderSettings{}}, client, "livetick", time.Unix(0, 0))
+	tr.enter()
+	tr.settle()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		tr.tick++
+		tr.settle()
 	}
 }

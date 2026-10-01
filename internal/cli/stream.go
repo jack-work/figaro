@@ -184,7 +184,7 @@ type interactiveInput struct {
 	// startInline keeps an ordinary send in the incipit until something
 	// promotes it. Every other session opens the pager as it starts.
 	startInline  bool
-	mu           *sync.Mutex
+	mu           *renderLock
 	set          *renderSettings
 	figaroID     string
 	cancel       context.CancelFunc
@@ -674,7 +674,7 @@ func (in *interactiveInput) cancelTranscriptSearch() {
 //
 // current() is read under the render lock: `send` wires its input loop after
 // starting the clock, and it returns nil until then.
-func startPagerClock(mu *sync.Mutex, lt *livelogTurn, current func() *interactiveInput) func() {
+func startPagerClock(mu *renderLock, lt *livelogTurn, current func() *interactiveInput) func() {
 	stop := make(chan struct{})
 	// Metrics -- the capacity figure and the mantra -- are still pulled: they
 	// are not yet intrinsic forms. See plans/reactive-queue-and-state-forms.md §5.4.

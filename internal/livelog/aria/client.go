@@ -19,6 +19,9 @@ type Client struct {
 	store       *Store
 	closedLimit int
 	closedRev   uint64
+	// rev counts every change to what a viewer would draw, the open message
+	// included. See Revision.
+	rev uint64
 	// Highest fully sealed turn; the field name predates turn addressing.
 	lastCommittedLT int
 
@@ -190,6 +193,7 @@ func (c *Client) EvictBefore(a Anchor) {
 	c.store.Evict(Anchor{}, a.Prev())
 	if c.store.Count() != before {
 		c.closedRev++
+		c.rev++
 	}
 	for id := range c.inquiry {
 		if id < int(a.Turn) {
@@ -353,6 +357,7 @@ const (
 func (c *Client) Apply(p Page, f Fold) []Message {
 	c.mu.Lock()
 	finalized, desync := c.fold(p)
+	c.rev++ // SOMETHING WAS FOLDED: see Revision
 	haveLive := c.store.OpenTurn() != 0
 	live := c.openMessage()
 	c.mu.Unlock()
@@ -515,6 +520,7 @@ func (c *Client) fold(p Page) (finalized []Message, desync int) {
 		// is what is news.
 		finalized = c.store.Insert(finalized...)
 		c.closedRev++
+		c.rev++
 	}
 	c.adoptMoreAfter(p)
 	c.trimClosed()
@@ -660,6 +666,7 @@ func (c *Client) trimClosed() {
 		return
 	}
 	c.closedRev++
+	c.rev++
 	c.store.TrimOldestTo(c.closedLimit)
 	first := c.store.First()
 	if first == nil {
@@ -687,6 +694,36 @@ func (c *Client) ClosedRevision() uint64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.closedRev + 1
+}
+
+// Revision counts every change to the local view: a fold, an eviction, a trim.
+// ClosedRevision answers the narrower question (did the retained CLOSED set
+// move); this one also moves when a token lands on the open message, which is
+// what a renderer needs to ask "is the frame I painted still true".
+//
+// A renderer that holds this between frames does no work on a frame where
+// nothing arrived, which is most of them: the pager's clock ticks eleven times
+// a second for a spinner, and the transcript used to rebuild its whole line
+// index on every one of those ticks.
+func (c *Client) Revision() uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.rev + 1
+}
+
+// OpenKey identifies the open message WITHOUT materializing it: the turn it
+// belongs to and the node it begins at, which is all a cache key or a frame's
+// staleness stamp needs. Open copies the whole live node slice, and a renderer
+// that only wants to know "is it still the same message" should not pay for
+// that -- four times a frame, eleven frames a second.
+func (c *Client) OpenKey() (turn int, from uint64, ok bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	turn = c.store.OpenTurn()
+	if turn == 0 {
+		return 0, 0, false
+	}
+	return turn, uint64(c.store.OpenBase(c.openStart(turn))), true
 }
 
 // Open returns just the open, in-flight message (nil when none). View copies

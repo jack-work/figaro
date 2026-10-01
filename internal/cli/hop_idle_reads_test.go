@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"sync"
 	"testing"
 	"time"
 
@@ -157,7 +156,7 @@ func TestHop_AForkOffALiveTurnLeavesNoHole(t *testing.T) {
 func TestHop_AGapFromTheStreamIsChasedWithoutAKey(t *testing.T) {
 	var out bytes.Buffer
 	reads := make(chan aria.Anchor, 8)
-	in := &interactiveInput{mu: &sync.Mutex{}}
+	in := &interactiveInput{mu: new(renderLock)}
 	in.fcli = &countingReader{reads: reads}
 	in.lt = newLivelogTurn(&out, 80, 20, &renderSettings{}, "ariaAAAA", time.Now(),
 		newSessionStatus("ariaAAAA", time.Now()), nil, dimRule)

@@ -113,24 +113,35 @@ func adornerFor(block int, n livedoc.Node) adorner {
 // buildAdornment composes the rows shared by every layout.
 func buildAdornment(a adorner, deltas map[string]livedoc.FormDelta, w int, open bool) ldrender.Adornment {
 	out := ldrender.Adornment{GutterLast: a.gutterLast(), Tail: a.tail()}
-	if a.liftFork() {
+	lift := a.liftFork()
+	forked := false
+	if lift {
 		if parent := forkParentOf(deltas); parent != "" {
 			out.Suffix = term.StateDim(forkGlyph + " " + parent)
+			forked = true
 		}
 	}
-	rows := deltaRows(deltas, a.liftFork())
-	if len(rows) == 0 {
-		// A turn whose only state was the fork has nothing to open: the
-		// header says it all, and a marker over an empty list would be a
-		// gesture that answers nothing.
-		return out
-	}
+	// A CLOSED ADORNMENT ONLY HAS TO KNOW WHETHER THERE IS ANYTHING TO OPEN,
+	// and closed is the state nearly every block is in on nearly every frame.
+	// Building the rows to measure them was the cost of that common case: the
+	// whole delta set grouped into maps and sorted, per block, per frame, to
+	// decide between one glyph and no glyph.
 	if !open || w < adornFloor(a) {
+		if !anyDeltaRow(deltas, lift, forked) {
+			// A turn whose only state was the fork has nothing to open: the
+			// header says it all, and a marker over an empty list would be a
+			// gesture that answers nothing.
+			return out
+		}
 		// TOO NARROW TO SAY ANYTHING DRAWS THE MARKER INSTEAD. A list needs
 		// the snake's column, a key and both sides of a transition; below
 		// that the rows would be glyphs and ellipses, and the one column the
 		// gutter costs still tells the reader there is state here.
 		out.Gutter = term.StateDim(deltaGlyph)
+		return out
+	}
+	rows := deltaRows(deltas, lift)
+	if len(rows) == 0 {
 		return out
 	}
 	tail := a.tail() != ""
@@ -216,7 +227,7 @@ func spineGlyph(slot ldrender.SpineSlot, delta, cursor int) string {
 // adornRowCount is how many pseudonodes a block's deltas become: the refs
 // the selection walks, and nothing about the screen.
 func adornRowCount(deltas map[string]livedoc.FormDelta, lift bool) int {
-	return len(deltaRows(deltas, lift))
+	return deltaRowCount(deltas, lift, lift && forkParentOf(deltas) != "")
 }
 
 // adornLift reports whether a block's coordinate lifts its fork: the

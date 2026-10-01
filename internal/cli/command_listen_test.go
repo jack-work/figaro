@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -224,7 +223,7 @@ func TestCommandForkSendsThePlansRequest(t *testing.T) {
 	}
 	defer acli.Close()
 
-	in := &interactiveInput{mu: &sync.Mutex{}, acli: acli, figaroID: "abcd1234"}
+	in := &interactiveInput{mu: new(renderLock), acli: acli, figaroID: "abcd1234"}
 	if _, err := in.commandFork(context.Background(), tokenize("fork abcd1234:12 -S mantra=q -- hello")[1:]); err == nil {
 		t.Fatal("the fake angelus refused the fork and commandFork reported success")
 	}

@@ -33,9 +33,9 @@ import (
 // pagedPacerTurn builds a pager on a fake clock with the pacer armed, plus a
 // settle() that drains any owed trailing render so a test starts from a screen
 // that is genuinely up to date.
-func pagedPacerTurn(t *testing.T, w *countingWriter) (lt *livelogTurn, mu *sync.Mutex, now *time.Time, timers *[]func(), settle func()) {
+func pagedPacerTurn(t *testing.T, w *countingWriter) (lt *livelogTurn, mu *renderLock, now *time.Time, timers *[]func(), settle func()) {
 	t.Helper()
-	var lock sync.Mutex
+	var lock renderLock
 	lt = newLivelogTurn(w, 80, 24, &renderSettings{}, "aria0001", time.Unix(0, 0), nil, nil, nil)
 	clock := time.Unix(3000, 0)
 	var armed []func()
@@ -157,7 +157,7 @@ func TestPacedPageLanding_NoFurtherInputRequired(t *testing.T) {
 	reader := &slowHistoryReader{history: transcriptHistory(300), delay: 20 * time.Millisecond}
 	tc := newSearchInputTerminal()
 	in := newSearchInteractiveInput(reader, tc)
-	var mu sync.Mutex
+	var mu renderLock
 	in.mu = &mu
 	in.lt.setRenderLock(&mu) // real time.AfterFunc, real 120 fps ceiling
 
@@ -238,7 +238,7 @@ func TestPacerAndPrefetchDoNotDeadlock(t *testing.T) {
 	reader := &blockingHistoryReader{history: transcriptHistory(400)}
 	tc := newSearchInputTerminal()
 	in := newSearchInteractiveInput(reader, tc)
-	var mu sync.Mutex
+	var mu renderLock
 	in.mu = &mu
 	in.lt.setRenderLock(&mu)
 

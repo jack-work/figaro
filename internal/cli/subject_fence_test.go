@@ -21,7 +21,7 @@ import (
 func fenceSession(t testing.TB) *interactiveInput {
 	t.Helper()
 	var out bytes.Buffer
-	in := &interactiveInput{mu: &sync.Mutex{}}
+	in := &interactiveInput{mu: new(renderLock)}
 	in.lt = newLivelogTurn(&out, 80, 20, &renderSettings{}, "", time.Now(),
 		newSessionStatus("", time.Now()), nil, dimRule)
 	return in

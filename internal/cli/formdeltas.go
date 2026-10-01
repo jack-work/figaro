@@ -101,6 +101,43 @@ func deltaRows(deltas map[string]livedoc.FormDelta, liftFork bool) []deltaRow {
 	return out
 }
 
+// deltaRowCount is how many rows a delta set draws, WITHOUT drawing them: the
+// banner a dead form gets, plus one row per surviving key, less the keys a
+// lifted fork consumed. forked says the lift found a parent, which is the only
+// thing that suppresses a key (see deltaRows).
+//
+// It exists because the two cheapest questions about an adornment -- "is there
+// anything in it" and "how many refs does the selection walk" -- were both
+// answered by building every row of it, which grouped and sorted the whole
+// set. On the frame path that is the difference between a map scan and a
+// sort per block per frame.
+func deltaRowCount(deltas map[string]livedoc.FormDelta, liftFork, forked bool) int {
+	n := 0
+	var dead map[string]bool // only allocated if a form actually died
+	for key, d := range deltas {
+		if d.Event == livedoc.FormDeleted {
+			if dead == nil {
+				dead = map[string]bool{}
+			}
+			if !dead[d.Form] {
+				dead[d.Form] = true
+				n++ // one banner per dead form, as groupDeltas folds it
+			}
+			continue
+		}
+		if liftFork && forked && forkKey(d.Kind, strings.TrimPrefix(key, d.Form+".")) {
+			continue
+		}
+		n++
+	}
+	return n
+}
+
+// anyDeltaRow reports whether an adornment has anything to open.
+func anyDeltaRow(deltas map[string]livedoc.FormDelta, liftFork, forked bool) bool {
+	return deltaRowCount(deltas, liftFork, forked) > 0
+}
+
 // deltaKeyWidth is the key column shared by a set of rows.
 func deltaKeyWidth(rows []deltaRow) int {
 	w := 0
@@ -253,6 +290,11 @@ func groupDeltas(deltas map[string]livedoc.FormDelta) (map[string]*deltaGroup, [
 	return groups, order
 }
 
+// forkedFromKey is the bare key a fork's birth patch stamps on the new
+// aria's board. Named once: forkParent reads it off a group, forkParentOf
+// reads it off the raw set, and they must agree.
+const forkedFromKey = "system.forked_from"
+
 // forkParent names the aria this figaro was forked from, when the window
 // holds a fork's birth patch. A fork's birth patch stamps
 // system.forked_from beside the new aria_id, so the parent comes off the
@@ -261,7 +303,7 @@ func forkParent(g *deltaGroup) string {
 	if g.kind != livedoc.FormBound {
 		return ""
 	}
-	if d, ok := g.byKey["system.forked_from"]; ok && d.Event == livedoc.FormSet {
+	if d, ok := g.byKey[forkedFromKey]; ok && d.Event == livedoc.FormSet {
 		return unquote(d.Value).text
 	}
 	return ""
@@ -270,7 +312,7 @@ func forkParent(g *deltaGroup) string {
 // forkKeys are consumed by the lifted fork and suppressed from the list, or
 // the header and its raw material both draw.
 func forkKey(kind livedoc.FormKind, key string) bool {
-	return kind == livedoc.FormBound && (key == "system.forked_from" || key == "aria_id")
+	return kind == livedoc.FormBound && (key == forkedFromKey || key == "aria_id")
 }
 
 // deltaFormName prefixes a key with the form it belongs to. The bound
