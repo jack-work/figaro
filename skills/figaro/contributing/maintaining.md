@@ -154,6 +154,27 @@ Two ways this goes wrong, both seen:
   Rebase it deliberately, hunk by hunk, or rewrite it. Never `git am` a stale
   patch and call the bug closed.
 
+### No comments in the code that ships
+
+Non-test Go files carry zero comments. No function header, no inline note,
+no line beside a constant explaining why the constant is what it is. The
+justification goes in the commit message and in the handoff; both are dated,
+attributed, and cannot rot in place the way a `//` does.
+
+This tree is full of long explanatory comments from before the rule. **They
+are not a style to match.** A file thick with commentary is the backlog, not
+permission, and an agent that mirrors its surroundings is the reason the
+backlog grows. When a change makes a nearby comment false, delete that
+comment rather than updating it: a sentence nobody is maintaining is worse
+than silence.
+
+Tests may be commented. A test is the one place where the reason for the
+assertion cannot be read off the code, because the failure it defends against
+is absent by construction.
+
+If the reason truly cannot leave the file, the code is the problem. Rename,
+split, or narrow the types until a reader needs no narration.
+
 ### One worktree per independent fix
 
 Two unrelated repairs in one branch cannot be reviewed, bisected or reverted
