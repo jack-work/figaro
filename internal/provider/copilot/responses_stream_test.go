@@ -257,3 +257,106 @@ func TestResponsesAbnormalTerminalPreservesAuthoritativeNativeOutput(t *testing.
 	require.Len(t, out.Output, 1)
 	require.Equal(t, string(native), string(out.Output[0]))
 }
+
+// A model that answers through its tools and then says nothing ends the turn
+// with an empty assistant message. Cached, it is replayed on every later turn,
+// and the proxy refuses the whole request: the aria goes mute for good. The
+// item must never reach the cache.
+func TestResponsesTextFreeAssistantItemNeverEntersTheCache(t *testing.T) {
+	reasoning := json.RawMessage(`{"type":"reasoning","id":"signed","encrypted_content":"opaque","content":[],"summary":[]}`)
+	empty := json.RawMessage(`{"type":"message","role":"assistant","id":"blank","content":[{"type":"output_text","text":"","annotations":[],"logprobs":[]}]}`)
+	call := json.RawMessage(`{"type":"function_call","call_id":"c1","name":"echo","arguments":"{}","status":"completed"}`)
+	server := newResponseServer(t, func(conn *websocket.Conn) {
+		defer conn.Close()
+		var req responseCreateRequest
+		if websocket.JSON.Receive(conn, &req) != nil {
+			return
+		}
+		_ = websocket.JSON.Send(conn, map[string]any{"type": "response.completed", "response": map[string]any{
+			"status": "completed", "output": []any{reasoning, empty, call},
+		}})
+	})
+	cache := store.NewMemLog[[]json.RawMessage]()
+	p := newResponsesTestProvider(server, cache)
+	bus := &responseTestBus{}
+	require.NoError(t, p.Send(context.Background(), provider.SendInput{AriaID: "blank", FigLog: newResponsesInputLog(t)}, bus))
+
+	require.Len(t, bus.cache, 1)
+	payload := bus.cache[0].Payload
+	require.Len(t, payload, 2, "the empty message is gone, reasoning and the call are not")
+	require.JSONEq(t, string(reasoning), string(payload[0]))
+	require.Contains(t, string(payload[1]), `"function_call"`)
+	for _, raw := range payload {
+		require.NotContains(t, string(raw), `"blank"`, "no trace of the text-free item")
+	}
+}
+
+func TestVetResponseMessageItemPrunesOnlyWhatItRecognizes(t *testing.T) {
+	for _, tc := range []struct {
+		name, raw, want string
+		keep            bool
+	}{
+		{
+			name: "text-free message is dropped whole",
+			raw:  `{"type":"message","role":"assistant","content":[{"type":"output_text","text":""}]}`,
+		},
+		{
+			name: "whitespace is not speech",
+			raw:  `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"  \n "}]}`,
+		},
+		{
+			name: "a message with no content at all is dropped",
+			raw:  `{"type":"message","role":"assistant","content":[]}`,
+		},
+		{
+			name: "text survives verbatim",
+			raw:  `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ecco","annotations":[]}]}`,
+			want: `{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ecco","annotations":[]}]}`,
+			keep: true,
+		},
+		{
+			name: "a mixed message keeps the spoken part with its fields",
+			raw:  `{"type":"message","role":"assistant","id":"m","content":[{"type":"output_text","text":""},{"type":"output_text","text":"ecco","annotations":["a"]}]}`,
+			want: `{"type":"message","role":"assistant","id":"m","content":[{"type":"output_text","text":"ecco","annotations":["a"]}]}`,
+			keep: true,
+		},
+		{
+			name: "reasoning keeps its empty content: the payload is encrypted",
+			raw:  `{"type":"reasoning","encrypted_content":"opaque","content":[],"summary":[]}`,
+			want: `{"type":"reasoning","encrypted_content":"opaque","content":[],"summary":[]}`,
+			keep: true,
+		},
+		{
+			name: "a part shape this file does not know is left alone",
+			raw:  `{"type":"message","role":"assistant","content":[{"type":"output_audio","text":""}]}`,
+			want: `{"type":"message","role":"assistant","content":[{"type":"output_audio","text":""}]}`,
+			keep: true,
+		},
+		{
+			name: "an image part is speech even with no text",
+			raw:  `{"type":"message","role":"assistant","content":[{"type":"input_text","text":"","image_url":"data:image/png;base64,AA"}]}`,
+			want: `{"type":"message","role":"assistant","content":[{"type":"input_text","text":"","image_url":"data:image/png;base64,AA"}]}`,
+			keep: true,
+		},
+		{
+			name: "undecodable bytes pass through untouched",
+			raw:  `not json`,
+			want: `not json`,
+			keep: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := vetResponseMessageItem(json.RawMessage(tc.raw))
+			require.Equal(t, tc.keep, ok)
+			if !tc.keep {
+				require.Nil(t, got)
+				return
+			}
+			if tc.want == "not json" {
+				require.Equal(t, tc.want, string(got))
+				return
+			}
+			require.JSONEq(t, tc.want, string(got))
+		})
+	}
+}

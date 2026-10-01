@@ -159,7 +159,9 @@ func (p *responsePartial) outputItems() []json.RawMessage {
 			continue
 		}
 		if part.raw != nil {
-			out = append(out, part.raw)
+			if vetted, ok := vetResponseMessageItem(part.raw); ok {
+				out = append(out, vetted)
+			}
 			continue
 		}
 		var item any
@@ -422,7 +424,9 @@ func (s *responseStreamState) reconcile(response *responseObject) error {
 			return fmt.Errorf("copilot responses: decode terminal item: %w", err)
 		}
 		if item.Type != "function_call" {
-			out = append(out, raw)
+			if vetted, ok := vetResponseMessageItem(raw); ok {
+				out = append(out, vetted)
+			}
 			continue
 		}
 		if item.CallID == "" || item.Name == "" {
@@ -598,6 +602,60 @@ func safeResponseReason(reason string) string {
 		return reason
 	default:
 		return "unknown reason"
+	}
+}
+
+func vetResponseMessageItem(raw json.RawMessage) (json.RawMessage, bool) {
+	var item struct {
+		Type    string            `json:"type"`
+		Content []json.RawMessage `json:"content"`
+	}
+	if json.Unmarshal(raw, &item) != nil || item.Type != "message" {
+		return raw, true
+	}
+	kept := make([]json.RawMessage, 0, len(item.Content))
+	for _, part := range item.Content {
+		if responsePartIsBlank(part) {
+			continue
+		}
+		kept = append(kept, part)
+	}
+	if len(kept) == 0 {
+		return nil, false
+	}
+	if len(kept) == len(item.Content) {
+		return raw, true
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return raw, true
+	}
+	content, err := json.Marshal(kept)
+	if err != nil {
+		return raw, true
+	}
+	fields["content"] = content
+	out, err := json.Marshal(fields)
+	if err != nil {
+		return raw, true
+	}
+	return out, true
+}
+
+func responsePartIsBlank(raw json.RawMessage) bool {
+	var part struct {
+		Type     string `json:"type"`
+		Text     string `json:"text"`
+		ImageURL string `json:"image_url"`
+	}
+	if json.Unmarshal(raw, &part) != nil {
+		return false
+	}
+	switch part.Type {
+	case "output_text", "text", "summary_text", "input_text", "refusal":
+		return strings.TrimSpace(part.Text) == "" && part.ImageURL == ""
+	default:
+		return false
 	}
 }
 
