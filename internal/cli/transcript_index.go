@@ -77,6 +77,66 @@ type lineIndex struct {
 	// authority on "the retained page set changed", shared with the page layer.
 	// See transcript.invalidateWindow.
 	rev uint64
+	// stamp is everything the entries above are a function of, as of the build
+	// that produced them. An index whose stamp still holds does not need
+	// rebuilding; see transcript.indexStamp.
+	stamp indexStamp
+	built bool
+}
+
+// indexShape is everything the line index is a function of EXCEPT the live
+// message: which messages the window holds, what width they were drawn at,
+// and whose rows are cached. Two frames with the same shape describe the same
+// entries, so the second one has nothing to do.
+type indexShape struct {
+	rev       uint64 // aria.Client.Revision: something was folded
+	windowRev uint64 // the window's floor moved (invalidateWindow)
+	rowRev    uint64 // cached rows were dropped (a fold gesture, a setting, a prune)
+	w, h      int    // the geometry every row and the tail keep are derived at
+	from      aria.Anchor
+	tailWant  int
+	tailTuned bool
+	// resetting is whether THIS frame's buildIndex re-derives the tail. A walk
+	// into history does not (see below), so entering or leaving one changes
+	// what the index describes even when nothing else moved.
+	resetting bool
+	openKey   sliceKey // which message is the live one, if any
+}
+
+// indexStamp is a shape plus the one thing that moves under a steady shape:
+// the spinner of a live message.
+type indexStamp struct {
+	shape indexShape
+	// animTick is the frame counter, but ONLY while something under the open
+	// message animates. A tool's spinner is a function of the clock, so those
+	// frames must recompose the live entry; every other tick -- the status
+	// bar's own spinner, an alert expiring, a repaint after a scroll -- leaves
+	// the index exactly as it was and is now free.
+	animTick int
+}
+
+// indexStamp reads the current stamp. It materializes NOTHING: the live
+// message is identified by its key (Client.OpenKey), because the whole point
+// of the stamp is to be cheaper than what it guards.
+func (t *transcript) indexStamp() indexStamp {
+	st := indexStamp{shape: indexShape{
+		rev:       t.client.Revision(),
+		windowRev: t.windowRev,
+		rowRev:    t.rowRev,
+		w:         t.w,
+		h:         t.h,
+		from:      t.from,
+		tailWant:  t.tailWant,
+		tailTuned: t.tailTuned,
+		resetting: t.follow && t.search == nil && t.jump == nil,
+	}}
+	if turn, from, ok := t.client.OpenKey(); ok {
+		st.shape.openKey = sliceKeyOf(turn, from)
+		if t.client.OpenAnimating() {
+			st.animTick = t.tick
+		}
+	}
+	return st
 }
 
 // entryAt returns the index of the entry owning absolute line i, or -1.
@@ -100,7 +160,52 @@ func (x *lineIndex) entryAt(i int) int {
 // subsumes the bookkeeping lines() used to do: tail reset while following,
 // width invalidation of rowCache, and keeping lineTurn current: but stops short
 // of materializing any row text.
+//
+// IT IS IDEMPOTENT AND IT IS CHEAP TO ASK. Thirty call sites call it to be
+// sure the index is current, and the frame path calls it through settle up to
+// four times a frame; it used to re-walk the window and recompose the live
+// message every single time. Now the stamp decides: nothing moved is nothing
+// to do, only the live message moved is only the live entry to redraw, and the
+// full walk happens when the window itself changed.
 func (t *transcript) buildIndex() {
+	st := t.indexStamp()
+	if t.index.built && st == t.index.stamp {
+		return // the index already describes this state
+	}
+	if t.index.built && st.shape == t.index.stamp.shape {
+		// Only the spinner moved. The live entry is the LAST entry by
+		// construction, so redrawing it moves no other entry's start.
+		if t.refreshOpenEntry(t.openMessage()) {
+			t.index.stamp = st
+			return
+		}
+	}
+	t.rebuildIndex(t.openMessage())
+}
+
+// refreshOpenEntry redraws the live message in place, and reports whether it
+// could: a window whose last entry is not the open message (there is none, or
+// the index predates it) needs the full walk instead.
+func (t *transcript) refreshOpenEntry(open *aria.Message) bool {
+	if open == nil || len(t.index.entries) == 0 {
+		return false
+	}
+	e := &t.index.entries[len(t.index.entries)-1]
+	if !e.open || e.key != keyOf(*open) {
+		return false
+	}
+	was := e.height()
+	e.rows = t.renderOpenMsg(*open).rows
+	if now := e.height(); now != was {
+		t.index.total += now - was
+		t.rebuildLineLT()
+	}
+	return true
+}
+
+// rebuildIndex is the full walk of the retained window: every entry's rows and
+// the line space they occupy, from the window's floor to the live message.
+func (t *transcript) rebuildIndex(live *aria.Message) {
 	// A WALK INTO HISTORY IS NOT FOLLOWING, and this line is why the pager
 	// could lock up with a core pinned.
 	//
@@ -118,6 +223,9 @@ func (t *transcript) buildIndex() {
 	// so nothing is lost by not fighting for it here.
 	if t.follow && t.search == nil && t.jump == nil {
 		t.resetToTail()
+		// The floor it raised decides which message is live, so the caller's
+		// answer may be stale by one frame.
+		live = t.openMessage()
 	}
 	if t.cacheW != t.w { // width changed: cached rows are stale
 		t.rowCache = map[sliceKey]cachedMessage{}
@@ -166,8 +274,8 @@ func (t *transcript) buildIndex() {
 		add(0, gapKey(g), nil, false, &hole)
 		return true
 	})
-	if open := t.openMessage(); open != nil {
-		add(open.Turn, keyOf(*open), t.renderOpenMsg(*open).rows, true, nil)
+	if live != nil {
+		add(live.Turn, keyOf(*live), t.renderOpenMsg(*live).rows, true, nil)
 	}
 	// The page set moved => the index describes a different window, full stop.
 	// That is the one authority (windowRev); the shape diff below only has to
@@ -189,6 +297,11 @@ func (t *transcript) buildIndex() {
 	}
 	t.index.scratch, t.index.entries, t.index.total = t.index.entries, entries, total
 	t.index.rev = t.windowRev
+	// STAMPED FROM THE STATE THE WALK LANDED ON, not the state it started
+	// from: resetToTail above may have moved the floor, and a stamp taken
+	// before it would describe a window that no longer exists and send the
+	// next frame down this path again.
+	t.index.stamp, t.index.built = t.indexStamp(), true
 	if changed {
 		t.rebuildLineLT()
 	}

@@ -187,6 +187,11 @@ type transcript struct {
 	// this counter so the line index refills lineKey instead of inferring the
 	// move from a shape diff.
 	windowRev uint64
+	// rowRev is the same authority for CACHED ROWS: every path that drops rows
+	// (a fold gesture, a settings change, a prune) bumps it, so the line index
+	// knows its entries were composed under state that is gone. Without it the
+	// index's stamp would hold while the rows under it had been thrown away.
+	rowRev uint64
 
 	// rowCache memoizes rows of committed messages in their unselected resting
 	// form: clipped and gutter-prefixed (plainNodeRow), but carrying no
@@ -707,8 +712,12 @@ type sliceKey int64
 
 const sliceKeyFromBits = 20
 
-func keyOf(m aria.Message) sliceKey {
-	return sliceKey(int64(m.Turn)<<sliceKeyFromBits | int64(m.From))
+func keyOf(m aria.Message) sliceKey { return sliceKeyOf(m.Turn, m.From) }
+
+// sliceKeyOf packs the same key from the coordinate alone, for the callers
+// that have the identity of a message but not the message.
+func sliceKeyOf(turn int, from uint64) sliceKey {
+	return sliceKey(int64(turn)<<sliceKeyFromBits | int64(from))
 }
 
 // turn is the turn id a unit belongs to.
@@ -908,6 +917,9 @@ func (t *transcript) pruneCaches() {
 			}
 		}
 	}
+	// A prune that dropped nothing is not news, but it is called from the
+	// frame path and counting what it deleted would cost as much as the bump.
+	t.rowRev++
 }
 
 // forEachMessage walks the retained window without materializing a slice of
@@ -1036,6 +1048,7 @@ func (t *transcript) restoreViewportAnchor(key sliceKey, within int) {
 }
 
 func (t *transcript) invalidateRows() {
+	t.rowRev++
 	t.rowCache = map[sliceKey]cachedMessage{}
 	// The open message's blocks were drawn under the same settings and at the
 	// same width, so whatever voided the committed rows voided them too.
@@ -2781,6 +2794,7 @@ func (t *transcript) dropTurnsRows(lts map[int]struct{}) {
 	if len(lts) == 0 {
 		return
 	}
+	t.rowRev++
 	for k := range t.rowCache {
 		if _, ok := lts[k.turn()]; ok {
 			delete(t.rowCache, k)

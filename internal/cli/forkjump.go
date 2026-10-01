@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"strings"
+
 	"github.com/jack-work/figaro/api/livedoc"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
@@ -46,15 +48,25 @@ func (t *transcript) forkPoints() []forkAt {
 
 // forkParentOf is the aria a delta set says this one was forked from, or
 // "". One derivation, shared by the renderer and the jump.
+//
+// IT IS A LOOKUP, NOT A SURVEY. This used to group the whole delta set -- a
+// map per form, a sorted key slice per group, every value grouped so that one
+// of them could be read -- and the renderer calls it for every block of every
+// frame. It showed up as the holder of the render lock in live goroutine
+// dumps, inside map growth, for a question that is one key wide.
+//
+// Only the bound board can carry a fork (forkParent says so), and a board has
+// one forked_from, so the first match IS the answer and map order cannot make
+// it ambiguous.
 func forkParentOf(deltas map[string]livedoc.FormDelta) string {
-	if len(deltas) == 0 {
-		return ""
-	}
-	groups, order := groupDeltas(deltas)
-	for _, id := range order {
-		if p := forkParent(groups[id]); p != "" {
-			return p
+	for key, d := range deltas {
+		if d.Kind != livedoc.FormBound || d.Event != livedoc.FormSet {
+			continue
 		}
+		if strings.TrimPrefix(key, d.Form+".") != forkedFromKey {
+			continue
+		}
+		return unquote(d.Value).text
 	}
 	return ""
 }

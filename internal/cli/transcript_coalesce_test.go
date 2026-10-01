@@ -219,7 +219,7 @@ func coalesceInput(tb testing.TB, out *countingWriter) (*interactiveInput, *live
 	lt.enterTranscript()
 	lt.apply(aria.Page{Parts: committed})
 	return &interactiveInput{
-		tc: nil, lt: lt, fcli: stubReadClient{}, mu: &sync.Mutex{}, set: settings,
+		tc: nil, lt: lt, fcli: stubReadClient{}, mu: new(renderLock), set: settings,
 		figaroID: "aria0001", cancel: func() {},
 		disconnectCh: make(chan struct{}, 1),
 	}, lt

@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"sync"
 	"testing"
 	"time"
 )
@@ -13,7 +12,7 @@ import (
 // fixture test (which supplies its own completer) stayed green.
 func TestCompleterDoesNotTakeTheInputLock(t *testing.T) {
 	t.Setenv("FIGARO_RUNTIME_DIR", t.TempDir()) // no daemon: every RPC fails fast
-	in := &interactiveInput{figaroID: "aria1234", mu: new(sync.Mutex)}
+	in := &interactiveInput{figaroID: "aria1234", mu: new(renderLock)}
 	in.mu.Lock()
 	defer in.mu.Unlock()
 	done := make(chan []string, 1)

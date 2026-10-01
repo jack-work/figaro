@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -54,7 +53,7 @@ func travelFixture(tb testing.TB, count, nodes int) (*interactiveInput, *travelR
 	lt.enterTranscript()
 	lt.apply(aria.PaginateBefore(r.turns, aria.Anchor{}, aria.Anchor{}, 8192))
 	lt.client.SetMoreBefore(true)
-	in := &interactiveInput{lt: lt, fcli: r, mu: &sync.Mutex{}, set: set, figaroID: "travel", cancel: func() {}, disconnectCh: make(chan struct{}, 1)}
+	in := &interactiveInput{lt: lt, fcli: r, mu: new(renderLock), set: set, figaroID: "travel", cancel: func() {}, disconnectCh: make(chan struct{}, 1)}
 	lt.setHistoryFetcher(in.historyFetcher())
 	return in, r
 }

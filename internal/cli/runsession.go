@@ -135,7 +135,7 @@ func runSession(ctx context.Context, cancel context.CancelFunc, opt sessionOpts)
 	defer lt.leaveTranscript()
 	lt.openRule() // the renderer owns the rule AND the margin under it
 
-	var mu sync.Mutex
+	var mu renderLock
 	doneCh := make(chan struct{}, 1)
 	disconnectCh := make(chan struct{}, 1) // Ctrl-D: leave the turn running
 
@@ -336,7 +336,7 @@ func (in *interactiveInput) sendPrompt(ctx context.Context) {
 // interruptAndLeave is Ctrl-C at the session level: stop the turn in flight,
 // wait briefly for it to land, and exit 130 if there was one. With nothing
 // running it is a clean close.
-func (in *interactiveInput) interruptAndLeave(mu *sync.Mutex, doneCh <-chan struct{}) {
+func (in *interactiveInput) interruptAndLeave(mu *renderLock, doneCh <-chan struct{}) {
 	mu.Lock()
 	wasRunning := in.lt.status.turnRunning()
 	mu.Unlock()

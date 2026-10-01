@@ -5,7 +5,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/jack-work/figaro/internal/mark"
@@ -13,7 +12,7 @@ import (
 
 // markMemory samples the process and the pager's retained state on a clock
 // while marks are on. Stops with the returned func.
-func markMemory(mu *sync.Mutex, lt *livelogTurn, every time.Duration) func() {
+func markMemory(mu *renderLock, lt *livelogTurn, every time.Duration) func() {
 	if !mark.Enabled() {
 		return func() {}
 	}

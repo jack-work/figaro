@@ -202,7 +202,7 @@ func TestFailedCatchUpIsRetried(t *testing.T) {
 	lt := newLivelogTurn(out, 80, 12, settings, "", time.Time{}, nil, nil, nil)
 	lt.enterTranscript()
 	in := &interactiveInput{
-		tc: newSearchInputTerminal(), lt: lt, fcli: reader, mu: &sync.Mutex{}, set: settings,
+		tc: newSearchInputTerminal(), lt: lt, fcli: reader, mu: new(renderLock), set: settings,
 		cancel: func() {}, disconnectCh: make(chan struct{}, 1),
 	}
 
