@@ -23,9 +23,7 @@ import (
 	"github.com/jack-work/figaro/internal/wirelog"
 )
 
-// v4: a tool round with nobody speaking carries its reminders inside the last
-// function_call_output instead of a user message of their own.
-const responsesFingerprintPrefix = "copilot-responses/v4"
+const responsesFingerprintPrefix = "copilot-responses/v5"
 
 type responseTokenSource interface {
 	Resolve() (string, error)
