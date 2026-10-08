@@ -8,7 +8,10 @@ Doesn't duplicate `README.md` or `ARCHITECTURE.md`: points at them and adds the 
 
 - **What this is.** Go CLI coding agent, supervisor architecture, JSON-RPC over Unix sockets. See `README.md`.
 - **How it's wired.** Process model, packages, data flow live in `ARCHITECTURE.md`. Treat as authoritative; if you contradict it, update it in the same change.
-- **Personality.** `internal/credo/default_credo.md` shapes the user-facing voice. Match lightly; don't parody.
+- **Personality.** The credo shapes the user-facing voice, and it is the
+  owner's file (`$FIGARO_CONFIG_DIR/credo.md`), not the repo's: there is no
+  default credo in this tree. Match lightly; don't parody. Editing it changes
+  every aria on the machine, so say so when you do.
 
 ## Build, run, test
 

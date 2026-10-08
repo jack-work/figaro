@@ -134,6 +134,64 @@ is disk, though it survives reboot, so clean up after yourself.
 Commits are itemized and self-contained. There is one real user, so a clean
 design beats a compatibility shim.
 
+### Commit constantly, present deliberately
+
+**Two different jobs, and one commit stream cannot do both.**
+
+| Need | Wants |
+|---|---|
+| RECOVERABILITY, do not lose bytes | frequent, cheap, thoughtless, now |
+| COHERENCE, a history someone can read | rewritten, ordered, late |
+
+Conflating them is how an agent comes to hold forty modified files for an hour
+with no restore point, which is the state in which `git checkout <path>` eats
+work. Measured, 2026-10-07: two files reverted whole to undo one sabotaged
+line each, and both had to be rebuilt by hand from the transcript.
+
+So: **commit on every green step, with a throwaway message.** Then, when a
+slice is done, mark the mess and rebuild it as the thing you would hand over:
+
+```sh
+git commit -am wip                                 # constantly, all day
+git branch scratch/<topic>-$(date +%Y%m%d) HEAD    # the net
+git reset --soft <last presented commit>           # tree intact, history gone
+git commit -F -                                    # one idea, green alone
+```
+
+Three things this is NOT:
+
+- **Not a second working branch.** A scratch branch cannot be a SOURCE of
+  merges: merging mess yields mess, and to get one coherent commit out of five
+  WIP commits you rebuild it from the tree regardless. The scratch ref is a
+  safety net, never an input. Once that is true you never switch branches
+  while working, which is the point: a branch dance costs a rebuild and loses
+  the working-tree continuity that made `cp /tmp/x.bak` tempting.
+- **Not a squash.** The presented history is REORDERED. Discovery order is
+  almost never explanatory order, and each commit has to be one idea and green
+  on its own, which is rarely how it was found.
+- **Not a place for apology archaeology.** "I tried X, it failed, so Y"
+  belongs nowhere. Y with its reason is the commit. Same law as the comment
+  rule: the record that outlives the work carries the reason, not the
+  scaffolding.
+
+**The canary needs a restore point, not a backup file.** `git stash` → break
+it → run → `git stash pop`, or commit → break → `git checkout .`. Mixing a
+`.bak` copy for some files and `git checkout` for others is how a revert
+reaches past its target: git's unit is the FILE and an agent's edits are not.
+Standing rule: never `git checkout <path>` while that path holds uncommitted
+work you mean to keep.
+
+**Scratch refs are garbage and need a sweeper.** Dated in the name, pruned by
+`scripts/scratch-gc.sh` (`--days`, `--dry-run`). A policy with no sweeper is a
+preference: there were 223 branches in `.bare` the day this was written, which
+is what nothing-prunes-anything looks like after a year.
+
+**All of this is a MENU, not a ceremony.** Gluck's instruction outranks it
+entirely, and "just put it on main" is a sentence he says. Reach for the full
+shape when the work is long, exploratory, or someone else will read it; skip
+straight to one commit when the change is one change. Use your judgement and
+say which you did.
+
 ### Start red
 
 Reproduce on current HEAD before you read anyone's proposed fix, including

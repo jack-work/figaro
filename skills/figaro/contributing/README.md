@@ -12,7 +12,7 @@ subject is in play.
 
 | File | When to read it |
 |---|---|
-| [maintaining.md](maintaining.md) | Always, before the first change. Worktrees, dev shells, the loop, handing work back, and cutting a release, which goes through `scripts/release.sh` because a tag alone ships to nobody. |
+| [maintaining.md](maintaining.md) | Always, before the first change. Worktrees, dev shells, the loop, how to commit (constantly) and how to present (deliberately), handing work back, and cutting a release, which goes through `scripts/release.sh` because a tag alone ships to nobody. |
 | [updating-docs.md](updating-docs.md) | You are about to edit any file in the skill tree. Before, not after. |
 
 ## Testing what paints
