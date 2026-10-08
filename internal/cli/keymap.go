@@ -828,7 +828,7 @@ var helpRows = []helpRow{
 	{helpAriaJump, "^O / ^I", "jumplist: back / forward through attended arias"},
 	{helpQuestionTravel, "M-n / M-p", "travel to the next / previous question"},
 	{helpSelectExtend, "^N/^P + Shift", "travel between questions (Alt+^N/^P extends a selection)"},
-	{helpExpand, "Enter", "open tool bodies and form deltas within the selection"},
+	{helpExpand, "Enter", "open tool bodies, quoted passages and form deltas within the selection"},
 	{helpToolBody, "e", "open the tool bodies within the selection"},
 	{helpPitEnter, "(in a list) Enter", "the row's own action: open a form value or a notification, attend an aria"},
 	{helpVisualSelect, "(in v) Enter", "select the node under the cursor (then e expands it)"},

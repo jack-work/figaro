@@ -13,7 +13,6 @@ import (
 	"github.com/mattn/go-runewidth"
 
 	"github.com/jack-work/figaro/api/livedoc"
-	"github.com/jack-work/figaro/api/quote"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/livelog/aria"
@@ -1359,14 +1358,14 @@ func (t *transcript) composer(m aria.Message) ldrender.Composer {
 		// The pager is the surface where Enter means something, so its view
 		// may open arguments as well as output (see ariaView.gesture).
 		View: pagerView(t.view), Header: messageHeader, Rule: t.transRule, InputHeader: inputHeader, Tick: t.tick,
-		Expanded: func(block int) bool { return t.expanded[nodeRefAt(m, block)] },
+		Expanded: func(block int) bool { return t.expanded[blockRef(m, block)] },
 		// The delta list folds on its own gesture (d), and with the body on
 		// Enter; the layout is the block type's (see adornment.go).
 		Adorn: func(block int, n livedoc.Node, deltas map[string]livedoc.FormDelta, w int) ldrender.Adornment {
 			ref := blockRef(m, block)
 			return buildAdornment(adornerFor(block, n), deltas, w, t.adorned[ref])
 		},
-		Quote: func(q quote.Mention, w int) []string { return quoteRows(q, w, t.verbose()) },
+		Quote: quoteRows,
 	}
 	// The address is composed always and drawn only under M-m, so the toggle is
 	// a paint-time decision and the row cache does not know about it.

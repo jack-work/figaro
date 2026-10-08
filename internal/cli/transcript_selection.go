@@ -655,6 +655,9 @@ func (t *transcript) foldSubjects() (tools, adorned []nodeRef) {
 		if len(m.FormDeltas) > 0 && touched(inq) && adornRowCount(m.FormDeltas, adornLift(inq.index)) > 0 {
 			adorned = append(adorned, inq)
 		}
+		if touched(inq) && quoteFolds(m.Inquiry, t.w) {
+			tools = append(tools, inq)
+		}
 		for i, n := range m.Nodes {
 			ref := nodeRefAt(m, i)
 			if !touched(ref) {

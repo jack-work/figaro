@@ -123,7 +123,7 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 	// Attribution rides in the dim register block timestamps and tool
 	// durations use, so a sender reads as metadata rather than as content.
 	in.InputHeader = inputHeader
-	in.Quote = func(q quote.Mention, w int) []string { return quoteRows(q, w, settings != nil && settings.verbose) }
+	in.Quote = func(q quote.Mention, w int, expanded bool) []string { return quoteRows(q, w, expanded) }
 	t := &livelogTurn{in: in, term: term, client: aria.NewClient(), view: view, status: status}
 	in.Queued = t.queuedRows // the queue is live chrome in the inline view too
 	t.tr = newTranscript(audited, w, h, view, t.client, figaroID, startedAt)

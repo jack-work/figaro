@@ -47,16 +47,17 @@ coordinate, so the terminal reads it back instead of guessing:
 Every surface that draws a conversation (the pager, the inline view, `show`)
 draws that block as a CARD rather than as a paragraph of markdown: one dim
 heading row with the coordinate, three rows of the passage under a rule, and a
-closing row counting what is folded. `M-m`, the same toggle that puts node
-addresses and timings on the screen, opens the card: the whole passage, and
-the aria, turn and length beside the coordinate.
+closing row counting what is folded. Select the question (`^N` / `^P`) and
+press `Enter` to open it, exactly as you would open a tool's body: the whole
+passage, and the aria, turn and length beside the coordinate. `show` has no
+gesture, so it prints the card open.
 
 ```
   ╭ ❝ lt 412.0
   │ Ecco fatto. The barber works in three strokes: isolate the environment,
   │ drive the real binary in a real pty, and assert on what the terminal kept
   │ rather than on what the renderer returned.
-  ╰ 2 rows more · M-m
+  ╰ 2 rows more
 ```
 
 ## Selecting it in the pager

@@ -238,7 +238,7 @@ func TestOpensTranscript_MatchesTheHandKeptList(t *testing.T) {
 		'm',        // more: the status bar's own detail, an opener exactly as 'o' is
 		's',        // the pinned question, a pager toggle and so an opener too
 		0x0e, 0x10, // ^N/^P node selection
-		0x0d, 0x0a, // Enter: open tool bodies and form deltas
+		0x0d, 0x0a, // Enter: open tool bodies, quoted passages and form deltas
 		'e',      // the tool body alone; it was 't' until 2026-09-17
 		'v', 'V', // visual selection: a gesture about rows, which only the pager has
 		' ', // the leader, 2026-09-30: `space n` opens notifications, a pit
@@ -349,7 +349,7 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  ^O / ^I             jumplist: back / forward through attended arias",
 		"  M-n / M-p           travel to the next / previous question",
 		"  ^N/^P + Shift       travel between questions (Alt+^N/^P extends a selection)",
-		"  Enter               open tool bodies and form deltas within the selection",
+		"  Enter               open tool bodies, quoted passages and form deltas within the selection",
 		"  e                   open the tool bodies within the selection",
 		"  (in a list) Enter   the row's own action: open a form value or a notification, attend an aria",
 		"  (in v) Enter        select the node under the cursor (then e expands it)",

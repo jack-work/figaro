@@ -118,10 +118,11 @@ type Composer struct {
 	Adorn func(block int, n livedoc.Node, deltas map[string]livedoc.FormDelta, w int) Adornment
 
 	// Quote draws a passage the question opens by quoting, already styled by
-	// the surface and already folded to whatever its reader asked to see.
-	// nil leaves the block in the question's markdown, where a blockquote is
-	// a paragraph: which is what a surface with no chrome of its own wants.
-	Quote func(m quote.Mention, w int) []string
+	// the surface. expanded is the inquiry block's fold state, the same one
+	// Expanded answers for a node. nil leaves the block in the question's
+	// markdown, where a blockquote is a paragraph: which is what a surface
+	// with no chrome of its own wants.
+	Quote func(m quote.Mention, w int, expanded bool) []string
 
 	Tick int // animation frame for spinners
 
@@ -339,7 +340,7 @@ func (c Composer) quoted(text string, w int) []Row {
 		return prose(text, w, BlockInquiry)
 	}
 	var rows []Row
-	for _, line := range c.Quote(m, w) {
+	for _, line := range c.Quote(m, w, c.Expanded != nil && c.Expanded(BlockInquiry)) {
 		rows = append(rows, Row{Text: clip(line, w), Block: BlockInquiry})
 	}
 	if strings.TrimSpace(rest) == "" {

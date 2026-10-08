@@ -57,7 +57,7 @@ type Incipit struct {
 	Header      func(role string) string   // printed above each message; "" suppresses
 	InputHeader func(sender string) string // inquiry heading, shared with show and the pager
 	// Quote draws a passage the question quotes; see Composer.Quote.
-	Quote func(m quote.Mention, w int) []string
+	Quote func(m quote.Mention, w int, expanded bool) []string
 	// Queued renders prompts the agent has accepted but not yet placed in the
 	// transcript. They are LIVE CHROME, drawn just above the bookend and never
 	// frozen: a queued prompt has not happened yet, so committing it to

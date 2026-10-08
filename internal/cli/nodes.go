@@ -110,7 +110,7 @@ func turnComposer(turn, width int, tick uint64, set renderSettings) ldrender.Com
 		Adorn: func(block int, n livedoc.Node, deltas map[string]livedoc.FormDelta, w int) ldrender.Adornment {
 			return buildAdornment(adornerFor(block, n), deltas, w, set.verbose)
 		},
-		Quote: func(q quote.Mention, w int) []string { return quoteRows(q, w, set.verbose) },
+		Quote: func(q quote.Mention, w int, _ bool) []string { return quoteRows(q, w, true) },
 	}
 	if set.verbose {
 		c.Mark = func(block int, n livedoc.Node) string {
