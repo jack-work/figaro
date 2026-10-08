@@ -604,6 +604,11 @@ var inputOracle = []struct {
 		"csiu ^p+alt": "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"",
 	}},
 	{"panel", "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"", map[string]string{
+		"0x4e": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		// n AND N WALK A PIT'S ROWS, 2026-10-07: in a pit the repeat keys now
+		// repeat the PIT's search instead of the conversation's, so a query
+		// aimed at a list can find its second match.
+		"0x6e": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		// '>' IS THE DRAFT, 2026-10-07, and like ':' it YANKS THE PAGER UP
 		// from the inline view: what a draft dispatches is shown there. So it
 		// is no longer inert in any state a pager key can act from.

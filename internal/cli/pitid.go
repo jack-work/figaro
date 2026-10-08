@@ -15,7 +15,7 @@ const (
 	pitQueue         pitID = "queue"
 	pitNotifications pitID = "notifications"
 	pitCommand       pitID = "command"
-	pitPrompt        pitID = "prompt"
+	pitCompose       pitID = "prompt"
 	pitSearch        pitID = "search"
 	pitHelp          pitID = "help"
 	pitStatus        pitID = "status"
@@ -55,9 +55,10 @@ var pitFaces = map[pitID]pitFace{
 	pitQueue:         {"𝄚", "queue", "♭", modePanel},
 	pitNotifications: {"𝄞", "notifications", "♩", modePanel},
 	pitCommand:       {"∴", "command", "", modeBox},
-	// The draft. 𝄐 is the pause mark a performer holds for as long as they
-	// mean to: a prompt being written is exactly that, and it is single-width.
-	pitPrompt:  {"𝄐", "draft", "", modeBox},
+	// The compose drawer. One glyph for one thing: the pencil is the sigil the
+	// box wears in normal mode, the title it takes under M-m, and the token on
+	// the bar, so a reader learns it once.
+	pitCompose: {"✎", "compose", "", modeBox},
 	pitSearch:  {"⌕", "search", "", modeSearch},
 	pitHelp:    {"?", "help", "", modePanel},
 	pitStatus:  {"!", "status", "", modePanel},

@@ -473,9 +473,9 @@ run `figaro show` (full content above, cursor below).
 | `↓` / `↑` | line down / up |
 | `PgDn` / `PgUp` | half-page down / up |
 | `Home` / `End` | top / bottom |
-| `/` / `?` | literal string search, forward / backward. Inside a pit it searches that pit's rows. `n` / `N` repeat it and land the block cursor on the hit |
+| `/` / `?` | literal string search, forward / backward. Inside a drawer it searches THAT drawer: a list's rows, or the compose pit's draft. `n` / `N` repeat it, in the drawer or in the conversation |
 | `:` | the command line: any figaro verb, or a coordinate (`:12`, `:12.3`, `:0`). With a highlight up it opens holding `<,>`. See [quoting.md](quoting.md). |
-| `>` | a draft: type or paste a prompt, newlines and quotes intact. `M-Enter` sends it, `Enter` is a newline, `Esc` puts the drawer away and keeps the draft, `^C` spends it. Tab completes `@refs` and paths. With a highlight up it opens holding `<,>`, so the prompt quotes the passage. See [quoting.md](quoting.md). |
+| `>` | the COMPOSE PIT: type or paste a prompt, newlines and quotes intact. `M-Enter` sends, `Enter` is a newline, Tab completes `@refs` and paths. With a highlight up it opens holding `<,>`, so the prompt quotes the passage. See [quoting.md](quoting.md) and the table below. |
 | `e` / `Enter` | open a tool's body / both the body and the form deltas (and a quoted passage, which folds to three rows until asked). Enter is the ONLY key that opens a delta list. In a pit, Enter is the row's own action: a form value opens, a listing row attends |
 | `f j` / `f k` | next / previous fork point (the block whose `⑂` the question's header carries) |
 | `a` | attend the aria that fork point came from; in a list, the selected row's |
@@ -491,9 +491,38 @@ run `figaro show` (full content above, cursor below).
 | `q` / `Esc` / `Ctrl-T` | exit the pager |
 
 A pasted paragraph needs no key at all: with no box open, a paste opens the
-draft and lands in it, because a paragraph arriving in a pager is a prompt
-being written. Bracketed paste is on while the pager is up, so the payload is
-taken as text rather than replayed as keystrokes.
+compose pit and lands in it, because a paragraph arriving in a pager is a
+prompt being written. Bracketed paste is on while the pager is up, so the
+payload is taken as text rather than replayed as keystrokes.
+
+### The compose pit has two modes
+
+`>` opens it in INSERT, which is the readline box every other box here is.
+`Esc` drops into NORMAL, where the pager's own vocabulary points at the draft.
+The sigil is the whole indicator: `>` insert, `✎` normal.
+
+| Key | In normal mode (`✎`) |
+| --- | --- |
+| `h` `j` `k` `l` · arrows | the cursor, by character and by line |
+| `w` `b` `e` · `0` `^` `$` · `gg` `G` · `{` `}` | word, line and buffer motions, vim's |
+| `i` `a` `I` `A` | back to insert: here, after, line start, line end |
+| `v` / `V` | mark by character / by line; again drops it |
+| `y` | copy the mark, or the whole draft when nothing is marked |
+| `/` `?` `n` `N` | search the DRAFT, not the conversation |
+| `F` | the drawer takes the pane |
+| `:` | the command line, over the drawer: closing it comes back to the draft |
+| `Esc` | drop the mark, else put the drawer away (the draft survives; `^C` spends it) |
+| `M-Enter` | send, from either mode |
+
+There are no editing verbs (`d`, `c`, `x`, `p`, `r`): a draft is written in
+insert mode, and this mode is for reading one, marking part of it and
+searching it. `M-m` titles the drawer, which is the only place its gestures
+are spelled out on screen.
+
+**A search targets whatever drawer is open.** `/` with the compose pit up
+moves the draft's cursor; with a list up it walks that list's rows, and `n`/`N`
+repeat it there. The box says which with one glyph before the sigil: `✎/`,
+`웃/`, `𝄚/`. With nothing open it is the conversation, as before.
 
 A listing opens with the cursor on the aria you are attending, not on the top
 row. `x` and `:kill` ask before they kill. The question holds the keyboard and the

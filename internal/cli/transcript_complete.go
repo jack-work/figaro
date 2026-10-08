@@ -277,11 +277,11 @@ func (t *transcript) wordAtCursor() (before, word string) {
 // own names and flags for a command line, what belongs in a prompt for a
 // draft. ONE menu, two questions.
 func (t *transcript) candidates() func(string) []string {
-	if t.box == boxPrompt {
-		if t.promptCompleter != nil {
-			return t.promptCompleter
+	if t.box == boxCompose {
+		if t.composeCompleter != nil {
+			return t.composeCompleter
 		}
-		return promptCandidates
+		return composeCandidates
 	}
 	return t.completer
 }

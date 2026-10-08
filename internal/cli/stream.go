@@ -1209,6 +1209,22 @@ func inputYank(in *interactiveInput, ev keyEvent) keyVerdict {
 		// copying -- a queued message's text, an aria id out of `:ls` -- and the
 		// transcript's node selection is a different question that is not being
 		// asked while a list is up.
+		// THE COMPOSE DRAWER OWNS 'y' while it is in normal mode: what the
+		// reader marked is in the draft, not in the conversation behind it.
+		if in.lt.tr.box == boxCompose && in.lt.tr.composeMode == composeNormal {
+			text, ok := in.lt.tr.composeYankText()
+			if !ok {
+				in.lt.tr.setCommandNoteAt("nothing to copy", alertError)
+				in.lt.tr.render()
+				in.mu.Unlock()
+				return keyHandled
+			}
+			in.lt.tr.noteYank(text)
+			in.lt.tr.render()
+			in.mu.Unlock()
+			in.tc.SetClipboard(text)
+			return keyHandled
+		}
 		if row, ok := in.lt.tr.pit.selected(); ok && row.yank != "" {
 			in.lt.tr.noteYank(row.yank)
 			in.mu.Unlock()

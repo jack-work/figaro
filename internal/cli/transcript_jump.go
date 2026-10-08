@@ -146,6 +146,12 @@ func boxCancel(t *transcript) {
 		t.dismissCompletion()
 		return
 	}
+	// THE DRAWER HAS ONE MORE RUNG: insert drops into normal mode, which is
+	// where Esc then puts it away. Vim's ladder, on the key everyone presses.
+	if t.box == boxCompose {
+		composeNormalEnter(t)
+		return
+	}
 	boxClose(t)
 }
 
@@ -154,13 +160,17 @@ func boxCancel(t *transcript) {
 // it may be a page of pasted text, and losing one to a stray Esc is not a
 // trade any reader would make. cmdAbort is the key that spends it.
 func boxClose(t *transcript) {
-	if t.box == boxPrompt {
-		t.draftClose(false)
+	if t.box == boxCompose {
+		t.composeClose(false)
 		return
 	}
 	t.box = boxNone
 	t.cmdline.reset()
 	t.clearCompletions()
+	// A COMMAND LINE OPENED FROM THE DRAWER GOES BACK TO IT. ':' over a draft
+	// is a detour, not a dismissal: the draft is still what the reader is
+	// writing, and losing the drawer under them would be the surprise.
+	t.composeResume()
 }
 
 func boxBackspace(t *transcript) {
@@ -274,8 +284,8 @@ func cmdAbort(t *transcript) {
 	}
 	// ^C AND ^G SPEND THE DRAFT. Esc only puts the drawer away; these two say
 	// "no", which at a shell prompt means the line is gone.
-	if t.box == boxPrompt {
-		t.draftClose(true)
+	if t.box == boxCompose {
+		t.composeClose(true)
 		return
 	}
 	boxClose(t)
@@ -311,7 +321,7 @@ func cmdHistPrev(t *transcript) {
 	}
 	// IN A DRAFT THEY ARE LINE MOTIONS, emacs's. A draft has lines to move
 	// between and no past worth walking; a command line is the opposite.
-	if t.box == boxPrompt {
+	if t.box == boxCompose {
 		t.edit(func(e *lineEditor) { e.lineUp() })
 		return
 	}
@@ -323,7 +333,7 @@ func cmdHistNext(t *transcript) {
 		t.cycleCompletion(1)
 		return
 	}
-	if t.box == boxPrompt {
+	if t.box == boxCompose {
 		t.edit(func(e *lineEditor) { e.lineDown() })
 		return
 	}
@@ -383,8 +393,8 @@ func boxAccept(t *transcript) { boxEnter(t) }
 // reader who has just dispatched a question wants to be when the answer
 // lands.
 func boxAcceptSnap(t *transcript) {
-	if t.box == boxPrompt {
-		draftSubmit(t)
+	if t.box == boxCompose {
+		composeSubmit(t)
 		return
 	}
 	t.boxSubmit(true)
@@ -409,6 +419,7 @@ func (t *transcript) boxSubmit(snap bool) {
 	t.cmdline.remember(text)
 	t.cmdline.reset()
 	t.box, t.jumpNote = boxNone, ""
+	t.composeResume()
 	t.menu = nil
 	if text == "" {
 		return
@@ -712,7 +723,7 @@ func cmdPaste(t *transcript) {
 	// A DRAFT KEEPS THE LINES. Folding a paragraph onto one line is right for
 	// a command box, where a newline cannot be represented at all, and wrong
 	// for the box that exists to hold one.
-	if t.box == boxPrompt {
+	if t.box == boxCompose {
 		t.editor().endSearch()
 		t.clearCompletions()
 		t.editor().insertPasted(text, true)

@@ -62,11 +62,13 @@ gesture, so it prints the card open.
 
 ## Replying to it: the `>` draft
 
-In the pager, `>` opens a draft: a box that takes a PROMPT rather than a
-command line, so a newline is a newline and a quote is a quote. `M-Enter`
-sends it; `Enter` makes a new line; `Esc` puts the drawer away and keeps what
-you wrote; `^C` spends it. Tab completes `@refs` and paths, and a paste keeps
-its lines (with no box open, a paste opens the draft by itself).
+In the pager, `>` opens the compose pit: a box that takes a PROMPT rather than
+a command line, so a newline is a newline and a quote is a quote. `M-Enter`
+sends it; `Enter` makes a new line; `Esc` drops into its normal mode (`✎`) and
+again puts the drawer away, keeping what you wrote; `^C` spends it. Tab
+completes `@refs` and paths, and a paste keeps its lines (with no box open, a
+paste opens the drawer by itself). The motions, the mark and the draft-local
+search live in [ui-stream.md](ui-stream.md).
 
 With a highlight up, `>` opens the draft holding `<,>`: the placeholder
 expands into the coordinate at submit, so the prompt quotes the passage you

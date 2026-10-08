@@ -79,14 +79,14 @@ type transcript struct {
 	// completer returns Tab candidates for a partially typed command line. Set
 	// by the input loop, which owns the router.
 	completer func(string) []string
-	// promptCompleter is Tab in the '>' draft: what belongs in a prompt, not
+	// composeCompleter is Tab in the '>' draft: what belongs in a prompt, not
 	// what belongs in a command line. Defaulted, because both of its sources
 	// (form keys, paths) are local questions a fixture can answer too.
-	promptCompleter func(string) []string
-	// sendDraft submits the '>' draft as a prompt, bytes intact. Set by the
+	composeCompleter func(string) []string
+	// sendCompose submits the '>' draft as a prompt, bytes intact. Set by the
 	// input loop for the same reason command is, and under the same rule: it
 	// is called holding the render lock, so it must hand off.
-	sendDraft func(string)
+	sendCompose func(string)
 	// openForm is 'S': the input loop's door to the live form view, because
 	// opening one dials. IT MUST NOT TAKE THE RENDER LOCK -- every hook here
 	// is called from dispatch, which already holds it, so implementations hand
@@ -162,12 +162,23 @@ type transcript struct {
 	// lineedit.go -- the short one being that the old box could not represent
 	// "café", let alone a cursor.
 	cmdline lineEditor
-	// draft is the '>' box's editor: the same editor, a separate buffer and a
-	// separate history, because a prompt and a command line are not each
-	// other's past. It OUTLIVES the box: Esc puts the drawer away and '>'
-	// brings the draft back, which is what makes a long paste safe to look
-	// away from.
-	draft lineEditor
+	// compose is the '>' drawer's editor: the same editor, a separate buffer
+	// and a separate history, because a prompt and a command line are not each
+	// other's past. It OUTLIVES the drawer: Esc puts it away and '>' brings
+	// the draft back, which is what makes a long paste safe to look away from.
+	compose lineEditor
+	// composeMode is which keymap the drawer answers to: the readline box it
+	// opens as, or the transcript's own motions over the draft. See
+	// compose_normal.go.
+	composeMode composeKeys
+	// composeMark is the anchor of the drawer's highlight, a rune index, with
+	// composeKind saying what kind it is. The same two-part shape the
+	// transcript's visual selection has, over a buffer instead of a window.
+	composeMark int
+	composeKind visualKind
+	// composeHeld remembers a drawer a ':' line was taken out of, so closing
+	// the command line comes back to the draft instead of to the conversation.
+	composeHeld bool
 	// menu is Tab's completion pit, open while it is non-nil. See
 	// transcript_complete.go.
 	menu *completionMenu
@@ -1202,7 +1213,7 @@ const (
 // fullPit is whether the pit takes the pane right now: the disposition, and
 // the focus. A fullscreen pit recedes when the transcript takes the keys.
 func (t *transcript) fullPit() bool {
-	return t.full && t.pit.open() && t.focused == focusPit
+	return t.full && (t.pit.open() || t.box == boxCompose) && t.focused == focusPit
 }
 
 // focusTranscriptKey is `T`: hand the screen to the conversation without
@@ -1923,7 +1934,14 @@ func (t *transcript) mode() keyMode {
 	if t.pendF && !t.inSearch && !t.boxOpen() {
 		return modeFork
 	}
-	return t.openPit().keys()
+	// THE COMPOSE DRAWER HAS TWO KEYMAPS where every other pit has one, so its
+	// sub-mode is asked AFTER openPit has decided what is open: a search box or
+	// a ':' line over the drawer outranks it, exactly as they outrank a list.
+	open := t.openPit()
+	if open == pitCompose && t.composeMode == composeNormal {
+		return modeCompose
+	}
+	return open.keys()
 }
 
 // openPit is what is open, as an identity. THE ONE PLACE that reads the
@@ -1936,8 +1954,8 @@ func (t *transcript) openPit() pitID {
 		return pitSearch
 	case t.box == boxCommand:
 		return pitCommand
-	case t.box == boxPrompt:
-		return pitPrompt
+	case t.box == boxCompose:
+		return pitCompose
 	case t.pit.open():
 		return t.pit.id
 	default:
@@ -2001,6 +2019,16 @@ func (t *transcript) dispatch(ev keyEvent) {
 			t.boxLiteral(ev.b)
 		}
 		t.render()
+		return
+	case modeCompose:
+		// THE DRAWER OWNS THE KEYBOARD, the way a visual selection does: a key
+		// with no row here is inert rather than scrolling the conversation
+		// behind the draft a reader is reading.
+		if act := pagerAct.pager(modeCompose, ev); act != nil {
+			act(t)
+			t.pendG = ev.b == 'g' && !t.pendG
+			t.render()
+		}
 		return
 	case modeFork:
 		// The direction key, or nothing: an 'f' followed by anything else is
@@ -2332,18 +2360,54 @@ func panelDismiss(t *transcript) { t.closePanels() }
 func searchAccept(t *transcript) {
 	t.inSearch = false
 	t.matchQuery = t.query
-	// A PIT SEARCHES ITS OWN ROWS. The reader is inside a list, and the
-	// transcript scrolling underneath it is not what they asked for.
-	if t.pit.open() && t.pit.list() != nil {
+	// THE SEARCH TARGETS WHAT IS OPEN. A reader inside a drawer asked about
+	// the drawer; the transcript scrolling underneath it is not what they
+	// meant, and a query that silently moved the wrong thing is worse than
+	// one that reports finding nothing.
+	switch {
+	case t.box == boxCompose:
+		t.composeMode = composeNormal
+		t.composeFind(t.searchStep())
+	case t.pit.open() && t.pit.list() != nil:
 		if !t.pit.findRow(t.query, t.searchStep()) {
-			t.note("no row matching " + t.query)
+			t.setCommandNoteAt("no row matching "+t.query, alertError)
 		}
-		return
+	default:
+		t.find(t.query)
 	}
-	t.find(t.query)
 }
 
 func searchCancel(t *transcript) { t.inSearch, t.query = false, "" }
+
+// pagerFindRowNext and pagerFindRowPrev are n and N inside a pit: the same
+// walk searchAccept made, repeated.
+func pagerFindRowNext(t *transcript) { t.findRow(t.searchStep()) }
+func pagerFindRowPrev(t *transcript) { t.findRow(-t.searchStep()) }
+
+func (t *transcript) findRow(dir int) {
+	// THE BAR, NOT A NOTE PIT. A note is itself a pit, so reporting a failed
+	// search that way closed the list the search was aimed at: the reader
+	// pressed n and lost the form they were reading.
+	if t.matchQuery == "" {
+		t.setCommandNoteAt("no search yet", alertError)
+		return
+	}
+	if !t.pit.findRow(t.matchQuery, dir) {
+		t.setCommandNoteAt("no row matching "+t.matchQuery, alertError)
+	}
+}
+
+// searchTarget names what the box will search, for the one row of chrome the
+// box draws: a drawer, a list, or the conversation.
+func (t *transcript) searchTarget() string {
+	switch {
+	case t.box == boxCompose:
+		return composeGlyph
+	case t.pit.open() && t.pit.list() != nil:
+		return t.pit.id.face().glyph
+	}
+	return ""
+}
 
 func searchBackspace(t *transcript) {
 	if len(t.query) > 0 {
@@ -2968,6 +3032,12 @@ func (t *transcript) inputDrawerLines() []string {
 		if t.searchStep() < 0 {
 			sigil = "?"
 		}
+		// THE TARGET IS A GLYPH, not a sentence: a search aimed at a drawer
+		// rather than at the conversation has to say so, and one column of
+		// chrome is what that costs.
+		if g := t.searchTarget(); g != "" {
+			sigil = g + sigil
+		}
 		rows = []string{pitGray(clipToWidth(sigil+t.query, t.w))}
 	case t.box != boxNone:
 		// The PROMPT is the editor's, not a constant: while ^R runs it reads
@@ -2976,20 +3046,30 @@ func (t *transcript) inputDrawerLines() []string {
 		//
 		// THE BOX WRAPS, and it obeys the pit's page like every other list:
 		// a long command used to scroll sideways under the prompt, which is
-		// the one place a reader cannot check what they typed. Fullscreen is
-		// not offered here -- a box is a thing you are typing INTO, not a
-		// screen you are reading.
+		// the one place a reader cannot check what they typed. The compose
+		// drawer may take the pane (F); the command line may not, because it
+		// is a thing you type INTO rather than a screen you read.
 		e := t.editor()
-		room := min(t.boxRows(), max(t.pitRoom(), 1))
-		if t.box == boxPrompt {
-			// THE HINT COSTS A ROW, so the box gets one fewer: a drawer that
-			// grew by a row when it opened would move the conversation under
-			// the reader's eyes.
-			room = max(room-1, 1)
+		rows = t.composeTitle()
+		// FULLSCREEN LIFTS THE DRAWER'S OWN CAP: the cap exists so a draft does
+		// not quietly eat the conversation, and F is the reader saying they
+		// want it to.
+		room := max(min(t.boxRows(), t.pitRoom())-len(rows), 1)
+		if t.fullPit() {
+			room = max(t.pitRoom()-len(rows), 1)
 		}
-		rows = e.wrap(e.prompt(t.box.sigil()), t.w, room)
-		if t.box == boxPrompt {
-			rows = append(rows, pitGray(clipToWidth("  "+draftHint(e), t.w)))
+		lo, hi := -1, -1
+		if from, to, ok := t.composeSpan(); ok {
+			lo, hi = from, to
+		}
+		rows = append(rows, e.wrapWash(e.prompt(t.boxSigil()), t.w, room, lo, hi)...)
+		// FULLSCREEN IS A SURFACE, so it keeps the room it took: a drawer that
+		// asked for the pane and then drew three rows would leave the rest of
+		// it blank behind a transcript that is not there any more.
+		if t.box == boxCompose && t.fullPit() {
+			for len(rows) < room {
+				rows = append(rows, "")
+			}
 		}
 	default:
 		return nil

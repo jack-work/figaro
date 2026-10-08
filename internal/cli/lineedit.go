@@ -925,7 +925,7 @@ func (e *lineEditor) render(prefix string, w int) string {
 			hi++
 		}
 		if e.cursor <= hi || lo >= len(e.runes) {
-			return prefix + renderWithCursor(flattenNewlines(e.runes[lo:hi]), e.cursor-lo)
+			return prefix + renderWithCursor(flattenNewlines(e.runes[lo:hi]), e.cursor-lo, -1, -1)
 		}
 		lo++
 	}
@@ -936,6 +936,12 @@ func (e *lineEditor) render(prefix string, w int) string {
 // are indented under the prompt, and past `rows` the window follows the
 // cursor -- what you are typing is always on the screen.
 func (e *lineEditor) wrap(prefix string, w, rows int) []string {
+	return e.wrapWash(prefix, w, rows, -1, -1)
+}
+
+// wrapWash is wrap with a highlight over the runes [lo, hi): the compose
+// pit's visual selection, painted the way the transcript paints its own.
+func (e *lineEditor) wrapWash(prefix string, w, rows, lo, hi int) []string {
 	if w <= 0 || rows < 1 {
 		return nil
 	}
@@ -963,7 +969,7 @@ func (e *lineEditor) wrap(prefix string, w, rows int) []string {
 		if i == at {
 			idx = e.cursor - lines[i].start
 		}
-		out = append(out, head+renderWithCursor(lines[i].runes, idx))
+		out = append(out, head+renderWithCursor(lines[i].runes, idx, lo-lines[i].start, hi-lines[i].start))
 	}
 	return out
 }
@@ -1020,19 +1026,116 @@ func flattenNewlines(runes []rune) []rune {
 
 // renderWithCursor paints the cursor cell in reverse video. The pager owns the
 // whole grid and hides the real cursor, so the caret has to be drawn.
-func renderWithCursor(runes []rune, at int) string {
+func renderWithCursor(runes []rune, at int, washFrom, washTo int) string {
 	var b strings.Builder
+	washing := false
 	for i, r := range runes {
 		if i == at {
+			if washing {
+				b.WriteString("\x1b[27m")
+				washing = false
+			}
 			b.WriteString("\x1b[7m")
 			b.WriteRune(r)
 			b.WriteString("\x1b[27m")
 			continue
 		}
+		if !washing && i >= washFrom && i < washTo {
+			b.WriteString("\x1b[7m")
+			washing = true
+		} else if washing && i >= washTo {
+			b.WriteString("\x1b[27m")
+			washing = false
+		}
 		b.WriteRune(r)
+	}
+	if washing {
+		b.WriteString("\x1b[27m")
 	}
 	if at >= len(runes) {
 		b.WriteString("\x1b[7m \x1b[27m") // the cursor past the end of the line
 	}
 	return b.String()
+}
+
+// ---------------------------------------------------------------------------
+// What the compose pit's normal mode needs: motions that are not edits, a
+// search over the buffer, and a laid-out view that can carry a wash.
+// ---------------------------------------------------------------------------
+
+// firstNonBlank is ^ : the first non-space of the cursor's line.
+func (e *lineEditor) firstNonBlank() {
+	e.lastOp = opOther
+	i := e.lineStart(e.cursor)
+	end := e.lineEnd(i)
+	for i < end && (e.runes[i] == ' ' || e.runes[i] == '\t') {
+		i++
+	}
+	e.cursor = i
+}
+
+// bufferStart and bufferEnd are gg and G.
+func (e *lineEditor) bufferStart() { e.lastOp = opOther; e.cursor = 0 }
+func (e *lineEditor) bufferEnd()   { e.lastOp = opOther; e.cursor = len(e.runes) }
+
+// paragraph is { and }: the next blank line in that direction, vim's.
+func (e *lineEditor) paragraph(dir int) {
+	e.lastOp = opOther
+	for {
+		before := e.cursor
+		e.lineStep(dir)
+		if e.cursor == before {
+			return
+		}
+		if e.lineEnd(e.cursor) == e.lineStart(e.cursor) {
+			return
+		}
+	}
+}
+
+// findRune searches the buffer for q from the cursor, wrapping once, and
+// leaves the cursor on the match. It reports whether one was found.
+func (e *lineEditor) findRune(q string, dir int) bool {
+	if q == "" || len(e.runes) == 0 {
+		return false
+	}
+	hay := []rune(strings.ToLower(string(e.runes)))
+	needle := []rune(strings.ToLower(q))
+	at := func(i int) bool {
+		if i < 0 || i+len(needle) > len(hay) {
+			return false
+		}
+		for k, r := range needle {
+			if hay[i+k] != r {
+				return false
+			}
+		}
+		return true
+	}
+	n := len(hay)
+	for step := 1; step <= n; step++ {
+		i := ((e.cursor+dir*step)%n + n) % n
+		if at(i) {
+			e.lastOp = opOther
+			e.cursor = i
+			return true
+		}
+	}
+	return false
+}
+
+// selectionText is the runes between two indices, in order.
+func (e *lineEditor) selectionText(lo, hi int) string {
+	lo, hi = max(min(lo, hi), 0), min(max(lo, hi), len(e.runes))
+	if lo >= hi {
+		return ""
+	}
+	return string(e.runes[lo:hi])
+}
+
+// rows is how many visual rows the buffer occupies at this width: what the
+// drawer needs to know before it decides how much of itself to show.
+func (e *lineEditor) rowCount(avail int) int {
+	rows, _ := e.layout(max(avail, 1))
+	return len(rows)
 }

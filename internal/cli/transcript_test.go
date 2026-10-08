@@ -214,10 +214,12 @@ func TestTranscript_HelpPanel(t *testing.T) {
 	if !tr.showing("help") {
 		t.Fatalf("j should scroll the help panel, not wipe it")
 	}
-	// Something with nothing to move still goes away on any key.
-	tr.key('n')
+	// Something with nothing to move still goes away on any key. NOT 'n' any
+	// more: in a pit n repeats the pit's own search, so it is a key the drawer
+	// owns. 'z' is bound nowhere, which is what this rule is about.
+	tr.key('z')
 	if tr.showing("help") {
-		t.Fatalf("a key the drawer does not own (n) should still wipe it")
+		t.Fatalf("a key the drawer does not own (z) should still wipe it")
 	}
 	if !tr.active {
 		t.Fatalf("help panel interactions must never exit the pager")

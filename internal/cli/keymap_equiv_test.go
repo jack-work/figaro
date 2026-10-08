@@ -171,6 +171,16 @@ var oracleStates = map[string]func(*transcript){
 	// A y/n question up: the mode a destructive verb opens, where every key
 	// that is not an answer is swallowed.
 	"confirm": func(tr *transcript) { tr.askConfirm("kill aria1234?", func() {}) },
+	// The compose drawer in NORMAL mode: '>' opens it, two words are typed,
+	// Esc drops into the motions. No pre-refactor twin -- the mode is new --
+	// so its row records the behaviour it was built to have.
+	"compose": func(tr *transcript) {
+		tr.key('>')
+		for _, b := range []byte("alpha bravo") {
+			tr.key(b)
+		}
+		tr.key(0x1b)
+	},
 }
 
 // REBASED A SECOND TIME, for the cold-selection seed (Ctrl-N/Ctrl-P). Two
@@ -238,12 +248,18 @@ var oracleStates = map[string]func(*transcript){
 // typed '/'.
 //
 // Regenerated mechanically, not hand-edited.
+// n AND N WALK A PIT'S ROWS, 2026-10-07: a search aimed at a list used to
+// find one row and have no way to find the next, because the repeat keys were
+// bound in the transcript only. In a pit they now repeat the pit's own search,
+// which is what moved the cells for n/N in the four pit states below.
 var pagerOracle = []struct {
 	state string
 	inert string
 	keys  map[string]string
 }{
 	{"help", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		"0x4e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x6e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		// '>' IS THE DRAFT, 2026-10-07: a second door into the box, so every
 		// state a pager key can act from has a cell for it now. jmp=true with
 		// an empty jq is the signature of it: the draft is a buffer of its
@@ -449,6 +465,11 @@ var pagerOracle = []struct {
 		"0x7f": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"1\" vis=none",
 	}},
 	{"panel+sel", "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		"0x4e": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
+		// A FAILED PIT SEARCH REPORTS ON THE BAR, 2026-10-08: it used to open a
+		// note, and a note is itself a pit, so saying "no row matching x" closed
+		// the list the reader was searching. The cells below are that fix.
+		"0x6e": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		// '>' IS THE DRAFT, 2026-10-07: a second door into the box, so every
 		// state a pager key can act from has a cell for it now. jmp=true with
 		// an empty jq is the signature of it: the draft is a buffer of its
@@ -517,6 +538,8 @@ var pagerOracle = []struct {
 		"0x78": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 	}},
 	{"queued", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		"0x4e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x6e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=true g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		// '>' IS THE DRAFT, 2026-10-07: a second door into the box, so every
 		// state a pager key can act from has a cell for it now. jmp=true with
 		// an empty jq is the signature of it: the draft is a buffer of its
@@ -800,6 +823,8 @@ var pagerOracle = []struct {
 		"0x7f": "off:same fol=false srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 	}},
 	{"status", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		"0x4e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x6e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		// '>' IS THE DRAFT, 2026-10-07: a second door into the box, so every
 		// state a pager key can act from has a cell for it now. jmp=true with
 		// an empty jq is the signature of it: the draft is a buffer of its
@@ -1130,6 +1155,21 @@ var pagerOracle = []struct {
 		"0x76": "off:vis fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+4:0",
 		"Home": "off:top fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"PgUp": "off:-5 fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+	}},
+	{"compose", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=none", map[string]string{
+		// g ARMS gg, the one two-key gesture the drawer has, which the signature
+		// can see (g=true) because the pager owns the pending flag.
+		"0x67": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=true sel=false exp=0 jmp=true jq=\"\" vis=none",
+		// WHAT THIS ROW CAN AND CANNOT SEE. The signature has no column for the
+		// draft, so a motion inside it reads as inert here: what this state
+		// asserts is that the drawer's keys leave the REST of the pager alone,
+		// which is the cross-contamination this oracle exists to catch. The
+		// motions themselves are measured in transcript_box_test.go, against
+		// the cursor they move.
+		"0x1b": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
+		"0x2f": "off:same fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=none",
+		"0x3f": "off:same fol=true srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=none",
+		"0x46": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=none",
 	}},
 }
 
