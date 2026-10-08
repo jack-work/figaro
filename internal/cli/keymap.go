@@ -17,7 +17,7 @@ const (
 	modeIncipit    keyMode = iota // inline streaming; the pager is not up
 	modeTranscript                // the pager, no panel, not searching
 	modeSearch                    // typing into the '/' box: almost all keys are text
-	modeJump                      // typing into the ':' box: the same, for a coordinate
+	modeBox                       // typing into the ':' box: the same, for a coordinate
 	modePanel                     // a '?'/'!'/'Q' panel is showing
 	modeVisual                    // v/V: a visual selection is up and owns the motions
 	modeFork                      // 'f' is down, waiting for the direction of the fork jump
@@ -32,7 +32,7 @@ const (
 	inIncipit    keyModeSet = 1 << modeIncipit
 	inTranscript keyModeSet = 1 << modeTranscript
 	inSearchBox  keyModeSet = 1 << modeSearch
-	inJumpBox    keyModeSet = 1 << modeJump
+	inBox        keyModeSet = 1 << modeBox
 	inPanel      keyModeSet = 1 << modePanel
 	inVisual     keyModeSet = 1 << modeVisual
 	inFork       keyModeSet = 1 << modeFork
@@ -41,7 +41,7 @@ const (
 	// inPager is every mode with the pager up. Note that a transcript-mode
 	// row is ALSO reachable while a panel is showing: the panel swallows only
 	// its own keys and every other key wipes it and acts (see dispatch).
-	inPager  = inTranscript | inSearchBox | inJumpBox | inPanel | inVisual | inFork | inConfirm
+	inPager  = inTranscript | inSearchBox | inBox | inPanel | inVisual | inFork | inConfirm
 	inAnyBox = inIncipit | inPager
 )
 
@@ -157,7 +157,7 @@ func (b *keyBinding) hidden() bool { return b.help == helpNone }
 var keymap = []keyBinding{
 	// -- input level: the keys that own the process ------------------------
 	//
-	// NOTE THE HOLE IN EVERY ONE OF THEM: `&^ inJumpBox`. A command line that
+	// NOTE THE HOLE IN EVERY ONE OF THEM: `&^ inBox`. A command line that
 	// answers to the pager's escape hatches is not a command line -- ^D would
 	// detach instead of deleting a character, ^C would end the session instead
 	// of abandoning the line, ^L would re-enter a pager already up, and ^T
@@ -166,12 +166,12 @@ var keymap = []keyBinding{
 	// removed, only moved one press further away: ^D on an EMPTY box closes
 	// the box, and the next ^D detaches (see cmdDeleteFwd).
 	{
-		chord: byteChord(0x03), modes: inAnyBox &^ inJumpBox,
+		chord: byteChord(0x03), modes: inAnyBox &^ inBox,
 		open: staysInline, why: "interrupt; handled whether or not the pager is up",
 		help: helpInterrupt, input: inputInterrupt,
 	},
 	{
-		chord: byteChord(0x04), modes: inAnyBox &^ inJumpBox,
+		chord: byteChord(0x04), modes: inAnyBox &^ inBox,
 		open: staysInline, why: "detach; handled whether or not the pager is up",
 		help: helpDetach, input: inputDisconnect,
 	},
@@ -187,12 +187,12 @@ var keymap = []keyBinding{
 		help: helpLeavePit, input: inputLeavePit,
 	},
 	{
-		chord: byteChord(0x0c), modes: inAnyBox &^ inJumpBox,
+		chord: byteChord(0x0c), modes: inAnyBox &^ inBox,
 		open: staysInline, why: "enters the pager through its own action",
 		help: helpListen, input: inputEnterTranscript,
 	},
 	{
-		chord: byteChord(0x14), modes: inAnyBox &^ inJumpBox,
+		chord: byteChord(0x14), modes: inAnyBox &^ inBox,
 		open: staysInline, why: "^T enters the pager through its own action",
 		help: helpNone, input: inputEnterTranscript,
 	},
@@ -204,7 +204,7 @@ var keymap = []keyBinding{
 		// Ctrl+M because Ctrl+M IS ENTER'S BYTE (0x0d) and cannot be bound
 		// apart from it. It shares its letter with 'm', the status bar's own
 		// verbosity: one letter, two depths, and the modifier says which.
-		chord: metaChord('m'), modes: inAnyBox &^ inJumpBox,
+		chord: metaChord('m'), modes: inAnyBox &^ inBox,
 		open: opensPager, help: helpVerbose, input: inputToggleVerbose,
 	},
 	{
@@ -257,11 +257,11 @@ var keymap = []keyBinding{
 		// selection ate the completion menu the keys were meant to walk. A box
 		// that has its own meaning for a chord must be excluded from the rows
 		// that claim it globally.
-		chord: ctrlChord('n'), modes: inAnyBox &^ inJumpBox,
+		chord: ctrlChord('n'), modes: inAnyBox &^ inBox,
 		open: opensPager, help: helpSelectExtend, input: inputSelectNext,
 	},
 	{
-		chord: ctrlChord('p'), modes: inAnyBox &^ inJumpBox,
+		chord: ctrlChord('p'), modes: inAnyBox &^ inBox,
 		open: opensPager, help: helpSelectExtend, input: inputSelectPrev,
 	},
 
@@ -373,7 +373,24 @@ var keymap = []keyBinding{
 		// pager up first, exactly as '?' and '!' do.
 		chord: byteChord(':'), modes: inTranscript,
 		open: opensPager,
-		help: helpJump, pager: pagerJumpPrompt,
+		help: helpJump, pager: pagerCommandBox,
+	},
+
+	{
+		// '>' IS THE DRAFT, and it opens the pager for the same reason ':'
+		// does: what it dispatches is shown there. The sigil is the key, so
+		// the box a reader opens looks like the key they pressed.
+		chord: byteChord('>'), modes: inTranscript,
+		open: opensPager,
+		help: helpDraft, pager: pagerPromptBox,
+	},
+	{
+		// With a highlight up it opens holding the range, which the submit
+		// expands into the coordinate that quotes the passage: a reply to
+		// something already said, typed where you are reading it.
+		chord: byteChord('>'), modes: inVisual,
+		open: opensPager,
+		help: helpDraft, pager: pagerVisualPrompt,
 	},
 
 	// -- pager level: panels -----------------------------------------------
@@ -562,27 +579,27 @@ var keymap = []keyBinding{
 	// no row here is literal text, which is what makes '/' an ordinary
 	// character in here as ':' is one in there.
 	{
-		chord: byteChord(0x0d), modes: inJumpBox,
+		chord: byteChord(0x0d), modes: inBox,
 		open: staysInline, why: "only reachable with the jump prompt already up",
-		help: helpJump, pager: jumpAccept,
+		help: helpJump, pager: boxAccept,
 	},
 	{
-		chord: byteChord(0x0a), modes: inJumpBox,
+		chord: byteChord(0x0a), modes: inBox,
 		open: staysInline, why: "only reachable with the jump prompt already up",
-		help: helpJump, pager: jumpAccept,
+		help: helpJump, pager: boxAccept,
 	},
 	{
-		chord: byteChord(0x1b), modes: inJumpBox,
+		chord: byteChord(0x1b), modes: inBox,
 		open: staysInline, why: "only reachable with the jump prompt already up",
-		help: helpJump, pager: jumpCancel,
+		help: helpJump, pager: boxCancel,
 	},
 	{
 		// Alt+Enter, and Ctrl+Enter on a CSI-u terminal (the input loop folds
 		// the second onto the first: a legacy terminal cannot tell Ctrl+Enter
 		// from Enter). Submit, then snap to the live tail.
-		chord: metaChord(0x0d), modes: inJumpBox,
+		chord: metaChord(0x0d), modes: inBox,
 		open: staysInline, why: "only reachable with the jump prompt already up",
-		help: helpCmdSubmitSnap, pager: jumpAcceptSnap,
+		help: helpCmdSubmitSnap, pager: boxAcceptSnap,
 	},
 	// -- the command line's EMACS BINDINGS --------------------------------
 	//
@@ -604,78 +621,78 @@ var keymap = []keyBinding{
 	// keyed on an encoding that terminal never sends.
 
 	// Moving.
-	{chord: byteChord(0x01), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdHome},
-	{chord: byteChord(0x05), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdEnd},
-	{chord: byteChord(0x02), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdLeft},
-	{chord: byteChord(0x06), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdRight},
-	{chord: metaChord('b'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdWordLeft},
-	{chord: metaChord('f'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdWordRight},
-	{chord: byteChord(0x0c), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdRedraw},
+	{chord: byteChord(0x01), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdHome},
+	{chord: byteChord(0x05), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdEnd},
+	{chord: byteChord(0x02), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdLeft},
+	{chord: byteChord(0x06), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdRight},
+	{chord: metaChord('b'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdWordLeft},
+	{chord: metaChord('f'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdWordRight},
+	{chord: byteChord(0x0c), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdRedraw},
 
 	// Changing text.
-	{chord: byteChord(0x04), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdDeleteFwd},
-	{chord: byteChord(0x14), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdTranspose},
-	{chord: metaChord('t'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdTransposeWord},
-	{chord: metaChord('u'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdUpcase},
-	{chord: metaChord('l'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdDowncase},
-	{chord: metaChord('c'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdCapitalize},
+	{chord: byteChord(0x04), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdDeleteFwd},
+	{chord: byteChord(0x14), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdTranspose},
+	{chord: metaChord('t'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdTransposeWord},
+	{chord: metaChord('u'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdUpcase},
+	{chord: metaChord('l'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdDowncase},
+	{chord: metaChord('c'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdCapitalize},
 
 	// Killing and yanking. Every kill feeds the kill ring, which is what makes
 	// ^Y paste whatever any of them cut, and M-y walk back through the rest.
-	{chord: byteChord(0x0b), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdKillToEnd},
-	{chord: byteChord(0x15), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdKillToStart},
-	{chord: byteChord(0x17), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdKillWord},
-	{chord: metaChord('d'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdKillWordFwd},
-	{chord: metaChord(0x7f), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdKillWordAlpha},
-	{chord: metaChord('\\'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdDeleteSpace},
-	{chord: byteChord(0x19), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdYank},
-	{chord: metaChord('y'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdYankPop},
+	{chord: byteChord(0x0b), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdKillToEnd},
+	{chord: byteChord(0x15), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdKillToStart},
+	{chord: byteChord(0x17), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdKillWord},
+	{chord: metaChord('d'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdKillWordFwd},
+	{chord: metaChord(0x7f), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdKillWordAlpha},
+	{chord: metaChord('\\'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdDeleteSpace},
+	{chord: byteChord(0x19), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdYank},
+	{chord: metaChord('y'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdYankPop},
 
 	// History, including the incremental search.
-	{chord: byteChord(0x10), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistPrev},
-	{chord: byteChord(0x0e), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistNext},
-	{chord: metaChord('<'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHistFirst},
-	{chord: metaChord('>'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHistLast},
-	{chord: byteChord(0x12), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdSearchPrev},
-	{chord: byteChord(0x13), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdSearchNext},
-	{chord: metaChord('p'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdPrefixPrev},
-	{chord: metaChord('n'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdPrefixNext},
-	{chord: metaChord('.'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdYankLastArg},
-	{chord: metaChord('_'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdYankLastArg},
+	{chord: byteChord(0x10), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistPrev},
+	{chord: byteChord(0x0e), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistNext},
+	{chord: metaChord('<'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHistFirst},
+	{chord: metaChord('>'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHistLast},
+	{chord: byteChord(0x12), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdSearchPrev},
+	{chord: byteChord(0x13), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdSearchNext},
+	{chord: metaChord('p'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdPrefixPrev},
+	{chord: metaChord('n'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdPrefixNext},
+	{chord: metaChord('.'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdYankLastArg},
+	{chord: metaChord('_'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdYankLastArg},
 
 	// Undo, and the two ways to abandon a line.
-	{chord: byteChord(0x1f), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdUndo},
-	{chord: metaChord('r'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdRevert},
-	{chord: byteChord(0x07), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdAbort, pager: cmdAbort},
-	{chord: byteChord(0x03), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdAbort, pager: cmdAbort},
+	{chord: byteChord(0x1f), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdUndo},
+	{chord: metaChord('r'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdRevert},
+	{chord: byteChord(0x07), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdAbort, pager: cmdAbort},
+	{chord: byteChord(0x03), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdAbort, pager: cmdAbort},
 
 	// Completion.
-	{chord: byteChord(0x09), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdComplete, pager: cmdComplete},
-	{chord: byteChord(0x16), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdPaste, pager: cmdPaste},
-	{chord: ctrlChord('v'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdPaste},
-	{chord: metaChord('?'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdListComplete},
-	{chord: metaChord('*'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdInsertComplete},
+	{chord: byteChord(0x09), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdComplete, pager: cmdComplete},
+	{chord: byteChord(0x16), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdPaste, pager: cmdPaste},
+	{chord: ctrlChord('v'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdPaste},
+	{chord: metaChord('?'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdListComplete},
+	{chord: metaChord('*'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdInsertComplete},
 
 	// The same keys as CSI-u chords: see the note at the top of this block.
 	// These are the rows that actually fire on a terminal that answers
 	// \x1b[>1u, and the byte rows above are the ones that never do.
-	{chord: ctrlChord('a'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHome},
-	{chord: ctrlChord('e'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdEnd},
-	{chord: ctrlChord('b'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdLeft},
-	{chord: ctrlChord('f'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdRight},
-	{chord: ctrlChord('d'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdDeleteFwd},
-	{chord: ctrlChord('t'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdTranspose},
-	{chord: ctrlChord('k'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdKillToEnd},
-	{chord: ctrlChord('u'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdKillToStart},
-	{chord: ctrlChord('w'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdKillWord},
-	{chord: ctrlChord('y'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdYank},
-	{chord: ctrlChord('n'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHistNext},
-	{chord: ctrlChord('p'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHistPrev},
-	{chord: ctrlChord('r'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdSearchPrev},
-	{chord: ctrlChord('s'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdSearchNext},
-	{chord: ctrlChord('g'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdAbort},
-	{chord: ctrlChord('l'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdRedraw},
-	{chord: ctrlChord('h'), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: jumpBackspace},
+	{chord: ctrlChord('a'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHome},
+	{chord: ctrlChord('e'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdEnd},
+	{chord: ctrlChord('b'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdLeft},
+	{chord: ctrlChord('f'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdRight},
+	{chord: ctrlChord('d'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdDeleteFwd},
+	{chord: ctrlChord('t'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdTranspose},
+	{chord: ctrlChord('k'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdKillToEnd},
+	{chord: ctrlChord('u'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdKillToStart},
+	{chord: ctrlChord('w'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdKillWord},
+	{chord: ctrlChord('y'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdYank},
+	{chord: ctrlChord('n'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHistNext},
+	{chord: ctrlChord('p'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHistPrev},
+	{chord: ctrlChord('r'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdSearchPrev},
+	{chord: ctrlChord('s'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdSearchNext},
+	{chord: ctrlChord('g'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdAbort},
+	{chord: ctrlChord('l'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdRedraw},
+	{chord: ctrlChord('h'), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: boxBackspace},
 
 	// NOT BOUND, each for a reason:
 	//
@@ -705,22 +722,22 @@ var keymap = []keyBinding{
 
 	// The arrow cluster, which the box means literally: Up/Down are history,
 	// Left/Right are the cursor, Home/End are the ends of the line.
-	{chord: navChord(navUp), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistPrev},
-	{chord: navChord(navDown), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistNext},
-	{chord: navChord(navHome), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHome},
-	{chord: navChord(navEnd), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdEnd},
-	{chord: navChord(navLeft), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdLeft},
-	{chord: navChord(navRight), modes: inJumpBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdRight},
+	{chord: navChord(navUp), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistPrev},
+	{chord: navChord(navDown), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdHistory, pager: cmdHistNext},
+	{chord: navChord(navHome), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdHome},
+	{chord: navChord(navEnd), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpNone, pager: cmdEnd},
+	{chord: navChord(navLeft), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdLeft},
+	{chord: navChord(navRight), modes: inBox, open: staysInline, why: "only reachable with the command line up", help: helpCmdEdit, pager: cmdRight},
 
 	{
-		chord: byteChord(0x7f), modes: inJumpBox,
+		chord: byteChord(0x7f), modes: inBox,
 		open: staysInline, why: "only reachable with the jump prompt already up",
-		help: helpNone, pager: jumpBackspace,
+		help: helpNone, pager: boxBackspace,
 	},
 	{
-		chord: byteChord(0x08), modes: inJumpBox,
+		chord: byteChord(0x08), modes: inBox,
 		open: staysInline, why: "only reachable with the jump prompt already up",
-		help: helpNone, pager: jumpBackspace,
+		help: helpNone, pager: boxBackspace,
 	},
 }
 
@@ -741,6 +758,7 @@ const (
 	helpSearch
 	helpSearchRepeat
 	helpJump
+	helpDraft
 	helpYank
 	helpVerbose
 	helpSticky
@@ -807,6 +825,7 @@ var helpRows = []helpRow{
 	{helpSearch, "/ · ?", "search forward / backward (in a pit, its rows)"},
 	{helpSearchRepeat, "n / N", "next / previous match, with the cursor on it"},
 	{helpJump, ":", "command line: any figaro verb, or a coordinate (:12, :12.3, :0)"},
+	{helpDraft, "> · (in >) M-Enter", "a draft: type or paste a prompt, newlines and quotes intact; M-Enter sends (in v it quotes the highlight)"},
 	{helpCmdHistory, "(in :) ^P/^N · ^R", "command history · search it"},
 	{helpCmdComplete, "(in :) Tab", "complete the verb, an id, or a flag"},
 	// ONE ROW FOR THIRTY BINDINGS, on purpose. The ':' box is readline's
@@ -838,7 +857,7 @@ var helpRows = []helpRow{
 	{helpVisualCols, "(in v) h/l · ←/→", "move the cursor's column"},
 	{helpVisualYankCoord, "(in v) Y", "copy the selection's coordinate (<lt.block:a-b>!)"},
 	{helpVisualMotions, "(in v) w b e · 0 ^ $ · H M L · { }", "vim motions over the cursor; / n N land it on a match"},
-	{helpCmdSubmitSnap, "(in :) M-Enter", "submit, leave visual mode, and snap to the live tail"},
+	{helpCmdSubmitSnap, "(in : or >) M-Enter", "submit, leave visual mode, and snap to the live tail"},
 	{helpListen, "^L", "open the transcript (stays open until you close it)"},
 	{helpStatusPanel, "!", "figaro status panel"},
 	{helpQueuedPanel, "Q", "queued prompts panel"},
@@ -1131,7 +1150,7 @@ func ctrlChordBoundIn(mode keyMode, letter byte) bool {
 // everywhere else the prefix is claimed per chord, and Esc then '/' outside a
 // box is still two keys.
 func metaBoundIn(mode keyMode, b byte) bool {
-	return mode == modeJump || (b < 128 && metaBound[mode][b])
+	return mode == modeBox || (b < 128 && metaBound[mode][b])
 }
 
 // metaFold is the case rule for a Meta chord: Alt+Shift+B means Alt+b, because

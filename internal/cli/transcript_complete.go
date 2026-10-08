@@ -97,7 +97,7 @@ func cmdListComplete(t *transcript) {
 // Rare, and cheap to have: it is how you turn "which arias are there" into a
 // line you then edit down.
 func cmdInsertComplete(t *transcript) {
-	t.cmdline.endSearch()
+	t.editor().endSearch()
 	before, word := t.wordAtCursor()
 	pool := t.fetchCompletions(before, word)
 	shown, _ := filterCompletions(pool, word)
@@ -106,22 +106,22 @@ func cmdInsertComplete(t *transcript) {
 	}
 	t.clearCompletions()
 	for range []rune(word) {
-		t.cmdline.backspace()
+		t.editor().backspace()
 	}
 	vals := make([]string, len(shown))
 	for i, c := range shown {
 		vals[i] = c.value
 	}
-	t.cmdline.insert(strings.Join(vals, " ") + " ")
+	t.editor().insert(strings.Join(vals, " ") + " ")
 }
 
 // openCompletion asks for the candidates under the cursor and acts on them:
 // nothing, one, or a menu. insertPrefix is Tab's first move and not M-?'s.
 func (t *transcript) openCompletion(insertPrefix bool) {
-	if t.completer == nil {
+	if t.candidates() == nil {
 		return
 	}
-	t.cmdline.endSearch()
+	t.editor().endSearch()
 	before, word := t.wordAtCursor()
 	pool := t.fetchCompletions(before, word)
 	shown, loose := filterCompletions(pool, word)
@@ -130,7 +130,7 @@ func (t *transcript) openCompletion(insertPrefix bool) {
 		t.noteOrClear("no completions")
 		return
 	}
-	at := t.cmdline.cursor - len([]rune(word))
+	at := t.editor().cursor - len([]rune(word))
 	if insertPrefix && !loose {
 		vals := make([]string, len(shown))
 		for i, c := range shown {
@@ -139,7 +139,7 @@ func (t *transcript) openCompletion(insertPrefix bool) {
 		// FIRST TAB INSERTS THE LONGEST THING THAT CANNOT BE WRONG, which is
 		// what both shells do before they offer to show you anything.
 		if pre := commonPrefix(vals); len(pre) > len(word) {
-			t.cmdline.insert(pre[len(word):])
+			t.editor().insert(pre[len(word):])
 			word = pre
 		}
 		if len(shown) == 1 {
@@ -167,7 +167,7 @@ func (t *transcript) finishWord(value string) {
 	if strings.HasSuffix(value, "/") || strings.HasSuffix(value, ",") {
 		return
 	}
-	t.cmdline.insert(" ")
+	t.editor().insert(" ")
 }
 
 // cycleCompletion is Tab, ^N/^P and the arrows with the menu up: move the
@@ -188,10 +188,11 @@ func (t *transcript) cycleCompletion(dir int) {
 // replaceWord puts value where the word starting at `at` is: the text from
 // there to the cursor is cut, so cycling never concatenates candidates.
 func (t *transcript) replaceWord(at int, value string) {
-	for t.cmdline.cursor > at {
-		t.cmdline.backspace()
+	e := t.editor()
+	for e.cursor > at {
+		e.backspace()
 	}
-	t.cmdline.insert(value)
+	e.insert(value)
 }
 
 // refilterCompletion follows the line after a keystroke inside the word.
@@ -203,12 +204,12 @@ func (t *transcript) refilterCompletion() {
 	if m == nil {
 		return
 	}
-	if t.cmdline.cursor < m.at {
+	if t.editor().cursor < m.at {
 		t.clearCompletions()
 		return
 	}
 	before, word := t.wordAtCursor()
-	if strings.ContainsAny(word, " \t") || t.cmdline.cursor-len([]rune(word)) != m.at {
+	if strings.ContainsAny(word, " \t") || t.editor().cursor-len([]rune(word)) != m.at {
 		t.clearCompletions()
 		return
 	}
@@ -259,8 +260,9 @@ func (t *transcript) clearCompletions() { t.menu = nil }
 // being completed and the word itself. Only text BEFORE the cursor counts: a
 // cursor in the middle of a line completes the word it is in.
 func (t *transcript) wordAtCursor() (before, word string) {
-	runes := []rune(t.cmdline.String())
-	cur := min(max(t.cmdline.cursor, 0), len(runes))
+	e := t.editor()
+	runes := []rune(e.String())
+	cur := min(max(e.cursor, 0), len(runes))
 	head := string(runes[:cur])
 	word = lastWord(head)
 	return head[:len(head)-len(word)], word
@@ -271,11 +273,25 @@ func (t *transcript) wordAtCursor() (before, word string) {
 // a completer reads for itself -- a path up to its last slash, a list up to
 // its last comma -- so the pool does not depend on the letters still being
 // typed.
+// candidates is the pool's source for whichever box is open: the router's
+// own names and flags for a command line, what belongs in a prompt for a
+// draft. ONE menu, two questions.
+func (t *transcript) candidates() func(string) []string {
+	if t.box == boxPrompt {
+		if t.promptCompleter != nil {
+			return t.promptCompleter
+		}
+		return promptCandidates
+	}
+	return t.completer
+}
+
 func (t *transcript) fetchCompletions(before, word string) []completionCand {
-	if t.completer == nil {
+	ask := t.candidates()
+	if ask == nil {
 		return nil
 	}
-	lines := t.completer(before + completionStem(word))
+	lines := ask(before + completionStem(word))
 	out := make([]completionCand, 0, len(lines))
 	for _, l := range lines {
 		v, d := cmdkit.SplitCandidate(l)

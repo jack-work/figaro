@@ -79,6 +79,14 @@ type transcript struct {
 	// completer returns Tab candidates for a partially typed command line. Set
 	// by the input loop, which owns the router.
 	completer func(string) []string
+	// promptCompleter is Tab in the '>' draft: what belongs in a prompt, not
+	// what belongs in a command line. Defaulted, because both of its sources
+	// (form keys, paths) are local questions a fixture can answer too.
+	promptCompleter func(string) []string
+	// sendDraft submits the '>' draft as a prompt, bytes intact. Set by the
+	// input loop for the same reason command is, and under the same rule: it
+	// is called holding the render lock, so it must hand off.
+	sendDraft func(string)
 	// openForm is 'S': the input loop's door to the live form view, because
 	// opening one dials. IT MUST NOT TAKE THE RENDER LOCK -- every hook here
 	// is called from dispatch, which already holds it, so implementations hand
@@ -144,15 +152,22 @@ type transcript struct {
 	query      string
 	matchQuery string // persistent query: highlights + n/N target
 
-	// The ':' coordinate jump (transcript_jump.go). inJump/jumpQuery are the
-	// command line, exactly as inSearch/query are the search box; jump is a
-	// walk in progress; jumpNote is what the footer says about the last one.
-	inJump bool
+	// box is which text box owns the keyboard, and the zero value is none.
+	// Both kinds are one mode to the keymap (modeBox) and one pit to the
+	// screen: what differs is the sigil, what Enter does, and where a submit
+	// goes. See transcript_jump.go.
+	box boxKind
 	// cmdline is the ':' box's editor: runes, a cursor, emacs motions and
 	// history. It replaced a `q += string(b)` string for the reasons in
 	// lineedit.go -- the short one being that the old box could not represent
 	// "café", let alone a cursor.
 	cmdline lineEditor
+	// draft is the '>' box's editor: the same editor, a separate buffer and a
+	// separate history, because a prompt and a command line are not each
+	// other's past. It OUTLIVES the box: Esc puts the drawer away and '>'
+	// brings the draft back, which is what makes a long paste safe to look
+	// away from.
+	draft lineEditor
 	// menu is Tab's completion pit, open while it is non-nil. See
 	// transcript_complete.go.
 	menu *completionMenu
@@ -308,7 +323,7 @@ func (t *transcript) enter() {
 	t.active, t.follow, t.prev = true, true, nil
 	t.pendG, t.pendF, t.inSearch, t.query, t.matchQuery = false, false, false, "", ""
 	t.searchDir = 1
-	t.inJump, t.jumpNote, t.jump = false, "", nil
+	t.box, t.jumpNote, t.jump = boxNone, "", nil
 	t.cmdline.reset()
 	t.menu = nil
 	// THE PAGER OWNS RETENTION while it is up. The client's count-based trim
@@ -1550,7 +1565,7 @@ func (t *transcript) renderFrame() {
 			screen[r] = l
 		}
 	}
-	if t.pit.open() || t.inSearch || t.inJump {
+	if t.pit.open() || t.inSearch || t.boxOpen() {
 		// NO CLOSING RULE, AND NO HINTS. An open pit used to be fenced top
 		// and bottom, with the lower fence carrying "^N/^P select · y yank ·
 		// Esc close" -- a second rule and a row of key advice between the list
@@ -1899,13 +1914,13 @@ func (t *transcript) mode() keyMode {
 	}
 	// A BOX OUTRANKS THE SELECTION: `:` with a selection up opens the command
 	// line, and the line must own the keyboard while the highlight stays.
-	if t.visual.active() && !t.inSearch && !t.inJump {
+	if t.visual.active() && !t.inSearch && !t.boxOpen() {
 		return modeVisual
 	}
 	// A HALF-TYPED GESTURE OWNS THE NEXT KEY. 'f' is armed, so j/k mean fork
 	// points; every other key falls through to the transcript's own rows (see
 	// dispatch), which is what the second key of gg does too.
-	if t.pendF && !t.inSearch && !t.inJump {
+	if t.pendF && !t.inSearch && !t.boxOpen() {
 		return modeFork
 	}
 	return t.openPit().keys()
@@ -1919,8 +1934,10 @@ func (t *transcript) openPit() pitID {
 		return pitConfirm
 	case t.inSearch:
 		return pitSearch
-	case t.inJump:
+	case t.box == boxCommand:
 		return pitCommand
+	case t.box == boxPrompt:
+		return pitPrompt
 	case t.pit.open():
 		return t.pit.id
 	default:
@@ -1966,22 +1983,22 @@ func (t *transcript) dispatch(ev keyEvent) {
 		}
 		t.render()
 		return
-	case modeJump:
+	case modeBox:
 		// THE ARROW CLUSTER IS LIVE HERE, unlike in the search box: Up/Down are
 		// history and Home/End are motions, which is what a command line means
 		// by them. An arrow with no row is still swallowed rather than allowed
 		// to scroll the transcript behind the prompt.
 		if ev.nav != navNone {
-			if act := pagerAct.pager(modeJump, ev); act != nil {
+			if act := pagerAct.pager(modeBox, ev); act != nil {
 				act(t)
 				t.render()
 			}
 			return
 		}
-		if act := pagerAct.pager(modeJump, ev); act != nil {
+		if act := pagerAct.pager(modeBox, ev); act != nil {
 			act(t)
 		} else {
-			t.jumpLiteral(ev.b)
+			t.boxLiteral(ev.b)
 		}
 		t.render()
 		return
@@ -2080,9 +2097,9 @@ func (t *transcript) dispatch(ev keyEvent) {
 	// status row until the next key, then the ordinary status line takes the row
 	// back. Without this a failed `:999` would eat the mantra/ctx/cost line for
 	// the rest of the session. The key that SET the note never reaches here -
-	// jumpAccept returns from the modeJump arm above: so the note always gets
+	// boxAccept returns from the modeBox arm above: so the note always gets
 	// its frame.
-	if !t.inJump {
+	if !t.boxOpen() {
 		t.jumpNote = ""
 	}
 	t.render()
@@ -2237,7 +2254,7 @@ func pagerVisualPendingTop(t *transcript) {
 // what the command will be handed. With only the cursor up it is the plain
 // command line.
 func pagerVisualCommand(t *transcript) {
-	pagerJumpPrompt(t)
+	pagerCommandBox(t)
 	if t.visual.highlighted() {
 		t.cmdline.insert(visualRangePlaceholder)
 	}
@@ -2952,7 +2969,7 @@ func (t *transcript) inputDrawerLines() []string {
 			sigil = "?"
 		}
 		rows = []string{pitGray(clipToWidth(sigil+t.query, t.w))}
-	case t.inJump:
+	case t.box != boxNone:
 		// The PROMPT is the editor's, not a constant: while ^R runs it reads
 		// `(reverse-i-search)`needle':` exactly as a shell's does, which is the
 		// only thing on screen that says the box is in a search at all.
@@ -2962,12 +2979,23 @@ func (t *transcript) inputDrawerLines() []string {
 		// the one place a reader cannot check what they typed. Fullscreen is
 		// not offered here -- a box is a thing you are typing INTO, not a
 		// screen you are reading.
-		rows = t.cmdline.wrap(t.cmdline.prompt(":"), t.w, min(pickerRows, max(t.pitRoom(), 1)))
+		e := t.editor()
+		room := min(t.boxRows(), max(t.pitRoom(), 1))
+		if t.box == boxPrompt {
+			// THE HINT COSTS A ROW, so the box gets one fewer: a drawer that
+			// grew by a row when it opened would move the conversation under
+			// the reader's eyes.
+			room = max(room-1, 1)
+		}
+		rows = e.wrap(e.prompt(t.box.sigil()), t.w, room)
+		if t.box == boxPrompt {
+			rows = append(rows, pitGray(clipToWidth("  "+draftHint(e), t.w)))
+		}
 	default:
 		return nil
 	}
 	footer, own := t.jumpFooter()
-	if t.inJump && t.menu != nil {
+	if t.boxOpen() && t.menu != nil {
 		// THE MENU TAKES WHAT THE PIT HAS LEFT: the pane's allowance for a
 		// pit, less the line being typed and the footer under it.
 		room := t.pitRoom() - len(rows)
@@ -3033,7 +3061,7 @@ func pagerLeader(t *transcript) { t.pendLeader = true }
 // second key of gg is.
 func (t *transcript) leaderChord(ev keyEvent) bool {
 	t.pendLeader = false
-	if t.inSearch || t.inJump || ev.nav != navNone {
+	if t.inSearch || t.boxOpen() || ev.nav != navNone {
 		return false
 	}
 	switch ev.b {

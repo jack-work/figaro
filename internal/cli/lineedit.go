@@ -220,6 +220,31 @@ func (e *lineEditor) insertRune(r rune) {
 	e.cursor++
 }
 
+// insertPasted puts pasted text in at the cursor. Newlines survive in a box
+// that has lines and become spaces in one that does not; every other control
+// rune is dropped, because a box draws one row per line and a stray escape
+// in a paste would be painted as geometry.
+func (e *lineEditor) insertPasted(s string, lines bool) {
+	// ONE NEWLINE PER LINE BREAK. A terminal pastes CRLF as both bytes, and a
+	// box that took each of them would double every blank line in the text.
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	for _, r := range s {
+		switch {
+		case r == '\r' || r == '\n':
+			if lines {
+				e.insertRune('\n')
+				continue
+			}
+			e.insertRune(' ')
+		case r == '\t':
+			e.insertRune(' ')
+		case r < 0x20 || r == 0x7f:
+		default:
+			e.insertRune(r)
+		}
+	}
+}
+
 // insert puts a whole string in at the cursor: what a completion does.
 func (e *lineEditor) insert(s string) {
 	for _, r := range s {
@@ -247,8 +272,70 @@ func (e *lineEditor) right() {
 	}
 }
 
-func (e *lineEditor) home() { e.lastOp = opOther; e.cursor = 0 }
-func (e *lineEditor) end()  { e.lastOp = opOther; e.cursor = len(e.runes) }
+// home and end are EMACS's, not bash's: the start and end of the LINE the
+// cursor is in. On a buffer with no newline in it the two readings coincide,
+// which is every command line; a draft is where they part.
+func (e *lineEditor) home() { e.lastOp = opOther; e.cursor = e.lineStart(e.cursor) }
+func (e *lineEditor) end()  { e.lastOp = opOther; e.cursor = e.lineEnd(e.cursor) }
+
+// multiline reports whether the buffer holds a newline at all.
+func (e *lineEditor) multiline() bool {
+	for _, r := range e.runes {
+		if r == '\n' {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *lineEditor) lineStart(at int) int {
+	for i := min(at, len(e.runes)) - 1; i >= 0; i-- {
+		if e.runes[i] == '\n' {
+			return i + 1
+		}
+	}
+	return 0
+}
+
+func (e *lineEditor) lineEnd(at int) int {
+	for i := max(at, 0); i < len(e.runes); i++ {
+		if e.runes[i] == '\n' {
+			return i
+		}
+	}
+	return len(e.runes)
+}
+
+// insertNewline is Enter in a draft: the one key a one-line box cannot have,
+// and the reason a pasted paragraph survives.
+func (e *lineEditor) insertNewline() { e.insertRune('\n') }
+
+// lineUp and lineDown are ^P/^N in a draft: the cursor keeps its column, as
+// emacs does, and stops at the first and last line rather than wrapping.
+func (e *lineEditor) lineUp()   { e.lineStep(-1) }
+func (e *lineEditor) lineDown() { e.lineStep(1) }
+
+func (e *lineEditor) lineStep(dir int) {
+	e.lastOp = opOther
+	start := e.lineStart(e.cursor)
+	col := e.cursor - start
+	if dir < 0 {
+		if start == 0 {
+			e.cursor = 0
+			return
+		}
+		prev := e.lineStart(start - 1)
+		e.cursor = min(prev+col, start-1)
+		return
+	}
+	end := e.lineEnd(e.cursor)
+	if end >= len(e.runes) {
+		e.cursor = len(e.runes)
+		return
+	}
+	next := end + 1
+	e.cursor = min(next+col, e.lineEnd(next))
+}
 
 // backspace deletes the rune BEFORE the cursor (^H, DEL).
 func (e *lineEditor) backspace() {
@@ -312,12 +399,18 @@ func (e *lineEditor) kill(lo, hi int, backward bool) {
 	e.killIdx = 0
 }
 
-// killToEnd is ^K.
-func (e *lineEditor) killToEnd() { e.kill(e.cursor, len(e.runes), false) }
+// killToEnd is ^K: to the end of the line, and at the end of a line the
+// newline itself, so two presses take a line and close the gap.
+func (e *lineEditor) killToEnd() {
+	if end := e.lineEnd(e.cursor); end > e.cursor {
+		e.kill(e.cursor, end, false)
+		return
+	}
+	e.kill(e.cursor, min(e.cursor+1, len(e.runes)), false)
+}
 
-// killToStart is ^U. readline's ^U kills to the start of the LINE, which for a
-// one-line editor is the whole prefix.
-func (e *lineEditor) killToStart() { e.kill(0, e.cursor, true) }
+// killToStart is ^U: to the start of the line the cursor is in.
+func (e *lineEditor) killToStart() { e.kill(e.lineStart(e.cursor), e.cursor, true) }
 
 // killWordBack is ^W: kill the whitespace-delimited word before the cursor,
 // including the run of spaces that leads to it. readline's ^W is
@@ -832,7 +925,7 @@ func (e *lineEditor) render(prefix string, w int) string {
 			hi++
 		}
 		if e.cursor <= hi || lo >= len(e.runes) {
-			return prefix + renderWithCursor(e.runes[lo:hi], e.cursor-lo)
+			return prefix + renderWithCursor(flattenNewlines(e.runes[lo:hi]), e.cursor-lo)
 		}
 		lo++
 	}
@@ -851,27 +944,7 @@ func (e *lineEditor) wrap(prefix string, w, rows int) []string {
 	if avail < 4 || rows == 1 {
 		return []string{e.render(prefix, w)}
 	}
-	// Lay the runes out in rows of `avail` columns, remembering which row the
-	// cursor lands in.
-	var lines [][]rune
-	var cur []rune
-	width, at := 0, 0
-	for i, r := range e.runes {
-		rw := runewidth.RuneWidth(r)
-		if width+rw > avail-1 {
-			lines = append(lines, cur)
-			cur, width = nil, 0
-		}
-		if i == e.cursor {
-			at = len(lines)
-		}
-		cur = append(cur, r)
-		width += rw
-	}
-	lines = append(lines, cur)
-	if e.cursor >= len(e.runes) {
-		at = len(lines) - 1
-	}
+	lines, at := e.layout(avail)
 	// The window of rows that fits, holding the cursor's row.
 	top := 0
 	if at >= rows {
@@ -880,7 +953,6 @@ func (e *lineEditor) wrap(prefix string, w, rows int) []string {
 	end := min(top+rows, len(lines))
 	out := make([]string, 0, end-top)
 	pad := strings.Repeat(" ", pw)
-	seen := 0
 	for i := top; i < end; i++ {
 		head := pad
 		if i == 0 {
@@ -889,21 +961,61 @@ func (e *lineEditor) wrap(prefix string, w, rows int) []string {
 		// The cursor's rune index within this row.
 		idx := -1
 		if i == at {
-			idx = e.cursor - runeCountBefore(lines, i)
+			idx = e.cursor - lines[i].start
 		}
-		out = append(out, head+renderWithCursor(lines[i], idx))
-		seen += len(lines[i])
+		out = append(out, head+renderWithCursor(lines[i].runes, idx))
 	}
 	return out
 }
 
-// runeCountBefore is how many runes precede row i.
-func runeCountBefore(lines [][]rune, i int) int {
-	n := 0
-	for k := 0; k < i && k < len(lines); k++ {
-		n += len(lines[k])
+// visualRow is one laid-out row: its runes, and the rune index in the buffer
+// it begins at. The index is CARRIED rather than recomputed from the lengths,
+// because a row break on a newline consumes a rune that is in no row.
+type visualRow struct {
+	runes []rune
+	start int
+}
+
+// layout breaks the buffer into rows of at most avail columns, at the margin
+// and at every newline, and reports which row the cursor is in.
+func (e *lineEditor) layout(avail int) ([]visualRow, int) {
+	rows := []visualRow{{start: 0}}
+	at, width := 0, 0
+	for i, r := range e.runes {
+		if i == e.cursor {
+			at = len(rows) - 1
+		}
+		if r == '\n' {
+			rows = append(rows, visualRow{start: i + 1})
+			width = 0
+			continue
+		}
+		rw := runewidth.RuneWidth(r)
+		if width+rw > avail-1 {
+			rows = append(rows, visualRow{start: i})
+			width = 0
+		}
+		last := &rows[len(rows)-1]
+		last.runes = append(last.runes, r)
+		width += rw
 	}
-	return n
+	if e.cursor >= len(e.runes) {
+		at = len(rows) - 1
+	}
+	return rows, at
+}
+
+// flattenNewlines is for the ONE-ROW view: a newline drawn into a row would
+// desync the painter, which counts one row per line.
+func flattenNewlines(runes []rune) []rune {
+	out := make([]rune, len(runes))
+	for i, r := range runes {
+		if r == '\n' {
+			r = ' '
+		}
+		out[i] = r
+	}
+	return out
 }
 
 // renderWithCursor paints the cursor cell in reverse video. The pager owns the

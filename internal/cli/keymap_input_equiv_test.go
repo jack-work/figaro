@@ -148,7 +148,7 @@ func inputSignature(p *inputProbe, stop bool, rest []byte, base int) string {
 		stop, string(rest), tr.active, offToken(tr, base), tr.follow, tr.inSearch, tr.query,
 		tr.showing("help"), tr.showing("status"), tr.showing("queue"), tr.pendG, tr.selection.active,
 		p.in.set.verbose, len(p.in.disconnectCh), p.cancelled.Load(), clip, copyFailed, copying,
-		tr.inJump, tr.cmdline.String())
+		tr.boxOpen(), tr.cmdline.String())
 }
 
 // settleProbe waits out the background paging and any selection copy the
@@ -391,6 +391,10 @@ var inputOracle = []struct {
 	keys  map[string]string
 }{
 	{"incipit", "stop=false rest=\"\" act=false off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"", map[string]string{
+		// '>' IS THE DRAFT, 2026-10-07, and like ':' it YANKS THE PAGER UP
+		// from the inline view: what a draft dispatches is shown there. So it
+		// is no longer inert in any state a pager key can act from.
+		"0x3e": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"\"",
 		// SPACE IS THE LEADER, 2026-09-30: `space n` is notifications (as
 		// `<leader>n` is in Gluck's Neovim). A leader arms and waits, so it no
 		// longer falls through to the any-key dismissal: the panel stays open,
@@ -485,7 +489,7 @@ var inputOracle = []struct {
 		// THE NINE CELLS THE READLINE PASS MOVED, all in this state and none
 		// outside it: while the ':' box is up, ^C ^D ^G ^L ^O ^T (and their
 		// CSI-u spellings) belong to the LINE rather than to the process. See
-		// keymap.go's `&^ inJumpBox`, and cmdDeleteFwd for why unbinding
+		// keymap.go's `&^ inBox`, and cmdDeleteFwd for why unbinding
 		// detach here does not remove the escape hatch: ^D on an EMPTY box
 		// closes the box, and the ^D after that detaches exactly as before.
 		"0x03":    "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
@@ -600,6 +604,10 @@ var inputOracle = []struct {
 		"csiu ^p+alt": "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"",
 	}},
 	{"panel", "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"", map[string]string{
+		// '>' IS THE DRAFT, 2026-10-07, and like ':' it YANKS THE PAGER UP
+		// from the inline view: what a draft dispatches is shown there. So it
+		// is no longer inert in any state a pager key can act from.
+		"0x3e": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"\"",
 		// SPACE IS THE LEADER, 2026-09-30: `space n` is notifications (as
 		// `<leader>n` is in Gluck's Neovim). A leader arms and waits, so it no
 		// longer falls through to the any-key dismissal: the panel stays open,
@@ -810,6 +818,10 @@ var inputOracle = []struct {
 		"csiu ^p+alt":     "stop=false rest=\"\" act=true off:sel fol=false srch=true q=\"ms\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 	}},
 	{"transcript", "stop=false rest=\"\" act=true off:same fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"", map[string]string{
+		// '>' IS THE DRAFT, 2026-10-07, and like ':' it YANKS THE PAGER UP
+		// from the inline view: what a draft dispatches is shown there. So it
+		// is no longer inert in any state a pager key can act from.
+		"0x3e": "stop=false rest=\"\" act=true off:bottom fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"\"",
 		// M-m IS VERBOSE TOOL OUTPUT, 2026-09-12, which ^O used to be: the
 		// chord went to the jumplist, Ctrl+M could not take the job (that byte
 		// is Enter), and a plain letter cannot be live in incipit. In the ':'
@@ -845,6 +857,10 @@ var inputOracle = []struct {
 		"nav:Up":          "stop=false rest=\"\" act=true off:-1 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 	}},
 	{"transcript+sel", "stop=false rest=\"\" act=true off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"", map[string]string{
+		// '>' IS THE DRAFT, 2026-10-07, and like ':' it YANKS THE PAGER UP
+		// from the inline view: what a draft dispatches is shown there. So it
+		// is no longer inert in any state a pager key can act from.
+		"0x3e": "stop=false rest=\"\" act=true off:same fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"\"",
 		// M-m IS VERBOSE TOOL OUTPUT, 2026-09-12, which ^O used to be: the
 		// chord went to the jumplist, Ctrl+M could not take the job (that byte
 		// is Enter), and a plain letter cannot be live in incipit. In the ':'

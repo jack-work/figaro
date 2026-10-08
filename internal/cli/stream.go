@@ -808,6 +808,21 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 		// see input then swallows a bare Esc as a possible mouse prefix.
 		active := in.lt.transcriptActive()
 		in.mu.Unlock()
+		// A PASTE IS TEXT, NOT KEYSTROKES, and only a box can take it. It is
+		// read before the mouse and before the decoder because its payload
+		// may contain anything, including the escapes both of those parse.
+		if active {
+			if text, consumed, ok, need := parseBracketedPaste(data[i:]); need {
+				pending = append(pending, data[i:]...)
+				break
+			} else if ok {
+				i += consumed
+				in.mu.Lock()
+				in.lt.tr.pasteText(text)
+				in.mu.Unlock()
+				continue
+			}
+		}
 		if active {
 			if ev, consumed, ok, need := ldmouse.Parse(data[i:]); need {
 				pending = append(pending, data[i:]...)

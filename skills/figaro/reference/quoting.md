@@ -60,6 +60,19 @@ gesture, so it prints the card open.
   ╰ 2 rows more
 ```
 
+## Replying to it: the `>` draft
+
+In the pager, `>` opens a draft: a box that takes a PROMPT rather than a
+command line, so a newline is a newline and a quote is a quote. `M-Enter`
+sends it; `Enter` makes a new line; `Esc` puts the drawer away and keeps what
+you wrote; `^C` spends it. Tab completes `@refs` and paths, and a paste keeps
+its lines (with no box open, a paste opens the draft by itself).
+
+With a highlight up, `>` opens the draft holding `<,>`: the placeholder
+expands into the coordinate at submit, so the prompt quotes the passage you
+were reading. `:<,>send -- …` still works and still tokenizes like a shell
+line, which is why the draft exists.
+
 ## Selecting it in the pager
 
 `v` puts a cursor in the transcript; `v` again marks by character, `V` by line.

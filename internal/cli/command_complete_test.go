@@ -48,7 +48,7 @@ func menuFixture(t *testing.T, pools map[string][]string) (*transcript, *complet
 
 func typeInto(tr *transcript, s string) {
 	for i := 0; i < len(s); i++ {
-		tr.jumpLiteral(s[i])
+		tr.boxLiteral(s[i])
 	}
 }
 
@@ -93,9 +93,9 @@ func TestTabPit(t *testing.T) {
 		next keyEvent
 		prev keyEvent
 	}{
-		{"bytes", keyEvent{b: 0x0e, mode: modeJump}, keyEvent{b: 0x10, mode: modeJump}},
-		{"CSI-u", keyEvent{ctrl: 'n', mode: modeJump}, keyEvent{ctrl: 'p', mode: modeJump}},
-		{"arrows", keyEvent{nav: navDown, mode: modeJump}, keyEvent{nav: navUp, mode: modeJump}},
+		{"bytes", keyEvent{b: 0x0e, mode: modeBox}, keyEvent{b: 0x10, mode: modeBox}},
+		{"CSI-u", keyEvent{ctrl: 'n', mode: modeBox}, keyEvent{ctrl: 'p', mode: modeBox}},
+		{"arrows", keyEvent{nav: navDown, mode: modeBox}, keyEvent{nav: navUp, mode: modeBox}},
 	} {
 		t.Run("^N/^P walk the ring and the choice is in the line: "+enc.name, func(t *testing.T) {
 			tr, _ := menuFixture(t, ariaPool)
@@ -163,8 +163,8 @@ func TestTabPit(t *testing.T) {
 		if c.calls != calls {
 			t.Fatalf("typing inside the word asked the completer %d more times; the pool must be reused (it runs under the render lock)", c.calls-calls)
 		}
-		jumpBackspace(tr)
-		jumpBackspace(tr)
+		boxBackspace(tr)
+		boxBackspace(tr)
 		if tr.menu == nil || len(tr.menu.shown) != 2 {
 			t.Fatalf("Backspace should widen the pit again: %+v", tr.menu)
 		}
@@ -212,14 +212,14 @@ func TestTabPit(t *testing.T) {
 		typeInto(tr, "attend ")
 		cmdComplete(tr)
 		cmdHistNext(tr)
-		jumpAccept(tr)
-		if ran != "" || !tr.inJump || tr.menu != nil {
-			t.Fatalf("Enter on a choice ran %q, inJump=%v, menu=%v", ran, tr.inJump, tr.menu != nil)
+		boxAccept(tr)
+		if ran != "" || !tr.boxOpen() || tr.menu != nil {
+			t.Fatalf("Enter on a choice ran %q, inJump=%v, menu=%v", ran, tr.boxOpen(), tr.menu != nil)
 		}
 		if tr.cmdline.String() != "attend 3b7aff0a " {
 			t.Fatalf("line %q", tr.cmdline.String())
 		}
-		jumpAccept(tr)
+		boxAccept(tr)
 		if ran != "attend 3b7aff0a" {
 			t.Fatalf("the second Enter should run the line, ran %q", ran)
 		}
@@ -231,7 +231,7 @@ func TestTabPit(t *testing.T) {
 		tr.command = func(s string) { ran = s }
 		typeInto(tr, "attend ")
 		cmdComplete(tr)
-		jumpAccept(tr)
+		boxAccept(tr)
 		if ran != "attend" {
 			t.Fatalf("ran %q", ran)
 		}
@@ -242,12 +242,12 @@ func TestTabPit(t *testing.T) {
 		typeInto(tr, "attend 3b")
 		cmdComplete(tr)
 		cmdHistNext(tr)
-		jumpCancel(tr)
-		if tr.menu != nil || !tr.inJump || tr.cmdline.String() != "attend 3b" {
-			t.Fatalf("first Esc: menu=%v inJump=%v line %q", tr.menu != nil, tr.inJump, tr.cmdline.String())
+		boxCancel(tr)
+		if tr.menu != nil || !tr.boxOpen() || tr.cmdline.String() != "attend 3b" {
+			t.Fatalf("first Esc: menu=%v inJump=%v line %q", tr.menu != nil, tr.boxOpen(), tr.cmdline.String())
 		}
-		jumpCancel(tr)
-		if tr.inJump {
+		boxCancel(tr)
+		if tr.boxOpen() {
 			t.Fatal("second Esc must close the box")
 		}
 	})

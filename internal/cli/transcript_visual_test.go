@@ -213,7 +213,7 @@ func TestVisual_ColonPreloadsTheRangeOnlyWhenHighlighted(t *testing.T) {
 	tr, _ := visualFixture(t)
 	tr.key('V')
 	tr.key(':')
-	if tr.mode() != modeJump || tr.cmdline.String() != "" {
+	if tr.mode() != modeBox || tr.cmdline.String() != "" {
 		t.Fatalf("':' with a bare cursor: mode=%v box=%q", tr.mode(), tr.cmdline.String())
 	}
 	tr.key(0x1b)

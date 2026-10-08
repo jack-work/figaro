@@ -103,7 +103,7 @@ func oracleSignature(tr *transcript, base int) string {
 	return fmt.Sprintf("%s fol=%v srch=%v q=%q mq=%q h=%v s=%v Q=%v g=%v sel=%v exp=%d jmp=%v jq=%q vis=%s",
 		offToken(tr, base), tr.follow, tr.inSearch, tr.query, tr.matchQuery,
 		tr.showing("help"), tr.showing("status"), tr.showing("queue"), tr.pendG, tr.selection.active,
-		len(tr.expanded), tr.inJump, tr.cmdline.String(), visToken(tr))
+		len(tr.expanded), tr.boxOpen(), tr.cmdline.String(), visToken(tr))
 }
 
 // visToken is the visual mode as a statement about the KEY: the highlight's
@@ -244,6 +244,11 @@ var pagerOracle = []struct {
 	keys  map[string]string
 }{
 	{"help", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		// '>' IS THE DRAFT, 2026-10-07: a second door into the box, so every
+		// state a pager key can act from has a cell for it now. jmp=true with
+		// an empty jq is the signature of it: the draft is a buffer of its
+		// own, and the command line it shares the mode with is untouched.
+		"0x3e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=none",
 		// SPACE IS THE LEADER, 2026-09-30: `space n` is notifications (as
 		// `<leader>n` is in Gluck's Neovim). A leader arms and waits, so it no
 		// longer falls through to the any-key dismissal: the panel stays open,
@@ -331,7 +336,7 @@ var pagerOracle = []struct {
 		"0x17": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=none",
 		// THE FOUR CELLS THE READLINE PASS MOVED, each because a key that used
 		// to belong to the process now belongs to the line while the box is up
-		// (keymap.go, `&^ inJumpBox`). Nothing outside jump mode moved: the
+		// (keymap.go, `&^ inBox`). Nothing outside jump mode moved: the
 		// other four states in this table passed unchanged.
 		//   ^C and ^G abandon the line and close the box (they used to end the
 		//   session and be inert respectively) -- off:bottom because closing
@@ -444,6 +449,11 @@ var pagerOracle = []struct {
 		"0x7f": "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"1\" vis=none",
 	}},
 	{"panel+sel", "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		// '>' IS THE DRAFT, 2026-10-07: a second door into the box, so every
+		// state a pager key can act from has a cell for it now. jmp=true with
+		// an empty jq is the signature of it: the draft is a buffer of its
+		// own, and the command line it shares the mode with is untouched.
+		"0x3e": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=true jq=\"\" vis=none",
 		// SPACE IS THE LEADER, 2026-09-30: `space n` is notifications (as
 		// `<leader>n` is in Gluck's Neovim). A leader arms and waits, so it no
 		// longer falls through to the any-key dismissal: the panel stays open,
@@ -507,6 +517,11 @@ var pagerOracle = []struct {
 		"0x78": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 	}},
 	{"queued", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		// '>' IS THE DRAFT, 2026-10-07: a second door into the box, so every
+		// state a pager key can act from has a cell for it now. jmp=true with
+		// an empty jq is the signature of it: the draft is a buffer of its
+		// own, and the command line it shares the mode with is untouched.
+		"0x3e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=none",
 		// SPACE IS THE LEADER, 2026-09-30: `space n` is notifications (as
 		// `<leader>n` is in Gluck's Neovim). A leader arms and waits, so it no
 		// longer falls through to the any-key dismissal: the panel stays open,
@@ -785,6 +800,11 @@ var pagerOracle = []struct {
 		"0x7f": "off:same fol=false srch=true q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 	}},
 	{"status", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		// '>' IS THE DRAFT, 2026-10-07: a second door into the box, so every
+		// state a pager key can act from has a cell for it now. jmp=true with
+		// an empty jq is the signature of it: the draft is a buffer of its
+		// own, and the command line it shares the mode with is untouched.
+		"0x3e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=none",
 		// SPACE IS THE LEADER, 2026-09-30: `space n` is notifications (as
 		// `<leader>n` is in Gluck's Neovim). A leader arms and waits, so it no
 		// longer falls through to the any-key dismissal: the panel stays open,
@@ -859,6 +879,11 @@ var pagerOracle = []struct {
 		"0x78": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=true Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 	}},
 	{"transcript", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		// '>' IS THE DRAFT, 2026-10-07: a second door into the box, so every
+		// state a pager key can act from has a cell for it now. jmp=true with
+		// an empty jq is the signature of it: the draft is a buffer of its
+		// own, and the command line it shares the mode with is untouched.
+		"0x3e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=none",
 		"0x4c": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x5e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x61": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
@@ -890,6 +915,11 @@ var pagerOracle = []struct {
 		"Up":   "off:-1 fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 	}},
 	{"transcript+pendG", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		// '>' IS THE DRAFT, 2026-10-07: a second door into the box, so every
+		// state a pager key can act from has a cell for it now. jmp=true with
+		// an empty jq is the signature of it: the draft is a buffer of its
+		// own, and the command line it shares the mode with is untouched.
+		"0x3e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=none",
 		"0x4c": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x5e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x61": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
@@ -921,6 +951,11 @@ var pagerOracle = []struct {
 		"Up":   "off:-1 fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 	}},
 	{"transcript+sel", "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		// '>' IS THE DRAFT, 2026-10-07: a second door into the box, so every
+		// state a pager key can act from has a cell for it now. jmp=true with
+		// an empty jq is the signature of it: the draft is a buffer of its
+		// own, and the command line it shares the mode with is untouched.
+		"0x3e": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=true jq=\"\" vis=none",
 		// VISUAL MODE, 2026-09-11: v/V drop the node selection (the two cannot
 		// both be active) and seed a visual one on the viewport.
 		"0x68": "off:same fol=false srch=false q=\"\" mq=\"\" h=true s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
@@ -957,6 +992,11 @@ var pagerOracle = []struct {
 	// key is inert, which is the point of a mode. Regenerated again for the
 	// vim motions (w b e 0 ^ $ H M L { }) and for / n N landing the cursor.
 	{"visual", "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=line+1:0", map[string]string{
+		// '>' IS THE DRAFT, 2026-10-07: a second door into the box, so every
+		// state a pager key can act from has a cell for it now. jmp=true with
+		// an empty jq is the signature of it: the draft is a buffer of its
+		// own, and the command line it shares the mode with is untouched.
+		"0x3e": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=line+1:0",
 		"0x0a": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x0d": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x1b": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
@@ -982,6 +1022,11 @@ var pagerOracle = []struct {
 		"Up":   "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=line+0:0",
 	}},
 	{"visual+char", "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=char+0:2", map[string]string{
+		// '>' IS THE DRAFT, 2026-10-07: a second door into the box, so every
+		// state a pager key can act from has a cell for it now. jmp=true with
+		// an empty jq is the signature of it: the draft is a buffer of its
+		// own, and the command line it shares the mode with is untouched.
+		"0x3e": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=char+0:2",
 		"0x0a": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x0d": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x1b": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
@@ -1016,6 +1061,11 @@ var pagerOracle = []struct {
 		"Up":   "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=char-2:2",
 	}},
 	{"visual+cursor", "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=cur+5:0", map[string]string{
+		// '>' IS THE DRAFT, 2026-10-07: a second door into the box, so every
+		// state a pager key can act from has a cell for it now. jmp=true with
+		// an empty jq is the signature of it: the draft is a buffer of its
+		// own, and the command line it shares the mode with is untouched.
+		"0x3e": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=cur+5:0",
 		"0x0a": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x0d": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=true exp=0 jmp=false jq=\"\" vis=none",
 		"0x1b": "off:same fol=false srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
@@ -1051,6 +1101,11 @@ var pagerOracle = []struct {
 	// is the whole point: consent is typed, never stumbled into.
 	{"confirm", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{}},
 	{"fork", "off:same fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none", map[string]string{
+		// '>' IS THE DRAFT, 2026-10-07: a second door into the box, so every
+		// state a pager key can act from has a cell for it now. jmp=true with
+		// an empty jq is the signature of it: the draft is a buffer of its
+		// own, and the command line it shares the mode with is untouched.
+		"0x3e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=true jq=\"\" vis=none",
 		"0x4c": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x5e": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",
 		"0x61": "off:bottom fol=true srch=false q=\"\" mq=\"\" h=false s=false Q=false g=false sel=false exp=0 jmp=false jq=\"\" vis=none",

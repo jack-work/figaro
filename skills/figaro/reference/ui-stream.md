@@ -475,7 +475,8 @@ run `figaro show` (full content above, cursor below).
 | `Home` / `End` | top / bottom |
 | `/` / `?` | literal string search, forward / backward. Inside a pit it searches that pit's rows. `n` / `N` repeat it and land the block cursor on the hit |
 | `:` | the command line: any figaro verb, or a coordinate (`:12`, `:12.3`, `:0`). With a highlight up it opens holding `<,>`. See [quoting.md](quoting.md). |
-| `e` / `Enter` | open a tool's body / both the body and the form deltas. Enter is the ONLY key that opens a delta list. In a pit, Enter is the row's own action: a form value opens, a listing row attends |
+| `>` | a draft: type or paste a prompt, newlines and quotes intact. `M-Enter` sends it, `Enter` is a newline, `Esc` puts the drawer away and keeps the draft, `^C` spends it. Tab completes `@refs` and paths. With a highlight up it opens holding `<,>`, so the prompt quotes the passage. See [quoting.md](quoting.md). |
+| `e` / `Enter` | open a tool's body / both the body and the form deltas (and a quoted passage, which folds to three rows until asked). Enter is the ONLY key that opens a delta list. In a pit, Enter is the row's own action: a form value opens, a listing row attends |
 | `f j` / `f k` | next / previous fork point (the block whose `⑂` the question's header carries) |
 | `a` | attend the aria that fork point came from; in a list, the selected row's |
 | `^` | attend this aria's parent, or say it is top-level |
@@ -488,6 +489,11 @@ run `figaro show` (full content above, cursor below).
 | `M-m` | verbose tool output, and every node's address |
 | `Ctrl-O` / `Ctrl-I` | the jumplist: back / forward through the arias attended here |
 | `q` / `Esc` / `Ctrl-T` | exit the pager |
+
+A pasted paragraph needs no key at all: with no box open, a paste opens the
+draft and lands in it, because a paragraph arriving in a pager is a prompt
+being written. Bracketed paste is on while the pager is up, so the payload is
+taken as text rather than replayed as keystrokes.
 
 A listing opens with the cursor on the aria you are attending, not on the top
 row. `x` and `:kill` ask before they kill. The question holds the keyboard and the

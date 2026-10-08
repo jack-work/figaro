@@ -123,21 +123,21 @@ type transcriptJump struct {
 // The keymap actions. One row each; see keymap.go.
 // ---------------------------------------------------------------------------
 
-// pagerJumpPrompt is ':': open the command line.
-func pagerJumpPrompt(t *transcript) {
-	t.inJump, t.jumpNote = true, ""
+// pagerCommandBox is ':': open the command line.
+func pagerCommandBox(t *transcript) {
+	t.box, t.jumpNote = boxCommand, ""
 	t.cmdline.reset()
 	t.menu = nil
 }
 
-func jumpCancel(t *transcript) {
+func boxCancel(t *transcript) {
 	// ESC IS THE LADDER OUT, one rung per press, and it takes back the most
 	// recent thing first: a running history search, then the completion menu's
 	// offer, then the box itself. That is what a shell does, and it is why the
 	// same key can be "toggle command mode off" without ever discarding a line
 	// you were still looking at.
-	if t.cmdline.searching() {
-		t.cmdline.endSearch()
+	if t.editor().searching() {
+		t.editor().endSearch()
 		return
 	}
 	if t.menu != nil {
@@ -146,29 +146,35 @@ func jumpCancel(t *transcript) {
 		t.dismissCompletion()
 		return
 	}
-	jumpClose(t)
+	boxClose(t)
 }
 
-// jumpClose puts the box away. The line goes with it -- ^C at a shell prompt
-// does not leave its text lying around either.
-func jumpClose(t *transcript) {
-	t.inJump = false
+// boxClose puts the box away. A COMMAND LINE GOES WITH IT -- ^C at a shell
+// prompt does not leave its text lying around either -- but a DRAFT STAYS:
+// it may be a page of pasted text, and losing one to a stray Esc is not a
+// trade any reader would make. cmdAbort is the key that spends it.
+func boxClose(t *transcript) {
+	if t.box == boxPrompt {
+		t.draftClose(false)
+		return
+	}
+	t.box = boxNone
 	t.cmdline.reset()
 	t.clearCompletions()
 }
 
-func jumpBackspace(t *transcript) {
+func boxBackspace(t *transcript) {
 	// While a history search runs, Backspace shortens the NEEDLE: that is what
 	// it does at a shell, and it is the only way to back out of a failed
 	// search without abandoning it.
-	if t.cmdline.searching() {
-		t.cmdline.searchBackspace()
+	if t.editor().searching() {
+		t.editor().searchBackspace()
 		return
 	}
 	if t.menu != nil {
 		// Backspace inside the word keeps the menu and widens it again.
-		t.cmdline.endSearch()
-		t.cmdline.backspace()
+		t.editor().endSearch()
+		t.editor().backspace()
 		t.refilterCompletion()
 		return
 	}
@@ -183,8 +189,9 @@ func jumpBackspace(t *transcript) {
 // and then acts. Putting it here rather than in each action is what makes that
 // true of every binding, including ones added later.
 func (t *transcript) edit(fn func(*lineEditor)) {
-	t.cmdline.endSearch()
-	fn(&t.cmdline)
+	e := t.editor()
+	e.endSearch()
+	fn(e)
 	t.clearCompletions()
 }
 
@@ -222,7 +229,7 @@ func cmdYankLastArg(t *transcript)   { t.edit(func(e *lineEditor) { e.yankLastAr
 // wrong place to hide the one rule this key has -- it only follows a yank, and
 // the editor is what knows whether the last thing that happened was one.
 func cmdYankPop(t *transcript) {
-	if !t.cmdline.yankPop() {
+	if !t.editor().yankPop() {
 		return
 	}
 	t.clearCompletions()
@@ -232,9 +239,9 @@ func cmdYankPop(t *transcript) {
 // because a key that silently does nothing is indistinguishable from a key
 // that is not bound.
 func cmdUndo(t *transcript) {
-	t.cmdline.endSearch()
+	t.editor().endSearch()
 	t.clearCompletions()
-	if !t.cmdline.undoOne() {
+	if !t.editor().undoOne() {
 		t.noteOrClear("nothing to undo")
 	}
 }
@@ -246,12 +253,12 @@ func cmdUndo(t *transcript) {
 // deeper rather than removing it: ^D on an empty box closes it, and the next
 // ^D detaches the session as it always did.
 func cmdDeleteFwd(t *transcript) {
-	if t.cmdline.searching() {
-		t.cmdline.endSearch()
+	if t.editor().searching() {
+		t.editor().endSearch()
 		return
 	}
-	if t.cmdline.empty() {
-		jumpClose(t)
+	if t.editor().empty() {
+		boxClose(t)
 		return
 	}
 	t.edit(func(e *lineEditor) { e.deleteForward() })
@@ -261,11 +268,17 @@ func cmdDeleteFwd(t *transcript) {
 // Inside a search it puts back the line the search was started from, which is
 // the only way to say "no, never mind" to a search that has walked far away.
 func cmdAbort(t *transcript) {
-	if t.cmdline.searching() {
-		t.cmdline.abortSearch()
+	if t.editor().searching() {
+		t.editor().abortSearch()
 		return
 	}
-	jumpClose(t)
+	// ^C AND ^G SPEND THE DRAFT. Esc only puts the drawer away; these two say
+	// "no", which at a shell prompt means the line is gone.
+	if t.box == boxPrompt {
+		t.draftClose(true)
+		return
+	}
+	boxClose(t)
 }
 
 // cmdRedraw is ^L: readline's clear-screen. The pager owns the whole grid, so
@@ -279,12 +292,12 @@ func cmdRedraw(t *transcript) {
 // cmdSearchPrev / cmdSearchNext are ^R / ^S: the incremental history search.
 func cmdSearchPrev(t *transcript) {
 	t.clearCompletions()
-	t.cmdline.searchAgain(-1)
+	t.editor().searchAgain(-1)
 }
 
 func cmdSearchNext(t *transcript) {
 	t.clearCompletions()
-	t.cmdline.searchAgain(1)
+	t.editor().searchAgain(1)
 }
 
 // ^P/^N are HISTORY when there is no completion menu and MENU MOVEMENT when
@@ -296,6 +309,12 @@ func cmdHistPrev(t *transcript) {
 		t.cycleCompletion(-1)
 		return
 	}
+	// IN A DRAFT THEY ARE LINE MOTIONS, emacs's. A draft has lines to move
+	// between and no past worth walking; a command line is the opposite.
+	if t.box == boxPrompt {
+		t.edit(func(e *lineEditor) { e.lineUp() })
+		return
+	}
 	t.edit(func(e *lineEditor) { e.historyPrev() })
 }
 
@@ -304,10 +323,14 @@ func cmdHistNext(t *transcript) {
 		t.cycleCompletion(1)
 		return
 	}
+	if t.box == boxPrompt {
+		t.edit(func(e *lineEditor) { e.lineDown() })
+		return
+	}
 	t.edit(func(e *lineEditor) { e.historyNext() })
 }
 
-// jumpLiteral is the box's fallback: a printable key is text, not a binding -
+// boxLiteral is the box's fallback: a printable key is text, not a binding -
 // which is what makes '/' an ordinary character in here, as ':' is in the
 // search box. The keymap does not enumerate "every printable byte"; see
 // searchLiteral, whose contract this mirrors exactly.
@@ -315,14 +338,15 @@ func cmdHistNext(t *transcript) {
 // While a history search runs the same bytes grow the NEEDLE instead. One
 // acceptor, two destinations: that is the whole of what ^R changes about
 // typing, and it is why ^R needs no mode of the pager's own.
-func (t *transcript) jumpLiteral(b byte) {
-	if t.cmdline.searching() {
+func (t *transcript) boxLiteral(b byte) {
+	e := t.editor()
+	if e.searching() {
 		if r, ok := searchRune(b); ok {
-			t.cmdline.searchType(r)
+			e.searchType(r)
 		}
 		return
 	}
-	if !t.cmdline.insertByte(b) {
+	if !e.insertByte(b) {
 		return
 	}
 	// TYPING WHILE THE MENU IS UP NARROWS IT, the way fish's pager does. A
@@ -344,7 +368,7 @@ func searchRune(b byte) (rune, bool) {
 	return rune(b), true
 }
 
-// jumpAccept is Enter in the ':' box, which is a COMMAND LINE with a
+// boxAccept is Enter in the ':' box, which is a COMMAND LINE with a
 // coordinate shorthand -- exactly the arrangement vim has, where `:12` goes to
 // line 12 and `:w` writes. A bare coordinate is handled here, because it needs
 // nothing but the window; anything else is handed to the owner of this
@@ -352,19 +376,25 @@ func searchRune(b byte) (rune, bool) {
 //
 // The transcript therefore knows nothing about the command language. It knows
 // "this is not a coordinate" and who to give it to.
-func jumpAccept(t *transcript) { t.jumpSubmit(false) }
+func boxAccept(t *transcript) { boxEnter(t) }
 
-// jumpAcceptSnap is Alt+Enter (or Ctrl+Enter): the same submit, then SNAP TO
+// boxAcceptSnap is Alt+Enter (or Ctrl+Enter): the same submit, then SNAP TO
 // CURRENT: leave visual mode and re-follow the live tail, which is where a
 // reader who has just dispatched a question wants to be when the answer
 // lands.
-func jumpAcceptSnap(t *transcript) { t.jumpSubmit(true) }
+func boxAcceptSnap(t *transcript) {
+	if t.box == boxPrompt {
+		draftSubmit(t)
+		return
+	}
+	t.boxSubmit(true)
+}
 
-// jumpSubmit runs the box's line. SUBMITTING LEAVES VISUAL MODE AND KEEPS THE
+// boxSubmit runs the box's line. SUBMITTING LEAVES VISUAL MODE AND KEEPS THE
 // PLACE: the viewport stays, the last search survives (so n keeps working),
 // and only the cursor and highlight go, spent or not. A coordinate jump is
 // not a submission in that sense and leaves the mode alone.
-func (t *transcript) jumpSubmit(snap bool) {
+func (t *transcript) boxSubmit(snap bool) {
 	// Enter DURING a search accepts what the search found, and runs it: the
 	// line on screen is the line, and a reader who has found it and pressed
 	// Enter has said so.
@@ -378,7 +408,7 @@ func (t *transcript) jumpSubmit(snap bool) {
 	text := strings.TrimSpace(t.cmdline.String())
 	t.cmdline.remember(text)
 	t.cmdline.reset()
-	t.inJump, t.jumpNote = false, ""
+	t.box, t.jumpNote = boxNone, ""
 	t.menu = nil
 	if text == "" {
 		return
@@ -677,6 +707,15 @@ func cmdPaste(t *transcript) {
 	text, err := clipboardRead()
 	if err != nil {
 		t.noteOrClear("paste: " + err.Error())
+		return
+	}
+	// A DRAFT KEEPS THE LINES. Folding a paragraph onto one line is right for
+	// a command box, where a newline cannot be represented at all, and wrong
+	// for the box that exists to hold one.
+	if t.box == boxPrompt {
+		t.editor().endSearch()
+		t.clearCompletions()
+		t.editor().insertPasted(text, true)
 		return
 	}
 	if text = pasteIntoLine(text); text == "" {

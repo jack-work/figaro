@@ -23,7 +23,7 @@ func modeName(m keyMode) string {
 		return "transcript"
 	case modeSearch:
 		return "search"
-	case modeJump:
+	case modeBox:
 		return "jump"
 	case modePanel:
 		return "panel"
@@ -226,6 +226,7 @@ func TestOpensTranscript_MatchesTheHandKeptList(t *testing.T) {
 		'j', 'k', 'u', 'd', 'g', 'G', // scroll
 		'/',           // search prompt
 		':',           // command line (see above)
+		'>',           // the draft: a prompt is dispatched from the pager, so it opens one
 		'?', '!', 'Q', // backward search / figaro status / queued-prompt panels
 		'h',      // the help panel, which '?' used to open
 		'l', 'L', // the listing, and the home listing
@@ -333,6 +334,7 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  / · ?               search forward / backward (in a pit, its rows)",
 		"  n / N               next / previous match, with the cursor on it",
 		"  :                   command line: any figaro verb, or a coordinate (:12, :12.3, :0)",
+		"  > · (in >) M-Enter  a draft: type or paste a prompt, newlines and quotes intact; M-Enter sends (in v it quotes the highlight)",
 		"  (in :) ^P/^N · ^R   command history · search it",
 		"  (in :) Tab          complete the verb, an id, or a flag",
 		"  (in :) ^A ^E ^W ^K ^Y emacs/readline editing, the whole set",
@@ -359,7 +361,7 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  (in v) h/l · ←/→    move the cursor's column",
 		"  (in v) Y            copy the selection's coordinate (<lt.block:a-b>!)",
 		"  (in v) w b e · 0 ^ $ · H M L · { } vim motions over the cursor; / n N land it on a match",
-		"  (in :) M-Enter      submit, leave visual mode, and snap to the live tail",
+		"  (in : or >) M-Enter submit, leave visual mode, and snap to the live tail",
 		"  ^L                  open the transcript (stays open until you close it)",
 		"  !                   figaro status panel",
 		"  Q                   queued prompts panel",

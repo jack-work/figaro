@@ -69,7 +69,7 @@ func topRow(tr *transcript) string {
 func TestJumpSnapsToATurn(t *testing.T) {
 	tr := jumpFixture(t, 1, 8)
 	typeJump(tr, "3")
-	if tr.inJump {
+	if tr.boxOpen() {
 		t.Fatal("the box is still open after Enter")
 	}
 	if tr.follow {
@@ -246,8 +246,8 @@ func TestJumpBoxTakesSlashAsText(t *testing.T) {
 		t.Fatal("'/' opened the search box from inside the jump box")
 	}
 	tr.key(0x1b) // Esc cancels the typing
-	if tr.inJump || tr.cmdline.String() != "" {
-		t.Fatalf("Esc left the box open: inJump=%v q=%q", tr.inJump, tr.cmdline.String())
+	if tr.boxOpen() || tr.cmdline.String() != "" {
+		t.Fatalf("Esc left the box open: inJump=%v q=%q", tr.boxOpen(), tr.cmdline.String())
 	}
 }
 

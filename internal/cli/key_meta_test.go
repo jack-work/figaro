@@ -19,7 +19,7 @@ func cmdBox(t *testing.T, seed string) (*interactiveInput, *livelogTurn) {
 	t.Helper()
 	in, lt := navInput(t, &countingWriter{}, true)
 	feed(t, in, ":"+seed)
-	if lt.transcriptMode() != modeJump {
+	if lt.transcriptMode() != modeBox {
 		t.Fatalf("the ':' box did not open (mode %v)", lt.transcriptMode())
 	}
 	return in, lt
@@ -117,7 +117,7 @@ func TestEscOutsideTheBoxIsStillEsc(t *testing.T) {
 	// is swallowed whole rather than closing the box and typing a slash.
 	in2, lt2 := cmdBox(t, "ab")
 	feed(t, in2, "\x1b/")
-	if lt2.transcriptMode() != modeJump {
+	if lt2.transcriptMode() != modeBox {
 		t.Fatal("Esc then '/' closed the ':' box")
 	}
 	if got := cmdLine(lt2); got != "ab" {
@@ -261,7 +261,7 @@ func TestHistorySearchThroughTheLoop(t *testing.T) {
 		t.Fatalf("the box does not say it is searching: %q", rows)
 	}
 	feed(t, in, "\x1b") // Esc: keep the line, end the search
-	if lt.transcriptMode() != modeJump {
+	if lt.transcriptMode() != modeBox {
 		t.Fatal("Esc out of a search closed the whole box")
 	}
 	if got := cmdLine(lt); got != "open alpha" {

@@ -185,7 +185,7 @@ func TestVisualMotion_SubmitLeavesAndKeepsPlace_SnapFollows(t *testing.T) {
 	for _, b := range []byte("send -- hi") {
 		tr.key(b)
 	}
-	tr.dispatch(keyEvent{meta: 0x0d, alt: true, mode: modeJump})
+	tr.dispatch(keyEvent{meta: 0x0d, alt: true, mode: modeBox})
 	if tr.visual.active() || !tr.follow {
 		t.Fatalf("M-Enter: active=%v follow=%v", tr.visual.active(), tr.follow)
 	}

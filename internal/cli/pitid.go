@@ -15,6 +15,7 @@ const (
 	pitQueue         pitID = "queue"
 	pitNotifications pitID = "notifications"
 	pitCommand       pitID = "command"
+	pitPrompt        pitID = "prompt"
 	pitSearch        pitID = "search"
 	pitHelp          pitID = "help"
 	pitStatus        pitID = "status"
@@ -53,13 +54,16 @@ var pitFaces = map[pitID]pitFace{
 	pitNothing:       {"", "", "", modeTranscript},
 	pitQueue:         {"𝄚", "queue", "♭", modePanel},
 	pitNotifications: {"𝄞", "notifications", "♩", modePanel},
-	pitCommand:       {"∴", "command", "", modeJump},
-	pitSearch:        {"⌕", "search", "", modeSearch},
-	pitHelp:          {"?", "help", "", modePanel},
-	pitStatus:        {"!", "status", "", modePanel},
-	pitNote:          {"", "", "", modePanel},
-	pitOutput:        {"", "", "♭", modePanel},
-	pitDropped:       {"𝄽", "dropped", "♭", modePanel},
+	pitCommand:       {"∴", "command", "", modeBox},
+	// The draft. 𝄐 is the pause mark a performer holds for as long as they
+	// mean to: a prompt being written is exactly that, and it is single-width.
+	pitPrompt:  {"𝄐", "draft", "", modeBox},
+	pitSearch:  {"⌕", "search", "", modeSearch},
+	pitHelp:    {"?", "help", "", modePanel},
+	pitStatus:  {"!", "status", "", modePanel},
+	pitNote:    {"", "", "", modePanel},
+	pitOutput:  {"", "", "♭", modePanel},
+	pitDropped: {"𝄽", "dropped", "♭", modePanel},
 	// 웃 is the form itself: a figure, arms out -- the dummy an outfit is
 	// folded onto. Wide (East Asian W, two cells) rather than ambiguous, so
 	// runewidth reports 2 everywhere and the bar's arithmetic holds. Its
@@ -69,7 +73,7 @@ var pitFaces = map[pitID]pitFace{
 	// say what will answer it.
 	pitConfirm: {"[y/N]", "confirm", "", modeConfirm},
 	// ♪ is a single note: the one candidate you are about to take.
-	pitCompletion: {"", "completion", "♪", modeJump},
+	pitCompletion: {"", "completion", "♪", modeBox},
 }
 
 // face is the pit's presentation, or the empty face for one nobody has named:

@@ -1,5 +1,10 @@
 package cli
 
+import (
+	"bytes"
+	"strings"
+)
+
 // navKey names the logical cursor-motion keys. They are the one part of the
 // keyboard a terminal cannot deliver as a byte: every one of them arrives as
 // an escape sequence: which is why they need a vocabulary of their own
@@ -73,7 +78,46 @@ var ctrlPunctuation = map[byte]byte{
 const (
 	enableModifiedKeyReporting  = "\x1b[>1u"
 	disableModifiedKeyReporting = "\x1b[<u"
+
+	// BRACKETED PASTE. Without it a terminal hands a pasted paragraph to the
+	// program as keystrokes, and every byte in it that happens to be bound
+	// acts: a tab opens the completion menu, a CR submits, and what arrives
+	// is not what was copied. With it the payload is delimited and can be
+	// taken as TEXT, which is the only way a box can accept a page of prose.
+	enableBracketedPaste  = "\x1b[?2004h"
+	disableBracketedPaste = "\x1b[?2004l"
+
+	pasteStart = "\x1b[200~"
+	pasteEnd   = "\x1b[201~"
 )
+
+// parseBracketedPaste reads one complete paste from the head of data: the
+// payload between the brackets, and how many bytes it spans. need is true
+// for a paste that has begun and not yet ended, which is the ordinary case
+// for anything large: the caller holds the bytes and asks again.
+func parseBracketedPaste(data []byte) (text string, consumed int, ok, need bool) {
+	if len(data) == 0 || data[0] != 0x1b {
+		return "", 0, false, false
+	}
+	if len(data) < len(pasteStart) {
+		// A BARE ESC IS A KEY, and holding one back waiting for a paste that
+		// may never come is how Escape comes to need a second press. Only a
+		// sequence already past the ESC can be an unfinished paste.
+		if len(data) >= 2 && strings.HasPrefix(pasteStart, string(data)) {
+			return "", 0, false, true
+		}
+		return "", 0, false, false
+	}
+	if string(data[:len(pasteStart)]) != pasteStart {
+		return "", 0, false, false
+	}
+	rest := data[len(pasteStart):]
+	end := bytes.Index(rest, []byte(pasteEnd))
+	if end < 0 {
+		return "", 0, false, true
+	}
+	return string(rest[:end]), len(pasteStart) + end + len(pasteEnd), true, false
+}
 
 // parseModifiedKey recognizes CSI-u enhanced keyboard reports and the
 // portable Alt+Ctrl fallback. It leaves ordinary bytes to the existing input
