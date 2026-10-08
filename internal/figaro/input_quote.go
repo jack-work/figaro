@@ -363,9 +363,8 @@ func (c *clip) passage() passage {
 	return passage{head: string(c.headBuf), tail: string(rest), total: c.total}
 }
 
-// renderQuote is the block the agent receives: a header naming the
-// coordinate, the passage under a gutter, head and tail with an ellipsis
-// between when it is long, then a blank line for the reader's own text.
+// renderQuote is the block the agent receives, and the one the terminal
+// reads back as chrome: see api/quote.Block.
 func renderQuote(view InputView, r quote.Range, p passage) string {
 	ellipsis, gutter, header := config.QuoteEllipsisDefault, config.QuoteGutterDefault, true
 	if l := view.Settings; l != nil {
@@ -375,41 +374,16 @@ func renderQuote(view InputView, r quote.Range, p passage) string {
 	if p.truncated {
 		body = p.head + ellipsis + p.tail
 	}
-	var b strings.Builder
+	heading := ""
 	if header {
-		b.WriteString(gutter)
-		b.WriteString(quoteHeader(view, r, p.total))
-		b.WriteByte('\n')
+		heading = quote.Heading(r, view.AriaID, turnOf(view, r), p.total)
 	}
-	for _, line := range strings.Split(strings.TrimRight(body, "\n"), "\n") {
-		b.WriteString(gutter)
-		b.WriteString(line)
-		b.WriteByte('\n')
-	}
-	b.WriteByte('\n')
-	return b.String()
+	return quote.Block(gutter, heading, body)
 }
 
-func quoteHeader(view InputView, r quote.Range, total int) string {
-	var b strings.Builder
-	b.WriteString("quoting")
-	if view.AriaID != "" {
-		b.WriteString(" aria " + view.AriaID)
+func turnOf(view InputView, r quote.Range) uint64 {
+	if msg, ok := view.Log.Lookup(r.Start.LT); ok {
+		return msg.Payload.TurnID
 	}
-	if msg, ok := view.Log.Lookup(r.Start.LT); ok && msg.Payload.TurnID != 0 {
-		fmt.Fprintf(&b, " · turn %d", msg.Payload.TurnID)
-	}
-	switch {
-	case r.Span():
-		fmt.Fprintf(&b, " · lt %d.%d:%d to %d.%d:%d", r.Start.LT, r.Start.Block, r.Start.Offset,
-			r.End.LT, r.End.Block, r.End.Offset)
-	case r.Offsets:
-		fmt.Fprintf(&b, " · lt %d.%d · chars %d-%d", r.Start.LT, r.Start.Block, r.Start.Offset, r.End.Offset)
-	case r.Block:
-		fmt.Fprintf(&b, " · lt %d.%d", r.Start.LT, r.Start.Block)
-	default:
-		fmt.Fprintf(&b, " · lt %d", r.Start.LT)
-	}
-	fmt.Fprintf(&b, " (%d chars)", total)
-	return b.String()
+	return 0
 }

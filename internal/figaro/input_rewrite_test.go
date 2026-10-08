@@ -156,7 +156,7 @@ func TestRenderQuoteTruncates(t *testing.T) {
 	view := InputView{AriaID: "abcd1234", Log: log, Settings: quoteSettings(5, 3)}
 	r := mustRange(t, "<2.0>!")
 	got := renderQuote(view, r, mustPassage(t, view, r))
-	want := "> quoting aria abcd1234 · turn 1 · lt 2.0 (31 chars)\n> Alpha…ho.\n\n"
+	want := "> quoting <2.0>! · aria abcd1234 · turn 1 · 31 chars\n> Alpha…ho.\n\n"
 	if got != want {
 		t.Fatalf("got %q\nwant %q", got, want)
 	}
@@ -221,7 +221,7 @@ func TestRewriteInputOrderAndNaming(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(out, "> quoting aria abcd1234 · turn 1 · lt 2.0 · chars 0-5 (5 chars)\n> Alpha\n\nwhat is this") {
+	if !strings.HasPrefix(out, "> quoting <2.0:0-5>! · aria abcd1234 · turn 1 · 5 chars\n> Alpha\n\nwhat is this") {
 		t.Fatalf("got %q", out)
 	}
 	// Unterminated tokens are text and pass through, whatever they look like.

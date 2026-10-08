@@ -124,7 +124,7 @@ func TestQuotedPromptReachesTheProvider(t *testing.T) {
 	}
 	got := prov.seen[1]
 	for _, want := range []string{
-		"> quoting aria " + a.ID() + " · turn 1 · lt " + itoa(lt) + ".0 · chars 4-14 (10 chars)\n",
+		"> quoting " + tok + " · aria " + a.ID() + " · turn 1 · 10 chars\n",
 		"> retry loop\n",
 		"\n\nis the retry loop racy here?",
 	} {
@@ -132,8 +132,12 @@ func TestQuotedPromptReachesTheProvider(t *testing.T) {
 			t.Fatalf("the provider did not receive %q; it received:\n%s", want, got)
 		}
 	}
-	if strings.Contains(got, tok) {
-		t.Fatalf("the raw token reached the provider: %s", got)
+	// The coordinate survives IN THE HEADING, where it names the passage
+	// under it and where the terminal reads it back as chrome. What must not
+	// survive is an UNRESOLVED token: one still standing where the reader
+	// typed it, with no passage beneath it.
+	if strings.HasPrefix(strings.TrimSpace(got), tok) {
+		t.Fatalf("the raw token reached the provider unresolved: %s", got)
 	}
 }
 
