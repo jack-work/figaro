@@ -22,6 +22,7 @@ A pty is the only honest oracle for anything that draws.
 | File | When to read it |
 |---|---|
 | [ui-testing.md](ui-testing.md) | Changing the incipit, the pager, the composer, footers, freeze or scrollback, or a green test disagrees with a human. |
+| [isolated-pane.md](isolated-pane.md) | You need the dev-shell binary in a real pty, with a store, config, hush, tmux server and provider that are all yours. `scripts/devpane.sh`. |
 | [paint-repro.md](paint-repro.md) | Hunting one specific paint bug: flicker, a repaint that erases before it writes, a gap or a stray scroll. Also how to run the `scripts/paint-*.sh` instruments. |
 
 To capture a real session and replay it as a fixture, see
