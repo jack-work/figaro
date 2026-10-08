@@ -268,7 +268,8 @@
           ] ++ [ figaroPkg ];
 
           shellHook = ''
-            export FIGARO_DEV_ROOT="''${XDG_RUNTIME_DIR:-/tmp}/figaro-dev-${name}"
+            : "''${FIGARO_DEV_ROOT:=''${XDG_RUNTIME_DIR:-/tmp}/figaro-dev-${name}}"
+            export FIGARO_DEV_ROOT
             mkdir -p "$FIGARO_DEV_ROOT"
             chmod 700 "$FIGARO_DEV_ROOT"
 
