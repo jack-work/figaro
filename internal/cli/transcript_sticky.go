@@ -273,8 +273,10 @@ func joinRule(rule string, above, below gutterCut) string {
 // not a connection to the chrome.
 func gutterColumn(row string) (int, bool) {
 	rest, col := firstVisible(row)
-	if strings.HasPrefix(rest, "│") {
-		return col, true
+	for _, glyph := range []string{"│", quoteOpen, quoteClose} {
+		if strings.HasPrefix(rest, glyph) {
+			return col, true
+		}
 	}
 	return 0, false
 }

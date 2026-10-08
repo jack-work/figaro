@@ -13,6 +13,7 @@ import (
 	"github.com/mattn/go-runewidth"
 
 	"github.com/jack-work/figaro/api/livedoc"
+	"github.com/jack-work/figaro/api/quote"
 	"github.com/jack-work/figaro/api/rpc"
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/livelog/aria"
@@ -1365,6 +1366,7 @@ func (t *transcript) composer(m aria.Message) ldrender.Composer {
 			ref := blockRef(m, block)
 			return buildAdornment(adornerFor(block, n), deltas, w, t.adorned[ref])
 		},
+		Quote: func(q quote.Mention, w int) []string { return quoteRows(q, w, t.verbose()) },
 	}
 	// The address is composed always and drawn only under M-m, so the toggle is
 	// a paint-time decision and the row cache does not know about it.

@@ -33,6 +33,32 @@ fig send --id 90ec6584 -- '<412.0:23-1180>! why did this branch return early?'
 Where the numbers come from: `M-m` in the pager draws every node's address, or
 read them from `figaro show <id> -v`.
 
+## What it looks like afterwards
+
+What lands in the log is a heading naming the passage, then the passage under
+the gutter, then your own words. The heading leads with the canonical
+coordinate, so the terminal reads it back instead of guessing:
+
+```
+> quoting <412.0:23-1180>! · aria 7e151902 · turn 9 · 1157 chars
+> Ecco fatto. The barber works in three strokes, …
+```
+
+Every surface that draws a conversation (the pager, the inline view, `show`)
+draws that block as a CARD rather than as a paragraph of markdown: one dim
+heading row with the coordinate, three rows of the passage under a rule, and a
+closing row counting what is folded. `M-m`, the same toggle that puts node
+addresses and timings on the screen, opens the card: the whole passage, and
+the aria, turn and length beside the coordinate.
+
+```
+  ╭ ❝ lt 412.0
+  │ Ecco fatto. The barber works in three strokes: isolate the environment,
+  │ drive the real binary in a real pty, and assert on what the terminal kept
+  │ rather than on what the renderer returned.
+  ╰ 2 rows more · M-m
+```
+
 ## Selecting it in the pager
 
 `v` puts a cursor in the transcript; `v` again marks by character, `V` by line.
@@ -98,7 +124,7 @@ head_chars = 480   # runes kept from the front
 tail_chars = 160   # runes kept from the end
 ellipsis = "…"
 gutter = "> "
-header = true      # the "quoting aria … (N chars)" line
+header = true      # the "quoting <coord>! · … · N chars" line
 ```
 
 A passage longer than `head_chars + tail_chars` is sent as its two ends with

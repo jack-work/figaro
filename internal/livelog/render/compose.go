@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/jack-work/figaro/api/livedoc"
+	"github.com/jack-work/figaro/api/quote"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	fig "github.com/jack-work/figaro/internal/render"
 )
@@ -115,6 +116,12 @@ type Composer struct {
 	// BlockInquiry addresses the turn-level set. nil adorns nothing, which
 	// is every surface that has not opted in.
 	Adorn func(block int, n livedoc.Node, deltas map[string]livedoc.FormDelta, w int) Adornment
+
+	// Quote draws a passage the question opens by quoting, already styled by
+	// the surface and already folded to whatever its reader asked to see.
+	// nil leaves the block in the question's markdown, where a blockquote is
+	// a paragraph: which is what a surface with no chrome of its own wants.
+	Quote func(m quote.Mention, w int) []string
 
 	Tick int // animation frame for spinners
 
@@ -309,7 +316,7 @@ func (c Composer) Inquiry(inquiry string, segments []aria.InquirySegment, w int,
 			rows = append(rows, head)
 		}
 		first := len(rows)
-		rows = append(rows, prose(seg.Text, w, BlockInquiry)...)
+		rows = append(rows, c.quoted(seg.Text, w)...)
 		if k == 0 && c.Mark != nil && len(rows) > first {
 			rows[first].Mark = c.Mark(BlockInquiry, livedoc.Node{})
 		}
@@ -319,6 +326,29 @@ func (c Composer) Inquiry(inquiry string, segments []aria.InquirySegment, w int,
 	// transcript_sticky.go). The question's breathing room is BELOW, in the
 	// seam Message draws under it.
 	return rows
+}
+
+// quoted composes a segment's text: a passage it opens by quoting as the
+// surface's own chrome, then the reader's words as prose.
+func (c Composer) quoted(text string, w int) []Row {
+	if c.Quote == nil {
+		return prose(text, w, BlockInquiry)
+	}
+	m, rest, ok := quote.Mentioned(text)
+	if !ok {
+		return prose(text, w, BlockInquiry)
+	}
+	var rows []Row
+	for _, line := range c.Quote(m, w) {
+		rows = append(rows, Row{Text: clip(line, w), Block: BlockInquiry})
+	}
+	if strings.TrimSpace(rest) == "" {
+		return rows
+	}
+	if len(rows) > 0 {
+		rows = append(rows, Row{Block: BlockInquiry})
+	}
+	return append(rows, prose(rest, w, BlockInquiry)...)
 }
 
 func (c Composer) head(role string) string {

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jack-work/figaro/api/livedoc"
+	"github.com/jack-work/figaro/api/quote"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 )
 
@@ -55,6 +56,8 @@ type Incipit struct {
 	Rule        func() string              // closes any other message (a plain full-width rule)
 	Header      func(role string) string   // printed above each message; "" suppresses
 	InputHeader func(sender string) string // inquiry heading, shared with show and the pager
+	// Quote draws a passage the question quotes; see Composer.Quote.
+	Quote func(m quote.Mention, w int) []string
 	// Queued renders prompts the agent has accepted but not yet placed in the
 	// transcript. They are LIVE CHROME, drawn just above the bookend and never
 	// frozen: a queued prompt has not happened yet, so committing it to
@@ -428,7 +431,7 @@ func (i *Incipit) messageRows(inquiry string, segments []aria.InquirySegment, ro
 
 // composer is the incipit's composition: its view, its chrome, its tick.
 func (i *Incipit) composer() Composer {
-	return Composer{View: i.view, Header: i.Header, InputHeader: i.InputHeader, Tick: i.tick,
+	return Composer{View: i.view, Header: i.Header, InputHeader: i.InputHeader, Quote: i.Quote, Tick: i.tick,
 		Rule: func() string {
 			if i.Rule == nil {
 				return ""

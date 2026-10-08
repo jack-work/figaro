@@ -267,6 +267,9 @@ func TestFooterRuleJoinsOnlyAGutterItCuts(t *testing.T) {
 // can meet the header's rule from above. n says how many lines of it.
 func quotedPager(t testing.TB, lines int) *transcript {
 	t.Helper()
+	// A heading in the shape written BEFORE api/quote stamped a canonical
+	// coordinate, deliberately: the card has to draw for the arias already on
+	// disk, and this fixture is the only place that is checked.
 	quote := "> quoting aria bd0cf2bd · turn 3 · lt 63.1 · chars 3033-3067 (34 chars)"
 	for range lines - 1 {
 		quote += "\n> and another line of the passage, long enough to stand on its own row"
