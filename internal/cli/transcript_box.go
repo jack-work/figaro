@@ -57,7 +57,7 @@ func (t *transcript) composerTitle() []string {
 	if n := strings.Count(t.draft.String(), "\n"); n > 0 {
 		parts = append(parts, plural(n+1, "line"))
 	}
-	parts = append(parts, "M-⏎ send")
+	parts = append(parts, "^S send")
 	return []string{pitGray(clipToWidth("  "+strings.Join(parts, " · "), t.w))}
 }
 
@@ -140,11 +140,13 @@ func composerSubmit(t *transcript) {
 	}
 	expanded, note, err := t.expandComposerRange(text)
 	if err != "" {
-		t.noteOrClear(err)
+		// THE BAR, NOT A NOTE: a note is a pit, and the composer outranks it
+		// (see openPit), so the sentence would be drawn nowhere at all.
+		t.setCommandNoteAt(err, alertError)
 		return
 	}
 	if t.sendComposer == nil {
-		t.noteOrClear("sending needs a live session")
+		t.setCommandNoteAt("sending needs a live session", alertError)
 		return
 	}
 	t.draft.remember(composerFirstLine(text))

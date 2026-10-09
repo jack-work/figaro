@@ -475,7 +475,7 @@ run `figaro show` (full content above, cursor below).
 | `Home` / `End` | top / bottom |
 | `/` / `?` | literal string search, forward / backward. Inside a drawer it searches THAT drawer: a list's rows, or the composer's draft. `n` / `N` repeat it, in the drawer or in the conversation |
 | `:` | the command line: any figaro verb, or a coordinate (`:12`, `:12.3`, `:0`). With a highlight up it opens holding `<,>`. See [quoting.md](quoting.md). |
-| `>` | the COMPOSER: type or paste a prompt, newlines and quotes intact. `M-Enter` sends, `Enter` is a newline, Tab completes `@refs` and paths. With a highlight up it opens holding `<,>`, so the prompt quotes the passage. See [quoting.md](quoting.md) and the table below. |
+| `>` | the COMPOSER: type or paste a prompt, newlines and quotes intact. `^S` sends, `Enter` is a newline, Tab completes `@refs` and paths. With a highlight up it opens holding `<,>`, so the prompt quotes the passage. See [quoting.md](quoting.md) and the table below. |
 | `e` / `Enter` | open a tool's body / both the body and the form deltas (and a quoted passage, which folds to three rows until asked). Enter is the ONLY key that opens a delta list. In a pit, Enter is the row's own action: a form value opens, a listing row attends |
 | `f j` / `f k` | next / previous fork point (the block whose `⑂` the question's header carries) |
 | `a` | attend the aria that fork point came from; in a list, the selected row's |
@@ -512,7 +512,7 @@ The sigil is the whole indicator: `>` insert, `✎` normal.
 | `F` | the drawer takes the pane |
 | `:` | the command line, over the drawer: closing it comes back to the draft |
 | `Esc` | drop the mark, else put the drawer away (the draft survives; `^C` spends it) |
-| `M-Enter` | send, from either mode |
+| `^S` · `M-Enter` | send, from either mode. **`^S` is the portable one**: Windows Terminal and conhost claim Alt+Enter for their own fullscreen toggle, so it never reaches figaro there |
 
 There are no editing verbs (`d`, `c`, `x`, `p`, `r`): a draft is written in
 insert mode, and this mode is for reading one, marking part of it and
@@ -604,7 +604,7 @@ meaning detach/interrupt/listen/jumplist the moment the box closes.
 | `^Y` / `M-y` | yank the last kill / rotate the kill ring |
 | `^P` / `^N` · `↑` / `↓` | previous / next in history |
 | `M-<` / `M->` | first / last history entry |
-| `^R` / `^S` | incremental history search backward / forward |
+| `^R` / `^S` | incremental history search backward / forward. **In the composer `^S` SENDS instead**: a box with a prompt history worth walking and a box with a draft in it are different boxes, and Alt+Enter is unreachable on Windows |
 | `M-p` / `M-n` | history search on what you have typed as a prefix |
 | `M-.` / `M-_` | insert the last word of the previous command (repeat to walk back) |
 | `^_` / `M-r` | undo one edit / revert the line to how it was fetched |

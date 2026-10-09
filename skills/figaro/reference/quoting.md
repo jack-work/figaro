@@ -63,8 +63,9 @@ gesture, so it prints the card open.
 ## Replying to it: the composer
 
 In the pager, `>` opens the composer: a box that takes a PROMPT rather than
-a command line, so a newline is a newline and a quote is a quote. `M-Enter`
-sends it; `Enter` makes a new line; `Esc` drops into its normal mode (`✎`) and
+a command line, so a newline is a newline and a quote is a quote. `^S`
+sends it (`M-Enter` too, where the terminal does not claim it: Windows
+does); `Enter` makes a new line; `Esc` drops into its normal mode (`✎`) and
 again puts the drawer away, keeping what you wrote; `^C` spends it. Tab
 completes `@refs` and paths, and a paste keeps its lines (with no box open, a
 paste opens the drawer by itself). The motions, the mark and the draft-local

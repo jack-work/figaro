@@ -305,7 +305,25 @@ func cmdSearchPrev(t *transcript) {
 	t.editor().searchAgain(-1)
 }
 
+// cmdSearchNext is ^S in the command line, and SUBMIT in the composer.
+//
+// THE REASON IS WINDOWS. Alt+Enter is the portable submit everywhere else,
+// and on Windows it never arrives: conhost and Windows Terminal both claim it
+// for their own fullscreen toggle, so the one chord that sends a draft is
+// unreachable on that platform. ^S is what internal/cli/compose.go already
+// chose for the same problem ("Ctrl-S is for the ones that eat both"), so the
+// two composers in this program agree.
+//
+// It costs the composer readline's forward i-search, which the COMMAND line
+// keeps: a box with a prompt history worth walking and a box with a draft in
+// it are different boxes, which is the same reason Enter differs between them.
+// ^S is safe in a terminal this program put in raw mode: IXON is off, so the
+// byte arrives instead of pausing the tty.
 func cmdSearchNext(t *transcript) {
+	if t.box == boxComposer {
+		composerSubmit(t)
+		return
+	}
 	t.clearCompletions()
 	t.editor().searchAgain(1)
 }

@@ -660,7 +660,13 @@ var keymap = []keyBinding{
 	{chord: byteChord('F'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerFullscreen},
 	{chord: byteChord(':'), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerCommand},
 	{chord: byteChord(0x1b), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerEscape},
-	{chord: metaChord(0x0d), modes: inComposer, open: staysInline, why: "only reachable with the drawer open", help: helpNone, pager: composerSubmit},
+	{chord: metaChord(0x0d), modes: inComposer, open: staysInline, why: "only reachable with the composer open", help: helpNone, pager: composerSubmit},
+	// ^S SENDS, and it is the chord to teach: Alt+Enter is claimed by the
+	// terminal itself on Windows (fullscreen), so it is the one submit that
+	// cannot be reached there. Bound twice, byte and CSI-u report, like every
+	// other chord the box takes.
+	{chord: byteChord(0x13), modes: inComposer, open: staysInline, why: "only reachable with the composer open", help: helpComposerSend, pager: composerSubmit},
+	{chord: ctrlChord('s'), modes: inComposer, open: staysInline, why: "only reachable with the composer open", help: helpNone, pager: composerSubmit},
 	{
 		// Alt+Enter, and Ctrl+Enter on a CSI-u terminal (the input loop folds
 		// the second onto the first: a legacy terminal cannot tell Ctrl+Enter
@@ -827,6 +833,7 @@ const (
 	helpSearchRepeat
 	helpJump
 	helpDraft
+	helpComposerSend
 	helpComposerNormal
 	helpComposerMotions
 	helpComposerMark
@@ -896,7 +903,8 @@ var helpRows = []helpRow{
 	{helpSearch, "/ · ?", "search forward / backward (in a pit, its rows)"},
 	{helpSearchRepeat, "n / N", "next / previous match, with the cursor on it"},
 	{helpJump, ":", "command line: any figaro verb, or a coordinate (:12, :12.3, :0)"},
-	{helpDraft, "> · (in >) M-Enter", "the composer: type or paste a prompt, newlines and quotes intact; M-Enter sends (in v it quotes the highlight)"},
+	{helpDraft, ">", "the composer: type or paste a prompt, newlines and quotes intact (in v it quotes the highlight)"},
+	{helpComposerSend, "(in >) ^S · M-Enter", "send the draft. ^S everywhere; M-Enter where the terminal does not eat it (Windows claims it)"},
 	{helpComposerNormal, "(in >) Esc · i a I A", "normal mode (✎) and back to insert; Esc again puts the drawer away, keeping the draft"},
 	{helpComposerMotions, "(in ✎) h j k l w b e 0 ^ $ gg G { }", "the transcript's motions, over the draft; / ? n N search it; F takes the pane; : is the command line"},
 	{helpComposerMark, "(in ✎) v / V · y", "mark by character / by line; y copies the mark, or the whole draft"},
@@ -931,7 +939,7 @@ var helpRows = []helpRow{
 	{helpVisualCols, "(in v) h/l · ←/→", "move the cursor's column"},
 	{helpVisualYankCoord, "(in v) Y", "copy the selection's coordinate (<lt.block:a-b>!)"},
 	{helpVisualMotions, "(in v) w b e · 0 ^ $ · H M L · { }", "vim motions over the cursor; / n N land it on a match"},
-	{helpCmdSubmitSnap, "(in : or >) M-Enter", "submit, leave visual mode, and snap to the live tail"},
+	{helpCmdSubmitSnap, "(in :) M-Enter", "submit, leave visual mode, and snap to the live tail"},
 	{helpListen, "^L", "open the transcript (stays open until you close it)"},
 	{helpStatusPanel, "!", "figaro status panel"},
 	{helpQueuedPanel, "Q", "queued prompts panel"},

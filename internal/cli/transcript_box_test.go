@@ -73,7 +73,9 @@ func TestComposerTitleOnlyUnderVerbose(t *testing.T) {
 	if _, ok := rowContaining(rows, composerGlyph+" composer"); !ok {
 		t.Fatalf("M-m must title the drawer:\n%s", strings.Join(rows, "\n"))
 	}
-	if _, ok := rowContaining(rows, "M-⏎ send"); !ok {
+	// THE PORTABLE CHORD IS THE ONE TAUGHT. Alt+Enter also sends, where the
+	// terminal lets it through; Windows does not, so the title names ^S.
+	if _, ok := rowContaining(rows, "^S send"); !ok {
 		t.Fatalf("the title is where the gesture is spelled out:\n%s", strings.Join(rows, "\n"))
 	}
 }
@@ -548,5 +550,63 @@ func TestComposerSendsFromNormalMode(t *testing.T) {
 	}
 	if tr.box != boxNone {
 		t.Fatal("the drawer stayed open after a send")
+	}
+}
+
+// ^S SENDS, FROM EITHER MODE, and it is the chord that has to work: Windows
+// Terminal and conhost both claim Alt+Enter for their own fullscreen toggle,
+// so the draft would have no reachable submit on that platform.
+func TestComposerSendsOnCtrlS(t *testing.T) {
+	for _, mode := range []string{"insert", "normal"} {
+		t.Run(mode, func(t *testing.T) {
+			tr, sent := composerPager(t, 72, 24)
+			tr.key('>')
+			typeInto(tr, "ship it")
+			if mode == "normal" {
+				tr.key(0x1b)
+			}
+			tr.key(0x13)
+			if *sent != "ship it" {
+				t.Fatalf("^S in %s mode sent %q", mode, *sent)
+			}
+			if tr.box != boxNone {
+				t.Fatalf("^S in %s mode left the composer open", mode)
+			}
+		})
+	}
+}
+
+// The CSI-u spelling of the same chord, which is what a terminal with
+// modified-key reporting sends instead of the byte.
+func TestComposerSendsOnCtrlSReportedAsCSIu(t *testing.T) {
+	tr, sent := composerPager(t, 72, 24)
+	tr.key('>')
+	typeInto(tr, "ship it")
+	tr.dispatch(keyEvent{ctrl: 's', mode: modeBox})
+	if *sent != "ship it" {
+		t.Fatalf("CSI-u ^S sent %q", *sent)
+	}
+}
+
+// AND THE COMMAND LINE KEEPS ITS SEARCH. ^S costs the composer readline's
+// forward i-search; it must not cost the box whose history is worth walking.
+func TestCtrlSStillSearchesTheCommandHistory(t *testing.T) {
+	tr, sent := composerPager(t, 72, 24)
+	tr.cmdline.remember("send -- older")
+	tr.cmdline.remember("ls -H")
+	tr.key(':')
+	tr.key(0x12) // ^R: start a reverse search, which ^S then walks forward
+	if !tr.cmdline.searching() {
+		t.Fatal("^R did not start a history search")
+	}
+	tr.key(0x13)
+	if !tr.cmdline.searching() {
+		t.Fatal("^S ended the command line's search instead of walking it")
+	}
+	if *sent != "" {
+		t.Fatalf("^S in the command line sent %q", *sent)
+	}
+	if tr.box != boxCommand {
+		t.Fatalf("^S closed the command line: box=%v", tr.box)
 	}
 }
